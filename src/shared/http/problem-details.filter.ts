@@ -21,6 +21,7 @@ import {
 } from '../domain/errors/domain-error';
 
 import { extractDatabaseProblem } from './database-problem';
+import { extractMiddlewareProblem } from './middleware-problem';
 import {
   PROBLEM_CONTENT_TYPE,
   type ProblemDetails,
@@ -142,6 +143,23 @@ export class ProblemDetailsFilter implements ExceptionFilter {
         // Only the names of the failing dependencies. That is what whoever
         // debugs needs and it reveals nothing sensitive.
         ...(failed ? { failedDependencies: failed } : {}),
+      };
+    }
+
+    // Errors thrown by Express middleware, which run BEFORE NestJS sees the
+    // request and therefore never become HttpException. The body-parser
+    // rejecting an oversized payload is the one that matters today: it was
+    // answering 500, so a client sending too much data was told the server had
+    // broken rather than that the request was too big.
+    const middlewareProblem = extractMiddlewareProblem(exception);
+    if (middlewareProblem) {
+      const { code, title } = this.describeHttpStatus(middlewareProblem.status);
+      return {
+        ...base,
+        type: `${BASE_TYPE}/http-${middlewareProblem.status}`,
+        title,
+        status: middlewareProblem.status,
+        code,
       };
     }
 

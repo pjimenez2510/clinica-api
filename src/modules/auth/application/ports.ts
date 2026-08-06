@@ -94,12 +94,31 @@ export interface AuthUserRepositoryPort {
   findById(id: string): Promise<AuthUser | null>;
   findByRefreshFamily(familyId: string): Promise<AuthUser | null>;
   updatePasswordHash(userId: string, passwordHash: string): Promise<void>;
-  recordFailedAttempt(
-    userId: string,
-    failures: number,
-    lockedUntil: Date | null,
-  ): Promise<void>;
+  /**
+   * Increments the failure counter and returns the NEW value.
+   *
+   * Returns it because the caller cannot compute it: reading the count into
+   * the process and writing back an absolute value loses every concurrent
+   * attempt but one, and an account that never reaches the threshold never
+   * locks. The increment has to happen in the database, in one statement.
+   */
+  registerFailure(userId: string): Promise<number>;
+  applyLock(userId: string, lockedUntil: Date): Promise<void>;
   clearFailedAttempts(userId: string): Promise<void>;
+  /**
+   * Changes the password AND revokes every session, or does neither.
+   *
+   * Expressed as one operation because the atomicity is the point: if the
+   * revocation fails after the password changed, an attacker's stolen session
+   * survives a password change made specifically to kill it. The transaction
+   * is the adapter's business; what the application declares is that these two
+   * cannot come apart.
+   */
+  rotateCredentials(
+    userId: string,
+    passwordHash: string,
+    revocationReason: string,
+  ): Promise<void>;
   savePendingMfaSecret(userId: string, encryptedSecret: string): Promise<void>;
   confirmMfa(userId: string, usedStep: bigint): Promise<void>;
   recordMfaStep(userId: string, usedStep: bigint): Promise<void>;

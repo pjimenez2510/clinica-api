@@ -46,7 +46,8 @@ describe('sign-in does not reveal who works here', () => {
    * method access, which the linter rejects for good reason.
    */
   let findByEmail: Mock<AuthUserRepositoryPort['findByEmail']>;
-  let recordFailedAttempt: Mock<AuthUserRepositoryPort['recordFailedAttempt']>;
+  let registerFailure: Mock<AuthUserRepositoryPort['registerFailure']>;
+  let applyLock: Mock<AuthUserRepositoryPort['applyLock']>;
   let clearFailedAttempts: Mock<AuthUserRepositoryPort['clearFailedAttempts']>;
   let verify: Mock<PasswordHasherPort['verify']>;
   let burnTime: Mock<PasswordHasherPort['burnTime']>;
@@ -57,8 +58,12 @@ describe('sign-in does not reveal who works here', () => {
     findByEmail = vi
       .fn<AuthUserRepositoryPort['findByEmail']>()
       .mockResolvedValue(null);
-    recordFailedAttempt = vi
-      .fn<AuthUserRepositoryPort['recordFailedAttempt']>()
+    // Returns the NEW count, the way the database does.
+    registerFailure = vi
+      .fn<AuthUserRepositoryPort['registerFailure']>()
+      .mockResolvedValue(1);
+    applyLock = vi
+      .fn<AuthUserRepositoryPort['applyLock']>()
       .mockResolvedValue(undefined);
     clearFailedAttempts = vi
       .fn<AuthUserRepositoryPort['clearFailedAttempts']>()
@@ -76,11 +81,13 @@ describe('sign-in does not reveal who works here', () => {
       findById: vi.fn(),
       findByRefreshFamily: vi.fn(),
       updatePasswordHash: vi.fn().mockResolvedValue(undefined),
-      recordFailedAttempt,
+      registerFailure,
+      applyLock,
       clearFailedAttempts,
       savePendingMfaSecret: vi.fn(),
       confirmMfa: vi.fn(),
       recordMfaStep: vi.fn(),
+      rotateCredentials: vi.fn().mockResolvedValue(undefined),
       findActiveGrants: vi.fn().mockResolvedValue([]),
     };
 
@@ -212,10 +219,10 @@ describe('sign-in does not reveal who works here', () => {
 
   it('counts a failed attempt only when the password was wrong', async () => {
     await codeFor(buildUser());
-    expect(recordFailedAttempt).toHaveBeenCalled();
+    expect(registerFailure).toHaveBeenCalled();
 
-    recordFailedAttempt.mockClear();
+    registerFailure.mockClear();
     await codeFor(buildUser({ lockedUntil: new Date(Date.now() + 60_000) }));
-    expect(recordFailedAttempt).not.toHaveBeenCalled();
+    expect(registerFailure).not.toHaveBeenCalled();
   });
 });

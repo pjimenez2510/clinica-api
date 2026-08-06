@@ -1,6 +1,8 @@
 import { VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+
+import { enableBigIntSerialisation } from './shared/bigint-json';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
@@ -15,8 +17,22 @@ import { AppModule } from './app.module';
 import type { Env } from './shared/config/env.schema';
 
 async function bootstrap(): Promise<void> {
+  // Before anything can serialise a response: Prisma returns BigInt for
+  // bigserial ids and JSON.stringify throws on them.
+  enableBigIntSerialisation();
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
+    /**
+     * MUST be false for the body limit below to mean anything.
+     *
+     * Without it the Express adapter registers its own JSON parser during
+     * `create()` — with the default 100 KB — and the first parser to see a
+     * request wins. `useBodyParser('json', { limit: '1mb' })` then registers a
+     * second one that never runs, so the documented 1 MB was actually 100 KB.
+     * It failed safe, which is exactly why nobody noticed.
+     */
+    bodyParser: false,
   });
 
   // `bufferLogs: true` above holds the startup logs until this point, so they

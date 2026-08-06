@@ -65,14 +65,50 @@ export class PrismaAuthUserRepository implements AuthUserRepositoryPort {
     });
   }
 
-  async recordFailedAttempt(
-    userId: string,
-    failures: number,
-    lockedUntil: Date | null,
-  ): Promise<void> {
+  /**
+   * `increment`, not an absolute value.
+   *
+   * The previous version read the counter into the process and wrote back
+   * `read + 1`. Twenty concurrent attempts all read 0 and all wrote 1, so
+   * `failedAttempts` never reached the threshold and the account never locked
+   * — leaving only the per-IP throttle, which is exactly what a distributed
+   * attack sidesteps.
+   */
+  async registerFailure(userId: string): Promise<number> {
+    const { failedAttempts } = await this.prisma.user.update({
+      where: { id: userId },
+      data: { failedAttempts: { increment: 1 } },
+      select: { failedAttempts: true },
+    });
+    return failedAttempts;
+  }
+
+  async applyLock(userId: string, lockedUntil: Date): Promise<void> {
     await this.prisma.user.update({
       where: { id: userId },
-      data: { failedAttempts: failures, lockedUntil },
+      data: { lockedUntil },
+    });
+  }
+
+  /**
+   * Both writes or neither.
+   *
+   * The transaction lives here because it is a detail of this adapter. What
+   * the port declares is the atomicity: a password changed without the
+   * sessions being cut is the precise situation the operation exists to
+   * prevent.
+   */
+  async rotateCredentials(
+    userId: string,
+    passwordHash: string,
+    revocationReason: string,
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id: userId }, data: { passwordHash } });
+      await tx.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date(), revocationReason },
+      });
     });
   }
 

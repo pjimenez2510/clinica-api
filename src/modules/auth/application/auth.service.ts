@@ -57,6 +57,15 @@ export class UserNotFoundError extends NotFoundError {
   }
 }
 
+export class InvalidMfaCodeError extends UnauthorizedError {
+  readonly code = 'INVALID_MFA_CODE';
+  constructor() {
+    // Same answer whether the code was wrong or the account is locked out of
+    // the second factor: telling them apart hands an attacker a progress bar.
+    super('The verification code is not valid');
+  }
+}
+
 export class MfaNotEnrolledError extends UnauthorizedError {
   readonly code = 'MFA_NOT_ENROLLED';
   constructor() {
@@ -90,6 +99,13 @@ export const RevocationReason = {
  * credential stuffing.
  */
 const MAX_FAILED_ATTEMPTS = 5;
+/**
+ * Lower for TOTP: a six-digit code is not mistyped five times, and the search
+ * space is 10^6 with three codes valid at once because of the window. Sharing
+ * the password threshold would leave the SECOND factor easier to brute-force
+ * than the first.
+ */
+const MAX_MFA_ATTEMPTS = 3;
 const BASE_LOCK_SECONDS = 60;
 const MAX_LOCK_SECONDS = 15 * 60;
 
@@ -171,7 +187,7 @@ export class AuthService {
      */
     const denialReason = !user.active
       ? 'ACCOUNT_INACTIVE'
-      : user.lockedUntil && user.lockedUntil > new Date()
+      : this.isLocked(user)
         ? 'ACCOUNT_LOCKED'
         : undefined;
 
@@ -185,7 +201,7 @@ export class AuthService {
     }
 
     if (!(await this.hasher.verify(user.passwordHash, password))) {
-      await this.registerFailedAttempt(user.id, user.failedAttempts);
+      await this.registerFailedAttempt(user.id, MAX_FAILED_ATTEMPTS);
       throw new InvalidCredentialsError();
     }
 
@@ -222,14 +238,40 @@ export class AuthService {
     ctx: ClientContext = {},
   ): Promise<AuthenticatedSession> {
     const user = await this.requireUser(userId);
+
+    /**
+     * The second factor gets the same brake as the first.
+     *
+     * Without this, a wrong code cost nothing: no counter, no lock, no record.
+     * The only limit was the per-IP throttle, and the challenge token stays
+     * valid for the full fifteen minutes — so rotating addresses was enough to
+     * walk 10^6 codes, with three of them valid at any moment. The second
+     * factor was the weaker one.
+     */
+    if (this.isLocked(user)) {
+      this.logger.warn(
+        { user_id: user.id, error_code: 'ACCOUNT_LOCKED' },
+        'mfa verification denied',
+      );
+      throw new InvalidMfaCodeError();
+    }
+
     if (!user.mfaSecretEncrypted) throw new MfaNotEnrolledError();
 
-    const usedStep = this.totp.verify(
-      user.mfaSecretEncrypted,
-      code,
-      user.email,
-      user.mfaLastStep,
-    );
+    let usedStep: bigint;
+    try {
+      usedStep = this.totp.verify(
+        user.mfaSecretEncrypted,
+        code,
+        user.email,
+        user.mfaLastStep,
+      );
+    } catch (error) {
+      await this.registerFailedAttempt(user.id, MAX_MFA_ATTEMPTS);
+      throw error;
+    }
+
+    await this.users.clearFailedAttempts(user.id);
 
     // Persisting the step is what makes replay detection work. Without it the
     // code stays usable for its whole 30 second window.
@@ -340,12 +382,12 @@ export class AuthService {
       cedula: user.cedula ?? undefined,
     });
 
-    await this.users.updatePasswordHash(
+    // ONE operation, not two. Changing the password and cutting the sessions
+    // must not come apart: a failure between them leaves the attacker's stolen
+    // session alive after a password change made specifically to kill it.
+    await this.users.rotateCredentials(
       userId,
       await this.hasher.hash(newPassword),
-    );
-    await this.refreshTokens.revokeAllForUser(
-      userId,
       RevocationReason.PASSWORD_CHANGE,
     );
 
@@ -390,26 +432,34 @@ export class AuthService {
   }
 
   /** Exponential backoff, capped. Linear delays are trivial to wait out. */
+  /**
+   * Counts a failure and locks the account once it crosses the threshold.
+   *
+   * The count comes back FROM the database. Computing it here from a value
+   * read at the start of the request loses every concurrent attempt but one,
+   * and an account that never reaches the threshold never locks.
+   */
+  /** Whether the account is serving a lockout right now. */
+  private isLocked(user: AuthUser): boolean {
+    return user.lockedUntil !== null && user.lockedUntil > new Date();
+  }
+
   private async registerFailedAttempt(
     userId: string,
-    currentFailures: number,
+    maxAttempts: number,
   ): Promise<void> {
-    const failures = currentFailures + 1;
+    const failures = await this.users.registerFailure(userId);
 
-    if (failures < MAX_FAILED_ATTEMPTS) {
-      await this.users.recordFailedAttempt(userId, failures, null);
-      return;
-    }
+    if (failures < maxAttempts) return;
 
-    const overshoot = failures - MAX_FAILED_ATTEMPTS;
+    const overshoot = failures - maxAttempts;
     const lockSeconds = Math.min(
       BASE_LOCK_SECONDS * 2 ** overshoot,
       MAX_LOCK_SECONDS,
     );
 
-    await this.users.recordFailedAttempt(
+    await this.users.applyLock(
       userId,
-      failures,
       new Date(Date.now() + lockSeconds * 1000),
     );
 
