@@ -19,6 +19,10 @@ export default defineConfig({
     root: './',
     include: ['test/integration/**/*.spec.ts'],
     globalSetup: ['test/integration/setup/global-setup.ts'],
+    // Runs before the test files are imported, which is the only moment early
+    // enough: `ConfigModule.forRoot()` validates the environment at IMPORT
+    // time, so a call inside a spec body already lost the race.
+    setupFiles: ['test/integration/setup/test-env.ts'],
     // One shared database: parallel files would truncate each other's rows
     // mid-test and produce failures that do not reproduce.
     fileParallelism: false,
