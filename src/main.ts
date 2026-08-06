@@ -3,10 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 // `Logger` is the adapter NestJS uses internally; `PinoLogger` is the one that
 // takes a structured object as its first argument. They are not interchangeable.
 import { Logger as NestPinoLogger, PinoLogger } from 'nestjs-pino';
+import { ZodValidationPipe } from 'nestjs-zod';
 
 import { AppModule } from './app.module';
 import type { Env } from './shared/config/env.schema';
@@ -65,6 +67,15 @@ async function bootstrap(): Promise<void> {
   // Compression is delegated to nginx: compressing inside the event loop
   // competes with application work and opens the door to BREACH on responses
   // that carry PHI.
+
+  // Needed to read the refresh token, which only ever travels in an httpOnly
+  // cookie so an injected script cannot reach it.
+  app.use(cookieParser());
+
+  // Validation runs as a PIPE, which means it happens AFTER guards. Never take
+  // an authorization decision from the body inside a guard: it is unvalidated
+  // at that point.
+  app.useGlobalPipes(new ZodValidationPipe());
 
   app.setGlobalPrefix('api');
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
