@@ -85,8 +85,12 @@ describe('Cedula', () => {
     });
 
     it('compara por valor, no por referencia', () => {
-      expect(Cedula.crear('1710034065').equals(Cedula.crear('1710034065'))).toBe(true);
-      expect(Cedula.crear('1710034065').equals(Cedula.crear('1713175071'))).toBe(false);
+      expect(
+        Cedula.crear('1710034065').equals(Cedula.crear('1710034065')),
+      ).toBe(true);
+      expect(
+        Cedula.crear('1710034065').equals(Cedula.crear('1713175071')),
+      ).toBe(false);
     });
 
     it('esValida no lanza', () => {

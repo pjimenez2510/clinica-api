@@ -3,10 +3,12 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ClsModule } from 'nestjs-cls';
+import { LoggerModule } from 'nestjs-pino';
 
 import { validarEnv } from './shared/config/env.schema';
 import { ProblemDetailsFilter } from './shared/http/problem-details.filter';
 import { SharedInfrastructureModule } from './shared/infrastructure/shared-infrastructure.module';
+import { loggerConfig } from './shared/observability/logger.config';
 
 @Module({
   imports: [
@@ -17,6 +19,13 @@ import { SharedInfrastructureModule } from './shared/infrastructure/shared-infra
       // Es preferible a fallar tres horas después, en la primera factura.
       validate: validarEnv,
     }),
+
+    /**
+     * Logging estructurado con redacción de datos de salud en tres capas:
+     * serializadores de allowlist, `redact` como red, y poda final del objeto.
+     * Ver `shared/observability/log-privacy.ts`.
+     */
+    LoggerModule.forRoot(loggerConfig),
 
     /**
      * Contexto por petición sobre AsyncLocalStorage.

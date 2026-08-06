@@ -39,26 +39,29 @@ export class Cedula {
     const limpia = (entrada ?? '').trim();
 
     if (!/^\d{10}$/.test(limpia)) {
-      throw new CedulaInvalidaError('debe tener exactamente 10 dígitos numéricos');
+      throw new CedulaInvalidaError(
+        'debe tener exactamente 10 dígitos numéricos',
+      );
     }
 
     const provincia = Number.parseInt(limpia.slice(0, 2), 10);
     const provinciaValida =
-      (provincia >= Cedula.PROVINCIA_MIN && provincia <= Cedula.PROVINCIA_MAX) ||
+      (provincia >= Cedula.PROVINCIA_MIN &&
+        provincia <= Cedula.PROVINCIA_MAX) ||
       provincia === Cedula.PROVINCIA_EXTRANJEROS;
 
     if (!provinciaValida) {
       throw new CedulaInvalidaError('el código de provincia no existe');
     }
 
-    const tercerDigito = Number.parseInt(limpia[2]!, 10);
+    const tercerDigito = Number.parseInt(limpia[2], 10);
     if (tercerDigito >= 6) {
       throw new CedulaInvalidaError(
         'el tercer dígito debe ser menor que 6 en una cédula de persona natural',
       );
     }
 
-    if (Cedula.digitoVerificador(limpia) !== Number.parseInt(limpia[9]!, 10)) {
+    if (Cedula.digitoVerificador(limpia) !== Number.parseInt(limpia[9], 10)) {
       throw new CedulaInvalidaError('el dígito verificador no coincide');
     }
 
@@ -81,7 +84,7 @@ export class Cedula {
    */
   private static digitoVerificador(cedula: string): number {
     const suma = Cedula.COEFICIENTES.reduce((acc, coeficiente, i) => {
-      const producto = Number.parseInt(cedula[i]!, 10) * coeficiente;
+      const producto = Number.parseInt(cedula[i], 10) * coeficiente;
       return acc + (producto > 9 ? producto - 9 : producto);
     }, 0);
 

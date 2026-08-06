@@ -1,9 +1,12 @@
-import { Logger, VersioningType } from '@nestjs/common';
+import { VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
+// `Logger` es el adaptador que NestJS usa internamente; `PinoLogger` es el que
+// acepta objetos estructurados como primer argumento. No son intercambiables.
+import { Logger as NestPinoLogger, PinoLogger } from 'nestjs-pino';
 
 import { AppModule } from './app.module';
 import type { Env } from './shared/config/env.schema';
@@ -12,6 +15,10 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
   });
+
+  // `bufferLogs: true` arriba retiene los logs de arranque hasta este punto,
+  // para que también pasen por la redacción de PHI y no por el logger por defecto.
+  app.useLogger(app.get(NestPinoLogger));
 
   const config = app.get(ConfigService<Env, true>);
   const esProduccion = config.get('NODE_ENV', { infer: true }) === 'production';
@@ -82,11 +89,14 @@ async function bootstrap(): Promise<void> {
   const puerto = config.get('PORT', { infer: true });
   await app.listen(puerto, '0.0.0.0');
 
-  const logger = new Logger('Bootstrap');
-  logger.log(`API escuchando en http://localhost:${puerto}/api`);
-  if (!esProduccion) {
-    logger.log(`OpenAPI en http://localhost:${puerto}/api/docs`);
-  }
+  // Datos como campos estructurados, no interpolados en el mensaje. Aquí solo
+  // hay un número de puerto, pero la regla de ESLint no distingue —y hace bien:
+  // el día que alguien interpole una cédula, el hábito ya estará adquirido.
+  //
+  // `resolve` y no `get`: PinoLogger es un provider con scope de petición, y
+  // `get()` lanza sobre providers scoped.
+  const logger = await app.resolve(PinoLogger);
+  logger.info({ puerto, docs: !esProduccion }, 'API iniciada');
 }
 
 void bootstrap();

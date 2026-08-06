@@ -4,9 +4,10 @@ import {
   ExceptionFilter,
   HttpException,
   HttpStatus,
-  Logger,
 } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
+import type { Request, Response } from 'express';
+import { PinoLogger } from 'nestjs-pino';
 
 import {
   BusinessRuleViolation,
@@ -19,7 +20,10 @@ import {
   ValidationError,
 } from '../domain/errors/domain-error';
 
-import { PROBLEM_CONTENT_TYPE, type ProblemDetails } from './problem-details.types';
+import {
+  PROBLEM_CONTENT_TYPE,
+  type ProblemDetails,
+} from './problem-details.types';
 
 const BASE_TYPE = 'https://api.clinica.ec/problems';
 
@@ -35,35 +39,47 @@ const BASE_TYPE = 'https://api.clinica.ec/problems';
  */
 @Catch()
 export class ProblemDetailsFilter implements ExceptionFilter {
-  private readonly logger = new Logger(ProblemDetailsFilter.name);
   private readonly esProduccion = process.env.NODE_ENV === 'production';
 
-  constructor(private readonly adapterHost: HttpAdapterHost) {}
+  constructor(
+    private readonly adapterHost: HttpAdapterHost,
+    private readonly logger: PinoLogger,
+  ) {
+    this.logger.setContext(ProblemDetailsFilter.name);
+  }
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const { httpAdapter } = this.adapterHost;
     const ctx = host.switchToHttp();
-    const req = ctx.getRequest();
-    const res = ctx.getResponse();
+    const req = ctx.getRequest<Request>();
+    const res = ctx.getResponse<Response>();
 
     // Sin query string: puede llevar cédula o número de historia clínica.
     const instance = String(httpAdapter.getRequestUrl(req) ?? '').split('?')[0];
     const problema = this.aProblemDetails(exception, instance);
 
-    // El error COMPLETO va al log, donde el pipeline de redacción lo limpia.
-    // La respuesta HTTP solo lleva lo que está en `problema`.
+    /**
+     * EL MENSAJE ESTÁTICO ES OBLIGATORIO, no es estilo.
+     *
+     * Si a pino le pasas un objeto con `err` y NO le das mensaje, usa
+     * `err.message` como `msg`. Y `msg` es un string: los serializadores no lo
+     * tocan. El 404 de Nest lleva la URL completa —con query string— en su
+     * mensaje, así que sin esto se filtraría la cédula que venga en la URL.
+     */
     const nivel = problema.status >= 500 ? 'error' : 'warn';
-    this.logger[nivel]({
-      err: exception,
-      error_code: problema.code,
-      status: problema.status,
-    });
+    this.logger[nivel](
+      { err: exception, error_code: problema.code, status: problema.status },
+      'peticion fallida',
+    );
 
     httpAdapter.setHeader?.(res, 'Content-Type', PROBLEM_CONTENT_TYPE);
     httpAdapter.reply(res, problema, problema.status);
   }
 
-  private aProblemDetails(exception: unknown, instance: string): ProblemDetails {
+  private aProblemDetails(
+    exception: unknown,
+    instance: string,
+  ): ProblemDetails {
     const base = { instance, timestamp: new Date().toISOString() };
 
     if (exception instanceof DomainError) {
@@ -115,17 +131,25 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       return { status: HttpStatus.UNPROCESSABLE_ENTITY, slug: 'validacion' };
     if (e instanceof NotFoundError)
       return { status: HttpStatus.NOT_FOUND, slug: 'no-encontrado' };
-    if (e instanceof ConflictError) return { status: HttpStatus.CONFLICT, slug: 'conflicto' };
+    if (e instanceof ConflictError)
+      return { status: HttpStatus.CONFLICT, slug: 'conflicto' };
     if (e instanceof BusinessRuleViolation)
-      return { status: HttpStatus.UNPROCESSABLE_ENTITY, slug: 'regla-de-negocio' };
+      return {
+        status: HttpStatus.UNPROCESSABLE_ENTITY,
+        slug: 'regla-de-negocio',
+      };
     if (e instanceof UnauthorizedError)
       return { status: HttpStatus.UNAUTHORIZED, slug: 'no-autenticado' };
-    if (e instanceof ForbiddenError) return { status: HttpStatus.FORBIDDEN, slug: 'sin-permiso' };
+    if (e instanceof ForbiddenError)
+      return { status: HttpStatus.FORBIDDEN, slug: 'sin-permiso' };
     if (e instanceof ExternalServiceError) {
       // Un servicio caído es 503 (reintentable); un rechazo de negocio del SRI
       // es 502: reintentar no lo va a arreglar.
       return e.esReintentable
-        ? { status: HttpStatus.SERVICE_UNAVAILABLE, slug: 'servicio-no-disponible' }
+        ? {
+            status: HttpStatus.SERVICE_UNAVAILABLE,
+            slug: 'servicio-no-disponible',
+          }
         : { status: HttpStatus.BAD_GATEWAY, slug: 'servicio-externo' };
     }
     return { status: HttpStatus.INTERNAL_SERVER_ERROR, slug: 'error-interno' };

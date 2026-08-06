@@ -8,7 +8,9 @@ import { z } from 'zod';
  * que uno que no arranca.
  */
 export const envSchema = z.object({
-  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  NODE_ENV: z
+    .enum(['development', 'test', 'production'])
+    .default('development'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
 
   /**
@@ -64,14 +66,21 @@ export const envSchema = z.object({
     }),
 
   // --- Observabilidad ---
-  LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
+  LOG_LEVEL: z
+    .enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal'])
+    .default('info'),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
 
   /** Orígenes permitidos, separados por coma. Nunca '*' con datos de salud. */
   CORS_ORIGINS: z
     .string()
     .default('')
-    .transform((s) => s.split(',').map((o) => o.trim()).filter(Boolean)),
+    .transform((s) =>
+      s
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean),
+    ),
 });
 
 export type Env = z.infer<typeof envSchema>;
