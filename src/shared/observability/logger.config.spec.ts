@@ -64,10 +64,7 @@ describe('error logging pipeline', () => {
   it('redacts a cedula inside the error message', () => {
     // The message survives, but the personal data in it does not.
     const entry = logAndCapture((logger) =>
-      logger.error(
-        { err: new Error('cedula 1710034065 rechazada') },
-        'failed',
-      ),
+      logger.error({ err: new Error('cedula 1710034065 rechazada') }, 'failed'),
     );
 
     const { message } = entry.err as { message: string };
