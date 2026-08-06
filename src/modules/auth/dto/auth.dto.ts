@@ -10,28 +10,52 @@ import { z } from 'zod';
  * two drift apart silently.
  */
 
+/**
+ * Every user-facing field declares its OWN message.
+ *
+ * Zod's built-in Spanish locale is machine translated and reads badly
+ * ("Inválido dirección de correo electrónico"). It stays configured as a
+ * fallback so nothing ever surfaces in English, but anything a receptionist
+ * will actually read is written here.
+ */
+const TOTP_CODE = z
+  .string({ error: 'el código es obligatorio' })
+  .regex(/^\d{6}$/, 'el código debe tener exactamente 6 dígitos');
+
 export const signInSchema = z.object({
-  email: z.email().toLowerCase().trim(),
-  // Length is not validated here: the policy only applies when SETTING a
-  // password. Rejecting a short one at sign-in would tell an attacker that the
+  email: z
+    .string({ error: 'el correo es obligatorio' })
+    .trim()
+    .toLowerCase()
+    .pipe(z.email('ingresa un correo electrónico válido')),
+  // Length is NOT validated here. The policy only applies when SETTING a
+  // password; rejecting a short one at sign-in would tell an attacker that the
   // stored password is short.
-  password: z.string().min(1).max(256),
+  password: z
+    .string({ error: 'la contraseña es obligatoria' })
+    .min(1, 'la contraseña es obligatoria')
+    .max(256, 'la contraseña no puede superar 256 caracteres'),
 });
 export class SignInDto extends createZodDto(signInSchema) {}
 
-export const verifyMfaSchema = z.object({
-  code: z.string().regex(/^\d{6}$/, 'el código debe tener 6 dígitos'),
-});
+export const verifyMfaSchema = z.object({ code: TOTP_CODE });
 export class VerifyMfaDto extends createZodDto(verifyMfaSchema) {}
 
-export const confirmMfaSchema = z.object({
-  code: z.string().regex(/^\d{6}$/, 'el código debe tener 6 dígitos'),
-});
+export const confirmMfaSchema = z.object({ code: TOTP_CODE });
 export class ConfirmMfaDto extends createZodDto(confirmMfaSchema) {}
 
 export const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1).max(256),
-  newPassword: z.string().min(1).max(256),
+  currentPassword: z
+    .string({ error: 'la contraseña actual es obligatoria' })
+    .min(1, 'la contraseña actual es obligatoria')
+    .max(256),
+  // The strength policy is NOT duplicated here: it lives in the domain, needs
+  // the user's own data to check the password does not contain their name, and
+  // must apply to every path that sets a password — not only this endpoint.
+  newPassword: z
+    .string({ error: 'la nueva contraseña es obligatoria' })
+    .min(1, 'la nueva contraseña es obligatoria')
+    .max(256, 'la contraseña no puede superar 256 caracteres'),
 });
 export class ChangePasswordDto extends createZodDto(changePasswordSchema) {}
 

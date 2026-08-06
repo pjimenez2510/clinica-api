@@ -9,6 +9,7 @@ import helmet from 'helmet';
 // takes a structured object as its first argument. They are not interchangeable.
 import { Logger as NestPinoLogger, PinoLogger } from 'nestjs-pino';
 import { ZodValidationPipe } from 'nestjs-zod';
+import { z } from 'zod';
 
 import { AppModule } from './app.module';
 import type { Env } from './shared/config/env.schema';
@@ -71,6 +72,12 @@ async function bootstrap(): Promise<void> {
   // Needed to read the refresh token, which only ever travels in an httpOnly
   // cookie so an injected script cannot reach it.
   app.use(cookieParser());
+
+  // Spanish as the FALLBACK for validation messages. Its wording is machine
+  // translated and reads poorly ("Inválido dirección de correo electrónico"),
+  // so every user-facing field should still declare its own message in the
+  // schema. This only ensures nothing ever surfaces in English.
+  z.config(z.locales.es());
 
   // Validation runs as a PIPE, which means it happens AFTER guards. Never take
   // an authorization decision from the body inside a guard: it is unvalidated

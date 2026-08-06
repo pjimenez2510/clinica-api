@@ -24,6 +24,7 @@ import {
   PROBLEM_CONTENT_TYPE,
   type ProblemDetails,
 } from './problem-details.types';
+import { extractZodError, zodIssuesToFieldErrors } from './zod-problem';
 
 const BASE_TYPE = 'https://api.clinica.ec/problems';
 
@@ -103,6 +104,24 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     }
 
     if (exception instanceof HttpException) {
+      // Request-body validation. Handled before the generic branch because Zod
+      // knows exactly which field failed, and answering a bare 400 throws that
+      // away — leaving the client unable to highlight the offending input.
+      const zodError = extractZodError(exception);
+      if (zodError) {
+        return {
+          ...base,
+          type: `${BASE_TYPE}/validation`,
+          title: 'VALIDATION_FAILED',
+          // 422 and not Zod's default 400: the body parsed fine, it is the
+          // CONTENT that is invalid. Same status the domain ValidationError
+          // maps to, so the client has one rule instead of two.
+          status: HttpStatus.UNPROCESSABLE_ENTITY,
+          code: 'VALIDATION_FAILED',
+          errors: zodIssuesToFieldErrors(zodError),
+        };
+      }
+
       const status = exception.getStatus();
       const failed = this.failedDependencies(exception);
       return {
