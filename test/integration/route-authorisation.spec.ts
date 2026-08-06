@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../../src/app.module';
 import {
   IS_PUBLIC_KEY,
-  MFA_OPTIONAL_KEY,
+  MFA_FLOW_ONLY_KEY,
   OWN_ACCOUNT_KEY,
   REQUIRED_PERMISSION_KEY,
   SITE_SCOPE_KEY,
@@ -67,7 +67,7 @@ describe('every route declares its protection', () => {
           const permission = read(REQUIRED_PERMISSION_KEY);
           const marker = read(IS_PUBLIC_KEY)
             ? 'public'
-            : read(MFA_OPTIONAL_KEY)
+            : read(MFA_FLOW_ONLY_KEY)
               ? 'mfa-flow'
               : read(OWN_ACCOUNT_KEY)
                 ? 'own-account'
@@ -98,7 +98,7 @@ describe('every route declares its protection', () => {
 
     expect(
       undeclared,
-      'Add @RequirePermission(), @Public(), @MfaOptional() or @OwnAccount()',
+      'Add @RequirePermission(), @Public(), @MfaFlowOnly() or @OwnAccount()',
     ).toEqual([]);
   });
 

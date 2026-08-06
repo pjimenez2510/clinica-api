@@ -15,7 +15,7 @@ import { MfaRequiredError } from '../domain/auth.errors';
 import {
   CURRENT_USER,
   IS_PUBLIC_KEY,
-  MFA_OPTIONAL_KEY,
+  MFA_FLOW_ONLY_KEY,
 } from '../../../shared/http/auth.decorators';
 
 import { type AccessTokenClaims, TokenService } from './token.service';
@@ -64,7 +64,7 @@ export class JwtAuthGuard implements CanActivate {
     // flow itself. Without this check, the first token issued after the
     // password would already grant full access and MFA would be decorative.
     const mfaOptional = this.reflector.getAllAndOverride<boolean>(
-      MFA_OPTIONAL_KEY,
+      MFA_FLOW_ONLY_KEY,
       targets,
     );
     if (!claims.mfa && !mfaOptional) throw new MfaRequiredError();

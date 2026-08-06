@@ -1,4 +1,5 @@
 import {
+  SetMetadata,
   type CallHandler,
   type ExecutionContext,
   Injectable,
@@ -20,12 +21,12 @@ const TIMEOUT_KEY = 'timeout_ms';
  * The SRI web services take seconds and sometimes over a minute, so the routes
  * that talk to them need a much wider margin than a normal query.
  */
-export const Timeout =
-  (ms: number): MethodDecorator =>
-  (_target, _key, descriptor: PropertyDescriptor) => {
-    Reflect.defineMetadata(TIMEOUT_KEY, ms, descriptor.value as object);
-    return descriptor;
-  };
+export const Timeout = (ms: number): MethodDecorator =>
+  // `SetMetadata`, like every other decorator in the project. Reaching for
+  // `Reflect.defineMetadata` directly worked, but being the single exception
+  // to a pattern with no reason written down is how a codebase stops having
+  // patterns.
+  SetMetadata(TIMEOUT_KEY, ms);
 
 /**
  * Cuts off requests that run longer than acceptable.

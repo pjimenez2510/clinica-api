@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ClsModule } from 'nestjs-cls';
@@ -10,7 +10,8 @@ import { validateEnv } from './shared/config/env.schema';
 import { TimeoutInterceptor } from './shared/http/interceptors/timeout.interceptor';
 import { ProblemDetailsFilter } from './shared/http/problem-details.filter';
 import { SharedInfrastructureModule } from './shared/infrastructure/shared-infrastructure.module';
-import { loggerConfig } from './shared/observability/logger.config';
+import type { Env } from './shared/config/env.schema';
+import { buildLoggerConfig } from './shared/observability/logger.config';
 
 @Module({
   imports: [
@@ -27,7 +28,19 @@ import { loggerConfig } from './shared/observability/logger.config';
      * serializers, `redact` as a net, and a final prune of the object.
      * See `shared/observability/log-privacy.ts`.
      */
-    LoggerModule.forRoot(loggerConfig),
+    // forRootAsync so the logger is built from VALIDATED configuration. Read
+    // straight from `process.env` at import time, a bad LOG_LEVEL blew up with
+    // a pino error instead of the readable message the schema produces —
+    // cancelling the fail-fast exactly where it is most visible.
+    LoggerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>) =>
+        buildLoggerConfig({
+          NODE_ENV: config.get('NODE_ENV', { infer: true }),
+          LOG_LEVEL: config.get('LOG_LEVEL', { infer: true }),
+          APP_VERSION: config.get('APP_VERSION', { infer: true }),
+        }),
+    }),
 
     /**
      * Per-request context over AsyncLocalStorage.

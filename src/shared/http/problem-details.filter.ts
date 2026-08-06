@@ -5,8 +5,12 @@ import {
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { HttpAdapterHost } from '@nestjs/core';
 import type { Request, Response } from 'express';
+
+import type { Env } from '../config/env.schema';
+import { ClsService } from 'nestjs-cls';
 import { PinoLogger } from 'nestjs-pino';
 
 import {
@@ -42,12 +46,17 @@ const BASE_TYPE = 'https://api.clinica.ec/problems';
  */
 @Catch()
 export class ProblemDetailsFilter implements ExceptionFilter {
-  private readonly isProduction = process.env.NODE_ENV === 'production';
+  /** From validated configuration, not `process.env`. */
+  private readonly isProduction: boolean;
 
   constructor(
     private readonly adapterHost: HttpAdapterHost,
     private readonly logger: PinoLogger,
+    private readonly cls: ClsService,
+    config: ConfigService<Env, true>,
   ) {
+    this.isProduction =
+      config.get('NODE_ENV', { infer: true }) === 'production';
     this.logger.setContext(ProblemDetailsFilter.name);
   }
 
@@ -63,7 +72,7 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     // body would be worse than an empty one.
     const instance =
       String(httpAdapter.getRequestUrl(req) ?? '').split('?')[0] ?? '';
-    const problem = this.toProblemDetails(exception, instance);
+    const problem = this.toProblemDetails(exception, instance, req);
 
     /**
      * THE STATIC MESSAGE IS MANDATORY, not a style choice.
@@ -73,11 +82,40 @@ export class ProblemDetailsFilter implements ExceptionFilter {
      * it. Nest's 404 carries the full URL — query string included — in its
      * message, so without this the cedula in the URL would leak.
      */
-    const level = problem.status >= 500 ? 'error' : 'warn';
-    this.logger[level](
-      { err: exception, error_code: problem.code, status: problem.status },
-      'request failed',
-    );
+    /**
+     * A 4xx does NOT carry the error object.
+     *
+     * An expired token is a continuous, entirely normal event in production,
+     * and writing a stack for each one costs money and buries what matters.
+     * The code and the route answer every question a 4xx raises; a 5xx is our
+     * bug and needs everything.
+     */
+    if (problem.status >= 500) {
+      this.logger.error(
+        { err: exception, error_code: problem.code, status: problem.status },
+        'request failed',
+      );
+    } else {
+      this.logger.warn(
+        { error_code: problem.code, status: problem.status, route: instance },
+        'request rejected',
+      );
+    }
+
+    /**
+     * Nothing to do if the response has already started.
+     *
+     * `reply` throws when headers are sent, and it throws INSIDE the filter —
+     * which loses the handler and takes the process with it. The request is
+     * already lost; the process does not have to be.
+     */
+    if (res.headersSent) {
+      this.logger.error(
+        { error_code: problem.code },
+        'error raised after the response had started',
+      );
+      return;
+    }
 
     httpAdapter.setHeader?.(res, 'Content-Type', PROBLEM_CONTENT_TYPE);
     httpAdapter.reply(res, problem, problem.status);
@@ -86,8 +124,27 @@ export class ProblemDetailsFilter implements ExceptionFilter {
   private toProblemDetails(
     exception: unknown,
     instance: string,
+    req: Request,
   ): ProblemDetails {
-    const base = { instance, timestamp: new Date().toISOString() };
+    /**
+     * `traceId` is populated, and it is THE SAME id as the header.
+     *
+     * The type promised "the user reports the id and you find the trace" and
+     * the body never carried it, while `genReqId` had already put one in the
+     * response header. Filling it from the CLS id instead would have been
+     * worse than leaving it empty: two different identifiers for one event,
+     * with the user reading one and the logs holding the other.
+     *
+     * `req.id` is what pino-http assigned and what went out in
+     * `X-Request-Id`. The CLS id is only a fallback for a path that never
+     * reached the HTTP logger.
+     */
+    const requestId = (req as { id?: unknown }).id;
+    const base = {
+      instance,
+      timestamp: new Date().toISOString(),
+      traceId: typeof requestId === 'string' ? requestId : this.cls.getId(),
+    };
 
     if (exception instanceof DomainError) {
       const { status, slug, title } = this.mapDomainError(exception);

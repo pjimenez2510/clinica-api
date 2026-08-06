@@ -3,7 +3,7 @@ import { Writable } from 'node:stream';
 import pino from 'pino';
 import { describe, expect, it } from 'vitest';
 
-import { loggerConfig } from './logger.config';
+import { buildLoggerConfig } from './logger.config';
 
 /**
  * Exercises the REAL pino configuration, not an imitation of it.
@@ -30,7 +30,9 @@ function logAndCapture(
     },
   });
 
-  const options = { ...loggerConfig.pinoHttp } as pino.LoggerOptions;
+  const options = {
+    ...buildLoggerConfig({ NODE_ENV: 'test' }).pinoHttp,
+  } as pino.LoggerOptions;
   // pino-pretty would reformat the output and hide the shape under test.
   delete (options as { transport?: unknown }).transport;
   options.level = 'debug';

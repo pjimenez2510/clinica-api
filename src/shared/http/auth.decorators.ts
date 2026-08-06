@@ -14,7 +14,7 @@ import type { Permission } from '../authorisation/permission.catalogue';
  */
 
 export const IS_PUBLIC_KEY = 'auth:public';
-export const MFA_OPTIONAL_KEY = 'auth:mfa_optional';
+export const MFA_FLOW_ONLY_KEY = 'auth:mfa_flow_only';
 export const REQUIRED_PERMISSION_KEY = 'auth:permission';
 export const OWN_ACCOUNT_KEY = 'auth:own_account';
 export const SITE_SCOPE_KEY = 'auth:site_scope';
@@ -24,12 +24,20 @@ export const Public = (): MethodDecorator & ClassDecorator =>
   SetMetadata(IS_PUBLIC_KEY, true);
 
 /**
- * Allows a route to be reached with a session that has not yet completed the
- * second factor. Only for the MFA flow itself: verifying the code, and
- * enrolling.
+ * The MFA flow itself, and nothing else.
+ *
+ * Reachable by a session that has not completed the second factor — verifying
+ * the code, enrolling, confirming. It ALSO SKIPS THE PERMISSION CHECK
+ * entirely, because such a session holds no grants yet and requiring one would
+ * make the second factor impossible to complete.
+ *
+ * Renamed from `@MfaOptional()`, which said "MFA is optional here" and not
+ * "this route checks no permissions". Somebody would eventually have put the
+ * old name on a fourth route meaning the first thing. The exact list is
+ * asserted in `route-authorisation.spec.ts`.
  */
-export const MfaOptional = (): MethodDecorator =>
-  SetMetadata(MFA_OPTIONAL_KEY, true);
+export const MfaFlowOnly = (): MethodDecorator =>
+  SetMetadata(MFA_FLOW_ONLY_KEY, true);
 
 /** Key under which the authenticated identity is published in the request context. */
 export const CURRENT_USER = 'currentUser';

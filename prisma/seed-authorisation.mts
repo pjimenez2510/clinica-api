@@ -24,16 +24,21 @@ export async function syncAuthorisation(prisma: PrismaClient): Promise<{
   rolesCreated: string[];
   orphanPermissions: string[];
 }> {
-  for (const permission of PERMISSION_CATALOGUE) {
-    await prisma.permission.upsert({
-      where: { code: permission.code },
-      update: {
-        resource: permission.resource,
-        description: permission.description,
-      },
-      create: permission,
-    });
-  }
+  // One transaction: a failure halfway through left the catalogue partially
+  // synced, and a partially synced catalogue is one where a role references a
+  // permission that does not exist yet.
+  await prisma.$transaction(
+    PERMISSION_CATALOGUE.map((permission) =>
+      prisma.permission.upsert({
+        where: { code: permission.code },
+        update: {
+          resource: permission.resource,
+          description: permission.description,
+        },
+        create: permission,
+      }),
+    ),
+  );
 
   // A permission in the database that the code no longer checks grants nothing
   // and protects nothing, but it stays assignable in the admin screen — where

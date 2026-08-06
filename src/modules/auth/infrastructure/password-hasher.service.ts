@@ -10,7 +10,7 @@ import * as argon2 from 'argon2';
  * These values live inside the resulting hash, so they can be raised later
  * without migrating existing rows: `needsRehash` detects the outdated ones.
  */
-const ARGON2_OPTIONS = {
+export const ARGON2_OPTIONS = {
   type: argon2.argon2id,
   memoryCost: 19_456, // 19 MiB
   timeCost: 2,

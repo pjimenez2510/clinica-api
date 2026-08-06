@@ -7,7 +7,9 @@ const base = {
   DATABASE_URL: 'postgresql://clinica:pwd@localhost:5432/clinica',
   JWT_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----',
   JWT_PUBLIC_KEY: '-----BEGIN PUBLIC KEY-----\nx\n-----END PUBLIC KEY-----',
-  MFA_ENCRYPTION_KEY: 'a'.repeat(44),
+  // 32 zero bytes in base64. It must DECODE to 32 bytes, not merely be 44
+  // characters: `'a'.repeat(44)` is 44 characters and decodes to 33.
+  MFA_ENCRYPTION_KEY: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
   S3_ENDPOINT: 'http://localhost:9000',
   S3_ACCESS_KEY: 'k',
   S3_SECRET_KEY: 's',
@@ -93,5 +95,67 @@ describe('validateEnv', () => {
         /TZ/,
       );
     });
+  });
+
+  it('REFUSES a key that is 44 characters but not 32 bytes', () => {
+    // The exact failure the old `.min(44)` let through, and which TotpService
+    // then rejected from its constructor — the right outcome, from the wrong
+    // place, with the wrong message.
+    expect(() =>
+      validateEnv({ ...base, MFA_ENCRYPTION_KEY: 'a'.repeat(44) }),
+    ).toThrow(/32 bytes/);
+  });
+
+  it('REFUSES a token TTL that is not a duration', () => {
+    // `z.string()` accepted "banana", and the failure surfaced when the first
+    // token was issued rather than at startup.
+    expect(() => validateEnv({ ...base, JWT_ACCESS_TTL: 'banana' })).toThrow(
+      /duración/,
+    );
+    expect(validateEnv({ ...base, JWT_ACCESS_TTL: '2h' }).JWT_ACCESS_TTL).toBe(
+      '2h',
+    );
+  });
+
+  it('REFUSES an origin that is not a URL', () => {
+    // A missing scheme or a stray character silently stopped that origin from
+    // working, and the only symptom was a CORS failure in the browser.
+    expect(() =>
+      validateEnv({ ...base, CORS_ORIGINS: 'https://clinica.ec, no-soy-url' }),
+    ).toThrow();
+  });
+
+  it('DEMANDS an explicit trust-proxy setting in production', () => {
+    // The default of 0 is right in development and dangerous in production,
+    // where it puts the whole clinic in one rate-limit bucket and records the
+    // proxy as every user's address.
+    expect(() => validateEnv({ ...base, NODE_ENV: 'production' })).toThrow(
+      /TRUST_PROXY_HOPS/,
+    );
+
+    expect(
+      validateEnv({ ...base, NODE_ENV: 'production', TRUST_PROXY_HOPS: '1' })
+        .TRUST_PROXY_HOPS,
+    ).toBe(1);
+  });
+
+  it('does not demand storage or mail configuration yet', () => {
+    // Requiring configuration for features that do not exist teaches people to
+    // invent values, and a fail-fast that cries wolf gets worked around. The
+    // base fixture supplies them, so they are removed here on purpose.
+    const withoutOptionalServices = { ...base };
+    for (const key of [
+      'S3_ENDPOINT',
+      'S3_ACCESS_KEY',
+      'S3_SECRET_KEY',
+      'SMTP_HOST',
+      'SMTP_FROM',
+    ]) {
+      delete (withoutOptionalServices as Record<string, unknown>)[key];
+    }
+
+    const env = validateEnv(withoutOptionalServices);
+    expect(env.S3_ENDPOINT).toBeUndefined();
+    expect(env.SMTP_HOST).toBeUndefined();
   });
 });

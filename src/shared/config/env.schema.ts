@@ -46,24 +46,53 @@ export const envSchema = z.object({
    */
   JWT_PRIVATE_KEY: z.string().min(1),
   JWT_PUBLIC_KEY: z.string().min(1),
-  JWT_ACCESS_TTL: z.string().default('15m'),
+  /**
+   * A duration, not any string. `z.string()` accepted `"banana"`, and the
+   * failure then surfaced when the FIRST token was issued rather than at
+   * startup — which is the whole point of validating configuration.
+   */
+  JWT_ACCESS_TTL: z
+    .string()
+    .regex(/^\d+[smhd]$/, 'debe ser una duración como 15m, 2h o 7d')
+    .default('15m'),
   JWT_REFRESH_TTL_DAYS: z.coerce.number().int().positive().default(7),
 
-  /** Encrypts TOTP secrets at rest (AES-256-GCM -> 32 bytes in base64). */
-  MFA_ENCRYPTION_KEY: z.string().min(44),
+  /**
+   * Encrypts TOTP secrets at rest. AES-256-GCM, so it must DECODE to 32 bytes.
+   *
+   * `.min(44)` only checked the length of the base64 text, which 44 x's
+   * satisfies while decoding to 33. `TotpService` then rejected it in its
+   * constructor — so the process did die at startup, but with the wrong
+   * message from the wrong place.
+   */
+  MFA_ENCRYPTION_KEY: z
+    .string()
+    .refine(
+      (value) => Buffer.from(value, 'base64').length === 32,
+      'debe decodificar a exactamente 32 bytes (AES-256-GCM)',
+    ),
 
   // --- Infrastructure ---
   REDIS_URL: z.url().startsWith('redis').optional(),
 
-  S3_ENDPOINT: z.url(),
-  S3_ACCESS_KEY: z.string().min(1),
-  S3_SECRET_KEY: z.string().min(1),
+  /**
+   * OPTIONAL until an adapter reads them.
+   *
+   * Requiring configuration for features that do not exist forces whoever sets
+   * the system up to invent values, and a fail-fast that cries wolf is one
+   * people learn to work around. They become required the day attachments are
+   * implemented.
+   */
+  S3_ENDPOINT: z.url().optional(),
+  S3_ACCESS_KEY: z.string().min(1).optional(),
+  S3_SECRET_KEY: z.string().min(1).optional(),
   S3_BUCKET: z.string().min(1).default('clinica'),
   S3_REGION: z.string().default('us-east-1'),
 
-  SMTP_HOST: z.string().min(1),
+  /** Optional for the same reason as S3: nothing sends mail yet. */
+  SMTP_HOST: z.string().min(1).optional(),
   SMTP_PORT: z.coerce.number().int().default(1025),
-  SMTP_FROM: z.email(),
+  SMTP_FROM: z.email().optional(),
 
   // --- Ecuadorian context ---
   /**
@@ -89,16 +118,26 @@ export const envSchema = z.object({
     .default('info'),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
 
-  /** Allowed origins, comma separated. Never '*' with health data. */
+  /** Stamped on every log line so an incident can be tied to a deployment. */
+  APP_VERSION: z.string().optional(),
+
+  /**
+   * Allowed origins, comma separated. Never '*' with health data.
+   *
+   * Each one is validated as a URL: an extra space or a missing scheme made
+   * that origin silently stop working, and the symptom is a CORS failure in
+   * the browser with nothing in the server logs.
+   */
   CORS_ORIGINS: z
     .string()
     .default('')
-    .transform((s) =>
-      s
+    .transform((raw) =>
+      raw
         .split(',')
-        .map((o) => o.trim())
+        .map((origin) => origin.trim())
         .filter(Boolean),
-    ),
+    )
+    .pipe(z.array(z.url()).describe('lista de orígenes permitidos')),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -108,7 +147,27 @@ export type Env = z.infer<typeof envSchema>;
  * it fails: a raw `ZodError` is unreadable at 3am during a deployment.
  */
 export function validateEnv(raw: Record<string, unknown>): Env {
-  const result = envSchema.safeParse(raw);
+  const result = envSchema
+    /**
+     * `TRUST_PROXY_HOPS` must be DECLARED in production.
+     *
+     * Its default of 0 is right for development and wrong behind the nginx
+     * that almost always sits in front of production — where it puts the whole
+     * clinic in one rate-limit bucket and records the proxy's address as every
+     * user's. Defaulting silently to the dangerous value is the one case where
+     * a default is worse than a refusal to start.
+     */
+    .superRefine((env, ctx) => {
+      if (env.NODE_ENV === 'production' && raw.TRUST_PROXY_HOPS === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['TRUST_PROXY_HOPS'],
+          message:
+            'debe declararse explícitamente en producción (0 si la API se expone directamente)',
+        });
+      }
+    })
+    .safeParse(raw);
 
   if (!result.success) {
     const detail = result.error.issues

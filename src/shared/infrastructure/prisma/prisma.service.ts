@@ -13,9 +13,15 @@ import type { Env } from '../../config/env.schema';
 /**
  * Cliente de Prisma con adaptador de driver.
  *
- * Prisma 7 eliminó la URL del schema: el cliente recibe un adaptador construido
- * aquí. La ventaja real es que el pool de conexiones lo controlas tú, no Prisma
- * — importante porque pg-boss comparte la misma base y hay que repartir el cupo.
+ * Prisma 7 removed the URL from the schema: the client receives an adapter
+ * built here. The real benefit is that the connection pool is ours to control
+ * rather than Prisma's — which matters because pg-boss shares the same database
+ * and the quota has to be split between them.
+ *
+ * ⚠️ TODO: that control is not exercised yet. Only `connectionString` is
+ * passed, so `max` stays at the driver default of 10 and nothing is reserved
+ * for the queue. Written as a TODO rather than left as a claim the code does
+ * not keep — the sizing needs a deployment to size against.
  */
 @Injectable()
 export class PrismaService

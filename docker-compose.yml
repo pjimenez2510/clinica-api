@@ -39,7 +39,7 @@ services:
     restart: unless-stopped
     # OJO: las colas NO usan Redis (van en PostgreSQL con pg-boss, para poder
     # encolar dentro de la misma transacción). Redis está solo para caché de
-    # catálogos y rate limiting compartido entre instancias.
+    # catálogos y Rate limiting compartido entre instancias (TODO: el throttler sigue en memoria).
     # `noeviction` es obligatorio: una política de expulsión borraría datos en silencio.
     command: redis-server --maxmemory 256mb --maxmemory-policy noeviction --appendonly yes
     ports:

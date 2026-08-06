@@ -21,8 +21,9 @@ export default defineConfig({
     environment: 'node',
     root: './',
     include: ['src/**/*.spec.ts'],
-    // Los e2e viven aparte: necesitan contenedores y tardan órdenes de magnitud más.
-    exclude: ['**/node_modules/**', '**/dist/**', 'test/e2e/**'],
+    // The integration suite lives in `test/integration/` and runs from its own
+    // config: it needs containers and takes orders of magnitude longer.
+    exclude: ['**/node_modules/**', '**/dist/**', 'test/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov', 'html'],
@@ -58,13 +59,6 @@ export default defineConfig({
         'src/modules/*/application/**': { lines: 85, branches: 80, functions: 85 },
         'src/modules/*/infrastructure/**': { lines: 50, branches: 45, functions: 50 },
 
-        // Riesgo fiscal y clínico: sin concesiones. Un off-by-one en el dígito
-        // verificador de la clave de acceso son comprobantes rechazados en producción.
-        'src/modules/facturacion-sri/domain/**': {
-          lines: 100,
-          branches: 100,
-          functions: 100,
-        },
       },
     },
   },

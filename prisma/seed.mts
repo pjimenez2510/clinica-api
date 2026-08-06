@@ -2,6 +2,12 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
 
+// The SAME parameters the application hashes with. A third copy meant that
+// raising `memoryCost` — the very scenario `needsRehash` exists to support —
+// left the seed producing hashes with the old ones, so the development
+// password was silently rehashed on every single login.
+import { ARGON2_OPTIONS } from '../src/modules/auth/infrastructure/password-hasher.service.ts';
+
 /**
  * Development seed.
  *
@@ -42,12 +48,7 @@ async function main(): Promise<void> {
   });
 
   // Hashed once and reused: Argon2id at these parameters costs ~100 ms per call.
-  const passwordHash = await argon2.hash(DEV_PASSWORD, {
-    type: argon2.argon2id,
-    memoryCost: 19_456,
-    timeCost: 2,
-    parallelism: 1,
-  });
+  const passwordHash = await argon2.hash(DEV_PASSWORD, ARGON2_OPTIONS);
 
   for (const user of USERS) {
     await prisma.user.upsert({

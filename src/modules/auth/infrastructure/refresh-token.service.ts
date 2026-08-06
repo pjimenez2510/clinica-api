@@ -129,7 +129,12 @@ export class RefreshTokenService {
   }
 
   /**
-   * Deletes expired tokens. Meant to be run from a scheduled job.
+   * Deletes expired tokens.
+   *
+   * ⚠️ TODO: NOTHING CALLS THIS. `refresh_token` grows without bound. It needs
+   * a scheduled job, which is what pg-boss is already a dependency for — but
+   * the queue is not wired up yet, and claiming this "runs from a scheduled
+   * job" while nothing runs it is worse than admitting it.
    *
    * Used tokens are NOT deleted before they expire: they are what makes reuse
    * detectable. Removing them early would turn an attack into a plain

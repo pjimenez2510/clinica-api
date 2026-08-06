@@ -15,7 +15,7 @@ import type { Request, Response } from 'express';
 import type { Env } from '../../shared/config/env.schema';
 import { UnauthorizedError } from '../../shared/domain/errors/domain-error';
 import {
-  MfaOptional,
+  MfaFlowOnly,
   OwnAccount,
   Public,
 } from '../../shared/http/auth.decorators';
@@ -105,7 +105,7 @@ export class AuthController {
 
   /** Completes sign-in with the TOTP code. Reachable with an MFA-pending token. */
   @Post('mfa/verify')
-  @MfaOptional()
+  @MfaFlowOnly()
   @HttpCode(HttpStatus.OK)
   @Throttle({ short: { ttl: 60_000, limit: 10 } })
   @ApiOperation({ summary: 'Complete sign-in with the second factor' })
@@ -127,7 +127,7 @@ export class AuthController {
 
   /** Starts TOTP enrolment. Returns the secret once, for the QR code. */
   @Post('mfa/enroll')
-  @MfaOptional()
+  @MfaFlowOnly()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Start second factor enrolment' })
   async enrollMfa(): Promise<{ secret: string; uri: string }> {
@@ -136,7 +136,7 @@ export class AuthController {
 
   /** Confirms enrolment by proving the authenticator was actually configured. */
   @Post('mfa/confirm')
-  @MfaOptional()
+  @MfaFlowOnly()
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Confirm second factor enrolment' })
   async confirmMfa(@Body() dto: ConfirmMfaDto): Promise<void> {

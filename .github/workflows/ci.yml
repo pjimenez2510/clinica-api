@@ -63,6 +63,12 @@ jobs:
       - name: Architecture rules
         run: pnpm arch:check
 
+      - name: Migrations drop nothing they should not
+        # `pnpm verify` runs this, but the job did not — so the check guarding
+        # against the failure that has already happened twice only ran if
+        # somebody remembered to.
+        run: pnpm migrations:check
+
       - name: Unit tests
         run: pnpm test
 
@@ -138,6 +144,14 @@ jobs:
         env:
           DATABASE_URL: postgresql://clinica:clinica@localhost:5432/clinica_ci
         run: pnpm db:deploy
+
+      - name: Seed the authorisation catalogue
+        # Not a development seed: the permission catalogue is part of the
+        # code's contract and a database without it cannot grant anything. It
+        # is idempotent, and running it here proves it stays that way.
+        env:
+          DATABASE_URL: postgresql://clinica:clinica@localhost:5432/clinica_ci
+        run: pnpm db:seed:auth
 
       - name: Ensure psql is available
         # The runner image ships it today. Depending on that silently is how a

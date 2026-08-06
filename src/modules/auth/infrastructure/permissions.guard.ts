@@ -7,7 +7,7 @@ import { ForbiddenError } from '../../../shared/domain/errors/domain-error';
 import {
   CURRENT_USER,
   IS_PUBLIC_KEY,
-  MFA_OPTIONAL_KEY,
+  MFA_FLOW_ONLY_KEY,
   OWN_ACCOUNT_KEY,
   REQUIRED_PERMISSION_KEY,
   SITE_SCOPE_KEY,
@@ -101,7 +101,7 @@ export class PermissionsGuard implements CanActivate {
     // The MFA endpoints are reached by a session that has not finished
     // authenticating, so it holds no grants yet. Requiring a permission there
     // would make the second factor impossible to complete.
-    if (this.reflector.getAllAndOverride<boolean>(MFA_OPTIONAL_KEY, targets)) {
+    if (this.reflector.getAllAndOverride<boolean>(MFA_FLOW_ONLY_KEY, targets)) {
       return true;
     }
 

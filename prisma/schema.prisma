@@ -1267,6 +1267,8 @@ model EncounterPriorityGroup {
 ///
 /// Its own table, not four columns on `encounter`, because its access regime
 /// differs: it is the most sensitive item in the record. A table can be REVOKEd
+/// TODO: no REVOKE, no separate permission and no distinct flow exists yet.
+/// The separation is a design intent, not a property the schema currently has.
 /// and audited separately; a column cannot without column-level grants.
 model ViolenceScreening {
   encounterId String    @id @map("encounter_id") @db.Uuid
