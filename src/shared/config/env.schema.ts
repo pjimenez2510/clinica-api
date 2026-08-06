@@ -14,6 +14,23 @@ export const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
 
   /**
+   * How many reverse proxies sit in front of the API.
+   *
+   * A COUNT, never `true`. With `trust proxy: true` Express believes the whole
+   * `X-Forwarded-For` chain, so any client can prepend a forged address, get a
+   * fresh rate-limit bucket on every request and walk past the login throttle.
+   * A count makes Express skip exactly that many hops from the right and take
+   * the next one, which cannot be spoofed.
+   *
+   * 0 means the API is exposed directly. Getting this wrong is not cosmetic:
+   * with a proxy in front and 0 here, every client shares one bucket, so a
+   * single attacker exhausts the login limit for the whole clinic — and the IP
+   * recorded against each session is the proxy's, which makes the LOPDP audit
+   * trail useless for investigating improper access.
+   */
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
+
+  /**
    * Always UTC. No date conversion may depend on the server's timezone:
    * appointments render in the site's timezone, not the host's.
    */

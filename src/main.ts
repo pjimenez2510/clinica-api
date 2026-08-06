@@ -27,6 +27,22 @@ async function bootstrap(): Promise<void> {
   const isProduction = config.get('NODE_ENV', { infer: true }) === 'production';
 
   /**
+   * Who the client actually is, when there is a proxy in front.
+   *
+   * Without this `req.ip` is the proxy's address for every request, and two
+   * things break at once: the rate limiter puts the entire clinic in one
+   * bucket — so a single attacker exhausts the ten login attempts per minute
+   * for everybody — and the IP stored alongside each session, which is the
+   * trail the LOPDP expects us to follow when investigating improper access,
+   * points at our own infrastructure.
+   *
+   * A COUNT of hops, never `true`: trusting the whole `X-Forwarded-For` chain
+   * lets a client prepend a forged address and mint itself a fresh bucket on
+   * every request.
+   */
+  app.set('trust proxy', config.get('TRUST_PROXY_HOPS', { infer: true }));
+
+  /**
    * DELIBERATE ORDER. The NestJS lifecycle is:
    *   middleware -> guards -> interceptors -> pipes -> controller
    *              -> interceptors (REVERSE order) -> exception filters

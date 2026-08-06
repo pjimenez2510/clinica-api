@@ -33,13 +33,16 @@ export class InvalidCredentialsError extends UnauthorizedError {
   }
 }
 
-export class AccountLockedError extends ForbiddenError {
-  readonly code = 'ACCOUNT_LOCKED';
-  constructor(readonly retryAfterSeconds: number) {
-    super('Account is temporarily locked', { retryAfterSeconds });
-  }
-}
-
+/**
+ * Only thrown where the caller has ALREADY proved they had a session — a
+ * refresh whose account was deactivated meanwhile. Saying so there is useful:
+ * the client stops retrying and shows a real message.
+ *
+ * It is deliberately NOT thrown during sign-in. There, the caller is anonymous
+ * and "this account exists but is inactive" is exactly what an attacker is
+ * fishing for. There is no `AccountLockedError` for the same reason: an
+ * attacker can create the locked state at will with five wrong guesses.
+ */
 export class AccountInactiveError extends ForbiddenError {
   readonly code = 'ACCOUNT_INACTIVE';
   constructor() {
@@ -149,13 +152,39 @@ export class AuthService {
       throw new InvalidCredentialsError();
     }
 
-    if (!user.active) throw new AccountInactiveError();
+    /**
+     * A locked or inactive account answers exactly like a wrong password.
+     *
+     * It used to answer 403 ACCOUNT_LOCKED and 403 ACCOUNT_INACTIVE, and that
+     * was an enumeration oracle — not a passive one. An attacker did not have
+     * to wait for an account to happen to be locked: five wrong guesses LOCK
+     * it, and the change from 401 to 403 confirms the address belongs to
+     * somebody who works here. The same move also denies that person access on
+     * purpose, one doctor at a time.
+     *
+     * `burnTime` before returning, and BEFORE verifying anything, so a locked
+     * account costs the same as a real verification. Returning early without
+     * it left a ~100 ms gap that survives any amount of unifying the response
+     * body. Checking the lock before the hash also keeps a flood against a
+     * locked account from spending Argon2 CPU.
+     *
+     * The real reason is logged. The person who is genuinely locked out finds
+     * out through an administrator, not through an endpoint that answers
+     * anyone who can type their email address.
+     */
+    const denialReason = !user.active
+      ? 'ACCOUNT_INACTIVE'
+      : user.lockedUntil && user.lockedUntil > new Date()
+        ? 'ACCOUNT_LOCKED'
+        : undefined;
 
-    if (user.lockedUntil && user.lockedUntil > new Date()) {
-      const retryAfter = Math.ceil(
-        (user.lockedUntil.getTime() - Date.now()) / 1000,
+    if (denialReason) {
+      await this.hasher.burnTime();
+      this.logger.warn(
+        { user_id: user.id, error_code: denialReason },
+        'sign-in denied',
       );
-      throw new AccountLockedError(retryAfter);
+      throw new InvalidCredentialsError();
     }
 
     if (!(await this.hasher.verify(user.passwordHash, password))) {
