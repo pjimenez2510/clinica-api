@@ -62,6 +62,17 @@ import { TotpService } from './infrastructure/totp.service';
     // and this one reads the claims JwtAuthGuard puts in the context.
     { provide: APP_GUARD, useClass: PermissionsGuard },
   ],
-  exports: [TokenService, CurrentUserService, PasswordHasher],
+  /**
+   * The SYMBOLS, not the adapter classes.
+   *
+   * Exporting `TokenService` and `PasswordHasher` meant any module consuming
+   * them was coupled to the adapter — precisely what the ports were introduced
+   * to avoid. A consumer injects by symbol and depends on the interface, so
+   * swapping the implementation touches this module and nothing else.
+   *
+   * `CurrentUserService` stays a class: it is the request-scoped reader of the
+   * CLS context, not an adapter behind a port, and there is nothing to swap.
+   */
+  exports: [TOKEN_ISSUER, PASSWORD_HASHER, CurrentUserService],
 })
 export class AuthModule {}

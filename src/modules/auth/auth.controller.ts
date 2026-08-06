@@ -21,6 +21,7 @@ import {
 } from '../../shared/http/auth.decorators';
 
 import { AuthService } from './application/auth.service';
+import { TokenService } from './infrastructure/token.service';
 import {
   ChangePasswordDto,
   ConfirmMfaDto,
@@ -62,6 +63,7 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly currentUser: CurrentUserService,
+    private readonly tokens: TokenService,
     config: ConfigService<Env, true>,
   ) {
     this.isProduction =
@@ -162,7 +164,12 @@ export class AuthController {
     const rotated = await this.auth.refresh(presented, this.clientContext(req));
 
     this.setRefreshCookie(res, rotated.refreshToken, rotated.expiresAt);
-    return { accessToken: rotated.accessToken, expiresIn: 900 };
+    return {
+      accessToken: rotated.accessToken,
+      // Read from the token service, not a literal. The TTL is configurable,
+      // and a hardcoded 900 makes the API lie about when the token expires.
+      expiresIn: this.tokens.accessTokenSeconds,
+    };
   }
 
   /** Closes the current session. Other devices stay signed in. */
@@ -243,7 +250,7 @@ export class AuthController {
   }): SessionResponse {
     return {
       accessToken: session.accessToken,
-      expiresIn: 900,
+      expiresIn: this.tokens.accessTokenSeconds,
       user: session.user,
     };
   }

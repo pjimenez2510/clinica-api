@@ -1,3 +1,9 @@
+import type {
+  ClientContext,
+  IssuedRefreshToken,
+} from '../../../shared/request/client-context';
+
+export type { ClientContext, IssuedRefreshToken };
 import type { RoleAssignment } from '../../../shared/authorisation/principal';
 
 /**
@@ -53,26 +59,15 @@ export interface TokenIssuerPort {
   issueAccessToken(claims: AccessTokenClaimsInput): Promise<string>;
 }
 
-export interface IssuedRefreshTokenResult {
-  token: string;
-  familyId: string;
-  expiresAt: Date;
-}
-
-export interface ClientContext {
-  ip?: string;
-  userAgent?: string;
-}
-
 export interface RefreshTokenPort {
   issueForNewSession(
     userId: string,
     ctx?: ClientContext,
-  ): Promise<IssuedRefreshTokenResult>;
+  ): Promise<IssuedRefreshToken>;
   rotate(
     presentedToken: string,
     ctx?: ClientContext,
-  ): Promise<IssuedRefreshTokenResult>;
+  ): Promise<IssuedRefreshToken>;
   revokeFamily(familyId: string, reason: string): Promise<void>;
   revokeAllForUser(userId: string, reason: string): Promise<void>;
 }

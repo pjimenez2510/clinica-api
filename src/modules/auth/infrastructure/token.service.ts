@@ -43,6 +43,23 @@ export interface AccessTokenClaims {
   mfa: boolean;
 }
 
+/**
+ * `15m` and friends into seconds.
+ *
+ * The format is validated by the environment schema, so this only has to
+ * handle what got through — but it still throws rather than defaulting: a
+ * silent 0 would tell every client its token was already expired.
+ */
+function parseDurationSeconds(ttl: string): number {
+  const match = /^(\d+)([smhd])$/.exec(ttl);
+  if (!match) throw new Error(`Unsupported token TTL: ${ttl}`);
+
+  const amount = Number(match[1]);
+  const unit = match[2] as 's' | 'm' | 'h' | 'd';
+  const seconds = { s: 1, m: 60, h: 3600, d: 86_400 };
+  return amount * seconds[unit];
+}
+
 const ISSUER = 'clinica-api';
 const AUDIENCE = 'clinica-web';
 
@@ -54,8 +71,22 @@ export class TokenService implements OnModuleInit {
   private privateKey!: CryptoKey;
   private publicKey!: CryptoKey;
   private accessTtl!: string;
+  /**
+   * The same TTL, in seconds, for the response body.
+   *
+   * The controller used to return a literal `900`. `JWT_ACCESS_TTL` is
+   * configurable, so changing it made the API lie to the client about when its
+   * token expires — the frontend then schedules its refresh wrong and produces
+   * intermittent 401s that nobody can reproduce. One source, computed here.
+   */
+  private accessTtlSecondsValue = 0;
 
   constructor(private readonly config: ConfigService<Env, true>) {}
+
+  /** How long an access token is valid, in seconds, for the response body. */
+  get accessTokenSeconds(): number {
+    return this.accessTtlSecondsValue;
+  }
 
   async onModuleInit(): Promise<void> {
     // PEM keys carry escaped newlines in the environment variable.
@@ -69,6 +100,7 @@ export class TokenService implements OnModuleInit {
     this.privateKey = await importPKCS8(privatePem, 'EdDSA');
     this.publicKey = await importSPKI(publicPem, 'EdDSA');
     this.accessTtl = this.config.get('JWT_ACCESS_TTL', { infer: true });
+    this.accessTtlSecondsValue = parseDurationSeconds(this.accessTtl);
   }
 
   /**

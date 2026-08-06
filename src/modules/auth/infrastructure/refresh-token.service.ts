@@ -2,6 +2,12 @@ import { randomUUID } from 'node:crypto';
 
 import { Injectable } from '@nestjs/common';
 
+import type {
+  ClientContext,
+  IssuedRefreshToken,
+} from '../../../shared/request/client-context';
+import { RevocationReason } from '../../../shared/request/client-context';
+
 // Infrastructure THROWS domain errors; it does not DEFINE them. These two are
 // part of the public contract, and an adapter defining public contract means
 // changing the token strategy moves the contract with the frontend underneath.
@@ -16,25 +22,6 @@ import type { Env } from '../../../shared/config/env.schema';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 
 import { TokenService } from './token.service';
-
-/** Why a token stopped being valid. Stored for the audit trail. */
-export const RevocationReason = {
-  ROTATION: 'ROTATION',
-  REUSE: 'REUSE',
-  SIGN_OUT: 'SIGN_OUT',
-  PASSWORD_CHANGE: 'PASSWORD_CHANGE',
-} as const;
-
-export interface IssuedRefreshToken {
-  token: string;
-  familyId: string;
-  expiresAt: Date;
-}
-
-export interface ClientContext {
-  ip?: string;
-  userAgent?: string;
-}
 
 @Injectable()
 export class RefreshTokenService {

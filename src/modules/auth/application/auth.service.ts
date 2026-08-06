@@ -15,7 +15,6 @@ import {
   AUTH_USER_REPOSITORY,
   type AuthUser,
   type AuthUserRepositoryPort,
-  type ClientContext,
   PASSWORD_HASHER,
   type PasswordHasherPort,
   REFRESH_TOKENS,
@@ -25,6 +24,14 @@ import {
   TOTP,
   type TotpPort,
 } from './ports';
+// One definition, in shared: the audit log needs the same shapes, and the
+// audit log is not auth's business.
+import {
+  type ClientContext,
+  RevocationReason,
+} from '../../../shared/request/client-context';
+
+export { type ClientContext, RevocationReason };
 
 /**
  * The errors these use cases raise live in `../domain/auth.errors`.
@@ -44,14 +51,6 @@ export {
   RefreshTokenReuseError,
   SessionUserMissingError,
 } from '../domain/auth.errors';
-
-/** Why a token stopped being valid. Mirrored in the audit trail. */
-export const RevocationReason = {
-  ROTATION: 'ROTATION',
-  REUSE: 'REUSE',
-  SIGN_OUT: 'SIGN_OUT',
-  PASSWORD_CHANGE: 'PASSWORD_CHANGE',
-} as const;
 
 /**
  * Lockout thresholds.
