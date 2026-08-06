@@ -93,6 +93,12 @@ export class ProblemDetailsFilter implements ExceptionFilter {
         // along details of the PostgreSQL row that caused it.
         detail: this.isProduction ? undefined : exception.message,
         code: exception.code,
+        // Field errors travel in EVERY environment, unlike `detail`. They are
+        // written for the user and carry no rejected values, and a validation
+        // error that does not say what to fix is useless.
+        ...(exception.fieldErrors?.length
+          ? { errors: [...exception.fieldErrors] }
+          : {}),
       };
     }
 

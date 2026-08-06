@@ -3,12 +3,22 @@ import { ValidationError } from '../../../shared/domain/errors/domain-error';
 export class WeakPasswordError extends ValidationError {
   readonly code = 'WEAK_PASSWORD';
 
-  constructor(readonly reasons: string[]) {
-    // The password NEVER goes into the message or the params: this text ends
-    // up in logs and support tickets.
-    super(`Password rejected: ${reasons.length} rule(s) failed`, {
-      reasonCount: reasons.length,
-    });
+  constructor(
+    readonly reasons: string[],
+    field = 'password',
+  ) {
+    // Two audiences, deliberately separated:
+    //  - `message` is English, technical, and only reaches the logs. It never
+    //    contains the password.
+    //  - `fieldErrors` is what the user reads, and it DOES travel in the
+    //    response in every environment. Telling somebody "the password was
+    //    rejected" without saying why leaves them guessing, and guessing ends
+    //    in a weaker password, not a stronger one.
+    super(
+      `Password rejected: ${reasons.length} rule(s) failed`,
+      { reasonCount: reasons.length },
+      reasons.map((message) => ({ field, code: 'WEAK_PASSWORD', message })),
+    );
   }
 }
 

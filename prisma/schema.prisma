@@ -71,6 +71,10 @@ model User {
   refreshTokens RefreshToken[]
   backupCodes   BackupCode[]
 
+  /// Clinical profile. Optional: receptionists and billing staff have an
+  /// account but no clinical role.
+  practitioner Practitioner?
+
   @@index([email])
   @@map("app_user")
 }
@@ -177,4 +181,1446 @@ model AccessAudit {
   @@index([userId, occurredAt(sort: Desc)])
   @@index([occurredAt(sort: Desc)])
   @@map("access_audit")
+}
+
+// ===========================================================================
+// CLINICAL CORE
+//
+// Rule of thumb: a value set only our code cares about is a Prisma enum; a
+// value set the ministry publishes, versions and expects back in a report is a
+// row in `catalog_concept`. Ministries change code lists far more often than
+// we change state machines.
+// ===========================================================================
+
+enum PatientSex {
+  MALE
+  FEMALE
+  /// Deliberately outside the RDACAA export mapping: the ministry form only
+  /// accepts H/M. The export layer decides how to collapse these; the record
+  /// itself must not lie about what was documented.
+  INTERSEX
+  UNKNOWN
+
+  @@map("patient_sex")
+}
+
+enum IdentifierType {
+  CEDULA
+  PASSPORT
+  REFUGEE_CARD
+  FOREIGN_ID
+  /// Newborn or unidentified patient. Never globally unique on its own.
+  PROVISIONAL
+
+  @@map("identifier_type")
+}
+
+enum IdentifierUse {
+  OFFICIAL
+  OLD
+  TEMP
+
+  @@map("identifier_use")
+}
+
+enum AgendaEntryKind {
+  APPOINTMENT
+  BLOCK
+
+  @@map("agenda_entry_kind")
+}
+
+enum AgendaStatus {
+  BOOKED
+  CONFIRMED
+  CHECKED_IN
+  IN_PROGRESS
+  FULFILLED
+  CANCELLED
+  NO_SHOW
+  /// Only valid for kind = BLOCK.
+  BLOCKED
+
+  @@map("agenda_status")
+}
+
+enum CareModality {
+  MORBIDITY
+  PREVENTION
+
+  @@map("care_modality")
+}
+
+enum CareSetting {
+  INTRAMURAL
+  EXTRAMURAL
+
+  @@map("care_setting")
+}
+
+enum VisitSequence {
+  FIRST_TIME
+  SUBSEQUENT
+
+  @@map("visit_sequence")
+}
+
+enum DischargeCondition {
+  ALIVE
+  REFERRED
+  DECEASED
+  ABANDONED
+
+  @@map("discharge_condition")
+}
+
+/// RDACAA: presuntivo vs definitivo.
+enum DiagnosisCertainty {
+  PRESUMPTIVE
+  DEFINITIVE
+
+  @@map("diagnosis_certainty")
+}
+
+/// RDACAA: first time vs subsequent, PER DIAGNOSIS — not per encounter. A
+/// patient can get a first-time diabetes diagnosis during a subsequent visit
+/// for hypertension.
+enum DiagnosisOccurrence {
+  FIRST_TIME
+  SUBSEQUENT
+
+  @@map("diagnosis_occurrence")
+}
+
+enum NoteStatus {
+  DRAFT
+  SIGNED
+  SUPERSEDED
+  /// Retracted with no replacement. Different from SUPERSEDED, which always
+  /// points at the version that took over.
+  ENTERED_IN_ERROR
+
+  @@map("note_status")
+}
+
+enum ViolenceScreeningResult {
+  NOT_APPLIED
+  NO_SIGNS
+  SUSPECTED
+  CONFIRMED
+
+  @@map("violence_screening_result")
+}
+
+enum ViolenceType {
+  PHYSICAL
+  PSYCHOLOGICAL
+  SEXUAL
+  NEGLECT
+  ECONOMIC
+
+  @@map("violence_type")
+}
+
+enum PrescriptionStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+
+  @@map("prescription_status")
+}
+
+enum ServiceOrderCategory {
+  LABORATORY
+  IMAGING
+  PROCEDURE
+
+  @@map("service_order_category")
+}
+
+enum ServiceOrderPriority {
+  ROUTINE
+  URGENT
+  STAT
+
+  @@map("service_order_priority")
+}
+
+enum ServiceOrderItemStatus {
+  REQUESTED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+
+  @@map("service_order_item_status")
+}
+
+enum DiagnosticReportStatus {
+  PARTIAL
+  FINAL
+  CORRECTED
+  CANCELLED
+
+  @@map("diagnostic_report_status")
+}
+
+enum AbnormalFlag {
+  NORMAL
+  LOW
+  HIGH
+  CRITICAL_LOW
+  CRITICAL_HIGH
+
+  @@map("abnormal_flag")
+}
+
+enum CertificateType {
+  ATTENDANCE
+  MEDICAL_REST
+  FITNESS
+  DISABILITY_SUPPORT
+
+  @@map("certificate_type")
+}
+
+enum ReferralDirection {
+  REFERRAL
+  DERIVATION
+  COUNTER_REFERRAL
+
+  @@map("referral_direction")
+}
+
+enum ReferralStatus {
+  ISSUED
+  ACCEPTED
+  REJECTED
+  COMPLETED
+  EXPIRED
+
+  @@map("referral_status")
+}
+
+enum InterconsultationStatus {
+  REQUESTED
+  ANSWERED
+  CANCELLED
+
+  @@map("interconsultation_status")
+}
+
+enum WaitlistStatus {
+  WAITING
+  CONTACTED
+  SCHEDULED
+  EXPIRED
+  CANCELLED
+
+  @@map("waitlist_status")
+}
+
+enum AllergyCriticality {
+  LOW
+  HIGH
+  UNABLE_TO_ASSESS
+
+  @@map("allergy_criticality")
+}
+
+// ---------------------------------------------------------------------------
+// CATALOGS
+// ---------------------------------------------------------------------------
+
+/// A code system: CIE-10, CNMB, INEC DPA, ethnicity, priority groups, tariff.
+///
+/// One generic machine instead of one table per catalogue. All of them need
+/// validity periods, the official release that introduced each code, and
+/// accent-insensitive search, and none needs typed columns badly enough to
+/// justify duplicating that machinery five times.
+model CatalogSystem {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  /// CIE10, CNMB, DPA, TARIFF, ETHNICITY, NATIONALITY, PRIORITY_GROUP,
+  /// SERVICE_TYPE, SPECIALTY, GENDER_IDENTITY.
+  code String @unique @db.VarChar(32)
+  name String @db.VarChar(160)
+
+  /// FHIR CodeSystem.url, so the translation layer never hardcodes a URI.
+  canonicalUri String? @map("canonical_uri") @db.VarChar(255)
+
+  /// Whether concepts form a tree (DPA and CIE-10 do; ethnicity does not).
+  hierarchical Boolean @default(false)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  releases CatalogRelease[]
+  concepts CatalogConcept[]
+
+  @@map("catalog_system")
+}
+
+/// An official publication of a catalogue. Provenance, not versioning:
+/// versioning lives on each concept's validity period.
+model CatalogRelease {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  systemId String        @map("system_id") @db.Uuid
+  system   CatalogSystem @relation(fields: [systemId], references: [id], onDelete: Restrict)
+
+  version       String    @db.VarChar(64)
+  publishedOn   DateTime? @map("published_on") @db.Date
+  effectiveFrom DateTime  @map("effective_from") @db.Date
+  sourceUrl     String?   @map("source_url") @db.VarChar(512)
+
+  /// Checksum of the imported file. Proves which artefact produced the rows,
+  /// which matters when the ministry silently republishes a spreadsheet under
+  /// the same version number.
+  sourceChecksum String? @map("source_checksum") @db.Char(64)
+
+  importedAt DateTime @default(now()) @map("imported_at") @db.Timestamptz(6)
+
+  introducedConcepts CatalogConcept[] @relation("ConceptIntroducedBy")
+  retiredConcepts    CatalogConcept[] @relation("ConceptRetiredBy")
+
+  @@unique([systemId, version])
+  @@map("catalog_release")
+}
+
+/// One version of one code.
+///
+/// The surrogate `id` is the whole point: clinical rows reference THIS ROW, not
+/// the code string, so "resolve a 2024 diagnosis against the 2024 catalogue"
+/// stops being a query everyone forgets to write and becomes a foreign key.
+///
+/// It is also forced: PostgreSQL 18 only lets a temporal PRIMARY KEY be
+/// referenced by a temporal FOREIGN KEY (PERIOD), and those support NO ACTION
+/// only. Without the surrogate key there could be no foreign key at all.
+model CatalogConcept {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  systemId String        @map("system_id") @db.Uuid
+  system   CatalogSystem @relation(fields: [systemId], references: [id], onDelete: Restrict)
+
+  /// Not unique on its own: unique per non-overlapping validity period, via
+  /// `UNIQUE (system_id, code, valid_period WITHOUT OVERLAPS)` in a manual
+  /// migration. Prisma cannot express that.
+  code    String @db.VarChar(32)
+  display String @db.VarChar(512)
+
+  /// Self-reference for DPA and CIE-10 chapters. DPA codes are hierarchical by
+  /// prefix (province = left(code,2), canton = left(code,4)), so no
+  /// denormalised province/canton columns are needed anywhere.
+  parentId String?          @map("parent_id") @db.Uuid
+  parent   CatalogConcept?  @relation("ConceptTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children CatalogConcept[] @relation("ConceptTree")
+
+  validFrom DateTime  @map("valid_from") @db.Date
+  /// NULL means still in force.
+  validTo   DateTime? @map("valid_to") @db.Date
+
+  /// Turned into `GENERATED ALWAYS AS daterange(...) STORED` by a manual
+  /// migration. STORED and not VIRTUAL because PostgreSQL 18 cannot index or
+  /// constrain virtual columns. Declared here so Prisma never drops it.
+  validPeriod Unsupported("daterange")?
+
+  /// Catalogue-specific payload: ATC code for CNMB, chapter for CIE-10,
+  /// amount for TARIFF.
+  attributes Json? @db.JsonB
+
+  introducedByReleaseId String?         @map("introduced_by_release_id") @db.Uuid
+  introducedByRelease   CatalogRelease? @relation("ConceptIntroducedBy", fields: [introducedByReleaseId], references: [id], onDelete: Restrict)
+
+  retiredByReleaseId String?         @map("retired_by_release_id") @db.Uuid
+  retiredByRelease   CatalogRelease? @relation("ConceptRetiredBy", fields: [retiredByReleaseId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  patientsEthnicity       Patient[]                  @relation("PatientEthnicity")
+  patientsNationality     Patient[]                  @relation("PatientNationality")
+  patientsResidence       Patient[]                  @relation("PatientResidenceParish")
+  patientsGenderIdentity  Patient[]                  @relation("PatientGenderIdentity")
+  sites                   Site[]                     @relation("SiteParish")
+  practitioners           Practitioner[]             @relation("PractitionerSpecialty")
+  scheduleRules           PractitionerScheduleRule[]
+  agendaEntries           AgendaEntry[]              @relation("AgendaServiceType")
+  waitlistEntries         WaitlistEntry[]            @relation("WaitlistServiceType")
+  encounterPriorityGroups EncounterPriorityGroup[]
+  diagnoses               EncounterDiagnosis[]
+  procedures              EncounterProcedure[]
+  prescriptionItems       PrescriptionItem[]
+  serviceOrderItems       ServiceOrderItem[]
+  observationResults      ObservationResult[]        @relation("ObservationAnalyte")
+  allergies               PatientAllergy[]
+  referrals               Referral[]                 @relation("ReferralSpecialty")
+  interconsultations      Interconsultation[]        @relation("InterconsultationSpecialty")
+
+  @@index([systemId, code])
+  @@index([parentId])
+  @@map("catalog_concept")
+}
+
+// ---------------------------------------------------------------------------
+// ORGANISATION
+// ---------------------------------------------------------------------------
+
+/// A physical site of the clinic. Not a tenant: the whole database belongs to
+/// one clinic. It exists because RDACAA is reported per establishment code.
+model Site {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  /// Unique establishment code issued by the MSP. The single most important
+  /// field for RDACAA reporting.
+  mspUnicode String @unique @map("msp_unicode") @db.VarChar(20)
+
+  name String  @db.VarChar(160)
+  ruc  String? @db.VarChar(13)
+
+  parishConceptId String?         @map("parish_concept_id") @db.Uuid
+  parish          CatalogConcept? @relation("SiteParish", fields: [parishConceptId], references: [id], onDelete: Restrict)
+
+  addressLine String? @map("address_line") @db.VarChar(255)
+  phone       String? @db.VarChar(32)
+  active      Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  rooms           SiteRoom[]
+  practitioners   PractitionerSite[]
+  scheduleRules   PractitionerScheduleRule[]
+  agendaEntries   AgendaEntry[]
+  encounters      Encounter[]
+  waitlistEntries WaitlistEntry[]
+  serviceOrders   ServiceOrder[]
+
+  @@map("site")
+}
+
+/// Consulting room (FHIR Location). It exists so two practitioners cannot be
+/// assigned the same room at the same time — a second exclusion constraint.
+model SiteRoom {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  siteId String @map("site_id") @db.Uuid
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Restrict)
+
+  name   String  @db.VarChar(80)
+  active Boolean @default(true)
+
+  agendaEntries AgendaEntry[]
+
+  @@unique([siteId, name])
+  @@map("site_room")
+}
+
+/// Clinical profile of a system user.
+///
+/// Separate from `app_user` because they are different things with different
+/// lifecycles: `app_user` is an account (credentials, MFA, lockout);
+/// `Practitioner` is a clinical role. Receptionists have the first, not both.
+model Practitioner {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  userId String @unique @map("user_id") @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  /// Professional code assigned by the MSP, required per attention by RDACAA.
+  /// Cedula and ACESS registration already live on `app_user`, not duplicated.
+  mspCode String? @map("msp_code") @db.VarChar(32)
+
+  specialtyConceptId String?         @map("specialty_concept_id") @db.Uuid
+  specialty          CatalogConcept? @relation("PractitionerSpecialty", fields: [specialtyConceptId], references: [id], onDelete: Restrict)
+
+  /// Whether this practitioner takes appointments. A pathologist has a clinical
+  /// profile but no agenda.
+  schedulable Boolean @default(true)
+  active      Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  sites              PractitionerSite[]
+  scheduleRules      PractitionerScheduleRule[]
+  agendaEntries      AgendaEntry[]
+  encounters         Encounter[]
+  authoredNotes      ClinicalNote[]            @relation("NoteAuthor")
+  signedNotes        ClinicalNote[]            @relation("NoteSigner")
+  prescriptions      Prescription[]
+  serviceOrders      ServiceOrder[]
+  diagnosticReports  DiagnosticReport[]
+  certificates       MedicalCertificate[]
+  referralsIssued    Referral[]                @relation("ReferralIssuer")
+  interconsultAsked  Interconsultation[]       @relation("InterconsultRequester")
+  interconsultAnswer Interconsultation[]       @relation("InterconsultResponder")
+  waitlistEntries    WaitlistEntry[]
+
+  @@map("practitioner")
+}
+
+/// FHIR PractitionerRole: which sites a practitioner works at.
+model PractitionerSite {
+  practitionerId String       @map("practitioner_id") @db.Uuid
+  practitioner   Practitioner @relation(fields: [practitionerId], references: [id], onDelete: Cascade)
+
+  siteId String @map("site_id") @db.Uuid
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([practitionerId, siteId])
+  @@map("practitioner_site")
+}
+
+/// Weekly availability template (FHIR Schedule).
+///
+/// Slots are NOT stored: they are derived from this rule minus occupied
+/// `agenda_entry` rows. Materialising every free slot creates millions of rows
+/// whose only job is to be empty.
+model PractitionerScheduleRule {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  practitionerId String       @map("practitioner_id") @db.Uuid
+  practitioner   Practitioner @relation(fields: [practitionerId], references: [id], onDelete: Cascade)
+
+  siteId String @map("site_id") @db.Uuid
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Restrict)
+
+  serviceTypeConceptId String?         @map("service_type_concept_id") @db.Uuid
+  serviceType          CatalogConcept? @relation(fields: [serviceTypeConceptId], references: [id], onDelete: Restrict)
+
+  /// ISO-8601: 1 = Monday .. 7 = Sunday.
+  weekday Int @db.SmallInt
+
+  /// `time` and not `timestamptz`: this is a wall-clock rule ("Mondays from
+  /// 08:00"), not an instant. The only deliberate exception to the timestamptz
+  /// convention, and it is not a timestamp at all.
+  startTime DateTime @map("start_time") @db.Time(0)
+  endTime   DateTime @map("end_time") @db.Time(0)
+
+  slotMinutes Int @default(20) @map("slot_minutes") @db.SmallInt
+
+  validFrom DateTime  @map("valid_from") @db.Date
+  validTo   DateTime? @map("valid_to") @db.Date
+
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([practitionerId, weekday])
+  @@index([siteId, weekday])
+  @@map("practitioner_schedule_rule")
+}
+
+// ---------------------------------------------------------------------------
+// PATIENT
+// ---------------------------------------------------------------------------
+
+model Patient {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  /// Medical record number. THE identity anchor: assigned once, never changed,
+  /// never dependent on a document the patient may not have. Every internal FK
+  /// points at `id`; humans quote the `mrn`.
+  mrn String @unique @db.VarChar(12)
+
+  /// Ecuadorian names carry two surnames. A single `full_name` column makes
+  /// sorting and ministry reporting impossible.
+  familyName       String  @map("family_name") @db.VarChar(120)
+  secondFamilyName String? @map("second_family_name") @db.VarChar(120)
+  givenName        String  @map("given_name") @db.VarChar(120)
+  secondGivenName  String? @map("second_given_name") @db.VarChar(120)
+
+  sex PatientSex
+
+  genderIdentityConceptId String?         @map("gender_identity_concept_id") @db.Uuid
+  genderIdentity          CatalogConcept? @relation("PatientGenderIdentity", fields: [genderIdentityConceptId], references: [id], onDelete: Restrict)
+
+  birthDate DateTime @map("birth_date") @db.Date
+
+  /// Undocumented migrants arrive with an estimated age. Without this flag an
+  /// estimate is reported to the ministry as a fact.
+  birthDateEstimated Boolean @default(false) @map("birth_date_estimated")
+
+  deceasedAt DateTime? @map("deceased_at") @db.Timestamptz(6)
+
+  /// RDACAA ethnic self-identification. A catalogue and not an enum because
+  /// INEC revises the categories, and every historical record must keep the
+  /// wording it was recorded with.
+  ethnicityConceptId String?         @map("ethnicity_concept_id") @db.Uuid
+  ethnicity          CatalogConcept? @relation("PatientEthnicity", fields: [ethnicityConceptId], references: [id], onDelete: Restrict)
+
+  nationalityConceptId String?         @map("nationality_concept_id") @db.Uuid
+  nationality          CatalogConcept? @relation("PatientNationality", fields: [nationalityConceptId], references: [id], onDelete: Restrict)
+
+  /// INEC DPA parish (6 digits). Province and canton are prefixes of this code,
+  /// so they are derived, never stored twice.
+  residenceParishConceptId String?         @map("residence_parish_concept_id") @db.Uuid
+  residenceParish          CatalogConcept? @relation("PatientResidenceParish", fields: [residenceParishConceptId], references: [id], onDelete: Restrict)
+
+  residenceAddressLine String? @map("residence_address_line") @db.VarChar(255)
+  phone                String? @db.VarChar(32)
+  email                String? @db.VarChar(255)
+  bloodType            String? @map("blood_type") @db.VarChar(3)
+
+  /// Registered with no definitive document yet (newborn, unidentified).
+  isProvisional Boolean @default(false) @map("is_provisional")
+
+  /// Newborns are registered under their mother before they have a document of
+  /// their own. Also the fastest way to find the record 20 minutes after birth.
+  motherPatientId String?   @map("mother_patient_id") @db.Uuid
+  mother          Patient?  @relation("PatientMother", fields: [motherPatientId], references: [id], onDelete: Restrict)
+  children        Patient[] @relation("PatientMother")
+
+  /// Duplicate resolution. The losing record is NEVER deleted: printed
+  /// documents and external systems still quote its MRN.
+  mergedIntoId String?   @map("merged_into_id") @db.Uuid
+  mergedInto   Patient?  @relation("PatientMerge", fields: [mergedIntoId], references: [id], onDelete: Restrict)
+  mergedFrom   Patient[] @relation("PatientMerge")
+  mergedAt     DateTime? @map("merged_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  identifiers     PatientIdentifier[]
+  contacts        PatientContact[]
+  allergies       PatientAllergy[]
+  agendaEntries   AgendaEntry[]
+  encounters      Encounter[]
+  waitlistEntries WaitlistEntry[]
+  certificates    MedicalCertificate[]
+  referrals       Referral[]
+  mergesAsSource  PatientMerge[]       @relation("MergeSource")
+  mergesAsTarget  PatientMerge[]       @relation("MergeTarget")
+
+  @@index([familyName, givenName])
+  @@index([birthDate])
+  @@map("patient")
+}
+
+/// FHIR Patient.identifier[].
+///
+/// A child table and not columns on `patient`, because identification in
+/// Ecuador is genuinely 0..n over time: a refugee arrives with a passport and a
+/// refugee card, and later gets a cedula. Flat columns force you to overwrite,
+/// which destroys the trail behind documents already issued.
+model PatientIdentifier {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  patientId String  @map("patient_id") @db.Uuid
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  type IdentifierType
+
+  /// ISO 3166-1 alpha-3. Two passports may share a number if issued by
+  /// different countries, so the real key is (type, issuing_country, value).
+  issuingCountry String @default("ECU") @map("issuing_country") @db.Char(3)
+
+  value String @db.VarChar(32)
+
+  use IdentifierUse @default(OFFICIAL)
+
+  validFrom DateTime? @map("valid_from") @db.Date
+  validTo   DateTime? @map("valid_to") @db.Date
+
+  /// Denormalised from `patient.merged_into_id`, maintained by trigger. It
+  /// exists only so the uniqueness index can be partial: index predicates
+  /// cannot contain subqueries, and a merged record must release its cedula so
+  /// the surviving record can keep it.
+  patientMerged Boolean @default(false) @map("patient_merged")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([patientId, use])
+  @@index([value])
+  @@map("patient_identifier")
+}
+
+/// Emergency contact or legal representative (minors, incapacitated adults).
+model PatientContact {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  patientId String  @map("patient_id") @db.Uuid
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  fullName     String  @map("full_name") @db.VarChar(240)
+  relationship String  @db.VarChar(80)
+  phone        String? @db.VarChar(32)
+  cedula       String? @db.VarChar(10)
+
+  /// Legal representative for consent purposes, not merely someone to call.
+  isLegalRepresentative Boolean @default(false) @map("is_legal_representative")
+  isPrimary             Boolean @default(false) @map("is_primary")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([patientId])
+  @@map("patient_contact")
+}
+
+/// FHIR AllergyIntolerance. Structured rather than buried in the form-002 JSON
+/// because prescribing has to check it, and "check it" means a query, not a
+/// human reading prose.
+model PatientAllergy {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  patientId String  @map("patient_id") @db.Uuid
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  /// CNMB concept when the allergen is a drug; NULL plus free text otherwise
+  /// (foods, latex, insect stings).
+  substanceConceptId String?         @map("substance_concept_id") @db.Uuid
+  substance          CatalogConcept? @relation(fields: [substanceConceptId], references: [id], onDelete: Restrict)
+
+  substanceText String             @map("substance_text") @db.VarChar(240)
+  reaction      String?            @db.VarChar(512)
+  criticality   AllergyCriticality @default(UNABLE_TO_ASSESS)
+
+  recordedAt DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
+
+  /// Refuted allergies are marked, never deleted: knowing an allergy was ruled
+  /// out is clinical information in its own right.
+  refutedAt    DateTime? @map("refuted_at") @db.Timestamptz(6)
+  refutedNotes String?   @map("refuted_notes") @db.Text
+
+  @@index([patientId, refutedAt])
+  @@map("patient_allergy")
+}
+
+/// Append-only record of a duplicate merge, with a snapshot of the losing
+/// record so the operation can be explained and undone.
+model PatientMerge {
+  id BigInt @id @default(autoincrement())
+
+  sourcePatientId String  @map("source_patient_id") @db.Uuid
+  sourcePatient   Patient @relation("MergeSource", fields: [sourcePatientId], references: [id], onDelete: Restrict)
+
+  targetPatientId String  @map("target_patient_id") @db.Uuid
+  targetPatient   Patient @relation("MergeTarget", fields: [targetPatientId], references: [id], onDelete: Restrict)
+
+  performedBy String?  @map("performed_by") @db.Uuid
+  performedAt DateTime @default(now()) @map("performed_at") @db.Timestamptz(6)
+  reason      String   @db.Text
+
+  /// Snapshot of the source row and its children at merge time.
+  sourceSnapshot Json @map("source_snapshot") @db.JsonB
+
+  @@index([targetPatientId])
+  @@map("patient_merge")
+}
+
+// ---------------------------------------------------------------------------
+// AGENDA
+// ---------------------------------------------------------------------------
+
+/// Appointments AND calendar blocks in one table.
+///
+/// One table because they compete for the same resource — the practitioner's
+/// time — and PostgreSQL cannot enforce an exclusion constraint across two
+/// tables. Split them and "never book on top of a holiday" goes back to being
+/// application logic, which is to say a race condition waiting for a Monday
+/// morning with two receptionists.
+///
+/// The non-overlap guarantee lives in a manual migration:
+///   EXCLUDE USING gist (practitioner_id WITH =,
+///                       tstzrange(starts_at, ends_at, '[)') WITH &&)
+///   WHERE (released_at IS NULL AND blocks_calendar)
+model AgendaEntry {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  kind AgendaEntryKind
+
+  siteId String @map("site_id") @db.Uuid
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Restrict)
+
+  practitionerId String       @map("practitioner_id") @db.Uuid
+  practitioner   Practitioner @relation(fields: [practitionerId], references: [id], onDelete: Restrict)
+
+  roomId String?   @map("room_id") @db.Uuid
+  room   SiteRoom? @relation(fields: [roomId], references: [id], onDelete: Restrict)
+
+  /// NULL exactly when kind = BLOCK. Enforced by CHECK in a manual migration.
+  patientId String?  @map("patient_id") @db.Uuid
+  patient   Patient? @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  startsAt DateTime @map("starts_at") @db.Timestamptz(6)
+  endsAt   DateTime @map("ends_at") @db.Timestamptz(6)
+
+  /// false = deliberate overbooking (an urgent case squeezed in). The exclusion
+  /// constraint ignores these rows, so the rule gets broken on purpose and on
+  /// the record instead of being worked around.
+  blocksCalendar Boolean @default(true) @map("blocks_calendar")
+
+  /// NULL means the slot still occupies the calendar. A two-column predicate
+  /// keeps the exclusion constraint stable when new statuses appear: adding
+  /// RESCHEDULED to the enum must not force a rebuild of the GiST index.
+  releasedAt DateTime? @map("released_at") @db.Timestamptz(6)
+
+  status AgendaStatus @default(BOOKED)
+
+  serviceTypeConceptId String?         @map("service_type_concept_id") @db.Uuid
+  serviceType          CatalogConcept? @relation("AgendaServiceType", fields: [serviceTypeConceptId], references: [id], onDelete: Restrict)
+
+  reason String? @db.VarChar(512)
+
+  /// PHONE, WALK_IN, WEB, REFERRAL.
+  bookingChannel String? @map("booking_channel") @db.VarChar(32)
+
+  checkedInAt      DateTime? @map("checked_in_at") @db.Timestamptz(6)
+  noShowAt         DateTime? @map("no_show_at") @db.Timestamptz(6)
+  cancelledAt      DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  cancellationNote String?   @map("cancellation_note") @db.VarChar(512)
+
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  statusHistory  AgendaStatusHistory[]
+  encounter      Encounter?
+  waitlistOrigin WaitlistEntry[]
+
+  @@index([practitionerId, startsAt])
+  @@index([siteId, startsAt])
+  @@index([patientId, startsAt(sort: Desc)])
+  @@map("agenda_entry")
+}
+
+/// Append-only transition log. Without it, "the appointment showed up as
+/// cancelled" has no answer.
+model AgendaStatusHistory {
+  id BigInt @id @default(autoincrement())
+
+  agendaEntryId String      @map("agenda_entry_id") @db.Uuid
+  agendaEntry   AgendaEntry @relation(fields: [agendaEntryId], references: [id], onDelete: Cascade)
+
+  fromStatus AgendaStatus? @map("from_status")
+  toStatus   AgendaStatus  @map("to_status")
+
+  changedById String?  @map("changed_by_id") @db.Uuid
+  changedAt   DateTime @default(now()) @map("changed_at") @db.Timestamptz(6)
+  note        String?  @db.VarChar(512)
+
+  @@index([agendaEntryId, changedAt])
+  @@map("agenda_status_history")
+}
+
+model WaitlistEntry {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  patientId String  @map("patient_id") @db.Uuid
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  siteId String @map("site_id") @db.Uuid
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Restrict)
+
+  /// NULL = any practitioner offering the requested service type.
+  practitionerId String?       @map("practitioner_id") @db.Uuid
+  practitioner   Practitioner? @relation(fields: [practitionerId], references: [id], onDelete: Restrict)
+
+  serviceTypeConceptId String?         @map("service_type_concept_id") @db.Uuid
+  serviceType          CatalogConcept? @relation("WaitlistServiceType", fields: [serviceTypeConceptId], references: [id], onDelete: Restrict)
+
+  /// 1 = highest. Priority groups (elderly, pregnant, disabled) have
+  /// constitutional preference in Ecuador; this is not a nicety.
+  priority Int @default(5) @db.SmallInt
+
+  preferredFrom DateTime? @map("preferred_from") @db.Date
+  preferredTo   DateTime? @map("preferred_to") @db.Date
+
+  status          WaitlistStatus @default(WAITING)
+  contactAttempts Int            @default(0) @map("contact_attempts") @db.SmallInt
+  lastContactedAt DateTime?      @map("last_contacted_at") @db.Timestamptz(6)
+
+  convertedEntryId String?      @map("converted_entry_id") @db.Uuid
+  convertedEntry   AgendaEntry? @relation(fields: [convertedEntryId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([siteId, status, priority, createdAt])
+  @@index([patientId])
+  @@map("waitlist_entry")
+}
+
+// ---------------------------------------------------------------------------
+// ENCOUNTER — the RDACAA row
+// ---------------------------------------------------------------------------
+
+model Encounter {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  siteId String @map("site_id") @db.Uuid
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Restrict)
+
+  practitionerId String       @map("practitioner_id") @db.Uuid
+  practitioner   Practitioner @relation(fields: [practitionerId], references: [id], onDelete: Restrict)
+
+  patientId String  @map("patient_id") @db.Uuid
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  /// Walk-ins have no appointment. One-to-one when it exists.
+  agendaEntryId String?      @unique @map("agenda_entry_id") @db.Uuid
+  agendaEntry   AgendaEntry? @relation(fields: [agendaEntryId], references: [id], onDelete: Restrict)
+
+  startedAt DateTime  @map("started_at") @db.Timestamptz(6)
+  endedAt   DateTime? @map("ended_at") @db.Timestamptz(6)
+
+  careModality CareModality
+  careSetting  CareSetting  @default(INTRAMURAL)
+
+  /// First-time vs subsequent AT THIS ESTABLISHMENT. Per-diagnosis
+  /// first/subsequent is a different field on `encounter_diagnosis`.
+  visitSequence VisitSequence
+
+  /// RDACAA reports the age the patient HAD on the day of care. Computed once
+  /// by a BEFORE INSERT trigger and frozen: derive it on the fly and
+  /// reprocessing an old report yields different numbers, and fixing a mistyped
+  /// birth date silently rewrites reports already filed with the ministry.
+  ageYears  Int? @map("age_years") @db.SmallInt
+  ageMonths Int? @map("age_months") @db.SmallInt
+  ageDays   Int? @map("age_days") @db.SmallInt
+
+  dischargeCondition DischargeCondition?
+
+  /// When this encounter was included in an RDACAA/PRAS submission. NULL means
+  /// not yet reported, and drives the pending-report partial index.
+  reportedAt DateTime? @map("reported_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  vitals             EncounterVitals?
+  violenceScreening  ViolenceScreening?
+  priorityGroups     EncounterPriorityGroup[]
+  diagnoses          EncounterDiagnosis[]
+  procedures         EncounterProcedure[]
+  notes              ClinicalNote[]
+  prescriptions      Prescription[]
+  serviceOrders      ServiceOrder[]
+  certificates       MedicalCertificate[]
+  referrals          Referral[]
+  interconsultations Interconsultation[]
+
+  @@index([patientId, startedAt(sort: Desc)])
+  @@index([practitionerId, startedAt(sort: Desc)])
+  @@index([siteId, startedAt])
+  @@map("encounter")
+}
+
+/// Anthropometry and vital signs. RDACAA mandates weight, height, head
+/// circumference, abdominal circumference and BMI per attention.
+model EncounterVitals {
+  encounterId String    @id @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  weightKg                 Decimal? @map("weight_kg") @db.Decimal(6, 3)
+  heightCm                 Decimal? @map("height_cm") @db.Decimal(5, 1)
+  headCircumferenceCm      Decimal? @map("head_circumference_cm") @db.Decimal(5, 1)
+  abdominalCircumferenceCm Decimal? @map("abdominal_circumference_cm") @db.Decimal(5, 1)
+
+  /// Written by a BEFORE INSERT OR UPDATE trigger, never by the application.
+  /// Not a PostgreSQL 18 generated column: Prisma does not model those and
+  /// would try to INSERT into it, and a VIRTUAL column cannot be indexed — and
+  /// BMI is filtered in nutritional screening.
+  bmi Decimal? @db.Decimal(5, 2)
+
+  systolicBp       Int?     @map("systolic_bp") @db.SmallInt
+  diastolicBp      Int?     @map("diastolic_bp") @db.SmallInt
+  heartRate        Int?     @map("heart_rate") @db.SmallInt
+  respiratoryRate  Int?     @map("respiratory_rate") @db.SmallInt
+  temperatureC     Decimal? @map("temperature_c") @db.Decimal(4, 1)
+  oxygenSaturation Int?     @map("oxygen_saturation") @db.SmallInt
+
+  measuredAt DateTime @default(now()) @map("measured_at") @db.Timestamptz(6)
+
+  @@map("encounter_vitals")
+}
+
+/// RDACAA priority and vulnerable groups, recorded per attention.
+///
+/// A join table instead of ten booleans: when the ministry adds a category this
+/// absorbs it with an INSERT. Booleans need a schema migration and leave every
+/// historical row with `false` where the honest value is "did not apply".
+model EncounterPriorityGroup {
+  encounterId String    @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  conceptId String         @map("concept_id") @db.Uuid
+  concept   CatalogConcept @relation(fields: [conceptId], references: [id], onDelete: Restrict)
+
+  recordedAt DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
+
+  @@id([encounterId, conceptId])
+  @@map("encounter_priority_group")
+}
+
+/// RDACAA violence screening.
+///
+/// Its own table, not four columns on `encounter`, because its access regime
+/// differs: it is the most sensitive item in the record. A table can be REVOKEd
+/// and audited separately; a column cannot without column-level grants.
+model ViolenceScreening {
+  encounterId String    @id @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  result ViolenceScreeningResult @default(NOT_APPLIED)
+
+  /// Several types can coexist in a single case.
+  types ViolenceType[]
+
+  screeningTool       String? @map("screening_tool") @db.VarChar(80)
+  actionTaken         String? @map("action_taken") @db.Text
+  reportedToAuthority Boolean @default(false) @map("reported_to_authority")
+
+  screenedById String?  @map("screened_by_id") @db.Uuid
+  screenedAt   DateTime @default(now()) @map("screened_at") @db.Timestamptz(6)
+
+  @@map("violence_screening")
+}
+
+/// FHIR Condition.
+model EncounterDiagnosis {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  encounterId String    @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  /// The exact VERSION of the CIE-10 concept in force on the day of care. This
+  /// makes historical resolution automatic instead of a query somebody has to
+  /// remember to write.
+  conceptId String         @map("concept_id") @db.Uuid
+  concept   CatalogConcept @relation(fields: [conceptId], references: [id], onDelete: Restrict)
+
+  /// Deliberately redundant with the catalogue. In fifteen years the catalogue
+  /// may have been migrated, pruned or reloaded; the record must still say what
+  /// was diagnosed. Same reason an invoice stores the price, not just the
+  /// product id.
+  cie10Code    String @map("cie10_code") @db.VarChar(10)
+  cie10Display String @map("cie10_display") @db.VarChar(512)
+
+  certainty  DiagnosisCertainty
+  occurrence DiagnosisOccurrence
+
+  /// 1 = principal diagnosis. Unique per encounter via a partial unique index.
+  rank Int @default(1) @db.SmallInt
+
+  /// Mandatory epidemiological notification (dengue, tuberculosis...).
+  notifiable Boolean @default(false)
+
+  note String? @db.Text
+
+  recordedAt DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
+
+  @@index([encounterId])
+  @@index([cie10Code, recordedAt])
+  @@map("encounter_diagnosis")
+}
+
+/// FHIR Procedure.
+model EncounterProcedure {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  encounterId String    @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  conceptId String         @map("concept_id") @db.Uuid
+  concept   CatalogConcept @relation(fields: [conceptId], references: [id], onDelete: Restrict)
+
+  procedureCode    String @map("procedure_code") @db.VarChar(20)
+  procedureDisplay String @map("procedure_display") @db.VarChar(512)
+
+  quantity Int @default(1) @db.SmallInt
+
+  /// Frozen tariff amount. Money is always Decimal(12,2), never Float.
+  tariffAmount Decimal? @map("tariff_amount") @db.Decimal(12, 2)
+
+  performedAt DateTime @default(now()) @map("performed_at") @db.Timestamptz(6)
+  note        String?  @db.Text
+
+  @@index([encounterId])
+  @@map("encounter_procedure")
+}
+
+// ---------------------------------------------------------------------------
+// CLINICAL NOTES — MSP forms
+// ---------------------------------------------------------------------------
+
+/// Append-only clinical note with an amendment chain.
+///
+/// A signed note is never edited; it is superseded by a new version stating who
+/// amended it and why. Chosen over system-versioned tables (which PostgreSQL 18
+/// still does not provide natively) and over SCD-2, because an amendment is a
+/// CLINICAL ACT that must be readable, printable and citable in a legal
+/// proceeding — not a side effect of how rows are stored.
+model ClinicalNote {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  /// Lineage identifier, constant across every version. Version 1 sets it to
+  /// its own id.
+  chainId String @map("chain_id") @db.Uuid
+  version Int    @default(1) @db.SmallInt
+
+  /// MSP form code: 002 (consulta externa), 005 (evolución y prescripciones),
+  /// 007 (interconsulta), 053 / legacy 011 (referencia-contrarreferencia).
+  /// Stored as data, not baked into the schema, so a renumbering by the
+  /// ministry costs an UPDATE and not a migration.
+  formCode    String @map("form_code") @db.VarChar(8)
+  formVersion String @default("1") @map("form_version") @db.VarChar(16)
+
+  encounterId String    @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  status NoteStatus @default(DRAFT)
+
+  /// Narrative sections of the form. Typed columns carry everything the
+  /// ministry reports on or the system queries; prose that is only displayed
+  /// and printed lives here, validated against a JSON Schema keyed by
+  /// (form_code, form_version).
+  content Json @db.JsonB
+
+  authorId String       @map("author_id") @db.Uuid
+  author   Practitioner @relation("NoteAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+
+  signedById String?       @map("signed_by_id") @db.Uuid
+  signedBy   Practitioner? @relation("NoteSigner", fields: [signedById], references: [id], onDelete: Restrict)
+  signedAt   DateTime?     @map("signed_at") @db.Timestamptz(6)
+
+  /// SHA-256 of the canonicalised content plus signing metadata. Proves the
+  /// content has not changed since signature WITHOUT relying on the
+  /// immutability trigger never having been disabled.
+  contentHash String? @map("content_hash") @db.Char(64)
+
+  supersedesId String?       @unique @map("supersedes_id") @db.Uuid
+  supersedes   ClinicalNote? @relation("NoteAmendment", fields: [supersedesId], references: [id], onDelete: Restrict)
+  supersededBy ClinicalNote? @relation("NoteAmendment")
+
+  /// Mandatory free text when creating an amendment. A dropdown gets filled in
+  /// on autopilot; a text box does not.
+  amendmentReason String? @map("amendment_reason") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  prescriptions Prescription[]
+
+  @@index([encounterId, formCode])
+  @@index([chainId, version])
+  @@map("clinical_note")
+}
+
+// ---------------------------------------------------------------------------
+// PRESCRIPTION (form 005)
+// ---------------------------------------------------------------------------
+
+model Prescription {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  encounterId String    @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  /// The form-005 note this prescription was issued with, when there is one.
+  noteId String?       @map("note_id") @db.Uuid
+  note   ClinicalNote? @relation(fields: [noteId], references: [id], onDelete: Restrict)
+
+  prescriberId String       @map("prescriber_id") @db.Uuid
+  prescriber   Practitioner @relation(fields: [prescriberId], references: [id], onDelete: Restrict)
+
+  status   PrescriptionStatus @default(DRAFT)
+  issuedAt DateTime?          @map("issued_at") @db.Timestamptz(6)
+
+  /// Short code printed on the prescription so a pharmacy can verify it without
+  /// receiving any clinical data.
+  verificationCode String? @unique @map("verification_code") @db.VarChar(16)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  items PrescriptionItem[]
+
+  @@index([encounterId])
+  @@map("prescription")
+}
+
+/// FHIR MedicationRequest — one per line of the prescription.
+model PrescriptionItem {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  prescriptionId String       @map("prescription_id") @db.Uuid
+  prescription   Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+
+  /// CNMB concept version. NULL only when prescribing outside the CNMB, which
+  /// then requires `offFormularyJustification` (enforced by CHECK).
+  conceptId String?         @map("concept_id") @db.Uuid
+  concept   CatalogConcept? @relation(fields: [conceptId], references: [id], onDelete: Restrict)
+
+  /// Frozen at prescription time, for the same reason as the CIE-10 display.
+  genericName   String  @map("generic_name") @db.VarChar(240)
+  presentation  String? @db.VarChar(160)
+  concentration String? @db.VarChar(80)
+
+  doseText      String   @map("dose_text") @db.VarChar(160)
+  routeCode     String?  @map("route_code") @db.VarChar(32)
+  frequencyText String   @map("frequency_text") @db.VarChar(160)
+  durationDays  Int?     @map("duration_days") @db.SmallInt
+  quantity      Decimal? @db.Decimal(10, 2)
+  instructions  String?  @db.Text
+
+  /// Prescribing outside the CNMB is allowed but must be justified in writing.
+  offFormularyJustification String? @map("off_formulary_justification") @db.Text
+
+  @@index([prescriptionId])
+  @@map("prescription_item")
+}
+
+// ---------------------------------------------------------------------------
+// ORDERS AND RESULTS
+// ---------------------------------------------------------------------------
+
+/// FHIR ServiceRequest.
+model ServiceOrder {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  encounterId String    @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  siteId String @map("site_id") @db.Uuid
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Restrict)
+
+  orderedById String       @map("ordered_by_id") @db.Uuid
+  orderedBy   Practitioner @relation(fields: [orderedById], references: [id], onDelete: Restrict)
+
+  category ServiceOrderCategory
+  priority ServiceOrderPriority @default(ROUTINE)
+
+  clinicalNoteText String? @map("clinical_note_text") @db.Text
+
+  /// Denormalised count maintained by trigger. It exists only so the "pending
+  /// results" worklist can be a partial index: index predicates cannot contain
+  /// subqueries.
+  pendingItems Int @default(0) @map("pending_items") @db.SmallInt
+
+  requestedAt DateTime @default(now()) @map("requested_at") @db.Timestamptz(6)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  items   ServiceOrderItem[]
+  reports DiagnosticReport[]
+
+  @@index([encounterId])
+  @@index([siteId, requestedAt])
+  @@map("service_order")
+}
+
+model ServiceOrderItem {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  serviceOrderId String       @map("service_order_id") @db.Uuid
+  serviceOrder   ServiceOrder @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
+
+  conceptId String         @map("concept_id") @db.Uuid
+  concept   CatalogConcept @relation(fields: [conceptId], references: [id], onDelete: Restrict)
+
+  testCode    String @map("test_code") @db.VarChar(32)
+  testDisplay String @map("test_display") @db.VarChar(240)
+
+  status ServiceOrderItemStatus @default(REQUESTED)
+
+  /// NULL means pending. The pending-results worklist is a partial index on
+  /// this column, so rows LEAVE the index when they complete and it stays
+  /// permanently small and cache-resident.
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  results ObservationResult[]
+
+  @@index([serviceOrderId])
+  @@map("service_order_item")
+}
+
+/// FHIR DiagnosticReport.
+model DiagnosticReport {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  serviceOrderId String       @map("service_order_id") @db.Uuid
+  serviceOrder   ServiceOrder @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+
+  status DiagnosticReportStatus @default(PARTIAL)
+
+  performedById String?       @map("performed_by_id") @db.Uuid
+  performedBy   Practitioner? @relation(fields: [performedById], references: [id], onDelete: Restrict)
+
+  conclusion String?   @db.Text
+  issuedAt   DateTime? @map("issued_at") @db.Timestamptz(6)
+
+  /// Corrections follow the same rule as clinical notes: a new report that
+  /// supersedes the previous one, never an in-place edit. A result already read
+  /// by a clinician may have changed a treatment decision.
+  supersedesId String?           @unique @map("supersedes_id") @db.Uuid
+  supersedes   DiagnosticReport? @relation("ReportCorrection", fields: [supersedesId], references: [id], onDelete: Restrict)
+  supersededBy DiagnosticReport? @relation("ReportCorrection")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  results ObservationResult[]
+
+  @@index([serviceOrderId])
+  @@map("diagnostic_report")
+}
+
+/// FHIR Observation (laboratory). BigInt and not UUID: this is the one clinical
+/// table with genuinely high row counts — a metabolic panel is ~20 rows — and
+/// they are only ever read through their report.
+model ObservationResult {
+  id BigInt @id @default(autoincrement())
+
+  reportId String           @map("report_id") @db.Uuid
+  report   DiagnosticReport @relation(fields: [reportId], references: [id], onDelete: Restrict)
+
+  orderItemId String?           @map("order_item_id") @db.Uuid
+  orderItem   ServiceOrderItem? @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+
+  analyteConceptId String?         @map("analyte_concept_id") @db.Uuid
+  analyte          CatalogConcept? @relation("ObservationAnalyte", fields: [analyteConceptId], references: [id], onDelete: Restrict)
+
+  analyteDisplay String @map("analyte_display") @db.VarChar(240)
+
+  /// Three value columns because lab results are genuinely polymorphic:
+  /// numeric (glucose 92), coded (blood group O+) and textual (culture: no
+  /// growth at 48h). A CHECK enforces that exactly one is populated.
+  valueNumeric Decimal? @map("value_numeric") @db.Decimal(18, 6)
+  valueText    String?  @map("value_text") @db.Text
+  valueCode    String?  @map("value_code") @db.VarChar(64)
+
+  unit          String?  @db.VarChar(32)
+  referenceLow  Decimal? @map("reference_low") @db.Decimal(18, 6)
+  referenceHigh Decimal? @map("reference_high") @db.Decimal(18, 6)
+  referenceText String?  @map("reference_text") @db.VarChar(160)
+
+  abnormalFlag AbnormalFlag? @map("abnormal_flag")
+
+  observedAt DateTime @default(now()) @map("observed_at") @db.Timestamptz(6)
+
+  @@index([reportId])
+  @@index([analyteConceptId, observedAt(sort: Desc)])
+  @@map("observation_result")
+}
+
+// ---------------------------------------------------------------------------
+// CERTIFICATES, REFERRAL, INTERCONSULTATION
+// ---------------------------------------------------------------------------
+
+model MedicalCertificate {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  encounterId String    @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  patientId String  @map("patient_id") @db.Uuid
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  issuedById String       @map("issued_by_id") @db.Uuid
+  issuedBy   Practitioner @relation(fields: [issuedById], references: [id], onDelete: Restrict)
+
+  type CertificateType
+
+  /// Rest period for MEDICAL_REST. Two dates and not a daterange so Prisma can
+  /// read and write them; the range is only needed inside constraints.
+  restFrom DateTime? @map("rest_from") @db.Date
+  restTo   DateTime? @map("rest_to") @db.Date
+
+  /// The patient decides whether the diagnosis appears on the certificate their
+  /// employer will read. Defaults to hidden: privacy by default is an LOPDP
+  /// requirement, not a preference.
+  includeDiagnosis Boolean @default(false) @map("include_diagnosis")
+
+  body String @db.Text
+
+  /// Printed as a QR so a third party can verify the certificate is genuine
+  /// without receiving any clinical data.
+  verificationCode String @unique @map("verification_code") @db.VarChar(24)
+
+  issuedAt         DateTime  @default(now()) @map("issued_at") @db.Timestamptz(6)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(6)
+  revocationReason String?   @map("revocation_reason") @db.Text
+
+  @@index([patientId, issuedAt(sort: Desc)])
+  @@map("medical_certificate")
+}
+
+/// MSP form 053 (legacy numbering 011): referral, derivation and
+/// counter-referral. One table with a direction, because the counter-referral
+/// is the answer to a referral and belongs on the same thread.
+model Referral {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  encounterId String    @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  patientId String  @map("patient_id") @db.Uuid
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  issuedById String       @map("issued_by_id") @db.Uuid
+  issuedBy   Practitioner @relation("ReferralIssuer", fields: [issuedById], references: [id], onDelete: Restrict)
+
+  direction ReferralDirection
+  status    ReferralStatus    @default(ISSUED)
+
+  /// MSP unique code of the destination establishment. A plain string and not
+  /// an FK: the destination is normally outside this clinic.
+  destinationMspUnicode String? @map("destination_msp_unicode") @db.VarChar(20)
+  destinationName       String? @map("destination_name") @db.VarChar(240)
+
+  specialtyConceptId String?         @map("specialty_concept_id") @db.Uuid
+  specialty          CatalogConcept? @relation("ReferralSpecialty", fields: [specialtyConceptId], references: [id], onDelete: Restrict)
+
+  reason   String               @db.Text
+  summary  String?              @db.Text
+  priority ServiceOrderPriority @default(ROUTINE)
+
+  /// A counter-referral answers a referral. Self-relation on the same thread.
+  respondsToId String?   @unique @map("responds_to_id") @db.Uuid
+  respondsTo   Referral? @relation("ReferralThread", fields: [respondsToId], references: [id], onDelete: Restrict)
+  response     Referral? @relation("ReferralThread")
+
+  issuedAt   DateTime  @default(now()) @map("issued_at") @db.Timestamptz(6)
+  resolvedAt DateTime? @map("resolved_at") @db.Timestamptz(6)
+
+  @@index([patientId, issuedAt(sort: Desc)])
+  @@index([status, issuedAt])
+  @@map("referral")
+}
+
+/// MSP form 007.
+model Interconsultation {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  encounterId String    @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  requestedById String       @map("requested_by_id") @db.Uuid
+  requestedBy   Practitioner @relation("InterconsultRequester", fields: [requestedById], references: [id], onDelete: Restrict)
+
+  respondedById String?       @map("responded_by_id") @db.Uuid
+  respondedBy   Practitioner? @relation("InterconsultResponder", fields: [respondedById], references: [id], onDelete: Restrict)
+
+  specialtyConceptId String?         @map("specialty_concept_id") @db.Uuid
+  specialty          CatalogConcept? @relation("InterconsultationSpecialty", fields: [specialtyConceptId], references: [id], onDelete: Restrict)
+
+  status InterconsultationStatus @default(REQUESTED)
+
+  reason   String  @db.Text
+  findings String? @db.Text
+  opinion  String? @db.Text
+
+  requestedAt DateTime  @default(now()) @map("requested_at") @db.Timestamptz(6)
+  respondedAt DateTime? @map("responded_at") @db.Timestamptz(6)
+
+  @@index([encounterId])
+  @@index([status, requestedAt])
+  @@map("interconsultation")
 }

@@ -1,4 +1,21 @@
 /**
+ * A per-field message meant for the end user.
+ *
+ * Unlike `DomainError.message`, these ARE exposed in the HTTP response in every
+ * environment — a validation error that does not say what is wrong is useless.
+ * That is exactly why they must never carry the rejected value or any health
+ * data: `code` stays stable and English, `message` is what the user reads.
+ */
+export interface DomainFieldError {
+  /** Dot-notation path: `newPassword`, `patient.cedula`. */
+  field: string;
+  /** Stable machine code. Never translated. */
+  code: string;
+  /** Text shown to the user. Translated. */
+  message: string;
+}
+
+/**
  * Root of every business error.
  *
  * ARCHITECTURAL RULE: this layer knows nothing about HTTP. There are no status
@@ -20,14 +37,25 @@ export abstract class DomainError extends Error {
    */
   readonly params: Readonly<Record<string, string | number>>;
 
+  /**
+   * Field-level detail for the user. Subclasses that reject specific inputs
+   * should populate it; without it the client receives a status code and no
+   * way to tell the user what to fix.
+   */
+  readonly fieldErrors?: readonly DomainFieldError[];
+
   protected constructor(
     technicalMessage: string,
     params: Record<string, string | number> = {},
+    fieldErrors?: readonly DomainFieldError[],
   ) {
     // Technical message is English and only feeds logs. Never exposed.
     super(technicalMessage);
     this.name = new.target.name;
     this.params = Object.freeze({ ...params });
+    this.fieldErrors = fieldErrors
+      ? Object.freeze([...fieldErrors])
+      : undefined;
     Error.captureStackTrace?.(this, new.target);
   }
 }
