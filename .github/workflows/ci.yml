@@ -40,6 +40,14 @@ jobs:
 
       - name: Generate the Prisma client
         # Not committed to the repository, and typecheck fails without it.
+        # The placeholder URL is required because `prisma generate` loads
+        # prisma.config.ts, which resolves DATABASE_URL eagerly for the
+        # migration engine. Generating never opens a connection, so the value
+        # is never used — and if some command ever did try to connect with it,
+        # failing loudly against a host called `placeholder` is what should
+        # happen.
+        env:
+          DATABASE_URL: postgresql://placeholder:placeholder@placeholder:5432/placeholder
         run: pnpm db:generate
 
       - name: Typecheck
@@ -76,6 +84,14 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Generate the Prisma client
+        # The placeholder URL is required because `prisma generate` loads
+        # prisma.config.ts, which resolves DATABASE_URL eagerly for the
+        # migration engine. Generating never opens a connection, so the value
+        # is never used — and if some command ever did try to connect with it,
+        # failing loudly against a host called `placeholder` is what should
+        # happen.
+        env:
+          DATABASE_URL: postgresql://placeholder:placeholder@placeholder:5432/placeholder
         run: pnpm db:generate
 
       - name: Integration tests
