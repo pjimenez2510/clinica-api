@@ -2,7 +2,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
 import { DEFAULT_ROLES } from '../src/modules/auth/domain/default-roles.ts';
-import { PERMISSION_CATALOGUE } from '../src/modules/auth/domain/permissions.ts';
+import { PERMISSION_CATALOGUE } from '../src/shared/authorisation/permission.catalogue.ts';
 
 /**
  * Brings the authorisation tables in line with the code.

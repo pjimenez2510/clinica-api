@@ -1,13 +1,23 @@
-import type { Permission } from './permissions';
+import type { Permission } from './permission.catalogue';
 
 /**
  * Evaluating what an authenticated caller may do.
  *
+ * IN `shared/`, NOT IN `modules/auth/`. Every business module needs to know who
+ * the caller is and what they may do, and `dependency-cruiser` forbids one
+ * module importing another. Leaving this inside the auth module meant the first
+ * clinical module would collide with our own architecture rule — and the fix
+ * under deadline is an exception in `.dependency-cruiser.cjs`. Architecture
+ * rules die by accumulated exceptions, not all at once.
+ *
+ * `modules/auth` PRODUCES the principal; `shared/authorisation` is the
+ * vocabulary everyone CONSUMES. Startup policy — the default roles, the risky
+ * combinations — stays in the module: that is auth's business, not shared
+ * vocabulary.
+ *
  * Separate from the catalogue because the catalogue is imported by the seed
- * script, which Node runs with type stripping — and stripping cannot handle a
- * class with parameter properties. Splitting them also makes the dependency
- * honest: seeding needs to know which permissions EXIST, not how access is
- * decided.
+ * script, which Node runs with type stripping, and stripping cannot handle a
+ * class with parameter properties.
  */
 
 /**

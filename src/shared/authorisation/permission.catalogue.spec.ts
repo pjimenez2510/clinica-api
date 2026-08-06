@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PERMISSION_CATALOGUE, PERMISSIONS } from './permissions';
+import { PERMISSION_CATALOGUE, PERMISSIONS } from './permission.catalogue';
 import { ALL_SITES, Principal, type ResolvedGrant } from './principal';
 
 describe('the permission catalogue', () => {

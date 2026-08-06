@@ -1,4 +1,4 @@
-import type { Permission } from './permissions';
+import type { Permission } from '../../../shared/authorisation/permission.catalogue';
 
 /**
  * The roles a clinic starts with, and nothing more.

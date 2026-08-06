@@ -1,4 +1,6 @@
-import { SetMetadata } from '@nestjs/common';
+import { applyDecorators, SetMetadata } from '@nestjs/common';
+
+import type { Permission } from '../authorisation/permission.catalogue';
 
 /**
  * Route-level authentication markers.
@@ -15,6 +17,7 @@ export const IS_PUBLIC_KEY = 'auth:public';
 export const MFA_OPTIONAL_KEY = 'auth:mfa_optional';
 export const REQUIRED_PERMISSION_KEY = 'auth:permission';
 export const OWN_ACCOUNT_KEY = 'auth:own_account';
+export const SITE_SCOPE_KEY = 'auth:site_scope';
 
 /** Marks a route as reachable without authentication. */
 export const Public = (): MethodDecorator & ClassDecorator =>
@@ -41,12 +44,43 @@ export const CURRENT_USER = 'currentUser';
  * ADR-007 §3.
  *
  * The permission string is not free text: `Permission` is a closed union, so a
- * typo does not compile.
+ * typo does not compile. That claim used to be false — the parameter was
+ * `string` — and it was the comment itself that told the reader not to check.
  */
+/**
+ * How a route handles the SITE dimension of authorisation.
+ *
+ * Closed by default here too: a route must say which of these it is, and the
+ * route-coverage test fails if it does not. Holding a permission is not the
+ * same as holding it at the site being touched, and in a multi-site clinic the
+ * site is the dimension that produces improper access.
+ *
+ *   - `param:<name>` — the site id is a route parameter and the GUARD checks
+ *     it. The strongest option, and the only one the guard can enforce on its
+ *     own. Use it whenever the site is in the URL.
+ *   - `query` — the site is not in the URL, so the HANDLER must narrow with
+ *     `siteScope()`. The guard cannot verify this; the declaration is what
+ *     makes the omission visible in review.
+ *   - `global` — the route is genuinely not site-scoped: managing users,
+ *     reading catalogues. Stating it is the point, so that "no site check" is
+ *     a decision somebody wrote down rather than something nobody thought
+ *     about.
+ *
+ * NOTE ON `param:` — guards run BEFORE pipes, so the body is unvalidated at
+ * that moment and cannot be trusted for an authorisation decision. Only route
+ * parameters are readable this early. That is a constraint of the framework,
+ * not a preference.
+ */
+export type SiteScopeDeclaration = `param:${string}` | 'query' | 'global';
+
 export const RequirePermission = (
-  permission: string,
+  permission: Permission,
+  siteScope: SiteScopeDeclaration,
 ): MethodDecorator & ClassDecorator =>
-  SetMetadata(REQUIRED_PERMISSION_KEY, permission);
+  applyDecorators(
+    SetMetadata(REQUIRED_PERMISSION_KEY, permission),
+    SetMetadata(SITE_SCOPE_KEY, siteScope),
+  );
 
 /**
  * Any authenticated user, acting on their OWN account: signing out, changing

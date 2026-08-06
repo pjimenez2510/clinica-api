@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 
-import type { RoleAssignment } from '../domain/principal';
+import type { RoleAssignment } from '../../../shared/authorisation/principal';
 import { ConfigService } from '@nestjs/config';
 import {
   type CryptoKey,

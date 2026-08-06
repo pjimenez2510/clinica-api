@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import type { AuthUser, AuthUserRepositoryPort } from '../application/ports';
-import type { RoleAssignment } from '../domain/principal';
+import type { RoleAssignment } from '../../../shared/authorisation/principal';
 
 /**
  * Only the columns the use cases actually need are selected.

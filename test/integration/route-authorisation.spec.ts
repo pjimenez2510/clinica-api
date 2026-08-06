@@ -8,8 +8,9 @@ import {
   MFA_OPTIONAL_KEY,
   OWN_ACCOUNT_KEY,
   REQUIRED_PERMISSION_KEY,
+  SITE_SCOPE_KEY,
 } from '../../src/shared/http/auth.decorators';
-import { PERMISSIONS } from '../../src/modules/auth/domain/permissions';
+import { PERMISSIONS } from '../../src/shared/authorisation/permission.catalogue';
 
 /**
  * Every route declares how it is protected. No exceptions, and no defaults.
@@ -28,6 +29,7 @@ describe('every route declares its protection', () => {
     route: string;
     marker: string;
     permission?: unknown;
+    siteScope?: unknown;
   }
 
   let routes: RouteInfo[];
@@ -77,6 +79,7 @@ describe('every route declares its protection', () => {
             route: `${metatype.name}.${name}`,
             marker,
             permission,
+            siteScope: read(SITE_SCOPE_KEY),
           });
         }
       }
@@ -108,6 +111,23 @@ describe('every route declares its protection', () => {
       .map((r) => `${r.route} -> ${String(r.permission)}`);
 
     expect(unknown).toEqual([]);
+  });
+
+  it('makes every permission route state how the site is checked', () => {
+    // Closing the permission dimension by default and leaving the SITE
+    // dimension open would be closing the wrong one: in a multi-site clinic
+    // the site is what produces improper access. `global` is a valid answer —
+    // stating it is the point, so "no site check" is a decision somebody wrote
+    // down rather than something nobody considered.
+    const undeclared = routes
+      .filter((r) => r.marker === 'permission')
+      .filter((r) => !r.siteScope)
+      .map((r) => r.route);
+
+    expect(
+      undeclared,
+      'Pass a site scope to @RequirePermission: param:<name>, query or global',
+    ).toEqual([]);
   });
 
   it('keeps the public surface small and deliberate', () => {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
 import { DEFAULT_ROLES } from '../../src/modules/auth/domain/default-roles';
-import { PERMISSION_CATALOGUE } from '../../src/modules/auth/domain/permissions';
+import { PERMISSION_CATALOGUE } from '../../src/shared/authorisation/permission.catalogue';
 
 import { useDatabase } from './setup/database';
 

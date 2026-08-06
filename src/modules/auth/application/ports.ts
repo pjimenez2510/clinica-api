@@ -1,4 +1,4 @@
-import type { RoleAssignment } from '../domain/principal';
+import type { RoleAssignment } from '../../../shared/authorisation/principal';
 
 /**
  * Ports the authentication use cases depend on.

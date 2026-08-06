@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
-import type { ResolvedGrant } from '../domain/principal';
+import type { ResolvedGrant } from '../../../shared/authorisation/principal';
 
 /**
  * Resolves a role into its permissions, with a short-lived cache.
