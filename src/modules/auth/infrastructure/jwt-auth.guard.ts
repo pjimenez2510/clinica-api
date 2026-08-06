@@ -8,6 +8,10 @@ import type { Request } from 'express';
 import { ClsService } from 'nestjs-cls';
 
 import { UnauthorizedError } from '../../../shared/domain/errors/domain-error';
+// A missing Authorization header is the SHAPE of the transport, so
+// `MissingTokenError` stays here. An unfinished second factor is a business
+// rule, so it does not.
+import { MfaRequiredError } from '../domain/auth.errors';
 import {
   CURRENT_USER,
   IS_PUBLIC_KEY,
@@ -20,13 +24,6 @@ export class MissingTokenError extends UnauthorizedError {
   readonly code = 'MISSING_TOKEN';
   constructor() {
     super('Authorization header is missing or malformed');
-  }
-}
-
-export class MfaRequiredError extends UnauthorizedError {
-  readonly code = 'MFA_REQUIRED';
-  constructor() {
-    super('Second factor has not been completed for this session');
   }
 }
 

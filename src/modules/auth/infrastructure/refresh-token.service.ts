@@ -1,32 +1,21 @@
 import { randomUUID } from 'node:crypto';
 
 import { Injectable } from '@nestjs/common';
+
+// Infrastructure THROWS domain errors; it does not DEFINE them. These two are
+// part of the public contract, and an adapter defining public contract means
+// changing the token strategy moves the contract with the frontend underneath.
+import {
+  InvalidRefreshTokenError,
+  RefreshTokenReuseError,
+} from '../domain/auth.errors';
 import { ConfigService } from '@nestjs/config';
 import { PinoLogger } from 'nestjs-pino';
 
 import type { Env } from '../../../shared/config/env.schema';
-import { UnauthorizedError } from '../../../shared/domain/errors/domain-error';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 
 import { TokenService } from './token.service';
-
-export class InvalidRefreshTokenError extends UnauthorizedError {
-  readonly code = 'INVALID_REFRESH_TOKEN';
-
-  constructor() {
-    // Deliberately opaque: not found, expired, already used and revoked all
-    // return the same thing. Telling them apart helps only an attacker.
-    super('Refresh token is not usable');
-  }
-}
-
-export class RefreshTokenReuseError extends UnauthorizedError {
-  readonly code = 'REFRESH_TOKEN_REUSE_DETECTED';
-
-  constructor() {
-    super('Refresh token reuse detected, session family revoked');
-  }
-}
 
 /** Why a token stopped being valid. Stored for the audit trail. */
 export const RevocationReason = {

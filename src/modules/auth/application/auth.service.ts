@@ -2,11 +2,13 @@ import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 
 import {
-  ConflictError,
-  ForbiddenError,
-  NotFoundError,
-  UnauthorizedError,
-} from '../../../shared/domain/errors/domain-error';
+  AccountInactiveError,
+  InvalidCredentialsError,
+  InvalidMfaCodeError,
+  MfaAlreadyEnrolledError,
+  MfaNotEnrolledError,
+  SessionUserMissingError,
+} from '../domain/auth.errors';
 import { assertValidPassword } from '../domain/password-policy';
 
 import {
@@ -24,63 +26,24 @@ import {
   type TotpPort,
 } from './ports';
 
-export class InvalidCredentialsError extends UnauthorizedError {
-  readonly code = 'INVALID_CREDENTIALS';
-  constructor() {
-    // Deliberately identical whether the email is unknown or the password is
-    // wrong. Telling them apart lets an attacker enumerate who works here.
-    super('Email or password is incorrect');
-  }
-}
-
 /**
- * Only thrown where the caller has ALREADY proved they had a session — a
- * refresh whose account was deactivated meanwhile. Saying so there is useful:
- * the client stops retrying and shows a real message.
+ * The errors these use cases raise live in `../domain/auth.errors`.
  *
- * It is deliberately NOT thrown during sign-in. There, the caller is anonymous
- * and "this account exists but is inactive" is exactly what an attacker is
- * fishing for. There is no `AccountLockedError` for the same reason: an
- * attacker can create the locked state at will with five wrong guesses.
+ * Re-exported so existing imports keep working, but the definitions belong to
+ * the domain: an error is a lightweight value and importing it should not drag
+ * in this service, its five ports and the whole of NestJS.
  */
-export class AccountInactiveError extends ForbiddenError {
-  readonly code = 'ACCOUNT_INACTIVE';
-  constructor() {
-    super('Account is not active');
-  }
-}
-
-export class UserNotFoundError extends NotFoundError {
-  readonly code = 'USER_NOT_FOUND';
-  constructor() {
-    super('User does not exist');
-  }
-}
-
-export class InvalidMfaCodeError extends UnauthorizedError {
-  readonly code = 'INVALID_MFA_CODE';
-  constructor() {
-    // Same answer whether the code was wrong or the account is locked out of
-    // the second factor: telling them apart hands an attacker a progress bar.
-    super('The verification code is not valid');
-  }
-}
-
-export class MfaNotEnrolledError extends UnauthorizedError {
-  readonly code = 'MFA_NOT_ENROLLED';
-  constructor() {
-    super('No TOTP secret is enrolled for this account');
-  }
-}
-
-export class MfaAlreadyEnrolledError extends ConflictError {
-  readonly code = 'MFA_ALREADY_ENROLLED';
-  constructor() {
-    // Re-enrolling would silently invalidate the user's authenticator without
-    // proving they still control the current one.
-    super('This account already has a confirmed second factor');
-  }
-}
+export {
+  AccountInactiveError,
+  InvalidCredentialsError,
+  InvalidMfaCodeError,
+  InvalidRefreshTokenError,
+  MfaAlreadyEnrolledError,
+  MfaNotEnrolledError,
+  MfaRequiredError,
+  RefreshTokenReuseError,
+  SessionUserMissingError,
+} from '../domain/auth.errors';
 
 /** Why a token stopped being valid. Mirrored in the audit trail. */
 export const RevocationReason = {
@@ -329,7 +292,7 @@ export class AuthService {
     const rotated = await this.refreshTokens.rotate(presentedToken, ctx);
 
     const user = await this.users.findByRefreshFamily(rotated.familyId);
-    if (!user) throw new UserNotFoundError();
+    if (!user) throw new SessionUserMissingError();
 
     if (!user.active) {
       await this.refreshTokens.revokeAllForUser(
@@ -399,7 +362,7 @@ export class AuthService {
 
   private async requireUser(userId: string): Promise<AuthUser> {
     const user = await this.users.findById(userId);
-    if (!user) throw new UserNotFoundError();
+    if (!user) throw new SessionUserMissingError();
     return user;
   }
 

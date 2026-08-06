@@ -15,6 +15,10 @@ import {
 } from '../../../shared/http/auth.decorators';
 import type { Permission } from '../../../shared/authorisation/permission.catalogue';
 import { Principal } from '../../../shared/authorisation/principal';
+// The SAME error the query helper throws. Two classes declaring
+// SITE_SCOPE_DENIED is exactly the duplication a public contract cannot have:
+// clients branch on the code, and nothing stopped two of them existing.
+import { SiteScopeDeniedError } from '../../../shared/authorisation/site-scope';
 
 import { RolePermissionRegistry } from './role-permission.registry';
 
@@ -43,13 +47,6 @@ export class RouteNotSecuredError extends ForbiddenError {
   readonly code = 'ROUTE_NOT_SECURED';
   constructor(missing: string) {
     super(`Route declares no ${missing}`);
-  }
-}
-
-export class SiteNotInScopeError extends ForbiddenError {
-  readonly code = 'SITE_SCOPE_DENIED';
-  constructor(permission: string) {
-    super(`Site is not in scope for ${permission}`, { permission });
   }
 }
 
@@ -193,7 +190,7 @@ export class PermissionsGuard implements CanActivate {
           { user_id: principal.userId, error_code: 'SITE_SCOPE_DENIED' },
           'site not in scope',
         );
-        throw new SiteNotInScopeError(required);
+        throw new SiteScopeDeniedError(required);
       }
     }
 
