@@ -1,6 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 import { Injectable, type OnModuleInit } from '@nestjs/common';
+import { z } from 'zod';
+
+import { MFA_CHALLENGE_FAMILY } from '../domain/session';
 
 import type { RoleAssignment } from '../../../shared/authorisation/principal';
 import { ConfigService } from '@nestjs/config';
@@ -59,6 +62,24 @@ function parseDurationSeconds(ttl: string): number {
   const seconds = { s: 1, m: 60, h: 3600, d: 86_400 };
   return amount * seconds[unit];
 }
+
+/**
+ * The claims an access token must carry.
+ *
+ * `fam` accepts the literal `pending-mfa` alongside a UUID because the
+ * challenge token reuses the field with a magic value — a detail an explicit
+ * schema surfaces and an `as string` hides. Marked for replacement by a `typ`
+ * claim of its own: overloading `fam` means a bug in the MFA flow could not be
+ * told apart from a bug in the session flow.
+ */
+const accessClaimsSchema = z.object({
+  sub: z.uuid(),
+  fam: z.union([z.uuid(), z.literal(MFA_CHALLENGE_FAMILY)]),
+  grants: z
+    .array(z.object({ roleId: z.uuid(), siteId: z.uuid().nullable() }))
+    .default([]),
+  mfa: z.boolean().default(false),
+});
 
 const ISSUER = 'clinica-api';
 const AUDIENCE = 'clinica-web';
@@ -134,12 +155,20 @@ export class TokenService implements OnModuleInit {
         algorithms: ['EdDSA'], // pinned: stops an `alg: none` downgrade
       });
 
-      return {
-        sub: payload.sub!,
-        fam: payload.fam as string,
-        grants: (payload.grants as RoleAssignment[]) ?? [],
-        mfa: payload.mfa === true,
-      };
+      /**
+       * PARSED, not cast.
+       *
+       * The signature proves WE issued the token; it says nothing about the
+       * shape of what is inside. A botched key rotation, a token from an older
+       * claims schema, or a future bug in `issueAccessToken` would have
+       * produced a `Principal` with corrupt grants — and the failure would
+       * surface three layers down, with no visible relation to the cause. The
+       * previous code read these with one `!` and two `as`.
+       *
+       * Costs microseconds and turns a diffuse failure into a rejected token
+       * at the edge.
+       */
+      return accessClaimsSchema.parse(payload);
     } catch (error) {
       // The library's reason is not propagated: it distinguishes "expired" from
       // "bad signature", and that difference is useful to an attacker.

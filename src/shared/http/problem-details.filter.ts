@@ -58,7 +58,11 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     const res = ctx.getResponse<Response>();
 
     // No query string: it may carry a cedula or a medical record number.
-    const instance = String(httpAdapter.getRequestUrl(req) ?? '').split('?')[0];
+    // `?? ''` after the split too: `String.split` is typed as possibly
+    // undefined at an index, and an instance of `undefined` in the response
+    // body would be worse than an empty one.
+    const instance =
+      String(httpAdapter.getRequestUrl(req) ?? '').split('?')[0] ?? '';
     const problem = this.toProblemDetails(exception, instance);
 
     /**

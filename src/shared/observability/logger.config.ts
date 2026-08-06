@@ -198,7 +198,7 @@ export const loggerConfig: Params = {
     autoLogging: {
       ignore: (req: { url?: string }) =>
         ['/api/v1/health', '/api/v1/ping'].includes(
-          (req.url ?? '').split('?')[0],
+          (req.url ?? '').split('?')[0] ?? '',
         ),
     },
 

@@ -55,14 +55,19 @@ export class Cedula {
       throw new InvalidCedulaError('province code does not exist');
     }
 
-    const thirdDigit = Number.parseInt(cleaned[2], 10);
+    // `charAt` rather than `cleaned[2]`: indexing a string is typed as
+    // possibly undefined under `noUncheckedIndexedAccess`, and the length was
+    // already validated above. `charAt` returns '' out of range, which
+    // `parseInt` turns into NaN — a value the comparison below rejects — so
+    // the impossible case still fails closed instead of being asserted away.
+    const thirdDigit = Number.parseInt(cleaned.charAt(2), 10);
     if (thirdDigit >= 6) {
       throw new InvalidCedulaError(
         'third digit must be below 6 for a natural person cedula',
       );
     }
 
-    if (Cedula.checkDigit(cleaned) !== Number.parseInt(cleaned[9], 10)) {
+    if (Cedula.checkDigit(cleaned) !== Number.parseInt(cleaned.charAt(9), 10)) {
       throw new InvalidCedulaError('check digit does not match');
     }
 
@@ -85,7 +90,7 @@ export class Cedula {
    */
   private static checkDigit(cedula: string): number {
     const sum = Cedula.COEFFICIENTS.reduce((acc, coefficient, i) => {
-      const product = Number.parseInt(cedula[i], 10) * coefficient;
+      const product = Number.parseInt(cedula.charAt(i), 10) * coefficient;
       return acc + (product > 9 ? product - 9 : product);
     }, 0);
 

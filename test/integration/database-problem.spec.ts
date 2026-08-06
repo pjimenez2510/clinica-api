@@ -116,7 +116,7 @@ describe('database errors become usable responses', () => {
     );
 
     expect(problem?.code).toBe('ROOM_SLOT_TAKEN');
-    expect(problem?.errors?.[0].field).toBe('roomId');
+    expect(problem?.errors?.[0]?.field).toBe('roomId');
   });
 
   it('turns a wrong cedula check digit into 422, not 500', async () => {
@@ -130,7 +130,7 @@ describe('database errors become usable responses', () => {
 
     expect(problem?.status).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
     expect(problem?.code).toBe('INVALID_CEDULA');
-    expect(problem?.errors?.[0].message).toMatch(/dígito verificador/);
+    expect(problem?.errors?.[0]?.message).toMatch(/dígito verificador/);
   });
 
   it('turns a duplicate document into 409', async () => {

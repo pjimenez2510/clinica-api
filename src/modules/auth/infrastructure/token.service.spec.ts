@@ -3,6 +3,8 @@ import { generateKeyPairSync } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { MFA_CHALLENGE_FAMILY } from '../domain/session';
+
 import { InvalidTokenError, TokenService } from './token.service';
 
 function buildService(overrides: Record<string, string> = {}): TokenService {
@@ -24,7 +26,15 @@ function buildService(overrides: Record<string, string> = {}): TokenService {
   } as unknown as ConfigService<never, true>);
 }
 
-const CLAIMS = { sub: 'u-1', fam: 'f-1', grants: [], mfa: true };
+// Real UUIDs, because that is what the claims schema now requires — and what
+// production actually carries. The previous `'u-1'` passed only because the
+// claims were cast rather than parsed.
+const CLAIMS = {
+  sub: '019fd518-79ae-76e3-9cc9-6303aab36879',
+  fam: '019fd518-b1e1-74a5-b9a0-20eea8ab5419',
+  grants: [],
+  mfa: true,
+};
 
 describe('TokenService', () => {
   let service: TokenService;
@@ -40,7 +50,7 @@ describe('TokenService', () => {
       // With HMAC, whoever can verify can forge.
       const jwt = await service.issueAccessToken(CLAIMS);
       const header = JSON.parse(
-        Buffer.from(jwt.split('.')[0], 'base64url').toString(),
+        Buffer.from(jwt.split('.')[0] ?? '', 'base64url').toString(),
       ) as { alg: string };
 
       expect(header.alg).toBe('EdDSA');
@@ -130,6 +140,48 @@ describe('TokenService', () => {
     it('hashes deterministically so lookup works', () => {
       const { token, hash } = service.generateRefreshToken();
       expect(TokenService.hashRefreshToken(token)).toBe(hash);
+    });
+  });
+
+  describe('claims are parsed, not trusted', () => {
+    it('REFUSES a token we signed whose claims are the wrong shape', async () => {
+      /**
+       * The signature proves WE issued it. It says nothing about the shape of
+       * what is inside, and a botched key rotation or a token from an older
+       * claims schema would otherwise produce a Principal with corrupt grants
+       * — failing three layers down with no visible relation to the cause.
+       *
+       * The cast is the point: it stands in for the future bug in
+       * `issueAccessToken` that this parsing defends against.
+       */
+      const service = buildService();
+      await service.onModuleInit();
+
+      const badlyShaped = await service.issueAccessToken({
+        ...CLAIMS,
+        grants: 'no soy un arreglo' as unknown as [],
+      });
+
+      await expect(service.verifyAccessToken(badlyShaped)).rejects.toThrow(
+        InvalidTokenError,
+      );
+    });
+
+    it('accepts the challenge token, whose family is not a UUID', async () => {
+      // `fam: 'pending-mfa'` is a magic value the schema must allow. An
+      // explicit schema surfaces that; the old `as string` hid it.
+      const service = buildService();
+      await service.onModuleInit();
+
+      const challenge = await service.issueAccessToken({
+        ...CLAIMS,
+        fam: MFA_CHALLENGE_FAMILY,
+        mfa: false,
+      });
+
+      const claims = await service.verifyAccessToken(challenge);
+      expect(claims.fam).toBe(MFA_CHALLENGE_FAMILY);
+      expect(claims.mfa).toBe(false);
     });
   });
 });

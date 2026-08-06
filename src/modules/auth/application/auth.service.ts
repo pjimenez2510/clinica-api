@@ -24,6 +24,7 @@ import {
   TOTP,
   type TotpPort,
 } from './ports';
+import { MFA_CHALLENGE_FAMILY } from '../domain/session';
 // One definition, in shared: the audit log needs the same shapes, and the
 // audit log is not auth's business.
 import {
@@ -183,7 +184,7 @@ export class AuthService {
       // session here would make the second factor decorative.
       const challengeToken = await this.tokens.issueAccessToken({
         sub: user.id,
-        fam: 'pending-mfa',
+        fam: MFA_CHALLENGE_FAMILY,
         grants: [],
         mfa: false,
       });

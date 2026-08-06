@@ -35,7 +35,8 @@ function collectDeclaredCodes(): { code: string; file: string }[] {
       }
       const source = readFileSync(path, 'utf8');
       for (const match of source.matchAll(/readonly code = '([^']+)'/g)) {
-        found.push({ code: match[1], file: path.replace(SOURCE_ROOT, 'src') });
+        const code = match[1];
+        if (code) found.push({ code, file: path.replace(SOURCE_ROOT, 'src') });
       }
     }
   };
