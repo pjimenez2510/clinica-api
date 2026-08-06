@@ -20,6 +20,117 @@ datasource db {
   provider = "postgresql"
 }
 
+/// Usuario del sistema (personal clínico y administrativo).
+///
+/// NO es el paciente: el paciente es una entidad clínica distinta. Mezclarlos
+/// obliga después a separar dos conceptos con ciclos de vida y permisos
+/// completamente distintos.
+model Usuario {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// Identificador de acceso. Se guarda en minúsculas para que el login no
+  /// dependa de cómo lo escriba el usuario.
+  correo String @unique @db.VarChar(255)
+
+  /// Argon2id. El algoritmo y sus parámetros viajan dentro del propio hash,
+  /// así que se pueden endurecer más adelante sin migrar los existentes.
+  passwordHash String @map("password_hash") @db.VarChar(255)
+
+  nombres   String @db.VarChar(120)
+  apellidos String @db.VarChar(120)
+
+  /// Cédula del profesional. Necesaria para el reporte RDACAA y para firmar.
+  cedula String? @unique @db.VarChar(10)
+
+  /// Registro ACESS del profesional sanitario. Sin él no puede firmar recetas
+  /// ni certificados.
+  registroAcess String?   @map("registro_acess") @db.VarChar(32)
+  acessVenceEn  DateTime? @map("acess_vence_en") @db.Date
+
+  activo Boolean @default(true)
+
+  // --- Segundo factor ---
+  /// Secreto TOTP cifrado con AES-256-GCM. Nunca en claro.
+  mfaSecretoCifrado String?   @map("mfa_secreto_cifrado") @db.Text
+  mfaActivadoEn     DateTime? @map("mfa_activado_en") @db.Timestamptz(6)
+
+  /// Último paso de tiempo TOTP consumido. Impide reutilizar un código
+  /// interceptado durante los 30 segundos que sigue siendo válido.
+  mfaUltimoPaso BigInt? @map("mfa_ultimo_paso")
+
+  // --- Defensa contra fuerza bruta ---
+  intentosFallidos Int       @default(0) @map("intentos_fallidos")
+  bloqueadoHasta   DateTime? @map("bloqueado_hasta") @db.Timestamptz(6)
+
+  creadoEn     DateTime  @default(now()) @map("creado_en") @db.Timestamptz(6)
+  actualizadoEn DateTime @updatedAt @map("actualizado_en") @db.Timestamptz(6)
+
+  refreshTokens   RefreshToken[]
+  codigosRespaldo CodigoRespaldo[]
+
+  @@index([correo])
+  @@map("usuario")
+}
+
+/// Refresh token con rotación y detección de reutilización.
+///
+/// Los tokens de una misma sesión forman una FAMILIA. Si llega uno ya usado,
+/// significa que alguien tiene una copia: se revoca la familia entera. Eso
+/// convierte un token robado en una alarma en lugar de en una brecha silenciosa.
+model RefreshToken {
+  id String @id @default(uuid()) @db.Uuid
+
+  usuarioId String  @map("usuario_id") @db.Uuid
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  /// Agrupa todos los tokens derivados de un mismo inicio de sesión.
+  familiaId String @map("familia_id") @db.Uuid
+
+  /// SHA-256 del token, nunca el token. Si roban la base de datos, no se
+  /// llevan sesiones activas.
+  tokenHash String @unique @map("token_hash") @db.Char(64)
+
+  expiraEn  DateTime  @map("expira_en") @db.Timestamptz(6)
+  usadoEn   DateTime? @map("usado_en") @db.Timestamptz(6)
+  revocadoEn DateTime? @map("revocado_en") @db.Timestamptz(6)
+
+  /// Por qué se revocó: ROTACION (uso normal), REUTILIZACION (ataque
+  /// detectado), CIERRE_SESION, o CAMBIO_PASSWORD.
+  motivoRevocacion String? @map("motivo_revocacion") @db.VarChar(32)
+
+  ip        String? @db.Inet
+  userAgent String? @map("user_agent") @db.VarChar(512)
+
+  creadoEn DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
+
+  @@index([familiaId])
+  @@index([usuarioId, revocadoEn])
+  @@index([expiraEn])
+  @@map("refresh_token")
+}
+
+/// Códigos de recuperación de un solo uso.
+///
+/// Sin esto, un médico que pierde el teléfono queda fuera de las historias
+/// clínicas. En urgencias eso no es un problema de usabilidad, es un problema
+/// de seguridad del paciente.
+model CodigoRespaldo {
+  id String @id @default(uuid()) @db.Uuid
+
+  usuarioId String  @map("usuario_id") @db.Uuid
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  /// Hasheado con Argon2id igual que una contraseña: es un credencial.
+  codigoHash String @map("codigo_hash") @db.VarChar(255)
+
+  usadoEn DateTime? @map("usado_en") @db.Timestamptz(6)
+
+  creadoEn DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
+
+  @@index([usuarioId, usadoEn])
+  @@map("codigo_respaldo")
+}
+
 /// Bitácora de acceso a datos personales y de salud.
 ///
 /// Exigida por la LOPDP: hay que poder responder quién vio qué historia

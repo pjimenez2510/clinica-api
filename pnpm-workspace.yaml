@@ -14,3 +14,6 @@ allowBuilds:
 
   # Telemetría de terceros. Denegado a propósito.
   '@scarf/scarf': false
+
+  # Necesario: compila el binding nativo del hash de contraseñas.
+  argon2: true
