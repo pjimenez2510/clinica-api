@@ -2,12 +2,16 @@ import { randomUUID } from 'node:crypto';
 
 import type { Params } from 'nestjs-pino';
 
-import { podarAllowlist, sanearMensajeError, sanearUrl } from './log-privacy';
+import {
+  pruneToAllowlist,
+  sanitizeErrorMessage,
+  sanitizeUrl,
+} from './log-privacy';
 
-const esProduccion = process.env.NODE_ENV === 'production';
+const isProduction = process.env.NODE_ENV === 'production';
 
-/** Cabeceras que pueden loguearse. El resto se descarta. */
-const CABECERAS_PERMITIDAS = [
+/** Headers that may be logged. Everything else is dropped. */
+const ALLOWED_HEADERS = [
   'host',
   'user-agent',
   'content-type',
@@ -19,21 +23,11 @@ const CABECERAS_PERMITIDAS = [
 ] as const;
 
 /**
- * Denylist de `redact`. Es la SEGUNDA red, no la defensa principal: la primera
- * es la allowlist de `formatters.log`.
- *
- * Se minimizan los comodines a propósito: sin ellos el coste es ~2% sobre
- * `JSON.stringify`; con ellos sube en torno al 50%.
- *
- * Los paths se compilan con un VM context, así que NUNCA pueden provenir de
- * entrada de usuario ni de configuración editable.
+ * Minimal shapes of what pino-http hands to each serializer.
+ * Declared by hand because the package types are `any`, and typing the input
+ * is what lets the linter catch access to a field that does not exist.
  */
-/**
- * Formas mínimas de lo que pino-http entrega a cada serializador.
- * Se declaran a mano porque los tipos del paquete son `any`, y tipar la entrada
- * es lo que permite que el linter detecte un acceso a un campo que no existe.
- */
-interface PeticionCruda {
+interface RawRequest {
   id?: unknown;
   method?: string;
   url?: string;
@@ -41,22 +35,32 @@ interface PeticionCruda {
   route?: { path?: string };
 }
 
-interface RespuestaCruda {
+interface RawResponse {
   statusCode?: number;
   raw?: { statusCode?: number };
 }
 
-interface ErrorCrudo {
+interface RawError {
   name?: string;
   constructor?: { name?: string };
   message?: string;
   code?: unknown;
   stack?: string;
-  /** Los fallos de conexión de `pg` llegan agrupados aquí. */
+  /** `pg` connection failures arrive grouped here. */
   errors?: Array<{ code?: unknown; message?: string }>;
 }
 
-const PATHS_REDACT = [
+/**
+ * `redact` denylist. This is the SECOND net, not the main defence: the first
+ * one is the allowlist in `formatters.log`.
+ *
+ * Wildcards are kept to a minimum on purpose: without them the cost is ~2% over
+ * `JSON.stringify`; with them it rises to around 50%.
+ *
+ * Paths are compiled inside a VM context, so they must NEVER come from user
+ * input or from editable configuration.
+ */
+const REDACT_PATHS = [
   'req.headers.authorization',
   'req.headers.cookie',
   'req.headers["x-api-key"]',
@@ -67,20 +71,19 @@ const PATHS_REDACT = [
   'accessToken',
   'refreshToken',
   'secret',
-  'clave',
   'cedula',
   'ruc',
-  'nombres',
-  'apellidos',
-  'diagnostico',
-  'paciente',
+  'firstName',
+  'lastName',
+  'diagnosis',
+  'patient',
   'body',
   'req.body',
 ];
 
 export const loggerConfig: Params = {
   pinoHttp: {
-    level: process.env.LOG_LEVEL ?? (esProduccion ? 'info' : 'debug'),
+    level: process.env.LOG_LEVEL ?? (isProduction ? 'info' : 'debug'),
 
     base: {
       service: 'clinica-api',
@@ -89,83 +92,83 @@ export const loggerConfig: Params = {
     },
 
     /**
-     * Un solo identificador para buscar en todas partes. Cuando haya
-     * OpenTelemetry, aquí se reutilizará el `trace_id` de la traza activa para
-     * no tener dos identificadores distintos del mismo suceso.
+     * One identifier to search everywhere. Once OpenTelemetry is wired in, this
+     * will reuse the active trace's `trace_id` so a single event does not end
+     * up with two different identifiers.
      */
     genReqId(
       req: { headers: Record<string, unknown> },
-      res: { setHeader: (nombre: string, valor: string) => unknown },
+      res: { setHeader: (name: string, value: string) => unknown },
     ): string {
-      const entrante = req.headers['x-request-id'];
-      // Validar SIEMPRE la cabecera entrante: sin esto hay log-forging, un
-      // cliente podría inyectar saltos de línea y falsear entradas del log.
-      const valido =
-        typeof entrante === 'string' &&
-        entrante.length <= 128 &&
-        /^[A-Za-z0-9._-]+$/.test(entrante);
+      const incoming = req.headers['x-request-id'];
+      // ALWAYS validate the incoming header: without this there is log forging,
+      // a client could inject newlines and fabricate log entries.
+      const valid =
+        typeof incoming === 'string' &&
+        incoming.length <= 128 &&
+        /^[A-Za-z0-9._-]+$/.test(incoming);
 
-      const id = valido ? entrante : randomUUID();
+      const id = valid ? incoming : randomUUID();
       res.setHeader('X-Request-Id', id);
       return id;
     },
 
-    /** CAPA 1 — serializadores de allowlist: se construye lo que se loguea. */
+    /** LAYER 1 — allowlist serializers: what gets logged is built explicitly. */
     serializers: {
-      req(req: PeticionCruda) {
+      req(req: RawRequest) {
         const headers: Record<string, unknown> = {};
-        for (const h of CABECERAS_PERMITIDAS) {
-          const valor = req.headers?.[h];
-          if (valor !== undefined) headers[h] = valor;
+        for (const h of ALLOWED_HEADERS) {
+          const value = req.headers?.[h];
+          if (value !== undefined) headers[h] = value;
         }
         return {
           id: req.id,
           method: req.method,
-          url: sanearUrl(req.url), // sin query string
+          url: sanitizeUrl(req.url), // no query string
           route: req.route?.path,
           headers,
-          // La IP se OMITE: es dato personal bajo LOPDP. Cuando se necesite para
-          // investigar accesos indebidos, va a la tabla de auditoría —donde está
-          // declarada en el registro de actividades— no a los logs generales.
+          // The IP is OMITTED: it is personal data under LOPDP. When it is
+          // needed to investigate improper access it goes to the audit table —
+          // where it is declared in the processing register — not to general logs.
         };
       },
-      // pino-http envuelve la respuesta: según el momento del ciclo, el código
-      // real está en `res.raw`. Sin este fallback se registra `statusCode: null`
-      // en todas las peticiones, que es peor que no tener log de acceso porque
-      // parece correcto.
-      res: (res: RespuestaCruda) => ({
+      // pino-http wraps the response: depending on the lifecycle stage the real
+      // status lives in `res.raw`. Without this fallback every request logs
+      // `statusCode: null`, which is worse than no access log because it looks
+      // correct.
+      res: (res: RawResponse) => ({
         statusCode: res.statusCode ?? res.raw?.statusCode ?? null,
       }),
-      err: (err: ErrorCrudo) => {
-        // `pg` agrupa los fallos de conexión en `errors[]` y deja vacíos el
-        // mensaje y el código de arriba. Sin este rescate, el log solo dice
-        // `type: "Object", message: ""` y no sirve para diagnosticar nada.
-        const agrupado = err?.errors?.[0];
+      err: (err: RawError) => {
+        // `pg` groups connection failures under `errors[]` and leaves the top
+        // level message and code empty. Without this rescue the log only says
+        // `type: "Object", message: ""` and is useless for diagnosis.
+        const grouped = err?.errors?.[0];
         return {
           type: err?.name ?? err?.constructor?.name ?? 'Error',
-          // Los errores de Prisma y pg incluyen la fila que causó el conflicto.
-          message: sanearMensajeError(err?.message || agrupado?.message),
-          code: err?.code ?? agrupado?.code,
-          stack: esProduccion ? undefined : err?.stack,
-          // err.query, err.parameters y err.detail NUNCA se serializan.
+          // Prisma and pg errors embed the row that caused the conflict.
+          message: sanitizeErrorMessage(err?.message || grouped?.message),
+          code: err?.code ?? grouped?.code,
+          stack: isProduction ? undefined : err?.stack,
+          // err.query, err.parameters and err.detail are NEVER serialized.
         };
       },
     },
 
-    /** CAPA 2 — denylist como red de seguridad. */
+    /** LAYER 2 — denylist as a safety net. */
     redact: {
-      paths: PATHS_REDACT,
-      censor: '[PHI_REDACTADO]',
-      // Se deja el marcador en vez de borrar la clave: la ausencia visible es
-      // auditable, un campo que simplemente no está no dice nada.
+      paths: REDACT_PATHS,
+      censor: '[PHI_REDACTED]',
+      // The marker is kept instead of removing the key: a visible absence is
+      // auditable, a field that is simply missing says nothing.
       remove: false,
     },
 
-    /** CAPA 3 — poda de allowlist sobre el objeto ya combinado. Falla cerrado. */
+    /** LAYER 3 — allowlist pruning over the merged object. Fails closed. */
     formatters: {
       level: (label: string) => ({ level: label }),
-      log: (objeto: Record<string, unknown>) =>
-        podarAllowlist(objeto) as Record<string, unknown>,
+      log: (object: Record<string, unknown>) =>
+        pruneToAllowlist(object) as Record<string, unknown>,
     },
 
     autoLogging: {
@@ -177,7 +180,7 @@ export const loggerConfig: Params = {
 
     quietReqLogger: true,
 
-    transport: esProduccion
+    transport: isProduction
       ? undefined
       : { target: 'pino-pretty', options: { colorize: true } },
   },

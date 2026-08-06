@@ -1,61 +1,61 @@
 /**
  * RFC 9457 — Problem Details for HTTP APIs.
- * Proposed Standard, julio 2023. Obsoleta al RFC 7807.
+ * Proposed Standard, July 2023. Obsoletes RFC 7807.
  *
- * Se sirve con `Content-Type: application/problem+json`.
+ * Served with `Content-Type: application/problem+json`.
  */
 
-/** Miembros estándar del RFC 9457 §3.1. */
+/** Standard members from RFC 9457 section 3.1. */
 export interface ProblemDetailsBase {
   /**
-   * URI que identifica el TIPO de problema.
-   * El §3.1.1 aclara que NO tiene por qué ser dereferenciable: no hace falta
-   * servir documentación en esa URL para que el contrato sea válido.
+   * URI identifying the problem TYPE.
+   * Section 3.1.1 clarifies it does NOT need to be dereferenceable: no
+   * documentation has to be served at that URL for the contract to be valid.
    */
   type: string;
-  /** Resumen legible del tipo de problema. Se traduce. */
+  /** Human readable summary of the problem type. Translated. */
   title: string;
   status: number;
-  /** Explicación de ESTA ocurrencia. Se traduce. NUNCA lleva datos de salud. */
+  /** Explanation of THIS occurrence. Translated. NEVER carries health data. */
   detail?: string;
-  /** URI de la ocurrencia concreta. Sin query string: puede llevar la cédula. */
+  /** URI of the specific occurrence. No query string: it may carry a cedula. */
   instance?: string;
 }
 
 /**
- * Extensiones propias. El §3.2 obliga a los clientes a ignorar los miembros
- * que no reconozcan, así que añadirlas es conforme al estándar.
+ * Custom extensions. Section 3.2 requires clients to ignore members they do
+ * not recognise, so adding these is standard compliant.
  */
 export interface ProblemDetails extends ProblemDetailsBase {
   /**
-   * Código de negocio ESTABLE, en inglés y mayúsculas.
-   * Es el contrato de máquina: los clientes hacen `switch` sobre él y los
-   * integradores lo usan en sus alertas. Nunca se traduce ni se renombra.
+   * STABLE business code, English and uppercase.
+   * This is the machine contract: clients switch on it and integrators use it
+   * in their alerts. Never translated, never renamed.
    */
   code: string;
-  /** Trace ID de OpenTelemetry: el usuario reporta el ID y encuentras la traza. */
+  /** OpenTelemetry trace id: the user reports the id and you find the trace. */
   traceId?: string;
   timestamp: string;
-  /** Errores por campo, para formularios. */
+  /** Per-field errors, for forms. */
   errors?: FieldError[];
   /**
-   * Nombres de las dependencias caídas en un fallo de readiness (503).
-   * Solo nombres (`base_de_datos`), nunca el mensaje del error: ese puede
-   * arrastrar la cadena de conexión con credenciales.
+   * Names of the failing dependencies on a readiness failure (503).
+   * Names only (`database`), never the error message: that one can carry the
+   * connection string with credentials.
    */
-  dependenciasCaidas?: string[];
+  failedDependencies?: string[];
 }
 
 export interface FieldError {
-  /** Ruta del campo con notación de puntos: `paciente.cedula`. */
+  /** Field path in dot notation: `patient.cedula`. */
   field: string;
-  /** Código estable, no traducido. */
+  /** Stable code, not translated. */
   code: string;
-  /** Mensaje traducido para mostrar al usuario. */
+  /** Translated message shown to the user. */
   message: string;
   /**
-   * Valor rechazado. Se OMITE cuando el campo puede contener datos personales:
-   * devolver la cédula rechazada en el cuerpo del error es una fuga.
+   * Rejected value. OMITTED when the field may contain personal data:
+   * returning the rejected cedula in the response body is a leak.
    */
   rejectedValue?: unknown;
 }

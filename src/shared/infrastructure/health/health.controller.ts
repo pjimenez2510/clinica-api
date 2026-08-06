@@ -1,22 +1,22 @@
 import { Controller, Get } from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   HealthCheck,
   HealthCheckService,
   type HealthIndicatorResult,
   MemoryHealthIndicator,
 } from '@nestjs/terminus';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import { PinoLogger } from 'nestjs-pino';
 
 import { PrismaService } from '../prisma/prisma.service';
 
-@ApiTags('salud')
+@ApiTags('health')
 @Controller({ path: 'health', version: '1' })
 export class HealthController {
   constructor(
     private readonly health: HealthCheckService,
-    private readonly memoria: MemoryHealthIndicator,
+    private readonly memory: MemoryHealthIndicator,
     private readonly prisma: PrismaService,
     private readonly logger: PinoLogger,
   ) {
@@ -24,48 +24,47 @@ export class HealthController {
   }
 
   /**
-   * Sondeo de preparación (readiness): comprueba también las dependencias.
+   * Readiness probe: also checks dependencies.
    *
-   * Se exceptúa del rate limiting a propósito: el orquestador sondea con mucha
-   * frecuencia y un 429 lo interpretaría como servicio caído.
+   * Exempt from rate limiting on purpose: the orchestrator probes often and a
+   * 429 would be read as the service being down.
    *
-   * OJO: hay que nombrar cada throttler explícitamente. `@SkipThrottle()` sin
-   * argumentos solo exceptúa el throttler llamado `default`, y aquí todos
-   * tienen nombre — el resultado sería que el sondeo se sigue limitando sin
-   * que nada avise.
+   * NOTE: every throttler must be named explicitly. A bare `@SkipThrottle()`
+   * only exempts the throttler called `default`, and all of ours are named —
+   * the probe would keep being rate limited with nothing warning about it.
    */
   @Get()
-  @SkipThrottle({ corta: true, media: true, larga: true })
+  @SkipThrottle({ short: true, medium: true, long: true })
   @HealthCheck()
-  @ApiOperation({ summary: 'Estado del servicio y sus dependencias' })
-  comprobar() {
+  @ApiOperation({ summary: 'Service and dependency status' })
+  check() {
     return this.health.check([
-      (): Promise<HealthIndicatorResult> => this.comprobarBaseDeDatos(),
-      () => this.memoria.checkHeap('memoria_heap', 512 * 1024 * 1024),
+      (): Promise<HealthIndicatorResult> => this.checkDatabase(),
+      () => this.memory.checkHeap('memory_heap', 512 * 1024 * 1024),
     ]);
   }
 
-  private async comprobarBaseDeDatos(): Promise<HealthIndicatorResult> {
+  private async checkDatabase(): Promise<HealthIndicatorResult> {
     try {
       await this.prisma.ping();
-      return { base_de_datos: { status: 'up' } };
+      return { database: { status: 'up' } };
     } catch (error) {
       /**
-       * Dos destinos distintos para la misma causa, a propósito:
+       * Two different destinations for the same cause, on purpose:
        *
-       *  - Al LOG va el motivo saneado, para poder diagnosticar. Sin esto el
-       *    endpoint solo dice "down" y no hay forma de saber si es la red, las
-       *    credenciales o que el motor no arrancó.
-       *  - A la RESPUESTA no va nada. El mensaje puede arrastrar la cadena de
-       *    conexión con usuario y contraseña, y este endpoint suele quedar
-       *    accesible desde fuera.
+       *  - The LOG gets the sanitized reason, so it can be diagnosed. Without
+       *    it the endpoint only says "down" and there is no way to tell
+       *    network from credentials from an engine that never started.
+       *  - The RESPONSE gets nothing. The message can drag the connection
+       *    string with username and password, and this endpoint is usually
+       *    reachable from outside.
        */
-      const causa = error instanceof Error ? error : new Error('desconocida');
+      const cause = error instanceof Error ? error : new Error('unknown');
       this.logger.error(
-        { err: causa, dependencia: 'postgresql' },
-        'comprobacion de dependencia fallida',
+        { err: cause, dependency: 'postgresql' },
+        'dependency check failed',
       );
-      return { base_de_datos: { status: 'down' } };
+      return { database: { status: 'down' } };
     }
   }
 }

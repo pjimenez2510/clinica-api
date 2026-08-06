@@ -1,29 +1,29 @@
 /**
- * Protección de datos personales y de salud en los logs.
+ * Protection of personal and health data in logs.
  *
- * ESTRATEGIA: lista de permitidos (allowlist), no de bloqueados.
+ * STRATEGY: allowlist, not denylist.
  *
- * Una denylist es una carrera que se pierde por defecto: solo protege lo que
- * alguien recordó enumerar en el pasado, y cada sprint añade campos nuevos a
- * las entidades de paciente. Los modos de fallo son asimétricos:
+ * A denylist is a race you lose by default: it only protects what somebody
+ * remembered to enumerate in the past, and every sprint adds new fields to
+ * patient entities. The failure modes are asymmetric:
  *
- *   - Allowlist mal puesta  → un log menos informativo, detectado al depurar.
- *   - Denylist mal puesta   → PHI en disco, replicado a backups y retenido
- *                             según la política de conservación. Irreversible
- *                             y notificable a la SPDP.
+ *   - Wrong allowlist -> a less informative log, noticed while debugging.
+ *   - Wrong denylist  -> PHI on disk, replicated to backups and retained for
+ *                        the whole retention period. Irreversible and
+ *                        reportable to the data protection authority.
  *
- * Además, la LOPDP no dice "quita lo sensible", dice "trata solo lo necesario".
- * Una allowlist es la implementación literal de ese principio.
+ * Ecuador's LOPDP does not say "strip the sensitive parts", it says "process
+ * only what is necessary". An allowlist is the literal implementation of that.
  */
 
 /**
- * Claves que SÍ pueden aparecer en un log.
+ * Keys that MAY appear in a log.
  *
- * Añadir una entrada aquí requiere revisión explícita en el pull request.
- * Nada que identifique a un paciente: ni cédula, ni nombres, ni diagnóstico.
+ * Adding an entry here requires explicit review in the pull request. Nothing
+ * that identifies a patient: no cedula, no names, no diagnosis.
  */
-export const CLAVES_PERMITIDAS: ReadonlySet<string> = new Set([
-  // Envoltorio de pino
+export const ALLOWED_KEYS: ReadonlySet<string> = new Set([
+  // Pino envelope
   'level',
   'time',
   'pid',
@@ -31,13 +31,13 @@ export const CLAVES_PERMITIDAS: ReadonlySet<string> = new Set([
   'msg',
   'name',
 
-  // Correlación
+  // Correlation
   'trace_id',
   'span_id',
   'req_id',
   'reqId',
 
-  // Serializadores y sus campos
+  // Serializers and their fields
   'req',
   'res',
   'err',
@@ -48,24 +48,24 @@ export const CLAVES_PERMITIDAS: ReadonlySet<string> = new Set([
   'route',
   'statusCode',
 
-  // Negocio: identificadores INTERNOS, nunca identificadores nacionales
-  'sede_id',
-  'usuario_id',
-  'rol',
-  'modulo',
-  'paciente_id',
-  'atencion_id',
-  'orden_id',
-  'comprobante_id',
+  // Business: INTERNAL identifiers, never national ones
+  'site_id',
+  'user_id',
+  'role',
+  'module',
+  'patient_id',
+  'encounter_id',
+  'order_id',
+  'invoice_id',
 
-  // Dominio clínico desidentificado
-  'especialidad_codigo',
-  'tipo_documento',
-  'estado',
-  'accion',
-  'resultado',
+  // De-identified clinical context
+  'specialty_code',
+  'document_type',
+  'state',
+  'action',
+  'result',
 
-  // Métricas técnicas
+  // Technical metrics
   'duration_ms',
   'count',
   'total',
@@ -74,75 +74,75 @@ export const CLAVES_PERMITIDAS: ReadonlySet<string> = new Set([
   'retries',
   'cache_hit',
 
-  // Errores
+  // Errors
   'type',
   'message',
   'code',
   'stack',
   'error_code',
   'status',
+  'dependency',
 
-  // Contexto
+  // Context
   'context',
   'service',
   'version',
   'env',
 
-  // Operación (arranque, configuración): nunca contienen datos de paciente.
-  'puerto',
+  // Operational (startup, configuration): never contain patient data
+  'port',
   'docs',
-  'ambiente_sri',
+  'sri_environment',
 ]);
 
-const PROFUNDIDAD_MAX = 6;
-const ELEMENTOS_ARRAY_MAX = 20;
+const MAX_DEPTH = 6;
+const MAX_ARRAY_ITEMS = 20;
 
 /**
- * Poda un objeto dejando solo las claves permitidas.
+ * Prunes an object down to the allowed keys.
  *
- * La ausencia de un `else` al final del bucle ES la política: lo no declarado
- * se descarta en silencio.
+ * The missing `else` at the end of the loop IS the policy: anything not
+ * declared is dropped silently.
  */
-export function podarAllowlist(valor: unknown, profundidad = 0): unknown {
-  if (valor === null || valor === undefined) return valor;
-  if (profundidad > PROFUNDIDAD_MAX) return '[PROFUNDIDAD_MAX]';
+export function pruneToAllowlist(value: unknown, depth = 0): unknown {
+  if (value === null || value === undefined) return value;
+  if (depth > MAX_DEPTH) return '[MAX_DEPTH]';
 
-  const tipo = typeof valor;
-  if (tipo === 'string' || tipo === 'number' || tipo === 'boolean')
-    return valor;
-  if (valor instanceof Date) return valor.toISOString();
+  const type = typeof value;
+  if (type === 'string' || type === 'number' || type === 'boolean')
+    return value;
+  if (value instanceof Date) return value.toISOString();
 
-  if (Array.isArray(valor)) {
-    const recortado: unknown[] = valor
-      .slice(0, ELEMENTOS_ARRAY_MAX)
-      .map((v) => podarAllowlist(v, profundidad + 1));
-    if (valor.length > ELEMENTOS_ARRAY_MAX) {
-      recortado.push(
-        `[+${valor.length - ELEMENTOS_ARRAY_MAX} elementos omitidos]`,
-      );
+  if (Array.isArray(value)) {
+    const trimmed: unknown[] = value
+      .slice(0, MAX_ARRAY_ITEMS)
+      .map((v) => pruneToAllowlist(v, depth + 1));
+    if (value.length > MAX_ARRAY_ITEMS) {
+      trimmed.push(`[+${value.length - MAX_ARRAY_ITEMS} items omitted]`);
     }
-    return recortado;
+    return trimmed;
   }
 
-  if (tipo === 'object') {
-    const salida: Record<string, unknown> = {};
-    for (const [clave, v] of Object.entries(valor as Record<string, unknown>)) {
-      if (CLAVES_PERMITIDAS.has(clave)) {
-        salida[clave] = podarAllowlist(v, profundidad + 1);
+  if (type === 'object') {
+    const output: Record<string, unknown> = {};
+    for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+      if (ALLOWED_KEYS.has(key)) {
+        output[key] = pruneToAllowlist(v, depth + 1);
       }
-      // Sin `else`: lo no permitido se descarta. Esto es la política.
+      // No `else`: anything not allowed is dropped. This is the policy.
     }
-    return salida;
+    return output;
   }
 
   return undefined;
 }
 
 /**
- * Quita la query string de una URL y normaliza los identificadores numéricos.
- * En un sistema clínico la query suele llevar cédula o número de historia.
+ * Strips the query string from a URL and normalises numeric identifiers.
+ * In a clinical system the query string usually carries a cedula or a medical
+ * record number.
  */
-export function sanearUrl(url?: string): string {
+export function sanitizeUrl(url?: string): string {
   if (!url) return '';
   const i = url.indexOf('?');
   const base = i === -1 ? url : url.slice(0, i);
@@ -150,39 +150,38 @@ export function sanearUrl(url?: string): string {
 }
 
 /**
- * EL ORDEN IMPORTA: de más específico a más genérico.
+ * ORDER MATTERS: most specific first.
  *
- * Un celular ecuatoriano (09 + 8 dígitos) tiene exactamente 10 dígitos, igual
- * que una cédula. Si el patrón genérico de 10 dígitos va primero, se traga
- * todos los teléfonos y los etiqueta mal.
+ * An Ecuadorian mobile number (09 + 8 digits) is exactly 10 digits long, same
+ * as a cedula. If the generic 10-digit pattern runs first it swallows every
+ * phone number and mislabels it.
  *
- * (Ambos quedan enmascarados igualmente, así que la etiqueta es cosmética —
- * pero un log que miente sobre qué tipo de dato ocultó estorba al investigar
- * un incidente.)
+ * (Both end up masked either way, so the label is cosmetic — but a log that
+ * lies about which kind of data it hid gets in the way during an incident.)
  */
-const PATRONES_PII: ReadonlyArray<readonly [RegExp, string]> = [
+const PII_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, '[EMAIL]'],
-  [/\b\d{13}\b/g, '[RUC]'], // 13 dígitos, antes que cédula y teléfono
-  [/\b09\d{8}\b/g, '[TELEFONO]'], // 10 dígitos con prefijo fijo
-  [/\b\d{10}\b/g, '[CEDULA]'], // 10 dígitos, el más genérico: va al final
+  [/\b\d{13}\b/g, '[RUC]'], // 13 digits, before cedula and phone
+  [/\b09\d{8}\b/g, '[PHONE]'], // 10 digits with a fixed prefix
+  [/\b\d{10}\b/g, '[CEDULA]'], // 10 digits, the most generic: goes last
 ];
 
 /**
- * Limpia el mensaje de un error.
+ * Cleans an error message.
  *
- * Los errores de PostgreSQL y de Prisma incluyen con frecuencia la fila que
- * causó el conflicto — con nombre y cédula del paciente dentro.
+ * PostgreSQL and Prisma errors often embed the row that caused the conflict —
+ * with the patient's name and cedula inside.
  */
-export function sanearMensajeError(mensaje?: string): string {
-  if (!mensaje) return '';
-  let limpio = mensaje;
-  for (const [patron, reemplazo] of PATRONES_PII) {
-    limpio = limpio.replace(patron, reemplazo);
+export function sanitizeErrorMessage(message?: string): string {
+  if (!message) return '';
+  let cleaned = message;
+  for (const [pattern, replacement] of PII_PATTERNS) {
+    cleaned = cleaned.replace(pattern, replacement);
   }
-  // El detalle de una violación de constraint de pg: `Key (cedula)=(1712345678)`
-  limpio = limpio.replace(
+  // Detail of a pg constraint violation: `Key (cedula)=(1712345678)`
+  cleaned = cleaned.replace(
     /\((?:[^()]{0,200})\)\s*=\s*\((?:[^()]{0,200})\)/g,
     '(...)=(...)',
   );
-  return limpio.slice(0, 500);
+  return cleaned.slice(0, 500);
 }

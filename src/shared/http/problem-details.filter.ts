@@ -28,18 +28,18 @@ import {
 const BASE_TYPE = 'https://api.clinica.ec/problems';
 
 /**
- * Traduce cualquier excepción a una respuesta RFC 9457.
+ * Translates any exception into an RFC 9457 response.
  *
- * Es el ÚNICO sitio del sistema que conoce códigos HTTP. El dominio lanza
- * `DomainError` sin saber qué es un 404; gracias a eso las mismas reglas de
- * negocio se reutilizan desde un worker de cola, donde "404" no significa nada.
+ * This is the ONLY place in the system that knows about HTTP status codes. The
+ * domain throws `DomainError` without knowing what a 404 is, which is what lets
+ * the same business rules run from a queue worker where "404" means nothing.
  *
- * Se registra con APP_FILTER (no con `useGlobalFilters`) para que pueda recibir
- * dependencias por inyección.
+ * Registered through APP_FILTER (not `useGlobalFilters`) so it can receive
+ * dependencies by injection.
  */
 @Catch()
 export class ProblemDetailsFilter implements ExceptionFilter {
-  private readonly esProduccion = process.env.NODE_ENV === 'production';
+  private readonly isProduction = process.env.NODE_ENV === 'production';
 
   constructor(
     private readonly adapterHost: HttpAdapterHost,
@@ -54,150 +54,147 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     const req = ctx.getRequest<Request>();
     const res = ctx.getResponse<Response>();
 
-    // Sin query string: puede llevar cédula o número de historia clínica.
+    // No query string: it may carry a cedula or a medical record number.
     const instance = String(httpAdapter.getRequestUrl(req) ?? '').split('?')[0];
-    const problema = this.aProblemDetails(exception, instance);
+    const problem = this.toProblemDetails(exception, instance);
 
     /**
-     * EL MENSAJE ESTÁTICO ES OBLIGATORIO, no es estilo.
+     * THE STATIC MESSAGE IS MANDATORY, not a style choice.
      *
-     * Si a pino le pasas un objeto con `err` y NO le das mensaje, usa
-     * `err.message` como `msg`. Y `msg` es un string: los serializadores no lo
-     * tocan. El 404 de Nest lleva la URL completa —con query string— en su
-     * mensaje, así que sin esto se filtraría la cédula que venga en la URL.
+     * If you hand pino an object with `err` and no message, it uses
+     * `err.message` as `msg`. And `msg` is a string: serializers never touch
+     * it. Nest's 404 carries the full URL — query string included — in its
+     * message, so without this the cedula in the URL would leak.
      */
-    const nivel = problema.status >= 500 ? 'error' : 'warn';
-    this.logger[nivel](
-      { err: exception, error_code: problema.code, status: problema.status },
-      'peticion fallida',
+    const level = problem.status >= 500 ? 'error' : 'warn';
+    this.logger[level](
+      { err: exception, error_code: problem.code, status: problem.status },
+      'request failed',
     );
 
     httpAdapter.setHeader?.(res, 'Content-Type', PROBLEM_CONTENT_TYPE);
-    httpAdapter.reply(res, problema, problema.status);
+    httpAdapter.reply(res, problem, problem.status);
   }
 
-  private aProblemDetails(
+  private toProblemDetails(
     exception: unknown,
     instance: string,
   ): ProblemDetails {
     const base = { instance, timestamp: new Date().toISOString() };
 
     if (exception instanceof DomainError) {
-      const { status, slug } = this.mapear(exception);
+      const { status, slug } = this.mapDomainError(exception);
       return {
         ...base,
         type: `${BASE_TYPE}/${slug}`,
         title: exception.code,
         status,
-        // El mensaje técnico solo se expone fuera de producción: puede arrastrar
-        // detalles de la fila de PostgreSQL que lo originó.
-        detail: this.esProduccion ? undefined : exception.message,
+        // The technical message is only exposed outside production: it can drag
+        // along details of the PostgreSQL row that caused it.
+        detail: this.isProduction ? undefined : exception.message,
         code: exception.code,
       };
     }
 
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
-      const caidas = this.dependenciasCaidas(exception);
+      const failed = this.failedDependencies(exception);
       return {
         ...base,
         type: `${BASE_TYPE}/http-${status}`,
         title: exception.name,
         status,
-        detail: this.esProduccion ? undefined : exception.message,
-        code: this.codigoHttp(status),
-        // Solo los nombres de las dependencias caídas. Es lo que necesita quien
-        // depura y no revela nada sensible.
-        ...(caidas ? { dependenciasCaidas: caidas } : {}),
+        detail: this.isProduction ? undefined : exception.message,
+        code: this.httpErrorCode(status),
+        // Only the names of the failing dependencies. That is what whoever
+        // debugs needs and it reveals nothing sensitive.
+        ...(failed ? { failedDependencies: failed } : {}),
       };
     }
 
-    // Excepción no controlada: nunca se filtra su mensaje. `err.message` de
-    // Prisma o de pg puede contener una fila entera con datos del paciente.
+    // Unhandled exception: its message is never leaked. `err.message` from
+    // Prisma or pg can contain a whole row with patient data.
     return {
       ...base,
-      type: `${BASE_TYPE}/error-interno`,
+      type: `${BASE_TYPE}/internal-error`,
       title: 'Error interno del servidor',
       status: HttpStatus.INTERNAL_SERVER_ERROR,
-      code: 'ERROR_INTERNO',
+      code: 'INTERNAL_ERROR',
     };
   }
 
   /**
-   * Mapea por CATEGORÍA de error, no por un registro código a código.
+   * Maps by error CATEGORY, not by a code-to-code registry.
    *
-   * Un diccionario con una entrada por cada código sería ceremonia: habría que
-   * mantenerlo a mano y olvidarse de una entrada daría un 500 silencioso. Con
-   * categorías, un error nuevo hereda el estado correcto por construcción.
+   * A dictionary with one entry per code would be ceremony: it must be kept by
+   * hand and forgetting one entry yields a silent 500. With categories, a new
+   * error inherits the right status by construction.
    */
-  private mapear(e: DomainError): { status: HttpStatus; slug: string } {
+  private mapDomainError(e: DomainError): { status: HttpStatus; slug: string } {
     if (e instanceof ValidationError)
-      return { status: HttpStatus.UNPROCESSABLE_ENTITY, slug: 'validacion' };
+      return { status: HttpStatus.UNPROCESSABLE_ENTITY, slug: 'validation' };
     if (e instanceof NotFoundError)
-      return { status: HttpStatus.NOT_FOUND, slug: 'no-encontrado' };
+      return { status: HttpStatus.NOT_FOUND, slug: 'not-found' };
     if (e instanceof ConflictError)
-      return { status: HttpStatus.CONFLICT, slug: 'conflicto' };
+      return { status: HttpStatus.CONFLICT, slug: 'conflict' };
     if (e instanceof BusinessRuleViolation)
-      return {
-        status: HttpStatus.UNPROCESSABLE_ENTITY,
-        slug: 'regla-de-negocio',
-      };
+      return { status: HttpStatus.UNPROCESSABLE_ENTITY, slug: 'business-rule' };
     if (e instanceof UnauthorizedError)
-      return { status: HttpStatus.UNAUTHORIZED, slug: 'no-autenticado' };
+      return { status: HttpStatus.UNAUTHORIZED, slug: 'unauthenticated' };
     if (e instanceof ForbiddenError)
-      return { status: HttpStatus.FORBIDDEN, slug: 'sin-permiso' };
+      return { status: HttpStatus.FORBIDDEN, slug: 'forbidden' };
     if (e instanceof ExternalServiceError) {
-      // Un servicio caído es 503 (reintentable); un rechazo de negocio del SRI
-      // es 502: reintentar no lo va a arreglar.
-      return e.esReintentable
+      // A service that is down is 503 (retryable); a business rejection from
+      // the SRI is 502: retrying will not fix it.
+      return e.isRetryable
         ? {
             status: HttpStatus.SERVICE_UNAVAILABLE,
-            slug: 'servicio-no-disponible',
+            slug: 'service-unavailable',
           }
-        : { status: HttpStatus.BAD_GATEWAY, slug: 'servicio-externo' };
+        : { status: HttpStatus.BAD_GATEWAY, slug: 'external-service' };
     }
-    return { status: HttpStatus.INTERNAL_SERVER_ERROR, slug: 'error-interno' };
+    return { status: HttpStatus.INTERNAL_SERVER_ERROR, slug: 'internal-error' };
   }
 
-  private codigoHttp(status: number): string {
-    const conocidos: Record<number, string> = {
-      400: 'PETICION_INVALIDA',
-      401: 'NO_AUTENTICADO',
-      403: 'SIN_PERMISO',
-      404: 'NO_ENCONTRADO',
-      405: 'METODO_NO_PERMITIDO',
-      409: 'CONFLICTO',
-      413: 'PAYLOAD_DEMASIADO_GRANDE',
-      415: 'TIPO_NO_SOPORTADO',
-      422: 'ENTIDAD_NO_PROCESABLE',
-      429: 'DEMASIADAS_PETICIONES',
-      500: 'ERROR_INTERNO',
-      502: 'SERVICIO_EXTERNO',
-      503: 'SERVICIO_NO_DISPONIBLE',
-      504: 'TIEMPO_AGOTADO',
+  private httpErrorCode(status: number): string {
+    const known: Record<number, string> = {
+      400: 'BAD_REQUEST',
+      401: 'UNAUTHENTICATED',
+      403: 'FORBIDDEN',
+      404: 'NOT_FOUND',
+      405: 'METHOD_NOT_ALLOWED',
+      409: 'CONFLICT',
+      413: 'PAYLOAD_TOO_LARGE',
+      415: 'UNSUPPORTED_MEDIA_TYPE',
+      422: 'UNPROCESSABLE_ENTITY',
+      429: 'TOO_MANY_REQUESTS',
+      500: 'INTERNAL_ERROR',
+      502: 'EXTERNAL_SERVICE',
+      503: 'SERVICE_UNAVAILABLE',
+      504: 'GATEWAY_TIMEOUT',
     };
-    return conocidos[status] ?? 'ERROR_HTTP';
+    return known[status] ?? 'HTTP_ERROR';
   }
 
   /**
-   * Extrae los nombres de las dependencias caídas de la respuesta de Terminus.
+   * Extracts the names of the failing dependencies from Terminus's response.
    *
-   * Terminus lanza `ServiceUnavailableException` con `{ status, info, error,
-   * details }` dentro. Sin esto, el filtro reemplazaba ese cuerpo por un
-   * genérico y quien depura no sabía si falló la base de datos, la memoria o
-   * el almacenamiento.
+   * Terminus throws `ServiceUnavailableException` carrying
+   * `{ status, info, error, details }`. Without this the filter replaced that
+   * body with a generic one and whoever debugs could not tell whether the
+   * database, memory or storage had failed.
    *
-   * Solo se toman los NOMBRES de los indicadores, nunca sus mensajes: el nombre
-   * (`base_de_datos`) es seguro; el mensaje puede llevar la cadena de conexión.
+   * Only indicator NAMES are taken, never their messages: the name
+   * (`database`) is safe; the message can carry the connection string.
    */
-  private dependenciasCaidas(exception: HttpException): string[] | undefined {
-    const cuerpo: unknown = exception.getResponse();
-    if (typeof cuerpo !== 'object' || cuerpo === null) return undefined;
+  private failedDependencies(exception: HttpException): string[] | undefined {
+    const body: unknown = exception.getResponse();
+    if (typeof body !== 'object' || body === null) return undefined;
 
-    const error = (cuerpo as { error?: unknown }).error;
+    const error = (body as { error?: unknown }).error;
     if (typeof error !== 'object' || error === null) return undefined;
 
-    const nombres = Object.keys(error);
-    return nombres.length > 0 ? nombres : undefined;
+    const names = Object.keys(error);
+    return names.length > 0 ? names : undefined;
   }
 }

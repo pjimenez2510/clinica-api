@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { validarEnv } from './env.schema';
+import { validateEnv } from './env.schema';
 
-/** Configuración mínima válida. Cada test parte de aquí y altera una cosa. */
+/** Minimal valid configuration. Every test starts here and changes one thing. */
 const base = {
   DATABASE_URL: 'postgresql://clinica:pwd@localhost:5432/clinica',
   JWT_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----',
@@ -12,61 +12,60 @@ const base = {
   S3_ACCESS_KEY: 'k',
   S3_SECRET_KEY: 's',
   SMTP_HOST: 'localhost',
-  SMTP_FROM: 'no-responder@clinica.local',
+  SMTP_FROM: 'no-reply@clinica.local',
 };
 
-describe('validarEnv', () => {
-  it('acepta la configuración mínima y aplica los valores por defecto', () => {
-    const env = validarEnv(base);
+describe('validateEnv', () => {
+  it('accepts the minimal configuration and applies defaults', () => {
+    const env = validateEnv(base);
 
     expect(env.NODE_ENV).toBe('development');
     expect(env.PORT).toBe(3000);
     expect(env.TZ).toBe('UTC');
-    expect(env.ZONA_HORARIA_DEFECTO).toBe('America/Guayaquil');
+    expect(env.DEFAULT_TIMEZONE).toBe('America/Guayaquil');
   });
 
-  it('emite contra pruebas del SRI por defecto, nunca contra producción', () => {
-    // Que producción exija una decisión explícita es intencional: un valor por
-    // defecto olvidado no puede acabar emitiendo comprobantes reales.
-    expect(validarEnv(base).SRI_AMBIENTE).toBe('1');
+  it('defaults to the SRI testing environment, never production', () => {
+    // Requiring an explicit decision for production is intentional: a
+    // forgotten default must not end up issuing real invoices.
+    expect(validateEnv(base).SRI_ENVIRONMENT).toBe('1');
   });
 
-  it('convierte CORS_ORIGINS en array y descarta entradas vacías', () => {
-    const env = validarEnv({
+  it('turns CORS_ORIGINS into an array and drops empty entries', () => {
+    const env = validateEnv({
       ...base,
       CORS_ORIGINS: 'http://a.com, http://b.com , ',
     });
     expect(env.CORS_ORIGINS).toEqual(['http://a.com', 'http://b.com']);
   });
 
-  it('coacciona PORT de texto a número', () => {
-    expect(validarEnv({ ...base, PORT: '8080' }).PORT).toBe(8080);
+  it('coerces PORT from text to number', () => {
+    expect(validateEnv({ ...base, PORT: '8080' }).PORT).toBe(8080);
   });
 
-  describe('zona horaria', () => {
-    it('acepta las dos zonas reales de Ecuador', () => {
-      for (const zona of ['America/Guayaquil', 'Pacific/Galapagos']) {
+  describe('timezone', () => {
+    it('accepts both real Ecuadorian timezones', () => {
+      for (const tz of ['America/Guayaquil', 'Pacific/Galapagos']) {
         expect(
-          validarEnv({ ...base, ZONA_HORARIA_DEFECTO: zona })
-            .ZONA_HORARIA_DEFECTO,
-        ).toBe(zona);
+          validateEnv({ ...base, DEFAULT_TIMEZONE: tz }).DEFAULT_TIMEZONE,
+        ).toBe(tz);
       }
     });
 
-    it('rechaza America/Galapagos, que no existe en la base IANA', () => {
-      // Es el error clásico. Sin esta validación, revienta con RangeError en
-      // tiempo de ejecución al formatear la primera fecha.
+    it('rejects America/Galapagos, which does not exist in the IANA database', () => {
+      // The classic mistake. Without this validation it blows up with a
+      // RangeError at runtime when formatting the first date.
       expect(() =>
-        validarEnv({ ...base, ZONA_HORARIA_DEFECTO: 'America/Galapagos' }),
-      ).toThrow(/zona horaria IANA inválida/);
+        validateEnv({ ...base, DEFAULT_TIMEZONE: 'America/Galapagos' }),
+      ).toThrow(/invalid IANA timezone/);
     });
   });
 
-  describe('falla rápido y con un mensaje legible', () => {
-    it('nombra cada variable que falta', () => {
+  describe('fails fast with a readable message', () => {
+    it('names every missing variable', () => {
       try {
-        validarEnv({ NODE_ENV: 'production' });
-        expect.unreachable('debió lanzar');
+        validateEnv({ NODE_ENV: 'production' });
+        expect.unreachable('should have thrown');
       } catch (e) {
         const msg = (e as Error).message;
         expect(msg).toContain('DATABASE_URL');
@@ -75,22 +74,22 @@ describe('validarEnv', () => {
       }
     });
 
-    it('rechaza una DATABASE_URL que no sea de postgres', () => {
+    it('rejects a DATABASE_URL that is not postgres', () => {
       expect(() =>
-        validarEnv({ ...base, DATABASE_URL: 'mysql://x/y' }),
+        validateEnv({ ...base, DATABASE_URL: 'mysql://x/y' }),
       ).toThrow();
     });
 
-    it('rechaza una clave de cifrado MFA demasiado corta', () => {
+    it('rejects an MFA encryption key that is too short', () => {
       expect(() =>
-        validarEnv({ ...base, MFA_ENCRYPTION_KEY: 'corta' }),
+        validateEnv({ ...base, MFA_ENCRYPTION_KEY: 'short' }),
       ).toThrow(/MFA_ENCRYPTION_KEY/);
     });
 
-    it('rechaza TZ distinto de UTC', () => {
-      // Permitir otra zona en el servidor haría que las conversiones dependieran
-      // del host, que es la causa raíz de los bugs de fecha más difíciles.
-      expect(() => validarEnv({ ...base, TZ: 'America/Guayaquil' })).toThrow(
+    it('rejects a TZ other than UTC', () => {
+      // Allowing another server timezone would make conversions depend on the
+      // host, the root cause of the hardest date bugs.
+      expect(() => validateEnv({ ...base, TZ: 'America/Guayaquil' })).toThrow(
         /TZ/,
       );
     });

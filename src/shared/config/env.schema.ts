@@ -1,11 +1,11 @@
 import { z } from 'zod';
 
 /**
- * Esquema de las variables de entorno.
+ * Environment variable schema.
  *
- * Se valida al arrancar (fail-fast). Un proceso que levanta con configuración
- * incompleta y falla tres horas después, en la primera factura, es mucho peor
- * que uno que no arranca.
+ * Validated at startup (fail fast). A process that boots with incomplete
+ * configuration and fails three hours later, on the first invoice, is far
+ * worse than one that refuses to start.
  */
 export const envSchema = z.object({
   NODE_ENV: z
@@ -14,27 +14,28 @@ export const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
 
   /**
-   * Siempre UTC. Ninguna conversión de fecha puede depender de la zona horaria
-   * del servidor: las citas se renderizan en la zona de la sede, no en la del host.
+   * Always UTC. No date conversion may depend on the server's timezone:
+   * appointments render in the site's timezone, not the host's.
    */
   TZ: z.literal('UTC').default('UTC'),
 
   DATABASE_URL: z.url().startsWith('postgres'),
 
-  // --- Autenticación ---
+  // --- Authentication ---
   /**
-   * Claves Ed25519 en PEM. EdDSA y no HS256: con clave asimétrica los workers
-   * verifican tokens sin poder emitirlos. Con HMAC, quien verifica puede falsificar.
+   * Ed25519 keys in PEM. EdDSA rather than HS256: with an asymmetric key,
+   * workers verify tokens without being able to issue them. With HMAC, whoever
+   * can verify can forge.
    */
   JWT_PRIVATE_KEY: z.string().min(1),
   JWT_PUBLIC_KEY: z.string().min(1),
   JWT_ACCESS_TTL: z.string().default('15m'),
-  JWT_REFRESH_TTL_DIAS: z.coerce.number().int().positive().default(7),
+  JWT_REFRESH_TTL_DAYS: z.coerce.number().int().positive().default(7),
 
-  /** Cifra los secretos TOTP en reposo (AES-256-GCM → 32 bytes en base64). */
+  /** Encrypts TOTP secrets at rest (AES-256-GCM -> 32 bytes in base64). */
   MFA_ENCRYPTION_KEY: z.string().min(44),
 
-  // --- Infraestructura ---
+  // --- Infrastructure ---
   REDIS_URL: z.url().startsWith('redis').optional(),
 
   S3_ENDPOINT: z.url(),
@@ -47,31 +48,31 @@ export const envSchema = z.object({
   SMTP_PORT: z.coerce.number().int().default(1025),
   SMTP_FROM: z.email(),
 
-  // --- Contexto ecuatoriano ---
+  // --- Ecuadorian context ---
   /**
-   * Ambiente del SRI: 1 = pruebas, 2 = producción.
-   * Se declara explícitamente para que emitir contra producción sea una decisión
-   * consciente y no el resultado de un valor por defecto olvidado.
+   * SRI environment: 1 = testing, 2 = production.
+   * Declared explicitly so that issuing against production is a conscious
+   * decision and never the result of a forgotten default.
    */
-  SRI_AMBIENTE: z.enum(['1', '2']).default('1'),
-  SRI_RUC_EMISOR: z.string().length(13).optional(),
+  SRI_ENVIRONMENT: z.enum(['1', '2']).default('1'),
+  SRI_ISSUER_RUC: z.string().length(13).optional(),
 
-  /** Zona por defecto de la sede. `Pacific/Galapagos` para Galápagos. */
-  ZONA_HORARIA_DEFECTO: z
+  /** Default site timezone. `Pacific/Galapagos` for the Galapagos islands. */
+  DEFAULT_TIMEZONE: z
     .string()
     .default('America/Guayaquil')
-    .refine((z_) => Intl.supportedValuesOf('timeZone').includes(z_), {
+    .refine((tz) => Intl.supportedValuesOf('timeZone').includes(tz), {
       message:
-        'zona horaria IANA inválida (recuerda: es Pacific/Galapagos, no America/Galapagos)',
+        'invalid IANA timezone (remember: it is Pacific/Galapagos, not America/Galapagos)',
     }),
 
-  // --- Observabilidad ---
+  // --- Observability ---
   LOG_LEVEL: z
     .enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal'])
     .default('info'),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
 
-  /** Orígenes permitidos, separados por coma. Nunca '*' con datos de salud. */
+  /** Allowed origins, comma separated. Never '*' with health data. */
   CORS_ORIGINS: z
     .string()
     .default('')
@@ -86,22 +87,22 @@ export const envSchema = z.object({
 export type Env = z.infer<typeof envSchema>;
 
 /**
- * Valida y devuelve la configuración. Lanza con un mensaje legible si falla:
- * `ZodError` en crudo es ilegible a las 3 de la mañana durante un despliegue.
+ * Validates and returns the configuration. Throws with a readable message when
+ * it fails: a raw `ZodError` is unreadable at 3am during a deployment.
  */
-export function validarEnv(raw: Record<string, unknown>): Env {
-  const resultado = envSchema.safeParse(raw);
+export function validateEnv(raw: Record<string, unknown>): Env {
+  const result = envSchema.safeParse(raw);
 
-  if (!resultado.success) {
-    const detalle = resultado.error.issues
-      .map((i) => `  - ${i.path.join('.') || '(raíz)'}: ${i.message}`)
+  if (!result.success) {
+    const detail = result.error.issues
+      .map((i) => `  - ${i.path.join('.') || '(root)'}: ${i.message}`)
       .join('\n');
 
     throw new Error(
-      `Configuración de entorno inválida. El proceso no arranca:\n${detalle}\n\n` +
-        `Revisa tu archivo .env contra .env.example.`,
+      `Invalid environment configuration. The process will not start:\n${detail}\n\n` +
+        `Check your .env file against .env.example.`,
     );
   }
 
-  return resultado.data;
+  return result.data;
 }

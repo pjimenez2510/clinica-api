@@ -1,77 +1,78 @@
 import { ValidationError } from '../errors/domain-error';
 
-export class CedulaInvalidaError extends ValidationError {
-  readonly code = 'CEDULA_INVALIDA';
+export class InvalidCedulaError extends ValidationError {
+  readonly code = 'INVALID_CEDULA';
 
-  constructor(motivo: string) {
-    // El valor rechazado NO se incluye: es un dato personal y este mensaje
-    // termina en logs y en tickets de soporte.
-    super(`Invalid Ecuadorian cédula: ${motivo}`, { motivo });
+  constructor(reason: string) {
+    // The rejected value is NOT included: it is personal data and this message
+    // ends up in logs and support tickets.
+    super(`Invalid Ecuadorian cedula: ${reason}`, { reason });
   }
 }
 
 /**
- * Cédula de identidad ecuatoriana (10 dígitos).
+ * Ecuadorian national ID (cedula de identidad, 10 digits).
  *
- * Es un value object autovalidante: si existe una instancia, el número es
- * válido. Una entidad `Paciente` no puede construirse con una cédula inválida
- * porque el tipo es imposible de crear mal — eso no se consigue llamando a una
- * función de validación desde un DTO.
+ * `Cedula` keeps its Spanish name on purpose: it is a proper noun of the
+ * problem domain with no English equivalent, like IBAN or SSN. Everything
+ * around it is English.
  *
- * Estructura:
- *   - Dígitos 1-2: provincia (01-24, o 30 para extranjeros)
- *   - Dígito 3:    < 6 para persona natural (6 = sector público, 9 = sociedad;
- *                  esos dos solo existen como RUC, no como cédula)
- *   - Dígitos 1-9: base
- *   - Dígito 10:   verificador, algoritmo módulo 10
+ * Self-validating value object: if an instance exists, the number is valid. A
+ * `Patient` entity cannot be built with an invalid cedula because the type is
+ * impossible to construct wrong — something a validation call from a DTO
+ * cannot guarantee.
+ *
+ * Layout:
+ *   - Digits 1-2: province (01-24, or 30 for foreigners)
+ *   - Digit 3:    < 6 for a natural person (6 = public sector, 9 = company;
+ *                 those two only exist as RUC, never as a cedula)
+ *   - Digits 1-9: base
+ *   - Digit 10:   check digit, modulo 10 algorithm
  */
 export class Cedula {
-  /** Coeficientes alternos aplicados a los 9 primeros dígitos. */
-  private static readonly COEFICIENTES = [2, 1, 2, 1, 2, 1, 2, 1, 2] as const;
+  /** Alternating coefficients applied to the first nine digits. */
+  private static readonly COEFFICIENTS = [2, 1, 2, 1, 2, 1, 2, 1, 2] as const;
 
-  private static readonly PROVINCIA_MIN = 1;
-  private static readonly PROVINCIA_MAX = 24;
-  private static readonly PROVINCIA_EXTRANJEROS = 30;
+  private static readonly MIN_PROVINCE = 1;
+  private static readonly MAX_PROVINCE = 24;
+  private static readonly FOREIGNERS_PROVINCE = 30;
 
-  private constructor(private readonly valor: string) {}
+  private constructor(private readonly value: string) {}
 
-  static crear(entrada: string): Cedula {
-    const limpia = (entrada ?? '').trim();
+  static create(input: string): Cedula {
+    const cleaned = (input ?? '').trim();
 
-    if (!/^\d{10}$/.test(limpia)) {
-      throw new CedulaInvalidaError(
-        'debe tener exactamente 10 dígitos numéricos',
+    if (!/^\d{10}$/.test(cleaned)) {
+      throw new InvalidCedulaError('must be exactly 10 numeric digits');
+    }
+
+    const province = Number.parseInt(cleaned.slice(0, 2), 10);
+    const validProvince =
+      (province >= Cedula.MIN_PROVINCE && province <= Cedula.MAX_PROVINCE) ||
+      province === Cedula.FOREIGNERS_PROVINCE;
+
+    if (!validProvince) {
+      throw new InvalidCedulaError('province code does not exist');
+    }
+
+    const thirdDigit = Number.parseInt(cleaned[2], 10);
+    if (thirdDigit >= 6) {
+      throw new InvalidCedulaError(
+        'third digit must be below 6 for a natural person cedula',
       );
     }
 
-    const provincia = Number.parseInt(limpia.slice(0, 2), 10);
-    const provinciaValida =
-      (provincia >= Cedula.PROVINCIA_MIN &&
-        provincia <= Cedula.PROVINCIA_MAX) ||
-      provincia === Cedula.PROVINCIA_EXTRANJEROS;
-
-    if (!provinciaValida) {
-      throw new CedulaInvalidaError('el código de provincia no existe');
+    if (Cedula.checkDigit(cleaned) !== Number.parseInt(cleaned[9], 10)) {
+      throw new InvalidCedulaError('check digit does not match');
     }
 
-    const tercerDigito = Number.parseInt(limpia[2], 10);
-    if (tercerDigito >= 6) {
-      throw new CedulaInvalidaError(
-        'el tercer dígito debe ser menor que 6 en una cédula de persona natural',
-      );
-    }
-
-    if (Cedula.digitoVerificador(limpia) !== Number.parseInt(limpia[9], 10)) {
-      throw new CedulaInvalidaError('el dígito verificador no coincide');
-    }
-
-    return new Cedula(limpia);
+    return new Cedula(cleaned);
   }
 
-  /** Valida sin lanzar. Útil para filtros y búsquedas, no para construir entidades. */
-  static esValida(entrada: string): boolean {
+  /** Validates without throwing. For filters and search, not for building entities. */
+  static isValid(input: string): boolean {
     try {
-      Cedula.crear(entrada);
+      Cedula.create(input);
       return true;
     } catch {
       return false;
@@ -79,32 +80,32 @@ export class Cedula {
   }
 
   /**
-   * Módulo 10: multiplica cada dígito por su coeficiente; si el producto pasa
-   * de 9 se le resta 9; el verificador es lo que falta para la siguiente decena.
+   * Modulo 10: multiply each digit by its coefficient, subtract 9 when the
+   * product exceeds 9, then the check digit is the distance to the next ten.
    */
-  private static digitoVerificador(cedula: string): number {
-    const suma = Cedula.COEFICIENTES.reduce((acc, coeficiente, i) => {
-      const producto = Number.parseInt(cedula[i], 10) * coeficiente;
-      return acc + (producto > 9 ? producto - 9 : producto);
+  private static checkDigit(cedula: string): number {
+    const sum = Cedula.COEFFICIENTS.reduce((acc, coefficient, i) => {
+      const product = Number.parseInt(cedula[i], 10) * coefficient;
+      return acc + (product > 9 ? product - 9 : product);
     }, 0);
 
-    return (10 - (suma % 10)) % 10;
+    return (10 - (sum % 10)) % 10;
   }
 
-  get provincia(): number {
-    return Number.parseInt(this.valor.slice(0, 2), 10);
+  get province(): number {
+    return Number.parseInt(this.value.slice(0, 2), 10);
   }
 
-  /** Para mostrar en pantalla cuando no hace falta el número completo. */
-  enmascarada(): string {
-    return `${this.valor.slice(0, 3)}****${this.valor.slice(7)}`;
+  /** For display when the full number is not needed. */
+  masked(): string {
+    return `${this.value.slice(0, 3)}****${this.value.slice(7)}`;
   }
 
   toString(): string {
-    return this.valor;
+    return this.value;
   }
 
-  equals(otra: Cedula): boolean {
-    return this.valor === otra.valor;
+  equals(other: Cedula): boolean {
+    return this.value === other.value;
   }
 }

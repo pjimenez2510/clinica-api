@@ -1,158 +1,159 @@
 import { describe, expect, it } from 'vitest';
 
-import { podarAllowlist, sanearMensajeError, sanearUrl } from './log-privacy';
+import {
+  pruneToAllowlist,
+  sanitizeErrorMessage,
+  sanitizeUrl,
+} from './log-privacy';
 
 /**
- * Datos señuelo. Si alguno aparece en un log, es una fuga de datos de salud
- * notificable a la SPDP. Este archivo es la red que impide que eso se degrade
- * con el tiempo.
+ * Canary values. If any of these shows up in a log it is a reportable health
+ * data leak. This file is the net that stops the protection from eroding.
  */
-const SEÑUELOS = [
-  '1712345678', // cédula
+const CANARIES = [
+  '1712345678', // cedula
   'paciente@ejemplo.com',
-  '0991234567', // celular
+  '0991234567', // mobile
   'Juan Pérez Andrade',
-  'J45.9', // CIE-10
+  'J45.9', // ICD-10
 ];
 
-function contieneSeñuelo(salida: string): string | null {
-  return SEÑUELOS.find((s) => salida.includes(s)) ?? null;
+function containsCanary(output: string): string | null {
+  return CANARIES.find((c) => output.includes(c)) ?? null;
 }
 
-describe('podarAllowlist', () => {
-  it('descarta datos de paciente anidados y conserva los identificadores internos', () => {
-    const resultado = podarAllowlist({
-      atencion_id: 'A-1',
+describe('pruneToAllowlist', () => {
+  it('drops nested patient data and keeps internal identifiers', () => {
+    const result = pruneToAllowlist({
+      encounter_id: 'A-1',
       duration_ms: 42,
-      paciente: {
+      patient: {
         cedula: '1712345678',
-        nombres: 'Juan',
-        apellidos: 'Pérez Andrade',
+        firstName: 'Juan',
+        lastName: 'Pérez Andrade',
         email: 'paciente@ejemplo.com',
-        diagnostico: 'J45.9',
+        diagnosis: 'J45.9',
       },
     });
 
-    const salida = JSON.stringify(resultado);
-    expect(contieneSeñuelo(salida)).toBeNull();
-    expect(resultado).toEqual({ atencion_id: 'A-1', duration_ms: 42 });
+    expect(containsCanary(JSON.stringify(result))).toBeNull();
+    expect(result).toEqual({ encounter_id: 'A-1', duration_ms: 42 });
   });
 
-  it('descarta campos NUEVOS no declarados: falla cerrado', () => {
-    // Simula el sprint que añade un campo a la entidad Paciente y nadie
-    // se acuerda de tocar la configuración de logs. Con una denylist esto
-    // se filtraría; con allowlist, no.
-    const resultado = podarAllowlist({
-      campoInventadoEnElSprint12: '1712345678',
-      usuario_id: 'u-1',
+  it('drops NEW undeclared fields: fails closed', () => {
+    // Simulates the sprint that adds a field to the Patient entity and nobody
+    // remembers to touch the logging config. A denylist would leak this.
+    const result = pruneToAllowlist({
+      fieldInventedInSprint12: '1712345678',
+      user_id: 'u-1',
     });
 
-    expect(JSON.stringify(resultado)).not.toContain('1712345678');
-    expect(resultado).toEqual({ usuario_id: 'u-1' });
+    expect(JSON.stringify(result)).not.toContain('1712345678');
+    expect(result).toEqual({ user_id: 'u-1' });
   });
 
-  it('no se deja engañar por mayúsculas ni variantes del nombre de la clave', () => {
-    // Los paths de `redact` de pino distinguen mayúsculas: `Cedula` != `cedula`.
-    // La allowlist no tiene ese problema porque no enumera lo prohibido.
-    const resultado = podarAllowlist({
+  it('is not fooled by casing or key-name variants', () => {
+    // Pino's `redact` paths are case sensitive: `Cedula` != `cedula`. The
+    // allowlist does not have that problem because it never enumerates what is
+    // forbidden.
+    const result = pruneToAllowlist({
       Cedula: '1712345678',
       CEDULA: '1712345678',
-      numeroIdentificacion: '1712345678',
+      identificationNumber: '1712345678',
     });
 
-    expect(resultado).toEqual({});
+    expect(result).toEqual({});
   });
 
-  it('corta la recursión en objetos muy profundos', () => {
-    let anidado: Record<string, unknown> = { estado: 'fin' };
-    for (let i = 0; i < 12; i++) anidado = { req: anidado };
+  it('stops recursion on very deep objects', () => {
+    let nested: Record<string, unknown> = { state: 'end' };
+    for (let i = 0; i < 12; i++) nested = { req: nested };
 
-    expect(JSON.stringify(podarAllowlist(anidado))).toContain(
-      'PROFUNDIDAD_MAX',
-    );
+    expect(JSON.stringify(pruneToAllowlist(nested))).toContain('MAX_DEPTH');
   });
 
-  it('recorta arrays largos indicando cuántos elementos se omitieron', () => {
-    const resultado = podarAllowlist(
-      Array.from({ length: 30 }, (_, i) => ({ atencion_id: `A-${i}` })),
+  it('trims long arrays and reports how many were omitted', () => {
+    const result = pruneToAllowlist(
+      Array.from({ length: 30 }, (_, i) => ({ encounter_id: `A-${i}` })),
     ) as unknown[];
 
-    expect(resultado).toHaveLength(21); // 20 + el marcador
-    expect(resultado.at(-1)).toBe('[+10 elementos omitidos]');
+    expect(result).toHaveLength(21); // 20 plus the marker
+    expect(result.at(-1)).toBe('[+10 items omitted]');
   });
 
-  it('conserva primitivos y serializa fechas', () => {
-    expect(podarAllowlist('texto')).toBe('texto');
-    expect(podarAllowlist(42)).toBe(42);
-    expect(podarAllowlist(null)).toBeNull();
-    expect(podarAllowlist(new Date('2026-08-06T00:00:00Z'))).toBe(
+  it('keeps primitives and serialises dates', () => {
+    expect(pruneToAllowlist('text')).toBe('text');
+    expect(pruneToAllowlist(42)).toBe(42);
+    expect(pruneToAllowlist(null)).toBeNull();
+    expect(pruneToAllowlist(new Date('2026-08-06T00:00:00Z'))).toBe(
       '2026-08-06T00:00:00.000Z',
     );
   });
 });
 
-describe('sanearUrl', () => {
-  it('elimina la query string, que suele llevar la cédula', () => {
-    expect(sanearUrl('/api/v1/pacientes?cedula=1712345678')).toBe(
-      '/api/v1/pacientes',
+describe('sanitizeUrl', () => {
+  it('removes the query string, which usually carries the cedula', () => {
+    expect(sanitizeUrl('/api/v1/patients?cedula=1712345678')).toBe(
+      '/api/v1/patients',
     );
   });
 
-  it('normaliza identificadores numéricos para no multiplicar cardinalidad', () => {
-    expect(sanearUrl('/api/v1/pacientes/123456/atenciones')).toBe(
-      '/api/v1/pacientes/:id/atenciones',
+  it('normalises numeric identifiers to keep cardinality low', () => {
+    expect(sanitizeUrl('/api/v1/patients/123456/encounters')).toBe(
+      '/api/v1/patients/:id/encounters',
     );
   });
 
-  it('deja intactas las rutas sin identificadores', () => {
-    expect(sanearUrl('/api/v1/health')).toBe('/api/v1/health');
+  it('leaves routes without identifiers untouched', () => {
+    expect(sanitizeUrl('/api/v1/health')).toBe('/api/v1/health');
   });
 });
 
-describe('sanearMensajeError', () => {
-  it('enmascara los patrones de identificación ecuatorianos', () => {
-    const limpio = sanearMensajeError(
-      'duplicate key: cedula 1712345678, correo paciente@ejemplo.com, cel 0991234567',
+describe('sanitizeErrorMessage', () => {
+  it('masks Ecuadorian identification patterns', () => {
+    const cleaned = sanitizeErrorMessage(
+      'duplicate key: cedula 1712345678, email paciente@ejemplo.com, mobile 0991234567',
     );
-    expect(contieneSeñuelo(limpio)).toBeNull();
-    expect(limpio).toContain('[CEDULA]');
-    expect(limpio).toContain('[EMAIL]');
-    expect(limpio).toContain('[TELEFONO]');
+    expect(containsCanary(cleaned)).toBeNull();
+    expect(cleaned).toContain('[CEDULA]');
+    expect(cleaned).toContain('[EMAIL]');
+    expect(cleaned).toContain('[PHONE]');
   });
 
-  it('distingue el RUC de la cédula por longitud', () => {
-    expect(sanearMensajeError('ruc 1712345678001')).toContain('[RUC]');
+  it('tells a RUC apart from a cedula by length', () => {
+    expect(sanitizeErrorMessage('ruc 1712345678001')).toContain('[RUC]');
   });
 
-  it('oculta el detalle de una violación de constraint de PostgreSQL', () => {
-    // pg devuelve literalmente: Key (cedula)=(1712345678) already exists.
-    const limpio = sanearMensajeError(
-      'Key (cedula)=(1712345678) already exists.',
-    );
-    expect(limpio).not.toContain('1712345678');
+  it('hides the detail of a PostgreSQL constraint violation', () => {
+    // pg returns literally: Key (cedula)=(1712345678) already exists.
+    expect(
+      sanitizeErrorMessage('Key (cedula)=(1712345678) already exists.'),
+    ).not.toContain('1712345678');
   });
 
-  it('trunca mensajes desmesurados', () => {
-    expect(sanearMensajeError('x'.repeat(2000))).toHaveLength(500);
+  it('truncates oversized messages', () => {
+    expect(sanitizeErrorMessage('x'.repeat(2000))).toHaveLength(500);
   });
 });
 
-describe('límite conocido: la interpolación en el mensaje', () => {
-  it('documenta que un template literal SÍ filtra, y por eso hace falta la regla de ESLint', () => {
-    // `redact` de pino opera sobre las PROPIEDADES del objeto, NUNCA sobre el
-    // string `msg`. Es el vector de fuga número uno en Node y ninguna
-    // configuración lo cubre.
+describe('known limitation: interpolation into the message', () => {
+  it('documents that a template literal DOES leak, hence the ESLint rule', () => {
+    // Pino's `redact` works on the object PROPERTIES, never on the `msg`
+    // string. It is the number one leak vector in Node and no configuration
+    // covers it.
     //
-    //   logger.info({ cedula })                  -> redactado
-    //   logger.info(`consulta de ${cedula}`)     -> FUGA TOTAL
+    //   logger.info({ cedula })                  -> redacted
+    //   logger.info(`consulta de ${cedula}`)     -> FULL LEAK
     //
-    // La defensa es la regla `no-restricted-syntax` de ESLint que prohíbe
-    // template literals en llamadas de log. Este test existe para que el
-    // límite quede escrito y nadie lo descubra en producción.
-    const mensajeInterpolado = `consulta de la cédula 1712345678`;
-    expect(contieneSeñuelo(mensajeInterpolado)).not.toBeNull();
+    // The defence is the `no-restricted-syntax` ESLint rule banning template
+    // literals in log calls. This test exists so the limitation is written
+    // down and nobody discovers it in production.
+    const interpolatedMessage = `consulta de la cedula 1712345678`;
+    expect(containsCanary(interpolatedMessage)).not.toBeNull();
 
-    // Sanearlo a mano sí funciona, pero depende de que alguien se acuerde:
-    expect(contieneSeñuelo(sanearMensajeError(mensajeInterpolado))).toBeNull();
+    // Sanitising by hand does work, but relies on somebody remembering:
+    expect(
+      containsCanary(sanitizeErrorMessage(interpolatedMessage)),
+    ).toBeNull();
   });
 });

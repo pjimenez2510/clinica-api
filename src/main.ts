@@ -4,8 +4,8 @@ import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
-// `Logger` es el adaptador que NestJS usa internamente; `PinoLogger` es el que
-// acepta objetos estructurados como primer argumento. No son intercambiables.
+// `Logger` is the adapter NestJS uses internally; `PinoLogger` is the one that
+// takes a structured object as its first argument. They are not interchangeable.
 import { Logger as NestPinoLogger, PinoLogger } from 'nestjs-pino';
 
 import { AppModule } from './app.module';
@@ -16,22 +16,22 @@ async function bootstrap(): Promise<void> {
     bufferLogs: true,
   });
 
-  // `bufferLogs: true` arriba retiene los logs de arranque hasta este punto,
-  // para que también pasen por la redacción de PHI y no por el logger por defecto.
+  // `bufferLogs: true` above holds the startup logs until this point, so they
+  // also go through PHI redaction instead of the default logger.
   app.useLogger(app.get(NestPinoLogger));
 
   const config = app.get(ConfigService<Env, true>);
-  const esProduccion = config.get('NODE_ENV', { infer: true }) === 'production';
+  const isProduction = config.get('NODE_ENV', { infer: true }) === 'production';
 
   /**
-   * ORDEN DELIBERADO. En NestJS el ciclo es:
-   *   middleware → guards → interceptors → pipes → controlador
-   *              → interceptors (en orden INVERSO) → exception filters
+   * DELIBERATE ORDER. The NestJS lifecycle is:
+   *   middleware -> guards -> interceptors -> pipes -> controller
+   *              -> interceptors (REVERSE order) -> exception filters
    *
-   * Lo de aquí abajo es capa de plataforma: corre antes que todo eso.
+   * Everything below is platform level: it runs before all of that.
    */
 
-  // 1. Cabeceras de seguridad, lo primero.
+  // 1. Security headers, first of all.
   app.use(
     helmet({
       contentSecurityPolicy: { directives: { defaultSrc: ["'self'"] } },
@@ -40,7 +40,7 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  // 2. CORS restrictivo. Nunca '*' con datos de salud.
+  // 2. Restrictive CORS. Never '*' with health data.
   app.enableCors({
     origin: config.get('CORS_ORIGINS', { infer: true }),
     credentials: true,
@@ -57,46 +57,47 @@ async function bootstrap(): Promise<void> {
     maxAge: 600,
   });
 
-  // 3. Límite de payload. Una historia clínica en JSON no llega a 1 MB;
-  //    los adjuntos van a object storage, no por el cuerpo de la petición.
+  // 3. Payload limit. A clinical record in JSON never reaches 1 MB; attachments
+  //    go to object storage, not through the request body.
   app.useBodyParser('json', { limit: '1mb' });
   app.useBodyParser('urlencoded', { limit: '1mb', extended: true });
 
-  // La compresión se delega a nginx: comprimir en el event loop compite con el
-  // trabajo de la aplicación y abre la puerta a BREACH sobre respuestas con PHI.
+  // Compression is delegated to nginx: compressing inside the event loop
+  // competes with application work and opens the door to BREACH on responses
+  // that carry PHI.
 
   app.setGlobalPrefix('api');
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   app.enableShutdownHooks();
 
-  // OpenAPI: es el contrato del que el frontend genera sus tipos.
-  // Fuera de producción para no exponer la superficie de la API.
-  if (!esProduccion) {
-    const documento = SwaggerModule.createDocument(
+  // OpenAPI: the contract the frontend generates its types from.
+  // Disabled in production so the API surface is not exposed.
+  if (!isProduction) {
+    const document = SwaggerModule.createDocument(
       app,
       new DocumentBuilder()
-        .setTitle('API Clínica')
-        .setDescription('Sistema de gestión clínica — Ecuador')
+        .setTitle('API Clinica')
+        .setDescription('Clinical management system — Ecuador')
         .setVersion('0.1.0')
         .addBearerAuth()
         .build(),
     );
-    SwaggerModule.setup('api/docs', app, documento, {
+    SwaggerModule.setup('api/docs', app, document, {
       jsonDocumentUrl: 'api/docs/openapi.json',
     });
   }
 
-  const puerto = config.get('PORT', { infer: true });
-  await app.listen(puerto, '0.0.0.0');
+  const port = config.get('PORT', { infer: true });
+  await app.listen(port, '0.0.0.0');
 
-  // Datos como campos estructurados, no interpolados en el mensaje. Aquí solo
-  // hay un número de puerto, pero la regla de ESLint no distingue —y hace bien:
-  // el día que alguien interpole una cédula, el hábito ya estará adquirido.
+  // Data as structured fields, never interpolated into the message. There is
+  // only a port number here, but the ESLint rule does not discriminate — and
+  // rightly so: by the time someone interpolates a cedula, the habit is set.
   //
-  // `resolve` y no `get`: PinoLogger es un provider con scope de petición, y
-  // `get()` lanza sobre providers scoped.
+  // `resolve` and not `get`: PinoLogger is a request-scoped provider and
+  // `get()` throws on scoped providers.
   const logger = await app.resolve(PinoLogger);
-  logger.info({ puerto, docs: !esProduccion }, 'API iniciada');
+  logger.info({ port, docs: !isProduction }, 'API started');
 }
 
 void bootstrap();
