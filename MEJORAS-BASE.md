@@ -1,5 +1,15 @@
 # Correcciones y mejoras de la base
 
+> **Estado: P0, P1 y P2 aplicados el 6 de agosto de 2026.** Cada punto lleva
+> abajo cómo quedó. P3.2 a P3.8 siguen pendientes a propósito: son de
+> operación y esperan a que exista un entorno donde desplegar.
+>
+> Lo que la revisión hizo bien y conviene repetir: no señaló estilo, señaló
+> sitios donde un comentario **afirmaba** una garantía que el código no daba.
+> Tres de los cinco P0 eran defectos que ninguna prueba existente podía haber
+> detectado — dos carreras y una atomicidad —, y el arreglo de uno destapó otro
+> (el cuerpo de 2 MB devolvía 500 en vez de 413).
+
 Revisión del código actual (`src/`, `prisma/seed*.mts`, tooling) con el objetivo
 de dejar cimientos sobre los que se pueda construir el resto del backend sin
 tener que volver atrás.
@@ -23,6 +33,8 @@ Prioridades:
 ## P0 — Defectos reales
 
 ### P0.1 · El bloqueo por intentos fallidos no funciona con concurrencia
+
+> ✅ **HECHO.** Incremento en la base en una sola sentencia; la decisión de bloqueo se toma sobre el valor devuelto. Probado contra PostgreSQL real: diez fallos concurrentes cuentan diez, y cada llamante recibe un número distinto.
 
 **Dónde:** `src/modules/auth/application/auth.service.ts` → `registerFailedAttempt`
 **Y:** `src/modules/auth/infrastructure/prisma-auth-user.repository.ts` → `recordFailedAttempt`
@@ -72,6 +84,8 @@ cálculo del backoff exponencial se queda en el servicio, que es donde toca.
 
 ### P0.2 · La verificación TOTP no tiene freno por cuenta
 
+> ✅ **HECHO.** Misma maquinaria, umbral de 3, y una cuenta bloqueada se rechaza antes de comprobar el código.
+
 **Dónde:** `src/modules/auth/application/auth.service.ts` → `verifyMfa`
 
 Un código fallido no incrementa `failedAttempts`, no bloquea y no se registra.
@@ -112,6 +126,8 @@ tantas veces.
 
 ### P0.3 · `changePassword` no es atómico
 
+> ✅ **HECHO.** `rotateCredentials` en el puerto, transacción en el adaptador. Probado que un fallo posterior deja la contraseña intacta.
+
 **Dónde:** `src/modules/auth/application/auth.service.ts` → `changePassword`
 
 ```ts
@@ -145,6 +161,8 @@ declara es la atomicidad.
 
 ### P0.4 · `BigInt` va a romper el primer endpoint que lo devuelva
 
+> ✅ **HECHO.** Serializado como **string**, no como number: por encima de 2^53 se pierde precisión en silencio y esto son identificadores.
+
 **Dónde:** `prisma/schema.prisma` → `AccessAudit.id`, `ObservationResult.id`,
 `PatientMerge.id`, `AgendaStatusHistory.id`
 
@@ -171,6 +189,8 @@ explique por qué está ahí.
 
 ### P0.5 · El límite de 1 MB del body probablemente no se aplica
 
+> ✅ **HECHO.** `bodyParser: false`, verificado en vivo. Y destapó otro: 2 MB devolvía **500**, porque los errores de middleware nunca son `HttpException`. Ahora 413.
+
 **Dónde:** `src/main.ts`
 
 `NestFactory.create()` no recibe `{ bodyParser: false }`, así que el adaptador
@@ -188,6 +208,8 @@ y espere 413.
 ## P1 — Cimientos que no sostienen lo que dicen
 
 ### P1.1 · `@RequirePermission` acepta cualquier string
+
+> ✅ **HECHO.** Tipado con la unión cerrada; comprobado compilando un typo y viendo a tsc rechazarlo.
 
 **Dónde:** `src/shared/http/auth.decorators.ts`
 
@@ -213,6 +235,8 @@ es vocabulario compartido, no propiedad del módulo auth**. Ver P1.3.
 ---
 
 ### P1.2 · El guard no aplica el alcance por sede
+
+> ✅ **HECHO.** Opciones 1, 2 y 3 del documento, las tres. Documentado en ADR-007 §3.
 
 **Dónde:** `src/modules/auth/infrastructure/permissions.guard.ts`
 
@@ -270,6 +294,8 @@ Elige una y escríbela en un ADR. Lo que no puede quedar es implícito.
 
 ### P1.3 · `Principal` y compañía están en el módulo equivocado
 
+> ✅ **HECHO.** `shared/authorisation/`. `default-roles` y `RISKY_COMBINATIONS` se quedaron en el módulo, como proponía el documento.
+
 **Dónde:** `src/modules/auth/domain/principal.ts`,
 `src/modules/auth/domain/permissions.ts`,
 `src/modules/auth/infrastructure/jwt-auth.guard.ts` (`CurrentUserService`),
@@ -310,6 +336,8 @@ política de arranque del módulo de autorización, no vocabulario compartido.
 ---
 
 ### P1.4 · Los errores de dominio no tienen dueño ni registro
+
+> ✅ **HECHO.** Criterio del documento aplicado tal cual, más el catálogo congelado. **Había ya un duplicado**: `SITE_SCOPE_DENIED` en dos clases. Regla en ADR-008 §1.
 
 Esto responde directamente a la pregunta de si está bien declarar
 `AccountInactiveError` dentro de `auth.service.ts`.
@@ -380,6 +408,8 @@ sesión, o un error propio.
 
 ### P1.5 · `ports.ts`: un archivo está bien, pero hay tres cosas que no son puertos
 
+> ✅ **HECHO.** Las tres a `shared/request/`. El módulo exporta símbolos, no adaptadores.
+
 Esto responde a la otra pregunta.
 
 **Un archivo `application/ports.ts` con los cinco puertos está bien.** Cohesión
@@ -426,6 +456,8 @@ que el consumidor dependa de la interfaz.
 
 ### P1.6 · `strict: true` en TypeScript
 
+> ✅ **HECHO.** Nueve errores, todos en los sitios que el documento predijo. Arreglados manejando el caso, no con `!`.
+
 **Dónde:** `tsconfig.json`
 
 Hoy hay `strictNullChecks` y `noImplicitAny` sueltos. Faltan:
@@ -452,6 +484,8 @@ Añadir también `noUnusedLocals` y `noUnusedParameters`, o dejarlos al linter
 ---
 
 ### P1.7 · Claims del JWT sin validar
+
+> ✅ **HECHO.** Esquema Zod tras `jwtVerify`. El `fam: pending-mfa` quedó explícito y anotado como olor, con el motivo por el que no se cambia hoy.
 
 **Dónde:** `src/modules/auth/infrastructure/token.service.ts` → `verifyAccessToken`
 
@@ -491,6 +525,8 @@ mágico dentro.
 
 ### P1.8 · `expiresIn: 900` a mano mientras el TTL es configurable
 
+> ✅ **HECHO.** Calculado del TTL en `TokenService`.
+
 **Dónde:** `src/modules/auth/auth.controller.ts` (dos veces: `refresh` y
 `toSessionResponse`)
 
@@ -505,6 +541,12 @@ en `onModuleInit`) y que el controlador lo lea. Una sola fuente.
 ---
 
 ## P2 — Coherencia y contrato
+
+> ✅ **P2.1 a P2.10 hechos.** Notas: `APP_VERSION` ni siquiera estaba en el
+> esquema, que es lo que permitía leerlo crudo. `traceId` ahora lleva **el
+> mismo** identificador que la cabecera `X-Request-Id` — poblarlo con el id de
+> CLS habría sido peor que dejarlo vacío: dos identificadores para un evento.
+
 
 ### P2.1 · Tres lecturas de `process.env` que se saltan la validación
 
@@ -698,6 +740,13 @@ paso de arranque idempotente o parte del `db:deploy` del despliegue.
 ---
 
 ## P3 — Antes de tocar un servidor
+
+> ✅ **P3.1 hecho.** `migrations:check` corre en CI, y de paso el job de
+> migraciones siembra el catálogo de autorización, lo que además demuestra que
+> la siembra sigue siendo idempotente.
+>
+> P3.2 a P3.8 pendientes, a la espera de un entorno de despliegue.
+
 
 Estos no afectan al código actual, pero son los que convierten "corre en mi
 máquina" en "corre".
