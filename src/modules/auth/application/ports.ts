@@ -1,4 +1,4 @@
-import type { RoleGrant } from '../domain/permissions';
+import type { TokenGrant } from '../infrastructure/token.service';
 
 /**
  * Ports the authentication use cases depend on.
@@ -45,7 +45,7 @@ export interface PasswordHasherPort {
 export interface AccessTokenClaimsInput {
   sub: string;
   fam: string;
-  grants: RoleGrant[];
+  grants: TokenGrant[];
   mfa: boolean;
 }
 
@@ -104,7 +104,7 @@ export interface AuthUserRepositoryPort {
   confirmMfa(userId: string, usedStep: bigint): Promise<void>;
   recordMfaStep(userId: string, usedStep: bigint): Promise<void>;
   /** Roles currently in force. Revoked grants are excluded by the query. */
-  findActiveGrants(userId: string): Promise<RoleGrant[]>;
+  findActiveGrants(userId: string): Promise<TokenGrant[]>;
 }
 
 export const PASSWORD_HASHER = Symbol('PASSWORD_HASHER');

@@ -10,7 +10,6 @@ import {
   SignJWT,
 } from 'jose';
 
-import type { RoleGrant } from '../domain/permissions';
 import type { Env } from '../../../shared/config/env.schema';
 import { UnauthorizedError } from '../../../shared/domain/errors/domain-error';
 
@@ -23,6 +22,12 @@ export class InvalidTokenError extends UnauthorizedError {
 }
 
 /** Claims carried by the access token. */
+/** A role held, by id, at one site or everywhere. */
+export interface TokenGrant {
+  roleId: string;
+  siteId: string | null;
+}
+
 export interface AccessTokenClaims {
   /** Subject: internal user id. NEVER the cedula. */
   sub: string;
@@ -37,7 +42,7 @@ export interface AccessTokenClaims {
    * lifetime (15 minutes) of staleness after a role changes, which ADR-007
    * accepts and bounds.
    */
-  grants: RoleGrant[];
+  grants: TokenGrant[];
   /** Whether the second factor was already satisfied in this session. */
   mfa: boolean;
 }
@@ -104,7 +109,7 @@ export class TokenService implements OnModuleInit {
       return {
         sub: payload.sub!,
         fam: payload.fam as string,
-        grants: (payload.grants as RoleGrant[]) ?? [],
+        grants: (payload.grants as TokenGrant[]) ?? [],
         mfa: payload.mfa === true,
       };
     } catch (error) {

@@ -81,21 +81,68 @@ model User {
   @@map("app_user")
 }
 
-/// Roles of a clinic, derived from who signs what rather than from a generic
-/// template. See ADR-007.
+/// A permission the code actually checks.
 ///
-/// `ADMIN` deliberately does NOT include access to clinical records:
-/// administering the system is not treating patients, and that separation is
-/// the first thing an SPDP audit asks about.
-enum StaffRole {
-  ADMIN
-  MEDICO
-  ENFERMERIA
-  RECEPCION
-  CAJA
-  AUDITOR
+/// The CATALOGUE is anchored to the code — a permission only means something
+/// if some route asks for it, so you cannot invent one here and expect it to
+/// protect anything. It is mirrored into this table so that role assignments
+/// have referential integrity and so the admin interface can list what exists
+/// without importing TypeScript. A test asserts the table and the code agree.
+model Permission {
+  code String @id @db.VarChar(64)
 
-  @@map("staff_role")
+  /// Grouping for the administration screen: patient, agenda, record, billing.
+  resource String @db.VarChar(32)
+  /// What it allows, in Spanish, for whoever assigns it.
+  description String @db.VarChar(255)
+
+  roles RolePermission[]
+
+  @@index([resource])
+  @@map("permission")
+}
+
+/// A role, as DATA.
+///
+/// Deliberately not an enum. A clinic hires an external auditor, splits
+/// nursing into ward and outpatient, or brings in a health-insurance
+/// liaison — none of which should require a migration and a deploy.
+model Role {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  /// Stable identifier used in seeds and logs. Uppercase, no spaces.
+  code String @unique @db.VarChar(48)
+  name String @db.VarChar(120)
+  description String? @db.Text
+
+  /// Ships with the product. Its permissions remain editable, but it cannot be
+  /// deleted: an empty role table would lock everyone out, including whoever
+  /// would fix it.
+  isSystem Boolean @default(false) @map("is_system")
+  active   Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  permissions RolePermission[]
+  grants      UserRoleGrant[]
+
+  @@map("role")
+}
+
+/// Which permissions a role carries. Editable by an administrator.
+model RolePermission {
+  roleId String @map("role_id") @db.Uuid
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  permissionCode String     @map("permission_code") @db.VarChar(64)
+  permission     Permission @relation(fields: [permissionCode], references: [code], onDelete: Restrict)
+
+  grantedAt   DateTime @default(now()) @map("granted_at") @db.Timestamptz(6)
+  grantedById String?  @map("granted_by_id") @db.Uuid
+
+  @@id([roleId, permissionCode])
+  @@map("role_permission")
 }
 
 /// A role held by a user, scoped to one site or granted globally.
@@ -115,7 +162,8 @@ model UserRoleGrant {
   /// deactivated, not removed.
   user   User   @relation("GrantHolder", fields: [userId], references: [id], onDelete: Restrict)
 
-  role StaffRole
+  roleId String @map("role_id") @db.Uuid
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Restrict)
 
   /// NULL means every site. A receptionist is hired at one site; the clinic
   /// director is not.
@@ -132,6 +180,7 @@ model UserRoleGrant {
   revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
 
   @@index([userId, revokedAt])
+  @@index([roleId])
   @@map("user_role_grant")
 }
 

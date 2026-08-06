@@ -1,151 +1,122 @@
 /**
- * What each role may do. See ADR-007.
+ * The catalogue of permissions, and how a caller's access is evaluated.
  *
- * PERMISSIONS LIVE IN CODE, ROLES LIVE IN THE DATABASE. A permission only
- * means something if some route checks it, so an editable permission table
- * produces rows that protect nothing and routes guarded by permissions nobody
- * remembers creating. Roles are data — a clinic hires an external auditor
- * without a deploy — but the catalogue below is part of the code's contract.
+ * WHAT IS CODE AND WHAT IS DATA — the distinction the first version got wrong:
  *
- * There is no role hierarchy on purpose. With six roles, having MEDICO inherit
- * from STAFF adds an indirection that has to be unwound mentally every time
- * somebody asks "who can see this?". The lists repeat themselves, and that is
- * the cheaper problem.
+ *   - WHICH PERMISSIONS EXIST is code. Each one corresponds to a check in a
+ *     route, so inventing one in a database row would protect nothing. The
+ *     catalogue is mirrored into the `permission` table for referential
+ *     integrity and so the admin screen can list it, and a test asserts the
+ *     two agree.
+ *   - WHICH ROLES EXIST is data. A clinic hires an external auditor, splits
+ *     nursing into ward and outpatient, brings in an insurance liaison. None
+ *     of that should need a migration and a deploy.
+ *   - WHICH PERMISSIONS A ROLE CARRIES is data. It is the clinic's policy, not
+ *     the code's.
+ *
+ * The first two were hardcoded as a PostgreSQL enum and a constant map. That
+ * was wrong, and this file is the correction.
  */
 
-export const PERMISSIONS = [
-  'patient:read',
-  'patient:write',
-  'agenda:read',
-  'agenda:write',
-  /** Open a clinical record. The one that matters most under the LOPDP. */
-  'record:read',
-  'record:write',
-  /** Sign a note or a certificate. Requires a valid ACESS registration. */
-  'record:sign',
-  'vitals:write',
-  'prescription:write',
-  'billing:read',
-  'billing:write',
-  'catalog:read',
-  'catalog:manage',
-  'user:manage',
-  'site:manage',
-  /** Read the access log. Reading it is itself recorded. */
-  'audit:read',
-] as const;
-
-export type Permission = (typeof PERMISSIONS)[number];
-
-export type StaffRoleName =
-  'ADMIN' | 'MEDICO' | 'ENFERMERIA' | 'RECEPCION' | 'CAJA' | 'AUDITOR';
-
-/**
- * Roles of an Ecuadorian clinic, derived from who signs what.
- *
- * THE SEPARATION THAT MATTERS MOST: `ADMIN` has no `record:*` permission.
- * Administering the system is not treating patients. Whoever holds technical
- * control must not also hold clinical access, and that is the first thing an
- * SPDP audit asks about.
- *
- * `RECEPCION` likewise cannot read a clinical record. Reception needs to know
- * that the patient exists and when they are coming — not what they have.
- */
-export const ROLE_PERMISSIONS: Readonly<
-  Record<StaffRoleName, readonly Permission[]>
-> = {
-  ADMIN: [
-    'user:manage',
-    'site:manage',
-    'catalog:manage',
-    'catalog:read',
-    'audit:read',
-  ],
-  MEDICO: [
-    'patient:read',
-    'agenda:read',
-    'agenda:write',
-    'record:read',
-    'record:write',
-    'record:sign',
-    'vitals:write',
-    'prescription:write',
-    'catalog:read',
-  ],
-  // Nursing reads the record because vital signs without context are useless,
-  // but it neither diagnoses nor prescribes.
-  ENFERMERIA: [
-    'patient:read',
-    'agenda:read',
-    'record:read',
-    'vitals:write',
-    'catalog:read',
-  ],
-  RECEPCION: [
-    'patient:read',
-    'patient:write',
-    'agenda:read',
-    'agenda:write',
-    'catalog:read',
-  ],
-  CAJA: ['patient:read', 'billing:read', 'billing:write', 'catalog:read'],
-  AUDITOR: ['audit:read', 'catalog:read'],
-};
-
-/** A role held at one site, or everywhere when `siteId` is null. */
-export interface RoleGrant {
-  role: StaffRoleName;
-  siteId: string | null;
+export interface PermissionDefinition {
+  code: string;
+  /** Grouping for the administration screen. */
+  resource: string;
+  /** Read by whoever assigns it, so it is written in Spanish. */
+  description: string;
 }
 
-/** Every site is in scope, without enumerating them. */
-export const ALL_SITES = Symbol('ALL_SITES');
-
 /**
- * The authenticated caller, and what they are allowed to do.
+ * Every permission the code checks.
  *
- * `sitesFor` exists because answering "can they?" is not enough in a
- * multi-site clinic: a receptionist hired at one site may list appointments,
- * but only that site's. Query code asks which sites are in scope and filters;
- * without it, every route would reimplement the same filter and one of them
- * would get it wrong.
+ * Adding an entry here is half the work: the other half is a route that asks
+ * for it. A permission nothing checks is a promise the system does not keep.
  */
-export class Principal {
-  constructor(
-    readonly userId: string,
-    readonly grants: readonly RoleGrant[],
-  ) {}
+export const PERMISSION_CATALOGUE = [
+  {
+    code: 'patient:read',
+    resource: 'patient',
+    description: 'Consultar la ficha administrativa de un paciente',
+  },
+  {
+    code: 'patient:write',
+    resource: 'patient',
+    description: 'Registrar y corregir datos de pacientes',
+  },
+  {
+    code: 'agenda:read',
+    resource: 'agenda',
+    description: 'Ver la agenda de citas',
+  },
+  {
+    code: 'agenda:write',
+    resource: 'agenda',
+    description: 'Agendar, reprogramar y anular citas',
+  },
+  {
+    code: 'record:read',
+    resource: 'record',
+    description: 'Abrir la historia clínica de un paciente',
+  },
+  {
+    code: 'record:write',
+    resource: 'record',
+    description: 'Registrar la atención en la historia clínica',
+  },
+  {
+    code: 'record:sign',
+    resource: 'record',
+    description: 'Firmar notas clínicas y certificados',
+  },
+  {
+    code: 'vitals:write',
+    resource: 'record',
+    description: 'Registrar signos vitales y antropometría',
+  },
+  {
+    code: 'prescription:write',
+    resource: 'record',
+    description: 'Emitir recetas',
+  },
+  {
+    code: 'billing:read',
+    resource: 'billing',
+    description: 'Consultar facturación y estado de cobros',
+  },
+  {
+    code: 'billing:write',
+    resource: 'billing',
+    description: 'Emitir comprobantes y registrar cobros',
+  },
+  {
+    code: 'catalog:read',
+    resource: 'catalog',
+    description: 'Consultar catálogos: CIE-10, medicamentos, tarifario',
+  },
+  {
+    code: 'catalog:manage',
+    resource: 'catalog',
+    description: 'Cargar y versionar catálogos',
+  },
+  {
+    code: 'user:manage',
+    resource: 'admin',
+    description: 'Administrar usuarios, roles y permisos',
+  },
+  {
+    code: 'site:manage',
+    resource: 'admin',
+    description: 'Administrar sedes y consultorios',
+  },
+  {
+    code: 'audit:read',
+    resource: 'admin',
+    description: 'Consultar la bitácora de accesos',
+  },
+] as const satisfies readonly PermissionDefinition[];
 
-  can(permission: Permission): boolean {
-    return this.grants.some((grant) =>
-      ROLE_PERMISSIONS[grant.role]?.includes(permission),
-    );
-  }
+export type Permission = (typeof PERMISSION_CATALOGUE)[number]['code'];
 
-  /**
-   * Sites where the caller holds this permission.
-   *
-   * Returns `ALL_SITES` for a global grant, otherwise the list. An EMPTY list
-   * means the permission is not held anywhere — callers must treat that as a
-   * denial, never as "no filter".
-   */
-  sitesFor(permission: Permission): typeof ALL_SITES | string[] {
-    const holding = this.grants.filter((grant) =>
-      ROLE_PERMISSIONS[grant.role]?.includes(permission),
-    );
-
-    if (holding.some((grant) => grant.siteId === null)) return ALL_SITES;
-    return [
-      ...new Set(
-        holding
-          .map((grant) => grant.siteId)
-          .filter((siteId): siteId is string => siteId !== null),
-      ),
-    ];
-  }
-
-  canAtSite(permission: Permission, siteId: string): boolean {
-    const scope = this.sitesFor(permission);
-    return scope === ALL_SITES || scope.includes(siteId);
-  }
-}
+export const PERMISSIONS: readonly Permission[] = PERMISSION_CATALOGUE.map(
+  (definition) => definition.code,
+);

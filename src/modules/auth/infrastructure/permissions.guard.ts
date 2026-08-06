@@ -11,7 +11,10 @@ import {
   OWN_ACCOUNT_KEY,
   REQUIRED_PERMISSION_KEY,
 } from '../../../shared/http/auth.decorators';
-import { type Permission, Principal } from '../domain/permissions';
+import type { Permission } from '../domain/permissions';
+import { Principal } from '../domain/principal';
+
+import { RolePermissionRegistry } from './role-permission.registry';
 
 import type { AccessTokenClaims } from './token.service';
 
@@ -55,12 +58,13 @@ export class PermissionsGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly cls: ClsService,
+    private readonly roles: RolePermissionRegistry,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(PermissionsGuard.name);
   }
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const targets = [context.getHandler(), context.getClass()];
 
     if (this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, targets)) {
@@ -94,7 +98,13 @@ export class PermissionsGuard implements CanActivate {
     }
 
     const claims = this.cls.get<AccessTokenClaims | undefined>(CURRENT_USER);
-    const principal = new Principal(claims?.sub ?? '', claims?.grants ?? []);
+    // Permissions are resolved HERE, not carried in the token: once a role's
+    // permissions are editable, a token would keep granting a permission that
+    // was revoked until it expired.
+    const principal = new Principal(
+      claims?.sub ?? '',
+      await this.roles.resolve(claims?.grants ?? []),
+    );
 
     if (!principal.can(required)) {
       this.logger.warn(

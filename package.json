@@ -29,11 +29,13 @@
     "db:studio": "prisma studio",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
-    "verify": "pnpm typecheck && pnpm lint:check && pnpm arch:check && pnpm test",
+    "verify": "pnpm typecheck && pnpm lint:check && pnpm arch:check && pnpm migrations:check && pnpm test",
     "db:seed": "node --env-file=.env --experimental-strip-types prisma/seed.mts",
     "db:reset": "prisma migrate reset --force && pnpm db:seed",
     "test:integration": "vitest run --config vitest.integration.config.mts",
-    "lint:check": "eslint \"{src,test}/**/*.ts\""
+    "lint:check": "eslint \"{src,test}/**/*.ts\"",
+    "migrations:check": "node --experimental-strip-types scripts/check-migrations.mts",
+    "db:seed:auth": "node --env-file-if-exists=.env --experimental-strip-types prisma/seed-authorisation.mts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.28",

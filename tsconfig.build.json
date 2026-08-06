@@ -1,5 +1,15 @@
 {
   "extends": "./tsconfig.json",
+  // The root tsconfig turns these on so `tsc --noEmit` can typecheck the seed
+  // scripts, which import `.ts` paths because Node's type stripping requires
+  // an explicit extension. Both must be OFF here: inheriting `noEmit` made
+  // `nest build` compile nothing and still exit 0 — a green build with no
+  // artifact, which start:prod then fails on. `prisma/` is excluded from this
+  // config, so the `.ts` imports never reach it.
+  "compilerOptions": {
+    "noEmit": false,
+    "allowImportingTsExtensions": false
+  },
   // Solo se compila `src`. Sin esto, los archivos de configuración de la raíz
   // (prisma.config.ts, vitest.config.mts) entran en la compilación, desplazan
   // el rootDir inferido y la salida acaba en dist/src/main.js en vez de
