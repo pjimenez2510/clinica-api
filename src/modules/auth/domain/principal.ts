@@ -24,6 +24,18 @@ export interface ResolvedGrant {
   permissions: readonly string[];
 }
 
+/**
+ * A role held, by id, at one site or everywhere.
+ *
+ * This is what the token carries and what the repository returns — the ID
+ * only. Which permissions it implies is resolved per request, so revoking one
+ * does not have to wait for every live token to expire.
+ */
+export interface RoleAssignment {
+  roleId: string;
+  siteId: string | null;
+}
+
 /** Every site is in scope, without enumerating them. */
 export const ALL_SITES = Symbol('ALL_SITES');
 

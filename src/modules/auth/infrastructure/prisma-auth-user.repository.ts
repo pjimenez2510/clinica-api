@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import type { AuthUser, AuthUserRepositoryPort } from '../application/ports';
-import type { TokenGrant } from './token.service';
+import type { RoleAssignment } from '../domain/principal';
 
 /**
  * Only the columns the use cases actually need are selected.
@@ -123,7 +123,7 @@ export class PrismaAuthUserRepository implements AuthUserRepositoryPort {
    * request, so an administrator revoking one takes effect without waiting for
    * every live token to expire.
    */
-  async findActiveGrants(userId: string): Promise<TokenGrant[]> {
+  async findActiveGrants(userId: string): Promise<RoleAssignment[]> {
     const grants = await this.prisma.userRoleGrant.findMany({
       where: { userId, revokedAt: null },
       select: { roleId: true, siteId: true },

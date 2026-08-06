@@ -14,25 +14,23 @@ import { useDatabase } from './setup/database';
 describe('roles are data, permissions are a contract', () => {
   const db = useDatabase();
 
-  it('mirrors the code catalogue into the database', () => {
+  it('mirrors the code catalogue into the database', async () => {
     // The table exists so role assignments have referential integrity and the
     // admin screen can list what is assignable. If the two drift, the screen
     // offers permissions that protect nothing.
-    return (async () => {
-      const prisma = db();
-      await syncAuthorisation(prisma);
+    const prisma = db();
+    await syncAuthorisation(prisma);
 
-      const stored = await prisma.permission.findMany({
-        select: { code: true, resource: true, description: true },
-        orderBy: { code: 'asc' },
-      });
+    const stored = await prisma.permission.findMany({
+      select: { code: true, resource: true, description: true },
+      orderBy: { code: 'asc' },
+    });
 
-      expect(stored).toEqual(
-        [...PERMISSION_CATALOGUE]
-          .map((p) => ({ ...p }))
-          .sort((a, b) => a.code.localeCompare(b.code)),
-      );
-    })();
+    expect(stored).toEqual(
+      [...PERMISSION_CATALOGUE]
+        .map((p) => ({ ...p }))
+        .sort((a, b) => a.code.localeCompare(b.code)),
+    );
   });
 
   it('creates the default roles once and never overwrites them', async () => {
@@ -226,7 +224,7 @@ describe('roles are data, permissions are a contract', () => {
     ).rejects.toThrow(/Foreign key constraint/);
   });
 
-  it('keeps the shipped separation between administering and treating', async () => {
+  it('keeps the shipped separation between administering and treating', () => {
     // No longer enforced by the code — it is a default now, and the clinic can
     // change it. It must still be what a fresh installation starts with.
     const admin = DEFAULT_ROLES.find((role) => role.code === 'ADMIN');

@@ -1,6 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 import { Injectable, type OnModuleInit } from '@nestjs/common';
+
+import type { RoleAssignment } from '../domain/principal';
 import { ConfigService } from '@nestjs/config';
 import {
   type CryptoKey,
@@ -22,12 +24,6 @@ export class InvalidTokenError extends UnauthorizedError {
 }
 
 /** Claims carried by the access token. */
-/** A role held, by id, at one site or everywhere. */
-export interface TokenGrant {
-  roleId: string;
-  siteId: string | null;
-}
-
 export interface AccessTokenClaims {
   /** Subject: internal user id. NEVER the cedula. */
   sub: string;
@@ -42,7 +38,7 @@ export interface AccessTokenClaims {
    * lifetime (15 minutes) of staleness after a role changes, which ADR-007
    * accepts and bounds.
    */
-  grants: TokenGrant[];
+  grants: RoleAssignment[];
   /** Whether the second factor was already satisfied in this session. */
   mfa: boolean;
 }
@@ -109,7 +105,7 @@ export class TokenService implements OnModuleInit {
       return {
         sub: payload.sub!,
         fam: payload.fam as string,
-        grants: (payload.grants as TokenGrant[]) ?? [],
+        grants: (payload.grants as RoleAssignment[]) ?? [],
         mfa: payload.mfa === true,
       };
     } catch (error) {

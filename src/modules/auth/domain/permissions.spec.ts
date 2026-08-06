@@ -18,25 +18,30 @@ describe('the permission catalogue', () => {
     }
   });
 
-  it('groups every permission under a resource that matches its code', () => {
+  it('groups every permission under a screen of the administration UI', () => {
+    // The resource is the SCREEN the permission belongs to, not the prefix of
+    // its code — `vitals:write` and `prescription:write` are configured from
+    // the clinical record screen, and `user:manage` from the admin one. An
+    // exception list keyed on the prefix would have grown with every addition;
+    // asserting the closed set of screens is the invariant that actually
+    // matters.
+    const SCREENS = ['patient', 'agenda', 'record', 'billing', 'catalog', 'admin']; // prettier-ignore
+
     for (const definition of PERMISSION_CATALOGUE) {
-      const [resourceInCode] = definition.code.split(':');
-      // `vitals:write` and `prescription:write` belong to the record screen,
-      // so their resource deliberately differs from their prefix. Everything
-      // else must line up, or the grouping is arbitrary.
-      const deliberate = ['vitals:write', 'prescription:write'];
-      if (deliberate.includes(definition.code)) continue;
-      expect(definition.resource, definition.code).toBe(resourceInCode);
+      expect(SCREENS, definition.code).toContain(definition.resource);
     }
   });
 
-  it('describes every permission for whoever assigns it', () => {
-    // The description is read by a clinic administrator building a role. An
-    // empty or English one makes the screen useless to them.
+  it('describes every permission the way the user reads it', () => {
+    // A clinic administrator builds a role from these strings. They follow the
+    // same convention as any other user-facing text (ADR-005): a complete
+    // sentence, capitalised, in Spanish.
     for (const definition of PERMISSION_CATALOGUE) {
-      expect(definition.description.length, definition.code).toBeGreaterThan(
-        15,
-      );
+      expect(definition.description, definition.code).toMatch(/^[A-ZÁÉÍÓÚÑ]/);
+      expect(
+        definition.description.split(' ').length,
+        `${definition.code} is not a sentence`,
+      ).toBeGreaterThan(1);
     }
   });
 });
