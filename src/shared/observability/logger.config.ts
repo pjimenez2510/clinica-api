@@ -167,8 +167,32 @@ export const loggerConfig: Params = {
     /** LAYER 3 — allowlist pruning over the merged object. Fails closed. */
     formatters: {
       level: (label: string) => ({ level: label }),
-      log: (object: Record<string, unknown>) =>
-        pruneToAllowlist(object) as Record<string, unknown>,
+      /**
+       * `err`, `req` and `res` are held back from the pruning.
+       *
+       * NOT a weakening — a repair. `formatters.log` runs BEFORE the
+       * serializers, and `pruneToAllowlist` recurses: handed a raw `Error` it
+       * rebuilt it as a plain object, and `message`, `stack` and `name` are
+       * NON-ENUMERABLE on an Error, so they were dropped before any serializer
+       * saw them. Every error log came out as
+       * `{"err":{"type":"Object","message":""}}` — no message, no stack, and
+       * `sanitizeErrorMessage` was dead code that never received anything.
+       *
+       * An error log with no content cannot reconstruct an improper access,
+       * which is exactly what the LOPDP requires us to be able to do.
+       *
+       * These three keys lose nothing by being held back: each has a
+       * serializer that is itself an allowlist and builds its output field by
+       * field. Everything else still fails closed here.
+       */
+      log: (object: Record<string, unknown>) => {
+        const { err, req, res, ...rest } = object;
+        const pruned = pruneToAllowlist(rest) as Record<string, unknown>;
+        if (err !== undefined) pruned.err = err;
+        if (req !== undefined) pruned.req = req;
+        if (res !== undefined) pruned.res = res;
+        return pruned;
+      },
     },
 
     autoLogging: {

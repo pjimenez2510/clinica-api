@@ -45,16 +45,29 @@ export function useDatabase(): () => PrismaClient {
 
   afterEach(async () => {
     // `access_audit` carries a trigger that refuses TRUNCATE — that is the
-    // point of the table, and there is a test below proving it. Replica mode
-    // is the escape hatch the trigger's own comment describes: a superuser
-    // disabling it deliberately. It is scoped to this session and restored
-    // immediately, so it can never be in force while a test runs.
-    await prisma.$executeRawUnsafe(`SET session_replication_role = 'replica'`);
-    try {
-      await prisma.$executeRawUnsafe(truncateStatement);
-    } finally {
-      await prisma.$executeRawUnsafe(`SET session_replication_role = 'origin'`);
-    }
+    // point of the table, and there is a test proving it. Replica mode is the
+    // escape hatch the trigger's own comment describes.
+    //
+    // INSIDE A TRANSACTION, AND `SET LOCAL`. Not decoration:
+    // `PrismaPg` is a POOL. Three loose `$executeRawUnsafe` calls are three
+    // independent checkouts, so the SET, the TRUNCATE and the restore are not
+    // guaranteed to land on the same connection. The first test to issue
+    // concurrent queries grows the pool, and then the restore can miss —
+    // leaving a connection stuck in replica mode with EVERY user trigger
+    // disabled. A later test picking up that connection would find a signed
+    // note editable and report the safety property as passing when nothing
+    // was actually enforced. A test that passes vacuously is worse than one
+    // that fails.
+    //
+    // `$transaction` pins one connection, and `SET LOCAL` is reverted by the
+    // COMMIT or the ROLLBACK — so no failure path can leave replica mode on,
+    // and no `finally` is needed. `lock_timeout` stops an open transaction
+    // elsewhere from stalling the run for the full three-minute hook timeout.
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`); // prettier-ignore
+      await tx.$executeRawUnsafe(`SET LOCAL lock_timeout = '5s'`);
+      await tx.$executeRawUnsafe(truncateStatement);
+    });
   });
 
   afterAll(async () => {

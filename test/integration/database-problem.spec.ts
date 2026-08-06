@@ -268,6 +268,144 @@ describe('database errors become usable responses', () => {
     expect(JSON.stringify(problem)).not.toMatch(/Failing row/i);
   });
 
+  it('turns an encounter starting before the patient was born into 422', async () => {
+    // Raised by a TRIGGER, not by a declarative constraint, so it carries
+    // SQLSTATE 23000 — the class code. That was missing from the table and
+    // this plain data-entry mistake answered 500.
+    const { prisma, site, practitioner } = await agenda();
+    const baby = await createPatient(prisma, {
+      birthDate: new Date('2026-09-20'),
+    });
+
+    const problem = await problemFrom(
+      prisma.encounter.create({
+        data: {
+          siteId: site.id,
+          practitionerId: practitioner.id,
+          patientId: baby.id,
+          startedAt: new Date('2026-09-14T14:00:00Z'),
+          careModality: 'MORBIDITY',
+          visitSequence: 'FIRST_TIME',
+        },
+      }),
+    );
+
+    expect(problem?.status).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
+    expect(problem?.code).toBe('INTEGRITY_RULE_FAILED');
+  });
+
+  it('turns an encounter filed against another patient into 422', async () => {
+    // The only thing standing between a diagnosis and the wrong medical
+    // record. It also answered 500.
+    const { prisma, site, practitioner, patient } = await agenda();
+    const appointment = await prisma.agendaEntry.create({
+      data: {
+        kind: 'APPOINTMENT',
+        siteId: site.id,
+        practitionerId: practitioner.id,
+        patientId: patient.id,
+        ...hourSlot(9),
+      },
+    });
+    const someoneElse = await createPatient(prisma);
+
+    const problem = await problemFrom(
+      prisma.encounter.create({
+        data: {
+          siteId: site.id,
+          practitionerId: practitioner.id,
+          patientId: someoneElse.id,
+          agendaEntryId: appointment.id,
+          startedAt: new Date('2026-09-14T14:00:00Z'),
+          careModality: 'MORBIDITY',
+          visitSequence: 'FIRST_TIME',
+        },
+      }),
+    );
+
+    expect(problem?.status).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
+    expect(problem?.code).toBe('INTEGRITY_RULE_FAILED');
+  });
+
+  it('NEVER lets a client steer which error it gets back', () => {
+    // A trigger message interpolates the value it rejected. With an unanchored
+    // search, a client sending a field containing `constraint "..."` chose
+    // which of the registry messages the API returned, and which input the
+    // interface highlighted.
+    const forged = {
+      code: 'P2039',
+      clientVersion: '7.9.1',
+      meta: {
+        driverAdapterError: {
+          cause: {
+            code: '23000',
+            originalMessage:
+              'frozen cie10_code constraint "agenda_entry_no_practitioner_overlap" does not match concept',
+          },
+        },
+      },
+    };
+
+    const problem = extractDatabaseProblem(forged);
+
+    expect(problem?.code).toBe('INTEGRITY_RULE_FAILED');
+    expect(problem?.code).not.toBe('PRACTITIONER_SLOT_TAKEN');
+    expect(problem?.errors).toBeUndefined();
+  });
+
+  it('reports the database being unreachable as 503, not 500', () => {
+    // The client has to be able to tell "retry in a moment" from "this server
+    // has a bug". /health already called this `down`; the API contradicted it.
+    const unreachable = { code: 'P1001', clientVersion: '7.9.1' };
+
+    expect(extractDatabaseProblem(unreachable)).toEqual({
+      status: HttpStatus.SERVICE_UNAVAILABLE,
+      slug: 'service-unavailable',
+      title: 'Servicio no disponible',
+      code: 'DATABASE_UNAVAILABLE',
+    });
+  });
+
+  it('does NOT dress a real privilege failure up as a business conflict', () => {
+    // 42501 is also what a missing GRANT raises. Mapping it wholesale meant a
+    // least-privilege deployment would answer 409 — and 409 logs at `warn`, so
+    // a total write outage would page nobody.
+    const missingGrant = {
+      code: 'P2039',
+      clientVersion: '7.9.1',
+      meta: {
+        driverAdapterError: {
+          cause: {
+            code: '42501',
+            originalMessage: 'permission denied for table patient',
+          },
+        },
+      },
+    };
+
+    expect(extractDatabaseProblem(missingGrant)).toBeUndefined();
+  });
+
+  it('does not resolve a constraint name through the prototype chain', () => {
+    const hostile = {
+      code: 'P2039',
+      clientVersion: '7.9.1',
+      meta: {
+        driverAdapterError: {
+          cause: {
+            code: '23514',
+            originalMessage:
+              'new row for relation "x" violates check constraint "constructor"',
+          },
+        },
+      },
+    };
+
+    // Falls back to the SQLSTATE meaning instead of building a malformed body
+    // out of `Object.prototype.constructor`.
+    expect(extractDatabaseProblem(hostile)?.code).toBe('CHECK_FAILED');
+  });
+
   it('leaves an error it does not understand alone', () => {
     // An unmapped failure is a bug on our side. Returning `undefined` sends it
     // to the generic 500 instead of inventing a reassuring message.
