@@ -61,6 +61,72 @@ describe('clinical record integrity', () => {
       expect(foreign.id).toBeTruthy();
     });
 
+    it('accepts a cedula whose check digit is 0', async () => {
+      // The classic bug in this algorithm. The outer `% 10` in
+      // `((10 - (total % 10)) % 10)` exists ONLY for this case: without it the
+      // result would be 10 and every cedula ending in 0 would be rejected —
+      // roughly one Ecuadorian in ten. Digit computed by hand, then confirmed
+      // against the database function.
+      const prisma = db();
+      const patient = await createPatient(prisma);
+
+      const identifier = await prisma.patientIdentifier.create({
+        data: { patientId: patient.id, type: 'CEDULA', value: '1700000050' },
+      });
+
+      expect(identifier.value).toBe('1700000050');
+    });
+
+    it('accepts province 30, Ecuadorians registered abroad', async () => {
+      // An explicit acceptance branch. Anyone "simplifying" the province check
+      // to 1..24 would lock out a real group of patients, and no test would
+      // have noticed.
+      const prisma = db();
+      const patient = await createPatient(prisma);
+
+      const identifier = await prisma.patientIdentifier.create({
+        data: { patientId: patient.id, type: 'CEDULA', value: '3000000004' },
+      });
+
+      expect(identifier.value).toBe('3000000004');
+    });
+
+    it('REFUSES a cedula that is not ten digits', async () => {
+      // A bulk import from the ministry with truncated values would otherwise
+      // walk straight in.
+      const prisma = db();
+      const patient = await createPatient(prisma);
+
+      await expect(
+        prisma.patientIdentifier.create({
+          data: { patientId: patient.id, type: 'CEDULA', value: '171003406' },
+        }),
+      ).rejects.toThrow(/patient_identifier_cedula_valid/);
+    });
+
+    it('REFUSES an impossible province', async () => {
+      const prisma = db();
+      const patient = await createPatient(prisma);
+
+      await expect(
+        prisma.patientIdentifier.create({
+          data: { patientId: patient.id, type: 'CEDULA', value: '2510034065' },
+        }),
+      ).rejects.toThrow(/patient_identifier_cedula_valid/);
+    });
+
+    it('REFUSES a RUC where a cedula belongs', async () => {
+      // A third digit of 6 or more is a RUC, not a natural person.
+      const prisma = db();
+      const patient = await createPatient(prisma);
+
+      await expect(
+        prisma.patientIdentifier.create({
+          data: { patientId: patient.id, type: 'CEDULA', value: '1760034065' },
+        }),
+      ).rejects.toThrow(/patient_identifier_cedula_valid/);
+    });
+
     it('REFUSES two active patients holding the same cedula', async () => {
       const prisma = db();
       const first = await createPatient(prisma);
@@ -74,7 +140,9 @@ describe('clinical record integrity', () => {
         prisma.patientIdentifier.create({
           data: { patientId: second.id, type: 'CEDULA', value: '1710034065' },
         }),
-      ).rejects.toThrow(/Unique constraint failed/);
+      ).rejects.toThrow(
+        /Unique constraint failed on the fields: \(`type`, `issuing_country`, `value`\)/,
+      );
     });
   });
 
@@ -101,7 +169,10 @@ describe('clinical record integrity', () => {
         data: { encounterId: encounter.id, weightKg: 70, heightCm: 175 },
       });
 
-      expect(Number(vitals.bmi)).toBeCloseTo(22.86, 2);
+      // Exact, not `toBeCloseTo`: the unrounded value is 22.8571…, which is
+      // within the 0.005 tolerance, so the assertion passed with or without
+      // the trigger's `round(…, 2)`.
+      expect(vitals.bmi?.toString()).toBe('22.86');
     });
 
     it('recomputes BMI when the weight is corrected', async () => {
@@ -115,7 +186,7 @@ describe('clinical record integrity', () => {
         data: { weightKg: 80 },
       });
 
-      expect(Number(corrected.bmi)).toBeCloseTo(26.12, 2);
+      expect(corrected.bmi?.toString()).toBe('26.12');
     });
 
     it('leaves BMI null when the height is missing', async () => {
@@ -218,7 +289,10 @@ describe('clinical record integrity', () => {
           where: { id: note.id },
           data: { content: { motivo: 'otra cosa' } },
         }),
-      ).rejects.toThrow(/signed clinical note|insufficient_privilege|cannot/i);
+        // Anchored on the message the trigger actually raises. The previous
+        // `/cannot/i` matched almost any PostgreSQL or JavaScript error, so the
+        // test would have passed with the trigger removed.
+      ).rejects.toThrow(/is signed and cannot be modified/);
     });
 
     it('REFUSES deleting any note, signed or not', async () => {

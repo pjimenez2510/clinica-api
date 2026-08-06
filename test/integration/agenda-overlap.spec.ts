@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from '@prisma/client';
+import { describe, expect, inject, it } from 'vitest';
+
+import { extractDatabaseProblem } from '../../src/shared/http/database-problem';
 
 import { useDatabase } from './setup/database';
 import {
@@ -242,6 +246,68 @@ describe('agenda entry overlap', () => {
         },
       }),
     ).rejects.toThrow(/agenda_entry_patient_coherence/);
+  });
+
+  it('ARBITRATES between two receptionists booking the same slot', async () => {
+    /**
+     * The reason this rule lives in the database and not in a service.
+     *
+     * Every comment in this codebase justifies the EXCLUDE with "two
+     * receptionists booking in the same millisecond", and until now nothing
+     * exercised it: the other tests write one row and then another, which
+     * proves uniqueness, not arbitration. A `SELECT ... WHERE NOT EXISTS`
+     * followed by an INSERT would pass all of them and still double-book,
+     * because both transactions read "free" before either writes.
+     *
+     * Two independent clients, so these are genuinely two connections. Both
+     * insert before either commits — which is the moment that matters.
+     */
+    const { site, practitioner, patient } = await scheduleContext();
+    const other = await createPatient(db());
+    const url = inject('databaseUrl');
+
+    const clientA = new PrismaClient({
+      adapter: new PrismaPg({ connectionString: url }),
+    });
+    const clientB = new PrismaClient({
+      adapter: new PrismaPg({ connectionString: url }),
+    });
+
+    const slot = hourSlot(16);
+
+    const book = (client: PrismaClient, patientId: string) =>
+      client.agendaEntry.create({
+        data: {
+          kind: 'APPOINTMENT',
+          siteId: site.id,
+          practitionerId: practitioner.id,
+          patientId,
+          ...slot,
+        },
+      });
+
+    try {
+      // No barrier holding the transactions open, and the first attempt at one
+      // taught us why: PostgreSQL makes the second writer WAIT on the first
+      // one's uncommitted row and only rejects it at that commit. Trying to
+      // force both to insert before either commits deadlocks by construction —
+      // that blocking IS the arbitration.
+      const outcomes = await Promise.allSettled([
+        book(clientA, patient.id),
+        book(clientB, other.id),
+      ]);
+
+      // EXACTLY one, not "at least one failed": two winners is the bug.
+      expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
+
+      // And the loser gets an answer she can act on, not a server error.
+      const loser = outcomes.find((o) => o.status === 'rejected');
+      expect(extractDatabaseProblem(loser?.reason)?.code).toBe(
+        'PRACTITIONER_SLOT_TAKEN',
+      );
+    } finally {
+      await Promise.all([clientA.$disconnect(), clientB.$disconnect()]);
+    }
   });
 
   it('blocks the calendar for a vacation block just like an appointment', async () => {
