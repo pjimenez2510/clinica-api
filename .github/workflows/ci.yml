@@ -183,7 +183,9 @@ jobs:
             'trg_clinical_note_immutable',
             'trg_clinical_note_no_truncate',
             'trg_encounter_vitals_bmi',
-            'trg_encounter_freeze_age'
+            'trg_encounter_freeze_age',
+            'trg_user_role_grant_no_delete',
+            'trg_user_role_grant_no_truncate'
           ]) AS expected
           WHERE NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = expected);
           SQL
@@ -193,4 +195,48 @@ jobs:
             exit 1
           fi
 
-          echo "Constraints and triggers present."
+          # Indexes and generated columns, added after `prisma migrate dev`
+          # produced a migration that dropped exactly these. The check above
+          # would NOT have caught it: they are neither constraints nor
+          # triggers, and losing them silently removes accent-insensitive
+          # patient search and the temporal validity of the CIE-10 catalogue.
+          missing=$(psql -h localhost -U clinica -d clinica_ci -t -A <<'SQL'
+          SELECT string_agg(expected, ', ')
+          FROM unnest(ARRAY[
+            'patient_search_name_trgm',
+            'catalog_concept_search_trgm',
+            'catalog_concept_current',
+            'clinical_note_chain_version_unique',
+            'clinical_note_one_current_per_chain',
+            'patient_identifier_active_unique',
+            'access_audit_occurred_brin',
+            'user_role_grant_active_unique'
+          ]) AS expected
+          WHERE NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = expected);
+          SQL
+          )
+          if [ -n "$missing" ]; then
+            echo "::error::Indexes missing after migrating: $missing"
+            exit 1
+          fi
+
+          missing=$(psql -h localhost -U clinica -d clinica_ci -t -A <<'SQL'
+          SELECT string_agg(t || '.' || c, ', ')
+          FROM (VALUES
+            ('patient', 'search_name'),
+            ('catalog_concept', 'search_display'),
+            ('catalog_concept', 'valid_period'),
+            ('encounter_vitals', 'bmi')
+          ) AS expected(t, c)
+          WHERE NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = expected.t AND column_name = expected.c
+          );
+          SQL
+          )
+          if [ -n "$missing" ]; then
+            echo "::error::Columns missing after migrating: $missing"
+            exit 1
+          fi
+
+          echo "Constraints, triggers, indexes and generated columns present.

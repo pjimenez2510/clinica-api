@@ -70,6 +70,8 @@ model User {
 
   refreshTokens RefreshToken[]
   backupCodes   BackupCode[]
+  roleGrants    UserRoleGrant[] @relation("GrantHolder")
+  grantsIssued  UserRoleGrant[] @relation("GrantIssuer")
 
   /// Clinical profile. Optional: receptionists and billing staff have an
   /// account but no clinical role.
@@ -77,6 +79,60 @@ model User {
 
   @@index([email])
   @@map("app_user")
+}
+
+/// Roles of a clinic, derived from who signs what rather than from a generic
+/// template. See ADR-007.
+///
+/// `ADMIN` deliberately does NOT include access to clinical records:
+/// administering the system is not treating patients, and that separation is
+/// the first thing an SPDP audit asks about.
+enum StaffRole {
+  ADMIN
+  MEDICO
+  ENFERMERIA
+  RECEPCION
+  CAJA
+  AUDITOR
+
+  @@map("staff_role")
+}
+
+/// A role held by a user, scoped to one site or granted globally.
+///
+/// Permissions are NOT stored: they are derived from the role in code. A
+/// permission only means something if some route checks it, and an editable
+/// permission table produces rows that protect nothing. Roles are data — a
+/// clinic adds an external auditor without a deploy — but the permission
+/// catalogue is part of the code's contract.
+model UserRoleGrant {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  userId String @map("user_id") @db.Uuid
+  /// Restrict, not Cascade: a grant is revoked, never deleted, so a cascade
+  /// here could only ever fail — and it would fail with a message about role
+  /// grants when the caller was trying to delete a user. Staff accounts are
+  /// deactivated, not removed.
+  user   User   @relation("GrantHolder", fields: [userId], references: [id], onDelete: Restrict)
+
+  role StaffRole
+
+  /// NULL means every site. A receptionist is hired at one site; the clinic
+  /// director is not.
+  siteId String? @map("site_id") @db.Uuid
+  site   Site?   @relation(fields: [siteId], references: [id], onDelete: Restrict)
+
+  /// Who granted it. Nullable only for the seed, which has no author.
+  grantedById String? @map("granted_by_id") @db.Uuid
+  grantedBy   User?   @relation("GrantIssuer", fields: [grantedById], references: [id], onDelete: Restrict)
+
+  grantedAt DateTime  @default(now()) @map("granted_at") @db.Timestamptz(6)
+  /// Revoked, never deleted: who could do what and when is part of the audit
+  /// trail, and a deleted row cannot answer that.
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+
+  @@index([userId, revokedAt])
+  @@map("user_role_grant")
 }
 
 /// Refresh token with rotation and reuse detection.
@@ -588,6 +644,7 @@ model Site {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   rooms           SiteRoom[]
+  roleGrants      UserRoleGrant[]
   practitioners   PractitionerSite[]
   scheduleRules   PractitionerScheduleRule[]
   agendaEntries   AgendaEntry[]

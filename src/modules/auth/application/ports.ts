@@ -1,3 +1,5 @@
+import type { RoleGrant } from '../domain/permissions';
+
 /**
  * Ports the authentication use cases depend on.
  *
@@ -43,7 +45,7 @@ export interface PasswordHasherPort {
 export interface AccessTokenClaimsInput {
   sub: string;
   fam: string;
-  roles: string[];
+  grants: RoleGrant[];
   mfa: boolean;
 }
 
@@ -101,6 +103,8 @@ export interface AuthUserRepositoryPort {
   savePendingMfaSecret(userId: string, encryptedSecret: string): Promise<void>;
   confirmMfa(userId: string, usedStep: bigint): Promise<void>;
   recordMfaStep(userId: string, usedStep: bigint): Promise<void>;
+  /** Roles currently in force. Revoked grants are excluded by the query. */
+  findActiveGrants(userId: string): Promise<RoleGrant[]>;
 }
 
 export const PASSWORD_HASHER = Symbol('PASSWORD_HASHER');

@@ -10,6 +10,7 @@ import {
   SignJWT,
 } from 'jose';
 
+import type { RoleGrant } from '../domain/permissions';
 import type { Env } from '../../../shared/config/env.schema';
 import { UnauthorizedError } from '../../../shared/domain/errors/domain-error';
 
@@ -27,7 +28,16 @@ export interface AccessTokenClaims {
   sub: string;
   /** Session family, so a token can be tied to the refresh chain it came from. */
   fam: string;
-  roles: string[];
+  /**
+   * Roles held, each scoped to a site or global (`siteId: null`).
+   *
+   * The GRANTS travel, not the permissions. Permissions are derived from the
+   * role in code, so widening a role does not require reissuing every live
+   * token — and the token stays small. The cost is up to one access-token
+   * lifetime (15 minutes) of staleness after a role changes, which ADR-007
+   * accepts and bounds.
+   */
+  grants: RoleGrant[];
   /** Whether the second factor was already satisfied in this session. */
   mfa: boolean;
 }
@@ -70,7 +80,7 @@ export class TokenService implements OnModuleInit {
   async issueAccessToken(claims: AccessTokenClaims): Promise<string> {
     return new SignJWT({
       fam: claims.fam,
-      roles: claims.roles,
+      grants: claims.grants,
       mfa: claims.mfa,
     })
       .setProtectedHeader({ alg: 'EdDSA' })
@@ -94,7 +104,7 @@ export class TokenService implements OnModuleInit {
       return {
         sub: payload.sub!,
         fam: payload.fam as string,
-        roles: (payload.roles as string[]) ?? [],
+        grants: (payload.grants as RoleGrant[]) ?? [],
         mfa: payload.mfa === true,
       };
     } catch (error) {

@@ -24,7 +24,7 @@ function buildService(overrides: Record<string, string> = {}): TokenService {
   } as unknown as ConfigService<never, true>);
 }
 
-const CLAIMS = { sub: 'u-1', fam: 'f-1', roles: ['DOCTOR'], mfa: true };
+const CLAIMS = { sub: 'u-1', fam: 'f-1', grants: [], mfa: true };
 
 describe('TokenService', () => {
   let service: TokenService;

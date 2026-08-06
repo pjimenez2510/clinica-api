@@ -81,6 +81,7 @@ describe('sign-in does not reveal who works here', () => {
       savePendingMfaSecret: vi.fn(),
       confirmMfa: vi.fn(),
       recordMfaStep: vi.fn(),
+      findActiveGrants: vi.fn().mockResolvedValue([]),
     };
 
     const hasher: PasswordHasherPort = {

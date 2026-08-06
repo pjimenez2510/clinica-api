@@ -93,9 +93,6 @@ const MAX_FAILED_ATTEMPTS = 5;
 const BASE_LOCK_SECONDS = 60;
 const MAX_LOCK_SECONDS = 15 * 60;
 
-/** Roles are not modelled yet; every user gets the same one for now. */
-const DEFAULT_ROLES = ['STAFF'];
-
 export interface AuthenticatedSession {
   accessToken: string;
   refreshToken: string;
@@ -209,7 +206,7 @@ export class AuthService {
       const challengeToken = await this.tokens.issueAccessToken({
         sub: user.id,
         fam: 'pending-mfa',
-        roles: [],
+        grants: [],
         mfa: false,
       });
       return { mfaRequired: true, challengeToken };
@@ -303,7 +300,7 @@ export class AuthService {
     const accessToken = await this.tokens.issueAccessToken({
       sub: user.id,
       fam: rotated.familyId,
-      roles: DEFAULT_ROLES,
+      grants: await this.users.findActiveGrants(user.id),
       mfa: true,
     });
 
@@ -373,7 +370,9 @@ export class AuthService {
     const accessToken = await this.tokens.issueAccessToken({
       sub: user.id,
       fam: refresh.familyId,
-      roles: DEFAULT_ROLES,
+      // Read at issue time, not cached: a role revoked before this sign-in
+      // must not travel in the token that sign-in produces.
+      grants: await this.users.findActiveGrants(user.id),
       mfa: true,
     });
 

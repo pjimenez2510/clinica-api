@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import type { AuthUser, AuthUserRepositoryPort } from '../application/ports';
+import type { RoleGrant } from '../domain/permissions';
 
 /**
  * Only the columns the use cases actually need are selected.
@@ -109,5 +110,27 @@ export class PrismaAuthUserRepository implements AuthUserRepositoryPort {
       where: { id: userId },
       data: { mfaLastStep: usedStep },
     });
+  }
+
+  /**
+   * Roles in force right now.
+   *
+   * Revoked grants are filtered in the QUERY, not afterwards: a filter that
+   * lives in application code is one someone can forget to apply, and the
+   * consequence here is a revoked role still granting clinical access.
+   *
+   * No cast on `role`: Prisma's generated enum and the `StaffRoleName` union
+   * are structurally identical, so adding a role to one and not the other
+   * fails to compile. A cast here would have hidden exactly that.
+   */
+  async findActiveGrants(userId: string): Promise<RoleGrant[]> {
+    const grants = await this.prisma.userRoleGrant.findMany({
+      where: { userId, revokedAt: null },
+      select: { role: true, siteId: true },
+    });
+    return grants.map((grant) => ({
+      role: grant.role,
+      siteId: grant.siteId,
+    }));
   }
 }

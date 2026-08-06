@@ -14,7 +14,11 @@ import type { Request, Response } from 'express';
 
 import type { Env } from '../../shared/config/env.schema';
 import { UnauthorizedError } from '../../shared/domain/errors/domain-error';
-import { MfaOptional, Public } from '../../shared/http/auth.decorators';
+import {
+  MfaOptional,
+  OwnAccount,
+  Public,
+} from '../../shared/http/auth.decorators';
 
 import { AuthService } from './application/auth.service';
 import {
@@ -163,6 +167,7 @@ export class AuthController {
 
   /** Closes the current session. Other devices stay signed in. */
   @Post('logout')
+  @OwnAccount()
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Close the current session' })
   async logout(@Res({ passthrough: true }) res: Response): Promise<void> {
@@ -173,6 +178,7 @@ export class AuthController {
   }
 
   @Post('password')
+  @OwnAccount()
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Change the password and close every session' })
   async changePassword(

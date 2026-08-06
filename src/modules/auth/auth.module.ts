@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 
 import { AuthService } from './application/auth.service';
+import { PermissionsGuard } from './infrastructure/permissions.guard';
 import {
   AUTH_USER_REPOSITORY,
   PASSWORD_HASHER,
@@ -55,6 +56,9 @@ import { TotpService } from './infrastructure/totp.service';
     { provide: AUTH_USER_REPOSITORY, useExisting: PrismaAuthUserRepository },
 
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    // ORDER MATTERS: NestJS runs APP_GUARD providers in registration order,
+    // and this one reads the claims JwtAuthGuard puts in the context.
+    { provide: APP_GUARD, useClass: PermissionsGuard },
   ],
   exports: [TokenService, CurrentUserService, PasswordHasher],
 })
