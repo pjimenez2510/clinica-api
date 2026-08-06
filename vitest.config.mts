@@ -72,8 +72,8 @@ export default defineConfig({
     // Vitest NO resuelve los path aliases de TS automáticamente (Jest sí lo hacía
     // vía ts-jest + tsconfig-paths). Hay que declararlos aquí a mano.
     alias: {
-      '@': resolve(__dirname, './src'),
-      '@test': resolve(__dirname, './test'),
+      '@': resolve(import.meta.dirname, './src'),
+      '@test': resolve(import.meta.dirname, './test'),
     },
   },
 });

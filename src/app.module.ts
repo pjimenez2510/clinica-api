@@ -1,10 +1,52 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
+import { ConfigModule } from '@nestjs/config';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ClsModule } from 'nestjs-cls';
+
+import { validarEnv } from './shared/config/env.schema';
+import { ProblemDetailsFilter } from './shared/http/problem-details.filter';
+import { SharedInfrastructureModule } from './shared/infrastructure/shared-infrastructure.module';
 
 @Module({
-  imports: [],
-  controllers: [AppController],
-  providers: [AppService],
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      cache: true,
+      // Valida al arrancar: si falta una variable, el proceso no levanta.
+      // Es preferible a fallar tres horas después, en la primera factura.
+      validate: validarEnv,
+    }),
+
+    /**
+     * Contexto por petición sobre AsyncLocalStorage.
+     * Propaga requestId, usuarioId y sedeId sin ensuciar la firma de cada
+     * función — que es lo que permite mantener el dominio libre de NestJS.
+     */
+    ClsModule.forRoot({
+      global: true,
+      middleware: { mount: true, generateId: true },
+    }),
+
+    /**
+     * Rate limiting en capa de GUARD: corre antes de que se ejecute nada caro.
+     * Tres ventanas para distinguir una ráfaga puntual de un abuso sostenido.
+     */
+    ThrottlerModule.forRoot({
+      throttlers: [
+        { name: 'corta', ttl: 1_000, limit: 5 },
+        { name: 'media', ttl: 10_000, limit: 30 },
+        { name: 'larga', ttl: 60_000, limit: 150 },
+      ],
+    }),
+
+    SharedInfrastructureModule,
+  ],
+  providers: [
+    // Se registra con APP_FILTER, no con useGlobalFilters, para que el filtro
+    // pueda recibir HttpAdapterHost por inyección.
+    { provide: APP_FILTER, useClass: ProblemDetailsFilter },
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
 })
 export class AppModule {}

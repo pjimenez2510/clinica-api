@@ -1,0 +1,66 @@
+// Esquema de base de datos.
+//
+// Convenciones fijadas para todo el proyecto:
+//   - Nombres de tabla y columna en snake_case (@map / @@map), modelos en PascalCase.
+//   - Todas las marcas de tiempo en `timestamptz` (@db.Timestamptz), jamás `timestamp`.
+//   - El dinero en `Decimal(12,2)`, jamás Float.
+//   - `relationJoins` activado: sin él Prisma divide cada relación en varias
+//     consultas y las une en la aplicación, que es el patrón N+1 clásico.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["relationJoins"]
+}
+
+// Prisma 7 eliminó `url` del datasource. La conexión de las migraciones vive
+// ahora en `prisma.config.ts`, y el cliente en tiempo de ejecución recibe un
+// adaptador de driver (@prisma/adapter-pg) construido en la aplicación.
+// Ventaja real: el pool de conexiones lo controlas tú, no Prisma.
+datasource db {
+  provider = "postgresql"
+}
+
+/// Bitácora de acceso a datos personales y de salud.
+///
+/// Exigida por la LOPDP: hay que poder responder quién vio qué historia
+/// clínica, cuándo y desde dónde. Es la evidencia principal ante la SPDP.
+///
+/// Es append-only por diseño. La inmutabilidad NO se garantiza aquí sino con
+/// permisos de PostgreSQL (REVOKE UPDATE, DELETE) en una migración aparte:
+/// una convención que solo vive en el código de la aplicación no es auditable.
+model AuditoriaAcceso {
+  id BigInt @id @default(autoincrement())
+
+  /// Momento del acceso. Siempre timestamptz.
+  ocurridoEn DateTime @default(now()) @map("ocurrido_en") @db.Timestamptz(6)
+
+  /// Quién. Identificador interno del usuario, NUNCA su cédula.
+  usuarioId String? @map("usuario_id") @db.Uuid
+
+  /// Qué recurso se tocó: tipo y su identificador interno.
+  recursoTipo String @map("recurso_tipo") @db.VarChar(64)
+  recursoId   String @map("recurso_id") @db.VarChar(64)
+
+  /// Qué se hizo: LEER, CREAR, ACTUALIZAR, EXPORTAR, IMPRIMIR...
+  accion String @db.VarChar(32)
+
+  /// Desde dónde. La IP es dato personal bajo LOPDP: se guarda porque es
+  /// necesaria para investigar accesos indebidos, y se declara en el registro
+  /// de actividades de tratamiento.
+  ip        String? @db.Inet
+  userAgent String? @map("user_agent") @db.VarChar(512)
+
+  /// Correlación con la traza de OpenTelemetry: permite reconstruir la petición
+  /// completa a partir de una entrada de auditoría.
+  traceId String? @map("trace_id") @db.VarChar(32)
+
+  /// Motivo declarado en un acceso de emergencia (break-the-glass).
+  /// Texto libre obligatorio en ese flujo: una lista desplegable se rellena
+  /// en automático sin pensar.
+  motivoEmergencia String? @map("motivo_emergencia") @db.Text
+
+  @@index([recursoTipo, recursoId, ocurridoEn(sort: Desc)])
+  @@index([usuarioId, ocurridoEn(sort: Desc)])
+  @@index([ocurridoEn(sort: Desc)])
+  @@map("auditoria_acceso")
+}

@@ -1,4 +1,9 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["node_modules", "test", "dist", "**/*spec.ts"]
+  // Solo se compila `src`. Sin esto, los archivos de configuración de la raíz
+  // (prisma.config.ts, vitest.config.mts) entran en la compilación, desplazan
+  // el rootDir inferido y la salida acaba en dist/src/main.js en vez de
+  // dist/main.js — rompiendo el script `start:prod`.
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "test", "**/*.spec.ts"]
 }
