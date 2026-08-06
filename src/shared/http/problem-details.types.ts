@@ -38,6 +38,12 @@ export interface ProblemDetails extends ProblemDetailsBase {
   timestamp: string;
   /** Errores por campo, para formularios. */
   errors?: FieldError[];
+  /**
+   * Nombres de las dependencias caídas en un fallo de readiness (503).
+   * Solo nombres (`base_de_datos`), nunca el mensaje del error: ese puede
+   * arrastrar la cadena de conexión con credenciales.
+   */
+  dependenciasCaidas?: string[];
 }
 
 export interface FieldError {

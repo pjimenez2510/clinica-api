@@ -98,6 +98,7 @@ export class ProblemDetailsFilter implements ExceptionFilter {
 
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
+      const caidas = this.dependenciasCaidas(exception);
       return {
         ...base,
         type: `${BASE_TYPE}/http-${status}`,
@@ -105,6 +106,9 @@ export class ProblemDetailsFilter implements ExceptionFilter {
         status,
         detail: this.esProduccion ? undefined : exception.message,
         code: this.codigoHttp(status),
+        // Solo los nombres de las dependencias caídas. Es lo que necesita quien
+        // depura y no revela nada sensible.
+        ...(caidas ? { dependenciasCaidas: caidas } : {}),
       };
     }
 
@@ -161,10 +165,39 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       401: 'NO_AUTENTICADO',
       403: 'SIN_PERMISO',
       404: 'NO_ENCONTRADO',
+      405: 'METODO_NO_PERMITIDO',
       409: 'CONFLICTO',
+      413: 'PAYLOAD_DEMASIADO_GRANDE',
+      415: 'TIPO_NO_SOPORTADO',
       422: 'ENTIDAD_NO_PROCESABLE',
       429: 'DEMASIADAS_PETICIONES',
+      500: 'ERROR_INTERNO',
+      502: 'SERVICIO_EXTERNO',
+      503: 'SERVICIO_NO_DISPONIBLE',
+      504: 'TIEMPO_AGOTADO',
     };
     return conocidos[status] ?? 'ERROR_HTTP';
+  }
+
+  /**
+   * Extrae los nombres de las dependencias caídas de la respuesta de Terminus.
+   *
+   * Terminus lanza `ServiceUnavailableException` con `{ status, info, error,
+   * details }` dentro. Sin esto, el filtro reemplazaba ese cuerpo por un
+   * genérico y quien depura no sabía si falló la base de datos, la memoria o
+   * el almacenamiento.
+   *
+   * Solo se toman los NOMBRES de los indicadores, nunca sus mensajes: el nombre
+   * (`base_de_datos`) es seguro; el mensaje puede llevar la cadena de conexión.
+   */
+  private dependenciasCaidas(exception: HttpException): string[] | undefined {
+    const cuerpo: unknown = exception.getResponse();
+    if (typeof cuerpo !== 'object' || cuerpo === null) return undefined;
+
+    const error = (cuerpo as { error?: unknown }).error;
+    if (typeof error !== 'object' || error === null) return undefined;
+
+    const nombres = Object.keys(error);
+    return nombres.length > 0 ? nombres : undefined;
   }
 }

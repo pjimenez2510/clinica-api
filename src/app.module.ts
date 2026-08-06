@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ClsModule } from 'nestjs-cls';
 import { LoggerModule } from 'nestjs-pino';
 
 import { validarEnv } from './shared/config/env.schema';
+import { TimeoutInterceptor } from './shared/http/interceptors/timeout.interceptor';
 import { ProblemDetailsFilter } from './shared/http/problem-details.filter';
 import { SharedInfrastructureModule } from './shared/infrastructure/shared-infrastructure.module';
 import { loggerConfig } from './shared/observability/logger.config';
@@ -56,6 +57,8 @@ import { loggerConfig } from './shared/observability/logger.config';
     // pueda recibir HttpAdapterHost por inyección.
     { provide: APP_FILTER, useClass: ProblemDetailsFilter },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // Corta las peticiones colgadas antes de que agoten el pool de conexiones.
+    { provide: APP_INTERCEPTOR, useClass: TimeoutInterceptor },
   ],
 })
 export class AppModule {}

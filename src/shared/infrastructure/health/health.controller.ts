@@ -7,6 +7,7 @@ import {
 } from '@nestjs/terminus';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
+import { PinoLogger } from 'nestjs-pino';
 
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -17,7 +18,10 @@ export class HealthController {
     private readonly health: HealthCheckService,
     private readonly memoria: MemoryHealthIndicator,
     private readonly prisma: PrismaService,
-  ) {}
+    private readonly logger: PinoLogger,
+  ) {
+    this.logger.setContext(HealthController.name);
+  }
 
   /**
    * Sondeo de preparación (readiness): comprueba también las dependencias.
@@ -45,9 +49,22 @@ export class HealthController {
     try {
       await this.prisma.ping();
       return { base_de_datos: { status: 'up' } };
-    } catch {
-      // El mensaje del error NO se propaga: puede llevar la cadena de conexión
-      // con credenciales, y este endpoint suele estar expuesto.
+    } catch (error) {
+      /**
+       * Dos destinos distintos para la misma causa, a propósito:
+       *
+       *  - Al LOG va el motivo saneado, para poder diagnosticar. Sin esto el
+       *    endpoint solo dice "down" y no hay forma de saber si es la red, las
+       *    credenciales o que el motor no arrancó.
+       *  - A la RESPUESTA no va nada. El mensaje puede arrastrar la cadena de
+       *    conexión con usuario y contraseña, y este endpoint suele quedar
+       *    accesible desde fuera.
+       */
+      const causa = error instanceof Error ? error : new Error('desconocida');
+      this.logger.error(
+        { err: causa, dependencia: 'postgresql' },
+        'comprobacion de dependencia fallida',
+      );
       return { base_de_datos: { status: 'down' } };
     }
   }

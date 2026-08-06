@@ -47,10 +47,13 @@ interface RespuestaCruda {
 }
 
 interface ErrorCrudo {
+  name?: string;
   constructor?: { name?: string };
   message?: string;
   code?: unknown;
   stack?: string;
+  /** Los fallos de conexión de `pg` llegan agrupados aquí. */
+  errors?: Array<{ code?: unknown; message?: string }>;
 }
 
 const PATHS_REDACT = [
@@ -133,14 +136,20 @@ export const loggerConfig: Params = {
       res: (res: RespuestaCruda) => ({
         statusCode: res.statusCode ?? res.raw?.statusCode ?? null,
       }),
-      err: (err: ErrorCrudo) => ({
-        type: err?.constructor?.name ?? 'Error',
-        // Los errores de Prisma y pg incluyen la fila que causó el conflicto.
-        message: sanearMensajeError(err?.message),
-        code: err?.code,
-        stack: esProduccion ? undefined : err?.stack,
-        // err.query, err.parameters y err.detail NUNCA se serializan.
-      }),
+      err: (err: ErrorCrudo) => {
+        // `pg` agrupa los fallos de conexión en `errors[]` y deja vacíos el
+        // mensaje y el código de arriba. Sin este rescate, el log solo dice
+        // `type: "Object", message: ""` y no sirve para diagnosticar nada.
+        const agrupado = err?.errors?.[0];
+        return {
+          type: err?.name ?? err?.constructor?.name ?? 'Error',
+          // Los errores de Prisma y pg incluyen la fila que causó el conflicto.
+          message: sanearMensajeError(err?.message || agrupado?.message),
+          code: err?.code ?? agrupado?.code,
+          stack: esProduccion ? undefined : err?.stack,
+          // err.query, err.parameters y err.detail NUNCA se serializan.
+        };
+      },
     },
 
     /** CAPA 2 — denylist como red de seguridad. */
