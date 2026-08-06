@@ -11,6 +11,12 @@ import {
 } from '../../src/shared/http/auth.decorators';
 import { PERMISSIONS } from '../../src/modules/auth/domain/permissions';
 
+import { useTestEnvironment } from './setup/test-env';
+
+// Before anything imports the module: configuration is validated at startup
+// and the application refuses to boot without it.
+useTestEnvironment();
+
 /**
  * Every route declares how it is protected. No exceptions, and no defaults.
  *

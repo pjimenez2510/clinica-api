@@ -239,4 +239,4 @@ jobs:
             exit 1
           fi
 
-          echo "Constraints, triggers, indexes and generated columns present.
+          echo "Constraints, triggers, indexes and generated columns present."
