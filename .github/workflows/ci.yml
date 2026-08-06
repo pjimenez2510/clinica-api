@@ -145,6 +145,13 @@ jobs:
           DATABASE_URL: postgresql://clinica:clinica@localhost:5432/clinica_ci
         run: pnpm db:deploy
 
+      - name: Generate the Prisma client
+        # The seed imports it. Without this the job resolves the stub package,
+        # which is CommonJS-only, and the ESM seed fails on a named export.
+        env:
+          DATABASE_URL: postgresql://clinica:clinica@localhost:5432/clinica_ci
+        run: pnpm db:generate
+
       - name: Seed the authorisation catalogue
         # Not a development seed: the permission catalogue is part of the
         # code's contract and a database without it cannot grant anything. It
