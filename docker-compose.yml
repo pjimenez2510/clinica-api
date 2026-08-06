@@ -1,0 +1,91 @@
+# Infraestructura de desarrollo local.
+# Producción usa un compose distinto: aquí los puertos están expuestos y las
+# credenciales son triviales a propósito.
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: clinica-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: clinica
+      POSTGRES_PASSWORD: clinica_dev
+      POSTGRES_DB: clinica
+      # Español de Ecuador para que el ordenamiento e índices de texto se
+      # comporten igual que en producción (tildes y ñ).
+      LANG: es_EC.utf8
+      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C.UTF-8'
+      # UTC deliberadamente: ninguna conversión de fecha debe depender de la
+      # zona horaria del servidor.
+      TZ: UTC
+    ports:
+      - '5432:5432'
+    volumes:
+      # PostgreSQL 18+ cambió la convención: el montaje va en /var/lib/postgresql
+      # (no en .../data). La imagen coloca los datos en un subdirectorio por
+      # versión mayor, /var/lib/postgresql/18/docker, para que `pg_upgrade --link`
+      # no cruce fronteras de punto de montaje.
+      # Montar en la ruta antigua hace que el contenedor aborte al arrancar.
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U clinica -d clinica']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    container_name: clinica-redis
+    restart: unless-stopped
+    # OJO: las colas NO usan Redis (van en PostgreSQL con pg-boss, para poder
+    # encolar dentro de la misma transacción). Redis está solo para caché de
+    # catálogos y rate limiting compartido entre instancias.
+    # `noeviction` es obligatorio: una política de expulsión borraría datos en silencio.
+    command: redis-server --maxmemory 256mb --maxmemory-policy noeviction --appendonly yes
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: clinica-minio
+    restart: unless-stopped
+    # Adjuntos clínicos, XML firmados y RIDE. En producción es el mismo MinIO
+    # autohospedado: se testea contra el binario real, no contra un emulador de S3.
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio_dev
+      MINIO_ROOT_PASSWORD: minio_dev_password
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: clinica-mailpit
+    restart: unless-stopped
+    # Captura todo el correo saliente en desarrollo. Sin esto, un test puede
+    # enviar una historia clínica a una dirección real.
+    ports:
+      - '1025:1025' # SMTP
+      - '8025:8025' # interfaz web
+    environment:
+      MP_MAX_MESSAGES: 500
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:

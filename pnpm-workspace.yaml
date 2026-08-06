@@ -1,0 +1,16 @@
+# pnpm bloquea los scripts de postinstall por defecto (defensa ante supply chain).
+# Aquí se aprueban uno a uno, con el motivo.
+allowBuilds:
+  # Necesarios: descargan o compilan binarios sin los que el paquete no funciona.
+  prisma: true # motor de migraciones
+  '@prisma/engines': true # binarios del motor
+  '@swc/core': true # compilador nativo (Vitest + decoradores)
+  unrs-resolver: true # resolver nativo de ESLint
+
+  # Testcontainers: builds nativos opcionales. Funciona sin ellos.
+  cpu-features: false
+  ssh2: false
+  protobufjs: false
+
+  # Telemetría de terceros. Denegado a propósito.
+  '@scarf/scarf': false
