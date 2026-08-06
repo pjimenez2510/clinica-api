@@ -38,7 +38,7 @@ export class WeakPasswordError extends ValidationError {
  * NOTE: the rejection reasons are shown to the end user, so they are the one
  * thing in this file written in Spanish. Each one is a COMPLETE sentence with
  * its own subject — they are rendered on their own next to the field, never
- * appended to a prefix. See ../docs/ADR-005-mensajes-al-usuario.md.
+ * appended to a prefix. See clinica-docs/ADR-005-mensajes-al-usuario.md.
  */
 export const MIN_LENGTH = 12;
 export const MAX_LENGTH = 256; // prevents DoS by hashing huge inputs

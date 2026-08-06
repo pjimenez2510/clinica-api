@@ -18,7 +18,7 @@ import { z } from 'zod';
  * fallback so nothing ever surfaces in English, but anything a receptionist
  * will actually read is written here.
  *
- * Wording follows ../docs/ADR-005-mensajes-al-usuario.md: a complete sentence,
+ * Wording follows clinica-docs/ADR-005-mensajes-al-usuario.md: a complete sentence,
  * capitalised, no trailing period, addressing the user as "usted".
  */
 const TOTP_CODE = z

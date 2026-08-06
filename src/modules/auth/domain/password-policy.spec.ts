@@ -93,7 +93,7 @@ describe('validatePassword', () => {
     // their own. They used to be fragments ("debe tener al menos 12
     // caracteres") that assumed a subject nobody ever prepended, so the user
     // read a sentence with no beginning.
-    // Convention: ../docs/ADR-005-mensajes-al-usuario.md.
+    // Convention: clinica-docs/ADR-005-mensajes-al-usuario.md.
     const everyReason = [
       ...validatePassword('aaa'),
       ...validatePassword('contraseña'),

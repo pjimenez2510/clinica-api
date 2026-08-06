@@ -2,7 +2,7 @@
 
 API del sistema de gestión clínica para Ecuador. NestJS 11 · PostgreSQL 18 · Prisma 7.
 
-> Documentación de arquitectura y decisiones: `../docs/ADR-001-stack-backend.md`
+> Documentación de arquitectura y decisiones: `../clinica-docs/ADR-001-stack-backend.md`
 
 ---
 
