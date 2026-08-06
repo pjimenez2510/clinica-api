@@ -1,0 +1,179 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push cancels the run still in flight for the same branch: the older
+# result is about to be obsolete anyway.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Matches the developer machine. The ADR proposes Node 24; until that move is
+  # made deliberately, CI runs what the code is actually written against —
+  # otherwise CI fails on something nobody can reproduce locally.
+  NODE_VERSION: '22'
+
+jobs:
+  # Static checks and unit tests. No Docker, so it answers in about a minute
+  # and catches most mistakes before the slow job even finishes booting.
+  verify:
+    name: Types, lint, architecture and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        # `--frozen-lockfile` fails instead of silently updating the lockfile:
+        # CI must test the same tree the developer has.
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate the Prisma client
+        # Not committed to the repository, and typecheck fails without it.
+        run: pnpm db:generate
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        # `lint:check`, NOT `lint`: the latter carries --fix, which repairs the
+        # problem and exits 0. A gate that fixes what it is meant to reject is
+        # not a gate.
+        run: pnpm lint:check
+
+      - name: Architecture rules
+        run: pnpm arch:check
+
+      - name: Unit tests
+        run: pnpm test
+
+  # Constraints, triggers and generated columns against a real PostgreSQL.
+  # Separate job so a type error does not have to wait for a container.
+  integration:
+    name: Integration against PostgreSQL 18
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate the Prisma client
+        run: pnpm db:generate
+
+      - name: Integration tests
+        # Testcontainers starts PostgreSQL 18 itself; the runner already has
+        # Docker. No `services:` block on purpose — that would pin the version
+        # in two places, and the tests would drift from what is deployed.
+        run: pnpm test:integration
+
+  # The migration is the only thing standing between the schema and the
+  # guarantees Prisma cannot express. `db push` would rebuild the schema and
+  # drop every one of them, so it is forbidden — and this proves the migrations
+  # still apply cleanly from an empty database.
+  migrations:
+    name: Migrations apply from scratch
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: clinica
+          POSTGRES_PASSWORD: clinica
+          POSTGRES_DB: clinica_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U clinica"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply migrations
+        env:
+          DATABASE_URL: postgresql://clinica:clinica@localhost:5432/clinica_ci
+        run: pnpm db:deploy
+
+      - name: Ensure psql is available
+        # The runner image ships it today. Depending on that silently is how a
+        # pipeline breaks on an image update for a reason unrelated to the code.
+        run: command -v psql || (sudo apt-get update && sudo apt-get install -y postgresql-client)
+
+      - name: The critical guarantees survived the migration
+        # NOT `prisma migrate diff`. That was tried and is structurally useless
+        # here: the migration deliberately creates objects Prisma cannot
+        # express — the `search_name` generated column, the EXCLUDE
+        # constraints, the (chain_id, version) unique index — so Prisma reads
+        # every one of them as drift to be removed and the check is red
+        # forever. A gate that is always red teaches people to ignore the gate.
+        #
+        # This asks the real question instead: after applying the migrations,
+        # do the guarantees exist? It is what catches a `prisma db push`, which
+        # rebuilds the schema from schema.prisma and silently drops all of it.
+        env:
+          PGPASSWORD: clinica
+        run: |
+          missing=$(psql -h localhost -U clinica -d clinica_ci -t -A <<'SQL'
+          SELECT string_agg(expected, ', ')
+          FROM unnest(ARRAY[
+            'agenda_entry_no_practitioner_overlap',
+            'agenda_entry_no_room_overlap',
+            'patient_identifier_cedula_valid',
+            'encounter_vitals_ranges',
+            'catalog_concept_code_temporal_unique'
+          ]) AS expected
+          WHERE NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = expected);
+          SQL
+          )
+          if [ -n "$missing" ]; then
+            echo "::error::Constraints missing after migrating: $missing"
+            exit 1
+          fi
+
+          missing=$(psql -h localhost -U clinica -d clinica_ci -t -A <<'SQL'
+          SELECT string_agg(expected, ', ')
+          FROM unnest(ARRAY[
+            'trg_access_audit_immutable',
+            'trg_access_audit_no_truncate',
+            'trg_clinical_note_immutable',
+            'trg_clinical_note_no_truncate',
+            'trg_encounter_vitals_bmi',
+            'trg_encounter_freeze_age'
+          ]) AS expected
+          WHERE NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = expected);
+          SQL
+          )
+          if [ -n "$missing" ]; then
+            echo "::error::Triggers missing after migrating: $missing"
+            exit 1
+          fi
+
+          echo "Constraints and triggers present."

@@ -21,19 +21,19 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
-    "test:e2e": "vitest run --config vitest.config.e2e.ts",
     "arch:check": "depcruise src --config .dependency-cruiser.cjs",
-    "arch:graph": "depcruise src --include-only '^src' --output-type mermaid > docs/arquitectura.mmd",
+    "arch:graph": "depcruise src --include-only '^src' --output-type mermaid > arquitectura.mmd",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
-    "verify": "pnpm typecheck && pnpm lint && pnpm arch:check && pnpm test",
+    "verify": "pnpm typecheck && pnpm lint:check && pnpm arch:check && pnpm test",
     "db:seed": "node --env-file=.env --experimental-strip-types prisma/seed.mts",
     "db:reset": "prisma migrate reset --force && pnpm db:seed",
-    "test:integration": "vitest run --config vitest.integration.config.mts"
+    "test:integration": "vitest run --config vitest.integration.config.mts",
+    "lint:check": "eslint \"{src,test}/**/*.ts\""
   },
   "dependencies": {
     "@nestjs/common": "^11.1.28",
