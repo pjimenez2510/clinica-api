@@ -5,6 +5,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ClsModule } from 'nestjs-cls';
 import { LoggerModule } from 'nestjs-pino';
 
+import { AuthModule } from './modules/auth/auth.module';
 import { validateEnv } from './shared/config/env.schema';
 import { TimeoutInterceptor } from './shared/http/interceptors/timeout.interceptor';
 import { ProblemDetailsFilter } from './shared/http/problem-details.filter';
@@ -51,6 +52,7 @@ import { loggerConfig } from './shared/observability/logger.config';
     }),
 
     SharedInfrastructureModule,
+    AuthModule,
   ],
   providers: [
     // Registered with APP_FILTER, not useGlobalFilters, so the filter can

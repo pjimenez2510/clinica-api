@@ -9,10 +9,12 @@ import {
 import { SkipThrottle } from '@nestjs/throttler';
 import { PinoLogger } from 'nestjs-pino';
 
+import { Public } from '../../http/auth.decorators';
 import { PrismaService } from '../prisma/prisma.service';
 
 @ApiTags('health')
 @Controller({ path: 'health', version: '1' })
+@Public()
 export class HealthController {
   constructor(
     private readonly health: HealthCheckService,

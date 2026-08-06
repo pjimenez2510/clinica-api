@@ -1,6 +1,8 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
+import { Public } from '../../http/auth.decorators';
+
 /**
  * Liveness probe, kept separate from readiness.
  *
@@ -14,6 +16,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
  */
 @ApiTags('health')
 @Controller({ path: 'ping', version: '1' })
+@Public()
 export class LivenessController {
   @Get()
   @ApiOperation({ summary: 'The process responds (liveness)' })
