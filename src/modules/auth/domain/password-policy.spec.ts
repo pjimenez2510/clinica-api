@@ -15,35 +15,35 @@ describe('validatePassword', () => {
 
   it('rejects insufficient length', () => {
     expect(validatePassword('corta123')).toContain(
-      'debe tener al menos 12 caracteres',
+      'La contraseña debe tener al menos 12 caracteres',
     );
   });
 
   it('rejects huge inputs, a DoS vector through hashing', () => {
     expect(validatePassword('a'.repeat(300))).toContain(
-      'no puede superar 256 caracteres',
+      'La contraseña no puede superar 256 caracteres',
     );
   });
 
   it('rejects known trivial passwords', () => {
     expect(validatePassword('administrador')).toContain(
-      'es una contraseña demasiado común',
+      'Esta contraseña es demasiado común',
     );
   });
 
   it('ignores accents when comparing against the forbidden list', () => {
     // `contraseña` and `contrasena` must be treated the same.
     expect(validatePassword('contraseña')).toContain(
-      'es una contraseña demasiado común',
+      'Esta contraseña es demasiado común',
     );
   });
 
   it('rejects a repeated character and keyboard sequences', () => {
     expect(validatePassword('aaaaaaaaaaaaaa')).toContain(
-      'no puede ser un mismo carácter repetido',
+      'La contraseña no puede ser un mismo carácter repetido',
     );
     expect(validatePassword('qwertyuiop1234')).toContain(
-      'no puede ser una secuencia del teclado',
+      'La contraseña no puede ser una secuencia del teclado',
     );
   });
 
@@ -57,19 +57,19 @@ describe('validatePassword', () => {
 
     it('rejects when it contains the email local part', () => {
       expect(validatePassword('jperez-mi-clave-larga', user)).toContain(
-        'no puede contener tu nombre, correo ni cédula',
+        'La contraseña no puede contener su nombre, correo ni cédula',
       );
     });
 
     it('rejects when it contains the last name even without the accent', () => {
       expect(validatePassword('perez-mi-clave-larga', user)).toContain(
-        'no puede contener tu nombre, correo ni cédula',
+        'La contraseña no puede contener su nombre, correo ni cédula',
       );
     });
 
     it('rejects when it contains the cedula', () => {
       expect(validatePassword('clave1710034065aqui', user)).toContain(
-        'no puede contener tu nombre, correo ni cédula',
+        'La contraseña no puede contener su nombre, correo ni cédula',
       );
     });
 
@@ -86,6 +86,33 @@ describe('validatePassword', () => {
     // Discovering them one at a time exhausts the user and ends in worse
     // passwords.
     expect(validatePassword('aaa').length).toBeGreaterThan(1);
+  });
+
+  it('phrases every reason as a standalone sentence', () => {
+    // These go straight into the response as field errors and are rendered on
+    // their own. They used to be fragments ("debe tener al menos 12
+    // caracteres") that assumed a subject nobody ever prepended, so the user
+    // read a sentence with no beginning.
+    // Convention: ../docs/ADR-005-mensajes-al-usuario.md.
+    const everyReason = [
+      ...validatePassword('aaa'),
+      ...validatePassword('contraseña'),
+      ...validatePassword('a'.repeat(300)),
+      ...validatePassword('qwertyuiop123'),
+      ...validatePassword('juanperez-clave', { firstName: 'juanperez' }),
+    ];
+    expect(everyReason.length).toBeGreaterThan(4);
+
+    for (const reason of everyReason) {
+      expect(reason, 'must start with a capital letter').toMatch(
+        /^[A-ZÁÉÍÓÚÑ]/,
+      );
+      expect(reason, 'must not end with a period').not.toMatch(/\.$/);
+      // A subject of its own, not a dangling verb phrase.
+      expect(reason, 'must not open with a bare verb').not.toMatch(
+        /^(Debe|No puede|Es|Tiene|Contiene)\b/,
+      );
+    }
   });
 });
 

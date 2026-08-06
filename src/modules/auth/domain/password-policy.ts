@@ -36,7 +36,9 @@ export class WeakPasswordError extends ValidationError {
  * come from.
  *
  * NOTE: the rejection reasons are shown to the end user, so they are the one
- * thing in this file written in Spanish.
+ * thing in this file written in Spanish. Each one is a COMPLETE sentence with
+ * its own subject — they are rendered on their own next to the field, never
+ * appended to a prefix. See ../docs/ADR-005-mensajes-al-usuario.md.
  */
 export const MIN_LENGTH = 12;
 export const MAX_LENGTH = 256; // prevents DoS by hashing huge inputs
@@ -80,24 +82,24 @@ export function validatePassword(
   const reasons: string[] = [];
 
   if (password.length < MIN_LENGTH) {
-    reasons.push(`debe tener al menos ${MIN_LENGTH} caracteres`);
+    reasons.push(`La contraseña debe tener al menos ${MIN_LENGTH} caracteres`);
   }
   if (password.length > MAX_LENGTH) {
-    reasons.push(`no puede superar ${MAX_LENGTH} caracteres`);
+    reasons.push(`La contraseña no puede superar ${MAX_LENGTH} caracteres`);
   }
 
   const normalized = normalize(password);
 
   if (FORBIDDEN.has(normalized)) {
-    reasons.push('es una contraseña demasiado común');
+    reasons.push('Esta contraseña es demasiado común');
   }
 
   // A single repeated character, or an obvious sequence.
   if (/^(.)\1+$/.test(password)) {
-    reasons.push('no puede ser un mismo carácter repetido');
+    reasons.push('La contraseña no puede ser un mismo carácter repetido');
   }
   if (/0123456789|abcdefghij|qwertyuiop/.test(normalized)) {
-    reasons.push('no puede ser una secuencia del teclado');
+    reasons.push('La contraseña no puede ser una secuencia del teclado');
   }
 
   // The user's own data: this is where guessable passwords come from.
@@ -111,7 +113,7 @@ export function validatePassword(
     .map(normalize);
 
   if (fragments.some((f) => normalized.includes(f))) {
-    reasons.push('no puede contener tu nombre, correo ni cédula');
+    reasons.push('La contraseña no puede contener su nombre, correo ni cédula');
   }
 
   return reasons;

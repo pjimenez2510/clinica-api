@@ -58,7 +58,7 @@ export function zodIssuesToFieldErrors(error: unknown): DomainFieldError[] {
   return issues.map((issue) => ({
     field: toFieldPath(issue.path),
     code: CODE_BY_ZOD_ISSUE[issue.code ?? ''] ?? 'INVALID_VALUE',
-    message: issue.message ?? 'valor inválido',
+    message: issue.message ?? 'El valor no es válido',
   }));
 }
 

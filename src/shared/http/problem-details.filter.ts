@@ -84,11 +84,14 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     const base = { instance, timestamp: new Date().toISOString() };
 
     if (exception instanceof DomainError) {
-      const { status, slug } = this.mapDomainError(exception);
+      const { status, slug, title } = this.mapDomainError(exception);
       return {
         ...base,
         type: `${BASE_TYPE}/${slug}`,
-        title: exception.code,
+        // RFC 9457: `title` summarises the problem TYPE for a human. It is not
+        // the machine identifier — that is `code`. Repeating the code here
+        // would make the field dead weight.
+        title,
         status,
         // The technical message is only exposed outside production: it can drag
         // along details of the PostgreSQL row that caused it.
@@ -112,7 +115,7 @@ export class ProblemDetailsFilter implements ExceptionFilter {
         return {
           ...base,
           type: `${BASE_TYPE}/validation`,
-          title: 'VALIDATION_FAILED',
+          title: 'Datos inválidos',
           // 422 and not Zod's default 400: the body parsed fine, it is the
           // CONTENT that is invalid. Same status the domain ValidationError
           // maps to, so the client has one rule instead of two.
@@ -124,13 +127,17 @@ export class ProblemDetailsFilter implements ExceptionFilter {
 
       const status = exception.getStatus();
       const failed = this.failedDependencies(exception);
+      const { code, title } = this.describeHttpStatus(status);
       return {
         ...base,
         type: `${BASE_TYPE}/http-${status}`,
-        title: exception.name,
+        // NOT `exception.name`: that leaks a NestJS class name
+        // ("NotFoundException") into a public contract, and renaming an
+        // internal class would silently change the response.
+        title,
         status,
         detail: this.isProduction ? undefined : exception.message,
-        code: this.httpErrorCode(status),
+        code,
         // Only the names of the failing dependencies. That is what whoever
         // debugs needs and it reveals nothing sensitive.
         ...(failed ? { failedDependencies: failed } : {}),
@@ -155,19 +162,47 @@ export class ProblemDetailsFilter implements ExceptionFilter {
    * hand and forgetting one entry yields a silent 500. With categories, a new
    * error inherits the right status by construction.
    */
-  private mapDomainError(e: DomainError): { status: HttpStatus; slug: string } {
+  private mapDomainError(e: DomainError): {
+    status: HttpStatus;
+    slug: string;
+    title: string;
+  } {
     if (e instanceof ValidationError)
-      return { status: HttpStatus.UNPROCESSABLE_ENTITY, slug: 'validation' };
+      return {
+        status: HttpStatus.UNPROCESSABLE_ENTITY,
+        slug: 'validation',
+        title: 'Datos inválidos',
+      };
     if (e instanceof NotFoundError)
-      return { status: HttpStatus.NOT_FOUND, slug: 'not-found' };
+      return {
+        status: HttpStatus.NOT_FOUND,
+        slug: 'not-found',
+        title: 'Recurso no encontrado',
+      };
     if (e instanceof ConflictError)
-      return { status: HttpStatus.CONFLICT, slug: 'conflict' };
+      return {
+        status: HttpStatus.CONFLICT,
+        slug: 'conflict',
+        title: 'Conflicto con el estado actual',
+      };
     if (e instanceof BusinessRuleViolation)
-      return { status: HttpStatus.UNPROCESSABLE_ENTITY, slug: 'business-rule' };
+      return {
+        status: HttpStatus.UNPROCESSABLE_ENTITY,
+        slug: 'business-rule',
+        title: 'Regla de negocio incumplida',
+      };
     if (e instanceof UnauthorizedError)
-      return { status: HttpStatus.UNAUTHORIZED, slug: 'unauthenticated' };
+      return {
+        status: HttpStatus.UNAUTHORIZED,
+        slug: 'unauthenticated',
+        title: 'No autenticado',
+      };
     if (e instanceof ForbiddenError)
-      return { status: HttpStatus.FORBIDDEN, slug: 'forbidden' };
+      return {
+        status: HttpStatus.FORBIDDEN,
+        slug: 'forbidden',
+        title: 'Acceso denegado',
+      };
     if (e instanceof ExternalServiceError) {
       // A service that is down is 503 (retryable); a business rejection from
       // the SRI is 502: retrying will not fix it.
@@ -175,30 +210,46 @@ export class ProblemDetailsFilter implements ExceptionFilter {
         ? {
             status: HttpStatus.SERVICE_UNAVAILABLE,
             slug: 'service-unavailable',
+            title: 'Servicio no disponible',
           }
-        : { status: HttpStatus.BAD_GATEWAY, slug: 'external-service' };
+        : {
+            status: HttpStatus.BAD_GATEWAY,
+            slug: 'external-service',
+            title: 'Error en un servicio externo',
+          };
     }
-    return { status: HttpStatus.INTERNAL_SERVER_ERROR, slug: 'internal-error' };
+    return {
+      status: HttpStatus.INTERNAL_SERVER_ERROR,
+      slug: 'internal-error',
+      title: 'Error interno del servidor',
+    };
   }
 
-  private httpErrorCode(status: number): string {
-    const known: Record<number, string> = {
-      400: 'BAD_REQUEST',
-      401: 'UNAUTHENTICATED',
-      403: 'FORBIDDEN',
-      404: 'NOT_FOUND',
-      405: 'METHOD_NOT_ALLOWED',
-      409: 'CONFLICT',
-      413: 'PAYLOAD_TOO_LARGE',
-      415: 'UNSUPPORTED_MEDIA_TYPE',
-      422: 'UNPROCESSABLE_ENTITY',
-      429: 'TOO_MANY_REQUESTS',
-      500: 'INTERNAL_ERROR',
-      502: 'EXTERNAL_SERVICE',
-      503: 'SERVICE_UNAVAILABLE',
-      504: 'GATEWAY_TIMEOUT',
+  /**
+   * Machine code and human title for a status, in one table.
+   *
+   * They are declared together on purpose: kept apart, one gets a new entry and
+   * the other does not, and the response ends up describing itself two
+   * different ways.
+   */
+  private describeHttpStatus(status: number): { code: string; title: string } {
+    const known: Record<number, { code: string; title: string }> = {
+      400: { code: 'BAD_REQUEST', title: 'Solicitud mal formada' },
+      401: { code: 'UNAUTHENTICATED', title: 'No autenticado' },
+      403: { code: 'FORBIDDEN', title: 'Acceso denegado' },
+      404: { code: 'NOT_FOUND', title: 'Recurso no encontrado' },
+      405: { code: 'METHOD_NOT_ALLOWED', title: 'Método no permitido' },
+      409: { code: 'CONFLICT', title: 'Conflicto con el estado actual' },
+      413: { code: 'PAYLOAD_TOO_LARGE', title: 'El contenido es demasiado grande' }, // prettier-ignore
+      415: { code: 'UNSUPPORTED_MEDIA_TYPE', title: 'Formato no admitido' },
+      422: { code: 'UNPROCESSABLE_ENTITY', title: 'Datos inválidos' },
+      429: { code: 'TOO_MANY_REQUESTS', title: 'Demasiadas solicitudes' },
+      500: { code: 'INTERNAL_ERROR', title: 'Error interno del servidor' },
+      502: { code: 'EXTERNAL_SERVICE', title: 'Error en un servicio externo' },
+      503: { code: 'SERVICE_UNAVAILABLE', title: 'Servicio no disponible' },
+      504: { code: 'GATEWAY_TIMEOUT', title: 'Tiempo de espera agotado' },
     };
-    return known[status] ?? 'HTTP_ERROR';
+    return known[status] ?? { code: 'HTTP_ERROR', title: 'Error en la solicitud' }; // prettier-ignore
   }
 
   /**
