@@ -32,7 +32,8 @@
     "docker:down": "docker compose down",
     "verify": "pnpm typecheck && pnpm lint && pnpm arch:check && pnpm test",
     "db:seed": "node --env-file=.env --experimental-strip-types prisma/seed.mts",
-    "db:reset": "prisma migrate reset --force && pnpm db:seed"
+    "db:reset": "prisma migrate reset --force && pnpm db:seed",
+    "test:integration": "vitest run --config vitest.integration.config.mts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.28",
