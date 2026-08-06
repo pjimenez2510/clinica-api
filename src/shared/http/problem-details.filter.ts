@@ -20,6 +20,7 @@ import {
   ValidationError,
 } from '../domain/errors/domain-error';
 
+import { extractDatabaseProblem } from './database-problem';
 import {
   PROBLEM_CONTENT_TYPE,
   type ProblemDetails,
@@ -141,6 +142,25 @@ export class ProblemDetailsFilter implements ExceptionFilter {
         // Only the names of the failing dependencies. That is what whoever
         // debugs needs and it reveals nothing sensitive.
         ...(failed ? { failedDependencies: failed } : {}),
+      };
+    }
+
+    // A rule the database enforced. Checked before the generic branch because
+    // these are NOT server failures: the appointment overlap, the cedula check
+    // digit and the immutability of a signed note all reached the client as a
+    // 500, telling the user the system had broken when it had just protected
+    // the record.
+    const dbProblem = extractDatabaseProblem(exception);
+    if (dbProblem) {
+      return {
+        ...base,
+        type: `${BASE_TYPE}/${dbProblem.slug}`,
+        title: dbProblem.title,
+        status: dbProblem.status,
+        code: dbProblem.code,
+        // No `detail`, in ANY environment. PostgreSQL puts the offending row
+        // in the error, and that row holds patient data.
+        ...(dbProblem.errors ? { errors: dbProblem.errors } : {}),
       };
     }
 
