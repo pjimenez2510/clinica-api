@@ -30,7 +30,9 @@
     "db:studio": "prisma studio",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
-    "verify": "pnpm typecheck && pnpm lint && pnpm arch:check && pnpm test"
+    "verify": "pnpm typecheck && pnpm lint && pnpm arch:check && pnpm test",
+    "db:seed": "node --env-file=.env --experimental-strip-types prisma/seed.mts",
+    "db:reset": "prisma migrate reset --force && pnpm db:seed"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.28",

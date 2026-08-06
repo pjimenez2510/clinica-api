@@ -1,98 +1,154 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# clinica-api
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+API del sistema de gestión clínica para Ecuador. NestJS 11 · PostgreSQL 18 · Prisma 7.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+> Documentación de arquitectura y decisiones: `../docs/ADR-001-stack-backend.md`
 
-## Description
+---
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
+## Levantar el entorno
 
 ```bash
-$ pnpm install
+corepack enable pnpm        # solo la primera vez
+pnpm install
+docker compose up -d        # postgres, redis, minio, mailpit
+pnpm db:deploy              # aplica migraciones
+pnpm db:seed                # crea usuarios de prueba
+pnpm start:dev
 ```
 
-## Compile and run the project
+La API queda en `http://localhost:3000/api` y la documentación interactiva en
+**`http://localhost:3000/api/docs`** (Swagger UI, solo fuera de producción).
+
+## Usuarios de prueba
+
+Los crea `pnpm db:seed`. **Solo para desarrollo local.**
+
+| Correo | Contraseña | Perfil |
+|---|---|---|
+| `medico@clinica.ec` | `el caballo come alfalfa` | Con registro ACESS |
+| `recepcion@clinica.ec` | `el caballo come alfalfa` | Sin registro ACESS |
+
+La contraseña es una frase larga a propósito: la política sigue la
+recomendación del NIST, donde **manda la longitud** y no las reglas de
+composición. `Password1!` sería rechazada por corta.
+
+El seed es idempotente y además **reinicia el bloqueo por intentos fallidos y
+el segundo factor**, así que si una prueba manual deja la cuenta bloqueada,
+basta con volver a ejecutarlo.
+
+---
+
+## Probar la autenticación
+
+La forma más cómoda es **Swagger UI** en `/api/docs`. Desde la terminal:
+
+### Iniciar sesión
 
 ```bash
-# development
-$ pnpm run start
-
-# watch mode
-$ pnpm run start:dev
-
-# production mode
-$ pnpm run start:prod
+curl -i -c cookies.txt -X POST http://localhost:3000/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"medico@clinica.ec","password":"el caballo come alfalfa"}'
 ```
 
-## Run tests
+Devuelve el `accessToken` **en el cuerpo** y el refresh token **en una cookie
+`httpOnly`** que JavaScript no puede leer. Por eso hace falta `-c cookies.txt`:
+sin guardar la cookie, el refresh no funciona.
+
+### Usar el token
 
 ```bash
-# unit tests
-$ pnpm run test
-
-# e2e tests
-$ pnpm run test:e2e
-
-# test coverage
-$ pnpm run test:cov
+curl http://localhost:3000/api/v1/auth/logout \
+  -X POST -H "Authorization: Bearer <accessToken>"
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+### Rotar la sesión
 
 ```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
+curl -b cookies.txt -c cookies.txt -X POST http://localhost:3000/api/v1/auth/refresh
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Cada refresh **invalida el token anterior**. Si reutilizas uno ya usado, el
+sistema lo interpreta como un token robado, revoca **todas** las sesiones de esa
+familia y devuelve `REFRESH_TOKEN_REUSE_DETECTED`. Para probarlo, guarda una
+copia del `cookies.txt` antes de refrescar y vuelve a enviarla después.
 
-## Resources
+### Segundo factor
 
-Check out a few resources that may come in handy when working with NestJS:
+```bash
+# 1. Iniciar enrolamiento: devuelve el secreto y el URI para el QR
+curl -X POST http://localhost:3000/api/v1/auth/mfa/enroll \
+  -H "Authorization: Bearer <accessToken>"
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+# 2. Confirmar con el código de la app autenticadora
+curl -X POST http://localhost:3000/api/v1/auth/mfa/confirm \
+  -H "Authorization: Bearer <accessToken>" \
+  -H 'Content-Type: application/json' -d '{"code":"123456"}'
+```
 
-## Support
+Una vez confirmado, el login devuelve `{"mfaRequired":true,"challengeToken":"..."}`
+en lugar de una sesión. Ese token **solo abre los endpoints de MFA**: hay que
+completar `POST /auth/mfa/verify` con el código para obtener la sesión real.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+### Respuestas de error
 
-## Stay in touch
+Todas siguen **RFC 9457** con `Content-Type: application/problem+json`:
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+```json
+{
+  "type": "https://api.clinica.ec/problems/unauthenticated",
+  "title": "INVALID_CREDENTIALS",
+  "status": 401,
+  "code": "INVALID_CREDENTIALS",
+  "instance": "/api/v1/auth/login",
+  "timestamp": "2026-08-06T01:47:48.000Z"
+}
+```
 
-## License
+El campo `code` es **estable y nunca se traduce**: es el contrato que consumen
+los clientes, los logs y las alertas. `title` y `detail` sí son traducibles.
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Un correo inexistente y una contraseña incorrecta devuelven **exactamente lo
+mismo**, y tardan lo mismo. Es deliberado: la diferencia permitiría averiguar
+quién trabaja en la clínica.
+
+---
+
+## Comandos
+
+| Comando | Qué hace |
+|---|---|
+| `pnpm start:dev` | Arranca en modo watch |
+| `pnpm verify` | typecheck + lint + reglas de arquitectura + tests |
+| `pnpm test` | Tests unitarios |
+| `pnpm test:cov` | Cobertura con umbrales por capa |
+| `pnpm arch:check` | Verifica las reglas de dependencia entre capas |
+| `pnpm db:migrate` | Crea y aplica una migración |
+| `pnpm db:reset` | Borra la base, migra y siembra de nuevo |
+| `pnpm db:studio` | Explorador visual de la base |
+
+`pnpm verify` es lo que debería pasar antes de cada commit.
+
+---
+
+## Estructura
+
+```
+src/
+├── shared/           # transversal, sin lógica de negocio
+│   ├── domain/       # DomainError, value objects (Cedula)
+│   ├── http/         # filtro RFC 9457, interceptors, decoradores de auth
+│   ├── infrastructure/
+│   ├── observability/# redacción de datos de salud en logs
+│   └── config/       # validación de entorno con Zod al arrancar
+└── modules/
+    └── auth/
+        ├── domain/         # política de contraseñas
+        ├── application/    # casos de uso + PUERTOS
+        └── infrastructure/ # adaptadores (Argon2, jose, Prisma, TOTP)
+```
+
+**La regla de dependencia se verifica en CI** con `pnpm arch:check`: el dominio
+no puede importar infraestructura, y la capa de aplicación depende de puertos,
+nunca de adaptadores concretos. Una regla arquitectónica que no está
+automatizada es solo una sugerencia.
