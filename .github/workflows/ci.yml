@@ -12,10 +12,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Matches the developer machine. The ADR proposes Node 24; until that move is
-  # made deliberately, CI runs what the code is actually written against —
-  # otherwise CI fails on something nobody can reproduce locally.
-  NODE_VERSION: '22'
+  # Node 24 LTS, per ADR-001, and the same version `.nvmrc` selects locally.
+  # Kept as one variable so CI and the developer machine cannot drift: a
+  # pipeline failing on something nobody can reproduce is worse than no
+  # pipeline.
+  NODE_VERSION: '24'
 
 jobs:
   # Static checks and unit tests. No Docker, so it answers in about a minute
