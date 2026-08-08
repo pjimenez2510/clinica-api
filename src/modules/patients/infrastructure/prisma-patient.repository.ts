@@ -42,16 +42,45 @@ const SUMMARY_SELECT = {
 } satisfies Prisma.PatientSelect;
 
 /**
- * Del criterio de dominio a columnas reales.
+ * Colación española, y no la de la base.
  *
- * El mapa es lo que permite que el cliente no conozca ni un nombre de columna:
+ * La base está creada con colación `C`, que ordena por byte. Con eso
+ * `Zambrano` va antes que `alvarez` —porque las mayúsculas tienen byte menor—
+ * y `Ñaupa` cae detrás de TODO, después incluso de las minúsculas. Un listado
+ * de pacientes donde los Ñaupa están al final es un apellido que nadie
+ * encuentra, y en Ecuador no es un caso raro.
+ *
+ * `es-ES-x-icu` pone `Ñ` entre `N` y `O`, que es donde va en español, y deja de
+ * separar por mayúsculas.
+ *
+ * NO se cambia la colación de la base entera: eso obligaría a recrearla y
+ * reindexarla, y afectaría a comparaciones donde el orden byte a byte es lo
+ * correcto y lo más rápido. Se aplica sólo donde se ordena para que lo lea una
+ * persona.
+ */
+const SPANISH = 'COLLATE "es-ES-x-icu"';
+
+/**
+ * Del criterio de dominio a las expresiones de orden.
+ *
+ * UNA LISTA, no una cadena, y esa es la corrección. Antes esto era
+ * `'p.family_name, p.given_name'` y se concatenaba la dirección al final:
+ *
+ *     ORDER BY p.family_name, p.given_name DESC
+ *
+ * En SQL la dirección se aplica a UNA expresión, no a la lista: eso ordena el
+ * apellido ASCENDENTE y sólo el nombre descendente. Como los apellidos casi
+ * siempre difieren, el resultado de «descendente» era idéntico al de
+ * «ascendente» — que es exactamente lo que se veía en pantalla.
+ *
+ * El mapa también permite que el cliente no conozca ni un nombre de columna:
  * pide «name» y aquí se decide que eso son dos columnas, apellido y nombre, en
  * ese orden — que es como se archiva a la gente en una clínica.
  */
-const SORT_COLUMNS: Record<PatientSortField, string> = {
-  name: 'p.family_name, p.given_name',
-  mrn: 'p.mrn',
-  birthDate: 'p.birth_date',
+const SORT_COLUMNS: Record<PatientSortField, readonly string[]> = {
+  name: [`p.family_name ${SPANISH}`, `p.given_name ${SPANISH}`],
+  mrn: ['p.mrn'],
+  birthDate: ['p.birth_date'],
 };
 
 @Injectable()
@@ -121,6 +150,21 @@ export class PrismaPatientRepository implements PatientRepository {
      */
     const direction = criteria.sortDirection === 'desc' ? 'DESC' : 'ASC';
 
+    /**
+     * La dirección en CADA columna, y un desempate final por id.
+     *
+     * El desempate no es cosmético: sin un orden total, dos pacientes con el
+     * mismo apellido y nombre pueden intercambiarse entre dos consultas, y con
+     * `LIMIT/OFFSET` eso hace que una fila aparezca dos veces en páginas
+     * distintas o no aparezca en ninguna. `id` es único, así que basta.
+     */
+    const orderBy = [
+      ...SORT_COLUMNS[criteria.sortBy].map(
+        (column) => `${column} ${direction}`,
+      ),
+      `p.id ${direction}`,
+    ].join(', ');
+
     const documentPrefix = `${query}%`;
     const searchesDocument = /^[A-Za-z0-9-]{4,}$/.test(query);
 
@@ -142,7 +186,7 @@ export class PrismaPatientRepository implements PatientRepository {
       SELECT p.id
       FROM patient p
       WHERE (${matches}) AND ${filter}
-      ORDER BY ${Prisma.raw(SORT_COLUMNS[criteria.sortBy])} ${Prisma.raw(direction)}
+      ORDER BY ${Prisma.raw(orderBy)}
       LIMIT ${criteria.pageSize} OFFSET ${offset}
     `;
 

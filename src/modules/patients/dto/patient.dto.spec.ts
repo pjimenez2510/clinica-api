@@ -62,6 +62,21 @@ describe('registering a patient', () => {
     expect(result.success).toBe(false);
   });
 
+  it('rejects a RUC dressed up as a cedula', () => {
+    // El tercer dígito 6 o más identifica a un RUC —entidad pública o persona
+    // jurídica—, nunca a un paciente. La base ya lo exigía y esta capa no, así
+    // que llegaba como una violación de restricción ilegible en el mostrador.
+    const result = createPatientSchema.safeParse({
+      ...BASE,
+      identifier: {
+        type: 'CEDULA',
+        issuingCountry: 'ECU',
+        value: '0960048080',
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('accepts 30, the code for citizens registered abroad', () => {
     // A real case in Ecuador, and a rule that says "01 to 24" quietly refuses
     // the entire diaspora.

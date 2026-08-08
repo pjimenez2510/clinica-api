@@ -36,6 +36,16 @@ function hasValidCedulaCheckDigit(value: string): boolean {
   // 01–24 are the provinces; 30 is used for citizens registered abroad.
   if (province < 1 || (province > 24 && province !== 30)) return false;
 
+  /**
+   * THE THIRD DIGIT IS 0–5 FOR A PERSON.
+   *
+   * Six or more identifies a RUC — a public body or a company — which is not
+   * something a patient has. This rule was missing here while the database
+   * enforced it, so a RUC passed validation and came back as a raw constraint
+   * violation the receptionist could not act on.
+   */
+  if (Number(value[2]) >= 6) return false;
+
   const digits = [...value].map(Number);
   const total = digits.slice(0, 9).reduce((sum, digit, index) => {
     if (index % 2 !== 0) return sum + digit;

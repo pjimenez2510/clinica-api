@@ -1,7 +1,7 @@
 {
   "name": "clinica-api",
   "version": "0.1.0",
-  "description": "API del sistema de gesti\u00f3n cl\u00ednica (Ecuador)",
+  "description": "API del sistema de gestión clínica (Ecuador)",
   "private": true,
   "license": "UNLICENSED",
   "engines": {
@@ -37,7 +37,8 @@
     "db:seed:auth": "node --env-file-if-exists=.env --experimental-strip-types prisma/seed-authorisation.mts",
     "build:check": "node --experimental-strip-types scripts/check-build.mts",
     "format:check": "prettier --check \"{src,test,prisma,scripts}/**/*.{ts,mts,json}\"",
-    "db:migrate:new": "node --experimental-strip-types scripts/new-migration.mts"
+    "db:migrate:new": "node --experimental-strip-types scripts/new-migration.mts",
+    "db:seed:patients": "node --env-file=.env --experimental-strip-types prisma/seed-patients.mts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.28",
