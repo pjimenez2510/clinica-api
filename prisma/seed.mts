@@ -10,6 +10,7 @@ import { PASSWORD_HASHING } from '../src/modules/auth/domain/password-hashing.ts
 // El catálogo es la fuente: construir el rol de desarrollo a partir de él
 // evita una segunda lista que alguien tendría que recordar actualizar.
 import { PERMISSIONS } from '../src/shared/authorisation/permission.catalogue.ts';
+import { syncAuthorisation } from './seed-authorisation.mts';
 
 /**
  * Development seed.
@@ -95,6 +96,19 @@ async function main(): Promise<void> {
    * catalogue must appear here without anybody remembering, so this seed
    * rewrites its permission set outright.
    */
+  /**
+   * EL CATÁLOGO PRIMERO. Sin esto el seed sólo funcionaba sobre una base que
+   * alguien ya había sembrado antes: contra una recién creada por
+   * `prisma migrate reset`, la tabla `permission` está vacía y el rol de
+   * desarrollo revienta con una violación de clave foránea
+   * (`role_permission_permission_code_fkey`).
+   *
+   * Es idempotente y no pisa roles existentes, así que llamarlo aquí no
+   * duplica lo que hace `pnpm db:seed:auth` — sólo deja de depender de que
+   * alguien lo recuerde en el orden correcto.
+   */
+  await syncAuthorisation(prisma);
+
   const superuser = await prisma.role.upsert({
     where: { code: DEV_SUPERUSER_ROLE.code },
     update: { name: DEV_SUPERUSER_ROLE.name, active: true },

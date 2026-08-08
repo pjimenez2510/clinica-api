@@ -123,7 +123,8 @@ quién trabaja en la clínica.
 | `pnpm test` | Tests unitarios |
 | `pnpm test:cov` | Cobertura con umbrales por capa |
 | `pnpm arch:check` | Verifica las reglas de dependencia entre capas |
-| `pnpm db:migrate` | Crea y aplica una migración |
+| `pnpm db:migrate:new <nombre>` | Crea una migración VACÍA para escribirla a mano |
+| `pnpm db:deploy` | Aplica las migraciones escritas. Nunca inventa SQL |
 | `pnpm db:reset` | Borra la base, migra y siembra de nuevo |
 | `pnpm db:studio` | Explorador visual de la base |
 
@@ -152,3 +153,28 @@ src/
 no puede importar infraestructura, y la capa de aplicación depende de puertos,
 nunca de adaptadores concretos. Una regla arquitectónica que no está
 automatizada es solo una sugerencia.
+
+---
+
+## ⚠️ `prisma migrate dev` está prohibido en este repositorio
+
+`migrate dev` genera el SQL necesario para que la base **se parezca a
+`schema.prisma`**. Eso es correcto cuando el esquema puede describir la base
+entera. Aquí no puede: hay columnas generadas (`patient.search_name`), índices
+GIN con `gin_trgm_ops`, un BRIN, índices únicos parciales, restricciones
+`EXCLUDE` y disparadores de inmutabilidad. Nada de eso cabe en el esquema, así
+que Prisma los lee como cosas que **sobran** y propone borrarlos.
+
+Ha ocurrido tres veces. La tercera se aplicó y se llevó `search_name`, cuatro
+índices y `clinical_note_chain_version_unique`, que es una garantía
+médico-legal. `pnpm migrations:check` lo detecta, pero corre en `verify` y en
+CI: después del daño.
+
+El flujo correcto:
+
+```bash
+pnpm db:migrate:new nombre_de_la_migracion
+# escribir el SQL a mano
+pnpm migrations:check
+pnpm db:deploy
+```
