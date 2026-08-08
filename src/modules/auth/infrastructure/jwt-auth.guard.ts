@@ -7,10 +7,12 @@ import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { ClsService } from 'nestjs-cls';
 
-import { UnauthorizedError } from '../../../shared/domain/errors/domain-error';
-// A missing Authorization header is the SHAPE of the transport, so
-// `MissingTokenError` stays here. An unfinished second factor is a business
-// rule, so it does not.
+// `MissingTokenError` lives in `shared/authorisation` because two places
+// raise it: this guard, when the Authorization header is missing, and
+// `CurrentUserService`, when nothing set an identity for the request. An
+// unfinished second factor is a business rule, so `MfaRequiredError` does not
+// move.
+import { MissingTokenError } from '../../../shared/authorisation/current-user.service';
 import { MfaRequiredError } from '../domain/auth.errors';
 import {
   CURRENT_USER,
@@ -18,14 +20,7 @@ import {
   MFA_FLOW_ONLY_KEY,
 } from '../../../shared/http/auth.decorators';
 
-import { type AccessTokenClaims, TokenService } from './token.service';
-
-export class MissingTokenError extends UnauthorizedError {
-  readonly code = 'MISSING_TOKEN';
-  constructor() {
-    super('Authorization header is missing or malformed');
-  }
-}
+import { TokenService } from './token.service';
 
 /**
  * Validates the access token and publishes the identity into the request
@@ -77,21 +72,5 @@ export class JwtAuthGuard implements CanActivate {
     if (!header) return null;
     const [scheme, value] = header.split(' ');
     return scheme?.toLowerCase() === 'bearer' && value ? value : null;
-  }
-}
-
-/** Reads the authenticated identity from anywhere in the request. */
-@Injectable()
-export class CurrentUserService {
-  constructor(private readonly cls: ClsService) {}
-
-  get(): AccessTokenClaims | undefined {
-    return this.cls.get<AccessTokenClaims | undefined>(CURRENT_USER);
-  }
-
-  requireUserId(): string {
-    const user = this.get();
-    if (!user) throw new MissingTokenError();
-    return user.sub;
   }
 }

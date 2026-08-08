@@ -35,7 +35,7 @@ export class InvalidCredentialsError extends UnauthorizedError {
    * protection below: it still refuses to distinguish an unknown email from a
    * wrong password from a locked account.
    */
-  readonly override userTitle = 'El correo o la contraseña no son correctos';
+  override readonly userTitle = 'El correo o la contraseña no son correctos';
   constructor() {
     // Deliberately identical whether the email is unknown, the password is
     // wrong, or the account is locked or inactive. Telling them apart lets an

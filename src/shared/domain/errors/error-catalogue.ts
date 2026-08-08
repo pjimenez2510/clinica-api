@@ -31,6 +31,12 @@ export const DOMAIN_ERROR_CODES = [
   'MFA_REQUIRED',
   'MISSING_REFRESH_TOKEN',
   'MISSING_TOKEN',
+  // Registro de pacientes. `PATIENT_MERGED` no es un 404: la historia existió y
+  // documentos ya impresos siguen citando su número, así que el cliente
+  // necesita saber a dónde se movió.
+  'PATIENT_IDENTIFIER_TAKEN',
+  'PATIENT_MERGED',
+  'PATIENT_NOT_FOUND',
   'PERMISSION_DENIED',
   'PRINCIPAL_UNAVAILABLE',
   'REFRESH_TOKEN_REUSE_DETECTED',

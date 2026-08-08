@@ -12,10 +12,8 @@ import {
   TOTP,
 } from './application/ports';
 import { AuthController } from './auth.controller';
-import {
-  CurrentUserService,
-  JwtAuthGuard,
-} from './infrastructure/jwt-auth.guard';
+import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import { JwtAuthGuard } from './infrastructure/jwt-auth.guard';
 import { PasswordHasher } from './infrastructure/password-hasher.service';
 import { PrismaAuthUserRepository } from './infrastructure/prisma-auth-user.repository';
 import { RefreshTokenService } from './infrastructure/refresh-token.service';

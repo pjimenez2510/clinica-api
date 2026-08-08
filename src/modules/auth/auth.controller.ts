@@ -41,7 +41,7 @@ import {
   SignInDto,
   VerifyMfaDto,
 } from './dto/auth.dto';
-import { CurrentUserService } from './infrastructure/jwt-auth.guard';
+import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 
 export class MissingRefreshCookieError extends UnauthorizedError {
   readonly code = 'MISSING_REFRESH_TOKEN';
