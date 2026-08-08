@@ -1,4 +1,20 @@
 import { Injectable } from '@nestjs/common';
+
+import {
+  PASSWORD_HASHING,
+  REHASH_CHECK_OPTIONS,
+} from '../domain/password-hashing';
+
+/**
+ * The domain names the algorithm; this maps it to the library constant.
+ * That indirection is what keeps `argon2` out of the domain.
+ */
+const ARGON2_OPTIONS = {
+  type: argon2.argon2id,
+  memoryCost: PASSWORD_HASHING.memoryCost,
+  timeCost: PASSWORD_HASHING.timeCost,
+  parallelism: PASSWORD_HASHING.parallelism,
+} satisfies argon2.HashOptions;
 import * as argon2 from 'argon2';
 
 /**
@@ -10,23 +26,6 @@ import * as argon2 from 'argon2';
  * These values live inside the resulting hash, so they can be raised later
  * without migrating existing rows: `needsRehash` detects the outdated ones.
  */
-export const ARGON2_OPTIONS = {
-  type: argon2.argon2id,
-  memoryCost: 19_456, // 19 MiB
-  timeCost: 2,
-  parallelism: 1,
-} satisfies argon2.HashOptions;
-
-/**
- * `needsRehash` only compares the cost parameters — it does not take `type`.
- * Kept as a separate object so the two can never drift apart silently.
- */
-const REHASH_CHECK_OPTIONS = {
-  memoryCost: ARGON2_OPTIONS.memoryCost,
-  timeCost: ARGON2_OPTIONS.timeCost,
-  parallelism: ARGON2_OPTIONS.parallelism,
-};
-
 @Injectable()
 export class PasswordHasher {
   async hash(plain: string): Promise<string> {

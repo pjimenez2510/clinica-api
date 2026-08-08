@@ -21,6 +21,7 @@ import {
 } from '../../shared/http/auth.decorators';
 
 import { AuthService } from './application/auth.service';
+import { RolePermissionRegistry } from './infrastructure/role-permission.registry';
 import { TokenService } from './infrastructure/token.service';
 import {
   ChangePasswordDto,
@@ -64,6 +65,7 @@ export class AuthController {
     private readonly auth: AuthService,
     private readonly currentUser: CurrentUserService,
     private readonly tokens: TokenService,
+    private readonly roles: RolePermissionRegistry,
     config: ConfigService<Env, true>,
   ) {
     this.isProduction =
@@ -100,7 +102,7 @@ export class AuthController {
     if ('mfaRequired' in result) return result;
 
     this.setRefreshCookie(res, result.refreshToken, result.expiresAt);
-    return this.toSessionResponse(result);
+    return await this.toSessionResponse(result);
   }
 
   /** Completes sign-in with the TOTP code. Reachable with an MFA-pending token. */
@@ -122,7 +124,7 @@ export class AuthController {
     );
 
     this.setRefreshCookie(res, session.refreshToken, session.expiresAt);
-    return this.toSessionResponse(session);
+    return await this.toSessionResponse(session);
   }
 
   /** Starts TOTP enrolment. Returns the secret once, for the QR code. */
@@ -244,14 +246,25 @@ export class AuthController {
     return { ip: req.ip, userAgent: req.get('user-agent') };
   }
 
-  private toSessionResponse(session: {
+  /**
+   * Includes the resolved grants so the interface knows what to OFFER.
+   *
+   * NOT the authorisation — the API decides on every request. This only stops
+   * the client showing a receptionist a "Historia clínica" menu entry that
+   * answers 403: an interface full of buttons that fail teaches people the
+   * system is broken, and they stop reporting the errors that matter.
+   */
+  private async toSessionResponse(session: {
     accessToken: string;
     user: { id: string; email: string; firstName: string; lastName: string };
-  }): SessionResponse {
+  }): Promise<SessionResponse> {
+    const assignments = await this.auth.grantsFor(session.user.id);
+
     return {
       accessToken: session.accessToken,
       expiresIn: this.tokens.accessTokenSeconds,
       user: session.user,
+      grants: await this.roles.resolve(assignments),
     };
   }
 }

@@ -402,6 +402,17 @@ export class AuthService {
    * read at the start of the request loses every concurrent attempt but one,
    * and an account that never reaches the threshold never locks.
    */
+  /**
+   * Roles the user currently holds, by id and site.
+   *
+   * Exposed so the controller can resolve them into permissions for the
+   * client. The interface uses them to decide what to OFFER — never to decide
+   * access, which the API settles on every request.
+   */
+  async grantsFor(userId: string) {
+    return this.users.findActiveGrants(userId);
+  }
+
   /** Whether the account is serving a lockout right now. */
   private isLocked(user: AuthUser): boolean {
     return user.lockedUntil !== null && user.lockedUntil > new Date();

@@ -72,6 +72,15 @@ export interface SessionResponse {
     firstName: string;
     lastName: string;
   };
+  /**
+   * Roles held, with their permissions resolved, so the interface knows what
+   * to OFFER. Never what to ALLOW — the API settles that on every request.
+   */
+  grants: {
+    roleCode: string;
+    siteId: string | null;
+    permissions: readonly string[];
+  }[];
 }
 
 /** Returned when the password was right but the second factor is still pending. */
