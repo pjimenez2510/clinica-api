@@ -165,22 +165,53 @@ export class PrismaPatientRepository implements PatientRepository {
       `p.id ${direction}`,
     ].join(', ');
 
+    /**
+     * EL NÚMERO DE HISTORIA SE ESCRIBE COMO SE DICE.
+     *
+     * `HC0000000801` es lo que hay impreso en la carpeta, pero nadie lo dicta
+     * así: se dice «la ochocientos uno». Exigir los diez dígitos y el prefijo
+     * convertía el buscador en un ejercicio de transcripción, y un cero de más
+     * o de menos no devolvía nada sin explicar por qué.
+     *
+     * Se normaliza a la parte numérica: `801`, `0801`, `hc801` y
+     * `HC0000000801` son la misma historia. Sigue siendo COINCIDENCIA EXACTA
+     * sobre ese número —no un prefijo—, así que teclear `80` no lista todas
+     * las que empiezan por 80.
+     */
+    const mrnBuscado = normaliseMrn(query);
+
     const documentPrefix = `${query}%`;
     const searchesDocument = /^[A-Za-z0-9-]{4,}$/.test(query);
+
+    /**
+     * Las condiciones se COMPONEN, no se escriben todas siempre.
+     *
+     * Un parámetro suelto dentro de `IS NOT NULL` deja a PostgreSQL sin forma
+     * de deducir su tipo y la consulta falla con `could not determine data type
+     * of parameter`. Incluir sólo las condiciones que aplican evita el problema
+     * y, de paso, no manda parámetros que no se van a usar.
+     */
+    const condiciones: Prisma.Sql[] = [
+      Prisma.sql`p.search_name LIKE immutable_unaccent(lower(${pattern}))`,
+    ];
+
+    if (mrnBuscado !== null) {
+      condiciones.push(Prisma.sql`p.mrn = ${mrnBuscado}`);
+    }
+
+    if (searchesDocument) {
+      condiciones.push(Prisma.sql`EXISTS (
+        SELECT 1 FROM patient_identifier pi
+        WHERE pi.patient_id = p.id
+          AND pi.valid_to IS NULL
+          AND pi.value LIKE ${documentPrefix}
+      )`);
+    }
 
     const filter =
       query === ''
         ? Prisma.sql`TRUE`
-        : Prisma.sql`(
-          p.search_name LIKE immutable_unaccent(lower(${pattern}))
-          OR p.mrn = upper(${query})
-          OR (${searchesDocument} AND EXISTS (
-            SELECT 1 FROM patient_identifier pi
-            WHERE pi.patient_id = p.id
-              AND pi.valid_to IS NULL
-              AND pi.value LIKE ${documentPrefix}
-          ))
-        )`;
+        : Prisma.sql`(${Prisma.join(condiciones, ' OR ')})`;
 
     const rows = await this.prisma.$queryRaw<{ id: string }[]>`
       SELECT p.id
@@ -377,4 +408,16 @@ function toIdentifier(row: {
     issuingCountry: row.issuingCountry,
     value: row.value,
   };
+}
+
+/**
+ * Cualquier forma de escribir un número de historia, a su forma canónica.
+ *
+ * Devuelve `null` cuando lo tecleado no puede ser uno, para que la consulta
+ * omita esa condición en vez de compararla contra una cadena vacía.
+ */
+function normaliseMrn(query: string): string | null {
+  const match = /^\s*(?:hc)?\s*0*(\d{1,10})\s*$/i.exec(query);
+  if (!match) return null;
+  return formatMrn(Number(match[1]));
 }

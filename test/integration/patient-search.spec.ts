@@ -153,6 +153,32 @@ describe('búsqueda y ordenación de pacientes', () => {
     expect(items.map((p) => p.familyName)).toEqual(['Ñaupa']);
   });
 
+  it('encuentra la historia como se dicta, no como se imprime', async () => {
+    // `HC0000000003` es lo que hay en la carpeta; en el mostrador se dice «la
+    // tres». Exigir el prefijo y los diez dígitos convertía el buscador en un
+    // ejercicio de transcripción.
+    for (const escrito of ['3', '003', 'HC3', 'hc0000000003', 'HC0000000003']) {
+      const { items } = await repository.search({
+        ...criteria('name', 'asc'),
+        query: escrito,
+      });
+      expect(
+        items.map((p) => p.mrn),
+        `buscando «${escrito}»`,
+      ).toEqual(['HC0000000003']);
+    }
+  });
+
+  it('la historia se busca EXACTA, no por prefijo', async () => {
+    // `1` no debe listar la 1, la 10 y la 100: el número identifica una
+    // historia concreta, y un prefijo convertiría el buscador en un listado.
+    const { items } = await repository.search({
+      ...criteria('name', 'asc'),
+      query: '1',
+    });
+    expect(items.map((p) => p.mrn)).toEqual(['HC0000000001']);
+  });
+
   it('no busca por documento con menos de cuatro caracteres', async () => {
     // Un prefijo corto sobre documentos convierte el buscador en un oráculo
     // para enumerar el registro.
