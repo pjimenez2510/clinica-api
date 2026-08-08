@@ -31,7 +31,16 @@ import type { Permission } from './permission.catalogue';
 export interface ResolvedGrant {
   roleCode: string;
   siteId: string | null;
-  permissions: readonly string[];
+  /**
+   * `Permission`, not `string`.
+   *
+   * These codes come from the catalogue, and typing them loosely defeated the
+   * point of having one: `can('paceint:read')` compiled happily and simply
+   * never matched. It also let the response DTO — which declares the catalogue
+   * as an enum so the contract carries it — go out of sync with what actually
+   * travels in it.
+   */
+  permissions: readonly Permission[];
 }
 
 /**

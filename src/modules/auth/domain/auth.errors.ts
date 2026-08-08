@@ -27,6 +27,15 @@ import {
 
 export class InvalidCredentialsError extends UnauthorizedError {
   readonly code = 'INVALID_CREDENTIALS';
+  /**
+   * Says the pair is wrong WITHOUT saying which half.
+   *
+   * The generic 401 title, "No autenticado", is HTTP vocabulary and left the
+   * user with nothing actionable on screen. This does not weaken the
+   * protection below: it still refuses to distinguish an unknown email from a
+   * wrong password from a locked account.
+   */
+  readonly override userTitle = 'El correo o la contraseña no son correctos';
   constructor() {
     // Deliberately identical whether the email is unknown, the password is
     // wrong, or the account is locked or inactive. Telling them apart lets an

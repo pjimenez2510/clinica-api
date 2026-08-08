@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { PERMISSION_CATALOGUE, PERMISSIONS } from './permission.catalogue';
+import {
+  type Permission,
+  PERMISSION_CATALOGUE,
+  PERMISSIONS,
+} from './permission.catalogue';
 import { ALL_SITES, Principal, type ResolvedGrant } from './principal';
 
 describe('the permission catalogue', () => {
@@ -53,7 +57,7 @@ describe('Principal', () => {
   const grant = (
     roleCode: string,
     siteId: string | null,
-    permissions: string[],
+    permissions: Permission[],
   ): ResolvedGrant => ({ roleCode, siteId, permissions });
 
   it('denies everything with no grants', () => {

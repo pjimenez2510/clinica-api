@@ -8,7 +8,14 @@ import {
   Res,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiExtraModels,
+  ApiNoContentResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+  getSchemaPath,
+} from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 
@@ -26,8 +33,11 @@ import { TokenService } from './infrastructure/token.service';
 import {
   ChangePasswordDto,
   ConfirmMfaDto,
+  MfaChallengeResponseDto,
+  MfaEnrolmentResponseDto,
   type MfaChallengeResponse,
   type SessionResponse,
+  SessionResponseDto,
   SignInDto,
   VerifyMfaDto,
 } from './dto/auth.dto';
@@ -88,6 +98,25 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Throttle({ short: { ttl: 60_000, limit: 10 } })
   @ApiOperation({ summary: 'Sign in with email and password' })
+  /**
+   * DECLARING THE RESPONSE IS NOT DOCUMENTATION, IT IS THE CONTRACT.
+   *
+   * Without this the OpenAPI document says the endpoint answers with no
+   * content, and a client generated from it types the body as `never`. The
+   * frontend then writes the shape by hand — which is exactly how `user`
+   * vanished from the refresh response with nothing to catch it.
+   */
+  @ApiExtraModels(SessionResponseDto, MfaChallengeResponseDto)
+  @ApiOkResponse({
+    // `oneOf`, porque el endpoint responde una cosa o la otra. Un cliente que
+    // solo conociera la sesión trataría el reto de MFA como respuesta rota.
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(SessionResponseDto) },
+        { $ref: getSchemaPath(MfaChallengeResponseDto) },
+      ],
+    },
+  })
   async login(
     @Body() dto: SignInDto,
     @Req() req: Request,
@@ -111,6 +140,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Throttle({ short: { ttl: 60_000, limit: 10 } })
   @ApiOperation({ summary: 'Complete sign-in with the second factor' })
+  @ApiOkResponse({ type: SessionResponseDto })
   async verifyMfa(
     @Body() dto: VerifyMfaDto,
     @Req() req: Request,
@@ -132,6 +162,7 @@ export class AuthController {
   @MfaFlowOnly()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Start second factor enrolment' })
+  @ApiOkResponse({ type: MfaEnrolmentResponseDto })
   async enrollMfa(): Promise<{ secret: string; uri: string }> {
     return this.auth.enrollMfa(this.currentUser.requireUserId());
   }
@@ -141,6 +172,7 @@ export class AuthController {
   @MfaFlowOnly()
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Confirm second factor enrolment' })
+  @ApiNoContentResponse()
   async confirmMfa(@Body() dto: ConfirmMfaDto): Promise<void> {
     await this.auth.confirmMfaEnrollment(
       this.currentUser.requireUserId(),
@@ -158,6 +190,7 @@ export class AuthController {
   @Public()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Rotate the session' })
+  @ApiOkResponse({ type: SessionResponseDto })
   async refresh(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
@@ -177,6 +210,7 @@ export class AuthController {
   @OwnAccount()
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Close the current session' })
+  @ApiNoContentResponse()
   async logout(@Res({ passthrough: true }) res: Response): Promise<void> {
     const user = this.currentUser.get();
     if (user) await this.auth.signOut(user.fam);
@@ -188,6 +222,7 @@ export class AuthController {
   @OwnAccount()
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Change the password and close every session' })
+  @ApiNoContentResponse()
   async changePassword(
     @Body() dto: ChangePasswordDto,
     @Res({ passthrough: true }) res: Response,

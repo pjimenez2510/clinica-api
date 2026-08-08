@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import type { Permission } from './permission.catalogue';
+
 import { Principal, type ResolvedGrant } from './principal';
 import {
   assertSiteInScope,
@@ -12,7 +14,7 @@ const SUR = 'site-sur';
 
 const grant = (
   siteId: string | null,
-  permissions: string[],
+  permissions: Permission[],
 ): ResolvedGrant => ({ roleCode: 'RECEPCION', siteId, permissions });
 
 describe('siteScope', () => {

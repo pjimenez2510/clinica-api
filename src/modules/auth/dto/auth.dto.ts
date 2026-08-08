@@ -1,6 +1,11 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
+import {
+  type Permission,
+  PERMISSIONS,
+} from '../../../shared/authorisation/permission.catalogue';
+
 /**
  * Request and response contracts.
  *
@@ -62,30 +67,87 @@ export const changePasswordSchema = z.object({
 });
 export class ChangePasswordDto extends createZodDto(changePasswordSchema) {}
 
-/** Session issued after a completed sign-in. */
-export interface SessionResponse {
-  accessToken: string;
-  expiresIn: number;
-  user: {
-    id: string;
-    email: string;
-    firstName: string;
-    lastName: string;
-  };
+/**
+ * RESPONSES ARE SCHEMAS TOO, not bare TypeScript interfaces.
+ *
+ * They used to be interfaces, and the consequence was concrete: the OpenAPI
+ * document described every response as having no content, so a client
+ * generated from it got `never` for the body of every call. The contract
+ * between the two repositories IS this document — writing the types by hand on
+ * the other side is how `user` disappeared from the refresh response without
+ * anything noticing.
+ *
+ * `createZodDto` puts them in the document; `z.infer` keeps the TypeScript
+ * type derived from the same schema, so they cannot drift.
+ */
+export const sessionResponseSchema = z.object({
+  accessToken: z.string(),
+  /** Seconds, not a timestamp. Read from the token service, never a literal. */
+  expiresIn: z.number().int().positive(),
+  user: z.object({
+    id: z.uuid(),
+    email: z.email(),
+    firstName: z.string(),
+    lastName: z.string(),
+  }),
   /**
    * Roles held, with their permissions resolved, so the interface knows what
    * to OFFER. Never what to ALLOW — the API settles that on every request.
    */
-  grants: {
-    roleCode: string;
-    siteId: string | null;
-    permissions: readonly string[];
-  }[];
-}
+  grants: z.array(
+    z.object({
+      roleCode: z.string(),
+      /** `null` means every site. */
+      siteId: z.uuid().nullable(),
+      /**
+       * THE CATALOGUE TRAVELS IN THE CONTRACT, not as free strings.
+       *
+       * Declared as an enum so the OpenAPI document lists every permission
+       * code, which means a client generated from it gets a string-literal
+       * union instead of `string`. On the other side those codes are written
+       * in three places — the sidebar, each page's route meta, and every
+       * button guard — and with a plain `string` a single typo produces a
+       * screen nobody can reach and no error anywhere.
+       *
+       * `readonly` because `ResolvedGrant` is: the list is resolved once and
+       * shared between requests, so nobody should be able to mutate it.
+       */
+      permissions: z
+        .enum(PERMISSIONS as unknown as [Permission, ...Permission[]])
+        .array()
+        .readonly(),
+    }),
+  ),
+});
+export class SessionResponseDto extends createZodDto(sessionResponseSchema) {}
+export type SessionResponse = z.infer<typeof sessionResponseSchema>;
 
 /** Returned when the password was right but the second factor is still pending. */
-export interface MfaChallengeResponse {
-  mfaRequired: true;
+export const mfaChallengeResponseSchema = z.object({
+  mfaRequired: z.literal(true),
   /** Short-lived token that only opens the MFA endpoints. */
-  challengeToken: string;
-}
+  challengeToken: z.string(),
+});
+export class MfaChallengeResponseDto extends createZodDto(
+  mfaChallengeResponseSchema,
+) {}
+export type MfaChallengeResponse = z.infer<typeof mfaChallengeResponseSchema>;
+
+/**
+ * `POST /auth/login` answers with a session OR a pending second factor.
+ *
+ * NOT a `createZodDto` over a union: that class would have to extend a base
+ * whose return type is a union, which TypeScript rejects outright —
+ * "Base constructor return type is not an object type". The union is declared
+ * to Swagger as `oneOf` at the controller instead, which is also what the
+ * OpenAPI document is supposed to say.
+ */
+
+/** Secret and provisioning URI, returned once so the QR code can be drawn. */
+export const mfaEnrolmentResponseSchema = z.object({
+  secret: z.string(),
+  uri: z.string(),
+});
+export class MfaEnrolmentResponseDto extends createZodDto(
+  mfaEnrolmentResponseSchema,
+) {}

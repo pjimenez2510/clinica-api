@@ -2,7 +2,18 @@ import { Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
+import {
+  type Permission,
+  PERMISSIONS,
+} from '../../../shared/authorisation/permission.catalogue';
 import type { ResolvedGrant } from '../../../shared/authorisation/principal';
+
+/**
+ * Codes the CODE knows about, as a set for the membership test below.
+ *
+ * The database is a mirror of the catalogue, not the other way round.
+ */
+const KNOWN_PERMISSIONS: ReadonlySet<string> = new Set(PERMISSIONS);
 
 /**
  * Resolves a role into its permissions, with a short-lived cache.
@@ -29,7 +40,7 @@ const CACHE_TTL_MS = 30_000;
 
 interface CachedRole {
   code: string;
-  permissions: string[];
+  permissions: Permission[];
 }
 
 @Injectable()
@@ -109,7 +120,18 @@ export class RolePermissionRegistry {
         role.id,
         {
           code: role.code,
-          permissions: role.permissions.map((p) => p.permissionCode),
+          /**
+           * FILTERED AGAINST THE CATALOGUE, and it fails closed.
+           *
+           * The row is a string the database happens to hold. A code the
+           * catalogue no longer defines — renamed in a release, left behind by
+           * a half-applied seed — protects nothing anyway: no route asks for
+           * it. Carrying it forward would only make it look like the caller
+           * holds something.
+           */
+          permissions: role.permissions
+            .map((p) => p.permissionCode)
+            .filter((code): code is Permission => KNOWN_PERMISSIONS.has(code)),
         },
       ]),
     );

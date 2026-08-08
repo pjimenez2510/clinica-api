@@ -154,7 +154,11 @@ export class ProblemDetailsFilter implements ExceptionFilter {
         // RFC 9457: `title` summarises the problem TYPE for a human. It is not
         // the machine identifier — that is `code`. Repeating the code here
         // would make the field dead weight.
-        title,
+        //
+        // The error's OWN sentence wins when it has one. The per-status titles
+        // below are correct but generic, and "No autenticado" on a rejected
+        // sign-in told a receptionist nothing she could act on.
+        title: exception.userTitle ?? title,
         status,
         // The technical message is only exposed outside production: it can drag
         // along details of the PostgreSQL row that caused it.

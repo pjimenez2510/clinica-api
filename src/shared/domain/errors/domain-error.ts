@@ -44,6 +44,21 @@ export abstract class DomainError extends Error {
    */
   readonly fieldErrors?: readonly DomainFieldError[];
 
+  /**
+   * The sentence the USER should read, when the status alone reads as jargon.
+   *
+   * Optional, and most errors should leave it alone: the HTTP layer already
+   * derives a decent title per status. It exists for the cases where that
+   * title is technically right and practically useless — a rejected sign-in
+   * came back titled "No autenticado", which tells a receptionist nothing
+   * about what to do next.
+   *
+   * Still NOT the place for anything sensitive: this text reaches the client
+   * in every environment, unlike `message`. Follow ADR-005 — a complete
+   * sentence, capitalised, no trailing period, addressing the user as "usted".
+   */
+  readonly userTitle?: string;
+
   protected constructor(
     technicalMessage: string,
     params: Record<string, string | number> = {},
