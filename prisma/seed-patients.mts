@@ -224,10 +224,29 @@ async function main(): Promise<void> {
     await prisma.patient.deleteMany({});
   }
 
-  // La secuencia se reinicia para que los números de historia empiecen en 1 y
-  // sean legibles al revisarlos a mano.
+  /**
+   * LOS NÚMEROS SALEN DE LA SECUENCIA, no se calculan aparte.
+   *
+   * La primera versión los generaba con `formatMrn(i + 1)` y nunca llamaba a
+   * `nextval`. El resultado: 800 historias en la tabla y la secuencia intacta,
+   * así que el primer paciente registrado DE VERDAD pedía su número, recibía
+   * uno ya usado y chocaba contra el índice único. Un fallo que sólo aparece
+   * después de sembrar, y en el mostrador.
+   *
+   * Se reserva el bloque entero en UNA consulta: `generate_series` llama a
+   * `nextval` una vez por fila, así que la secuencia queda exactamente donde
+   * debe y no hay dos sitios decidiendo qué número toca — que era el problema
+   * de fondo, no el desajuste en sí.
+   *
+   * El reinicio previo mantiene los números empezando en 1, que es lo que hace
+   * legible una base de desarrollo al revisarla a mano.
+   */
   await prisma.$executeRawUnsafe(
     'ALTER SEQUENCE patient_mrn_seq RESTART WITH 1',
+  );
+
+  const reservados = await prisma.$queryRawUnsafe<{ nextval: bigint }[]>(
+    `SELECT nextval('patient_mrn_seq') FROM generate_series(1, ${TOTAL})`,
   );
 
   // Fecha fija: el seed tiene que ser reproducible, y `new Date()` haría que
@@ -243,7 +262,7 @@ async function main(): Promise<void> {
 
     await prisma.patient.create({
       data: {
-        mrn: formatMrn(i + 1),
+        mrn: formatMrn(Number(reservados[i]!.nextval)),
         familyName: APELLIDOS[i % APELLIDOS.length]!,
         secondFamilyName:
           i % 3 === 0 ? undefined : APELLIDOS[(i * 13) % APELLIDOS.length]!,
@@ -271,11 +290,39 @@ async function main(): Promise<void> {
     });
   }
 
+  /**
+   * La secuencia queda por delante de lo sembrado.
+   *
+   * Se comprueba en vez de darlo por hecho: es la garantía que faltaba, y su
+   * ausencia no se notaba hasta que alguien registraba un paciente.
+   */
+  const filas = await prisma.$queryRawUnsafe<{ siguiente: bigint }[]>(
+    'SELECT last_value + (CASE WHEN is_called THEN 1 ELSE 0 END) AS siguiente FROM patient_mrn_seq',
+  );
+  // Desestructurar directamente daría `possibly undefined` con `noUncheckedIndexedAccess`,
+  // y silenciarlo con `!` en una comprobación de integridad sería contradictorio.
+  const siguiente = filas[0]?.siguiente;
+  if (siguiente === undefined) {
+    throw new Error('No se pudo leer el estado de patient_mrn_seq');
+  }
+
+  const proximoMrn = formatMrn(Number(siguiente));
+  const yaExiste = await prisma.patient.findUnique({
+    where: { mrn: proximoMrn },
+    select: { id: true },
+  });
+  if (yaExiste) {
+    throw new Error(
+      `La secuencia daría ${proximoMrn}, que ya existe. El seed dejó la base en un estado que rompe el próximo registro.`,
+    );
+  }
+
   const conDocumento = await prisma.patientIdentifier.count();
   console.log(`Sembrados ${TOTAL} pacientes (${conDocumento} con cédula).`);
   console.log(
     '  Incluye apellidos con Ñ y tildes, y recién nacidos sin documento.',
   );
+  console.log(`  La próxima historia que emita el sistema será ${proximoMrn}.`);
   await prisma.$disconnect();
 }
 
