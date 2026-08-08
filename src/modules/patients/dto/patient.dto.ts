@@ -117,6 +117,16 @@ export const searchPatientsSchema = z.object({
   // Capped so a caller cannot ask for the entire register in one request.
   pageSize: z.coerce.number().int().min(1).max(50).default(20),
   includeMerged: z.coerce.boolean().default(false),
+  /**
+   * Ordenación, como lista cerrada y no como nombre de columna.
+   *
+   * El valor acaba en un ORDER BY, donde PostgreSQL no admite parámetros, así
+   * que aceptar texto libre sería una inyección. Además obliga a decidir qué
+   * es ordenable, que es una decisión de producto: ordenar por teléfono no
+   * significa nada para nadie.
+   */
+  sortBy: z.enum(['name', 'mrn', 'birthDate']).default('name'),
+  sortDirection: z.enum(['asc', 'desc']).default('asc'),
 });
 export class SearchPatientsDto extends createZodDto(searchPatientsSchema) {}
 

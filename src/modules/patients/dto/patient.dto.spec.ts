@@ -21,7 +21,11 @@ describe('registering a patient', () => {
   it('accepts a valid Ecuadorian cedula', () => {
     const result = createPatientSchema.safeParse({
       ...BASE,
-      identifier: { type: 'CEDULA', issuingCountry: 'ECU', value: VALID_CEDULA },
+      identifier: {
+        type: 'CEDULA',
+        issuingCountry: 'ECU',
+        value: VALID_CEDULA,
+      },
     });
     expect(result.success).toBe(true);
   });
@@ -31,7 +35,11 @@ describe('registering a patient', () => {
     // which is exactly why the check digit exists.
     const result = createPatientSchema.safeParse({
       ...BASE,
-      identifier: { type: 'CEDULA', issuingCountry: 'ECU', value: '1710034064' },
+      identifier: {
+        type: 'CEDULA',
+        issuingCountry: 'ECU',
+        value: '1710034064',
+      },
     });
 
     expect(result.success).toBe(false);
@@ -45,7 +53,11 @@ describe('registering a patient', () => {
     // alone would let it through.
     const result = createPatientSchema.safeParse({
       ...BASE,
-      identifier: { type: 'CEDULA', issuingCountry: 'ECU', value: '9910034065' },
+      identifier: {
+        type: 'CEDULA',
+        issuingCountry: 'ECU',
+        value: '9910034065',
+      },
     });
     expect(result.success).toBe(false);
   });
@@ -63,7 +75,9 @@ describe('registering a patient', () => {
       identifier: { type: 'CEDULA', issuingCountry: 'ECU', value: candidate },
     });
     const message = result.error?.issues[0]?.message;
-    expect(message === undefined || message === 'La cédula ingresada no es válida').toBe(true);
+    expect(
+      message === undefined || message === 'La cédula ingresada no es válida',
+    ).toBe(true);
   });
 
   it('does NOT apply the Ecuadorian check digit to a foreign document', () => {
@@ -71,7 +85,11 @@ describe('registering a patient', () => {
     // would reject a document that is perfectly valid.
     const result = createPatientSchema.safeParse({
       ...BASE,
-      identifier: { type: 'FOREIGN_ID', issuingCountry: 'COL', value: '1234567890' },
+      identifier: {
+        type: 'FOREIGN_ID',
+        issuingCountry: 'COL',
+        value: '1234567890',
+      },
     });
     expect(result.success).toBe(true);
   });
@@ -101,10 +119,12 @@ describe('registering a patient', () => {
   });
 
   it('requires both a given name and a family name', () => {
-    expect(createPatientSchema.safeParse({ ...BASE, givenName: '   ' }).success)
-      .toBe(false);
-    expect(createPatientSchema.safeParse({ ...BASE, familyName: '' }).success)
-      .toBe(false);
+    expect(
+      createPatientSchema.safeParse({ ...BASE, givenName: '   ' }).success,
+    ).toBe(false);
+    expect(
+      createPatientSchema.safeParse({ ...BASE, familyName: '' }).success,
+    ).toBe(false);
   });
 
   it('keeps the second surname optional', () => {
@@ -118,7 +138,9 @@ describe('searching the register', () => {
   it('caps the page size so nobody can ask for the whole register', () => {
     // The register is health data. One request returning every row is both a
     // performance problem and an exfiltration primitive.
-    expect(searchPatientsSchema.safeParse({ pageSize: 500 }).success).toBe(false);
+    expect(searchPatientsSchema.safeParse({ pageSize: 500 }).success).toBe(
+      false,
+    );
   });
 
   it('defaults to a first page of a sane size', () => {

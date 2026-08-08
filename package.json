@@ -1,7 +1,7 @@
 {
   "name": "clinica-api",
   "version": "0.1.0",
-  "description": "API del sistema de gestión clínica (Ecuador)",
+  "description": "API del sistema de gesti\u00f3n cl\u00ednica (Ecuador)",
   "private": true,
   "license": "UNLICENSED",
   "engines": {
@@ -15,7 +15,7 @@
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
-    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "format": "prettier --write \"{src,test,prisma,scripts}/**/*.{ts,mts,json}\"",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -29,14 +29,15 @@
     "db:studio": "prisma studio",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
-    "verify": "pnpm typecheck && pnpm lint:check && pnpm arch:check && pnpm migrations:check && pnpm test",
+    "verify": "pnpm format:check && pnpm typecheck && pnpm lint:check && pnpm arch:check && pnpm migrations:check && pnpm test",
     "db:seed": "node --env-file=.env --experimental-strip-types prisma/seed.mts",
     "db:reset": "prisma migrate reset --force && pnpm db:seed",
     "test:integration": "vitest run --config vitest.integration.config.mts",
     "lint:check": "eslint \"{src,test}/**/*.ts\"",
     "migrations:check": "node --experimental-strip-types scripts/check-migrations.mts",
     "db:seed:auth": "node --env-file-if-exists=.env --experimental-strip-types prisma/seed-authorisation.mts",
-    "build:check": "node --experimental-strip-types scripts/check-build.mts"
+    "build:check": "node --experimental-strip-types scripts/check-build.mts",
+    "format:check": "prettier --check \"{src,test,prisma,scripts}/**/*.{ts,mts,json}\""
   },
   "dependencies": {
     "@nestjs/common": "^11.1.28",

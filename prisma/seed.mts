@@ -7,6 +7,9 @@ import argon2 from 'argon2';
 // left the seed producing hashes with the old ones, so the development
 // password was silently rehashed on every single login.
 import { PASSWORD_HASHING } from '../src/modules/auth/domain/password-hashing.ts';
+// El catálogo es la fuente: construir el rol de desarrollo a partir de él
+// evita una segunda lista que alguien tendría que recordar actualizar.
+import { PERMISSIONS } from '../src/shared/authorisation/permission.catalogue.ts';
 
 /**
  * Development seed.
@@ -26,7 +29,36 @@ function userColumns({ role: _role, ...columns }: (typeof USERS)[number]) {
   return columns;
 }
 
+/**
+ * A DEVELOPMENT-ONLY role holding every permission in the catalogue.
+ *
+ * WHY IT IS NOT IN `DEFAULT_ROLES`: those ship with a fresh installation, and
+ * a real clinic must never start with an account that can read every chart AND
+ * administer users. That separation is the first thing an SPDP audit asks
+ * about. This role exists so a developer can walk the whole application
+ * without switching accounts six times, and it is created by the DEVELOPMENT
+ * seed, which refuses to run against production.
+ *
+ * Built from `PERMISSIONS` rather than a hand-written list: a permission added
+ * to the catalogue tomorrow is included automatically, and there is no second
+ * list to forget.
+ */
+const DEV_SUPERUSER_ROLE = {
+  code: 'DESARROLLO',
+  name: 'Desarrollo (todos los permisos)',
+  description:
+    'Rol de pruebas con todos los permisos. NO debe existir en produccion.',
+} as const;
+
 const USERS = [
+  {
+    email: 'admin@clinica.ec',
+    firstName: 'Pablo',
+    lastName: 'Jimenez',
+    cedula: '1804822136',
+    acessRegistration: null,
+    role: DEV_SUPERUSER_ROLE.code,
+  },
   {
     email: 'medico@clinica.ec',
     firstName: 'Ana',
@@ -52,6 +84,29 @@ async function main(): Promise<void> {
 
   const prisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
+  });
+
+  /**
+   * The catch-all development role, refreshed on every run.
+   *
+   * `syncAuthorisation` deliberately never overwrites an existing role — a
+   * clinic that removed a permission meant it. That protection is right for
+   * the shipped roles and wrong for this one: a permission added to the
+   * catalogue must appear here without anybody remembering, so this seed
+   * rewrites its permission set outright.
+   */
+  const superuser = await prisma.role.upsert({
+    where: { code: DEV_SUPERUSER_ROLE.code },
+    update: { name: DEV_SUPERUSER_ROLE.name, active: true },
+    create: { ...DEV_SUPERUSER_ROLE, active: true },
+  });
+
+  await prisma.rolePermission.deleteMany({ where: { roleId: superuser.id } });
+  await prisma.rolePermission.createMany({
+    data: PERMISSIONS.map((permissionCode) => ({
+      roleId: superuser.id,
+      permissionCode,
+    })),
   });
 
   // Hashed once and reused: Argon2id at these parameters costs ~100 ms per call.
@@ -106,7 +161,12 @@ async function main(): Promise<void> {
   // Sessions from previous runs are meaningless once passwords are reset.
   await prisma.refreshToken.deleteMany({});
 
-  console.log(`Seeded ${USERS.length} users. Password for all of them: ${DEV_PASSWORD}`);
+  console.log(
+    `Seeded ${USERS.length} users. Password for all of them: ${DEV_PASSWORD}`,
+  );
+  console.log(
+    `  admin@clinica.ec holds every permission (${PERMISSIONS.length}) through the ${DEV_SUPERUSER_ROLE.code} role.`,
+  );
   await prisma.$disconnect();
 }
 

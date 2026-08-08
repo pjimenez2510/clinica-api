@@ -55,7 +55,20 @@ export interface PatientDetail extends PatientSummary {
   createdAt: Date;
 }
 
+/**
+ * Por qué columna se ordena.
+ *
+ * UNA LISTA CERRADA, no el nombre de columna que llegue. La ordenación acaba
+ * concatenada en SQL, así que aceptar texto libre es una inyección esperando
+ * a ocurrir; y además obliga a decidir explícitamente qué es ordenable, que es
+ * una decisión de producto y no un detalle de la tabla.
+ */
+export type PatientSortField = 'name' | 'mrn' | 'birthDate';
+export type SortDirection = 'asc' | 'desc';
+
 export interface PatientSearchCriteria {
+  sortBy: PatientSortField;
+  sortDirection: SortDirection;
   /** Free text: name fragments, or an identifier typed in full. */
   query?: string;
   page: number;

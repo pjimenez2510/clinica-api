@@ -51,6 +51,11 @@ jobs:
           DATABASE_URL: postgresql://placeholder:placeholder@placeholder:5432/placeholder
         run: pnpm db:generate
 
+      - name: Formato
+        # Prettier como PUERTA, no como sugerencia. `--check` y no `--write`:
+        # una comprobación que arregla lo que debe rechazar no comprueba nada.
+        run: pnpm format:check
+
       - name: Typecheck
         run: pnpm typecheck
 

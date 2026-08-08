@@ -5,6 +5,7 @@ import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.serv
 import { formatMrn } from '../domain/mrn';
 import type {
   NewPatient,
+  PatientSortField,
   PatientDetail,
   PatientIdentifier,
   PatientPage,
@@ -39,6 +40,19 @@ const SUMMARY_SELECT = {
     take: 1,
   },
 } satisfies Prisma.PatientSelect;
+
+/**
+ * Del criterio de dominio a columnas reales.
+ *
+ * El mapa es lo que permite que el cliente no conozca ni un nombre de columna:
+ * pide «name» y aquí se decide que eso son dos columnas, apellido y nombre, en
+ * ese orden — que es como se archiva a la gente en una clínica.
+ */
+const SORT_COLUMNS: Record<PatientSortField, string> = {
+  name: 'p.family_name, p.given_name',
+  mrn: 'p.mrn',
+  birthDate: 'p.birth_date',
+};
 
 @Injectable()
 export class PrismaPatientRepository implements PatientRepository {
@@ -76,25 +90,59 @@ export class PrismaPatientRepository implements PatientRepository {
     const matches = Prisma.sql`
       p.merged_into_id IS NULL OR ${criteria.includeMerged}
     `;
+    /**
+     * EL DOCUMENTO SE BUSCA POR PREFIJO, con un mínimo de cuatro dígitos.
+     *
+     * Coincidencia exacta era demasiado rígida: en el mostrador se teclean los
+     * primeros dígitos mientras el paciente sigue leyendo la cédula en voz
+     * alta, y obligar a escribir los diez completos hace que se abandone la
+     * búsqueda y se registre un duplicado — el problema que el registro existe
+     * para evitar.
+     *
+     * PREFIJO Y NO `%valor%`, y el mínimo de cuatro tampoco es capricho:
+     *
+     *  - Un `contains` sobre documentos convierte el buscador en un oráculo:
+     *    con `7` se enumera medio registro. El prefijo sólo responde a quien
+     *    ya sabe cómo empieza el número.
+     *  - Menos de cuatro dígitos devuelve cientos de personas que no se
+     *    buscaban, y de paso pierde el índice B-tree `varchar_pattern_ops`
+     *    —que es exactamente el que sirve un `LIKE 'algo%'`—.
+     *
+     * El nombre sí va con `%…%`: se teclea a medias y mal, y no identifica a
+     * nadie por sí solo.
+     */
+    /**
+     * `Prisma.raw` SÓLO sobre valores que salen del mapa de arriba.
+     *
+     * Es la única forma de parametrizar un ORDER BY —PostgreSQL no admite un
+     * placeholder ahí— y por eso el campo llega como una unión cerrada y la
+     * dirección se normaliza a dos literales. Nada de lo que escribe el
+     * usuario toca esta línea.
+     */
+    const direction = criteria.sortDirection === 'desc' ? 'DESC' : 'ASC';
+
+    const documentPrefix = `${query}%`;
+    const searchesDocument = /^[A-Za-z0-9-]{4,}$/.test(query);
+
     const filter =
       query === ''
         ? Prisma.sql`TRUE`
         : Prisma.sql`(
           p.search_name LIKE immutable_unaccent(lower(${pattern}))
           OR p.mrn = upper(${query})
-          OR EXISTS (
+          OR (${searchesDocument} AND EXISTS (
             SELECT 1 FROM patient_identifier pi
             WHERE pi.patient_id = p.id
               AND pi.valid_to IS NULL
-              AND pi.value = ${query}
-          )
+              AND pi.value LIKE ${documentPrefix}
+          ))
         )`;
 
     const rows = await this.prisma.$queryRaw<{ id: string }[]>`
       SELECT p.id
       FROM patient p
       WHERE (${matches}) AND ${filter}
-      ORDER BY p.family_name ASC, p.given_name ASC
+      ORDER BY ${Prisma.raw(SORT_COLUMNS[criteria.sortBy])} ${Prisma.raw(direction)}
       LIMIT ${criteria.pageSize} OFFSET ${offset}
     `;
 
@@ -106,11 +154,24 @@ export class PrismaPatientRepository implements PatientRepository {
 
     // The ids come from SQL; the ROWS come back through Prisma so the shape
     // stays in one place and `select` cannot drift between the two paths.
-    const items = await this.prisma.patient.findMany({
-      where: { id: { in: rows.map((r) => r.id) } },
-      select: SUMMARY_SELECT,
-      orderBy: [{ familyName: 'asc' }, { givenName: 'asc' }],
-    });
+    /**
+     * El orden lo fija el SQL de arriba, no esta consulta.
+     *
+     * `WHERE id IN (...)` no conserva ningún orden, así que reordenar aquí con
+     * un `orderBy` distinto daría una página ordenada de dos maneras a la vez.
+     * Se reindexa por id contra la lista que ya vino ordenada.
+     */
+    const byId = new Map(
+      (
+        await this.prisma.patient.findMany({
+          where: { id: { in: rows.map((r) => r.id) } },
+          select: SUMMARY_SELECT,
+        })
+      ).map((row) => [row.id, row]),
+    );
+    const items = rows
+      .map((r) => byId.get(r.id))
+      .filter((row): row is NonNullable<typeof row> => row !== undefined);
 
     return {
       items: items.map((row) => this.toSummary(row)),

@@ -73,6 +73,8 @@ export class PatientsController {
       page: dto.page,
       pageSize: dto.pageSize,
       includeMerged: dto.includeMerged,
+      sortBy: dto.sortBy,
+      sortDirection: dto.sortDirection,
     });
 
     return {

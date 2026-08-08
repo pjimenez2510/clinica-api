@@ -72,7 +72,8 @@ for (const dir of readdirSync(MIGRATIONS, { withFileTypes: true })) {
   }
 
   sql.split('\n').forEach((line, index) => {
-    const dropping = /^\s*(DROP\s+(INDEX|COLUMN)|ALTER\s+TABLE.*DROP\s+COLUMN)/i;
+    const dropping =
+      /^\s*(DROP\s+(INDEX|COLUMN)|ALTER\s+TABLE.*DROP\s+COLUMN)/i;
     if (!dropping.test(line)) return;
 
     for (const name of PROTECTED) {
