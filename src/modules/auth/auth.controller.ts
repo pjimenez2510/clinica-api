@@ -161,17 +161,15 @@ export class AuthController {
   async refresh(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
-  ): Promise<{ accessToken: string; expiresIn: number }> {
+  ): Promise<SessionResponse> {
     const presented = this.readRefreshCookie(req);
     const rotated = await this.auth.refresh(presented, this.clientContext(req));
 
     this.setRefreshCookie(res, rotated.refreshToken, rotated.expiresAt);
-    return {
-      accessToken: rotated.accessToken,
-      // Read from the token service, not a literal. The TTL is configurable,
-      // and a hardcoded 900 makes the API lie about when the token expires.
-      expiresIn: this.tokens.accessTokenSeconds,
-    };
+    // The SAME shape `login` answers with. A reload has to rebuild the whole
+    // session, and two different shapes for "here is your session" is how the
+    // client ends up handling one of them wrong.
+    return await this.toSessionResponse(rotated);
   }
 
   /** Closes the current session. Other devices stay signed in. */

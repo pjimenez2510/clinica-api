@@ -284,11 +284,22 @@ export class AuthService {
     );
   }
 
-  /** Rotates the session. Reuse detection lives in the refresh token port. */
+  /**
+   * Rotates the session. Reuse detection lives in the refresh token port.
+   *
+   * RETURNS THE IDENTITY, not just the token. A browser reload loses the
+   * in-memory access token, and this endpoint is the only way back — so if it
+   * answers with a token and nothing else, the client holds a valid session it
+   * cannot describe: signed in, but unable to say as whom or with which
+   * permissions. That is exactly what happened, and it rendered an empty
+   * dashboard on every reload.
+   *
+   * It costs nothing: the user is already loaded below to check `active`.
+   */
   async refresh(
     presentedToken: string,
     ctx: ClientContext = {},
-  ): Promise<{ accessToken: string; refreshToken: string; expiresAt: Date }> {
+  ): Promise<AuthenticatedSession> {
     const rotated = await this.refreshTokens.rotate(presentedToken, ctx);
 
     const user = await this.users.findByRefreshFamily(rotated.familyId);
@@ -313,6 +324,12 @@ export class AuthService {
       accessToken,
       refreshToken: rotated.token,
       expiresAt: rotated.expiresAt,
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+      },
     };
   }
 
