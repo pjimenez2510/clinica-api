@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import * as argon2 from 'argon2';
 
 import {
   PASSWORD_HASHING,
@@ -8,6 +9,13 @@ import {
 /**
  * The domain names the algorithm; this maps it to the library constant.
  * That indirection is what keeps `argon2` out of the domain.
+ *
+ * THE IMPORT ABOVE MUST STAY ABOVE THIS CONSTANT. It used to sit below, and
+ * the difference is invisible until deployment: SWC compiles to ESM and hoists
+ * imports, so all 137 unit tests passed, while `tsc` emitting CommonJS leaves
+ * the `require` where it was written — `argon2` in the temporal dead zone, and
+ * the API dead on startup with `Cannot access 'argon2' before initialization`.
+ * A build that only the production output breaks is the worst kind.
  */
 const ARGON2_OPTIONS = {
   type: argon2.argon2id,
@@ -15,7 +23,6 @@ const ARGON2_OPTIONS = {
   timeCost: PASSWORD_HASHING.timeCost,
   parallelism: PASSWORD_HASHING.parallelism,
 } satisfies argon2.HashOptions;
-import * as argon2 from 'argon2';
 
 /**
  * OWASP recommended Argon2id parameters.

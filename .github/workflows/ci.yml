@@ -72,6 +72,20 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+      - name: Build
+        # CI did not build at all, so the artifact that gets deployed was the
+        # one thing never checked.
+        run: pnpm build
+
+      - name: The compiled output loads
+        # NOT redundant with the build. `tsc` compiles an import written below
+        # the constant that uses it without complaint; the failure only appears
+        # when Node executes the CommonJS output. Tests do not catch it either
+        # — they run the source through SWC, which emits ESM and hoists
+        # imports. The API once passed every gate above and died on startup
+        # with `Cannot access 'argon2' before initialization`.
+        run: pnpm build:check
+
   # Constraints, triggers and generated columns against a real PostgreSQL.
   # Separate job so a type error does not have to wait for a container.
   integration:

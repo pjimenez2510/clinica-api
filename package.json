@@ -35,7 +35,8 @@
     "test:integration": "vitest run --config vitest.integration.config.mts",
     "lint:check": "eslint \"{src,test}/**/*.ts\"",
     "migrations:check": "node --experimental-strip-types scripts/check-migrations.mts",
-    "db:seed:auth": "node --env-file-if-exists=.env --experimental-strip-types prisma/seed-authorisation.mts"
+    "db:seed:auth": "node --env-file-if-exists=.env --experimental-strip-types prisma/seed-authorisation.mts",
+    "build:check": "node --experimental-strip-types scripts/check-build.mts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.28",
