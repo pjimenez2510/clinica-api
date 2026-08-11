@@ -38,7 +38,8 @@
     "build:check": "node --experimental-strip-types scripts/check-build.mts",
     "format:check": "prettier --check \"{src,test,prisma,scripts}/**/*.{ts,mts,json}\"",
     "db:migrate:new": "node --experimental-strip-types scripts/new-migration.mts",
-    "db:seed:patients": "node --env-file=.env --experimental-strip-types prisma/seed-patients.mts"
+    "db:seed:patients": "node --env-file=.env --experimental-strip-types prisma/seed-patients.mts",
+    "db:seed:cie10": "node --env-file=.env --experimental-strip-types prisma/seed-cie10.mts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.28",
