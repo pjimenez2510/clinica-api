@@ -1,0 +1,25 @@
+-- Índice para buscar un código de catálogo sin puntuación.
+--
+-- LA BÚSQUEDA DE CATÁLOGO ES UN «OR» DE DOS RAMAS —código o descripción— y esa
+-- forma es exactamente la que obliga a tener las dos indexadas: PostgreSQL sólo
+-- combina ramas con un BitmapOr cuando TODAS tienen índice; si una sola no lo
+-- tiene, recorre la tabla entera y el índice trigram de la otra no se usa.
+--
+-- Medido sobre los 14 498 conceptos de la CIE-10, misma consulta:
+--
+--     sin este índice   Seq Scan     74 ms
+--     con este índice   BitmapOr      1 ms
+--
+-- No es una micro-optimización: la caja de diagnóstico busca en cada pulsación,
+-- así que 74 ms por tecla son 74 ms que el médico ve como lentitud.
+--
+-- `replace(code, '.', '')` porque `J30.1`, `J301` y `j30 1` son el mismo código
+-- para quien lo teclea, y la consulta normaliza igual antes de comparar. La
+-- expresión del índice tiene que ser LITERALMENTE la misma que la del `WHERE`.
+--
+-- `text_pattern_ops` y no el operador por defecto: sin él un `LIKE 'J30%'` no
+-- puede usar el índice salvo que la base esté en collation `C`. Con él funciona
+-- sea cual sea la collation, que es lo que hace falta porque este esquema usa
+-- `es-ES-x-icu` para los nombres.
+CREATE INDEX catalog_concept_code_plain
+  ON catalog_concept (replace(code, '.', '') text_pattern_ops);

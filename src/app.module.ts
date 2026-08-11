@@ -6,6 +6,7 @@ import { ClsModule } from 'nestjs-cls';
 import { LoggerModule } from 'nestjs-pino';
 
 import { AuthModule } from './modules/auth/auth.module';
+import { CatalogsModule } from './modules/catalogs/catalogs.module';
 import { PatientsModule } from './modules/patients/patients.module';
 import { validateEnv } from './shared/config/env.schema';
 import { TimeoutInterceptor } from './shared/http/interceptors/timeout.interceptor';
@@ -68,6 +69,7 @@ import { buildLoggerConfig } from './shared/observability/logger.config';
     SharedInfrastructureModule,
     AuthModule,
     PatientsModule,
+    CatalogsModule,
   ],
   providers: [
     // Registered with APP_FILTER, not useGlobalFilters, so the filter can

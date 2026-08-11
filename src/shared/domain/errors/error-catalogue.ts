@@ -30,6 +30,14 @@ export const DOMAIN_ERROR_CODES = [
   'MFA_NOT_ENROLLED',
   'MFA_REQUIRED',
   'MISSING_REFRESH_TOKEN',
+  // Catálogos clínicos. Las tres respuestas negativas son distintas a
+  // propósito: «no existe» es un error de tecleo, «no vigente» es una historia
+  // antigua perfectamente válida, y «no seleccionable» es un capítulo que hay
+  // que concretar. Un 404 para las tres haría que la de en medio pareciera
+  // corrupción de datos.
+  'CATALOG_CONCEPT_NOT_FOUND',
+  'CATALOG_CONCEPT_NOT_IN_FORCE',
+  'CATALOG_CONCEPT_NOT_SELECTABLE',
   'MISSING_TOKEN',
   // Registro de pacientes. `PATIENT_MERGED` no es un 404: la historia existió y
   // documentos ya impresos siguen citando su número, así que el cliente
