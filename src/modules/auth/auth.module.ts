@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 
 import { AuthService } from './application/auth.service';
+import { MfaEnrolmentService } from './application/mfa-enrolment.service';
 import { PermissionsGuard } from './infrastructure/permissions.guard';
 import { RolePermissionRegistry } from './infrastructure/role-permission.registry';
 import {
@@ -37,6 +38,7 @@ import { TotpService } from './infrastructure/totp.service';
   controllers: [AuthController],
   providers: [
     AuthService,
+    MfaEnrolmentService,
     CurrentUserService,
 
     // Concrete implementations.

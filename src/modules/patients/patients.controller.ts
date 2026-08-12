@@ -34,6 +34,7 @@ import {
   PatientDetailDto,
   PatientPageDto,
   SearchPatientsDto,
+  type PatientDetailResponse,
 } from './dto/patient.dto';
 
 /**
@@ -100,7 +101,7 @@ export class PatientsController {
   async byId(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: Request,
-  ): Promise<unknown> {
+  ): Promise<PatientDetailResponse> {
     const patient = await this.patients.getById(id, this.requester(req));
     return toDetailResponse(patient);
   }
@@ -113,7 +114,7 @@ export class PatientsController {
   async create(
     @Body() dto: CreatePatientDto,
     @Req() req: Request,
-  ): Promise<unknown> {
+  ): Promise<PatientDetailResponse> {
     const created = await this.patients.create(
       {
         familyName: dto.familyName,

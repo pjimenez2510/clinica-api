@@ -167,7 +167,7 @@ export const patientDetailSchema = patientSummarySchema.extend({
   bloodType: z.string().nullable(),
   residenceAddressLine: z.string().nullable(),
   isProvisional: z.boolean(),
-  identifiers: z.array(identifierResponseSchema),
+  identifiers: z.array(identifierResponseSchema).readonly(),
   /**
    * Set once a duplicate was resolved. The record is NOT deleted — printed
    * documents still quote its MRN — so the interface has to be able to say
@@ -179,9 +179,13 @@ export const patientDetailSchema = patientSummarySchema.extend({
 export class PatientDetailDto extends createZodDto(patientDetailSchema) {}
 
 export const patientPageSchema = z.object({
-  items: z.array(patientSummarySchema),
+  items: z.array(patientSummarySchema).readonly(),
   total: z.number().int().nonnegative(),
   page: z.number().int().positive(),
   pageSize: z.number().int().positive(),
 });
 export class PatientPageDto extends createZodDto(patientPageSchema) {}
+
+/** Response types inferred from the published schemas; see agenda.dto.ts. */
+export type PatientDetailResponse = z.infer<typeof patientDetailSchema>;
+export type PatientPageResponse = z.infer<typeof patientPageSchema>;

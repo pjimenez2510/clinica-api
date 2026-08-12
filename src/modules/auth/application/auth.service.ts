@@ -5,7 +5,6 @@ import {
   AccountInactiveError,
   InvalidCredentialsError,
   InvalidMfaCodeError,
-  MfaAlreadyEnrolledError,
   MfaNotEnrolledError,
   SessionUserMissingError,
 } from '../domain/auth.errors';
@@ -31,27 +30,6 @@ import {
   type ClientContext,
   RevocationReason,
 } from '../../../shared/request/client-context';
-
-export { type ClientContext, RevocationReason };
-
-/**
- * The errors these use cases raise live in `../domain/auth.errors`.
- *
- * Re-exported so existing imports keep working, but the definitions belong to
- * the domain: an error is a lightweight value and importing it should not drag
- * in this service, its five ports and the whole of NestJS.
- */
-export {
-  AccountInactiveError,
-  InvalidCredentialsError,
-  InvalidMfaCodeError,
-  InvalidRefreshTokenError,
-  MfaAlreadyEnrolledError,
-  MfaNotEnrolledError,
-  MfaRequiredError,
-  RefreshTokenReuseError,
-  SessionUserMissingError,
-} from '../domain/auth.errors';
 
 /**
  * Lockout thresholds.
@@ -244,47 +222,6 @@ export class AuthService {
   }
 
   /**
-   * Starts TOTP enrolment.
-   *
-   * The secret is stored immediately but stays disabled until confirmed.
-   * Keeping the pending secret server-side rather than handing the encrypted
-   * blob to the client removes a whole class of replay: the client never holds
-   * anything it could send back later.
-   *
-   * The plaintext secret is returned exactly once, for the QR code.
-   */
-  async enrollMfa(userId: string): Promise<{ secret: string; uri: string }> {
-    const user = await this.requireUser(userId);
-    if (user.mfaEnabledAt) throw new MfaAlreadyEnrolledError();
-
-    const { secret, encrypted, uri } = this.totp.enroll(user.email);
-    await this.users.savePendingMfaSecret(userId, encrypted);
-
-    return { secret, uri };
-  }
-
-  /** Confirms enrolment: proves the user actually scanned the QR code. */
-  async confirmMfaEnrollment(userId: string, code: string): Promise<void> {
-    const user = await this.requireUser(userId);
-
-    if (!user.mfaSecretEncrypted) throw new MfaNotEnrolledError();
-    if (user.mfaEnabledAt) throw new MfaAlreadyEnrolledError();
-
-    const usedStep = this.totp.verify(
-      user.mfaSecretEncrypted,
-      code,
-      user.email,
-      null,
-    );
-    await this.users.confirmMfa(userId, usedStep);
-
-    this.logger.info(
-      { user_id: userId, action: 'MFA_ENROLLED' },
-      'second factor enrolled',
-    );
-  }
-
-  /**
    * Rotates the session. Reuse detection lives in the refresh token port.
    *
    * RETURNS THE IDENTITY, not just the token. A browser reload loses the
@@ -411,14 +348,6 @@ export class AuthService {
     };
   }
 
-  /** Exponential backoff, capped. Linear delays are trivial to wait out. */
-  /**
-   * Counts a failure and locks the account once it crosses the threshold.
-   *
-   * The count comes back FROM the database. Computing it here from a value
-   * read at the start of the request loses every concurrent attempt but one,
-   * and an account that never reaches the threshold never locks.
-   */
   /**
    * Roles the user currently holds, by id and site.
    *
@@ -435,6 +364,14 @@ export class AuthService {
     return user.lockedUntil !== null && user.lockedUntil > new Date();
   }
 
+  /**
+   * Counts a failure and locks the account once it crosses the threshold,
+   * with capped exponential backoff — linear delays are trivial to wait out.
+   *
+   * The count comes back FROM the database. Computing it here from a value
+   * read at the start of the request loses every concurrent attempt but one,
+   * and an account that never reaches the threshold never locks.
+   */
   private async registerFailedAttempt(
     userId: string,
     maxAttempts: number,

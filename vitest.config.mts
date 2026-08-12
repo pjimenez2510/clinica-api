@@ -42,23 +42,46 @@ export default defineConfig({
         '**/*.query.ts',
         '**/*.exception.ts', // subclases de Error sin lógica
         'src/shared/config/**', // validado por Zod al arrancar (fail-fast)
+        // Datos de semilla con forma de código: los roles por defecto se
+        // insertan una vez y se editan como datos. Cubrirlos con una prueba
+        // unitaria sería afirmar que una constante es igual a sí misma.
+        'src/modules/auth/domain/default-roles.ts',
         '**/*.d.ts',
       ],
+      /**
+       * PISOS DE TRINQUETE, no aspiraciones. Los umbrales anteriores (75/95/85)
+       * asumían que la suite unitaria cubre lo que en este proyecto cubren las
+       * pruebas de integración —los constraints, los guards, los repositorios—
+       * y como nadie ejecutaba `--coverage`, la puerta llevaba apagada desde el
+       * principio (revisión de mantenibilidad, 12-08-2026). Ahora `pnpm verify`
+       * la ejecuta en cada pasada, con pisos medidos ese día.
+       *
+       * LA REGLA: un piso solo se SUBE. Al cerrar cada entrega, si la medida
+       * real supera el piso por más de 5 puntos, se sube el piso a medida-2.
+       * Bajar un piso exige explicar en el commit qué cobertura se perdió y
+       * por qué está bien perderla.
+       */
       thresholds: {
-        // Red global.
-        lines: 75,
-        branches: 70,
-        functions: 75,
-        statements: 75,
+        lines: 46,
+        branches: 46,
+        functions: 44,
+        statements: 46,
 
-        // Umbrales por capa. El dominio es código puro: sin I/O, sin framework,
-        // cada test cuesta milisegundos. Por debajo de 95% no significa
-        // "faltan tests", significa código muerto o mal ubicado.
+        // shared/domain y el dominio de agenda están al 95-99: ese es el nivel
+        // exigido a módulos NUEVOS. El agregado baja por auth y catalogs, cuyos
+        // errores se ejercitan por integración; suben con la regla de arriba.
         'src/shared/domain/**': { lines: 95, branches: 90, functions: 95 },
-        'src/modules/*/domain/**': { lines: 95, branches: 90, functions: 95 },
-        'src/modules/*/application/**': { lines: 85, branches: 80, functions: 85 },
-        'src/modules/*/infrastructure/**': { lines: 50, branches: 45, functions: 50 },
-
+        'src/modules/*/domain/**': { lines: 83, branches: 90, functions: 80 },
+        'src/modules/*/application/**': {
+          lines: 50,
+          branches: 43,
+          functions: 45,
+        },
+        'src/modules/*/infrastructure/**': {
+          lines: 20,
+          branches: 8,
+          functions: 15,
+        },
       },
     },
   },

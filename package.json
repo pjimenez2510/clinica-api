@@ -28,7 +28,7 @@
     "db:studio": "prisma studio",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
-    "verify": "pnpm format:check && pnpm typecheck && pnpm lint:check && pnpm arch:check && pnpm migrations:check && pnpm test",
+    "verify": "pnpm format:check && pnpm typecheck && pnpm lint:check && pnpm arch:check && pnpm migrations:check && pnpm rtm && pnpm test:cov && node .claude/hooks/stamp-verify.mjs",
     "db:seed": "node --env-file=.env --experimental-strip-types prisma/seed.mts",
     "db:reset": "pnpm migrations:check && prisma migrate reset --force && pnpm db:seed",
     "test:integration": "vitest run --config vitest.integration.config.mts",
@@ -39,7 +39,11 @@
     "format:check": "prettier --check \"{src,test,prisma,scripts}/**/*.{ts,mts,json}\"",
     "db:migrate:new": "node --experimental-strip-types scripts/new-migration.mts",
     "db:seed:patients": "node --env-file=.env --experimental-strip-types prisma/seed-patients.mts",
-    "db:seed:cie10": "node --env-file=.env --experimental-strip-types prisma/seed-cie10.mts"
+    "db:seed:cie10": "node --env-file=.env --experimental-strip-types prisma/seed-cie10.mts",
+    "rtm": "node --experimental-strip-types scripts/check-rtm.mts",
+    "rtm:write": "node --experimental-strip-types scripts/check-rtm.mts --write",
+    "estado": "node --experimental-strip-types scripts/estado.mts",
+    "estado:proyecto": "node --experimental-strip-types scripts/estado-proyecto.mts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.28",

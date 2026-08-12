@@ -35,6 +35,18 @@ import { extractZodError, zodIssuesToFieldErrors } from './zod-problem';
 const BASE_TYPE = 'https://api.clinica.ec/problems';
 
 /**
+ * What a 503 tells the client to wait when the error itself does not say.
+ *
+ * Five seconds: long enough that a hundred clients retrying do not reproduce
+ * the outage, short enough that a receptionist does not think the system is
+ * down for good.
+ */
+const DEFAULT_RETRY_AFTER_SECONDS = 5;
+
+/** Typed as a plain number: `ProblemDetails.status` is one, not the enum. */
+const SERVICE_UNAVAILABLE: number = HttpStatus.SERVICE_UNAVAILABLE;
+
+/**
  * Translates any exception into an RFC 9457 response.
  *
  * This is the ONLY place in the system that knows about HTTP status codes. The
@@ -118,6 +130,28 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     }
 
     httpAdapter.setHeader?.(res, 'Content-Type', PROBLEM_CONTENT_TYPE);
+
+    /**
+     * `Retry-After` on every 503, and only on a 503.
+     *
+     * A 503 without it is "later" with no number attached: every client picks
+     * its own interval and the impatient ones pick the shortest, which turns a
+     * moment of contention into a retry storm. AG-026 requires it for a
+     * booking abandoned after serialisation retries; a database that is away
+     * (`DATABASE_UNAVAILABLE`) and a failing readiness probe deserve the same
+     * answer, so the header is attached by STATUS rather than by error class.
+     *
+     * The error names its own interval when it knows one — a serialisation
+     * abort clears in seconds, a dependency outage does not.
+     */
+    if (problem.status === SERVICE_UNAVAILABLE) {
+      const seconds =
+        exception instanceof DomainError
+          ? (exception.retryAfterSeconds ?? DEFAULT_RETRY_AFTER_SECONDS)
+          : DEFAULT_RETRY_AFTER_SECONDS;
+      httpAdapter.setHeader?.(res, 'Retry-After', String(seconds));
+    }
+
     httpAdapter.reply(res, problem, problem.status);
   }
 

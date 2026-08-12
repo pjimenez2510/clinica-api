@@ -343,10 +343,25 @@ enum AgendaStatus {
   FULFILLED
   CANCELLED
   NO_SHOW
-  /// Only valid for kind = BLOCK.
+  /// Only valid for kind = BLOCK, and a BLOCK only ever holds BOOKED, BLOCKED
+  /// or CANCELLED. Enforced by `agenda_entry_kind_status_coherence` in a manual
+  /// migration: the other five statuses assert something about a patient, and a
+  /// block has none.
   BLOCKED
 
   @@map("agenda_status")
+}
+
+/// How the clinic was asked for the appointment. A closed list because AG-080
+/// reports the no-show rate grouped by it: as free text it accepted 'telefono'
+/// and 'Phone' as different channels.
+enum BookingChannel {
+  PHONE
+  WALK_IN
+  WEB
+  REFERRAL
+
+  @@map("booking_channel")
 }
 
 enum CareModality {
@@ -1072,8 +1087,11 @@ model AgendaEntry {
 
   reason String? @db.VarChar(512)
 
-  /// PHONE, WALK_IN, WEB, REFERRAL.
-  bookingChannel String? @map("booking_channel") @db.VarChar(32)
+  /// Required exactly when kind = APPOINTMENT (AG-029); NULL on a block, which
+  /// nobody books. Enforced by `agenda_entry_booking_channel_coherence` in a
+  /// manual migration — a CHECK and not NOT NULL, because half the rows may
+  /// legitimately be empty.
+  bookingChannel BookingChannel? @map("booking_channel")
 
   checkedInAt      DateTime? @map("checked_in_at") @db.Timestamptz(6)
   noShowAt         DateTime? @map("no_show_at") @db.Timestamptz(6)

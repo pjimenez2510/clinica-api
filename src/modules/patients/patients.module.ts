@@ -1,3 +1,4 @@
+import './infrastructure/patients.constraints';
 import { Module } from '@nestjs/common';
 
 import { ACCESS_AUDIT_RECORDER } from '../../shared/audit/access-audit.port';

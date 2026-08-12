@@ -60,6 +60,58 @@ export async function createPatient(
   });
 }
 
+/**
+ * Links a practitioner to a site.
+ *
+ * AG-014: without the row, no slot of theirs is offered at that site and no
+ * appointment is admitted. It is a separate call on purpose — a fixture that
+ * created it silently would hide the requirement it exists for.
+ */
+export async function linkPractitionerToSite(
+  prisma: PrismaClient,
+  practitionerId: string,
+  siteId: string,
+) {
+  return prisma.practitionerSite.create({ data: { practitionerId, siteId } });
+}
+
+/**
+ * A weekly schedule rule, in WALL CLOCK time.
+ *
+ * `start_time` and `end_time` are `time` columns — the one deliberate
+ * exception to timestamptz — so they are written as a Date pinned to
+ * 1970-01-01 whose UTC parts ARE the wall clock. Writing them with local
+ * getters would shift the rule by the host's offset, which is the bug
+ * `WallClockTime.fromTimeColumn` exists to avoid on the way back.
+ */
+export async function createScheduleRule(
+  prisma: PrismaClient,
+  ids: { practitionerId: string; siteId: string },
+  rule: {
+    /** ISO-8601: 1 = Monday .. 7 = Sunday. */
+    weekday: number;
+    startTime: string;
+    endTime: string;
+    slotMinutes?: number;
+    validFrom?: Date;
+    validTo?: Date | null;
+    active?: boolean;
+  },
+) {
+  return prisma.practitionerScheduleRule.create({
+    data: {
+      ...ids,
+      weekday: rule.weekday,
+      startTime: new Date(`1970-01-01T${rule.startTime}:00Z`),
+      endTime: new Date(`1970-01-01T${rule.endTime}:00Z`),
+      slotMinutes: rule.slotMinutes ?? 20,
+      validFrom: rule.validFrom ?? new Date('2026-01-01T00:00:00Z'),
+      validTo: rule.validTo ?? null,
+      active: rule.active ?? true,
+    },
+  });
+}
+
 export async function createEncounter(
   prisma: PrismaClient,
   ids: { siteId: string; practitionerId: string; patientId: string },

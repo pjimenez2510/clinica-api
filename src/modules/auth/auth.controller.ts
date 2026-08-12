@@ -28,6 +28,7 @@ import {
 } from '../../shared/http/auth.decorators';
 
 import { AuthService } from './application/auth.service';
+import { MfaEnrolmentService } from './application/mfa-enrolment.service';
 import { RolePermissionRegistry } from './infrastructure/role-permission.registry';
 import { TokenService } from './infrastructure/token.service';
 import {
@@ -73,6 +74,7 @@ export class AuthController {
 
   constructor(
     private readonly auth: AuthService,
+    private readonly mfaEnrolment: MfaEnrolmentService,
     private readonly currentUser: CurrentUserService,
     private readonly tokens: TokenService,
     private readonly roles: RolePermissionRegistry,
@@ -164,7 +166,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Start second factor enrolment' })
   @ApiOkResponse({ type: MfaEnrolmentResponseDto })
   async enrollMfa(): Promise<{ secret: string; uri: string }> {
-    return this.auth.enrollMfa(this.currentUser.requireUserId());
+    return this.mfaEnrolment.enroll(this.currentUser.requireUserId());
   }
 
   /** Confirms enrolment by proving the authenticator was actually configured. */
@@ -174,10 +176,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Confirm second factor enrolment' })
   @ApiNoContentResponse()
   async confirmMfa(@Body() dto: ConfirmMfaDto): Promise<void> {
-    await this.auth.confirmMfaEnrollment(
-      this.currentUser.requireUserId(),
-      dto.code,
-    );
+    await this.mfaEnrolment.confirm(this.currentUser.requireUserId(), dto.code);
   }
 
   /**

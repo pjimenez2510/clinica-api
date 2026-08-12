@@ -2,6 +2,9 @@ import { HttpStatus } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 
 import { extractDatabaseProblem } from '../../src/shared/http/database-problem';
+import '../../src/modules/agenda/infrastructure/agenda.constraints';
+import '../../src/modules/patients/infrastructure/patients.constraints';
+import '../../src/modules/catalogs/infrastructure/catalogs.constraints';
 
 import { useDatabase } from './setup/database';
 import {
@@ -49,6 +52,7 @@ describe('database errors become usable responses', () => {
     await prisma.agendaEntry.create({
       data: {
         kind: 'APPOINTMENT',
+        bookingChannel: 'PHONE',
         siteId: site.id,
         practitionerId: practitioner.id,
         patientId: patient.id,
@@ -60,6 +64,7 @@ describe('database errors become usable responses', () => {
       prisma.agendaEntry.create({
         data: {
           kind: 'APPOINTMENT',
+          bookingChannel: 'PHONE',
           siteId: site.id,
           practitionerId: practitioner.id,
           patientId: (await createPatient(prisma)).id,
@@ -94,6 +99,7 @@ describe('database errors become usable responses', () => {
     await prisma.agendaEntry.create({
       data: {
         kind: 'APPOINTMENT',
+        bookingChannel: 'PHONE',
         siteId: site.id,
         practitionerId: first.id,
         roomId: room.id,
@@ -106,6 +112,7 @@ describe('database errors become usable responses', () => {
       prisma.agendaEntry.create({
         data: {
           kind: 'APPOINTMENT',
+          bookingChannel: 'PHONE',
           siteId: site.id,
           practitionerId: second.id,
           roomId: room.id,
@@ -160,6 +167,7 @@ describe('database errors become usable responses', () => {
       prisma.agendaEntry.create({
         data: {
           kind: 'APPOINTMENT',
+          bookingChannel: 'PHONE',
           siteId: '00000000-0000-7000-8000-000000000000',
           practitionerId: practitioner.id,
           patientId: patient.id,
@@ -301,6 +309,7 @@ describe('database errors become usable responses', () => {
     const appointment = await prisma.agendaEntry.create({
       data: {
         kind: 'APPOINTMENT',
+        bookingChannel: 'PHONE',
         siteId: site.id,
         practitionerId: practitioner.id,
         patientId: patient.id,

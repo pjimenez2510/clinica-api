@@ -103,7 +103,7 @@ export const catalogConceptSchema = z.object({
 export class CatalogConceptDto extends createZodDto(catalogConceptSchema) {}
 
 export const catalogSearchResultSchema = z.object({
-  items: z.array(catalogConceptSchema),
+  items: z.array(catalogConceptSchema).readonly(),
 });
 export class CatalogSearchResultDto extends createZodDto(
   catalogSearchResultSchema,
@@ -111,8 +111,14 @@ export class CatalogSearchResultDto extends createZodDto(
 
 export const catalogConceptDetailSchema = catalogConceptSchema.extend({
   /** De capítulo a padre inmediato, para situar el código en su rama. */
-  ancestors: z.array(catalogConceptSchema),
+  ancestors: z.array(catalogConceptSchema).readonly(),
 });
 export class CatalogConceptDetailDto extends createZodDto(
   catalogConceptDetailSchema,
 ) {}
+
+/** Response types inferred from the published schemas; see agenda.dto.ts. */
+export type CatalogSearchResponse = z.infer<typeof catalogSearchResultSchema>;
+export type CatalogConceptDetailResponse = z.infer<
+  typeof catalogConceptDetailSchema
+>;

@@ -1,6 +1,8 @@
 import { HttpStatus } from '@nestjs/common';
 
 import type { DomainFieldError } from '../domain/errors/domain-error';
+import { constraintMeaningOf } from './constraint-meanings';
+import './pending-constraints';
 
 /**
  * Translates a database rejection into the error contract.
@@ -59,67 +61,13 @@ interface PrismaErrorLike {
 }
 
 /**
- * What each constraint means to the person who hit it.
- *
- * A registry is right here — unlike the domain errors, which map by category.
- * There is no category to infer from: `agenda_entry_no_practitioner_overlap`
- * and `patient_identifier_cedula_valid` are both "a constraint said no", and
- * only a human knows that one means "that slot is taken" and the other "check
- * the ID number". Anything not listed still gets a correct status through the
- * SQLSTATE fallback; the registry only upgrades the message.
+ * Constraint meanings live in each module's `*.constraints.ts`, registered
+ * into `constraint-meanings.ts` at import time. Shared keeps the machinery —
+ * the SQLSTATE table below, the name extraction, the availability codes — and
+ * grows by zero when a module adds a constraint (maintainability review,
+ * finding 3). `pending-constraints.ts` holds the entries whose owning module
+ * does not exist yet.
  */
-const CONSTRAINT_MEANINGS = new Map<
-  string,
-  { code: string; field: string; message: string }
->(
-  Object.entries({
-    agenda_entry_no_practitioner_overlap: {
-      code: 'PRACTITIONER_SLOT_TAKEN',
-      field: 'startsAt',
-      message: 'El profesional ya tiene una cita en ese horario',
-    },
-    agenda_entry_no_room_overlap: {
-      code: 'ROOM_SLOT_TAKEN',
-      field: 'roomId',
-      message: 'El consultorio ya está ocupado en ese horario',
-    },
-    agenda_entry_time_order: {
-      code: 'INVALID_TIME_RANGE',
-      field: 'endsAt',
-      message: 'La cita debe terminar después de la hora en que empieza',
-    },
-    agenda_entry_patient_coherence: {
-      code: 'PATIENT_REQUIRED',
-      field: 'patientId',
-      message: 'Una cita necesita paciente y un bloqueo de agenda no lo admite',
-    },
-    patient_identifier_cedula_valid: {
-      code: 'INVALID_CEDULA',
-      field: 'value',
-      message: 'La cédula no es válida: el dígito verificador no corresponde',
-    },
-    patient_identifier_active_unique: {
-      code: 'DUPLICATE_IDENTIFIER',
-      field: 'value',
-      message: 'Ya existe un paciente registrado con ese documento',
-    },
-    encounter_vitals_ranges: {
-      code: 'VITALS_OUT_OF_RANGE',
-      field: 'vitals',
-      message: 'Alguno de los signos vitales está fuera de rango: revise los valores ingresados', // prettier-ignore
-    },
-    clinical_note_one_current_per_chain: {
-      code: 'NOTE_ALREADY_CURRENT',
-      field: 'chainId',
-      message: 'Esta nota ya tiene una versión vigente',
-    },
-    catalog_concept_code_temporal_unique: {
-      code: 'CONCEPT_ALREADY_VALID',
-      field: 'code',
-      message: 'Ese código ya tiene una definición vigente en el mismo periodo',
-    },
-  }),
-);
 
 const INVALID_DATA = {
   status: HttpStatus.UNPROCESSABLE_ENTITY,
@@ -367,7 +315,7 @@ export function extractDatabaseProblem(
   const base = sqlState ? BY_SQLSTATE.get(sqlState) : undefined;
 
   const name = constraintName(exception, sqlState);
-  const meaning = name ? CONSTRAINT_MEANINGS.get(name) : undefined;
+  const meaning = name ? constraintMeaningOf(name) : undefined;
 
   if (!base && !meaning) {
     // An unmapped database failure is a bug on our side, not something the

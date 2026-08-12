@@ -5,6 +5,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ClsModule } from 'nestjs-cls';
 import { LoggerModule } from 'nestjs-pino';
 
+import { AgendaModule } from './modules/agenda/agenda.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CatalogsModule } from './modules/catalogs/catalogs.module';
 import { PatientsModule } from './modules/patients/patients.module';
@@ -69,6 +70,7 @@ import { buildLoggerConfig } from './shared/observability/logger.config';
     SharedInfrastructureModule,
     AuthModule,
     PatientsModule,
+    AgendaModule,
     CatalogsModule,
   ],
   providers: [

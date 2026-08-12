@@ -30,18 +30,14 @@ export class PatientNotFoundError extends NotFoundError {
 /**
  * The record was merged into another after a duplicate was resolved.
  *
- * NOT a 404: the record genuinely existed and printed documents still quote
- * its MRN. The caller needs to be told where it went, or a receptionist will
- * keep opening the old chart and wondering why the notes stop.
+ * DECLARED IN `shared/domain/errors/patient-merged.error.ts` and re-exported
+ * here, so this module keeps naming it where the rest of its errors live. It
+ * moved because the agenda has to refuse a booking for a merged chart (AG-027)
+ * and no module may import another; two classes declaring `PATIENT_MERGED`
+ * would be two situations a client cannot tell apart, which the error
+ * catalogue refuses outright.
  */
-export class PatientMergedError extends ConflictError {
-  readonly code = 'PATIENT_MERGED';
-  override readonly userTitle =
-    'Esta historia se unificó con otra. Abra la vigente';
-  constructor(readonly survivingMrn: string) {
-    super(`Patient was merged into ${survivingMrn}`, { mrn: survivingMrn });
-  }
-}
+export { PatientMergedError } from '../../../shared/domain/errors/patient-merged.error';
 
 export class DuplicateIdentifierError extends ConflictError {
   readonly code = 'PATIENT_IDENTIFIER_TAKEN';

@@ -20,10 +20,22 @@
  */
 export const DOMAIN_ERROR_CODES = [
   'ACCOUNT_INACTIVE',
+  // Agenda, AG-026: PostgreSQL abortó la reserva por serialización y se
+  // agotaron los reintentos. NO es un conflicto de cupo: un `40001` no dice
+  // nada del horario, así que responder «ese cupo está ocupado» movería la
+  // cita de un paciente sin motivo. Sale como 503 con `Retry-After`.
+  'BOOKING_RETRY_EXHAUSTED',
+  // Agenda. Los tres son 422 y dicen cosas distintas a propósito: el canal es
+  // un valor que el cliente escribió mal, la duración es correcta pero no
+  // encaja en los cupos del profesional, y el intervalo cae fuera de toda
+  // regla vigente. Un solo código para los tres obligaría a leer el texto para
+  // saber qué corregir.
+  'INVALID_BOOKING_CHANNEL',
   'INVALID_CEDULA',
   'INVALID_CREDENTIALS',
   'INVALID_MFA_CODE',
   'INVALID_REFRESH_TOKEN',
+  'INVALID_SLOT_DURATION',
   'INVALID_TOKEN',
   'INVALID_TOTP_CODE',
   'MFA_ALREADY_ENROLLED',
@@ -39,6 +51,9 @@ export const DOMAIN_ERROR_CODES = [
   'CATALOG_CONCEPT_NOT_IN_FORCE',
   'CATALOG_CONCEPT_NOT_SELECTABLE',
   'MISSING_TOKEN',
+  // Agenda: el intervalo no lo cubre ninguna regla de horario vigente. La vía
+  // documentada para saltárselo es el sobrecupo, que deja constancia por cita.
+  'OUTSIDE_SCHEDULE_RULE',
   // Registro de pacientes. `PATIENT_MERGED` no es un 404: la historia existió y
   // documentos ya impresos siguen citando su número, así que el cliente
   // necesita saber a dónde se movió.
@@ -48,9 +63,24 @@ export const DOMAIN_ERROR_CODES = [
   'PERMISSION_DENIED',
   'PRINCIPAL_UNAVAILABLE',
   'REFRESH_TOKEN_REUSE_DETECTED',
+  // Agenda, AG-071: el consultorio pedido es de otra sede. Nada en el esquema
+  // ata `agenda_entry.room_id` a `agenda_entry.site_id` —la única garantía es
+  // la clave foránea contra `site_room(id)`—, así que por el cuerpo de la
+  // petición se ocupaba un recurso físico de una sede sobre la que quien
+  // reserva no tiene alcance, y la entrada no aparecía nunca en la agenda de
+  // esa sede, que filtra por `site_id`. Es 422 y no 403: el dato enviado es
+  // incoherente, y responder «acceso denegado» diría de qué sede es el
+  // consultorio a quien no puede saberlo.
+  'ROOM_NOT_IN_SITE',
   'ROUTE_NOT_SECURED',
   'SESSION_USER_MISSING',
   'SITE_SCOPE_DENIED',
+  // Agenda: la hora de inicio no cae en el borde de un cupo de la regla. Es
+  // distinto de `INVALID_SLOT_DURATION` a propósito: una cita de 08:10 a 08:30
+  // dura exactamente un cupo y aun así parte la rejilla en dos huecos que ya
+  // nadie puede reservar. Lo que hay que corregir es la hora de inicio, no la
+  // de fin, y un solo código obligaría a leer el texto para saber cuál.
+  'SLOT_NOT_ALIGNED',
   'WEAK_PASSWORD',
 ] as const;
 

@@ -59,6 +59,21 @@ export abstract class DomainError extends Error {
    */
   readonly userTitle?: string;
 
+  /**
+   * How long the client should wait before trying the very same request again.
+   *
+   * Only meaningful for a failure that is TRANSIENT: the database aborted the
+   * transaction for serialisation, an external service is momentarily away.
+   * The HTTP layer turns it into `Retry-After`, which is the only part of a
+   * 503 a client can act on automatically — without it, "try again later"
+   * means every integrator invents their own interval, and the busiest ones
+   * pick the shortest.
+   *
+   * Left undefined by every error the caller must NOT repeat unchanged: a
+   * taken slot does not become free by asking twice.
+   */
+  readonly retryAfterSeconds?: number;
+
   protected constructor(
     technicalMessage: string,
     params: Record<string, string | number> = {},

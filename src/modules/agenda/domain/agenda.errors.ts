@@ -1,0 +1,245 @@
+import {
+  BusinessRuleViolation,
+  ExternalServiceError,
+  ValidationError,
+} from '../../../shared/domain/errors/domain-error';
+import { wallClockOf } from '../../../shared/domain/clinic-time';
+
+/**
+ * What can go wrong when booking against the schedule, in business terms.
+ *
+ * No HTTP here: the category decides the status in `problem-details.filter.ts`
+ * (ValidationError and BusinessRuleViolation are both 422), which is what lets
+ * these rules run from a worker or a CLI import.
+ *
+ * NOT declared here: `PRACTITIONER_SLOT_TAKEN` and `ROOM_SLOT_TAKEN`. Those
+ * two are the two `EXCLUDE USING gist` constraints speaking, and they are
+ * produced by the PostgreSQL error mapping, which has its own table. Restating
+ * them in TypeScript would be a second, weaker copy of a rule the database
+ * already guarantees.
+ */
+
+/** AG-028. */
+export class OutsideScheduleRuleError extends BusinessRuleViolation {
+  readonly code = 'OUTSIDE_SCHEDULE_RULE';
+  override readonly userTitle =
+    'El horario solicitado no está dentro de la agenda del profesional. Elija un cupo disponible';
+
+  constructor() {
+    // No practitioner, site or patient identifier in the message: it reaches
+    // the logs, and who is being booked with whom is not log material.
+    super('Requested interval is not covered by any schedule rule in force');
+  }
+}
+
+/** AG-034. */
+export class InvalidBookingChannelError extends ValidationError {
+  readonly code = 'INVALID_BOOKING_CHANNEL';
+  override readonly userTitle =
+    'Indique cómo se solicitó la cita: teléfono, ventanilla, web o referencia';
+
+  constructor() {
+    super(
+      'Booking channel must be one of PHONE, WALK_IN, WEB or REFERRAL',
+      {},
+      [
+        {
+          field: 'bookingChannel',
+          code: 'INVALID_BOOKING_CHANNEL',
+          // The admitted values are the stable codes, not their translations:
+          // this is what the client sends back.
+          message: 'Valores admitidos: PHONE, WALK_IN, WEB, REFERRAL',
+        },
+      ],
+    );
+  }
+}
+
+/**
+ * AG-012.
+ *
+ * WHY `INVALID_SLOT_DURATION` AND NOT SOMETHING ELSE. The spec names the code
+ * for every other requirement of this delivery and leaves this one open. The
+ * two candidates were `DURATION_NOT_SLOT_MULTIPLE`, which describes the
+ * arithmetic, and this one, which describes what the caller got wrong. It
+ * reads the same way as its neighbour `INVALID_BOOKING_CHANNEL` — both are
+ * "the value you sent is not one this schedule admits" — and it survives the
+ * rule changing shape: if a rule ever admits a list of durations instead of a
+ * multiple, the code still describes the rejection, and a public code that has
+ * to be renamed breaks every client that branches on it.
+ *
+ * `params` carries the admitted length so the client can say what to change,
+ * which is the second half of the requirement ("indicando la duración
+ * admitida"). Numbers only: nothing here identifies a patient.
+ */
+export class InvalidSlotDurationError extends BusinessRuleViolation {
+  readonly code = 'INVALID_SLOT_DURATION';
+  override readonly userTitle =
+    'La duración de la cita no coincide con los cupos del profesional. Ajuste la hora de fin';
+
+  constructor(requestedMinutes: number, slotMinutes: number) {
+    super(
+      `Requested ${requestedMinutes} minutes, not a multiple of the ${slotMinutes} minute slot`,
+      { requestedMinutes, slotMinutes },
+      [
+        {
+          field: 'endsAt',
+          code: 'INVALID_SLOT_DURATION',
+          message: `La duración debe ser un múltiplo de ${slotMinutes} minutos`,
+        },
+      ],
+    );
+  }
+}
+
+/**
+ * The consulting room asked for belongs to a different site.
+ *
+ * WHY IT IS A RULE OF THIS MODULE AND NOT A DATABASE ERROR (yet). Nothing ties
+ * `agenda_entry.room_id` to `agenda_entry.site_id`: the only guarantee is the
+ * foreign key to `site_room(id)`, which happily accepts a room of any site. The
+ * damage is twofold — the request occupies a physical resource of a site the
+ * caller has no scope over (AG-071, which the site in the path exists to
+ * enforce), and the entry never appears in that site's agenda, which filters by
+ * `site_id`, so the room looks free while
+ * `agenda_entry_no_room_overlap` refuses the legitimate booking with no
+ * explanation. The lasting guarantee is a composite foreign key against
+ * `site_room(id, site_id)`, which is a migration.
+ *
+ * NEITHER IDENTIFIER IS NAMED. Answering "that room is at site X" would tell a
+ * caller with no scope over X something about X's rooms, one guess at a time.
+ */
+export class RoomNotInSiteError extends BusinessRuleViolation {
+  readonly code = 'ROOM_NOT_IN_SITE';
+  override readonly userTitle =
+    'El consultorio no pertenece a esta sede. Elija uno de la sede en la que está agendando';
+
+  constructor() {
+    super('Requested room belongs to a different site', {}, [
+      {
+        field: 'roomId',
+        code: 'ROOM_NOT_IN_SITE',
+        message: 'Seleccione un consultorio de esta sede',
+      },
+    ]);
+  }
+}
+
+/** The slot starts either side of the requested one; `null` where the grid ends. */
+export interface NeighbouringSlotStarts {
+  previous: Date | null;
+  next: Date | null;
+}
+
+/**
+ * AG-104 (D-007).
+ *
+ * WHY ONLY THE TWO NEIGHBOURS AND NOT THE WHOLE DAY. "Los inicios admitidos más
+ * próximos" could be read as the day's full grid, and that reading is worse
+ * here: the grid a client may actually book is the one AG-003 derives WITH
+ * occupancy subtracted, and this rule runs before anything is known about who
+ * else holds a slot. Listing the day from here would hand back starts that are
+ * already taken and invite a second rejection. The start before and the start
+ * after are enough to correct the input, they are always both bookable
+ * candidates as far as this rule can tell, and they say nothing the caller did
+ * not already ask about.
+ *
+ * `params` carries instants in ISO-8601 — what the client sends back — and the
+ * sentence carries the Ecuadorian wall clock, which is what a receptionist
+ * reads. Instants only: nothing here names a patient or a practitioner.
+ */
+export class SlotNotAlignedError extends BusinessRuleViolation {
+  readonly code = 'SLOT_NOT_ALIGNED';
+  override readonly userTitle =
+    'La cita debe empezar al inicio de un cupo del profesional. Ajuste la hora de inicio';
+
+  constructor(
+    requestedStart: Date,
+    admitted: NeighbouringSlotStarts,
+    timeZone?: string,
+  ) {
+    const candidates = [admitted.previous, admitted.next].filter(
+      (start): start is Date => start !== null,
+    );
+    const clocks = candidates.map((start) =>
+      wallClockOf(start, timeZone).toString(),
+    );
+
+    super(
+      `Requested start ${requestedStart.toISOString()} is not a slot boundary of the applicable rule`,
+      {
+        requestedStart: requestedStart.toISOString(),
+        ...(admitted.previous === null
+          ? {}
+          : { previousStart: admitted.previous.toISOString() }),
+        ...(admitted.next === null
+          ? {}
+          : { nextStart: admitted.next.toISOString() }),
+      },
+      [
+        {
+          field: 'startsAt',
+          code: 'SLOT_NOT_ALIGNED',
+          message: describeAdmittedStarts(clocks),
+        },
+      ],
+    );
+  }
+}
+
+/**
+ * AG-026. PostgreSQL kept aborting the booking for serialisation and the
+ * retries ran out.
+ *
+ * WHY IT IS NOT A CONFLICT, which is the whole point of the requirement. A
+ * `40001` says nothing about the slot: the transaction was aborted before it
+ * could decide. Answering 409 `PRACTITIONER_SLOT_TAKEN` would tell a
+ * receptionist to pick another time for a slot that may well be free, and she
+ * would move a patient's appointment for nothing. 503 with `Retry-After` says
+ * the true thing — ask again — and it is the answer a client can automate.
+ *
+ * WHY `ExternalServiceError`, whose examples are the SRI and the IESS. The
+ * status is decided by CATEGORY in `problem-details.filter.ts`, and this is
+ * the category that means "a system we depend on failed transiently, retrying
+ * is the right response": `isRetryable` maps to 503, and to 502 when it is
+ * not. PostgreSQL is not a third party, but the shape of the failure and of
+ * the correct answer are exactly this one. The alternative was a new category
+ * used by a single error.
+ *
+ * THE CODE IS A DECISION THIS DELIVERY MADE: AG-026 names a status and a
+ * header but no code. `BOOKING_RETRY_EXHAUSTED` states what happened —
+ * we already retried, and it kept failing — which is what a client needs in
+ * order to decide between backing off and telling the user.
+ */
+export class BookingRetryExhaustedError extends ExternalServiceError {
+  readonly code = 'BOOKING_RETRY_EXHAUSTED';
+  readonly service = 'postgresql';
+  readonly isRetryable = true;
+  override readonly userTitle =
+    'La agenda está muy solicitada en este momento. Intente reservar de nuevo en unos segundos';
+
+  override readonly retryAfterSeconds: number;
+
+  constructor(attempts: number, retryAfterSeconds = 2) {
+    // Attempt count only: nothing here names a patient, a practitioner or an
+    // hour, and this message does reach the logs.
+    super(`Booking abandoned after ${attempts} serialisation failures`, {
+      attempts,
+    });
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+/** The Spanish sentence for zero, one or two admitted starts. */
+function describeAdmittedStarts(clocks: readonly string[]): string {
+  if (clocks.length === 0) {
+    // Reachable only if the rule yields no slot at all, which `slotsOfRuleOn`
+    // already refuses to produce; saying nothing is still better than a
+    // sentence with a hole in it.
+    return 'La cita debe empezar al inicio de un cupo del horario';
+  }
+  if (clocks.length === 1) {
+    return `El inicio admitido más próximo es ${clocks[0]}`;
+  }
+  return `Los inicios admitidos más próximos son ${clocks.join(' y ')}`;
+}

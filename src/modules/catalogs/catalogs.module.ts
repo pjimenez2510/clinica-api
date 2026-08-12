@@ -1,3 +1,4 @@
+import './infrastructure/catalogs.constraints';
 import { Module } from '@nestjs/common';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';

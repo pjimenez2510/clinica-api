@@ -22,6 +22,8 @@ import {
   // `openapi-typescript` los tipa entonces como `never` y el frontend no puede
   // ni pasarlos. Silencioso de principio a fin: compila, arranca y responde.
   SearchCatalogDto,
+  type CatalogConceptDetailResponse,
+  type CatalogSearchResponse,
 } from './dto/catalog.dto';
 
 /**
@@ -60,7 +62,7 @@ export class CatalogsController {
   async search(
     @Param() params: CatalogPathDto,
     @Query() query: SearchCatalogDto,
-  ): Promise<unknown> {
+  ): Promise<CatalogSearchResponse> {
     const items = await this.catalogs.search({
       systemCode: params.system,
       query: query.q,
@@ -87,7 +89,7 @@ export class CatalogsController {
   async byCode(
     @Param() params: CatalogCodePathDto,
     @Query() query: ResolveCatalogDto,
-  ): Promise<unknown> {
+  ): Promise<CatalogConceptDetailResponse> {
     const concepto = await this.catalogs.resolveDiagnosis(
       params.system,
       params.code,

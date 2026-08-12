@@ -1,7 +1,8 @@
 import { PinoLogger } from 'nestjs-pino';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
-import { AuthService, InvalidCredentialsError } from './auth.service';
+import { AuthService } from './auth.service';
+import { InvalidCredentialsError } from '../domain/auth.errors';
 import type {
   AuthUser,
   AuthUserRepositoryPort,
