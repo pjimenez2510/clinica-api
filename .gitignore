@@ -55,3 +55,12 @@ pids
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 arquitectura.mmd
+
+# Configuración de Claude Code: SÍ se versiona.
+# Los hooks, reglas, comandos y subagentes son parte del proyecto — sin ellos un
+# clon nuevo pierde toda la capa que impide saltarse las convenciones.
+# Solo se ignora el estado local de la máquina.
+.claude/settings.local.json
+.claude/.verify-stamp
+.specify/drafts/
+.specify/feature.json
