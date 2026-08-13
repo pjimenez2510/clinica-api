@@ -44,9 +44,15 @@ const COVERS = /\*\*Cubre:\*\*\s*([^\n]*(?:\n(?!\s*\n|###|##)[^\n]*)*)/;
  * escrito al lado. Una lista en este guion sería una lista que nadie revisa al
  * cambiar un requisito, y el guion es el sitio equivocado para decidir qué se
  * puede ver: eso lo sabe quien escribe la especificación.
+ *
+ * SOLO HASTA EL PRIMER PUNTO, y esto ya mordió: la primera versión leía el
+ * párrafo entero, así que un ID citado en la PROSA —«eso es AU-002, y contarlo
+ * aparte lo delataría»— entraba en la lista y excluía de la interfaz un
+ * requisito que sí se ve. La lista es la frase de los identificadores; lo que
+ * viene después es la explicación, y la explicación necesita poder nombrar
+ * otros requisitos sin declararlos.
  */
-const SERVER_ONLY =
-  /\*\*Solo servidor:\*\*\s*([^\n]*(?:\n(?!\s*\n|###|##)[^\n]*)*)/;
+const SERVER_ONLY = /\*\*Solo servidor:\*\*\s*([^.]*)\./;
 const RANGE = /\b([A-Z]{2,4})-(\d{3})\s+a\s+(?:[A-Z]{2,4}-)?(\d{3})/g;
 const SINGLE = /\b([A-Z]{2,4}-\d{3})\b/g;
 const DECLARATION = /^\s*[-*]\s*\*\*([A-Z]{2,4}-\d{3})\*\*/gm;
