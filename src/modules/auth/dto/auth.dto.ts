@@ -68,6 +68,58 @@ export const changePasswordSchema = z.object({
 export class ChangePasswordDto extends createZodDto(changePasswordSchema) {}
 
 /**
+ * Setting the FIRST password from an invitation link (AU-021, D-013).
+ *
+ * NO `currentPassword`, and that is the entire difference from the schema
+ * above: whoever uses this has no password to prove. The token is what proves
+ * they hold the invitation, and the account cannot sign in until this
+ * succeeds.
+ *
+ * The strength policy is NOT duplicated here either — same reason as
+ * `changePassword`: it lives in the domain, needs the account's own data to
+ * refuse a password containing their name, and must be the same rules on every
+ * path that sets a password. This is the path reachable WITHOUT
+ * authentication, which is the one where a second, weaker copy would matter
+ * most.
+ */
+export const setCredentialSchema = z.object({
+  /**
+   * Bounded so a caller cannot make the server hash an arbitrarily long
+   * string before discovering the token is nonsense. 512 is far above the 43
+   * characters a 32-byte base64url token actually takes.
+   */
+  token: z
+    .string({ error: 'El enlace no es válido' })
+    .min(1, 'El enlace no es válido')
+    .max(512, 'El enlace no es válido'),
+  password: z
+    .string({ error: 'La contraseña es obligatoria' })
+    .min(1, 'La contraseña es obligatoria')
+    .max(256, 'La contraseña no puede superar 256 caracteres'),
+});
+export class SetCredentialDto extends createZodDto(setCredentialSchema) {}
+
+/**
+ * Whether an invitation link is still worth showing a form for (AU-028).
+ *
+ * ONE SHAPE FOR ALL THREE FAILURES — unknown, spent, expired — because telling
+ * them apart on a public endpoint is an oracle over the secret itself.
+ * `expiresAt` is withheld when invalid for the same reason: a date would
+ * confirm the token existed.
+ */
+export const credentialTokenStatusSchema = z.object({
+  valid: z.boolean(),
+  /** `null` whenever `valid` is false. Never a reason. */
+  expiresAt: z.iso.datetime().nullable(),
+});
+export class CredentialTokenStatusDto extends createZodDto(
+  credentialTokenStatusSchema,
+) {}
+export type CredentialTokenStatusResponse = z.infer<
+  typeof credentialTokenStatusSchema
+>;
+
+/**
  * RESPONSES ARE SCHEMAS TOO, not bare TypeScript interfaces.
  *
  * They used to be interfaces, and the consequence was concrete: the OpenAPI

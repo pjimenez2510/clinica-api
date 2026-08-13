@@ -24,6 +24,8 @@ import {
   ValidationError,
 } from '../domain/errors/domain-error';
 
+import { sanitizeUrl } from '../observability/log-privacy';
+
 import { extractDatabaseProblem } from './database-problem';
 import { extractMiddlewareProblem } from './middleware-problem';
 import {
@@ -109,7 +111,16 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       );
     } else {
       this.logger.warn(
-        { error_code: problem.code, status: problem.status, route: instance },
+        {
+          error_code: problem.code,
+          status: problem.status,
+          // SANITISED, unlike `instance`. The body's `instance` goes back to
+          // the caller, who already holds whatever is in their own URL; the
+          // LOG has a wider audience, and `/auth/credential/:token` carries a
+          // credential that stays valid for 72 hours (AU-021). Same helper the
+          // access log uses, so the two cannot mask different things.
+          route: sanitizeUrl(instance),
+        },
         'request rejected',
       );
     }

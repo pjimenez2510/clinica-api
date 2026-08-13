@@ -130,6 +130,37 @@ export const accountListSchema = z.object({
 });
 export class AccountListDto extends createZodDto(accountListSchema) {}
 
+/**
+ * What creating an account answers, and what re-sending its invitation
+ * answers (AU-021, AU-027, AU-029).
+ *
+ * `invitationSent` IS NOT A COURTESY FIELD. D-013 chose delivery by e-mail,
+ * which means creating an account now depends on a mail server the clinic may
+ * not have configured or that may be down — and AU-029 says the account is
+ * created regardless. Without this flag the screen would show a green «cuenta
+ * creada» over a person who will never receive anything, and the two would
+ * only find out on Monday when she cannot open the agenda.
+ *
+ * `false` is therefore a NORMAL answer to a 201, not an error dressed as one:
+ * the account exists, has an id, can be given roles, and its invitation can be
+ * sent again from the same screen.
+ */
+export const invitationOutcomeSchema = z.object({
+  /** `false` = the account exists and the message did not leave. */
+  invitationSent: z.boolean(),
+  /** When the link stops working, so the screen can say the date (72 h). */
+  invitationExpiresAt: z.iso.datetime(),
+});
+export class InvitationOutcomeDto extends createZodDto(
+  invitationOutcomeSchema,
+) {}
+
+/** The account, plus what happened to its invitation. */
+export const createdAccountSchema = accountSchema.extend(
+  invitationOutcomeSchema.shape,
+);
+export class CreatedAccountDto extends createZodDto(createdAccountSchema) {}
+
 // --- Grants (AU-032) --------------------------------------------------------
 
 export const grantSchema = z.object({
@@ -309,6 +340,8 @@ export class PermissionListDto extends createZodDto(permissionListSchema) {}
 /** Response types inferred from the published schemas; see agenda.dto.ts. */
 export type AccountResponse = z.infer<typeof accountSchema>;
 export type AccountListResponse = z.infer<typeof accountListSchema>;
+export type CreatedAccountResponse = z.infer<typeof createdAccountSchema>;
+export type InvitationOutcomeResponse = z.infer<typeof invitationOutcomeSchema>;
 export type GrantListResponse = z.infer<typeof grantListSchema>;
 export type RoleResponse = z.infer<typeof roleSchema>;
 export type RoleListResponse = z.infer<typeof roleListSchema>;

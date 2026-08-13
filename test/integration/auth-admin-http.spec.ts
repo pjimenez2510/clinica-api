@@ -13,8 +13,10 @@ import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
+import { MAILER } from '../../src/shared/mail/mail.port';
 
 import { useDatabase } from './setup/database';
+import { FakeMailer } from './setup/fake-mailer';
 
 /**
  * The administration half of `auth` (A2) as the browser consumes it, against a
@@ -84,15 +86,26 @@ describe('la administración de cuentas y roles por HTTP', () => {
 
   let token: string;
   let adminUserId: string;
+  const mailer = new FakeMailer();
 
   beforeEach(async () => {
     enableBigIntSerialisation();
     prisma = db();
+    mailer.reset();
 
     if (!app) {
       const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
         .overrideProvider(PrismaService)
         .useValue(prisma)
+        /**
+         * ⚠️ NO SMTP CONNECTION IN A TEST, EVER. Creating an account now
+         * sends the invitation of AU-021, and without this override every
+         * `createAccount` here would spend ten seconds failing to resolve
+         * `not-a-real-host` — or, on a machine with Mailpit and a real `.env`,
+         * would actually send.
+         */
+        .overrideProvider(MAILER)
+        .useValue(mailer)
         // The storage is replaced, not the guard: `APP_GUARD` also covers the
         // authorisation guard, which is exactly what these tests exercise.
         .overrideProvider(ThrottlerStorage)
@@ -255,10 +268,11 @@ describe('la administración de cuentas y roles por HTTP', () => {
     });
 
     it('AU-021 crea la cuenta SIN credencial: no puede iniciar sesión todavía', async () => {
-      // ⚠️ D-013 sigue sin contestarse — cómo llega la primera credencial a la
-      // persona es una decisión de política, no de código. Lo que AU-021 sí
-      // fija es que el administrador NO elige la contraseña de nadie, y esto
-      // es lo que lo hace comprobable: la cuenta existe y no entra.
+      // D-013 quedó resuelta por correo, y AU-021 sigue prohibiendo lo mismo:
+      // el administrador NO elige la contraseña de nadie. La cuenta existe, la
+      // invitación va camino del buzón de la persona, y hasta que la canjee la
+      // cuenta no entra. El flujo completo está en
+      // `auth-credential-http.spec.ts`.
       const created = await createAccount({
         email: 'sincredencial@clinica.ec',
       });
@@ -296,10 +310,19 @@ describe('la administración de cuentas y roles por HTTP', () => {
       const trail = await prisma.accessAudit.findMany({
         where: { resourceType: 'auth' },
         select: { action: true, resourceId: true, userId: true },
+        // Explicit order: `id` is the autoincrement, so it is the sequence in
+        // which the two entries were written. Without it PostgreSQL is free to
+        // return them either way round and the test passes or fails by luck.
+        orderBy: { id: 'asc' },
       });
 
+      // DOS entradas y no una: el alta, y la invitación de primera credencial
+      // que la sigue (AU-021). Las dos llevan al administrador como autor y
+      // ninguna tiene dónde poner un hash, un token ni una contraseña — que es
+      // cómo se cumple «NO DEBERÁ registrar nunca la contraseña».
       expect(trail).toEqual([
         { action: 'CREATE', resourceId: created.id, userId: adminUserId },
+        { action: 'UPDATE', resourceId: created.id, userId: adminUserId },
       ]);
     });
 

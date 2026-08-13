@@ -89,10 +89,33 @@ export const envSchema = z.object({
   S3_BUCKET: z.string().min(1).default('clinica'),
   S3_REGION: z.string().default('us-east-1'),
 
-  /** Optional for the same reason as S3: nothing sends mail yet. */
+  /**
+   * OPTIONAL EVEN THOUGH MAIL NOW HAS AN ADAPTER (AU-021, D-013).
+   *
+   * Making them required would stop an installation that never creates an
+   * account from booting, which is a worse failure than the one it prevents.
+   * The refusal happens at the POINT OF USE instead — `MAIL_NOT_CONFIGURED` —
+   * so the administrator who tries to invite somebody is told what is missing,
+   * by name, at the moment it matters, and the account is still created
+   * (AU-029).
+   */
   SMTP_HOST: z.string().min(1).optional(),
   SMTP_PORT: z.coerce.number().int().default(1025),
   SMTP_FROM: z.email().optional(),
+
+  /**
+   * Where the BROWSER lives, so a link in an e-mail can point at a screen.
+   *
+   * The API cannot render the page that asks somebody for a new password: it
+   * is `clinica-web` that owns `/acceso/credencial`. Without this the
+   * invitation of AU-021 would have to point at the API, which would answer
+   * JSON to a person expecting a form.
+   *
+   * Defaulted for development because that is where `clinica-web` runs; in
+   * production it is the public address of the interface, and getting it wrong
+   * produces an invitation nobody can open.
+   */
+  WEB_BASE_URL: z.url().default('http://localhost:3001'),
 
   // --- Ecuadorian context ---
   /**

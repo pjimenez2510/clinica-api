@@ -1,10 +1,22 @@
 import './infrastructure/auth.constraints';
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 
 import { ACCESS_AUDIT_RECORDER } from '../../shared/audit/access-audit.port';
+import type { Env } from '../../shared/config/env.schema';
 import { PrismaAccessAuditRecorder } from '../../shared/infrastructure/audit/prisma-access-audit.recorder';
+import { NodemailerMailer } from '../../shared/infrastructure/mail/nodemailer.mailer';
+import { MAILER } from '../../shared/mail/mail.port';
 import { AccountsService } from './application/accounts.service';
+import {
+  CREDENTIAL_INVITATION_REPOSITORY,
+  CREDENTIAL_TOKENS,
+  WEB_BASE_URL,
+} from './application/credential-ports';
+import { CredentialInvitationsService } from './application/credential-invitations.service';
+import { CredentialTokenService } from './infrastructure/credential-token.service';
+import { PrismaCredentialInvitationRepository } from './infrastructure/prisma-credential-invitation.repository';
 import {
   ACCOUNT_ADMIN_REPOSITORY,
   ROLE_ADMIN_REPOSITORY,
@@ -66,6 +78,15 @@ import { TotpService } from './infrastructure/totp.service';
     // let go, the other for what the clinic's roles mean.
     AccountsService,
     RolesService,
+    /**
+     * AU-021 and AU-026..AU-029 (D-013). Split from `AccountsService` per
+     * ADR-008 §2:
+     * that one was already at the eight-use-case limit, and the two change for
+     * different reasons — one for how a person is hired and let go, this one
+     * for how a credential is delivered, which is a decision that has already
+     * been reopened once.
+     */
+    CredentialInvitationsService,
     AuthAdminAuditTrail,
     CurrentUserService,
 
@@ -74,9 +95,11 @@ import { TotpService } from './infrastructure/totp.service';
     TokenService,
     RefreshTokenService,
     TotpService,
+    CredentialTokenService,
     PrismaAuthUserRepository,
     PrismaAccountAdminRepository,
     PrismaRoleAdminRepository,
+    PrismaCredentialInvitationRepository,
 
     // Port -> adapter bindings. `useExisting` reuses the same singleton
     // instead of creating a second one behind the token.
@@ -101,6 +124,33 @@ import { TotpService } from './infrastructure/totp.service';
      * another, and shared infrastructure is wired by whoever uses it.
      */
     { provide: ACCESS_AUDIT_RECORDER, useClass: PrismaAccessAuditRecorder },
+
+    // --- First credential (AU-021, AU-026..AU-029, D-013) ------------------
+    { provide: CREDENTIAL_TOKENS, useExisting: CredentialTokenService },
+    { provide: CREDENTIAL_INVITATION_REPOSITORY, useExisting: PrismaCredentialInvitationRepository }, // prettier-ignore
+    /**
+     * HOW MAIL LEAVES THE BUILDING. Provided here, by whoever uses it, for the
+     * same reason as the audit recorder: no module imports another, and shared
+     * infrastructure is wired by its consumer.
+     *
+     * ⚠️ Its failure policy is the OPPOSITE of `ACCESS_AUDIT_RECORDER`'s: this
+     * one throws at the caller instead of swallowing, because a credential
+     * e-mail that fails silently leaves a person unable to enter with nobody
+     * aware. See `mail.port.ts`.
+     */
+    { provide: MAILER, useClass: NodemailerMailer },
+    /**
+     * A VALUE and not a port: the use case needs one string, and an interface
+     * with a single `get()` would be a pattern added for symmetry. Read from
+     * the VALIDATED environment, so the application layer still does not know
+     * that NestJS configuration exists.
+     */
+    {
+      provide: WEB_BASE_URL,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>): string =>
+        config.get('WEB_BASE_URL', { infer: true }),
+    },
 
     RolePermissionRegistry,
     { provide: APP_GUARD, useClass: JwtAuthGuard },

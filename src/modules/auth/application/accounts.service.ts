@@ -22,6 +22,10 @@ import {
   type RolePermissionCachePort,
 } from './admin-ports';
 import { AuthAdminAuditTrail, type Requester } from './auth-admin-audit.trail';
+import {
+  CredentialInvitationsService,
+  type IssuedInvitation,
+} from './credential-invitations.service';
 import { REFRESH_TOKENS, type RefreshTokenPort } from './ports';
 
 /** The permission whose loss locks the installation (AU-024). */
@@ -40,6 +44,12 @@ export interface UpdateAccountCommand {
   cedula?: string | null;
 }
 
+/** AU-021, AU-026, AU-029: the account, and what happened to its invitation. */
+export interface CreatedAccount {
+  account: AccountView;
+  invitation: IssuedInvitation;
+}
+
 /**
  * Accounts and their role grants: AU-020 to AU-025, AU-032.
  *
@@ -50,11 +60,12 @@ export interface UpdateAccountCommand {
  * that is why the check lives in a place both can reach: the repository query
  * `permissionsOf`, not a copied `if`.
  *
- * ⚠️ AU-021 IS NOT FINISHED, AND CANNOT BE. `create` makes an account that
- * CANNOT SIGN IN — see `UNUSABLE_PASSWORD_HASH` for the whole reasoning — and
- * whatever delivers the first credential is **D-013, still unanswered**. Until
- * it is, giving somebody an account is a two-step process whose second step
- * does not exist yet in software.
+ * AU-021 IS NOW COMPLETE (D-013, resolved 13-08-2026). `create` still writes
+ * `UNUSABLE_PASSWORD_HASH` — the administrator does not choose anybody's
+ * password, which is the prohibition AU-021 actually states — and it now also
+ * issues a single-use invitation that is mailed to the person, who sets their
+ * own. The delivery itself belongs to `CredentialInvitationsService`; this one
+ * only asks for it, and reports whether it left.
  */
 @Injectable()
 export class AccountsService {
@@ -68,6 +79,17 @@ export class AccountsService {
     @Inject(ROLE_PERMISSION_CACHE)
     private readonly cache: RolePermissionCachePort,
     private readonly trail: AuthAdminAuditTrail,
+    /**
+     * A COLLABORATOR, like `AuthAdminAuditTrail`, and not a port.
+     *
+     * Both are application services of this same module, so there is no layer
+     * being crossed and nothing to invert: what would be gained by a port is
+     * the ability to swap the invitation flow for another one, and D-013 is
+     * the decision that says there is only one. Delivery is already behind a
+     * port where it matters — `MAILER` — which is the boundary that will
+     * actually move.
+     */
+    private readonly invitations: CredentialInvitationsService,
   ) {}
 
   /** AU-022: deactivated accounts travel only when explicitly asked for. */
@@ -83,18 +105,28 @@ export class AccountsService {
   }
 
   /**
-   * AU-020, AU-021, AU-025.
+   * AU-020, AU-021, AU-025, AU-026, AU-029.
    *
-   * The account is created WITHOUT a usable credential, on purpose and not as
-   * a stub: AU-021 forbids the administrator choosing somebody else's
-   * password, and how the first one reaches the person is D-013 — a policy
-   * decision that is not an agent's to take. The account exists, can be given
-   * roles, and cannot sign in until a credential is set.
+   * The account is created WITHOUT a usable credential and that is not a stub:
+   * AU-021 forbids the administrator choosing somebody else's password,
+   * because then they know it and the trail's non-repudiation evaporates. What
+   * makes the account usable is the invitation — a single-use link mailed to
+   * the institutional address, from which the person sets their own password
+   * (D-013).
+   *
+   * ⚠️ AN E-MAIL FAILURE DOES NOT UNDO THE ACCOUNT (AU-029). It is issued
+   * after the row exists and its outcome travels back in the response instead
+   * of becoming an exception, because the alternatives are both worse: rolling
+   * the account back turns a mail outage into «no puede darse de alta a
+   * nadie», and failing the request while keeping the row leaves the
+   * administrator convinced nothing happened, so they try again and get
+   * `EMAIL_ALREADY_REGISTERED` — a message about e-mail addresses for a
+   * problem about mail servers.
    */
   async create(
     command: CreateAccountCommand,
     requester: Requester,
-  ): Promise<AccountView> {
+  ): Promise<CreatedAccount> {
     const created = await this.accounts.create({
       // Stored lowercase so signing in does not depend on how it was typed —
       // the same normalisation `login` applies, and the unique index is what
@@ -103,12 +135,15 @@ export class AccountsService {
       firstName: command.firstName,
       lastName: command.lastName,
       cedula: command.cedula?.trim() || null,
-      // ⚠️ D-013's seam. See `UNUSABLE_PASSWORD_HASH`.
+      // AU-021: never a password an administrator chose. The invitation below
+      // is what replaces this value, and only the person themselves can do it.
       passwordHash: UNUSABLE_PASSWORD_HASH,
     });
 
     await this.trail.record('CREATE', created.id, requester);
-    return created;
+
+    const invitation = await this.invitations.issue(created.id, requester);
+    return { account: created, invitation };
   }
 
   /** AU-025. The email is not patchable — see the DTO for why. */

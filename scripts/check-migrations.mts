@@ -44,6 +44,10 @@ const PROTECTED = [
   'agenda_entry_daily_agenda',
   'encounter_pending_report',
   'user_role_grant_active_unique',
+  // Índice único PARCIAL: una cuenta, como mucho una invitación de credencial
+  // viva (AU-027). Sin él, dos reenvíos simultáneos dejan dos enlaces válidos
+  // y el que se envió por error sigue sirviendo.
+  'credential_invitation_one_live_per_user',
 ];
 
 /**

@@ -3,6 +3,7 @@ import {
   ConflictError,
   NotFoundError,
   UnauthorizedError,
+  ValidationError,
 } from '../../../shared/domain/errors/domain-error';
 
 /**
@@ -125,6 +126,47 @@ export class RefreshTokenReuseError extends UnauthorizedError {
   readonly code = 'REFRESH_TOKEN_REUSE_DETECTED';
   constructor() {
     super('The refresh token had already been used');
+  }
+}
+
+/**
+ * AU-028 — the first-credential link does not work.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ONE ANSWER FOR THREE SITUATIONS, AND THAT IS THE REQUIREMENT.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Unknown token, already redeemed token, expired token: identical status,
+ * identical code, identical sentence. Telling them apart turns a PUBLIC
+ * endpoint into an oracle over a secret whose shape is guessable — «ya se usó»
+ * confirms the token existed, and «caducó» confirms somebody was invited. It
+ * is the same reasoning as `InvalidCredentialsError`, applied to a channel
+ * where the caller is anonymous BY DESIGN: whoever cannot sign in is exactly
+ * who has to reach this.
+ *
+ * A `ValidationError` (422) and not a 404: nothing was looked up on the
+ * caller's behalf, and a 404 would say «este token no existe», which is
+ * precisely the thing that must not be said. The field error points the
+ * interface at the token so it can show the message on the page rather than in
+ * a toast the person has already navigated away from.
+ *
+ * The sentence tells them WHAT TO DO, because there is exactly one thing they
+ * can do and they cannot sign in to find out what it is.
+ */
+export class InvalidCredentialTokenError extends ValidationError {
+  readonly code = 'INVALID_CREDENTIAL_TOKEN';
+  override readonly userTitle =
+    'Este enlace ya no sirve: puede que haya caducado o que ya lo haya usado. Pida a quien administra el sistema que le envíe uno nuevo';
+
+  constructor() {
+    // Deliberately identical whether the token is unknown, spent or expired.
+    super('The credential invitation token is not usable', {}, [
+      {
+        field: 'token',
+        code: 'INVALID_CREDENTIAL_TOKEN',
+        message: 'El enlace ya no es válido',
+      },
+    ]);
   }
 }
 

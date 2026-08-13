@@ -78,6 +78,11 @@ model User {
   roleGrants    UserRoleGrant[] @relation("GrantHolder")
   grantsIssued  UserRoleGrant[] @relation("GrantIssuer")
 
+  /// AU-021: the single-use links that let this person set their first
+  /// password, and the ones they sent to somebody else.
+  credentialInvitations     CredentialInvitation[] @relation("InvitationHolder")
+  credentialInvitationsSent CredentialInvitation[] @relation("InvitationIssuer")
+
   /// Clinical profile. Optional: receptionists and billing staff have an
   /// account but no clinical role.
   practitioner Practitioner?
@@ -246,6 +251,53 @@ model BackupCode {
 
   @@index([userId, usedAt])
   @@map("backup_code")
+}
+
+/// The first credential of an account, as a single-use link (AU-021, D-013).
+///
+/// AU-021 forbids the administrator choosing somebody else's password. D-013
+/// settled how the first one reaches them instead: the system mails a link to
+/// the institutional address and the person sets their own, so nobody else
+/// ever knows it.
+///
+/// Like `RefreshToken`, only the SHA-256 of the token is stored — a stolen
+/// dump contains no usable credential — and the token itself exists for the
+/// length of one HTTP response.
+///
+/// NOT IN THIS FILE, and it cannot be: `credential_invitation_one_live_per_user`
+/// is a PARTIAL unique index (`WHERE used_at IS NULL`) which `schema.prisma`
+/// has no way to express. It is what makes a re-send invalidate the previous
+/// link instead of adding a second one (AU-027), and it is on the protected
+/// list of `scripts/check-migrations.mts` so nothing proposes dropping it.
+model CredentialInvitation {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  userId String @map("user_id") @db.Uuid
+  /// Cascade, like `RefreshToken`: this is a credential artefact, not clinical
+  /// evidence. An invitation outliving its account would be a live way to set
+  /// the password of an account that no longer exists.
+  user   User   @relation("InvitationHolder", fields: [userId], references: [id], onDelete: Cascade)
+
+  /// SHA-256 of the token, never the token. 64 hex characters, always.
+  tokenHash String @unique @map("token_hash") @db.Char(64)
+
+  /// 72 hours after issue. The number lives in one constant in the code,
+  /// `CREDENTIAL_INVITATION_TTL_HOURS`, not in a database default: two
+  /// definitions of one deadline is one that gets forgotten.
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+
+  /// NULL means live. It stops being live for two reasons and deliberately
+  /// answers the same to both: the person redeemed it (AU-021), or somebody
+  /// re-sent the invitation and this one was superseded (AU-027).
+  usedAt DateTime? @map("used_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  /// Who invited them. NULL only for a seed, which has no author.
+  createdById String? @map("created_by_id") @db.Uuid
+  createdBy   User?   @relation("InvitationIssuer", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@map("credential_invitation")
 }
 
 /// Access log for personal and health data.

@@ -139,9 +139,20 @@ describe('every route declares its protection', () => {
       .map((r) => r.route)
       .sort();
 
+    /**
+     * The two credential routes are PUBLIC BY NECESSITY, and this list is
+     * where that decision is visible (AU-021, D-013). Somebody who cannot sign
+     * in is exactly who has to reach them: one says whether an invitation link
+     * is still good, the other is how they set their first password. Both
+     * answer the same thing for an unknown, a spent and an expired token
+     * (AU-028), both are rate limited like `login`, and neither confirms that
+     * any account exists.
+     */
     expect(publicRoutes).toEqual([
+      'AuthController.checkCredential',
       'AuthController.login',
       'AuthController.refresh',
+      'AuthController.setCredential',
       'HealthController.check',
       'LivenessController.ping',
     ]);

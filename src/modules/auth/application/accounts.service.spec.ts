@@ -12,6 +12,10 @@ import { UNUSABLE_PASSWORD_HASH } from '../domain/password-hashing';
 
 import { AccountsService } from './accounts.service';
 import type {
+  CredentialInvitationsService,
+  IssuedInvitation,
+} from './credential-invitations.service';
+import type {
   AccountAdminRepositoryPort,
   AccountListFilter,
   AccountPatch,
@@ -167,6 +171,27 @@ class RolesDouble implements RoleAdminRepositoryPort {
   }
 }
 
+/**
+ * The invitation half, as a collaborator.
+ *
+ * A DOUBLE AND NOT THE REAL SERVICE: what these tests are about is whether
+ * creating an account ASKS for an invitation and survives a refusal. How the
+ * invitation is built, hashed and mailed is `credential-invitations.service.spec.ts`'s
+ * subject, and dragging it in here would make a test about hiring somebody
+ * fail because of a change to an e-mail body.
+ */
+const INVITATION_EXPIRY = new Date('2026-08-16T12:00:00.000Z');
+
+class InvitationsDouble {
+  readonly issuedFor: string[] = [];
+  sent = true;
+
+  issue(userId: string): Promise<IssuedInvitation> {
+    this.issuedFor.push(userId);
+    return Promise.resolve({ sent: this.sent, expiresAt: INVITATION_EXPIRY });
+  }
+}
+
 class RefreshTokensDouble implements RefreshTokenPort {
   readonly revoked: { userId: string; reason: string }[] = [];
 
@@ -189,6 +214,7 @@ describe('la administración de cuentas', () => {
   let accounts: AccountsDouble;
   let roles: RolesDouble;
   let refreshTokens: RefreshTokensDouble;
+  let invitations: InvitationsDouble;
   let recorded: AccessAuditEntry[];
   let invalidations: number;
   let service: AccountsService;
@@ -197,6 +223,7 @@ describe('la administración de cuentas', () => {
     accounts = new AccountsDouble();
     roles = new RolesDouble();
     refreshTokens = new RefreshTokensDouble();
+    invitations = new InvitationsDouble();
     recorded = [];
     invalidations = 0;
     service = new AccountsService(
@@ -214,6 +241,7 @@ describe('la administración de cuentas', () => {
           return Promise.resolve();
         },
       }),
+      invitations as unknown as CredentialInvitationsService,
     );
   });
 
@@ -232,10 +260,9 @@ describe('la administración de cuentas', () => {
     });
 
     it('AU-021 crea la cuenta SIN credencial utilizable: no puede iniciar sesión', async () => {
-      // ⚠️ D-013 sigue sin contestarse: cómo llega la primera credencial a la
-      // persona no lo decide el código. Lo que sí está decidido es lo que NO
-      // se hace — el administrador no elige la contraseña de nadie (AU-021) —
-      // y esto es lo que lo hace cierto de forma comprobable.
+      // Lo que AU-021 prohíbe: el administrador NO elige la contraseña de
+      // nadie. La cuenta nace con un centinela que ningún Argon2 puede
+      // producir, y lo que la vuelve utilizable es la invitación (AU-021).
       await service.create(
         { email: 'nueva@clinica.ec', firstName: 'Ana', lastName: 'Villacís' },
         REQUESTER,
@@ -248,6 +275,36 @@ describe('la administración de cuentas', () => {
       expect(accounts.createdWith?.passwordHash.startsWith('$argon2')).toBe(false); // prettier-ignore
     });
 
+    it('AU-021 emite y envía por correo la invitación de la cuenta recién creada', async () => {
+      const created = await service.create(
+        { email: 'nueva@clinica.ec', firstName: 'Ana', lastName: 'Villacís' },
+        REQUESTER,
+      );
+
+      expect(invitations.issuedFor).toEqual([created.account.id]);
+      expect(created.invitation).toEqual({
+        sent: true,
+        expiresAt: INVITATION_EXPIRY,
+      });
+    });
+
+    it('AU-029 conserva la cuenta cuando el correo no sale, y lo dice', async () => {
+      // La alternativa —deshacer el alta— convertiría una caída del servidor
+      // de correo en «no se puede dar de alta a nadie». La cuenta existe,
+      // admite roles, y la invitación se puede reenviar desde la pantalla.
+      invitations.sent = false;
+
+      const created = await service.create(
+        { email: 'nueva@clinica.ec', firstName: 'Ana', lastName: 'Villacís' },
+        REQUESTER,
+      );
+
+      expect(created.account.id).toBe(ACCOUNT.id);
+      expect(created.invitation.sent).toBe(false);
+      // La creación sí ocurrió: el repositorio recibió la fila.
+      expect(accounts.createdWith).not.toBeNull();
+    });
+
     it('AU-025 deja en la bitácora quién creó la cuenta, y nunca la credencial', async () => {
       const created = await service.create(
         { email: 'nueva@clinica.ec', firstName: 'Ana', lastName: 'Villacís' },
@@ -258,7 +315,7 @@ describe('la administración de cuentas', () => {
         {
           userId: ADMIN_ID,
           resourceType: 'auth',
-          resourceId: created.id,
+          resourceId: created.account.id,
           action: 'CREATE',
           ip: '10.0.0.1',
           userAgent: undefined,

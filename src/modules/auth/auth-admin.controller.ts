@@ -27,13 +27,16 @@ import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import { AccountsService } from './application/accounts.service';
 import type { Requester } from './application/auth-admin-audit.trail';
+import { CredentialInvitationsService } from './application/credential-invitations.service';
 import { RolesService } from './application/roles.service';
 import {
   AccountDto,
   AccountListDto,
   CreateAccountDto,
+  CreatedAccountDto,
   CreateRoleDto,
   GrantListDto,
+  InvitationOutcomeDto,
   // NO `import type` for parameter DTOs: with `type` the class is erased at
   // compile time, `design:paramtypes` emits `Object`, and Swagger documents
   // the endpoint WITHOUT its parameters — silently, end to end. See
@@ -50,7 +53,9 @@ import {
   UpdateRoleDto,
   type AccountListResponse,
   type AccountResponse,
+  type CreatedAccountResponse,
   type GrantListResponse,
+  type InvitationOutcomeResponse,
   type PermissionListResponse,
   type RoleListResponse,
   type RolePermissionsResponse,
@@ -95,6 +100,14 @@ export class AuthAdminController {
   constructor(
     private readonly accounts: AccountsService,
     private readonly roles: RolesService,
+    /**
+     * INJECTED DIRECTLY and not reached through `AccountsService`. Re-sending
+     * an invitation is not an account-administration use case — it delivers a
+     * credential — and routing it through the other service would have pushed
+     * it to nine public use cases, past the limit ADR-008 §2 sets, to gain a
+     * one-line delegation.
+     */
+    private readonly invitations: CredentialInvitationsService,
     private readonly currentUser: CurrentUserService,
   ) {}
 
@@ -126,29 +139,35 @@ export class AuthAdminController {
   }
 
   /**
-   * AU-020, AU-021, AU-025.
+   * AU-020, AU-021, AU-025, AU-029.
    *
-   * ⚠️ THE ACCOUNT CANNOT SIGN IN WHEN THIS RETURNS, and that is not a defect
-   * to be fixed by whoever reads this next. AU-021 forbids the administrator
-   * choosing somebody else's password, and **how the first credential reaches
-   * the person is D-013, still unanswered** — email link, or a code handed
-   * over on screen. Inventing one here would be taking a policy decision that
-   * is not the code's to take.
+   * ⚠️ THE ACCOUNT STILL CANNOT SIGN IN WHEN THIS RETURNS, and that is the
+   * requirement rather than a gap. AU-021 forbids the administrator choosing
+   * somebody else's password; D-013 settled how the first one reaches them
+   * instead — a single-use link mailed to the institutional address, from
+   * which the person sets their own. `credentialPending: true` says the
+   * account is not usable yet, and it stops being true when they redeem it.
    *
-   * The response carries `credentialPending: true` so the screen can say so
-   * out loud instead of leaving a new employee staring at a login that refuses
-   * them for no visible reason.
+   * `invitationSent: false` IS A NORMAL ANSWER TO A 201. The account exists
+   * and the message did not leave — no mail server configured, or one that
+   * refused — and the screen has to say exactly that and offer to send it
+   * again. Failing the whole request instead would leave the administrator
+   * convinced nothing happened, so they would create the account again and get
+   * `EMAIL_ALREADY_REGISTERED`: a message about addresses for a problem about
+   * mail servers.
    */
   @Post('users')
   @RequirePermission('user:manage', 'global')
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Crear una cuenta (sin credencial: ver D-013)' })
-  @ApiCreatedResponse({ type: AccountDto })
+  @ApiOperation({
+    summary: 'Crear una cuenta y enviarle su invitación de acceso',
+  })
+  @ApiCreatedResponse({ type: CreatedAccountDto })
   async createUser(
     @Body() dto: CreateAccountDto,
     @Req() req: Request,
-  ): Promise<AccountResponse> {
-    return this.accounts.create(
+  ): Promise<CreatedAccountResponse> {
+    const { account, invitation } = await this.accounts.create(
       {
         email: dto.email,
         firstName: dto.firstName,
@@ -157,6 +176,48 @@ export class AuthAdminController {
       },
       this.requester(req),
     );
+
+    return {
+      ...account,
+      invitationSent: invitation.sent,
+      invitationExpiresAt: invitation.expiresAt.toISOString(),
+    };
+  }
+
+  /**
+   * AU-021, AU-027, AU-029. Sends the invitation again.
+   *
+   * ⚠️ IT INVALIDATES THE PREVIOUS LINK (AU-027), and that is why it exists in
+   * this shape rather than as «enviar otra vez el mismo correo». The three
+   * situations that lead somebody here are the mail server having been down,
+   * the address having been mistyped, and the link having expired — and in the
+   * second one the old link is sitting in a stranger's mailbox. A re-send that
+   * merely added a second valid link would leave it there.
+   *
+   * `user:manage` and not `user:read`: this puts a credential in motion.
+   *
+   * The administrator never sees the token. What they get back is whether the
+   * message left and when the new link expires.
+   */
+  @Post('users/:id/invitation')
+  @RequirePermission('user:manage', 'global')
+  // 200 and not 201: the invitation is not addressable, and the previous one
+  // was replaced rather than a second one created.
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Reenviar la invitación de acceso, anulando el enlace anterior',
+  })
+  @ApiOkResponse({ type: InvitationOutcomeDto })
+  async resendInvitation(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request,
+  ): Promise<InvitationOutcomeResponse> {
+    const invitation = await this.invitations.issue(id, this.requester(req));
+
+    return {
+      invitationSent: invitation.sent,
+      invitationExpiresAt: invitation.expiresAt.toISOString(),
+    };
   }
 
   /** AU-025. Neither the email nor any credential is patchable; see the DTO. */

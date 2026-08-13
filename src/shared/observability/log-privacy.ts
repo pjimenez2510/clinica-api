@@ -138,7 +138,23 @@ export function pruneToAllowlist(value: unknown, depth = 0): unknown {
 }
 
 /**
- * Strips the query string from a URL and normalises numeric identifiers.
+ * A LIVE CREDENTIAL SITTING IN A PATH SEGMENT (AU-021).
+ *
+ * `GET /auth/credential/:token` carries the first-credential token in the URL,
+ * which is what makes the link openable from an e-mail — and the access log
+ * writes `req.url` verbatim. Without this, every check of a link would leave a
+ * working credential in the log for the 72 hours it remains valid, readable by
+ * anybody who can read logs: which is a wider audience than the person it was
+ * mailed to, and precisely the audience that must not be able to take over an
+ * account.
+ *
+ * Stripping the query string is not enough, because here the token is in the
+ * PATH. The route prefix is matched literally so nothing else is affected.
+ */
+const CREDENTIAL_TOKEN_IN_PATH = /(\/auth\/credential\/)[^/?#]+/g;
+
+/**
+ * Strips the query string from a URL and normalises identifiers.
  * In a clinical system the query string usually carries a cedula or a medical
  * record number.
  */
@@ -146,7 +162,9 @@ export function sanitizeUrl(url?: string): string {
   if (!url) return '';
   const i = url.indexOf('?');
   const base = i === -1 ? url : url.slice(0, i);
-  return base.replace(/\/\d{4,}/g, '/:id');
+  return base
+    .replace(CREDENTIAL_TOKEN_IN_PATH, '$1:token')
+    .replace(/\/\d{4,}/g, '/:id');
 }
 
 /**

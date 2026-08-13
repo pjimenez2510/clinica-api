@@ -165,6 +165,27 @@ export const DOMAIN_ERROR_CODES = [
   // `CHECK_FAILED` en una frase sobre la que una clínica puede actuar.
   'CANNOT_DEMOTE_SELF',
   'CANNOT_GRANT_TO_SELF',
+  // Auth, primera credencial (AU-021 y AU-026..AU-029, D-013 resuelta el
+  // 13-08-2026).
+  //
+  // `INVALID_CREDENTIAL_TOKEN` es UNO SOLO para tres situaciones —enlace
+  // desconocido, ya usado y caducado— y eso es el requisito, no una
+  // simplificación: el endpoint es PÚBLICO por necesidad —quien no puede
+  // iniciar sesión es justo quien tiene que alcanzarlo— y distinguirlas lo
+  // convierte en un oráculo sobre el propio secreto. Es 422 y no 404 porque un
+  // 404 diría «este token no existe», que es exactamente lo que no puede
+  // decirse.
+  //
+  // Los dos del correo son fallos de un servicio externo y se distinguen por
+  // lo que hay que hacer: `MAIL_NOT_CONFIGURED` (502, no reintentable) es
+  // configuración que falta y nombra la variable; `MAIL_DELIVERY_FAILED` (503
+  // con `Retry-After`) es un servidor que no aceptó el mensaje y puede
+  // aceptarlo dentro de un minuto. Ninguno de los dos hace fracasar el alta de
+  // la cuenta (AU-029): la respuesta lleva `invitationSent: false` y el error
+  // queda en el registro.
+  'INVALID_CREDENTIAL_TOKEN',
+  'MAIL_DELIVERY_FAILED',
+  'MAIL_NOT_CONFIGURED',
   'EMAIL_ALREADY_REGISTERED',
   'ROLE_CODE_DUPLICATE',
   'ROLE_IN_USE',

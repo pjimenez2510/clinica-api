@@ -1,8 +1,10 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
+  Param,
   Post,
   Req,
   Res,
@@ -28,15 +30,19 @@ import {
 } from '../../shared/http/auth.decorators';
 
 import { AuthService } from './application/auth.service';
+import { CredentialInvitationsService } from './application/credential-invitations.service';
 import { MfaEnrolmentService } from './application/mfa-enrolment.service';
 import { RolePermissionRegistry } from './infrastructure/role-permission.registry';
 import { TokenService } from './infrastructure/token.service';
 import {
   ChangePasswordDto,
   ConfirmMfaDto,
+  CredentialTokenStatusDto,
+  type CredentialTokenStatusResponse,
   MfaChallengeResponseDto,
   MfaEnrolmentResponseDto,
   type MfaChallengeResponse,
+  SetCredentialDto,
   type SessionResponse,
   SessionResponseDto,
   SignInDto,
@@ -75,6 +81,14 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly mfaEnrolment: MfaEnrolmentService,
+    /**
+     * The first-credential flow lives on THIS controller and not on the
+     * administration one, even though an administrator is what starts it. Its
+     * two routes are `@Public()`, and `auth-admin.controller.ts` exists
+     * precisely so that a public marker can never end up in the same file as
+     * «administra a toda la clínica».
+     */
+    private readonly credentials: CredentialInvitationsService,
     private readonly currentUser: CurrentUserService,
     private readonly tokens: TokenService,
     private readonly roles: RolePermissionRegistry,
@@ -234,6 +248,80 @@ export class AuthController {
 
     // Every session was revoked, including this one.
     this.clearRefreshCookie(res);
+  }
+
+  /**
+   * AU-028. Is this invitation link still worth showing a form for?
+   *
+   * ⚠️ PUBLIC, AND IT HAS TO BE. Whoever opens it CANNOT SIGN IN — that is the
+   * entire situation the link exists for — so requiring a token here would
+   * make the flow impossible. It is the smallest possible public surface: one
+   * boolean, and a date only when the answer is yes.
+   *
+   * It exists so the page can say «este enlace ya no sirve» BEFORE asking
+   * somebody to think of a password. Without it, the only way to find out is
+   * to type one and have it refused, which reads as «my password was wrong» to
+   * a person who does not have one yet.
+   *
+   * ONE ANSWER FOR UNKNOWN, SPENT AND EXPIRED. Telling them apart turns this
+   * into an oracle over the secret itself: «ya se usó» confirms the token
+   * existed, «caducó» confirms somebody was invited.
+   *
+   * RATE LIMITED like `login`, and for the same reason: this is the endpoint
+   * that answers yes-or-no about a guessable-shaped secret, so it is what a
+   * brute force would aim at. The 256 bits of entropy in the token are the
+   * real defence; this bounds the attempt rate anyway, because a defence with
+   * one layer is a defence with none the day the other one is weakened.
+   */
+  @Get('credential/:token')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ short: { ttl: 60_000, limit: 10 } })
+  @ApiOperation({ summary: 'Comprobar si un enlace de acceso sigue sirviendo' })
+  @ApiOkResponse({ type: CredentialTokenStatusDto })
+  async checkCredential(
+    @Param('token') token: string,
+  ): Promise<CredentialTokenStatusResponse> {
+    const status = await this.credentials.check(token);
+
+    return {
+      valid: status.valid,
+      expiresAt: status.expiresAt?.toISOString() ?? null,
+    };
+  }
+
+  /**
+   * AU-021, AU-028. Sets the first password from an invitation link.
+   *
+   * ⚠️ PUBLIC, for the same unavoidable reason as the route above: this IS how
+   * somebody who cannot sign in gets a password. The token is the credential,
+   * and it is single use — redeeming it spends it, so a link read from a
+   * forwarded message after the fact is worth nothing.
+   *
+   * The password policy is the SAME one `changePassword` applies. It is not
+   * restated anywhere: this is the path reachable without authentication, and
+   * a second, weaker copy of those rules would matter most exactly here.
+   *
+   * No session is issued. The person is sent to the sign-in screen and uses
+   * the password they have just chosen, which is also the first proof that it
+   * is the one they think it is — issuing a session here would let a typo they
+   * cannot see through go unnoticed until the next day.
+   */
+  @Post('credential')
+  @Public()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Throttle({ short: { ttl: 60_000, limit: 10 } })
+  @ApiOperation({ summary: 'Fijar la contraseña desde un enlace de acceso' })
+  @ApiNoContentResponse()
+  async setCredential(
+    @Body() dto: SetCredentialDto,
+    @Req() req: Request,
+  ): Promise<void> {
+    await this.credentials.redeem(
+      dto.token,
+      dto.password,
+      this.clientContext(req),
+    );
   }
 
   /**

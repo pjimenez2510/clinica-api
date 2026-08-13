@@ -107,6 +107,25 @@ describe('sanitizeUrl', () => {
   it('leaves routes without identifiers untouched', () => {
     expect(sanitizeUrl('/api/v1/health')).toBe('/api/v1/health');
   });
+
+  it('AU-021 masks the first-credential token, which is a live credential in the path', () => {
+    // The link is valid for 72 hours and anybody holding it can set the
+    // password of an account that may read medical records. Logging it puts a
+    // working credential in front of everybody who can read logs — a much
+    // wider audience than the person it was mailed to.
+    const token = '6VMKaPl8xyCbAkl2BGi1J7XprpqdseKTayxvAqGzYVA';
+
+    expect(sanitizeUrl(`/api/v1/auth/credential/${token}`)).toBe(
+      '/api/v1/auth/credential/:token',
+    );
+  });
+
+  it('AU-021 does not confuse the credential route with anything else', () => {
+    // Matched literally, so no other route loses a segment to this rule.
+    expect(
+      sanitizeUrl('/api/v1/auth/users/019ffbaf-5cbc-7c02-a945-782313'),
+    ).toBe('/api/v1/auth/users/019ffbaf-5cbc-7c02-a945-782313');
+  });
 });
 
 describe('sanitizeErrorMessage', () => {
