@@ -61,6 +61,60 @@ describe('roles are data, permissions are a contract', () => {
     expect(after.map((p) => p.permissionCode)).not.toContain('catalog:read');
   });
 
+  it('D-012: grants a BRAND-NEW permission to the system roles that declare it', async () => {
+    // Without this a new feature ships unreachable: the permission exists, no
+    // role holds it, and the screen that would grant it is itself behind a
+    // permission. It happened with `config:*`.
+    const prisma = db();
+    await syncAuthorisation(prisma);
+
+    const admin = await prisma.role.findUniqueOrThrow({
+      where: { code: 'ADMIN' },
+    });
+    // Simulates the deploy before the code existed: remove the grant AND the
+    // permission itself, which is what makes it new rather than revoked.
+    await prisma.rolePermission.deleteMany({
+      where: { roleId: admin.id, permissionCode: 'config:read' },
+    });
+    await prisma.permission.delete({ where: { code: 'config:read' } });
+
+    const result = await syncAuthorisation(prisma);
+
+    expect(result.grantedToSystemRoles).toContain('ADMIN → config:read');
+    const after = await prisma.rolePermission.findMany({
+      where: { roleId: admin.id },
+      select: { permissionCode: true },
+    });
+    expect(after.map((p) => p.permissionCode)).toContain('config:read');
+  });
+
+  it('D-012: a permission the clinic REVOKED is never handed back', async () => {
+    // The narrowness is the whole safety argument: only a code that did not
+    // exist is granted, and a code that never existed cannot have been
+    // revoked by anybody. Same shape as the RECEPCION case above, on a
+    // permission that D-012 does grant when it is new.
+    const prisma = db();
+    await syncAuthorisation(prisma);
+
+    const admin = await prisma.role.findUniqueOrThrow({
+      where: { code: 'ADMIN' },
+    });
+    // The permission STAYS in the catalogue: this is a revocation, not a
+    // missing code.
+    await prisma.rolePermission.deleteMany({
+      where: { roleId: admin.id, permissionCode: 'config:manage' },
+    });
+
+    const result = await syncAuthorisation(prisma);
+
+    expect(result.grantedToSystemRoles).toEqual([]);
+    const after = await prisma.rolePermission.findMany({
+      where: { roleId: admin.id },
+      select: { permissionCode: true },
+    });
+    expect(after.map((p) => p.permissionCode)).not.toContain('config:manage');
+  });
+
   it('lets a clinic invent a role the code never heard of', async () => {
     // The entire point of the refactor. An enum would have needed a migration
     // and a deploy for this.
