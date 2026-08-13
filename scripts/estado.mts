@@ -21,11 +21,26 @@ const REPO_ROOT = process.cwd();
 const MODULES_DIR = join(REPO_ROOT, 'src', 'modules');
 const JSON_OUTPUT = process.argv.includes('--json');
 
-/** `### E1 — Reservar sin pisar a nadie *(P1)*` */
+/** `### E1 — Reservar sin pisar a nadie *(P1)*`, `### A2 — …`, `### C3 — …` */
 // Prettier rewrites `*(P1)*` as `_(P1)_` when it formats the SPEC, so both
 // emphasis styles must parse — the first version read only `*` and every
 // priority silently became "P?" after one formatting pass.
-const DELIVERABLE = /^###\s+(E\d+)\s+—\s+(.+?)\s*(?:[*_]\((P\d)\)[*_])?\s*$/gm;
+//
+// CUALQUIER LETRA, no sólo `E`. Esto se escribió cuando el único módulo con
+// SPEC era `agenda` y sus entregas se llamaban E1 a E7. Al nacer los demás
+// —A de `auth`, C de configuración, O de `organization`, S de `staff`— el
+// guion dejó de ver NINGUNA de sus entregas, y como el informe se construye
+// con lo que encuentra, cinco módulos enteramente construidos aparecían con
+// sus requisitos «sin pertenecer a ninguna entrega». No faltaba trabajo:
+// faltaba una letra en esta expresión, y el informe decía lo contrario con
+// toda seguridad. Un estado que se equivoca callando es peor que no tenerlo.
+// Y LA PRIORIDAD ADMITE COMPAÑÍA. `_(P1, ya construida en Fase 0)_` y
+// `_(P1, cruza módulos)_` no casaban con `\((P\d)\)`, así que el paréntesis
+// entero se quedaba dentro del título —que salía con el markdown crudo— y la
+// prioridad caía a «P?». Justo en las entregas que llevan una nota es donde
+// más importa leerla bien: son las excepciones.
+const DELIVERABLE =
+  /^###\s+([A-Z]\d+)\s+—\s+(.+?)\s*(?:[*_]\((P\d)[^)]*\)[*_])?\s*$/gm;
 /** `**Cubre:** AG-001 a AG-003, AG-010 a AG-014, AG-017` */
 const COVERS = /\*\*Cubre:\*\*\s*([^\n]*(?:\n(?!\s*\n|###|##)[^\n]*)*)/;
 const RANGE = /\b([A-Z]{2,4})-(\d{3})\s+a\s+(?:[A-Z]{2,4}-)?(\d{3})/g;

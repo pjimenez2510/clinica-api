@@ -22,7 +22,15 @@ const MODULES = join(API, 'src', 'modules');
 const CONTRACT = join(WEB, 'app', 'shared', 'api', 'schema.d.ts');
 
 // Both emphasis styles: prettier rewrites `*(P1)*` as `_(P1)_`.
-const DELIVERABLE = /^###\s+(E\d+)\s+—\s+(.+?)\s*(?:[*_]\((P\d)\)[*_])?\s*$/;
+//
+// CUALQUIER LETRA, no sólo `E`: ver la nota extensa en `estado.mts`. Aquí el
+// efecto era aún más engañoso, porque este informe dice cuántas entregas están
+// completas «de punta a punta» — y contaba sobre siete, las de `agenda`, como
+// si `auth`, `organization`, `specialties`, `staff` y `configuration` no
+// tuvieran ninguna.
+// La prioridad admite compañía —`_(P1, cruza módulos)_`—; ver `estado.mts`.
+const DELIVERABLE =
+  /^###\s+([A-Z]\d+)\s+—\s+(.+?)\s*(?:[*_]\((P\d)[^)]*\)[*_])?\s*$/;
 const COVERS = /\*\*Cubre:\*\*\s*([^\n]*(?:\n(?!\s*\n|###|##)[^\n]*)*)/;
 const RANGE = /\b([A-Z]{2,4})-(\d{3})\s+a\s+(?:[A-Z]{2,4}-)?(\d{3})/g;
 const SINGLE = /\b([A-Z]{2,4}-\d{3})\b/g;
