@@ -118,18 +118,32 @@ consumirá.
 
 ## Códigos de error
 
-| Código                     | HTTP | Cuándo                                                    |
-| -------------------------- | ---- | ---------------------------------------------------------- |
-| `SITE_NOT_FOUND`           | 404  | La sede indicada no existe                                 |
-| `SITE_IN_USE`              | 409  | Borrar una sede referenciada (OR-006)                      |
-| `MSP_UNICODE_DUPLICATE`    | 409  | Código único del MSP repetido (OR-002)                     |
-| `SITE_ROOM_DUPLICATE`      | 409  | Nombre de consultorio repetido en la sede (OR-020)         |
-| `EMISSION_POINT_DUPLICATE` | 409  | Punto de emisión repetido en la sede (OR-024)              |
-| `ROOM_NOT_IN_SITE`         | 422  | Consultorio de otra sede (OR-021)                          |
-| `INVALID_RUC`              | 422  | RUC que no supera la validación del SRI (OR-008)           |
+| Código                      | HTTP | Cuándo                                                     |
+| --------------------------- | ---- | ---------------------------------------------------------- |
+| `ESTABLISHMENT_NOT_FOUND`   | 404  | Todavía no se ha registrado el establecimiento (OR-001)    |
+| `SITE_NOT_FOUND`            | 404  | La sede indicada no existe                                 |
+| `SITE_ROOM_NOT_FOUND`       | 404  | El consultorio indicado no existe                          |
+| `EMISSION_POINT_NOT_FOUND`  | 404  | El punto de emisión indicado no existe                     |
+| `SITE_IN_USE`               | 409  | Borrar una sede referenciada (OR-006)                      |
+| `SITE_ROOM_IN_USE`          | 409  | Borrar un consultorio con citas (OR-022)                   |
+| `MSP_UNICODE_DUPLICATE`     | 409  | Código único del MSP repetido (OR-002)                     |
+| `SITE_ROOM_DUPLICATE`       | 409  | Nombre de consultorio repetido en la sede (OR-020)         |
+| `EMISSION_POINT_DUPLICATE`  | 409  | Punto de emisión repetido en la sede (OR-024)              |
+| `ROOM_NOT_IN_SITE`          | 422  | Consultorio de otra sede (OR-021)                          |
+| `INVALID_RUC`               | 422  | RUC que no supera la validación del SRI (OR-008)           |
 
 `ROOM_NOT_IN_SITE` ya existe en `error-catalogue.ts`, emitido hoy desde
 `agenda`: la garantía se declara aquí y se comprueba allí, sin cambiar la cadena.
+
+Los cuatro «no existe» y los dos «en uso» de consultorio y punto de emisión no
+estaban en la primera redacción de esta tabla: aparecieron al implementar los
+`PATCH` y `DELETE` que OR-022 y OR-026 exigen, y se anotan aquí porque el
+`code` es contrato público desde la primera respuesta que lo lleva.
+
+`EMISSION_POINT_IN_USE` **no existe a propósito**: hoy nada referencia a
+`emission_point`. Lo traerá `billing` junto con su clave foránea (REQ-085);
+armar un código que ninguna prueba puede provocar sería prometer una garantía
+que no está escrita en ninguna parte.
 
 ## Notas de esquema
 
@@ -137,11 +151,22 @@ Las tablas `site` y `site_room` ya existen y hoy no tienen módulo dueño — la
 razón de ser de este SPEC. `site.msp_unicode` es único y `site_room` es único
 por `(site_id, name)`.
 
-Lo que falta y entra con este módulo:
+Lo que entra con este módulo, en la migración
+`20260813025017_organization_establishment_and_emission_points`:
 
 - La entidad **establecimiento** propiamente dicha, con su tipología: hoy
   `Site` mezcla establecimiento y sede porque la clínica arranca con una sola.
   Separarlas mientras hay una fila es barato; con historial de dos años, no.
-- Los **puntos de emisión** (OR-023): tabla nueva, única por `(site_id, código)`.
-- El `UNIQUE (id, site_id)` en `site_room` que la clave foránea compuesta de
-  AG-105 necesita para que OR-021 deje de vivir solo en TypeScript.
+  `site.establishment_id` nace **anulable** para que las filas existentes
+  sobrevivan a la migración; la semilla las rellena.
+- Los **puntos de emisión** (OR-023): tabla nueva, única por `(site_id, código)`,
+  con un `CHECK` de tres dígitos.
+- El `UNIQUE (id, site_id)` en `site_room` **y la clave foránea compuesta**
+  `agenda_entry (room_id, site_id) → site_room (id, site_id)`, que saca OR-021
+  (AG-105) de TypeScript y lo mete en la base. Con `room_id` anulable,
+  `MATCH SIMPLE` deja pasar la cita sin consultorio, que es lo correcto.
+
+Lo que **no** hizo falta añadir, comprobado antes de escribir la migración:
+`site` ya tenía `name`, `address_line`, `phone`, `parish_concept_id`, `ruc` y
+`active`. A OR-004 y OR-007 no les faltaban columnas: les faltaba un módulo
+dueño, que es exactamente lo que constató ADR-011.

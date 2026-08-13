@@ -684,6 +684,37 @@ model CatalogConcept {
 // ORGANISATION
 // ---------------------------------------------------------------------------
 
+/// The health establishment as the MSP knows it (OR-001): typology, unique
+/// code and RUC. Owns one or more sites.
+///
+/// SEPARATE FROM `Site` since ADR-011. `Site` conflated the two because the
+/// clinic starts with a single establishment, and the code the RDACAA demands
+/// per attention (REQ-020) belongs to the establishment, not to the building.
+/// Splitting them while there is one row costs a migration; with two years of
+/// history it would not be possible.
+model Establishment {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  /// Unique establishment code issued by the MSP (OR-002).
+  mspUnicode String @unique @map("msp_unicode") @db.VarChar(20)
+
+  /// MSP typology of A.M. 00000079: what determines the reporting duties.
+  typology  String  @db.VarChar(64)
+  legalName String  @map("legal_name") @db.VarChar(160)
+  /// Shape guaranteed by `establishment_ruc_format`; the SRI check digit by
+  /// the `Ruc` value object (OR-008).
+  ruc       String? @db.VarChar(13)
+
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  sites Site[]
+
+  @@map("establishment")
+}
+
 /// A physical site of the clinic. Not a tenant: the whole database belongs to
 /// one clinic. It exists because RDACAA is reported per establishment code.
 model Site {
@@ -692,6 +723,11 @@ model Site {
   /// Unique establishment code issued by the MSP. The single most important
   /// field for RDACAA reporting.
   mspUnicode String @unique @map("msp_unicode") @db.VarChar(20)
+
+  /// NULLABLE only so the rows that predate `establishment` survived the
+  /// migration; `seed-organization.mts` backfills them (OR-004).
+  establishmentId String?        @map("establishment_id") @db.Uuid
+  establishment   Establishment? @relation(fields: [establishmentId], references: [id], onDelete: Restrict)
 
   name String  @db.VarChar(160)
   ruc  String? @db.VarChar(13)
@@ -707,6 +743,7 @@ model Site {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   rooms           SiteRoom[]
+  emissionPoints  EmissionPoint[]
   roleGrants      UserRoleGrant[]
   practitioners   PractitionerSite[]
   scheduleRules   PractitionerScheduleRule[]
@@ -732,7 +769,36 @@ model SiteRoom {
   agendaEntries AgendaEntry[]
 
   @@unique([siteId, name])
+  /// Redundant as uniqueness — `id` is already the key — and REQUIRED as the
+  /// TARGET of `agenda_entry_room_in_site`, the composite foreign key that
+  /// moves OR-021 (AG-105) out of TypeScript and into the base. That foreign
+  /// key itself CANNOT be expressed here: `siteId` already backs the `site`
+  /// relation on `AgendaEntry`, and Prisma would read a second relation over
+  /// the same scalar as a conflict. It lives in the migration, like the
+  /// EXCLUDE constraints and the generated columns.
+  @@unique([id, siteId], map: "site_room_id_site_unique")
   @@map("site_room")
+}
+
+/// SRI point of emission (OR-023). Stored here as DATA only: the sequential
+/// numbering, the signature and the dialogue with the SRI belong to `billing`
+/// (REQ-085, OR-025).
+model EmissionPoint {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  siteId String @map("site_id") @db.Uuid
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Restrict)
+
+  /// Exactly three digits, leading zero significant: «001» is not 1.
+  code        String  @db.Char(3)
+  description String? @db.VarChar(120)
+  active      Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([siteId, code], map: "emission_point_code_unique_per_site")
+  @@map("emission_point")
 }
 
 /// Clinical profile of a system user.

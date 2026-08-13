@@ -37,6 +37,7 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       'Administra usuarios, sedes y catálogos. No accede a historias clínicas.',
     permissions: [
       'user:manage',
+      'site:read',
       'site:manage',
       'catalog:manage',
       'catalog:read',
@@ -62,6 +63,11 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       'vitals:write',
       'prescription:write',
       'catalog:read',
+      // Every role that reads the agenda also gets to read the clinic's map:
+      // booking means picking a site and a consulting room, and a screen that
+      // cannot name them is a screen nobody can use (ADR-011). It is READ
+      // only — creating or deactivating a site stays with `site:manage`.
+      'site:read',
     ],
   },
   {
@@ -77,6 +83,7 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       'record:read',
       'vitals:write',
       'catalog:read',
+      'site:read',
     ],
   },
   {
@@ -90,6 +97,7 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       'agenda:read',
       'agenda:write',
       'catalog:read',
+      'site:read',
     ],
   },
   {

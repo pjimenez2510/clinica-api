@@ -114,6 +114,17 @@ export const PERMISSION_CATALOGUE = [
     resource: 'admin',
     description: 'Administrar usuarios, roles y permisos',
   },
+  // Reading the clinic's map is split from editing it (ADR-011, OR-004): a
+  // receptionist has to know which sites, consulting rooms and points of
+  // emission exist to book into them, and nothing about that implies being
+  // able to create one. `site:manage` already existed and is reused unchanged
+  // for every mutation.
+  {
+    code: 'site:read',
+    resource: 'admin',
+    description:
+      'Consultar el establecimiento, las sedes, los consultorios y los puntos de emisión',
+  },
   {
     code: 'site:manage',
     resource: 'admin',

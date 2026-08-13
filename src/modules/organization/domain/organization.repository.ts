@@ -1,0 +1,104 @@
+/**
+ * What administering the establishment and its sites needs from storage,
+ * stated without naming a database.
+ *
+ * WHAT IS DELIBERATELY ABSENT: any "does this MSP code already exist?" query.
+ * OR-002 is a unique index; a check-first method would be an invitation to
+ * read, decide and lose the race the index exists to close. The adapter lets
+ * PostgreSQL arbitrate and translates the refusal into `MSP_UNICODE_DUPLICATE`.
+ */
+
+/** The establishment as the administration screen shows it (OR-001, OR-003). */
+export interface EstablishmentView {
+  id: string;
+  /** The code the RDACAA demands in every attention (REQ-020, OR-003). */
+  mspUnicode: string;
+  /** MSP typology of A.M. 00000079 (OR-001). */
+  typology: string;
+  legalName: string;
+  /** Validated by the `Ruc` value object before it gets here (OR-008). */
+  ruc: string | null;
+  active: boolean;
+}
+
+/** A site as the administration and selection screens list it (OR-004). */
+export interface SiteView {
+  id: string;
+  establishmentId: string | null;
+  mspUnicode: string;
+  name: string;
+  ruc: string | null;
+  /** Parish of the INEC's DPA, from `catalogs` (OR-004). */
+  parishConceptId: string | null;
+  addressLine: string | null;
+  phone: string | null;
+  active: boolean;
+}
+
+/** Everything the establishment form writes (OR-001, OR-008). */
+export interface EstablishmentInput {
+  mspUnicode: string;
+  typology: string;
+  legalName: string;
+  ruc: string | null;
+  active: boolean;
+}
+
+export interface SiteInput {
+  mspUnicode: string;
+  establishmentId: string | null;
+  name: string;
+  ruc: string | null;
+  parishConceptId: string | null;
+  addressLine: string | null;
+  phone: string | null;
+}
+
+export interface SitePatch {
+  name?: string;
+  ruc?: string | null;
+  parishConceptId?: string | null;
+  addressLine?: string | null;
+  phone?: string | null;
+  active?: boolean;
+}
+
+export interface OrganizationRepository {
+  /**
+   * The establishment, or `null` when none has been registered.
+   *
+   * SINGULAR ON PURPOSE. The clinic is one establishment with one or more
+   * sites (ADR-011); the table admits several so that a group of clinics
+   * sharing an installation is a data change rather than a migration, and
+   * this method returns the oldest one, which is the one the screens mean.
+   */
+  findEstablishment(): Promise<EstablishmentView | null>;
+
+  /** Throws `MspUnicodeDuplicateError` when the unique index refuses (OR-002). */
+  createEstablishment(input: EstablishmentInput): Promise<EstablishmentView>;
+
+  /** `null` when the row is gone; the service owns the refusal. */
+  updateEstablishment(
+    id: string,
+    input: EstablishmentInput,
+  ): Promise<EstablishmentView | null>;
+
+  /** OR-007: `includeInactive` decides whether deactivated sites travel. */
+  listSites(includeInactive: boolean): Promise<readonly SiteView[]>;
+
+  findSite(id: string): Promise<SiteView | null>;
+
+  /** Throws `MspUnicodeDuplicateError` on a repeated MSP code (OR-002). */
+  createSite(input: SiteInput): Promise<SiteView>;
+
+  updateSite(id: string, patch: SitePatch): Promise<SiteView | null>;
+
+  /**
+   * Hard delete (OR-006). `false` when the row does not exist; throws
+   * `SiteInUseError` when a FK RESTRICT refuses, which is what offers
+   * deactivation instead.
+   */
+  deleteSite(id: string): Promise<boolean>;
+}
+
+export const ORGANIZATION_REPOSITORY = Symbol('OrganizationRepository');

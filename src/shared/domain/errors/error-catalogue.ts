@@ -46,6 +46,11 @@ export const DOMAIN_ERROR_CODES = [
   'INVALID_CREDENTIALS',
   'INVALID_MFA_CODE',
   'INVALID_REFRESH_TOKEN',
+  // OR-008. El RUC no supera la validación del SRI. Vive en el value object
+  // `Ruc` de `shared/domain` y no en `organization`, porque `billing` valida
+  // el mismo número para imprimirlo en cada comprobante (REQ-085) y un módulo
+  // no importa a otro. Es 422: el dato enviado es incorrecto, no falta.
+  'INVALID_RUC',
   'INVALID_SLOT_DURATION',
   'INVALID_TOKEN',
   'INVALID_TOTP_CODE',
@@ -73,6 +78,22 @@ export const DOMAIN_ERROR_CODES = [
   'PATIENT_MERGED',
   'PATIENT_NOT_FOUND',
   'PERMISSION_DENIED',
+  // Organización, O1 y O2 (ADR-011). Los duplicados y los «en uso» son 409 y
+  // los produce la base —índices únicos y FK RESTRICT—: el adaptador los
+  // traduce por nombre de constraint al código que la spec fija. «En uso»
+  // ofrece desactivar en lugar de borrar, que es la otra mitad de OR-006 y
+  // OR-022. `ESTABLISHMENT_NOT_FOUND` no es corrupción de datos: una
+  // instalación recién montada no tiene establecimiento hasta que alguien
+  // rellena el formulario, y OR-001 prohíbe operar hasta entonces.
+  'EMISSION_POINT_DUPLICATE',
+  'EMISSION_POINT_NOT_FOUND',
+  'ESTABLISHMENT_NOT_FOUND',
+  'MSP_UNICODE_DUPLICATE',
+  'SITE_IN_USE',
+  'SITE_NOT_FOUND',
+  'SITE_ROOM_DUPLICATE',
+  'SITE_ROOM_IN_USE',
+  'SITE_ROOM_NOT_FOUND',
   // Especialidades, C1. Los duplicados y los «en uso» son 409 y los produce la
   // base (índices únicos funcionales y FK RESTRICT): el adaptador los traduce
   // por nombre de constraint al código que la spec fija (SP-003, SP-006,

@@ -8,6 +8,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { AgendaModule } from './modules/agenda/agenda.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CatalogsModule } from './modules/catalogs/catalogs.module';
+import { OrganizationModule } from './modules/organization/organization.module';
 import { PatientsModule } from './modules/patients/patients.module';
 import { SpecialtiesModule } from './modules/specialties/specialties.module';
 import { validateEnv } from './shared/config/env.schema';
@@ -76,6 +77,7 @@ import { buildLoggerConfig } from './shared/observability/logger.config';
     AgendaModule,
     CatalogsModule,
     SpecialtiesModule,
+    OrganizationModule,
   ],
   providers: [
     // Registered with APP_FILTER, not useGlobalFilters, so the filter can
