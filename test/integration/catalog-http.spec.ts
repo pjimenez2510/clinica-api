@@ -15,6 +15,7 @@ import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/ro
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
+import { closeApp, listenForTests } from './setup/http-server';
 
 /**
  * El catálogo por HTTP, tal y como lo consume el navegador.
@@ -85,7 +86,7 @@ describe('catálogos por HTTP', () => {
       bodyParser: false,
     });
     configureApp(app);
-    await app.init();
+    await listenForTests(app);
 
     registry = app.get(RolePermissionRegistry);
   });
@@ -104,7 +105,7 @@ describe('catálogos por HTTP', () => {
   });
 
   afterAll(async () => {
-    await app?.close();
+    await closeApp(app);
   });
 
   /**
@@ -264,15 +265,163 @@ describe('catálogos por HTTP', () => {
   });
 
   it('distingue un código inexistente de uno fuera de vigencia', async () => {
-    await request(app.getHttpServer())
+    /**
+     * LAS DOS RAMAS, no sólo la primera. Este título prometía una distinción y
+     * únicamente comprobaba el 404, así que la otra mitad pudo estar rota
+     * desde el principio sin que nada fallara — y lo estaba: la comprobación
+     * de «¿existió alguna vez?» preguntaba por el año 1900, en el que ningún
+     * concepto está vigente, de modo que un código retirado respondía «no
+     * existe».
+     *
+     * La diferencia no es cosmética. Sobre una historia de hace tres años, un
+     * 404 dice que el diagnóstico registrado es basura; el 422 dice que el
+     * código existió, que la historia es válida, y que hay que elegir otro
+     * para lo que se escriba HOY.
+     */
+    const inexistente = await request(app.getHttpServer())
       .get('/api/v1/catalogs/CIE10/Z999')
       .set('Authorization', `Bearer ${token}`)
       .expect(404);
+    expect((inexistente.body as { code: string }).code).toBe(
+      'CATALOG_CONCEPT_NOT_FOUND',
+    );
+
+    const retirado = await prisma.catalogConcept.findFirstOrThrow({
+      where: { code: 'J18.9' },
+    });
+    await prisma.catalogConcept.update({
+      where: { id: retirado.id },
+      data: { validTo: new Date('2015-01-01T00:00:00Z') },
+    });
+
+    const fueraDeVigencia = await request(app.getHttpServer())
+      .get('/api/v1/catalogs/CIE10/J189')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(422);
+    expect((fueraDeVigencia.body as { code: string }).code).toBe(
+      'CATALOG_CONCEPT_NOT_IN_FORCE',
+    );
   });
 
   it('rechaza una fecha de vigencia mal escrita', async () => {
     // `on` llegaba antes como texto suelto sin validar, y de ahí a un
     // `new Date()` que producía una fecha inválida en la consulta.
     await buscar('?q=neumonia&on=ayer').expect(422);
+  });
+
+  /**
+   * Resolver por id lo que ya está guardado.
+   *
+   * Nace de una carencia concreta: `site.parish_concept_id` guarda una
+   * parroquia del DPA y la pantalla de la sede sólo podía decir «Registrada»,
+   * porque no existía forma de preguntar CUÁL.
+   */
+  describe('un concepto por su id', () => {
+    const porId = (id: string) =>
+      request(app.getHttpServer())
+        .get(`/api/v1/catalogs/concepts/${id}`)
+        .set('Authorization', `Bearer ${token}`);
+
+    async function idDe(code: string): Promise<string> {
+      const concepto = await prisma.catalogConcept.findFirstOrThrow({
+        where: { code },
+      });
+      return concepto.id;
+    }
+
+    it('resuelve el concepto con su cadena de ancestros', async () => {
+      const response = await porId(await idDe('J18.9')).expect(200);
+
+      const cuerpo = response.body as ConceptoCuerpo & {
+        ancestors: ConceptoCuerpo[];
+      };
+      expect(cuerpo.code).toBe('J18.9');
+      expect(cuerpo.display).toBe('Neumonía, no especificada');
+      expect(cuerpo.ancestors.map((a) => a.code)).toEqual(['J00-J99']);
+    });
+
+    /**
+     * ESTA ES LA RAZÓN DE QUE NO PASE POR `resolveDiagnosis`.
+     *
+     * Una parroquia retirada del DPA —o un código de la CIE-10 sustituido—
+     * sigue estando en la columna de una fila que nadie ha tocado. Si la
+     * consulta exigiera vigencia, la dirección de una sede que no se ha movido
+     * se quedaría en blanco el día que el INEC reorganiza las parroquias.
+     */
+    it('resuelve también un concepto que ya no está vigente', async () => {
+      const retirado = await prisma.catalogConcept.findFirstOrThrow({
+        where: { code: 'J18.9' },
+      });
+      await prisma.catalogConcept.update({
+        where: { id: retirado.id },
+        data: { validTo: new Date('2015-01-01T00:00:00Z') },
+      });
+
+      // Por código, con la fecha de hoy, ya no se puede registrar.
+      const porCodigo = await request(app.getHttpServer())
+        .get('/api/v1/catalogs/CIE10/J189')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(422);
+      expect((porCodigo.body as { code: string }).code).toBe(
+        'CATALOG_CONCEPT_NOT_IN_FORCE',
+      );
+
+      // Por id sigue teniendo nombre, que es lo único que se preguntaba.
+      const response = await porId(retirado.id).expect(200);
+      expect((response.body as ConceptoCuerpo).code).toBe('J18.9');
+    });
+
+    /**
+     * Y TAMPOCO EXIGE QUE SEA DIAGNOSTICABLE. Un capítulo es una referencia
+     * perfectamente válida para una columna que no es un diagnóstico —una
+     * provincia del DPA es exactamente eso—, y `resolveDiagnosis` lo rechaza
+     * con `CATALOG_CONCEPT_NOT_SELECTABLE`.
+     */
+    it('resuelve un concepto que no es diagnosticable', async () => {
+      const response = await porId(await idDe('J00-J99')).expect(200);
+
+      const cuerpo = response.body as ConceptoCuerpo;
+      expect(cuerpo.selectable).toBe(false);
+      expect(cuerpo.display).toBe('Enfermedades del sistema respiratorio');
+    });
+
+    it('responde 404 con CATALOG_CONCEPT_NOT_FOUND a un id que no existe', async () => {
+      const response = await porId(
+        '01920000-0000-7000-8000-000000000000',
+      ).expect(404);
+
+      expect((response.body as { code: string }).code).toBe(
+        'CATALOG_CONCEPT_NOT_FOUND',
+      );
+    });
+
+    it('rechaza un id que no es un uuid en vez de llevarlo a la consulta', async () => {
+      // Sin `ParseUUIDPipe` el texto llega al `::uuid` de la consulta y sale
+      // como error de la base: un 500 por lo que es un error del cliente. 400
+      // y no 422 porque es lo que responde el pipe de NestJS, igual que en el
+      // resto de rutas que reciben un id en la URL.
+      await porId('J18.9').expect(400);
+    });
+
+    it('exige sesión, como el resto del catálogo', async () => {
+      await request(app.getHttpServer())
+        .get(`/api/v1/catalogs/concepts/${await idDe('J18.9')}`)
+        .expect(401);
+    });
+
+    /**
+     * EL ORDEN DE DECLARACIÓN ES LA GARANTÍA, y esta prueba es lo que lo
+     * sostiene. `/catalogs/concepts/<uuid>` encaja también en `:system/:code`;
+     * si alguien mueve este método por debajo de `byCode`, `concepts` llega
+     * como sistema, falla contra la lista cerrada y la ruta responde 422 sin
+     * ejecutarse nunca. Sin esta prueba el fallo sería un 422 desconcertante
+     * en la pantalla de sedes, meses después y lejos del cambio que lo causó.
+     */
+    it('no confunde «concepts» con el nombre de un catálogo', async () => {
+      const response = await porId(await idDe('J18.9')).expect(200);
+
+      // Un 422 aquí significa exactamente eso: `:system/:code` ganó la ruta.
+      expect(response.status).not.toBe(422);
+    });
   });
 });

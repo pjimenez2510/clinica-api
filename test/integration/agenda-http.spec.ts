@@ -23,6 +23,7 @@ import {
   createSite,
   linkPractitionerToSite,
 } from './setup/fixtures';
+import { closeApp, listenForTests } from './setup/http-server';
 
 /**
  * The agenda as the browser consumes it.
@@ -100,7 +101,7 @@ describe('la agenda por HTTP', () => {
         bodyParser: false,
       });
       configureApp(app);
-      await app.init();
+      await listenForTests(app);
       registry = app.get(RolePermissionRegistry);
     }
 
@@ -110,7 +111,7 @@ describe('la agenda por HTTP', () => {
   });
 
   afterAll(async () => {
-    await app?.close();
+    await closeApp(app);
   });
 
   async function seed(): Promise<void> {

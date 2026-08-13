@@ -20,6 +20,7 @@ import {
   createPractitioner,
   createRoom,
 } from './setup/fixtures';
+import { closeApp, listenForTests } from './setup/http-server';
 
 /**
  * The configuration module (C3) as the browser consumes it, against a real
@@ -102,7 +103,7 @@ describe('la configuración por HTTP', () => {
         bodyParser: false,
       });
       configureApp(app);
-      await app.init();
+      await listenForTests(app);
       registry = app.get(RolePermissionRegistry);
     }
 
@@ -115,7 +116,7 @@ describe('la configuración por HTTP', () => {
   });
 
   afterAll(async () => {
-    await app?.close();
+    await closeApp(app);
   });
 
   async function signIn(

@@ -22,6 +22,7 @@ import '../../src/modules/staff/infrastructure/staff.constraints';
 
 import { useDatabase } from './setup/database';
 import { createPatient, createSite } from './setup/fixtures';
+import { closeApp, listenForTests } from './setup/http-server';
 
 /**
  * The staff module (S1 and S2) as the browser consumes it, against a real
@@ -108,7 +109,7 @@ describe('el personal por HTTP', () => {
         bodyParser: false,
       });
       configureApp(app);
-      await app.init();
+      await listenForTests(app);
       registry = app.get(RolePermissionRegistry);
     }
 
@@ -133,7 +134,7 @@ describe('el personal por HTTP', () => {
   });
 
   afterAll(async () => {
-    await app?.close();
+    await closeApp(app);
   });
 
   async function signIn(

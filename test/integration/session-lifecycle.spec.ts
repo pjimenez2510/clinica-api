@@ -13,6 +13,7 @@ import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
+import { closeApp, listenForTests } from './setup/http-server';
 
 /**
  * The session, over real HTTP, against a real database.
@@ -76,11 +77,11 @@ describe('session over HTTP', () => {
       bodyParser: false,
     });
     configureApp(app);
-    await app.init();
+    await listenForTests(app);
   });
 
   afterAll(async () => {
-    await app?.close();
+    await closeApp(app);
   });
 
   /** A signed-in-capable account holding a real role. */

@@ -3,11 +3,33 @@ import {
   NotFoundError,
 } from '../../../shared/domain/errors/domain-error';
 
+/**
+ * Un concepto que no está.
+ *
+ * DOS FORMAS DE PREGUNTAR Y UN SOLO `code`, porque para quien recibe la
+ * respuesta significan lo mismo: lo que buscabas no existe. Lo que cambia es
+ * qué se puede decir en el detalle — un sistema y un código cuando se tecleó
+ * un diagnóstico, un id a secas cuando se resolvía una referencia guardada — y
+ * dos constructores nombrados dicen eso mejor que un parámetro que a veces
+ * sobra.
+ */
 export class CatalogConceptNotFoundError extends NotFoundError {
   readonly code = 'CATALOG_CONCEPT_NOT_FOUND';
   override readonly userTitle = 'No se encontró el código en el catálogo';
-  constructor(systemCode: string, code: string) {
-    super(`${code} does not exist in ${systemCode}`, { systemCode, code });
+
+  private constructor(message: string, details: Record<string, string>) {
+    super(message, details);
+  }
+
+  static byCode(systemCode: string, code: string): CatalogConceptNotFoundError {
+    return new CatalogConceptNotFoundError(
+      `${code} does not exist in ${systemCode}`,
+      { systemCode, code },
+    );
+  }
+
+  static byId(id: string): CatalogConceptNotFoundError {
+    return new CatalogConceptNotFoundError(`no concept has id ${id}`, { id });
   }
 }
 

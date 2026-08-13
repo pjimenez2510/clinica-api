@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import {
   ApiOkResponse,
   ApiOperation,
@@ -72,6 +72,38 @@ export class CatalogsController {
     });
 
     return { items };
+  }
+
+  /**
+   * Un concepto por su identificador, para poner nombre a lo ya guardado.
+   *
+   * DECLARADA ANTES QUE `:system/:code` A PROPÓSITO. NestJS registra las rutas
+   * en el orden en que aparecen los métodos, y `/catalogs/concepts/<uuid>`
+   * encaja también en `:system/:code`: si aquella fuera primero, `concepts`
+   * llegaría como sistema, fallaría contra la lista cerrada y esta ruta
+   * respondería 422 sin haberse ejecutado nunca. El orden es la garantía, así
+   * que moverla de sitio la rompe en silencio — y hay una prueba que lo
+   * detecta.
+   *
+   * `concepts` y no un segundo `:algo` porque un segmento fijo no puede chocar
+   * con un código de catálogo futuro.
+   *
+   * SIN FECHA DE VIGENCIA: ver `CatalogsService.byId`. Quien pregunta tiene una
+   * clave foránea, no un código que esté eligiendo.
+   */
+  @Get('concepts/:id')
+  @RequirePermission('catalog:read', 'global')
+  @ApiOperation({ summary: 'Resolve one stored concept by its id' })
+  @ApiOkResponse({ type: CatalogConceptDetailDto })
+  async byId(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<CatalogConceptDetailResponse> {
+    const concepto = await this.catalogs.byId(id);
+
+    return {
+      ...concepto,
+      ancestors: await this.catalogs.ancestorsOf(concepto.id),
+    };
   }
 
   /**

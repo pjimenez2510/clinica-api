@@ -1,6 +1,7 @@
+import type { INestApplication } from '@nestjs/common';
 import { ModulesContainer } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { AppModule } from '../../src/app.module';
 import {
@@ -11,6 +12,40 @@ import {
   SITE_SCOPE_KEY,
 } from '../../src/shared/http/auth.decorators';
 import { PERMISSIONS } from '../../src/shared/authorisation/permission.catalogue';
+import { closeApp } from './setup/http-server';
+
+/** `'agenda/sites/:siteId'` + `'availability'` → `/agenda/sites/:siteId/availability`. */
+function joinPath(controller: unknown, handler: unknown): string {
+  const segments = [controller, handler]
+    .map((part) => (typeof part === 'string' ? part : ''))
+    .flatMap((part) => part.split('/'))
+    .filter((segment) => segment !== '' && segment !== '/');
+
+  return `/${segments.join('/')}`;
+}
+
+/**
+ * The name of the path parameter that carries a site, or `undefined`.
+ *
+ * TWO SHAPES, because both are in use and both are right: `:siteId` names
+ * itself, and `sites/:id` names the site through the segment before it — that
+ * is what `organization` does for a resource whose whole identity IS the site.
+ * Matching only the first would leave the second dimension of authorisation
+ * unchecked on exactly the routes that manage sites.
+ */
+function siteParamOf(path: string): string | undefined {
+  const segments = path.split('/');
+
+  for (const [index, segment] of segments.entries()) {
+    if (!segment.startsWith(':')) continue;
+
+    const name = segment.slice(1);
+    if (/^site(_?id)?$/i.test(name)) return name;
+    if (segments[index - 1] === 'sites') return name;
+  }
+
+  return undefined;
+}
 
 /**
  * Every route declares how it is protected. No exceptions, and no defaults.
@@ -27,18 +62,24 @@ import { PERMISSIONS } from '../../src/shared/authorisation/permission.catalogue
 describe('every route declares its protection', () => {
   interface RouteInfo {
     route: string;
+    /** Controller path joined to handler path, as NestJS registered it. */
+    path: string;
     marker: string;
     permission?: unknown;
     siteScope?: unknown;
   }
 
   let routes: RouteInfo[];
+  // Held outside the hook so a throw during the walk still releases it. An
+  // application that outlives its suite keeps a Prisma pool open for the rest
+  // of the run, and the next suite pays for it in connections.
+  let app: INestApplication | undefined;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
-    const app = moduleRef.createNestApplication();
+    app = moduleRef.createNestApplication();
     await app.init();
 
     // Every controller handler, read off the metadata the decorators set.
@@ -75,8 +116,11 @@ describe('every route declares its protection', () => {
                   ? 'permission'
                   : 'UNDECLARED';
 
+          const controllerPath: unknown = Reflect.getMetadata('path', metatype);
+
           routes.push({
             route: `${metatype.name}.${name}`,
+            path: joinPath(controllerPath, path),
             marker,
             permission,
             siteScope: read(SITE_SCOPE_KEY),
@@ -85,10 +129,13 @@ describe('every route declares its protection', () => {
       }
     }
 
-    await app.close();
     // If this finds nothing, the walk is broken and every assertion below
     // would pass vacuously — which is worse than failing.
     expect(routes.length).toBeGreaterThan(0);
+  });
+
+  afterAll(async () => {
+    await closeApp(app);
   });
 
   it('leaves no route without a declaration', () => {
@@ -127,6 +174,38 @@ describe('every route declares its protection', () => {
     expect(
       undeclared,
       'Pass a site scope to @RequirePermission: param:<name>, query or global',
+    ).toEqual([]);
+  });
+
+  it('narrows to the site whenever the site is in the URL', () => {
+    /**
+     * The previous test only asks that SOMETHING be declared, and `global` is
+     * an accepted answer — so a route that takes a site id in its path and
+     * declares `global` passes it while checking nothing. That is not a
+     * hypothetical: the site scope was declared and wrong in `organization`
+     * until a review caught it by reading, and reading does not scale to every
+     * route added from here on.
+     *
+     * `param:<name>` is the only correct answer when the name is right there
+     * in the URL, because it is the one the GUARD can enforce on its own.
+     * `query` would push the check into a handler that is already holding the
+     * value, and `global` would drop it.
+     */
+    const wrong = routes
+      .filter((r) => r.marker === 'permission')
+      .flatMap((r) => {
+        const param = siteParamOf(r.path);
+        if (!param) return [];
+
+        const expected = `param:${param}`;
+        if (r.siteScope === expected) return [];
+
+        return [`${r.route} (${r.path}) declares ${String(r.siteScope)}`];
+      });
+
+    expect(
+      wrong,
+      'A route whose URL carries a site id must declare param:<that name>',
     ).toEqual([]);
   });
 

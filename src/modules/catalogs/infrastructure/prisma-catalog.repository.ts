@@ -162,6 +162,42 @@ export class PrismaCatalogRepository implements CatalogRepository {
     return filas[0] ? toConcept(filas[0]) : null;
   }
 
+  /** El mismo `WHERE` que `findByCode`, menos la vigencia. */
+  async existsInAnyPeriod(systemCode: string, code: string): Promise<boolean> {
+    const filas = await this.prisma.$queryRaw<{ uno: number }[]>`
+      SELECT 1 AS uno
+      FROM catalog_concept c
+      JOIN catalog_system s ON s.id = c.system_id
+      WHERE s.code = ${systemCode}
+        AND replace(c.code, '.', '') = ${code.replace(/[\s.]/g, '').toUpperCase()}
+      LIMIT 1
+    `;
+    return filas.length > 0;
+  }
+
+  /**
+   * Un concepto por su id, sin condición de vigencia.
+   *
+   * El `::uuid` es lo que hace que la comparación tenga tipo: el parámetro
+   * llega como `text` y la columna es `uuid`. NO valida la forma —un id mal
+   * escrito hace fallar el propio cast—, y de eso se encarga el
+   * `ParseUUIDPipe` del controlador, que responde 400 antes de llegar aquí.
+   */
+  async findById(id: string): Promise<CatalogConcept | null> {
+    const filas = await this.prisma.$queryRaw<FilaConcepto[]>`
+      SELECT
+        c.id,
+        c.code,
+        c.display,
+        c.attributes->>'chapter' AS chapter,
+        (c.attributes->>'level')::int AS level
+      FROM catalog_concept c
+      WHERE c.id = ${id}::uuid
+      LIMIT 1
+    `;
+    return filas[0] ? toConcept(filas[0]) : null;
+  }
+
   /**
    * La cadena de ancestros, de capítulo a padre inmediato.
    *

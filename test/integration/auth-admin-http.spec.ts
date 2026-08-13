@@ -17,6 +17,7 @@ import { MAILER } from '../../src/shared/mail/mail.port';
 
 import { useDatabase } from './setup/database';
 import { FakeMailer } from './setup/fake-mailer';
+import { closeApp, listenForTests } from './setup/http-server';
 
 /**
  * The administration half of `auth` (A2) as the browser consumes it, against a
@@ -124,7 +125,7 @@ describe('la administración de cuentas y roles por HTTP', () => {
         bodyParser: false,
       });
       configureApp(app);
-      await app.init();
+      await listenForTests(app);
       registry = app.get(RolePermissionRegistry);
     }
 
@@ -137,7 +138,7 @@ describe('la administración de cuentas y roles por HTTP', () => {
   });
 
   afterAll(async () => {
-    await app?.close();
+    await closeApp(app);
   });
 
   async function hash(): Promise<string> {

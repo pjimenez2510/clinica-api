@@ -23,6 +23,7 @@ import {
   createSite,
   linkPractitionerToSite,
 } from './setup/fixtures';
+import { closeApp, listenForTests } from './setup/http-server';
 
 /**
  * E2: the day of the consultation, against a real PostgreSQL.
@@ -103,7 +104,7 @@ describe('las transiciones de estado de la cita por HTTP', () => {
         bodyParser: false,
       });
       configureApp(app);
-      await app.init();
+      await listenForTests(app);
       registry = app.get(RolePermissionRegistry);
     }
 
@@ -111,7 +112,7 @@ describe('las transiciones de estado de la cita por HTTP', () => {
   });
 
   afterAll(async () => {
-    await app?.close();
+    await closeApp(app);
   });
 
   async function seed(): Promise<void> {

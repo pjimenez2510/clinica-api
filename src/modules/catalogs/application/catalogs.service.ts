@@ -68,19 +68,42 @@ export class CatalogsService {
       // Se distingue «no existe» de «existió pero no en esa fecha» buscando sin
       // restricción temporal. Cuesta una consulta más y sólo en el camino de
       // error, que es donde importa dar la razón correcta.
-      const enCualquierFecha = await this.catalog.findByCode(
+      //
+      // ESTA CONSULTA IGNORA EL PERIODO; antes preguntaba por el 1 de enero de
+      // 1900, y eso hacía la rama INALCANZABLE: ningún concepto de la CIE-10
+      // está vigente en 1900, así que el `if` era siempre falso y un código
+      // retirado respondía «no existe». Justo al revés de lo que hace falta
+      // sobre una historia de hace tres años, que es el caso para el que se
+      // escribió.
+      const enCualquierFecha = await this.catalog.existsInAnyPeriod(
         systemCode,
         code,
-        new Date('1900-01-01T00:00:00Z'),
       );
       if (enCualquierFecha) throw new CatalogConceptNotInForceError(code, on);
-      throw new CatalogConceptNotFoundError(systemCode, code);
+      throw CatalogConceptNotFoundError.byCode(systemCode, code);
     }
 
     if (!concepto.selectable) {
       throw new CatalogConceptNotSelectableError(concepto.code);
     }
 
+    return concepto;
+  }
+
+  /**
+   * Pone nombre a una referencia guardada.
+   *
+   * NO COMPRUEBA NI VIGENCIA NI SELECCIONABILIDAD, y por eso no reutiliza
+   * `resolveDiagnosis`. Quien llama no está eligiendo un código: ya lo eligió
+   * alguien, está guardado en una columna, y lo único que falta es cómo se
+   * llama. `site.parish_concept_id` es el caso que lo motiva —la pantalla de
+   * la sede decía «Registrada» porque no había forma de preguntar CUÁL— y
+   * negarle el nombre a una parroquia retirada del DPA dejaría en blanco la
+   * dirección de una sede que no ha cambiado de sitio.
+   */
+  async byId(id: string): Promise<CatalogConcept> {
+    const concepto = await this.catalog.findById(id);
+    if (!concepto) throw CatalogConceptNotFoundError.byId(id);
     return concepto;
   }
 

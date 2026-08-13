@@ -66,6 +66,35 @@ export interface CatalogRepository {
     on: Date,
   ): Promise<CatalogConcept | null>;
 
+  /**
+   * Un concepto por su identificador, para poner nombre a una referencia ya
+   * guardada.
+   *
+   * SIN FECHA Y SIN SISTEMA, y las dos ausencias son deliberadas. Quien llama
+   * tiene una clave foránea en la mano —`site.parish_concept_id`— y lo único
+   * que le falta es cómo se llama. Exigirle la fecha de vigencia convertiría
+   * la retirada de una parroquia del DPA en una pantalla que deja de decir
+   * dónde está la sede; exigirle el sistema le obligaría a saber de qué
+   * catálogo salió el id que le dieron.
+   *
+   * Por eso tampoco pasa por `resolveDiagnosis`: aquella pregunta es «¿puedo
+   * registrar esto HOY?» y responde que no a un código retirado, que es
+   * exactamente lo correcto allí y exactamente lo contrario de lo que hace
+   * falta aquí.
+   */
+  findById(id: string): Promise<CatalogConcept | null>;
+
+  /**
+   * Si el código existió ALGUNA VEZ, sin mirar en qué periodo.
+   *
+   * Es lo que separa «se tecleó mal» de «existió, pero no en esa fecha», y por
+   * eso es una pregunta propia y no `findByCode` con una fecha muy antigua:
+   * esa fecha tendría que ser anterior al `valid_from` de todo concepto del
+   * catálogo, y no hay ninguna que lo garantice. Devuelve un booleano porque
+   * es lo único que hace falta para elegir el mensaje.
+   */
+  existsInAnyPeriod(systemCode: string, code: string): Promise<boolean>;
+
   /** La cadena de ancestros, de capítulo a padre inmediato. */
   ancestorsOf(id: string): Promise<readonly CatalogConcept[]>;
 }

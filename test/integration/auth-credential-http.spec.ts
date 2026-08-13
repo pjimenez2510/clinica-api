@@ -18,6 +18,7 @@ import { MAILER } from '../../src/shared/mail/mail.port';
 
 import { useDatabase } from './setup/database';
 import { FakeMailer } from './setup/fake-mailer';
+import { closeApp, listenForTests } from './setup/http-server';
 
 /**
  * The first credential of an account, end to end, against a real PostgreSQL 18
@@ -111,7 +112,7 @@ describe('la primera credencial por correo', () => {
         bodyParser: false,
       });
       configureApp(app);
-      await app.init();
+      await listenForTests(app);
       registry = app.get(RolePermissionRegistry);
     }
 
@@ -124,7 +125,7 @@ describe('la primera credencial por correo', () => {
   });
 
   afterAll(async () => {
-    await app?.close();
+    await closeApp(app);
   });
 
   const base = '/api/v1/auth';

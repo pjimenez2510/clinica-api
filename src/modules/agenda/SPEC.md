@@ -614,9 +614,13 @@ Convertirlo en configuración sería regalar la garantía.
 | **La zona horaria `America/Guayaquil`**                    | Parametrizarla parece flexible y es una trampa: el sistema es de una sola clínica ecuatoriana, y un huso mal configurado cambia `age_days` de un neonato, que es como el RDACAA lo clasifica. Se revisará si algún día hay sedes fuera del país                     |
 | **Que toda ruta declare permiso**                          | Cerrado por defecto no admite excepción configurable, o no está cerrado                                                                                                                                                                                             |
 
-> **Falta esquema.** No existen las tablas `holiday` ni la de parámetros por
-> sede. Son dos migraciones nuevas, y son prerrequisito de AG-015, AG-016,
-> AG-028, AG-035 y AG-090 a AG-098.
+> **Esquema resuelto el 13-08-2026.** `holiday` y `site_parameter` existen
+> desde la migración `20260813040610_configuration_holidays_and_site_parameters`
+> y las administra `configuration` (CF-060 a CF-066). Lo que falta de AG-015,
+> AG-016, AG-028, AG-035 y AG-090 a AG-098 ya no es esquema: es que la agenda
+> LEA lo que la configuración guarda. El bloqueo se anota aquí como resuelto y
+> no se borra porque `pnpm estado` los cuenta leyendo este archivo, y un
+> bloqueo que desaparece sin dejar rastro se vuelve a declarar la próxima vez.
 
 ---
 

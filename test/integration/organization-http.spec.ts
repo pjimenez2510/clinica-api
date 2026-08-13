@@ -17,6 +17,7 @@ import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.ser
 
 import { useDatabase } from './setup/database';
 import { createPatient, createPractitioner } from './setup/fixtures';
+import { closeApp, listenForTests } from './setup/http-server';
 
 /**
  * The organization module (O1 and O2) as the browser consumes it, against a
@@ -82,7 +83,7 @@ describe('la organización por HTTP', () => {
         bodyParser: false,
       });
       configureApp(app);
-      await app.init();
+      await listenForTests(app);
       registry = app.get(RolePermissionRegistry);
     }
 
@@ -98,7 +99,7 @@ describe('la organización por HTTP', () => {
   });
 
   afterAll(async () => {
-    await app?.close();
+    await closeApp(app);
   });
 
   /**

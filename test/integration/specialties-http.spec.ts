@@ -22,6 +22,7 @@ import {
   createSite,
   linkPractitionerToSite,
 } from './setup/fixtures';
+import { closeApp, listenForTests } from './setup/http-server';
 
 /**
  * The specialties module (C1) as the browser consumes it, against a real
@@ -84,7 +85,7 @@ describe('las especialidades por HTTP', () => {
         bodyParser: false,
       });
       configureApp(app);
-      await app.init();
+      await listenForTests(app);
       registry = app.get(RolePermissionRegistry);
     }
 
@@ -92,7 +93,7 @@ describe('las especialidades por HTTP', () => {
   });
 
   afterAll(async () => {
-    await app?.close();
+    await closeApp(app);
   });
 
   async function seed(): Promise<void> {
