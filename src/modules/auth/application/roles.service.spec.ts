@@ -240,6 +240,29 @@ describe('la administración de roles', () => {
       ).resolves.toMatchObject({ active: false });
     });
 
+    it('AU-024 no se deja engañar por un rol que administra y nadie tiene', async () => {
+      // El camino que sí bricaba la instalación, en tres acciones de pantalla
+      // corrientes: crear un rol, darle `user:manage` —permitido, no concede
+      // nada a nadie— y desactivar el administrador de verdad. Contando roles,
+      // la cuenta daba dos y la guarda callaba; el llamante perdía todos sus
+      // permisos en la siguiente petición y nadie tenía el rol nuevo.
+      const SIN_NADIE: RoleView = {
+        id: 'role-supervisor',
+        code: 'SUPERVISOR',
+        name: 'Supervisor',
+        description: null,
+        isSystem: false,
+        active: true,
+        liveGrants: 0,
+      };
+      repository.roles = [ADMIN_ROLE, SIN_NADIE];
+      repository.administering = [ADMIN_ROLE, SIN_NADIE];
+
+      await expect(
+        service.update(ADMIN_ROLE.id, { active: false }, REQUESTER),
+      ).rejects.toBeInstanceOf(CannotDemoteSelfError);
+    });
+
     it('AU-031 no estorba al desactivar un rol que no administra usuarios', async () => {
       repository.administering = [ADMIN_ROLE];
 

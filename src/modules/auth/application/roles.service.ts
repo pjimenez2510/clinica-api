@@ -114,7 +114,11 @@ export class RolesService {
     // in the query — so deactivating the last one that administers users is
     // the same catastrophe as deleting it, arrived at more quietly.
     if (command.active === false) {
-      await this.assertNotTheLastAdministrator(id, 'deactivated');
+      await this.assertNotTheLastAdministrator(
+        id,
+        'deactivated',
+        requester.userId,
+      );
     }
 
     const updated = await this.roles.update(id, {
@@ -143,7 +147,7 @@ export class RolesService {
     if (!role) throw new RoleNotFoundError();
     if (role.isSystem) throw new SystemRoleProtectedError();
 
-    await this.assertNotTheLastAdministrator(id, 'deleted');
+    await this.assertNotTheLastAdministrator(id, 'deleted', requester.userId);
 
     const deleted = await this.roles.delete(id);
     if (!deleted) throw new RoleNotFoundError();
@@ -213,23 +217,50 @@ export class RolesService {
   }
 
   /**
-   * AU-024. Refuses when this role is the last ACTIVE one carrying
-   * `user:manage`.
+   * AU-024. Refuses when losing this role would leave the installation with
+   * no administration that anybody actually holds.
    *
-   * Counted over active roles only, because an inactive role grants nothing:
-   * counting it would let somebody deactivate the real administrator role
-   * while a disabled one made the check pass.
+   * COUNTING ROLES IS NOT ENOUGH, and the first version of this counted them.
+   * A role that nobody holds administers nothing, so three ordinary screen
+   * actions bricked the installation: create `SUPERVISOR`, give it
+   * `user:manage` — allowed, it grants nothing to nobody — and now the count
+   * is two, so deactivating the real administrator role passes silently.
+   * `role-permission.registry.ts` drops inactive roles in the query, so the
+   * caller loses every permission on their very next request and nobody holds
+   * `SUPERVISOR`. Unrecoverable without `psql`.
+   *
+   * The database does not catch it either: `trg_role_permission_keep_admin`
+   * fires on `role_permission`, and deactivating a `role` row never reaches
+   * it. So the check has to be right here.
+   *
+   * The standard is the one its sibling below already applies: what survives
+   * has to be ACTIVE, HELD by somebody, and held by the CALLER — otherwise an
+   * administrator locks themselves out while the installation technically
+   * survives.
    */
   private async assertNotTheLastAdministrator(
     roleId: string,
     verb: string,
+    callerId: string,
   ): Promise<void> {
     const administering = await this.roles.rolesGranting(ADMINISTERS_USERS);
     if (!administering.some((role) => role.id === roleId)) return;
-    if (administering.length > 1) return;
+
+    // `liveGrants` is what turns «a role exists» into «somebody administers».
+    const remaining = administering.filter((role) => role.id !== roleId);
+    if (remaining.length === 0) {
+      throw new CannotDemoteSelfError(
+        `The last active role granting ${ADMINISTERS_USERS} cannot be ${verb}`,
+      );
+    }
+
+    const held = new Set(await this.roles.liveRoleIdsOf(callerId));
+    if (remaining.some((role) => held.has(role.id))) return;
+    // The caller does not hold this one either, so nothing of theirs changes.
+    if (!held.has(roleId)) return;
 
     throw new CannotDemoteSelfError(
-      `The last active role granting ${ADMINISTERS_USERS} cannot be ${verb}`,
+      `An administrator cannot leave themselves without administration by having it ${verb}`,
     );
   }
 
