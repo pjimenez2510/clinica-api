@@ -526,7 +526,7 @@ describe('el personal por HTTP', () => {
       ]);
     });
 
-    it('ST-008 rechaza con PRIMARY_SPECIALTY_REQUIRED una asignación con dos principales', async () => {
+    it('ST-008/SP-005 rechaza con PRIMARY_SPECIALTY_REQUIRED una asignación con dos principales', async () => {
       const practitioner = await createPractitioner();
       const first = await createSpecialty('cardiologia', 'Cardiología');
       const second = await createSpecialty('pediatria', 'Pediatría');
@@ -544,7 +544,7 @@ describe('el personal por HTTP', () => {
       expect((response.body as Problem).code).toBe('PRIMARY_SPECIALTY_REQUIRED'); // prettier-ignore
     });
 
-    it('ST-008 la base admite a lo sumo una principal: el índice parcial rechaza la segunda', async () => {
+    it('ST-008/SP-005 la base admite a lo sumo una principal: el índice parcial rechaza la segunda', async () => {
       const practitioner = await createPractitioner();
       const first = await createSpecialty('cardiologia', 'Cardiología');
       const second = await createSpecialty('pediatria', 'Pediatría');
@@ -569,7 +569,7 @@ describe('el personal por HTTP', () => {
       ).rejects.toThrowError(/practitioner_specialty_one_primary|Unique/i);
     });
 
-    it('ST-008 expone la especialidad principal en el listado que consume la agenda', async () => {
+    it('ST-008/SP-008 expone la especialidad principal en el listado que consume la agenda', async () => {
       const practitioner = await createPractitioner();
       const cardio = await createSpecialty('cardiologia', 'Cardiología');
       const pedia = await createSpecialty('pediatria', 'Pediatría');
@@ -631,7 +631,7 @@ describe('el personal por HTTP', () => {
       ]);
     });
 
-    it('ST-009 fija, resuelve y retira una excepción de duración por profesional', async () => {
+    it('ST-009/SP-022 fija, resuelve y retira una excepción de duración por profesional', async () => {
       const practitioner = await createPractitioner();
       const specialty = await createSpecialty();
       const control = await createServiceType(specialty.id, 'Control', 20);
@@ -686,7 +686,7 @@ describe('el personal por HTTP', () => {
       ).toBe(0);
     });
 
-    it('ST-009 el rango de la duración lo garantiza la base: 37 y 250 minutos se rechazan', async () => {
+    it('ST-009/SP-022 el rango de la duración lo garantiza la base: 37 y 250 minutos se rechazan', async () => {
       const practitioner = await createPractitioner();
       const specialty = await createSpecialty();
       const type = await createServiceType(specialty.id);

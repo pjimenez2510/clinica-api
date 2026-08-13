@@ -195,7 +195,7 @@ describe('PractitionerAssignmentsService', () => {
   });
 
   describe('especialidades que ejerce', () => {
-    it('ST-008 rechaza la asignación sin ninguna principal', async () => {
+    it('ST-008/SP-005 rechaza la asignación sin ninguna principal', async () => {
       await expect(
         service.replaceSpecialties(
           'prac-1',
@@ -206,7 +206,7 @@ describe('PractitionerAssignmentsService', () => {
       expect(writes()).toEqual([]);
     });
 
-    it('ST-008 rechaza la asignación con dos principales', async () => {
+    it('ST-008/SP-005 rechaza la asignación con dos principales', async () => {
       await expect(
         service.replaceSpecialties(
           'prac-1',
@@ -286,7 +286,7 @@ describe('PractitionerAssignmentsService', () => {
   });
 
   describe('excepciones de duración', () => {
-    it('ST-009 fija la excepción tras comprobar profesional y tipo', async () => {
+    it('ST-009/SP-022 fija la excepción tras comprobar profesional y tipo', async () => {
       await service.setDurationException('prac-1', 'type-1', 45, REQUESTER);
 
       expect(writes()).toEqual([

@@ -74,7 +74,14 @@ administración.
 **Prueba independiente:** resolver la duración de Cardiología·Control para un
 médico con y sin excepción, contra PostgreSQL real, y comprobar que desactivar
 una especialidad referenciada no la borra.
-**Cubre:** SP-001 a SP-008, SP-020 a SP-028.
+**Cubre:** SP-001 a SP-008, SP-020 a SP-027.
+
+> **SP-028 NO ES DE C1, y lo decía desde el principio: «CUANDO recepción elija
+> especialidad y tipo AL RESERVAR».** Estaba en las dos entregas a la vez, así
+> que C1 —el catálogo y sus pantallas, terminado— no podía cerrarse nunca sin
+> construir antes una función de la agenda. Un requisito pertenece a una sola
+> entrega o la que lo comparte deja de poder terminarse. Corregido el
+> 13-08-2026: vive en C4, que es donde está su trabajo.
 
 **Solo servidor:** SP-024, SP-027. Que cambiar una duración no toque las
 citas ya reservadas se demuestra mirando filas anteriores al cambio, no una
