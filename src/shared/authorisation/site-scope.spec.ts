@@ -23,14 +23,14 @@ describe('siteScope', () => {
     expect(siteScope(director, 'agenda:read')).toEqual({});
   });
 
-  it('confines the query to the sites actually held', () => {
+  it('AU-011 confines the query to the sites actually held', () => {
     const receptionist = new Principal('u1', [grant(NORTE, ['agenda:read'])]);
     expect(siteScope(receptionist, 'agenda:read')).toEqual({
       siteId: { in: [NORTE] },
     });
   });
 
-  it('THROWS when the permission is held nowhere', () => {
+  it('AU-011 THROWS when the permission is held nowhere', () => {
     /**
      * The mistake this function exists to make unspellable.
      *
@@ -67,7 +67,7 @@ describe('assertSiteInScope', () => {
     ).not.toThrow();
   });
 
-  it('REFUSES a write at another site', () => {
+  it('AU-011 REFUSES a write at another site', () => {
     // A receptionist hired at Norte booking into Sur's agenda. Holding the
     // permission is not holding it here.
     const receptionist = new Principal('u1', [grant(NORTE, ['agenda:write'])]);

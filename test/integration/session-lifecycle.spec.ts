@@ -1,3 +1,4 @@
+import { ThrottlerStorage } from '@nestjs/throttler';
 import { Test } from '@nestjs/testing';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { PrismaClient } from '@prisma/client';
@@ -71,6 +72,28 @@ describe('session over HTTP', () => {
       // it here is what keeps the two from being different databases.
       .overrideProvider(PrismaService)
       .useValue(prisma)
+      /**
+       * SIN LÍMITE DE PETICIONES, como en el resto de suites de HTTP.
+       *
+       * El limitador real permite diez peticiones por segundo POR IP, y aquí
+       * todas salen de la misma: las pruebas de rotación hacen varias seguidas
+       * a `/auth/refresh` y empezaban a recibir 429 en vez de lo que
+       * comprueban. Un 429 en mitad de una prueba de reúso no es una señal
+       * útil, es ruido que depende de lo rápido que vaya la máquina.
+       *
+       * ⚠️ Nadie comprueba el limitador en ninguna suite: todas lo sustituyen.
+       * Anotado como deuda, no se tapa aquí.
+       */
+      .overrideProvider(ThrottlerStorage)
+      .useValue({
+        increment: () =>
+          Promise.resolve({
+            totalHits: 1,
+            timeToExpire: 1,
+            isBlocked: false,
+            timeToBlockExpire: 0,
+          }),
+      })
       .compile();
 
     app = moduleRef.createNestApplication<NestExpressApplication>({
@@ -185,5 +208,106 @@ describe('session over HTTP', () => {
       .expect(200);
 
     expect(Object.keys(sessionBody(resumed))).not.toContain('refreshToken');
+  });
+
+  /**
+   * AU-004 — «refrescos rotatorios, y SI un refresco se reutiliza, ENTONCES
+   * DEBERÁ invalidar toda la familia de sesiones de esa cuenta».
+   *
+   * LA MITAD QUE IMPORTA NO ESTABA PROBADA. `RefreshTokenService` no tenía
+   * NINGUNA prueba: ni la reclamación atómica, ni la detección de reúso, ni la
+   * revocación de la familia. Es lo que convierte un token robado en una
+   * alarma en vez de una brecha silenciosa, y podía romperse entero sin que
+   * fallara nada — el comentario del servicio lo describía con detalle, que es
+   * exactamente la clase de garantía que nadie vuelve a comprobar.
+   *
+   * CONTRA LA BASE Y NO CONTRA UN DOBLE: la garantía vive en un `updateMany`
+   * condicional, y un doble que devuelve `count: 1` demuestra únicamente que
+   * el doble devuelve 1.
+   */
+  describe('AU-004 rotación de refrescos y detección de reúso', () => {
+    async function signIn(): Promise<string[]> {
+      await createAccount();
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ email: 'ana.torres@clinica.ec', password: PASSWORD })
+        .expect(200);
+      return response.get('Set-Cookie')!;
+    }
+
+    const refresh = (cookies: string[]) =>
+      request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', cookies);
+
+    it('AU-004 gasta el refresco al usarlo: el mismo no vale dos veces', async () => {
+      const first = await signIn();
+
+      const rotated = await refresh(first).expect(200);
+      expect(rotated.get('Set-Cookie'), 'refrescar entrega uno nuevo').toBeDefined(); // prettier-ignore
+
+      // El segundo intento con el MISMO no es un 200 tardío: es el incidente.
+      await refresh(first).expect(401);
+    });
+
+    it('AU-004 un refresco reutilizado tumba TODA la familia, no solo el token repetido', async () => {
+      /**
+       * EL ATAQUE, tal cual. El ladrón se lleva una copia y la usa; el dueño
+       * vuelve más tarde con el suyo, que es legítimo y sigue siendo válido.
+       * No hay forma de saber cuál de los dos es el impostor, así que la única
+       * respuesta segura es cerrar la sesión entera y obligar a entrar de
+       * nuevo — cosa que el dueño puede hacer y el ladrón no.
+       *
+       * Sin esto, el que refresca gana para siempre y nadie se entera.
+       */
+      const stolen = await signIn();
+
+      // El ladrón rota una vez. Ahora `stolen` está gastado y hay uno vivo.
+      const live = (await refresh(stolen).expect(200)).get('Set-Cookie')!;
+
+      // El dueño reaparece con la copia gastada: se detecta el reúso.
+      await refresh(stolen).expect(401);
+
+      // Y el que estaba vivo —el del ladrón— muere con la familia.
+      await refresh(live).expect(401);
+    });
+
+    it('AU-004 marca la familia como REUSE en la base, no solo la rechaza', async () => {
+      // El motivo es lo que un responsable de seguridad lee después. Revocar
+      // sin decir por qué deja el incidente indistinguible de un cierre de
+      // sesión corriente.
+      const cookies = await signIn();
+      await refresh(cookies).expect(200);
+      await refresh(cookies).expect(401);
+
+      const revoked = await prisma.refreshToken.findMany({
+        where: { revocationReason: 'REUSE' },
+      });
+      expect(revoked.length).toBeGreaterThan(0);
+    });
+
+    it('AU-004 en dos refrescos simultáneos con el mismo token gana exactamente uno', async () => {
+      // La reclamación es un `updateMany` condicional justamente por esto: un
+      // «leer, comprobar, escribir» dejaría pasar los dos y partiría la
+      // familia en dos ramas vivas. Se afirma CUÁNTOS ganan, no que «alguno
+      // falle»: dos ganadores es el fallo que se busca.
+      const cookies = await signIn();
+
+      const outcomes = await Promise.all([refresh(cookies), refresh(cookies)]);
+
+      const statuses = outcomes.map((o) => o.status).sort();
+      expect(statuses).toEqual([200, 401]);
+    });
+
+    it('AU-004 el token de acceso es de vida corta y la respuesta dice cuánto', async () => {
+      // «Vida corta» sin número no es comprobable. Una hora es el techo que
+      // hace que revocar un rol surta efecto en minutos y no en días.
+      const cookies = await signIn();
+      const resumed = await refresh(cookies).expect(200);
+
+      const { expiresIn } = sessionBody(resumed);
+      expect(expiresIn).toBeGreaterThan(0);
+      expect(expiresIn).toBeLessThanOrEqual(3600);
+    });
   });
 });

@@ -89,7 +89,7 @@ describe('Principal', () => {
     expect(principal.can('record:read')).toBe(false);
   });
 
-  it('confines a site-scoped grant to that site', () => {
+  it('AU-011 confines a site-scoped grant to that site', () => {
     // A receptionist hired at Norte does not work Sur's agenda.
     const principal = new Principal('u1', [
       grant('RECEPCION', SITE_NORTE, ['agenda:write']),
@@ -118,7 +118,7 @@ describe('Principal', () => {
     expect(principal.sitesFor('vitals:write')).toEqual([SITE_NORTE, SITE_SUR]);
   });
 
-  it('does not let one role widen the scope of another', () => {
+  it('AU-011 does not let one role widen the scope of another', () => {
     // Being an administrator everywhere must not turn a doctor's single-site
     // clinical access into global clinical access.
     const principal = new Principal('u1', [

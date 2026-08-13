@@ -96,6 +96,19 @@ segunda vez.
   invalidar toda la familia de sesiones de esa cuenta.
 - **AU-005** — El sistema DEBERÁ permitir matricular un segundo factor TOTP con
   códigos de respaldo, y DEBERÁ cifrar el secreto en la aplicación (ADR-008 §3).
+
+  > **A MEDIAS, y por eso no lo cita ninguna prueba.** El TOTP está: matrícula,
+  > confirmación, secreto cifrado con clave propia, rechazo de un código
+  > repetido y de uno anterior al último consumido —todo ello con prueba en
+  > `totp.service.spec.ts` y `mfa-enrolment.service.spec.ts`—. **Los códigos de
+  > respaldo no existen**: no hay columna en `app_user`, ni método en
+  > `MfaEnrolmentService`, ni forma de usarlos al iniciar sesión.
+  >
+  > No se cita AU-005 en las pruebas del TOTP a propósito. Marcarlo cubierto
+  > pondría A1 en 8/8 y **taparía una función que nadie ha construido**: quien
+  > pierde el teléfono se queda fuera de la clínica sin más salida que un
+  > administrador tocando la base a mano. Un eslabón en verde mintiendo es peor
+  > que uno en rojo, así que se queda en rojo hasta que exista.
 - **AU-010** — El acceso DEBERÁ estar **cerrado por defecto**: una ruta sin
   declaración explícita de permiso se rechaza (REQ-118).
 - **AU-011** — MIENTRAS el usuario no tenga alcance sobre la sede del recurso,

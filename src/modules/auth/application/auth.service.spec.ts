@@ -1,5 +1,13 @@
 import { PinoLogger } from 'nestjs-pino';
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  type Mock,
+  vi,
+} from 'vitest';
 
 import { AuthService } from './auth.service';
 import { InvalidCredentialsError } from '../domain/auth.errors';
@@ -143,12 +151,12 @@ describe('sign-in does not reveal who works here', () => {
     }
   }
 
-  it('answers the same for an unknown email and a wrong password', async () => {
+  it('AU-002 answers the same for an unknown email and a wrong password', async () => {
     expect(await codeFor(null)).toBe('INVALID_CREDENTIALS');
     expect(await codeFor(buildUser())).toBe('INVALID_CREDENTIALS');
   });
 
-  it('answers the same for a LOCKED account', async () => {
+  it('AU-002 answers the same for a LOCKED account', async () => {
     // The attack this closes is not passive. Five wrong guesses lock any
     // account, so answering ACCOUNT_LOCKED let an attacker CREATE the state
     // that confirms the address belongs to somebody who works here — and shut
@@ -161,13 +169,13 @@ describe('sign-in does not reveal who works here', () => {
     expect(await codeFor(locked)).toBe('INVALID_CREDENTIALS');
   });
 
-  it('answers the same for an INACTIVE account', async () => {
+  it('AU-002 answers the same for an INACTIVE account', async () => {
     const inactive = buildUser({ active: false });
 
     expect(await codeFor(inactive, CORRECT)).toBe('INVALID_CREDENTIALS');
   });
 
-  it('spends the same work on every rejection', async () => {
+  it('AU-002 spends the same work on every rejection', async () => {
     // A unified response body is not enough on its own: returning early
     // without hashing left a ~100 ms gap that answers the same question.
     for (const user of [
@@ -185,7 +193,7 @@ describe('sign-in does not reveal who works here', () => {
     }
   });
 
-  it('does NOT verify the password of a locked account', async () => {
+  it('AU-003 does NOT verify the password of a locked account', async () => {
     // Hashing on a locked account would let a flood against one address spend
     // Argon2 CPU at will.
     await codeFor(buildUser({ lockedUntil: new Date(Date.now() + 60_000) }));
@@ -194,7 +202,7 @@ describe('sign-in does not reveal who works here', () => {
     expect(burnTime).toHaveBeenCalled();
   });
 
-  it('records the real reason where only staff can read it', async () => {
+  it('AU-002 records the real reason where only staff can read it', async () => {
     // The person genuinely locked out learns it from an administrator, not
     // from an endpoint that answers anybody who can type their address.
     warn.mockClear();
@@ -218,12 +226,93 @@ describe('sign-in does not reveal who works here', () => {
     expect(clearFailedAttempts).toHaveBeenCalledWith('user-1');
   });
 
-  it('counts a failed attempt only when the password was wrong', async () => {
+  it('AU-003 counts a failed attempt only when the password was wrong', async () => {
     await codeFor(buildUser());
     expect(registerFailure).toHaveBeenCalled();
 
     registerFailure.mockClear();
     await codeFor(buildUser({ lockedUntil: new Date(Date.now() + 60_000) }));
     expect(registerFailure).not.toHaveBeenCalled();
+  });
+
+  /**
+   * AU-003 — «bloquear la cuenta tras un número de intentos fallidos y
+   * registrar el bloqueo».
+   *
+   * NADA DE ESTO ESTABA PROBADO. `applyLock` existía como doble desde el
+   * primer día y ninguna aserción lo miraba, así que el umbral, la espera
+   * creciente, su techo y el registro del bloqueo podían romperse los cuatro
+   * sin que fallara nada. Es la mitad del requisito que de verdad frena un
+   * ataque por fuerza bruta: la otra —no decir que la cuenta está
+   * bloqueada— sí lo estaba, y sin esta no sirve de mucho.
+   *
+   * EL RELOJ SE FIJA. El instante del bloqueo se calcula desde `Date.now()`,
+   * así que sin fijarlo la aserción sería una ventana de tolerancia — y una
+   * ventana es justo lo que deja pasar un error de factor.
+   *
+   * Los números van escritos, no importados: `MAX_FAILED_ATTEMPTS` y las dos
+   * constantes de espera son privadas del servicio, y aunque se exportaran
+   * afirmar `constante === constante` no comprueba nada. Cinco intentos y un
+   * minuto que se dobla hasta quince son una decisión de seguridad; cambiarla
+   * debe costar tocar esta prueba y leer por qué.
+   */
+  describe('AU-003 el bloqueo tras intentos fallidos', () => {
+    const AHORA = new Date('2026-08-13T14:00:00Z');
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(AHORA);
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    /** Segundos de bloqueo aplicados, o `null` si no se bloqueó. */
+    async function lockAfter(failures: number): Promise<number | null> {
+      registerFailure.mockResolvedValue(failures);
+      applyLock.mockClear();
+
+      await codeFor(buildUser());
+
+      const call = applyLock.mock.calls[0];
+      if (!call) return null;
+      return (call[1].getTime() - AHORA.getTime()) / 1000;
+    }
+
+    it('AU-003 no bloquea antes del quinto intento', async () => {
+      expect(await lockAfter(4)).toBeNull();
+    });
+
+    it('AU-003 bloquea un minuto al quinto intento fallido', async () => {
+      expect(await lockAfter(5)).toBe(60);
+    });
+
+    it('AU-003 dobla la espera en cada intento posterior', async () => {
+      // Que crezca es lo que convierte un ataque de minutos en uno de días.
+      // Una espera fija de un minuto permite 1 440 intentos diarios contra
+      // una misma cuenta, que sobre una contraseña débil basta.
+      expect(await lockAfter(6)).toBe(120);
+      expect(await lockAfter(7)).toBe(240);
+      expect(await lockAfter(8)).toBe(480);
+    });
+
+    it('AU-003 topa la espera en quince minutos y no sigue creciendo', async () => {
+      // El techo existe para que un atacante no pueda dejar fuera para
+      // siempre a una persona real: pasadas las horas la cuenta vuelve sola,
+      // sin que nadie tenga que llamar a un administrador de madrugada.
+      expect(await lockAfter(9)).toBe(900);
+      expect(await lockAfter(20)).toBe(900);
+    });
+
+    it('AU-003 deja constancia del bloqueo donde solo lo lee el personal', async () => {
+      warn.mockClear();
+      await lockAfter(5);
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'ACCOUNT_LOCKED', count: 5 }),
+        expect.any(String),
+      );
+    });
   });
 });

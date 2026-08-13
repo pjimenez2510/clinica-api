@@ -138,7 +138,7 @@ describe('every route declares its protection', () => {
     await closeApp(app);
   });
 
-  it('leaves no route without a declaration', () => {
+  it('AU-010 leaves no route without a declaration', () => {
     const undeclared = routes
       .filter((r) => r.marker === 'UNDECLARED')
       .map((r) => r.route);
@@ -149,7 +149,7 @@ describe('every route declares its protection', () => {
     ).toEqual([]);
   });
 
-  it('names a real permission wherever one is declared', () => {
+  it('AU-010 names a real permission wherever one is declared', () => {
     // A typo grants nothing and denies nothing: the route simply becomes
     // unreachable, and nobody can work out why.
     const unknown = routes
@@ -160,7 +160,7 @@ describe('every route declares its protection', () => {
     expect(unknown).toEqual([]);
   });
 
-  it('makes every permission route state how the site is checked', () => {
+  it('AU-011 makes every permission route state how the site is checked', () => {
     // Closing the permission dimension by default and leaving the SITE
     // dimension open would be closing the wrong one: in a multi-site clinic
     // the site is what produces improper access. `global` is a valid answer —
@@ -177,7 +177,7 @@ describe('every route declares its protection', () => {
     ).toEqual([]);
   });
 
-  it('narrows to the site whenever the site is in the URL', () => {
+  it('AU-011 narrows to the site whenever the site is in the URL', () => {
     /**
      * The previous test only asks that SOMETHING be declared, and `global` is
      * an accepted answer — so a route that takes a site id in its path and
@@ -209,7 +209,7 @@ describe('every route declares its protection', () => {
     ).toEqual([]);
   });
 
-  it('keeps the public surface small and deliberate', () => {
+  it('AU-010 keeps the public surface small and deliberate', () => {
     // Anything reachable without a token is attack surface. The list is
     // asserted exactly, so widening it is a decision somebody has to make in a
     // diff rather than something that drifts.
