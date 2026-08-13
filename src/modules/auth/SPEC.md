@@ -92,7 +92,18 @@ concesión aparece en la bitácora.
 ### Cuentas (REQ-152)
 
 - **AU-020** — El sistema DEBERÁ permitir crear una cuenta con nombre, apellido
-  y correo institucional único, con el permiso de administración de usuarios.
+  y correo institucional único, con el permiso de administración de usuarios. SI
+  la cuenta lleva **cédula**, ENTONCES el sistema DEBERÁ validarla —diez
+  dígitos, provincia existente, tercer dígito menor que 6 y dígito verificador—
+  y rechazarla con `INVALID_CEDULA` cuando no lo sea. La ausencia de cédula
+  sigue siendo legítima: recepción y caja no firman nada.
+
+  > **Por qué se añade.** Esa columna es la que el RDACAA exige en cada atención
+  > (REQ-021) y la que `staff` sirve en la ficha profesional, y no la
+  > comprobaba nadie: `PATCH /auth/users/:id {"cedula":"abc"}` respondía 2xx. El
+  > `is_valid_cedula()` de la base colgaba únicamente de `patient_identifier`.
+  > Ahora la valida el value object `Cedula` en el DTO y la respalda
+  > `app_user_cedula_valid` en la base.
 - **AU-021** — CUANDO se cree una cuenta, el sistema NO DEBERÁ fijarle una
   contraseña elegida por el administrador: DEBERÁ emitir una credencial de
   primer acceso que obligue a cambiarla.
@@ -134,6 +145,15 @@ concesión aparece en la bitácora.
   y su descripción, para que quien asigna sepa qué está concediendo. Los
   permisos NO DEBERÁN poder crearse ni borrarse desde la aplicación: son código
   (D-002).
+
+  > **La descripción es la única salvaguarda de una concesión.** Los roles son
+  > dato (AU-030): una clínica inventa «TALENTO HUMANO» y marca las casillas que
+  > reconoce. `user:read` decía «las cuentas, los roles y el catálogo de
+  > permisos» mientras el listado llevaba —y lleva— la **cédula** de toda la
+  > plantilla, así que la descripción la nombra. No se retiró del listado
+  > porque `clinica-web` no pide el detalle de una cuenta: la lee de la fila, y
+  > quitarla haría que la siguiente edición guardara `cedula: null` y borrara la
+  > cédula de cada profesional a quien alguien cambiase el nombre.
 - **AU-034** — CUANDO se conceda a un rol un permiso de historia clínica
   (`record:*`) y ese rol tenga además administración de usuarios, el sistema
   DEBERÁ advertirlo sin impedirlo: es la separación que una auditoría de la
@@ -154,6 +174,7 @@ concesión aparece en la bitácora.
 | `ROLE_IN_USE`              | 409  | Borrar un rol con concesiones vivas (AU-031)                  |
 | `SYSTEM_ROLE_PROTECTED`    | 422  | Borrar un rol del sistema (AU-031)                            |
 | `UNKNOWN_PERMISSION`       | 422  | Conceder un permiso que el código no declara (AU-033)         |
+| `INVALID_CEDULA`           | 422  | Cédula del personal que no supera su dígito verificador (AU-020) |
 
 `CANNOT_GRANT_TO_SELF` **no es una regla nueva de esta entrega**: la garantía
 `user_role_grant_no_self_grant` está en la base desde

@@ -137,14 +137,29 @@ export const PERMISSION_CATALOGUE = [
   // Administering accounts and roles (`auth`, A2). `user:manage` already
   // existed and covers every mutation; `user:read` is new and is what lets a
   // screen LIST the staff, their roles and the permission catalogue without
-  // being able to create an account or move a permission. The list carries the
-  // name and the institutional email of every employee, so it is not open to
-  // anyone who merely holds a clinical permission.
+  // being able to create an account or move a permission.
+  //
+  // ⚠️ THE DESCRIPTION NAMES THE CEDULA, and it has to. This description used
+  // to say «las cuentas, los roles y el catálogo de permisos», and three
+  // places in the system repeated that the list carries «el nombre y el correo
+  // institucional» — while `accountSchema` has carried `cedula` all along and
+  // the LIST route serves it. ROLES ARE DATA: a clinic that invents a
+  // «TALENTO HUMANO» role and ticks this box gets the national ID of every
+  // employee, and it deserves to know that BEFORE ticking it, not after.
+  //
+  // The field is NOT dropped from the listing instead, and that is a decision
+  // rather than an omission: `clinica-web` has no detail request at all —
+  // `GET /auth/users/{id}` is deliberately unused — so the edit form reads the
+  // cedula from the list row, and a listing without it would send `cedula:
+  // null` back on the next save and ERASE the cedula of every practitioner
+  // somebody renamed. Making the grant informed is the fix that does not trade
+  // one leak for a data loss. Compare `staff:read`, whose read side is narrow
+  // for the same reason stated the other way round.
   {
     code: 'user:read',
     resource: 'admin',
     description:
-      'Consultar las cuentas, los roles y el catálogo de permisos del sistema',
+      'Consultar las cuentas del personal —incluida su cédula—, los roles y el catálogo de permisos',
   },
   {
     code: 'user:manage',

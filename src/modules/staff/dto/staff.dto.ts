@@ -62,12 +62,14 @@ export class ListScheduleRulesQueryDto extends createZodDto(
 // --- The practitioner (ST-001..ST-003, ST-006, ST-010) ---------------------
 
 /**
- * ST-001. THE CHECK DIGIT IS CHECKED HERE, and it has to be: unlike `patient`,
- * `app_user.cedula` carries no `is_valid_cedula()` CHECK, so this boundary is
- * the only thing between a typo and a RDACAA row the Ministry rejects months
+ * ST-001. THE CHECK DIGIT IS CHECKED HERE, so a typo answers with a message
+ * pointing at the field instead of a RDACAA row the Ministry rejects months
  * later. The algorithm is the `Cedula` value object's — the same one the
- * patient register uses — so the two cannot disagree about what a valid
- * document is.
+ * patient register and `auth` use — so the three cannot disagree about what a
+ * valid document is.
+ *
+ * The base backs it since `app_user_cedula_valid`; `auth` was the door that
+ * had neither, and now both write through the same rule.
  *
  * An empty string is how a browser form sends a cleared field; it is read as
  * «no cedula» and stored NULL.

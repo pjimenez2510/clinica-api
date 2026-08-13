@@ -56,6 +56,8 @@ interface Problem {
 interface AccountBody {
   id: string;
   email: string;
+  /** AU-020. Present in the LIST too, which is why `user:read` says so. */
+  cedula: string | null;
   active: boolean;
   credentialPending: boolean;
 }
@@ -336,6 +338,83 @@ describe('la administración de cuentas y roles por HTTP', () => {
 
       expect(ids(hidden.body)).not.toContain(created.id);
       expect(ids(shown.body)).toContain(created.id);
+    });
+
+    it('AU-020 rechaza al crear una cédula que no supera el dígito verificador', async () => {
+      // Hasta esta corrección el DTO sólo limitaba la longitud, y su comentario
+      // decía que del dígito verificador se encargaban el value object `Cedula`
+      // y el `is_valid_cedula()` de la base. Las dos afirmaciones eran falsas:
+      // la función colgaba únicamente de `patient_identifier` y nadie importaba
+      // `Cedula` bajo `modules/auth/`.
+      const response = await post('/users', {
+        email: nextEmail(),
+        firstName: 'Ana',
+        lastName: 'Villacís',
+        // El mismo número con el dígito verificador cambiado en uno.
+        cedula: '1710034066',
+      }).expect(422);
+
+      const problem = response.body as Problem;
+      expect(problem.errors?.[0]?.field).toBe('cedula');
+      expect(await prisma.user.count({ where: { cedula: '1710034066' } })).toBe(0); // prettier-ignore
+    });
+
+    it('AU-020 rechaza al editar una cédula que no es una cédula', async () => {
+      // `PATCH /auth/users/:id {"cedula":"abc"}` respondía 2xx y guardaba
+      // «abc» en la columna que el RDACAA exige en cada atención (REQ-021).
+      const created = await createAccount();
+
+      const response = await patch(`/users/${created.id}`, {
+        cedula: 'abc',
+      }).expect(422);
+
+      expect((response.body as Problem).errors?.[0]?.field).toBe('cedula');
+      const after = await prisma.user.findUniqueOrThrow({
+        where: { id: created.id },
+        select: { cedula: true },
+      });
+      expect(after.cedula).toBeNull();
+    });
+
+    it('AU-020 la BASE también rechaza una cédula imposible en app_user', async () => {
+      // Un `psql` a las dos de la mañana o una importación de datos esquivan el
+      // DTO igual que lo esquivaba el listado. `app_user_cedula_valid` es lo
+      // que queda, con el mismo algoritmo que el value object.
+      // `app_user.id` y `updated_at` los pone Prisma, no la base: por eso
+      // viajan explícitos aquí, que es exactamente lo que haría la
+      // importación de datos contra la que protege la restricción.
+      await expect(
+        prisma.$executeRaw`
+          INSERT INTO app_user (id, email, password_hash, first_name, last_name, cedula, updated_at)
+          VALUES (gen_random_uuid(), 'cruda@clinica.ec', 'x', 'Ana', 'Villacís', '1710034066', now())
+        `,
+      ).rejects.toThrowError(/app_user_cedula_valid/);
+    });
+
+    it('AU-020 la misma restricción deja pasar NULL: recepción no firma nada', async () => {
+      // NULL es el caso mayoritario y sigue siendo legítimo. Si la restricción
+      // lo rechazara, la clínica no podría dar de alta a nadie que no sea
+      // profesional.
+      await expect(
+        prisma.$executeRaw`
+          INSERT INTO app_user (id, email, password_hash, first_name, last_name, cedula, updated_at)
+          VALUES (gen_random_uuid(), 'sin.cedula@clinica.ec', 'x', 'Ana', 'Villacís', NULL, now())
+        `,
+      ).resolves.toBe(1);
+    });
+
+    it('AU-025 guarda la cédula válida y la deja vacía cuando se borra', async () => {
+      const created = await createAccount({ cedula: '1713175071' });
+      expect(created.cedula).toBe('1713175071');
+
+      // La cadena vacía es como un formulario manda un campo borrado.
+      await patch(`/users/${created.id}`, { cedula: '' }).expect(200);
+
+      const after = await prisma.user.findUniqueOrThrow({
+        where: { id: created.id },
+        select: { cedula: true },
+      });
+      expect(after.cedula).toBeNull();
     });
 
     it('AU-020 encuentra una cuenta por nombre o por correo', async () => {
@@ -974,6 +1053,34 @@ describe('la administración de cuentas y roles por HTTP', () => {
 
       const response = await get('/users', recepcion).expect(403);
       expect((response.body as Problem).code).toBe('PERMISSION_DENIED');
+    });
+
+    it('AU-033 el listado bajo user:read lleva la cédula, y el permiso lo dice', async () => {
+      /**
+       * Los roles son DATO (AU-030): una clínica inventa «TALENTO HUMANO»,
+       * marca las casillas que reconoce y se queda con el resultado. Lo único
+       * que lee antes de marcar es la descripción del permiso, así que una que
+       * omita el documento de identidad de toda la plantilla no es un problema
+       * de redacción: es una concesión desinformada.
+       *
+       * Las dos mitades se afirman JUNTAS a propósito. Quien quite `cedula` del
+       * listado tendrá que suavizar la frase, y quien suavice la frase tendrá
+       * que quitar el campo primero.
+       */
+      await createAccount({ cedula: '1713175071' });
+
+      const listed = await get('/users').expect(200);
+      const carries = (listed.body as { items: AccountBody[] }).items.some(
+        (item) => item.cedula === '1713175071',
+      );
+
+      const catalogue = await get('/permissions').expect(200);
+      const description = (
+        catalogue.body as { items: { code: string; description: string }[] }
+      ).items.find((item) => item.code === 'user:read')?.description;
+
+      expect(carries).toBe(true);
+      expect(description).toMatch(/cédula/i);
     });
 
     it('AU-030 rechaza a quien no tiene user:manage al tocar los roles', async () => {

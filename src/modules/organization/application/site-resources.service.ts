@@ -42,6 +42,32 @@ export class SiteResourcesService {
     private readonly audit: AccessAuditRecorder,
   ) {}
 
+  /**
+   * The site a room belongs to, so the caller's scope can be checked against
+   * it before anything is written (ADR-007).
+   *
+   * IT IS A READ AND NOT A DECISION: the service says which site owns the row,
+   * and the controller — where every other authorisation decision in this
+   * codebase is taken — decides whether the caller may act there. A missing
+   * row answers 404 here rather than 403, because that is what it already
+   * answered before any scope check existed and «no existe» is the truthful
+   * answer to whoever may act on the site.
+   */
+  async siteOfRoom(id: string): Promise<string> {
+    const siteId = await this.repository.siteOfRoom(id);
+    if (siteId === null) throw new SiteRoomNotFoundError();
+
+    return siteId;
+  }
+
+  /** See `siteOfRoom`. */
+  async siteOfEmissionPoint(id: string): Promise<string> {
+    const siteId = await this.repository.siteOfEmissionPoint(id);
+    if (siteId === null) throw new EmissionPointNotFoundError();
+
+    return siteId;
+  }
+
   /** OR-022: deactivated rooms are not offered for new appointments. */
   async listRooms(
     siteId: string,

@@ -54,6 +54,17 @@ export interface SiteInput {
   phone: string | null;
 }
 
+/**
+ * The sites a caller may see, already resolved from their grants.
+ *
+ * `'all'` and not an empty array for "no filter": an empty array is a real and
+ * different answer — the permission is held at no site at all — and collapsing
+ * the two is how a denial turns into a listing of the whole clinic. Same shape
+ * and same reasoning as the agenda's `SiteScopeFilter`; each module states it
+ * for itself rather than importing another module's type.
+ */
+export type SiteScopeFilter = 'all' | readonly string[];
+
 export interface SitePatch {
   name?: string;
   ruc?: string | null;
@@ -83,8 +94,21 @@ export interface OrganizationRepository {
     input: EstablishmentInput,
   ): Promise<EstablishmentView | null>;
 
-  /** OR-007: `includeInactive` decides whether deactivated sites travel. */
-  listSites(includeInactive: boolean): Promise<readonly SiteView[]>;
+  /**
+   * OR-007: `includeInactive` decides whether deactivated sites travel.
+   *
+   * `scope` is the SITE dimension of ADR-007, and it is a required argument on
+   * purpose. The listing has no site in its URL, so the guard cannot narrow
+   * it; leaving the narrowing optional is how `GET /organization/sites` ended
+   * up serving the name, MSP code, RUC, address and phone of every site of the
+   * clinic to a caller scoped to one city — while `GET /sites/:id` correctly
+   * refused the very same row. `'all'` is the answer for a clinic-wide grant
+   * and has to be spelled out.
+   */
+  listSites(
+    includeInactive: boolean,
+    scope: SiteScopeFilter,
+  ): Promise<readonly SiteView[]>;
 
   findSite(id: string): Promise<SiteView | null>;
 

@@ -72,8 +72,13 @@ import {
  * administrator role; every mutation here reuses it rather than inventing a
  * second administration permission for the same screen. `user:read` is new and
  * splits READING the staff list, the roles and the permission catalogue from
- * CHANGING them — the list carries the name and the institutional email of
- * every employee, so it is not something a clinical permission should imply.
+ * CHANGING them — the list carries the name, the institutional email AND THE
+ * CEDULA of every employee, so it is not something a clinical permission
+ * should imply. That last item used to be missing from this sentence, from the
+ * catalogue's description and from the screen that grants it, while
+ * `accountSchema` carried it all along; the permission catalogue now says so
+ * out loud, because roles are data and whoever ticks the box is entitled to
+ * know what they are handing over.
  *
  * THE SITE SCOPE IS `global` ON EVERY ROUTE, and that is the truth rather than
  * a shrug. An account is not a resource OF a site: the same person may be

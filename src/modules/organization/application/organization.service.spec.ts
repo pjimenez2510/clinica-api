@@ -12,6 +12,7 @@ import type {
   OrganizationRepository,
   SiteInput,
   SitePatch,
+  SiteScopeFilter,
   SiteView,
 } from '../domain/organization.repository';
 import { OrganizationService, type Requester } from './organization.service';
@@ -94,8 +95,8 @@ function makeDouble(answers: Answers): {
           : null,
       );
     },
-    listSites: (includeInactive: boolean) => {
-      note('listSites', includeInactive);
+    listSites: (includeInactive: boolean, scope: SiteScopeFilter) => {
+      note('listSites', includeInactive, scope);
       return Promise.resolve([SITE]);
     },
     findSite: (id: string) => {
@@ -275,12 +276,12 @@ describe('OrganizationService', () => {
     it('OR-007 pide al repositorio las desactivadas solo cuando se le indica', async () => {
       const { service, calls } = build();
 
-      await service.listSites(false);
-      await service.listSites(true);
+      await service.listSites(false, 'all');
+      await service.listSites(true, 'all');
 
       expect(calls).toEqual([
-        { method: 'listSites', args: [false] },
-        { method: 'listSites', args: [true] },
+        { method: 'listSites', args: [false, 'all'] },
+        { method: 'listSites', args: [true, 'all'] },
       ]);
     });
 

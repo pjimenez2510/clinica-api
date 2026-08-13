@@ -139,7 +139,17 @@ _Numeración conservada de `CF-040`..`CF-046` al mudarse desde `configuration`
   como exclusión (AG-106).
 - **ST-043** — CUANDO un cambio de horario deje citas ya reservadas fuera del
   nuevo horario, el sistema NO DEBERÁ anularlas ni moverlas solo: DEBERÁ
-  listarlas como conflictos para gestión humana.
+  listarlas como conflictos para gestión humana. CUANDO el cambio mueva la
+  regla a otra sede, la lista DEBERÁ incluir las citas de **la sede que la
+  regla deja**, no solo las de la nueva.
+
+  > **Por qué se dice explícitamente.** Los conflictos se calculaban contra la
+  > sede que la regla tiene DESPUÉS del cambio, así que
+  > `PATCH /staff/schedule-rules/{id} {"siteId": …}` respondía `200
+  > {conflicts: []}` mientras las citas de la sede original se quedaban sin
+  > ninguna regla que las cubriera. Un sobrecupo (`blocks_calendar = false`) es
+  > una cita con un paciente que espera y también cuenta; un bloqueo, no —eso
+  > lo distingue `kind`—.
 - **ST-044** — Toda mutación de horario DEBERÁ quedar en la bitácora con autor,
   instante y regla anterior.
 - **ST-045** — El sistema DEBERÁ validar que la hora de fin sea posterior a la

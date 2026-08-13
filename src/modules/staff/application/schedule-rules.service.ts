@@ -131,7 +131,22 @@ export class ScheduleRulesService {
     if (!updated) throw new ScheduleRuleNotFoundError();
 
     await this.trail.record('UPDATE', updated.id, requester);
-    return { rule: updated, conflicts: await this.conflictsAfter(updated) };
+    return {
+      rule: updated,
+      /**
+       * BOTH SITES WHEN THE RULE MOVED, and this is the whole reason the
+       * parameter exists. Asking only about the site the rule now lives at
+       * answered `{conflicts: []}` to a change that had just left every
+       * appointment at the ORIGINAL site covered by no rule at all — the exact
+       * situation ST-043 exists to report, reported as "nothing happened".
+       */
+      conflicts: await this.conflictsAfter(
+        updated,
+        current.siteId === updated.siteId
+          ? [updated.siteId]
+          : [current.siteId, updated.siteId],
+      ),
+    };
   }
 
   /**
@@ -169,18 +184,34 @@ export class ScheduleRulesService {
    * Only from today forward: ST-041 forbids a change from reaching days
    * already past, and an appointment already attended is history, not a
    * conflict somebody can still phone about.
+   *
+   * `siteIds` is a LIST and not `rule.siteId` because a rule can MOVE (ST-046):
+   * after `PATCH {"siteId": …}` the appointments that need looking at are the
+   * ones at the site the rule left, which the rule no longer names. Passing
+   * both is what makes the answer about the change rather than about the row.
+   * `scheduleConflicts` already copes with a mixed-site list — `isCovered`
+   * keys on `rule.siteId === entry.siteId`.
    */
   private async conflictsAfter(
     rule: ScheduleRuleView,
+    siteIds: readonly string[] = [rule.siteId],
     from: ClinicalDate = clinicalDateOf(new Date()),
   ): Promise<readonly ScheduleConflict[]> {
     const [booked, inForce] = await Promise.all([
-      this.rules.bookedFrom(rule.practitionerId, rule.siteId, from),
+      Promise.all(
+        siteIds.map((siteId) =>
+          this.rules.bookedFrom(rule.practitionerId, siteId, from),
+        ),
+      ),
       this.rules.listByPractitioner(rule.practitionerId, false),
     ]);
 
     return scheduleConflicts(
-      booked,
+      // Chronological across the sites, so the screen reads as one list of
+      // appointments to phone about and not as one list per site.
+      booked
+        .flat()
+        .sort((left, right) => left.startsAt.getTime() - right.startsAt.getTime()), // prettier-ignore
       inForce.map((row) => ({
         siteId: row.siteId,
         weekday: row.weekday,

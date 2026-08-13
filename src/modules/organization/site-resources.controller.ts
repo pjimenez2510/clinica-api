@@ -22,6 +22,7 @@ import {
 import type { Request } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import { assertSiteInScope } from '../../shared/authorisation/site-scope';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import type { Requester } from './application/organization.service';
@@ -50,15 +51,21 @@ import {
  * services: `SiteResourcesService` owns what hangs off a site, and a single
  * controller with fourteen routes would hide which half a change belongs to.
  *
- * THE SITE SCOPE, and the one place it is honestly weaker. Creating and
- * listing name the site in the URL, so they are `param:siteId` and the guard
- * enforces the caller's scope. Editing and deleting name the ROOM or the
- * POINT, whose site the guard cannot know: guards run before pipes and before
- * any database read, so there is nothing to check against. They are declared
- * `global` — which is the truth, not a shrug — and what carries the weight
- * there is `site:manage`, an administration permission that DEFAULT_ROLES
- * grants clinic-wide and to one role only. Narrowing it further would mean
- * putting the site back in the path, which the SPEC's URL shape does not.
+ * THE SITE SCOPE. Creating and listing name the site in the URL, so they are
+ * `param:siteId` and the GUARD enforces the caller's scope. Editing and
+ * deleting name the ROOM or the POINT, whose site the guard cannot know:
+ * guards run before pipes and before any database read. Those declare
+ * `'query'` and the HANDLER narrows, by loading the row and asserting the
+ * caller may act on its site.
+ *
+ * ⚠️ THEY USED TO DECLARE `global`, justified as «an administration permission
+ * DEFAULT_ROLES grants clinic-wide and to one role only». That justification
+ * did not survive the same delivery that wrote it: `ReplaceGrantsDto` exists
+ * to grant a role PER SITE (AU-032), so a clinic scoping «Administrador de
+ * sede» to one city got a role that could rename and delete another city's
+ * consulting rooms — while `POST /sites/:siteId/rooms`, on the very same
+ * resource, refused. Roles are data; a scope check must not depend on how the
+ * product happens to seed them.
  */
 @ApiTags('organization')
 @Controller({ path: 'organization', version: '1' })
@@ -99,7 +106,7 @@ export class SiteResourcesController {
 
   /** OR-022 (deactivate), OR-026. */
   @Patch('rooms/:id')
-  @RequirePermission('site:manage', 'global')
+  @RequirePermission('site:manage', 'query')
   @ApiOperation({ summary: 'Renombrar o desactivar un consultorio' })
   @ApiOkResponse({ type: RoomDto })
   async updateRoom(
@@ -107,6 +114,7 @@ export class SiteResourcesController {
     @Body() dto: UpdateRoomDto,
     @Req() req: Request,
   ): Promise<RoomResponse> {
+    await this.assertRoomInScope(id);
     return this.resources.updateRoom(
       id,
       { name: dto.name, active: dto.active },
@@ -116,7 +124,7 @@ export class SiteResourcesController {
 
   /** OR-022: refused with `SITE_ROOM_IN_USE`, offering deactivation instead. */
   @Delete('rooms/:id')
-  @RequirePermission('site:manage', 'global')
+  @RequirePermission('site:manage', 'query')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Borrar un consultorio sin citas' })
   @ApiNoContentResponse()
@@ -124,6 +132,7 @@ export class SiteResourcesController {
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: Request,
   ): Promise<void> {
+    await this.assertRoomInScope(id);
     await this.resources.deleteRoom(id, this.requester(req));
   }
 
@@ -165,7 +174,7 @@ export class SiteResourcesController {
 
   /** OR-026. The code itself is not editable — see the DTO for why. */
   @Patch('emission-points/:id')
-  @RequirePermission('site:manage', 'global')
+  @RequirePermission('site:manage', 'query')
   @ApiOperation({ summary: 'Editar o desactivar un punto de emisión' })
   @ApiOkResponse({ type: EmissionPointDto })
   async updateEmissionPoint(
@@ -173,6 +182,7 @@ export class SiteResourcesController {
     @Body() dto: UpdateEmissionPointDto,
     @Req() req: Request,
   ): Promise<EmissionPointResponse> {
+    await this.assertEmissionPointInScope(id);
     return this.resources.updateEmissionPoint(
       id,
       { description: dto.description, active: dto.active },
@@ -182,7 +192,7 @@ export class SiteResourcesController {
 
   /** OR-026. */
   @Delete('emission-points/:id')
-  @RequirePermission('site:manage', 'global')
+  @RequirePermission('site:manage', 'query')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Borrar un punto de emisión' })
   @ApiNoContentResponse()
@@ -190,7 +200,34 @@ export class SiteResourcesController {
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: Request,
   ): Promise<void> {
+    await this.assertEmissionPointInScope(id);
     await this.resources.deleteEmissionPoint(id, this.requester(req));
+  }
+
+  /**
+   * ADR-007. The narrowing the `'query'` declaration promises, for a route
+   * whose URL names the resource and not its site.
+   *
+   * BEFORE the mutation, always: `updateRoom` returns the row it wrote, so
+   * checking afterwards would mean the write had already happened. A room
+   * cannot move between sites — the adapter documents why the column is not
+   * patchable — so nothing changes underneath between this read and the write.
+   */
+  private async assertRoomInScope(roomId: string): Promise<void> {
+    assertSiteInScope(
+      this.currentUser.requirePrincipal(),
+      'site:manage',
+      await this.resources.siteOfRoom(roomId),
+    );
+  }
+
+  /** See `assertRoomInScope`. */
+  private async assertEmissionPointInScope(pointId: string): Promise<void> {
+    assertSiteInScope(
+      this.currentUser.requirePrincipal(),
+      'site:manage',
+      await this.resources.siteOfEmissionPoint(pointId),
+    );
   }
 
   /** Who is asking, for the trail (OR-026). */

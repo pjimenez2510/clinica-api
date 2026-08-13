@@ -1,6 +1,8 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
+import { Cedula } from '../../../shared/domain/value-objects/cedula.vo';
+
 /**
  * The administration contract, requests and responses (A2).
  *
@@ -33,15 +35,31 @@ const nameSchema = (what: string) =>
     .max(120, `El ${what} no puede superar 120 caracteres`);
 
 /**
- * AU-020. The DTO caps shape and length; the check digit of a cedula is the
- * `Cedula` value object's business and the database's `is_valid_cedula()`.
- * Splitting the rule in two would let the two halves disagree.
+ * AU-020. THE CHECK DIGIT IS CHECKED HERE, with the same `Cedula` value object
+ * `staff` and the patient register use, so the three cannot disagree about
+ * what a valid document is.
  *
- * An empty string is how a browser form sends a cleared field; the service
- * reads it as «sin cédula» and stores NULL. Most accounts have none —
- * reception and billing staff are not practitioners.
+ * ⚠️ THIS USED TO BE `z.string().trim().max(10)` and a comment claiming the
+ * `Cedula` value object and the database's `is_valid_cedula()` covered it.
+ * BOTH CLAIMS WERE FALSE: `is_valid_cedula()` was attached to
+ * `patient_identifier` and to nothing else, and nothing under `modules/auth/`
+ * ever imported `Cedula`. `PATCH /auth/users/:id {"cedula":"abc"}` answered
+ * 2xx, and this column is what `staff` serves and what RDACAA demands on every
+ * row (REQ-021), so the typo would have surfaced months later as a report the
+ * Ministry rejects. The base now carries `app_user_cedula_valid` as well; this
+ * boundary is what turns its refusal into a message pointing at a field.
+ *
+ * An empty string is how a browser form sends a cleared field; it is read as
+ * «sin cédula» and stored NULL. Most accounts have none — reception and
+ * billing staff are not practitioners.
  */
-const cedulaSchema = z.string().trim().max(10, 'La cédula son diez dígitos');
+const cedulaSchema = z
+  .string({ error: 'Indique la cédula' })
+  .trim()
+  .refine((value) => value === '' || Cedula.isValid(value), {
+    message: 'La cédula no es válida: revise los diez dígitos',
+  })
+  .transform((value) => (value === '' ? null : value));
 
 export const listAccountsQuerySchema = z.object({
   includeInactive: explicitFlag,

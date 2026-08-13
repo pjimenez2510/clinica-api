@@ -188,11 +188,18 @@ export class PrismaScheduleRuleRepository implements ScheduleRuleRepository {
   }
 
   /**
-   * ST-043. `released_at IS NULL` and `blocks_calendar` are the same predicate
-   * the agenda's exclusion constraints use: a cancelled appointment stopped
-   * occupying the calendar, so it is not something a schedule change strands.
-   * Blocks are excluded too — a holiday block outside the new hours is exactly
-   * what a holiday block is for.
+   * ST-043. `kind = 'APPOINTMENT'` and `released_at IS NULL` are what the two
+   * exclusions in the comment this replaces were actually about: a cancelled
+   * appointment stopped occupying the calendar, and a holiday block outside
+   * the new hours is exactly what a holiday block is for.
+   *
+   * ⚠️ `blocks_calendar` IS DELIBERATELY NOT FILTERED, and it used to be. That
+   * column is `false` for an OVERBOOKING — an urgent case squeezed in on
+   * purpose — which is a real appointment with a real patient waiting. Copying
+   * the agenda's exclusion predicate wholesale hid exactly the people somebody
+   * has to phone. The agenda's constraint ignores those rows because it is
+   * arbitrating who occupies a slot; this query is asking who is left outside
+   * the hours, and that is a different question.
    *
    * The lower bound is resolved in `America/Guayaquil`, never in the session's
    * zone: `>= today at 00:00` computed on a UTC host would drop the whole
@@ -209,7 +216,6 @@ export class PrismaScheduleRuleRepository implements ScheduleRuleRepository {
         siteId,
         kind: 'APPOINTMENT',
         releasedAt: null,
-        blocksCalendar: true,
         startsAt: { gte: clinicalDayBounds(from).startsAt },
       },
       select: { id: true, siteId: true, startsAt: true, endsAt: true },

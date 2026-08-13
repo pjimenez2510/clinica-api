@@ -45,4 +45,16 @@ registerConstraintMeanings({
     message:
       'El código va en mayúsculas, sin espacios ni tildes, y tiene entre 3 y 48 caracteres. Por ejemplo: AUDITOR_EXTERNO',
   },
+  /**
+   * AU-020. The cedula of an EMPLOYEE, checked by the base with the same
+   * algorithm the `Cedula` value object runs at the DTO boundary. This column
+   * is what RDACAA demands on every attention (REQ-021), so a typo here
+   * surfaces months later as a report the Ministry rejects — and until the
+   * `app_user_cedula_valid` migration nothing checked it at all.
+   */
+  app_user_cedula_valid: {
+    code: 'INVALID_CEDULA',
+    field: 'cedula',
+    message: 'La cédula no es válida: revise los diez dígitos',
+  },
 });

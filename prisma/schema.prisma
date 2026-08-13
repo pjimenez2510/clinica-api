@@ -43,6 +43,11 @@ model User {
   lastName  String @map("last_name") @db.VarChar(120)
 
   /// Practitioner's cedula. Required by RDACAA reporting and for signing.
+  ///
+  /// `app_user_cedula_valid` (manual migration) refuses anything that is not a
+  /// real cedula: ten digits, an existing province, third digit below 6 and a
+  /// matching check digit. NULL stays legitimate and is the majority case —
+  /// reception and billing staff have an account and no clinical profile.
   cedula String? @unique @db.VarChar(10)
 
   /// ACESS registration of the health professional. Without it they cannot

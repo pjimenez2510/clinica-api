@@ -40,6 +40,22 @@ export interface SiteResourcesRepository {
    */
   siteExists(siteId: string): Promise<boolean>;
 
+  /**
+   * Which site a room or a point of emission belongs to; `null` when there is
+   * no such row.
+   *
+   * WHY THIS EXISTS. `PATCH`/`DELETE` name the ROOM, not the site, so the
+   * guard has nothing to check — guards run before pipes and before any read.
+   * Declaring those routes `global` was the consequence, and the consequence
+   * of THAT was a clinic scoping «Administrador de sede» to one city (which
+   * `ReplaceGrantsDto` exists to allow) getting a role that could rename and
+   * delete another city's consulting rooms. The site cannot be known without
+   * reading the row, so reading the row is what the handler does.
+   */
+  siteOfRoom(id: string): Promise<string | null>;
+
+  siteOfEmissionPoint(id: string): Promise<string | null>;
+
   /** OR-022: deactivated rooms travel only when explicitly asked for. */
   listRooms(
     siteId: string,

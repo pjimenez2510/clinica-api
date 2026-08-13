@@ -16,9 +16,15 @@ import { PrismaClient } from '@prisma/client';
  * Each specialty gets two default service types (SP-020): «Primera vez» at
  * 30 minutes and «Control» at 20 — defaults, editable from the screen.
  *
- * Chain: run AFTER `pnpm db:seed` (users) and, if you want the seeded
- * practitioners to receive a primary specialty, after `pnpm db:seed:agenda`
- * (practitioner profiles). Missing practitioners are skipped, not an error.
+ * WHAT IT NO LONGER DOES: assign a primary specialty to the seeded
+ * practitioners. `practitioner_specialty` is a table of the STAFF module since
+ * the 13-08-2026 move (ST-008), and a seed writing another module's table is
+ * the same boundary violation `arch:check` refuses in the source. It lives in
+ * `seed-staff.mts` now, together with the `duration_exception` of ST-009 that
+ * nobody was writing at all.
+ *
+ * Chain: run AFTER `pnpm db:seed` (users). Then `pnpm db:seed:staff` if you
+ * want the seeded practitioners to have a specialty and a duration exception.
  */
 
 interface SeedSpecialty {
@@ -62,19 +68,9 @@ const DEFAULT_SERVICE_TYPES = [
   { name: 'Control', durationMinutes: 20 },
 ] as const;
 
-/** Primary specialty for the practitioners `seed-agenda.mts` creates. */
-const PRACTITIONER_PRIMARIES: readonly {
-  email: string;
-  specialtyCode: string;
-}[] = [
-  { email: 'medico@clinica.ec', specialtyCode: 'cardiologia' },
-  { email: 'admin@clinica.ec', specialtyCode: 'medicina-general' },
-];
-
 export async function seedSpecialties(prisma: PrismaClient): Promise<{
   specialtiesCreated: number;
   serviceTypesCreated: number;
-  practitionersAssigned: number;
 }> {
   let specialtiesCreated = 0;
   let serviceTypesCreated = 0;
@@ -113,45 +109,15 @@ export async function seedSpecialties(prisma: PrismaClient): Promise<{
     }
   }
 
-  // --- Primary specialty for the seeded practitioners (SP-005, SP-008) ----
-  // Only when the practitioner exists AND has no specialties yet: an
-  // assignment somebody edited from the screen is configuration, not seed
-  // material.
-  let practitionersAssigned = 0;
-  for (const { email, specialtyCode } of PRACTITIONER_PRIMARIES) {
-    const user = await prisma.user.findUnique({
-      where: { email },
-      select: { practitioner: { select: { id: true } } },
-    });
-    const practitionerId = user?.practitioner?.id;
-    if (!practitionerId) continue;
-
-    const already = await prisma.practitionerSpecialty.count({
-      where: { practitionerId },
-    });
-    if (already > 0) continue;
-
-    const specialty = await prisma.specialty.findFirst({
-      where: { code: { equals: specialtyCode, mode: 'insensitive' } },
-      select: { id: true },
-    });
-    if (!specialty) continue;
-
-    await prisma.practitionerSpecialty.create({
-      data: { practitionerId, specialtyId: specialty.id, isPrimary: true },
-    });
-    practitionersAssigned += 1;
-  }
-
-  return { specialtiesCreated, serviceTypesCreated, practitionersAssigned };
+  return { specialtiesCreated, serviceTypesCreated };
 }
 
 /** Entry point for `pnpm db:seed:specialties`. */
 async function main(): Promise<void> {
   if (process.env.NODE_ENV === 'production') {
-    // The catalogue itself is legitimate everywhere, but the practitioner
-    // assignments reference development accounts; production gets its
-    // catalogue through the administration screen or a deliberate migration.
+    // The catalogue itself would be legitimate everywhere, but a production
+    // clinic gets it through the administration screen or a deliberate
+    // migration, not through a script anybody can run by accident.
     throw new Error('This seed is for development only.');
   }
 
@@ -164,8 +130,7 @@ async function main(): Promise<void> {
     console.log(
       `Especialidades: ${result.specialtiesCreated} especialidades y ` +
         `${result.serviceTypesCreated} tipos de atención creados ` +
-        `(${SPECIALTIES.length} especialidades en total), ` +
-        `${result.practitionersAssigned} profesionales con especialidad principal.`,
+        `(${SPECIALTIES.length} especialidades en total).`,
     );
   } finally {
     await prisma.$disconnect();

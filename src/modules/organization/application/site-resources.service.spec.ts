@@ -42,6 +42,9 @@ const EMISSION_POINT: EmissionPointView = {
 
 interface Answers {
   siteExists: boolean;
+  /** `null` = there is no such row, which is the 404 branch. */
+  siteOfRoom: string | null;
+  siteOfEmissionPoint: string | null;
   updateRoom: SiteRoomView | null;
   deleteRoom: boolean;
   updateEmissionPoint: EmissionPointView | null;
@@ -66,6 +69,14 @@ function makeDouble(answers: Answers): {
     siteExists: (siteId) => {
       note('siteExists', siteId);
       return Promise.resolve(answers.siteExists);
+    },
+    siteOfRoom: (id) => {
+      note('siteOfRoom', id);
+      return Promise.resolve(answers.siteOfRoom);
+    },
+    siteOfEmissionPoint: (id) => {
+      note('siteOfEmissionPoint', id);
+      return Promise.resolve(answers.siteOfEmissionPoint);
     },
     listRooms: (siteId, includeInactive) => {
       note('listRooms', siteId, includeInactive);
@@ -123,11 +134,38 @@ describe('SiteResourcesService', () => {
     entries = [];
     answers = {
       siteExists: true,
+      siteOfRoom: ROOM.siteId,
+      siteOfEmissionPoint: EMISSION_POINT.siteId,
       updateRoom: ROOM,
       deleteRoom: true,
       updateEmissionPoint: EMISSION_POINT,
       deleteEmissionPoint: true,
     };
+  });
+
+  describe('la sede dueña del recurso (ADR-007)', () => {
+    it('OR-026 dice de qué sede es el consultorio, para comprobar el alcance', async () => {
+      // Lo que hace posible el control de sede en `PATCH`/`DELETE
+      // /rooms/:id`: la URL nombra el consultorio y el guard no puede saber su
+      // sede, porque corre antes de cualquier lectura.
+      const { service } = build();
+
+      await expect(service.siteOfRoom('room-1')).resolves.toBe('site-1');
+      await expect(service.siteOfEmissionPoint('point-1')).resolves.toBe('site-1'); // prettier-ignore
+    });
+
+    it('OR-026 un recurso inexistente responde 404 y no un 403 disfrazado', async () => {
+      answers.siteOfRoom = null;
+      answers.siteOfEmissionPoint = null;
+      const { service } = build();
+
+      await expect(service.siteOfRoom('room-1')).rejects.toThrow(
+        SiteRoomNotFoundError,
+      );
+      await expect(service.siteOfEmissionPoint('point-1')).rejects.toThrow(
+        EmissionPointNotFoundError,
+      );
+    });
   });
 
   describe('los consultorios', () => {

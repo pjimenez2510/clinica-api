@@ -101,10 +101,19 @@ describe('la organización por HTTP', () => {
     await app?.close();
   });
 
+  /**
+   * `siteId` is what ADR-007's site dimension looks like from outside.
+   *
+   * `null` — the default — is the clinic-wide grant a director gets. A NAMED
+   * site is what `ReplaceGrantsDto` exists to allow (AU-032): «Administrador
+   * de sede», scoped to one city. The two used to be indistinguishable to
+   * `PATCH /organization/rooms/:id`, which is the defect the tests below fix.
+   */
   async function signIn(
     email: string,
     roleCode: 'ADMIN' | 'RECEPCION',
     cedula: string,
+    siteId: string | null = null,
   ): Promise<string> {
     const user = await prisma.user.create({
       data: {
@@ -121,15 +130,13 @@ describe('la organización por HTTP', () => {
         }),
       },
     });
-    if (roleCode === 'ADMIN') adminUserId = user.id;
+    if (roleCode === 'ADMIN' && siteId === null) adminUserId = user.id;
 
     const role = await prisma.role.findUniqueOrThrow({
       where: { code: roleCode },
     });
-    // GLOBAL grant (siteId null): administering the clinic's map is not
-    // scoped to one of its sites, and this is how a director is hired.
     await prisma.userRoleGrant.create({
-      data: { userId: user.id, roleId: role.id },
+      data: { userId: user.id, roleId: role.id, siteId },
     });
 
     const response = await request(app.getHttpServer())
@@ -159,16 +166,16 @@ describe('la organización por HTTP', () => {
       .set('Authorization', `Bearer ${auth}`)
       .send(body);
 
-  const patch = (path: string, body: Record<string, unknown>) =>
+  const patch = (path: string, body: Record<string, unknown>, auth = token) =>
     request(app.getHttpServer())
       .patch(`${base}${path}`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Authorization', `Bearer ${auth}`)
       .send(body);
 
-  const destroy = (path: string) =>
+  const destroy = (path: string, auth = token) =>
     request(app.getHttpServer())
       .delete(`${base}${path}`)
-      .set('Authorization', `Bearer ${token}`);
+      .set('Authorization', `Bearer ${auth}`);
 
   let siteSequence = 0;
   const nextMspCode = (): string => {
@@ -687,6 +694,167 @@ describe('la organización por HTTP', () => {
       ).expect(403);
 
       expect((response.body as Problem).code).toBe('PERMISSION_DENIED');
+    });
+  });
+
+  describe('el alcance por sede (ADR-007)', () => {
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     * LA DIMENSIÓN QUE PRODUCE ACCESO INDEBIDO EN UNA CLÍNICA MULTISEDE
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * `PATCH`/`DELETE` de consultorios y de puntos de emisión se declaraban
+     * `global` con esta justificación: «un permiso de administración que
+     * DEFAULT_ROLES concede a nivel de clínica y a un solo rol». Los roles son
+     * DATO —`ReplaceGrantsDto` existe justamente para concederlos POR SEDE—,
+     * así que una clínica que crea «Administrador de sede» y lo acota a una
+     * ciudad obtenía un rol capaz de renombrar y borrar los consultorios de
+     * otra. `POST /sites/:siteId/rooms`, sobre el mismo recurso, sí lo
+     * impedía: la incoherencia era la pista.
+     *
+     * `route-authorisation.spec.ts` no lo veía y no podía verlo: comprueba que
+     * la declaración EXISTA, no que sea la correcta.
+     */
+    const SEDE_ADMIN_EMAIL = 'admin.norte@clinica.ec';
+    const SEDE_ADMIN_CEDULA = '1804822136';
+
+    /** Norte y Sur, y una administradora que sólo administra Norte. */
+    async function twoSites() {
+      const norte = await createSite({ name: 'Sede Norte' });
+      const sur = await createSite({ name: 'Sede Sur' });
+      const scoped = await signIn(
+        SEDE_ADMIN_EMAIL,
+        'ADMIN',
+        SEDE_ADMIN_CEDULA,
+        norte.id,
+      );
+      return { norte, sur, scoped };
+    }
+
+    it('OR-026 quien administra Norte no puede renombrar un consultorio de Sur', async () => {
+      const { sur, scoped } = await twoSites();
+      const room = await createRoom(sur.id, 'Consultorio ajeno');
+
+      const response = await patch(
+        `/rooms/${room.id}`,
+        { name: 'Renombrado a distancia' },
+        scoped,
+      ).expect(403);
+
+      expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+      // Y no se escribió nada: el nombre sigue siendo el suyo.
+      expect(
+        await prisma.siteRoom.findUniqueOrThrow({ where: { id: room.id } }),
+      ).toMatchObject({ name: 'Consultorio ajeno' });
+    });
+
+    it('OR-022 tampoco puede borrarlo', async () => {
+      const { sur, scoped } = await twoSites();
+      const room = await createRoom(sur.id, 'Consultorio ajeno');
+
+      const response = await destroy(`/rooms/${room.id}`, scoped).expect(403);
+
+      expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+      expect(
+        await prisma.siteRoom.findUnique({ where: { id: room.id } }),
+      ).not.toBeNull();
+    });
+
+    it('OR-026 sí puede con los consultorios de SU sede: la comprobación no es un muro', async () => {
+      const { norte, scoped } = await twoSites();
+      const room = await createRoom(norte.id, 'Consultorio propio');
+
+      await patch(`/rooms/${room.id}`, { name: 'Consultorio 2' }, scoped).expect(200); // prettier-ignore
+      await destroy(`/rooms/${room.id}`, scoped).expect(204);
+    });
+
+    it('OR-026 no puede editar ni borrar un punto de emisión de otra sede', async () => {
+      const { sur, scoped } = await twoSites();
+      const created = await post(`/sites/${sur.id}/emission-points`, {
+        code: '001',
+      }).expect(201);
+      const pointId = (created.body as { id: string }).id;
+
+      const edited = await patch(
+        `/emission-points/${pointId}`,
+        { active: false },
+        scoped,
+      ).expect(403);
+      const deleted = await destroy(`/emission-points/${pointId}`, scoped).expect(403); // prettier-ignore
+
+      expect((edited.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+      expect((deleted.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+      expect(
+        await prisma.emissionPoint.findUniqueOrThrow({
+          where: { id: pointId },
+        }),
+      ).toMatchObject({ active: true });
+    });
+
+    it('OR-007 el listado de sedes muestra las suyas y no las de la otra ciudad', async () => {
+      const { norte, sur, scoped } = await twoSites();
+
+      const response = await get('/sites', scoped).expect(200);
+
+      const ids = (response.body as { items: { id: string }[] }).items.map(
+        (item) => item.id,
+      );
+      expect(ids).toEqual([norte.id]);
+      expect(ids).not.toContain(sur.id);
+      // Y la ruta por id sigue negando la sede ajena, como ya hacía.
+      await get(`/sites/${sur.id}`, scoped).expect(403);
+    });
+
+    it('OR-004 una concesión sin sede sigue viendo todas: acotar no es romper', async () => {
+      await twoSites();
+
+      const response = await get('/sites').expect(200);
+
+      expect((response.body as { items: unknown[] }).items).toHaveLength(2);
+    });
+  });
+
+  describe('el RUC y quién puede verlo (OR-025)', () => {
+    /**
+     * Los diez primeros dígitos de un RUC de persona natural SON la cédula de
+     * su titular, dígito verificador incluido — `ruc.vo.ts` lo documenta al
+     * explicar por qué `InvalidRucError` no incluye el valor que rechaza. En
+     * una clínica de un solo profesional registrada con el RUC de su dueño,
+     * servirlo bajo `site:read` entrega su documento de identidad a recepción,
+     * a enfermería y a cualquier rol clínico. El RUC es para facturar
+     * (OR-025); agendar una cita no es facturar.
+     */
+    const NATURAL_PERSON_RUC = '1710034065001';
+
+    it('OR-025 RECEPCION no recibe el RUC de la sede ni el del establecimiento', async () => {
+      await saveEstablishment({ ruc: NATURAL_PERSON_RUC });
+      const site = await createSite({ ruc: NATURAL_PERSON_RUC });
+      const recepcion = await signIn(RECEPCION_EMAIL, 'RECEPCION', '0926687856'); // prettier-ignore
+
+      const establishment = await get('/establishment', recepcion).expect(200);
+      const sites = await get('/sites', recepcion).expect(200);
+      const one = await get(`/sites/${site.id}`, recepcion).expect(200);
+
+      const listed = (sites.body as { items: Record<string, unknown>[] }).items[0]; // prettier-ignore
+      // AUSENTE, no `null`: `null` significa «esta sede no tiene RUC», que es
+      // un estado real sobre el que una pantalla actúa.
+      expect(establishment.body).not.toHaveProperty('ruc');
+      expect(listed).not.toHaveProperty('ruc');
+      expect(one.body).not.toHaveProperty('ruc');
+      // Y el resto de la sede sigue viajando: sin ella no se puede agendar.
+      expect(one.body).toMatchObject({ id: site.id, name: expect.any(String) });
+      expect(JSON.stringify(sites.body)).not.toContain(NATURAL_PERSON_RUC);
+    });
+
+    it('OR-025 quien administra sedes sí lo recibe: es dato de facturación', async () => {
+      await saveEstablishment({ ruc: NATURAL_PERSON_RUC });
+      const site = await createSite({ ruc: NATURAL_PERSON_RUC });
+
+      const establishment = await get('/establishment').expect(200);
+      const one = await get(`/sites/${site.id}`).expect(200);
+
+      expect((establishment.body as { ruc: string }).ruc).toBe(NATURAL_PERSON_RUC); // prettier-ignore
+      expect((one.body as { ruc: string }).ruc).toBe(NATURAL_PERSON_RUC);
     });
   });
 

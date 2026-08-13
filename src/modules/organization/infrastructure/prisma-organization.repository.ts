@@ -9,6 +9,7 @@ import type {
   OrganizationRepository,
   SiteInput,
   SitePatch,
+  SiteScopeFilter,
   SiteView,
 } from '../domain/organization.repository';
 import {
@@ -97,9 +98,18 @@ export class PrismaOrganizationRepository implements OrganizationRepository {
   }
 
   /** OR-007. Ordered by name so the screen is stable between requests. */
-  async listSites(includeInactive: boolean): Promise<readonly SiteView[]> {
+  async listSites(
+    includeInactive: boolean,
+    scope: SiteScopeFilter,
+  ): Promise<readonly SiteView[]> {
     return this.prisma.site.findMany({
-      where: includeInactive ? {} : { active: true },
+      where: {
+        ...(includeInactive ? {} : { active: true }),
+        // `id` and not `siteId`: here the site IS the row. An empty scope
+        // produces `in: []`, which returns nothing — the fail-closed answer
+        // for a caller who holds the permission at no site.
+        ...(scope === 'all' ? {} : { id: { in: [...scope] } }),
+      },
       select: SITE_SELECT,
       orderBy: { name: 'asc' },
     });

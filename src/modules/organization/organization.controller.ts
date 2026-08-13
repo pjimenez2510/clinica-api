@@ -23,12 +23,17 @@ import {
 import type { Request } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import { ALL_SITES } from '../../shared/authorisation/principal';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import {
   OrganizationService,
   type Requester,
 } from './application/organization.service';
+import type {
+  EstablishmentView,
+  SiteView,
+} from './domain/organization.repository';
 import {
   CreateSiteDto,
   EstablishmentDto,
@@ -56,11 +61,19 @@ import {
  * EDITING it: a receptionist has to know which sites and rooms exist to book
  * into them, and nothing about that implies being able to create one.
  *
- * THE SITE SCOPE. `global` on the establishment and on the listing, because
- * neither has a site: there is one establishment, and a listing that filtered
- * itself out of existence would leave a receptionist with nothing to pick
- * from. `param:id` on everything that names ONE site, so the guard checks the
- * caller's scope over exactly that site before the handler runs.
+ * THE SITE SCOPE. `global` on the establishment, and that one is genuinely
+ * global: there is ONE establishment and it has no site. `param:id` on
+ * everything that names one site, so the guard checks the caller's scope over
+ * exactly that site before the handler runs. `'query'` on the LISTING, where
+ * the guard has nothing to read and the handler narrows — it used to be
+ * `global` on the argument that a filtered listing would leave a receptionist
+ * with nothing to pick from, which was the wrong conclusion from a true
+ * premise: a receptionist scoped to one site should be picking from that site,
+ * and `POST /sites` is the route that creates one.
+ *
+ * WHAT THE RUC DOES NOT DO IS TRAVEL UNDER `site:read`. See `organization.dto`
+ * for the reasoning; `visibleSite` and `visibleEstablishment` are where it is
+ * applied, on the way out of every route that serves either shape.
  */
 @ApiTags('organization')
 @Controller({ path: 'organization', version: '1' })
@@ -78,7 +91,9 @@ export class OrganizationController {
   @ApiOperation({ summary: 'Datos del establecimiento' })
   @ApiOkResponse({ type: EstablishmentDto })
   async getEstablishment(): Promise<EstablishmentResponse> {
-    return this.organization.getEstablishment();
+    return this.visibleEstablishment(
+      await this.organization.getEstablishment(),
+    );
   }
 
   /**
@@ -93,28 +108,43 @@ export class OrganizationController {
     @Body() dto: SaveEstablishmentDto,
     @Req() req: Request,
   ): Promise<EstablishmentResponse> {
-    return this.organization.saveEstablishment(
-      {
-        mspUnicode: dto.mspUnicode,
-        typology: dto.typology,
-        legalName: dto.legalName,
-        ruc: dto.ruc,
-        active: dto.active,
-      },
-      this.requester(req),
+    return this.visibleEstablishment(
+      await this.organization.saveEstablishment(
+        {
+          mspUnicode: dto.mspUnicode,
+          typology: dto.typology,
+          legalName: dto.legalName,
+          ruc: dto.ruc,
+          active: dto.active,
+        },
+        this.requester(req),
+      ),
     );
   }
 
   // --- Sites ------------------------------------------------------------------
 
-  /** OR-007: deactivated sites travel only when explicitly asked for. */
+  /**
+   * OR-007: deactivated sites travel only when explicitly asked for.
+   *
+   * `'query'` site scope: there is no site in the URL for the guard to check,
+   * so the HANDLER narrows and the caller's own resolved scope IS the filter —
+   * the same shape as `GET /agenda/sites` (AG-107). It used to be `global`,
+   * and the consequence was that a caller scoped to one city received the
+   * name, MSP code, RUC, address and phone of every site of the clinic from
+   * this route while `GET /sites/:id` refused them the very same row.
+   */
   @Get('sites')
-  @RequirePermission('site:read', 'global')
-  @ApiOperation({ summary: 'Sedes del establecimiento' })
+  @RequirePermission('site:read', 'query')
+  @ApiOperation({ summary: 'Sedes que quien llama puede consultar' })
   @ApiOkResponse({ type: SiteListDto })
   async listSites(@Query() query: ListQueryDto): Promise<SiteListResponse> {
-    const items = await this.organization.listSites(query.includeInactive);
-    return { items };
+    const scope = this.currentUser.requirePrincipal().sitesFor('site:read');
+    const items = await this.organization.listSites(
+      query.includeInactive,
+      scope === ALL_SITES ? 'all' : scope,
+    );
+    return { items: items.map((site) => this.visibleSite(site)) };
   }
 
   @Get('sites/:id')
@@ -122,7 +152,7 @@ export class OrganizationController {
   @ApiOperation({ summary: 'Datos de una sede' })
   @ApiOkResponse({ type: SiteDto })
   async getSite(@Param('id', ParseUUIDPipe) id: string): Promise<SiteResponse> {
-    return this.organization.getSite(id);
+    return this.visibleSite(await this.organization.getSite(id));
   }
 
   /** OR-004, OR-005, OR-008. */
@@ -135,16 +165,18 @@ export class OrganizationController {
     @Body() dto: CreateSiteDto,
     @Req() req: Request,
   ): Promise<SiteResponse> {
-    return this.organization.createSite(
-      {
-        mspUnicode: dto.mspUnicode,
-        name: dto.name,
-        ruc: dto.ruc,
-        parishConceptId: dto.parishConceptId,
-        addressLine: dto.addressLine,
-        phone: dto.phone,
-      },
-      this.requester(req),
+    return this.visibleSite(
+      await this.organization.createSite(
+        {
+          mspUnicode: dto.mspUnicode,
+          name: dto.name,
+          ruc: dto.ruc,
+          parishConceptId: dto.parishConceptId,
+          addressLine: dto.addressLine,
+          phone: dto.phone,
+        },
+        this.requester(req),
+      ),
     );
   }
 
@@ -158,17 +190,19 @@ export class OrganizationController {
     @Body() dto: UpdateSiteDto,
     @Req() req: Request,
   ): Promise<SiteResponse> {
-    return this.organization.updateSite(
-      id,
-      {
-        name: dto.name,
-        ruc: dto.ruc,
-        parishConceptId: dto.parishConceptId,
-        addressLine: dto.addressLine,
-        phone: dto.phone,
-        active: dto.active,
-      },
-      this.requester(req),
+    return this.visibleSite(
+      await this.organization.updateSite(
+        id,
+        {
+          name: dto.name,
+          ruc: dto.ruc,
+          parishConceptId: dto.parishConceptId,
+          addressLine: dto.addressLine,
+          phone: dto.phone,
+          active: dto.active,
+        },
+        this.requester(req),
+      ),
     );
   }
 
@@ -183,6 +217,38 @@ export class OrganizationController {
     @Req() req: Request,
   ): Promise<void> {
     await this.organization.deleteSite(id, this.requester(req));
+  }
+
+  /**
+   * OR-025. The RUC, only for a caller who administers sites.
+   *
+   * The first ten digits of a natural-person RUC ARE the owner's cedula
+   * (`ruc.vo.ts`), so a single-practitioner clinic registered under its
+   * doctor's own RUC was handing that doctor's national ID to reception and to
+   * nursing through `site:read` — a permission every clinical role holds
+   * because it is how they learn which sites and rooms exist. The RUC serves
+   * billing (OR-025); booking an appointment is not billing.
+   *
+   * OMITTED, never nulled: `null` already means «no tiene RUC», which a screen
+   * acts on, and «no le corresponde» is a different answer. Applied on the way
+   * out of every route, including the ones behind `site:manage`, so there is
+   * one place to read rather than a rule each handler remembers.
+   */
+  private visibleSite(site: SiteView): SiteResponse {
+    const { ruc, ...rest } = site;
+    return this.administersSites() ? { ...rest, ruc } : rest;
+  }
+
+  /** See `visibleSite`. The establishment's RUC is the same document. */
+  private visibleEstablishment(
+    establishment: EstablishmentView,
+  ): EstablishmentResponse {
+    const { ruc, ...rest } = establishment;
+    return this.administersSites() ? { ...rest, ruc } : rest;
+  }
+
+  private administersSites(): boolean {
+    return this.currentUser.requirePrincipal().can('site:manage');
   }
 
   /** Who is asking, for the trail (OR-005). */

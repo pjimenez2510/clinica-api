@@ -78,8 +78,11 @@ export const establishmentSchema = z.object({
   mspUnicode: z.string(),
   typology: z.string(),
   legalName: z.string(),
-  /** OR-025: exposed to billing as data, with no sequential attached. */
-  ruc: z.string().nullable(),
+  /**
+   * OR-025: exposed to billing as data, with no sequential attached — and ONLY
+   * to billing. See `rucVisibility` below for why the field can be absent.
+   */
+  ruc: z.string().nullable().optional(),
   active: z.boolean(),
 });
 export class EstablishmentDto extends createZodDto(establishmentSchema) {}
@@ -132,12 +135,28 @@ export const updateSiteSchema = z
   });
 export class UpdateSiteDto extends createZodDto(updateSiteSchema) {}
 
+/**
+ * WHY THE RUC IS OPTIONAL IN BOTH RESPONSES, AND WHAT ITS ABSENCE MEANS.
+ *
+ * A natural-person RUC's first ten digits ARE the owner's cedula, check digit
+ * included — `ruc.vo.ts` says so where it explains why `InvalidRucError`
+ * withholds the value it rejected. In a clinic registered under the doctor's
+ * own RUC, serving it under `site:read` hands their national ID to reception,
+ * to nursing and to every clinical role, none of which needs it: the RUC is
+ * for billing (OR-025), and booking an appointment is not billing.
+ *
+ * So it travels only to `site:manage`, and it is OMITTED rather than nulled.
+ * `null` already means «esta sede no tiene RUC» — a real state a screen acts
+ * on — and reusing it for «no le corresponde verlo» would make the two
+ * indistinguishable. Absent is the honest third answer.
+ */
 export const siteSchema = z.object({
   id: z.uuid(),
   establishmentId: z.uuid().nullable(),
   mspUnicode: z.string(),
   name: z.string(),
-  ruc: z.string().nullable(),
+  /** Present only for a caller holding `site:manage`. See above. */
+  ruc: z.string().nullable().optional(),
   parishConceptId: z.uuid().nullable(),
   addressLine: z.string().nullable(),
   phone: z.string().nullable(),

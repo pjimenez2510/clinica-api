@@ -27,6 +27,14 @@ import { PrismaClient } from '@prisma/client';
  *   - one practitioner whose ACESS expires in 20 days — the ST-005 warning;
  *   - one whose ACESS expired 10 days ago — the ST-004 refusal to sign, which
  *     must NOT stop anybody from booking them (D-009).
+ *
+ * ⚠️ WHY THE SPECIALTY ASSIGNMENT AND THE DURATION EXCEPTION MOVED HERE.
+ * `practitioner_specialty` and `duration_exception` are tables of THIS module
+ * since the 13-08-2026 move (`SPEC.md`, ST-008 and ST-009), and
+ * `seed-specialties.mts` was still writing the first one while nobody wrote
+ * the second at all — so the ST-009 screen opened on an empty table and could
+ * not be tried by hand. A module that owns a table owns its seed; the
+ * specialty catalogue itself stays where it belongs, in `seed-specialties`.
  */
 
 /** Today as the Ecuadorian calendar date, never the host's. */
@@ -76,14 +84,54 @@ const ACESS = [
  */
 const SUNDAY = 7;
 
-async function main() {
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('This seed is for development only.');
-  }
+/**
+ * ST-008. The primary specialty of each seeded practitioner, by the account
+ * they hang from. Moved verbatim from `seed-specialties.mts`: the codes are
+ * public contract and changing the emitter cannot change them.
+ */
+const PRACTITIONER_PRIMARIES: readonly {
+  email: string;
+  specialtyCode: string;
+}[] = [
+  { email: 'medico@clinica.ec', specialtyCode: 'cardiologia' },
+  { email: 'admin@clinica.ec', specialtyCode: 'medicina-general' },
+];
 
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
-  const prisma = new PrismaClient({ adapter });
+/**
+ * ST-009. One duration exception, so the screen opens on something.
+ *
+ * «Control» lasts 20 minutes by default (SP-020) and this cardiologist takes
+ * 45: an exception that is VISIBLY different from the base is what makes the
+ * D-010 hierarchy —excepción → base— legible at a glance. A multiple of 5
+ * inside 5..240, which is what `duration_exception_range` demands.
+ */
+const DURATION_EXCEPTIONS: readonly {
+  email: string;
+  specialtyCode: string;
+  serviceTypeName: string;
+  durationMinutes: number;
+}[] = [
+  {
+    email: 'medico@clinica.ec',
+    specialtyCode: 'cardiologia',
+    serviceTypeName: 'Control',
+    durationMinutes: 45,
+  },
+];
 
+export interface StaffSeedResult {
+  habilitated: number;
+  siteAssignments: number;
+  rules: number;
+  /** ST-008. Zero when the specialty catalogue has not been seeded yet. */
+  specialtiesAssigned: number;
+  /** ST-009. Zero for the same reason, and never an error. */
+  durationExceptions: number;
+}
+
+export async function seedStaff(
+  prisma: PrismaClient,
+): Promise<StaffSeedResult> {
   // --- The habilitación, which lives on the ACCOUNT (ST-001, ST-002) --------
   let habilitated = 0;
   for (const person of ACESS) {
@@ -186,15 +234,139 @@ async function main() {
     }
   }
 
-  console.log(
-    `Staff seed lista: ${habilitated} fichas con ACESS y código MSP ` +
-      `(una caduca en 20 días y otra caducó hace 10), ` +
-      `${assignments} asignaciones de sede nuevas, ${rules} reglas de horario nuevas.`,
-  );
-  await prisma.$disconnect();
+  // --- Specialties and duration exceptions (ST-008, ST-009) ----------------
+  const specialtiesAssigned = await assignPrimarySpecialties(prisma);
+  const durationExceptions = await setDurationExceptions(prisma);
+
+  return {
+    habilitated,
+    siteAssignments: assignments,
+    rules,
+    specialtiesAssigned,
+    durationExceptions,
+  };
 }
 
-main().catch((error: unknown) => {
-  console.error(error);
-  process.exit(1);
-});
+/** The practitioner of an account, or `null` when either does not exist. */
+async function practitionerOf(
+  prisma: PrismaClient,
+  email: string,
+): Promise<string | null> {
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: { practitioner: { select: { id: true } } },
+  });
+  return user?.practitioner?.id ?? null;
+}
+
+/** A specialty by its stable code, matched case-insensitively like the catalogue seed. */
+async function specialtyIdOf(
+  prisma: PrismaClient,
+  code: string,
+): Promise<string | null> {
+  const specialty = await prisma.specialty.findFirst({
+    where: { code: { equals: code, mode: 'insensitive' } },
+    select: { id: true },
+  });
+  return specialty?.id ?? null;
+}
+
+/**
+ * ST-008. Only when the practitioner exists AND has no specialties yet: an
+ * assignment somebody edited from the screen is configuration, not seed
+ * material. A missing specialty catalogue is skipped, never an error — this
+ * seed does not own it.
+ */
+async function assignPrimarySpecialties(prisma: PrismaClient): Promise<number> {
+  let assigned = 0;
+
+  for (const { email, specialtyCode } of PRACTITIONER_PRIMARIES) {
+    const practitionerId = await practitionerOf(prisma, email);
+    if (!practitionerId) continue;
+
+    const already = await prisma.practitionerSpecialty.count({
+      where: { practitionerId },
+    });
+    if (already > 0) continue;
+
+    const specialtyId = await specialtyIdOf(prisma, specialtyCode);
+    if (!specialtyId) continue;
+
+    await prisma.practitionerSpecialty.create({
+      data: { practitionerId, specialtyId, isPrimary: true },
+    });
+    assigned += 1;
+  }
+
+  return assigned;
+}
+
+/**
+ * ST-009. The row the duration-exception screen needs to be worth opening.
+ *
+ * `skipDuplicates` and not an update: the composite primary key
+ * (practitioner, service type) is what makes re-running safe, and a clinic
+ * that changed 45 to 40 from the screen meant it.
+ */
+async function setDurationExceptions(prisma: PrismaClient): Promise<number> {
+  let written = 0;
+
+  for (const exception of DURATION_EXCEPTIONS) {
+    const practitionerId = await practitionerOf(prisma, exception.email);
+    if (!practitionerId) continue;
+
+    const specialtyId = await specialtyIdOf(prisma, exception.specialtyCode);
+    if (!specialtyId) continue;
+
+    const serviceType = await prisma.serviceType.findFirst({
+      where: {
+        specialtyId,
+        name: { equals: exception.serviceTypeName, mode: 'insensitive' },
+      },
+      select: { id: true },
+    });
+    if (!serviceType) continue;
+
+    const { count } = await prisma.durationException.createMany({
+      data: {
+        practitionerId,
+        serviceTypeId: serviceType.id,
+        durationMinutes: exception.durationMinutes,
+      },
+      skipDuplicates: true,
+    });
+    written += count;
+  }
+
+  return written;
+}
+
+/** Entry point for `pnpm db:seed:staff`. */
+async function main(): Promise<void> {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('This seed is for development only.');
+  }
+
+  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+  const prisma = new PrismaClient({ adapter });
+
+  try {
+    const result = await seedStaff(prisma);
+    console.log(
+      `Staff seed lista: ${result.habilitated} fichas con ACESS y código MSP ` +
+        `(una caduca en 20 días y otra caducó hace 10), ` +
+        `${result.siteAssignments} asignaciones de sede nuevas, ` +
+        `${result.rules} reglas de horario nuevas, ` +
+        `${result.specialtiesAssigned} especialidades principales, ` +
+        `${result.durationExceptions} excepciones de duración.`,
+    );
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+// Only when invoked directly, so the integration suite can import `seedStaff`
+// without connecting twice.
+if (process.argv[1]?.endsWith('seed-staff.mts')) {
+  await main();
+}

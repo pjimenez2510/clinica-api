@@ -50,6 +50,23 @@ export class PrismaSiteResourcesRepository implements SiteResourcesRepository {
     return row !== null;
   }
 
+  /** The site the room hangs from, for the scope check of a route that names the room. */
+  async siteOfRoom(id: string): Promise<string | null> {
+    const row = await this.prisma.siteRoom.findUnique({
+      where: { id },
+      select: { siteId: true },
+    });
+    return row?.siteId ?? null;
+  }
+
+  async siteOfEmissionPoint(id: string): Promise<string | null> {
+    const row = await this.prisma.emissionPoint.findUnique({
+      where: { id },
+      select: { siteId: true },
+    });
+    return row?.siteId ?? null;
+  }
+
   async listRooms(
     siteId: string,
     includeInactive: boolean,

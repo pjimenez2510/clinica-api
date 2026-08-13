@@ -8,6 +8,8 @@ import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, inject, it } from 'vitest';
 
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
+import { seedSpecialties } from '../../prisma/seed-specialties.mts';
+import { seedStaff } from '../../prisma/seed-staff.mts';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
@@ -1021,6 +1023,132 @@ describe('el personal por HTTP', () => {
       expect((response.body as ScheduleOutcome).conflicts).toEqual([]);
     });
 
+    it('ST-043 mover la regla a otra sede LISTA las citas que se quedan en la original', async () => {
+      // El fallo que esta prueba fija: los conflictos se calculaban contra la
+      // sede que la regla tiene DESPUÉS del cambio, así que mover una regla
+      // respondía 200 con `conflicts: []` mientras las citas de la sede
+      // original se quedaban sin ninguna regla que las cubriera.
+      const practitioner = await createPractitioner();
+      const patient = await createPatient(prisma);
+      const second = await createSite(prisma, 'Sede Sur');
+      await put(`/practitioners/${practitioner.id}/sites`, {
+        siteIds: [siteId, second.id],
+      }).expect(200);
+
+      const created = await post(
+        `/practitioners/${practitioner.id}/schedule-rules`,
+        { siteId, ...RULE },
+      ).expect(201);
+      const ruleId = (created.body as ScheduleOutcome).rule.id;
+
+      // Un lunes dentro de la franja, en la sede original.
+      const booked = await prisma.agendaEntry.create({
+        data: {
+          kind: 'APPOINTMENT',
+          siteId,
+          practitionerId: practitioner.id,
+          patientId: patient.id,
+          startsAt: new Date('2027-03-01T09:00:00-05:00'),
+          endsAt: new Date('2027-03-01T09:20:00-05:00'),
+          bookingChannel: 'PHONE',
+        },
+      });
+
+      const response = await patch(`/schedule-rules/${ruleId}`, {
+        siteId: second.id,
+      }).expect(200);
+
+      const outcome = response.body as ScheduleOutcome;
+      expect(outcome.conflicts).toEqual([
+        expect.objectContaining({
+          agendaEntryId: booked.id,
+          date: '2027-03-01',
+        }),
+      ]);
+
+      // Y nada se anuló ni se movió: la lista es para un humano (ST-043).
+      const after = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: booked.id },
+      });
+      expect(after).toMatchObject({
+        siteId,
+        startsAt: booked.startsAt,
+        releasedAt: null,
+        cancelledAt: null,
+      });
+    });
+
+    it('ST-043 un SOBRECUPO fuera del nuevo horario también es un conflicto', async () => {
+      /**
+       * `blocks_calendar = false` es un sobrecupo deliberado: una urgencia
+       * encajada a mano, y es una cita con un paciente que espera. La consulta
+       * de ST-043 filtraba `blocks_calendar: true`, así que los sobrecupos
+       * desaparecían de la lista — precisamente los pacientes a los que hay que
+       * llamar. `kind` y `released_at` ya cubren los dos casos que el
+       * comentario de esa consulta citaba (los bloqueos y las citas anuladas).
+       */
+      const practitioner = await createPractitioner();
+      const patient = await createPatient(prisma);
+      const created = await post(
+        `/practitioners/${practitioner.id}/schedule-rules`,
+        { siteId, ...RULE },
+      ).expect(201);
+      const ruleId = (created.body as ScheduleOutcome).rule.id;
+
+      const overbooked = await prisma.agendaEntry.create({
+        data: {
+          kind: 'APPOINTMENT',
+          siteId,
+          practitionerId: practitioner.id,
+          patientId: patient.id,
+          startsAt: new Date('2027-03-01T09:00:00-05:00'),
+          endsAt: new Date('2027-03-01T09:20:00-05:00'),
+          bookingChannel: 'PHONE',
+          blocksCalendar: false,
+        },
+      });
+
+      const response = await patch(`/schedule-rules/${ruleId}`, {
+        endTime: '08:30',
+      }).expect(200);
+
+      expect(
+        (response.body as ScheduleOutcome).conflicts.map(
+          (conflict) => conflict.agendaEntryId,
+        ),
+      ).toEqual([overbooked.id]);
+    });
+
+    it('ST-043 un BLOQUEO fuera del nuevo horario NO es un conflicto', async () => {
+      // La otra mitad, y lo que `kind` ya distinguía: un feriado fuera de las
+      // horas nuevas es exactamente para lo que sirve un bloqueo.
+      const practitioner = await createPractitioner();
+      const created = await post(
+        `/practitioners/${practitioner.id}/schedule-rules`,
+        { siteId, ...RULE },
+      ).expect(201);
+      const ruleId = (created.body as ScheduleOutcome).rule.id;
+
+      await prisma.agendaEntry.create({
+        data: {
+          // `agenda_entry_booking_channel_coherence`: un bloqueo no tiene
+          // canal de reserva ni paciente, porque no lo reservó nadie.
+          kind: 'BLOCK',
+          status: 'BLOCKED',
+          siteId,
+          practitionerId: practitioner.id,
+          startsAt: new Date('2027-03-01T09:00:00-05:00'),
+          endsAt: new Date('2027-03-01T09:20:00-05:00'),
+        },
+      });
+
+      const response = await patch(`/schedule-rules/${ruleId}`, {
+        endTime: '08:30',
+      }).expect(200);
+
+      expect((response.body as ScheduleOutcome).conflicts).toEqual([]);
+    });
+
     it('ST-042 ARBITRA entre dos administradores que solapan el mismo horario', async () => {
       /**
        * The reason ST-042 lives in the database and not in a service.
@@ -1104,6 +1232,88 @@ describe('el personal por HTTP', () => {
       } finally {
         await Promise.all([clientA.$disconnect(), clientB.$disconnect()]);
       }
+    });
+  });
+
+  describe('la semilla de desarrollo', () => {
+    /**
+     * LA REGLA DE «SEMILLAS POR ENTREGA»: toda entrega con pantalla nueva deja
+     * un estado idempotente donde probarla a mano. La de ST-009 no lo tenía —
+     * `duration_exception` no la escribía nadie— y `practitioner_specialty`,
+     * que es tabla de este módulo desde el 13-08-2026, la seguía escribiendo
+     * la semilla de `specialties`. Una pantalla que sólo se puede probar
+     * escribiendo SQL a mano es una pantalla que nadie prueba.
+     */
+    async function seededPractitionerAccounts(): Promise<void> {
+      for (const [email, cedula] of [
+        ['medico@clinica.ec', '1804822136'],
+        ['admin@clinica.ec', '0926687856'],
+      ] as const) {
+        const user = await prisma.user.create({
+          data: {
+            email,
+            firstName: 'Personal',
+            lastName: 'De prueba',
+            // Cédulas sintéticas con dígito verificador calculado.
+            cedula,
+            passwordHash: 'not-a-real-hash',
+          },
+        });
+        await prisma.practitioner.create({ data: { userId: user.id } });
+      }
+    }
+
+    it('ST-008/ST-009 deja especialidad principal y excepción de duración, y es idempotente', async () => {
+      await seededPractitionerAccounts();
+      await seedSpecialties(prisma);
+
+      const first = await seedStaff(prisma);
+      expect(first.habilitated).toBe(2);
+      expect(first.specialtiesAssigned).toBe(2);
+      // ST-009: la fila sin la cual la pantalla de excepciones abre vacía.
+      expect(first.durationExceptions).toBe(1);
+
+      const exception = await prisma.durationException.findFirstOrThrow({
+        select: { durationMinutes: true, serviceType: { select: { name: true, durationMinutes: true } } }, // prettier-ignore
+      });
+      // Visiblemente distinta de la base (SP-020): así se lee de un vistazo la
+      // jerarquía de D-010 —excepción → base—.
+      expect(exception).toMatchObject({
+        durationMinutes: 45,
+        serviceType: { name: 'Control', durationMinutes: 20 },
+      });
+
+      const second = await seedStaff(prisma);
+      expect(second.specialtiesAssigned).toBe(0);
+      expect(second.durationExceptions).toBe(0);
+      expect(second.rules).toBe(0);
+      expect(await prisma.durationException.count()).toBe(1);
+      expect(await prisma.practitionerSpecialty.count()).toBe(2);
+    });
+
+    it('SP-001 la semilla del catálogo ya NO escribe practitioner_specialty', async () => {
+      // Es tabla de `staff` (ST-008). Una semilla que escribe la tabla de otro
+      // módulo es la misma frontera que `arch:check` rechaza en el código.
+      await seededPractitionerAccounts();
+
+      await seedSpecialties(prisma);
+
+      expect(await prisma.practitionerSpecialty.count()).toBe(0);
+    });
+
+    it('ST-008 sin catálogo de especialidades la semilla no falla: lo omite', async () => {
+      // `specialties` no es suyo. Saltarlo es la respuesta correcta a «todavía
+      // no se ha sembrado el catálogo», y reventar aquí obligaría a recordar
+      // un orden que nadie escribió.
+      await seededPractitionerAccounts();
+
+      const result = await seedStaff(prisma);
+
+      expect(result.specialtiesAssigned).toBe(0);
+      expect(result.durationExceptions).toBe(0);
+      // Y lo que sí es suyo sí quedó sembrado.
+      expect(result.habilitated).toBe(2);
+      expect(result.rules).toBeGreaterThan(0);
     });
   });
 });

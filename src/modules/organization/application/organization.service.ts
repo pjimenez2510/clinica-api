@@ -17,6 +17,7 @@ import {
   type OrganizationRepository,
   type SiteInput,
   type SitePatch,
+  type SiteScopeFilter,
   type SiteView,
 } from '../domain/organization.repository';
 
@@ -127,9 +128,21 @@ export class OrganizationService {
     return updated;
   }
 
-  /** OR-007: deactivated sites are not offered unless explicitly asked for. */
-  async listSites(includeInactive: boolean): Promise<readonly SiteView[]> {
-    return this.repository.listSites(includeInactive);
+  /**
+   * OR-007: deactivated sites are not offered unless explicitly asked for.
+   *
+   * The SCOPE is the caller's own, resolved by the controller from their
+   * grants (ADR-007): the route declares `'query'` site scope because there is
+   * no site in the URL for the guard to check, and this is where the narrowing
+   * lands. Passing anything other than the caller's resolved scope here is the
+   * bug this sentence exists to prevent — same contract as the agenda's
+   * AG-107 listing.
+   */
+  async listSites(
+    includeInactive: boolean,
+    scope: SiteScopeFilter,
+  ): Promise<readonly SiteView[]> {
+    return this.repository.listSites(includeInactive, scope);
   }
 
   async getSite(id: string): Promise<SiteView> {

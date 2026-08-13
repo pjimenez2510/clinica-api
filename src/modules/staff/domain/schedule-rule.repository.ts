@@ -73,9 +73,18 @@ export interface ScheduleRuleRepository {
   isSchedulable(practitionerId: string): Promise<boolean | null>;
 
   /**
-   * ST-043. Appointments of this practitioner, at this site, that still occupy
-   * the calendar from `from` onwards. Released and cancelled entries are
-   * excluded: a freed slot is not a conflict, it is a free slot.
+   * ST-043. Appointments of this practitioner, at this site, still standing
+   * from `from` onwards. Released and cancelled entries are excluded — a freed
+   * slot is not a conflict, it is a free slot — and so are blocks, which is
+   * what `kind` distinguishes.
+   *
+   * OVERBOOKINGS ARE INCLUDED. An urgent case squeezed in outside the calendar
+   * (`blocks_calendar = false`) is a patient who is expecting to be seen, so
+   * it is one of the appointments a schedule change strands; the adapter's
+   * comment explains why the agenda's exclusion predicate does not transfer.
+   *
+   * Asked once per site. The caller passes the site the rule LEFT as well when
+   * a rule moved, which is why this takes one site and not the rule.
    */
   bookedFrom(
     practitionerId: string,

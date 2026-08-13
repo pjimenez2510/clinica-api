@@ -110,9 +110,31 @@ consumirá.
   código dentro de una sede, con la garantía en la base.
 - **OR-025** — El sistema DEBERÁ exponer RUC y punto de emisión a `billing`
   como **dato**, sin numerar comprobantes ni hablar con el SRI: esa lógica es de
-  `billing` (REQ-085).
+  `billing` (REQ-085). El RUC DEBERÁ viajar únicamente a quien tenga
+  `site:manage`, y estar **ausente** de la respuesta —no en `null`— para el
+  resto.
+
+  > **Por qué la restricción.** Los diez primeros dígitos de un RUC de persona
+  > natural SON la cédula de su titular (`ruc.vo.ts`), así que una clínica de un
+  > solo profesional registrada con el RUC de su dueño entregaba su documento de
+  > identidad a recepción y a enfermería a través de `site:read` —el permiso con
+  > el que se enteran de qué sedes y consultorios existen para poder agendar—.
+  > Agendar no es facturar. `null` sigue significando «esta sede no tiene RUC»,
+  > que es un estado real sobre el que una pantalla actúa.
 - **OR-026** — Toda mutación de consultorios y puntos de emisión DEBERÁ quedar
-  en la bitácora con autor, instante y valor anterior.
+  en la bitácora con autor, instante y valor anterior, y DEBERÁ comprobar que
+  quien llama tenga alcance sobre la **sede dueña** del consultorio o del punto
+  de emisión, respondiendo `SITE_SCOPE_DENIED` cuando no lo tenga (ADR-007).
+
+  > **Por qué se añade la segunda mitad.** `PATCH` y `DELETE` nombran el
+  > consultorio, no la sede, así que el guard no puede comprobarla: corre antes
+  > de cualquier lectura. Se declararon `global` con el argumento de que
+  > `site:manage` se concede a nivel de clínica y a un solo rol — pero los roles
+  > son DATO y `ReplaceGrantsDto` existe para concederlos POR SEDE (AU-032), así
+  > que «Administrador de sede» acotado a una ciudad podía borrar los
+  > consultorios de otra. `POST /sites/:siteId/rooms`, sobre el mismo recurso,
+  > sí lo impedía. El listado de sedes se acota por la misma razón: quien puede
+  > consultar una sede no puede enumerar las demás.
 
 ---
 
@@ -131,6 +153,7 @@ consumirá.
 | `EMISSION_POINT_DUPLICATE`  | 409  | Punto de emisión repetido en la sede (OR-024)              |
 | `ROOM_NOT_IN_SITE`          | 422  | Consultorio de otra sede (OR-021)                          |
 | `INVALID_RUC`               | 422  | RUC que no supera la validación del SRI (OR-008)           |
+| `SITE_SCOPE_DENIED`         | 403  | Actuar sobre una sede fuera del alcance (OR-026, ADR-007)  |
 
 `ROOM_NOT_IN_SITE` ya existe en `error-catalogue.ts`, emitido hoy desde
 `agenda`: la garantía se declara aquí y se comprueba allí, sin cambiar la cadena.

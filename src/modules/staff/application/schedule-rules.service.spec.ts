@@ -107,9 +107,16 @@ function makeDouble(answers: Answers): {
       note('isSchedulable', practitionerId);
       return Promise.resolve(answers.schedulable);
     },
+    /**
+     * FILTERS BY SITE, like the real query does. A double that ignored the
+     * argument would let a `bookedFrom` asking about the wrong site pass —
+     * which is exactly the defect these tests have to be able to see.
+     */
     bookedFrom: (practitionerId, siteId, from) => {
       note('bookedFrom', practitionerId, siteId, from);
-      return Promise.resolve(answers.booked);
+      return Promise.resolve(
+        answers.booked.filter((entry) => entry.siteId === siteId),
+      );
     },
   };
 
@@ -350,6 +357,89 @@ describe('ScheduleRulesService', () => {
       );
 
       expect(outcome.conflicts).toEqual([]);
+    });
+
+    it('ST-043 mover la regla a otra sede LISTA las citas que quedan en la sede original', async () => {
+      /**
+       * El fallo que esta prueba fija: `conflictsAfter` preguntaba por las
+       * citas de la sede que la regla tiene DESPUÉS del cambio, así que mover
+       * una regla de Norte a Sur respondía `{conflicts: []}` mientras las citas
+       * de Norte se quedaban sin ninguna regla que las cubriera. Nadie se
+       * enteraba, y ST-043 es justamente para que alguien se entere.
+       */
+      const moved: ScheduleRuleView = { ...RULE, siteId: 'site-2' };
+      answers.update = moved;
+      // Como queda el horario del profesional tras el cambio: la regla ya
+      // rige en site-2 y en site-1 no queda ninguna.
+      answers.rules = [moved];
+      answers.booked = [
+        {
+          id: 'entry-norte',
+          siteId: 'site-1',
+          startsAt: new Date('2026-09-14T09:00:00-05:00'),
+          endsAt: new Date('2026-09-14T09:20:00-05:00'),
+        },
+      ];
+
+      const outcome = await service.update(
+        'rule-1',
+        { siteId: 'site-2' },
+        REQUESTER,
+      );
+
+      expect(outcome.conflicts.map((conflict) => conflict.agendaEntryId)).toEqual(['entry-norte']); // prettier-ignore
+      // Y sigue sin anular ni mover nada: la lista es para un humano.
+      expect(writes()).toEqual([
+        { method: 'update', args: ['rule-1', { siteId: 'site-2' }] },
+      ]);
+    });
+
+    it('ST-043 al mover la regla también mira la sede nueva, no solo la que deja', async () => {
+      const moved: ScheduleRuleView = {
+        ...RULE,
+        siteId: 'site-2',
+        endTime: '10:00',
+      };
+      answers.update = moved;
+      answers.rules = [moved];
+      answers.booked = [
+        // Ya estaba agendada en la sede de destino, fuera de la franja.
+        {
+          id: 'entry-sur',
+          siteId: 'site-2',
+          startsAt: new Date('2026-09-14T11:00:00-05:00'),
+          endsAt: new Date('2026-09-14T11:20:00-05:00'),
+        },
+        // Y esta, en la sede original, se queda sin regla.
+        {
+          id: 'entry-norte',
+          siteId: 'site-1',
+          startsAt: new Date('2026-09-14T09:00:00-05:00'),
+          endsAt: new Date('2026-09-14T09:20:00-05:00'),
+        },
+      ];
+
+      const outcome = await service.update(
+        'rule-1',
+        { siteId: 'site-2', endTime: '10:00' },
+        REQUESTER,
+      );
+
+      // En orden cronológico y no por sede: quien llama tiene que telefonear a
+      // los pacientes, no reconciliar dos listas.
+      expect(outcome.conflicts.map((conflict) => conflict.agendaEntryId)).toEqual(['entry-norte', 'entry-sur']); // prettier-ignore
+    });
+
+    it('ST-043 sin cambio de sede sigue preguntando por una sola', async () => {
+      // La consulta extra sólo aparece cuando la regla se mueve: cobrarla en
+      // cada edición sería una consulta por petición que nunca devuelve nada.
+      await service.update('rule-1', { slotMinutes: 30 }, REQUESTER);
+
+      expect(
+        calls
+          .filter((call) => call.method === 'bookedFrom')
+          .map((call) => call.args[1]),
+      ).toEqual(['site-1']);
     });
 
     it('ST-043 mide los conflictos contra TODAS las reglas vigentes, no solo la tocada', async () => {
