@@ -1,0 +1,182 @@
+# SPEC — Módulo `staff`
+
+**Estado:** borrador para revisión · **Fecha:** 12 de agosto de 2026
+**Fase:** 1 — Núcleo operativo · **Formato:** EARS, según ADR-010
+
+El profesional de la salud como dato del expediente, no como preferencia. Nace
+de ADR-011: al cerrar C1 de agenda, `Practitioner` estaba siendo **leído** por
+`agenda` y **escrito** por `configuration`, sin que ninguno de los dos fuera su
+dueño. Este módulo es ese dueño. Decisiones que lo gobiernan: D-002, D-010.
+
+> **Cómo se lee.** `CUANDO` = disparador · `MIENTRAS` = estado que dura ·
+> `SI … ENTONCES` = comportamiento no deseado · `DONDE` = opcional · sin palabra
+> clave = siempre activo. `DEBERÁ` es obligación; no existe «debería».
+
+---
+
+## Alcance
+
+Este módulo **posee** al `Practitioner`: su identificación profesional —cédula,
+registro ACESS con su vigencia, código MSP—, **las especialidades que ejerce**,
+**sus reglas de horario** y **las sedes donde atiende**.
+
+Cinco módulos dependen de él y hoy lo toman prestado: `agenda` lo lee para
+componer columnas, `encounter` necesita su cédula y su código en cada atención
+(REQ-021), `prescription` un prescriptor con registro (REQ-050), `certificates`
+que el ACESS vencido impida firmar (REQ-041) y `reporting` los tres datos en
+**cada** fila del RDACAA.
+
+**Se muda aquí desde `specialties` cuando este módulo se construya:** la
+asignación profesional·especialidad (hoy `SP-005`, `SP-008`) y las excepciones
+de duración por profesional (hoy `SP-022`). El SPEC de `specialties` lo declara
+como deuda con esa misma fecha; `ST-008` y `ST-009` son su forma definitiva.
+
+**Fuera de alcance:** la cuenta de acceso —credenciales, MFA, bloqueo por
+intentos— es de `auth`, y son cosas distintas con ciclos de vida distintos: una
+recepcionista tiene cuenta y no tiene perfil clínico. Tampoco: el catálogo de
+especialidades en sí (módulo `specialties`), la sede como entidad (módulo
+`organization`), ni cómo la agenda **obedece** una regla de horario al reservar
+(módulo `agenda`, AG-020 a AG-030).
+
+**Depende de:** `auth` (la cuenta a la que se ata el perfil, y el permiso de
+administración), `organization` (las sedes donde atiende) y `specialties` (el
+catálogo del que elige).
+
+## Vocabulario
+
+| Término               | Significado exacto en este módulo                                                       |
+| --------------------- | --------------------------------------------------------------------------------------- |
+| **Profesional**       | Perfil clínico de una cuenta: quien atiende, prescribe o firma. No es la cuenta          |
+| **Registro ACESS**    | Habilitación profesional con fecha de caducidad. Sin ella no se firma (REQ-041)          |
+| **Código MSP**        | Código del profesional que el RDACAA exige en cada atención (REQ-021)                    |
+| **Agendable**         | Si el profesional toma citas. Un patólogo tiene perfil clínico y no tiene agenda          |
+| **Regla de horario**  | Plantilla semanal por sede con vigencia. Los cupos se derivan de ella, no se almacenan   |
+| **Vigencia**          | `daterange` de una regla de horario: desde cuándo y hasta cuándo rige                    |
+
+---
+
+## Entregas priorizadas
+
+### S1 — El profesional y su habilitación _(P1)_
+
+Alta y edición del perfil clínico: cédula, ACESS con vigencia, código MSP,
+agendable, sedes donde atiende y especialidades que ejerce.
+
+**Por qué es P1:** `encounter` no puede cerrarse sin él, y `agenda` ya está
+leyendo estos datos sin dueño.
+**Prueba independiente:** un profesional con ACESS caducado ayer no puede
+firmar; el mismo con ACESS vigente sí.
+**Cubre:** ST-001 a ST-010.
+
+### S2 — Horarios editables con vigencia _(P1)_
+
+Un administrador cambia el horario de un médico desde la pantalla: días, horas,
+sede, vigencia. El solape de reglas lo rechaza la base (AG-106 se implementa
+aquí).
+
+**Prueba independiente:** dos reglas vigentes solapadas del mismo profesional
+insertadas concurrentemente — gana exactamente una.
+**Cubre:** ST-040 a ST-046.
+
+---
+
+## Requisitos
+
+### Identificación y habilitación del profesional (REQ-040, REQ-041, REQ-021)
+
+- **ST-001** — El sistema DEBERÁ almacenar la cédula del profesional, única en
+  todo el sistema, con la garantía de unicidad en la base.
+- **ST-002** — El sistema DEBERÁ almacenar el registro ACESS del profesional
+  junto con su **fecha de caducidad**; sin ambos datos el profesional NO DEBERÁ
+  considerarse habilitado para firmar.
+- **ST-003** — El sistema DEBERÁ almacenar el código MSP del profesional y
+  exponerlo a quien deba consignarlo en cada atención (REQ-021).
+- **ST-004** — SI el registro ACESS de un profesional está vencido en la fecha
+  clínica, ENTONCES el sistema DEBERÁ impedirle firmar notas clínicas, recetas y
+  certificados, rechazándolo con `ACESS_EXPIRED` y nombrando la fecha de
+  caducidad.
+- **ST-005** — CUANDO falten 30 días o menos para la caducidad del ACESS, el
+  sistema DEBERÁ advertirlo al profesional y a la administración, sin bloquear
+  nada todavía.
+  > **D-009, resuelta el 12-08-2026.** Un ACESS vencido impide firmar y **no**
+  > agendar: bloquear la agenda es desproporcionado para un trámite que suele
+  > resolverse en días, y REQ-041 protege la firma, no la atención. La vigencia
+  > se comprueba **al firmar**, nunca al reservar, así que `agenda` no adquiere
+  > ninguna dependencia nueva sobre este módulo. Este aviso es lo que sustituye
+  > al bloqueo: sin él, la clínica lo descubre con el paciente delante.
+- **ST-006** — El sistema DEBERÁ marcar si un profesional es **agendable**;
+  MIENTRAS no lo sea, NO DEBERÁ ofrecerse como columna de agenda ni admitir
+  reglas de horario nuevas.
+- **ST-007** — El sistema DEBERÁ registrar en qué sedes atiende cada
+  profesional, y SI se intenta reservar o crear una regla de horario en una sede
+  donde no atiende, ENTONCES DEBERÁ rechazarlo.
+- **ST-008** — El sistema DEBERÁ permitir que un profesional ejerza una o varias
+  especialidades del catálogo de `specialties`, exactamente una marcada como
+  principal, y DEBERÁ exponer la principal en el listado que consume la agenda.
+- **ST-009** — El sistema DEBERÁ permitir una excepción de duración por
+  profesional para un especialidad·tipo concreto, que es el primer nivel de la
+  jerarquía de D-010.
+- **ST-010** — SI se intenta borrar un profesional con atenciones, citas o
+  documentos firmados, ENTONCES el sistema DEBERÁ rechazarlo y ofrecer
+  desactivarlo; toda mutación del perfil DEBERÁ quedar en la bitácora con autor,
+  instante y valor anterior.
+
+### Horarios de los profesionales (REQ-151)
+
+_Numeración conservada de `CF-040`..`CF-046` al mudarse desde `configuration`
+(ADR-011): cambia el prefijo, no el número._
+
+- **ST-040** — El sistema DEBERÁ permitir crear, editar y cerrar reglas de
+  horario de un profesional por sede desde la aplicación, con el permiso de
+  administración.
+- **ST-041** — Toda regla DEBERÁ llevar vigencia; CUANDO se cierre una regla, el
+  cierre DEBERÁ regir hacia adelante sin tocar días ya pasados.
+- **ST-042** — SI una regla nueva o editada solapa otra vigente del mismo
+  profesional y sede en el mismo día de la semana, ENTONCES el sistema DEBERÁ
+  rechazarla con `SCHEDULE_RULE_OVERLAP`, y la garantía DEBERÁ vivir en la base
+  como exclusión (AG-106).
+- **ST-043** — CUANDO un cambio de horario deje citas ya reservadas fuera del
+  nuevo horario, el sistema NO DEBERÁ anularlas ni moverlas solo: DEBERÁ
+  listarlas como conflictos para gestión humana.
+- **ST-044** — Toda mutación de horario DEBERÁ quedar en la bitácora con autor,
+  instante y regla anterior.
+- **ST-045** — El sistema DEBERÁ validar que la hora de fin sea posterior a la
+  de inicio y que los minutos por turno quepan al menos una vez en la franja,
+  con la garantía como `CHECK` en la base.
+- **ST-046** — DONDE la clínica opere en más de una sede, una regla DEBERÁ
+  pertenecer a exactamente una sede; el no-solapamiento del profesional entre
+  sedes ya lo garantiza el `EXCLUDE` de citas.
+
+---
+
+## Códigos de error
+
+| Código                  | HTTP | Cuándo                                              |
+| ----------------------- | ---- | ---------------------------------------------------- |
+| `PRACTITIONER_NOT_FOUND`| 404  | El profesional indicado no existe                    |
+| `PRACTITIONER_IN_USE`   | 409  | Borrar un profesional con historial (ST-010)         |
+| `ACESS_EXPIRED`         | 422  | Firmar con registro ACESS vencido (ST-004)           |
+| `PRACTITIONER_NOT_IN_SITE` | 422 | Reserva o regla en una sede donde no atiende (ST-007) |
+| `SCHEDULE_RULE_OVERLAP` | 409  | Regla de horario solapada (ST-042)                   |
+| `PRIMARY_SPECIALTY_REQUIRED` | 422 | La asignación no marca exactamente una principal (ST-008) |
+
+`PRACTITIONER_NOT_FOUND` y `PRIMARY_SPECIALTY_REQUIRED` ya existen en
+`error-catalogue.ts`, emitidos hoy desde `specialties`: cuando la deuda se salde
+cambian de emisor, no de cadena.
+
+## Notas de esquema
+
+Las tablas ya existen y hoy no tienen módulo dueño — esa es exactamente la razón
+de ser de este SPEC: `practitioner`, `practitioner_site`,
+`practitioner_schedule_rule`, y las dos que llegan desde `specialties`,
+`practitioner_specialty` y `duration_exception`.
+
+Dos cosas que conviene saber antes de tocarlas:
+
+- **Cédula y ACESS viven hoy en `app_user`, no en `practitioner`**, y no están
+  duplicadas. ST-001 y ST-002 se satisfacen a través de esa relación; si alguna
+  vez se mueven, es una migración con dueño claro y no un `ADD COLUMN`.
+- El `EXCLUDE` que ST-042 exige (AG-106) **no existe todavía**: `start_time` y
+  `end_time` son `time` y PostgreSQL no trae `timerange`, así que hay que
+  rangificar a minutos desde medianoche y combinarlo con el `daterange` de
+  vigencia. Entra con S2 y merece sus propias pruebas de concurrencia.

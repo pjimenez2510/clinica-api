@@ -6,6 +6,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { ForbiddenError } from '../../../shared/domain/errors/domain-error';
 import {
   CURRENT_USER,
+  PRINCIPAL,
   IS_PUBLIC_KEY,
   MFA_FLOW_ONLY_KEY,
   OWN_ACCOUNT_KEY,
@@ -31,7 +32,6 @@ import type { AccessTokenClaims } from './token.service';
  * thanks to module initialisation order, and that the linter said nothing was
  * the actual finding: `no-use-before-define` was missing from the config.
  */
-export const PRINCIPAL = 'principal';
 
 export class PermissionDeniedError extends ForbiddenError {
   readonly code = 'PERMISSION_DENIED';

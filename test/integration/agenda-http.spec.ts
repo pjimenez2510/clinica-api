@@ -757,10 +757,10 @@ describe('la agenda por HTTP', () => {
       await expect(prisma.accessAudit.count()).resolves.toBe(before);
     });
 
-    it('AG-074 no devuelve nombre, documento ni motivo de consulta en el listado', async () => {
-      // Lo que no viaja tampoco puede acabar en un log ni en una captura de
-      // pantalla de soporte. La ficha se abre por su propia ruta, y esa sí
-      // deja constancia.
+    it('AG-109 devuelve el nombre del paciente y jamás su documento ni el motivo', async () => {
+      // El nombre es identificación operativa: sin él la rejilla del
+      // calendario es inoperable. El documento y el motivo son de la ficha,
+      // que se abre por su ruta auditada (AG-073).
       await book(anAppointment({ reason: 'Control de embarazo' })).expect(201);
       const patient = await prisma.patient.findUniqueOrThrow({
         where: { id: patientId },
@@ -768,8 +768,9 @@ describe('la agenda por HTTP', () => {
 
       const response = await dayOf().expect(200);
 
-      expect(response.text).not.toContain(patient.familyName);
-      expect(response.text).not.toContain(patient.givenName);
+      expect(response.text).toContain(
+        `${patient.familyName}, ${patient.givenName}`,
+      );
       expect(response.text).not.toContain(patient.mrn);
       // El motivo de consulta es dato de salud: cualquiera con `agenda:read`
       // en la sede leía el de las cuarenta filas del día sin que quedara
@@ -787,6 +788,56 @@ describe('la agenda por HTTP', () => {
         .expect(422);
 
       expect((response.body as Problem).code).toBe('VALIDATION_FAILED');
+    });
+  });
+
+  describe('las listas de referencia', () => {
+    it('AG-107 lista solo las sedes del alcance de quien llama', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/agenda/sites')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const body = response.body as { items: { id: string; name: string }[] };
+      // La recepcionista tiene UNA sede: ver la otra sería revelar cómo se
+      // organiza la clínica a quien no trabaja allí.
+      expect(body.items.map((site) => site.id)).toEqual([siteId]);
+      expect(body.items[0]).toEqual({
+        id: siteId,
+        name: expect.any(String) as string,
+      });
+    });
+
+    it('AG-107 exige sesión', async () => {
+      await request(app.getHttpServer())
+        .get('/api/v1/agenda/sites')
+        .expect(401);
+    });
+
+    it('AG-108 lista los profesionales agendables de la sede, solo id y nombre', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/api/v1/agenda/sites/${siteId}/practitioners`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const body = response.body as { items: Record<string, unknown>[] };
+      expect(body.items).toHaveLength(2);
+      for (const item of body.items) {
+        // Nombre y nada más: ni cédula, ni ACESS, ni correo (AG-108).
+        expect(Object.keys(item).sort()).toEqual(['fullName', 'id', 'userId']);
+      }
+      expect(body.items.map((item) => item.id).sort()).toEqual(
+        [practitionerId, secondPractitionerId].sort(),
+      );
+    });
+
+    it('AG-108 rechaza la sede fuera del alcance con SITE_SCOPE_DENIED', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/api/v1/agenda/sites/${otherSiteId}/practitioners`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+
+      expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
     });
   });
 });

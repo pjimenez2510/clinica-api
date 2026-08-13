@@ -129,6 +129,54 @@ export const bookAppointmentSchema = z.object({
 });
 export class BookAppointmentDto extends createZodDto(bookAppointmentSchema) {}
 
+/**
+ * AG-040 to AG-044: one transition of one appointment.
+ *
+ * `to` IS an enum here, unlike `bookingChannel` above, and the asymmetry is
+ * reasoned: AG-034 names the code the channel must answer with, so the domain
+ * must be the one refusing it. No requirement names a code for an unknown
+ * TARGET status — an unlisted `to` is a malformed request, not a state
+ * conflict, and the generic per-field 422 is the honest answer. `BOOKED` and
+ * `BLOCKED` are not offered: nothing returns to BOOKED, and BLOCKED belongs
+ * to blocks alone (AG-046).
+ */
+export const transitionStatusSchema = z
+  .object({
+    to: z.enum(
+      [
+        'CONFIRMED',
+        'CHECKED_IN',
+        'IN_PROGRESS',
+        'FULFILLED',
+        'CANCELLED',
+        'NO_SHOW',
+      ],
+      { error: 'Indique el estado al que pasa la cita' },
+    ),
+    /**
+     * Free text a receptionist types; it can carry health data, so it is
+     * stored (history `note`, and `cancellation_note` on an annulment) and
+     * never logged nor served back in listings (AG-074).
+     */
+    reason: z
+      .string()
+      .trim()
+      .max(512, 'El motivo no puede superar 512 caracteres')
+      .optional(),
+  })
+  .superRefine((value, ctx) => {
+    // AG-044: an annulment without a reason is refused PER FIELD, so the
+    // form knows exactly which box to highlight.
+    if (value.to === 'CANCELLED' && !value.reason) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['reason'],
+        message: 'Indique el motivo de la anulación',
+      });
+    }
+  });
+export class TransitionStatusDto extends createZodDto(transitionStatusSchema) {}
+
 export const agendaEntrySchema = z.object({
   id: z.uuid(),
   kind: KIND,
@@ -137,6 +185,11 @@ export const agendaEntrySchema = z.object({
   roomId: z.uuid().nullable(),
   /** `null` on a block, which has no patient (AG-021). */
   patientId: z.uuid().nullable(),
+  /**
+   * Filing order («Andrade, Rosa»), for the calendar card. Identification is
+   * operational; the REASON stays out of the listing (AG-072/074).
+   */
+  patientName: z.string().nullable(),
   startsAt: z.iso.datetime(),
   endsAt: z.iso.datetime(),
   status: STATUS,
@@ -260,3 +313,42 @@ export class DailyAgendaDto extends createZodDto(dailyAgendaSchema) {}
 export type DailyAgendaResponse = z.infer<typeof dailyAgendaSchema>;
 export type AvailabilityResponse = z.infer<typeof availabilitySchema>;
 export type AgendaEntryResponse = z.infer<typeof agendaEntrySchema>;
+
+/** AG-107. A site the caller may schedule in. */
+export const agendaSiteSchema = z.object({
+  id: z.uuid(),
+  name: z.string(),
+});
+export class AgendaSiteDto extends createZodDto(agendaSiteSchema) {}
+
+export const agendaSitesSchema = z.object({
+  items: z.array(agendaSiteSchema).readonly(),
+});
+export class AgendaSitesDto extends createZodDto(agendaSitesSchema) {}
+
+/**
+ * AG-108. Name and id, nothing else: the cedula and the ACESS registration
+ * travel in signed documents, not in a dropdown anyone with `agenda:read`
+ * can open.
+ */
+export const schedulablePractitionerSchema = z.object({
+  id: z.uuid(),
+  /** Account id: lets the interface preselect the signed-in doctor's column. */
+  userId: z.uuid(),
+  fullName: z.string(),
+});
+export class SchedulablePractitionerDto extends createZodDto(
+  schedulablePractitionerSchema,
+) {}
+
+export const schedulablePractitionersSchema = z.object({
+  items: z.array(schedulablePractitionerSchema).readonly(),
+});
+export class SchedulablePractitionersDto extends createZodDto(
+  schedulablePractitionersSchema,
+) {}
+
+export type AgendaSitesResponse = z.infer<typeof agendaSitesSchema>;
+export type SchedulablePractitionersResponse = z.infer<
+  typeof schedulablePractitionersSchema
+>;

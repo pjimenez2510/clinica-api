@@ -4,6 +4,7 @@ import { Module } from '@nestjs/common';
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 
 import { AgendaController } from './agenda.controller';
+import { AgendaReferenceController } from './agenda-reference.controller';
 import { AgendaService } from './application/agenda.service';
 import { AGENDA_REPOSITORY } from './domain/agenda.repository';
 import { PrismaAgendaRepository } from './infrastructure/prisma-agenda.repository';
@@ -26,7 +27,7 @@ import { PrismaAgendaRepository } from './infrastructure/prisma-agenda.repositor
  * recorder wired in here would eventually be called once per listed row.
  */
 @Module({
-  controllers: [AgendaController],
+  controllers: [AgendaController, AgendaReferenceController],
   providers: [
     AgendaService,
     CurrentUserService,

@@ -43,7 +43,9 @@
     "rtm": "node --experimental-strip-types scripts/check-rtm.mts",
     "rtm:write": "node --experimental-strip-types scripts/check-rtm.mts --write",
     "estado": "node --experimental-strip-types scripts/estado.mts",
-    "estado:proyecto": "node --experimental-strip-types scripts/estado-proyecto.mts"
+    "estado:proyecto": "node --experimental-strip-types scripts/estado-proyecto.mts",
+    "db:seed:agenda": "node --env-file=.env --experimental-strip-types prisma/seed-agenda.mts",
+    "db:seed:specialties": "node --env-file=.env --experimental-strip-types prisma/seed-specialties.mts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.28",

@@ -7,10 +7,18 @@ import {
   isSerialisationFailure,
   withSerialisationRetry,
 } from '../../../shared/infrastructure/prisma/serialisation-retry';
-import { BookingRetryExhaustedError } from '../domain/agenda.errors';
+import {
+  AgendaEntryHasEncounterError,
+  AgendaEntryNotFoundError,
+  BookingRetryExhaustedError,
+  InvalidAgendaTransitionError,
+} from '../domain/agenda.errors';
 import type {
   AgendaEntryView,
   AgendaRepository,
+  AgendaSite,
+  SchedulablePractitioner,
+  SiteScopeFilter,
   AvailabilityContext,
   AvailabilityContextQuery,
   DailyAgendaQuery,
@@ -18,6 +26,9 @@ import type {
   PatientBookingStatus,
   ScheduleContext,
   ScheduleContextQuery,
+  StatusChange,
+  TransitionCommand,
+  TransitionRead,
 } from '../domain/agenda.repository';
 import {
   type ClinicalDate,
@@ -56,6 +67,11 @@ const ENTRY_SELECT = {
   practitionerId: true,
   roomId: true,
   patientId: true,
+  // The NAME travels with the listing since the calendar redesign: reception
+  // operates by name ("señora Andrade, pase"), and a grid of anonymous ids is
+  // unusable. The REASON stays out — that is clinical content (AG-072/074);
+  // identification is not, and opening the chart remains the audited act.
+  patient: { select: { givenName: true, familyName: true } },
   startsAt: true,
   endsAt: true,
   status: true,
@@ -101,6 +117,50 @@ export class PrismaAgendaRepository implements AgendaRepository {
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(PrismaAgendaRepository.name);
+  }
+
+  /** AG-107. Names only; the scope narrowing IS the authorisation here. */
+  async listSites(scope: SiteScopeFilter): Promise<AgendaSite[]> {
+    const rows = await this.prisma.site.findMany({
+      where: {
+        active: true,
+        ...(scope === 'all' ? {} : { id: { in: [...scope] } }),
+      },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+    return rows;
+  }
+
+  /**
+   * AG-108. The join to `user` exists only for the display name: nothing else
+   * of the account — email, cedula, MFA state — is selected, so nothing else
+   * can leak into the dropdown or a screenshot of it.
+   */
+  async listSchedulablePractitioners(
+    siteId: string,
+  ): Promise<SchedulablePractitioner[]> {
+    const rows = await this.prisma.practitioner.findMany({
+      where: {
+        active: true,
+        schedulable: true,
+        sites: { some: { siteId } },
+      },
+      select: {
+        id: true,
+        userId: true,
+        user: { select: { firstName: true, lastName: true } },
+      },
+    });
+    return rows
+      .map((row) => ({
+        id: row.id,
+        // For "my agenda": the session knows the USER, the column is the
+        // PRACTITIONER, and this is the only place the two ids meet.
+        userId: row.userId,
+        fullName: `${row.user.firstName} ${row.user.lastName}`.trim(),
+      }))
+      .sort((a, b) => a.fullName.localeCompare(b.fullName, 'es'));
   }
 
   /**
@@ -385,6 +445,119 @@ export class PrismaAgendaRepository implements AgendaRepository {
       throw new BookingRetryExhaustedError(BOOKING_ATTEMPTS);
     }
   }
+
+  /**
+   * AG-004, AG-040 to AG-045: one transition, one transaction.
+   *
+   * READ, DECIDE, WRITE CONDITIONALLY. The read is by id AND site, so an
+   * entry of another site answers exactly like a missing one — telling them
+   * apart would confirm foreign entries to whoever guesses identifiers. The
+   * policy is the `decide` closure the service built; whatever it throws
+   * aborts the transaction with nothing written.
+   *
+   * THE UPDATE DOES NOT TRUST THE READ. Two receptionists resolve the same
+   * BOOKED at the same moment; both closures approve. The `updateMany` is
+   * conditioned on the status that was read, so the loser matches zero rows,
+   * re-reads, and is refused with the status the WINNER left — the honest
+   * 409, not a stale acceptance (AG-040 is what closes AG-025's race here).
+   *
+   * The history row rides in the same transaction (AG-004): a transition
+   * that could commit without its history would make `agenda_status_history`
+   * a best-effort diary. And this module only ever INSERTS into it (AG-005).
+   */
+  async transition(
+    command: TransitionCommand,
+    decide: (entry: TransitionRead) => StatusChange,
+  ): Promise<AgendaEntryView> {
+    return this.prisma.$transaction(async (tx) => {
+      const row = await tx.agendaEntry.findFirst({
+        where: { id: command.entryId, siteId: command.siteId },
+        select: {
+          id: true,
+          kind: true,
+          status: true,
+          startsAt: true,
+          releasedAt: true,
+          encounter: { select: { id: true } },
+        },
+      });
+      if (!row) throw new AgendaEntryNotFoundError();
+
+      const fromStatus = row.status;
+      const change = decide({
+        id: row.id,
+        kind: row.kind,
+        status: fromStatus,
+        startsAt: row.startsAt,
+        releasedAt: row.releasedAt,
+        hasEncounter: row.encounter !== null,
+      });
+
+      /**
+       * EVERYTHING THE CLOSURE DECIDED ON is re-arbitrated by the WRITE, not
+       * only `status` (adversarial review of E2, P1 and P2-1):
+       *
+       *  - `encounter: { is: null }` when the move releases the slot. The
+       *    decide saw no encounter, but one can be committed between our read
+       *    and our write, and cancelling an attended appointment is exactly
+       *    what AG-045 prohibits. This narrows the window to intra-statement;
+       *    the residual gap (encounter created after this UPDATE commits) is
+       *    a DOCUMENTED ACCEPTED WINDOW until the encounter module closes it
+       *    from its side — see the `Falta esquema` note on AG-045 in SPEC.md.
+       *  - `releasedAt: null` when the effects stamp a release. Unreachable
+       *    today (only terminal states release, and terminals admit nothing),
+       *    but E3's "liberar el cupo original" will create released rows in
+       *    non-terminal states, and without this guard a stale transition
+       *    would overwrite the release instant.
+       */
+      const releasing = change.effects.releasedAt !== undefined;
+      const updated = await tx.agendaEntry.updateMany({
+        where: {
+          id: command.entryId,
+          siteId: command.siteId,
+          status: fromStatus,
+          ...(releasing ? { releasedAt: null, encounter: { is: null } } : {}),
+        },
+        data: {
+          status: change.to,
+          ...change.effects,
+          ...(change.cancellationNote === undefined
+            ? {}
+            : { cancellationNote: change.cancellationNote }),
+        },
+      });
+      if (updated.count === 0) {
+        // Somebody else changed what we decided on, between our read and our
+        // write. WHICH dimension changed decides the refusal: blaming the
+        // status when an encounter appeared would tell the receptionist to
+        // retry an action AG-045 forbids.
+        const current = await tx.agendaEntry.findUniqueOrThrow({
+          where: { id: command.entryId },
+          select: { status: true, encounter: { select: { id: true } } },
+        });
+        if (releasing && current.encounter !== null) {
+          throw new AgendaEntryHasEncounterError();
+        }
+        throw new InvalidAgendaTransitionError(current.status, change.to);
+      }
+
+      await tx.agendaStatusHistory.create({
+        data: {
+          agendaEntryId: command.entryId,
+          fromStatus,
+          toStatus: change.to,
+          changedById: command.changedById,
+          note: change.historyNote,
+        },
+      });
+
+      const entry = await tx.agendaEntry.findUniqueOrThrow({
+        where: { id: command.entryId },
+        select: ENTRY_SELECT,
+      });
+      return toEntryView(entry);
+    });
+  }
 }
 
 /** A `practitioner_schedule_rule` row as the domain reads it. */
@@ -430,6 +603,7 @@ function toEntryView(row: {
   practitionerId: string;
   roomId: string | null;
   patientId: string | null;
+  patient: { givenName: string; familyName: string } | null;
   startsAt: Date;
   endsAt: Date;
   status: string;
@@ -440,6 +614,10 @@ function toEntryView(row: {
   createdById: string | null;
 }): AgendaEntryView {
   return {
+    // Ecuadorian filing order, same as the register screen: surname first.
+    patientName: row.patient
+      ? `${row.patient.familyName}, ${row.patient.givenName}`
+      : null,
     id: row.id,
     kind: row.kind as AgendaEntryView['kind'],
     siteId: row.siteId,

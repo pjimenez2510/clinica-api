@@ -56,7 +56,7 @@ regla del módulo cuyo fallo produce dos pacientes en la misma silla.
 **Prueba independiente:** reservar contra un PostgreSQL real con dos clientes
 concurrentes y comprobar que gana exactamente uno.
 **Cubre:** AG-001 a AG-003, AG-010 a AG-014, AG-017, AG-018, AG-020 a AG-030,
-AG-034, AG-104, AG-105, AG-106.
+AG-034, AG-104, AG-105, AG-106, AG-109.
 
 > AG-031 a AG-033 (antelación mínima, máxima y reserva en el pasado) **no son de
 > E1 aunque estén en §3**: leen la configuración de la sede, que no existe hasta
@@ -202,6 +202,16 @@ es falsa, hay requisitos que cambian.
   > recepcionista no tenía forma de elegir dónde reservar. Lo detectó el
   > contrato generado, no una lectura — «la API está lista» y «la API es
   > operable desde una pantalla» no son lo mismo.
+- **AG-109** — CUANDO se consulte la agenda de un día, el sistema DEBERÁ
+  incluir el nombre del paciente de cada cita, en orden de archivo
+  («Apellido, Nombre»), y NO DEBERÁ incluir su documento ni el motivo de
+  consulta.
+  > Decisión del rediseño de calendario (12-08-2026, pedida por el usuario
+  > sobre su maqueta): la primera versión excluía también el nombre, y una
+  > rejilla de citas anónimas es inoperable — recepción llama a la gente por
+  > su nombre. La línea queda donde estaba para lo demás: la identificación es
+  > operativa; el documento y el motivo son de la ficha, que se abre por su
+  > ruta auditada (AG-073). AG-072 no cambia: listar sigue sin auditar por fila.
 - **AG-108** — CUANDO se consulten los profesionales agendables de una sede, el
   sistema DEBERÁ listar identificador y nombre de los que están activos, con
   `schedulable = true` y vinculados a esa sede, y NO DEBERÁ incluir cédula,
@@ -430,6 +440,16 @@ Transiciones admitidas. Cualquier par no listado se rechaza.
   motivo, DEBERÁ registrar `cancelled_at` y DEBERÁ liberar el cupo.
 - **AG-045** — MIENTRAS una cita tenga un `Encounter` asociado, el sistema NO
   DEBERÁ permitir anularla ni marcarla como `NO_SHOW`.
+  > **Ventana aceptada, por escrito** (revisión adversarial de E2, P1). El
+  > chequeo se decide dentro de la transacción y el `UPDATE` re-arbitra con
+  > `encounter IS NULL`, así que la carrera anulación-vs-atención queda cerrada
+  > hasta el intervalo intra-sentencia. Queda un resquicio: un `Encounter`
+  > confirmado DESPUÉS de ese `UPDATE` sobre una cita recién anulada — nada en
+  > la base ata la creación de un encounter al estado de la cita.
+  > **Falta esquema.** El cierre definitivo es del módulo `encounter`: al crear
+  > la atención, verificar el estado de la cita dentro de su propia transacción
+  > con bloqueo de la fila de agenda (o trigger equivalente). Va con ese módulo,
+  > no con una migración de agenda.
 - **AG-046** — El estado `BLOCKED` DEBERÁ ser válido únicamente para entradas de
   tipo `BLOCK`.
   > Garantía de la base desde `20260812125924_agenda_guarantees`:
@@ -604,30 +624,47 @@ Convertirlo en configuración sería regalar la garantía.
 
 Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 
-| Código                        | Estado | Requisito |
-| ----------------------------- | ------ | --------- |
-| `INVALID_AGENDA_TRANSITION`   | 409    | AG-040    |
-| `OUTSIDE_SCHEDULE_RULE`       | 422    | AG-028    |
-| `AGENDA_ENTRY_HAS_ENCOUNTER`  | 409    | AG-045    |
-| `BLOCK_OVERLAPS_APPOINTMENTS` | 409    | AG-038    |
-| `BOOKING_IN_THE_PAST`         | 422    | AG-031    |
-| `BOOKING_TOO_SOON`            | 422    | AG-032    |
-| `BOOKING_TOO_FAR`             | 422    | AG-033    |
-| `INVALID_BOOKING_CHANNEL`     | 422    | AG-034    |
-| `INVALID_SLOT_DURATION`       | 422    | AG-012    |
-| `OVERBOOKING_NOT_ALLOWED`     | 422    | AG-039    |
-| `OVERBOOKING_LIMIT_REACHED`   | 409    | AG-100    |
-| `OVERBOOKING_NOT_AUTHORISED`  | 403    | AG-101    |
-| `SELF_AUTHORISATION_DENIED`   | 403    | AG-103    |
-| `SLOT_NOT_ALIGNED`            | 422    | AG-104    |
-| `ROOM_NOT_IN_SITE`            | 422    | AG-105    |
-| `BOOKING_RETRY_EXHAUSTED`     | 503    | AG-026    |
+| Código                         | Estado | Requisito |
+| ------------------------------ | ------ | --------- |
+| `INVALID_AGENDA_TRANSITION`    | 409    | AG-040    |
+| `OUTSIDE_SCHEDULE_RULE`        | 422    | AG-028    |
+| `AGENDA_ENTRY_HAS_ENCOUNTER`   | 409    | AG-045    |
+| `BLOCK_OVERLAPS_APPOINTMENTS`  | 409    | AG-038    |
+| `BOOKING_IN_THE_PAST`          | 422    | AG-031    |
+| `BOOKING_TOO_SOON`             | 422    | AG-032    |
+| `BOOKING_TOO_FAR`              | 422    | AG-033    |
+| `INVALID_BOOKING_CHANNEL`      | 422    | AG-034    |
+| `INVALID_SLOT_DURATION`        | 422    | AG-012    |
+| `OVERBOOKING_NOT_ALLOWED`      | 422    | AG-039    |
+| `OVERBOOKING_LIMIT_REACHED`    | 409    | AG-100    |
+| `OVERBOOKING_NOT_AUTHORISED`   | 403    | AG-101    |
+| `SELF_AUTHORISATION_DENIED`    | 403    | AG-103    |
+| `SLOT_NOT_ALIGNED`             | 422    | AG-104    |
+| `ROOM_NOT_IN_SITE`             | 422    | AG-105    |
+| `BOOKING_RETRY_EXHAUSTED`      | 503    | AG-026    |
+| `NO_SHOW_BEFORE_START`         | 422    | AG-043    |
+| `CANCELLATION_REASON_REQUIRED` | 422    | AG-044    |
+| `AGENDA_ENTRY_NOT_FOUND`       | 404    | AG-071    |
 
 > `BOOKING_RETRY_EXHAUSTED` lo fijó la implementación de E1: AG-026 nombra el
 > estado (503) y la cabecera (`Retry-After`) pero no el código, y sin uno el
 > cliente no puede distinguir «reintente» de cualquier otro 503. Sale de la
 > categoría reintentable, así que la respuesta lleva `Retry-After`; **no** es un
 > conflicto de cupo, que es justo lo que el requisito prohíbe presentar.
+
+> `NO_SHOW_BEFORE_START` y `AGENDA_ENTRY_NOT_FOUND` los fijó la implementación
+> de E2, por la misma regla que `BOOKING_RETRY_EXHAUSTED`: AG-043 manda el
+> rechazo sin nombrar código, y sin uno el cliente no distingue «aún es
+> temprano para marcarla» de cualquier otro 422. El 404 responde igual para la
+> entrada que no existe y para la de otra sede — distinguirlas confirmaría
+> citas ajenas a quien prueba identificadores, el mismo razonamiento de
+> AG-105.
+
+> `CANCELLATION_REASON_REQUIRED` salió de la revisión adversarial de E2 (P2-3):
+> el DTO ya exigía el motivo por HTTP, pero E3 anulará la cita original desde
+> DENTRO del servicio, y un DEBERÁ que solo la capa de transporte hace cumplir
+> no es una garantía. La regla vive ahora en el servicio, donde ningún llamador
+> la rodea.
 
 Estos **no** entran, porque los produce el mapeo de errores de PostgreSQL en
 `shared/http/database-problem.ts`, que tiene su propia tabla:

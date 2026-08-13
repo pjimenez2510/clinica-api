@@ -29,7 +29,7 @@ describe('the permission catalogue', () => {
     // exception list keyed on the prefix would have grown with every addition;
     // asserting the closed set of screens is the invariant that actually
     // matters.
-    const SCREENS = ['patient', 'agenda', 'record', 'billing', 'catalog', 'admin']; // prettier-ignore
+    const SCREENS = ['patient', 'agenda', 'record', 'billing', 'catalog', 'config', 'admin']; // prettier-ignore
 
     for (const definition of PERMISSION_CATALOGUE) {
       expect(SCREENS, definition.code).toContain(definition.resource);

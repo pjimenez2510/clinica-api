@@ -2,7 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { ClsService } from 'nestjs-cls';
 
 import { UnauthorizedError } from '../domain/errors/domain-error';
-import { CURRENT_USER } from '../http/auth.decorators';
+import { CURRENT_USER, PRINCIPAL } from '../http/auth.decorators';
+import type { Principal } from './principal';
 
 /**
  * Reads the authenticated identity from anywhere in the request.
@@ -52,5 +53,22 @@ export class CurrentUserService {
     const user = this.get();
     if (!user) throw new MissingTokenError();
     return user.sub;
+  }
+
+  /**
+   * The resolved permissions of the caller, set by the permissions guard.
+   *
+   * Exists for the handlers that declared `'query'` site scope: the guard
+   * cannot check a site that is not in the URL, so the HANDLER narrows with
+   * `principal.sitesFor(...)` — and for that it needs the principal. Reading
+   * it from CLS keeps "who is asking" out of every method signature.
+   *
+   * Absent means the route ran without the guard, which no business route
+   * does; the same refusal as a missing token is the honest answer.
+   */
+  requirePrincipal(): Principal {
+    const principal = this.cls.get<Principal | undefined>(PRINCIPAL);
+    if (!principal) throw new MissingTokenError();
+    return principal;
   }
 }

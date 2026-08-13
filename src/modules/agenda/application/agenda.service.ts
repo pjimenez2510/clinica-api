@@ -4,10 +4,22 @@ import { PinoLogger } from 'nestjs-pino';
 import { PatientMergedError } from '../../../shared/domain/errors/patient-merged.error';
 import {
   AGENDA_REPOSITORY,
+  type AgendaEntryStatus,
   type AgendaEntryView,
   type AgendaRepository,
+  type SiteScopeFilter,
 } from '../domain/agenda.repository';
+import {
+  AgendaEntryHasEncounterError,
+  CancellationReasonRequiredError,
+} from '../domain/agenda.errors';
 import { checkBookingChannel, checkBookingFitsSchedule, checkRoomBelongsToSite } from '../domain/booking-policy'; // prettier-ignore
+import {
+  type AgendaTransitionTarget,
+  assertNoShowNotBeforeStart,
+  assertTransition,
+  effectsOf,
+} from '../domain/status-machine';
 import {
   type ClinicalDate,
   clinicalDateOf,
@@ -51,6 +63,18 @@ export interface BookAppointmentRequest {
   /** Unvalidated: `checkBookingChannel` decides (AG-034). */
   bookingChannel: string;
   serviceTypeConceptId?: string;
+  reason?: string;
+}
+
+export interface TransitionRequest {
+  siteId: string;
+  entryId: string;
+  to: AgendaTransitionTarget;
+  /**
+   * Free text. Required by the DTO exactly when `to` is CANCELLED (AG-044);
+   * whenever it comes it lands in the history's `note`, and on a
+   * cancellation also in `cancellation_note`. Never in a log (AG-074).
+   */
   reason?: string;
 }
 
@@ -256,5 +280,103 @@ export class AgendaService {
     );
 
     return entry;
+  }
+
+  /**
+   * AG-040 to AG-045. One status transition of one appointment.
+   *
+   * THE POLICY IS A CLOSURE handed to the port, and the shape is deliberate:
+   * the rules live here, but they must judge the row as it is INSIDE the
+   * adapter's transaction — a read from a moment earlier is exactly what two
+   * receptionists resolving the same appointment would both act on. The
+   * adapter still re-arbitrates the write with a conditional update, so even
+   * a stale decision loses honestly (AG-025's reasoning, applied to states).
+   *
+   * `now` is taken ONCE, here, and handed down: the machine is pure (no
+   * clock in the domain), and one instant stamping `checked_in_at` and
+   * `released_at` alike is what makes the history reconstructible.
+   */
+  async transition(
+    request: TransitionRequest,
+    requester: Requester,
+  ): Promise<AgendaEntryView> {
+    const now = new Date();
+    let from: AgendaEntryStatus | undefined;
+
+    // AG-044 lives HERE, not only in the DTO (adversarial review of E2,
+    // P2-3): E3 will cancel the original entry from inside the service, and
+    // an internal caller must hit the same DEBERÁ the HTTP boundary enforces.
+    // Before any read: a refusal that costs a transaction is a worse refusal.
+    if (request.to === 'CANCELLED' && !request.reason?.trim()) {
+      throw new CancellationReasonRequiredError();
+    }
+
+    const entry = await this.agenda.transition(
+      {
+        siteId: request.siteId,
+        entryId: request.entryId,
+        changedById: requester.userId,
+      },
+      (read) => {
+        from = read.status;
+        // AG-040, AG-046: the table of SPEC §5, and BLOCKED is blocks-only.
+        assertTransition(read.kind, read.status, request.to);
+        // AG-043: nobody is a no-show before the appointment starts.
+        if (request.to === 'NO_SHOW') {
+          assertNoShowNotBeforeStart(read.startsAt, now);
+        }
+        // AG-045: a documented attention outweighs the agenda.
+        if (
+          (request.to === 'CANCELLED' || request.to === 'NO_SHOW') &&
+          read.hasEncounter
+        ) {
+          throw new AgendaEntryHasEncounterError();
+        }
+
+        return {
+          to: request.to,
+          effects: effectsOf(request.to, now),
+          // AG-044: the reason lands on the entry only when it is annulled.
+          cancellationNote:
+            request.to === 'CANCELLED' ? request.reason : undefined,
+          // AG-004: and in the history whenever the caller gave one.
+          historyNote: request.reason,
+        };
+      },
+    );
+
+    /**
+     * AG-074. Site, action and the two states, in stable codes. No patient,
+     * no reason: "la cita pasó a otra sala" is operational, who missed which
+     * doctor is health data.
+     */
+    this.logger.info(
+      {
+        site_id: entry.siteId,
+        action: 'AGENDA_STATUS_CHANGED',
+        from_status: from,
+        to_status: request.to,
+      },
+      'agenda entry status changed',
+    );
+
+    return entry;
+  }
+
+  /**
+   * AG-107. The sites the CALLER may schedule in — the scope is the filter.
+   *
+   * The route declares `'query'` site scope, which means the guard cannot
+   * narrow it and this method is the narrowing. Passing anything other than
+   * the caller's own resolved scope here is the bug this comment exists to
+   * prevent.
+   */
+  async sitesFor(scope: SiteScopeFilter) {
+    return this.agenda.listSites(scope);
+  }
+
+  /** AG-108. Selector data: names, and deliberately nothing else. */
+  async schedulablePractitioners(siteId: string) {
+    return this.agenda.listSchedulablePractitioners(siteId);
   }
 }

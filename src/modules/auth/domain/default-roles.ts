@@ -40,6 +40,11 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       'site:manage',
       'catalog:manage',
       'catalog:read',
+      // Clinic-wide parametrisation (specialties, durations, schedules): it is
+      // operational configuration, not clinical content, so it sits with the
+      // administrator alongside users and sites.
+      'config:read',
+      'config:manage',
       'audit:read',
     ],
   },

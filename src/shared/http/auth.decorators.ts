@@ -1,4 +1,5 @@
 import { applyDecorators, SetMetadata } from '@nestjs/common';
+import { ApiSecurity } from '@nestjs/swagger';
 
 import type { Permission } from '../authorisation/permission.catalogue';
 
@@ -19,9 +20,15 @@ export const REQUIRED_PERMISSION_KEY = 'auth:permission';
 export const OWN_ACCOUNT_KEY = 'auth:own_account';
 export const SITE_SCOPE_KEY = 'auth:site_scope';
 
-/** Marks a route as reachable without authentication. */
+/**
+ * Marks a route as reachable without authentication.
+ *
+ * `ApiSecurity({})` mirrors the guard's behaviour in the OpenAPI document: an
+ * empty security requirement overrides the document-wide bearer requirement,
+ * so a route the guard lets through anonymously is also documented as open.
+ */
 export const Public = (): MethodDecorator & ClassDecorator =>
-  SetMetadata(IS_PUBLIC_KEY, true);
+  applyDecorators(SetMetadata(IS_PUBLIC_KEY, true), ApiSecurity({}));
 
 /**
  * The MFA flow itself, and nothing else.
@@ -40,6 +47,13 @@ export const MfaFlowOnly = (): MethodDecorator =>
   SetMetadata(MFA_FLOW_ONLY_KEY, true);
 
 /** Key under which the authenticated identity is published in the request context. */
+/**
+ * CLS key under which the permissions guard stores the resolved `Principal`.
+ * Lives here, beside `CURRENT_USER`, so shared code can read it without
+ * importing the guard — which is auth infrastructure and off limits.
+ */
+export const PRINCIPAL = 'principal';
+
 export const CURRENT_USER = 'currentUser';
 
 /**

@@ -117,9 +117,13 @@ export function configureApp(app: NestExpressApplication): void {
         .setTitle('API Clinica')
         .setDescription('Clinical management system — Ecuador')
         .setVersion('0.1.0')
-        .addBearerAuth()
+        .addBearerAuth(
+          { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+          'bearer',
+        )
         .build(),
     );
+    document.security = [{ bearer: [] }];
     SwaggerModule.setup('api/docs', app, document, {
       jsonDocumentUrl: 'api/docs/openapi.json',
     });

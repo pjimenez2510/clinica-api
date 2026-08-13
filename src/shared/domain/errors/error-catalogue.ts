@@ -20,6 +20,17 @@
  */
 export const DOMAIN_ERROR_CODES = [
   'ACCOUNT_INACTIVE',
+  // Agenda, E2. Los cuatro son la máquina de estados de la cita (SPEC §5) y
+  // responden cosas distintas a propósito: la transición no está en la tabla
+  // (409, el estado actual la rechaza), la cita ya tiene atención registrada
+  // (409, AG-045), la inasistencia se pidió antes de la hora de inicio (422,
+  // AG-043 — código fijado por la implementación, la spec no lo nombra), y la
+  // entrada no existe o es de otra sede (404, un solo mensaje para ambas:
+  // distinguirlas confirmaría citas ajenas a quien adivina identificadores).
+  'AGENDA_ENTRY_HAS_ENCOUNTER',
+  'AGENDA_ENTRY_NOT_FOUND',
+  'INVALID_AGENDA_TRANSITION',
+  'NO_SHOW_BEFORE_START',
   // Agenda, AG-026: PostgreSQL abortó la reserva por serialización y se
   // agotaron los reintentos. NO es un conflicto de cupo: un `40001` no dice
   // nada del horario, así que responder «ese cupo está ocupado» movería la
@@ -47,6 +58,7 @@ export const DOMAIN_ERROR_CODES = [
   // antigua perfectamente válida, y «no seleccionable» es un capítulo que hay
   // que concretar. Un 404 para las tres haría que la de en medio pareciera
   // corrupción de datos.
+  'CANCELLATION_REASON_REQUIRED',
   'CATALOG_CONCEPT_NOT_FOUND',
   'CATALOG_CONCEPT_NOT_IN_FORCE',
   'CATALOG_CONCEPT_NOT_SELECTABLE',
@@ -61,6 +73,22 @@ export const DOMAIN_ERROR_CODES = [
   'PATIENT_MERGED',
   'PATIENT_NOT_FOUND',
   'PERMISSION_DENIED',
+  // Especialidades, C1. Los duplicados y los «en uso» son 409 y los produce la
+  // base (índices únicos funcionales y FK RESTRICT): el adaptador los traduce
+  // por nombre de constraint al código que la spec fija (SP-003, SP-006,
+  // SP-025, SP-026). «En uso» ofrece desactivar en lugar de borrar, que es la
+  // otra mitad del requisito. Los dos de asignación son del servicio: SP-005
+  // exige exactamente una especialidad principal, y SP-004 prohíbe asignar
+  // una especialidad desactivada a un profesional que no la tenía.
+  'PRACTITIONER_NOT_FOUND',
+  'PRIMARY_SPECIALTY_REQUIRED',
+  'SERVICE_TYPE_DUPLICATE',
+  'SERVICE_TYPE_IN_USE',
+  'SERVICE_TYPE_NOT_FOUND',
+  'SPECIALTY_DUPLICATE',
+  'SPECIALTY_INACTIVE',
+  'SPECIALTY_IN_USE',
+  'SPECIALTY_NOT_FOUND',
   'PRINCIPAL_UNAVAILABLE',
   'REFRESH_TOKEN_REUSE_DETECTED',
   // Agenda, AG-071: el consultorio pedido es de otra sede. Nada en el esquema

@@ -37,7 +37,11 @@ marca por «ya funciona en mi máquina», y no se marca a medias.
    `revisor-clinico`, y también los revisores de seguridad y de cobertura si el
    cambio los toca. **Lo que confirmen se corrige antes de marcar `[x]`**, no
    después.
-8. **ROADMAP actualizado** con lo que de verdad quedó hecho, y la deuda que
+8. **Semilla de desarrollo al día.** Si la entrega añadió pantallas o estados
+   nuevos, `prisma/seed-*.mts` debe dejar datos con los que probarlos a mano
+   (idempotente, y solo desarrollo). Una pantalla que nadie puede abrir con
+   datos reales es una pantalla que nadie prueba.
+9. **ROADMAP actualizado** con lo que de verdad quedó hecho, y la deuda que
    quedó abierta anotada donde se vea.
 
 ## Al terminar

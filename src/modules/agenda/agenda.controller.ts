@@ -29,6 +29,7 @@ import {
   BookAppointmentDto,
   DailyAgendaDto,
   DailyAgendaQueryDto,
+  TransitionStatusDto,
   type AgendaEntryResponse,
   type AvailabilityResponse,
   type DailyAgendaResponse,
@@ -164,6 +165,32 @@ export class AgendaController {
 
     return toEntryResponse(entry);
   }
+
+  /**
+   * AG-040 to AG-045. One status transition, with its history row (AG-004).
+   *
+   * POST AND NOT PATCH, because it is not an edit: it is a command against a
+   * machine that can refuse it, and it leaves an append-only record behind.
+   * 200 with the updated entry, so the screen repaints without a second call.
+   */
+  @Post('entries/:entryId/status')
+  @RequirePermission('agenda:write', 'param:siteId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Cambiar el estado de una cita' })
+  @ApiOkResponse({ type: AgendaEntryDto })
+  async transition(
+    @Param('siteId', ParseUUIDPipe) siteId: string,
+    @Param('entryId', ParseUUIDPipe) entryId: string,
+    @Body() dto: TransitionStatusDto,
+  ): Promise<AgendaEntryResponse> {
+    const entry = await this.agenda.transition(
+      { siteId, entryId, to: dto.to, reason: dto.reason },
+      // AG-004: the author comes from the session, never from the body.
+      { userId: this.currentUser.requireUserId() },
+    );
+
+    return toEntryResponse(entry);
+  }
 }
 
 /**
@@ -198,6 +225,7 @@ function toEntryResponse(entry: AgendaEntryView) {
     practitionerId: entry.practitionerId,
     roomId: entry.roomId,
     patientId: entry.patientId,
+    patientName: entry.patientName,
     startsAt: entry.startsAt.toISOString(),
     endsAt: entry.endsAt.toISOString(),
     status: entry.status,

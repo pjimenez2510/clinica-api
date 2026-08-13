@@ -3,13 +3,19 @@ import { describe, expect, it } from 'vitest';
 import { DOMAIN_ERROR_CODES } from '../../../shared/domain/errors/error-catalogue';
 import {
   BusinessRuleViolation,
+  ConflictError,
+  NotFoundError,
   ValidationError,
 } from '../../../shared/domain/errors/domain-error';
 
 import {
+  AgendaEntryHasEncounterError,
+  AgendaEntryNotFoundError,
   BookingRetryExhaustedError,
+  InvalidAgendaTransitionError,
   InvalidBookingChannelError,
   InvalidSlotDurationError,
+  NoShowBeforeStartError,
   OutsideScheduleRuleError,
   SlotNotAlignedError,
 } from './agenda.errors';
@@ -139,6 +145,66 @@ describe('agenda errors', () => {
       'INVALID_SLOT_DURATION',
       'OUTSIDE_SCHEDULE_RULE',
       'SLOT_NOT_ALIGNED',
+    ]) {
+      expect(DOMAIN_ERROR_CODES).toContain(code);
+    }
+  });
+});
+
+describe('the transition errors (E2)', () => {
+  it('AG-040 answers INVALID_AGENDA_TRANSITION as a 409 naming the current state in Spanish', () => {
+    const error = new InvalidAgendaTransitionError('CHECKED_IN', 'CONFIRMED');
+
+    expect(error.code).toBe('INVALID_AGENDA_TRANSITION');
+    expect(error).toBeInstanceOf(ConflictError); // 409, the spec names it
+    expect(error.userTitle).toBe(
+      'La cita está en estado «En sala» y no admite ese cambio. Actualice la agenda',
+    );
+    // Both ends in stable codes, for the client that branches.
+    expect(error.params).toEqual({ from: 'CHECKED_IN', to: 'CONFIRMED' });
+    expect(error.message).not.toMatch(/undefined/);
+  });
+
+  it('AG-045 answers AGENDA_ENTRY_HAS_ENCOUNTER as a 409 with the sentence of the spec', () => {
+    const error = new AgendaEntryHasEncounterError();
+
+    expect(error.code).toBe('AGENDA_ENTRY_HAS_ENCOUNTER');
+    expect(error).toBeInstanceOf(ConflictError); // 409
+    expect(error.userTitle).toBe(
+      'La cita ya tiene una atención registrada: no puede anularse ni marcarse como inasistencia',
+    );
+  });
+
+  it('AG-043 answers NO_SHOW_BEFORE_START as an unprocessable business rule', () => {
+    const error = new NoShowBeforeStartError();
+
+    expect(error.code).toBe('NO_SHOW_BEFORE_START');
+    expect(error).toBeInstanceOf(BusinessRuleViolation); // 422
+    expect(error.userTitle).toBe(
+      'La inasistencia solo puede marcarse desde la hora de inicio de la cita',
+    );
+    // The message reaches the logs: no instant, no identifier.
+    expect(error.params).toEqual({});
+  });
+
+  it('AG-071 answers AGENDA_ENTRY_NOT_FOUND alike for a missing entry and a foreign-site one', () => {
+    const error = new AgendaEntryNotFoundError();
+
+    expect(error.code).toBe('AGENDA_ENTRY_NOT_FOUND');
+    expect(error).toBeInstanceOf(NotFoundError); // 404
+    // One message for both cases: "it exists, elsewhere" would confirm
+    // entries of sites the caller has no scope over.
+    expect(error.userTitle).toBe(
+      'La cita no existe en esta sede. Actualice la agenda',
+    );
+  });
+
+  it('AG-040 registers the four transition codes in the frozen public catalogue', () => {
+    for (const code of [
+      'INVALID_AGENDA_TRANSITION',
+      'AGENDA_ENTRY_HAS_ENCOUNTER',
+      'NO_SHOW_BEFORE_START',
+      'AGENDA_ENTRY_NOT_FOUND',
     ]) {
       expect(DOMAIN_ERROR_CODES).toContain(code);
     }

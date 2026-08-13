@@ -114,7 +114,13 @@ export async function createScheduleRule(
 
 export async function createEncounter(
   prisma: PrismaClient,
-  ids: { siteId: string; practitionerId: string; patientId: string },
+  ids: {
+    siteId: string;
+    practitionerId: string;
+    patientId: string;
+    /** AG-045: set to hang the encounter off an appointment. */
+    agendaEntryId?: string;
+  },
 ) {
   return prisma.encounter.create({
     data: {

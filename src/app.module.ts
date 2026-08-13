@@ -9,6 +9,7 @@ import { AgendaModule } from './modules/agenda/agenda.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CatalogsModule } from './modules/catalogs/catalogs.module';
 import { PatientsModule } from './modules/patients/patients.module';
+import { SpecialtiesModule } from './modules/specialties/specialties.module';
 import { validateEnv } from './shared/config/env.schema';
 import { TimeoutInterceptor } from './shared/http/interceptors/timeout.interceptor';
 import { ProblemDetailsFilter } from './shared/http/problem-details.filter';
@@ -61,7 +62,9 @@ import { buildLoggerConfig } from './shared/observability/logger.config';
      */
     ThrottlerModule.forRoot({
       throttlers: [
-        { name: 'short', ttl: 1_000, limit: 5 },
+        // 10/s: the agenda's week view legitimately bursts 6 same-handler
+        // GETs (one per day); 5/s returned 429 on the sixth and blanked it.
+        { name: 'short', ttl: 1_000, limit: 10 },
         { name: 'medium', ttl: 10_000, limit: 30 },
         { name: 'long', ttl: 60_000, limit: 150 },
       ],
@@ -72,6 +75,7 @@ import { buildLoggerConfig } from './shared/observability/logger.config';
     PatientsModule,
     AgendaModule,
     CatalogsModule,
+    SpecialtiesModule,
   ],
   providers: [
     // Registered with APP_FILTER, not useGlobalFilters, so the filter can

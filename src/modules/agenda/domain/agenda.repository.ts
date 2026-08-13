@@ -25,17 +25,9 @@ import type {
   ScheduleRule,
 } from './slot-availability';
 
-export type AgendaEntryKind = 'APPOINTMENT' | 'BLOCK';
+import type { AgendaEntryKind, AgendaEntryStatus } from './agenda-entry';
 
-export type AgendaEntryStatus =
-  | 'BOOKED'
-  | 'CONFIRMED'
-  | 'CHECKED_IN'
-  | 'IN_PROGRESS'
-  | 'FULFILLED'
-  | 'CANCELLED'
-  | 'NO_SHOW'
-  | 'BLOCKED';
+export type { AgendaEntryKind, AgendaEntryStatus } from './agenda-entry';
 
 /**
  * An agenda entry as the day's list shows it.
@@ -53,6 +45,12 @@ export interface AgendaEntryView {
   roomId: string | null;
   /** `null` exactly when `kind` is `BLOCK` (AG-021). */
   patientId: string | null;
+  /**
+   * Identification for the calendar card, in filing order («Andrade, Rosa»).
+   * The REASON never rides here — identification is operational, the motive
+   * is clinical (AG-072/074). Null on blocks.
+   */
+  patientName: string | null;
   startsAt: Date;
   endsAt: Date;
   status: AgendaEntryStatus;
@@ -163,7 +161,81 @@ export interface NewBooking {
   createdById: string;
 }
 
+/**
+ * What the transition policy needs to know about the entry, read INSIDE the
+ * adapter's transaction. No patient, no reason: the machine judges states
+ * and instants, never people.
+ */
+export interface TransitionRead {
+  id: string;
+  kind: AgendaEntryKind;
+  status: AgendaEntryStatus;
+  startsAt: Date;
+  releasedAt: Date | null;
+  /** AG-045: whether an encounter already hangs off this entry. */
+  hasEncounter: boolean;
+}
+
+/** The columns a transition stamps. Shared with the pure status machine. */
+export type TransitionEffects = Partial<
+  Record<'checkedInAt' | 'noShowAt' | 'cancelledAt' | 'releasedAt', Date>
+>;
+
+/**
+ * What the policy decided: the new status, its stamps, and the two notes.
+ *
+ * `cancellationNote` lands on the entry ONLY when the policy set it (the
+ * service does so exactly on CANCELLED, AG-044); `historyNote` is the free
+ * text of the history row (AG-004), carried when the caller gave a reason.
+ */
+export interface StatusChange {
+  to: AgendaEntryStatus;
+  effects: TransitionEffects;
+  cancellationNote?: string;
+  historyNote?: string;
+}
+
+/** AG-004: who asks for which entry. The author comes from the session. */
+export interface TransitionCommand {
+  siteId: string;
+  entryId: string;
+  changedById: string;
+}
+
+/** AG-107. A site the caller may schedule in: identifier and name, nothing else. */
+export interface AgendaSite {
+  id: string;
+  name: string;
+}
+
+/**
+ * AG-108. A practitioner a receptionist can pick in the booking screen.
+ *
+ * Name only, ON PURPOSE: the cedula and the ACESS registration travel in
+ * signed documents (REQ-050), not in a dropdown that anyone holding
+ * `agenda:read` can open.
+ */
+export interface SchedulablePractitioner {
+  id: string;
+  /** Account id, so the interface can preselect the signed-in doctor's own column. */
+  userId: string;
+  fullName: string;
+}
+
+/**
+ * The caller's site scope, as `Principal.sitesFor` states it: every site, or
+ * an explicit list. Declared here so the port does not import authorisation
+ * machinery — the DOMAIN only needs to know which of the two shapes it got.
+ */
+export type SiteScopeFilter = 'all' | readonly string[];
+
 export interface AgendaRepository {
+  /** AG-107. Sites in the caller's scope, by name, for the site selector. */
+  listSites(scope: SiteScopeFilter): Promise<AgendaSite[]>;
+  /** AG-108. Active, schedulable practitioners attached to the site. */
+  listSchedulablePractitioners(
+    siteId: string,
+  ): Promise<SchedulablePractitioner[]>;
   /** AG-017, AG-018. Ordered by start instant. */
   dailyAgenda(query: DailyAgendaQuery): Promise<AgendaEntryView[]>;
   /** AG-027. `null` when no such chart exists — the insert then fails on the FK. */
@@ -196,6 +268,28 @@ export interface AgendaRepository {
    * checks first.
    */
   book(booking: NewBooking): Promise<AgendaEntryView>;
+  /**
+   * AG-004, AG-040 to AG-045: one status transition, atomically.
+   *
+   * THE POLICY TRAVELS AS A FUNCTION, and that is the design. The service
+   * owns the rules (the table, AG-043, AG-045) but they must judge the row
+   * AS IT IS INSIDE THE TRANSACTION, not a read from a moment earlier — so
+   * the adapter reads, hands the row to `decide`, and applies whatever it
+   * returns in the same transaction, together with the history row (AG-004).
+   *
+   * The race two receptionists can still run — both read the same status,
+   * both decide — is closed by the adapter with a CONDITIONAL update on the
+   * status it read: the loser matches zero rows and is refused with the
+   * winner's status, never with a stale one.
+   *
+   * `decide` throws a domain error to refuse; the adapter aborts and nothing
+   * is written. It never lands on a missing entry: the adapter refuses an
+   * unknown or foreign-site identifier first.
+   */
+  transition(
+    command: TransitionCommand,
+    decide: (entry: TransitionRead) => StatusChange,
+  ): Promise<AgendaEntryView>;
 }
 
 /** Injection token. The application never names the adapter. */

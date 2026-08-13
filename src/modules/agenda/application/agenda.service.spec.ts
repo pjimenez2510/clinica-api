@@ -22,7 +22,16 @@ import type {
   PatientBookingStatus,
   ScheduleContext,
   ScheduleContextQuery,
+  StatusChange,
+  TransitionCommand,
+  TransitionRead,
 } from '../domain/agenda.repository';
+import {
+  AgendaEntryHasEncounterError,
+  CancellationReasonRequiredError,
+  InvalidAgendaTransitionError,
+  NoShowBeforeStartError,
+} from '../domain/agenda.errors';
 import type { AgendaOccupancy } from '../domain/slot-availability';
 import { AgendaService, type Requester } from './agenda.service';
 
@@ -75,6 +84,7 @@ function anEntry(overrides: Partial<AgendaEntryView> = {}): AgendaEntryView {
     practitionerId: PRACTITIONER,
     roomId: null,
     patientId: PATIENT,
+    patientName: 'Guamán, María',
     startsAt: EIGHT,
     endsAt: EIGHT_TWENTY,
     status: 'BOOKED',
@@ -109,6 +119,22 @@ interface Recorded {
   availability: AvailabilityContextQuery[];
   rooms: string[];
   booked: NewBooking[];
+  transitions: { command: TransitionCommand; change: StatusChange }[];
+}
+
+/** The row `transition` hands the service's policy, as the adapter would. */
+function aTransitionRead(
+  overrides: Partial<TransitionRead> = {},
+): TransitionRead {
+  return {
+    id: 'entry-1',
+    kind: 'APPOINTMENT',
+    status: 'BOOKED',
+    startsAt: EIGHT,
+    releasedAt: null,
+    hasEncounter: false,
+    ...overrides,
+  };
 }
 
 function repositoryDouble(
@@ -118,6 +144,7 @@ function repositoryDouble(
     context?: ScheduleContext;
     availability?: AvailabilityContext;
     roomSiteId?: string | null;
+    transitionRead?: TransitionRead;
   } = {},
 ): { repository: AgendaRepository; recorded: Recorded } {
   const recorded: Recorded = {
@@ -126,9 +153,14 @@ function repositoryDouble(
     availability: [],
     rooms: [],
     booked: [],
+    transitions: [],
   };
 
   const repository: AgendaRepository = {
+    // Reference lists are pass-through reads with no policy in the service;
+    // their behaviour is proven against the real database in integration.
+    listSites: () => Promise.resolve([]),
+    listSchedulablePractitioners: () => Promise.resolve([]),
     dailyAgenda: (query) => {
       recorded.daily.push(query);
       return Promise.resolve(overrides.entries ?? []);
@@ -179,6 +211,17 @@ function repositoryDouble(
           bookingChannel: booking.bookingChannel,
           createdById: booking.createdById,
         }),
+      );
+    },
+    // Like the real adapter: reads (here, the programmed row), hands it to
+    // the policy, records what the policy decided, answers the updated row.
+    // A policy that throws leaves nothing recorded, which is the assertion
+    // half these tests make.
+    transition: (command, decide) => {
+      const change = decide(overrides.transitionRead ?? aTransitionRead());
+      recorded.transitions.push({ command, change });
+      return Promise.resolve(
+        anEntry({ status: change.to, releasedAt: change.effects.releasedAt ?? null }), // prettier-ignore
       );
     },
   };
@@ -447,6 +490,208 @@ describe('booking an appointment', () => {
 });
 
 /**
+ * The status transitions, against the double of the port.
+ *
+ * WHAT IS NOT TESTED HERE: the atomicity, the conditional update and the
+ * history row. Those are the adapter's transaction, and a double that does
+ * whatever we programmed cannot prove a transaction exists — they are
+ * exercised in `test/integration/agenda-transitions.spec.ts` against a real
+ * PostgreSQL. What IS here is the policy the service builds: the table, the
+ * no-show clock, the encounter veto, and which effects each target stamps.
+ */
+describe('transitioning an appointment', () => {
+  /** Started long ago: the no-show clock rule cannot interfere. */
+  const STARTED = aTransitionRead({
+    status: 'CHECKED_IN',
+    startsAt: new Date('2026-01-05T13:00:00Z'),
+  });
+
+  const aTransition = (overrides: Record<string, unknown> = {}) => ({
+    siteId: SITE,
+    entryId: 'entry-1',
+    to: 'CONFIRMED' as const,
+    ...overrides,
+  });
+
+  it('AG-041 stamps the arrival instant when the patient checks in', async () => {
+    const { service, recorded } = serviceWith();
+
+    const entry = await service.transition(
+      { ...aTransition(), to: 'CHECKED_IN' },
+      REQUESTER,
+    );
+
+    expect(recorded.transitions[0]?.command).toEqual({
+      siteId: SITE,
+      entryId: 'entry-1',
+      changedById: USER,
+    });
+    const change = recorded.transitions[0]?.change;
+    expect(change?.to).toBe('CHECKED_IN');
+    expect(change?.effects.checkedInAt).toBeInstanceOf(Date);
+    // Arriving occupies the slot MORE, not less: nothing is released.
+    expect(change?.effects.releasedAt).toBeUndefined();
+    expect(entry.status).toBe('CHECKED_IN');
+  });
+
+  it('AG-042 marks the no-show and releases the slot in one decision', async () => {
+    const { service, recorded } = serviceWith({ transitionRead: STARTED });
+
+    await service.transition({ ...aTransition(), to: 'NO_SHOW' }, REQUESTER);
+
+    const change = recorded.transitions[0]?.change;
+    expect(change?.effects.noShowAt).toBeInstanceOf(Date);
+    expect(change?.effects.releasedAt).toBeInstanceOf(Date);
+    // One instant for both stamps: the history must be reconstructible.
+    expect(change?.effects.releasedAt).toEqual(change?.effects.noShowAt);
+  });
+
+  it('AG-043 refuses a no-show before the appointment starts and writes nothing', async () => {
+    const { service, recorded } = serviceWith({
+      transitionRead: aTransitionRead({
+        startsAt: new Date('2100-01-01T13:00:00Z'),
+      }),
+    });
+
+    await expect(
+      service.transition({ ...aTransition(), to: 'NO_SHOW' }, REQUESTER),
+    ).rejects.toBeInstanceOf(NoShowBeforeStartError);
+
+    expect(recorded.transitions).toEqual([]);
+  });
+
+  it('AG-044 sends the reason to the cancellation note and to the history', async () => {
+    const { service, recorded } = serviceWith();
+
+    await service.transition(
+      { ...aTransition(), to: 'CANCELLED', reason: 'Paciente reagenda' },
+      REQUESTER,
+    );
+
+    const change = recorded.transitions[0]?.change;
+    expect(change?.cancellationNote).toBe('Paciente reagenda');
+    expect(change?.historyNote).toBe('Paciente reagenda');
+    expect(change?.effects.cancelledAt).toBeInstanceOf(Date);
+    expect(change?.effects.releasedAt).toBeInstanceOf(Date);
+  });
+
+  it('AG-044 refuses a cancellation without a reason even for internal callers', async () => {
+    // The DTO already blocks this over HTTP; this pins the rule INSIDE the
+    // service, where E3's reschedule will call from (adversarial review P2-3).
+    const { service, recorded } = serviceWith();
+
+    await expect(
+      service.transition({ ...aTransition(), to: 'CANCELLED' }, REQUESTER),
+    ).rejects.toBeInstanceOf(CancellationReasonRequiredError);
+    await expect(
+      service.transition(
+        { ...aTransition(), to: 'CANCELLED', reason: '   ' },
+        REQUESTER,
+      ),
+    ).rejects.toBeInstanceOf(CancellationReasonRequiredError);
+    expect(recorded.transitions).toHaveLength(0);
+  });
+
+  it('AG-044 keeps the cancellation note for annulments alone', async () => {
+    const { service, recorded } = serviceWith();
+
+    await service.transition(
+      { ...aTransition(), to: 'CONFIRMED', reason: 'Confirmó por teléfono' },
+      REQUESTER,
+    );
+
+    const change = recorded.transitions[0]?.change;
+    // The history keeps the caller's words (AG-004); the entry's
+    // `cancellation_note` means "why it was annulled" and nothing else.
+    expect(change?.cancellationNote).toBeUndefined();
+    expect(change?.historyNote).toBe('Confirmó por teléfono');
+  });
+
+  it('AG-045 refuses to cancel an appointment that already has an encounter', async () => {
+    const { service, recorded } = serviceWith({
+      transitionRead: aTransitionRead({ hasEncounter: true }),
+    });
+
+    await expect(
+      service.transition(
+        { ...aTransition(), to: 'CANCELLED', reason: 'x' },
+        REQUESTER,
+      ),
+    ).rejects.toBeInstanceOf(AgendaEntryHasEncounterError);
+
+    expect(recorded.transitions).toEqual([]);
+  });
+
+  it('AG-045 refuses a no-show on an appointment that already has an encounter', async () => {
+    const { service } = serviceWith({
+      transitionRead: aTransitionRead({
+        hasEncounter: true,
+        startsAt: new Date('2026-01-05T13:00:00Z'),
+      }),
+    });
+
+    await expect(
+      service.transition({ ...aTransition(), to: 'NO_SHOW' }, REQUESTER),
+    ).rejects.toBeInstanceOf(AgendaEntryHasEncounterError);
+  });
+
+  it('AG-045 still lets an encountered appointment move forward', async () => {
+    // The veto is on denying the attention, not on the appointment moving:
+    // confirming or fulfilling contradicts nothing the record says.
+    const { service, recorded } = serviceWith({
+      transitionRead: aTransitionRead({ hasEncounter: true }),
+    });
+
+    await service.transition(aTransition(), REQUESTER);
+
+    expect(recorded.transitions[0]?.change.to).toBe('CONFIRMED');
+  });
+
+  it('AG-040 refuses a pair outside the table with the current state', async () => {
+    const { service, recorded } = serviceWith({
+      transitionRead: aTransitionRead({ status: 'FULFILLED' }),
+    });
+
+    const rejection = await service
+      .transition({ ...aTransition(), to: 'CANCELLED', reason: 'x' }, REQUESTER)
+      .catch((error: unknown) => error);
+
+    expect(rejection).toBeInstanceOf(InvalidAgendaTransitionError);
+    expect((rejection as InvalidAgendaTransitionError).params).toEqual({
+      from: 'FULFILLED',
+      to: 'CANCELLED',
+    });
+    expect(recorded.transitions).toEqual([]);
+  });
+
+  it('AG-046 refuses appointment transitions on a BLOCK', async () => {
+    const { service } = serviceWith({
+      transitionRead: aTransitionRead({ kind: 'BLOCK', status: 'BLOCKED' }),
+    });
+
+    await expect(
+      service.transition({ ...aTransition(), to: 'CHECKED_IN' }, REQUESTER),
+    ).rejects.toBeInstanceOf(InvalidAgendaTransitionError);
+  });
+
+  it('AG-074 logs the change without patient, practitioner or reason', async () => {
+    const { service, lines } = serviceWith();
+
+    await service.transition(
+      { ...aTransition(), to: 'CANCELLED', reason: 'Motivo con dato de salud' },
+      REQUESTER,
+    );
+
+    const logged = JSON.stringify(lines);
+    expect(logged).toContain('AGENDA_STATUS_CHANGED');
+    expect(logged).toContain('CANCELLED');
+    expect(logged).not.toContain('Motivo con dato de salud');
+    expect(logged).not.toContain(PATIENT);
+    expect(logged).not.toContain(PRACTITIONER);
+  });
+});
+
+/**
  * The availability view, against doubles of the port.
  *
  * WHAT IS BEING VERIFIED HERE is the wiring, not the arithmetic: the grid
@@ -639,5 +884,54 @@ describe('the availability view', () => {
     });
 
     expect(Object.keys(service)).not.toContain('audit');
+  });
+});
+
+describe('las listas de referencia', () => {
+  // Pass-throughs a propósito: la política es el ALCANCE que llega como
+  // argumento (AG-107) y la consulta filtrada del adaptador (AG-108), probada
+  // contra PostgreSQL real en agenda-http.spec.ts. Aquí solo se clava que el
+  // servicio no altera ni el filtro ni el resultado por el camino.
+  it('AG-107 entrega al repositorio exactamente el alcance recibido', async () => {
+    const scopes: unknown[] = [];
+    const { service } = serviceWith();
+    const spied = new AgendaService(
+      {
+        ...repositoryDouble().repository,
+        listSites: (scope) => {
+          scopes.push(scope);
+          return Promise.resolve([{ id: 'site-1', name: 'Sede Norte' }]);
+        },
+      },
+      loggerDouble().logger,
+    );
+
+    await expect(spied.sitesFor(['site-1'])).resolves.toEqual([
+      { id: 'site-1', name: 'Sede Norte' },
+    ]);
+    await spied.sitesFor('all');
+    expect(scopes).toEqual([['site-1'], 'all']);
+    expect(service).toBeDefined();
+  });
+
+  it('AG-108 delega la sede sin transformarla', async () => {
+    const asked: string[] = [];
+    const spied = new AgendaService(
+      {
+        ...repositoryDouble().repository,
+        listSchedulablePractitioners: (siteId) => {
+          asked.push(siteId);
+          return Promise.resolve([
+            { id: 'p-1', userId: 'u-1', fullName: 'Ana Villacís' },
+          ]);
+        },
+      },
+      loggerDouble().logger,
+    );
+
+    await expect(spied.schedulablePractitioners('site-9')).resolves.toEqual([
+      { id: 'p-1', userId: 'u-1', fullName: 'Ana Villacís' },
+    ]);
+    expect(asked).toEqual(['site-9']);
   });
 });

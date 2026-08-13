@@ -99,6 +99,17 @@ export const PERMISSION_CATALOGUE = [
     description: 'Cargar y versionar catálogos',
   },
   {
+    code: 'config:read',
+    resource: 'config',
+    description: 'Consultar la configuración clínica y operativa',
+  },
+  {
+    code: 'config:manage',
+    resource: 'config',
+    description:
+      'Administrar especialidades, tipos de atención, duraciones y parámetros',
+  },
+  {
     code: 'user:manage',
     resource: 'admin',
     description: 'Administrar usuarios, roles y permisos',

@@ -662,7 +662,6 @@ model CatalogConcept {
   patientsResidence       Patient[]                  @relation("PatientResidenceParish")
   patientsGenderIdentity  Patient[]                  @relation("PatientGenderIdentity")
   sites                   Site[]                     @relation("SiteParish")
-  practitioners           Practitioner[]             @relation("PractitionerSpecialty")
   scheduleRules           PractitionerScheduleRule[]
   agendaEntries           AgendaEntry[]              @relation("AgendaServiceType")
   waitlistEntries         WaitlistEntry[]            @relation("WaitlistServiceType")
@@ -751,9 +750,6 @@ model Practitioner {
   /// Cedula and ACESS registration already live on `app_user`, not duplicated.
   mspCode String? @map("msp_code") @db.VarChar(32)
 
-  specialtyConceptId String?         @map("specialty_concept_id") @db.Uuid
-  specialty          CatalogConcept? @relation("PractitionerSpecialty", fields: [specialtyConceptId], references: [id], onDelete: Restrict)
-
   /// Whether this practitioner takes appointments. A pathologist has a clinical
   /// profile but no agenda.
   schedulable Boolean @default(true)
@@ -776,8 +772,90 @@ model Practitioner {
   interconsultAsked  Interconsultation[]       @relation("InterconsultRequester")
   interconsultAnswer Interconsultation[]       @relation("InterconsultResponder")
   waitlistEntries    WaitlistEntry[]
+  specialties        PractitionerSpecialty[]
+  durationExceptions DurationException[]
 
   @@map("practitioner")
+}
+
+/// The clinic's specialty catalogue (D-008): MSP-preloaded, editable, never
+/// deleted while referenced — deactivated instead (SP-003, SP-004).
+model Specialty {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  /// Stable English code: the contract for RDACAA and billing. Uniqueness is
+  /// case-insensitive via a functional index in the manual migration; same
+  /// for `name`, accent-insensitive (SP-006). Prisma cannot express either.
+  code String @db.VarChar(64)
+  name String @db.VarChar(160)
+
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  practitioners PractitionerSpecialty[]
+  serviceTypes  ServiceType[]
+
+  @@map("specialty")
+}
+
+/// A practitioner holds one or more specialties, exactly one primary — the
+/// "at most one" lives in a partial unique index (SP-005); the "at least one"
+/// is the service's job when assigning.
+model PractitionerSpecialty {
+  practitionerId String       @map("practitioner_id") @db.Uuid
+  practitioner   Practitioner @relation(fields: [practitionerId], references: [id], onDelete: Cascade)
+
+  specialtyId String    @map("specialty_id") @db.Uuid
+  specialty   Specialty @relation(fields: [specialtyId], references: [id], onDelete: Restrict)
+
+  isPrimary Boolean @default(false) @map("is_primary")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([practitionerId, specialtyId])
+  @@index([specialtyId])
+  @@map("practitioner_specialty")
+}
+
+/// Attention type within a specialty, with its base duration (SP-020). The
+/// 5..240-in-multiples-of-5 range is a CHECK in the manual migration (SP-021).
+model ServiceType {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  specialtyId String    @map("specialty_id") @db.Uuid
+  specialty   Specialty @relation(fields: [specialtyId], references: [id], onDelete: Restrict)
+
+  name            String @db.VarChar(120)
+  durationMinutes Int    @map("duration_minutes") @db.SmallInt
+
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  durationExceptions DurationException[]
+
+  @@map("service_type")
+}
+
+/// One practitioner's own duration for one service type (D-007, SP-022): the
+/// top of the resolution hierarchy, above the specialty·type base.
+model DurationException {
+  practitionerId String       @map("practitioner_id") @db.Uuid
+  practitioner   Practitioner @relation(fields: [practitionerId], references: [id], onDelete: Cascade)
+
+  serviceTypeId String      @map("service_type_id") @db.Uuid
+  serviceType   ServiceType @relation(fields: [serviceTypeId], references: [id], onDelete: Cascade)
+
+  durationMinutes Int @map("duration_minutes") @db.SmallInt
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@id([practitionerId, serviceTypeId])
+  @@map("duration_exception")
 }
 
 /// FHIR PractitionerRole: which sites a practitioner works at.

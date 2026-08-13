@@ -1,9 +1,12 @@
 import {
   BusinessRuleViolation,
+  ConflictError,
   ExternalServiceError,
+  NotFoundError,
   ValidationError,
 } from '../../../shared/domain/errors/domain-error';
 import { wallClockOf } from '../../../shared/domain/clinic-time';
+import type { AgendaEntryStatus } from './agenda-entry';
 
 /**
  * What can go wrong when booking against the schedule, in business terms.
@@ -227,6 +230,123 @@ export class BookingRetryExhaustedError extends ExternalServiceError {
       attempts,
     });
     this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+/**
+ * The Spanish label of each status, as the SCREEN names them.
+ *
+ * Lives next to the one error that speaks them because the requirement is
+ * about the MESSAGE: AG-040 demands that the refusal name the current state,
+ * and «CHECKED_IN» names it to a programmer, not to a receptionist.
+ */
+const STATUS_LABEL: Readonly<Record<AgendaEntryStatus, string>> = {
+  BOOKED: 'Agendada',
+  CONFIRMED: 'Confirmada',
+  CHECKED_IN: 'En sala',
+  IN_PROGRESS: 'En atención',
+  FULFILLED: 'Atendida',
+  CANCELLED: 'Anulada',
+  NO_SHOW: 'No asistió',
+  BLOCKED: 'Bloqueada',
+};
+
+/**
+ * AG-040. The requested pair is not in the table of SPEC §5.
+ *
+ * A CONFLICT (409) and not a validation error, and the spec says so
+ * explicitly: the request was well-formed, it is the CURRENT STATE of the
+ * appointment that refuses it — usually because a colleague moved it first.
+ * The title names that state, which is the one thing the caller's screen no
+ * longer knows; `params` carries both ends in stable codes for the client
+ * that branches.
+ */
+export class InvalidAgendaTransitionError extends ConflictError {
+  readonly code = 'INVALID_AGENDA_TRANSITION';
+  override readonly userTitle: string;
+
+  constructor(from: AgendaEntryStatus, to: AgendaEntryStatus) {
+    // Status codes only: no patient, practitioner or hour reaches a log.
+    super(`Transition ${from} to ${to} is not admitted`, { from, to });
+    this.userTitle = `La cita está en estado «${STATUS_LABEL[from]}» y no admite ese cambio. Actualice la agenda`;
+  }
+}
+
+/**
+ * AG-045. The appointment already has an encounter behind it.
+ *
+ * Cancelling or marking a no-show would deny an attention that is already
+ * documented in the clinical record — the record wins, the agenda adjusts.
+ */
+export class AgendaEntryHasEncounterError extends ConflictError {
+  readonly code = 'AGENDA_ENTRY_HAS_ENCOUNTER';
+  override readonly userTitle =
+    'La cita ya tiene una atención registrada: no puede anularse ni marcarse como inasistencia';
+
+  constructor() {
+    super('Agenda entry already has an encounter');
+  }
+}
+
+/**
+ * AG-043. A no-show declared before the appointment even starts.
+ *
+ * THE CODE IS A DECISION THIS DELIVERY MADE, like `BOOKING_RETRY_EXHAUSTED`
+ * before it: the spec demands the refusal and names no code, and without one
+ * a client cannot tell "too early to mark" from any other 422.
+ */
+export class NoShowBeforeStartError extends BusinessRuleViolation {
+  readonly code = 'NO_SHOW_BEFORE_START';
+  override readonly userTitle =
+    'La inasistencia solo puede marcarse desde la hora de inicio de la cita';
+
+  constructor() {
+    // No instants in the message: the start of an appointment says when
+    // somebody is expected somewhere, and this text reaches the logs.
+    super('NO_SHOW requested before the appointment start');
+  }
+}
+
+/**
+ * AG-044. A cancellation with no reason, refused where it cannot be walked
+ * around.
+ *
+ * The DTO already refuses this per-field over HTTP; this error exists for the
+ * INTERNAL callers — E3's reschedule cancels the original entry from inside
+ * the service, and a DEBERÁ that only the transport enforces is not a
+ * guarantee (adversarial review of E2, P2-3).
+ */
+export class CancellationReasonRequiredError extends ValidationError {
+  readonly code = 'CANCELLATION_REASON_REQUIRED';
+  override readonly userTitle =
+    'Indique el motivo de la anulación. Queda registrado en el historial de la cita';
+  override readonly fieldErrors = [
+    {
+      field: 'reason',
+      code: 'CANCELLATION_REASON_REQUIRED',
+      message: 'Indique el motivo de la anulación',
+    },
+  ];
+
+  constructor() {
+    super('CANCELLED requested without a reason');
+  }
+}
+
+/**
+ * The entry does not exist — or belongs to a site other than the route's.
+ *
+ * ONE MESSAGE FOR BOTH, deliberately: answering "it exists, elsewhere" would
+ * confirm entries of sites the caller has no scope over, one guessed
+ * identifier at a time (AG-071, same reasoning as `ROOM_NOT_IN_SITE`).
+ */
+export class AgendaEntryNotFoundError extends NotFoundError {
+  readonly code = 'AGENDA_ENTRY_NOT_FOUND';
+  override readonly userTitle =
+    'La cita no existe en esta sede. Actualice la agenda';
+
+  constructor() {
+    super('Agenda entry not found at this site');
   }
 }
 
