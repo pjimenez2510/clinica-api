@@ -146,16 +146,40 @@ for (const entry of exists(MODULES)
     const total = requirements.length;
 
     totalDeliverables += 1;
-    const done = back === total && front > 0;
+
+    /**
+     * COMPLETA ES COMPLETA EN LOS DOS LADOS.
+     *
+     * Esto decía `back === total && front > 0`: UNA sola prueba de interfaz,
+     * sobre los veintiséis requisitos de E1, bastaba para imprimir «completo».
+     * Y lo imprimía tres líneas por encima de su propia leyenda —«cuando sus
+     * requisitos tienen prueba en los DOS lados»—, de modo que el informe se
+     * desmentía a sí mismo en la misma pantalla y nadie lo leía porque la
+     * columna de la derecha ya decía 6/26.
+     *
+     * El efecto era el de siempre: no un hueco, una afirmación falsa. Nueve
+     * entregas «completas de punta a punta» cuando de verdad lo estaba una.
+     *
+     * ⚠️ SE SUBESTIMA A PROPÓSITO. No todo requisito tiene mitad visible —un
+     * `EXCLUDE` de PostgreSQL no se prueba desde una pantalla— y hoy NADA lo
+     * declara: el `SPEC.md` fija el nivel de prueba del backend y no dice
+     * nada de la interfaz. Hasta que exista esa declaración, una entrega con
+     * requisitos de solo servidor se queda en «interfaz parcial» aunque esté
+     * terminada. Quedarse corto obliga a mirar; pasarse deja trabajo sin
+     * hacer detrás de un visto bueno.
+     */
+    const done = back === total && front === total;
     if (done) complete += 1;
 
     const estado = done
       ? 'completo'
-      : back === total
-        ? 'falta interfaz'
-        : back > 0
-          ? 'backend en curso'
-          : 'sin empezar';
+      : back === total && front > 0
+        ? 'interfaz parcial'
+        : back === total
+          ? 'falta interfaz'
+          : back > 0
+            ? 'backend en curso'
+            : 'sin empezar';
 
     console.log(
       `    ${(parsed[1] ?? '').padEnd(3)} ${(parsed[2] ?? '').slice(0, 22).padEnd(23)}` +
@@ -168,6 +192,7 @@ for (const entry of exists(MODULES)
 console.log('\n  ' + '─'.repeat(66));
 console.log(
   `  ${complete} de ${totalDeliverables} entregas completas de punta a punta.\n` +
-    '  Una entrega está completa cuando sus requisitos tienen prueba en los DOS lados.\n' +
-    '  Un endpoint al que nadie llega desde una pantalla no es una función entregada.\n',
+    '  Completa = TODOS sus requisitos con prueba en los DOS lados, no uno.\n' +
+    '  Un endpoint al que nadie llega desde una pantalla no es una función entregada.\n' +
+    '  «interfaz parcial» = el backend está entero y la interfaz cubre solo una parte.\n',
 );
