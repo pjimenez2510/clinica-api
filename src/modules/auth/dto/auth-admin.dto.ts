@@ -1,6 +1,9 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
+// AU-022: las cuentas desactivadas viajan solo si se piden EXPLÍCITAMENTE.
+import { explicitFlag } from '../../../shared/http/query-flag';
+
 import { Cedula } from '../../../shared/domain/value-objects/cedula.vo';
 
 /**
@@ -14,16 +17,6 @@ import { Cedula } from '../../../shared/domain/value-objects/cedula.vo';
  * types from the OpenAPI document, and a response Swagger cannot see arrives
  * on the other side typed as `never`. Wording follows ADR-005.
  */
-
-/**
- * A flag that only the literal `true` turns on. `z.coerce.boolean()` follows
- * JavaScript truthiness, so `?includeInactive=false` would become `true` — and
- * AU-022 says deactivated accounts travel only when asked for EXPLICITLY.
- */
-const explicitFlag = z
-  .enum(['true', 'false'], { error: 'Indique verdadero o falso' })
-  .default('false')
-  .transform((value) => value === 'true');
 
 // --- Accounts (AU-020..AU-025) ---------------------------------------------
 

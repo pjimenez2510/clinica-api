@@ -1,6 +1,8 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
+import { explicitFlag } from '../../../shared/http/query-flag';
+
 /**
  * The patient contract, requests and responses.
  *
@@ -126,7 +128,7 @@ export const searchPatientsSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   // Capped so a caller cannot ask for the entire register in one request.
   pageSize: z.coerce.number().int().min(1).max(50).default(20),
-  includeMerged: z.coerce.boolean().default(false),
+  includeMerged: explicitFlag,
   /**
    * Ordenación, como lista cerrada y no como nombre de columna.
    *

@@ -1,6 +1,9 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
+// AG-018: las liberadas se dejan fuera salvo que se pidan EXPLÍCITAMENTE.
+import { explicitFlag } from '../../../shared/http/query-flag';
+
 import {
   type ClinicalDate,
   MAX_RANGE_DAYS,
@@ -50,22 +53,6 @@ const STATUS = z.enum([
 ]);
 
 const BOOKING_CHANNEL = z.enum(['PHONE', 'WALK_IN', 'WEB', 'REFERRAL']);
-
-/**
- * A flag that only `true` turns on.
- *
- * NOT `z.coerce.boolean()`, and the difference is not pedantry: coercion
- * follows JavaScript truthiness, so `?includeReleased=false` becomes `true` —
- * the string is non-empty. AG-018 says released entries are left out unless
- * they are asked for EXPLICITLY, and a flag that cannot be turned off by
- * writing `false` is not explicit at all.
- */
-const explicitFlag = z
-  .enum(['true', 'false'], {
-    error: 'Indique verdadero o falso',
-  })
-  .default('false')
-  .transform((value) => value === 'true');
 
 /**
  * An instant, with its offset stated.

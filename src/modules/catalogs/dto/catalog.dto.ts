@@ -1,6 +1,8 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
+import { explicitFlag } from '../../../shared/http/query-flag';
+
 /**
  * El contrato de los catálogos.
  *
@@ -67,7 +69,7 @@ export const searchCatalogSchema = z.object({
    * Por defecto no. Sirve para una pantalla de exploración del catálogo, nunca
    * para la caja de diagnóstico de una consulta.
    */
-  includeGroups: z.coerce.boolean().default(false),
+  includeGroups: explicitFlag,
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 export class SearchCatalogDto extends createZodDto(searchCatalogSchema) {}

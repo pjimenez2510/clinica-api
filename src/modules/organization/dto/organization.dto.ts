@@ -1,6 +1,9 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
+// OR-007: las desactivadas viajan solo si se piden EXPLÍCITAMENTE.
+import { explicitFlag } from '../../../shared/http/query-flag';
+
 /**
  * The organization contract, requests and responses.
  *
@@ -8,17 +11,6 @@ import { z } from 'zod';
  * types from the OpenAPI document, and a response Swagger cannot see arrives
  * on the other side typed as `never`. Wording follows ADR-005.
  */
-
-/**
- * A flag that only the literal `true` turns on. Same reasoning as the
- * specialties listing: `z.coerce.boolean()` follows JavaScript truthiness, so
- * `?includeInactive=false` would become `true` — and OR-007 says deactivated
- * rows travel only when asked for EXPLICITLY.
- */
-const explicitFlag = z
-  .enum(['true', 'false'], { error: 'Indique verdadero o falso' })
-  .default('false')
-  .transform((value) => value === 'true');
 
 export const listQuerySchema = z.object({
   includeInactive: explicitFlag,

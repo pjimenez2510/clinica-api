@@ -219,20 +219,37 @@ describe('catálogos por HTTP', () => {
   });
 
   it('no ofrece capítulos como diagnóstico, salvo si se piden', async () => {
-    expect(
+    const codigos = async (consulta: string) =>
       (
-        (await buscar('?q=respiratori').expect(200)).body as {
+        (await buscar(consulta).expect(200)).body as {
           items: ConceptoCuerpo[];
         }
-      ).items.map((c) => c.code),
-    ).not.toContain('J00-J99');
+      ).items.map((c) => c.code);
 
-    expect(
-      (
-        (await buscar('?q=respiratori&includeGroups=true').expect(200))
-          .body as { items: ConceptoCuerpo[] }
-      ).items.map((c) => c.code),
-    ).toContain('J00-J99');
+    // Omitido.
+    expect(await codigos('?q=respiratori')).not.toContain('J00-J99');
+
+    /**
+     * Y PEDIDO EXPLÍCITAMENTE EN `false`, que es el caso que faltaba y el que
+     * estaba roto. El esquema usaba `z.coerce.boolean()`, y `Boolean('false')`
+     * es `true` porque la cadena no está vacía: la bandera NO SE PODÍA APAGAR.
+     * La interfaz manda `includeGroups=false` en cada pulsación, así que la
+     * caja de diagnóstico venía ofreciendo capítulos y grupos —`A00-B99` es un
+     * título, no una enfermedad— que es exactamente el dato que el RDACAA
+     * rechaza. Las dos ramas de arriba pasaban igual, y por eso duró.
+     */
+    expect(await codigos('?q=respiratori&includeGroups=false')).not.toContain(
+      'J00-J99',
+    );
+
+    expect(await codigos('?q=respiratori&includeGroups=true')).toContain(
+      'J00-J99',
+    );
+  });
+
+  it('rechaza una bandera que no es ni `true` ni `false`, en vez de adivinar', async () => {
+    // Adivinar es como se llegó al defecto de arriba.
+    await buscar('?q=respiratori&includeGroups=1').expect(422);
   });
 
   it('rechaza una búsqueda demasiado corta con un problema, no con una lista vacía', async () => {

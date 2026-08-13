@@ -1,6 +1,9 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
+// SP-007: las desactivadas viajan solo si se piden EXPLÍCITAMENTE.
+import { explicitFlag } from '../../../shared/http/query-flag';
+
 /**
  * The specialties contract, requests and responses.
  *
@@ -8,17 +11,6 @@ import { z } from 'zod';
  * types from the OpenAPI document, and a response Swagger cannot see arrives
  * on the other side typed as `never`. Wording follows ADR-005.
  */
-
-/**
- * A flag that only the literal `true` turns on. Same reasoning as the
- * agenda's `includeReleased`: `z.coerce.boolean()` follows JavaScript
- * truthiness, so `?includeInactive=false` would become `true` — and SP-007
- * says deactivated rows travel only when asked for EXPLICITLY.
- */
-const explicitFlag = z
-  .enum(['true', 'false'], { error: 'Indique verdadero o falso' })
-  .default('false')
-  .transform((value) => value === 'true');
 
 /**
  * SP-021 mirrored from the CHECK `service_type_duration_range`: 5..240 in

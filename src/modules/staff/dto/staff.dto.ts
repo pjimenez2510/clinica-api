@@ -1,6 +1,9 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
+// ST-010: un profesional desactivado viaja solo si se pide EXPLÍCITAMENTE.
+import { explicitFlag } from '../../../shared/http/query-flag';
+
 import {
   type ClinicalDate,
   parseClinicalDate,
@@ -33,15 +36,6 @@ const clinicalDateField = (message: string) =>
       return z.NEVER;
     }
   });
-
-/**
- * A flag that only the literal `true` turns on. `z.coerce.boolean()` follows
- * JavaScript truthiness, so `?includeInactive=false` would become `true`.
- */
-const explicitFlag = z
-  .enum(['true', 'false'], { error: 'Indique verdadero o falso' })
-  .default('false')
-  .transform((value) => value === 'true');
 
 export const listPractitionersQuerySchema = z.object({
   /** ST-010: a deactivated practitioner travels only when asked for. */
