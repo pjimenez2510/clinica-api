@@ -744,6 +744,8 @@ model Site {
 
   rooms           SiteRoom[]
   emissionPoints  EmissionPoint[]
+  holidays        Holiday[]
+  parameters      SiteParameter?
   roleGrants      UserRoleGrant[]
   practitioners   PractitionerSite[]
   scheduleRules   PractitionerScheduleRule[]
@@ -799,6 +801,80 @@ model EmissionPoint {
 
   @@unique([siteId, code], map: "emission_point_code_unique_per_site")
   @@map("emission_point")
+}
+
+/// A non-working day, for one site or for all of them (CF-060).
+///
+/// `date` and not a timestamp: a holiday is a day of the civil calendar, not
+/// an instant. Storing it as an instant would force picking an hour and then
+/// resolving it back in `America/Guayaquil` to know which day it was.
+///
+/// The uniqueness of CF-061 CANNOT be expressed here: it is
+/// `UNIQUE NULLS NOT DISTINCT (date, site_id)`, which Prisma has no syntax
+/// for, and a plain `@@unique` would leave the "all sites" rows unconstrained
+/// — precisely the row that does the most damage, since every site obeys it.
+/// It lives in the migration, like the EXCLUDE constraints.
+model Holiday {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  date DateTime @db.Date
+  name String   @db.VarChar(160)
+
+  /// NULL means EVERY site. That is the «alcance» of CF-060.
+  ///
+  /// Cascade, against this schema's general RESTRICT rule and deliberately: a
+  /// holiday of a site is not clinical evidence, nothing references it, and it
+  /// has no meaning apart from its site. See the migration's header.
+  siteId String? @map("site_id") @db.Uuid
+  site   Site?   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([date], map: "holiday_by_date")
+  @@map("holiday")
+}
+
+/// What is done with cancelled appointments once they are old (D-001, D-004).
+///
+/// ONE value today, on purpose. D-004 settled that the system never deletes
+/// clinical history and D-001 chose «no borrar» for cancelled appointments, so
+/// `NEVER` is the only policy that exists. It is an enum rather than a boolean
+/// so that a future `PURGE_AFTER_DAYS` is `ALTER TYPE … ADD VALUE` plus a
+/// column instead of rewriting the column and every row.
+enum CancelledRetentionPolicy {
+  NEVER
+
+  @@map("cancelled_retention_policy")
+}
+
+/// The operating numbers of one site (CF-062, D-001).
+///
+/// One row per site, written by the database itself when the site is created
+/// (`trg_site_parameter_defaults`): `organization` owns the site and must not
+/// know this module's tables (ADR-011), and a site inserted by a data import
+/// has to end up just as parametrised as one created from the screen.
+///
+/// The ranges of CF-065 are CHECK constraints in the migration; Prisma cannot
+/// express them, and they are what makes the guarantee survive a `psql`.
+model SiteParameter {
+  /// The primary key IS the site: one row per site, never two.
+  siteId String @id @map("site_id") @db.Uuid
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  /// Minutes that must pass between now and the appointment (D-001: 0).
+  minLeadMinutes Int @default(0) @map("min_lead_minutes")
+  /// How far ahead the agenda may be booked (D-001: 180 days).
+  maxLeadDays    Int @default(180) @map("max_lead_days")
+  /// Deliberate overbookings allowed per practitioner and day (D-001: 2).
+  overbookingCap Int @default(2) @map("overbooking_cap")
+
+  cancelledRetention CancelledRetentionPolicy @default(NEVER) @map("cancelled_retention")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("site_parameter")
 }
 
 /// Clinical profile of a system user.

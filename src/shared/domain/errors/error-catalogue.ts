@@ -78,6 +78,19 @@ export const DOMAIN_ERROR_CODES = [
   'PATIENT_MERGED',
   'PATIENT_NOT_FOUND',
   'PERMISSION_DENIED',
+  // Configuración, C3 (CF-060..CF-066). `HOLIDAY_DUPLICATE` lo produce la base
+  // —`holiday_date_scope_unique`, un índice `UNIQUE NULLS NOT DISTINCT` que
+  // cubre los dos alcances de CF-060— y el adaptador lo traduce al código que
+  // la spec fija. `PARAM_OUT_OF_RANGE` es 422 y NOMBRA el rango, que es la
+  // mitad de CF-065 que sirve de algo. `SITE_PARAMETERS_NOT_FOUND` existe
+  // porque `SITE_NOT_FOUND` ya es de `organization`, dueño de la sede, y dos
+  // clases con el mismo código son dos situaciones que el cliente no puede
+  // distinguir; además es lo único que este módulo puede afirmar con
+  // honestidad, porque no es el dueño de la sede.
+  'HOLIDAY_DUPLICATE',
+  'HOLIDAY_NOT_FOUND',
+  'PARAM_OUT_OF_RANGE',
+  'SITE_PARAMETERS_NOT_FOUND',
   // Organización, O1 y O2 (ADR-011). Los duplicados y los «en uso» son 409 y
   // los produce la base —índices únicos y FK RESTRICT—: el adaptador los
   // traduce por nombre de constraint al código que la spec fija. «En uso»
@@ -130,6 +143,35 @@ export const DOMAIN_ERROR_CODES = [
   'SPECIALTY_INACTIVE',
   'SPECIALTY_IN_USE',
   'SPECIALTY_NOT_FOUND',
+  // Auth, A2 (AU-020..AU-034): la administración de cuentas, roles y permisos.
+  // A diferencia de los códigos de SESIÓN, que son deliberadamente vagos para
+  // no enumerar al personal ante un anónimo, estos responden a quien ya tiene
+  // `user:manage` y está mirando la lista: ser específico aquí no relaja
+  // AU-002, es otro modelo de amenaza.
+  //
+  // `CANNOT_DEMOTE_SELF` es el que protege la instalación (AU-024) y cubre las
+  // tres formas de dejarla sin administrador: desactivarse a uno mismo,
+  // quitarse el propio `user:manage`, y borrar o desactivar el último rol que
+  // lo concede. Es 422 y no 403 a propósito: quien llama está perfectamente
+  // autorizado; lo que pide es un estado al que el sistema no debe poder
+  // llegar. `SYSTEM_ROLE_PROTECTED` y `UNKNOWN_PERMISSION` son 422 por lo
+  // mismo. `ROLE_IN_USE` es 409 y ofrece desactivar, igual que `SITE_IN_USE`.
+  //
+  // `CANNOT_GRANT_TO_SELF` no es una regla nueva: `user_role_grant_no_self_grant`
+  // está en la base desde la migración de roles, con su porqué al lado —«la
+  // pregunta de auditoría "quién dio a esta persona acceso a las historias" no
+  // puede responderse "ella misma"»—. Construir las pantallas es lo que le ha
+  // dado por fin una forma de alcanzarse, y el código es lo que convierte un
+  // `CHECK_FAILED` en una frase sobre la que una clínica puede actuar.
+  'CANNOT_DEMOTE_SELF',
+  'CANNOT_GRANT_TO_SELF',
+  'EMAIL_ALREADY_REGISTERED',
+  'ROLE_CODE_DUPLICATE',
+  'ROLE_IN_USE',
+  'ROLE_NOT_FOUND',
+  'SYSTEM_ROLE_PROTECTED',
+  'UNKNOWN_PERMISSION',
+  'USER_NOT_FOUND',
   'PRINCIPAL_UNAVAILABLE',
   'REFRESH_TOKEN_REUSE_DETECTED',
   // Agenda, AG-071: el consultorio pedido es de otra sede. Nada en el esquema

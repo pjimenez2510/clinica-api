@@ -47,7 +47,8 @@
     "db:seed:agenda": "node --env-file=.env --experimental-strip-types prisma/seed-agenda.mts",
     "db:seed:specialties": "node --env-file=.env --experimental-strip-types prisma/seed-specialties.mts",
     "db:seed:organization": "node --env-file=.env --experimental-strip-types prisma/seed-organization.mts",
-    "db:seed:staff": "node --env-file=.env --experimental-strip-types prisma/seed-staff.mts"
+    "db:seed:staff": "node --env-file=.env --experimental-strip-types prisma/seed-staff.mts",
+    "db:seed:configuration": "node --env-file=.env --experimental-strip-types prisma/seed-configuration.mts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.28",

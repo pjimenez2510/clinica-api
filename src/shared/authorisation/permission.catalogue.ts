@@ -109,6 +109,43 @@ export const PERMISSION_CATALOGUE = [
     description:
       'Administrar especialidades, tipos de atención, duraciones y parámetros',
   },
+  // Operational parameters of the clinic (ADR-011, `configuration`): holidays
+  // and the per-site numbers of D-001. A SEPARATE pair from `config:*`, which
+  // covers specialties, attention types and durations — those are master data
+  // the record and the invoice reference, and these are numbers nobody
+  // references from a row. Reading them is split from editing them because
+  // every booking screen has to know the holidays and the lead times to
+  // explain a refusal, and nothing about that implies being able to raise the
+  // overbooking cap.
+  //
+  // NAMED `settings:manage` AND NOT `settings:write`, which is what D-002's
+  // prose says: every other administration pair in this catalogue is
+  // `read`/`manage` (`config:*`, `site:*`, `staff:*`, `catalog:*`), and one
+  // odd verb in a closed union is a typo waiting to compile.
+  {
+    code: 'settings:read',
+    resource: 'settings',
+    description:
+      'Consultar los feriados y los parámetros de operación de cada sede',
+  },
+  {
+    code: 'settings:manage',
+    resource: 'settings',
+    description:
+      'Administrar feriados y parámetros de operación: antelaciones, tope de sobrecupos y retención',
+  },
+  // Administering accounts and roles (`auth`, A2). `user:manage` already
+  // existed and covers every mutation; `user:read` is new and is what lets a
+  // screen LIST the staff, their roles and the permission catalogue without
+  // being able to create an account or move a permission. The list carries the
+  // name and the institutional email of every employee, so it is not open to
+  // anyone who merely holds a clinical permission.
+  {
+    code: 'user:read',
+    resource: 'admin',
+    description:
+      'Consultar las cuentas, los roles y el catálogo de permisos del sistema',
+  },
   {
     code: 'user:manage',
     resource: 'admin',

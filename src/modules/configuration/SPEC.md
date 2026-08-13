@@ -98,14 +98,42 @@ que rige para reservas nuevas y no revalida ni anula lo ya reservado.
 
 ## Códigos de error
 
-| Código                | HTTP | Cuándo                                       |
-| --------------------- | ---- | -------------------------------------------- |
-| `HOLIDAY_DUPLICATE`   | 409  | Feriado repetido en fecha y alcance (CF-061) |
-| `PARAM_OUT_OF_RANGE`  | 422  | Parámetro fuera de rango (CF-065)            |
+| Código                      | HTTP | Cuándo                                                     |
+| --------------------------- | ---- | ---------------------------------------------------------- |
+| `HOLIDAY_DUPLICATE`         | 409  | Feriado repetido en fecha y alcance (CF-061)               |
+| `HOLIDAY_NOT_FOUND`         | 404  | El feriado indicado no existe                              |
+| `PARAM_OUT_OF_RANGE`        | 422  | Parámetro fuera de rango, nombrándolo (CF-065)             |
+| `SITE_PARAMETERS_NOT_FOUND` | 404  | La sede indicada no tiene fila de parámetros (CF-062)      |
+
+`SITE_NOT_FOUND` **no** se emite desde aquí aunque sea lo que un lector
+esperaría: ese código es de `organization`, dueño de la sede, y dos clases
+respondiendo el mismo código son dos situaciones que el cliente no puede
+distinguir —hay una prueba del catálogo que lo impide—. Lo que este módulo
+puede afirmar con honestidad es que la sede no tiene parámetros.
 
 ## Notas de esquema
 
-Tablas de este módulo: `holiday` y `site_parameter`. Ninguna de las dos existe
-todavía: entran con C3, junto a su índice único de fecha·alcance (CF-061) y a
-los `CHECK` de rango que respaldan CF-065. Los defectos de D-001 se escriben al
-crear la sede, que es de `organization`, no aquí.
+Tablas de este módulo: `holiday` y `site_parameter`, creadas por
+`20260813040610_configuration_holidays_and_site_parameters`.
+
+- **CF-061 es `UNIQUE NULLS NOT DISTINCT (date, site_id)`**, no un `UNIQUE`
+  corriente: en PostgreSQL dos `NULL` nunca son iguales, así que un índice
+  normal dejaría sin restringir justo la fila «feriado de todas las sedes», que
+  es la que obedecen todas. La sintaxis existe desde PostgreSQL 15 y esta
+  instalación es la 18, así que un solo índice cubre los dos alcances; la
+  alternativa clásica —dos índices parciales— haría lo mismo con dos nombres de
+  constraint viajando al cliente. **Prisma no sabe expresarlo**, así que vive en
+  la migración, como los `EXCLUDE`.
+- **Los defectos de D-001 los escribe la base**, con el disparador
+  `trg_site_parameter_defaults` sobre `site`. `organization` es el dueño de la
+  sede y no debe conocer las tablas de este módulo (ADR-011), y una sede creada
+  por una importación tiene que quedar igual de parametrizada.
+- `holiday.site_id` y `site_parameter.site_id` borran **en cascada**, contra la
+  regla general de `ON DELETE RESTRICT` de este esquema. Ninguna de las dos
+  filas es evidencia de nada ni la referencia nadie, y con RESTRICT ninguna sede
+  podría borrarse jamás (OR-006), porque el disparador les crea la fila de
+  parámetros a todas.
+- La retención es el tipo enumerado `cancelled_retention_policy` con **un solo
+  valor**, `NEVER` (D-001, D-004). Es enumeración y no booleano para que añadir
+  un purgado futuro sea `ALTER TYPE … ADD VALUE` y una columna, no reescribir la
+  columna y todas las filas.

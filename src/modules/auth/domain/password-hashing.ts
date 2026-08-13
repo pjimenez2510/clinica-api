@@ -27,6 +27,41 @@ export const PASSWORD_HASHING = {
 } as const;
 
 /**
+ * AU-021 — the placeholder that means «esta cuenta todavía no puede entrar».
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * THE SEAM WHERE D-013 PLUGS IN. READ BEFORE CHANGING ANYTHING HERE.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * AU-021 fixes what must NOT happen: the administrator does not choose another
+ * person's password, because then they know it and the trail's non-repudiation
+ * evaporates. What it does not fix is HOW the first credential reaches the
+ * person — by email, or handed over on screen — and that is **D-013, still
+ * unanswered**. Inventing a delivery mechanism here would be exactly the kind
+ * of policy decision an agent does not take (constitution §8).
+ *
+ * So `POST /auth/users` creates the account with THIS value as its hash, and
+ * the account cannot sign in: `PasswordHasher.verify` runs `argon2.verify`
+ * against a string that is not an Argon2 hash, which throws, which that method
+ * turns into `false`. The account therefore answers `INVALID_CREDENTIALS` like
+ * any wrong password — with no way to tell it apart, which is AU-002.
+ *
+ * A LEADING `!` AND NOT AN EMPTY STRING, and not a random value either. Argon2
+ * hashes always start with `$argon2`, so no hash the hasher can ever produce
+ * collides with this; an empty string would be indistinguishable from a column
+ * somebody forgot to fill, and a random value would be a credential nobody
+ * knows — which looks identical but cannot be DETECTED, so the screen could
+ * not tell the administrator the account is still unusable.
+ *
+ * WHEN D-013 IS ANSWERED: the account creation flow keeps writing this value
+ * and additionally issues whatever D-013 chose — a single-use link, or a code
+ * shown once on screen — and the redemption of that credential is what
+ * replaces this hash. Nothing else in the system needs to change: everything
+ * already treats an unusable hash as "cannot sign in".
+ */
+export const UNUSABLE_PASSWORD_HASH = '!no-usable-credential';
+
+/**
  * `needsRehash` compares only the cost parameters — it does not accept the
  * algorithm. Derived from the object above so the two cannot drift apart.
  */

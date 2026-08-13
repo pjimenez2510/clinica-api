@@ -33,7 +33,13 @@ describe('the permission catalogue', () => {
     // (ADR-011): the professional file is its own screen, not a corner of the
     // clinical parametrisation, because who may read a colleague's cedula and
     // ACESS is a different question from who may rename a specialty.
-    const SCREENS = ['patient', 'agenda', 'record', 'billing', 'catalog', 'config', 'staff', 'admin']; // prettier-ignore
+    // `settings` joined on 13-08-2026 with `configuration` (C3, ADR-011):
+    // holidays and the four numbers of D-001 are their own screen, separate
+    // from `config` — which is specialties, attention types and durations.
+    // The split is the one ADR-011 drew: a parameter changes behaviour and no
+    // row references it; a specialty is master data the record, the invoice
+    // and the report to the State all cite.
+    const SCREENS = ['patient', 'agenda', 'record', 'billing', 'catalog', 'config', 'settings', 'staff', 'admin']; // prettier-ignore
 
     for (const definition of PERMISSION_CATALOGUE) {
       expect(SCREENS, definition.code).toContain(definition.resource);

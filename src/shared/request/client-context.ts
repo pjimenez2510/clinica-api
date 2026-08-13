@@ -27,6 +27,15 @@ export const RevocationReason = {
   REUSE: 'REUSE',
   SIGN_OUT: 'SIGN_OUT',
   PASSWORD_CHANGE: 'PASSWORD_CHANGE',
+  /**
+   * AU-023: an administrator deactivated the account.
+   *
+   * A reason of its own and not `SIGN_OUT`: the two answer different questions
+   * in an audit. «Se cerró la sesión» is the employee leaving for the day;
+   * «se desactivó la cuenta» is somebody's access being withdrawn, which is
+   * exactly what the SPDP asks to see.
+   */
+  ACCOUNT_DEACTIVATED: 'ACCOUNT_DEACTIVATED',
 } as const;
 
 export type RevocationReason =

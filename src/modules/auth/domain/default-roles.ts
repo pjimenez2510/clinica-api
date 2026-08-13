@@ -36,6 +36,7 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
     description:
       'Administra usuarios, sedes y catálogos. No accede a historias clínicas.',
     permissions: [
+      'user:read',
       'user:manage',
       'site:read',
       'site:manage',
@@ -46,6 +47,12 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       // administrator alongside users and sites.
       'config:read',
       'config:manage',
+      // Feriados y parámetros de sede (D-001, D-002). Van al administrador y a
+      // nadie más por defecto: el tope de sobrecupos deja de ser un control en
+      // cuanto lo puede subir quien lo incumple, y la bitácora es lo que
+      // compensa esa concentración.
+      'settings:read',
+      'settings:manage',
       // The staff file (ADR-011). It goes to the administrator and to NOBODY
       // ELSE by default, which is a decision and not an oversight: the file
       // carries the cedula and the ACESS registration of an employee, and the

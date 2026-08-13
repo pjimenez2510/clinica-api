@@ -98,6 +98,17 @@ concesión aparece en la bitácora.
   primer acceso que obligue a cambiarla.
   > **[NECESITA ACLARACIÓN]** ¿Cómo llega esa credencial a la persona: correo,
   > o la entrega el administrador en pantalla? Ver `D-013`.
+  >
+  > **Estado a 13-08-2026: cubierto a medias, y a propósito.** `POST
+  > /auth/users` crea la cuenta **sin credencial utilizable** —el hash es el
+  > centinela `UNUSABLE_PASSWORD_HASH`, que ningún Argon2 puede producir— de
+  > modo que la mitad prohibitiva de AU-021 sí se cumple y es comprobable: el
+  > administrador no elige la contraseña de nadie y la cuenta no entra. La
+  > respuesta lleva `credentialPending: true` para que la pantalla lo diga en
+  > voz alta. **Lo que falta es la emisión**, que depende de D-013, y hasta que
+  > se conteste **dar de alta a alguien no funciona de extremo a extremo**: la
+  > cuenta existe, admite roles y no puede iniciar sesión. La costura donde
+  > encaja el mecanismo está marcada en `domain/password-hashing.ts`.
 - **AU-022** — El sistema NO DEBERÁ permitir **borrar** una cuenta: DEBERÁ
   desactivarla. Sus accesos quedan en la bitácora y borrarla dejaría huérfana
   la evidencia que exige la LOPDP (REQ-110).
@@ -137,10 +148,29 @@ concesión aparece en la bitácora.
 | `EMAIL_ALREADY_REGISTERED` | 409  | Correo repetido al crear una cuenta (AU-020)                  |
 | `USER_NOT_FOUND`           | 404  | La cuenta indicada no existe                                  |
 | `CANNOT_DEMOTE_SELF`       | 422  | Un administrador se desactiva o se despoja a sí mismo (AU-024) |
+| `CANNOT_GRANT_TO_SELF`     | 422  | Alguien se concede a sí mismo un rol                          |
 | `ROLE_CODE_DUPLICATE`      | 409  | Código de rol repetido (AU-030)                               |
+| `ROLE_NOT_FOUND`           | 404  | El rol indicado no existe                                     |
 | `ROLE_IN_USE`              | 409  | Borrar un rol con concesiones vivas (AU-031)                  |
 | `SYSTEM_ROLE_PROTECTED`    | 422  | Borrar un rol del sistema (AU-031)                            |
 | `UNKNOWN_PERMISSION`       | 422  | Conceder un permiso que el código no declara (AU-033)         |
+
+`CANNOT_GRANT_TO_SELF` **no es una regla nueva de esta entrega**: la garantía
+`user_role_grant_no_self_grant` está en la base desde
+`20260806045045_staff_roles_and_site_scope`, con su porqué escrito al lado —«la
+pregunta de auditoría *quién dio a esta persona acceso a las historias* no puede
+responderse *ella misma*»—. Construir las pantallas de A2 es lo que por fin le ha
+dado una forma de alcanzarse desde la aplicación, y el código convierte un
+`CHECK_FAILED` en una frase sobre la que una clínica puede actuar. Sólo prohíbe
+**añadirse** concesiones: retirarse una propia sigue siendo posible, y AU-024 es
+lo que impide retirarse la que importa.
+
+`CANNOT_DEMOTE_SELF` cubre las **tres** formas de dejar la instalación sin
+administración, y las tres tienen prueba: desactivarse a uno mismo, quitarse el
+propio `user:manage` editando las concesiones, y borrar o desactivar el último
+rol activo que lo lleva —o vaciárselo—. La última la respalda además el
+disparador de sentencia `trg_role_permission_keep_an_administrator`, que es lo
+único que aguanta un `DELETE FROM role_permission` tecleado en `psql`.
 
 Los de sesión —`INVALID_CREDENTIALS`, `ACCOUNT_LOCKED`, `MFA_REQUIRED`,
 `REFRESH_TOKEN_REUSE`— ya existen en `error-catalogue.ts` desde Fase 0 y no se
@@ -161,3 +191,16 @@ las re-implemente:
 - **Revocar surte efecto en segundos.** El token lleva sólo los roles y los
   permisos se resuelven por petición con caché corta, que es lo que hace
   cumplible AU-032 sin cerrar la sesión de nadie.
+
+> **El matiz de AU-032, comprobado al construirlo (13-08-2026).** «Sin
+> reiniciar la sesión» se cumple exactamente en la mitad que importa y conviene
+> tenerlo escrito: **cambiar qué permisos lleva un rol** alcanza al token que ya
+> está en el navegador, en la petición inmediatamente siguiente, porque el guard
+> resuelve los permisos por petición y la administración invalida la caché al
+> guardar. **Conceder un rol NUEVO** no, porque el token lleva *qué roles* tiene
+> el portador: llega en cuanto la sesión rota —sin volver a teclear la
+> contraseña, que es lo que «sin reiniciar la sesión» significa para quien lo
+> usa— y como muy tarde al caducar el token de acceso. Hacerlo inmediato
+> exigiría consultar las concesiones en cada petición, que es justo el coste que
+> `role-permission.registry.ts` documenta haber evitado. Las dos mitades tienen
+> prueba de integración con ese nombre.
