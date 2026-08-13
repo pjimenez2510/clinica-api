@@ -80,6 +80,8 @@ aquí).
 insertadas concurrentemente — gana exactamente una.
 **Cubre:** ST-040 a ST-046.
 
+**Solo servidor:** ST-044. Bitácora.
+
 ---
 
 ## Requisitos

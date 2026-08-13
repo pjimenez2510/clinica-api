@@ -32,6 +32,21 @@ const CONTRACT = join(WEB, 'app', 'shared', 'api', 'schema.d.ts');
 const DELIVERABLE =
   /^###\s+([A-Z]\d+)\s+—\s+(.+?)\s*(?:[*_]\((P\d)[^)]*\)[*_])?\s*$/;
 const COVERS = /\*\*Cubre:\*\*\s*([^\n]*(?:\n(?!\s*\n|###|##)[^\n]*)*)/;
+/**
+ * `**Solo servidor:** AU-001, AU-003, AU-012. Cómo se hashea una contraseña…`
+ *
+ * Qué requisitos de la entrega NO tienen mitad visible, y por qué. Sin esto la
+ * cuenta de la interfaz mide contra un total inalcanzable: la bitácora, el
+ * algoritmo de hash y «no exponer esto como parámetro» no se ven en ninguna
+ * pantalla, así que una entrega terminada se quedaba para siempre en parcial.
+ *
+ * LA DECLARACIÓN VA EN EL `SPEC.md`, JUNTO A `**Cubre:**`, y lleva su porqué
+ * escrito al lado. Una lista en este guion sería una lista que nadie revisa al
+ * cambiar un requisito, y el guion es el sitio equivocado para decidir qué se
+ * puede ver: eso lo sabe quien escribe la especificación.
+ */
+const SERVER_ONLY =
+  /\*\*Solo servidor:\*\*\s*([^\n]*(?:\n(?!\s*\n|###|##)[^\n]*)*)/;
 const RANGE = /\b([A-Z]{2,4})-(\d{3})\s+a\s+(?:[A-Z]{2,4}-)?(\d{3})/g;
 const SINGLE = /\b([A-Z]{2,4}-\d{3})\b/g;
 const DECLARATION = /^\s*[-*]\s*\*\*([A-Z]{2,4}-\d{3})\*\*/gm;
@@ -141,9 +156,20 @@ for (const entry of exists(MODULES)
     const requirements = expand(COVERS.exec(raw)?.[1] ?? '', declared);
     if (requirements.length === 0) continue;
 
+    /**
+     * Los que no tienen mitad visible salen del DENOMINADOR de la interfaz,
+     * no del numerador: el backend sigue debiéndolos, y si alguno los cubre
+     * desde una pantalla, mejor — pero no se le exige.
+     */
+    const serverOnly = new Set(
+      expand(SERVER_ONLY.exec(raw)?.[1] ?? '', declared),
+    );
+    const visible = requirements.filter((id) => !serverOnly.has(id));
+
     const back = requirements.filter((id) => backendTested.has(id)).length;
-    const front = requirements.filter((id) => frontendTested.has(id)).length;
+    const front = visible.filter((id) => frontendTested.has(id)).length;
     const total = requirements.length;
+    const frontTotal = visible.length;
 
     totalDeliverables += 1;
 
@@ -160,15 +186,14 @@ for (const entry of exists(MODULES)
      * El efecto era el de siempre: no un hueco, una afirmación falsa. Nueve
      * entregas «completas de punta a punta» cuando de verdad lo estaba una.
      *
-     * ⚠️ SE SUBESTIMA A PROPÓSITO. No todo requisito tiene mitad visible —un
-     * `EXCLUDE` de PostgreSQL no se prueba desde una pantalla— y hoy NADA lo
-     * declara: el `SPEC.md` fija el nivel de prueba del backend y no dice
-     * nada de la interfaz. Hasta que exista esa declaración, una entrega con
-     * requisitos de solo servidor se queda en «interfaz parcial» aunque esté
-     * terminada. Quedarse corto obliga a mirar; pasarse deja trabajo sin
-     * hacer detrás de un visto bueno.
+     * No todo requisito tiene mitad visible —la bitácora, el algoritmo de
+     * hash, «no exponer esto como parámetro»—, así que exigirla a todos
+     * dejaría entregas terminadas en parcial para siempre. Cuáles son lo
+     * declara el `SPEC.md` con `**Solo servidor:**` y su porqué al lado, y
+     * esos salen del denominador. Lo que NO se declara se exige: el que calla
+     * debe interfaz.
      */
-    const done = back === total && front === total;
+    const done = back === total && front === frontTotal;
     if (done) complete += 1;
 
     const estado = done
@@ -184,7 +209,7 @@ for (const entry of exists(MODULES)
     console.log(
       `    ${(parsed[1] ?? '').padEnd(3)} ${(parsed[2] ?? '').slice(0, 22).padEnd(23)}` +
         `${bar(back, total)} ${String(back).padStart(2)}/${String(total).padEnd(2)}  ` +
-        `${bar(front, total)} ${String(front).padStart(2)}/${String(total).padEnd(2)}  ${estado}`,
+        `${bar(front, frontTotal)} ${String(front).padStart(2)}/${String(frontTotal).padEnd(2)}  ${estado}`,
     );
   }
 }

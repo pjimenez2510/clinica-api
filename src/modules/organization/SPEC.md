@@ -60,12 +60,17 @@ y `encounter` no puede cerrarse sin él.
 que el código único del MSP no admite repetido.
 **Cubre:** OR-001 a OR-008.
 
+**Solo servidor:** OR-005. Bitácora.
+
 ### O2 — Consultorios y puntos de emisión _(P2)_
 
 Consultorios por sede, y los puntos de emisión del SRI que la facturación
 consumirá.
 
 **Cubre:** OR-020 a OR-026.
+
+**Solo servidor:** OR-026. Bitácora y comprobación de alcance en el guard;
+la mitad que sí se ve —no ofrecer lo que no se puede tocar— la cubre OR-020.
 
 ---
 

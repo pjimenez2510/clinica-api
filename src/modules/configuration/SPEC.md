@@ -70,6 +70,11 @@ que esta entrega añade es poder cambiarlos sin desplegar.
 que rige para reservas nuevas y no revalida ni anula lo ya reservado.
 **Cubre:** CF-060 a CF-066.
 
+**Solo servidor:** CF-063, CF-066. El primero es una afirmación sobre la
+SUPERFICIE de la API —qué no se expone— y se prueba en negativo contra el
+contrato; el segundo es una escritura en la bitácora. Una pantalla no puede
+enseñar lo que no existe ni leer un registro que no le pertenece.
+
 ---
 
 ## Requisitos

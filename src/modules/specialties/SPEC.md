@@ -76,6 +76,10 @@ médico con y sin excepción, contra PostgreSQL real, y comprobar que desactivar
 una especialidad referenciada no la borra.
 **Cubre:** SP-001 a SP-008, SP-020 a SP-028.
 
+**Solo servidor:** SP-024, SP-027. Que cambiar una duración no toque las
+citas ya reservadas se demuestra mirando filas anteriores al cambio, no una
+pantalla; SP-027 es bitácora.
+
 ### C4 — La agenda obedece la configuración _(P1, cruza módulos)_
 
 Reservar usa la duración resuelta (D-010) en lugar del fijo de la regla; el

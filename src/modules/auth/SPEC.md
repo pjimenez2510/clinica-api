@@ -51,6 +51,12 @@ detección de reutilización, bloqueo por intentos y cierre de sesión.
 
 **Cubre:** AU-001 a AU-012.
 
+**Solo servidor:** AU-001, AU-003, AU-012. Cómo se hashea una contraseña no
+se ve; el bloqueo por intentos responde a la pantalla lo MISMO que una
+contraseña incorrecta —eso es AU-002, y contarlo aparte lo delataría—; y
+«por petición y no dentro del token» es una propiedad del servidor que un
+navegador no puede observar.
+
 ### A2 — Administración de cuentas, roles y permisos _(P1)_
 
 Un administrador da de alta a una persona, le asigna roles —con su sede— y
@@ -63,6 +69,11 @@ que entra el lunes, sigue exigiendo tocar la base de datos a mano.
 comprobar que sus permisos efectivos cambian **sin reiniciar** y que la
 concesión aparece en la bitácora.
 **Cubre:** AU-020 a AU-034.
+
+**Solo servidor:** AU-025, AU-026, AU-027. Los dos primeros son bitácora y
+el plazo de caducidad definido en un único sitio; AU-027 es un índice único
+parcial. La pantalla no puede enseñar ninguno: por AU-028, un enlace
+caducado, gastado o inventado responden lo mismo.
 
 ### A3 — Primera credencial por correo _(P1, 13-08-2026)_
 
@@ -77,6 +88,8 @@ hiciera. La cuenta existía, admitía roles, y era inútil.
 una contraseña y entrar con ella; y comprobar que el enlace ya no sirve una
 segunda vez.
 **Cubre:** AU-021, AU-026 a AU-029.
+
+**Solo servidor:** AU-026, AU-027. Ver A2.
 
 ---
 
