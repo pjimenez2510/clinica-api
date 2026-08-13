@@ -27,10 +27,14 @@ import {
  * The specialties module (C1) as the browser consumes it, against a real
  * PostgreSQL 18: what these prove that the unit suites cannot is that the
  * guarantees actually live in the base — the accent-insensitive uniqueness
- * (SP-006, SP-026), the duration CHECK (SP-021), the at-most-one-primary
- * partial index (SP-005), the RESTRICT that answers SPECIALTY_IN_USE
- * (SP-003) — and that every refusal reaches HTTP with the code the SPEC
- * fixes, under the permissions of D-002.
+ * (SP-006, SP-026), the duration CHECK (SP-021), the RESTRICT that answers
+ * SPECIALTY_IN_USE (SP-003) — and that every refusal reaches HTTP with the
+ * code the SPEC fixes, under the permissions of D-002.
+ *
+ * WHAT MOVED OUT ON 13-08-2026: everything that administered a PRACTITIONER.
+ * The assignment of specialties and the per-practitioner duration exceptions
+ * are ST-008 and ST-009 in `test/integration/staff-http.spec.ts`, which is
+ * where the debt this SPEC declared got settled.
  */
 const PASSWORD = 'el caballo come alfalfa';
 const ADMIN_EMAIL = 'gerencia@clinica.ec';
@@ -159,12 +163,6 @@ describe('las especialidades por HTTP', () => {
       .set('Authorization', `Bearer ${token}`)
       .send(body);
 
-  const put = (path: string, body: Record<string, unknown>) =>
-    request(app.getHttpServer())
-      .put(`/api/v1/specialties${path}`)
-      .set('Authorization', `Bearer ${token}`)
-      .send(body);
-
   const destroy = (path: string) =>
     request(app.getHttpServer())
       .delete(`/api/v1/specialties${path}`)
@@ -289,97 +287,6 @@ describe('las especialidades por HTTP', () => {
     });
   });
 
-  describe('especialidades por profesional', () => {
-    it('SP-005 rechaza con PRIMARY_SPECIALTY_REQUIRED una asignación con dos principales', async () => {
-      const first = await createSpecialty('cardiologia', 'Cardiología');
-      const second = await createSpecialty('pediatria', 'Pediatría');
-
-      const response = await put(
-        `/practitioners/${practitionerId}/specialties`,
-        {
-          items: [
-            { specialtyId: first.id, isPrimary: true },
-            { specialtyId: second.id, isPrimary: true },
-          ],
-        },
-      ).expect(422);
-
-      expect((response.body as Problem).code).toBe('PRIMARY_SPECIALTY_REQUIRED'); // prettier-ignore
-    });
-
-    it('SP-005 la base admite a lo sumo una principal: el índice parcial rechaza la segunda', async () => {
-      const first = await createSpecialty('cardiologia', 'Cardiología');
-      const second = await createSpecialty('pediatria', 'Pediatría');
-
-      await prisma.practitionerSpecialty.create({
-        data: { practitionerId, specialtyId: first.id, isPrimary: true },
-      });
-      // Straight into the table, dodging service and DTO: only
-      // `practitioner_specialty_one_primary` can refuse this one.
-      await expect(
-        prisma.practitionerSpecialty.create({
-          data: { practitionerId, specialtyId: second.id, isPrimary: true },
-        }),
-      ).rejects.toThrowError(/practitioner_specialty_one_primary|Unique/i);
-    });
-
-    it('SP-008 expone la especialidad principal del profesional, la principal primero', async () => {
-      const cardio = await createSpecialty('cardiologia', 'Cardiología');
-      const pedia = await createSpecialty('pediatria', 'Pediatría');
-
-      await put(`/practitioners/${practitionerId}/specialties`, {
-        items: [
-          { specialtyId: pedia.id, isPrimary: false },
-          { specialtyId: cardio.id, isPrimary: true },
-        ],
-      }).expect(200);
-
-      const response = await get(
-        `/practitioners/${practitionerId}/specialties`,
-      ).expect(200);
-      const items = (
-        response.body as {
-          items: { specialtyId: string; isPrimary: boolean }[];
-        }
-      ).items;
-
-      expect(items[0]).toMatchObject({ specialtyId: cardio.id, isPrimary: true }); // prettier-ignore
-      expect(items.filter((item) => item.isPrimary)).toHaveLength(1);
-    });
-
-    it('SP-004 rechaza con SPECIALTY_INACTIVE asignar una especialidad desactivada', async () => {
-      const specialty = await createSpecialty();
-      await patch(`/${specialty.id}`, { active: false }).expect(200); // prettier-ignore
-
-      const response = await put(
-        `/practitioners/${practitionerId}/specialties`,
-        { items: [{ specialtyId: specialty.id, isPrimary: true }] },
-      ).expect(422);
-
-      expect((response.body as Problem).code).toBe('SPECIALTY_INACTIVE');
-    });
-
-    it('SP-004 conserva intactas las referencias existentes al desactivar', async () => {
-      const specialty = await createSpecialty();
-      await put(`/practitioners/${practitionerId}/specialties`, {
-        items: [{ specialtyId: specialty.id, isPrimary: true }],
-      }).expect(200);
-
-      await patch(`/${specialty.id}`, { active: false }).expect(200); // prettier-ignore
-
-      const response = await get(
-        `/practitioners/${practitionerId}/specialties`,
-      ).expect(200);
-      const items = (
-        response.body as {
-          items: { specialtyId: string; active: boolean }[];
-        }
-      ).items;
-      expect(items).toHaveLength(1);
-      expect(items[0]).toMatchObject({ specialtyId: specialty.id, active: false }); // prettier-ignore
-    });
-  });
-
   describe('tipos de atención y duraciones', () => {
     it('SP-020 crea un tipo de atención con duración base y lo lista por especialidad', async () => {
       const specialty = await createSpecialty();
@@ -437,13 +344,16 @@ describe('las especialidades por HTTP', () => {
     it('SP-025 un tipo sin citas que lo referencien sí se borra; sus excepciones mueren con él', async () => {
       const specialty = await createSpecialty();
       const type = await createServiceType(specialty.id);
-      await put(`/practitioners/${practitionerId}/specialties`, {
-        items: [{ specialtyId: specialty.id, isPrimary: true }],
-      }).expect(200);
-      await put(
-        `/practitioners/${practitionerId}/duration-exceptions/${type.id}`,
-        { durationMinutes: 45 },
-      ).expect(204);
+      // Written straight into the table: the endpoint that sets an exception
+      // is `staff`'s since ST-009 absorbed it, and what this test is about is
+      // the CASCADE, not the endpoint.
+      await prisma.durationException.create({
+        data: {
+          practitionerId,
+          serviceTypeId: type.id,
+          durationMinutes: 45,
+        },
+      });
 
       await destroy(`/service-types/${type.id}`).expect(204);
 
@@ -504,71 +414,6 @@ describe('las especialidades por HTTP', () => {
         startsAt: booked.startsAt,
         endsAt: booked.endsAt,
         updatedAt: booked.updatedAt,
-      });
-    });
-
-    it('SP-022 fija y retira una excepción de duración por médico', async () => {
-      const specialty = await createSpecialty();
-      const type = await createServiceType(specialty.id, 'Control', 20);
-      await put(`/practitioners/${practitionerId}/specialties`, {
-        items: [{ specialtyId: specialty.id, isPrimary: true }],
-      }).expect(200);
-
-      await put(
-        `/practitioners/${practitionerId}/duration-exceptions/${type.id}`,
-        { durationMinutes: 45 },
-      ).expect(204);
-      expect(
-        await prisma.durationException.count({ where: { practitionerId } }),
-      ).toBe(1);
-
-      await destroy(
-        `/practitioners/${practitionerId}/duration-exceptions/${type.id}`,
-      ).expect(204);
-      expect(
-        await prisma.durationException.count({ where: { practitionerId } }),
-      ).toBe(0);
-    });
-
-    it('SP-023/SP-028 resuelve excepción → base y la expone como resolvedMinutes', async () => {
-      const specialty = await createSpecialty();
-      const control = await createServiceType(specialty.id, 'Control', 20);
-      const primera = await createServiceType(specialty.id, 'Primera vez', 30);
-      await put(`/practitioners/${practitionerId}/specialties`, {
-        items: [{ specialtyId: specialty.id, isPrimary: true }],
-      }).expect(200);
-      await put(
-        `/practitioners/${practitionerId}/duration-exceptions/${control.id}`,
-        { durationMinutes: 45 },
-      ).expect(204);
-
-      const response = await get(
-        `/practitioners/${practitionerId}/duration-exceptions`,
-      ).expect(200);
-      const items = (
-        response.body as {
-          items: {
-            serviceTypeId: string;
-            baseMinutes: number;
-            exceptionMinutes: number | null;
-            resolvedMinutes: number;
-          }[];
-        }
-      ).items;
-
-      const withException = items.find((i) => i.serviceTypeId === control.id);
-      const withoutException = items.find((i) => i.serviceTypeId === primera.id); // prettier-ignore
-      // With an exception the practitioner's own minutes rule (SP-023 level 1)…
-      expect(withException).toMatchObject({
-        baseMinutes: 20,
-        exceptionMinutes: 45,
-        resolvedMinutes: 45,
-      });
-      // …and without one the base of the specialty·type rules (level 2).
-      expect(withoutException).toMatchObject({
-        baseMinutes: 30,
-        exceptionMinutes: null,
-        resolvedMinutes: 30,
       });
     });
   });

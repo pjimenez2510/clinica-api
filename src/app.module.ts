@@ -11,6 +11,7 @@ import { CatalogsModule } from './modules/catalogs/catalogs.module';
 import { OrganizationModule } from './modules/organization/organization.module';
 import { PatientsModule } from './modules/patients/patients.module';
 import { SpecialtiesModule } from './modules/specialties/specialties.module';
+import { StaffModule } from './modules/staff/staff.module';
 import { validateEnv } from './shared/config/env.schema';
 import { TimeoutInterceptor } from './shared/http/interceptors/timeout.interceptor';
 import { ProblemDetailsFilter } from './shared/http/problem-details.filter';
@@ -78,6 +79,7 @@ import { buildLoggerConfig } from './shared/observability/logger.config';
     CatalogsModule,
     SpecialtiesModule,
     OrganizationModule,
+    StaffModule,
   ],
   providers: [
     // Registered with APP_FILTER, not useGlobalFilters, so the filter can

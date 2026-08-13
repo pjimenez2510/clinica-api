@@ -967,9 +967,20 @@ model PractitionerScheduleRule {
   slotMinutes Int @default(20) @map("slot_minutes") @db.SmallInt
 
   validFrom DateTime  @map("valid_from") @db.Date
+  /// NULL means the rule is still in force (ST-041).
   validTo   DateTime? @map("valid_to") @db.Date
 
   active Boolean @default(true)
+
+  /// Both are `GENERATED ALWAYS AS … STORED`, written by the manual migration
+  /// `20260813031542_staff_schedule_rule_no_overlap`. STORED and not VIRTUAL
+  /// because PostgreSQL 18 cannot index or constrain virtual columns, and they
+  /// exist only to feed the `schedule_rule_no_overlap` EXCLUDE of ST-042:
+  /// `&&` has no operator over `time`, so the span is rangified to minutes
+  /// from midnight. Declared here so Prisma never reads them as surplus and
+  /// proposes dropping them — same treatment as `CatalogConcept.validPeriod`.
+  minutesRange Unsupported("int4range")? @map("minutes_range")
+  validity     Unsupported("daterange")?
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)

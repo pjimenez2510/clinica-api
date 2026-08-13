@@ -9,7 +9,6 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
-  Put,
   Query,
   Req,
 } from '@nestjs/common';
@@ -30,7 +29,6 @@ import {
   type Requester,
 } from './application/specialties.service';
 import {
-  AssignSpecialtiesDto,
   CreateServiceTypeDto,
   CreateSpecialtyDto,
   // NO `import type` for parameter DTOs: with `type` the class is erased at
@@ -39,17 +37,12 @@ import {
   // catalogs.controller.ts.
   ListServiceTypesQueryDto,
   ListSpecialtiesQueryDto,
-  PractitionerDurationListDto,
-  PractitionerSpecialtyListDto,
   ServiceTypeDto,
   ServiceTypeListDto,
-  SetDurationExceptionDto,
   SpecialtyDto,
   SpecialtyListDto,
   UpdateServiceTypeDto,
   UpdateSpecialtyDto,
-  type PractitionerDurationListResponse,
-  type PractitionerSpecialtyListResponse,
   type ServiceTypeListResponse,
   type ServiceTypeResponse,
   type SpecialtyListResponse,
@@ -203,95 +196,6 @@ export class SpecialtiesController {
     @Req() req: Request,
   ): Promise<void> {
     await this.specialties.deleteServiceType(id, this.requester(req));
-  }
-
-  // --- Practitioner specialties ------------------------------------------------
-
-  /** SP-008: the primary flag travels with each row, primary first. */
-  @Get('practitioners/:practitionerId/specialties')
-  @RequirePermission('config:read', 'global')
-  @ApiOperation({ summary: 'List the specialties a practitioner holds' })
-  @ApiOkResponse({ type: PractitionerSpecialtyListDto })
-  async listPractitionerSpecialties(
-    @Param('practitionerId', ParseUUIDPipe) practitionerId: string,
-  ): Promise<PractitionerSpecialtyListResponse> {
-    const items =
-      await this.specialties.listPractitionerSpecialties(practitionerId);
-    return { items };
-  }
-
-  /**
-   * SP-005: the body is the WHOLE assignment — replace-set semantics, which
-   * is why it is a PUT. Exactly one row must be primary.
-   */
-  @Put('practitioners/:practitionerId/specialties')
-  @RequirePermission('config:manage', 'global')
-  @ApiOperation({ summary: 'Replace the specialties a practitioner holds' })
-  @ApiOkResponse({ type: PractitionerSpecialtyListDto })
-  async replacePractitionerSpecialties(
-    @Param('practitionerId', ParseUUIDPipe) practitionerId: string,
-    @Body() dto: AssignSpecialtiesDto,
-    @Req() req: Request,
-  ): Promise<PractitionerSpecialtyListResponse> {
-    const items = await this.specialties.replacePractitionerSpecialties(
-      practitionerId,
-      dto.items,
-      this.requester(req),
-    );
-    return { items };
-  }
-
-  // --- Duration exceptions ------------------------------------------------------
-
-  /** SP-023 resolved per row (SP-028 reads `resolvedMinutes`). */
-  @Get('practitioners/:practitionerId/duration-exceptions')
-  @RequirePermission('config:read', 'global')
-  @ApiOperation({ summary: 'List durations for a practitioner, resolved' })
-  @ApiOkResponse({ type: PractitionerDurationListDto })
-  async listPractitionerDurations(
-    @Param('practitionerId', ParseUUIDPipe) practitionerId: string,
-  ): Promise<PractitionerDurationListResponse> {
-    const items =
-      await this.specialties.listPractitionerDurations(practitionerId);
-    return { items };
-  }
-
-  /** SP-022. A PUT: setting it twice is the same exception, not two. */
-  @Put('practitioners/:practitionerId/duration-exceptions/:serviceTypeId')
-  @RequirePermission('config:manage', 'global')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Set a duration exception for a practitioner' })
-  @ApiNoContentResponse()
-  async setDurationException(
-    @Param('practitionerId', ParseUUIDPipe) practitionerId: string,
-    @Param('serviceTypeId', ParseUUIDPipe) serviceTypeId: string,
-    @Body() dto: SetDurationExceptionDto,
-    @Req() req: Request,
-  ): Promise<void> {
-    await this.specialties.setDurationException(
-      practitionerId,
-      serviceTypeId,
-      dto.durationMinutes,
-      this.requester(req),
-    );
-  }
-
-  /** SP-022: back to the base duration. */
-  @Delete('practitioners/:practitionerId/duration-exceptions/:serviceTypeId')
-  @RequirePermission('config:manage', 'global')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Remove a duration exception' })
-  @ApiNoContentResponse()
-  async removeDurationException(
-    @Param('practitionerId', ParseUUIDPipe) practitionerId: string,
-    @Param('serviceTypeId', ParseUUIDPipe) serviceTypeId: string,
-    @Req() req: Request,
-  ): Promise<void> {
-    await this.specialties.removeDurationException(
-      practitionerId,
-      serviceTypeId,
-      this.requester(req),
-    );
   }
 
   /** Who is asking, for the trail (SP-002, SP-027). */

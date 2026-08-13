@@ -1,6 +1,6 @@
 # SPEC — Módulo `specialties`
 
-**Estado:** borrador para revisión · **Fecha:** 12 de agosto de 2026
+**Estado:** borrador para revisión · **Fecha:** 13 de agosto de 2026
 **Fase:** 1 — Núcleo operativo · **Formato:** EARS, según ADR-010
 
 El catálogo propio de la clínica: qué especialidades ejerce, qué tipos de
@@ -29,17 +29,15 @@ maestro propio de la clínica, no una preferencia y no un catálogo externo del
 MSP como los de `catalogs`: la referencian el expediente, la factura y el
 reporte al Estado, y por eso nace con código estable y no solo con nombre.
 
-> **Deuda declarada el 12-08-2026, y es deuda, no diseño.** Dos requisitos de
-> este SPEC administran datos que pertenecen a `staff`: la **asignación de
-> especialidades a un profesional** (SP-005, y su lectura SP-008) y las
-> **excepciones de duración por profesional** (SP-022). Viven aquí
-> **temporalmente**, porque `staff` todavía no existe y la agenda ya construyó
-> encima de estos datos. `staff` es el módulo inmediatamente siguiente en el
-> ROADMAP; cuando exista, la propiedad de `practitioner_specialty` y de
-> `duration_exception` se muda con él y este SPEC conserva solo el catálogo, el
-> tipo de atención y la duración base. Mientras tanto las rutas correspondientes
-> cuelgan del prefijo `/specialties`, que es exactamente la señal de que están
-> en el sitio equivocado.
+> **Deuda saldada el 13-08-2026.** La asignación de especialidades a un
+> profesional (SP-005, SP-008) y las excepciones de duración por profesional
+> (SP-022) vivían aquí temporalmente porque `staff` no existía. Ya existe: las
+> rutas cuelgan de `/staff/practitioners/...`, la propiedad de
+> `practitioner_specialty` y de `duration_exception` es suya, y ST-008 y ST-009
+> son su forma definitiva. Los tres requisitos quedan aquí como el CATÁLOGO que
+> son —qué puede asignarse y con qué duración base— y su cumplimiento se
+> verifica en la suite de `staff`. Este módulo conserva la especialidad, el tipo
+> de atención y la duración base, y nada más.
 
 **Fuera de alcance:** cómo la agenda **obedece** estos datos al reservar — eso
 vive en el SPEC de `agenda` (AG-031 a AG-033, AG-090 a AG-098, AG-102) y las
@@ -109,6 +107,9 @@ diálogo ofrece especialidad y tipo.
   referencias existentes.
 - **SP-005** — El sistema DEBERÁ permitir que un profesional tenga una o varias
   especialidades, exactamente una marcada como principal.
+  > Lo hace cumplir `staff` desde el 13-08-2026 (ST-008): el índice parcial
+  > `practitioner_specialty_one_primary` sigue siendo la garantía, y quien la
+  > invoca es el dueño del profesional.
 - **SP-006** — El sistema DEBERÁ impedir dos especialidades con el mismo código
   o el mismo nombre (comparación insensible a mayúsculas y acentos), con la
   garantía en la base.
@@ -116,6 +117,8 @@ diálogo ofrece especialidad y tipo.
   incluir activas e inactivas; DONDE sea de selección, solo activas.
 - **SP-008** — El sistema DEBERÁ exponer la especialidad principal del
   profesional en el listado que consume la agenda.
+  > Lo expone `staff` desde el 13-08-2026 (ST-008), en el listado de
+  > profesionales que es suyo.
 
 ### Tipos de atención y duraciones (REQ-150, D-010)
 
@@ -125,6 +128,9 @@ diálogo ofrece especialidad y tipo.
   múltiplos de 5, con la garantía como `CHECK` en la base.
 - **SP-022** — El sistema DEBERÁ permitir una excepción de duración por médico
   para un especialidad·tipo concreto, con la misma garantía de rango.
+  > La administra `staff` desde el 13-08-2026 (ST-009). El `CHECK`
+  > `duration_exception_range` no se movió —vive en la base— pero su traducción
+  > a mensaje sí, a `staff.constraints.ts`.
 - **SP-023** — CUANDO se necesite la duración de una cita, el sistema DEBERÁ
   resolverla en este orden: excepción del médico → duración base del
   especialidad·tipo → minutos de la regla de horario del profesional.
@@ -157,14 +163,19 @@ una prueba comprueba que ninguna clase de error inventa un código fuera de él.
 | `SERVICE_TYPE_DUPLICATE`   | 409  | Nombre repetido dentro de la especialidad (SP-026)               |
 | `SPECIALTY_NOT_FOUND`      | 404  | La especialidad indicada no existe                               |
 | `SERVICE_TYPE_NOT_FOUND`   | 404  | El tipo de atención indicado no existe                           |
-| `PRACTITIONER_NOT_FOUND`   | 404  | El profesional indicado no existe (deuda: pasa a `staff`)        |
-| `PRIMARY_SPECIALTY_REQUIRED` | 422 | La asignación no marca exactamente una principal (SP-005)       |
-| `SPECIALTY_INACTIVE`       | 422  | Asignar una especialidad desactivada a quien no la tenía (SP-004) |
+
+
+`PRACTITIONER_NOT_FOUND`, `PRIMARY_SPECIALTY_REQUIRED` y `SPECIALTY_INACTIVE`
+los emite `staff` desde el 13-08-2026, con las mismas cadenas: el `code` es
+contrato público y cambiar de emisor no puede cambiarlo.
+`SPECIALTY_NOT_FOUND` y `SERVICE_TYPE_NOT_FOUND` viven ahora en
+`shared/domain/errors/master-data.errors.ts`, porque los dos módulos tienen que
+responderlos y ninguno importa al otro — el mismo camino que tomó `INVALID_RUC`.
 
 ## Notas de esquema
 
-Tablas de este módulo: `specialty`, `service_type` y —**temporalmente**, por la
-deuda declarada en el Alcance— `practitioner_specialty` y `duration_exception`.
+Tablas de este módulo: `specialty` y `service_type`. `practitioner_specialty` y
+`duration_exception` son de `staff` desde el 13-08-2026.
 
 Las garantías viven en la base, no en TypeScript, porque dos administradores
 escribiendo en el mismo milisegundo leen ambos «libre»:
@@ -178,11 +189,18 @@ escribiendo en el mismo milisegundo leen ambos «libre»:
 - `service_type_name_unique_per_specialty`: índice único funcional (SP-026).
 - `service_type_duration_range` y `duration_exception_range`: `CHECK` de 5..240
   en múltiplos de 5 (SP-021, SP-022).
-- `practitioner_specialty_one_primary`: índice único **parcial**, el «a lo sumo
-  una principal» de SP-005. El «al menos una» cuenta filas hermanas, así que no
-  puede ser un `CHECK` y lo hace cumplir el servicio sobre el conjunto completo.
 - Claves foráneas `ON DELETE RESTRICT` hacia `specialty` y `service_type`: son
   las que producen SP-003 y SP-025.
+
+`practitioner_specialty_one_primary` —el índice único parcial de SP-005— y el
+`CHECK` `duration_exception_range` siguen existiendo en la base, sobre tablas
+que ahora son de `staff`. Su registro en `constraint-meanings` se mudó allí con
+las rutas.
+
+`resolveDuration` —la función pura de SP-023— vive en `shared/domain` desde el
+13-08-2026: al mudarse la excepción por profesional, el único llamador quedó en
+`staff`, y `pnpm arch:check` prohíbe que un módulo importe de otro. Duplicar la
+jerarquía en dos módulos es exactamente lo que esa función existe para evitar.
 
 ## Rutas
 
@@ -191,5 +209,5 @@ Todas bajo `/api/v1/specialties`, con `config:read` para lectura y
 diciendo `config:*` a propósito** (ADR-011): se revisan de una sola vez cuando
 existan `staff` y `organization`, no módulo a módulo.
 
-Las cuatro rutas con `practitioners/` en el camino son las de la deuda: se van
-con `staff`.
+Ninguna ruta lleva ya `practitioners/` en el camino: las cuatro que la llevaban
+se fueron con `staff` el 13-08-2026, que es lo que significa saldar la deuda.

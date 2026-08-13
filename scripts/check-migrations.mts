@@ -29,6 +29,11 @@ const PROTECTED = [
   'search_name',
   'search_display',
   'valid_period',
+  // Generated columns of `practitioner_schedule_rule` (ST-042). They exist
+  // only to feed `schedule_rule_no_overlap`, so dropping either silently
+  // removes the exclusion with it.
+  'minutes_range',
+  'validity',
   'patient_search_name_trgm',
   'catalog_concept_search_trgm',
   'catalog_concept_current',

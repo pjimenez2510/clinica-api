@@ -101,8 +101,28 @@ export const DOMAIN_ERROR_CODES = [
   // otra mitad del requisito. Los dos de asignación son del servicio: SP-005
   // exige exactamente una especialidad principal, y SP-004 prohíbe asignar
   // una especialidad desactivada a un profesional que no la tenía.
+  // Profesionales, S1 y S2 (ADR-011). `PRACTITIONER_NOT_FOUND`,
+  // `PRIMARY_SPECIALTY_REQUIRED` y `SPECIALTY_INACTIVE` ya existían emitidos
+  // desde `specialties`: al saldarse la deuda el 13-08-2026 cambiaron de
+  // emisor, no de cadena — el `code` es contrato público y renombrarlo rompe
+  // clientes. Los nuevos: el ACESS vencido impide FIRMAR y nunca agendar
+  // (D-009, ST-004), y el ausente se distingue del vencido a propósito porque
+  // lo que hay que hacer es distinto —registrarlo frente a renovarlo—; el
+  // profesional con historial no se borra, se desactiva (ST-010); y una regla
+  // o una reserva en una sede donde no atiende se rechaza (ST-007).
+  //
+  // `SCHEDULE_RULE_OVERLAP` NO está aquí: lo produce el EXCLUDE
+  // `schedule_rule_no_overlap` y se registra en `staff.constraints.ts`, que es
+  // su enumeración, igual que `PRACTITIONER_SLOT_TAKEN`.
+  'ACESS_EXPIRED',
+  'ACESS_MISSING',
+  'INVALID_SCHEDULE_RULE',
+  'PRACTITIONER_IN_USE',
   'PRACTITIONER_NOT_FOUND',
+  'PRACTITIONER_NOT_IN_SITE',
+  'PRACTITIONER_NOT_SCHEDULABLE',
   'PRIMARY_SPECIALTY_REQUIRED',
+  'SCHEDULE_RULE_NOT_FOUND',
   'SERVICE_TYPE_DUPLICATE',
   'SERVICE_TYPE_IN_USE',
   'SERVICE_TYPE_NOT_FOUND',

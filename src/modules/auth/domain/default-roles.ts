@@ -46,6 +46,17 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       // administrator alongside users and sites.
       'config:read',
       'config:manage',
+      // The staff file (ADR-011). It goes to the administrator and to NOBODY
+      // ELSE by default, which is a decision and not an oversight: the file
+      // carries the cedula and the ACESS registration of an employee, and the
+      // two roles that could plausibly want it do not need it. The agenda
+      // already lists bookable practitioners under `agenda:read` (AG-108), so
+      // granting `staff:read` to MEDICO or RECEPCION would widen access to
+      // personal data without unlocking a single screen they lack today. A
+      // clinic that wants it can grant it — roles are data (D-012 only seeds
+      // the roles whose definition declares the code).
+      'staff:read',
+      'staff:manage',
       'audit:read',
     ],
   },

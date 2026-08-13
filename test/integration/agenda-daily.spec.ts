@@ -503,12 +503,16 @@ describe('AG-026 a booking aborted for serialisation', () => {
 });
 
 /**
- * Which schedule rule governs a booking when two of them are in force over the
- * same hours — a state nothing in the schema forbids today.
+ * Which schedule rule governs a booking when a practitioner's schedule is
+ * REPLACED: the old rule closed, the new one in force from the next day.
  *
- * AGAINST A REAL POSTGRESQL because the defect was the ABSENCE of an ORDER BY:
- * a double hands back the array it was given and proves nothing about what the
- * server returns, which is what changed the answer.
+ * IT USED TO BE «two rules in force over the same hours — a state nothing in
+ * the schema forbids today». ST-042 forbids it since 13-08-2026: the EXCLUDE
+ * `schedule_rule_no_overlap` refuses two rules in force for the same
+ * practitioner, site and weekday over overlapping hours, so the old scenario
+ * is no longer representable. What AG-106 protects is the same and still
+ * needs a real PostgreSQL: the defect was the ABSENCE of an ORDER BY, and a
+ * double hands back the array it was given.
  */
 describe('the applicable schedule rule', () => {
   async function withTwoOverlappingRules(newerSlotMinutes: 20 | 30) {
@@ -521,6 +525,11 @@ describe('the applicable schedule rule', () => {
     // Se insertan SIEMPRE en el mismo orden físico — 20 primero — y sólo
     // cambia cuál entró en vigor después. Si el orden de la consulta no fuese
     // explícito, las dos pruebas darían el mismo resultado.
+    //
+    // La regla vieja lleva `validTo`: desde ST-042 dos reglas vigentes no
+    // pueden solaparse, así que una sustitución se escribe como sucesión —
+    // último día de la vieja, primer día de la nueva—, que es exactamente lo
+    // que ST-041 llama cerrar hacia adelante.
     const older = newerSlotMinutes === 30 ? 20 : 30;
     await createScheduleRule(
       prisma,
@@ -531,6 +540,7 @@ describe('the applicable schedule rule', () => {
         endTime: '12:00',
         slotMinutes: older,
         validFrom: new Date('2026-01-01T00:00:00Z'),
+        validTo: new Date('2026-05-31T00:00:00Z'),
       },
     );
     await createScheduleRule(

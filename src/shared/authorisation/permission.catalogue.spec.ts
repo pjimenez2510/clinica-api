@@ -29,7 +29,11 @@ describe('the permission catalogue', () => {
     // exception list keyed on the prefix would have grown with every addition;
     // asserting the closed set of screens is the invariant that actually
     // matters.
-    const SCREENS = ['patient', 'agenda', 'record', 'billing', 'catalog', 'config', 'admin']; // prettier-ignore
+    // `staff` joined on 13-08-2026 with the module that owns `Practitioner`
+    // (ADR-011): the professional file is its own screen, not a corner of the
+    // clinical parametrisation, because who may read a colleague's cedula and
+    // ACESS is a different question from who may rename a specialty.
+    const SCREENS = ['patient', 'agenda', 'record', 'billing', 'catalog', 'config', 'staff', 'admin']; // prettier-ignore
 
     for (const definition of PERMISSION_CATALOGUE) {
       expect(SCREENS, definition.code).toContain(definition.resource);

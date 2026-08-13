@@ -1,6 +1,6 @@
 # SPEC — Módulo `staff`
 
-**Estado:** borrador para revisión · **Fecha:** 12 de agosto de 2026
+**Estado:** borrador para revisión · **Fecha:** 13 de agosto de 2026
 **Fase:** 1 — Núcleo operativo · **Formato:** EARS, según ADR-010
 
 El profesional de la salud como dato del expediente, no como preferencia. Nace
@@ -26,10 +26,12 @@ componer columnas, `encounter` necesita su cédula y su código en cada atenció
 que el ACESS vencido impida firmar (REQ-041) y `reporting` los tres datos en
 **cada** fila del RDACAA.
 
-**Se muda aquí desde `specialties` cuando este módulo se construya:** la
-asignación profesional·especialidad (hoy `SP-005`, `SP-008`) y las excepciones
-de duración por profesional (hoy `SP-022`). El SPEC de `specialties` lo declara
-como deuda con esa misma fecha; `ST-008` y `ST-009` son su forma definitiva.
+**Mudado desde `specialties` el 13-08-2026, deuda saldada:** la asignación
+profesional·especialidad (`SP-005`, `SP-008`) y las excepciones de duración por
+profesional (`SP-022`). `ST-008` y `ST-009` son su forma definitiva, las rutas
+cuelgan de `/staff/practitioners/...`, y `practitioner_specialty` y
+`duration_exception` son tablas de este módulo. Los `code` no cambiaron: son
+contrato público y cambiar de emisor no puede cambiarlos.
 
 **Fuera de alcance:** la cuenta de acceso —credenciales, MFA, bloqueo por
 intentos— es de `auth`, y son cosas distintas con ciclos de vida distintos: una
@@ -151,18 +153,33 @@ _Numeración conservada de `CF-040`..`CF-046` al mudarse desde `configuration`
 
 ## Códigos de error
 
-| Código                  | HTTP | Cuándo                                              |
-| ----------------------- | ---- | ---------------------------------------------------- |
-| `PRACTITIONER_NOT_FOUND`| 404  | El profesional indicado no existe                    |
-| `PRACTITIONER_IN_USE`   | 409  | Borrar un profesional con historial (ST-010)         |
-| `ACESS_EXPIRED`         | 422  | Firmar con registro ACESS vencido (ST-004)           |
-| `PRACTITIONER_NOT_IN_SITE` | 422 | Reserva o regla en una sede donde no atiende (ST-007) |
-| `SCHEDULE_RULE_OVERLAP` | 409  | Regla de horario solapada (ST-042)                   |
-| `PRIMARY_SPECIALTY_REQUIRED` | 422 | La asignación no marca exactamente una principal (ST-008) |
+| Código                        | HTTP | Cuándo                                                       |
+| ----------------------------- | ---- | ------------------------------------------------------------ |
+| `PRACTITIONER_NOT_FOUND`      | 404  | El profesional indicado no existe                            |
+| `SCHEDULE_RULE_NOT_FOUND`     | 404  | La regla de horario indicada no existe                       |
+| `PRACTITIONER_IN_USE`         | 409  | Borrar un profesional con historial (ST-010)                 |
+| `SCHEDULE_RULE_OVERLAP`       | 409  | Regla de horario solapada (ST-042)                           |
+| `ACESS_EXPIRED`               | 422  | Firmar con registro ACESS vencido (ST-004)                   |
+| `ACESS_MISSING`               | 422  | Firmar sin registro ACESS o sin caducidad (ST-002)           |
+| `PRACTITIONER_NOT_IN_SITE`    | 422  | Regla en una sede donde no atiende (ST-007)                  |
+| `PRACTITIONER_NOT_SCHEDULABLE`| 422  | Regla nueva para quien no toma citas (ST-006)                |
+| `INVALID_SCHEDULE_RULE`       | 422  | Horas invertidas, turno que no cabe o vigencia vacía (ST-045)|
+| `PRIMARY_SPECIALTY_REQUIRED`  | 422  | La asignación no marca exactamente una principal (ST-008)    |
+| `SPECIALTY_INACTIVE`          | 422  | Asignar una especialidad desactivada a quien no la tenía     |
 
-`PRACTITIONER_NOT_FOUND` y `PRIMARY_SPECIALTY_REQUIRED` ya existen en
-`error-catalogue.ts`, emitidos hoy desde `specialties`: cuando la deuda se salde
-cambian de emisor, no de cadena.
+`PRACTITIONER_NOT_FOUND`, `PRIMARY_SPECIALTY_REQUIRED` y `SPECIALTY_INACTIVE`
+ya existían en `error-catalogue.ts` emitidos desde `specialties`: al saldarse la
+deuda cambiaron de emisor, no de cadena.
+
+**`SCHEDULE_RULE_OVERLAP` no está en el catálogo congelado y es deliberado.** Lo
+produce el `EXCLUDE` `schedule_rule_no_overlap` y se registra en
+`staff.constraints.ts`, que es su enumeración — como `PRACTITIONER_SLOT_TAKEN`
+en la agenda. Una clase de error sugeriría que el servicio puede decidirlo, y no
+puede: dos administradores editando el mismo lunes leen los dos «libre».
+
+Tres códigos más nacen del mapeo de constraints, con la misma regla:
+`PRACTITIONER_DUPLICATE` (esa cuenta ya tiene ficha), `USER_NOT_FOUND` (la
+cuenta no existe) y `CEDULA_TAKEN` (`app_user_cedula_key`, ST-001).
 
 ## Notas de esquema
 
@@ -176,7 +193,80 @@ Dos cosas que conviene saber antes de tocarlas:
 - **Cédula y ACESS viven hoy en `app_user`, no en `practitioner`**, y no están
   duplicadas. ST-001 y ST-002 se satisfacen a través de esa relación; si alguna
   vez se mueven, es una migración con dueño claro y no un `ADD COLUMN`.
-- El `EXCLUDE` que ST-042 exige (AG-106) **no existe todavía**: `start_time` y
-  `end_time` son `time` y PostgreSQL no trae `timerange`, así que hay que
-  rangificar a minutos desde medianoche y combinarlo con el `daterange` de
-  vigencia. Entra con S2 y merece sus propias pruebas de concurrencia.
+- El `EXCLUDE` que ST-042 exige (AG-106) entró el 13-08-2026 con la migración
+  `20260813031542_staff_schedule_rule_no_overlap`. `start_time` y `end_time`
+  son `time` y PostgreSQL no trae `timerange`, así que la franja se rangifica a
+  minutos desde medianoche en una columna generada `minutes_range int4range`, y
+  la vigencia en `validity daterange`. Las dos son `GENERATED … STORED` y se
+  declaran en `schema.prisma` como `Unsupported(...)` para que Prisma no
+  proponga borrarlas.
+
+  Tres detalles que costaron una vuelta cada uno y conviene no volver a
+  descubrir:
+
+  - **`validity` es `'[]'`, no `'[)'`.** `valid_to` ya significaba «el último
+    día en que la regla rige» desde E1: `slot-availability.ts` lee
+    `date <= rule.validTo`. Un rango medio abierto habría creado dos verdades
+    sobre la misma columna, y el desacuerdo dura exactamente un día por regla —
+    el tiempo justo para que la agenda ofrezca un cupo que la reserva rechace.
+  - **`minutes_range` usa `greatest(...)`.** Una columna generada se calcula
+    ANTES que los `CHECK`, y `int4range(720, 480)` lanza `22000` en lugar de
+    dejar hablar a `schedule_rule_time_order`. Con `greatest` la regla
+    invertida produce un rango vacío, que no solapa con nada, y el `CHECK`
+    vuelve a ser quien la rechaza y quien lo explica.
+  - **`schedule_rule_slot_fits` empieza por `end_time <= start_time OR …`.** Sin
+    esa salida, una franja invertida incumple también ese `CHECK`, PostgreSQL
+    reporta el que evalúa primero, y el nombre de la restricción —que es lo que
+    elige el mensaje— acaba diciendo «los turnos no caben» sobre el campo
+    equivocado.
+
+  `btree_gist` ya estaba instalada desde `20260806022956_clinical_core_constraints`,
+  que es lo que permite meter los tres `WITH =` dentro del índice GiST.
+
+## Rutas
+
+Todas bajo `/api/v1/staff`, con `staff:read` para lectura y `staff:manage` para
+toda mutación. El alcance por sede es `global` en todas: un profesional no es un
+recurso DE una sede —la misma persona atiende en dos, y su cédula, su ACESS y su
+código MSP son los mismos en ambas—, así que acotarlo por sede significaría o
+esconder media persona o elegir arbitrariamente una de sus sedes. Lo que
+sustituye a esa comprobación es más fuerte: ST-007 rechaza toda regla en una
+sede donde el profesional no atiende, contra la tabla de asignaciones y en cada
+escritura.
+
+`staff:read` es **deliberadamente estrecho**: solo lo tiene ADMIN por defecto.
+La agenda lista a los profesionales agendables por su propia ruta bajo
+`agenda:read` (AG-108), así que ni recepción ni medicina necesitan nada de aquí
+para trabajar — y esta ficha lleva la cédula y el registro ACESS de un empleado,
+que es dato personal sin sitio en una pantalla de reservas. Una clínica que lo
+quiera puede concederlo: los roles son datos.
+
+| Método   | Ruta                                                                | Requisito        |
+| -------- | ------------------------------------------------------------------- | ---------------- |
+| `GET`    | `/practitioners?includeInactive=`                                   | ST-001..003, 010 |
+| `GET`    | `/practitioners/acess-expiring?withinDays=`                         | ST-005           |
+| `GET`    | `/practitioners/:id`                                                | ST-001..003      |
+| `POST`   | `/practitioners`                                                    | ST-001..003, 006 |
+| `PATCH`  | `/practitioners/:id`                                                | ST-001..003, 010 |
+| `DELETE` | `/practitioners/:id`                                                | ST-010           |
+| `GET`    | `/practitioners/:id/signing-eligibility`                            | ST-002, ST-004   |
+| `GET`    | `/practitioners/:id/sites`                                          | ST-007           |
+| `PUT`    | `/practitioners/:id/sites`                                          | ST-007           |
+| `GET`    | `/practitioners/:id/specialties`                                    | ST-008           |
+| `PUT`    | `/practitioners/:id/specialties`                                    | ST-008           |
+| `GET`    | `/practitioners/:id/duration-exceptions`                            | ST-009           |
+| `PUT`    | `/practitioners/:id/duration-exceptions/:serviceTypeId`             | ST-009           |
+| `DELETE` | `/practitioners/:id/duration-exceptions/:serviceTypeId`             | ST-009           |
+| `GET`    | `/practitioners/:id/schedule-rules?includeClosed=`                  | ST-040, ST-041   |
+| `POST`   | `/practitioners/:id/schedule-rules`                                 | ST-040..046      |
+| `PATCH`  | `/schedule-rules/:id`                                               | ST-040..046      |
+| `DELETE` | `/schedule-rules/:id`                                               | ST-041, ST-043   |
+
+**`GET /signing-eligibility` es una consulta que RECHAZA**, y es el requisito:
+quien va a firmar pregunta, y un ACESS caducado tiene que detenerle. Responder
+200 con `eligible: false` volvería opcional el rechazo para todo llamador
+futuro, y el primero que olvidara leer el campo firmaría igual.
+
+**`DELETE /schedule-rules/:id` cierra, no borra** (ST-041), y responde 200 con
+cuerpo en lugar de 204 porque los conflictos de ST-043 son justamente lo que
+hace que valga la pena cerrar un horario desde una pantalla.

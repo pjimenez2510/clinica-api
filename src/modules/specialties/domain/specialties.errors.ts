@@ -1,9 +1,4 @@
-import {
-  BusinessRuleViolation,
-  ConflictError,
-  NotFoundError,
-  ValidationError,
-} from '../../../shared/domain/errors/domain-error';
+import { ConflictError } from '../../../shared/domain/errors/domain-error';
 
 /**
  * What can go wrong when administering the clinic's parametrisation, in
@@ -18,44 +13,17 @@ import {
  * one of these classes, which is why they are defined HERE and only thrown
  * THERE (the constitution's rule: infrastructure throws domain errors, it
  * does not define them).
+ *
+ * WHAT LEFT THIS FILE ON 13-08-2026, when `staff` settled the declared debt:
+ *   - `SPECIALTY_NOT_FOUND` and `SERVICE_TYPE_NOT_FOUND` moved to
+ *     `shared/domain/errors/master-data.errors.ts`. Both modules must answer
+ *     them and no module may import another.
+ *   - `PRACTITIONER_NOT_FOUND`, `PRIMARY_SPECIALTY_REQUIRED` and
+ *     `SPECIALTY_INACTIVE` moved to `modules/staff/domain/staff.errors.ts`.
+ *     They are raised only where a practitioner is administered, and that is
+ *     `staff` now. The strings did not change: a code is a public contract and
+ *     changing the emitter must not change it.
  */
-
-/** The specialty does not exist. Never says whether it once did. */
-export class SpecialtyNotFoundError extends NotFoundError {
-  readonly code = 'SPECIALTY_NOT_FOUND';
-  override readonly userTitle =
-    'La especialidad indicada no existe. Actualice la lista e intente de nuevo';
-
-  constructor() {
-    super('Specialty not found');
-  }
-}
-
-/** The service type does not exist. */
-export class ServiceTypeNotFoundError extends NotFoundError {
-  readonly code = 'SERVICE_TYPE_NOT_FOUND';
-  override readonly userTitle =
-    'El tipo de atención indicado no existe. Actualice la lista e intente de nuevo';
-
-  constructor() {
-    super('Service type not found');
-  }
-}
-
-/**
- * The practitioner whose specialties or durations are being administered does
- * not exist. A 404 and not a foreign-key 422: the identifier names the
- * resource in the URL, so a wrong one is a missing resource, not bad data.
- */
-export class PractitionerNotFoundError extends NotFoundError {
-  readonly code = 'PRACTITIONER_NOT_FOUND';
-  override readonly userTitle =
-    'El profesional indicado no existe. Actualice la lista e intente de nuevo';
-
-  constructor() {
-    super('Practitioner not found');
-  }
-}
 
 /**
  * SP-006. Two specialties may not share a code or a name, compared without
@@ -139,50 +107,5 @@ export class ServiceTypeInUseError extends ConflictError {
 
   constructor() {
     super('Service type is referenced and cannot be deleted');
-  }
-}
-
-/**
- * SP-005. A practitioner holds one or more specialties, EXACTLY ONE of them
- * primary. The base guarantees "at most one" with the partial unique index
- * `practitioner_specialty_one_primary`; "at least one" cannot be a CHECK —
- * it counts sibling rows — so the service enforces it here, on the whole
- * replacement set.
- */
-export class PrimarySpecialtyRequiredError extends ValidationError {
-  readonly code = 'PRIMARY_SPECIALTY_REQUIRED';
-  override readonly userTitle =
-    'Marque exactamente una especialidad como principal';
-
-  constructor(primaryCount: number) {
-    super(
-      `Assignment must mark exactly one primary specialty, got ${primaryCount}`,
-      { primaryCount },
-      [
-        {
-          field: 'items',
-          code: 'PRIMARY_SPECIALTY_REQUIRED',
-          message:
-            primaryCount === 0
-              ? 'Ninguna especialidad está marcada como principal'
-              : 'Hay más de una especialidad marcada como principal',
-        },
-      ],
-    );
-  }
-}
-
-/**
- * SP-004. A deactivated specialty is not offered for NEW assignments; the
- * ones a practitioner already holds are kept intact, which is why the service
- * only refuses identifiers that were not previously assigned.
- */
-export class InactiveSpecialtyAssignmentError extends BusinessRuleViolation {
-  readonly code = 'SPECIALTY_INACTIVE';
-  override readonly userTitle =
-    'La especialidad está desactivada y no admite nuevas asignaciones. Reactívela si debe volver a ofrecerse';
-
-  constructor() {
-    super('Deactivated specialty refused for a new assignment');
   }
 }

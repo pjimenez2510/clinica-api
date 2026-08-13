@@ -8,10 +8,7 @@ import {
 } from '../domain/specialties.errors';
 import type {
   SpecialtiesRepository,
-  PractitionerDurationRow,
-  PractitionerSpecialtyView,
   ServiceTypeView,
-  SpecialtyAssignment,
   SpecialtyView,
 } from '../domain/specialties.repository';
 import {
@@ -65,15 +62,6 @@ export class PrismaSpecialtiesRepository implements SpecialtiesRepository {
   async findSpecialty(id: string): Promise<SpecialtyView | null> {
     return this.prisma.specialty.findUnique({
       where: { id },
-      select: SPECIALTY_SELECT,
-    });
-  }
-
-  async findSpecialtiesByIds(
-    ids: readonly string[],
-  ): Promise<readonly SpecialtyView[]> {
-    return this.prisma.specialty.findMany({
-      where: { id: { in: [...ids] } },
       select: SPECIALTY_SELECT,
     });
   }
@@ -132,13 +120,6 @@ export class PrismaSpecialtiesRepository implements SpecialtiesRepository {
     });
   }
 
-  async findServiceType(id: string): Promise<ServiceTypeView | null> {
-    return this.prisma.serviceType.findUnique({
-      where: { id },
-      select: SERVICE_TYPE_SELECT,
-    });
-  }
-
   /** SP-020; SP-026 answered by `service_type_name_unique_per_specialty`. */
   async createServiceType(input: {
     specialtyId: string;
@@ -190,125 +171,5 @@ export class PrismaSpecialtiesRepository implements SpecialtiesRepository {
       if (isForeignKeyRestriction(error)) throw new ServiceTypeInUseError();
       throw error;
     }
-  }
-
-  async practitionerExists(id: string): Promise<boolean> {
-    const row = await this.prisma.practitioner.findUnique({
-      where: { id },
-      select: { id: true },
-    });
-    return row !== null;
-  }
-
-  /** SP-008: primary first, so the agenda reads row zero. */
-  async listPractitionerSpecialties(
-    practitionerId: string,
-  ): Promise<readonly PractitionerSpecialtyView[]> {
-    const rows = await this.prisma.practitionerSpecialty.findMany({
-      where: { practitionerId },
-      select: {
-        specialtyId: true,
-        isPrimary: true,
-        specialty: { select: { code: true, name: true, active: true } },
-      },
-      orderBy: [{ isPrimary: 'desc' }, { specialty: { name: 'asc' } }],
-    });
-
-    return rows.map((row) => ({
-      specialtyId: row.specialtyId,
-      code: row.specialty.code,
-      name: row.specialty.name,
-      active: row.specialty.active,
-      isPrimary: row.isPrimary,
-    }));
-  }
-
-  /**
-   * SP-005, replace-set in ONE transaction: what is not named disappears,
-   * what is named is written fresh. Delete-then-insert rather than a diff —
-   * the set is a handful of rows, and a diff would trade readability for
-   * nothing measurable. The partial unique index arbitrates any concurrent
-   * writer that slips in between.
-   */
-  async replacePractitionerSpecialties(
-    practitionerId: string,
-    items: readonly SpecialtyAssignment[],
-  ): Promise<void> {
-    await this.prisma.$transaction([
-      this.prisma.practitionerSpecialty.deleteMany({
-        where: { practitionerId },
-      }),
-      this.prisma.practitionerSpecialty.createMany({
-        data: items.map((item) => ({
-          practitionerId,
-          specialtyId: item.specialtyId,
-          isPrimary: item.isPrimary,
-        })),
-      }),
-    ]);
-  }
-
-  /**
-   * The two upper levels of SP-023 for every service type the practitioner's
-   * specialties offer. Only ACTIVE types of ACTIVE specialties: this listing
-   * feeds selection (SP-004, SP-007), not administration.
-   */
-  async listPractitionerDurations(
-    practitionerId: string,
-  ): Promise<readonly PractitionerDurationRow[]> {
-    const rows = await this.prisma.serviceType.findMany({
-      where: {
-        active: true,
-        specialty: {
-          active: true,
-          practitioners: { some: { practitionerId } },
-        },
-      },
-      select: {
-        id: true,
-        name: true,
-        durationMinutes: true,
-        specialty: { select: { id: true, name: true } },
-        durationExceptions: {
-          where: { practitionerId },
-          select: { durationMinutes: true },
-        },
-      },
-      orderBy: [{ specialty: { name: 'asc' } }, { name: 'asc' }],
-    });
-
-    return rows.map((row) => ({
-      serviceTypeId: row.id,
-      serviceTypeName: row.name,
-      specialtyId: row.specialty.id,
-      specialtyName: row.specialty.name,
-      baseMinutes: row.durationMinutes,
-      exceptionMinutes: row.durationExceptions[0]?.durationMinutes ?? null,
-    }));
-  }
-
-  /** SP-022. One statement; the composite key is the identity. */
-  async upsertDurationException(
-    practitionerId: string,
-    serviceTypeId: string,
-    durationMinutes: number,
-  ): Promise<void> {
-    await this.prisma.durationException.upsert({
-      where: {
-        practitionerId_serviceTypeId: { practitionerId, serviceTypeId },
-      },
-      update: { durationMinutes },
-      create: { practitionerId, serviceTypeId, durationMinutes },
-    });
-  }
-
-  async deleteDurationException(
-    practitionerId: string,
-    serviceTypeId: string,
-  ): Promise<boolean> {
-    const result = await this.prisma.durationException.deleteMany({
-      where: { practitionerId, serviceTypeId },
-    });
-    return result.count > 0;
   }
 }

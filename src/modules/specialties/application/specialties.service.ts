@@ -6,21 +6,15 @@ import {
   type AuditAction,
 } from '../../../shared/audit/access-audit.port';
 import {
-  InactiveSpecialtyAssignmentError,
-  PractitionerNotFoundError,
-  PrimarySpecialtyRequiredError,
   ServiceTypeNotFoundError,
   SpecialtyNotFoundError,
-} from '../domain/specialties.errors';
+} from '../../../shared/domain/errors/master-data.errors';
 import {
   SPECIALTIES_REPOSITORY,
   type SpecialtiesRepository,
-  type PractitionerSpecialtyView,
   type ServiceTypeView,
-  type SpecialtyAssignment,
   type SpecialtyView,
 } from '../domain/specialties.repository';
-import { resolveDuration } from '../domain/duration-resolution';
 
 /** Who is asking, so the trail can say so (SP-002, SP-027). */
 export interface Requester {
@@ -29,26 +23,18 @@ export interface Requester {
   userAgent?: string;
 }
 
-/** One row of the duration listing, with SP-023 already resolved (SP-028). */
-export interface PractitionerDurationView {
-  serviceTypeId: string;
-  serviceTypeName: string;
-  specialtyId: string;
-  specialtyName: string;
-  baseMinutes: number;
-  exceptionMinutes: number | null;
-  /** exception → base, by `resolveDuration`; the rule level belongs to agenda. */
-  resolvedMinutes: number;
-}
-
 /**
  * Administering specialties, service types and durations (C1).
  *
  * The authorisation decision is NOT here — the guard settled it from the
  * route's `@RequirePermission`. What IS here is what must hold regardless of
- * which endpoint asked: the audit entry on every mutation (SP-002, SP-027),
- * the exactly-one-primary rule (SP-005), and the refusal of deactivated
- * specialties for new assignments (SP-004).
+ * which endpoint asked: the audit entry on every mutation (SP-002, SP-027).
+ *
+ * WHAT LEFT ON 13-08-2026: assigning specialties to a practitioner (SP-005,
+ * SP-008) and their duration exceptions (SP-022) are now ST-008 and ST-009 in
+ * `staff`, which owns the practitioner. This SPEC declared them as debt on the
+ * 12th and it is settled; what stays here is the catalogue, the service type
+ * and the BASE duration.
  *
  * WHAT THIS SERVICE DOES NOT DO: check for duplicates or references before
  * writing. Two administrators creating «Pediatría» in the same millisecond
@@ -156,126 +142,6 @@ export class SpecialtiesService {
     if (!deleted) throw new ServiceTypeNotFoundError();
 
     await this.recordMutation('UPDATE', id, requester);
-  }
-
-  /** SP-008: the primary flag travels with each row. */
-  async listPractitionerSpecialties(
-    practitionerId: string,
-  ): Promise<readonly PractitionerSpecialtyView[]> {
-    await this.requirePractitioner(practitionerId);
-    return this.repository.listPractitionerSpecialties(practitionerId);
-  }
-
-  /**
-   * SP-005: the whole assignment in one request — at least one specialty,
-   * exactly one primary. SP-004: a deactivated specialty is refused for ids
-   * the practitioner did not already hold; the ones already assigned survive
-   * intact, deactivated or not, because deactivation must not amputate
-   * existing references.
-   */
-  async replacePractitionerSpecialties(
-    practitionerId: string,
-    items: readonly SpecialtyAssignment[],
-    requester: Requester,
-  ): Promise<readonly PractitionerSpecialtyView[]> {
-    await this.requirePractitioner(practitionerId);
-
-    const primaries = items.filter((item) => item.isPrimary).length;
-    if (items.length === 0 || primaries !== 1) {
-      throw new PrimarySpecialtyRequiredError(primaries);
-    }
-
-    const specialties = await this.repository.findSpecialtiesByIds(
-      items.map((item) => item.specialtyId),
-    );
-    const byId = new Map(specialties.map((s) => [s.id, s]));
-    const current =
-      await this.repository.listPractitionerSpecialties(practitionerId);
-    const alreadyHeld = new Set(current.map((row) => row.specialtyId));
-
-    for (const item of items) {
-      const specialty = byId.get(item.specialtyId);
-      if (!specialty) throw new SpecialtyNotFoundError();
-      if (!specialty.active && !alreadyHeld.has(item.specialtyId)) {
-        throw new InactiveSpecialtyAssignmentError();
-      }
-    }
-
-    await this.repository.replacePractitionerSpecialties(practitionerId, items);
-    await this.recordMutation('UPDATE', practitionerId, requester);
-
-    return this.repository.listPractitionerSpecialties(practitionerId);
-  }
-
-  /**
-   * SP-023 as a listing, SP-028 as its consumer: every service type the
-   * practitioner can serve, with the duration already resolved through the
-   * SAME function the agenda will use. The rule level is absent on purpose —
-   * a base duration always exists here, and the schedule rule belongs to the
-   * booking, not to the catalogue.
-   */
-  async listPractitionerDurations(
-    practitionerId: string,
-  ): Promise<readonly PractitionerDurationView[]> {
-    await this.requirePractitioner(practitionerId);
-
-    const rows =
-      await this.repository.listPractitionerDurations(practitionerId);
-    return rows.map((row) => ({
-      ...row,
-      // Non-null: `baseMinutes` is NOT NULL in the base, so the hierarchy
-      // always lands somewhere before the rule level.
-      resolvedMinutes:
-        resolveDuration({
-          exceptionMinutes: row.exceptionMinutes,
-          serviceTypeMinutes: row.baseMinutes,
-        }) ?? row.baseMinutes,
-    }));
-  }
-
-  /** SP-022. */
-  async setDurationException(
-    practitionerId: string,
-    serviceTypeId: string,
-    durationMinutes: number,
-    requester: Requester,
-  ): Promise<void> {
-    await this.requirePractitioner(practitionerId);
-    const serviceType = await this.repository.findServiceType(serviceTypeId);
-    if (!serviceType) throw new ServiceTypeNotFoundError();
-
-    await this.repository.upsertDurationException(
-      practitionerId,
-      serviceTypeId,
-      durationMinutes,
-    );
-    await this.recordMutation('UPDATE', serviceTypeId, requester);
-  }
-
-  /**
-   * SP-022. Removing an exception that is not there is not an error: the
-   * caller wanted it gone and it is gone. Only an actual removal is audited —
-   * recording a no-op would write noise into the trail.
-   */
-  async removeDurationException(
-    practitionerId: string,
-    serviceTypeId: string,
-    requester: Requester,
-  ): Promise<void> {
-    await this.requirePractitioner(practitionerId);
-
-    const removed = await this.repository.deleteDurationException(
-      practitionerId,
-      serviceTypeId,
-    );
-    if (removed) {
-      await this.recordMutation('UPDATE', serviceTypeId, requester);
-    }
-  }
-
-  private async requirePractitioner(practitionerId: string): Promise<void> {
-    const exists = await this.repository.practitionerExists(practitionerId);
-    if (!exists) throw new PractitionerNotFoundError();
   }
 
   /**

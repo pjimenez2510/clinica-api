@@ -130,6 +130,25 @@ export const PERMISSION_CATALOGUE = [
     resource: 'admin',
     description: 'Administrar sedes y consultorios',
   },
+  // The clinical profile of the staff (ADR-011, `staff`). Split read from
+  // write for the same reason as `site:*` — except that here the READ side is
+  // deliberately narrow: a practitioner's file carries their cedula, their
+  // ACESS registration and its expiry, which is personal data of an employee
+  // and not something a booking screen needs. The agenda lists who can be
+  // booked through its own AG-108 route under `agenda:read`, so no clinical
+  // role has to hold `staff:read` to work.
+  {
+    code: 'staff:read',
+    resource: 'staff',
+    description:
+      'Consultar la ficha profesional: ACESS, código MSP, sedes, especialidades y horarios',
+  },
+  {
+    code: 'staff:manage',
+    resource: 'staff',
+    description:
+      'Administrar profesionales, sus sedes, sus especialidades y sus horarios',
+  },
   {
     code: 'audit:read',
     resource: 'admin',
