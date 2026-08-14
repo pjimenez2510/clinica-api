@@ -36,6 +36,16 @@ export const DOMAIN_ERROR_CODES = [
   // nada del horario, así que responder «ese cupo está ocupado» movería la
   // cita de un paciente sin motivo. Sale como 503 con `Retry-After`.
   'BOOKING_RETRY_EXHAUSTED',
+  // Agenda, E7 (AG-031 a AG-033): la ventana de reserva de la sede. Los tres
+  // son 422 y son tres códigos y no uno porque lo que hay que corregir es
+  // distinto en cada caso: la hora ya pasó y no hay hora que valga sin cambiar
+  // el día, falta esperar a que se cumpla la antelación mínima —y el error
+  // dice desde cuándo—, o la fecha excede lo que la sede publica —y el error
+  // dice hasta cuándo—. Un único `BOOKING_OUT_OF_WINDOW` obligaría al cliente
+  // a leer el texto en español para saber cuál de las tres.
+  'BOOKING_IN_THE_PAST',
+  'BOOKING_TOO_FAR',
+  'BOOKING_TOO_SOON',
   // Agenda. Los tres son 422 y dicen cosas distintas a propósito: el canal es
   // un valor que el cliente escribió mal, la duración es correcta pero no
   // encaja en los cupos del profesional, y el intervalo cae fuera de toda
@@ -55,6 +65,11 @@ export const DOMAIN_ERROR_CODES = [
   'INVALID_TOKEN',
   'INVALID_TOTP_CODE',
   'MFA_ALREADY_ENROLLED',
+  // AU-037. Confirmar un cambio de segundo factor que ya no está a medias: o
+  // nadie lo empezó, o se empezó otro y el secreto pendiente es distinto. Los
+  // dos casos se responden igual porque para quien está delante son el mismo
+  // hecho y tienen la misma salida: volver a empezar.
+  'MFA_CHANGE_NOT_STARTED',
   'MFA_NOT_ENROLLED',
   'MFA_REQUIRED',
   'MISSING_REFRESH_TOKEN',
@@ -91,6 +106,16 @@ export const DOMAIN_ERROR_CODES = [
   'HOLIDAY_NOT_FOUND',
   'PARAM_OUT_OF_RANGE',
   'SITE_PARAMETERS_NOT_FOUND',
+  // D-021, 14-08-2026. La duración configurada no es múltiplo del átomo de la
+  // agenda. Lo responden TRES módulos —`specialties` por la duración base
+  // (SP-021), `staff` por la excepción del médico (SP-022) y `configuration`
+  // por el átomo mismo cuando se cambia (CF-062)— y por eso la clase vive en
+  // `shared/domain/errors`, como `SERVICE_TYPE_NOT_FOUND`. NO es
+  // `PARAM_OUT_OF_RANGE`: 25 minutos sobre una rejilla de 10 está dentro del
+  // rango 5..240 y aun así no se puede reservar, así que un cliente que
+  // ramificara por el mismo código tendría que leer el texto en español para
+  // saber qué corregir.
+  'DURATION_NOT_SLOT_MULTIPLE',
   // Organización, O1 y O2 (ADR-011). Los duplicados y los «en uso» son 409 y
   // los produce la base —índices únicos y FK RESTRICT—: el adaptador los
   // traduce por nombre de constraint al código que la spec fija. «En uso»
@@ -165,6 +190,18 @@ export const DOMAIN_ERROR_CODES = [
   // `CHECK_FAILED` en una frase sobre la que una clínica puede actuar.
   'CANNOT_DEMOTE_SELF',
   'CANNOT_GRANT_TO_SELF',
+  // Auth, A4 (AU-035, D-014). Reiniciar el propio segundo factor. Es 422 por
+  // lo mismo que los dos de arriba: quien llama está autorizado, y lo que pide
+  // es un estado al que no debe poder llegarse por esta puerta.
+  //
+  // No es simetría con AU-024. La ruta exige una sesión completa, y una sesión
+  // completa significa que el segundo factor YA funcionó: nunca podría ser un
+  // camino de recuperación, sólo una forma de que quien tenga una sesión viva
+  // de esa cuenta —un portátil desbloqueado— le retire el factor y a partir de
+  // ahí entre con la contraseña sola. Y dejaría al autor y al sujeto siendo la
+  // misma persona, que es justo lo que hace inútil la entrada de bitácora que
+  // AU-035 exige.
+  'CANNOT_RESET_OWN_MFA',
   // Auth, primera credencial (AU-021 y AU-026..AU-029, D-013 resuelta el
   // 13-08-2026).
   //
@@ -192,6 +229,14 @@ export const DOMAIN_ERROR_CODES = [
   'ROLE_NOT_FOUND',
   'SYSTEM_ROLE_PROTECTED',
   'UNKNOWN_PERMISSION',
+  // El hermano de `UNKNOWN_PERMISSION`, y lo contrario: el código SÍ declara el
+  // permiso y es la tabla `permission` de ESTA instalación la que aún no lo
+  // tiene. Ocurre entre desplegar una versión que declara uno nuevo y correr
+  // `pnpm db:seed:auth`, y hasta ahora salía por la puerta genérica de la base
+  // —`RELATED_RECORD_MISSING`, «Datos inválidos»— sobre un formulario donde
+  // nada era inválido. Es 409 y no 422 porque lo que impide la operación es el
+  // estado de la instalación, no lo que se envió.
+  'PERMISSION_NOT_INSTALLED',
   'USER_NOT_FOUND',
   'PRINCIPAL_UNAVAILABLE',
   'REFRESH_TOKEN_REUSE_DETECTED',
@@ -205,6 +250,14 @@ export const DOMAIN_ERROR_CODES = [
   // consultorio a quien no puede saberlo.
   'ROOM_NOT_IN_SITE',
   'ROUTE_NOT_SECURED',
+  // AU-036. El token de acceso pertenece a una sesión que ya se cerró: se
+  // reinició el segundo factor, se cambió la contraseña o se desactivó la
+  // cuenta. Es distinto de `INVALID_TOKEN` a propósito —ése es «esto no lo
+  // firmamos nosotros», y su motivo se oculta porque separa caducado de
+  // falsificado—, y no revela nada a quien ya tiene el token en la mano. Lo que
+  // gana es que la interfaz mande a esa persona a iniciar sesión con la frase
+  // que corresponde. Ver `SessionRevokedError`.
+  'SESSION_REVOKED',
   'SESSION_USER_MISSING',
   'SITE_SCOPE_DENIED',
   // Agenda: la hora de inicio no cae en el borde de un cupo de la regla. Es

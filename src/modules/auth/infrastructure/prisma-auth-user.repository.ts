@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
-import type { AuthUser, AuthUserRepositoryPort } from '../application/ports';
+import type {
+  AuthUser,
+  AuthUserRepositoryPort,
+  LiveBackupCode,
+} from '../application/ports';
 import type { RoleAssignment } from '../../../shared/authorisation/principal';
 
 /**
@@ -21,6 +25,7 @@ const AUTH_USER_FIELDS = {
   cedula: true,
   active: true,
   mfaSecretEncrypted: true,
+  mfaPendingSecretEncrypted: true,
   mfaEnabledAt: true,
   mfaLastStep: true,
   failedAttempts: true,
@@ -134,18 +139,162 @@ export class PrismaAuthUserRepository implements AuthUserRepositoryPort {
     });
   }
 
-  async confirmMfa(userId: string, usedStep: bigint): Promise<void> {
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { mfaEnabledAt: new Date(), mfaLastStep: usedStep },
-    });
-  }
-
   async recordMfaStep(userId: string, usedStep: bigint): Promise<void> {
     await this.prisma.user.update({
       where: { id: userId },
       data: { mfaLastStep: usedStep },
     });
+  }
+
+  /**
+   * AU-005. Enables the factor and installs the batch, or does neither — and
+   * `count` is the answer to "was it me?".
+   *
+   * THE CLAIM COMES FIRST, INSIDE THE TRANSACTION, AND THAT ORDER IS THE
+   * WHOLE ARBITRATION. `WHERE id = ? AND mfa_enabled_at IS NULL` is evaluated
+   * by PostgreSQL in the same statement that writes, so the winner takes the
+   * user row lock and holds it until it commits. A second confirmation of the
+   * same account — the double-clicked form, arriving with the same TOTP code
+   * inside the same thirty-second window — blocks there, re-reads the row
+   * under READ COMMITTED once the first commits, finds `mfa_enabled_at` set
+   * and updates nothing. It therefore never reaches the batch, which is the
+   * point: two callers past this line would each delete the rows they could
+   * see and insert ten of their own, leaving TWENTY live codes and a person
+   * holding two lists with no way to tell which one works.
+   *
+   * ONE TRANSACTION, because the gap between the statements is an account with
+   * a second factor and no usable backup code at all. Short, but it is the
+   * window in which the person who just lost their phone is told to write down
+   * ten codes that do not exist.
+   */
+  async confirmMfaWithBackupCodes(
+    userId: string,
+    usedStep: bigint,
+    codeHashes: readonly string[],
+  ): Promise<boolean> {
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.user.updateMany({
+        where: { id: userId, mfaEnabledAt: null },
+        data: { mfaEnabledAt: new Date(), mfaLastStep: usedStep },
+      });
+      if (count !== 1) return false;
+
+      await tx.backupCode.deleteMany({ where: { userId } });
+      await tx.backupCode.createMany({
+        data: codeHashes.map((codeHash) => ({ userId, codeHash })),
+      });
+
+      return true;
+    });
+  }
+
+  /**
+   * AU-037. The secret of a change in progress, and NOTHING else.
+   *
+   * Every other field is deliberately absent from this `data`. The temptation
+   * is to mirror `savePendingMfaSecret` and clear `mfaEnabledAt` "for
+   * symmetry"; doing so is what would strand somebody halfway through changing
+   * their phone with no second factor at all.
+   */
+  async savePendingMfaChange(
+    userId: string,
+    encryptedSecret: string,
+  ): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { mfaPendingSecretEncrypted: encryptedSecret },
+    });
+  }
+
+  /**
+   * AU-037. Installs the pending secret as the real one and replaces the batch
+   * — or does neither — and `count` is the answer to "was it me?".
+   *
+   * THE CLAIM IS `mfa_pending_secret_encrypted = <this exact blob>`, EVALUATED
+   * BY POSTGRESQL IN THE STATEMENT THAT WRITES. `mfa_enabled_at IS NULL`, the
+   * condition that arbitrates a first enrolment, is useless here: the account
+   * IS enrolled, so it would match every caller and settle nothing.
+   *
+   * The winner takes the user row lock and nulls the pending secret. A second
+   * confirmation of the same change — the double-clicked form, carrying the
+   * same TOTP code inside the same thirty-second window — blocks, re-reads
+   * under READ COMMITTED, matches nothing and updates nothing. Two callers
+   * past this line would each delete the rows they could see and insert ten of
+   * their own, leaving TWENTY live codes and a person holding two lists.
+   *
+   * Matching the EXACT blob rather than `IS NOT NULL` also decides the other
+   * race: a change started twice. The confirmation belonging to the abandoned
+   * secret loses, instead of installing a secret whose QR code that person may
+   * never have scanned.
+   *
+   * ONE TRANSACTION, because the gap between the statements is an account
+   * whose factor has just changed and whose backup codes are still the old
+   * batch — the one printed on the paper the person believes they have just
+   * replaced.
+   */
+  async replaceMfaSecretWithBackupCodes(
+    userId: string,
+    pendingSecretEncrypted: string,
+    usedStep: bigint,
+    codeHashes: readonly string[],
+  ): Promise<boolean> {
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.user.updateMany({
+        where: {
+          id: userId,
+          mfaPendingSecretEncrypted: pendingSecretEncrypted,
+        },
+        data: {
+          mfaSecretEncrypted: pendingSecretEncrypted,
+          mfaPendingSecretEncrypted: null,
+          // The factor is enabled again, now: to an auditor the date answers
+          // "since when is THIS device the second factor", and the old answer
+          // stopped being true the moment the secret changed.
+          mfaEnabledAt: new Date(),
+          mfaLastStep: usedStep,
+        },
+      });
+      if (count !== 1) return false;
+
+      await tx.backupCode.deleteMany({ where: { userId } });
+      await tx.backupCode.createMany({
+        data: codeHashes.map((codeHash) => ({ userId, codeHash })),
+      });
+
+      return true;
+    });
+  }
+
+  /** Unspent codes only. The filter is in the QUERY: see the port. */
+  async findLiveBackupCodes(userId: string): Promise<LiveBackupCode[]> {
+    return this.prisma.backupCode.findMany({
+      where: { userId, usedAt: null },
+      select: { id: true, codeHash: true },
+      // Oldest first, so a batch is spent in the order it was printed.
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  /**
+   * AU-005. A CONDITIONAL update, and that is the single-use guarantee.
+   *
+   * `WHERE id = ? AND used_at IS NULL` is evaluated by PostgreSQL in the same
+   * statement that writes. Two requests carrying the same code both find the
+   * row unused and both get here; the first takes the row lock and writes, the
+   * second blocks, re-reads the row under READ COMMITTED, finds `used_at` set
+   * and updates nothing. `count` is therefore the answer to "was it me?", and
+   * exactly one caller can hear yes.
+   *
+   * The same shape as the refresh token claim, for the same reason: a "read,
+   * check, write" in the application would let both through and hand the same
+   * code two sessions.
+   */
+  async consumeBackupCode(backupCodeId: string): Promise<boolean> {
+    const { count } = await this.prisma.backupCode.updateMany({
+      where: { id: backupCodeId, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+    return count === 1;
   }
 
   /**

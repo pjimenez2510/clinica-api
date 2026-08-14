@@ -61,14 +61,32 @@ describe('la superficie de configuración', () => {
     }
   });
 
-  it('CF-063 admite exactamente los cuatro parámetros de D-001 y ninguno más', () => {
-    // The closed list is the requirement. A new key here is a decision
-    // somebody has to defend in a diff, which is the whole point.
+  it('CF-063 admite exactamente los parámetros declarados y ninguno más', () => {
+    /**
+     * The closed list is the requirement. A new key here is a decision
+     * somebody has to defend in a diff, which is the whole point.
+     *
+     * `allowPastBooking` (AG-031, AG-094) is the fifth and it belongs: CF-063
+     * forbids exposing what would STOP BEING A GUARANTEE once configurable,
+     * and admitting a start earlier than now touches none of the three it
+     * names. The `EXCLUDE USING gist` still refuses an overlap in that past
+     * hour, `agenda_status_history` is still written by the same append-only
+     * trigger, and booking still demands `agenda:write` and scope over the
+     * site. What changes is WHICH HOUR is accepted, which is precisely the
+     * class of decision REQ-145 wants in configuration instead of burnt into
+     * the code.
+     */
     expect(Object.keys(updateSiteParametersSchema.shape).sort()).toEqual([
+      'allowPastBooking',
       'cancelledRetention',
       'maxLeadDays',
       'minLeadMinutes',
       'overbookingCap',
+      // D-021, el sexto: el turno de la agenda. Pertenece a la lista por lo
+      // mismo que `allowPastBooking` — configurarlo no deja de garantizar
+      // nada. Al revés: es lo que hace que AG-012 y AG-104 no puedan fallar
+      // por configuración, porque toda duración se guarda como múltiplo suyo.
+      'slotAtomMinutes',
     ]);
   });
 
@@ -79,11 +97,14 @@ describe('la superficie de configuración', () => {
     // `.passthrough()` from turning the strip into a store.
     const parsed = updateSiteParametersSchema.parse({
       overbookingCap: 4,
+      allowPastBooking: true,
       allowOverlap: true,
       historyImmutable: false,
     });
 
-    expect(parsed).toEqual({ overbookingCap: 4 });
+    // The declared parameters survive — including the one whose name looks
+    // like a switch and is not one — and the guarantees do not.
+    expect(parsed).toEqual({ overbookingCap: 4, allowPastBooking: true });
   });
 
   it('CF-060 exige fecha y nombre en un feriado, y deja el alcance opcional', () => {

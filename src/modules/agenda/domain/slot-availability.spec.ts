@@ -4,6 +4,7 @@ import {
   WallClockTime,
   parseClinicalDate,
 } from '../../../shared/domain/clinic-time';
+import type { Holiday } from './holiday-calendar';
 import {
   type AgendaOccupancy,
   type PractitionerAvailability,
@@ -48,7 +49,6 @@ const rule = ({
   weekday: 1,
   startTime: WallClockTime.parse('08:00'),
   endTime: WallClockTime.parse('09:00'),
-  slotMinutes: 20,
   validFrom: parseClinicalDate(validFrom ?? '2026-01-01'),
   validTo: validTo == null ? null : parseClinicalDate(validTo),
   active: true,
@@ -68,19 +68,46 @@ const occupancy = (
   ...overrides,
 });
 
+const holiday = (overrides: Partial<Holiday> = {}): Holiday => ({
+  id: 'holiday-1',
+  // 2026-09-14 is the Monday every case here derives slots for.
+  date: parseClinicalDate('2026-09-14'),
+  name: 'Feriado de prueba',
+  siteId: null,
+  workedBySiteIds: [],
+  ...overrides,
+});
+
+/**
+ * The two holiday inputs are REQUIRED by `deriveAvailability` and defaulted
+ * here, not there. A default of "no holidays loaded" inside the derivation is
+ * exactly the assumption AG-093 forbids: every caller has to say what it read,
+ * and the year 2026 is declared covered below so the cases that are not about
+ * AG-093 do not carry its warning.
+ */
 const availability = (input: {
   rules?: readonly ScheduleRule[];
   entries?: readonly AgendaOccupancy[];
   practitioner?: PractitionerAvailability;
+  holidays?: readonly Holiday[];
+  calendarYears?: readonly number[];
   from?: string;
   to?: string;
   siteId?: string;
+  slotAtomMinutes?: number;
 }) =>
   deriveAvailability({
     practitioner: input.practitioner ?? practitioner(),
     siteId: input.siteId ?? SITE,
     rules: input.rules ?? [rule()],
     entries: input.entries ?? [],
+    // D-021: the grid is the SITE's, so it is an input of the derivation and
+    // no longer a field of the rule. 20 keeps every case below reading as it
+    // did, which is what makes the diff about the move and not about the
+    // expectations.
+    slotAtomMinutes: input.slotAtomMinutes ?? 20,
+    holidays: input.holidays ?? [],
+    calendarYears: input.calendarYears ?? [2026],
     from: parseClinicalDate(input.from ?? '2026-09-14'),
     to: parseClinicalDate(input.to ?? '2026-09-14'),
   });
@@ -333,7 +360,6 @@ describe('slot availability', () => {
   // malformed rule is a caller bug, and the derivation paths filter first.
   it('skips a malformed rule instead of taking down every healthy one', () => {
     const healthy = rule();
-    const zeroSlot = rule({ id: 'rule-zero', slotMinutes: 0 });
     const inverted = rule({
       id: 'rule-inverted',
       endTime: WallClockTime.parse('07:00'),
@@ -341,7 +367,7 @@ describe('slot availability', () => {
     const impossibleWeekday = rule({ id: 'rule-weekday', weekday: 8 });
 
     const { slots } = availability({
-      rules: [zeroSlot, healthy, inverted, impossibleWeekday],
+      rules: [healthy, inverted, impossibleWeekday],
     });
 
     expect(slots.length).toBeGreaterThan(0);
@@ -351,17 +377,140 @@ describe('slot availability', () => {
   it('still refuses to derive slots directly from a malformed rule', () => {
     expect(() =>
       slotsOfRuleOn(
-        rule({ slotMinutes: 0 }),
-        parseClinicalDate('2026-09-14'),
-        undefined,
-      ),
-    ).toThrow(RangeError);
-    expect(() =>
-      slotsOfRuleOn(
         rule({ endTime: WallClockTime.parse('07:00') }),
         parseClinicalDate('2026-09-14'),
+        20,
         undefined,
       ),
     ).toThrow(RangeError);
+  });
+
+  /**
+   * D-021. A grid of zero minutes is now a broken SITE, not a broken rule, so
+   * it must not degrade to «this rule offers nothing»: that would hide a
+   * misconfigured site behind an empty agenda for every practitioner in it.
+   * `site_parameter_slot_atom_minutes_range` forbids the value; this is what
+   * happens if something gets past it.
+   */
+  it('AG-003 refuses to derive a grid from a site whose atom is not a real increment', () => {
+    expect(() =>
+      slotsOfRuleOn(rule(), parseClinicalDate('2026-09-14'), 0, undefined),
+    ).toThrow(RangeError);
+  });
+
+  /**
+   * D-021, the point of the whole change: the same rule dices differently
+   * because the SITE says so, and nothing about the rule changed.
+   */
+  it('AG-003 derives the grid from the atom of the site, not from the rule', () => {
+    const { slots } = availability({ slotAtomMinutes: 30 });
+
+    expect(startsOf(slots)).toEqual([
+      '2026-09-14T13:00:00.000Z',
+      '2026-09-14T13:30:00.000Z',
+    ]);
+    expect(slots.every((slot) => slot.slotMinutes === 30)).toBe(true);
+  });
+});
+
+describe('availability on a holiday', () => {
+  it('AG-015 offers no slot on a date the site observes as a holiday, and says why', () => {
+    const { slots, closedDates } = availability({
+      holidays: [holiday({ name: 'Primer Grito de Independencia' })],
+    });
+
+    expect(slots).toEqual([]);
+    expect(closedDates).toEqual([
+      {
+        date: parseClinicalDate('2026-09-14'),
+        reason: 'Primer Grito de Independencia',
+      },
+    ]);
+  });
+
+  it('AG-015 keeps showing the appointments already booked on a holiday', () => {
+    // The same reasoning as AG-011: the day closing does not un-book anybody,
+    // and whoever holds that hour will turn up for it. Hiding the entry would
+    // erase it from the screen and from nowhere else.
+    const booked = occupancy();
+
+    const { slots, occupied } = availability({
+      holidays: [holiday()],
+      entries: [booked],
+    });
+
+    expect(slots).toEqual([]);
+    expect(occupied.map((entry) => entry.id)).toEqual([booked.id]);
+  });
+
+  it('AG-016 leaves the day open when the holiday belongs to another site', () => {
+    const { slots, closedDates } = availability({
+      holidays: [holiday({ siteId: OTHER_SITE })],
+    });
+
+    expect(slots).toHaveLength(3);
+    expect(closedDates).toEqual([]);
+  });
+
+  it('AG-092 offers the slots again when the site works the holiday', () => {
+    const { slots, closedDates } = availability({
+      holidays: [holiday({ workedBySiteIds: [SITE] })],
+    });
+
+    expect(slots).toHaveLength(3);
+    expect(closedDates).toEqual([]);
+  });
+
+  it('AG-015 closes only the holiday of the range and leaves the other dates alone', () => {
+    // Monday the 14th and Monday the 21st both derive slots; only the 21st is
+    // a holiday.
+    const { slots, closedDates } = availability({
+      holidays: [holiday({ date: parseClinicalDate('2026-09-21') })],
+      from: '2026-09-14',
+      to: '2026-09-21',
+    });
+
+    expect(slots).toHaveLength(3);
+    expect(
+      slots.every((slot) =>
+        slot.startsAt.toISOString().startsWith('2026-09-14'),
+      ),
+    ).toBe(true);
+    expect(closedDates.map((closed) => closed.date)).toEqual(['2026-09-21']);
+  });
+
+  it('AG-015 reports the closure even when the practitioner offers no slot anyway', () => {
+    // The day is closed for the SITE, which has nothing to do with who was
+    // asked about: answering "no slots and no reason" would let the screen
+    // blame the doctor for a holiday.
+    const { slots, closedDates } = availability({
+      practitioner: practitioner({ schedulable: false }),
+      holidays: [holiday()],
+    });
+
+    expect(slots).toEqual([]);
+    expect(closedDates).toHaveLength(1);
+  });
+
+  it('AG-093 offers the slots of a year with no calendar loaded and warns about it', () => {
+    const { slots, closedDates, yearsWithoutCalendar } = availability({
+      calendarYears: [],
+    });
+
+    // The slots are offered: an unloaded calendar is not a reason to shut the
+    // agenda down.
+    expect(slots).toHaveLength(3);
+    expect(closedDates).toEqual([]);
+    // And nothing pretends the year has no holidays.
+    expect(yearsWithoutCalendar).toEqual([2026]);
+  });
+
+  it('AG-093 stays silent about a year whose calendar is loaded', () => {
+    const { yearsWithoutCalendar } = availability({
+      holidays: [],
+      calendarYears: [2026],
+    });
+
+    expect(yearsWithoutCalendar).toEqual([]);
   });
 });

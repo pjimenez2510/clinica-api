@@ -94,3 +94,33 @@ CREATE TABLE duration_exception (
   CONSTRAINT duration_exception_range
     CHECK (duration_minutes BETWEEN 5 AND 240 AND duration_minutes % 5 = 0)
 );
+
+-- ─── El tipo de atención QUEDA REGISTRADO EN LA CITA (SP-028, SP-025) ───────
+--
+-- La columna nació en `20260806022931_clinical_core` como
+-- `agenda_entry.service_type_concept_id`, apuntando a `catalog_concept`: el
+-- catálogo clínico del MSP. El tipo de atención con su duración es otra cosa
+-- —`service_type`, dato maestro propio de la clínica (SP-020, D-010)— y con
+-- aquel modelo NI SP-028 NI SP-025 podían cumplirse: la cita no podía dejar
+-- registrado el tipo que la agenda resuelve, y la base no tenía forma de
+-- rechazar el borrado de un tipo referenciado por una cita.
+--
+-- Se corrigió MOVIENDO la columna aquí en lugar de apilar un ALTER encima del
+-- modelo equivocado: `scripts/database-phase.mjs` declara `development`, no
+-- hay ninguna instalación en producción, y el bucle es editar el SQL y
+-- `pnpm db:reset`. Aquí y no allí porque `service_type` no existe hasta esta
+-- migración: una clave foránea no puede apuntar a una tabla que aún no nació.
+--
+-- `ON DELETE RESTRICT` es lo que produce SP-025, igual que las de `specialty`
+-- producen SP-003. Es la base la que arbitra: dos administradores borrando y
+-- reservando en el mismo milisegundo leen ambos «no hay citas».
+ALTER TABLE agenda_entry
+  ADD COLUMN service_type_id uuid
+    REFERENCES service_type (id) ON DELETE RESTRICT;
+
+-- Sin él, cada borrado de un tipo recorre `agenda_entry` entera para saber si
+-- alguna cita lo referencia — y es PostgreSQL quien lo recorre, en cada
+-- DELETE, mientras recepción espera.
+CREATE INDEX agenda_entry_by_service_type
+  ON agenda_entry (service_type_id)
+  WHERE service_type_id IS NOT NULL;

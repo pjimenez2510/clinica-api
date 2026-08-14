@@ -154,6 +154,23 @@ export class PrismaRoleAdminRepository implements RoleAdminRepositoryPort {
   }
 
   /**
+   * AU-033. Reads the MIRROR, which is the whole point: the catalogue the
+   * screen offers comes from the code, and this answers what the foreign key
+   * will actually accept.
+   */
+  async installedPermissions(
+    codes: readonly string[],
+  ): Promise<readonly string[]> {
+    if (codes.length === 0) return [];
+
+    const rows = await this.prisma.permission.findMany({
+      where: { code: { in: [...codes] } },
+      select: { code: true },
+    });
+    return rows.map((row) => row.code);
+  }
+
+  /**
    * AU-033. One transaction: a role left half-way through a permission change
    * is a role that grants a set nobody chose.
    *

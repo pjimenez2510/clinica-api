@@ -14,6 +14,7 @@ import {
   createScheduleRule,
   createSite,
   linkPractitionerToSite,
+  setSlotAtom,
 } from './setup/fixtures';
 
 /**
@@ -47,12 +48,17 @@ function agendaOf(prisma: PrismaClient): AgendaService {
 }
 
 /** A practitioner who takes appointments at a site, with a Monday rule. */
-async function context(rule: { validFrom?: Date; validTo?: Date | null } = {}) {
+async function context(
+  rule: { validFrom?: Date; validTo?: Date | null; slotAtom?: number } = {},
+) {
   const prisma = db();
   const site = await createSite(prisma);
   const practitioner = await createPractitioner(prisma);
   const patient = await createPatient(prisma);
   await linkPractitionerToSite(prisma, practitioner.id, site.id);
+  // D-021: the grid is the site's. Twenty minutes is what every case here read
+  // off the rule before the atom moved, so the expectations are unchanged.
+  await setSlotAtom(prisma, site.id, rule.slotAtom ?? 20);
 
   const scheduleRule = await createScheduleRule(
     prisma,
@@ -61,7 +67,6 @@ async function context(rule: { validFrom?: Date; validTo?: Date | null } = {}) {
       weekday: 1,
       startTime: '08:00',
       endTime: '12:00',
-      slotMinutes: 20,
       validFrom: rule.validFrom ?? new Date('2026-01-01T00:00:00Z'),
       validTo: rule.validTo ?? null,
     },
@@ -73,6 +78,48 @@ async function context(rule: { validFrom?: Date; validTo?: Date | null } = {}) {
 const at = (isoUtc: string) => new Date(isoUtc);
 
 describe('deriving availability against the database', () => {
+  /**
+   * D-021. La rejilla que la agenda deriva sale del ÁTOMO DE LA SEDE
+   * (`site_parameter.slot_atom_minutes`), no de la regla, que ya no lleva
+   * ninguno. Contra PostgreSQL de verdad porque es donde vive ese número, en
+   * una tabla de otro módulo que la agenda lee por su puerto.
+   */
+  it('AG-094 deriva los cupos del turno de la sede y no de la regla', async () => {
+    const { prisma, site, practitioner } = await context({ slotAtom: 30 });
+
+    const view = await agendaOf(prisma).availability({
+      siteId: site.id,
+      practitionerId: practitioner.id,
+      from: parseClinicalDate('2026-09-14'),
+      to: parseClinicalDate('2026-09-14'),
+    });
+
+    // 08:00–12:00 en cupos de treinta: ocho, y no los doce de veinte.
+    expect(view.slots).toHaveLength(8);
+    expect(view.slots.every((slot) => slot.slotMinutes === 30)).toBe(true);
+    expect(view.slots[1]?.startsAt.toISOString()).toBe(
+      '2026-09-14T13:30:00.000Z',
+    );
+  });
+
+  it('AG-095 deriva con el turno por defecto del código cuando la sede no tiene fila', async () => {
+    // La misma cadena que la ventana de reserva: sede → clínica → código. La
+    // fila la escribe un disparador (CF-062), así que esto sólo pasa con un
+    // volcado restaurado a medias — y entonces la agenda opera con diez.
+    const { prisma, site, practitioner } = await context();
+    await prisma.siteParameter.delete({ where: { siteId: site.id } });
+
+    const view = await agendaOf(prisma).availability({
+      siteId: site.id,
+      practitionerId: practitioner.id,
+      from: parseClinicalDate('2026-09-14'),
+      to: parseClinicalDate('2026-09-14'),
+    });
+
+    expect(view.slots).toHaveLength(24);
+    expect(view.slots.every((slot) => slot.slotMinutes === 10)).toBe(true);
+  });
+
   it('AG-010 offers slots only on the dates the rule in force covers', async () => {
     // Valid until Monday the 14th, inclusive. The 21st is also a Monday and it
     // is past the window.
@@ -145,7 +192,6 @@ describe('deriving availability against the database', () => {
         weekday: 1,
         startTime: '10:00',
         endTime: '12:00',
-        slotMinutes: 20,
         validFrom: new Date('2026-09-14T00:00:00Z'),
       },
     );
@@ -246,12 +292,14 @@ describe('deriving availability against the database', () => {
     process.env.TZ = 'Asia/Tokyo';
 
     try {
-      const { prisma, site, practitioner, patient } = await context();
-      // Wednesday rule, 20:00–21:00 in slots of thirty: two slots.
+      const { prisma, site, practitioner, patient } = await context({
+        slotAtom: 30,
+      });
+      // Wednesday rule, 20:00–21:00 on a 30-minute grid: two slots.
       await createScheduleRule(
         prisma,
         { practitionerId: practitioner.id, siteId: site.id },
-        { weekday: 3, startTime: '20:00', endTime: '21:00', slotMinutes: 30 },
+        { weekday: 3, startTime: '20:00', endTime: '21:00' },
       );
 
       // 20:30 in Ecuador on the 12th, which is 01:30Z on the THIRTEENTH.

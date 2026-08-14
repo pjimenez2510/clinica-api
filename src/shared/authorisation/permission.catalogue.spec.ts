@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  EXPLICIT_GRANT_ONLY_PERMISSIONS,
   type Permission,
   PERMISSION_CATALOGUE,
   PERMISSIONS,
+  SEEDABLE_PERMISSIONS,
 } from './permission.catalogue';
 import { ALL_SITES, Principal, type ResolvedGrant } from './principal';
 
@@ -17,8 +19,17 @@ describe('the permission catalogue', () => {
   it('names every permission as resource:action', () => {
     // The shape is what lets the admin screen group them, and what keeps the
     // codes greppable when one shows up in a log.
+    //
+    // THE ACTION MAY BE HYPHENATED, and that was widened on 13-08-2026 for
+    // `user:reset-mfa` (AU-035). The alternative was `user:resetmfa`, and the
+    // convention is not worth a code nobody can read: what the shape actually
+    // buys is one colon, one resource in front of it, lowercase throughout and
+    // no spaces — all of which still hold. The requirement names this code
+    // literally, and an identifier in a SPEC.md is quoted, never adapted.
     for (const code of PERMISSIONS) {
-      expect(code, `${code} is not resource:action`).toMatch(/^[a-z]+:[a-z]+$/);
+      expect(code, `${code} is not resource:action`).toMatch(
+        /^[a-z]+:[a-z]+(-[a-z]+)*$/,
+      );
     }
   });
 
@@ -44,6 +55,26 @@ describe('the permission catalogue', () => {
     for (const definition of PERMISSION_CATALOGUE) {
       expect(SCREENS, definition.code).toContain(definition.resource);
     }
+  });
+
+  it('AU-035 keeps the permissions a person must grant on purpose out of what a seed may hand out', () => {
+    // Las dos listas se derivan de la misma marca, así que esto afirma la
+    // partición: nada se pierde y nada aparece en las dos. Sin ella, una
+    // semilla que pida «todos los permisos» reparte también los de riesgo, que
+    // es exactamente cómo `user:reset-mfa` acabó en el rol de desarrollo.
+    expect(EXPLICIT_GRANT_ONLY_PERMISSIONS.length).toBeGreaterThan(0);
+    expect([...SEEDABLE_PERMISSIONS, ...EXPLICIT_GRANT_ONLY_PERMISSIONS].sort()).toEqual([...PERMISSIONS].sort()); // prettier-ignore
+
+    for (const risky of EXPLICIT_GRANT_ONLY_PERMISSIONS) {
+      expect(SEEDABLE_PERMISSIONS, risky).not.toContain(risky);
+    }
+  });
+
+  it('AU-035 marks `user:reset-mfa` as one of them', () => {
+    // El requisito lo nombra literalmente: el permiso NO DEBERÁ venir
+    // concedido a ningún rol de fábrica. La marca es lo que lo hace cumplible
+    // por código en lugar de por memoria.
+    expect(EXPLICIT_GRANT_ONLY_PERMISSIONS).toContain('user:reset-mfa');
   });
 
   it('describes every permission the way the user reads it', () => {

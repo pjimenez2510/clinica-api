@@ -26,7 +26,6 @@ export interface ScheduleRuleView {
   /** `HH:MM`, wall clock. Never an instant: this is "Mondays from 08:00". */
   startTime: string;
   endTime: string;
-  slotMinutes: number;
   validFrom: ClinicalDate;
   /** `null` means still in force (ST-041). */
   validTo: ClinicalDate | null;
@@ -39,7 +38,6 @@ export interface ScheduleRuleWrite {
   weekday: number;
   startTime: string;
   endTime: string;
-  slotMinutes: number;
   validFrom: ClinicalDate;
   validTo: ClinicalDate | null;
 }
@@ -91,6 +89,20 @@ export interface ScheduleRuleRepository {
     siteId: string,
     from: ClinicalDate,
   ): Promise<readonly BookedInterval[]>;
+
+  /**
+   * D-021, ST-045. What that site dices its day into.
+   *
+   * THE RULE NO LONGER CARRIES ITS OWN SLOT LENGTH, so the one check that
+   * needed it — «el turno cabe al menos una vez en la franja» — has to read the
+   * site's atom. `null` when the site has no parameter row, which is the
+   * AG-095 case and means «nothing to compare against», never «zero minutes».
+   *
+   * It reads `site_parameter`, `configuration`'s table, through this module's
+   * own adapter; see `SpecialtiesRepository.siteSlotAtoms` for why that is what
+   * a port is for.
+   */
+  slotAtomOfSite(siteId: string): Promise<number | null>;
 }
 
 export const SCHEDULE_RULE_REPOSITORY = Symbol('ScheduleRuleRepository');

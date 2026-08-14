@@ -6,6 +6,10 @@ import {
   SpecialtyNotFoundError,
 } from '../../../shared/domain/errors/master-data.errors';
 import {
+  assertDurationFitsSlotAtom,
+  clinicSlotAtom,
+} from '../../../shared/domain/slot-atom';
+import {
   InactiveSpecialtyAssignmentError,
   PractitionerNotFoundError,
   PrimarySpecialtyRequiredError,
@@ -177,6 +181,22 @@ export class PractitionerAssignmentsService {
     if (!(await this.repository.serviceTypeExists(serviceTypeId))) {
       throw new ServiceTypeNotFoundError();
     }
+
+    /**
+     * SP-022, D-021. The exception has to be a whole number of slots too, and
+     * it is refused HERE — at save time — for the same reason the base
+     * duration is: a 25-minute exception on a 10-minute grid is inside
+     * `duration_exception_range` and still impossible to book.
+     *
+     * IT IS THE RUNG THAT WINS (SP-023), so leaving it out would make the
+     * guarantee cosmetic: every service type could tile the grid and one
+     * doctor's override would still strand every appointment of theirs.
+     */
+    assertDurationFitsSlotAtom(
+      'durationMinutes',
+      durationMinutes,
+      clinicSlotAtom(await this.repository.siteSlotAtoms()),
+    );
 
     await this.repository.upsertDurationException(
       practitionerId,

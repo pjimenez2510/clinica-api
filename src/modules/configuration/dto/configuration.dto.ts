@@ -30,9 +30,12 @@ import { CANCELLED_RETENTION_POLICIES } from '../domain/site-parameters';
  *   - Closed-by-default authorisation is what makes a forgotten annotation a
  *     refusal instead of an open door (REQ-118, REQ-146).
  *
- * What IS configurable is the four numbers of D-001 below, and the reason they
- * are safe to configure is that no guarantee depends on their value — only
- * behaviour does.
+ * What IS configurable is the four numbers of D-001 below plus the past
+ * booking switch of AG-094, and the reason they are safe to configure is that
+ * no guarantee depends on their value — only behaviour does. Admitting a start
+ * earlier than now changes WHICH HOUR is accepted; the `EXCLUDE` still refuses
+ * an overlap in that hour, the status history is still append-only, and the
+ * booking route still demands its permission and its site scope.
  */
 
 // --- Holidays (CF-060, CF-061) ---------------------------------------------
@@ -116,6 +119,14 @@ export const holidaySchema = z.object({
   name: z.string(),
   /** `null` = todas las sedes (CF-060). */
   siteId: z.uuid().nullable(),
+  /**
+   * AG-092. Las sedes que TRABAJAN ese feriado; vacío es lo normal.
+   *
+   * Viaja en el listado porque, si no, nada en la pantalla delata que un
+   * feriado nacional tiene una excepción, y la única forma de enterarse sería
+   * pedir la disponibilidad de cada sede día a día.
+   */
+  workedBySiteIds: z.array(z.uuid()).readonly(),
 });
 export class HolidayDto extends createZodDto(holidaySchema) {}
 
@@ -146,6 +157,23 @@ export const updateSiteParametersSchema = z
     maxLeadDays: parameterSchema.optional(),
     overbookingCap: parameterSchema.optional(),
     /**
+     * D-021. The atom of the agenda. Its range and its step of 5 are not here
+     * for the same reason the other three ranges are not: CF-065 has to answer
+     * `PARAM_OUT_OF_RANGE` naming the range, and a Zod failure answers with
+     * the generic validation problem.
+     */
+    slotAtomMinutes: parameterSchema.optional(),
+    /**
+     * AG-031, AG-094. Whether the site admits a start earlier than now.
+     *
+     * NO RANGE, because a boolean has none: `assertParametersInRange` walks
+     * `PARAMETER_RANGES` and this key is deliberately not in it. Both values
+     * are legitimate; which one the site wants is the whole decision.
+     */
+    allowPastBooking: z
+      .boolean({ error: 'Indique si la sede admite reservar en el pasado' })
+      .optional(),
+    /**
      * One value today (D-001, D-004): the system does not delete. It travels
      * in the contract anyway so the screen can show what the policy IS, and so
      * the day a purge policy is added the field already exists.
@@ -164,6 +192,10 @@ export const siteParametersSchema = z.object({
   minLeadMinutes: z.number().int(),
   maxLeadDays: z.number().int(),
   overbookingCap: z.number().int(),
+  /** D-021. The site's slot atom, which every duration is a multiple of. */
+  slotAtomMinutes: z.number().int(),
+  /** AG-031, AG-094. It travels in the ANSWER too, or nobody can see it. */
+  allowPastBooking: z.boolean(),
   cancelledRetention: z.enum(CANCELLED_RETENTION_POLICIES),
 });
 export class SiteParametersDto extends createZodDto(siteParametersSchema) {}

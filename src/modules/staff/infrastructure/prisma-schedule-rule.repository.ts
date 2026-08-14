@@ -40,7 +40,6 @@ const RULE_SELECT = {
   weekday: true,
   startTime: true,
   endTime: true,
-  slotMinutes: true,
   validFrom: true,
   validTo: true,
   active: true,
@@ -71,7 +70,6 @@ function toView(row: RuleRow): ScheduleRuleView {
     weekday: row.weekday,
     startTime: WallClockTime.fromTimeColumn(row.startTime).toString(),
     endTime: WallClockTime.fromTimeColumn(row.endTime).toString(),
-    slotMinutes: row.slotMinutes,
     validFrom: toClinicalDate(row.validFrom),
     validTo: row.validTo === null ? null : toClinicalDate(row.validTo),
     active: row.active,
@@ -115,7 +113,6 @@ export class PrismaScheduleRuleRepository implements ScheduleRuleRepository {
         weekday: rule.weekday,
         startTime: toTimeColumn(rule.startTime),
         endTime: toTimeColumn(rule.endTime),
-        slotMinutes: rule.slotMinutes,
         validFrom: fromClinicalDate(rule.validFrom),
         validTo: rule.validTo === null ? null : fromClinicalDate(rule.validTo),
       },
@@ -141,9 +138,6 @@ export class PrismaScheduleRuleRepository implements ScheduleRuleRepository {
             : {}),
           ...(patch.endTime !== undefined
             ? { endTime: toTimeColumn(patch.endTime) }
-            : {}),
-          ...(patch.slotMinutes !== undefined
-            ? { slotMinutes: patch.slotMinutes }
             : {}),
           ...(patch.validFrom !== undefined
             ? { validFrom: fromClinicalDate(patch.validFrom) }
@@ -222,5 +216,23 @@ export class PrismaScheduleRuleRepository implements ScheduleRuleRepository {
       orderBy: { startsAt: 'asc' },
     });
     return rows;
+  }
+
+  /**
+   * D-021, ST-045. The site's slot atom, or `null` when the site has no
+   * parameter row.
+   *
+   * `null` IS NOT ZERO. It is the AG-095 case — «un parámetro no está definido
+   * para la sede» — and what it means here is «there is nothing to compare the
+   * band against», not «every band is too short». A trigger writes the row for
+   * every site (CF-062), so in a healthy database it never happens; answering
+   * it honestly is what stops a restored dump from refusing every schedule.
+   */
+  async slotAtomOfSite(siteId: string): Promise<number | null> {
+    const row = await this.prisma.siteParameter.findUnique({
+      where: { siteId },
+      select: { slotAtomMinutes: true },
+    });
+    return row?.slotAtomMinutes ?? null;
   }
 }

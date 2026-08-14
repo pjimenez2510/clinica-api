@@ -251,4 +251,30 @@ describe('every route declares its protection', () => {
       'AuthController.verifyMfa',
     ]);
   });
+
+  it('AU-037 exige una sesión COMPLETA para cambiar el segundo factor', () => {
+    /**
+     * La lista de arriba ya lo dice por omisión, y esto lo dice a la cara: si
+     * alguna de estas dos rutas acabara marcada `@MfaFlowOnly()` —copiando la
+     * de al lado, que es como pasan estas cosas— un token que todavía no ha
+     * pasado el segundo factor podría sustituirlo, y la prueba de posesión
+     * que hace segura a AU-037 dejaría de exigir posesión de nada.
+     *
+     * `own-account` y no un permiso: cambiar el propio segundo factor no
+     * tiene dimensión de rol, igual que cerrar sesión o cambiar la propia
+     * contraseña. Modelarlo como permiso dejaría sin cambiar de teléfono a
+     * quien tenga un rol al que se le olvidó marcarlo.
+     */
+    const change = routes.filter((r) =>
+      ['AuthController.changeMfa', 'AuthController.confirmMfaChange'].includes(
+        r.route,
+      ),
+    );
+
+    expect(change.map((r) => r.route).sort()).toEqual([
+      'AuthController.changeMfa',
+      'AuthController.confirmMfaChange',
+    ]);
+    expect(change.map((r) => r.marker)).toEqual(['own-account', 'own-account']);
+  });
 });

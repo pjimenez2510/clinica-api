@@ -42,6 +42,16 @@ const PROTECTED = [
   'patient_identifier_active_unique',
   'access_audit_occurred_brin',
   'agenda_entry_daily_agenda',
+  // Índice PARCIAL (`WHERE service_type_id IS NOT NULL`): sin él, cada intento
+  // de borrar un tipo de atención recorre `agenda_entry` entera para decidir
+  // SP-025. Prisma no puede describir el predicado, así que lo lee como
+  // sobrante.
+  'agenda_entry_by_service_type',
+  // Índice único PARCIAL (`WHERE rescheduled_from_id IS NOT NULL`): es a la vez
+  // la garantía de que una cita se reprograma UNA sola vez (AG-050) y el índice
+  // con el que se recorre la cadena hacia adelante (AG-051). Prisma no puede
+  // describir el predicado, así que lo lee como sobrante.
+  'agenda_entry_one_reschedule_per_entry',
   'encounter_pending_report',
   'user_role_grant_active_unique',
   // Índice único PARCIAL: una cuenta, como mucho una invitación de credencial

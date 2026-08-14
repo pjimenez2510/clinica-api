@@ -10,7 +10,12 @@ import type {
   CreateAccountInput,
   GrantInput,
   GrantView,
+  MfaResetAuthor,
 } from '../application/admin-ports';
+// The discriminator, not a second literal: one query has to answer «quién
+// cambió quién puede hacer qué», and two writers spelling it differently is
+// the drift `AuthAdminAuditTrail` warns about.
+import { AUTH_AUDIT_RESOURCE } from '../application/auth-admin-audit.trail';
 import { UNUSABLE_PASSWORD_HASH } from '../domain/password-hashing';
 
 import { duplicateErrorFrom, isRecordNotFound } from './auth-database-errors';
@@ -161,6 +166,100 @@ export class PrismaAccountAdminRepository implements AccountAdminRepositoryPort 
         select: ACCOUNT_FIELDS,
       });
       return toView(row);
+    } catch (error) {
+      if (isRecordNotFound(error)) return null;
+      throw error;
+    }
+  }
+
+  /**
+   * AU-035, AU-036. The second factor, its backup codes, the open sessions of
+   * the account AND the trail entry, in ONE transaction.
+   *
+   * WHY A TRANSACTION: the port states the four half-applied states and why
+   * each is worse than the failure. The one that matters most is the secret
+   * cleared with the codes alive — ten credentials that still open an account
+   * whose second factor the screen now shows as removed, printed for a phone
+   * that is gone.
+   *
+   * ⚠️ WHY THE TRAIL ENTRY IS WRITTEN HERE AND NOT THROUGH
+   * `AccessAuditRecorder`. That adapter swallows its failures on purpose, and
+   * for a read of a chart that is the right trade. Its own comment names the
+   * exception — «those must fail closed when they cannot be recorded … they
+   * must not reuse this path» — and AU-035 is exactly it: the entry is the
+   * requirement, because this is the permission that lets somebody take over
+   * another person's account. A reset that cannot be attributed must not
+   * happen. `access_audit` refuses UPDATE and DELETE but takes INSERTs, and a
+   * ROLLBACK is not a deletion, so nothing about the table's append-only
+   * guarantee is weakened by enrolling it here.
+   *
+   * WHY THE CODES ARE DELETED AND NOT MARKED SPENT, unlike a grant, which is
+   * revoked and never deleted: a backup code is a CREDENTIAL, not evidence.
+   * `access_audit` is what answers who reset what and when (AU-035); keeping
+   * the Argon2 hash of a withdrawn code adds nothing to that and leaves a
+   * credential in the table it was withdrawn from. It is the same treatment
+   * `confirmMfaWithBackupCodes` already gives the previous batch.
+   *
+   * THE PASSWORD IS NOT IN `data`, and that absence is the requirement: the
+   * person still needs their own to sign in.
+   *
+   * `update` refuses a missing row with P2025, which aborts the whole
+   * transaction — so a caller can never see the codes deleted for an account
+   * that turned out not to exist.
+   */
+  async resetMfa(
+    userId: string,
+    revocationReason: string,
+    author: MfaResetAuthor,
+  ): Promise<AccountView | null> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const row = await tx.user.update({
+          where: { id: userId },
+          data: {
+            mfaSecretEncrypted: null,
+            // AU-037. A change left in progress goes too. Leaving it behind
+            // would let a confirmation that predates the reset install a
+            // second factor on an account somebody has just been given back.
+            mfaPendingSecretEncrypted: null,
+            mfaEnabledAt: null,
+            // The consumed step goes too. Left behind, the next enrolment
+            // would have to wait for the clock to pass it before its first
+            // code was accepted, and the person would read that as the reset
+            // not having worked.
+            mfaLastStep: null,
+          },
+          select: ACCOUNT_FIELDS,
+        });
+
+        await tx.backupCode.deleteMany({ where: { userId } });
+
+        // AU-036. Same shape as `rotateCredentials`: the sessions that exist
+        // because the old factor was satisfied do not outlive it.
+        await tx.refreshToken.updateMany({
+          where: { userId, revokedAt: null },
+          data: { revokedAt: new Date(), revocationReason },
+        });
+
+        // AU-035. The entry is part of the act, not a note about it. Only who,
+        // over whom and from where: there is no field here that could carry a
+        // secret, a hash or a backup code, which is AU-025 made structural.
+        await tx.accessAudit.create({
+          data: {
+            userId: author.userId,
+            resourceType: AUTH_AUDIT_RESOURCE,
+            resourceId: userId,
+            // A verb of its own and not `UPDATE`: recorded generically, «¿a
+            // quién le han reiniciado el segundo factor, y quién?» would be
+            // indistinguishable from renaming the same account.
+            action: 'MFA_RESET',
+            ip: author.ip,
+            userAgent: author.userAgent,
+          },
+        });
+
+        return toView(row);
+      });
     } catch (error) {
       if (isRecordNotFound(error)) return null;
       throw error;

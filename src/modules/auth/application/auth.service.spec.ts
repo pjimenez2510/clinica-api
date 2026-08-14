@@ -9,7 +9,10 @@ import {
   vi,
 } from 'vitest';
 
+import { AccountLockout } from './account-lockout';
 import { AuthService } from './auth.service';
+import { SecondFactorVerifier } from './second-factor-verifier';
+import { BACKUP_CODE_COUNT } from '../domain/backup-code';
 import { InvalidCredentialsError } from '../domain/auth.errors';
 import type {
   AuthUser,
@@ -40,6 +43,7 @@ function buildUser(overrides: Partial<AuthUser> = {}): AuthUser {
     cedula: null,
     active: true,
     mfaSecretEncrypted: null,
+    mfaPendingSecretEncrypted: null,
     mfaEnabledAt: null,
     mfaLastStep: null,
     failedAttempts: 0,
@@ -94,8 +98,12 @@ describe('sign-in does not reveal who works here', () => {
       applyLock,
       clearFailedAttempts,
       savePendingMfaSecret: vi.fn(),
-      confirmMfa: vi.fn(),
+      savePendingMfaChange: vi.fn(),
       recordMfaStep: vi.fn(),
+      confirmMfaWithBackupCodes: vi.fn().mockResolvedValue(true),
+      replaceMfaSecretWithBackupCodes: vi.fn().mockResolvedValue(true),
+      findLiveBackupCodes: vi.fn().mockResolvedValue([]),
+      consumeBackupCode: vi.fn().mockResolvedValue(false),
       rotateCredentials: vi.fn().mockResolvedValue(undefined),
       findActiveGrants: vi.fn().mockResolvedValue([]),
     };
@@ -130,12 +138,18 @@ describe('sign-in does not reveal who works here', () => {
       debug: vi.fn(),
     } as unknown as PinoLogger;
 
+    // The two collaborators are REAL, wired to the same doubles. Replacing
+    // them with stubs would leave the lockout and the second factor untested
+    // from here, which is where their behaviour is actually specified.
+    const lockout = new AccountLockout(users, logger);
+
     service = new AuthService(
       users,
       hasher,
       tokens,
       refreshTokens,
-      totp,
+      lockout,
+      new SecondFactorVerifier(users, hasher, totp, lockout, logger),
       logger,
     );
   });
@@ -226,6 +240,22 @@ describe('sign-in does not reveal who works here', () => {
     expect(clearFailedAttempts).toHaveBeenCalledWith('user-1');
   });
 
+  it('la sesión dice que esta cuenta NO tiene segundo factor', async () => {
+    /**
+     * WHY THE SESSION CARRIES IT. Whether YOUR OWN account has a second
+     * factor is your own data and needs no permission, and until now the only
+     * way to find out was `GET /auth/users` — administration, `user:read`
+     * over the whole payroll. The screen that offers «matricular» and
+     * «cambiar de dispositivo» could not tell which of the two would work, so
+     * it offered both and one of them was guaranteed to fail.
+     */
+    findByEmail.mockResolvedValue(buildUser());
+
+    const session = await service.signIn('medico@clinica.ec', CORRECT);
+
+    expect(session).toMatchObject({ mfaEnabled: false });
+  });
+
   it('AU-003 counts a failed attempt only when the password was wrong', async () => {
     await codeFor(buildUser());
     expect(registerFailure).toHaveBeenCalled();
@@ -314,5 +344,274 @@ describe('sign-in does not reveal who works here', () => {
         expect.any(String),
       );
     });
+  });
+});
+
+/**
+ * AU-005 — «matricular un segundo factor TOTP CON CÓDIGOS DE RESPALDO».
+ *
+ * The half that exists for the day the phone does not. What is asserted here
+ * is not only that a backup code works: it is that using one is not a SOFTER
+ * path than the TOTP. A backup code that answered differently, or that cost no
+ * failed attempt, would make the recovery route the one an attacker picks.
+ */
+describe('AU-005 el segundo factor acepta un código de respaldo', () => {
+  const LIVE_CODE = 'ABCDE-FGHJK';
+  const CANONICAL = 'ABCDEFGHJK';
+
+  /**
+   * The refusal the TOTP verifier produces, kept as ONE instance.
+   *
+   * Asserting the exact same object is what proves a wrong backup code and a
+   * wrong TOTP are indistinguishable — two different instances of two classes
+   * that happen to share a code would drift apart the first time either
+   * message is edited.
+   *
+   * Declared here rather than imported from `totp.service.ts`: the application
+   * layer must not reach into infrastructure, and `pnpm arch:check` counts a
+   * spec in this folder as part of it.
+   */
+  const totpRefusal = new Error('TOTP code is invalid or already used');
+
+  let findById: Mock<AuthUserRepositoryPort['findById']>;
+  let findLiveBackupCodes: Mock<AuthUserRepositoryPort['findLiveBackupCodes']>;
+  let consumeBackupCode: Mock<AuthUserRepositoryPort['consumeBackupCode']>;
+  let registerFailure: Mock<AuthUserRepositoryPort['registerFailure']>;
+  let applyLock: Mock<AuthUserRepositoryPort['applyLock']>;
+  let clearFailedAttempts: Mock<AuthUserRepositoryPort['clearFailedAttempts']>;
+  let recordMfaStep: Mock<AuthUserRepositoryPort['recordMfaStep']>;
+  let verifyHash: Mock<PasswordHasherPort['verify']>;
+  let burnTime: Mock<PasswordHasherPort['burnTime']>;
+  let totpVerify: Mock<TotpPort['verify']>;
+  let service: AuthService;
+
+  const enrolled = buildUser({
+    mfaSecretEncrypted: 'encrypted-secret',
+    mfaEnabledAt: new Date('2026-01-01T00:00:00Z'),
+  });
+
+  beforeEach(() => {
+    findById = vi
+      .fn<AuthUserRepositoryPort['findById']>()
+      .mockResolvedValue(enrolled);
+    findLiveBackupCodes = vi
+      .fn<AuthUserRepositoryPort['findLiveBackupCodes']>()
+      .mockResolvedValue([
+        { id: 'code-7', codeHash: `argon2-of:${CANONICAL}` },
+      ]);
+    consumeBackupCode = vi
+      .fn<AuthUserRepositoryPort['consumeBackupCode']>()
+      .mockResolvedValue(true);
+    registerFailure = vi
+      .fn<AuthUserRepositoryPort['registerFailure']>()
+      .mockResolvedValue(1);
+    applyLock = vi
+      .fn<AuthUserRepositoryPort['applyLock']>()
+      .mockResolvedValue(undefined);
+    clearFailedAttempts = vi
+      .fn<AuthUserRepositoryPort['clearFailedAttempts']>()
+      .mockResolvedValue(undefined);
+    recordMfaStep = vi
+      .fn<AuthUserRepositoryPort['recordMfaStep']>()
+      .mockResolvedValue(undefined);
+    // Stands in for Argon2 without paying for it: the double answers true only
+    // for the hash of the very code presented.
+    verifyHash = vi.fn<PasswordHasherPort['verify']>((hash, plain) =>
+      Promise.resolve(hash === `argon2-of:${plain}`),
+    );
+    burnTime = vi
+      .fn<PasswordHasherPort['burnTime']>()
+      .mockResolvedValue(undefined);
+    totpVerify = vi.fn<TotpPort['verify']>(() => {
+      throw totpRefusal;
+    });
+
+    const users = {
+      findById,
+      findLiveBackupCodes,
+      consumeBackupCode,
+      registerFailure,
+      applyLock,
+      clearFailedAttempts,
+      recordMfaStep,
+      findActiveGrants: vi.fn().mockResolvedValue([]),
+    } as unknown as AuthUserRepositoryPort;
+
+    const hasher = {
+      hash: vi.fn(),
+      verify: verifyHash,
+      needsRehash: vi.fn().mockReturnValue(false),
+      burnTime,
+    } as unknown as PasswordHasherPort;
+
+    const tokens: TokenIssuerPort = {
+      issueAccessToken: vi.fn().mockResolvedValue('access-token'),
+    };
+    const refreshTokens = {
+      issueForNewSession: vi.fn().mockResolvedValue({
+        token: 'refresh-token',
+        familyId: 'fam-1',
+        expiresAt: new Date('2026-12-31'),
+      }),
+    } as unknown as RefreshTokenPort;
+
+    const logger = {
+      setContext: vi.fn(),
+      warn: vi.fn(),
+      info: vi.fn(),
+    } as unknown as PinoLogger;
+    const totp: TotpPort = { enroll: vi.fn(), verify: totpVerify };
+    const lockout = new AccountLockout(users, logger);
+
+    service = new AuthService(
+      users,
+      hasher,
+      tokens,
+      refreshTokens,
+      lockout,
+      new SecondFactorVerifier(users, hasher, totp, lockout, logger),
+      logger,
+    );
+  });
+
+  it('AU-005 completa el segundo factor con un código de respaldo cuando el TOTP no sirve', async () => {
+    // Exactly the situation the requirement exists for: the phone is gone, so
+    // there is no authenticator to read a code from.
+    const session = await service.verifyMfa('user-1', LIVE_CODE);
+
+    expect(session.accessToken).toBe('access-token');
+    expect(consumeBackupCode).toHaveBeenCalledWith('code-7');
+    // Using a backup code is not a failed sign-in: the counter is cleared like
+    // any other successful second factor.
+    expect(clearFailedAttempts).toHaveBeenCalledWith('user-1');
+    expect(recordMfaStep).not.toHaveBeenCalled();
+  });
+
+  it('la sesión dice que esta cuenta SÍ tiene segundo factor', async () => {
+    // El otro estado del mismo campo. Con los dos escritos, un `mfaEnabled`
+    // constante —el error fácil— no puede pasar las dos pruebas.
+    const session = await service.verifyMfa('user-1', LIVE_CODE);
+
+    expect(session.mfaEnabled).toBe(true);
+  });
+
+  it('AU-005 es de un solo uso: el código gastado ya no está entre los vivos', async () => {
+    findLiveBackupCodes.mockResolvedValue([]);
+
+    await expect(service.verifyMfa('user-1', LIVE_CODE)).rejects.toBe(
+      totpRefusal,
+    );
+    expect(consumeBackupCode).not.toHaveBeenCalled();
+  });
+
+  it('AU-005 quien pierde la carrera por el mismo código recibe el mismo rechazo', async () => {
+    // The winner is decided in the database by a conditional update; losing it
+    // is indistinguishable from having typed a code that was already spent,
+    // and it answers accordingly.
+    consumeBackupCode.mockResolvedValue(false);
+
+    await expect(service.verifyMfa('user-1', LIVE_CODE)).rejects.toBe(
+      totpRefusal,
+    );
+  });
+
+  it('AU-005 un código de respaldo incorrecto responde EXACTAMENTE igual que un TOTP incorrecto', async () => {
+    // Two different answers would say whether the account has live backup
+    // codes, which is a fact about somebody who works here.
+    await expect(service.verifyMfa('user-1', 'ZZZZZ-ZZZZZ')).rejects.toBe(
+      totpRefusal,
+    );
+    await expect(service.verifyMfa('user-1', '123456')).rejects.toBe(
+      totpRefusal,
+    );
+  });
+
+  it('AU-005 un código de respaldo fallido cuenta para el mismo bloqueo que el TOTP', async () => {
+    // Without this the backup code is the weak path: unlimited guesses against
+    // 50 bits, while the six-digit TOTP locks after three.
+    registerFailure.mockResolvedValue(3);
+
+    await expect(service.verifyMfa('user-1', 'ZZZZZ-ZZZZZ')).rejects.toBe(
+      totpRefusal,
+    );
+
+    expect(registerFailure).toHaveBeenCalledWith('user-1');
+    expect(applyLock).toHaveBeenCalledWith('user-1', expect.any(Date));
+  });
+
+  it('AU-005 no gasta Argon2 con un código que ni siquiera tiene forma de respaldo', async () => {
+    // Verifying costs one Argon2 per live code, so a mistyped TOTP must not
+    // reach the loop. The decision is made on the SHAPE OF THE INPUT, which is
+    // the caller's own doing and reveals nothing about the account.
+    await expect(service.verifyMfa('user-1', '123456')).rejects.toBe(
+      totpRefusal,
+    );
+
+    expect(findLiveBackupCodes).not.toHaveBeenCalled();
+    expect(verifyHash).not.toHaveBeenCalled();
+    expect(burnTime).not.toHaveBeenCalled();
+  });
+
+  it('AU-005 gasta el mismo trabajo tenga la cuenta diez códigos vivos o ninguno', async () => {
+    /**
+     * THE TIMING ORACLE THIS CLOSES. The response is already identical, but
+     * the WORK was not: an account with no live codes answered after zero
+     * Argon2 verifications and one with ten after ten — half a second apart,
+     * which is a perfectly readable answer to "does this person have backup
+     * codes". The failing path pads with `burnTime` up to the batch size.
+     */
+    const workFor = async (live: number): Promise<number> => {
+      verifyHash.mockClear();
+      burnTime.mockClear();
+      findLiveBackupCodes.mockResolvedValue(
+        Array.from({ length: live }, (_, index) => ({
+          id: `code-${index}`,
+          codeHash: `argon2-of:no-es-este-${index}`,
+        })),
+      );
+
+      await service.verifyMfa('user-1', 'ZZZZZ-ZZZZZ').catch(() => undefined);
+      return verifyHash.mock.calls.length + burnTime.mock.calls.length;
+    };
+
+    const withNone = await workFor(0);
+    expect(withNone).toBe(BACKUP_CODE_COUNT);
+    expect(await workFor(4)).toBe(withNone);
+    expect(await workFor(BACKUP_CODE_COUNT)).toBe(withNone);
+  });
+
+  it('AU-005 gasta el mismo trabajo aunque la cuenta tenga MÁS códigos vivos que un lote', async () => {
+    /**
+     * EL RELLENO NO PUEDE FIARSE DE QUE NADIE ESCRIBA DE MÁS.
+     *
+     * Nada en la base acota cuántas filas vivas puede tener una cuenta: la
+     * tabla `backup_code` tiene clave primaria, clave ajena y un índice sobre
+     * `(user_id, used_at)`, y nada más. Si el bucle da por hecho el tamaño del
+     * lote, una cuenta con veinte filas vivas cuesta VEINTE verificaciones
+     * donde las demás cuestan diez —el doble de latencia— y el relleno no
+     * llega a ejecutarse ni una vez: justo el oráculo por tiempo que el
+     * relleno existe para cerrar (AU-002).
+     *
+     * Se cuentan llamadas sobre los dobles y no milisegundos: medir tiempo
+     * aquí sería medir la máquina.
+     */
+    const workFor = async (live: number): Promise<number> => {
+      verifyHash.mockClear();
+      burnTime.mockClear();
+      findLiveBackupCodes.mockResolvedValue(
+        Array.from({ length: live }, (_, index) => ({
+          id: `code-${index}`,
+          codeHash: `argon2-of:no-es-este-${index}`,
+        })),
+      );
+
+      await service.verifyMfa('user-1', 'ZZZZZ-ZZZZZ').catch(() => undefined);
+      return verifyHash.mock.calls.length + burnTime.mock.calls.length;
+    };
+
+    const withNone = await workFor(0);
+    expect(withNone).toBe(BACKUP_CODE_COUNT);
+    expect(await workFor(BACKUP_CODE_COUNT + 1)).toBe(withNone);
+    expect(await workFor(BACKUP_CODE_COUNT * 2)).toBe(withNone);
   });
 });

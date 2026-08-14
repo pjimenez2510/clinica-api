@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { AccessAuditEntry } from '../../../shared/audit/access-audit.port';
 import { SpecialtyNotFoundError } from '../../../shared/domain/errors/master-data.errors';
+import { DurationNotSlotMultipleError } from '../../../shared/domain/errors/slot-atom.errors';
 import type {
   SpecialtiesRepository,
   ServiceTypeView,
@@ -48,6 +49,8 @@ interface Answers {
   updateServiceType: ServiceTypeView | null;
   deleteSpecialty: boolean;
   deleteServiceType: boolean;
+  /** D-021: what each site dices its day into. */
+  siteSlotAtoms: number[];
 }
 
 /** Every call the double receives, in order: writes AND reads. */
@@ -102,6 +105,10 @@ function makeDouble(answers: Answers): {
       note('deleteServiceType', id);
       return Promise.resolve(answers.deleteServiceType);
     },
+    siteSlotAtoms: () => {
+      note('siteSlotAtoms');
+      return Promise.resolve(answers.siteSlotAtoms);
+    },
   };
 
   return { repository, calls };
@@ -126,9 +133,10 @@ describe('SpecialtiesService', () => {
     answers = {
       findSpecialty: SPECIALTY,
       updateSpecialty: SPECIALTY,
-      updateServiceType: { ...SERVICE_TYPE, durationMinutes: 25 },
+      updateServiceType: { ...SERVICE_TYPE, durationMinutes: 30 },
       deleteSpecialty: true,
       deleteServiceType: true,
+      siteSlotAtoms: [10],
     };
     const double = makeDouble(answers);
     calls = double.calls;
@@ -212,7 +220,7 @@ describe('SpecialtiesService', () => {
     it('SP-024 cambiar una duración toca solo el tipo: ninguna otra escritura', async () => {
       await service.updateServiceType(
         'type-1',
-        { durationMinutes: 25 },
+        { durationMinutes: 30 },
         REQUESTER,
       );
 
@@ -222,7 +230,7 @@ describe('SpecialtiesService', () => {
       expect(writes()).toEqual([
         {
           method: 'updateServiceType',
-          args: ['type-1', { durationMinutes: 25 }],
+          args: ['type-1', { durationMinutes: 30 }],
         },
       ]);
     });
@@ -232,7 +240,7 @@ describe('SpecialtiesService', () => {
         { specialtyId: SPECIALTY.id, name: 'Control', durationMinutes: 20 },
         REQUESTER,
       );
-      await service.updateServiceType('type-1', { durationMinutes: 25 }, REQUESTER); // prettier-ignore
+      await service.updateServiceType('type-1', { durationMinutes: 30 }, REQUESTER); // prettier-ignore
       await service.deleteServiceType('type-1', REQUESTER);
 
       expect(recorded.map((entry) => entry.action)).toEqual([
@@ -243,6 +251,72 @@ describe('SpecialtiesService', () => {
       expect(
         recorded.every((entry) => entry.resourceType === 'configuration'),
       ).toBe(true);
+    });
+
+    /**
+     * SP-021 since D-021: the base duration has to tile the grid, and it is
+     * refused AT SAVE TIME rather than at the counter.
+     */
+    describe('SP-021 la duración es múltiplo del turno de la agenda', () => {
+      it('SP-021 rechaza al CREAR una duración que no es múltiplo, sin escribir', async () => {
+        const rejection = await service
+          .createServiceType(
+            { specialtyId: SPECIALTY.id, name: 'Control', durationMinutes: 25 },
+            REQUESTER,
+          )
+          .catch((error: unknown) => error);
+
+        expect(rejection).toBeInstanceOf(DurationNotSlotMultipleError);
+        const failure = rejection as DurationNotSlotMultipleError;
+        expect(failure.fieldErrors?.[0]?.field).toBe('durationMinutes');
+        // NOMBRA EL ÁTOMO: es lo único que le dice a quien administra qué
+        // escribir en su lugar.
+        expect(failure.fieldErrors?.[0]?.message).toContain('10 minutos');
+        expect(writes()).toEqual([]);
+        expect(recorded).toEqual([]);
+      });
+
+      it('SP-021 rechaza al EDITAR una duración que no es múltiplo, sin escribir', async () => {
+        await expect(
+          service.updateServiceType(
+            'type-1',
+            { durationMinutes: 25 },
+            REQUESTER,
+          ),
+        ).rejects.toBeInstanceOf(DurationNotSlotMultipleError);
+        expect(writes()).toEqual([]);
+      });
+
+      it('SP-021 exige el múltiplo de TODAS las sedes, porque el tipo no es de ninguna', async () => {
+        // Sedes de 10 y de 15: sólo los múltiplos de 30 se pueden reservar en
+        // las dos, y un tipo de atención se puede dar en cualquiera.
+        answers.siteSlotAtoms = [10, 15];
+
+        await expect(
+          service.createServiceType(
+            { specialtyId: SPECIALTY.id, name: 'Control', durationMinutes: 20 },
+            REQUESTER,
+          ),
+        ).rejects.toBeInstanceOf(DurationNotSlotMultipleError);
+
+        await expect(
+          service.createServiceType(
+            { specialtyId: SPECIALTY.id, name: 'Control', durationMinutes: 30 },
+            REQUESTER,
+          ),
+        ).resolves.toBeDefined();
+      });
+
+      it('SP-021 no estorba a un cambio que no toca la duración', async () => {
+        // `undefined` significa «déjala como está», y una duración que ya
+        // estaba guardada no se vuelve inválida por renombrar el tipo.
+        await expect(
+          service.updateServiceType('type-1', { name: 'Control largo' }, REQUESTER), // prettier-ignore
+        ).resolves.toBeDefined();
+        expect(calls.filter((call) => call.method === 'siteSlotAtoms')).toEqual(
+          [],
+        );
+      });
     });
   });
 });

@@ -4,12 +4,12 @@ import { PinoLogger } from 'nestjs-pino';
 import {
   AccountInactiveError,
   InvalidCredentialsError,
-  InvalidMfaCodeError,
-  MfaNotEnrolledError,
   SessionUserMissingError,
 } from '../domain/auth.errors';
 import { assertValidPassword } from '../domain/password-policy';
 
+import { AccountLockout, MAX_FAILED_ATTEMPTS } from './account-lockout';
+import { SecondFactorVerifier } from './second-factor-verifier';
 import {
   AUTH_USER_REPOSITORY,
   type AuthUser,
@@ -20,8 +20,6 @@ import {
   type RefreshTokenPort,
   TOKEN_ISSUER,
   type TokenIssuerPort,
-  TOTP,
-  type TotpPort,
 } from './ports';
 import { MFA_CHALLENGE_FAMILY } from '../domain/session';
 // One definition, in shared: the audit log needs the same shapes, and the
@@ -31,30 +29,35 @@ import {
   RevocationReason,
 } from '../../../shared/request/client-context';
 
-/**
- * Lockout thresholds.
- *
- * Two layers on purpose: per account here, and per IP through the throttler.
- * Account-only lets an attacker lock a doctor out of the records deliberately
- * — a denial of service on patient care. IP-only does not stop distributed
- * credential stuffing.
- */
-const MAX_FAILED_ATTEMPTS = 5;
-/**
- * Lower for TOTP: a six-digit code is not mistyped five times, and the search
- * space is 10^6 with three codes valid at once because of the window. Sharing
- * the password threshold would leave the SECOND factor easier to brute-force
- * than the first.
- */
-const MAX_MFA_ATTEMPTS = 3;
-const BASE_LOCK_SECONDS = 60;
-const MAX_LOCK_SECONDS = 15 * 60;
-
 export interface AuthenticatedSession {
   accessToken: string;
   refreshToken: string;
   expiresAt: Date;
   user: { id: string; email: string; firstName: string; lastName: string };
+  /**
+   * AU-005, AU-037. Whether THIS account has a second factor enrolled.
+   *
+   * ═════════════════════════════════════════════════════════════════════════
+   * IT IS THE OWNER'S OWN DATA, AND IT TRAVELS WITH THE SESSION FOR THAT
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * The only place it could be read before was `AccountDto`, from
+   * `GET /auth/users` — administration, `user:read` over the whole payroll. So
+   * a person could not find out about THEIR OWN account without a permission
+   * to inspect everybody else's, and the screen offering «matricular» and
+   * «cambiar de dispositivo» had to offer both and let one of them fail.
+   *
+   * ONE BOOLEAN AND NOTHING MORE. Not the secret, not `mfaEnabledAt`, not the
+   * last consumed step, and above all not how many backup codes are left: that
+   * number tells anyone reading over a shoulder how close the account is to
+   * being locked out of the medical records, and it is the kind of detail
+   * AU-002 refuses to answer about a session.
+   *
+   * `mfaEnabledAt != null` is the SAME condition `MfaEnrolmentService` guards
+   * enrolment with, so «false» means enrolling will be accepted rather than
+   * merely that some other column looked empty.
+   */
+  mfaEnabled: boolean;
 }
 
 export interface MfaChallenge {
@@ -66,11 +69,18 @@ export interface MfaChallenge {
  * Authentication operations.
  *
  * Kept as one cohesive service rather than five single-method use case classes:
- * they all share user lookup, lockout accounting and session issuance, so
- * splitting them would duplicate wiring without isolating anything.
+ * they all share user lookup and session issuance, so splitting them would
+ * duplicate wiring without isolating anything.
  *
- * Every dependency is a port. That is what lets these flows be tested with
- * in-memory fakes instead of real Argon2 and a real database.
+ * WHAT DID COME OUT, and only because a second caller appeared for it:
+ * `AccountLockout` and `SecondFactorVerifier`. AU-037 needs the second factor
+ * verified — with its lockout accounting — outside any sign-in, and the one
+ * thing that could not be allowed is two implementations of «is this the right
+ * code?» answering differently.
+ *
+ * Every remaining dependency is a port or an application collaborator. That is
+ * what lets these flows be tested with in-memory fakes instead of real Argon2
+ * and a real database.
  */
 @Injectable()
 export class AuthService {
@@ -80,7 +90,13 @@ export class AuthService {
     @Inject(PASSWORD_HASHER) private readonly hasher: PasswordHasherPort,
     @Inject(TOKEN_ISSUER) private readonly tokens: TokenIssuerPort,
     @Inject(REFRESH_TOKENS) private readonly refreshTokens: RefreshTokenPort,
-    @Inject(TOTP) private readonly totp: TotpPort,
+    private readonly lockout: AccountLockout,
+    /**
+     * AU-005, AU-037. The same question this service asks to finish a sign-in
+     * is the one `MfaEnrolmentService` asks before letting somebody replace
+     * their factor, so it lives in one collaborator instead of two copies.
+     */
+    private readonly secondFactor: SecondFactorVerifier,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(AuthService.name);
@@ -128,7 +144,7 @@ export class AuthService {
      */
     const denialReason = !user.active
       ? 'ACCOUNT_INACTIVE'
-      : this.isLocked(user)
+      : this.lockout.isLocked(user)
         ? 'ACCOUNT_LOCKED'
         : undefined;
 
@@ -142,7 +158,7 @@ export class AuthService {
     }
 
     if (!(await this.hasher.verify(user.passwordHash, password))) {
-      await this.registerFailedAttempt(user.id, MAX_FAILED_ATTEMPTS);
+      await this.lockout.registerFailedAttempt(user.id, MAX_FAILED_ATTEMPTS);
       throw new InvalidCredentialsError();
     }
 
@@ -172,7 +188,10 @@ export class AuthService {
     return this.issueSession(user, ctx);
   }
 
-  /** Completes sign-in by validating the TOTP code. */
+  /**
+   * Completes sign-in with the second factor: the TOTP code, or one of the
+   * backup codes (AU-005).
+   */
   async verifyMfa(
     userId: string,
     code: string,
@@ -180,43 +199,11 @@ export class AuthService {
   ): Promise<AuthenticatedSession> {
     const user = await this.requireUser(userId);
 
-    /**
-     * The second factor gets the same brake as the first.
-     *
-     * Without this, a wrong code cost nothing: no counter, no lock, no record.
-     * The only limit was the per-IP throttle, and the challenge token stays
-     * valid for the full fifteen minutes — so rotating addresses was enough to
-     * walk 10^6 codes, with three of them valid at any moment. The second
-     * factor was the weaker one.
-     */
-    if (this.isLocked(user)) {
-      this.logger.warn(
-        { user_id: user.id, error_code: 'ACCOUNT_LOCKED' },
-        'mfa verification denied',
-      );
-      throw new InvalidMfaCodeError();
-    }
-
-    if (!user.mfaSecretEncrypted) throw new MfaNotEnrolledError();
-
-    let usedStep: bigint;
-    try {
-      usedStep = this.totp.verify(
-        user.mfaSecretEncrypted,
-        code,
-        user.email,
-        user.mfaLastStep,
-      );
-    } catch (error) {
-      await this.registerFailedAttempt(user.id, MAX_MFA_ATTEMPTS);
-      throw error;
-    }
-
-    await this.users.clearFailedAttempts(user.id);
-
-    // Persisting the step is what makes replay detection work. Without it the
-    // code stays usable for its whole 30 second window.
-    await this.users.recordMfaStep(user.id, usedStep);
+    // Everything the second factor means — the TOTP window, the backup code,
+    // the padding, the lockout and the deliberately identical refusal — is
+    // `SecondFactorVerifier`'s, because AU-037 asks the same question before a
+    // re-enrolment and two copies of it would answer differently.
+    await this.secondFactor.verify(user, code);
 
     return this.issueSession(user, ctx);
   }
@@ -267,6 +254,10 @@ export class AuthService {
         firstName: user.firstName,
         lastName: user.lastName,
       },
+      // Read from the user just loaded, not carried over from the session
+      // being rotated: a factor enrolled — or reset by an administrator
+      // (AU-035) — since the last refresh has to be what the client hears.
+      mfaEnabled: user.mfaEnabledAt !== null,
     };
   }
 
@@ -345,6 +336,7 @@ export class AuthService {
         firstName: user.firstName,
         lastName: user.lastName,
       },
+      mfaEnabled: user.mfaEnabledAt !== null,
     };
   }
 
@@ -357,43 +349,5 @@ export class AuthService {
    */
   async grantsFor(userId: string) {
     return this.users.findActiveGrants(userId);
-  }
-
-  /** Whether the account is serving a lockout right now. */
-  private isLocked(user: AuthUser): boolean {
-    return user.lockedUntil !== null && user.lockedUntil > new Date();
-  }
-
-  /**
-   * Counts a failure and locks the account once it crosses the threshold,
-   * with capped exponential backoff — linear delays are trivial to wait out.
-   *
-   * The count comes back FROM the database. Computing it here from a value
-   * read at the start of the request loses every concurrent attempt but one,
-   * and an account that never reaches the threshold never locks.
-   */
-  private async registerFailedAttempt(
-    userId: string,
-    maxAttempts: number,
-  ): Promise<void> {
-    const failures = await this.users.registerFailure(userId);
-
-    if (failures < maxAttempts) return;
-
-    const overshoot = failures - maxAttempts;
-    const lockSeconds = Math.min(
-      BASE_LOCK_SECONDS * 2 ** overshoot,
-      MAX_LOCK_SECONDS,
-    );
-
-    await this.users.applyLock(
-      userId,
-      new Date(Date.now() + lockSeconds * 1000),
-    );
-
-    this.logger.warn(
-      { user_id: userId, action: 'ACCOUNT_LOCKED', count: failures },
-      'account locked after repeated failures',
-    );
   }
 }

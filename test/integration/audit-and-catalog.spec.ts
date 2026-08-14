@@ -62,6 +62,110 @@ describe('access audit is append-only', () => {
   });
 });
 
+/**
+ * D-017. The trail carries the value a mutation replaced — and only for the
+ * resource types that were declared safe to carry one.
+ *
+ * WHY THE WHITELIST IS THE REQUIREMENT AND NOT A PRECAUTION. `access_audit` is
+ * written by every module, including the one that records each read of a
+ * clinical chart. A free-form «previous value» there is an open road for a
+ * patient's data to land in the very table that exists to watch who looks at
+ * them — a table that is append-only and never purged, so a mistake cannot be
+ * undone. The `CHECK` is what makes the road closed instead of merely
+ * discouraged, and these tests ask PostgreSQL to break it: the whole point of
+ * D-017 is a guarantee the application cannot bypass, and an application-level
+ * convention would pass every unit test while proving nothing.
+ */
+describe('AG-097 · CF-066 · el valor anterior en la bitácora', () => {
+  const db = useDatabase();
+
+  it('AG-097 guarda desde qué valor y hasta cuál en un recurso declarado', async () => {
+    const prisma = db();
+
+    const entry = await prisma.accessAudit.create({
+      data: {
+        resourceType: 'configuration',
+        resourceId: 'a-site-id',
+        action: 'UPDATE',
+        before: { overbookingCap: 2 },
+        after: { overbookingCap: 4 },
+      },
+    });
+
+    expect(entry.before).toEqual({ overbookingCap: 2 });
+    expect(entry.after).toEqual({ overbookingCap: 4 });
+  });
+
+  it('CF-066 RECHAZA un valor anterior en un recurso clínico', async () => {
+    // Written straight through SQL on purpose: what is being asked is whether
+    // the BASE refuses it, not whether our code happens not to try.
+    const prisma = db();
+
+    await expect(
+      prisma.$executeRawUnsafe(
+        `INSERT INTO access_audit (resource_type, resource_id, action, "before")
+         VALUES ('patient', $1, 'READ', $2::jsonb)`,
+        'some-patient-id',
+        JSON.stringify({ names: 'quien fuera', cedula: 'la que fuera' }),
+      ),
+    ).rejects.toThrow(/access_audit_payload_only_for_declared_resources/);
+  });
+
+  it('CF-066 RECHAZA también el valor nuevo en un recurso clínico', async () => {
+    // Both columns, because refusing only one would leave the road open.
+    const prisma = db();
+
+    await expect(
+      prisma.$executeRawUnsafe(
+        `INSERT INTO access_audit (resource_type, resource_id, action, "after")
+         VALUES ('encounter', $1, 'UPDATE', $2::jsonb)`,
+        'some-encounter-id',
+        JSON.stringify({ diagnosis: 'lo que fuera' }),
+      ),
+    ).rejects.toThrow(/access_audit_payload_only_for_declared_resources/);
+  });
+
+  it('CF-066 sigue aceptando la fila de acceso a una historia, que no lleva valor', async () => {
+    // The ordinary row — a read — is unaffected, which is what makes the two
+    // columns free: a NULL lives in the row's bitmap and costs no space.
+    const prisma = db();
+
+    const entry = await prisma.accessAudit.create({
+      data: {
+        resourceType: 'patient',
+        resourceId: 'some-patient-id',
+        action: 'READ',
+      },
+    });
+
+    expect(entry.before).toBeNull();
+    expect(entry.after).toBeNull();
+  });
+
+  it('AG-097 el valor anterior tampoco se puede corregir después', async () => {
+    // The immutability trigger and the whitelist are separate guarantees and
+    // both have to hold: a «previous value» somebody can rewrite answers
+    // «desde qué valor» with whatever the last editor preferred.
+    const prisma = db();
+    const entry = await prisma.accessAudit.create({
+      data: {
+        resourceType: 'configuration',
+        resourceId: 'a-site-id',
+        action: 'UPDATE',
+        before: { overbookingCap: 2 },
+        after: { overbookingCap: 4 },
+      },
+    });
+
+    await expect(
+      prisma.accessAudit.update({
+        where: { id: entry.id },
+        data: { before: { overbookingCap: 3 } },
+      }),
+    ).rejects.toThrow(/append-only/);
+  });
+});
+
 describe('catalog concepts are valid over a period', () => {
   const db = useDatabase();
 

@@ -106,6 +106,28 @@ CREATE TABLE site_parameter (
   overbooking_cap     int  NOT NULL DEFAULT 2,
   cancelled_retention cancelled_retention_policy NOT NULL DEFAULT 'NEVER',
 
+  -- ─── D-021: EL ÁTOMO DE LA AGENDA (14-08-2026) ───────────────────────────
+  --
+  -- QUÉ ES. El incremento en que se trocea la jornada de esta sede. Todos los
+  -- cupos que la agenda ofrece duran esto, y toda duración configurable —la
+  -- base de un especialidad·tipo y la excepción de un médico— tiene que ser
+  -- múltiplo suyo. Por eso «átomo»: es la unidad indivisible de la que se
+  -- componen las demás.
+  --
+  -- POR QUÉ SUBE HASTA AQUÍ. Vivía en `practitioner_schedule_rule.slot_minutes`
+  -- —un número libre POR REGLA— junto a otro número libre por especialidad·tipo
+  -- que tenía que casar con él, y nada los obligaba. La base ya tenía rejillas
+  -- de 20 y de 30 con tipos de 10, 20 y 30: un tipo de 20 sobre un médico de
+  -- cupos de 30 era imposible de reservar (AG-012 lo rechaza) y ninguna
+  -- pantalla lo cruzaba. La práctica establecida —American College of
+  -- Physicians, y toda la literatura de scheduling ambulatorio— es un
+  -- incremento pequeño y ÚNICO del que todas las citas son múltiplos.
+  --
+  -- POR QUÉ 10 DE DEFECTO. Es el único de la banda estándar (10, 15, 20) del
+  -- que son múltiplos las tres duraciones ya configuradas —10, 20 y 30—, así
+  -- que ningún dato existente queda incoherente al migrar.
+  slot_atom_minutes   int  NOT NULL DEFAULT 10,
+
   created_at          timestamptz NOT NULL DEFAULT now(),
   updated_at          timestamptz NOT NULL DEFAULT now(),
 
@@ -120,6 +142,20 @@ CREATE TABLE site_parameter (
     CHECK (max_lead_days BETWEEN 1 AND 730),
   CONSTRAINT site_parameter_overbooking_cap_range
     CHECK (overbooking_cap BETWEEN 0 AND 20),
+
+  -- D-021. De 5 a 60 minutos y de cinco en cinco.
+  --
+  -- EL PASO DE 5 NO ES CEREMONIA: es lo que mantiene verdadero el `CHECK` que
+  -- la base SÍ puede expresar sobre las duraciones. `service_type_duration_range`
+  -- y `duration_exception_range` exigen múltiplos de 5, y un `CHECK` no puede
+  -- consultar `site_parameter` para exigir el múltiplo del átomo. Con el átomo
+  -- restringido a múltiplos de 5, la regla local de esas dos tablas deja de ser
+  -- un resto contradictorio y pasa a ser una CONSECUENCIA de la regla fina que
+  -- hace cumplir la aplicación. Los extremos: por debajo de 5 la rejilla es
+  -- ruido —una agenda de 1 minuto no la opera nadie— y por encima de 60 no hay
+  -- ninguna banda documentada, y la banda estándar (10, 15, 20) cae dentro.
+  CONSTRAINT site_parameter_slot_atom_minutes_range
+    CHECK (slot_atom_minutes BETWEEN 5 AND 60 AND slot_atom_minutes % 5 = 0),
 
   -- Coherencia entre los dos: una antelación mínima mayor que la máxima deja
   -- la sede sin ninguna hora reservable, y la agenda no tendría cómo

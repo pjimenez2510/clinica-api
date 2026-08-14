@@ -7,6 +7,7 @@ import {
   type SiteParameterView,
 } from '../domain/site-parameter.repository';
 import {
+  assertAtomFitsStoredDurations,
   assertLeadWindowCoherent,
   assertParametersInRange,
   type SiteParametersPatch,
@@ -63,26 +64,53 @@ export class SiteParametersService {
   ): Promise<SiteParameterView> {
     assertParametersInRange(patch);
 
+    /**
+     * D-021, the second half of the guarantee. `assertParametersInRange` says
+     * the atom is a sane increment; this says it does not strand a duration
+     * somebody already configured against the atom it replaces.
+     *
+     * ONLY WHEN THE ATOM IS BEING TOUCHED: reading every service type on a
+     * request that moves the minimum lead would be a query nothing needs, and
+     * `undefined` here means «leave it as it is», which strands nothing.
+     */
+    if (patch.slotAtomMinutes !== undefined) {
+      assertAtomFitsStoredDurations(
+        patch.slotAtomMinutes,
+        await this.repository.configuredDurations(),
+      );
+    }
+
     // Read before writing, so coherence is judged on the RESULT: the two lead
     // numbers can arrive in different requests, and a minimum that is fine
     // today becomes absurd the moment somebody lowers the maximum.
     const current = await this.repository.find(siteId);
     if (!current) throw new SiteParametersNotFoundError();
 
+    // `??` and never `||`: `0` minutes of minimum lead and `false` for past
+    // booking are values a site chose, and the falsy test would silently
+    // replace them with what the row already had.
     assertLeadWindowCoherent({
       minLeadMinutes: patch.minLeadMinutes ?? current.minLeadMinutes,
       maxLeadDays: patch.maxLeadDays ?? current.maxLeadDays,
       overbookingCap: patch.overbookingCap ?? current.overbookingCap,
+      slotAtomMinutes: patch.slotAtomMinutes ?? current.slotAtomMinutes,
+      allowPastBooking: patch.allowPastBooking ?? current.allowPastBooking,
       cancelledRetention:
         patch.cancelledRetention ?? current.cancelledRetention,
     });
 
-    const updated = await this.repository.update(siteId, patch);
+    const change = await this.repository.update(siteId, patch);
     // Somebody deleted the site between the read and the write. Answering 404
     // is truthful; retrying would be guessing what the caller wanted.
-    if (!updated) throw new SiteParametersNotFoundError();
+    if (!change) throw new SiteParametersNotFoundError();
 
-    await this.trail.record('UPDATE', updated.siteId, requester);
-    return updated;
+    // AG-097, CF-066: «desde qué valor», and it is `change.before` rather than
+    // the `current` read above ON PURPOSE. That read exists to judge coherence
+    // and is already stale; `change.before` is the row this very statement
+    // overwrote, read inside the same transaction. When two administrators
+    // save at once, the two entries chain — each one's `before` is the other's
+    // `after` — instead of both claiming to have started from the same value.
+    await this.trail.record('UPDATE', change.after.siteId, requester, change);
+    return change.after;
   }
 }

@@ -13,7 +13,7 @@
 -- Found by adversarial review of E1 (P1-1). `practitioner_schedule_rule` had
 -- no CHECK whatsoever, and in E1 its ONLY entry path is SQL and seeds — there
 -- is no management endpoint validating anything. A representable-but-broken
--- row did real damage: a rule with `slot_minutes = 0` or `start >= end`
+-- row did real damage: a rule with `start >= end`
 -- reached `slotsOfRuleOn`, threw RangeError, and turned availability AND
 -- booking into 500 for every date the row covered. The domain now also skips
 -- malformed rules defensively, but the database is where an invariant lives;
@@ -25,9 +25,11 @@
 ALTER TABLE practitioner_schedule_rule
   ADD CONSTRAINT schedule_rule_weekday_iso CHECK (weekday BETWEEN 1 AND 7);
 
--- A slot of zero or negative minutes cannot tile an interval.
-ALTER TABLE practitioner_schedule_rule
-  ADD CONSTRAINT schedule_rule_slot_positive CHECK (slot_minutes > 0);
+-- NO `schedule_rule_slot_positive`. It guarded `slot_minutes`, and D-021
+-- removed that column: the grid is now one atom per site
+-- (`site_parameter.slot_atom_minutes`), guarded by
+-- `site_parameter_slot_atom_minutes_range` where it lives. A CHECK cannot
+-- reach another table, so nothing about the atom is enforceable from here.
 
 -- The rule must span a real interval, and it must end strictly inside the day.
 --
@@ -47,5 +49,5 @@ ALTER TABLE practitioner_schedule_rule
 -- `ADD CONSTRAINT ... CHECK` validates existing rows: if any rule already
 -- violates these, the deploy stops here, names the constraint, and the row
 -- has to be fixed by hand — which is the point. No data is rewritten by this
--- migration on purpose: inventing a weekday or a slot length would silently
+-- migration on purpose: inventing a weekday or a closing hour would silently
 -- change somebody's published schedule.

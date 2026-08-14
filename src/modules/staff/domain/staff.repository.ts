@@ -192,6 +192,19 @@ export interface StaffRepository {
     practitionerId: string,
     siteIds: readonly string[],
   ): Promise<void>;
+
+  /**
+   * D-021, SP-022. What each site dices its day into, so a per-practitioner
+   * duration exception can be refused when it does not tile the grid.
+   *
+   * EVERY SITE AND NOT THE PRACTITIONER'S, and the difference is not academic:
+   * the exception hangs off a `service_type`, which has no site, and a doctor
+   * can be added to another site tomorrow without anybody revisiting their
+   * exceptions. Validating against the sites they happen to work at today
+   * would let that later assignment strand the exception silently. Which
+   * single number the list reduces to is `clinicSlotAtom`.
+   */
+  siteSlotAtoms(): Promise<readonly number[]>;
 }
 
 export const STAFF_REPOSITORY = Symbol('StaffRepository');

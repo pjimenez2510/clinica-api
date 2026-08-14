@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import type {
+  HolidayChange,
   HolidayInput,
   HolidayPatch,
   HolidayQuery,
@@ -12,6 +13,7 @@ import type {
 
 import {
   duplicateErrorFrom,
+  isForeignKeyViolationOf,
   isRecordNotFound,
 } from './configuration-database-errors';
 
@@ -45,6 +47,11 @@ const HOLIDAY_SELECT = {
   date: true,
   name: true,
   siteId: true,
+  /**
+   * AG-092. Ordered, so two exceptions never swap places between requests and
+   * a client comparing the two answers does not see a change that is not one.
+   */
+  workedBy: { select: { siteId: true }, orderBy: { siteId: 'asc' } },
 } satisfies Prisma.HolidaySelect;
 
 interface HolidayRow {
@@ -52,6 +59,7 @@ interface HolidayRow {
   date: Date;
   name: string;
   siteId: string | null;
+  workedBy: { siteId: string }[];
 }
 
 function toView(row: HolidayRow): HolidayView {
@@ -60,6 +68,7 @@ function toView(row: HolidayRow): HolidayView {
     date: row.date.toISOString().slice(0, 10),
     name: row.name,
     siteId: row.siteId,
+    workedBySiteIds: row.workedBy.map((exception) => exception.siteId),
   };
 }
 
@@ -116,32 +125,155 @@ export class PrismaHolidayRepository implements HolidayRepository {
     }
   }
 
-  async update(id: string, patch: HolidayPatch): Promise<HolidayView | null> {
+  /**
+   * AG-097, CF-066: the row as it was and as it became, both read inside the
+   * transaction that writes. The previous value is the point — see
+   * `HolidayChange` for why a read issued before the call cannot serve.
+   */
+  async update(id: string, patch: HolidayPatch): Promise<HolidayChange | null> {
     try {
-      const row = await this.prisma.holiday.update({
-        where: { id },
-        data: {
-          // `undefined` leaves the column alone; only a value replaces it.
-          date: patch.date === undefined ? undefined : toColumn(patch.date),
-          name: patch.name,
-          siteId: patch.siteId,
-        },
-        select: HOLIDAY_SELECT,
+      return await this.prisma.$transaction(async (tx) => {
+        // `FOR UPDATE`, which Prisma cannot express: at READ COMMITTED another
+        // transaction can commit between this read and the update, and the
+        // trail would then name a previous value this write never replaced.
+        // The row's own lock is enough; the exceptions travel with it because
+        // nothing changes them here.
+        await tx.$queryRaw`SELECT 1 FROM holiday WHERE id = ${id}::uuid FOR UPDATE`;
+
+        const before = await this.find(tx, id);
+        if (!before) return null;
+
+        const row = await tx.holiday.update({
+          where: { id },
+          data: {
+            // `undefined` leaves the column alone; only a value replaces it.
+            date: patch.date === undefined ? undefined : toColumn(patch.date),
+            name: patch.name,
+            siteId: patch.siteId,
+          },
+          select: HOLIDAY_SELECT,
+        });
+
+        return { before, after: toView(row) };
       });
-      return toView(row);
     } catch (error) {
       if (isRecordNotFound(error)) return null;
       throw duplicateErrorFrom(error) ?? error;
     }
   }
 
-  async delete(id: string): Promise<boolean> {
+  /**
+   * The row that disappeared, so the trail can keep it (AG-097): after this
+   * runs, the audit entry is the only place it still exists.
+   *
+   * Read and delete in one transaction, and the read is `FOR UPDATE`: two
+   * simultaneous deletions must not both claim to have removed the row.
+   */
+  async delete(id: string): Promise<HolidayView | null> {
     try {
-      await this.prisma.holiday.delete({ where: { id } });
-      return true;
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT 1 FROM holiday WHERE id = ${id}::uuid FOR UPDATE`;
+
+        const deleted = await this.find(tx, id);
+        if (!deleted) return null;
+
+        await tx.holiday.delete({ where: { id } });
+        return deleted;
+      });
     } catch (error) {
-      if (isRecordNotFound(error)) return false;
+      if (isRecordNotFound(error)) return null;
       throw error;
     }
+  }
+
+  /**
+   * AG-092. `holiday_site_exception` gains the pair, or already had it.
+   *
+   * AN UPSERT AND NOT A CREATE, so the second click is not a 409: the primary
+   * key IS the pair, and «esta sede trabaja este feriado» said twice is the
+   * same statement. There is nothing to update — the row has no other column
+   * the caller controls — so `update: {}` is the whole point of it.
+   *
+   * NEITHER FOREIGN KEY IS CHECKED FIRST. A missing holiday comes back as
+   * `null` so the service can answer `HOLIDAY_NOT_FOUND`; a missing site keeps
+   * travelling, because the site belongs to `organization` and
+   * `configuration.constraints.ts` turns that refusal into `SITE_NOT_FOUND`
+   * with a message. Reading before writing would only move the race.
+   */
+  async markWorkedBy(
+    holidayId: string,
+    siteId: string,
+  ): Promise<HolidayChange | null> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT 1 FROM holiday WHERE id = ${holidayId}::uuid FOR UPDATE`;
+
+        const before = await this.find(tx, holidayId);
+        if (!before) return null;
+
+        await tx.holidaySiteException.upsert({
+          where: { holidayId_siteId: { holidayId, siteId } },
+          create: { holidayId, siteId },
+          update: {},
+        });
+
+        const after = await this.find(tx, holidayId);
+        return after ? { before, after } : null;
+      });
+    } catch (error) {
+      if (
+        isForeignKeyViolationOf(error, 'holiday_site_exception_holiday_id_fkey')
+      ) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * AG-092, in reverse: the site observes the holiday again.
+   *
+   * `deleteMany` and not `delete`, so removing an exception that is not there
+   * answers «hecho» instead of 404: the caller asked for a state, and the
+   * state is already that one. What DOES answer 404 is the holiday being gone,
+   * which the read below settles.
+   */
+  async unmarkWorkedBy(
+    holidayId: string,
+    siteId: string,
+  ): Promise<HolidayChange | null> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT 1 FROM holiday WHERE id = ${holidayId}::uuid FOR UPDATE`;
+
+      const before = await this.find(tx, holidayId);
+      if (!before) return null;
+
+      await tx.holidaySiteException.deleteMany({
+        where: { holidayId, siteId },
+      });
+
+      const after = await this.find(tx, holidayId);
+      return after ? { before, after } : null;
+    });
+  }
+
+  /**
+   * The holiday with its exceptions, or `null` when it is gone.
+   *
+   * It takes the client rather than reaching for `this.prisma`, so that a
+   * caller inside a transaction reads what that transaction sees. Handing it
+   * the pooled client instead would read from a different connection — and the
+   * `before` of a mutation would come from outside the write that produced it.
+   */
+  private async find(
+    client: Prisma.TransactionClient,
+    id: string,
+  ): Promise<HolidayView | null> {
+    const row = await client.holiday.findUnique({
+      where: { id },
+      select: HOLIDAY_SELECT,
+    });
+
+    return row ? toView(row) : null;
   }
 }

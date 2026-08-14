@@ -13,9 +13,17 @@ import { explicitFlag } from '../../../shared/http/query-flag';
  */
 
 /**
- * SP-021 mirrored from the CHECK `service_type_duration_range`: 5..240 in
- * multiples of 5. The base has the final word; this is the version that
- * answers per-field instead of via a constraint translation.
+ * The FLOOR of SP-021, mirrored from the CHECK `service_type_duration_range`:
+ * 5..240 in multiples of 5.
+ *
+ * NOT THE WHOLE RULE SINCE D-021 (14-08-2026). What SP-021 now demands is a
+ * multiple of the site's slot atom, and neither this schema nor a `CHECK` can
+ * answer it: the atom lives in `site_parameter`, so it takes a read.
+ * `SpecialtiesService` does that and refuses with `DURATION_NOT_SLOT_MULTIPLE`
+ * naming the atom. What survives here is the part that needs no read — and it
+ * is not redundant: the atom's own range is 5..60 in steps of 5, so every
+ * multiple of the atom is a multiple of 5, and a value this schema rejects
+ * could never have fitted any grid.
  */
 const durationMinutesSchema = z
   .number({ error: 'Indique la duración en minutos' })

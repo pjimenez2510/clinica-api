@@ -62,6 +62,18 @@ model User {
   mfaSecretEncrypted String?   @map("mfa_secret_encrypted") @db.Text
   mfaEnabledAt       DateTime? @map("mfa_enabled_at") @db.Timestamptz(6)
 
+  /// AU-037. Secret of a second-factor change that has been STARTED and not
+  /// yet confirmed, encrypted the same way.
+  ///
+  /// A COLUMN OF ITS OWN, and that is the requirement rather than a
+  /// convenience: the factor in `mfa_secret_encrypted` has to keep working
+  /// until the new one is confirmed. Reusing that column would mean a person
+  /// who closes the tab halfway — or whose scan fails — is left with no second
+  /// factor at all and no way to enrol another one. It is cleared in the same
+  /// statement that installs the new secret, and that claim is what arbitrates
+  /// two simultaneous changes.
+  mfaPendingSecretEncrypted String? @map("mfa_pending_secret_encrypted") @db.Text
+
   /// Last consumed TOTP time step. Stops an intercepted code from being reused
   /// during the 30 seconds it remains valid.
   mfaLastStep BigInt? @map("mfa_last_step")
@@ -338,6 +350,22 @@ model AccessAudit {
   /// Reason stated during an emergency access (break-the-glass).
   /// Mandatory free text in that flow: a dropdown gets filled in on autopilot.
   emergencyReason String? @map("emergency_reason") @db.Text
+
+  /// D-017, AG-097, CF-066. The state of the resource before the mutation and
+  /// after it, so the trail says «desde qué valor» and not only who and when.
+  ///
+  /// ⚠️ WHICH RESOURCE TYPES MAY CARRY THESE IS DECIDED BY A `CHECK` THAT THIS
+  /// FILE CANNOT DESCRIBE: `access_audit_payload_only_for_declared_resources`,
+  /// in `20260814161031_access_audit_previous_value`. Today the whitelist is
+  /// exactly `'configuration'`. Clinical resource types are NOT on it and must
+  /// not be added — this table is append-only and never purged, so a chart's
+  /// contents landing here could never be removed. Read the migration's header
+  /// before touching either column.
+  ///
+  /// Null on every read, which is almost every row: a NULL lives in the row's
+  /// null bitmap and costs no space.
+  before Json? @db.JsonB
+  after  Json? @db.JsonB
 
   @@index([resourceType, resourceId, occurredAt(sort: Desc)])
   @@index([userId, occurredAt(sort: Desc)])
@@ -720,7 +748,9 @@ model CatalogConcept {
   patientsGenderIdentity  Patient[]                  @relation("PatientGenderIdentity")
   sites                   Site[]                     @relation("SiteParish")
   scheduleRules           PractitionerScheduleRule[]
-  agendaEntries           AgendaEntry[]              @relation("AgendaServiceType")
+  /// NO HAY `agendaEntries` AQUÍ desde C4, y la ausencia es el arreglo: la
+  /// cita registra su tipo de atención en `service_type` —el catálogo propio
+  /// de la clínica, SP-020— y no en un concepto clínico del MSP.
   waitlistEntries         WaitlistEntry[]            @relation("WaitlistServiceType")
   encounterPriorityGroups EncounterPriorityGroup[]
   diagnoses               EncounterDiagnosis[]
@@ -803,6 +833,7 @@ model Site {
   emissionPoints  EmissionPoint[]
   holidays        Holiday[]
   parameters      SiteParameter?
+  workedHolidays  HolidaySiteException[]
   roleGrants      UserRoleGrant[]
   practitioners   PractitionerSite[]
   scheduleRules   PractitionerScheduleRule[]
@@ -888,8 +919,32 @@ model Holiday {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  /// AG-092. The sites that work this holiday anyway.
+  workedBy HolidaySiteException[]
+
   @@index([date], map: "holiday_by_date")
   @@map("holiday")
+}
+
+/// AG-092. The site WORKS that holiday: A&E opens on 25 December without the
+/// holiday ceasing to apply to every other site.
+///
+/// A row and not a flag on `holiday`, because «working for whom» is N sites per
+/// holiday. The meaning is uniform for both scopes: on a local holiday it
+/// reads the same and amounts to deleting it, which is why nothing restricts
+/// this to national ones. See the migration's header.
+model HolidaySiteException {
+  holidayId String  @map("holiday_id") @db.Uuid
+  holiday   Holiday @relation(fields: [holidayId], references: [id], onDelete: Cascade)
+
+  siteId String @map("site_id") @db.Uuid
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([holidayId, siteId])
+  @@index([siteId], map: "holiday_site_exception_by_site")
+  @@map("holiday_site_exception")
 }
 
 /// What is done with cancelled appointments once they are old (D-001, D-004).
@@ -925,6 +980,15 @@ model SiteParameter {
   maxLeadDays    Int @default(180) @map("max_lead_days")
   /// Deliberate overbookings allowed per practitioner and day (D-001: 2).
   overbookingCap Int @default(2) @map("overbooking_cap")
+
+  /// D-021. The atom of the agenda: the increment this site dices its day
+  /// into, and the number every configurable duration must be a multiple of
+  /// (D-021: 10 minutes).
+  slotAtomMinutes Int @default(10) @map("slot_atom_minutes")
+
+  /// AG-031. The site accepts appointments that start in the past (recording
+  /// after the fact). `false` by default on purpose — see the migration.
+  allowPastBooking Boolean @default(false) @map("allow_past_booking")
 
   cancelledRetention CancelledRetentionPolicy @default(NEVER) @map("cancelled_retention")
 
@@ -1035,6 +1099,9 @@ model ServiceType {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   durationExceptions DurationException[]
+  /// SP-025. Declared so the `RESTRICT` foreign key is visible from this side
+  /// too: a type nobody booked can be deleted, one an appointment names cannot.
+  agendaEntries      AgendaEntry[]
 
   @@map("service_type")
 }
@@ -1097,8 +1164,9 @@ model PractitionerScheduleRule {
   startTime DateTime @map("start_time") @db.Time(0)
   endTime   DateTime @map("end_time") @db.Time(0)
 
-  slotMinutes Int @default(20) @map("slot_minutes") @db.SmallInt
-
+  /// D-021: no slot length here. The grid is one atom per site
+  /// (`SiteParameter.slotAtomMinutes`); the rule says WHEN the practitioner
+  /// works, never how the day is diced.
   validFrom DateTime  @map("valid_from") @db.Date
   /// NULL means the rule is still in force (ST-041).
   validTo   DateTime? @map("valid_to") @db.Date
@@ -1370,8 +1438,11 @@ model AgendaEntry {
 
   status AgendaStatus @default(BOOKED)
 
-  serviceTypeConceptId String?         @map("service_type_concept_id") @db.Uuid
-  serviceType          CatalogConcept? @relation("AgendaServiceType", fields: [serviceTypeConceptId], references: [id], onDelete: Restrict)
+  /// SP-028: el tipo de atención que recepción eligió al reservar, y con el
+  /// que se resolvió la duración (SP-023). `RESTRICT` es lo que produce
+  /// SP-025 — borrar un tipo con citas se rechaza en la base, no en TypeScript.
+  serviceTypeId String?      @map("service_type_id") @db.Uuid
+  serviceType   ServiceType? @relation(fields: [serviceTypeId], references: [id], onDelete: Restrict)
 
   reason String? @db.VarChar(512)
 
@@ -1386,6 +1457,18 @@ model AgendaEntry {
   cancelledAt      DateTime? @map("cancelled_at") @db.Timestamptz(6)
   cancellationNote String?   @map("cancellation_note") @db.VarChar(512)
 
+  /// AG-050, AG-051: la cita de la que ésta procede al reprogramar, y NULL en
+  /// toda cita reservada directamente. Reprogramar no mueve el intervalo de la
+  /// fila existente: la libera y crea ésta, que es la que apunta hacia atrás.
+  ///
+  /// DECLARADA COMO 1:N Y GARANTIZADA 1:1 POR LA BASE. El índice único es
+  /// PARCIAL (`WHERE rescheduled_from_id IS NOT NULL`, migración
+  /// `agenda_reschedule_link`) y Prisma no puede describir el predicado, así
+  /// que `@unique` aquí generaría un índice distinto del que existe. La lista
+  /// de abajo tiene, por tanto, cero o un elemento — nunca más.
+  rescheduledFromId String?      @map("rescheduled_from_id") @db.Uuid
+  rescheduledFrom   AgendaEntry? @relation("AgendaEntryReschedule", fields: [rescheduledFromId], references: [id], onDelete: Restrict)
+
   createdById String?  @map("created_by_id") @db.Uuid
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -1393,6 +1476,8 @@ model AgendaEntry {
   statusHistory  AgendaStatusHistory[]
   encounter      Encounter?
   waitlistOrigin WaitlistEntry[]
+  /// AG-051, el sentido de ida: la cita que sustituyó a ésta. Cero o una.
+  rescheduledTo  AgendaEntry[]         @relation("AgendaEntryReschedule")
 
   @@index([practitionerId, startsAt])
   @@index([siteId, startsAt])
@@ -1402,11 +1487,20 @@ model AgendaEntry {
 
 /// Append-only transition log. Without it, "the appointment showed up as
 /// cancelled" has no answer.
+///
+/// AG-005, SC-005, D-022: append-only is enforced by the DATABASE, not by the
+/// habits of this module. `trg_agenda_status_history_immutable` refuses UPDATE
+/// and DELETE, `trg_agenda_status_history_no_truncate` refuses TRUNCATE, and
+/// neither is expressible here — see the migration
+/// `agenda_status_history_immutable`.
 model AgendaStatusHistory {
   id BigInt @id @default(autoincrement())
 
-  agendaEntryId String      @map("agenda_entry_id") @db.Uuid
-  agendaEntry   AgendaEntry @relation(fields: [agendaEntryId], references: [id], onDelete: Cascade)
+  agendaEntryId String @map("agenda_entry_id") @db.Uuid
+  /// `Restrict` and not `Cascade` (D-022): deleting an appointment used to take
+  /// its whole trail with it, in silence, which contradicts SPEC §5 — an
+  /// appointment is not deleted, it is cancelled, released or marked.
+  agendaEntry   AgendaEntry @relation(fields: [agendaEntryId], references: [id], onDelete: Restrict)
 
   fromStatus AgendaStatus? @map("from_status")
   toStatus   AgendaStatus  @map("to_status")

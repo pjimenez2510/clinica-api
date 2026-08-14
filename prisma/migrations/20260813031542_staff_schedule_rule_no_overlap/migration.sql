@@ -109,26 +109,24 @@ ALTER TABLE practitioner_schedule_rule
 -- ===========================================================================
 -- 3. ST-045 — el turno tiene que caber al menos una vez
 -- ===========================================================================
-
--- `schedule_rule_slot_positive` ya prohíbe un turno de cero minutos y
--- `schedule_rule_time_order` que la franja esté invertida. Faltaba lo que une
--- a los dos: una regla de 08:00–08:15 con turnos de 20 minutos es
--- representable, pasa ambos CHECK y no produce NI UN cupo. En pantalla se ve
--- como un médico sin agenda y nada dice por qué.
 --
--- POR QUÉ EMPIEZA POR `end_time <= start_time`. Sin esa salida, una franja
--- invertida —12:00 a 08:00— también incumple ESTE CHECK, y PostgreSQL reporta
--- el que evalúa primero. El nombre de la restricción es contrato: viaja al
--- cliente y elige el mensaje, así que una franja invertida acabaría diciéndole
--- al administrador «los turnos no caben» en lugar de «la hora de fin debe ser
--- posterior a la de inicio» — un consejo correcto sobre el campo equivocado.
--- Cada CHECK responde de lo suyo; de la inversión responde
--- `schedule_rule_time_order`, que ya existe y ya la rechaza.
-ALTER TABLE practitioner_schedule_rule
-  ADD CONSTRAINT schedule_rule_slot_fits CHECK (
-    end_time <= start_time
-    OR EXTRACT(EPOCH FROM (end_time - start_time)) >= slot_minutes * 60
-  );
+-- AQUÍ VIVÍA `schedule_rule_slot_fits`, Y D-021 SE LO LLEVÓ (14-08-2026).
+-- Garantizaba que una regla de 08:00–08:15 con turnos de 20 minutos —
+-- representable, y que no produce NI UN cupo— no llegara a la base, leyendo
+-- `practitioner_schedule_rule.slot_minutes`. Esa columna ya no existe: la
+-- rejilla es un átomo único por sede (`site_parameter.slot_atom_minutes`), y
+-- un `CHECK` no puede consultar otra tabla.
+--
+-- QUÉ OCUPA SU SITIO, Y QUÉ SE PIERDE. La comprobación sigue existiendo en
+-- `scheduleRuleProblems` (`staff/domain/schedule-rule.ts`), que recibe el
+-- átomo de la sede y responde por campo antes de escribir. Lo que se pierde es
+-- que la garantía la sostuviera la base: una `INSERT` por `psql` o por
+-- importación puede volver a crear una franja más corta que el átomo. No es
+-- una fila peligrosa —degrada a «esta regla no ofrece cupos», que la
+-- derivación ya trata— sino una fila inútil, y ése es el precio de que la
+-- rejilla deje de ser un número libre por regla. Recuperarla exigiría un
+-- disparador que leyera `site_parameter` en cada escritura de regla, para
+-- rechazar lo que la aplicación ya rechaza y lo que no hace daño.
 
 -- ===========================================================================
 -- 4. ST-042 (AG-106) — la exclusión

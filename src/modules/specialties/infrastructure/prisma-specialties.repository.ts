@@ -172,4 +172,21 @@ export class PrismaSpecialtiesRepository implements SpecialtiesRepository {
       throw error;
     }
   }
+
+  /**
+   * D-021, SP-021. The distinct slot atoms of the clinic's sites.
+   *
+   * A SITE WITHOUT A ROW CONTRIBUTES NOTHING, and that is not a hole:
+   * `trg_site_parameter_defaults` writes the row of D-001 the moment a site is
+   * inserted, whoever inserts it (CF-062), so the set of rows IS the set of
+   * sites. `distinct` because the answer feeds a lowest common multiple, where
+   * repeating a value changes nothing.
+   */
+  async siteSlotAtoms(): Promise<readonly number[]> {
+    const rows = await this.prisma.siteParameter.findMany({
+      distinct: ['slotAtomMinutes'],
+      select: { slotAtomMinutes: true },
+    });
+    return rows.map((row) => row.slotAtomMinutes);
+  }
 }

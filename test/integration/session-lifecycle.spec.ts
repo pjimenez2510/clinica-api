@@ -45,6 +45,8 @@ interface SessionBody {
   accessToken: string;
   expiresIn: number;
   user: { id: string; email: string; firstName: string; lastName: string };
+  /** AU-005, AU-037: si ESTA cuenta tiene segundo factor. Nada más de él. */
+  mfaEnabled: boolean;
   grants: { roleCode: string; siteId: string | null; permissions: string[] }[];
 }
 
@@ -182,6 +184,66 @@ describe('session over HTTP', () => {
     expect(after.expiresIn).toEqual(before.expiresIn);
     // A NEW token, because rotation is the point of the endpoint.
     expect(after.accessToken).not.toEqual(before.accessToken);
+  });
+
+  it('dice si la cuenta tiene segundo factor, al entrar y al reanudar', async () => {
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     * SIN ESTE CAMPO, UNA PANTALLA TENÍA QUE ADIVINAR
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * `/mi-cuenta` ofrecía «Matricular» y «Cambiar de dispositivo» a la vez
+     * porque la sesión no decía en cuál de los dos estados está la cuenta, y
+     * una de las dos acciones estaba garantizado que fallaba —
+     * `MFA_NOT_ENROLLED` o `MFA_ALREADY_ENROLLED`. Saberlo de la PROPIA cuenta
+     * no exige ningún permiso; el único sitio donde vivía era `GET
+     * /auth/users`, que es administrar a toda la plantilla.
+     *
+     * La mitad que se comprueba aquí es «sin matricular», en las dos
+     * respuestas que una cuenta sin segundo factor puede recibir. El otro
+     * estado —y `mfa/verify`— están en `mfa-backup-codes.spec.ts`, que es
+     * donde se matricula de verdad.
+     */
+    await createAccount();
+
+    const signedIn = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email: 'ana.torres@clinica.ec', password: PASSWORD })
+      .expect(200);
+
+    expect(sessionBody(signedIn).mfaEnabled).toBe(false);
+
+    const resumed = await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Cookie', signedIn.get('Set-Cookie')!)
+      .expect(200);
+
+    // Reanudar es la única vía tras recargar la página, así que si el campo
+    // faltase justo aquí la pantalla volvería a no saber nada.
+    expect(sessionBody(resumed).mfaEnabled).toBe(false);
+  });
+
+  it('la sesión no cuenta NADA MÁS del segundo factor que si lo hay', async () => {
+    // El secreto, el paso consumido y cuántos códigos de respaldo quedan no
+    // salen de aquí: lo último diría a cualquiera que mire la pantalla lo
+    // cerca que está esa cuenta de quedarse fuera del expediente.
+    await createAccount();
+
+    const signedIn = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email: 'ana.torres@clinica.ec', password: PASSWORD })
+      .expect(200);
+
+    const raw = JSON.stringify(signedIn.body);
+    for (const leak of [
+      'mfaSecret',
+      'mfaEnabledAt',
+      'mfaLastStep',
+      'backupCodes',
+      'backupCodesRemaining',
+    ]) {
+      expect(raw).not.toContain(leak);
+    }
   });
 
   it('refuses to resume without the cookie', async () => {

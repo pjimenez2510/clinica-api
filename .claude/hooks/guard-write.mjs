@@ -2,17 +2,26 @@
 /**
  * PreToolUse hook for Edit and Write. Freezes migrations once they are shared.
  *
- * THE RULE: a migration file that git already tracks is immutable. An
- * untracked one is still a draft and can be edited freely — which is exactly
- * the workflow this project needs, because every generated migration must be
- * read and corrected BEFORE being applied.
+ * THE RULE, AND WHEN IT APPLIES: a migration file that git already tracks is
+ * immutable — but only once there IS somewhere else that ran it. That is what
+ * `scripts/database-phase.mjs` declares, and while it says `development` this
+ * guard stands down: with no production installation, editing the SQL and
+ * re-running `pnpm db:reset` is the loop Prisma itself recommends, and the
+ * alternative — piling a correction on top of a mistake because the file is
+ * frozen — ends in a worse model for no benefit.
  *
- * Editing an applied migration is the worst kind of change: it works on the
- * machine that already ran it and breaks every environment that has not.
+ * Editing an applied migration is otherwise the worst kind of change: it works
+ * on the machine that already ran it and breaks every environment that has not.
+ *
+ * ⚠️ This says NOTHING about `prisma migrate dev` or `db push`. Those stay
+ * blocked in `guard-bash.mjs` in every phase, because they delete the 20 SQL
+ * objects `schema.prisma` cannot describe. Different risk, different guard.
  */
 
 import { execFileSync } from 'node:child_process';
 import { dirname, relative, resolve } from 'node:path';
+
+import { MIGRATIONS_ARE_REWRITABLE } from '../../scripts/database-phase.mjs';
 
 const MIGRATION = /prisma[\\/]migrations[\\/][^\\/]+[\\/].+\.sql$/;
 
@@ -49,6 +58,9 @@ if (MODULE_SPEC.test(filePath) && !filePath.endsWith('SPEC.md')) {
 }
 
 if (!filePath || !MIGRATION.test(filePath)) process.exit(0);
+
+// Pre-production: the migration history is still a draft in its entirety.
+if (MIGRATIONS_ARE_REWRITABLE) process.exit(0);
 
 const absolute = resolve(filePath);
 

@@ -130,7 +130,6 @@ async function main() {
                 weekday,
                 startTime: new Date(`1970-01-01T${start}:00Z`),
                 endTime: new Date(`1970-01-01T${end}:00Z`),
-                slotMinutes: 20,
                 validFrom: new Date('2026-01-01T00:00:00Z'),
               },
             });

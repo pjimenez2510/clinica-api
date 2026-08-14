@@ -14,6 +14,25 @@ export interface Requester {
 }
 
 /**
+ * What the mutation replaced and what it left (AG-097, CF-066, D-017).
+ *
+ * `before` is absent on a creation and `after` on a deletion; a rename carries
+ * both.
+ *
+ * `Readonly<object>` and not the port's `Record<string, unknown>`: the callers
+ * hold INTERFACES — `HolidayView`, `SiteParameterView` — and TypeScript
+ * withholds the implicit index signature from an interface, so the stricter
+ * type would force a spread at every call site and buy nothing. The rule that
+ * matters cannot be typed anyway: what travels is the DOMAIN view, never the
+ * ORM row. The repositories return domain views precisely so that there is
+ * nothing else within reach to pass.
+ */
+export interface ConfigurationChange {
+  before?: Readonly<object>;
+  after?: Readonly<object>;
+}
+
+/**
  * Every mutation of a holiday or a parameter in the trail (CF-066).
  *
  * A collaborator and not a private method copied into two services: CF-066 is
@@ -42,6 +61,7 @@ export class ConfigurationAuditTrail {
     action: AuditAction,
     resourceId: string,
     requester: Requester,
+    change: ConfigurationChange = {},
   ): Promise<void> {
     await this.audit.record({
       userId: requester.userId,
@@ -50,6 +70,20 @@ export class ConfigurationAuditTrail {
       action,
       ip: requester.ip,
       userAgent: requester.userAgent,
+      /**
+       * AG-097, CF-066. Copied rather than passed along, so what reaches the
+       * column is a plain JSON object: a class instance would serialise to
+       * whatever its own fields happen to be, and a shared reference could be
+       * mutated between here and the INSERT.
+       *
+       * `'configuration'` is on the whitelist of
+       * `access_audit_payload_only_for_declared_resources` — it is a date, a
+       * name, a scope, four numbers and two flags, with no PHI reachable from
+       * any of them. That is why this trail may carry a payload and the one
+       * recording chart accesses may not.
+       */
+      before: change.before && { ...change.before },
+      after: change.after && { ...change.after },
     });
   }
 }

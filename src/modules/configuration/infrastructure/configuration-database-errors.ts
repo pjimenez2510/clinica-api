@@ -96,6 +96,24 @@ export function duplicateErrorFrom(error: unknown): DomainError | undefined {
   return constraint ? DUPLICATE_BY_CONSTRAINT[constraint]?.() : undefined;
 }
 
+/**
+ * `true` when PostgreSQL refused the write because of THAT foreign key.
+ *
+ * By name and not by SQLSTATE alone: `holiday_site_exception` has two foreign
+ * keys and they mean opposite things to the caller. A missing HOLIDAY is this
+ * module's own 404; a missing SITE belongs to `organization`, so that one is
+ * left to travel and `configuration.constraints.ts` gives it its message.
+ */
+export function isForeignKeyViolationOf(
+  error: unknown,
+  constraint: string,
+): boolean {
+  if (!isPrismaError(error)) return false;
+  if (sqlStateOf(error) !== '23503') return false;
+
+  return constraintNameOf(error) === constraint;
+}
+
 /** Prisma's "the row this operation depended on is gone" (update/delete by id). */
 export function isRecordNotFound(error: unknown): boolean {
   return (

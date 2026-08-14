@@ -2,7 +2,11 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
 import { DEFAULT_ROLES } from '../src/modules/auth/domain/default-roles.ts';
-import { PERMISSION_CATALOGUE } from '../src/shared/authorisation/permission.catalogue.ts';
+// `PERMISSION_DEFINITIONS` and not the raw catalogue: `permission` has three
+// columns, and handing Prisma the constant verbatim broke the moment an entry
+// grew an internal field (`explicitGrantOnly`). The projection is the shape of
+// the table, stated in one place.
+import { PERMISSION_DEFINITIONS } from '../src/shared/authorisation/permission.catalogue.ts';
 
 /**
  * Brings the authorisation tables in line with the code.
@@ -50,7 +54,7 @@ export async function syncAuthorisation(prisma: PrismaClient): Promise<{
   // synced, and a partially synced catalogue is one where a role references a
   // permission that does not exist yet.
   await prisma.$transaction(
-    PERMISSION_CATALOGUE.map((permission) =>
+    PERMISSION_DEFINITIONS.map((permission) =>
       prisma.permission.upsert({
         where: { code: permission.code },
         update: {
@@ -68,7 +72,7 @@ export async function syncAuthorisation(prisma: PrismaClient): Promise<{
   // deleted: a role may still reference it, and deleting it during a deploy
   // would fail on the foreign key at the worst moment.
   const stored = await prisma.permission.findMany({ select: { code: true } });
-  const known = new Set<string>(PERMISSION_CATALOGUE.map((p) => p.code));
+  const known = new Set<string>(PERMISSION_DEFINITIONS.map((p) => p.code));
   const orphanPermissions = stored
     .map((p) => p.code)
     .filter((code) => !known.has(code));
@@ -106,7 +110,7 @@ export async function syncAuthorisation(prisma: PrismaClient): Promise<{
    * somehow already there, leaving it exactly as it is beats rewriting it.
    */
   const grantedToSystemRoles: string[] = [];
-  const brandNew = PERMISSION_CATALOGUE.map((p) => p.code).filter(
+  const brandNew = PERMISSION_DEFINITIONS.map((p) => p.code).filter(
     (code) => !codesBefore.has(code),
   );
 
@@ -141,7 +145,7 @@ export async function syncAuthorisation(prisma: PrismaClient): Promise<{
   }
 
   return {
-    permissions: PERMISSION_CATALOGUE.length,
+    permissions: PERMISSION_DEFINITIONS.length,
     rolesCreated,
     orphanPermissions,
     grantedToSystemRoles,

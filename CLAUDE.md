@@ -83,7 +83,12 @@ líneas por sí solo no es motivo. → ADR-008 §2.
 - **Toda migración generada se lee entera antes de aplicarse.** `prisma migrate
   dev` ya generó una vez `DROP` de columnas generadas, índices trigram y
   constraints que existen en SQL y no en `schema.prisma`. Es un riesgo activo,
-  no una anécdota.
+  no una anécdota. `migrate dev` y `db push` están bloqueados en toda fase.
+- **Mientras no haya producción, una migración se puede reescribir.** Lo declara
+  `scripts/database-phase.mjs`. El bucle es editar el SQL y `pnpm db:reset`.
+  Corregir el modelo ahora vale más que arrastrarlo: lo caro no es rehacer la
+  base hoy, es haber dejado un modelo peor por no tocarla. Cuando exista
+  producción, esa constante pasa a `production` y vuelve la inmutabilidad.
 - `timestamptz` siempre. La única excepción deliberada es
   `practitioner_schedule_rule.start_time`/`end_time`, que son hora de pared y no
   instantes.

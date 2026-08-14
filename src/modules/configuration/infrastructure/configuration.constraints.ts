@@ -31,6 +31,13 @@ registerConstraintMeanings({
     field: 'overbookingCap',
     message: 'El tope de sobrecupos va de 0 a 20',
   },
+  // D-021. El átomo de la agenda. Mismo motivo que los tres de arriba: para
+  // la escritura que no pasa por `assertParametersInRange`.
+  site_parameter_slot_atom_minutes_range: {
+    code: 'PARAM_OUT_OF_RANGE',
+    field: 'slotAtomMinutes',
+    message: 'El turno de la agenda va de 5 a 60 minutos, de 5 en 5',
+  },
   site_parameter_lead_window_coherent: {
     code: 'PARAM_OUT_OF_RANGE',
     field: 'minLeadMinutes',
@@ -43,5 +50,16 @@ registerConstraintMeanings({
     code: 'HOLIDAY_NAME_REQUIRED',
     field: 'name',
     message: 'Indique el nombre del feriado',
+  },
+  // AG-092: marcar como laborable un feriado para una sede que no existe. La
+  // clave foránea responde, así que el servicio no tiene que leer antes y
+  // perder la ventana de en medio — igual que `practitioner_site_site_id_fkey`
+  // en `staff`. El código es `SITE_NOT_FOUND` porque la sede es de
+  // `organization`, dueña de ese código: esto es el mapeo de un rechazo de
+  // PostgreSQL, no una clase de error nueva de este módulo.
+  holiday_site_exception_site_id_fkey: {
+    code: 'SITE_NOT_FOUND',
+    field: 'siteId',
+    message: 'La sede indicada no existe. Actualice la lista de sedes',
   },
 });

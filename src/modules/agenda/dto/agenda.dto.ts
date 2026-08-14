@@ -103,7 +103,12 @@ export const bookAppointmentSchema = z.object({
    * requirement names the code.
    */
   bookingChannel: z.string({ error: 'Indique cómo se solicitó la cita' }),
-  serviceTypeConceptId: z.uuid('Seleccione un tipo de servicio válido').optional(), // prettier-ignore
+  /**
+   * SP-028. `service_type.id` — the clinic's own type of attention with its
+   * base duration (SP-020), NOT a concept of the MSP clinical catalogue,
+   * which is what this field named until C4.
+   */
+  serviceTypeId: z.uuid('Seleccione un tipo de atención válido').optional(),
   /**
    * Free text a receptionist types. It may carry a reason for the visit, which
    * is health data: it is stored, and it never reaches a log (AG-074).
@@ -189,7 +194,8 @@ export const agendaEntrySchema = z.object({
    */
   releasedAt: z.iso.datetime().nullable(),
   bookingChannel: BOOKING_CHANNEL.nullable(),
-  serviceTypeConceptId: z.uuid().nullable(),
+  /** SP-028: the type recepción chose, `service_type.id`. */
+  serviceTypeId: z.uuid().nullable(),
   /**
    * NO `reason` IN THE RESPONSE (AG-072, AG-074, SC-006). It is accepted on
    * the way in and stored; it is not served back, because the day's list is
@@ -199,8 +205,102 @@ export const agendaEntrySchema = z.object({
    * carry, not a field quietly added back.
    */
   createdById: z.uuid().nullable(),
+  /**
+   * AG-051. The other end of a reschedule, in BOTH directions.
+   *
+   * IDENTIFIERS AND NOT AN EMBEDDED ENTRY: nesting a whole appointment inside
+   * another would put a second copy of every field into the response, and the
+   * two would age differently. A client that needs the other one lists its day.
+   *
+   * `rescheduledFromId` is the stored column; `rescheduledToId` is that same
+   * column read backwards through `agenda_entry_one_reschedule_per_entry`.
+   * Both `null` on an appointment booked directly and never moved, which is
+   * almost every one of them.
+   */
+  rescheduledFromId: z.uuid().nullable(),
+  rescheduledToId: z.uuid().nullable(),
 });
 export class AgendaEntryDto extends createZodDto(agendaEntrySchema) {}
+
+/**
+ * AG-110. The appointment that was created, plus what is worth saying about it.
+ *
+ * THE WARNINGS RIDE IN A 201 AND NEVER IN A PROBLEM DOCUMENT. Present and
+ * empty when there is nothing to say; never a refusal. The booking already
+ * happened when this travels — a holiday does not block it, because a clinic
+ * with A&E works the 25th of December and refusing would only push that case
+ * out of the system (D-019, the reasoning of D-005).
+ *
+ * SENTENCES AND NOT CODES, like `RolePermissions.warnings` of `auth`
+ * (AU-034): the text names a holiday an administrator typed in freely, so
+ * there is nothing stable for a client to branch on and inventing a code would
+ * mean maintaining a second vocabulary for rows nobody enumerates.
+ *
+ * ONLY ON THE BOOKING RESPONSE, not on `AgendaEntryDto`: a warning is about a
+ * change somebody is making, and carrying it on every listed row would train
+ * people to ignore it (the same line `auth` draws between reading a role and
+ * saving one).
+ */
+export const bookedAppointmentSchema = agendaEntrySchema.extend({
+  warnings: z.array(z.string()).readonly(),
+});
+export class BookedAppointmentDto extends createZodDto(
+  bookedAppointmentSchema,
+) {}
+
+/**
+ * AG-050. What moving one appointment needs to be told.
+ *
+ * ONLY THE INTERVAL AND THE CHANNEL. The patient, the professional, the room
+ * and the type of attention are NOT here and it is not an omission: the new
+ * appointment is the old one moved, so all of that is copied from the stored
+ * row. A body that could change the patient would turn «reprogramar» into a
+ * way of handing one person's hour to another with one field.
+ *
+ * THE CHANNEL IS ASKED FOR because the reschedule was requested however it was
+ * requested — by telephone, at the counter — and AG-080 reports by channel.
+ * Inheriting the original's would report a call that never happened.
+ */
+export const rescheduleAppointmentSchema = z.object({
+  startsAt: instant('La nueva hora de inicio'),
+  endsAt: instant('La nueva hora de fin'),
+  /** AG-029, AG-034: a string, so the domain answers `INVALID_BOOKING_CHANNEL`. */
+  bookingChannel: z.string({ error: 'Indique cómo se solicitó el cambio' }),
+  /**
+   * AG-044. REQUIRED, unlike the reason of a booking: the entry that exists is
+   * annulled by this operation, and «anular con rastro» is worth nothing if
+   * the rastro can be empty. Refused per field, so the form knows which box to
+   * highlight before the domain says the same thing.
+   */
+  reason: z
+    .string()
+    .trim()
+    .min(1, 'Indique el motivo de la reprogramación')
+    .max(512, 'El motivo no puede superar 512 caracteres'),
+});
+export class RescheduleAppointmentDto extends createZodDto(
+  rescheduleAppointmentSchema,
+) {}
+
+/**
+ * AG-050, AG-051. The pair one reschedule leaves behind.
+ *
+ * BOTH ENTRIES TRAVEL BACK, and that is what makes AG-051 visible to a client
+ * instead of only true in the database: `original` comes back annulled and
+ * released with `rescheduledToId` pointing at the new one, and `created` comes
+ * back with `rescheduledFromId` pointing back. Neither has to be looked up.
+ *
+ * `warnings` is AG-110, exactly as the booking response carries it: present,
+ * usually empty, and never a refusal — the entry already exists by then.
+ */
+export const rescheduledAppointmentSchema = z.object({
+  original: agendaEntrySchema,
+  created: agendaEntrySchema,
+  warnings: z.array(z.string()).readonly(),
+});
+export class RescheduledAppointmentDto extends createZodDto(
+  rescheduledAppointmentSchema,
+) {}
 
 /**
  * AG-010. Which practitioner, at which site, over which range of dates.
@@ -245,7 +345,19 @@ export const availabilitySlotSchema = z.object({
   ruleId: z.uuid(),
   startsAt: z.iso.datetime(),
   endsAt: z.iso.datetime(),
+  /** D-021: the site's atom, which is what every slot now lasts. */
   slotMinutes: z.number().int().positive(),
+  /**
+   * `practitioner_schedule_rule.service_type_concept_id`, a concept of the MSP
+   * CLINICAL catalogue — and NOT the same thing as the appointment's
+   * `serviceTypeId`, which since C4 is the clinic's own `service_type`
+   * (SP-020). The two names differ because the two identities differ: sending
+   * this one as a booking's `serviceTypeId` would name a row of another table.
+   *
+   * The column is not written by any route today (ST-04x never sets it), so
+   * this is `null` on every slot. It was deliberately left alone in C4 — see
+   * the note on the schedule rule in `specialties/SPEC.md`.
+   */
   serviceTypeConceptId: z.uuid().nullable(),
 });
 
@@ -268,6 +380,21 @@ export const occupiedIntervalSchema = z.object({
   endsAt: z.iso.datetime(),
 });
 
+/**
+ * AG-015. A date that offers nothing because the site observes a holiday, and
+ * the reason to show for it.
+ *
+ * THE REASON IS THE NAME OF THE HOLIDAY and it is a Spanish sentence fragment
+ * a receptionist reads, not a stable code: there is nothing for a client to
+ * branch on here, and inventing a code would mean maintaining a second
+ * vocabulary for rows an administrator types in freely.
+ */
+export const closedDateSchema = z.object({
+  date: z.iso.date(),
+  /** «Navidad», «Primer Grito de Independencia». */
+  reason: z.string(),
+});
+
 export const availabilitySchema = z.object({
   siteId: z.uuid(),
   practitionerId: z.uuid(),
@@ -278,8 +405,62 @@ export const availabilitySchema = z.object({
   slots: z.array(availabilitySlotSchema),
   /** AG-011: what is taken, including entries booked under expired rules. */
   occupied: z.array(occupiedIntervalSchema),
+  /**
+   * AG-015, AG-016. The dates of the range with no slots on offer, and why.
+   *
+   * A date listed here has no slot in `slots`, and the pairing is the point:
+   * a screen that only saw the missing slots would say «este profesional no
+   * atiende ese día» about a national holiday.
+   */
+  closedDates: z.array(closedDateSchema),
+  /**
+   * AG-093. Years of the range whose holiday calendar is not loaded.
+   *
+   * The slots of those dates ARE in `slots`: the answer is given and the doubt
+   * is stated with it. Empty is the ordinary case and means nothing is
+   * pending — never that the years have no holidays.
+   */
+  yearsWithoutCalendar: z.array(z.number().int()),
 });
 export class AvailabilityDto extends createZodDto(availabilitySchema) {}
+
+/**
+ * SP-028. What recepción has picked so far, when it asks how long the
+ * appointment would last.
+ *
+ * THE SITE IS NOT HERE: it is the `:siteId` of the route, so the guard settles
+ * the caller's scope before any pipe runs (AG-071), like every other route of
+ * this controller.
+ */
+export const durationProposalQuerySchema = z.object({
+  practitionerId: z.uuid('Seleccione un profesional de la lista'),
+  /**
+   * The instant the appointment would start. It decides which schedule rule is
+   * open (AG-010, AG-106), which is SP-023's third rung.
+   */
+  startsAt: instant('La hora de inicio'),
+  /** Absent until recepción chooses a type: the rule's slot then answers. */
+  serviceTypeId: z.uuid('Seleccione un tipo de atención válido').optional(),
+});
+export class DurationProposalQueryDto extends createZodDto(
+  durationProposalQuerySchema,
+) {}
+
+export const durationProposalSchema = z.object({
+  /**
+   * SP-023: excepción → duración base → turno de la sede.
+   *
+   * D-021 REMOVED THE SECOND FIELD, `slotMinutes`. It carried the grid so the
+   * screen could warn «no encaja en los turnos de N min» before the click,
+   * back when a duration could be saved that the very next booking refused.
+   * Every duration is now a multiple of the site's atom by the time it can be
+   * saved, so the warning can no longer fire — and one that never fires only
+   * teaches people to skip the ones that do.
+   */
+  minutes: z.number().int().positive().nullable(),
+});
+export class DurationProposalDto extends createZodDto(durationProposalSchema) {}
+export type DurationProposalResponse = z.infer<typeof durationProposalSchema>;
 
 export const dailyAgendaSchema = z.object({
   siteId: z.uuid(),
@@ -300,6 +481,10 @@ export class DailyAgendaDto extends createZodDto(dailyAgendaSchema) {}
 export type DailyAgendaResponse = z.infer<typeof dailyAgendaSchema>;
 export type AvailabilityResponse = z.infer<typeof availabilitySchema>;
 export type AgendaEntryResponse = z.infer<typeof agendaEntrySchema>;
+export type BookedAppointmentResponse = z.infer<typeof bookedAppointmentSchema>;
+export type RescheduledAppointmentResponse = z.infer<
+  typeof rescheduledAppointmentSchema
+>;
 
 /** AG-107. A site the caller may schedule in. */
 export const agendaSiteSchema = z.object({

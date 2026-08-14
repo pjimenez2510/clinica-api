@@ -101,9 +101,13 @@ const PRACTITIONER_PRIMARIES: readonly {
  * ST-009. One duration exception, so the screen opens on something.
  *
  * «Control» lasts 20 minutes by default (SP-020) and this cardiologist takes
- * 45: an exception that is VISIBLY different from the base is what makes the
- * D-010 hierarchy —excepción → base— legible at a glance. A multiple of 5
- * inside 5..240, which is what `duration_exception_range` demands.
+ * 40: an exception that is VISIBLY different from the base is what makes the
+ * D-010 hierarchy —excepción → base— legible at a glance.
+ *
+ * 40 AND NOT 45 SINCE D-021: every duration has to be a multiple of the site's
+ * slot atom, which a fresh site starts at 10 minutes. A seed that wrote 45
+ * would be seeding the very incoherence the decision removed — and it would
+ * write it straight past the endpoint that refuses it.
  */
 const DURATION_EXCEPTIONS: readonly {
   email: string;
@@ -115,7 +119,7 @@ const DURATION_EXCEPTIONS: readonly {
     email: 'medico@clinica.ec',
     specialtyCode: 'cardiologia',
     serviceTypeName: 'Control',
-    durationMinutes: 45,
+    durationMinutes: 40,
   },
 ];
 
@@ -200,9 +204,9 @@ export async function seedStaff(
      */
     const sundays = [
       // Closed six months ago: `validTo` is the LAST day it ruled.
-      { validFrom: new Date('2026-01-01T00:00:00Z'), validTo: new Date('2026-06-30T00:00:00Z'), slotMinutes: 30 }, // prettier-ignore
+      { validFrom: new Date('2026-01-01T00:00:00Z'), validTo: new Date('2026-06-30T00:00:00Z') }, // prettier-ignore
       // In force ever since.
-      { validFrom: new Date('2026-07-01T00:00:00Z'), validTo: null, slotMinutes: 20 }, // prettier-ignore
+      { validFrom: new Date('2026-07-01T00:00:00Z'), validTo: null }, // prettier-ignore
     ];
 
     for (const period of sundays) {
@@ -225,7 +229,6 @@ export async function seedStaff(
           weekday: SUNDAY,
           startTime: wallClock('09:00'),
           endTime: wallClock('13:00'),
-          slotMinutes: period.slotMinutes,
           validFrom: period.validFrom,
           validTo: period.validTo,
         },
@@ -306,7 +309,7 @@ async function assignPrimarySpecialties(prisma: PrismaClient): Promise<number> {
  *
  * `skipDuplicates` and not an update: the composite primary key
  * (practitioner, service type) is what makes re-running safe, and a clinic
- * that changed 45 to 40 from the screen meant it.
+ * that changed 40 to 30 from the screen meant it.
  */
 async function setDurationExceptions(prisma: PrismaClient): Promise<number> {
   let written = 0;

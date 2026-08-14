@@ -18,12 +18,48 @@
  * was wrong, and this file is the correction.
  */
 
+/**
+ * What a permission IS, as the `permission` table mirrors it and the
+ * administration screen reads it. These three fields and no more: they are the
+ * published contract (`PermissionDto`), so anything added here shows up in an
+ * HTTP response and in a column.
+ */
 export interface PermissionDefinition {
   code: string;
   /** Grouping for the administration screen. */
   resource: string;
   /** Read by whoever assigns it, so it is written in Spanish. */
   description: string;
+}
+
+/** A catalogue entry: the definition above, plus how it may be granted. */
+export interface CatalogueEntry extends PermissionDefinition {
+  /**
+   * NO AUTOMATED PROCESS MAY HAND THIS OUT. A person grants it, on purpose, or
+   * nobody holds it.
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * WHY THE MARK LIVES HERE AND NOT IN A LIST INSIDE A SEED.
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * The property belongs to the permission, so it is declared next to it: a
+   * separate list is a second place to update, and the one thing nobody does
+   * when adding a permission is remember a file they are not editing. That is
+   * exactly how `user:reset-mfa` reached the development role — the seed built
+   * it from the WHOLE catalogue, so a permission whose requirement says «no
+   * shipped role may carry it» arrived on its own the day it was declared.
+   *
+   * WHAT IT MEANS, PRECISELY: no seed and no sync may grant it. It says
+   * nothing about a clinic granting it from the administration screen — that
+   * is the entire point of these permissions existing, and AU-035 is explicit
+   * that the installation has to concede it deliberately.
+   *
+   * THE TEST OF «IS THIS ONE OF THEM»: holding it lets somebody TAKE OVER
+   * another person's identity, or erase the evidence of having done so. Not
+   * «it is powerful» — `user:manage` is powerful and is not marked, because it
+   * cannot by itself sign in as a doctor.
+   */
+  explicitGrantOnly?: true;
 }
 
 /**
@@ -166,6 +202,34 @@ export const PERMISSION_CATALOGUE = [
     resource: 'admin',
     description: 'Administrar usuarios, roles y permisos',
   },
+  // Recuperar el segundo factor de otra cuenta (A4, AU-035, D-014).
+  //
+  // ⚠️ UN PERMISO PROPIO, FUERA DE `user:manage`, Y NINGÚN ROL DE FÁBRICA LO
+  // TRAE. Quien reinicia el segundo factor de un médico le quita la única
+  // barrera que queda entre una contraseña y su firma; si además puede
+  // invitarle de nuevo (AU-021), puede entrar como él y firmar en su nombre.
+  // El no repudio de la bitácora —la evidencia principal ante la SPDP
+  // (REQ-110)— se apoya en que eso no llegue por herencia, así que la
+  // instalación tiene que concedérselo a alguien a propósito.
+  //
+  // LA DESCRIPCIÓN NOMBRA LA CONSECUENCIA, como la de `user:read` nombra la
+  // cédula: los roles son dato, y quien marca la casilla tiene derecho a saber
+  // qué está entregando ANTES de marcarla, no después.
+  //
+  // ⚠️ Y NINGUNA SEMILLA LO REPARTE. `explicitGrantOnly` es lo que lo hace
+  // cierto en código: la semilla de desarrollo construía su rol «todos los
+  // permisos» a partir del catálogo entero, así que este permiso aterrizaba
+  // ahí solo, y la única barrera era `NODE_ENV !== 'production'`. Para un
+  // permiso al que AU-035 dedica un párrafo explicando por qué no puede llegar
+  // por herencia, «esto no es producción» es más flojo que el resto del
+  // argumento: cualquier staging, UAT o demo sembrada lo concedía.
+  {
+    code: 'user:reset-mfa',
+    resource: 'admin',
+    description:
+      'Retirar el segundo factor de otra cuenta para que vuelva a matricularlo. Deja esa cuenta protegida solo por su contraseña y cierra sus sesiones',
+    explicitGrantOnly: true,
+  },
   // Reading the clinic's map is split from editing it (ADR-011, OR-004): a
   // receptionist has to know which sites, consulting rooms and points of
   // emission exist to book into them, and nothing about that implies being
@@ -206,10 +270,67 @@ export const PERMISSION_CATALOGUE = [
     resource: 'admin',
     description: 'Consultar la bitácora de accesos',
   },
-] as const satisfies readonly PermissionDefinition[];
+] as const satisfies readonly CatalogueEntry[];
 
 export type Permission = (typeof PERMISSION_CATALOGUE)[number]['code'];
 
 export const PERMISSIONS: readonly Permission[] = PERMISSION_CATALOGUE.map(
   (definition) => definition.code,
 );
+
+/**
+ * The ones a person has to grant deliberately. See `explicitGrantOnly`.
+ *
+ * DERIVED, never written by hand: the marks are the source, and a hand-kept
+ * copy would be the second list this exists to avoid.
+ */
+/**
+ * The two lists below, from the one mark.
+ *
+ * The predicate is typed as `PermissionDefinition` on purpose: `as const`
+ * narrows each entry to its own literal type, where an optional field that is
+ * absent does not exist at all, and reading it off the union does not compile.
+ */
+const marked = (wanted: boolean): readonly Permission[] =>
+  PERMISSION_CATALOGUE.filter(
+    (definition: CatalogueEntry) =>
+      Boolean(definition.explicitGrantOnly) === wanted,
+  ).map((definition) => definition.code);
+
+export const EXPLICIT_GRANT_ONLY_PERMISSIONS: readonly Permission[] =
+  marked(true);
+
+/**
+ * What a seed may hand out: everything except the above.
+ *
+ * A SEED THAT WANTS «ALL THE PERMISSIONS» ASKS FOR THIS ONE. Using `PERMISSIONS`
+ * there is what put `user:reset-mfa` into the development superuser role — a
+ * permission that AU-035 says must reach nobody by inheritance — and made
+ * `NODE_ENV !== 'production'` the only thing standing between a staging
+ * database and an account able to take over any doctor's identity.
+ */
+export const SEEDABLE_PERMISSIONS: readonly Permission[] = marked(false);
+
+/**
+ * The catalogue as the `permission` table stores it and the API publishes it.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * THE PROJECTION IS THE CONTRACT BOUNDARY, AND IT IS DELIBERATE.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `explicitGrantOnly` is an internal rule about who may GRANT a permission, and
+ * it stops here: `PermissionDto` declares three fields, `permission` has three
+ * columns, and letting a fourth leak out of the constant would make the served
+ * response disagree with the OpenAPI document generated from that DTO — which
+ * is how a frontend ends up typing a field by hand.
+ *
+ * Whether the administration screen should SAY «este permiso se concede a
+ * propósito» is a good question and a separate change: it needs the DTO, the
+ * document and the interface to move together.
+ */
+export const PERMISSION_DEFINITIONS: readonly PermissionDefinition[] =
+  PERMISSION_CATALOGUE.map(({ code, resource, description }) => ({
+    code,
+    resource,
+    description,
+  }));

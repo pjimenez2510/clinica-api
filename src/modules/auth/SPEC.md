@@ -91,6 +91,27 @@ segunda vez.
 
 **Solo servidor:** AU-026, AU-027. Ver A2.
 
+### A4 — Recuperar el segundo factor _(P1, 13-08-2026)_
+
+Quien pierde el teléfono vuelve a entrar: con sus códigos de respaldo si los
+guardó, y si no, pidiéndole a alguien con permiso explícito que le retire el
+segundo factor para volver a matricularlo.
+
+**Por qué es P1:** hoy no hay ninguna de las dos salidas más que un administrador
+tocando la base a mano, y eso sobre un sistema que un médico usa para firmar es
+una interrupción asistencial, no una incidencia de soporte.
+**Prueba independiente:** reiniciar el segundo factor de una cuenta desde otra
+que tenga el permiso, comprobar que la primera puede volver a matricularlo, que
+sus sesiones se cerraron, y que el reinicio aparece en la bitácora con autor y
+sujeto. Y, para AU-037: cambiar el propio segundo factor presentando un código
+del actual, comprobar que el lote de respaldo se renueva, que las sesiones
+**siguen abiertas**, y que dejar el cambio a medias deja el factor viejo
+funcionando.
+**Cubre:** AU-035, AU-036, AU-037.
+
+**Solo servidor:** AU-036. Cerrar las sesiones de OTRA persona no se observa
+desde la pantalla de quien reinicia; se comprueba contra la base.
+
 ---
 
 ## Requisitos
@@ -110,18 +131,50 @@ segunda vez.
 - **AU-005** — El sistema DEBERÁ permitir matricular un segundo factor TOTP con
   códigos de respaldo, y DEBERÁ cifrar el secreto en la aplicación (ADR-008 §3).
 
-  > **A MEDIAS, y por eso no lo cita ninguna prueba.** El TOTP está: matrícula,
-  > confirmación, secreto cifrado con clave propia, rechazo de un código
-  > repetido y de uno anterior al último consumido —todo ello con prueba en
-  > `totp.service.spec.ts` y `mfa-enrolment.service.spec.ts`—. **Los códigos de
-  > respaldo no existen**: no hay columna en `app_user`, ni método en
-  > `MfaEnrolmentService`, ni forma de usarlos al iniciar sesión.
+  > **Completo.** El TOTP —matrícula, confirmación, secreto cifrado con clave
+  > propia, rechazo de un código repetido y de uno anterior al último
+  > consumido— está probado en `totp.service.spec.ts` y
+  > `mfa-enrolment.service.spec.ts`. Los **códigos de respaldo**, que faltaban
+  > enteros, están en `domain/backup-code.ts` y probados en
+  > `backup-code.spec.ts`, `auth.service.spec.ts` y, contra PostgreSQL, en
+  > `test/integration/mfa-backup-codes.spec.ts`.
   >
-  > No se cita AU-005 en las pruebas del TOTP a propósito. Marcarlo cubierto
-  > pondría A1 en 8/8 y **taparía una función que nadie ha construido**: quien
-  > pierde el teléfono se queda fuera de la clínica sin más salida que un
-  > administrador tocando la base a mano. Un eslabón en verde mintiendo es peor
-  > que uno en rojo, así que se queda en rojo hasta que exista.
+  > Lo que el sistema entrega, para que la interfaz no lo adivine: **diez
+  > códigos** de **diez símbolos** en alfabeto Crockford base32, mostrados como
+  > `ABCDE-FGHJK`, **50 bits** cada uno. `POST /auth/mfa/confirm` responde
+  > **200 con el lote** —antes 204— y es **la única vez que se envían**: solo
+  > se guarda su hash Argon2id, como el de una contraseña, porque un código de
+  > respaldo es una credencial. **Solo se confirma una vez**: habilitar el
+  > factor y guardar el lote son una única operación condicional
+  > (`UPDATE … WHERE mfa_enabled_at IS NULL`), así que un doble envío del
+  > formulario —que llega con el mismo TOTP y lo supera dos veces— recibe
+  > `MFA_ALREADY_ENROLLED` en la segunda y **nunca** deja dos lotes vivos.
+  > `POST /auth/mfa/verify` acepta el TOTP o uno de
+  > ellos, **de un solo uso** (`UPDATE … WHERE used_at IS NULL`: quien gana lo
+  > decide la base), y un código de respaldo incorrecto responde y cuenta para
+  > el bloqueo **exactamente igual** que un TOTP incorrecto — distinguirlos
+  > diría si la cuenta tiene códigos vivos.
+  >
+  > **Sigue sin haber forma de regenerar el lote** sin volver a matricular el
+  > segundo factor. Quien gaste los diez vuelve a depender de un
+  > administrador; una ruta de regeneración es trabajo aparte, no AU-005.
+  >
+  > **LA SESIÓN DICE SI LA CUENTA YA TIENE UNO** (14-08-2026). Las tres
+  > respuestas de sesión —`POST /auth/login`, `POST /auth/refresh` y
+  > `POST /auth/mfa/verify`— llevan `mfaEnabled`. **Un booleano y nada más**:
+  > ni el secreto, ni el instante de matrícula, ni el último paso consumido,
+  > ni cuántos códigos de respaldo quedan — ese número diría lo cerca que está
+  > esa cuenta de quedarse fuera del expediente. Vale `mfaEnabledAt IS NOT
+  > NULL`, que es la misma condición con la que se guarda la matrícula, así
+  > que «falso» significa que matricular será aceptado.
+  >
+  > **POR QUÉ NO BASTABA CON `AccountDto`.** Saber si la PROPIA cuenta tiene
+  > segundo factor es un dato de uno mismo y no exige ningún permiso, pero el
+  > único sitio donde viajaba era `GET /auth/users` —administración, con
+  > `user:read` sobre toda la plantilla—. Sin el campo, `/mi-cuenta` tenía que
+  > ofrecer «matricular» (AU-005) y «cambiar de dispositivo» (AU-037) a la vez
+  > sin saber cuál de las dos correspondía, y **una de las dos estaba
+  > garantizado que fallaba**: `MFA_ALREADY_ENROLLED` o `MFA_NOT_ENROLLED`.
 - **AU-010** — El acceso DEBERÁ estar **cerrado por defecto**: una ruta sin
   declaración explícita de permiso se rechaza (REQ-118).
 - **AU-011** — MIENTRAS el usuario no tenga alcance sobre la sede del recurso,
@@ -276,6 +329,87 @@ enlace que no sirve y con un correo que no sale.
   DEBERÁ advertirlo sin impedirlo: es la separación que una auditoría de la
   SPDP pregunta primero, y la clínica puede decidir asumirla.
 
+### Recuperación del segundo factor (REQ-154, D-014)
+
+- **AU-035** — CUANDO quien tenga el permiso `user:reset-mfa` lo pida sobre otra
+  cuenta, el sistema DEBERÁ retirarle el segundo factor y sus códigos de
+  respaldo, de modo que pueda volver a matricularlo; y DEBERÁ registrarlo en la
+  bitácora con autor, sujeto e instante. El permiso NO DEBERÁ venir concedido a
+  ningún rol de fábrica.
+
+  > **POR QUÉ ES UN PERMISO PROPIO Y NO PARTE DE `user:manage`.** Quien reinicia
+  > el segundo factor de un médico le quita la única barrera que queda entre una
+  > contraseña y su firma. Si además puede invitarle de nuevo (AU-021), puede
+  > entrar como él y firmar en su nombre: el no repudio de la bitácora —que es
+  > la evidencia principal ante la SPDP (REQ-110)— se apoya en que eso no ocurra
+  > por herencia. Por eso la instalación tiene que **concederlo explícitamente a
+  > alguien**, como cualquier permiso de riesgo, en vez de que aparezca
+  > encendido dentro del rol de administración (decisión del usuario, D-014).
+  >
+  > **POR QUÉ EXISTE.** Sin él, quien pierde el teléfono y los códigos depende
+  > de un administrador tocando la base a mano. La revisión adversarial del
+  > 13-08-2026 lo agravó: como los códigos se entregan una sola vez y no hay
+  > regeneración, **perder la respuesta HTTP de `mfa/confirm` deja la cuenta con
+  > segundo factor y diez códigos que nadie vio**. Un corte de red bastaba para
+  > dejar fuera a un médico.
+  >
+  > **NO ES UN CAMBIO DE CONTRASEÑA.** Retira el factor y nada más: la persona
+  > sigue necesitando su contraseña para entrar, y vuelve a matricular el
+  > segundo factor ella misma. Quien reinicia nunca conoce ninguna credencial.
+- **AU-036** — CUANDO se reinicie el segundo factor de una cuenta, el sistema
+  DEBERÁ invalidar sus sesiones abiertas, por la misma razón que AU-023: si el
+  factor deja de valer, las sesiones que se abrieron gracias a él tampoco.
+
+  > **UNA SESIÓN ABIERTA SON DOS COSAS, Y AL PRINCIPIO SÓLO SE CERRABA UNA.**
+  > La revisión adversarial del 13-08-2026 encontró que revocar la cadena de
+  > refresco dejaba vivo el token de acceso —quince minutos por defecto— y que
+  > `mfa/enroll` y `mfa/confirm` son alcanzables con él, porque por diseño no
+  > comprueban permiso: quien no ha terminado de autenticarse es justo quien
+  > está matriculando un factor. Como el reinicio deja la cuenta **sin
+  > matricular a propósito**, quien tuviera la sesión anterior podía matricular
+  > su propio autenticador en la cuenta recién devuelta y llevarse el lote de
+  > códigos de respaldo. Desde entonces el guardia comprueba en cada petición
+  > que la familia del token siga viva, así que la revocación cierra las dos
+  > mitades; un token de una sesión cerrada responde `SESSION_REVOKED`.
+  >
+  > **VALE PARA TODA REVOCACIÓN, no sólo para ésta.** `PASSWORD_CHANGE` y
+  > `ACCOUNT_DEACTIVATED` (AU-023) tenían la misma cola y la pierden por el
+  > mismo cambio. La única excepción es el token de reto de segundo factor, que
+  > no tiene fila de refresco por construcción: sólo abre el flujo de MFA y sólo
+  > se obtiene presentando la contraseña.
+- **AU-037** — CUANDO alguien con sesión completa pida cambiar su segundo factor
+  y presente un código válido del factor **ACTUAL** —un TOTP o un código de
+  respaldo, que se gasta—, el sistema DEBERÁ dejarle matricular uno nuevo; y
+  CUANDO confirme el nuevo, DEBERÁ sustituir el secreto anterior y **emitir un
+  lote de códigos de respaldo nuevo**, invalidando el viejo. Un intento con un
+  código inválido DEBERÁ contar para el bloqueo igual que cualquier otro fallo
+  del segundo factor (AU-003).
+
+  > **NO ES UN REINICIO, Y POR ESO ES SEGURO.** Reiniciarse a uno mismo está
+  > prohibido (`CANNOT_RESET_OWN_MFA`) porque la sesión completa ya prueba que
+  > el factor funcionó: sólo serviría para que alguien con un portátil ajeno
+  > desbloqueado retirase la protección. Esto exige **poseer justo lo que se va
+  > a sustituir**, así que quien robó la sesión no puede hacerlo, y quien perdió
+  > el teléfono tampoco — ése tiene AU-005 y AU-035.
+  >
+  > **POR QUÉ HACE FALTA.** Sin este camino, cambiar de teléfono —una tarea
+  > rutinaria— obliga a pedirle a alguien el permiso `user:reset-mfa`. Y un
+  > permiso de riesgo que se necesita a diario acaba concedido a media clínica,
+  > que es exactamente lo que AU-035 existe para evitar (D-015).
+  >
+  > **EL SECRETO VIEJO SIGUE VALIENDO HASTA QUE SE CONFIRME EL NUEVO.** Si se
+  > retirase al empezar, una rematrícula abandonada a la mitad —se cierra la
+  > pestaña, falla el escaneo— dejaría a la persona sin ningún factor y sin
+  > sesión con la que arreglarlo. Es el mismo fallo que la revisión adversarial
+  > encontró en AU-005 con la respuesta perdida, y aquí se evita por diseño.
+  >
+  > **NO CIERRA LAS SESIONES**, a diferencia de AU-035: no hay nadie de quien
+  > desconfiar — la persona acaba de demostrar que es ella.
+  >
+  > **CUÁNDO SE OFRECE ESTE CAMINO Y NO EL DE AU-005** lo decide el `mfaEnabled`
+  > de la sesión, descrito en la nota de AU-005. La pantalla enseña **una sola**
+  > de las dos acciones, nunca las dos.
+
 ---
 
 ## Códigos de error
@@ -286,20 +420,34 @@ enlace que no sirve y con un correo que no sale.
 | `USER_NOT_FOUND`           | 404  | La cuenta indicada no existe                                  |
 | `CANNOT_DEMOTE_SELF`       | 422  | Un administrador se desactiva o se despoja a sí mismo (AU-024) |
 | `CANNOT_GRANT_TO_SELF`     | 422  | Alguien se concede a sí mismo un rol                          |
+| `CANNOT_RESET_OWN_MFA`     | 422  | Alguien reinicia su propio segundo factor (AU-035)            |
 | `ROLE_CODE_DUPLICATE`      | 409  | Código de rol repetido (AU-030)                               |
 | `ROLE_NOT_FOUND`           | 404  | El rol indicado no existe                                     |
 | `ROLE_IN_USE`              | 409  | Borrar un rol con concesiones vivas (AU-031)                  |
 | `SYSTEM_ROLE_PROTECTED`    | 422  | Borrar un rol del sistema (AU-031)                            |
 | `UNKNOWN_PERMISSION`       | 422  | Conceder un permiso que el código no declara (AU-033)         |
+| `PERMISSION_NOT_INSTALLED` | 409  | Conceder un permiso que el código SÍ declara y la tabla `permission` de esta instalación aún no tiene (AU-033) |
 | `INVALID_CEDULA`           | 422  | Cédula del personal que no supera su dígito verificador (AU-020) |
 | `INVALID_CREDENTIAL_TOKEN` | 422  | Enlace de primera credencial desconocido, usado o caducado (AU-028) |
 | `MAIL_NOT_CONFIGURED`      | 502  | La instalación no tiene `SMTP_HOST` (AU-029)                  |
 | `MAIL_DELIVERY_FAILED`     | 503  | El servidor de correo no aceptó el mensaje (AU-029)           |
+| `MFA_CHANGE_NOT_STARTED`   | 409  | Confirmar un cambio de segundo factor que ya no está a medias (AU-037) |
+| `SESSION_REVOKED`          | 401  | El token de acceso es de una sesión ya cerrada (AU-036, AU-023)        |
 
 `INVALID_CREDENTIAL_TOKEN` es **uno solo para tres situaciones**, y eso es el
 requisito y no una simplificación (AU-028). Es 422 y no 404 porque un 404 diría
 «este token no existe», que es exactamente lo que no puede decirse; y porque
 nada se buscó por cuenta de quien llama.
+
+`UNKNOWN_PERMISSION` y `PERMISSION_NOT_INSTALLED` son **fallos opuestos y hay
+que distinguirlos**. El primero es un código que el programa no declara: la
+pantalla está desfasada y hay que recargarla. El segundo es un código que el
+programa sí declara y que la tabla `permission` de esta instalación todavía no
+tiene, porque la sincronización de autorización (`pnpm db:seed:auth`) no ha
+corrido desde el despliegue que lo introdujo. Quien está en la pantalla no puede
+arreglar el segundo, así que la frase le dice a quién avisar; salía como un
+error genérico de base —«Datos inválidos», sobre un formulario donde nada era
+inválido— y no nombraba el permiso.
 
 Los dos del correo se distinguen por **lo que hay que hacer**:
 `MAIL_NOT_CONFIGURED` es configuración que falta —no es reintentable y la frase
@@ -330,6 +478,43 @@ Los de sesión —`INVALID_CREDENTIALS`, `ACCOUNT_LOCKED`, `MFA_REQUIRED`,
 `REFRESH_TOKEN_REUSE`— ya existen en `error-catalogue.ts` desde Fase 0 y no se
 tocan.
 
+`MFA_CHANGE_NOT_STARTED` **lo fijó la implementación de AU-037**: es lo que se
+responde a quien confirma un cambio de segundo factor que ya no está a medias.
+**Un solo código para dos situaciones**, y a propósito: o nadie lo empezó —o el
+secreto pendiente ya se canjeó— o se empezó otro cambio y esta confirmación
+lleva un secreto que ya no existe. Para quien está delante son el mismo hecho y
+tienen la misma salida: empezar de nuevo. No es `MFA_NOT_ENROLLED`, porque la
+cuenta sí tiene un segundo factor —el viejo, que sigue funcionando, que es todo
+el sentido de AU-037— y mandar al cliente a la pantalla de matrícula lo dejaría
+entre dos errores, porque allí responde `MFA_ALREADY_ENROLLED`.
+
+`SESSION_REVOKED` **lo fijó la revisión adversarial de A4** y es de sesión, no
+de administración: es lo que responde cualquier ruta a un token de acceso cuya
+familia ya se revocó —por AU-036, por un cambio de contraseña o por AU-023—
+antes de que caduque solo. **No es `INVALID_TOKEN`**, y la diferencia importa en
+las dos direcciones: aquél oculta su motivo porque separaría «caducado» de
+«falsificado», y éste no oculta nada a quien tiene el token en la mano. Lo que
+gana es que la interfaz mande a esa persona a iniciar sesión con la frase que
+corresponde en lugar de un «no autenticado» que se lee como sistema roto.
+
+`CANNOT_RESET_OWN_MFA` **lo fijó la implementación de A4**; AU-035 dice «sobre
+otra cuenta» y esto es lo que se responde a quien lo pide sobre la suya. **No es
+simetría con AU-024**, y el porqué está escrito junto a la clase: la ruta exige
+una sesión completa, y una sesión completa significa que el segundo factor ya
+funcionó, así que reiniciarse el propio nunca podría ser un camino de
+recuperación —quien perdió el teléfono no llega hasta aquí—. Lo único que
+permitiría es que quien tenga una sesión viva de esa cuenta le retire el factor
+y a partir de ahí entre con la contraseña sola, dejando además al autor y al
+sujeto siendo la misma persona: justo lo que hace inútil la entrada de bitácora
+que AU-035 exige. No se pierde nada al prohibirlo, porque tampoco existe hoy
+ninguna forma de rematricular el segundo factor por cuenta propia
+(`MFA_ALREADY_ENROLLED` rechaza una segunda matrícula).
+
+> **Resuelto por AU-037 (D-015).** El Cambiar de teléfono sin perderlo —el caso legítimo
+> que queda sin salida— exigiría un camino de auto-servicio que hoy no existe en
+> ningún requisito: rematricular el propio segundo factor probando el actual.
+> Queda **fuera de A4**, que trata de quien ya no puede entrar.
+
 ## Notas de esquema
 
 Todo lo que A2 necesita para cuentas, roles y concesiones **ya existía**:
@@ -351,6 +536,19 @@ canjearon (AU-021) o la anularon al reenviar (AU-027). Los dos responden lo
 mismo a quien presenta el enlace, que es lo único que el enlace debe poder
 distinguir (AU-028), y qué invitación se canjeó de verdad se responde con
 evidencia más fuerte: sólo un canje cambia `app_user.password_hash`.
+
+**AU-037 sí necesitó columna nueva**, en `20260813233941_auth_mfa_pending_secret`:
+`app_user.mfa_pending_secret_encrypted`, el secreto TOTP de un cambio empezado y
+sin confirmar. **Es una columna aparte y eso es el requisito, no una comodidad**:
+cambiar de teléfono es de dos pasos —se enseña un QR y después se confirma un
+código que demuestra que se escaneó—, y si el secreto nuevo se escribiera encima
+del que está en uso, el intervalo entre los dos pasos sería una cuenta cuyo
+segundo factor ya no vale y cuyo sustituto todavía no está confirmado. Se pone al
+empezar y se vacía en la **misma sentencia** que instala el secreto nuevo; esa
+reclamación —`WHERE mfa_pending_secret_encrypted = <el que se acaba de
+verificar>`— es lo que arbitra dos cambios simultáneos, porque la de la primera
+matrícula (`mfa_enabled_at IS NULL`) aquí la cumplen todos y no arbitra nada.
+Se vacía también al reiniciar el segundo factor (AU-035).
 
 **Variables de entorno nuevas:** `WEB_BASE_URL` (por defecto
 `http://localhost:3001` en desarrollo), porque el enlace apunta a la

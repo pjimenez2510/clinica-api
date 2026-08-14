@@ -11,7 +11,10 @@ import {
 import {
   AgendaEntryHasEncounterError,
   AgendaEntryNotFoundError,
+  BookingInThePastError,
   BookingRetryExhaustedError,
+  BookingTooFarError,
+  BookingTooSoonError,
   InvalidAgendaTransitionError,
   InvalidBookingChannelError,
   InvalidSlotDurationError,
@@ -19,6 +22,7 @@ import {
   OutsideScheduleRuleError,
   SlotNotAlignedError,
 } from './agenda.errors';
+import { parseClinicalDate } from '../../../shared/domain/clinic-time';
 
 /**
  * The error contract: stable code, the category that decides the HTTP status,
@@ -244,5 +248,90 @@ describe('SlotNotAlignedError wording (AG-104)', () => {
     expect(error.fieldErrors?.[0]?.message).toBe(
       'La cita debe empezar al inicio de un cupo del horario',
     );
+  });
+});
+
+/**
+ * The booking window of the site (E7). Same contract as every other error:
+ * stable `code`, the category that decides the 422 in
+ * `problem-details.filter.ts`, and a sentence that says what to do next.
+ */
+describe('the booking window errors (AG-031 to AG-033)', () => {
+  it('AG-031 answers BOOKING_IN_THE_PAST without naming any instant', () => {
+    const error = new BookingInThePastError();
+
+    expect(error.code).toBe('BOOKING_IN_THE_PAST');
+    expect(error).toBeInstanceOf(BusinessRuleViolation); // 422
+    expect(error.userTitle).toBe(
+      'La cita no puede empezar en una hora que ya pasó. Elija una hora futura',
+    );
+    // Nothing to state that the caller does not know: they sent the start and
+    // «now» is on their own screen.
+    expect(error.params).toEqual({});
+    expect(error.fieldErrors).toEqual([
+      {
+        field: 'startsAt',
+        code: 'BOOKING_IN_THE_PAST',
+        message: 'La hora indicada ya pasó',
+      },
+    ]);
+  });
+
+  it('AG-032 answers BOOKING_TOO_SOON stating the first admissible instant', () => {
+    // 14:00Z is 09:00 in Guayaquil, and that is what the sentence must say:
+    // «a las 14:00» would be a UTC timestamp leaking into Spanish.
+    const error = new BookingTooSoonError(new Date('2026-09-14T14:00:00Z'), 60);
+
+    expect(error.code).toBe('BOOKING_TOO_SOON');
+    expect(error).toBeInstanceOf(BusinessRuleViolation); // 422
+    expect(error.userTitle).toBe(
+      'La cita se pide con menos antelación de la que admite esta sede. Elija una hora más tarde',
+    );
+    expect(error.params).toEqual({
+      earliestStart: '2026-09-14T14:00:00.000Z',
+      minLeadMinutes: 60,
+    });
+    expect(error.fieldErrors).toEqual([
+      {
+        field: 'startsAt',
+        code: 'BOOKING_TOO_SOON',
+        message:
+          'La primera cita que puede reservarse es el 14/09/2026 a las 09:00',
+      },
+    ]);
+    // The technical half feeds the logs: minutes of configuration, never a
+    // patient, a practitioner or a chart number.
+    expect(error.message).toBe(
+      'Requested start is closer than the 60 minute minimum lead of the site',
+    );
+  });
+
+  it('AG-033 answers BOOKING_TOO_FAR stating the last admissible date', () => {
+    const error = new BookingTooFarError(parseClinicalDate('2027-03-13'), 180);
+
+    expect(error.code).toBe('BOOKING_TOO_FAR');
+    expect(error).toBeInstanceOf(BusinessRuleViolation); // 422
+    expect(error.userTitle).toBe(
+      'La cita se pide con demasiada antelación para esta sede. Elija una fecha más cercana',
+    );
+    // ISO in `params`, what the client parses; Ecuadorian order in the
+    // sentence, what a person reads.
+    expect(error.params).toEqual({
+      latestDate: '2027-03-13',
+      maxLeadDays: 180,
+    });
+    expect(error.fieldErrors?.[0]?.message).toBe(
+      'La última fecha que puede reservarse es el 13/03/2027',
+    );
+  });
+
+  it('AG-094 registers the three window codes in the frozen public catalogue', () => {
+    for (const code of [
+      'BOOKING_IN_THE_PAST',
+      'BOOKING_TOO_SOON',
+      'BOOKING_TOO_FAR',
+    ]) {
+      expect(DOMAIN_ERROR_CODES).toContain(code);
+    }
   });
 });

@@ -28,7 +28,7 @@ export interface UpdateHolidayCommand {
 }
 
 /**
- * Holidays: CF-060, CF-061, CF-066.
+ * Holidays: CF-060, CF-061, CF-066, and the working exception of AG-092.
  *
  * The authorisation decision is NOT here — the guard settled it from the
  * route's `@RequirePermission`. What IS here is what must hold regardless of
@@ -73,11 +73,15 @@ export class HolidaysService {
       siteId: command.siteId ?? null,
     });
 
-    await this.trail.record('CREATE', created.id, requester);
+    // AG-097: no `before`, and that is the honest answer rather than an empty
+    // object — nothing was replaced.
+    await this.trail.record('CREATE', created.id, requester, {
+      after: created,
+    });
     return created;
   }
 
-  /** CF-060, CF-066. */
+  /** CF-060, CF-066, AG-097. */
   async update(
     id: string,
     command: UpdateHolidayCommand,
@@ -89,23 +93,64 @@ export class HolidaysService {
     // silently widen a site's holiday to the whole clinic on every rename.
     if (command.siteId !== undefined) patch.siteId = command.siteId;
 
-    const updated = await this.repository.update(id, patch);
-    if (!updated) throw new HolidayNotFoundError();
+    const change = await this.repository.update(id, patch);
+    if (!change) throw new HolidayNotFoundError();
 
-    await this.trail.record('UPDATE', updated.id, requester);
-    return updated;
+    await this.trail.record('UPDATE', change.after.id, requester, change);
+    return change.after;
   }
 
   /**
-   * CF-066. A hard delete, and this is the one row in the module where that is
-   * right: nothing references a holiday — the agenda READS the calendar when
-   * it books and stores no pointer to it — so there is no evidence to orphan.
-   * The trail keeps who removed it.
+   * CF-066, AG-097. A hard delete, and this is the one row in the module where
+   * that is right: nothing references a holiday — the agenda READS the
+   * calendar when it books and stores no pointer to it — so there is no
+   * evidence to orphan. The trail keeps who removed it AND what was removed,
+   * which here is the only surviving copy of the row.
    */
   async delete(id: string, requester: Requester): Promise<void> {
     const deleted = await this.repository.delete(id);
     if (!deleted) throw new HolidayNotFoundError();
 
-    await this.trail.record('UPDATE', id, requester);
+    await this.trail.record('UPDATE', id, requester, { before: deleted });
+  }
+
+  /**
+   * AG-092, CF-066. This site works that holiday: A&E opens on 25 December
+   * while every other site stays shut.
+   *
+   * AN EXCEPTION AND NOT A DELETION, which is the whole requirement: deleting
+   * the national holiday would open the other sites too, and there would be
+   * nothing left to say the day IS a holiday for them.
+   *
+   * The mutation is on the HOLIDAY, so the trail names the holiday (CF-066).
+   * The site is in the URL and the guard already checked the caller's scope
+   * over it before this ran.
+   */
+  async markWorkedBy(
+    id: string,
+    siteId: string,
+    requester: Requester,
+  ): Promise<HolidayView> {
+    const change = await this.repository.markWorkedBy(id, siteId);
+    if (!change) throw new HolidayNotFoundError();
+
+    // AG-097: what changed IS the list of exceptions, so the pair is what
+    // makes the entry mean anything — «se tocó este feriado» does not say
+    // which site started or stopped working it.
+    await this.trail.record('UPDATE', change.after.id, requester, change);
+    return change.after;
+  }
+
+  /** AG-092, CF-066, AG-097. The site goes back to observing the holiday. */
+  async unmarkWorkedBy(
+    id: string,
+    siteId: string,
+    requester: Requester,
+  ): Promise<HolidayView> {
+    const change = await this.repository.unmarkWorkedBy(id, siteId);
+    if (!change) throw new HolidayNotFoundError();
+
+    await this.trail.record('UPDATE', change.after.id, requester, change);
+    return change.after;
   }
 }

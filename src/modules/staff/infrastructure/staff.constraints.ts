@@ -26,22 +26,14 @@ registerConstraintMeanings({
     field: 'startTime',
     message: 'El profesional ya tiene otro horario en esa sede ese día a esa hora', // prettier-ignore
   },
-  // ST-045, mirrored by `InvalidScheduleRuleError` before the base is reached.
-  // This is what a seed, an import or a `psql` at two in the morning gets.
-  schedule_rule_slot_fits: {
-    code: 'INVALID_SCHEDULE_RULE',
-    field: 'slotMinutes',
-    message: 'Los turnos no caben ni una vez en la franja horaria',
-  },
+  // D-021 se llevó `schedule_rule_slot_fits` y `schedule_rule_slot_positive`:
+  // los dos leían `practitioner_schedule_rule.slot_minutes`, que ya no existe.
+  // «El turno cabe en la franja» lo comprueba ahora `scheduleRuleProblems` con
+  // el átomo de la sede, porque un `CHECK` no puede consultar `site_parameter`.
   schedule_rule_time_order: {
     code: 'INVALID_SCHEDULE_RULE',
     field: 'endTime',
     message: 'La hora de fin debe ser posterior a la de inicio y anterior a medianoche', // prettier-ignore
-  },
-  schedule_rule_slot_positive: {
-    code: 'INVALID_SCHEDULE_RULE',
-    field: 'slotMinutes',
-    message: 'Los minutos por turno deben ser mayores que cero',
   },
   schedule_rule_weekday_iso: {
     code: 'INVALID_SCHEDULE_RULE',

@@ -45,7 +45,6 @@ export interface ScheduleRulePatch {
   weekday?: number;
   startTime?: string;
   endTime?: string;
-  slotMinutes?: number;
   validFrom?: ClinicalDate;
   validTo?: ClinicalDate | null;
 }
@@ -92,7 +91,7 @@ export class ScheduleRulesService {
   ): Promise<ScheduleRuleOutcome> {
     await this.requireSchedulablePractitioner(practitionerId, true);
     await this.requireSiteOfPractitioner(practitionerId, input.siteId);
-    this.requireDerivable(input);
+    await this.requireDerivable(input);
 
     const rule = await this.rules.create({ practitionerId, ...input });
     await this.trail.record('CREATE', rule.id, requester);
@@ -125,7 +124,7 @@ export class ScheduleRulesService {
         patch.siteId,
       );
     }
-    this.requireDerivable(merged);
+    await this.requireDerivable(merged);
 
     const updated = await this.rules.update(ruleId, definedOf(patch));
     if (!updated) throw new ScheduleRuleNotFoundError();
@@ -224,23 +223,32 @@ export class ScheduleRulesService {
     );
   }
 
-  /** ST-045, mirrored per field before the CHECK constraints are reached. */
-  private requireDerivable(draft: {
+  /**
+   * ST-045, answered per field before the CHECK constraints are reached.
+   *
+   * IT IS ASYNC SINCE D-021 because one of the three questions — «¿cabe algún
+   * turno en esta franja?» — is about the SITE's grid, not about the rule, and
+   * the rule no longer carries a slot length of its own. The read is one row
+   * by primary key.
+   */
+  private async requireDerivable(draft: {
+    siteId: string;
     weekday: number;
     startTime: string;
     endTime: string;
-    slotMinutes: number;
     validFrom: ClinicalDate;
     validTo: ClinicalDate | null;
-  }): void {
-    const problems = scheduleRuleProblems({
-      weekday: draft.weekday,
-      startTime: WallClockTime.parse(draft.startTime),
-      endTime: WallClockTime.parse(draft.endTime),
-      slotMinutes: draft.slotMinutes,
-      validFrom: draft.validFrom,
-      validTo: draft.validTo,
-    });
+  }): Promise<void> {
+    const problems = scheduleRuleProblems(
+      {
+        weekday: draft.weekday,
+        startTime: WallClockTime.parse(draft.startTime),
+        endTime: WallClockTime.parse(draft.endTime),
+        validFrom: draft.validFrom,
+        validTo: draft.validTo,
+      },
+      await this.rules.slotAtomOfSite(draft.siteId),
+    );
     if (problems.length > 0) throw new InvalidScheduleRuleError(problems);
   }
 
@@ -281,7 +289,6 @@ export class ScheduleRulesService {
     weekday: number;
     startTime: string;
     endTime: string;
-    slotMinutes: number;
     validFrom: ClinicalDate;
     validTo: ClinicalDate | null;
   } & Pick<ScheduleRuleDraft, 'validFrom' | 'validTo'> {
@@ -290,7 +297,6 @@ export class ScheduleRulesService {
       weekday: rule.weekday,
       startTime: rule.startTime,
       endTime: rule.endTime,
-      slotMinutes: rule.slotMinutes,
       validFrom: rule.validFrom,
       validTo: rule.validTo,
     };

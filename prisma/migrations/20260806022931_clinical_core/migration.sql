@@ -179,7 +179,14 @@ CREATE TABLE "practitioner_schedule_rule" (
     "weekday" SMALLINT NOT NULL,
     "start_time" TIME(0) NOT NULL,
     "end_time" TIME(0) NOT NULL,
-    "slot_minutes" SMALLINT NOT NULL DEFAULT 20,
+    -- D-021, 14-08-2026: NO HAY `slot_minutes` AQUÍ, y su ausencia es la
+    -- decisión. La rejilla era un número libre por regla que tenía que casar
+    -- con la duración de cada especialidad·tipo —otro número libre— y nada los
+    -- obligaba: una base de 30 minutos sobre cupos de 20 se configuraba sin
+    -- protesta y la reserva la rechazaba después con `INVALID_SLOT_DURATION`.
+    -- La rejilla es ahora un átomo único por sede
+    -- (`site_parameter.slot_atom_minutes`), del que toda duración es múltiplo,
+    -- así que la regla dice CUÁNDO se atiende y ya no CÓMO se trocea.
     "valid_from" DATE NOT NULL,
     "valid_to" DATE,
     "active" BOOLEAN NOT NULL DEFAULT true,
@@ -292,7 +299,13 @@ CREATE TABLE "agenda_entry" (
     "blocks_calendar" BOOLEAN NOT NULL DEFAULT true,
     "released_at" TIMESTAMPTZ(6),
     "status" "agenda_status" NOT NULL DEFAULT 'BOOKED',
-    "service_type_concept_id" UUID,
+    -- El tipo de atención de la cita NO nace aquí. Nació apuntando a
+    -- `catalog_concept` —el catálogo clínico del MSP— y el tipo con su
+    -- duración resultó ser `service_type`, dato maestro propio de la clínica
+    -- (SP-020). La columna vive ahora en
+    -- `20260812222827_configuration_specialties_and_durations`, que es donde
+    -- existe la tabla a la que apunta; sin ella aquí no había forma de que la
+    -- base rechazara borrar un tipo referenciado por una cita (SP-025).
     "reason" VARCHAR(512),
     "booking_channel" VARCHAR(32),
     "checked_in_at" TIMESTAMPTZ(6),
@@ -854,9 +867,6 @@ ALTER TABLE "agenda_entry" ADD CONSTRAINT "agenda_entry_room_id_fkey" FOREIGN KE
 
 -- AddForeignKey
 ALTER TABLE "agenda_entry" ADD CONSTRAINT "agenda_entry_patient_id_fkey" FOREIGN KEY ("patient_id") REFERENCES "patient"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "agenda_entry" ADD CONSTRAINT "agenda_entry_service_type_concept_id_fkey" FOREIGN KEY ("service_type_concept_id") REFERENCES "catalog_concept"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "agenda_status_history" ADD CONSTRAINT "agenda_status_history_agenda_entry_id_fkey" FOREIGN KEY ("agenda_entry_id") REFERENCES "agenda_entry"("id") ON DELETE CASCADE ON UPDATE CASCADE;

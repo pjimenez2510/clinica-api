@@ -189,6 +189,30 @@ describe('las especialidades por HTTP', () => {
     return response.body as { id: string };
   }
 
+  /**
+   * Una cita reservada QUE NOMBRA EL TIPO (SP-028), escrita directamente en la
+   * tabla: la ruta que reserva es de `agenda` y lo que estas pruebas
+   * comprueban es la clave foránea, no el endpoint.
+   */
+  async function bookAppointmentWith(serviceTypeId: string) {
+    const site = await createSite(prisma);
+    await linkPractitionerToSite(prisma, practitionerId, site.id);
+    const patient = await createPatient(prisma);
+
+    return prisma.agendaEntry.create({
+      data: {
+        kind: 'APPOINTMENT',
+        siteId: site.id,
+        practitionerId,
+        patientId: patient.id,
+        startsAt: new Date('2026-09-14T13:00:00Z'),
+        endsAt: new Date('2026-09-14T13:20:00Z'),
+        bookingChannel: 'PHONE',
+        serviceTypeId,
+      },
+    });
+  }
+
   describe('especialidades', () => {
     it('SP-002 crea una especialidad y deja constancia en la bitácora con autor e instante', async () => {
       const specialty = await createSpecialty();
@@ -330,6 +354,97 @@ describe('las especialidades por HTTP', () => {
       expect((response.body as Problem).errors?.[0]?.field).toBe('durationMinutes'); // prettier-ignore
     });
 
+    /**
+     * SP-021 desde D-021: la duración tiene que ser múltiplo del turno de la
+     * agenda, y NO SE PUEDE GUARDAR la que no lo sea.
+     *
+     * CONTRA POSTGRESQL DE VERDAD porque es lo que un doble no puede
+     * demostrar: el átomo vive en `site_parameter`, una tabla de otro módulo
+     * que este servicio lee por su puerto, y lo que se comprueba es que la
+     * fila no queda escrita.
+     */
+    describe('SP-021 · la duración es múltiplo del turno de la agenda (D-021)', () => {
+      it('SP-021 rechaza al crear una duración que no es múltiplo del turno, sin escribirla', async () => {
+        await createSite(prisma); // Nace con turnos de diez minutos (D-021).
+        const specialty = await createSpecialty();
+
+        const response = await post(`/${specialty.id}/service-types`, {
+          name: 'Control',
+          durationMinutes: 25,
+        }).expect(422);
+
+        const problem = response.body as Problem;
+        expect(problem.code).toBe('DURATION_NOT_SLOT_MULTIPLE');
+        expect(problem.errors?.[0]?.field).toBe('durationMinutes');
+        // NOMBRA EL ÁTOMO: sin el número, «duración inválida» manda a quien
+        // administra a leer el código fuente.
+        expect(problem.errors?.[0]?.message).toContain('10 minutos');
+        // Y no quedó escrita: la comprobación es ANTES del INSERT.
+        await expect(prisma.serviceType.count()).resolves.toBe(0);
+      });
+
+      it('SP-021 rechaza al editar una duración que no es múltiplo, dejando la anterior intacta', async () => {
+        await createSite(prisma);
+        const specialty = await createSpecialty();
+        const type = await createServiceType(specialty.id, 'Control', 20);
+
+        await patch(`/service-types/${type.id}`, {
+          durationMinutes: 25,
+        }).expect(422);
+
+        await expect(
+          prisma.serviceType.findUniqueOrThrow({
+            where: { id: type.id },
+            select: { durationMinutes: true },
+          }),
+        ).resolves.toEqual({ durationMinutes: 20 });
+      });
+
+      it('SP-021 acepta la duración que sí encaja en el turno de la sede', async () => {
+        const site = await createSite(prisma);
+        await prisma.siteParameter.update({
+          where: { siteId: site.id },
+          data: { slotAtomMinutes: 15 },
+        });
+        const specialty = await createSpecialty();
+
+        // 30 es múltiplo de 15; 20 no lo es, y la misma sede lo rechaza.
+        await post(`/${specialty.id}/service-types`, {
+          name: 'Primera vez',
+          durationMinutes: 30,
+        }).expect(201);
+        await post(`/${specialty.id}/service-types`, {
+          name: 'Control',
+          durationMinutes: 20,
+        }).expect(422);
+      });
+
+      it('SP-021 exige el múltiplo de TODAS las sedes, porque un tipo de atención no es de ninguna', async () => {
+        // Sedes de 10 y de 15: sólo los múltiplos de 30 se pueden reservar en
+        // las dos, y `service_type` no tiene `site_id`.
+        await createSite(prisma, 'Sede Norte');
+        const south = await createSite(prisma, 'Sede Sur');
+        await prisma.siteParameter.update({
+          where: { siteId: south.id },
+          data: { slotAtomMinutes: 15 },
+        });
+        const specialty = await createSpecialty();
+
+        const refused = await post(`/${specialty.id}/service-types`, {
+          name: 'Control',
+          durationMinutes: 20,
+        }).expect(422);
+        expect((refused.body as Problem).errors?.[0]?.message).toContain(
+          '30 minutos',
+        );
+
+        await post(`/${specialty.id}/service-types`, {
+          name: 'Primera vez',
+          durationMinutes: 30,
+        }).expect(201);
+      });
+    });
+
     it('SP-026 rechaza con SERVICE_TYPE_DUPLICATE dos tipos con el mismo nombre en la especialidad', async () => {
       const specialty = await createSpecialty();
       await createServiceType(specialty.id, 'Control', 20);
@@ -352,15 +467,15 @@ describe('las especialidades por HTTP', () => {
         data: {
           practitionerId,
           serviceTypeId: type.id,
-          durationMinutes: 45,
+          durationMinutes: 40,
         },
       });
 
       await destroy(`/service-types/${type.id}`).expect(204);
 
       // The exception CASCADEd by design: a personal override of a type that
-      // no longer exists means nothing. SERVICE_TYPE_IN_USE stays armed for
-      // the day agenda entries reference the type (C4).
+      // no longer exists means nothing. What DOES refuse the delete is an
+      // appointment naming the type — the case below.
       expect(
         await prisma.durationException.count({
           where: { serviceTypeId: type.id },
@@ -368,10 +483,44 @@ describe('las especialidades por HTTP', () => {
       ).toBe(0);
     });
 
+    it('SP-025 rechaza con SERVICE_TYPE_IN_USE borrar un tipo que una cita referencia', async () => {
+      const specialty = await createSpecialty();
+      const type = await createServiceType(specialty.id, 'Control', 20);
+      const appointment = await bookAppointmentWith(type.id);
+
+      const response = await destroy(`/service-types/${type.id}`).expect(409);
+
+      const problem = response.body as Problem;
+      expect(problem.code).toBe('SERVICE_TYPE_IN_USE');
+      // «Ofrecer desactivarlo» es la salida que el requisito exige, y el texto
+      // es lo que la recepcionista lee para tomarla.
+      expect(problem.title).toMatch(/desactiv/i);
+
+      // La cita sigue entera: el RESTRICT rechazó la operación completa, no
+      // dejó la fila apuntando a un tipo que ya no existe.
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: appointment.id },
+      });
+      expect(stored.serviceTypeId).toBe(type.id);
+      await expect(prisma.serviceType.count()).resolves.toBe(1);
+    });
+
+    it('SP-025 desactivar el tipo referenciado sí se admite: es la salida que se ofrece', async () => {
+      const specialty = await createSpecialty();
+      const type = await createServiceType(specialty.id, 'Control', 20);
+      await bookAppointmentWith(type.id);
+
+      const response = await patch(`/service-types/${type.id}`, {
+        active: false,
+      }).expect(200);
+
+      expect(response.body).toMatchObject({ id: type.id, active: false });
+    });
+
     it('SP-027 toda mutación de tipos y duraciones queda en la bitácora con autor', async () => {
       const specialty = await createSpecialty();
       const type = await createServiceType(specialty.id);
-      await patch(`/service-types/${type.id}`, { durationMinutes: 25 }).expect(200); // prettier-ignore
+      await patch(`/service-types/${type.id}`, { durationMinutes: 30 }).expect(200); // prettier-ignore
 
       const trail = await prisma.accessAudit.findMany({
         where: { resourceType: 'configuration' },
@@ -387,25 +536,17 @@ describe('las especialidades por HTTP', () => {
     });
 
     it('SP-024 cambiar una duración no toca ninguna cita ya reservada', async () => {
-      const site = await createSite(prisma);
-      await linkPractitionerToSite(prisma, practitionerId, site.id);
-      const patient = await createPatient(prisma);
       const specialty = await createSpecialty();
       const type = await createServiceType(specialty.id, 'Control', 20);
+      // LA CITA REFERENCIA EL TIPO, que es lo que hace la prueba pertinente
+      // desde C4: antes de que `agenda_entry.service_type_id` existiera, «no
+      // se tocan las citas» era trivialmente cierto porque ninguna cita tenía
+      // relación con el tipo. Ahora la tiene, y sigue siéndolo.
+      const booked = await bookAppointmentWith(type.id);
 
-      const booked = await prisma.agendaEntry.create({
-        data: {
-          kind: 'APPOINTMENT',
-          siteId: site.id,
-          practitionerId,
-          patientId: patient.id,
-          startsAt: new Date('2026-09-14T13:00:00Z'),
-          endsAt: new Date('2026-09-14T13:20:00Z'),
-          bookingChannel: 'PHONE',
-        },
-      });
-
-      await patch(`/service-types/${type.id}`, { durationMinutes: 45 }).expect(200); // prettier-ignore
+      // 40 y no 45: SP-021 exige múltiplo del turno de la sede (D-021), y la
+      // sede nace con diez minutos.
+      await patch(`/service-types/${type.id}`, { durationMinutes: 40 }).expect(200); // prettier-ignore
 
       // Row count AND content: the appointment neither disappeared nor moved.
       const entries = await prisma.agendaEntry.findMany();
@@ -413,7 +554,10 @@ describe('las especialidades por HTTP', () => {
       expect(entries[0]).toMatchObject({
         id: booked.id,
         startsAt: booked.startsAt,
+        // Los veinte minutos con los que se reservó, no los cuarenta que el
+        // tipo dice ahora: la duración rige HACIA ADELANTE.
         endsAt: booked.endsAt,
+        serviceTypeId: type.id,
         updatedAt: booked.updatedAt,
       });
     });

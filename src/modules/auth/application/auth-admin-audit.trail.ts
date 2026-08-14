@@ -14,6 +14,18 @@ export interface Requester {
 }
 
 /**
+ * The `resource_type` every entry about an account, a role or a grant carries.
+ *
+ * EXPORTED because AU-035's entry is NOT written through this collaborator: it
+ * rides inside the reset's own transaction, in
+ * `PrismaAccountAdminRepository.resetMfa`, and a second literal `'auth'` there
+ * is exactly the drift this class's own comment warns about — one query has to
+ * answer «quién cambió quién puede hacer qué», and it cannot if two writers
+ * spell the discriminator differently.
+ */
+export const AUTH_AUDIT_RESOURCE = 'auth';
+
+/**
  * Every mutation of an account, a role or a grant in the trail (AU-025).
  *
  * A collaborator and not a private method copied into two services: AU-025 is
@@ -42,7 +54,7 @@ export class AuthAdminAuditTrail {
   ): Promise<void> {
     await this.audit.record({
       userId: requester.userId,
-      resourceType: 'auth',
+      resourceType: AUTH_AUDIT_RESOURCE,
       resourceId,
       action,
       ip: requester.ip,

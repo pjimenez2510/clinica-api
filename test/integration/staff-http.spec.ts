@@ -640,9 +640,11 @@ describe('el personal por HTTP', () => {
         items: [{ specialtyId: specialty.id, isPrimary: true }],
       }).expect(200);
 
+      // 40 y no 45: SP-022 exige múltiplo del turno de la sede (D-021), y la
+      // sede nace con diez minutos.
       await put(
         `/practitioners/${practitioner.id}/duration-exceptions/${control.id}`,
-        { durationMinutes: 45 },
+        { durationMinutes: 40 },
       ).expect(204);
 
       const listed = await get(
@@ -664,8 +666,8 @@ describe('el personal por HTTP', () => {
       ).toMatchObject({
         // prettier-ignore
         baseMinutes: 20,
-        exceptionMinutes: 45,
-        resolvedMinutes: 45,
+        exceptionMinutes: 40,
+        resolvedMinutes: 40,
       });
       // …and without one the base of the specialty·type rules (level 2).
       expect(
@@ -715,6 +717,64 @@ describe('el personal por HTTP', () => {
 
       expect((response.body as Problem).errors?.[0]?.field).toBe('durationMinutes'); // prettier-ignore
     });
+
+    /**
+     * SP-022 desde D-021: la excepción del médico también tiene que ser
+     * múltiplo del turno de la agenda, y NO SE PUEDE GUARDAR la que no lo sea.
+     *
+     * Es el peldaño que GANA en SP-023, así que dejarlo fuera haría cosmética
+     * la garantía: todos los tipos encajarían en la rejilla y la
+     * sobreescritura de un solo médico dejaría sin reservar todas sus citas.
+     */
+    it('SP-022 rechaza una excepción que no es múltiplo del turno, sin escribirla', async () => {
+      const practitioner = await createPractitioner();
+      const specialty = await createSpecialty();
+      const type = await createServiceType(specialty.id);
+
+      const response = await put(
+        `/practitioners/${practitioner.id}/duration-exceptions/${type.id}`,
+        { durationMinutes: 25 },
+      ).expect(422);
+
+      const problem = response.body as Problem;
+      expect(problem.code).toBe('DURATION_NOT_SLOT_MULTIPLE');
+      expect(problem.errors?.[0]?.field).toBe('durationMinutes');
+      // La sede de este fichero nace con el turno de D-021: diez minutos.
+      expect(problem.errors?.[0]?.message).toContain('10 minutos');
+      await expect(prisma.durationException.count()).resolves.toBe(0);
+    });
+
+    it('SP-022 exige el múltiplo de TODAS las sedes, no de las del profesional', async () => {
+      // La excepción cuelga de un `service_type`, que no tiene sede, y a un
+      // médico se le puede añadir otra sede mañana sin que nadie vuelva a
+      // mirar sus excepciones.
+      const practitioner = await createPractitioner();
+      const specialty = await createSpecialty();
+      // El tipo se crea ANTES de la segunda sede: con las dos rejillas ya
+      // puestas, sus 20 minutos tampoco se podrían guardar (SP-021).
+      const type = await createServiceType(specialty.id);
+
+      const south = await createSite(prisma, 'Sede Sur del átomo');
+      await prisma.siteParameter.update({
+        where: { siteId: south.id },
+        data: { slotAtomMinutes: 15 },
+      });
+
+      // El profesional sólo atiende en la sede de diez minutos, y aun así 20
+      // se rechaza: mañana puede atender en la de quince.
+      const refused = await put(
+        `/practitioners/${practitioner.id}/duration-exceptions/${type.id}`,
+        { durationMinutes: 20 },
+      ).expect(422);
+      expect((refused.body as Problem).errors?.[0]?.message).toContain(
+        '30 minutos',
+      );
+
+      await put(
+        `/practitioners/${practitioner.id}/duration-exceptions/${type.id}`,
+        { durationMinutes: 30 },
+      ).expect(204);
+    });
   });
 
   // --- Schedule rules (S2) ----------------------------------------------------
@@ -724,7 +784,6 @@ describe('el personal por HTTP', () => {
       weekday: 1,
       startTime: '08:00',
       endTime: '12:00',
-      slotMinutes: 20,
       validFrom: '2026-01-01',
     };
 
@@ -769,31 +828,31 @@ describe('el personal por HTTP', () => {
       expect((response.body as Problem).code).toBe('PRACTITIONER_NOT_SCHEDULABLE'); // prettier-ignore
     });
 
-    it('ST-045 la base rechaza un turno que no cabe en la franja', async () => {
-      const practitioner = await createPractitioner();
-
-      // Straight SQL: the service mirrors this per field, the CHECK is the
-      // guarantee for a seed, an import or a psql.
-      await expect(
-        prisma.$executeRaw`
-          INSERT INTO practitioner_schedule_rule
-            (practitioner_id, site_id, weekday, start_time, end_time, slot_minutes, valid_from, updated_at)
-          VALUES (${practitioner.id}::uuid, ${siteId}::uuid, 1, '08:00', '08:15', 20, '2026-01-01', now())
-        `,
-      ).rejects.toThrowError(/schedule_rule_slot_fits/);
-    });
-
-    it('ST-045 el espejo responde por campo antes de llegar a la base', async () => {
+    /**
+     * D-021 (14-08-2026) SE LLEVÓ EL `CHECK` QUE SOSTENÍA ESTO, y hay que
+     * decirlo aquí porque aquí es donde se probaba: `schedule_rule_slot_fits`
+     * leía `practitioner_schedule_rule.slot_minutes`, columna que ya no
+     * existe, y un `CHECK` no puede consultar `site_parameter` para leer el
+     * átomo de la sede. La comprobación sigue viva en la aplicación —abajo— y
+     * lo que se pierde es que una `INSERT` por `psql` pueda crear una franja
+     * más corta que el turno. Es una fila inútil, no peligrosa: la derivación
+     * la trata como «esta regla no ofrece cupos».
+     */
+    it('ST-045 rechaza por campo una franja donde el turno de la sede no cabe', async () => {
       const practitioner = await createPractitioner();
 
       const response = await post(
         `/practitioners/${practitioner.id}/schedule-rules`,
-        { siteId, ...RULE, startTime: '08:00', endTime: '08:15' },
+        { siteId, ...RULE, startTime: '08:00', endTime: '08:05' },
       ).expect(422);
 
       const problem = response.body as Problem;
       expect(problem.code).toBe('INVALID_SCHEDULE_RULE');
-      expect(problem.errors?.[0]?.field).toBe('slotMinutes');
+      // El campo es `endTime` desde D-021: los minutos por turno ya no son un
+      // campo de este formulario, así que el fin de franja es lo único que
+      // quien administra puede corregir aquí.
+      expect(problem.errors?.[0]?.field).toBe('endTime');
+      expect(problem.errors?.[0]?.message).toContain('10 minutos');
     });
 
     it('ST-042 rechaza con SCHEDULE_RULE_OVERLAP una regla que solapa otra vigente', async () => {
@@ -937,7 +996,9 @@ describe('el personal por HTTP', () => {
         { siteId, ...RULE },
       ).expect(201);
       const ruleId = (created.body as ScheduleOutcome).rule.id;
-      await patch(`/schedule-rules/${ruleId}`, { slotMinutes: 30 }).expect(200);
+      await patch(`/schedule-rules/${ruleId}`, { endTime: '13:00' }).expect(
+        200,
+      );
       await destroy(`/schedule-rules/${ruleId}`).expect(200);
 
       const trail = await prisma.accessAudit.findMany({
@@ -1191,7 +1252,6 @@ describe('el personal por HTTP', () => {
               weekday: 1,
               startTime: new Date(`1970-01-01T${startHour}:00Z`),
               endTime: new Date(`1970-01-01T${endHour}:00Z`),
-              slotMinutes: 20,
               validFrom: new Date('2026-01-01T00:00:00Z'),
             },
           }),
@@ -1280,7 +1340,8 @@ describe('el personal por HTTP', () => {
       // Visiblemente distinta de la base (SP-020): así se lee de un vistazo la
       // jerarquía de D-010 —excepción → base—.
       expect(exception).toMatchObject({
-        durationMinutes: 45,
+        // D-021: múltiplo del turno de la sede, que nace en diez minutos.
+        durationMinutes: 40,
         serviceType: { name: 'Control', durationMinutes: 20 },
       });
 

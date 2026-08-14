@@ -18,18 +18,26 @@ const RULE = {
   weekday: 1,
   startTime: at('08:00'),
   endTime: at('12:00'),
-  slotMinutes: 20,
   validFrom: on('2026-01-01'),
   validTo: null,
 };
 
+/**
+ * D-021: the slot length is the SITE's now, so it arrives as an argument. 20
+ * is what these cases used to read off the rule itself.
+ */
+const problemsOf = (
+  draft: Parameters<typeof scheduleRuleProblems>[0],
+  slotAtomMinutes: number | null = 20,
+) => scheduleRuleProblems(draft, slotAtomMinutes);
+
 describe('la regla de horario', () => {
   it('ST-045 acepta una franja en la que el turno cabe holgadamente', () => {
-    expect(scheduleRuleProblems(RULE)).toEqual([]);
+    expect(problemsOf(RULE)).toEqual([]);
   });
 
   it('ST-045 rechaza que la hora de fin no sea posterior a la de inicio', () => {
-    const problems = scheduleRuleProblems({
+    const problems = problemsOf({
       ...RULE,
       startTime: at('12:00'),
       endTime: at('08:00'),
@@ -38,47 +46,47 @@ describe('la regla de horario', () => {
     expect(problems.map((problem) => problem.field)).toContain('endTime');
   });
 
-  it('ST-045 rechaza un turno que no cabe ni una vez en la franja', () => {
-    // Representable, ordered, positive — and it yields NOT ONE slot. On screen
-    // that is a practitioner with no agenda and nothing saying why.
-    const problems = scheduleRuleProblems({
+  it('ST-045 rechaza una franja en la que el turno de la sede no cabe ni una vez', () => {
+    // Representable and ordered — and it yields NOT ONE slot. On screen that
+    // is a practitioner with no agenda and nothing saying why. D-021 moved the
+    // field to `endTime`: the slot length is no longer on this form, so the
+    // band is the only thing the administrator can change here.
+    const problems = problemsOf({
       ...RULE,
       startTime: at('08:00'),
       endTime: at('08:15'),
-      slotMinutes: 20,
     });
 
-    expect(problems).toEqual([
-      expect.objectContaining({ field: 'slotMinutes' }),
-    ]);
+    expect(problems).toEqual([expect.objectContaining({ field: 'endTime' })]);
+    expect(problems[0]?.message).toContain('20 minutos');
   });
 
-  it('ST-045 admite el turno que cabe EXACTAMENTE una vez', () => {
+  it('ST-045 admite la franja en la que el turno cabe EXACTAMENTE una vez', () => {
     expect(
-      scheduleRuleProblems({
-        ...RULE,
-        startTime: at('08:00'),
-        endTime: at('08:20'),
-        slotMinutes: 20,
-      }),
+      problemsOf({ ...RULE, startTime: at('08:00'), endTime: at('08:20') }),
     ).toEqual([]);
+  });
+
+  it('ST-045 no juzga la franja cuando la sede no declara ningún turno', () => {
+    // AG-095's case: `null` means «there is nothing to compare against», never
+    // «every band is too short». A restored dump must not refuse every
+    // schedule in the clinic.
+    expect(problemsOf({ ...RULE, endTime: at('08:01') }, null)).toEqual([]);
   });
 
   it('ST-045 informa de TODOS los errores a la vez, no del primero', () => {
     // An administrator fixing a form one refusal at a time is how a two-field
     // mistake becomes three round trips.
-    const problems = scheduleRuleProblems({
+    const problems = problemsOf({
       weekday: 9,
       startTime: at('12:00'),
       endTime: at('08:00'),
-      slotMinutes: 0,
       validFrom: on('2026-03-01'),
       validTo: on('2026-02-01'),
     });
 
     expect(problems.map((problem) => problem.field).sort()).toEqual([
       'endTime',
-      'slotMinutes',
       'validTo',
       'weekday',
     ]);
@@ -88,7 +96,7 @@ describe('la regla de horario', () => {
     // An empty daterange overlaps nothing, so such a rule would also slip past
     // the ST-042 exclusion entirely.
     expect(
-      scheduleRuleProblems({
+      problemsOf({
         ...RULE,
         validFrom: on('2026-05-02'),
         validTo: on('2026-05-01'),
@@ -101,7 +109,7 @@ describe('la regla de horario', () => {
     // `slot-availability.ts` has read it since E1. A rule for one Monday only
     // is a real thing — a locum covering a single day.
     expect(
-      scheduleRuleProblems({
+      problemsOf({
         ...RULE,
         validFrom: on('2026-05-01'),
         validTo: on('2026-05-01'),

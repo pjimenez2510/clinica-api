@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { AccessAuditEntry } from '../../../shared/audit/access-audit.port';
-import { PERMISSION_CATALOGUE } from '../../../shared/authorisation/permission.catalogue';
+import {
+  EXPLICIT_GRANT_ONLY_PERMISSIONS,
+  PERMISSION_DEFINITIONS,
+} from '../../../shared/authorisation/permission.catalogue';
 import {
   CannotDemoteSelfError,
+  PermissionNotInstalledError,
   RoleNotFoundError,
   SystemRoleProtectedError,
   UnknownPermissionError,
@@ -70,6 +74,13 @@ class RolesDouble implements RoleAdminRepositoryPort {
   /** Role ids the CALLER holds through a live grant. */
   heldByCaller: string[] = [ADMIN_ROLE.id];
   permissions: string[] = [];
+  /**
+   * Codes the `permission` mirror does NOT have, which is the state between a
+   * deploy and `pnpm db:seed:auth`. Empty by default: an installation whose
+   * mirror is published is the normal case, and every other test here assumes
+   * it.
+   */
+  notInstalled: string[] = [];
 
   list(includeInactive: boolean): Promise<readonly RoleView[]> {
     this.calls.push({ method: 'list', args: [includeInactive] });
@@ -100,6 +111,13 @@ class RolesDouble implements RoleAdminRepositoryPort {
   listPermissions(roleId: string): Promise<readonly string[]> {
     this.calls.push({ method: 'listPermissions', args: [roleId] });
     return Promise.resolve(this.permissions);
+  }
+
+  installedPermissions(codes: readonly string[]): Promise<readonly string[]> {
+    this.calls.push({ method: 'installedPermissions', args: [codes] });
+    return Promise.resolve(
+      codes.filter((code) => !this.notInstalled.includes(code)),
+    );
   }
 
   replacePermissions(
@@ -279,9 +297,34 @@ describe('la administración de roles', () => {
       // el código el que decide qué comprueba cada ruta.
       const catalogue = service.catalogue();
 
-      expect(catalogue).toEqual(PERMISSION_CATALOGUE);
+      expect(catalogue).toEqual(PERMISSION_DEFINITIONS);
       expect(catalogue.every((entry) => entry.description.length > 0)).toBe(true); // prettier-ignore
       expect(catalogue.every((entry) => entry.resource.length > 0)).toBe(true);
+    });
+
+    it('AU-033 expone el catálogo ENTERO, incluidos los que hay que conceder a propósito', () => {
+      // `explicitGrantOnly` gobierna a las semillas, no a la pantalla: si el
+      // permiso desapareciera del catálogo, la clínica no podría concedérselo
+      // a nadie y AU-035 sería inalcanzable — el fallo opuesto, y también deja
+      // al médico fuera.
+      const codes = service.catalogue().map((entry) => entry.code);
+
+      for (const risky of EXPLICIT_GRANT_ONLY_PERMISSIONS) {
+        expect(codes, risky).toContain(risky);
+      }
+    });
+
+    it('AU-033 no publica la marca interna de cómo se concede un permiso', () => {
+      // La forma publicada es `PermissionDto`: tres campos. Un cuarto que el
+      // documento OpenAPI no declara es un campo que el frontend acaba
+      // escribiendo a mano.
+      for (const entry of service.catalogue()) {
+        expect(Object.keys(entry).sort()).toEqual([
+          'code',
+          'description',
+          'resource',
+        ]);
+      }
     });
 
     it('AU-033 rechaza un código de permiso que el sistema no declara', async () => {
@@ -314,6 +357,43 @@ describe('la administración de roles', () => {
         ),
       ).rejects.toBeInstanceOf(UnknownPermissionError);
 
+      expect(
+        repository.calls.some((call) => call.method === 'replacePermissions'),
+      ).toBe(false);
+    });
+
+    it('AU-033 distingue un permiso que el código no declara de uno que la base aún no tiene', async () => {
+      /**
+       * EL FALLO REAL, REPRODUCIDO. Conceder `user:reset-mfa` recién declarado
+       * contra una base que todavía no había corrido `pnpm db:seed:auth` moría
+       * en la clave foránea y llegaba a la pantalla como «Datos inválidos»
+       * sobre un formulario donde nada era inválido — y sin nombrar el permiso,
+       * así que ni quien administra ni soporte podían saber qué hacer.
+       *
+       * Los dos códigos son distintos a propósito: `UNKNOWN_PERMISSION` dice
+       * «actualice la pantalla, eso no existe» y sería mentira aquí.
+       */
+      repository.notInstalled = ['user:reset-mfa'];
+
+      try {
+        await service.replacePermissions(
+          CUSTOM_ROLE.id,
+          ['agenda:read', 'user:reset-mfa'],
+          REQUESTER,
+        );
+        expect.unreachable('debía rechazarse');
+      } catch (error) {
+        expect(error).toBeInstanceOf(PermissionNotInstalledError);
+        expect((error as PermissionNotInstalledError).code).toBe(
+          'PERMISSION_NOT_INSTALLED',
+        );
+        expect(
+          (error as PermissionNotInstalledError).fieldErrors?.[0]?.message,
+        ).toContain('user:reset-mfa');
+      }
+
+      // Y no escribe nada: el rol conserva lo que ya tenía en vez de quedarse
+      // con el subconjunto que sí estaba instalado.
       expect(
         repository.calls.some((call) => call.method === 'replacePermissions'),
       ).toBe(false);

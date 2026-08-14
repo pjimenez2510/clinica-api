@@ -112,6 +112,15 @@ class AccountsDouble implements AccountAdminRepositoryPort {
     return Promise.resolve(this.setActiveAnswer);
   }
 
+  /**
+   * AU-035 is `MfaResetService`'s, not this one's. It throws rather than
+   * returning something plausible: if `AccountsService` ever starts calling
+   * it, that has to be a decision somebody made, not a test that stayed green.
+   */
+  resetMfa(): Promise<AccountView | null> {
+    throw new Error('not used');
+  }
+
   grants: GrantView[] = [];
 
   listGrants(userId: string): Promise<readonly GrantView[]> {
@@ -159,6 +168,10 @@ class RolesDouble implements RoleAdminRepositoryPort {
   }
   listPermissions(): Promise<readonly string[]> {
     return Promise.resolve([]);
+  }
+  /** Nada de esta suite reparte permisos; el espejo está siempre publicado. */
+  installedPermissions(codes: readonly string[]): Promise<readonly string[]> {
+    return Promise.resolve(codes);
   }
   replacePermissions(): Promise<readonly string[]> {
     return Promise.resolve([]);

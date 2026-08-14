@@ -125,6 +125,7 @@ quién trabaja en la clínica.
 | `pnpm arch:check` | Verifica las reglas de dependencia entre capas |
 | `pnpm db:migrate:new <nombre>` | Crea una migración VACÍA para escribirla a mano |
 | `pnpm db:deploy` | Aplica las migraciones escritas. Nunca inventa SQL |
+| `pnpm db:seed:auth` | Publica el catálogo de permisos en la base. **Obligatorio tras cada despliegue** (D-016) |
 | `pnpm db:reset` | Borra la base, migra y siembra de nuevo |
 | `pnpm db:studio` | Explorador visual de la base |
 
@@ -178,3 +179,38 @@ pnpm db:migrate:new nombre_de_la_migracion
 pnpm migrations:check
 pnpm db:deploy
 ```
+
+---
+
+## Desplegar
+
+**Dos pasos, en este orden, y el segundo no es opcional** (D-016):
+
+```bash
+pnpm db:deploy      # aplica las migraciones
+pnpm db:seed:auth   # publica el catálogo de permisos en la base
+```
+
+`pnpm db:seed` **no** se usa fuera de desarrollo: crea usuarios de prueba.
+
+### Por qué el segundo paso
+
+La tabla `permission` es un **espejo** del catálogo que vive en el código
+(`src/shared/authorisation/permission.catalogue.ts`), y existe para que las
+concesiones de un rol tengan integridad referencial. La pantalla de
+administración lee el catálogo **del código** —a propósito: si los dos
+discrepan, manda el código, porque es el que decide lo que comprueba cada
+ruta—, así que entre desplegar una versión que declara un permiso nuevo y
+publicar el espejo, esa pantalla ofrece una casilla que la clave foránea
+rechaza.
+
+`pnpm db:seed:auth` es **idempotente**: publica los permisos que falten, no
+borra ninguno —un rol puede estar referenciándolo— y no retira ninguna
+concesión. Lo único que concede es un permiso recién declarado a los roles de
+sistema que lo declaran (D-012), y nunca los marcados `explicitGrantOnly`, que
+una instalación tiene que conceder a propósito (AU-035).
+
+Si el paso se olvida, la red es el error **`PERMISSION_NOT_INSTALLED`**: quien
+intente conceder ese permiso recibe una frase que nombra el permiso y dice a
+quién avisar, en vez de un «Datos inválidos» que no lleva a ninguna parte. Es
+una red, no un sustituto.

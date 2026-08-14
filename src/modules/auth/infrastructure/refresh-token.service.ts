@@ -112,6 +112,39 @@ export class RefreshTokenService {
     throw new InvalidRefreshTokenError();
   }
 
+  /**
+   * AU-036. Is this session family still open?
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * WHAT IT IS FOR, AND WHY THE ACCESS TOKEN NEEDS IT.
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * An access token is self-contained: once signed, nothing about it can be
+   * withdrawn before it expires. Every revocation in this file therefore closed
+   * only half of a session — the refresh chain — and left up to a full
+   * `JWT_ACCESS_TTL` of complete access alive. `JwtAuthGuard` asks this on
+   * every authenticated request so the other half closes too.
+   *
+   * ONE INDEXED LOOKUP (`refresh_token_family_id_idx`), AND IT IS THE PRICE.
+   * The alternative that avoids the query — an instant on `app_user` compared
+   * against the token's `iat` — costs the same lookup on another table, plus a
+   * column that EVERY future path which closes sessions has to remember to
+   * bump. This derives from the fact that already exists and that every one of
+   * those paths already writes: the family is revoked.
+   *
+   * A ROW WITH `revoked_at IS NULL` IS WHAT «OPEN» MEANS, and used rows count.
+   * Rotation marks `used_at` and leaves `revoked_at` alone precisely so reuse
+   * stays detectable, so requiring an unused row would kill the session of
+   * anybody whose client refreshed while a request was in flight.
+   */
+  async isFamilyOpen(familyId: string): Promise<boolean> {
+    const open = await this.prisma.refreshToken.findFirst({
+      where: { familyId, revokedAt: null },
+      select: { id: true },
+    });
+    return open !== null;
+  }
+
   /** Closes one session. The other sessions of the user stay open. */
   async revokeFamily(familyId: string, reason: string): Promise<void> {
     await this.prisma.refreshToken.updateMany({

@@ -28,6 +28,7 @@ import { RequirePermission } from '../../shared/http/auth.decorators';
 import { AccountsService } from './application/accounts.service';
 import type { Requester } from './application/auth-admin-audit.trail';
 import { CredentialInvitationsService } from './application/credential-invitations.service';
+import { MfaResetService } from './application/mfa-reset.service';
 import { RolesService } from './application/roles.service';
 import {
   AccountDto,
@@ -108,6 +109,15 @@ export class AuthAdminController {
      * one-line delegation.
      */
     private readonly invitations: CredentialInvitationsService,
+    /**
+     * A4. INJECTED DIRECTLY too, and for the same reason as the invitations:
+     * `AccountsService` is at ADR-008 §2's eight-use-case limit, and reaching
+     * this through it would buy a one-line delegation at the price of crossing
+     * it. The two also change for different reasons — that one for how a
+     * person is hired and let go, this one for how a lost second factor is
+     * recovered (D-014).
+     */
+    private readonly mfaReset: MfaResetService,
     private readonly currentUser: CurrentUserService,
   ) {}
 
@@ -263,6 +273,42 @@ export class AuthAdminController {
     @Req() req: Request,
   ): Promise<AccountResponse> {
     return this.accounts.deactivate(id, this.requester(req));
+  }
+
+  /**
+   * AU-035, AU-036. Retires the account's second factor so it can be enrolled
+   * again.
+   *
+   * ⚠️ `user:reset-mfa`, AND NOT `user:manage`. It is the only route in this
+   * controller that does not reuse the administration permission, and the
+   * exception is the point (D-014): whoever retires a doctor's second factor
+   * removes the last barrier between a password and their signature, and
+   * whoever can also re-invite them can sign in their name. No shipped role
+   * carries it — the installation grants it deliberately, like any permission
+   * of this weight, and `authorisation-data.spec.ts` fails if a deploy ever
+   * hands it out on its own.
+   *
+   * A POST and 200, like `deactivate`: this is an ACTION on the account with a
+   * second half that must not be forgettable — the open sessions are revoked —
+   * and nothing was created. It returns the account so the row on the screen
+   * stops saying «con segundo factor» without a reload.
+   *
+   * NO BODY, and no password field anywhere near it. Whoever resets never
+   * learns any credential; the person keeps their own password and enrols a
+   * new factor themselves.
+   */
+  @Post('users/:id/reset-mfa')
+  @RequirePermission('user:reset-mfa', 'global')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Reiniciar el segundo factor de una cuenta y cerrar sus sesiones',
+  })
+  @ApiOkResponse({ type: AccountDto })
+  async resetUserMfa(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request,
+  ): Promise<AccountResponse> {
+    return this.mfaReset.reset(id, this.requester(req));
   }
 
   /** AU-022. Restores access; it does not resurrect any session. */

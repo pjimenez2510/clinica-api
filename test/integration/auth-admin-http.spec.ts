@@ -3,6 +3,10 @@ import { ThrottlerStorage } from '@nestjs/throttler';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
+// AU-035: el segundo factor se matricula por las rutas reales, y el TOTP se
+// calcula desde el `uri` de la matrícula — lo que haría el teléfono al leer el
+// QR. Reconstruirlo con los parámetros copiados del servicio probaría la copia.
+import { URI } from 'otpauth';
 import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
@@ -846,6 +850,78 @@ describe('la administración de cuentas y roles por HTTP', () => {
       ]);
     });
 
+    it('AU-033 dice que el permiso NO ESTÁ INSTALADO cuando la base va por detrás del código', async () => {
+      /**
+       * ═══════════════════════════════════════════════════════════════════════
+       * EL FALLO TAL Y COMO OCURRIÓ, CONTRA LA BASE DE VERDAD.
+       * ═══════════════════════════════════════════════════════════════════════
+       *
+       * `permission` es un ESPEJO del catálogo del código, y la pantalla lee el
+       * catálogo del CÓDIGO —a propósito: `RolesService.catalogue()` explica por
+       * qué—. Entre desplegar una versión que declara un permiso nuevo y correr
+       * `pnpm db:seed:auth` los dos discrepan, y marcar esa casilla moría en la
+       * clave foránea: 422 `RELATED_RECORD_MISSING`, en pantalla «Datos
+       * inválidos», sobre un formulario donde nada era inválido.
+       *
+       * NINGUNA PRUEBA PODÍA VERLO, y esa es la otra mitad del defecto: todas
+       * las de integración llaman a `syncAuthorisation` al preparar, así que la
+       * discrepancia era irrepresentable en la suite. Aquí se provoca borrando
+       * la fila del espejo, que es exactamente el estado de un despliegue sin
+       * sincronizar.
+       *
+       * `user:reset-mfa` y no otro porque es el que lo destapó: AU-035 obliga a
+       * que una instalación lo conceda a propósito, así que hay una persona
+       * delante de esa pantalla marcándolo, y lo que obtenía no le decía nada.
+       */
+      const role = await createRole();
+      await prisma.permission.delete({ where: { code: 'user:reset-mfa' } });
+
+      const response = await put(`/roles/${role.id}/permissions`, {
+        permissions: ['agenda:read', 'user:reset-mfa'],
+      }).expect(409);
+
+      const problem = response.body as Problem;
+      expect(problem.code).toBe('PERMISSION_NOT_INSTALLED');
+
+      /**
+       * LO QUE SE AFIRMA ES EL `errors[0].message`, Y NO EL `title`, porque es
+       * el que la pantalla enseña: `ApiError.userMessage` en `clinica-web`
+       * prefiere el error de campo sobre el título. La primera versión de este
+       * arreglo puso la frase accionable en `title` y una lista de códigos
+       * pelada en el campo, así que en pantalla se leía «Permisos sin
+       * instalar: user:reset-mfa» — mejor que «Datos inválidos», pero sin
+       * ninguna de las palabras que dicen qué hacer.
+       */
+      const message = problem.errors?.[0]?.message ?? '';
+      // El permiso, para poder decir cuál en una llamada a soporte.
+      expect(message).toContain('user:reset-mfa');
+      // Qué hacer ahora, y a quién avisar para que deje de pasar.
+      expect(message).toContain('Desmárquelo');
+      expect(message).toContain('avise a quien administra');
+
+      // Y no se escribió el subconjunto que sí estaba instalado: el rol
+      // conserva lo que tenía.
+      const after = await get(`/roles/${role.id}/permissions`).expect(200);
+      expect((after.body as RolePermissionsBody).permissions).toEqual([]);
+    });
+
+    it('AU-033 guarda con normalidad en cuanto el espejo está publicado', async () => {
+      // La otra mitad de la prueba de arriba: el rechazo es por el estado de la
+      // instalación, no por el permiso. Sin esto, un `if` que rechazara
+      // `user:reset-mfa` siempre pasaría igual — y AU-035 dejaría de poder
+      // cumplirse, porque la clínica no podría concedérselo a nadie.
+      const role = await createRole();
+
+      await put(`/roles/${role.id}/permissions`, {
+        permissions: ['user:reset-mfa'],
+      }).expect(200);
+
+      const after = await get(`/roles/${role.id}/permissions`).expect(200);
+      expect((after.body as RolePermissionsBody).permissions).toEqual([
+        'user:reset-mfa',
+      ]);
+    });
+
     it('AU-034 ADVIERTE de record:* junto a user:manage y guarda igualmente', async () => {
       // El requisito es advertir SIN impedir: rechazarlo empujaría a una
       // clínica pequeña a compartir una cuenta, que es peor para la bitácora.
@@ -1121,6 +1197,540 @@ describe('la administración de cuentas y roles por HTTP', () => {
         { permissions: ['audit:read'] },
         recepcion,
       ).expect(403);
+    });
+  });
+
+  /**
+   * A4 — recuperar el segundo factor (AU-035, AU-036, REQ-154, D-014).
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * POR QUÉ ESTO NO PUEDE PROBARSE CON DOBLES.
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Lo que AU-035 promete es una AUSENCIA en la base: el secreto TOTP, los
+   * códigos de respaldo y los refrescos vivos de esa cuenta dejan de estar. Un
+   * doble que contesta «hecho» demuestra que el doble contesta. Y la promesa
+   * añadida —que las tres desaparecen en la MISMA operación— sólo es
+   * observable si hay una transacción de verdad detrás: una cuenta con el
+   * secreto borrado y diez códigos vivos es un segundo factor a medias que
+   * nadie puede usar y que la pantalla presenta como retirado.
+   *
+   * El segundo factor se matricula recorriendo las rutas REALES, con el TOTP
+   * calculado desde el `uri` que devuelve la matrícula —lo que haría la
+   * aplicación del teléfono al leer el QR—. Insertar las filas a mano probaría
+   * la inserción.
+   */
+  describe('el reinicio del segundo factor', () => {
+    const SOPORTE_EMAIL = 'soporte@clinica.ec';
+    const SOPORTE_CEDULA = '1713175071';
+    const MEDICO_EMAIL = 'medico.sin.telefono@clinica.ec';
+
+    interface Operator {
+      token: string;
+      userId: string;
+    }
+
+    /**
+     * Una cuenta que puede reiniciar segundos factores Y NADA MÁS.
+     *
+     * El rol se crea aquí porque NINGÚN rol de fábrica lleva este permiso
+     * (AU-035, D-014) — que es justo lo que afirma
+     * `authorisation-data.spec.ts`—. Que la clínica tenga que concederlo a
+     * mano es el requisito, así que la prueba lo concede a mano.
+     */
+    async function signInWithResetPermission(): Promise<Operator> {
+      await prisma.role.create({
+        data: {
+          code: 'SOPORTE',
+          name: 'Soporte técnico',
+          permissions: { create: [{ permissionCode: 'user:reset-mfa' }] },
+        },
+      });
+      // La caché de rol→permiso se indexa por id; sin esto el rol recién
+      // creado no concede nada durante su TTL.
+      registry.invalidate();
+
+      const operatorToken = await signIn(
+        SOPORTE_EMAIL,
+        'SOPORTE',
+        SOPORTE_CEDULA,
+      );
+      const user = await prisma.user.findUniqueOrThrow({
+        where: { email: SOPORTE_EMAIL },
+      });
+
+      return { token: operatorToken, userId: user.id };
+    }
+
+    interface EnrolledDoctor {
+      userId: string;
+      /** La cookie de refresco de una sesión abierta. */
+      cookies: string[];
+      /**
+       * El token de acceso de esa sesión, YA con el segundo factor superado.
+       *
+       * Se devuelve porque AU-036 habla de «sesiones abiertas» y una sesión
+       * abierta son dos cosas: la cookie de refresco y este token. Sin él, la
+       * prueba sólo alcanzaría la mitad que caduca sola.
+       */
+      accessToken: string;
+      backupCodes: string[];
+    }
+
+    /** Una cuenta con el segundo factor matriculado y una sesión abierta. */
+    async function enrolledDoctor(): Promise<EnrolledDoctor> {
+      const user = await prisma.user.create({
+        data: {
+          email: MEDICO_EMAIL,
+          firstName: 'Ana',
+          lastName: 'Villacís',
+          passwordHash: await hash(),
+        },
+      });
+
+      const signedIn = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ email: MEDICO_EMAIL, password: PASSWORD })
+        .expect(200);
+      const cookies = signedIn.get('Set-Cookie');
+      expect(cookies, 'el inicio de sesión debe fijar la cookie').toBeDefined();
+      const accessToken = (signedIn.body as { accessToken: string })
+        .accessToken;
+
+      const enrolment = (
+        await request(app.getHttpServer())
+          .post('/api/v1/auth/mfa/enroll')
+          .set('Authorization', `Bearer ${accessToken}`)
+          .expect(200)
+      ).body as { uri: string };
+
+      const confirmation = (
+        await request(app.getHttpServer())
+          .post('/api/v1/auth/mfa/confirm')
+          .set('Authorization', `Bearer ${accessToken}`)
+          .send({ code: URI.parse(enrolment.uri).generate() })
+          .expect(200)
+      ).body as { backupCodes: string[] };
+
+      return { userId: user.id, cookies: cookies!, accessToken, backupCodes: confirmation.backupCodes }; // prettier-ignore
+    }
+
+    const resetMfa = (userId: string, auth: string) =>
+      post(`/users/${userId}/reset-mfa`, {}, auth);
+
+    it('AU-035 borra el secreto, la marca de matrícula, el último paso y los códigos de respaldo', async () => {
+      const operator = await signInWithResetPermission();
+      const doctor = await enrolledDoctor();
+
+      // ANTES: si esto no se afirma, la prueba pasaría con una cuenta que
+      // nunca tuvo segundo factor y no demostraría nada.
+      const before = await prisma.user.findUniqueOrThrow({
+        where: { id: doctor.userId },
+        select: { mfaSecretEncrypted: true, mfaEnabledAt: true },
+      });
+      expect(before.mfaSecretEncrypted).not.toBeNull();
+      expect(before.mfaEnabledAt).not.toBeNull();
+      expect(doctor.backupCodes.length).toBeGreaterThan(0);
+      expect(
+        await prisma.backupCode.count({ where: { userId: doctor.userId } }),
+      ).toBe(doctor.backupCodes.length);
+
+      const response = await resetMfa(doctor.userId, operator.token).expect(
+        200,
+      );
+      expect((response.body as AccountBody & { mfaEnabled: boolean }).mfaEnabled).toBe(false); // prettier-ignore
+
+      const after = await prisma.user.findUniqueOrThrow({
+        where: { id: doctor.userId },
+        select: {
+          mfaSecretEncrypted: true,
+          mfaEnabledAt: true,
+          mfaLastStep: true,
+        },
+      });
+      expect(after.mfaSecretEncrypted).toBeNull();
+      expect(after.mfaEnabledAt).toBeNull();
+      // El último paso consumido también: dejarlo obligaría a la próxima
+      // matrícula a esperar a que el reloj lo superase.
+      expect(after.mfaLastStep).toBeNull();
+      expect(
+        await prisma.backupCode.count({ where: { userId: doctor.userId } }),
+      ).toBe(0);
+    });
+
+    it('AU-035 no deja la cuenta a medias: o desaparecen el secreto y los códigos, o ninguno', async () => {
+      // La atomicidad, afirmada sobre el estado resultante: no existe ningún
+      // instante observable con el secreto retirado y códigos vivos, ni al
+      // revés. Con dos escrituras sueltas, un fallo entre ellas deja
+      // exactamente una de esas dos mitades.
+      const operator = await signInWithResetPermission();
+      const doctor = await enrolledDoctor();
+
+      await resetMfa(doctor.userId, operator.token).expect(200);
+
+      const [account, codes] = await Promise.all([
+        prisma.user.findUniqueOrThrow({
+          where: { id: doctor.userId },
+          select: { mfaSecretEncrypted: true },
+        }),
+        prisma.backupCode.count({ where: { userId: doctor.userId } }),
+      ]);
+
+      const secretGone = account.mfaSecretEncrypted === null;
+      const codesGone = codes === 0;
+      expect(
+        secretGone === codesGone,
+        'el secreto y los códigos tienen que irse juntos',
+      ).toBe(true);
+      expect(secretGone).toBe(true);
+    });
+
+    it('AU-036 invalida las sesiones abiertas de esa cuenta, con un motivo propio', async () => {
+      const operator = await signInWithResetPermission();
+      const doctor = await enrolledDoctor();
+
+      // La sesión funciona ANTES del reinicio: sin esto la prueba pasaría
+      // vacíamente.
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', doctor.cookies)
+        .expect(200);
+
+      await resetMfa(doctor.userId, operator.token).expect(200);
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', doctor.cookies)
+        .expect(401);
+
+      const tokens = await prisma.refreshToken.findMany({
+        where: { userId: doctor.userId },
+        select: { revokedAt: true, revocationReason: true },
+      });
+      expect(tokens.every((row) => row.revokedAt !== null)).toBe(true);
+      // Un motivo propio y no `ACCOUNT_DEACTIVATED`: en una auditoría, «se le
+      // retiró el acceso» y «se le retiró el segundo factor» son dos hechos
+      // distintos y sólo uno de los dos ocurrió.
+      expect(tokens.some((row) => row.revocationReason === 'MFA_RESET')).toBe(
+        true,
+      );
+    });
+
+    it('AU-036 deja sin valor el token de acceso emitido ANTES del reinicio', async () => {
+      /**
+       * ═══════════════════════════════════════════════════════════════════════
+       * LA CARRERA POR LA PROPIEDAD DEL SEGUNDO FACTOR.
+       * ═══════════════════════════════════════════════════════════════════════
+       *
+       * Revocar sólo los refrescos dejaba vivo el token de acceso —quince
+       * minutos por defecto— y `mfa/enroll` y `mfa/confirm` llevan
+       * `@MfaFlowOnly()`, que por diseño NO comprueba permiso. Quien tuviera la
+       * sesión anterior podía matricular SU autenticador en la cuenta que
+       * soporte acababa de devolverle a la doctora, y llevarse además el lote
+       * de códigos de respaldo.
+       *
+       * Es la ventana más grave precisamente porque el reinicio deja la cuenta
+       * sin matricular a propósito: no hay factor viejo que estorbe.
+       */
+      const operator = await signInWithResetPermission();
+      const doctor = await enrolledDoctor();
+
+      // El token ALCANZA la ruta antes del reinicio; sin esto la prueba pasaría
+      // vacíamente con un token que nunca sirvió. El 409 es de la matrícula ya
+      // hecha, no del token: la petición pasó los dos guardias.
+      const before = await request(app.getHttpServer())
+        .post('/api/v1/auth/mfa/enroll')
+        .set('Authorization', `Bearer ${doctor.accessToken}`)
+        .expect(409);
+      expect((before.body as Problem).code).toBe('MFA_ALREADY_ENROLLED');
+
+      await resetMfa(doctor.userId, operator.token).expect(200);
+
+      const enrolment = await request(app.getHttpServer())
+        .post('/api/v1/auth/mfa/enroll')
+        .set('Authorization', `Bearer ${doctor.accessToken}`)
+        .expect(401);
+      expect((enrolment.body as Problem).code).toBe('SESSION_REVOKED');
+      // Y la frase dice QUÉ HACER. «No autenticado» a secas manda a la doctora
+      // a soporte otra vez, que es de donde acaba de salir.
+      expect((enrolment.body as Problem).title).toMatch(/vuelva a iniciar sesión/i); // prettier-ignore
+
+      const confirmation = await request(app.getHttpServer())
+        .post('/api/v1/auth/mfa/confirm')
+        .set('Authorization', `Bearer ${doctor.accessToken}`)
+        .send({ code: '000000' })
+        .expect(401);
+      expect((confirmation.body as Problem).code).toBe('SESSION_REVOKED');
+
+      // Y la cuenta sigue esperando a su dueña: sin segundo factor y sin lote
+      // de respaldo en manos de nadie.
+      const after = await prisma.user.findUniqueOrThrow({
+        where: { id: doctor.userId },
+        select: { mfaEnabledAt: true, mfaPendingSecretEncrypted: true },
+      });
+      expect(after.mfaEnabledAt).toBeNull();
+      expect(after.mfaPendingSecretEncrypted).toBeNull();
+      expect(
+        await prisma.backupCode.count({ where: { userId: doctor.userId } }),
+      ).toBe(0);
+    });
+
+    it('AU-036 no toca las sesiones de las demás cuentas', async () => {
+      // La otra mitad del mismo arreglo: comprobar la familia en cada petición
+      // no puede convertir el reinicio de una cuenta en el cierre de sesión de
+      // quien lo pidió, ni de nadie más.
+      const operator = await signInWithResetPermission();
+      const doctor = await enrolledDoctor();
+
+      await resetMfa(doctor.userId, operator.token).expect(200);
+
+      // El operador sigue trabajando con el mismo token.
+      await resetMfa(doctor.userId, operator.token).expect(200);
+    });
+
+    it('AU-035 no toca la contraseña: quien reinicia no conoce ninguna credencial', async () => {
+      const operator = await signInWithResetPermission();
+      const doctor = await enrolledDoctor();
+
+      const before = await prisma.user.findUniqueOrThrow({
+        where: { id: doctor.userId },
+        select: { passwordHash: true },
+      });
+
+      await resetMfa(doctor.userId, operator.token).expect(200);
+
+      const after = await prisma.user.findUniqueOrThrow({
+        where: { id: doctor.userId },
+        select: { passwordHash: true },
+      });
+      expect(after.passwordHash).toBe(before.passwordHash);
+
+      // Y la persona sigue necesitando la suya para entrar. Ahora sin reto de
+      // segundo factor, que es lo que le permite volver a matricularlo.
+      const session = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ email: MEDICO_EMAIL, password: PASSWORD })
+        .expect(200);
+      expect((session.body as { mfaRequired?: true }).mfaRequired).toBeUndefined(); // prettier-ignore
+    });
+
+    it('AU-035 deja a la persona volver a matricular su segundo factor', async () => {
+      // La prueba independiente de la entrega A4, de extremo a extremo.
+      const operator = await signInWithResetPermission();
+      const doctor = await enrolledDoctor();
+
+      await resetMfa(doctor.userId, operator.token).expect(200);
+
+      const accessToken = (
+        await request(app.getHttpServer())
+          .post('/api/v1/auth/login')
+          .send({ email: MEDICO_EMAIL, password: PASSWORD })
+          .expect(200)
+      ).body as { accessToken: string };
+
+      const enrolment = (
+        await request(app.getHttpServer())
+          .post('/api/v1/auth/mfa/enroll')
+          .set('Authorization', `Bearer ${accessToken.accessToken}`)
+          .expect(200)
+      ).body as { uri: string };
+
+      const confirmation = (
+        await request(app.getHttpServer())
+          .post('/api/v1/auth/mfa/confirm')
+          .set('Authorization', `Bearer ${accessToken.accessToken}`)
+          .send({ code: URI.parse(enrolment.uri).generate() })
+          .expect(200)
+      ).body as { backupCodes: string[] };
+
+      expect(confirmation.backupCodes.length).toBeGreaterThan(0);
+      // Un lote NUEVO: los códigos anteriores no vuelven.
+      expect(confirmation.backupCodes).not.toEqual(doctor.backupCodes);
+    });
+
+    it('AU-035 registra el reinicio en la bitácora con autor, sujeto e instante', async () => {
+      // No es decoración: este permiso permite apropiarse de una cuenta ajena
+      // —quien retira el segundo factor de un médico y además puede invitarle
+      // de nuevo puede firmar en su nombre—, y la bitácora es lo único que lo
+      // hace rastreable (REQ-110).
+      const operator = await signInWithResetPermission();
+      const doctor = await enrolledDoctor();
+
+      await resetMfa(doctor.userId, operator.token).expect(200);
+
+      const trail = await prisma.accessAudit.findMany({
+        where: { resourceType: 'auth', action: 'MFA_RESET' },
+        select: {
+          userId: true,
+          resourceId: true,
+          occurredAt: true,
+          action: true,
+        },
+      });
+
+      expect(trail).toHaveLength(1);
+      expect(trail[0]?.userId).toBe(operator.userId);
+      expect(trail[0]?.resourceId).toBe(doctor.userId);
+      expect(trail[0]?.occurredAt).toBeInstanceOf(Date);
+      // UN VERBO PROPIO Y NO `UPDATE`: renombrar una cuenta escribe también un
+      // `UPDATE` sobre `auth`, así que con el verbo genérico la pregunta «¿a
+      // quién le han reiniciado el segundo factor?» no tiene respuesta.
+      expect(trail[0]?.action).toBe('MFA_RESET');
+    });
+
+    it('AU-035 no aplica el reinicio si la entrada de bitácora no se puede escribir', async () => {
+      /**
+       * ═══════════════════════════════════════════════════════════════════════
+       * ESTE ACTO FALLA CERRADO, Y ES LA ÚNICA EXCEPCIÓN DEL MÓDULO.
+       * ═══════════════════════════════════════════════════════════════════════
+       *
+       * `PrismaAccessAuditRecorder` se traga cualquier fallo a propósito, y
+       * está bien: negarle una historia clínica a un médico porque la tabla de
+       * bitácora tosió es el peor de los dos fallos. Su propio comentario ya
+       * nombraba la excepción —lo que hay que registrar para poder hacerlo—, y
+       * `MFA_RESET` es exactamente eso: AU-035 dice que la entrada NO es
+       * contabilidad, es el requisito, y es lo único que hace defendible
+       * conceder el permiso ante la SPDP.
+       *
+       * Con la escritura anterior —transacción primero, bitácora después y
+       * fuera de ella— un `INSERT` fallido dejaba al médico sin segundo factor,
+       * sin sesiones, sin nadie a quien atribuirlo… y con un 200 en pantalla.
+       *
+       * SE ROMPE LA BASE, NO UN DOBLE. El trigger es lo único que reproduce el
+       * fallo de verdad: un doble que lanza demostraría que el doble lanza, y
+       * no que las dos escrituras comparten transacción.
+       */
+      const operator = await signInWithResetPermission();
+      const doctor = await enrolledDoctor();
+
+      await prisma.$executeRawUnsafe(`
+        CREATE OR REPLACE FUNCTION test_refuse_mfa_reset_audit()
+        RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF NEW.action = 'MFA_RESET' THEN
+            -- 53100 disk_full: un fallo de INFRAESTRUCTURA, que es el
+            -- escenario. Un RAISE desnudo saldría como P0001 y el mapeo lo
+            -- degrada a 422 «regla de integridad», que diría que el reinicio
+            -- se rechazó por una regla de negocio. Aquí no hay ninguna regla:
+            -- la tabla no está disponible.
+            RAISE EXCEPTION 'access_audit unreachable' USING ERRCODE = '53100';
+          END IF;
+          RETURN NEW;
+        END;
+        $$;
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE TRIGGER trg_test_refuse_mfa_reset_audit
+        BEFORE INSERT ON access_audit
+        FOR EACH ROW EXECUTE FUNCTION test_refuse_mfa_reset_audit()
+      `);
+
+      try {
+        await resetMfa(doctor.userId, operator.token).expect(500);
+      } finally {
+        await prisma.$executeRawUnsafe(
+          'DROP TRIGGER IF EXISTS trg_test_refuse_mfa_reset_audit ON access_audit',
+        );
+        await prisma.$executeRawUnsafe(
+          'DROP FUNCTION IF EXISTS test_refuse_mfa_reset_audit()',
+        );
+      }
+
+      // NADA se aplicó. Ni el factor, ni los códigos, ni las sesiones.
+      const after = await prisma.user.findUniqueOrThrow({
+        where: { id: doctor.userId },
+        select: { mfaSecretEncrypted: true, mfaEnabledAt: true },
+      });
+      expect(after.mfaSecretEncrypted).not.toBeNull();
+      expect(after.mfaEnabledAt).not.toBeNull();
+      expect(
+        await prisma.backupCode.count({ where: { userId: doctor.userId } }),
+      ).toBe(doctor.backupCodes.length);
+
+      const sessions = await prisma.refreshToken.findMany({
+        where: { userId: doctor.userId },
+        select: { revokedAt: true },
+      });
+      expect(sessions.some((row) => row.revokedAt === null)).toBe(true);
+
+      // Y la sesión de la doctora sigue abierta de verdad, no sólo en la fila.
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', doctor.cookies)
+        .expect(200);
+    });
+
+    it('AU-035 nunca escribe una credencial en la bitácora', async () => {
+      const operator = await signInWithResetPermission();
+      const doctor = await enrolledDoctor();
+
+      const secret = await prisma.user.findUniqueOrThrow({
+        where: { id: doctor.userId },
+        select: { mfaSecretEncrypted: true },
+      });
+
+      await resetMfa(doctor.userId, operator.token).expect(200);
+
+      const trail = await prisma.accessAudit.findMany({
+        where: { resourceType: 'auth' },
+      });
+      const written = JSON.stringify(trail);
+
+      expect(written).not.toContain(secret.mfaSecretEncrypted);
+      for (const code of doctor.backupCodes) {
+        expect(written).not.toContain(code);
+      }
+    });
+
+    it('AU-035 exige user:reset-mfa: administrar usuarios no alcanza', async () => {
+      // El permiso existe SEPARADO de `user:manage` justo por esto (D-014).
+      // Si `user:manage` bastara, el permiso sería decorativo y el rol de
+      // administración podría apropiarse de la cuenta de cualquier médico.
+      const doctor = await enrolledDoctor();
+
+      const refused = await resetMfa(doctor.userId, token).expect(403);
+      expect((refused.body as Problem).code).toBe('PERMISSION_DENIED');
+
+      // Y no ocurrió nada: el rechazo es anterior a cualquier escritura.
+      const after = await prisma.user.findUniqueOrThrow({
+        where: { id: doctor.userId },
+        select: { mfaEnabledAt: true },
+      });
+      expect(after.mfaEnabledAt).not.toBeNull();
+    });
+
+    it('AU-035 responde 404 sobre una cuenta que no existe', async () => {
+      const operator = await signInWithResetPermission();
+
+      const missing = await resetMfa(
+        '00000000-0000-4000-8000-000000000000',
+        operator.token,
+      ).expect(404);
+
+      expect((missing.body as Problem).code).toBe('USER_NOT_FOUND');
+    });
+
+    it('AU-035 impide reiniciarse el propio segundo factor', async () => {
+      const operator = await signInWithResetPermission();
+
+      const refused = await resetMfa(operator.userId, operator.token).expect(422); // prettier-ignore
+
+      expect((refused.body as Problem).code).toBe('CANNOT_RESET_OWN_MFA');
+      expect((refused.body as Problem).title).toMatch(/otra persona/i);
+    });
+
+    it('AU-035 acepta sin error una cuenta que no tenía segundo factor', async () => {
+      // Idempotente a propósito: lo que se pide es un estado, y ya se cumple.
+      const operator = await signInWithResetPermission();
+      const account = await createAccount();
+
+      const response = await resetMfa(account.id, operator.token).expect(200);
+
+      expect(
+        (response.body as AccountBody & { mfaEnabled: boolean }).mfaEnabled,
+      ).toBe(false);
+      // Y sigue siendo idempotente la segunda vez.
+      await resetMfa(account.id, operator.token).expect(200);
     });
   });
 });

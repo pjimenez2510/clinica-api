@@ -8,13 +8,21 @@ import {
  * What a schedule rule must satisfy, and what closing one means (ST-041,
  * ST-045, ST-046).
  *
- * EVERY RULE HERE IS ALSO A CONSTRAINT IN THE BASE, and that is deliberate,
- * not redundant. `schedule_rule_time_order`, `schedule_rule_slot_positive`,
- * `schedule_rule_slot_fits` and `schedule_rule_validity_not_empty` are the
- * guarantee — they hold for a seed, a data import and a `psql` at two in the
- * morning. What lives here is the mirror that answers PER FIELD before the
- * base is reached, because "violates check constraint schedule_rule_slot_fits"
- * is not a sentence an administrator can act on.
+ * MOST OF WHAT IS HERE IS ALSO A CONSTRAINT IN THE BASE, and that is
+ * deliberate, not redundant. `schedule_rule_time_order` and
+ * `schedule_rule_validity_not_empty` are the guarantee — they hold for a seed,
+ * a data import and a `psql` at two in the morning. What lives here is the
+ * mirror that answers PER FIELD before the base is reached, because "violates
+ * check constraint schedule_rule_time_order" is not a sentence an
+ * administrator can act on.
+ *
+ * THE ONE THAT HAS NO CONSTRAINT BEHIND IT IS «EL TURNO CABE» (D-021,
+ * 14-08-2026). It used to be `schedule_rule_slot_fits`, reading the rule's own
+ * `slot_minutes`; that column is gone and the grid is now one atom per site,
+ * which a `CHECK` cannot reach. So this file is the only thing standing
+ * between an administrator and a rule that produces no slots at all — see the
+ * migration `20260813031542_staff_schedule_rule_no_overlap`, where the
+ * trade-off is written down.
  */
 
 /** The shape a rule is proposed in, before it is a row. */
@@ -23,7 +31,6 @@ export interface ScheduleRuleDraft {
   weekday: number;
   startTime: WallClockTime;
   endTime: WallClockTime;
-  slotMinutes: number;
   validFrom: ClinicalDate;
   /** `null` means it stays in force indefinitely. */
   validTo: ClinicalDate | null;
@@ -31,7 +38,7 @@ export interface ScheduleRuleDraft {
 
 /** One thing wrong with a draft, named by the field the screen must highlight. */
 export interface ScheduleRuleProblem {
-  field: 'weekday' | 'endTime' | 'slotMinutes' | 'validTo';
+  field: 'weekday' | 'endTime' | 'validTo';
   message: string;
 }
 
@@ -43,6 +50,12 @@ export interface ScheduleRuleProblem {
  */
 export function scheduleRuleProblems(
   draft: ScheduleRuleDraft,
+  /**
+   * D-021. The site's slot atom, or `null` when the site declares none. It is
+   * a PARAMETER and not a constant because the grid belongs to the site, and
+   * the rule now says only WHEN the practitioner works.
+   */
+  slotAtomMinutes: number | null,
 ): ScheduleRuleProblem[] {
   const problems: ScheduleRuleProblem[] = [];
 
@@ -68,19 +81,20 @@ export function scheduleRuleProblems(
     });
   }
 
-  if (!Number.isInteger(draft.slotMinutes) || draft.slotMinutes <= 0) {
+  // ST-045, second half, and the reason it exists: a rule of 08:00–08:15 on a
+  // site with a 20-minute grid passes every ordering check and produces NOT
+  // ONE slot. On screen that is a practitioner with no agenda and nothing
+  // saying why.
+  //
+  // THE FIELD IS `endTime` SINCE D-021, and that is the honest answer rather
+  // than a fallback: the slot length is no longer a field of this form, so the
+  // only thing the administrator can change here is where the band ends. The
+  // other way out — widening the site's grid — is another screen's, and the
+  // message must not send them to it for a band they can simply extend.
+  if (slotAtomMinutes !== null && span > 0 && span < slotAtomMinutes) {
     problems.push({
-      field: 'slotMinutes',
-      message: 'Los minutos por turno deben ser un número mayor que cero',
-    });
-  } else if (span > 0 && draft.slotMinutes > span) {
-    // ST-045, second half, and the reason it exists: a rule of 08:00–08:15
-    // with 20-minute slots passes every ordering check and produces NOT ONE
-    // slot. On screen that is a practitioner with no agenda and nothing saying
-    // why. Mirrors `schedule_rule_slot_fits`.
-    problems.push({
-      field: 'slotMinutes',
-      message: `Los turnos de ${draft.slotMinutes} minutos no caben en una franja de ${span} minutos`,
+      field: 'endTime',
+      message: `La franja de ${span} minutos no da para ningún turno de ${slotAtomMinutes} minutos`,
     });
   }
 

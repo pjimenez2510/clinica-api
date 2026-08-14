@@ -27,12 +27,20 @@ import {
   AvailabilityDto,
   AvailabilityQueryDto,
   BookAppointmentDto,
+  BookedAppointmentDto,
   DailyAgendaDto,
   DailyAgendaQueryDto,
+  DurationProposalDto,
+  DurationProposalQueryDto,
+  RescheduleAppointmentDto,
+  RescheduledAppointmentDto,
   TransitionStatusDto,
   type AgendaEntryResponse,
   type AvailabilityResponse,
+  type BookedAppointmentResponse,
   type DailyAgendaResponse,
+  type DurationProposalResponse,
+  type RescheduledAppointmentResponse,
 } from './dto/agenda.dto';
 
 /**
@@ -98,7 +106,9 @@ export class AgendaController {
   }
 
   /**
-   * AG-003, AG-010, AG-011, AG-013, AG-014. What is free and what is taken.
+   * AG-003, AG-010, AG-011, AG-013, AG-014. What is free and what is taken,
+   * plus which dates the site's holidays close and why (AG-015, AG-016), and
+   * which years of the range have no calendar loaded (AG-093).
    *
    * THE ROUTE READS AND NEVER WRITES: a free slot is derived from the rules
    * minus what occupies the calendar, and nothing here materialises one as a
@@ -134,17 +144,56 @@ export class AgendaController {
     };
   }
 
-  /** AG-020, AG-029. Books an appointment into this site's agenda. */
+  /**
+   * SP-028, SP-023. How long an appointment of this type with this
+   * practitioner should last, at this instant.
+   *
+   * `agenda:read` AND NOT `config:read`: what it answers is a number of
+   * minutes for a booking recepción is composing, and recepción administers no
+   * catalogue. The site scope is checked like every route here (AG-071).
+   *
+   * A GET, because it decides nothing and stores nothing — asking twice must
+   * answer twice the same.
+   */
+  @Get('duration')
+  @RequirePermission('agenda:read', 'param:siteId')
+  @ApiOperation({
+    summary: 'Proponer la duración de una cita según especialidad y tipo',
+  })
+  @ApiOkResponse({ type: DurationProposalDto })
+  async duration(
+    @Param('siteId', ParseUUIDPipe) siteId: string,
+    @Query() query: DurationProposalQueryDto,
+  ): Promise<DurationProposalResponse> {
+    return this.agenda.proposeDuration({
+      siteId,
+      practitionerId: query.practitionerId,
+      // The schema refuses an instant with no offset, so `Date` reads it
+      // without guessing a zone.
+      startsAt: new Date(query.startsAt),
+      serviceTypeId: query.serviceTypeId,
+    });
+  }
+
+  /**
+   * AG-020, AG-029. Books an appointment into this site's agenda.
+   *
+   * AG-110 RIDES IN THIS 201 AND NOT IN A 4xx. A date the site's calendar
+   * closes does not refuse the booking — the clinic works many holidays — so
+   * the appointment is created and the closure comes back as a warning next to
+   * it. Nothing here can turn that warning into a rejection: by the time it
+   * exists, the row does too.
+   */
   @Post('entries')
   @RequirePermission('agenda:write', 'param:siteId')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Reservar una cita' })
-  @ApiCreatedResponse({ type: AgendaEntryDto })
+  @ApiCreatedResponse({ type: BookedAppointmentDto })
   async book(
     @Param('siteId', ParseUUIDPipe) siteId: string,
     @Body() dto: BookAppointmentDto,
-  ): Promise<AgendaEntryResponse> {
-    const entry = await this.agenda.book(
+  ): Promise<BookedAppointmentResponse> {
+    const booked = await this.agenda.book(
       {
         siteId,
         practitionerId: dto.practitionerId,
@@ -155,7 +204,7 @@ export class AgendaController {
         startsAt: new Date(dto.startsAt),
         endsAt: new Date(dto.endsAt),
         bookingChannel: dto.bookingChannel,
-        serviceTypeConceptId: dto.serviceTypeConceptId,
+        serviceTypeId: dto.serviceTypeId,
         reason: dto.reason,
       },
       // AG-029: who booked it. From the session, never from the body — a
@@ -163,7 +212,7 @@ export class AgendaController {
       { userId: this.currentUser.requireUserId() },
     );
 
-    return toEntryResponse(entry);
+    return { ...toEntryResponse(booked.entry), warnings: [...booked.warnings] };
   }
 
   /**
@@ -191,6 +240,52 @@ export class AgendaController {
 
     return toEntryResponse(entry);
   }
+
+  /**
+   * AG-050, AG-051, AG-052. Moves one appointment to another moment.
+   *
+   * 201 AND NOT 200, because what this leaves behind is a NEW entry: the
+   * original is not edited, it is annulled and released (AG-050), and the
+   * appointment the patient will turn up for is a row that did not exist
+   * before. Answering 200 would say "the appointment you know about changed",
+   * which is exactly what the requirement forbids happening.
+   *
+   * A SUB-RESOURCE OF THE ENTRY (`…/entries/:entryId/reschedule`) and not a
+   * POST to `entries` with an extra field: the site scope is settled by the
+   * guard from `param:siteId` like every route here (AG-071), and the entry
+   * being moved is part of the address rather than of the payload.
+   */
+  @Post('entries/:entryId/reschedule')
+  @RequirePermission('agenda:write', 'param:siteId')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Reprogramar una cita a otro horario' })
+  @ApiCreatedResponse({ type: RescheduledAppointmentDto })
+  async reschedule(
+    @Param('siteId', ParseUUIDPipe) siteId: string,
+    @Param('entryId', ParseUUIDPipe) entryId: string,
+    @Body() dto: RescheduleAppointmentDto,
+  ): Promise<RescheduledAppointmentResponse> {
+    const moved = await this.agenda.reschedule(
+      {
+        siteId,
+        entryId,
+        // Both instants carry their offset — the schema refuses one that does
+        // not — so `Date` reads them without guessing a zone.
+        startsAt: new Date(dto.startsAt),
+        endsAt: new Date(dto.endsAt),
+        bookingChannel: dto.bookingChannel,
+        reason: dto.reason,
+      },
+      // AG-004, AG-029: the author comes from the session, never from the body.
+      { userId: this.currentUser.requireUserId() },
+    );
+
+    return {
+      original: toEntryResponse(moved.original),
+      created: toEntryResponse(moved.created),
+      warnings: [...moved.warnings],
+    };
+  }
 }
 
 /**
@@ -213,6 +308,15 @@ function toAvailabilityResponse(view: AvailabilityView) {
       startsAt: entry.startsAt.toISOString(),
       endsAt: entry.endsAt.toISOString(),
     })),
+    // AG-015. The date and the motive; the slots of that day are simply not
+    // in `slots`, which is what "marcar los cupos como no disponibles" means
+    // for an answer that never materialised a slot as a row (AG-003).
+    closedDates: view.closedDates.map((closed) => ({
+      date: closed.date,
+      reason: closed.reason,
+    })),
+    // AG-093. The doubt travels with the answer, never instead of it.
+    yearsWithoutCalendar: view.yearsWithoutCalendar,
   };
 }
 
@@ -233,7 +337,11 @@ function toEntryResponse(entry: AgendaEntryView) {
     // AG-018: what tells a released entry apart from a live one.
     releasedAt: entry.releasedAt?.toISOString() ?? null,
     bookingChannel: entry.bookingChannel,
-    serviceTypeConceptId: entry.serviceTypeConceptId,
+    serviceTypeId: entry.serviceTypeId,
     createdById: entry.createdById,
+    // AG-051: both ends of the reschedule chain, so neither entry has to be
+    // looked up to find out what happened to the other.
+    rescheduledFromId: entry.rescheduledFromId,
+    rescheduledToId: entry.rescheduledToId,
   };
 }

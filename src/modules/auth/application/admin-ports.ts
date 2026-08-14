@@ -68,6 +68,22 @@ export interface GrantInput {
   siteId: string | null;
 }
 
+/**
+ * Who asked for the reset, so the trail entry can be written WITH it (AU-035).
+ *
+ * It travels into the port — rather than being recorded by the use case
+ * afterwards — because the entry and the reset must land together. See
+ * `resetMfa` for the argument.
+ *
+ * The SHAPE is what keeps AU-025 true: there is nowhere here to put a secret,
+ * a hash or a backup code. Only who, from where, and with what.
+ */
+export interface MfaResetAuthor {
+  userId: string;
+  ip?: string;
+  userAgent?: string;
+}
+
 export interface AccountAdminRepositoryPort {
   list(filter: AccountListFilter): Promise<readonly AccountView[]>;
   findById(id: string): Promise<AccountView | null>;
@@ -76,6 +92,59 @@ export interface AccountAdminRepositoryPort {
   /** `null` when the row is gone; the service owns the refusal. */
   update(id: string, patch: AccountPatch): Promise<AccountView | null>;
   setActive(id: string, active: boolean): Promise<AccountView | null>;
+  /**
+   * AU-035, AU-036. Removes the account's second factor, its backup codes and
+   * its open sessions, AND writes the trail entry — ALL FOUR, OR NONE. `null`
+   * when the row is gone.
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * ONE OPERATION, AND THE ATOMICITY IS THE REQUIREMENT, NOT AN OPTIMISATION.
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Expressed here as a single method for the same reason as
+   * `rotateCredentials` and `confirmMfaWithBackupCodes`: each pair of these
+   * writes has a half-applied state that is worse than the failure.
+   *
+   *   - SECRET CLEARED, CODES ALIVE: ten credentials that open an account
+   *     whose second factor the screen now reports as removed. They were
+   *     printed for a phone that is gone, which is why the reset was asked
+   *     for.
+   *   - CODES DELETED, SECRET ALIVE: the person still needs the authenticator
+   *     they just lost, and now has no backup either — the exact lockout A4
+   *     exists to end, caused by the operation meant to fix it.
+   *   - FACTOR GONE, SESSIONS ALIVE (AU-036): the sessions that only exist
+   *     because that factor was satisfied outlive it. Same argument as
+   *     `rotateCredentials`, where a revocation that fails after the password
+   *     changed leaves the attacker's session alive.
+   *   - RESET APPLIED, NOBODY RECORDED: the doctor loses their second factor
+   *     and every session, and no row says who did it. THE ENTRY IS THE
+   *     REQUIREMENT here, not bookkeeping — it is the only thing that makes
+   *     granting `user:reset-mfa` defensible before the SPDP (REQ-110), and
+   *     this permission is the one that lets somebody take over another
+   *     person's account. So this act, alone in the module, FAILS CLOSED when
+   *     it cannot be recorded. `AccessAuditRecorder` is the right policy for
+   *     everything else — a database hiccup must not deny a doctor a chart —
+   *     and its own comment already named this as the exception, so this write
+   *     deliberately does not reuse that path.
+   *
+   * The transaction is the adapter's business. What the application declares
+   * is that these cannot come apart.
+   *
+   * IT DOES NOT TOUCH THE PASSWORD, and there is no parameter for it: the
+   * person still needs their own to sign in, and whoever resets never learns
+   * any credential (AU-035).
+   *
+   * IDEMPOTENT ON PURPOSE. An account with no second factor is not a refusal:
+   * what is being asked for is a STATE — «esta cuenta no tiene segundo
+   * factor» — and it already holds. Two support staff clicking on the same
+   * ticket, or a retried request, must not produce an error that reads like a
+   * failure.
+   */
+  resetMfa(
+    userId: string,
+    revocationReason: string,
+    author: MfaResetAuthor,
+  ): Promise<AccountView | null>;
 
   listGrants(userId: string): Promise<readonly GrantView[]>;
   /**
@@ -137,6 +206,16 @@ export interface RoleAdminRepositoryPort {
   delete(id: string): Promise<boolean>;
 
   listPermissions(roleId: string): Promise<readonly string[]>;
+  /**
+   * Which of these codes the `permission` mirror actually has (AU-033).
+   *
+   * The catalogue the screen shows is read from the CODE, and this table is a
+   * mirror published by the authorisation sync. Between a deploy and that sync
+   * the two disagree, and asking BEFORE writing is what turns a foreign-key
+   * violation — «Datos inválidos», on a form where nothing was invalid — into
+   * `PERMISSION_NOT_INSTALLED` naming the codes.
+   */
+  installedPermissions(codes: readonly string[]): Promise<readonly string[]>;
   /** Makes the role's permissions EXACTLY the ones given (AU-033). */
   replacePermissions(
     roleId: string,

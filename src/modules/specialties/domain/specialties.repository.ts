@@ -81,6 +81,22 @@ export interface SpecialtiesRepository {
 
   /** SP-025. Throws `ServiceTypeInUseError` when a FK RESTRICT refuses. */
   deleteServiceType(id: string): Promise<boolean>;
+
+  /**
+   * D-021, SP-021. What each site dices its day into, so a base duration can
+   * be refused when it does not tile the grid.
+   *
+   * IT READS `site_parameter`, WHICH IS `configuration`'s TABLE, and that is
+   * what a port is for: `sin-imports-entre-modulos` forbids importing their
+   * code, not reading rows through an adapter of our own. `agenda` already
+   * reads `service_type` and `practitioner_schedule_rule` this way.
+   *
+   * EVERY SITE AND NOT ONE, because a service type has no site: it belongs to
+   * the clinic and can therefore be given anywhere. Which single number the
+   * list reduces to is `clinicSlotAtom` in `shared/domain`, where the reasoning
+   * for choosing that rule over the alternatives is written down.
+   */
+  siteSlotAtoms(): Promise<readonly number[]>;
 }
 
 export const SPECIALTIES_REPOSITORY = Symbol('SpecialtiesRepository');

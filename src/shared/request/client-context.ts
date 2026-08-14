@@ -36,6 +36,17 @@ export const RevocationReason = {
    * exactly what the SPDP asks to see.
    */
   ACCOUNT_DEACTIVATED: 'ACCOUNT_DEACTIVATED',
+  /**
+   * AU-036: the account's second factor was reset by somebody else.
+   *
+   * Its own reason for the same argument as `ACCOUNT_DEACTIVATED`. To an
+   * auditor «se desactivó la cuenta» is access being withdrawn and «se
+   * reinició el segundo factor» is a recovery that leaves the account
+   * reachable with the password alone — and only one of the two happened. The
+   * value lands in `refresh_token.revocation_reason`, which is where that
+   * question gets answered.
+   */
+  MFA_RESET: 'MFA_RESET',
 } as const;
 
 export type RevocationReason =

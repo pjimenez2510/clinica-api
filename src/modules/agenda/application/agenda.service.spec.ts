@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { PatientMergedError } from '../../../shared/domain/errors/patient-merged.error';
+import { ServiceTypeNotFoundError } from '../../../shared/domain/errors/master-data.errors';
 import {
+  BookingTooSoonError,
   InvalidBookingChannelError,
   InvalidSlotDurationError,
   OutsideScheduleRuleError,
@@ -18,20 +20,27 @@ import type {
   AvailabilityContext,
   AvailabilityContextQuery,
   DailyAgendaQuery,
+  DurationSourcesQuery,
+  HolidayQuery,
   NewBooking,
   PatientBookingStatus,
+  RescheduledBooking,
   ScheduleContext,
   ScheduleContextQuery,
   StatusChange,
+  StoredDurationSources,
+  StoredSiteParameters,
   TransitionCommand,
   TransitionRead,
 } from '../domain/agenda.repository';
 import {
   AgendaEntryHasEncounterError,
+  AgendaEntryNotFoundError,
   CancellationReasonRequiredError,
   InvalidAgendaTransitionError,
   NoShowBeforeStartError,
 } from '../domain/agenda.errors';
+import type { Holiday } from '../domain/holiday-calendar';
 import type { AgendaOccupancy } from '../domain/slot-availability';
 import { AgendaService, type Requester } from './agenda.service';
 
@@ -52,6 +61,7 @@ const PATIENT = '00000000-0000-4000-8000-000000000003';
 const USER = '00000000-0000-4000-8000-000000000004';
 const ROOM = '00000000-0000-4000-8000-000000000005';
 const OTHER_SITE = '00000000-0000-4000-8000-000000000006';
+const SERVICE_TYPE = '00000000-0000-4000-8000-000000000007';
 
 const REQUESTER: Requester = { userId: USER };
 
@@ -66,7 +76,6 @@ const RULE = {
   weekday: 1,
   startTime: WallClockTime.parse('08:00'),
   endTime: WallClockTime.parse('12:00'),
-  slotMinutes: 20,
   validFrom: parseClinicalDate('2026-01-01'),
   validTo: null,
   active: true,
@@ -91,8 +100,11 @@ function anEntry(overrides: Partial<AgendaEntryView> = {}): AgendaEntryView {
     blocksCalendar: true,
     releasedAt: null,
     bookingChannel: 'PHONE',
-    serviceTypeConceptId: null,
+    serviceTypeId: null,
     createdById: USER,
+    // AG-051: an appointment booked directly and never moved.
+    rescheduledFromId: null,
+    rescheduledToId: null,
     ...overrides,
   };
 }
@@ -118,8 +130,30 @@ interface Recorded {
   context: ScheduleContextQuery[];
   availability: AvailabilityContextQuery[];
   rooms: string[];
+  /**
+   * AG-110: what the booking path asked the calendar, and HOW MANY BOOKINGS
+   * had been written by then.
+   *
+   * The counter is the requirement's «sobre lo que se guardó»: without it the
+   * assertion passes just as well when the calendar is read before the insert,
+   * because the query is the same either way. Zero means the warning describes
+   * an appointment that does not exist yet.
+   */
+  holidayQueries: (HolidayQuery & { bookedSoFar: number })[];
+  /** SP-023: which practitioner·type the proposal asked storage about. */
+  durationSources: DurationSourcesQuery[];
   booked: NewBooking[];
   transitions: { command: TransitionCommand; change: StatusChange }[];
+  /**
+   * AG-052: what the ONE atomic port call was told, and nothing about the
+   * order of two calls — because there must not be two. `transitions` and
+   * `booked` staying empty during a reschedule is the assertion.
+   */
+  reschedules: {
+    command: TransitionCommand;
+    booking: RescheduledBooking;
+    change: StatusChange;
+  }[];
 }
 
 /** The row `transition` hands the service's policy, as the adapter would. */
@@ -142,9 +176,26 @@ function repositoryDouble(
     entries?: AgendaEntryView[];
     patient?: PatientBookingStatus | null;
     context?: ScheduleContext;
-    availability?: AvailabilityContext;
+    /**
+     * PARTIAL, so a case that is not about holidays says nothing about them
+     * and still gets a context that states what was read of the catalogue —
+     * which `AvailabilityContext` requires and AG-093 is the reason for.
+     */
+    availability?: Partial<AvailabilityContext>;
     roomSiteId?: string | null;
     transitionRead?: TransitionRead;
+    /** AG-050: the entry a reschedule reads before it decides, or `null`. */
+    entry?: AgendaEntryView | null;
+    /** AG-094, AG-095: what the site has stored, `null` when it has no row. */
+    siteParameters?: StoredSiteParameters | null;
+    /** AG-110: the rows of `holiday` the booked date could be closed by. */
+    holidays?: Holiday[];
+    /**
+     * SP-023: what storage knows about the duration, or `null` for a service
+     * type that does not exist. `undefined` means nothing was programmed and
+     * the double answers as an empty catalogue would.
+     */
+    durationSources?: StoredDurationSources | null;
   } = {},
 ): { repository: AgendaRepository; recorded: Recorded } {
   const recorded: Recorded = {
@@ -152,8 +203,11 @@ function repositoryDouble(
     context: [],
     availability: [],
     rooms: [],
+    holidayQueries: [],
+    durationSources: [],
     booked: [],
     transitions: [],
+    reschedules: [],
   };
 
   const repository: AgendaRepository = {
@@ -177,6 +231,31 @@ function repositoryDouble(
         overrides.roomSiteId === undefined ? SITE : overrides.roomSiteId,
       );
     },
+    /**
+     * AG-094. The default OPENS THE PAST on purpose, and it is not laziness.
+     *
+     * Every case in this file pins Monday 14 September 2026 so the weekly rule
+     * that applies is deterministic, and a pinned date becomes a date in the
+     * past the moment the calendar passes it — at which point AG-031 would
+     * refuse forty bookings that are about the channel, the merged chart or
+     * the log line. The window rule has tests of its own, pure ones with the
+     * clock injected (`booking-policy.spec.ts`) and end-to-end ones against a
+     * real database (`agenda-parameters.spec.ts`), so nothing is lost by
+     * taking it out of the way here.
+     */
+    siteParametersFor: () =>
+      Promise.resolve(
+        overrides.siteParameters === undefined
+          ? {
+              minLeadMinutes: 0,
+              maxLeadDays: 180,
+              allowPastBooking: true,
+              // D-021: the grid is the site's now. Twenty minutes is what
+              // every case here used to read off the rule.
+              slotAtomMinutes: 20,
+            }
+          : overrides.siteParameters,
+      ),
     scheduleContextFor: (query) => {
       recorded.context.push(query);
       return Promise.resolve(
@@ -190,19 +269,39 @@ function repositoryDouble(
         },
       );
     },
+    durationSourcesFor: (query) => {
+      recorded.durationSources.push(query);
+      return Promise.resolve(overrides.durationSources ?? null);
+    },
     availabilityContextFor: (query) => {
       recorded.availability.push(query);
-      return Promise.resolve(
-        overrides.availability ?? {
-          practitioner: {
-            practitionerId: PRACTITIONER,
-            schedulable: true,
-            siteIds: [SITE],
-          },
-          rules: [RULE],
-          entries: [],
+      return Promise.resolve({
+        practitioner: {
+          practitionerId: PRACTITIONER,
+          schedulable: true,
+          siteIds: [SITE],
         },
-      );
+        rules: [RULE],
+        entries: [],
+        // AG-015, AG-093. The default is "no holiday, and the year IS loaded":
+        // an empty `calendarYears` would make every case that ignores holidays
+        // carry the warning of a catalogue nobody filled in.
+        holidays: [],
+        calendarYears: [2026],
+        ...overrides.availability,
+      });
+    },
+    /**
+     * AG-110. Recorded as well as answered: WHEN it was asked is half the
+     * requirement, and `recorded.booked` being empty at that moment is what
+     * proves the warning describes a row that already exists.
+     */
+    holidaysFor: (query) => {
+      recorded.holidayQueries.push({
+        ...query,
+        bookedSoFar: recorded.booked.length,
+      });
+      return Promise.resolve(overrides.holidays ?? []);
     },
     book: (booking) => {
       recorded.booked.push(booking);
@@ -210,6 +309,7 @@ function repositoryDouble(
         anEntry({
           bookingChannel: booking.bookingChannel,
           createdById: booking.createdById,
+          serviceTypeId: booking.serviceTypeId ?? null,
         }),
       );
     },
@@ -223,6 +323,37 @@ function repositoryDouble(
       return Promise.resolve(
         anEntry({ status: change.to, releasedAt: change.effects.releasedAt ?? null }), // prettier-ignore
       );
+    },
+    findEntry: (query) =>
+      Promise.resolve(
+        overrides.entry === undefined
+          ? anEntry({ id: query.entryId, siteId: query.siteId })
+          : overrides.entry,
+      ),
+    /**
+     * AG-050 to AG-052. The double answers the pair the real adapter answers
+     * — original annulled and released, new one pointing back at it — so a
+     * caller that expected one entry would not compile.
+     */
+    reschedule: (command, booking, decide) => {
+      const change = decide(overrides.transitionRead ?? aTransitionRead());
+      recorded.reschedules.push({ command, booking, change });
+      return Promise.resolve({
+        original: anEntry({
+          id: command.entryId,
+          status: change.to,
+          releasedAt: change.effects.releasedAt ?? null,
+          rescheduledToId: 'entry-2',
+        }),
+        created: anEntry({
+          id: 'entry-2',
+          startsAt: booking.startsAt,
+          endsAt: booking.endsAt,
+          bookingChannel: booking.bookingChannel,
+          createdById: command.changedById,
+          rescheduledFromId: command.entryId,
+        }),
+      });
     },
   };
 
@@ -328,7 +459,7 @@ describe('booking an appointment', () => {
   it('AG-029 records the booking channel and the user who booked', async () => {
     const { service, recorded } = serviceWith();
 
-    const entry = await service.book(
+    const { entry } = await service.book(
       { ...aBooking(), bookingChannel: 'WALK_IN' },
       REQUESTER,
     );
@@ -366,6 +497,44 @@ describe('booking an appointment', () => {
     });
     // NOT a 404 and NOT a write: the chart exists, it just moved.
     expect(recorded.booked).toEqual([]);
+  });
+
+  it('AG-094 judges the booking window with the parameters it read from the site', async () => {
+    // The value has to come from the SITE and not from a constant in the
+    // service: this one is ten hours, which no default in the code states.
+    const { service, recorded } = serviceWith({
+      siteParameters: {
+        minLeadMinutes: 600,
+        maxLeadDays: 180,
+        allowPastBooking: false,
+      },
+    });
+
+    // Relative to the real clock on purpose: the requirement is about the
+    // distance to "now", and a pinned instant would stop being close to it.
+    const soon = new Date(Date.now() + 5 * 60_000);
+
+    const rejection = await service
+      .book({ ...aBooking(), startsAt: soon, endsAt: soon }, REQUESTER)
+      .catch((error: unknown) => error);
+
+    expect(rejection).toBeInstanceOf(BookingTooSoonError);
+    expect(recorded.booked).toEqual([]);
+  });
+
+  it('AG-095 books on the code defaults when the site has no parameters stored', async () => {
+    // With no row the minimum lead is zero, so the window lets this through
+    // and the booking is refused further down for a reason that has nothing to
+    // do with the window — which is what proves the fallback ran at all.
+    const { service } = serviceWith({ siteParameters: null });
+    const soon = new Date(Date.now() + 5 * 60_000);
+
+    const rejection = await service
+      .book({ ...aBooking(), startsAt: soon, endsAt: soon }, REQUESTER)
+      .catch((error: unknown) => error);
+
+    expect(rejection).not.toBeInstanceOf(BookingTooSoonError);
+    expect(rejection).toBeInstanceOf(OutsideScheduleRuleError);
   });
 
   it('AG-028 refuses an interval no schedule rule in force covers', async () => {
@@ -486,6 +655,212 @@ describe('booking an appointment', () => {
     const logged = JSON.stringify(lines);
     expect(logged).not.toContain('Control de embarazo');
     expect(logged).not.toContain(PATIENT);
+  });
+
+  /**
+   * AG-110. A closed day warns; it never refuses.
+   *
+   * The date under test is the Monday every case in this file books on, so
+   * what changes between them is the catalogue and nothing else.
+   */
+  const christmasOn = (overrides: Partial<Holiday> = {}): Holiday => ({
+    id: 'holiday-1',
+    date: DATE,
+    name: 'Navidad',
+    // `null` is the national scope: every site observes it (AG-091).
+    siteId: null,
+    workedBySiteIds: [],
+    ...overrides,
+  });
+
+  it('AG-110 accepts a booking on a closed day and warns with the reason', async () => {
+    const { service, recorded } = serviceWith({ holidays: [christmasOn()] });
+
+    const { entry, warnings } = await service.book(aBooking(), REQUESTER);
+
+    // The appointment EXISTS: no refusal, no 4xx, nothing undone.
+    expect(recorded.booked).toHaveLength(1);
+    expect(entry.id).toBe('entry-1');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('Navidad');
+  });
+
+  it('AG-110 says nothing about a day the calendar does not close', async () => {
+    const { service } = serviceWith();
+
+    const { warnings } = await service.book(aBooking(), REQUESTER);
+
+    expect(warnings).toEqual([]);
+  });
+
+  it('AG-110 says nothing when the site works that holiday', async () => {
+    // AG-092. The exception belongs to the site being booked, and the domain
+    // is the one that reads it — the service never resolves the scope.
+    const { service } = serviceWith({
+      holidays: [christmasOn({ workedBySiteIds: [SITE] })],
+    });
+
+    const { warnings } = await service.book(aBooking(), REQUESTER);
+
+    expect(warnings).toEqual([]);
+  });
+
+  it('AG-110 asks the calendar about the entry that was stored, after storing it', async () => {
+    const { service, recorded } = serviceWith({ holidays: [christmasOn()] });
+
+    await service.book(aBooking(), REQUESTER);
+
+    // The site and the Ecuadorian date of the STORED instant (AG-001) — and
+    // `bookedSoFar: 1`, which is the half that matters: read before the
+    // insert, the query would look identical and mean the opposite.
+    expect(recorded.holidayQueries).toEqual([
+      { siteId: SITE, date: DATE, bookedSoFar: 1 },
+    ]);
+  });
+
+  it('AG-110 does not warn about a booking that was refused', async () => {
+    // Nothing was stored, so there is nothing to warn about — and the
+    // calendar is not even read: a sentence about an appointment nobody has
+    // is worse than silence.
+    const { service, recorded } = serviceWith({ holidays: [christmasOn()] });
+
+    await expect(
+      service.book({ ...aBooking(), bookingChannel: 'telefono' }, REQUESTER),
+    ).rejects.toBeInstanceOf(InvalidBookingChannelError);
+
+    expect(recorded.holidayQueries).toEqual([]);
+  });
+
+  it('SP-028 deja el tipo de atención registrado en la cita', async () => {
+    const { service, recorded } = serviceWith();
+
+    const { entry } = await service.book(
+      { ...aBooking(), serviceTypeId: SERVICE_TYPE },
+      REQUESTER,
+    );
+
+    expect(recorded.booked[0]?.serviceTypeId).toBe(SERVICE_TYPE);
+    expect(entry.serviceTypeId).toBe(SERVICE_TYPE);
+  });
+
+  it('SP-028 reserva sin tipo cuando recepción no eligió ninguno', async () => {
+    // Not every booking has one: a block, a walk-in squeezed in at the
+    // counter. Storing an invented type would report a lie in the statistics.
+    const { service, recorded } = serviceWith();
+
+    await service.book(aBooking(), REQUESTER);
+
+    expect(recorded.booked[0]?.serviceTypeId).toBeUndefined();
+  });
+});
+
+/**
+ * SP-028, SP-023. The proposal recepción sees when it picks a specialty and a
+ * type, resolved through the hierarchy of D-010.
+ *
+ * THE ORDER OF THE RUNGS IS TESTED PURELY in
+ * `shared/domain/duration-resolution.spec.ts`, which is where the `??` chain
+ * lives. What these cases add is the half only the service can wire: WHICH
+ * rows feed each rung, that the third one is the rule the agenda resolved, and
+ * that a type nobody has is refused rather than silently falling through.
+ */
+describe('proposing the duration of an appointment', () => {
+  const aProposal = (overrides: Record<string, unknown> = {}) => ({
+    siteId: SITE,
+    practitionerId: PRACTITIONER,
+    startsAt: EIGHT,
+    ...overrides,
+  });
+
+  it('SP-023 la excepción del médico gana a la duración base del tipo', async () => {
+    const { service } = serviceWith({
+      durationSources: { exceptionMinutes: 40, serviceTypeMinutes: 30 },
+    });
+
+    const proposal = await service.proposeDuration(
+      aProposal({ serviceTypeId: SERVICE_TYPE }),
+    );
+
+    expect(proposal.minutes).toBe(40);
+  });
+
+  it('SP-023 sin excepción rige la duración base del especialidad·tipo', async () => {
+    const { service } = serviceWith({
+      durationSources: { exceptionMinutes: null, serviceTypeMinutes: 30 },
+    });
+
+    const proposal = await service.proposeDuration(
+      aProposal({ serviceTypeId: SERVICE_TYPE }),
+    );
+
+    expect(proposal.minutes).toBe(30);
+  });
+
+  it('SP-023 sin tipo elegido rige el turno de la sede', async () => {
+    // D-021 moved the third rung from the rule to the site. 20 minutes is
+    // what the booking screen books today: the rung is the case, not the
+    // omission.
+    const { service, recorded } = serviceWith();
+
+    const proposal = await service.proposeDuration(aProposal());
+
+    expect(proposal).toEqual({ minutes: 20 });
+    // Storage is not even asked: there is no type to ask about.
+    expect(recorded.durationSources).toEqual([]);
+  });
+
+  it('SP-023 pregunta por el par profesional·tipo, no por el tipo a secas', async () => {
+    // The exception of SP-022 belongs to ONE practitioner: asking without one
+    // would hand another doctor's minutes to this booking.
+    const { service, recorded } = serviceWith({
+      durationSources: { exceptionMinutes: 45, serviceTypeMinutes: 30 },
+    });
+
+    await service.proposeDuration(aProposal({ serviceTypeId: SERVICE_TYPE }));
+
+    expect(recorded.durationSources).toEqual([
+      { practitionerId: PRACTITIONER, serviceTypeId: SERVICE_TYPE },
+    ]);
+  });
+
+  it('SP-028 no devuelve ya la rejilla: D-021 hizo imposible el desencaje', async () => {
+    // The field carried the grid so the screen could warn «no encaja en los
+    // turnos de N min» before the click, back when a base duration of 30 over
+    // a 20-minute grid was a configuration the clinic could reach. It cannot
+    // be saved any more, so the warning can never fire — and a warning that
+    // never fires teaches people to skip the ones that do.
+    const { service } = serviceWith({
+      durationSources: { exceptionMinutes: null, serviceTypeMinutes: 60 },
+    });
+
+    const proposal = await service.proposeDuration(
+      aProposal({ serviceTypeId: SERVICE_TYPE }),
+    );
+
+    expect(proposal).toEqual({ minutes: 60 });
+  });
+
+  it('SP-023 sin regla abierta a esa hora y sin tipo no propone ninguna duración', async () => {
+    // 07:00 local, an hour before the rule opens. `null` and not a made-up
+    // number: the booking is refused by AG-028 anyway, and a proposal here
+    // would be a number nobody can act on.
+    const { service } = serviceWith();
+
+    const proposal = await service.proposeDuration(
+      aProposal({ startsAt: new Date('2026-09-14T12:00:00Z') }),
+    );
+
+    expect(proposal).toEqual({ minutes: null });
+  });
+
+  it('SERVICE_TYPE_NOT_FOUND cuando el tipo elegido no existe', async () => {
+    // Falling through to the rule's minutes would propose a length for a type
+    // nobody has, and recepción would book it without ever being told.
+    const { service } = serviceWith({ durationSources: null });
+
+    await expect(
+      service.proposeDuration(aProposal({ serviceTypeId: SERVICE_TYPE })),
+    ).rejects.toBeInstanceOf(ServiceTypeNotFoundError);
   });
 });
 
@@ -685,6 +1060,183 @@ describe('transitioning an appointment', () => {
     const logged = JSON.stringify(lines);
     expect(logged).toContain('AGENDA_STATUS_CHANGED');
     expect(logged).toContain('CANCELLED');
+    expect(logged).not.toContain('Motivo con dato de salud');
+    expect(logged).not.toContain(PATIENT);
+    expect(logged).not.toContain(PRACTITIONER);
+  });
+});
+
+/**
+ * Rescheduling, at the layer that decides HOW it is done.
+ *
+ * WHAT ONLY THIS FILE CAN PROVE, and it is the whole reason AG-052 is
+ * satisfiable at all: that the service does NOT compose the operation out of
+ * an annulment followed by a booking. Whether the transaction really rolls
+ * back is PostgreSQL's answer and lives in
+ * `test/integration/agenda-reschedule.spec.ts`; whether there is a single
+ * atomic call for it to roll back is decided here, and a double is exactly the
+ * right instrument for it.
+ */
+const aReschedule = (overrides: Record<string, unknown> = {}) => ({
+  siteId: SITE,
+  entryId: 'entry-1',
+  startsAt: new Date('2026-09-14T14:00:00Z'),
+  endsAt: new Date('2026-09-14T14:20:00Z'),
+  bookingChannel: 'PHONE',
+  reason: 'Paciente pide otra hora',
+  ...overrides,
+});
+
+describe('rescheduling an appointment', () => {
+  it('AG-052 moves the appointment through ONE atomic port call, never an annulment plus a booking', async () => {
+    const { service, recorded } = serviceWith();
+
+    await service.reschedule(aReschedule(), REQUESTER);
+
+    // The assertion that matters is the pair of empties: composing the
+    // operation out of these two is what leaves a patient with no appointment
+    // the first time the destination slot is taken.
+    expect(recorded.transitions).toEqual([]);
+    expect(recorded.booked).toEqual([]);
+    expect(recorded.reschedules).toHaveLength(1);
+    expect(recorded.reschedules[0]?.command).toEqual({
+      siteId: SITE,
+      entryId: 'entry-1',
+      changedById: USER,
+    });
+  });
+
+  it('AG-050 hands the port the new interval and a decision that only releases the old row', async () => {
+    const { service, recorded } = serviceWith();
+
+    const moved = await service.reschedule(aReschedule(), REQUESTER);
+
+    const [only] = recorded.reschedules;
+    expect(only?.booking).toEqual({
+      startsAt: new Date('2026-09-14T14:00:00Z'),
+      endsAt: new Date('2026-09-14T14:20:00Z'),
+      bookingChannel: 'PHONE',
+    });
+    // What the ORIGINAL row is told to become: annulled and released, with no
+    // key that could carry an interval (AG-050's «no mover la fila existente»).
+    expect(only?.change.to).toBe('CANCELLED');
+    expect(Object.keys(only?.change.effects ?? {}).sort()).toEqual([
+      'cancelledAt',
+      'releasedAt',
+    ]);
+    expect(moved.original.releasedAt).toBeInstanceOf(Date);
+  });
+
+  it('AG-051 answers with both entries naming each other', async () => {
+    const { service } = serviceWith();
+
+    const moved = await service.reschedule(aReschedule(), REQUESTER);
+
+    expect(moved.original.rescheduledToId).toBe(moved.created.id);
+    expect(moved.created.rescheduledFromId).toBe(moved.original.id);
+  });
+
+  it('AG-044 refuses a reschedule with no reason before it reads anything', async () => {
+    const { service, recorded } = serviceWith();
+
+    await expect(
+      service.reschedule(aReschedule({ reason: '  ' }), REQUESTER),
+    ).rejects.toBeInstanceOf(CancellationReasonRequiredError);
+    expect(recorded.reschedules).toEqual([]);
+    // Not even the schedule was read: a refusal that costs a round trip is a
+    // worse refusal.
+    expect(recorded.context).toEqual([]);
+  });
+
+  it('AG-071 answers a missing entry and a foreign one the same way', async () => {
+    const { service, recorded } = serviceWith({ entry: null });
+
+    await expect(
+      service.reschedule(aReschedule(), REQUESTER),
+    ).rejects.toBeInstanceOf(AgendaEntryNotFoundError);
+    expect(recorded.reschedules).toEqual([]);
+  });
+
+  it('AG-034 refuses an unknown booking channel before touching the entry', async () => {
+    const { service, recorded } = serviceWith();
+
+    await expect(
+      service.reschedule(
+        aReschedule({ bookingChannel: 'telefono' }),
+        REQUESTER,
+      ),
+    ).rejects.toBeInstanceOf(InvalidBookingChannelError);
+    expect(recorded.reschedules).toEqual([]);
+  });
+
+  it('AG-040 refuses to reschedule an appointment that is already terminal', async () => {
+    const { service, recorded } = serviceWith({
+      entry: anEntry({ status: 'CANCELLED', releasedAt: EIGHT }),
+    });
+
+    await expect(
+      service.reschedule(aReschedule(), REQUESTER),
+    ).rejects.toBeInstanceOf(InvalidAgendaTransitionError);
+    expect(recorded.reschedules).toEqual([]);
+  });
+
+  it('AG-104 judges the NEW interval with the same rules a fresh booking gets', async () => {
+    const { service, recorded } = serviceWith();
+
+    // 14:10Z is 09:10 in Guayaquil: inside the rule, off the twenty-minute
+    // grid. A reschedule that skipped these checks would place an appointment
+    // the booking route refuses to create.
+    await expect(
+      service.reschedule(
+        aReschedule({
+          startsAt: new Date('2026-09-14T14:10:00Z'),
+          endsAt: new Date('2026-09-14T14:30:00Z'),
+        }),
+        REQUESTER,
+      ),
+    ).rejects.toBeInstanceOf(SlotNotAlignedError);
+    expect(recorded.reschedules).toEqual([]);
+  });
+
+  it('AG-027 refuses moving an appointment whose chart was merged away', async () => {
+    const { service, recorded } = serviceWith({
+      patient: { id: PATIENT, mergedIntoMrn: 'HC-000042' },
+    });
+
+    await expect(
+      service.reschedule(aReschedule(), REQUESTER),
+    ).rejects.toBeInstanceOf(PatientMergedError);
+    expect(recorded.reschedules).toEqual([]);
+  });
+
+  it('AG-110 warns about the day the appointment LANDED on, read after it exists', async () => {
+    const { service } = serviceWith({
+      holidays: [
+        {
+          id: 'holiday-1',
+          date: parseClinicalDate('2026-09-14'),
+          name: 'Fiesta local',
+          siteId: SITE,
+          workedBySiteIds: [],
+        },
+      ],
+    });
+
+    const moved = await service.reschedule(aReschedule(), REQUESTER);
+
+    expect(moved.warnings.join(' ')).toContain('Fiesta local');
+  });
+
+  it('AG-074 logs the site and the fact, never the patient or the reason', async () => {
+    const { service, lines } = serviceWith();
+
+    await service.reschedule(
+      aReschedule({ reason: 'Motivo con dato de salud' }),
+      REQUESTER,
+    );
+
+    const logged = JSON.stringify(lines);
+    expect(logged).toContain('AGENDA_ENTRY_RESCHEDULED');
     expect(logged).not.toContain('Motivo con dato de salud');
     expect(logged).not.toContain(PATIENT);
     expect(logged).not.toContain(PRACTITIONER);

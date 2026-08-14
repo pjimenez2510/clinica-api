@@ -22,6 +22,7 @@ import { PrismaAgendaRepository } from './prisma-agenda.repository';
  */
 
 const ENTRY_ID = '00000000-0000-4000-8000-00000000000a';
+const CREATED_ID = '00000000-0000-4000-8000-00000000000b';
 const SITE = '00000000-0000-4000-8000-000000000001';
 const USER = '00000000-0000-4000-8000-000000000004';
 
@@ -44,6 +45,11 @@ function entryRow(overrides: Record<string, unknown> = {}) {
     serviceTypeConceptId: null,
     createdById: USER,
     encounter: null,
+    // AG-051: what `ENTRY_SELECT` reads of the reschedule chain. An empty list
+    // is "nothing replaced this one", which the partial unique index makes the
+    // only alternative to a single element.
+    rescheduledFromId: null,
+    rescheduledTo: [],
     ...overrides,
   };
 }
@@ -57,6 +63,8 @@ function prismaDouble(options: {
   /** Answers for `findFirst`/`findUniqueOrThrow`, consumed in call order. */
   reads: (Record<string, unknown> | null)[];
   updatedCount?: number;
+  /** AG-052: what the INSERT of the new entry throws, if it is to fail. */
+  createFails?: Error;
 }) {
   const calls: { method: string; args: Record<string, unknown> }[] = [];
   let readIndex = 0;
@@ -77,6 +85,12 @@ function prismaDouble(options: {
       updateMany: (args: Record<string, unknown>) => {
         calls.push({ method: 'entry.updateMany', args });
         return Promise.resolve({ count: options.updatedCount ?? 1 });
+      },
+      create: (args: Record<string, unknown>) => {
+        calls.push({ method: 'entry.create', args });
+        return options.createFails
+          ? Promise.reject(options.createFails)
+          : Promise.resolve(entryRow({ id: CREATED_ID }));
       },
     },
     agendaStatusHistory: {
@@ -263,5 +277,128 @@ describe('the transition transaction', () => {
       .catch((error: unknown) => error);
 
     expect(rejection).toBeInstanceOf(AgendaEntryHasEncounterError);
+  });
+});
+
+/**
+ * The reschedule transaction, against the same double.
+ *
+ * WHAT ONLY THIS FILE CAN PIN: the SHAPE — that the release and the insert are
+ * issued inside ONE `$transaction`, in that order, and that the original is
+ * re-read only after the insert so its forward link exists. Whether PostgreSQL
+ * really rolls the release back when the insert is refused is not a claim a
+ * double may make, and `test/integration/agenda-reschedule.spec.ts` makes it
+ * against a real database.
+ */
+const NEW_SLOT = {
+  startsAt: new Date('2026-01-05T14:00:00Z'),
+  endsAt: new Date('2026-01-05T14:20:00Z'),
+  bookingChannel: 'PHONE' as const,
+};
+
+const annul = (): StatusChange => ({
+  to: 'CANCELLED',
+  effects: { cancelledAt: NOW, releasedAt: NOW },
+  cancellationNote: 'Paciente pide otra hora',
+  historyNote: 'Paciente pide otra hora',
+});
+
+describe('the reschedule transaction', () => {
+  it('AG-050 releases the existing row and INSERTS the new interval instead of updating it', async () => {
+    const { repository, calls } = prismaDouble({
+      reads: [entryRow(), entryRow(), entryRow({ status: 'CANCELLED' })],
+    });
+
+    await repository.reschedule(COMMAND, NEW_SLOT, annul);
+
+    expect(calls.map((call) => call.method)).toEqual([
+      'entry.findFirst',
+      'entry.updateMany',
+      'history.create',
+      // The columns the new row copies from the old one, read inside the
+      // transaction so nothing about the appointment can change under it.
+      'entry.findUniqueOrThrow',
+      'entry.create',
+      // Re-read AFTER the insert: before it, the original would come back
+      // pointing at nothing (AG-051).
+      'entry.findUniqueOrThrow',
+    ]);
+
+    // AG-050 in the one place it could be broken: the UPDATE stamps the
+    // annulment and NEVER the new interval.
+    expect(calls[1]?.args).toMatchObject({
+      where: { id: ENTRY_ID, siteId: SITE, status: 'BOOKED', releasedAt: null },
+      data: { status: 'CANCELLED', releasedAt: NOW },
+    });
+    const updateData = (calls[1]?.args as { data: Record<string, unknown> })
+      .data;
+    expect(updateData).not.toHaveProperty('startsAt');
+    expect(updateData).not.toHaveProperty('endsAt');
+  });
+
+  it('AG-051 stamps the new entry with the entry it came from', async () => {
+    const { repository, calls } = prismaDouble({
+      reads: [entryRow(), entryRow(), entryRow({ status: 'CANCELLED' })],
+    });
+
+    await repository.reschedule(COMMAND, NEW_SLOT, annul);
+
+    const created = calls.find((call) => call.method === 'entry.create');
+    expect(created?.args).toMatchObject({
+      data: {
+        kind: 'APPOINTMENT',
+        siteId: SITE,
+        startsAt: NEW_SLOT.startsAt,
+        endsAt: NEW_SLOT.endsAt,
+        bookingChannel: 'PHONE',
+        createdById: USER,
+        rescheduledFromId: ENTRY_ID,
+      },
+    });
+  });
+
+  it('AG-052 lets the refusal of the new entry escape, so the transaction takes the release with it', async () => {
+    const slotTaken = new Error('exclusion violation');
+    const { repository, calls } = prismaDouble({
+      reads: [entryRow(), entryRow()],
+      createFails: slotTaken,
+    });
+
+    await expect(repository.reschedule(COMMAND, NEW_SLOT, annul)).rejects.toBe(
+      slotTaken,
+    );
+
+    // NOTHING is swallowed and nothing is compensated by hand: the adapter
+    // does not catch this, so `$transaction` rolls the release back. A version
+    // that answered "created: null" would leave the original annulled.
+    expect(calls.map((call) => call.method)).toEqual([
+      'entry.findFirst',
+      'entry.updateMany',
+      'history.create',
+      'entry.findUniqueOrThrow',
+      'entry.create',
+    ]);
+  });
+
+  it('AG-052 writes nothing at all when the policy refuses the annulment', async () => {
+    const { repository, calls } = prismaDouble({ reads: [entryRow()] });
+
+    await expect(
+      repository.reschedule(COMMAND, NEW_SLOT, () => {
+        throw new InvalidAgendaTransitionError('CANCELLED', 'CANCELLED');
+      }),
+    ).rejects.toBeInstanceOf(InvalidAgendaTransitionError);
+
+    expect(calls.map((call) => call.method)).toEqual(['entry.findFirst']);
+  });
+
+  it('AG-071 answers not-found for an entry of another site without writing', async () => {
+    const { repository, calls } = prismaDouble({ reads: [null] });
+
+    await expect(
+      repository.reschedule(COMMAND, NEW_SLOT, annul),
+    ).rejects.toBeInstanceOf(AgendaEntryNotFoundError);
+
+    expect(calls.map((call) => call.method)).toEqual(['entry.findFirst']);
   });
 });

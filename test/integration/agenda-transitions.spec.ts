@@ -132,8 +132,19 @@ describe('las transiciones de estado de la cita por HTTP', () => {
     await createScheduleRule(
       prisma,
       { practitionerId: practitioner.id, siteId: site.id },
-      { weekday: 1, startTime: '08:00', endTime: '12:00', slotMinutes: 20 },
+      { weekday: 1, startTime: '08:00', endTime: '12:00' },
     );
+
+    // AG-031, desde E7: reservar con inicio anterior a ahora está cerrado de
+    // fábrica, y todas las citas de este fichero son del pasado a propósito
+    // (una inasistencia necesita que la hora de inicio ya haya pasado). La
+    // sede habilita el registro a posteriori, que es exactamente el caso para
+    // el que existe el parámetro; el interruptor en sí lo prueban AG-031 y
+    // AG-094 en `agenda-parameters.spec.ts`.
+    await prisma.siteParameter.update({
+      where: { siteId: site.id },
+      data: { allowPastBooking: true },
+    });
 
     token = await signIn();
   }

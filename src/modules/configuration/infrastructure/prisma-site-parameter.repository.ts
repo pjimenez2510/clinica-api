@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import type {
+  SiteParameterChange,
   SiteParameterRepository,
   SiteParameterView,
 } from '../domain/site-parameter.repository';
@@ -30,6 +31,8 @@ const PARAMETER_SELECT = {
   minLeadMinutes: true,
   maxLeadDays: true,
   overbookingCap: true,
+  slotAtomMinutes: true,
+  allowPastBooking: true,
   cancelledRetention: true,
 } satisfies Prisma.SiteParameterSelect;
 
@@ -49,25 +52,86 @@ export class PrismaSiteParameterRepository implements SiteParameterRepository {
    * nothing else. No pass over `agenda_entry`, no revalidation, no
    * cancellation — a change rules forward only, and the cheapest way to keep
    * that true is for the code that would undo it not to exist.
+   *
+   * AG-097, CF-066: it answers with BOTH sides, and the read that produces
+   * `before` runs INSIDE the transaction that writes `after`. The service also
+   * reads before calling — for CF-065's coherence check — and that read cannot
+   * serve here: it is already stale by the time the UPDATE runs, so two
+   * administrators saving at once would each log a previous value the other
+   * had replaced. `SELECT … FOR UPDATE` is what makes the pair exact rather
+   * than merely likely: the second transaction waits for the first, reads what
+   * it actually left, and the entries chain instead of contradicting.
    */
   async update(
     siteId: string,
     patch: SiteParametersPatch,
-  ): Promise<SiteParameterView | null> {
+  ): Promise<SiteParameterChange | null> {
     try {
-      return await this.prisma.siteParameter.update({
-        where: { siteId },
-        data: {
-          minLeadMinutes: patch.minLeadMinutes,
-          maxLeadDays: patch.maxLeadDays,
-          overbookingCap: patch.overbookingCap,
-          cancelledRetention: patch.cancelledRetention,
-        },
-        select: PARAMETER_SELECT,
+      return await this.prisma.$transaction(async (tx) => {
+        // Prisma has no `FOR UPDATE`, so the lock is asked for in SQL. Without
+        // it, READ COMMITTED lets another transaction commit between this read
+        // and the update below, and `before` would name a value this write did
+        // not replace. It locks nothing when the site has no row, which the
+        // read then reports as the unknown site it is.
+        await tx.$queryRaw`
+          SELECT 1 FROM site_parameter WHERE site_id = ${siteId}::uuid FOR UPDATE
+        `;
+
+        const before = await tx.siteParameter.findUnique({
+          where: { siteId },
+          select: PARAMETER_SELECT,
+        });
+        if (!before) return null;
+
+        const after = await tx.siteParameter.update({
+          where: { siteId },
+          data: {
+            minLeadMinutes: patch.minLeadMinutes,
+            maxLeadDays: patch.maxLeadDays,
+            overbookingCap: patch.overbookingCap,
+            slotAtomMinutes: patch.slotAtomMinutes,
+            // `undefined` leaves the column alone; `false` is a value the site
+            // chose and has to reach the row like any other.
+            allowPastBooking: patch.allowPastBooking,
+            cancelledRetention: patch.cancelledRetention,
+          },
+          select: PARAMETER_SELECT,
+        });
+
+        return { before, after };
       });
     } catch (error) {
       if (isRecordNotFound(error)) return null;
       throw error;
     }
+  }
+
+  /**
+   * D-021. The distinct durations the clinic has configured: the base of every
+   * service type and every per-practitioner exception.
+   *
+   * BOTH TABLES, and both belong to other modules — see the port. Missing
+   * either one would make the refusal a half-truth: an exception of 30 minutes
+   * is just as unbookable on a 20-minute grid as a base duration of 30, and
+   * ST-009 is the rung that wins when it exists (SP-023).
+   *
+   * INACTIVE ROWS COUNT. A deactivated service type keeps its duration and
+   * SP-004 promises the existing references stay intact, so reactivating it
+   * after the atom moved would produce exactly the unbookable configuration
+   * this refusal exists to prevent — silently, and much later.
+   */
+  async configuredDurations(): Promise<readonly number[]> {
+    const [types, exceptions] = await Promise.all([
+      this.prisma.serviceType.findMany({
+        distinct: ['durationMinutes'],
+        select: { durationMinutes: true },
+      }),
+      this.prisma.durationException.findMany({
+        distinct: ['durationMinutes'],
+        select: { durationMinutes: true },
+      }),
+    ]);
+
+    return [...types, ...exceptions].map((row) => row.durationMinutes);
   }
 }

@@ -387,6 +387,22 @@ export class PrismaStaffRepository implements StaffRepository {
       }),
     ]);
   }
+
+  /**
+   * D-021, SP-022. The distinct slot atoms of the clinic's sites.
+   *
+   * `distinct` because the answer feeds a lowest common multiple, where a
+   * repeated value changes nothing. A site without a parameter row contributes
+   * nothing: `trg_site_parameter_defaults` writes one for every site (CF-062),
+   * so the set of rows IS the set of sites.
+   */
+  async siteSlotAtoms(): Promise<readonly number[]> {
+    const rows = await this.prisma.siteParameter.findMany({
+      distinct: ['slotAtomMinutes'],
+      select: { slotAtomMinutes: true },
+    });
+    return rows.map((row) => row.slotAtomMinutes);
+  }
 }
 
 function toView(row: PractitionerRow): PractitionerView {

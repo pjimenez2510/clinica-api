@@ -46,7 +46,10 @@ import {
 } from './dto/configuration.dto';
 
 /**
- * Holidays and the operating numbers of each site (C3: CF-060..CF-066).
+ * Holidays and the operating parameters of each site (C3: CF-060..CF-066),
+ * including the two rules `agenda` declares and this module administers: which
+ * sites work a holiday (AG-092) and whether a site admits booking in the past
+ * (AG-031, AG-094).
  *
  * WHY `settings:read` AND `settings:manage`, and not `config:*`. `config:*`
  * covers specialties, attention types and durations — master data the record
@@ -61,15 +64,18 @@ import {
  *   - The parameter routes name ONE site in the path, so they are
  *     `param:siteId` and the guard checks the caller's scope over exactly that
  *     site before the handler runs. That is the strongest form available.
- *   - The holiday routes are `global`, and it is the honest answer rather than
- *     a shrug. A holiday's scope arrives in the BODY, and guards run before
- *     the pipes — there is nothing validated to check against at that moment.
- *     The listing is `global` for a second reason that matters more: the rows
- *     with `site_id IS NULL` belong to no site and every site obeys them, so
- *     narrowing the query by the caller's sites would HIDE exactly the
- *     holidays that apply everywhere. What carries the weight there is
- *     `settings:manage`, an administration permission DEFAULT_ROLES grants
- *     clinic-wide and to one role only.
+ *   - The holiday routes that create, edit and delete are `global`, and it is
+ *     the honest answer rather than a shrug. A holiday's scope arrives in the
+ *     BODY, and guards run before the pipes — there is nothing validated to
+ *     check against at that moment. The listing is `global` for a second
+ *     reason that matters more: the rows with `site_id IS NULL` belong to no
+ *     site and every site obeys them, so narrowing the query by the caller's
+ *     sites would HIDE exactly the holidays that apply everywhere. What
+ *     carries the weight there is `settings:manage`, an administration
+ *     permission DEFAULT_ROLES grants clinic-wide and to one role only.
+ *   - The AG-092 exception routes are the exception to that exception: their
+ *     site is IN THE PATH, so they are `param:siteId` like the parameter
+ *     routes and the guard settles the scope before the handler runs.
  */
 @ApiTags('configuration')
 @Controller({ path: 'configuration', version: '1' })
@@ -143,9 +149,57 @@ export class ConfigurationController {
     await this.holidays.delete(id, this.requester(req));
   }
 
+  /**
+   * AG-092, CF-066. This site works this holiday: urgencias abre el 25 de
+   * diciembre y las demás sedes siguen cerradas.
+   *
+   * A PUT, because the pair is the primary key: marking it twice is the same
+   * statement, and the second click deserves «hecho» rather than a 409.
+   *
+   * `param:siteId` AND NOT `global`, unlike the holiday routes above. Those
+   * carry their scope in the BODY, which the guard cannot see; this one has
+   * the site in the URL, so the guard checks the caller's scope over exactly
+   * that site before the handler runs — and a route whose URL names a site and
+   * declares `global` is caught by `route-authorisation.spec.ts`.
+   */
+  @Put('holidays/:id/worked-by/:siteId')
+  @RequirePermission('settings:manage', 'param:siteId')
+  @ApiOperation({ summary: 'Marcar que una sede trabaja un feriado' })
+  @ApiOkResponse({ type: HolidayDto })
+  async markHolidayWorkedBy(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('siteId', ParseUUIDPipe) siteId: string,
+    @Req() req: Request,
+  ): Promise<HolidayResponse> {
+    return this.holidays.markWorkedBy(id, siteId, this.requester(req));
+  }
+
+  /**
+   * AG-092, CF-066. The site observes the holiday again.
+   *
+   * It answers with the HOLIDAY and not with 204: what changed is the
+   * holiday's list of exceptions, and handing it back lets the screen replace
+   * the row it already has instead of reloading the year.
+   */
+  @Delete('holidays/:id/worked-by/:siteId')
+  @RequirePermission('settings:manage', 'param:siteId')
+  @ApiOperation({ summary: 'Quitar que una sede trabaja un feriado' })
+  @ApiOkResponse({ type: HolidayDto })
+  async unmarkHolidayWorkedBy(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('siteId', ParseUUIDPipe) siteId: string,
+    @Req() req: Request,
+  ): Promise<HolidayResponse> {
+    return this.holidays.unmarkWorkedBy(id, siteId, this.requester(req));
+  }
+
   // --- Site parameters -------------------------------------------------------
 
-  /** CF-062: the four numbers of D-001, with the site's current values. */
+  /**
+   * CF-062, AG-094: the four numbers of D-001 and the past booking switch,
+   * with the site's current values. The switch travels in the ANSWER too — a
+   * parameter an administrator cannot SEE is one they cannot rely on.
+   */
   @Get('sites/:siteId/parameters')
   @RequirePermission('settings:read', 'param:siteId')
   @ApiOperation({ summary: 'Parámetros de operación de una sede' })
@@ -180,6 +234,8 @@ export class ConfigurationController {
         minLeadMinutes: dto.minLeadMinutes,
         maxLeadDays: dto.maxLeadDays,
         overbookingCap: dto.overbookingCap,
+        slotAtomMinutes: dto.slotAtomMinutes,
+        allowPastBooking: dto.allowPastBooking,
         cancelledRetention: dto.cancelledRetention,
       },
       this.requester(req),

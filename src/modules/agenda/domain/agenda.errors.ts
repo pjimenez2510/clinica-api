@@ -5,7 +5,11 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../../shared/domain/errors/domain-error';
-import { wallClockOf } from '../../../shared/domain/clinic-time';
+import {
+  type ClinicalDate,
+  clinicalDateOf,
+  wallClockOf,
+} from '../../../shared/domain/clinic-time';
 import type { AgendaEntryStatus } from './agenda-entry';
 
 /**
@@ -191,6 +195,111 @@ export class SlotNotAlignedError extends BusinessRuleViolation {
 }
 
 /**
+ * AG-031. The appointment starts before now, at a site that does not admit it.
+ *
+ * WHY THE REFUSAL IS THE DEFAULT and the permission is the exception
+ * (`site_parameter.allow_past_booking`, false out of the box). With a minimum
+ * lead of zero — D-001 — a site already accepts the appointment of the patient
+ * standing at the counter right now, so nothing legitimate needs the past
+ * except recording an attention that already happened. That case is real, and
+ * it is also indistinguishable from filling holes backwards as if they had
+ * been booked on time. A site opening it is that site's decision; shipping it
+ * open would be ours.
+ *
+ * NO INSTANT TRAVELS in the message or the parameters, unlike its two
+ * neighbours: there is nothing to state that the caller does not already know
+ * — they sent the start, and «now» is on their own screen.
+ */
+export class BookingInThePastError extends BusinessRuleViolation {
+  readonly code = 'BOOKING_IN_THE_PAST';
+  override readonly userTitle =
+    'La cita no puede empezar en una hora que ya pasó. Elija una hora futura';
+
+  constructor() {
+    super(
+      'Requested start precedes the current instant and the site does not admit past bookings',
+      {},
+      [
+        {
+          field: 'startsAt',
+          code: 'BOOKING_IN_THE_PAST',
+          message: 'La hora indicada ya pasó',
+        },
+      ],
+    );
+  }
+}
+
+/**
+ * AG-032. Closer than the minimum lead the site requires.
+ *
+ * IT CARRIES THE FIRST ADMISSIBLE INSTANT because the requirement demands it
+ * («indicando el primer instante admisible»), and because the alternative is a
+ * receptionist trying 10:00, 10:15 and 10:30 until one is accepted. `params`
+ * holds the ISO-8601 instant, which is what the client sends back; the
+ * sentence holds the Ecuadorian wall clock and date, which is what a person
+ * reads (AG-001).
+ *
+ * THE MINIMUM LEAD ITSELF TRAVELS TOO. It is a number of minutes of the site's
+ * own configuration, not health data, and without it the client cannot explain
+ * why an hour that is plainly in the future was refused.
+ */
+export class BookingTooSoonError extends BusinessRuleViolation {
+  readonly code = 'BOOKING_TOO_SOON';
+  override readonly userTitle =
+    'La cita se pide con menos antelación de la que admite esta sede. Elija una hora más tarde';
+
+  constructor(earliestStart: Date, minLeadMinutes: number, timeZone?: string) {
+    super(
+      `Requested start is closer than the ${minLeadMinutes} minute minimum lead of the site`,
+      {
+        earliestStart: earliestStart.toISOString(),
+        minLeadMinutes,
+      },
+      [
+        {
+          field: 'startsAt',
+          code: 'BOOKING_TOO_SOON',
+          message:
+            `La primera cita que puede reservarse es el ${spanishDate(clinicalDateOf(earliestStart, timeZone))} ` +
+            `a las ${wallClockOf(earliestStart, timeZone).toString()}`,
+        },
+      ],
+    );
+  }
+}
+
+/**
+ * AG-033. Further ahead than the maximum lead the site publishes.
+ *
+ * THE LIMIT IS A DATE AND NOT AN INSTANT, and the requirement says so: it asks
+ * the refusal to name «la última fecha admisible», while AG-032 asks for «el
+ * primer instante admisible». The units agree with that reading — minutes for
+ * the minimum lead, days for the maximum — and a date boundary is the one a
+ * receptionist can act on: every hour of that day is bookable, so the sentence
+ * is true as written instead of true until 14:37.
+ */
+export class BookingTooFarError extends BusinessRuleViolation {
+  readonly code = 'BOOKING_TOO_FAR';
+  override readonly userTitle =
+    'La cita se pide con demasiada antelación para esta sede. Elija una fecha más cercana';
+
+  constructor(latestDate: ClinicalDate, maxLeadDays: number) {
+    super(
+      `Requested start is beyond the ${maxLeadDays} day maximum lead of the site`,
+      { latestDate, maxLeadDays },
+      [
+        {
+          field: 'startsAt',
+          code: 'BOOKING_TOO_FAR',
+          message: `La última fecha que puede reservarse es el ${spanishDate(latestDate)}`,
+        },
+      ],
+    );
+  }
+}
+
+/**
  * AG-026. PostgreSQL kept aborting the booking for serialisation and the
  * retries ran out.
  *
@@ -348,6 +457,20 @@ export class AgendaEntryNotFoundError extends NotFoundError {
   constructor() {
     super('Agenda entry not found at this site');
   }
+}
+
+/**
+ * `2027-03-13` as Ecuador writes it: `13/03/2027`.
+ *
+ * The ISO form stays in `params`, which is what a client parses and sends
+ * back; this is only for the sentence a person reads. No `Intl.DateTimeFormat`
+ * because a `ClinicalDate` is a calendar date and not an instant — handing it
+ * to a formatter means turning it into one, and that is where the zone bugs
+ * come from.
+ */
+function spanishDate(date: ClinicalDate): string {
+  const [year, month, day] = date.split('-');
+  return `${day}/${month}/${year}`;
 }
 
 /** The Spanish sentence for zero, one or two admitted starts. */

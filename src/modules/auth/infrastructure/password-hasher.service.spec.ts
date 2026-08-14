@@ -46,11 +46,28 @@ describe('AU-001 el almacenamiento de contraseñas', () => {
   it('AU-001 no deja recuperar el texto en claro desde el hash', async () => {
     const hash = await hasher.hash(PASSWORD);
 
-    // Ni entero ni por partes: un hash que contuviera cualquier fragmento
-    // legible sería un filtrado, no un resumen.
     expect(hash).not.toContain(PASSWORD);
-    for (const palabra of PASSWORD.split(' ')) {
-      expect(hash).not.toContain(palabra);
+
+    /**
+     * SOLO FRAGMENTOS LARGOS, y esto es la corrección de una prueba que yo
+     * mismo escribí mal el 13-08-2026.
+     *
+     * La primera versión recorría TODAS las palabras, «el» incluida. Un hash
+     * de Argon2 lleva la sal en base64 —unos setenta caracteres de alfabeto
+     * `A-Za-z0-9+/`— así que un fragmento de dos letras aparece por AZAR cada
+     * pocas ejecuciones: la prueba falló una vez y pasó las tres siguientes.
+     * Una puerta que falla al azar se aprende a ignorar, y entonces deja de
+     * proteger el día que el fallo es real.
+     *
+     * El requisito es que no se pueda recuperar el texto en claro, no que el
+     * hash evite dos letras cualesquiera. Con siete caracteres la coincidencia
+     * fortuita es de una entre billones, así que la afirmación vuelve a ser
+     * sobre el código y no sobre la suerte.
+     */
+    const significativas = PASSWORD.split(' ').filter((w) => w.length >= 4);
+    expect(significativas.length).toBeGreaterThan(0);
+    for (const palabra of significativas) {
+      expect(hash, palabra).not.toContain(palabra);
     }
   });
 

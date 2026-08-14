@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { AccessAuditEntry } from '../../../shared/audit/access-audit.port';
 import { HolidayNotFoundError } from '../domain/configuration.errors';
 import type {
+  HolidayChange,
   HolidayInput,
   HolidayPatch,
   HolidayQuery,
@@ -32,6 +33,7 @@ const HOLIDAY: HolidayView = {
   date: '2026-01-01',
   name: 'Año Nuevo',
   siteId: null,
+  workedBySiteIds: [],
 };
 
 interface Call {
@@ -39,10 +41,21 @@ interface Call {
   args: unknown[];
 }
 
+const RENAMED: HolidayView = { ...HOLIDAY, name: 'Año Nuevo (corregido)' };
+const WORKED: HolidayView = { ...HOLIDAY, workedBySiteIds: ['site-9'] };
+
 class RepositoryDouble implements HolidayRepository {
   readonly calls: Call[] = [];
-  updateAnswer: HolidayView | null = HOLIDAY;
-  deleteAnswer = true;
+  /**
+   * AG-097, CF-066, D-017: a mutation answers with BOTH sides. The adapter
+   * reads the previous row inside the transaction that overwrites it, which is
+   * the only read that can honestly be called «desde qué valor».
+   */
+  updateAnswer: HolidayChange | null = { before: HOLIDAY, after: RENAMED };
+  /** The row that disappeared, which is all a deletion leaves behind. */
+  deleteAnswer: HolidayView | null = HOLIDAY;
+  /** AG-092. `null` is «that holiday is gone», for both exception methods. */
+  exceptionAnswer: HolidayChange | null = { before: HOLIDAY, after: WORKED };
 
   list(query: HolidayQuery): Promise<readonly HolidayView[]> {
     this.calls.push({ method: 'list', args: [query] });
@@ -54,14 +67,30 @@ class RepositoryDouble implements HolidayRepository {
     return Promise.resolve({ ...HOLIDAY, ...input });
   }
 
-  update(id: string, patch: HolidayPatch): Promise<HolidayView | null> {
+  update(id: string, patch: HolidayPatch): Promise<HolidayChange | null> {
     this.calls.push({ method: 'update', args: [id, patch] });
     return Promise.resolve(this.updateAnswer);
   }
 
-  delete(id: string): Promise<boolean> {
+  delete(id: string): Promise<HolidayView | null> {
     this.calls.push({ method: 'delete', args: [id] });
     return Promise.resolve(this.deleteAnswer);
+  }
+
+  markWorkedBy(
+    holidayId: string,
+    siteId: string,
+  ): Promise<HolidayChange | null> {
+    this.calls.push({ method: 'markWorkedBy', args: [holidayId, siteId] });
+    return Promise.resolve(this.exceptionAnswer);
+  }
+
+  unmarkWorkedBy(
+    holidayId: string,
+    siteId: string,
+  ): Promise<HolidayChange | null> {
+    this.calls.push({ method: 'unmarkWorkedBy', args: [holidayId, siteId] });
+    return Promise.resolve(this.exceptionAnswer);
   }
 }
 
@@ -122,8 +151,21 @@ describe('la administración de feriados', () => {
         action: 'CREATE',
         ip: '10.0.0.1',
         userAgent: undefined,
+        // Nothing was replaced, so there is no previous value to claim.
+        before: undefined,
+        after: created,
       },
     ]);
+  });
+
+  it('AG-097 registra desde qué valor cambió el feriado', async () => {
+    // D-017. A holiday is a date, a name and a scope — no PHI anywhere in it,
+    // which is what makes it one of the resource types the base lets carry a
+    // payload at all.
+    await service.update('holiday-1', { name: 'Año Nuevo (corregido)' }, REQUESTER); // prettier-ignore
+
+    expect(recorded[0]?.before).toEqual(HOLIDAY);
+    expect(recorded[0]?.after).toEqual(RENAMED);
   });
 
   it('CF-066 no escribe en la bitácora al listar', async () => {
@@ -162,7 +204,7 @@ describe('la administración de feriados', () => {
   });
 
   it('CF-060 responde HOLIDAY_NOT_FOUND al borrar uno que ya no está', async () => {
-    repository.deleteAnswer = false;
+    repository.deleteAnswer = null;
 
     await expect(service.delete('holiday-1', REQUESTER)).rejects.toBeInstanceOf(
       HolidayNotFoundError,
@@ -178,5 +220,108 @@ describe('la administración de feriados', () => {
       resourceType: 'configuration',
       resourceId: 'holiday-1',
     });
+  });
+
+  it('AG-097 el borrado deja el valor que desapareció y nada después', async () => {
+    // The one mutation where `before` is the whole record: after it, the row
+    // does not exist anywhere else.
+    await service.delete('holiday-1', REQUESTER);
+
+    expect(recorded[0]?.before).toEqual(HOLIDAY);
+    expect(recorded[0]?.after).toBeUndefined();
+  });
+
+  it('AG-092 marca que una sede trabaja el feriado sin borrarlo para las demás', async () => {
+    // El feriado sigue existiendo con su alcance intacto: lo que se añade es
+    // la excepción de esa sede. Borrarlo abriría también a las demás, que es
+    // justo lo que AG-092 existe para evitar.
+    const holiday = await service.markWorkedBy(
+      'holiday-1',
+      'site-9',
+      REQUESTER,
+    );
+
+    expect(repository.calls[0]).toEqual({
+      method: 'markWorkedBy',
+      args: ['holiday-1', 'site-9'],
+    });
+    expect(holiday).toMatchObject({
+      siteId: null,
+      workedBySiteIds: ['site-9'],
+    });
+  });
+
+  it('AG-092 responde HOLIDAY_NOT_FOUND al marcar un feriado que ya no está', async () => {
+    repository.exceptionAnswer = null;
+
+    await expect(
+      service.markWorkedBy('holiday-1', 'site-9', REQUESTER),
+    ).rejects.toBeInstanceOf(HolidayNotFoundError);
+    expect(recorded).toEqual([]);
+  });
+
+  it('AG-092 devuelve la sede a observar el feriado', async () => {
+    repository.exceptionAnswer = { before: WORKED, after: HOLIDAY };
+
+    const holiday = await service.unmarkWorkedBy(
+      'holiday-1',
+      'site-9',
+      REQUESTER,
+    );
+
+    expect(repository.calls[0]).toEqual({
+      method: 'unmarkWorkedBy',
+      args: ['holiday-1', 'site-9'],
+    });
+    expect(holiday.workedBySiteIds).toEqual([]);
+  });
+
+  it('AG-092 responde HOLIDAY_NOT_FOUND al desmarcar un feriado que ya no está', async () => {
+    repository.exceptionAnswer = null;
+
+    await expect(
+      service.unmarkWorkedBy('holiday-1', 'site-9', REQUESTER),
+    ).rejects.toBeInstanceOf(HolidayNotFoundError);
+    expect(recorded).toEqual([]);
+  });
+
+  it('CF-066 deja en la bitácora quién cambió la excepción de AG-092', async () => {
+    // La mutación es sobre el FERIADO —es su lista de excepciones la que
+    // cambia—, así que la bitácora nombra el feriado y no la sede.
+    await service.markWorkedBy('holiday-1', 'site-9', REQUESTER);
+    await service.unmarkWorkedBy('holiday-1', 'site-9', REQUESTER);
+
+    expect(recorded).toEqual([
+      {
+        userId: 'user-1',
+        resourceType: 'configuration',
+        resourceId: 'holiday-1',
+        action: 'UPDATE',
+        ip: '10.0.0.1',
+        userAgent: undefined,
+        before: HOLIDAY,
+        after: WORKED,
+      },
+      {
+        userId: 'user-1',
+        resourceType: 'configuration',
+        resourceId: 'holiday-1',
+        action: 'UPDATE',
+        ip: '10.0.0.1',
+        userAgent: undefined,
+        before: HOLIDAY,
+        after: WORKED,
+      },
+    ]);
+  });
+
+  it('AG-097 la excepción de AG-092 también dice qué sedes trabajaban antes', async () => {
+    // Which sites worked the holiday IS the value that changed here, so a
+    // trail without it says a holiday was touched and not what happened to it.
+    repository.exceptionAnswer = { before: HOLIDAY, after: WORKED };
+    await service.markWorkedBy('holiday-1', 'site-9', REQUESTER);
+
+    expect(recorded[0]?.before).toMatchObject({ workedBySiteIds: [] });
+    expect(recorded[0]?.after).toMatchObject({ workedBySiteIds: ['site-9'] });
   });
 });

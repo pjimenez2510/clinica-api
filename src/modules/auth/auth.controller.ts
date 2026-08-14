@@ -35,11 +35,14 @@ import { MfaEnrolmentService } from './application/mfa-enrolment.service';
 import { RolePermissionRegistry } from './infrastructure/role-permission.registry';
 import { TokenService } from './infrastructure/token.service';
 import {
+  ChangeMfaDto,
   ChangePasswordDto,
   ConfirmMfaDto,
   CredentialTokenStatusDto,
   type CredentialTokenStatusResponse,
   MfaChallengeResponseDto,
+  MfaConfirmationResponseDto,
+  type MfaConfirmationResponse,
   MfaEnrolmentResponseDto,
   type MfaChallengeResponse,
   SetCredentialDto,
@@ -183,14 +186,101 @@ export class AuthController {
     return this.mfaEnrolment.enroll(this.currentUser.requireUserId());
   }
 
-  /** Confirms enrolment by proving the authenticator was actually configured. */
+  /**
+   * Confirms enrolment by proving the authenticator was actually configured,
+   * and returns the backup codes (AU-005).
+   *
+   * ⚠️ 200 AND NOT 204, and the difference matters to the client. The codes
+   * exist in this response and nowhere else — only their hashes are stored —
+   * so a caller that ignores the body leaves the person one lost phone away
+   * from being locked out of the medical records.
+   *
+   * THROTTLED LIKE `mfa/verify`, and for a reason of its own: this route hands
+   * out ten Argon2 hashes' worth of work per call, and a confirmation that is
+   * retried in a loop would spend it on every attempt. It is defence in depth
+   * and NOT what stops a double submission — the database settles that, in the
+   * same statement that writes; see `confirmMfaWithBackupCodes`.
+   */
   @Post('mfa/confirm')
   @MfaFlowOnly()
-  @HttpCode(HttpStatus.NO_CONTENT)
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ short: { ttl: 60_000, limit: 10 } })
   @ApiOperation({ summary: 'Confirm second factor enrolment' })
-  @ApiNoContentResponse()
-  async confirmMfa(@Body() dto: ConfirmMfaDto): Promise<void> {
-    await this.mfaEnrolment.confirm(this.currentUser.requireUserId(), dto.code);
+  @ApiOkResponse({ type: MfaConfirmationResponseDto })
+  async confirmMfa(
+    @Body() dto: ConfirmMfaDto,
+  ): Promise<MfaConfirmationResponse> {
+    return this.mfaEnrolment.confirm(
+      this.currentUser.requireUserId(),
+      dto.code,
+    );
+  }
+
+  /**
+   * AU-037. Starts CHANGING the second factor, proving the current one.
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * `@OwnAccount()` AND NOT `@MfaFlowOnly()`, AND THE DIFFERENCE IS THE POINT.
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * `mfa/enroll` and `mfa/confirm` are reachable by a HALF-authenticated
+   * session, because they have to be: somebody who has not finished the second
+   * factor is exactly who is setting one up. This route is the opposite
+   * situation. It demands a COMPLETE session — which is what `@OwnAccount()`
+   * gets, since `JwtAuthGuard` refuses any token with `mfa: false` outside the
+   * MFA flow — plus a live code from the factor being replaced.
+   *
+   * No permission, and none would fit: this has no role dimension at all.
+   * Changing your own second factor is not something a role grants, any more
+   * than changing your own password is, and modelling it as one would mean an
+   * employee whose role forgot the permission cannot change phones.
+   *
+   * Nothing here reads an id from the request: the subject is the caller, from
+   * the token, always.
+   *
+   * THROTTLED like `mfa/verify`, because it accepts the same codes and would
+   * otherwise be a second, unlimited door to guessing them.
+   */
+  @Post('mfa/change')
+  @OwnAccount()
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ short: { ttl: 60_000, limit: 10 } })
+  @ApiOperation({ summary: 'Empezar el cambio del segundo factor' })
+  @ApiOkResponse({ type: MfaEnrolmentResponseDto })
+  async changeMfa(
+    @Body() dto: ChangeMfaDto,
+  ): Promise<{ secret: string; uri: string }> {
+    return this.mfaEnrolment.startChange(
+      this.currentUser.requireUserId(),
+      dto.code,
+    );
+  }
+
+  /**
+   * AU-037. Confirms the new authenticator and returns the NEW backup codes.
+   *
+   * ⚠️ 200 AND NOT 204, for the same reason as `mfa/confirm`: this response is
+   * the only place the new batch ever exists, and it invalidates the previous
+   * one — so a client that ignores the body leaves the person holding ten
+   * codes that no longer open anything and none that do.
+   *
+   * IT DOES NOT CLEAR THE REFRESH COOKIE, unlike `password`. AU-037 does not
+   * close sessions: there is nobody to distrust, because the person has just
+   * proved they hold the factor being replaced.
+   */
+  @Post('mfa/change/confirm')
+  @OwnAccount()
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ short: { ttl: 60_000, limit: 10 } })
+  @ApiOperation({ summary: 'Confirmar el segundo factor nuevo' })
+  @ApiOkResponse({ type: MfaConfirmationResponseDto })
+  async confirmMfaChange(
+    @Body() dto: ConfirmMfaDto,
+  ): Promise<MfaConfirmationResponse> {
+    return this.mfaEnrolment.confirmChange(
+      this.currentUser.requireUserId(),
+      dto.code,
+    );
   }
 
   /**
@@ -377,6 +467,7 @@ export class AuthController {
   private async toSessionResponse(session: {
     accessToken: string;
     user: { id: string; email: string; firstName: string; lastName: string };
+    mfaEnabled: boolean;
   }): Promise<SessionResponse> {
     const assignments = await this.auth.grantsFor(session.user.id);
 
@@ -384,6 +475,14 @@ export class AuthController {
       accessToken: session.accessToken,
       expiresIn: this.tokens.accessTokenSeconds,
       user: session.user,
+      /**
+       * Travels in ALL THREE session responses — login, refresh and
+       * mfa/verify — because all three are «here is your session» and a client
+       * that has to guess which of them describes the account fully ends up
+       * guessing wrong on the one that matters: refresh, the only path a
+       * reload has.
+       */
+      mfaEnabled: session.mfaEnabled,
       grants: await this.roles.resolve(assignments),
     };
   }

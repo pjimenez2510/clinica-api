@@ -66,6 +66,8 @@ interface HolidayBody {
   date: string;
   name: string;
   siteId: string | null;
+  /** AG-092. Las sedes que trabajan ese feriado. */
+  workedBySiteIds: string[];
 }
 
 describe('la configuración por HTTP', () => {
@@ -347,6 +349,126 @@ describe('la configuración por HTTP', () => {
       expect((second.body as Problem).code).toBe('HOLIDAY_NOT_FOUND');
     });
 
+    it('AG-092 marca una sede como laborable en un feriado nacional y lo deshace', async () => {
+      /**
+       * EL REQUISITO LITERAL: «admitir marcar un feriado como laborable para
+       * una sede concreta: una clínica con urgencias atiende el 25 de
+       * diciembre». Antes de esto la tabla existía y sólo la leía la agenda:
+       * la única forma de que urgencias abriera era borrar el feriado
+       * nacional, y entonces abrían todas las sedes.
+       */
+      const urgencias = await createSite('Sede Urgencias');
+      const created = await post('/holidays', { date: '2026-12-25', name: 'Navidad' }).expect(201); // prettier-ignore
+      const { id } = created.body as HolidayBody;
+
+      // El feriado nace sin excepciones y lo dice.
+      expect((created.body as HolidayBody).workedBySiteIds).toEqual([]);
+
+      const marked = await put(`/holidays/${id}/worked-by/${urgencias.id}`, {}).expect(200); // prettier-ignore
+      expect(marked.body).toMatchObject({
+        // El feriado SIGUE siendo nacional: la excepción no le cambia el
+        // alcance, que es la diferencia entre esto y borrarlo.
+        siteId: null,
+        workedBySiteIds: [urgencias.id],
+      });
+
+      // Y el listado del año lo cuenta, sin que nadie pregunte sede a sede.
+      const listed = await get('/holidays?year=2026').expect(200);
+      expect(
+        (listed.body as { items: HolidayBody[] }).items[0]?.workedBySiteIds,
+      ).toEqual([urgencias.id]);
+
+      // La fila que queda es EXACTAMENTE el par que la agenda lee. La otra
+      // mitad del requisito —que con esa fila la sede conserve sus cupos y las
+      // demás sigan cerradas— se prueba en `agenda-holidays.spec.ts`, contra
+      // esta misma tabla y contra la misma base.
+      expect(
+        await prisma.holidaySiteException.findMany({
+          select: { holidayId: true, siteId: true },
+        }),
+      ).toEqual([{ holidayId: id, siteId: urgencias.id }]);
+
+      const unmarked = await destroy(`/holidays/${id}/worked-by/${urgencias.id}`).expect(200); // prettier-ignore
+      expect((unmarked.body as HolidayBody).workedBySiteIds).toEqual([]);
+    });
+
+    it('AG-092 admite marcar dos veces la misma sede sin inventarse un conflicto', async () => {
+      // La clave primaria ES el par: decirlo dos veces no significa nada
+      // distinto, así que el segundo clic merece «hecho» y no un 409.
+      const site = await createSite('Sede Urgencias');
+      const created = await post('/holidays', { date: '2026-12-25', name: 'Navidad' }).expect(201); // prettier-ignore
+      const { id } = created.body as HolidayBody;
+
+      await put(`/holidays/${id}/worked-by/${site.id}`, {}).expect(200);
+      const second = await put(`/holidays/${id}/worked-by/${site.id}`, {}).expect(200); // prettier-ignore
+
+      expect((second.body as HolidayBody).workedBySiteIds).toEqual([site.id]);
+      expect(await prisma.holidaySiteException.count()).toBe(1);
+    });
+
+    it('AG-092 responde HOLIDAY_NOT_FOUND al marcar un feriado que no existe', async () => {
+      const site = await createSite();
+
+      const response = await put(
+        `/holidays/00000000-0000-7000-8000-000000000000/worked-by/${site.id}`,
+        {},
+      ).expect(404);
+
+      expect((response.body as Problem).code).toBe('HOLIDAY_NOT_FOUND');
+    });
+
+    it('AG-092 responde SITE_NOT_FOUND cuando la sede indicada no existe', async () => {
+      // Lo arbitra la clave foránea, no una lectura previa: el código es de
+      // `organization`, dueña de la sede, y este módulo sólo traduce el
+      // rechazo de PostgreSQL.
+      const created = await post('/holidays', { date: '2026-12-25', name: 'Navidad' }).expect(201); // prettier-ignore
+      const { id } = created.body as HolidayBody;
+
+      const response = await put(
+        `/holidays/${id}/worked-by/00000000-0000-7000-8000-000000000000`,
+        {},
+      ).expect(422);
+
+      const problem = response.body as Problem;
+      expect(problem.code).toBe('SITE_NOT_FOUND');
+      expect(problem.errors?.[0]).toMatchObject({ field: 'siteId' });
+    });
+
+    it('AG-092 desmarcar una sede que no trabajaba el feriado deja el estado que se pidió', async () => {
+      // Idempotente a propósito: quien pide «esta sede NO trabaja este
+      // feriado» y ya no lo trabajaba obtuvo lo que pedía.
+      const site = await createSite();
+      const created = await post('/holidays', { date: '2026-12-25', name: 'Navidad' }).expect(201); // prettier-ignore
+      const { id } = created.body as HolidayBody;
+
+      const response = await destroy(`/holidays/${id}/worked-by/${site.id}`).expect(200); // prettier-ignore
+
+      expect((response.body as HolidayBody).workedBySiteIds).toEqual([]);
+    });
+
+    it('AG-092 responde HOLIDAY_NOT_FOUND al desmarcar un feriado que no existe', async () => {
+      const site = await createSite();
+
+      const response = await destroy(
+        `/holidays/00000000-0000-7000-8000-000000000000/worked-by/${site.id}`,
+      ).expect(404);
+
+      expect((response.body as Problem).code).toBe('HOLIDAY_NOT_FOUND');
+    });
+
+    it('AG-092 borra la excepción con el feriado, sin dejar filas colgando', async () => {
+      // `ON DELETE CASCADE`, y por eso se comprueba contra la base: la fila no
+      // es evidencia clínica y no significa nada sin su feriado.
+      const site = await createSite();
+      const created = await post('/holidays', { date: '2026-12-25', name: 'Navidad' }).expect(201); // prettier-ignore
+      const { id } = created.body as HolidayBody;
+      await put(`/holidays/${id}/worked-by/${site.id}`, {}).expect(200);
+
+      await destroy(`/holidays/${id}`).expect(204);
+
+      expect(await prisma.holidaySiteException.count()).toBe(0);
+    });
+
     it('CF-066 deja en la bitácora cada mutación de un feriado, y ninguna lectura', async () => {
       const created = await post('/holidays', { date: '2026-11-02', name: 'Día de los Difuntos' }).expect(201); // prettier-ignore
       const { id } = created.body as HolidayBody;
@@ -366,6 +488,70 @@ describe('la configuración por HTTP', () => {
         { action: 'UPDATE', resourceId: id, userId: adminUserId },
       ]);
     });
+
+    it('AG-097 · CF-066 la bitácora dice desde qué valor cambió el feriado', async () => {
+      // D-017. `before` is the half that lets somebody reconstruct why the
+      // agenda behaved one way in March and another in April; without it the
+      // trail answers «quién y cuándo» and stops there.
+      const created = await post('/holidays', { date: '2026-11-02', name: 'Día de los Difuntos' }).expect(201); // prettier-ignore
+      const { id } = created.body as HolidayBody;
+      await patch(`/holidays/${id}`, { name: 'Difuntos' }).expect(200);
+      await destroy(`/holidays/${id}`).expect(204);
+
+      const trail = await prisma.accessAudit.findMany({
+        where: { resourceType: 'configuration' },
+        // By id and not by instant: BIGSERIAL is strictly increasing, and two
+        // requests in the same microsecond would order arbitrarily.
+        orderBy: { id: 'asc' },
+        select: { action: true, before: true, after: true },
+      });
+
+      const difuntos = {
+        id,
+        date: '2026-11-02',
+        name: 'Día de los Difuntos',
+        siteId: null,
+        workedBySiteIds: [],
+      };
+
+      expect(trail).toEqual([
+        // Nothing was replaced, so there is no previous value to state.
+        { action: 'CREATE', before: null, after: difuntos },
+        {
+          action: 'UPDATE',
+          before: difuntos,
+          after: { ...difuntos, name: 'Difuntos' },
+        },
+        // Deleting leaves what disappeared and nothing after it.
+        { action: 'UPDATE', before: { ...difuntos, name: 'Difuntos' }, after: null }, // prettier-ignore
+      ]);
+    });
+
+    it('AG-092 · CF-066 la bitácora dice qué sedes trabajaban el feriado antes', async () => {
+      const site = await createSite();
+      const created = await post('/holidays', { date: '2026-12-25', name: 'Navidad' }).expect(201); // prettier-ignore
+      const { id } = created.body as HolidayBody;
+
+      await put(`/holidays/${id}/worked-by/${site.id}`, {}).expect(200);
+      await destroy(`/holidays/${id}/worked-by/${site.id}`).expect(200);
+
+      const trail = await prisma.accessAudit.findMany({
+        where: { resourceType: 'configuration', action: 'UPDATE' },
+        orderBy: { id: 'asc' },
+        select: { before: true, after: true },
+      });
+
+      expect(trail.map((row) => [row.before, row.after])).toEqual([
+        [
+          expect.objectContaining({ workedBySiteIds: [] }),
+          expect.objectContaining({ workedBySiteIds: [site.id] }),
+        ],
+        [
+          expect.objectContaining({ workedBySiteIds: [site.id] }),
+          expect.objectContaining({ workedBySiteIds: [] }),
+        ],
+      ]);
+    });
   });
 
   describe('los parámetros de la sede', () => {
@@ -379,6 +565,12 @@ describe('la configuración por HTTP', () => {
         minLeadMinutes: 0,
         maxLeadDays: 180,
         overbookingCap: 2,
+        // D-021: el turno de la agenda. Diez es el único de la banda estándar
+        // del que son múltiplos las tres duraciones ya configuradas.
+        slotAtomMinutes: 10,
+        // AG-031, AG-094: el interruptor nace cerrado. Que una sede abra el
+        // pasado es decisión suya; tenerlo abierto de fábrica sería nuestra.
+        allowPastBooking: false,
         cancelledRetention: 'NEVER',
       });
     });
@@ -401,6 +593,7 @@ describe('la configuración por HTTP', () => {
         minLeadMinutes: 0,
         maxLeadDays: 180,
         overbookingCap: 2,
+        allowPastBooking: false,
         cancelledRetention: 'NEVER',
       });
     });
@@ -427,6 +620,41 @@ describe('la configuración por HTTP', () => {
       });
     });
 
+    it('AG-094 abre y vuelve a cerrar la reserva en el pasado desde la aplicación', async () => {
+      /**
+       * REQ-145 EN UNA FRASE: la sede con urgencias que registra a posteriori
+       * lo activa desde la pantalla, no con un `psql`. Antes de E7 la columna
+       * existía y no había forma de tocarla ni de VERLA, que es la mitad que
+       * más engaña: un administrador no puede saber con qué está operando su
+       * sede si el parámetro no viaja en la respuesta.
+       */
+      const site = await createSite();
+
+      const opened = await put(`/sites/${site.id}/parameters`, {
+        allowPastBooking: true,
+      }).expect(200);
+      expect(opened.body).toMatchObject({ allowPastBooking: true });
+
+      // Y se lee de vuelta, que es lo que la pantalla enseña.
+      const read = await get(`/sites/${site.id}/parameters`).expect(200);
+      expect(read.body).toMatchObject({ allowPastBooking: true });
+
+      // Volver a cerrarlo es un `false`, y `false` no es «no lo envié»: la
+      // trampa de los valores falsy dejaría la sede abierta contestando que se
+      // guardó.
+      const closed = await put(`/sites/${site.id}/parameters`, {
+        allowPastBooking: false,
+      }).expect(200);
+      expect(closed.body).toMatchObject({ allowPastBooking: false });
+
+      const stored = await prisma.siteParameter.findUniqueOrThrow({
+        where: { siteId: site.id },
+      });
+      expect(stored.allowPastBooking).toBe(false);
+      // Y no arrastró a los demás parámetros al pasar por encima.
+      expect(stored.maxLeadDays).toBe(180);
+    });
+
     it('CF-065 rechaza un tope de sobrecupos fuera de rango nombrando el rango', async () => {
       const site = await createSite();
 
@@ -440,6 +668,47 @@ describe('la configuración por HTTP', () => {
         field: 'overbookingCap',
         code: 'PARAM_OUT_OF_RANGE',
         message: 'El tope de sobrecupos va de 0 a 20',
+      });
+    });
+
+    it('AG-096 rechaza el guardado por CAMPO, en vez de dejar el valor inválido para descubrirlo al reservar', async () => {
+      /**
+       * LA MITAD DE AG-096 QUE SIRVE DE ALGO ES «NO DEBERÁ ACEPTAR UN VALOR
+       * INVÁLIDO PARA DESCUBRIRLO AL RESERVAR».
+       *
+       * Es el mismo comportamiento que CF-065 garantiza desde el lado de
+       * `configuration`, y por eso esto no reimplementa nada: lo que añade es
+       * la afirmación que la agenda necesita —que un parámetro imposible NO
+       * llega a la tabla que ella lee—, y la trazabilidad de que alguien la
+       * comprobó. Sin ella, la ventana de reserva de AG-031 a AG-033 podría
+       * estar calculándose con una antelación negativa cargada meses antes.
+       *
+       * SE ENVÍAN DOS CAMPOS MALOS A LA VEZ, que es lo que distingue «un error
+       * por campo» de «el primero que falle»: arreglar de uno en uno a través
+       * de cuatro viajes es como una pantalla de configuración se abandona a
+       * medio configurar.
+       */
+      const site = await createSite();
+
+      const response = await put(`/sites/${site.id}/parameters`, {
+        minLeadMinutes: -1,
+        overbookingCap: 99,
+      }).expect(422);
+
+      const problem = response.body as Problem;
+      expect(problem.code).toBe('PARAM_OUT_OF_RANGE');
+      expect(problem.errors?.map((error) => error.field).sort()).toEqual([
+        'minLeadMinutes',
+        'overbookingCap',
+      ]);
+
+      // Y NADA SE GUARDÓ: el rechazo es del guardado entero, no de los campos
+      // que fallaron. Un guardado parcial dejaría la sede con una mitad de la
+      // configuración que nadie eligió.
+      const stored = await get(`/sites/${site.id}/parameters`).expect(200);
+      expect(stored.body).toMatchObject({
+        minLeadMinutes: 0,
+        overbookingCap: 2,
       });
     });
 
@@ -482,6 +751,124 @@ describe('la configuración por HTTP', () => {
       ).rejects.toThrow(/site_parameter_lead_window_coherent/);
     });
 
+    /**
+     * D-021. El turno de la agenda, y las DOS puertas de la garantía.
+     *
+     * Hacer múltiplos a las duraciones cierra la puerta por la que entran las
+     * duraciones (SP-021, SP-022); ésta cierra la otra. Sin ella, una clínica
+     * con tipos de 10, 20 y 30 podría mover una sede a turnos de 20 y dejar
+     * cada tipo de 30 sin poder reservarse allí — la misma incoherencia,
+     * entrando por configuración.
+     */
+    describe('D-021 · el turno de la agenda', () => {
+      it('CF-062 la sede nace con el turno de diez minutos y se puede cambiar', async () => {
+        const site = await createSite();
+
+        const response = await put(`/sites/${site.id}/parameters`, {
+          slotAtomMinutes: 15,
+        }).expect(200);
+
+        expect(response.body).toMatchObject({ slotAtomMinutes: 15 });
+      });
+
+      it('CF-065 rechaza un turno fuera de la banda nombrando el rango', async () => {
+        const site = await createSite();
+
+        const response = await put(`/sites/${site.id}/parameters`, {
+          slotAtomMinutes: 90,
+        }).expect(422);
+
+        const problem = response.body as Problem;
+        expect(problem.code).toBe('PARAM_OUT_OF_RANGE');
+        expect(problem.errors?.[0]?.field).toBe('slotAtomMinutes');
+        expect(problem.errors?.[0]?.message).toContain('5 a 60');
+      });
+
+      it('CF-065 la base también rechaza un turno fuera de la banda o fuera del paso de cinco', async () => {
+        const site = await createSite();
+
+        for (const minutes of [0, 7, 90]) {
+          await expect(
+            prisma.$executeRawUnsafe(
+              `UPDATE site_parameter SET slot_atom_minutes = ${minutes} WHERE site_id = $1::uuid`,
+              site.id,
+            ),
+          ).rejects.toThrow(/site_parameter_slot_atom_minutes_range/);
+        }
+      });
+
+      it('D-021 rechaza un turno que dejaría sin reservar una duración ya configurada', async () => {
+        const site = await createSite();
+        const specialty = await prisma.specialty.create({
+          data: { code: 'cardiologia', name: 'Cardiología' },
+        });
+        await prisma.serviceType.createMany({
+          data: [
+            { specialtyId: specialty.id, name: 'Control', durationMinutes: 20 },
+            { specialtyId: specialty.id, name: 'Primera vez', durationMinutes: 30 }, // prettier-ignore
+          ],
+        });
+
+        const response = await put(`/sites/${site.id}/parameters`, {
+          slotAtomMinutes: 20,
+        }).expect(422);
+
+        const problem = response.body as Problem;
+        expect(problem.code).toBe('PARAM_OUT_OF_RANGE');
+        expect(problem.errors?.[0]?.field).toBe('slotAtomMinutes');
+        // NOMBRA LAS QUE ESTORBAN: «no puede ser 20» deja a quien administra
+        // adivinando cuál de cuarenta tipos de atención se lo impide.
+        expect(problem.errors?.[0]?.message).toContain('30');
+
+        // Y no escribió: la fila conserva el turno anterior.
+        await expect(
+          prisma.siteParameter.findUniqueOrThrow({
+            where: { siteId: site.id },
+            select: { slotAtomMinutes: true },
+          }),
+        ).resolves.toEqual({ slotAtomMinutes: 10 });
+      });
+
+      it('D-021 la excepción de un médico cuenta igual que la duración base', async () => {
+        // Es el peldaño que gana en SP-023: mirar sólo `service_type` dejaría
+        // la mitad de las duraciones fuera de la comprobación.
+        const site = await createSite();
+        const practitioner = await createPractitioner(prisma);
+        const specialty = await prisma.specialty.create({
+          data: { code: 'cardiologia', name: 'Cardiología' },
+        });
+        const type = await prisma.serviceType.create({
+          data: { specialtyId: specialty.id, name: 'Control', durationMinutes: 20 }, // prettier-ignore
+        });
+        await prisma.durationException.create({
+          data: {
+            practitionerId: practitioner.id,
+            serviceTypeId: type.id,
+            durationMinutes: 30,
+          },
+        });
+
+        // 20 divide a la duración base y no a la excepción.
+        await put(`/sites/${site.id}/parameters`, {
+          slotAtomMinutes: 20,
+        }).expect(422);
+      });
+
+      it('D-021 acepta un turno del que toda duración configurada es múltiplo', async () => {
+        const site = await createSite();
+        const specialty = await prisma.specialty.create({
+          data: { code: 'cardiologia', name: 'Cardiología' },
+        });
+        await prisma.serviceType.create({
+          data: { specialtyId: specialty.id, name: 'Control', durationMinutes: 30 }, // prettier-ignore
+        });
+
+        await put(`/sites/${site.id}/parameters`, {
+          slotAtomMinutes: 15,
+        }).expect(200);
+      });
+    });
+
     it('CF-066 deja en la bitácora quién cambió los parámetros y de qué sede', async () => {
       const site = await createSite();
       await put(`/sites/${site.id}/parameters`, { maxLeadDays: 60 }).expect(
@@ -497,6 +884,39 @@ describe('la configuración por HTTP', () => {
       expect(trail).toEqual([
         { action: 'UPDATE', resourceId: site.id, userId: adminUserId },
       ]);
+    });
+
+    it('AG-097 · CF-066 la bitácora dice desde qué valor cambió el parámetro', async () => {
+      // D-017, y es la mitad que sirve: «quién subió el tope de sobrecupos y
+      // cuándo» no explica por qué una cita se aceptó en marzo y una idéntica
+      // se rechazó en abril. «Desde qué» sí.
+      const site = await createSite();
+      await put(`/sites/${site.id}/parameters`, {
+        maxLeadDays: 60,
+        overbookingCap: 4,
+      }).expect(200);
+
+      const [row] = await prisma.accessAudit.findMany({
+        where: { resourceType: 'configuration' },
+        select: { before: true, after: true },
+      });
+
+      const defaults = {
+        siteId: site.id,
+        minLeadMinutes: 0,
+        maxLeadDays: 180,
+        overbookingCap: 2,
+        slotAtomMinutes: 10,
+        allowPastBooking: false,
+        cancelledRetention: 'NEVER',
+      };
+
+      expect(row?.before).toEqual(defaults);
+      expect(row?.after).toEqual({
+        ...defaults,
+        maxLeadDays: 60,
+        overbookingCap: 4,
+      });
     });
   });
 
@@ -551,8 +971,13 @@ describe('la configuración por HTTP', () => {
     it('CF-063 no guarda un interruptor de solapamiento, de historial ni de cierre por defecto', async () => {
       const site = await createSite();
 
+      // Se envían a la vez los DOS parámetros legítimos que un lector podría
+      // confundir con interruptores —el tope de sobrecupos y la reserva en el
+      // pasado— y tres que sí apagarían una garantía. Sólo los primeros
+      // sobreviven.
       await put(`/sites/${site.id}/parameters`, {
         overbookingCap: 3,
+        allowPastBooking: true,
         allowOverlap: true,
         historyImmutable: false,
         closedByDefault: false,
@@ -564,11 +989,14 @@ describe('la configuración por HTTP', () => {
 
       // Lo enviado de más se descartó; lo legítimo se guardó.
       expect(stored.overbookingCap).toBe(3);
+      expect(stored.allowPastBooking).toBe(true);
       expect(Object.keys(stored)).toEqual([
         'siteId',
         'minLeadMinutes',
         'maxLeadDays',
         'overbookingCap',
+        'slotAtomMinutes',
+        'allowPastBooking',
         'cancelledRetention',
         'createdAt',
         'updatedAt',
@@ -579,6 +1007,27 @@ describe('la configuración por HTTP', () => {
       // La prueba se hace contra `information_schema` y no contra el modelo de
       // Prisma: la columna la crearía una migración, y una migración puede
       // añadir lo que `schema.prisma` no menciona.
+      //
+      // POR QUÉ `allow_past_booking` SÍ ES UN PARÁMETRO LEGÍTIMO, y no de los
+      // que este requisito veda. CF-063 prohíbe exponer como configuración
+      // aquello **cuya garantía se perdería al configurarlo**, y enumera las
+      // tres: no-solapamiento, inmutabilidad del historial y cierre por
+      // defecto. Admitir una cita con inicio anterior a ahora no toca ninguna:
+      //
+      //   * los tres `EXCLUDE USING gist` siguen arbitrando el solape — una
+      //     cita en el pasado que pise a otra se rechaza igual, y la prueba de
+      //     abajo lo comprueba contra la base;
+      //   * `agenda_status_history` se sigue escribiendo dentro de la misma
+      //     transición y ninguna operación del módulo la actualiza ni la borra
+      //     (AG-005): el interruptor no la roza;
+      //   * la ruta de reserva sigue exigiendo `agenda:write` y alcance sobre
+      //     la sede (AG-071); no hay nada que «abrir» en ese eje.
+      //
+      // Lo que cambia es QUÉ HORA se admite, que es exactamente la clase de
+      // decisión que REQ-145 quiere en configuración y no quemada en el
+      // código: AG-094 lo enumera junto a la antelación mínima y máxima como
+      // parámetro de sede, y el defecto de la migración es `false` — cerrado
+      // hasta que la sede decida lo contrario, no abierto de fábrica.
       const columns = await prisma.$queryRaw<{ column_name: string }[]>`
         SELECT column_name
           FROM information_schema.columns
@@ -587,12 +1036,19 @@ describe('la configuración por HTTP', () => {
       `;
 
       expect(columns.map((column) => column.column_name)).toEqual([
+        'allow_past_booking',
         'cancelled_retention',
         'created_at',
         'max_lead_days',
         'min_lead_minutes',
         'overbooking_cap',
         'site_id',
+        // D-021. Es un parámetro legítimo por la misma razón que
+        // `allow_past_booking`, y con más motivo: configurarlo no pierde
+        // ninguna garantía — es lo que hace que AG-012 y AG-104 no puedan
+        // fallar por configuración, porque toda duración se guarda como
+        // múltiplo suyo.
+        'slot_atom_minutes',
         'updated_at',
       ]);
     });
@@ -632,6 +1088,23 @@ describe('la configuración por HTTP', () => {
       const response = await post(
         '/holidays',
         { date: '2026-01-01', name: 'Año Nuevo' },
+        receptionToken,
+      ).expect(403);
+
+      expect((response.body as Problem).code).toBe('PERMISSION_DENIED');
+    });
+
+    it('AG-092 rechaza a quien no tiene settings:manage al marcar una sede como laborable', async () => {
+      // Es una mutación de la configuración de la clínica, no de la agenda:
+      // el permiso es el mismo que crear el feriado, y recepción no lo tiene.
+      const site = await createSite();
+      const created = await post('/holidays', { date: '2026-12-25', name: 'Navidad' }).expect(201); // prettier-ignore
+      const { id } = created.body as HolidayBody;
+      const receptionToken = await signIn(RECEPCION_EMAIL, 'RECEPCION', RECEPCION_CEDULA); // prettier-ignore
+
+      const response = await put(
+        `/holidays/${id}/worked-by/${site.id}`,
+        {},
         receptionToken,
       ).expect(403);
 

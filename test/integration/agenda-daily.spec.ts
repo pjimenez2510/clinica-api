@@ -6,7 +6,7 @@ import { describe, expect, inject, it } from 'vitest';
 import { AgendaService } from '../../src/modules/agenda/application/agenda.service';
 import {
   BookingRetryExhaustedError,
-  InvalidSlotDurationError,
+  SlotNotAlignedError,
 } from '../../src/modules/agenda/domain/agenda.errors';
 import { PrismaAgendaRepository } from '../../src/modules/agenda/infrastructure/prisma-agenda.repository';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
@@ -515,7 +515,16 @@ describe('AG-026 a booking aborted for serialisation', () => {
  * double hands back the array it was given.
  */
 describe('the applicable schedule rule', () => {
-  async function withTwoOverlappingRules(newerSlotMinutes: 20 | 30) {
+  /**
+   * D-021 CHANGED WHAT DISTINGUISHES THE TWO RULES. It used to be their slot
+   * length, and the grid is the site's now. What is left is where each rule's
+   * grid BEGINS (AG-104): a rule opening at 08:00 puts a boundary at 08:20 and
+   * none at 08:10; one opening at 08:10 does the opposite. So which rule
+   * governs still decides whether a booking is accepted — which is why the
+   * criterion has to be written down rather than left to PostgreSQL's row
+   * order.
+   */
+  async function withTwoOverlappingRules(newerStartTime: '08:00' | '08:10') {
     const prisma = db();
     const site = await createSite(prisma);
     const practitioner = await createPractitioner(prisma);
@@ -530,15 +539,14 @@ describe('the applicable schedule rule', () => {
     // pueden solaparse, así que una sustitución se escribe como sucesión —
     // último día de la vieja, primer día de la nueva—, que es exactamente lo
     // que ST-041 llama cerrar hacia adelante.
-    const older = newerSlotMinutes === 30 ? 20 : 30;
+    const olderStartTime = newerStartTime === '08:00' ? '08:10' : '08:00';
     await createScheduleRule(
       prisma,
       { practitionerId: practitioner.id, siteId: site.id },
       {
         weekday: 1,
-        startTime: '08:00',
+        startTime: olderStartTime,
         endTime: '12:00',
-        slotMinutes: older,
         validFrom: new Date('2026-01-01T00:00:00Z'),
         validTo: new Date('2026-05-31T00:00:00Z'),
       },
@@ -548,44 +556,56 @@ describe('the applicable schedule rule', () => {
       { practitionerId: practitioner.id, siteId: site.id },
       {
         weekday: 1,
-        startTime: '08:00',
+        startTime: newerStartTime,
         endTime: '12:00',
-        slotMinutes: newerSlotMinutes,
         validFrom: new Date('2026-06-01T00:00:00Z'),
       },
     );
 
+    // AG-031, desde E7: la sede admite reservar en el pasado. Las citas de
+    // este fichero viven en un lunes fijo —lo exigen las dos reglas que se
+    // suceden en fechas concretas—, y un lunes fijo deja de ser futuro en
+    // cuanto el calendario lo pasa. Sin esto, AG-106 empezaría a fallar por
+    // una razón que no tiene nada que ver con qué regla gobierna el cupo.
+    await prisma.siteParameter.update({
+      where: { siteId: site.id },
+      // D-021: veinte minutos, que es la rejilla con la que se escribieron
+      // estos casos. La sede nace con diez (D-021), y aquí importa que 08:10
+      // NO sea borde de la regla que abre a las 08:00.
+      data: { allowPastBooking: true, slotAtomMinutes: 20 },
+    });
+
     return { prisma, site, practitioner, patient };
   }
 
-  /** 08:00–08:30 en Ecuador: un cupo entero de 30 y uno y medio de 20. */
-  const halfHour = {
-    startsAt: new Date('2026-09-14T13:00:00Z'),
+  /** 08:10–08:30 en Ecuador: un cupo entero, y sólo desde la regla de 08:10. */
+  const tenPast = {
+    startsAt: new Date('2026-09-14T13:10:00Z'),
     endsAt: new Date('2026-09-14T13:30:00Z'),
     bookingChannel: 'PHONE',
   };
 
   it('AG-106 aplica la regla que entró en vigor más tarde, y no la que devuelva primero PostgreSQL', async () => {
     const { prisma, site, practitioner, patient } =
-      await withTwoOverlappingRules(30);
+      await withTwoOverlappingRules('08:10');
     const { service } = agendaOf(prisma);
 
-    const entry = await service.book(
+    const { entry } = await service.book(
       {
         siteId: site.id,
         practitionerId: practitioner.id,
         patientId: patient.id,
-        ...halfHour,
+        ...tenPast,
       },
       { userId: (await prisma.user.findFirstOrThrow()).id },
     );
 
-    expect(entry.startsAt).toEqual(halfHour.startsAt);
+    expect(entry.startsAt).toEqual(tenPast.startsAt);
   });
 
   it('AG-106 rechaza bajo la regla más reciente lo que la anterior admitía', async () => {
     const { prisma, site, practitioner, patient } =
-      await withTwoOverlappingRules(20);
+      await withTwoOverlappingRules('08:00');
     const { service } = agendaOf(prisma);
 
     const rejection = await service
@@ -594,16 +614,13 @@ describe('the applicable schedule rule', () => {
           siteId: site.id,
           practitionerId: practitioner.id,
           patientId: patient.id,
-          ...halfHour,
+          ...tenPast,
         },
         { userId: (await prisma.user.findFirstOrThrow()).id },
       )
       .catch((error: unknown) => error);
 
-    expect(rejection).toBeInstanceOf(InvalidSlotDurationError);
-    expect((rejection as InvalidSlotDurationError).params).toMatchObject({
-      slotMinutes: 20,
-    });
+    expect(rejection).toBeInstanceOf(SlotNotAlignedError);
     await expect(prisma.agendaEntry.count()).resolves.toBe(0);
   });
 });

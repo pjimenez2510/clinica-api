@@ -9,7 +9,14 @@ import argon2 from 'argon2';
 import { PASSWORD_HASHING } from '../src/modules/auth/domain/password-hashing.ts';
 // El catálogo es la fuente: construir el rol de desarrollo a partir de él
 // evita una segunda lista que alguien tendría que recordar actualizar.
-import { PERMISSIONS } from '../src/shared/authorisation/permission.catalogue.ts';
+//
+// ⚠️ `SEEDABLE_PERMISSIONS` Y NO `PERMISSIONS`. La diferencia son los permisos
+// marcados `explicitGrantOnly`, que ninguna semilla reparte: ver el porqué en
+// el catálogo y en `DEV_SUPERUSER_ROLE` más abajo.
+import {
+  EXPLICIT_GRANT_ONLY_PERMISSIONS,
+  SEEDABLE_PERMISSIONS,
+} from '../src/shared/authorisation/permission.catalogue.ts';
 import { syncAuthorisation } from './seed-authorisation.mts';
 
 /**
@@ -31,7 +38,7 @@ function userColumns({ role: _role, ...columns }: (typeof USERS)[number]) {
 }
 
 /**
- * A DEVELOPMENT-ONLY role holding every permission in the catalogue.
+ * A DEVELOPMENT-ONLY role holding every permission a seed may hand out.
  *
  * WHY IT IS NOT IN `DEFAULT_ROLES`: those ship with a fresh installation, and
  * a real clinic must never start with an account that can read every chart AND
@@ -40,9 +47,23 @@ function userColumns({ role: _role, ...columns }: (typeof USERS)[number]) {
  * without switching accounts six times, and it is created by the DEVELOPMENT
  * seed, which refuses to run against production.
  *
- * Built from `PERMISSIONS` rather than a hand-written list: a permission added
- * to the catalogue tomorrow is included automatically, and there is no second
- * list to forget.
+ * Built from `SEEDABLE_PERMISSIONS` rather than a hand-written list: a
+ * permission added to the catalogue tomorrow is included automatically, and
+ * there is no second list to forget.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * EXCEPT LOS MARCADOS `explicitGrantOnly`, Y ÉSA ES LA CORRECCIÓN.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Construir el rol a partir del catálogo ENTERO metía aquí `user:reset-mfa` —
+ * el permiso al que AU-035 dedica un párrafo explicando por qué no puede
+ * llegar a nadie por herencia — sin que nadie lo pidiera, y la única barrera
+ * era `NODE_ENV !== 'production'`. Cualquier staging, UAT o demo sembrada con
+ * `pnpm db:seed` lo concedía, y esa cuenta puede apropiarse de la identidad de
+ * cualquier médico.
+ *
+ * Un desarrollador que necesite ejercer AU-035 en local lo concede a mano, que
+ * es exactamente lo que se le pide a una clínica. El mensaje final lo dice.
  */
 const DEV_SUPERUSER_ROLE = {
   code: 'DESARROLLO',
@@ -78,14 +99,19 @@ const USERS = [
   },
 ];
 
-async function main(): Promise<void> {
+/**
+ * Leaves the development database in the known state, on the client it is
+ * given.
+ *
+ * EXPORTED, and that is what let this file finally be covered. The invariant
+ * «ninguna semilla concede `user:reset-mfa`» had a test that called only
+ * `syncAuthorisation` — never the seed that was actually breaking it — so the
+ * thing it claimed to protect was the one path nobody ran.
+ */
+export async function seedDevelopment(prisma: PrismaClient): Promise<void> {
   if (process.env.NODE_ENV === 'production') {
     throw new Error('The development seed must never run against production');
   }
-
-  const prisma = new PrismaClient({
-    adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
-  });
 
   /**
    * The catch-all development role, refreshed on every run.
@@ -117,7 +143,7 @@ async function main(): Promise<void> {
 
   await prisma.rolePermission.deleteMany({ where: { roleId: superuser.id } });
   await prisma.rolePermission.createMany({
-    data: PERMISSIONS.map((permissionCode) => ({
+    data: SEEDABLE_PERMISSIONS.map((permissionCode) => ({
       roleId: superuser.id,
       permissionCode,
     })),
@@ -132,7 +158,7 @@ async function main(): Promise<void> {
   });
 
   for (const user of USERS) {
-    await prisma.user.upsert({
+    const account = await prisma.user.upsert({
       where: { email: user.email },
       update: {
         passwordHash,
@@ -142,10 +168,21 @@ async function main(): Promise<void> {
         lockedUntil: null,
         mfaEnabledAt: null,
         mfaSecretEncrypted: null,
+        // AU-037. A half-started second factor change is exactly the kind of
+        // leftover this seed exists to clear, and it was missed when the
+        // column arrived: the account came back «sin segundo factor» while a
+        // pending secret from yesterday's manual test could still be confirmed.
+        mfaPendingSecretEncrypted: null,
         mfaLastStep: null,
       },
       create: { ...userColumns(user), passwordHash },
     });
+
+    // AU-005. The batch belongs to the secret that was just cleared. Left
+    // behind, ten codes from a previous run would still open the account — the
+    // same half-applied state `resetMfa` refuses to produce, arriving instead
+    // through the seed that promises «el mismo estado conocido».
+    await prisma.backupCode.deleteMany({ where: { userId: account.id } });
   }
 
   /**
@@ -174,17 +211,40 @@ async function main(): Promise<void> {
 
   // Sessions from previous runs are meaningless once passwords are reset.
   await prisma.refreshToken.deleteMany({});
+}
+
+async function main(): Promise<void> {
+  const prisma = new PrismaClient({
+    adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
+  });
+
+  try {
+    await seedDevelopment(prisma);
+  } finally {
+    await prisma.$disconnect();
+  }
 
   console.log(
     `Seeded ${USERS.length} users. Password for all of them: ${DEV_PASSWORD}`,
   );
   console.log(
-    `  admin@clinica.ec holds every permission (${PERMISSIONS.length}) through the ${DEV_SUPERUSER_ROLE.code} role.`,
+    `  admin@clinica.ec holds ${SEEDABLE_PERMISSIONS.length} permissions through the ${DEV_SUPERUSER_ROLE.code} role.`,
   );
-  await prisma.$disconnect();
+  // Se dice SIEMPRE, y se dice aquí: un permiso que no está no se echa de
+  // menos hasta que una pantalla responde 403 y el desarrollador concluye que
+  // está rota. Y quien lo conceda a mano lo hace sabiendo qué entrega, que es
+  // exactamente lo que AU-035 le pide a una clínica.
+  console.log(
+    `  Excluidos a propósito (concédalos a mano si los necesita): ${EXPLICIT_GRANT_ONLY_PERMISSIONS.join(', ')}.`,
+  );
 }
 
-main().catch((error: unknown) => {
-  console.error(error);
-  process.exit(1);
-});
+// Sólo cuando se invoca directamente, para que importar `seedDevelopment` desde
+// una prueba no siembre la base al cargar el módulo. `seed-authorisation.mts`
+// no termina en `seed.mts`, así que `pnpm db:seed:auth` no entra por aquí.
+if (process.argv[1]?.endsWith('seed.mts')) {
+  main().catch((error: unknown) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

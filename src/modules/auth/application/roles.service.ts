@@ -1,12 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
 
 import {
-  PERMISSION_CATALOGUE,
+  PERMISSION_DEFINITIONS,
   PERMISSIONS,
   type PermissionDefinition,
 } from '../../../shared/authorisation/permission.catalogue';
 import {
   CannotDemoteSelfError,
+  PermissionNotInstalledError,
   RoleNotFoundError,
   SystemRoleProtectedError,
   UnknownPermissionError,
@@ -75,7 +76,11 @@ export class RolesService {
    * is the one that decides what a route actually checks.
    */
   catalogue(): readonly PermissionDefinition[] {
-    return PERMISSION_CATALOGUE;
+    // `PERMISSION_DEFINITIONS` and not `PERMISSION_CATALOGUE`: the constant
+    // also carries `explicitGrantOnly`, which is an internal rule about who
+    // may grant a permission and not part of the published shape. See the
+    // projection's own comment.
+    return PERMISSION_DEFINITIONS;
   }
 
   /** AU-030. `ROLE_CODE_DUPLICATE` comes from the unique index, not a read. */
@@ -181,14 +186,44 @@ export class RolesService {
     const role = await this.roles.findById(roleId);
     if (!role) throw new RoleNotFoundError();
 
+    const desired = [...new Set(codes)];
+
     // AU-033. Unknown codes are refused BEFORE anything is written: a role
     // half-updated because the fourth code was a typo is worse than a refusal.
-    const unknown = [...new Set(codes)].filter(
-      (code) => !KNOWN_PERMISSIONS.has(code),
-    );
+    const unknown = desired.filter((code) => !KNOWN_PERMISSIONS.has(code));
     if (unknown.length > 0) throw new UnknownPermissionError(unknown);
 
-    const desired = [...new Set(codes)];
+    /**
+     * AND THE OTHER HALF OF THE SAME QUESTION: the code declares them, but does
+     * the `permission` mirror of THIS installation have them?
+     *
+     * The check above compares against the catalogue in the code, so it can
+     * never catch this: the screen read that same catalogue to draw the
+     * checkbox. What the foreign key answers to is the table, and between
+     * deploying a version that declares a new permission and running
+     * `pnpm db:seed:auth` the two disagree. `user:reset-mfa` (AU-035) is the
+     * first one where it mattered, because it is the one an installation MUST
+     * grant deliberately — so somebody is at that screen ticking it on purpose,
+     * and what they got was «Datos inválidos».
+     *
+     * ONE READ, BEFORE ANYTHING IS WRITTEN, for the reason the check above
+     * gives: the alternative is a foreign-key violation mid-transaction whose
+     * only honest rendering is a generic database problem.
+     *
+     * IT IS ADVISORY, AND THE FOREIGN KEY IS STILL THE GUARD. The read is not
+     * in the write's transaction, so a `DELETE` landing on `permission` in
+     * between still ends in `RELATED_RECORD_MISSING` — rolled back whole, never
+     * half-written. That window is nearly unreachable in practice: the sync
+     * never deletes rows and the key is `onDelete: Restrict`, so it takes
+     * somebody deleting by hand a permission no role holds. Widening this into
+     * a locking read would buy a better message for that case and pay for it on
+     * every save.
+     */
+    const installed = new Set(await this.roles.installedPermissions(desired));
+    const notInstalled = desired.filter((code) => !installed.has(code));
+    if (notInstalled.length > 0) {
+      throw new PermissionNotInstalledError(notInstalled);
+    }
 
     // AU-024, shapes two and three at once: taking `user:manage` off a role
     // may leave nobody administering the system, and it may leave the CALLER

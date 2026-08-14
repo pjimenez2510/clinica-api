@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { AccessAuditEntry } from '../../../shared/audit/access-audit.port';
+import { DurationNotSlotMultipleError } from '../../../shared/domain/errors/slot-atom.errors';
 import {
   ServiceTypeNotFoundError,
   SpecialtyNotFoundError,
@@ -47,6 +48,8 @@ interface Answers {
   sites: PractitionerSiteView[];
   serviceTypeExists: boolean;
   deleteDurationException: boolean;
+  /** D-021: what each site dices its day into. */
+  siteSlotAtoms: number[];
 }
 
 interface Call {
@@ -114,6 +117,10 @@ function makeDouble(answers: Answers): {
       note('replacePractitionerSites', practitionerId, siteIds);
       return Promise.resolve();
     },
+    siteSlotAtoms: () => {
+      note('siteSlotAtoms');
+      return Promise.resolve(answers.siteSlotAtoms);
+    },
   } as unknown as StaffRepository;
 
   return { repository, calls };
@@ -141,6 +148,7 @@ describe('PractitionerAssignmentsService', () => {
       sites: [],
       serviceTypeExists: true,
       deleteDurationException: true,
+      siteSlotAtoms: [10],
     };
     const double = makeDouble(answers);
     calls = double.calls;
@@ -287,12 +295,45 @@ describe('PractitionerAssignmentsService', () => {
 
   describe('excepciones de duración', () => {
     it('ST-009/SP-022 fija la excepción tras comprobar profesional y tipo', async () => {
-      await service.setDurationException('prac-1', 'type-1', 45, REQUESTER);
+      await service.setDurationException('prac-1', 'type-1', 40, REQUESTER);
 
       expect(writes()).toEqual([
-        { method: 'upsertDurationException', args: ['prac-1', 'type-1', 45] },
+        { method: 'upsertDurationException', args: ['prac-1', 'type-1', 40] },
       ]);
       expect(recorded[0]).toMatchObject({ resourceType: 'staff' });
+    });
+
+    /**
+     * SP-022 desde D-021. La excepción es el peldaño que GANA (SP-023), así
+     * que dejarla fuera haría cosmética la garantía: todos los tipos podrían
+     * encajar en la rejilla y la sobreescritura de un solo médico dejaría sin
+     * reservar todas sus citas.
+     */
+    it('SP-022 rechaza una excepción que no es múltiplo del turno, sin escribir', async () => {
+      const rejection = await service
+        .setDurationException('prac-1', 'type-1', 45, REQUESTER)
+        .catch((error: unknown) => error);
+
+      expect(rejection).toBeInstanceOf(DurationNotSlotMultipleError);
+      const failure = rejection as DurationNotSlotMultipleError;
+      expect(failure.fieldErrors?.[0]?.field).toBe('durationMinutes');
+      expect(failure.fieldErrors?.[0]?.message).toContain('10 minutos');
+      expect(writes()).toEqual([]);
+      expect(recorded).toEqual([]);
+    });
+
+    it('SP-022 exige el múltiplo de TODAS las sedes, no de las del profesional', async () => {
+      // La excepción cuelga de un `service_type`, que no tiene sede, y a un
+      // médico se le puede añadir otra sede mañana sin que nadie vuelva a
+      // mirar sus excepciones.
+      answers.siteSlotAtoms = [10, 15];
+
+      await expect(
+        service.setDurationException('prac-1', 'type-1', 20, REQUESTER),
+      ).rejects.toBeInstanceOf(DurationNotSlotMultipleError);
+      await expect(
+        service.setDurationException('prac-1', 'type-1', 60, REQUESTER),
+      ).resolves.toBeUndefined();
     });
 
     it('ST-009 rechaza la excepción sobre un tipo de atención inexistente', async () => {

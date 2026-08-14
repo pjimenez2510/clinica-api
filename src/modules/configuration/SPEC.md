@@ -44,6 +44,15 @@ Estado, deja de ser parámetro y pertenece a su módulo dueño.
 SPEC de `agenda` (AG-031 a AG-033, AG-090 a AG-098, AG-102). Ni los permisos
 (módulo `auth`), ni los catálogos clínicos CIE-10/CNMB (módulo `catalogs`).
 
+> **Dos requisitos de `agenda` se ADMINISTRAN desde aquí, y no se reescriben
+> aquí** (14-08-2026, al implementar E7). Hay una sola especificación para todo
+> el sistema: quien manda un feriado como laborable para una sede (**AG-092**) o
+> abre la reserva en el pasado (**AG-031**, **AG-094**) usa la superficie de
+> este módulo, porque este módulo es el dueño del catálogo de feriados y de la
+> fila de parámetros. Duplicarlos como `CF-###` sería tener dos textos que
+> describen lo mismo, y dos textos discrepan en semanas. Las pruebas de esa
+> superficie citan los `AG-###` originales.
+
 **Depende de:** `auth` (permiso de administración, D-002) y de `organization`,
 porque un parámetro y un feriado se declaran **por sede**.
 
@@ -86,8 +95,34 @@ enseñar lo que no existe ni leer un registro que no le pertenece.
 - **CF-061** — El sistema DEBERÁ impedir dos feriados con la misma fecha y el
   mismo alcance, con la garantía en la base.
 - **CF-062** — El sistema DEBERÁ mantener por sede: antelación mínima y máxima
-  de reserva, tope de sobrecupos por profesional y día, y política de retención
-  de anuladas, con los valores de D-001 como defecto al crear la sede.
+  de reserva, tope de sobrecupos por profesional y día, **turno de la agenda**
+  y política de retención de anuladas, con los valores de D-001 como defecto al
+  crear la sede.
+  > **El turno de la agenda (`slot_atom_minutes`) entró el 14-08-2026 con
+  > D-021.** Es el **átomo** de la agenda: el incremento en que la sede trocea
+  > su jornada. Todos los cupos que la agenda ofrece duran eso, y **toda
+  > duración configurable —la base de un especialidad·tipo (SP-021) y la
+  > excepción de un médico (SP-022)— tiene que ser múltiplo suyo**. Antes vivía
+  > en `practitioner_schedule_rule.slot_minutes`, un número libre por regla que
+  > tenía que casar con otro número libre por tipo de atención sin que nada los
+  > obligara: la base ya tenía rejillas de 20 y 30 con tipos de 10, 20 y 30, y
+  > un tipo de 20 sobre cupos de 30 era **imposible de reservar** sin que
+  > ninguna pantalla lo cruzara.
+  >
+  > **Valor de arranque 10 minutos**, rango 5..60 **de cinco en cinco**. El paso
+  > de 5 no es ceremonia: `service_type_duration_range` y
+  > `duration_exception_range` exigen múltiplos de 5 y un `CHECK` no puede
+  > consultar `site_parameter`, así que restringir el átomo a múltiplos de 5
+  > convierte esa regla local en **consecuencia** de la regla fina en vez de un
+  > resto que la contradice.
+  >
+  > **Cambiar el átomo se valida contra lo ya guardado**, y es la otra mitad de
+  > la garantía: hacer múltiplos a las duraciones cierra la puerta por la que
+  > entran las duraciones, no la puerta por la que entra el átomo. Mover una
+  > sede a turnos de 20 con tipos de 30 configurados se rechaza con
+  > `PARAM_OUT_OF_RANGE` **nombrando las duraciones que estorban**. Se consultan
+  > `service_type` y `duration_exception`, tablas de otros módulos, por un
+  > puerto propio — igual que `agenda` lee `service_type`.
 - **CF-063** — El sistema NO DEBERÁ exponer como parámetro aquello cuya garantía
   se perdería al configurarlo: no-solapamiento, inmutabilidad del historial,
   cierre por defecto (REQ-146).
@@ -98,6 +133,22 @@ enseñar lo que no existe ni leer un registro que no le pertenece.
   sistema DEBERÁ rechazarlo con `PARAM_OUT_OF_RANGE` nombrando el rango.
 - **CF-066** — Toda mutación de feriados y parámetros DEBERÁ quedar en la
   bitácora con autor, instante y valor anterior.
+  > **El valor anterior existe desde el 14-08-2026 — `D-017`, opción A
+  > revisada.** `access_audit` lleva `before` y `after` (`jsonb`) y este módulo
+  > los escribe con la vista de dominio —fecha, nombre y alcance de un feriado;
+  > las cuatro cifras y las dos banderas de una sede—, nunca con la fila del ORM.
+  > Se leen **dentro de la misma transacción que escribe**, con `FOR UPDATE`: un
+  > «desde qué valor» leído antes de la llamada ya está caducado, y dos
+  > administradores guardando a la vez registrarían cada uno un valor que el
+  > otro ya había reemplazado.
+  >
+  > **Qué protege que esto no sea una puerta abierta:**
+  > `access_audit_payload_only_for_declared_resources` obliga a que las dos
+  > columnas sean nulas salvo para los tipos de recurso declarados, hoy sólo
+  > `'configuration'`. La historia clínica no está en la lista a propósito —la
+  > bitácora de accesos no puede convertirse en una copia permanente e imborrable
+  > de lo que vigila— y ampliarla es una decisión sobre datos personales.
+  > AG-097 pide lo mismo que este requisito y queda cubierto por lo mismo.
 
 ---
 
@@ -119,7 +170,28 @@ puede afirmar con honestidad es que la sede no tiene parámetros.
 ## Notas de esquema
 
 Tablas de este módulo: `holiday` y `site_parameter`, creadas por
-`20260813040610_configuration_holidays_and_site_parameters`.
+`20260813040610_configuration_holidays_and_site_parameters`, más
+`holiday_site_exception` y la columna `site_parameter.allow_past_booking`, que
+añadió `20260814131942_agenda_site_operating_rules` para AG-092 y AG-031.
+
+- **`holiday_site_exception` es una fila por sede que trabaja el feriado**
+  (AG-092), no una bandera en `holiday`: «laborable para quién» son N sedes por
+  feriado. Se administra desde `PUT`/`DELETE
+  /configuration/holidays/{id}/worked-by/{siteId}`, con `settings:manage` y
+  alcance sobre esa sede, y el feriado la lleva consigo al listarse. Marcar dos
+  veces no es conflicto: la clave primaria ES el par. La sede inexistente la
+  rechaza la clave foránea y se responde `SITE_NOT_FOUND`, que es el código de
+  `organization` traducido desde PostgreSQL, no una clase de error de aquí.
+- **`allow_past_booking` es un parámetro de sede más** (AG-031, AG-094): un
+  booleano, así que no tiene rango y CF-065 no lo toca. Nace en `false` porque
+  abrir el pasado es una decisión de la sede.
+- **`slot_atom_minutes` también** (D-021, CF-062), y sí tiene rango:
+  `site_parameter_slot_atom_minutes_range` exige 5..60 en múltiplos de 5. Nació
+  en la misma migración que la tabla —no hay producción y una migración se
+  corrige donde nació, no se apila encima (ADR-010, `database-phase.mjs`)—.
+  Que **CF-063 no lo excluya** es deliberado: configurarlo no pierde ninguna
+  garantía; al revés, es lo que hace que AG-012 y AG-104 no puedan fallar por
+  configuración.
 
 - **CF-061 es `UNIQUE NULLS NOT DISTINCT (date, site_id)`**, no un `UNIQUE`
   corriente: en PostgreSQL dos `NULL` nunca son iguales, así que un índice

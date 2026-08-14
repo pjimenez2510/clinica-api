@@ -41,6 +41,9 @@ import { closeApp, listenForTests } from './setup/http-server';
 const PASSWORD = 'el caballo come alfalfa';
 const EMAIL = 'recepcion@clinica.ec';
 
+/** Fijo, para que la especialidad se cree una sola vez por prueba. */
+const SPECIALTY_ID = '00000000-0000-4000-8000-0000000000a1';
+
 /** 08:00–08:20 in Guayaquil: the first slot of the rule. */
 const FIRST_SLOT = {
   startsAt: '2026-09-14T13:00:00Z',
@@ -135,9 +138,23 @@ describe('la agenda por HTTP', () => {
       await createScheduleRule(
         prisma,
         { practitionerId: id, siteId: site.id },
-        { weekday: 1, startTime: '08:00', endTime: '12:00', slotMinutes: 20 },
+        { weekday: 1, startTime: '08:00', endTime: '12:00' },
       );
     }
+
+    // AG-031, desde E7: la sede admite reservar en el pasado, y es lo que
+    // mantiene vivo el lunes fijo de este fichero. Las citas se fijan al 14 de
+    // septiembre de 2026 para que la regla semanal y las horas de Ecuador sean
+    // deterministas, y esa fecha deja de ser futura en cuanto el calendario la
+    // pasa: sin esto, la mitad de este fichero empezaría a responder
+    // `BOOKING_IN_THE_PAST` un martes cualquiera. La ventana de reserva tiene
+    // su propio fichero, `agenda-parameters.spec.ts`.
+    await prisma.siteParameter.update({
+      where: { siteId: site.id },
+      // D-021: veinte minutos de átomo, que es la rejilla con la que se
+      // escribió este fichero entero. La sede nace con diez.
+      data: { allowPastBooking: true, slotAtomMinutes: 20 },
+    });
 
     token = await signIn();
   }
@@ -597,6 +614,36 @@ describe('la agenda por HTTP', () => {
       await expect(prisma.agendaEntry.count()).resolves.toBe(0);
     });
 
+    it('AG-110 responde 201 con la advertencia del feriado, y nunca un 4xx', async () => {
+      // La contradicción que encontró la revisión adversarial de E7: la
+      // disponibilidad decía «cerrado» y la reserva respondía 201 sin decir
+      // nada. Sigue respondiendo 201 —el feriado no bloquea (D-019)— y ahora
+      // lo dice.
+      await prisma.holiday.create({
+        // Día civil, no instante: una `date` viaja como medianoche UTC.
+        data: { date: new Date('2026-09-14T00:00:00.000Z'), name: 'Navidad' },
+      });
+
+      const response = await book(anAppointment()).expect(201);
+
+      const body = response.body as { id: string; warnings: string[] };
+      expect(body.warnings).toHaveLength(1);
+      expect(body.warnings[0]).toContain('Navidad');
+      // Una respuesta correcta, no un problema: nada de RFC 9457 aquí.
+      expect(response.headers['content-type']).not.toContain('problem+json');
+      await expect(
+        prisma.agendaEntry.findUnique({ where: { id: body.id } }),
+      ).resolves.not.toBeNull();
+    });
+
+    it('AG-110 no advierte nada en una reserva de un día ordinario', async () => {
+      const response = await book(anAppointment()).expect(201);
+
+      // Presente y vacío: el cliente no tiene que distinguir «sin
+      // advertencias» de «este endpoint no las trae».
+      expect((response.body as { warnings: string[] }).warnings).toEqual([]);
+    });
+
     it('AG-023 rechaza con 409 una cita que pisa a otra del mismo profesional', async () => {
       await book(anAppointment()).expect(201);
 
@@ -839,6 +886,174 @@ describe('la agenda por HTTP', () => {
         .expect(403);
 
       expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+    });
+  });
+
+  /**
+   * C4: la agenda obedece la configuración (SP-023, SP-028).
+   *
+   * CONTRA POSTGRESQL DE VERDAD, y no contra un doble, porque lo que se
+   * comprueba aquí es precisamente lo que un doble no puede demostrar: que
+   * `duration_exception` y `service_type` son las filas que alimentan los dos
+   * primeros peldaños, que la clave foránea de `agenda_entry.service_type_id`
+   * existe, y que el tipo queda de verdad EN LA FILA de la cita.
+   */
+  describe('la duración resuelta y el tipo en la cita', () => {
+    /** «Control» de Cardiología, veinte minutos: encaja en la rejilla. */
+    async function createServiceType(durationMinutes = 20, name = 'Control') {
+      const specialty = await prisma.specialty.upsert({
+        where: { id: SPECIALTY_ID },
+        create: {
+          id: SPECIALTY_ID,
+          code: 'cardiologia',
+          name: 'Cardiología',
+        },
+        update: {},
+      });
+      return prisma.serviceType.create({
+        data: { specialtyId: specialty.id, name, durationMinutes },
+      });
+    }
+
+    const durationOf = (query: Record<string, string>, site = siteId) =>
+      request(app.getHttpServer())
+        .get(
+          `/api/v1/agenda/sites/${site}/duration?${new URLSearchParams({
+            practitionerId,
+            startsAt: FIRST_SLOT.startsAt,
+            ...query,
+          }).toString()}`,
+        )
+        .set('Authorization', `Bearer ${token}`);
+
+    it('SP-023 propone la duración base del especialidad·tipo cuando el médico no tiene excepción', async () => {
+      const type = await createServiceType(40, 'Primera vez');
+
+      const response = await durationOf({ serviceTypeId: type.id }).expect(200);
+
+      // 40 y no 20: el peldaño del turno de la sede queda por debajo del tipo.
+      expect(response.body).toEqual({ minutes: 40 });
+    });
+
+    it('SP-023 la excepción del médico gana a la duración base, leída de duration_exception', async () => {
+      const type = await createServiceType(40, 'Primera vez');
+      await prisma.durationException.create({
+        data: {
+          practitionerId,
+          serviceTypeId: type.id,
+          durationMinutes: 60,
+        },
+      });
+
+      const response = await durationOf({ serviceTypeId: type.id }).expect(200);
+
+      expect(response.body).toEqual({ minutes: 60 });
+    });
+
+    it('SP-023 la excepción es de UN médico: el otro sigue con la duración base', async () => {
+      const type = await createServiceType(40, 'Primera vez');
+      await prisma.durationException.create({
+        data: {
+          practitionerId: secondPractitionerId,
+          serviceTypeId: type.id,
+          durationMinutes: 60,
+        },
+      });
+
+      const response = await durationOf({ serviceTypeId: type.id }).expect(200);
+
+      expect(response.body).toEqual({ minutes: 40 });
+    });
+
+    it('SP-023 sin tipo elegido propone el turno de la sede', async () => {
+      // D-021 movió el tercer peldaño de la regla a la sede. Sigue
+      // condicionado a que HAYA una regla abierta a esa hora: la sede tiene
+      // átomo a cualquier hora de la semana y proponer minutos para un domingo
+      // que nadie trabaja respondería a otra pregunta.
+      const response = await durationOf({}).expect(200);
+
+      expect(response.body).toEqual({ minutes: 20 });
+    });
+
+    it('SERVICE_TYPE_NOT_FOUND cuando el tipo elegido no existe', async () => {
+      const response = await durationOf({
+        serviceTypeId: '00000000-0000-4000-8000-0000000000ff',
+      }).expect(404);
+
+      expect((response.body as Problem).code).toBe('SERVICE_TYPE_NOT_FOUND');
+    });
+
+    it('AG-071 rechaza proponer una duración en una sede fuera de alcance', async () => {
+      const response = await durationOf({}, otherSiteId).expect(403);
+      expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+    });
+
+    it('SP-028 reserva con la duración resuelta y deja el tipo registrado en la cita', async () => {
+      const type = await createServiceType(40, 'Primera vez');
+      const { minutes } = (
+        await durationOf({ serviceTypeId: type.id }).expect(200)
+      ).body as { minutes: number };
+
+      const response = await book(
+        anAppointment({
+          serviceTypeId: type.id,
+          endsAt: new Date(
+            new Date(FIRST_SLOT.startsAt).getTime() + minutes * 60_000,
+          ).toISOString(),
+        }),
+      ).expect(201);
+
+      const created = response.body as { id: string; serviceTypeId: string };
+      expect(created.serviceTypeId).toBe(type.id);
+
+      // EN LA FILA, no sólo en la respuesta: es lo que SP-025 necesita para
+      // poder rechazar el borrado, y lo que SP-028 llama «dejar el tipo
+      // registrado en la cita».
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: created.id },
+      });
+      expect(stored.serviceTypeId).toBe(type.id);
+      // 08:00–08:40 de Ecuador: la duración resuelta, no los veinte de la regla.
+      expect(stored.endsAt.toISOString()).toBe('2026-09-14T13:40:00.000Z');
+    });
+
+    /**
+     * AG-012 SIGUE SIENDO LA GARANTÍA, Y D-021 LE QUITÓ UNA FORMA DE
+     * DISPARARSE. Antes, una duración base de 30 sobre una rejilla de 20 era
+     * una configuración alcanzable —SP-021 admitía cualquier múltiplo de 5— y
+     * la reserva de la propuesta se rechazaba en el mostrador. Hoy esa
+     * configuración no se puede guardar (ver `specialties-durations.spec.ts`),
+     * así que lo que queda de AG-012 es lo que ningún guardado puede impedir:
+     * la API recibe `startsAt` y `endsAt`, no una duración, y un intervalo
+     * compuesto a mano sigue estando a un POST de distancia.
+     */
+    it('AG-012 rechaza un intervalo que no es múltiplo del turno de la sede', async () => {
+      const type = await createServiceType(20, 'Control');
+
+      const response = await book(
+        anAppointment({
+          serviceTypeId: type.id,
+          // 08:00–08:30: media hora sobre una rejilla de veinte.
+          endsAt: '2026-09-14T13:30:00Z',
+        }),
+      ).expect(422);
+
+      expect((response.body as Problem).code).toBe('INVALID_SLOT_DURATION');
+      expect((response.body as Problem).errors?.[0]?.field).toBe('endsAt');
+    });
+
+    it('SP-028 rechaza un tipo de atención que no existe: la clave foránea es la garantía', async () => {
+      const response = await book(
+        anAppointment({
+          serviceTypeId: '00000000-0000-4000-8000-0000000000ff',
+        }),
+      ).expect(422);
+
+      // Traducido del rechazo de PostgreSQL, igual que un paciente inexistente:
+      // la cita no se guarda apuntando a un tipo que no está, y nada se
+      // comprobó antes de escribir — la clave foránea es lo que arbitra.
+      expect((response.body as Problem).code).toBe('RELATED_RECORD_MISSING');
+      await expect(prisma.agendaEntry.count()).resolves.toBe(0);
     });
   });
 });

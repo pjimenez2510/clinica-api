@@ -10,6 +10,10 @@ import {
   SpecialtyNotFoundError,
 } from '../../../shared/domain/errors/master-data.errors';
 import {
+  assertDurationFitsSlotAtom,
+  clinicSlotAtom,
+} from '../../../shared/domain/slot-atom';
+import {
   SPECIALTIES_REPOSITORY,
   type SpecialtiesRepository,
   type ServiceTypeView,
@@ -113,6 +117,8 @@ export class SpecialtiesService {
     const specialty = await this.repository.findSpecialty(input.specialtyId);
     if (!specialty) throw new SpecialtyNotFoundError();
 
+    await this.requireSlotMultiple(input.durationMinutes);
+
     const created = await this.repository.createServiceType(input);
     await this.recordMutation('CREATE', created.id, requester);
     return created;
@@ -129,11 +135,35 @@ export class SpecialtiesService {
     patch: { name?: string; durationMinutes?: number; active?: boolean },
     requester: Requester,
   ): Promise<ServiceTypeView> {
+    if (patch.durationMinutes !== undefined) {
+      await this.requireSlotMultiple(patch.durationMinutes);
+    }
+
     const updated = await this.repository.updateServiceType(id, patch);
     if (!updated) throw new ServiceTypeNotFoundError();
 
     await this.recordMutation('UPDATE', updated.id, requester);
     return updated;
+  }
+
+  /**
+   * SP-021, D-021. The base duration has to be a whole number of slots, and
+   * this is where it is refused: AT SAVE TIME, not at booking time.
+   *
+   * WHY IT IS NOT A `CHECK`. The atom lives in `site_parameter` and a `CHECK`
+   * cannot reach another table. What the base still holds is the range and the
+   * step of 5 (`service_type_duration_range`), which the atom's own range
+   * makes a consequence of this rule rather than a leftover contradicting it.
+   *
+   * WHY EVERY SITE AND NOT «THIS» ONE: a service type has no site. The
+   * reasoning, and the alternatives that were rejected, are in `clinicSlotAtom`.
+   */
+  private async requireSlotMultiple(durationMinutes: number): Promise<void> {
+    assertDurationFitsSlotAtom(
+      'durationMinutes',
+      durationMinutes,
+      clinicSlotAtom(await this.repository.siteSlotAtoms()),
+    );
   }
 
   /** SP-025. */

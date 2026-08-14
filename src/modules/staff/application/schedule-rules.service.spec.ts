@@ -38,7 +38,6 @@ const RULE: ScheduleRuleView = {
   weekday: 1,
   startTime: '08:00',
   endTime: '12:00',
-  slotMinutes: 20,
   validFrom: on('2026-01-01'),
   validTo: null,
   active: true,
@@ -49,7 +48,6 @@ const DRAFT = {
   weekday: 1,
   startTime: '14:00',
   endTime: '18:00',
-  slotMinutes: 20,
   validFrom: on('2026-01-01'),
   validTo: null,
 };
@@ -61,6 +59,8 @@ interface Answers {
   schedulable: boolean | null;
   rules: ScheduleRuleView[];
   booked: BookedInterval[];
+  /** D-021: what the site dices its day into. `null` is the AG-095 case. */
+  slotAtom: number | null;
 }
 
 interface Call {
@@ -118,6 +118,10 @@ function makeDouble(answers: Answers): {
         answers.booked.filter((entry) => entry.siteId === siteId),
       );
     },
+    slotAtomOfSite: (siteId) => {
+      note('slotAtomOfSite', siteId);
+      return Promise.resolve(answers.slotAtom);
+    },
   };
 
   return { repository, calls };
@@ -139,6 +143,7 @@ describe('ScheduleRulesService', () => {
       schedulable: true,
       rules: [RULE],
       booked: [],
+      slotAtom: 20,
     };
     const double = makeDouble(answers);
     calls = double.calls;
@@ -173,7 +178,7 @@ describe('ScheduleRulesService', () => {
     });
 
     it('ST-044 editar una regla deja constancia como UPDATE', async () => {
-      await service.update('rule-1', { slotMinutes: 30 }, REQUESTER);
+      await service.update('rule-1', { endTime: '13:00' }, REQUESTER);
 
       expect(recorded[0]).toMatchObject({
         action: 'UPDATE',
@@ -234,7 +239,7 @@ describe('ScheduleRulesService', () => {
       const rejection = await service
         .create(
           'prac-1',
-          { ...DRAFT, startTime: '14:00', endTime: '14:15', slotMinutes: 20 },
+          { ...DRAFT, startTime: '14:00', endTime: '14:15' },
           REQUESTER,
         )
         .catch((error: unknown) => error);
@@ -242,7 +247,7 @@ describe('ScheduleRulesService', () => {
       expect(rejection).toBeInstanceOf(InvalidScheduleRuleError);
       expect(
         (rejection as InvalidScheduleRuleError).fieldErrors?.[0]?.field,
-      ).toBe('slotMinutes');
+      ).toBe('endTime');
       expect(writes()).toEqual([]);
     });
 
@@ -259,7 +264,7 @@ describe('ScheduleRulesService', () => {
       answers.findRule = null;
 
       await expect(
-        service.update('ghost', { slotMinutes: 30 }, REQUESTER),
+        service.update('ghost', { endTime: '13:00' }, REQUESTER),
       ).rejects.toBeInstanceOf(ScheduleRuleNotFoundError);
     });
   });
@@ -352,7 +357,7 @@ describe('ScheduleRulesService', () => {
 
       const outcome = await service.update(
         'rule-1',
-        { slotMinutes: 30 },
+        { endTime: '13:00' },
         REQUESTER,
       );
 
@@ -433,7 +438,7 @@ describe('ScheduleRulesService', () => {
     it('ST-043 sin cambio de sede sigue preguntando por una sola', async () => {
       // La consulta extra sólo aparece cuando la regla se mueve: cobrarla en
       // cada edición sería una consulta por petición que nunca devuelve nada.
-      await service.update('rule-1', { slotMinutes: 30 }, REQUESTER);
+      await service.update('rule-1', { endTime: '13:00' }, REQUESTER);
 
       expect(
         calls

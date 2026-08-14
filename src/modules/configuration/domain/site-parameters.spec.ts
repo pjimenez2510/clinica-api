@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ParameterOutOfRangeError } from './configuration.errors';
 import {
+  assertAtomFitsStoredDurations,
   assertLeadWindowCoherent,
   assertParametersInRange,
   DEFAULT_SITE_PARAMETERS,
@@ -9,7 +10,7 @@ import {
 } from './site-parameters';
 
 /**
- * The rules of the four numbers of D-001, with no database in sight.
+ * The rules of a site's operating parameters, with no database in sight.
  *
  * What the base guarantees is proved against the base in
  * `test/integration/configuration-http.spec.ts`; what is proved here is that
@@ -25,14 +26,29 @@ describe('los parámetros de operación de una sede', () => {
   };
 
   it('CF-062 arranca con los valores que fijó D-001', () => {
-    // Not a tautology: these four numbers are also the column DEFAULTs of the
-    // migration, and the integration suite asserts the base writes exactly
-    // these when a site is created. If somebody changes one here without
-    // changing the other, the two tests disagree and one of them fails.
+    /**
+     * WHAT THIS ASSERTS, AND WHAT IT DOES NOT. It pins the constant against
+     * the values written down in D-001 — plus `allowPastBooking: false`, the
+     * conservative default the E7 migration chose — so changing any of them is
+     * a failing test somebody has to look at, and not a silent edit.
+     *
+     * It does NOT compare anything against the database: this is a literal
+     * against a literal, with no PostgreSQL in the process. The same numbers
+     * are also the column DEFAULTs of
+     * `20260813040610_configuration_holidays_and_site_parameters` and of the
+     * E7 migration, and that the two copies agree is asserted separately, by
+     * `test/integration/configuration-http.spec.ts` reading back a site the
+     * trigger has just parametrised. Two tests over two sources; nothing here
+     * makes the base fail because this constant moved.
+     */
     expect(DEFAULT_SITE_PARAMETERS).toEqual({
       minLeadMinutes: 0,
       maxLeadDays: 180,
       overbookingCap: 2,
+      // D-021: el único valor de la banda estándar del que son múltiplos las
+      // tres duraciones ya configuradas (10, 20 y 30).
+      slotAtomMinutes: 10,
+      allowPastBooking: false,
       cancelledRetention: 'NEVER',
     });
   });
@@ -130,6 +146,8 @@ describe('los parámetros de operación de una sede', () => {
         minLeadMinutes: 10_080,
         maxLeadDays: 1,
         overbookingCap: 2,
+        slotAtomMinutes: 10,
+        allowPastBooking: false,
         cancelledRetention: 'NEVER',
       });
       expect.unreachable('debía rechazarse');
@@ -147,20 +165,92 @@ describe('los parámetros de operación de una sede', () => {
         minLeadMinutes: 1440,
         maxLeadDays: 1,
         overbookingCap: 2,
+        slotAtomMinutes: 10,
+        allowPastBooking: false,
         cancelledRetention: 'NEVER',
       });
     }).not.toThrow();
   });
 
   it('CF-063 no declara rango para nada que sea una garantía del sistema', () => {
-    // La lista de parámetros con rango ES la lista de lo configurable. Si
-    // mañana alguien añade aquí un `allowOverlap` o un `historyImmutable`, esta
-    // prueba lo caza antes que ninguna otra: CF-063 dice que eso no es un
-    // parámetro, es una garantía, y configurarla es perderla (REQ-146).
+    // La lista de parámetros con rango ES la lista de lo configurable con
+    // límites. Si mañana alguien añade aquí un `allowOverlap` o un
+    // `historyImmutable`, esta prueba lo caza antes que ninguna otra: CF-063
+    // dice que eso no es un parámetro, es una garantía, y configurarla es
+    // perderla (REQ-146).
+    //
+    // `allowPastBooking` NO FALTA: es un booleano y un booleano no tiene rango
+    // —sus dos valores son legítimos—, así que `assertParametersInRange` no
+    // tiene nada que comprobar sobre él.
     expect(Object.keys(PARAMETER_RANGES)).toEqual([
       'minLeadMinutes',
       'maxLeadDays',
       'overbookingCap',
+      'slotAtomMinutes',
     ]);
+  });
+
+  /**
+   * D-021. The atom is a number with a range like the other three, and one
+   * extra thing: it lands on a step of 5.
+   */
+  describe('CF-062 el turno de la agenda', () => {
+    it('CF-065 acepta un turno de la banda estándar', () => {
+      for (const slotAtomMinutes of [5, 10, 15, 20, 30, 60]) {
+        expect(() => {
+          assertParametersInRange({ slotAtomMinutes });
+        }, `${slotAtomMinutes}`).not.toThrow();
+      }
+    });
+
+    it('CF-065 rechaza un turno fuera de la banda, nombrando el rango', () => {
+      try {
+        assertParametersInRange({ slotAtomMinutes: 90 });
+        expect.unreachable('debía rechazarse');
+      } catch (error) {
+        expect(error).toBeInstanceOf(ParameterOutOfRangeError);
+        const failure = error as ParameterOutOfRangeError;
+        expect(failure.fieldErrors?.[0]?.field).toBe('slotAtomMinutes');
+        expect(failure.fieldErrors?.[0]?.message).toContain('5 a 60');
+      }
+    });
+
+    it('CF-065 rechaza un turno que no cae en el paso de cinco', () => {
+      // 7 está dentro de 5..60 y no es múltiplo de 5. El paso es lo que
+      // mantiene `service_type_duration_range` como CONSECUENCIA de la regla
+      // fina en vez de un resto que la contradice.
+      expect(() => {
+        assertParametersInRange({ slotAtomMinutes: 7 });
+      }).toThrow(ParameterOutOfRangeError);
+    });
+
+    it('D-021 rechaza un turno que dejaría sin reservar una duración ya configurada', () => {
+      // La OTRA mitad de la garantía: hacer múltiplos a las duraciones cierra
+      // la puerta por la que entran las duraciones, no la puerta por la que
+      // entra el átomo.
+      try {
+        assertAtomFitsStoredDurations(20, [10, 20, 30]);
+        expect.unreachable('debía rechazarse');
+      } catch (error) {
+        expect(error).toBeInstanceOf(ParameterOutOfRangeError);
+        const failure = error as ParameterOutOfRangeError;
+        expect(failure.fieldErrors?.[0]?.field).toBe('slotAtomMinutes');
+        // Nombra las que estorban: «no puede ser 20» deja a quien administra
+        // adivinando cuál de cuarenta tipos de atención se lo impide.
+        expect(failure.fieldErrors?.[0]?.message).toContain('10, 30');
+      }
+    });
+
+    it('D-021 acepta un turno del que toda duración configurada es múltiplo', () => {
+      expect(() => {
+        assertAtomFitsStoredDurations(10, [10, 20, 30]);
+      }).not.toThrow();
+    });
+
+    it('D-021 no estorba cuando la clínica no ha configurado ninguna duración', () => {
+      expect(() => {
+        assertAtomFitsStoredDurations(60, []);
+      }).not.toThrow();
+    });
   });
 });

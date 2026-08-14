@@ -22,9 +22,12 @@ import {
   ROLE_ADMIN_REPOSITORY,
   ROLE_PERMISSION_CACHE,
 } from './application/admin-ports';
+import { AccountLockout } from './application/account-lockout';
 import { AuthAdminAuditTrail } from './application/auth-admin-audit.trail';
 import { AuthService } from './application/auth.service';
+import { SecondFactorVerifier } from './application/second-factor-verifier';
 import { MfaEnrolmentService } from './application/mfa-enrolment.service';
+import { MfaResetService } from './application/mfa-reset.service';
 import { RolesService } from './application/roles.service';
 import { AuthAdminController } from './auth-admin.controller';
 import { PrismaAccountAdminRepository } from './infrastructure/prisma-account-admin.repository';
@@ -73,6 +76,16 @@ import { TotpService } from './infrastructure/totp.service';
   providers: [
     AuthService,
     MfaEnrolmentService,
+    /**
+     * AU-003, AU-005, AU-037. Two application collaborators, not use cases:
+     * they answer questions the use cases ask, and they exist because AU-037
+     * needs the second factor verified — lockout included — outside any
+     * sign-in. Two implementations of «is this the right code?» would answer
+     * differently, and the path with the weaker one is the path an attacker
+     * picks.
+     */
+    AccountLockout,
+    SecondFactorVerifier,
     // A2. Split per ADR-008 §2: together they are twelve public use cases, and
     // they change for different reasons — one for how a person is hired and
     // let go, the other for what the clinic's roles mean.
@@ -87,6 +100,13 @@ import { TotpService } from './infrastructure/totp.service';
      * been reopened once.
      */
     CredentialInvitationsService,
+    /**
+     * A4 (AU-035, AU-036, D-014). Split from `AccountsService` on the same two
+     * lines of ADR-008 §2 as the invitations: that one is at the eight-use-case
+     * limit, and this changes for a different reason — how a lost second factor
+     * is recovered, not how somebody is hired and let go.
+     */
+    MfaResetService,
     AuthAdminAuditTrail,
     CurrentUserService,
 

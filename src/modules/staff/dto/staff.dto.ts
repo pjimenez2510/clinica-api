@@ -282,7 +282,15 @@ export class PractitionerSpecialtyListDto extends createZodDto(
 
 // --- Duration exceptions (ST-009) ------------------------------------------
 
-/** Mirror of the `duration_exception_range` CHECK, per field and in Spanish. */
+/**
+ * The FLOOR of SP-022, mirrored from the `duration_exception_range` CHECK.
+ *
+ * NOT THE WHOLE RULE SINCE D-021: the exception also has to be a multiple of
+ * the site's slot atom, which lives in `site_parameter` and therefore takes a
+ * read. `PractitionerAssignmentsService` does it and refuses with
+ * `DURATION_NOT_SLOT_MULTIPLE` naming the atom. What stays here needs no read
+ * — and is not redundant, since the atom's own range is 5..60 in steps of 5.
+ */
 const durationMinutesSchema = z
   .number({ error: 'Indique la duración en minutos' })
   .int('La duración debe ser un número entero de minutos')
@@ -335,19 +343,19 @@ const weekdaySchema = z
   .min(1, 'El día va de 1 (lunes) a 7 (domingo)')
   .max(7, 'El día va de 1 (lunes) a 7 (domingo)');
 
-const slotMinutesSchema = z
-  .number({ error: 'Indique los minutos por turno' })
-  .int('Los minutos por turno deben ser un número entero')
-  .min(5, 'El turno mínimo es de 5 minutos')
-  .max(240, 'El turno máximo es de 240 minutos');
-
+/**
+ * D-021: NO HAY `slotMinutes` EN ESTE ESQUEMA, y su ausencia es la decisión.
+ * La rejilla dejó de ser un número por regla y es el átomo de la sede
+ * (`site_parameter.slot_atom_minutes`), así que la pantalla de horarios tiene
+ * un campo menos que decidir y no puede volver a desencajar con la duración de
+ * un tipo de atención.
+ */
 export const createScheduleRuleSchema = z.object({
   /** ST-046: a rule belongs to exactly one site. */
   siteId: z.uuid('Seleccione la sede de la lista'),
   weekday: weekdaySchema,
   startTime: wallClockSchema,
   endTime: wallClockSchema,
-  slotMinutes: slotMinutesSchema.default(20),
   /** ST-041: every rule carries validity. */
   validFrom: clinicalDateField('Indique el inicio de vigencia en formato AAAA-MM-DD'), // prettier-ignore
   validTo: clinicalDateField('Indique el fin de vigencia en formato AAAA-MM-DD').nullish(), // prettier-ignore
@@ -362,7 +370,6 @@ export const updateScheduleRuleSchema = z
     weekday: weekdaySchema.optional(),
     startTime: wallClockSchema.optional(),
     endTime: wallClockSchema.optional(),
-    slotMinutes: slotMinutesSchema.optional(),
     validFrom: clinicalDateField('Indique el inicio de vigencia en formato AAAA-MM-DD').optional(), // prettier-ignore
     validTo: clinicalDateField('Indique el fin de vigencia en formato AAAA-MM-DD').nullish(), // prettier-ignore
   })
@@ -383,7 +390,6 @@ export const scheduleRuleSchema = z.object({
   weekday: z.number().int(),
   startTime: z.string(),
   endTime: z.string(),
-  slotMinutes: z.number().int(),
   validFrom: z.iso.date(),
   /** `null` means still in force (ST-041). */
   validTo: z.iso.date().nullable(),

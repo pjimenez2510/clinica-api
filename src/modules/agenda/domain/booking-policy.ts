@@ -9,12 +9,16 @@
  * condition and a second copy of the rule that drifts from the first. The
  * infrastructure translates the PostgreSQL error; it does not re-implement it.
  *
- * Pure: no clock. Anything that compares against "now" — AG-031, AG-032,
- * AG-033 — belongs to the site parameters of E7 and is not part of this
- * delivery.
+ * Pure: no clock. The rules that DO compare against "now" — AG-031, AG-032,
+ * AG-033, the booking window of E7 — live at the bottom of this file and take
+ * the instant AS A PARAMETER. A `new Date()` here would make "an appointment
+ * two minutes from now" impossible to test without waiting two minutes.
  */
 
 import {
+  BookingInThePastError,
+  BookingTooFarError,
+  BookingTooSoonError,
   InvalidBookingChannelError,
   InvalidSlotDurationError,
   OutsideScheduleRuleError,
@@ -23,6 +27,7 @@ import {
 } from './agenda.errors';
 import {
   type ClinicalDate,
+  addDays,
   atWallClock,
   clinicalDateOf,
 } from '../../../shared/domain/clinic-time';
@@ -98,6 +103,15 @@ export interface BookingScheduleCheck {
   request: BookingRequest;
   rules: readonly ScheduleRule[];
   /**
+   * D-021, AG-094, AG-095. The atom of the site: the grid AG-012 measures the
+   * duration against and AG-104 aligns the start to.
+   *
+   * REQUIRED. It used to be `rule.slotMinutes`, and the rule no longer carries
+   * one; an optional field with a default would let a caller book against a
+   * grid nobody resolved, which is the whole class of mistake D-021 removed.
+   */
+  slotAtomMinutes: number;
+  /**
    * AG-013 and AG-014 when known. Optional because the caller may have
    * resolved the practitioner already; when given, it is checked first.
    */
@@ -132,6 +146,7 @@ export function checkBookingFitsSchedule(
   const {
     request,
     rules,
+    slotAtomMinutes,
     practitioner,
     overbookingDeclared = false,
     timeZone,
@@ -155,11 +170,11 @@ export function checkBookingFitsSchedule(
 
   const date = clinicalDateOf(request.startsAt, timeZone);
 
-  // A malformed rule (slot of 0 minutes, start not before end) is filtered
-  // here for the same reason availability filters it: it must degrade to "no
-  // rule covers this" — a 422 the receptionist can read — never to the
-  // RangeError that `slotsOfRuleOn` would throw, which the filter turns into
-  // a 500 for every booking the broken row happens to cover.
+  // A malformed rule (start not before end) is filtered here for the same
+  // reason availability filters it: it must degrade to "no rule covers this" —
+  // a 422 the receptionist can read — never to the RangeError that
+  // `slotsOfRuleOn` would throw, which the filter turns into a 500 for every
+  // booking the broken row happens to cover.
   const covering = rules.filter(
     (rule) =>
       isWellFormedRule(rule) &&
@@ -178,27 +193,90 @@ export function checkBookingFitsSchedule(
     throw new OutsideScheduleRuleError();
   }
 
-  // AG-012. Deliberately NOT excused by an overbooking: the specification
-  // grants that exception to AG-028 only, and inventing a second one would be
-  // deciding policy that nobody wrote down.
+  /**
+   * AG-012. Deliberately NOT excused by an overbooking: the specification
+   * grants that exception to AG-028 only, and inventing a second one would be
+   * deciding policy that nobody wrote down.
+   *
+   * SINCE D-021 THIS CAN NO LONGER FAIL FOR A CONFIGURED DURATION, and the
+   * check stays exactly where it was. Every duration an administrator can save
+   * is a multiple of this same atom, so what is left here catches the interval
+   * a CALLER composed by hand — the API takes `startsAt` and `endsAt`, not a
+   * duration, so «45 minutes on a 20-minute grid» is still one POST away. The
+   * requirement is the guarantee; what disappeared is that configuration could
+   * breach it.
+   */
   if (
     requestedMinutes <= 0 ||
-    !Number.isInteger(requestedMinutes / applicable.slotMinutes)
+    !Number.isInteger(requestedMinutes / slotAtomMinutes)
   ) {
-    throw new InvalidSlotDurationError(
-      requestedMinutes,
-      applicable.slotMinutes,
-    );
+    throw new InvalidSlotDurationError(requestedMinutes, slotAtomMinutes);
   }
 
   // AG-104. Excused by the same declared overbooking as AG-028, and by nothing
   // else: starting at 08:10 is still possible through the path that demands a
   // reason and leaves a record (AG-035).
   if (!overbookingDeclared) {
-    checkStartIsOnSlotBoundary(applicable, date, request, timeZone);
+    checkStartIsOnSlotBoundary(
+      applicable,
+      date,
+      slotAtomMinutes,
+      request,
+      timeZone,
+    );
   }
 
   return applicable;
+}
+
+/**
+ * SP-023's third rung: the rule that governs an INSTANT, with no end in hand.
+ *
+ * WHY IT CANNOT REUSE `checkBookingFitsSchedule`. That function needs the
+ * interval, and here the interval is precisely what is being worked out — the
+ * duration is what the caller is asking for. So the question is narrowed to
+ * the one it can answer: which rule is open at the moment recepción clicked.
+ *
+ * THE TIE-BREAK IS THE SAME (AG-106) and it is the same comparator, not a
+ * second copy: nothing forbids two rules in force over the same hours, and the
+ * proposal must not be decided by the row PostgreSQL happened to return first.
+ * A proposal that changed after a `VACUUM` would send recepción to a booking
+ * the very next check refuses.
+ *
+ * `null` when no rule is open then. The caller decides what that means — for
+ * the proposal it means «there is no third rung», not an error: a service type
+ * with a base duration still answers, and a start outside every schedule is
+ * refused by AG-028 when the booking is actually attempted.
+ */
+export function ruleGoverningStart(
+  rules: readonly ScheduleRule[],
+  request: { practitionerId: string; siteId: string; startsAt: Date },
+  timeZone?: string,
+): ScheduleRule | null {
+  const date = clinicalDateOf(request.startsAt, timeZone);
+
+  const open = rules.filter(
+    (rule) =>
+      isWellFormedRule(rule) &&
+      rule.practitionerId === request.practitionerId &&
+      rule.siteId === request.siteId &&
+      ruleAppliesOn(rule, date) &&
+      containsStart(rule, date, request.startsAt, timeZone),
+  );
+
+  return [...open].sort(mostRecentlyInForce)[0] ?? null;
+}
+
+/** Half-open, `[opens, closes)`: a start AT the closing time opens nothing. */
+function containsStart(
+  rule: ScheduleRule,
+  date: ClinicalDate,
+  startsAt: Date,
+  timeZone: string | undefined,
+): boolean {
+  const opens = atWallClock(date, rule.startTime, timeZone).getTime();
+  const closes = atWallClock(date, rule.endTime, timeZone).getTime();
+  return startsAt.getTime() >= opens && startsAt.getTime() < closes;
 }
 
 /**
@@ -247,13 +325,14 @@ function mostRecentlyInForce(a: ScheduleRule, b: ScheduleRule): number {
 function checkStartIsOnSlotBoundary(
   rule: ScheduleRule,
   date: ClinicalDate,
+  slotAtomMinutes: number,
   request: BookingRequest,
   timeZone: string | undefined,
 ): void {
   // The grid comes from the same derivation the availability query offers
   // (AG-003), never from arithmetic repeated here.
-  const starts = slotsOfRuleOn(rule, date, timeZone).map((slot) =>
-    slot.startsAt.getTime(),
+  const starts = slotsOfRuleOn(rule, date, slotAtomMinutes, timeZone).map(
+    (slot) => slot.startsAt.getTime(),
   );
   const requested = request.startsAt.getTime();
 
@@ -286,4 +365,188 @@ function coversInterval(
     request.startsAt.getTime() >= opens.getTime() &&
     request.endsAt.getTime() <= closes.getTime()
   );
+}
+
+/* ─── The booking window of the site (E7: AG-031 to AG-033, AG-094, AG-095) ─── */
+
+/**
+ * The operating numbers the booking path reads from the site.
+ *
+ * FOUR, and not the seven AG-094 enumerates: the overbooking switch, the
+ * permission that authorises it and the waiting-list contact attempts belong to
+ * E4 and E5. A field declared here that nothing reads is a field nobody
+ * maintains, and the day it is read for real its meaning has already drifted.
+ * `cancelled_retention` is absent for a different reason — see AG-102 below.
+ */
+export interface SiteBookingParameters {
+  /** Minutes that must pass between now and the start (AG-032). */
+  minLeadMinutes: number;
+  /** Calendar days the agenda may be booked ahead (AG-033). */
+  maxLeadDays: number;
+  /** Whether a start before the current instant is admitted (AG-031). */
+  allowPastBooking: boolean;
+  /**
+   * D-021. The atom of the site: the increment its day is diced into, which is
+   * both the length of every slot the agenda offers and the number AG-012 and
+   * AG-104 measure a booking against.
+   *
+   * IT IS A BOOKING PARAMETER AND NOT AN ODD ONE OUT: it is read on the same
+   * path, resolved by the same AG-095 chain, and missing from the row for the
+   * same reasons as the rest. What makes it different from the other three is
+   * only that AVAILABILITY reads it too — the grid is what availability IS.
+   */
+  slotAtomMinutes: number;
+}
+
+/**
+ * AG-095, third rung: what the agenda operates with when nothing is stored.
+ *
+ * WHY THE AGENDA DECLARES ITS OWN AND DOES NOT SHARE `configuration`'s. The
+ * two modules would look like duplication — the numbers of D-001 are the same
+ * — and they are not the same statement. `configuration` declares what a site
+ * is CREATED with and what an administrator may save; this declares what the
+ * booking path OPERATES WITH when the site says nothing at all, which is a
+ * question about behaviour under missing data. Sharing one constant in
+ * `shared/` would tie the two modules together through a value each reads for
+ * a different purpose, and the first divergence — say, `configuration` adding
+ * a parameter of E4 — would drag this file along for no reason. It would also
+ * be the only thing in `shared/` that no third party needs.
+ *
+ * The two copies cannot drift in silence: `agenda-parameters.spec.ts` books
+ * against a site whose row was deleted and asserts the outcome matches the
+ * column defaults the migration wrote, so a change on either side is a failing
+ * test rather than a surprise at the counter.
+ *
+ * AND THE SECOND RUNG, "el valor de la clínica", IS NOT MISSING. There is no
+ * clinic-level table: the trigger of
+ * `20260813040610_configuration_holidays_and_site_parameters` writes the
+ * clinic's values into every site's row the moment the site exists, so the
+ * clinic level IS the column default. The chain of AG-095 has three rungs and
+ * the lower two coincide today; when a clinic-level table exists it slots in
+ * here without touching a caller.
+ */
+export const DEFAULT_BOOKING_PARAMETERS: SiteBookingParameters = Object.freeze({
+  minLeadMinutes: 0,
+  maxLeadDays: 180,
+  allowPastBooking: false,
+  // D-021: the only value of the standard band (10, 15, 20) that 10, 20 and 30
+  // — the durations already configured when the decision was taken — are all
+  // multiples of.
+  slotAtomMinutes: 10,
+});
+
+/**
+ * What storage may answer: every parameter, some of them, or no row at all.
+ *
+ * PARTIAL ON PURPOSE even though the columns are `NOT NULL` today. AG-095 is
+ * about "un parámetro" not being defined, not about a whole row missing, and a
+ * port typed as all-or-nothing quietly forbids the requirement's own case.
+ */
+export type StoredSiteParameters = Partial<SiteBookingParameters>;
+
+/**
+ * AG-095. Site value first, code default for whatever it does not state.
+ *
+ * Field by field, and `??` rather than `||`: `0` minutes of minimum lead and
+ * `false` for past booking are legitimate stored values, and the falsy test
+ * would replace a decision the site made with a default it never asked for.
+ */
+export function resolveBookingParameters(
+  stored: StoredSiteParameters | null,
+): SiteBookingParameters {
+  return {
+    minLeadMinutes:
+      stored?.minLeadMinutes ?? DEFAULT_BOOKING_PARAMETERS.minLeadMinutes,
+    maxLeadDays: stored?.maxLeadDays ?? DEFAULT_BOOKING_PARAMETERS.maxLeadDays,
+    allowPastBooking:
+      stored?.allowPastBooking ?? DEFAULT_BOOKING_PARAMETERS.allowPastBooking,
+    slotAtomMinutes:
+      stored?.slotAtomMinutes ?? DEFAULT_BOOKING_PARAMETERS.slotAtomMinutes,
+  };
+}
+
+export interface BookingWindowCheck {
+  startsAt: Date;
+  /** The current instant, INJECTED. The domain owns no clock. */
+  now: Date;
+  /** AG-032 exempts `WALK_IN` and nothing else. */
+  channel: BookingChannel;
+  parameters: SiteBookingParameters;
+  /** Only the tests move it: the clinic operates in one zone (SPEC §10). */
+  timeZone?: string;
+}
+
+/**
+ * AG-031, AG-032, AG-033: whether the requested start is inside the window the
+ * site admits at the instant it is being asked.
+ *
+ * ORDER OF THE CHECKS, AND WHY IT IS NOT ARBITRARY. The past comes first
+ * because it is the only one of the three whose answer is "that hour is gone",
+ * and hearing "reserve it later" about an hour that already passed would send
+ * a receptionist looking for a slot that cannot exist. The minimum lead next,
+ * and the maximum last, because a start can only be too far once it is not too
+ * soon.
+ *
+ * WHAT THIS FUNCTION DELIBERATELY DOES NOT DO (AG-098): it judges ONE booking
+ * against the parameters handed to it. It has no way to reach an entry that
+ * already exists, which is what makes "a parameter change does not revalidate
+ * what is already booked" a property of the design and not of somebody
+ * remembering not to write the loop.
+ */
+export function checkBookingWindow(check: BookingWindowCheck): void {
+  const { startsAt, now, channel, parameters, timeZone } = check;
+  const { minLeadMinutes, maxLeadDays, allowPastBooking } = parameters;
+
+  // Strictly before: a start AT the current instant is the counter booking
+  // that D-001 set the minimum lead to zero for, not a booking in the past.
+  const startsInThePast = startsAt.getTime() < now.getTime();
+
+  // AG-031.
+  if (startsInThePast && !allowPastBooking) {
+    throw new BookingInThePastError();
+  }
+
+  /**
+   * AG-032, with its two exemptions.
+   *
+   * `WALK_IN` is the requirement's own: the patient is already at the counter,
+   * and a minimum lead applied to the window only teaches reception to declare
+   * another channel — at which point AG-080 measures smoke.
+   *
+   * THE PAST IS THE SECOND, AND IT IS A DECISION THIS DELIVERY MADE because
+   * the requirement does not say which way to read "dista del instante actual"
+   * for an instant that already went by. A site that switched AG-031 on is
+   * recording an attention that happened; measuring the minimum lead against
+   * that start refuses every such record whenever the lead is above zero, and
+   * the switch the clinic deliberately turned on would do nothing. The
+   * combination is unreachable with the values of D-001 (0 minutes, past
+   * closed); it is written down because a site can reach it.
+   */
+  if (!startsInThePast && channel !== 'WALK_IN') {
+    const earliest = new Date(now.getTime() + minLeadMinutes * MS_PER_MINUTE);
+    if (startsAt.getTime() < earliest.getTime()) {
+      throw new BookingTooSoonError(earliest, minLeadMinutes, timeZone);
+    }
+  }
+
+  /**
+   * AG-033, counted on the Ecuadorian calendar (AG-001).
+   *
+   * DATES AND NOT INSTANTS: the requirement asks the refusal to name «la
+   * última fecha admisible», the parameter is a number of days, and the whole
+   * of that last day is bookable — so the sentence the receptionist reads is
+   * true at 08:00 and still true at 19:00. Measured from the instant instead,
+   * the same message would be a lie for part of its own day, and the limit
+   * would drift by the minute the query is made.
+   *
+   * The dates are resolved in Ecuador and never in UTC: an appointment at
+   * 21:00 falls on the following UTC day, and a limit read there refuses the
+   * evening of a day the clinic considers admissible.
+   */
+  const latestDate = addDays(clinicalDateOf(now, timeZone), maxLeadDays);
+  // ISO-8601 dates compare lexicographically exactly as they compare
+  // chronologically, which is the whole reason `ClinicalDate` is that shape.
+  if (clinicalDateOf(startsAt, timeZone) > latestDate) {
+    throw new BookingTooFarError(latestDate, maxLeadDays);
+  }
 }

@@ -102,10 +102,74 @@ export class MfaAlreadyEnrolledError extends ConflictError {
   }
 }
 
+/**
+ * AU-037 — there is no re-enrolment in progress to confirm.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ONE CODE FOR TWO SITUATIONS, AND BOTH ARE THE SAME FACT.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Either nobody started a change — the confirmation arrived on its own, or the
+ * pending secret was already spent — or somebody started ANOTHER one and this
+ * confirmation is holding a secret that no longer exists. To whoever is at the
+ * screen these are one thing: «lo que estaba a medias ya no está», and the
+ * only move is to start again. Telling them apart would describe a race the
+ * person cannot act on.
+ *
+ * NOT `MfaNotEnrolledError`: the account has a perfectly good second factor —
+ * that is the whole point of AU-037, the old one keeps working — so saying it
+ * is not enrolled would send the client to the enrolment screen, which refuses
+ * with `MFA_ALREADY_ENROLLED`, and the person would be stuck between two
+ * errors.
+ *
+ * 409 like `MfaAlreadyEnrolledError`: the request is well formed and the
+ * caller is authorised; the state it assumes is simply not there any more.
+ */
+export class MfaChangeNotStartedError extends ConflictError {
+  readonly code = 'MFA_CHANGE_NOT_STARTED';
+  override readonly userTitle =
+    'No hay ningún cambio de segundo factor a medias. Empiece de nuevo y escanee el código otra vez';
+
+  constructor() {
+    super('No pending second factor change to confirm');
+  }
+}
+
 export class MfaRequiredError extends UnauthorizedError {
   readonly code = 'MFA_REQUIRED';
   constructor() {
     super('This session has not completed the second factor');
+  }
+}
+
+/**
+ * AU-036 — the session this token belongs to was closed before it expired.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * WHY IT IS NOT `INVALID_TOKEN`, AND WHY SAYING SO LEAKS NOTHING.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `InvalidTokenError` is «this string is not something we signed», and the
+ * reason behind it is deliberately withheld because it distinguishes an
+ * expired token from a forged one. This is a different fact: the token IS ours,
+ * it IS still within its lifetime, and the session behind it was revoked —
+ * because the second factor was reset (AU-036), the password changed, or the
+ * account was deactivated (AU-023).
+ *
+ * It tells whoever holds the token nothing they did not already know: they are
+ * holding it. What it buys is that the interface can send the person back to
+ * sign in with a sentence that matches what happened, instead of the «su sesión
+ * no es válida» that a receptionist reads as a broken system.
+ *
+ * A 401 and not a 403: the way forward is to authenticate again.
+ */
+export class SessionRevokedError extends UnauthorizedError {
+  readonly code = 'SESSION_REVOKED';
+  override readonly userTitle =
+    'Su sesión se cerró. Vuelva a iniciar sesión para continuar';
+
+  constructor() {
+    super('The session family behind this access token has been revoked');
   }
 }
 
@@ -241,6 +305,49 @@ export class CannotDemoteSelfError extends BusinessRuleViolation {
   }
 }
 
+/**
+ * AU-035 — nobody resets their OWN second factor.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * WHY THIS IS FORBIDDEN, AND IT IS NOT SYMMETRY WITH AU-024.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * AU-035 scopes itself to «otra cuenta», and three things make that the right
+ * scope rather than an accident of wording:
+ *
+ *   - IT COULD NEVER BE A RECOVERY PATH. The route is behind a permission, so
+ *     reaching it needs a completed session — and a completed session means
+ *     the second factor already worked. Whoever actually lost their phone
+ *     cannot get here; whoever can get here does not need to.
+ *   - SO IT WOULD ONLY EVER REMOVE A WORKING FACTOR. Anybody holding a live
+ *     session of an account with this permission — a laptop left unlocked, a
+ *     stolen token — could strip that account's second factor and from then on
+ *     re-enter with the password alone. A factor a session can remove is a
+ *     factor that stops protecting the moment it is most needed.
+ *   - AND IT WOULD BREAK THE ONLY THING MAKING THE PERMISSION SAFE. The value
+ *     of the entry AU-035 demands is that author and subject are different
+ *     people. Author equal to subject is the same shape the base already
+ *     refuses in `user_role_grant_no_self_grant`: the audit question must not
+ *     answer «lo hizo ella misma».
+ *
+ * NOTHING IS LOST BY REFUSING IT. There is no self-service way to re-enrol
+ * anyway — `MfaAlreadyEnrolledError` refuses a second enrolment — so somebody
+ * changing phones already needs another person. This makes that explicit
+ * instead of offering a path that quietly weakens the account.
+ *
+ * 422 and not 403, like `CANNOT_DEMOTE_SELF`: the caller is perfectly
+ * authorised; what they asked for is a state the system must not reach here.
+ */
+export class CannotResetOwnMfaError extends BusinessRuleViolation {
+  readonly code = 'CANNOT_RESET_OWN_MFA';
+  override readonly userTitle =
+    'No puede reiniciar su propio segundo factor. Pídaselo a otra persona con ese permiso: la bitácora tiene que poder decir quién lo reinició y a quién';
+
+  constructor() {
+    super('A user may not reset their own second factor');
+  }
+}
+
 /** AU-030. Two roles may not share a code: it appears in seeds and in logs. */
 export class RoleCodeDuplicateError extends ConflictError {
   readonly code = 'ROLE_CODE_DUPLICATE';
@@ -331,6 +438,89 @@ export class UnknownPermissionError extends BusinessRuleViolation {
       },
     ]);
   }
+}
+
+/**
+ * AU-033. The code declares the permission; THIS INSTALLATION'S DATABASE has
+ * not been told about it yet.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * NOT THE SAME FAILURE AS `UNKNOWN_PERMISSION`, AND SAYING SO IS THE POINT.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `permission` is a MIRROR of the catalogue in the code, kept so grants have
+ * referential integrity. The screen reads the catalogue from the CODE — that is
+ * deliberate, and `RolesService.catalogue()` explains why — so between deploying
+ * a version that declares a new permission and running `pnpm db:seed:auth`, the
+ * screen offers a checkbox the foreign key will refuse.
+ *
+ * WHAT THAT LOOKED LIKE BEFORE THIS ERROR EXISTED: `RELATED_RECORD_MISSING`,
+ * rendered as «Datos inválidos» over a form where nothing was invalid. Whoever
+ * was granting `user:reset-mfa` to somebody so a doctor could get back into the
+ * system had no way to learn that the answer was one command on the server, and
+ * the obvious next move — untick, retick, try another role — cannot work.
+ *
+ * The sentence is written for whoever is at the screen and cannot fix it, so it
+ * says who can. The command belongs in this comment, not on a screen a
+ * receptionist reads.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * THE SENTENCE THAT MATTERS IS THE FIELD ERROR'S, NOT `userTitle`.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `clinica-web` renders `ApiError.userMessage`, which prefers
+ * `errors[0].message` and falls back to `title`. This error ALWAYS carries a
+ * field error, so `userTitle` is what a client without that rule would show and
+ * the field error is what the administration screen actually displays. The
+ * first version put the action in `userTitle` and a bare list of codes in the
+ * field error — so the screen read «Permisos sin instalar: user:reset-mfa» and
+ * every word about what to do next died on the way. Both say the same thing
+ * now, and the one that is read names the codes.
+ *
+ * IT DOES NOT PROMISE A PARTIAL SAVE, because there is none: nothing is
+ * written. «Desmárquelo para guardar el resto» is an instruction for the next
+ * attempt, and the earlier wording — «los demás permisos sí se pueden
+ * guardar» — could be read on a rejected save as «the rest went through».
+ *
+ * A CONFLICT AND NOT A VALIDATION ERROR: what was sent is perfectly valid and
+ * the code does declare it. It is the state of the installation that prevents
+ * the operation, which is exactly what 409 means here.
+ */
+export class PermissionNotInstalledError extends ConflictError {
+  readonly code = 'PERMISSION_NOT_INSTALLED';
+  override readonly userTitle =
+    'Alguno de los permisos elegidos todavía no está instalado en el sistema, así que no se puede conceder. Avise a quien administra la instalación';
+
+  constructor(missing: readonly string[]) {
+    super(
+      'The permission catalogue in the database lags the one in the code; run the authorisation sync',
+      {},
+      [
+        {
+          field: 'permissions',
+          code: 'PERMISSION_NOT_INSTALLED',
+          // The codes are named for the same reason `UnknownPermissionError`
+          // names its own: they came from the caller, they are not personal
+          // data, and a support call that cannot quote the code is
+          // unactionable.
+          message: sentenceFor(missing),
+        },
+      ],
+    );
+  }
+}
+
+/**
+ * Singular and plural, because the constructor takes a list and a screen that
+ * says «estos permisos» over one line reads like a bug.
+ */
+function sentenceFor(missing: readonly string[]): string {
+  const action =
+    'para guardar el resto, y avise a quien administra la instalación';
+
+  return missing.length === 1
+    ? `«${missing[0]}» todavía no está instalado en el sistema. Desmárquelo ${action}.`
+    : `Estos permisos todavía no están instalados en el sistema: ${missing.join(', ')}. Desmárquelos ${action}.`;
 }
 
 /**

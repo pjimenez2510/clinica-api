@@ -94,6 +94,36 @@ diálogo ofrece especialidad y tipo.
 
 **Cubre:** SP-028 junto a los AG-### de agenda que ya lo describen.
 
+**Prueba independiente:** proponer la duración de un especialidad·tipo para un
+médico con y sin excepción contra PostgreSQL real, reservar con esa duración y
+comprobar que el tipo queda en la fila de la cita, y que borrar ese tipo se
+rechaza con `SERVICE_TYPE_IN_USE`.
+
+**Niveles de prueba:**
+
+| Requisito | Nivel                                                                  |
+| --------- | ---------------------------------------------------------------------- |
+| SP-021    | Unitario puro de la aritmética + unitario de aplicación + integración: no se puede GUARDAR una duración que no es múltiplo |
+| SP-022    | Unitario de aplicación + integración contra PostgreSQL real            |
+| SP-023    | Unitario puro (jerarquía y jerarquía + regla) + integración por peldaño |
+| SP-024    | Integración: filas anteriores al cambio, no una pantalla                |
+| SP-025    | Integración contra el `RESTRICT` + contrato HTTP del `code`             |
+| SP-028    | Unitario de aplicación + integración del camino completo + componente   |
+
+> **El defecto de modelo que C4 tuvo que corregir primero.**
+> `agenda_entry.service_type_concept_id` apuntaba a `catalog_concept` —el
+> catálogo clínico del MSP— y el tipo de atención con su duración vive en
+> `service_type`. Con ese modelo **ni SP-028 ni SP-025 podían cumplirse**: la
+> cita no podía «dejar el tipo registrado» y la base no tenía nada sobre lo que
+> rechazar un borrado. La columna es ahora
+> `agenda_entry.service_type_id → service_type(id) ON DELETE RESTRICT`.
+>
+> Se corrigió **editando las dos migraciones donde nació la columna**, no
+> apilando un `ALTER` encima: `scripts/database-phase.mjs` dice `development` y
+> no hay ninguna instalación en producción. Nace en
+> `20260812222827_configuration_specialties_and_durations`, que es donde nace
+> `service_type` — una clave foránea no apunta a una tabla que aún no existe.
+
 ---
 
 ## Requisitos
@@ -135,16 +165,58 @@ diálogo ofrece especialidad y tipo.
 
 - **SP-020** — El sistema DEBERÁ mantener tipos de atención por especialidad,
   cada uno con duración base en minutos.
-- **SP-021** — El sistema DEBERÁ aceptar duraciones entre 5 y 240 minutos en
-  múltiplos de 5, con la garantía como `CHECK` en la base.
+- **SP-021** — El sistema DEBERÁ aceptar duraciones que sean **múltiplo del
+  turno de la agenda de la sede** (CF-062), y DEBERÁ rechazar al guardar, por
+  campo y nombrando ese turno, la que no lo sea.
+  > **Cambiado el 14-08-2026 por D-021.** Decía «entre 5 y 240 minutos en
+  > múltiplos de 5, con la garantía como `CHECK` en la base», y ése era
+  > justamente el agujero: cualquier múltiplo de 5 valía y nada lo ataba a la
+  > rejilla del profesional, así que una base de 30 sobre cupos de 20 se
+  > guardaba sin protesta y la reserva la rechazaba después con
+  > `INVALID_SLOT_DURATION` (AG-012). Ahora la rejilla es un átomo único por
+  > sede y toda duración es múltiplo suyo, **validado al guardar**.
+  >
+  > **Contra qué átomo, si el tipo de atención es de la CLÍNICA y el átomo es de
+  > la SEDE.** Contra el de **todas** las sedes a la vez —el mínimo común
+  > múltiplo—, y el porqué está escrito en `shared/domain/slot-atom.ts`. En
+  > corto: `service_type` no tiene `site_id` y nunca lo tuvo, porque «Primera
+  > vez de Cardiología» es la misma atención se dé donde se dé; un tipo que se
+  > puede ofrecer en cualquier sede tiene que poder reservarse en cualquier
+  > sede. Validar contra «el de la clínica» —que hoy es el defecto de columna—
+  > no garantizaría nada sobre una sede que cambió el suyo, y sería la misma
+  > incoherencia alcanzable movida a «la otra sede». **Lo que cuesta, dicho en
+  > voz alta:** con sedes de 10 y de 15 sólo se admiten múltiplos de 30, así que
+  > un control de 20 minutos deja de poder configurarse. No es un defecto de la
+  > regla sino la forma real de la restricción — una cita de 20 minutos no cabe
+  > en una rejilla de 15— y la alternativa a decirlo al configurar es decirlo en
+  > el mostrador, cita por cita.
+  >
+  > **Lo que queda como `CHECK` en la base:** `service_type_duration_range`,
+  > 5..240 en múltiplos de 5. Un `CHECK` no puede consultar `site_parameter`, y
+  > no es un resto contradictorio: el átomo va de 5 a 60 **de cinco en cinco**,
+  > así que todo múltiplo del átomo es múltiplo de 5 y lo que este `CHECK`
+  > rechaza no habría encajado en ninguna rejilla.
 - **SP-022** — El sistema DEBERÁ permitir una excepción de duración por médico
-  para un especialidad·tipo concreto, con la misma garantía de rango.
+  para un especialidad·tipo concreto, con la misma garantía.
   > La administra `staff` desde el 13-08-2026 (ST-009). El `CHECK`
   > `duration_exception_range` no se movió —vive en la base— pero su traducción
   > a mensaje sí, a `staff.constraints.ts`.
+  >
+  > **D-021 le alcanza igual, y no es simetría:** la excepción es el peldaño que
+  > GANA en SP-023, así que dejarla fuera haría cosmética la garantía —todos los
+  > tipos encajarían en la rejilla y la sobreescritura de un solo médico dejaría
+  > sin reservar todas sus citas—. Se valida contra el átomo de todas las sedes
+  > y no contra las del profesional: la excepción cuelga de un `service_type`,
+  > que no tiene sede, y a un médico se le puede añadir otra sede mañana sin que
+  > nadie vuelva a mirar sus excepciones.
 - **SP-023** — CUANDO se necesite la duración de una cita, el sistema DEBERÁ
   resolverla en este orden: excepción del médico → duración base del
-  especialidad·tipo → minutos de la regla de horario del profesional.
+  especialidad·tipo → **turno de la agenda de la sede**.
+  > **El tercer peldaño cambió el 14-08-2026 (D-021).** Eran «los minutos de la
+  > regla de horario», y la regla ya no lleva ninguno. Sigue **condicionado a
+  > que haya una regla abierta a esa hora**: la sede tiene átomo a cualquier
+  > hora de la semana, y proponer diez minutos para un domingo que nadie trabaja
+  > respondería a una pregunta distinta de la que hace la pantalla.
 - **SP-024** — CUANDO cambie una duración, el sistema NO DEBERÁ alterar citas ya
   reservadas: rige solo hacia adelante.
 - **SP-025** — SI se intenta borrar un tipo de atención referenciado por una
@@ -157,6 +229,27 @@ diálogo ofrece especialidad y tipo.
 - **SP-028** — CUANDO recepción elija especialidad y tipo al reservar, el
   sistema DEBERÁ proponer la duración resuelta según SP-023 y dejar el tipo
   registrado en la cita.
+  > **Proponer no es imponer, y la palabra es del requisito.** La reserva
+  > guarda el intervalo que recibe y el tipo que recibe; no reescribe el fin
+  > con la duración resuelta ni rechaza una cita que dure otra cosa. Ningún
+  > requisito lo pide, y sería inventar política: un control que el médico
+  > acorta no incumple nada. Lo que la propuesta y la reserva **sí** comparten
+  > es la función (`shared/domain/duration-resolution.ts`), que es lo que
+  > impide que el número que ve recepción y el que resuelve cualquier otro
+  > llamador sean dos números distintos.
+  >
+  > **Cómo convive con AG-012 y AG-104: desde D-021, sin poder chocar.** La
+  > duración propuesta sigue teniendo que ser múltiplo del turno de la sede
+  > (AG-012) y el inicio sigue teniendo que caer en un borde de cupo (AG-104),
+  > pero ahora **toda duración configurable es múltiplo de ese mismo turno**, así
+  > que la propuesta encaja por construcción.
+  >
+  > **La propuesta ya no devuelve la rejilla.** Ese campo (`slotMinutes`)
+  > existía para que la pantalla avisara «no encaja en los turnos de N min»
+  > antes del clic, cuando la incoherencia era alcanzable. Se retiró con D-021,
+  > que sustituye a **D-020**: aquella decisión se quedaba en avisar de la
+  > incoherencia en vez de impedirla, y un aviso que ya no puede dispararse sólo
+  > enseña a saltarse los que sí.
 
 ---
 
@@ -174,6 +267,7 @@ una prueba comprueba que ninguna clase de error inventa un código fuera de él.
 | `SERVICE_TYPE_DUPLICATE`   | 409  | Nombre repetido dentro de la especialidad (SP-026)               |
 | `SPECIALTY_NOT_FOUND`      | 404  | La especialidad indicada no existe                               |
 | `SERVICE_TYPE_NOT_FOUND`   | 404  | El tipo de atención indicado no existe                           |
+| `DURATION_NOT_SLOT_MULTIPLE` | 422 | La duración no es múltiplo del turno de la agenda (SP-021, SP-022) |
 
 
 `PRACTITIONER_NOT_FOUND`, `PRIMARY_SPECIALTY_REQUIRED` y `SPECIALTY_INACTIVE`
@@ -199,9 +293,31 @@ escribiendo en el mismo milisegundo leen ambos «libre»:
   renombra**.
 - `service_type_name_unique_per_specialty`: índice único funcional (SP-026).
 - `service_type_duration_range` y `duration_exception_range`: `CHECK` de 5..240
-  en múltiplos de 5 (SP-021, SP-022).
+  en múltiplos de 5. Desde D-021 son el **suelo** de SP-021 y SP-022, no la
+  regla entera: la regla es «múltiplo del átomo de la sede», que un `CHECK` no
+  puede expresar porque vive en otra tabla, y la hace cumplir la aplicación con
+  `DURATION_NOT_SLOT_MULTIPLE`.
 - Claves foráneas `ON DELETE RESTRICT` hacia `specialty` y `service_type`: son
   las que producen SP-003 y SP-025.
+- `agenda_entry.service_type_id → service_type(id) ON DELETE RESTRICT`, más el
+  índice parcial `agenda_entry_by_service_type` (C4). Es la que **produce**
+  SP-025: sin ella el borrado de un tipo referenciado por una cita no tenía
+  nada que lo rechazara, y la rama que traduce el rechazo llevaba desde C1
+  armada sin poder dispararse nunca.
+
+> **`practitioner_schedule_rule.service_type_concept_id` NO se tocó, y es una
+> decisión, no un olvido.** También apunta a `catalog_concept`, pero SP-023 no
+> lo lee: su tercer peldaño es el turno de la sede, no el tipo que la regla
+> declare. Nada lo escribe —los DTO de ST-04x, que son los dueños de
+> la regla, no lo exponen— y su único lector es
+> `Slot.serviceTypeConceptId`, un campo de la respuesta de disponibilidad que
+> hoy vale `null` en todos los cupos. Cambiarlo habría sido tocar el esquema de
+> otro módulo para arreglar un campo que ningún requisito usa. Los dos nombres
+> quedan distintos **a propósito**: `serviceTypeId` es `service_type` y
+> `serviceTypeConceptId` es `catalog_concept`, y confundirlos es enviar el
+> identificador de una tabla como si fuera el de otra. Cuando `staff` decida
+> qué significa «esta regla es para este tipo de atención», es ST-04x quien
+> tiene que decidirlo.
 
 `practitioner_specialty_one_primary` —el índice único parcial de SP-005— y el
 `CHECK` `duration_exception_range` siguen existiendo en la base, sobre tablas

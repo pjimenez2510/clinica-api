@@ -49,7 +49,20 @@ const DECLARATION = /^\s*[-*]\s*\*\*([A-Z]{2,4}-\d{3})\*\*/gm;
 const STATE_LINE = /^\*\*Estado:\*\*\s*(\S+)/m;
 const TEST_TITLE =
   /\b(?:it|test|describe)(?:\.\w+)*\s*\(\s*(['"`])([^'"`]+)\1/g;
-const NEEDS_CLARIFICATION = /\[NECESITA ACLARACIÓN\][^\n]*(?:\n>\s*[^\n]*)*/g;
+/**
+ * `> **[NECESITA ACLARACIÓN]** …` — EN NEGRITA, que es como lo exige
+ * `.claude/rules/especificaciones.md`.
+ *
+ * Sin la negrita, el marcador se cazaba también DENTRO de la prosa que explica
+ * que ya se resolvió: «el `[NECESITA ACLARACIÓN]` que había aquí queda
+ * cerrado» contaba como un bloqueo abierto, y `auth` llevaba días declarando
+ * uno que no existe. Es el mismo defecto que tuvo `**Solo servidor:**`, y por
+ * la misma causa: leer un identificador sin mirar si está DECLARADO o sólo
+ * citado. Un bloqueo inventado hace que el orquestador aparte requisitos que
+ * podía trabajar.
+ */
+const NEEDS_CLARIFICATION =
+  /\*\*\[NECESITA ACLARACIÓN\]\*\*[^\n]*(?:\n>\s*[^\n]*)*/g;
 const MISSING_SCHEMA = /\*\*Falta esquema\.\*\*[^\n]*(?:\n>\s*[^\n]*)*/g;
 const OUTCOME_PREFIXES = new Set(['SC']);
 

@@ -5,6 +5,7 @@ import {
   type Permission,
   PERMISSIONS,
 } from '../../../shared/authorisation/permission.catalogue';
+import { normalizeBackupCode } from '../domain/backup-code';
 
 /**
  * Request and response contracts.
@@ -46,11 +47,56 @@ export const signInSchema = z.object({
 });
 export class SignInDto extends createZodDto(signInSchema) {}
 
-export const verifyMfaSchema = z.object({ code: TOTP_CODE });
+/**
+ * AU-005. Completing the second factor accepts EITHER shape.
+ *
+ * The endpoint takes the six digits from the authenticator or one of the
+ * backup codes, and the form has one field for both — asking the person to
+ * declare which kind they are about to type is a question they should not have
+ * to answer, and a second field is a second thing to get wrong while locked
+ * out.
+ *
+ * The shape is checked here only to refuse obvious rubbish before it reaches
+ * Argon2. WHICH of the two it is is decided by the service, and both are
+ * refused with the same error, so this validation cannot become an oracle. The
+ * backup format is not restated: `normalizeBackupCode` owns it, and a second
+ * copy of the alphabet is how a correctly typed code ends up rejected.
+ *
+ * `confirmMfaSchema` below stays six digits: confirming enrolment proves the
+ * QR code was scanned, and a backup code cannot prove that.
+ */
+const MFA_CODE = z
+  .string({ error: 'El código de verificación es obligatorio' })
+  // Bounded before any parsing: there is no reason for this field to be long,
+  // and normalising a megabyte of input is work an anonymous caller can ask
+  // for over and over.
+  .max(64, 'El código no tiene el formato de ninguno de los dos códigos')
+  .refine(
+    (value) => /^\d{6}$/.test(value) || normalizeBackupCode(value) !== null,
+    'Ingrese el código de seis dígitos de su aplicación o uno de sus códigos de respaldo',
+  );
+
+export const verifyMfaSchema = z.object({ code: MFA_CODE });
 export class VerifyMfaDto extends createZodDto(verifyMfaSchema) {}
 
 export const confirmMfaSchema = z.object({ code: TOTP_CODE });
 export class ConfirmMfaDto extends createZodDto(confirmMfaSchema) {}
+
+/**
+ * AU-037. The proof of the CURRENT factor, to start changing it.
+ *
+ * Accepts both shapes, like `verifyMfaSchema` and for the same reason: the
+ * person may be changing phones precisely because the old one is already gone
+ * from their hands, and a backup code is the second factor just as much as the
+ * six digits are. It is spent, like any other use of one.
+ *
+ * Confirming the NEW authenticator reuses `confirmMfaSchema`: six digits and
+ * nothing else, because what that step has to prove is that the new QR code
+ * was scanned, and a backup code — which belongs to the old batch — cannot
+ * prove that.
+ */
+export const changeMfaSchema = z.object({ code: MFA_CODE });
+export class ChangeMfaDto extends createZodDto(changeMfaSchema) {}
 
 export const changePasswordSchema = z.object({
   currentPassword: z
@@ -143,6 +189,19 @@ export const sessionResponseSchema = z.object({
     lastName: z.string(),
   }),
   /**
+   * AU-005, AU-037. Whether THIS account has a second factor enrolled.
+   *
+   * ⚠️ ONE BOOLEAN, DELIBERATELY. Not the secret, not when it was enrolled,
+   * not the last consumed step and not how many backup codes are left — that
+   * count is an oracle over how close an account is to losing access, and
+   * nothing on screen needs it.
+   *
+   * It is here because it is the OWNER'S OWN DATA and needs no permission to
+   * read. The only other place it exists is `AccountDto`, behind `user:read`
+   * over the whole payroll, which is administration looking at somebody else.
+   */
+  mfaEnabled: z.boolean(),
+  /**
    * Roles held, with their permissions resolved, so the interface knows what
    * to OFFER. Never what to ALLOW — the API settles that on every request.
    */
@@ -203,3 +262,22 @@ export const mfaEnrolmentResponseSchema = z.object({
 export class MfaEnrolmentResponseDto extends createZodDto(
   mfaEnrolmentResponseSchema,
 ) {}
+
+/**
+ * AU-005. The backup codes, returned by `POST /auth/mfa/confirm`.
+ *
+ * ⚠️ THE ONLY TIME THEY ARE EVER SENT. Only their Argon2 hashes are stored, so
+ * this response cannot be repeated — which is why the endpoint answers 200
+ * with a body and no longer 204. An interface that discards it leaves the
+ * person with a second factor and no way back if the phone is lost.
+ */
+export const mfaConfirmationResponseSchema = z.object({
+  /** Ten codes in the printed form `ABCDE-FGHJK`. */
+  backupCodes: z.array(z.string()),
+});
+export class MfaConfirmationResponseDto extends createZodDto(
+  mfaConfirmationResponseSchema,
+) {}
+export type MfaConfirmationResponse = z.infer<
+  typeof mfaConfirmationResponseSchema
+>;

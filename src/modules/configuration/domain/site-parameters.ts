@@ -1,10 +1,11 @@
 import type { DomainFieldError } from '../../../shared/domain/errors/domain-error';
+import { isSlotMultiple } from '../../../shared/domain/slot-atom';
 
 import { ParameterOutOfRangeError } from './configuration.errors';
 
 /**
- * The four operating numbers of a site, and what they are allowed to be
- * (CF-062, CF-065, D-001).
+ * The operating parameters of a site — the four numbers of D-001 and the past
+ * booking switch of AG-094 — and what they are allowed to be (CF-062, CF-065).
  *
  * PURE DOMAIN: no I/O, no clock, no framework. The ranges are declared once
  * here and mirrored by the CHECK constraints of
@@ -31,6 +32,31 @@ export interface SiteParameters {
   minLeadMinutes: number;
   maxLeadDays: number;
   overbookingCap: number;
+  /**
+   * D-021, CF-062. The atom of the agenda: the increment this site dices its
+   * day into. Every slot the agenda offers lasts exactly this, and every
+   * configurable duration — the base of a specialty·type and a practitioner's
+   * exception — has to be a multiple of it.
+   *
+   * IT IS A RANGED PARAMETER LIKE THE OTHER THREE, so `assertParametersInRange`
+   * sees it; but unlike them it also has to answer to what is ALREADY stored,
+   * because durations were saved against the atom it is replacing. That second
+   * half is `assertAtomFitsStoredDurations` and it needs a read, so it lives in
+   * the service.
+   */
+  slotAtomMinutes: number;
+  /**
+   * AG-031, AG-094. The site accepts a start earlier than now, which is how an
+   * attention that already happened gets recorded after the fact.
+   *
+   * A BOOLEAN, so it has no range and `assertParametersInRange` never sees it:
+   * both of its values are legitimate and the only decision is which one the
+   * site wants. What makes it safe to configure is the same thing that makes
+   * the other four safe (CF-063): no guarantee depends on its value. The
+   * `EXCLUDE` still arbitrates overlap over a past hour, the status history is
+   * still append-only, and booking still demands `agenda:write` over the site.
+   */
+  allowPastBooking: boolean;
   cancelledRetention: CancelledRetention;
 }
 
@@ -40,6 +66,11 @@ export type SiteParametersPatch = Partial<SiteParameters>;
 interface Range {
   min: number;
   max: number;
+  /**
+   * The increment the value has to land on, when it has one. Absent means
+   * «any integer inside the range».
+   */
+  step?: number;
   /** Written into the message, so the range reads as a sentence. */
   describe: (min: number, max: number) => string;
 }
@@ -71,15 +102,51 @@ export const PARAMETER_RANGES = {
     max: 20,
     describe: (min, max) => `El tope de sobrecupos va de ${min} a ${max}`,
   },
+  /**
+   * D-021. Mirrors `site_parameter_slot_atom_minutes_range`.
+   *
+   * THE STEP OF 5 IS WHAT KEEPS THE DATABASE HONEST. `service_type_duration_range`
+   * and `duration_exception_range` demand multiples of 5, and a `CHECK` cannot
+   * reach `site_parameter` to demand the multiple of the atom instead. With
+   * the atom itself restricted to multiples of 5, that table-local rule stops
+   * being a leftover that contradicts the sharp one and becomes a consequence
+   * of it.
+   *
+   * THE ENDS: below 5 the grid is noise — nobody operates a one-minute agenda
+   * — and above 60 there is no documented band at all. The standard band of
+   * ambulatory scheduling (10, 15, 20) falls inside.
+   */
+  slotAtomMinutes: {
+    min: 5,
+    max: 60,
+    step: 5,
+    describe: (min, max) =>
+      `El turno de la agenda va de ${min} a ${max} minutos, de 5 en 5`,
+  },
 } as const satisfies Record<string, Range>;
 
 export type RangedParameter = keyof typeof PARAMETER_RANGES;
 
-/** The values a fresh site starts with (D-001). */
+/**
+ * The values a fresh site starts with (D-001).
+ *
+ * `allowPastBooking` is `false` and that is not a D-001 number: it is the
+ * column default the migration of E7 wrote, and the conservative one on
+ * purpose. A site opens the past because it needs to record after the fact,
+ * which is its decision; shipping it open would be ours.
+ */
 export const DEFAULT_SITE_PARAMETERS: SiteParameters = {
   minLeadMinutes: 0,
   maxLeadDays: 180,
   overbookingCap: 2,
+  /**
+   * D-021: 10 minutes, and it is not an arbitrary pick. It is the only value
+   * of the standard band (10, 15, 20) that 10, 20 and 30 — the three durations
+   * already configured when the decision was taken — are all multiples of, so
+   * no existing row was left incoherent by the change.
+   */
+  slotAtomMinutes: 10,
+  allowPastBooking: false,
   cancelledRetention: 'NEVER',
 };
 
@@ -102,8 +169,14 @@ export function assertParametersInRange(patch: SiteParametersPatch): void {
     const value = patch[key];
     if (value === undefined) continue;
 
-    const range = PARAMETER_RANGES[key];
-    if (Number.isInteger(value) && value >= range.min && value <= range.max) {
+    const range: Range = PARAMETER_RANGES[key];
+    const step = range.step ?? 1;
+    if (
+      Number.isInteger(value) &&
+      value >= range.min &&
+      value <= range.max &&
+      value % step === 0
+    ) {
       continue;
     }
 
@@ -115,6 +188,44 @@ export function assertParametersInRange(patch: SiteParametersPatch): void {
   }
 
   if (errors.length > 0) throw new ParameterOutOfRangeError(errors);
+}
+
+/**
+ * D-021, the OTHER half of «AG-012 y AG-104 se cumplen por construcción».
+ *
+ * WHY THERE ARE TWO HALVES AND NOT ONE. Making every duration a multiple of
+ * the atom closes the door the durations come through; it does nothing about
+ * the door the ATOM comes through. A clinic with 10-, 20- and 30-minute types
+ * that moves a site to a 20-minute grid has just made every 30-minute type
+ * unbookable there — the very incoherence D-021 removed, walked back in
+ * through configuration. So the atom answers to what is already stored, and
+ * the guarantee is symmetric: the set of atoms and the set of durations must
+ * be mutually compatible, whichever side is being written.
+ *
+ * IT NAMES THE DURATIONS THAT DO NOT FIT, and that is the difference between
+ * a refusal and an obstacle: «no puede ser 20» leaves an administrator
+ * guessing which of forty service types is in the way.
+ *
+ * `stored` is what the WHOLE clinic has configured, not this site's — a
+ * service type has no site (see `clinicSlotAtom`).
+ */
+export function assertAtomFitsStoredDurations(
+  atom: number,
+  stored: readonly number[],
+): void {
+  const stranded = [...new Set(stored)]
+    .filter((minutes) => !isSlotMultiple(minutes, atom))
+    .sort((a, b) => a - b);
+
+  if (stranded.length === 0) return;
+
+  throw new ParameterOutOfRangeError([
+    {
+      field: 'slotAtomMinutes',
+      code: 'PARAM_OUT_OF_RANGE',
+      message: `Con turnos de ${atom} minutos quedarían sin poder reservarse las duraciones ya configuradas de ${stranded.join(', ')} minutos. Ajústelas primero`,
+    },
+  ]);
 }
 
 /**

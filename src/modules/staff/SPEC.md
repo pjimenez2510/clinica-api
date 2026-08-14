@@ -133,6 +133,13 @@ _Numeración conservada de `CF-040`..`CF-046` al mudarse desde `configuration`
 - **ST-040** — El sistema DEBERÁ permitir crear, editar y cerrar reglas de
   horario de un profesional por sede desde la aplicación, con el permiso de
   administración.
+  > **La regla dice CUÁNDO se atiende, ya no cómo se trocea el día**
+  > (D-021, 14-08-2026). `practitioner_schedule_rule` perdió `slot_minutes` y la
+  > pantalla de horarios perdió el campo de minutos por turno: la rejilla es
+  > ahora un solo número por sede (`site_parameter.slot_atom_minutes`, CF-062).
+  > Era un número libre por regla que tenía que casar con otro número libre por
+  > tipo de atención sin que nada los obligara — y la base ya tenía rejillas de
+  > 20 y 30 con tipos de 10, 20 y 30.
 - **ST-041** — Toda regla DEBERÁ llevar vigencia; CUANDO se cierre una regla, el
   cierre DEBERÁ regir hacia adelante sin tocar días ya pasados.
 - **ST-042** — SI una regla nueva o editada solapa otra vigente del mismo
@@ -155,8 +162,23 @@ _Numeración conservada de `CF-040`..`CF-046` al mudarse desde `configuration`
 - **ST-044** — Toda mutación de horario DEBERÁ quedar en la bitácora con autor,
   instante y regla anterior.
 - **ST-045** — El sistema DEBERÁ validar que la hora de fin sea posterior a la
-  de inicio y que los minutos por turno quepan al menos una vez en la franja,
-  con la garantía como `CHECK` en la base.
+  de inicio y que el **turno de la sede** quepa al menos una vez en la franja.
+  > **La segunda mitad dejó de tener `CHECK` el 14-08-2026 (D-021), y hay que
+  > decirlo.** `schedule_rule_slot_fits` leía
+  > `practitioner_schedule_rule.slot_minutes`, columna que ya no existe, y un
+  > `CHECK` no puede consultar `site_parameter` para leer el átomo de la sede.
+  > La comprobación sigue viva en `scheduleRuleProblems`, que recibe el átomo y
+  > responde **por campo**; lo que se pierde es que una `INSERT` por `psql` o
+  > por importación pueda crear una franja más corta que el turno. No es una
+  > fila peligrosa —la derivación la trata como «esta regla no ofrece cupos»—
+  > sino inútil, y recuperarla exigiría un disparador que leyera
+  > `site_parameter` en cada escritura de regla para rechazar lo que la
+  > aplicación ya rechaza. La primera mitad sí sigue en la base
+  > (`schedule_rule_time_order`).
+  >
+  > **El campo del rechazo es `endTime`**, no «minutos por turno»: ese campo ya
+  > no está en el formulario, así que el fin de franja es lo único que quien
+  > administra puede corregir desde esta pantalla.
 - **ST-046** — DONDE la clínica opere en más de una sede, una regla DEBERÁ
   pertenecer a exactamente una sede; el no-solapamiento del profesional entre
   sedes ya lo garantiza el `EXCLUDE` de citas.
@@ -175,7 +197,8 @@ _Numeración conservada de `CF-040`..`CF-046` al mudarse desde `configuration`
 | `ACESS_MISSING`               | 422  | Firmar sin registro ACESS o sin caducidad (ST-002)           |
 | `PRACTITIONER_NOT_IN_SITE`    | 422  | Regla en una sede donde no atiende (ST-007)                  |
 | `PRACTITIONER_NOT_SCHEDULABLE`| 422  | Regla nueva para quien no toma citas (ST-006)                |
-| `INVALID_SCHEDULE_RULE`       | 422  | Horas invertidas, turno que no cabe o vigencia vacía (ST-045)|
+| `INVALID_SCHEDULE_RULE`       | 422  | Horas invertidas, franja más corta que el turno o vigencia vacía (ST-045)|
+| `DURATION_NOT_SLOT_MULTIPLE`  | 422  | Excepción de duración que no es múltiplo del turno (ST-009, SP-022)|
 | `PRIMARY_SPECIALTY_REQUIRED`  | 422  | La asignación no marca exactamente una principal (ST-008)    |
 | `SPECIALTY_INACTIVE`          | 422  | Asignar una especialidad desactivada a quien no la tenía     |
 
@@ -226,11 +249,12 @@ Dos cosas que conviene saber antes de tocarlas:
     dejar hablar a `schedule_rule_time_order`. Con `greatest` la regla
     invertida produce un rango vacío, que no solapa con nada, y el `CHECK`
     vuelve a ser quien la rechaza y quien lo explica.
-  - **`schedule_rule_slot_fits` empieza por `end_time <= start_time OR …`.** Sin
-    esa salida, una franja invertida incumple también ese `CHECK`, PostgreSQL
-    reporta el que evalúa primero, y el nombre de la restricción —que es lo que
-    elige el mensaje— acaba diciendo «los turnos no caben» sobre el campo
-    equivocado.
+  - **`schedule_rule_slot_fits` ya no existe** (D-021, 14-08-2026). Leía
+    `slot_minutes`, columna que se fue con la rejilla a `site_parameter`, y un
+    `CHECK` no alcanza otra tabla. La comprobación vive ahora sólo en la
+    aplicación; ver la nota de ST-045. (Empezaba por
+    `end_time <= start_time OR …` para no robarle el mensaje a
+    `schedule_rule_time_order`; ese motivo desapareció con el `CHECK`.)
 
   `btree_gist` ya estaba instalada desde `20260806022956_clinical_core_constraints`,
   que es lo que permite meter los tres `WITH =` dentro del índice GiST.

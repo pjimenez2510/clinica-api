@@ -25,6 +25,26 @@ export async function createSite(prisma: PrismaClient, name = 'Sede Central') {
   });
 }
 
+/**
+ * D-021. Sets what the site dices its day into.
+ *
+ * A SEPARATE CALL AND NOT A FIELD OF `createSite`, for the same reason
+ * `linkPractitionerToSite` is separate: `trg_site_parameter_defaults` writes
+ * the row of D-001 on insert (CF-062), so the grid a test operates on is
+ * always a deliberate departure from the ten minutes the clinic ships with —
+ * and a test that changes it should say so on the line that changes it.
+ */
+export async function setSlotAtom(
+  prisma: PrismaClient,
+  siteId: string,
+  slotAtomMinutes: number,
+) {
+  return prisma.siteParameter.update({
+    where: { siteId },
+    data: { slotAtomMinutes },
+  });
+}
+
 export async function createRoom(prisma: PrismaClient, siteId: string) {
   return prisma.siteRoom.create({
     data: { siteId, name: `Consultorio ${next()}` },
@@ -92,7 +112,6 @@ export async function createScheduleRule(
     weekday: number;
     startTime: string;
     endTime: string;
-    slotMinutes?: number;
     validFrom?: Date;
     validTo?: Date | null;
     active?: boolean;
@@ -104,7 +123,6 @@ export async function createScheduleRule(
       weekday: rule.weekday,
       startTime: new Date(`1970-01-01T${rule.startTime}:00Z`),
       endTime: new Date(`1970-01-01T${rule.endTime}:00Z`),
-      slotMinutes: rule.slotMinutes ?? 20,
       validFrom: rule.validFrom ?? new Date('2026-01-01T00:00:00Z'),
       validTo: rule.validTo ?? null,
       active: rule.active ?? true,

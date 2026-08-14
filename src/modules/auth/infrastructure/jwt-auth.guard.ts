@@ -13,13 +13,15 @@ import { ClsService } from 'nestjs-cls';
 // unfinished second factor is a business rule, so `MfaRequiredError` does not
 // move.
 import { MissingTokenError } from '../../../shared/authorisation/current-user.service';
-import { MfaRequiredError } from '../domain/auth.errors';
+import { MfaRequiredError, SessionRevokedError } from '../domain/auth.errors';
+import { MFA_CHALLENGE_FAMILY } from '../domain/session';
 import {
   CURRENT_USER,
   IS_PUBLIC_KEY,
   MFA_FLOW_ONLY_KEY,
 } from '../../../shared/http/auth.decorators';
 
+import { RefreshTokenService } from './refresh-token.service';
 import { TokenService } from './token.service';
 
 /**
@@ -39,6 +41,11 @@ export class JwtAuthGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly tokens: TokenService,
+    /**
+     * AU-036. The session registry, consulted on every authenticated request.
+     * See `assertSessionStillOpen` for why the signature alone is not enough.
+     */
+    private readonly sessions: RefreshTokenService,
     private readonly cls: ClsService,
   ) {}
 
@@ -64,8 +71,59 @@ export class JwtAuthGuard implements CanActivate {
     );
     if (!claims.mfa && !mfaOptional) throw new MfaRequiredError();
 
+    await this.assertSessionStillOpen(claims.fam);
+
     this.cls.set(CURRENT_USER, claims);
     return true;
+  }
+
+  /**
+   * AU-036 — A VALID SIGNATURE IS NOT A LIVE SESSION.
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * WHY THIS COSTS A QUERY PER REQUEST, AND WHY IT IS WORTH IT.
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Until this check existed, every revocation in the system closed exactly
+   * half a session. `resetMfa`, `rotateCredentials` and deactivating an account
+   * all revoke the refresh chain — and the ACCESS token, already signed, kept
+   * granting everything for up to `JWT_ACCESS_TTL` (15 minutes by default).
+   *
+   * The adversarial review of A4 turned that into a race for ownership of
+   * somebody else's second factor, and it is worth stating in full because it
+   * is the reason this is not a nice-to-have: `mfa/enroll` and `mfa/confirm`
+   * carry `@MfaFlowOnly()`, which BY DESIGN skips the permission check — they
+   * have to be reachable by a session that has not finished authenticating.
+   * A reset leaves the account deliberately unenrolled. So whoever held the
+   * previous session could, with a token issued BEFORE the reset, enrol THEIR
+   * authenticator on the account support had just given back to its owner, and
+   * walk away with the ten backup codes as well.
+   *
+   * TWO WAYS TO CLOSE IT, AND WHY THIS ONE. The alternative is an instant on
+   * `app_user` — «credentials changed at» — compared against the token's `iat`.
+   * It costs a column instead of a table, but the same one lookup per request,
+   * and it has a failure mode this one does not: every future code path that
+   * closes sessions must remember to bump the column, and forgetting is silent.
+   * Deriving the answer from the revocation those paths ALREADY write means a
+   * new one cannot forget. It also avoids reasoning about `iat`, which is
+   * second-resolution and would need a tie-break rule at the boundary.
+   *
+   * WHAT IS DELIBERATELY NOT CACHED: nothing. A cache here is a window, and the
+   * window is the entire defect.
+   *
+   * THE ONE EXEMPTION IS THE MFA CHALLENGE TOKEN. It carries the magic family
+   * of `MFA_CHALLENGE_FAMILY` and has no `refresh_token` row by construction —
+   * the row is created when the second factor completes — so checking it would
+   * make signing in with MFA impossible. It grants nothing beyond the MFA flow,
+   * it is only obtainable by presenting the password, and whoever holds the
+   * password can obtain a fresh one at any time, so nothing is lost by
+   * exempting it.
+   */
+  private async assertSessionStillOpen(familyId: string): Promise<void> {
+    if (familyId === MFA_CHALLENGE_FAMILY) return;
+    if (await this.sessions.isFamilyOpen(familyId)) return;
+
+    throw new SessionRevokedError();
   }
 
   private extractBearer(header?: string): string | null {
