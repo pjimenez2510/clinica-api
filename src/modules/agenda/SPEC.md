@@ -881,20 +881,29 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   adolescentes, mujeres embarazadas, personas con discapacidad, personas privadas
   de libertad y quienes adolezcan de enfermedades catastróficas o de alta
   complejidad. NO DEBERÁ tratarse como preferencia opcional.
-  > **Falta esquema.** La ficha de paciente no tiene los campos de grupo
-  > prioritario: guarda fecha de nacimiento —de donde sale la edad—, pero
-  > embarazo, discapacidad y enfermedad catastrófica **no tienen columna**, y
-  > son dato de salud de categoría especial bajo la LOPDP, así que no se
-  > improvisan en un texto libre. Declarado como bloqueo el 14-08-2026 a
-  > petición del usuario, para que `pnpm estado` lo cuente: **E5 no se abre
-  > hasta que el módulo de paciente los tenga.**
+  > **El esquema que faltaba existe desde el 16-08-2026** (entrega P3 de
+  > `patients`: PA-033 a PA-042, D-026, D-027). Este requisito estuvo declarado
+  > como bloqueo desde el 14-08-2026 —«E5 no se abre hasta que el módulo de
+  > paciente los tenga»— y ya no lo está: la ficha registra los grupos como
+  > filas fechadas con vigencia, origen y autor.
   >
-  > **Depende del módulo de paciente** (decisión D-003, 12-08-2026). La ficha
-  > guarda fecha de nacimiento —de donde sale la edad—, pero embarazo,
-  > discapacidad y enfermedad catastrófica no tienen campo. Se descartó
-  > implementarlo solo por edad: media prioridad aplicada es peor que ninguna,
-  > porque parece que funciona. **E5 no se cierra sin esto**, y esos campos son
-  > los que el RDACAA exige de todos modos (REQ-024).
+  > **Qué lee la agenda, y qué NO.** Lee la **prioridad ya calculada**, que
+  > viaja como el campo `priority` de toda respuesta que lleva un paciente y
+  > basta con `patient:read`: `1` es prioritario por el artículo 35 y `2`
+  > corriente, sin decir por qué. El MOTIVO tiene su propio permiso
+  > (`patient:priority`, D-029) y su propia fila de bitácora, y **no viaja en
+  > ningún listado** (PA-042, AG-073). Ordenar la lista de espera por ese número
+  > es todo lo que AG-061 necesita.
+  >
+  > **Y son diez grupos, no seis** (D-027): el artículo 35 tiene dos frases, y
+  > la segunda —personas en situación de riesgo, víctimas de violencia doméstica
+  > y sexual, de maltrato infantil y de desastres— concede «la misma atención
+  > prioritaria». Los diez cuentan para el orden; los cuatro de la segunda frase
+  > exigen una llave aparte para LEERSE, que la agenda no necesita porque nunca
+  > ve el motivo.
+  >
+  > Sigue en pie lo que decidió D-003: **no se implementa sólo por edad**. Media
+  > prioridad aplicada es peor que ninguna, porque parece que funciona.
 - **AG-063** — CUANDO una entrada de lista de espera se convierta en cita, el
   sistema DEBERÁ marcarla `SCHEDULED` y DEBERÁ enlazarla con la cita creada.
 - **AG-064** — El sistema DEBERÁ registrar cada intento de contacto con su

@@ -487,26 +487,57 @@ Ningún requisito de esta sección lo altera._
   > añada, mientras que diez booleanos exigen migración y dejan cada fila
   > histórica en `false` donde lo honesto es «no se valoró».
   >
-  > **Falta esquema.** No existe ninguna tabla de grupos prioritarios **del
-  > paciente**. `encounter_priority_group` existe, pero es por atención y
-  > `encounter` no existe todavía; AG-062 los necesita al inscribir en lista de
-  > espera, que no es una atención. Hace falta una tabla nueva con grupo,
-  > periodo, origen, documento acreditativo, autor e instante, y el catálogo
-  > `PRIORITY_GROUP` que la surta —que tampoco está en `catalogSystemSchema`—.
-- **PA-034** — El sistema DEBERÁ admitir exactamente estos grupos: **adultos
-  mayores**; **niñas, niños y adolescentes**; **mujeres embarazadas**; **personas
-  con discapacidad**; **personas privadas de libertad**; y **personas que
-  adolezcan de enfermedades catastróficas o de alta complejidad**.
-  > **[NECESITA ACLARACIÓN]** El artículo 35 enumera además **«las personas en
-  > situación de riesgo, las víctimas de violencia doméstica y maltrato
-  > infantil, desastres naturales o antropogénicos»**, y D-026 no las nombra al
-  > fijar la lista. La pregunta cambia el catálogo y cambia quién puede leerlo:
-  > «víctima de violencia doméstica» es el dato **más sensible del expediente**
-  > —REQ-025 le da tabla propia en la atención, `violence_screening`, por su
-  > régimen de acceso—, y meterlo en la misma puerta que «adulto mayor» sería
-  > rebajarlo. Recomendación: **dejar los seis de arriba en este módulo** y que
-  > la condición de víctima se registre donde ya tiene su régimen, en la
-  > atención. Es decisión clínica y legal: la toma el usuario.
+  > **Esquema construido el 16-08-2026**: `patient_priority_group`, con grupo,
+  > periodo (`starts_on`/`ends_on` como fechas de calendario, no instantes),
+  > origen, documento acreditativo, autor e instante, y quién la cerró.
+  > `encounter_priority_group` sigue existiendo y es otra cosa: es por atención,
+  > y la instantánea que tomará cada atención es trabajo de `encounter`, no de
+  > esta entrega (D-026).
+  >
+  > **La enumeración es código y no catálogo, y la decisión es de ingeniería.**
+  > La etnia y la parroquia son catálogo porque el INEC las revisa, publica
+  > versiones y espera de vuelta la redacción de hace tres años. Ésta no: es un
+  > artículo de la Constitución y —lo decisivo— **cada entrada gobierna una rama
+  > del código**. Cuáles se derivan de la fecha de nacimiento (PA-035), cuál
+  > caduca sola (PA-036), cuáles son estados persistentes (PA-037) y cuáles
+  > exigen la segunda llave (D-027) son decisiones que el código tiene que
+  > conocer, y una fila de catálogo que el código debe reconocer por su cadena
+  > para comportarse bien es un catálogo sólo de nombre. La base repite el
+  > subconjunto **registrable** en `patient_priority_group_recordable`, por lo
+  > mismo que repite el dígito verificador de la cédula: una importación no pasa
+  > por el servicio.
+- **PA-034** — El sistema DEBERÁ admitir exactamente estos diez grupos, y NO
+  DEBERÁ admitir ningún otro. De la primera frase del artículo 35: **adultos
+  mayores** (`OLDER_ADULT`); **niñas, niños y adolescentes**
+  (`CHILD_OR_ADOLESCENT`); **mujeres embarazadas** (`PREGNANT`); **personas con
+  discapacidad** (`DISABILITY`); **personas privadas de libertad**
+  (`DEPRIVED_OF_LIBERTY`); y **personas con enfermedades catastróficas o de alta
+  complejidad** (`CATASTROPHIC_ILLNESS`). De la segunda frase, que les concede
+  **«la misma atención prioritaria»**: **personas en situación de riesgo**
+  (`AT_RISK`); **víctimas de violencia doméstica y sexual**
+  (`DOMESTIC_OR_SEXUAL_VIOLENCE_VICTIM`); **víctimas de maltrato infantil**
+  (`CHILD_ABUSE_VICTIM`); y **víctimas de desastres naturales o antropogénicos**
+  (`DISASTER_VICTIM`). Los diez DEBERÁN contar para la prioridad de PA-041, y
+  los cuatro de la segunda frase DEBERÁN exigir el permiso de PA-040 **y** uno
+  adicional para leerse o registrarse.
+  > **Resuelto por D-027 el 16-08-2026, opción C: los diez, con lectura
+  > separada.** El artículo 35 tiene dos frases, y la segunda equipara. Dejar
+  > fuera a las víctimas de violencia haría que la lista de espera no las
+  > priorizara, contra la norma; meterlas en la misma casilla que «adulto mayor»
+  > pondría el dato más sensible del expediente detrás de la misma llave que la
+  > edad, y eso es **seguridad de la persona**, no sólo privacidad — es la razón
+  > de que REQ-025 le dé tabla propia (`violence_screening`) y régimen propio
+  > dentro de la atención.
+  >
+  > **Cómo se cumple, fijado al implementarlo:** los cuatro cuentan para el
+  > orden como cualquier otro —quien mira el número no distingue de dónde
+  > sale—, y para ver o registrar el motivo hace falta
+  > `patient:priority:protected` además de `patient:priority`. Al **leer** no se
+  > rechaza: las filas **se omiten**. Un 403 sobre una lectura confirmaría que
+  > esa fila existe para esa persona, que es el oráculo que PA-024 evita para el
+  > registro entero. Al **escribir** sí se rechaza con
+  > `PRIORITY_GROUP_RESTRICTED`, porque quien llama nombró el grupo él mismo y
+  > negarse no revela nada que no hubiera tecleado.
 - **PA-035** — El sistema NO DEBERÁ registrar como fila los grupos que se
   deducen de la edad: adulto mayor y niña, niño o adolescente DEBERÁN derivarse
   de la fecha de nacimiento en la fecha clínica (PA-030).
@@ -538,15 +569,25 @@ Ningún requisito de esta sección lo altera._
 - **PA-040** — La lectura del **motivo** de la prioridad DEBERÁ exigir un
   permiso propio, distinto de `patient:read`, y DEBERÁ quedar en la bitácora
   como acceso a dato de salud.
-  > **[NECESITA ACLARACIÓN]** El permiso es cosa juzgada (D-026); lo que falta
-  > decidir es **qué roles lo traen de fábrica**. Hoy `patient:read` lo tienen
-  > recepción, medicina, enfermería y caja: que recepción vea la fecha de
-  > nacimiento es operativo, que vea «enfermedad catastrófica» es otra cosa.
-  > Recomendación: `MEDICO` y `ENFERMERIA` sí; `RECEPCION` y `CAJA` no —les
-  > basta la prioridad calculada de PA-041—; `ADMIN` lo tiene por D-002 como
-  > todos. Es política de acceso a datos de categoría especial: la fija el
-  > usuario, y los roles son datos, así que la clínica puede cambiarla después
+  > **Resuelto por D-029 el 16-08-2026:** el permiso es `patient:priority`, y de
+  > fábrica lo traen **`MEDICO` y `ENFERMERIA`**. `RECEPCION` y `CAJA` **no**:
+  > les basta la prioridad calculada de PA-041, que es lo que necesitan para
+  > trabajar. Los roles son datos, así que la clínica puede cambiarlo después
   > sin desplegar.
+  >
+  > **El segundo permiso, fijado al implementar D-027:**
+  > `patient:priority:protected`, para los cuatro grupos de la segunda frase del
+  > artículo 35. **No lo trae ningún rol de fábrica** (`explicitGrantOnly`), con
+  > el mismo criterio que `agenda:overbook:self` (AG-103), `user:reset-mfa`
+  > (AU-035) y `patient:merge` (D-030): la instalación se lo concede a alguien a
+  > propósito o no lo tiene nadie. Se llama `:protected` y **no nombra el dato**
+  > —nada de `patient:violence`— porque el código del permiso se lee en la
+  > pantalla de roles, en la bitácora y en un mensaje de error, y un nombre que
+  > describa la categoría convertiría cada uno de esos sitios en una pista sobre
+  > el paciente. Qué rol debe llevarlo es política de acceso y está registrada
+  > como decisión pendiente; mientras nadie lo tenga, esos cuatro grupos ni se
+  > leen ni se registran, y siguen contando para el orden si alguien los
+  > registró.
 - **PA-041** — El sistema DEBERÁ exponer la **prioridad ya calculada** de un
   paciente sin el motivo, para que la agenda ordene la lista de espera con sólo
   `patient:read` (AG-061, AG-062).
@@ -666,8 +707,17 @@ cuando se implemente su entrega, no antes:
 | `MERGE_INTO_SELF`                  | 422  | PA-046    |
 | `PATIENT_ALREADY_MERGED`           | 409  | PA-046    |
 | `MERGE_UNDO_CONFLICT`              | 409  | PA-048    |
-| `PRIORITY_GROUP_PERIOD_INVALID`    | 422  | PA-036    |
-| `PRIORITY_GROUP_EVIDENCE_REQUIRED` | 422  | PA-038    |
+
+Los de los grupos prioritarios **ya existen** desde el 16-08-2026, y son cinco y
+no dos porque lo que hay que hacer es distinto en cada caso:
+
+| Código                             | HTTP | Cuándo                                                                 | Requisito |
+| ---------------------------------- | ---- | ---------------------------------------------------------------------- | --------- |
+| `PRIORITY_GROUP_NOT_RECORDABLE`    | 422  | Se intentó guardar un grupo que se deduce de la edad                    | PA-035    |
+| `PRIORITY_GROUP_PERIOD_INVALID`    | 422  | El periodo termina antes de empezar, o el embarazo no tiene fin         | PA-036    |
+| `PRIORITY_GROUP_EVIDENCE_REQUIRED` | 422  | Se marcó «acreditado» sin decir con qué documento                       | PA-038    |
+| `PRIORITY_GROUP_RESTRICTED`        | 403  | Se intentó **registrar** un grupo de la segunda frase sin la llave      | PA-034    |
+| `PRIORITY_GROUP_NOT_FOUND`         | 404  | La fila no existe, es de otro paciente, o quien pregunta no puede verla | PA-037    |
 
 **El motivo de la fusión se exige en el servicio y no sólo en el DTO**, por lo
 mismo que `CANCELLATION_REASON_REQUIRED` en la agenda: un `DEBERÁ` que sólo hace
@@ -707,11 +757,21 @@ Lo que ya existe y conviene no volver a descubrir:
 Todas bajo `/api/v1/patients`, alcance `global` (PA-051). Lo que **existe hoy**
 es únicamente esto:
 
-| Método | Ruta            | Permiso         | Requisitos             |
-| ------ | --------------- | --------------- | ---------------------- |
-| `GET`  | `/patients`     | `patient:read`  | PA-016 a PA-021, PA-023 |
-| `GET`  | `/patients/:id` | `patient:read`  | PA-022, PA-024         |
-| `POST` | `/patients`     | `patient:write` | PA-001 a PA-014        |
+| Método  | Ruta                                        | Permiso            | Requisitos              |
+| ------- | ------------------------------------------- | ------------------ | ----------------------- |
+| `GET`   | `/patients`                                 | `patient:read`     | PA-016 a PA-021, PA-023 |
+| `GET`   | `/patients/:id`                             | `patient:read`     | PA-022, PA-024          |
+| `POST`  | `/patients`                                 | `patient:write`    | PA-001 a PA-014         |
+| `GET`   | `/patients/:id/priority-groups`             | `patient:priority` | PA-033 a PA-040         |
+| `POST`  | `/patients/:id/priority-groups`             | `patient:priority` | PA-033 a PA-039         |
+| `PATCH` | `/patients/:id/priority-groups/:recordId`   | `patient:priority` | PA-037, PA-039          |
+
+La **prioridad calculada** (PA-041) no tiene ruta propia: viaja como el campo
+`priority` de toda respuesta que ya lleva un paciente —el listado y la ficha—,
+bajo `patient:read`. Así la lista de espera ordena sin una petición por fila y
+sin ver el motivo, y no hay una segunda superficie que alguien pueda olvidar de
+proteger. **No hay ruta que BORRE un registro de grupo**, y esa ausencia es
+PA-037 en la tabla de rutas: cerrar es fechar.
 
 **Tres rutas para todo un registro de personas, y ninguna de escritura salvo el
 alta.** No se puede corregir un apellido, ni añadir el documento que faltaba, ni
@@ -751,20 +811,20 @@ prueba cite un ID inexistente; el día que este `SPEC.md` pase a `vigente`,
 
 ## Preguntas abiertas
 
-Seis, todas **junto a su requisito** y no aquí: una pregunta separada del
+Cuatro, todas **junto a su requisito** y no aquí: una pregunta separada del
 requisito que bloquea no bloquea nada. Esta tabla sólo las enumera para que se
 puedan llevar en bloque a `DECISIONES-PENDIENTES.md`.
 
-| Dónde  | Qué hay que decidir                                                              |
-| ------ | -------------------------------------------------------------------------------- |
+| Dónde  | Qué hay que decidir                                                               |
+| ------ | --------------------------------------------------------------------------------- |
 | PA-031 | Si `access_audit` acepta valor anterior para `'patient'`, o el histórico va aparte |
 | PA-032 | Si los campos del RDACAA se exigen al registrar o al cerrar la primera atención    |
-| PA-034 | Si los grupos incluyen «víctimas de violencia» y «personas en situación de riesgo» |
-| PA-040 | Qué roles traen `patient:priority` de fábrica                                     |
 | PA-049 | Si la fusión repunta la historia de la ficha absorbida o se lee por el enlace      |
-| PA-052 | Qué permiso autoriza fusionar y deshacer                                          |
+| PA-052 | Qué permiso autoriza fusionar y deshacer                                           |
 
-**D-026 no está entre ellas: está resuelta**, y las secciones 6 y 3 de este
-documento son su forma ejecutable. Lo que queda abierto de los grupos
-prioritarios es quién los lee (PA-040) y si la lista es de seis o de ocho
-(PA-034), no dónde viven ni cómo se registran.
+**Los grupos prioritarios ya no están entre ellas.** D-026 fijó dónde viven y
+cómo se registran, D-027 que son los diez con lectura separada, y D-029 que
+`patient:priority` lo traen `MEDICO` y `ENFERMERIA`. Queda una sola pregunta, y
+no bloquea nada de esta entrega: **qué rol debe llevar
+`patient:priority:protected`**, que hoy no trae ninguno a propósito. Está
+registrada en `DECISIONES-PENDIENTES.md` con su recomendación.

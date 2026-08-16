@@ -4,9 +4,11 @@ import { Module } from '@nestjs/common';
 import { ACCESS_AUDIT_RECORDER } from '../../shared/audit/access-audit.port';
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import { PrismaAccessAuditRecorder } from '../../shared/infrastructure/audit/prisma-access-audit.recorder';
+import { PatientPriorityService } from './application/patient-priority.service';
 import { PatientsService } from './application/patients.service';
 import { PATIENT_REPOSITORY } from './domain/patient.repository';
 import { PrismaPatientRepository } from './infrastructure/prisma-patient.repository';
+import { PatientPriorityController } from './patient-priority.controller';
 import { PatientsController } from './patients.controller';
 
 /**
@@ -25,9 +27,10 @@ import { PatientsController } from './patients.controller';
  * twice costs nothing and couples nothing.
  */
 @Module({
-  controllers: [PatientsController],
+  controllers: [PatientsController, PatientPriorityController],
   providers: [
     PatientsService,
+    PatientPriorityService,
     CurrentUserService,
     { provide: PATIENT_REPOSITORY, useClass: PrismaPatientRepository },
     { provide: ACCESS_AUDIT_RECORDER, useClass: PrismaAccessAuditRecorder },

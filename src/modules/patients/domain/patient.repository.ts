@@ -1,3 +1,10 @@
+import type { ClinicalDate } from '../../../shared/domain/clinic-time';
+import type {
+  PriorityGroup,
+  PriorityGroupOrigin,
+  RecordedPriorityGroup,
+} from './priority-groups';
+
 /**
  * What the application needs from storage, stated without naming a database.
  *
@@ -30,6 +37,17 @@ export interface PatientIdentifier {
  */
 export interface PatientSummary {
   id: string;
+  /**
+   * PA-041. The priority the agenda orders by — `1` prioritised, `2` ordinary
+   * — ALREADY CALCULATED, and never the reason.
+   *
+   * It travels with `patient:read` on purpose: the waiting list needs the
+   * ORDER to work, and the reason is health data behind its own audited door
+   * (PA-040, AG-073). A listing that carried the reason «porque la pantalla ya
+   * lo tiene» would hand the social diagnosis of half the clinic to anybody
+   * who can open a waiting list (PA-042, SC-010).
+   */
+  priority: number;
   mrn: string;
   familyName: string;
   secondFamilyName: string | null;
@@ -97,9 +115,82 @@ export interface NewPatient {
   identifier?: PatientIdentifier;
 }
 
+/**
+ * One recorded assessment, as the application reads it back (PA-033, PA-038,
+ * PA-039).
+ *
+ * The period is two CALENDAR DATES and not two instants: whether a pregnancy
+ * still counts is a question about a day, and an instant would make the answer
+ * depend on the hour it was asked.
+ */
+export interface PriorityGroupRecord {
+  id: string;
+  group: PriorityGroup;
+  startsOn: ClinicalDate;
+  endsOn: ClinicalDate | null;
+  origin: PriorityGroupOrigin;
+  evidenceDocument: string | null;
+  /** PA-039. Who recorded it and when. */
+  recordedById: string;
+  recordedAt: Date;
+  closedById: string | null;
+  closedAt: Date | null;
+}
+
+export interface NewPriorityGroup {
+  patientId: string;
+  group: PriorityGroup;
+  startsOn: ClinicalDate;
+  endsOn: ClinicalDate | null;
+  origin: PriorityGroupOrigin;
+  evidenceDocument: string | null;
+  recordedById: string;
+}
+
+/** The two columns the ORDER depends on, and nothing that says why. */
+export interface PatientPriorityInput {
+  birthDate: ClinicalDate;
+  recorded: readonly RecordedPriorityGroup[];
+}
+
 export interface PatientRepository {
   search(criteria: PatientSearchCriteria): Promise<PatientPage>;
   findById(id: string): Promise<PatientDetail | null>;
+  /**
+   * Whether the chart exists at all, without opening it.
+   *
+   * SEPARATE FROM `findById` because opening a chart is the ACCOUNTABLE act
+   * that writes an audit row (PA-022). Recording a priority group needs to
+   * know the patient exists and nothing else; reusing `findById` would put a
+   * «somebody opened this chart» row in the LOPDP trail for an act that opened
+   * nothing.
+   */
+  exists(id: string): Promise<boolean>;
+  /**
+   * Every recorded assessment of one patient, in force or not.
+   *
+   * NOT FILTERED BY DATE HERE. Whether a period counts is a domain decision
+   * (`isPeriodInForce`), and pushing it into SQL would put the rule in two
+   * places — the one that has to be corrected the day «hasta el 15» stops
+   * including the 15th. Closed rows come back too: they are the answer to
+   * «¿por qué esta persona tuvo prioridad en marzo?» (PA-037).
+   */
+  listPriorityGroups(
+    patientId: string,
+  ): Promise<readonly PriorityGroupRecord[]>;
+  addPriorityGroup(record: NewPriorityGroup): Promise<PriorityGroupRecord>;
+  /**
+   * Sets the end date of a record. NEVER deletes it (PA-037).
+   *
+   * Returns `null` when the record does not exist or belongs to another
+   * patient, so the caller answers the same thing in both cases.
+   */
+  closePriorityGroup(input: {
+    patientId: string;
+    recordId: string;
+    endsOn: ClinicalDate;
+    closedById: string;
+  }): Promise<PriorityGroupRecord | null>;
   /** Used to refuse a duplicate before the database has to. */
   findByIdentifier(
     identifier: PatientIdentifier,

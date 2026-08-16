@@ -123,6 +123,35 @@ export const DOMAIN_ERROR_CODES = [
   'PATIENT_IDENTIFIER_TAKEN',
   'PATIENT_MERGED',
   'PATIENT_NOT_FOUND',
+  // Grupos prioritarios del paciente (P3: PA-033..PA-042, D-026, D-027).
+  //
+  // Son cinco y no uno porque lo que hay que hacer es distinto en cada caso, y
+  // quien lo lee está delante del paciente:
+  //
+  //   * `PRIORITY_GROUP_NOT_RECORDABLE` (422) — se intentó guardar «adulto
+  //     mayor» o «niña, niño o adolescente», que salen de la fecha de
+  //     nacimiento y NO se guardan (PA-035). Guardarlos sería un dato que
+  //     caduca cada cumpleaños.
+  //   * `PRIORITY_GROUP_PERIOD_INVALID` (422) — el periodo no se sostiene:
+  //     termina antes de empezar, o es un embarazo sin fecha probable de parto
+  //     ni fecha de fin (PA-036). Sin fin, el embarazo ordenaría la lista de
+  //     espera para siempre, que es exactamente la columna booleana que este
+  //     diseño existe para evitar.
+  //   * `PRIORITY_GROUP_EVIDENCE_REQUIRED` (422) — se marcó «acreditado» sin
+  //     decir con qué documento (PA-038).
+  //   * `PRIORITY_GROUP_RESTRICTED` (403) — los cuatro grupos de la SEGUNDA
+  //     frase del art. 35 (D-027) exigen `patient:priority:protected` para
+  //     REGISTRARSE. Al LEER no se rechaza: se omiten, porque un 403 sobre una
+  //     lectura confirmaría que esa fila existe, y eso es el oráculo que
+  //     PA-024 evita para el registro entero.
+  //   * `PRIORITY_GROUP_NOT_FOUND` (404) — la fila no existe, es de otro
+  //     paciente o es una que quien pregunta no puede ver. Las tres responden
+  //     igual, por lo mismo que `PATIENT_NOT_FOUND`.
+  'PRIORITY_GROUP_EVIDENCE_REQUIRED',
+  'PRIORITY_GROUP_NOT_FOUND',
+  'PRIORITY_GROUP_NOT_RECORDABLE',
+  'PRIORITY_GROUP_PERIOD_INVALID',
+  'PRIORITY_GROUP_RESTRICTED',
   'PERMISSION_DENIED',
   // Configuración, C3 (CF-060..CF-066). `HOLIDAY_DUPLICATE` lo produce la base
   // —`holiday_date_scope_unique`, un índice `UNIQUE NULLS NOT DISTINCT` que

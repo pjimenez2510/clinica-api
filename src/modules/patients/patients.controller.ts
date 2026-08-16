@@ -167,6 +167,15 @@ export class PatientsController {
 function toSummaryResponse(patient: PatientSummary) {
   return {
     id: patient.id,
+    /**
+     * PA-041 y PA-042. El ORDEN viaja; el motivo no, en ningún listado.
+     *
+     * Es lo que permite a la lista de espera ordenar con sólo `patient:read`
+     * (AG-061), y a recepción trabajar sin ver «enfermedad catastrófica». El
+     * motivo tiene su propia ruta, su propio permiso y su propia fila de
+     * bitácora.
+     */
+    priority: patient.priority,
     mrn: patient.mrn,
     familyName: patient.familyName,
     secondFamilyName: patient.secondFamilyName,

@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import { formatMrn } from '../domain/mrn';
 import type {
   NewPatient,
+  NewPriorityGroup,
   PatientSortField,
   PatientDetail,
   PatientIdentifier,
@@ -12,7 +14,14 @@ import type {
   PatientRepository,
   PatientSearchCriteria,
   PatientSummary,
+  PriorityGroupRecord,
 } from '../domain/patient.repository';
+import {
+  clinicalDateToday,
+  priorityLevelOf,
+  type PriorityGroup,
+  type PriorityGroupOrigin,
+} from '../domain/priority-groups';
 
 /**
  * Rows in, domain shapes out.
@@ -21,9 +30,29 @@ import type {
  * `Prisma.` type, which is what makes the search strategy below replaceable.
  */
 
+/**
+ * PA-041 y PA-042. Los dos campos con los que se calcula la prioridad, y
+ * NINGUNO que diga por qué.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * NO HAY `groupCode` EN ESTE `select`, Y ES LA MITAD DE LA GARANTÍA.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * El nivel depende de si HAY alguna valoración vigente, nunca de CUÁL, así que
+ * el motivo no hace falta para calcularlo. Dejándolo fuera de la consulta,
+ * «el motivo no viaja en ningún listado» deja de ser una regla que alguien
+ * tiene que recordar al mapear la respuesta: el dato no sale de la base. El
+ * motivo tiene su propia consulta, su propio permiso y su propia fila de
+ * bitácora (PA-040).
+ */
+const PRIORITY_PERIOD_SELECT = {
+  select: { startsOn: true, endsOn: true },
+} satisfies Prisma.Patient$priorityGroupsArgs;
+
 /** The columns a list row needs, and no clinical data at all. */
 const SUMMARY_SELECT = {
   id: true,
+  priorityGroups: PRIORITY_PERIOD_SELECT,
   mrn: true,
   familyName: true,
   secondFamilyName: true,
@@ -367,6 +396,74 @@ export class PrismaPatientRepository implements PatientRepository {
     return detail;
   }
 
+  async exists(id: string): Promise<boolean> {
+    const row = await this.prisma.patient.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    return row !== null;
+  }
+
+  async listPriorityGroups(
+    patientId: string,
+  ): Promise<readonly PriorityGroupRecord[]> {
+    const rows = await this.prisma.patientPriorityGroup.findMany({
+      where: { patientId },
+      // Newest assessment first: the current situation is what somebody
+      // deciding a turn is looking for, and the history is below it.
+      orderBy: [{ startsOn: 'desc' }, { recordedAt: 'desc' }],
+    });
+
+    return rows.map(toPriorityGroupRecord);
+  }
+
+  async addPriorityGroup(
+    record: NewPriorityGroup,
+  ): Promise<PriorityGroupRecord> {
+    const row = await this.prisma.patientPriorityGroup.create({
+      data: {
+        patientId: record.patientId,
+        groupCode: record.group,
+        startsOn: fromClinicalDate(record.startsOn),
+        endsOn: record.endsOn === null ? null : fromClinicalDate(record.endsOn),
+        origin: record.origin,
+        evidenceDocument: record.evidenceDocument,
+        recordedById: record.recordedById,
+      },
+    });
+
+    return toPriorityGroupRecord(row);
+  }
+
+  /**
+   * PA-037. Closing SETS A DATE; it never deletes the row.
+   *
+   * `updateMany` with the patient in the `where` and not `update` by id: the
+   * record has to belong to the patient in the URL, and checking that in a
+   * separate read would leave the window between the two. Zero rows updated is
+   * the same answer for «no existe» and «es de otro paciente», which is what
+   * the caller turns into one message.
+   */
+  async closePriorityGroup(input: {
+    patientId: string;
+    recordId: string;
+    endsOn: ClinicalDate;
+    closedById: string;
+  }): Promise<PriorityGroupRecord | null> {
+    const { count } = await this.prisma.patientPriorityGroup.updateMany({
+      where: { id: input.recordId, patientId: input.patientId },
+      data: {
+        endsOn: fromClinicalDate(input.endsOn),
+        closedById: input.closedById,
+        closedAt: new Date(),
+      },
+    });
+    if (count === 0) return null;
+
+    const records = await this.listPriorityGroups(input.patientId);
+    return records.find((record) => record.id === input.recordId) ?? null;
+  }
+
   private toSummary(row: {
     id: string;
     mrn: string;
@@ -378,10 +475,27 @@ export class PrismaPatientRepository implements PatientRepository {
     birthDate: Date;
     birthDateEstimated: boolean;
     deceasedAt: Date | null;
+    priorityGroups: { startsOn: Date; endsOn: Date | null }[];
     identifiers: { type: string; issuingCountry: string; value: string }[];
   }): PatientSummary {
     return {
       id: row.id,
+      /**
+       * PA-041. Resolved HERE, when read, against the Ecuadorian date.
+       *
+       * No stored flag and no nightly job: a pregnancy whose expected date of
+       * delivery has passed stops counting without anybody touching the row.
+       * `clinicalDateToday()` asks Ecuador rather than the host — at 21:00 in
+       * Guayaquil the UTC date is already tomorrow, and that difference is a
+       * whole day of priority for the last patient of the evening.
+       */
+      priority: priorityLevelOf(
+        {
+          birthDate: toClinicalDate(row.birthDate),
+          periods: row.priorityGroups.map(toPeriod),
+        },
+        clinicalDateToday(),
+      ),
       mrn: row.mrn,
       familyName: row.familyName,
       secondFamilyName: row.secondFamilyName,
@@ -407,6 +521,65 @@ function toIdentifier(row: {
     type: row.type as PatientIdentifier['type'],
     issuingCountry: row.issuingCountry,
     value: row.value,
+  };
+}
+
+/**
+ * A stored assessment to the shape the application reads.
+ *
+ * ONE MAPPING and not one per query: the two paths that return a record used
+ * to repeat it, and a field added to only one of them is a response that
+ * disagrees with itself depending on which call produced it.
+ */
+function toPriorityGroupRecord(row: {
+  id: string;
+  groupCode: string;
+  startsOn: Date;
+  endsOn: Date | null;
+  origin: PriorityGroupOrigin;
+  evidenceDocument: string | null;
+  recordedById: string;
+  recordedAt: Date;
+  closedById: string | null;
+  closedAt: Date | null;
+}): PriorityGroupRecord {
+  return {
+    id: row.id,
+    group: row.groupCode as PriorityGroup,
+    startsOn: toClinicalDate(row.startsOn),
+    endsOn: row.endsOn === null ? null : toClinicalDate(row.endsOn),
+    origin: row.origin,
+    evidenceDocument: row.evidenceDocument,
+    recordedById: row.recordedById,
+    recordedAt: row.recordedAt,
+    closedById: row.closedById,
+    closedAt: row.closedAt,
+  };
+}
+
+/**
+ * A `date` column to the calendar date it holds.
+ *
+ * Prisma normalises `@db.Date` to UTC midnight, so slicing the ISO string is
+ * the value stored and not a value shifted by anybody's zone. Reading it with
+ * local getters is the bug this project already paid for once.
+ */
+function toClinicalDate(value: Date): ClinicalDate {
+  return value.toISOString().slice(0, 10) as ClinicalDate;
+}
+
+/** The inverse: a calendar date to the UTC midnight the column expects. */
+function fromClinicalDate(date: ClinicalDate): Date {
+  return new Date(`${date}T00:00:00Z`);
+}
+
+function toPeriod(row: { startsOn: Date; endsOn: Date | null }): {
+  startsOn: ClinicalDate;
+  endsOn: ClinicalDate | null;
+} {
+  return {
+    startsOn: toClinicalDate(row.startsOn),
+    endsOn: row.endsOn === null ? null : toClinicalDate(row.endsOn),
   };
 }
 

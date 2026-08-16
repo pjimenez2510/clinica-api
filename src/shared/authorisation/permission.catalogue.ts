@@ -79,6 +79,52 @@ export const PERMISSION_CATALOGUE = [
     resource: 'patient',
     description: 'Registrar y corregir datos de pacientes',
   },
+  // Los grupos prioritarios del paciente (P3, REQ-024, D-026, D-027, D-029).
+  //
+  // DOS PERMISOS Y NO UNO, y la diferencia es el artículo 35 leído entero.
+  //
+  //   - `patient:priority` abre el MOTIVO de la prioridad: embarazo,
+  //     discapacidad, enfermedad catastrófica, privación de libertad. Es dato
+  //     de salud de categoría especial bajo la LOPDP, así que no viaja con
+  //     `patient:read` — que tienen recepción y caja— sino aparte. D-029 lo da
+  //     de fábrica a `MEDICO` y a `ENFERMERIA`. Recepción sigue viendo el
+  //     ORDEN, que es lo que necesita para trabajar (PA-041).
+  //   - `patient:priority:protected` abre los cuatro grupos de la SEGUNDA
+  //     frase del art. 35 —personas en situación de riesgo, víctimas de
+  //     violencia doméstica y sexual, de maltrato infantil y de desastres—,
+  //     que reciben «la misma atención prioritaria» y por tanto CUENTAN PARA
+  //     EL ORDEN igual que los demás, pero no se leen con la misma llave que
+  //     la edad.
+  //
+  // ⚠️ EL SEGUNDO NO LO TRAE NINGÚN ROL, por el mismo criterio que
+  // `agenda:overbook:self` (AG-103), `user:reset-mfa` (AU-035) y
+  // `patient:merge` (D-030): la instalación se lo concede a alguien A
+  // PROPÓSITO o no lo tiene nadie. Aquí el argumento no es la suplantación
+  // sino la SEGURIDAD DE LA PERSONA — que «víctima de violencia doméstica»
+  // aparezca en la pantalla de quien no debe verlo tiene consecuencias
+  // distintas de las de una filtración corriente, y es la razón de que REQ-025
+  // le dé tabla y régimen propios dentro de la atención—. Qué rol lo lleva es
+  // política de acceso a datos de categoría especial y la fija la clínica; ver
+  // `DECISIONES-PENDIENTES.md`.
+  //
+  // NO SE LLAMA `patient:violence` ni nada que NOMBRE EL DATO. El código del
+  // permiso se lee en la pantalla de roles, en la bitácora y en un mensaje de
+  // error, y un nombre que describa la categoría convierte cada uno de esos
+  // sitios en una pista sobre el paciente. `:protected` dice cuánto protege,
+  // no de qué.
+  {
+    code: 'patient:priority',
+    resource: 'patient',
+    description:
+      'Ver y registrar por qué un paciente es prioritario: embarazo, discapacidad, enfermedad catastrófica o privación de libertad. Es dato de salud',
+  },
+  {
+    code: 'patient:priority:protected',
+    resource: 'patient',
+    description:
+      'Ver y registrar los grupos prioritarios de acceso restringido. Quien lo tiene conoce situaciones cuya difusión puede poner en riesgo a la persona',
+    explicitGrantOnly: true,
+  },
   {
     code: 'agenda:read',
     resource: 'agenda',

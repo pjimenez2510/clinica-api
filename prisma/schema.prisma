@@ -104,6 +104,13 @@ model User {
   /// the two apart is the control itself (AG-103).
   overbookingsAuthorised AgendaEntry[] @relation("OverbookingAuthoriser")
 
+  /// PA-039: the priority group records this person wrote, and the ones they
+  /// closed. Two relations because they are two acts by two people at two
+  /// moments, and «¿quién lo cerró?» is a question the closing has to answer
+  /// as much as the recording does.
+  priorityGroupsRecorded PatientPriorityGroup[] @relation("PriorityGroupRecorder")
+  priorityGroupsClosed   PatientPriorityGroup[] @relation("PriorityGroupCloser")
+
   @@index([email])
   @@map("app_user")
 }
@@ -1287,6 +1294,7 @@ model Patient {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   identifiers     PatientIdentifier[]
+  priorityGroups  PatientPriorityGroup[]
   contacts        PatientContact[]
   allergies       PatientAllergy[]
   agendaEntries   AgendaEntry[]
@@ -1338,6 +1346,88 @@ model PatientIdentifier {
   @@index([patientId, use])
   @@index([value])
   @@map("patient_identifier")
+}
+
+/// How the system learnt the patient belongs to the group (PA-038).
+///
+/// «Lo dijo el paciente» and «consta en el carné del CONADIS» are not the same
+/// thing, and without the distinction nobody can tell which of the two they are
+/// looking at when they decide a turn.
+enum PriorityGroupOrigin {
+  SELF_DECLARED
+  ACCREDITED
+
+  @@map("priority_group_origin")
+}
+
+/// A dated assessment that the patient belongs to a priority group of article
+/// 35 of the Constitution (REQ-024, PA-033..PA-039, D-026, D-027).
+///
+/// ═══════════════════════════════════════════════════════════════════════════
+/// ONE ROW PER ASSESSMENT, NEVER A BOOLEAN COLUMN ON `patient`
+/// ═══════════════════════════════════════════════════════════════════════════
+///
+/// HL7 FHIR models pregnancy as an `Observation` — a dated assessment — and
+/// says expressly that it must NOT be captured as a `Condition`. A column
+/// `embarazada` is exactly the one that stays switched on for ever. Disability
+/// and catastrophic illness ARE `Condition`: persistent states, which is why
+/// closing one sets `ends_on` and never deletes the row (PA-037) — otherwise
+/// «¿por qué esta persona tuvo prioridad en marzo?» has no answer.
+///
+/// And a row absorbs with an INSERT the category the ministry adds, where ten
+/// booleans need a migration and leave every historical row at `false` where
+/// the honest value is «no se valoró».
+///
+/// ⚠️ AGE IS NOT HERE, and its absence is the design (PA-035). «Adulto mayor»
+/// and «niña, niño o adolescente» are derived from `birth_date` on the clinical
+/// date; stored, they would be data that expires on a birthday nobody processes.
+/// `patient_priority_group_recordable` is what makes that true in the database.
+///
+/// ⚠️ THE VALIDITY IS RESOLVED WHEN READ. No process marks rows as expired: a
+/// pregnancy whose expected date of delivery has passed simply stops counting,
+/// with nobody touching the row.
+///
+/// `date` and not `timestamptz` for the period, deliberately: «hasta el 15 de
+/// marzo» is a calendar fact, like `birth_date` and like
+/// `catalog_concept.valid_from`. An instant would make the answer depend on the
+/// hour it was asked.
+model PatientPriorityGroup {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  patientId String  @map("patient_id") @db.Uuid
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  /// One of the RECORDABLE codes of `priority-groups.ts`. A `varchar` with a
+  /// CHECK and not a native enum: the enumeration of TEN lives in the domain —
+  /// every entry drives a branch there — and only EIGHT may be written, so an
+  /// enum would have to contain the two derived ones and then permit storing
+  /// them. See `patient_priority_group_recordable`.
+  groupCode String @map("group_code") @db.VarChar(48)
+
+  startsOn DateTime  @map("starts_on") @db.Date
+  /// Expected date of delivery or end date. NULL means still open, which a
+  /// pregnancy may never be (`patient_priority_group_pregnancy_has_end`).
+  endsOn   DateTime? @map("ends_on") @db.Date
+
+  origin PriorityGroupOrigin
+
+  /// Which document accredits it: carné del CONADIS, certificado médico.
+  /// Required when `origin = ACCREDITED`, refused as blank by a CHECK.
+  evidenceDocument String? @map("evidence_document") @db.VarChar(160)
+
+  /// PA-039. Who recorded it and when. NOT NULL: a record nobody can be held
+  /// to is not a weaker record, it is a useless one.
+  recordedById String   @map("recorded_by") @db.Uuid
+  recordedBy   User     @relation("PriorityGroupRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
+  recordedAt   DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
+
+  /// Who closed it and when, for the same reason. Both NULL or both set.
+  closedById String?   @map("closed_by") @db.Uuid
+  closedBy   User?     @relation("PriorityGroupCloser", fields: [closedById], references: [id], onDelete: Restrict)
+  closedAt   DateTime? @map("closed_at") @db.Timestamptz(6)
+
+  @@index([patientId, startsOn])
+  @@map("patient_priority_group")
 }
 
 /// Emergency contact or legal representative (minors, incapacitated adults).

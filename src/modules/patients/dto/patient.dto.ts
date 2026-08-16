@@ -2,6 +2,11 @@ import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
 import { explicitFlag } from '../../../shared/http/query-flag';
+import {
+  PRIORITY_GROUPS,
+  RECORDABLE_PRIORITY_GROUPS,
+  type PriorityGroup,
+} from '../domain/priority-groups';
 
 /**
  * The patient contract, requests and responses.
@@ -150,6 +155,17 @@ const identifierResponseSchema = z.object({
 
 export const patientSummarySchema = z.object({
   id: z.uuid(),
+  /**
+   * PA-041. The order, ALREADY CALCULATED, and never the reason.
+   *
+   * `1` prioritised under article 35, `2` ordinary. Two values and not ten: the
+   * article does not rank the groups against each other, and a distinct number
+   * per group would leak the reason through the order — which is exactly what
+   * PA-042 forbids. It travels with `patient:read` because the waiting list
+   * needs the order to work; the reason has its own permission and its own
+   * audited route.
+   */
+  priority: z.number().int().positive(),
   /** The number humans quote. Printed monospaced, read digit by digit. */
   mrn: z.string(),
   familyName: z.string(),
@@ -188,6 +204,89 @@ export const patientPageSchema = z.object({
 });
 export class PatientPageDto extends createZodDto(patientPageSchema) {}
 
+// ---------------------------------------------------------------------------
+// Priority groups (P3: PA-033 to PA-042, D-026, D-027)
+// ---------------------------------------------------------------------------
+
+/**
+ * Qué grupos se pueden ESCRIBIR, que no son los diez.
+ *
+ * Sale del dominio con `satisfies` en vez de repetirse a mano: una segunda
+ * lista aquí sería la que nadie recuerda editar el día que el artículo 35 se
+ * lea otra vez, y el síntoma sería una pantalla que ofrece un grupo que la base
+ * rechaza. Los dos derivados de la edad —«adulto mayor» y «niña, niño o
+ * adolescente»— NO están, y por eso teclearlos es un error de campo y no un
+ * 500: PA-035 dice que se calculan de la fecha de nacimiento.
+ */
+const RECORDABLE_GROUP = z.enum(
+  RECORDABLE_PRIORITY_GROUPS as unknown as [PriorityGroup, ...PriorityGroup[]],
+);
+
+const PRIORITY_GROUP = z.enum(
+  PRIORITY_GROUPS as unknown as [PriorityGroup, ...PriorityGroup[]],
+);
+
+const ORIGIN = z.enum(['SELF_DECLARED', 'ACCREDITED']);
+
+export const recordPriorityGroupSchema = z.object({
+  group: RECORDABLE_GROUP,
+  startsOn: z.iso.date('Ingrese una fecha de inicio válida'),
+  /**
+   * Fecha probable de parto o de fin. OBLIGATORIA para el embarazo, y el
+   * servicio lo comprueba además del esquema: PA-036 es una regla de dominio,
+   * y una que sólo hace cumplir el transporte deja de cumplirse el día que
+   * otro caso de uso llame por dentro.
+   */
+  endsOn: z.iso.date('Ingrese una fecha de fin válida').nullish(),
+  origin: ORIGIN,
+  /** Carné del CONADIS, certificado médico. Obligatorio si es acreditado. */
+  evidenceDocument: z.string().trim().max(160).nullish(),
+});
+export class RecordPriorityGroupDto extends createZodDto(
+  recordPriorityGroupSchema,
+) {}
+
+export const closePriorityGroupSchema = z.object({
+  endsOn: z.iso.date('Ingrese la fecha en la que dejó de aplicar'),
+});
+export class ClosePriorityGroupDto extends createZodDto(
+  closePriorityGroupSchema,
+) {}
+
+export const priorityGroupSchema = z.object({
+  id: z.uuid(),
+  group: PRIORITY_GROUP,
+  startsOn: z.iso.date(),
+  endsOn: z.iso.date().nullable(),
+  /**
+   * Si cuenta HOY, resuelto al leer contra la fecha de `America/Guayaquil`.
+   *
+   * Viaja calculado para que la pantalla no vuelva a decidirlo: el navegador
+   * está en el huso del portátil, y un embarazo que caducó anoche seguiría
+   * pintándose como vigente hasta las 05:00.
+   */
+  inForce: z.boolean(),
+  origin: ORIGIN,
+  evidenceDocument: z.string().nullable(),
+  /** PA-039: quién lo registró y cuándo, y quién lo cerró. */
+  recordedById: z.uuid(),
+  recordedAt: z.iso.datetime(),
+  closedById: z.uuid().nullable(),
+  closedAt: z.iso.datetime().nullable(),
+});
+export class PriorityGroupDto extends createZodDto(priorityGroupSchema) {}
+
+export const priorityGroupListSchema = z.object({
+  /** La fecha clínica con la que se resolvió la vigencia. */
+  asOf: z.iso.date(),
+  items: z.array(priorityGroupSchema).readonly(),
+});
+export class PriorityGroupListDto extends createZodDto(
+  priorityGroupListSchema,
+) {}
+
 /** Response types inferred from the published schemas; see agenda.dto.ts. */
 export type PatientDetailResponse = z.infer<typeof patientDetailSchema>;
 export type PatientPageResponse = z.infer<typeof patientPageSchema>;
+export type PriorityGroupResponse = z.infer<typeof priorityGroupSchema>;
+export type PriorityGroupListResponse = z.infer<typeof priorityGroupListSchema>;

@@ -78,6 +78,12 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
     description: 'Atiende, diagnostica, prescribe y firma documentos clínicos.',
     permissions: [
       'patient:read',
+      // D-029, 16-08-2026. El motivo de la prioridad (PA-040): quien atiende
+      // necesita saber que la paciente está embarazada o que tiene una
+      // enfermedad catastrófica. Recepción y caja NO lo llevan — les basta la
+      // prioridad calculada de PA-041—, y eso es lo que separa «ver la fecha
+      // de nacimiento» de «ver el diagnóstico social».
+      'patient:priority',
       'agenda:read',
       'agenda:write',
       // D-005, AG-101. El médico AUTORIZA el sobrecupo que recepción reserva:
@@ -107,6 +113,10 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       'Registra signos vitales y tamizajes. No diagnostica ni prescribe.',
     permissions: [
       'patient:read',
+      // D-029. Enfermería hace el tamizaje y toma los signos: es quien registra
+      // que una paciente está embarazada, así que lee y escribe el motivo por
+      // la misma puerta que el médico.
+      'patient:priority',
       'agenda:read',
       'record:read',
       'vitals:write',
