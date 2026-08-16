@@ -414,6 +414,14 @@ describe('los parámetros de reserva de la sede', () => {
         // D-021: el turno de la agenda es el cuarto, y es el que más falta
         // haría cuadrar — la rejilla derivada sale de él.
         slotAtomMinutes: stored.slotAtomMinutes,
+        // E4 (AG-039, AG-100, AG-101): los tres del sobrecupo entraron con la
+        // entrega que los lee (D-018), y valen para esto exactamente igual —
+        // un interruptor que la base escribiera `false` y el código operara
+        // como `true` dejaría la sede sin sobrecupos sólo cuando le falta la
+        // fila, que es el caso más difícil de diagnosticar que existe.
+        overbookingEnabled: stored.overbookingEnabled,
+        overbookingCap: stored.overbookingCap,
+        overbookingPermission: stored.overbookingPermission,
       }).toEqual(DEFAULT_BOOKING_PARAMETERS);
     });
   });

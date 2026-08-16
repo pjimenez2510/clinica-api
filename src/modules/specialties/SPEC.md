@@ -158,8 +158,20 @@ rechaza con `SERVICE_TYPE_IN_USE`.
   incluir activas e inactivas; DONDE sea de selección, solo activas.
 - **SP-008** — El sistema DEBERÁ exponer la especialidad principal del
   profesional en el listado que consume la agenda.
-  > Lo expone `staff` desde el 13-08-2026 (ST-008), en el listado de
-  > profesionales que es suyo.
+  > **Lo expone la AGENDA desde el 14-08-2026 (AG-111), y ésta es la corrección
+  > de una nota que era falsa.** Decía «lo expone `staff` (ST-008), en el
+  > listado de profesionales que es suyo», y ese listado pide `staff:read` —que
+  > el rol `RECEPCION` no tiene—. El requisito nombra «el listado que consume la
+  > agenda», así que un listado que la agenda no puede leer no lo cumple: SP-008
+  > estaba en verde por el listado equivocado.
+  >
+  > Cumplido queda en dos sitios y no es duplicación: `staff` lo expone en su
+  > pantalla de personal (ST-008, bajo `staff:read`) y la agenda lo expone en
+  > `GET /agenda/sites/{siteId}/practitioners` (AG-111, bajo `agenda:read`) con
+  > el mínimo que su pantalla necesita —identificador, nombre y la marca de
+  > principal, nunca cédula ni ACESS (AG-108)—. La fila es la misma,
+  > `practitioner_specialty`; lo que cambia es cuánto de ella sale por cada
+  > puerta.
 
 ### Tipos de atención y duraciones (REQ-150, D-010)
 
@@ -338,3 +350,13 @@ existan `staff` y `organization`, no módulo a módulo.
 
 Ninguna ruta lleva ya `practitioners/` en el camino: las cuatro que la llevaban
 se fueron con `staff` el 13-08-2026, que es lo que significa saldar la deuda.
+
+> **`config:read` es correcto AQUÍ y era el defecto ALLÍ.** Estas rutas son las
+> de la pantalla de administración —listan activas e inactivas (SP-007), sirven
+> el código estable y son la puerta de las mutaciones—, y quien administra el
+> catálogo tiene `config:read`. Lo que no puede es ser también la puerta del
+> diálogo de reserva: `RECEPCION` no tiene ese permiso, así que el selector de
+> SP-028 pedía dos rutas que le respondían 403 y se quedaba vacío en silencio.
+> Desde el 14-08-2026 la agenda publica lo suyo bajo `agenda:read` (AG-111,
+> AG-112) y estas rutas se quedan con la administración, que es lo único que
+> siempre fueron.

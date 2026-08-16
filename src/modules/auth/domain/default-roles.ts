@@ -53,6 +53,11 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       // compensa esa concentración.
       'settings:read',
       'settings:manage',
+      // D-005, AG-101. La dirección también autoriza sobrecupos: el caso de
+      // «la sede está llena y la dirección decide atender a alguien más» es
+      // uno de los tres que D-005 enumera. Como el médico, sin
+      // `agenda:overbook:self`.
+      'agenda:overbook',
       // The staff file (ADR-011). It goes to the administrator and to NOBODY
       // ELSE by default, which is a decision and not an oversight: the file
       // carries the cedula and the ACESS registration of an employee, and the
@@ -75,6 +80,11 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       'patient:read',
       'agenda:read',
       'agenda:write',
+      // D-005, AG-101. El médico AUTORIZA el sobrecupo que recepción reserva:
+      // es quien atenderá la urgencia y quien puede decir que cabe. No lleva
+      // `agenda:overbook:self` — ése se concede a mano (AU-035 hace lo mismo
+      // con `user:reset-mfa`), porque salta la separación de personas.
+      'agenda:overbook',
       'record:read',
       'record:write',
       'record:sign',

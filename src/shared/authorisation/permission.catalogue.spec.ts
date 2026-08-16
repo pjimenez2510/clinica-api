@@ -26,9 +26,16 @@ describe('the permission catalogue', () => {
     // buys is one colon, one resource in front of it, lowercase throughout and
     // no spaces — all of which still hold. The requirement names this code
     // literally, and an identifier in a SPEC.md is quoted, never adapted.
+    // AND THE ACTION MAY BE QUALIFIED, widened on 14-08-2026 for
+    // `agenda:overbook:self` (AG-103, D-005). It is not a third level of
+    // resource: it is the same action over a narrower subject — authorising
+    // one's OWN overbooking — and calling it `agenda:overbook-self` would hide
+    // that it is the exception to `agenda:overbook` rather than a different
+    // power. The requirement quotes this code literally, and an identifier in
+    // a SPEC.md is quoted, never adapted.
     for (const code of PERMISSIONS) {
       expect(code, `${code} is not resource:action`).toMatch(
-        /^[a-z]+:[a-z]+(-[a-z]+)*$/,
+        /^[a-z]+:[a-z]+(-[a-z]+)*(:[a-z]+(-[a-z]+)*)?$/,
       );
     }
   });
@@ -75,6 +82,18 @@ describe('the permission catalogue', () => {
     // concedido a ningún rol de fábrica. La marca es lo que lo hace cumplible
     // por código en lugar de por memoria.
     expect(EXPLICIT_GRANT_ONLY_PERMISSIONS).toContain('user:reset-mfa');
+  });
+
+  it('AG-103 marks `agenda:overbook:self` as one of them', () => {
+    // D-005: la separación entre quien reserva y quien autoriza ES el control
+    // del sobrecupo, y este permiso es lo único que la levanta. Si una semilla
+    // lo repartiera —como repartió `user:reset-mfa` el día que se declaró—,
+    // cualquier recepcionista del rol sembrado podría autorizarse sus propias
+    // excepciones y el campo de autorización dejaría de significar nada.
+    expect(EXPLICIT_GRANT_ONLY_PERMISSIONS).toContain('agenda:overbook:self');
+    expect(SEEDABLE_PERMISSIONS).not.toContain('agenda:overbook:self');
+    // Y el otro SÍ se siembra: es el que MEDICO y ADMIN traen de fábrica.
+    expect(SEEDABLE_PERMISSIONS).toContain('agenda:overbook');
   });
 
   it('describes every permission the way the user reads it', () => {

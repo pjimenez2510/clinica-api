@@ -158,6 +158,8 @@ describe('la administración de cuentas y roles por HTTP', () => {
     email: string,
     roleCode: string,
     cedula: string | null,
+    /** AU-038: a grant confined to ONE site. Absent = clinic-wide. */
+    grantedSiteId?: string,
   ): Promise<string> {
     const user = await prisma.user.create({
       data: {
@@ -168,15 +170,20 @@ describe('la administración de cuentas y roles por HTTP', () => {
         passwordHash: await hash(),
       },
     });
-    if (roleCode === 'ADMIN') adminUserId = user.id;
+    // Only the clinic-wide administrator is the one the rest of this suite
+    // acts as; a site-scoped one must not take the name from underneath it.
+    if (roleCode === 'ADMIN' && grantedSiteId === undefined) {
+      adminUserId = user.id;
+    }
 
     const role = await prisma.role.findUniqueOrThrow({
       where: { code: roleCode },
     });
     // GLOBAL grant (siteId null): administering the clinic is not scoped to
-    // one of its sites, and this is how a director is hired.
+    // one of its sites, and this is how a director is hired. AU-038 is what
+    // happens when the grant is NOT global.
     await prisma.userRoleGrant.create({
-      data: { userId: user.id, roleId: role.id },
+      data: { userId: user.id, roleId: role.id, siteId: grantedSiteId },
     });
 
     const response = await request(app.getHttpServer())
@@ -1122,6 +1129,149 @@ describe('la administración de cuentas y roles por HTTP', () => {
       // la bitácora mostraría un cambio que no ocurrió.
       expect(after).toHaveLength(1);
       expect(after[0]?.id).toBe(first.id);
+    });
+  });
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   * AU-038 — LA CONCESIÓN DE ROLES ERA ESCALADA DE PRIVILEGIOS (D-023, opción A)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * `PUT /users/:id/roles` declaraba alcance `global` mientras `grants[].siteId`
+   * viajaba en el CUERPO, donde el guard no mira. Quien tuviera `user:manage`
+   * acotado a una sede podía conceder a OTRA cuenta un rol con `siteId: null`
+   * —toda sede, presente y futura— y a partir de ahí el alcance por sede deja
+   * de significar nada en todo el sistema. Concedérselo a sí mismo ya lo
+   * impedía `CANNOT_GRANT_TO_SELF`; hacerlo a una segunda cuenta, no.
+   *
+   * Decisión del usuario (15-08-2026): **opción A**, sólo dentro de su alcance,
+   * comprobado en los dos extremos como ST-047.
+   */
+  describe('AU-038 · el alcance por sede al conceder roles', () => {
+    const SEDE_ADMIN_EMAIL = 'admin.norte@clinica.ec';
+    /** Cédula sintética con dígito verificador calculado. */
+    const SEDE_ADMIN_CEDULA = '1708221443';
+
+    async function twoSites(): Promise<{
+      norte: { id: string };
+      sur: { id: string };
+      scoped: string;
+    }> {
+      const norte = await prisma.site.create({
+        data: { mspUnicode: 'AUTH-9001', name: 'Sede Norte' },
+        select: { id: true },
+      });
+      const sur = await prisma.site.create({
+        data: { mspUnicode: 'AUTH-9002', name: 'Sede Sur' },
+        select: { id: true },
+      });
+      const scoped = await signIn(
+        SEDE_ADMIN_EMAIL,
+        'ADMIN',
+        SEDE_ADMIN_CEDULA,
+        norte.id,
+      );
+      return { norte, sur, scoped };
+    }
+
+    const liveGrants = async (userId: string) =>
+      prisma.userRoleGrant.findMany({
+        where: { userId, revokedAt: null },
+        select: { siteId: true },
+      });
+
+    it('AU-038 quien administra Norte NO puede conceder un rol global a otra cuenta', async () => {
+      const { scoped } = await twoSites();
+      const account = await createAccount();
+      const recepcion = await roleIdOf('RECEPCION');
+
+      // `siteId` ausente = todas las sedes, incluidas las que se abran después.
+      const response = await put(
+        `/users/${account.id}/roles`,
+        { grants: [{ roleId: recepcion }] },
+        scoped,
+      ).expect(403);
+
+      expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+      // «Sin escribir nada»: la cuenta sigue sin ninguna concesión viva.
+      expect(await liveGrants(account.id)).toEqual([]);
+    });
+
+    it('AU-038 tampoco puede conceder un rol en OTRA sede', async () => {
+      const { sur, scoped } = await twoSites();
+      const account = await createAccount();
+      const recepcion = await roleIdOf('RECEPCION');
+
+      const response = await put(
+        `/users/${account.id}/roles`,
+        { grants: [{ roleId: recepcion, siteId: sur.id }] },
+        scoped,
+      ).expect(403);
+
+      expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+      expect(await liveGrants(account.id)).toEqual([]);
+      // La negativa no confirma que ese identificador sea una sede.
+      expect(JSON.stringify(response.body)).not.toContain(sur.id);
+    });
+
+    it('AU-038 tampoco puede REVOCAR en silencio la concesión de otra sede', async () => {
+      // El PUT fija el conjunto entero: enviar sólo lo suyo dejaría sin rol a
+      // la recepción de otra ciudad, y eso es tan suyo como dárselo.
+      const { norte, sur, scoped } = await twoSites();
+      const account = await createAccount();
+      const recepcion = await roleIdOf('RECEPCION');
+      await put(`/users/${account.id}/roles`, {
+        grants: [
+          { roleId: recepcion, siteId: norte.id },
+          { roleId: recepcion, siteId: sur.id },
+        ],
+      }).expect(200);
+
+      const response = await put(
+        `/users/${account.id}/roles`,
+        { grants: [{ roleId: recepcion, siteId: norte.id }] },
+        scoped,
+      ).expect(403);
+
+      expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+      expect(
+        (await liveGrants(account.id)).map((row) => row.siteId).sort(),
+      ).toEqual(
+        // prettier-ignore
+        [norte.id, sur.id].sort(),
+      );
+    });
+
+    it('AU-038 sí concede dentro de SU sede: la comprobación no es un muro', async () => {
+      const { norte, scoped } = await twoSites();
+      const account = await createAccount();
+      const recepcion = await roleIdOf('RECEPCION');
+
+      await put(
+        `/users/${account.id}/roles`,
+        { grants: [{ roleId: recepcion, siteId: norte.id }] },
+        scoped,
+      ).expect(200);
+
+      expect(await liveGrants(account.id)).toEqual([{ siteId: norte.id }]);
+    });
+
+    it('AU-038 la concesión de clínica sigue concediendo el rol global: es la dirección', async () => {
+      const { sur } = await twoSites();
+      const account = await createAccount();
+      const recepcion = await roleIdOf('RECEPCION');
+
+      // `token` es la administradora con concesión global (`siteId` nulo).
+      await put(`/users/${account.id}/roles`, {
+        grants: [{ roleId: recepcion }, { roleId: recepcion, siteId: sur.id }],
+      }).expect(200);
+
+      expect(
+        (await liveGrants(account.id)).map((row) => row.siteId).sort(),
+      ).toEqual(
+        // prettier-ignore
+        [null, sur.id].sort(),
+      );
     });
   });
 

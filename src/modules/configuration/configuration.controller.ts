@@ -64,15 +64,19 @@ import {
  *   - The parameter routes name ONE site in the path, so they are
  *     `param:siteId` and the guard checks the caller's scope over exactly that
  *     site before the handler runs. That is the strongest form available.
- *   - The holiday routes that create, edit and delete are `global`, and it is
- *     the honest answer rather than a shrug. A holiday's scope arrives in the
- *     BODY, and guards run before the pipes — there is nothing validated to
- *     check against at that moment. The listing is `global` for a second
- *     reason that matters more: the rows with `site_id IS NULL` belong to no
- *     site and every site obeys them, so narrowing the query by the caller's
- *     sites would HIDE exactly the holidays that apply everywhere. What
- *     carries the weight there is `settings:manage`, an administration
- *     permission DEFAULT_ROLES grants clinic-wide and to one role only.
+ *   - The holiday routes that create, edit and delete declare `'query'`
+ *     (CF-067, D-023). Their scope arrives in the BODY — on the delete, in the
+ *     ROW — and guards run before the pipes, so there is nothing validated for
+ *     the guard to check at that moment; `global` claimed those routes had no
+ *     site dimension, which was false. The HANDLER settles it with the
+ *     caller's own resolved scope, and `site_id IS NULL` — «todas las sedes» —
+ *     demands `settings:manage` granted clinic-wide, because a national
+ *     holiday shuts every site's agenda.
+ *   - The LISTING stays `global` and stays unnarrowed, for a reason that
+ *     points the other way: the rows with `site_id IS NULL` belong to no site
+ *     and every site obeys them, so narrowing the query by the caller's sites
+ *     would HIDE exactly the holidays that apply everywhere. Reading the
+ *     calendar shuts nobody's agenda.
  *   - The AG-092 exception routes are the exception to that exception: their
  *     site is IN THE PATH, so they are `param:siteId` like the parameter
  *     routes and the guard settles the scope before the handler runs.
@@ -103,9 +107,9 @@ export class ConfigurationController {
     return { items };
   }
 
-  /** CF-060, CF-061, CF-066. */
+  /** CF-060, CF-061, CF-066, CF-067. */
   @Post('holidays')
-  @RequirePermission('settings:manage', 'global')
+  @RequirePermission('settings:manage', 'query')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Registrar un feriado' })
   @ApiCreatedResponse({ type: HolidayDto })
@@ -116,12 +120,15 @@ export class ConfigurationController {
     return this.holidays.create(
       { date: dto.date, name: dto.name, siteId: dto.siteId },
       this.requester(req),
+      // CF-067: the scope comes from the session the guard resolved, never
+      // from the request — a body that could widen it would be no check.
+      this.currentUser.requirePrincipal(),
     );
   }
 
-  /** CF-060, CF-061, CF-066. */
+  /** CF-060, CF-061, CF-066, CF-067. */
   @Patch('holidays/:id')
-  @RequirePermission('settings:manage', 'global')
+  @RequirePermission('settings:manage', 'query')
   @ApiOperation({ summary: 'Editar un feriado' })
   @ApiOkResponse({ type: HolidayDto })
   async updateHoliday(
@@ -133,12 +140,13 @@ export class ConfigurationController {
       id,
       { date: dto.date, name: dto.name, siteId: dto.siteId },
       this.requester(req),
+      this.currentUser.requirePrincipal(),
     );
   }
 
-  /** CF-066. Nothing references a holiday, so it is deleted and not disabled. */
+  /** CF-066, CF-067. Nothing references a holiday, so it is deleted and not disabled. */
   @Delete('holidays/:id')
-  @RequirePermission('settings:manage', 'global')
+  @RequirePermission('settings:manage', 'query')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Borrar un feriado' })
   @ApiNoContentResponse()
@@ -146,7 +154,11 @@ export class ConfigurationController {
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: Request,
   ): Promise<void> {
-    await this.holidays.delete(id, this.requester(req));
+    await this.holidays.delete(
+      id,
+      this.requester(req),
+      this.currentUser.requirePrincipal(),
+    );
   }
 
   /**
@@ -236,6 +248,13 @@ export class ConfigurationController {
         overbookingCap: dto.overbookingCap,
         slotAtomMinutes: dto.slotAtomMinutes,
         allowPastBooking: dto.allowPastBooking,
+        // AG-039, AG-101 (E4): el interruptor del sobrecupo y el permiso que
+        // lo autoriza. Se enumeran uno a uno, como los demás, en vez de
+        // esparcir el DTO: lo que este módulo guarda es una lista cerrada, y
+        // un `...dto` haría de cada campo nuevo del transporte una columna por
+        // accidente.
+        overbookingEnabled: dto.overbookingEnabled,
+        overbookingPermission: dto.overbookingPermission,
         cancelledRetention: dto.cancelledRetention,
       },
       this.requester(req),

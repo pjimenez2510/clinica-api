@@ -7,15 +7,23 @@ import {
   type AgendaEntryStatus,
   type AgendaEntryView,
   type AgendaRepository,
+  type OverbookingRecord,
   type SiteScopeFilter,
 } from '../domain/agenda.repository';
 import {
   AgendaEntryHasEncounterError,
   AgendaEntryNotFoundError,
+  BlockOverlapsAppointmentsError,
   CancellationReasonRequiredError,
   InvalidAgendaTransitionError,
 } from '../domain/agenda.errors';
-import { checkBookingChannel, checkBookingFitsSchedule, checkBookingWindow, checkRoomBelongsToSite, resolveBookingParameters, ruleGoverningStart, type BookingChannel } from '../domain/booking-policy'; // prettier-ignore
+import { checkBookingChannel, checkBookingFitsSchedule, checkBookingWindow, checkRoomBelongsToSite, resolveBookingParameters, ruleGoverningStart, type BookingChannel, type SiteBookingParameters } from '../domain/booking-policy'; // prettier-ignore
+import {
+  assertOverbookingAdmitted,
+  checkOverbookingAuthoriser,
+  checkOverbookingCap,
+  requireOverbookingReason,
+} from '../domain/overbooking-policy';
 import { planReschedule } from '../domain/reschedule-policy';
 import { ServiceTypeNotFoundError } from '../../../shared/domain/errors/master-data.errors';
 import { resolveDuration } from '../../../shared/domain/duration-resolution';
@@ -24,6 +32,7 @@ import {
   assertNoShowNotBeforeStart,
   assertTransition,
   effectsOf,
+  planBlockRelease,
 } from '../domain/status-machine';
 import {
   type ClinicalDate,
@@ -35,6 +44,11 @@ import {
   deriveAvailability,
 } from '../domain/slot-availability';
 import { bookingWarningsFor } from '../domain/holiday-calendar';
+import {
+  type NoShowReport,
+  noShowWindow,
+  summariseNoShow,
+} from '../domain/no-show-metric';
 
 /** Who is asking. Only the internal user id: it is what AG-029 records. */
 export interface Requester {
@@ -49,6 +63,34 @@ export interface DailyAgendaRequest {
   roomId?: string;
   /** AG-018. Defaults to leaving released entries out. */
   includeReleased?: boolean;
+}
+
+/**
+ * AG-080. A range of Ecuadorian dates and the sites the caller may see.
+ *
+ * NO PRACTITIONER AND NO CHANNEL FILTER: the answer already carries all three
+ * breakdowns, so a filter would only let a client ask for a slice it has been
+ * given — and a client that filtered server-side would compute its totals over
+ * a different set from the one it displays.
+ */
+export interface NoShowRateRequest {
+  /** The caller's resolved scope for `agenda:read`, never a site they named. */
+  sites: SiteScopeFilter;
+  /** Inclusive Ecuadorian calendar dates, `YYYY-MM-DD`. */
+  from: ClinicalDate;
+  to: ClinicalDate;
+}
+
+/**
+ * The report plus the instant the count actually stopped at.
+ *
+ * `countedUntil` IS NOT DECORATION. AG-081 closes the window at the present
+ * moment, so a period asked over the whole month on the 15th was counted over
+ * half of it — and a screen that labelled the figure with the dates the user
+ * typed would be stating a period the number was never computed over.
+ */
+export interface NoShowRateResult extends NoShowReport {
+  countedUntil: Date;
 }
 
 export interface AvailabilityRequest {
@@ -70,6 +112,46 @@ export interface BookAppointmentRequest {
   bookingChannel: string;
   /** SP-028: the service type recepción chose, left registered on the entry. */
   serviceTypeId?: string;
+  reason?: string;
+  /**
+   * AG-035, D-005. Present when the caller DECLARES an overbooking: the
+   * documented way of booking off the grid, with a reason and somebody else's
+   * authorisation.
+   *
+   * ITS ABSENCE IS ALSO A DECLARATION. A booking without it is judged by the
+   * grid (AG-028, AG-104) and no reason or authoriser can reach the row — the
+   * exception has to be asked for, never inferred from an interval that
+   * happens not to fit.
+   */
+  overbooking?: DeclaredOverbooking;
+}
+
+/** AG-035, AG-101, AG-103: what the caller declares when breaking the grid. */
+export interface DeclaredOverbooking {
+  /** AG-035. Refused when empty; stored trimmed. */
+  reason?: string;
+  /**
+   * AG-101, AG-103. The account that authorises it — never the one booking,
+   * unless that person holds `agenda:overbook:self`.
+   */
+  authorisedById: string;
+}
+
+/**
+ * AG-037, AG-038. Closing a stretch of a practitioner's agenda: leave,
+ * theatre, a meeting.
+ *
+ * NO PATIENT AND NO CHANNEL: a block has neither, and the base says so
+ * (`agenda_entry_patient_coherence`, `agenda_entry_booking_channel_coherence`).
+ * NO SERVICE TYPE either — nothing is being attended.
+ */
+export interface BlockAgendaRequest {
+  siteId: string;
+  practitionerId: string;
+  roomId?: string;
+  startsAt: Date;
+  endsAt: Date;
+  /** Why the agenda is closed. Stored; not served back — see the adapter. */
   reason?: string;
 }
 
@@ -121,13 +203,13 @@ export interface BookedAppointment {
 }
 
 /**
- * AG-050. Moving one appointment to another moment.
+ * AG-050, AG-115. Moving one appointment to another moment — and, if it was
+ * the doctor that was wrong, to another agenda.
  *
- * WHAT IS NOT HERE IS THE POINT: no patient, no practitioner, no room and no
- * type of attention. The new entry is the old one moved, so all of that is
- * copied from the stored row and none of it is a decision this request may
- * take — a body that could change the patient would let «reprogramar» quietly
- * hand somebody else's hour to another person.
+ * WHAT IS NOT HERE IS THE POINT: no patient, no room. The new entry is the old
+ * one moved, so those are copied from the stored row and neither is a decision
+ * this request may take — a body that could change the patient would let
+ * «reprogramar» quietly hand somebody else's hour to another person.
  */
 export interface RescheduleRequest {
   siteId: string;
@@ -136,6 +218,13 @@ export interface RescheduleRequest {
   endsAt: Date;
   /** Unvalidated: `checkBookingChannel` decides (AG-034). */
   bookingChannel: string;
+  /**
+   * AG-115. Who will attend it now. ABSENT MEANS THE SAME ONE, which is the
+   * behaviour that existed before this requirement and that it must not break.
+   */
+  practitionerId?: string;
+  /** AG-115, SP-028. The type of attention. Absent means the stored one. */
+  serviceTypeId?: string;
   /**
    * AG-044. Why the original is annulled. Required, because rescheduling IS an
    * annulment for the entry that already exists, and «anular con rastro» is
@@ -386,7 +475,17 @@ export class AgendaService {
     // AG-080 reports by channel and an invented value reports a lie.
     const bookingChannel = checkBookingChannel(request.bookingChannel);
 
-    await this.checkIntervalIsBookable({
+    /**
+     * AG-035, AG-039, AG-100, AG-101, AG-103. Everything the exception has to
+     * satisfy is decided HERE, before the insert, and what comes back is the
+     * record that will be written with it — the reason already trimmed and the
+     * authoriser already checked.
+     *
+     * `undefined` when no overbooking was declared, and then the row is
+     * written the ordinary way. Nothing below infers an overbooking from an
+     * interval that does not fit.
+     */
+    const overbooking = await this.checkIntervalIsBookable({
       siteId: request.siteId,
       practitionerId: request.practitionerId,
       patientId: request.patientId,
@@ -394,6 +493,8 @@ export class AgendaService {
       startsAt: request.startsAt,
       endsAt: request.endsAt,
       channel: bookingChannel,
+      overbooking: request.overbooking,
+      requesterId: requester.userId,
       now,
     });
 
@@ -412,6 +513,9 @@ export class AgendaService {
       serviceTypeId: request.serviceTypeId,
       reason: request.reason,
       createdById: requester.userId,
+      // AG-035, AG-036: the three fields of the exception travel together, or
+      // the row is an ordinary appointment.
+      overbooking,
     });
 
     /**
@@ -480,8 +584,12 @@ export class AgendaService {
     startsAt: Date;
     endsAt: Date;
     channel: BookingChannel;
+    /** AG-035. Absent on an ordinary booking and on every reschedule. */
+    overbooking?: DeclaredOverbooking;
+    /** AG-103. From the session, so the two people can be compared. */
+    requesterId?: string;
     now: Date;
-  }): Promise<void> {
+  }): Promise<OverbookingRecord | undefined> {
     /**
      * AG-031, AG-032, AG-033 against the parameters of THIS site (AG-094),
      * completed with the code defaults for whatever it does not state
@@ -505,6 +613,21 @@ export class AgendaService {
       channel: input.channel,
       parameters,
     });
+
+    /**
+     * AG-039 and AG-035, in that order and before any further read.
+     *
+     * THE SWITCH FIRST: if this site does not do overbookings there is nothing
+     * to say about the reason, the authoriser or the cap — checking them would
+     * answer «falta el motivo» about an exception the site refuses outright.
+     * Both are pure and the parameters are already in hand, so a refusal here
+     * costs no round trip at all.
+     */
+    let reason: string | undefined;
+    if (input.overbooking !== undefined) {
+      assertOverbookingAdmitted(parameters);
+      reason = requireOverbookingReason(input.overbooking.reason);
+    }
 
     /**
      * AG-027. A merged chart is refused with the surviving number.
@@ -551,9 +674,10 @@ export class AgendaService {
       date: clinicalDateOf(input.startsAt),
     });
 
-    // AG-012, AG-013, AG-014, AG-028 and AG-104 in one pure call. Overbooking
-    // is not declarable in this delivery: it needs the authorisation column
-    // the schema does not have yet (AG-035).
+    // AG-012, AG-013, AG-014, AG-028 and AG-104 in one pure call. A declared
+    // overbooking excuses AG-028 and AG-104 — being off the grid is the whole
+    // point of it — and NOTHING else: the practitioner still has to be
+    // bookable and the duration still has to fit the site's atom.
     checkBookingFitsSchedule({
       request: {
         practitionerId: input.practitionerId,
@@ -570,7 +694,189 @@ export class AgendaService {
         schedulable: false,
         siteIds: [],
       },
+      overbookingDeclared: input.overbooking !== undefined,
     });
+
+    if (input.overbooking === undefined || reason === undefined) return undefined; // prettier-ignore
+
+    return this.authoriseOverbooking({
+      siteId: input.siteId,
+      practitionerId: input.practitionerId,
+      startsAt: input.startsAt,
+      authorisedById: input.overbooking.authorisedById,
+      requesterId: input.requesterId,
+      reason,
+      parameters,
+    });
+  }
+
+  /**
+   * AG-100, AG-101, AG-103. The two questions an overbooking cannot answer on
+   * its own: may this person authorise it, and does it still fit under the
+   * cap of that day.
+   *
+   * THE TWO READS GO TOGETHER because neither depends on the other and both
+   * are on the path of an urgency, where the person at the counter is waiting.
+   *
+   * THE ORDER OF THE REFUSALS IS NOT THE ORDER OF THE READS. Authorisation is
+   * judged first: «pídaselo al médico» is something recepción can do right
+   * now, while «ya no caben más hoy» ends the conversation — and hearing the
+   * second when the first is also true would send her to authorise a booking
+   * that was never going to be accepted.
+   *
+   * NOTHING IS WRITTEN HERE (AG-101 says so literally: «NO DEBERÁ crear la
+   * entrada»). What comes back is the record the insert will carry.
+   */
+  private async authoriseOverbooking(input: {
+    siteId: string;
+    practitionerId: string;
+    startsAt: Date;
+    authorisedById: string;
+    requesterId?: string;
+    reason: string;
+    parameters: SiteBookingParameters;
+  }): Promise<OverbookingRecord> {
+    /**
+     * AG-100, AG-001. The cap is counted over the CLINICAL date of the start,
+     * delimited in `America/Guayaquil` — never with a `::date` in SQL, which
+     * uses the session's zone: an overbooking at 19:30 would then count
+     * against the following day and the cap would stop limiting the evenings,
+     * which is exactly when it gets abused.
+     */
+    const { startsAt, endsAtExclusive } = clinicalDayBounds(
+      clinicalDateOf(input.startsAt),
+    );
+
+    const [permissions, used] = await Promise.all([
+      this.agenda.authoriserPermissions({
+        userId: input.authorisedById,
+        siteId: input.siteId,
+      }),
+      this.agenda.overbookingCount({
+        siteId: input.siteId,
+        practitionerId: input.practitionerId,
+        from: startsAt,
+        untilExclusive: endsAtExclusive,
+      }),
+    ]);
+
+    checkOverbookingAuthoriser({
+      authorisedById: input.authorisedById,
+      // An overbooking always has a requester: `book` is the only caller and
+      // it takes the id from the session. The fallback states that rather than
+      // letting `undefined` compare equal to nothing and quietly skip AG-103.
+      requesterId: input.requesterId ?? '',
+      authoriserPermissions: permissions,
+      requiredPermission: input.parameters.overbookingPermission,
+    });
+
+    checkOverbookingCap({ used, cap: input.parameters.overbookingCap });
+
+    return { reason: input.reason, authorisedById: input.authorisedById };
+  }
+
+  /**
+   * AG-037, AG-038. Closes a stretch of a practitioner's agenda.
+   *
+   * WHAT IT DOES NOT CHECK, and why. Not the schedule rules: a block for leave
+   * or for a public holiday is precisely an interval no rule covers, and
+   * demanding one would make the feature unable to express its main case. Not
+   * the booking window either — closing a morning that already passed changes
+   * nothing for anybody, and AG-031 to AG-033 are about «la reserva».
+   *
+   * WHAT IT DOES CHECK: that the room belongs to the site (AG-105, the same
+   * hole a booking has), and that no appointment stands inside the interval
+   * (AG-038) — which is a READ, and is why the `EXCLUDE` is still what decides
+   * (AG-037). The read can go stale between here and the insert; when it does,
+   * PostgreSQL refuses the block and the client gets
+   * `PRACTITIONER_SLOT_TAKEN`. What the read buys is the LIST, which a
+   * constraint rejection cannot give.
+   */
+  async blockAgenda(
+    request: BlockAgendaRequest,
+    requester: Requester,
+  ): Promise<AgendaEntryView> {
+    // AG-105, through the body of the request, exactly as booking does.
+    if (request.roomId !== undefined) {
+      checkRoomBelongsToSite(
+        await this.agenda.roomSiteOf(request.roomId),
+        request.siteId,
+      );
+    }
+
+    const blocking = await this.agenda.blockingAppointments({
+      siteId: request.siteId,
+      practitionerId: request.practitionerId,
+      startsAt: request.startsAt,
+      endsAt: request.endsAt,
+    });
+    if (blocking.length > 0) {
+      // AG-038. Identifiers and hours only: what may be said of somebody
+      // else's appointment in a message that reaches the logs (AG-074).
+      throw new BlockOverlapsAppointmentsError(blocking);
+    }
+
+    const entry = await this.agenda.blockAgenda({
+      siteId: request.siteId,
+      practitionerId: request.practitionerId,
+      roomId: request.roomId,
+      startsAt: request.startsAt,
+      endsAt: request.endsAt,
+      reason: request.reason ?? '',
+      createdById: requester.userId,
+    });
+
+    // AG-074. The site and the fact. A block names no patient by definition,
+    // and the practitioner is still not log material. Nothing interpolated.
+    this.logger.info(
+      { site_id: entry.siteId, action: 'AGENDA_BLOCKED' },
+      'agenda blocked',
+    );
+
+    return entry;
+  }
+
+  /**
+   * AG-114. Undoes a block: the interval comes back and the row stays.
+   *
+   * THE SAME PORT AS A TRANSITION, and that is the point rather than a
+   * shortcut. `transition` already reads inside the transaction, hands the row
+   * to a pure decision, re-arbitrates the write on what it read and writes the
+   * history row beside it (AG-004, AG-005) — everything AG-114 needs, and
+   * everything a second path would have to reimplement and eventually get
+   * wrong. What changes is only WHICH rule judges the row: `planBlockRelease`
+   * instead of the appointment table of SPEC §5.
+   *
+   * NOTHING IS DELETED HERE OR ANYWHERE. `releasedAt` is what both `EXCLUDE`
+   * constraints look at, so the hour is free the moment it is stamped, and the
+   * row keeps saying that this interval was closed and by whom.
+   */
+  async releaseBlock(
+    request: { siteId: string; entryId: string },
+    requester: Requester,
+  ): Promise<AgendaEntryView> {
+    // Taken ONCE and handed to the pure policy, like `book` and `transition`:
+    // the same instant stamps `cancelled_at` and `released_at`.
+    const now = new Date();
+
+    const entry = await this.agenda.transition(
+      {
+        siteId: request.siteId,
+        entryId: request.entryId,
+        // AG-004, AG-114: who undid it comes from the session, never from the
+        // request — «quién lo eliminó» is worth nothing if a client picks it.
+        changedById: requester.userId,
+      },
+      (read) => planBlockRelease(read, now),
+    );
+
+    // AG-074. The site and the fact. A block names no patient by definition.
+    this.logger.info(
+      { site_id: entry.siteId, action: 'AGENDA_BLOCK_RELEASED' },
+      'agenda block released',
+    );
+
+    return entry;
   }
 
   /**
@@ -627,9 +933,27 @@ export class AgendaService {
       throw new InvalidAgendaTransitionError(original.status, 'CANCELLED');
     }
 
+    /**
+     * AG-115. What the NEW entry will be, resolved once and used twice.
+     *
+     * THE FALLBACK IS THE REQUIREMENT'S «opcionales»: absent means the one it
+     * already had, so a reschedule that only moves the hour behaves exactly as
+     * it did before AG-115 existed. The patient is NOT in this list and has no
+     * fallback to write: it is copied by the adapter and no caller can name it.
+     */
+    const practitionerId = request.practitionerId ?? original.practitionerId;
+    const serviceTypeId = request.serviceTypeId ?? original.serviceTypeId;
+
+    /**
+     * AG-115's second half: «las mismas comprobaciones que a una reserva», and
+     * against the practitioner who will ATTEND. Judging the schedule of the
+     * doctor being left would place an appointment on a grid the booking route
+     * refuses — the exact reason these checks are shared with `book` instead of
+     * copied (see `checkIntervalIsBookable`).
+     */
     await this.checkIntervalIsBookable({
       siteId: request.siteId,
-      practitionerId: original.practitionerId,
+      practitionerId,
       patientId: original.patientId,
       // The new entry keeps the room of the old one, so it is the room whose
       // site has to be checked (AG-105) — even though nobody chose it now.
@@ -652,6 +976,8 @@ export class AgendaService {
         startsAt: request.startsAt,
         endsAt: request.endsAt,
         bookingChannel,
+        practitionerId,
+        serviceTypeId,
       },
       (read) => planReschedule({ entry: read, reason: request.reason, now }),
     );
@@ -779,8 +1105,52 @@ export class AgendaService {
     return this.agenda.listSites(scope);
   }
 
-  /** AG-108. Selector data: names, and deliberately nothing else. */
+  /**
+   * AG-108, AG-111. Selector data: names, their specialties, and deliberately
+   * nothing else.
+   */
   async schedulablePractitioners(siteId: string) {
     return this.agenda.listSchedulablePractitioners(siteId);
+  }
+
+  /**
+   * AG-080, AG-081. The inasistencia rate of a range, cut three ways.
+   *
+   * THE CLOCK IS READ ONCE, HERE. `noShowWindow` needs «now» to close the
+   * range at the last appointment that has actually had the chance to be
+   * missed (AG-081), and the domain owns no clock — two readings inside one
+   * request could straddle a minute and put the same appointment on both sides
+   * of the boundary.
+   *
+   * THE SCOPE IS A PARAMETER AND NOT A SITE ID: the route declares `'query'`
+   * because AG-080 asks for the breakdown BY SITE, and a metric rooted at
+   * `/sites/:siteId` could not answer that at all. Passing anything other than
+   * the caller's own resolved scope here is the bug this comment exists to
+   * prevent — it is the only thing standing between a receptionist of Norte
+   * and the figures of Sur (AG-071).
+   */
+  async noShowRate(request: NoShowRateRequest): Promise<NoShowRateResult> {
+    const window = noShowWindow(request.from, request.to, new Date());
+
+    const rows = await this.agenda.noShowCounts({
+      sites: request.sites,
+      from: window.from,
+      untilExclusive: window.untilExclusive,
+    });
+
+    return { ...summariseNoShow(rows), countedUntil: window.untilExclusive };
+  }
+
+  /**
+   * AG-112. The attention types of one specialty, for the booking dialog.
+   *
+   * THE SITE IS NOT A PARAMETER HERE, and that is not an oversight: a
+   * `service_type` has no site and never had one (SP-021), so there is nothing
+   * to filter by. The site lives in the ROUTE so the guard can settle the
+   * caller's scope before any pipe runs (AG-071), and passing it down would be
+   * pretending it narrows something.
+   */
+  async serviceTypesOf(specialtyId: string) {
+    return this.agenda.listServiceTypes(specialtyId);
   }
 }

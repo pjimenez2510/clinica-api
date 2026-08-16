@@ -44,10 +44,12 @@ Estado, deja de ser parámetro y pertenece a su módulo dueño.
 SPEC de `agenda` (AG-031 a AG-033, AG-090 a AG-098, AG-102). Ni los permisos
 (módulo `auth`), ni los catálogos clínicos CIE-10/CNMB (módulo `catalogs`).
 
-> **Dos requisitos de `agenda` se ADMINISTRAN desde aquí, y no se reescriben
-> aquí** (14-08-2026, al implementar E7). Hay una sola especificación para todo
-> el sistema: quien manda un feriado como laborable para una sede (**AG-092**) o
-> abre la reserva en el pasado (**AG-031**, **AG-094**) usa la superficie de
+> **Varios requisitos de `agenda` se ADMINISTRAN desde aquí, y no se reescriben
+> aquí** (14-08-2026, al implementar E7 y E4). Hay una sola especificación para
+> todo el sistema: quien manda un feriado como laborable para una sede
+> (**AG-092**), abre la reserva en el pasado (**AG-031**, **AG-094**) o decide
+> si la sede admite sobrecupos y qué permiso los autoriza (**AG-039**,
+> **AG-101**, **AG-094**) usa la superficie de
 > este módulo, porque este módulo es el dueño del catálogo de feriados y de la
 > fila de parámetros. Duplicarlos como `CF-###` sería tener dos textos que
 > describen lo mismo, y dos textos discrepan en semanas. Las pruebas de esa
@@ -77,12 +79,13 @@ Feriados editables y los parámetros de D-001 por sede, con sus defectos.
 que esta entrega añade es poder cambiarlos sin desplegar.
 **Prueba independiente:** cambiar la antelación máxima de una sede y comprobar
 que rige para reservas nuevas y no revalida ni anula lo ya reservado.
-**Cubre:** CF-060 a CF-066.
+**Cubre:** CF-060 a CF-067.
 
-**Solo servidor:** CF-063, CF-066. El primero es una afirmación sobre la
-SUPERFICIE de la API —qué no se expone— y se prueba en negativo contra el
+**Solo servidor:** CF-063, CF-066 y CF-067. El primero es una afirmación sobre
+la SUPERFICIE de la API —qué no se expone— y se prueba en negativo contra el
 contrato; el segundo es una escritura en la bitácora. Una pantalla no puede
-enseñar lo que no existe ni leer un registro que no le pertenece.
+enseñar lo que no existe ni leer un registro que no le pertenece. El tercero es
+alcance por sede sobre una escritura, y quien lo burla no usa la pantalla.
 
 ---
 
@@ -150,6 +153,49 @@ enseñar lo que no existe ni leer un registro que no le pertenece.
   > de lo que vigila— y ampliarla es una decisión sobre datos personales.
   > AG-097 pide lo mismo que este requisito y queda cubierto por lo mismo.
 
+- **CF-067** — CUANDO se cree, edite o borre un feriado, el sistema NO DEBERÁ
+  admitir un alcance fuera del alcance de quien llama —ni el que se fija ni el
+  que el feriado ya tenía—; y MIENTRAS el feriado sea **de todas las sedes**
+  (`siteId` nulo), sólo DEBERÁ admitirlo de quien tenga `settings:manage`
+  concedido a nivel de clínica. SI no se cumple, ENTONCES DEBERÁ rechazarlo con
+  `SITE_SCOPE_DENIED` sin escribir nada y sin nombrar ninguna sede.
+  > **D-023, cerrado el 15-08-2026.** Mismo agujero y misma causa que ST-047 y
+  > ST-048 en `staff`: las rutas declaran `global`, el alcance del feriado viaja
+  > **en el cuerpo**, y el guard sólo sabe leer `param:` y `query` porque corre
+  > antes de los pipes. Familia de **AG-105**. La declaración pasa a `'query'`,
+  > que es lo que significa «hay dimensión de sede y la estrecha el handler», y
+  > `route-authorisation.spec.ts` no podía verlo: comprueba que la declaración
+  > exista, no que sea la correcta.
+  >
+  > **POR QUÉ UN FERIADO NACIONAL EXIGE ALCANCE DE CLÍNICA.** Un feriado con
+  > `site_id IS NULL` no es «un feriado sin sede»: es el feriado que **todas**
+  > obedecen. La agenda lo lee al reservar y cierra el día (AG-015, AG-090), así
+  > que crear uno, renombrarlo o moverle la fecha **cierra o abre la agenda de
+  > cada sede de la clínica**, incluidas las que se abran después. Eso es un
+  > acto de alcance global, y el único alcance que lo contiene es tener el
+  > permiso concedido a nivel de clínica (`user_role_grant.site_id IS NULL`).
+  > Quien administra Norte no cierra la agenda de Sur ni por acción directa ni
+  > declarando nacional un feriado suyo.
+  >
+  > Borrar un nacional es la misma potencia con el signo cambiado: **abre** el
+  > día en todas las sedes. Por eso las tres escrituras se comprueban igual,
+  > incluida `DELETE`, que D-023 no enumeraba porque su alcance no viaja en el
+  > cuerpo sino en la fila — se lee y se comprueba.
+  >
+  > **Los dos extremos, como ST-047.** Editar mueve el alcance, y las dos
+  > puntas del movimiento cambian una agenda: pasar un feriado de nacional a
+  > Norte **reabre** el día en todas las demás, y pasar el de Norte a nacional
+  > lo cierra en todas. Ninguna de las dos la decide quien sólo administra una
+  > sede.
+  >
+  > **Lo que NO cambia.** El listado (`GET /holidays`) sigue siendo `global` y
+  > sin estrechar, y es deliberado: las filas con `site_id IS NULL` no
+  > pertenecen a ninguna sede y toda sede las obedece, así que filtrarlas por
+  > el alcance de quien llama escondería justo los feriados que le aplican.
+  > Leer el calendario no cierra la agenda de nadie. Las rutas de AG-092
+  > (`worked-by/{siteId}`) tampoco cambian: su sede está en la URL y el guard ya
+  > las resuelve con `param:siteId`.
+
 ---
 
 ## Códigos de error
@@ -158,6 +204,7 @@ enseñar lo que no existe ni leer un registro que no le pertenece.
 | --------------------------- | ---- | ---------------------------------------------------------- |
 | `HOLIDAY_DUPLICATE`         | 409  | Feriado repetido en fecha y alcance (CF-061)               |
 | `HOLIDAY_NOT_FOUND`         | 404  | El feriado indicado no existe                              |
+| `SITE_SCOPE_DENIED`         | 403  | Tocar un feriado de otra sede, o uno de todas sin alcance de clínica (CF-067, ADR-007) |
 | `PARAM_OUT_OF_RANGE`        | 422  | Parámetro fuera de rango, nombrándolo (CF-065)             |
 | `SITE_PARAMETERS_NOT_FOUND` | 404  | La sede indicada no tiene fila de parámetros (CF-062)      |
 
@@ -185,6 +232,29 @@ añadió `20260814131942_agenda_site_operating_rules` para AG-092 y AG-031.
 - **`allow_past_booking` es un parámetro de sede más** (AG-031, AG-094): un
   booleano, así que no tiene rango y CF-065 no lo toca. Nace en `false` porque
   abrir el pasado es una decisión de la sede.
+- **`overbooking_enabled` y `overbooking_permission`** (AG-039, AG-101, AG-094)
+  entraron el 14-08-2026 con `agenda_overbooking_authorisation`, que es la
+  entrega E4 de `agenda` — la que los LEE. Es lo que D-018 decidió: cada
+  parámetro entra con su entrega, no antes.
+  - El interruptor nace en **`true`**, al revés que `allow_past_booking` y a
+    propósito (D-005): el sobrecupo es la vía documentada de romper la rejilla,
+    y una sede que lo tuviera cerrado de fábrica resolvería las urgencias fuera
+    del registro. Lo que lo limita es `overbooking_cap`, que ya existía.
+  - **El permiso es el único CÓDIGO DE PERMISO que este esquema guarda como
+    dato**, y por eso se cierra por tres lados: `UNKNOWN_PERMISSION` (422) si
+    `permission.catalogue.ts` no lo declara —qué permisos existen es código—,
+    `PERMISSION_NOT_INSTALLED` (409) si esta instalación aún no lo ha sembrado,
+    y una clave foránea contra `permission (code)` para lo que llegue por otro
+    camino. Sin eso, una errata como `agenda:overbok` se guarda sin protesta y
+    la sede se queda sin poder autorizar ningún sobrecupo **sin que nada lo
+    diga**. Los dos códigos son los de AU-033 y viven en
+    `shared/domain/errors/permission.errors.ts` desde esta entrega: dos clases
+    respondiendo un mismo `code` son dos situaciones que el cliente no puede
+    distinguir.
+  - **CF-063 no los excluye**, y el segundo merece decirse porque parece que
+    debería: elegir QUIÉN autoriza una excepción no configura la excepción. El
+    `EXCLUDE` sigue en pie, la constancia del sobrecupo es un `CHECK`, y la
+    separación entre quien reserva y quien autoriza (AG-103) no es parámetro.
 - **`slot_atom_minutes` también** (D-021, CF-062), y sí tiene rango:
   `site_parameter_slot_atom_minutes_range` exige 5..60 en múltiplos de 5. Nació
   en la misma migración que la tabla —no hay producción y una migración se

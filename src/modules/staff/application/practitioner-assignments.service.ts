@@ -1,5 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 
+import type { Principal } from '../../../shared/authorisation/principal';
+import { assertSitesInScope } from '../../../shared/authorisation/site-scope';
 import { resolveDuration } from '../../../shared/domain/duration-resolution';
 import {
   ServiceTypeNotFoundError,
@@ -78,13 +80,35 @@ export class PractitionerAssignmentsService {
    * `staff.constraints.ts` turns its refusal into `SITE_NOT_FOUND` with the
    * field pointing at the list — one round trip instead of two, and no window
    * between the check and the write in which a site is deactivated.
+   *
+   * ST-047 IS CHECKED HERE AND NOT BY THE GUARD, and the reason is the same
+   * one AG-105 gives for the room: guards run before the pipes, so a site that
+   * travels in the BODY is unvalidated and unusable for an authorisation
+   * decision. The route declares `'query'` and the caller's own resolved scope
+   * — never anything taken from the request — is what narrows it.
+   *
+   * BOTH ENDS OF THE REPLACEMENT ARE JUDGED, and that is not belt and braces:
+   * a caller scoped to Norte sending `[Norte]` over a practitioner who also
+   * attends Sur would DROP the Sur row, and the practitioner would vanish from
+   * another city's list of bookable people (AG-108) without anybody there
+   * deciding it. What is being set and what is being replaced are both changes
+   * to a site's agenda, so both have to be inside the caller's scope.
    */
   async replaceSites(
     practitionerId: string,
     siteIds: readonly string[],
     requester: Requester,
+    caller: Principal,
   ): Promise<readonly PractitionerSiteView[]> {
     await this.requirePractitioner(practitionerId);
+
+    const current = await this.repository.listPractitionerSites(practitionerId);
+    // ST-047. Before the write and before any refusal that could describe the
+    // clinic's map: `SITE_SCOPE_DENIED` names the permission, never a site.
+    assertSitesInScope(caller, 'staff:manage', [
+      ...siteIds,
+      ...current.map((site) => site.siteId),
+    ]);
 
     await this.repository.replacePractitionerSites(practitionerId, siteIds);
     await this.trail.record('UPDATE', practitionerId, requester);

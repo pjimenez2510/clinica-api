@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -24,6 +25,7 @@ import type { AgendaEntryView } from './domain/agenda.repository';
 import type { AvailabilityView } from './domain/slot-availability';
 import {
   AgendaEntryDto,
+  BlockAgendaDto,
   AvailabilityDto,
   AvailabilityQueryDto,
   BookAppointmentDto,
@@ -206,6 +208,24 @@ export class AgendaController {
         bookingChannel: dto.bookingChannel,
         serviceTypeId: dto.serviceTypeId,
         reason: dto.reason,
+        /**
+         * AG-035, D-005. The exception is DECLARED or it does not exist: the
+         * three flat fields of the body become one object, and its absence is
+         * what tells the service to judge the booking by the grid.
+         *
+         * The schema guarantees the two fields are there when the flag is
+         * true, so the fallback is unreachable — it is written rather than
+         * asserted away because an overbooking with no authoriser is precisely
+         * the row `agenda_entry_overbooking_coherence` refuses, and the
+         * service answers for it with a sentence instead of a constraint name.
+         */
+        overbooking:
+          dto.overbooking === true
+            ? {
+                reason: dto.overbookingReason,
+                authorisedById: dto.overbookingAuthorisedById ?? '',
+              }
+            : undefined,
       },
       // AG-029: who booked it. From the session, never from the body — a
       // client must not be able to name somebody else as the author.
@@ -213,6 +233,84 @@ export class AgendaController {
     );
 
     return { ...toEntryResponse(booked.entry), warnings: [...booked.warnings] };
+  }
+
+  /**
+   * AG-037, AG-038. Closes a stretch of a practitioner's agenda.
+   *
+   * `agenda:write` AND NOT A PERMISSION OF ITS OWN: blocking an hour is the
+   * same power as booking it — both take a slot out of circulation — and
+   * inventing `agenda:block` would mean a permission no role carries and a
+   * screen nobody can reach. What DOES need its own permission is authorising
+   * an overbooking (`agenda:overbook`), because that one breaks a guarantee
+   * rather than using it.
+   *
+   * A ROUTE OF ITS OWN (`blocks`) AND NOT A `kind` ON `entries`: what it
+   * accepts has no patient, no channel and no service type, and a body where
+   * four fields are meaningless depending on a fifth is a body nobody can
+   * validate honestly.
+   */
+  @Post('blocks')
+  @RequirePermission('agenda:write', 'param:siteId')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Bloquear un intervalo de la agenda' })
+  @ApiCreatedResponse({ type: AgendaEntryDto })
+  async blockAgenda(
+    @Param('siteId', ParseUUIDPipe) siteId: string,
+    @Body() dto: BlockAgendaDto,
+  ): Promise<AgendaEntryResponse> {
+    const entry = await this.agenda.blockAgenda(
+      {
+        siteId,
+        practitionerId: dto.practitionerId,
+        roomId: dto.roomId,
+        // Both instants carry their offset — the schema refuses one that does
+        // not — so `Date` reads them without guessing a zone.
+        startsAt: new Date(dto.startsAt),
+        endsAt: new Date(dto.endsAt),
+        reason: dto.reason,
+      },
+      // Who closed the agenda, from the session and never from the body.
+      { userId: this.currentUser.requireUserId() },
+    );
+
+    return toEntryResponse(entry);
+  }
+
+  /**
+   * AG-114. Undoes a block created by mistake.
+   *
+   * A `DELETE` THAT DOES NOT DELETE, exactly like closing a schedule rule in
+   * `staff`: what it removes is the CLOSURE — `released_at` is stamped, both
+   * `EXCLUDE` constraints stop seeing the row, and the hour can be booked
+   * again. The row survives because it is the proof that the interval was
+   * closed, and AG-005 keeps the history row that says who undid it and when.
+   *
+   * 200 WITH THE ENTRY AND NOT 204: the screen repaints the block as released
+   * without a second call, and answering "no content" to something that leaves
+   * a visible row would be a lie of shape.
+   *
+   * A ROUTE UNDER `blocks` AND NOT A TRANSITION TO `CANCELLED`: the six
+   * targets of `POST entries/:id/status` all state something about a patient
+   * (AG-021), so a block must keep being refused there — which is what AG-040
+   * does through `assertTransition`.
+   */
+  @Delete('blocks/:entryId')
+  @RequirePermission('agenda:write', 'param:siteId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Deshacer un bloqueo y liberar el intervalo' })
+  @ApiOkResponse({ type: AgendaEntryDto })
+  async releaseBlock(
+    @Param('siteId', ParseUUIDPipe) siteId: string,
+    @Param('entryId', ParseUUIDPipe) entryId: string,
+  ): Promise<AgendaEntryResponse> {
+    const entry = await this.agenda.releaseBlock(
+      { siteId, entryId },
+      // AG-114: quién lo deshizo sale de la sesión, nunca del cuerpo.
+      { userId: this.currentUser.requireUserId() },
+    );
+
+    return toEntryResponse(entry);
   }
 
   /**
@@ -274,6 +372,10 @@ export class AgendaController {
         startsAt: new Date(dto.startsAt),
         endsAt: new Date(dto.endsAt),
         bookingChannel: dto.bookingChannel,
+        // AG-115. Absent means «el mismo», and the service is where that
+        // fallback lives: the transport does not invent the stored value.
+        practitionerId: dto.practitionerId,
+        serviceTypeId: dto.serviceTypeId,
         reason: dto.reason,
       },
       // AG-004, AG-029: the author comes from the session, never from the body.
@@ -334,6 +436,10 @@ function toEntryResponse(entry: AgendaEntryView) {
     endsAt: entry.endsAt.toISOString(),
     status: entry.status,
     blocksCalendar: entry.blocksCalendar,
+    // AG-036: the reason of the exception and who authorised it, on every row.
+    // NOT `reason`, which is the motive for the visit and stays out (AG-072).
+    overbookingReason: entry.overbookingReason,
+    overbookingAuthorisedById: entry.overbookingAuthorisedById,
     // AG-018: what tells a released entry apart from a live one.
     releasedAt: entry.releasedAt?.toISOString() ?? null,
     bookingChannel: entry.bookingChannel,

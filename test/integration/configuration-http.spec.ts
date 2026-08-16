@@ -125,6 +125,8 @@ describe('la configuración por HTTP', () => {
     email: string,
     roleCode: 'ADMIN' | 'RECEPCION',
     cedula: string,
+    /** CF-067: a grant confined to ONE site. Absent = clinic-wide. */
+    grantedSiteId?: string,
   ): Promise<string> {
     const user = await prisma.user.create({
       data: {
@@ -141,15 +143,20 @@ describe('la configuración por HTTP', () => {
         }),
       },
     });
-    if (roleCode === 'ADMIN') adminUserId = user.id;
+    // Only the clinic-wide administrator authors the audit assertions; a
+    // site-scoped one must not take the name from underneath them.
+    if (roleCode === 'ADMIN' && grantedSiteId === undefined) {
+      adminUserId = user.id;
+    }
 
     const role = await prisma.role.findUniqueOrThrow({
       where: { code: roleCode },
     });
     // GLOBAL grant (siteId null): configuring the clinic is not scoped to one
-    // of its sites, and this is how a director is hired.
+    // of its sites, and this is how a director is hired. CF-067 is what
+    // happens when the grant is NOT global.
     await prisma.userRoleGrant.create({
-      data: { userId: user.id, roleId: role.id },
+      data: { userId: user.id, roleId: role.id, siteId: grantedSiteId },
     });
 
     const response = await request(app.getHttpServer())
@@ -179,16 +186,16 @@ describe('la configuración por HTTP', () => {
       .set('Authorization', `Bearer ${auth}`)
       .send(body);
 
-  const patch = (path: string, body: Record<string, unknown>) =>
+  const patch = (path: string, body: Record<string, unknown>, auth = token) =>
     request(app.getHttpServer())
       .patch(`${base}${path}`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Authorization', `Bearer ${auth}`)
       .send(body);
 
-  const destroy = (path: string) =>
+  const destroy = (path: string, auth = token) =>
     request(app.getHttpServer())
       .delete(`${base}${path}`)
-      .set('Authorization', `Bearer ${token}`);
+      .set('Authorization', `Bearer ${auth}`);
 
   let siteSequence = 0;
   /** A site written straight to the table: the trigger must fire either way. */
@@ -552,6 +559,180 @@ describe('la configuración por HTTP', () => {
         ],
       ]);
     });
+
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     * CF-067 — EL FERIADO NACIONAL ES UN ACTO DE ALCANCE GLOBAL (D-023)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Las rutas de escritura declaraban `global` mientras el alcance del
+     * feriado viajaba en el CUERPO, donde el guard no mira. Y ese alcance no
+     * es una etiqueta: un feriado con `site_id IS NULL` CIERRA LA AGENDA DE
+     * TODAS LAS SEDES (AG-015, AG-090), incluidas las que se abran después.
+     * Crearlo, moverlo o borrarlo es por tanto un acto de clínica entera, y el
+     * único alcance que lo contiene es tener `settings:manage` concedido a
+     * nivel de clínica.
+     */
+    describe('el alcance por sede de los feriados (CF-067)', () => {
+      const SEDE_ADMIN_EMAIL = 'admin.feriados@clinica.ec';
+      /** Cédula sintética con dígito verificador calculado. */
+      const SEDE_ADMIN_CEDULA = '0904123353';
+
+      async function scopedTo(siteId: string): Promise<string> {
+        return signIn(SEDE_ADMIN_EMAIL, 'ADMIN', SEDE_ADMIN_CEDULA, siteId);
+      }
+
+      it('CF-067 quien sólo administra Norte no puede crear el feriado de Sur', async () => {
+        const norte = await createSite('Sede Norte');
+        const sur = await createSite('Sede Sur');
+        const scoped = await scopedTo(norte.id);
+
+        const response = await post(
+          '/holidays',
+          { date: '2026-08-10', name: 'Primer Grito', siteId: sur.id },
+          scoped,
+        ).expect(403);
+
+        expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+        expect(await prisma.holiday.count()).toBe(0);
+        // La negativa no confirma que ese identificador sea una sede.
+        expect(JSON.stringify(response.body)).not.toContain(sur.id);
+      });
+
+      it('CF-067 tampoco puede crear un feriado NACIONAL: cerraría la agenda de todas', async () => {
+        const norte = await createSite('Sede Norte');
+        await createSite('Sede Sur');
+        const scoped = await scopedTo(norte.id);
+
+        // Sin `siteId`, que es como se declara «todas las sedes» (CF-060).
+        const response = await post(
+          '/holidays',
+          { date: '2026-08-10', name: 'Primer Grito' },
+          scoped,
+        ).expect(403);
+
+        expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+        expect(await prisma.holiday.count()).toBe(0);
+      });
+
+      it('CF-067 tampoco puede EDITAR un feriado nacional, ni para renombrarlo', async () => {
+        const norte = await createSite('Sede Norte');
+        const created = await post('/holidays', { date: '2026-11-02', name: 'Difuntos' }).expect(201); // prettier-ignore
+        const { id } = created.body as HolidayBody;
+        const scoped = await scopedTo(norte.id);
+
+        const response = await patch(
+          `/holidays/${id}`,
+          { name: 'Día de los Difuntos' },
+          scoped,
+        ).expect(403);
+
+        expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+        const kept = await prisma.holiday.findUniqueOrThrow({ where: { id } });
+        expect(kept.name).toBe('Difuntos');
+      });
+
+      it('CF-067 tampoco puede ASCENDER su feriado a nacional: cerraría la agenda de las demás', async () => {
+        const norte = await createSite('Sede Norte');
+        const created = await post('/holidays', {
+          date: '2026-09-24',
+          name: 'Fiestas de Norte',
+          siteId: norte.id,
+        }).expect(201);
+        const { id } = created.body as HolidayBody;
+        const scoped = await scopedTo(norte.id);
+
+        const response = await patch(
+          `/holidays/${id}`,
+          { siteId: null },
+          scoped,
+        ).expect(403);
+
+        expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+        const kept = await prisma.holiday.findUniqueOrThrow({ where: { id } });
+        expect(kept.siteId).toBe(norte.id);
+      });
+
+      it('CF-067 tampoco puede DEGRADAR a su sede un feriado nacional: el otro extremo', async () => {
+        // El alcance que llega sí es suyo, así que mirar sólo eso dejaría pasar
+        // lo contrario del caso anterior: quedarse Norte el feriado y REABRIR
+        // ese día en todas las demás sedes, que es igual de global.
+        const norte = await createSite('Sede Norte');
+        await createSite('Sede Sur');
+        const created = await post('/holidays', { date: '2026-12-25', name: 'Navidad' }).expect(201); // prettier-ignore
+        const { id } = created.body as HolidayBody;
+        const scoped = await scopedTo(norte.id);
+
+        const response = await patch(
+          `/holidays/${id}`,
+          { siteId: norte.id },
+          scoped,
+        ).expect(403);
+
+        expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+        const kept = await prisma.holiday.findUniqueOrThrow({ where: { id } });
+        expect(kept.siteId).toBeNull();
+      });
+
+      it('CF-067 tampoco puede BORRAR un feriado nacional: lo abriría en todas las sedes', async () => {
+        const norte = await createSite('Sede Norte');
+        const created = await post('/holidays', { date: '2026-12-25', name: 'Navidad' }).expect(201); // prettier-ignore
+        const { id } = created.body as HolidayBody;
+        const scoped = await scopedTo(norte.id);
+
+        const response = await destroy(`/holidays/${id}`, scoped).expect(403);
+
+        expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+        expect(await prisma.holiday.count()).toBe(1);
+      });
+
+      it('CF-067 sí administra los feriados de SU sede: la comprobación no es un muro', async () => {
+        const norte = await createSite('Sede Norte');
+        const scoped = await scopedTo(norte.id);
+
+        const created = await post(
+          '/holidays',
+          { date: '2026-09-24', name: 'Fiestas de Norte', siteId: norte.id },
+          scoped,
+        ).expect(201);
+        const { id } = created.body as HolidayBody;
+
+        await patch(`/holidays/${id}`, { name: 'Fiestas de la ciudad' }, scoped).expect(200); // prettier-ignore
+        await destroy(`/holidays/${id}`, scoped).expect(204);
+
+        expect(await prisma.holiday.count()).toBe(0);
+      });
+
+      it('CF-067 y SIGUE LEYENDO el calendario entero, feriados nacionales incluidos', async () => {
+        // El listado no se estrecha a propósito: las filas con `site_id` nulo
+        // no son de ninguna sede y toda sede las obedece, así que filtrarlas
+        // por el alcance de quien llama escondería justo las que le aplican.
+        const norte = await createSite('Sede Norte');
+        await post('/holidays', { date: '2026-12-25', name: 'Navidad' }).expect(201); // prettier-ignore
+        const scoped = await scopedTo(norte.id);
+
+        const response = await get('/holidays?year=2026', scoped).expect(200);
+
+        expect((response.body as { items: HolidayBody[] }).items).toEqual([
+          expect.objectContaining({ name: 'Navidad', siteId: null }),
+        ]);
+      });
+
+      it('CF-067 la concesión de clínica sigue pudiéndolo todo: es la dirección', async () => {
+        const sur = await createSite('Sede Sur');
+
+        // `token` es la administradora con concesión global (`siteId` nulo).
+        const national = await post('/holidays', { date: '2026-12-25', name: 'Navidad' }).expect(201); // prettier-ignore
+        const surHoliday = await post('/holidays', {
+          date: '2026-09-24',
+          name: 'Fiestas de Sur',
+          siteId: sur.id,
+        }).expect(201);
+
+        await patch(`/holidays/${(national.body as HolidayBody).id}`, { name: 'Navidad ' }).expect(200); // prettier-ignore
+        await destroy(`/holidays/${(surHoliday.body as HolidayBody).id}`).expect(204); // prettier-ignore
+      });
+    });
   });
 
   describe('los parámetros de la sede', () => {
@@ -571,6 +752,11 @@ describe('la configuración por HTTP', () => {
         // AG-031, AG-094: el interruptor nace cerrado. Que una sede abra el
         // pasado es decisión suya; tenerlo abierto de fábrica sería nuestra.
         allowPastBooking: false,
+        // AG-039, AG-094 (E4, D-005): y el del sobrecupo nace ABIERTO, que es
+        // la decisión contraria y a propósito — es la vía documentada de la
+        // excepción, y lo que la limita es `overbookingCap`.
+        overbookingEnabled: true,
+        overbookingPermission: 'agenda:overbook',
         cancelledRetention: 'NEVER',
       });
     });
@@ -594,6 +780,8 @@ describe('la configuración por HTTP', () => {
         maxLeadDays: 180,
         overbookingCap: 2,
         allowPastBooking: false,
+        overbookingEnabled: true,
+        overbookingPermission: 'agenda:overbook',
         cancelledRetention: 'NEVER',
       });
     });
@@ -653,6 +841,105 @@ describe('la configuración por HTTP', () => {
       expect(stored.allowPastBooking).toBe(false);
       // Y no arrastró a los demás parámetros al pasar por encima.
       expect(stored.maxLeadDays).toBe(180);
+    });
+
+    it('AG-039, AG-094 apaga y vuelve a encender el sobrecupo desde la aplicación', async () => {
+      // Un parámetro que no se puede tocar desde la aplicación es el defecto
+      // que ya se corrigió una vez con `allowPastBooking` (REQ-145).
+      const site = await createSite();
+
+      const off = await put(`/sites/${site.id}/parameters`, {
+        overbookingEnabled: false,
+      }).expect(200);
+      expect(off.body).toMatchObject({ overbookingEnabled: false });
+
+      const on = await put(`/sites/${site.id}/parameters`, {
+        overbookingEnabled: true,
+      }).expect(200);
+      expect(on.body).toMatchObject({ overbookingEnabled: true });
+    });
+
+    it('AG-101 guarda el permiso que autoriza los sobrecupos y lo devuelve', async () => {
+      const site = await createSite();
+
+      const response = await put(`/sites/${site.id}/parameters`, {
+        overbookingPermission: 'settings:manage',
+      }).expect(200);
+
+      expect(response.body).toMatchObject({
+        overbookingPermission: 'settings:manage',
+      });
+      const stored = await prisma.siteParameter.findUniqueOrThrow({
+        where: { siteId: site.id },
+      });
+      expect(stored.overbookingPermission).toBe('settings:manage');
+    });
+
+    it('AG-101 rechaza con UNKNOWN_PERMISSION un permiso que el código no declara', async () => {
+      /**
+       * ES EL ÚNICO CÓDIGO DE PERMISO QUE ESTE ESQUEMA GUARDA COMO DATO. Con
+       * una errata dentro, la comprobación de AG-101 no la pasa NADIE: la sede
+       * se queda sin poder autorizar sobrecupos y ninguna pantalla lo dice.
+       * Qué permisos existen es código (AU-033), y el catálogo es la
+       * enumeración contra la que se valida.
+       */
+      const site = await createSite();
+
+      const response = await put(`/sites/${site.id}/parameters`, {
+        overbookingPermission: 'agenda:overbok',
+      }).expect(422);
+
+      const problem = response.body as Problem;
+      expect(problem.code).toBe('UNKNOWN_PERMISSION');
+      expect(problem.errors?.[0]).toMatchObject({
+        field: 'overbookingPermission',
+        code: 'UNKNOWN_PERMISSION',
+      });
+      expect(problem.errors?.[0]?.message).toContain('agenda:overbok');
+
+      // Y no se guardó: la sede sigue autorizando con lo que tenía.
+      const stored = await prisma.siteParameter.findUniqueOrThrow({
+        where: { siteId: site.id },
+      });
+      expect(stored.overbookingPermission).toBe('agenda:overbook');
+    });
+
+    it('AG-101 la BASE rechaza un permiso inventado aunque la escritura no pase por la aplicación', async () => {
+      // `trg_site_parameter_overbooking_permission`. Es un disparador y no una
+      // clave foránea a propósito: la fila la escribe el disparador de CF-062
+      // al crear la sede, y una FK ataría CREAR UNA SEDE a que el espejo
+      // `permission` ya estuviera sembrado.
+      const site = await createSite();
+
+      // El disparador levanta `foreign_key_violation`, que es lo que este
+      // valor incumple; Prisma lo traduce a su error de clave foránea sin
+      // nombre —de ahí que la aserción sea sobre el rechazo y sobre la fila,
+      // no sobre el texto—. Lo que importa es que la escritura NO ocurrió.
+      await expect(
+        prisma.siteParameter.update({
+          where: { siteId: site.id },
+          data: { overbookingPermission: 'agenda:overbok' },
+        }),
+      ).rejects.toThrow(/[Ff]oreign key/);
+
+      const stored = await prisma.siteParameter.findUniqueOrThrow({
+        where: { siteId: site.id },
+      });
+      expect(stored.overbookingPermission).toBe('agenda:overbook');
+    });
+
+    it('AG-101 la BASE deja pasar los guardados que no tocan el permiso', async () => {
+      // El disparador es `BEFORE UPDATE OF overbooking_permission` y con
+      // `WHEN … IS DISTINCT FROM …`: no corre en la mayoría de los guardados
+      // de esa pantalla, que son números.
+      const site = await createSite();
+
+      await expect(
+        prisma.siteParameter.update({
+          where: { siteId: site.id },
+          data: { maxLeadDays: 90 },
+        }),
+      ).resolves.toMatchObject({ maxLeadDays: 90 });
     });
 
     it('CF-065 rechaza un tope de sobrecupos fuera de rango nombrando el rango', async () => {
@@ -908,6 +1195,8 @@ describe('la configuración por HTTP', () => {
         overbookingCap: 2,
         slotAtomMinutes: 10,
         allowPastBooking: false,
+        overbookingEnabled: true,
+        overbookingPermission: 'agenda:overbook',
         cancelledRetention: 'NEVER',
       };
 
@@ -997,6 +1286,10 @@ describe('la configuración por HTTP', () => {
         'overbookingCap',
         'slotAtomMinutes',
         'allowPastBooking',
+        // E4 (AG-039, AG-101). Los dos del sobrecupo pasan la misma prueba:
+        // elegir QUIÉN autoriza una excepción no configura la excepción.
+        'overbookingEnabled',
+        'overbookingPermission',
         'cancelledRetention',
         'createdAt',
         'updatedAt',
@@ -1042,6 +1335,16 @@ describe('la configuración por HTTP', () => {
         'max_lead_days',
         'min_lead_minutes',
         'overbooking_cap',
+        // E4, AG-039 y AG-101. `overbooking_enabled` no apaga ninguna
+        // garantía: el `EXCLUDE` sigue en pie —el sobrecupo está exento de él
+        // por el mismo predicado `blocks_calendar` de siempre— y la constancia
+        // de cada excepción es un `CHECK`. `overbooking_permission` elige
+        // QUIÉN autoriza, que es política de la clínica (D-002), y no puede
+        // nombrar un permiso inventado: el catálogo del código lo rechaza con
+        // `UNKNOWN_PERMISSION` y `trg_site_parameter_overbooking_permission`
+        // lo rechaza en la base.
+        'overbooking_enabled',
+        'overbooking_permission',
         'site_id',
         // D-021. Es un parámetro legítimo por la misma razón que
         // `allow_past_booking`, y con más motivo: configurarlo no pierde

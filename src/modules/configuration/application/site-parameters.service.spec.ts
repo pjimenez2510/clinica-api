@@ -11,6 +11,10 @@ import type {
   SiteParameterView,
 } from '../domain/site-parameter.repository';
 import type { SiteParametersPatch } from '../domain/site-parameters';
+import {
+  PermissionNotInstalledError,
+  UnknownPermissionError,
+} from '../../../shared/domain/errors/permission.errors';
 
 import { ConfigurationAuditTrail } from './configuration-audit.trail';
 import { SiteParametersService } from './site-parameters.service';
@@ -35,6 +39,9 @@ const CURRENT: SiteParameterView = {
   overbookingCap: 2,
   slotAtomMinutes: 10,
   allowPastBooking: false,
+  // E4, D-005: el sobrecupo nace habilitado y lo autoriza `agenda:overbook`.
+  overbookingEnabled: true,
+  overbookingPermission: 'agenda:overbook',
   cancelledRetention: 'NEVER',
 };
 
@@ -48,6 +55,19 @@ class RepositoryDouble implements SiteParameterRepository {
   findAnswer: SiteParameterView | null = CURRENT;
   /** D-021: what the whole clinic has configured. */
   durationsAnswer: number[] = [10, 20, 30];
+  /**
+   * AU-033, AG-101: what the `permission` mirror of this installation has.
+   *
+   * The default is «todo lo que se pida está instalado», so the cases that are
+   * about the ranges or the trail do not die on a permission that the double
+   * simply never heard of.
+   */
+  installedAnswer: readonly string[] | null = null;
+
+  installedPermissions(codes: readonly string[]): Promise<readonly string[]> {
+    this.calls.push({ method: 'installedPermissions', args: [codes] });
+    return Promise.resolve(this.installedAnswer ?? codes);
+  }
 
   configuredDurations(): Promise<readonly number[]> {
     this.calls.push({ method: 'configuredDurations', args: [] });
@@ -185,6 +205,77 @@ describe('los parámetros de operación de una sede', () => {
     ]);
   });
 
+  it('AG-101 rechaza un permiso que el código no declara, y no escribe nada', async () => {
+    // El catálogo es la enumeración (AU-033). Guardado, `agenda:overbok` no lo
+    // tiene nadie: la sede se quedaría sin sobrecupos sin que nada lo dijera.
+    await expect(
+      service.update(
+        'site-1',
+        { overbookingPermission: 'agenda:overbok' },
+        REQUESTER,
+      ),
+    ).rejects.toBeInstanceOf(UnknownPermissionError);
+
+    expect(repository.calls.some((call) => call.method === 'update')).toBe(
+      false,
+    );
+  });
+
+  it('AG-101 distingue un permiso que el código no declara de uno que la base aún no tiene', async () => {
+    /**
+     * Los dos códigos dicen cosas distintas y llevan a acciones distintas:
+     * `UNKNOWN_PERMISSION` es «eso no existe, actualice la pantalla» y sería
+     * mentira aquí — el código SÍ lo declara y la instalación no lo ha
+     * sembrado, que se arregla con un comando en el servidor.
+     */
+    repository.installedAnswer = [];
+
+    const rejection = await service
+      .update(
+        'site-1',
+        { overbookingPermission: 'agenda:overbook:self' },
+        REQUESTER,
+      )
+      .catch((error: unknown) => error);
+
+    expect(rejection).toBeInstanceOf(PermissionNotInstalledError);
+    expect((rejection as PermissionNotInstalledError).code).toBe(
+      'PERMISSION_NOT_INSTALLED',
+    );
+    // La frase la lee quien está en la pantalla de parámetros, donde no hay
+    // ninguna casilla que desmarcar: le dice elegir otro y a quién avisar.
+    expect(
+      (rejection as PermissionNotInstalledError).fieldErrors?.[0]?.message,
+    ).toContain('agenda:overbook:self');
+    expect(repository.calls.some((call) => call.method === 'update')).toBe(
+      false,
+    );
+  });
+
+  it('AG-039, AG-101 guarda los dos parámetros del sobrecupo sin tocar los demás', async () => {
+    await service.update(
+      'site-1',
+      { overbookingEnabled: false, overbookingPermission: 'settings:manage' },
+      REQUESTER,
+    );
+
+    const write = repository.calls.find((call) => call.method === 'update');
+    expect(write?.args[1]).toEqual({
+      overbookingEnabled: false,
+      overbookingPermission: 'settings:manage',
+    });
+  });
+
+  it('AG-101 no pregunta por el catálogo cuando el permiso no se toca', async () => {
+    // Una lectura por cada guardado de las antelaciones es una consulta que no
+    // decide nada.
+    await service.update('site-1', { overbookingCap: 4 }, REQUESTER);
+
+    expect(
+      repository.calls.some((call) => call.method === 'installedPermissions'),
+    ).toBe(false);
+  });
+
   it('AG-097 registra desde qué valor cambió, no sólo hasta cuál', async () => {
     // D-017. The entry carries the domain view of the site's parameters —
     // four numbers and two flags, no PHI anywhere near it — and NOT the row
@@ -199,6 +290,8 @@ describe('los parámetros de operación de una sede', () => {
       overbookingCap: 2,
       slotAtomMinutes: 10,
       allowPastBooking: false,
+      overbookingEnabled: true,
+      overbookingPermission: 'agenda:overbook',
       cancelledRetention: 'NEVER',
     });
     expect(recorded[0]?.after).toMatchObject({ overbookingCap: 4 });

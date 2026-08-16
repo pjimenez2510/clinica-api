@@ -228,9 +228,19 @@ export class StaffController {
     return { items };
   }
 
-  /** ST-007. The body is the WHOLE list — replace-set, hence a PUT. */
+  /**
+   * ST-007, ST-047. The body is the WHOLE list — replace-set, hence a PUT.
+   *
+   * `'query'` AND NOT `'global'`, unlike every other route of this controller.
+   * The sites travel in the BODY, and guards run before the pipes, so this is
+   * the one route here that HAS a site dimension the guard cannot settle: the
+   * handler narrows instead, with the caller's own resolved scope. Declaring
+   * `global` said "this route has no site dimension", and that was false —
+   * whoever held `staff:manage` at one site could hand a practitioner to any
+   * other, where they then show up as bookable (AG-108).
+   */
   @Put('practitioners/:practitionerId/sites')
-  @RequirePermission('staff:manage', 'global')
+  @RequirePermission('staff:manage', 'query')
   @ApiOperation({ summary: 'Fijar las sedes donde atiende un profesional' })
   @ApiOkResponse({ type: PractitionerSiteListDto })
   async replaceSites(
@@ -242,6 +252,9 @@ export class StaffController {
       practitionerId,
       dto.siteIds,
       this.requester(req),
+      // ST-047: the scope comes from the session the guard resolved, never
+      // from the request — a body that could widen it would be no check.
+      this.currentUser.requirePrincipal(),
     );
     return { items };
   }

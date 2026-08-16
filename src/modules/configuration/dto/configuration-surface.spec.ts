@@ -82,10 +82,22 @@ describe('la superficie de configuración', () => {
       'maxLeadDays',
       'minLeadMinutes',
       'overbookingCap',
-      // D-021, el sexto: el turno de la agenda. Pertenece a la lista por lo
-      // mismo que `allowPastBooking` — configurarlo no deja de garantizar
-      // nada. Al revés: es lo que hace que AG-012 y AG-104 no puedan fallar
-      // por configuración, porque toda duración se guarda como múltiplo suyo.
+      /**
+       * E4, D-005: el interruptor del sobrecupo (AG-039) y el permiso que lo
+       * autoriza (AG-101). Pasan la misma prueba que los anteriores, y el
+       * segundo merece decirse porque parece que no: elegir QUÉ PERMISO
+       * autoriza una excepción no es configurar la excepción. El `EXCLUDE`
+       * sigue en pie, la constancia del sobrecupo es un CHECK de la base, y la
+       * separación entre quien reserva y quien autoriza (AG-103) no es
+       * parámetro ni va a serlo. Lo que la clínica elige es QUIÉN lleva la
+       * decisión, que es exactamente lo que D-002 dice que es política suya.
+       */
+      'overbookingEnabled',
+      'overbookingPermission',
+      // D-021: el turno de la agenda. Pertenece a la lista por lo mismo que
+      // `allowPastBooking` — configurarlo no deja de garantizar nada. Al
+      // revés: es lo que hace que AG-012 y AG-104 no puedan fallar por
+      // configuración, porque toda duración se guarda como múltiplo suyo.
       'slotAtomMinutes',
     ]);
   });

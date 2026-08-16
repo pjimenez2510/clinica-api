@@ -4,6 +4,7 @@ import { DOMAIN_ERROR_CODES } from '../../../shared/domain/errors/error-catalogu
 import {
   BusinessRuleViolation,
   ConflictError,
+  ForbiddenError,
   NotFoundError,
   ValidationError,
 } from '../../../shared/domain/errors/domain-error';
@@ -11,6 +12,7 @@ import {
 import {
   AgendaEntryHasEncounterError,
   AgendaEntryNotFoundError,
+  BlockOverlapsAppointmentsError,
   BookingInThePastError,
   BookingRetryExhaustedError,
   BookingTooFarError,
@@ -20,6 +22,11 @@ import {
   InvalidSlotDurationError,
   NoShowBeforeStartError,
   OutsideScheduleRuleError,
+  OverbookingLimitReachedError,
+  OverbookingNotAllowedError,
+  OverbookingNotAuthorisedError,
+  OverbookingReasonRequiredError,
+  SelfAuthorisationDeniedError,
   SlotNotAlignedError,
 } from './agenda.errors';
 import { parseClinicalDate } from '../../../shared/domain/clinic-time';
@@ -330,6 +337,124 @@ describe('the booking window errors (AG-031 to AG-033)', () => {
       'BOOKING_IN_THE_PAST',
       'BOOKING_TOO_SOON',
       'BOOKING_TOO_FAR',
+    ]) {
+      expect(DOMAIN_ERROR_CODES).toContain(code);
+    }
+  });
+
+  /* ─── E4: el sobrecupo y el bloqueo ─────────────────────────────────── */
+
+  it('AG-039 answers OVERBOOKING_NOT_ALLOWED without blaming a field', () => {
+    const error = new OverbookingNotAllowedError();
+
+    expect(error.code).toBe('OVERBOOKING_NOT_ALLOWED');
+    expect(error).toBeInstanceOf(BusinessRuleViolation); // 422
+    expect(error.userTitle).toBe(
+      'Esta sede no admite sobrecupos. Busque un cupo libre o pida que se habilite el sobrecupo para la sede',
+    );
+    // Nada del formulario está mal: lo que rechaza es un parámetro de sede, y
+    // señalar una casilla mandaría a recepción a corregir lo que ya está bien.
+    expect(error.fieldErrors).toBeUndefined();
+  });
+
+  it('AG-035 answers OVERBOOKING_REASON_REQUIRED on the field that is missing', () => {
+    const error = new OverbookingReasonRequiredError();
+
+    expect(error.code).toBe('OVERBOOKING_REASON_REQUIRED');
+    expect(error).toBeInstanceOf(ValidationError); // 422
+    expect(error.fieldErrors?.[0]?.field).toBe('overbookingReason');
+    expect(error.fieldErrors?.[0]?.message).toBe(
+      'Indique el motivo del sobrecupo',
+    );
+  });
+
+  it('AG-103 answers SELF_AUTHORISATION_DENIED telling whom to ask', () => {
+    const error = new SelfAuthorisationDeniedError();
+
+    expect(error.code).toBe('SELF_AUTHORISATION_DENIED');
+    expect(error).toBeInstanceOf(ForbiddenError); // 403
+    expect(error.userTitle).toBe(
+      'Un sobrecupo lo autoriza otra persona, no quien lo agenda. Indique al profesional que lo autoriza',
+    );
+  });
+
+  it('AG-101 answers OVERBOOKING_NOT_AUTHORISED naming the required permission', () => {
+    const error = new OverbookingNotAuthorisedError('agenda:overbook');
+
+    expect(error.code).toBe('OVERBOOKING_NOT_AUTHORISED');
+    expect(error).toBeInstanceOf(ForbiddenError); // 403
+    // El código es configuración de la sede — un administrador lo lee en la
+    // pantalla de parámetros—; lo que esa persona SÍ tiene no sale de aquí.
+    expect(error.params).toEqual({ requiredPermission: 'agenda:overbook' });
+    expect(error.fieldErrors?.[0]?.field).toBe('overbookingAuthorisedById');
+  });
+
+  it('AG-100 answers OVERBOOKING_LIMIT_REACHED stating the cap in force', () => {
+    const error = new OverbookingLimitReachedError(2);
+
+    expect(error.code).toBe('OVERBOOKING_LIMIT_REACHED');
+    expect(error).toBeInstanceOf(ConflictError); // 409
+    expect(error.params).toEqual({ cap: 2 });
+    expect(error.userTitle).toBe(
+      'Este profesional ya tiene los 2 sobrecupos que admite la sede ese día',
+    );
+    // Singular, porque «los 1 sobrecupos» es una frase que delata un sistema.
+    expect(new OverbookingLimitReachedError(1).userTitle).toBe(
+      'Este profesional ya tiene el sobrecupo que admite la sede ese día',
+    );
+  });
+
+  it('AG-038 answers BLOCK_OVERLAPS_APPOINTMENTS enumerating the appointments', () => {
+    const error = new BlockOverlapsAppointmentsError([
+      { id: 'entry-a', startsAt: new Date('2026-09-14T13:00:00Z') },
+      { id: 'entry-b', startsAt: new Date('2026-09-14T13:40:00Z') },
+    ]);
+
+    expect(error.code).toBe('BLOCK_OVERLAPS_APPOINTMENTS');
+    expect(error).toBeInstanceOf(ConflictError); // 409
+    expect(error.params).toEqual({
+      blockingCount: 2,
+      blockingEntryIds: 'entry-a,entry-b',
+    });
+    // Las horas en hora de pared ecuatoriana (AG-001), que es lo que se lee.
+    expect(error.fieldErrors?.[0]?.message).toBe(
+      'Hay 2 citas dentro de ese intervalo: 08:00, 08:40',
+    );
+  });
+
+  it('AG-038 names at most five hours and says how many more there are', () => {
+    // Un bloqueo de una semana de vacaciones cruza cuarenta citas, y una frase
+    // con cuarenta horas dentro no la lee nadie. Los identificadores de todas
+    // siguen en `params` para el cliente que quiera listarlas.
+    const many = Array.from({ length: 7 }, (_, index) => ({
+      id: `entry-${index}`,
+      startsAt: new Date(Date.UTC(2026, 8, 14, 13 + index, 0)),
+    }));
+
+    const error = new BlockOverlapsAppointmentsError(many);
+
+    expect(error.fieldErrors?.[0]?.message).toContain('y 2 más');
+    expect(error.params.blockingCount).toBe(7);
+  });
+
+  it('AG-038 says «una cita» in the singular', () => {
+    const error = new BlockOverlapsAppointmentsError([
+      { id: 'entry-a', startsAt: new Date('2026-09-14T13:00:00Z') },
+    ]);
+
+    expect(error.fieldErrors?.[0]?.message).toBe(
+      'Hay una cita a las 08:00 dentro de ese intervalo',
+    );
+  });
+
+  it('AG-035, AG-038 register the six E4 codes in the frozen public catalogue', () => {
+    for (const code of [
+      'OVERBOOKING_NOT_ALLOWED',
+      'OVERBOOKING_REASON_REQUIRED',
+      'OVERBOOKING_LIMIT_REACHED',
+      'OVERBOOKING_NOT_AUTHORISED',
+      'SELF_AUTHORISATION_DENIED',
+      'BLOCK_OVERLAPS_APPOINTMENTS',
     ]) {
       expect(DOMAIN_ERROR_CODES).toContain(code);
     }

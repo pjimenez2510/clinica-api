@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { PrismaClient } from '@prisma/client';
+import { describe, expect, inject, it } from 'vitest';
+
+import { createPgAdapter } from '../../src/shared/infrastructure/prisma/pg-adapter';
 
 import { useDatabase } from './setup/database';
 import {
@@ -122,5 +125,97 @@ describe('clinical date is resolved in Ecuador', () => {
     });
 
     expect(diagnosis.id).toBeTruthy();
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * EL INSTANTE QUE SE GUARDA NO PUEDE DEPENDER DE CÓMO ESTÉ CONFIGURADO EL
+ * SERVIDOR
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Lo encontró la prueba de la métrica de inasistencia (E6) preguntando dos
+ * veces por el mismo rango bajo dos husos de sesión distintos y recibiendo dos
+ * respuestas.
+ *
+ * LA CAUSA ESTÁ EN EL DRIVER, no en este código: `@prisma/adapter-pg`
+ * serializa un `Date` con las partes UTC y SIN sufijo de zona
+ * (`'2026-06-30 05:00:00'`), y PostgreSQL resuelve un literal así con el
+ * `TimeZone` DE LA SESIÓN. Toda la pila daba por supuesto que la sesión es
+ * UTC, y lo era por casualidad —el contenedor y la configuración por defecto
+ * lo son—. Un `postgresql.conf` con otra zona, un `ALTER DATABASE … SET
+ * TimeZone` o un proveedor gestionado con su propio valor bastan para mover
+ * TODOS los instantes clínicos de la base, en silencio y sin error.
+ *
+ * `createPgAdapter` lo fija en el arranque de cada conexión. Esta prueba pone
+ * la base en el peor caso posible y abre una conexión nueva, que es la forma
+ * exacta en que el fallo llega a producción.
+ */
+describe('el instante almacenado es independiente del huso del servidor', () => {
+  const db = useDatabase();
+
+  /** 19:30 del 29 de junio en Guayaquil. La tarde, que es donde duele. */
+  const EVENING = new Date('2026-06-30T00:30:00Z');
+
+  it('AG-001 guarda y compara el mismo instante con la base en otro huso', async () => {
+    const prisma = db();
+    const site = await createSite(prisma);
+    const practitioner = await createPractitioner(prisma);
+    const patient = await createPatient(prisma);
+
+    // La URL del contenedor de `global-setup.ts`, y el nombre de la base leído
+    // de ella: escribirlo a mano dejaría la prueba en verde contra otra base.
+    const databaseUrl = inject('databaseUrl');
+    const databaseName = new URL(databaseUrl).pathname.slice(1);
+
+    // El peor caso: la zona por defecto de la BASE, que toda conexión nueva
+    // hereda. Un `SET` suelto solo tocaría una conexión del pool.
+    await prisma.$executeRawUnsafe(
+      `ALTER DATABASE ${databaseName} SET TimeZone = 'Asia/Tokyo'`,
+    );
+
+    // Una conexión NUEVA, construida como la construye la aplicación.
+    const hostile = new PrismaClient({ adapter: createPgAdapter(databaseUrl) });
+    try {
+      await hostile.$connect();
+
+      const entry = await hostile.agendaEntry.create({
+        data: {
+          kind: 'APPOINTMENT',
+          siteId: site.id,
+          practitionerId: practitioner.id,
+          patientId: patient.id,
+          startsAt: EVENING,
+          endsAt: new Date(EVENING.getTime() + 20 * 60_000),
+          bookingChannel: 'PHONE',
+        },
+      });
+
+      // Ida: el instante escrito es el instante que se pidió escribir.
+      expect(entry.startsAt.toISOString()).toBe(EVENING.toISOString());
+
+      // Y vuelta: una comparación de rango encuentra la fila donde debe. Sin
+      // fijar la zona, la ventana viajaba nueve horas y la cita caía fuera.
+      const inside = await hostile.agendaEntry.count({
+        where: {
+          startsAt: {
+            gte: new Date('2026-06-01T05:00:00Z'),
+            lt: new Date('2026-06-30T05:00:00Z'),
+          },
+        },
+      });
+      expect(inside).toBe(1);
+
+      // Y el texto que la base guarda de verdad, leído sin intermediarios.
+      const [stored] = await hostile.$queryRaw<{ utc: string }[]>`
+        SELECT (starts_at AT TIME ZONE 'UTC')::text AS utc
+        FROM agenda_entry WHERE id = ${entry.id}::uuid`;
+      expect(stored?.utc).toBe('2026-06-30 00:30:00');
+    } finally {
+      await hostile.$disconnect();
+      await prisma.$executeRawUnsafe(
+        `ALTER DATABASE ${databaseName} RESET TimeZone`,
+      );
+    }
   });
 });

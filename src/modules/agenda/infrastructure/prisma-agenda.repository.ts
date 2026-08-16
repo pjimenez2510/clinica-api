@@ -16,7 +16,11 @@ import {
 import type {
   AgendaEntryView,
   AgendaRepository,
+  AgendaServiceType,
   AgendaSite,
+  AuthoriserPermissionsQuery,
+  BlockingAppointment,
+  BlockingAppointmentsQuery,
   SchedulablePractitioner,
   SiteScopeFilter,
   AvailabilityContext,
@@ -25,7 +29,11 @@ import type {
   DurationSourcesQuery,
   EntryQuery,
   HolidayQuery,
+  NewBlock,
   NewBooking,
+  NoShowCountRow,
+  NoShowCountsQuery,
+  OverbookingCountQuery,
   PatientBookingStatus,
   RescheduleOutcome,
   RescheduledBooking,
@@ -42,6 +50,7 @@ import {
   WallClockTime,
 } from '../../../shared/domain/clinic-time';
 import { type Holiday, yearOf } from '../domain/holiday-calendar';
+import { checkBookingChannel } from '../domain/booking-policy';
 import type {
   AgendaOccupancy,
   ScheduleRule,
@@ -84,6 +93,12 @@ const ENTRY_SELECT = {
   endsAt: true,
   status: true,
   blocksCalendar: true,
+  // AG-035, AG-036. The two columns of the deliberate exception. They ARE
+  // served — unlike `reason` — because they are administrative: why the grid
+  // was broken and who said it could be. That is the whole point of them being
+  // separate columns.
+  overbookingReason: true,
+  overbookingAuthorisedById: true,
   releasedAt: true,
   bookingChannel: true,
   serviceTypeId: true,
@@ -163,9 +178,16 @@ export class PrismaAgendaRepository implements AgendaRepository {
   }
 
   /**
-   * AG-108. The join to `user` exists only for the display name: nothing else
-   * of the account — email, cedula, MFA state — is selected, so nothing else
-   * can leak into the dropdown or a screenshot of it.
+   * AG-108, AG-111. The join to `user` exists only for the display name:
+   * nothing else of the account — email, cedula, MFA state — is selected, so
+   * nothing else can leak into the dropdown or a screenshot of it.
+   *
+   * The join to `specialty` is the same shape and the same discipline: the id,
+   * the name and the `is_primary` of the link row, and not one column more.
+   * `WHERE specialty.active` is SP-004 — a deactivated specialty is not
+   * offered for new appointments — and it filters the CATALOGUE row without
+   * touching `practitioner_specialty`, so reactivating it brings the
+   * assignment back exactly as it was.
    */
   async listSchedulablePractitioners(
     siteId: string,
@@ -180,6 +202,13 @@ export class PrismaAgendaRepository implements AgendaRepository {
         id: true,
         userId: true,
         user: { select: { firstName: true, lastName: true } },
+        specialties: {
+          where: { specialty: { active: true } },
+          select: {
+            isPrimary: true,
+            specialty: { select: { id: true, name: true } },
+          },
+        },
       },
     });
     return rows
@@ -189,8 +218,133 @@ export class PrismaAgendaRepository implements AgendaRepository {
         // PRACTITIONER, and this is the only place the two ids meet.
         userId: row.userId,
         fullName: `${row.user.firstName} ${row.user.lastName}`.trim(),
+        /**
+         * PRIMARY FIRST, then by name. The order is the server's because the
+         * dialog preselects the primary one (SP-005, SP-008), and a screen
+         * that had to re-sort what the server already knows would eventually
+         * sort it differently from the next screen.
+         */
+        specialties: row.specialties
+          .map((link) => ({
+            id: link.specialty.id,
+            name: link.specialty.name,
+            isPrimary: link.isPrimary,
+          }))
+          .sort(
+            (a, b) =>
+              Number(b.isPrimary) - Number(a.isPrimary) ||
+              a.name.localeCompare(b.name, 'es'),
+          ),
       }))
       .sort((a, b) => a.fullName.localeCompare(b.fullName, 'es'));
+  }
+
+  /**
+   * AG-112. The attention types the booking dialog offers, once a specialty is
+   * chosen.
+   *
+   * ACTIVE ONLY, and no existence check on the specialty: an unknown id and a
+   * specialty with no active types are the same answer to this question — an
+   * empty dropdown — and a 404 here would make the screen distinguish a case
+   * it cannot act on either way. The ids it can send come from AG-111.
+   */
+  async listServiceTypes(specialtyId: string): Promise<AgendaServiceType[]> {
+    return this.prisma.serviceType.findMany({
+      where: { specialtyId, active: true },
+      select: { id: true, name: true, durationMinutes: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  /**
+   * AG-080. The cube: how many appointments of each site · practitioner ·
+   * channel · status started inside the window.
+   *
+   * COUNTED HERE AND DECIDED THERE. There is no status filter in this query
+   * and there must not be one: AG-081 says which statuses count, it says it in
+   * `summariseNoShow`, and a `WHERE status <> 'CANCELLED'` added here would
+   * silently become the real rule while the test that names the requirement
+   * kept passing over a cube that no longer contained anything to exclude.
+   *
+   * THE WINDOW IS ALREADY INSTANTS (AG-001): `starts_at` is `timestamptz` and
+   * the two bounds were resolved in Ecuador by the domain, so nothing in this
+   * file casts a date and nothing depends on the session's `TimeZone`.
+   *
+   * `groupBy` AND NOT A `findMany`: what comes back is bounded by the clinic's
+   * shape — sites × practitioners × 4 channels × 8 statuses — and not by how
+   * many appointments it has taken. A year of them and an afternoon of them
+   * cross the wire identically.
+   */
+  async noShowCounts(
+    query: NoShowCountsQuery,
+  ): Promise<readonly NoShowCountRow[]> {
+    // An empty window is what `noShowWindow` answers for a range entirely in
+    // the future (AG-081). Asking anyway would be a round trip for a set the
+    // half-open bounds already prove is empty.
+    if (query.untilExclusive.getTime() <= query.from.getTime()) return [];
+
+    const cells = await this.prisma.agendaEntry.groupBy({
+      by: ['siteId', 'practitionerId', 'bookingChannel', 'status'],
+      where: {
+        // A block is neither attended nor missed: it has no patient and no
+        // channel, so it has no cell here (AG-021, AG-034).
+        kind: 'APPOINTMENT',
+        startsAt: { gte: query.from, lt: query.untilExclusive },
+        ...(query.sites === 'all' ? {} : { siteId: { in: [...query.sites] } }),
+      },
+      _count: { _all: true },
+    });
+
+    // The labels the report is read by, for the ids that actually appeared.
+    // Two small lookups rather than a join, because `groupBy` cannot carry a
+    // relation — and resolving them on the client would be a second answer
+    // that can disagree with the first.
+    const [sites, practitioners] = await Promise.all([
+      this.prisma.site.findMany({
+        where: { id: { in: [...new Set(cells.map((cell) => cell.siteId))] } },
+        select: { id: true, name: true },
+      }),
+      this.prisma.practitioner.findMany({
+        where: {
+          id: { in: [...new Set(cells.map((cell) => cell.practitionerId))] },
+        },
+        // The display name and NOTHING else of the account: not the email, not
+        // the cedula, exactly like the booking selector (AG-108).
+        select: { id: true, user: { select: { firstName: true, lastName: true } } }, // prettier-ignore
+      }),
+    ]);
+
+    const siteName = new Map(sites.map((site) => [site.id, site.name]));
+    const practitionerName = new Map(
+      practitioners.map((row) => [
+        row.id,
+        `${row.user.firstName} ${row.user.lastName}`.trim(),
+      ]),
+    );
+
+    return cells.map((cell) => ({
+      siteId: cell.siteId,
+      siteName: siteName.get(cell.siteId) ?? '',
+      practitionerId: cell.practitionerId,
+      practitionerName: practitionerName.get(cell.practitionerId) ?? '',
+      /**
+       * `checkBookingChannel` AND NOT A SILENT `filter`, and the difference is
+       * the whole reason this line reads like this.
+       *
+       * `booking_channel` is NOT NULL for an appointment —
+       * `agenda_entry_booking_channel_coherence` — so reaching the refusal
+       * means that CHECK is gone or the `kind` filter above stopped working.
+       * Dropping such a row instead would UNDER-COUNT the metric with no
+       * signal anywhere: the clinic would read a rate computed over fewer
+       * appointments than it had, and nothing would say so. It also makes the
+       * `kind` filter load-bearing rather than a second, untested copy of the
+       * same exclusion — a block reaching here now fails loudly, which is what
+       * lets a test prove blocks are excluded on purpose.
+       */
+      bookingChannel: checkBookingChannel(cell.bookingChannel),
+      status: cell.status,
+      count: cell._count._all,
+    }));
   }
 
   /**
@@ -346,11 +500,11 @@ export class PrismaAgendaRepository implements AgendaRepository {
   /**
    * AG-094, AG-095. The operating parameters of the site as they are STORED.
    *
-   * FOUR COLUMNS AND NOT THE WHOLE ROW. `overbooking_cap` belongs to E4 and
-   * `cancelled_retention` to a listing filter that does not exist yet
-   * (AG-102): reading them here would put values into the booking path that
-   * nothing consumes, and a value nobody consumes is a value nobody notices
-   * has gone wrong.
+   * SEVEN COLUMNS AND NOT THE WHOLE ROW. The three of the overbooking joined
+   * on 14-08-2026 with E4, which is the delivery that reads them (D-018).
+   * `cancelled_retention` stays out: the listing filter of AG-102 does not
+   * exist yet, and a value nobody consumes is a value nobody notices has gone
+   * wrong.
    *
    * `null` when the site has no row. A trigger writes one for every site
    * (CF-062), so in a healthy database this never happens — which is exactly
@@ -370,6 +524,14 @@ export class PrismaAgendaRepository implements AgendaRepository {
         // D-021. The grid, read on the same trip: both availability and
         // booking need it, and it is a site parameter like the other three.
         slotAtomMinutes: true,
+        // E4 (AG-039, AG-100, AG-101). Read on the SAME trip as the window,
+        // even though only a declared overbooking uses them: they are three
+        // columns of a row that is already being fetched by primary key, and a
+        // second round trip on the path of an urgency would be paying latency
+        // for nothing.
+        overbookingEnabled: true,
+        overbookingCap: true,
+        overbookingPermission: true,
       },
     });
   }
@@ -618,6 +780,22 @@ export class PrismaAgendaRepository implements AgendaRepository {
               serviceTypeId: booking.serviceTypeId,
               reason: booking.reason,
               createdById: booking.createdById,
+              /**
+               * AG-035, AG-036, D-005. The three fields of an overbooking move
+               * TOGETHER: `blocks_calendar = false` is what takes the row out
+               * of the `EXCLUDE` predicate, and the reason and the authoriser
+               * are what stop that from being an exception with no record.
+               * `agenda_entry_overbooking_coherence` refuses any other
+               * combination, so this is the only place that can compose one.
+               */
+              ...(booking.overbooking === undefined
+                ? {}
+                : {
+                    blocksCalendar: false,
+                    overbookingReason: booking.overbooking.reason,
+                    overbookingAuthorisedById:
+                      booking.overbooking.authorisedById,
+                  }),
             },
             select: ENTRY_SELECT,
           }),
@@ -651,6 +829,176 @@ export class PrismaAgendaRepository implements AgendaRepository {
       );
       throw new BookingRetryExhaustedError(BOOKING_ATTEMPTS);
     }
+  }
+
+  /**
+   * AG-037. A block of agenda, arbitrated by the very same constraints.
+   *
+   * THERE IS NO OVERLAP CHECK HERE EITHER, and that is the requirement rather
+   * than an omission: the predicate of the three `EXCLUDE USING gist` is
+   * `released_at IS NULL AND blocks_calendar` and says nothing about `kind`,
+   * so a block competes with appointments and with other blocks exactly as an
+   * appointment does — since `20260806022956`, before this method existed. The
+   * enumeration AG-038 asks for is a READ the service does first; this write
+   * is what makes the guarantee real when that read goes stale.
+   *
+   * `status: 'BLOCKED'` is the one state AG-046 reserves for blocks. It is set
+   * at creation because nothing can move a block afterwards — `assertTransition`
+   * refuses every target for `kind = BLOCK`, since all six of them state
+   * something about a patient a block does not have.
+   *
+   * THE REASON GOES INTO `reason` AND IS NOT SERVED BACK. It is the same
+   * column the day's listing deliberately never reads (AG-072, AG-074): the
+   * line this module draws is by COLUMN and not by row, because a serialiser
+   * that decided per row would be one condition away from serving a patient's
+   * motive. What a block needs on screen is its interval, and that travels.
+   */
+  async blockAgenda(block: NewBlock): Promise<AgendaEntryView> {
+    try {
+      const row = await withSerialisationRetry(
+        () =>
+          this.prisma.agendaEntry.create({
+            data: {
+              kind: 'BLOCK',
+              status: 'BLOCKED',
+              siteId: block.siteId,
+              practitionerId: block.practitionerId,
+              roomId: block.roomId,
+              startsAt: block.startsAt,
+              endsAt: block.endsAt,
+              reason: block.reason,
+              createdById: block.createdById,
+            },
+            select: ENTRY_SELECT,
+          }),
+        {
+          attempts: BOOKING_ATTEMPTS,
+          onRetry: (attempt) =>
+            this.logger.warn(
+              { retries: attempt, error_code: 'SERIALISATION_RETRY' },
+              'block retried after a serialisation failure',
+            ),
+        },
+      );
+
+      return toEntryView(row);
+    } catch (error) {
+      if (!isSerialisationFailure(error)) throw error;
+
+      this.logger.error(
+        { error_code: 'BOOKING_RETRY_EXHAUSTED', retries: BOOKING_ATTEMPTS },
+        'block abandoned after exhausting serialisation retries',
+      );
+      throw new BookingRetryExhaustedError(BOOKING_ATTEMPTS);
+    }
+  }
+
+  /**
+   * AG-100. How many overbookings this practitioner already holds that day.
+   *
+   * BY THE INSTANT IT STARTS, and not by overlap — which is the opposite
+   * choice to the daily agenda two methods above, and deliberate. The cap is
+   * about how many exceptions were made ON a date; an overbooking belongs to
+   * the date it begins, and matching by overlap would count one appointment
+   * against two days when it happens to straddle a midnight nobody works.
+   *
+   * The bounds are instants the service resolved in `America/Guayaquil`
+   * (AG-001). No `::date` cast anywhere: that one uses the session's zone, and
+   * a 19:30 overbooking would count against the following day — at which point
+   * the cap stops limiting the evenings, which is exactly when it is abused.
+   *
+   * RELEASED ONES DO NOT COUNT. A cancelled or no-show overbooking gave its
+   * exception back; spending a cap on it would refuse a real urgency because
+   * of an appointment nobody is attending.
+   */
+  async overbookingCount(query: OverbookingCountQuery): Promise<number> {
+    return this.prisma.agendaEntry.count({
+      where: {
+        siteId: query.siteId,
+        practitionerId: query.practitionerId,
+        blocksCalendar: false,
+        releasedAt: null,
+        startsAt: { gte: query.from, lt: query.untilExclusive },
+      },
+    });
+  }
+
+  /**
+   * AG-101. What the NAMED AUTHORISER may do at this site.
+   *
+   * IT ASKS THE SAME TABLES THE REQUEST GUARD ASKS, and it asks them of
+   * SOMEBODY ELSE — which is why it cannot reuse the principal in CLS: that
+   * one is whoever is calling, and the whole point of AG-103 is that the two
+   * are different people. No module imports another, so the agenda declares
+   * the question in its port and answers it here, the same route AG-027 took
+   * for the patient's merge state.
+   *
+   * REVOKED GRANTS AND INACTIVE ROLES ARE FILTERED IN THE QUERY, never
+   * afterwards: a filter in application code is one somebody can forget, and
+   * the consequence here is a revoked role still authorising exceptions to the
+   * strongest guarantee of the module. An INACTIVE ACCOUNT holds nothing
+   * either — a doctor who left the clinic cannot be named as the authoriser of
+   * today's urgency.
+   *
+   * `siteId: null` IS A GRANT EVERYWHERE (AU-011). The clinic director is not
+   * hired at one site, and dropping those grants here would refuse the very
+   * person D-005 names as the third case.
+   */
+  async authoriserPermissions(
+    query: AuthoriserPermissionsQuery,
+  ): Promise<readonly string[]> {
+    const grants = await this.prisma.userRoleGrant.findMany({
+      where: {
+        userId: query.userId,
+        revokedAt: null,
+        user: { active: true },
+        role: { active: true },
+        OR: [{ siteId: query.siteId }, { siteId: null }],
+      },
+      select: { role: { select: { permissions: { select: { permissionCode: true } } } } }, // prettier-ignore
+    });
+
+    return [
+      ...new Set(
+        grants.flatMap((grant) =>
+          grant.role.permissions.map((held) => held.permissionCode),
+        ),
+      ),
+    ];
+  }
+
+  /**
+   * AG-038. The appointments standing inside the interval about to be blocked.
+   *
+   * APPOINTMENTS ONLY (`kind = APPOINTMENT`), because that is what the
+   * requirement enumerates. A block that lands on another block is refused by
+   * `agenda_entry_no_practitioner_overlap` with its own message; listing it
+   * here would answer «hay 1 cita» about a row that is not one.
+   *
+   * A TRUE OVERLAP, `starts_at < until AND ends_at > from`: an appointment that
+   * began before the interval and runs into it is just as much in the way as
+   * one that starts inside it.
+   *
+   * THE SELECT IS THREE COLUMNS. The name AG-109 grants to the day's listing
+   * has no business in an error that reaches logs (AG-074, SC-006), and a
+   * value that is never loaded cannot leak into one.
+   */
+  async blockingAppointments(
+    query: BlockingAppointmentsQuery,
+  ): Promise<readonly BlockingAppointment[]> {
+    return this.prisma.agendaEntry.findMany({
+      where: {
+        siteId: query.siteId,
+        practitionerId: query.practitionerId,
+        kind: 'APPOINTMENT',
+        blocksCalendar: true,
+        releasedAt: null,
+        startsAt: { lt: query.endsAt },
+        endsAt: { gt: query.startsAt },
+      },
+      orderBy: [{ startsAt: 'asc' }, { id: 'asc' }],
+      select: { id: true, startsAt: true, endsAt: true },
+    });
   }
 
   /**
@@ -739,8 +1087,11 @@ export class PrismaAgendaRepository implements AgendaRepository {
             await applyStatusChange(tx, command, decide);
 
             /**
-             * THE NEW ENTRY IS THE OLD ONE MOVED, so everything but the
-             * interval and the channel is copied from the stored row.
+             * WHAT THE NEW ENTRY INHERITS, AND IT IS EXACTLY WHAT NOBODY MAY
+             * CHOOSE (AG-115). The patient, the room and the motive of the
+             * visit are read from the stored row here, inside the transaction:
+             * there is no field for them anywhere above, so a reschedule can
+             * never be a way of handing one person's hour to another.
              *
              * `reason` TRAVELS THROUGH HERE AND NOWHERE ELSE. It is the free
              * text where the motive for the visit lands — health data this
@@ -752,10 +1103,8 @@ export class PrismaAgendaRepository implements AgendaRepository {
             const source = await tx.agendaEntry.findUniqueOrThrow({
               where: { id: command.entryId },
               select: {
-                practitionerId: true,
                 patientId: true,
                 roomId: true,
-                serviceTypeId: true,
                 reason: true,
               },
             });
@@ -764,13 +1113,15 @@ export class PrismaAgendaRepository implements AgendaRepository {
               data: {
                 kind: 'APPOINTMENT',
                 siteId: command.siteId,
-                practitionerId: source.practitionerId,
+                // AG-115. Already resolved by the service: either the one the
+                // request named or the original's. Nothing is decided here.
+                practitionerId: booking.practitionerId,
                 patientId: source.patientId,
                 roomId: source.roomId,
                 startsAt: booking.startsAt,
                 endsAt: booking.endsAt,
                 bookingChannel: booking.bookingChannel,
-                serviceTypeId: source.serviceTypeId,
+                serviceTypeId: booking.serviceTypeId,
                 reason: source.reason,
                 // AG-029: whoever moved the appointment is who created this
                 // one. The original keeps its own author untouched.
@@ -1016,6 +1367,8 @@ function toEntryView(row: {
   bookingChannel: string | null;
   serviceTypeId: string | null;
   createdById: string | null;
+  overbookingReason: string | null;
+  overbookingAuthorisedById: string | null;
   rescheduledFromId: string | null;
   rescheduledTo: { id: string }[];
 }): AgendaEntryView {
@@ -1034,6 +1387,10 @@ function toEntryView(row: {
     endsAt: row.endsAt,
     status: row.status as AgendaEntryView['status'],
     blocksCalendar: row.blocksCalendar,
+    // AG-036: the flag and the WHY travel together, so a client distinguishes
+    // an overbooking without asking a second time.
+    overbookingReason: row.overbookingReason,
+    overbookingAuthorisedById: row.overbookingAuthorisedById,
     releasedAt: row.releasedAt,
     bookingChannel: row.bookingChannel as AgendaEntryView['bookingChannel'],
     serviceTypeId: row.serviceTypeId,

@@ -6,6 +6,8 @@ import { CurrentUserService } from '../../shared/authorisation/current-user.serv
 import { ALL_SITES } from '../../shared/authorisation/principal';
 import { AgendaService } from './application/agenda.service';
 import {
+  AgendaServiceTypesDto,
+  type AgendaServiceTypesResponse,
   AgendaSitesDto,
   type AgendaSitesResponse,
   SchedulablePractitionersDto,
@@ -48,7 +50,10 @@ export class AgendaReferenceController {
     return { items };
   }
 
-  /** AG-108. The guard checks the caller's scope over `:siteId` before this runs. */
+  /**
+   * AG-108, AG-111. The guard checks the caller's scope over `:siteId` before
+   * this runs.
+   */
   @Get('sites/:siteId/practitioners')
   @RequirePermission('agenda:read', 'param:siteId')
   @ApiOperation({ summary: 'Profesionales agendables de una sede' })
@@ -57,6 +62,33 @@ export class AgendaReferenceController {
     @Param('siteId', ParseUUIDPipe) siteId: string,
   ): Promise<SchedulablePractitionersResponse> {
     const items = await this.agenda.schedulablePractitioners(siteId);
+    return { items };
+  }
+
+  /**
+   * AG-112. The attention types of one specialty, under `agenda:read`.
+   *
+   * WHY THIS ROUTE EXISTS AT ALL, when `specialties` has served the same rows
+   * since C1: that one asks for `config:read`, which is the administration
+   * screen's permission and which `RECEPCION` does not hold. The booking
+   * dialog built on it in C4 was therefore unreachable by the very role it was
+   * built for. The fix is the one AG-108 already made for practitioners — the
+   * agenda publishes the minimum its own screen needs — and not widening
+   * recepción's grants until an administration catalogue fits through them.
+   *
+   * THE SITE IS IN THE PATH so `param:siteId` is enforceable by the guard,
+   * exactly like the practitioner list above. It authorises; it does not
+   * filter, because a `service_type` belongs to the clinic and not to a site.
+   */
+  @Get('sites/:siteId/specialties/:specialtyId/service-types')
+  @RequirePermission('agenda:read', 'param:siteId')
+  @ApiOperation({ summary: 'Tipos de atención de una especialidad' })
+  @ApiOkResponse({ type: AgendaServiceTypesDto })
+  async serviceTypes(
+    @Param('siteId', ParseUUIDPipe) _siteId: string,
+    @Param('specialtyId', ParseUUIDPipe) specialtyId: string,
+  ): Promise<AgendaServiceTypesResponse> {
+    const items = await this.agenda.serviceTypesOf(specialtyId);
     return { items };
   }
 }

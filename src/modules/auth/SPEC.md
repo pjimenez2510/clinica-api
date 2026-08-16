@@ -68,12 +68,13 @@ que entra el lunes, sigue exigiendo tocar la base de datos a mano.
 **Prueba independiente:** crear una cuenta, concederle un rol en una sede, y
 comprobar que sus permisos efectivos cambian **sin reiniciar** y que la
 concesión aparece en la bitácora.
-**Cubre:** AU-020 a AU-034.
+**Cubre:** AU-020 a AU-034, AU-038.
 
-**Solo servidor:** AU-025, AU-026, AU-027. Los dos primeros son bitácora y
-el plazo de caducidad definido en un único sitio; AU-027 es un índice único
-parcial. La pantalla no puede enseñar ninguno: por AU-028, un enlace
-caducado, gastado o inventado responden lo mismo.
+**Solo servidor:** AU-025, AU-026, AU-027 y AU-038. Los dos primeros son
+bitácora y el plazo de caducidad definido en un único sitio; AU-027 es un
+índice único parcial. La pantalla no puede enseñar ninguno: por AU-028, un
+enlace caducado, gastado o inventado responden lo mismo. AU-038 es alcance por
+sede sobre una escritura, y quien escala privilegios no usa la pantalla.
 
 ### A3 — Primera credencial por correo _(P1, 13-08-2026)_
 
@@ -329,6 +330,47 @@ enlace que no sirve y con un correo que no sale.
   DEBERÁ advertirlo sin impedirlo: es la separación que una auditoría de la
   SPDP pregunta primero, y la clínica puede decidir asumirla.
 
+- **AU-038** — CUANDO se fijen los roles de una cuenta, el sistema NO DEBERÁ
+  admitir ninguna concesión cuyo alcance esté fuera del alcance de quien llama
+  —ni las que se fijan ni las que se reemplazan—; y MIENTRAS la concesión sea
+  **global** (`siteId` nulo, que es toda sede presente y futura), sólo DEBERÁ
+  admitirla de quien tenga `user:manage` concedido a nivel de clínica. SI no se
+  cumple, ENTONCES DEBERÁ rechazarlo con `SITE_SCOPE_DENIED` sin escribir nada y
+  sin nombrar ninguna sede.
+  > **D-023, opción A, decidida por el usuario el 15-08-2026.** «Un administrador
+  > acotado a una sede sólo concede roles dentro de su alcance; el rol global lo
+  > concede quien tiene `user:manage` global», que es lo que el resto del sistema
+  > ya hace con la sede. Se descartaron **B** (prohibir `user:manage` acotado,
+  > que quita la delegación por ciudad) y **C** (dejarlo como estaba).
+  >
+  > **ESTO NO ERA UNA SEDE DE MÁS: ERA ESCALADA DE PRIVILEGIOS.** La ruta declara
+  > `global` y `grants[].siteId` viaja **en el cuerpo**, donde el guard no mira
+  > —sólo sabe leer `param:` y `query`, porque corre antes de los pipes—. Quien
+  > tuviera `user:manage` acotado a una sede podía conceder a otra cuenta un rol
+  > con `siteId: null`, y a partir de ahí el alcance por sede deja de significar
+  > nada **en todo el sistema**: es la única dimensión que produce acceso
+  > indebido en una clínica multisede, y se anulaba con un campo del cuerpo.
+  > Concedérselo a sí mismo ya lo impedía `CANNOT_GRANT_TO_SELF`
+  > (`user_role_grant_no_self_grant`); hacerlo a una segunda cuenta, no.
+  >
+  > **Los dos extremos, como ST-047.** El `PUT` fija el conjunto entero: enviar
+  > sólo las concesiones de la sede propia **revocaría en silencio** las de otra
+  > sede, y dejar sin rol a la recepción de otra ciudad es tan suyo como
+  > dárselo. Por eso se juzgan las concesiones que se fijan y las que se
+  > reemplazan, y la consecuencia deliberada es que un alcance de una sede no
+  > administra los roles de quien también los tiene fuera de él: eso es de la
+  > dirección.
+  >
+  > **La concesión global sigue pudiéndolo todo.** `user:manage` con
+  > `site_id IS NULL` —lo que `DEFAULT_ROLES` da a ADMIN— concede cualquier rol
+  > en cualquier sede y el rol global. Lo que esto cierra es exactamente el caso
+  > que nadie había decidido.
+  >
+  > **Lo que NO cambia.** `GET /users/:id/roles` sigue siendo `global`: leer qué
+  > roles tiene una cuenta no escala nada, y esconder la mitad de sus
+  > concesiones haría que la pantalla guardara un conjunto incompleto — que es
+  > justo el borrado silencioso que este requisito impide.
+
 ### Recuperación del segundo factor (REQ-154, D-014)
 
 - **AU-035** — CUANDO quien tenga el permiso `user:reset-mfa` lo pida sobre otra
@@ -433,6 +475,7 @@ enlace que no sirve y con un correo que no sale.
 | `MAIL_DELIVERY_FAILED`     | 503  | El servidor de correo no aceptó el mensaje (AU-029)           |
 | `MFA_CHANGE_NOT_STARTED`   | 409  | Confirmar un cambio de segundo factor que ya no está a medias (AU-037) |
 | `SESSION_REVOKED`          | 401  | El token de acceso es de una sesión ya cerrada (AU-036, AU-023)        |
+| `SITE_SCOPE_DENIED`        | 403  | Conceder o revocar un rol fuera del alcance de quien llama, o uno global sin `user:manage` de clínica (AU-038, ADR-007) |
 
 `INVALID_CREDENTIAL_TOKEN` es **uno solo para tres situaciones**, y eso es el
 requisito y no una simplificación (AU-028). Es 422 y no 404 porque un 404 diría

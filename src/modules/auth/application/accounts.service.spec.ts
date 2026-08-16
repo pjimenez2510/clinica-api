@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { AccessAuditEntry } from '../../../shared/audit/access-audit.port';
+import { Principal } from '../../../shared/authorisation/principal';
+import { SiteScopeDeniedError } from '../../../shared/authorisation/site-scope';
 import { RevocationReason } from '../../../shared/request/client-context';
 import {
   CannotDemoteSelfError,
@@ -43,6 +45,20 @@ import type { RefreshTokenPort } from './ports';
 
 const ADMIN_ID = 'user-admin';
 const REQUESTER = { userId: ADMIN_ID, ip: '10.0.0.1' };
+
+/**
+ * AU-038. The clinic-wide grant — `siteId: null` is every site, present and
+ * future — which is how the director is hired and what every case below that
+ * is not about the site scope uses.
+ */
+const DIRECTOR = new Principal(ADMIN_ID, [
+  { roleCode: 'ADMIN', siteId: null, permissions: ['user:manage'] },
+]);
+
+/** AU-038. `user:manage`, granted for `site-1` and for nowhere else. */
+const SCOPED_TO_SITE_1 = new Principal('user-scoped', [
+  { roleCode: 'ADMIN', siteId: 'site-1', permissions: ['user:manage'] },
+]);
 
 const ACCOUNT: AccountView = {
   id: 'user-1',
@@ -436,6 +452,7 @@ describe('la administración de cuentas', () => {
           { roleId: ADMIN_ROLE.id, siteId: null },
         ],
         REQUESTER,
+        DIRECTOR,
       );
 
       expect(grants.map((grant) => grant.siteId)).toEqual(['site-1', null]);
@@ -449,6 +466,7 @@ describe('la administración de cuentas', () => {
         'user-1',
         [{ roleId: NURSE_ROLE.id, siteId: null }],
         REQUESTER,
+        DIRECTOR,
       );
 
       expect(invalidations).toBe(1);
@@ -463,6 +481,7 @@ describe('la administración de cuentas', () => {
             { roleId: 'role-inventado', siteId: null },
           ],
           REQUESTER,
+          DIRECTOR,
         ),
       ).rejects.toBeInstanceOf(RoleNotFoundError);
 
@@ -480,13 +499,14 @@ describe('la administración de cuentas', () => {
           ADMIN_ID,
           [{ roleId: NURSE_ROLE.id, siteId: null }],
           REQUESTER,
+          DIRECTOR,
         ),
       ).rejects.toBeInstanceOf(CannotDemoteSelfError);
     });
 
     it('AU-024 impide también quedarse sin ningún rol', async () => {
       await expect(
-        service.replaceGrants(ADMIN_ID, [], REQUESTER),
+        service.replaceGrants(ADMIN_ID, [], REQUESTER, DIRECTOR),
       ).rejects.toBeInstanceOf(CannotDemoteSelfError);
     });
 
@@ -504,6 +524,7 @@ describe('la administración de cuentas', () => {
           ADMIN_ID,
           [{ roleId: ADMIN_ROLE.id, siteId: null }],
           REQUESTER,
+          DIRECTOR,
         ),
       ).resolves.toHaveLength(1);
     });
@@ -525,6 +546,7 @@ describe('la administración de cuentas', () => {
             { roleId: NURSE_ROLE.id, siteId: null },
           ],
           REQUESTER,
+          DIRECTOR,
         ),
       ).rejects.toBeInstanceOf(CannotGrantToSelfError);
     });
@@ -542,13 +564,14 @@ describe('la administración de cuentas', () => {
           ADMIN_ID,
           [{ roleId: ADMIN_ROLE.id, siteId: null }],
           REQUESTER,
+          DIRECTOR,
         ),
       ).rejects.toBeInstanceOf(CannotGrantToSelfError);
     });
 
     it('AU-024 no estorba cuando se editan las concesiones de OTRA persona', async () => {
       await expect(
-        service.replaceGrants('user-1', [], REQUESTER),
+        service.replaceGrants('user-1', [], REQUESTER, DIRECTOR),
       ).resolves.toEqual([]);
     });
 
@@ -557,6 +580,7 @@ describe('la administración de cuentas', () => {
         'user-1',
         [{ roleId: NURSE_ROLE.id, siteId: null }],
         REQUESTER,
+        DIRECTOR,
       );
 
       expect(recorded).toEqual([
@@ -586,6 +610,76 @@ describe('la administración de cuentas', () => {
       await expect(service.get('user-9')).rejects.toBeInstanceOf(
         UserNotFoundError,
       );
+    });
+  });
+
+  /**
+   * AU-038, D-023. `grants[].siteId` travels in the body, where the guard
+   * cannot look, and the route declared `global` — so a `user:manage` confined
+   * to one site could hand a SECOND account a grant good everywhere. That is
+   * not a missing site check on an agenda, it is privilege escalation.
+   */
+  describe('AU-038 · el alcance por sede de las concesiones', () => {
+    it('AU-038 rechaza conceder un rol GLOBAL desde un alcance de una sede', () => {
+      // `siteId: null` is every site, present and future: handing it out hands
+      // out the authority the site scope exists to limit.
+      return expect(
+        service.replaceGrants(
+          'user-1',
+          [{ roleId: NURSE_ROLE.id, siteId: null }],
+          REQUESTER,
+          SCOPED_TO_SITE_1,
+        ),
+      ).rejects.toBeInstanceOf(SiteScopeDeniedError);
+    });
+
+    it('AU-038 rechaza conceder un rol en otra sede, sin escribir nada', async () => {
+      await expect(
+        service.replaceGrants(
+          'user-1',
+          [{ roleId: NURSE_ROLE.id, siteId: 'site-2' }],
+          REQUESTER,
+          SCOPED_TO_SITE_1,
+        ),
+      ).rejects.toBeInstanceOf(SiteScopeDeniedError);
+
+      expect(
+        accounts.calls.some((call) => call.method === 'replaceGrants'),
+      ).toBe(false);
+    });
+
+    it('AU-038 rechaza REVOCAR en silencio la concesión de otra sede', async () => {
+      // The account already holds a grant at `site-2`; the caller sends only
+      // its own site, which as a replacement would drop the other one.
+      accounts.grants = [
+        { roleId: NURSE_ROLE.id, roleCode: 'ENFERMERIA', roleName: 'E', siteId: 'site-2' }, // prettier-ignore
+      ];
+
+      await expect(
+        service.replaceGrants(
+          'user-1',
+          [{ roleId: NURSE_ROLE.id, siteId: 'site-1' }],
+          REQUESTER,
+          SCOPED_TO_SITE_1,
+        ),
+      ).rejects.toBeInstanceOf(SiteScopeDeniedError);
+
+      expect(
+        accounts.calls.some((call) => call.method === 'replaceGrants'),
+      ).toBe(false);
+    });
+
+    it('AU-038 dentro de su sede concede: la comprobación no es un muro', async () => {
+      await service.replaceGrants(
+        'user-1',
+        [{ roleId: NURSE_ROLE.id, siteId: 'site-1' }],
+        REQUESTER,
+        SCOPED_TO_SITE_1,
+      );
+
+      expect(
+        accounts.calls.some((call) => call.method === 'replaceGrants'),
+      ).toBe(true);
     });
   });
 });

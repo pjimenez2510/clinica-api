@@ -89,6 +89,43 @@ export const PERMISSION_CATALOGUE = [
     resource: 'agenda',
     description: 'Agendar, reprogramar y anular citas',
   },
+  // Sobrecupo (E4, AG-101, AG-103, D-005). DOS permisos y no uno, y la
+  // diferencia entre ellos es el control entero:
+  //
+  //   - `agenda:overbook` lo trae de fábrica quien puede AUTORIZAR que se
+  //     rompa la rejilla: el médico que atenderá la urgencia y el
+  //     administrador. Es el caso real —recepción reserva, el médico
+  //     autoriza—, y por eso NO lo trae `RECEPCION`: quien reserva no autoriza
+  //     su propia excepción (AG-103), o el campo de autorización se rellena
+  //     solo y deja de autorizar nada.
+  //   - `agenda:overbook:self` es la excepción a esa separación, para el
+  //     médico de guardia a las 21:00 sin nadie más conectado.
+  //
+  // ⚠️ EL SEGUNDO NO LO TRAE NINGÚN ROL, por el mismo argumento que
+  // `user:reset-mfa` (AU-035): quien lo tiene puede saltarse él solo la única
+  // separación de personas que este módulo tiene, así que la instalación se lo
+  // concede a alguien A PROPÓSITO o no lo tiene nadie. `explicitGrantOnly` es
+  // lo que lo hace cierto en código: las semillas construyen sus roles a
+  // partir de `SEEDABLE_PERMISSIONS`, no del catálogo entero.
+  //
+  // CUÁL de los dos autoriza es un PARÁMETRO DE SEDE (AG-094,
+  // `site_parameter.overbooking_permission`), con `agenda:overbook` de
+  // arranque. Que el permiso sea configurable no hace configurable el
+  // CATÁLOGO: qué códigos existen sigue siendo código, y guardar uno que este
+  // catálogo no declara se rechaza con `UNKNOWN_PERMISSION`.
+  {
+    code: 'agenda:overbook',
+    resource: 'agenda',
+    description:
+      'Autorizar un sobrecupo: una cita fuera de la rejilla, con motivo y constancia de quién la autorizó',
+  },
+  {
+    code: 'agenda:overbook:self',
+    resource: 'agenda',
+    description:
+      'Autorizar el propio sobrecupo, sin que otra persona lo autorice. Es la excepción para el médico de guardia: quien lo tiene puede saltarse la separación entre quien reserva y quien autoriza',
+    explicitGrantOnly: true,
+  },
   {
     code: 'record:read',
     resource: 'record',

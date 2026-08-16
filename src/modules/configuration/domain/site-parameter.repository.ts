@@ -59,6 +59,24 @@ export interface SiteParameterRepository {
    * `site_id`. See `clinicSlotAtom`.
    */
   configuredDurations(): Promise<readonly number[]>;
+
+  /**
+   * AG-101, AU-033. Which of these permission codes THIS INSTALLATION has in
+   * its `permission` mirror.
+   *
+   * IT ASKS A TABLE OF ANOTHER MODULE, like `configuredDurations` above and
+   * for the same reason: the question is ours — «may this code be stored in a
+   * column of `site_parameter`?» — and the table is auth's. Importing
+   * `RolesService` for it would be a module importing another, which
+   * `pnpm arch:check` refuses and which is how a codebase stops having
+   * modules.
+   *
+   * WHAT IT IS NOT: the catalogue. Whether the CODE declares a permission is
+   * answered in the domain against `permission.catalogue.ts`, with no read at
+   * all — the two questions have two different answers on purpose
+   * (`UNKNOWN_PERMISSION` vs `PERMISSION_NOT_INSTALLED`).
+   */
+  installedPermissions(codes: readonly string[]): Promise<readonly string[]>;
 }
 
 export const SITE_PARAMETER_REPOSITORY = Symbol('SiteParameterRepository');

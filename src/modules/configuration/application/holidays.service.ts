@@ -1,5 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 
+import type { Principal } from '../../../shared/authorisation/principal';
+import { assertScopesInScope } from '../../../shared/authorisation/site-scope';
 import { HolidayNotFoundError } from '../domain/configuration.errors';
 import {
   HOLIDAY_REPOSITORY,
@@ -30,9 +32,23 @@ export interface UpdateHolidayCommand {
 /**
  * Holidays: CF-060, CF-061, CF-066, and the working exception of AG-092.
  *
- * The authorisation decision is NOT here — the guard settled it from the
- * route's `@RequirePermission`. What IS here is what must hold regardless of
- * which endpoint asked: an audit entry on every mutation (CF-066).
+ * THE SITE HALF OF THE AUTHORISATION IS HERE, and only that half (CF-067,
+ * D-023). The guard settled the permission from the route's
+ * `@RequirePermission`, but it cannot settle the SITE: a holiday's scope
+ * arrives in the body and guards run before the pipes. It matters more here
+ * than almost anywhere else because `site_id IS NULL` is not «sin sede», it is
+ * «todas» — a national holiday shuts every site's agenda (AG-015), so writing
+ * one is an act of clinic-wide reach and demands a clinic-wide grant. What is
+ * also here is what must hold regardless of which endpoint asked: an audit
+ * entry on every mutation (CF-066).
+ *
+ * THE SCOPE IS READ BEFORE THE WRITE, not inside the writing transaction, and
+ * the two reads are different questions. The trail's «desde qué valor» must be
+ * the row the write actually replaced, so it comes from inside; the
+ * authorisation answer must exist BEFORE anything is written, because a
+ * refusal that already changed a row is not a refusal. The window between them
+ * needs a concurrent privileged write to matter, and it is the same trade
+ * ST-047 accepted.
  *
  * WHAT THIS SERVICE DOES NOT DO: check for a duplicate before writing. Two
  * administrators loading the year's calendar and adding «Carnaval» in the same
@@ -62,11 +78,15 @@ export class HolidaysService {
     return this.repository.list(query);
   }
 
-  /** CF-060, CF-061, CF-066. */
+  /** CF-060, CF-061, CF-066, CF-067. */
   async create(
     command: CreateHolidayCommand,
     requester: Requester,
+    caller: Principal,
   ): Promise<HolidayView> {
+    // CF-067. `null` — «todas las sedes» — demands the clinic-wide grant.
+    assertScopesInScope(caller, 'settings:manage', [command.siteId ?? null]);
+
     const created = await this.repository.create({
       date: command.date,
       name: command.name,
@@ -81,12 +101,30 @@ export class HolidaysService {
     return created;
   }
 
-  /** CF-060, CF-066, AG-097. */
+  /**
+   * CF-060, CF-066, CF-067, AG-097.
+   *
+   * BOTH ENDS OF THE MOVE ARE JUDGED, like ST-047 does with a practitioner's
+   * sites. Editing a holiday moves its reach, and both ends of that move
+   * change an agenda: promoting Norte's holiday to national SHUTS the day
+   * everywhere, and demoting a national one to Norte REOPENS it everywhere
+   * else. Checking only what the caller sent would let either happen from one
+   * site's screen; checking only what is stored would let a national holiday
+   * be created out of a local one.
+   */
   async update(
     id: string,
     command: UpdateHolidayCommand,
     requester: Requester,
+    caller: Principal,
   ): Promise<HolidayView> {
+    const current = await this.repository.findById(id);
+    if (!current) throw new HolidayNotFoundError();
+    assertScopesInScope(caller, 'settings:manage', [
+      current.siteId,
+      command.siteId === undefined ? current.siteId : command.siteId,
+    ]);
+
     const patch: HolidayPatch = { date: command.date, name: command.name };
     // Only when the caller sent it. `undefined` means "leave the scope alone"
     // and `null` means "make it apply to every site"; collapsing the two would
@@ -107,7 +145,18 @@ export class HolidaysService {
    * evidence to orphan. The trail keeps who removed it AND what was removed,
    * which here is the only surviving copy of the row.
    */
-  async delete(id: string, requester: Requester): Promise<void> {
+  async delete(
+    id: string,
+    requester: Requester,
+    caller: Principal,
+  ): Promise<void> {
+    // CF-067. Deleting is the same power with the sign flipped: removing a
+    // national holiday OPENS that day in every site. The scope is not in the
+    // request at all — it is in the row — so it is read and judged the same.
+    const current = await this.repository.findById(id);
+    if (!current) throw new HolidayNotFoundError();
+    assertScopesInScope(caller, 'settings:manage', [current.siteId]);
+
     const deleted = await this.repository.delete(id);
     if (!deleted) throw new HolidayNotFoundError();
 

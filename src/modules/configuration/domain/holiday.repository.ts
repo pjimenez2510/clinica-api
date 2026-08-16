@@ -73,6 +73,18 @@ export interface HolidayRepository {
   list(query: HolidayQuery): Promise<readonly HolidayView[]>;
 
   /**
+   * One holiday by id, or `null`. Exists for CF-067.
+   *
+   * WHY A READ BEFORE A WRITE, when the rest of this port deliberately avoids
+   * them: the question it answers is not «is the date free?» but «whose
+   * holiday is this?», and that has to be answered BEFORE anything is written,
+   * because a refusal that has already changed a row is not a refusal. The
+   * pair the trail needs still comes from inside the writing transaction; this
+   * is the authorisation read, and the two are different questions.
+   */
+  findById(id: string): Promise<HolidayView | null>;
+
+  /**
    * Throws `HolidayDuplicateError` when the unique index refuses (CF-061).
    *
    * No pair here: nothing was replaced, so there is no previous value.

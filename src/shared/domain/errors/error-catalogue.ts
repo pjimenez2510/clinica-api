@@ -52,6 +52,37 @@ export const DOMAIN_ERROR_CODES = [
   // regla vigente. Un solo código para los tres obligaría a leer el texto para
   // saber qué corregir.
   'INVALID_BOOKING_CHANNEL',
+  // Agenda, E4 (AG-035 a AG-039, AG-100, AG-101, AG-103): el sobrecupo y los
+  // bloqueos, que son las dos vías DOCUMENTADAS de romper la rejilla (D-005).
+  //
+  // Son cinco códigos y no uno porque lo que hay que hacer es distinto en cada
+  // caso, y quien lo lee está en el mostrador con el paciente delante:
+  //
+  //   * `OVERBOOKING_NOT_ALLOWED` (422) — esta sede no admite sobrecupos. No
+  //     hay nada que corregir en el formulario: se cambia un parámetro de sede
+  //     o no se hace.
+  //   * `OVERBOOKING_REASON_REQUIRED` (422) — falta el motivo. Es un campo del
+  //     formulario, y por eso viaja por campo (AG-035).
+  //   * `OVERBOOKING_LIMIT_REACHED` (409) — el profesional ya agotó el tope
+  //     del DÍA (D-001: dos). Es 409 y no 422 porque lo enviado es correcto:
+  //     lo que lo impide es el estado de la agenda, y mañana el mismo cuerpo
+  //     se aceptaría.
+  //   * `OVERBOOKING_NOT_AUTHORISED` (403) — quien se indicó como autorizador
+  //     no tiene el permiso que la sede exige (AG-101).
+  //   * `SELF_AUTHORISATION_DENIED` (403) — quien reserva se puso a sí mismo
+  //     como autorizador (AG-103). Distinto del anterior a propósito: ahí
+  //     falta un permiso, aquí sobra la misma persona en los dos papeles, y la
+  //     salida es pedírselo a otra — el mensaje lo dice.
+  //
+  // `BLOCK_OVERLAPS_APPOINTMENTS` (409) es del bloqueo: hay citas dentro del
+  // intervalo, y el error las ENUMERA (AG-038) con identificador y horas, sin
+  // nombre ni motivo (AG-074, SC-006).
+  'BLOCK_OVERLAPS_APPOINTMENTS',
+  'OVERBOOKING_LIMIT_REACHED',
+  'OVERBOOKING_NOT_ALLOWED',
+  'OVERBOOKING_NOT_AUTHORISED',
+  'OVERBOOKING_REASON_REQUIRED',
+  'SELF_AUTHORISATION_DENIED',
   'INVALID_CEDULA',
   'INVALID_CREDENTIALS',
   'INVALID_MFA_CODE',

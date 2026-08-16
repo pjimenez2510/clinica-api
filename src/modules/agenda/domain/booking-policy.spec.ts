@@ -925,6 +925,11 @@ describe('the booking window of the site', () => {
         maxLeadDays: 180,
         allowPastBooking: false,
         slotAtomMinutes: 10,
+        // E4, D-005: el sobrecupo NACE habilitado, con el tope de D-001 y el
+        // permiso que MEDICO y ADMIN traen de fábrica.
+        overbookingEnabled: true,
+        overbookingCap: 2,
+        overbookingPermission: 'agenda:overbook',
       });
     });
 
@@ -937,6 +942,9 @@ describe('the booking window of the site', () => {
         maxLeadDays: 180,
         allowPastBooking: false,
         slotAtomMinutes: 10,
+        overbookingEnabled: true,
+        overbookingCap: 2,
+        overbookingPermission: 'agenda:overbook',
       });
     });
 
@@ -961,12 +969,19 @@ describe('the booking window of the site', () => {
         minLeadMinutes: 0,
         maxLeadDays: 0,
         allowPastBooking: false,
+        // AG-039: `false` guardado es una decisión de la sede, y el defecto de
+        // este parámetro es `true` — así que aquí el operador SÍ discrimina.
+        overbookingEnabled: false,
+        overbookingCap: 0,
       });
       expect(resolved).toEqual({
         minLeadMinutes: 0,
         maxLeadDays: 0,
         allowPastBooking: false,
         slotAtomMinutes: 10,
+        overbookingEnabled: false,
+        overbookingCap: 0,
+        overbookingPermission: 'agenda:overbook',
       });
     });
 

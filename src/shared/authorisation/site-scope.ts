@@ -59,3 +59,74 @@ export function assertSiteInScope(
     throw new SiteScopeDeniedError(permission);
   }
 }
+
+/**
+ * Asserts the caller may act on EVERY site of a set (ST-047).
+ *
+ * For the routes whose site dimension arrives as a LIST in the body — the
+ * sites a practitioner attends at — where the guard has nothing to check
+ * before the pipes run. One refusal for the whole set, never one per site:
+ * naming which of them was out of scope would answer «esa sede existe» to
+ * whoever guesses identifiers, which is what AG-105 refuses to do too.
+ *
+ * The refusal is thrown before any write, so a set containing one foreign
+ * site leaves the practitioner exactly as it was.
+ */
+export function assertSitesInScope(
+  principal: Principal,
+  permission: Permission,
+  siteIds: Iterable<string>,
+): void {
+  for (const siteId of new Set(siteIds)) {
+    assertSiteInScope(principal, permission, siteId);
+  }
+}
+
+/**
+ * Asserts the caller holds the permission AT EVERY SITE, present and future
+ * (D-023).
+ *
+ * WHY THIS IS NOT «holds it at all the sites that exist». A grant confined to
+ * Norte and Sur is not clinic-wide even when Norte and Sur are the only two
+ * sites open: the clinic opens a third one next month and whatever was written
+ * under this authority — a national holiday, a global role grant — applies
+ * there too, decided by somebody who never had that site. Only
+ * `user_role_grant.site_id IS NULL` means «todas, incluidas las que no
+ * existen todavía», and `Principal.sitesFor` reports exactly that as
+ * `ALL_SITES`.
+ */
+export function assertClinicWideScope(
+  principal: Principal,
+  permission: Permission,
+): void {
+  if (principal.sitesFor(permission) !== ALL_SITES) {
+    throw new SiteScopeDeniedError(permission);
+  }
+}
+
+/**
+ * Asserts the caller may act on every scope of a set, where `null` is EVERY
+ * SITE (D-023).
+ *
+ * FOR THE ROWS WHOSE SITE IS NULLABLE, and where the null is not «sin sede»
+ * but «todas»: a holiday with `site_id IS NULL` shuts every site's agenda
+ * (AG-015, CF-067), and a `user_role_grant` with `site_id IS NULL` carries its
+ * role everywhere (AU-038). Writing either one is an act of clinic-wide reach,
+ * so it demands clinic-wide authority — otherwise the site scope is undone by
+ * a field of the body, which is precisely what D-023 found.
+ *
+ * ONE REFUSAL FOR THE WHOLE SET, and the same one either way: `SITE_SCOPE_DENIED`
+ * names the permission and never a site, so it does not answer «esa sede
+ * existe» to whoever guesses identifiers, nor distinguish «otra sede» from
+ * «todas».
+ */
+export function assertScopesInScope(
+  principal: Principal,
+  permission: Permission,
+  scopes: Iterable<string | null>,
+): void {
+  for (const scope of new Set(scopes)) {
+    if (scope === null) assertClinicWideScope(principal, permission);
+    else assertSiteInScope(principal, permission, scope);
+  }
+}

@@ -1,6 +1,9 @@
 import type { INestApplication } from '@nestjs/common';
+import { ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
+import { RouteParamtypes } from '@nestjs/common/enums/route-paramtypes.enum';
 import { ModulesContainer } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
+import * as z from 'zod';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { AppModule } from '../../src/app.module';
@@ -48,6 +51,71 @@ function siteParamOf(path: string): string | undefined {
 }
 
 /**
+ * The DTO class NestJS will fill the `@Body()` parameter with, or `undefined`.
+ *
+ * Read the same way the framework reads it: `ROUTE_ARGS_METADATA` says which
+ * parameter INDEX carries the body, and `design:paramtypes` says what that
+ * index is declared as. A list of «this handler takes this DTO» maintained by
+ * hand would drift the first time somebody added a parameter.
+ */
+function bodyDtoOf(
+  controller: new (...args: never[]) => object,
+  handlerName: string,
+): unknown {
+  const args: unknown = Reflect.getMetadata(
+    ROUTE_ARGS_METADATA,
+    controller,
+    handlerName,
+  );
+  const parameters: unknown = Reflect.getMetadata(
+    'design:paramtypes',
+    controller.prototype as object,
+    handlerName,
+  );
+  if (typeof args !== 'object' || args === null) return undefined;
+  if (!Array.isArray(parameters)) return undefined;
+
+  const entry = Object.entries(args as Record<string, { index: number }>).find(
+    ([key]) => key.startsWith(`${RouteParamtypes.BODY}:`),
+  );
+
+  return entry ? (parameters as unknown[])[entry[1].index] : undefined;
+}
+
+/**
+ * Every path in a DTO's schema that names a site, at any depth.
+ *
+ * Through JSON Schema and not through the Zod internals: `z.toJSONSchema` is
+ * public API and flattens arrays, unions, optionals and nested objects on its
+ * own, so `grants[].siteId` is found without this function knowing what a
+ * `ZodArray` is. `unrepresentable: 'any'` keeps a refinement or a transform
+ * from turning «no lo sé representar» into a crash that would silently skip
+ * the DTO — a check that stops checking is worse than no check.
+ */
+function siteFieldsOf(dto: unknown): string[] {
+  const schema = (dto as { schema?: unknown } | undefined)?.schema;
+  if (!(schema instanceof z.ZodType)) return [];
+
+  const found: string[] = [];
+  const walk = (node: unknown, path: string): void => {
+    if (node === null || typeof node !== 'object') return;
+    for (const [key, value] of Object.entries(
+      node as Record<string, unknown>,
+    )) {
+      if (key === 'properties' && value !== null && typeof value === 'object') {
+        for (const field of Object.keys(value)) {
+          if (/^site_?ids?$/i.test(field)) found.push(`${path}.${field}`);
+        }
+      }
+      walk(value, key === 'properties' ? path : `${path}.${key}`);
+    }
+  };
+
+  walk(z.toJSONSchema(schema, { io: 'input', unrepresentable: 'any' }), '');
+  return found;
+}
+
+/**
  * Every route declares how it is protected. No exceptions, and no defaults.
  *
  * This is the compensation for enforcing authorisation in the application
@@ -67,6 +135,8 @@ describe('every route declares its protection', () => {
     marker: string;
     permission?: unknown;
     siteScope?: unknown;
+    /** D-023: the fields of the `@Body()` DTO that name a site, at any depth. */
+    bodySiteFields: string[];
   }
 
   let routes: RouteInfo[];
@@ -124,6 +194,7 @@ describe('every route declares its protection', () => {
             marker,
             permission,
             siteScope: read(SITE_SCOPE_KEY),
+            bodySiteFields: siteFieldsOf(bodyDtoOf(metatype, name)),
           });
         }
       }
@@ -207,6 +278,76 @@ describe('every route declares its protection', () => {
       wrong,
       'A route whose URL carries a site id must declare param:<that name>',
     ).toEqual([]);
+  });
+
+  it('AU-011 no deja una ruta `global` recibiendo un siteId en el cuerpo (D-023)', () => {
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     * LA PRUEBA QUE HABRÍA ENCONTRADO ST-047, AG-105 Y LAS SEIS DE D-023
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Las dos pruebas de arriba no podían verlo, y decirlo importa más que la
+     * prueba: la primera pide que HAYA declaración y acepta `global`; la
+     * segunda sólo mira la URL. Cuando la sede viaja en el CUERPO, `global`
+     * pasa las dos mientras no comprueba nada — y el guard no puede
+     * comprobarlo por sí mismo, porque corre antes de los pipes y el cuerpo
+     * todavía no está validado.
+     *
+     * Así que esto pregunta por el sitio donde el agujero es visible: el DTO.
+     * Una ruta que dice «no tengo dimensión de sede» y recibe un `siteId` en
+     * el cuerpo se está contradiciendo, y una de las dos afirmaciones es
+     * falsa. La respuesta correcta casi siempre es declarar `'query'` y
+     * comprobarlo en el handler con el alcance resuelto de la sesión
+     * (`assertSiteInScope` / `assertScopesInScope`); la otra respuesta posible
+     * es razonar la excepción AQUÍ, en la lista de abajo, donde se lee en el
+     * diff.
+     *
+     * NO DEMUESTRA QUE LA COMPROBACIÓN EXISTA, y no puede: `'query'` significa
+     * «la estrecha el handler», y si el handler no lo hace sólo lo ve su
+     * prueba. Lo que quita de en medio es la forma de este fallo que nadie
+     * mira, que es la que se repitió cinco veces.
+     */
+    const EXEMPT: Record<string, string> = {
+      // Vacío a propósito. Una entrada aquí es una decisión, no un atajo: hay
+      // que escribir por qué esa ruta recibe una sede y aun así no tiene
+      // dimensión de sede que comprobar.
+    };
+
+    const contradictory = routes
+      .filter((r) => r.marker === 'permission' && r.siteScope === 'global')
+      .filter((r) => r.bodySiteFields.length > 0)
+      .filter((r) => !(r.route in EXEMPT))
+      .map((r) => `${r.route} (${r.path}) recibe ${r.bodySiteFields.join(', ')}`); // prettier-ignore
+
+    expect(
+      contradictory,
+      'Declara `query` y comprueba el alcance en el handler, o razona la excepción en EXEMPT',
+    ).toEqual([]);
+  });
+
+  it('AU-011 y la prueba anterior no pasa por no encontrar ningún DTO', () => {
+    // Una prueba que pasa porque su lectura se rompió es peor que una que
+    // falla: `bodyDtoOf` lee metadatos de NestJS, y el día que cambien de
+    // forma la comprobación de arriba se volvería vacua en silencio.
+    const withBodySite = routes.filter((r) => r.bodySiteFields.length > 0);
+
+    expect(withBodySite.length).toBeGreaterThan(0);
+    // Y las que D-023 cerró están entre ellas, ya declarando `query`.
+    expect(
+      withBodySite
+        .filter((r) => r.siteScope === 'query')
+        .map((r) => r.route)
+        .sort(),
+    ).toEqual(
+      expect.arrayContaining([
+        'AuthAdminController.replaceUserRoles',
+        'ConfigurationController.createHoliday',
+        'ConfigurationController.updateHoliday',
+        'StaffController.replaceSites',
+        'StaffScheduleController.create',
+        'StaffScheduleController.update',
+      ]),
+    );
   });
 
   it('AU-010 keeps the public surface small and deliberate', () => {

@@ -86,14 +86,23 @@ import {
  * out loud, because roles are data and whoever ticks the box is entitled to
  * know what they are handing over.
  *
- * THE SITE SCOPE IS `global` ON EVERY ROUTE, and that is the truth rather than
- * a shrug. An account is not a resource OF a site: the same person may be
- * granted a role at two sites, and their name, email and cedula are the same
- * in both — scoping the account by site would mean either hiding half a person
- * or picking one of their sites arbitrarily. The site DIMENSION lives inside
- * the grants (AU-032), where it belongs, and `user:manage` is an
- * administration permission DEFAULT_ROLES grants clinic-wide and to one role
- * only.
+ * THE SITE SCOPE IS `global` ON EVERY ROUTE BUT ONE, and that is the truth
+ * rather than a shrug. An account is not a resource OF a site: the same person
+ * may be granted a role at two sites, and their name, email and cedula are the
+ * same in both — scoping the account by site would mean either hiding half a
+ * person or picking one of their sites arbitrarily. The site DIMENSION lives
+ * inside the grants (AU-032), where it belongs.
+ *
+ * THE ONE EXCEPTION IS `PUT /users/:id/roles`, which declares `'query'`
+ * (AU-038, D-023). That route is where the site dimension is WRITTEN, and it
+ * arrives in the body where the guard cannot reach it — so `global` there did
+ * not say «this route has no site dimension», it left the dimension that
+ * defines every other route's scope editable by anyone holding `user:manage`
+ * anywhere. The handler settles it with the caller's own resolved scope, and a
+ * grant with `siteId: null` demands `user:manage` granted clinic-wide.
+ * Reading the grants stays `global`: hiding half of somebody's roles would
+ * make the screen save an incomplete set, which is the silent revocation
+ * AU-038 exists to prevent.
  */
 @ApiTags('auth')
 @Controller({ path: 'auth', version: '1' })
@@ -344,7 +353,7 @@ export class AuthAdminController {
    * rather than the outcome of a sequence somebody could interrupt halfway.
    */
   @Put('users/:id/roles')
-  @RequirePermission('user:manage', 'global')
+  @RequirePermission('user:manage', 'query')
   @ApiOperation({ summary: 'Fijar los roles de una cuenta, con su sede' })
   @ApiOkResponse({ type: GrantListDto })
   async replaceUserRoles(
@@ -359,6 +368,9 @@ export class AuthAdminController {
         siteId: grant.siteId ?? null,
       })),
       this.requester(req),
+      // AU-038: the scope comes from the session the guard resolved, never
+      // from the request — a body that could widen it would be no check.
+      this.currentUser.requirePrincipal(),
     );
     return { items };
   }

@@ -218,6 +218,19 @@ describe('las transiciones de estado de la cita por HTTP', () => {
       .set('Authorization', `Bearer ${token}`)
       .send(body);
 
+  /** AG-037. Cierra un intervalo de la agenda del profesional. */
+  const block = (overrides: Record<string, unknown> = {}, site = siteId) =>
+    request(app.getHttpServer())
+      .post(`/api/v1/agenda/sites/${site}/blocks`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ practitionerId, ...PAST_SLOT, ...overrides });
+
+  /** AG-114. Deshace un bloqueo: libera el intervalo y NO borra la fila. */
+  const releaseBlock = (entryId: string, site = siteId) =>
+    request(app.getHttpServer())
+      .delete(`/api/v1/agenda/sites/${site}/blocks/${entryId}`)
+      .set('Authorization', `Bearer ${token}`);
+
   const historyOf = (entryId: string) =>
     prisma.agendaStatusHistory.findMany({
       where: { agendaEntryId: entryId },
@@ -504,6 +517,128 @@ describe('las transiciones de estado de la cita por HTTP', () => {
       await request(app.getHttpServer())
         .post(`/api/v1/agenda/sites/${siteId}/entries/${entryId}/status`)
         .send({ to: 'CONFIRMED' })
+        .expect(401);
+    });
+  });
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   * AG-114 — UN BLOQUEO CREADO POR ERROR TIENE MARCHA ATRÁS
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * La máquina de estados rechaza toda transición de un `BLOCK`, así que
+   * hasta ahora la única salida era la base de datos. Un control sin deshacer
+   * se rodea: se deja de usar el bloqueo y la ausencia del médico se gestiona
+   * por fuera del sistema.
+   *
+   * LIBERAR Y NO BORRAR, por lo mismo que AG-050 en la reprogramación: la
+   * fila es la prueba de que ese intervalo estuvo cerrado.
+   */
+  describe('deshacer un bloqueo', () => {
+    it('AG-114 libera el intervalo: el cupo vuelve a ser reservable y la fila sigue ahí', async () => {
+      const blocked = await block().expect(201);
+      const blockId = (blocked.body as EntryBody).id;
+
+      // Mientras el bloqueo ocupa calendario, el `EXCLUDE` del profesional
+      // rechaza la cita: es lo que hace honesta la comprobación de después.
+      await book().expect(409);
+
+      const released = await releaseBlock(blockId).expect(200);
+      expect((released.body as EntryBody).releasedAt).not.toBeNull();
+
+      // La prueba de que liberar libera DE VERDAD: el mismo intervalo pasa
+      // ahora por `agenda_entry_no_practitioner_overlap`.
+      await book().expect(201);
+
+      // Y la fila NO se borró: sigue siendo la prueba de que ese martes
+      // alguien cerró el quirófano.
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: blockId },
+      });
+      expect(stored.kind).toBe('BLOCK');
+      expect(stored.status).toBe('CANCELLED');
+      expect(stored.releasedAt).toBeInstanceOf(Date);
+    });
+
+    it('AG-114 deja constancia de quién lo eliminó y cuándo, en el historial', async () => {
+      const blocked = await block().expect(201);
+      const blockId = (blocked.body as EntryBody).id;
+
+      await releaseBlock(blockId).expect(200);
+
+      // AG-004: la constancia va en `agenda_status_history`, no en un texto
+      // libre que nadie puede recorrer.
+      const rows = await historyOf(blockId);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        fromStatus: 'BLOCKED',
+        toStatus: 'CANCELLED',
+        changedById: userId,
+      });
+      expect(rows[0]?.changedAt).toBeInstanceOf(Date);
+    });
+
+    it('AG-114 el mismo bloqueo no se libera dos veces', async () => {
+      const blocked = await block().expect(201);
+      const blockId = (blocked.body as EntryBody).id;
+      await releaseBlock(blockId).expect(200);
+
+      const again = await releaseBlock(blockId).expect(409);
+
+      expect((again.body as Problem).code).toBe('INVALID_AGENDA_TRANSITION');
+      // Y el historial sigue teniendo UNA fila: la de la liberación real.
+      await expect(historyOf(blockId)).resolves.toHaveLength(1);
+    });
+
+    it('AG-114 una cita no se deshace por la ruta de los bloqueos', async () => {
+      const entryId = await bookedEntry();
+
+      const response = await releaseBlock(entryId).expect(404);
+
+      // `/blocks/:id` no nombra citas: contestar otra cosa convertiría la
+      // ruta en un oráculo de identificadores (AG-071).
+      expect((response.body as Problem).code).toBe('AGENDA_ENTRY_NOT_FOUND');
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(stored.status).toBe('BOOKED');
+      expect(stored.releasedAt).toBeNull();
+    });
+
+    it('AG-114 el bloqueo de otra sede responde 404 por la URL propia y 403 por la ajena', async () => {
+      const foreign = await prisma.agendaEntry.create({
+        data: {
+          kind: 'BLOCK',
+          status: 'BLOCKED',
+          siteId: otherSiteId,
+          practitionerId,
+          startsAt: '2026-01-05T16:00:00Z',
+          endsAt: '2026-01-05T17:00:00Z',
+          createdById: userId,
+        },
+      });
+
+      const notFound = await releaseBlock(foreign.id).expect(404);
+      expect((notFound.body as Problem).code).toBe('AGENDA_ENTRY_NOT_FOUND');
+
+      // Por la URL de la sede ajena corta el guard: AG-071 por `param:siteId`.
+      const denied = await releaseBlock(foreign.id, otherSiteId).expect(403);
+      expect((denied.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: foreign.id },
+      });
+      expect(stored.status).toBe('BLOCKED');
+      expect(stored.releasedAt).toBeNull();
+    });
+
+    it('AG-070 exige sesión para deshacer un bloqueo', async () => {
+      const blocked = await block().expect(201);
+
+      await request(app.getHttpServer())
+        .delete(
+          `/api/v1/agenda/sites/${siteId}/blocks/${(blocked.body as EntryBody).id}`,
+        )
         .expect(401);
     });
   });

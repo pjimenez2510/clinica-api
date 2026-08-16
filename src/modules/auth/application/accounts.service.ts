@@ -1,5 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 
+import type { Principal } from '../../../shared/authorisation/principal';
+import { assertScopesInScope } from '../../../shared/authorisation/site-scope';
 import { RevocationReason } from '../../../shared/request/client-context';
 import {
   CannotDemoteSelfError,
@@ -233,14 +235,38 @@ export class AccountsService {
    * sites is two grants, and «todas las sedes» (`siteId: null`) is a third
    * thing that is not the union of them — it keeps applying when a new site
    * opens.
+   *
+   * AU-038, D-023 (option A, decided 15-08-2026). WHICH IS WHY THE SCOPE OF
+   * EACH GRANT IS CHECKED HERE AND NOT BY THE GUARD: `grants[].siteId` travels
+   * in the body, guards run before the pipes, and the route declared `global`.
+   * That was not a missing site check on an agenda — it was PRIVILEGE
+   * ESCALATION. Whoever held `user:manage` at one site could hand a second
+   * account a grant with `siteId: null`, and from there the site dimension
+   * means nothing anywhere in the system. `user_role_grant_no_self_grant`
+   * stopped them doing it to themselves; it never stopped the second account.
+   *
+   * BOTH ENDS, like ST-047. The replacement is a set, so sending only the
+   * caller's own site would SILENTLY REVOKE another site's grants — leaving a
+   * city's reception without a role is as much theirs as granting it. What is
+   * being set and what is being replaced both have to be in scope, and the
+   * deliberate consequence is that a one-site administrator does not
+   * administer the roles of somebody who also holds them elsewhere.
    */
   async replaceGrants(
     userId: string,
     desired: readonly GrantInput[],
     requester: Requester,
+    caller: Principal,
   ): Promise<readonly GrantView[]> {
     const account = await this.accounts.findById(userId);
     if (!account) throw new UserNotFoundError();
+
+    // AU-038, before the roles are even looked up: nothing is written, and the
+    // refusal names the permission and never a site.
+    assertScopesInScope(caller, 'user:manage', [
+      ...desired.map((grant) => grant.siteId),
+      ...(await this.accounts.listGrants(userId)).map((grant) => grant.siteId),
+    ]);
 
     // Every role has to exist before anything is written. Doing it inside the
     // replacement would leave the account with the roles that happened to be

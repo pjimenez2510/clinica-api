@@ -17,6 +17,13 @@ import {
 import type {
   AgendaEntryView,
   AgendaRepository,
+  AuthoriserPermissionsQuery,
+  BlockingAppointment,
+  BlockingAppointmentsQuery,
+  NewBlock,
+  NoShowCountRow,
+  NoShowCountsQuery,
+  OverbookingCountQuery,
   AvailabilityContext,
   AvailabilityContextQuery,
   DailyAgendaQuery,
@@ -36,9 +43,15 @@ import type {
 import {
   AgendaEntryHasEncounterError,
   AgendaEntryNotFoundError,
+  BlockOverlapsAppointmentsError,
   CancellationReasonRequiredError,
   InvalidAgendaTransitionError,
   NoShowBeforeStartError,
+  OverbookingLimitReachedError,
+  OverbookingNotAllowedError,
+  OverbookingNotAuthorisedError,
+  OverbookingReasonRequiredError,
+  SelfAuthorisationDeniedError,
 } from '../domain/agenda.errors';
 import type { Holiday } from '../domain/holiday-calendar';
 import type { AgendaOccupancy } from '../domain/slot-availability';
@@ -62,6 +75,12 @@ const USER = '00000000-0000-4000-8000-000000000004';
 const ROOM = '00000000-0000-4000-8000-000000000005';
 const OTHER_SITE = '00000000-0000-4000-8000-000000000006';
 const SERVICE_TYPE = '00000000-0000-4000-8000-000000000007';
+/** AG-101, AG-103: quien AUTORIZA el sobrecupo, que nunca es `USER`. */
+const DOCTOR_USER = '00000000-0000-4000-8000-000000000008';
+/** AG-115: the practitioner an appointment can be MOVED TO. */
+const OTHER_PRACTITIONER = '00000000-0000-4000-8000-000000000009';
+/** AG-115: the type of attention it can be moved to, distinct from the stored one. */
+const OTHER_SERVICE_TYPE = '00000000-0000-4000-8000-00000000000a';
 
 const REQUESTER: Requester = { userId: USER };
 
@@ -98,6 +117,10 @@ function anEntry(overrides: Partial<AgendaEntryView> = {}): AgendaEntryView {
     endsAt: EIGHT_TWENTY,
     status: 'BOOKED',
     blocksCalendar: true,
+    // AG-035, AG-036: an ordinary appointment carries no exception, and
+    // `agenda_entry_overbooking_coherence` guarantees the pairing.
+    overbookingReason: null,
+    overbookingAuthorisedById: null,
     releasedAt: null,
     bookingChannel: 'PHONE',
     serviceTypeId: null,
@@ -127,6 +150,8 @@ function anOccupancy(
 
 interface Recorded {
   daily: DailyAgendaQuery[];
+  /** AG-080, AG-081: the scope and the window the metric asked storage for. */
+  noShowQueries: NoShowCountsQuery[];
   context: ScheduleContextQuery[];
   availability: AvailabilityContextQuery[];
   rooms: string[];
@@ -143,6 +168,12 @@ interface Recorded {
   /** SP-023: which practitioner·type the proposal asked storage about. */
   durationSources: DurationSourcesQuery[];
   booked: NewBooking[];
+  /** AG-037: the blocks written, and AG-038 what was asked before writing. */
+  blocked: NewBlock[];
+  blockingQueries: BlockingAppointmentsQuery[];
+  /** AG-100, AG-101: the two questions an overbooking asks storage. */
+  overbookingCounts: OverbookingCountQuery[];
+  authoriserQueries: AuthoriserPermissionsQuery[];
   transitions: { command: TransitionCommand; change: StatusChange }[];
   /**
    * AG-052: what the ONE atomic port call was told, and nothing about the
@@ -196,16 +227,29 @@ function repositoryDouble(
      * the double answers as an empty catalogue would.
      */
     durationSources?: StoredDurationSources | null;
+    /** AG-101: what the NAMED AUTHORISER holds at the site. */
+    authoriserPermissions?: readonly string[];
+    /** AG-100: how many overbookings that practitioner already has that day. */
+    overbookingCount?: number;
+    /** AG-038: the appointments standing inside the interval to be blocked. */
+    blockingAppointments?: readonly BlockingAppointment[];
+    /** AG-080: the counted cube the metric reduces. */
+    noShowCounts?: readonly NoShowCountRow[];
   } = {},
 ): { repository: AgendaRepository; recorded: Recorded } {
   const recorded: Recorded = {
     daily: [],
+    noShowQueries: [],
     context: [],
     availability: [],
     rooms: [],
     holidayQueries: [],
     durationSources: [],
     booked: [],
+    blocked: [],
+    blockingQueries: [],
+    overbookingCounts: [],
+    authoriserQueries: [],
     transitions: [],
     reschedules: [],
   };
@@ -215,6 +259,11 @@ function repositoryDouble(
     // their behaviour is proven against the real database in integration.
     listSites: () => Promise.resolve([]),
     listSchedulablePractitioners: () => Promise.resolve([]),
+    listServiceTypes: () => Promise.resolve([]),
+    noShowCounts: (query) => {
+      recorded.noShowQueries.push(query);
+      return Promise.resolve(overrides.noShowCounts ?? []);
+    },
     dailyAgenda: (query) => {
       recorded.daily.push(query);
       return Promise.resolve(overrides.entries ?? []);
@@ -253,19 +302,30 @@ function repositoryDouble(
               // D-021: the grid is the site's now. Twenty minutes is what
               // every case here used to read off the rule.
               slotAtomMinutes: 20,
+              // E4, D-005: the overbooking is on out of the box, with the cap
+              // of D-001 and the permission MEDICO and ADMIN carry.
+              overbookingEnabled: true,
+              overbookingCap: 2,
+              overbookingPermission: 'agenda:overbook',
             }
           : overrides.siteParameters,
       ),
+    /**
+     * THE DEFAULT ANSWERS ABOUT WHOEVER WAS ASKED, which is what the real
+     * adapter does and what AG-115 needs: a double hard-wired to `PRACTITIONER`
+     * would refuse every move to another doctor with `OUTSIDE_SCHEDULE_RULE`
+     * and hide whether the service asked about the right person at all.
+     */
     scheduleContextFor: (query) => {
       recorded.context.push(query);
       return Promise.resolve(
         overrides.context ?? {
           practitioner: {
-            practitionerId: PRACTITIONER,
+            practitionerId: query.practitionerId,
             schedulable: true,
             siteIds: [SITE],
           },
-          rules: [RULE],
+          rules: [{ ...RULE, practitionerId: query.practitionerId }],
         },
       );
     },
@@ -312,6 +372,38 @@ function repositoryDouble(
           serviceTypeId: booking.serviceTypeId ?? null,
         }),
       );
+    },
+    blockAgenda: (block) => {
+      recorded.blocked.push(block);
+      return Promise.resolve(
+        anEntry({
+          id: 'block-1',
+          kind: 'BLOCK',
+          status: 'BLOCKED',
+          patientId: null,
+          patientName: null,
+          bookingChannel: null,
+          startsAt: block.startsAt,
+          endsAt: block.endsAt,
+          createdById: block.createdById,
+        }),
+      );
+    },
+    overbookingCount: (query) => {
+      recorded.overbookingCounts.push(query);
+      return Promise.resolve(overrides.overbookingCount ?? 0);
+    },
+    authoriserPermissions: (query) => {
+      recorded.authoriserQueries.push(query);
+      // The default is «this person may authorise»: the cases that are about
+      // the reason, the switch or the cap would otherwise all die on AG-101.
+      return Promise.resolve(
+        overrides.authoriserPermissions ?? ['agenda:overbook'],
+      );
+    },
+    blockingAppointments: (query) => {
+      recorded.blockingQueries.push(query);
+      return Promise.resolve(overrides.blockingAppointments ?? []);
     },
     // Like the real adapter: reads (here, the programmed row), hands it to
     // the policy, records what the policy decided, answers the updated row.
@@ -1116,6 +1208,9 @@ describe('rescheduling an appointment', () => {
       startsAt: new Date('2026-09-14T14:00:00Z'),
       endsAt: new Date('2026-09-14T14:20:00Z'),
       bookingChannel: 'PHONE',
+      // AG-115: asked for by nobody here, so they are the stored row's.
+      practitionerId: PRACTITIONER,
+      serviceTypeId: null,
     });
     // What the ORIGINAL row is told to become: annulled and released, with no
     // key that could carry an interval (AG-050's «no mover la fila existente»).
@@ -1134,6 +1229,56 @@ describe('rescheduling an appointment', () => {
 
     expect(moved.original.rescheduledToId).toBe(moved.created.id);
     expect(moved.created.rescheduledFromId).toBe(moved.original.id);
+  });
+
+  it('AG-115 hands the port the practitioner and the type the request asked for', async () => {
+    const { service, recorded } = serviceWith({
+      entry: anEntry({ serviceTypeId: SERVICE_TYPE }),
+    });
+
+    await service.reschedule(
+      aReschedule({
+        practitionerId: OTHER_PRACTITIONER,
+        serviceTypeId: OTHER_SERVICE_TYPE,
+      }),
+      REQUESTER,
+    );
+
+    // The two fields of a row that is being BORN, so choosing them is not a
+    // mutation of the appointment that already exists (AG-050).
+    expect(recorded.reschedules[0]?.booking).toMatchObject({
+      practitionerId: OTHER_PRACTITIONER,
+      serviceTypeId: OTHER_SERVICE_TYPE,
+    });
+  });
+
+  it('AG-115 keeps the practitioner and the type of the original when the request names neither', async () => {
+    const { service, recorded } = serviceWith({
+      entry: anEntry({ serviceTypeId: SERVICE_TYPE }),
+    });
+
+    await service.reschedule(aReschedule(), REQUESTER);
+
+    // The behaviour that existed before AG-115 and that AG-115 must not break:
+    // both fields are optional, and absent means «the one it already had».
+    expect(recorded.reschedules[0]?.booking).toMatchObject({
+      practitionerId: PRACTITIONER,
+      serviceTypeId: SERVICE_TYPE,
+    });
+  });
+
+  it('AG-115 judges the new interval against the schedule of the NEW practitioner', async () => {
+    const { service, recorded } = serviceWith();
+
+    await service.reschedule(
+      aReschedule({ practitionerId: OTHER_PRACTITIONER }),
+      REQUESTER,
+    );
+
+    // «Las mismas comprobaciones que una reserva» is worth nothing if they are
+    // run against the doctor being LEFT: the grid, the bookable flag and the
+    // site link (AG-028, AG-013) all belong to the one who will attend.
+    expect(recorded.context.at(-1)?.practitionerId).toBe(OTHER_PRACTITIONER);
   });
 
   it('AG-044 refuses a reschedule with no reason before it reads anything', async () => {
@@ -1474,7 +1619,12 @@ describe('las listas de referencia', () => {
         listSchedulablePractitioners: (siteId) => {
           asked.push(siteId);
           return Promise.resolve([
-            { id: 'p-1', userId: 'u-1', fullName: 'Ana Villacís' },
+            {
+              id: 'p-1',
+              userId: 'u-1',
+              fullName: 'Ana Villacís',
+              specialties: [],
+            },
           ]);
         },
       },
@@ -1482,8 +1632,411 @@ describe('las listas de referencia', () => {
     );
 
     await expect(spied.schedulablePractitioners('site-9')).resolves.toEqual([
-      { id: 'p-1', userId: 'u-1', fullName: 'Ana Villacís' },
+      { id: 'p-1', userId: 'u-1', fullName: 'Ana Villacís', specialties: [] },
     ]);
     expect(asked).toEqual(['site-9']);
+  });
+
+  it('AG-112 pide los tipos por especialidad y no por sede', async () => {
+    // La sede de la ruta AUTORIZA (AG-071) y no filtra: un `service_type` es
+    // de la clínica. Si algún día llegara hasta el repositorio sería porque
+    // alguien creyó que acota, y acotar por ella daría listas distintas en
+    // dos sedes para el mismo catálogo.
+    const asked: unknown[] = [];
+    const spied = new AgendaService(
+      {
+        ...repositoryDouble().repository,
+        listServiceTypes: (...args) => {
+          asked.push(args);
+          return Promise.resolve([
+            { id: 'st-1', name: 'Control', durationMinutes: 20 },
+          ]);
+        },
+      },
+      loggerDouble().logger,
+    );
+
+    await expect(spied.serviceTypesOf('sp-1')).resolves.toEqual([
+      { id: 'st-1', name: 'Control', durationMinutes: 20 },
+    ]);
+    expect(asked).toEqual([['sp-1']]);
+  });
+});
+
+/**
+ * E4 — el sobrecupo y el bloqueo, contra dobles del puerto.
+ *
+ * LO QUE NO SE PRUEBA AQUÍ, y es la mitad importante: que la base cuente los
+ * sobrecupos del día correcto, que el `EXCLUDE` arbitre el bloqueo y que
+ * `agenda_entry_overbooking_coherence` impida un sobrecupo sin constancia. Un
+ * doble que devuelve lo que le pedimos no demuestra ninguna de las tres:
+ * viven en `test/integration/agenda-overbooking.spec.ts` contra PostgreSQL de
+ * verdad. Aquí está lo que decide el servicio: qué comprueba, en qué orden, y
+ * que no escribe nada cuando rechaza.
+ */
+describe('AG-035 el sobrecupo', () => {
+  const OVERBOOKING = {
+    overbooking: { reason: '  Urgencia dental  ', authorisedById: DOCTOR_USER },
+  };
+
+  it('AG-035 escribe el sobrecupo con su motivo y su autorizador', async () => {
+    const { service, recorded } = serviceWith();
+
+    await service.book({ ...aBooking(), ...OVERBOOKING }, REQUESTER);
+
+    expect(recorded.booked[0]).toMatchObject({
+      // AG-029: quien reserva sigue siendo quien reserva…
+      createdById: USER,
+      // …y quien autoriza es otro. Ésa es la separación entera (AG-103).
+      overbooking: {
+        authorisedById: DOCTOR_USER,
+        // Recortado: lo que se comprobó es lo que se guarda, y la base rechaza
+        // un motivo en blanco.
+        reason: 'Urgencia dental',
+      },
+    });
+  });
+
+  it('AG-036 devuelve el indicador y el motivo del sobrecupo en la respuesta', async () => {
+    // Sin esto el listado no puede distinguirlo «sin consultar otra vez», que
+    // es literalmente lo que pide el requisito.
+    const { service } = serviceWith({
+      entries: [
+        anEntry({
+          blocksCalendar: false,
+          overbookingReason: 'Urgencia dental',
+          overbookingAuthorisedById: DOCTOR_USER,
+        }),
+      ],
+    });
+
+    const [entry] = await service.dailyAgenda({ siteId: SITE, date: DATE });
+
+    expect(entry).toMatchObject({
+      blocksCalendar: false,
+      overbookingReason: 'Urgencia dental',
+    });
+  });
+
+  it('AG-035 rechaza el sobrecupo sin motivo y no escribe nada', async () => {
+    const { service, recorded } = serviceWith();
+
+    await expect(
+      service.book(
+        {
+          ...aBooking(),
+          overbooking: { reason: '   ', authorisedById: DOCTOR_USER },
+        },
+        REQUESTER,
+      ),
+    ).rejects.toBeInstanceOf(OverbookingReasonRequiredError);
+
+    expect(recorded.booked).toEqual([]);
+  });
+
+  it('AG-028, AG-104 admite el intervalo fuera de la rejilla cuando se declara sobrecupo', async () => {
+    // Es la contrapartida de D-007: meter a alguien a las 08:10 sigue siendo
+    // posible por la vía que exige motivo y deja constancia.
+    const { service, recorded } = serviceWith();
+    const eightTen = new Date('2026-09-14T13:10:00Z');
+    const eightThirty = new Date('2026-09-14T13:30:00Z');
+
+    await service.book(
+      {
+        ...aBooking(),
+        startsAt: eightTen,
+        endsAt: eightThirty,
+        ...OVERBOOKING,
+      },
+      REQUESTER,
+    );
+
+    expect(recorded.booked).toHaveLength(1);
+  });
+
+  it('AG-039 rechaza el sobrecupo en una sede que no lo admite, sin preguntar nada más', async () => {
+    // Y el orden importa: comprobar el motivo o el autorizador antes que el
+    // interruptor mandaría a recepción a rellenar un formulario para una
+    // excepción que esta sede no hace.
+    const { service, recorded } = serviceWith({
+      siteParameters: {
+        minLeadMinutes: 0,
+        maxLeadDays: 180,
+        allowPastBooking: true,
+        slotAtomMinutes: 20,
+        overbookingEnabled: false,
+      },
+    });
+
+    await expect(
+      service.book(
+        { ...aBooking(), overbooking: { authorisedById: DOCTOR_USER } },
+        REQUESTER,
+      ),
+    ).rejects.toBeInstanceOf(OverbookingNotAllowedError);
+
+    expect(recorded.booked).toEqual([]);
+    expect(recorded.authoriserQueries).toEqual([]);
+    expect(recorded.overbookingCounts).toEqual([]);
+  });
+
+  it('AG-103 rechaza que quien reserva se autorice a sí mismo, y no crea la entrada', async () => {
+    const { service, recorded } = serviceWith();
+
+    await expect(
+      service.book(
+        {
+          ...aBooking(),
+          overbooking: { reason: 'Urgencia', authorisedById: USER },
+        },
+        REQUESTER,
+      ),
+    ).rejects.toBeInstanceOf(SelfAuthorisationDeniedError);
+
+    expect(recorded.booked).toEqual([]);
+  });
+
+  it('AG-101 pregunta por los permisos del AUTORIZADOR en ESA sede, no por los de quien reserva', async () => {
+    // Si preguntara por quien reserva, la separación de personas sería
+    // decorado: recepción nombraría a un médico y la comprobación miraría sus
+    // propios permisos, que ya incluyen `agenda:write`.
+    const { service, recorded } = serviceWith();
+
+    await service.book({ ...aBooking(), ...OVERBOOKING }, REQUESTER);
+
+    expect(recorded.authoriserQueries).toEqual([
+      { userId: DOCTOR_USER, siteId: SITE },
+    ]);
+  });
+
+  it('AG-101 rechaza al autorizador sin el permiso que la sede exige, y no crea la entrada', async () => {
+    const { service, recorded } = serviceWith({
+      authoriserPermissions: ['agenda:read', 'agenda:write'],
+    });
+
+    await expect(
+      service.book({ ...aBooking(), ...OVERBOOKING }, REQUESTER),
+    ).rejects.toBeInstanceOf(OverbookingNotAuthorisedError);
+
+    expect(recorded.booked).toEqual([]);
+  });
+
+  it('AG-100 cuenta el tope del día en America/Guayaquil y no en UTC', async () => {
+    /**
+     * EL BORDE QUE IMPORTA. Un sobrecupo de las 19:30 en Ecuador es
+     * `2026-09-15T00:30:00Z`: contado en UTC caería en el día siguiente, y el
+     * tope dejaría de limitar las tardes, que es justo cuando se abusa de él.
+     */
+    const halfSevenPM = new Date('2026-09-15T00:30:00Z');
+    const { service, recorded } = serviceWith();
+
+    await service.book(
+      {
+        ...aBooking(),
+        startsAt: halfSevenPM,
+        endsAt: new Date('2026-09-15T00:50:00Z'),
+        ...OVERBOOKING,
+      },
+      REQUESTER,
+    );
+
+    expect(recorded.overbookingCounts[0]).toMatchObject({
+      siteId: SITE,
+      practitionerId: PRACTITIONER,
+      // El 14 de septiembre en Ecuador, no el 15 en UTC.
+      from: new Date('2026-09-14T05:00:00Z'),
+      untilExclusive: new Date('2026-09-15T05:00:00Z'),
+    });
+  });
+
+  it('AG-100 rechaza el sobrecupo que pasaría del tope de la sede, indicándolo', async () => {
+    const { service, recorded } = serviceWith({ overbookingCount: 2 });
+
+    const rejection = await service
+      .book({ ...aBooking(), ...OVERBOOKING }, REQUESTER)
+      .catch((error: unknown) => error);
+
+    expect(rejection).toBeInstanceOf(OverbookingLimitReachedError);
+    expect((rejection as OverbookingLimitReachedError).params).toEqual({
+      cap: 2,
+    });
+    expect(recorded.booked).toEqual([]);
+  });
+});
+
+describe('AG-037 el bloqueo de agenda', () => {
+  const aBlock = (overrides: Record<string, unknown> = {}) => ({
+    siteId: SITE,
+    practitionerId: PRACTITIONER,
+    startsAt: EIGHT,
+    endsAt: EIGHT_TWENTY,
+    ...overrides,
+  });
+
+  it('AG-037 crea el bloqueo sin paciente y sin canal', async () => {
+    const { service, recorded } = serviceWith();
+
+    const entry = await service.blockAgenda(
+      aBlock({ reason: 'Quirófano' }),
+      REQUESTER,
+    );
+
+    expect(recorded.blocked[0]).toMatchObject({
+      siteId: SITE,
+      practitionerId: PRACTITIONER,
+      reason: 'Quirófano',
+      createdById: USER,
+    });
+    expect(entry.kind).toBe('BLOCK');
+    expect(entry.patientId).toBeNull();
+  });
+
+  it('AG-038 rechaza el bloqueo enumerando las citas que lo impiden', async () => {
+    const { service, recorded } = serviceWith({
+      blockingAppointments: [
+        { id: 'entry-a', startsAt: EIGHT, endsAt: EIGHT_TWENTY },
+        {
+          id: 'entry-b',
+          startsAt: new Date('2026-09-14T13:40:00Z'),
+          endsAt: new Date('2026-09-14T14:00:00Z'),
+        },
+      ],
+    });
+
+    const rejection = await service
+      .blockAgenda(aBlock(), REQUESTER)
+      .catch((error: unknown) => error);
+
+    expect(rejection).toBeInstanceOf(BlockOverlapsAppointmentsError);
+    const problem = rejection as BlockOverlapsAppointmentsError;
+    // ENUMERARLAS es la mitad útil: sin la lista hay que buscarlas a mano.
+    expect(problem.params).toMatchObject({
+      blockingCount: 2,
+      blockingEntryIds: 'entry-a,entry-b',
+    });
+    // Y las horas, en hora de pared ecuatoriana (AG-001).
+    expect(problem.fieldErrors?.[0]?.message).toContain('08:00');
+    expect(problem.fieldErrors?.[0]?.message).toContain('08:40');
+    // AG-038: rechazado, no escrito.
+    expect(recorded.blocked).toEqual([]);
+  });
+
+  it('AG-072, AG-074 no nombra al paciente de ninguna de esas citas', async () => {
+    // SC-006. El mensaje llega al registro y a una captura de soporte; AG-109
+    // concede el nombre al LISTADO del día, que es otra ruta con su permiso.
+    const { service } = serviceWith({
+      blockingAppointments: [
+        { id: 'entry-a', startsAt: EIGHT, endsAt: EIGHT_TWENTY },
+      ],
+    });
+
+    const rejection = (await service
+      .blockAgenda(aBlock(), REQUESTER)
+      .catch((error: unknown) => error)) as BlockOverlapsAppointmentsError;
+
+    const served = JSON.stringify({
+      message: rejection.message,
+      params: rejection.params,
+      fieldErrors: rejection.fieldErrors,
+      userTitle: rejection.userTitle,
+    });
+    expect(served).not.toContain('Guamán');
+    expect(served).not.toContain(PATIENT);
+  });
+
+  it('AG-105 rechaza el bloqueo de un consultorio de otra sede', async () => {
+    const { service, recorded } = serviceWith({ roomSiteId: OTHER_SITE });
+
+    await expect(
+      service.blockAgenda(aBlock({ roomId: ROOM }), REQUESTER),
+    ).rejects.toBeInstanceOf(RoomNotInSiteError);
+
+    expect(recorded.blocked).toEqual([]);
+  });
+});
+
+describe('AG-080 la tasa de inasistencia', () => {
+  const cell = (overrides: Partial<NoShowCountRow> = {}): NoShowCountRow => ({
+    siteId: SITE,
+    siteName: 'Sede Norte',
+    practitionerId: PRACTITIONER,
+    practitionerName: 'Ana Vera',
+    bookingChannel: 'PHONE',
+    status: 'FULFILLED',
+    count: 1,
+    ...overrides,
+  });
+
+  it('AG-071 entrega al repositorio exactamente el alcance recibido, no una sede pedida', async () => {
+    // Lo único que separa a recepción de Norte de las cifras de Sur: la ruta
+    // declara `'query'`, así que el guard no puede estrecharla y esto sí.
+    const { service, recorded } = serviceWith();
+
+    await service.noShowRate({
+      sites: [SITE],
+      from: parseClinicalDate('2026-09-01'),
+      to: parseClinicalDate('2026-09-30'),
+    });
+
+    expect(recorded.noShowQueries).toHaveLength(1);
+    expect(recorded.noShowQueries[0]?.sites).toEqual([SITE]);
+  });
+
+  it('AG-001 pide la ventana en instantes ecuatorianos y no fechas sueltas', async () => {
+    const { service, recorded } = serviceWith();
+
+    await service.noShowRate({
+      sites: 'all',
+      from: parseClinicalDate('2026-09-01'),
+      to: parseClinicalDate('2026-09-29'),
+    });
+
+    // 00:00 del 1 y 00:00 del 30, en Ecuador. El adaptador nunca ve una fecha,
+    // así que no hay `::date` que pueda resolverse con el huso de la sesión.
+    expect(recorded.noShowQueries[0]?.from.toISOString()).toBe(
+      '2026-09-01T05:00:00.000Z',
+    );
+  });
+
+  it('AG-081 cierra la ventana en el instante actual y lo dice en la respuesta', async () => {
+    const { service, recorded } = serviceWith();
+    const before = Date.now();
+
+    // Un rango que llega hasta 2027: nada de eso ha podido faltar todavía.
+    const report = await service.noShowRate({
+      sites: 'all',
+      from: parseClinicalDate('2026-01-01'),
+      to: parseClinicalDate('2026-12-31'),
+    });
+
+    const countedUntil = report.countedUntil.getTime();
+    expect(countedUntil).toBeGreaterThanOrEqual(before);
+    expect(countedUntil).toBeLessThanOrEqual(Date.now());
+    // Y es EL MISMO instante que se le pidió a la base: una segunda lectura
+    // del reloj dejaría la cifra y su etiqueta describiendo periodos distintos.
+    expect(recorded.noShowQueries[0]?.untilExclusive.getTime()).toBe(
+      countedUntil,
+    );
+  });
+
+  it('AG-080 reduce el cubo del repositorio sin recontarlo por su cuenta', async () => {
+    const { service } = serviceWith({
+      noShowCounts: [
+        cell({ status: 'NO_SHOW', count: 2 }),
+        cell({ status: 'FULFILLED', count: 8 }),
+        // AG-081: la base las devuelve y el dominio las descarta.
+        cell({ status: 'CANCELLED', count: 5 }),
+      ],
+    });
+
+    const report = await service.noShowRate({
+      sites: 'all',
+      from: parseClinicalDate('2026-09-01'),
+      to: parseClinicalDate('2026-09-30'),
+    });
+
+    expect(report.overall).toMatchObject({ noShow: 2, total: 10, rate: 0.2 });
+    expect(report.bySite).toHaveLength(1);
+    expect(report.byChannel).toHaveLength(1);
   });
 });

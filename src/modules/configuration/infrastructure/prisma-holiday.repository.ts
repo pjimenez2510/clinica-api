@@ -109,6 +109,11 @@ export class PrismaHolidayRepository implements HolidayRepository {
   }
 
   /** CF-061 answered by `holiday_date_scope_unique`. */
+  /** CF-067. The authorisation read: whose holiday is this, before anything. */
+  async findById(id: string): Promise<HolidayView | null> {
+    return this.find(this.prisma, id);
+  }
+
   async create(input: HolidayInput): Promise<HolidayView> {
     try {
       const row = await this.prisma.holiday.create({

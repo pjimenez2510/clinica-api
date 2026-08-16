@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { AccessAuditEntry } from '../../../shared/audit/access-audit.port';
+import { Principal } from '../../../shared/authorisation/principal';
+import { SiteScopeDeniedError } from '../../../shared/authorisation/site-scope';
 import { HolidayNotFoundError } from '../domain/configuration.errors';
 import type {
   HolidayChange,
@@ -28,6 +30,20 @@ import { HolidaysService } from './holidays.service';
 
 const REQUESTER = { userId: 'user-1', ip: '10.0.0.1' };
 
+/**
+ * CF-067. The clinic-wide grant — `siteId: null` is every site, present and
+ * future — which is what administering a national holiday takes, and what
+ * every case below that is not about the site scope uses.
+ */
+const DIRECTOR = new Principal('user-1', [
+  { roleCode: 'ADMIN', siteId: null, permissions: ['settings:manage'] },
+]);
+
+/** CF-067. `settings:manage`, granted for `site-9` and for nowhere else. */
+const SCOPED_TO_SITE_9 = new Principal('user-2', [
+  { roleCode: 'ADMIN', siteId: 'site-9', permissions: ['settings:manage'] },
+]);
+
 const HOLIDAY: HolidayView = {
   id: 'holiday-1',
   date: '2026-01-01',
@@ -54,12 +70,19 @@ class RepositoryDouble implements HolidayRepository {
   updateAnswer: HolidayChange | null = { before: HOLIDAY, after: RENAMED };
   /** The row that disappeared, which is all a deletion leaves behind. */
   deleteAnswer: HolidayView | null = HOLIDAY;
+  /** CF-067. The authorisation read: whose holiday is this, before anything. */
+  findAnswer: HolidayView | null = HOLIDAY;
   /** AG-092. `null` is «that holiday is gone», for both exception methods. */
   exceptionAnswer: HolidayChange | null = { before: HOLIDAY, after: WORKED };
 
   list(query: HolidayQuery): Promise<readonly HolidayView[]> {
     this.calls.push({ method: 'list', args: [query] });
     return Promise.resolve([HOLIDAY]);
+  }
+
+  findById(id: string): Promise<HolidayView | null> {
+    this.calls.push({ method: 'findById', args: [id] });
+    return Promise.resolve(this.findAnswer);
   }
 
   create(input: HolidayInput): Promise<HolidayView> {
@@ -118,7 +141,11 @@ describe('la administración de feriados', () => {
     // became a site chosen by default, the holiday would stop applying to the
     // rest of the clinic without anybody noticing.
     return service
-      .create({ date: '2026-05-01', name: 'Día del Trabajo' }, REQUESTER) // prettier-ignore
+      .create(
+        { date: '2026-05-01', name: 'Día del Trabajo' },
+        REQUESTER,
+        DIRECTOR,
+      ) // prettier-ignore
       .then(() => {
         expect(repository.calls[0]?.args[0]).toEqual({
           date: '2026-05-01',
@@ -132,6 +159,7 @@ describe('la administración de feriados', () => {
     await service.create(
       { date: '2026-05-01', name: 'Fiestas de la sede', siteId: 'site-9' },
       REQUESTER,
+      DIRECTOR,
     );
 
     expect(repository.calls[0]?.args[0]).toMatchObject({ siteId: 'site-9' });
@@ -141,6 +169,7 @@ describe('la administración de feriados', () => {
     const created = await service.create(
       { date: '2026-01-01', name: 'Año Nuevo' },
       REQUESTER,
+      DIRECTOR,
     );
 
     expect(recorded).toEqual([
@@ -162,7 +191,7 @@ describe('la administración de feriados', () => {
     // D-017. A holiday is a date, a name and a scope — no PHI anywhere in it,
     // which is what makes it one of the resource types the base lets carry a
     // payload at all.
-    await service.update('holiday-1', { name: 'Año Nuevo (corregido)' }, REQUESTER); // prettier-ignore
+    await service.update('holiday-1', { name: 'Año Nuevo (corregido)' }, REQUESTER, DIRECTOR); // prettier-ignore
 
     expect(recorded[0]?.before).toEqual(HOLIDAY);
     expect(recorded[0]?.after).toEqual(RENAMED);
@@ -180,25 +209,26 @@ describe('la administración de feriados', () => {
     // `undefined` es «déjalo como está» y `null` es «que valga para todas».
     // Colapsar los dos ampliaría el feriado de una sede a toda la clínica en
     // cada cambio de nombre.
-    await service.update('holiday-1', { name: 'Año Nuevo (corregido)' }, REQUESTER); // prettier-ignore
+    await service.update('holiday-1', { name: 'Año Nuevo (corregido)' }, REQUESTER, DIRECTOR); // prettier-ignore
 
-    expect(repository.calls[0]?.args[1]).toEqual({
+    // `calls[0]` is the CF-067 authorisation read; the write is the second.
+    expect(repository.calls[1]?.args[1]).toEqual({
       date: undefined,
       name: 'Año Nuevo (corregido)',
     });
   });
 
   it('CF-060 amplía el alcance a todas las sedes cuando se envía nulo', async () => {
-    await service.update('holiday-1', { siteId: null }, REQUESTER);
+    await service.update('holiday-1', { siteId: null }, REQUESTER, DIRECTOR);
 
-    expect(repository.calls[0]?.args[1]).toMatchObject({ siteId: null });
+    expect(repository.calls[1]?.args[1]).toMatchObject({ siteId: null });
   });
 
   it('CF-060 responde HOLIDAY_NOT_FOUND al editar uno que ya no está', async () => {
     repository.updateAnswer = null;
 
     await expect(
-      service.update('holiday-1', { name: 'X' }, REQUESTER),
+      service.update('holiday-1', { name: 'X' }, REQUESTER, DIRECTOR),
     ).rejects.toBeInstanceOf(HolidayNotFoundError);
     expect(recorded).toEqual([]);
   });
@@ -206,14 +236,14 @@ describe('la administración de feriados', () => {
   it('CF-060 responde HOLIDAY_NOT_FOUND al borrar uno que ya no está', async () => {
     repository.deleteAnswer = null;
 
-    await expect(service.delete('holiday-1', REQUESTER)).rejects.toBeInstanceOf(
-      HolidayNotFoundError,
-    );
+    await expect(
+      service.delete('holiday-1', REQUESTER, DIRECTOR),
+    ).rejects.toBeInstanceOf(HolidayNotFoundError);
     expect(recorded).toEqual([]);
   });
 
   it('CF-066 deja constancia del borrado, que es lo único que queda de él', async () => {
-    await service.delete('holiday-1', REQUESTER);
+    await service.delete('holiday-1', REQUESTER, DIRECTOR);
 
     expect(recorded).toHaveLength(1);
     expect(recorded[0]).toMatchObject({
@@ -225,7 +255,7 @@ describe('la administración de feriados', () => {
   it('AG-097 el borrado deja el valor que desapareció y nada después', async () => {
     // The one mutation where `before` is the whole record: after it, the row
     // does not exist anywhere else.
-    await service.delete('holiday-1', REQUESTER);
+    await service.delete('holiday-1', REQUESTER, DIRECTOR);
 
     expect(recorded[0]?.before).toEqual(HOLIDAY);
     expect(recorded[0]?.after).toBeUndefined();
@@ -323,5 +353,92 @@ describe('la administración de feriados', () => {
 
     expect(recorded[0]?.before).toMatchObject({ workedBySiteIds: [] });
     expect(recorded[0]?.after).toMatchObject({ workedBySiteIds: ['site-9'] });
+  });
+
+  /**
+   * CF-067, D-023. `site_id IS NULL` is not «sin sede», it is «todas»: a
+   * national holiday shuts every site's agenda (AG-015). Writing one is an act
+   * of clinic-wide reach and the guard could not see it, because the scope
+   * travels in the body.
+   */
+  describe('el alcance por sede (CF-067)', () => {
+    it('CF-067 rechaza crear un feriado NACIONAL desde un alcance de una sede', async () => {
+      await expect(
+        service.create(
+          { date: '2026-05-01', name: 'Día del Trabajo' },
+          REQUESTER,
+          SCOPED_TO_SITE_9,
+        ),
+      ).rejects.toBeInstanceOf(SiteScopeDeniedError);
+
+      expect(repository.calls).toEqual([]);
+    });
+
+    it('CF-067 rechaza crear el feriado de otra sede', async () => {
+      await expect(
+        service.create(
+          { date: '2026-05-01', name: 'Fiestas', siteId: 'site-otra' },
+          REQUESTER,
+          SCOPED_TO_SITE_9,
+        ),
+      ).rejects.toBeInstanceOf(SiteScopeDeniedError);
+
+      expect(repository.calls).toEqual([]);
+    });
+
+    it('CF-067 rechaza editar un feriado nacional, aunque sólo se renombre', async () => {
+      // The stored scope is `null`; the patch names no scope at all.
+      await expect(
+        service.update(
+          'holiday-1',
+          { name: 'Año Nuevo (corregido)' },
+          REQUESTER,
+          SCOPED_TO_SITE_9,
+        ),
+      ).rejects.toBeInstanceOf(SiteScopeDeniedError);
+
+      expect(repository.calls.map((call) => call.method)).toEqual(['findById']);
+    });
+
+    it('CF-067 rechaza ASCENDER a nacional el feriado de su propia sede', async () => {
+      repository.findAnswer = { ...HOLIDAY, siteId: 'site-9' };
+
+      await expect(
+        service.update(
+          'holiday-1',
+          { siteId: null },
+          REQUESTER,
+          SCOPED_TO_SITE_9,
+        ),
+      ).rejects.toBeInstanceOf(SiteScopeDeniedError);
+
+      expect(repository.calls.map((call) => call.method)).toEqual(['findById']);
+    });
+
+    it('CF-067 rechaza borrar un feriado nacional: lo abriría en todas las sedes', async () => {
+      await expect(
+        service.delete('holiday-1', REQUESTER, SCOPED_TO_SITE_9),
+      ).rejects.toBeInstanceOf(SiteScopeDeniedError);
+
+      expect(repository.calls.map((call) => call.method)).toEqual(['findById']);
+    });
+
+    it('CF-067 dentro de su sede escribe: la comprobación no es un muro', async () => {
+      repository.findAnswer = { ...HOLIDAY, siteId: 'site-9' };
+      repository.deleteAnswer = { ...HOLIDAY, siteId: 'site-9' };
+
+      await service.create(
+        { date: '2026-09-24', name: 'Fiestas', siteId: 'site-9' },
+        REQUESTER,
+        SCOPED_TO_SITE_9,
+      );
+      await service.delete('holiday-1', REQUESTER, SCOPED_TO_SITE_9);
+
+      expect(repository.calls.map((call) => call.method)).toEqual([
+        'create',
+        'findById',
+        'delete',
+      ]);
+    });
   });
 });

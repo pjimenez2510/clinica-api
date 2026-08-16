@@ -43,12 +43,19 @@ import {
  * one controller with twenty handlers is one nobody reads before adding the
  * twenty-first.
  *
- * THE SITE SCOPE IS `'global'` ON ALL OF THEM, and it is not laziness: guards
- * run BEFORE pipes, so the body is unvalidated when the site scope would be
- * checked, and the site of a schedule rule travels in the BODY, not in the
- * URL. What replaces it is stronger than a scope check would have been —
- * ST-007 refuses a rule in any site where the practitioner does not attend,
- * checked against the assignment table on every write.
+ * THE THREE MUTATIONS DECLARE `'query'`, NOT `'global'` (ST-048, D-023). The
+ * site of a schedule rule travels in the BODY — and on the DELETE it travels
+ * in no request at all, it is in the row — and guards run BEFORE pipes, so
+ * there is nothing validated for the guard to check at that moment. `global`
+ * said «this route has no site dimension», which was false: whoever held
+ * `staff:manage` at one site could open, move and close another site's
+ * schedule, which is what makes that site's agenda offer slots. The handler
+ * narrows instead, with the caller's own resolved scope.
+ *
+ * ST-007 IS A DIFFERENT QUESTION AND STAYS. «Does this practitioner attend
+ * there?» is not «is that site the caller's?», and reading the first as an
+ * answer to the second is what left the hole open for a whole delivery. The
+ * listing stays `global`: reading a schedule opens no agenda.
  *
  * EVERY MUTATION ANSWERS WITH ITS CONFLICTS (ST-043). The appointments a
  * change leaves outside the new hours are LISTED and never touched: cancelling
@@ -76,9 +83,9 @@ export class StaffScheduleController {
     return { items };
   }
 
-  /** ST-040, ST-042, ST-045, ST-046. */
+  /** ST-040, ST-042, ST-045, ST-046, ST-048. */
   @Post('practitioners/:practitionerId/schedule-rules')
-  @RequirePermission('staff:manage', 'global')
+  @RequirePermission('staff:manage', 'query')
   @ApiOperation({ summary: 'Crear una regla de horario con vigencia' })
   @ApiCreatedResponse({ type: ScheduleRuleOutcomeDto })
   async create(
@@ -98,13 +105,16 @@ export class StaffScheduleController {
           validTo: dto.validTo ?? null,
         },
         this.requester(req),
+        // ST-048: the scope comes from the session the guard resolved, never
+        // from the request — a body that could widen it would be no check.
+        this.currentUser.requirePrincipal(),
       ),
     );
   }
 
-  /** ST-040, ST-042, ST-044. */
+  /** ST-040, ST-042, ST-044, ST-048. */
   @Patch('schedule-rules/:ruleId')
-  @RequirePermission('staff:manage', 'global')
+  @RequirePermission('staff:manage', 'query')
   @ApiOperation({ summary: 'Editar una regla de horario' })
   @ApiOkResponse({ type: ScheduleRuleOutcomeDto })
   async update(
@@ -124,6 +134,7 @@ export class StaffScheduleController {
           validTo: dto.validTo,
         },
         this.requester(req),
+        this.currentUser.requirePrincipal(),
       ),
     );
   }
@@ -138,14 +149,20 @@ export class StaffScheduleController {
    * the whole point of closing a schedule from a screen.
    */
   @Delete('schedule-rules/:ruleId')
-  @RequirePermission('staff:manage', 'global')
+  @RequirePermission('staff:manage', 'query')
   @ApiOperation({ summary: 'Cerrar una regla de horario hacia adelante' })
   @ApiOkResponse({ type: ScheduleRuleOutcomeDto })
   async close(
     @Param('ruleId', ParseUUIDPipe) ruleId: string,
     @Req() req: Request,
   ): Promise<ScheduleRuleOutcomeResponse> {
-    return toResponse(await this.schedule.close(ruleId, this.requester(req)));
+    return toResponse(
+      await this.schedule.close(
+        ruleId,
+        this.requester(req),
+        this.currentUser.requirePrincipal(),
+      ),
+    );
   }
 
   /** Who is asking, for the trail (ST-044). */

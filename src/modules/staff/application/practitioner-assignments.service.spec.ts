@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { AccessAuditEntry } from '../../../shared/audit/access-audit.port';
+import { Principal } from '../../../shared/authorisation/principal';
+import { SiteScopeDeniedError } from '../../../shared/authorisation/site-scope';
 import { DurationNotSlotMultipleError } from '../../../shared/domain/errors/slot-atom.errors';
 import {
   ServiceTypeNotFoundError,
@@ -34,6 +36,15 @@ import { type Requester, StaffAuditTrail } from './staff-audit.trail';
  * specialty is the catalogue's, only its enforcement point moved.
  */
 const REQUESTER: Requester = { userId: 'user-1', ip: '10.0.0.1' };
+
+/** ST-047. The clinic-wide grant: `siteId: null` is every site, present and future. */
+const DIRECTOR = new Principal('user-1', [
+  { roleCode: 'ADMIN', siteId: null, permissions: ['staff:manage'] },
+]);
+/** ST-047. `staff:manage`, granted for Norte and for nowhere else. */
+const NORTE_ADMIN = new Principal('user-2', [
+  { roleCode: 'ADMIN', siteId: 'site-norte', permissions: ['staff:manage'] },
+]);
 
 const ACTIVE: SpecialtyReference = { id: 'spec-1', active: true };
 const INACTIVE: SpecialtyReference = { id: 'spec-2', active: false };
@@ -169,7 +180,12 @@ describe('PractitionerAssignmentsService', () => {
 
   describe('sedes donde atiende', () => {
     it('ST-007 fijar las sedes es un reemplazo completo y deja bitácora', async () => {
-      await service.replaceSites('prac-1', ['site-1', 'site-2'], REQUESTER);
+      await service.replaceSites(
+        'prac-1',
+        ['site-1', 'site-2'],
+        REQUESTER,
+        DIRECTOR,
+      );
 
       expect(writes()).toEqual([
         {
@@ -185,7 +201,7 @@ describe('PractitionerAssignmentsService', () => {
     });
 
     it('ST-007 una lista vacía es legal: quien está de baja larga no atiende en ninguna', async () => {
-      await service.replaceSites('prac-1', [], REQUESTER);
+      await service.replaceSites('prac-1', [], REQUESTER, DIRECTOR);
 
       expect(writes()).toEqual([
         { method: 'replacePractitionerSites', args: ['prac-1', []] },
@@ -196,9 +212,55 @@ describe('PractitionerAssignmentsService', () => {
       answers.findPractitioner = null;
 
       await expect(
-        service.replaceSites('ghost', ['site-1'], REQUESTER),
+        service.replaceSites('ghost', ['site-1'], REQUESTER, DIRECTOR),
       ).rejects.toBeInstanceOf(PractitionerNotFoundError);
       expect(writes()).toEqual([]);
+    });
+
+    it('ST-047 rechaza sin escribir la sede que queda fuera del alcance de quien llama', async () => {
+      answers.sites = [{ siteId: 'site-norte' } as PractitionerSiteView];
+
+      await expect(
+        service.replaceSites(
+          'prac-1',
+          ['site-norte', 'site-sur'],
+          REQUESTER,
+          NORTE_ADMIN,
+        ),
+      ).rejects.toBeInstanceOf(SiteScopeDeniedError);
+      expect(writes()).toEqual([]);
+    });
+
+    it('ST-047 rechaza también QUITAR una sede fuera del alcance: el PUT reemplaza el conjunto', async () => {
+      // El profesional atiende en las dos; enviar sólo Norte borraría la fila
+      // de Sur, y desaparecería del listado de agendables de otra ciudad.
+      answers.sites = [
+        { siteId: 'site-norte' } as PractitionerSiteView,
+        { siteId: 'site-sur' } as PractitionerSiteView,
+      ];
+
+      await expect(
+        service.replaceSites('prac-1', ['site-norte'], REQUESTER, NORTE_ADMIN),
+      ).rejects.toBeInstanceOf(SiteScopeDeniedError);
+      expect(writes()).toEqual([]);
+    });
+
+    it('ST-047 dentro de su alcance escribe: la comprobación no es un muro', async () => {
+      answers.sites = [{ siteId: 'site-norte' } as PractitionerSiteView];
+
+      await service.replaceSites(
+        'prac-1',
+        ['site-norte'],
+        REQUESTER,
+        NORTE_ADMIN,
+      );
+
+      expect(writes()).toEqual([
+        {
+          method: 'replacePractitionerSites',
+          args: ['prac-1', ['site-norte']],
+        },
+      ]);
     });
   });
 

@@ -33,6 +33,10 @@ const PARAMETER_SELECT = {
   overbookingCap: true,
   slotAtomMinutes: true,
   allowPastBooking: true,
+  // E4 (AG-039, AG-101). Los dos parámetros que D-018 dejó para la entrega
+  // que los lee, y que ésta ya lee.
+  overbookingEnabled: true,
+  overbookingPermission: true,
   cancelledRetention: true,
 } satisfies Prisma.SiteParameterSelect;
 
@@ -93,7 +97,14 @@ export class PrismaSiteParameterRepository implements SiteParameterRepository {
             // `undefined` leaves the column alone; `false` is a value the site
             // chose and has to reach the row like any other.
             allowPastBooking: patch.allowPastBooking,
-            cancelledRetention: patch.cancelledRetention,
+            overbookingEnabled: patch.overbookingEnabled,
+            /**
+             * AG-101. La clave foránea contra `permission(code)` es la última
+             * palabra: el servicio ya rechazó lo que el catálogo no declara y
+             * lo que esta instalación no tiene sembrado, y esto es lo que
+             * queda si la escritura llega por otro camino.
+             */
+            overbookingPermission: patch.overbookingPermission,
           },
           select: PARAMETER_SELECT,
         });
@@ -133,5 +144,24 @@ export class PrismaSiteParameterRepository implements SiteParameterRepository {
     ]);
 
     return [...types, ...exceptions].map((row) => row.durationMinutes);
+  }
+
+  /**
+   * AG-101, AU-033. Which of these codes the `permission` mirror actually has.
+   *
+   * IT READS `permission`, a table of `auth`, through this module's own
+   * adapter — the same route `configuredDurations` takes to `service_type`.
+   * The alternative was letting the foreign key answer, and that answer
+   * reaches a screen as «Datos inválidos» over a form where nothing is
+   * invalid: the exact failure `PERMISSION_NOT_INSTALLED` was created for.
+   */
+  async installedPermissions(
+    codes: readonly string[],
+  ): Promise<readonly string[]> {
+    const rows = await this.prisma.permission.findMany({
+      where: { code: { in: [...codes] } },
+      select: { code: true },
+    });
+    return rows.map((row) => row.code);
   }
 }

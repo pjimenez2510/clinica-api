@@ -141,6 +141,8 @@ describe('el personal por HTTP', () => {
     email: string,
     roleCode: 'ADMIN' | 'RECEPCION',
     cedula: string,
+    /** ST-047: a grant confined to ONE site. Absent = clinic-wide. */
+    grantedSiteId?: string,
   ): Promise<string> {
     const user = await prisma.user.create({
       data: {
@@ -156,15 +158,20 @@ describe('el personal por HTTP', () => {
         }),
       },
     });
-    if (roleCode === 'ADMIN') adminUserId = user.id;
+    // Only the clinic-wide administrator authors the audit assertions; a
+    // site-scoped one must not take the name from underneath them.
+    if (roleCode === 'ADMIN' && grantedSiteId === undefined) {
+      adminUserId = user.id;
+    }
 
     const role = await prisma.role.findUniqueOrThrow({
       where: { code: roleCode },
     });
-    // GLOBAL grant (siteId null): the staff file is clinic-wide, which is what
-    // the controller's `'global'` site scope says out loud.
+    // `siteId: null` = GLOBAL grant: the staff file is clinic-wide, which is
+    // what most of this controller says out loud. ST-047 is what happens when
+    // the grant is NOT global, which `ReplaceGrantsDto` makes possible.
     await prisma.userRoleGrant.create({
-      data: { userId: user.id, roleId: role.id },
+      data: { userId: user.id, roleId: role.id, siteId: grantedSiteId },
     });
 
     const response = await request(app.getHttpServer())
@@ -185,20 +192,20 @@ describe('el personal por HTTP', () => {
       .post(api(path))
       .set('Authorization', `Bearer ${auth}`)
       .send(body);
-  const patch = (path: string, body: Record<string, unknown>) =>
+  const patch = (path: string, body: Record<string, unknown>, auth = token) =>
     request(app.getHttpServer())
       .patch(api(path))
-      .set('Authorization', `Bearer ${token}`)
+      .set('Authorization', `Bearer ${auth}`)
       .send(body);
   const put = (path: string, body: Record<string, unknown>, auth = token) =>
     request(app.getHttpServer())
       .put(api(path))
       .set('Authorization', `Bearer ${auth}`)
       .send(body);
-  const destroy = (path: string) =>
+  const destroy = (path: string, auth = token) =>
     request(app.getHttpServer())
       .delete(api(path))
-      .set('Authorization', `Bearer ${token}`);
+      .set('Authorization', `Bearer ${auth}`);
 
   /** A profile on the seeded account, with sites already assigned. */
   async function createPractitioner(
@@ -524,6 +531,126 @@ describe('el personal por HTTP', () => {
       expect((response.body as { items: { siteId: string }[] }).items).toEqual([
         expect.objectContaining({ siteId }),
       ]);
+    });
+
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     * ST-047 — LA SEDE VIAJA EN EL CUERPO, DONDE EL GUARD NO MIRA
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * `PUT /practitioners/:id/sites` declara alcance `'query'` porque no hay
+     * sede en la URL: el guard sólo sabe leer `param:` y `query`, y las sedes
+     * llegan en `AssignSitesDto.siteIds`. Quien tenga `staff:manage` concedido
+     * sólo para Norte podía así vincular a un profesional con Sur — y un
+     * profesional vinculado a una sede aparece en su listado de agendables
+     * (AG-108) y se le puede reservar allí.
+     *
+     * Misma familia que AG-105 (`ROOM_NOT_IN_SITE`) y se cierra igual:
+     * comprobándolo en el handler, donde el guard no llega.
+     */
+    describe('el alcance por sede al fijar las sedes (ST-047)', () => {
+      const SEDE_ADMIN_EMAIL = 'admin.norte@clinica.ec';
+      /** Cédula sintética con dígito verificador calculado. */
+      const SEDE_ADMIN_CEDULA = '1712345675';
+
+      /** Norte (la sede del `beforeEach`), Sur, y quien sólo administra Norte. */
+      async function scopedToNorte() {
+        const sur = await createSite(prisma, 'Sede Sur');
+        const scoped = await signIn(
+          SEDE_ADMIN_EMAIL,
+          'ADMIN',
+          SEDE_ADMIN_CEDULA,
+          siteId,
+        );
+        return { sur, scoped };
+      }
+
+      const sitesOf = async (practitionerId: string): Promise<string[]> =>
+        (
+          await prisma.practitionerSite.findMany({
+            where: { practitionerId },
+            select: { siteId: true },
+          })
+        ).map((row) => row.siteId);
+
+      it('ST-047 quien sólo administra Norte no puede vincular a un profesional con Sur', async () => {
+        const practitioner = await createPractitioner();
+        const { sur, scoped } = await scopedToNorte();
+
+        const response = await put(
+          `/practitioners/${practitioner.id}/sites`,
+          { siteIds: [siteId, sur.id] },
+          scoped,
+        ).expect(403);
+
+        expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+        // «Sin escribir nada»: la fila de Sur no existe, y la de Norte sigue.
+        expect(await sitesOf(practitioner.id)).toEqual([siteId]);
+      });
+
+      it('ST-047 la negativa no nombra ninguna sede fuera del alcance de quien llama', async () => {
+        const practitioner = await createPractitioner();
+        const { sur, scoped } = await scopedToNorte();
+
+        const response = await put(
+          `/practitioners/${practitioner.id}/sites`,
+          { siteIds: [sur.id] },
+          scoped,
+        ).expect(403);
+
+        // Mismo criterio que AG-105 con las sedes: la respuesta no confirma
+        // que ese identificador sea una sede de la clínica.
+        expect(JSON.stringify(response.body)).not.toContain(sur.id);
+      });
+
+      it('ST-047 tampoco puede DESvincular la sede ajena: el PUT reemplaza el conjunto entero', async () => {
+        const practitioner = await createPractitioner();
+        const { sur, scoped } = await scopedToNorte();
+        // La dirección lo vinculó con las dos.
+        await put(`/practitioners/${practitioner.id}/sites`, {
+          siteIds: [siteId, sur.id],
+        }).expect(200);
+
+        const response = await put(
+          `/practitioners/${practitioner.id}/sites`,
+          { siteIds: [siteId] },
+          scoped,
+        ).expect(403);
+
+        expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+        // Enviar sólo la suya habría borrado la de Sur en silencio: el
+        // profesional desaparecería de la agenda de otra ciudad.
+        expect((await sitesOf(practitioner.id)).sort()).toEqual(
+          [siteId, sur.id].sort(),
+        );
+      });
+
+      it('ST-047 sí puede fijar las sedes de su alcance: la comprobación no es un muro', async () => {
+        const practitioner = await createPractitioner();
+        const { scoped } = await scopedToNorte();
+
+        await put(
+          `/practitioners/${practitioner.id}/sites`,
+          { siteIds: [siteId] },
+          scoped,
+        ).expect(200);
+
+        expect(await sitesOf(practitioner.id)).toEqual([siteId]);
+      });
+
+      it('ST-047 una concesión global fija cualquier sede: es el caso de la dirección', async () => {
+        const practitioner = await createPractitioner();
+        const { sur } = await scopedToNorte();
+
+        // `token` es la administradora con concesión global (`siteId` nulo).
+        await put(`/practitioners/${practitioner.id}/sites`, {
+          siteIds: [siteId, sur.id],
+        }).expect(200);
+
+        expect((await sitesOf(practitioner.id)).sort()).toEqual(
+          [siteId, sur.id].sort(),
+        );
+      });
     });
 
     it('ST-008/SP-005 rechaza con PRIMARY_SPECIALTY_REQUIRED una asignación con dos principales', async () => {
@@ -1167,6 +1294,11 @@ describe('el personal por HTTP', () => {
           endsAt: new Date('2027-03-01T09:20:00-05:00'),
           bookingChannel: 'PHONE',
           blocksCalendar: false,
+          // AG-035 desde E4: un sobrecupo no existe sin constancia, y
+          // `agenda_entry_overbooking_coherence` lo exige en la base. El
+          // autorizador es una cuenta real porque la clave foránea lo pide.
+          overbookingReason: 'Urgencia encajada a mano',
+          overbookingAuthorisedById: doctorUserId,
         },
       });
 
@@ -1293,6 +1425,244 @@ describe('el personal por HTTP', () => {
       } finally {
         await Promise.all([clientA.$disconnect(), clientB.$disconnect()]);
       }
+    });
+
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     * ST-048 — EL HORARIO DE OTRA SEDE, DONDE EL GUARD NO MIRA (D-023)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Las tres rutas declaraban `global` mientras el `siteId` viajaba en el
+     * CUERPO —y en `DELETE` ni siquiera eso: la sede está en la fila—, así que
+     * la dimensión de sede no la comprobaba nadie. Quien tuviera `staff:manage`
+     * concedido sólo para Norte podía abrir, mover y cerrar el horario de Sur,
+     * que es lo que hace que la agenda de Sur ofrezca cupos.
+     *
+     * Misma familia que ST-047 y AG-105, y se cierra igual: en el handler, con
+     * el alcance resuelto de la sesión, y juzgando LOS DOS EXTREMOS.
+     */
+    describe('el alcance por sede del horario (ST-048)', () => {
+      const SEDE_ADMIN_EMAIL = 'admin.horarios@clinica.ec';
+      /** Cédula sintética con dígito verificador calculado. */
+      const SEDE_ADMIN_CEDULA = '0703416677';
+
+      /**
+       * Norte (la del `beforeEach`), Sur, un profesional que atiende en LAS
+       * DOS, y quien sólo administra Norte.
+       *
+       * El profesional atiende en Sur a propósito: sin eso, la ruta rechazaría
+       * con `PRACTITIONER_NOT_IN_SITE` (ST-007) y la prueba pasaría sin que
+       * hubiera ninguna comprobación de alcance. Lo que se prueba aquí es el
+       * caso en que todo lo demás está bien y lo único que falta es que la
+       * sede sea de quien llama.
+       */
+      async function twoSites(): Promise<{
+        sur: { id: string };
+        practitioner: { id: string };
+        scoped: string;
+      }> {
+        const sur = await createSite(prisma, 'Sede Sur');
+        const practitioner = await createPractitioner();
+        await put(`/practitioners/${practitioner.id}/sites`, {
+          siteIds: [siteId, sur.id],
+        }).expect(200);
+        const scoped = await signIn(
+          SEDE_ADMIN_EMAIL,
+          'ADMIN',
+          SEDE_ADMIN_CEDULA,
+          siteId,
+        );
+        return { sur, practitioner, scoped };
+      }
+
+      /** Una regla de Sur, creada por la dirección, que es quien puede. */
+      async function ruleAtSur(
+        practitionerId: string,
+        surId: string,
+      ): Promise<string> {
+        const created = await post(
+          `/practitioners/${practitionerId}/schedule-rules`,
+          { siteId: surId, ...RULE },
+        ).expect(201);
+        return (created.body as ScheduleOutcome).rule.id;
+      }
+
+      it('ST-048 quien sólo administra Norte no puede CREAR un horario en Sur', async () => {
+        const { sur, practitioner, scoped } = await twoSites();
+
+        const response = await post(
+          `/practitioners/${practitioner.id}/schedule-rules`,
+          { siteId: sur.id, ...RULE },
+          scoped,
+        ).expect(403);
+
+        expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+        // «Sin escribir nada», y sin nombrar la sede: la negativa no confirma
+        // que ese identificador sea una sede de la clínica.
+        expect(await prisma.practitionerScheduleRule.count()).toBe(0);
+        expect(JSON.stringify(response.body)).not.toContain(sur.id);
+      });
+
+      it('ST-048 la negativa llega ANTES que PRACTITIONER_NOT_IN_SITE, que delataría el mapa', async () => {
+        // Un profesional que NO atiende en Sur. Responder 422 aquí contestaría
+        // «ese identificador es una sede y este médico no pasa por ella» a
+        // quien no tiene esa sede en su alcance.
+        const sur = await createSite(prisma, 'Sede Sur');
+        const practitioner = await createPractitioner();
+        const scoped = await signIn(
+          SEDE_ADMIN_EMAIL,
+          'ADMIN',
+          SEDE_ADMIN_CEDULA,
+          siteId,
+        );
+
+        const response = await post(
+          `/practitioners/${practitioner.id}/schedule-rules`,
+          { siteId: sur.id, ...RULE },
+          scoped,
+        ).expect(403);
+
+        expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+      });
+
+      it('ST-048 tampoco puede EDITAR la regla de Sur, aunque no nombre ninguna sede', async () => {
+        const { sur, practitioner, scoped } = await twoSites();
+        const ruleId = await ruleAtSur(practitioner.id, sur.id);
+
+        // El cuerpo no lleva `siteId`: la sede que hay que comprobar es la que
+        // la regla YA tiene, y eso no lo miraba nadie.
+        const response = await patch(
+          `/schedule-rules/${ruleId}`,
+          { endTime: '13:00' },
+          scoped,
+        ).expect(403);
+
+        expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+        const kept = await prisma.practitionerScheduleRule.findUniqueOrThrow({
+          where: { id: ruleId },
+        });
+        expect(kept.endTime).toEqual(new Date('1970-01-01T12:00:00.000Z'));
+      });
+
+      it('ST-048/ST-043 la negativa no entrega las citas de la otra sede', async () => {
+        /**
+         * La respuesta de toda mutación de horario LISTA las citas que el
+         * cambio deja fuera (ST-043). Sobre la regla de otra sede, esa lista
+         * era la agenda de esa sede —identificador, día y hora de cada cita—
+         * servida como efecto secundario de una edición.
+         */
+        const { sur, practitioner, scoped } = await twoSites();
+        const ruleId = await ruleAtSur(practitioner.id, sur.id);
+        const patient = await createPatient(prisma);
+        const booked = await prisma.agendaEntry.create({
+          data: {
+            kind: 'APPOINTMENT',
+            siteId: sur.id,
+            practitionerId: practitioner.id,
+            patientId: patient.id,
+            startsAt: new Date('2027-03-01T09:00:00-05:00'),
+            endsAt: new Date('2027-03-01T09:20:00-05:00'),
+            bookingChannel: 'PHONE',
+          },
+        });
+
+        const response = await patch(
+          `/schedule-rules/${ruleId}`,
+          { endTime: '08:30' },
+          scoped,
+        ).expect(403);
+
+        const body = JSON.stringify(response.body);
+        expect(body).not.toContain(booked.id);
+        expect(body).not.toContain('2027-03-01');
+      });
+
+      it('ST-048 tampoco puede MOVER a Sur una regla de Norte: cambian dos agendas', async () => {
+        const { sur, practitioner, scoped } = await twoSites();
+        const created = await post(
+          `/practitioners/${practitioner.id}/schedule-rules`,
+          { siteId, ...RULE },
+        ).expect(201);
+        const ruleId = (created.body as ScheduleOutcome).rule.id;
+
+        const response = await patch(
+          `/schedule-rules/${ruleId}`,
+          { siteId: sur.id },
+          scoped,
+        ).expect(403);
+
+        expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+        // La regla sigue en Norte: mover una regla le quita cupos a una sede y
+        // se los da a otra, y la que la gana no es de quien llama.
+        const kept = await prisma.practitionerScheduleRule.findUniqueOrThrow({
+          where: { id: ruleId },
+        });
+        expect(kept.siteId).toBe(siteId);
+      });
+
+      it('ST-048 tampoco puede TRAERSE a Norte la regla de Sur: el otro extremo', async () => {
+        // El destino sí es suyo, así que mirar sólo lo que llega dejaría pasar
+        // esto: quitarle una franja a la agenda de otra ciudad para ponérsela
+        // en la propia. Los dos extremos del movimiento cambian una agenda.
+        const { sur, practitioner, scoped } = await twoSites();
+        const ruleId = await ruleAtSur(practitioner.id, sur.id);
+
+        const response = await patch(
+          `/schedule-rules/${ruleId}`,
+          { siteId },
+          scoped,
+        ).expect(403);
+
+        expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+        const kept = await prisma.practitionerScheduleRule.findUniqueOrThrow({
+          where: { id: ruleId },
+        });
+        expect(kept.siteId).toBe(sur.id);
+      });
+
+      it('ST-048 tampoco puede CERRAR el horario de Sur: la sede se lee de la fila', async () => {
+        const { sur, practitioner, scoped } = await twoSites();
+        const ruleId = await ruleAtSur(practitioner.id, sur.id);
+
+        const response = await destroy(
+          `/schedule-rules/${ruleId}`,
+          scoped,
+        ).expect(403);
+
+        expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+        const kept = await prisma.practitionerScheduleRule.findUniqueOrThrow({
+          where: { id: ruleId },
+        });
+        expect(kept.validTo).toBeNull();
+      });
+
+      it('ST-048 sí administra el horario de SU sede: la comprobación no es un muro', async () => {
+        const { practitioner, scoped } = await twoSites();
+
+        const created = await post(
+          `/practitioners/${practitioner.id}/schedule-rules`,
+          { siteId, ...RULE },
+          scoped,
+        ).expect(201);
+        const ruleId = (created.body as ScheduleOutcome).rule.id;
+
+        await patch(`/schedule-rules/${ruleId}`, { endTime: '13:00' }, scoped).expect(200); // prettier-ignore
+        await destroy(`/schedule-rules/${ruleId}`, scoped).expect(200);
+      });
+
+      it('ST-048 una concesión global administra cualquier sede: es el caso de la dirección', async () => {
+        const { sur, practitioner } = await twoSites();
+
+        // `token` es la administradora con concesión global (`siteId` nulo).
+        const created = await post(
+          `/practitioners/${practitioner.id}/schedule-rules`,
+          { siteId: sur.id, ...RULE },
+        ).expect(201);
+        const ruleId = (created.body as ScheduleOutcome).rule.id;
+
+        await patch(`/schedule-rules/${ruleId}`, { endTime: '13:00' }).expect(200); // prettier-ignore
+        await destroy(`/schedule-rules/${ruleId}`).expect(200);
+      });
     });
   });
 

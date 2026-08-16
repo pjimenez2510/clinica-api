@@ -2,6 +2,7 @@ import {
   BusinessRuleViolation,
   ConflictError,
   ExternalServiceError,
+  ForbiddenError,
   NotFoundError,
   ValidationError,
 } from '../../../shared/domain/errors/domain-error';
@@ -457,6 +458,214 @@ export class AgendaEntryNotFoundError extends NotFoundError {
   constructor() {
     super('Agenda entry not found at this site');
   }
+}
+
+/* ─── Sobrecupo y bloqueos (E4: AG-035, AG-038, AG-039, AG-100 a AG-103) ─── */
+
+/**
+ * AG-039. This site does not admit overbookings.
+ *
+ * NOTHING IN THE FORM IS WRONG, so it carries no field error: what refuses the
+ * booking is a parameter of the site, and the only way forward is somebody
+ * with `settings:manage` changing it. Saying which box to correct would send a
+ * receptionist round a form where every box is right.
+ */
+export class OverbookingNotAllowedError extends BusinessRuleViolation {
+  readonly code = 'OVERBOOKING_NOT_ALLOWED';
+  override readonly userTitle =
+    'Esta sede no admite sobrecupos. Busque un cupo libre o pida que se habilite el sobrecupo para la sede';
+
+  constructor() {
+    super('The site does not admit overbookings');
+  }
+}
+
+/**
+ * AG-035. An overbooking with no reason.
+ *
+ * IT LIVES IN THE SERVICE AND NOT ONLY IN THE DTO, for the same reason
+ * `CancellationReasonRequiredError` does (adversarial review of E2, P2-3): a
+ * DEBERÁ that only the transport enforces stops being true the first time an
+ * internal caller books one. The base says it a third time
+ * (`agenda_entry_overbooking_coherence`), because an overbooking with no
+ * constancia is exactly the record D-005 exists to avoid.
+ */
+export class OverbookingReasonRequiredError extends ValidationError {
+  readonly code = 'OVERBOOKING_REASON_REQUIRED';
+  override readonly userTitle =
+    'Indique por qué se agenda este sobrecupo. Queda registrado en la cita';
+  override readonly fieldErrors = [
+    {
+      field: 'overbookingReason',
+      code: 'OVERBOOKING_REASON_REQUIRED',
+      message: 'Indique el motivo del sobrecupo',
+    },
+  ];
+
+  constructor() {
+    super('Overbooking requested without a reason');
+  }
+}
+
+/**
+ * AG-103, D-005. Whoever books an overbooking named themselves as the
+ * authoriser.
+ *
+ * THE SEPARATION OF PEOPLE IS THE CONTROL. An authorisation field that fills
+ * itself in authorises nothing, so this is not a formality: it is the only
+ * thing that makes `overbooking_authorised_by_id` mean anything. The exception
+ * — `agenda:overbook:self`, for the doctor on call at 21:00 with nobody else
+ * signed in — is granted deliberately and to a person, never inherited.
+ *
+ * 403 AND NOT 422: what was sent is well-formed and the hour may be free. What
+ * is missing is somebody else's authorisation, and the sentence says so — the
+ * way out is to ask for it, not to correct a field.
+ *
+ * NEITHER USER IS NAMED. The caller knows who they are, and naming the person
+ * who WOULD be able to authorise would turn the endpoint into a directory of
+ * who holds which permission.
+ */
+export class SelfAuthorisationDeniedError extends ForbiddenError {
+  readonly code = 'SELF_AUTHORISATION_DENIED';
+  override readonly userTitle =
+    'Un sobrecupo lo autoriza otra persona, no quien lo agenda. Indique al profesional que lo autoriza';
+
+  constructor() {
+    super('The requester named themselves as the overbooking authoriser');
+  }
+}
+
+/**
+ * AG-101. The person named as authoriser does not hold the permission this
+ * site requires for it.
+ *
+ * SAME ANSWER FOR «THAT ACCOUNT DOES NOT EXIST», and it is deliberate: an
+ * identifier that matches nobody holds no permission, and answering 404 would
+ * turn the booking form into a way of confirming which accounts exist, one
+ * guess at a time (the reasoning of `ROOM_NOT_IN_SITE` and of
+ * `AGENDA_ENTRY_NOT_FOUND`).
+ *
+ * THE REQUIRED PERMISSION TRAVELS in `params` and NOT the authoriser's own
+ * permissions: the code is configuration of the site — the same string an
+ * administrator can read on the parameters screen — while listing what that
+ * person does hold would be handing out somebody else's access profile.
+ */
+export class OverbookingNotAuthorisedError extends ForbiddenError {
+  readonly code = 'OVERBOOKING_NOT_AUTHORISED';
+  override readonly userTitle =
+    'Quien indicó no puede autorizar sobrecupos en esta sede. Indique a un profesional que sí pueda';
+
+  constructor(requiredPermission: string) {
+    super(
+      'The named authoriser lacks the permission the site requires for overbooking',
+      { requiredPermission },
+      [
+        {
+          field: 'overbookingAuthorisedById',
+          code: 'OVERBOOKING_NOT_AUTHORISED',
+          message: 'Esa persona no puede autorizar sobrecupos en esta sede',
+        },
+      ],
+    );
+  }
+}
+
+/**
+ * AG-100. The practitioner already used up the site's overbookings for that
+ * CLINICAL DATE.
+ *
+ * A CONFLICT (409) AND NOT A VALIDATION ERROR: everything sent is correct, and
+ * the same body would be accepted tomorrow. What refuses it is the state of
+ * that day's agenda.
+ *
+ * THE CAP TRAVELS because the requirement asks for it («indicando el tope
+ * vigente») and because «no caben más» without a number reads as a bug to
+ * whoever is at the counter. The count of what is already booked does not: it
+ * is always the cap by the time this is thrown.
+ */
+export class OverbookingLimitReachedError extends ConflictError {
+  readonly code = 'OVERBOOKING_LIMIT_REACHED';
+  override readonly userTitle: string;
+
+  constructor(cap: number) {
+    // Numbers only: no patient, no practitioner, no hour reaches a log.
+    super(`Practitioner already holds ${cap} overbookings for that clinical date`, { cap }); // prettier-ignore
+    this.userTitle =
+      cap === 1
+        ? 'Este profesional ya tiene el sobrecupo que admite la sede ese día'
+        : `Este profesional ya tiene los ${cap} sobrecupos que admite la sede ese día`;
+  }
+}
+
+/**
+ * AG-038. A block over an interval that already holds appointments.
+ *
+ * IT ENUMERATES THEM, and that is half the requirement: «no se puede» without
+ * the list leaves whoever is blocking a morning to find those appointments by
+ * hand, one day view at a time.
+ *
+ * WHAT MAY BE SAID OF THEM (AG-072, AG-074, AG-109, SC-006): the identifier
+ * and the hours. Not the name, not the chart, not the reason for the visit.
+ * AG-109 grants the patient's name to the day's LISTING — a route with its own
+ * permission and site scope — and never to a problem document, which reaches
+ * logs and support screenshots.
+ *
+ * WHAT THE CLIENT ACTUALLY READS IS THE SENTENCE, and the enumeration is in
+ * it: the problem document of this system serves `code`, `title`, `detail` and
+ * `errors`, never a domain error's `params`. So the hours are what reaches the
+ * counter — and they are enough to act on, because that is how an appointment
+ * is found in the day's view. The identifiers stay in `params` for the server's
+ * own record of what it refused; putting them in the sentence would be noise
+ * nobody can use.
+ *
+ * A CONFLICT (409): the request is well-formed and the same interval would be
+ * blockable once those appointments move.
+ */
+export class BlockOverlapsAppointmentsError extends ConflictError {
+  readonly code = 'BLOCK_OVERLAPS_APPOINTMENTS';
+  override readonly userTitle =
+    'Ese intervalo ya tiene citas agendadas. Reprográmelas o anúlelas antes de bloquearlo';
+
+  constructor(
+    blocking: readonly { id: string; startsAt: Date }[],
+    timeZone?: string,
+  ) {
+    super(
+      `Block requested over ${blocking.length} appointments that occupy the calendar`,
+      {
+        blockingCount: blocking.length,
+        blockingEntryIds: blocking.map((entry) => entry.id).join(','),
+      },
+      [
+        {
+          field: 'startsAt',
+          code: 'BLOCK_OVERLAPS_APPOINTMENTS',
+          message: describeBlockingAppointments(
+            blocking.map((entry) => wallClockOf(entry.startsAt, timeZone).toString()), // prettier-ignore
+          ),
+        },
+      ],
+    );
+  }
+}
+
+/**
+ * «Hay 2 citas …», with the hours, in Ecuadorian wall clock (AG-001).
+ *
+ * AT MOST FIVE HOURS ARE NAMED. A block of a week's leave can cross forty
+ * appointments, and a sentence with forty times in it is one nobody reads —
+ * the count is what says how big the problem is, and the identifiers of every
+ * one of them are still in `params` for a client that wants to list them.
+ */
+function describeBlockingAppointments(clocks: readonly string[]): string {
+  const shown = clocks.slice(0, 5);
+  const rest = clocks.length - shown.length;
+  const times =
+    rest > 0 ? `${shown.join(', ')} y ${rest} más` : shown.join(', ');
+
+  return clocks.length === 1
+    ? `Hay una cita a las ${times} dentro de ese intervalo`
+    : `Hay ${clocks.length} citas dentro de ese intervalo: ${times}`;
 }
 
 /**

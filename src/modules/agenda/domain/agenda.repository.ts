@@ -19,6 +19,7 @@
 
 import type { BookingChannel, StoredSiteParameters } from './booking-policy';
 import type { Holiday } from './holiday-calendar';
+import type { NoShowCountRow } from './no-show-metric';
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import type {
   AgendaOccupancy,
@@ -34,6 +35,7 @@ export type { AgendaEntryKind, AgendaEntryStatus } from './agenda-entry';
 // signature, so an adapter or a double should not have to know which domain
 // file the booking window happens to live in.
 export type { StoredSiteParameters } from './booking-policy';
+export type { NoShowCountRow } from './no-show-metric';
 
 /**
  * An agenda entry as the day's list shows it.
@@ -62,6 +64,20 @@ export interface AgendaEntryView {
   status: AgendaEntryStatus;
   /** `false` marks a deliberate overbooking (AG-036). */
   blocksCalendar: boolean;
+  /**
+   * AG-035, AG-036. The constancy of an overbooking, `null` on every entry
+   * that occupies the calendar — `agenda_entry_overbooking_coherence`
+   * guarantees the pairing, so «`blocksCalendar` false with no reason» is not
+   * a row this type has to describe.
+   *
+   * THE REASON IS SERVED, AND IT IS NOT THE OTHER ONE. `reason` — the motive
+   * for the visit — is health data and never leaves this module (AG-072,
+   * AG-074). This one is administrative: why the grid was broken. Two columns
+   * is what lets AG-036 be answered without a condition in a serialiser.
+   */
+  overbookingReason: string | null;
+  /** Who authorised it (AG-035). Deliberately not `createdById` — AG-103. */
+  overbookingAuthorisedById: string | null;
   /** AG-018: set when the slot was given back. */
   releasedAt: Date | null;
   bookingChannel: BookingChannel | null;
@@ -219,6 +235,86 @@ export interface NewBooking {
   reason?: string;
   /** AG-029: who booked it. */
   createdById: string;
+  /**
+   * AG-035, AG-036, D-005. Present exactly when this is a deliberate
+   * overbooking, and then the entry is written with `blocks_calendar = false`.
+   *
+   * ONE OPTIONAL OBJECT AND NOT THREE OPTIONAL FIELDS: the three travel
+   * together or not at all — the base refuses any other combination — and a
+   * shape that allowed «reason without authoriser» would be inviting the
+   * adapter to write a row the CHECK then rejects with a constraint name.
+   */
+  overbooking?: OverbookingRecord;
+}
+
+/** AG-035, AG-036: what makes an overbooking an exception ON the record. */
+export interface OverbookingRecord {
+  /** Already trimmed and known non-empty (`requireOverbookingReason`). */
+  reason: string;
+  /** The account that authorised it, never the one that booked it (AG-103). */
+  authorisedById: string;
+}
+
+/**
+ * AG-037, AG-038: a block of agenda — leave, theatre, a meeting.
+ *
+ * NO PATIENT AND NO BOOKING CHANNEL, and neither is an omission: a block has
+ * no patient (`agenda_entry_patient_coherence`, AG-021) and nobody books it by
+ * telephone (`agenda_entry_booking_channel_coherence`, AG-034). It shares
+ * everything else with an appointment — including the three `EXCLUDE`
+ * constraints, which is AG-037 in one line.
+ */
+export interface NewBlock {
+  siteId: string;
+  practitionerId: string;
+  roomId?: string;
+  startsAt: Date;
+  endsAt: Date;
+  /** Why the agenda is closed. Administrative, and served in the listing. */
+  reason: string;
+  createdById: string;
+}
+
+/** AG-100: the overbookings of one practitioner within one clinical day. */
+export interface OverbookingCountQuery {
+  siteId: string;
+  practitionerId: string;
+  /**
+   * The day as INSTANTS, resolved in `America/Guayaquil` by the service
+   * (AG-001), exactly like the daily agenda. A `::date` cast in SQL would use
+   * the session's zone and an overbooking at 19:30 would count against the
+   * following day — at which point the cap stops limiting the evenings, which
+   * is when it gets abused.
+   */
+  from: Date;
+  untilExclusive: Date;
+}
+
+/** AG-101: whose permissions are being asked about, and where. */
+export interface AuthoriserPermissionsQuery {
+  userId: string;
+  siteId: string;
+}
+
+/**
+ * AG-038: an appointment that stands in the way of a block.
+ *
+ * THREE FIELDS AND NO MORE. The identifier and the hours are what the refusal
+ * may say (AG-072, AG-074, SC-006); the name AG-109 grants to the day's
+ * listing has no business in an error that reaches logs.
+ */
+export interface BlockingAppointment {
+  id: string;
+  startsAt: Date;
+  endsAt: Date;
+}
+
+/** AG-038: which interval is about to be blocked, and for whom. */
+export interface BlockingAppointmentsQuery {
+  siteId: string;
+  practitionerId: string;
+  startsAt: Date;
+  endsAt: Date;
 }
 
 /**
@@ -263,15 +359,22 @@ export interface TransitionCommand {
 }
 
 /**
- * AG-050. The ONLY thing a reschedule decides about the new appointment.
+ * AG-050, AG-115. Everything the new appointment is allowed to decide.
  *
- * WHY THERE IS NO PATIENT, PRACTITIONER, ROOM OR TYPE HERE. The new entry is
- * the old one moved: everything except the interval and the channel is copied
- * from the stored row, INSIDE the transaction, by the adapter. Passing them
- * from above would mean the caller could quietly reschedule an appointment
- * onto a different patient — and it would also mean loading `reason`, which is
- * the free text where the motive for the visit lands and which this module
- * never reads back (AG-072, AG-074).
+ * WHY THERE IS NO PATIENT, ROOM OR REASON HERE, and it is the load-bearing
+ * half. Those three are copied from the stored row INSIDE the transaction by
+ * the adapter, and no caller can name them: a body that could change the
+ * patient would let «reprogramar» hand one person's hour to another with one
+ * field, and `reason` is the free text where the motive for the visit lands,
+ * which this module never reads back (AG-072, AG-074).
+ *
+ * WHY THE PRACTITIONER AND THE TYPE *ARE* HERE (AG-115). They are columns of a
+ * row that is being BORN — AG-050 already creates one — so choosing them is
+ * not a mutation of the appointment that exists. Forbidding it would not stop
+ * receptionists who picked the wrong doctor; it would only make them annul and
+ * book again, losing the link AG-051 builds and reporting an annulment to
+ * AG-080 that never was one. They are RESOLVED BY THE SERVICE, never optional
+ * here: the adapter must not have to decide what «absent» means.
  *
  * THE CHANNEL IS ASKED FOR AND NOT COPIED, on purpose: AG-080 reports
  * inasistencia BY CHANNEL, and the reschedule was requested however it was
@@ -283,6 +386,10 @@ export interface RescheduledBooking {
   endsAt: Date;
   /** AG-029, AG-034. Validated by the domain before it gets here. */
   bookingChannel: BookingChannel;
+  /** AG-115. The one who will attend: asked for, or the original's. */
+  practitionerId: string;
+  /** AG-115, SP-028. The type of attention, or `null` when there is none. */
+  serviceTypeId: string | null;
 }
 
 /**
@@ -342,6 +449,19 @@ export interface AgendaSite {
 }
 
 /**
+ * AG-111, SP-005, SP-008. One specialty a practitioner actually holds.
+ *
+ * The identifier is what the SERVICE TYPES hang off (AG-112), and `isPrimary`
+ * is what lets the booking dialog arrive with a choice already made instead of
+ * asking a question whose answer is already stored.
+ */
+export interface AgendaSpecialty {
+  id: string;
+  name: string;
+  isPrimary: boolean;
+}
+
+/**
  * AG-108. A practitioner a receptionist can pick in the booking screen.
  *
  * Name only, ON PURPOSE: the cedula and the ACESS registration travel in
@@ -353,6 +473,22 @@ export interface SchedulablePractitioner {
   /** Account id, so the interface can preselect the signed-in doctor's own column. */
   userId: string;
   fullName: string;
+  /** AG-111. The active ones only, primary first. */
+  specialties: readonly AgendaSpecialty[];
+}
+
+/**
+ * AG-112. An attention type as the BOOKING screen needs it.
+ *
+ * Three fields and no `active`: only the active ones are ever listed here, so
+ * a flag that is always `true` would only invite a client to filter on it.
+ * `specialtyId` is absent for the same reason — the caller named it in the URL.
+ */
+export interface AgendaServiceType {
+  id: string;
+  name: string;
+  /** SP-020. The catalogue's base duration, for the option's label. */
+  durationMinutes: number;
 }
 
 /**
@@ -362,13 +498,47 @@ export interface SchedulablePractitioner {
  */
 export type SiteScopeFilter = 'all' | readonly string[];
 
+/**
+ * AG-080, AG-081: which appointments the inasistencia cube is counted over.
+ *
+ * THE WINDOW ARRIVES AS INSTANTS, resolved in Ecuador by `noShowWindow`, for
+ * the same reason the daily agenda's does (AG-001): a `::date` cast in SQL
+ * would use the session's zone, and an appointment at 19:30 would be counted
+ * against the following day — which is precisely the evening franja the metric
+ * exists to watch.
+ *
+ * NO STATUS FILTER HERE, and that is deliberate. AG-081 decides which statuses
+ * count, and it decides it in `summariseNoShow`, where a test names it. An
+ * adapter that filtered would be a second copy of the rule that no test could
+ * break.
+ */
+export interface NoShowCountsQuery {
+  /** The caller's own resolved scope: the route declares `'query'`. */
+  sites: SiteScopeFilter;
+  from: Date;
+  untilExclusive: Date;
+}
+
 export interface AgendaRepository {
   /** AG-107. Sites in the caller's scope, by name, for the site selector. */
   listSites(scope: SiteScopeFilter): Promise<AgendaSite[]>;
-  /** AG-108. Active, schedulable practitioners attached to the site. */
+  /** AG-108, AG-111. Active, schedulable practitioners attached to the site. */
   listSchedulablePractitioners(
     siteId: string,
   ): Promise<SchedulablePractitioner[]>;
+  /** AG-112. The active attention types of one specialty, with their base duration. */
+  listServiceTypes(specialtyId: string): Promise<AgendaServiceType[]>;
+  /**
+   * AG-080. Appointments of the window, counted by site, practitioner, channel
+   * and status — the cube `summariseNoShow` reduces.
+   *
+   * APPOINTMENTS ONLY. A block has no patient and no channel
+   * (`agenda_entry_patient_coherence`, `agenda_entry_booking_channel_coherence`)
+   * so it cannot be attended or missed, and it has no cell to land in. That is
+   * a fact about the ROW's shape, not a policy about what counts — which is
+   * why it is the one filter this method is allowed to hold.
+   */
+  noShowCounts(query: NoShowCountsQuery): Promise<readonly NoShowCountRow[]>;
   /** AG-017, AG-018. Ordered by start instant. */
   dailyAgenda(query: DailyAgendaQuery): Promise<AgendaEntryView[]>;
   /** AG-027. `null` when no such chart exists — the insert then fails on the FK. */
@@ -434,6 +604,53 @@ export interface AgendaRepository {
    * checks first.
    */
   book(booking: NewBooking): Promise<AgendaEntryView>;
+  /**
+   * AG-037. Writes a block and lets the same three `EXCLUDE` constraints
+   * arbitrate it, because their predicate never mentioned `kind`.
+   *
+   * IT IS A SECOND METHOD AND NOT A FLAG ON `book`, because what it writes is
+   * a different row: no patient, no channel, no service type, and a status
+   * (`BLOCKED`) that AG-046 reserves for blocks. A boolean on `NewBooking`
+   * would have made four of its fields conditionally meaningless.
+   */
+  blockAgenda(block: NewBlock): Promise<AgendaEntryView>;
+  /**
+   * AG-100. How many overbookings this practitioner already holds at this site
+   * within the day, counted over the instants the service resolved.
+   *
+   * IT COUNTS WHAT OCCUPIES NOTHING. `blocks_calendar = false` and not
+   * released: a released overbooking gave its exception back, and counting it
+   * would spend a cap on an appointment nobody is going to attend.
+   */
+  overbookingCount(query: OverbookingCountQuery): Promise<number>;
+  /**
+   * AG-101. The permission codes the NAMED AUTHORISER holds over this site.
+   *
+   * EMPTY FOR AN ACCOUNT THAT DOES NOT EXIST, is inactive, or holds nothing
+   * here — the three answer the same on purpose: the refusal must not become a
+   * way of confirming which accounts exist (`AGENDA_ENTRY_NOT_FOUND` and
+   * `ROOM_NOT_IN_SITE` take the same line).
+   *
+   * STRINGS AND NOT `Permission`: they are rows. Whether the code declares
+   * them is a different question from whether this person holds them, and this
+   * port answers the second.
+   */
+  authoriserPermissions(
+    query: AuthoriserPermissionsQuery,
+  ): Promise<readonly string[]>;
+  /**
+   * AG-038. The appointments that occupy the calendar inside an interval about
+   * to be blocked, ordered by start.
+   *
+   * A READ BEFORE THE WRITE, AND THE `EXCLUDE` IS STILL THE GUARANTEE
+   * (AG-037). This list can go stale between the read and the insert; what it
+   * buys is the ENUMERATION the requirement asks for, which a constraint
+   * rejection cannot give — PostgreSQL names one conflicting row at most, and
+   * a block over a morning usually crosses several.
+   */
+  blockingAppointments(
+    query: BlockingAppointmentsQuery,
+  ): Promise<readonly BlockingAppointment[]>;
   /**
    * AG-004, AG-040 to AG-045: one status transition, atomically.
    *

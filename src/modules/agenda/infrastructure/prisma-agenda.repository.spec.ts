@@ -26,6 +26,9 @@ const CREATED_ID = '00000000-0000-4000-8000-00000000000b';
 const SITE = '00000000-0000-4000-8000-000000000001';
 const USER = '00000000-0000-4000-8000-000000000004';
 
+/** AG-115: the practitioner the appointment is being moved TO. */
+const NEW_PRACTITIONER = '00000000-0000-4000-8000-000000000009';
+
 const NOW = new Date('2026-01-05T13:30:00Z');
 
 function entryRow(overrides: Record<string, unknown> = {}) {
@@ -294,6 +297,10 @@ const NEW_SLOT = {
   startsAt: new Date('2026-01-05T14:00:00Z'),
   endsAt: new Date('2026-01-05T14:20:00Z'),
   bookingChannel: 'PHONE' as const,
+  // AG-115. Already resolved by the service — the adapter never decides what
+  // «absent» means, it writes what it is handed.
+  practitionerId: NEW_PRACTITIONER,
+  serviceTypeId: null,
 };
 
 const annul = (): StatusChange => ({
@@ -355,6 +362,39 @@ describe('the reschedule transaction', () => {
         rescheduledFromId: ENTRY_ID,
       },
     });
+  });
+
+  it('AG-115 writes the practitioner and the type it was handed, and reads the patient off the stored row', async () => {
+    const { repository, calls } = prismaDouble({
+      reads: [entryRow(), entryRow(), entryRow({ status: 'CANCELLED' })],
+    });
+
+    await repository.reschedule(
+      COMMAND,
+      { ...NEW_SLOT, serviceTypeId: 'service-type-1' },
+      annul,
+    );
+
+    const created = calls.find((call) => call.method === 'entry.create');
+    expect(created?.args).toMatchObject({
+      data: {
+        practitionerId: NEW_PRACTITIONER,
+        serviceTypeId: 'service-type-1',
+        // AG-115's other half: the patient is NOT among the things a caller
+        // can hand over. It comes off the row that is being moved.
+        patientId: '00000000-0000-4000-8000-000000000003',
+      },
+    });
+
+    // And the read INSIDE the transaction asks for exactly the three columns
+    // nobody may choose: a `practitionerId` back in this select would mean the
+    // adapter still had a say in AG-115 and could silently win over the caller.
+    const source = calls.filter(
+      (call) => call.method === 'entry.findUniqueOrThrow',
+    )[0];
+    expect(
+      (source?.args as { select: Record<string, unknown> }).select,
+    ).toEqual({ patientId: true, roomId: true, reason: true });
   });
 
   it('AG-052 lets the refusal of the new entry escape, so the transaction takes the release with it', async () => {

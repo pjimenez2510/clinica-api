@@ -56,12 +56,35 @@ regla del módulo cuyo fallo produce dos pacientes en la misma silla.
 **Prueba independiente:** reservar contra un PostgreSQL real con dos clientes
 concurrentes y comprobar que gana exactamente uno.
 **Cubre:** AG-001 a AG-003, AG-010 a AG-014, AG-017, AG-018, AG-020 a AG-030,
-AG-034, AG-104, AG-105, AG-106, AG-109.
+AG-034, AG-104, AG-105, AG-106, AG-109, AG-111, AG-112, AG-113.
+
+> AG-111 y AG-112 se añadieron el 14-08-2026, y pertenecen aquí por lo mismo
+> que AG-107 y AG-108: son **las listas de referencia que la pantalla de
+> reserva elige**, y sin ellas el diálogo no es operable por quien reserva. Se
+> descubrieron revisando C4 —el selector de especialidad y tipo pedía rutas con
+> `config:read`, que `RECEPCION` no tiene—, así que la mitad de C4 que se ve
+> depende de esta entrega, no al revés.
 
 > AG-031 a AG-033 (antelación mínima, máxima y reserva en el pasado) **no son de
 > E1 aunque estén en §3**: leen la configuración de la sede, que no existe hasta
 > E7. Se cubren allí. Ponerlas aquí obligaría a quemar los valores de D-001 en el
 > código, que es justo lo que REQ-145 prohíbe.
+
+**Solo servidor:** AG-001, AG-002, AG-003, AG-010, AG-020, AG-021, AG-022,
+AG-023, AG-024, AG-025, AG-026, AG-029, AG-034, AG-106. Son garantías de
+almacenamiento y de la base —el huso, el `timestamptz`, los `EXCLUDE`, el
+desempate entre reglas solapadas, la coherencia paciente/bloqueo y el orden de
+los tiempos—, concurrencia y reintento de serialización, o campos que se
+registran sin que nadie los vea. Se demuestran contra PostgreSQL con dos
+clientes a la vez, no en una pantalla: una interfaz que los «probara» estaría
+comprobando su propio doble.
+
+> **Lo que sí tiene mitad visible y por qué esta lista es corta.** AG-011,
+> AG-012, AG-013, AG-014, AG-017, AG-018, AG-027, AG-028, AG-030, AG-104,
+> AG-105 y AG-109 SE VEN: son lo que la rejilla enseña, a quién ofrece cupos y
+> dónde aterriza cada rechazo. Un rechazo que el servidor escribe y la pantalla
+> tapa con un aviso de esquina es un requisito cumplido a medias, y el que lo
+> paga es quien está en el mostrador.
 
 ### E2 — El día de la consulta _(P2)_
 
@@ -73,18 +96,45 @@ clínica sabe quién está en sala. **Prueba independiente:** recorrer la máqui
 de estados y verificar que cada transición dejó fila en `agenda_status_history`.
 **Cubre:** AG-004, AG-005, AG-040 a AG-046.
 
+**Solo servidor:** AG-004, AG-005, AG-045. La fila de `agenda_status_history` y
+su inmutabilidad son garantías de la base —dos disparadores y un `RESTRICT`,
+D-022— y, además, **no existe todavía ruta de lectura del historial**: no hay
+pantalla que pueda enseñarlo aunque quisiera. Con qué permiso se lee es decisión
+del usuario (ver AG-005); cuando exista esa ruta, AG-004 recupera mitad visible y
+sale de esta lista.
+
+> **AG-045 entra aquí el 15-08-2026, al cerrar la mitad visible de E2, y con el
+> argumento escrito** —la regla de esta lista es que quien calla debe interfaz—.
+> **El hecho que decide la regla no viaja al cliente.** `AgendaEntryDto` no lleva
+> ningún campo que diga si la cita tiene un `Encounter` asociado, y no es un
+> descuido del DTO: el módulo `encounter` todavía no existe, así que no hay
+> siquiera dato que publicar. Ninguna pantalla puede por tanto ofrecer ni retirar
+> «Anular…» ni «No asistió» por este motivo, que es lo que sí se hizo con AG-043
+> —ahí el dato es la hora, y la hora la sabe cualquiera—.
+>
+> Lo único observable es el rechazo, y es el camino GENÉRICO: un 409
+> `AGENDA_ENTRY_HAS_ENCOUNTER` lo cuenta el aviso global con la frase en español
+> de la propia API, exactamente igual que el 409 de una transición inválida
+> (AG-040) o el de un cupo perdido (AG-023). Escribir una prueba de interfaz
+> sobre eso citando AG-045 afirmaría que existe la política de errores, no que se
+> respeta esta regla — y la política ya tiene sus pruebas.
+>
+> **Cuando `encounter` publique si una cita tiene atención, AG-045 recupera mitad
+> visible** —no ofrecerlas— y sale de esta lista, igual que AG-004 con la ruta de
+> historial.
+
 ### E3 — Reprogramar y anular con rastro _(P3)_
 
 **Por qué es P3:** ocurre a diario, pero una clínica puede operar una semana
 anulando y volviendo a reservar a mano. **Prueba independiente:** reprogramar y
 comprobar que el cupo original quedó libre y ambas entradas se referencian.
-**Cubre:** AG-050 a AG-052.
+**Cubre:** AG-050 a AG-052 y AG-115.
 
 ### E4 — Bloqueos y sobrecupo _(P3)_
 
 **Por qué es P3:** son la vía documentada para romper la regla; sin ellos el
 personal la rompe por fuera del sistema. **Cubre:** AG-035 a AG-039, AG-100,
-AG-101, AG-103.
+AG-101, AG-103, AG-114.
 
 ### E5 — Lista de espera _(P4)_
 
@@ -96,6 +146,27 @@ de grupo prioritario que la ficha aún no tiene (D-003). No se cierra sin ellos.
 ### E6 — Métrica de inasistencia _(P5)_
 
 **Por qué es P5:** es explotación de datos que ya existen. **Cubre:** AG-080, AG-081.
+
+> **Cerrada el 16-08-2026.** `GET /agenda/metrics/no-show?from&to`, bajo
+> `agenda:read` con alcance `'query'` — el desglose POR SEDE es el requisito, y
+> una métrica colgada de `/sites/{siteId}` no podría contestarlo; el handler
+> estrecha con el alcance resuelto de la sesión, como AG-107. Sin migración: no
+> se añadió ni una columna.
+>
+> **La base cuenta y el dominio decide.** El adaptador devuelve el cubo
+> sede·profesional·canal·estado con su recuento, y `summariseNoShow` es quien
+> aplica AG-081 y divide. Un `WHERE status <> 'CANCELLED'` en la consulta sería
+> una segunda copia de la regla que ninguna prueba puede romper. El cubo no
+> crece con la historia de la clínica —su tamaño es sedes × profesionales × 4
+> canales × 8 estados—, así que un año de citas y una tarde cruzan igual.
+>
+> **Lo que destapó, y no era de la agenda.** La prueba que pide el mismo rango
+> bajo dos husos de sesión devolvía dos cifras: `@prisma/adapter-pg` serializa
+> un `Date` sin sufijo de zona y PostgreSQL lo resuelve con el `TimeZone` de la
+> sesión, así que TODO instante clínico del sistema dependía de cómo estuviera
+> configurado el servidor. Corregido fijando la zona de sesión en el arranque de
+> cada conexión (`shared/infrastructure/prisma/pg-adapter.ts`), con su prueba en
+> `clinical-date-timezone.spec.ts`.
 
 ### E7 — Parametrización por sede _(P2)_
 
@@ -109,6 +180,41 @@ E4 y E5, aunque se especifique después. **Prueba independiente:** cambiar la
 antelación mínima de una sede y comprobar que la reserva siguiente la respeta y
 que las ya creadas no se tocan (AG-098). **Cubre:** AG-015, AG-016, AG-031 a
 AG-033, AG-090 a AG-099, AG-102, AG-110.
+
+**Solo servidor:** AG-095, AG-097, AG-098. El segundo es bitácora —quién cambió
+qué parámetro, cuándo y desde qué valor, en `access_audit`— y el tercero se
+demuestra mirando las citas anteriores al cambio, que es exactamente lo que una
+pantalla no puede enseñar.
+
+> **AG-095 entra en esa lista el 15-08-2026, al cerrar la mitad visible de E7, y
+> con el argumento escrito.** La cadena de escalones **no es observable desde
+> ninguna pantalla**: `SiteParametersDto` entrega el valor YA RESUELTO y no lleva
+> ningún campo que diga de qué escalón sale. Y el segundo escalón no tiene tabla
+> —el disparador de
+> `20260813040610_configuration_holidays_and_site_parameters` escribe los valores
+> de la clínica en la fila de cada sede en cuanto la sede existe—, así que hoy
+> los dos escalones inferiores COINCIDEN: un `0` tecleado por un administrador y
+> un `0` heredado del código llegan idénticos, y ninguna pantalla puede
+> distinguirlos ni verlos caer.
+>
+> Lo que la pantalla de parámetros sí enseña —el defecto del código junto a cada
+> casilla, «Valor de arranque del sistema: 0 minutos»— es otra afirmación:
+> CF-062, con la tabla de D-001 detrás, y ya tiene sus pruebas. Llamarla AG-095
+> sería dar por probada la resolución mirando un rótulo. La cadena se comprueba
+> donde ocurre, con la prueba de integración que reserva contra una sede sin fila
+> de parámetros (ver el recuadro de AG-095).
+>
+> **Si algún día la respuesta dice de qué escalón sale cada valor**, AG-095
+> recupera mitad visible —enseñarlo junto a la casilla— y sale de esta lista.
+
+> **AG-090, AG-091, AG-099 y AG-102 NO están en esa lista, y es deliberado.**
+> Cada uno tiene una mitad que se ve: AG-090 vive en el catálogo administrable de
+> feriados, AG-091 en el alcance que cada fila del calendario escribe, AG-099 se
+> reasigna desde la pantalla de roles y AG-102 en que la retención se presenta
+> como valor fijo y nada de lo que la pantalla envía puede ordenar un borrado.
+> Declararlos «solo servidor» los daría por cerrados sin haberlos mirado, y eso
+> es peor que dejarlos pendientes: quien calla debe interfaz. **Los cuatro
+> quedaron con prueba de interfaz el 15-08-2026.**
 
 > AG-015 y AG-016 —los feriados en la consulta de disponibilidad— estaban
 > declarados y no pertenecían a ninguna entrega. Lo detectó `pnpm estado`, no una
@@ -246,6 +352,48 @@ es falsa, hay requisitos que cambian.
   > vigencia, parcial `WHERE active`. No es de una línea: `start_time` y
   > `end_time` son `time` y PostgreSQL no trae `timerange`, así que hay que
   > rangificarlos y combinarlos con el `daterange` de la vigencia.
+- **AG-111** — CUANDO se consulten los profesionales agendables de una sede, el
+  sistema DEBERÁ acompañar a cada uno de sus especialidades activas, con
+  identificador, nombre e indicación de cuál es la principal.
+  > **Por qué lo expone la agenda y no `staff`.** Es el mismo razonamiento de
+  > AG-108, aplicado al defecto que una revisión destapó en C4: el diálogo de
+  > reserva ofrecía **todas** las especialidades del catálogo pidiéndolas a
+  > `GET /specialties`, que exige `config:read`, y el rol `RECEPCION` —el que
+  > reserva— no lo tiene. El selector construido para recepción era
+  > inalcanzable para recepción. La salida no es conceder `config:read` ni
+  > `staff:read` al mostrador, que abriría el catálogo entero y la ficha del
+  > personal para llenar un desplegable: es que **la agenda publique bajo
+  > `agenda:read` el mínimo que su pantalla necesita**.
+  >
+  > **Y de paso deja de ofrecer combinaciones que no existen.** El profesional
+  > ya tiene las suyas en `practitioner_specialty` con una `is_primary`
+  > (SP-005); las demás no las ejerce, así que ofrecerlas es ofrecer un
+  > rechazo. Esto es lo que hace verdadera SP-008 **para la agenda** — hasta
+  > hoy sólo lo era para quien tuviera `staff:read`.
+  >
+  > **Sólo las activas** (SP-004): una especialidad desactivada no se ofrece
+  > para citas nuevas. Un profesional cuya única especialidad se desactivó
+  > llega con la lista vacía, y eso es la respuesta correcta, no un hueco.
+- **AG-112** — CUANDO se consulten los tipos de atención de una especialidad
+  para la agenda de una sede, el sistema DEBERÁ listar únicamente los activos,
+  con identificador, nombre y duración base, y NO DEBERÁ exigir más permiso que
+  `agenda:read` sobre esa sede.
+  > La otra mitad de SP-028: elegida la especialidad, el diálogo necesita sus
+  > tipos y cuánto dura cada uno. `GET /specialties/{id}/service-types` los
+  > sirve desde C1, pero bajo `config:read`, que es de la pantalla de
+  > administración —y allí sigue siendo lo correcto, porque allí se editan—.
+  >
+  > **La duración base viaja, y la propuesta sigue siendo del servidor.** Este
+  > número es el del catálogo; el que se reserva lo resuelve
+  > `GET /agenda/sites/{siteId}/duration` aplicando SP-023 entero —excepción
+  > del médico primero—. Sirve para que el desplegable diga «Control · 20 min»
+  > sin una petición por opción, no para calcular el fin de la cita.
+  >
+  > **La sede va en la ruta aunque `service_type` no tenga sede.** Es lo que
+  > permite declarar `param:siteId` y que el guard decida antes que ninguna
+  > tubería (AG-071): una ruta de agenda sin sede tendría que narrar su propio
+  > alcance en el handler, y aquí no hay nada que narrar. El precio es que el
+  > identificador de la sede no filtra nada, y se dice en voz alta.
 - **AG-012** — SI la duración solicitada no es múltiplo del **turno de la sede**
   (`site_parameter.slot_atom_minutes`, AG-094), ENTONCES el sistema DEBERÁ
   rechazar la reserva con `INVALID_SLOT_DURATION` indicando la duración
@@ -448,9 +596,23 @@ es falsa, hay requisitos que cambian.
 - **AG-035** — CUANDO se reserve una cita declarada como sobrecupo, el sistema
   DEBERÁ crearla con `blocks_calendar = false`, DEBERÁ exigir un motivo y DEBERÁ
   registrar quién la autorizó.
-  > **Falta esquema.** `agenda_entry` tiene `created_by_id`, pero no un campo de
-  > autorización. Quien reserva y quien autoriza el sobrecupo no son la misma
-  > persona: ese es el control. Requiere migración nueva.
+  > **Esquema resuelto el 14-08-2026 — migración
+  > `agenda_overbooking_authorisation`.** `agenda_entry.overbooking_authorised_by_id`
+  > apunta a la cuenta que autorizó, con `ON DELETE RESTRICT` (§5: una cita no se
+  > borra, y el rastro de quién autorizó tampoco). NO se reutiliza
+  > `created_by_id`: quien reserva y quien autoriza son personas distintas y ése
+  > es el control entero — una columna que sirviera para las dos cosas haría
+  > AG-103 incomprobable desde la fila.
+  >
+  > **Lo garantiza la base, no el servicio.**
+  > `agenda_entry_overbooking_coherence` exige que el autorizador y el motivo
+  > estén los dos presentes exactamente cuando `blocks_calendar = false`, y los
+  > dos ausentes cuando ocupa calendario: un sobrecupo sin constancia no se
+  > puede escribir ni por `psql`, y una cita normal no puede llevar una
+  > autorización que nadie dio.
+  >
+  > El bloqueo se anota como resuelto y no se borra, por la misma razón que el
+  > de AG-051 y el de §10: `pnpm estado` los cuenta leyendo este archivo.
 - **AG-036** — El sistema DEBERÁ exponer en la respuesta de listado el indicador
   de sobrecupo y su motivo, de forma que un cliente pueda distinguirlo sin
   consultar otra vez.
@@ -464,21 +626,63 @@ es falsa, hay requisitos que cambian.
   > impide que en un sobrecupo se escriba lo mismo, y una condición en el
   > serializador no es una garantía.
   >
-  > **Falta esquema.** El motivo del sobrecupo es un dato administrativo —por qué
-  > se rompió la rejilla—, no clínico, y merece columna propia
-  > (`agenda_entry.overbooking_reason`), hermana del campo de autorizador que
-  > AG-035 ya espera de la tanda 2. Con eso AG-036 se cumple sin condiciones y
-  > `reason` queda fuera de toda lectura. Si en cambio se decide reutilizar
-  > `reason`, entonces AG-036 y AG-072 se contradicen y hay que decir cuál cede:
-  > eso es política, no implementación.
+  > **Esquema resuelto el 14-08-2026 — migración
+  > `agenda_overbooking_authorisation`.** El motivo del sobrecupo es un dato
+  > administrativo —por qué se rompió la rejilla—, no clínico, y tiene columna
+  > propia: `agenda_entry.overbooking_reason`, hermana del autorizador de
+  > AG-035. Con eso AG-036 se cumple SIN CONDICIONES —el listado expone
+  > `blocksCalendar` y `overbookingReason` en todas las filas— y `reason`
+  > queda fuera de toda lectura, que es lo que AG-072 y AG-074 exigen.
+  >
+  > **Reutilizar `reason` era la otra opción y se descartó**: exponerlo «sólo
+  > cuando `blocks_calendar = false`» es exposición condicional de PHI —nada
+  > impide escribir el motivo de consulta en el motivo del sobrecupo, y una
+  > condición en el serializador no es una garantía—. Con dos columnas, lo que
+  > el listado sirve no depende de ninguna condición: la que se sirve nunca
+  > tuvo dentro un dato de salud.
 - **AG-037** — CUANDO se cree un bloqueo, el sistema DEBERÁ aplicarle las mismas
   reglas de solapamiento que a una cita.
+  > **Ya lo garantizaba la base, y por eso no se escribió regla nueva.** El
+  > predicado de los tres `EXCLUDE USING gist` es `released_at IS NULL AND
+  > blocks_calendar` —no menciona `kind`—, así que un bloqueo que ocupa
+  > calendario compite exactamente igual que una cita desde
+  > `20260806022956_clinical_core_constraints`. Lo que E4 añadió fue la RUTA que
+  > crea el bloqueo y la traducción del rechazo; reimplementar el solapamiento
+  > en TypeScript habría sido una segunda copia con una condición de carrera.
 - **AG-038** — SI se intenta crear un bloqueo sobre un intervalo que ya contiene
   citas que ocupan calendario, ENTONCES el sistema DEBERÁ rechazarlo y DEBERÁ
   enumerar las citas que lo impiden.
+  > **Qué se puede decir de esas citas, y qué no** (AG-072, AG-074, AG-109,
+  > SC-006). Se enumeran **por su hora de inicio** —«Hay 2 citas dentro de ese
+  > intervalo: 08:00, 09:00»— y nada más: ni nombre, ni documento, ni motivo de
+  > consulta. El mensaje de un error llega al registro y a una captura de
+  > soporte, y AG-109 concede el nombre al LISTADO del día —una ruta con su
+  > permiso y su alcance—, no a un problem document. Con la hora, quien está en
+  > el mostrador las abre en la agenda del día y actúa; sin la lista tendría
+  > que buscarlas a mano, que es la mitad útil del requisito.
+  >
+  > La hora y no el identificador porque el documento RFC 9457 de este sistema
+  > sirve `code`, `title`, `detail` y `errors`, y **nunca los `params` de un
+  > error de dominio**: los identificadores quedan del lado del servidor. Se
+  > nombran como mucho cinco horas y luego «y N más» — un bloqueo de una semana
+  > de vacaciones cruza cuarenta citas, y una frase con cuarenta horas dentro
+  > no la lee nadie.
+  >
+  > **Es una lectura antes de escribir, y el `EXCLUDE` sigue siendo la
+  > garantía** (AG-037). La lista puede quedar obsoleta entre la lectura y el
+  > `INSERT`; lo que no puede es dejar pasar el solapamiento, porque entonces
+  > responde la base con `PRACTITIONER_SLOT_TAKEN`. Esta comprobación mejora el
+  > mensaje, no sustituye al control.
 - **AG-039** — MIENTRAS la sede tenga el sobrecupo deshabilitado (AG-094), el
   sistema NO DEBERÁ admitir ninguna entrada con `blocks_calendar = false` y
   DEBERÁ rechazarla con `OVERBOOKING_NOT_ALLOWED`.
+  > **Nace HABILITADO en cada sede** (`site_parameter.overbooking_enabled`,
+  > decisión del usuario del 14-08-2026), al revés que `allow_past_booking`. El
+  > sobrecupo es la vía documentada de romper la rejilla (D-005) y una sede que
+  > lo tuviera cerrado de fábrica empujaría la urgencia fuera del sistema desde
+  > el primer día; lo que lo limita es el tope de D-001 —dos por profesional y
+  > día—, que sí es un número. Se administra desde `configuration`, como
+  > `allow_past_booking`.
 - **AG-100** — SI el profesional ya alcanzó el número máximo de sobrecupos de la
   sede para esa **fecha clínica**, ENTONCES el sistema DEBERÁ rechazar la reserva
   con `OVERBOOKING_LIMIT_REACHED` indicando el tope vigente.
@@ -499,6 +703,49 @@ es falsa, hay requisitos que cambian.
   > todos. En ambos caminos AG-035 registra quién autorizó, así que el rastro no
   > depende de cuál se tomó.
 
+- **AG-113** — CUANDO recepción esté reservando y el paciente no exista todavía,
+  el sistema DEBERÁ permitir crearlo sin abandonar la reserva, y DEBERÁ
+  continuar la reserva con la ficha recién creada.
+  > Pedido por el usuario el 14-08-2026, y es la mitad que faltaba para que la
+  > agenda sirva en el mostrador: el paciente nuevo es el caso NORMAL en una
+  > clínica que crece, no la excepción. Obligar a cerrar la reserva, irse a
+  > «Pacientes», crear la ficha y volver a empezar es donde recepción abandona
+  > el sistema y apunta la cita en un cuaderno — el mismo argumento con el que
+  > D-005 defiende el sobrecupo: lo que el sistema no admite no desaparece, se
+  > hace fuera.
+  >
+  > El alta rápida NO es una ficha distinta: es la misma de `patients` con lo
+  > mínimo, y lo que falte se completa después. Inventar un segundo modelo de
+  > paciente «provisional» sería crear un duplicado que nadie fusiona.
+
+- **AG-114** — CUANDO se elimine un bloqueo de agenda, el sistema DEBERÁ liberar
+  el intervalo y DEBERÁ dejar constancia de quién lo eliminó y cuándo, y NO
+  DEBERÁ borrar la fila.
+  > Lo destapó la revisión de E4: la máquina de estados rechaza toda transición
+  > de un `BLOCK`, así que un bloqueo creado por error no tenía deshacer y la
+  > única salida era la base de datos. Un control sin marcha atrás se rodea: se
+  > deja de usar el bloqueo y la ausencia del médico se gestiona por fuera.
+  >
+  > **Liberar y no borrar**, por lo mismo que AG-050 en la reprogramación: la
+  > fila es la prueba de que ese intervalo estuvo cerrado, y `released_at` ya es
+  > el predicado que ambos `EXCLUDE` miran. Borrarla haría desaparecer que
+  > alguien bloqueó el quirófano un martes.
+  >
+  > **Cerrado el 14-08-2026.** `DELETE /agenda/sites/{siteId}/blocks/{entryId}`
+  > bajo `agenda:write` y alcance `param:siteId`, como el resto de la agenda.
+  > Pasa el bloqueo a `CANCELLED` fijando `released_at` y `cancelled_at`, por el
+  > MISMO puerto que una transición: así la fila del historial (AG-004) viaja en
+  > la misma transacción y el `UPDATE` condicional vuelve a arbitrar lo que se
+  > leyó. No hace falta migración —`agenda_entry_kind_status_coherence` ya
+  > admite `CANCELLED` para un bloqueo— ni estado nuevo, que sería una segunda
+  > palabra para «ya no cierra nada».
+  >
+  > **No pide motivo**, a diferencia de AG-044: «quién y cuándo» son
+  > `changed_by_id` y `changed_at` de la fila de historial, y un texto libre que
+  > ningún requisito exige es una casilla más en la pantalla cuyo objeto es
+  > deshacer un error deprisa. Un paciente merece la explicación de una
+  > anulación; un bloqueo no se la debe a nadie.
+
 ## 5. Estados de la cita
 
 Transiciones admitidas. Cualquier par no listado se rechaza.
@@ -510,7 +757,18 @@ Transiciones admitidas. Cualquier par no listado se rechaza.
 | `CHECKED_IN`                        | `IN_PROGRESS`, `CANCELLED`, `NO_SHOW`             |
 | `IN_PROGRESS`                       | `FULFILLED`                                       |
 | `FULFILLED`, `CANCELLED`, `NO_SHOW` | _(terminal)_                                      |
-| `BLOCKED`                           | _(solo `kind = BLOCK`; terminal)_                 |
+| `BLOCKED`                           | `CANCELLED` _(solo por AG-114, y solo `kind = BLOCK`)_ |
+
+**La ruta de transiciones sigue rechazando todo bloqueo** (AG-040 sobre
+`assertTransition`): los seis destinos que un cliente puede pedir afirman algo
+de un paciente —confirmó, llegó, se le atiende, se le atendió, no vino, se
+anuló— y AG-021 garantiza que un bloqueo no lo tiene. La única salida de
+`BLOCKED` es deshacer el bloqueo (AG-114), que tiene ruta propia
+—`DELETE /agenda/sites/{siteId}/blocks/{entryId}`— y su propia regla pura,
+`planBlockRelease`. Un bloqueo ya liberado se rechaza con
+`INVALID_AGENDA_TRANSITION`, y una cita pedida por esa ruta responde
+`AGENDA_ENTRY_NOT_FOUND`: `blocks/:id` no nombra citas, y distinguirlas ahí
+convertiría la ruta en un oráculo de identificadores (AG-071).
 
 - **AG-040** — SI se solicita una transición que no aparece en la tabla anterior,
   ENTONCES el sistema DEBERÁ rechazarla con `INVALID_AGENDA_TRANSITION` y estado
@@ -587,6 +845,26 @@ Transiciones admitidas. Cualquier par no listado se rechaza.
   > que el original **sigue reservable como calendario ocupado**, no que se
   > lanzó un error.
 
+- **AG-115** — CUANDO se reprograme una cita, el sistema DEBERÁ admitir que la
+  entrada nueva sea de otro profesional o de otro tipo de atención, y DEBERÁ
+  aplicarle las mismas comprobaciones que a una reserva.
+  > Preguntado por el usuario el 14-08-2026 —«¿el reprogramar se puede cambiar
+  > de médico, especialidad?»— sobre una implementación que sólo admitía hora,
+  > canal y motivo.
+  >
+  > **Prohibirlo no impide el caso: le quita el rastro.** Recepción que se
+  > equivocó de médico anula y vuelve a reservar, y entonces se pierde
+  > exactamente lo que AG-051 acaba de construir — la referencia entre las dos
+  > entradas—, y la métrica de inasistencia cuenta una anulación que nunca lo
+  > fue. Es el argumento de D-005 con el sobrecupo y el de D-019 con los
+  > feriados: lo que el sistema no admite se hace fuera de él.
+  >
+  > **Mecánicamente no cuesta nada**: AG-050 ya libera la original y CREA una
+  > entrada nueva, así que el profesional y el tipo son campos de una fila que
+  > nace, no una mutación de la que existía. Lo que NO cambia es el **paciente**:
+  > una cita de otra persona no es una reprogramación, es otra cita, y admitirlo
+  > convertiría un error de tecleo en una cita atribuida a quien no la pidió.
+
 ## 7. Lista de espera
 
 - **AG-060** — CUANDO no haya cupo disponible en el rango solicitado, el sistema
@@ -603,6 +881,14 @@ Transiciones admitidas. Cualquier par no listado se rechaza.
   adolescentes, mujeres embarazadas, personas con discapacidad, personas privadas
   de libertad y quienes adolezcan de enfermedades catastróficas o de alta
   complejidad. NO DEBERÁ tratarse como preferencia opcional.
+  > **Falta esquema.** La ficha de paciente no tiene los campos de grupo
+  > prioritario: guarda fecha de nacimiento —de donde sale la edad—, pero
+  > embarazo, discapacidad y enfermedad catastrófica **no tienen columna**, y
+  > son dato de salud de categoría especial bajo la LOPDP, así que no se
+  > improvisan en un texto libre. Declarado como bloqueo el 14-08-2026 a
+  > petición del usuario, para que `pnpm estado` lo cuente: **E5 no se abre
+  > hasta que el módulo de paciente los tenga.**
+  >
   > **Depende del módulo de paciente** (decisión D-003, 12-08-2026). La ficha
   > guarda fecha de nacimiento —de donde sale la edad—, pero embarazo,
   > discapacidad y enfermedad catastrófica no tienen campo. Se descartó
@@ -644,8 +930,45 @@ Transiciones admitidas. Cualquier par no listado se rechaza.
 
 - **AG-080** — El sistema DEBERÁ calcular la tasa de inasistencia por
   profesional, por sede y por canal de reserva sobre un rango de fechas.
+  > **El rango son dos FECHAS ecuatorianas inclusivas**, no dos instantes:
+  > «del 1 al 30 de septiembre» es lo que pregunta una clínica, y con instantes
+  > la respuesta dependería de la hora a la que se preguntó. Se resuelven a
+  > `[00:00, 24:00)` en `America/Guayaquil` (AG-001), con los mismos dos topes
+  > que la disponibilidad — rango invertido y más de 366 días se rechazan por
+  > campo.
+  >
+  > **Los tres desgloses viajan JUNTOS en una respuesta**, con el total. Son
+  > tres cortes del mismo conjunto, no tres cuentas: un cliente que preguntara
+  > tres veces pintaría tres paneles calculados sobre tres «ahora» distintos, y
+  > no sumarían. La tasa se sirve con su NUMERADOR Y SU DENOMINADOR siempre —
+  > «50 %» sobre dos citas y sobre cuatrocientas es el mismo número y no el
+  > mismo hecho— y es `null`, nunca `0`, cuando no hubo ninguna cita: cero por
+  > ciento diría «no faltó nadie» un día que la clínica no abrió.
 - **AG-081** — El cálculo de inasistencia DEBERÁ excluir las citas anuladas y
   DEBERÁ contar solo las que alcanzaron su hora de inicio.
+  > **El denominador es literalmente eso y ni un filtro más:** las citas
+  > (`kind = APPOINTMENT`) cuyo `starts_at` cae en el rango y ya pasó, salvo las
+  > `CANCELLED`. El numerador son las `NO_SHOW`. «Ya pasó» se implementa
+  > cerrando la ventana en el instante actual, y la respuesta lo declara en
+  > `countedUntil`: un periodo pedido hasta fin de mes el día 15 se contó sobre
+  > medio mes, y etiquetar la cifra con las fechas que tecleó quien preguntó
+  > sería nombrar un periodo sobre el que no se calculó.
+  >
+  > **Anular incluye el original de una reprogramación**, que AG-050 deja
+  > `CANCELLED`: sin esta exclusión «recepción movió la hora» se reportaría como
+  > «el paciente no vino».
+  >
+  > **La cita que llegó a su hora y nadie cerró SIGUE en el denominador**, que
+  > es lo que dice el requisito y no lo que conviene. Tiene una consecuencia
+  > incómoda: una clínica que deje de marcar inasistencias ve mejorar su propia
+  > cifra. Por eso la respuesta publica `pending` —cuántas del denominador no
+  > tienen desenlace registrado— en vez de esconderlas. Si la tasa debe medirse
+  > solo sobre citas con desenlace es una decisión de negocio: **D-025**.
+  >
+  > **Los bloqueos no cuentan**, y no es política sino forma de la fila: un
+  > `BLOCK` no tiene paciente ni canal (`agenda_entry_patient_coherence`,
+  > `agenda_entry_booking_channel_coherence`), así que no hay celda donde
+  > caiga. Nadie falta a un quirófano.
 
 ## 10. Parametrización
 
@@ -799,6 +1122,7 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `INVALID_BOOKING_CHANNEL`      | 422    | AG-034    |
 | `INVALID_SLOT_DURATION`        | 422    | AG-012    |
 | `OVERBOOKING_NOT_ALLOWED`      | 422    | AG-039    |
+| `OVERBOOKING_REASON_REQUIRED`  | 422    | AG-035    |
 | `OVERBOOKING_LIMIT_REACHED`    | 409    | AG-100    |
 | `OVERBOOKING_NOT_AUTHORISED`   | 403    | AG-101    |
 | `SELF_AUTHORISATION_DENIED`    | 403    | AG-103    |
@@ -822,6 +1146,14 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 > entrada que no existe y para la de otra sede — distinguirlas confirmaría
 > citas ajenas a quien prueba identificadores, el mismo razonamiento de
 > AG-105.
+
+> `OVERBOOKING_REASON_REQUIRED` lo fijó la implementación de E4, por la misma
+> regla y por el mismo motivo que `CANCELLATION_REASON_REQUIRED`: AG-035 dice
+> «DEBERÁ exigir un motivo» y no nombra código, y un DEBERÁ que sólo hace
+> cumplir el DTO no es una garantía —la exigencia vive en el servicio, donde
+> ningún llamador la rodea, y la base la repite en
+> `agenda_entry_overbooking_coherence`—. Es 422 y por campo: lo que falta es un
+> dato del formulario, y quien está en el mostrador tiene que saber cuál.
 
 > `CANCELLATION_REASON_REQUIRED` salió de la revisión adversarial de E2 (P2-3):
 > el DTO ya exigía el motivo por HTTP, pero E3 anulará la cita original desde
@@ -860,9 +1192,13 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | ----------------------------------------------- | ---------------------------------------------------------- |
 | AG-021 a AG-026, AG-030                         | Integración contra PostgreSQL real                         |
 | AG-040 a AG-046, AG-050 a AG-052                | Unitario de dominio + integración                          |
+| AG-115                                          | Unitario con doble de repositorio + integración contra PostgreSQL real: la entrada nueva nace con el profesional pedido, el original queda liberado, y un destino ocupado no libera nada (AG-052) |
 | AG-070 a AG-074                                 | Seguridad dirigida                                         |
 | AG-023, AG-024, AG-027, AG-028, AG-030, AG-040  | Contrato HTTP (código, estado, mensaje)                    |
 | AG-031 a AG-034, AG-039, AG-100, AG-101, AG-103 | Contrato HTTP + unitario de dominio                        |
+| AG-035, AG-036, AG-101, AG-103                  | Integración contra PostgreSQL real: la separación de personas y la constancia las garantiza `agenda_entry_overbooking_coherence` |
+| AG-037, AG-038                                  | Integración contra PostgreSQL real: AG-037 ES el `EXCLUDE`, y AG-038 enumera filas |
+| AG-114                                          | Unitario de dominio + integración contra PostgreSQL real: liberar libera de verdad cuando el mismo intervalo se vuelve a reservar, y la fila de historial existe |
 | AG-001, AG-015, AG-017, AG-100                  | Unitario con huso alterado, como en `encounter_freeze_age` |
 | AG-018, AG-046, AG-066, AG-067                  | Integración contra PostgreSQL real                         |
 | AG-012, AG-104, AG-105                          | Unitario de dominio + contrato HTTP                        |
@@ -870,6 +1206,7 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | AG-106                                          | Unitario de dominio + integración con dos reglas solapadas |
 | AG-096, AG-097, AG-098, AG-102                  | Integración + contrato HTTP por campo                      |
 | AG-110                                          | Unitario de dominio + integración contra PostgreSQL real   |
+| AG-111, AG-112                                  | Contrato HTTP con una sesión de `RECEPCION` de verdad: el defecto era de permiso, y un doble con los grants puestos a mano no lo habría visto |
 
 ## Preguntas abiertas
 

@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { ParameterOutOfRangeError } from './configuration.errors';
+import { PERMISSIONS } from '../../../shared/authorisation/permission.catalogue';
+import { UnknownPermissionError } from '../../../shared/domain/errors/permission.errors';
 import {
   assertAtomFitsStoredDurations,
   assertLeadWindowCoherent,
   assertParametersInRange,
+  assertPermissionIsDeclared,
   DEFAULT_SITE_PARAMETERS,
   PARAMETER_RANGES,
 } from './site-parameters';
@@ -49,6 +52,12 @@ describe('los parámetros de operación de una sede', () => {
       // tres duraciones ya configuradas (10, 20 y 30).
       slotAtomMinutes: 10,
       allowPastBooking: false,
+      // E4, D-005 (14-08-2026). El sobrecupo nace HABILITADO —al revés que el
+      // pasado, y a propósito: es la vía documentada de la excepción, y lo que
+      // la limita es el tope de arriba— y lo autoriza el permiso que MEDICO y
+      // ADMIN traen de fábrica.
+      overbookingEnabled: true,
+      overbookingPermission: 'agenda:overbook',
       cancelledRetention: 'NEVER',
     });
   });
@@ -148,6 +157,8 @@ describe('los parámetros de operación de una sede', () => {
         overbookingCap: 2,
         slotAtomMinutes: 10,
         allowPastBooking: false,
+        overbookingEnabled: true,
+        overbookingPermission: 'agenda:overbook',
         cancelledRetention: 'NEVER',
       });
       expect.unreachable('debía rechazarse');
@@ -167,9 +178,47 @@ describe('los parámetros de operación de una sede', () => {
         overbookingCap: 2,
         slotAtomMinutes: 10,
         allowPastBooking: false,
+        overbookingEnabled: true,
+        overbookingPermission: 'agenda:overbook',
         cancelledRetention: 'NEVER',
       });
     }).not.toThrow();
+  });
+
+  it('AG-101 rechaza un permiso que el catálogo del código no declara', () => {
+    /**
+     * ES EL ÚNICO CÓDIGO DE PERMISO QUE ESTE ESQUEMA GUARDA COMO DATO, y lo
+     * que pasa si entra con una errata no es un error visible: `agenda:overbok`
+     * no lo tiene NADIE, así que la sede se queda sin poder autorizar
+     * sobrecupos y nada en pantalla lo dice. Qué permisos existen es código.
+     */
+    try {
+      assertPermissionIsDeclared('agenda:overbok', [...PERMISSIONS]);
+      expect.unreachable('debía rechazarse');
+    } catch (error) {
+      expect(error).toBeInstanceOf(UnknownPermissionError);
+      expect((error as UnknownPermissionError).code).toBe('UNKNOWN_PERMISSION');
+      // Bajo el campo que lo produjo, no bajo el `permissions` de la pantalla
+      // de roles: es otro formulario y otra casilla.
+      expect((error as UnknownPermissionError).fieldErrors?.[0]?.field).toBe(
+        'overbookingPermission',
+      );
+      expect(
+        (error as UnknownPermissionError).fieldErrors?.[0]?.message,
+      ).toContain('agenda:overbok');
+    }
+  });
+
+  it('AG-101 admite cualquier permiso que el catálogo SÍ declara', () => {
+    // No se estrecha a «los del sobrecupo»: quién autoriza una excepción es
+    // política de la clínica (D-002), y una lista corta aquí sería este módulo
+    // decidiéndola. Lo que no se admite es un código que no existe.
+    expect(() =>
+      assertPermissionIsDeclared('agenda:overbook', [...PERMISSIONS]),
+    ).not.toThrow();
+    expect(() =>
+      assertPermissionIsDeclared('settings:manage', [...PERMISSIONS]),
+    ).not.toThrow();
   });
 
   it('CF-063 no declara rango para nada que sea una garantía del sistema', () => {

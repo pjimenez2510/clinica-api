@@ -36,6 +36,16 @@ import { CANCELLED_RETENTION_POLICIES } from '../domain/site-parameters';
  * earlier than now changes WHICH HOUR is accepted; the `EXCLUDE` still refuses
  * an overlap in that hour, the status history is still append-only, and the
  * booking route still demands its permission and its site scope.
+ *
+ * THE TWO OF THE OVERBOOKING (E4, AG-039, AG-101) PASS THE SAME TEST, and the
+ * second one is worth stating because it looks like it does not: configuring
+ * WHICH PERMISSION authorises an exception is not configuring the exception
+ * away. The `EXCLUDE` still stands — the overbooking is exempt from it by the
+ * same `blocks_calendar` predicate it always was — the constancia is a CHECK
+ * of the base, and the separation between whoever books and whoever authorises
+ * (AG-103) is not a parameter and never will be. What the clinic chooses is
+ * WHO carries the decision, which is exactly the kind of thing D-002 says is
+ * the clinic's policy and not the code's.
  */
 
 // --- Holidays (CF-060, CF-061) ---------------------------------------------
@@ -174,6 +184,33 @@ export const updateSiteParametersSchema = z
       .boolean({ error: 'Indique si la sede admite reservar en el pasado' })
       .optional(),
     /**
+     * AG-039, AG-094. Whether this site admits overbookings.
+     *
+     * A boolean, so it has no range either — and its default is the opposite
+     * of the one above (D-005): the overbooking is the DOCUMENTED way of
+     * breaking the grid, and what keeps it from becoming the normal route is
+     * the cap, which is a number this same form administers.
+     */
+    overbookingEnabled: z
+      .boolean({ error: 'Indique si la sede admite sobrecupos' })
+      .optional(),
+    /**
+     * AG-101, AG-094. Which permission authorises an overbooking here.
+     *
+     * A STRING AND NOT A `z.enum` OF THE CATALOGUE, deliberately. Declaring
+     * the union here would answer an unknown code with the generic validation
+     * problem, and AU-033 already fixed the two answers this question
+     * deserves: `UNKNOWN_PERMISSION` for a code the CODE does not declare, and
+     * `PERMISSION_NOT_INSTALLED` for one this installation has not seeded. The
+     * domain and the service own them; this schema stops at «es un texto».
+     */
+    overbookingPermission: z
+      .string({ error: 'Indique el permiso que autoriza los sobrecupos' })
+      .trim()
+      .min(1, 'Indique el permiso que autoriza los sobrecupos')
+      .max(64, 'Un código de permiso no supera 64 caracteres')
+      .optional(),
+    /**
      * One value today (D-001, D-004): the system does not delete. It travels
      * in the contract anyway so the screen can show what the policy IS, and so
      * the day a purge policy is added the field already exists.
@@ -196,6 +233,10 @@ export const siteParametersSchema = z.object({
   slotAtomMinutes: z.number().int(),
   /** AG-031, AG-094. It travels in the ANSWER too, or nobody can see it. */
   allowPastBooking: z.boolean(),
+  /** AG-039, AG-094. Same reason: a parameter nobody can see is not one. */
+  overbookingEnabled: z.boolean(),
+  /** AG-101, AG-094. The code, as stored — the screen shows what it means. */
+  overbookingPermission: z.string(),
   cancelledRetention: z.enum(CANCELLED_RETENTION_POLICIES),
 });
 export class SiteParametersDto extends createZodDto(siteParametersSchema) {}

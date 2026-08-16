@@ -10,8 +10,11 @@ import {
   assertAtomFitsStoredDurations,
   assertLeadWindowCoherent,
   assertParametersInRange,
+  assertPermissionIsDeclared,
   type SiteParametersPatch,
 } from '../domain/site-parameters';
+import { PERMISSIONS } from '../../../shared/authorisation/permission.catalogue';
+import { PermissionNotInstalledError } from '../../../shared/domain/errors/permission.errors';
 
 import {
   ConfigurationAuditTrail,
@@ -65,6 +68,42 @@ export class SiteParametersService {
     assertParametersInRange(patch);
 
     /**
+     * AG-101, AU-033. The permission that authorises an overbooking is a CODE
+     * OF THE CATALOGUE stored as data, and this is where that stops being a
+     * hope. Two questions, two answers, exactly as the roles screen answers
+     * them:
+     *
+     *   1. Does the CODE declare it? `UNKNOWN_PERMISSION` (422). The catalogue
+     *      in `permission.catalogue.ts` is the enumeration — a code nothing
+     *      checks protects nothing, and stored here it would silently mean
+     *      «nobody may authorise a sobrecupo» with nothing on screen saying so.
+     *   2. Does THIS INSTALLATION have it? `PERMISSION_NOT_INSTALLED` (409).
+     *      Between deploying a version that declares a permission and running
+     *      `pnpm db:seed:auth`, the code says yes and the mirror says no — and
+     *      the foreign key would answer that with a generic database problem
+     *      over a form where nothing is wrong.
+     *
+     * BOTH BEFORE ANYTHING IS WRITTEN. The trigger in the base is still the
+     * guarantee: this read is not in the write's transaction, so a `DELETE` on
+     * `permission` landing in between still ends in the generic refusal —
+     * rolled back whole, never half-written. Same window `RolesService`
+     * documents, and just as unreachable: the sync never deletes.
+     */
+    if (patch.overbookingPermission !== undefined) {
+      assertPermissionIsDeclared(patch.overbookingPermission, PERMISSIONS);
+
+      const installed = await this.repository.installedPermissions([
+        patch.overbookingPermission,
+      ]);
+      if (!installed.includes(patch.overbookingPermission)) {
+        throw new PermissionNotInstalledError(
+          [patch.overbookingPermission],
+          'overbookingPermission',
+        );
+      }
+    }
+
+    /**
      * D-021, the second half of the guarantee. `assertParametersInRange` says
      * the atom is a sane increment; this says it does not strand a duration
      * somebody already configured against the atom it replaces.
@@ -95,6 +134,10 @@ export class SiteParametersService {
       overbookingCap: patch.overbookingCap ?? current.overbookingCap,
       slotAtomMinutes: patch.slotAtomMinutes ?? current.slotAtomMinutes,
       allowPastBooking: patch.allowPastBooking ?? current.allowPastBooking,
+      overbookingEnabled:
+        patch.overbookingEnabled ?? current.overbookingEnabled,
+      overbookingPermission:
+        patch.overbookingPermission ?? current.overbookingPermission,
       cancelledRetention:
         patch.cancelledRetention ?? current.cancelledRetention,
     });

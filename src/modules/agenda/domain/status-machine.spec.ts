@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AgendaEntryNotFoundError,
   InvalidAgendaTransitionError,
   NoShowBeforeStartError,
 } from './agenda.errors';
-import type { AgendaEntryStatus } from './agenda.repository';
+import type { AgendaEntryStatus, TransitionRead } from './agenda.repository';
 import {
   type AgendaTransitionTarget,
   assertNoShowNotBeforeStart,
   assertTransition,
   effectsOf,
+  planBlockRelease,
 } from './status-machine';
 
 /**
@@ -184,5 +186,45 @@ describe('the effects of each arrival', () => {
     expect(effectsOf('CONFIRMED', now)).toEqual({});
     expect(effectsOf('IN_PROGRESS', now)).toEqual({});
     expect(effectsOf('FULFILLED', now)).toEqual({});
+  });
+});
+
+describe('deshacer un bloqueo (AG-114)', () => {
+  const now = new Date('2026-09-14T13:05:00Z');
+
+  const readOf = (overrides: Partial<TransitionRead> = {}): TransitionRead => ({
+    id: 'entry-1',
+    kind: 'BLOCK',
+    status: 'BLOCKED',
+    startsAt: new Date('2026-09-14T13:00:00Z'),
+    releasedAt: null,
+    hasEncounter: false,
+    ...overrides,
+  });
+
+  it('AG-114 releases the interval and never deletes: `releasedAt` is the effect', () => {
+    // `blocks_calendar AND released_at IS NULL` is the predicate of both
+    // EXCLUDE constraints, so stamping it IS what gives the hour back.
+    expect(planBlockRelease(readOf(), now)).toEqual({
+      to: 'CANCELLED',
+      effects: { cancelledAt: now, releasedAt: now },
+    });
+  });
+
+  it('AG-114 refuses a block that was already released', () => {
+    expect(() =>
+      planBlockRelease(
+        readOf({ status: 'CANCELLED', releasedAt: new Date() }),
+        now,
+      ),
+    ).toThrow(InvalidAgendaTransitionError);
+  });
+
+  it('AG-114 refuses an appointment exactly like a missing entry', () => {
+    // The route addresses `blocks/:id`. Telling an appointment apart there
+    // would confirm foreign entries to whoever guesses identifiers (AG-071).
+    expect(() =>
+      planBlockRelease(readOf({ kind: 'APPOINTMENT', status: 'BOOKED' }), now),
+    ).toThrow(AgendaEntryNotFoundError);
   });
 });

@@ -99,6 +99,11 @@ model User {
   /// account but no clinical role.
   practitioner Practitioner?
 
+  /// AG-035, D-005: the overbookings this person AUTHORISED. Not the ones they
+  /// booked — `agenda_entry.created_by_id` carries no relation, and keeping
+  /// the two apart is the control itself (AG-103).
+  overbookingsAuthorised AgendaEntry[] @relation("OverbookingAuthoriser")
+
   @@index([email])
   @@map("app_user")
 }
@@ -990,6 +995,26 @@ model SiteParameter {
   /// after the fact). `false` by default on purpose — see the migration.
   allowPastBooking Boolean @default(false) @map("allow_past_booking")
 
+  /// AG-039, AG-094. The site admits overbookings. `true` by default, which is
+  /// the OPPOSITE choice to `allowPastBooking` and deliberate: the overbooking
+  /// is the documented way of breaking the grid (D-005), and what keeps it
+  /// from becoming the normal route is `overbookingCap`, not a switch nobody
+  /// turned on.
+  overbookingEnabled Boolean @default(true) @map("overbooking_enabled")
+
+  /// AG-101, AG-094. Which permission authorises an overbooking here.
+  ///
+  /// A PERMISSION CODE STORED AS DATA, and the only one in this schema. What
+  /// keeps it from being any string: the application refuses a code the
+  /// CATALOGUE does not declare (`UNKNOWN_PERMISSION`) and one this
+  /// installation has not seeded (`PERMISSION_NOT_INSTALLED`), and
+  /// `trg_site_parameter_overbooking_permission` refuses a CHANGE to a code
+  /// that is not in `permission` — a trigger and not a foreign key, because a
+  /// key would also be checked on the INSERT that `trg_site_parameter_defaults`
+  /// performs for every new site, tying site creation to the permission mirror
+  /// being seeded. See the migration.
+  overbookingPermission String @default("agenda:overbook") @map("overbooking_permission") @db.VarChar(64)
+
   cancelledRetention CancelledRetentionPolicy @default(NEVER) @map("cancelled_retention")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -1430,6 +1455,24 @@ model AgendaEntry {
   /// constraint ignores these rows, so the rule gets broken on purpose and on
   /// the record instead of being worked around.
   blocksCalendar Boolean @default(true) @map("blocks_calendar")
+
+  /// AG-035, AG-036, D-005. The constancy of an overbooking: WHO authorised it
+  /// and WHY the grid was broken. Both are set exactly when
+  /// `blocksCalendar` is false and both are null otherwise — guaranteed by
+  /// `agenda_entry_overbooking_coherence` (manual migration), which Prisma
+  /// cannot express.
+  ///
+  /// THE AUTHORISER IS NOT `createdById`, and that is the whole control: whoever
+  /// books an overbooking may not authorise it (AG-103) unless they hold
+  /// `agenda:overbook:self`. One column for both roles would make the rule
+  /// unverifiable from the row.
+  ///
+  /// AND THE REASON IS NOT `reason`: that one is free text where reception
+  /// writes the motive for the visit — health data no listing serves back
+  /// (AG-072, AG-074). This one is administrative and travels in every listing.
+  overbookingAuthorisedById String? @map("overbooking_authorised_by_id") @db.Uuid
+  overbookingAuthorisedBy   User?   @relation("OverbookingAuthoriser", fields: [overbookingAuthorisedById], references: [id], onDelete: Restrict)
+  overbookingReason         String? @map("overbooking_reason") @db.VarChar(512)
 
   /// NULL means the slot still occupies the calendar. A two-column predicate
   /// keeps the exclusion constraint stable when new statuses appear: adding

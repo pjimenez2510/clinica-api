@@ -7,11 +7,15 @@ import {
 } from '../../../shared/authorisation/permission.catalogue';
 import {
   CannotDemoteSelfError,
-  PermissionNotInstalledError,
   RoleNotFoundError,
   SystemRoleProtectedError,
-  UnknownPermissionError,
 } from '../domain/auth.errors';
+// AU-033. En `shared/` desde el 14-08-2026: `configuration` guarda un código de
+// permiso como dato (AG-094) y necesita responder los mismos dos códigos.
+import {
+  PermissionNotInstalledError,
+  UnknownPermissionError,
+} from '../../../shared/domain/errors/permission.errors';
 
 import type {
   CreateRoleInput,

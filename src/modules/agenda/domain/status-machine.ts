@@ -11,11 +11,16 @@
  */
 
 import {
+  AgendaEntryNotFoundError,
   InvalidAgendaTransitionError,
   NoShowBeforeStartError,
 } from './agenda.errors';
 import type { AgendaEntryKind, AgendaEntryStatus } from './agenda-entry';
-import type { TransitionEffects } from './agenda.repository';
+import type {
+  StatusChange,
+  TransitionEffects,
+  TransitionRead,
+} from './agenda.repository';
 
 /**
  * The statuses a client may ask for. `BOOKED` is where an entry is born and
@@ -61,6 +66,56 @@ export function assertTransition(
   if (kind === 'BLOCK' || !ADMITTED[from].includes(to)) {
     throw new InvalidAgendaTransitionError(from, to);
   }
+}
+
+/**
+ * AG-114. Undoing a block: the interval is given back and the row survives.
+ *
+ * A FUNCTION OF ITS OWN AND NOT A ROW IN THE TABLE ABOVE. The six targets of
+ * `AgendaTransitionTarget` all state something about a PATIENT — confirmed,
+ * arrived, being seen, seen, did not come, cancelled by somebody — and AG-021
+ * guarantees a block has none, which is why `assertTransition` refuses every
+ * transition of a `BLOCK` and must keep doing so. What a block can have is a
+ * mistake, and this is the way back from it.
+ *
+ * `CANCELLED` AND NOT A STATUS OF ITS OWN: `agenda_entry_kind_status_coherence`
+ * already admits exactly `BOOKED`, `BLOCKED` and `CANCELLED` for a block, and
+ * inventing a seventh status would mean a migration, a new value in every
+ * client's union, and a second word for «ya no cierra nada».
+ *
+ * `releasedAt` IS THE LOAD-BEARING EFFECT, exactly as in AG-042 and AG-044:
+ * `blocks_calendar AND released_at IS NULL` is the predicate of the two
+ * `EXCLUDE` constraints, so setting it — and never deleting the row — is what
+ * «liberar el intervalo» means. The row is the proof that somebody closed that
+ * Tuesday, and AG-005 keeps the history that says who undid it.
+ *
+ * An entry that is NOT a block answers like a missing one: the route addresses
+ * `blocks/:id`, and telling an appointment apart there would turn the endpoint
+ * into an oracle for guessed identifiers (AG-071).
+ */
+export function planBlockRelease(
+  entry: TransitionRead,
+  now: Date,
+): StatusChange {
+  if (entry.kind !== 'BLOCK') throw new AgendaEntryNotFoundError();
+
+  // A block that is no longer closing the calendar has nothing to give back.
+  // Its current status is what the refusal names, so a second click is told
+  // «ya está deshecho» rather than silently answering «hecho» twice.
+  if (entry.status !== 'BLOCKED' || entry.releasedAt !== null) {
+    throw new InvalidAgendaTransitionError(entry.status, 'CANCELLED');
+  }
+
+  /**
+   * NO NOTE, and no reason asked for. AG-114 demands «quién lo eliminó y
+   * cuándo», and both are columns of the history row the adapter writes in the
+   * same transaction (AG-004): `changed_by_id` and `changed_at`. A free-text
+   * field nobody requires would be one more thing to type on a screen whose
+   * whole point is undoing a mistake quickly — AG-044 demands one for an
+   * appointment because a patient is owed the explanation; a block owes it to
+   * nobody.
+   */
+  return { to: 'CANCELLED', effects: { cancelledAt: now, releasedAt: now } };
 }
 
 /**

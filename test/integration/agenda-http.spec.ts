@@ -840,6 +840,59 @@ describe('la agenda por HTTP', () => {
   });
 
   describe('las listas de referencia', () => {
+    interface AgendaSpecialty {
+      id: string;
+      name: string;
+      isPrimary: boolean;
+    }
+
+    /** Dos especialidades del catálogo, para poder distinguir «las suyas». */
+    async function createSpecialties(): Promise<{
+      cardiologia: string;
+      pediatria: string;
+    }> {
+      const [cardiologia, pediatria] = await Promise.all([
+        prisma.specialty.create({
+          data: { code: 'cardiologia', name: 'Cardiología' },
+        }),
+        prisma.specialty.create({
+          data: { code: 'pediatria', name: 'Pediatría' },
+        }),
+      ]);
+      return { cardiologia: cardiologia.id, pediatria: pediatria.id };
+    }
+
+    /** SP-005: una fila de `practitioner_specialty`, con o sin la marca. */
+    const assign = (
+      practitioner: string,
+      specialtyId: string,
+      { isPrimary }: { isPrimary: boolean },
+    ) =>
+      prisma.practitionerSpecialty.create({
+        data: { practitionerId: practitioner, specialtyId, isPrimary },
+      });
+
+    async function practitionersOf(
+      site = siteId,
+    ): Promise<{ id: string; specialties: AgendaSpecialty[] }[]> {
+      const response = await request(app.getHttpServer())
+        .get(`/api/v1/agenda/sites/${site}/practitioners`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      return (
+        response.body as {
+          items: { id: string; specialties: AgendaSpecialty[] }[];
+        }
+      ).items;
+    }
+
+    const serviceTypesOf = (specialtyId: string, site = siteId) =>
+      request(app.getHttpServer())
+        .get(
+          `/api/v1/agenda/sites/${site}/specialties/${specialtyId}/service-types`,
+        )
+        .set('Authorization', `Bearer ${token}`);
+
     it('AG-107 lista solo las sedes del alcance de quien llama', async () => {
       const response = await request(app.getHttpServer())
         .get('/api/v1/agenda/sites')
@@ -871,8 +924,15 @@ describe('la agenda por HTTP', () => {
       const body = response.body as { items: Record<string, unknown>[] };
       expect(body.items).toHaveLength(2);
       for (const item of body.items) {
-        // Nombre y nada más: ni cédula, ni ACESS, ni correo (AG-108).
-        expect(Object.keys(item).sort()).toEqual(['fullName', 'id', 'userId']);
+        // Nombre, especialidades y nada más: ni cédula, ni ACESS, ni correo
+        // (AG-108). `specialties` entró con AG-111 y trae id, nombre y la
+        // marca de principal — nada de la ficha del profesional.
+        expect(Object.keys(item).sort()).toEqual([
+          'fullName',
+          'id',
+          'specialties',
+          'userId',
+        ]);
       }
       expect(body.items.map((item) => item.id).sort()).toEqual(
         [practitionerId, secondPractitionerId].sort(),
@@ -886,6 +946,167 @@ describe('la agenda por HTTP', () => {
         .expect(403);
 
       expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+    });
+
+    it('AG-111 acompaña a cada profesional de sus especialidades y señala la principal', async () => {
+      const { cardiologia, pediatria } = await createSpecialties();
+      await assign(practitionerId, cardiologia, { isPrimary: false });
+      await assign(practitionerId, pediatria, { isPrimary: true });
+
+      const items = await practitionersOf();
+
+      const mine = items.find((item) => item.id === practitionerId)!;
+      // La PRINCIPAL primero, para que el desplegable la ofrezca sin que la
+      // pantalla tenga que reordenar lo que el servidor ya sabe.
+      expect(mine.specialties).toEqual([
+        { id: pediatria, name: 'Pediatría', isPrimary: true },
+        { id: cardiologia, name: 'Cardiología', isPrimary: false },
+      ]);
+      // Y son SUYAS: el otro profesional no hereda las de éste, que es lo que
+      // hacía el diálogo cuando ofrecía el catálogo entero.
+      expect(
+        items.find((item) => item.id === secondPractitionerId)!.specialties,
+      ).toEqual([]);
+    });
+
+    it('AG-111 no ofrece una especialidad desactivada aunque el profesional la tenga asignada', async () => {
+      // SP-004: desactivada no se ofrece para citas nuevas. La asignación no
+      // se borra —AG-111 no toca `practitioner_specialty`—, deja de salir.
+      const { cardiologia } = await createSpecialties();
+      await assign(practitionerId, cardiologia, { isPrimary: true });
+      await prisma.specialty.update({
+        where: { id: cardiologia },
+        data: { active: false },
+      });
+
+      const items = await practitionersOf();
+
+      expect(
+        items.find((item) => item.id === practitionerId)!.specialties,
+      ).toEqual([]);
+      await expect(
+        prisma.practitionerSpecialty.count({ where: { practitionerId } }),
+      ).resolves.toBe(1);
+    });
+
+    it('AG-112 lista los tipos de atención activos de la especialidad con su duración base', async () => {
+      const { cardiologia } = await createSpecialties();
+      await prisma.serviceType.createMany({
+        data: [
+          { specialtyId: cardiologia, name: 'Control', durationMinutes: 20 },
+          {
+            specialtyId: cardiologia,
+            name: 'Primera vez',
+            durationMinutes: 40,
+          },
+          {
+            specialtyId: cardiologia,
+            name: 'Retirado',
+            durationMinutes: 20,
+            active: false,
+          },
+        ],
+      });
+
+      const response = await serviceTypesOf(cardiologia).expect(200);
+
+      const body = response.body as {
+        items: Record<string, unknown>[];
+      };
+      // El desactivado no está: ofrecerlo sería ofrecer un rechazo (SP-004).
+      expect(body.items.map((item) => item.name)).toEqual([
+        'Control',
+        'Primera vez',
+      ]);
+      for (const item of body.items) {
+        expect(Object.keys(item).sort()).toEqual([
+          'durationMinutes',
+          'id',
+          'name',
+        ]);
+      }
+      expect(body.items[0]).toMatchObject({ durationMinutes: 20 });
+      expect(body.items[1]).toMatchObject({ durationMinutes: 40 });
+    });
+
+    it('AG-112 rechaza la sede fuera del alcance con SITE_SCOPE_DENIED', async () => {
+      const { cardiologia } = await createSpecialties();
+
+      const response = await serviceTypesOf(cardiologia, otherSiteId).expect(
+        403,
+      );
+
+      expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+    });
+
+    it('AG-112 exige sesión', async () => {
+      const { cardiologia } = await createSpecialties();
+
+      await request(app.getHttpServer())
+        .get(
+          `/api/v1/agenda/sites/${siteId}/specialties/${cardiologia}/service-types`,
+        )
+        .expect(401);
+    });
+
+    /**
+     * EL DEFECTO QUE ESTA ENTREGA CIERRA, dicho como una sola prueba.
+     *
+     * El selector de especialidad y tipo se construyó en C4 contra
+     * `GET /specialties` y `GET /specialties/{id}/service-types`, las dos con
+     * `config:read`. El rol que reserva es `RECEPCION` y no lo tiene, así que
+     * el desplegable que se hizo PARA recepción era inalcanzable POR recepción
+     * y fallaba en silencio.
+     *
+     * La sesión de este fichero es la de una recepcionista de verdad —rol
+     * `RECEPCION` sembrado por `syncAuthorisation`, con su grant en una sede—,
+     * y por eso el 403 de abajo es la reproducción del defecto y no un
+     * decorado: si alguien concediera `config:read` a recepción, esta prueba
+     * fallaría y habría que releerla, que es exactamente lo que se quiere.
+     */
+    it('AG-111, AG-112 recepción arma el selector de reserva sin config:read', async () => {
+      const { cardiologia } = await createSpecialties();
+      await assign(practitionerId, cardiologia, { isPrimary: true });
+      await prisma.serviceType.create({
+        data: {
+          specialtyId: cardiologia,
+          name: 'Control',
+          durationMinutes: 20,
+        },
+      });
+
+      // La puerta de administración sigue cerrada para quien reserva: es el
+      // defecto, no un efecto colateral.
+      await request(app.getHttpServer())
+        .get('/api/v1/specialties?includeInactive=false')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+      await request(app.getHttpServer())
+        .get(`/api/v1/specialties/${cardiologia}/service-types`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+
+      // Y la de la agenda, abierta: las dos mitades que el diálogo necesita.
+      const specialties = (await practitionersOf()).find(
+        (item) => item.id === practitionerId,
+      )!.specialties;
+      expect(specialties).toEqual([
+        { id: cardiologia, name: 'Cardiología', isPrimary: true },
+      ]);
+
+      const types = (await serviceTypesOf(cardiologia).expect(200)).body as {
+        items: { id: string; name: string; durationMinutes: number }[];
+      };
+      expect(types.items.map((type) => type.name)).toEqual(['Control']);
+
+      // Y lo elegido reserva de verdad: el selector no vale de nada si el
+      // identificador que entrega no cabe en el POST (SP-028).
+      const booked = await book(
+        anAppointment({ serviceTypeId: types.items[0]!.id }),
+      ).expect(201);
+      expect((booked.body as { serviceTypeId: string }).serviceTypeId).toBe(
+        types.items[0]!.id,
+      );
     });
   });
 

@@ -236,6 +236,30 @@ describe('la reprogramación de una cita por HTTP', () => {
         ...body,
       });
 
+  /**
+   * AG-115, SP-028. Dos tipos de atención de verdad, de UNA especialidad.
+   *
+   * Se crean aquí y no en las fixtures porque sólo esta sección los necesita:
+   * el resto del fichero mueve la hora y el tipo no interviene.
+   */
+  async function createServiceTypes(): Promise<{
+    control: string;
+    primeraVez: string;
+  }> {
+    const specialty = await prisma.specialty.create({
+      data: { code: 'cardiologia', name: 'Cardiología' },
+    });
+    const [control, primeraVez] = await Promise.all([
+      prisma.serviceType.create({
+        data: { specialtyId: specialty.id, name: 'Control', durationMinutes: 20 }, // prettier-ignore
+      }),
+      prisma.serviceType.create({
+        data: { specialtyId: specialty.id, name: 'Primera vez', durationMinutes: 40 }, // prettier-ignore
+      }),
+    ]);
+    return { control: control.id, primeraVez: primeraVez.id };
+  }
+
   const historyOf = (entryId: string) =>
     prisma.agendaStatusHistory.findMany({
       where: { agendaEntryId: entryId },
@@ -365,6 +389,175 @@ describe('la reprogramación de una cita por HTTP', () => {
       // inasistencia agrupa por él.
       expect(stored.bookingChannel).toBe('WALK_IN');
       expect(stored.createdById).toBe(userId);
+    });
+  });
+
+  /**
+   * AG-115. Reprogramar cambiando de médico o de tipo de atención.
+   *
+   * POR QUÉ HACE FALTA UN POSTGRESQL DE VERDAD para esto y no un doble: lo que
+   * se afirma es que la entrada NUEVA nace en la agenda de OTRO profesional
+   * —así que pasa por `agenda_entry_no_practitioner_overlap` contra las citas
+   * de ÉSE y no contra las del anterior— y que, cuando ese hueco está tomado,
+   * la transacción entera se deshace y el original sigue ocupando calendario
+   * (AG-052). Ninguna de las dos cosas la puede contestar nada que no sea la
+   * base.
+   */
+  describe('cuando además cambia el profesional o el tipo (AG-115)', () => {
+    /** Otro médico de la misma sede, con el mismo horario de lunes. */
+    async function anotherPractitioner(): Promise<string> {
+      const second = await createPractitioner(prisma);
+      await linkPractitionerToSite(prisma, second.id, siteId);
+      await createScheduleRule(
+        prisma,
+        { practitionerId: second.id, siteId },
+        { weekday: 1, startTime: '08:00', endTime: '12:00' },
+      );
+      return second.id;
+    }
+
+    it('AG-115 reprograma a otro profesional: la entrada nueva es suya, las dos se referencian y el cupo original queda libre', async () => {
+      const originalId = await bookedEntry();
+      const otherId = await anotherPractitioner();
+
+      const response = await reschedule(originalId, {
+        practitionerId: otherId,
+      }).expect(201);
+      const body = response.body as RescheduledBody;
+
+      // La fila que nace es del médico pedido, y sigue siendo del mismo
+      // paciente: eso último es AG-115 dicho al revés y es lo que separa una
+      // reprogramación de una cita de otra persona.
+      const created = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: body.created.id },
+      });
+      expect(created.practitionerId).toBe(otherId);
+      expect(created.patientId).toBe(patientId);
+      expect(created.rescheduledFromId).toBe(originalId);
+
+      // AG-051 en los dos sentidos: cambiar de médico no puede costar el
+      // rastro, que es justo lo que se pierde anulando y volviendo a reservar.
+      expect(body.original.rescheduledToId).toBe(body.created.id);
+
+      // AG-050: el original queda anulado y liberado, y «liberado» significa
+      // que su hueco vuelve a pasar por los tres `EXCLUDE USING gist`.
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: originalId },
+      });
+      expect(stored.status).toBe('CANCELLED');
+      expect(stored.practitionerId).toBe(practitionerId);
+      await book().expect(201);
+    });
+
+    it('AG-052 con el cupo del OTRO profesional ocupado, la reprogramación no libera nada', async () => {
+      const originalId = await bookedEntry();
+      const otherId = await anotherPractitioner();
+      // Otro paciente ya tiene esa hora CON EL MÉDICO DESTINO. El original no
+      // solapa con nada: lo único que choca es la fila que iba a nacer.
+      await book({
+        patientId: otherPatientId,
+        practitionerId: otherId,
+        ...NEW_SLOT,
+      }).expect(201);
+
+      const rejected = await reschedule(originalId, {
+        practitionerId: otherId,
+      }).expect(409);
+      expect((rejected.body as Problem).code).toBe('PRACTITIONER_SLOT_TAKEN');
+
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: originalId },
+      });
+      expect(stored.status).toBe('BOOKED');
+      expect(stored.releasedAt).toBeNull();
+      expect(stored.cancelledAt).toBeNull();
+
+      // Y OCUPA CALENDARIO, que es lo que «no liberar» significa: la base
+      // sigue rechazando cualquier otra cita sobre ese hueco.
+      const overlapping = await book({ patientId: otherPatientId }).expect(409);
+      expect((overlapping.body as Problem).code).toBe(
+        'PRACTITIONER_SLOT_TAKEN',
+      );
+      await expect(historyOf(originalId)).resolves.toEqual([]);
+      await expect(
+        prisma.agendaEntry.count({ where: { rescheduledFromId: originalId } }),
+      ).resolves.toBe(0);
+    });
+
+    it('AG-115 aplica al médico DESTINO las mismas comprobaciones que a una reserva', async () => {
+      const originalId = await bookedEntry();
+      // Un médico de la sede SIN regla de horario: reservar con él a esa hora
+      // se rechaza, y reprogramar hacia él tiene que rechazarse igual — si se
+      // juzgara el horario del médico que se deja, la cita caería en una
+      // agenda que la ruta de reserva no admite.
+      const withoutSchedule = await createPractitioner(prisma);
+      await linkPractitionerToSite(prisma, withoutSchedule.id, siteId);
+
+      const rejected = await reschedule(originalId, {
+        practitionerId: withoutSchedule.id,
+      }).expect(422);
+      expect((rejected.body as Problem).code).toBe('OUTSIDE_SCHEDULE_RULE');
+
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: originalId },
+      });
+      expect(stored.status).toBe('BOOKED');
+      expect(stored.releasedAt).toBeNull();
+    });
+
+    it('AG-115 cambia el tipo de atención y conserva el paciente y el motivo de la consulta', async () => {
+      const { control, primeraVez } = await createServiceTypes();
+      const originalId = await bookedEntry({
+        serviceTypeId: control,
+        reason: 'Control de presión',
+      });
+
+      const response = await reschedule(originalId, {
+        serviceTypeId: primeraVez,
+      }).expect(201);
+
+      const created = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: (response.body as RescheduledBody).created.id },
+      });
+      expect(created.serviceTypeId).toBe(primeraVez);
+      expect(created.patientId).toBe(patientId);
+      // El texto libre de la consulta viaja con la cita, como en cualquier
+      // reprogramación: cambiar de tipo no lo vacía.
+      expect(created.reason).toBe('Control de presión');
+    });
+
+    it('AG-115 sin profesional ni tipo en el cuerpo, la cita nueva hereda los de la original', async () => {
+      const { control } = await createServiceTypes();
+      const originalId = await bookedEntry({ serviceTypeId: control });
+
+      const response = await reschedule(originalId).expect(201);
+
+      const created = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: (response.body as RescheduledBody).created.id },
+      });
+      expect(created.practitionerId).toBe(practitionerId);
+      expect(created.serviceTypeId).toBe(control);
+    });
+
+    it('AG-115 rechaza por campo un cuerpo que pretende cambiar de paciente, y no mueve la cita', async () => {
+      const originalId = await bookedEntry();
+
+      const rejected = await reschedule(originalId, {
+        patientId: otherPatientId,
+      }).expect(422);
+      const problem = rejected.body as Problem;
+      expect(problem.code).toBe('VALIDATION_FAILED');
+      expect(problem.errors?.[0]).toMatchObject({ field: 'patientId' });
+
+      // Y no ha pasado nada: ni anulación, ni entrada nueva a nombre de nadie.
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: originalId },
+      });
+      expect(stored.status).toBe('BOOKED');
+      expect(stored.releasedAt).toBeNull();
+      await expect(
+        prisma.agendaEntry.count({ where: { rescheduledFromId: originalId } }),
+      ).resolves.toBe(0);
     });
   });
 

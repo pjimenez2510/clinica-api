@@ -37,6 +37,21 @@ async function scheduleContext() {
 }
 
 /**
+ * AG-035, AG-036 (E4). Las tres columnas de un sobrecupo, que viajan juntas o
+ * no viajan: `agenda_entry_overbooking_coherence` no admite ninguna otra
+ * combinación. El autorizador es una cuenta real porque la clave foránea lo
+ * exige — y aquí basta con que EXISTA: qué permisos tiene lo comprueba el
+ * servicio, no la base (AG-101).
+ */
+function anOverbooking(authorisedById: string) {
+  return {
+    blocksCalendar: false,
+    overbookingReason: 'Urgencia',
+    overbookingAuthorisedById: authorisedById,
+  };
+}
+
+/**
  * The rejection itself, so the same failure can be asserted twice: which
  * constraint fired, and what the client is told about it.
  *
@@ -325,7 +340,11 @@ describe('agenda entry overlap', () => {
         siteId: site.id,
         practitionerId: practitioner.id,
         patientId: (await createPatient(prisma)).id,
-        blocksCalendar: false,
+        // AG-035 desde E4: un sobrecupo no puede existir sin constancia.
+        // `agenda_entry_overbooking_coherence` exige el motivo y el
+        // autorizador exactamente cuando `blocks_calendar` es `false` — la
+        // exención del `EXCLUDE` y la constancia son la misma decisión.
+        ...anOverbooking(practitioner.userId),
         ...hourSlot(9),
       },
     });
@@ -695,7 +714,8 @@ describe('agenda entry patient double booking', () => {
         siteId: site.id,
         practitionerId: otherPractitioner.id,
         patientId: patient.id,
-        blocksCalendar: false,
+        // AG-035: la exención del `EXCLUDE` va con su constancia (E4).
+        ...anOverbooking(otherPractitioner.userId),
         ...hourSlot(9),
       },
     });

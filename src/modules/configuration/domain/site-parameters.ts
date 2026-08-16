@@ -1,4 +1,5 @@
 import type { DomainFieldError } from '../../../shared/domain/errors/domain-error';
+import { UnknownPermissionError } from '../../../shared/domain/errors/permission.errors';
 import { isSlotMultiple } from '../../../shared/domain/slot-atom';
 
 import { ParameterOutOfRangeError } from './configuration.errors';
@@ -57,6 +58,30 @@ export interface SiteParameters {
    * still append-only, and booking still demands `agenda:write` over the site.
    */
   allowPastBooking: boolean;
+  /**
+   * AG-039, AG-094. The site admits overbookings.
+   *
+   * A BOOLEAN LIKE `allowPastBooking` AND WITH THE OPPOSITE DEFAULT, which is
+   * a decision and not an inconsistency: the overbooking is the DOCUMENTED way
+   * of breaking the grid (D-005), and a site that shipped with it closed would
+   * still have urgencies — resolved on paper, or by annulling somebody else's
+   * appointment. What keeps it from becoming the normal route is
+   * `overbookingCap`, which is a number this screen already administers.
+   */
+  overbookingEnabled: boolean;
+  /**
+   * AG-101, AG-094. Which permission a person must hold to authorise an
+   * overbooking at this site.
+   *
+   * ⚠️ A PERMISSION CODE STORED AS DATA, and the only one in this schema. What
+   * permissions EXIST is code — each corresponds to a check, so one invented
+   * in a row protects nothing — so this column is checked against the
+   * catalogue before it is written (`assertPermissionIsDeclared`) and against
+   * the installed mirror by a foreign key. Left open, a typo would silently
+   * mean «nobody may authorise» and the sede would lose its overbookings with
+   * nothing saying why.
+   */
+  overbookingPermission: string;
   cancelledRetention: CancelledRetention;
 }
 
@@ -147,8 +172,39 @@ export const DEFAULT_SITE_PARAMETERS: SiteParameters = {
    */
   slotAtomMinutes: 10,
   allowPastBooking: false,
+  /**
+   * D-005, decided by the user on 14-08-2026: ENABLED out of the box. See the
+   * field, and the migration `agenda_overbooking_authorisation`.
+   */
+  overbookingEnabled: true,
+  /** D-005: the permission MEDICO and ADMIN carry out of the box. */
+  overbookingPermission: 'agenda:overbook',
   cancelledRetention: 'NEVER',
 };
+
+/**
+ * CF-065's shape applied to a value that is not a number: the code has to be
+ * one the CATALOGUE declares (AG-101, AU-033).
+ *
+ * WHY THE CATALOGUE AND NOT A LIST OF «THE ONES THAT MAKE SENSE HERE». Any
+ * permission is a defensible answer to «who may authorise an exception» — a
+ * clinic could decide it is whoever holds `settings:manage` — and narrowing it
+ * here would be this module deciding the clinic's policy. What is NOT
+ * defensible is a code that exists nowhere: it protects nothing, no route
+ * grants it, and the site would quietly lose its overbookings.
+ *
+ * THE INSTALLED MIRROR IS A DIFFERENT QUESTION and is not asked here: it needs
+ * a read, so it lives in the service, and the foreign key answers it for
+ * whatever bypasses both (`PERMISSION_NOT_INSTALLED`).
+ */
+export function assertPermissionIsDeclared(
+  code: string,
+  declared: readonly string[],
+): void {
+  if (declared.includes(code)) return;
+
+  throw new UnknownPermissionError([code], 'overbookingPermission');
+}
 
 /**
  * CF-065. Refuses the whole write when any number is outside its range, and

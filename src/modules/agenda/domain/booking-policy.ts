@@ -117,12 +117,19 @@ export interface BookingScheduleCheck {
    */
   practitioner?: PractitionerAvailability;
   /**
-   * AG-028's only exception. IT IS NEVER TRUE IN THIS DELIVERY: authorising an
-   * overbooking is E4 (AG-035, AG-039, AG-101, AG-103) and is blocked on the
-   * authorisation column the schema does not have. The parameter exists so
-   * that the escape hatch is explicit in the signature instead of being an
-   * implicit hole, and so E4 has somewhere to plug in without reopening this
-   * rule.
+   * AG-028's only exception, and AG-104's. TRUE SINCE E4 (14-08-2026): the
+   * caller declared an overbooking, which is the documented way of booking off
+   * the grid (D-005). It excuses being outside every rule in force and
+   * starting mid-slot, and NOTHING ELSE — the practitioner has to be bookable
+   * (AG-013, AG-014) and the duration still has to fit the site's atom
+   * (AG-012), because the specification grants the exception to those two
+   * requirements and inventing a third would be deciding policy nobody wrote
+   * down.
+   *
+   * WHAT MAKES IT SAFE TO SET is checked elsewhere and before: the site admits
+   * overbookings, there is a reason, somebody else authorised it and the day's
+   * cap is not spent (`overbooking-policy.ts`). This flag is the CONSEQUENCE
+   * of those checks, never the permission to skip them.
    */
   overbookingDeclared?: boolean;
   /** Only the tests move it: the clinic operates in one zone (SPEC §10). */
@@ -372,11 +379,14 @@ function coversInterval(
 /**
  * The operating numbers the booking path reads from the site.
  *
- * FOUR, and not the seven AG-094 enumerates: the overbooking switch, the
- * permission that authorises it and the waiting-list contact attempts belong to
- * E4 and E5. A field declared here that nothing reads is a field nobody
- * maintains, and the day it is read for real its meaning has already drifted.
- * `cancelled_retention` is absent for a different reason — see AG-102 below.
+ * SEVEN SINCE E4, and the three that joined on 14-08-2026 are the overbooking
+ * ones (AG-039, AG-100, AG-101): the switch, the cap and the permission that
+ * authorises. They were deliberately absent while nothing read them — D-018:
+ * a field nobody consumes is a field nobody maintains, and the day it is read
+ * for real its meaning has already drifted — and E4 is the delivery that reads
+ * them. What is still missing of AG-094 is the waiting list's contact attempts
+ * (E5), for the same reason, and `cancelled_retention`, for a different one:
+ * the listing filter of AG-102 does not exist yet.
  */
 export interface SiteBookingParameters {
   /** Minutes that must pass between now and the start (AG-032). */
@@ -396,6 +406,24 @@ export interface SiteBookingParameters {
    * only that AVAILABILITY reads it too — the grid is what availability IS.
    */
   slotAtomMinutes: number;
+  /** AG-039. Whether this site admits overbookings at all. */
+  overbookingEnabled: boolean;
+  /** AG-100. How many the same practitioner may hold on one clinical date. */
+  overbookingCap: number;
+  /**
+   * AG-101. Which permission an authoriser has to hold HERE.
+   *
+   * A `string` AND NOT `Permission`, on purpose. It is a row, not a literal of
+   * the code: what the column holds is whatever an administrator saved, and
+   * typing it as the closed union would be claiming a guarantee this side of
+   * the wire does not have. The guarantee is made where the value is WRITTEN —
+   * `configuration` refuses a code the catalogue does not declare
+   * (`UNKNOWN_PERMISSION`) and the foreign key refuses one the installation
+   * has not got (`PERMISSION_NOT_INSTALLED`) — so by the time a booking reads
+   * it, it names a real permission or the row was written around the
+   * application.
+   */
+  overbookingPermission: string;
 }
 
 /**
@@ -433,6 +461,23 @@ export const DEFAULT_BOOKING_PARAMETERS: SiteBookingParameters = Object.freeze({
   // — the durations already configured when the decision was taken — are all
   // multiples of.
   slotAtomMinutes: 10,
+  /**
+   * D-005, decided by the user on 14-08-2026: the overbooking is ON out of the
+   * box, which is the OPPOSITE of `allowPastBooking` and deliberate. It is the
+   * documented way of breaking the grid; a site that had it closed would still
+   * have urgencies and would resolve them outside the record. What keeps it
+   * from becoming the normal route is the cap below.
+   */
+  overbookingEnabled: true,
+  // D-001: two per practitioner and day. Enough for the real urgency, not
+  // enough to schedule a morning on top of another one.
+  overbookingCap: 2,
+  /**
+   * D-005: `agenda:overbook`, which MEDICO and ADMIN carry out of the box. The
+   * real case is recepción booking and the doctor who will see the urgency
+   * authorising, so the permission has to be the doctor's, never the booker's.
+   */
+  overbookingPermission: 'agenda:overbook',
 });
 
 /**
@@ -462,6 +507,14 @@ export function resolveBookingParameters(
       stored?.allowPastBooking ?? DEFAULT_BOOKING_PARAMETERS.allowPastBooking,
     slotAtomMinutes:
       stored?.slotAtomMinutes ?? DEFAULT_BOOKING_PARAMETERS.slotAtomMinutes,
+    overbookingEnabled:
+      stored?.overbookingEnabled ??
+      DEFAULT_BOOKING_PARAMETERS.overbookingEnabled,
+    overbookingCap:
+      stored?.overbookingCap ?? DEFAULT_BOOKING_PARAMETERS.overbookingCap,
+    overbookingPermission:
+      stored?.overbookingPermission ??
+      DEFAULT_BOOKING_PARAMETERS.overbookingPermission,
   };
 }
 

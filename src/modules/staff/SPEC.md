@@ -68,7 +68,10 @@ agendable, sedes donde atiende y especialidades que ejerce.
 leyendo estos datos sin dueño.
 **Prueba independiente:** un profesional con ACESS caducado ayer no puede
 firmar; el mismo con ACESS vigente sí.
-**Cubre:** ST-001 a ST-010.
+**Cubre:** ST-001 a ST-010, ST-047.
+
+**Solo servidor:** ST-047. Alcance por sede de una escritura: la pantalla no
+puede enseñar la negativa sin que el servidor la produzca.
 
 ### S2 — Horarios editables con vigencia _(P1)_
 
@@ -78,9 +81,11 @@ aquí).
 
 **Prueba independiente:** dos reglas vigentes solapadas del mismo profesional
 insertadas concurrentemente — gana exactamente una.
-**Cubre:** ST-040 a ST-046.
+**Cubre:** ST-040 a ST-046, ST-048.
 
-**Solo servidor:** ST-044. Bitácora.
+**Solo servidor:** ST-044 y ST-048. El primero es bitácora; el segundo es
+alcance por sede sobre una escritura, y una pantalla no puede demostrar una
+negativa que el servidor no produce.
 
 ---
 
@@ -114,6 +119,41 @@ insertadas concurrentemente — gana exactamente una.
 - **ST-007** — El sistema DEBERÁ registrar en qué sedes atiende cada
   profesional, y SI se intenta reservar o crear una regla de horario en una sede
   donde no atiende, ENTONCES DEBERÁ rechazarlo.
+- **ST-047** — CUANDO se fijen las sedes donde atiende un profesional, el sistema
+  NO DEBERÁ admitir ninguna sede fuera del alcance de quien llama, y DEBERÁ
+  rechazarlo sin escribir nada.
+  > **Defecto de seguridad, encontrado por el usuario el 14-08-2026.** La ruta
+  > declara alcance `global` y las sedes viajan **en el cuerpo**, donde el guard
+  > de alcance no mira — sólo sabe leer `param:` y `query`. Así, quien tenga
+  > `staff:manage` concedido sólo para una sede podía vincular a un profesional
+  > a cualquier otra.
+  >
+  > **No es un permiso de más: es una sede de más en la agenda ajena.** Un
+  > profesional vinculado a una sede aparece en su listado de agendables
+  > (AG-108) y se le puede reservar allí, así que el efecto se ve en la pantalla
+  > de otra sede sin que nadie de esa sede lo haya decidido.
+  >
+  > Es la misma familia que **AG-105** —«el alcance por sede lo comprueba el
+  > guard sobre `param:siteId`, pero `roomId` viaja en el cuerpo»—, y se cierra
+  > igual: comprobándolo donde el guard no llega.
+  >
+  > **Cerrado el 14-08-2026.** La ruta pasa a declarar alcance `'query'` —que
+  > es lo que significa «hay dimensión de sede y la estrecha el handler»— y
+  > `PractitionerAssignmentsService.replaceSites` comprueba el alcance con
+  > `assertSitesInScope` sobre el alcance resuelto de la sesión, nunca sobre
+  > nada del cuerpo. Se rechaza con `SITE_SCOPE_DENIED`, que ya es el código de
+  > esta negativa en todo el sistema (ADR-007) y **no nombra ninguna sede**.
+  >
+  > **Se juzgan los dos extremos del reemplazo, no sólo lo que se envía.** El
+  > PUT fija el conjunto entero, así que quien administra sólo Norte podía
+  > enviar `[Norte]` sobre un profesional que también atiende en Sur y BORRAR
+  > esa fila: el profesional desaparecía del listado de agendables de otra
+  > ciudad (AG-108) sin que nadie de allí lo decidiera. Quitar una sede es
+  > cambiar su agenda tanto como añadirla, de modo que las sedes que se fijan y
+  > las que se reemplazan tienen que estar todas dentro del alcance. La
+  > consecuencia deliberada es que un alcance de una sede no administra las
+  > sedes de un profesional que atiende fuera de él: eso es de la dirección.
+
 - **ST-008** — El sistema DEBERÁ permitir que un profesional ejerza una o varias
   especialidades del catálogo de `specialties`, exactamente una marcada como
   principal, y DEBERÁ exponer la principal en el listado que consume la agenda.
@@ -182,6 +222,41 @@ _Numeración conservada de `CF-040`..`CF-046` al mudarse desde `configuration`
 - **ST-046** — DONDE la clínica opere en más de una sede, una regla DEBERÁ
   pertenecer a exactamente una sede; el no-solapamiento del profesional entre
   sedes ya lo garantiza el `EXCLUDE` de citas.
+- **ST-048** — CUANDO se cree, edite o cierre una regla de horario, el sistema
+  NO DEBERÁ admitir ninguna sede fuera del alcance de quien llama —ni la que se
+  fija ni la que la regla ya tenía—, y DEBERÁ rechazarlo con
+  `SITE_SCOPE_DENIED` sin escribir nada y sin nombrar ninguna sede.
+  > **D-023, opción cerrada el 15-08-2026.** Es el mismo agujero que **ST-047**
+  > en otras tres rutas, y por la misma causa: el guard de alcance sólo sabe
+  > leer `param:` y `query` —corre antes de los pipes, así que el cuerpo aún no
+  > está validado—, de modo que una ruta que declara `global` y recibe el
+  > `siteId` **en el cuerpo** deja la dimensión de sede sin comprobar. Familia
+  > de **AG-105** (`roomId` en el cuerpo). `route-authorisation.spec.ts` no lo
+  > veía: comprueba que la declaración EXISTA, no que sea la correcta.
+  >
+  > **Qué conseguía un alcance de una sola sede.** Crear el horario de un
+  > profesional en otra sede, moverlo allí, o cerrarlo — y un horario es lo que
+  > hace que la agenda de esa sede ofrezca cupos, así que el efecto se ve en la
+  > pantalla de otra ciudad sin que nadie de allí lo haya decidido.
+  >
+  > **Se juzgan los dos extremos, como en ST-047.** En `PATCH` la sede ACTUAL
+  > de la regla no se comprobaba en absoluto: quien administra Norte podía
+  > editar la regla de Sur sin nombrar ninguna sede en el cuerpo. Mover una
+  > regla cambia dos agendas —la que la pierde y la que la gana—, así que las
+  > dos tienen que estar dentro del alcance. En `DELETE` la sede no viaja: se
+  > lee de la fila y se comprueba igual.
+  >
+  > **Esto cierra además una fuga de ST-043.** La respuesta de toda mutación
+  > lista las citas que el cambio deja fuera, y en un `PATCH` que mueve la
+  > regla esa lista incluye las citas de la sede que la regla deja. Sin esta
+  > comprobación, quien administraba Norte obtenía las citas de Sur —fecha, hora
+  > e identificador— como efecto secundario de una edición.
+  >
+  > **La comprobación va ANTES que cualquier otra validación** en la creación:
+  > `PRACTITIONER_NOT_IN_SITE` (ST-007) responde si el profesional atiende o no
+  > en la sede preguntada, y contestar eso a quien no tiene la sede en su
+  > alcance es enumerar el mapa de la clínica. `SITE_SCOPE_DENIED` nombra el
+  > permiso y nunca una sede.
 
 ---
 
@@ -191,6 +266,7 @@ _Numeración conservada de `CF-040`..`CF-046` al mudarse desde `configuration`
 | ----------------------------- | ---- | ------------------------------------------------------------ |
 | `PRACTITIONER_NOT_FOUND`      | 404  | El profesional indicado no existe                            |
 | `SCHEDULE_RULE_NOT_FOUND`     | 404  | La regla de horario indicada no existe                       |
+| `SITE_SCOPE_DENIED`           | 403  | Fijar sedes, o tocar el horario de una sede, fuera del alcance de quien llama (ST-047, ST-048, ADR-007)|
 | `PRACTITIONER_IN_USE`         | 409  | Borrar un profesional con historial (ST-010)                 |
 | `SCHEDULE_RULE_OVERLAP`       | 409  | Regla de horario solapada (ST-042)                           |
 | `ACESS_EXPIRED`               | 422  | Firmar con registro ACESS vencido (ST-004)                   |
@@ -262,13 +338,17 @@ Dos cosas que conviene saber antes de tocarlas:
 ## Rutas
 
 Todas bajo `/api/v1/staff`, con `staff:read` para lectura y `staff:manage` para
-toda mutación. El alcance por sede es `global` en todas: un profesional no es un
-recurso DE una sede —la misma persona atiende en dos, y su cédula, su ACESS y su
-código MSP son los mismos en ambas—, así que acotarlo por sede significaría o
-esconder media persona o elegir arbitrariamente una de sus sedes. Lo que
-sustituye a esa comprobación es más fuerte: ST-007 rechaza toda regla en una
-sede donde el profesional no atiende, contra la tabla de asignaciones y en cada
-escritura.
+toda mutación. El alcance por sede es `global` en **la ficha**: un profesional
+no es un recurso DE una sede —la misma persona atiende en dos, y su cédula, su
+ACESS y su código MSP son los mismos en ambas—, así que acotarlo por sede
+significaría o esconder media persona o elegir arbitrariamente una de sus sedes.
+
+**Las cuatro rutas que sí tienen dimensión de sede declaran `'query'`** —fijar
+las sedes (ST-047) y las tres de horario (ST-048)—, que es lo que significa «hay
+sede y la estrecha el handler porque viaja en el cuerpo». `global` en ellas era
+una afirmación falsa, no una comodidad. ST-007 sigue rechazando toda regla en
+una sede donde el profesional no atiende, y no sustituye a lo anterior: son dos
+preguntas distintas —«¿atiende ahí?» y «¿le corresponde a quien llama?»—.
 
 `staff:read` es **deliberadamente estrecho**: solo lo tiene ADMIN por defecto.
 La agenda lista a los profesionales agendables por su propia ruta bajo
@@ -294,9 +374,9 @@ quiera puede concederlo: los roles son datos.
 | `PUT`    | `/practitioners/:id/duration-exceptions/:serviceTypeId`             | ST-009           |
 | `DELETE` | `/practitioners/:id/duration-exceptions/:serviceTypeId`             | ST-009           |
 | `GET`    | `/practitioners/:id/schedule-rules?includeClosed=`                  | ST-040, ST-041   |
-| `POST`   | `/practitioners/:id/schedule-rules`                                 | ST-040..046      |
-| `PATCH`  | `/schedule-rules/:id`                                               | ST-040..046      |
-| `DELETE` | `/schedule-rules/:id`                                               | ST-041, ST-043   |
+| `POST`   | `/practitioners/:id/schedule-rules`                                 | ST-040..046, 048 |
+| `PATCH`  | `/schedule-rules/:id`                                               | ST-040..046, 048 |
+| `DELETE` | `/schedule-rules/:id`                                               | ST-041, 043, 048 |
 
 **`GET /signing-eligibility` es una consulta que RECHAZA**, y es el requisito:
 quien va a firmar pregunta, y un ACESS caducado tiene que detenerle. Responder

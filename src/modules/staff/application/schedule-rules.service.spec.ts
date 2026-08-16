@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { AccessAuditEntry } from '../../../shared/audit/access-audit.port';
+import { Principal } from '../../../shared/authorisation/principal';
+import { SiteScopeDeniedError } from '../../../shared/authorisation/site-scope';
 import {
   type ClinicalDate,
   parseClinicalDate,
@@ -28,6 +30,20 @@ import { type Requester, StaffAuditTrail } from './staff-audit.trail';
  * test in `test/integration/staff-http.spec.ts`, against a real PostgreSQL.
  */
 const REQUESTER: Requester = { userId: 'user-1', ip: '10.0.0.1' };
+
+/**
+ * ST-048. The clinic-wide grant — `siteId: null` is every site, present and
+ * future — which is how the director is hired and what every case below that
+ * is not about the site scope uses.
+ */
+const DIRECTOR = new Principal('user-1', [
+  { roleCode: 'ADMIN', siteId: null, permissions: ['staff:manage'] },
+]);
+
+/** ST-048. `staff:manage`, granted for `site-1` and for nowhere else. */
+const SCOPED_TO_SITE_1 = new Principal('user-2', [
+  { roleCode: 'ADMIN', siteId: 'site-1', permissions: ['staff:manage'] },
+]);
 const on = (value: string): ClinicalDate => parseClinicalDate(value);
 const TODAY = on('2026-09-14');
 
@@ -164,7 +180,12 @@ describe('ScheduleRulesService', () => {
 
   describe('crear y editar', () => {
     it('ST-040 crea la regla y la deja en la bitácora con autor e instante', async () => {
-      const outcome = await service.create('prac-1', DRAFT, REQUESTER);
+      const outcome = await service.create(
+        'prac-1',
+        DRAFT,
+        REQUESTER,
+        DIRECTOR,
+      );
 
       expect(outcome.rule.id).toBe('rule-new');
       expect(recorded).toEqual([
@@ -178,7 +199,7 @@ describe('ScheduleRulesService', () => {
     });
 
     it('ST-044 editar una regla deja constancia como UPDATE', async () => {
-      await service.update('rule-1', { endTime: '13:00' }, REQUESTER);
+      await service.update('rule-1', { endTime: '13:00' }, REQUESTER, DIRECTOR);
 
       expect(recorded[0]).toMatchObject({
         action: 'UPDATE',
@@ -191,7 +212,7 @@ describe('ScheduleRulesService', () => {
       answers.worksAt = false;
 
       await expect(
-        service.create('prac-1', DRAFT, REQUESTER),
+        service.create('prac-1', DRAFT, REQUESTER, DIRECTOR),
       ).rejects.toBeInstanceOf(PractitionerNotInSiteError);
       expect(writes()).toEqual([]);
     });
@@ -200,13 +221,18 @@ describe('ScheduleRulesService', () => {
       answers.worksAt = false;
 
       await expect(
-        service.update('rule-1', { siteId: 'site-2' }, REQUESTER),
+        service.update('rule-1', { siteId: 'site-2' }, REQUESTER, DIRECTOR),
       ).rejects.toBeInstanceOf(PractitionerNotInSiteError);
       expect(writes()).toEqual([]);
     });
 
     it('ST-046 editar sin tocar la sede no vuelve a comprobarla', async () => {
-      await service.update('rule-1', { siteId: RULE.siteId }, REQUESTER);
+      await service.update(
+        'rule-1',
+        { siteId: RULE.siteId },
+        REQUESTER,
+        DIRECTOR,
+      );
 
       expect(calls.filter((call) => call.method === 'practitionerWorksAt')).toEqual([]); // prettier-ignore
     });
@@ -215,7 +241,7 @@ describe('ScheduleRulesService', () => {
       answers.schedulable = false;
 
       await expect(
-        service.create('prac-1', DRAFT, REQUESTER),
+        service.create('prac-1', DRAFT, REQUESTER, DIRECTOR),
       ).rejects.toBeInstanceOf(PractitionerNotSchedulableError);
       expect(writes()).toEqual([]);
     });
@@ -241,6 +267,7 @@ describe('ScheduleRulesService', () => {
           'prac-1',
           { ...DRAFT, startTime: '14:00', endTime: '14:15' },
           REQUESTER,
+          DIRECTOR,
         )
         .catch((error: unknown) => error);
 
@@ -255,7 +282,7 @@ describe('ScheduleRulesService', () => {
       // The patch alone is harmless; merged with the stored row it produces a
       // rule that yields no slot. Validating the patch would let it through.
       await expect(
-        service.update('rule-1', { endTime: '08:10' }, REQUESTER),
+        service.update('rule-1', { endTime: '08:10' }, REQUESTER, DIRECTOR),
       ).rejects.toBeInstanceOf(InvalidScheduleRuleError);
       expect(writes()).toEqual([]);
     });
@@ -264,14 +291,14 @@ describe('ScheduleRulesService', () => {
       answers.findRule = null;
 
       await expect(
-        service.update('ghost', { endTime: '13:00' }, REQUESTER),
+        service.update('ghost', { endTime: '13:00' }, REQUESTER, DIRECTOR),
       ).rejects.toBeInstanceOf(ScheduleRuleNotFoundError);
     });
   });
 
   describe('cerrar', () => {
     it('ST-041 cerrar fija el fin de vigencia hacia adelante y no borra la fila', async () => {
-      await service.close('rule-1', REQUESTER, TODAY);
+      await service.close('rule-1', REQUESTER, DIRECTOR, TODAY);
 
       expect(writes()).toEqual([
         { method: 'update', args: ['rule-1', { validTo: '2026-09-14' }] },
@@ -281,7 +308,7 @@ describe('ScheduleRulesService', () => {
     it('ST-041 cerrar una regla que aún no empieza la desactiva, tampoco la borra', async () => {
       answers.findRule = { ...RULE, validFrom: on('2026-12-01') };
 
-      await service.close('rule-1', REQUESTER, TODAY);
+      await service.close('rule-1', REQUESTER, DIRECTOR, TODAY);
 
       expect(writes()).toEqual([
         { method: 'update', args: ['rule-1', { active: false }] },
@@ -289,7 +316,7 @@ describe('ScheduleRulesService', () => {
     });
 
     it('ST-044 cerrar también queda en la bitácora', async () => {
-      await service.close('rule-1', REQUESTER, TODAY);
+      await service.close('rule-1', REQUESTER, DIRECTOR, TODAY);
 
       expect(recorded[0]).toMatchObject({ action: 'UPDATE', resourceType: 'staff' }); // prettier-ignore
     });
@@ -310,6 +337,7 @@ describe('ScheduleRulesService', () => {
         'rule-1',
         { endTime: '11:00' },
         REQUESTER,
+        DIRECTOR,
       );
 
       expect(outcome.conflicts.map((conflict) => conflict.agendaEntryId)).toEqual(['entry-1']); // prettier-ignore
@@ -325,7 +353,7 @@ describe('ScheduleRulesService', () => {
         },
       ];
 
-      await service.update('rule-1', { endTime: '11:00' }, REQUESTER);
+      await service.update('rule-1', { endTime: '11:00' }, REQUESTER, DIRECTOR);
 
       // The load-bearing assertion is the ABSENCE of any other write: the
       // conflicts are handed to a human, never resolved by the system.
@@ -338,7 +366,7 @@ describe('ScheduleRulesService', () => {
       // `undefined` means «leave it as it is». A plain spread would erase the
       // stored `validFrom`, and the validation would then blow up on a date
       // that is not there — a 500 where a 200 belongs.
-      await service.update('rule-1', { endTime: '11:00', validTo: undefined }, REQUESTER); // prettier-ignore
+      await service.update('rule-1', { endTime: '11:00', validTo: undefined }, REQUESTER, DIRECTOR); // prettier-ignore
 
       expect(writes()).toEqual([
         { method: 'update', args: ['rule-1', { endTime: '11:00' }] },
@@ -359,6 +387,7 @@ describe('ScheduleRulesService', () => {
         'rule-1',
         { endTime: '13:00' },
         REQUESTER,
+        DIRECTOR,
       );
 
       expect(outcome.conflicts).toEqual([]);
@@ -390,6 +419,7 @@ describe('ScheduleRulesService', () => {
         'rule-1',
         { siteId: 'site-2' },
         REQUESTER,
+        DIRECTOR,
       );
 
       expect(outcome.conflicts.map((conflict) => conflict.agendaEntryId)).toEqual(['entry-norte']); // prettier-ignore
@@ -428,6 +458,7 @@ describe('ScheduleRulesService', () => {
         'rule-1',
         { siteId: 'site-2', endTime: '10:00' },
         REQUESTER,
+        DIRECTOR,
       );
 
       // En orden cronológico y no por sede: quien llama tiene que telefonear a
@@ -438,7 +469,7 @@ describe('ScheduleRulesService', () => {
     it('ST-043 sin cambio de sede sigue preguntando por una sola', async () => {
       // La consulta extra sólo aparece cuando la regla se mueve: cobrarla en
       // cada edición sería una consulta por petición que nunca devuelve nada.
-      await service.update('rule-1', { endTime: '13:00' }, REQUESTER);
+      await service.update('rule-1', { endTime: '13:00' }, REQUESTER, DIRECTOR);
 
       expect(
         calls
@@ -468,10 +499,100 @@ describe('ScheduleRulesService', () => {
         'rule-1',
         { endTime: '11:00' },
         REQUESTER,
+        DIRECTOR,
       );
 
       // Covered by the afternoon rule the change never touched.
       expect(outcome.conflicts).toEqual([]);
+    });
+  });
+  /**
+   * ST-048, D-023. The site of a schedule rule arrives in the BODY — and on
+   * the close, in no request at all — so the guard, which runs before the
+   * pipes, has nothing to check. These are the cases it could not see.
+   */
+  describe('el alcance por sede (ST-048)', () => {
+    it('ST-048 rechaza crear una regla en una sede fuera del alcance, sin escribir', async () => {
+      await expect(
+        service.create(
+          'prac-1',
+          { ...DRAFT, siteId: 'site-2' },
+          REQUESTER,
+          SCOPED_TO_SITE_1,
+        ),
+      ).rejects.toBeInstanceOf(SiteScopeDeniedError);
+
+      expect(writes()).toEqual([]);
+    });
+
+    it('ST-048 la negativa precede a ST-007: no contesta si el profesional atiende allí', async () => {
+      // `PRACTITIONER_NOT_IN_SITE` answers «that identifier is a site and this
+      // doctor does not pass through it», which is the clinic's map handed to
+      // somebody who does not hold that site.
+      answers.worksAt = false;
+
+      await expect(
+        service.create(
+          'prac-1',
+          { ...DRAFT, siteId: 'site-2' },
+          REQUESTER,
+          SCOPED_TO_SITE_1,
+        ),
+      ).rejects.toBeInstanceOf(SiteScopeDeniedError);
+    });
+
+    it('ST-048 rechaza editar la regla de otra sede aunque el cuerpo no nombre ninguna', async () => {
+      // The end nobody checked: the site the rule ALREADY has.
+      answers.findRule = { ...RULE, siteId: 'site-2' };
+
+      await expect(
+        service.update(
+          'rule-1',
+          { endTime: '13:00' },
+          REQUESTER,
+          SCOPED_TO_SITE_1,
+        ),
+      ).rejects.toBeInstanceOf(SiteScopeDeniedError);
+
+      expect(writes()).toEqual([]);
+    });
+
+    it('ST-048 rechaza MOVER la regla a una sede ajena: se juzgan los dos extremos', async () => {
+      // The rule is at `site-1`, which the caller holds; the destination is
+      // not. Moving takes slots from one agenda and hands them to another.
+      await expect(
+        service.update(
+          'rule-1',
+          { siteId: 'site-2' },
+          REQUESTER,
+          SCOPED_TO_SITE_1,
+        ),
+      ).rejects.toBeInstanceOf(SiteScopeDeniedError);
+
+      expect(writes()).toEqual([]);
+    });
+
+    it('ST-048 rechaza cerrar la regla de otra sede: la sede se lee de la fila', async () => {
+      answers.findRule = { ...RULE, siteId: 'site-2' };
+
+      await expect(
+        service.close('rule-1', REQUESTER, SCOPED_TO_SITE_1, TODAY),
+      ).rejects.toBeInstanceOf(SiteScopeDeniedError);
+
+      expect(writes()).toEqual([]);
+    });
+
+    it('ST-048 dentro de su alcance escribe: la comprobación no es un muro', async () => {
+      await service.update(
+        'rule-1',
+        { endTime: '13:00' },
+        REQUESTER,
+        SCOPED_TO_SITE_1,
+      );
+
+      expect(writes()).toEqual([
+        { method: 'update', args: ['rule-1', { endTime: '13:00' }] },
+      ]);
     });
   });
 });

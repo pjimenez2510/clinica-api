@@ -5,10 +5,11 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
 import type { Env } from '../../config/env.schema';
+
+import { createPgAdapter } from './pg-adapter';
 
 /**
  * Cliente de Prisma con adaptador de driver.
@@ -32,9 +33,10 @@ export class PrismaService
 
   constructor(config: ConfigService<Env, true>) {
     super({
-      adapter: new PrismaPg({
-        connectionString: config.get('DATABASE_URL', { infer: true }),
-      }),
+      // `createPgAdapter` and not `new PrismaPg` directly: it pins the
+      // session's time zone, without which every instant this system stores
+      // depends on how the server happens to be configured.
+      adapter: createPgAdapter(config.get('DATABASE_URL', { infer: true })),
     });
   }
 

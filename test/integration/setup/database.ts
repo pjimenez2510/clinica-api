@@ -1,6 +1,7 @@
-import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 import { afterAll, afterEach, beforeAll, inject } from 'vitest';
+
+import { createPgAdapter } from '../../../src/shared/infrastructure/prisma/pg-adapter';
 
 /**
  * A Prisma client bound to the throwaway container, plus isolation between
@@ -25,8 +26,11 @@ export function useDatabase(): () => PrismaClient {
   let truncateStatement: string;
 
   beforeAll(async () => {
+    // THE SAME ADAPTER THE APPLICATION USES, time zone included. A harness
+    // that built its own connection differently would prove a guarantee the
+    // running system does not have.
     prisma = new PrismaClient({
-      adapter: new PrismaPg({ connectionString: inject('databaseUrl') }),
+      adapter: createPgAdapter(inject('databaseUrl')),
     });
     await prisma.$connect();
 
