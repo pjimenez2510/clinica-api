@@ -116,16 +116,33 @@ export const PERMISSION_CATALOGUE = [
   //     EL ORDEN igual que los demás, pero no se leen con la misma llave que
   //     la edad.
   //
-  // ⚠️ EL SEGUNDO NO LO TRAE NINGÚN ROL, por el mismo criterio que
-  // `agenda:overbook:self` (AG-103), `user:reset-mfa` (AU-035) y
-  // `patient:merge` (D-030): la instalación se lo concede a alguien A
-  // PROPÓSITO o no lo tiene nadie. Aquí el argumento no es la suplantación
-  // sino la SEGURIDAD DE LA PERSONA — que «víctima de violencia doméstica»
-  // aparezca en la pantalla de quien no debe verlo tiene consecuencias
-  // distintas de las de una filtración corriente, y es la razón de que REQ-025
-  // le dé tabla y régimen propios dentro de la atención—. Qué rol lo lleva es
-  // política de acceso a datos de categoría especial y la fija la clínica; ver
-  // `DECISIONES-PENDIENTES.md`.
+  // ⚠️ EL SEGUNDO LO TRAEN `MEDICO` Y `ADMIN` DESDE EL 19-08-2026, y hasta ese
+  // día no lo traía nadie. Decisión del usuario, que cierra D-027/D-034 por la
+  // opción B ampliada al administrador: el médico tratante necesita saber que
+  // la paciente que tiene delante es víctima de violencia —era el caso clínico
+  // real— y la dirección se lo reserva también. Por eso este permiso YA NO
+  // lleva `explicitGrantOnly`: la marca significa «ninguna semilla lo reparte»
+  // y aquí dejó de ser cierto. Los otros tres —`agenda:overbook:self`
+  // (AG-103), `user:reset-mfa` (AU-035) y `patient:merge` (D-030)— siguen
+  // marcados: su argumento no ha cambiado.
+  //
+  // ⚠️ LA CONSECUENCIA, DICHA EN VOZ ALTA: con `ADMIN` llevándolo, QUIEN
+  // ADMINISTRA CUENTAS PUEDE LEER QUE UNA PACIENTE ES VÍCTIMA DE VIOLENCIA
+  // DOMÉSTICA. El argumento de este permiso nunca fue la suplantación sino la
+  // SEGURIDAD DE LA PERSONA —que «víctima de violencia doméstica» aparezca en
+  // la pantalla de quien no debe verlo tiene consecuencias distintas de las de
+  // una filtración corriente, y es la razón de que REQ-025 le dé tabla y
+  // régimen propios dentro de la atención—, así que ampliar el reparto a la
+  // dirección amplía ese riesgo. Está escrito aquí para que en un año se sepa
+  // que fue deliberado y no un descuido, y para que quien revise el reparto de
+  // roles sepa qué está mirando. Lo que lo acota hoy: `ADMIN` no trae
+  // `patient:read` ni `patient:priority`, y la ruta de los grupos exige
+  // `patient:priority` (PA-040), así que el administrador de fábrica no llega a
+  // leerlos sin que alguien le conceda además esos dos.
+  //
+  // ⚠️ Y LOS ROLES SON DATOS: la clínica puede quitárselo a `ADMIN` —o a
+  // `MEDICO`— desde la pantalla de roles, sin desplegar nada. Esto es el estado
+  // inicial de una instalación nueva, no una regla del código.
   //
   // NO SE LLAMA `patient:violence` ni nada que NOMBRE EL DATO. El código del
   // permiso se lee en la pantalla de roles, en la bitácora y en un mensaje de
@@ -143,26 +160,36 @@ export const PERMISSION_CATALOGUE = [
     resource: 'patient',
     description:
       'Ver y registrar los grupos prioritarios de acceso restringido. Quien lo tiene conoce situaciones cuya difusión puede poner en riesgo a la persona',
-    explicitGrantOnly: true,
   },
   // La orientación sexual del paciente (PA-057, PA-058, D-039 (b)).
   //
   // ⚠️ SE ESCRIBE CON `patient:write` Y SE LEE CON ESTE, y la asimetría es la
   // decisión. Es la columna 7 del formulario del RDACAA: se teclea en el
   // mostrador junto a las columnas 6, 8 y de la 11 a la 14, así que exigir este
-  // permiso también para escribirla dejaría la casilla imposible de llenar
-  // mientras nadie lo tenga — y no lo trae ningún rol. Lo que queda tras la
-  // puerta es VOLVER A LEERLA: la ficha no la lleva, el listado tampoco, y hay
-  // una ruta aparte que deja su propia fila de bitácora.
+  // permiso también para escribirla dejaría la casilla imposible de llenar para
+  // quien no lo tenga. Lo que queda tras la puerta es VOLVER A LEERLA: la ficha
+  // no la lleva, el listado tampoco, y hay una ruta aparte que deja su propia
+  // fila de bitácora.
   //
-  // ⚠️ NINGÚN ROL LO TRAE DE FÁBRICA, por el mismo criterio que
-  // `patient:priority:protected` (D-027), `agenda:overbook:self` (AG-103),
-  // `user:reset-mfa` (AU-035) y `patient:merge` (D-030): la instalación se lo
-  // concede a alguien A PROPÓSITO o no lo tiene nadie. Es dato de categoría
-  // especial bajo la LOPDP, y quién puede leerlo es política de acceso que fija
-  // la clínica, no un valor razonable que se elige por ella. Está registrado en
-  // `DECISIONES-PENDIENTES.md` junto a la pregunta gemela de
-  // `patient:priority:protected`; conviene contestarlas juntas.
+  // ⚠️ LO TRAEN `MEDICO` Y `ADMIN` DESDE EL 19-08-2026, y hasta ese día no lo
+  // traía nadie. Decisión del usuario, que cierra la única pregunta que D-039
+  // dejó abierta, y contestada a la vez que la gemela de
+  // `patient:priority:protected`. Por eso ya NO lleva `explicitGrantOnly`: esa
+  // marca significa «ninguna semilla lo reparte» y aquí dejó de ser cierto.
+  //
+  // ⚠️ LA CONSECUENCIA, DICHA EN VOZ ALTA: con `ADMIN` llevándolo, QUIEN
+  // ADMINISTRA CUENTAS PUEDE LEER LA ORIENTACIÓN SEXUAL DE CUALQUIER PACIENTE.
+  // Y aquí sin acotar, a diferencia de `patient:priority:protected`: la ruta de
+  // PA-058 exige ESTE permiso y ningún otro, así que `ADMIN` la abre de fábrica
+  // sin necesitar `patient:read`. Es dato de categoría especial bajo la LOPDP,
+  // la decisión es del usuario y se respeta; queda escrito para que en un año
+  // se sepa que fue deliberado y no un descuido, y para que quien revise el
+  // reparto de roles sepa qué está mirando. Lo que lo compensa es lo de
+  // siempre: cada lectura deja su fila de bitácora con quién y cuándo.
+  //
+  // ⚠️ Y LOS ROLES SON DATOS: la clínica puede quitárselo a `ADMIN` desde la
+  // pantalla de roles sin desplegar nada. Esto es el estado inicial de una
+  // instalación nueva, no una regla del código.
   //
   // EL CÓDIGO NOMBRA EL CAMPO Y NO SU CONTENIDO —nada de `patient:lgbt`—, por
   // lo mismo que `patient:priority:protected` no se llama `patient:violence`:
@@ -174,7 +201,6 @@ export const PERMISSION_CATALOGUE = [
     resource: 'patient',
     description:
       'Ver la orientación sexual registrada del paciente. Es dato de categoría especial: quien lo tiene lee un dato que el paciente declaró y que no viaja en la ficha',
-    explicitGrantOnly: true,
   },
   {
     code: 'agenda:read',

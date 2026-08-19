@@ -30,9 +30,11 @@ import { closeApp, listenForTests } from './setup/http-server';
  *     AG-111 fue exactamente eso. Aquí se firma con `RECEPCION` —que tiene
  *     `patient:read` y `patient:write` y NO el permiso nuevo— y con un rol al
  *     que alguien se lo concedió a propósito.
- *  2. **Que ninguna semilla reparta `patient:sexual-orientation`.**
+ *  2. **A qué roles reparte la semilla `patient:sexual-orientation`.**
  *     `syncAuthorisation` acaba de correr con el catálogo entero en el
- *     `beforeEach`, y el único rol que lo tiene es el que esta prueba creó.
+ *     `beforeEach`, así que el conjunto de portadores es exacto: `MEDICO` y
+ *     `ADMIN` desde el 19-08-2026 (D-039), el que esta prueba creó, y nadie
+ *     más — ni `RECEPCION` ni `CAJA`.
  *  3. **Que la corrección deje su fila en `patient_change_history`** con el
  *     valor anterior, también para la orientación sexual — que es dato de
  *     categoría especial y por eso el rastro importa más, no menos.
@@ -139,11 +141,11 @@ describe('las columnas del instructivo del RDACAA, contra la base', () => {
 
     /**
      * ⚠️ `patient:sexual-orientation` SE CONCEDE AQUÍ, A MANO, y eso es la
-     * mitad de PA-058 que se ve. Ninguna semilla lo reparte
-     * —`explicitGrantOnly`—, así que un rol que pueda leer la columna 7 es un
-     * rol que alguien creó y al que alguien marcó esa casilla. Qué rol debe
-     * llevarlo en una clínica de verdad es política de acceso a datos de
-     * categoría especial y está registrada como decisión pendiente.
+     * mitad de PA-058 que se ve: los roles son datos, así que una clínica
+     * arma desde la pantalla de roles el que quiera. Desde el 19-08-2026 lo
+     * traen también `MEDICO` y `ADMIN` de fábrica (D-039), pero este fichero
+     * firma con un rol propio para que la prueba de la puerta no dependa de
+     * qué permisos lleve además el rol sembrado.
      */
     const role = await prisma.role.create({
       data: {
@@ -546,19 +548,32 @@ describe('las columnas del instructivo del RDACAA, contra la base', () => {
     ]);
   });
 
-  it('PA-058 no deja que ninguna semilla conceda `patient:sexual-orientation`', async () => {
+  it('PA-058 reparte `patient:sexual-orientation` a MEDICO y a ADMIN, y a ningun otro rol de fabrica', async () => {
     /**
-     * `explicitGrantOnly`: «el permiso NO LO TRAE NINGÚN ROL», como
-     * `patient:priority:protected` y `patient:merge`. `syncAuthorisation` acaba
-     * de correr en el `beforeEach` con el catálogo entero, y el único rol que lo
-     * tiene es el que esta prueba creó a mano.
+     * ⚠️ ESTA PRUEBA AFIRMABA LO CONTRARIO HASTA EL 19-08-2026, y el cambio es
+     * la decisión del usuario que cierra la última pregunta de D-039: el
+     * permiso lo llevan `MEDICO` y `ADMIN`. Antes no lo traía nadie
+     * (`explicitGrantOnly`) y la columna 7 se escribía y no se leía.
+     *
+     * SIGUE SIENDO UN REPARTO EXACTO, y por eso no se borró: `RECEPCION`,
+     * `CAJA`, `ENFERMERIA` y `AUDITOR` no lo tienen, y que uno de ellos lo
+     * reciba en una semilla falla aquí. `MEDICO_RDACAA` es el rol que este
+     * fichero crea a mano en el `beforeEach`, que es lo que una clínica hace
+     * desde la pantalla de roles.
+     *
+     * ⚠️ Y LA CONSECUENCIA, DICHA EN VOZ ALTA: con `ADMIN` llevándolo, quien
+     * administra cuentas puede leer la orientación sexual de cualquier
+     * paciente — esta ruta exige este permiso y ningún otro, así que no hace
+     * falta ni `patient:read`. Es deliberado, no un descuido.
      */
     const holders = await prisma.rolePermission.findMany({
       where: { permissionCode: 'patient:sexual-orientation' },
       select: { role: { select: { code: true } } },
     });
 
-    expect(holders.map((holder) => holder.role.code)).toEqual([
+    expect(holders.map((holder) => holder.role.code).sort()).toEqual([
+      'ADMIN',
+      'MEDICO',
       'MEDICO_RDACAA',
     ]);
   });

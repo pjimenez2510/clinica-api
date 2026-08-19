@@ -20,10 +20,17 @@ import {
  *
  * Es la columna 7 del formulario del RDACAA y es **dato de categoría especial
  * bajo la LOPDP**, como el motivo de la prioridad. Esta ruta exige
- * `patient:sexual-orientation`, que `patient:read` no implica y que **no trae
- * ningún rol de fábrica**: la clínica se lo concede a alguien a propósito o no
- * lo tiene nadie. Recepción y caja siguen trabajando con `patient:read` — la
- * ficha no lleva este dato y el listado tampoco.
+ * `patient:sexual-orientation`, que `patient:read` no implica y que **desde el
+ * 19-08-2026 traen `MEDICO` y `ADMIN`** (D-039). Recepción y caja siguen
+ * trabajando con `patient:read` — la ficha no lleva este dato y el listado
+ * tampoco.
+ *
+ * ⚠️ ESTA RUTA EXIGE ESE PERMISO Y NINGÚN OTRO, así que quien lo tenga la abre
+ * sin necesitar `patient:read`. Con `ADMIN` llevándolo, **quien administra
+ * cuentas puede leer la orientación sexual de cualquier paciente**: es la
+ * decisión del usuario, está escrita en el recuadro de PA-058 y en
+ * `default-roles.ts`, y los roles son datos —la clínica se lo quita desde la
+ * pantalla de roles sin desplegar nada.
  *
  * Poner este manejador junto a los del registro lo dejaría a un decorador
  * olvidado de desaparecer, que es exactamente el argumento de

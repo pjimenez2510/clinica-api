@@ -960,22 +960,37 @@ requisitos que cambian.
   > y por eso la ficha no la lleva y hay una ruta aparte con su propia puerta y
   > su propia fila de bitácora.
   >
-  > **NINGÚN ROL LO TRAE DE FÁBRICA (`explicitGrantOnly`)**, con el mismo
-  > criterio que `patient:priority:protected` (PA-040), `agenda:overbook:self`
-  > (AG-103), `user:reset-mfa` (AU-035) y `patient:merge` (D-030): la
-  > instalación se lo concede a alguien **a propósito** o no lo tiene nadie.
-  > **Qué rol debe llevarlo es política de acceso a datos de categoría especial
-  > y NO la decide un agente**: está registrada en `DECISIONES-PENDIENTES.md`
-  > con su recomendación.
+  > **Resuelto el 19-08-2026 (D-039): lo traen `MEDICO` y `ADMIN`.** Hasta ese
+  > día no lo traía **ningún** rol (`explicitGrantOnly`), y la consecuencia era
+  > que la columna 7 **se escribía y no se leía**. Se contestó a la vez que la
+  > gemela de `patient:priority:protected` (PA-040), que es como D-039 pedía que
+  > se contestara.
+  >
+  > **Y LA CONSECUENCIA DE QUE `ADMIN` LO LLEVE, DICHA EN VOZ ALTA: quien
+  > administra cuentas puede leer la orientación sexual de cualquier paciente.**
+  > Aquí **sin nada que la acote**, a diferencia de PA-040: esta ruta exige este
+  > permiso **y ningún otro**, así que `ADMIN` la abre de fábrica sin necesitar
+  > siquiera `patient:read`. Es la decisión del usuario y se respeta; queda
+  > escrita para que dentro de un año se sepa que fue deliberada y no un
+  > descuido, y para que quien revise el reparto de roles sepa qué está mirando.
+  > Lo que la compensa es lo de siempre: cada lectura deja **su fila de
+  > bitácora** con quién y cuándo.
+  >
+  > **Los roles son datos**: la clínica puede quitárselo a `ADMIN` desde la
+  > pantalla de roles **sin desplegar nada**. Lo anterior es el estado inicial de
+  > una instalación nueva, no una regla del código. Los que **siguen sin traer
+  > ningún rol** son `agenda:overbook:self` (AG-103), `user:reset-mfa` (AU-035)
+  > y `patient:merge` (D-030).
   >
   > **ESCRIBIR NO EXIGE ESE PERMISO, Y ES UNA DECISIÓN, NO UN OLVIDO.** El dato
   > se teclea en el mostrador, en la misma pantalla que las columnas 6, 8, 11,
   > 12, 13 y 14 del formulario, así que exigirlo también para escribir dejaría
-  > **la columna 7 imposible de llenar mientras nadie tenga el permiso** — y
-  > como no lo trae ningún rol, eso sería siempre. El alta y la corrección lo
-  > aceptan con `patient:write`, igual que los demás campos del RDACAA, y lo que
-  > queda tras la puerta es **volver a leerlo**. La asimetría es deliberada: se
-  > registra lo que el paciente declara, y se lee sólo con la llave.
+  > **la columna 7 imposible de llenar para quien no tenga el permiso** — y
+  > recepción, que es quien la teclea, sigue sin tenerlo. El alta y la
+  > corrección lo aceptan con `patient:write`, igual que los demás campos del
+  > RDACAA, y lo que queda tras la puerta es **volver a leerlo**. La asimetría es
+  > deliberada: se registra lo que el paciente declara, y se lee sólo con la
+  > llave.
   >
   > **Y SE CORRIGE COMO CUALQUIER OTRO CAMPO DE LA FICHA** (PA-031): deja su
   > fila en `patient_change_history` con el valor anterior. Esa tabla es
@@ -1116,6 +1131,12 @@ Ningún requisito de esta sección lo altera._
   > registro entero. Al **escribir** sí se rechaza con
   > `PRIORITY_GROUP_RESTRICTED`, porque quien llama nombró el grupo él mismo y
   > negarse no revela nada que no hubiera tecleado.
+  >
+  > **QUIÉN LLEVA ESA SEGUNDA LLAVE, desde el 19-08-2026 (D-034): `MEDICO` y
+  > `ADMIN`.** Hasta ese día no la llevaba nadie, y por tanto estos cuatro
+  > grupos no se podían ni registrar. El reparto, su porqué y **la consecuencia
+  > de que la lleve `ADMIN`** están en el recuadro de PA-040, que es donde vive
+  > el permiso.
 - **PA-035** — El sistema NO DEBERÁ registrar como fila los grupos que se
   deducen de la edad: adulto mayor y niña, niño o adolescente DEBERÁN derivarse
   de la fecha de nacimiento en la fecha clínica (PA-030).
@@ -1155,17 +1176,35 @@ Ningún requisito de esta sección lo altera._
   >
   > **El segundo permiso, fijado al implementar D-027:**
   > `patient:priority:protected`, para los cuatro grupos de la segunda frase del
-  > artículo 35. **No lo trae ningún rol de fábrica** (`explicitGrantOnly`), con
-  > el mismo criterio que `agenda:overbook:self` (AG-103), `user:reset-mfa`
-  > (AU-035) y `patient:merge` (D-030): la instalación se lo concede a alguien a
-  > propósito o no lo tiene nadie. Se llama `:protected` y **no nombra el dato**
-  > —nada de `patient:violence`— porque el código del permiso se lee en la
-  > pantalla de roles, en la bitácora y en un mensaje de error, y un nombre que
-  > describa la categoría convertiría cada uno de esos sitios en una pista sobre
-  > el paciente. Qué rol debe llevarlo es política de acceso y está registrada
-  > como decisión pendiente; mientras nadie lo tenga, esos cuatro grupos ni se
-  > leen ni se registran, y siguen contando para el orden si alguien los
-  > registró.
+  > artículo 35. Se llama `:protected` y **no nombra el dato** —nada de
+  > `patient:violence`— porque el código del permiso se lee en la pantalla de
+  > roles, en la bitácora y en un mensaje de error, y un nombre que describa la
+  > categoría convertiría cada uno de esos sitios en una pista sobre el
+  > paciente.
+  >
+  > **Resuelto por D-034 el 19-08-2026: lo traen `MEDICO` y `ADMIN`.** Hasta ese
+  > día no lo traía **ningún** rol (`explicitGrantOnly`), y la consecuencia era
+  > la que D-034 anotaba: esos cuatro grupos **no se podían ni registrar**, así
+  > que la lista de espera no priorizaba a una víctima de violencia — justo lo
+  > que D-027 quería cerrar. Va a `MEDICO` porque quien atiende necesita
+  > saberlo, y el coste es el que D-034 escribió: en una clínica con veinte
+  > médicos, el dato lo ven veinte personas.
+  >
+  > **Y LA CONSECUENCIA DE QUE `ADMIN` LO LLEVE, DICHA EN VOZ ALTA: quien
+  > administra cuentas puede leer que una paciente es víctima de violencia
+  > doméstica.** Es la decisión del usuario y se respeta; queda escrita para que
+  > dentro de un año se sepa que fue deliberada y no un descuido, y para que
+  > quien revise el reparto de roles sepa qué está mirando. Lo que hoy la acota:
+  > `ADMIN` no trae `patient:read` ni `patient:priority`, y la ruta pide
+  > `patient:priority` además, así que el administrador de fábrica no llega a
+  > leerlos hasta que alguien le conceda también esos dos.
+  >
+  > **Los roles son datos**: la clínica puede quitárselo a `ADMIN` —o a
+  > `MEDICO`— desde la pantalla de roles **sin desplegar nada**. Lo anterior es
+  > el estado inicial de una instalación nueva, no una regla del código. Los que
+  > **siguen sin traer ningún rol** son `agenda:overbook:self` (AG-103),
+  > `user:reset-mfa` (AU-035) y `patient:merge` (D-030): su argumento no ha
+  > cambiado.
   >
   > **LA BITÁCORA NOMBRA LA FICHA EN LA QUE ESTÁ LA FILA, no sólo la de la URL
   > (18-08-2026, REQ-110).** Con PA-055 el motivo se lee por el enlace y la fila
@@ -2009,9 +2048,11 @@ prueba cite un ID inexistente; el día que este `SPEC.md` pase a `vigente`,
 
 ## Preguntas abiertas
 
-Queda **una**, y está **junto a su requisito** además de aquí: una pregunta
-separada del requisito que bloquea no bloquea nada. Esta tabla sólo la enumera
-para que se pueda llevar a `DECISIONES-PENDIENTES.md` con las demás.
+**No queda ninguna.** La última —qué rol lleva `patient:sexual-orientation`— la
+contestó el usuario el **19-08-2026**, junto con su gemela de
+`patient:priority:protected`: **los dos van a `MEDICO` y a `ADMIN`**. El reparto,
+su porqué y **la consecuencia de que `ADMIN` los lleve** están en los recuadros
+de PA-058 y PA-040, junto a sus requisitos, que es donde sirven de algo.
 
 > **Las cuatro que abrió el instructivo oficial del RDACAA 2.0 el 19-08-2026
 > están cerradas por D-039 y construidas —o anotadas— el mismo día.** Eran dos
@@ -2022,11 +2063,8 @@ para que se pueda llevar a `DECISIONES-PENDIENTES.md` con las demás.
 > sitio en la capa de exportación.
 >
 > Este párrafo decía «cuatro» sobre una tabla de una sola fila (corregido el
-> 18-08-2026) y luego cuatro sobre cuatro filas. Hoy dice una sobre una.
-
-| Dónde  | Qué hay que decidir                                                                                                                                                                                                                                                                            |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PA-058 | **Qué rol debe llevar `patient:sexual-orientation`**, que hoy no trae ninguno a propósito (`explicitGrantOnly`). Es política de acceso a datos de categoría especial bajo la LOPDP, la fija la clínica y **no la decide un agente**. Mientras nadie lo tenga, la columna 7 se escribe y no se lee |
+> 18-08-2026), luego cuatro sobre cuatro filas, luego una sobre una. Hoy no
+> queda ninguna.
 
 **Cuatro de las cinco que este documento planteó ya están contestadas**, y sus
 requisitos lo dicen en su propio recuadro: PA-031 por **D-032** (histórico
@@ -2039,11 +2077,8 @@ sólo se cuenta como dato que falta en la ficha «Indígena» y mientras la etni
 esté sin registrar. Está en el recuadro de PA-032.
 
 **Los grupos prioritarios ya no están entre ellas.** D-026 fijó dónde viven y
-cómo se registran, D-027 que son los diez con lectura separada, y D-029 que
-`patient:priority` lo traen `MEDICO` y `ENFERMERIA`. Queda una sola pregunta, y
-no bloquea nada de esta entrega: **qué rol debe llevar
-`patient:priority:protected`**, que hoy no trae ninguno a propósito. Está
-registrada en `DECISIONES-PENDIENTES.md` con su recomendación, y desde el
-19-08-2026 tiene una hermana idéntica en la tabla de arriba:
-`patient:sexual-orientation` (PA-058). Las dos son la misma pregunta sobre dos
-datos de categoría especial, y conviene contestarlas juntas.
+cómo se registran, D-027 que son los diez con lectura separada, D-029 que
+`patient:priority` lo traen `MEDICO` y `ENFERMERIA`, y **D-034, el 19-08-2026,
+que `patient:priority:protected` lo traen `MEDICO` y `ADMIN`** — la misma
+respuesta que su hermana `patient:sexual-orientation` (PA-058), porque eran la
+misma pregunta sobre dos datos de categoría especial y se contestaron juntas.

@@ -217,7 +217,9 @@ export class PatientsService {
    * ═══════════════════════════════════════════════════════════════════════════
    *
    * The route demands `patient:sexual-orientation`, which `patient:read` does
-   * not imply and which no shipped role carries. The split is the same one
+   * not imply and which `MEDICO` and `ADMIN` carry from the seed since
+   * 19-08-2026 (D-039, and see `default-roles.ts` for what that means for an
+   * administrator). The split is the same one
    * PA-040 and PA-042 make for the reason behind a priority: reception and
    * billing hold `patient:read` and keep working, and this datum is simply not
    * part of what they receive.

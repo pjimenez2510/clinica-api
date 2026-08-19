@@ -70,6 +70,23 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       'staff:read',
       'staff:manage',
       'audit:read',
+      // ⚠️ LOS DOS PERMISOS MÁS SENSIBLES DEL SISTEMA, y hasta el 19-08-2026 no
+      // los traía nadie a propósito. Decisión del usuario, que cierra
+      // D-027/D-034 y la última pregunta de D-039: van a `MEDICO` y a `ADMIN`.
+      //
+      // LA CONSECUENCIA, DICHA EN VOZ ALTA: QUIEN ADMINISTRA CUENTAS PUEDE
+      // LEER QUE UNA PACIENTE ES VÍCTIMA DE VIOLENCIA DOMÉSTICA Y LA
+      // ORIENTACIÓN SEXUAL DE CUALQUIERA. La segunda sin nada que la acote —la
+      // ruta de PA-058 exige ese permiso y ningún otro—; la primera acotada
+      // hoy porque este rol no trae `patient:read` ni `patient:priority`, que
+      // es lo que la ruta de PA-040 pide además. Se escribe para que dentro de
+      // un año se sepa que fue deliberado y no un descuido.
+      //
+      // Y ESTO ES EL ESTADO INICIAL, NO UNA REGLA: los roles son datos, así
+      // que la clínica puede quitárselos a `ADMIN` desde la pantalla de roles
+      // sin desplegar nada.
+      'patient:priority:protected',
+      'patient:sexual-orientation',
     ],
   },
   {
@@ -84,6 +101,26 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       // prioridad calculada de PA-041—, y eso es lo que separa «ver la fecha
       // de nacimiento» de «ver el diagnóstico social».
       'patient:priority',
+      // 19-08-2026, decisión del usuario que cierra D-027/D-034 y la última
+      // pregunta de D-039. Hasta hoy ninguno de los dos lo traía ningún rol
+      // (`explicitGrantOnly`), con la consecuencia que D-034 anotaba: los
+      // cuatro grupos de la segunda frase del artículo 35 no se podían ni
+      // registrar, así que la lista de espera no priorizaba a una víctima de
+      // violencia — justo lo que D-027 quería cerrar.
+      //
+      //   - `patient:priority:protected`: personas en situación de riesgo,
+      //     víctimas de violencia doméstica y sexual, de maltrato infantil y
+      //     de desastres. Quien atiende necesita saberlo, que era el argumento
+      //     de la opción B de D-034; el coste es que en una clínica con veinte
+      //     médicos el dato lo ven veinte personas.
+      //   - `patient:sexual-orientation`: la columna 7 del RDACAA (PA-058).
+      //     Se escribe con `patient:write` y se lee sólo con éste.
+      //
+      // Los dos son dato de categoría especial bajo la LOPDP y los dos son
+      // DATOS, no código: la clínica los reparte de otro modo desde la
+      // pantalla de roles sin desplegar nada.
+      'patient:priority:protected',
+      'patient:sexual-orientation',
       'agenda:read',
       'agenda:write',
       // D-005, AG-101. El médico AUTORIZA el sobrecupo que recepción reserva:

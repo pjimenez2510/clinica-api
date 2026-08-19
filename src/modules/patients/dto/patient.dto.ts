@@ -216,9 +216,11 @@ export const createPatientSchema = z.object({
    * ⚠️ SE ESCRIBE CON `patient:write` Y SE LEE CON OTRO PERMISO, y la asimetría
    * es deliberada: el dato se teclea en el mostrador junto a las demás columnas
    * del formulario, así que exigir `patient:sexual-orientation` también para
-   * escribirlo dejaría la columna 7 imposible de llenar mientras nadie tenga
-   * ese permiso — y no lo trae ningún rol de fábrica. Volver a leerlo es lo que
-   * queda tras la puerta, y por eso NO está en `PatientDetailDto`.
+   * escribirlo dejaría la columna 7 imposible de llenar para quien no tenga ese
+   * permiso — y `RECEPCION`, que es quien la teclea, no lo tiene: desde el
+   * 19-08-2026 lo traen `MEDICO` y `ADMIN`, y nadie más (D-039). Volver a
+   * leerlo es lo que queda tras la puerta, y por eso NO está en
+   * `PatientDetailDto`.
    *
    * La condición de edad —desde los 10 años— tampoco está aquí: depende de la
    * fecha de nacimiento resuelta en `America/Guayaquil`, y la resuelve el

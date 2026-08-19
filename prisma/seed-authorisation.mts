@@ -9,6 +9,46 @@ import { DEFAULT_ROLES } from '../src/modules/auth/domain/default-roles.ts';
 import { PERMISSION_DEFINITIONS } from '../src/shared/authorisation/permission.catalogue.ts';
 
 /**
+ * Grants that D-012's third rule CANNOT deliver, and the only reason they are
+ * written by hand.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * WHY A LIST AT ALL, WHEN `DEFAULT_ROLES` ALREADY DECLARES THEM
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * D-012 grants a permission to the system roles that declare it ONLY WHEN THE
+ * CODE IS BRAND NEW, and that narrowness is the whole safety argument: a code
+ * nobody could ever have revoked is one where there is no human decision to
+ * overwrite. These two codes are not new — they have existed since 16-08-2026
+ * and 19-08-2026 — so on any database older than the decision the sync would
+ * report success and change nothing, and the decision would exist in the code
+ * and in no installation.
+ *
+ * WHY IT IS SAFE HERE, AND ONLY HERE: until 19-08-2026 both codes carried
+ * `explicitGrantOnly`, which means NO SEED EVER HANDED THEM OUT. Their absence
+ * from a role is therefore not a revocation anybody made — it is the state the
+ * code imposed. That is exactly the property D-012 needs and cannot infer,
+ * because the catalogue does not remember what it used to say.
+ *
+ * ⚠️ WHAT IT COSTS: an installation where somebody granted one of these by
+ * hand and then took it away gets it back once. There is no way to tell that
+ * apart from «never granted» without a history the tables do not keep, and the
+ * decision of 19-08-2026 is that these two roles carry them.
+ *
+ * ⚠️ THIS LIST IS ONE-OFF AND DATED. It can be deleted once no database
+ * predates 19-08-2026 — for a fresh installation it is already redundant,
+ * since the roles are created from `DEFAULT_ROLES` with the codes in them.
+ * Do NOT grow it into the general mechanism: the general mechanism is D-012,
+ * and widening that one is how a permission a clinic revoked comes back.
+ */
+const BACKFILL_19_08_2026: readonly { role: string; permission: string }[] = [
+  { role: 'MEDICO', permission: 'patient:priority:protected' },
+  { role: 'MEDICO', permission: 'patient:sexual-orientation' },
+  { role: 'ADMIN', permission: 'patient:priority:protected' },
+  { role: 'ADMIN', permission: 'patient:sexual-orientation' },
+];
+
+/**
  * Brings the authorisation tables in line with the code.
  *
  * Runs in EVERY environment, unlike the development seed: the permission
@@ -41,6 +81,8 @@ export async function syncAuthorisation(prisma: PrismaClient): Promise<{
   orphanPermissions: string[];
   /** `ROLE → permission` granted because the code is new (D-012). */
   grantedToSystemRoles: string[];
+  /** `ROLE → permission` granted by the dated list above, and nothing else. */
+  backfilled: string[];
 }> {
   // Read BEFORE upserting: afterwards every code exists and «new» is no
   // longer answerable. This snapshot is the whole basis of D-012's third rule.
@@ -144,11 +186,36 @@ export async function syncAuthorisation(prisma: PrismaClient): Promise<{
     }
   }
 
+  /**
+   * The dated one-off above. Only roles the CODE owns, and only roles that
+   * survived from a previous deploy: one just created already carries the
+   * codes, because `DEFAULT_ROLES` declares them.
+   */
+  const backfilled: string[] = [];
+  for (const grant of BACKFILL_19_08_2026) {
+    if (rolesCreated.includes(grant.role)) continue;
+
+    const role = await prisma.role.findUnique({
+      where: { code: grant.role },
+      select: { id: true, isSystem: true },
+    });
+    if (!role?.isSystem) continue;
+
+    const written = await prisma.rolePermission.createMany({
+      data: [{ roleId: role.id, permissionCode: grant.permission }],
+      skipDuplicates: true,
+    });
+    if (written.count > 0) {
+      backfilled.push(`${grant.role} → ${grant.permission}`);
+    }
+  }
+
   return {
     permissions: PERMISSION_DEFINITIONS.length,
     rolesCreated,
     orphanPermissions,
     grantedToSystemRoles,
+    backfilled,
   };
 }
 
@@ -169,6 +236,12 @@ async function main(): Promise<void> {
     if (result.grantedToSystemRoles.length > 0) {
       console.log(
         `Permisos nuevos concedidos a roles del sistema (D-012): ${result.grantedToSystemRoles.join(', ')}.`,
+      );
+    }
+    // Lo mismo para la lista fechada: si concede algo, se ve.
+    if (result.backfilled.length > 0) {
+      console.log(
+        `Permisos repartidos por la decisión del 19-08-2026 (D-034, D-039): ${result.backfilled.join(', ')}.`,
       );
     }
     if (result.orphanPermissions.length > 0) {

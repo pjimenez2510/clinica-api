@@ -1323,8 +1323,9 @@ model Patient {
   /// ⚠️ SPECIAL CATEGORY DATA under the LOPDP, like the priority reason. It is
   /// WRITTEN with `patient:write` — it is typed at the desk on the same form as
   /// columns 6, 8 and 11 to 14 — and READ only behind `patient:sexual-
-  /// orientation`, a permission no shipped role carries, through a route of its
-  /// own that leaves an audit row. It travels neither on the chart nor on the
+  /// orientation`, which `MEDICO` and `ADMIN` carry from the seed since
+  /// 19-08-2026 (D-039), through a route of its own that leaves an audit row.
+  /// It travels neither on the chart nor on the
   /// listing: adding it to either `select` removes that door with nothing
   /// failing.
   ///

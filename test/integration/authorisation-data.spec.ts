@@ -201,18 +201,124 @@ describe('roles are data, permissions are a contract', () => {
     expect(granted.length).toBe(SEEDABLE_PERMISSIONS.length);
     expect(granted).toContain('user:manage');
 
+    /**
+     * ⚠️ LOS TRES QUE SIGUEN SIN REPARTIRSE, ENUMERADOS Y NO DERIVADOS.
+     *
+     * El 19-08-2026 esta lista tenía cinco y pasó a tener tres: el usuario
+     * decidió que `patient:priority:protected` y `patient:sexual-orientation`
+     * los lleven `MEDICO` y `ADMIN` (D-034, D-039), así que dejaron de estar
+     * marcados. Los otros tres siguen igual y su argumento no ha cambiado.
+     *
+     * SE ESCRIBEN A MANO A PROPÓSITO. Recorrer sólo
+     * `EXPLICIT_GRANT_ONLY_PERMISSIONS` afirmaría «lo marcado no se reparte»,
+     * que es una tautología: vaciar la lista dejaría la prueba en verde
+     * repartiéndolo todo. Con los tres nombrados, quitarle la marca a uno
+     * falla aquí y obliga a que la decisión se tome, se escriba y se fecha —
+     * que es exactamente lo que ocurrió con los dos de arriba.
+     */
+    expect([...EXPLICIT_GRANT_ONLY_PERMISSIONS].sort()).toEqual([
+      'agenda:overbook:self',
+      'patient:merge',
+      'user:reset-mfa',
+    ]);
+
     for (const risky of EXPLICIT_GRANT_ONLY_PERMISSIONS) {
       expect(granted, `${risky} no puede llegar por una semilla`).not.toContain(
         risky,
       );
     }
 
-    // Y no por otra puerta: NINGÚN rol lo tiene tras sembrar.
+    // Y no por otra puerta: NINGÚN rol los tiene tras sembrar.
     const holders = await prisma.rolePermission.findMany({
       where: { permissionCode: { in: [...EXPLICIT_GRANT_ONLY_PERMISSIONS] } },
       select: { role: { select: { code: true } } },
     });
     expect(holders.map((holder) => holder.role.code)).toEqual([]);
+  });
+
+  it('PA-040 y PA-058 reparten los dos permisos de categoria especial a MEDICO y a ADMIN, y a nadie mas', async () => {
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     * LA DECISIÓN DEL 19-08-2026, AFIRMADA SOBRE LA BASE
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Hasta ese día ningún rol traía `patient:priority:protected` (D-027,
+     * D-034) ni `patient:sexual-orientation` (D-039), y esta prueba afirmaba
+     * exactamente eso. El usuario decidió que los lleven `MEDICO` y `ADMIN`,
+     * así que aquí se afirma lo que ahora es cierto — y sigue siendo una
+     * prueba de reparto, no una tautología: el conjunto de portadores es
+     * EXACTO, de modo que darle uno de los dos a `RECEPCION` o a `CAJA` falla.
+     *
+     * ⚠️ LO QUE ESTO DEJA ESCRITO, Y ES LA MITAD QUE IMPORTA: con `ADMIN`
+     * llevándolos, quien administra cuentas puede leer que una paciente es
+     * víctima de violencia doméstica y la orientación sexual de cualquiera.
+     * Es la decisión del usuario y se respeta; que una prueba la nombre es lo
+     * que impide que dentro de un año se lea como un descuido.
+     *
+     * Y LOS ROLES SON DATOS: esto es el estado INICIAL de una instalación, no
+     * una regla. `lets an administrator edit what a system role may do`, más
+     * abajo, es la prueba de que la clínica puede quitárselo sin desplegar.
+     */
+    const prisma = db();
+    await syncAuthorisation(prisma);
+
+    for (const code of [
+      'patient:priority:protected',
+      'patient:sexual-orientation',
+    ]) {
+      const holders = await prisma.rolePermission.findMany({
+        where: { permissionCode: code },
+        select: { role: { select: { code: true } } },
+      });
+
+      expect(holders.map((holder) => holder.role.code).sort(), code).toEqual([
+        'ADMIN',
+        'MEDICO',
+      ]);
+    }
+  });
+
+  it('PA-040 reparte los dos permisos tambien en una instalacion anterior a la decision', async () => {
+    /**
+     * EL CASO QUE D-012 NO PUEDE CUBRIR, Y POR EL QUE EXISTE LA LISTA FECHADA.
+     *
+     * La tercera regla de `syncAuthorisation` concede a los roles del sistema
+     * los códigos que NO EXISTÍAN antes del despliegue, y ésa es toda su
+     * seguridad: un código que nunca existió no se lo pudo quitar nadie. Estos
+     * dos existen desde el 16 y el 19-08-2026, así que sobre una base anterior
+     * la sincronización habría dicho «todo en orden» sin conceder nada, y la
+     * decisión habría quedado en el código y en ninguna instalación.
+     *
+     * Se reproduce el despliegue de verdad: los roles ya están creados, y las
+     * concesiones se retiran como estaban antes de la decisión —el permiso
+     * SIGUE en el catálogo, así que para D-012 no es nuevo—.
+     */
+    const prisma = db();
+    await syncAuthorisation(prisma);
+
+    const before = await prisma.rolePermission.deleteMany({
+      where: {
+        permissionCode: {
+          in: ['patient:priority:protected', 'patient:sexual-orientation'],
+        },
+      },
+    });
+    expect(before.count).toBe(4);
+
+    const result = await syncAuthorisation(prisma);
+
+    expect(result.rolesCreated).toEqual([]);
+    // D-012 no concede nada: para él estos códigos no son nuevos.
+    expect(result.grantedToSystemRoles).toEqual([]);
+    expect([...result.backfilled].sort()).toEqual([
+      'ADMIN → patient:priority:protected',
+      'ADMIN → patient:sexual-orientation',
+      'MEDICO → patient:priority:protected',
+      'MEDICO → patient:sexual-orientation',
+    ]);
+
+    // Y una tercera pasada no vuelve a anunciarlo: ya están concedidos.
+    expect((await syncAuthorisation(prisma)).backfilled).toEqual([]);
   });
 
   it('AU-035 la semilla de desarrollo deja la cuenta sin segundo factor a medias ni códigos viejos', async () => {

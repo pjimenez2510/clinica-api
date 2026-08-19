@@ -42,9 +42,24 @@ const PASSWORD = 'el caballo come alfalfa';
 const MEDICO_EMAIL = 'medica@clinica.ec';
 const RECEPCION_EMAIL = 'recepcion@clinica.ec';
 const TRABAJO_SOCIAL_EMAIL = 'trabajosocial@clinica.ec';
+const SIN_LLAVE_EMAIL = 'consultaexterna@clinica.ec';
 
 /** El rol que la clínica crea a propósito para el segundo nivel de D-027. */
 const PROTECTED_ROLE = 'TRABAJO_SOCIAL';
+
+/**
+ * El rol que lee el MOTIVO y no el segundo nivel, y por qué hace falta desde
+ * el 19-08-2026.
+ *
+ * Hasta ese día ese rol era `MEDICO`: `patient:priority` sí, y
+ * `patient:priority:protected` no, porque no lo traía nadie. La decisión del
+ * usuario (D-034) se lo dio a `MEDICO` y a `ADMIN`, así que la sesión de
+ * médico ya no sirve para demostrar qué ve quien NO tiene la segunda llave —
+ * que es lo que PA-034 promete—. Este rol es esa sesión, y es lo que una
+ * clínica arma desde la pantalla de roles el día que decide que la llave no la
+ * lleve todo el mundo: los roles son datos.
+ */
+const KEYLESS_ROLE = 'CONSULTA_EXTERNA';
 
 interface Problem {
   type: string;
@@ -74,13 +89,18 @@ describe('los grupos prioritarios por HTTP', () => {
   let prisma: PrismaClient;
   let registry: RolePermissionRegistry;
 
-  /** `MEDICO`: `patient:read` + `patient:priority` (D-029). */
+  /**
+   * `MEDICO`: `patient:read` + `patient:priority` (D-029) + la segunda llave,
+   * `patient:priority:protected`, desde el 19-08-2026 (D-034).
+   */
   let medico: string;
   let medicoUserId: string;
   /** `RECEPCION`: `patient:read` y NADA más de prioridad (D-029). */
   let recepcion: string;
   /** Un rol creado a mano con `patient:priority:protected` (D-027). */
   let trabajoSocial: string;
+  /** Un rol con el motivo y SIN la segunda llave. Ver `KEYLESS_ROLE`. */
+  let sinLlave: string;
 
   let patientId: string;
 
@@ -118,6 +138,7 @@ describe('los grupos prioritarios por HTTP', () => {
     registry.invalidate();
 
     await createProtectedRole();
+    await createKeylessRole();
 
     medico = await signIn(MEDICO_EMAIL, 'MEDICO', '1710034065');
     recepcion = await signIn(RECEPCION_EMAIL, 'RECEPCION', '0926687856');
@@ -126,6 +147,7 @@ describe('los grupos prioritarios por HTTP', () => {
       PROTECTED_ROLE,
       '1712345675',
     );
+    sinLlave = await signIn(SIN_LLAVE_EMAIL, KEYLESS_ROLE, '1104081656');
 
     // 36 años el 16-08-2026: ni adulto mayor ni adolescente, así que toda
     // prioridad que aparezca viene de una fila y no de la edad.
@@ -142,11 +164,12 @@ describe('los grupos prioritarios por HTTP', () => {
   /**
    * El rol que lleva el segundo nivel de D-027.
    *
-   * SE CREA AQUÍ Y NO LO TRAE NINGUNA SEMILLA, y eso es el requisito:
-   * `patient:priority:protected` está marcado `explicitGrantOnly`, así que la
-   * instalación se lo concede a alguien a propósito o no lo tiene nadie —el
-   * mismo criterio que `agenda:overbook:self` y `user:reset-mfa`—. Este rol es
-   * exactamente lo que una clínica haría desde la pantalla de roles.
+   * SE CREA AQUÍ, Y ESO SIGUE SIENDO EL PUNTO AUNQUE YA NO SEA EL ÚNICO CAMINO.
+   * Hasta el 19-08-2026 `patient:priority:protected` no lo traía ningún rol
+   * (`explicitGrantOnly`) y sólo se llegaba a él así; desde esa fecha lo traen
+   * `MEDICO` y `ADMIN` (D-034). Lo que este rol demuestra es lo que no cambió:
+   * los permisos de un rol son DATOS, así que una clínica arma el suyo —trabajo
+   * social, aquí— desde la pantalla de roles y sin desplegar nada.
    */
   async function createProtectedRole(): Promise<void> {
     await prisma.role.create({
@@ -159,6 +182,31 @@ describe('los grupos prioritarios por HTTP', () => {
             { permissionCode: 'patient:read' },
             { permissionCode: 'patient:priority' },
             { permissionCode: 'patient:priority:protected' },
+          ],
+        },
+      },
+    });
+    registry.invalidate();
+  }
+
+  /**
+   * El rol que lee el MOTIVO y no el segundo nivel (`KEYLESS_ROLE`).
+   *
+   * Es la contraparte del de arriba y existe por la misma razón que él: los
+   * permisos son datos. Desde que `MEDICO` trae la segunda llave (D-034), ésta
+   * es la sesión que demuestra qué ve quien NO la tiene — que es lo que PA-034
+   * promete y lo que ninguna sesión de fábrica puede ya enseñar.
+   */
+  async function createKeylessRole(): Promise<void> {
+    await prisma.role.create({
+      data: {
+        code: KEYLESS_ROLE,
+        name: 'Consulta externa',
+        description: 'Ve el motivo de la prioridad, no los grupos restringidos',
+        permissions: {
+          create: [
+            { permissionCode: 'patient:read' },
+            { permissionCode: 'patient:priority' },
           ],
         },
       },
@@ -707,23 +755,35 @@ describe('los grupos prioritarios por HTTP', () => {
     // Quien tiene `patient:priority` pero no el segundo nivel NO recibe un
     // rechazo: recibe una lista sin esa fila. Un 403 confirmaría que existe,
     // que es el oráculo que PA-024 evita para el registro entero.
-    const asMedico = await groupsOf(medico).expect(200);
-    expect((asMedico.body as { items: PriorityGroupBody[] }).items).toEqual([]);
-    expect(JSON.stringify(asMedico.body)).not.toContain('VIOLENCE');
+    const asSinLlave = await groupsOf(sinLlave).expect(200);
+    expect((asSinLlave.body as { items: PriorityGroupBody[] }).items).toEqual(
+      [],
+    );
+    expect(JSON.stringify(asSinLlave.body)).not.toContain('VIOLENCE');
 
-    // Y quien sí lo tiene la lee entera.
+    // Y quien sí lo tiene la lee entera: el rol que la clínica creó…
     const asTrabajoSocial = await groupsOf(trabajoSocial).expect(200);
     expect(
       (asTrabajoSocial.body as { items: PriorityGroupBody[] }).items[0]?.group,
     ).toBe('DOMESTIC_OR_SEXUAL_VIOLENCE_VICTIM');
+
+    // …y `MEDICO`, que la trae de fábrica desde el 19-08-2026 (D-034). Esta
+    // mitad es nueva: hasta ese día el médico estaba en el lado de arriba.
+    const asMedico = await groupsOf(medico).expect(200);
+    expect(
+      (asMedico.body as { items: PriorityGroupBody[] }).items[0]?.group,
+    ).toBe('DOMESTIC_OR_SEXUAL_VIOLENCE_VICTIM');
   });
 
   it('PA-034 refuses to RECORD a restricted group without the second key, and says so', async () => {
-    const refused = await recordGroup({
-      group: 'CHILD_ABUSE_VICTIM',
-      startsOn: daysFromToday(-5),
-      origin: 'SELF_DECLARED',
-    }).expect(403);
+    const refused = await recordGroup(
+      {
+        group: 'CHILD_ABUSE_VICTIM',
+        startsOn: daysFromToday(-5),
+        origin: 'SELF_DECLARED',
+      },
+      sinLlave,
+    ).expect(403);
 
     expect((refused.body as Problem).code).toBe('PRIORITY_GROUP_RESTRICTED');
     const rows = await prisma.patientPriorityGroup.findMany({
@@ -743,7 +803,11 @@ describe('los grupos prioritarios por HTTP', () => {
     ).expect(201);
     const recordId = (created.body as PriorityGroupBody).id;
 
-    const refused = await closeGroup(recordId, { endsOn: today() }).expect(404);
+    const refused = await closeGroup(
+      recordId,
+      { endsOn: today() },
+      sinLlave,
+    ).expect(404);
     expect((refused.body as Problem).code).toBe('PRIORITY_GROUP_NOT_FOUND');
 
     // Nada cambió.
@@ -820,9 +884,9 @@ describe('los grupos prioritarios por HTTP', () => {
 
     // 2. SIN él, lista vacía desde la superviviente — no un 403, que
     //    confirmaría que existe (D-027) — y ni el código asoma en la respuesta.
-    const sinLlave = await groupsOf(medico).expect(200);
-    expect((sinLlave.body as { items: PriorityGroupBody[] }).items).toEqual([]);
-    expect(JSON.stringify(sinLlave.body)).not.toContain('VIOLENCE');
+    const oculto = await groupsOf(sinLlave).expect(200);
+    expect((oculto.body as { items: PriorityGroupBody[] }).items).toEqual([]);
+    expect(JSON.stringify(oculto.body)).not.toContain('VIOLENCE');
 
     // 3. Y el ORDEN sí llega, hasta a recepción: es la equiparación del
     //    artículo 35, y la fusión no la cambia porque es la misma persona.
@@ -891,8 +955,8 @@ describe('los grupos prioritarios por HTTP', () => {
      */
     const absorbida = await absorbedChartWithGroup('CHILD_ABUSE_VICTIM');
 
-    const sinLlave = await groupsOf(medico).expect(200);
-    expect((sinLlave.body as { items: PriorityGroupBody[] }).items).toEqual([]);
+    const oculto = await groupsOf(sinLlave).expect(200);
+    expect((oculto.body as { items: PriorityGroupBody[] }).items).toEqual([]);
 
     const trail = await prisma.accessAudit.findMany({
       where: { resourceType: 'patient_priority_group', resourceId: absorbida },
