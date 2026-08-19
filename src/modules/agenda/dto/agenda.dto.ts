@@ -820,3 +820,187 @@ export type SchedulablePractitionersResponse = z.infer<
 export type AgendaServiceTypesResponse = z.infer<
   typeof agendaServiceTypesSchema
 >;
+
+// --- Lista de espera (E5: AG-060 a AG-067) ---------------------------------
+
+const WAITLIST_STATUS = z.enum([
+  'WAITING',
+  'CONTACTED',
+  'SCHEDULED',
+  'EXPIRED',
+  'CANCELLED',
+]);
+
+/** AG-064. Qué pasó en la llamada; los tres cierran el cupo de forma distinta. */
+const CONTACT_OUTCOME = z.enum(['NO_ANSWER', 'ACCEPTED', 'DECLINED']);
+
+/**
+ * AG-060. Inscribir a quien se quedó sin cupo.
+ *
+ * LA SEDE NO VA EN EL CUERPO: es el `:siteId` de la ruta, para que el guard
+ * compruebe el alcance antes de que corra ningún pipe (AG-071).
+ *
+ * EL RANGO ES OBLIGATORIO Y EL RESTO NO. Sin fecha máxima, AG-065 no se cumple
+ * nunca y la entrada compite por cada cupo de la sede para siempre; el
+ * profesional y el tipo de atención en cambio son lo único que AG-060 declara
+ * opcional, y omitirlos significa «cualquiera», no «ninguno».
+ */
+export const enrolInWaitlistSchema = z
+  .object({
+    patientId: z.uuid('Seleccione el paciente que espera'),
+    preferredFrom: clinicalDateField(
+      'Indique desde qué fecha le sirve la cita, en formato AAAA-MM-DD',
+    ),
+    preferredTo: clinicalDateField(
+      'Indique hasta qué fecha le sirve la cita, en formato AAAA-MM-DD',
+    ),
+    practitionerId: z.uuid('Seleccione un profesional de la lista').optional(),
+    /**
+     * ⚠️ EL TIPO DE ATENCIÓN NO SE ADMITE TODAVÍA, y no es un olvido.
+     *
+     * AG-060 lo declara opcional y la columna existe, pero
+     * `waitlist_entry.service_type_concept_id` apunta a `catalog_concept`
+     * mientras `agenda_entry.service_type_id` apunta a `service_type` desde C4
+     * (`configuration_specialties_and_durations`). Son tablas distintas: lo
+     * que se guardara aquí NUNCA podría coincidir con el tipo de la cita que
+     * libera un cupo, así que la mitad de AG-061 que compara los dos tipos no
+     * se puede cumplir y el campo sólo serviría para rechazar por clave
+     * foránea todo identificador legítimo.
+     *
+     * Admitirlo sería un campo que parece funcionar. Ver la nota
+     * `> **Falta esquema.**` junto a AG-060 en el SPEC: se corrige moviendo la
+     * columna a `service_type`, que es una migración y no una tanda de código.
+     */
+  })
+  .refine((value) => value.preferredTo >= value.preferredFrom, {
+    // Inclusivo por los dos lados: «del 3 al 3» es un rango legítimo — la
+    // paciente sólo puede ese día. Lo mismo que dice
+    // `waitlist_entry_preferred_range_valid`.
+    path: ['preferredTo'],
+    message: 'La fecha final no puede ser anterior a la inicial',
+  });
+/**
+ * ⚠️ NO HAY TOPE DE LONGITUD DEL RANGO, y quitarlo fue deliberado.
+ *
+ * La primera versión rechazaba más de un año, reutilizando `MAX_RANGE_DAYS`,
+ * que existe para acotar CONSULTAS. Aquí no acota una consulta: decide cuánto
+ * tiempo puede una persona seguir esperando un cupo, que es política de la
+ * clínica y no la decide un agente (D-040 no la pregunta y nadie la ha
+ * contestado). Lo que sí impide que una entrada espere para siempre es AG-065,
+ * que necesita una fecha máxima y ya la exige.
+ */
+export class EnrolInWaitlistDto extends createZodDto(enrolInWaitlistSchema) {}
+
+/** AG-064. */
+export const recordContactAttemptSchema = z.object({
+  outcome: CONTACT_OUTCOME,
+});
+export class RecordContactAttemptDto extends createZodDto(
+  recordContactAttemptSchema,
+) {}
+
+/**
+ * AG-063. La cita YA CREADA con la que se cierra la inscripción.
+ *
+ * La cita se reserva por la ruta de siempre y esto la enlaza: AG-063 dice qué
+ * le pasa a la ENTRADA, no cómo nace la cita, y reservarla aquí sería un
+ * segundo camino a través de AG-020 a AG-034.
+ */
+export const convertWaitlistEntrySchema = z.object({
+  appointmentId: z.uuid('Seleccione la cita creada para este paciente'),
+});
+export class ConvertWaitlistEntryDto extends createZodDto(
+  convertWaitlistEntrySchema,
+) {}
+
+/**
+ * Una inscripción, como la devuelve toda ruta de E5.
+ *
+ * NI NOMBRE NI MOTIVO (AG-072, AG-074, SC-006): el identificador de la ficha y
+ * nada más. La pantalla que necesite el nombre se lo pide al registro de
+ * pacientes, y esa petición es la que deja fila en la bitácora (AG-073).
+ *
+ * `contactAttempts` y `lastContactedAt` se DERIVAN del rastro de llamadas: las
+ * dos columnas que decían esto a medias se fueron con
+ * `agenda_waitlist_contact_trail`.
+ */
+export const waitlistEntrySchema = z.object({
+  id: z.uuid(),
+  siteId: z.uuid(),
+  patientId: z.uuid(),
+  practitionerId: z.uuid().nullable(),
+  serviceTypeId: z.uuid().nullable(),
+  preferredFrom: z.iso.date(),
+  preferredTo: z.iso.date(),
+  status: WAITLIST_STATUS,
+  /** AG-063. La cita en que se convirtió, o `null`. */
+  convertedEntryId: z.uuid().nullable(),
+  contactAttempts: z.number().int().nonnegative(),
+  lastContactedAt: z.iso.datetime().nullable(),
+  createdAt: z.iso.datetime(),
+});
+export class WaitlistEntryDto extends createZodDto(waitlistEntrySchema) {}
+
+/**
+ * Una candidata, con el número por el que se ordena.
+ *
+ * ⚠️ `priority` ES `1` o `2` Y NO DICE POR QUÉ (PA-042, AG-073). Se deriva en
+ * el instante de proponer a partir de los grupos vigentes hoy — la columna que
+ * lo congelaba se quitó — y el motivo tiene su propio permiso, su propia fila
+ * de bitácora y no viaja en ningún listado.
+ */
+export const waitlistCandidateSchema = z.object({
+  entryId: z.uuid(),
+  patientId: z.uuid(),
+  /** `1` prioritario por el artículo 35, `2` corriente. */
+  priority: z.union([z.literal(1), z.literal(2)]),
+  status: WAITLIST_STATUS,
+  /** AG-061. La antigüedad de inscripción, que es el segundo criterio. */
+  enrolledAt: z.iso.datetime(),
+  practitionerId: z.uuid().nullable(),
+  serviceTypeId: z.uuid().nullable(),
+  preferredFrom: z.iso.date(),
+  preferredTo: z.iso.date(),
+  contactAttempts: z.number().int().nonnegative(),
+  lastContactedAt: z.iso.datetime().nullable(),
+});
+export class WaitlistCandidateDto extends createZodDto(
+  waitlistCandidateSchema,
+) {}
+
+/** AG-062, AG-065, AG-067. La lista de espera abierta de una sede, en orden. */
+export const waitlistSchema = z.object({
+  siteId: z.uuid(),
+  items: z.array(waitlistCandidateSchema).readonly(),
+});
+export class WaitlistDto extends createZodDto(waitlistSchema) {}
+
+/**
+ * AG-061. A quién se le ofrece el cupo que acaba de liberarse.
+ *
+ * EL CUPO VIAJA EN LA RESPUESTA porque lo derivó el servidor de la entrada
+ * liberada, no el cliente: quien llama tiene que poder decirle al paciente qué
+ * hora se le está ofreciendo, y repetir lo que él mismo envió sería etiquetar
+ * la lista con un horario que nadie comprobó.
+ */
+export const waitlistCandidatesSchema = z.object({
+  siteId: z.uuid(),
+  releasedEntryId: z.uuid(),
+  slot: z.object({
+    date: z.iso.date(),
+    startsAt: z.iso.datetime(),
+    endsAt: z.iso.datetime(),
+    practitionerId: z.uuid(),
+    serviceTypeId: z.uuid().nullable(),
+  }),
+  items: z.array(waitlistCandidateSchema).readonly(),
+});
+export class WaitlistCandidatesDto extends createZodDto(
+  waitlistCandidatesSchema,
+) {}
+
+export type WaitlistEntryResponse = z.infer<typeof waitlistEntrySchema>;
+export type WaitlistResponse = z.infer<typeof waitlistSchema>;
+export type WaitlistCandidatesResponse = z.infer<
+  typeof waitlistCandidatesSchema
+>;

@@ -460,6 +460,133 @@ export class AgendaEntryNotFoundError extends NotFoundError {
   }
 }
 
+/* ─── Lista de espera (E5: AG-060 a AG-067) ─────────────────────────────── */
+
+/**
+ * AG-071. The waiting list entry does not exist, or belongs to another site.
+ *
+ * ONE MESSAGE FOR BOTH, for the same reason as `AgendaEntryNotFoundError`:
+ * answering «existe, en otra sede» would confirm who is waiting elsewhere, one
+ * guessed identifier at a time.
+ */
+export class WaitlistEntryNotFoundError extends NotFoundError {
+  readonly code = 'WAITLIST_ENTRY_NOT_FOUND';
+  override readonly userTitle =
+    'Esa inscripción en lista de espera no existe en esta sede. Actualice la lista';
+
+  constructor() {
+    super('Waitlist entry not found at this site');
+  }
+}
+
+/**
+ * AG-067. The entry is already `SCHEDULED`, `EXPIRED` or `CANCELLED`.
+ *
+ * 409 AND NOT 422: nothing sent is wrong — the entry moved on, and what to do
+ * about it is enrol the patient again, which is exactly what the message says.
+ * The entry NEVER reopens: it would return to the queue with its original
+ * seniority, ahead of everybody who enrolled afterwards, and
+ * `trg_waitlist_entry_closure_final` guarantees it in the database too.
+ */
+export class WaitlistEntryClosedError extends ConflictError {
+  readonly code = 'WAITLIST_ENTRY_CLOSED';
+  override readonly userTitle =
+    'Esa inscripción ya está cerrada y no vuelve a la lista. Si el paciente sigue esperando, inscríbalo de nuevo';
+
+  constructor() {
+    super('Waitlist entry is closed and cannot be acted upon');
+  }
+}
+
+/**
+ * AG-064, second half: «NO DEBERÁ reasignar automáticamente el cupo sin
+ * confirmación».
+ *
+ * IT IS THE DATABASE THAT REFUSES IT, not this class:
+ * `trg_waitlist_entry_conversion_consented` looks for an attempt with outcome
+ * `ACCEPTED` and aborts without one, so an import or a `psql` cannot get past
+ * it either. What this adds is the sentence a receptionist can act on, in
+ * place of a bare `CHECK_FAILED` naming a trigger.
+ *
+ * WHAT IT DOES NOT FORBID is the acceptance given at the counter: that is
+ * recorded like any other, as an attempt with outcome `ACCEPTED` and the
+ * person who took it as author. What it forbids is the acceptance nobody
+ * wrote down.
+ */
+export class WaitlistAcceptanceRequiredError extends BusinessRuleViolation {
+  readonly code = 'WAITLIST_ACCEPTANCE_REQUIRED';
+  override readonly userTitle =
+    'Registre primero el intento de contacto en que el paciente aceptó el cupo';
+
+  constructor() {
+    super('Waitlist entry has no recorded acceptance');
+  }
+}
+
+/**
+ * AG-063. The appointment being linked belongs to another chart.
+ *
+ * NO IDENTIFIER AND NO NAME IN THE MESSAGE (AG-074, SC-006): whoever is at the
+ * desk may have no access to the other appointment, and «la cita es de Juan
+ * Pérez» would tell them anyway.
+ *
+ * A block of agenda lands here too and needs no separate code: a block has no
+ * patient at all (`agenda_entry_patient_coherence`), so «is it the same
+ * chart?» answers no.
+ */
+export class WaitlistPatientMismatchError extends BusinessRuleViolation {
+  readonly code = 'WAITLIST_PATIENT_MISMATCH';
+  override readonly userTitle =
+    'La cita indicada no es de la persona que espera. Elija la cita creada para ese paciente';
+
+  constructor() {
+    super('Linked appointment belongs to a different patient');
+  }
+}
+
+/**
+ * AG-063. Another entry already claimed that appointment.
+ *
+ * THE RACE THIS FEATURE EXISTS TO ARBITRATE: two receptionists working the
+ * same freed slot hand it to two people, and without
+ * `waitlist_entry_one_per_converted_entry` the list would say both were served
+ * with one slot — and the one who was left out would appear as attended.
+ *
+ * 409 and not 422: what was sent was right when it was sent, and the answer is
+ * to look for another slot, which is what the message says.
+ */
+export class WaitlistSlotAlreadyClaimedError extends ConflictError {
+  readonly code = 'WAITLIST_SLOT_ALREADY_CLAIMED';
+  override readonly userTitle =
+    'Ese cupo ya se asignó a otra persona de la lista. Actualice la lista y proponga otro';
+
+  constructor() {
+    super('Appointment is already linked to another waitlist entry');
+  }
+}
+
+/**
+ * AG-061. The entry named as the freed slot still occupies the calendar.
+ *
+ * THE REQUIREMENT'S PRECONDITION, ENFORCED RATHER THAN ASSUMED: «CUANDO se
+ * libere un cupo QUE OCUPABA CALENDARIO». Proposing candidates for an
+ * appointment that is still standing would have reception phoning people about
+ * an hour that is not free, and the patient who holds it turning up to find it
+ * given away.
+ *
+ * 422 and not 409: what is wrong is which entry was named, and the caller can
+ * fix it by naming the one that was actually released.
+ */
+export class SlotNotReleasedError extends BusinessRuleViolation {
+  readonly code = 'SLOT_NOT_RELEASED';
+  override readonly userTitle =
+    'Ese horario sigue ocupado: la lista de espera se propone sobre un cupo ya liberado';
+
+  constructor() {
+    super('The named entry still occupies the calendar');
+  }
+}
+
 /* ─── Sobrecupo y bloqueos (E4: AG-035, AG-038, AG-039, AG-100 a AG-103) ─── */
 
 /**

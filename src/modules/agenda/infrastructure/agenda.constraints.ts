@@ -49,4 +49,41 @@ registerConstraintMeanings({
     field: 'patientId',
     message: 'Una cita necesita paciente y un bloqueo de agenda no lo admite',
   },
+
+  // ── Lista de espera (E5, `agenda_waitlist_contact_trail`) ────────────────
+  //
+  // AG-060. El rango preferido invertido. El DTO lo rechaza antes con un
+  // mensaje por campo; esto es para la escritura que no pasa por él —una
+  // importación, un `psql`—, igual que los rangos de `site_parameter`.
+  waitlist_entry_preferred_range_valid: {
+    code: 'INVALID_PREFERRED_RANGE',
+    field: 'preferredTo',
+    message: 'La fecha final del rango no puede ser anterior a la inicial',
+  },
+  // AG-063. `SCHEDULED` sin cita enlazada, o cita enlazada sin `SCHEDULED`:
+  // son el mismo hecho y el CHECK es bicondicional. Ningún camino de la
+  // aplicación lo alcanza —`convertWaitlistEntry` escribe las dos columnas en
+  // la misma sentencia—, y por eso está aquí: si algún día uno lo alcanza, el
+  // mensaje dice qué pasó en vez de nombrar un constraint.
+  waitlist_entry_conversion_complete: {
+    code: 'WAITLIST_CONVERSION_INCOMPLETE',
+    field: 'convertedEntryId',
+    message:
+      'Una inscripción atendida tiene que decir con qué cita se atendió: se marcan las dos cosas a la vez',
+  },
 });
+
+/**
+ * ⚠️ LOS DOS DISPARADORES DE E5 NO ESTÁN AQUÍ, Y NO ES UN OLVIDO.
+ *
+ * `trg_waitlist_entry_conversion_consented` y `trg_waitlist_entry_closure_final`
+ * lanzan desde PL/pgSQL, así que PostgreSQL no emite ninguna cláusula
+ * «violates check constraint "…"» y el nombre no viaja: llegan sólo por
+ * SQLSTATE (`23514`), que este registro no puede leer. Se distinguen por la
+ * frase que levanta cada uno, en `prisma-waitlist.repository.ts`, que es donde
+ * `patients` resolvió lo mismo para los tres rechazos de la fusión.
+ *
+ * Tampoco está `waitlist_entry_one_per_converted_entry`: Prisma resuelve la
+ * violación de unicidad ella misma (P2002) y devuelve la COLUMNA, no el nombre
+ * del índice, así que este registro nunca lo encontraría.
+ */

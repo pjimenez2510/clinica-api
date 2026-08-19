@@ -215,6 +215,14 @@ export const updateSiteParametersSchema = z
      * in the contract anyway so the screen can show what the policy IS, and so
      * the day a purge policy is added the field already exists.
      */
+    /**
+     * AG-066, AG-094. Cuántas llamadas agotan una entrada de lista de espera.
+     *
+     * Sin rango aquí, por lo mismo que los otros números: CF-065 tiene que
+     * responder `PARAM_OUT_OF_RANGE` nombrando el rango, y un fallo de Zod
+     * responde con el problema genérico de validación.
+     */
+    waitlistMaxContactAttempts: parameterSchema.optional(),
     cancelledRetention: z.enum(CANCELLED_RETENTION_POLICIES).optional(),
   })
   .refine((value) => Object.values(value).some((v) => v !== undefined), {
@@ -237,6 +245,8 @@ export const siteParametersSchema = z.object({
   overbookingEnabled: z.boolean(),
   /** AG-101, AG-094. The code, as stored — the screen shows what it means. */
   overbookingPermission: z.string(),
+  /** AG-066, AG-094. Viaja en la respuesta o la sede no puede verlo (D-040). */
+  waitlistMaxContactAttempts: z.number().int(),
   cancelledRetention: z.enum(CANCELLED_RETENTION_POLICIES),
 });
 export class SiteParametersDto extends createZodDto(siteParametersSchema) {}

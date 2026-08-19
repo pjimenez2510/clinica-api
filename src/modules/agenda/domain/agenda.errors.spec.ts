@@ -28,6 +28,12 @@ import {
   OverbookingReasonRequiredError,
   SelfAuthorisationDeniedError,
   SlotNotAlignedError,
+  SlotNotReleasedError,
+  WaitlistAcceptanceRequiredError,
+  WaitlistEntryClosedError,
+  WaitlistEntryNotFoundError,
+  WaitlistPatientMismatchError,
+  WaitlistSlotAlreadyClaimedError,
 } from './agenda.errors';
 import { parseClinicalDate } from '../../../shared/domain/clinic-time';
 
@@ -455,6 +461,87 @@ describe('the booking window errors (AG-031 to AG-033)', () => {
       'OVERBOOKING_NOT_AUTHORISED',
       'SELF_AUTHORISATION_DENIED',
       'BLOCK_OVERLAPS_APPOINTMENTS',
+    ]) {
+      expect(DOMAIN_ERROR_CODES).toContain(code);
+    }
+  });
+
+  /* ─── Lista de espera (E5: AG-060 a AG-067) ─────────────────────────────── */
+
+  it('AG-071 answers WAITLIST_ENTRY_NOT_FOUND without saying whether it exists elsewhere', () => {
+    const error = new WaitlistEntryNotFoundError();
+
+    expect(error.code).toBe('WAITLIST_ENTRY_NOT_FOUND');
+    expect(error).toBeInstanceOf(NotFoundError); // 404
+    expect(error.userTitle).toBe(
+      'Esa inscripción en lista de espera no existe en esta sede. Actualice la lista',
+    );
+    // Ni sede ni ficha en el texto: distinguir «existe en otra sede» de «no
+    // existe» confirmaría quién espera en sedes ajenas.
+    expect(error.userTitle).not.toMatch(/otra sede|paciente/i);
+  });
+
+  it('AG-067 answers WAITLIST_ENTRY_CLOSED as a conflict, and tells how to go on', () => {
+    const error = new WaitlistEntryClosedError();
+
+    expect(error.code).toBe('WAITLIST_ENTRY_CLOSED');
+    expect(error).toBeInstanceOf(ConflictError); // 409
+    expect(error.userTitle).toBe(
+      'Esa inscripción ya está cerrada y no vuelve a la lista. Si el paciente sigue esperando, inscríbalo de nuevo',
+    );
+  });
+
+  it('AG-064 answers WAITLIST_ACCEPTANCE_REQUIRED naming what has to be recorded first', () => {
+    const error = new WaitlistAcceptanceRequiredError();
+
+    expect(error.code).toBe('WAITLIST_ACCEPTANCE_REQUIRED');
+    expect(error).toBeInstanceOf(BusinessRuleViolation); // 422
+    expect(error.userTitle).toBe(
+      'Registre primero el intento de contacto en que el paciente aceptó el cupo',
+    );
+  });
+
+  it('AG-063 answers WAITLIST_PATIENT_MISMATCH without naming the other chart', () => {
+    const error = new WaitlistPatientMismatchError();
+
+    expect(error.code).toBe('WAITLIST_PATIENT_MISMATCH');
+    expect(error).toBeInstanceOf(BusinessRuleViolation); // 422
+    expect(error.userTitle).toBe(
+      'La cita indicada no es de la persona que espera. Elija la cita creada para ese paciente',
+    );
+    // AG-074, SC-006: quien está en el mostrador puede no tener acceso a esa
+    // otra cita, y el mensaje no se la enseña.
+    expect(error.message).not.toMatch(/[0-9a-f]{8}-/);
+  });
+
+  it('AG-063 answers WAITLIST_SLOT_ALREADY_CLAIMED as a conflict when another entry took the slot', () => {
+    const error = new WaitlistSlotAlreadyClaimedError();
+
+    expect(error.code).toBe('WAITLIST_SLOT_ALREADY_CLAIMED');
+    expect(error).toBeInstanceOf(ConflictError); // 409
+    expect(error.userTitle).toBe(
+      'Ese cupo ya se asignó a otra persona de la lista. Actualice la lista y proponga otro',
+    );
+  });
+
+  it('AG-061 answers SLOT_NOT_RELEASED when the named entry still occupies the calendar', () => {
+    const error = new SlotNotReleasedError();
+
+    expect(error.code).toBe('SLOT_NOT_RELEASED');
+    expect(error).toBeInstanceOf(BusinessRuleViolation); // 422
+    expect(error.userTitle).toBe(
+      'Ese horario sigue ocupado: la lista de espera se propone sobre un cupo ya liberado',
+    );
+  });
+
+  it('AG-060, AG-067 register the six E5 codes in the frozen public catalogue', () => {
+    for (const code of [
+      'WAITLIST_ENTRY_NOT_FOUND',
+      'WAITLIST_ENTRY_CLOSED',
+      'WAITLIST_ACCEPTANCE_REQUIRED',
+      'WAITLIST_PATIENT_MISMATCH',
+      'WAITLIST_SLOT_ALREADY_CLAIMED',
+      'SLOT_NOT_RELEASED',
     ]) {
       expect(DOMAIN_ERROR_CODES).toContain(code);
     }

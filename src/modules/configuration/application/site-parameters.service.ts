@@ -138,6 +138,8 @@ export class SiteParametersService {
         patch.overbookingEnabled ?? current.overbookingEnabled,
       overbookingPermission:
         patch.overbookingPermission ?? current.overbookingPermission,
+      waitlistMaxContactAttempts:
+        patch.waitlistMaxContactAttempts ?? current.waitlistMaxContactAttempts,
       cancelledRetention:
         patch.cancelledRetention ?? current.cancelledRetention,
     });

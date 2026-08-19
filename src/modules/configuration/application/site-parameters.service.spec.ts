@@ -42,6 +42,7 @@ const CURRENT: SiteParameterView = {
   // E4, D-005: el sobrecupo nace habilitado y lo autoriza `agenda:overbook`.
   overbookingEnabled: true,
   overbookingPermission: 'agenda:overbook',
+  waitlistMaxContactAttempts: 3,
   cancelledRetention: 'NEVER',
 };
 
@@ -292,6 +293,7 @@ describe('los parámetros de operación de una sede', () => {
       allowPastBooking: false,
       overbookingEnabled: true,
       overbookingPermission: 'agenda:overbook',
+      waitlistMaxContactAttempts: 3,
       cancelledRetention: 'NEVER',
     });
     expect(recorded[0]?.after).toMatchObject({ overbookingCap: 4 });

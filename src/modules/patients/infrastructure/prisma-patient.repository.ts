@@ -55,9 +55,9 @@ import type {
   UndoMergeOutcome,
 } from '../domain/patient.repository';
 import { rdacaaMissingFields } from '../domain/rdacaa-completeness';
+import { priorityLevelOf } from '../../../shared/domain/priority-level';
 import {
   clinicalDateToday,
-  priorityLevelOf,
   type PriorityGroup,
   type PriorityGroupOrigin,
 } from '../domain/priority-groups';

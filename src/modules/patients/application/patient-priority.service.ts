@@ -17,11 +17,11 @@ import {
   type PatientRepository,
   type PriorityGroupRecord,
 } from '../domain/patient.repository';
+import { isPeriodInForce } from '../../../shared/domain/priority-level';
 import {
   assertPriorityPeriodOrder,
   assertRecordablePriorityGroup,
   clinicalDateToday,
-  isPeriodInForce,
   isRestrictedPriorityGroup,
   type PriorityGroupOrigin,
 } from '../domain/priority-groups';

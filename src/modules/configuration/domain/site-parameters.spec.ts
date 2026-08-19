@@ -58,6 +58,7 @@ describe('los parámetros de operación de una sede', () => {
       // ADMIN traen de fábrica.
       overbookingEnabled: true,
       overbookingPermission: 'agenda:overbook',
+      waitlistMaxContactAttempts: 3,
       cancelledRetention: 'NEVER',
     });
   });
@@ -159,6 +160,7 @@ describe('los parámetros de operación de una sede', () => {
         allowPastBooking: false,
         overbookingEnabled: true,
         overbookingPermission: 'agenda:overbook',
+        waitlistMaxContactAttempts: 3,
         cancelledRetention: 'NEVER',
       });
       expect.unreachable('debía rechazarse');
@@ -180,6 +182,7 @@ describe('los parámetros de operación de una sede', () => {
         allowPastBooking: false,
         overbookingEnabled: true,
         overbookingPermission: 'agenda:overbook',
+        waitlistMaxContactAttempts: 3,
         cancelledRetention: 'NEVER',
       });
     }).not.toThrow();
@@ -236,6 +239,11 @@ describe('los parámetros de operación de una sede', () => {
       'maxLeadDays',
       'overbookingCap',
       'slotAtomMinutes',
+      // AG-066, AG-094 (E5): cuántas llamadas agotan una entrada de lista de
+      // espera. Pertenece a la lista por lo mismo que los anteriores —nada
+      // deja de garantizarse por configurarlo—, y el número dentro del rango
+      // es decisión de la clínica (D-040), no del código.
+      'waitlistMaxContactAttempts',
     ]);
   });
 

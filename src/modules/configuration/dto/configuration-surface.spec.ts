@@ -99,6 +99,11 @@ describe('la superficie de configuración', () => {
       // revés: es lo que hace que AG-012 y AG-104 no puedan fallar por
       // configuración, porque toda duración se guarda como múltiplo suyo.
       'slotAtomMinutes',
+      // AG-066, AG-094 (E5): el octavo parámetro de AG-094, que sólo pudo
+      // entrar cuando se abrió la lista de espera. Configurable por la misma
+      // razón que los demás, y con una de más: D-040 (a) todavía no está
+      // contestada, y la respuesta tiene que poder cambiarse sin desplegar.
+      'waitlistMaxContactAttempts',
     ]);
   });
 

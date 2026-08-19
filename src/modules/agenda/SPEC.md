@@ -139,9 +139,67 @@ AG-101, AG-103, AG-114.
 ### E5 — Lista de espera _(P4)_
 
 **Por qué es P4:** aporta ingreso y equidad, pero nada se rompe sin ella.
-**Depende del módulo de paciente**, no solo de agenda: AG-062 necesita los campos
-de grupo prioritario que la ficha aún no tiene (D-003). No se cierra sin ellos.
-**Cubre:** AG-060 a AG-067.
+**Dependía del módulo de paciente**, no solo de agenda: AG-062 necesitaba los
+campos de grupo prioritario que la ficha no tenía (D-003), y los tiene desde el
+16-08-2026. **Cubre:** AG-060 a AG-067.
+
+> **Cerrada el 19-08-2026.** Esquema en `agenda_waitlist_contact_trail`; código
+> en `waitlist.ts`, `waitlist.repository.ts`, `waitlist.service.ts`,
+> `prisma-waitlist.repository.ts` y `waitlist.controller.ts`.
+>
+> **La prioridad se deriva al proponer, y la deriva `shared`.** AG-061 ordena
+> por un número que ninguna columna guarda: `waitlist_entry.priority` se quitó
+> en la migración porque congelarlo reintroduce el defecto que PA-036 evita —la
+> mujer que ya dio a luz seguiría siendo prioridad 1 para siempre—, y aquí es
+> peor que en la ficha porque el dato caducado no se muestra: ordena una cola.
+> Quien sabía derivarlo era `patients`, y **ningún módulo importa de otro**
+> (`pnpm arch:check` lo hace fallar). Así que la parte MÍNIMA se movió a
+> `shared/domain/priority-level.ts` —la derivación del nivel a partir de la
+> fecha de nacimiento y de los periodos vigentes— por el mismo camino que
+> `clinic-time.ts`, el value object `Ruc` y `master-data.errors.ts`. En
+> `patients` se queda lo suyo: el catálogo de los diez grupos, los orígenes, el
+> subconjunto registrable y el restringido. **La agenda nunca ve el motivo**:
+> `priorityLevelOf` recibe PERIODOS y ningún código de grupo, así que la
+> consulta que alimenta la lista no lo selecciona y PA-042 deja de ser una
+> regla que alguien tiene que recordar.
+>
+> **La base cuenta y el dominio decide**, como en E6. El adaptador trae los
+> hechos crudos —las dos fechas, lo que la entrada fija, cuántas llamadas
+> lleva, la fecha de nacimiento y los periodos— y `waitlist.ts` decide quién
+> encaja, quién caducó y quién va primero. Los periodos se resuelven por el
+> alcance de ficha (PA-055): un embarazo registrado en la ficha absorbida sigue
+> priorizando a la superviviente.
+>
+> **AG-061 se dispara pidiéndolo sobre la entrada liberada, no solo.**
+> «Proponer» necesita a quién proponerle, y este sistema no tiene canal al que
+> empujar —el portal es Fase 3 y los recordatorios Fase 4—: un efecto dentro de
+> la anulación calcularía una lista y la tiraría al suelo. Y un cupo se libera
+> de cuatro formas —anular (AG-041), inasistencia (AG-042), la mitad original
+> de una reprogramación (AG-050), retirar un bloqueo (AG-114)—, y las cuatro
+> sellan `released_at` sobre una fila que ocupaba calendario. Nombrando ESA
+> FILA, una sola ruta sirve a las cuatro, presentes y futuras, en vez de cuatro
+> copias de «qué es un cupo liberado». El servidor deriva el día, el
+> profesional y el tipo de la fila liberada, así que nadie puede preguntar por
+> un intervalo que nunca se liberó, y una entrada que sigue en pie se rechaza
+> con `SLOT_NOT_RELEASED`: la precondición del requisito se hace cumplir en vez
+> de suponerse.
+>
+> **AG-065 y AG-066 son actos, y ocurren donde no se pueden olvidar.** Cuando
+> una fecha pasa no OCURRE nada —el reloj avanza y a la base no se le dice—,
+> así que ninguna restricción puede marcar la fila. El barrido corre a la
+> cabeza de todo caso de uso que podría actuar sobre una entrada caducada
+> —proponer, listar, llamar— y en la misma transacción. **No es un proceso
+> programado** porque ésa es la respuesta que depende de que alguien se
+> acuerde: de configurarlo, de mantenerlo vivo, de notar la noche que no corrió
+> —y una corrida perdida es una entrada cuya quincena terminó en julio
+> compitiendo por los cupos de octubre con su antigüedad original, sin que nada
+> se ponga rojo. Resolverlo donde se lee no se puede olvidar: la única forma de
+> observar la diferencia es hacer la lectura que la corrige. AG-066 es la otra
+> mitad y sí es un EVENTO —el intento que alcanza el tope—, así que se aplica
+> en el acto, en la misma transacción que el intento.
+>
+> **Lo que quedó fuera, y por qué.** El tipo de atención de la inscripción: ver
+> la nota de esquema junto a AG-060.
 
 ### E6 — Métrica de inasistencia _(P5)_
 
@@ -882,6 +940,24 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
 - **AG-060** — CUANDO no haya cupo disponible en el rango solicitado, el sistema
   DEBERÁ permitir inscribir al paciente en lista de espera con sede, rango de
   fechas preferido y, opcionalmente, profesional y tipo de servicio.
+  > **Falta esquema.** El TIPO DE SERVICIO no se admite todavía, y por eso la
+  > mitad de AG-061 que compara los dos tipos no se puede comprobar de extremo a
+  > extremo. `waitlist_entry.service_type_concept_id` apunta a `catalog_concept`
+  > desde `clinical_core`, mientras `agenda_entry.service_type_id` pasó a
+  > apuntar a `service_type` con C4
+  > (`20260812222827_configuration_specialties_and_durations`, SP-028). Son dos
+  > tablas distintas: lo que se guardara en la inscripción NUNCA podría coincidir
+  > con el tipo de la cita que libera el cupo, y admitir el campo sería ofrecer
+  > uno que parece funcionar y sólo puede rechazar por clave foránea todo
+  > identificador legítimo. La regla de compatibilidad está escrita y probada en
+  > `waitlist.ts`; lo que falta es la columna. **Se corrige moviendo
+  > `waitlist_entry` a `service_type_id` con su clave foránea a `service_type`**,
+  > que es una migración —la tabla está vacía— y no una tanda de código.
+  >
+  > La ANTELACIÓN de la inscripción tampoco tiene tope: cuánto tiempo puede
+  > alguien seguir esperando es política de la clínica, no del código. Lo que
+  > impide que una entrada espere para siempre es AG-065, que exige fecha máxima
+  > y la base ya la hace obligatoria.
 - **AG-061** — CUANDO se libere un cupo que ocupaba calendario, el sistema
   DEBERÁ proponer los candidatos de la lista de espera compatibles con ese cupo,
   ordenados por prioridad ascendente y, a igual prioridad, por antigüedad de
@@ -1174,12 +1250,33 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `NO_SHOW_BEFORE_START`         | 422    | AG-043    |
 | `CANCELLATION_REASON_REQUIRED` | 422    | AG-044    |
 | `AGENDA_ENTRY_NOT_FOUND`       | 404    | AG-071    |
+| `WAITLIST_ENTRY_NOT_FOUND`     | 404    | AG-071    |
+| `WAITLIST_ENTRY_CLOSED`        | 409    | AG-067    |
+| `WAITLIST_ACCEPTANCE_REQUIRED` | 422    | AG-064    |
+| `WAITLIST_PATIENT_MISMATCH`    | 422    | AG-063    |
+| `WAITLIST_SLOT_ALREADY_CLAIMED`| 409    | AG-063    |
+| `SLOT_NOT_RELEASED`            | 422    | AG-061    |
 
 > `BOOKING_RETRY_EXHAUSTED` lo fijó la implementación de E1: AG-026 nombra el
 > estado (503) y la cabecera (`Retry-After`) pero no el código, y sin uno el
 > cliente no puede distinguir «reintente» de cualquier otro 503. Sale de la
 > categoría reintentable, así que la respuesta lleva `Retry-After`; **no** es un
 > conflicto de cupo, que es justo lo que el requisito prohíbe presentar.
+
+> **Los seis de E5 los fijó la implementación**, por la misma regla que
+> `BOOKING_RETRY_EXHAUSTED`: AG-060 a AG-067 mandan los rechazos y no nombran
+> códigos, y sin uno el cliente no distingue «la inscripción ya está cerrada»
+> de cualquier otro 409. Cuatro de ellos traducen lo que rechaza la BASE —los
+> dos disparadores de la migración y el índice único parcial—, y esa traducción
+> vive en `prisma-waitlist.repository.ts` y no en `agenda.constraints.ts`
+> porque **los disparadores llegan por SQLSTATE y sin nombre de constraint**:
+> PL/pgSQL no emite la cláusula «violates check constraint "…"» que
+> `database-problem.ts` lee, así que los tres rechazos distintos llegarían como
+> un `CHECK_FAILED` genérico. Se distinguen por la frase que levanta cada uno,
+> exactamente como `patients` resolvió los tres rechazos de
+> `trg_patient_merge_not_chained`. `waitlist_entry_one_per_converted_entry`
+> tampoco puede ir en el registro: Prisma resuelve la violación de unicidad
+> ella misma (P2002) y devuelve la COLUMNA, no el nombre del índice.
 
 > `NO_SHOW_BEFORE_START` y `AGENDA_ENTRY_NOT_FOUND` los fijó la implementación
 > de E2, por la misma regla que `BOOKING_RETRY_EXHAUSTED`: AG-043 manda el
@@ -1213,11 +1310,58 @@ Estos **no** entran, porque los produce el mapeo de errores de PostgreSQL en
 | `PATIENT_DOUBLE_BOOKED`    | 409    | `agenda_entry_no_patient_overlap`        | AG-030    |
 | `INVALID_STATUS_FOR_KIND`  | 422    | `agenda_entry_kind_status_coherence`     | AG-046    |
 | `BOOKING_CHANNEL_REQUIRED` | 422    | `agenda_entry_booking_channel_coherence` | AG-029    |
+| `INVALID_PREFERRED_RANGE`  | 422    | `waitlist_entry_preferred_range_valid`   | AG-060    |
+| `WAITLIST_CONVERSION_INCOMPLETE` | 422 | `waitlist_entry_conversion_complete`  | AG-063    |
 
 `PATIENT_DOUBLE_BOOKED` estaba arriba hasta que AG-030 pasó a ser un `EXCLUDE`.
 Se mueve por la regla de esta misma sección: un código que nace de un constraint
 no lo declara el catálogo de dominio, o habría dos sitios donde cambiarlo y solo
 uno se acordaría.
+
+## Rutas
+
+Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
+(AG-070, AG-071); `param:siteId` es el único que el guard puede comprobar por sí
+solo, porque los guards corren antes que los pipes y en ese momento el cuerpo
+aún no está validado.
+
+| Método   | Ruta                                                          | Permiso          | Alcance         | Requisitos                       |
+| -------- | ------------------------------------------------------------- | ---------------- | --------------- | -------------------------------- |
+| `GET`    | `/agenda/sites`                                                | `agenda:read`    | `query`         | AG-107                           |
+| `GET`    | `/agenda/metrics/no-show`                                      | `agenda:read`    | `query`         | AG-080, AG-081                   |
+| `GET`    | `/agenda/sites/{siteId}/practitioners`                         | `agenda:read`    | `param:siteId`  | AG-108, AG-111                   |
+| `GET`    | `/agenda/sites/{siteId}/specialties/{specialtyId}/service-types`| `agenda:read`   | `param:siteId`  | AG-112                           |
+| `GET`    | `/agenda/sites/{siteId}/entries`                               | `agenda:read`    | `param:siteId`  | AG-017, AG-018                   |
+| `GET`    | `/agenda/sites/{siteId}/availability`                          | `agenda:read`    | `param:siteId`  | AG-003, AG-010 a AG-016, AG-093  |
+| `GET`    | `/agenda/sites/{siteId}/duration`                              | `agenda:read`    | `param:siteId`  | SP-023, SP-028                   |
+| `POST`   | `/agenda/sites/{siteId}/entries`                               | `agenda:write`   | `param:siteId`  | AG-020 a AG-035, AG-110          |
+| `POST`   | `/agenda/sites/{siteId}/entries/{entryId}/status`               | `agenda:write`   | `param:siteId`  | AG-040 a AG-046                  |
+| `POST`   | `/agenda/sites/{siteId}/entries/{entryId}/reschedule`           | `agenda:write`   | `param:siteId`  | AG-050 a AG-052, AG-115          |
+| `POST`   | `/agenda/sites/{siteId}/blocks`                                | `agenda:write`   | `param:siteId`  | AG-037, AG-038                   |
+| `DELETE` | `/agenda/sites/{siteId}/blocks/{entryId}`                       | `agenda:write`   | `param:siteId`  | AG-114                           |
+| `GET`    | `/agenda/sites/{siteId}/waitlist`                              | `agenda:read`    | `param:siteId`  | AG-062, AG-065 a AG-067          |
+| `POST`   | `/agenda/sites/{siteId}/waitlist`                              | `agenda:write`   | `param:siteId`  | AG-060                           |
+| `GET`    | `/agenda/sites/{siteId}/waitlist/candidates/{releasedEntryId}`  | `agenda:read`    | `param:siteId`  | AG-061, AG-062, AG-065 a AG-067  |
+| `POST`   | `/agenda/sites/{siteId}/waitlist/{entryId}/contact-attempts`    | `agenda:write`   | `param:siteId`  | AG-064, AG-066                   |
+| `POST`   | `/agenda/sites/{siteId}/waitlist/{entryId}/conversion`          | `agenda:write`   | `param:siteId`  | AG-063, AG-064                   |
+
+**La lista de espera usa `agenda:read` / `agenda:write` y no un permiso propio.**
+Inscribir a quien se quedó sin cupo es el mismo acto que reservarlo, lo hace la
+misma persona en la misma conversación, e inventar `waitlist:write` sería un
+permiso que ningún rol lleva y una pantalla a la que nadie llega — el mismo
+argumento que ya cerró `POST blocks`.
+
+**No hay ruta que BORRE una inscripción ni que la REABRA**, y esa ausencia es
+AG-067 en la tabla de rutas: una entrada cerrada volvería a la cola con su
+antigüedad original, por delante de todos los que se inscribieron después.
+`trg_waitlist_entry_closure_final` lo garantiza también en la base. Quien sigue
+esperando se inscribe de nuevo, y la entrada nueva cuenta desde hoy.
+
+**`POST …/conversion` enlaza una cita YA RESERVADA por la ruta de siempre.**
+AG-063 dice qué le pasa a la ENTRADA y no cómo nace la cita; reservarla aquí
+sería un segundo camino a través de AG-020 a AG-034 —la ventana de la sede, el
+encaje en la rejilla, la ficha fusionada, los tres `EXCLUDE`— que ya tiene
+exactamente una implementación.
 
 ## Trazabilidad
 
@@ -1243,6 +1387,8 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | AG-114                                          | Unitario de dominio + integración contra PostgreSQL real: liberar libera de verdad cuando el mismo intervalo se vuelve a reservar, y la fila de historial existe |
 | AG-001, AG-015, AG-017, AG-100                  | Unitario con huso alterado, como en `encounter_freeze_age` |
 | AG-018, AG-046, AG-066, AG-067                  | Integración contra PostgreSQL real                         |
+| AG-060, AG-063, AG-064, AG-065                  | Integración contra PostgreSQL real + contrato HTTP: el rastro es append-only y los dos disparadores llegan por SQLSTATE, así que sólo la base demuestra que existen y sólo el contrato demuestra que se traducen |
+| AG-061, AG-062                                  | Unitario de dominio (el orden y la compatibilidad) + integración: la prioridad se deriva de los periodos ALMACENADOS, incluidos los de las fichas absorbidas (PA-055), y eso no lo demuestra ningún doble |
 | AG-012, AG-104, AG-105                          | Unitario de dominio + contrato HTTP                        |
 | AG-094 (turno de la agenda, D-021)              | Unitario de dominio + integración: la rejilla derivada es la de la sede |
 | AG-106                                          | Unitario de dominio + integración con dos reglas solapadas |

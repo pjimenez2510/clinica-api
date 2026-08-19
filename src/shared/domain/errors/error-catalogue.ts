@@ -83,6 +83,39 @@ export const DOMAIN_ERROR_CODES = [
   'OVERBOOKING_NOT_AUTHORISED',
   'OVERBOOKING_REASON_REQUIRED',
   'SELF_AUTHORISATION_DENIED',
+  // Agenda, E5 (AG-060 a AG-067): la lista de espera, que reparte un recurso
+  // escaso —el cupo que otro paciente acaba de liberar— y por eso tiene que
+  // poder explicar a quién se le ofreció y por qué.
+  //
+  //   * `WAITLIST_ENTRY_NOT_FOUND` (404) — no existe, o es de otra sede. Un
+  //     solo mensaje para las dos, como `AGENDA_ENTRY_NOT_FOUND`: separarlas
+  //     confirmaría quién espera en sedes ajenas a quien prueba identificadores.
+  //   * `WAITLIST_ENTRY_CLOSED` (409) — ya está `SCHEDULED`, `EXPIRED` o
+  //     `CANCELLED` (AG-067). Es 409 y no 422 porque lo enviado es correcto y
+  //     lo que lo impide es el estado; la salida es inscribir de nuevo, y la
+  //     entrada nueva empieza a contar antigüedad desde hoy.
+  //   * `WAITLIST_ACCEPTANCE_REQUIRED` (422) — se intentó convertir sin que
+  //     conste una aceptación. Es la segunda mitad de AG-064 y la garantiza
+  //     `trg_waitlist_entry_conversion_consented`: el código sólo convierte su
+  //     `CHECK_FAILED` en una frase sobre la que se puede actuar.
+  //   * `WAITLIST_PATIENT_MISMATCH` (422) — la cita enlazada es de otra ficha.
+  //     Sin identificador ni nombre en el mensaje (AG-074): quien está en el
+  //     mostrador puede no tener acceso a esa otra cita.
+  //   * `SLOT_NOT_RELEASED` (422) — se pidieron candidatos sobre una entrada
+  //     que sigue ocupando calendario. Es la precondición literal de AG-061,
+  //     hecha cumplir en vez de supuesta.
+  //   * `WAITLIST_SLOT_ALREADY_CLAIMED` (409) — otra entrada se llevó esa cita
+  //     primero. Es la carrera que E5 existe para arbitrar: dos recepcionistas
+  //     repartiendo el mismo cupo liberado. Lo impide
+  //     `waitlist_entry_one_per_converted_entry`, un índice único PARCIAL que
+  //     Prisma resuelve él mismo (P2002) devolviendo la COLUMNA y no el nombre
+  //     del índice, así que el adaptador lo traduce por ahí.
+  'SLOT_NOT_RELEASED',
+  'WAITLIST_ACCEPTANCE_REQUIRED',
+  'WAITLIST_ENTRY_CLOSED',
+  'WAITLIST_ENTRY_NOT_FOUND',
+  'WAITLIST_PATIENT_MISMATCH',
+  'WAITLIST_SLOT_ALREADY_CLAIMED',
   'INVALID_CEDULA',
   'INVALID_CREDENTIALS',
   'INVALID_MFA_CODE',

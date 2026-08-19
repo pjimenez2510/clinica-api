@@ -5,7 +5,7 @@ import {
   clinicalDaySpan,
   parseClinicalDate,
 } from '../../../shared/domain/clinic-time';
-import { ageInYearsOn } from './priority-groups';
+import { ageInYearsOn } from '../../../shared/domain/priority-level';
 
 /**
  * The age of a patient, DERIVED and never stored (PA-030, REQ-027).

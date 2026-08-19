@@ -7,8 +7,12 @@ import { AgendaController } from './agenda.controller';
 import { AgendaMetricsController } from './agenda-metrics.controller';
 import { AgendaReferenceController } from './agenda-reference.controller';
 import { AgendaService } from './application/agenda.service';
+import { WaitlistService } from './application/waitlist.service';
 import { AGENDA_REPOSITORY } from './domain/agenda.repository';
+import { WAITLIST_REPOSITORY } from './domain/waitlist.repository';
 import { PrismaAgendaRepository } from './infrastructure/prisma-agenda.repository';
+import { PrismaWaitlistRepository } from './infrastructure/prisma-waitlist.repository';
+import { WaitlistController } from './waitlist.controller';
 
 /**
  * The agenda.
@@ -32,11 +36,18 @@ import { PrismaAgendaRepository } from './infrastructure/prisma-agenda.repositor
     AgendaController,
     AgendaMetricsController,
     AgendaReferenceController,
+    WaitlistController,
   ],
   providers: [
     AgendaService,
+    // E5. A service of its own because the waiting list is another aggregate
+    // (ADR-008 §2): it shares no method with booking and changes for different
+    // reasons. It reads the agenda's port for the two facts that live there —
+    // which interval came free, and whose chart an appointment is.
+    WaitlistService,
     CurrentUserService,
     { provide: AGENDA_REPOSITORY, useClass: PrismaAgendaRepository },
+    { provide: WAITLIST_REPOSITORY, useClass: PrismaWaitlistRepository },
   ],
 })
 export class AgendaModule {}

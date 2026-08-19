@@ -82,6 +82,17 @@ export interface SiteParameters {
    * nothing saying why.
    */
   overbookingPermission: string;
+  /**
+   * AG-066, AG-094. How many contact attempts exhaust a waiting list entry at
+   * this site.
+   *
+   * ⚠️ THE NUMBER IS THE CLINIC'S AND NOT OURS. D-001 fixed the starting
+   * values of the other parameters and did not include this one; D-040 (a) is
+   * open with a recommendation of 3, which is what the column defaults to.
+   * Being wrong about it costs a screen and not a migration, which is the whole
+   * point of it being a site parameter (REQ-145).
+   */
+  waitlistMaxContactAttempts: number;
   cancelledRetention: CancelledRetention;
 }
 
@@ -148,6 +159,21 @@ export const PARAMETER_RANGES = {
     describe: (min, max) =>
       `El turno de la agenda va de ${min} a ${max} minutos, de 5 en 5`,
   },
+  /**
+   * AG-066, AG-094. Mirrors `site_parameter_waitlist_max_contact_attempts_range`.
+   *
+   * THE ENDS ARE OURS AND THE VALUE IS NOT. At 0 the entry would expire before
+   * the first call and the list would phone nobody; above 10 «agotar los
+   * intentos» stops closing anything and the slot is held for days waiting on
+   * somebody who does not answer. Which number inside that band is a decision
+   * of the clinic (D-040).
+   */
+  waitlistMaxContactAttempts: {
+    min: 1,
+    max: 10,
+    describe: (min, max) =>
+      `Los intentos de contacto de la lista de espera van de ${min} a ${max}`,
+  },
 } as const satisfies Record<string, Range>;
 
 export type RangedParameter = keyof typeof PARAMETER_RANGES;
@@ -179,6 +205,8 @@ export const DEFAULT_SITE_PARAMETERS: SiteParameters = {
   overbookingEnabled: true,
   /** D-005: the permission MEDICO and ADMIN carry out of the box. */
   overbookingPermission: 'agenda:overbook',
+  /** D-040 (a), recommendation pending the clinic's answer. The column default. */
+  waitlistMaxContactAttempts: 3,
   cancelledRetention: 'NEVER',
 };
 

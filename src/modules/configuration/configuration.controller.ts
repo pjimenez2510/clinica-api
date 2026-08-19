@@ -255,6 +255,9 @@ export class ConfigurationController {
         // accidente.
         overbookingEnabled: dto.overbookingEnabled,
         overbookingPermission: dto.overbookingPermission,
+        // AG-066, AG-094 (E5): el octavo parámetro que AG-094 enumera y que
+        // `site_parameter` no tuvo hasta que se abrió la lista de espera.
+        waitlistMaxContactAttempts: dto.waitlistMaxContactAttempts,
         cancelledRetention: dto.cancelledRetention,
       },
       this.requester(req),

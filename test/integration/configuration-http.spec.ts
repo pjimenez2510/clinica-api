@@ -757,6 +757,11 @@ describe('la configuración por HTTP', () => {
         // excepción, y lo que la limita es `overbookingCap`.
         overbookingEnabled: true,
         overbookingPermission: 'agenda:overbook',
+        // AG-066, AG-094 (E5): el octavo parámetro, que entró con la lista de
+        // espera. Tres es la recomendación de D-040 (a) hasta que la clínica
+        // conteste, y es el defecto de la columna: cambiarlo cuesta una
+        // pantalla y no una migración.
+        waitlistMaxContactAttempts: 3,
         cancelledRetention: 'NEVER',
       });
     });
@@ -1197,6 +1202,7 @@ describe('la configuración por HTTP', () => {
         allowPastBooking: false,
         overbookingEnabled: true,
         overbookingPermission: 'agenda:overbook',
+        waitlistMaxContactAttempts: 3,
         cancelledRetention: 'NEVER',
       };
 

@@ -2,8 +2,12 @@ import {
   CLINIC_TIME_ZONE,
   type ClinicalDate,
   clinicalDateOf,
-  parseClinicalDate,
 } from '../../../shared/domain/clinic-time';
+import {
+  type PriorityGroupPeriod,
+  agePriorityBracketsOn,
+  isPeriodInForce,
+} from '../../../shared/domain/priority-level';
 import {
   PriorityGroupEvidenceRequiredError,
   PriorityGroupNotRecordableError,
@@ -131,6 +135,17 @@ const withEvidence = (
 export const RECORDABLE_PRIORITY_GROUPS: readonly PriorityGroup[] =
   withEvidence(['ASSESSMENT', 'STATE']);
 
+/**
+ * The two the birth date settles on its own.
+ *
+ * ⚠️ THE COMPILER IS THE LINK WITH `shared`, not a comment. The arithmetic
+ * that decides them lives in `shared/domain/priority-level.ts` — `agenda`
+ * needs the same answer for AG-061 and no module may import another — and
+ * `agePriorityBracketsOn` returns two strings that HAVE to be two of the ten:
+ * `priorityGroupsInForce` below would stop compiling the day either side
+ * renamed one. This list stays derived from the catalogue's own
+ * `evidence: 'AGE'` marks, and a spec asserts the two agree.
+ */
 export const AGE_DERIVED_PRIORITY_GROUPS: readonly PriorityGroup[] =
   withEvidence(['AGE']);
 
@@ -178,16 +193,6 @@ export const PRIORITY_GROUP_ORIGINS: readonly PriorityGroupOrigin[] = [
   'ACCREDITED',
 ];
 
-/**
- * Age thresholds, IN ONE PLACE (PA-035).
- *
- * 65 completed years — article 36 of the Constitution. Under 18 — Código de la
- * Niñez y Adolescencia. They live here, and only here, so that correcting one
- * is a single line the day a review finds another in force.
- */
-export const OLDER_ADULT_MIN_AGE_YEARS = 65;
-export const ADULTHOOD_MIN_AGE_YEARS = 18;
-
 /** Today in Ecuador. The only place this file gets near a clock. */
 export function clinicalDateToday(
   now: Date = new Date(),
@@ -196,89 +201,9 @@ export function clinicalDateToday(
   return clinicalDateOf(now, timeZone);
 }
 
-/**
- * Completed years between two calendar dates.
- *
- * ON THE CALENDAR, never by dividing elapsed milliseconds: that is off by a
- * day around leap years and around the birthday itself, and "off by a day" on
- * a 64-year-old is a different answer to whether they are a priority patient.
- */
-export function ageInYearsOn(
-  birthDate: ClinicalDate,
-  on: ClinicalDate,
-): number {
-  const [birthYear, birthMonth, birthDay] = splitDate(birthDate);
-  const [year, month, day] = splitDate(on);
-
-  const hadBirthday =
-    month > birthMonth || (month === birthMonth && day >= birthDay);
-
-  return Math.max(0, year - birthYear - (hadBirthday ? 0 : 1));
-}
-
-/** A period as it is stored: two calendar dates, the end optional. */
-export interface PriorityGroupPeriod {
-  startsOn: ClinicalDate;
-  /** `null` means still open. A pregnancy never has it null (PA-036). */
-  endsOn: ClinicalDate | null;
-}
-
-/**
- * Whether a recorded period counts on a given day.
- *
- * ═══════════════════════════════════════════════════════════════════════════
- * RESOLVED WHEN READ. NO PROCESS MARKS ROWS AS EXPIRED.
- * ═══════════════════════════════════════════════════════════════════════════
- *
- * That is what makes PA-036 true: the pregnancy of somebody who gave birth in
- * March stops ordering the waiting list in April WITHOUT anyone touching the
- * row. A nightly job that flipped a flag would be one missed run away from
- * prioritising the wrong person, and it would also destroy the answer to «¿por
- * qué tuvo prioridad en marzo?», which is the same reason closing a state does
- * not delete its row.
- *
- * BOTH ENDS INCLUSIVE. The last day of the period still counts: "hasta el 15"
- * means the 15th is covered, and PA-036 says a group stops counting while the
- * date is IN THE PAST.
- */
-export function isPeriodInForce(
-  period: PriorityGroupPeriod,
-  on: ClinicalDate,
-): boolean {
-  if (period.startsOn > on) return false;
-  return period.endsOn === null || period.endsOn >= on;
-}
-
 /** A recorded row, reduced to what the order depends on. */
 export interface RecordedPriorityGroup extends PriorityGroupPeriod {
   group: PriorityGroup;
-}
-
-/**
- * The groups the birth date alone puts somebody in, at a completed age.
- *
- * ═══════════════════════════════════════════════════════════════════════════
- * ONE IMPLEMENTATION, BECAUSE THERE WERE TWO AND THEY COULD DIVERGE IN SILENCE
- * ═══════════════════════════════════════════════════════════════════════════
- *
- * `priorityGroupsInForce` and `priorityLevelOf` each spelled the same two
- * comparisons out. A mutation audit found the second copy uncovered at the
- * boundary — `age >= 65 || age < 18` survived being turned into
- * `age > 65 || age <= 18`, which takes the priority away from somebody on the
- * very day they turn 65 and gives it back a year later. The chart would have
- * said «adulto mayor» while the waiting list said «espere su turno», and
- * nothing would have been red.
- *
- * Two copies of a threshold are two answers to the same question waiting to
- * disagree, so there is one. The numbers themselves stay in the two exported
- * constants: article 36 of the Constitution for 65, the Código de la Niñez y
- * Adolescencia for 18.
- */
-function ageDerivedGroupsAt(age: number): PriorityGroup[] {
-  const derived: PriorityGroup[] = [];
-  if (age >= OLDER_ADULT_MIN_AGE_YEARS) derived.push('OLDER_ADULT');
-  if (age < ADULTHOOD_MIN_AGE_YEARS) derived.push('CHILD_OR_ADOLESCENT');
-  return derived;
 }
 
 /**
@@ -293,57 +218,13 @@ export function priorityGroupsInForce(
   patient: { birthDate: ClinicalDate; recorded: readonly RecordedPriorityGroup[] }, // prettier-ignore
   on: ClinicalDate,
 ): readonly PriorityGroup[] {
-  const derived = ageDerivedGroupsAt(ageInYearsOn(patient.birthDate, on));
+  const derived = agePriorityBracketsOn(patient.birthDate, on);
 
   const inForce = patient.recorded
     .filter((record) => isPeriodInForce(record, on))
     .map((record) => record.group);
 
   return [...new Set([...derived, ...inForce])];
-}
-
-/**
- * The number the agenda orders by (PA-041, AG-061, AG-062).
- *
- * TWO LEVELS AND NOT TEN. AG-062 says «prioridad 1 para los grupos de atención
- * prioritaria», and article 35 does not rank them against each other. Ordering
- * a queue by which group somebody belongs to would be inventing a clinical
- * hierarchy nobody wrote down, and — worse — a distinct number per group would
- * leak the REASON through the ORDER, which is the one thing PA-042 forbids.
- * `1` and `2` say who goes first and nothing else.
- */
-export const PRIORITY_LEVEL = { PRIORITY: 1, STANDARD: 2 } as const;
-export type PriorityLevel =
-  (typeof PRIORITY_LEVEL)[keyof typeof PRIORITY_LEVEL];
-
-/**
- * ⚠️ IT TAKES PERIODS, NOT GROUPS, AND THAT IS THE POINT.
- *
- * The order depends on WHETHER any assessment is in force, never on WHICH one,
- * so the reason is not a parameter of this function at all. The listing query
- * therefore selects two date columns and no `group_code` — PA-042 stops being
- * a rule somebody has to remember and becomes something the SELECT cannot
- * express. The same reason `agenda` will be able to order the waiting list
- * with only `patient:read`.
- */
-export function priorityLevelOf(
-  patient: {
-    birthDate: ClinicalDate;
-    periods: readonly PriorityGroupPeriod[];
-  },
-  on: ClinicalDate,
-): PriorityLevel {
-  // THE SAME FUNCTION `priorityGroupsInForce` uses, not a second copy of the
-  // two comparisons: the level and the list cannot disagree about who is a
-  // priority patient because they read the same answer.
-  const derivedFromAge =
-    ageDerivedGroupsAt(ageInYearsOn(patient.birthDate, on)).length > 0;
-
-  const prioritised =
-    derivedFromAge ||
-    patient.periods.some((period) => isPeriodInForce(period, on));
-
-  return prioritised ? PRIORITY_LEVEL.PRIORITY : PRIORITY_LEVEL.STANDARD;
 }
 
 /** What a caller hands over to record one. */
@@ -430,10 +311,4 @@ export function assertRecordablePriorityGroup(
   }
 
   return record.group;
-}
-
-function splitDate(date: ClinicalDate): [number, number, number] {
-  return parseClinicalDate(date)
-    .split('-')
-    .map((part) => Number.parseInt(part, 10)) as [number, number, number];
 }

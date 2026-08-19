@@ -38,6 +38,14 @@ registerConstraintMeanings({
     field: 'slotAtomMinutes',
     message: 'El turno de la agenda va de 5 a 60 minutos, de 5 en 5',
   },
+  // AG-066, AG-094 (E5). Mismo motivo que los de arriba: la escritura que no
+  // pasa por `assertParametersInRange`. El número que la sede elige dentro del
+  // rango es decisión de la clínica (D-040); los extremos no.
+  site_parameter_waitlist_max_contact_attempts_range: {
+    code: 'PARAM_OUT_OF_RANGE',
+    field: 'waitlistMaxContactAttempts',
+    message: 'Los intentos de contacto de la lista de espera van de 1 a 10',
+  },
   site_parameter_lead_window_coherent: {
     code: 'PARAM_OUT_OF_RANGE',
     field: 'minLeadMinutes',

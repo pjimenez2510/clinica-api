@@ -37,6 +37,9 @@ const PARAMETER_SELECT = {
   // que los lee, y que ésta ya lee.
   overbookingEnabled: true,
   overbookingPermission: true,
+  // E5 (AG-066, AG-094). El octavo parámetro de AG-094, que `site_parameter`
+  // no tuvo hasta `agenda_waitlist_contact_trail`.
+  waitlistMaxContactAttempts: true,
   cancelledRetention: true,
 } satisfies Prisma.SiteParameterSelect;
 
@@ -105,6 +108,7 @@ export class PrismaSiteParameterRepository implements SiteParameterRepository {
              * queda si la escritura llega por otro camino.
              */
             overbookingPermission: patch.overbookingPermission,
+            waitlistMaxContactAttempts: patch.waitlistMaxContactAttempts,
           },
           select: PARAMETER_SELECT,
         });

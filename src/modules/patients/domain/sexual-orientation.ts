@@ -1,6 +1,6 @@
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 
-import { ageInYearsOn } from './priority-groups';
+import { ageInYearsOn } from '../../../shared/domain/priority-level';
 
 /**
  * From what age the RDACAA's sexual orientation may be recorded
