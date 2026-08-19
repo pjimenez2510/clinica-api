@@ -7,8 +7,8 @@ import { PrismaClient } from '@prisma/client';
 
 /**
  * Importa los tres catálogos PLANOS que la ficha del RDACAA necesita:
- * autoidentificación étnica, nacionalidad o pueblo indígena e identidad de
- * género.
+ * autoidentificación étnica (columna 12), nacionalidad indígena (columna 13) e
+ * identidad de género (columna 8).
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * LOS TRES EN UN SOLO SEMBRADOR, PORQUE SON LA MISMA COSA TRES VECES
@@ -16,84 +16,157 @@ import { PrismaClient } from '@prisma/client';
  *
  * Misma forma —`codigo;nombre`, sin padres, sin capítulos—, misma disciplina
  * que el DPA, la CIE-10 y los países —una `catalog_release` por sistema con su
- * versión, su origen y el SHA-256 del archivo— y la misma fuente documental: el
- * formulario del RDACAA y lo que el MSP y el INEC publican sobre él. Tres
- * archivos casi idénticos sólo habrían multiplicado por tres el sitio donde
- * corregir el día que aparezca el instructivo oficial.
+ * versión, su origen y el SHA-256 del archivo— y ahora también la misma fuente:
+ * las tres listas salen del MISMO documento del ministerio, y de tres páginas
+ * seguidas de él. Tres archivos casi idénticos sólo habrían multiplicado por
+ * tres el sitio donde corregir.
  *
  * El mecanismo ya estaba hecho desde P2 de `patients`: `catalogSystemSchema`
  * admite los tres códigos y la ficha sabe guardar la referencia. Lo único que
  * faltaba eran las FILAS, y sin ellas el selector de la pantalla salía vacío
- * —con un 200, que es la forma cara de romperse— igual que le pasaba al de
- * parroquia antes del 13-08-2026.
+ * —con un 200, que es la forma cara de romperse—.
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * DE DÓNDE SALE CADA LISTA (D-036, resuelta el 17-08-2026)
+ * DE DÓNDE SALEN LAS TRES LISTAS: EL INSTRUCTIVO OFICIAL, 19-08-2026
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * **Etnia** — las ocho categorías de la pregunta 11 del cuestionario del VIII
- * Censo de Población y VII de Vivienda 2022 del INEC:
- * `https://www.ecuadorencifras.gob.ec/documentos/web-inec/CPV_2022/Doc/Cuestionario%20censal%202022.pdf`
+ * **Instructivo del formulario SNS-MSP / Form. 504 / 2019 — «Registro Diario
+ * Automatizado de Consultas y Atenciones Ambulatorias RDACAA 2.0»**,
+ * Coordinación General de Planificación y Gestión Estratégica · Dirección
+ * Nacional de Estadística y Análisis de Información de Salud, **abril de
+ * 2019**. Los catálogos están en las páginas 37, 39 y 40 del PDF, **como
+ * imágenes**: no salen al extraer el texto y hay que mirarlas.
  *
- * **Nacionalidad** — la variable `P12`, «nacionalidad o pueblo indígena», del
- * mismo censo, tal como el INEC la publica en su catálogo de microdatos ANDA:
- * `https://anda.inec.gob.ec/anda5/index.php/catalog/1085`
+ *  - **§ 1.4.8, columna 8 — Identidad de género** → `GENDER_IDENTITY`
+ *  - **§ 1.4.12, columna 12 — Autoidentificación étnica** → `ETHNICITY`
+ *    («Aplica para nacionalidad Ecuatoriana»)
+ *  - **§ 1.4.13, columna 13 — Nacionalidades** → `NATIONALITY`
+ *    («Aplica únicamente para la autoidentificación "indígena"»)
  *
- * **Identidad de género** — los términos que define el *Manual de atención
- * integral en salud a personas de las diversidades sexo-genéricas* del MSP
- * (Acuerdo Ministerial 00085-2024), publicado en el **Registro Oficial Nº 579
- * del 14 de junio de 2024**, § 6.1.7 y su glosario.
- *
- * ═══════════════════════════════════════════════════════════════════════════
- * POR QUÉ LA ETNIA SON OCHO Y NO LAS SEIS QUE EL INEC PUBLICA
- * ═══════════════════════════════════════════════════════════════════════════
- *
- * El INEC agrupa afroecuatoriano, negro y mulato en una sola categoría **al
- * publicar** los resultados, pero el formulario pregunta por las ocho y el
- * RDACAA las separa. Se siembran las ocho por el mismo argumento que PA-005
- * escribe para el sexo: **agrupar es trabajo de la capa de exportación, no del
- * registro**. De ocho siempre se pueden sacar seis; de seis no se pueden sacar
- * ocho, y lo que se perdió no se puede volver a preguntar.
+ * El documento es del ministerio; el ejemplar del que se transcribió está
+ * alojado en un tercero —el MSP no lo publica en una URL estable— y una copia
+ * vive en `../clinica-docs/`. Eso afecta a DÓNDE se consiguió, no a QUÉ dice.
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * ⚠️ «NACIONALIDAD» AQUÍ NO ES EL PAÍS. QUIEN LEA ESTO DENTRO DE UN AÑO: NO.
+ * ⚠️ CORRECCIÓN DEL 19-08-2026: LA COLUMNA 11 SÍ ES EL PAÍS. AQUÍ SE DIJO QUE
+ *    NO, Y ERA FALSO.
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * En el RDACAA ese campo **se activa sólo cuando la autoidentificación étnica
- * es «Indígena»** y recoge la nacionalidad o pueblo indígena —Kichwa, Shuar,
- * Awa…—. El país de un paciente extranjero es otra cosa, hoy **no tiene
- * columna**, y está registrado como decisión pendiente (D-036, opción C). Sin
- * esta advertencia, la primera persona que necesite anotar que alguien es
- * venezolano rellenará esta tabla con países, y el reporte mensual saldrá mal
- * sin que nada falle. El país emisor de un documento sí tiene catálogo propio:
- * `COUNTRY`, ver `seed-countries.mts`.
+ * Este archivo, el `SPEC.md` de `patients` y la decisión D-036 afirmaban que
+ * «en el RDACAA "nacionalidad" NO es el país». **No es cierto, y quien lo lea
+ * tiene que saberlo antes de tocar nada.** Son DOS columnas con nombres casi
+ * iguales:
  *
- * SE CONSERVAN LOS CÓDIGOS DEL INEC CON SUS SALTOS —del 14 al 21, sin 37—
- * porque son los suyos: renumerarlos para que quedaran seguidos rompería la
- * comparación con cualquier fuente oficial. Y se excluye a propósito el código
- * `99 Se ignora`: es un resultado de la recolección, no algo que se le ofrezca
- * a nadie para elegir — que el campo quede vacío ya dice eso.
+ *  - **Columna 11, «Nacionalidad»** — *«Registrar la nacionalidad (país de
+ *    origen) del usuario»*. Lista cerrada de 20 países más `988 Otro/a`. Es el
+ *    país, y en este sistema lo cubre `patient.country_of_nationality_code`
+ *    contra el catálogo `COUNTRY` (PA-053).
+ *  - **Columna 13, «Nacionalidades»** — la nacionalidad INDÍGENA —Achuar, Awa,
+ *    Kichwa, Shuar…—, que el formulario *«aplica únicamente para la
+ *    autoidentificación "indígena"»*. Es la que se siembra aquí, en
+ *    `NATIONALITY`, y a la que apunta `patient.nationality_concept_id`
+ *    (PA-027).
+ *
+ * Lo que la corrección NO cambia: **siguen haciendo falta los dos datos**, que
+ * es lo que D-036 decidió con la opción C y sigue siendo correcto. Lo que sí
+ * cambia es el motivo: no es que el RDACAA no pregunte el país —lo pregunta en
+ * la columna 11—, es que pregunta las dos cosas en dos columnas distintas.
+ *
+ * Y lo que la corrección CONFIRMA: **la condición de PA-027 es exactamente la
+ * del instructivo.** Se construyó a partir de una copia de terceros del manual
+ * de usuario del software y resulta ser literalmente lo que dice el documento
+ * oficial. Ya no hay salvedad sobre la fuente.
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * LAS TRES LISTAS SON PROVISIONALES, Y POR ESO CADA UNA ES UNA RELEASE
+ * `COUNTRY` NO SE TOCA, Y ÉSTA ES LA PREGUNTA QUE HARÁ EL SIGUIENTE QUE LEA
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * La lista que manda es la del **instructivo del RDACAA 2.0** —el propio MSP
- * remite a él: «utilizando las definiciones que constan en esas herramientas»—
- * y no se ha podido obtener de fuente oficial. El usuario dio permiso expreso
- * (17-08-2026) para sembrar con la lista del INEC y corregir cuando aparezca el
- * documento.
+ * El instructivo cierra la columna 11 en **20 países más «Otro/a»**, y el
+ * catálogo `COUNTRY` que sirve a PA-053 tiene los **249 de `ISO 3166-1
+ * alpha-3`** (ver `seed-countries.mts`). No se reduce, y no es descuido:
  *
- * Por eso cada sistema entra como `catalog_release` con versión y checksum:
- * **sustituir una lista es cargar otra release, no editar filas a mano**, y una
- * ficha registrada hoy seguirá resolviendo la categoría con la que se registró
- * —que es lo que separa un catálogo clínico de una semilla de desarrollo—.
+ *  - Los 20 del RDACAA son un **subconjunto** de los 249. Reducir el catálogo
+ *    obligaría a registrar como «Otro/a» a un paciente boliviano, y **lo que se
+ *    perdió no se puede volver a preguntar**.
+ *  - Plegar los 249 a los 21 del formulario es trabajo de la **capa de
+ *    exportación**, no del registro: es el mismo argumento que PA-005 escribe
+ *    para el sexo y el que ya se aplicó a las nueve categorías de etnia.
+ *  - `patient_identifier.issuing_country` guarda el país emisor del documento
+ *    con el mismo estándar. Dos listas de países distintas en la misma base es
+ *    lo que garantiza que un día discrepen.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * SUSTITUIR UNA LISTA ES CARGAR OTRA RELEASE, NO EDITAR FILAS
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Las tres listas que se sembraron el 17-08-2026 salían del censo del INEC y de
+ * un manual del MSP —no del instructivo— y las tres estaban mal. La peor era la
+ * etnia: usaba el `8` para «Otro/a» donde el ministerio pone **«No sabe / No
+ * responde»**, así que una ficha registrada como «Otro/a» se habría reportado
+ * como «No sabe» sin que nada fallara. El instructivo separa las dos: `8` es
+ * «No sabe / No responde» y `98` es «Otro/a».
+ *
+ * La corrección entra como una **release nueva**: `sembrarUno` cierra la
+ * vigencia de lo que dejó la anterior —`valid_to` y `retired_by_release_id`— y
+ * mete las filas nuevas. La versión vieja **se queda en la tabla**, que es lo
+ * que permite que una ficha registrada ayer siga resolviendo la categoría con
+ * la que se registró: las fichas apuntan a la FILA por su `id`, no al código,
+ * y leer una ficha nunca pregunta por vigencia (ver `isInForce` en
+ * `patients.service.ts`, que sólo se aplica al escribir).
  *
  * CATÁLOGOS PLANOS: `hierarchical` en `false`. Ninguno cuelga de nada, y de esa
  * bandera depende que sus conceptos sean elegibles — ver `toConcept` en
  * `prisma-catalog.repository.ts`. Con `true`, los tres saldrían marcados como
  * títulos de navegación y los tres selectores aparecerían vacíos.
  */
+
+/**
+ * El documento del que salen las tres listas, escrito una sola vez.
+ *
+ * La página es de un tercero porque el MSP no publica el instructivo en una URL
+ * estable; el CONTENIDO es el del ministerio, con su número de formulario y su
+ * fecha en la portada. Poner aquí una URL de `salud.gob.ec` que no existe sería
+ * peor que decir de dónde se sacó de verdad.
+ */
+const INSTRUCTIVO_URL =
+  'https://pdfcoffee.com/instructivo-fisico-rdacaa-20-ministerio-salud-publica-ecuador-pdf-free.html';
+
+/**
+ * La versión con la que entran los tres, que es el propio documento.
+ *
+ * Lleva el año de la portada —abril de 2019— porque el número de versión del
+ * formulario (`2.0`) no cambia cuando el ministerio reedita el instructivo, y
+ * dos artefactos distintos bajo la misma versión es exactamente lo que
+ * `sourceChecksum` está puesto para detectar.
+ */
+const VERSION_INSTRUCTIVO = 'msp-rdacaa-2.0-2019';
+
+/**
+ * Desde cuándo esta base sirve las listas del instructivo.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * NO SE ANCLA AL INICIO DEL AÑO, AL REVÉS QUE UNA PRIMERA CARGA
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * El DPA, los países y la primera siembra de estos tres anclan su vigencia al
+ * inicio del año para no declarar «no vigente» la categoría de una ficha
+ * registrada antes. Para una release que SUSTITUYE a otra ese mismo anclaje es
+ * el error: retrasar el corte a enero cerraría la lista anterior en una fecha
+ * en la que estuvo sirviendo de verdad, y una ficha registrada bajo ella
+ * quedaría apuntando a un concepto que su propia fecha de registro dice que no
+ * existía.
+ *
+ * El corte es el día de la carga, y eso es lo que significa: **hasta el 19 esta
+ * base servía la lista del INEC; desde el 19 sirve la del ministerio.** No
+ * pretende decir desde cuándo rige el instructivo —rige desde 2019, y eso lo
+ * dicen `sourceUrl` y la portada del documento—, sino desde cuándo lo obedece
+ * este sistema.
+ *
+ * FIJA Y NO `new Date()`: sembrar dos veces tiene que producir lo mismo, y una
+ * fecha que se mueve con el reloj convierte cada `pnpm db:seed` en una release
+ * con una vigencia distinta.
+ */
+const VIGENTE_DESDE = new Date('2026-08-19T00:00:00Z');
 
 /** Un catálogo plano y de dónde sale. Lo único que cambia entre los tres. */
 interface CatalogoPlano {
@@ -104,15 +177,11 @@ interface CatalogoPlano {
   sourceUrl: string;
   /**
    * La fecha del documento que publica la lista, cuando se conoce con
-   * precisión. Del censo se conoce el año, no el día, y una fecha inventada
-   * sería peor que ninguna.
+   * precisión. Del instructivo se conoce el mes —abril de 2019— y no el día, y
+   * una fecha inventada sería peor que ninguna: el año va en la versión.
    */
   publishedOn: Date | null;
-  /**
-   * Desde cuándo rige, ANCLADA AL INICIO DEL AÑO como el DPA y los países: una
-   * fecha reciente marcaría como «no vigente» la categoría de cualquier ficha
-   * registrada antes, y el catálogo se consulta con la fecha del registro.
-   */
+  /** Desde cuándo esta base la sirve. Ver {@link VIGENTE_DESDE}. */
   effectiveFrom: Date;
 }
 
@@ -120,44 +189,44 @@ interface CatalogoPlano {
  * Los tres, con sus valores por defecto.
  *
  * Cada uno admite `<SISTEMA>_FILE`, `<SISTEMA>_VERSION` y
- * `<SISTEMA>_SOURCE_URL` por entorno, que es como se cargará el instructivo
- * oficial del RDACAA 2.0 el día que se consiga: otra release, sin tocar código.
+ * `<SISTEMA>_SOURCE_URL` por entorno, que es como entrará la próxima edición
+ * del instructivo: otra release, sin tocar código.
  */
 const CATALOGOS: readonly CatalogoPlano[] = [
   {
     systemCode: 'ETHNICITY',
-    nombre: 'Autoidentificación étnica (RDACAA)',
+    // Columna 12 del formulario. El instructivo la titula así, en singular.
+    nombre: 'Autoidentificación étnica (RDACAA, columna 12)',
     archivo: 'rdacaa/etnias.csv',
-    version: 'inec-cpv-2022',
-    sourceUrl:
-      'https://www.ecuadorencifras.gob.ec/documentos/web-inec/CPV_2022/Doc/Cuestionario%20censal%202022.pdf',
+    version: VERSION_INSTRUCTIVO,
+    sourceUrl: INSTRUCTIVO_URL,
     publishedOn: null,
-    effectiveFrom: new Date('2022-01-01T00:00:00Z'),
+    effectiveFrom: VIGENTE_DESDE,
   },
   {
     systemCode: 'NATIONALITY',
-    nombre: 'Nacionalidad o pueblo indígena (RDACAA)',
+    /**
+     * Columna 13, y el instructivo la titula «Nacionalidades», en plural, para
+     * distinguirla de la columna 11 «Nacionalidad», que es el país. Aquí se
+     * escribe «indígena» en el nombre porque ese plural no basta para que nadie
+     * las confunda: es la confusión que este catálogo ya sufrió una vez.
+     */
+    nombre: 'Nacionalidad indígena (RDACAA, columna 13)',
     archivo: 'rdacaa/nacionalidades-indigenas.csv',
-    version: 'inec-cpv-2022',
-    sourceUrl: 'https://anda.inec.gob.ec/anda5/index.php/catalog/1085',
+    version: VERSION_INSTRUCTIVO,
+    sourceUrl: INSTRUCTIVO_URL,
     publishedOn: null,
-    effectiveFrom: new Date('2022-01-01T00:00:00Z'),
+    effectiveFrom: VIGENTE_DESDE,
   },
   {
     systemCode: 'GENDER_IDENTITY',
-    nombre: 'Identidad de género (MSP)',
+    // Columna 8.
+    nombre: 'Identidad de género (RDACAA, columna 8)',
     archivo: 'rdacaa/identidades-genero.csv',
-    version: 'msp-ro-579-2024',
-    /**
-     * La página del MSP que anuncia el manual, y no un enlace al PDF: el
-     * documento no está publicado en una URL oficial estable. La cita canónica
-     * de la norma es el Acuerdo Ministerial 00085-2024, Registro Oficial Nº 579
-     * del 14-06-2024, y eso es lo que va en `publishedOn`.
-     */
-    sourceUrl:
-      'https://www.salud.gob.ec/msp-presento-el-manual-buenas-practicas-en-la-atencion-integral-de-salud-a-personas-de-las-diversidades-sexo-genericas-lgbtiq/',
-    publishedOn: new Date('2024-06-14T00:00:00Z'),
-    effectiveFrom: new Date('2024-01-01T00:00:00Z'),
+    version: VERSION_INSTRUCTIVO,
+    sourceUrl: INSTRUCTIVO_URL,
+    publishedOn: null,
+    effectiveFrom: VIGENTE_DESDE,
   },
 ];
 
@@ -169,14 +238,21 @@ interface Concepto {
 /**
  * Lee un CSV `codigo;nombre` con cabecera.
  *
- * SEPARADOR `;` Y SIN COMILLAS, como los archivos del INEC. Los nombres llevan
- * barras y apóstrofos —«Afroecuatoriano/a», «A'i cofan»— pero ningún punto y
- * coma, así que partir por el separador es correcto; si algún día apareciera
- * uno, la comprobación de forma rechaza la fila en vez de partirla mal.
+ * SEPARADOR `;` Y SIN COMILLAS. Los nombres llevan barras y espacios
+ * —«Afroecuatoriano/a Afrodescendiente», «No sabe / No responde»— pero ningún
+ * punto y coma, así que partir por el separador es correcto; si algún día
+ * apareciera uno, la comprobación de forma rechaza la fila en vez de partirla
+ * mal.
  *
- * EL CÓDIGO SE GUARDA TAL CUAL, con su cero a la izquierda: `01` es el código
- * del INEC para Awa, y `1` sería otro. Por eso la comprobación es de forma y no
- * un `Number`.
+ * EL CÓDIGO SE GUARDA TAL CUAL, como una cadena y no como un número: en el
+ * instructivo la etnia salta del `8` al `98`, y `98` no es «el noveno». Un
+ * `Number` invitaría a renumerar, y renumerar es lo que hace que el reporte
+ * mensual salga mal sin que nada falle.
+ *
+ * DOS DÍGITOS COMO MUCHO, que es lo más ancho de las tres listas (`98 Otro/a`).
+ * La columna 11 llega hasta `988`, pero esa es la del país y la sirve `COUNTRY`
+ * con códigos `ISO 3166-1 alpha-3`; si alguien la volcara aquí, sus filas se
+ * descartarían EN VOZ ALTA en vez de entrar mal.
  *
  * El BOM se quita por si el archivo se reexporta desde una hoja de cálculo: sin
  * quitarlo la primera fila tendría un código que no encuentra nadie.
@@ -247,8 +323,13 @@ async function sembrarUno(
      * impide que una fila creada a mano en `true` deje el catálogo entero como
      * no elegible. Con `update: {}` eso sólo se corrige a mano, y nadie mira
      * una bandera cuyo síntoma es un desplegable vacío.
+     *
+     * `name` TAMBIÉN, porque el título del catálogo cambió al llegar el
+     * instructivo —«Nacionalidad o pueblo indígena» era de otra fuente y de
+     * otra columna— y un nombre que sólo se escribe al crear se queda con la
+     * redacción equivocada en toda base que ya existiera.
      */
-    update: { hierarchical: false },
+    update: { hierarchical: false, name: catalogo.nombre },
     create: {
       code: catalogo.systemCode,
       name: catalogo.nombre,
@@ -273,6 +354,42 @@ async function sembrarUno(
     );
   }
 
+  /**
+   * Lo que la release anterior dejó vigente y esta va a sustituir.
+   *
+   * Se cuenta ANTES de la transacción sólo para poder decirlo por consola; lo
+   * que decide es el `updateMany` de dentro.
+   */
+  const vigentes = await prisma.catalogConcept.count({
+    where: { systemId: sistema.id, validTo: null },
+  });
+
+  /**
+   * Una lista anterior que empiece EN o DESPUÉS del corte no se puede cerrar.
+   *
+   * `catalog_concept_period_not_empty` exige `valid_to > valid_from`, y
+   * `catalog_concept_code_temporal_unique` rechazaría los códigos repetidos:
+   * el fallo llegaría igual, pero como una violación de constraint en mitad de
+   * un `createMany` de dieciséis filas. Decirlo aquí, con el sistema y la
+   * fecha, es la diferencia entre saber qué pasa y leer un `23514`.
+   */
+  const posteriores = await prisma.catalogConcept.count({
+    where: {
+      systemId: sistema.id,
+      validTo: null,
+      validFrom: { gte: catalogo.effectiveFrom },
+    },
+  });
+
+  if (posteriores > 0) {
+    throw new Error(
+      `${catalogo.systemCode}: ${posteriores} concepto(s) vigentes empiezan en ` +
+        `${catalogo.effectiveFrom.toISOString().slice(0, 10)} o después, así que ` +
+        'la release nueva no los puede sustituir. Cargue la lista con una ' +
+        'fecha de vigencia posterior.',
+    );
+  }
+
   // Todo dentro de una transacción: una lista a medias que se declara completa
   // deja categorías que simplemente no aparecen, y la siguiente ejecución ve el
   // mismo checksum y no hace nada. Ya pasó con la CIE-10.
@@ -285,6 +402,25 @@ async function sembrarUno(
         effectiveFrom: catalogo.effectiveFrom,
         sourceUrl: catalogo.sourceUrl,
         sourceChecksum: checksum,
+      },
+    });
+
+    /**
+     * RETIRAR, NO BORRAR. Las fichas apuntan a estas filas por su `id` —hay
+     * `ON DELETE RESTRICT` de por medio—, así que borrarlas ni se puede ni se
+     * querría: lo que se retira es la posibilidad de ELEGIRLAS a partir del
+     * corte. Una ficha registrada antes sigue enseñando la categoría con la
+     * que se registró, porque leerla no pregunta por vigencia.
+     *
+     * `retired_by_release_id` es lo que deja escrito QUIÉN las retiró, y es la
+     * mitad que faltaba de la provenance: sin ella, un catálogo con dos
+     * releases no sabe decir cuál cerró qué.
+     */
+    await tx.catalogConcept.updateMany({
+      where: { systemId: sistema.id, validTo: null },
+      data: {
+        validTo: catalogo.effectiveFrom,
+        retiredByReleaseId: release.id,
       },
     });
 
@@ -309,6 +445,14 @@ async function sembrarUno(
       `  sha-256:  ${checksum}`,
   );
 
+  if (vigentes > 0) {
+    console.log(
+      `  ${vigentes} concepto(s) de la release anterior retirados el ` +
+        `${catalogo.effectiveFrom.toISOString().slice(0, 10)}. Las fichas que ` +
+        'los declaran los siguen resolviendo; ya no se pueden elegir.',
+    );
+  }
+
   if (descartadas.length > 0) {
     console.log(
       `  ${descartadas.length} línea(s) sin forma de dato, descartadas:`,
@@ -330,11 +474,6 @@ export async function seedRdacaa(prisma: PrismaClient): Promise<void> {
   for (const catalogo of CATALOGOS) {
     await sembrarUno(prisma, catalogo);
   }
-
-  console.log(
-    '  ⚠️  Listas PROVISIONALES hasta contrastarlas con el instructivo del ' +
-      'RDACAA 2.0 del MSP (D-036). Sustituirlas es cargar otra release.',
-  );
 }
 
 async function main(): Promise<void> {

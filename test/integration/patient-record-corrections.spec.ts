@@ -276,19 +276,25 @@ describe('la ficha del RDACAA y su corrección, contra la base', () => {
     ethnicityId = await ethnicityRow('1', 'Indígena');
     mestizoEthnicityId = await ethnicityRow('6', 'Mestizo/a');
     /**
-     * ⚠️ `NATIONALITY` ES LA NACIONALIDAD O PUEBLO INDÍGENA, NO EL PAÍS.
+     * ⚠️ `NATIONALITY` ES LA NACIONALIDAD INDÍGENA —COLUMNA 13—, NO EL PAÍS.
      *
-     * En el RDACAA ese campo sólo se activa si la autoidentificación étnica es
-     * «Indígena» y recoge Kichwa, Shuar, Awa… El país de un paciente extranjero
-     * es otro dato y tiene columna propia (PA-053). Sembrar aquí «Ecuatoriana»
-     * era exactamente la confusión contra la que avisa la cabecera de
-     * `seed-rdacaa.mts`.
+     * El instructivo del RDACAA activa esa columna sólo si la
+     * autoidentificación étnica es «Indígena», y recoge Achuar, Awa, Kichwa,
+     * Shuar… El país de un paciente extranjero es la COLUMNA 11, se llama
+     * «Nacionalidad» en singular y tiene columna propia en la ficha (PA-053).
+     * Sembrar aquí «Ecuatoriana» era exactamente la confusión contra la que
+     * avisa la cabecera de `seed-rdacaa.mts`.
+     *
+     * El `6` es el código de Kichwa en el instructivo. La lista del INEC que
+     * este catálogo tuvo sembrada hasta el 19-08-2026 lo ponía en el `14`, que
+     * ahora es Andoa: un código que se lee bajo la lista equivocada es un dato
+     * distinto, y por eso la fila de prueba lleva el del ministerio.
      */
     nationalityId = await flat(
       'NATIONALITY',
-      'Nacionalidad o pueblo indígena',
+      'Nacionalidad indígena (RDACAA, columna 13)',
       {
-        code: '14',
+        code: '6',
         display: 'Kichwa',
       },
     );

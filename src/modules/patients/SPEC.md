@@ -257,9 +257,23 @@ requisitos que cambian.
 - **PA-005** — El sistema DEBERÁ almacenar el sexo tal como se documentó, sin
   inferirlo ni asignarle un valor por defecto, y NO DEBERÁ colapsar `INTERSEX`
   ni `UNKNOWN` al almacenarlos.
-  > El formulario del ministerio sólo admite H/M, y **esa reducción es de la
-  > capa de exportación**, no del registro. Colapsar al guardar hace que la
-  > ficha mienta sobre lo que se documentó, y ya no hay forma de volver atrás.
+  > El formulario del ministerio admite `1 Hombre`, `2 Mujer` y `3 Intersexual`
+  > (instructivo, columna 6), y toda reducción a H/M es **de la capa de
+  > exportación**, no del registro. Colapsar al guardar hace que la ficha mienta
+  > sobre lo que se documentó, y ya no hay forma de volver atrás.
+  >
+  > > **[NECESITA ACLARACIÓN]** El instructivo añade que *«el sexo
+  > > "Intersexual" se registra únicamente en usuarios menores de un año»*, y
+  > > este sistema lo acepta a cualquier edad. Hay que decidir si es un rechazo
+  > > o un aviso, y qué debe pasar con una ficha que cumple un año. **No se
+  > > decide aquí**: es política de registro.
+  >
+  > > **Falta esquema.** La **columna 7 del formulario, «Orientación sexual»**
+  > > —`1 Lesbiana · 2 Gay · 3 Bisexual · 4 Heterosexual · 5 No sabe/no
+  > > responde`, *«a partir de los 10 años de edad»*— no existe en este sistema:
+  > > no hay columna en `patient`, ni catálogo `SEXUAL_ORIENTATION`, ni
+  > > requisito. Anotarla en un texto libre sería justo lo que esta sección
+  > > prohíbe para la etnia.
 - **PA-006** — El sistema DEBERÁ almacenar la fecha de nacimiento junto con una
   marca de **estimada**, y DEBERÁ exponer esa marca en toda respuesta que lleve
   la fecha.
@@ -500,41 +514,75 @@ requisitos que cambian.
   paciente eligiéndola de un catálogo, y NO DEBERÁ almacenarla como texto libre
   ni como enumeración del código.
   > Es autoidentificación: la declara el paciente, no la deduce quien teclea.
-  > Y es catálogo porque el INEC revisa las categorías, y una ficha de hace tres
-  > años tiene que seguir mostrando la redacción con la que se registró.
+  > Y es catálogo porque el ministerio revisa las categorías, y una ficha de
+  > hace tres años tiene que seguir mostrando la redacción con la que se
+  > registró — que es exactamente lo que pasó el 19-08-2026, cuando la lista del
+  > censo se sustituyó por la del instructivo cargando otra `catalog_release`.
+  >
+  > **NUEVE CATEGORÍAS, columna 12 del instructivo, y el `8` no es «Otro/a».**
+  > `1 Indígena · 2 Afroecuatoriano/a Afrodescendiente · 3 Negro/a · 4 Mulato/a ·
+  > 5 Montubio/a · 6 Mestizo/a · 7 Blanco/a · 8 No sabe / No responde ·
+  > 98 Otro/a`. El salto del `8` al `98` es del ministerio y se conserva:
+  > renumerarlo convertiría «Otro/a» en «No sabe» en el reporte mensual sin que
+  > nada fallara, que es el error que la lista del INEC tenía sembrado hasta el
+  > 19-08-2026.
+  >
+  > > **[NECESITA ACLARACIÓN]** El instructivo anota sobre esta columna *«Aplica
+  > > para nacionalidad Ecuatoriana»*, y sobre la columna 11 *«si el usuario NO
+  > > es ecuatoriano, pase a la columna 15 dejando los espacios en blanco»*.
+  > > Este sistema no comprueba nada entre `country_of_nationality_code` y
+  > > `ethnicity_concept_id`. Hay que decidir si la combinación se rechaza, se
+  > > avisa o se deja pasar. **No se decide aquí**: es política de registro.
+  >
+  > > **Falta esquema.** La **columna 14, «Pueblos»** —18 códigos, *«aplica
+  > > únicamente para la nacionalidad indígena "Kichwa"»*— no existe en este
+  > > sistema: no hay `patient.people_concept_id`, ni catálogo `PEOPLE`, ni
+  > > requisito. Es el tercer escalón de la misma cadena que PA-026 y PA-027 ya
+  > > recorren —etnia → nacionalidad indígena → pueblo— y el formulario lo exige
+  > > cuando la nacionalidad es «Kichwa».
 - **PA-027** — El sistema DEBERÁ registrar la **nacionalidad** del paciente
   eligiéndola de un catálogo. **SI** la ficha que resultaría del alta o de la
   corrección declara una nacionalidad **y** su autoidentificación étnica no es
   «Indígena» —porque es otra o porque falta—, **ENTONCES** el sistema DEBERÁ
   rechazar la operación con `NATIONALITY_REQUIRES_INDIGENOUS_ETHNICITY`
   señalando el campo `nationalityConceptId`, y NO DEBERÁ escribir nada.
-  > **Aquí «nacionalidad» es la NACIONALIDAD O PUEBLO INDÍGENA, no el país**
-  > (D-036, resuelta el 17-08-2026). Es lo que el RDACAA 2.0 pide en ese campo,
-  > que además **sólo se activa si la autoidentificación es «Indígena»**:
-  > Kichwa, Shuar, Awa. `NATIONALITY` está sembrado con las 34 categorías de la
-  > variable `P12` del Censo 2022 del INEC, con sus códigos y sus saltos, y la
-  > advertencia está escrita en la cabecera de `prisma/seed-rdacaa.mts` para que
-  > nadie rellene esa tabla con países.
+  > **Aquí «nacionalidad» es la NACIONALIDAD INDÍGENA de la columna 13, no el
+  > país.** Son dos columnas del formulario con nombres casi iguales, y este
+  > documento las confundió hasta el 19-08-2026:
   >
-  > **El país de la persona es otro dato y tiene columna propia: PA-053.** Las
-  > dos hacen falta, y por qué no se fusionan está escrito allí.
+  > - **Columna 11, «Nacionalidad»** — *«Registrar la nacionalidad (país de
+  >   origen) del usuario»*, lista cerrada de 20 países más `988 Otro/a`. **Es
+  >   el país**, y en este sistema lo cubre PA-053.
+  > - **Columna 13, «Nacionalidades»** — la nacionalidad **indígena** —Achuar,
+  >   Awa, Kichwa, Shuar…, 16 códigos—, que *«aplica únicamente para la
+  >   autoidentificación "indígena"»*. **Es ésta**, y es la que siembra
+  >   `prisma/seed-rdacaa.mts` en el catálogo `NATIONALITY`.
   >
-  > **LA CONDICIÓN ES DEL FORMULARIO DEL MINISTERIO, NO NUESTRA, Y SU FUENTE ES
-  > DE TERCEROS.** No es una regla clínica ni una preferencia de diseño: el
-  > manual de usuario del software RDACAA v2.0 dice que el campo «Nacionalidad»
-  > **se activa sólo si la autoidentificación étnica es «Indígena»** —y que si
-  > la respuesta es «kichwa» se activa además «Pueblos», que este sistema
-  > todavía no registra—. De ese manual **sólo tenemos una copia de terceros**:
-  > el instructivo original del MSP no se ha podido obtener de fuente oficial
-  > (D-036, y sigue abierto). Así que esto puede resultar equivocado el día que
-  > aparezca el documento, y por eso se corrige **en un solo sitio**:
-  > `INDIGENOUS_ETHNICITY_CODE` en
+  > Lo que decía este recuadro —«en el RDACAA nacionalidad NO es el país»— era
+  > **falso**: el RDACAA pregunta las dos cosas, en dos columnas distintas. Lo
+  > que no cambia es la consecuencia: **hacen falta los dos datos**, que es lo
+  > que D-036 decidió con la opción C y sigue siendo correcto. **El país de la
+  > persona tiene columna propia: PA-053**, y por qué no se fusionan está
+  > escrito allí.
+  >
+  > **LA CONDICIÓN ES DEL FORMULARIO DEL MINISTERIO, NO NUESTRA, Y AHORA CONSTA
+  > EN SU DOCUMENTO OFICIAL.** No es una regla clínica ni una preferencia de
+  > diseño: el **Instructivo del formulario SNS-MSP / Form. 504 / 2019 —
+  > «Registro Diario Automatizado de Consultas y Atenciones Ambulatorias RDACAA
+  > 2.0»**, Dirección Nacional de Estadística y Análisis de Información de
+  > Salud, abril de 2019, § 1.4.13, escribe literalmente *«Aplica únicamente
+  > para la autoidentificación "indígena"»*. Esta regla se construyó a partir de
+  > una copia de terceros del manual de usuario del software y **el documento
+  > oficial la confirma palabra por palabra**; la salvedad sobre la fuente que
+  > había aquí ya no aplica.
+  >
+  > Se corrige, aun así, **en un solo sitio**: `INDIGENOUS_ETHNICITY_CODE` en
   > `src/modules/patients/domain/indigenous-nationality.ts`, que es lo único
   > que sabe qué fila del catálogo `ETHNICITY` es «Indígena». Se reconoce por
-  > su **`code`** —el `1` de la pregunta 11 del INEC, con el que la siembra
-  > `prisma/seed-rdacaa.mts`— y nunca por su texto: la redacción de una
-  > categoría se reescribe entre censos y una comparación de cadenas repartida
-  > por el código deja de cumplirse sin que nada falle.
+  > su **`code`** —el `1` de la columna 12 del instructivo, con el que la
+  > siembra `prisma/seed-rdacaa.mts`— y nunca por su texto: la redacción de una
+  > categoría se reescribe entre ediciones y una comparación de cadenas
+  > repartida por el código deja de cumplirse sin que nada falle.
   >
   > **LA FICHA QUE YA TENÍA NACIONALIDAD Y CAMBIA DE ETNIA SE RECHAZA, y ésta
   > es la parte que tiene consecuencias.** Cuenta el estado **resultante** de
@@ -605,11 +653,14 @@ requisitos que cambian.
   > `NATIONALITY`, `GENDER_IDENTITY`— no se podían ni sembrar ni leer. P2 los
   > añade, y con ellos la ficha ya elige de un catálogo.
   >
-  > **Dato pendiente (D-036).** Qué lista oficial carga cada uno de los tres
-  > sistemas está registrado como decisión con su fuente y su recomendación. No
-  > cambia una línea de código —la ficha guarda una referencia a un concepto sea
-  > cual sea la lista—, pero hasta que se siembre, el selector de la pantalla
-  > está vacío, que es lo que le pasaba al de parroquia antes del 13-08-2026.
+  > **Resuelto el 19-08-2026 (D-036).** Los tres sistemas cargan las listas del
+  > **instructivo del RDACAA 2.0 del MSP** —columnas 12, 13 y 8—, que es el
+  > documento que manda. Las que se sembraron el 17-08-2026 salían del censo del
+  > INEC y de un manual del MSP y las tres estaban mal; se sustituyeron cargando
+  > otra `catalog_release`, no editando filas. No cambia una línea de código —la
+  > ficha guarda una referencia a un concepto sea cual sea la lista—, pero sin
+  > sembrar, el selector de la pantalla está vacío, que es lo que le pasaba al
+  > de parroquia antes del 13-08-2026.
 - **PA-030** — El sistema DEBERÁ **derivar** la edad del paciente de su fecha de
   nacimiento resuelta en la fecha clínica de `America/Guayaquil`, NO DEBERÁ
   almacenarla, para menores de 29 días DEBERÁ poder expresarla en días y, desde
@@ -694,25 +745,36 @@ requisitos que cambian.
   >
   > **Quién es «Indígena» lo decide un solo sitio**, `INDIGENOUS_ETHNICITY_CODE`
   > e `isIndigenousEthnicity` (PA-027): el indicador reutiliza ese predicado en
-  > vez de comparar por su cuenta, para que el día que aparezca el instructivo
-  > oficial que D-036 sigue esperando se corrija una línea y no dos reglas que
-  > ya discreparían.
+  > vez de comparar por su cuenta, para que el día que cambie qué categoría es
+  > «Indígena» se corrija una línea y no dos reglas que ya discreparían. El
+  > instructivo oficial que D-036 esperaba llegó el 19-08-2026 y no la movió:
+  > sigue siendo el código `1`, ahora de la columna 12.
 - **PA-053** — El sistema DEBERÁ registrar el **país de nacionalidad** del
   paciente como código `ISO 3166-1 alpha-3` elegido del catálogo `COUNTRY`,
   DEBERÁ devolverlo en la ficha con el **nombre** que ese catálogo le da, y NO
   DEBERÁ contarlo entre los datos que el RDACAA exige (PA-032). El alta y la
   corrección DEBERÁN aceptarlo, y ninguna de las dos DEBERÁ exigirlo (REQ-166).
   > **SON DOS COLUMNAS Y NO UNA, Y ÉSTE ES EL PÁRRAFO QUE LO IMPIDE FUSIONAR.**
-  > `nationality_concept_id` (PA-027) es la **nacionalidad o pueblo indígena**
-  > del RDACAA —Kichwa, Shuar, Awa—, un campo que el formulario del ministerio
-  > sólo activa cuando la autoidentificación étnica es «Indígena».
-  > `country_of_nationality_code` es de **qué país** es la persona. Se escriben
-  > parecido y no son lo mismo: son dos preguntas distintas, con dos listas
-  > distintas, y una clínica ecuatoriana tiene delante a diario a quien necesita
+  > Y no es una interpretación nuestra: **el propio formulario del ministerio
+  > tiene las dos**, con nombres casi iguales y una columna de por medio.
+  > `country_of_nationality_code` es la **columna 11, «Nacionalidad»** —*«país
+  > de origen»*—; `nationality_concept_id` (PA-027) es la **columna 13,
+  > «Nacionalidades»**, la nacionalidad **indígena** —Achuar, Awa, Kichwa,
+  > Shuar—, que el instructivo activa sólo cuando la autoidentificación étnica
+  > es «Indígena». Se escriben parecido y no son lo mismo: dos preguntas, dos
+  > listas, y una clínica ecuatoriana tiene delante a diario a quien necesita
   > cada una. Quien las fusione tendrá que elegir entre cumplir el reporte
   > mensual y poder decir que un paciente es venezolano; y descubrirlo en el
   > primer reporte devuelto obliga a reinterpretar hacia atrás un dato que ya no
-  > se le puede volver a preguntar a nadie. D-036 opción C, 17-08-2026.
+  > se le puede volver a preguntar a nadie. D-036 opción C, 17-08-2026,
+  > confirmada por el instructivo oficial el 19-08-2026.
+  >
+  > **`COUNTRY` tiene 249 países y la columna 11 sólo 20 más «Otro/a», y así se
+  > queda.** Los 20 son un subconjunto de la lista `ISO 3166-1 alpha-3`;
+  > reducirla obligaría a registrar como «Otro/a» a un paciente boliviano, y
+  > plegar 249 en 21 es trabajo de la **capa de exportación**, no del registro —
+  > el mismo argumento que este documento escribe para el sexo en PA-005 y para
+  > las nueve categorías de etnia en PA-026.
   >
   > **Un código de texto, no una clave foránea al catálogo.** Es exactamente lo
   > que ya hace `patient_identifier.issuing_country`: el mismo dato del mismo
@@ -1575,19 +1637,26 @@ prueba cite un ID inexistente; el día que este `SPEC.md` pase a `vigente`,
 
 ## Preguntas abiertas
 
-Queda **una**, y está **junto a su requisito** y no aquí: una pregunta separada
-del requisito que bloquea no bloquea nada. Esta tabla sólo la enumera para que
-se pueda llevar a `DECISIONES-PENDIENTES.md` con las demás.
+Quedan **cuatro**, y las cuatro están **junto a su requisito** además de aquí:
+una pregunta separada del requisito que bloquea no bloquea nada. Esta tabla sólo
+las enumera para que se puedan llevar a `DECISIONES-PENDIENTES.md` con las demás.
 
+> **Las cuatro las abrió el instructivo oficial del RDACAA 2.0, el 19-08-2026.**
+> Leerlo cerró la que había —qué lista carga cada catálogo, D-036— y abrió estas
+> otras: **dos columnas del formulario que este sistema no tiene** y **dos
+> condiciones del formulario que no comprueba**. Ninguna bloquea lo ya
+> entregado, y ninguna la decide un agente: son alcance y política de registro.
+>
 > Este párrafo decía «cuatro» sobre una tabla de una sola fila (corregido el
-> 18-08-2026). Las otras tres se contestaron —D-032, D-028, D-031 y D-030, que
-> son las que enumera el párrafo de más abajo— y el encabezado se quedó con el
-> número viejo, que es el que alguien lee para decidir si esta entrega está
-> bloqueada.
+> 18-08-2026), y hoy vuelve a decir cuatro sobre cuatro filas. Las contestadas
+> —D-032, D-028, D-031 y D-030— son las que enumera el párrafo de más abajo.
 
 | Dónde                  | Qué hay que decidir                                                                                                                                                                                                                                                |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| PA-026, PA-027, PA-029 | Contrastar las tres listas sembradas con el **instructivo de llenado del RDACAA 2.0** del MSP, que no se ha podido obtener de fuente oficial. Cada una es una `catalog_release` con checksum, así que sustituirla es cargar otra versión y no editar filas (D-036) |
+| PA-026, PA-027                | **«Pueblos», la columna 14 del RDACAA, no existe en el esquema.** El instructivo la exige cuando la nacionalidad indígena es «Kichwa», con 18 códigos propios (§ 1.4.14). Haría falta `patient.people_concept_id`, un catálogo `PEOPLE` y una regla condicionada a la nacionalidad, igual que PA-027 lo está a la etnia. **Falta esquema** |
+| PA-005                        | **«Orientación sexual», la columna 7, no existe en el esquema.** El instructivo la pide *«a partir de los 10 años de edad»*, con 5 códigos (§ 1.4.7). Haría falta columna, catálogo `SEXUAL_ORIENTATION` y la condición de edad. **Falta esquema**                                                                                     |
+| PA-026                        | **La etnia sólo aplica a nacionalidad ecuatoriana** (§ 1.4.12, *«Aplica para nacionalidad Ecuatoriana»*), y hoy no se comprueba nada entre `country_of_nationality_code` y `ethnicity_concept_id`. Decidir si se rechaza, se avisa o se deja pasar                                                                                      |
+| PA-005                        | **«Intersexual» sólo se registra en menores de un año** (§ 1.4.6), y hoy se acepta a cualquier edad. Decidir si es un rechazo o un aviso, y qué pasa con una ficha que cumple un año                                                                                                                                                   |
 
 **Cuatro de las cinco que este documento planteó ya están contestadas**, y sus
 requisitos lo dicen en su propio recuadro: PA-031 por **D-032** (histórico

@@ -565,14 +565,17 @@ describe('catálogos por HTTP', () => {
        * Es el caso del selector de países y el de etnia: no hay más nivel que
        * éste, y sus conceptos son exactamente lo que se elige.
        *
-       * LAS OCHO CATEGORÍAS, no las seis que el INEC publica: el formulario del
-       * RDACAA separa afroecuatoriano, negro y mulato, y agrupar es trabajo de
-       * la capa de exportación. Ver `seed-rdacaa.mts`.
+       * LAS NUEVE CATEGORÍAS del instructivo del RDACAA, no las seis que el
+       * INEC publica: el formulario separa afroecuatoriano, negro y mulato, y
+       * agrupar es trabajo de la capa de exportación. Ver `seed-rdacaa.mts`.
+       *
+       * `98` y no `9`: el instructivo salta del `8` —«No sabe / No responde»—
+       * al `98` —«Otro/a»—, y el orden es por código como cadena.
        */
       const cuerpo = (await raices('ETHNICITY').expect(200))
         .body as PaginaCuerpo;
 
-      expect(cuerpo.total).toBe(8);
+      expect(cuerpo.total).toBe(9);
       expect(cuerpo.items.map((c) => c.code).sort()).toEqual([
         '1',
         '2',
@@ -582,6 +585,7 @@ describe('catálogos por HTTP', () => {
         '6',
         '7',
         '8',
+        '98',
       ]);
       expect(cuerpo.items.every((c) => c.selectable)).toBe(true);
     });
