@@ -789,10 +789,12 @@ model CatalogConcept {
   patientsOrientation     Patient[]                  @relation("PatientSexualOrientation")
   sites                   Site[]                     @relation("SiteParish")
   scheduleRules           PractitionerScheduleRule[]
-  /// NO HAY `agendaEntries` AQUÍ desde C4, y la ausencia es el arreglo: la
-  /// cita registra su tipo de atención en `service_type` —el catálogo propio
-  /// de la clínica, SP-020— y no en un concepto clínico del MSP.
-  waitlistEntries         WaitlistEntry[]            @relation("WaitlistServiceType")
+  /// NO HAY `agendaEntries` NI `waitlistEntries` AQUÍ, y la ausencia es el
+  /// arreglo: la cita registra su tipo de atención en `service_type` —el
+  /// catálogo propio de la clínica, SP-020— y no en un concepto clínico del
+  /// MSP. Con C4 lo hizo la cita; con
+  /// `waitlist_service_type_follows_agenda`, la lista de espera, que se había
+  /// quedado atrás y por eso AG-061 no podía comparar los dos tipos.
   encounterPriorityGroups EncounterPriorityGroup[]
   diagnoses               EncounterDiagnosis[]
   procedures              EncounterProcedure[]
@@ -1174,6 +1176,9 @@ model ServiceType {
   /// SP-025. Declared so the `RESTRICT` foreign key is visible from this side
   /// too: a type nobody booked can be deleted, one an appointment names cannot.
   agendaEntries      AgendaEntry[]
+  /// AG-060. The same `RESTRICT`, for the people still waiting for that type:
+  /// deleting it would leave them waiting for something that no longer exists.
+  waitlistEntries    WaitlistEntry[]
 
   @@map("service_type")
 }
@@ -1825,8 +1830,13 @@ model WaitlistEntry {
   practitionerId String?       @map("practitioner_id") @db.Uuid
   practitioner   Practitioner? @relation(fields: [practitionerId], references: [id], onDelete: Restrict)
 
-  serviceTypeConceptId String?         @map("service_type_concept_id") @db.Uuid
-  serviceType          CatalogConcept? @relation("WaitlistServiceType", fields: [serviceTypeConceptId], references: [id], onDelete: Restrict)
+  /// AG-060, AG-061. `service_type` Y NO `catalog_concept`, desde
+  /// `waitlist_service_type_follows_agenda`: es la MISMA tabla que
+  /// `agenda_entry.service_type_id` nombra desde C4, y sin eso la mitad de
+  /// AG-061 que compara los dos tipos no podía ser cierta nunca. NULL
+  /// significa «cualquiera», no «ninguno».
+  serviceTypeId String?      @map("service_type_id") @db.Uuid
+  serviceType   ServiceType? @relation(fields: [serviceTypeId], references: [id], onDelete: Restrict)
 
   /// AG-060. Between which dates the appointment is of any use to the patient.
   ///

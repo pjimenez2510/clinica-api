@@ -119,7 +119,7 @@ const ENTRY_SELECT = {
   siteId: true,
   patientId: true,
   practitionerId: true,
-  serviceTypeConceptId: true,
+  serviceTypeId: true,
   preferredFrom: true,
   preferredTo: true,
   status: true,
@@ -143,7 +143,7 @@ export class PrismaWaitlistRepository implements WaitlistRepository {
         siteId: entry.siteId,
         patientId: entry.patientId,
         practitionerId: entry.practitionerId,
-        serviceTypeConceptId: entry.serviceTypeId,
+        serviceTypeId: entry.serviceTypeId,
         // `@db.Date` columns: the calendar day, with no instant to shift. A
         // `new Date('2026-09-01')` is midnight UTC and PostgreSQL stores the
         // date part, which is the same day in every session zone.
@@ -391,7 +391,7 @@ function toEntryView(row: {
   siteId: string;
   patientId: string;
   practitionerId: string | null;
-  serviceTypeConceptId: string | null;
+  serviceTypeId: string | null;
   preferredFrom: Date;
   preferredTo: Date;
   status: WaitlistEntryView['status'];
@@ -405,7 +405,7 @@ function toEntryView(row: {
     siteId: row.siteId,
     patientId: row.patientId,
     practitionerId: row.practitionerId,
-    serviceTypeId: row.serviceTypeConceptId,
+    serviceTypeId: row.serviceTypeId,
     preferredFrom: toClinicalDate(row.preferredFrom),
     preferredTo: toClinicalDate(row.preferredTo),
     status: row.status,

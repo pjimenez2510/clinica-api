@@ -212,6 +212,26 @@ describe('la lista de espera por HTTP', () => {
   }
 
   /**
+   * A type of attention out of the CLINIC's own catalogue (`service_type`,
+   * SP-020) — the table `agenda_entry.service_type_id` has named since C4.
+   *
+   * IT IS THE HALF OF AG-061 THAT COULD NOT BE PROVEN END TO END while
+   * `waitlist_entry` still pointed at `catalog_concept`: two different tables
+   * can never compare equal, so an enrolment that fixed a type could only be
+   * refused by a foreign key.
+   */
+  let serviceTypes = 0;
+  async function createServiceType(name: string) {
+    serviceTypes += 1;
+    const specialty = await prisma.specialty.create({
+      data: { code: `especialidad-${serviceTypes}`, name: `Especialidad ${serviceTypes}` }, // prettier-ignore
+    });
+    return prisma.serviceType.create({
+      data: { specialtyId: specialty.id, name, durationMinutes: 20 },
+    });
+  }
+
+  /**
    * An appointment that occupied the calendar and has been released.
    *
    * Written directly rather than booked-and-cancelled through HTTP: what is
@@ -224,6 +244,7 @@ describe('la lista de espera por HTTP', () => {
       blocksCalendar?: boolean;
       releasedAt?: Date | null;
       site?: string;
+      serviceTypeId?: string;
     } = {},
   ) {
     const other = await createPatient(prisma);
@@ -252,16 +273,11 @@ describe('la lista de espera por HTTP', () => {
             ? new Date(Date.UTC(2026, 8, 10, 12, 0))
             : overrides.releasedAt,
         /**
-         * ⚠️ SIN TIPO DE ATENCIÓN, Y NO SE PUEDE PONER UNO QUE COMPARE.
-         *
-         * `agenda_entry.service_type_id` apunta a `service_type` desde C4 y
-         * `waitlist_entry.service_type_concept_id` sigue apuntando a
-         * `catalog_concept`: son tablas distintas, así que la mitad de AG-061
-         * que compara los dos tipos no es comprobable de extremo a extremo
-         * hasta que la columna se corrija. La regla está escrita y probada en
-         * `waitlist.spec.ts`, que es donde se puede probar hoy. Ver la nota
-         * `> **Falta esquema.**` junto a AG-060 en el SPEC.
+         * EL TIPO DE ATENCIÓN DEL CUPO, cuando la prueba lo fija. Sin él, el
+         * cupo no fija ninguno —un bloqueo liberado, típicamente— y una
+         * entrada que exige uno simplemente no queda satisfecha.
          */
+        serviceTypeId: overrides.serviceTypeId ?? null,
       },
     });
   }
@@ -301,6 +317,14 @@ describe('la lista de espera por HTTP', () => {
       const entry = await enrol({ practitionerId });
 
       expect(entry.practitionerId).toBe(practitionerId);
+    });
+
+    it('AG-060 keeps the service type when the enrolment fixes one', async () => {
+      const type = await createServiceType('Control');
+
+      const entry = await enrol({ serviceTypeId: type.id });
+
+      expect(entry.serviceTypeId).toBe(type.id);
     });
 
     it('AG-060 refuses an inverted preferred range by field', async () => {
@@ -356,6 +380,47 @@ describe('la lista de espera por HTTP', () => {
 
       expect(proposed.map((c) => c.entryId)).toEqual([demandsThis.id]);
       expect(proposed.map((c) => c.entryId)).not.toContain(demandsAnother.id);
+    });
+
+    /**
+     * AG-061, la mitad que compara los TIPOS. Estuvo escrita y probada en
+     * `waitlist.spec.ts` desde E5 y no se podía comprobar de extremo a
+     * extremo: la inscripción no admitía el campo, porque la columna apuntaba
+     * a otra tabla. Ésta es la prueba de que las dos partes hablan de lo
+     * mismo.
+     */
+    it('AG-061 refuses a slot of another service type when the entry fixes one', async () => {
+      const control = await createServiceType('Control');
+      const primeraVez = await createServiceType('Primera vez');
+      const demandsAnother = await enrol({ serviceTypeId: primeraVez.id });
+      const demandsThis = await enrol({ serviceTypeId: control.id });
+
+      const released = await releasedSlot({ serviceTypeId: control.id });
+      const proposed = await candidatesFor(released.id);
+
+      expect(proposed.map((c) => c.entryId)).toEqual([demandsThis.id]);
+      expect(proposed.map((c) => c.entryId)).not.toContain(demandsAnother.id);
+    });
+
+    it('AG-061 proposes an entry that fixes no type for a slot that does', async () => {
+      const control = await createServiceType('Control');
+      // Omitirlo significa «cualquiera», no «ninguno» (AG-060).
+      const anyType = await enrol();
+
+      const released = await releasedSlot({ serviceTypeId: control.id });
+      const proposed = await candidatesFor(released.id);
+
+      expect(proposed.map((c) => c.entryId)).toEqual([anyType.id]);
+    });
+
+    it('AG-061 refuses a released block, which fixes no type, to an entry that demands one', async () => {
+      const control = await createServiceType('Control');
+      const demandsOne = await enrol({ serviceTypeId: control.id });
+
+      const released = await releasedSlot();
+      const proposed = await candidatesFor(released.id);
+
+      expect(proposed.map((c) => c.entryId)).not.toContain(demandsOne.id);
     });
 
     it('AG-061 refuses to propose over an entry that still occupies the calendar', async () => {

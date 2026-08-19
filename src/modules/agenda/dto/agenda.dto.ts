@@ -856,21 +856,20 @@ export const enrolInWaitlistSchema = z
     ),
     practitionerId: z.uuid('Seleccione un profesional de la lista').optional(),
     /**
-     * ⚠️ EL TIPO DE ATENCIÓN NO SE ADMITE TODAVÍA, y no es un olvido.
+     * AG-060, AG-061. EL MISMO CATÁLOGO QUE NOMBRA LA CITA: `service_type`,
+     * desde `waitlist_service_type_follows_agenda`.
      *
-     * AG-060 lo declara opcional y la columna existe, pero
-     * `waitlist_entry.service_type_concept_id` apunta a `catalog_concept`
-     * mientras `agenda_entry.service_type_id` apunta a `service_type` desde C4
-     * (`configuration_specialties_and_durations`). Son tablas distintas: lo
-     * que se guardara aquí NUNCA podría coincidir con el tipo de la cita que
-     * libera un cupo, así que la mitad de AG-061 que compara los dos tipos no
-     * se puede cumplir y el campo sólo serviría para rechazar por clave
-     * foránea todo identificador legítimo.
+     * La columna apuntaba a `catalog_concept` mientras
+     * `agenda_entry.service_type_id` apuntaba a `service_type` desde C4, y con
+     * dos tablas distintas la mitad de AG-061 que compara los dos tipos no
+     * podía ser cierta nunca: el campo sólo habría servido para rechazar por
+     * clave foránea todo identificador legítimo. Por eso no se admitió al
+     * cerrar E5, y por eso se admite ahora.
      *
-     * Admitirlo sería un campo que parece funcionar. Ver la nota
-     * `> **Falta esquema.**` junto a AG-060 en el SPEC: se corrige moviendo la
-     * columna a `service_type`, que es una migración y no una tanda de código.
+     * OMITIRLO SIGNIFICA «CUALQUIERA», no «ninguno»: una entrada sin tipo
+     * encaja en cualquier cupo del rango, y una que lo fija sólo en los suyos.
      */
+    serviceTypeId: z.uuid('Seleccione un tipo de atención válido').optional(),
   })
   .refine((value) => value.preferredTo >= value.preferredFrom, {
     // Inclusivo por los dos lados: «del 3 al 3» es un rango legítimo — la

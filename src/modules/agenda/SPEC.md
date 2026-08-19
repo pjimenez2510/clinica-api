@@ -198,8 +198,14 @@ campos de grupo prioritario que la ficha no tenía (D-003), y los tiene desde el
 > mitad y sí es un EVENTO —el intento que alcanza el tope—, así que se aplica
 > en el acto, en la misma transacción que el intento.
 >
-> **Lo que quedó fuera, y por qué.** El tipo de atención de la inscripción: ver
-> la nota de esquema junto a AG-060.
+> **Lo que quedó fuera al cerrarla, y ya no.** El tipo de atención de la
+> inscripción, que la entrega dejó sin admitir porque su columna apuntaba a otra
+> tabla que la de la cita. Corregido el 19-08-2026 con
+> `waitlist_service_type_follows_agenda`: `waitlist_entry.service_type_id`
+> nombra ahora `service_type`, la misma tabla que `agenda_entry`, así que la
+> mitad de AG-061 que compara los dos tipos —escrita y probada en `waitlist.ts`
+> desde el principio— dejó de ser imposible de cumplir. Ver la nota junto a
+> AG-060.
 
 ### E6 — Métrica de inasistencia _(P5)_
 
@@ -940,19 +946,24 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
 - **AG-060** — CUANDO no haya cupo disponible en el rango solicitado, el sistema
   DEBERÁ permitir inscribir al paciente en lista de espera con sede, rango de
   fechas preferido y, opcionalmente, profesional y tipo de servicio.
-  > **Falta esquema.** El TIPO DE SERVICIO no se admite todavía, y por eso la
-  > mitad de AG-061 que compara los dos tipos no se puede comprobar de extremo a
-  > extremo. `waitlist_entry.service_type_concept_id` apunta a `catalog_concept`
-  > desde `clinical_core`, mientras `agenda_entry.service_type_id` pasó a
-  > apuntar a `service_type` con C4
-  > (`20260812222827_configuration_specialties_and_durations`, SP-028). Son dos
-  > tablas distintas: lo que se guardara en la inscripción NUNCA podría coincidir
-  > con el tipo de la cita que libera el cupo, y admitir el campo sería ofrecer
-  > uno que parece funcionar y sólo puede rechazar por clave foránea todo
-  > identificador legítimo. La regla de compatibilidad está escrita y probada en
-  > `waitlist.ts`; lo que falta es la columna. **Se corrige moviendo
-  > `waitlist_entry` a `service_type_id` con su clave foránea a `service_type`**,
-  > que es una migración —la tabla está vacía— y no una tanda de código.
+  > **El esquema que faltaba existe desde el 19-08-2026**
+  > (`waitlist_service_type_follows_agenda`). El TIPO DE SERVICIO no se admitía
+  > al cerrar E5 y por eso la mitad de AG-061 que compara los dos tipos no se
+  > podía comprobar de extremo a extremo: `waitlist_entry.service_type_concept_id`
+  > apuntaba a `catalog_concept` desde `clinical_core`, mientras
+  > `agenda_entry.service_type_id` pasó a `service_type` con C4
+  > (`20260812222827_configuration_specialties_and_durations`, SP-028). Con dos
+  > tablas distintas lo guardado en la inscripción NUNCA podría coincidir con el
+  > tipo de la cita que libera el cupo, y el campo sólo habría servido para
+  > rechazar por clave foránea todo identificador legítimo.
+  >
+  > **La columna se movió a `service_type_id` con su clave foránea a
+  > `service_type`** —una migración, no una tanda de código: la tabla estaba
+  > vacía y no hubo dato que trasladar—. `ON DELETE RESTRICT` en los dos lados,
+  > como SP-025: un tipo que alguien espera no se borra. Las dos mitades de
+  > AG-061 se comprueban ahora de extremo a extremo en
+  > `agenda-waitlist-http.spec.ts`, y la clave foránea en
+  > `agenda-waitlist.spec.ts`.
   >
   > La ANTELACIÓN de la inscripción tampoco tiene tope: cuánto tiempo puede
   > alguien seguir esperando es política de la clínica, no del código. Lo que

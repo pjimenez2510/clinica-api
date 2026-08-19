@@ -44,11 +44,10 @@ export interface EnrolRequest {
   preferredTo: ClinicalDate;
   practitionerId?: string;
   /**
-   * ⚠️ NO ROUTE SETS THIS TODAY. `waitlist_entry.service_type_concept_id`
-   * points at `catalog_concept` while `agenda_entry.service_type_id` points at
-   * `service_type` since C4, so a value stored here could never match the type
-   * of the appointment that frees a slot. The rule that compares them is
-   * written and tested (`isCompatibleWith`); what is missing is the column.
+   * AG-060. The clinic's own `service_type`, which is what
+   * `agenda_entry.service_type_id` names since C4 and what this column names
+   * since `waitlist_service_type_follows_agenda`. Absent means ANY type, so
+   * the entry is a wider match rather than a narrower one.
    */
   serviceTypeId?: string;
 }

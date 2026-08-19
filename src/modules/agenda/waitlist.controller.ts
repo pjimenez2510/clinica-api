@@ -112,9 +112,10 @@ export class WaitlistController {
       preferredFrom: dto.preferredFrom,
       preferredTo: dto.preferredTo,
       practitionerId: dto.practitionerId,
-      // El tipo de atención no viaja: ver la nota del esquema en
-      // `enrolInWaitlistSchema`. La entrada nace sin él, que significa
-      // «cualquiera» y es lo único que hoy puede ser cierto.
+      // AG-060. Omitirlo significa «cualquiera», y desde
+      // `waitlist_service_type_follows_agenda` fijarlo significa algo: es la
+      // misma tabla que nombra la cita, así que AG-061 puede compararlos.
+      serviceTypeId: dto.serviceTypeId,
     });
 
     return toEntryResponse(entry);

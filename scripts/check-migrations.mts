@@ -53,6 +53,10 @@ const PROTECTED = [
   // SP-025. Prisma no puede describir el predicado, así que lo lee como
   // sobrante.
   'agenda_entry_by_service_type',
+  // Su gemelo en la lista de espera (`WHERE service_type_id IS NOT NULL`):
+  // borrar un tipo de atención tiene que decidir también si alguien lo espera
+  // (AG-060). Prisma no puede describir el predicado.
+  'waitlist_entry_by_service_type',
   // Índice único PARCIAL (`WHERE rescheduled_from_id IS NOT NULL`): es a la vez
   // la garantía de que una cita se reprograma UNA sola vez (AG-050) y el índice
   // con el que se recorre la cadena hacia adelante (AG-051). Prisma no puede
