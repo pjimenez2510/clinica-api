@@ -11,6 +11,7 @@ import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
+import { PatientMergeService } from '../../src/modules/patients/application/patient-merge.service';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
@@ -83,6 +84,8 @@ describe('la lista de espera por HTTP', () => {
   let app: NestExpressApplication;
   let prisma: PrismaClient;
   let registry: RolePermissionRegistry;
+  /** PA-060. La fusión de fichas, que es lo que esta cola tiene que sobrevivir. */
+  let merges: PatientMergeService;
 
   let token: string;
   let userId: string;
@@ -120,6 +123,7 @@ describe('la lista de espera por HTTP', () => {
       configureApp(app);
       await listenForTests(app);
       registry = app.get(RolePermissionRegistry);
+      merges = app.get(PatientMergeService);
     }
 
     await seed();
@@ -521,6 +525,54 @@ describe('la lista de espera por HTTP', () => {
 
       expect(proposed.map((c) => c.entryId)).toEqual([merged.id, ordinary.id]);
       expect(proposed[0]?.priority).toBe(1);
+    });
+
+    it('PA-060 la persona conserva su puesto en la cola cuando admisión fusiona sus dos fichas', async () => {
+      /**
+       * ═════════════════════════════════════════════════════════════════════
+       * D-041 (B), Y ES EL PROPÓSITO ENTERO DEL REQUISITO
+       * ═════════════════════════════════════════════════════════════════════
+       *
+       * Rosa se inscribe primero, con ficha duplicada. Alguien se inscribe
+       * DESPUÉS. Admisión fusiona las dos fichas de Rosa —correctamente— y
+       * hasta PA-060 eso la mandaba al final de la cola: su entrada colgaba de
+       * la absorbida y `rankWaiting` la descarta (no podría convertirse en
+       * cita), así que el único candidato compatible era el que llegó después.
+       *
+       * La fusión es un acto administrativo; la cola es un reparto. AG-061
+       * promete que el turno es del ORDEN DE LLEGADA DE LA PERSONA.
+       */
+      const duplicate = await createPatient(prisma);
+      const survivor = await createPatient(prisma);
+
+      const early = await enrol({}, duplicate.id);
+      const later = await enrol({});
+
+      await merges.merge(
+        {
+          sourcePatientId: duplicate.id,
+          targetPatientId: survivor.id,
+          reason: 'la misma persona registrada dos veces en admisión',
+        },
+        { userId },
+      );
+
+      const released = await releasedSlot();
+      const proposed = await candidatesFor(released.id);
+
+      // La ficha vigente va PRIMERA, con la antigüedad de la inscripción
+      // original, y por delante de quien se inscribió después.
+      expect(proposed.map((candidate) => candidate.patientId)).toEqual([
+        survivor.id,
+        patientId,
+      ]);
+      // Y la entrada de la ficha absorbida NO se propone: reservar sobre ella
+      // se rechaza (AG-027), así que ofrecerla sería ofrecer un cupo que nadie
+      // puede tomar.
+      expect(proposed.map((candidate) => candidate.entryId)).not.toContain(
+        early.id,
+      );
+      expect(proposed[1]?.entryId).toBe(later.id);
     });
 
     it('AG-062 never returns the reason somebody is prioritised', async () => {

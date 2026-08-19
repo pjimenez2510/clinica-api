@@ -177,7 +177,7 @@ quedaba en la ficha muerta, el mostrador no encontraba a nadie al teclearla y se
 abría una tercera ficha con ella —que dejaba la fusión irreversible para
 siempre—. Ahora los documentos `OFFICIAL` viajan a la superviviente dentro de la
 misma transacción y vuelven al deshacer.
-**Cubre:** PA-043 a PA-049, PA-052, PA-054, PA-055.
+**Cubre:** PA-043 a PA-049, PA-052, PA-054, PA-055, PA-060.
 
 **Solo servidor:** PA-044, PA-046. El rastro append-only con su instantánea y la
 imposibilidad de fusionar una ficha consigo misma o encadenar fusiones son
@@ -1408,6 +1408,13 @@ Ningún requisito de esta sección lo altera._
   > que contesta, y que las filas sigan teniendo el `patient_id` de la absorbida.
   > Con sólo los contadores, repuntar las filas «para unificar la historia»
   > seguiría cuadrando.
+  >
+  > **Y `waitlistEntries` SIGUE SIGNIFICANDO LO MISMO DESPUÉS DE PA-060**
+  > (19-08-2026), que es lo que había que comprobar al tocar la fusión: la
+  > inscripción de la absorbida **no se reapunta**, así que el contador cuenta
+  > las mismas filas que contaba. Lo que PA-060 añade es una fila **nueva** en
+  > la superviviente, y una fila de la superviviente nunca entró en este
+  > objeto — que responde «cuántas de la ABSORBIDA se quedaron donde estaban».
 - **PA-054** — MIENTRAS una ficha haya absorbido a otras, la **ficha** DEBERÁ
   decir cuántas absorbió y el **número de historia** de ellas. El listado NO
   DEBERÁ llevarlo, y el campo NO DEBERÁ contener ningún otro dato de la
@@ -1597,6 +1604,121 @@ Ningún requisito de esta sección lo altera._
   > respuesta y ningún permiso nuevo: el motivo de la prioridad sigue detrás de
   > `patient:priority` (PA-040) y el nivel sigue saliendo con `patient:read`
   > (PA-041). Lo único que cambia es **de qué filas** se calculan los dos.
+
+- **PA-060** — CUANDO se fusionen dos fichas, por cada inscripción **abierta** de
+  lista de espera de la ficha absorbida el sistema DEBERÁ crear en la
+  superviviente una inscripción equivalente **conservando la fecha de
+  inscripción original**, y NO DEBERÁ crearla si la superviviente ya tiene una
+  abierta equivalente. La inscripción de la absorbida NO DEBERÁ reapuntarse.
+  CUANDO se deshaga la fusión, el sistema DEBERÁ retirar las inscripciones que
+  creó.
+  > **D-041, opción B (19-08-2026). LA COLA ES UN REPARTO Y LA FUSIÓN ES UN
+  > ACTO ADMINISTRATIVO: HOY EL PRIMERO PERJUDICA AL SEGUNDO.**
+  >
+  > > Rosa se inscribe en la lista de espera en marzo. En agosto admisiones
+  > > detecta que tiene ficha duplicada y **fusiona correctamente**. Desde ese
+  > > momento su inscripción cuelga de la absorbida, la cola no la propone
+  > > nunca más, y se la llama después de todos los que se inscribieron en
+  > > abril, mayo y junio.
+  >
+  > AG-061 promete que el turno es del **orden de llegada de la PERSONA**, y
+  > una ficha no es una persona. La fusión fue correcta y el rastro es
+  > impecable: lo que faltaba es que el turno la siguiera.
+  >
+  > **POR QUÉ NO BASTA CON LEER POR EL ENLACE, que es lo que resuelve PA-055
+  > para todo lo demás.** Una inscripción no sólo se lee: **se convierte en
+  > cita**. Reservar para la ficha absorbida se rechaza (AG-027,
+  > `PATIENT_MERGED`) y `trg_waitlist_entry_conversion_consented` exige que la
+  > cita enlazada sea del **mismo** `patient_id` que la entrada, así que la
+  > cita de la superviviente tampoco sirve. Proponer la entrada de la absorbida
+  > sería ofrecer un cupo que nadie puede tomar y dejarla compitiendo por cada
+  > cupo que se libere sin poder ganarlo nunca. Por eso D-041 eligió (B) y no
+  > el alcance de PA-055.
+  >
+  > **NO CONTRADICE A D-031: NO SE REAPUNTA NI UNA FILA.** Ningún `patient_id`
+  > cambia. Las inscripciones de la absorbida se quedan donde se escribieron
+  > —por eso `linkedRecords` (PA-049) sigue contando exactamente las mismas y
+  > sigue diciendo la verdad: cuenta **lo que se quedó**— y lo que la fusión
+  > añade es una **fila nueva** en la superviviente con el `created_at`
+  > original. Es la misma distinción que PA-043 hace con el documento de
+  > identidad, con una diferencia que conviene decir: allí la fila **viaja**,
+  > aquí **nace**, porque la de la absorbida tiene que seguir ahí para que
+  > deshacer la devuelva a la cola sin escribir nada.
+  >
+  > **QUÉ ESTADOS CUENTAN COMO «ABIERTA»: `WAITING` y `CONTACTED`**, que es el
+  > predicado de AG-067 y el del índice parcial
+  > `waitlist_entry_open_candidates`. Los otros tres son un no deliberado:
+  > `SCHEDULED` ya recibió su cupo —y la cita que produjo se lee desde la
+  > superviviente por PA-055—, y recrear una `EXPIRED` o `CANCELLED` **con su
+  > antigüedad original** es exactamente lo que
+  > `trg_waitlist_entry_closure_final` existe para impedir. Rodear un
+  > disparador escribiendo en otra fila sigue siendo rodearlo.
+  >
+  > **QUÉ ES «EQUIVALENTE», Y POR QUÉ NO SE DUPLICA.** Misma sede, mismo
+  > profesional, mismo tipo de servicio y **mismo rango preferido**: son las
+  > cinco columnas que AG-060 enumera como el contenido entero de una
+  > inscripción, así que dos entradas que coinciden en todas son la misma
+  > petición y **cualquier cupo compatible con una lo es con la otra**. Las dos
+  > en la cola serían una persona compitiendo dos veces por un cupo, que es lo
+  > contrario de un reparto justo. **Igual y no solapado**: un rango más ancho
+  > o más estrecho nombra días que el otro no, y descartarlo tiraría en
+  > silencio días que la persona pidió.
+  >
+  > **Y LA FILA QUE LA SUPERVIVIENTE YA TENÍA NO SE RETRASA NI SE ADELANTA.**
+  > Cuando es la más nueva de las dos, la persona conserva el puesto que esa
+  > ficha ya tenía y no el más antiguo. Reescribir `created_at` de una fila que
+  > la fusión no creó haría que la columna significara dos cosas —cuándo se
+  > escribió la fila y cuándo llegó la persona a la cola— y exigiría una
+  > segunda cosa que deshacer. Queda dicho aquí en vez de decidido en silencio:
+  > es el único caso en que esto no restituye la antigüedad entera, y está
+  > acotado —ya está en la cola por exactamente eso—.
+  >
+  > **EL RASTRO DE LLAMADAS NO SE COPIA, Y LA ENTRADA NUEVA NACE `WAITING`.**
+  > `waitlist_contact_attempt` es append-only por disparador (AG-064): una fila
+  > copiada ahí no se podría retirar nunca, y deshacer la fusión sería
+  > imposible. Una llamada además es un hecho sobre una llamada, no sobre un
+  > puesto en la cola, y `CONTACTED` en una entrada a la que nadie ha llamado
+  > es mentira en la única tabla que tiene que poder contestar «¿por qué el
+  > cupo se lo llevó ella?». La consecuencia visible es que el tope de la sede
+  > (AG-066) vuelve a empezar para la entrada nueva: se equivoca hacia llamar
+  > una vez más a la persona, que es la dirección que D-041 eligió.
+  >
+  > **DESHACER LA RETIRA, Y POR ID.** Las entradas que la fusión creó se
+  > guardan en su propia fila del rastro
+  > (`source_snapshot.reEnrolledWaitlistEntryIds`), igual que
+  > `movedIdentifierIds` (PA-047): deducirlas de su forma sería adivinar, y la
+  > fila sobre la que adivinaría mal es una inscripción que la superviviente
+  > hizo por su cuenta después. A la original no hay que hacerle nada —nunca se
+  > movió— y limpiar `merged_into_id` es lo que la devuelve a la cola, sin que
+  > nadie tenga que acordarse de nada (PA-055).
+  >
+  > **Y UNA COPIA PUEDE TENER YA VIDA PROPIA.** La que **nadie llamó** se
+  > **borra**: es una fila que la fusión inventó y retirarla deja la cola como
+  > estaba. La que tiene **intentos de contacto** se **cierra** (`CANCELLED`),
+  > porque ese rastro es append-only y `ON DELETE RESTRICT` rechazaría el
+  > borrado de todos modos —lo decide la base, no una costumbre—: una llamada
+  > que ocurrió no se borra porque una fusión se revirtiera. La que ya está
+  > `SCHEDULED` no se toca: deshacer una fusión es afirmar que son dos
+  > personas, y la cita es de la que fue llamada.
+  >
+  > **TODO DENTRO DE LA MISMA TRANSACCIÓN DE LA FUSIÓN**, como los documentos:
+  > una fusión que mueve media cosa no puede existir.
+  >
+  > **DÓNDE VIVE EL CÓDIGO, Y POR QUÉ NO EN NINGUNO DE LOS DOS MÓDULOS.**
+  > `waitlist_entry` es de `agenda` y la fusión es de `patients`, y **ningún
+  > módulo importa de otro**. `pnpm arch:check` mira los imports, así que
+  > `patients` escribiendo esa tabla con su propio SQL pasaría la comprobación
+  > y cruzaría la frontera por la puerta de atrás — peor que una violación
+  > detectada, porque nada la nombraría nunca. Vive en
+  > `shared/infrastructure/prisma/waitlist-follows-merge.ts`, por el mismo
+  > camino y el mismo motivo que `patient-chart-scope.ts` (PA-055): «qué le
+  > pasa a las inscripciones cuando dos fichas se funden» no es una regla **de**
+  > ninguno de los dos lados, es una regla de la costura. Un puerto de
+  > `patients` implementado en `agenda` era la otra respuesta y cuesta más de
+  > lo que da: todo esto corre dentro de la transacción de la fusión, así que el
+  > puerto tendría que llevar el cliente del ORM a través de
+  > `patients/domain` —justo la capa que no puede nombrarlo— y cablearse desde
+  > fuera de los dos módulos para evitar el import que existe para evitar.
 
 ## 8. Autorización y trazabilidad (REQ-118)
 
@@ -1883,6 +2005,7 @@ prueba cite un ID inexistente; el día que este `SPEC.md` pase a `vigente`,
 | PA-049, PA-050, PA-051, PA-052 | Contrato HTTP + prueba de rutas: `route-authorisation.spec.ts` recorre las rutas que NestJS registró de verdad                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | PA-054                         | Contrato HTTP **e** integración contra PostgreSQL real: la ficha que absorbió a dos las **nombra** y la que no absorbió a nadie devuelve la lista **vacía** —ni el campo ausente ni `null`—; el listado **no** lo lleva, afirmado sobre la respuesta y no sobre el esquema; y tras fusionar A→B la ficha de B nombra a A, tras deshacer deja de nombrarla. La segunda mitad no la puede ver una prueba de contrato: depende de que el enlace se recorra hacia atrás en la base                                                                                                                           |
 | PA-055                         | Integración contra PostgreSQL real **y** prueba del mecanismo: fusionar A→B con un grupo prioritario vigente en A y comprobar que **desde B se ve** —y que la **prioridad calculada** de B pasa a prioritaria—, y que **al deshacer deja de verse** y vuelve a ser estándar. Un doble no puede demostrarlo: depende de que el enlace se recorra en la base. Y la garantía tiene su propia prueba —`patient-chart-scope.spec.ts` recorre el código real y falla ante una lectura ingenua—, comprobada **rompiéndola**: la lectura por `patient_id` desnudo se le da al analizador y se afirma que la caza |
+| PA-060                         | Integración contra PostgreSQL real: inscribir en A, fusionar A→B y comprobar que B tiene una equivalente **con la fecha de inscripción original** y que la de A sigue donde estaba; que deshacer la retira; que la superviviente que ya tenía una equivalente **no acaba con dos**; y la que demuestra el propósito, de extremo a extremo por la ruta de la lista de espera: tras la fusión la persona **conserva su puesto en la cola** frente a quien se inscribió después. Un doble no puede demostrar ninguna: dependen de `created_at` y del orden que la base devuelve |
 
 ## Preguntas abiertas
 

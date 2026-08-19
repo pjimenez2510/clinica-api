@@ -506,7 +506,14 @@ export interface LinkedRecordCounts {
   contacts: number;
   /** `patient_priority_group`, which is what orders the waiting room. */
   priorityGroups: number;
-  /** `waitlist_entry` still waiting under the absorbed chart. */
+  /**
+   * `waitlist_entry` rows still hanging off the absorbed chart.
+   *
+   * ⚠️ STILL THE SAME ROWS AFTER PA-060, and that is what keeps this object
+   * honest: re-enrolling on the survivor (D-041 B) creates a NEW row over
+   * there and re-points nothing here, so this counter answers exactly what it
+   * always answered — how many rows OF THE ABSORBED CHART stayed put.
+   */
   waitlistEntries: number;
 }
 

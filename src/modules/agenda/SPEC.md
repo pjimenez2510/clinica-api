@@ -975,6 +975,18 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   inscripción. Compatible significa: misma sede, y el cupo cae dentro de
   `preferred_from`–`preferred_to`, y —si la entrada los fija— mismo profesional y
   mismo tipo de servicio.
+  > **Y LA ANTIGÜEDAD SOBREVIVE A UNA FUSIÓN DE FICHAS, desde el 19-08-2026:
+  > está en `PA-060` de `patients` y no aquí** (D-041, opción B). Una
+  > inscripción no sólo se lee —se convierte en cita—, así que el alcance de
+  > PA-055 no la alcanza: reservar para la ficha absorbida se rechaza (AG-027)
+  > y `trg_waitlist_entry_conversion_consented` exige que la cita sea del mismo
+  > `patient_id`. La fusión crea en la superviviente una inscripción
+  > equivalente **con el `created_at` original**, y deshacerla la retira. El
+  > requisito vive en `patients` porque lo que cambia es **lo que hace una
+  > fusión**, no lo que hace la cola: nada de AG-060 a AG-067 se dispara con
+  > una fusión, y quien quiera saber qué toca una fusión lo busca en la
+  > sección 7 de `patients`, donde ya están el documento de identidad (PA-043)
+  > y la lectura por el enlace (PA-055). Aquí sólo se dice que ocurre.
 - **AG-062** — El sistema DEBERÁ admitir prioridad 1 para los grupos de atención
   prioritaria del artículo 35 de la Constitución: adultos mayores, niñas, niños y
   adolescentes, mujeres embarazadas, personas con discapacidad, personas privadas

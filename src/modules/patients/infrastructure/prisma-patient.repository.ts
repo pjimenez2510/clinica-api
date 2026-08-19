@@ -9,6 +9,12 @@ import {
   chartScopeSelect,
 } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
+import {
+  reEnrolOpenWaitlistEntries,
+  reEnrolledWaitlistEntryIdsOf,
+  reEnrolledWaitlistEntrySnapshot,
+  undoWaitlistReEnrolment,
+} from '../../../shared/infrastructure/prisma/waitlist-follows-merge';
 import { parishLocationOf } from '../domain/dpa-parish';
 import {
   PROVISIONAL_IDENTIFIER_TYPE,
@@ -1488,6 +1494,35 @@ export class PrismaPatientRepository implements PatientRepository {
           RETURNING mine.id::text AS id
         `;
 
+        /**
+         * ⚠️ AND THE PLACE IN THE QUEUE FOLLOWS THE PERSON (PA-060, D-041 B).
+         *
+         * The open waiting-list enrolments of the absorbed chart are RE-MADE
+         * on the survivor carrying their original `created_at`. Not moved:
+         * `waitlist_entry` keeps its `patient_id` like the rest of the
+         * history (D-031), and `linkedRecords` still counts exactly the rows
+         * it counted before.
+         *
+         * It is a NEW ROW and not a scope read (PA-055) because an enrolment
+         * does not only get read — IT TURNS INTO AN APPOINTMENT, and booking
+         * for a merged chart is refused (AG-027) while
+         * `trg_waitlist_entry_conversion_consented` demands the appointment be
+         * of the same `patient_id`. Proposing the absorbed chart's entry would
+         * offer a slot nobody can take.
+         *
+         * IN `shared` AND NOT HERE: `waitlist_entry` belongs to `agenda`, and
+         * no module writes another module's table — `arch:check` reads
+         * imports, so doing it inline would cross the boundary through the
+         * back door. See the header of `waitlist-follows-merge.ts`.
+         *
+         * IN THE SAME TRANSACTION as everything else: a merge that moves half
+         * a thing cannot exist.
+         */
+        const reEnrolled = await reEnrolOpenWaitlistEntries(tx, {
+          absorbedChartId: input.sourcePatientId,
+          survivingChartId: input.targetPatientId,
+        });
+
         const row = await tx.patientMerge.create({
           data: {
             event: 'MERGE',
@@ -1509,6 +1544,14 @@ export class PrismaPatientRepository implements PatientRepository {
                * answer that never guesses.
                */
               movedIdentifierIds: moved.map((identifier) => identifier.id),
+              /**
+               * PA-060. WHICH ENROLMENTS THIS OPERATION CREATED, by id, for
+               * the same reason as the line above: undoing has to take back
+               * exactly these rows and no others. Deducing them from their
+               * shape would guess wrong about an enrolment the survivor made
+               * on her own account after the merge.
+               */
+              ...reEnrolledWaitlistEntrySnapshot(reEnrolled),
             },
           },
           select: { id: true },
@@ -1664,6 +1707,20 @@ export class PrismaPatientRepository implements PatientRepository {
              WHERE id = ANY(${movedIds}::uuid[])
           `;
         }
+
+        /**
+         * PA-060. And the enrolments the merge created are taken back.
+         *
+         * ORDER IS NOT LOAD-BEARING HERE, unlike the identifiers above, and
+         * saying so is the point: no trigger couples these rows to the link.
+         * The absorbed chart's own entries need nothing done to them — they
+         * never moved — and clearing `merged_into_id` below is what puts them
+         * back in the queue, with nobody having to remember anything (PA-055).
+         */
+        await undoWaitlistReEnrolment(
+          tx,
+          reEnrolledWaitlistEntryIdsOf(merged.sourceSnapshot),
+        );
 
         await tx.$executeRaw`
           UPDATE patient

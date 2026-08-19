@@ -192,6 +192,16 @@ const EXEMPT: Record<string, string> = {
     'la única forma de enseñar desde fuera que «se lee por el enlace» (D-031) ' +
     'y que ninguna fila se movió. Resolverla por el alcance contaría las de ' +
     'la superviviente y la respuesta dejaría de significar nada.',
+  'src/shared/infrastructure/prisma/waitlist-follows-merge.ts#reEnrolOpenWaitlistEntries':
+    'PA-060, D-041 (B). Aquí las dos fichas se nombran COMO FILAS y no como ' +
+    'persona: se leen las inscripciones abiertas de la ABSORBIDA para ' +
+    'recrearlas en la superviviente, y se comprueba si la SUPERVIVIENTE ya ' +
+    'tiene una equivalente. Resolver el alcance en la primera mitad traería ' +
+    'también las de las fichas que la absorbida absorbió —que PA-046 prohíbe— ' +
+    'y en la segunda traería las de la propia absorbida, con lo que la fusión ' +
+    'nunca copiaría nada porque cada entrada sería «equivalente a sí misma». ' +
+    'Es el mismo motivo que `countLinkedRecords`: la fusión escribe, y una ' +
+    'escritura nombra filas concretas por definición.',
 };
 
 // ---------------------------------------------------------------------------

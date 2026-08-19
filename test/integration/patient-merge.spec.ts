@@ -2601,4 +2601,250 @@ describe('fusión de duplicados: el contrato y su permiso', () => {
     // Y B vuelve a ser estándar porque ya no hay ninguna valoración vigente.
     expect((await openChart(target.id)).priority).toBe(2);
   });
+  // =========================================================================
+  // PA-060 · la cola es un reparto, y la fusión no puede costarle el turno
+  // =========================================================================
+
+  /**
+   * Una inscripción abierta, con la antigüedad que la prueba necesita.
+   *
+   * `createdAt` EXPLÍCITO: es lo único que AG-061 lee para desempatar, así que
+   * una prueba sobre la antigüedad que dejara la columna en `now()` no podría
+   * distinguir «se conservó» de «se creó ahora».
+   */
+  async function enrolInWaitlist(
+    prismaClient: PrismaClient,
+    entry: {
+      patientId: string;
+      siteId: string;
+      createdAt: Date;
+      practitionerId?: string;
+      status?: 'WAITING' | 'CONTACTED' | 'EXPIRED';
+      preferredTo?: string;
+    },
+  ) {
+    return prismaClient.waitlistEntry.create({
+      data: {
+        patientId: entry.patientId,
+        siteId: entry.siteId,
+        practitionerId: entry.practitionerId ?? null,
+        preferredFrom: new Date('2026-09-01'),
+        preferredTo: new Date(entry.preferredTo ?? '2099-09-30'),
+        status: entry.status ?? 'WAITING',
+        createdAt: entry.createdAt,
+      },
+    });
+  }
+
+  const MARCH = new Date('2026-03-02T14:00:00.000Z');
+
+  it('PA-060 la inscripción abierta de la absorbida nace en la superviviente CON SU FECHA ORIGINAL', async () => {
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     * D-041 (B). LA FUSIÓN ES UN ACTO ADMINISTRATIVO; LA COLA, UN REPARTO
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Rosa se inscribió en marzo. Admisión fusiona sus dos fichas en agosto, y
+     * hasta hoy eso le costaba el turno: la entrada colgaba de la absorbida y
+     * la cola no la propone nunca más (AG-027 impide reservar sobre ella, y
+     * `trg_waitlist_entry_conversion_consented` exige que la cita sea del
+     * MISMO `patient_id`). Leer por el enlace, que resuelve todo lo demás
+     * (PA-055), aquí ofrecería un cupo que nadie puede tomar.
+     */
+    const prismaClient = db();
+    const source = await createPatient(prismaClient);
+    const target = await createPatient(prismaClient);
+    const site = await createSite(prismaClient, 'Sede Norte');
+    const practitioner = await createPractitioner(prismaClient);
+    await linkPractitionerToSite(prismaClient, practitioner.id, site.id);
+
+    const original = await enrolInWaitlist(prismaClient, {
+      patientId: source.id,
+      siteId: site.id,
+      practitionerId: practitioner.id,
+      createdAt: MARCH,
+    });
+
+    await mergeCharts(source, target);
+
+    const carried = await prismaClient.waitlistEntry.findMany({
+      where: { patientId: target.id },
+    });
+    expect(carried).toHaveLength(1);
+    // LA ANTIGÜEDAD, que es el requisito entero: `created_at` es lo que AG-061
+    // lee para desempatar, y una fila nacida hoy manda a Rosa al final.
+    expect(carried[0]?.createdAt.toISOString()).toBe(MARCH.toISOString());
+    expect(carried[0]?.siteId).toBe(site.id);
+    expect(carried[0]?.practitionerId).toBe(practitioner.id);
+    // `WAITING` y no `CONTACTED`: la entrada nueva no tiene llamadas propias,
+    // y el rastro de llamadas no se copia (es append-only, AG-064).
+    expect(carried[0]?.status).toBe('WAITING');
+
+    // Y LA ORIGINAL NO SE MOVIÓ (D-031): sigue siendo de la absorbida, con su
+    // `patient_id` intacto. Repuntarla es lo que D-031 rechazó.
+    const stayed = await prismaClient.waitlistEntry.findUniqueOrThrow({
+      where: { id: original.id },
+    });
+    expect(stayed.patientId).toBe(source.id);
+  });
+
+  it('PA-060 el rastro de la fusión sigue contando la inscripción que se quedó en la absorbida', async () => {
+    /**
+     * PA-049 responde «cuántas filas de la ABSORBIDA se quedaron donde
+     * estaban», y esa frase tiene que seguir siendo cierta después de PA-060:
+     * la fila nueva es de la superviviente y nunca entró en este objeto.
+     */
+    const prismaClient = db();
+    const source = await createPatient(prismaClient);
+    const target = await createPatient(prismaClient);
+    const site = await createSite(prismaClient, 'Sede Valle');
+
+    await enrolInWaitlist(prismaClient, {
+      patientId: source.id,
+      siteId: site.id,
+      createdAt: MARCH,
+    });
+
+    const body = await mergeCharts(source, target);
+
+    expect(body.linkedRecords.waitlistEntries).toBe(1);
+    expect(body.linkedRecords.policy).toBe('READ_THROUGH_LINK');
+  });
+
+  it('PA-060 deshacer la fusión retira la inscripción que la fusión creó', async () => {
+    const prismaClient = db();
+    const source = await createPatient(prismaClient);
+    const target = await createPatient(prismaClient);
+    const site = await createSite(prismaClient, 'Sede Centro');
+
+    const original = await enrolInWaitlist(prismaClient, {
+      patientId: source.id,
+      siteId: site.id,
+      createdAt: MARCH,
+    });
+
+    await mergeCharts(source, target);
+    await undoRequest(source.id, admision)
+      .send({ reason: 'eran dos personas distintas' })
+      .expect(200);
+
+    // La cola vuelve a estar como estaba: una entrada, la de siempre, en la
+    // ficha que vuelve a estar entera.
+    const entries = await prismaClient.waitlistEntry.findMany({
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.id).toBe(original.id);
+    expect(entries[0]?.patientId).toBe(source.id);
+    expect(entries[0]?.status).toBe('WAITING');
+  });
+
+  it('PA-060 no deja compitiendo dos veces a quien la superviviente ya tenía inscrita igual', async () => {
+    /**
+     * Duplicar pondría a la misma persona a competir dos veces por el mismo
+     * cupo, que es lo contrario de un reparto justo: las cinco columnas que
+     * AG-060 enumera son el contenido entero de una inscripción, así que dos
+     * entradas que coinciden en todas son la misma petición.
+     */
+    const prismaClient = db();
+    const source = await createPatient(prismaClient);
+    const target = await createPatient(prismaClient);
+    const site = await createSite(prismaClient, 'Sede Sur');
+
+    await enrolInWaitlist(prismaClient, {
+      patientId: source.id,
+      siteId: site.id,
+      createdAt: MARCH,
+    });
+    const standing = await enrolInWaitlist(prismaClient, {
+      patientId: target.id,
+      siteId: site.id,
+      createdAt: new Date('2026-06-10T14:00:00.000Z'),
+    });
+
+    await mergeCharts(source, target);
+
+    const onSurvivor = await prismaClient.waitlistEntry.findMany({
+      where: { patientId: target.id },
+    });
+    expect(onSurvivor).toHaveLength(1);
+    expect(onSurvivor[0]?.id).toBe(standing.id);
+    // Y la que ya estaba no se reescribe: `created_at` sigue diciendo cuándo
+    // se escribió esa fila, no cuándo llegó la persona a la cola.
+    expect(onSurvivor[0]?.createdAt.toISOString()).toBe(
+      '2026-06-10T14:00:00.000Z',
+    );
+  });
+
+  it('PA-060 no resucita en la superviviente una inscripción ya cerrada', async () => {
+    /**
+     * Recrear una `EXPIRED` con su antigüedad original es exactamente lo que
+     * `trg_waitlist_entry_closure_final` existe para impedir —«una entrada
+     * cerrada no vuelve a competir por un cupo»—, y hacerlo escribiendo en
+     * otra fila seguiría siendo rodear el disparador.
+     */
+    const prismaClient = db();
+    const source = await createPatient(prismaClient);
+    const target = await createPatient(prismaClient);
+    const site = await createSite(prismaClient, 'Sede Norte');
+
+    await enrolInWaitlist(prismaClient, {
+      patientId: source.id,
+      siteId: site.id,
+      createdAt: MARCH,
+      status: 'EXPIRED',
+    });
+
+    await mergeCharts(source, target);
+
+    expect(
+      await prismaClient.waitlistEntry.count({
+        where: { patientId: target.id },
+      }),
+    ).toBe(0);
+  });
+
+  it('PA-060 al deshacer cierra, en vez de borrar, la inscripción a la que ya se llamó', async () => {
+    /**
+     * El rastro de llamadas es append-only (AG-064) y la clave foránea es
+     * `ON DELETE RESTRICT`: una llamada que ocurrió no se borra porque una
+     * fusión se revirtiera. La entrada deja de competir y punto.
+     */
+    const prismaClient = db();
+    const source = await createPatient(prismaClient);
+    const target = await createPatient(prismaClient);
+    const site = await createSite(prismaClient, 'Sede Centro');
+
+    await enrolInWaitlist(prismaClient, {
+      patientId: source.id,
+      siteId: site.id,
+      createdAt: MARCH,
+    });
+    await mergeCharts(source, target);
+
+    const copy = await prismaClient.waitlistEntry.findFirstOrThrow({
+      where: { patientId: target.id },
+    });
+    await prismaClient.waitlistContactAttempt.create({
+      data: {
+        waitlistEntryId: copy.id,
+        outcome: 'NO_ANSWER',
+        recordedById: admisionUserId,
+      },
+    });
+
+    await undoRequest(source.id, admision)
+      .send({ reason: 'eran dos personas distintas' })
+      .expect(200);
+
+    const kept = await prismaClient.waitlistEntry.findUniqueOrThrow({
+      where: { id: copy.id },
+    });
+    expect(kept.status).toBe('CANCELLED');
+    expect(
+      await prismaClient.waitlistContactAttempt.count({
+        where: { waitlistEntryId: copy.id },
+      }),
+    ).toBe(1);
+  });
 });
