@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseClinicalDate } from '../../../shared/domain/clinic-time';
+import {
+  CLINIC_TIME_ZONE,
+  WallClockTime,
+  addDays,
+  atWallClock,
+  clinicalDateOf,
+  parseClinicalDate,
+} from '../../../shared/domain/clinic-time';
 import { PatientMergedError } from '../../../shared/domain/errors/patient-merged.error';
 import {
   AgendaEntryNotFoundError,
+  ReleasedSlotInThePastError,
   SlotNotReleasedError,
   WaitlistEntryClosedError,
   WaitlistEntryNotFoundError,
@@ -36,6 +44,29 @@ const PRACTITIONER = 'practitioner-p';
 const RECEPTIONIST = 'user-recepcion';
 
 /**
+ * ⚠️ THE SERVICE READS THE REAL CLOCK, so everything it is asked about is
+ * placed RELATIVE TO NOW.
+ *
+ * A pinned September would pass today and fail the week the calendar goes past
+ * it — AG-061 refuses a slot whose hour has gone, and AG-065 expires an entry
+ * whose last preferred day has. The clock is the service's, not the domain's:
+ * every rule underneath takes the instant as a parameter, which is what these
+ * tests exercise.
+ */
+const MINUTE_MS = 60_000;
+const DAY_MS = 24 * 60 * MINUTE_MS;
+const NOW = new Date();
+const inMinutes = (count: number) =>
+  new Date(NOW.getTime() + count * MINUTE_MS);
+const inDays = (count: number) => new Date(NOW.getTime() + count * DAY_MS);
+
+/** The freed slot, a week away: still there to be offered. */
+const FREED_SLOT_STARTS_AT = inDays(7);
+/** A range that covers it, from today. */
+const PREFERRED_FROM = clinicalDateOf(NOW, CLINIC_TIME_ZONE);
+const PREFERRED_TO = clinicalDateOf(inDays(30), CLINIC_TIME_ZONE);
+
+/**
  * The waiting list as the SERVICE decides it.
  *
  * WHAT THIS LEVEL PROVES AND THE INTEGRATION SUITE DOES NOT: which port calls
@@ -62,9 +93,9 @@ function candidate(
     id: 'entry-001',
     patientId: PATIENT,
     status: 'WAITING',
-    enrolledAt: new Date(Date.UTC(2026, 8, 1, 12, 0)),
-    preferredFrom: d('2026-09-01'),
-    preferredTo: d('2026-09-30'),
+    enrolledAt: inDays(-30),
+    preferredFrom: PREFERRED_FROM,
+    preferredTo: PREFERRED_TO,
     practitionerId: null,
     serviceTypeId: null,
     contactAttempts: 0,
@@ -87,13 +118,13 @@ function entryView(
     patientId: PATIENT,
     practitionerId: null,
     serviceTypeId: null,
-    preferredFrom: d('2026-09-01'),
-    preferredTo: d('2026-09-30'),
+    preferredFrom: PREFERRED_FROM,
+    preferredTo: PREFERRED_TO,
     status: 'WAITING',
     convertedEntryId: null,
     contactAttempts: 0,
     lastContactedAt: null,
-    createdAt: new Date(Date.UTC(2026, 8, 1, 12, 0)),
+    createdAt: inDays(-30),
     ...overrides,
   };
 }
@@ -110,13 +141,13 @@ function agendaEntry(
     roomId: null,
     patientId: 'patient-999',
     patientName: null,
-    startsAt: new Date(Date.UTC(2026, 8, 14, 13, 0)),
-    endsAt: new Date(Date.UTC(2026, 8, 14, 13, 30)),
+    startsAt: FREED_SLOT_STARTS_AT,
+    endsAt: new Date(FREED_SLOT_STARTS_AT.getTime() + 30 * MINUTE_MS),
     status: 'CANCELLED',
     blocksCalendar: true,
     overbookingReason: null,
     overbookingAuthorisedById: null,
-    releasedAt: new Date(Date.UTC(2026, 8, 10, 12, 0)),
+    releasedAt: inMinutes(-60),
     bookingChannel: 'PHONE',
     serviceTypeId: 'service-general',
     createdById: RECEPTIONIST,
@@ -314,17 +345,22 @@ describe('WaitlistService', () => {
     });
 
     it('AG-061 resolves the day of the freed slot in Ecuador and not in the session zone', async () => {
-      // 14 September 20:30 in Guayaquil is already the 15th in UTC. An entry
-      // whose last preferred day is the 14th must still be offered it.
-      const lastDayIsThe14th = candidate({
-        preferredFrom: d('2026-09-14'),
-        preferredTo: d('2026-09-14'),
+      // 20:30 in Guayaquil is already the following day in UTC. An entry whose
+      // ONLY preferred day is that one must still be offered the slot.
+      const evening = clinicalDateOf(inDays(7), CLINIC_TIME_ZONE);
+      const at2030 = atWallClock(evening, WallClockTime.of(20, 30));
+      // The premise the test rests on, asserted instead of assumed.
+      expect(clinicalDateOf(at2030, 'UTC')).toBe(addDays(evening, 1));
+
+      const onlyThatEvening = candidate({
+        preferredFrom: evening,
+        preferredTo: evening,
       });
       const { service } = build({
-        open: [lastDayIsThe14th],
+        open: [onlyThatEvening],
         agenda: agendaEntry({
-          startsAt: new Date(Date.UTC(2026, 8, 15, 1, 30)),
-          endsAt: new Date(Date.UTC(2026, 8, 15, 2, 0)),
+          startsAt: at2030,
+          endsAt: new Date(at2030.getTime() + 30 * MINUTE_MS),
         }),
       });
 
@@ -333,8 +369,86 @@ describe('WaitlistService', () => {
         entryId: 'agenda-001',
       });
 
-      expect(proposal.slot.date).toBe('2026-09-14');
+      expect(proposal.slot.date).toBe(evening);
       expect(proposal.candidates).toHaveLength(1);
+    });
+
+    /**
+     * AG-061. EL DEFECTO QUE ESTA PRUEBA CIERRA: la cita de la mañana se
+     * anuló y por la tarde se seguía ofreciendo. Se proponía la cola, se
+     * llamaba a alguien de verdad, aceptaba, y la reserva chocaba con AG-031 —
+     * gastando por el camino un intento de los tres que la entrada tiene
+     * (AG-066), sobre un rastro que no se puede reescribir.
+     */
+    it('AG-061 refuses to propose over a slot whose hour has already gone', async () => {
+      const { service, recorded } = build({
+        open: [candidate()],
+        agenda: agendaEntry({
+          startsAt: inMinutes(-240),
+          endsAt: inMinutes(-220),
+        }),
+      });
+
+      await expect(
+        service.proposeCandidates({ siteId: SITE, entryId: 'agenda-001' }),
+      ).rejects.toBeInstanceOf(ReleasedSlotInThePastError);
+      // Y ni siquiera se barre la cola: no hay nada que repartir, así que
+      // nadie sale de ella por una consulta que no se podía responder.
+      expect(recorded.expired).toEqual([]);
+    });
+
+    /**
+     * EL BORDE. Estrictamente antes del instante, como `checkBookingWindow`
+     * lee AG-031: lo que empieza dentro de cinco minutos se puede dar —el
+     * mínimo de antelación de la sede es de AG-032 y D-001 lo dejó en cero—, y
+     * lo que empezó hace un minuto no. Que las dos reglas lean el borde igual
+     * es lo que impide que la cola esconda un cupo que la reserva sí acepta.
+     */
+    it('AG-061 still proposes a slot that starts five minutes from now', async () => {
+      const { service } = build({
+        open: [candidate({ id: 'entry-soon' })],
+        agenda: agendaEntry({
+          startsAt: inMinutes(5),
+          endsAt: inMinutes(25),
+        }),
+      });
+
+      const proposal = await service.proposeCandidates({
+        siteId: SITE,
+        entryId: 'agenda-001',
+      });
+
+      expect(proposal.candidates.map((c) => c.entryId)).toEqual(['entry-soon']);
+    });
+
+    it('AG-061 refuses a slot that started a minute ago', async () => {
+      const { service } = build({
+        open: [candidate()],
+        agenda: agendaEntry({
+          startsAt: inMinutes(-1),
+          endsAt: inMinutes(19),
+        }),
+      });
+
+      await expect(
+        service.proposeCandidates({ siteId: SITE, entryId: 'agenda-001' }),
+      ).rejects.toBeInstanceOf(ReleasedSlotInThePastError);
+    });
+
+    it('AG-061 answers that the slot was never freed before it looks at the clock', async () => {
+      // Nombrar una entrada que sigue en pie es otro error, con otra salida
+      // —nombrar la que sí se liberó— y es verdad diga lo que diga el reloj.
+      const { service } = build({
+        agenda: agendaEntry({
+          releasedAt: null,
+          startsAt: inMinutes(-240),
+          endsAt: inMinutes(-220),
+        }),
+      });
+
+      await expect(
+        service.proposeCandidates({ siteId: SITE, entryId: 'agenda-001' }),
+      ).rejects.toBeInstanceOf(SlotNotReleasedError);
     });
 
     it('AG-061 refuses to propose over an entry that still occupies the calendar', async () => {

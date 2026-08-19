@@ -587,6 +587,49 @@ export class SlotNotReleasedError extends BusinessRuleViolation {
   }
 }
 
+/**
+ * AG-061. The slot was freed, but its hour has already gone.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * WHY A CODE OF ITS OWN AND NOT `BOOKING_IN_THE_PAST`
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The fact looks the same — an hour that passed cannot be occupied — and the
+ * situation is not:
+ *
+ *   * NOTHING IS BEING BOOKED HERE. This is a `GET` naming a released entry;
+ *     there is no `startsAt` in the request, so the field error that
+ *     `BOOKING_IN_THE_PAST` carries would send a receptionist to correct a box
+ *     that does not exist on this screen, and a client branching on that code
+ *     to "fix the start time" would fire on a query.
+ *   * THE CONDITION IS DIFFERENT. `BOOKING_IN_THE_PAST` obeys the site's
+ *     `allow_past_booking` (AG-031), so a site that records attentions after
+ *     the fact never sees it. This refusal is unconditional: a proposal is a
+ *     call asking somebody to come, and no parameter makes a past hour
+ *     attendable.
+ *   * WHAT TO DO IS DIFFERENT. There is no future hour to pick instead —
+ *     there is nothing to offer on this slot at all.
+ *
+ * 422 AND NOT 409, like its neighbour `SLOT_NOT_RELEASED` on the same route:
+ * both say «esta entrada no sirve como cupo a repartir», one because it still
+ * occupies the calendar and the other because its hour is gone, and a client
+ * handles the two the same way — show the sentence, show no list. A 409 would
+ * suggest refreshing and trying again, which is exactly the wrong hint for an
+ * hour that is never coming back.
+ *
+ * NO IDENTIFIER AND NO HOUR IN THE MESSAGE (AG-074): the entry that was freed
+ * belongs to another patient.
+ */
+export class ReleasedSlotInThePastError extends BusinessRuleViolation {
+  readonly code = 'RELEASED_SLOT_IN_THE_PAST';
+  override readonly userTitle =
+    'Ese cupo ya pasó y no hay nada que ofrecer. Proponga la lista sobre un cupo liberado que aún no haya empezado';
+
+  constructor() {
+    super('The released slot starts before the current instant');
+  }
+}
+
 /* ─── Sobrecupo y bloqueos (E4: AG-035, AG-038, AG-039, AG-100 a AG-103) ─── */
 
 /**

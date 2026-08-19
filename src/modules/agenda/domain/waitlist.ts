@@ -202,6 +202,46 @@ export function isCompatibleWith(
 }
 
 /**
+ * AG-061. The freed hour has already gone, so there is nothing to offer.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * A SLOT THAT PASSED IS NOT A SLOT — and offering it costs a real call
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * An appointment cancelled this morning was still being proposed in the
+ * afternoon: the queue named somebody, reception phoned them, they accepted,
+ * and booking refused the hour (AG-031). The list led the receptionist to a
+ * wall, and on the way it spent a call to a real person and one of the
+ * attempts that entry has before it expires (AG-066). Neither is undoable —
+ * `waitlist_contact_attempt` is append-only.
+ *
+ * THE INSTANT, NOT THE DAY, and `now` is a parameter like every other question
+ * in this file. The day is what `preferred_from`–`preferred_to` speak, and it
+ * is too coarse here: 08:00 and 19:00 of today are the same date and only one
+ * of them can still be given at noon.
+ *
+ * ⚠️ STRICTLY BEFORE, WHICH IS HOW AG-031 READS THE SAME FACT
+ * (`checkBookingWindow`: «a start AT the current instant is the counter
+ * booking that D-001 set the minimum lead to zero for»). So the slot starting
+ * five minutes from now is offered, the one that started a minute ago is not,
+ * and the one starting AT this instant is offered — because the booking that
+ * closes the flow would accept it. Reading the border the other way would hide
+ * a slot the system does let somebody take; reading it more strictly still —
+ * adding a margin — would be inventing a minimum lead the site did not ask
+ * for, and AG-032 already owns that number.
+ *
+ * NOT CONDITIONED ON `allow_past_booking`, which is the parameter AG-031 obeys
+ * (`site_parameter`). That switch exists so a site can RECORD an attention
+ * that already happened, and a retroactive record never travels through the
+ * waiting list: proposing a candidate is a call asking somebody to come. A
+ * slot nobody can attend is nothing to offer, whatever the site admits typing
+ * in afterwards.
+ */
+export function hasSlotPassed(startsAt: Date, now: Date): boolean {
+  return startsAt.getTime() < now.getTime();
+}
+
+/**
  * AG-065. The last preferred day is already in the past.
  *
  * STRICTLY BEFORE TODAY: «del 3 al 3» is a legitimate range and the 3rd itself

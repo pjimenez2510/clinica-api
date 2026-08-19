@@ -26,6 +26,7 @@ import {
   OverbookingNotAllowedError,
   OverbookingNotAuthorisedError,
   OverbookingReasonRequiredError,
+  ReleasedSlotInThePastError,
   SelfAuthorisationDeniedError,
   SlotNotAlignedError,
   SlotNotReleasedError,
@@ -534,7 +535,30 @@ describe('the booking window errors (AG-031 to AG-033)', () => {
     );
   });
 
-  it('AG-060, AG-067 register the six E5 codes in the frozen public catalogue', () => {
+  it('AG-061 answers RELEASED_SLOT_IN_THE_PAST when the freed hour has already gone', () => {
+    const error = new ReleasedSlotInThePastError();
+
+    expect(error.code).toBe('RELEASED_SLOT_IN_THE_PAST');
+    expect(error).toBeInstanceOf(BusinessRuleViolation); // 422
+    expect(error.userTitle).toBe(
+      'Ese cupo ya pasó y no hay nada que ofrecer. Proponga la lista sobre un cupo liberado que aún no haya empezado',
+    );
+  });
+
+  it('AG-061 keeps RELEASED_SLOT_IN_THE_PAST apart from BOOKING_IN_THE_PAST', () => {
+    const proposing = new ReleasedSlotInThePastError();
+    const booking = new BookingInThePastError();
+
+    // Son el mismo HECHO —una hora que pasó— y dos situaciones distintas: al
+    // proponer no se reserva nada, así que no hay campo que corregir. Un
+    // `errors[]` señalando `startsAt` mandaría a recepción a arreglar una
+    // casilla que esta pantalla no tiene.
+    expect(proposing.code).not.toBe(booking.code);
+    expect(proposing.fieldErrors).toBeUndefined();
+    expect(booking.fieldErrors?.[0]?.field).toBe('startsAt');
+  });
+
+  it('AG-060, AG-067 register the seven E5 codes in the frozen public catalogue', () => {
     for (const code of [
       'WAITLIST_ENTRY_NOT_FOUND',
       'WAITLIST_ENTRY_CLOSED',
@@ -542,6 +566,7 @@ describe('the booking window errors (AG-031 to AG-033)', () => {
       'WAITLIST_PATIENT_MISMATCH',
       'WAITLIST_SLOT_ALREADY_CLAIMED',
       'SLOT_NOT_RELEASED',
+      'RELEASED_SLOT_IN_THE_PAST',
     ]) {
       expect(DOMAIN_ERROR_CODES).toContain(code);
     }

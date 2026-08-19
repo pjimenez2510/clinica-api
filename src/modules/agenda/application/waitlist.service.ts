@@ -9,6 +9,7 @@ import {
 import { PatientMergedError } from '../../../shared/domain/errors/patient-merged.error';
 import {
   AgendaEntryNotFoundError,
+  ReleasedSlotInThePastError,
   SlotNotReleasedError,
   WaitlistEntryClosedError,
   WaitlistEntryNotFoundError,
@@ -23,6 +24,7 @@ import {
   type RankedCandidate,
   type WaitlistContactOutcome,
   entriesToExpire,
+  hasSlotPassed,
   isOpenWaitlistStatus,
   rankCandidates,
   rankWaiting,
@@ -185,7 +187,7 @@ export class WaitlistService {
   async review(
     request: WaitlistReviewRequest,
   ): Promise<readonly RankedCandidate[]> {
-    const today = this.today();
+    const today = this.todayIn(this.now());
     await this.sweep(request.siteId, today);
 
     return rankWaiting(
@@ -220,6 +222,14 @@ export class WaitlistService {
    * that was released, so a client cannot ask about an interval that never
    * came free — and the precondition of the requirement, «un cupo QUE OCUPABA
    * CALENDARIO», is enforced instead of assumed (`SLOT_NOT_RELEASED`).
+   *
+   * AND THE SLOT HAS TO STILL BE THERE. A cancelled appointment does not stop
+   * being released when its hour goes by, so nothing in the row says the
+   * offer is over — the clock does, and it is read here
+   * (`RELEASED_SLOT_IN_THE_PAST`). Without it this route led reception by the
+   * hand to a wall: it proposed, somebody phoned a real person, they accepted,
+   * and booking refused the hour (AG-031) — after spending one of the attempts
+   * that entry has before it expires (AG-066), on an append-only trail.
    */
   async proposeCandidates(
     request: CandidatesRequest,
@@ -239,7 +249,20 @@ export class WaitlistService {
       throw new SlotNotReleasedError();
     }
 
-    const today = this.today();
+    // ONE READING OF THE CLOCK for the whole use case, and both questions are
+    // asked of it: whether the hour has gone, and which Ecuadorian day it is
+    // for the sweep. Two `new Date()` calls could straddle midnight in
+    // Guayaquil and answer about two different days.
+    const now = this.now();
+
+    // AG-061, AFTER the two above: naming an entry that never came free is a
+    // different mistake with a different way out —name the one that was
+    // released— and it is true whatever the clock says.
+    if (hasSlotPassed(released.startsAt, now)) {
+      throw new ReleasedSlotInThePastError();
+    }
+
+    const today = this.todayIn(now);
     await this.sweep(request.siteId, today);
 
     const open = await this.waitlist.openWaitlistEntriesFor(request.siteId);
@@ -256,6 +279,12 @@ export class WaitlistService {
    * the site's calls still competing for slots (AG-066), and the trail is
    * append-only, so the write cannot be taken back and corrected.
    *
+   * IT NAMES NO SLOT, so the hole AG-061 had cannot exist here: the request
+   * carries an entry and an outcome and nothing else. What kept a receptionist
+   * from spending a call on an hour that had passed was never a check on this
+   * route — the call is only made because the queue proposed somebody, and
+   * that is where the slot is now refused.
+   *
    * AN ACCEPTANCE CLOSES NOTHING HERE, and that is the second half of AG-064:
    * it is the CONFIRMATION that authorises converting the entry, and the entry
    * becomes `SCHEDULED` only when the appointment exists and is linked. A
@@ -266,7 +295,7 @@ export class WaitlistService {
     request: ContactRequest,
     requester: Requester,
   ): Promise<WaitlistEntryView> {
-    const today = this.today();
+    const today = this.todayIn(this.now());
     await this.sweep(request.siteId, today);
 
     const entry = await this.requireEntry(request.siteId, request.entryId);
@@ -315,6 +344,15 @@ export class WaitlistService {
    * grid, the merged chart, the three `EXCLUDE` constraints and the
    * overbooking rules, all of which already have exactly one implementation.
    *
+   * ⚠️ AND THAT IS ALSO WHY IT DOES NOT REPEAT THE CHECK AG-061 NOW MAKES.
+   * Converting books nothing: the appointment already exists, and the only way
+   * it can exist is the ordinary route, where `checkBookingWindow` already
+   * applied AG-031 with the site's `allow_past_booking`. Adding a second
+   * «no está en el pasado» here would be a weaker copy of that rule in the one
+   * place it must NOT hold — a site that records attentions after the fact has
+   * a legitimate past appointment to link, and this method would refuse to
+   * close the entry that was actually served.
+   *
    * WHAT THE DATABASE ARBITRATES AND THIS METHOD ONLY TRANSLATES: that the
    * appointment is of the SAME chart (AG-063), that an acceptance is on record
    * (AG-064), that the entry is not already closed (AG-067) and that no other
@@ -356,8 +394,7 @@ export class WaitlistService {
    * SCOPED TO THE SITE, like every route of this module (AG-071), which is
    * also what keeps it cheap: a site's open waiting list is counted in tens.
    */
-  private async sweep(siteId: string, on?: ClinicalDate): Promise<void> {
-    const today = on ?? this.today();
+  private async sweep(siteId: string, today: ClinicalDate): Promise<void> {
     const [open, stored] = await Promise.all([
       this.waitlist.openWaitlistEntriesFor(siteId),
       this.waitlist.waitlistParametersFor(siteId),
@@ -409,8 +446,22 @@ export class WaitlistService {
     };
   }
 
-  /** Today in Ecuador. The only place this service reads a clock. */
-  private today(): ClinicalDate {
-    return clinicalDateOf(new Date(), CLINIC_TIME_ZONE);
+  /**
+   * The current instant. The only place this service reads a clock, and the
+   * reason the domain never has to: every rule down there takes it as a
+   * parameter.
+   */
+  private now(): Date {
+    return new Date();
+  }
+
+  /**
+   * The day that instant falls on IN ECUADOR, never in the session's zone
+   * (AG-001). At 20:00 in Guayaquil the UTC date is already tomorrow, and an
+   * entry whose last preferred day is today would be expired half a shift
+   * early (AG-065).
+   */
+  private todayIn(now: Date): ClinicalDate {
+    return clinicalDateOf(now, CLINIC_TIME_ZONE);
   }
 }

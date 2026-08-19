@@ -13,6 +13,7 @@ import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
 import { PatientMergeService } from '../../src/modules/patients/application/patient-merge.service';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
+import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
@@ -41,15 +42,37 @@ import { closeApp, listenForTests } from './setup/http-server';
  * no recorded acceptance comes back as a sentence rather than a 500, and that
  * every route is refused to somebody with no scope over the site.
  *
- * Every appointment is on Monday 14 September 2026 and the times are
- * Ecuadorian: 08:00 there is 13:00Z. The site admits booking in the past for
- * the same reason as `agenda-http.spec.ts` — the pinned Monday stops being
- * future the moment the calendar passes it.
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ⚠️ EVERY INSTANT HERE IS RELATIVE TO NOW, NEVER A DATE ON THE CALENDAR
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * AG-061 refuses to propose candidates for a slot whose hour has already gone,
+ * so a pinned Monday would make this suite green today and red the week the
+ * calendar passes it — the very defect the requirement is about, moved into
+ * the tests. The days are resolved in Ecuador (AG-001), which is the calendar
+ * the preferred range is expressed in.
  */
 const PASSWORD = 'el caballo come alfalfa';
 const EMAIL = 'recepcion.espera@clinica.ec';
 
 const BASE = '/api/v1/agenda/sites';
+
+const MINUTE_MS = 60_000;
+const DAY_MS = 24 * 60 * MINUTE_MS;
+
+const NOW = new Date();
+const inMinutes = (minutes: number): Date =>
+  new Date(NOW.getTime() + minutes * MINUTE_MS);
+const inDays = (days: number): Date => new Date(NOW.getTime() + days * DAY_MS);
+
+/** The slot that came free: a week away, so it is still there to be offered. */
+const FREED_SLOT_STARTS_AT = inDays(7);
+/** The instant it was cancelled — behind us, like every release. */
+const FREED_AT = inMinutes(-60);
+
+/** The range a patient states when enrolling: from today, for a month. */
+const PREFERRED_FROM = clinicalDateOf(NOW);
+const PREFERRED_TO = clinicalDateOf(inDays(30));
 
 interface Problem {
   type: string;
@@ -207,8 +230,8 @@ describe('la lista de espera por HTTP', () => {
       .set('Authorization', auth())
       .send({
         patientId: patient,
-        preferredFrom: '2026-09-01',
-        preferredTo: '2026-09-30',
+        preferredFrom: PREFERRED_FROM,
+        preferredTo: PREFERRED_TO,
         ...body,
       })
       .expect(201);
@@ -249,9 +272,12 @@ describe('la lista de espera por HTTP', () => {
       releasedAt?: Date | null;
       site?: string;
       serviceTypeId?: string;
+      /** AG-061. When the freed hour is, measured against the clock. */
+      startsAt?: Date;
     } = {},
   ) {
     const other = await createPatient(prisma);
+    const startsAt = overrides.startsAt ?? FREED_SLOT_STARTS_AT;
     return prisma.agendaEntry.create({
       data: {
         kind: 'APPOINTMENT',
@@ -259,9 +285,8 @@ describe('la lista de espera por HTTP', () => {
         siteId: overrides.site ?? siteId,
         patientId: other.id,
         practitionerId,
-        // 08:00 Ecuador on Monday 14 September 2026.
-        startsAt: new Date(Date.UTC(2026, 8, 14, 13, 0)),
-        endsAt: new Date(Date.UTC(2026, 8, 14, 13, 20)),
+        startsAt,
+        endsAt: new Date(startsAt.getTime() + 20 * MINUTE_MS),
         status: 'CANCELLED',
         blocksCalendar: overrides.blocksCalendar ?? true,
         // AG-035, `agenda_entry_overbooking_coherence`: un sobrecupo lleva
@@ -273,9 +298,7 @@ describe('la lista de espera por HTTP', () => {
             }
           : {}),
         releasedAt:
-          overrides.releasedAt === undefined
-            ? new Date(Date.UTC(2026, 8, 10, 12, 0))
-            : overrides.releasedAt,
+          overrides.releasedAt === undefined ? FREED_AT : overrides.releasedAt,
         /**
          * EL TIPO DE ATENCIÓN DEL CUPO, cuando la prueba lo fija. Sin él, el
          * cupo no fija ninguno —un bloqueo liberado, típicamente— y una
@@ -308,8 +331,8 @@ describe('la lista de espera por HTTP', () => {
       const entry = await enrol();
 
       expect(entry.status).toBe('WAITING');
-      expect(entry.preferredFrom).toBe('2026-09-01');
-      expect(entry.preferredTo).toBe('2026-09-30');
+      expect(entry.preferredFrom).toBe(PREFERRED_FROM);
+      expect(entry.preferredTo).toBe(PREFERRED_TO);
       // Lo ÚNICO opcional de AG-060, y omitirlo significa «cualquiera».
       expect(entry.practitionerId).toBeNull();
       expect(entry.serviceTypeId).toBeNull();
@@ -337,8 +360,8 @@ describe('la lista de espera por HTTP', () => {
         .set('Authorization', auth())
         .send({
           patientId,
-          preferredFrom: '2026-09-30',
-          preferredTo: '2026-09-01',
+          preferredFrom: PREFERRED_TO,
+          preferredTo: PREFERRED_FROM,
         })
         .expect(422);
 
@@ -347,11 +370,12 @@ describe('la lista de espera por HTTP', () => {
     });
 
     it('AG-060 admits a preferred range of a single day', async () => {
-      // «Sólo puedo el 3» es un rango legítimo, inclusivo por los dos lados,
-      // igual que `waitlist_entry_preferred_range_valid`.
+      // «Sólo puedo el jueves» es un rango legítimo, inclusivo por los dos
+      // lados, igual que `waitlist_entry_preferred_range_valid`.
+      const onlyOneDay = clinicalDateOf(inDays(3));
       const entry = await enrol({
-        preferredFrom: '2026-09-03',
-        preferredTo: '2026-09-03',
+        preferredFrom: onlyOneDay,
+        preferredTo: onlyOneDay,
       });
 
       expect(entry.status).toBe('WAITING');
@@ -362,8 +386,8 @@ describe('la lista de espera por HTTP', () => {
     it('AG-061 proposes the compatible entries of the site for the freed slot', async () => {
       const fits = await enrol();
       const wrongDay = await enrol({
-        preferredFrom: '2026-10-01',
-        preferredTo: '2026-10-31',
+        preferredFrom: clinicalDateOf(inDays(60)),
+        preferredTo: clinicalDateOf(inDays(90)),
       });
 
       const released = await releasedSlot();
@@ -447,6 +471,108 @@ describe('la lista de espera por HTTP', () => {
         .expect(422);
 
       expect((response.body as Problem).code).toBe('SLOT_NOT_RELEASED');
+    });
+
+    /**
+     * ═════════════════════════════════════════════════════════════════════
+     * EL DEFECTO, CONTADO POR QUIEN LO SUFRIÓ
+     * ═════════════════════════════════════════════════════════════════════
+     *
+     * «Yo llamo y contesta, pero ya llamé hoy en la tarde y la cita era en la
+     * mañana; cuando le digo aprobar el cupo me sale error.»
+     *
+     * La cita de la mañana se anuló, y por la tarde la cola seguía
+     * ofreciéndola: se proponía a alguien, se le llamaba de verdad, aceptaba —
+     * y la reserva chocaba contra AG-031. El daño no es el error final: es la
+     * llamada gastada a una persona real y el INTENTO consumido de los que la
+     * entrada tiene antes de caducar (AG-066).
+     */
+    it('AG-061 refuses to propose candidates for a slot whose hour has already gone', async () => {
+      const waiting = await enrol();
+      const thisMorning = await releasedSlot({ startsAt: inMinutes(-240) });
+
+      const response = await request(app.getHttpServer())
+        .get(`${BASE}/${siteId}/waitlist/candidates/${thisMorning.id}`)
+        .set('Authorization', auth())
+        .expect(422);
+
+      // Una frase, y no una lista vacía: quien pregunta acaba de pulsar sobre
+      // esa cita, y cero candidatos en una cola con gente parece un fallo.
+      const problem = response.body as Problem;
+      expect(problem.code).toBe('RELEASED_SLOT_IN_THE_PAST');
+      expect(problem.title).toMatch(/pas/i);
+      expect(response.body).not.toHaveProperty('items');
+
+      // Y nadie ha gastado una llamada ni un intento de esa entrada.
+      const untouched = await prisma.waitlistEntry.findUniqueOrThrow({
+        where: { id: waiting.id },
+      });
+      expect(untouched.status).toBe('WAITING');
+      expect(
+        await prisma.waitlistContactAttempt.findMany({
+          where: { waitlistEntryId: waiting.id },
+        }),
+      ).toEqual([]);
+    });
+
+    /**
+     * EL BORDE, Y POR QUÉ ESTÁ DONDE ESTÁ. La comparación es contra el
+     * INSTANTE de inicio y es estricta, exactamente como `checkBookingWindow`
+     * lee AG-031: lo que empieza dentro de cinco minutos todavía se puede dar
+     * —la persona vive a dos cuadras y el mínimo de antelación de la sede es
+     * cero (D-001)—, y lo que empezó hace un minuto ya no. Si las dos reglas
+     * discreparan, la cola escondería un cupo que la reserva sí aceptaría, o
+     * al revés: volvería a llevar de la mano hasta el muro.
+     */
+    it('AG-061 offers the slot that starts in five minutes and refuses the one that started a minute ago', async () => {
+      const waiting = await enrol();
+
+      const imminent = await releasedSlot({ startsAt: inMinutes(5) });
+      expect((await candidatesFor(imminent.id)).map((c) => c.entryId)).toEqual([
+        waiting.id,
+      ]);
+
+      const justGone = await releasedSlot({ startsAt: inMinutes(-1) });
+      const response = await request(app.getHttpServer())
+        .get(`${BASE}/${siteId}/waitlist/candidates/${justGone.id}`)
+        .set('Authorization', auth())
+        .expect(422);
+
+      expect((response.body as Problem).code).toBe('RELEASED_SLOT_IN_THE_PAST');
+    });
+
+    it('AG-061 keeps proposing candidates for a slot that has not started yet', async () => {
+      // El arreglo no apaga la función: el cupo de la semana que viene se
+      // sigue repartiendo igual.
+      const waiting = await enrol();
+
+      const proposed = await candidatesFor((await releasedSlot()).id);
+
+      expect(proposed.map((c) => c.entryId)).toEqual([waiting.id]);
+    });
+
+    /**
+     * LO OTRO QUE SOBRABA EN LA MISMA CONSULTA, y el barrido de AG-065 sí lo
+     * cubre: la lectura CIERRA la entrada caducada antes de proponer a nadie,
+     * y `rankWaiting` la deja fuera aunque la escritura fallara. Con el cupo
+     * pasado ya rechazado, además, es inalcanzable por partida doble: una
+     * entrada sólo puede encajar en un cupo que cae dentro de su rango, y ese
+     * rango termina antes de hoy.
+     */
+    it('AG-065 leaves out of the candidates an entry whose last preferred day has passed', async () => {
+      const lapsed = await enrol({
+        preferredFrom: '2020-01-01',
+        preferredTo: '2020-01-31',
+      });
+      const live = await enrol();
+
+      const proposed = await candidatesFor((await releasedSlot()).id);
+
+      expect(proposed.map((c) => c.entryId)).toEqual([live.id]);
+      const stored = await prisma.waitlistEntry.findUniqueOrThrow({
+        where: { id: lapsed.id },
+      });
+      expect(stored.status).toBe('EXPIRED');
     });
   });
 
@@ -926,8 +1052,8 @@ describe('la lista de espera por HTTP', () => {
         request(app.getHttpServer()).get(`${BASE}/${siteId}/waitlist`),
         request(app.getHttpServer()).post(`${BASE}/${siteId}/waitlist`).send({
           patientId,
-          preferredFrom: '2026-09-01',
-          preferredTo: '2026-09-30',
+          preferredFrom: PREFERRED_FROM,
+          preferredTo: PREFERRED_TO,
         }),
         request(app.getHttpServer())
           .post(`${BASE}/${siteId}/waitlist/${entry.id}/contact-attempts`)

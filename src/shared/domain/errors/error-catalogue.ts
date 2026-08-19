@@ -104,12 +104,21 @@ export const DOMAIN_ERROR_CODES = [
   //   * `SLOT_NOT_RELEASED` (422) — se pidieron candidatos sobre una entrada
   //     que sigue ocupando calendario. Es la precondición literal de AG-061,
   //     hecha cumplir en vez de supuesta.
+  //   * `RELEASED_SLOT_IN_THE_PAST` (422) — el cupo se liberó, pero su hora ya
+  //     pasó. NO es `BOOKING_IN_THE_PAST`: aquí no se reserva nada —es un
+  //     `GET` sin `startsAt` que corregir—, y aquel obedece a
+  //     `allow_past_booking`, que existe para REGISTRAR una atención ya
+  //     ocurrida; proponer candidatos es llamar a alguien para que venga, y
+  //     ningún parámetro hace asistible una hora que pasó. Ofrecerla gastaba
+  //     una llamada real y uno de los intentos de la entrada (AG-066), que es
+  //     append-only.
   //   * `WAITLIST_SLOT_ALREADY_CLAIMED` (409) — otra entrada se llevó esa cita
   //     primero. Es la carrera que E5 existe para arbitrar: dos recepcionistas
   //     repartiendo el mismo cupo liberado. Lo impide
   //     `waitlist_entry_one_per_converted_entry`, un índice único PARCIAL que
   //     Prisma resuelve él mismo (P2002) devolviendo la COLUMNA y no el nombre
   //     del índice, así que el adaptador lo traduce por ahí.
+  'RELEASED_SLOT_IN_THE_PAST',
   'SLOT_NOT_RELEASED',
   'WAITLIST_ACCEPTANCE_REQUIRED',
   'WAITLIST_ENTRY_CLOSED',

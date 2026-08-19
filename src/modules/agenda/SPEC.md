@@ -143,6 +143,31 @@ AG-101, AG-103, AG-114.
 campos de grupo prioritario que la ficha no tenía (D-003), y los tiene desde el
 16-08-2026. **Cubre:** AG-060 a AG-067.
 
+> ### ⏸ Construida y EN REPOSO desde el 19-08-2026
+>
+> **Sin punto de entrada en la interfaz.** El backend, el esquema y todos los
+> requisitos de abajo siguen vigentes y probados en los dos lados; lo que se
+> apagó son las puertas: el diálogo de candidatos ya no se abre solo al anular,
+> al marcar una inasistencia ni al quitar un bloqueo, y no quedan el botón de la
+> barra de la agenda, el de una entrada ya liberada ni la salida «Inscribir en
+> lista de espera» de la reserva sin cupos.
+>
+> **Por qué.** El usuario la probó y decidió dejarla dormida: en su clínica
+> generalmente sí hay cupo, así que la cola casi no se usaría, y lo que de
+> verdad quiere es recordar la cita por WhatsApp y reprogramar fácil, que ataca
+> el problema antes de que el hueco exista. La primera vez que la usó de verdad
+> se llamó a una persona por un cupo que ya había pasado —defecto ya corregido—,
+> y lo que dejó claro es que todo esto termina en una llamada de teléfono.
+>
+> **El interruptor** es `WAITLIST_UI_ENABLED`, una constante en
+> `clinica-web/app/modules/agenda/waitlist-access.ts`. Ponerla en `true` la
+> devuelve entera; ese archivo lleva escrito qué mirar antes, empezando por lo
+> principal: que exista un canal para avisar sin llamar.
+>
+> `pnpm estado` sigue contando E5 como completa, y es cierto: las pruebas de la
+> interfaz siguen citando AG-060 a AG-067 porque los componentes siguen ahí. Lo
+> que el contador no puede decir es que nada los abre, y por eso lo dice esto.
+
 > **Cerrada el 19-08-2026.** Esquema en `agenda_waitlist_contact_trail`; código
 > en `waitlist.ts`, `waitlist.repository.ts`, `waitlist.service.ts`,
 > `prisma-waitlist.repository.ts` y `waitlist.controller.ts`.
@@ -974,7 +999,40 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   ordenados por prioridad ascendente y, a igual prioridad, por antigüedad de
   inscripción. Compatible significa: misma sede, y el cupo cae dentro de
   `preferred_from`–`preferred_to`, y —si la entrada los fija— mismo profesional y
-  mismo tipo de servicio.
+  mismo tipo de servicio. **SI la hora de inicio del cupo liberado ya pasó,
+  ENTONCES el sistema NO DEBERÁ proponer ningún candidato y DEBERÁ rechazar la
+  consulta con `RELEASED_SLOT_IN_THE_PAST`.**
+  > **UN CUPO QUE YA PASÓ NO ES UN CUPO, desde el 19-08-2026.** Lo contó quien
+  > lo sufrió: «yo llamo y contesta, pero ya llamé hoy en la tarde y la cita era
+  > en la mañana; cuando le digo aprobar el cupo me sale error». Una cita anulada
+  > por la mañana seguía ofreciéndose por la tarde —nada cambia en la fila cuando
+  > su hora pasa, sólo se mueve el reloj—, así que la cola proponía, alguien
+  > llamaba **a una persona de verdad**, aceptaba, y la reserva chocaba con
+  > AG-031. **El daño no era el error final**: era la llamada gastada y el
+  > INTENTO consumido de los que la entrada tiene antes de caducar (AG-066),
+  > sobre un rastro que es append-only y no se puede deshacer.
+  >
+  > **EL BORDE ES EL INSTANTE Y ES ESTRICTO**, exactamente como `checkBookingWindow`
+  > lee AG-031: lo que empieza dentro de cinco minutos se propone, lo que empezó
+  > hace un minuto no, y **lo que empieza justo ahora sí se propone** —porque es
+  > la reserva de ventanilla que la reserva misma acepta (D-001 dejó la
+  > antelación mínima en cero)—. Si las dos reglas leyeran el borde distinto, la
+  > cola escondería un cupo que el sistema sí deja tomar, o volvería a llevar de
+  > la mano hasta el muro. El instante, y no el día: 08:00 y 19:00 de hoy son la
+  > misma fecha y a mediodía sólo uno de los dos se puede dar. El «ahora» se
+  > resuelve **una sola vez por consulta** y su día en `America/Guayaquil`
+  > (AG-001), y entra en el dominio como parámetro.
+  >
+  > **NO SE REPITE AL CONVERTIR NI AL REGISTRAR UN INTENTO.** Registrar un
+  > intento no nombra ningún cupo —lleva entrada y resultado y nada más—, así que
+  > el agujero no existe ahí: la llamada sólo se hace porque la cola propuso, y
+  > es ahí donde se corta. Y `POST …/conversion` no reserva: enlaza una cita que
+  > **ya existe**, y la única forma de que exista es la ruta de siempre, donde
+  > AG-031 ya se aplicó con el `allow_past_booking` de la sede. Repetir la
+  > comprobación al convertir sería una copia más débil de esa regla en el único
+  > sitio donde NO debe valer —una sede que registra atenciones a posteriori
+  > tiene una cita pasada legítima que enlazar—.
+  >
   > **Y LA ANTIGÜEDAD SOBREVIVE A UNA FUSIÓN DE FICHAS, desde el 19-08-2026:
   > está en `PA-060` de `patients` y no aquí** (D-041, opción B). Una
   > inscripción no sólo se lee —se convierte en cita—, así que el alcance de
@@ -1279,12 +1337,29 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `WAITLIST_PATIENT_MISMATCH`    | 422    | AG-063    |
 | `WAITLIST_SLOT_ALREADY_CLAIMED`| 409    | AG-063    |
 | `SLOT_NOT_RELEASED`            | 422    | AG-061    |
+| `RELEASED_SLOT_IN_THE_PAST`    | 422    | AG-061    |
 
 > `BOOKING_RETRY_EXHAUSTED` lo fijó la implementación de E1: AG-026 nombra el
 > estado (503) y la cabecera (`Retry-After`) pero no el código, y sin uno el
 > cliente no puede distinguir «reintente» de cualquier otro 503. Sale de la
 > categoría reintentable, así que la respuesta lleva `Retry-After`; **no** es un
 > conflicto de cupo, que es justo lo que el requisito prohíbe presentar.
+
+> **`RELEASED_SLOT_IN_THE_PAST` es propio y no `BOOKING_IN_THE_PAST`**, aunque
+> el hecho sea el mismo —una hora que pasó no se puede ocupar—, porque la
+> situación no lo es. Aquí **no se reserva nada**: es un `GET` que nombra una
+> entrada liberada, sin `startsAt` que corregir, así que el error por campo de
+> AG-031 mandaría a recepción a arreglar una casilla que esta pantalla no
+> tiene, y un cliente que ramifica por ese código para «corrija la hora»
+> saltaría en una consulta. Y la **condición** es distinta:
+> `BOOKING_IN_THE_PAST` obedece a `allow_past_booking`, el parámetro con el que
+> una sede REGISTRA una atención ya ocurrida, y un registro retroactivo no pasa
+> nunca por la lista de espera —proponer es llamar a alguien para que venga—,
+> así que este rechazo no depende de ningún parámetro. Es 422 como su vecino
+> `SLOT_NOT_RELEASED`, con el que comparte ruta y salida: los dos dicen «esa
+> entrada no sirve como cupo a repartir», y un 409 sugeriría refrescar y
+> reintentar, que es justo lo contrario de lo que hay que hacer con una hora
+> que no vuelve.
 
 > **Los seis de E5 los fijó la implementación**, por la misma regla que
 > `BOOKING_RETRY_EXHAUSTED`: AG-060 a AG-067 mandan los rechazos y no nombran

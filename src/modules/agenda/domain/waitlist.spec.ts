@@ -10,6 +10,7 @@ import {
   entriesToExpire,
   hasExhaustedContactAttempts,
   hasLapsed,
+  hasSlotPassed,
   isCompatibleWith,
   rankCandidates,
   resolveWaitlistParameters,
@@ -102,6 +103,34 @@ describe('lista de espera', () => {
       expect(isCompatibleWith(entry, { ...SLOT, serviceTypeId: null })).toBe(
         false,
       );
+    });
+  });
+
+  describe('AG-061 · un cupo que ya pasó no es un cupo', () => {
+    /** 08:00 in Guayaquil on the 14th, which is 13:00Z. */
+    const NOW = new Date(Date.UTC(2026, 8, 14, 13, 0));
+    const minutes = (count: number) => new Date(NOW.getTime() + count * 60_000);
+
+    it('AG-061 refuses a freed slot that started before the current instant', () => {
+      // El caso del mostrador: la cita era en la mañana y se pregunta por la
+      // tarde. Ofrecerla gasta una llamada real y un intento de los tres.
+      expect(hasSlotPassed(minutes(-1), NOW)).toBe(true);
+      expect(hasSlotPassed(minutes(-240), NOW)).toBe(true);
+    });
+
+    it('AG-061 admits a freed slot that starts five minutes from now', () => {
+      // Todavía se puede dar: la antelación mínima de la sede es de AG-032, y
+      // D-001 la dejó en cero. Un margen inventado aquí sería un segundo
+      // parámetro que nadie configuró.
+      expect(hasSlotPassed(minutes(5), NOW)).toBe(false);
+    });
+
+    it('AG-061 admits the freed slot that is starting at this very instant', () => {
+      // ESTRICTAMENTE ANTES, igual que `checkBookingWindow` lee AG-031: lo que
+      // empieza AL instante actual es la reserva de ventanilla, no una cita en
+      // el pasado. Si las dos reglas discreparan, la cola escondería un cupo
+      // que la reserva sí acepta.
+      expect(hasSlotPassed(new Date(NOW.getTime()), NOW)).toBe(false);
     });
   });
 
