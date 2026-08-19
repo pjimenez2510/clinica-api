@@ -90,8 +90,10 @@ export class SpecialtiesController {
     @Body() dto: CreateSpecialtyDto,
     @Req() req: Request,
   ): Promise<SpecialtyResponse> {
+    // SP-009: only the name travels. The stable code is derived from it in the
+    // service and comes back in the response — see `specialty-code.ts`.
     return this.specialties.createSpecialty(
-      { code: dto.code, name: dto.name },
+      { name: dto.name },
       this.requester(req),
     );
   }

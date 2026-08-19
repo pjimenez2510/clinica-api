@@ -27,16 +27,32 @@ import {
  * defend — it is the catalogue they name.
  */
 describe('specialties errors', () => {
-  it('SP-006 responde SPECIALTY_DUPLICATE como conflicto señalando el campo que chocó', () => {
+  it('SP-006 responde SPECIALTY_DUPLICATE como conflicto apuntando siempre al nombre', () => {
     const byCode = new SpecialtyDuplicateError('code');
     const byName = new SpecialtyDuplicateError('name');
 
     expect(byCode).toBeInstanceOf(ConflictError);
     expect(byCode.code).toBe('SPECIALTY_DUPLICATE');
-    expect(byCode.fieldErrors?.[0]?.field).toBe('code');
+    // SP-009: no queda ninguna casilla de código que iluminar.
+    expect(byCode.fieldErrors?.[0]?.field).toBe('name');
     expect(byName.fieldErrors?.[0]?.field).toBe('name');
     // The rejected value never travels: it reaches logs and screenshots.
     expect(byName.message).not.toMatch(/pediatr/i);
+  });
+
+  it('SP-009 el choque del código derivado no le dice «código» a quien solo escribió un nombre', () => {
+    const derived = new SpecialtyDuplicateError('code');
+
+    for (const text of [
+      derived.userTitle ?? '',
+      derived.fieldErrors?.[0]?.message ?? '',
+    ]) {
+      expect(text).not.toMatch(/c[oó]digo/i);
+      expect(text.length).toBeGreaterThan(0);
+    }
+    // Y no afirma que el nombre esté repetido, porque no lo está: son dos
+    // nombres distintos que el sistema no podría distinguir.
+    expect(derived.fieldErrors?.[0]?.message).not.toMatch(/ya pertenece/i);
   });
 
   it('SP-003 responde SPECIALTY_IN_USE como conflicto y ofrece desactivar en la frase', () => {

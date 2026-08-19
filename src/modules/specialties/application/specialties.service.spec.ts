@@ -154,10 +154,7 @@ describe('SpecialtiesService', () => {
 
   describe('especialidades', () => {
     it('SP-002 crear una especialidad deja bitácora con autor y entidad', async () => {
-      await service.createSpecialty(
-        { code: 'pediatria', name: 'Pediatría' },
-        REQUESTER,
-      );
+      await service.createSpecialty({ name: 'Pediatría' }, REQUESTER);
 
       expect(recorded).toEqual([
         expect.objectContaining({
@@ -168,6 +165,42 @@ describe('SpecialtiesService', () => {
           ip: '10.0.0.1',
         }),
       ]);
+    });
+
+    it('SP-009 crear deriva el código del nombre: nadie lo teclea', async () => {
+      await service.createSpecialty(
+        { name: 'Ginecología y Obstetricia' },
+        REQUESTER,
+      );
+
+      expect(calls.filter((call) => call.method === 'createSpecialty')).toEqual(
+        [
+          {
+            method: 'createSpecialty',
+            args: [
+              { code: 'ginecologia-obstetricia', name: 'Ginecología y Obstetricia' }, // prettier-ignore
+            ],
+          },
+        ],
+      );
+    });
+
+    it('SP-010 renombrar NO vuelve a derivar el código: la fila no cambia de identidad', async () => {
+      // Corregir la tilde de «Ginecologia» es el caso real, y es exactamente
+      // el que se llevaría por delante `practitioner_specialty`, los informes
+      // y el emparejamiento de la semilla si el código se recalculara.
+      await service.updateSpecialty(
+        SPECIALTY.id,
+        { name: 'Ginecología y Obstetricia' },
+        REQUESTER,
+      );
+
+      const patches = calls
+        .filter((call) => call.method === 'updateSpecialty')
+        .map((call) => call.args[1]);
+      expect(patches).toEqual([{ name: 'Ginecología y Obstetricia' }]);
+      // La aserción que sostiene el requisito es la AUSENCIA de `code`.
+      expect(patches[0]).not.toHaveProperty('code');
     });
 
     it('SP-002 renombrar una especialidad deja bitácora como UPDATE', async () => {

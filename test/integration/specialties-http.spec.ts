@@ -169,12 +169,14 @@ describe('las especialidades por HTTP', () => {
       .delete(`/api/v1/specialties${path}`)
       .set('Authorization', `Bearer ${token}`);
 
+  /**
+   * SP-009: only the name travels — the request has no `code` any more.
+   */
   async function createSpecialty(
-    code = 'cardiologia',
     name = 'Cardiología',
-  ): Promise<{ id: string }> {
-    const response = await post('', { code, name }).expect(201);
-    return response.body as { id: string };
+  ): Promise<{ id: string; code: string }> {
+    const response = await post('', { name }).expect(201);
+    return response.body as { id: string; code: string };
   }
 
   async function createServiceType(
@@ -232,38 +234,86 @@ describe('las especialidades por HTTP', () => {
     it('SP-002 exige el permiso de administración: RECEPCION recibe 403', async () => {
       const recepcion = await signIn(RECEPCION_EMAIL, 'RECEPCION', '0926687856'); // prettier-ignore
 
-      const response = await post(
-        '',
-        { code: 'pediatria', name: 'Pediatría' },
-        recepcion,
-      ).expect(403);
+      const response = await post('', { name: 'Pediatría' }, recepcion).expect(403); // prettier-ignore
 
       expect((response.body as Problem).code).toBe('PERMISSION_DENIED');
     });
 
     it('SP-006 rechaza con SPECIALTY_DUPLICATE un nombre que solo difiere en acentos y mayúsculas', async () => {
-      await createSpecialty('pediatria', 'Pediatría');
+      await createSpecialty('Pediatría');
 
-      const response = await post('', {
-        code: 'pediatria-2',
-        name: 'PEDIATRIA',
-      }).expect(409);
+      const response = await post('', { name: 'PEDIATRIA' }).expect(409);
 
       const problem = response.body as Problem;
       expect(problem.code).toBe('SPECIALTY_DUPLICATE');
       expect(problem.errors?.[0]?.field).toBe('name');
     });
 
-    it('SP-006 rechaza con SPECIALTY_DUPLICATE un código repetido sin importar la caja', async () => {
-      await createSpecialty('cardiologia', 'Cardiología');
+    it('SP-009 deriva el código del nombre al crear y lo devuelve en la respuesta', async () => {
+      const created = await createSpecialty('Ginecología y Obstetricia');
 
+      // El mismo código que ya trae la semilla del MSP para esta especialidad:
+      // que la derivación los reproduzca los 22 lo fija
+      // `specialty-code.spec.ts`; aquí se comprueba que es el que se GUARDA.
+      expect(created.code).toBe('ginecologia-obstetricia');
+      expect(
+        await prisma.specialty.findUnique({ where: { id: created.id } }),
+      ).toMatchObject({ code: 'ginecologia-obstetricia' });
+    });
+
+    it('SP-009 ignora un código enviado a mano: el contrato ya no lo acepta', async () => {
       const response = await post('', {
-        code: 'CARDIOLOGIA',
-        name: 'Otra cardiología',
+        name: 'Cardiología',
+        code: 'el-que-yo-quiera',
+      }).expect(201);
+
+      expect((response.body as { code: string }).code).toBe('cardiologia');
+    });
+
+    it('SP-010 renombrar NO mueve el código, ni siquiera al corregir una tilde', async () => {
+      const created = await createSpecialty('Ginecologia y Obstetricia');
+      expect(created.code).toBe('ginecologia-obstetricia');
+
+      const renamed = await patch(`/${created.id}`, {
+        name: 'Ginecología y Obstetricia',
+      }).expect(200);
+
+      // Si el código se volviera a derivar aquí, esta fila cambiaría de
+      // identidad para `practitioner_specialty`, los informes y la semilla.
+      expect((renamed.body as { code: string }).code).toBe(
+        'ginecologia-obstetricia',
+      );
+      expect(
+        await prisma.specialty.findUnique({ where: { id: created.id } }),
+      ).toMatchObject({ code: 'ginecologia-obstetricia' });
+    });
+
+    it('SP-009/SP-006 dos nombres que derivan el mismo código chocan hablando del NOMBRE', async () => {
+      await createSpecialty('Medicina Familiar y Comunitaria');
+
+      // Otro nombre, distinto de verdad, que deriva `medicina-familiar`.
+      const response = await post('', {
+        name: 'Medicina Familiar Preventiva',
       }).expect(409);
 
-      expect((response.body as Problem).code).toBe('SPECIALTY_DUPLICATE');
-      expect((response.body as Problem).errors?.[0]?.field).toBe('code');
+      const problem = response.body as Problem;
+      expect(problem.code).toBe('SPECIALTY_DUPLICATE');
+      // La casilla que el formulario tiene es la del nombre; la del código no
+      // existe, así que señalarla no iluminaría nada.
+      expect(problem.errors?.[0]?.field).toBe('name');
+      // Y ni el título ni el mensaje por campo le hablan de un código que esa
+      // persona nunca vio (ADR-005 §5).
+      expect(problem.title).not.toMatch(/c[oó]digo/i);
+      expect(problem.errors?.[0]?.message).not.toMatch(/c[oó]digo/i);
+    });
+
+    it('SP-009 rechaza por campo un nombre del que no se puede derivar ningún código', async () => {
+      const response = await post('', { name: '🙂🙂' }).expect(422);
+
+      const problem = response.body as Problem;
+      expect(problem.errors?.[0]?.field).toBe('name');
+      expect(problem.errors?.[0]?.message).toContain('letras');
+      expect(await prisma.specialty.count()).toBe(0);
     });
 
     it('SP-003 rechaza borrar una especialidad referenciada con SPECIALTY_IN_USE y ofrece desactivarla', async () => {

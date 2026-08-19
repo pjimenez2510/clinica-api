@@ -13,6 +13,7 @@ import {
   assertDurationFitsSlotAtom,
   clinicSlotAtom,
 } from '../../../shared/domain/slot-atom';
+import { specialtyCodeFromName } from '../domain/specialty-code';
 import {
   SPECIALTIES_REPOSITORY,
   type SpecialtiesRepository,
@@ -62,17 +63,45 @@ export class SpecialtiesService {
     return this.repository.listSpecialties(includeInactive);
   }
 
-  /** SP-002. */
+  /**
+   * SP-002, SP-009. The caller sends a NAME; the stable code is derived here,
+   * once, and stored with it (ADR-005 §5: nobody is asked to type an
+   * identifier they cannot interpret).
+   *
+   * Two different names can derive the same code — the derivation keeps two
+   * words, so «Medicina Familiar y Comunitaria» and «Medicina Familiar
+   * Preventiva» are both `medicina-familiar`. Nothing is checked here: the
+   * functional index `specialty_code_unique` arbitrates, and the adapter turns
+   * its refusal into `SpecialtyDuplicateError('code')`, which speaks about the
+   * NAME because that is the only thing this person wrote.
+   */
   async createSpecialty(
-    input: { code: string; name: string },
+    input: { name: string },
     requester: Requester,
   ): Promise<SpecialtyView> {
-    const created = await this.repository.createSpecialty(input);
+    const created = await this.repository.createSpecialty({
+      code: specialtyCodeFromName(input.name),
+      name: input.name,
+    });
     await this.recordMutation('CREATE', created.id, requester);
     return created;
   }
 
-  /** SP-002 (rename), SP-004 (deactivate). */
+  /**
+   * SP-002 (rename), SP-004 (deactivate), SP-010 (the code stays put).
+   *
+   * THE CODE IS NOT RE-DERIVED HERE, AND THAT IS THE POINT — do not "fix" it.
+   * Deriving it again on a rename is the obvious symmetry and it is wrong: the
+   * code is the identity of this row for everything that references it —
+   * `practitioner_specialty` in `staff`, the reports and invoices that stored
+   * it, and the MSP seed, which matches its 22 rows BY CODE and would create
+   * duplicates the moment one moved. Correcting a missing accent in
+   * «Ginecologia» would be enough to trigger all of it.
+   *
+   * Which is why the patch this method accepts has no `code` and the port's
+   * does not either: the only way to keep it stable is for no path to be able
+   * to write it after the insert.
+   */
   async updateSpecialty(
     id: string,
     patch: { name?: string; active?: boolean },

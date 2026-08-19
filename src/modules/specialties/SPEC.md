@@ -74,7 +74,7 @@ administración.
 **Prueba independiente:** resolver la duración de Cardiología·Control para un
 médico con y sin excepción, contra PostgreSQL real, y comprobar que desactivar
 una especialidad referenciada no la borra.
-**Cubre:** SP-001 a SP-008, SP-020 a SP-027.
+**Cubre:** SP-001 a SP-010, SP-020 a SP-027.
 
 > **SP-028 NO ES DE C1, y lo decía desde el principio: «CUANDO recepción elija
 > especialidad y tipo AL RESERVAR».** Estaba en las dos entregas a la vez, así
@@ -137,6 +137,11 @@ rechaza con `SERVICE_TYPE_IN_USE`.
   > los códigos de error, que son ingleses porque son contrato técnico. Este
   > identifica un concepto del dominio ecuatoriano que tendrá que casar con la
   > nomenclatura del MSP en el RDACAA, no con nomenclatura inglesa.
+  >
+  > **Sigue siendo contrato público, y eso no lo cambia SP-009.** Lo emparejan
+  > los 22 de la semilla, lo referencia `staff` al vincular profesionales, y
+  > viaja en toda respuesta de este módulo. Lo único que cambió el 19-08-2026
+  > es **quién lo escribe**.
 - **SP-002** — CUANDO un usuario con el permiso de administración cree o
   renombre una especialidad, el sistema DEBERÁ validarla y registrarla en la
   bitácora con autor e instante.
@@ -154,6 +159,23 @@ rechaza con `SERVICE_TYPE_IN_USE`.
 - **SP-006** — El sistema DEBERÁ impedir dos especialidades con el mismo código
   o el mismo nombre (comparación insensible a mayúsculas y acentos), con la
   garantía en la base.
+  > **El rechazo habla del NOMBRE desde SP-009, con los dos índices.** Ya no
+  > hay casilla de código en el formulario, así que `errors[0].field` es
+  > `name` venga el choque de `specialty_name_unique` o de
+  > `specialty_code_unique`, y ni el `title` ni el mensaje por campo nombran un
+  > código (ADR-005 §5). Lo que sí cambia con el índice es **la frase**, porque
+  > los dos casos son distintos: el del nombre es el mismo nombre escrito dos
+  > veces; el del código son **dos nombres distintos que derivan el mismo
+  > código**, y decirle «ese nombre ya existe» a quien escribió otro nombre le
+  > haría volver a teclear lo mismo.
+  >
+  > **Qué pasa exactamente en ese choque: se rechaza, no se desambigua.**
+  > Añadir un sufijo (`medicina-familiar-2`) produciría un código que no
+  > identifica nada y que nadie podría leer en un informe, que es justo lo que
+  > el código existe para evitar; y el `code` es contrato, así que fabricarlo
+  > en silencio es peor que pedir otro nombre. Dos especialidades cuyas dos
+  > primeras palabras coinciden son además difíciles de distinguir **en la
+  > lista**, no solo en el código.
 - **SP-007** — DONDE la pantalla sea de administración, el listado DEBERÁ
   incluir activas e inactivas; DONDE sea de selección, solo activas.
 - **SP-008** — El sistema DEBERÁ exponer la especialidad principal del
@@ -172,6 +194,48 @@ rechaza con `SERVICE_TYPE_IN_USE`.
   > principal, nunca cédula ni ACESS (AG-108)—. La fila es la misma,
   > `practitioner_specialty`; lo que cambia es cuánto de ella sale por cada
   > puerta.
+
+- **SP-009** — CUANDO se cree una especialidad, el sistema DEBERÁ derivar su
+  código estable del nombre —sin tildes, en minúsculas, con las palabras unidas
+  por guiones y sin más caracteres que letras, números y guion— y NO DEBERÁ
+  aceptar un código en la petición.
+  > **Decisión del usuario, 19-08-2026:** «podríamos derivarlo, pero editarlo y
+  > esas cosas no lo veo necesario, ni mostrarlo». Nace de **ADR-005 §5**: no se
+  > le pide a nadie que teclee un código que no interpreta. El formulario pedía
+  > escribir `ginecologia-obstetricia` a mano.
+  >
+  > **La derivación tiene que reproducir los 22 códigos ya sembrados**, o la
+  > misma especialidad tendría dos identidades según quién la creara. La regla
+  > es: plegar acentos y minúsculas · separar por todo lo que no sea letra o
+  > número · descartar las palabras de enlace (`y`, `de`, `del`…) · **quedarse
+  > con las dos primeras palabras que queden**. Ese último paso es el que hace
+  > que «Medicina de Emergencias y Desastres» dé `medicina-emergencias`: un
+  > código es un asa, no una transcripción del nombre.
+  >
+  > **Si el nombre no tiene nada de lo que derivar** —escrito entero en un
+  > alfabeto que el código no representa— se rechaza **por campo**, sobre
+  > `name`, al validar. Un código vacío lo aceptaría el índice una sola vez y
+  > convertiría el segundo en un conflicto que nadie podría corregir.
+  >
+  > **Nivel de prueba:** unitario puro que **recorre los 22** de
+  > `prisma/seed-specialties.mts` leyéndolos del propio archivo, más integración
+  > del alta contra PostgreSQL real.
+
+- **SP-010** — CUANDO se renombre una especialidad, el sistema NO DEBERÁ
+  recalcular su código.
+  > **Es el requisito que impide el «arreglo» obvio.** Derivar también al
+  > renombrar es la simetría que cualquiera querrá añadir, y se llevaría por
+  > delante la identidad de la fila: la referencian `practitioner_specialty` en
+  > `staff`, los informes y las facturas que la guardaron, y la semilla del MSP,
+  > que empareja **por código** y crearía duplicados en cuanto uno se moviera.
+  > Corregir una tilde en «Ginecologia» bastaría para provocarlo.
+  >
+  > La forma de sostenerlo es que **ningún camino pueda escribir el código
+  > después del alta**: ni el DTO de edición ni el `patch` del puerto lo llevan.
+  >
+  > **Nivel de prueba:** unitario de aplicación (el `patch` no lleva `code`) +
+  > integración: renombrar añadiendo la tilde y comprobar que la fila conserva
+  > el código.
 
 ### Tipos de atención y duraciones (REQ-150, D-010)
 
@@ -350,6 +414,11 @@ existan `staff` y `organization`, no módulo a módulo.
 
 Ninguna ruta lleva ya `practitioners/` en el camino: las cuatro que la llevaban
 se fueron con `staff` el 13-08-2026, que es lo que significa saldar la deuda.
+
+**El cuerpo de `POST /specialties` cambió el 19-08-2026 (SP-009).** Era
+`{ code, name }` y es `{ name }`: el código se deriva y **sigue viajando en toda
+respuesta**. `PATCH /specialties/{id}` no lo aceptaba antes y sigue sin
+aceptarlo (SP-010).
 
 > **`config:read` es correcto AQUÍ y era el defecto ALLÍ.** Estas rutas son las
 > de la pantalla de administración —listan activas e inactivas (SP-007), sirven

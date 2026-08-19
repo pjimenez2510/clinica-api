@@ -223,14 +223,14 @@ describe('el personal por HTTP', () => {
     return practitioner;
   }
 
+  /** SP-009: the stable code is derived from the name; only the name travels. */
   async function createSpecialty(
-    code = 'cardiologia',
     name = 'Cardiología',
   ): Promise<{ id: string }> {
     const response = await request(app.getHttpServer())
       .post('/api/v1/specialties')
       .set('Authorization', `Bearer ${token}`)
-      .send({ code, name })
+      .send({ name })
       .expect(201);
     return response.body as { id: string };
   }
@@ -655,8 +655,8 @@ describe('el personal por HTTP', () => {
 
     it('ST-008/SP-005 rechaza con PRIMARY_SPECIALTY_REQUIRED una asignación con dos principales', async () => {
       const practitioner = await createPractitioner();
-      const first = await createSpecialty('cardiologia', 'Cardiología');
-      const second = await createSpecialty('pediatria', 'Pediatría');
+      const first = await createSpecialty('Cardiología');
+      const second = await createSpecialty('Pediatría');
 
       const response = await put(
         `/practitioners/${practitioner.id}/specialties`,
@@ -673,8 +673,8 @@ describe('el personal por HTTP', () => {
 
     it('ST-008/SP-005 la base admite a lo sumo una principal: el índice parcial rechaza la segunda', async () => {
       const practitioner = await createPractitioner();
-      const first = await createSpecialty('cardiologia', 'Cardiología');
-      const second = await createSpecialty('pediatria', 'Pediatría');
+      const first = await createSpecialty('Cardiología');
+      const second = await createSpecialty('Pediatría');
 
       await prisma.practitionerSpecialty.create({
         data: {
@@ -698,8 +698,8 @@ describe('el personal por HTTP', () => {
 
     it('ST-008/SP-008 expone la especialidad principal en el listado que consume la agenda', async () => {
       const practitioner = await createPractitioner();
-      const cardio = await createSpecialty('cardiologia', 'Cardiología');
-      const pedia = await createSpecialty('pediatria', 'Pediatría');
+      const cardio = await createSpecialty('Cardiología');
+      const pedia = await createSpecialty('Pediatría');
 
       await put(`/practitioners/${practitioner.id}/specialties`, {
         items: [

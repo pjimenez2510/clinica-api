@@ -38,13 +38,16 @@ function uniqueViolation(constraint: string, via: 'index' | 'message') {
 }
 
 describe('specialties database error translation', () => {
-  it('SP-006 traduce specialty_code_unique y specialty_name_unique a SPECIALTY_DUPLICATE señalando el campo', () => {
+  it('SP-006 traduce specialty_code_unique y specialty_name_unique a SPECIALTY_DUPLICATE', () => {
     const byCode = duplicateErrorFrom(uniqueViolation('specialty_code_unique', 'index')); // prettier-ignore
     const byName = duplicateErrorFrom(uniqueViolation('specialty_name_unique', 'message')); // prettier-ignore
 
     expect(byCode).toBeInstanceOf(SpecialtyDuplicateError);
-    expect(byCode?.fieldErrors?.[0]?.field).toBe('code');
     expect(byName).toBeInstanceOf(SpecialtyDuplicateError);
+    // SP-009: los dos índices apuntan al NOMBRE, que es la única casilla que
+    // el formulario tiene desde que el código se deriva. Lo que los distingue
+    // es la frase, y eso se afirma en `specialties.errors.spec.ts`.
+    expect(byCode?.fieldErrors?.[0]?.field).toBe('name');
     expect(byName?.fieldErrors?.[0]?.field).toBe('name');
   });
 

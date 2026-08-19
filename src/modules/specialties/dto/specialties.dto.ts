@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 // SP-007: las desactivadas viajan solo si se piden EXPLÍCITAMENTE.
 import { explicitFlag } from '../../../shared/http/query-flag';
+import { specialtyCodeFromName } from '../domain/specialty-code';
 
 /**
  * The specialties contract, requests and responses.
@@ -32,26 +33,27 @@ const durationMinutesSchema = z
   .max(240, 'La duración máxima es de 240 minutos')
   .multipleOf(5, 'La duración debe ser un múltiplo de 5 minutos');
 
-/**
- * D-011: a stable code — letters, digits and hyphens, no spaces or accents.
- * It is the contract billing and reports hold on to, which is why renaming a
- * specialty changes `name` and never `code`.
- */
-const specialtyCodeSchema = z
-  .string({ error: 'Indique el código de la especialidad' })
-  .trim()
-  .min(2, 'El código debe tener al menos 2 caracteres')
-  .max(64, 'El código no puede superar 64 caracteres')
-  .regex(
-    /^[a-z0-9-]+$/i,
-    'El código solo admite letras, números y guiones, sin espacios ni acentos',
-  );
-
 const specialtyNameSchema = z
   .string({ error: 'Indique el nombre de la especialidad' })
   .trim()
   .min(2, 'El nombre debe tener al menos 2 caracteres')
   .max(160, 'El nombre no puede superar 160 caracteres');
+
+/**
+ * SP-009: AT CREATION the name is also the source of the stable code (D-011),
+ * so it has to have something derivable in it. A name written entirely in
+ * characters the code alphabet cannot represent would derive to '', and the
+ * functional unique index would then hand the first such specialty the empty
+ * code and refuse every later one with a conflict nobody could act on.
+ *
+ * NOT REQUIRED ON RENAME, and that is not an oversight: the code is derived
+ * once and never again (SP-010), so after creation the name has stopped being
+ * anybody's identifier.
+ */
+const derivableSpecialtyNameSchema = specialtyNameSchema.refine(
+  (name) => specialtyCodeFromName(name) !== '',
+  { message: 'El nombre debe incluir letras o números' },
+);
 
 const serviceTypeNameSchema = z
   .string({ error: 'Indique el nombre del tipo de atención' })
@@ -69,16 +71,24 @@ export class ListSpecialtiesQueryDto extends createZodDto(
   listSpecialtiesQuerySchema,
 ) {}
 
+/**
+ * SP-009: the CODE IS NOT IN THE REQUEST. It is derived from the name by
+ * `specialtyCodeFromName` and returned in the response, because ADR-005 §5
+ * refuses to ask anybody to type an identifier they cannot interpret. It is
+ * still a public contract — it just stopped being something a form asks for.
+ */
 export const createSpecialtySchema = z.object({
-  code: specialtyCodeSchema,
-  name: specialtyNameSchema,
+  name: derivableSpecialtyNameSchema,
 });
 export class CreateSpecialtyDto extends createZodDto(createSpecialtySchema) {}
 
 /**
- * Rename or (de)activate — the CODE is not editable: it is the stable
- * contract of D-011, and a PATCH that could change it would break every
- * report that stored it.
+ * Rename or (de)activate — the CODE is not editable AND IS NOT RE-DERIVED
+ * either: it is the stable contract of D-011, and a PATCH that could change it
+ * would break every report, every `practitioner_specialty` row and the MSP
+ * seed, all of which hold on to it. Fixing a missing accent in «Ginecologia»
+ * must not move the identity of the row. See
+ * `SpecialtiesService.updateSpecialty`.
  */
 export const updateSpecialtySchema = z
   .object({

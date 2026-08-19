@@ -36,6 +36,12 @@ interface SeedSpecialty {
  * The MSP-recognised specialties (D-008). Codes are kebab-case and STABLE:
  * they are the contract reports hold on to, so they never change even if the
  * display name does.
+ *
+ * EVERY CODE HERE IS `specialtyCodeFromName(name)` (SP-009), and
+ * `src/modules/specialties/domain/specialty-code.spec.ts` reads THIS LIST and
+ * fails if one drifts. Adding a specialty here means deriving its code the same
+ * way, or the same specialty ends up with two identities depending on whether
+ * the seed or the administration screen created it.
  */
 const SPECIALTIES: readonly SeedSpecialty[] = [
   { code: 'medicina-general', name: 'Medicina General' },

@@ -29,28 +29,44 @@ import { ConflictError } from '../../../shared/domain/errors/domain-error';
  * SP-006. Two specialties may not share a code or a name, compared without
  * case or accents — «Pediatría» and «PEDIATRIA» are the same specialty typed
  * twice. The guarantee lives in the base as two functional unique indexes
- * (`specialty_code_unique`, `specialty_name_unique`); which field collided is
- * known from the constraint that fired, and the field error points at it so
- * the form highlights the right box.
+ * (`specialty_code_unique`, `specialty_name_unique`), and which one fired is
+ * what the constructor receives.
+ *
+ * BOTH POINT AT `name`, SINCE SP-009. There is no code box in the form any
+ * more: the code is derived from the name, so a field error aimed at `code`
+ * would highlight nothing and «Ese código ya existe» would be an answer about
+ * something the person never saw (ADR-005 §5). What changes with the index is
+ * the SENTENCE, because the two situations are genuinely different: the name
+ * index means the same name, and the code index means a DIFFERENT name that
+ * derives to the same identifier — saying "that name already exists" there
+ * would be false, and the user would retype the same thing.
  */
 export class SpecialtyDuplicateError extends ConflictError {
   readonly code = 'SPECIALTY_DUPLICATE';
-  override readonly userTitle =
-    'Ya existe una especialidad con ese código o nombre. Revise el catálogo antes de crear otra';
+  override readonly userTitle: string;
 
-  constructor(field: 'code' | 'name') {
+  constructor(collision: 'code' | 'name') {
     // No rejected value in the message: it reaches logs and screenshots, and
     // the person who typed it is looking at it already.
-    super(`Specialty ${field} already exists (case/accent-insensitive)`, {}, [
-      {
-        field,
-        code: 'SPECIALTY_DUPLICATE',
-        message:
-          field === 'code'
-            ? 'Ese código ya pertenece a otra especialidad'
-            : 'Ese nombre ya pertenece a otra especialidad (la comparación ignora mayúsculas y acentos)',
-      },
-    ]);
+    super(
+      `Specialty ${collision} already exists (case/accent-insensitive)`,
+      {},
+      [
+        {
+          field: 'name',
+          code: 'SPECIALTY_DUPLICATE',
+          message:
+            collision === 'name'
+              ? 'Ese nombre ya pertenece a otra especialidad (la comparación ignora mayúsculas y acentos)'
+              : 'Ese nombre se confunde con el de otra especialidad ya registrada. Escriba un nombre que empiece de otra manera',
+        },
+      ],
+    );
+
+    this.userTitle =
+      collision === 'name'
+        ? 'Ya existe una especialidad con ese nombre. Revise el catálogo antes de crear otra'
+        : 'Ya existe una especialidad que el sistema no podría distinguir de ésta. Revise el catálogo y elija un nombre distinto';
   }
 }
 
