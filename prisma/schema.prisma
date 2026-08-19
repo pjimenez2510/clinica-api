@@ -765,6 +765,8 @@ model CatalogConcept {
   patientsNationality     Patient[]                  @relation("PatientNationality")
   patientsResidence       Patient[]                  @relation("PatientResidenceParish")
   patientsGenderIdentity  Patient[]                  @relation("PatientGenderIdentity")
+  patientsPeople          Patient[]                  @relation("PatientPeople")
+  patientsOrientation     Patient[]                  @relation("PatientSexualOrientation")
   sites                   Site[]                     @relation("SiteParish")
   scheduleRules           PractitionerScheduleRule[]
   /// NO HAY `agendaEntries` AQUÍ desde C4, y la ausencia es el arreglo: la
@@ -1270,6 +1272,31 @@ model Patient {
 
   nationalityConceptId String?         @map("nationality_concept_id") @db.Uuid
   nationality          CatalogConcept? @relation("PatientNationality", fields: [nationalityConceptId], references: [id], onDelete: Restrict)
+
+  /// PA-056. RDACAA column 14, «Pueblos». THIRD STEP of a chain whose first two
+  /// are above: ethnicity → indigenous nationality → people. The ministry's
+  /// instructivo enables it ONLY when the indigenous nationality is «Kichwa»,
+  /// and that condition is NOT here and cannot be: it depends on which row of
+  /// the `NATIONALITY` catalogue is Kichwa, and a CHECK cannot query another
+  /// table. `indigenous-people.ts` is the one place that decides.
+  peopleConceptId String?         @map("people_concept_id") @db.Uuid
+  people          CatalogConcept? @relation("PatientPeople", fields: [peopleConceptId], references: [id], onDelete: Restrict)
+
+  /// PA-057, PA-058. RDACAA column 7, «Orientación sexual».
+  ///
+  /// ⚠️ SPECIAL CATEGORY DATA under the LOPDP, like the priority reason. It is
+  /// WRITTEN with `patient:write` — it is typed at the desk on the same form as
+  /// columns 6, 8 and 11 to 14 — and READ only behind `patient:sexual-
+  /// orientation`, a permission no shipped role carries, through a route of its
+  /// own that leaves an audit row. It travels neither on the chart nor on the
+  /// listing: adding it to either `select` removes that door with nothing
+  /// failing.
+  ///
+  /// The «from 10 years of age» rule of the instructivo is enforced in the
+  /// service, not here: the age is DERIVED (PA-030) and a CHECK over it would
+  /// expire with the calendar.
+  sexualOrientationConceptId String?         @map("sexual_orientation_concept_id") @db.Uuid
+  sexualOrientation          CatalogConcept? @relation("PatientSexualOrientation", fields: [sexualOrientationConceptId], references: [id], onDelete: Restrict)
 
   /// PA-053. Country of nationality, ISO 3166-1 alpha-3. NOT the column above:
   /// `nationality_concept_id` is the RDACAA's nationality or indigenous people

@@ -11,6 +11,7 @@ import { PATIENT_REPOSITORY } from './domain/patient.repository';
 import { PrismaPatientRepository } from './infrastructure/prisma-patient.repository';
 import { PatientMergeController } from './patient-merge.controller';
 import { PatientPriorityController } from './patient-priority.controller';
+import { PatientSexualOrientationController } from './patient-sexual-orientation.controller';
 import { PatientsController } from './patients.controller';
 
 /**
@@ -32,6 +33,7 @@ import { PatientsController } from './patients.controller';
   controllers: [
     PatientsController,
     PatientPriorityController,
+    PatientSexualOrientationController,
     PatientMergeController,
   ],
   providers: [

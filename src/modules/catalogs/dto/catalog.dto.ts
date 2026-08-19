@@ -27,6 +27,14 @@ import { explicitFlag } from '../../../shared/http/query-flag';
  * si el sistema es jerárquico y no de la profundidad; ver
  * `prisma-catalog.repository.ts`.
  *
+ * LOS DOS ÚLTIMOS ENTRAN EL 19-08-2026 CON D-039 (PA-056, PA-057). Son las
+ * columnas 7 y 14 del formulario del RDACAA —orientación sexual y pueblo—, que
+ * este sistema no tenía: ni columna en `patient`, ni catálogo, ni requisito.
+ * También PLANOS. `PEOPLE` NO cuelga de `NATIONALITY` aunque el formulario lo
+ * condicione a ella: la condición es del registro (PA-056), no del catálogo, y
+ * una jerarquía obligaría a cruzar dos releases cada vez que el ministerio
+ * reedite una de las dos listas.
+ *
  * `COUNTRY` ES EL PAÍS EMISOR DE UN DOCUMENTO, POR SU NOMBRE. La columna
  * `patient_identifier.issuing_country` guarda `ISO 3166-1 alpha-3` y sigue
  * guardándolo; lo que faltaba era de dónde saca la pantalla los 249 nombres,
@@ -43,6 +51,8 @@ export const catalogSystemSchema = z.enum([
   'NATIONALITY',
   'GENDER_IDENTITY',
   'COUNTRY',
+  'SEXUAL_ORIENTATION',
+  'PEOPLE',
 ]);
 
 /**

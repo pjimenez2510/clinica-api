@@ -47,6 +47,27 @@ export const CORRECTABLE_PATIENT_FIELDS = [
   'bloodType',
   'ethnicityConceptId',
   'nationalityConceptId',
+  /**
+   * PA-056. The people of column 14, third step of the chain.
+   *
+   * It sits behind the indigenous nationality because that is what enables it
+   * (`indigenous-people.ts`), and the order of this list is the order of the
+   * trail: two people sending the same correction leave the same rows in the
+   * same order.
+   */
+  'peopleConceptId',
+  /**
+   * PA-057, PA-058. The sexual orientation of column 7.
+   *
+   * ⚠️ SPECIAL CATEGORY DATA AND STILL ON THIS LIST, on purpose. Reading it
+   * goes through a permission of its own, but CORRECTING it has to leave
+   * «desde qué valor» like any other field (PA-031): with no history row, a
+   * datum the LOPDP protects could be changed with no trail at all. And the row
+   * lives in `patient_change_history` — rectifiable on purpose, the one trail
+   * table with no immutability trigger — precisely so REQ-113 can be exercised
+   * over it.
+   */
+  'sexualOrientationConceptId',
   'residenceParishConceptId',
   'genderIdentityConceptId',
   /**
@@ -117,6 +138,10 @@ export interface PatientCorrectionRequest {
   bloodType?: string | null;
   ethnicityConceptId?: string | null;
   nationalityConceptId?: string | null;
+  /** PA-056. The people, admissible only on a Kichwa indigenous nationality. */
+  peopleConceptId?: string | null;
+  /** PA-057. The sexual orientation, admissible only from ten years of age. */
+  sexualOrientationConceptId?: string | null;
   residenceParishConceptId?: string | null;
   genderIdentityConceptId?: string | null;
   /** PA-053. `ISO 3166-1 alpha-3`, ya en mayúsculas: lo normaliza el DTO. */

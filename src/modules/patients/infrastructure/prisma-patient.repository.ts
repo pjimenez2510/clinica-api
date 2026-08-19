@@ -51,6 +51,7 @@ import type {
   PatientSearchCriteria,
   PatientSummary,
   PriorityGroupRecord,
+  SexualOrientationRead,
   UndoMergeOutcome,
 } from '../domain/patient.repository';
 import { rdacaaMissingFields } from '../domain/rdacaa-completeness';
@@ -155,6 +156,17 @@ const SUMMARY_SELECT = {
   nationalityConceptId: true,
   residenceParishConceptId: true,
   /**
+   * AND THE COUNTRY, WHICH IS A GATE AND NOT A REQUIRED DATUM (PA-032, PA-059).
+   *
+   * A foreign chart must NOT be told it is missing the ethnicity or the
+   * nationality — the ministry says to leave columns 12 to 14 blank and PA-059
+   * refuses to record them — so the indicator needs to know the country on
+   * EVERY ROW OF THE LISTING too, which is where admission works from. It is a
+   * plain column: no join, no cost. The country's NAME is another matter and
+   * still travels only on the chart (PA-053, PA-021).
+   */
+  countryOfNationalityCode: true,
+  /**
    * AND THE ETHNICITY'S `code` BESIDES ITS ID (PA-032, D-037).
    *
    * The indicator no longer counts the nationality on a chart whose ethnicity
@@ -199,7 +211,7 @@ const CONCEPT_SELECT = {
   select: { id: true, code: true, display: true },
 } satisfies Prisma.Patient$ethnicityArgs;
 
-/** Los dieciocho campos corregibles, más a dónde se movió la ficha. */
+/** Los veinte campos corregibles, más a dónde se movió la ficha. */
 const CORRECTION_SELECT = {
   familyName: true,
   secondFamilyName: true,
@@ -215,6 +227,8 @@ const CORRECTION_SELECT = {
   bloodType: true,
   ethnicityConceptId: true,
   nationalityConceptId: true,
+  peopleConceptId: true,
+  sexualOrientationConceptId: true,
   residenceParishConceptId: true,
   genderIdentityConceptId: true,
   countryOfNationalityCode: true,
@@ -509,7 +523,7 @@ export class PrismaPatientRepository implements PatientRepository {
         bloodType: true,
         residenceAddressLine: true,
         /**
-         * Los cuatro conceptos, UNIDOS SÓLO AQUÍ (PA-026 a PA-029).
+         * Los conceptos elegidos, UNIDOS SÓLO AQUÍ (PA-026 a PA-029, PA-056).
          *
          * La redacción es la que se guardó, sin condición de vigencia: una
          * parroquia retirada del DPA no debe dejar en blanco la dirección de
@@ -519,6 +533,17 @@ export class PrismaPatientRepository implements PatientRepository {
          */
         ethnicity: CONCEPT_SELECT,
         nationality: CONCEPT_SELECT,
+        /**
+         * PA-056. El pueblo, con la redacción con la que se registró.
+         *
+         * ⚠️ Y `sexualOrientation` NO ESTÁ AQUÍ, que es la mitad visible de
+         * PA-058: es dato de categoría especial y se lee por su propia ruta,
+         * con su propio permiso y su propia fila de bitácora
+         * (`findSexualOrientation`). Añadirla a este `select` la pondría en la
+         * respuesta que recibe todo el que tenga `patient:read` —recepción y
+         * caja incluidas— sin que nada fallara.
+         */
+        people: CONCEPT_SELECT,
         genderIdentity: CONCEPT_SELECT,
         residenceParish: CONCEPT_SELECT,
         /**
@@ -596,6 +621,7 @@ export class PrismaPatientRepository implements PatientRepository {
       residenceAddressLine: row.residenceAddressLine,
       ethnicity: toConceptReference(row.ethnicity),
       nationality: toConceptReference(row.nationality),
+      people: toConceptReference(row.people),
       genderIdentity: toConceptReference(row.genderIdentity),
       countryOfNationality: await this.namedCountry(
         row.countryOfNationalityCode,
@@ -698,6 +724,10 @@ export class PrismaPatientRepository implements PatientRepository {
           // dice qué le falta (PA-032).
           ethnicityConceptId: patient.ethnicityConceptId,
           nationalityConceptId: patient.nationalityConceptId,
+          // PA-056, PA-057. Las dos columnas del instructivo que faltaban. Sus
+          // condiciones —Kichwa, y diez años— las hace cumplir el servicio.
+          peopleConceptId: patient.peopleConceptId,
+          sexualOrientationConceptId: patient.sexualOrientationConceptId,
           residenceParishConceptId: patient.residenceParishConceptId,
           genderIdentityConceptId: patient.genderIdentityConceptId,
           // PA-053. El país como código; el catálogo sólo dice cómo se llama.
@@ -885,6 +915,50 @@ export class PrismaPatientRepository implements PatientRepository {
    * un país renombrado tiene una fila por release. La que decide si `SUN` puede
    * elegirse hoy es la última, no la primera que se cargó.
    */
+  /**
+   * PA-057, PA-058. La orientación sexual, y NADA MÁS de la ficha.
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * UN `select` DE UN SOLO CAMPO, Y ESO ES LA MITAD DEL REQUISITO
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Devolver aquí la ficha entera —o reutilizar `findById` y quedarse con un
+   * campo— convertiría esta ruta en una segunda puerta a todo lo demás, y la
+   * bitácora diría «leyó la orientación sexual» sobre una lectura que trajo el
+   * apellido, el documento y la dirección. Lo que la puerta protege es lo que
+   * viaja, no lo que se pide.
+   *
+   * `undefined` es «no existe»; `{ orientation: null }` es «existe y nadie lo
+   * ha preguntado todavía». El servicio los distingue: el primero es un 404 y
+   * el segundo una respuesta legítima.
+   *
+   * ⚠️ NO FILTRA POR FICHA FUSIONADA: eso lo decide el servicio, que es quien
+   * sabe responder `PATIENT_MERGED` con el MRN de la superviviente (PA-045).
+   */
+  async findSexualOrientation(
+    patientId: string,
+  ): Promise<SexualOrientationRead | undefined> {
+    const row = await this.prisma.patient.findUnique({
+      where: { id: patientId },
+      select: {
+        sexualOrientation: CONCEPT_SELECT,
+        /**
+         * AND WHERE THE CHART WENT, because PA-045 covers «toda operación que
+         * la nombre» and this is one. It rides in the same statement: a second
+         * query to find out whether the chart was merged would double the cost
+         * of a route that reads one column.
+         */
+        mergedInto: { select: { mrn: true } },
+      },
+    });
+    if (!row) return undefined;
+
+    return {
+      mergedIntoMrn: row.mergedInto?.mrn ?? null,
+      orientation: toConceptReference(row.sexualOrientation),
+    };
+  }
+
   async findConceptReferenceByCode(
     systemCode: string,
     code: string,
@@ -1796,6 +1870,8 @@ export class PrismaPatientRepository implements PatientRepository {
     /** Only the `code` is required here; the detail select carries more. */
     ethnicity: { code: string } | null;
     nationalityConceptId: string | null;
+    /** PA-059. A gate on the two above, not a fifth required datum. */
+    countryOfNationalityCode: string | null;
     residenceParishConceptId: string | null;
     priorityGroups: { startsOn: Date; endsOn: Date | null }[];
     /** PA-055. Las fichas absorbidas, con sus mismos periodos. */
@@ -1883,9 +1959,16 @@ export class PrismaPatientRepository implements PatientRepository {
        * Which those are is decided by `isIndigenousEthnicity` and nowhere else:
        * deciding it here would be a second comparison to keep in step with
        * PA-027.
+       *
+       * And the COUNTRY goes in since PA-059, for the same kind of reason one
+       * step further up: on a chart whose country is not Ecuador the ministry
+       * asks for neither the ethnicity nor the nationality, so neither can be
+       * reported as missing. It is a plain column of this very `select`, so it
+       * costs the listing nothing.
        */
       rdacaaMissingFields: rdacaaMissingFields({
         hasDefinitiveDocument: documents.length > 0,
+        countryOfNationalityCode: row.countryOfNationalityCode,
         ethnicityConceptId: row.ethnicityConceptId,
         ethnicityCode: row.ethnicity?.code ?? null,
         nationalityConceptId: row.nationalityConceptId,
@@ -1925,6 +2008,8 @@ function correctionSnapshotOf(row: {
   bloodType: string | null;
   ethnicityConceptId: string | null;
   nationalityConceptId: string | null;
+  peopleConceptId: string | null;
+  sexualOrientationConceptId: string | null;
   residenceParishConceptId: string | null;
   genderIdentityConceptId: string | null;
   countryOfNationalityCode: string | null;
@@ -1945,6 +2030,8 @@ function correctionSnapshotOf(row: {
     bloodType: row.bloodType,
     ethnicityConceptId: row.ethnicityConceptId,
     nationalityConceptId: row.nationalityConceptId,
+    peopleConceptId: row.peopleConceptId,
+    sexualOrientationConceptId: row.sexualOrientationConceptId,
     residenceParishConceptId: row.residenceParishConceptId,
     genderIdentityConceptId: row.genderIdentityConceptId,
     countryOfNationalityCode: row.countryOfNationalityCode,

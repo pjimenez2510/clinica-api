@@ -1,6 +1,6 @@
 # SPEC — Módulo `patients`
 
-**Estado:** vigente · **Fecha:** 18 de agosto de 2026
+**Estado:** vigente · **Fecha:** 19 de agosto de 2026
 **Fase:** 0 — construido sin especificación · **Formato:** EARS, según ADR-010
 
 La ficha del paciente: quién es, con qué documento, dónde vive y a qué grupo
@@ -44,7 +44,8 @@ falte aquí no falta en una pantalla: falta en el reporte de doce meses.
 **Fuera de alcance:** el contenido clínico —diagnósticos, notas, signos
 vitales— es de `encounter`; la cuenta de acceso del personal es de `auth` (un
 paciente no tiene cuenta hasta el portal de Fase 3); el catálogo de conceptos
-—etnia, nacionalidad, parroquia DPA, identidad de género— es de `catalogs`, de
+—etnia, nacionalidad indígena, pueblo, orientación sexual, identidad de
+género, parroquia DPA y países— es de `catalogs`, de
 donde esta ficha **elige** sin poseer nada.
 
 **Tampoco lo cubre este borrador**, aunque las tablas existan y sean de este
@@ -55,7 +56,9 @@ comprobar cuando exista la consulta. Se especifican con `encounter`, no antes:
 escribir hoy sus requisitos sería redactar ficción, que es exactamente el límite
 que ADR-010 §«Qué NO se especifica» pone.
 
-**Depende de:** `catalogs` (los cuatro sistemas de los que elige) y `auth` (el
+**Depende de:** `catalogs` (los **siete** sistemas de los que elige —etnia,
+nacionalidad indígena, pueblo, orientación sexual, identidad de género,
+parroquia DPA y países—) y `auth` (el
 permiso y quién pregunta). **No depende de** `agenda`: es `agenda` quien depende
 de este módulo, y por partida doble —AG-011 para reservar y **AG-062 para
 ordenar la lista de espera**, que es la entrega que P3 desbloquea—.
@@ -181,6 +184,40 @@ imposibilidad de fusionar una ficha consigo misma o encadenar fusiones son
 garantías de almacenamiento: la primera se demuestra intentando reescribir la
 fila, y la segunda no tiene pantalla que la ofrezca.
 
+### P5 — Las columnas del instructivo que faltaban _(P2)_
+
+Las cuatro cosas que D-039 sacó de leer el **instructivo oficial del RDACAA
+2.0** el 19-08-2026: «Pueblos» (columna 14), «Orientación sexual» (columna 7),
+la etnia condicionada a la nacionalidad ecuatoriana (columnas 11 y 12) y el
+sexo «Intersexual» de menores de un año (columna 6) — esta última **anotada y
+no construida**, y el porqué está en PA-005.
+
+**Por qué es P2 y no P1:** el módulo está cerrado y en verde, y ninguna de las
+cuatro rompe nada de lo construido. Lo que bloquean es que **la fila del reporte
+mensual salga completa** en las columnas que la Dirección Distrital revisa: sin
+la 14, la ficha de un paciente kichwa sale incompleta; sin la 7, la columna
+entera va vacía; y sin la condición de la 12, se reporta una etnia en la fila de
+un paciente extranjero, donde el ministerio manda dejarla en blanco. Duele el
+día del reporte, no el día del mostrador — que es exactamente la definición de
+P2 de este documento.
+
+**Prueba independiente:** registrar una ficha kichwa con su pueblo y comprobar
+que la misma ficha con nacionalidad Shuar se rechaza; registrar una ficha
+venezolana con etnia y comprobar que se rechaza, y que la ficha venezolana sin
+etnia **no** cuenta la etnia ni la nacionalidad entre lo que le falta; y
+comprobar que una sesión con `patient:read` y `patient:write` puede **escribir**
+la orientación sexual y recibe 403 al leerla.
+**Cubre:** PA-056 a PA-059.
+
+**Solo servidor:** PA-058 y la segunda mitad de PA-059. El primero es una
+puerta y una ausencia —un 403 con una sesión de verdad, y que la orientación
+sexual **no viaje** en la ficha ni en el listado—, y la única forma de
+demostrarlo es sobre la respuesta, no sobre lo que una pantalla decidió no
+pintar; el defecto de AG-111 fue exactamente confiar en un doble con los
+permisos puestos a mano. El segundo es que la etnia y la nacionalidad **dejen
+de contar** en la ficha extranjera, que tampoco es algo que una pantalla pueda
+enseñar.
+
 ## Criterios de éxito
 
 Medibles y sin nombrar tecnología. **No empiezan en `SC-001` a propósito**: los
@@ -216,7 +253,7 @@ requisitos que cambian.
 - **Registrar sin documento es lo normal, no la excepción**: neonatos y
   urgencias. Un flujo que lo trate como caso raro produce fichas duplicadas
   cuando el documento aparece.
-- Los cuatro catálogos de los que elige esta ficha se cargan con la misma
+- Los siete catálogos de los que elige esta ficha se cargan con la misma
   disciplina de release que el DPA y la CIE-10: versión, origen y checksum, para
   que una ficha de hace tres años siga resolviendo la etnia con la que se
   registró.
@@ -262,18 +299,29 @@ requisitos que cambian.
   > exportación**, no del registro. Colapsar al guardar hace que la ficha mienta
   > sobre lo que se documentó, y ya no hay forma de volver atrás.
   >
-  > > **[NECESITA ACLARACIÓN]** El instructivo añade que *«el sexo
-  > > "Intersexual" se registra únicamente en usuarios menores de un año»*, y
-  > > este sistema lo acepta a cualquier edad. Hay que decidir si es un rechazo
-  > > o un aviso, y qué debe pasar con una ficha que cumple un año. **No se
-  > > decide aquí**: es política de registro.
+  > **«INTERSEXUAL» SÓLO EN MENORES DE UN AÑO ES REGLA DE LA EXPORTACIÓN, Y
+  > AQUÍ NO SE VALIDA (D-039 (d), 19-08-2026).** El instructivo lo dice de la
+  > columna 6 —*«el sexo "Intersexual" se registra únicamente en usuarios
+  > menores de un año»*— y este sistema **lo acepta a cualquier edad, a
+  > propósito**. Validarlo al escribir no cubriría el caso que importa y
+  > rompería uno que sí: **el dato ya está escrito y el paciente envejece
+  > solo**, así que una ficha válida el día que se registró pasaría a inválida
+  > sin que nadie la toque, por el mero paso del tiempo. Es el mismo problema
+  > que PA-036 resuelve con la vigencia del embarazo, y la razón por la que
+  > aquélla es una fila fechada y no una columna.
   >
-  > > **Falta esquema.** La **columna 7 del formulario, «Orientación sexual»**
-  > > —`1 Lesbiana · 2 Gay · 3 Bisexual · 4 Heterosexual · 5 No sabe/no
-  > > responde`, *«a partir de los 10 años de edad»*— no existe en este sistema:
-  > > no hay columna en `patient`, ni catálogo `SEXUAL_ORIENTATION`, ni
-  > > requisito. Anotarla en un texto libre sería justo lo que esta sección
-  > > prohíbe para la etnia.
+  > **Dónde vive entonces, si el ministerio lo exige: en la capa de
+  > exportación**, que es donde ya vive la reducción del sexo a H/M de este
+  > mismo requisito. La fila del RDACAA se compone con la edad **del día de la
+  > atención que se reporta**, no con la de hoy, así que allí la condición se
+  > puede evaluar sin que caduque: un neonato intersexual atendido en marzo
+  > sigue teniendo menos de un año en la fila de marzo para siempre.
+  > **Queda anotado y NO construido**: no hay capa de exportación todavía
+  > (REQ-028), y este requisito es el sitio donde tendrá que leerse.
+  >
+  > **La columna 7, «Orientación sexual», ya existe: es PA-057.** El recuadro
+  > de esquema pendiente que había aquí se cerró el 19-08-2026, y con él la
+  > columna del formulario que este sistema no sabía guardar.
 - **PA-006** — El sistema DEBERÁ almacenar la fecha de nacimiento junto con una
   marca de **estimada**, y DEBERÁ exponer esa marca en toda respuesta que lleve
   la fecha.
@@ -527,19 +575,19 @@ requisitos que cambian.
   > nada fallara, que es el error que la lista del INEC tenía sembrado hasta el
   > 19-08-2026.
   >
-  > > **[NECESITA ACLARACIÓN]** El instructivo anota sobre esta columna *«Aplica
-  > > para nacionalidad Ecuatoriana»*, y sobre la columna 11 *«si el usuario NO
-  > > es ecuatoriano, pase a la columna 15 dejando los espacios en blanco»*.
-  > > Este sistema no comprueba nada entre `country_of_nationality_code` y
-  > > `ethnicity_concept_id`. Hay que decidir si la combinación se rechaza, se
-  > > avisa o se deja pasar. **No se decide aquí**: es política de registro.
+  > **LA ETNIA SÓLO APLICA A NACIONALIDAD ECUATORIANA, Y ESO ES PA-058.** El
+  > instructivo lo anota sobre esta columna —*«Aplica para nacionalidad
+  > Ecuatoriana»*— y lo refuerza sobre la columna 11 —*«si el usuario NO es
+  > ecuatoriano, pase a la columna 15 dejando los espacios en blanco»*—. El
+  > `[NECESITA ACLARACIÓN]` que había aquí lo cerró **D-039 (c) el
+  > 19-08-2026**, opción A: se rechaza.
   >
-  > > **Falta esquema.** La **columna 14, «Pueblos»** —18 códigos, *«aplica
-  > > únicamente para la nacionalidad indígena "Kichwa"»*— no existe en este
-  > > sistema: no hay `patient.people_concept_id`, ni catálogo `PEOPLE`, ni
-  > > requisito. Es el tercer escalón de la misma cadena que PA-026 y PA-027 ya
-  > > recorren —etnia → nacionalidad indígena → pueblo— y el formulario lo exige
-  > > cuando la nacionalidad es «Kichwa».
+  > **Y EL TERCER ESCALÓN DE LA CADENA ES PA-056.** La **columna 14,
+  > «Pueblos»** —18 códigos, *«aplica únicamente para la nacionalidad indígena
+  > "Kichwa"»*— ya tiene columna, catálogo y requisito; el recuadro de esquema
+  > pendiente que había aquí se cerró el 19-08-2026. La cadena
+  > completa es **país → etnia → nacionalidad indígena → pueblo**, cada escalón
+  > condicionado al anterior: PA-058, PA-026, PA-027 y PA-056.
 - **PA-027** — El sistema DEBERÁ registrar la **nacionalidad** del paciente
   eligiéndola de un catálogo. **SI** la ficha que resultaría del alta o de la
   corrección declara una nacionalidad **y** su autoidentificación étnica no es
@@ -743,6 +791,13 @@ requisitos que cambian.
   >   registrara «Indígena» — el indicador retrocedería sin que nada del reporte
   >   hubiera cambiado.
   >
+  > **Y DESDE PA-059 HAY UNA CONDICIÓN ANTES QUE ÉSTAS TRES: EL PAÍS.** Si la
+  > ficha declara un país de nacionalidad que no es Ecuador, el ministerio manda
+  > dejar en blanco las columnas 12, 13 y 14, así que **ni la etnia ni la
+  > nacionalidad cuentan** entre lo que le falta — el mismo argumento de D-037
+  > aplicado un escalón más arriba. Se evalúa primero porque decide sobre las
+  > otras dos: una ficha venezolana sin etnia no está incompleta, está completa.
+  >
   > **Quién es «Indígena» lo decide un solo sitio**, `INDIGENOUS_ETHNICITY_CODE`
   > e `isIndigenousEthnicity` (PA-027): el indicador reutiliza ese predicado en
   > vez de comparar por su cuenta, para que el día que cambie qué categoría es
@@ -802,6 +857,196 @@ requisitos que cambian.
   > incompleta por un dato que el ministerio no pide convierte el indicador en
   > ruido que admisión aprende a ignorar, que es el mismo argumento por el que la
   > identidad de género tampoco cuenta (PA-032).
+
+- **PA-056** — El sistema DEBERÁ registrar el **pueblo** del paciente
+  eligiéndolo de un catálogo. **SI** la ficha que resultaría del alta o de la
+  corrección declara un pueblo **y** su nacionalidad indígena no es «Kichwa»
+  —porque es otra o porque falta—, **ENTONCES** el sistema DEBERÁ rechazar la
+  operación con `PEOPLE_REQUIRES_KICHWA_NATIONALITY` señalando el campo
+  `peopleConceptId`, y NO DEBERÁ escribir nada.
+  > **ES LA COLUMNA 14 DEL FORMULARIO Y EL TERCER ESCALÓN DE UNA CADENA QUE YA
+  > TENÍA DOS.** El instructivo del RDACAA 2.0, § 1.4.14, escribe literalmente
+  > *«Aplica únicamente para la nacionalidad indígena "Kichwa"»*, y su catálogo
+  > son 18 códigos: `1 Chibuleo · 2 Karanki · 3 Kañari · 4 Kayambi ·
+  > 5 Kisapincha · 6 Kitukara · 7 Natabuela · 8 Otavalo · 9 Paltas ·
+  > 10 Panzaleo · 11 Pastos · 12 Puruha · 13 Salasaka · 14 Saraguro ·
+  > 15 Tomabela · 16 Waranka · 17 Kichwa Amazónico · 18 No sabe / No responde`.
+  > Se enumeran aquí y no se referencian: «los pueblos del instructivo» no es
+  > especificar. Entran como catálogo `PEOPLE` con su release, con la misma
+  > disciplina que los otros tres —versión, origen y checksum— para que una
+  > ficha de hace tres años siga resolviendo el pueblo con el que se registró.
+  >
+  > **LA CONDICIÓN SE DECIDE SOBRE LA FICHA RESULTANTE, no sobre el cuerpo**, y
+  > por lo mismo que PA-027: corregir sólo la nacionalidad a «Shuar» en una
+  > ficha que ya declara pueblo se responde igual que enviar las dos a la vez.
+  > Para que la corrección entre hay que **vaciar el pueblo en la misma
+  > petición** (`peopleConceptId: null`), que es un solo `PATCH`. Borrarlo en
+  > silencio sería pérdida de dato disfrazada de actualización, sobre algo que
+  > sólo el paciente puede volver a declarar.
+  >
+  > **QUIÉN ES «KICHWA» LO DECIDE UN SOLO SITIO**, `KICHWA_NATIONALITY_CODE` en
+  > `src/modules/patients/domain/indigenous-people.ts`, y se reconoce por su
+  > **`code`** —el `6` de la columna 13— y nunca por su texto. Es exactamente
+  > el criterio de `INDIGENOUS_ETHNICITY_CODE`, y por el mismo motivo: la
+  > redacción de una categoría se reescribe entre ediciones, y el `6` fue `14`
+  > en la lista del INEC que este catálogo tuvo sembrada hasta el 19-08-2026.
+  > Un código leído bajo la lista equivocada es un dato distinto.
+  >
+  > **ESTO NO PUEDE VIVIR EN UN `CHECK`, y no se busque allí.** Depende de
+  > **qué fila del catálogo `NATIONALITY` es «Kichwa»**, y eso está en otra
+  > tabla: un `CHECK` no consulta otra tabla. Es la misma razón que PA-027 y
+  > PA-053 escriben, con la misma consecuencia asumida —una importación o un
+  > `INSERT` por `psql` **pueden** escribir la combinación contradictoria, y lo
+  > que la detectaría es el reporte mensual—. Va **en el servicio y no sólo en
+  > el DTO**, porque un `DEBERÁ` que sólo hace cumplir la capa de transporte
+  > deja de cumplirse el día que otro caso de uso llame por dentro.
+  >
+  > **NO cuenta para `rdacaaMissingFields`** (PA-032): REQ-022 enumera
+  > documento, sexo, autoidentificación étnica, nacionalidad, edad y
+  > residencia, y el pueblo no está. Mismo argumento que la identidad de género
+  > y el país: marcar una ficha como incompleta por un dato que el ministerio
+  > no pide convierte el indicador en ruido que admisión aprende a ignorar.
+- **PA-057** — El sistema DEBERÁ registrar la **orientación sexual** del
+  paciente eligiéndola de un catálogo. **SI** la ficha que resultaría del alta o
+  de la corrección declara una orientación sexual **y** la edad del paciente
+  —derivada de su fecha de nacimiento en la fecha clínica de
+  `America/Guayaquil`, PA-030— es menor de **diez años cumplidos**, **ENTONCES**
+  el sistema DEBERÁ rechazar la operación con
+  `SEXUAL_ORIENTATION_BELOW_MINIMUM_AGE` señalando el campo
+  `sexualOrientationConceptId`, y NO DEBERÁ escribir nada.
+  > **ES LA COLUMNA 7 DEL FORMULARIO**, § 1.4.7 del instructivo, con cinco
+  > códigos: `1 Lesbiana · 2 Gay · 3 Bisexual · 4 Heterosexual · 5 No sabe/no
+  > responde`. Entran como catálogo `SEXUAL_ORIENTATION` con su release, igual
+  > que los otros cuatro. La nota del instructivo es literal: *«Esta variable
+  > aplica a usuarios a partir de los 10 años de edad»*.
+  >
+  > **ES LA PRIMERA REGLA DE ESTE MÓDULO QUE DEPENDE DE LA EDAD DERIVADA, y por
+  > eso se dice en voz alta.** La edad no se almacena (PA-030): se deriva de la
+  > fecha de nacimiento resuelta en `America/Guayaquil`, nunca en el huso de la
+  > sesión. A las 21:00 de Guayaquil ya es el día siguiente en UTC, y sobre el
+  > décimo cumpleaños eso es la diferencia entre aceptar la ficha y rechazarla
+  > durante toda la franja vespertina. El umbral vive en **un solo sitio**,
+  > `SEXUAL_ORIENTATION_MIN_AGE_YEARS`, por lo mismo que
+  > `NEONATE_MAX_AGE_DAYS`: el día que el ministerio lo mueva, moverlo ahí ha
+  > de ser el cambio entero.
+  >
+  > **Y ES LA SIMÉTRICA DE «INTERSEXUAL», NO SU EXCEPCIÓN.** PA-005 explica por
+  > qué el sexo «Intersexual» de menores de un año **no** se valida al escribir:
+  > el paciente envejece solo y la ficha se volvería inválida sin que nadie la
+  > toque. Aquí el tiempo corre **a favor**: un dato admisible el día que se
+  > escribió lo sigue siendo siempre, porque nadie rejuvenece. Por eso ésta sí
+  > es una validación de escritura y aquélla no, y la diferencia es la
+  > dirección de la desigualdad, no un criterio distinto.
+  >
+  > **LA FICHA QUE YA TIENE ORIENTACIÓN Y LE CORRIGEN LA FECHA DE NACIMIENTO
+  > TAMBIÉN SE RECHAZA.** Se cuenta el estado **resultante**, como en PA-027 y
+  > PA-056: adelantar la fecha de nacimiento de un adolescente mal registrado
+  > hasta dejarlo con ocho años se decide igual que enviar las dos cosas a la
+  > vez. Para que la corrección entre hay que vaciar la orientación en la misma
+  > petición.
+  >
+  > **NO cuenta para `rdacaaMissingFields`** (PA-032), por lo mismo que el
+  > pueblo: REQ-022 no la enumera.
+- **PA-058** — La lectura de la **orientación sexual** DEBERÁ exigir un permiso
+  propio, `patient:sexual-orientation`, distinto de `patient:read`, y DEBERÁ
+  quedar en la bitácora como acceso a dato de salud. La orientación sexual NO
+  DEBERÁ viajar en la ficha, ni en ningún listado, ni en ningún mensaje de error
+  o registro de log.
+  > **ES DATO DE CATEGORÍA ESPECIAL BAJO LA LOPDP**, como los grupos del
+  > artículo 35, así que se le aplica el mismo criterio que D-029 fijó para el
+  > motivo de la prioridad: **no basta `patient:read`**. Recepción y caja tienen
+  > `patient:read`; que la orientación sexual de media clínica viaje en la
+  > respuesta que ya reciben es exactamente lo que PA-042 evita para el motivo,
+  > y por eso la ficha no la lleva y hay una ruta aparte con su propia puerta y
+  > su propia fila de bitácora.
+  >
+  > **NINGÚN ROL LO TRAE DE FÁBRICA (`explicitGrantOnly`)**, con el mismo
+  > criterio que `patient:priority:protected` (PA-040), `agenda:overbook:self`
+  > (AG-103), `user:reset-mfa` (AU-035) y `patient:merge` (D-030): la
+  > instalación se lo concede a alguien **a propósito** o no lo tiene nadie.
+  > **Qué rol debe llevarlo es política de acceso a datos de categoría especial
+  > y NO la decide un agente**: está registrada en `DECISIONES-PENDIENTES.md`
+  > con su recomendación.
+  >
+  > **ESCRIBIR NO EXIGE ESE PERMISO, Y ES UNA DECISIÓN, NO UN OLVIDO.** El dato
+  > se teclea en el mostrador, en la misma pantalla que las columnas 6, 8, 11,
+  > 12, 13 y 14 del formulario, así que exigirlo también para escribir dejaría
+  > **la columna 7 imposible de llenar mientras nadie tenga el permiso** — y
+  > como no lo trae ningún rol, eso sería siempre. El alta y la corrección lo
+  > aceptan con `patient:write`, igual que los demás campos del RDACAA, y lo que
+  > queda tras la puerta es **volver a leerlo**. La asimetría es deliberada: se
+  > registra lo que el paciente declara, y se lee sólo con la llave.
+  >
+  > **Y SE CORRIGE COMO CUALQUIER OTRO CAMPO DE LA FICHA** (PA-031): deja su
+  > fila en `patient_change_history` con el valor anterior. Esa tabla es
+  > rectificable a propósito, que es lo que REQ-113 exige de un dato de
+  > categoría especial.
+- **PA-059** — **SI** la ficha que resultaría del alta o de la corrección
+  declara una autoidentificación étnica **y** un país de nacionalidad distinto
+  de Ecuador, **ENTONCES** el sistema DEBERÁ rechazar la operación con
+  `ETHNICITY_REQUIRES_ECUADORIAN_NATIONALITY` señalando el campo
+  `ethnicityConceptId`, y NO DEBERÁ escribir nada. **MIENTRAS** el país de
+  nacionalidad de una ficha esté registrado y no sea Ecuador, el sistema NO
+  DEBERÁ contar `ethnicityConceptId` ni `nationalityConceptId` entre los datos
+  que a esa ficha le faltan (PA-032).
+  > **LA CONDICIÓN ES DEL FORMULARIO DEL MINISTERIO Y ESTÁ ESCRITA DOS VECES.**
+  > El instructivo la anota sobre la columna 12 —*«Aplica para nacionalidad
+  > Ecuatoriana»*— y la repite sobre la columna 11 —*«Si el usuario NO es
+  > ecuatoriano, pase a la columna 15 dejando los espacios en blanco»*—. La
+  > columna 15 es la residencia, así que lo que el ministerio manda dejar en
+  > blanco son las columnas **12, 13 y 14**: etnia, nacionalidad indígena y
+  > pueblo. Las tres caen solas, porque cada una cuelga de la anterior:
+  > sin etnia no hay nacionalidad (PA-027) y sin nacionalidad no hay pueblo
+  > (PA-056). Por eso este requisito sólo nombra la etnia.
+  >
+  > **SE RECHAZA, y es D-039 (c) opción A, 19-08-2026**, por coherencia con
+  > PA-027: ya rechazamos la nacionalidad indígena de un mestizo, y ésta es la
+  > misma clase de imposible.
+  >
+  > **⚠️ PERO CON UNA DIFERENCIA QUE OBLIGA A CUIDAR EL MENSAJE: SON DOS
+  > PANTALLAS DEL MISMO FORMULARIO.** La combinación de PA-027 no se puede
+  > teclear por accidente —quien elige «Mestizo/a» ve el selector de
+  > nacionalidad apagarse—; ésta sí, porque el país se elige en los datos de
+  > identidad y la etnia en los del RDACAA, y entre las dos hay medio
+  > formulario. Así que el mensaje **dice qué hacer** y ofrece las dos salidas
+  > —corregir el país o vaciar la etnia—, y no describe lo que falló.
+  >
+  > **UN PAÍS AUSENTE NO ACTIVA LA REGLA.** `countryOfNationalityCode` es
+  > opcional (PA-053), y «todavía nadie lo ha preguntado» no es «no es
+  > ecuatoriano»: rechazar ahí impediría registrar la etnia de la inmensa
+  > mayoría de las fichas, que no llevan país. Es la simétrica exacta de la
+  > rama de etnia ausente de PA-027, leída al revés.
+  >
+  > **LA FICHA QUE YA TIENE ETNIA Y LE CAMBIAN EL PAÍS SE RECHAZA**, y ésta es
+  > la parte con consecuencias, igual que en PA-027. Se cuenta el estado
+  > **resultante**: poner `countryOfNationalityCode: "VEN"` en una ficha que ya
+  > declara «Mestizo/a» se decide igual que enviar las dos a la vez, y se
+  > responde con el mismo error señalando `ethnicityConceptId`. Para que la
+  > corrección entre hay que **vaciar la etnia en la misma petición**
+  > (`ethnicityConceptId: null`), que es un solo `PATCH`. Borrarla en silencio
+  > sería pérdida de dato disfrazada de actualización.
+  >
+  > **Y EL INDICADOR TIENE QUE SEGUIRLA, O REPETIMOS EL DEFECTO DE D-037.** Si
+  > la etnia deja de aplicar a un paciente extranjero, **no puede seguir
+  > contando como dato que falta**: sería otra casilla que el sistema prohíbe
+  > cerrar, y un indicador que nadie puede dejar en cero es un indicador que
+  > admisión aprende a ignorar. Es literalmente lo que D-037 resolvió para la
+  > nacionalidad, con el mismo criterio y **reutilizando el mismo sitio** —
+  > `rdacaaMissingFields`, que ya tiene la condición de D-037 y ahora la
+  > antepone ésta—. La nacionalidad cae con la etnia sin necesidad de una
+  > condición propia: PA-027 no la admite sin etnia «Indígena», y la ficha
+  > extranjera no puede tener ninguna.
+  >
+  > **ESTO TAMPOCO PUEDE VIVIR EN UN `CHECK`**, y aquí el motivo es distinto y
+  > conviene decirlo: las dos columnas están en la misma tabla, así que un
+  > `CHECK` **sí podría** compararlas. Lo que no puede es saber que `ECU` es
+  > Ecuador sin consultar el catálogo `COUNTRY`… salvo que se escriba el
+  > literal, y ahí está el argumento: el código del país es `ISO 3166-1
+  > alpha-3` y su forma la garantiza `patient_country_of_nationality_format`,
+  > pero repartir el literal `'ECU'` entre un `CHECK` y el dominio son **dos
+  > sitios que un día discrepan**. Vive junto a los otros dos escalones de la
+  > cadena, en el servicio, con `ECUADOR_COUNTRY_CODE` como único sitio que lo
+  > sabe.
 
 ## 6. Grupos prioritarios (REQ-024, D-026, REQ-115)
 
@@ -1627,6 +1872,10 @@ prueba cite un ID inexistente; el día que este `SPEC.md` pase a `vigente`,
 | PA-031                         | Integración: la corrección escribe **dos** filas —bitácora sin valores e histórico con el valor anterior— y la de bitácora respeta el `CHECK` de la lista blanca, que sigue sin incluir `'patient'`                                                                                                                                                                                                                                                                                                                                                                                                      |
 | PA-032                         | Contrato HTTP: la ficha sin etnia se crea igualmente y la respuesta NOMBRA el campo que falta + unitario de dominio con las **tres** ramas de D-037 —etnia indígena, etnia registrada y no indígena, y etnia ausente—, cada una con la nacionalidad puesta y sin poner + contrato HTTP: la ficha mestiza sin nacionalidad **no** la nombra entre lo que falta y la indígena **sí**, también en la fila del listado, que es donde el código de la etnia se resuelve por unión                                                                                                                             |
 | PA-053                         | Unitario + contrato HTTP **e** integración contra PostgreSQL real: el `CHECK` de formato rechaza `ec` y `ECUADOR` por SQL directo —el DTO no interviene en una importación—, corregir el país deja su fila en `patient_change_history` con el valor anterior, el nombre viaja resuelto en la ficha y **no** en el listado, y la ficha sin país no se declara incompleta                                                                                                                                                                                                                                  |
+| PA-056                         | Unitario de dominio con las **cuatro** combinaciones —nacionalidad Kichwa con pueblo, otra nacionalidad con pueblo, nacionalidad ausente con pueblo, y pueblo ausente con cualquier nacionalidad— + contrato HTTP del `code`, el 422 y el campo señalado + integración contra PostgreSQL real: **corregir sólo la nacionalidad de una ficha que ya tenía pueblo** se rechaza y no deja ni fila de histórico ni fila de bitácora. Ese último caso no lo puede ver una unitaria: depende del estado almacenado, no del cuerpo |
+| PA-057                         | Unitario de dominio **con el huso alterado**, como PA-030: el décimo cumpleaños se decide en `America/Guayaquil` y no en el del anfitrión + contrato HTTP del `code`, el 422 y el campo señalado + integración: **corregir la fecha de nacimiento** de una ficha que ya declara orientación sexual, dejándola por debajo del umbral, se rechaza |
+| PA-058                         | Seguridad dirigida, con **sesión real**: `patient:read` y `patient:write` escriben la orientación sexual y reciben 403 al leerla; con el permiso concedido la leen y la lectura deja **una** fila de bitácora. Y una ausencia afirmada sobre la respuesta: ni la ficha ni el listado la llevan. Con sesión de verdad y no con un doble con los permisos puestos a mano — el defecto de AG-111 fue exactamente eso |
+| PA-059                         | Unitario de dominio con las **tres** ramas —país ausente, país `ECU`, país extranjero—, cada una con etnia y sin ella + contrato HTTP del `code`, el 422 y el campo señalado + integración contra PostgreSQL real: **cambiar el país** de una ficha que ya tenía etnia se rechaza sin escribir nada, y la ficha extranjera sin etnia **no** nombra ni la etnia ni la nacionalidad entre lo que le falta, también en la fila del listado |
 | PA-033, PA-036, PA-037         | Unitario de dominio + integración: el embarazo caducado deja de contar **sin escritura alguna**, y cerrar un estado no borra la fila                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | PA-034, PA-035, PA-038, PA-039 | Unitario de dominio: la enumeración, los umbrales de edad y el origen son decisiones puras                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | PA-040, PA-041, PA-042         | Seguridad dirigida: una sesión real con `patient:read` y sin `patient:priority` obtiene el orden y no el motivo. Con sesión de verdad, no con un doble con los permisos puestos a mano — el defecto de AG-111 fue exactamente eso                                                                                                                                                                                                                                                                                                                                                                        |
@@ -1637,26 +1886,24 @@ prueba cite un ID inexistente; el día que este `SPEC.md` pase a `vigente`,
 
 ## Preguntas abiertas
 
-Quedan **cuatro**, y las cuatro están **junto a su requisito** además de aquí:
-una pregunta separada del requisito que bloquea no bloquea nada. Esta tabla sólo
-las enumera para que se puedan llevar a `DECISIONES-PENDIENTES.md` con las demás.
+Queda **una**, y está **junto a su requisito** además de aquí: una pregunta
+separada del requisito que bloquea no bloquea nada. Esta tabla sólo la enumera
+para que se pueda llevar a `DECISIONES-PENDIENTES.md` con las demás.
 
-> **Las cuatro las abrió el instructivo oficial del RDACAA 2.0, el 19-08-2026.**
-> Leerlo cerró la que había —qué lista carga cada catálogo, D-036— y abrió estas
-> otras: **dos columnas del formulario que este sistema no tiene** y **dos
-> condiciones del formulario que no comprueba**. Ninguna bloquea lo ya
-> entregado, y ninguna la decide un agente: son alcance y política de registro.
+> **Las cuatro que abrió el instructivo oficial del RDACAA 2.0 el 19-08-2026
+> están cerradas por D-039 y construidas —o anotadas— el mismo día.** Eran dos
+> columnas que este sistema no tenía y dos condiciones que no comprobaba:
+> «Pueblos» es PA-056, «Orientación sexual» es PA-057 y PA-058, la etnia
+> condicionada al país es PA-059, y «Intersexual» sólo en menores de un año
+> **no se valida a propósito** y está escrito en el recuadro de PA-005, con su
+> sitio en la capa de exportación.
 >
 > Este párrafo decía «cuatro» sobre una tabla de una sola fila (corregido el
-> 18-08-2026), y hoy vuelve a decir cuatro sobre cuatro filas. Las contestadas
-> —D-032, D-028, D-031 y D-030— son las que enumera el párrafo de más abajo.
+> 18-08-2026) y luego cuatro sobre cuatro filas. Hoy dice una sobre una.
 
-| Dónde                  | Qué hay que decidir                                                                                                                                                                                                                                                |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| PA-026, PA-027                | **«Pueblos», la columna 14 del RDACAA, no existe en el esquema.** El instructivo la exige cuando la nacionalidad indígena es «Kichwa», con 18 códigos propios (§ 1.4.14). Haría falta `patient.people_concept_id`, un catálogo `PEOPLE` y una regla condicionada a la nacionalidad, igual que PA-027 lo está a la etnia. **Falta esquema** |
-| PA-005                        | **«Orientación sexual», la columna 7, no existe en el esquema.** El instructivo la pide *«a partir de los 10 años de edad»*, con 5 códigos (§ 1.4.7). Haría falta columna, catálogo `SEXUAL_ORIENTATION` y la condición de edad. **Falta esquema**                                                                                     |
-| PA-026                        | **La etnia sólo aplica a nacionalidad ecuatoriana** (§ 1.4.12, *«Aplica para nacionalidad Ecuatoriana»*), y hoy no se comprueba nada entre `country_of_nationality_code` y `ethnicity_concept_id`. Decidir si se rechaza, se avisa o se deja pasar                                                                                      |
-| PA-005                        | **«Intersexual» sólo se registra en menores de un año** (§ 1.4.6), y hoy se acepta a cualquier edad. Decidir si es un rechazo o un aviso, y qué pasa con una ficha que cumple un año                                                                                                                                                   |
+| Dónde  | Qué hay que decidir                                                                                                                                                                                                                                                                            |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PA-058 | **Qué rol debe llevar `patient:sexual-orientation`**, que hoy no trae ninguno a propósito (`explicitGrantOnly`). Es política de acceso a datos de categoría especial bajo la LOPDP, la fija la clínica y **no la decide un agente**. Mientras nadie lo tenga, la columna 7 se escribe y no se lee |
 
 **Cuatro de las cinco que este documento planteó ya están contestadas**, y sus
 requisitos lo dicen en su propio recuadro: PA-031 por **D-032** (histórico
@@ -1673,4 +1920,7 @@ cómo se registran, D-027 que son los diez con lectura separada, y D-029 que
 `patient:priority` lo traen `MEDICO` y `ENFERMERIA`. Queda una sola pregunta, y
 no bloquea nada de esta entrega: **qué rol debe llevar
 `patient:priority:protected`**, que hoy no trae ninguno a propósito. Está
-registrada en `DECISIONES-PENDIENTES.md` con su recomendación.
+registrada en `DECISIONES-PENDIENTES.md` con su recomendación, y desde el
+19-08-2026 tiene una hermana idéntica en la tabla de arriba:
+`patient:sexual-orientation` (PA-058). Las dos son la misma pregunta sobre dos
+datos de categoría especial, y conviene contestarlas juntas.

@@ -170,6 +170,33 @@ export const DOMAIN_ERROR_CODES = [
   // vaciar la nacionalidad). Y no puede ser un `CHECK`: qué fila de `ETHNICITY`
   // es «Indígena» está en otra tabla.
   'NATIONALITY_REQUIRES_INDIGENOUS_ETHNICITY',
+  // PA-056, PA-057, PA-059, 19-08-2026 (D-039). Las tres condiciones que el
+  // instructivo oficial del RDACAA 2.0 escribe sobre las columnas 7, 12 y 14, y
+  // que este sistema no comprobaba. Son 422 y viajan POR CAMPO, señalando en
+  // cada caso el campo CONDICIONADO —el que el formulario activa— y no el que
+  // lo activa, porque es su valor el que tiene que ceder:
+  //
+  //   * `PEOPLE_REQUIRES_KICHWA_NATIONALITY` → `peopleConceptId`. El pueblo de
+  //     la columna 14 «aplica únicamente para la nacionalidad indígena
+  //     "Kichwa"». Es el hermano de `NATIONALITY_REQUIRES_INDIGENOUS_ETHNICITY`
+  //     un escalón más abajo de la misma cadena.
+  //   * `ETHNICITY_REQUIRES_ECUADORIAN_NATIONALITY` → `ethnicityConceptId`. La
+  //     columna 12 «aplica para nacionalidad Ecuatoriana». Es el escalón de
+  //     ARRIBA de esa misma cadena, y el único de los tres que se teclea por
+  //     accidente: el país y la etnia están en dos pantallas del mismo
+  //     formulario.
+  //   * `SEXUAL_ORIENTATION_BELOW_MINIMUM_AGE` → `sexualOrientationConceptId`.
+  //     La columna 7 «aplica a usuarios a partir de los 10 años de edad», y la
+  //     edad se DERIVA de la fecha de nacimiento en `America/Guayaquil`.
+  //
+  // NINGUNO es un `CATALOG_CONCEPT_*`: el concepto enviado existe, es del
+  // catálogo correcto y está vigente — lo que no encaja es con OTRO campo de la
+  // ficha, y lo que hay que hacer es distinto. Y ninguno puede ser un `CHECK`:
+  // los dos primeros dependen de qué fila de otro catálogo es «Kichwa» o
+  // «Ecuador», y el tercero de una edad que se mueve sola con el calendario.
+  'ETHNICITY_REQUIRES_ECUADORIAN_NATIONALITY',
+  'PEOPLE_REQUIRES_KICHWA_NATIONALITY',
+  'SEXUAL_ORIENTATION_BELOW_MINIMUM_AGE',
   // Grupos prioritarios del paciente (P3: PA-033..PA-042, D-026, D-027).
   //
   // Son cinco y no uno porque lo que hay que hacer es distinto en cada caso, y

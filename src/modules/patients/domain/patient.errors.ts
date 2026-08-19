@@ -105,6 +105,120 @@ export class NationalityRequiresIndigenousEthnicityError extends ValidationError
   }
 }
 
+/**
+ * PA-056. The chart declares a people and its indigenous nationality is not
+ * «Kichwa».
+ *
+ * THE SAME SHAPE AS `NationalityRequiresIndigenousEthnicityError` ONE STEP
+ * FURTHER ALONG THE CHAIN, and deliberately so: ethnicity → indigenous
+ * nationality → people is one rule written three times over three columns of
+ * the same form. Enforced in the service and not only in the DTO, and NOT a
+ * `CHECK` — which nationality is «Kichwa» lives in another table; see
+ * `indigenous-people.ts`.
+ *
+ * ⚠️ THE MESSAGE NAMES NO DATUM OF THE PATIENT. It says what to do — pick the
+ * Kichwa nationality or clear the field — and never which people or which
+ * nationality was sent: an error text ends up in support screenshots and logs.
+ */
+export class PeopleRequiresKichwaNationalityError extends ValidationError {
+  readonly code = 'PEOPLE_REQUIRES_KICHWA_NATIONALITY';
+  override readonly userTitle =
+    'El pueblo sólo se registra si la nacionalidad indígena es «Kichwa»';
+  /**
+   * IT POINTS AT `peopleConceptId` AND NOT AT THE NATIONALITY, on purpose.
+   *
+   * Two fields are involved and only one can be blamed. The people is the one
+   * the RDACAA treats as conditional — it is the field that gets enabled — so
+   * it is the one whose value has to give way, and the message offers both ways
+   * out of the contradiction. Same reasoning as PA-027 one step up.
+   */
+  constructor() {
+    super(
+      'An indigenous people requires the Kichwa indigenous nationality',
+      {},
+      [
+        {
+          field: 'peopleConceptId',
+          code: 'PEOPLE_REQUIRES_KICHWA_NATIONALITY',
+          message: 'Elija «Kichwa» en la nacionalidad indígena, o deje vacío el pueblo', // prettier-ignore
+        },
+      ],
+    );
+  }
+}
+
+/**
+ * PA-059. The chart declares an ethnic self-identification and a country of
+ * nationality other than Ecuador.
+ *
+ * ⚠️ THE ONE OF THE THREE THAT GETS TYPED BY ACCIDENT, AND THAT IS WHY THE
+ * MESSAGE MATTERS MORE HERE. PA-027's contradiction is unreachable from a
+ * well-built form — choosing «Mestizo/a» switches the nationality selector off
+ * in front of the person typing. This one is not: the country is chosen among
+ * the identity fields and the ethnicity among the RDACAA ones, half a form
+ * apart, so the desk reaches it without noticing. The text therefore says WHAT
+ * TO DO and offers BOTH ways out, rather than describing what failed.
+ *
+ * Enforced in the service and not only in the DTO, for the same reason as its
+ * two siblings. Not a `CHECK` either, and there the reason differs — see
+ * `ecuadorian-ethnicity.ts`.
+ */
+export class EthnicityRequiresEcuadorianNationalityError extends ValidationError {
+  readonly code = 'ETHNICITY_REQUIRES_ECUADORIAN_NATIONALITY';
+  override readonly userTitle =
+    'La autoidentificación étnica sólo se registra si la nacionalidad es ecuatoriana';
+  /**
+   * IT POINTS AT `ethnicityConceptId` AND NOT AT THE COUNTRY.
+   *
+   * The ethnicity is the conditional one — the instructivo says to leave
+   * columns 12 to 14 blank for a foreign patient, never to change the country —
+   * so it is its value that has to give way. The message still names the other
+   * way out, because on this pairing the country is quite often the field that
+   * is actually wrong.
+   */
+  constructor() {
+    super('An ethnic self-identification requires Ecuadorian nationality', {}, [
+      {
+        field: 'ethnicityConceptId',
+        code: 'ETHNICITY_REQUIRES_ECUADORIAN_NATIONALITY',
+        message: 'Deje vacía la autoidentificación étnica, o corrija el país de nacionalidad a Ecuador', // prettier-ignore
+      },
+    ]);
+  }
+}
+
+/**
+ * PA-057. The chart declares a sexual orientation and the patient is under the
+ * age from which the ministry's form asks the question.
+ *
+ * ⚠️ THE MESSAGE SAYS THE AGE AND NOTHING ABOUT THE PATIENT. «Diez años» is
+ * the ministry's threshold and is public; the patient's own birth date is not,
+ * and an error text ends up in support screenshots and logs (PA-025).
+ *
+ * ⚠️ AND IT DOES NOT NAME THE VALUE THAT WAS SENT — which on this field is
+ * special category data under the LOPDP. An error that echoed «Bisexual» back
+ * would put it in every log line and every screenshot, defeating the whole
+ * point of PA-058's separate door.
+ */
+export class SexualOrientationBelowMinimumAgeError extends ValidationError {
+  readonly code = 'SEXUAL_ORIENTATION_BELOW_MINIMUM_AGE';
+  override readonly userTitle =
+    'La orientación sexual sólo se registra desde los 10 años de edad';
+  constructor() {
+    super(
+      'Sexual orientation applies from the ministry minimum age onwards',
+      {},
+      [
+        {
+          field: 'sexualOrientationConceptId',
+          code: 'SEXUAL_ORIENTATION_BELOW_MINIMUM_AGE',
+          message: 'Deje vacía la orientación sexual, o revise la fecha de nacimiento', // prettier-ignore
+        },
+      ],
+    );
+  }
+}
+
 export class DuplicateIdentifierError extends ConflictError {
   readonly code = 'PATIENT_IDENTIFIER_TAKEN';
   override readonly userTitle =

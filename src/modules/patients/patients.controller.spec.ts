@@ -56,6 +56,7 @@ function aDetail(overrides: Partial<PatientDetail> = {}): PatientDetail {
     residenceAddressLine: null,
     ethnicity: { id: PATIENT, code: '3', display: 'Mestiza/o' },
     nationality: null,
+    people: null,
     genderIdentity: null,
     countryOfNationality: null,
     residenceParish: {

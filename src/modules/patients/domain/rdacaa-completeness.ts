@@ -1,8 +1,9 @@
+import { ethnicityApplies } from './ecuadorian-ethnicity';
 import { isIndigenousEthnicity } from './indigenous-nationality';
 
 /**
  * Which of the data the RDACAA demands are still missing from a chart
- * (PA-032, REQ-022, D-028, D-037).
+ * (PA-032, PA-059, REQ-022, D-028, D-037, D-039).
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * IT NEVER STOPS THE CHART FROM EXISTING.
@@ -43,6 +44,16 @@ export type RdacaaRequiredField = (typeof RDACAA_REQUIRED_FIELDS)[number];
 
 export interface RdacaaChart {
   /**
+   * The chart's country of nationality, `ISO 3166-1 alpha-3` or `null`.
+   *
+   * ⚠️ NOT ONE OF THE REQUIRED FOUR — REQ-022 does not ask for it and PA-053
+   * says so explicitly. It is here as a GATE: the instructivo tells whoever
+   * fills the form to leave columns 12 to 14 blank for a patient who is not
+   * Ecuadorian, and PA-059 refuses to record them, so demanding them of a
+   * foreign chart would be another box nobody can tick.
+   */
+  countryOfNationalityCode: string | null;
+  /**
    * Whether the chart holds an active DEFINITIVE identity document.
    *
    * ⚠️ DEFINITIVE, and the word is the whole point: a `PROVISIONAL` marker is
@@ -79,7 +90,7 @@ export interface RdacaaChart {
  * Whether the RDACAA asks THIS chart for a nationality at all (PA-032, D-037).
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * THE ONLY CONDITIONAL IN THIS FILE, AND PA-027 IS WHAT PUTS IT HERE.
+ * THE FIRST OF TWO CONDITIONALS, AND PA-027 IS WHAT PUTS IT HERE.
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * Since PA-027 enforces the ministry's form — the nationality or indigenous
@@ -97,8 +108,38 @@ export interface RdacaaChart {
  * would go backwards without anything changing about the report.
  */
 function nationalityIsDemanded(chart: RdacaaChart): boolean {
+  if (!ethnicityIsDemanded(chart)) return false;
   if (chart.ethnicityConceptId === null) return true;
   return isIndigenousEthnicity(chart.ethnicityCode);
+}
+
+/**
+ * Whether the RDACAA asks THIS chart for an ethnicity at all (PA-059, D-039).
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * THE SECOND CONDITIONAL, AND IT SITS ABOVE THE FIRST.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Same shape and same argument as {@link nationalityIsDemanded}, one step up
+ * the chain: PA-059 enforces the ministry's form — columns 12 to 14 stay blank
+ * for a patient who is not Ecuadorian — so counting the ethnicity on a foreign
+ * chart would leave it permanently incomplete over a box THE SYSTEM ITSELF
+ * REFUSES TO LET ANYBODY FILL IN. That is word for word the defect D-037 found
+ * one step below, and the same answer.
+ *
+ * ⚠️ A MISSING COUNTRY STILL DEMANDS IT, for the reason `ethnicityApplies`
+ * spells out: the country is optional and most charts carry none, so «nobody
+ * has asked» must not read as «not Ecuadorian».
+ *
+ * ⚠️ AND THE NATIONALITY FALLS WITH IT AUTOMATICALLY, which is why the
+ * function above defers to this one instead of repeating the test: PA-027 does
+ * not admit a nationality without an «Indígena» ethnicity, and a foreign chart
+ * cannot hold one. Two independent conditions would be two things to keep in
+ * step, and the one that drifted would quietly ask a Venezuelan chart for a
+ * Kichwa nationality.
+ */
+function ethnicityIsDemanded(chart: RdacaaChart): boolean {
+  return ethnicityApplies(chart.countryOfNationalityCode);
 }
 
 /**
@@ -111,12 +152,15 @@ export function rdacaaMissingFields(
   chart: RdacaaChart,
 ): readonly RdacaaRequiredField[] {
   /**
-   * SETTLED, not «present»: three of the four are settled by being there, and
-   * the nationality is also settled by not being demanded of this chart.
+   * SETTLED, not «present»: two of the four are settled only by being there,
+   * and the ethnicity and the nationality are ALSO settled by not being
+   * demanded of this chart at all — by the country (PA-059) or by the ethnicity
+   * itself (D-037).
    */
   const settled: Record<RdacaaRequiredField, boolean> = {
     identifier: chart.hasDefinitiveDocument,
-    ethnicityConceptId: chart.ethnicityConceptId !== null,
+    ethnicityConceptId:
+      !ethnicityIsDemanded(chart) || chart.ethnicityConceptId !== null,
     nationalityConceptId:
       !nationalityIsDemanded(chart) || chart.nationalityConceptId !== null,
     residenceParishConceptId: chart.residenceParishConceptId !== null,

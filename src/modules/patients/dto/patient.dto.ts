@@ -190,7 +190,8 @@ export const createPatientSchema = z.object({
   residenceAddressLine: z.string().trim().max(255).optional(),
   bloodType: BLOOD_TYPE.optional(),
   /**
-   * Los cuatro datos del RDACAA, TODOS OPCIONALES (D-028, PA-026 a PA-029).
+   * Los seis datos del RDACAA, TODOS OPCIONALES (D-028, PA-026 a PA-029,
+   * PA-056, PA-057).
    *
    * La norma los exige «en cada consulta», no al registrar, y bloquear el alta
    * a las tres de la mañana con un neonato delante es exactamente lo que
@@ -200,6 +201,30 @@ export const createPatientSchema = z.object({
    */
   ethnicityConceptId: z.uuid().optional(),
   nationalityConceptId: z.uuid().optional(),
+  /**
+   * PA-056. El pueblo de la columna 14 del RDACAA.
+   *
+   * El formulario del ministerio lo activa SÓLO si la nacionalidad indígena es
+   * «Kichwa», y esa condición NO está aquí: vive en el servicio, por lo mismo
+   * que la de PA-027. Un `DEBERÁ` que sólo hace cumplir la capa de transporte
+   * deja de cumplirse el día que otro caso de uso llame por dentro.
+   */
+  peopleConceptId: z.uuid().optional(),
+  /**
+   * PA-057, PA-058. La orientación sexual de la columna 7 del RDACAA.
+   *
+   * ⚠️ SE ESCRIBE CON `patient:write` Y SE LEE CON OTRO PERMISO, y la asimetría
+   * es deliberada: el dato se teclea en el mostrador junto a las demás columnas
+   * del formulario, así que exigir `patient:sexual-orientation` también para
+   * escribirlo dejaría la columna 7 imposible de llenar mientras nadie tenga
+   * ese permiso — y no lo trae ningún rol de fábrica. Volver a leerlo es lo que
+   * queda tras la puerta, y por eso NO está en `PatientDetailDto`.
+   *
+   * La condición de edad —desde los 10 años— tampoco está aquí: depende de la
+   * fecha de nacimiento resuelta en `America/Guayaquil`, y la resuelve el
+   * servicio sobre la ficha RESULTANTE.
+   */
+  sexualOrientationConceptId: z.uuid().optional(),
   /** Parroquia del DPA del INEC. Provincia y cantón se derivan (PA-028). */
   residenceParishConceptId: z.uuid().optional(),
   /** PA-029: dato DISTINTO del sexo. Ninguno se deriva del otro. */
@@ -292,6 +317,10 @@ const correctableFields = {
   bloodType: BLOOD_TYPE.nullish(),
   ethnicityConceptId: z.uuid().nullish(),
   nationalityConceptId: z.uuid().nullish(),
+  /** PA-056. El mismo esquema que el alta, no una copia suya. */
+  peopleConceptId: z.uuid().nullish(),
+  /** PA-057, PA-058. Se corrige con `patient:write`; leerla es otra ruta. */
+  sexualOrientationConceptId: z.uuid().nullish(),
   residenceParishConceptId: z.uuid().nullish(),
   genderIdentityConceptId: z.uuid().nullish(),
   /** PA-053. El mismo esquema que el alta, no una copia suya. */
@@ -531,16 +560,24 @@ export const patientDetailSchema = patientSummarySchema.extend({
   bloodType: z.string().nullable(),
   residenceAddressLine: z.string().nullable(),
   /**
-   * Los cuatro conceptos elegidos, con la redacción con la que se registraron
-   * (PA-026 a PA-029).
+   * Los conceptos elegidos, con la redacción con la que se registraron
+   * (PA-026 a PA-029, PA-056).
    *
    * NO VIAJAN EN EL LISTADO, y esa ausencia es PA-021: una búsqueda se dispara
-   * con cada letra tecleada, y resolver cuatro conceptos por fila para pintar
-   * una lista es trabajo que nadie pidió. Lo que sí viaja allí es la edad y qué
+   * con cada letra tecleada, y resolver un concepto por fila para pintar una
+   * lista es trabajo que nadie pidió. Lo que sí viaja allí es la edad y qué
    * falta.
+   *
+   * ⚠️ Y LA ORIENTACIÓN SEXUAL NO ESTÁ AQUÍ, que es la mitad visible de
+   * PA-058. Es dato de categoría especial bajo la LOPDP: se lee por
+   * `GET /patients/:id/sexual-orientation`, con permiso propio y su fila de
+   * bitácora. Añadirla a este esquema quitaría esa puerta sin que nada fallara
+   * — exactamente lo que PA-042 evita para el motivo de la prioridad.
    */
   ethnicity: conceptResponseSchema.nullable(),
   nationality: conceptResponseSchema.nullable(),
+  /** PA-056. El pueblo, tercer escalón de la cadena que empieza en la etnia. */
+  people: conceptResponseSchema.nullable(),
   genderIdentity: conceptResponseSchema.nullable(),
   /**
    * PA-053. El país de la persona, que NO es `nationality`.
@@ -571,6 +608,31 @@ export const patientDetailSchema = patientSummarySchema.extend({
   createdAt: z.iso.datetime(),
 });
 export class PatientDetailDto extends createZodDto(patientDetailSchema) {}
+
+/**
+ * PA-057, PA-058. La orientación sexual, por su propia puerta.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * UN ESQUEMA APARTE PORQUE LA RESPUESTA ES APARTE
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Es un solo campo y aun así no viaja dentro de `PatientDetailDto`: es dato de
+ * categoría especial bajo la LOPDP y su lectura exige
+ * `patient:sexual-orientation`, que no basta declarar en una ruta si el dato
+ * viaja también por otra. Mismo reparto que el motivo de la prioridad
+ * (PA-040, PA-042): el orden viaja con la ficha, el motivo tiene su ruta.
+ *
+ * `null` significa «no se ha registrado», y es una respuesta legítima que
+ * quien tiene el permiso puede ver: lo que la puerta protege es el valor, no
+ * la existencia del campo.
+ */
+export const sexualOrientationSchema = z.object({
+  sexualOrientation: conceptResponseSchema.nullable(),
+});
+export class SexualOrientationDto extends createZodDto(
+  sexualOrientationSchema,
+) {}
+export type SexualOrientationResponse = z.infer<typeof sexualOrientationSchema>;
 
 export const patientPageSchema = z.object({
   items: z.array(patientSummarySchema).readonly(),

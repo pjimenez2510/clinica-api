@@ -29,6 +29,8 @@ const CURRENT: PatientCorrectionSnapshot = {
   bloodType: null,
   ethnicityConceptId: null,
   nationalityConceptId: null,
+  peopleConceptId: null,
+  sexualOrientationConceptId: null,
   residenceParishConceptId: null,
   genderIdentityConceptId: null,
   countryOfNationalityCode: null,

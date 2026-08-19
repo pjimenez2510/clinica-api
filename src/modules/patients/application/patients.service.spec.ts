@@ -6,7 +6,9 @@ import type {
   AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
 import { parseClinicalDate } from '../../../shared/domain/clinic-time';
+import { ECUADOR_COUNTRY_CODE } from '../domain/ecuadorian-ethnicity';
 import { INDIGENOUS_ETHNICITY_CODE } from '../domain/indigenous-nationality';
+import { KICHWA_NATIONALITY_CODE } from '../domain/indigenous-people';
 import type { PatientCorrectionRequest } from '../domain/patient-corrections';
 import type {
   CatalogReference,
@@ -46,6 +48,8 @@ const PARISH = '00000000-0000-4000-8000-000000000005';
 const NATIONALITY = '00000000-0000-4000-8000-000000000006';
 const GENDER_IDENTITY = '00000000-0000-4000-8000-000000000007';
 const COUNTRY = '00000000-0000-4000-8000-000000000008';
+const PEOPLE = '00000000-0000-4000-8000-000000000009';
+const SEXUAL_ORIENTATION = '00000000-0000-4000-8000-00000000000a';
 
 const REQUESTER: Requester = { userId: USER };
 
@@ -92,13 +96,44 @@ function anIndigenousEthnicity(
   });
 }
 
-/** Kichwa. Cualquiera de las 34 valdría: la regla no mira cuál. */
-function aNationality(): CatalogReference {
+/**
+ * Kichwa, `6` de la columna 13 del instructivo.
+ *
+ * PA-027 no mira cuál de las dieciséis es —cualquiera valdría—, pero PA-056 sí:
+ * es la ÚNICA nacionalidad con la que el formulario activa la columna 14. Por
+ * su `code` y no por su texto, y con el del ministerio: la lista del INEC que
+ * este catálogo tuvo sembrada hasta el 19-08-2026 ponía Kichwa en el `14`, que
+ * ahora es Andoa.
+ */
+function aNationality(
+  overrides: Partial<CatalogReference> = {},
+): CatalogReference {
   return aConcept({
     id: NATIONALITY,
     systemCode: 'NATIONALITY',
-    code: '14',
+    code: KICHWA_NATIONALITY_CODE,
     display: 'Kichwa',
+    ...overrides,
+  });
+}
+
+/** PA-056. El pueblo de la columna 14. Cualquiera de los 18 valdría. */
+function aPeople(): CatalogReference {
+  return aConcept({
+    id: PEOPLE,
+    systemCode: 'PEOPLE',
+    code: '8',
+    display: 'Otavalo',
+  });
+}
+
+/** PA-057. La orientación sexual de la columna 7. La regla no mira cuál es. */
+function aSexualOrientation(): CatalogReference {
+  return aConcept({
+    id: SEXUAL_ORIENTATION,
+    systemCode: 'SEXUAL_ORIENTATION',
+    code: '4',
+    display: 'Heterosexual',
   });
 }
 
@@ -141,6 +176,7 @@ function aDetail(overrides: Partial<PatientDetail> = {}): PatientDetail {
     residenceAddressLine: null,
     ethnicity: null,
     nationality: null,
+    people: null,
     genderIdentity: null,
     countryOfNationality: null,
     residenceParish: null,
@@ -170,6 +206,8 @@ const CURRENT_VALUES: PatientCorrectionState['values'] = {
   bloodType: null,
   ethnicityConceptId: null,
   nationalityConceptId: null,
+  peopleConceptId: null,
+  sexualOrientationConceptId: null,
   residenceParishConceptId: null,
   genderIdentityConceptId: null,
   countryOfNationalityCode: null,
@@ -188,6 +226,11 @@ interface Doubles {
   /** What the adapter's locked transaction concluded: did anything change? */
   changed?: boolean;
   identifierHolder?: { id: string } | null;
+  /** PA-057, PA-058. Lo que la ficha guarda en la columna 7, si existe. */
+  sexualOrientation?: {
+    mergedIntoMrn: string | null;
+    orientation: { id: string; code: string; display: string } | null;
+  };
 }
 
 interface Recorded {
@@ -262,6 +305,8 @@ function serviceWith(doubles: Doubles = {}): {
       recorded.created.push(patient);
       return Promise.resolve(aDetail());
     },
+    findSexualOrientation: () =>
+      Promise.resolve(doubles.sexualOrientation ?? undefined),
     listPriorityGroups: () => Promise.resolve([]),
     addPriorityGroup: () => Promise.reject(new Error('not used here')),
     closePriorityGroup: () => Promise.resolve(null),
@@ -387,6 +432,345 @@ describe('choosing the RDACAA references from a catalogue', () => {
       code: 'NATIONALITY_REQUIRES_INDIGENOUS_ETHNICITY',
     });
     expect(recorded.created).toEqual([]);
+  });
+
+  it('PA-056 stores the people concept chosen from the catalogue', async () => {
+    // WITH THE KICHWA NATIONALITY, because that is the only chart on which the
+    // field exists: the RDACAA's form enables column 14 only then. And with the
+    // indigenous ethnicity above it, because PA-027 enables column 13 only then
+    // — the three columns are one chain.
+    const { service, recorded } = serviceWith({
+      concepts: {
+        [ETHNICITY]: anIndigenousEthnicity(),
+        [NATIONALITY]: aNationality(),
+        [PEOPLE]: aPeople(),
+      },
+    });
+
+    await service.create(
+      aNewPatient({
+        ethnicityConceptId: ETHNICITY,
+        nationalityConceptId: NATIONALITY,
+        peopleConceptId: PEOPLE,
+      }),
+      REQUESTER,
+      NOW,
+    );
+
+    expect(recorded.created[0]?.peopleConceptId).toBe(PEOPLE);
+  });
+
+  it('PA-056 refuses a people on a chart whose indigenous nationality is not Kichwa', async () => {
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     * EN EL SERVICIO Y NO SÓLO EN EL DTO, y no puede estar en la base.
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Shuar + Otavalo es un dato contradictorio que el ministerio no espera y
+     * que nada detecta después: vuelve con el reporte mensual. El DTO no puede
+     * decidirlo —no sabe qué fila del catálogo es «Kichwa»— y un `CHECK`
+     * tampoco, porque eso está en otra tabla.
+     */
+    const { service, recorded } = serviceWith({
+      concepts: {
+        [ETHNICITY]: anIndigenousEthnicity(),
+        [NATIONALITY]: aNationality({ code: '8', display: 'Shuar' }),
+        [PEOPLE]: aPeople(),
+      },
+    });
+
+    await expect(
+      service.create(
+        aNewPatient({
+          ethnicityConceptId: ETHNICITY,
+          nationalityConceptId: NATIONALITY,
+          peopleConceptId: PEOPLE,
+        }),
+        REQUESTER,
+        NOW,
+      ),
+    ).rejects.toMatchObject({
+      code: 'PEOPLE_REQUIRES_KICHWA_NATIONALITY',
+      fieldErrors: [expect.objectContaining({ field: 'peopleConceptId' })],
+    });
+    // Y no queda media ficha: se decide antes de escribir nada.
+    expect(recorded.created).toEqual([]);
+  });
+
+  it('PA-056 refuses a people on a chart with no indigenous nationality at all', async () => {
+    const { service, recorded } = serviceWith({
+      concepts: { [PEOPLE]: aPeople() },
+    });
+
+    await expect(
+      service.create(aNewPatient({ peopleConceptId: PEOPLE }), REQUESTER, NOW),
+    ).rejects.toMatchObject({ code: 'PEOPLE_REQUIRES_KICHWA_NATIONALITY' });
+    expect(recorded.created).toEqual([]);
+  });
+
+  it('PA-056 refuses to clear the nationality of a chart that already declares a people', async () => {
+    /**
+     * ⚠️ THE RULE IS ABOUT THE CHART THAT WOULD RESULT, NOT THE BODY.
+     *
+     * A correction that only touches column 13 reaches the same contradiction
+     * in two requests instead of one, and this is the case a unit test of the
+     * pure rule cannot see: it depends on what is STORED.
+     */
+    const { service, recorded } = serviceWith({
+      correctionState: {
+        mergedIntoMrn: null,
+        values: {
+          ...CURRENT_VALUES,
+          ethnicityConceptId: ETHNICITY,
+          nationalityConceptId: NATIONALITY,
+          peopleConceptId: PEOPLE,
+        },
+      },
+      concepts: {
+        [ETHNICITY]: anIndigenousEthnicity(),
+        [NATIONALITY]: aNationality(),
+        [PEOPLE]: aPeople(),
+      },
+    });
+
+    await expect(
+      service.correct(PATIENT, { nationalityConceptId: null }, REQUESTER, NOW),
+    ).rejects.toMatchObject({ code: 'PEOPLE_REQUIRES_KICHWA_NATIONALITY' });
+    // Nothing was written: no correction reached the adapter.
+    expect(recorded.corrections).toEqual([]);
+  });
+
+  it('PA-057 stores the sexual orientation concept chosen from the catalogue', async () => {
+    const { service, recorded } = serviceWith({
+      concepts: { [SEXUAL_ORIENTATION]: aSexualOrientation() },
+    });
+
+    await service.create(
+      aNewPatient({ sexualOrientationConceptId: SEXUAL_ORIENTATION }),
+      REQUESTER,
+      NOW,
+    );
+
+    expect(recorded.created[0]?.sexualOrientationConceptId).toBe(
+      SEXUAL_ORIENTATION,
+    );
+  });
+
+  it('PA-057 refuses a sexual orientation on a chart under ten years of age', async () => {
+    // `NOW` is 16 August 2026 in Guayaquil, so a chart born in 2020 is six.
+    const { service, recorded } = serviceWith({
+      concepts: { [SEXUAL_ORIENTATION]: aSexualOrientation() },
+    });
+
+    await expect(
+      service.create(
+        aNewPatient({
+          birthDate: new Date('2020-01-05T00:00:00Z'),
+          sexualOrientationConceptId: SEXUAL_ORIENTATION,
+        }),
+        REQUESTER,
+        NOW,
+      ),
+    ).rejects.toMatchObject({
+      code: 'SEXUAL_ORIENTATION_BELOW_MINIMUM_AGE',
+      fieldErrors: [
+        expect.objectContaining({ field: 'sexualOrientationConceptId' }),
+      ],
+    });
+    expect(recorded.created).toEqual([]);
+  });
+
+  it('PA-057 refuses to move the birth date of a chart that already declares a sexual orientation', async () => {
+    /**
+     * ⚠️ THE OTHER HALF OF «the chart that would result», and the one that is
+     * easy to miss: here nobody touched the orientation at all. Correcting a
+     * mistyped year until the patient is eight leaves the same contradiction,
+     * and only the stored value can reveal it.
+     */
+    const { service, recorded } = serviceWith({
+      correctionState: {
+        mergedIntoMrn: null,
+        values: {
+          ...CURRENT_VALUES,
+          sexualOrientationConceptId: SEXUAL_ORIENTATION,
+        },
+      },
+      concepts: { [SEXUAL_ORIENTATION]: aSexualOrientation() },
+    });
+
+    await expect(
+      service.correct(PATIENT, { birthDate: '2020-01-05' }, REQUESTER, NOW),
+    ).rejects.toMatchObject({
+      code: 'SEXUAL_ORIENTATION_BELOW_MINIMUM_AGE',
+    });
+    expect(recorded.corrections).toEqual([]);
+  });
+
+  it('PA-059 refuses an ethnicity on a chart whose country of nationality is not Ecuador', async () => {
+    const { service, recorded } = serviceWith({
+      concepts: { [ETHNICITY]: aConcept({ code: '6', display: 'Mestizo/a' }) },
+      countries: { VEN: aCountry() },
+    });
+
+    await expect(
+      service.create(
+        aNewPatient({
+          ethnicityConceptId: ETHNICITY,
+          countryOfNationalityCode: 'VEN',
+        }),
+        REQUESTER,
+        NOW,
+      ),
+    ).rejects.toMatchObject({
+      code: 'ETHNICITY_REQUIRES_ECUADORIAN_NATIONALITY',
+      fieldErrors: [expect.objectContaining({ field: 'ethnicityConceptId' })],
+    });
+    expect(recorded.created).toEqual([]);
+  });
+
+  it('PA-059 stores an ethnicity when the country of nationality is Ecuador', async () => {
+    const { service, recorded } = serviceWith({
+      concepts: { [ETHNICITY]: aConcept({ code: '6', display: 'Mestizo/a' }) },
+      countries: {
+        [ECUADOR_COUNTRY_CODE]: aCountry({
+          code: ECUADOR_COUNTRY_CODE,
+          display: 'Ecuador',
+        }),
+      },
+    });
+
+    await service.create(
+      aNewPatient({
+        ethnicityConceptId: ETHNICITY,
+        countryOfNationalityCode: ECUADOR_COUNTRY_CODE,
+      }),
+      REQUESTER,
+      NOW,
+    );
+
+    expect(recorded.created[0]?.ethnicityConceptId).toBe(ETHNICITY);
+  });
+
+  it('PA-059 refuses to change the country of a chart that already declares an ethnicity', async () => {
+    /**
+     * ⚠️ THE CASE THAT GETS TYPED BY ACCIDENT, and the reason PA-059 insists on
+     * the resulting chart: the country lives among the identity fields and the
+     * ethnicity among the RDACAA ones, half a form apart, so nobody sees the
+     * two together.
+     */
+    const { service, recorded } = serviceWith({
+      correctionState: {
+        mergedIntoMrn: null,
+        values: { ...CURRENT_VALUES, ethnicityConceptId: ETHNICITY },
+      },
+      concepts: { [ETHNICITY]: aConcept({ code: '6', display: 'Mestizo/a' }) },
+      countries: { VEN: aCountry() },
+    });
+
+    await expect(
+      service.correct(
+        PATIENT,
+        { countryOfNationalityCode: 'VEN' },
+        REQUESTER,
+        NOW,
+      ),
+    ).rejects.toMatchObject({
+      code: 'ETHNICITY_REQUIRES_ECUADORIAN_NATIONALITY',
+      fieldErrors: [expect.objectContaining({ field: 'ethnicityConceptId' })],
+    });
+    expect(recorded.corrections).toEqual([]);
+  });
+
+  it('PA-059 accepts the country and the ethnicity cleared in the SAME correction', async () => {
+    // The way out the message offers has to actually work in one `PATCH`, or
+    // the desk is stuck with a chart it cannot correct at all.
+    const { service, recorded } = serviceWith({
+      correctionState: {
+        mergedIntoMrn: null,
+        values: { ...CURRENT_VALUES, ethnicityConceptId: ETHNICITY },
+      },
+      concepts: { [ETHNICITY]: aConcept({ code: '6', display: 'Mestizo/a' }) },
+      countries: { VEN: aCountry() },
+    });
+
+    await service.correct(
+      PATIENT,
+      { countryOfNationalityCode: 'VEN', ethnicityConceptId: null },
+      REQUESTER,
+      NOW,
+    );
+
+    expect(recorded.corrections).toHaveLength(1);
+  });
+
+  it('PA-058 audits a read of the sexual orientation under its own resource type', async () => {
+    /**
+     * «¿Quién abrió la ficha de esta persona?» and «¿quién leyó su orientación
+     * sexual?» are two questions, and answering the second by filtering
+     * `'patient'` rows by hand is how an investigation gets the wrong answer.
+     * Same split as `patient_priority_group`.
+     */
+    const { service, recorded } = serviceWith({
+      sexualOrientation: {
+        mergedIntoMrn: null,
+        orientation: { id: SEXUAL_ORIENTATION, code: '4', display: 'Heterosexual' }, // prettier-ignore
+      },
+    });
+
+    const read = await service.getSexualOrientation(PATIENT, REQUESTER);
+
+    expect(read.orientation?.display).toBe('Heterosexual');
+    expect(recorded.audit).toEqual([
+      expect.objectContaining({
+        userId: USER,
+        resourceType: 'patient_sexual_orientation',
+        resourceId: PATIENT,
+        action: 'READ',
+      }),
+    ]);
+    // No payload, ever: the whitelist of
+    // `access_audit_payload_only_for_declared_resources` is exactly
+    // `'configuration'`, and recording does not throw (D-032).
+    expect(recorded.audit[0]).not.toHaveProperty('before');
+  });
+
+  it('PA-058 audits a read that finds nothing recorded', async () => {
+    // «Nadie lo ha preguntado» is itself information about the patient, so a
+    // trail that only recorded the successful reads would leave the cheapest
+    // way of probing charts invisible.
+    const { service, recorded } = serviceWith({
+      sexualOrientation: { mergedIntoMrn: null, orientation: null },
+    });
+
+    const read = await service.getSexualOrientation(PATIENT, REQUESTER);
+
+    expect(read.orientation).toBeNull();
+    expect(recorded.audit).toHaveLength(1);
+  });
+
+  it('PA-058 does not audit a read of a chart that does not exist', async () => {
+    // Same criterion as the 404 of PA-024: nothing was disclosed, and a row per
+    // guessed identifier would let anybody fill the trail with noise.
+    const { service, recorded } = serviceWith({});
+
+    await expect(
+      service.getSexualOrientation(PATIENT, REQUESTER),
+    ).rejects.toMatchObject({ code: 'PATIENT_NOT_FOUND' });
+    expect(recorded.audit).toEqual([]);
+  });
+
+  it('PA-058 tells a merged chart where it went instead of answering null', async () => {
+    // PA-045 covers «toda operación que la nombre», and on this field a bare
+    // `null` would read as «no se ha registrado» and send somebody to ask the
+    // patient again.
+    const { service, recorded } = serviceWith({
+      sexualOrientation: { mergedIntoMrn: 'HC0000000802', orientation: null },
+    });
+
+    await expect(
+      service.getSexualOrientation(PATIENT, REQUESTER),
+    ).rejects.toMatchObject({ code: 'PATIENT_MERGED' });
+    expect(recorded.audit).toEqual([]);
   });
 
   it('PA-028 stores the residence as a DPA parish concept', async () => {

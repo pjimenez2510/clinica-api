@@ -9,13 +9,22 @@ import {
   CatalogConceptNotFoundError,
   CatalogConceptNotInForceError,
 } from '../../../shared/domain/errors/catalog-reference.errors';
-import type { ClinicalDate } from '../../../shared/domain/clinic-time';
+import {
+  type ClinicalDate,
+  parseClinicalDate,
+} from '../../../shared/domain/clinic-time';
+import { ethnicityContradictsCountry } from '../domain/ecuadorian-ethnicity';
 import { nationalityContradictsEthnicity } from '../domain/indigenous-nationality';
+import { peopleContradictsNationality } from '../domain/indigenous-people';
+import { sexualOrientationBelowMinimumAge } from '../domain/sexual-orientation';
 import {
   DuplicateIdentifierError,
+  EthnicityRequiresEcuadorianNationalityError,
   NationalityRequiresIndigenousEthnicityError,
   PatientMergedError,
   PatientNotFoundError,
+  PeopleRequiresKichwaNationalityError,
+  SexualOrientationBelowMinimumAgeError,
 } from '../domain/patient.errors';
 import type { PatientCorrectionRequest } from '../domain/patient-corrections';
 import {
@@ -27,6 +36,7 @@ import {
   type PatientPage,
   type PatientRepository,
   type PatientSearchCriteria,
+  type SexualOrientationRead,
 } from '../domain/patient.repository';
 import { clinicalDateToday } from '../domain/priority-groups';
 
@@ -38,20 +48,43 @@ export interface Requester {
 }
 
 /**
+ * The chart as the four conditional rules of the RDACAA form see it.
+ *
+ * ONE SHAPE FOR THE FOUR, and it is the same shape whether the chart is being
+ * created or corrected: the rules are about the row that WOULD RESULT, so the
+ * caller resolves «absent means do not touch» first and hands over a plain
+ * chart. Two shapes would be two places for a field to go missing, and the
+ * symptom would be a rule that holds on registration and not on correction.
+ */
+interface ConditionalChart {
+  countryOfNationalityCode: string | null;
+  ethnicityConceptId: string | null;
+  nationalityConceptId: string | null;
+  peopleConceptId: string | null;
+  sexualOrientationConceptId: string | null;
+  /** Never null: `patient.birth_date` is `NOT NULL`. See `resultingBirthDate`. */
+  birthDate: ClinicalDate;
+}
+
+/**
  * Which catalogue each reference of the chart must come from (PA-026 to
- * PA-029).
+ * PA-029, PA-056, PA-057).
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * THE FIELD NAME IS THE KEY, AND THAT IS WHAT MAKES THE ERROR ACTIONABLE.
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * Four catalogue selectors sit on one form. An error that says only «no se
- * encontró el código» sends the desk to re-check all four; named by field, the
- * message lands on the input that is wrong.
+ * Six catalogue selectors sit on one form, and three of them look alike enough
+ * to be swapped by accident — nationality, sexual orientation and gender
+ * identity. An error that says only «no se encontró el código» sends the desk
+ * to re-check all six; named by field, the message lands on the input that is
+ * wrong.
  */
 const EXPECTED_SYSTEM = {
   ethnicityConceptId: 'ETHNICITY',
   nationalityConceptId: 'NATIONALITY',
+  peopleConceptId: 'PEOPLE',
+  sexualOrientationConceptId: 'SEXUAL_ORIENTATION',
   residenceParishConceptId: 'DPA',
   genderIdentityConceptId: 'GENDER_IDENTITY',
 } as const;
@@ -75,6 +108,18 @@ type ConceptField = keyof typeof EXPECTED_SYSTEM;
  */
 const COUNTRY_SYSTEM_CODE = 'COUNTRY';
 const COUNTRY_FIELD = 'countryOfNationalityCode';
+
+/**
+ * PA-058. The resource type the trail uses for the sexual orientation.
+ *
+ * DISTINCT FROM `'patient'` ON PURPOSE, exactly as `patient_priority_group` is.
+ * «¿Quién abrió la ficha de esta persona?» and «¿quién leyó su orientación
+ * sexual?» are two questions, and answering the second by filtering `'patient'`
+ * rows by hand is how an investigation gets the wrong answer.
+ * `access_audit.resource_type` is a `varchar(64)` with no CHECK, so this is the
+ * whole change.
+ */
+const SEXUAL_ORIENTATION_RESOURCE_TYPE = 'patient_sexual_orientation';
 
 /**
  * Reading, creating and correcting patient records.
@@ -165,6 +210,60 @@ export class PatientsService {
   }
 
   /**
+   * PA-057, PA-058. Reads the chart's sexual orientation, behind its own door.
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * A SEPARATE READ BECAUSE IT IS SPECIAL CATEGORY DATA (LOPDP).
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * The route demands `patient:sexual-orientation`, which `patient:read` does
+   * not imply and which no shipped role carries. The split is the same one
+   * PA-040 and PA-042 make for the reason behind a priority: reception and
+   * billing hold `patient:read` and keep working, and this datum is simply not
+   * part of what they receive.
+   *
+   * ⚠️ AUDITED, AND WITH ITS OWN `resourceType`. «¿Quién abrió la ficha de esta
+   * persona?» and «¿quién leyó su orientación sexual?» are two questions, and
+   * answering the second by filtering `'patient'` rows by hand is how an
+   * investigation gets the wrong answer. Same reasoning, and same shape, as
+   * `patient_priority_group`.
+   *
+   * ⚠️ AND THE ENTRY IS WRITTEN WHATEVER THE ANSWER IS — including `null`.
+   * «Nobody has recorded it» is itself information about the patient, and a
+   * trail that only recorded the successful reads would leave the cheapest way
+   * of probing charts invisible. What is NOT audited is a chart that does not
+   * exist (PA-024) or one that was merged: nothing was disclosed.
+   */
+  async getSexualOrientation(
+    id: string,
+    requester: Requester,
+  ): Promise<SexualOrientationRead> {
+    const found = await this.patients.findSexualOrientation(id);
+    if (!found) throw new PatientNotFoundError();
+
+    // PA-045. An absorbed chart says where it went, on every operation that
+    // names it — answering `null` here would read as «no se ha registrado».
+    if (found.mergedIntoMrn !== null) {
+      throw new PatientMergedError(found.mergedIntoMrn);
+    }
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: SEXUAL_ORIENTATION_RESOURCE_TYPE,
+      resourceId: id,
+      action: 'READ',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+      // `before`/`after` deliberately absent, as everywhere in this module:
+      // `access_audit_payload_only_for_declared_resources` refuses a payload
+      // outside `'configuration'`, and recording does not throw — the entry
+      // would simply be lost (REQ-113, D-032).
+    });
+
+    return found;
+  }
+
+  /**
    * Registers a new patient.
    *
    * The duplicate check is a COURTESY, not the guarantee. The database holds a
@@ -183,9 +282,24 @@ export class PatientsService {
       input.countryOfNationalityCode,
       clinicalDateToday(now),
     );
-    await this.assertNationalityFitsEthnicity(
-      input.ethnicityConceptId ?? null,
-      input.nationalityConceptId ?? null,
+    await this.assertConditionalFields(
+      {
+        countryOfNationalityCode: input.countryOfNationalityCode ?? null,
+        ethnicityConceptId: input.ethnicityConceptId ?? null,
+        nationalityConceptId: input.nationalityConceptId ?? null,
+        peopleConceptId: input.peopleConceptId ?? null,
+        sexualOrientationConceptId: input.sexualOrientationConceptId ?? null,
+        /**
+         * The column is a DATE and the controller parsed it at UTC midnight,
+         * so the calendar day is its UTC slice — asking Ecuador here would
+         * move it to the day before. Same conversion the adapter does
+         * (`toClinicalDate`).
+         */
+        birthDate: parseClinicalDate(
+          input.birthDate.toISOString().slice(0, 10),
+        ),
+      },
+      clinicalDateToday(now),
     );
     await this.assertMotherExists(input.motherPatientId);
 
@@ -275,19 +389,36 @@ export class PatientsService {
       clinicalDateToday(now),
     );
     /**
-     * PA-027, and it is decided on the chart that WOULD RESULT, not on the body.
+     * PA-027, PA-056, PA-057 and PA-059, all decided on the chart that WOULD
+     * RESULT and never on the body.
      *
-     * Correcting only the ethnicity of a chart that already declares a Kichwa
-     * people has to be answered exactly like sending both at once: the
-     * contradiction is a property of the row, and a rule that only looked at
+     * Correcting only the ethnicity of a chart that already declares a
+     * nationality — or only the country of one that already declares an
+     * ethnicity, or only the birth date of one that already declares a sexual
+     * orientation — has to be answered exactly like sending both at once: the
+     * contradiction is a property of the ROW, and a rule that only looked at
      * what was sent would let the desk reach it in two requests instead of one.
      * `state.values` is the snapshot read above, so ABSENT means «lo que ya
      * había» and `null` means «bórralo» — the same two meanings the correction
      * has everywhere else.
      */
-    await this.assertNationalityFitsEthnicity(
-      resultingValue(state.values.ethnicityConceptId, requested.ethnicityConceptId), // prettier-ignore
-      resultingValue(state.values.nationalityConceptId, requested.nationalityConceptId), // prettier-ignore
+    await this.assertConditionalFields(
+      {
+        countryOfNationalityCode: resultingValue(state.values.countryOfNationalityCode, requested.countryOfNationalityCode), // prettier-ignore
+        ethnicityConceptId: resultingValue(state.values.ethnicityConceptId, requested.ethnicityConceptId), // prettier-ignore
+        nationalityConceptId: resultingValue(state.values.nationalityConceptId, requested.nationalityConceptId), // prettier-ignore
+        peopleConceptId: resultingValue(state.values.peopleConceptId, requested.peopleConceptId), // prettier-ignore
+        sexualOrientationConceptId: resultingValue(state.values.sexualOrientationConceptId, requested.sexualOrientationConceptId), // prettier-ignore
+        /**
+         * ⚠️ AND THE BIRTH DATE IS ONE OF THE INPUTS, which is what makes
+         * PA-057 hold when it is the DATE that gets corrected rather than the
+         * orientation. The snapshot already stores it as `YYYY-MM-DD`, the
+         * same shape the request carries, so no conversion enters here — and
+         * it is never `null`: the column is `NOT NULL`.
+         */
+        birthDate: resultingBirthDate(state.values.birthDate, requested.birthDate), // prettier-ignore
+      },
+      clinicalDateToday(now),
     );
     await this.assertMotherExists(requested.motherPatientId);
 
@@ -458,51 +589,110 @@ export class PatientsService {
   }
 
   /**
-   * PA-027. The nationality may only be there if the chart identifies as
-   * «Indígena».
+   * The chart the RDACAA can report: the four conditional fields of the
+   * ministry's form, decided together (PA-027, PA-056, PA-057, PA-059).
    *
    * ═══════════════════════════════════════════════════════════════════════════
-   * IN THE SERVICE, BECAUSE THERE IS NOWHERE ELSE IT CAN LIVE.
+   * IN THE SERVICE, BECAUSE THERE IS NOWHERE ELSE THEY CAN LIVE.
    * ═══════════════════════════════════════════════════════════════════════════
    *
-   * Not the DTO: enforcing it only at the transport layer stops enforcing it
-   * the day another use case calls from inside — the same argument the merge
+   * Not the DTO: enforcing a rule only at the transport layer stops enforcing
+   * it the day another use case calls from inside — the same argument the merge
    * reason and the end of a pregnancy already make. And not a `CHECK` either,
-   * which is where the rest of this module's invariants live: whether an
-   * ethnicity is «Indígena» depends on WHICH ROW of the `ETHNICITY` catalogue
-   * it points at, and a `CHECK` cannot query another table. Which ethnicity
-   * that is, is decided in ONE place — `indigenous-nationality.ts`.
+   * which is where the rest of this module's invariants live:
    *
-   * THE ETHNICITY IS LOOKED UP ONLY WHEN THERE IS A NATIONALITY. With no
-   * nationality there is nothing to refuse, and a query per registration that
-   * decides nothing is a query that will be removed by somebody who cannot see
-   * why it is there.
+   *   - whether an ethnicity is «Indígena» and whether a nationality is
+   *     «Kichwa» depend on WHICH ROW of another catalogue they point at, and a
+   *     `CHECK` cannot query another table;
+   *   - whether a patient is ten depends on an age that is DERIVED and moves
+   *     with the calendar, so a `CHECK` would turn a valid row invalid with
+   *     nobody touching it;
+   *   - and the country one COULD be a `CHECK`, at the price of writing `'ECU'`
+   *     in SQL as well as in the domain — two copies of a literal that one day
+   *     disagree (see `ecuadorian-ethnicity.ts`).
    *
-   * ⚠️ VALIDITY IS NOT ASKED. A category INEC withdraws does not stop being the
-   * one the patient declared, and refusing a correction of an unrelated field
-   * because the ethnicity recorded in 2022 is no longer current would make old
-   * charts uncorrectable. Whether it may be CHOSEN today is
-   * {@link assertReferences}, and it already ran.
+   * ═══════════════════════════════════════════════════════════════════════════
+   * ONE METHOD FOR FOUR RULES, AND THE ORDER IS THE FORM'S OWN.
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Columns 11 → 12 → 13 → 14 are a chain: the country enables the ethnicity,
+   * the ethnicity enables the nationality, the nationality enables the people.
+   * They are checked in that order so the OUTERMOST broken link is the one
+   * reported — telling a Venezuelan chart that its people needs a Kichwa
+   * nationality would send the desk to fix a field that has to be emptied
+   * anyway. The sexual orientation of column 7 hangs off nothing and is checked
+   * last.
+   *
+   * ⚠️ EACH CATALOGUE IS RESOLVED ONLY WHEN A RULE ACTUALLY NEEDS IT. With no
+   * nationality there is nothing to refuse about the people, and a query per
+   * registration that decides nothing is a query somebody will remove without
+   * being able to see why it was there.
+   *
+   * ⚠️ VALIDITY IS NOT ASKED. A category the ministry withdraws does not stop
+   * being the one the patient declared, and refusing a correction of an
+   * unrelated field because an ethnicity recorded in 2022 is no longer current
+   * would make old charts uncorrectable. Whether a concept may be CHOSEN today
+   * is {@link assertReferences}, and it already ran.
    */
-  private async assertNationalityFitsEthnicity(
-    ethnicityConceptId: string | null,
-    nationalityConceptId: string | null,
+  private async assertConditionalFields(
+    chart: ConditionalChart,
+    today: ClinicalDate,
   ): Promise<void> {
-    if (nationalityConceptId === null) return;
-
-    const ethnicity =
-      ethnicityConceptId === null
-        ? null
-        : await this.patients.findConceptReference(ethnicityConceptId);
-
-    if (
-      nationalityContradictsEthnicity({
-        ethnicityCode: ethnicity?.code ?? null,
-        nationalityConceptId,
-      })
-    ) {
-      throw new NationalityRequiresIndigenousEthnicityError();
+    // PA-059, column 12: «Aplica para nacionalidad Ecuatoriana».
+    if (ethnicityContradictsCountry(chart)) {
+      throw new EthnicityRequiresEcuadorianNationalityError();
     }
+
+    // PA-027, column 13: «Aplica únicamente para la autoidentificación
+    // "indígena"».
+    if (chart.nationalityConceptId !== null) {
+      const ethnicity = await this.conceptCodeOf(chart.ethnicityConceptId);
+      if (
+        nationalityContradictsEthnicity({
+          ethnicityCode: ethnicity,
+          nationalityConceptId: chart.nationalityConceptId,
+        })
+      ) {
+        throw new NationalityRequiresIndigenousEthnicityError();
+      }
+    }
+
+    // PA-056, column 14: «Aplica únicamente para la nacionalidad indígena
+    // "Kichwa"».
+    if (chart.peopleConceptId !== null) {
+      const nationality = await this.conceptCodeOf(chart.nationalityConceptId);
+      if (
+        peopleContradictsNationality({
+          nationalityCode: nationality,
+          peopleConceptId: chart.peopleConceptId,
+        })
+      ) {
+        throw new PeopleRequiresKichwaNationalityError();
+      }
+    }
+
+    // PA-057, column 7: «aplica a usuarios a partir de los 10 años de edad».
+    // No catalogue to resolve — the answer is in the chart's own birth date,
+    // read on the clinical date of Ecuador and never on the host's.
+    if (sexualOrientationBelowMinimumAge(chart, today)) {
+      throw new SexualOrientationBelowMinimumAgeError();
+    }
+  }
+
+  /**
+   * The catalogue `code` behind a stored concept id, or `null`.
+   *
+   * The rules above compare CODES and never ids, because which row of a
+   * catalogue means «Indígena» or «Kichwa» is the thing that changes between
+   * editions — and it already did once, on 19-08-2026. Resolving it in one
+   * place keeps the three conditional rules asking the same question.
+   */
+  private async conceptCodeOf(
+    conceptId: string | null,
+  ): Promise<string | null> {
+    if (conceptId === null) return null;
+    const reference = await this.patients.findConceptReference(conceptId);
+    return reference?.code ?? null;
   }
 
   /**
@@ -542,6 +732,28 @@ function resultingValue(
   requested: string | null | undefined,
 ): string | null {
   return requested === undefined ? stored : requested;
+}
+
+/**
+ * The birth date the chart would hold once the correction is applied.
+ *
+ * ITS OWN FUNCTION BECAUSE IT IS THE ONE FIELD THAT CANNOT BE CLEARED. The
+ * snapshot types every correctable field as `string | null` — it is one record
+ * over one list — but `patient.birth_date` is `NOT NULL` and
+ * `correctPatientSchema` does not accept `null` for it, so both `null`s are
+ * unreachable. Collapsing them into `parseClinicalDate(x ?? '')` at the call
+ * site would hide that behind a `RangeError` nobody could read; here the
+ * impossible case is named and answered with the value that is actually there.
+ */
+function resultingBirthDate(
+  stored: string | null,
+  requested: string | undefined,
+): ClinicalDate {
+  const resulting = requested ?? stored;
+  if (resulting === null) {
+    throw new Error('A chart cannot exist without a birth date');
+  }
+  return parseClinicalDate(resulting);
 }
 
 /**

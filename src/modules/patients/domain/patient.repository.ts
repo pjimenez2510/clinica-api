@@ -224,6 +224,21 @@ export interface AbsorbedCharts {
  */
 export const ABSORBED_MRN_LIMIT = 5;
 
+/**
+ * PA-057, PA-058. What the gated read of the sexual orientation brings back.
+ *
+ * TWO FIELDS AND NOT ONE: `mergedIntoMrn` is here because PA-045 covers «toda
+ * operación que la nombre», and reading a merged chart has to say where it went
+ * instead of quietly answering `null` — which on this field would read as «no
+ * se ha registrado» and send somebody to ask the patient again.
+ */
+export interface SexualOrientationRead {
+  /** Set when this chart was absorbed by another (PA-043, PA-045). */
+  mergedIntoMrn: string | null;
+  /** `null` means nobody has recorded it yet, which is a legitimate answer. */
+  orientation: CatalogConceptReference | null;
+}
+
 export interface PatientDetail extends PatientSummary {
   phone: string | null;
   email: string | null;
@@ -233,6 +248,15 @@ export interface PatientDetail extends PatientSummary {
   ethnicity: CatalogConceptReference | null;
   /** PA-027. */
   nationality: CatalogConceptReference | null;
+  /**
+   * PA-056. The people of column 14, third step of the chain.
+   *
+   * ⚠️ AND THE SEXUAL ORIENTATION OF COLUMN 7 IS NOT HERE, which is the visible
+   * half of PA-058. It is special category data under the LOPDP and is read
+   * through `findSexualOrientation` behind a permission of its own. Adding it
+   * to this interface would remove that door with nothing failing.
+   */
+  people: CatalogConceptReference | null;
   /** PA-029. A datum DISTINCT from sex; neither is derived from the other. */
   genderIdentity: CatalogConceptReference | null;
   /**
@@ -336,6 +360,10 @@ export interface NewPatient {
    */
   ethnicityConceptId?: string;
   nationalityConceptId?: string;
+  /** PA-056. Only admissible on a Kichwa indigenous nationality. */
+  peopleConceptId?: string;
+  /** PA-057. Only admissible from ten years of age. */
+  sexualOrientationConceptId?: string;
   residenceParishConceptId?: string;
   genderIdentityConceptId?: string;
   /**
@@ -703,6 +731,26 @@ export interface PatientRepository {
    * DPA blanking out the address of somebody who has not moved.
    */
   findConceptReference(id: string): Promise<CatalogReference | null>;
+  /**
+   * PA-057, PA-058. The chart's sexual orientation, on its own.
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * A READ OF ITS OWN BECAUSE THE DOOR IS ITS OWN.
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * One column, and still not part of `findById`: it is special category data
+   * under the LOPDP, and `PatientDetail` is served to everybody holding
+   * `patient:read` — reception and billing included. The split is the same one
+   * PA-040 and PA-042 make for the reason behind a priority: the chart carries
+   * what everyone needs, and this carries what needs a key.
+   *
+   * `undefined` means the chart does not exist or is not visible; a chart with
+   * no orientation recorded answers `{ orientation: null }`, because «nobody
+   * asked yet» is a legitimate answer for whoever holds the permission.
+   */
+  findSexualOrientation(
+    patientId: string,
+  ): Promise<SexualOrientationRead | undefined>;
   /**
    * El mismo concepto, buscado POR CÓDIGO dentro de un sistema (PA-053).
    *

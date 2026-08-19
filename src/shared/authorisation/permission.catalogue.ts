@@ -145,6 +145,37 @@ export const PERMISSION_CATALOGUE = [
       'Ver y registrar los grupos prioritarios de acceso restringido. Quien lo tiene conoce situaciones cuya difusión puede poner en riesgo a la persona',
     explicitGrantOnly: true,
   },
+  // La orientación sexual del paciente (PA-057, PA-058, D-039 (b)).
+  //
+  // ⚠️ SE ESCRIBE CON `patient:write` Y SE LEE CON ESTE, y la asimetría es la
+  // decisión. Es la columna 7 del formulario del RDACAA: se teclea en el
+  // mostrador junto a las columnas 6, 8 y de la 11 a la 14, así que exigir este
+  // permiso también para escribirla dejaría la casilla imposible de llenar
+  // mientras nadie lo tenga — y no lo trae ningún rol. Lo que queda tras la
+  // puerta es VOLVER A LEERLA: la ficha no la lleva, el listado tampoco, y hay
+  // una ruta aparte que deja su propia fila de bitácora.
+  //
+  // ⚠️ NINGÚN ROL LO TRAE DE FÁBRICA, por el mismo criterio que
+  // `patient:priority:protected` (D-027), `agenda:overbook:self` (AG-103),
+  // `user:reset-mfa` (AU-035) y `patient:merge` (D-030): la instalación se lo
+  // concede a alguien A PROPÓSITO o no lo tiene nadie. Es dato de categoría
+  // especial bajo la LOPDP, y quién puede leerlo es política de acceso que fija
+  // la clínica, no un valor razonable que se elige por ella. Está registrado en
+  // `DECISIONES-PENDIENTES.md` junto a la pregunta gemela de
+  // `patient:priority:protected`; conviene contestarlas juntas.
+  //
+  // EL CÓDIGO NOMBRA EL CAMPO Y NO SU CONTENIDO —nada de `patient:lgbt`—, por
+  // lo mismo que `patient:priority:protected` no se llama `patient:violence`:
+  // el código se lee en la pantalla de roles, en la bitácora y en un mensaje de
+  // error, y un nombre que describa el valor convertiría cada uno de esos
+  // sitios en una pista sobre el paciente.
+  {
+    code: 'patient:sexual-orientation',
+    resource: 'patient',
+    description:
+      'Ver la orientación sexual registrada del paciente. Es dato de categoría especial: quien lo tiene lee un dato que el paciente declaró y que no viaja en la ficha',
+    explicitGrantOnly: true,
+  },
   {
     code: 'agenda:read',
     resource: 'agenda',

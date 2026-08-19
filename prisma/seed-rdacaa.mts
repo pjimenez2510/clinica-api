@@ -6,28 +6,35 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
 /**
- * Importa los tres catálogos PLANOS que la ficha del RDACAA necesita:
- * autoidentificación étnica (columna 12), nacionalidad indígena (columna 13) e
- * identidad de género (columna 8).
+ * Importa los cinco catálogos PLANOS que la ficha del RDACAA necesita:
+ * orientación sexual (columna 7), identidad de género (columna 8),
+ * autoidentificación étnica (columna 12), nacionalidad indígena (columna 13) y
+ * pueblo (columna 14).
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * LOS TRES EN UN SOLO SEMBRADOR, PORQUE SON LA MISMA COSA TRES VECES
+ * LOS CINCO EN UN SOLO SEMBRADOR, PORQUE SON LA MISMA COSA CINCO VECES
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * Misma forma —`codigo;nombre`, sin padres, sin capítulos—, misma disciplina
  * que el DPA, la CIE-10 y los países —una `catalog_release` por sistema con su
  * versión, su origen y el SHA-256 del archivo— y ahora también la misma fuente:
- * las tres listas salen del MISMO documento del ministerio, y de tres páginas
- * seguidas de él. Tres archivos casi idénticos sólo habrían multiplicado por
- * tres el sitio donde corregir.
+ * las cinco listas salen del MISMO documento del ministerio, y de tres páginas
+ * seguidas de él. Cinco sembradores casi idénticos sólo habrían multiplicado
+ * por cinco el sitio donde corregir.
+ *
+ * ⚠️ LOS DOS ÚLTIMOS ENTRARON EL 19-08-2026, CON D-039 (PA-056, PA-057). Eran
+ * dos columnas del formulario que este sistema no tenía —la 7 y la 14—, así
+ * que su casilla salía vacía en el reporte mensual sin que nada fallara.
  *
  * El mecanismo ya estaba hecho desde P2 de `patients`: `catalogSystemSchema`
- * admite los tres códigos y la ficha sabe guardar la referencia. Lo único que
- * faltaba eran las FILAS, y sin ellas el selector de la pantalla salía vacío
- * —con un 200, que es la forma cara de romperse—.
+ * admite los códigos y la ficha sabe guardar la referencia. Para los tres
+ * primeros lo único que faltaba eran las FILAS, y sin ellas el selector de la
+ * pantalla salía vacío —con un 200, que es la forma cara de romperse—; para los
+ * dos últimos faltaba además la columna, y la puso
+ * `20260819093227_patient_rdacaa_people_and_sexual_orientation`.
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * DE DÓNDE SALEN LAS TRES LISTAS: EL INSTRUCTIVO OFICIAL, 19-08-2026
+ * DE DÓNDE SALEN LAS CINCO LISTAS: EL INSTRUCTIVO OFICIAL, 19-08-2026
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * **Instructivo del formulario SNS-MSP / Form. 504 / 2019 — «Registro Diario
@@ -37,11 +44,15 @@ import { PrismaClient } from '@prisma/client';
  * 2019**. Los catálogos están en las páginas 37, 39 y 40 del PDF, **como
  * imágenes**: no salen al extraer el texto y hay que mirarlas.
  *
+ *  - **§ 1.4.7, columna 7 — Orientación sexual** → `SEXUAL_ORIENTATION`
+ *    («Esta variable aplica a usuarios a partir de los 10 años de edad»)
  *  - **§ 1.4.8, columna 8 — Identidad de género** → `GENDER_IDENTITY`
  *  - **§ 1.4.12, columna 12 — Autoidentificación étnica** → `ETHNICITY`
  *    («Aplica para nacionalidad Ecuatoriana»)
  *  - **§ 1.4.13, columna 13 — Nacionalidades** → `NATIONALITY`
  *    («Aplica únicamente para la autoidentificación "indígena"»)
+ *  - **§ 1.4.14, columna 14 — Pueblos** → `PEOPLE`
+ *    («Aplica únicamente para la nacionalidad indígena "Kichwa"»)
  *
  * El documento es del ministerio; el ejemplar del que se transcribió está
  * alojado en un tercero —el MSP no lo publica en una URL estable— y una copia
@@ -116,8 +127,15 @@ import { PrismaClient } from '@prisma/client';
  *
  * CATÁLOGOS PLANOS: `hierarchical` en `false`. Ninguno cuelga de nada, y de esa
  * bandera depende que sus conceptos sean elegibles — ver `toConcept` en
- * `prisma-catalog.repository.ts`. Con `true`, los tres saldrían marcados como
- * títulos de navegación y los tres selectores aparecerían vacíos.
+ * `prisma-catalog.repository.ts`. Con `true`, saldrían marcados como títulos de
+ * navegación y sus selectores aparecerían vacíos.
+ *
+ * ⚠️ Y `PEOPLE` NO CUELGA DE `NATIONALITY`, aunque el formulario lo condicione
+ * a ella. La condición es del REGISTRO —«pueblo sólo si la nacionalidad es
+ * Kichwa», PA-056— y no del catálogo: los 18 pueblos no son hijos de una fila
+ * de otro sistema, y modelarlos como jerarquía obligaría a cruzar dos releases
+ * cada vez que el ministerio reedite una de las dos listas. Misma razón por la
+ * que `NATIONALITY` no cuelga de `ETHNICITY`.
  */
 
 /**
@@ -168,7 +186,26 @@ const VERSION_INSTRUCTIVO = 'msp-rdacaa-2.0-2019';
  */
 const VIGENTE_DESDE = new Date('2026-08-19T00:00:00Z');
 
-/** Un catálogo plano y de dónde sale. Lo único que cambia entre los tres. */
+/**
+ * Desde cuándo esta base sirve una lista que NO SUSTITUYE A NINGUNA.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * UNA PRIMERA CARGA SÍ SE ANCLA AL INICIO DEL AÑO, AL REVÉS QUE {@link VIGENTE_DESDE}
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `SEXUAL_ORIENTATION` y `PEOPLE` entran el 19-08-2026 sin nada que retirar, y
+ * ahí el argumento se invierte: `isInForce` (ver `patients.service.ts`) exige
+ * `validFrom <= hoy` **al escribir**, así que una lista que empieza el mismo día
+ * de la carga deja fuera cualquier ficha que se registre con una fecha clínica
+ * anterior —una base restaurada, un entorno con el reloj movido, una prueba que
+ * fija el día—. Con el corte en enero eso no puede pasar y no se pierde nada:
+ * no hay ninguna release previa a la que este corte pudiera contradecir.
+ *
+ * Es el mismo anclaje que el DPA y los países, y por el mismo motivo.
+ */
+const VIGENTE_DESDE_PRIMERA_CARGA = new Date('2026-01-01T00:00:00Z');
+
+/** Un catálogo plano y de dónde sale. Lo único que cambia entre los cinco. */
 interface CatalogoPlano {
   systemCode: string;
   nombre: string;
@@ -186,13 +223,31 @@ interface CatalogoPlano {
 }
 
 /**
- * Los tres, con sus valores por defecto.
+ * Los cinco, con sus valores por defecto.
  *
  * Cada uno admite `<SISTEMA>_FILE`, `<SISTEMA>_VERSION` y
  * `<SISTEMA>_SOURCE_URL` por entorno, que es como entrará la próxima edición
  * del instructivo: otra release, sin tocar código.
  */
 const CATALOGOS: readonly CatalogoPlano[] = [
+  {
+    systemCode: 'SEXUAL_ORIENTATION',
+    /**
+     * Columna 7, y el instructivo la titula así en singular.
+     *
+     * ⚠️ NO ES `GENDER_IDENTITY`, que es la columna siguiente. El formulario
+     * pregunta las dos, una detrás de otra, y son datos distintos: la identidad
+     * de género dice cómo se identifica la persona y ésta a quién atrae.
+     * Derivar una de la otra —o servir una lista donde se espera la otra— es el
+     * error que este nombre existe para hacer visible.
+     */
+    nombre: 'Orientación sexual (RDACAA, columna 7)',
+    archivo: 'rdacaa/orientaciones-sexuales.csv',
+    version: VERSION_INSTRUCTIVO,
+    sourceUrl: INSTRUCTIVO_URL,
+    publishedOn: null,
+    effectiveFrom: VIGENTE_DESDE_PRIMERA_CARGA,
+  },
   {
     systemCode: 'ETHNICITY',
     // Columna 12 del formulario. El instructivo la titula así, en singular.
@@ -227,6 +282,23 @@ const CATALOGOS: readonly CatalogoPlano[] = [
     sourceUrl: INSTRUCTIVO_URL,
     publishedOn: null,
     effectiveFrom: VIGENTE_DESDE,
+  },
+  {
+    systemCode: 'PEOPLE',
+    /**
+     * Columna 14, el tercer escalón de la cadena que empieza en la 12.
+     *
+     * El instructivo lo activa *«únicamente para la nacionalidad indígena
+     * "Kichwa"»*, y esa condición es del REGISTRO (PA-056), no de este
+     * catálogo: aquí sólo entran las 18 filas, planas y sin padre. Ver la
+     * cabecera.
+     */
+    nombre: 'Pueblo (RDACAA, columna 14)',
+    archivo: 'rdacaa/pueblos.csv',
+    version: VERSION_INSTRUCTIVO,
+    sourceUrl: INSTRUCTIVO_URL,
+    publishedOn: null,
+    effectiveFrom: VIGENTE_DESDE_PRIMERA_CARGA,
   },
 ];
 
@@ -462,10 +534,10 @@ async function sembrarUno(
 }
 
 /**
- * Deja los tres catálogos en la base, sobre el cliente que se le dé.
+ * Deja los cinco catálogos en la base, sobre el cliente que se le dé.
  *
  * EXPORTADA para que `seed.mts` la llame y para que las pruebas siembren lo
- * mismo que se sirve: sin filas, los tres selectores de la ficha aparecen
+ * mismo que se sirve: sin filas, los cinco selectores de la ficha aparecen
  * vacíos en cada base recién creada y eso parece un fallo de la pantalla en vez
  * de una siembra que falta. Es idempotente —la release con su checksum es la
  * que decide—, así que llamarla en cada arranque no duplica nada.

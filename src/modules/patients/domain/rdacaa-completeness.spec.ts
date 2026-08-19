@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { ECUADOR_COUNTRY_CODE } from './ecuadorian-ethnicity';
 import { INDIGENOUS_ETHNICITY_CODE } from './indigenous-nationality';
 import { rdacaaMissingFields } from './rdacaa-completeness';
 
@@ -14,6 +15,7 @@ const MESTIZO_ETHNICITY_CODE = '6';
 
 const complete = {
   hasDefinitiveDocument: true,
+  countryOfNationalityCode: ECUADOR_COUNTRY_CODE,
   ethnicityConceptId: CONCEPT,
   ethnicityCode: INDIGENOUS_ETHNICITY_CODE,
   nationalityConceptId: CONCEPT,
@@ -42,6 +44,7 @@ describe('what the RDACAA still needs from a chart', () => {
     expect(
       rdacaaMissingFields({
         hasDefinitiveDocument: false,
+        countryOfNationalityCode: null,
         ethnicityConceptId: null,
         ethnicityCode: null,
         nationalityConceptId: null,
@@ -142,5 +145,75 @@ describe('what the RDACAA still needs from a chart', () => {
         ethnicityCode: null,
       }),
     ).toEqual(['ethnicityConceptId']);
+  });
+
+  it('PA-059 does NOT ask a foreign chart for the ethnicity PA-059 forbids it', () => {
+    /**
+     * The instructivo tells the person filling the form to skip columns 12 to
+     * 14 for a patient who is not Ecuadorian, and PA-059 refuses to record
+     * them. Counting the ethnicity here would leave every foreign chart
+     * permanently incomplete over a box THE SYSTEM ITSELF REFUSES TO LET
+     * ANYBODY FILL IN — which is literally the defect D-037 fixed one step
+     * further down the chain.
+     */
+    expect(
+      rdacaaMissingFields({
+        ...complete,
+        countryOfNationalityCode: 'VEN',
+        ethnicityConceptId: null,
+        ethnicityCode: null,
+        nationalityConceptId: null,
+      }),
+    ).toEqual([]);
+  });
+
+  it('PA-059 does NOT ask a foreign chart for the nationality either', () => {
+    // The nationality falls with the ethnicity and needs no condition of its
+    // own: PA-027 does not admit it without an «Indígena» ethnicity, and a
+    // foreign chart cannot hold one.
+    expect(
+      rdacaaMissingFields({
+        ...complete,
+        countryOfNationalityCode: 'COL',
+        ethnicityConceptId: null,
+        ethnicityCode: null,
+        nationalityConceptId: null,
+        residenceParishConceptId: null,
+      }),
+    ).toEqual(['residenceParishConceptId']);
+  });
+
+  it('PA-059 still asks for the ethnicity while no country has been recorded', () => {
+    /**
+     * ⚠️ THE BRANCH THAT IS EASY TO LOSE, and the same one D-037 wrote down for
+     * the nationality: until somebody has asked the question, nobody knows
+     * whether the field applies. Dropping it here would let a chart read as
+     * complete and start missing the ethnicity the moment a country of `ECU` is
+     * recorded — the indicator would go backwards with nothing about the report
+     * having changed.
+     */
+    expect(
+      rdacaaMissingFields({
+        ...complete,
+        countryOfNationalityCode: null,
+        ethnicityConceptId: null,
+        ethnicityCode: null,
+        nationalityConceptId: null,
+      }),
+    ).toEqual(['ethnicityConceptId', 'nationalityConceptId']);
+  });
+
+  it('PA-059 asks an Ecuadorian chart for everything it is missing', () => {
+    // `ECU` is the ordinary case and must behave exactly as an unrecorded
+    // country does: the country is a gate, not a fourth required datum.
+    expect(
+      rdacaaMissingFields({
+        ...complete,
+        countryOfNationalityCode: ECUADOR_COUNTRY_CODE,
+        ethnicityConceptId: null,
+        ethnicityCode: null,
+        nationalityConceptId: null,
+      }),
+    ).toEqual(['ethnicityConceptId', 'nationalityConceptId']);
   });
 });

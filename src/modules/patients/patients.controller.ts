@@ -144,6 +144,11 @@ export class PatientsController {
         // `encounter`.
         ethnicityConceptId: dto.ethnicityConceptId,
         nationalityConceptId: dto.nationalityConceptId,
+        // PA-056, PA-057. Las columnas 14 y 7 del formulario. Sus condiciones
+        // —nacionalidad «Kichwa», y diez años cumplidos— las hace cumplir el
+        // servicio sobre la ficha RESULTANTE, no el DTO.
+        peopleConceptId: dto.peopleConceptId,
+        sexualOrientationConceptId: dto.sexualOrientationConceptId,
         residenceParishConceptId: dto.residenceParishConceptId,
         genderIdentityConceptId: dto.genderIdentityConceptId,
         // PA-053. De qué país es, que no es la nacionalidad indígena de
@@ -287,6 +292,15 @@ function toDetailResponse(patient: PatientDetail) {
     residenceAddressLine: patient.residenceAddressLine,
     ethnicity: patient.ethnicity,
     nationality: patient.nationality,
+    /**
+     * PA-056. El pueblo, tercer escalón de la cadena.
+     *
+     * ⚠️ Y LA ORIENTACIÓN SEXUAL NO ESTÁ, que es la mitad visible de PA-058:
+     * es dato de categoría especial y sale por `PatientSexualOrientation
+     * Controller`, con su permiso propio y su fila de bitácora. Añadirla aquí
+     * la pondría en la respuesta que recibe todo el que tenga `patient:read`.
+     */
+    people: patient.people,
     genderIdentity: patient.genderIdentity,
     countryOfNationality: patient.countryOfNationality,
     residenceParish: patient.residenceParish,

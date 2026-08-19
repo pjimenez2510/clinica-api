@@ -1193,13 +1193,23 @@ describe('la ficha del RDACAA y su corrección, contra la base', () => {
      *
      * Esta prueba guarda LOS DOS a la vez sobre la misma ficha, que es la única
      * forma de demostrar que no se pisan. La etnia viaja porque la nacionalidad
-     * no existe sin ella (PA-027) — y el país sí: alguien indígena puede ser
-     * venezolano, que es justo lo que las dos columnas permiten decir.
+     * no existe sin ella (PA-027).
+     *
+     * ⚠️ Y EL PAÍS ES `ECU`, CORREGIDO EL 19-08-2026 (PA-059). Este párrafo
+     * decía «alguien indígena puede ser venezolano, que es justo lo que las dos
+     * columnas permiten decir», y la ficha se registraba con `VEN` + etnia. Es
+     * falso, y lo dice el propio instructivo del ministerio: la columna 12
+     * *«aplica para nacionalidad Ecuatoriana»* y la 11 manda dejar en blanco de
+     * la 12 a la 14 *«si el usuario NO es ecuatoriano»*. Lo que la prueba
+     * demuestra no cambia —son dos columnas y no se pisan—; lo que cambia es
+     * que la combinación elegida ahora es una que el RDACAA admite. Que el país
+     * extranjero se guarda igual de bien lo comprueba la segunda mitad, sobre
+     * una ficha sin etnia, que es exactamente la ficha que el ministerio espera.
      */
     const created = await registerPatient({
       ethnicityConceptId: ethnicityId,
       nationalityConceptId: nationalityId,
-      countryOfNationalityCode: 'VEN',
+      countryOfNationalityCode: 'ECU',
     });
 
     const row = await prisma.patient.findUniqueOrThrow({
@@ -1208,11 +1218,22 @@ describe('la ficha del RDACAA y su corrección, contra la base', () => {
     expect(row.nationalityConceptId).toBe(nationalityId);
     // EL CÓDIGO, no un uuid: es lo mismo que guarda `issuing_country`, y por
     // eso las dos columnas se pueden cruzar.
-    expect(row.countryOfNationalityCode).toBe('VEN');
+    expect(row.countryOfNationalityCode).toBe('ECU');
 
     const reread = (await read(created.id).expect(200)).body as PatientBody;
     expect(reread.nationality?.display).toBe('Kichwa');
     expect(reread.countryOfNationality).toEqual({
+      code: 'ECU',
+      display: 'Ecuador',
+    });
+
+    // Y el país extranjero, en la ficha donde el RDACAA lo espera: sin etnia y
+    // sin nacionalidad indígena (PA-059).
+    const foreign = await registerPatient({
+      familyName: 'Piedra',
+      countryOfNationalityCode: 'VEN',
+    });
+    expect(foreign.countryOfNationality).toEqual({
       code: 'VEN',
       display: 'Venezuela (República Bolivariana de)',
     });
@@ -1369,9 +1390,19 @@ describe('la ficha del RDACAA y su corrección, contra la base', () => {
     expect(completa.countryOfNationality).toBeNull();
     expect(completa.rdacaaMissingFields).toEqual([]);
 
-    // Y ponerlo tampoco cambia el indicador en ninguna dirección.
+    /**
+     * Y ponerlo tampoco cambia el indicador en ninguna dirección.
+     *
+     * ⚠️ CON `ECU` Y NO CON `VEN`, corregido el 19-08-2026: la ficha ya declara
+     * etnia, y PA-059 rechaza esa combinación porque el ministerio manda dejar
+     * las columnas 12 a 14 en blanco cuando el usuario no es ecuatoriano. Lo
+     * que esta prueba afirma —que el país no entra en el indicador— es
+     * independiente de cuál sea; lo que el país extranjero SÍ cambia está en
+     * `patient-rdacaa-instructivo.spec.ts` (PA-059), y es que la etnia y la
+     * nacionalidad dejan de contar.
+     */
     const conPais = await correct(completa.id, {
-      countryOfNationalityCode: 'VEN',
+      countryOfNationalityCode: 'ECU',
     }).expect(200);
     expect((conPais.body as PatientBody).rdacaaMissingFields).toEqual([]);
   });
