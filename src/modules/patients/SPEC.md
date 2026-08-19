@@ -1,6 +1,6 @@
 # SPEC — Módulo `patients`
 
-**Estado:** borrador para revisión · **Fecha:** 16 de agosto de 2026
+**Estado:** vigente · **Fecha:** 18 de agosto de 2026
 **Fase:** 0 — construido sin especificación · **Formato:** EARS, según ADR-010
 
 La ficha del paciente: quién es, con qué documento, dónde vive y a qué grupo
