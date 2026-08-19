@@ -118,6 +118,11 @@ model User {
   /// useless one.
   patientMerges PatientMerge[] @relation("PatientMergeAuthor")
 
+  /// AG-064. The waiting-list calls this person made. `RESTRICT` on the way
+  /// back: the trail names whoever called, and an account is deactivated, never
+  /// deleted (AU-024).
+  waitlistContacts WaitlistContactAttempt[] @relation("WaitlistContactRecorder")
+
   @@index([email])
   @@map("app_user")
 }
@@ -644,6 +649,21 @@ enum WaitlistStatus {
   @@map("waitlist_status")
 }
 
+/// AG-064. What happened on a contact attempt.
+///
+/// THREE VALUES BECAUSE THREE THINGS HAPPEN TO THE SLOT, not for the sake of
+/// detail: nobody answering expires the entry (AG-066), a refusal closes it by
+/// the patient's own decision, and an acceptance is the only confirmation that
+/// authorises converting the entry into an appointment — which is the half of
+/// AG-064 that says the slot is not reassigned without one.
+enum WaitlistContactOutcome {
+  NO_ANSWER
+  ACCEPTED
+  DECLINED
+
+  @@map("waitlist_contact_outcome")
+}
+
 enum AllergyCriticality {
   LOW
   HIGH
@@ -1030,6 +1050,17 @@ model SiteParameter {
   /// performs for every new site, tying site creation to the permission mirror
   /// being seeded. See the migration.
   overbookingPermission String @default("agenda:overbook") @map("overbooking_permission") @db.VarChar(64)
+
+  /// AG-066, AG-094. How many contact attempts exhaust a waiting-list entry
+  /// here. The last of the eight parameters AG-094 enumerates and the only one
+  /// that never had a column, because E5 had not been opened.
+  ///
+  /// THE NUMBER IS THE USER'S DECISION and is pending in
+  /// `DECISIONES-PENDIENTES.md`: D-001 fixed the starting values of the others
+  /// and did not include this one. It ships as 3 so that every site HAS a
+  /// value, and being per-site and editable without a deploy (REQ-145) is what
+  /// makes a wrong default cost a screen instead of a migration.
+  waitlistMaxContactAttempts Int @default(3) @map("waitlist_max_contact_attempts")
 
   cancelledRetention CancelledRetentionPolicy @default(NEVER) @map("cancelled_retention")
 
@@ -1797,26 +1828,79 @@ model WaitlistEntry {
   serviceTypeConceptId String?         @map("service_type_concept_id") @db.Uuid
   serviceType          CatalogConcept? @relation("WaitlistServiceType", fields: [serviceTypeConceptId], references: [id], onDelete: Restrict)
 
-  /// 1 = highest. Priority groups (elderly, pregnant, disabled) have
-  /// constitutional preference in Ecuador; this is not a nicety.
-  priority Int @default(5) @db.SmallInt
+  /// AG-060. Between which dates the appointment is of any use to the patient.
+  ///
+  /// NOT NULL SINCE `agenda_waitlist_contact_trail`, and both of them: AG-060
+  /// lists the range among what an entry carries and marks only practitioner
+  /// and service type as optional, and AG-065 — «CUANDO la fecha preferida
+  /// máxima quede en el pasado, márquela EXPIRED» — never triggers on a NULL,
+  /// so an entry without an upper bound would compete for every slot of the
+  /// site forever. `waitlist_entry_preferred_range_valid` refuses an inverted
+  /// range.
+  preferredFrom DateTime @map("preferred_from") @db.Date
+  preferredTo   DateTime @map("preferred_to") @db.Date
 
-  preferredFrom DateTime? @map("preferred_from") @db.Date
-  preferredTo   DateTime? @map("preferred_to") @db.Date
+  status WaitlistStatus @default(WAITING)
 
-  status          WaitlistStatus @default(WAITING)
-  contactAttempts Int            @default(0) @map("contact_attempts") @db.SmallInt
-  lastContactedAt DateTime?      @map("last_contacted_at") @db.Timestamptz(6)
+  /// AG-064. Every contact attempt, with its instant, its author and what
+  /// happened. THE COUNT AND THE LAST INSTANT ARE DERIVED FROM HERE — the
+  /// `contact_attempts` and `last_contacted_at` columns this table used to
+  /// carry were dropped, because two statements of one fact drift and only the
+  /// cached one can be wrong.
+  contactAttempts WaitlistContactAttempt[]
 
+  /// AG-063. The appointment this entry became, and `status = SCHEDULED`, are
+  /// the same fact: `waitlist_entry_conversion_complete` is a biconditional,
+  /// `waitlist_entry_one_per_converted_entry` (partial unique index, invisible
+  /// to Prisma) refuses two entries claiming one slot, and
+  /// `trg_waitlist_entry_conversion_consented` refuses an appointment of
+  /// another patient or a conversion with no recorded acceptance.
   convertedEntryId String?      @map("converted_entry_id") @db.Uuid
   convertedEntry   AgendaEntry? @relation(fields: [convertedEntryId], references: [id], onDelete: Restrict)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  @@index([siteId, status, priority, createdAt])
+  /// NO INDEX BY `(site_id, status, …)` DECLARED HERE, and it is not missing:
+  /// AG-061 only ever asks for the OPEN candidates of a site, so the index is
+  /// PARTIAL (`waitlist_entry_open_candidates`, `WHERE status IN ('WAITING',
+  /// 'CONTACTED')`) and Prisma cannot describe the predicate — declaring it
+  /// here would create a second, wider index instead. The priority the listing
+  /// orders by is not stored either (PA-041): it is derived from the groups in
+  /// force on the day the candidates are proposed.
   @@index([patientId])
   @@map("waitlist_entry")
+}
+
+/// AG-064. One call, with who made it, when, and what came of it.
+///
+/// A TABLE AND NOT A COUNTER, which is what `waitlist_entry` carried until
+/// `agenda_waitlist_contact_trail`: with `contact_attempts = 3` nobody can say
+/// when the first two were, who called, or what the patient answered — and
+/// «¿por qué el cupo se lo llevó ella y no yo, que estaba antes?» is the
+/// question a waiting list exists to be able to answer.
+///
+/// APPEND-ONLY, ENFORCED BY THE DATABASE (`trg_waitlist_contact_attempt_immutable`
+/// and `trg_waitlist_contact_attempt_no_truncate`, neither expressible here):
+/// a trail that can be rewritten after the slot was given away proves nothing.
+model WaitlistContactAttempt {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  waitlistEntryId String        @map("waitlist_entry_id") @db.Uuid
+  waitlistEntry   WaitlistEntry @relation(fields: [waitlistEntryId], references: [id], onDelete: Restrict)
+
+  attemptedAt DateTime @default(now()) @map("attempted_at") @db.Timestamptz(6)
+
+  /// Who called. NOT NULL for the same reason as
+  /// `patient_priority_group.recorded_by`: «se le llamó tres veces» with no
+  /// name can neither be checked nor denied.
+  recordedById String @map("recorded_by") @db.Uuid
+  recordedBy   User   @relation("WaitlistContactRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
+
+  outcome WaitlistContactOutcome
+
+  @@index([waitlistEntryId, attemptedAt(sort: Desc)], map: "waitlist_contact_attempt_by_entry")
+  @@map("waitlist_contact_attempt")
 }
 
 // ---------------------------------------------------------------------------

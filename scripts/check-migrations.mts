@@ -58,6 +58,17 @@ const PROTECTED = [
   // con el que se recorre la cadena hacia adelante (AG-051). Prisma no puede
   // describir el predicado, así que lo lee como sobrante.
   'agenda_entry_one_reschedule_per_entry',
+  // Índice único PARCIAL (`WHERE converted_entry_id IS NOT NULL`): un cupo
+  // satisface UNA entrada de lista de espera (AG-063). Sin él dos entradas
+  // pueden apuntar a la misma cita y las dos quedan `SCHEDULED`, así que la
+  // lista certifica que se atendió a dos personas con un cupo. Prisma no puede
+  // describir el predicado, así que lo lee como sobrante.
+  'waitlist_entry_one_per_converted_entry',
+  // Índice PARCIAL (`WHERE status IN ('WAITING','CONTACTED')`): es la consulta
+  // de AG-061 —los candidatos ABIERTOS de una sede— y su predicado es el del
+  // requisito. Las entradas cerradas, que con el tiempo son casi todas, no se
+  // proponen nunca (AG-067) y por eso no están en el índice.
+  'waitlist_entry_open_candidates',
   'encounter_pending_report',
   'user_role_grant_active_unique',
   // Índice único PARCIAL: una cuenta, como mucho una invitación de credencial

@@ -920,11 +920,32 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   sistema DEBERÁ marcarla `SCHEDULED` y DEBERÁ enlazarla con la cita creada.
 - **AG-064** — El sistema DEBERÁ registrar cada intento de contacto con su
   instante, y NO DEBERÁ reasignar automáticamente el cupo sin confirmación.
-  > **Falta esquema.** `waitlist_entry` guarda `contact_attempts` (un contador) y
-  > `last_contacted_at` (solo el último). «Cada intento con su instante» no cabe
-  > ahí: al tercer intento no se puede responder cuándo fueron los dos primeros
-  > ni quién llamó. O se añade una tabla de intentos, o AG-064 se rebaja a
-  > «el número de intentos y el último instante» y se dice.
+  > **El esquema que faltaba existe desde el 19-08-2026**
+  > (`agenda_waitlist_contact_trail`). Este requisito estuvo declarado como
+  > bloqueo desde el 12-08-2026 —`waitlist_entry` guardaba `contact_attempts`,
+  > un contador, y `last_contacted_at`, sólo el último, así que al tercer
+  > intento no se podía responder cuándo fueron los dos primeros ni quién
+  > llamó— y ya no lo está: `waitlist_contact_attempt` registra **cada intento
+  > con su instante, su autor y su resultado**, y es append-only por lo mismo
+  > que `agenda_status_history` (D-022) — un rastro que se puede reescribir
+  > después de dar el cupo a otra persona no prueba el reparto, lo decora.
+  >
+  > **Se construyó en lugar de rebajarse.** D-006 anotó lo contrario cuando E5
+  > no tenía fecha; rebajar el requisito es cambiar lo que el sistema promete y
+  > eso lo decide el usuario, construir lo que ya está especificado no. El texto
+  > EARS de arriba no se ha tocado.
+  >
+  > **El resultado —no contestó, aceptó, rechazó— no es adorno del registro**:
+  > es lo que hace aplicable la segunda mitad del requisito. Sin él, «se le
+  > llamó tres veces» no distingue la entrada que caduca por incomparecencia
+  > (AG-066) de la que se cierra porque la paciente dijo que no, y
+  > `trg_waitlist_entry_conversion_consented` no tendría cómo comprobar lo
+  > único que la base puede comprobar de «no reasignar sin confirmación»: que
+  > una conversión sin ninguna aceptación registrada se rechaza.
+  >
+  > **El contador y el último instante se derivan y sus columnas se fueron.**
+  > Dos verdades sobre el mismo hecho sólo pueden discrepar, y la que puede
+  > quedarse corta —un intento registrado sin sumar el contador— es la caché.
 - **AG-065** — CUANDO la fecha preferida máxima quede en el pasado, el sistema
   DEBERÁ marcar la entrada como `EXPIRED`.
 - **AG-066** — SI una entrada alcanza el número máximo de intentos de contacto de
@@ -1244,7 +1265,13 @@ en `../clinica-docs/DECISIONES-PENDIENTES.md`:
 
 | D-005 | El sobrecupo **se mantiene**. Quien reserva no lo autoriza, salvo permiso `agenda:overbook:self` |
 
-**No queda ninguna decisión abierta.**
+**Abierta desde el 19-08-2026: D-040**, al construir el esquema de E5. Son dos
+números que la clínica tiene que elegir y que ningún agente decide: cuántos
+intentos de contacto agotan una entrada (AG-066, AG-094 — la columna existe y
+nace en 3) y qué le pasa a la entrada cuando el paciente contesta y RECHAZA el
+cupo, que es una pregunta que sólo se puede formular desde que el rastro
+distingue «no contestó» de «dijo que no». **No bloquea E5**: los dos tienen
+valor de arranque y son cambiables sin migración.
 
 Lo que sigue son las consecuencias ya decididas, que sí siguen siendo trabajo:
 
@@ -1256,10 +1283,13 @@ Lo que sigue son las consecuencias ya decididas, que sí siguen siendo trabajo:
    (AG-051). **La autorreferencia se adelantó con E3** —no dependía de D-005—
    y entró el 14-08-2026 en `agenda_reschedule_link`; de la tanda 2 queda el
    campo de autorización del sobrecupo, que sí depende de esa decisión.
-2. **El historial de intentos de contacto (AG-064) se rebaja, no se migra.** Se
-   conserva el contador y el último instante que `waitlist_entry` ya tiene. Si
-   al usar la lista de espera de verdad hace falta el historial completo, será
-   una migración con motivo, no por si acaso.
+2. ~~**El historial de intentos de contacto (AG-064) se rebaja, no se migra.**~~
+   **Superado el 19-08-2026, al abrir E5** (`agenda_waitlist_contact_trail`).
+   D-006 decidió conservar el contador y el último instante «hasta que al usar
+   la lista de espera de verdad haga falta el historial completo»; ese momento
+   es ahora, y el motivo estaba escrito desde el principio en el propio AG-064.
+   El contador y el último instante ya no existen como columnas: se derivan de
+   `waitlist_contact_attempt`. Ver el recuadro de AG-064.
 3. **Dos códigos de permiso nuevos** en `permission.catalogue.ts`:
    `settings:read` y `settings:manage` (AG-099). Es cambio de código porque el
    catálogo es la enumeración contra la que se valida cada ruta; a quién se

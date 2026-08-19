@@ -1290,6 +1290,15 @@ describe('la configuración por HTTP', () => {
         // elegir QUIÉN autoriza una excepción no configura la excepción.
         'overbookingEnabled',
         'overbookingPermission',
+        // E5 (AG-066, AG-094). Cuántas llamadas sin respuesta agotan una
+        // entrada de lista de espera. Pasa la misma prueba que las anteriores:
+        // no apaga ninguna garantía —el orden de la cola lo sigue decidiendo la
+        // prioridad derivada y la antigüedad, y el rastro de intentos es
+        // append-only pase lo que pase con este número—, sólo dice cuándo la
+        // clínica deja de llamar. Todavía NO se expone en la pantalla de
+        // parámetros: la columna entra con la migración de E5 y el DTO, con el
+        // servicio.
+        'waitlistMaxContactAttempts',
         'cancelledRetention',
         'createdAt',
         'updatedAt',
@@ -1353,6 +1362,12 @@ describe('la configuración por HTTP', () => {
         // múltiplo suyo.
         'slot_atom_minutes',
         'updated_at',
+        // E5 (AG-066, AG-094). El octavo y último parámetro que AG-094 enumera
+        // —«el número máximo de intentos de contacto de la lista de espera»— y
+        // el único que nunca tuvo columna, porque E5 no se había abierto.
+        // `site_parameter_waitlist_max_contact_attempts_range` lo mantiene
+        // entre 1 y 10: en 0 la entrada caducaría antes de la primera llamada.
+        'waitlist_max_contact_attempts',
       ]);
     });
 

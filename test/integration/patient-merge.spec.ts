@@ -2325,8 +2325,16 @@ describe('fusión de duplicados: el contrato y su permiso', () => {
         recordedById: admisionUserId,
       },
     });
+    // El rango preferido es obligatorio desde
+    // `20260819125906_agenda_waitlist_contact_trail`: sin fecha máxima la
+    // entrada no puede caducar nunca (AG-060, AG-065).
     await prismaClient.waitlistEntry.create({
-      data: { patientId: source.id, siteId: site.id },
+      data: {
+        patientId: source.id,
+        siteId: site.id,
+        preferredFrom: new Date('2026-09-01'),
+        preferredTo: new Date('2026-09-30'),
+      },
     });
 
     const body = await mergeCharts(source, target);
