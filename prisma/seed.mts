@@ -18,6 +18,8 @@ import {
   SEEDABLE_PERMISSIONS,
 } from '../src/shared/authorisation/permission.catalogue.ts';
 import { syncAuthorisation } from './seed-authorisation.mts';
+import { seedCountries } from './seed-countries.mts';
+import { seedRdacaa } from './seed-rdacaa.mts';
 
 /**
  * Development seed.
@@ -134,6 +136,31 @@ export async function seedDevelopment(prisma: PrismaClient): Promise<void> {
    * alguien lo recuerde en el orden correcto.
    */
   await syncAuthorisation(prisma);
+
+  /**
+   * LOS PAÍSES, que no son datos de prueba sino una lista de referencia.
+   *
+   * Va aquí y no en `db:seed:countries` a secas porque sin ellos el alta de un
+   * paciente extranjero no puede decir de dónde es su pasaporte: el selector
+   * aparece vacío en cada base recién creada y parece una pantalla rota. Es la
+   * misma carencia que tenía el combobox de parroquia antes del 13-08-2026.
+   *
+   * A diferencia del DPA —1401 parroquias que se cargan aparte— son 249 filas
+   * y una lectura de un CSV de 4 kB, y la release con su checksum hace que la
+   * segunda ejecución no haga nada.
+   */
+  await seedCountries(prisma);
+
+  /**
+   * LOS TRES CATÁLOGOS DEL RDACAA, por el mismo motivo que los países.
+   *
+   * Etnia, nacionalidad e identidad de género son listas de referencia, no
+   * datos de prueba: sin ellas los tres selectores de la ficha salen vacíos
+   * —con un 200— en cada base recién creada, y REQ-022 queda incumplido
+   * teniendo el código hecho. Son 48 filas de tres CSV pequeños, y la release
+   * con su checksum hace que la segunda ejecución no haga nada.
+   */
+  await seedRdacaa(prisma);
 
   const superuser = await prisma.role.upsert({
     where: { code: DEV_SUPERUSER_ROLE.code },

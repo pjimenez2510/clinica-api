@@ -108,6 +108,39 @@ describe('búsqueda en catálogos', () => {
         attributes: { level: 3, chapter: 'J00-J99' },
       },
     });
+
+    /**
+     * UN CATÁLOGO PLANO AL LADO DEL JERÁRQUICO, y las dos ramas de
+     * `selectable` ejercidas en la misma suite.
+     *
+     * Etnia, nacionalidad e identidad de género no tienen capítulos ni grupos:
+     * sus conceptos están en el nivel 0 y son exactamente lo que hay que
+     * elegir. Filtrando por profundidad sin mirar si el sistema es jerárquico,
+     * `/catalogs/ETHNICITY` devolvía SIEMPRE la lista vacía y sin fallar, que
+     * es la forma más cara de romperse: el selector aparece vacío y parece que
+     * falta sembrar.
+     *
+     * ⚠️ Se siembra AQUÍ y no con `pnpm db:seed`: qué lista oficial carga cada
+     * uno de los tres sistemas es una decisión pendiente (D-034), y lo que esta
+     * prueba necesita es un catálogo plano cualquiera.
+     */
+    const plano = await prisma.catalogSystem.create({
+      data: {
+        code: 'ETHNICITY',
+        name: 'Autoidentificación étnica',
+        hierarchical: false,
+      },
+    });
+    await prisma.catalogConcept.create({
+      data: {
+        systemId: plano.id,
+        code: 'MONTUBIO',
+        display: 'Montubio/a',
+        validFrom: desde,
+        // Sin `level`: el `COALESCE` lo lee como 0, que es el caso real de una
+        // lista sin jerarquía y el que devolvía lista vacía.
+      },
+    });
   });
 
   const buscar = (query: string, extra = {}) =>
@@ -116,6 +149,7 @@ describe('búsqueda en catálogos', () => {
       query,
       on: HOY,
       onlySelectable: true,
+      parentId: null,
       limit: 20,
       ...extra,
     });
@@ -183,6 +217,36 @@ describe('búsqueda en catálogos', () => {
 
     const [hoja] = await buscar('J30.1');
     expect(hoja?.selectable).toBe(true);
+  });
+
+  it('en un catálogo PLANO, el concepto de nivel 0 sí es seleccionable', async () => {
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     * LA RAMA QUE `selectable: !hierarchical || nivel >= 2` AÑADIÓ, EJERCIDA.
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * En un catálogo jerárquico el nivel 0 es un título de navegación; en uno
+     * plano es el dato. Sin esta prueba la rama nueva no la ejercía nadie, y su
+     * fallo —la lista entera declarada no elegible— sale como un combobox vacío
+     * que parece falta de siembra.
+     *
+     * Y el otro lado del mismo condicional: `hierarchical` es `@default(false)`,
+     * así que una fila `CIE10` que se quedara en `false` haría diagnosticable
+     * TODO capítulo de la CIE-10. Los dos sembradores fijan ahora la bandera
+     * también al actualizar, y la prueba de arriba es la que lo delataría.
+     */
+    const items = await repository.search({
+      systemCode: 'ETHNICITY',
+      query: 'montubio',
+      on: HOY,
+      onlySelectable: true,
+      parentId: null,
+      limit: 20,
+    });
+
+    expect(items.map((c) => c.code)).toEqual(['MONTUBIO']);
+    expect(items[0]?.level).toBe(0);
+    expect(items[0]?.selectable).toBe(true);
   });
 
   it('devuelve la cadena de ancestros de capítulo a padre', async () => {

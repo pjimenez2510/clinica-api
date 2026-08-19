@@ -44,11 +44,28 @@ describe('siteScope', () => {
      */
     const outsider = new Principal('u1', [grant(NORTE, ['patient:read'])]);
 
-    expect(() => siteScope(outsider, 'agenda:read')).toThrow(
-      SiteScopeDeniedError,
-    );
-    // And specifically NOT the shape that means "everything".
-    expect(() => siteScope(outsider, 'agenda:read')).not.toEqual({});
+    /**
+     * ⚠️ SE CAPTURA LO QUE DEVUELVE Y LO QUE LANZA, POR SEPARADO.
+     *
+     * La segunda aserción era `expect(() => siteScope(...)).not.toEqual({})`,
+     * que compara una FUNCIÓN con un objeto: una función nunca es igual a
+     * `{}`, así que la línea pasaba con cualquier implementación — incluida la
+     * que devuelve el filtro vacío y enseña las fichas de todas las sedes, que
+     * es exactamente lo que decía estar comprobando.
+     */
+    let filter: unknown;
+    let refusal: unknown;
+    try {
+      filter = siteScope(outsider, 'agenda:read');
+    } catch (error) {
+      refusal = error;
+    }
+
+    expect(refusal).toBeInstanceOf(SiteScopeDeniedError);
+    expect((refusal as SiteScopeDeniedError).code).toBe('SITE_SCOPE_DENIED');
+    // Y no devolvió NADA: en particular, no `{}` — el filtro vacío que en una
+    // consulta significa «todas las sedes».
+    expect(filter).toBeUndefined();
   });
 
   it('merges several sites into one filter', () => {

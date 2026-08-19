@@ -175,6 +175,23 @@ export function wallClockOf(
 }
 
 /**
+ * The instant a calendar date begins in `timeZone`.
+ *
+ * WHAT A DATE BECOMES WHEN IT HAS TO BE STORED AS AN INSTANT. A date of death
+ * is what the person at the desk knows — "murió el 3 de marzo" — while
+ * `patient.deceased_at` is a `timestamptz`, so somebody has to decide which
+ * moment that date is. Midnight IN ECUADOR, never midnight UTC: the latter is
+ * 19:00 of the previous day here, which pushes the death a day earlier than
+ * recorded and can make it precede a birth on the same date.
+ */
+export function startOfClinicalDay(
+  date: ClinicalDate,
+  timeZone: string = CLINIC_TIME_ZONE,
+): Date {
+  return atWallClock(date, WallClockTime.fromMinutes(0), timeZone);
+}
+
+/**
  * The half-open bounds of a clinical day, `[startsAt, endsAtExclusive)`.
  *
  * Half-open because that is what `tstzrange(…, '[)')` uses in the exclusion
@@ -185,10 +202,9 @@ export function clinicalDayBounds(
   date: ClinicalDate,
   timeZone: string = CLINIC_TIME_ZONE,
 ): { startsAt: Date; endsAtExclusive: Date } {
-  const midnight = WallClockTime.fromMinutes(0);
   return {
-    startsAt: atWallClock(date, midnight, timeZone),
-    endsAtExclusive: atWallClock(addDays(date, 1), midnight, timeZone),
+    startsAt: startOfClinicalDay(date, timeZone),
+    endsAtExclusive: startOfClinicalDay(addDays(date, 1), timeZone),
   };
 }
 

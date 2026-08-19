@@ -54,6 +54,26 @@ export const ALLOWED_KEYS: ReadonlySet<string> = new Set([
   'role',
   'module',
   'patient_id',
+  /**
+   * PA-025. The medical record number, and the three keys the patients module
+   * actually logs it under.
+   *
+   * ⚠️ IT IS AN INTERNAL NUMBER, NOT A NATIONAL ONE. `HC0000000801` says
+   * nothing about anybody outside this installation — unlike a cedula, which
+   * identifies the person anywhere in Ecuador — and it is precisely what
+   * support needs to trace a registration or a merge that should not have
+   * happened. The requirement that forbids names, documents and clinical data
+   * in a log names this as the one exception, on purpose.
+   *
+   * WITHOUT THESE THREE, THE ALLOWLIST WAS DROPPING THEM IN SILENCE: three log
+   * sites in `patients` built their entry believing it carried the MRN, and
+   * what reached disk was `patient registered` with no way to tell WHICH
+   * registration. Failing closed is the right default; the cost of it is that
+   * a key nobody declared disappears without a word.
+   */
+  'patient_mrn',
+  'source_mrn',
+  'target_mrn',
   'encounter_id',
   'order_id',
   'invoice_id',

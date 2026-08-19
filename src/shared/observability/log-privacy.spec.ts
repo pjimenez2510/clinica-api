@@ -40,6 +40,53 @@ describe('pruneToAllowlist', () => {
     expect(result).toEqual({ encounter_id: 'A-1', duration_ms: 42 });
   });
 
+  it('PA-025 keeps the MRN of a registration and drops the name and the document', () => {
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     * EL OBJETO ES EL QUE `PatientsService` CONSTRUYE DE VERDAD, MÁS RUIDO.
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Las dos mitades del requisito en una sola aserción, porque separarlas es
+     * lo que dejó pasar el defecto: la primera —que no salga nombre, documento
+     * ni dato clínico— pasaba con la lista blanca comiéndose TAMBIÉN el número
+     * de historia, y entonces la línea decía «patient registered» sin decir
+     * cuál. Un registro que no se puede seguir no cumple la mitad que sí exige
+     * REQ-116: poder reconstruir un acceso.
+     *
+     * El MRN es la excepción declarada y lo es por lo que es: un número
+     * interno, no un identificador nacional.
+     */
+    const result = pruneToAllowlist({
+      patient_mrn: 'HC0000000801',
+      action: 'PATIENT_REGISTERED',
+      familyName: 'Pérez Andrade',
+      cedula: '1712345678',
+      diagnosis: 'J45.9',
+    });
+
+    expect(result).toEqual({
+      patient_mrn: 'HC0000000801',
+      action: 'PATIENT_REGISTERED',
+    });
+    expect(containsCanary(JSON.stringify(result))).toBeNull();
+  });
+
+  it('PA-025 keeps both MRNs of a merge, which is what support traces it by', () => {
+    // Mismo criterio y mismo defecto: `patient-merge.service.ts` los construye
+    // creyendo que viajan, y sin declararlos la lista blanca los tiraba.
+    const result = pruneToAllowlist({
+      source_mrn: 'HC0000000801',
+      target_mrn: 'HC0000000802',
+      action: 'PATIENTS_MERGED',
+    });
+
+    expect(result).toEqual({
+      source_mrn: 'HC0000000801',
+      target_mrn: 'HC0000000802',
+      action: 'PATIENTS_MERGED',
+    });
+  });
+
   it('drops NEW undeclared fields: fails closed', () => {
     // Simulates the sprint that adds a field to the Patient entity and nobody
     // remembers to touch the logging config. A denylist would leak this.

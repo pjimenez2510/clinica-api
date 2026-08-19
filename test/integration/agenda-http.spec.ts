@@ -516,7 +516,9 @@ describe('la agenda por HTTP', () => {
       const surviving = await createPatient(prisma);
       await prisma.patient.update({
         where: { id: patientId },
-        data: { mergedIntoId: surviving.id },
+        // Enlace e instante van juntos: `patient_merged_at_matches_link` lo
+        // exige, para que un deshacer esté completo o no ocurra (PA-047).
+        data: { mergedIntoId: surviving.id, mergedAt: new Date() },
       });
 
       const response = await book(anAppointment()).expect(409);

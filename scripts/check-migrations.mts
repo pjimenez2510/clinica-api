@@ -40,6 +40,12 @@ const PROTECTED = [
   'clinical_note_chain_version_unique',
   'clinical_note_one_current_per_chain',
   'patient_identifier_active_unique',
+  // Índice PARCIAL (`WHERE merged_into_id IS NOT NULL`): responde «¿qué fichas
+  // absorbió ésta?», que con D-031 —la superviviente lee por el enlace— es
+  // camino de lectura y no una rareza, y es lo que impide que detectar una
+  // cadena de fusiones (PA-046) recorra el registro entero. Prisma no puede
+  // describir el predicado, así que lo lee como sobrante.
+  'patient_absorbed_charts',
   'access_audit_occurred_brin',
   'agenda_entry_daily_agenda',
   // Índice PARCIAL (`WHERE service_type_id IS NOT NULL`): sin él, cada intento

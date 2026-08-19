@@ -255,6 +255,33 @@ export interface RecordedPriorityGroup extends PriorityGroupPeriod {
 }
 
 /**
+ * The groups the birth date alone puts somebody in, at a completed age.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ONE IMPLEMENTATION, BECAUSE THERE WERE TWO AND THEY COULD DIVERGE IN SILENCE
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `priorityGroupsInForce` and `priorityLevelOf` each spelled the same two
+ * comparisons out. A mutation audit found the second copy uncovered at the
+ * boundary — `age >= 65 || age < 18` survived being turned into
+ * `age > 65 || age <= 18`, which takes the priority away from somebody on the
+ * very day they turn 65 and gives it back a year later. The chart would have
+ * said «adulto mayor» while the waiting list said «espere su turno», and
+ * nothing would have been red.
+ *
+ * Two copies of a threshold are two answers to the same question waiting to
+ * disagree, so there is one. The numbers themselves stay in the two exported
+ * constants: article 36 of the Constitution for 65, the Código de la Niñez y
+ * Adolescencia for 18.
+ */
+function ageDerivedGroupsAt(age: number): PriorityGroup[] {
+  const derived: PriorityGroup[] = [];
+  if (age >= OLDER_ADULT_MIN_AGE_YEARS) derived.push('OLDER_ADULT');
+  if (age < ADULTHOOD_MIN_AGE_YEARS) derived.push('CHILD_OR_ADOLESCENT');
+  return derived;
+}
+
+/**
  * Every group the patient belongs to on that day: the two derived from the
  * birth date plus the recorded rows still in force.
  *
@@ -266,11 +293,7 @@ export function priorityGroupsInForce(
   patient: { birthDate: ClinicalDate; recorded: readonly RecordedPriorityGroup[] }, // prettier-ignore
   on: ClinicalDate,
 ): readonly PriorityGroup[] {
-  const age = ageInYearsOn(patient.birthDate, on);
-
-  const derived: PriorityGroup[] = [];
-  if (age >= OLDER_ADULT_MIN_AGE_YEARS) derived.push('OLDER_ADULT');
-  if (age < ADULTHOOD_MIN_AGE_YEARS) derived.push('CHILD_OR_ADOLESCENT');
+  const derived = ageDerivedGroupsAt(ageInYearsOn(patient.birthDate, on));
 
   const inForce = patient.recorded
     .filter((record) => isPeriodInForce(record, on))
@@ -310,9 +333,11 @@ export function priorityLevelOf(
   },
   on: ClinicalDate,
 ): PriorityLevel {
-  const age = ageInYearsOn(patient.birthDate, on);
+  // THE SAME FUNCTION `priorityGroupsInForce` uses, not a second copy of the
+  // two comparisons: the level and the list cannot disagree about who is a
+  // priority patient because they read the same answer.
   const derivedFromAge =
-    age >= OLDER_ADULT_MIN_AGE_YEARS || age < ADULTHOOD_MIN_AGE_YEARS;
+    ageDerivedGroupsAt(ageInYearsOn(patient.birthDate, on)).length > 0;
 
   const prioritised =
     derivedFromAge ||
@@ -328,6 +353,42 @@ export interface NewPriorityGroupRecord {
   endsOn: ClinicalDate | null;
   origin: PriorityGroupOrigin;
   evidenceDocument: string | null;
+}
+
+/**
+ * A period that ends before it starts is not a period (PA-036).
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ON ITS OWN BECAUSE IT IS DEMANDED ON TWO PATHS, AND ONLY ONE HAD IT.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Recording a group went through `assertRecordablePriorityGroup` and was
+ * refused with `PRIORITY_GROUP_PERIOD_INVALID` and its field error. CLOSING
+ * one did not go through anything: the date travelled straight to the UPDATE,
+ * `patient_priority_group_period_valid` refused it, and the person at the desk
+ * got a bare `422 CHECK_FAILED` — a generic code, with no field to put the
+ * sentence under and nothing to act on. Found by probing the three constraints
+ * of that table that no test violated.
+ *
+ * The database keeps its CHECK, and that is the point of it: an import or a
+ * `psql` never passes through here. What this adds is the same answer on both
+ * paths, which is what the SPEC fixed for the code and the screen needs to
+ * render.
+ *
+ * BOTH ENDS INCLUSIVE: a period that starts and ends the same day is a period
+ * — a disaster victim seen and discharged the same afternoon — and `>=` is
+ * exactly what the CHECK says too.
+ */
+export function assertPriorityPeriodOrder(
+  startsOn: ClinicalDate,
+  endsOn: ClinicalDate | null,
+): void {
+  if (endsOn !== null && endsOn < startsOn) {
+    throw new PriorityGroupPeriodInvalidError(
+      'endsOn',
+      'La fecha de fin no puede ser anterior a la de inicio',
+    );
+  }
 }
 
 /**
@@ -350,12 +411,7 @@ export function assertRecordablePriorityGroup(
     throw new PriorityGroupNotRecordableError(record.group);
   }
 
-  if (record.endsOn !== null && record.endsOn < record.startsOn) {
-    throw new PriorityGroupPeriodInvalidError(
-      'endsOn',
-      'La fecha de fin no puede ser anterior a la de inicio',
-    );
-  }
+  assertPriorityPeriodOrder(record.startsOn, record.endsOn);
 
   // PA-036. A pregnancy without an end is the boolean column this design
   // exists to avoid: it would order the waiting list for ever.

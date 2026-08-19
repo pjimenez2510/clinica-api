@@ -350,6 +350,83 @@ describe('every route declares its protection', () => {
     );
   });
 
+  /**
+   * PA-050, PA-051. El registro de pacientes, mirado APARTE.
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * LAS COMPROBACIONES GENERALES DE ARRIBA NO LO CUBREN, Y POR DOS MOTIVOS.
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * La de `AU-011` sólo pide que HAYA una declaración de sede y acepta
+   * `global`, así que no puede decir que las rutas de este módulo lo declaren
+   * DE VERDAD y no por descuido. Y ninguna afirma que la lista de rutas del
+   * módulo no esté vacía: el día que este recorrido deje de encontrar los
+   * controladores de `patients` —un cambio de nombre, un módulo que deja de
+   * importarse— las de arriba seguirían en verde sobre las rutas restantes.
+   */
+  const patientRoutes = (): RouteInfo[] =>
+    routes.filter(
+      (r) => r.path === '/patients' || r.path.startsWith('/patients/'),
+    );
+
+  it('PA-050 no deja ninguna ruta del registro sin declaración de permiso', () => {
+    const rutas = patientRoutes();
+
+    /**
+     * SE FILTRA POR LA RUTA Y NO POR EL NOMBRE DE LA CLASE, y no es lo mismo:
+     * lo que hay que cerrar es todo lo que cuelga de `/patients`, venga del
+     * controlador que venga. Un endpoint de otro módulo colgado ahí es
+     * exactamente el que nadie miraría.
+     *
+     * Y SE COMPRUEBA QUE EL RECORRIDO ENCONTRÓ LOS TRES CONTROLADORES: si
+     * dejara de verlos, todo lo de abajo pasaría en el vacío.
+     */
+    expect(rutas.map((r) => r.route).sort()).toEqual(
+      expect.arrayContaining([
+        'PatientMergeController.merge',
+        'PatientPriorityController.record',
+        'PatientsController.byId',
+        'PatientsController.create',
+        'PatientsController.search',
+      ]),
+    );
+    expect(rutas.map((r) => r.marker)).toEqual(rutas.map(() => 'permission'));
+    expect(
+      rutas.filter((r) => !PERMISSIONS.includes(r.permission as never)),
+    ).toEqual([]);
+  });
+
+  it('PA-051 declara alcance global en todas las rutas del registro, y ninguna acota por sede', () => {
+    /**
+     * ES UNA DECISIÓN, NO UN OLVIDO, y esta prueba es donde se lee. La persona
+     * registrada en la sede norte es la misma que entra por la sur, y acotar el
+     * registro por sede crearía una segunda ficha para ella — exactamente el
+     * duplicado que el MRN existe para evitar. Lo que sí va acotado por sede es
+     * lo que le OCURRE: citas, atenciones y facturas.
+     *
+     * Se afirma en los dos sentidos: que todas dicen `global`, y que ninguna
+     * lleva una sede en la URL —lo que obligaría a `param:` y convertiría la
+     * ficha en un recurso por sede sin que nadie lo decidiera—.
+     */
+    const rutas = patientRoutes();
+    expect(rutas.length).toBeGreaterThan(0);
+
+    const noGlobales = rutas
+      .filter((r) => r.siteScope !== 'global')
+      .map((r) => `${r.route} declara ${String(r.siteScope)}`);
+    expect(noGlobales).toEqual([]);
+
+    const conSedeEnLaUrl = rutas
+      .filter((r) => siteParamOf(r.path) !== undefined)
+      .map((r) => r.path);
+    expect(conSedeEnLaUrl).toEqual([]);
+
+    const conSedeEnElCuerpo = rutas
+      .filter((r) => r.bodySiteFields.length > 0)
+      .map((r) => `${r.route} recibe ${r.bodySiteFields.join(', ')}`);
+    expect(conSedeEnElCuerpo).toEqual([]);
+  });
+
   it('AU-010 keeps the public surface small and deliberate', () => {
     // Anything reachable without a token is attack surface. The list is
     // asserted exactly, so widening it is a decision somebody has to make in a

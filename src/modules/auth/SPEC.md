@@ -517,9 +517,18 @@ rol activo que lo lleva —o vaciárselo—. La última la respalda además el
 disparador de sentencia `trg_role_permission_keep_an_administrator`, que es lo
 único que aguanta un `DELETE FROM role_permission` tecleado en `psql`.
 
-Los de sesión —`INVALID_CREDENTIALS`, `ACCOUNT_LOCKED`, `MFA_REQUIRED`,
-`REFRESH_TOKEN_REUSE`— ya existen en `error-catalogue.ts` desde Fase 0 y no se
-tocan.
+Los de sesión —`INVALID_CREDENTIALS`, `ACCOUNT_INACTIVE`, `MFA_REQUIRED`,
+`REFRESH_TOKEN_REUSE_DETECTED`— ya existen en `error-catalogue.ts` desde Fase 0
+y no se tocan.
+
+> **Dos de esos cuatro nombres estaban mal escritos aquí** (corregido el
+> 18-08-2026). No es un detalle de redacción: un `code` es contrato público, y
+> un documento que nombra `ACCOUNT_LOCKED` y `REFRESH_TOKEN_REUSE` describe dos
+> códigos que **no existen** — el catálogo declara `ACCOUNT_INACTIVE` y
+> `REFRESH_TOKEN_REUSE_DETECTED`. Peor en el primer caso: `ACCOUNT_LOCKED` **se
+> retiró a propósito**, porque distinguir «bloqueada» de «inexistente» o
+> «inactiva» enumera al personal de la clínica (AU-002). Escribirlo aquí como
+> algo que «ya existe» es una invitación a devolverlo.
 
 `MFA_CHANGE_NOT_STARTED` **lo fijó la implementación de AU-037**: es lo que se
 responde a quien confirma un cambio de segundo factor que ya no está a medias.

@@ -79,6 +79,26 @@ export const PERMISSION_CATALOGUE = [
     resource: 'patient',
     description: 'Registrar y corregir datos de pacientes',
   },
+  // PA-052, D-030. Fusionar dos fichas y deshacer la fusión.
+  //
+  // ⚠️ NO LO TRAE NINGÚN ROL DE FÁBRICA, y ésa es la decisión, no un olvido.
+  // Una fusión mal hecha une los expedientes clínicos de dos personas
+  // distintas —el peor incidente posible de este módulo— y deshacerla puede
+  // ser IMPOSIBLE si otra ficha reclamó el documento mientras tanto (PA-048).
+  // Que exista y no lo tenga nadie es preferible a que lo tenga quien registra
+  // pacientes en el mostrador, así que `explicitGrantOnly` deja fuera a las
+  // semillas —construyen sus roles desde `SEEDABLE_PERMISSIONS`— y la
+  // instalación se lo concede a alguien a propósito.
+  //
+  // FUERA DE `patient:write` por lo mismo: quien corrige un apellido no debería
+  // poder unir dos historias con el permiso que ya tiene puesto.
+  {
+    code: 'patient:merge',
+    resource: 'patient',
+    description:
+      'Fusionar dos historias duplicadas y deshacer la fusión. Une los expedientes de dos fichas: hecho sobre personas distintas, mezcla dos historias clínicas y puede no tener vuelta atrás',
+    explicitGrantOnly: true,
+  },
   // Los grupos prioritarios del paciente (P3, REQ-024, D-026, D-027, D-029).
   //
   // DOS PERMISOS Y NO UNO, y la diferencia es el artículo 35 leído entero.

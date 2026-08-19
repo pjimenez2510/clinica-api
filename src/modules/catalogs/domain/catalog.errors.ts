@@ -1,53 +1,23 @@
-import {
-  BusinessRuleViolation,
-  NotFoundError,
-} from '../../../shared/domain/errors/domain-error';
+import { BusinessRuleViolation } from '../../../shared/domain/errors/domain-error';
 
 /**
- * Un concepto que no está.
+ * Lo que puede salir mal al resolver un código de catálogo.
  *
- * DOS FORMAS DE PREGUNTAR Y UN SOLO `code`, porque para quien recibe la
- * respuesta significan lo mismo: lo que buscabas no existe. Lo que cambia es
- * qué se puede decir en el detalle — un sistema y un código cuando se tecleó
- * un diagnóstico, un id a secas cuando se resolvía una referencia guardada — y
- * dos constructores nombrados dicen eso mejor que un parámetro que a veces
- * sobra.
- */
-export class CatalogConceptNotFoundError extends NotFoundError {
-  readonly code = 'CATALOG_CONCEPT_NOT_FOUND';
-  override readonly userTitle = 'No se encontró el código en el catálogo';
-
-  private constructor(message: string, details: Record<string, string>) {
-    super(message, details);
-  }
-
-  static byCode(systemCode: string, code: string): CatalogConceptNotFoundError {
-    return new CatalogConceptNotFoundError(
-      `${code} does not exist in ${systemCode}`,
-      { systemCode, code },
-    );
-  }
-
-  static byId(id: string): CatalogConceptNotFoundError {
-    return new CatalogConceptNotFoundError(`no concept has id ${id}`, { id });
-  }
-}
-
-/**
- * El código existe pero no estaba vigente en la fecha pedida.
+ * DOS DE LOS TRES VIVEN EN `shared` DESDE EL 17-08-2026 y se reexportan aquí,
+ * para que este módulo siga nombrando sus errores donde están los demás.
+ * `patients` tuvo que aprender a rechazar una referencia inexistente o no
+ * vigente cuando la ficha empezó a elegir etnia, nacionalidad, parroquia e
+ * identidad de género (PA-026 a PA-029), y ningún módulo importa de otro:
+ * declarar una segunda clase con el mismo `code` es justo lo que
+ * `error-catalogue.spec.ts` rechaza. Ver `shared/domain/errors/catalog-reference.errors.ts`.
  *
- * NO es un 404, y la diferencia importa: un código retirado en 2020 SÍ existió,
- * y un diagnóstico de 2018 que lo use es válido. Confundirlos haría que una
- * historia antigua pareciese corrupta.
+ * `CatalogConceptNotSelectableError` NO se movió: «esto es un capítulo, no un
+ * diagnóstico» es una pregunta que sólo hace la caja de diagnóstico.
  */
-export class CatalogConceptNotInForceError extends BusinessRuleViolation {
-  readonly code = 'CATALOG_CONCEPT_NOT_IN_FORCE';
-  override readonly userTitle =
-    'Ese código no estaba vigente en la fecha indicada';
-  constructor(code: string, on: Date) {
-    super(`${code} was not in force on ${on.toISOString()}`, { code });
-  }
-}
+export {
+  CatalogConceptNotFoundError,
+  CatalogConceptNotInForceError,
+} from '../../../shared/domain/errors/catalog-reference.errors';
 
 /**
  * Se intentó registrar un capítulo o un grupo como diagnóstico.

@@ -8,6 +8,7 @@ import {
 import {
   CATALOG_REPOSITORY,
   type CatalogConcept,
+  type CatalogPage,
   type CatalogRepository,
 } from '../domain/catalog.repository';
 
@@ -30,6 +31,7 @@ export class CatalogsService {
     query: string;
     on?: Date;
     onlySelectable?: boolean;
+    parentId?: string;
     limit?: number;
   }): Promise<readonly CatalogConcept[]> {
     return this.catalog.search({
@@ -40,7 +42,61 @@ export class CatalogsService {
       // diagnóstico no quiere ver títulos de capítulo, y ofrecérselos es
       // invitarle a registrar algo que el ministerio rechaza.
       onlySelectable: params.onlySelectable ?? true,
+      /**
+       * Sin rama, todo el catálogo.
+       *
+       * UNA RAMA INEXISTENTE DEVUELVE LISTA VACÍA, y no un 404. Es un FILTRO de
+       * una búsqueda, no el recurso que se pide: quien navega el árbol tiene el
+       * id del cantón que acaba de abrir, y responder 404 a una caja de texto
+       * convertiría un filtro obsoleto en una pantalla de error.
+       */
+      parentId: params.parentId ?? null,
       limit: params.limit ?? 20,
+    });
+  }
+
+  /**
+   * Las raíces de un catálogo: las 24 provincias del DPA, los 249 países.
+   *
+   * NO COMPRUEBA QUE EL CATÁLOGO EXISTA porque no puede no existir: la lista
+   * cerrada de `catalogSystemSchema` ya lo rechazó en el borde. Un catálogo
+   * declarado y sin sembrar devuelve cero, que es la verdad.
+   */
+  async rootsOf(
+    systemCode: string,
+    params: { on?: Date; limit: number; offset: number },
+  ): Promise<CatalogPage> {
+    return this.catalog.rootsOf(systemCode, {
+      on: params.on ?? new Date(),
+      limit: params.limit,
+      offset: params.offset,
+    });
+  }
+
+  /**
+   * Los hijos de un concepto: los cantones de una provincia, sus parroquias.
+   *
+   * SE COMPRUEBA ANTES QUE EL PADRE EXISTE, y esa consulta de más es lo único
+   * que separa «este cantón no tiene parroquias» de «ese id no es nada». Las
+   * dos respuestas son una lista vacía, y una parroquia —que es una hoja— tiene
+   * cero hijos con toda legitimidad, así que sin la comprobación un id
+   * caducado en la pantalla se vería igual que un nivel sin descendencia.
+   *
+   * `byId` es la que comprueba, y por tanto TAMPOCO exige vigencia al padre:
+   * abrir una provincia retirada del DPA para ver qué colgaba de ella es una
+   * pregunta legítima. La vigencia se aplica a los HIJOS, que son los que se
+   * están ofreciendo para elegir.
+   */
+  async childrenOf(
+    parentId: string,
+    params: { on?: Date; limit: number; offset: number },
+  ): Promise<CatalogPage> {
+    await this.byId(parentId);
+
+    return this.catalog.childrenOf(parentId, {
+      on: params.on ?? new Date(),
+      limit: params.limit,
+      offset: params.offset,
     });
   }
 

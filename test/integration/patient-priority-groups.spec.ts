@@ -294,15 +294,158 @@ describe('los grupos prioritarios por HTTP', () => {
   });
 
   it('PA-039 refuses a row whose author the database cannot name', async () => {
-    // `recorded_by` es NOT NULL con clave foránea RESTRICT: un registro que
-    // nadie puede responder no es un registro más débil, es uno inútil.
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     * DOS GARANTÍAS DISTINTAS, Y ANTES SÓLO SE TOCABA UNA.
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Esta prueba insertaba `NULL` y afirmaba `rejects.toThrow()` sin patrón:
+     * disparaba el `NOT NULL` de la columna y `patient_priority_group_recorded_by_fkey`
+     * NO SE CONSULTABA NUNCA. Borrar la clave foránea entera dejaba la prueba
+     * en verde, que es tanto como no tenerla.
+     *
+     * Ahora se ataca cada una por su lado, y se afirma QUÉ objeto rechazó: sin
+     * el nombre, un fallo por otra restricción —o por un error de sintaxis—
+     * cuenta como éxito.
+     */
+
+    // (1) La columna: un registro sin autor no es un registro más débil, es
+    // uno inútil.
     await expect(
       prisma.$executeRaw`
         INSERT INTO patient_priority_group
           (patient_id, group_code, starts_on, origin, recorded_by)
         VALUES (${patientId}::uuid, 'DISABILITY', current_date, 'SELF_DECLARED', NULL)
       `,
-    ).rejects.toThrow();
+    ).rejects.toThrow(/recorded_by/);
+
+    // (2) LA CLAVE FORÁNEA, que la prueba anterior no llegaba a tocar: un
+    // identificador con forma perfecta que no es ninguna cuenta. Es la forma
+    // en que esto ocurre de verdad —una importación, un `psql`— y la que deja
+    // un rastro que no se puede responder.
+    await expect(
+      prisma.$executeRaw`
+        INSERT INTO patient_priority_group
+          (patient_id, group_code, starts_on, origin, recorded_by)
+        VALUES (
+          ${patientId}::uuid, 'DISABILITY', current_date, 'SELF_DECLARED',
+          '00000000-0000-4000-8000-0000000000ff'::uuid
+        )
+      `,
+    ).rejects.toThrow(/patient_priority_group_recorded_by_fkey/);
+  });
+
+  it('PA-036 refuses a period that ends before it starts, in the database too', async () => {
+    /**
+     * `patient_priority_group_period_valid`, que hasta ahora no violaba nadie:
+     * cero referencias en `src/` y en `test/`. Un CHECK sin prueba es una
+     * intención.
+     *
+     * Se ataca por SQL directo porque es como llega de verdad —una
+     * importación, una migración de datos— y porque el DTO no está en ese
+     * camino. Los dos extremos son inclusivos: el mismo día vale.
+     */
+    const insertPeriod = (startsOn: string, endsOn: string) =>
+      prisma.$executeRaw`
+        INSERT INTO patient_priority_group
+          (patient_id, group_code, starts_on, ends_on, origin, recorded_by)
+        VALUES (
+          ${patientId}::uuid, 'DISABILITY', ${startsOn}::date, ${endsOn}::date,
+          'SELF_DECLARED', ${medicoUserId}::uuid
+        )
+      `;
+
+    await expect(insertPeriod('2026-03-10', '2026-03-09')).rejects.toThrow(
+      /patient_priority_group_period_valid/,
+    );
+
+    // Y el límite que NO debe rechazar: empieza y acaba el mismo día.
+    await expect(insertPeriod('2026-03-10', '2026-03-10')).resolves.toBe(1);
+  });
+
+  it('PA-039 refuses a closure that says when but not who, and the other way round', async () => {
+    /**
+     * `patient_priority_group_closure_complete`, la otra restricción que nadie
+     * violaba. PA-039 aplicado al cierre: quién y cuándo van juntos o no van.
+     * Una fila con `closed_at` y sin `closed_by` diría que se cerró sin decir
+     * quién — que es exactamente lo que el requisito impide.
+     */
+    const created = await recordGroup({
+      group: 'DISABILITY',
+      startsOn: daysFromToday(-30),
+      origin: 'SELF_DECLARED',
+    }).expect(201);
+    const recordId = (created.body as PriorityGroupBody).id;
+
+    await expect(
+      prisma.$executeRaw`
+        UPDATE patient_priority_group
+        SET ends_on = current_date, closed_at = now(), closed_by = NULL
+        WHERE id = ${recordId}::uuid
+      `,
+    ).rejects.toThrow(/patient_priority_group_closure_complete/);
+
+    await expect(
+      prisma.$executeRaw`
+        UPDATE patient_priority_group
+        SET ends_on = current_date, closed_at = NULL, closed_by = ${medicoUserId}::uuid
+        WHERE id = ${recordId}::uuid
+      `,
+    ).rejects.toThrow(/patient_priority_group_closure_complete/);
+
+    // Las dos juntas sí: es el cierre que la ruta escribe.
+    await expect(
+      prisma.$executeRaw`
+        UPDATE patient_priority_group
+        SET ends_on = current_date, closed_at = now(), closed_by = ${medicoUserId}::uuid
+        WHERE id = ${recordId}::uuid
+      `,
+    ).resolves.toBe(1);
+  });
+
+  it('PA-036 REFUSES closing a record with an end date before its start, with the code the SPEC fixes', async () => {
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     * UN DEFECTO DE CONTRATO QUE DESTAPÓ SONDEAR `_period_valid`.
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Cerrar con una fecha anterior a la de inicio respondía `422 CHECK_FAILED`
+     * —un código genérico, sin campo— porque `close()` no pasaba por la
+     * validación que sí hace el camino de registro: la fecha viajaba hasta el
+     * UPDATE y quien contestaba era la restricción de la base. El `SPEC.md`
+     * fija `PRIORITY_GROUP_PERIOD_INVALID` para esto, y una frase que no cae
+     * bajo ninguna casilla no la puede pintar el formulario que hay que
+     * corregir.
+     *
+     * La regla vale ahora en los DOS caminos, y la base la sigue guardando
+     * para lo que no pasa por ninguno.
+     */
+    const created = await recordGroup({
+      group: 'DISABILITY',
+      startsOn: daysFromToday(-30),
+      origin: 'SELF_DECLARED',
+    }).expect(201);
+    const recordId = (created.body as PriorityGroupBody).id;
+
+    const response = await closeGroup(recordId, {
+      endsOn: daysFromToday(-90),
+    }).expect(422);
+
+    const problem = response.body as Problem;
+    expect(problem.code).toBe('PRIORITY_GROUP_PERIOD_INVALID');
+    expect(problem.errors?.[0]).toMatchObject({
+      field: 'endsOn',
+      code: 'PRIORITY_GROUP_PERIOD_INVALID',
+    });
+
+    // Y no escribió nada: la fila sigue abierta.
+    const row = await prisma.patientPriorityGroup.findUniqueOrThrow({
+      where: { id: recordId },
+      select: { endsOn: true, closedAt: true, closedById: true },
+    });
+    expect(row.endsOn).toBeNull();
+    expect(row.closedAt).toBeNull();
+    expect(row.closedById).toBeNull();
   });
 
   // -------------------------------------------------------------------------
@@ -608,6 +751,161 @@ describe('los grupos prioritarios por HTTP', () => {
       where: { id: recordId },
     });
     expect(row.endsOn).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // Donde el permiso POR FILA (P3) y el alcance POR FUSIÓN (P4) se componen
+  // -------------------------------------------------------------------------
+
+  /**
+   * Una ficha absorbida por `patientId`, con una valoración ya escrita en ella.
+   *
+   * LA FUSIÓN SE HACE CON UN `UPDATE` Y NO POR LA RUTA, a propósito: lo que se
+   * juzga aquí es la LECTURA compuesta, y `patient:merge` no lo tiene ninguno
+   * de los tres roles de esta suite —ni debe (D-030)—. Que la ruta de fusión
+   * escriba bien el enlace y su rastro es de `patient-merge.spec.ts`; lo que
+   * hace falta aquí es el estado que deja, y `trg_patient_sync_merged` se
+   * dispara igual.
+   */
+  async function absorbedChartWithGroup(groupCode: string): Promise<string> {
+    const absorbida = await createPatient(prisma, {
+      birthDate: new Date('1990-03-15'),
+    });
+    await prisma.patientPriorityGroup.create({
+      data: {
+        patientId: absorbida.id,
+        groupCode,
+        startsOn: new Date(`${daysFromToday(-30)}T00:00:00Z`),
+        origin: 'SELF_DECLARED',
+        recordedById: medicoUserId,
+      },
+    });
+    await prisma.patient.update({
+      where: { id: absorbida.id },
+      data: { mergedIntoId: patientId, mergedAt: new Date() },
+    });
+    return absorbida.id;
+  }
+
+  it('PA-034 keeps a restricted group of an ABSORBED chart hidden from whoever lacks the second key', async () => {
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     * EL ÚNICO PUNTO DONDE UN FILTRO POR PERMISO Y UN ALCANCE POR FUSIÓN SE
+     * COMPONEN — Y SOBRE EL DATO DONDE EQUIVOCARSE CUESTA MÁS
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * PA-055 hizo que la superviviente lea la historia de las absorbidas, y
+     * D-027 exige que «víctima de violencia doméstica» sólo la vea quien tenga
+     * `patient:priority:protected`. Cada mitad tenía su prueba; la composición
+     * no tenía ninguna, y es donde una fuga no se parecería a un defecto de
+     * ninguna de las dos: el filtro se aplica sobre la lista YA ampliada por el
+     * enlace, así que basta con que alguien reordene esas dos líneas para que
+     * la fila restringida de la absorbida salga por la ficha vigente.
+     *
+     * Aquí la consecuencia no es la privacidad: es la seguridad de una persona.
+     *
+     * LAS TRES AFIRMACIONES HACEN FALTA, y la primera es la que impide que esto
+     * pase en verde por la razón equivocada —si la fila no se viera desde `B`
+     * en absoluto, «no se ve sin la llave» sería cierto y no probaría nada—.
+     */
+    await absorbedChartWithGroup('DOMESTIC_OR_SEXUAL_VIOLENCE_VICTIM');
+
+    // 1. CON el segundo nivel se ve, y se ve POR EL ENLACE (PA-055).
+    const conLlave = await groupsOf(trabajoSocial).expect(200);
+    expect(
+      (conLlave.body as { items: PriorityGroupBody[] }).items.map(
+        (i) => i.group,
+      ),
+    ).toEqual(['DOMESTIC_OR_SEXUAL_VIOLENCE_VICTIM']);
+
+    // 2. SIN él, lista vacía desde la superviviente — no un 403, que
+    //    confirmaría que existe (D-027) — y ni el código asoma en la respuesta.
+    const sinLlave = await groupsOf(medico).expect(200);
+    expect((sinLlave.body as { items: PriorityGroupBody[] }).items).toEqual([]);
+    expect(JSON.stringify(sinLlave.body)).not.toContain('VIOLENCE');
+
+    // 3. Y el ORDEN sí llega, hasta a recepción: es la equiparación del
+    //    artículo 35, y la fusión no la cambia porque es la misma persona.
+    expect(await priorityOf(patientId)).toBe(1);
+  });
+
+  it('PA-040 names the ABSORBED chart in the access trail when its reason was revealed', async () => {
+    /**
+     * «¿QUIÉN LEYÓ POR QUÉ ERA PRIORITARIA LA FICHA A?» TIENE QUE TENER UNA
+     * FILA QUE NOMBRE A `A` (REQ-110).
+     *
+     * El motivo se lee por el enlace y la fila conserva el `patient_id` de la
+     * absorbida (D-031), así que una bitácora que sólo nombrara la ficha de la
+     * URL diría que se leyó la superviviente mientras se revelaba un dato de
+     * salud escrito en otra — y la pregunta de arriba se quedaría sin respuesta
+     * justo en el caso en que una investigación la hace.
+     *
+     * LAS DOS FILAS, no una en lugar de la otra: el acceso ocurrió POR `B` y
+     * reveló contenido DE `A`.
+     */
+    const absorbida = await absorbedChartWithGroup('CATASTROPHIC_ILLNESS');
+
+    await groupsOf(medico).expect(200);
+
+    const trail = await prisma.accessAudit.findMany({
+      where: { resourceType: 'patient_priority_group', action: 'READ' },
+      select: { resourceId: true, userId: true },
+    });
+    expect(trail.map((row) => row.resourceId).sort()).toEqual(
+      [absorbida, patientId].sort(),
+    );
+    expect(new Set(trail.map((row) => row.userId))).toEqual(
+      new Set([medicoUserId]),
+    );
+  });
+
+  it('PA-040 names the ABSORBED chart when a record of it is closed from the surviving chart', async () => {
+    // PA-037 cierra fechando, y `closePriorityGroup` alcanza la fila por el
+    // alcance (PA-055): la valoración modificada vive en la absorbida, así que
+    // el rastro del `UPDATE` tiene que nombrarla igual que el de la lectura.
+    const absorbida = await absorbedChartWithGroup('CATASTROPHIC_ILLNESS');
+    const record = await prisma.patientPriorityGroup.findFirstOrThrow({
+      where: { patientId: absorbida },
+      select: { id: true },
+    });
+
+    await closeGroup(record.id, { endsOn: today() }).expect(200);
+
+    const trail = await prisma.accessAudit.findMany({
+      where: { resourceType: 'patient_priority_group', action: 'UPDATE' },
+      select: { resourceId: true },
+    });
+    expect(trail.map((row) => row.resourceId).sort()).toEqual(
+      [absorbida, patientId].sort(),
+    );
+  });
+
+  it('PA-040 writes NO trail row for an absorbed chart whose only reason stayed hidden', async () => {
+    /**
+     * LA OTRA MITAD, Y SIN ELLA LA BITÁCORA SERÍA EL ORÁCULO QUE D-027 EVITA.
+     *
+     * Si la fila se escribiera por el ALCANCE CONSULTADO en vez de por lo que
+     * de verdad se reveló, quien audita vería que la lectura de `B` tocó `A`
+     * —y con ello que `A` guarda algo— aunque quien leyó no viera nada. El
+     * rastro dice lo que se leyó, ni más ni menos.
+     */
+    const absorbida = await absorbedChartWithGroup('CHILD_ABUSE_VICTIM');
+
+    const sinLlave = await groupsOf(medico).expect(200);
+    expect((sinLlave.body as { items: PriorityGroupBody[] }).items).toEqual([]);
+
+    const trail = await prisma.accessAudit.findMany({
+      where: { resourceType: 'patient_priority_group', resourceId: absorbida },
+    });
+    expect(trail).toHaveLength(0);
+
+    // Y quien SÍ la lee deja su fila, que es lo que hace la aserción anterior
+    // una ausencia significativa y no una tabla vacía.
+    await groupsOf(trabajoSocial).expect(200);
+    const conLlave = await prisma.accessAudit.findMany({
+      where: { resourceType: 'patient_priority_group', resourceId: absorbida },
+    });
+    expect(conLlave).toHaveLength(1);
   });
 
   it('PA-033 answers PATIENT_NOT_FOUND for a chart that does not exist, without writing a trail row', async () => {

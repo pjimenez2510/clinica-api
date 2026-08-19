@@ -24,8 +24,30 @@ export class PatientNotFoundError extends NotFoundError {
    * That is exactly the kind of leak the LOPDP exists to prevent.
    */
   override readonly userTitle = 'No se encontró el paciente';
-  constructor() {
-    super('Patient does not exist or is not visible to the caller');
+
+  /**
+   * `field` names the request field that carried the id, when there is one.
+   *
+   * PA-009 needs it: `motherPatientId` points at a chart that has to exist,
+   * and answering «no se encontró el paciente» with no field on a form that
+   * also names the patient being corrected leaves the desk unable to tell
+   * WHICH of the two is missing. Absent for `GET /patients/:id`, where the id
+   * came from the URL and there is no field to blame.
+   */
+  constructor(field?: string) {
+    super(
+      'Patient does not exist or is not visible to the caller',
+      {},
+      field === undefined
+        ? undefined
+        : [
+            {
+              field,
+              code: 'PATIENT_NOT_FOUND',
+              message: 'No se encontró esa historia: búsquela otra vez',
+            },
+          ],
+    );
   }
 }
 
@@ -41,12 +63,250 @@ export class PatientNotFoundError extends NotFoundError {
  */
 export { PatientMergedError } from '../../../shared/domain/errors/patient-merged.error';
 
+/**
+ * PA-027. The chart declares a nationality or indigenous people and does not
+ * identify as «Indígena».
+ *
+ * ENFORCED IN THE SERVICE AND NOT ONLY IN THE DTO, for the same reason
+ * `CANCELLATION_REASON_REQUIRED` and `MERGE_REASON_REQUIRED` are: a `DEBERÁ`
+ * enforced only by the transport layer stops being enforced the day another use
+ * case calls from inside. The database CANNOT repeat it as a `CHECK` — which
+ * ethnicity is «Indígena» lives in another table — so this is the whole
+ * guarantee; see `indigenous-nationality.ts`.
+ *
+ * ⚠️ THE MESSAGE NAMES NO DATUM OF THE PATIENT. It says what to do — pick the
+ * ethnicity or clear the field — and never which people or which category was
+ * sent: an error text ends up in support screenshots and in logs.
+ */
+export class NationalityRequiresIndigenousEthnicityError extends ValidationError {
+  readonly code = 'NATIONALITY_REQUIRES_INDIGENOUS_ETHNICITY';
+  override readonly userTitle =
+    'La nacionalidad o pueblo indígena sólo se registra si la autoidentificación étnica es «Indígena»';
+  /**
+   * IT POINTS AT `nationalityConceptId` AND NOT AT THE ETHNICITY, on purpose.
+   *
+   * Two fields are involved and only one can be blamed. The nationality is the
+   * one the RDACAA treats as conditional — it is the field that gets enabled —
+   * so it is the one whose value has to give way, and the message offers both
+   * ways out of the contradiction.
+   */
+  constructor() {
+    super(
+      'Nationality or indigenous people requires an indigenous ethnic self-identification',
+      {},
+      [
+        {
+          field: 'nationalityConceptId',
+          code: 'NATIONALITY_REQUIRES_INDIGENOUS_ETHNICITY',
+          message: 'Elija «Indígena» en la autoidentificación étnica, o deje vacía la nacionalidad', // prettier-ignore
+        },
+      ],
+    );
+  }
+}
+
 export class DuplicateIdentifierError extends ConflictError {
   readonly code = 'PATIENT_IDENTIFIER_TAKEN';
   override readonly userTitle =
     'Ya existe un paciente registrado con ese documento';
   constructor() {
     super('Another patient already holds this identifier');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Duplicate resolution (P4: PA-043 to PA-049, REQ-010)
+// ---------------------------------------------------------------------------
+
+/**
+ * PA-044, PA-047. Merging and undoing a merge both demand a reason.
+ *
+ * ENFORCED IN THE SERVICE AND NOT ONLY IN THE DTO, for the same reason
+ * `CANCELLATION_REASON_REQUIRED` is: a `DEBERÁ` enforced only by the transport
+ * layer stops being enforced the day another use case calls from inside. The
+ * database repeats it as `patient_merge_reason_not_blank`, which is what also
+ * stops an import — but that CHECK answers with a generic 422, and this is the
+ * message that lands on the field somebody has to fill in.
+ *
+ * BLANK IS NOT A REASON. `NOT NULL` refuses the absence, never `'   '`, and a
+ * mandatory reason is the whole of what tells this apart from a click.
+ */
+export class MergeReasonRequiredError extends ValidationError {
+  readonly code = 'MERGE_REASON_REQUIRED';
+  override readonly userTitle = 'Escriba por qué se unen las dos historias';
+  constructor() {
+    super('A merge and an undo both require a non-blank reason', {}, [
+      {
+        field: 'reason',
+        code: 'MERGE_REASON_REQUIRED',
+        message: 'Explique por qué: quedará en el rastro de la fusión', // prettier-ignore
+      },
+    ]);
+  }
+}
+
+/**
+ * PA-046. The chart being absorbed and the surviving one are the same.
+ *
+ * A chart merged into itself is, for PA-045, a chart that refuses every
+ * operation and points at itself: nobody could open it or undo it from the
+ * application. `patient_merged_into_not_self` refuses the row as well — which
+ * is what stops an import — and this is what a form gets told.
+ */
+export class MergeIntoSelfError extends ValidationError {
+  readonly code = 'MERGE_INTO_SELF';
+  override readonly userTitle = 'Esa es la misma historia: elija la otra ficha';
+  constructor() {
+    super('A chart cannot be merged into itself', {}, [
+      {
+        field: 'targetPatientId',
+        code: 'MERGE_INTO_SELF',
+        message: 'Elija la historia que debe quedar vigente, que no es ésta',
+      },
+    ]);
+  }
+}
+
+/**
+ * PA-046. The merge would build a chain, in either direction.
+ *
+ * TWO SITUATIONS AND ONE CODE, because what the desk has to do is the same in
+ * both — undo the other merge first — and the `errors[]` entry names which
+ * chart is the problem:
+ *
+ *   - the TARGET is itself merged: A→B when B→C, so the survivor is not the
+ *     one being chosen;
+ *   - the SOURCE has already absorbed other charts: B→C when A→B, which is the
+ *     same chain from the other end.
+ *
+ * «Se resuelve prohibiéndola, no siguiéndola»: a chain forces every reader in
+ * every module to walk it, and the first one that does not will show the wrong
+ * chart. It is 409 and not 422 because what was sent is correct — it is the
+ * state of the register that refuses it, and undoing the other merge makes the
+ * very same request work.
+ *
+ * ⚠️ THE GUARANTEE IS `trg_patient_merge_not_chained`, NOT THIS CLASS. The
+ * trigger locks the target row, so two simultaneous merges cannot build a chain
+ * between them; this is the translation of its rejection into something a
+ * person can act on. The surviving MRN is looked up only on that path.
+ */
+export class PatientAlreadyMergedError extends ConflictError {
+  readonly code = 'PATIENT_ALREADY_MERGED';
+  override readonly userTitle =
+    'Esa historia ya está unida a otra. Deshaga esa fusión antes de hacer ésta';
+
+  /**
+   * @param field which chart of the request is the one already merged.
+   * @param survivingMrn where that chart's history is now, when it is known.
+   *   Only an MRN travels: an internal number, never a name or a document.
+   */
+  constructor(
+    field: 'patientId' | 'targetPatientId',
+    readonly survivingMrn: string | null = null,
+  ) {
+    super(
+      'Merging these charts would chain one merge onto another',
+      survivingMrn === null ? {} : { mrn: survivingMrn },
+      [
+        {
+          field,
+          code: 'PATIENT_ALREADY_MERGED',
+          message:
+            survivingMrn === null
+              ? 'Esa historia ya participó en otra fusión: deshágala primero'
+              : `Esa historia ya se unió a ${survivingMrn}: deshaga esa fusión primero`,
+        },
+      ],
+    );
+  }
+}
+
+/**
+ * PA-047. There is no merge to undo on this chart.
+ *
+ * NOT `PATIENT_NOT_FOUND`, and the difference matters at the desk: the patient
+ * exists and is on the screen. What does not exist is the EVENT — the chart was
+ * never merged, or its merge was already undone, which the unique link
+ * `patient_merge_undone_once` makes a lookup rather than a guess. Same shape as
+ * `AGENDA_ENTRY_NOT_FOUND`.
+ */
+export class MergeNotFoundError extends NotFoundError {
+  readonly code = 'MERGE_NOT_FOUND';
+  override readonly userTitle = 'Esta historia no tiene ninguna fusión que deshacer'; // prettier-ignore
+  constructor() {
+    super('No merge of this chart is open to be undone');
+  }
+}
+
+/**
+ * How each kind of document is called in the sentence a person reads.
+ *
+ * THE CLASS OF DOCUMENT, NEVER ITS VALUE. «Cédula» says which field to look at;
+ * the number itself is exactly what must not appear in an error, a log or a
+ * support screenshot (PA-025, REQ-116, SC-006).
+ *
+ * `PROVISIONAL` is here for completeness and cannot actually reach the message:
+ * `patient_identifier_active_unique` excludes it from the index, so a
+ * placeholder never conflicts with anything.
+ */
+const IDENTIFIER_LABEL: Readonly<Record<string, string>> = {
+  CEDULA: 'la cédula',
+  PASSPORT: 'el pasaporte',
+  REFUGEE_CARD: 'el carné de refugiado',
+  FOREIGN_ID: 'el documento de identidad extranjero',
+  PROVISIONAL: 'el documento provisional',
+};
+
+/**
+ * PA-048. Undoing would give the chart back a document another live chart has
+ * taken in the meantime.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * WHY THIS CANNOT COME OUT OF THE CONSTRAINT MAP
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * PostgreSQL refuses through `patient_identifier_active_unique` — the SAME
+ * partial index a duplicate registration hits — because undoing puts the
+ * absorbed chart's documents back into it. `patients.constraints.ts` maps that
+ * index to `DUPLICATE_IDENTIFIER`, which is right for a registration and wrong
+ * here: it tells whoever pressed «deshacer» that the document they just typed
+ * is taken, and they typed none. The map cannot tell the two apart, because
+ * only the caller knows the operation was an undo — so the merge service is
+ * what translates it.
+ *
+ * IT IS NOT A DEFECT THAT IT FAILS. This is the technical consequence of
+ * PA-014: two live charts cannot hold one document, and SC-008 says that number
+ * is zero without exception. What PA-048 also demands is that nothing be left
+ * half-undone, and that is the transaction's job — the chart stays merged, whole
+ * or not at all.
+ *
+ * ⚠️ WHAT THE MESSAGE MAY SAY. The CLASS of document and the MRN that holds it
+ * now — an internal number, the same one `PATIENT_MERGED` publishes. Never the
+ * document's value, never a name.
+ */
+export class MergeUndoConflictError extends ConflictError {
+  readonly code = 'MERGE_UNDO_CONFLICT';
+  override readonly userTitle =
+    'No se puede deshacer: otra historia tiene ahora ese documento';
+
+  constructor(
+    readonly identifierType: string,
+    readonly holderMrn: string,
+  ) {
+    const label = IDENTIFIER_LABEL[identifierType] ?? 'ese documento';
+    super(
+      `Undoing the merge would return an identifier already held by ${holderMrn}`,
+      { identifierType, mrn: holderMrn },
+      [
+        {
+          // The chart being un-merged: it is the one whose document cannot come
+          // back, and the URL is where it was named.
+          field: 'patientId',
+          code: 'MERGE_UNDO_CONFLICT',
+          message: `La historia ${holderMrn} tiene ahora ${label} de esta ficha: corríjala allí antes de deshacer la fusión`,
+        },
+      ],
+    );
   }
 }
 

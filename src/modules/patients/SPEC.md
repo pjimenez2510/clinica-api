@@ -15,11 +15,11 @@ que le falta es la mitad de REQ-022 y la totalidad de REQ-010 y REQ-024.
 > P1 es un **inventario**: describe lo que el módulo ya hace, leído de
 > `patients.service.ts`, de `prisma-patient.repository.ts` y de las migraciones
 > que lo tocan, no de lo que sería razonable que hiciera. Donde el código y esta
-> spec discrepen, es la spec la que está mal y se corrige. Ninguna prueba cita
-> todavía un `PA-###`, así que `pnpm estado` mostrará P1 en 0/N: el módulo tiene
-> pruebas —20 unitarias y 9 de integración—, lo que no tiene es la cita que las
-> ata a un requisito. Ponerla es trabajo de la primera tanda de código, no de
-> este documento.
+> spec discrepen, es la spec la que está mal y se corrige — y ya ocurrió una
+> vez: ver PA-016. Cuando se escribió este documento ninguna prueba citaba un
+> `PA-###`, así que `pnpm estado` mostraba P1 en 0/N: el módulo tenía pruebas
+> —20 unitarias y 9 de integración—, lo que no tenía era la cita que las ata a
+> un requisito. **Puesta el 18-08-2026**, que es cuando P1 se cerró.
 
 > **Cómo se lee.** `CUANDO` = disparador · `MIENTRAS` = estado que dura ·
 > `SI … ENTONCES` = comportamiento no deseado · `DONDE` = opcional · sin palabra
@@ -62,17 +62,17 @@ ordenar la lista de espera**, que es la entrega que P3 desbloquea—.
 
 ## Vocabulario
 
-| Término | Significado exacto en este módulo |
-| --- | --- |
-| **Ficha** | La fila de `patient`. Una por persona en TODO el sistema, no una por sede |
-| **MRN** | Número de historia clínica: `HC` + 10 dígitos. El ancla de identidad, emitido una vez y nunca cambiado |
-| **Provisional** | `is_provisional = true`: ficha sin documento definitivo. Un recién nacido tiene historia antes de tener cédula |
-| **Identificador activo** | `valid_to IS NULL AND use = 'OFFICIAL'` sobre una ficha no fusionada. Es el predicado del índice único |
-| **Ficha absorbida** | La perdedora de una fusión: `merged_into_id IS NOT NULL`. **No se borra nunca** |
-| **Grupo prioritario** | Una de las categorías del art. 35 de la Constitución, registrada como **fila fechada**, nunca como columna booleana |
-| **Declarado / acreditado** | Origen del registro: lo dijo el paciente, frente a consta en un documento oficial (carné del CONADIS, certificado) |
-| **Prioridad calculada** | Un número derivado de los grupos vigentes hoy. Es lo único que sale del módulo sin la puerta de `patient:priority` |
-| **Fecha clínica** | La fecha resuelta en `America/Guayaquil`, nunca en el huso de la sesión |
+| Término                    | Significado exacto en este módulo                                                                                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Ficha**                  | La fila de `patient`. Una por persona en TODO el sistema, no una por sede                                                                                          |
+| **MRN**                    | Número de historia clínica: `HC` + 10 dígitos. El ancla de identidad, emitido una vez y nunca cambiado                                                             |
+| **Provisional**            | `is_provisional = true`: ficha sin documento definitivo. Un recién nacido tiene historia antes de tener cédula                                                     |
+| **Identificador activo**   | `valid_to IS NULL`: el documento que la ficha usa hoy. Es lo que filtran **las lecturas**, y **no** es el predicado del índice único — ver el recuadro bajo PA-014 |
+| **Ficha absorbida**        | La perdedora de una fusión: `merged_into_id IS NOT NULL`. **No se borra nunca**                                                                                    |
+| **Grupo prioritario**      | Una de las categorías del art. 35 de la Constitución, registrada como **fila fechada**, nunca como columna booleana                                                |
+| **Declarado / acreditado** | Origen del registro: lo dijo el paciente, frente a consta en un documento oficial (carné del CONADIS, certificado)                                                 |
+| **Prioridad calculada**    | Un número derivado de los grupos vigentes hoy. Es lo único que sale del módulo sin la puerta de `patient:priority`                                                 |
+| **Fecha clínica**          | La fecha resuelta en `America/Guayaquil`, nunca en el huso de la sesión                                                                                            |
 
 ---
 
@@ -120,12 +120,12 @@ REQ-113.
 comprobar que provincia (`17`) y cantón (`1701`) se derivan del código y no
 existen como columna; corregir el apellido y comprobar que el MRN no cambió y
 que la mutación dejó rastro.
-**Cubre:** PA-008, PA-009, PA-015, PA-026 a PA-032.
+**Cubre:** PA-008, PA-009, PA-015, PA-026 a PA-032, PA-053.
 
-**Solo servidor:** PA-031. Es bitácora de una mutación: quién cambió qué y desde
-qué valor. No hay pantalla que lo enseñe hoy —no existe ruta de lectura de la
-bitácora, igual que en AG-004— y, además, la parte de «desde qué valor» choca
-hoy con un `CHECK` de la base; ver el recuadro del propio requisito.
+**Solo servidor:** PA-031. Es el rastro de una mutación: quién cambió qué y
+desde qué valor. No hay pantalla que lo enseñe hoy —no existe ruta de lectura
+del histórico, igual que en AG-004— y lo que se demuestra es que la fila **se
+escribió**, que ninguna pantalla puede enseñar.
 
 ### P3 — Grupos prioritarios y la prioridad que la agenda ordena _(P1)_
 
@@ -158,15 +158,23 @@ Fusionar dos fichas de la misma persona conservando las dos, y poder deshacerlo.
 **Por qué es P2 y no P1:** duele a diario en admisión, pero la clínica opera con
 dos fichas duplicadas —mal, con la historia partida— y no opera sin lista de
 espera priorizada ni sin los campos del RDACAA. **Es además la entrega con más
-riesgo**: hay un defecto confirmado el 6-08-2026 según el cual deshacer una
-fusión es hoy imposible, porque el disparador de sincronización choca con el
-índice único parcial y quien lo intenta recibe `DUPLICATE_IDENTIFIER` sobre un
-documento que no estaba tocando.
+riesgo**: se creía que un defecto del 6-08-2026 hacía imposible deshacer una
+fusión, porque el disparador de sincronización choca con el índice único
+parcial. Reproducido el 17-08-2026, el choque **sólo** ocurre cuando otra ficha
+activa reclamó el documento mientras tanto —que es PA-048 y es lo correcto—; lo
+que estaba mal era que quien deshace recibiera `DUPLICATE_IDENTIFIER` sobre un
+documento que no estaba tocando, **arreglado el 17-08-2026 en el servicio** con
+`MERGE_UNDO_CONFLICT`.
 **Prueba independiente:** fusionar A en B, comprobar que la cédula de A deja de
 bloquear el índice único y que B la conserva, deshacer, y comprobar que A vuelve
 a tenerla; con un tercer caso donde el documento ya fue reclamado y deshacer se
-rechaza sin escribir nada.
-**Cubre:** PA-043 a PA-049, PA-052.
+rechaza sin escribir nada. **Hecho el 17-08-2026**, y era lo que faltaba: la
+fusión escribía sólo el enlace y la fila del rastro, así que la cédula se
+quedaba en la ficha muerta, el mostrador no encontraba a nadie al teclearla y se
+abría una tercera ficha con ella —que dejaba la fusión irreversible para
+siempre—. Ahora los documentos `OFFICIAL` viajan a la superviviente dentro de la
+misma transacción y vuelven al deshacer.
+**Cubre:** PA-043 a PA-049, PA-052, PA-054, PA-055.
 
 **Solo servidor:** PA-044, PA-046. El rastro append-only con su instantánea y la
 imposibilidad de fusionar una ficha consigo misma o encadenar fusiones son
@@ -271,9 +279,34 @@ requisitos que cambian.
   > es siempre `NULL`. Entra en P2 con la ruta de corrección, no antes.
 - **PA-009** — El sistema DEBERÁ permitir vincular una ficha con la de su madre,
   y ese vínculo DEBERÁ ser suficiente para encontrar al recién nacido antes de
-  que tenga documento propio.
+  que tenga documento propio, **también después de que la ficha de la madre haya
+  sido absorbida por una fusión**.
   > Misma situación que PA-008: `mother_patient_id` existe en la tabla desde la
   > primera migración y ninguna ruta lo escribe ni lo lee.
+  >
+  > **⚠️ Y LA MADRE ES «LA FICHA Y LAS QUE ABSORBIÓ» (18-08-2026, PA-055).** El
+  > filtro era `p.mother_patient_id = :motherId` a secas, y eso hacía
+  > desaparecer al recién nacido en el caso más corriente que existe:
+  >
+  > 1. Alta de la madre → ficha `A`.
+  > 2. Alta del recién nacido **sin documento**, con `motherPatientId: A`.
+  > 3. Admisión descubre que la madre estaba duplicada y fusiona `A→B`.
+  > 4. `GET /patients?motherId=B` devolvía **cero**, y `GET /patients/A`
+  >    responde 409 (PA-045): **nadie podía llegar a `A`**.
+  >
+  > El neonato quedaba fuera del único camino que lo alcanzaba antes de tener
+  > cédula, así que se le registraba otra vez y su historia se partía en dos —
+  > el duplicado que este requisito existe para evitar, provocado por la
+  > operación que existe para arreglarlos. Se resuelve con `chartScopeIds`, el
+  > mismo predicado que el resto de PA-055, y **`patient-chart-scope.spec.ts`
+  > falla** si esa comparación vuelve a escribirse con un id desnudo.
+  >
+  > La comprobación del servicio (`existsUnmerged`) **no cubría esto y no podía**:
+  > defiende el instante de _escribir_ el vínculo, y aquí la fusión ocurre
+  > después, sobre un vínculo que era correcto cuando se escribió. Sigue en pie
+  > por otra razón —el mostrador debe nombrar la ficha **vigente** de la madre,
+  > no una absorbida—, y de paso el alcance hace inofensiva la carrera entre esa
+  > comprobación y una fusión que se confirme justo después de ella.
 
 ## 2. Documentos de identidad (REQ-009, REQ-022)
 
@@ -312,27 +345,94 @@ requisitos que cambian.
   > **imposible fusionar duplicados**: la ficha absorbida tiene que soltar su
   > cédula para que la superviviente la conserve. Un predicado de índice no
   > admite subconsultas, así que `patient_identifier.patient_merged` está
-  > desnormalizada y la mantiene `trg_patient_sync_merged`. Ese disparador es
-  > **también el causante del defecto que bloquea PA-047**: al deshacer, vuelve
-  > a poner `patient_merged = false` y choca con el índice si el documento ya
-  > fue reclamado.
+  > desnormalizada y la mantienen dos disparadores: `trg_patient_sync_merged`
+  > cuando cambia la FICHA —al fusionar y al deshacer— y
+  > `trg_patient_identifier_set_merged` cuando cambia la FILA: al insertarla y
+  > **al moverla de ficha** (17-08-2026), que es lo que hace la consolidación
+  > del documento de PA-043. Al deshacer, el primero vuelve a poner
+  > `patient_merged = false` y choca con el índice **sólo si el documento ya fue
+  > reclamado** por otra ficha activa, que es PA-048 y no un defecto.
+  >
+  > **⚠️ EL ÍNDICE NO MIRA `valid_to`, Y EL VOCABULARIO DECÍA QUE SÍ
+  > (corregido el 18-08-2026).** El predicado real es exactamente:
+  >
+  > ```sql
+  > CREATE UNIQUE INDEX patient_identifier_active_unique
+  >   ON patient_identifier (type, issuing_country, value)
+  >   WHERE use = 'OFFICIAL' AND NOT patient_merged AND type <> 'PROVISIONAL';
+  > ```
+  >
+  > Tres condiciones, y `valid_to` no está entre ellas. **Las lecturas sí lo
+  > filtran** —`findByIdentifier`, el `SUMMARY_SELECT` de la ficha y el `EXISTS`
+  > de la búsqueda por documento llevan todos `valid_to IS NULL`—, así que hoy
+  > los dos conjuntos coinciden **por una sola razón: ninguna ruta escribe
+  > `valid_to`**. No hay reemplazo de documento, y por eso nada ha divergido.
+  >
+  > **QUÉ PASARÁ EL DÍA QUE EXISTA EL REEMPLAZO, para que quien lo construya lo
+  > vea antes de escribirlo.** Cerrar un documento poniéndole `valid_to` lo saca
+  > de todas las lecturas y **lo deja dentro del índice**. Entonces:
+  >
+  > 1. `findByIdentifier` no lo encuentra y responde que el número está libre.
+  > 2. La comprobación de cortesía de PA-013 pasa.
+  > 3. El `INSERT` choca con `patient_identifier_active_unique`, y en el
+  >    mostrador aparece `PATIENT_IDENTIFIER_TAKEN` sobre un número que la
+  >    pantalla acaba de dar por libre — el peor sitio donde puede aparecer un
+  >    409: después de decir que no lo habría.
+  >
+  > Y no basta con añadir `valid_to IS NULL` al índice: eso permitiría que una
+  > ficha CERRARA su cédula y otra ficha activa la tomara, que es exactamente lo
+  > que PA-013 prohíbe. **La decisión es de PA-014, no del reemplazo**, y hay que
+  > tomarla —y probarla contra la base— en la misma entrega que escriba
+  > `valid_to` por primera vez. Hasta entonces esto es latente, no inofensivo.
 - **PA-015** — CUANDO un paciente registrado sin documento presente uno, el
   sistema DEBERÁ añadirlo a su ficha, DEBERÁ dejar de marcarla provisional y NO
   DEBERÁ crear una ficha nueva.
-  > **Falta la ruta, y es la que evita el duplicado.** Hoy `is_provisional` se
-  > fija en el alta y nada lo cambia, así que la única forma de que el recién
-  > nacido tenga su cédula es registrarlo otra vez — que es precisamente el
-  > duplicado que REQ-010 luego tiene que fusionar.
+  > **POR QUÉ ES LA RUTA QUE EVITA EL DUPLICADO.** Antes de que existiera,
+  > `is_provisional` se fijaba en el alta y nada lo movía, así que la única
+  > forma de que el recién nacido tuviera su cédula era registrarlo otra vez —
+  > que es precisamente el duplicado que REQ-010 luego tiene que fusionar. La
+  > ruta es `POST /patients/:id/identifiers`, y añade el documento y termina lo
+  > provisional **en una transacción**: una ficha con cédula que sigue marcada
+  > provisional es la que el mostrador vuelve a registrar «porque parece que no
+  > se guardó».
+  >
+  > **⚠️ LA FUSIÓN SE RELEE BAJO EL BLOQUEO, DENTRO DE LA TRANSACCIÓN
+  > (18-08-2026).** Comprobar la fusión sólo en el servicio no bastaba, y aquí
+  > menos que en una corrección, porque el `INSERT` **no espera al mismo
+  > candado** que la fusión: ésta toma `FOR UPDATE` sobre la ficha, el `INSERT`
+  > se detiene en el `FOR KEY SHARE` de su clave foránea y **reanuda después**
+  > de que la fusión haya movido los identificadores. La fila aterrizaba en la
+  > ficha **absorbida**, marcada `patient_merged`: fuera del índice único, sobre
+  > una ficha que ninguna búsqueda devuelve, y ya no la movía nadie. Al día
+  > siguiente se teclea ese número, no aparece, se abre una **tercera** ficha y
+  > deshacer responde conflicto para siempre — la avería que la migración
+  > `20260817222356_patient_identifier_follows_merge` se escribió para eliminar.
+  > De paso, `is_provisional = false` se escribía sobre una ficha ya absorbida.
+  > La defensa es la misma que la de PA-026 en `correct`, y en el mismo orden:
+  > bloquear, releer, y sólo entonces escribir. Gana la fusión, y quien añade el
+  > documento recibe `PATIENT_MERGED` con el MRN al que ir (PA-045).
 
 ## 3. Búsqueda del registro
 
-- **PA-016** — El sistema DEBERÁ encontrar a un paciente por fragmentos de su
-  nombre **sin tildes y tolerando errores de tecleo**, sobre la columna generada
+- **PA-016** — El sistema DEBERÁ encontrar a un paciente por **cualquier
+  fragmento** de su nombre y **sin tildes**, sobre la columna generada
   `search_name` y su índice trigram.
   > La normalización vive **sólo en la base** (`immutable_unaccent`). Repetirla
   > en JavaScript serían dos implementaciones de «quitar las tildes» obligadas a
   > coincidir para siempre; no coincidirían, y el síntoma sería una búsqueda que
   > deja de encontrar en silencio.
+  >
+  > **CORREGIDO EL 18-08-2026, Y ES EL INVENTARIO HACIENDO SU TRABAJO.** Este
+  > requisito decía «y tolerando errores de tecleo». El código no lo hace ni lo
+  > ha hecho nunca: la consulta es `search_name LIKE '%…%'` sobre la forma sin
+  > acentos —un fragmento en cualquier posición, que es lo que el índice GIN
+  > trigram sirve—, no una comparación por similitud. Teclear «Ñuapa» no
+  > encuentra a «Ñaupa». Como P1 es un inventario de lo ya construido, manda el
+  > código y se corrige la spec; **tolerar el error de tecleo sigue siendo una
+  > mejora deseable** —`similarity()` con su umbral, que es una decisión de
+  > producto por el ruido que introduce— y entraría como requisito propio, no
+  > escondida en éste. Redactado como estaba, `spec-traceability` habría dado
+  > por probada una tolerancia que no existe.
 - **PA-017** — El sistema DEBERÁ ordenar el listado por nombre, historia o fecha
   de nacimiento, en los dos sentidos, con **colación española** y con un orden
   total.
@@ -403,7 +503,66 @@ requisitos que cambian.
   > Y es catálogo porque el INEC revisa las categorías, y una ficha de hace tres
   > años tiene que seguir mostrando la redacción con la que se registró.
 - **PA-027** — El sistema DEBERÁ registrar la **nacionalidad** del paciente
-  eligiéndola de un catálogo.
+  eligiéndola de un catálogo. **SI** la ficha que resultaría del alta o de la
+  corrección declara una nacionalidad **y** su autoidentificación étnica no es
+  «Indígena» —porque es otra o porque falta—, **ENTONCES** el sistema DEBERÁ
+  rechazar la operación con `NATIONALITY_REQUIRES_INDIGENOUS_ETHNICITY`
+  señalando el campo `nationalityConceptId`, y NO DEBERÁ escribir nada.
+  > **Aquí «nacionalidad» es la NACIONALIDAD O PUEBLO INDÍGENA, no el país**
+  > (D-036, resuelta el 17-08-2026). Es lo que el RDACAA 2.0 pide en ese campo,
+  > que además **sólo se activa si la autoidentificación es «Indígena»**:
+  > Kichwa, Shuar, Awa. `NATIONALITY` está sembrado con las 34 categorías de la
+  > variable `P12` del Censo 2022 del INEC, con sus códigos y sus saltos, y la
+  > advertencia está escrita en la cabecera de `prisma/seed-rdacaa.mts` para que
+  > nadie rellene esa tabla con países.
+  >
+  > **El país de la persona es otro dato y tiene columna propia: PA-053.** Las
+  > dos hacen falta, y por qué no se fusionan está escrito allí.
+  >
+  > **LA CONDICIÓN ES DEL FORMULARIO DEL MINISTERIO, NO NUESTRA, Y SU FUENTE ES
+  > DE TERCEROS.** No es una regla clínica ni una preferencia de diseño: el
+  > manual de usuario del software RDACAA v2.0 dice que el campo «Nacionalidad»
+  > **se activa sólo si la autoidentificación étnica es «Indígena»** —y que si
+  > la respuesta es «kichwa» se activa además «Pueblos», que este sistema
+  > todavía no registra—. De ese manual **sólo tenemos una copia de terceros**:
+  > el instructivo original del MSP no se ha podido obtener de fuente oficial
+  > (D-036, y sigue abierto). Así que esto puede resultar equivocado el día que
+  > aparezca el documento, y por eso se corrige **en un solo sitio**:
+  > `INDIGENOUS_ETHNICITY_CODE` en
+  > `src/modules/patients/domain/indigenous-nationality.ts`, que es lo único
+  > que sabe qué fila del catálogo `ETHNICITY` es «Indígena». Se reconoce por
+  > su **`code`** —el `1` de la pregunta 11 del INEC, con el que la siembra
+  > `prisma/seed-rdacaa.mts`— y nunca por su texto: la redacción de una
+  > categoría se reescribe entre censos y una comparación de cadenas repartida
+  > por el código deja de cumplirse sin que nada falle.
+  >
+  > **LA FICHA QUE YA TENÍA NACIONALIDAD Y CAMBIA DE ETNIA SE RECHAZA, y ésta
+  > es la parte que tiene consecuencias.** Cuenta el estado **resultante** de
+  > la ficha, no lo que venga en el cuerpo: corregir sólo la etnia a «Mestizo/a»
+  > en una ficha que ya declara Kichwa se decide igual que enviar las dos a la
+  > vez, y se responde con el mismo error señalando `nationalityConceptId`. Para
+  > que la corrección entre hay que **vaciar la nacionalidad en la misma
+  > petición** (`nationalityConceptId: null`), que es un solo `PATCH`. La
+  > alternativa —borrarla en silencio— es pérdida de dato disfrazada de
+  > actualización: dejaría en el histórico una fila que nadie pidió, sobre un
+  > dato que el paciente declaró y que sólo él puede volver a declarar. El mismo
+  > criterio que hace que un campo ausente signifique «no lo toques» y nunca
+  > «bórralo» (PA-031).
+  >
+  > **ESTO NO PUEDE VIVIR EN UN `CHECK`, y no se busque allí.** El resto de
+  > invariantes de este módulo sí lo hacen —el dígito verificador de la cédula,
+  > el fallecimiento posterior al nacimiento, la ficha que es su propia madre—,
+  > y por eso hay que decir por qué ésta no: la condición depende de **qué fila
+  > del catálogo `ETHNICITY` es «Indígena»**, y eso está en otra tabla.
+  > **Un `CHECK` no consulta otra tabla** — es exactamente el mismo motivo por
+  > el que PA-053 comprueba contra el catálogo `COUNTRY` en el servicio y deja
+  > al `CHECK` sólo la forma de tres letras. La consecuencia se asume: una
+  > importación o un `INSERT` por `psql` **pueden** escribir la combinación
+  > contradictoria, y lo que la detectaría es el reporte mensual. Ponerla en el
+  > servicio y no sólo en el DTO es lo que queda al alcance, y por lo mismo que
+  > `CANCELLATION_REASON_REQUIRED` en la agenda: un `DEBERÁ` que sólo hace
+  > cumplir la capa de transporte deja de cumplirse el día que otro caso de uso
+  > llame por dentro.
 - **PA-028** — El sistema DEBERÁ registrar la residencia del paciente por
   **parroquia del DPA del INEC** (seis dígitos), y NO DEBERÁ almacenar provincia
   ni cantón: DEBERÁ derivarlos del prefijo del código.
@@ -413,62 +572,174 @@ requisitos que cambian.
   > Almacenando el cantón, la residencia de esos pacientes saldría reportada al
   > ministerio en el cantón equivocado sin que nada fallara.
   >
-  > **Falta esquema.** El catálogo DPA está cargado —24 provincias, 221 cantones
-  > y 1401 parroquias— y `patient.residence_parish_concept_id` existe, pero
-  > **ninguna ruta lo acepta ni lo devuelve**: ni el alta, ni la ficha, ni el
-  > listado. El campo no llega nunca a la tabla, así que REQ-022 está incumplido
-  > por la mitad que sí tiene columna.
+  > **Nunca faltó esquema: faltaba la ruta.** El catálogo DPA está cargado —24
+  > provincias, 221 cantones y 1401 parroquias— y
+  > `patient.residence_parish_concept_id` existe desde la primera migración,
+  > pero hasta P2 **ninguna ruta lo aceptaba ni lo devolvía**: ni el alta, ni la
+  > ficha, ni el listado. El campo no llegaba nunca a la tabla, así que REQ-022
+  > figuraba cubierto e incumplido a la vez. El alta y la corrección lo aceptan,
+  > y la ficha devuelve el código de seis dígitos con su descripción y con
+  > provincia y cantón **derivados del prefijo**.
+  >
+  > **Y con su NOMBRE, porque «Provincia 17 · Cantón 1701» no le dice nada a
+  > nadie.** El código es lo que se reporta al ministerio; el nombre es lo que
+  > lee quien tiene al paciente delante. Se resuelve del catálogo DPA
+  > preguntando **cómo se llama el código derivado** —nunca a qué cantón
+  > pertenece la parroquia—, así que la columna descriptiva del archivo del INEC
+  > sigue sin leerse y no se almacena nada nuevo: derivar el código y resolver
+  > su nombre es la misma derivación. Si el catálogo no puede nombrarlo —una
+  > parroquia de una edición anterior cuyo cantón ya no está—, el nombre viaja
+  > nulo y **el código sigue viajando**. Sólo en la ficha: el listado no lleva
+  > estos campos (PA-021).
 - **PA-029** — El sistema DEBERÁ registrar la identidad de género como dato
   **distinto del sexo**, eligiéndola de un catálogo, y NO DEBERÁ derivar uno del
   otro.
-  > **Falta esquema.** `patient.gender_identity_concept_id` existe y su catálogo
-  > `GENDER_IDENTITY` no: `catalogSystemSchema` en `catalogs` sólo admite
-  > `CIE10`, `CNMB`, `TARIFF` y `DPA`, así que los tres sistemas que esta
-  > entrega necesita —`ETHNICITY`, `NATIONALITY`, `GENDER_IDENTITY`— no se
-  > pueden ni sembrar ni leer. La pantalla de la ficha no tendría de dónde
-  > tirar, que es exactamente lo que le pasaba al selector de parroquia antes
-  > del 13-08-2026.
+  > **La identidad de género no se deriva del sexo y tampoco lo sustituye**: son
+  > dos columnas, y el RDACAA las pide por separado desde que el MSP incorporó
+  > la variable sexo-género (Acuerdo Ministerial publicado en el Registro
+  > Oficial 579, 14-06-2024).
+  >
+  > **Lo que faltaba era la lista cerrada de sistemas**, no la columna:
+  > `catalogSystemSchema` en `catalogs` sólo admitía `CIE10`, `CNMB`, `TARIFF` y
+  > `DPA`, así que los tres sistemas que esta entrega necesita —`ETHNICITY`,
+  > `NATIONALITY`, `GENDER_IDENTITY`— no se podían ni sembrar ni leer. P2 los
+  > añade, y con ellos la ficha ya elige de un catálogo.
+  >
+  > **Dato pendiente (D-036).** Qué lista oficial carga cada uno de los tres
+  > sistemas está registrado como decisión con su fuente y su recomendación. No
+  > cambia una línea de código —la ficha guarda una referencia a un concepto sea
+  > cual sea la lista—, pero hasta que se siembre, el selector de la pantalla
+  > está vacío, que es lo que le pasaba al de parroquia antes del 13-08-2026.
 - **PA-030** — El sistema DEBERÁ **derivar** la edad del paciente de su fecha de
   nacimiento resuelta en la fecha clínica de `America/Guayaquil`, NO DEBERÁ
-  almacenarla, y para menores de 29 días DEBERÁ poder expresarla en días
-  (REQ-027).
+  almacenarla, para menores de 29 días DEBERÁ poder expresarla en días y, desde
+  los 29 días hasta el primer cumpleaños, en meses cumplidos (REQ-027).
   > Un `::date` desnudo sobre un `timestamptz` usa el huso de la sesión: a las
   > 21:00 de Guayaquil ya es el día siguiente en UTC, y sobre un neonato eso son
   > **24 horas de diferencia en `age_days`**, que es el campo con el que el
   > RDACAA lo clasifica. Afecta a toda la franja vespertina de atención. Lo
   > mismo por lo que AG-001 existe y por lo que se corrigió
   > `encounter_freeze_age`.
+  > **Los meses entraron por D-035 (a), opción A, el 17-08-2026**: con sólo años
+  > y días, un lactante de siete meses salía como «Menos de 1 año», y las tablas
+  > de dosis pediátricas van por meses. Se calculan en el servidor por el mismo
+  > motivo que los días —el navegador está en el huso del portátil—, y **días y
+  > meses nunca vienen los dos a la vez**: debajo de los años viaja como mucho
+  > una unidad, porque un bebé de veinte días tiene cero meses cumplidos y
+  > ofrecer las dos invita a pintar «0 meses» donde importan los días.
 - **PA-031** — CUANDO se corrija cualquier dato de la ficha, el sistema DEBERÁ
   dejar en la bitácora quién lo cambió, cuándo y **desde qué valor**.
-  > **[NECESITA ACLARACIÓN]** La base lo prohíbe hoy y no por descuido.
-  > `access_audit_payload_only_for_declared_resources` rechaza toda fila cuyo
-  > `resource_type` no esté en la lista blanca y traiga `before`/`after`, y la
-  > lista blanca es exactamente `'configuration'`. Los tipos clínicos están
-  > **deliberadamente fuera**: la tabla es append-only y no se purga nunca, así
-  > que un dato de la ficha que caiga ahí no se podría corregir, minimizar ni
-  > eliminar jamás — lo contrario de lo que la LOPDP exige (REQ-113). Y como
-  > fallar al registrar no lanza, la fila se perdería **en silencio**.
+  > **Resuelto por D-032 el 16-08-2026, opción (b): histórico propio de la
+  > ficha, y la lista blanca de `access_audit` NO se amplía.** La bitácora de
+  > accesos vigila quién mira; el histórico de la ficha guarda qué cambió. Cada
+  > tabla con su régimen, y ésa es la razón de que sean dos:
   >
-  > Las dos lecturas dan código distinto: **(a)** ampliar la lista blanca a
-  > `'patient'` y aceptar que el valor anterior de un nombre o un documento vive
-  > para siempre en una tabla inmutable; **(b)** registrar la mutación sin
-  > valores, y que «desde qué valor» se responda con un histórico propio de la
-  > ficha, que sí se puede rectificar. Recomendación: **(b)**, por coherencia
-  > con REQ-113 y porque el propio puerto declara que ampliar esa lista es una
-  > decisión sobre datos personales y no un ajuste de esquema. Decide el
-  > usuario.
+  > `access_audit_payload_only_for_declared_resources` rechaza toda fila cuyo
+  > `resource_type` no esté en la lista blanca —hoy exactamente
+  > `'configuration'`— y traiga `before`/`after`. Los tipos clínicos están
+  > **deliberadamente fuera**: esa tabla es append-only y no se purga nunca, así
+  > que un apellido anterior que cayera ahí no se podría corregir, minimizar ni
+  > eliminar jamás, contra el derecho de rectificación de REQ-113. Y como fallar
+  > al registrar no lanza, la fila se habría perdido **en silencio**.
+  >
+  > **Qué escribe entonces una corrección, y son dos filas:** una en
+  > `access_audit` con `action = 'UPDATE'` y **sin** `before`/`after` —quién
+  > tocó la ficha y cuándo—, y una en `patient_change_history` con el valor
+  > anterior y el nuevo campo a campo. La segunda es rectificable: se puede
+  > corregir, minimizar y borrar cuando el titular ejerza REQ-113, que es
+  > exactamente lo que la primera no permite.
 - **PA-032** — El sistema DEBERÁ señalar qué fichas no tienen completos los
-  datos que el RDACAA exige, sin impedir que la ficha exista.
-  > **[NECESITA ACLARACIÓN]** ¿Etnia, nacionalidad y parroquia son obligatorias
-  > **al registrar**, o basta con exigirlas antes de cerrar la atención? La
-  > norma las exige «en cada consulta», no en el registro, y bloquear el alta a
-  > las tres de la mañana con un neonato delante es exactamente lo que REQ-009
-  > prohíbe. Pero si no se exigen nunca, el reporte mensual sale incompleto y no
-  > hay quien lo descubra hasta que la Dirección Distrital lo devuelve.
-  > Recomendación: **opcionales en el alta, obligatorias al cerrar la primera
-  > atención**, con este indicador para que admisión sepa a quién le falta.
-  > Cambia el código en las dos direcciones —qué valida el DTO y qué bloquea
-  > `encounter`—, así que no lo decide un agente.
+  datos que el RDACAA exige, sin impedir que la ficha exista. **MIENTRAS** la
+  autoidentificación étnica de una ficha esté registrada y **no** sea
+  «Indígena», el sistema NO DEBERÁ contar `nationalityConceptId` entre los datos
+  que a esa ficha le faltan.
+  > **Resuelto por D-028 el 16-08-2026, recomendación aceptada: opcionales al
+  > dar de alta y obligatorias al cerrar la primera atención**, con la ficha
+  > marcada como incompleta mientras tanto. La norma las exige «en cada
+  > consulta», no en el registro, y bloquear el alta a las tres de la mañana con
+  > un neonato delante es exactamente lo que REQ-009 prohíbe; no exigirlas nunca
+  > deja el reporte mensual incompleto sin que nadie lo descubra hasta que la
+  > Dirección Distrital lo devuelve.
+  >
+  > **Qué le toca a este módulo, y qué no.** Aquí: el DTO del alta acepta los
+  > cuatro campos como opcionales, y toda respuesta que lleve la ficha expone
+  > **qué falta**, por nombre de campo, para que admisión pueda completarlo sin
+  > adivinar. Lo que bloquea el cierre de la primera atención es de `encounter`
+  > y se especifica allí: este indicador es su entrada, no su sustituto.
+  >
+  > La identidad de género **no cuenta** para este indicador: REQ-022 enumera
+  > documento, sexo, autoidentificación étnica, nacionalidad, edad y residencia,
+  > y no la incluye. Marcar como incompleta una ficha por un dato que el reporte
+  > no pide convertiría el indicador en ruido que admisión aprende a ignorar.
+  >
+  > **Resuelto por D-037 el 17-08-2026, recomendación aceptada, opción A: la
+  > nacionalidad se exige según la etnia, y son tres ramas.**
+  >
+  > - **Etnia «Indígena»** — `nationalityConceptId` **cuenta**: es la única
+  >   ficha a la que el ministerio le pide ese dato, y es donde el indicador
+  >   tiene que avisar de que falta.
+  > - **Etnia registrada y distinta de «Indígena»** — **no cuenta**. PA-027
+  >   rechaza la operación que lo rellenaría, así que contarlo dejaba la ficha
+  >   de un paciente mestizo —la mayoría— marcada como incompleta para siempre
+  >   por una casilla que el sistema le prohíbe cerrar. Un indicador que nadie
+  >   puede dejar en cero es un indicador que admisión aprende a ignorar, que es
+  >   el mismo argumento por el que quedaron fuera la identidad de género y el
+  >   país (PA-053).
+  > - **Etnia ausente** — **sigue contando**, y ésta es la rama que se pierde
+  >   con facilidad: mientras nadie haya hecho la pregunta, **no se sabe todavía
+  >   si el campo hará falta**. Dejar de pedirla ahí haría que la ficha se
+  >   leyera como completa y volviera a estar incompleta en cuanto alguien
+  >   registrara «Indígena» — el indicador retrocedería sin que nada del reporte
+  >   hubiera cambiado.
+  >
+  > **Quién es «Indígena» lo decide un solo sitio**, `INDIGENOUS_ETHNICITY_CODE`
+  > e `isIndigenousEthnicity` (PA-027): el indicador reutiliza ese predicado en
+  > vez de comparar por su cuenta, para que el día que aparezca el instructivo
+  > oficial que D-036 sigue esperando se corrija una línea y no dos reglas que
+  > ya discreparían.
+- **PA-053** — El sistema DEBERÁ registrar el **país de nacionalidad** del
+  paciente como código `ISO 3166-1 alpha-3` elegido del catálogo `COUNTRY`,
+  DEBERÁ devolverlo en la ficha con el **nombre** que ese catálogo le da, y NO
+  DEBERÁ contarlo entre los datos que el RDACAA exige (PA-032). El alta y la
+  corrección DEBERÁN aceptarlo, y ninguna de las dos DEBERÁ exigirlo (REQ-166).
+  > **SON DOS COLUMNAS Y NO UNA, Y ÉSTE ES EL PÁRRAFO QUE LO IMPIDE FUSIONAR.**
+  > `nationality_concept_id` (PA-027) es la **nacionalidad o pueblo indígena**
+  > del RDACAA —Kichwa, Shuar, Awa—, un campo que el formulario del ministerio
+  > sólo activa cuando la autoidentificación étnica es «Indígena».
+  > `country_of_nationality_code` es de **qué país** es la persona. Se escriben
+  > parecido y no son lo mismo: son dos preguntas distintas, con dos listas
+  > distintas, y una clínica ecuatoriana tiene delante a diario a quien necesita
+  > cada una. Quien las fusione tendrá que elegir entre cumplir el reporte
+  > mensual y poder decir que un paciente es venezolano; y descubrirlo en el
+  > primer reporte devuelto obliga a reinterpretar hacia atrás un dato que ya no
+  > se le puede volver a preguntar a nadie. D-036 opción C, 17-08-2026.
+  >
+  > **Un código de texto, no una clave foránea al catálogo.** Es exactamente lo
+  > que ya hace `patient_identifier.issuing_country`: el mismo dato del mismo
+  > estándar, guardado del mismo modo. Dos representaciones del país en la misma
+  > base —aquí un `uuid` de concepto, allí tres letras— es lo que garantiza que
+  > un día discrepen y que nadie pueda cruzar «pacientes venezolanos» con
+  > «documentos emitidos en Venezuela». El catálogo `COUNTRY` es de donde la
+  > pantalla **elige** y de donde sale el **nombre**; lo que se guarda es el
+  > código. Su forma la hace cumplir la base con un `CHECK` de tres letras
+  > mayúsculas (`patient_country_of_nationality_format`), porque una importación
+  > o un `INSERT` por `psql` no pasan por el DTO — el mismo argumento que el
+  > dígito verificador de la cédula (PA-011).
+  >
+  > **Y CON SU NOMBRE, porque `VEN` no es información** (ADR-005 §5): un código
+  > que quien lo lee no puede interpretar es ruido con aspecto de dato. Se
+  > resuelve del catálogo al abrir la ficha, igual que la provincia y el cantón
+  > de PA-028, y **sólo ahí**: el listado no lo lleva, porque se dispara con cada
+  > letra tecleada (PA-021). Si el catálogo no puede nombrarlo —una edición
+  > anterior, un país que se dividió—, el nombre viaja nulo y **el código sigue
+  > viajando**.
+  >
+  > **NO cuenta para `rdacaaMissingFields`, y es una decisión.** REQ-022 enumera
+  > lo que el reporte exige —documento, sexo, autoidentificación étnica,
+  > nacionalidad, edad y residencia— y el país no está. Marcar una ficha como
+  > incompleta por un dato que el ministerio no pide convierte el indicador en
+  > ruido que admisión aprende a ignorar, que es el mismo argumento por el que la
+  > identidad de género tampoco cuenta (PA-032).
 
 ## 6. Grupos prioritarios (REQ-024, D-026, REQ-115)
 
@@ -588,6 +859,23 @@ Ningún requisito de esta sección lo altera._
   > como decisión pendiente; mientras nadie lo tenga, esos cuatro grupos ni se
   > leen ni se registran, y siguen contando para el orden si alguien los
   > registró.
+  >
+  > **LA BITÁCORA NOMBRA LA FICHA EN LA QUE ESTÁ LA FILA, no sólo la de la URL
+  > (18-08-2026, REQ-110).** Con PA-055 el motivo se lee por el enlace y la fila
+  > conserva el `patient_id` de la absorbida (D-031), así que una sola entrada
+  > con el id de la URL decía que se había leído la **superviviente** mientras
+  > se revelaba un dato de salud escrito en **otra**: «¿quién leyó por qué era
+  > prioritaria la ficha `A`?» se quedaba sin ninguna fila que nombrara a `A`,
+  > justo en el caso en que una investigación hace esa pregunta. Ahora una
+  > lectura escribe **una entrada por ficha realmente leída** —la pedida
+  > siempre, y cada absorbida de la que salió alguna fila visible— y un cierre
+  > (PA-037) nombra igual la ficha en la que vive la valoración fechada. La
+  > forma de la entrada no cambia: sigue siendo quién, qué recurso y qué acto.
+  >
+  > **Y SÓLO LAS FILAS VISIBLES**, que es la mitad que impide convertir la
+  > propia bitácora en el oráculo que D-027 evita: si se escribiera por el
+  > alcance _consultado_, quien audita vería que leer `B` tocó `A` —y con ello
+  > que `A` guarda algo— aunque quien leyó no viera nada.
 - **PA-041** — El sistema DEBERÁ exponer la **prioridad ya calculada** de un
   paciente sin el motivo, para que la agenda ordene la lista de espera con sólo
   `patient:read` (AG-061, AG-062).
@@ -605,34 +893,129 @@ Ningún requisito de esta sección lo altera._
   absorbida: DEBERÁ conservarla con su MRN y apuntándola a la superviviente.
   > Documentos ya impresos y sistemas externos siguen citando el número de la
   > absorbida. Borrarla convierte esos papeles en referencias a la nada.
+  >
+  > **Y el DOCUMENTO DE IDENTIDAD sí se mueve** (17-08-2026). Los identificadores
+  > de uso `OFFICIAL` de la absorbida pasan a la superviviente **dentro de la
+  > misma transacción de la fusión**, y vuelven al deshacer.
+  >
+  > **No contradice a D-031, y hay que leerlo entero para no creer que sí.**
+  > D-031 decide qué pasa con la **historia** —citas, atenciones, certificados,
+  > derivaciones, alergias, contactos, grupos prioritarios, lista de espera—,
+  > que no se mueve y se lee por el enlace. Un documento de identidad **no es
+  > historia**: no es algo que le ocurrió a la persona, es **cómo se la
+  > encuentra**. Consolidarlo no reescribe ningún pasado y es el propósito
+  > entero de fusionar. Sin esto, la fusión sacaba la cédula del índice único
+  > (PA-014, correcto) y no la llevaba a ninguna parte: al día siguiente se
+  > tecleaba en el mostrador, `PATIENT_NOT_FOUND`, se abría una **tercera**
+  > ficha, y a partir de ahí deshacer respondía `MERGE_UNDO_CONFLICT` para
+  > siempre. `patient_identifier` es la **única** tabla hija cuyo `patient_id`
+  > cambia en una fusión.
+  >
+  > **Qué NO se mueve, y por qué son exactamente esos:**
+  >
+  > - Lo que la superviviente **ya tiene** con el mismo tipo, país emisor y
+  >   valor. El índice ya está satisfecho y mover dejaría dos copias del mismo
+  >   número en una ficha. Sólo ocurre cuando la copia de la superviviente está
+  >   fuera del índice —`use` distinto de `OFFICIAL`—, porque dos fichas activas
+  >   no pueden tener la misma cédula `OFFICIAL`: eso es PA-014.
+  > - Los de `use` distinto de `OFFICIAL` y los de tipo `PROVISIONAL`. El índice
+  >   los excluye por construcción, así que moverlos no libera ni ocupa nada, y
+  >   arrastrar un marcador provisional a una ficha que sí tiene documento de
+  >   verdad sólo la ensucia.
+  >
+  > **El esquema que hacía falta** (`20260817222356_patient_identifier_follows_merge`):
+  > `trg_patient_identifier_set_merged` pasa de `BEFORE INSERT` a
+  > `BEFORE INSERT OR UPDATE OF patient_id`. Sin él —comprobado contra
+  > PostgreSQL 18— la fila llegaba a la superviviente con `patient_merged` en
+  > `true`, se quedaba fuera del índice único, y una tercera ficha con esa
+  > cédula seguía siendo **aceptada**: el defecto sobrevivía a su propia
+  > corrección y SC-008 dejaba de ser cierto.
 - **PA-044** — Toda fusión DEBERÁ dejar una fila **append-only** con ficha
   origen, ficha destino, autor, instante, **motivo obligatorio** y una
   instantánea de la ficha absorbida.
   > La instantánea es lo que permite explicar la operación y deshacerla; el
   > motivo obligatorio es lo que la distingue de un clic. Sin los dos, «rastro
   > auditable y reversible» de REQ-010 es una frase.
+  >
+  > **«Toda fusión deja UNA fila», y hacía falta decirlo** (17-08-2026). Un doble
+  > clic en «Fusionar» manda dos peticiones idénticas solapadas, y
+  > `trg_patient_merge_not_chained` **no las arbitra**: sólo levanta excepción
+  > cuando el destino cambia, y reescribir el **mismo** destino no cambia
+  > ninguna columna. Quedaban dos filas `MERGE` para una fusión, y eso no se
+  > puede corregir nunca — al deshacer se cierra la más reciente y la anterior
+  > queda abierta para siempre sobre una ficha ya entera, y `patient_merge` es
+  > append-only—. Se cierra con `SELECT … FOR UPDATE` sobre la ficha **origen**
+  > dentro de la transacción de la fusión, antes de tomar la instantánea: la
+  > misma defensa que el disparador ya aplica a la ficha destino, y en el mismo
+  > orden —origen y luego destino—, que es lo que impide que dos fusiones se
+  > bloqueen entre sí. La segunda petición recibe `PATIENT_MERGED` con el MRN
+  > de la superviviente, que es PA-045.
+  >
+  > **Una garantía declarativa sería mejor y no cabe.** «Una sola fusión abierta
+  > por ficha origen» es un índice único parcial sobre
+  > `patient_merge (source_patient_id) WHERE event = 'MERGE'` **menos** las
+  > filas que un `UNDO` ya nombra, y ese «menos» es una subconsulta, que el
+  > predicado de un índice no admite. Hacerlo declarativo exige esquema —una
+  > columna `patient.open_merge_id`, o un disparador— y queda anotado aquí en
+  > vez de improvisado.
 - **PA-045** — MIENTRAS una ficha esté fusionada, toda operación que la nombre
   DEBERÁ rechazarse con `PATIENT_MERGED` **nombrando el MRN de la
   superviviente**.
   > No es un 404: la historia existió. El cliente necesita saber a dónde se
   > movió, que es justo lo que hace la agenda al rechazar una reserva sobre una
   > ficha fusionada (AG-027).
+  >
+  > **«Toda operación» incluye ABRIRLA** (17-08-2026). Es la que duele: el error
+  > existe literalmente para que en el mostrador se deje de abrir la ficha vieja
+  > y preguntarse por qué se cortan las notas. Devolverla con un campo
+  > `mergedIntoMrn` en algún sitio del cuerpo es un puntero que cada pantalla
+  > tiene que acordarse de leer; un 409 que nombra el número vigente, no.
+  >
+  > **La única excepción es deshacer** (`POST /patients/:id/merge/undo`), y no es
+  > una grieta: la ficha que se va a separar está fusionada por definición, así
+  > que rechazarla ahí dejaría PA-047 fuera de alcance.
 - **PA-046** — SI la ficha origen y la destino son la misma, o SI la destino
   está a su vez fusionada, ENTONCES el sistema DEBERÁ rechazar la fusión.
   > Una cadena A→B→C obliga a todo lector a recorrerla, y el primero que no lo
   > haga enseñará la ficha equivocada. Se resuelve prohibiéndola, no siguiéndola.
 - **PA-047** — El sistema DEBERÁ permitir **deshacer** una fusión, dejando de
   ella el mismo rastro que de la fusión: quién, cuándo y por qué (REQ-010).
-  > **Falta esquema.** `patient_merge` es append-only y no tiene dónde decir que
-  > una fusión se deshizo: no hay `undone_at` ni `undone_by`, así que hoy
-  > deshacer sería borrar la fila —lo contrario de append-only— o dejar el
-  > registro mintiendo.
+  > **Esquema resuelto el 17-08-2026** (`20260817204801_patient_merge_events`):
+  > `patient_merge` es un registro de **sucesos**. Deshacer es una **fila
+  > nueva** con `event = 'UNDO'` que apunta a la fusión que deshace, y no una
+  > edición de la fila existente. Se descartó añadir `undone_at`/`undone_by`
+  > porque editar la fila obliga a abrir un agujero en la inmutabilidad, y una
+  > tabla append-only «salvo esta columna» es una convención, no una garantía.
+  > El enlace es **único**: una fusión se deshace una sola vez, y por eso
+  > «¿está deshecha?» es una consulta exacta y no una adivinanza por fechas
+  > cuando la misma pareja se vuelve a fusionar.
   >
-  > **Y hay un defecto confirmado debajo** (revisión del 6-08-2026): deshacer es
-  > hoy imposible porque `trg_patient_sync_merged` vuelve a poner
-  > `patient_merged = false` y choca con `patient_identifier_active_unique`; lo
-  > que ve quien lo intenta es `DUPLICATE_IDENTIFIER` sobre un documento que no
-  > estaba tocando. Cualquier implementación de este requisito empieza por ahí.
+  > **Y el «defecto confirmado del 6-08-2026» no era del esquema.** Reproducido
+  > contra PostgreSQL 18 en `patient-merge.spec.ts`: en el caso normal deshacer
+  > **funciona** —`patient_merged` vuelve a `false` y no hay con qué chocar,
+  > porque el índice parcial impedía desde el principio que dos fichas activas
+  > compartieran el documento—. Sólo choca cuando otra ficha activa reclamó el
+  > documento mientras tanto, que es **PA-048** y es lo correcto. Lo que fallaba
+  > ahí era el mensaje: `DUPLICATE_IDENTIFIER` sobre un documento que no se
+  > estaba tocando, en vez de `MERGE_UNDO_CONFLICT`. Era del servicio y no de la
+  > base, y ahí se arregló el 17-08-2026.
+  >
+  > **EL ORDEN AL DESHACER ESTÁ FIJADO** (17-08-2026): los documentos vuelven a
+  > la absorbida **antes** de limpiar `merged_into_id`. Mientras la ficha sigue
+  > fusionada, una fila que aterriza en ella se marca `patient_merged` y
+  > permanece **fuera** del índice único; limpiar el enlace después dispara
+  > `trg_patient_sync_merged`, que devuelve **de golpe** todos sus documentos al
+  > índice, y ése es el único instante en que PA-048 se decide, sobre el
+  > conjunto completo. Invertido, las filas que vuelven reentrarían en el índice
+  > una operación antes de tiempo: PA-048 dispararía sobre el conjunto
+  > equivocado —los que nunca se fueron— y un conflicto real sobre uno que
+  > vuelve saldría como una violación de constraint que nadie sabría leer.
+  >
+  > **Qué filas vuelven: las que la fusión movió, por identificador**, guardadas
+  > en su propia fila del rastro (`source_snapshot.movedIdentifierIds`).
+  > Deducirlas de la instantánea no funciona: un documento que la superviviente
+  > ya tenía se quedó en la absorbida, y desde fuera esa fila y la propia de la
+  > superviviente son indistinguibles — devolver la equivocada sería robársela.
 - **PA-048** — SI al deshacer una fusión el documento que la ficha absorbida
   recupera ya pertenece a otra ficha activa, ENTONCES el sistema DEBERÁ
   rechazarlo nombrando el conflicto y NO DEBERÁ dejar la fusión a medio deshacer.
@@ -640,9 +1023,22 @@ Ningún requisito de esta sección lo altera._
   > parcial no puede admitir dos fichas activas con la misma cédula, y una
   > reversión que fallara a mitad dejaría la ficha absorbida ni fusionada ni
   > entera.
+  >
+  > **Desde que el documento viaja a la superviviente, esto casi no ocurre — y
+  > ése era el objetivo** (17-08-2026). El camino por el que se llegaba era
+  > exactamente el defecto: la fusión liberaba la cédula y otra ficha la tomaba.
+  > Ahora la cédula sigue ocupando el índice desde la superviviente, así que
+  > nadie puede reclamarla. Para que el conflicto exista, la absorbida tiene que
+  > tener un documento `OFFICIAL` que no esté en la superviviente, y **desde la
+  > aplicación eso ya no pasa**: pasa por los caminos que no atraviesan las
+  > rutas —una importación, un `INSERT` por `psql`, datos traídos de otro
+  > sistema—, que es el mismo argumento del dígito verificador de la cédula.
+  > Por eso PA-048 sigue haciendo falta y no es una reliquia, y por eso la
+  > prueba lo monta así.
 - **PA-049** — CUANDO se fusionen dos fichas, el sistema DEBERÁ poder responder
   qué ocurre con las citas, atenciones y documentos de la absorbida.
-  > **[NECESITA ACLARACIÓN]** Y es la pregunta más cara de esta entrega. Dos
+  > **Resuelto por D-031 el 16-08-2026: se lee por el enlace.** Era la pregunta
+  > más cara de esta entrega. Dos
   > opciones, con código distinto: **(a) repuntar** las filas hijas a la ficha
   > superviviente, con lo que la historia queda unificada de verdad pero
   > deshacer exige recordar cuáles se movieron —y una cita creada después de la
@@ -651,11 +1047,249 @@ Ningún requisito de esta sección lo altera._
   > de historia del sistema tiene que acordarse de seguir el enlace, para
   > siempre, en cada módulo que se escriba.
   >
-  > Hoy el esquema hace (b) sin haberlo decidido: `merged_into_id` es lo único
-  > que existe y ninguna fila hija se mueve. Recomendación: **(b) explícita**,
-  > porque es la única compatible con el «reversible» que REQ-010 exige y porque
-  > (a) sobre historia clínica es una reescritura del pasado. Es decisión
-  > clínica y médico-legal: la toma el usuario.
+  > El esquema ya hacía (b) sin haberlo decidido: `merged_into_id` es lo único
+  > que existe y ninguna fila hija se mueve. D-031 lo hace **explícito**, porque
+  > es la única compatible con el «reversible» que REQ-010 exige y porque (a)
+  > sobre historia clínica es una reescritura del pasado.
+  >
+  > **Cómo se hace comprobable** (17-08-2026): lo dice **la propia respuesta de
+  > la fusión**, en `linkedRecords` — `policy: "READ_THROUGH_LINK"` y cuánto se
+  > quedó en la absorbida. Es lo más barato
+  > que existe: no hace falta ninguna ruta nueva, ninguna consulta que el cliente
+  > tenga que recordar hacer, y quien fusiona ve en el acto qué se movió de sitio
+  > —nada—. Se descartó una ruta `GET /patients/:id/linked-records`, que sería
+  > una superficie más que declarar, autorizar y auditar para contestar algo que
+  > la operación ya sabe. `policy` es un literal a propósito: si algún día se
+  > repuntaran las filas, ese campo tendría que cambiar de valor y ninguna
+  > pantalla podría no enterarse.
+  >
+  > **Y son los OCHO contadores, no tres** (17-08-2026). La primera versión
+  > contaba citas, atenciones y documentos, y tres contadores diciendo «no se
+  > movió nada» es peor que ninguno: quien fusiona lo lee como la respuesta
+  > completa y **no se entera de que la lista de alergias se quedó en la ficha
+  > vieja**, que es la que duele porque quien prescribe la consulta por ficha.
+  > La lista se recorrió contra el esquema y es: `appointments`, `encounters`,
+  > `documents` —certificados y derivaciones—, `allergies`, `contacts`,
+  > `priorityGroups` y `waitlistEntries`. Quedan fuera a propósito
+  > `patient_change_history` y `patient_merge`, que son rastros **sobre** la
+  > ficha y no atención recibida, y `patient.mother_patient_id`, que es una
+  > columna de **otra** ficha apuntando a ésta. Y se responde en **una sola
+  > consulta**: la lista crece, y una ida y vuelta por tabla la convertiría en
+  > latencia que crece con ella.
+  >
+  > **REVISADO EL 18-08-2026: LOS HIJOS VINCULADOS SIGUEN FUERA, y ahora es una
+  > decisión escrita y no una omisión.** Se planteó añadir un noveno contador
+  > —«esta ficha tiene un recién nacido colgando»— porque quien fusionaba no
+  > recibía ningún aviso. Se descartó por dos razones:
+  >
+  > - **Ya no hay nada de lo que avisar.** El aviso habría hecho falta cuando el
+  >   neonato se volvía inalcanzable; con el alcance de PA-009 preguntar por la
+  >   ficha superviviente lo encuentra, así que el contador avisaría de algo que
+  >   ya no ocurre. Arreglar la lectura es mejor que documentar la avería.
+  > - **Los otros ocho significan otra cosa.** `linkedRecords` responde
+  >   _«cuántas filas de la absorbida **se quedaron donde estaban**»_, que es lo
+  >   que hace comprobable el `policy: "READ_THROUGH_LINK"` de D-031. Un hijo no
+  >   es una fila de esta ficha: es **otra ficha** que la nombra. Meterlo en el
+  >   mismo objeto haría que un solo campo contestara dos preguntas distintas, y
+  >   la primera dejaría de poder leerse como una afirmación sobre la fusión.
+  >
+  > Si algún día hace falta llegar a los hijos desde la fusión, el camino es
+  > `GET /patients?motherId=<superviviente>`, que ya existe, ya está autorizado
+  > y ya resuelve el alcance.
+  >
+  > La prueba comprueba **las dos mitades**, y la segunda es la que importa: lo
+  > que contesta, y que las filas sigan teniendo el `patient_id` de la absorbida.
+  > Con sólo los contadores, repuntar las filas «para unificar la historia»
+  > seguiría cuadrando.
+- **PA-054** — MIENTRAS una ficha haya absorbido a otras, la **ficha** DEBERÁ
+  decir cuántas absorbió y el **número de historia** de ellas. El listado NO
+  DEBERÁ llevarlo, y el campo NO DEBERÁ contener ningún otro dato de la
+  absorbida.
+
+  > **ES LA MITAD QUE LE FALTABA A PA-043, Y HASTA HOY NO EXISTÍA.**
+  >
+  > PA-043 conserva la absorbida «apuntándola a la superviviente», y PA-045
+  > hace que abrirla lleve a la vigente. Las dos recorren el enlace en el mismo
+  > sentido: **de la absorbida hacia la superviviente**. Desde la superviviente
+  > no había nada. Ni `PatientDetailDto`, ni la fila del listado, ni ninguna
+  > consulta decían que esta ficha hubiera absorbido a otra, y
+  > `GET /patients` no filtra por ficha destino. Un enlace que sólo se puede
+  > recorrer en un sentido no permite **saber** que hay algo al otro lado, y
+  > saberlo es la condición de que alguien lo siga.
+  >
+  > **Por qué existe, con el caso delante (D-038, REQ-008):**
+  >
+  > > Admisión fusiona correctamente las dos fichas de una paciente. En la
+  > > absorbida estaba registrada su **alergia a la penicilina**. El médico abre
+  > > la ficha vigente, no ve ninguna alergia, y prescribe.
+  >
+  > La fusión fue correcta, el rastro es impecable y el dato existe en la base:
+  > lo que falta es que alguien lo lea. REQ-008 exige que las alergias sean
+  > visibles de forma permanente durante la consulta, y una ficha fusionada las
+  > esconde. Lo que P4 ya hacía —`linkedRecords` de PA-049— sólo lo ve **quien
+  > fusiona, en el acto**; quien abre la ficha una semana después no fusionó
+  > nada y no tiene esa respuesta en ninguna parte.
+  >
+  > **QUÉ NO ES: NO SUSTITUYE A D-038 NI A NINGUNA DE SUS TRES OPCIONES.**
+  > D-031 decidió que la historia **no se repunta** y que la superviviente la
+  > lee **siguiendo el enlace**; eso no se toca. D-038 decide **quién** la lee
+  > por el enlace —(A) cada módulo clínico, (B) repuntar sólo las alergias, (C)
+  > una consulta compartida «la ficha y sus absorbidas»—, y las **tres**
+  > necesitan que la superviviente sepa que tiene absorbidas. Esto hace el
+  > problema **visible**; no lo resuelve, y el propio D-038 lo declara como la
+  > mitigación mientras la decisión llega. Cuando D-038 se conteste, lo hecho
+  > es esto y lo que falte es la lectura.
+  >
+  > **La forma: los NÚMEROS DE HISTORIA, acotados, con el total al lado.** Un
+  > contador a secas —«absorbió 2»— no deja llegar a ninguna parte: nombra un
+  > problema y no da con qué ir a mirarlo. El MRN es lo que una persona cita y
+  > lo que se teclea en la búsqueda del registro, así que es lo que permite
+  > **llegar** a la otra ficha. Y la lista entera tampoco sirve: una ficha con
+  > veinte absorbidas convierte el aviso en un muro, y a partir de unas pocas lo
+  > que hace falta no es la lista sino la lectura unificada que decide D-038.
+  > Así que viajan **como mucho cinco** MRN, de la fusión más antigua a la más
+  > reciente, y el **total** al lado para que el recorte se vea en vez de
+  > mentir por omisión.
+  >
+  > **Y nada más que el número.** Ni nombre, ni documento, ni fecha de
+  > nacimiento de la absorbida: PA-025 lo prohíbe y el MRN es justamente lo
+  > único que este módulo ya publica de una ficha ajena —es lo que
+  > `PATIENT_MERGED` nombra (PA-045)—.
+  >
+  > **El listado NO lo lleva, y es PA-021.** La búsqueda se dispara con cada
+  > letra tecleada, y una subconsulta por fila para contestar algo que ninguna
+  > fila de resultados necesita es latencia en el camino más caliente del
+  > módulo. Va donde ya se paga por resolver la ficha entera.
+  >
+  > **No cuesta una consulta aparte.** Viaja en el mismo `findById` que ya une
+  > los conceptos de catálogo, y el enlace hacia atrás ya tiene índice:
+  > `patient_absorbed_charts` —parcial, `WHERE merged_into_id IS NOT NULL`—,
+  > creado en la migración de P4 (`20260817204801_patient_merge_events`)
+  > precisamente «para recorrer el enlace hacia atrás». **No hace falta
+  > esquema nuevo.**
+  >
+  > **Vacío, nunca ausente ni `null`.** Una ficha que no absorbió a nadie
+  > responde `total: 0` y la lista vacía. Que la interfaz tenga que distinguir
+  > tres estados —ausente, `null` y vacío— donde el dominio tiene dos es cómo
+  > nacen los errores de pantalla.
+  >
+  > **Una ficha absorbida nunca tiene absorbidas**, y no es casualidad: PA-046
+  > prohíbe la cadena en los dos sentidos, así que el campo vale para una sola
+  > lectura y no obliga a nadie a recorrer nada.
+
+- **PA-055** — MIENTRAS una ficha haya absorbido a otras, toda lectura de la
+  **historia** del paciente DEBERÁ comprender también la de las fichas
+  absorbidas, y la **prioridad calculada** DEBERÁ tenerla en cuenta. CUANDO se
+  deshaga la fusión, esa historia NO DEBERÁ seguir viéndose desde la ficha que
+  fue superviviente. El sistema DEBERÁ resolver «la ficha y sus absorbidas» en
+  **un solo sitio compartido** y NO DEBERÁ admitir una lectura de historia que
+  no pase por él.
+  > **D-038, opción C (18-08-2026). ES LA MITAD QUE PA-054 DEJÓ SIN HACER.**
+  >
+  > **El escenario, que es por qué esto es P0 clínico y no una comodidad
+  > (REQ-008):**
+  >
+  > > Admisión fusiona correctamente las dos fichas de una paciente. En la
+  > > absorbida estaba registrada su **alergia a la penicilina**. El médico abre
+  > > la ficha vigente, no ve ninguna alergia, y prescribe.
+  >
+  > La fusión fue correcta, el rastro es impecable y el dato existe en la base.
+  > Lo que faltaba es que alguien lo **lea**. REQ-008 exige que las alergias
+  > sean visibles de forma permanente durante la consulta, y una ficha fusionada
+  > las escondía.
+  >
+  > **COMPLETA A D-031, NO LA CONTRADICE, y hay que decirlo entero.** D-031
+  > decidió que la fusión **no repunta nada**: citas, atenciones, documentos
+  > clínicos, alergias, contactos y grupos prioritarios conservan su
+  > `patient_id` en la absorbida y la superviviente los lee **siguiendo el
+  > enlace**. Eso no se toca: aquí no se emite un solo `UPDATE`, y deshacer
+  > sigue siendo trivial precisamente porque nada se movió. **El enlace siempre
+  > fue el mecanismo; lo que nunca existió es quien lo recorre.** Esto es quien
+  > lo recorre.
+  >
+  > **QUÉ ES «LA HISTORIA» Y QUÉ NO**, porque no todo lo que cuelga de una ficha
+  > se lee así, y confundirlo produce las dos averías opuestas —esconder un dato
+  > clínico, o devolver dos veces el mismo documento—:
+  >
+  > | Tabla                             | Se lee por el enlace                                                         | Por qué                                                                                                                                                                                                                                                                                           |
+  > | --------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  > | `patient_priority_group`          | **Sí**                                                                       | Le pasó a la persona, y ordena la sala                                                                                                                                                                                                                                                            |
+  > | `patient_allergy`                 | **Sí**                                                                       | Es el escenario de arriba (REQ-008)                                                                                                                                                                                                                                                               |
+  > | `patient_contact`                 | **Sí**                                                                       | A quién avisar es de la persona, no de la ficha                                                                                                                                                                                                                                                   |
+  > | `agenda_entry`                    | **Sí**                                                                       | Las citas que pidió                                                                                                                                                                                                                                                                               |
+  > | `waitlist_entry`                  | **Sí**                                                                       | Lo que está esperando                                                                                                                                                                                                                                                                             |
+  > | `encounter`                       | **Sí**                                                                       | La atención recibida                                                                                                                                                                                                                                                                              |
+  > | `medical_certificate`, `referral` | **Sí**                                                                       | Lo que se le emitió                                                                                                                                                                                                                                                                               |
+  > | `patient_identifier`              | **No**                                                                       | **Ya se consolida** en la superviviente dentro de la transacción de la fusión (PA-043). Un documento no es algo que le ocurrió a la persona: es **cómo se la encuentra**. Es la única tabla hija cuyo `patient_id` cambia, y volver a resolverla por el enlace devolvería la misma fila dos veces |
+  > | `patient_change_history`          | **No**                                                                       | Rastro **sobre** la ficha, no atención recibida (D-032)                                                                                                                                                                                                                                           |
+  > | `patient_merge`, `access_audit`   | **No**                                                                       | Rastros sobre la ficha por lo mismo, y ninguna de las dos tiene siquiera columna `patient_id`                                                                                                                                                                                                     |
+  > | `patient.mother_patient_id`       | **No** (no es historia) — pero **preguntar por ella SÍ resuelve el alcance** | Es una columna de **otra** ficha apuntando a ésta, así que no se lee como historia de ésta. Pero `?motherId=` pregunta por la madre **como persona**, y ahí sí: ver PA-009                                                                                                                        |
+  >
+  > **UN SOLO NIVEL, NUNCA UN ÁRBOL.** `trg_patient_merge_not_chained` prohíbe
+  > A→B→C en los dos sentidos (PA-046), así que una ficha absorbida no puede
+  > tener absorbidas. La resolución es un `OR` plano y no un CTE recursivo:
+  > recorrer un árbol que la base impide sería pagarlo en cada lectura por una
+  > forma que no puede existir.
+  >
+  > **DESHACER FUNCIONA SIN QUE NADIE SE ACUERDE DE NADA.** El alcance se deriva
+  > de `merged_into_id` en el momento de leer y no se guarda en ninguna parte.
+  > Deshacer sólo limpia el enlace, y en ese mismo instante la historia deja de
+  > verse desde la que era superviviente.
+  >
+  > **POR QUÉ COMPARTIDA Y NO «QUE CADA MÓDULO SE ACUERDE» (la opción A).** La
+  > opción A ya estaba tomada y es la que falló, no por mal criterio sino porque
+  > _«acuérdate siempre» no es una garantía_: este proyecto ya decidió lo mismo
+  > sobre las cédulas, los husos y los permisos. Se descartó la opción B
+  > —repuntar sólo las alergias— porque mezcla dos regímenes y hace que
+  > «reversible» dependa de qué tabla se mire.
+  >
+  > **Y LA GARANTÍA ES LA MITAD QUE IMPORTA.** Una resolución compartida que un
+  > módulo nuevo puede ignorar es la opción A con más pasos, así que el
+  > `NO DEBERÁ admitir` de arriba es una prueba y no una convención:
+  > `patient-chart-scope.spec.ts` recorre el **código real** —el mismo
+  > procedimiento de `route-authorisation.spec.ts` con las rutas que NestJS
+  > registró— y falla en **cuatro** formas: cuando una tabla de historia se lee
+  > por un `patient_id` desnudo, cuando un `select` anidado trae una relación de
+  > historia sin las absorbidas, cuando un SQL crudo la nombra sin el fragmento
+  > compartido, y cuando **una columna que apunta a una ficha con otro nombre**
+  > se compara con un id desnudo. Las tablas **y las columnas** salen de
+  > `schema.prisma`, así que **una tabla nueva con `patient_id`, o una columna
+  > nueva que apunte a `patient`, rompe el build hasta que alguien la
+  > clasifique**. Las excepciones se razonan donde se declaran.
+  >
+  > **LAS TRES GRIETAS QUE TENÍA LA PROPIA GARANTÍA, cerradas el 18-08-2026.**
+  > Se encontraron revisando el módulo entero y no un diff, que es donde
+  > aparecen los defectos de composición:
+  >
+  > 1. **La cuarta forma no existía**, y es la que dejó pasar el defecto de
+  >    PA-009: las tres reglas buscaban el literal `patient_id`, y
+  >    `mother_patient_id` no se llama así. Ahora cada columna que apunta a
+  >    `patient` se clasifica como `scope` —nombra a una ficha **como
+  >    persona**— o `exact` —la nombra **como fila**: el propio
+  >    `merged_into_id`, que _es_ el alcance, y la pareja de `patient_merge`,
+  >    donde resolver un alcance sería el defecto—.
+  > 2. **La regla 2 no comprobaba lo que decía comprobar.** Exigía que existiera
+  >    una hermana llamada `mergedFrom` y nunca que ese `mergedFrom` **trajera
+  >    la misma relación**, así que
+  >    `{ allergies: …, mergedFrom: { select: { mrn: true } } }` pasaba limpio
+  >    con la alergia escondida — la forma exacta que `findById` teme en voz
+  >    alta («EL `select` SE EXTIENDE, NO SE SUSTITUYE»), y del tamaño exacto
+  >    del defecto que motivó este requisito.
+  > 3. **Una exención caducada no fallaba.** Se comprobaba la obsolescencia de
+  >    las tablas y no la de las excepciones, así que renombrar el método exento
+  >    dejaba la exención viva cubriendo en silencio a lo que cayera con ese
+  >    nombre. Ahora se comprueba **apagándolas**: una exención sin hallazgo
+  >    detrás rompe el build.
+  >
+  > **CONSECUENCIA VISIBLE, Y ES LA CORRECTA: LA PRIORIDAD CALCULADA CAMBIA.**
+  > Si la absorbida tenía un embarazo vigente, la superviviente pasa a ser
+  > prioritaria (PA-041) y la agenda la ordena antes (AG-062). Es la misma
+  > persona: esconderlo era el defecto. Se prueba, no se supone.
+  >
+  > **QUÉ NO CAMBIA.** Ninguna ruta nueva, ningún campo nuevo en ninguna
+  > respuesta y ningún permiso nuevo: el motivo de la prioridad sigue detrás de
+  > `patient:priority` (PA-040) y el nivel sigue saliendo con `patient:read`
+  > (PA-041). Lo único que cambia es **de qué filas** se calculan los dos.
 
 ## 8. Autorización y trazabilidad (REQ-118)
 
@@ -670,13 +1304,18 @@ Ningún requisito de esta sección lo altera._
   > atenciones y facturas.
 - **PA-052** — Fusionar y deshacer una fusión DEBERÁN exigir permiso propio, y
   el sistema NO DEBERÁ admitirlas con el permiso de registro corriente.
-  > **[NECESITA ACLARACIÓN]** ¿Cuál, y quién lo lleva? Una fusión mal hecha une
-  > los expedientes de dos personas distintas, que es el peor incidente posible
-  > de este módulo, y deshacerla puede ser imposible (PA-047). Recomendación: un
-  > `patient:merge` que **no traiga ningún rol por defecto** —como
+  > **Resuelto por D-030 el 16-08-2026: `patient:merge`, sin ningún rol de
+  > fábrica.** Una fusión mal hecha une los expedientes de dos personas
+  > distintas, que es el peor incidente posible de este módulo, y deshacerla
+  > puede ser imposible (PA-047). El permiso **no lo trae ningún rol** —como
   > `agenda:overbook:self`— para que la instalación se lo conceda a alguien a
   > propósito. Que un permiso exista y nadie lo tenga es preferible a que lo
   > tenga quien registra pacientes en el mostrador.
+  >
+  > **En el catálogo desde el 17-08-2026**, marcado `explicitGrantOnly`, que es
+  > lo que lo hace cierto en código y no una convención: las semillas construyen
+  > sus roles desde `SEEDABLE_PERMISSIONS` y no desde el catálogo entero, así
+  > que ninguna puede repartirlo ni por descuido ni en un entorno de pruebas.
 
 ---
 
@@ -684,35 +1323,80 @@ Ningún requisito de esta sección lo altera._
 
 Ya existen en `shared/domain/errors/error-catalogue.ts` y los emite este módulo:
 
-| Código                     | HTTP | Cuándo                                                     |
-| -------------------------- | ---- | ---------------------------------------------------------- |
-| `PATIENT_NOT_FOUND`        | 404  | La ficha no existe o no es visible; **el mismo** para ambos (PA-024) |
-| `PATIENT_IDENTIFIER_TAKEN` | 409  | Otra ficha activa ya tiene ese documento (PA-013)          |
-| `PATIENT_MERGED`           | 409  | La ficha se fusionó; nombra el MRN superviviente (PA-045)  |
+| Código                                      | HTTP | Cuándo                                                                                                                                                                     |
+| ------------------------------------------- | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PATIENT_NOT_FOUND`                         | 404  | La ficha no existe o no es visible; **el mismo** para ambos (PA-024)                                                                                                       |
+| `PATIENT_IDENTIFIER_TAKEN`                  | 409  | Otra ficha activa ya tiene ese documento (PA-013)                                                                                                                          |
+| `PATIENT_MERGED`                            | 409  | La ficha se fusionó; nombra el MRN superviviente (PA-045)                                                                                                                  |
+| `NATIONALITY_REQUIRES_INDIGENOUS_ETHNICITY` | 422  | La ficha resultante declara nacionalidad o pueblo indígena y su autoidentificación étnica no es «Indígena» (PA-027). Viaja **por campo**, señalando `nationalityConceptId` |
 
 Nacen del mapeo de constraints de PostgreSQL en `patients.constraints.ts` y por
 eso **no** entran en el catálogo congelado, igual que `PRACTITIONER_SLOT_TAKEN`:
 
-| Código                 | HTTP | Constraint                          | Requisito |
-| ---------------------- | ---- | ----------------------------------- | --------- |
-| `INVALID_CEDULA`       | 422  | `patient_identifier_cedula_valid`   | PA-011    |
-| `DUPLICATE_IDENTIFIER` | 409  | `patient_identifier_active_unique`  | PA-013    |
+| Código                  | HTTP | Constraint                         | Requisito |
+| ----------------------- | ---- | ---------------------------------- | --------- |
+| `INVALID_CEDULA`        | 422  | `patient_identifier_cedula_valid`  | PA-011    |
+| `DUPLICATE_IDENTIFIER`  | 409  | `patient_identifier_active_unique` | PA-013    |
+| `INVALID_DECEASED_DATE` | 422  | `patient_deceased_after_birth`     | PA-008    |
+| `INVALID_MOTHER_LINK`   | 422  | `patient_mother_not_self`          | PA-009    |
 
-Los que hacen falta y **no existen todavía**. Entran en el catálogo congelado
-cuando se implemente su entrega, no antes:
+Los dos últimos nacen con P2 y son `CHECK` y no validación de servicio por lo
+mismo que el dígito verificador de la cédula: una importación o un `INSERT` por
+`psql` no pasan por el DTO. Un fallecimiento anterior al nacimiento y una ficha
+que es su propia madre son datos que no deben poder existir, no datos que haya
+que recordar comprobar.
 
-| Código                             | HTTP | Requisito |
-| ---------------------------------- | ---- | --------- |
-| `MERGE_REASON_REQUIRED`            | 422  | PA-044    |
-| `MERGE_INTO_SELF`                  | 422  | PA-046    |
-| `PATIENT_ALREADY_MERGED`           | 409  | PA-046    |
-| `MERGE_UNDO_CONFLICT`              | 409  | PA-048    |
+Los de la fusión **ya existen** desde el 17-08-2026, y son **cinco y no cuatro**:
+
+| Código                   | HTTP | Cuándo                                                                                                                                        | Requisito      |
+| ------------------------ | ---- | --------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| `MERGE_REASON_REQUIRED`  | 422  | Falta el motivo, al fusionar o al deshacer. Por campo                                                                                         | PA-044, PA-047 |
+| `MERGE_INTO_SELF`        | 422  | Origen y destino son la misma ficha                                                                                                           | PA-046         |
+| `PATIENT_ALREADY_MERGED` | 409  | La fusión encadenaría: el **destino** ya está fusionado, o el **origen** ya absorbió otras fichas                                             | PA-046         |
+| `MERGE_UNDO_CONFLICT`    | 409  | Al deshacer, otra ficha activa reclamó el documento. Nombra la **clase** de documento y el MRN que lo tiene                                   | PA-048         |
+| `MERGE_NOT_FOUND`        | 404  | Se pidió deshacer sobre una ficha que no está fusionada, o cuya fusión ya se deshizo — **incluido el perdedor de dos deshaceres simultáneos** | PA-047         |
+
+**El quinto lo descubrió implementarlo, y no es simetría.** PA-047 exige poder
+deshacer; no dice qué se responde cuando no hay nada que deshacer, y las dos
+respuestas que había eran peores: `PATIENT_NOT_FOUND` manda a admisión a buscar
+una ficha que tiene delante, y un 409 diría que el estado impide algo que en
+realidad ya está como se pide. Es el hermano de `AGENDA_ENTRY_NOT_FOUND`: lo que
+no existe es el **suceso**, no la persona.
+
+**`PATIENT_ALREADY_MERGED` es del destino, y del origen sólo cuando ya absorbió
+a otras.** Si la ficha **origen** está fusionada, la respuesta es
+`PATIENT_MERGED` con el MRN de su superviviente (PA-045), que es la misma que da
+cualquier otra ruta del módulo y la que dice a dónde ir. Dos códigos porque lo
+que hay que hacer es distinto: allí se abre la ficha vigente, aquí se deshace la
+otra fusión primero.
+
+**También en la carrera** (17-08-2026). El disparador de cadenas tiene **tres**
+frases y no dos, y la tercera —«re-apuntar una ficha ya fusionada a otro
+destino»— se traducía como si fuera una cadena. Es del **origen fusionado**, así
+que le toca `PATIENT_MERGED`. La segunda petición de un doble clic sale ahora
+por ahí, arbitrada por el `FOR UPDATE` de PA-044 y no por el disparador.
+
+**El perdedor de dos deshaceres simultáneos recibe `MERGE_NOT_FOUND`**
+(17-08-2026). Los dos leen la ficha como fusionada y los dos encuentran la
+**misma** fila de fusión abierta; quien arbitra es
+`patient_merge_undone_once`. El perdedor salía por el mapa genérico de
+violaciones únicas como `DUPLICATE_VALUE` 409 —un código que no está en esta
+tabla y que en el mostrador no dice nada—. Recibe lo mismo que quien deshace dos
+veces seguidas, porque es lo mismo que le pasó: la fusión que pedía deshacer ya
+no está abierta.
+
+**`MERGE_UNDO_CONFLICT` no puede salir del mapa de constraints**, y ésa es la
+mitad del defecto del 6-08-2026 que sí era un defecto. PostgreSQL rechaza por
+`patient_identifier_active_unique`, el **mismo** índice que un alta duplicada, y
+el mapa no puede distinguir las dos operaciones: sólo quien pidió el deshacer
+sabe que lo era. Así que lo traduce `PatientMergeService`, y el adaptador se
+limita a decir **qué** documento y **qué** ficha lo tiene ahora.
 
 Los de los grupos prioritarios **ya existen** desde el 16-08-2026, y son cinco y
 no dos porque lo que hay que hacer es distinto en cada caso:
 
-| Código                             | HTTP | Cuándo                                                                 | Requisito |
-| ---------------------------------- | ---- | ---------------------------------------------------------------------- | --------- |
+| Código                             | HTTP | Cuándo                                                                  | Requisito |
+| ---------------------------------- | ---- | ----------------------------------------------------------------------- | --------- |
 | `PRIORITY_GROUP_NOT_RECORDABLE`    | 422  | Se intentó guardar un grupo que se deduce de la edad                    | PA-035    |
 | `PRIORITY_GROUP_PERIOD_INVALID`    | 422  | El periodo termina antes de empezar, o el embarazo no tiene fin         | PA-036    |
 | `PRIORITY_GROUP_EVIDENCE_REQUIRED` | 422  | Se marcó «acreditado» sin decir con qué documento                       | PA-038    |
@@ -745,26 +1429,71 @@ Lo que ya existe y conviene no volver a descubrir:
   use índice: un B-tree únicamente sirve a un orden con **su misma** colación, y
   el que crea Prisma usa la de la base. Sin él, cada búsqueda ordena la tabla
   entera.
-- **No hay `CHECK` que impida `merged_into_id = id`.** PA-046 lo prohíbe y hoy
-  nada lo garantiza en la base; la garantía debería vivir ahí, no sólo en el
-  servicio.
+- **PA-046 lo garantiza la base desde el 17-08-2026.**
+  `patient_merged_into_not_self` impide `merged_into_id = id`, y
+  `patient_merge_not_self` lo mismo en el rastro.
+  `patient_merged_at_matches_link` obliga a que el enlace y el instante vayan
+  juntos, de modo que deshacer está completo o no ocurre. **La cadena A→B→C no
+  es un `CHECK` y no puede serlo**: depende de otra fila de `patient`, así que
+  la impide `trg_patient_merge_not_chained`, que además bloquea la ficha
+  destino (`FOR UPDATE`) para que dos fusiones simultáneas no construyan entre
+  las dos una cadena que ningún constraint llegaría a ver.
+- **`patient_merge` es append-only de verdad desde el 17-08-2026.** Lo que el
+  documento afirmaba lo sostenía sólo el hecho de que ninguna ruta escribía en
+  la tabla. Ahora hay disparador contra `UPDATE`, `DELETE` y `TRUNCATE`, mismo
+  patrón que `access_audit`; `performed_by` es `NOT NULL` con clave foránea a
+  la cuenta; el motivo no puede quedar en blanco; y la instantánea está atada
+  al tipo de suceso —obligatoria en la fusión, prohibida en el deshacer, donde
+  sería inventada—.
+- **`patient_identifier.patient_merged` la mantienen DOS disparadores, en TRES
+  momentos.** `trg_patient_sync_merged` cuando cambia la ficha —al fusionar y al
+  deshacer—, y `trg_patient_identifier_set_merged` cuando cambia la fila: al
+  **insertarla** y al **moverla de ficha**.
+  - Sin la parte del `INSERT`, un documento añadido a una ficha ya fusionada
+    tomaba el `DEFAULT false` y entraba en el índice único como si la ficha
+    estuviera activa, bloqueando un documento que debía estar libre.
+  - Sin la parte del `UPDATE OF patient_id` —añadida el 17-08-2026 con
+    `20260817222356_patient_identifier_follows_merge`—, el documento que la
+    fusión consolida en la superviviente llegaba con la bandera en `true`,
+    se quedaba **fuera** del índice, y una tercera ficha con esa misma cédula
+    seguía siendo aceptada. Es decir: el arreglo de PA-043 sin este disparador
+    no arreglaba nada, y SC-008 dejaba de ser cierto.
+
+  La columna **no se escribe a mano** desde ninguna capa de la aplicación:
+  escribirla es cómo se desincroniza del índice, y el índice es SC-008.
+
 - **El MRN lo formatea el dominio y lo numera la base.** `formatMrn` aplica
   `HC` + 10 dígitos; la secuencia sólo garantiza que nadie reciba el mismo
   número dos veces, que es lo que el código no puede garantizar.
+- **`patient_change_history` es la única tabla de rastro de este sistema que NO
+  es append-only, y lo es a propósito** (D-032, PA-031). No lleva los
+  disparadores de inmutabilidad que sí llevan `access_audit`, `patient_merge` y
+  el historial de estados de la agenda, porque guarda contenido de la ficha y
+  REQ-113 obliga a poder rectificarlo y eliminarlo. Quien la copie como plantilla
+  para un rastro de otra cosa se estará llevando justo lo contrario de lo que
+  necesita.
+- **La provincia y el cantón no existen como columna y no deben crearse.** Son
+  `left(code,2)` y `left(code,4)` del código de parroquia. Dos filas del archivo
+  del INEC declaran un cantón que su propio código desmiente (PA-028): con
+  columnas, esos pacientes se reportarían al ministerio en el cantón equivocado
+  sin que nada fallara.
 
 ## Rutas
 
-Todas bajo `/api/v1/patients`, alcance `global` (PA-051). Lo que **existe hoy**
-es únicamente esto:
+Todas bajo `/api/v1/patients`, alcance `global` (PA-051):
 
-| Método  | Ruta                                        | Permiso            | Requisitos              |
-| ------- | ------------------------------------------- | ------------------ | ----------------------- |
-| `GET`   | `/patients`                                 | `patient:read`     | PA-016 a PA-021, PA-023 |
-| `GET`   | `/patients/:id`                             | `patient:read`     | PA-022, PA-024          |
-| `POST`  | `/patients`                                 | `patient:write`    | PA-001 a PA-014         |
-| `GET`   | `/patients/:id/priority-groups`             | `patient:priority` | PA-033 a PA-040         |
-| `POST`  | `/patients/:id/priority-groups`             | `patient:priority` | PA-033 a PA-039         |
-| `PATCH` | `/patients/:id/priority-groups/:recordId`   | `patient:priority` | PA-037, PA-039          |
+| Método  | Ruta                                      | Permiso            | Requisitos                                      |
+| ------- | ----------------------------------------- | ------------------ | ----------------------------------------------- |
+| `GET`   | `/patients`                               | `patient:read`     | PA-016 a PA-021, PA-023                         |
+| `GET`   | `/patients/:id`                           | `patient:read`     | PA-022, PA-024, PA-054                          |
+| `POST`  | `/patients`                               | `patient:write`    | PA-001 a PA-014, PA-026 a PA-029, PA-053        |
+| `PATCH` | `/patients/:id`                           | `patient:write`    | PA-008, PA-009, PA-026 a PA-029, PA-031, PA-053 |
+| `POST`  | `/patients/:id/identifiers`               | `patient:write`    | PA-015                                          |
+| `GET`   | `/patients/:id/priority-groups`           | `patient:priority` | PA-033 a PA-040                                 |
+| `POST`  | `/patients/:id/priority-groups`           | `patient:priority` | PA-033 a PA-039                                 |
+| `PATCH` | `/patients/:id/priority-groups/:recordId` | `patient:priority` | PA-037, PA-039                                  |
+| `POST`  | `/patients/:id/merge`                     | `patient:merge`    | PA-043 a PA-046, PA-049, PA-052                 |
+| `POST`  | `/patients/:id/merge/undo`                | `patient:merge`    | PA-047, PA-048, PA-052                          |
 
 La **prioridad calculada** (PA-041) no tiene ruta propia: viaja como el campo
 `priority` de toda respuesta que ya lleva un paciente —el listado y la ficha—,
@@ -773,11 +1502,40 @@ sin ver el motivo, y no hay una segunda superficie que alguien pueda olvidar de
 proteger. **No hay ruta que BORRE un registro de grupo**, y esa ausencia es
 PA-037 en la tabla de rutas: cerrar es fechar.
 
-**Tres rutas para todo un registro de personas, y ninguna de escritura salvo el
-alta.** No se puede corregir un apellido, ni añadir el documento que faltaba, ni
-registrar un fallecimiento, ni fusionar dos fichas. Esa ausencia es el núcleo de
-P2 y P4, y es también la razón de que REQ-113 —rectificación— no tenga hoy por
-dónde empezar.
+**La corrección es una sola ruta y no una por campo.** `PATCH` acepta el
+subconjunto de campos que se envíe y no toca los demás, porque en el mostrador
+se corrige lo que se acaba de ver mal —una letra de un apellido— y una ruta por
+campo multiplicaría por seis las superficies que hay que declarar, autorizar y
+auditar. **El MRN no está entre los campos corregibles** (PA-002): es el ancla
+de identidad y no un dato de la ficha. El sexo y la fecha de nacimiento sí lo
+están —un año mal tecleado es el error más caro del mostrador— y es el histórico
+de PA-031 el que hace que eso sea rectificar y no reescribir el pasado.
+
+**La fusión tiene sus dos rutas desde el 17-08-2026**, y con ellas REQ-010 deja
+de ser una promesa del documento. Tres decisiones que la spec no fijaba:
+
+- **La URL nombra la ficha ABSORBIDA**, y la superviviente viaja en el cuerpo
+  (`targetPatientId`). Es la absorbida la que cambia —recibe el enlace y el
+  instante— y la que sigue siendo direccionable después, porque no se borra
+  (PA-043).
+- **`POST …/merge/undo` y no `DELETE …/merge`**, por lo mismo que un grupo
+  prioritario se cierra con `PATCH` y no se borra: aquí no se borra nada.
+  Deshacer es una **fila nueva** en un registro append-only, con autor, instante
+  y motivo obligatorio propios (PA-047); un `DELETE` que además exigiera un
+  cuerpo para decir por qué describiría lo contrario de lo que ocurre.
+- **Las dos responden `200` y no `201`**: no se crea nada que el cliente pueda ir
+  a buscar a una URL propia. Lo que vuelve es el suceso —`mergeId`, los dos MRN,
+  el instante— y `linkedRecords` (PA-049). **No vuelve ni el motivo ni la
+  instantánea**: son contenido de ficha, y existen para la auditoría, no para la
+  pantalla.
+
+**Y una ruta que cambió de comportamiento con esta entrega:** `GET /patients/:id`
+sobre una ficha absorbida responde **409 `PATIENT_MERGED`** con el MRN de la
+superviviente, en vez de servir la ficha con `mergedIntoMrn` relleno. Es PA-045
+leído como está escrito —«toda operación que la nombre»— y es la operación que
+duele: el error existe para que en el mostrador se deje de abrir la ficha vieja.
+Las fusionadas se siguen **encontrando** con `includeMerged=true`; lo que cambia
+es que seguirlas lleva a la ficha vigente en vez de a un callejón.
 
 ## Trazabilidad
 
@@ -792,35 +1550,54 @@ it('PA-013 refuses a second chart for a cedula already registered', …)
 prueba cite un ID inexistente; el día que este `SPEC.md` pase a `vigente`,
 **cada `PA-###` necesita su prueba o el CI falla**.
 
-| Requisitos                        | Nivel de prueba obligatorio |
-| --------------------------------- | --------------------------- |
-| PA-001, PA-013, PA-014            | Integración contra PostgreSQL real: la secuencia con dos clientes a la vez y el índice único **parcial**. Un doble que devuelve lo que le pedimos no demuestra que el índice exista |
-| PA-011, PA-012                    | Unitario de dominio + integración: el `CHECK` de la base **y** el rechazo por campo del DTO son dos garantías distintas, y las dos se prueban. Toda cédula de prueba lleva dígito verificador calculado, nunca copiado de una persona real |
-| PA-002, PA-003, PA-015            | Integración: el MRN sobrevive a corregir el documento y a la fusión |
-| PA-016 a PA-021                   | Integración contra PostgreSQL real: sin tildes, colación española, prefijo de documento y MRN normalizado sólo existen dentro de la base |
-| PA-022, PA-023, PA-024, PA-025    | Seguridad dirigida: contar filas de bitácora, y afirmar que un 404 no escribe ninguna |
-| PA-005, PA-006, PA-007            | Unitario + contrato HTTP: la marca de estimada y la fecha como calendario se ven en la respuesta |
-| PA-026 a PA-029                   | Contrato HTTP + integración: el concepto elegido se guarda y vuelve; provincia y cantón se derivan del prefijo y no existen como columna |
-| PA-030                            | Unitario **con el huso alterado**, como `clinical-date-timezone.spec.ts`: la misma fecha de nacimiento bajo `Asia/Tokyo` da la misma edad |
-| PA-031                            | Integración: la fila de bitácora existe y respeta el `CHECK` de la lista blanca |
-| PA-033, PA-036, PA-037            | Unitario de dominio + integración: el embarazo caducado deja de contar **sin escritura alguna**, y cerrar un estado no borra la fila |
-| PA-034, PA-035, PA-038, PA-039    | Unitario de dominio: la enumeración, los umbrales de edad y el origen son decisiones puras |
-| PA-040, PA-041, PA-042            | Seguridad dirigida: una sesión real con `patient:read` y sin `patient:priority` obtiene el orden y no el motivo. Con sesión de verdad, no con un doble con los permisos puestos a mano — el defecto de AG-111 fue exactamente eso |
-| PA-043 a PA-048                   | Integración contra PostgreSQL real: la fusión libera el documento, deshacerla lo recupera, y el conflicto se rechaza **sin dejar nada a medias** |
-| PA-049, PA-050, PA-051, PA-052    | Contrato HTTP + prueba de rutas: `route-authorisation.spec.ts` recorre las rutas que NestJS registró de verdad |
+| Requisitos                     | Nivel de prueba obligatorio                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PA-001, PA-013, PA-014         | Integración contra PostgreSQL real: la secuencia con dos clientes a la vez y el índice único **parcial**. Un doble que devuelve lo que le pedimos no demuestra que el índice exista                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| PA-011, PA-012                 | Unitario de dominio + integración: el `CHECK` de la base **y** el rechazo por campo del DTO son dos garantías distintas, y las dos se prueban. Toda cédula de prueba lleva dígito verificador calculado, nunca copiado de una persona real                                                                                                                                                                                                                                                                                                                                                               |
+| PA-002, PA-003, PA-015         | Integración: el MRN sobrevive a corregir el documento y a la fusión                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| PA-016 a PA-021                | Integración contra PostgreSQL real: sin tildes, colación española, prefijo de documento y MRN normalizado sólo existen dentro de la base                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| PA-022, PA-023, PA-024, PA-025 | Seguridad dirigida: contar filas de bitácora, y afirmar que un 404 no escribe ninguna                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| PA-005, PA-006, PA-007         | Unitario + contrato HTTP: la marca de estimada y la fecha como calendario se ven en la respuesta                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| PA-026 a PA-029                | Contrato HTTP + integración: el concepto elegido se guarda y vuelve; provincia y cantón se derivan del prefijo y no existen como columna                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| PA-027 (la condición)          | Unitario de dominio con las **cuatro** combinaciones —etnia indígena con nacionalidad, etnia no indígena con nacionalidad, etnia ausente con nacionalidad, y nacionalidad ausente con cualquier etnia— + contrato HTTP del `code`, el 422 y el campo señalado + integración contra PostgreSQL real: **corregir sólo la etnia de una ficha que ya tenía nacionalidad** se rechaza y no deja ni fila de histórico ni fila de bitácora. Ese último caso no lo puede ver una unitaria: depende del estado almacenado, no del cuerpo                                                                          |
+| PA-030                         | Unitario **con el huso alterado**, como `clinical-date-timezone.spec.ts`: la misma fecha de nacimiento bajo `Asia/Tokyo` da la misma edad                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| PA-008, PA-009                 | Integración contra PostgreSQL real: los dos `CHECK` existen y rechazan la fila. Un servicio que compruebe lo mismo no demuestra que la base lo impida                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| PA-031                         | Integración: la corrección escribe **dos** filas —bitácora sin valores e histórico con el valor anterior— y la de bitácora respeta el `CHECK` de la lista blanca, que sigue sin incluir `'patient'`                                                                                                                                                                                                                                                                                                                                                                                                      |
+| PA-032                         | Contrato HTTP: la ficha sin etnia se crea igualmente y la respuesta NOMBRA el campo que falta + unitario de dominio con las **tres** ramas de D-037 —etnia indígena, etnia registrada y no indígena, y etnia ausente—, cada una con la nacionalidad puesta y sin poner + contrato HTTP: la ficha mestiza sin nacionalidad **no** la nombra entre lo que falta y la indígena **sí**, también en la fila del listado, que es donde el código de la etnia se resuelve por unión                                                                                                                             |
+| PA-053                         | Unitario + contrato HTTP **e** integración contra PostgreSQL real: el `CHECK` de formato rechaza `ec` y `ECUADOR` por SQL directo —el DTO no interviene en una importación—, corregir el país deja su fila en `patient_change_history` con el valor anterior, el nombre viaja resuelto en la ficha y **no** en el listado, y la ficha sin país no se declara incompleta                                                                                                                                                                                                                                  |
+| PA-033, PA-036, PA-037         | Unitario de dominio + integración: el embarazo caducado deja de contar **sin escritura alguna**, y cerrar un estado no borra la fila                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| PA-034, PA-035, PA-038, PA-039 | Unitario de dominio: la enumeración, los umbrales de edad y el origen son decisiones puras                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| PA-040, PA-041, PA-042         | Seguridad dirigida: una sesión real con `patient:read` y sin `patient:priority` obtiene el orden y no el motivo. Con sesión de verdad, no con un doble con los permisos puestos a mano — el defecto de AG-111 fue exactamente eso                                                                                                                                                                                                                                                                                                                                                                        |
+| PA-043 a PA-048                | Integración contra PostgreSQL real: la fusión libera el documento, deshacerla lo recupera, y el conflicto se rechaza **sin dejar nada a medias**                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| PA-049, PA-050, PA-051, PA-052 | Contrato HTTP + prueba de rutas: `route-authorisation.spec.ts` recorre las rutas que NestJS registró de verdad                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| PA-054                         | Contrato HTTP **e** integración contra PostgreSQL real: la ficha que absorbió a dos las **nombra** y la que no absorbió a nadie devuelve la lista **vacía** —ni el campo ausente ni `null`—; el listado **no** lo lleva, afirmado sobre la respuesta y no sobre el esquema; y tras fusionar A→B la ficha de B nombra a A, tras deshacer deja de nombrarla. La segunda mitad no la puede ver una prueba de contrato: depende de que el enlace se recorra hacia atrás en la base                                                                                                                           |
+| PA-055                         | Integración contra PostgreSQL real **y** prueba del mecanismo: fusionar A→B con un grupo prioritario vigente en A y comprobar que **desde B se ve** —y que la **prioridad calculada** de B pasa a prioritaria—, y que **al deshacer deja de verse** y vuelve a ser estándar. Un doble no puede demostrarlo: depende de que el enlace se recorra en la base. Y la garantía tiene su propia prueba —`patient-chart-scope.spec.ts` recorre el código real y falla ante una lectura ingenua—, comprobada **rompiéndola**: la lectura por `patient_id` desnudo se le da al analizador y se afirma que la caza |
 
 ## Preguntas abiertas
 
-Cuatro, todas **junto a su requisito** y no aquí: una pregunta separada del
-requisito que bloquea no bloquea nada. Esta tabla sólo las enumera para que se
-puedan llevar en bloque a `DECISIONES-PENDIENTES.md`.
+Queda **una**, y está **junto a su requisito** y no aquí: una pregunta separada
+del requisito que bloquea no bloquea nada. Esta tabla sólo la enumera para que
+se pueda llevar a `DECISIONES-PENDIENTES.md` con las demás.
 
-| Dónde  | Qué hay que decidir                                                               |
-| ------ | --------------------------------------------------------------------------------- |
-| PA-031 | Si `access_audit` acepta valor anterior para `'patient'`, o el histórico va aparte |
-| PA-032 | Si los campos del RDACAA se exigen al registrar o al cerrar la primera atención    |
-| PA-049 | Si la fusión repunta la historia de la ficha absorbida o se lee por el enlace      |
-| PA-052 | Qué permiso autoriza fusionar y deshacer                                           |
+> Este párrafo decía «cuatro» sobre una tabla de una sola fila (corregido el
+> 18-08-2026). Las otras tres se contestaron —D-032, D-028, D-031 y D-030, que
+> son las que enumera el párrafo de más abajo— y el encabezado se quedó con el
+> número viejo, que es el que alguien lee para decidir si esta entrega está
+> bloqueada.
+
+| Dónde                  | Qué hay que decidir                                                                                                                                                                                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| PA-026, PA-027, PA-029 | Contrastar las tres listas sembradas con el **instructivo de llenado del RDACAA 2.0** del MSP, que no se ha podido obtener de fuente oficial. Cada una es una `catalog_release` con checksum, así que sustituirla es cargar otra versión y no editar filas (D-036) |
+
+**Cuatro de las cinco que este documento planteó ya están contestadas**, y sus
+requisitos lo dicen en su propio recuadro: PA-031 por **D-032** (histórico
+propio, rectificable), PA-032 por **D-028** (opcionales al alta, obligatorias al
+cerrar la primera atención), PA-049 por **D-031** (se lee por el enlace) y
+PA-052 por **D-030** (`patient:merge`, sin rol de fábrica).
+
+Y la que abrió hacer cumplir PA-027, **D-037** (17-08-2026): la nacionalidad
+sólo se cuenta como dato que falta en la ficha «Indígena» y mientras la etnia
+esté sin registrar. Está en el recuadro de PA-032.
 
 **Los grupos prioritarios ya no están entre ellas.** D-026 fijó dónde viven y
 cómo se registran, D-027 que son los diez con lectura separada, y D-029 que

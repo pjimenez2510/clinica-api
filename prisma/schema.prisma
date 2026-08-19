@@ -110,6 +110,13 @@ model User {
   /// as much as the recording does.
   priorityGroupsRecorded PatientPriorityGroup[] @relation("PriorityGroupRecorder")
   priorityGroupsClosed   PatientPriorityGroup[] @relation("PriorityGroupCloser")
+  patientCorrections     PatientChangeHistory[] @relation("PatientChangeAuthor")
+
+  /// PA-044. Merges and undos this person performed. `performed_by` is NOT
+  /// NULL and carries a foreign key: merging joins two people's clinical
+  /// records, and a trail nobody answers for is not a weaker trail, it is a
+  /// useless one.
+  patientMerges PatientMerge[] @relation("PatientMergeAuthor")
 
   @@index([email])
   @@map("app_user")
@@ -1264,6 +1271,19 @@ model Patient {
   nationalityConceptId String?         @map("nationality_concept_id") @db.Uuid
   nationality          CatalogConcept? @relation("PatientNationality", fields: [nationalityConceptId], references: [id], onDelete: Restrict)
 
+  /// PA-053. Country of nationality, ISO 3166-1 alpha-3. NOT the column above:
+  /// `nationality_concept_id` is the RDACAA's nationality or indigenous people
+  /// (Kichwa, Shuar, Awa), a field the ministry's form only enables when the
+  /// ethnic self-identification is indigenous. This one says the person is
+  /// Venezuelan.
+  ///
+  /// A CODE AND NOT A FOREIGN KEY, exactly like `issuing_country` three tables
+  /// down: two representations of the same country in one database eventually
+  /// disagree. The `COUNTRY` catalogue is where the screen CHOOSES from and
+  /// where the NAME comes from; the code is what is stored. Its shape is held
+  /// by `patient_country_of_nationality_format` — an import never sees the DTO.
+  countryOfNationalityCode String? @map("country_of_nationality_code") @db.Char(3)
+
   /// INEC DPA parish (6 digits). Province and canton are prefixes of this code,
   /// so they are derived, never stored twice.
   residenceParishConceptId String?         @map("residence_parish_concept_id") @db.Uuid
@@ -1285,6 +1305,14 @@ model Patient {
 
   /// Duplicate resolution. The losing record is NEVER deleted: printed
   /// documents and external systems still quote its MRN.
+  ///
+  /// Three guarantees live in SQL and cannot be written here (PA-046):
+  /// `patient_merged_into_not_self`, `patient_merged_at_matches_link`, and
+  /// `trg_patient_merge_not_chained`, which refuses A→B→C in either direction
+  /// and locks the target row so two concurrent merges cannot build a chain
+  /// between them. Nor can the PARTIAL index `patient_absorbed_charts`
+  /// (`WHERE merged_into_id IS NOT NULL`), which is how the link is walked
+  /// backwards.
   mergedIntoId String?   @map("merged_into_id") @db.Uuid
   mergedInto   Patient?  @relation("PatientMerge", fields: [mergedIntoId], references: [id], onDelete: Restrict)
   mergedFrom   Patient[] @relation("PatientMerge")
@@ -1295,6 +1323,7 @@ model Patient {
 
   identifiers     PatientIdentifier[]
   priorityGroups  PatientPriorityGroup[]
+  changeHistory   PatientChangeHistory[]
   contacts        PatientContact[]
   allergies       PatientAllergy[]
   agendaEntries   AgendaEntry[]
@@ -1430,6 +1459,45 @@ model PatientPriorityGroup {
   @@map("patient_priority_group")
 }
 
+/// What was corrected on a chart, from which value, by whom and when
+/// (PA-031, D-032).
+///
+/// ⚠️ THE ONLY TRAIL IN THIS SYSTEM THAT IS DELIBERATELY NOT APPEND-ONLY.
+/// `access_audit`, `patient_merge` and the signed-note chain all carry
+/// immutability triggers; this one must not. It holds the chart's own
+/// contents, and REQ-113 obliges us to be able to correct and erase those.
+/// The access trail watches WHO LOOKED and is immutable for that reason —
+/// which is exactly why `access_audit_payload_only_for_declared_resources`
+/// refuses `'patient'` and why this table exists at all.
+///
+/// One row PER FIELD, not one per correction with a JSON payload: erasing one
+/// datum under REQ-113 then deletes a row instead of editing a document that
+/// also holds data which must be kept.
+model PatientChangeHistory {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  patientId String  @map("patient_id") @db.Uuid
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  /// The DOMAIN field name (`familyName`), not the column. Restricted by
+  /// `patient_change_history_field_known`, whose list is the one repeated in
+  /// `patient-corrections.ts`. `mrn` is absent on purpose: PA-002 says it
+  /// never changes.
+  field String @db.VarChar(64)
+
+  /// Both sides as text. NULL means "had no value" / "was cleared", which is a
+  /// real change. A CHECK refuses a row where both sides are the same.
+  valueBefore String? @map("value_before")
+  valueAfter  String? @map("value_after")
+
+  changedById String   @map("changed_by") @db.Uuid
+  changedBy   User     @relation("PatientChangeAuthor", fields: [changedById], references: [id], onDelete: Restrict)
+  changedAt   DateTime @default(now()) @map("changed_at") @db.Timestamptz(6)
+
+  @@index([patientId, changedAt(sort: Desc)])
+  @@map("patient_change_history")
+}
+
 /// Emergency contact or legal representative (minors, incapacitated adults).
 model PatientContact {
   id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
@@ -1482,10 +1550,30 @@ model PatientAllergy {
   @@map("patient_allergy")
 }
 
-/// Append-only record of a duplicate merge, with a snapshot of the losing
-/// record so the operation can be explained and undone.
+/// What a `patient_merge` row records: the merge, or undoing it.
+enum PatientMergeEvent {
+  MERGE
+  UNDO
+
+  @@map("patient_merge_event")
+}
+
+/// Append-only log of EVENTS in duplicate resolution: one row per merge and
+/// another per undo, pointing at the merge it undoes (PA-043 a PA-049).
+///
+/// UNDOING IS A NEW ROW, NEVER AN EDIT. The obvious alternative — `undone_at`
+/// and `undone_by` on the merge row — needs a hole in the immutability trigger
+/// to allow that one transition, and an append-only table "except for these
+/// two columns" is a convention somebody has to remember, not a guarantee.
+///
+/// The guarantees live in `20260817204801_patient_merge_events` and NOT in
+/// this file, which cannot describe them: the trigger that refuses UPDATE,
+/// DELETE and TRUNCATE, and the one that refuses an undo row naming a
+/// different pair of charts than the merge it claims to undo.
 model PatientMerge {
   id BigInt @id @default(autoincrement())
+
+  event PatientMergeEvent
 
   sourcePatientId String  @map("source_patient_id") @db.Uuid
   sourcePatient   Patient @relation("MergeSource", fields: [sourcePatientId], references: [id], onDelete: Restrict)
@@ -1493,14 +1581,34 @@ model PatientMerge {
   targetPatientId String  @map("target_patient_id") @db.Uuid
   targetPatient   Patient @relation("MergeTarget", fields: [targetPatientId], references: [id], onDelete: Restrict)
 
-  performedBy String?  @map("performed_by") @db.Uuid
-  performedAt DateTime @default(now()) @map("performed_at") @db.Timestamptz(6)
-  reason      String   @db.Text
+  /// PA-047. The merge this row undoes. UNIQUE, so a merge is undone exactly
+  /// once and «is this merge undone?» is a lookup instead of a guess from
+  /// dates — which stops being answerable the day the same pair is merged
+  /// again.
+  undoesMergeId BigInt?       @unique(map: "patient_merge_undone_once") @map("undoes_merge_id")
+  undoes        PatientMerge? @relation("MergeUndo", fields: [undoesMergeId], references: [id], onDelete: Restrict)
+  undoneBy      PatientMerge? @relation("MergeUndo")
 
-  /// Snapshot of the source row and its children at merge time.
-  sourceSnapshot Json @map("source_snapshot") @db.JsonB
+  /// PA-044. NOT NULL and with a foreign key: merging joins two people's
+  /// clinical records, and the question to answer twelve months later is who
+  /// did it.
+  performedBy String   @map("performed_by") @db.Uuid
+  performedByUser User @relation("PatientMergeAuthor", fields: [performedBy], references: [id], onDelete: Restrict)
+
+  performedAt DateTime @default(now()) @map("performed_at") @db.Timestamptz(6)
+
+  /// PA-044, PA-047. Mandatory on BOTH events, and a CHECK refuses it blank:
+  /// a mandatory reason is what tells this apart from a click.
+  reason String @db.Text
+
+  /// Snapshot of the source row and its children at merge time. Present on the
+  /// MERGE row and absent on the UNDO one, tied to `event` by a CHECK: there is
+  /// nothing to undo about an undo, and the chart cannot have changed while
+  /// merged (PA-045), so a snapshot there would be invented.
+  sourceSnapshot Json? @map("source_snapshot") @db.JsonB
 
   @@index([targetPatientId])
+  @@index([sourcePatientId])
   @@map("patient_merge")
 }
 

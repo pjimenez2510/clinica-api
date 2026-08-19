@@ -18,8 +18,32 @@ import { explicitFlag } from '../../../shared/http/query-flag';
  * y además obliga a decidir qué está expuesto: `CIE10` hoy, `CNMB` y `TARIFF`
  * cuando existan. Un `string` dejaría la puerta abierta a sondear qué otros
  * catálogos hay.
+ *
+ * LOS TRES ÚLTIMOS ENTRAN CON P2 DE `patients` (PA-026, PA-027, PA-029). El
+ * modelo `CatalogSystem` ya los nombraba y la ficha ya tenía sus columnas; lo
+ * que faltaba era esta lista, así que ni se podían sembrar ni leer y REQ-022
+ * figuraba cubierto e incumplido a la vez. Son catálogos PLANOS —no tienen
+ * capítulos ni grupos—, que es lo que obliga a que «seleccionable» dependa de
+ * si el sistema es jerárquico y no de la profundidad; ver
+ * `prisma-catalog.repository.ts`.
+ *
+ * `COUNTRY` ES EL PAÍS EMISOR DE UN DOCUMENTO, POR SU NOMBRE. La columna
+ * `patient_identifier.issuing_country` guarda `ISO 3166-1 alpha-3` y sigue
+ * guardándolo; lo que faltaba era de dónde saca la pantalla los 249 nombres,
+ * porque el formulario venía pidiendo «código de tres letras: ECU, COL, VEN» y
+ * en el mostrador nadie sabe el alpha-3 de un pasaporte. También PLANO: un país
+ * no cuelga de nada.
  */
-export const catalogSystemSchema = z.enum(['CIE10', 'CNMB', 'TARIFF', 'DPA']);
+export const catalogSystemSchema = z.enum([
+  'CIE10',
+  'CNMB',
+  'TARIFF',
+  'DPA',
+  'ETHNICITY',
+  'NATIONALITY',
+  'GENDER_IDENTITY',
+  'COUNTRY',
+]);
 
 /**
  * El catálogo pedido en la ruta, validado contra la lista cerrada.
@@ -70,9 +94,49 @@ export const searchCatalogSchema = z.object({
    * para la caja de diagnóstico de una consulta.
    */
   includeGroups: explicitFlag,
+  /**
+   * Buscar SÓLO dentro de una rama del árbol.
+   *
+   * «Busca SANTA en este cantón» en vez de «busca SANTA en las 1401 parroquias
+   * del país». Sin esto, acotar obliga al cliente a traerse el cantón entero y
+   * filtrar en memoria — que es exactamente el trabajo que esta ruta existe
+   * para no hacer en el navegador.
+   *
+   * Alcanza a TODA la descendencia y no sólo a los hijos: una parroquia es
+   * nieta de una provincia, así que acotar por provincia con hijos directos
+   * devolvería cantones y ninguna parroquia.
+   */
+  parentId: z.uuid().optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 export class SearchCatalogDto extends createZodDto(searchCatalogSchema) {}
+
+/**
+ * Recorrer el árbol por niveles: qué hay debajo de esto, y cuánto falta.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * POR QUÉ `pageSize` LLEGA A 500 CUANDO EL DE PACIENTES SE QUEDA EN 50
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Porque son listas de naturaleza distinta. El registro de pacientes crece sin
+ * final y por eso se le pone un tope bajo; un nivel de un catálogo es una lista
+ * CERRADA y corta, y el nodo más grande que existe de verdad son los 249 países
+ * —la lista entera, porque un catálogo plano no tiene más nivel que sus
+ * raíces— y las 65 parroquias del cantón Quito. Un tope de 50 obligaría a
+ * paginar un desplegable de países en cinco viajes, o peor: a que el cliente se
+ * quede con los cincuenta primeros sin darse cuenta.
+ *
+ * El valor por defecto sí es 100, y ése es el que protege del otro extremo: un
+ * catálogo plano de miles de conceptos —la CNMB de medicamentos lo será— no
+ * debe llegar entero por no haberlo pedido.
+ */
+export const browseCatalogSchema = z.object({
+  /** Vigencia, igual que en la búsqueda: una parroquia retirada no se ofrece. */
+  on: z.iso.date().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(500).default(100),
+});
+export class BrowseCatalogDto extends createZodDto(browseCatalogSchema) {}
 
 /**
  * La fecha con la que se resuelve UN código.
@@ -93,8 +157,25 @@ export const catalogConceptSchema = z.object({
   /** Con punto, como se lee y como se imprime: `J30.1`. */
   code: z.string(),
   display: z.string(),
-  /** Capítulo al que pertenece, para desambiguar dos textos parecidos. */
+  /**
+   * Capítulo al que pertenece, para desambiguar dos textos parecidos.
+   *
+   * EL CÓDIGO —`A00-B99`, `17`— que sigue viajando porque en la CIE-10 se
+   * maneja: quien diagnostica lo dicta y lo teclea.
+   */
   chapter: z.string().nullable(),
+  /**
+   * Cómo se llama ese capítulo: «Ciertas enfermedades infecciosas y
+   * parasitarias», «Pichincha».
+   *
+   * ADR-005 §5: un código que quien lo lee no puede interpretar no es
+   * información. `A00-B99` no desambigua nada, que es justo lo que el capítulo
+   * está aquí para hacer. No se esconde el código, se le pone el nombre al
+   * lado — y tiene que mandarlo el backend, porque la interfaz no puede
+   * resolverlo sola. `null` si el catálogo es plano o si no hay fila de
+   * capítulo que consultar.
+   */
+  chapterDisplay: z.string().nullable(),
   level: z.number().int().nonnegative(),
   /**
    * Si puede registrarse como diagnóstico. Un capítulo (`A00-B99`) no puede:
@@ -119,8 +200,25 @@ export class CatalogConceptDetailDto extends createZodDto(
   catalogConceptDetailSchema,
 ) {}
 
+/**
+ * Un nivel del árbol, con el total para poder pedir el resto.
+ *
+ * EL `total` ES LA MITAD QUE FALTABA. La búsqueda devuelve como mucho 50 filas
+ * y no dice cuántas hay: quien teclea «SANTA» sobre 1401 parroquias recibe un
+ * puñado y no sabe si la suya está entre las que no cupieron. Aquí el cliente
+ * sabe siempre si le falta algo y puede pedirlo.
+ */
+export const catalogPageSchema = z.object({
+  items: z.array(catalogConceptSchema).readonly(),
+  total: z.number().int().nonnegative(),
+  page: z.number().int().positive(),
+  pageSize: z.number().int().positive(),
+});
+export class CatalogPageDto extends createZodDto(catalogPageSchema) {}
+
 /** Response types inferred from the published schemas; see agenda.dto.ts. */
 export type CatalogSearchResponse = z.infer<typeof catalogSearchResultSchema>;
+export type CatalogPageResponse = z.infer<typeof catalogPageSchema>;
 export type CatalogConceptDetailResponse = z.infer<
   typeof catalogConceptDetailSchema
 >;

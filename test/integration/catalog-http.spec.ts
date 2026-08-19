@@ -7,6 +7,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
+import { seedRdacaa } from '../../prisma/seed-rdacaa.mts';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
@@ -36,6 +37,7 @@ interface ConceptoCuerpo {
   code: string;
   display: string;
   chapter: string | null;
+  chapterDisplay: string | null;
   level: number;
   selectable: boolean;
 }
@@ -144,6 +146,18 @@ describe('catálogos por HTTP', () => {
         attributes: { level: 3, chapter: 'J00-J99' },
       },
     });
+
+    /**
+     * Y LOS CATÁLOGOS PLANOS DEL RDACAA, CON SU SEMBRADOR DE VERDAD.
+     *
+     * `ETHNICITY`, `NATIONALITY` y `GENDER_IDENTITY` son listas sin capítulos:
+     * sus conceptos están en el nivel 0 y son exactamente lo que se elige. Se
+     * sembraban aquí a mano mientras qué lista cargar era una decisión
+     * pendiente; resuelta D-034 se llama al sembrador, así que lo que estas
+     * pruebas recorren es la lista que sirve la aplicación y no una imitación
+     * de tres filas que puede diferir de ella sin que nadie lo note.
+     */
+    await seedRdacaa(prisma);
   }
 
   async function iniciarSesion(): Promise<string> {
@@ -218,6 +232,39 @@ describe('catálogos por HTTP', () => {
     });
   });
 
+  it('el capítulo viaja con su nombre, no sólo con su código', async () => {
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     * ADR-005 §5. `J00-J99` NO DESAMBIGUA NADA PARA NADIE.
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * El capítulo existe en el contrato «para desambiguar dos textos
+     * parecidos», y un rango de códigos que quien lo lee no puede interpretar
+     * no es información: es ruido con aspecto de dato. En la CIE-10 el código
+     * SÍ se maneja —quien diagnostica lo dicta y lo teclea—, así que no se
+     * esconde: se le pone el nombre al lado. Los dos viajan.
+     */
+    const response = await buscar('?q=nuemonia').expect(200);
+    const { items } = response.body as { items: ConceptoCuerpo[] };
+
+    expect(items[0]).toMatchObject({
+      chapter: 'J00-J99',
+      chapterDisplay: 'Enfermedades del sistema respiratorio',
+    });
+  });
+
+  it('un catálogo sin capítulos no inventa un nombre de capítulo', async () => {
+    // Etnia es una lista plana: no hay agrupador, y `null` en los dos campos
+    // es la respuesta correcta — no una cadena vacía que la pantalla pintaría.
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/catalogs/ETHNICITY?q=montubio')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    const { items } = response.body as { items: ConceptoCuerpo[] };
+    expect(items[0]).toMatchObject({ chapter: null, chapterDisplay: null });
+  });
+
   it('no ofrece capítulos como diagnóstico, salvo si se piden', async () => {
     const codigos = async (consulta: string) =>
       (
@@ -245,6 +292,35 @@ describe('catálogos por HTTP', () => {
     expect(await codigos('?q=respiratori&includeGroups=true')).toContain(
       'J00-J99',
     );
+  });
+
+  it('un catálogo PLANO devuelve resultados en vez de una lista vacía', async () => {
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     * EL DEFECTO QUE NO FALLA: UN SELECTOR VACÍO QUE PARECE FALTA DE SIEMBRA.
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * `onlySelectable` está en `true` por defecto —quien busca en una caja de
+     * diagnóstico no quiere títulos de capítulo— y antes de P2 filtraba por
+     * profundidad SIN mirar si el sistema es jerárquico. Etnia, nacionalidad e
+     * identidad de género son listas planas de nivel 0, así que
+     * `/catalogs/ETHNICITY` devolvía la lista vacía SIEMPRE y con 200. Es la
+     * rama que el cambio de `selectable` añadió, y ninguna prueba la ejercía.
+     */
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/catalogs/ETHNICITY?q=montubio')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    const { items } = response.body as { items: ConceptoCuerpo[] };
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      // El código del INEC, que es el que se reporta; el nombre es lo que se
+      // lee. Ver `seed-rdacaa.mts`.
+      code: '5',
+      display: 'Montubio/a',
+      selectable: true,
+    });
   });
 
   it('rechaza una bandera que no es ni `true` ni `false`, en vez de adivinar', async () => {
@@ -439,6 +515,163 @@ describe('catálogos por HTTP', () => {
 
       // Un 422 aquí significa exactamente eso: `:system/:code` ganó la ruta.
       expect(response.status).not.toBe(422);
+    });
+  });
+
+  /**
+   * Recorrer el árbol, que es el camino que faltaba.
+   *
+   * `GET /catalogs/{system}` exige dos caracteres y devuelve como mucho 50
+   * filas sin decir cuántas hay: sobre 1401 parroquias, quien teclea «SANTA»
+   * recibe un puñado y no tiene forma de llegar al resto. Estas dos rutas son
+   * el otro camino —provincia → cantón → parroquia— y no dependen de acertar
+   * con el texto.
+   */
+  describe('el árbol por niveles', () => {
+    interface PaginaCuerpo {
+      items: ConceptoCuerpo[];
+      total: number;
+      page: number;
+      pageSize: number;
+    }
+
+    const raices = (sistema: string, consulta = '') =>
+      request(app.getHttpServer())
+        .get(`/api/v1/catalogs/${sistema}/roots${consulta}`)
+        .set('Authorization', `Bearer ${token}`);
+
+    const hijos = (id: string, consulta = '') =>
+      request(app.getHttpServer())
+        .get(`/api/v1/catalogs/concepts/${id}/children${consulta}`)
+        .set('Authorization', `Bearer ${token}`);
+
+    async function idDeCodigo(code: string): Promise<string> {
+      const concepto = await prisma.catalogConcept.findFirstOrThrow({
+        where: { code },
+      });
+      return concepto.id;
+    }
+
+    it('devuelve el primer nivel con el total, no sólo un puñado', async () => {
+      const cuerpo = (await raices('CIE10').expect(200)).body as PaginaCuerpo;
+
+      expect(cuerpo.items.map((c) => c.code)).toEqual(['J00-J99']);
+      // El total es lo que le dice al cliente si le falta algo por pedir.
+      expect(cuerpo).toMatchObject({ total: 1, page: 1, pageSize: 100 });
+    });
+
+    it('un catálogo PLANO devuelve su lista entera como raíces', async () => {
+      /**
+       * Es el caso del selector de países y el de etnia: no hay más nivel que
+       * éste, y sus conceptos son exactamente lo que se elige.
+       *
+       * LAS OCHO CATEGORÍAS, no las seis que el INEC publica: el formulario del
+       * RDACAA separa afroecuatoriano, negro y mulato, y agrupar es trabajo de
+       * la capa de exportación. Ver `seed-rdacaa.mts`.
+       */
+      const cuerpo = (await raices('ETHNICITY').expect(200))
+        .body as PaginaCuerpo;
+
+      expect(cuerpo.total).toBe(8);
+      expect(cuerpo.items.map((c) => c.code).sort()).toEqual([
+        '1',
+        '2',
+        '3',
+        '4',
+        '5',
+        '6',
+        '7',
+        '8',
+      ]);
+      expect(cuerpo.items.every((c) => c.selectable)).toBe(true);
+    });
+
+    it('devuelve lo que cuelga de un concepto', async () => {
+      const cuerpo = (await hijos(await idDeCodigo('J00-J99')).expect(200))
+        .body as PaginaCuerpo;
+
+      expect(cuerpo.items.map((c) => c.code)).toEqual(['J18.9']);
+      expect(cuerpo.total).toBe(1);
+    });
+
+    it('distingue una hoja de un id que no es nada', async () => {
+      /**
+       * LAS DOS RESPUESTAS SON UNA LISTA VACÍA, y por eso hace falta la
+       * comprobación del padre. Una parroquia tiene cero hijos con toda
+       * legitimidad; un id caducado en la pantalla también devolvería cero, y
+       * sin distinguirlos el usuario ve un nivel vacío donde hay un error.
+       */
+      const hoja = (await hijos(await idDeCodigo('J18.9')).expect(200))
+        .body as PaginaCuerpo;
+      expect(hoja.items).toEqual([]);
+      expect(hoja.total).toBe(0);
+
+      const inexistente = await hijos(
+        '01920000-0000-7000-8000-000000000000',
+      ).expect(404);
+      expect((inexistente.body as { code: string }).code).toBe(
+        'CATALOG_CONCEPT_NOT_FOUND',
+      );
+    });
+
+    it('rechaza un id que no es un uuid antes de llegar a la consulta', async () => {
+      await hijos('J18.9').expect(400);
+    });
+
+    it('rechaza una página imposible en vez de adivinar', async () => {
+      await raices('CIE10', '?page=0').expect(422);
+      await raices('CIE10', '?pageSize=0').expect(422);
+      // 500 es el tope: cubre los 249 países de una vez, y no un catálogo
+      // plano de miles de medicamentos.
+      await raices('CIE10', '?pageSize=501').expect(422);
+    });
+
+    it('exige sesión, como el resto del catálogo', async () => {
+      await request(app.getHttpServer())
+        .get('/api/v1/catalogs/CIE10/roots')
+        .expect(401);
+      await request(app.getHttpServer())
+        .get(`/api/v1/catalogs/concepts/${await idDeCodigo('J18.9')}/children`)
+        .expect(401);
+    });
+
+    /**
+     * EL ORDEN DE DECLARACIÓN ES LA GARANTÍA, igual que con `concepts/:id`.
+     * `/catalogs/CIE10/roots` encaja también en `:system/:code`; si aquélla
+     * fuera primero, `roots` llegaría como CÓDIGO de la CIE-10 y esta ruta
+     * respondería 404 sin ejecutarse nunca. Quien mueva el método de sitio lo
+     * rompe en silencio, y esto es lo que lo detecta.
+     */
+    it('no confunde «roots» con un código del catálogo', async () => {
+      const cuerpo = (await raices('CIE10').expect(200)).body as PaginaCuerpo;
+
+      // Un 404 con CATALOG_CONCEPT_NOT_FOUND significaría que `:system/:code`
+      // ganó la ruta y buscó un código llamado «roots».
+      expect(cuerpo.items).toHaveLength(1);
+    });
+
+    it('acota la búsqueda a una rama', async () => {
+      const capitulo = await idDeCodigo('J00-J99');
+
+      const dentro = (
+        await request(app.getHttpServer())
+          .get(`/api/v1/catalogs/CIE10?q=neumonia&parentId=${capitulo}`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200)
+      ).body as { items: ConceptoCuerpo[] };
+      expect(dentro.items.map((c) => c.code)).toEqual(['J18.9']);
+
+      // Acotada a una rama que no la contiene, la misma búsqueda no devuelve
+      // nada: es lo que demuestra que el filtro filtra.
+      const fuera = (
+        await request(app.getHttpServer())
+          .get(
+            `/api/v1/catalogs/CIE10?q=neumonia&parentId=${await idDeCodigo('J18.9')}`,
+          )
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200)
+      ).body as { items: ConceptoCuerpo[] };
+      expect(fuera.items).toEqual([]);
     });
   });
 });

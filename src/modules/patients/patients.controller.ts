@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Req,
@@ -30,6 +31,8 @@ import type {
   PatientSummary,
 } from './domain/patient.repository';
 import {
+  AddIdentifierDto,
+  CorrectPatientDto,
   CreatePatientDto,
   PatientDetailDto,
   PatientPageDto,
@@ -74,6 +77,9 @@ export class PatientsController {
       page: dto.page,
       pageSize: dto.pageSize,
       includeMerged: dto.includeMerged,
+      // PA-009. Un filtro más, no una búsqueda aparte: al recién nacido se le
+      // encuentra por su madre porque no hay otra cosa que teclear.
+      motherId: dto.motherId,
       sortBy: dto.sortBy,
       sortDirection: dto.sortDirection,
     });
@@ -132,12 +138,84 @@ export class PatientsController {
         email: dto.email,
         residenceAddressLine: dto.residenceAddressLine,
         bloodType: dto.bloodType,
+        // D-028: los cuatro del RDACAA son opcionales al dar de alta. La ficha
+        // se marca incompleta mientras tanto (PA-032), y lo que obliga a
+        // completarlos es el cierre de la primera atención, que es de
+        // `encounter`.
+        ethnicityConceptId: dto.ethnicityConceptId,
+        nationalityConceptId: dto.nationalityConceptId,
+        residenceParishConceptId: dto.residenceParishConceptId,
+        genderIdentityConceptId: dto.genderIdentityConceptId,
+        // PA-053. De qué país es, que no es la nacionalidad indígena de
+        // arriba: se guarda el código alpha-3 y la ficha lo devuelve con su
+        // nombre. No cuenta para `rdacaaMissingFields` (REQ-022 no lo pide).
+        countryOfNationalityCode: dto.countryOfNationalityCode,
+        motherPatientId: dto.motherPatientId,
         identifier: dto.identifier,
       },
       this.requester(req),
     );
 
     return toDetailResponse(created);
+  }
+
+  /**
+   * Corrige una ficha (PA-008, PA-009, PA-026 a PA-029, PA-031).
+   *
+   * UNA SOLA RUTA Y NO UNA POR CAMPO. En el mostrador se corrige lo que se
+   * acaba de ver mal —una letra de un apellido—, y una ruta por campo
+   * multiplicaría por seis las superficies que hay que declarar, autorizar y
+   * auditar. Acepta el subconjunto que se envíe y no toca lo demás.
+   *
+   * EL MRN NO ESTÁ ENTRE LOS CAMPOS (PA-002). Ni aquí, ni en el esquema, ni en
+   * el CHECK de la base: es el ancla de identidad, no un dato de la ficha.
+   */
+  @Patch(':id')
+  @RequirePermission('patient:write', 'global')
+  @ApiOperation({ summary: 'Correct a patient record' })
+  @ApiOkResponse({ type: PatientDetailDto })
+  async correct(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CorrectPatientDto,
+    @Req() req: Request,
+  ): Promise<PatientDetailResponse> {
+    /**
+     * El cuerpo se pasa TAL CUAL, sin reconstruirlo campo a campo.
+     *
+     * Reconstruirlo aquí sería la cuarta copia de la lista de campos
+     * corregibles —dominio, base, esquema y esta— y la que convierte «se me
+     * olvidó añadirlo» en un campo que se valida, se documenta y no se guarda.
+     * El esquema ya rechazó cualquier clave que no esté en la lista.
+     */
+    const corrected = await this.patients.correct(id, dto, this.requester(req));
+
+    return toDetailResponse(corrected);
+  }
+
+  /**
+   * PA-015. El documento de una ficha provisional.
+   *
+   * NO CREA FICHA. Es la ruta que evita el duplicado: hasta que existió, la
+   * única forma de que el recién nacido tuviera su cédula era registrarlo otra
+   * vez, que es precisamente lo que REQ-010 tiene luego que fusionar.
+   */
+  @Post(':id/identifiers')
+  @RequirePermission('patient:write', 'global')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Add an identity document to an existing record' })
+  @ApiOkResponse({ type: PatientDetailDto })
+  async addIdentifier(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AddIdentifierDto,
+    @Req() req: Request,
+  ): Promise<PatientDetailResponse> {
+    const updated = await this.patients.addIdentifier(
+      id,
+      { type: dto.type, issuingCountry: dto.issuingCountry, value: dto.value },
+      this.requester(req),
+    );
+
+    return toDetailResponse(updated);
   }
 
   /**
@@ -185,6 +263,17 @@ function toSummaryResponse(patient: PatientSummary) {
     birthDate: patient.birthDate.toISOString().slice(0, 10),
     birthDateEstimated: patient.birthDateEstimated,
     deceasedAt: patient.deceasedAt?.toISOString() ?? null,
+    /**
+     * PA-030 y PA-032, y son lo ÚNICO que el resumen gana.
+     *
+     * La edad porque el listado la enseña en cada fila y calcularla en el
+     * navegador la resolvería en el huso del portátil (`age_days` de un neonato
+     * cambia con eso). Qué falta porque admisión trabaja desde la lista. Los
+     * cuatro conceptos de catálogo NO están: PA-021 dice que el listado se
+     * dispara con cada letra tecleada.
+     */
+    age: patient.age,
+    rdacaaMissingFields: patient.rdacaaMissingFields,
     primaryIdentifier: patient.primaryIdentifier,
   };
 }
@@ -196,9 +285,25 @@ function toDetailResponse(patient: PatientDetail) {
     email: patient.email,
     bloodType: patient.bloodType,
     residenceAddressLine: patient.residenceAddressLine,
+    ethnicity: patient.ethnicity,
+    nationality: patient.nationality,
+    genderIdentity: patient.genderIdentity,
+    countryOfNationality: patient.countryOfNationality,
+    residenceParish: patient.residenceParish,
+    motherPatientId: patient.motherPatientId,
     isProvisional: patient.isProvisional,
     identifiers: patient.identifiers,
     mergedIntoMrn: patient.mergedIntoMrn,
+    /**
+     * PA-054. Qué fichas absorbió ésta, que es el enlace de PA-043 leído en el
+     * sentido que faltaba.
+     *
+     * SÓLO EN LA FICHA (PA-021): el resumen de arriba no lo lleva, porque el
+     * listado se dispara con cada letra tecleada y ninguna fila lo necesita.
+     * Y es un aviso, no la lectura: quién lee la historia por el enlace lo
+     * decide D-038.
+     */
+    absorbedCharts: patient.absorbedCharts,
     createdAt: patient.createdAt.toISOString(),
   };
 }

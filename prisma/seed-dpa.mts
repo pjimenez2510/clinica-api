@@ -237,7 +237,15 @@ async function main(): Promise<void> {
 
   const sistema = await prisma.catalogSystem.upsert({
     where: { code: SYSTEM_CODE },
-    update: {},
+    /**
+     * `hierarchical` SE FIJA TAMBIÉN AL ACTUALIZAR. Ver `seed-cie10.mts`: la
+     * columna es `@default(false)` y de ella depende que un concepto sea
+     * seleccionable. Con `update: {}`, una fila `DPA` que ya exista en `false`
+     * no se corrige nunca, y el combobox de residencia empieza a ofrecer
+     * provincias y cantones como parroquia — que es exactamente lo que PA-028
+     * prohíbe almacenar.
+     */
+    update: { hierarchical: true },
     create: {
       code: SYSTEM_CODE,
       name: 'División Política Administrativa del Ecuador (INEC)',

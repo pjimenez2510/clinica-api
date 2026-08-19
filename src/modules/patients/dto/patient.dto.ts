@@ -3,8 +3,14 @@ import { z } from 'zod';
 
 import { explicitFlag } from '../../../shared/http/query-flag';
 import {
+  CORRECTABLE_PATIENT_FIELDS,
+  type CorrectablePatientField,
+} from '../domain/patient-corrections';
+import { RDACAA_REQUIRED_FIELDS } from '../domain/rdacaa-completeness';
+import {
   PRIORITY_GROUPS,
   RECORDABLE_PRIORITY_GROUPS,
+  clinicalDateToday,
   type PriorityGroup,
 } from '../domain/priority-groups';
 
@@ -20,6 +26,7 @@ import {
  */
 
 const SEX = z.enum(['MALE', 'FEMALE', 'INTERSEX', 'UNKNOWN']);
+const BLOOD_TYPE = z.enum(['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']);
 const IDENTIFIER_TYPE = z.enum([
   'CEDULA',
   'PASSPORT',
@@ -92,12 +99,76 @@ const identifierSchema = z
     },
   );
 
+/**
+ * El país de nacionalidad, `ISO 3166-1 alpha-3` (PA-053).
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * SE NORMALIZA A MAYÚSCULAS ANTES DE VALIDAR, Y NO ES COSMÉTICA.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `patient_country_of_nationality_format` exige tres letras MAYÚSCULAS, así
+ * que sin normalizar aquí un `ven` perfectamente identificable llegaría a la
+ * base y volvería como una violación de restricción que nadie puede leer. La
+ * columna es `CHAR(3)`, que además rellena con espacios: `'ec'` se almacenaría
+ * como `'ec '` y el patrón lo rechaza por partida doble.
+ *
+ * EL MENSAJE NO PIDE UN CÓDIGO (ADR-005 §5). En la pantalla se elige el país
+ * por su nombre de la lista de `COUNTRY` y el sistema guarda el código; pedirle
+ * a nadie que teclee `ECU` es justamente lo que esa regla prohíbe. Que el
+ * código EXISTA lo comprueba el servicio contra el catálogo: un `CHECK` no
+ * puede consultar otra tabla y `XXX` pasa este esquema.
+ */
+const COUNTRY_CODE = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-Z]{3}$/, 'Elija el país de la lista');
+
 const NAME = (label: string) =>
   z
     .string({ error: `${label} es obligatorio` })
     .trim()
     .min(1, `${label} es obligatorio`)
     .max(120, `${label} no puede superar 120 caracteres`);
+
+/**
+ * Ni nacer ni morir en el futuro (PA-006, PA-008).
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * POR QUÉ ESTA COTA NO ESTÁ EN LA BASE, Y NO HAY QUE BUSCARLA ALLÍ.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `patient_deceased_after_birth` cierra el otro extremo con un `CHECK` porque
+ * compara dos COLUMNAS, y eso es inmutable. «No después de hoy» compara con
+ * `now()`, que PostgreSQL declara `STABLE` y no `IMMUTABLE`: un `CHECK` con una
+ * función no inmutable se rechaza al crearlo, y con razón —una fila válida al
+ * insertarla dejaría de serlo mañana sin que nadie la tocara, y un `pg_dump`
+ * restaurado ya no cargaría—. Así que va donde va el dígito verificador de la
+ * cédula: en la validación de entrada, como error por campo, mientras la
+ * persona sigue en el mostrador.
+ *
+ * El argumento del `CHECK` es SIMÉTRICO y sólo se había cerrado un lado: si el
+ * año mal tecleado es 2016 por 2026 el fallecimiento precede al nacimiento y la
+ * base lo rechaza; si es 2062 por 2026 se acepta, y como la edad se resuelve
+ * contra la fecha de fallecimiento cuando la hay (PA-030), la ficha y CADA FILA
+ * DEL LISTADO reportan setenta y dos años para alguien de treinta y seis,
+ * congelado para siempre.
+ *
+ * `clinicalDateToday()` pregunta a Ecuador y no al anfitrión: a las 21:00 en
+ * Guayaquil la fecha UTC ya es la de mañana, y con el huso de la sesión la
+ * franja vespertina rechazaría fechas de hoy perfectamente válidas. Las dos
+ * cadenas son `YYYY-MM-DD`, que ordenan cronológicamente, así que no entra
+ * ningún instante en la comparación.
+ */
+const notInTheFuture = <T extends z.ZodType<string>>(
+  schema: T,
+  message: string,
+) => schema.refine((value) => value <= clinicalDateToday(), { error: message });
+
+const BIRTH_DATE = notInTheFuture(
+  z.iso.date('Ingrese una fecha de nacimiento válida'),
+  'La fecha de nacimiento no puede ser posterior a hoy',
+);
 
 export const createPatientSchema = z.object({
   // Ecuadorian names carry TWO surnames. A single `fullName` makes sorting and
@@ -107,7 +178,8 @@ export const createPatientSchema = z.object({
   givenName: NAME('El primer nombre'),
   secondGivenName: z.string().trim().max(120).optional(),
   sex: SEX,
-  birthDate: z.iso.date('Ingrese una fecha de nacimiento válida'),
+  /** PA-006, PA-007. Fecha de calendario, y nunca en el futuro. */
+  birthDate: BIRTH_DATE,
   /**
    * An undocumented migrant arrives with an estimated age. Without this flag
    * the estimate is later reported to the ministry as a fact.
@@ -116,9 +188,42 @@ export const createPatientSchema = z.object({
   phone: z.string().trim().max(32).optional(),
   email: z.email('Ingrese un correo electrónico válido').optional(),
   residenceAddressLine: z.string().trim().max(255).optional(),
-  bloodType: z
-    .enum(['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'])
-    .optional(),
+  bloodType: BLOOD_TYPE.optional(),
+  /**
+   * Los cuatro datos del RDACAA, TODOS OPCIONALES (D-028, PA-026 a PA-029).
+   *
+   * La norma los exige «en cada consulta», no al registrar, y bloquear el alta
+   * a las tres de la mañana con un neonato delante es exactamente lo que
+   * REQ-009 prohíbe. Lo que obliga a completarlos es el cierre de la primera
+   * atención, que es de `encounter`; mientras tanto la ficha dice qué le falta
+   * (`rdacaaMissingFields`, PA-032).
+   */
+  ethnicityConceptId: z.uuid().optional(),
+  nationalityConceptId: z.uuid().optional(),
+  /** Parroquia del DPA del INEC. Provincia y cantón se derivan (PA-028). */
+  residenceParishConceptId: z.uuid().optional(),
+  /** PA-029: dato DISTINTO del sexo. Ninguno se deriva del otro. */
+  genderIdentityConceptId: z.uuid().optional(),
+  /**
+   * PA-053. DE QUÉ PAÍS ES LA PERSONA, y no es `nationalityConceptId`.
+   *
+   * Ése es la nacionalidad o pueblo indígena del RDACAA —Kichwa, Shuar, Awa—,
+   * un campo que el formulario del ministerio sólo activa si la
+   * autoidentificación étnica es «Indígena». Éste es el que permite que una
+   * ficha diga que un paciente es venezolano. Los dos hacen falta y no son el
+   * mismo dato (D-036 opción C).
+   *
+   * OPCIONAL como los cuatro de arriba (D-028), y **no cuenta** para
+   * `rdacaaMissingFields`: REQ-022 no lo pide.
+   */
+  countryOfNationalityCode: COUNTRY_CODE.optional(),
+  /**
+   * PA-009. La ficha de la madre.
+   *
+   * Es lo que permite encontrar al recién nacido antes de que tenga documento
+   * propio: el listado filtra por ella (`motherId`).
+   */
+  motherPatientId: z.uuid().optional(),
   /**
    * OPTIONAL, and that is a clinical requirement rather than laxity. A newborn
    * twenty minutes old and an unconscious trauma case both need a chart before
@@ -128,12 +233,112 @@ export const createPatientSchema = z.object({
 });
 export class CreatePatientDto extends createZodDto(createPatientSchema) {}
 
+/**
+ * PA-015. El documento que aparece después.
+ *
+ * REUTILIZA `identifierSchema`, no lo copia. El dígito verificador de la cédula
+ * no puede tener dos implementaciones: la segunda es la que se queda atrás el
+ * día que la primera se corrige, y el síntoma sería un documento que el alta
+ * rechaza y esta ruta acepta.
+ */
+export const addIdentifierSchema = identifierSchema;
+export class AddIdentifierDto extends createZodDto(addIdentifierSchema) {}
+
+/**
+ * La corrección de una ficha (PA-031).
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * LOS CAMPOS SALEN DEL DOMINIO, NO SE ESCRIBEN OTRA VEZ AQUÍ.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `CORRECTABLE_PATIENT_FIELDS` es la lista, y la base la repite en
+ * `patient_change_history_field_known`. Una tercera copia en la capa de
+ * transporte sería la que nadie recuerda editar, y el síntoma sería un
+ * formulario que ofrece un campo que la base se niega a trazar. El `satisfies`
+ * de abajo hace que añadir un campo a la lista sin definirlo aquí no compile.
+ *
+ * AUSENTE ≠ `null`. Un campo que no se envía no se toca; enviado como `null`
+ * se vacía. Colapsarlos convertiría cada campo no enviado en un borrado, que
+ * sobre una ficha clínica es pérdida de datos con forma de actualización.
+ *
+ * EL MRN NO ESTÁ (PA-002), ni puede estar: no es un dato de la ficha, es el
+ * ancla de identidad.
+ */
+const correctableFields = {
+  familyName: NAME('El primer apellido').optional(),
+  secondFamilyName: z.string().trim().max(120).nullish(),
+  givenName: NAME('El primer nombre').optional(),
+  secondGivenName: z.string().trim().max(120).nullish(),
+  sex: SEX.optional(),
+  birthDate: BIRTH_DATE.optional(),
+  birthDateEstimated: z.boolean().optional(),
+  /**
+   * PA-008. Una FECHA, que es lo que sabe quien está en el mostrador.
+   *
+   * Se almacena como el instante de la medianoche en `America/Guayaquil`. La
+   * respuesta la sigue devolviendo como ISO 8601, sin cambiar el contrato que
+   * el listado y la ficha ya tenían.
+   *
+   * Y NUNCA POSTERIOR A HOY: ver `notInTheFuture` arriba, incluido el porqué de
+   * que la cota no esté en la base.
+   */
+  deceasedAt: notInTheFuture(
+    z.iso.date('Ingrese una fecha de fallecimiento válida'),
+    'La fecha de fallecimiento no puede ser posterior a hoy',
+  ).nullish(),
+  phone: z.string().trim().max(32).nullish(),
+  email: z.email('Ingrese un correo electrónico válido').nullish(),
+  residenceAddressLine: z.string().trim().max(255).nullish(),
+  bloodType: BLOOD_TYPE.nullish(),
+  ethnicityConceptId: z.uuid().nullish(),
+  nationalityConceptId: z.uuid().nullish(),
+  residenceParishConceptId: z.uuid().nullish(),
+  genderIdentityConceptId: z.uuid().nullish(),
+  /** PA-053. El mismo esquema que el alta, no una copia suya. */
+  countryOfNationalityCode: COUNTRY_CODE.nullish(),
+  motherPatientId: z.uuid().nullish(),
+} satisfies Record<CorrectablePatientField, z.ZodType>;
+
+export const correctPatientSchema = z
+  .object(correctableFields)
+  .refine(
+    (body) =>
+      CORRECTABLE_PATIENT_FIELDS.some((field) => body[field] !== undefined),
+    {
+      /**
+       * Un cuerpo sin ningún campo corregible es un ERROR, no un 200 que no
+       * hizo nada.
+       *
+       * Responder 200 a una corrección que no corrigió nada hace creer al
+       * mostrador que el cambio se guardó — y lo que se ve es la ficha
+       * anterior, que parece un problema de caché. Sale por campo y como 422,
+       * igual que cualquier otro fallo de validación.
+       *
+       * SIN `path`: el fallo no es de ningún campo, es del cuerpo entero, y
+       * `zod-problem.ts` ya traduce una ruta vacía a `(root)`. Señalar un campo
+       * cualquiera pondría el mensaje sobre un input que no tiene nada de malo.
+       */
+      error: 'Indique al menos un dato que corregir',
+    },
+  );
+export class CorrectPatientDto extends createZodDto(correctPatientSchema) {}
+
 export const searchPatientsSchema = z.object({
   q: z.string().trim().max(120).optional(),
   page: z.coerce.number().int().min(1).default(1),
   // Capped so a caller cannot ask for the entire register in one request.
   pageSize: z.coerce.number().int().min(1).max(50).default(20),
   includeMerged: explicitFlag,
+  /**
+   * PA-009. Sólo las fichas cuya madre es ésta.
+   *
+   * ES LO QUE HACE QUE EL VÍNCULO SIRVA. Sin este filtro,
+   * `mother_patient_id` es una columna que nadie puede recorrer, y encontrar
+   * al recién nacido —que no tiene documento ni, muchas veces, nombre todavía—
+   * vuelve a depender de teclear un apellido. SE COMBINA con la búsqueda por
+   * texto, no la sustituye.
+   */
+  motherId: z.uuid().optional(),
   /**
    * Ordenación, como lista cerrada y no como nombre de columna.
    *
@@ -152,6 +357,102 @@ const identifierResponseSchema = z.object({
   issuingCountry: z.string(),
   value: z.string(),
 });
+
+/**
+ * PA-030. La edad DERIVADA, nunca almacenada.
+ *
+ * `days` sólo viene relleno para menores de 29 días, que es como el RDACAA
+ * clasifica a un neonato. Un número de días para un adulto sería ruido que
+ * alguien acabaría pintando como «29 200 días».
+ *
+ * `months` sólo para el lactante: de los 29 días al primer cumpleaños (D-035).
+ * Sin él la ficha decía «Menos de 1 año» de un bebé de siete meses, y las
+ * tablas de dosis pediátricas van por meses. Se calcula en el servidor por lo
+ * mismo que los días: el navegador está en el huso del portátil.
+ *
+ * ⚠️ `days` Y `months` NUNCA VIENEN LOS DOS. Debajo de `years` viaja como mucho
+ * una unidad, así que la pantalla no tiene nada que arbitrar: un bebé de veinte
+ * días tiene cero meses cumplidos, y ofrecer las dos a la vez es invitar a
+ * pintar «0 meses» donde lo que importa son los días.
+ */
+const ageResponseSchema = z.object({
+  years: z.number().int().nonnegative(),
+  months: z.number().int().nonnegative().nullable(),
+  days: z.number().int().nonnegative().nullable(),
+});
+
+/** Un concepto de catálogo tal como se guardó, con su redacción de entonces. */
+const conceptResponseSchema = z.object({
+  id: z.uuid(),
+  code: z.string(),
+  display: z.string(),
+});
+
+/**
+ * PA-053. El país de nacionalidad: el código y CÓMO SE LLAMA.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * SIN `id`, Y ESA AUSENCIA ES LA DIFERENCIA CON `conceptResponseSchema`.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * La ficha no guarda una fila del catálogo: guarda tres letras, igual que
+ * `issuingCountry` de un documento. Devolver un `id` invitaría a la pantalla a
+ * mandarlo de vuelta y a que un día la columna se convirtiera en una clave
+ * foránea — que es justo la segunda representación del país que esta entrega
+ * evita.
+ *
+ * `display` puede ser `null` —una edición anterior del catálogo, un país que se
+ * dividió— y el CÓDIGO SIGUE VIAJANDO: un nombre que falta es una pantalla
+ * peor, un código que falta es un registro peor. Mismo criterio que la
+ * provincia y el cantón.
+ *
+ * NO VIAJA EN EL LISTADO, y esa ausencia es PA-021: la búsqueda se dispara con
+ * cada letra tecleada y resolver el nombre cuesta una consulta por ficha.
+ */
+const countryResponseSchema = z.object({
+  code: z.string(),
+  display: z.string().nullable(),
+});
+
+/**
+ * PA-028. La parroquia, con provincia y cantón DERIVADOS del código.
+ *
+ * `provinceCode` es `left(code,2)` y `cantonCode` es `left(code,4)`. No son
+ * columnas y no deben serlo: dos filas del archivo del INEC declaran un cantón
+ * que su propio código desmiente, así que almacenarlo reportaría a esos
+ * pacientes en el cantón equivocado sin que nada fallara. Son `null` si el
+ * código guardado no tiene seis dígitos, en vez de un prefijo inventado.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Y EL NOMBRE, PORQUE «Provincia 06 · Cantón 0603» NO LE DICE NADA A NADIE
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * El código es lo que se reporta al ministerio; el nombre es lo que se lee en
+ * el mostrador. Devolver sólo el número obligaba a la pantalla a pintarlo tal
+ * cual, y nadie sabe que `0603` es Guano. Se resuelve del propio catálogo DPA
+ * por el código derivado —nunca por la columna descriptiva del archivo, que es
+ * la que miente en dos filas—, así que sigue siendo derivar y PA-028 no cambia.
+ *
+ * `null` cuando el catálogo no puede decirlo: una parroquia de una edición
+ * vieja cuyo cantón ya no está. El CÓDIGO sigue viajando — un nombre que falta
+ * es una pantalla peor, un código que falta es un registro peor.
+ */
+const parishResponseSchema = conceptResponseSchema.extend({
+  provinceCode: z.string().nullable(),
+  provinceDisplay: z.string().nullable(),
+  cantonCode: z.string().nullable(),
+  cantonDisplay: z.string().nullable(),
+});
+
+/**
+ * PA-032. Qué le falta a la ficha de lo que el RDACAA exige.
+ *
+ * Vacío significa completa. Por NOMBRE de campo y no un contador: admisión
+ * tiene que poder completarlo sin adivinar cuál de los cuatro es.
+ */
+const rdacaaMissingFieldsSchema = z
+  .array(z.enum(RDACAA_REQUIRED_FIELDS))
+  .readonly();
 
 export const patientSummarySchema = z.object({
   id: z.uuid(),
@@ -176,7 +477,52 @@ export const patientSummarySchema = z.object({
   birthDate: z.iso.date(),
   birthDateEstimated: z.boolean(),
   deceasedAt: z.iso.datetime().nullable(),
+  age: ageResponseSchema,
+  rdacaaMissingFields: rdacaaMissingFieldsSchema,
   primaryIdentifier: identifierResponseSchema.nullable(),
+});
+
+/**
+ * PA-054. Qué fichas absorbió ésta, vista desde la superviviente.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * LA MITAD QUE LE FALTABA A PA-043: EL ENLACE SÓLO SE RECORRÍA EN UN SENTIDO.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * PA-043 conserva la absorbida apuntando a la superviviente y PA-045 hace que
+ * abrirla lleve a la vigente. Las dos recorren el enlace de la absorbida hacia
+ * la superviviente. Al revés no había nada: ni esta ficha ni el listado decían
+ * que hubiera absorbido a otra, así que nadie podía SABER que había algo al
+ * otro lado — y saberlo es la condición de que alguien lo siga.
+ *
+ * POR QUÉ EXISTE, con el caso delante (D-038, REQ-008): admisión fusiona
+ * correctamente las dos fichas de una paciente; en la absorbida estaba su
+ * ALERGIA A LA PENICILINA; el médico abre la ficha vigente, no ve ninguna
+ * alergia, y prescribe. `linkedRecords` (PA-049) sólo lo ve quien fusiona, en
+ * el acto; quien abre la ficha una semana después no fusionó nada.
+ *
+ * ⚠️ NO SUSTITUYE A D-038 NI A NINGUNA DE SUS TRES OPCIONES. D-031 decidió que
+ * la historia no se repunta y que se lee siguiendo el enlace; D-038 decide
+ * QUIÉN la lee, y las tres opciones necesitan que la superviviente sepa que
+ * tiene absorbidas. Esto hace el problema visible; no lo resuelve.
+ *
+ * LA FORMA: los MRN acotados con el total al lado. Un contador a secas nombra
+ * el problema y no da con qué ir a mirarlo; el MRN es lo que se teclea en la
+ * búsqueda del registro. La lista entera tampoco sirve —veinte absorbidas
+ * convierten el aviso en un muro—, así que viajan como mucho cinco y el total
+ * hace que el recorte se vea.
+ *
+ * VACÍO, NUNCA AUSENTE NI `null`.
+ */
+const absorbedChartsSchema = z.object({
+  /** Cuántas fichas absorbió ésta. `0` si no absorbió ninguna. */
+  total: z.number().int().nonnegative(),
+  /**
+   * Sus números de historia, de la fusión más antigua a la más reciente y
+   * acotados. NADA MÁS QUE EL NÚMERO: ni nombre, ni documento, ni fecha de
+   * nacimiento de la absorbida (PA-025).
+   */
+  mrns: z.array(z.string()).readonly(),
 });
 
 export const patientDetailSchema = patientSummarySchema.extend({
@@ -184,6 +530,29 @@ export const patientDetailSchema = patientSummarySchema.extend({
   email: z.string().nullable(),
   bloodType: z.string().nullable(),
   residenceAddressLine: z.string().nullable(),
+  /**
+   * Los cuatro conceptos elegidos, con la redacción con la que se registraron
+   * (PA-026 a PA-029).
+   *
+   * NO VIAJAN EN EL LISTADO, y esa ausencia es PA-021: una búsqueda se dispara
+   * con cada letra tecleada, y resolver cuatro conceptos por fila para pintar
+   * una lista es trabajo que nadie pidió. Lo que sí viaja allí es la edad y qué
+   * falta.
+   */
+  ethnicity: conceptResponseSchema.nullable(),
+  nationality: conceptResponseSchema.nullable(),
+  genderIdentity: conceptResponseSchema.nullable(),
+  /**
+   * PA-053. El país de la persona, que NO es `nationality`.
+   *
+   * `nationality` es la nacionalidad o pueblo indígena del RDACAA; esto es de
+   * dónde es. Viajan los dos porque son dos preguntas distintas y la clínica
+   * tiene delante a diario a quien necesita cada una.
+   */
+  countryOfNationality: countryResponseSchema.nullable(),
+  residenceParish: parishResponseSchema.nullable(),
+  /** PA-009. La ficha de la madre, o `null`. */
+  motherPatientId: z.uuid().nullable(),
   isProvisional: z.boolean(),
   identifiers: z.array(identifierResponseSchema).readonly(),
   /**
@@ -192,6 +561,13 @@ export const patientDetailSchema = patientSummarySchema.extend({
    * "this chart moved" instead of showing a dead end.
    */
   mergedIntoMrn: z.string().nullable(),
+  /**
+   * PA-054. El mismo enlace leído hacia atrás.
+   *
+   * NO VIAJA EN EL LISTADO, y esa ausencia es PA-021: la búsqueda se dispara
+   * con cada letra tecleada y ninguna fila de resultados lo necesita.
+   */
+  absorbedCharts: absorbedChartsSchema,
   createdAt: z.iso.datetime(),
 });
 export class PatientDetailDto extends createZodDto(patientDetailSchema) {}
@@ -203,6 +579,97 @@ export const patientPageSchema = z.object({
   pageSize: z.number().int().positive(),
 });
 export class PatientPageDto extends createZodDto(patientPageSchema) {}
+
+// ---------------------------------------------------------------------------
+// Duplicate resolution (P4: PA-043 to PA-049, REQ-010)
+// ---------------------------------------------------------------------------
+
+/**
+ * Por qué se unen —o se separan— dos historias (PA-044, PA-047).
+ *
+ * OBLIGATORIO Y NO EN BLANCO. `NOT NULL` impide la ausencia, no `'   '`, y un
+ * motivo obligatorio es lo único que distingue esto de un clic. El esquema lo
+ * exige aquí, `patient_merge_reason_not_blank` en la base —una importación no
+ * pasa por el DTO— y `PatientMergeService` en medio, porque un `DEBERÁ` que
+ * sólo hace cumplir el transporte deja de cumplirse el día que otro caso de uso
+ * llame por dentro.
+ *
+ * El tope de 500 no lo pide la columna, que es `text`: lo pide que este texto
+ * viaja al rastro de auditoría y se lee en una pantalla, no en un informe.
+ */
+const MERGE_REASON = z
+  .string()
+  .trim()
+  .min(1, 'Explique por qué se unen las dos historias')
+  .max(500, 'El motivo no puede pasar de 500 caracteres');
+
+export const mergePatientSchema = z.object({
+  /**
+   * La ficha que queda VIGENTE. La absorbida es la de la URL, que es la que
+   * cambia: recibe el enlace y deja de estar activa.
+   */
+  targetPatientId: z.uuid('Elija la historia que debe quedar vigente'),
+  reason: MERGE_REASON,
+});
+export class MergePatientDto extends createZodDto(mergePatientSchema) {}
+
+export const undoPatientMergeSchema = z.object({ reason: MERGE_REASON });
+export class UndoPatientMergeDto extends createZodDto(undoPatientMergeSchema) {}
+
+/**
+ * PA-049, D-031. Qué ocurre con las citas, atenciones y documentos de la
+ * absorbida: NO SE MUEVE NADA.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * VIAJA EN LA RESPUESTA PARA QUE SEA COMPROBABLE, NO PARA QUE SE VEA BONITO.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * El esquema ya leía por el enlace antes de que nadie lo decidiera, y D-031 lo
+ * hizo explícito el 16-08-2026: repuntar las filas hijas unificaría la historia
+ * y haría la fusión irreversible en la práctica. Lo que faltaba era poder
+ * DEMOSTRARLO desde fuera, y una garantía que nadie puede observar es un
+ * comentario. La respuesta dice cuántas filas se quedaron donde estaban, y la
+ * prueba comprueba las dos mitades: lo que contesta y dónde siguen las filas.
+ *
+ * `policy` es un literal a propósito: si algún día se repuntara, este campo
+ * tendría que cambiar de valor y ninguna pantalla podría no enterarse.
+ *
+ * ⚠️ SON OCHO CONTADORES Y NO TRES, y eso es lo que hace que el campo sirva.
+ * Con citas, atenciones y documentos, quien fusiona leía «no se movió nada» y
+ * no se enteraba de que la LISTA DE ALERGIAS, los contactos, los grupos
+ * prioritarios y la lista de espera se quedaban en la ficha vieja. La lista
+ * completa vive en `LinkedRecordCounts`, recorrida contra el esquema.
+ */
+export const mergeLinkedRecordsSchema = z.object({
+  policy: z.literal('READ_THROUGH_LINK'),
+  /** Citas de la ficha absorbida, que siguen siendo suyas. */
+  appointments: z.number().int().nonnegative(),
+  encounters: z.number().int().nonnegative(),
+  /** Certificados y derivaciones: los documentos que cuelgan de la ficha. */
+  documents: z.number().int().nonnegative(),
+  /** Alergias: las que quien prescribe consulta por ficha, no por persona. */
+  allergies: z.number().int().nonnegative(),
+  contacts: z.number().int().nonnegative(),
+  priorityGroups: z.number().int().nonnegative(),
+  waitlistEntries: z.number().int().nonnegative(),
+});
+
+export const patientMergeSchema = z.object({
+  /**
+   * La fila del registro de sucesos. `bigint` como CADENA: JSON no tiene
+   * entero en el que se pueda confiar para uno.
+   */
+  mergeId: z.string(),
+  event: z.enum(['MERGE', 'UNDO']),
+  sourcePatientId: z.uuid(),
+  /** El número de la absorbida, que documentos ya impresos siguen citando. */
+  sourceMrn: z.string(),
+  targetPatientId: z.uuid(),
+  targetMrn: z.string(),
+  performedAt: z.iso.datetime(),
+  linkedRecords: mergeLinkedRecordsSchema,
+});
+export class PatientMergeDto extends createZodDto(patientMergeSchema) {}
 
 // ---------------------------------------------------------------------------
 // Priority groups (P3: PA-033 to PA-042, D-026, D-027)
@@ -288,5 +755,6 @@ export class PriorityGroupListDto extends createZodDto(
 /** Response types inferred from the published schemas; see agenda.dto.ts. */
 export type PatientDetailResponse = z.infer<typeof patientDetailSchema>;
 export type PatientPageResponse = z.infer<typeof patientPageSchema>;
+export type PatientMergeResponse = z.infer<typeof patientMergeSchema>;
 export type PriorityGroupResponse = z.infer<typeof priorityGroupSchema>;
 export type PriorityGroupListResponse = z.infer<typeof priorityGroupListSchema>;

@@ -55,18 +55,85 @@ describe('clinical date is resolved in Ecuador', () => {
     expect(encounter.ageMonths).toBe(0);
   });
 
-  it('gives the same age whatever the session time zone', async () => {
-    // The real guarantee: the result cannot depend on how the container, the
-    // cloud provider or a psql session happens to be configured.
+  it('gives the age of the Ecuadorian day even when the DATABASE is in another zone', async () => {
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     * ESTA PRUEBA NO PODÍA FALLAR, Y ERA LA QUE PARECÍA CUBRIR ESTO.
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Tenía tres defectos, y cada uno bastaba por sí solo:
+     *
+     *  1. EL HUSO HOSTIL ESTABA DE ACUERDO CON EL DEFECTO. Con `Asia/Tokyo`
+     *     (+9), el literal ingenuo `'2026-09-14 02:00:00'` se resuelve como
+     *     2026-09-13T17:00Z, que en Guayaquil sigue siendo el 13 — el mismo día
+     *     que da la lectura correcta. Hace falta un huso NEGATIVO para que la
+     *     fecha se mueva: `Pacific/Honolulu` (−10, sin horario de verano) lleva
+     *     el instante al 14, y la edad del neonato pasa de 0 a 1 día.
+     *  2. AFIRMABA `second.ageDays === first.ageDays`, es decir, comparaba el
+     *     resultado con un valor que ella misma acababa de producir. Los dos
+     *     podían estar mal a la vez. Ahora se afirma el CERO.
+     *  3. `SET TimeZone` sobre el cliente del pool no garantiza llegar a la
+     *     conexión que luego atiende la escritura: `PrismaPg` es un POOL y cada
+     *     consulta toma la conexión que le toca. Se hace como en el bloque de
+     *     abajo, que sí caza el defecto — `ALTER DATABASE`, que toda conexión
+     *     nueva hereda, y un cliente construido como lo construye la
+     *     aplicación.
+     *
+     * Lo que queda demostrado es que `createPgAdapter` fija el huso de sesión
+     * en el arranque de cada conexión, que es lo único que separa a este
+     * sistema de un `postgresql.conf` ajeno moviéndole todos los instantes
+     * clínicos un día.
+     */
     const prisma = db();
-    const first = await encounterFor(new Date('2026-09-13'));
+    const site = await createSite(prisma);
+    const practitioner = await createPractitioner(prisma);
+    const patient = await createPatient(prisma, {
+      birthDate: new Date('2026-09-13'),
+    });
 
-    await prisma.$executeRawUnsafe(`SET TimeZone = 'Asia/Tokyo'`);
+    // La URL del contenedor, y el nombre de la base leído de ella: escribirlo a
+    // mano dejaría la prueba en verde contra otra base.
+    const databaseUrl = inject('databaseUrl');
+    const databaseName = new URL(databaseUrl).pathname.slice(1);
+
+    await prisma.$executeRawUnsafe(
+      `ALTER DATABASE ${databaseName} SET TimeZone = 'Pacific/Honolulu'`,
+    );
+
+    const hostile = new PrismaClient({ adapter: createPgAdapter(databaseUrl) });
     try {
-      const second = await encounterFor(new Date('2026-09-13'));
-      expect(second.ageDays).toBe(first.ageDays);
+      await hostile.$connect();
+
+      const encounter = await hostile.encounter.create({
+        data: {
+          siteId: site.id,
+          practitionerId: practitioner.id,
+          patientId: patient.id,
+          startedAt: EVENING_CONSULTATION,
+          careModality: 'MORBIDITY',
+          visitSequence: 'FIRST_TIME',
+        },
+      });
+
+      // CERO, no «lo mismo que antes». Nacido el 13 y atendido a las 21:00 del
+      // 13: cero días. Sin el huso fijado, el instante se guardaría un día más
+      // tarde y el RDACAA clasificaría al neonato en otro tramo.
+      expect(encounter.ageDays).toBe(0);
+      expect(encounter.ageMonths).toBe(0);
+      expect(encounter.ageYears).toBe(0);
+
+      // Y el instante que la base guarda de verdad, leído sin intermediarios:
+      // es el que se pidió escribir, no el que la zona de la base habría
+      // interpretado.
+      const [stored] = await hostile.$queryRaw<{ utc: string }[]>`
+        SELECT (started_at AT TIME ZONE 'UTC')::text AS utc
+        FROM encounter WHERE id = ${encounter.id}::uuid`;
+      expect(stored?.utc).toBe('2026-09-14 02:00:00');
     } finally {
-      await prisma.$executeRawUnsafe(`SET TimeZone = 'UTC'`);
+      await hostile.$disconnect();
+      await prisma.$executeRawUnsafe(
+        `ALTER DATABASE ${databaseName} RESET TimeZone`,
+      );
     }
   });
 

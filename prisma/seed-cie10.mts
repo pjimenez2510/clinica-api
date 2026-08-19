@@ -191,7 +191,19 @@ async function main(): Promise<void> {
 
   const sistema = await prisma.catalogSystem.upsert({
     where: { code: SYSTEM_CODE },
-    update: {},
+    /**
+     * `hierarchical` SE FIJA TAMBIÉN AL ACTUALIZAR, y no es simetría.
+     *
+     * `catalog_system.hierarchical` es `@default(false)`, y de esa bandera
+     * depende ahora si un concepto es SELECCIONABLE: en un catálogo plano todo
+     * lo es, en uno jerárquico hace falta profundidad 2. Con `update: {}`, una
+     * fila `CIE10` creada antes de que existiera la columna —o por cualquier
+     * otro camino— se queda en `false` para siempre, y entonces TODO CAPÍTULO
+     * de la CIE-10 (`A00-B99`) pasa a ser diagnosticable y `resolveDiagnosis`
+     * deja de rechazarlo. El RDACAA rechaza esos códigos: es un dato que hay
+     * que corregir a mano meses después.
+     */
+    update: { hierarchical: true },
     create: {
       code: SYSTEM_CODE,
       name: 'Clasificación Internacional de Enfermedades, 10.ª revisión',

@@ -7,6 +7,7 @@ import {
 import type { Principal } from '../../../shared/authorisation/principal';
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import {
+  PatientMergedError,
   PatientNotFoundError,
   PriorityGroupNotFoundError,
   RestrictedPriorityGroupError,
@@ -17,6 +18,7 @@ import {
   type PriorityGroupRecord,
 } from '../domain/patient.repository';
 import {
+  assertPriorityPeriodOrder,
   assertRecordablePriorityGroup,
   clinicalDateToday,
   isPeriodInForce,
@@ -88,22 +90,37 @@ export class PatientPriorityService {
     asOf: ClinicalDate;
     records: readonly AssessedPriorityGroup[];
   }> {
-    if (!(await this.patients.exists(patientId))) {
-      throw new PatientNotFoundError();
-    }
-
-    await this.audit.record({
-      userId: requester.userId,
-      resourceType: PRIORITY_RESOURCE_TYPE,
-      resourceId: patientId,
-      action: 'READ',
-      ip: requester.ip,
-      userAgent: requester.userAgent,
-    });
+    await this.assertLiveChart(patientId);
 
     const asOf = clinicalDateToday(now);
     const visible = (await this.patients.listPriorityGroups(patientId)).filter(
       (record) => this.mayHandle(record.group, principal),
+    );
+
+    /**
+     * ⚠️ EL RASTRO NOMBRA LAS FICHAS QUE DE VERDAD SE LEYERON, y por eso se
+     * escribe DESPUÉS de leer y no antes.
+     *
+     * Con PA-055 esta consulta trae los grupos de la ficha pedida Y los de las
+     * que absorbió, que conservan su `patient_id` (D-031). Una sola fila de
+     * bitácora con el id de la URL decía que se había leído la SUPERVIVIENTE
+     * mientras se revelaba un dato de salud escrito en la ABSORBIDA, así que
+     * «¿quién leyó por qué era prioritaria la ficha A?» no tenía ninguna fila
+     * que nombrara a `A` — que es justo lo que REQ-110 y PA-040 existen para
+     * poder contestar.
+     *
+     * LA FICHA PEDIDA VA SIEMPRE, aunque no tenga ni una valoración propia: el
+     * acceso ocurrió por ella y una lectura que devuelve la lista vacía sigue
+     * siendo una lectura que alguien hizo.
+     *
+     * Y SÓLO LAS FILAS VISIBLES. Si la absorbida sólo guarda un grupo
+     * restringido y quien lee no tiene `patient:priority:protected`, no vio
+     * nada de esa ficha y el rastro no debe decir que sí (D-027).
+     */
+    await this.recordChartAccess(
+      [patientId, ...visible.map((record) => record.chartId)],
+      'READ',
+      requester,
     );
 
     return { asOf, records: visible.map((record) => assess(record, asOf)) };
@@ -129,9 +146,7 @@ export class PatientPriorityService {
     principal: Principal,
     now: Date = new Date(),
   ): Promise<AssessedPriorityGroup> {
-    if (!(await this.patients.exists(input.patientId))) {
-      throw new PatientNotFoundError();
-    }
+    await this.assertLiveChart(input.patientId);
 
     const group = assertRecordablePriorityGroup(input);
     if (isRestrictedPriorityGroup(group) && !this.mayHandle(group, principal)) {
@@ -182,6 +197,8 @@ export class PatientPriorityService {
     principal: Principal,
     now: Date = new Date(),
   ): Promise<AssessedPriorityGroup> {
+    await this.assertLiveChart(input.patientId);
+
     const existing = (
       await this.patients.listPriorityGroups(input.patientId)
     ).find((record) => record.id === input.recordId);
@@ -189,6 +206,22 @@ export class PatientPriorityService {
     if (!existing || !this.mayHandle(existing.group, principal)) {
       throw new PriorityGroupNotFoundError();
     }
+
+    /**
+     * LA MISMA REGLA QUE AL REGISTRAR, Y POR EL MISMO SITIO.
+     *
+     * Sin esto, cerrar con una fecha anterior a la de inicio llegaba hasta
+     * `patient_priority_group_period_valid` y volvía como `422 CHECK_FAILED`:
+     * un código genérico, sin campo bajo el que poner la frase, sobre un
+     * formulario donde lo que está mal es exactamente una casilla. El `SPEC.md`
+     * fija `PRIORITY_GROUP_PERIOD_INVALID` para esto, y la regla tiene que
+     * valer en los dos caminos o no vale.
+     *
+     * DESPUÉS de comprobar que la fila existe y que quien llama puede verla:
+     * un error de validación sobre una fila restringida confirmaría que la fila
+     * está ahí, que es justo lo que `PRIORITY_GROUP_NOT_FOUND` evita (D-027).
+     */
+    assertPriorityPeriodOrder(existing.startsOn, input.endsOn);
 
     const closed = await this.patients.closePriorityGroup({
       patientId: input.patientId,
@@ -198,18 +231,82 @@ export class PatientPriorityService {
     });
     if (!closed) throw new PriorityGroupNotFoundError();
 
-    await this.audit.record({
-      userId: requester.userId,
-      resourceType: PRIORITY_RESOURCE_TYPE,
-      resourceId: input.patientId,
-      action: 'UPDATE',
-      ip: requester.ip,
-      userAgent: requester.userAgent,
-    });
+    // La misma razón que en `list`, sobre una escritura: la fila que se acaba
+    // de fechar vive en `closed.chartId`, que tras una fusión no es la ficha de
+    // la URL. Las dos se nombran — se modificó una valoración DE `chartId`, y
+    // se hizo entrando POR `patientId`.
+    await this.recordChartAccess(
+      [input.patientId, closed.chartId],
+      'UPDATE',
+      requester,
+    );
 
     // Closing «hoy» leaves it in force TODAY: the period is inclusive at both
     // ends, so a disability closed on the 15th still counted on the 15th.
     return assess(closed, clinicalDateToday(now));
+  }
+
+  /**
+   * One audit row per chart actually touched, and never two for the same one.
+   *
+   * IN ONE PLACE, so «la bitácora nombra la ficha en la que está la fila» stops
+   * being a rule each new route has to remember — and forgetting it does not
+   * fail loudly, it writes the wrong chart's id for ever into a table that is
+   * append-only and never purged.
+   *
+   * THE SHAPE OF THE ROW DOES NOT CHANGE: one entry still means one
+   * (quién, qué recurso, qué acto). What changes is how many of them one
+   * request produces, which is exactly the number of charts it opened.
+   */
+  private async recordChartAccess(
+    chartIds: readonly string[],
+    action: 'READ' | 'UPDATE',
+    requester: Requester,
+  ): Promise<void> {
+    for (const chartId of new Set(chartIds)) {
+      await this.audit.record({
+        userId: requester.userId,
+        resourceType: PRIORITY_RESOURCE_TYPE,
+        resourceId: chartId,
+        action,
+        ip: requester.ip,
+        userAgent: requester.userAgent,
+        // `before`/`after` deliberately absent, as everywhere in this module:
+        // `access_audit_payload_only_for_declared_resources` refuses a payload
+        // outside `'configuration'`, and recording does not throw — the entry
+        // would simply be lost (REQ-113, D-032).
+      });
+    }
+  }
+
+  /**
+   * PA-045. The chart exists AND was not absorbed by a merge.
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * ALL THREE ROUTES, AND NOT ONLY THE TWO THAT WRITE.
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * «Toda operación que la nombre» is the requirement, and the reason is the
+   * same on the read as on the writes: with D-031 not a single row is
+   * re-pointed by a merge, so the groups recorded on an absorbed chart still
+   * live there and the live chart's are somewhere else. Answering the absorbed
+   * chart's list without saying so would show one half of a person's priority
+   * as if it were all of it — and recording a new group on it would file a
+   * health datum where nobody will look for it again.
+   *
+   * ⚠️ IT DOES NOT OPEN THE CHART. `findMergeState` reads identity and the
+   * merge link, which is what makes it usable here: opening one is the
+   * accountable act that writes an audit row (PA-022), and «is this merged?»
+   * opens nothing. The audit entry these routes DO write is a different act —
+   * «quién leyó por qué es prioritaria» — and it is written after this check,
+   * so a refusal accounts for no access.
+   */
+  private async assertLiveChart(patientId: string): Promise<void> {
+    const state = await this.patients.findMergeState(patientId);
+    if (!state) throw new PatientNotFoundError();
+    if (state.mergedIntoMrn !== null) {
+      throw new PatientMergedError(state.mergedIntoMrn);
+    }
   }
 
   /**

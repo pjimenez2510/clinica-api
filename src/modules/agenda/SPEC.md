@@ -493,6 +493,15 @@ es falsa, hay requisitos que cambian.
 - **AG-030** — SI el paciente ya tiene una cita que ocupa calendario solapada
   con el intervalo solicitado, ENTONCES el sistema DEBERÁ rechazar la reserva
   con `PATIENT_DOUBLE_BOOKED`.
+  > Garantía de la base desde `20260812125924_agenda_guarantees`:
+  > `agenda_entry_no_patient_overlap`, el tercer `EXCLUDE USING gist` junto a los
+  > de profesional y consultorio. Comprobarlo solo en la aplicación era una
+  > condición de carrera que AG-025 no cubre. Exento el sobrecupo
+  > (`blocks_calendar = false`) y la cita liberada, por las mismas razones que
+  > sus dos vecinos.
+  >
+  > _(Este recuadro colgaba de AG-105, dos requisitos más abajo, donde describía
+  > una garantía que no es la suya. Recolocado el 18-08-2026.)_
 - **AG-105** — SI el consultorio indicado no pertenece a la sede de la entrada,
   ENTONCES el sistema DEBERÁ rechazar la reserva con `ROOM_NOT_IN_SITE`, y el
   mensaje NO DEBERÁ nombrar ninguna de las dos sedes.
@@ -507,17 +516,20 @@ es falsa, hay requisitos que cambian.
   > pantalla lo explica. No nombrar las sedes evita convertir el error en un
   > identificador por intento.
   >
-  > **Falta esquema.** Hoy la regla vive solo en la aplicación, así que una
-  > escritura por fuera del módulo la esquiva. La garantía es una FK compuesta
-  > `agenda_entry (room_id, site_id) → site_room (id, site_id)`, que exige antes
-  > un `UNIQUE (id, site_id)` en `site_room`. Con `room_id` anulable,
-  > `MATCH SIMPLE` deja pasar la fila sin consultorio, que es lo correcto.
-  > Garantía de la base desde `20260812125924_agenda_guarantees`:
-  > `agenda_entry_no_patient_overlap`, el tercer `EXCLUDE USING gist` junto a los
-  > de profesional y consultorio. Comprobarlo solo en la aplicación era una
-  > condición de carrera que AG-025 no cubre. Exento el sobrecupo
-  > (`blocks_calendar = false`) y la cita liberada, por las mismas razones que
-  > sus dos vecinos.
+  > **Garantía de la base desde el 13-08-2026**, en
+  > `20260813025017_organization_establishment_and_emission_points`, firmada en
+  > su propio comentario como `OR-021 / AG-105`: la clave foránea compuesta
+  > `agenda_entry_room_in_site` sobre `(room_id, site_id) → site_room (id,
+  > site_id)`, apoyada en el `site_room_id_site_unique` que PostgreSQL exige
+  > como destino. Con `room_id` anulable, `MATCH SIMPLE` deja pasar la fila sin
+  > consultorio —un bloqueo de agenda no ocupa sala—, y en cuanto hay valor el
+  > par entero tiene que existir. La comprobación del servicio se queda para dar
+  > el mensaje legible; una escritura por fuera del módulo ya no la esquiva.
+  >
+  > Este recuadro decía «**Falta esquema**» hasta el 18-08-2026, cinco días
+  > después de que la migración existiera, y `pnpm estado` lo cantaba como uno
+  > de los cuatro bloqueos del módulo. Un bloqueo inventado hace que el
+  > orquestador aparte requisitos que podía trabajar.
 - **AG-031** — SI el inicio solicitado es anterior al instante actual y la sede
   no admite reservar en el pasado (AG-094), ENTONCES el sistema DEBERÁ rechazar
   la reserva con `BOOKING_IN_THE_PAST`.

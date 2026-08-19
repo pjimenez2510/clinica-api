@@ -217,6 +217,75 @@ describe('grupos prioritarios', () => {
       ).toBe(PRIORITY_LEVEL.PRIORITY);
     });
 
+    it('PA-041 makes the level change ON the 65th birthday, not a year later', () => {
+      /**
+       * ═══════════════════════════════════════════════════════════════════════
+       * EL LÍMITE, QUE ES DONDE VIVE EL DEFECTO.
+       * ═══════════════════════════════════════════════════════════════════════
+       *
+       * Las pruebas de esta sección usaban 36 y 76 años: dos edades a las que
+       * `>=` y `>` responden lo mismo. Una auditoría por mutación cambió
+       * `age >= 65 || age < 18` por `age > 65 || age <= 18` y la suite entera
+       * siguió en verde — es decir, un paciente perdía la prioridad el día que
+       * cumplía 65 y la recuperaba un año después, y nada lo decía. Son los
+       * umbrales del artículo 36 de la Constitución y del Código de la Niñez.
+       */
+      const patient = { birthDate: d('1961-06-30'), periods: [] };
+
+      expect(priorityLevelOf(patient, d('2026-06-29'))).toBe(
+        PRIORITY_LEVEL.STANDARD,
+      );
+      expect(priorityLevelOf(patient, d('2026-06-30'))).toBe(
+        PRIORITY_LEVEL.PRIORITY,
+      );
+    });
+
+    it('PA-041 keeps priority until the day BEFORE the 18th birthday, and drops it on the day', () => {
+      const patient = { birthDate: d('2008-06-30'), periods: [] };
+
+      expect(priorityLevelOf(patient, d('2026-06-29'))).toBe(
+        PRIORITY_LEVEL.PRIORITY,
+      );
+      expect(priorityLevelOf(patient, d('2026-06-30'))).toBe(
+        PRIORITY_LEVEL.STANDARD,
+      );
+    });
+
+    it('PA-041 the level and the list never disagree about the same birth date', () => {
+      /**
+       * LA GARANTÍA QUE HACE INÚTIL LA SEGUNDA COPIA.
+       *
+       * `priorityGroupsInForce` y `priorityLevelOf` respondían cada una con su
+       * propia pareja de comparaciones, y sólo una estaba cubierta en el
+       * límite: podían divergir en silencio y la ficha diría «adulto mayor»
+       * mientras la lista de espera dijera «espere su turno». Se recorren los
+       * cuatro días que rodean los dos umbrales y se exige que las dos
+       * contesten lo mismo.
+       */
+      const on = d('2026-06-30');
+      const birthDates = [
+        d('1961-06-29'), // 65 cumplidos ayer
+        d('1961-06-30'), // 65 hoy
+        d('1961-07-01'), // 64, los cumple mañana
+        d('2008-06-29'), // 18 cumplidos ayer
+        d('2008-06-30'), // 18 hoy
+        d('2008-07-01'), // 17, los cumple mañana
+        d('1990-03-15'), // ni una cosa ni la otra
+      ];
+
+      for (const birthDate of birthDates) {
+        const groups = priorityGroupsInForce({ birthDate, recorded: [] }, on);
+        const level = priorityLevelOf({ birthDate, periods: [] }, on);
+
+        expect(
+          level,
+          `birthDate ${birthDate} listó ${JSON.stringify(groups)}`,
+        ).toBe(
+          groups.length > 0 ? PRIORITY_LEVEL.PRIORITY : PRIORITY_LEVEL.STANDARD,
+        );
+      }
+    });
+
     it('PA-042 computes the order from the periods alone, never from which group it is', () => {
       /**
        * The signature is the guarantee: `priorityLevelOf` takes periods and no
@@ -297,6 +366,30 @@ describe('grupos prioritarios', () => {
       expect(() =>
         assertRecordablePriorityGroup({ ...VALID, endsOn: d('2026-01-09') }),
       ).toThrow(PriorityGroupPeriodInvalidError);
+    });
+
+    it('PA-036 ACCEPTS a period that starts and ends the same day', () => {
+      /**
+       * EL LÍMITE DE LA COMPARACIÓN, que faltaba.
+       *
+       * `record.endsOn < record.startsOn` sobrevivía a convertirse en `<=`: la
+       * única prueba del rechazo usaba un día ANTERIOR, así que un periodo de
+       * un solo día —el ingreso de una víctima de desastre atendida y dada de
+       * alta la misma tarde— habría dejado de poder registrarse sin que nada
+       * se pusiera rojo. Los dos extremos son inclusivos, y `_period_valid`
+       * en la base dice exactamente lo mismo con `ends_on >= starts_on`.
+       */
+      expect(
+        assertRecordablePriorityGroup({ ...VALID, endsOn: VALID.startsOn }),
+      ).toBe('DISABILITY');
+
+      // Y ese mismo día cuenta, que es la otra mitad de «inclusivo».
+      expect(
+        isPeriodInForce(
+          { startsOn: VALID.startsOn, endsOn: VALID.startsOn },
+          VALID.startsOn,
+        ),
+      ).toBe(true);
     });
 
     it('PA-038 refuses an accredited record that does not name its document', () => {

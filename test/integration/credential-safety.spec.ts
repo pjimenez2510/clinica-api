@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import { PrismaAuthUserRepository } from '../../src/modules/auth/infrastructure/prisma-auth-user.repository';
+import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
+
 import { useDatabase } from './setup/database';
 
 /**
@@ -8,9 +11,29 @@ import { useDatabase } from './setup/database';
  * Both were broken, and neither could have been caught by a unit test with a
  * repository double: the first is a race, the second is atomicity. A double
  * returns whatever it was told to and has no transaction to roll back.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ⚠️ SE EJERCITA `PrismaAuthUserRepository`, Y ANTES NO.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Este archivo no importaba ni un símbolo de producción: reimplementaba el
+ * adaptador en línea —`prisma.user.update({ increment })`, un `$transaction`
+ * escrito a mano— y afirmaba sobre su propia copia. Es decir, probaba que
+ * Prisma sabe incrementar y transaccionar, que no estaba en duda, mientras su
+ * cabecera decía demostrar «las dos garantías que sólo una base real puede
+ * demostrar». Borrar el `increment` del adaptador y volver a leer-y-escribir,
+ * o quitarle el `$transaction`, dejaba las cuatro pruebas en verde.
+ *
+ * Ahora las llamadas son las del adaptador. Lo que cambia no es la aserción:
+ * es que ahora hay algo que romper.
  */
 describe('credential safety under real conditions', () => {
   const db = useDatabase();
+
+  /** El adaptador de verdad, sobre el cliente del contenedor. */
+  function repository(): PrismaAuthUserRepository {
+    return new PrismaAuthUserRepository(db() as unknown as PrismaService);
+  }
 
   async function createUser(email = 'medico@clinica.ec') {
     return db().user.create({
@@ -23,7 +46,7 @@ describe('credential safety under real conditions', () => {
     });
   }
 
-  it('counts EVERY concurrent failure, not just one', async () => {
+  it('AU-003 counts EVERY concurrent failure, not just one', async () => {
     /**
      * THE BUG THIS PINS DOWN: the counter used to be read into the process and
      * written back as an absolute value. Ten simultaneous attempts all read 0
@@ -33,20 +56,14 @@ describe('credential safety under real conditions', () => {
      *
      * With the increment in the database, ten attempts count ten.
      */
-    const prisma = db();
+    const users = repository();
     const user = await createUser();
 
     await Promise.all(
-      Array.from({ length: 10 }, () =>
-        prisma.user.update({
-          where: { id: user.id },
-          data: { failedAttempts: { increment: 1 } },
-          select: { failedAttempts: true },
-        }),
-      ),
+      Array.from({ length: 10 }, () => users.registerFailure(user.id)),
     );
 
-    const after = await prisma.user.findUniqueOrThrow({
+    const after = await db().user.findUniqueOrThrow({
       where: { id: user.id },
       select: { failedAttempts: true },
     });
@@ -55,23 +72,15 @@ describe('credential safety under real conditions', () => {
     expect(after.failedAttempts).toBe(10);
   });
 
-  it('returns a distinct count to each concurrent caller', async () => {
+  it('AU-003 returns a distinct count to each concurrent caller', async () => {
     // What makes the lock decision possible: whoever gets the value that
     // crosses the threshold is the one that applies the lock, and exactly one
     // caller sees each number.
-    const prisma = db();
+    const users = repository();
     const user = await createUser('enfermera@clinica.ec');
 
     const counts = await Promise.all(
-      Array.from({ length: 5 }, () =>
-        prisma.user
-          .update({
-            where: { id: user.id },
-            data: { failedAttempts: { increment: 1 } },
-            select: { failedAttempts: true },
-          })
-          .then((row) => row.failedAttempts),
-      ),
+      Array.from({ length: 5 }, () => users.registerFailure(user.id)),
     );
 
     expect([...counts].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5]);
@@ -79,6 +88,7 @@ describe('credential safety under real conditions', () => {
 
   it('changes the password and cuts every session, or neither', async () => {
     const prisma = db();
+    const users = repository();
     const user = await createUser('atendido@clinica.ec');
     await prisma.refreshToken.createMany({
       data: [
@@ -97,26 +107,28 @@ describe('credential safety under real conditions', () => {
       ],
     });
 
-    await prisma.$transaction(async (tx) => {
-      await tx.user.update({
-        where: { id: user.id },
-        data: { passwordHash: 'the-new-hash' },
-      });
-      await tx.refreshToken.updateMany({
-        where: { userId: user.id, revokedAt: null },
-        data: { revokedAt: new Date(), revocationReason: 'PASSWORD_CHANGE' },
-      });
-    });
+    await users.rotateCredentials(user.id, 'the-new-hash', 'PASSWORD_CHANGE');
 
-    const [updated, live] = await Promise.all([
+    const [updated, live, revoked] = await Promise.all([
       prisma.user.findUniqueOrThrow({ where: { id: user.id } }),
       prisma.refreshToken.count({
         where: { userId: user.id, revokedAt: null },
+      }),
+      prisma.refreshToken.findMany({
+        where: { userId: user.id },
+        select: { revocationReason: true },
       }),
     ]);
 
     expect(updated.passwordHash).toBe('the-new-hash');
     expect(live).toBe(0);
+    // Y el MOTIVO viaja hasta la fila: es lo que responde «¿por qué se cerró
+    // esta sesión?» en una auditoría, y sin él las dos mitades del cambio de
+    // contraseña son indistinguibles de un cierre de sesión cualquiera.
+    expect(revoked.map((token) => token.revocationReason)).toEqual([
+      'PASSWORD_CHANGE',
+      'PASSWORD_CHANGE',
+    ]);
   });
 
   it('leaves the password unchanged when the revocation fails', async () => {
@@ -124,32 +136,43 @@ describe('credential safety under real conditions', () => {
      * The failure the atomicity exists for. Two statements without a
      * transaction leave the password changed and the attacker's session alive
      * — the precise outcome the operation was written to prevent.
+     *
+     * ⚠️ CÓMO SE HACE FALLAR LA SEGUNDA MITAD, sin tocar el adaptador:
+     * `refresh_token.revocation_reason` es `varchar(32)`, así que un motivo más
+     * largo revienta el `UPDATE` DESPUÉS de que la contraseña ya está escrita.
+     * Es exactamente la forma del fallo que preocupa —algo que falla entre las
+     * dos escrituras—, y llega por la ruta real: si el `$transaction` del
+     * adaptador desapareciera, la contraseña quedaría cambiada y la sesión del
+     * atacante viva.
      */
     const prisma = db();
+    const users = repository();
     const user = await createUser('fallo@clinica.ec');
     const originalHash = user.passwordHash;
 
+    await prisma.refreshToken.create({
+      data: {
+        userId: user.id,
+        familyId: '00000000-0000-4000-8000-000000000003',
+        tokenHash: 'c'.repeat(64),
+        expiresAt: new Date('2027-01-01'),
+      },
+    });
+
     await expect(
-      prisma.$transaction(async (tx) => {
-        await tx.user.update({
-          where: { id: user.id },
-          data: { passwordHash: 'the-new-hash' },
-        });
-        // Stands in for anything that can fail after the password is written.
-        await tx.refreshToken.create({
-          data: {
-            userId: '00000000-0000-4000-8000-00000000dead',
-            familyId: '00000000-0000-4000-8000-000000000003',
-            tokenHash: 'c'.repeat(64),
-            expiresAt: new Date('2027-01-01'),
-          },
-        });
-      }),
+      users.rotateCredentials(user.id, 'the-new-hash', 'X'.repeat(64)),
     ).rejects.toThrow();
 
-    const after = await prisma.user.findUniqueOrThrow({
-      where: { id: user.id },
-    });
+    const [after, live] = await Promise.all([
+      prisma.user.findUniqueOrThrow({ where: { id: user.id } }),
+      prisma.refreshToken.count({
+        where: { userId: user.id, revokedAt: null },
+      }),
+    ]);
+
     expect(after.passwordHash).toBe(originalHash);
+    // Y la sesión sigue exactamente como estaba: ni revocada a medias ni
+    // marcada con un motivo que nunca se escribió.
+    expect(live).toBe(1);
   });
 });

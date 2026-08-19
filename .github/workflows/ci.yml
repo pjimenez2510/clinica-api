@@ -74,6 +74,15 @@ jobs:
         # somebody remembered to.
         run: pnpm migrations:check
 
+      - name: The chain from the norm to the test is unbroken
+        # `pnpm rtm` walks norm → REQ-### → AG-### → test and fails if a link
+        # lies: a requirement in force with no test, or a test citing an id
+        # that no longer exists. `pnpm verify` runs it, but this job did not —
+        # so the gate that keeps the specification and the suite from drifting
+        # only ran if somebody remembered to run the whole of `verify`. Exactly
+        # the drift the `migrations:check` step above documents, one gate over.
+        run: pnpm rtm
+
       - name: Unit tests
         run: pnpm test
 

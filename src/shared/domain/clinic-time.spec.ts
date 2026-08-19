@@ -11,6 +11,7 @@ import {
   clinicalDayBounds,
   isoWeekdayOf,
   parseClinicalDate,
+  startOfClinicalDay,
   wallClockOf,
   zoneOffsetMinutes,
 } from './clinic-time';
@@ -65,6 +66,40 @@ describe('clinic time', () => {
       const shifted = clinicalDayBounds(d('2026-09-13'));
 
       expect(shifted.startsAt.toISOString()).toBe('2026-09-13T05:00:00.000Z');
+    });
+
+    /**
+     * PA-008 stores a date of death as an instant, and this is the conversion.
+     *
+     * Midnight UTC would be 19:00 of the day BEFORE in Ecuador, which reads
+     * back as a death one day earlier than the desk recorded — and, for a
+     * newborn who dies on the day of birth, as a death before the birth.
+     */
+    it('PA-008 turns a calendar date into midnight in Ecuador, not midnight UTC', () => {
+      expect(startOfClinicalDay(d('2026-03-03')).toISOString()).toBe(
+        '2026-03-03T05:00:00.000Z',
+      );
+    });
+
+    it('PA-008 turns a date into the same instant whatever the process time zone', () => {
+      const expected = startOfClinicalDay(d('2026-03-03')).toISOString();
+
+      for (const tz of ['Asia/Tokyo', 'Pacific/Kiritimati', 'America/Denver']) {
+        process.env.TZ = tz;
+        expect(
+          startOfClinicalDay(d('2026-03-03')).toISOString(),
+          `with TZ=${tz}`,
+        ).toBe(expected);
+      }
+    });
+
+    it('PA-008 reads the date of that instant back as the date it was given', () => {
+      // The round trip is the guarantee that matters: what the desk typed is
+      // what the chart shows back, in Ecuador.
+      for (const date of ['2026-01-01', '2026-06-30', '2026-12-31'] as const) {
+        const instant = startOfClinicalDay(d(date));
+        expect(clinicalDateOf(instant)).toBe(date);
+      }
     });
   });
 

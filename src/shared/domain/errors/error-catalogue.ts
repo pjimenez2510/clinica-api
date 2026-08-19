@@ -123,6 +123,53 @@ export const DOMAIN_ERROR_CODES = [
   'PATIENT_IDENTIFIER_TAKEN',
   'PATIENT_MERGED',
   'PATIENT_NOT_FOUND',
+  // Fusión de duplicados (P4: PA-043 a PA-049, REQ-010).
+  //
+  // Son cinco y no uno porque lo que hay que hacer es distinto en cada caso, y
+  // quien lo lee está en admisión con dos fichas de la misma persona delante:
+  //
+  //   * `MERGE_REASON_REQUIRED` (422) — falta el motivo, al fusionar o al
+  //     deshacer. Viaja POR CAMPO. Se exige EN EL SERVICIO y no sólo en el
+  //     DTO, por lo mismo que `CANCELLATION_REASON_REQUIRED`: un `DEBERÁ` que
+  //     sólo hace cumplir la capa de transporte deja de cumplirse el día que
+  //     otro caso de uso llame por dentro (PA-044, PA-047).
+  //   * `MERGE_INTO_SELF` (422) — origen y destino son la misma ficha
+  //     (PA-046). Una ficha fusionada consigo misma rechazaría toda operación
+  //     remitiendo a sí misma: nadie podría abrirla ni deshacerla.
+  //   * `PATIENT_ALREADY_MERGED` (409) — la fusión encadenaría (PA-046): el
+  //     DESTINO ya está fusionado, o el ORIGEN ya absorbió otras fichas. Es
+  //     409 y no 422 porque lo enviado es correcto y lo que lo impide es el
+  //     estado del registro. Lo arbitra `trg_patient_merge_not_chained`, que
+  //     además bloquea la ficha destino para que dos fusiones simultáneas no
+  //     construyan entre las dos una cadena que ningún constraint vería.
+  //   * `MERGE_UNDO_CONFLICT` (409) — al deshacer, el documento que la ficha
+  //     absorbida recupera ya lo tiene otra ficha activa (PA-048). NO PUEDE
+  //     SALIR DEL MAPA DE CONSTRAINTS: PostgreSQL rechaza por
+  //     `patient_identifier_active_unique`, el MISMO índice que un alta
+  //     duplicada, y el mapa no puede distinguir las dos operaciones. Sólo
+  //     quien pidió el deshacer sabe que lo era, así que la traducción la hace
+  //     el servicio. El mensaje NOMBRA el conflicto —qué clase de documento y
+  //     qué historia lo tiene ahora— y nunca el valor del documento ni el
+  //     nombre de nadie (PA-025, REQ-116).
+  //   * `MERGE_NOT_FOUND` (404) — se pidió deshacer sobre una ficha que no
+  //     está fusionada, o cuya fusión ya se deshizo. NO es `PATIENT_NOT_FOUND`:
+  //     el paciente existe y responder «no se encontró el paciente» mandaría a
+  //     admisión a buscar una ficha que tiene delante. Es el hermano de
+  //     `AGENDA_ENTRY_NOT_FOUND`: lo que no existe es el SUCESO, no la persona.
+  'MERGE_INTO_SELF',
+  'MERGE_NOT_FOUND',
+  'MERGE_REASON_REQUIRED',
+  'MERGE_UNDO_CONFLICT',
+  'PATIENT_ALREADY_MERGED',
+  // PA-027, 17-08-2026. La ficha declara nacionalidad o pueblo indígena sin
+  // autoidentificarse como «Indígena». Es 422 y viaja POR CAMPO señalando
+  // `nationalityConceptId`, que es el que el formulario del RDACAA activa sólo
+  // en ese caso. NO es un `CATALOG_CONCEPT_*`: el concepto enviado existe, es
+  // del catálogo correcto y está vigente — lo que no encaja es con el OTRO
+  // campo de la ficha, y lo que hay que hacer es distinto (cambiar la etnia o
+  // vaciar la nacionalidad). Y no puede ser un `CHECK`: qué fila de `ETHNICITY`
+  // es «Indígena» está en otra tabla.
+  'NATIONALITY_REQUIRES_INDIGENOUS_ETHNICITY',
   // Grupos prioritarios del paciente (P3: PA-033..PA-042, D-026, D-027).
   //
   // Son cinco y no uno porque lo que hay que hacer es distinto en cada caso, y

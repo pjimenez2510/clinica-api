@@ -10,8 +10,10 @@ import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import { CatalogsService } from './application/catalogs.service';
 import {
+  BrowseCatalogDto,
   CatalogCodePathDto,
   CatalogConceptDetailDto,
+  CatalogPageDto,
   CatalogPathDto,
   CatalogSearchResultDto,
   ResolveCatalogDto,
@@ -23,6 +25,7 @@ import {
   // ni pasarlos. Silencioso de principio a fin: compila, arranca y responde.
   SearchCatalogDto,
   type CatalogConceptDetailResponse,
+  type CatalogPageResponse,
   type CatalogSearchResponse,
 } from './dto/catalog.dto';
 
@@ -68,10 +71,81 @@ export class CatalogsController {
       query: query.q,
       on: query.on ? new Date(`${query.on}T00:00:00Z`) : undefined,
       onlySelectable: !query.includeGroups,
+      parentId: query.parentId,
       limit: query.limit,
     });
 
     return { items };
+  }
+
+  /**
+   * El primer nivel de un catálogo: las 24 provincias, los 249 países.
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * POR QUÉ EXISTE: BUSCAR A CIEGAS NO ES NAVEGAR
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * `GET /catalogs/{system}` exige dos caracteres y devuelve como mucho 50
+   * filas sin decir cuántas hay. Sobre 1401 parroquias, quien teclea «SANTA»
+   * recibe un puñado arbitrario y NO TIENE FORMA DE LLEGAR AL RESTO. Esta ruta
+   * y la de los hijos son el otro camino —provincia → cantón → parroquia—, que
+   * es como una persona sabe dónde vive y no depende de acertar con el texto.
+   *
+   * ⚠️ DECLARADA ANTES QUE `:system/:code`, por el mismo motivo que
+   * `concepts/:id`: `/catalogs/DPA/roots` encaja también en `:system/:code`, y
+   * si aquélla fuera primero, `roots` llegaría como CÓDIGO y esta ruta
+   * respondería 404 sin haberse ejecutado nunca. El orden de declaración es la
+   * garantía, y hay una prueba que lo detecta.
+   *
+   * El precio de un segmento fijo aquí es que un concepto cuyo código fuera
+   * literalmente `ROOTS` dejaría de poder resolverse por URL. Ningún catálogo
+   * de este sistema lo tiene —alpha-3, CIE-10, seis dígitos del DPA— y la
+   * alternativa, un tercer `:algo`, sería ambigua para siempre.
+   */
+  @ApiParam({ name: 'system', enum: catalogSystemSchema.options })
+  @Get(':system/roots')
+  @RequirePermission('catalog:read', 'global')
+  @ApiOperation({ summary: 'List the top level of a catalogue' })
+  @ApiOkResponse({ type: CatalogPageDto })
+  async roots(
+    @Param() params: CatalogPathDto,
+    @Query() query: BrowseCatalogDto,
+  ): Promise<CatalogPageResponse> {
+    const { items, total } = await this.catalogs.rootsOf(params.system, {
+      on: query.on ? new Date(`${query.on}T00:00:00Z`) : undefined,
+      limit: query.pageSize,
+      offset: (query.page - 1) * query.pageSize,
+    });
+
+    return { items, total, page: query.page, pageSize: query.pageSize };
+  }
+
+  /**
+   * Lo que cuelga de un concepto: los cantones de una provincia, y de un
+   * cantón sus parroquias.
+   *
+   * POR ID Y NO POR CÓDIGO porque quien navega acaba de recibir el nodo padre
+   * de esta misma API y tiene su id en la mano. Por código haría falta además
+   * el catálogo, y dos claves para señalar la misma fila.
+   *
+   * Cuelga de `concepts/:id`, así que son tres segmentos y no compite con
+   * `:system/:code`.
+   */
+  @Get('concepts/:id/children')
+  @RequirePermission('catalog:read', 'global')
+  @ApiOperation({ summary: 'List the children of one concept' })
+  @ApiOkResponse({ type: CatalogPageDto })
+  async children(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: BrowseCatalogDto,
+  ): Promise<CatalogPageResponse> {
+    const { items, total } = await this.catalogs.childrenOf(id, {
+      on: query.on ? new Date(`${query.on}T00:00:00Z`) : undefined,
+      limit: query.pageSize,
+      offset: (query.page - 1) * query.pageSize,
+    });
+
+    return { items, total, page: query.page, pageSize: query.pageSize };
   }
 
   /**
