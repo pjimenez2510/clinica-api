@@ -8,6 +8,7 @@ import {
 } from '../../../shared/domain/errors/domain-error';
 
 import {
+  AccessContextNotFoundError,
   MergeIntoSelfError,
   MergeNotFoundError,
   MergeReasonRequiredError,
@@ -85,6 +86,17 @@ describe('los errores de la fusión de duplicados', () => {
       'Esa historia ya participó en otra fusión: deshágala primero',
     );
     expect(error.params).toEqual({});
+  });
+
+  it('AG-073 answers ACCESS_CONTEXT_NOT_FOUND as a 404 that names the appointment, not the patient', () => {
+    const error = new AccessContextNotFoundError();
+
+    expect(error.code).toBe('ACCESS_CONTEXT_NOT_FOUND');
+    expect(error).toBeInstanceOf(NotFoundError); // 404
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+    expect(error.userTitle).toBe(
+      'No se encontró la cita desde la que se abre esta ficha',
+    );
   });
 
   it('PA-047 answers MERGE_NOT_FOUND when there is no merge to undo', () => {

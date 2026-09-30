@@ -19,6 +19,11 @@
  * themselves the enumeration.
  */
 export const DOMAIN_ERROR_CODES = [
+  // AG-073. La ficha se pidió DESDE una cita que no la respalda: no existe, es
+  // de otro paciente o de una sede sin `agenda:read`. 404 y un solo mensaje
+  // para las tres, como `AGENDA_ENTRY_NOT_FOUND`. Se rechaza en vez de anotar
+  // sin contexto: el contexto de una fila de bitácora es evidencia.
+  'ACCESS_CONTEXT_NOT_FOUND',
   'ACCOUNT_INACTIVE',
   // Agenda, E2. Los cuatro son la máquina de estados de la cita (SPEC §5) y
   // responden cosas distintas a propósito: la transición no está en la tabla

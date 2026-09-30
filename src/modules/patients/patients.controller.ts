@@ -24,6 +24,7 @@ import { RequirePermission } from '../../shared/http/auth.decorators';
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import {
   PatientsService,
+  type OpenedFromAgenda,
   type Requester,
 } from './application/patients.service';
 import type {
@@ -34,6 +35,7 @@ import {
   AddIdentifierDto,
   CorrectPatientDto,
   CreatePatientDto,
+  OpenPatientDto,
   PatientDetailDto,
   PatientPageDto,
   SearchPatientsDto,
@@ -107,8 +109,20 @@ export class PatientsController {
   async byId(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: Request,
+    @Query() query: OpenPatientDto = {},
   ): Promise<PatientDetailResponse> {
-    const patient = await this.patients.getById(id, this.requester(req));
+    const { agendaEntryId } = query;
+    /**
+     * AG-073. Opened from an appointment, the audit row names it — once the
+     * service has checked it is this patient's and at a site where the caller
+     * reads the agenda. The route stays `global` (a chart has no site); the
+     * site dimension belongs to the appointment, so it is checked there.
+     */
+    const patient = await this.patients.getById(
+      id,
+      this.requester(req),
+      agendaEntryId === undefined ? undefined : this.fromAgenda(agendaEntryId),
+    );
     return toDetailResponse(patient);
   }
 
@@ -221,6 +235,15 @@ export class PatientsController {
     );
 
     return toDetailResponse(updated);
+  }
+
+  /** AG-073. The appointment the chart is opened from, and who may vouch for it. */
+  private fromAgenda(agendaEntryId: string): OpenedFromAgenda {
+    const principal = this.currentUser.requirePrincipal();
+    return {
+      agendaEntryId,
+      mayReadAgendaAt: (siteId) => principal.canAtSite('agenda:read', siteId),
+    };
   }
 
   /**

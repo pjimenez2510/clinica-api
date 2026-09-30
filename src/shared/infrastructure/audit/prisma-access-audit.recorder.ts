@@ -55,6 +55,8 @@ export class PrismaAccessAuditRecorder implements AccessAuditRecorder {
            */
           before: entry.before as Prisma.InputJsonObject | undefined,
           after: entry.after as Prisma.InputJsonObject | undefined,
+          contextType: entry.context?.resourceType,
+          contextId: entry.context?.resourceId,
         },
       });
     } catch (error) {

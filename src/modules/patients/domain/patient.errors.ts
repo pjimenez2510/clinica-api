@@ -527,3 +527,24 @@ export class PriorityGroupNotFoundError extends NotFoundError {
     super('Priority group record does not exist or is not visible');
   }
 }
+
+/**
+ * AG-073. The chart was asked for FROM an appointment that does not back the
+ * claim: it does not exist, it is somebody else's (or a block, with nobody),
+ * or it sits at a site where the caller cannot read the agenda.
+ *
+ * ONE CODE FOR THE THREE, for the same reason as `PATIENT_NOT_FOUND`: telling
+ * «no existe» from «es de otra persona» would answer «this appointment belongs
+ * to somebody else» to whoever tries identifiers (AG-071). And it is refused
+ * rather than recorded without its context, because the context of an audit
+ * row is evidence: a claim nobody verified has no place in it.
+ */
+export class AccessContextNotFoundError extends NotFoundError {
+  readonly code = 'ACCESS_CONTEXT_NOT_FOUND';
+  override readonly userTitle =
+    'No se encontró la cita desde la que se abre esta ficha';
+
+  constructor() {
+    super('The appointment the chart was opened from does not back the access');
+  }
+}

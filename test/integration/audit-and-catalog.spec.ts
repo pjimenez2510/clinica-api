@@ -166,6 +166,82 @@ describe('AG-097 · CF-066 · el valor anterior en la bitácora', () => {
   });
 });
 
+/**
+ * AG-073. The trail says from WHERE a chart was opened — the appointment it was
+ * reached from — in the same row as the read.
+ *
+ * One row naming both resources, as FHIR `AuditEvent.entity` and IHE BALP do:
+ * two rows related only by their timestamps come apart as soon as somebody has
+ * two tabs open. And both halves or neither, which is what the base checks: a
+ * context type with no identifier is an assertion nobody can follow.
+ */
+describe('AG-073 · el contexto del acceso en la bitácora', () => {
+  const db = useDatabase();
+
+  it('AG-073 guarda en la misma fila la cita desde la que se abrió la ficha', async () => {
+    const prisma = db();
+
+    const entry = await prisma.accessAudit.create({
+      data: {
+        resourceType: 'patient',
+        resourceId: 'some-patient-id',
+        action: 'READ',
+        contextType: 'agenda_entry',
+        contextId: 'some-entry-id',
+      },
+    });
+
+    expect(entry.contextType).toBe('agenda_entry');
+    expect(entry.contextId).toBe('some-entry-id');
+  });
+
+  it('AG-073 acepta una lectura sin contexto, que es la de siempre', async () => {
+    const prisma = db();
+
+    const entry = await prisma.accessAudit.create({
+      data: { resourceType: 'patient', resourceId: 'p', action: 'READ' },
+    });
+
+    expect(entry.contextType).toBeNull();
+    expect(entry.contextId).toBeNull();
+  });
+
+  it('AG-073 RECHAZA un tipo de contexto sin su identificador', async () => {
+    const prisma = db();
+
+    await expect(
+      prisma.$executeRawUnsafe(
+        `INSERT INTO access_audit (resource_type, resource_id, action, context_type)
+         VALUES ('patient', 'p', 'READ', 'agenda_entry')`,
+      ),
+    ).rejects.toThrow(/access_audit_context_both_or_neither/);
+  });
+
+  it('AG-073 RECHAZA un tipo de contexto que no está declarado', async () => {
+    // `'cita'` en vez de `'agenda_entry'`: una investigación que filtra por el
+    // tipo declarado no la encontraría nunca.
+    const prisma = db();
+
+    await expect(
+      prisma.$executeRawUnsafe(
+        `INSERT INTO access_audit (resource_type, resource_id, action, context_type, context_id)
+         VALUES ('patient', 'p', 'READ', 'cita', 'some-entry-id')`,
+      ),
+    ).rejects.toThrow(/access_audit_context_declared_types/);
+  });
+
+  it('AG-073 RECHAZA un identificador de contexto sin su tipo', async () => {
+    const prisma = db();
+
+    await expect(
+      prisma.$executeRawUnsafe(
+        `INSERT INTO access_audit (resource_type, resource_id, action, context_id)
+         VALUES ('patient', 'p', 'READ', 'some-entry-id')`,
+      ),
+    ).rejects.toThrow(/access_audit_context_both_or_neither/);
+  });
+});
+
 describe('catalog concepts are valid over a period', () => {
   const db = useDatabase();
 

@@ -387,6 +387,16 @@ export const searchPatientsSchema = z.object({
 /** Query of GET /patients. */
 export class SearchPatientsDto extends createZodDto(searchPatientsSchema) {}
 
+/**
+ * Query of GET /patients/:id (AG-073). `agendaEntryId` names the appointment
+ * the chart is opened from; the service checks it before the audit row
+ * carries it.
+ */
+const openPatientSchema = z.object({
+  agendaEntryId: z.uuid().optional(),
+});
+export class OpenPatientDto extends createZodDto(openPatientSchema) {}
+
 const identifierResponseSchema = z.object({
   type: IDENTIFIER_TYPE,
   issuingCountry: z.string(),

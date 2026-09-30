@@ -87,6 +87,23 @@ export interface AccessAuditEntry {
    */
   before?: AuditSnapshot;
   after?: AuditSnapshot;
+  /**
+   * AG-073. From which resource the access was reached — a chart opened from
+   * an appointment names the appointment here. Identifiers only, never a
+   * snapshot: the base refuses one half without the other
+   * (`access_audit_context_both_or_neither`).
+   *
+   * ⚠️ ONLY WHAT THE SERVER VERIFIED. A row of this table is evidence; a
+   * context the client asserted and nobody checked would make it say whatever
+   * the client wanted.
+   */
+  context?: AccessContext;
+}
+
+/** AG-073. The resource an access was reached from. */
+export interface AccessContext {
+  resourceType: 'agenda_entry';
+  resourceId: string;
 }
 
 /**
