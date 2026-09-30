@@ -126,7 +126,7 @@ fecha de servicio sale al precio viejo. Contra PostgreSQL real, porque el
 no-solapamiento de vigencias lo garantiza la base.
 
 **Cubre:** BI-001, BI-002, BI-005, BI-006, BI-010 a BI-016, BI-020 a BI-026,
-BI-030 a BI-035, BI-040 a BI-048, BI-050 a BI-059, BI-070 a BI-074, BI-120 a
+BI-030 a BI-036, BI-040 a BI-048, BI-050 a BI-059, BI-070 a BI-074, BI-120 a
 BI-122.
 
 > **Lo entregado el 20-08-2026, y lo que se quedó fuera con su motivo.**
@@ -588,9 +588,18 @@ es falsa, hay requisitos que cambian.
   > `DECISIONES-PENDIENTES.md`.
 - **BI-034** — SI un pagador es institucional y se guarda sin `RUC` válido,
   ENTONCES el sistema DEBERÁ rechazarlo con `PAYER_RUC_REQUIRED`.
-  > El dígito verificador lo comprueba el value object `Ruc` que ya existe en
-  > `shared` (OR-008). Es la única ramificación por `kind` de todo el módulo, y
+  > La forma la comprueba el value object `Ruc` que ya existe en `shared`
+  > (OR-008, OR-009). Es la única ramificación por `kind` de todo el módulo, y
   > es de validación: un convenio de empresa sin RUC no puede recibir factura.
+- **BI-036** — SI se guarda un pagador, de cualquier clase, con un `RUC`
+  escrito que no supera OR-008 y OR-009, ENTONCES el sistema DEBERÁ rechazarlo
+  con `INVALID_RUC` sobre el campo `ruc`; y la base DEBERÁ rechazar por su
+  cuenta un `ruc` de pagador que no sean trece dígitos (`payer_ruc_format`).
+  > D-057: la interfaz ya exigía trece dígitos y la API sólo un máximo de 13
+  > caracteres, así que «Particular» admitía `12345`. Un RUC mal escrito llega a
+  > la factura electrónica y el SRI la rechaza meses después. El `CHECK` entra
+  > `NOT VALID`: rige para toda escritura nueva sin romper la migración por una
+  > fila vieja; las que no cumplan se listan antes y se corrigen a mano.
 - **BI-035** — El sistema NO DEBERÁ tomar el pagador de la cuenta como emisor ni
   como receptor de la factura por sí solo: el receptor se declara en BI-080.
   > El pagador dice **de qué lista sale el precio**. Quién figura en la factura
