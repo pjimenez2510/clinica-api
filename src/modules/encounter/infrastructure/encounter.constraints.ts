@@ -116,10 +116,13 @@ registerConstraintMeanings({
     field: 'heightPosition',
     message: 'Indique si la talla se tomó de pie o acostado: son medidas distintas', // prettier-ignore
   },
-  /** EN-065. There is no corrected value without the value it corrects. */
+  /**
+   * EN-065. There is no corrected value without the value it corrects. Named
+   * on the MEASURED box, which is the one to fill — the screen says the same.
+   */
   encounter_vitals_corrected_needs_hemoglobin: {
-    code: 'VITALS_OUT_OF_RANGE',
-    field: 'hemoglobinCorrectedGDl',
+    code: 'VALIDATION_FAILED',
+    field: 'hemoglobinGDl',
     message: 'Registre la hemoglobina medida antes de la corregida por altitud',
   },
   /** EN-163. A blank reason is not a reason: it either says something or is absent. */
@@ -144,16 +147,6 @@ registerConstraintMeanings({
     code: 'REFUTATION_REASON_REQUIRED',
     field: 'notes',
     message: 'Indique por qué se descarta este antecedente',
-  },
-  /**
-   * EN-143. Every taking since the column names who took it. The service
-   * always passes the session's account; this is for the writer that did not
-   * come through it.
-   */
-  encounter_vitals_names_its_author: {
-    code: 'VALIDATION_FAILED',
-    field: 'recordedBy',
-    message: 'Los signos vitales tienen que decir quién los tomó',
   },
 });
 

@@ -1582,11 +1582,14 @@ requisitos que cambian.
   >
   > **Esquema (`feat/f03-preparacion`):** `patient_allergy.recorded_by` y
   > `refuted_by`, claves foráneas a `app_user` con `RESTRICT`. **Garantía de la
-  > base:** `patient_allergy_names_its_author` y
-  > `patient_allergy_refutation_names_its_author`, `NOT VALID`: toda escritura
-  > desde la migración lleva autor, y las filas anteriores —que nunca lo
-  > tuvieron— no se inventan uno; para ellas la bitácora sigue siendo la única
-  > respuesta. Los antecedentes (EN-085) nacen ya con autor.
+  > base:** `trg_patient_allergy_guard` exige el autor **al insertar** y sólo
+  > admite después una escritura —refutar una alergia vigente, sin tocar nada
+  > más—; rechaza `DELETE` y `TRUNCATE`. No es un `CHECK NOT VALID` sobre
+  > `recorded_by`, que se evalúa en cada `UPDATE` y dejaba sin poder refutar
+  > las alergias anteriores a la columna.
+  > `patient_allergy_refutation_names_its_author` exige quién la descartó. Las
+  > filas anteriores no se inventan autor; para ellas la bitácora sigue siendo
+  > la única respuesta.
 - **EN-087** — CUANDO un clínico afirme que el paciente **no tiene alergias
   conocidas**, el sistema DEBERÁ registrar esa afirmación **con su autor y su
   instante**, y DEBERÁ servirla junto a la lista de alergias. El sistema NO
@@ -2322,9 +2325,12 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   > clave foránea a `app_user` —y no a `practitioner`: enfermería no tiene
   > perfil clínico agendable— con `RESTRICT`, y
   > `encounter_vitals_names_its_author`, `NOT VALID` por la misma razón que en
-  > EN-086. **Es el autor de la toma vigente**: como la toma es una (EN-067),
-  > quien la corrige pasa a ser su autor, y la bitácora conserva quién la
-  > escribió antes.
+  > EN-086. **Corregir no es tomar**: quien corrige queda en `corrected_by` y
+  > `corrected_at`, y ni el autor ni el instante de la toma cambian
+  > (`trg_encounter_vitals_keeps_its_author`). La primera versión hacía autor
+  > de todas las cifras a quien corregía una sola; la revisión clínica del
+  > 30-09-2026 lo paró. **La autoría por medida** —el médico que rehace la
+  > temperatura es autor de la temperatura y no del peso— **es D-062**.
   >
   > **Esto es lo que resuelve la contradicción del formulario 002**, que el flujo
   > dejó anotada: el instructivo del 002 dice que *«este formulario debe ser

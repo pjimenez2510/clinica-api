@@ -805,12 +805,68 @@ describe('las alergias del paciente contra PostgreSQL', () => {
           criticality: 'LOW',
         },
       }),
-    ).rejects.toThrow(/patient_allergy_names_its_author/);
+    ).rejects.toThrow(/must name its author/);
     await expect(
       prisma.patientAllergy.update({
         where: { id: allergy.id },
         data: { refutedAt: new Date(), refutedNotes: 'No era alergia' },
       }),
     ).rejects.toThrow(/patient_allergy_refutation_names_its_author/);
+  });
+
+  it('EN-082 EN-086 una alergia anterior a la columna, sin autor, se sigue pudiendo descartar', async () => {
+    const prisma = db();
+    const patient = await createPatient(prisma);
+    const doctor = await createUser(prisma);
+    // Una fila como las de antes de la migración: sin autor. `replica` apaga
+    // los disparadores, que es lo único que permite recrear el pasado.
+    const [, legacy] = await prisma.$transaction([
+      prisma.$executeRawUnsafe(
+        `SET LOCAL session_replication_role = 'replica'`,
+      ),
+      prisma.$queryRawUnsafe<{ id: string }[]>(
+        `INSERT INTO patient_allergy (patient_id, substance_text, criticality)
+         VALUES ($1::uuid, 'Penicilina', 'HIGH') RETURNING id`,
+        patient.id,
+      ),
+    ]);
+
+    const refuted = await allergiesOf(prisma).refute({
+      patientId: patient.id,
+      allergyId: legacy[0]!.id,
+      notes: 'Prueba de provocación negativa',
+      now: new Date(),
+      refutedById: doctor.id,
+    });
+
+    expect(refuted?.recordedBy).toBeNull();
+    expect(refuted?.refutedBy?.id).toBe(doctor.id);
+  });
+
+  it('EN-082 la base rechaza borrar, truncar y reescribir una alergia', async () => {
+    const prisma = db();
+    const patient = await createPatient(prisma);
+    const recorded = await allergiesOf(prisma).record({
+      patientId: patient.id,
+      substanceText: 'Penicilina',
+      criticality: 'HIGH',
+    });
+
+    await expect(
+      prisma.$executeRawUnsafe(
+        `UPDATE patient_allergy SET criticality = 'LOW' WHERE id = $1::uuid`,
+        recorded.id,
+      ),
+    ).rejects.toThrow(/append-only/);
+    await expect(
+      prisma.$executeRawUnsafe(
+        `DELETE FROM patient_allergy WHERE id = $1::uuid`,
+        recorded.id,
+      ),
+    ).rejects.toThrow(/append-only/);
+    await expect(
+      prisma.$executeRawUnsafe(`TRUNCATE patient_allergy CASCADE`),
+    ).rejects.toThrow(/append-only/);
+    await expect(prisma.patientAllergy.count()).resolves.toBe(1);
   });
 });

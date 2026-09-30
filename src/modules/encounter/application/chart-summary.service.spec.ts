@@ -174,8 +174,10 @@ class FakeActiveReader implements ActiveAllergyReader {
 class FakeHistory {
   rows: HistoryView[] = [];
 
-  listFor(): Promise<HistoryView[]> {
-    return Promise.resolve(this.rows);
+  activeFor(): Promise<HistoryView[]> {
+    // The adapter filters in the database; the fake does the same, so the
+    // summary is tested for passing on what it is given.
+    return Promise.resolve(this.rows.filter((row) => row.refutedAt === null));
   }
 }
 
@@ -313,7 +315,7 @@ describe('la historia a la vista durante la consulta', () => {
     expect(Object.keys(previous ?? {})).not.toContain('content');
   });
 
-  it('EN-085 lleva los antecedentes vigentes y deja fuera los descartados', async () => {
+  it('EN-085 lleva los antecedentes vigentes que le da el repositorio', async () => {
     history.rows = [
       anEntry(),
       anEntry({

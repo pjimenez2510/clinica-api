@@ -199,6 +199,9 @@ export interface VitalSignsView extends VitalSigns {
    * for takings older than the column, which nobody can give an author to.
    */
   recordedBy: { id: string; name: string } | null;
+  /** EN-143. Who corrected the taking last, and when; `null` if nobody did. */
+  correctedBy: { id: string; name: string } | null;
+  correctedAt: Date | null;
 }
 
 /**
@@ -331,14 +334,14 @@ export interface EncounterRepository {
    * outpatient care that is right; the day the clinic monitors blood pressure
    * for an hour it needs another table.
    *
-   * EN-143. `recordedById` is the account that took THIS reading, and it
-   * replaces the previous author along with the previous figures: the row is
-   * one taking, and the trail keeps who wrote the one before.
+   * EN-143. `authorId` is the session's account: the AUTHOR of a first
+   * taking, the CORRECTOR of a later one. A correction never replaces who
+   * took the reading, nor when (unless the caller names a new instant).
    */
   saveVitals(
     query: EncounterQuery,
     vitals: VitalSigns,
-    recordedById: string,
+    authorId: string,
   ): Promise<VitalSignsView>;
 
   /** EN-068. The vital signs of one attention, or `null` when none were taken. */

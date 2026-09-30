@@ -48,7 +48,7 @@ const RESOURCE_TYPE = 'encounter';
  * made for the priority groups: the vital signs are written by nursing under a
  * different permission through a different route, and an audit that recorded
  * them as «encounter» could not answer «¿quién tomó los signos?». The row
- * names the author of the CURRENT reading (EN-143); the trail keeps every one.
+ * names who took it and who corrected it last (EN-143); the trail keeps all.
  */
 const VITALS_RESOURCE_TYPE = 'encounter_vitals';
 
@@ -444,8 +444,8 @@ export class EncounterService {
       days: encounter.ageDays,
     });
 
-    // EN-143, D-048. The author goes IN the datum: whoever is signed in took
-    // this reading, and it is never a field of the body.
+    // EN-143, D-048. The author goes IN the datum, from the session and never
+    // from the body: the author of a first taking, the corrector of a later one.
     const saved = await this.encounters.saveVitals(
       { encounterId: encounter.id, sites: requester.sites },
       vitals,
@@ -461,8 +461,8 @@ export class EncounterService {
     });
 
     /**
-     * EN-143. The row names its CURRENT author; the trail keeps every write,
-     * so who took the reading a correction replaced is still answerable.
+     * EN-143. The row names who took the reading and who corrected it last;
+     * the trail keeps every write in between.
      */
     await this.audit.record({
       userId: requester.userId,

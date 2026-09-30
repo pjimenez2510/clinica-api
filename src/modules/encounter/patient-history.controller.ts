@@ -24,7 +24,6 @@ import type { Permission } from '../../shared/authorisation/permission.catalogue
 
 import { PatientHistoryService } from './application/patient-history.service';
 import type { Requester } from './application/encounter.service';
-import type { HistoryView } from './domain/patient-history.repository';
 import {
   HistoryDto,
   HistoryListDto,
@@ -33,6 +32,7 @@ import {
   type HistoryListResponse,
   type HistoryResponse,
 } from './dto/patient-history.dto';
+import { toHistoryResponse } from './dto/patient-history.mapper';
 
 /**
  * EN-085, EN-164. The patient's personal and family history.
@@ -123,20 +123,4 @@ export class PatientHistoryController {
       userAgent: req.get('user-agent'),
     };
   }
-}
-
-/** Shared with the chart summary, so the two reads cannot disagree. */
-export function toHistoryResponse(entry: HistoryView): HistoryResponse {
-  return {
-    id: entry.id,
-    patientId: entry.patientId,
-    kind: entry.kind,
-    description: entry.description,
-    relative: entry.relative,
-    recordedAt: entry.recordedAt.toISOString(),
-    recordedBy: entry.recordedBy,
-    refutedAt: entry.refutedAt?.toISOString() ?? null,
-    refutedNotes: entry.refutedNotes,
-    refutedBy: entry.refutedBy,
-  };
 }

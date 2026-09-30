@@ -155,6 +155,8 @@ class FakeEncounters implements EncounterRepository {
       bmi: null,
       measuredAt: vitals.measuredAt ?? new Date('2026-09-14T14:05:00Z'),
       recordedBy: { id: recordedById, name: 'Carmen Salazar' },
+      correctedBy: null,
+      correctedAt: null,
     });
   }
 

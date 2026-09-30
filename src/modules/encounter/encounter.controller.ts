@@ -513,5 +513,7 @@ function toVitalsResponse(vitals: VitalSignsView): VitalSignsResponse {
     presentingComplaint: vitals.presentingComplaint ?? null,
     measuredAt: vitals.measuredAt.toISOString(),
     recordedBy: vitals.recordedBy,
+    correctedBy: vitals.correctedBy,
+    correctedAt: vitals.correctedAt?.toISOString() ?? null,
   };
 }

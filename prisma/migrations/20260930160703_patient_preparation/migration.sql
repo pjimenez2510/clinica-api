@@ -43,6 +43,16 @@ ALTER TABLE "encounter_vitals"
   ADD COLUMN "hemoglobin_corrected_g_dl" DECIMAL(4,1),
   ADD COLUMN "presenting_complaint" VARCHAR(500),
   ADD COLUMN "recorded_by" UUID,
+  ADD COLUMN "corrected_by" UUID,
+  ADD COLUMN "corrected_at" TIMESTAMPTZ(6),
+
+  ADD CONSTRAINT "encounter_vitals_corrected_by_fkey"
+    FOREIGN KEY ("corrected_by") REFERENCES "app_user"("id")
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+  -- Una corrección dice quién y cuándo, o no hay corrección.
+  ADD CONSTRAINT "encounter_vitals_correction_is_whole" CHECK (
+    ("corrected_by" IS NULL) = ("corrected_at" IS NULL)
+  ),
 
   ADD CONSTRAINT "encounter_vitals_recorded_by_fkey"
     FOREIGN KEY ("recorded_by") REFERENCES "app_user"("id")
@@ -73,9 +83,37 @@ ALTER TABLE "encounter_vitals"
     ("height_cm" IS NULL) = ("height_position" IS NULL)
   ) NOT VALID,
   -- EN-143. Toda toma escrita desde hoy nombra a quien la tomó.
+  -- Una toma anterior a la columna no tiene autor y nadie se lo inventa: si se
+  -- corrige, la nombra quien la corrigió.
   ADD CONSTRAINT "encounter_vitals_names_its_author" CHECK (
-    "recorded_by" IS NOT NULL
+    "recorded_by" IS NOT NULL OR "corrected_by" IS NOT NULL
   ) NOT VALID;
+
+-- EN-143, D-048: QUIEN TOMÓ LOS SIGNOS NO CAMBIA AL CORREGIRLOS. Una corrección
+-- posterior —el médico que rehace la temperatura— no convierte al que corrige
+-- en autor del peso que tomó enfermería: queda en `corrected_by` y
+-- `corrected_at`. Sin esto, «Tomados por» nombraría a quien no midió nada.
+-- La autoría POR MEDIDA es una decisión abierta (D-062); esto es lo mínimo que
+-- no miente mientras se decide.
+CREATE OR REPLACE FUNCTION encounter_vitals_keeps_its_author()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF OLD."recorded_by" IS NOT NULL
+     AND NEW."recorded_by" IS DISTINCT FROM OLD."recorded_by" THEN
+    RAISE EXCEPTION 'encounter_vitals.recorded_by cannot change once written'
+      USING ERRCODE = 'insufficient_privilege',
+            HINT = 'Quien corrige la toma queda en corrected_by.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_encounter_vitals_keeps_its_author
+  BEFORE UPDATE ON "encounter_vitals"
+  FOR EACH ROW
+  EXECUTE FUNCTION encounter_vitals_keeps_its_author();
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -93,14 +131,69 @@ ALTER TABLE "patient_allergy"
     FOREIGN KEY ("refuted_by") REFERENCES "app_user"("id")
     ON DELETE RESTRICT ON UPDATE CASCADE,
 
-  -- EN-086. «¿Quién dijo que era alérgico?» tiene respuesta en la fila.
-  ADD CONSTRAINT "patient_allergy_names_its_author" CHECK (
-    "recorded_by" IS NOT NULL
-  ) NOT VALID,
-  -- Y «¿quién la descartó?», en cuanto se descarta.
+  -- EN-086. «¿Quién la descartó?», en cuanto se descarta. NOT VALID: las
+  -- refutadas antes de la columna no tienen a quién nombrar.
   ADD CONSTRAINT "patient_allergy_refutation_names_its_author" CHECK (
     "refuted_at" IS NULL OR "refuted_by" IS NOT NULL
   ) NOT VALID;
+
+-- EN-086, EN-082. EL AUTOR SE EXIGE AL NACER, NO EN CADA UPDATE, y la alergia
+-- sólo admite UNA escritura posterior: refutarla.
+--
+-- ⚠️ NO ES UN CHECK `NOT VALID` SOBRE `recorded_by`, y fue el primer intento: un
+-- CHECK se evalúa en todo UPDATE sobre la fila nueva, así que una alergia de
+-- antes de la columna —sin autor— dejaba de poder refutarse, y con ella de poder
+-- afirmarse «sin alergias conocidas» sobre esa ficha (revisión clínica,
+-- 30-09-2026). El autor se exige al INSERT; el UPDATE sólo puede refutar.
+--
+-- Y SE REFUTAN, NO SE REESCRIBEN NI SE BORRAN, igual que `patient_history`: sin
+-- esto cualquier UPDATE podía cambiar la sustancia, la criticidad o el autor
+-- que EN-086 dice guardar.
+CREATE OR REPLACE FUNCTION patient_allergy_guard()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF NEW."recorded_by" IS NULL THEN
+      RAISE EXCEPTION 'patient_allergy must name its author'
+        USING ERRCODE = 'check_violation',
+              CONSTRAINT = 'patient_allergy_names_its_author';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF TG_OP = 'UPDATE'
+     AND OLD."refuted_at" IS NULL
+     AND NEW."refuted_at" IS NOT NULL
+     AND NEW."id" = OLD."id"
+     AND NEW."patient_id" = OLD."patient_id"
+     AND NEW."substance_concept_id" IS NOT DISTINCT FROM OLD."substance_concept_id"
+     AND NEW."substance_text" = OLD."substance_text"
+     AND NEW."reaction" IS NOT DISTINCT FROM OLD."reaction"
+     AND NEW."criticality" = OLD."criticality"
+     AND NEW."recorded_at" = OLD."recorded_at"
+     AND NEW."recorded_by" IS NOT DISTINCT FROM OLD."recorded_by"
+  THEN
+    RETURN NEW;
+  END IF;
+
+  RAISE EXCEPTION 'patient_allergy is append-only: operation % is forbidden', TG_OP
+    USING ERRCODE = 'insufficient_privilege',
+          HINT = 'Una alergia no se borra ni se reescribe: se refuta, una vez, '
+                 'con su motivo; y si hace falta otra, se registra.';
+END;
+$$;
+
+CREATE TRIGGER trg_patient_allergy_guard
+  BEFORE INSERT OR UPDATE OR DELETE ON "patient_allergy"
+  FOR EACH ROW
+  EXECUTE FUNCTION patient_allergy_guard();
+
+CREATE TRIGGER trg_patient_allergy_no_truncate
+  BEFORE TRUNCATE ON "patient_allergy"
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION patient_allergy_guard();
 
 
 -- ═══════════════════════════════════════════════════════════════════════════

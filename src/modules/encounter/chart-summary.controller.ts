@@ -19,7 +19,7 @@ import {
   ChartSummaryDto,
   type ChartSummaryResponse,
 } from './dto/chart-summary.dto';
-import { toHistoryResponse } from './patient-history.controller';
+import { toHistoryResponse } from './dto/patient-history.mapper';
 
 /**
  * EN-159 to EN-161. The patient's history, without leaving the consultation.

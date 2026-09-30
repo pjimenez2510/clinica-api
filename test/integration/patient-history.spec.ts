@@ -172,4 +172,48 @@ describe('los antecedentes del paciente contra PostgreSQL', () => {
       }),
     ).rejects.toThrow(/patient_history_family_names_relative/);
   });
+
+  it('EN-085 la base rechaza la descripcion en blanco, la refutacion a medias y refutar dos veces', async () => {
+    const prisma = db();
+    const patient = await createPatient(prisma);
+    const author = await createUser(prisma);
+    const { entry } = await aFamilyEntry(prisma, patient.id);
+
+    await expect(
+      prisma.patientHistory.create({
+        data: {
+          patientId: patient.id,
+          recordedById: author.id,
+          kind: 'PERSONAL',
+          description: '   ',
+        },
+      }),
+    ).rejects.toThrow(/patient_history_description_not_blank/);
+
+    // Sin motivo: refutar es cuándo, por qué y quién, o nada.
+    await expect(
+      prisma.$executeRawUnsafe(
+        `UPDATE patient_history SET refuted_at = now(), refuted_by = $2::uuid
+          WHERE id = $1::uuid`,
+        entry.id,
+        author.id,
+      ),
+    ).rejects.toThrow(/patient_history_refutation_is_whole/);
+
+    // Control positivo: la refutación entera entra por SQL…
+    await prisma.$executeRawUnsafe(
+      `UPDATE patient_history
+          SET refuted_at = now(), refuted_by = $2::uuid, refuted_notes = 'Era la tía'
+        WHERE id = $1::uuid`,
+      entry.id,
+      author.id,
+    );
+    // …y la segunda la para el disparador, no el repositorio.
+    await expect(
+      prisma.$executeRawUnsafe(
+        `UPDATE patient_history SET refuted_notes = 'Otro motivo' WHERE id = $1::uuid`,
+        entry.id,
+      ),
+    ).rejects.toThrow(/append-only/);
+  });
 });

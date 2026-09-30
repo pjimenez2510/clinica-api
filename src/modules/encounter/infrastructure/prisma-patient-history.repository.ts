@@ -106,6 +106,16 @@ export class PrismaPatientHistoryRepository implements PatientHistoryRepository 
     });
     return rows.map(toHistoryView);
   }
+
+  /** Answered by `patient_history_patient_id_refuted_at_idx`. */
+  async activeFor(chartId: string): Promise<HistoryView[]> {
+    const rows = await this.prisma.patientHistory.findMany({
+      where: { ...chartScope(chartId), refutedAt: null },
+      select: HISTORY_SELECT,
+      orderBy: [{ recordedAt: 'desc' }, { id: 'desc' }],
+    });
+    return rows.map(toHistoryView);
+  }
 }
 
 function authorOf(user: {

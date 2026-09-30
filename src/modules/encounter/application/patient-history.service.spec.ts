@@ -63,6 +63,10 @@ class FakeHistory implements PatientHistoryRepository {
   listFor(): Promise<HistoryView[]> {
     return Promise.resolve([anEntry()]);
   }
+
+  activeFor(): Promise<HistoryView[]> {
+    return Promise.resolve([anEntry()]);
+  }
 }
 
 describe('los antecedentes del paciente', () => {

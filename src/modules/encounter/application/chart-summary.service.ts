@@ -224,7 +224,7 @@ export class ChartSummaryService {
     ] = await Promise.all([
       this.allergies.activeFor(encounter.patientId),
       this.allergyRecords.standingAbsenceFor(encounter.patientId),
-      this.historyRecords.listFor(encounter.patientId),
+      this.historyRecords.activeFor(encounter.patientId),
       this.summaries.previousEncounters(query),
       this.summaries.countEncounters(query),
     ]);
@@ -245,7 +245,7 @@ export class ChartSummaryService {
       noKnownAllergies,
       // EN-085. A ruled-out entry stays in the record and out of the summary,
       // as a refuted allergy does: the summary is what still counts.
-      history: history.filter((entry) => entry.refutedAt === null),
+      history,
       previousEncounters,
       totalEncounters,
     };

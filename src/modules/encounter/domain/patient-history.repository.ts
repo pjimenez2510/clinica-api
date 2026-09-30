@@ -69,6 +69,9 @@ export interface PatientHistoryRepository {
 
   /** Every entry of the chart and the charts it absorbed, live ones first. */
   listFor(chartId: string): Promise<HistoryView[]>;
+
+  /** EN-085. Only the live entries, for the consultation's summary. */
+  activeFor(chartId: string): Promise<HistoryView[]>;
 }
 
 export const PATIENT_HISTORY_REPOSITORY = Symbol('PatientHistoryRepository');

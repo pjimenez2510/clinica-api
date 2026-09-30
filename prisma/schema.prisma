@@ -128,6 +128,7 @@ model User {
   allergiesRecorded PatientAllergy[]  @relation("AllergyRecorder")
   allergiesRefuted  PatientAllergy[]  @relation("AllergyRefuter")
   vitalsRecorded    EncounterVitals[] @relation("VitalsRecorder")
+  vitalsCorrected   EncounterVitals[] @relation("VitalsCorrector")
   historyRecorded   PatientHistory[]  @relation("HistoryRecorder")
   historyRefuted    PatientHistory[]  @relation("HistoryRefuter")
 
@@ -2420,10 +2421,16 @@ model EncounterVitals {
   /// preparation. NOT the 002's `motivoConsulta`, which the doctor writes.
   presentingComplaint String? @map("presenting_complaint") @db.VarChar(500)
 
-  /// EN-143. Who took the CURRENT reading (one per attention, EN-067).
-  /// Nullable only for rows older than the column; NOT VALID check since.
+  /// EN-143. Who TOOK the reading. Never changes once written
+  /// (`trg_encounter_vitals_keeps_its_author`): a correction is not a taking.
+  /// Nullable only for rows older than the column.
   recordedById String? @map("recorded_by") @db.Uuid
   recordedBy   User?   @relation("VitalsRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
+
+  /// EN-143. Who corrected it last, and when; both or neither.
+  correctedById String?   @map("corrected_by") @db.Uuid
+  correctedBy   User?     @relation("VitalsCorrector", fields: [correctedById], references: [id], onDelete: Restrict)
+  correctedAt   DateTime? @map("corrected_at") @db.Timestamptz(6)
 
   @@map("encounter_vitals")
 }

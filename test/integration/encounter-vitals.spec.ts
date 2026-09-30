@@ -13,6 +13,7 @@ import {
   createPatient,
   createPractitioner,
   createSite,
+  createUser,
 } from './setup/fixtures';
 
 /**
@@ -434,7 +435,7 @@ describe('los signos vitales de la atención', () => {
       save(query, { hemoglobinCorrectedGDl: 10.9 }),
     );
     expect(problem?.status).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
-    expect(problem?.errors?.[0]?.field).toBe('hemoglobinCorrectedGDl');
+    expect(problem?.errors?.[0]?.field).toBe('hemoglobinGDl');
   });
 
   it('EN-065 rechaza en la base una hemoglobina de 115, que es 11.5 sin la coma', async () => {
@@ -450,58 +451,113 @@ describe('los signos vitales de la atención', () => {
     expect(problem?.errors?.[0]?.field).toBe('hemoglobinGDl');
   });
 
-  it('EN-143 la toma nombra en la fila a quien la guardo, y quien la corrige pasa a ser su autor', async () => {
+  it('EN-143 corregir no es tomar: el autor y la hora de la toma se quedan, y el que corrige va aparte', async () => {
     const prisma = db();
     const { site, encounter, practitioner } = await anEncounter(prisma);
-    const nurse = await prisma.user.create({
-      data: {
-        email: 'enfermera.en143@clinica.ec',
-        passwordHash: 'not-a-real-hash',
-        firstName: 'Carmen',
-        lastName: 'Salazar',
-      },
-    });
+    const nurse = await createUser(prisma);
     const repository = repositoryOf(prisma);
     const query = { encounterId: encounter.id, sites: [site.id] };
+    const takenAt = new Date(Date.now() - 3_600_000);
 
     const taken = await repository.saveVitals(
       query,
-      { weightKg: 68 },
+      { weightKg: 68, measuredAt: takenAt },
       nurse.id,
     );
-    expect(taken.recordedBy).toEqual({
-      id: nurse.id,
-      name: 'Carmen Salazar',
-    });
+    expect(taken.recordedBy).toEqual({ id: nurse.id, name: 'Carmen Salazar' });
+    expect(taken.correctedBy).toBeNull();
 
+    // El médico rehace sólo la temperatura, sin decir una hora nueva.
     const corrected = await repository.saveVitals(
       query,
-      { weightKg: 68.5 },
+      { weightKg: 68, temperatureC: 37.2 },
       practitioner.userId,
     );
-    expect(corrected.recordedBy?.id).toBe(practitioner.userId);
-    await expect(repository.findVitals(query)).resolves.toMatchObject({
-      recordedBy: { id: practitioner.userId },
-    });
+
+    expect(corrected.recordedBy?.id).toBe(nurse.id);
+    expect(corrected.measuredAt).toEqual(takenAt);
+    expect(corrected.correctedBy?.id).toBe(practitioner.userId);
+    expect(corrected.correctedAt).not.toBeNull();
   });
 
-  it('EN-143 la base rechaza una toma escrita sin autor', async () => {
+  it('EN-143 la base rechaza cambiar el autor de una toma, y una toma sin autor', async () => {
     const prisma = db();
     const { encounter, practitioner } = await anEncounter(prisma);
+    const other = await createUser(prisma);
 
-    // Control positivo: la misma sentencia con autor entra.
+    // Control positivo: la toma con autor entra, y corregir una cifra también.
     await prisma.$executeRawUnsafe(
       `INSERT INTO encounter_vitals (encounter_id, weight_kg, recorded_by)
        VALUES ($1, 68, $2::uuid)`,
       encounter.id,
       practitioner.userId,
     );
+    await prisma.$executeRawUnsafe(
+      `UPDATE encounter_vitals SET weight_kg = 69 WHERE encounter_id = $1`,
+      encounter.id,
+    );
+
     await expect(
       prisma.$executeRawUnsafe(
-        `UPDATE encounter_vitals SET recorded_by = NULL WHERE encounter_id = $1`,
+        `UPDATE encounter_vitals SET recorded_by = $2::uuid WHERE encounter_id = $1`,
         encounter.id,
+        other.id,
+      ),
+    ).rejects.toThrow(/cannot change once written/);
+
+    const second = await anEncounter(prisma);
+    await expect(
+      prisma.$executeRawUnsafe(
+        `INSERT INTO encounter_vitals (encounter_id, weight_kg) VALUES ($1, 68)`,
+        second.encounter.id,
       ),
     ).rejects.toThrow(/encounter_vitals_names_its_author/);
+  });
+
+  it('EN-143 una toma anterior a la columna se corrige sin inventarle autor', async () => {
+    const prisma = db();
+    const { site, encounter, practitioner } = await anEncounter(prisma);
+    // Una fila como las de antes de la migración: sin autor. Se recrea el
+    // pasado quitando la comprobación un instante, en una transacción.
+    await prisma.$transaction([
+      prisma.$executeRawUnsafe(
+        `SET LOCAL session_replication_role = 'replica'`,
+      ),
+      prisma.$executeRawUnsafe(
+        `ALTER TABLE encounter_vitals DROP CONSTRAINT encounter_vitals_names_its_author`,
+      ),
+      prisma.$executeRawUnsafe(
+        `INSERT INTO encounter_vitals (encounter_id, weight_kg) VALUES ($1::uuid, 68)`,
+        encounter.id,
+      ),
+      prisma.$executeRawUnsafe(
+        `ALTER TABLE encounter_vitals ADD CONSTRAINT encounter_vitals_names_its_author
+           CHECK (recorded_by IS NOT NULL OR corrected_by IS NOT NULL) NOT VALID`,
+      ),
+    ]);
+
+    const corrected = await repositoryOf(prisma).saveVitals(
+      { encounterId: encounter.id, sites: [site.id] },
+      { weightKg: 68.5 },
+      practitioner.userId,
+    );
+
+    expect(corrected.recordedBy).toBeNull();
+    expect(corrected.correctedBy?.id).toBe(practitioner.userId);
+  });
+
+  it('EN-163 la base rechaza un motivo en blanco', async () => {
+    const prisma = db();
+    const { encounter, practitioner } = await anEncounter(prisma);
+
+    await expect(
+      prisma.$executeRawUnsafe(
+        `INSERT INTO encounter_vitals (encounter_id, recorded_by, presenting_complaint)
+         VALUES ($1::uuid, $2::uuid, '   ')`,
+        encounter.id,
+        practitioner.userId,
+      ),
+    ).rejects.toThrow(/encounter_vitals_presenting_complaint_not_blank/);
   });
 
   it('EN-163 guarda con la toma el motivo en palabras del paciente', async () => {

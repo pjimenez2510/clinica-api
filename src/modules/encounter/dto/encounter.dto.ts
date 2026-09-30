@@ -382,6 +382,9 @@ export const vitalSignsSchema = z.object({
   measuredAt: z.iso.datetime(),
   /** EN-143. Who took this reading; `null` only for takings older than the column. */
   recordedBy: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+  /** EN-143. Who corrected it last, and when; a correction is not a taking. */
+  correctedBy: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+  correctedAt: z.iso.datetime().nullable(),
 });
 /** Response of reading and recording block D. */
 export class VitalSignsDto extends createZodDto(vitalSignsSchema) {}
