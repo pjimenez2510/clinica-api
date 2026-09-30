@@ -48,6 +48,12 @@ export interface AccessTokenClaims {
   grants: RoleAssignment[];
   /** Whether the second factor was already satisfied in this session. */
   mfa: boolean;
+  /**
+   * AU-041. Only on the MFA challenge: the session epoch read with the
+   * password. Completing the second factor compares it, so closing every
+   * session of the account also voids a challenge in flight.
+   */
+  sep?: number;
 }
 
 /**
@@ -83,6 +89,7 @@ const accessClaimsSchema = z.object({
     .array(z.object({ roleId: z.uuid(), siteId: z.uuid().nullable() }))
     .default([]),
   mfa: z.boolean().default(false),
+  sep: z.number().int().nonnegative().optional(),
 });
 
 /**
@@ -153,6 +160,7 @@ export class TokenService implements OnModuleInit {
       fam: claims.fam,
       grants: claims.grants,
       mfa: claims.mfa,
+      ...(claims.sep === undefined ? {} : { sep: claims.sep }),
     })
       .setProtectedHeader({ alg: 'EdDSA' })
       .setSubject(claims.sub)

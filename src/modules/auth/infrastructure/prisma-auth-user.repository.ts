@@ -31,6 +31,7 @@ const AUTH_USER_FIELDS = {
   mfaLastStep: true,
   failedAttempts: true,
   lockedUntil: true,
+  sessionEpoch: true,
 } as const;
 
 /**
@@ -78,13 +79,18 @@ export class PrismaAuthUserRepository implements AuthUserRepositoryPort {
    * The transparent rehash after a successful sign-in, when `needsRehash` says
    * the parameters are outdated. Sessions are untouched: the password itself
    * did not change.
+   *
+   * CONDITIONAL on the hash that was verified (AU-041). Unconditional, a
+   * password change committed between the sign-in's read and this write was
+   * overwritten with a hash of the OLD password — which then worked again.
    */
   async updatePasswordHash(
     userId: string,
     passwordHash: string,
+    expectedCurrent: string,
   ): Promise<void> {
-    await this.prisma.user.update({
-      where: { id: userId },
+    await this.prisma.user.updateMany({
+      where: { id: userId, passwordHash: expectedCurrent },
       data: { passwordHash },
     });
   }

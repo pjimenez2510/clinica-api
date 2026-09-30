@@ -13,7 +13,11 @@ import { ClsService } from 'nestjs-cls';
 // unfinished second factor is a business rule, so `MfaRequiredError` does not
 // move.
 import { MissingTokenError } from '../../../shared/authorisation/current-user.service';
-import { MfaRequiredError, SessionRevokedError } from '../domain/auth.errors';
+import {
+  MfaRequiredError,
+  SessionExpiredError,
+  SessionRevokedError,
+} from '../domain/auth.errors';
 import { MFA_CHALLENGE_FAMILY } from '../domain/session';
 import {
   CURRENT_USER,
@@ -77,7 +81,7 @@ export class JwtAuthGuard implements CanActivate {
     );
     if (!claims.mfa && !mfaOptional) throw new MfaRequiredError();
 
-    await this.assertSessionStillOpen(claims.fam);
+    await this.assertSessionStillOpen(claims.fam, claims.sub, claims.sep);
 
     this.cls.set(CURRENT_USER, claims);
     return true;
@@ -117,19 +121,42 @@ export class JwtAuthGuard implements CanActivate {
    * WHAT IS DELIBERATELY NOT CACHED: nothing. A cache here is a window, and the
    * window is the entire defect.
    *
-   * THE ONE EXEMPTION IS THE MFA CHALLENGE TOKEN. It carries the magic family
-   * of `MFA_CHALLENGE_FAMILY` and has no `refresh_token` row by construction —
-   * the row is created when the second factor completes — so checking it would
-   * make signing in with MFA impossible. It grants nothing beyond the MFA flow,
-   * it is only obtainable by presenting the password, and whoever holds the
-   * password can obtain a fresh one at any time, so nothing is lost by
-   * exempting it.
+   * THE MFA CHALLENGE TOKEN IS CHECKED DIFFERENTLY, NOT EXEMPTED. It carries
+   * the magic family `MFA_CHALLENGE_FAMILY` and has no `refresh_token` row by
+   * construction — the row is created when the second factor completes — so
+   * the family check cannot apply. It was once exempted on the grounds that
+   * whoever holds the password can get a fresh one anyway; that stops being
+   * true the moment the password changes or the factor is reset, and an
+   * exempted challenge then still reached `mfa/enroll` (clean-context review,
+   * 30-09-2026). It is checked against the session epoch it carries (AU-041).
    */
-  private async assertSessionStillOpen(familyId: string): Promise<void> {
-    if (familyId === MFA_CHALLENGE_FAMILY) return;
-    if (await this.sessions.isFamilyOpen(familyId)) return;
+  private async assertSessionStillOpen(
+    familyId: string,
+    userId: string,
+    challengeEpoch: number | undefined,
+  ): Promise<void> {
+    /**
+     * AU-041. The challenge has no family, but it is not exempt: it carries
+     * the session epoch read with the password. Closing every session of the
+     * account (a reset, a password change, a deactivation) voids it, and so
+     * does the account being inactive. Without this, a challenge obtained
+     * before a second-factor reset still reached `mfa/enroll` — its holder,
+     * with the password and without the phone, could enrol THEIR authenticator
+     * on the account support had just given back.
+     */
+    if (familyId === MFA_CHALLENGE_FAMILY) {
+      if (await this.sessions.isChallengeCurrent(userId, challengeEpoch)) {
+        return;
+      }
+      throw new SessionRevokedError();
+    }
 
-    throw new SessionRevokedError();
+    // AU-040: a family that reached its lifetime is closed too, and says so.
+    const state = await this.sessions.familyState(familyId);
+    if (state === 'open') return;
+    throw state === 'expired'
+      ? new SessionExpiredError()
+      : new SessionRevokedError();
   }
 
   /**

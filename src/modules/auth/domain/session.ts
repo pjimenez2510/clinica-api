@@ -13,3 +13,14 @@
  * that is a deploy-time decision, not a refactor.
  */
 export const MFA_CHALLENGE_FAMILY = 'pending-mfa';
+
+/**
+ * AU-040. How much longer the refresh COOKIE lives than its session family.
+ *
+ * With both expiring at the same instant, the browser drops the cookie exactly
+ * when the family reaches its lifetime: the next refresh carries no cookie,
+ * the API can only answer «no cookie», and nobody is told the session expired.
+ * A day later, the server still refuses by the row and can say why. Expired
+ * rows must outlive their expiry by the same margin when they are purged.
+ */
+export const REFRESH_COOKIE_MARGIN_MS = 24 * 60 * 60 * 1000;

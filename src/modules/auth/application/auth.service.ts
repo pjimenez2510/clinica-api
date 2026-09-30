@@ -180,6 +180,7 @@ export class AuthService {
       await this.users.updatePasswordHash(
         user.id,
         await this.hasher.hash(password),
+        user.passwordHash,
       );
     }
 
@@ -191,6 +192,8 @@ export class AuthService {
         fam: MFA_CHALLENGE_FAMILY,
         grants: [],
         mfa: false,
+        // AU-041: the epoch read with the password travels with the challenge.
+        sep: user.sessionEpoch,
       });
       return { mfaRequired: true, challengeToken };
     }
@@ -201,13 +204,40 @@ export class AuthService {
   /**
    * Completes sign-in with the second factor: the TOTP code, or one of the
    * backup codes (AU-005).
+   *
+   * AU-041, AU-023. `challengeEpoch` is the session epoch the challenge
+   * carries — the one read with the password, possibly minutes ago. The
+   * session is issued against IT, not against the epoch read now: closing
+   * every session of the account in between (a deactivation, a password
+   * change, a reset, a redeemed invitation) voids the challenge. A challenge
+   * without one — issued before this existed — is refused the same way. And
+   * an inactive account is refused outright, like at the password (AU-002).
    */
   async verifyMfa(
     userId: string,
+    challengeEpoch: number | undefined,
     code: string,
     ctx: ClientContext = {},
   ): Promise<AuthenticatedSession> {
     const user = await this.requireUser(userId);
+    // Checked BEFORE the code: a voided challenge must not spend a backup
+    // code or a TOTP step. The guard already refuses these; this is the same
+    // rule where the session is actually issued.
+    if (
+      !user.active ||
+      challengeEpoch === undefined ||
+      user.sessionEpoch !== challengeEpoch
+    ) {
+      await this.hasher.burnTime();
+      this.logger.warn(
+        {
+          user_id: user.id,
+          error_code: user.active ? 'MFA_CHALLENGE_VOIDED' : 'ACCOUNT_INACTIVE',
+        },
+        'second factor refused before verification',
+      );
+      throw new InvalidCredentialsError();
+    }
 
     // Everything the second factor means — the TOTP window, the backup code,
     // the padding, the lockout and the deliberately identical refusal — is
@@ -215,7 +245,7 @@ export class AuthService {
     // re-enrolment and two copies of it would answer differently.
     await this.secondFactor.verify(user, code);
 
-    return this.issueSession(user, ctx);
+    return this.issueSession({ ...user, sessionEpoch: challengeEpoch }, ctx);
   }
 
   /**
@@ -328,12 +358,29 @@ export class AuthService {
   /**
    * Opens a new refresh family and signs an access token tied to it with `mfa:
    * true`. Only reached once every required factor has been proved.
+   *
+   * AU-041: `user` is the account as it was read with the credentials just
+   * proved. If every session of it was closed since — a password change, a
+   * deactivation, a second-factor reset, a redeemed invitation — no family is
+   * issued, and the answer is AU-002's: the credentials that were checked may
+   * be exactly the ones that were just replaced.
    */
   private async issueSession(
     user: AuthUser,
     ctx: ClientContext,
   ): Promise<AuthenticatedSession> {
-    const refresh = await this.refreshTokens.issueForNewSession(user.id, ctx);
+    const refresh = await this.refreshTokens.issueForNewSession(
+      user.id,
+      user.sessionEpoch,
+      ctx,
+    );
+    if (!refresh) {
+      this.logger.warn(
+        { user_id: user.id, error_code: 'SESSIONS_CLOSED_DURING_SIGN_IN' },
+        'sign-in refused: every session of the account was closed meanwhile',
+      );
+      throw new InvalidCredentialsError();
+    }
 
     const accessToken = await this.tokens.issueAccessToken({
       sub: user.id,

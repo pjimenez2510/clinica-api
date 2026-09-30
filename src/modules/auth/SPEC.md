@@ -49,13 +49,17 @@ credencial del MSP.
 Inicio de sesión con Argon2id, segundo factor TOTP, rotación de refresco con
 detección de reutilización, bloqueo por intentos y cierre de sesión.
 
-**Cubre:** AU-001 a AU-012, AU-039.
+**Cubre:** AU-001 a AU-012, AU-039 a AU-041.
 
-**Solo servidor:** AU-001, AU-003, AU-012. Cómo se hashea una contraseña no
-se ve; el bloqueo por intentos responde a la pantalla lo MISMO que una
-contraseña incorrecta —eso es AU-002, y contarlo aparte lo delataría—; y
+**Solo servidor:** AU-001, AU-003, AU-012, AU-039, AU-041. Cómo se hashea una
+contraseña no se ve; el bloqueo por intentos responde a la pantalla lo MISMO
+que una contraseña incorrecta —eso es AU-002, y contarlo aparte lo delataría—;
 «por petición y no dentro del token» es una propiedad del servidor que un
-navegador no puede observar.
+navegador no puede observar. La gracia de AU-039 es **transparente** para la
+interfaz por diseño: el cliente reintenta con la cookie que tenga y la sesión
+sigue, así que lo único que una pantalla puede enseñar es que no pasó nada.
+AU-041 es el orden de dos transacciones de la base, y un inicio de sesión que
+pierde esa carrera responde lo mismo que una contraseña incorrecta (AU-002).
 
 ### A2 — Administración de cuentas, roles y permisos _(P1)_
 
@@ -213,8 +217,7 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   > ventana para entrar, no la alarma**: si quien pierde su sucesor es el
   > dueño y cierra el navegador al acabar el turno, la alarma suena cuando
   > vuelva y renueve —puede ser días después—, y hasta entonces la otra rama
-  > vive. Un tope de vida absoluto por familia lo acortaría; no existe hoy y
-  > queda anotado en D-063. Y si dos
+  > vive. **Como mucho hasta el tope de vida de la familia (AU-040).** Y si dos
   > pestañas renuevan a la vez con el mismo refresco y el navegador se queda
   > con la cookie del sucesor retirado —las respuestas llegaron en el orden
   > inverso—, la siguiente renovación es AU-004: el mismo cierre que hoy
@@ -258,6 +261,113 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   > (D-063): tenerla activa por defecto, el tamaño, el agente de usuario como
   > condición y el alcance de «la familia» en AU-004. Lo que tiene fuente es la
   > cifra; aceptar el riesgo es del autor.
+- **AU-040** — El sistema DEBERÁ fijar la caducidad de una familia de sesión
+  al iniciar sesión, **`JWT_REFRESH_TTL_DAYS` días** después (7 por defecto,
+  como mucho 7), y NO DEBERÁ alargarla al rotar un refresco, tampoco por
+  AU-039. CUANDO se presente un refresco de una familia caducada, el sistema
+  DEBERÁ responder `SESSION_EXPIRED` sin emitir ningún refresco, **también
+  dentro de la ventana de AU-039**; y CUANDO llegue un token de acceso de una
+  familia caducada, DEBERÁ responder `SESSION_EXPIRED` aunque el token no
+  haya caducado. La interfaz DEBERÁ devolver a la persona a iniciar sesión
+  diciéndole que su sesión caducó.
+
+  > **DECIDIDO POR EL AUTOR** (D-063, punto 4, 30-09-2026): tope de vida
+  > absoluto de **7 días desde el inicio de sesión**. Hasta aquí la caducidad
+  > de 7 días se renovaba con cada rotación, así que una sesión usada a diario
+  > no caducaba nunca, y la rama robada que AU-039 no detecta al momento vivía
+  > lo mismo. Es lo que acota «lo acotado a segundos es la ventana para
+  > entrar, no la alarma» de AU-039: como mucho vive hasta el tope.
+  >
+  > **CÓMO: EL SUCESOR HEREDA LA CADUCIDAD**, en vez de `ahora + 7 días`. Toda
+  > la familia caduca a la vez y no hace falta columna: la reclamación
+  > atómica y la gracia ya exigían `expires_at > ahora`, así que una familia
+  > caducada no renueva **por construcción**.
+  >
+  > **CONFIGURABLE CON TECHO.** La misma variable, que ya valía 7, pasa a
+  > significar vida absoluta. Una instalación puede **acortarla**, en días
+  > enteros (1 como mínimo), y no alargar lo que decidió el autor: el esquema
+  > de entorno rechaza más de 7 y no arranca. No hay además caducidad por inactividad:
+  > con las dos en 7 días, la de inactividad no actuaría nunca.
+  >
+  > **EL GUARDIA TAMBIÉN LA VE.** Sin él, un token de acceso emitido el último
+  > minuto seguiría valiendo `JWT_ACCESS_TTL` más allá del tope. El guardia de
+  > AU-036 distingue ya tres estados de la familia —abierta, revocada,
+  > **caducada** (la última caducidad de sus filas vivas ya pasó)— con la
+  > misma consulta indexada.
+  >
+  > **`SESSION_EXPIRED` Y NO `INVALID_REFRESH_TOKEN` NI `SESSION_REVOKED`**:
+  > la frase de éste («se cerró porque cambiaron su contraseña») sería
+  > mentira, y la de aquél se lee como sistema roto. Decir «caducó» no filtra
+  > nada: quien lo lee tiene el token en la mano. Una familia caducada **no se
+  > revoca ni da la alarma de reúso** aunque el refresco presentado estuviera
+  > usado: no queda nada abierto que tomar. Eso queda como aviso
+  > (`REFRESH_TOKEN_AFTER_EXPIRY`, con su propio `error_code` para poder
+  > alertar sobre él: el navegador legítimo no presenta un refresco usado de
+  > una familia caducada), igual que `REFRESH_TOKEN_AFTER_CLOSE`.
+  >
+  > **«CADUCADA» SE DECIDE POR LA FAMILIA, NO POR LA FILA.** Las familias
+  > anteriores a AU-040 tienen una caducidad por fila: un refresco usado puede
+  > haber caducado con su sucesor aún vivo, y presentarlo es AU-004, no una
+  > sesión caducada.
+  >
+  > **LA COOKIE DURA UN DÍA MÁS QUE LA FAMILIA.** Si caducaran a la vez, el
+  > navegador dejaría de enviarla justo al llegar el tope, la API sólo podría
+  > contestar «no hay cookie» y nadie sabría que la sesión caducó. El servidor
+  > sigue rechazando por la fila; la cookie sólo le deja decir por qué. Cuando
+  > se programe la purga de refrescos, tiene que conservar las filas ese mismo
+  > día de margen.
+  >
+  > **LO QUE PASA EN PANTALLA.** El corte cae a la misma hora en que se inició
+  > sesión, así que a menudo en plena consulta. La interfaz **no saca a nadie
+  > de la pantalla** por `SESSION_EXPIRED`: primero intenta una renovación
+  > (otra pestaña puede haber vuelto a entrar ya) y, si no, pide volver a
+  > entrar **en un diálogo encima**, con la misma cuenta, y reintenta lo que
+  > se estaba guardando. Alinear el corte a una hora fija de la clínica es una
+  > decisión del autor (D-065).
+- **AU-041** — CUANDO se cierren todas las sesiones de una cuenta —cambio de
+  contraseña, AU-023, AU-036 o canje de una invitación— mientras un inicio de
+  sesión de esa cuenta está en curso, el sistema NO DEBERÁ dejar abierta la
+  sesión que ese inicio emita: o no la emite y responde como AU-002, o la
+  emite antes y el cierre la alcanza.
+
+  > **LA CARRERA.** Iniciar sesión es leer la cuenta, gastar ~100 ms de
+  > Argon2 y emitir la familia. Un cierre de todas las sesiones confirmado en
+  > medio no veía la familia, porque aún no existía, y ésta nacía viva
+  > **después** del acto que existía para cerrarla. La encontró la revisión
+  > de `fix/auth-refresh-gracia`.
+  >
+  > **CÓMO: UNA ÉPOCA DE SESIONES EN `app_user`.** `revokeLiveSessions` la
+  > incrementa **como primera sentencia** cada vez que cierra todas las
+  > sesiones de una cuenta, así que ningún camino tiene que acordarse: los
+  > cuatro pasan por ahí. El inicio de sesión lee la época con las
+  > credenciales y emite la familia en una transacción que bloquea la cuenta
+  > `FOR SHARE` y compara. Si cambió, no emite. Si no, el bloqueo compartido
+  > hace esperar el incremento de una revocación que llegue después hasta que
+  > la familia esté confirmada, y el `UPDATE` que revoca —que va detrás— la
+  > ve. Incrementar después de revocar la dejaría viva: la prueba lo comprueba.
+  >
+  > **UN CONTADOR, NO UN INSTANTE**: la comparación es de igualdad, y un
+  > contador no tiene empates de reloj ni depende de que `now()` sea el
+  > inicio de la transacción.
+  >
+  > **EL DESAFÍO DEL SEGUNDO FACTOR LLEVA LA ÉPOCA.** Entre la contraseña y
+  > el código pueden pasar minutos, y el desafío no tiene fila que revocar. La
+  > época leída con la contraseña viaja en el token de desafío (`sep`), y la
+  > sesión se emite contra ESA, no contra la que se lee al completar el
+  > código: cerrar todas las sesiones en medio anula el desafío. Además, una
+  > cuenta inactiva no completa el segundo factor. **Y el guardia lo comprueba
+  > en cada ruta del desafío**, no sólo al completar el código: un desafío
+  > anterior a un reinicio del segundo factor ya no llega a `mfa/enroll`, donde
+  > quien tuviera la contraseña sin el teléfono podía matricular su propio
+  > autenticador en la cuenta que soporte acababa de devolver. El código se
+  > comprueba después: un desafío anulado no gasta un código de respaldo. La revisión en contexto
+  > limpio encontró que, sin esto, una cuenta dada de baja con el desafío en
+  > la mano obtenía una sesión completa con su propio teléfono.
+  >
+  > **EL REHASH NO PISA UNA CONTRASEÑA NUEVA.** El inicio de sesión que rehace
+  > el hash con parámetros más fuertes sólo escribe si el hash sigue siendo el
+  > que comprobó; sin condición, un cambio de contraseña confirmado en medio
+  > se sobrescribía con un hash de la vieja, que volvía a valer.
 - **AU-005** — El sistema DEBERÁ permitir matricular un segundo factor TOTP con
   códigos de respaldo, y DEBERÁ cifrar el secreto en la aplicación (ADR-008 §3).
 
@@ -604,6 +714,7 @@ enlace que no sirve y con un correo que no sale.
 | `MAIL_DELIVERY_FAILED`     | 503  | El servidor de correo no aceptó el mensaje (AU-029)           |
 | `MFA_CHANGE_NOT_STARTED`   | 409  | Confirmar un cambio de segundo factor que ya no está a medias (AU-037) |
 | `SESSION_REVOKED`          | 401  | El token de acceso es de una sesión ya cerrada (AU-036, AU-023)        |
+| `SESSION_EXPIRED`          | 401  | La sesión llegó a su tope de vida desde que se inició (AU-040)         |
 | `SITE_SCOPE_DENIED`        | 403  | Conceder o revocar un rol fuera del alcance de quien llama, o uno global sin `user:manage` de clínica (AU-038, ADR-007) |
 
 `INVALID_CREDENTIAL_TOKEN` es **uno solo para tres situaciones**, y eso es el
@@ -730,6 +841,13 @@ reclamación —`WHERE mfa_pending_secret_encrypted = <el que se acaba de
 verificar>`— es lo que arbitra dos cambios simultáneos, porque la de la primera
 matrícula (`mfa_enabled_at IS NULL`) aquí la cumplen todos y no arbitra nada.
 Se vacía también al reiniciar el segundo factor (AU-035).
+
+**AU-041 necesitó columna nueva**, en `20260930192201_auth_session_epoch`:
+`app_user.session_epoch integer NOT NULL DEFAULT 0`, cuántas veces se han
+cerrado todas las sesiones de la cuenta. Sólo la escribe `revokeLiveSessions`
+(alcance de cuenta) y sólo la compara la emisión de una familia nueva. AU-040
+**no** necesitó columna: la caducidad de la familia es la `expires_at` que
+heredan todas sus filas.
 
 **Variables de entorno nuevas:** `WEB_BASE_URL` (por defecto
 `http://localhost:3001` en desarrollo), porque el enlace apunta a la

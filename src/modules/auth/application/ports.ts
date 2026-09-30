@@ -45,6 +45,12 @@ export interface AuthUser {
   mfaLastStep: bigint | null;
   failedAttempts: number;
   lockedUntil: Date | null;
+  /**
+   * AU-041. How many times every session of the account has been closed.
+   * Read WITH the credentials, so a new session can be refused if the count
+   * moved before it was issued.
+   */
+  sessionEpoch: number;
 }
 
 /**
@@ -69,6 +75,8 @@ export interface AccessTokenClaimsInput {
   fam: string;
   grants: RoleAssignment[];
   mfa: boolean;
+  /** AU-041: the session epoch, carried by the MFA challenge only. */
+  sep?: number;
 }
 
 /**
@@ -87,10 +95,16 @@ export interface TokenIssuerPort {
  * session of the account (AU-023).
  */
 export interface RefreshTokenPort {
+  /**
+   * `sessionEpoch` is the one read with the credentials just proved. `null`
+   * when every session of the account was closed since (AU-041): the family
+   * was not issued, and the sign-in must fail like a wrong password.
+   */
   issueForNewSession(
     userId: string,
+    sessionEpoch: number,
     ctx?: ClientContext,
-  ): Promise<IssuedRefreshToken>;
+  ): Promise<IssuedRefreshToken | null>;
   rotate(
     presentedToken: string,
     ctx?: ClientContext,
@@ -125,7 +139,16 @@ export interface AuthUserRepositoryPort {
   findByEmail(email: string): Promise<AuthUser | null>;
   findById(id: string): Promise<AuthUser | null>;
   findByRefreshFamily(familyId: string): Promise<AuthUser | null>;
-  updatePasswordHash(userId: string, passwordHash: string): Promise<void>;
+  /**
+   * The transparent rehash. Writes only while the stored hash is still
+   * `expectedCurrent` — the one just verified — so a password changed in the
+   * meantime is never overwritten with a hash of the old one (AU-041).
+   */
+  updatePasswordHash(
+    userId: string,
+    passwordHash: string,
+    expectedCurrent: string,
+  ): Promise<void>;
   /**
    * Increments the failure counter and returns the NEW value.
    *

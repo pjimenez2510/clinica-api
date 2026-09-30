@@ -78,6 +78,12 @@ model User {
   /// during the 30 seconds it remains valid.
   mfaLastStep BigInt? @map("mfa_last_step")
 
+  /// AU-041. How many times every session of this account has been closed.
+  /// Bumped by `revokeLiveSessions` (account scope) and compared, under a
+  /// shared row lock, when a new session family is issued: a sign-in that
+  /// read its credentials before a revocation cannot open a session after it.
+  sessionEpoch Int @default(0) @map("session_epoch")
+
   // --- Brute force defence ---
   failedAttempts Int       @default(0) @map("failed_attempts")
   lockedUntil    DateTime? @map("locked_until") @db.Timestamptz(6)

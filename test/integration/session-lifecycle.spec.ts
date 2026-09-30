@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { ConfigService } from '@nestjs/config';
 import { ThrottlerStorage } from '@nestjs/throttler';
 import { Test } from '@nestjs/testing';
@@ -375,9 +377,12 @@ describe('session over HTTP', () => {
      * lock. A condition, not a delay: it returns the moment the revocation is
      * provably queued behind the open transaction, and fails if it never is.
      */
-    async function blockedOnALock(waiters = 1): Promise<void> {
-      // Only OTHER sessions, only statements on `refresh_token`: the waiters
-      // this test provoked, not whatever else the database is doing.
+    async function blockedOnALock(
+      waiters = 1,
+      table = 'refresh_token',
+    ): Promise<void> {
+      // Only OTHER sessions, only statements on `table`: the waiters this
+      // test provoked, not whatever else the database is doing.
       const deadline = Date.now() + 5_000;
       while (Date.now() < deadline) {
         const [row] = await prisma.$queryRaw<{ waiting: bigint }[]>`
@@ -385,7 +390,7 @@ describe('session over HTTP', () => {
            WHERE datname = current_database()
              AND pid <> pg_backend_pid()
              AND wait_event_type = 'Lock'
-             AND query ILIKE '%refresh_token%'`;
+             AND query ILIKE ${`%${table}%`}`;
         if ((row?.waiting ?? 0n) >= BigInt(waiters)) return;
       }
       throw new Error(
@@ -712,7 +717,7 @@ describe('session over HTTP', () => {
       // El mismo servicio, construido con la gracia apagada; lo demás es el de
       // la aplicación y la misma base.
       await createAccount();
-      const { id: userId } = await prisma.user.findUniqueOrThrow({
+      const { id: userId, sessionEpoch } = await prisma.user.findUniqueOrThrow({
         where: { email: 'ana.torres@clinica.ec' },
       });
       const config = app.get<ConfigService<Env, true>>(ConfigService);
@@ -728,9 +733,9 @@ describe('session over HTTP', () => {
         } as unknown as ConfigService<Env, true>,
       );
 
-      const issued = await strict.issueForNewSession(userId, {
+      const issued = (await strict.issueForNewSession(userId, sessionEpoch, {
         userAgent: BROWSER,
-      });
+      }))!;
       await strict.rotate(issued.token, { userAgent: BROWSER });
 
       await expect(
@@ -834,6 +839,387 @@ describe('session over HTTP', () => {
       const { expiresIn } = sessionBody(resumed);
       expect(expiresIn).toBeGreaterThan(0);
       expect(expiresIn).toBeLessThanOrEqual(3600);
+    });
+
+    /**
+     * AU-040 — UN TOPE DE VIDA POR FAMILIA, CONTADO DESDE EL INICIO DE SESIÓN.
+     *
+     * Nada aquí escribe una fecha: la familia se ENVEJECE desplazando hacia
+     * atrás todas sus marcas —`created_at`, `used_at`, `expires_at`— los días
+     * de `JWT_REFRESH_TTL_DAYS` que lee la aplicación, más o menos unos
+     * segundos. Cada caso negativo tiene su control, a un lado u otro del tope.
+     */
+    describe('AU-040 tope de vida de la sesión', () => {
+      /** The session lifetime, in seconds, the running app was configured with. */
+      function lifetimeSeconds(): number {
+        return (
+          app
+            .get<ConfigService<Env, true>>(ConfigService)
+            .get('JWT_REFRESH_TTL_DAYS', { infer: true }) * 86_400
+        );
+      }
+
+      /**
+       * Moves every mark of the family `seconds` into the past, as if it had
+       * been signed into that much earlier. `used_at` stays put when
+       * `keepUse`: the last rotation happened just now, near the ceiling.
+       */
+      async function ageFamily(
+        familyId: string,
+        seconds: number,
+        { keepUse = false } = {},
+      ): Promise<void> {
+        const aged = await prisma.$executeRaw`
+          UPDATE refresh_token
+             SET created_at = created_at - make_interval(secs => ${seconds}),
+                 expires_at = expires_at - make_interval(secs => ${seconds}),
+                 used_at = CASE WHEN ${keepUse} THEN used_at
+                                ELSE used_at - make_interval(secs => ${seconds}) END
+           WHERE family_id = ${familyId}::uuid`;
+        expect(aged, 'la familia tiene filas que envejecer').toBeGreaterThan(0);
+      }
+
+      async function familyRows(familyId: string) {
+        return prisma.refreshToken.findMany({
+          where: { familyId },
+          orderBy: { createdAt: 'asc' },
+        });
+      }
+
+      /** `Expires` of the refresh cookie, as the browser will read it. */
+      function cookieExpiry(cookies: string[]): string | undefined {
+        const cookie = cookies.find((c) => /^(__Host-)?refresh=/.test(c));
+        return /;\s*Expires=([^;]+)/i.exec(cookie ?? '')?.[1];
+      }
+
+      it('AU-040 la caducidad se fija al iniciar sesión: la vida configurada desde ese instante', async () => {
+        const { cookies } = await signIn();
+        const row = await rowOf(cookies);
+
+        const lifetimeMs = row.expiresAt.getTime() - row.createdAt.getTime();
+        // `created_at` is the database clock at the INSERT; `expires_at` the
+        // application clock just before it. Same machine: seconds apart at most.
+        expect(Math.abs(lifetimeMs - lifetimeSeconds() * 1000)).toBeLessThan(
+          5_000,
+        );
+      });
+
+      it('AU-040 la cookie dura un día más que la sesión, para que el navegador pueda oír que caducó', async () => {
+        // Con la cookie muriendo a la vez que la familia, el navegador ya no
+        // la envía al pasar el tope: la API responde «no hay cookie» y nadie
+        // sabe que la sesión caducó (revisión en contexto limpio, 30-09-2026).
+        const { cookies } = await signIn();
+        const row = await rowOf(cookies);
+
+        const cookieMs = Date.parse(cookieExpiry(cookies)!);
+        const marginMs = cookieMs - row.expiresAt.getTime();
+        // `Expires` has second resolution.
+        expect(Math.abs(marginMs - 86_400_000)).toBeLessThan(1_000);
+      });
+
+      it('AU-040 rotar no alarga la sesión: el sucesor y el de la gracia heredan la caducidad del inicio de sesión', async () => {
+        const { cookies: first } = await signIn();
+        const started = await rowOf(first);
+
+        const second = await rotate(first);
+        const third = await rotate(second);
+        await rotate(third); // la respuesta que «se perdió»
+        const regranted = (await refresh(third).expect(200)).get('Set-Cookie')!;
+
+        for (const cookies of [second, third, regranted]) {
+          expect((await rowOf(cookies)).expiresAt).toEqual(started.expiresAt);
+          // Y el navegador lo oye igual: la cookie no se alarga tampoco.
+          expect(cookieExpiry(cookies)).toBe(cookieExpiry(first));
+        }
+      });
+
+      it('AU-040 una sesión que se renueva hasta el último minuto caduca en el tope contado desde el inicio de sesión', async () => {
+        const { cookies: first } = await signIn();
+        const { familyId } = await rowOf(first);
+
+        // Control: a un minuto del tope, renueva. Con la caducidad renovada
+        // en cada rotación, esa renovación la habría alargado otra semana.
+        await ageFamily(familyId, lifetimeSeconds() - 60);
+        const lastMinute = await rotate(first);
+
+        // Dos minutos después: el tope pasó hace uno.
+        await ageFamily(familyId, 120);
+        const refused = await refresh(lastMinute).expect(401);
+        expect(refused.body).toMatchObject({ code: 'SESSION_EXPIRED' });
+      });
+
+      it('AU-040 una familia más allá del tope no emite nada, no se revoca y no da la alarma', async () => {
+        const { cookies: first } = await signIn();
+        const current = await rotate(first);
+        const { familyId } = await rowOf(first);
+        await ageFamily(familyId, lifetimeSeconds() + 1);
+        const before = await familyRows(familyId);
+
+        const refused = await refresh(current).expect(401);
+        expect(refused.body).toMatchObject({ code: 'SESSION_EXPIRED' });
+
+        // Ni fila nueva ni revocación: no quedaba nada abierto que cerrar.
+        const after = await familyRows(familyId);
+        expect(after).toEqual(before);
+        expect(after.every((row) => row.revokedAt === null)).toBe(true);
+      });
+
+      it('AU-040 un refresco ya usado de una familia caducada tampoco da la alarma de reúso', async () => {
+        const { cookies: first } = await signIn();
+        await rotate(first);
+        const { familyId } = await rowOf(first);
+        await ageFamily(familyId, lifetimeSeconds() + 1);
+
+        const refused = await refresh(first).expect(401);
+        expect(refused.body).toMatchObject({ code: 'SESSION_EXPIRED' });
+        expect(
+          (await familyRows(familyId)).some(
+            (row) => row.revocationReason === 'REUSE',
+          ),
+        ).toBe(false);
+      });
+
+      it('AU-004 una familia anterior al tope, con caducidades distintas por fila, sigue dando la alarma de reúso', async () => {
+        /**
+         * Antes de AU-040 cada rotación daba a su fila `ahora + 7 días`. En
+         * una familia así, el refresco ya usado puede haber caducado mientras
+         * su sucesor sigue vivo: presentarlo es un reúso, no una sesión
+         * caducada, y tiene que revocar la familia como siempre.
+         */
+        const { cookies: first } = await signIn();
+        const successor = await rotate(first);
+        const used = await rowOf(first);
+        // Sólo la fila usada caduca: la de su sucesor sigue en el futuro.
+        await prisma.$executeRaw`
+          UPDATE refresh_token
+             SET expires_at = now() - make_interval(secs => 1)
+           WHERE id = ${used.id}::uuid`;
+
+        const refused = await refresh(first).expect(401);
+        expect(refused.body).toMatchObject({
+          code: 'REFRESH_TOKEN_REUSE_DETECTED',
+        });
+        expect(await liveRows(used.familyId)).toBe(0);
+        await refresh(successor).expect(401);
+      });
+
+      it('AU-040 una familia REVOCADA cuyo refresco además pasó su caducidad no se hace pasar por caducada', async () => {
+        // Cerrada por el cierre de sesión: lo que responde es lo de una
+        // familia cerrada, no «caducó» — que abriría el diálogo de volver a
+        // entrar en vez de terminar la sesión.
+        const { cookies } = await signIn();
+        const { familyId } = await rowOf(cookies);
+        await app.get(RefreshTokenService).revokeFamily(familyId, 'SIGN_OUT');
+        await ageFamily(familyId, lifetimeSeconds() + 1);
+
+        const refused = await refresh(cookies).expect(401);
+        expect(refused.body).not.toMatchObject({ code: 'SESSION_EXPIRED' });
+      });
+
+      it('AU-040 la gracia de AU-039 no rescata una familia que pasó el tope', async () => {
+        // Todo lo que la gracia pide —el último usado, recién usado, el mismo
+        // navegador, la familia sin revocar— salvo la familia viva: empezó
+        // hace más que el tope, y la última renovación fue justo ahora.
+        const { cookies: first } = await signIn();
+        await rotate(first); // la respuesta que «se perdió»
+        const { familyId } = await rowOf(first);
+        await ageFamily(familyId, lifetimeSeconds() + 1, { keepUse: true });
+        const before = await familyRows(familyId);
+
+        const refused = await refresh(first).expect(401);
+        expect(refused.body).toMatchObject({ code: 'SESSION_EXPIRED' });
+        expect(await familyRows(familyId)).toEqual(before);
+      });
+
+      it('AU-040 control de la gracia: la misma respuesta perdida en una familia por debajo del tope sigue', async () => {
+        const { cookies: first } = await signIn();
+        await rotate(first);
+        const { familyId } = await rowOf(first);
+        await ageFamily(familyId, lifetimeSeconds() - 60, { keepUse: true });
+
+        await refresh(first).expect(200);
+      });
+
+      it('AU-040 el token de acceso de una familia caducada responde SESSION_EXPIRED antes de caducar él', async () => {
+        const { cookies, accessToken } = await signIn();
+        const { familyId } = await rowOf(cookies);
+        await ageFamily(familyId, lifetimeSeconds() + 1);
+
+        const refused = await request(app.getHttpServer())
+          .post('/api/v1/auth/logout')
+          .set('Authorization', `Bearer ${accessToken}`)
+          .expect(401);
+        expect(refused.body).toMatchObject({ code: 'SESSION_EXPIRED' });
+      });
+
+      it('AU-040 control del guardia: el token de acceso de una familia por debajo del tope sigue valiendo', async () => {
+        const { cookies, accessToken } = await signIn();
+        const { familyId } = await rowOf(cookies);
+        await ageFamily(familyId, lifetimeSeconds() - 60);
+
+        await request(app.getHttpServer())
+          .post('/api/v1/auth/logout')
+          .set('Authorization', `Bearer ${accessToken}`)
+          .expect(204);
+      });
+    });
+
+    /**
+     * AU-041 — LA CARRERA ENTRE INICIAR SESIÓN Y CERRAR TODAS LAS SESIONES.
+     *
+     * Forzada en el orden malo, no esperada, como las de AU-039. La prueba
+     * sostiene una transacción que bloquea la sesión que ya existe: el cierre
+     * incrementa la época de la cuenta y se queda esperando a esa fila, con la
+     * cuenta bloqueada. Entonces entra el inicio de sesión: lee las
+     * credenciales —y la época vieja— y espera a su vez sobre la cuenta (en
+     * `clearFailedAttempts`, antes de llegar al `FOR SHARE` de la emisión: lo
+     * que la prueba fija es que la época que compara se leyó antes del cierre).
+     * Cuando la prueba confirma, el cierre termina primero.
+     */
+    describe('AU-041 iniciar sesión mientras se cierran todas las sesiones', () => {
+      const accountWide = revocations.filter(
+        ({ name }) => name !== 'el cierre de sesión',
+      );
+
+      async function liveRowsOfUser(userId: string): Promise<number> {
+        return prisma.refreshToken.count({
+          where: { userId, revokedAt: null, usedAt: null },
+        });
+      }
+
+      const signInAgain = () =>
+        request(app.getHttpServer())
+          .post('/api/v1/auth/login')
+          .set('User-Agent', BROWSER)
+          .send({ email: 'ana.torres@clinica.ec', password: PASSWORD });
+
+      for (const { name, revoke } of accountWide) {
+        it(`AU-041 ${name} confirmado entre leer las credenciales y emitir la sesión: no queda ninguna abierta`, async () => {
+          const { cookies } = await signIn();
+          const existing = await rowOf(cookies);
+
+          let revoking: Promise<unknown> | undefined;
+          let signingIn: Promise<request.Response> | undefined;
+          await prisma.$transaction(async (tx) => {
+            await tx.$queryRaw`
+              SELECT id FROM refresh_token WHERE id = ${existing.id}::uuid FOR UPDATE`;
+
+            revoking = revoke(existing);
+            await blockedOnALock(1, 'refresh_token');
+
+            signingIn = signInAgain().then((response) => response);
+            await blockedOnALock(1, 'app_user');
+          });
+          await revoking;
+          const response = await signingIn!;
+
+          expect(response.status).toBe(401);
+          expect(await liveRowsOfUser(existing.userId)).toBe(0);
+        });
+      }
+
+      it('AU-041 un cierre que llega mientras se emite la sesión la alcanza', async () => {
+        /**
+         * El otro orden. La prueba ES la emisión: bloquea la cuenta FOR SHARE,
+         * como la de verdad, e inserta la familia. El cierre tiene que esperar
+         * a que se confirme y verla al revocar. **Control:** incrementando la
+         * época después del `UPDATE` que revoca, queda 1 fila viva.
+         */
+        const { cookies } = await signIn();
+        const existing = await rowOf(cookies);
+
+        let revoking: Promise<unknown> | undefined;
+        await prisma.$transaction(async (tx) => {
+          await tx.$queryRaw`
+            SELECT id FROM app_user WHERE id = ${existing.userId}::uuid FOR SHARE`;
+          await tx.refreshToken.create({
+            data: {
+              userId: existing.userId,
+              familyId: randomUUID(),
+              tokenHash: TokenService.hashRefreshToken(`nueva-${existing.id}`),
+              expiresAt: existing.expiresAt,
+              userAgent: BROWSER,
+            },
+          });
+
+          revoking = app
+            .get(RefreshTokenService)
+            .revokeAllForUser(existing.userId, 'ACCOUNT_DEACTIVATED');
+          await blockedOnALock(1, 'app_user');
+        });
+        await revoking;
+
+        expect(await liveRowsOfUser(existing.userId)).toBe(0);
+      });
+
+      it('AU-041 el rehash de un inicio de sesión no pisa una contraseña cambiada mientras tanto', async () => {
+        /**
+         * El inicio de sesión que rehace el hash (parámetros de Argon2 más
+         * fuertes) escribía el de la contraseña que acababa de comprobar, sin
+         * condición. Si en medio se confirmaba un cambio de contraseña, la
+         * VIEJA volvía a valer. Ahora sólo escribe si el hash sigue siendo el
+         * que leyó.
+         */
+        const { cookies } = await signIn();
+        const { userId } = await rowOf(cookies);
+        const repository = app.get(PrismaAuthUserRepository);
+        const { passwordHash: read } = await prisma.user.findUniqueOrThrow({
+          where: { id: userId },
+        });
+
+        await repository.rotateCredentials(
+          userId,
+          'hash-nuevo',
+          'PASSWORD_CHANGE',
+        );
+        await repository.updatePasswordHash(userId, 'rehash-de-la-vieja', read);
+
+        const { passwordHash } = await prisma.user.findUniqueOrThrow({
+          where: { id: userId },
+        });
+        expect(passwordHash).toBe('hash-nuevo');
+
+        // Control: con el hash que sigue ahí, el rehash sí se escribe.
+        await repository.updatePasswordHash(userId, 'rehash', 'hash-nuevo');
+        expect(
+          (await prisma.user.findUniqueOrThrow({ where: { id: userId } }))
+            .passwordHash,
+        ).toBe('rehash');
+      });
+
+      it('AU-041 control: sin un cierre de por medio, iniciar sesión otra vez funciona y deja dos sesiones', async () => {
+        const { cookies } = await signIn();
+        const { userId } = await rowOf(cookies);
+
+        await signInAgain().expect(200);
+
+        expect(await liveRowsOfUser(userId)).toBe(2);
+      });
+
+      it('AU-041 cerrar todas las sesiones avanza la época de la cuenta; cerrar una sola no', async () => {
+        const { cookies } = await signIn();
+        const existing = await rowOf(cookies);
+        const epochOf = async () =>
+          (
+            await prisma.user.findUniqueOrThrow({
+              where: { id: existing.userId },
+              select: { sessionEpoch: true },
+            })
+          ).sessionEpoch;
+
+        const start = await epochOf();
+        await app
+          .get(RefreshTokenService)
+          .revokeFamily(existing.familyId, 'SIGN_OUT');
+        expect(await epochOf()).toBe(start);
+
+        let expected = start;
+        for (const { name, revoke } of accountWide) {
+          await revoke(existing);
+          expected += 1;
+          expect(await epochOf(), name).toBe(expected);
+        }
+      });
     });
   });
 });
