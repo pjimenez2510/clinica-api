@@ -112,6 +112,9 @@ const availability = (input: {
     to: parseClinicalDate(input.to ?? '2026-09-14'),
   });
 
+const plusMinutes = (instant: Date, minutes: number): Date =>
+  new Date(instant.getTime() + minutes * 60_000);
+
 const startsOf = (slots: readonly { startsAt: Date }[]): string[] =>
   slots.map((slot) => slot.startsAt.toISOString());
 
@@ -186,6 +189,52 @@ describe('slot availability', () => {
         occupancy({
           startsAt: new Date('2026-09-14T12:40:00Z'),
           endsAt: new Date('2026-09-14T13:00:00Z'),
+        }),
+      ],
+    });
+
+    expect(slots).toHaveLength(3);
+  });
+
+  it('AG-144 drops a slot the practitioner holds at another site, and lists only this site as occupied', () => {
+    // One practitioner, one calendar: the EXCLUDE compares `practitioner_id`
+    // and the interval, never the site.
+    const result = availability({
+      entries: [occupancy({ id: 'elsewhere', siteId: OTHER_SITE })],
+    });
+
+    // The first slot is the one taken elsewhere; the other two remain.
+    const taken = occupancy().startsAt;
+    expect(startsOf(result.slots)).toEqual([
+      plusMinutes(taken, 20).toISOString(),
+      plusMinutes(taken, 40).toISOString(),
+    ]);
+    // Not this site's to show (AG-107): the hole, not the reason.
+    expect(result.occupied).toEqual([]);
+  });
+
+  it('AG-144 applies the predicate of the EXCLUDE to the entry at another site', () => {
+    const { slots } = availability({
+      entries: [
+        occupancy({ siteId: OTHER_SITE, blocksCalendar: false }),
+        occupancy({
+          siteId: OTHER_SITE,
+          startsAt: occupancy().endsAt,
+          endsAt: plusMinutes(occupancy().endsAt, 20),
+          releasedAt: plusMinutes(occupancy().startsAt, -60),
+        }),
+      ],
+    });
+
+    expect(slots).toHaveLength(3);
+  });
+
+  it('AG-144 ignores the entries of another practitioner at another site', () => {
+    const { slots } = availability({
+      entries: [
+        occupancy({
+          siteId: OTHER_SITE,
+          practitionerId: '018f1b3a-0000-7000-8000-000000000009',
         }),
       ],
     });

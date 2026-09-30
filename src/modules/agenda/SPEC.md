@@ -69,7 +69,7 @@ regla del módulo cuyo fallo produce dos pacientes en la misma silla.
 concurrentes y comprobar que gana exactamente uno.
 **Cubre:** AG-001 a AG-003, AG-010 a AG-014, AG-017, AG-018, AG-020 a AG-030,
 AG-034, AG-070 a AG-074, AG-104, AG-105, AG-106, AG-107, AG-108, AG-109,
-AG-111, AG-112, AG-113.
+AG-111, AG-112, AG-113, AG-144.
 
 > AG-111 y AG-112 se añadieron el 14-08-2026, y pertenecen aquí por lo mismo
 > que AG-107 y AG-108: son **las listas de referencia que la pantalla de
@@ -539,6 +539,25 @@ es falsa, hay requisitos que cambian.
   > El criterio no es arbitrario: un horario se cambia **añadiendo** la regla
   > nueva, así que la vieja que quedó abierta es el olvido y no la intención.
   > «El cupo más corto» mantendría viva para siempre una rejilla retirada.
+- **AG-144** — CUANDO se consulte la disponibilidad de un profesional en una
+  sede, el sistema NO DEBERÁ ofrecer ningún cupo que se solape con una entrada
+  del mismo profesional que ocupa calendario **en cualquier sede**, con el mismo
+  predicado que `agenda_entry_no_practitioner_overlap` (`released_at IS NULL AND
+  blocks_calendar`, intervalo `[)`); y la lista de lo ocupado que acompaña a los
+  cupos NO DEBERÁ incluir las entradas de otras sedes.
+  > **Añadido el 30-09-2026 (`fix/agenda-otra-sede`).** AG-003 decía «menos las
+  > entradas que ocupan calendario» y la consulta lo leía como «de esta sede»,
+  > mientras que el `EXCLUDE` de AG-023 compara sólo `practitioner_id`. La
+  > rejilla de la sede B ofrecía la hora en que el profesional atiende en la A,
+  > y la reserva la rechazaba con `PRACTITIONER_SLOT_TAKEN`: la pantalla
+  > prometía lo que la base no deja cumplir. Lo destaparon los recorridos, porque
+  > la semilla da a cada médico el mismo horario en tres sedes.
+  >
+  > **Por qué el hueco se quita y la cita ajena no se muestra.** El cupo se
+  > descuenta porque la base lo va a rechazar; la entrada de la otra sede no
+  > viaja porque quien consulta puede no tener `agenda:read` allí, y AG-107 no
+  > deja revelar ni que esa sede existe. La rejilla muestra el hueco ausente, no
+  > el porqué.
 - **AG-107** — CUANDO se consulten las sedes de agenda, el sistema DEBERÁ listar
   únicamente aquellas donde quien llama tiene `agenda:read`, con identificador y
   nombre, y NO DEBERÁ revelar la existencia de las demás.

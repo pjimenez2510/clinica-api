@@ -277,7 +277,13 @@ export function deriveAvailability(query: AvailabilityQuery): AvailabilityView {
   const firstDate = dates[0];
   const lastDate = dates.at(-1);
 
-  const occupied =
+  /**
+   * AG-144. What takes the practitioner's time, AT ANY SITE: the `EXCLUDE`
+   * compares `practitioner_id` and the interval, never the site, so one
+   * practitioner has one calendar. Offering the hour they spend at another
+   * site is offering a slot the database will refuse.
+   */
+  const busy =
     firstDate === undefined || lastDate === undefined
       ? []
       : (() => {
@@ -290,13 +296,16 @@ export function deriveAvailability(query: AvailabilityQuery): AvailabilityView {
           return query.entries
             .filter(
               (entry) =>
-                entry.siteId === siteId &&
                 entry.practitionerId === practitioner.practitionerId &&
                 occupiesCalendar(entry) &&
                 overlaps(entry.startsAt, entry.endsAt, rangeStart, rangeEnd),
             )
             .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
         })();
+
+  // What is SHOWN is this site's only: the caller may hold no `agenda:read`
+  // at the other one, and AG-107 does not let us reveal that it exists.
+  const occupied = busy.filter((entry) => entry.siteId === siteId);
 
   /**
    * AG-015, AG-016, AG-093: what the SITE's calendar says about these dates.
@@ -344,7 +353,7 @@ export function deriveAvailability(query: AvailabilityQuery): AvailabilityView {
     )
     .filter(
       (slot) =>
-        !occupied.some((entry) =>
+        !busy.some((entry) =>
           overlaps(slot.startsAt, slot.endsAt, entry.startsAt, entry.endsAt),
         ),
     )
