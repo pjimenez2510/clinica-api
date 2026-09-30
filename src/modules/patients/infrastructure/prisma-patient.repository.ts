@@ -35,6 +35,7 @@ import {
 } from '../domain/patient.errors';
 import { ABSORBED_MRN_LIMIT } from '../domain/patient.repository';
 import type {
+  AgendaEntryContext,
   AbsorbedCharts,
   AppliedCorrection,
   CatalogConceptReference,
@@ -984,6 +985,15 @@ export class PrismaPatientRepository implements PatientRepository {
       mergedIntoMrn: row.mergedInto?.mrn ?? null,
       orientation: toConceptReference(row.sexualOrientation),
     };
+  }
+
+  async findAgendaEntryContext(
+    entryId: string,
+  ): Promise<AgendaEntryContext | null> {
+    return this.prisma.agendaEntry.findUnique({
+      where: { id: entryId },
+      select: { patientId: true, siteId: true },
+    });
   }
 
   async findConceptReferenceByCode(

@@ -704,6 +704,13 @@ export interface PatientPriorityInput {
   recorded: readonly RecordedPriorityGroup[];
 }
 
+/** AG-073. What the chart needs to know of the appointment it is opened from. */
+export interface AgendaEntryContext {
+  /** `null` for a block, which has nobody. */
+  patientId: string | null;
+  siteId: string;
+}
+
 // The port described at the top of this file.
 export interface PatientRepository {
   search(criteria: PatientSearchCriteria): Promise<PatientPage>;
@@ -774,6 +781,16 @@ export interface PatientRepository {
   findSexualOrientation(
     patientId: string,
   ): Promise<SexualOrientationRead | undefined>;
+  /**
+   * AG-073. The appointment a chart is being opened from: whose it is and at
+   * which site. `null` when there is no such entry.
+   *
+   * READ HERE AND NOT ASKED OF `agenda`, because no module imports another
+   * (`arch:check`); it is one indexed row by primary key, the same way the
+   * agenda reads the patient's name for its day listing (AG-109). What it
+   * returns is only what the check needs — never the reason, never the time.
+   */
+  findAgendaEntryContext(entryId: string): Promise<AgendaEntryContext | null>;
   /**
    * El mismo concepto, buscado POR CÓDIGO dentro de un sistema (PA-053).
    *

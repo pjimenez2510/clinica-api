@@ -231,6 +231,8 @@ interface Doubles {
     mergedIntoMrn: string | null;
     orientation: { id: string; code: string; display: string } | null;
   };
+  /** AG-073. The appointment a chart is opened from, as the adapter finds it. */
+  agendaEntry?: { patientId: string | null; siteId: string } | null;
 }
 
 interface Recorded {
@@ -307,6 +309,7 @@ function serviceWith(doubles: Doubles = {}): {
     },
     findSexualOrientation: () =>
       Promise.resolve(doubles.sexualOrientation ?? undefined),
+    findAgendaEntryContext: () => Promise.resolve(doubles.agendaEntry ?? null),
     listPriorityGroups: () => Promise.resolve([]),
     addPriorityGroup: () => Promise.reject(new Error('not used here')),
     closePriorityGroup: () => Promise.resolve(null),
@@ -1446,5 +1449,74 @@ describe('abrir una ficha', () => {
     expect(recorded.audit).toEqual([
       expect.objectContaining({ action: 'READ', resourceType: 'patient' }),
     ]);
+  });
+});
+
+describe('abrir una ficha desde la cita', () => {
+  const ENTRY = '00000000-0000-4000-8000-0000000000e1';
+  const SITE = '00000000-0000-4000-8000-0000000000f1';
+  const OTHER_PATIENT = '00000000-0000-4000-8000-0000000000a9';
+  const fromEntry = (mayRead: boolean) => ({
+    agendaEntryId: ENTRY,
+    mayReadAgendaAt: (siteId: string) => mayRead && siteId === SITE,
+  });
+
+  it('AG-073 anota en la misma fila la cita desde la que se abrió', async () => {
+    const { service, recorded } = serviceWith({
+      agendaEntry: { patientId: PATIENT, siteId: SITE },
+    });
+
+    await service.getById(PATIENT, REQUESTER, fromEntry(true));
+
+    expect(recorded.audit).toEqual([
+      expect.objectContaining({
+        userId: USER,
+        resourceType: 'patient',
+        resourceId: PATIENT,
+        action: 'READ',
+        context: { resourceType: 'agenda_entry', resourceId: ENTRY },
+      }),
+    ]);
+  });
+
+  it('AG-073 sin cita, la fila no lleva contexto', async () => {
+    const { service, recorded } = serviceWith();
+
+    await service.getById(PATIENT, REQUESTER);
+
+    expect(recorded.audit).toHaveLength(1);
+    expect(recorded.audit[0]?.context).toBeUndefined();
+  });
+
+  it.each([
+    ['no existe', null, true],
+    ['es de otro paciente', { patientId: OTHER_PATIENT, siteId: SITE }, true],
+    ['es un bloqueo, sin paciente', { patientId: null, siteId: SITE }, true],
+    [
+      'está en una sede sin agenda:read',
+      { patientId: PATIENT, siteId: SITE },
+      false,
+    ],
+  ] as const)(
+    'AG-073 rechaza abrir desde una cita que %s, con un solo código y sin fila',
+    async (_why, agendaEntry, mayRead) => {
+      const { service, recorded } = serviceWith({ agendaEntry });
+
+      await expect(
+        service.getById(PATIENT, REQUESTER, fromEntry(mayRead)),
+      ).rejects.toMatchObject({ code: 'ACCESS_CONTEXT_NOT_FOUND' });
+      expect(recorded.audit).toEqual([]);
+    },
+  );
+
+  it('AG-073 una ficha fusionada sigue respondiendo PATIENT_MERGED aunque venga de una cita', async () => {
+    const { service } = serviceWith({
+      detail: aDetail({ mergedIntoMrn: 'HC0000000802' }),
+      agendaEntry: { patientId: PATIENT, siteId: SITE },
+    });
+
+    await expect(
+      service.getById(PATIENT, REQUESTER, fromEntry(true)),
+    ).rejects.toMatchObject({ code: 'PATIENT_MERGED' });
   });
 });

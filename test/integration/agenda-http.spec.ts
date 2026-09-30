@@ -841,6 +841,102 @@ describe('la agenda por HTTP', () => {
     });
   });
 
+  describe('abrir la ficha desde la cita', () => {
+    const openChart = (patient: string, query = '') =>
+      request(app.getHttpServer())
+        .get(`/api/v1/patients/${patient}${query}`)
+        .set('Authorization', `Bearer ${token}`)
+        .set('User-Agent', 'mostrador-3');
+
+    const bookedEntryId = async (): Promise<string> =>
+      ((await book(anAppointment()).expect(201)).body as { id: string }).id;
+
+    it('AG-073 deja una fila con quién, qué, cuándo, desde qué equipo y desde qué cita', async () => {
+      const entryId = await bookedEntryId();
+
+      await openChart(patientId, `?agendaEntryId=${entryId}`).expect(200);
+
+      const rows = await prisma.accessAudit.findMany({
+        where: { resourceType: 'patient', resourceId: patientId },
+      });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        userId,
+        action: 'READ',
+        userAgent: 'mostrador-3',
+        contextType: 'agenda_entry',
+        contextId: entryId,
+      });
+      expect(rows[0]?.ip).toBeTruthy();
+      expect(rows[0]?.occurredAt).toBeInstanceOf(Date);
+    });
+
+    it('AG-073 abierta desde Pacientes, la fila no dice que se llegó desde la agenda', async () => {
+      await openChart(patientId).expect(200);
+
+      const row = await prisma.accessAudit.findFirstOrThrow({
+        where: { resourceType: 'patient', resourceId: patientId },
+      });
+      expect(row.contextType).toBeNull();
+      expect(row.contextId).toBeNull();
+    });
+
+    it('AG-073 rechaza abrir desde la cita de otro paciente, y no deja fila', async () => {
+      const entryId = await bookedEntryId();
+      const stranger = await createPatient(prisma);
+
+      const response = await openChart(
+        stranger.id,
+        `?agendaEntryId=${entryId}`,
+      ).expect(404);
+
+      expect((response.body as Problem).code).toBe('ACCESS_CONTEXT_NOT_FOUND');
+      await expect(
+        prisma.accessAudit.count({ where: { resourceId: stranger.id } }),
+      ).resolves.toBe(0);
+    });
+
+    it('AG-073 rechaza abrir desde una cita de una sede sin alcance, con el mismo código', async () => {
+      await linkPractitionerToSite(prisma, secondPractitionerId, otherSiteId);
+      const foreign = await prisma.agendaEntry.create({
+        data: {
+          kind: 'APPOINTMENT',
+          bookingChannel: 'PHONE',
+          siteId: otherSiteId,
+          practitionerId: secondPractitionerId,
+          patientId,
+          startsAt: new Date(FIRST_SLOT.startsAt),
+          endsAt: new Date(FIRST_SLOT.endsAt),
+        },
+      });
+
+      const response = await openChart(
+        patientId,
+        `?agendaEntryId=${foreign.id}`,
+      ).expect(404);
+
+      expect((response.body as Problem).code).toBe('ACCESS_CONTEXT_NOT_FOUND');
+      await expect(prisma.accessAudit.count()).resolves.toBe(0);
+    });
+
+    it('AG-073 rechaza una cita que no existe con el mismo código que una ajena', async () => {
+      const response = await openChart(
+        patientId,
+        '?agendaEntryId=00000000-0000-4000-8000-00000000dead',
+      ).expect(404);
+
+      expect((response.body as Problem).code).toBe('ACCESS_CONTEXT_NOT_FOUND');
+    });
+
+    it('AG-073 rechaza un identificador de cita mal escrito antes de tocar la base', async () => {
+      const response = await openChart(patientId, '?agendaEntryId=ayer').expect(
+        422,
+      );
+
+      expect((response.body as Problem).code).toBe('VALIDATION_FAILED');
+    });
+  });
+
   describe('las listas de referencia', () => {
     interface AgendaSpecialty {
       id: string;

@@ -18,6 +18,7 @@ import { nationalityContradictsEthnicity } from '../domain/indigenous-nationalit
 import { peopleContradictsNationality } from '../domain/indigenous-people';
 import { sexualOrientationBelowMinimumAge } from '../domain/sexual-orientation';
 import {
+  AccessContextNotFoundError,
   DuplicateIdentifierError,
   EthnicityRequiresEcuadorianNationalityError,
   NationalityRequiresIndigenousEthnicityError,
@@ -45,6 +46,16 @@ export interface Requester {
   userId: string;
   ip?: string;
   userAgent?: string;
+}
+
+/**
+ * AG-073. The appointment a chart is being opened from, and whether the caller
+ * may read the agenda at a given site — asked as a function so this service
+ * does not have to know what a `Principal` is.
+ */
+export interface OpenedFromAgenda {
+  agendaEntryId: string;
+  mayReadAgendaAt(siteId: string): boolean;
 }
 
 /**
@@ -167,7 +178,11 @@ export class PatientsService {
    * account to, and writing a row per guessed identifier would let anybody
    * fill the trail with noise.
    */
-  async getById(id: string, requester: Requester): Promise<PatientDetail> {
+  async getById(
+    id: string,
+    requester: Requester,
+    openedFrom?: OpenedFromAgenda,
+  ): Promise<PatientDetail> {
     const patient = await this.patients.findById(id);
     if (!patient) throw new PatientNotFoundError();
 
@@ -198,6 +213,15 @@ export class PatientsService {
       throw new PatientMergedError(patient.mergedIntoMrn);
     }
 
+    /**
+     * AG-073. «Desde dónde» includes the appointment the chart was reached
+     * from, and it is CHECKED BEFORE it is written: the row is evidence, and a
+     * context the client merely asserted would make it say whatever the client
+     * wanted. After the 404 and the 409 above, so a missing or merged chart
+     * answers the same with or without an appointment behind it.
+     */
+    if (openedFrom) await this.assertOpenedFrom(patient.id, openedFrom);
+
     await this.audit.record({
       userId: requester.userId,
       resourceType: 'patient',
@@ -205,9 +229,34 @@ export class PatientsService {
       action: 'READ',
       ip: requester.ip,
       userAgent: requester.userAgent,
+      context: openedFrom && {
+        resourceType: 'agenda_entry',
+        resourceId: openedFrom.agendaEntryId,
+      },
     });
 
     return patient;
+  }
+
+  /**
+   * AG-073. The appointment must exist, be THIS patient's and sit at a site
+   * where the caller reads the agenda — and the three failures answer alike,
+   * so the route does not tell «es de otra persona» from «no existe» (AG-071).
+   */
+  private async assertOpenedFrom(
+    patientId: string,
+    openedFrom: OpenedFromAgenda,
+  ): Promise<void> {
+    const entry = await this.patients.findAgendaEntryContext(
+      openedFrom.agendaEntryId,
+    );
+    if (
+      !entry ||
+      entry.patientId !== patientId ||
+      !openedFrom.mayReadAgendaAt(entry.siteId)
+    ) {
+      throw new AccessContextNotFoundError();
+    }
   }
 
   /**
