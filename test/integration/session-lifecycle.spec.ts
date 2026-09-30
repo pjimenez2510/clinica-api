@@ -701,7 +701,11 @@ describe('session over HTTP', () => {
       await rotate(first);
 
       await refresh(first, '').expect(401);
-      expect(await liveRows((await rowOf(first)).familyId)).toBe(0);
+      const { familyId } = await rowOf(first);
+      expect(await liveRows(familyId)).toBe(0);
+      expect(await app.get(RefreshTokenService).isFamilyOpen(familyId)).toBe(
+        false,
+      );
     });
 
     it('AU-039 con la ventana a 0 rige AU-004 estricto: el mismo refresco no vale dos veces', async () => {
@@ -771,6 +775,9 @@ describe('session over HTTP', () => {
 
       expect((await presenting!).status).toBe(401);
       expect(await liveRows(secondRow.familyId)).toBe(0);
+      expect(
+        await app.get(RefreshTokenService).isFamilyOpen(secondRow.familyId),
+      ).toBe(false);
     });
 
     it('AU-004 marca la familia como REUSE en la base, no solo la rechaza', async () => {
