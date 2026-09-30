@@ -541,10 +541,11 @@ requisitos que cambian.
   > `READ`, la pida un gesto del usuario o la interfaz sola. La interfaz
   > guarda la ficha un minuto en una caché que comparten todas las pantallas
   > que muestran al paciente (la ficha, la atención, la orden, la cuenta de
-  > caja), y vuelve a pedirla al montar una de ellas, al volver a la pestaña,
-  > al recuperar la conexión y tras corregirla, **solo si pasó más de ese
-  > minuto** desde la última petición; dentro del minuto no pide nada y no
-  > deja fila. Así que una fila no dice qué pantalla la abrió, y abrir la
+  > caja). Vuelve a pedirla al montar una de ellas, al volver a la pestaña y
+  > al recuperar la conexión **solo si pasó más de ese minuto** desde la
+  > última petición, y siempre tras corregir o registrar un paciente, que
+  > vacía esa caché; dentro del minuto y sin cambios no pide nada y no deja
+  > fila. Así que una fila no dice qué pantalla la abrió, y abrir la
   > ficha en Pacientes justo después de verla en caja no deja una segunda.
   > Quien investiga lee varias filas seguidas del mismo usuario y la misma
   > ficha como una sesión de lectura, no como aperturas distintas.
