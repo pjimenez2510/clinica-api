@@ -1,10 +1,10 @@
 ---
 paths:
-  - "src/**/*.controller.ts"
-  - "src/**/dto/**/*.ts"
-  - "src/shared/http/**/*.ts"
-  - "src/**/*.guard.ts"
-  - "src/**/*.interceptor.ts"
+  - "clinica-api*/src/**/*.controller.ts"
+  - "clinica-api*/src/**/dto/**/*.ts"
+  - "clinica-api*/src/shared/http/**/*.ts"
+  - "clinica-api*/src/**/*.guard.ts"
+  - "clinica-api*/src/**/*.interceptor.ts"
 ---
 
 # Capa HTTP: controladores, DTO, guards

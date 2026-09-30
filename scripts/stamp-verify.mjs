@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /**
- * Last step of `pnpm verify`. Writes the stamp that `require-verify.mjs` reads.
+ * Last step of `pnpm verify` and `pnpm verify:tocado`. Writes the stamp that the
+ * workspace Stop hook (`clinica-docs/workspace/claude/hooks/require-verify.mjs`)
+ * reads.
  *
  * Because it is the last link of a `&&` chain, the stamp cannot exist unless
  * format:check, typecheck, lint:check, arch:check, migrations:check and the
@@ -12,7 +14,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 const STAMP = join(
-  resolve(import.meta.dirname, '..', '..'),
+  resolve(import.meta.dirname, '..'),
   '.claude',
   '.verify-stamp',
 );

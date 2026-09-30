@@ -1,6 +1,6 @@
 ---
 paths:
-  - "src/modules/*/SPEC.md"
+  - "clinica-api*/src/modules/*/SPEC.md"
 ---
 
 # Especificaciones de módulo

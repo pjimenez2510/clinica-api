@@ -12,26 +12,31 @@ Prisma · pnpm. Las decisiones y su porqué están en el repositorio hermano
 
 ## 1. Antes de dar algo por terminado
 
+Se trabaja por el flujo de seis etapas de `clinica-docs/GUIA-FRAMEWORK.md`
+(definir → planificar → construir → verificar en pantalla → revisar → cerrar),
+en una rama con plan en `clinica-docs/planes/`. Cada turno termina con:
+
 ```bash
-pnpm verify
+pnpm verify:tocado      # formato, tipos, lint, arquitectura y pruebas de lo tocado
 ```
 
-Corre `format:check`, `typecheck`, `lint:check`, `arch:check`,
-`migrations:check` y `test`. **No se sustituye por un subconjunto.** Las pruebas
-de integración van aparte y son obligatorias cuando se toca la base:
+Y la entrega se cierra con la puerta completa, de una en una en la máquina:
 
 ```bash
-pnpm test:integration
+../scripts/con-turno pnpm verify             # format, typecheck, lint, arch, migraciones, rtm, pruebas con cobertura
+../scripts/con-turno pnpm test:integration   # obligatorias si se tocó la base
 ```
 
 Nada se declara hecho porque «funciona en mi máquina». El criterio completo es
 la puerta de calidad del `ROADMAP.md` en `clinica-docs`.
 
-**Esto no depende de la buena voluntad.** `.claude/hooks/` bloquea de verdad:
-cerrar el turno con código sin verificar, `prisma migrate dev`, `prisma db push`,
-editar una migración ya versionada, `git push` y los commits con atribución de
-IA. Si un hook te bloquea, la respuesta nunca es rodearlo: es hacer lo que dice
-o decírselo al usuario. → ADR-010.
+**Esto no depende de la buena voluntad.** Los hooks del espacio de trabajo
+(`clinica-docs/workspace/claude/hooks/`, activos al abrir Claude en
+`PROYECTO/`) bloquean de verdad: escribir código sin plan, cerrar el turno con
+código sin verificar, fusionar a `main` sin revisión, `prisma migrate dev`,
+`prisma db push`, editar una migración ya versionada, `git push` y los commits
+con atribución de IA. Si un hook te bloquea, la respuesta nunca es rodearlo: es
+hacer lo que dice o decírselo al usuario. → ADR-010.
 
 ## 2. Idioma
 

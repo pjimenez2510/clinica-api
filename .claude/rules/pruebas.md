@@ -1,7 +1,7 @@
 ---
 paths:
-  - "src/**/*.spec.ts"
-  - "test/**/*.ts"
+  - "clinica-api*/src/**/*.spec.ts"
+  - "clinica-api*/test/**/*.ts"
 ---
 
 # Pruebas

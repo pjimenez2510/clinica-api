@@ -1,7 +1,7 @@
 ---
 paths:
-  - "src/modules/*/domain/**/*.ts"
-  - "src/shared/domain/**/*.ts"
+  - "clinica-api*/src/modules/*/domain/**/*.ts"
+  - "clinica-api*/src/shared/domain/**/*.ts"
 ---
 
 # Capa de dominio
