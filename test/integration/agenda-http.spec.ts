@@ -919,6 +919,27 @@ describe('la agenda por HTTP', () => {
       await expect(prisma.accessAudit.count()).resolves.toBe(0);
     });
 
+    it('AG-073 rechaza abrir desde un bloqueo, que no tiene paciente, y no deja fila', async () => {
+      const block = await prisma.agendaEntry.create({
+        data: {
+          kind: 'BLOCK',
+          status: 'BLOCKED',
+          siteId,
+          practitionerId,
+          startsAt: new Date(FIRST_SLOT.startsAt),
+          endsAt: new Date(FIRST_SLOT.endsAt),
+        },
+      });
+
+      const response = await openChart(
+        patientId,
+        `?agendaEntryId=${block.id}`,
+      ).expect(404);
+
+      expect((response.body as Problem).code).toBe('ACCESS_CONTEXT_NOT_FOUND');
+      await expect(prisma.accessAudit.count()).resolves.toBe(0);
+    });
+
     it('AG-073 rechaza una cita que no existe con el mismo código que una ajena', async () => {
       const response = await openChart(
         patientId,

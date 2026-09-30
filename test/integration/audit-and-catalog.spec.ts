@@ -217,6 +217,19 @@ describe('AG-073 · el contexto del acceso en la bitácora', () => {
     ).rejects.toThrow(/access_audit_context_both_or_neither/);
   });
 
+  it('AG-073 RECHAZA un tipo de contexto que no está declarado', async () => {
+    // `'cita'` en vez de `'agenda_entry'`: una investigación que filtra por el
+    // tipo declarado no la encontraría nunca.
+    const prisma = db();
+
+    await expect(
+      prisma.$executeRawUnsafe(
+        `INSERT INTO access_audit (resource_type, resource_id, action, context_type, context_id)
+         VALUES ('patient', 'p', 'READ', 'cita', 'some-entry-id')`,
+      ),
+    ).rejects.toThrow(/access_audit_context_declared_types/);
+  });
+
   it('AG-073 RECHAZA un identificador de contexto sin su tipo', async () => {
     const prisma = db();
 

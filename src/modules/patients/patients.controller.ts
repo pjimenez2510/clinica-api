@@ -237,14 +237,7 @@ export class PatientsController {
     return toDetailResponse(updated);
   }
 
-  /**
-   * Who is asking, for the access trail.
-   *
-   * `req.ip` is only the real client because `trust proxy` is configured with a
-   * COUNT of hops. Without that it would be the proxy's address on every row,
-   * and the trail the LOPDP expects us to follow when investigating improper
-   * access would point at our own infrastructure.
-   */
+  /** AG-073. The appointment the chart is opened from, and who may vouch for it. */
   private fromAgenda(agendaEntryId: string): OpenedFromAgenda {
     const principal = this.currentUser.requirePrincipal();
     return {
@@ -253,6 +246,14 @@ export class PatientsController {
     };
   }
 
+  /**
+   * Who is asking, for the access trail.
+   *
+   * `req.ip` is only the real client because `trust proxy` is configured with a
+   * COUNT of hops. Without that it would be the proxy's address on every row,
+   * and the trail the LOPDP expects us to follow when investigating improper
+   * access would point at our own infrastructure.
+   */
   private requester(req: Request): Requester {
     return {
       userId: this.currentUser.requireUserId(),

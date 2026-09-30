@@ -1802,6 +1802,15 @@ pasó de hora.
   > lugar de anotarse, y el rechazo es uno solo para las tres causas: separar
   > «no existe» de «es de otro paciente» respondería «esta cita es de otra
   > persona» a quien prueba identificadores (AG-071).
+  >
+  > **Lo que cubre y lo que no, a 30-09-2026.** Cubre la ficha abierta desde el
+  > detalle de una cita. La lista de espera también lleva a la ficha, y sin
+  > contexto; hoy no se alcanza desde la pantalla (`WAITLIST_UI_ENABLED` está
+  > apagado desde el 19-08-2026). Al reactivarla, `waitlist_entry` entra como
+  > segundo contexto, con la misma comprobación de paciente y sede. Qué cita
+  > vale como contexto —una anulada, una de hace un año— y qué cuenta como
+  > «una apertura» cuando la pantalla vuelve a pedir la ficha son decisiones
+  > del autor: D-059 y D-060 en `DECISIONES-PENDIENTES.md`.
 - **AG-074** — El sistema NO DEBERÁ incluir nombre, documento ni motivo de
   consulta del paciente en ningún registro de log.
 
