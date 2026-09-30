@@ -5,6 +5,7 @@ import { extractDatabaseProblem } from '../../src/shared/http/database-problem';
 import '../../src/modules/agenda/infrastructure/agenda.constraints';
 import '../../src/modules/patients/infrastructure/patients.constraints';
 import '../../src/modules/catalogs/infrastructure/catalogs.constraints';
+import '../../src/modules/encounter/infrastructure/encounter.constraints';
 
 import { useDatabase } from './setup/database';
 import {
@@ -258,6 +259,9 @@ describe('database errors become usable responses', () => {
 
     expect(problem?.status).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
     expect(problem?.code).toBe('VITALS_OUT_OF_RANGE');
+    // EN-062: the constraint name says which box, never the value it held.
+    expect(problem?.errors?.[0]?.field).toBe('weightKg');
+    expect(JSON.stringify(problem)).not.toContain('750');
   });
 
   it('NEVER lets the offending row reach the response', async () => {

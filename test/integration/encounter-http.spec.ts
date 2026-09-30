@@ -564,7 +564,27 @@ describe('la atención por HTTP', () => {
         { weightKg: 750, heightCm: 175 },
       ).expect(422);
 
-      expect((response.body as Problem).code).toBe('VITALS_OUT_OF_RANGE');
+      const problem = response.body as Problem;
+      expect(problem.code).toBe('VITALS_OUT_OF_RANGE');
+      // «Por campo, señalando cuál»: the nurse is told WHICH box, not «alguno».
+      expect(problem.errors?.[0]?.field).toBe('weightKg');
+      expect(problem.errors?.[0]?.message).toContain('entre 0,3 y 400 kg');
+    });
+
+    it('EN-062 rechaza una temperatura de 370 °C señalando la temperatura (D-058)', async () => {
+      const encounterId = await openEncounter(nurseToken);
+
+      const response = await put(
+        `/encounters/${encounterId}/vitals`,
+        nurseToken,
+        { temperatureC: 370 },
+      ).expect(422);
+
+      const problem = response.body as Problem;
+      expect(problem.code).toBe('VITALS_OUT_OF_RANGE');
+      expect(problem.errors?.[0]?.field).toBe('temperatureC');
+      expect(problem.errors?.[0]?.message).toContain('entre 25 y 45 °C');
+      await expect(prisma.encounterVitals.count()).resolves.toBe(0);
     });
 
     it('EN-142 rechaza que ENFERMERÍA abra o firme una nota de consulta externa', async () => {

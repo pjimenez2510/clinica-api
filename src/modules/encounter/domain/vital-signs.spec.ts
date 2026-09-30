@@ -12,7 +12,7 @@ import {
  *
  * ⚠️ THE TWO GUARANTEES THAT MATTER ARE NOT TESTED HERE AND CANNOT BE: the BMI
  * is written by `trg_encounter_vitals_bmi` and the physiological ranges by
- * `encounter_vitals_ranges`. A double that returned what we asked it for would
+ * `encounter_vitals_ranges_*`. A double that returned what we asked it for would
  * not demonstrate either. They live in `test/integration/encounter-vitals.spec.ts`,
  * against a real PostgreSQL, which is the rule of CLAUDE.md §5 without an
  * exception for convenience.

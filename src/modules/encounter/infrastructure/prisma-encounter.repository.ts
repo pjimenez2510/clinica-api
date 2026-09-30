@@ -452,7 +452,7 @@ export class PrismaEncounterRepository implements EncounterRepository {
    * be overwritten in the same statement. The row is read back afterwards so
    * what the caller receives is the number the DATABASE computed.
    *
-   * ⚠️ AND THE RANGES ARE NOT CHECKED. `encounter_vitals_ranges` refuses 750 kg
+   * ⚠️ AND THE RANGES ARE NOT CHECKED. `encounter_vitals_ranges_*` refuses 750 kg
    * — and refuses it to an import and to a `psql` too. A copy of the numbers
    * here would be a second, weaker rule that drifts from the one that matters.
    */

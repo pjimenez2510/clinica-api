@@ -411,7 +411,7 @@ export class EncounterService {
    *    that comes back is the stored one. A figure computed here could
    *    disagree with the row, and the row is what a nutritional screening
    *    filters on.
-   *  - THE RANGES ARE NOT CHECKED (EN-062). `encounter_vitals_ranges` refuses
+   *  - THE RANGES ARE NOT CHECKED (EN-062). `encounter_vitals_ranges_*` refuses
    *    750 kg, and it also refuses it to an import and to a `psql`. A copy of
    *    the numbers here would be a second, weaker rule that drifts.
    *
