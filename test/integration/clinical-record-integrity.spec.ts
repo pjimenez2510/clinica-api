@@ -207,7 +207,7 @@ describe('clinical record integrity', () => {
         prisma.encounterVitals.create({
           data: { encounterId: encounter.id, weightKg: 750, heightCm: 175 },
         }),
-      ).rejects.toThrow(/encounter_vitals_ranges/);
+      ).rejects.toThrow(/encounter_vitals_ranges_weight_kg/);
     });
 
     it('REFUSES a diastolic pressure above the systolic', async () => {
@@ -217,7 +217,7 @@ describe('clinical record integrity', () => {
         prisma.encounterVitals.create({
           data: { encounterId: encounter.id, systolicBp: 80, diastolicBp: 120 },
         }),
-      ).rejects.toThrow(/encounter_vitals_ranges/);
+      ).rejects.toThrow(/encounter_vitals_ranges_systolic_above_diastolic/);
     });
   });
 

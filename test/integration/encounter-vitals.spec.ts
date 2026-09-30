@@ -26,7 +26,7 @@ import {
  *    asked it for would prove nothing at all — and the requirement is that the
  *    figure COMES BACK COMPUTED and that sending one in the request does not
  *    change it.
- *  - EN-062: the physiological ranges are `encounter_vitals_ranges`. The
+ *  - EN-062: the physiological ranges are `encounter_vitals_ranges_*`. The
  *    requirement's own example is the finger that typed 750 instead of 75, and
  *    what has to be shown is that the DATABASE refuses it — not the DTO, which
  *    an import or a `psql` walks straight past.
@@ -176,6 +176,103 @@ describe('los signos vitales de la atención', () => {
     );
 
     expect(vitals.weightKg).toBe(0.8);
+  });
+
+  describe('EN-062 cada medida tiene su rango, y el rechazo señala su casilla (D-058)', () => {
+    type Vitals = Parameters<PrismaEncounterRepository['saveVitals']>[1];
+    type Measure = Exclude<keyof Vitals, 'measuredAt'>;
+
+    /**
+     * Every bound of `20260930124150_encounter_vitals_ranges_per_measure`,
+     * tried on BOTH sides against the real database: the edge is admitted
+     * (positive control — a CHECK that refused everything would pass the
+     * other half on its own) and the smallest step past it, in the column's
+     * own precision, is refused naming the field.
+     *
+     * The five of D-058 are the reason for this block; the five that already
+     * existed are here too because the migration re-created them, and a typo
+     * in a re-created bound is exactly what nobody would notice.
+     */
+    const bounds: {
+      field: Measure;
+      min: number;
+      max: number;
+      step: number;
+      range: string;
+    }[] = [
+      { field: 'temperatureC', min: 25, max: 45, step: 0.1, range: 'entre 25 y 45 °C' }, // prettier-ignore
+      { field: 'heartRate', min: 20, max: 300, step: 1, range: 'entre 20 y 300 lpm' }, // prettier-ignore
+      { field: 'respiratoryRate', min: 4, max: 100, step: 1, range: 'entre 4 y 100 rpm' }, // prettier-ignore
+      { field: 'headCircumferenceCm', min: 20, max: 80, step: 0.1, range: 'entre 20 y 80 cm' }, // prettier-ignore
+      { field: 'abdominalCircumferenceCm', min: 20, max: 250, step: 0.1, range: 'entre 20 y 250 cm' }, // prettier-ignore
+      { field: 'weightKg', min: 0.3, max: 400, step: 0.001, range: 'entre 0.3 y 400 kg' }, // prettier-ignore
+      { field: 'heightCm', min: 20, max: 260, step: 0.1, range: 'entre 20 y 260 cm' }, // prettier-ignore
+      { field: 'systolicBp', min: 40, max: 300, step: 1, range: 'entre 40 y 300 mmHg' }, // prettier-ignore
+      { field: 'diastolicBp', min: 20, max: 200, step: 1, range: 'entre 20 y 200 mmHg' }, // prettier-ignore
+      { field: 'oxygenSaturation', min: 30, max: 100, step: 1, range: 'entre 30 y 100 %' }, // prettier-ignore
+    ];
+
+    /** Rounded to the step so 45 + 0.1 is 45.1 and not 45.100000000000001. */
+    const past = (value: number, step: number) =>
+      Number(value.toFixed(String(step).split('.')[1]?.length ?? 0));
+
+    for (const { field, min, max, step, range } of bounds) {
+      it(`EN-062 admite ${field} en los dos bordes, ${min} y ${max}`, async () => {
+        const prisma = db();
+        const { site, encounter } = await anEncounter(prisma);
+        const repository = repositoryOf(prisma);
+        const query = { encounterId: encounter.id, sites: [site.id] };
+
+        for (const edge of [min, max]) {
+          const vitals = await repository.saveVitals(query, { [field]: edge });
+          expect(vitals[field]).toBe(edge);
+        }
+      });
+
+      for (const [side, value] of [
+        ['por debajo', past(min - step, step)],
+        ['por encima', past(max + step, step)],
+      ] as const) {
+        it(`EN-062 rechaza ${field} ${side} del rango (${value}) señalando la casilla`, async () => {
+          const prisma = db();
+          const { site, encounter } = await anEncounter(prisma);
+
+          const problem = await problemFrom(
+            repositoryOf(prisma).saveVitals(
+              { encounterId: encounter.id, sites: [site.id] },
+              { [field]: value },
+            ),
+          );
+
+          expect(problem?.status).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
+          expect(problem?.code).toBe('VITALS_OUT_OF_RANGE');
+          expect(problem?.errors).toEqual([
+            {
+              field,
+              code: 'VITALS_OUT_OF_RANGE',
+              message: expect.stringContaining(range) as string,
+            },
+          ]);
+        });
+      }
+    }
+
+    it('EN-062 señala la sistólica cuando es menor que la diastólica', async () => {
+      const prisma = db();
+      const { site, encounter } = await anEncounter(prisma);
+
+      const problem = await problemFrom(
+        repositoryOf(prisma).saveVitals(
+          { encounterId: encounter.id, sites: [site.id] },
+          { systolicBp: 80, diastolicBp: 120 },
+        ),
+      );
+
+      expect(problem?.errors?.[0]?.field).toBe('systolicBp');
+      expect(problem?.errors?.[0]?.message).toContain(
+        'mayor que la diastólica',
+      );
+    });
   });
 
   it('EN-067 no crea una segunda toma: la segunda sobreescribe la primera', async () => {

@@ -21,7 +21,7 @@ import type { EncounterStatus, NoteStatus } from './encounter';
  *
  * NOT DECLARED HERE, on purpose: `VITALS_OUT_OF_RANGE` and
  * `NOTE_ALREADY_CURRENT`. Those two are PostgreSQL constraints speaking
- * (`encounter_vitals_ranges`, `clinical_note_one_current_per_chain`) and they
+ * (`encounter_vitals_ranges_*`, `clinical_note_one_current_per_chain`) and they
  * travel through the database error mapping, which is its own enumeration.
  * Restating them in TypeScript would be a second, weaker copy of a rule the
  * database already guarantees.

@@ -1286,12 +1286,27 @@ requisitos que cambian.
   > puede indexar — y el IMC se filtra en el tamizaje nutricional.
 - **EN-062** — SI una medida cae fuera del rango fisiológico admisible, ENTONCES
   el sistema DEBERÁ rechazarla.
-  > **Garantía de la base:** `encounter_vitals_ranges`. Peso 0,3–400 kg · talla
-  > 20–260 cm · sistólica 40–300 · diastólica 20–200 · **sistólica mayor que
-  > diastólica** · saturación 30–100. Los rangos son **deliberadamente amplios**, y
-  > el comentario de la migración explica el criterio: el objetivo es cazar el dedo
-  > que tecleó 750 en vez de 75, **no discutir de fisiología con la clínica**. Un
-  > `CHECK` demasiado estricto acaba desactivado, y entonces no protege nada.
+  > **Garantía de la base:** un `CHECK` por medida, `encounter_vitals_ranges_*`.
+  > Peso 0,3–400 kg · talla 20–260 cm · perímetro cefálico 20–80 cm · perímetro
+  > abdominal 20–250 cm · sistólica 40–300 mmHg · diastólica 20–200 mmHg ·
+  > **sistólica mayor que diastólica** · frecuencia cardiaca 20–300 lpm ·
+  > frecuencia respiratoria 4–100 rpm · temperatura 25–45 °C · saturación
+  > 30–100 %. Los rangos son **deliberadamente amplios**, y el comentario de la
+  > migración explica el criterio: el objetivo es cazar el dedo que tecleó 750 en
+  > vez de 75, **no discutir de fisiología con la clínica**. Un `CHECK` demasiado
+  > estricto acaba desactivado, y entonces no protege nada.
+  >
+  > **D-058 (30-09-2026):** temperatura, frecuencias cardiaca y respiratoria y los
+  > dos perímetros no tenían límite en ninguna parte; el autor eligió rangos
+  > amplios con el mismo criterio que los existentes. Las cinco restricciones
+  > nuevas se crean `NOT VALID` —se comprueban en toda escritura desde la
+  > migración, sin impedir desplegar donde ya se guardó un valor absurdo— y se
+  > promueven con `VALIDATE CONSTRAINT` cuando no quede ninguno.
+  >
+  > **Una restricción por medida, y no una sola**, porque PostgreSQL sólo nombra
+  > la restricción que falló —el valor viaja en la fila, que nunca se lee—: así el
+  > 422 `VITALS_OUT_OF_RANGE` señala la casilla (`weightKg`, `temperatureC`…) con
+  > un mensaje que dice el rango. El par sistólica/diastólica señala `systolicBp`.
 - **EN-063** — MIENTRAS el paciente sea **menor de 5 años** o tenga registrado el
   grupo prioritario **embarazada**, el sistema DEBERÁ exigir peso, talla y
   perímetro cefálico; para el resto DEBERÁN ser opcionales.
@@ -2546,7 +2561,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `CONCEPT_WRONG_CATALOGUE` | 422 | El concepto existe y es de otro catálogo —una parroquia del DPA archivada como enfermedad, un diagnóstico registrado como procedimiento, una enfermedad CIE-10 archivada como la sustancia a la que alguien es alérgico—. **Uno solo para los tres**: lo que hay que hacer es idéntico, elegir de la lista correcta, y el mensaje nombra **cuál**. En la alergia el campo señalado es `substanceConceptId` y no `conceptId` | EN-040, EN-050, EN-080 |
 | `DIAGNOSIS_PRIMARY_TAKEN` | 409 | Segundo diagnóstico principal. Lo arbitra `encounter_diagnosis_one_primary`; el adaptador lee el rango en uso dentro de la misma transacción para que el rechazo sea una frase, así que el código llega por **las dos vías** | EN-043 |
 | `DIAGNOSIS_CONCEPT_NOT_IN_FORCE` | 422 | El código CIE-10 no estaba vigente en la fecha de la atención. **Lo emite el adaptador**, no el mapeo de constraints: `trg_diagnosis_concept_in_force` levanta `integrity_constraint_violation` desde PL/pgSQL, así que el nombre del disparador nunca viaja al cliente | EN-042 |
-| `VITALS_OUT_OF_RANGE` | 422 | Medida fuera de rango. Del mapeo de constraints: `encounter_vitals_ranges`. **Por campo**, señalando cuál | EN-062 |
+| `VITALS_OUT_OF_RANGE` | 422 | Medida fuera de rango. Del mapeo de constraints: `encounter_vitals_ranges_*`, una por medida (D-058). **Por campo**, señalando cuál y diciendo el rango | EN-062 |
 | `VITALS_REQUIRED` | 422 | Falta antropometría obligatoria en menor de 5 años o embarazada | EN-063 |
 | `BMI_IS_DERIVED` | 422 | Se envió el IMC en la petición | EN-061 |
 | `VIOLENCE_SCREENING_RESTRICTED` | 403 | Se intentó **registrar** el tamizaje sin la segunda llave. Al **leer** no se rechaza: se omite | EN-072 |

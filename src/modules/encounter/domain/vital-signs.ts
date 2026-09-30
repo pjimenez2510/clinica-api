@@ -15,7 +15,7 @@
  *    implementation here would be a number that can disagree with the stored
  *    one, and the stored one is the one a nutritional screening filters on.
  *  - IT DOES NOT CHECK THE PHYSIOLOGICAL RANGES (EN-062).
- *    `encounter_vitals_ranges` does, deliberately wide: the goal is to catch
+ *    `encounter_vitals_ranges_*` does, deliberately wide: the goal is to catch
  *    the finger that typed 750 instead of 75, not to argue physiology with the
  *    clinic. A stricter copy here would refuse readings the database accepts,
  *    and the two would drift the first time either moved.

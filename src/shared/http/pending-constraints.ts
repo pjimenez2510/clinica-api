@@ -13,13 +13,12 @@ import { registerConstraintMeanings } from './constraint-meanings';
  * `encounter.constraints.ts` and delete it here. This file should end up
  * empty and removed. Adding a NEW entry here instead of in a module is a
  * mistake unless the module genuinely does not exist yet.
+ *
+ * `encounter_vitals_ranges` left on 30-09-2026: the constraint was split into
+ * one per measure (D-058, `20260930124150_encounter_vitals_ranges_per_measure`)
+ * and each one is registered in `encounter.constraints.ts` with its own field.
  */
 registerConstraintMeanings({
-  encounter_vitals_ranges: {
-    code: 'VITALS_OUT_OF_RANGE',
-    field: 'vitals',
-    message: 'Alguno de los signos vitales está fuera de rango: revise los valores ingresados', // prettier-ignore
-  },
   clinical_note_one_current_per_chain: {
     code: 'NOTE_ALREADY_CURRENT',
     field: 'chainId',

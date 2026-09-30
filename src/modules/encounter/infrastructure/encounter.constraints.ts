@@ -17,14 +17,86 @@ import { registerConstraintMeanings } from '../../../shared/http/constraint-mean
  * These codes are deliberately NOT in `error-catalogue.ts`: they are produced
  * by PostgreSQL constraints, and this registration is their enumeration.
  *
- * ⚠️ `encounter_vitals_ranges` AND `clinical_note_one_current_per_chain` ARE
- * NOT HERE, and it is not an oversight. They are still registered in
- * `shared/http/pending-constraints.ts`, which was written to hold the entries
- * of a module that did not exist yet and says «move them when it does».
- * Moving them means editing `database-problem.ts` and the integration test
- * that imports the shared file, both outside this delivery's boundary. They
- * are named here so the next person finds the two halves together.
+ * ⚠️ `clinical_note_one_current_per_chain` IS NOT HERE, and it is not an
+ * oversight. It is still registered in `shared/http/pending-constraints.ts`,
+ * which was written to hold the entries of a module that did not exist yet and
+ * says «move them when it does». It is named here so the next person finds the
+ * two halves together. The vitals ranges used to wait there too; they moved
+ * here when D-058 split them into one constraint per measure.
  */
+
+/**
+ * EN-062, D-058. One `encounter_vitals_ranges_*` CHECK per measure, and one
+ * entry here per CHECK, each pointing at the DTO field the nurse has to fix.
+ *
+ * ⚠️ WHY ONE CONSTRAINT PER MEASURE. PostgreSQL names the constraint that
+ * failed and puts the offending VALUE in `detail`, which is the patient's row
+ * and is never read (see `database-problem.ts`). With the single
+ * `encounter_vitals_ranges` of before, the 422 could only say «alguno de los
+ * signos vitales», and the SPEC asks for the field. The name is now the answer,
+ * and the ranges still live only in the migration: the message restates them
+ * for the reader, it does not enforce them.
+ *
+ * The figures below MUST match
+ * `20260930124150_encounter_vitals_ranges_per_measure`; the integration tests
+ * of EN-062 try every bound on both sides against the real database.
+ */
+function vitalsOutOfRange(field: string, message: string) {
+  return { code: 'VITALS_OUT_OF_RANGE', field, message };
+}
+
+registerConstraintMeanings({
+  encounter_vitals_ranges_weight_kg: vitalsOutOfRange(
+    'weightKg',
+    'El peso debe estar entre 0.3 y 400 kg: revise el valor ingresado',
+  ),
+  encounter_vitals_ranges_height_cm: vitalsOutOfRange(
+    'heightCm',
+    'La talla debe estar entre 20 y 260 cm: revise el valor ingresado',
+  ),
+  encounter_vitals_ranges_head_circumference_cm: vitalsOutOfRange(
+    'headCircumferenceCm',
+    'El perímetro cefálico debe estar entre 20 y 80 cm: revise el valor ingresado', // prettier-ignore
+  ),
+  encounter_vitals_ranges_abdominal_circumference_cm: vitalsOutOfRange(
+    'abdominalCircumferenceCm',
+    'El perímetro abdominal debe estar entre 20 y 250 cm: revise el valor ingresado', // prettier-ignore
+  ),
+  encounter_vitals_ranges_systolic_bp: vitalsOutOfRange(
+    'systolicBp',
+    'La tensión sistólica debe estar entre 40 y 300 mmHg: revise el valor ingresado', // prettier-ignore
+  ),
+  encounter_vitals_ranges_diastolic_bp: vitalsOutOfRange(
+    'diastolicBp',
+    'La tensión diastólica debe estar entre 20 y 200 mmHg: revise el valor ingresado', // prettier-ignore
+  ),
+  /**
+   * The one pairing among the ranges. Pointed at the systolic because that is
+   * the first of the two boxes; 80/120 is almost always both typed the wrong
+   * way round, and the sentence says so.
+   */
+  encounter_vitals_ranges_systolic_above_diastolic: vitalsOutOfRange(
+    'systolicBp',
+    'La tensión sistólica debe ser mayor que la diastólica: revise si las ingresó al revés', // prettier-ignore
+  ),
+  encounter_vitals_ranges_heart_rate: vitalsOutOfRange(
+    'heartRate',
+    'La frecuencia cardiaca debe estar entre 20 y 300 lpm: revise el valor ingresado', // prettier-ignore
+  ),
+  encounter_vitals_ranges_respiratory_rate: vitalsOutOfRange(
+    'respiratoryRate',
+    'La frecuencia respiratoria debe estar entre 4 y 100 rpm: revise el valor ingresado', // prettier-ignore
+  ),
+  encounter_vitals_ranges_temperature_c: vitalsOutOfRange(
+    'temperatureC',
+    'La temperatura debe estar entre 25 y 45 °C: revise el valor ingresado',
+  ),
+  encounter_vitals_ranges_oxygen_saturation: vitalsOutOfRange(
+    'oxygenSaturation',
+    'La saturación de oxígeno debe estar entre 30 y 100 %: revise el valor ingresado', // prettier-ignore
+  ),
+});
+
 registerConstraintMeanings({
   /**
    * EN-126. The column and the instant cannot disagree, in either direction.

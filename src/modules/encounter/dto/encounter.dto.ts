@@ -176,7 +176,7 @@ export class OpenEncountersQueryDto extends createZodDto(
  * EN-060 to EN-063, EN-066. Block D — form **020**.
  *
  * ⚠️ THE UNITS ARE IN THE FIELD NAMES ON PURPOSE. `weightKg` and not `weight`:
- * the column is `Decimal(6,3)` in kilograms and `encounter_vitals_ranges`
+ * the column is `Decimal(6,3)` in kilograms and `encounter_vitals_ranges_*`
  * refuses anything outside 0,3–400, so a client sending grams would be refused
  * for a reason nobody could read off the field name.
  *
@@ -188,7 +188,7 @@ export class OpenEncountersQueryDto extends createZodDto(
  * carries the code the SPEC's table names instead of a generic
  * `VALIDATION_FAILED`.
  *
- * ⚠️ THE PHYSIOLOGICAL RANGES ARE NOT REPEATED HERE. `encounter_vitals_ranges`
+ * ⚠️ THE PHYSIOLOGICAL RANGES ARE NOT REPEATED HERE. `encounter_vitals_ranges_*`
  * owns them and they are deliberately wide — the goal is to catch the finger
  * that typed 750 instead of 75, not to argue physiology with the clinic. A
  * copy in the DTO would be a second, stricter rule that refuses readings the
