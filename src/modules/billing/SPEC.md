@@ -177,7 +177,7 @@ se puede corregir ni anulando.
 **Prueba independiente:** emitir dos facturas seguidas en el mismo punto de
 emisión y comprobar que los secuenciales son consecutivos y únicos; intentar
 actualizar una factura emitida por debajo de la aplicación y comprobar que la
-base lo rechaza. **Cubre:** BI-080 a BI-090.
+base lo rechaza. **Cubre:** BI-080 a BI-090, BI-159.
 
 **Solo servidor:** BI-084, BI-085, BI-086, BI-088. La inmutabilidad, el
 secuencial sin huecos y que un cargo no pueda estar en dos facturas vivas son
@@ -987,6 +987,21 @@ es falsa, hay requisitos que cambian.
   > REQ-084, y su origen es el rechazo habitual de las aseguradoras. Es la
   > consecuencia práctica de BI-035: el pagador dice de qué lista sale el
   > precio; no dice quién figura en el documento.
+- **BI-159** — SI se emite una factura a un receptor identificado con RUC
+  (tipo `04`) que no supera OR-008 y OR-009, o con cédula (tipo `05`) que no
+  supera el value object `Cedula`, ENTONCES el sistema DEBERÁ rechazarla con
+  `INVALID_RUC` o `INVALID_CEDULA` sobre el campo `receiver.identification`;
+  y la base DEBERÁ rechazar por su cuenta el mismo receptor con la misma regla
+  (`invoice_buyer_ruc_valid`, `invoice_buyer_cedula_valid`).
+  > REQ-080: la ficha técnica del SRI valida la identificación del comprador,
+  > y una factura con un RUC que no existe se rechaza **después** de emitida,
+  > cuando ya consumió su secuencial y no se puede editar (BI-084). Hallado en
+  > la revisión de `fix/formularios-d057`: la emisión sólo exigía que el número
+  > no estuviera vacío, y `1790012345000` o `2590000000001` salían hacia el SRI.
+  > Los tipos `06` (pasaporte) y `08` (exterior) no tienen forma que comprobar
+  > aquí: los emite otro país. Los `CHECK` usan `is_valid_cedula()` —la de
+  > `patient_identifier_cedula_valid`— e `is_valid_ruc()`, que es `Ruc` en SQL:
+  > la cédula que va al SRI la garantiza la base igual que la del paciente.
 - **BI-088** — El sistema NO DEBERÁ incluir un mismo cargo en más de una factura
   no anulada, y la garantía DEBERÁ vivir en la base de datos.
   > **Resuelto por el estado del cargo, no por un índice.** No existe
@@ -1407,7 +1422,8 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 
 **Se reutilizan, y no se declaran de nuevo:** `SELF_AUTHORISATION_DENIED`
 (BI-064, ya en el catálogo por AG-103), `SITE_SCOPE_DENIED` (BI-131),
-`PERMISSION_DENIED`, `INVALID_RUC` (BI-034, del value object `Ruc`),
+`PERMISSION_DENIED`, `INVALID_RUC` (BI-034, BI-159, del value object `Ruc`),
+`INVALID_CEDULA` (BI-159, del value object `Cedula`),
 `PATIENT_NOT_FOUND`, `EMISSION_POINT_NOT_FOUND` y `SITE_NOT_FOUND`. Un código
 nuevo para un hecho que ya tiene el suyo obliga a que el cliente ramifique dos
 veces por lo mismo.
@@ -1431,6 +1447,8 @@ registrados en `infrastructure/billing.constraints.ts`.
 | `PAYER_CODE_DUPLICATE` | 409 | `payer_code_unique` | BI-030 |
 | `INVALID_PAYER_KIND` | 422 | `payer_kind_is_known` | BI-030 |
 | `INVALID_RUC` | 422 | `payer_ruc_format` | BI-036 |
+| `INVALID_RUC` | 422 | `invoice_buyer_ruc_valid` | BI-159 |
+| `INVALID_CEDULA` | 422 | `invoice_buyer_cedula_valid` | BI-159 |
 | `INVALID_CHARGE_QUANTITY` | 422 | `charge_item_quantity_is_positive` | BI-057 |
 | `DISCOUNT_REASON_REQUIRED` | 422 | `charge_item_discount_states_a_reason` | BI-061 |
 | `DISCOUNT_EXCEEDS_LINE_AMOUNT` | 422 | `charge_item_discount_within_line` | BI-065 |

@@ -517,3 +517,93 @@ describe('BI-081 «Consumidor Final» lleva la identificación del SRI o no exis
     expect(invoice.receiver.buyerIdentification).toBe('9999999999999');
   });
 });
+
+describe('BI-159 la base rechaza un RUC o una cédula de receptor que el SRI no acepta', () => {
+  /**
+   * Straight through the repository, UNDER `resolveReceiver`: what is proved
+   * here is what an import or a script that skips the value objects is told.
+   * The rule is the whole of `Ruc` and `Cedula`, not only the shape: the
+   * cedula check is `is_valid_cedula()`, the one `patient_identifier` uses.
+   * Each group of rejections has its controls beside it, through the same
+   * insert, so a CHECK that refused every `04` would fail.
+   */
+  const issueTo = async (
+    buyerIdentificationType: '04' | '05' | '06' | '08',
+    buyerIdentification: string,
+  ) =>
+    context.accounts.issueInvoice({
+      accountId: await anAccountReadyToInvoice(),
+      siteId: context.siteId,
+      emissionPointId: context.emissionPointId,
+      receiver: { ...receiver, buyerIdentificationType, buyerIdentification },
+      issuedById: context.userId,
+    });
+
+  it.each([
+    ['sin establecimiento (000)', '1790012345000'],
+    ['de doce dígitos', '179001234500'],
+    ['con letras', '17900123450O1'],
+    ['de una provincia que no existe', '2590000000001'],
+    ['de tercer dígito 7, que no es de nadie', '1770012345001'],
+    ['de persona natural con verificador equivocado', '1710034066001'],
+  ])('BI-159 rechaza un RUC %s (invoice_buyer_ruc_valid)', async (_, ruc) => {
+    const rejection = await rejectionOf(issueTo('04', ruc));
+
+    expect(extractDatabaseProblem(rejection)).toMatchObject({
+      code: 'INVALID_RUC',
+    });
+    expect(String((rejection as Error).message)).toMatch(
+      /invoice_buyer_ruc_valid/,
+    );
+  });
+
+  it.each([
+    ['sociedad privada con la numeración de 2021', '1793189906001'],
+    ['entidad del sector público', '1760013210001'],
+    ['persona natural', '1710034065001'],
+    ['persona inscrita en el exterior (provincia 30)', '3001234560001'],
+  ])('BI-159 admite el RUC de una %s (control positivo)', async (_, ruc) => {
+    const invoice = await issueTo('04', ruc);
+    expect(invoice.receiver.buyerIdentification).toBe(ruc);
+  });
+
+  it.each([
+    ['de nueve dígitos', '171003406'],
+    ['de trece dígitos', '1710034065001'],
+    ['con verificador equivocado', '1710034066'],
+    ['de tercer dígito 6, que es de un RUC', '1760013210'],
+  ])(
+    'BI-159 rechaza una cédula %s (invoice_buyer_cedula_valid)',
+    async (_, cedula) => {
+      const rejection = await rejectionOf(issueTo('05', cedula));
+
+      expect(extractDatabaseProblem(rejection)).toMatchObject({
+        code: 'INVALID_CEDULA',
+      });
+      expect(String((rejection as Error).message)).toMatch(
+        /invoice_buyer_cedula_valid/,
+      );
+    },
+  );
+
+  it.each([
+    ['de Pichincha', '1710034065'],
+    ['de la provincia 30', '3001234560'],
+  ])('BI-159 admite la cédula %s (control positivo)', async (_, cedula) => {
+    const invoice = await issueTo('05', cedula);
+    expect(invoice.receiver.buyerIdentification).toBe(cedula);
+  });
+
+  it.each([
+    ['06', 'AB123456'],
+    ['08', '1710034066'],
+  ] as const)(
+    'BI-159 no alcanza al documento %s, que emite otro país',
+    async (type, identification) => {
+      // `08` with a number that is NOT a valid Ecuadorian cedula: a CHECK
+      // written against the wrong type would refuse it.
+      const invoice = await issueTo(type, identification);
+      expect(invoice.receiver.buyerIdentification).toBe(identification);
+    },
+  );
+});

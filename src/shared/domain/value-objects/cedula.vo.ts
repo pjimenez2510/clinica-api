@@ -7,10 +7,27 @@ import { ValidationError } from '../errors/domain-error';
 export class InvalidCedulaError extends ValidationError {
   readonly code = 'INVALID_CEDULA';
 
-  constructor(reason: string) {
+  /**
+   * `field`, when given, is where the form shows it (BI-159:
+   * `receiver.identification`). Without it the error names no field, as it
+   * always has for the registers that map it themselves.
+   */
+  constructor(reason: string, field?: string) {
     // The rejected value is NOT included: it is personal data and this message
     // ends up in logs and support tickets.
-    super(`Invalid Ecuadorian cedula: ${reason}`, { reason });
+    super(
+      `Invalid Ecuadorian cedula: ${reason}`,
+      { reason },
+      field === undefined
+        ? undefined
+        : [
+            {
+              field,
+              code: 'INVALID_CEDULA',
+              message: 'La cédula no es válida: revise los diez dígitos',
+            },
+          ],
+    );
   }
 }
 

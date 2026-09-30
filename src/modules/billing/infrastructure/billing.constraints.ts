@@ -201,6 +201,20 @@ registerConstraintMeanings({
     field: 'receiver.identification',
     message: 'Una factura a Consumidor Final lleva la identificación 9999999999999 del SRI', // prettier-ignore
   },
+  // BI-159: the receiver's RUC and cedula, the whole rule of `Ruc` and
+  // `Cedula`. `resolveReceiver` refuses the same before the database is
+  // reached; this is what a path that skips it (an import, a script) is told.
+  invoice_buyer_ruc_valid: {
+    code: 'INVALID_RUC',
+    field: 'receiver.identification',
+    message:
+      'El RUC no supera la validación del SRI. Compruebe los trece dígitos y el código de establecimiento',
+  },
+  invoice_buyer_cedula_valid: {
+    code: 'INVALID_CEDULA',
+    field: 'receiver.identification',
+    message: 'La cédula no es válida: revise los diez dígitos',
+  },
   invoice_status_is_known: {
     code: 'INVALID_INVOICE_STATUS',
     field: 'status',

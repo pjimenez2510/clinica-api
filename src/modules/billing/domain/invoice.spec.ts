@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { InvalidCedulaError } from '../../../shared/domain/value-objects/cedula.vo';
+import { InvalidRucError } from '../../../shared/domain/value-objects/ruc.vo';
 import {
   FinalConsumerNotConfirmedError,
   InvoiceReceiverIsPayerError,
@@ -87,6 +89,95 @@ describe('BI-080, BI-082 quién recibe la factura', () => {
       isFinalConsumer: false,
     });
   });
+});
+
+describe('BI-159 el RUC y la cédula del receptor son los que el SRI acepta', () => {
+  const thrownBy = (request: Parameters<typeof resolveReceiver>[0]) => {
+    try {
+      resolveReceiver(request, context());
+      return null;
+    } catch (error) {
+      return error;
+    }
+  };
+
+  it.each([
+    ['sin establecimiento (000)', '1790012345000'],
+    ['de una provincia que no existe', '2590000000001'],
+    ['de persona natural con verificador equivocado', '1710034066001'],
+    ['de doce dígitos', '179001234500'],
+    ['de tercer dígito 7, que no es de nadie', '1770012345001'],
+  ])('BI-159 rechaza un RUC %s sobre receiver.identification', (_, ruc) => {
+    const thrown = thrownBy({ ...receiver, identificationType: '04', identification: ruc }); // prettier-ignore
+
+    expect(thrown).toBeInstanceOf(InvalidRucError);
+    expect((thrown as InvalidRucError).fieldErrors?.[0]).toMatchObject({
+      field: 'receiver.identification',
+      code: 'INVALID_RUC',
+    });
+  });
+
+  it.each([
+    ['con verificador equivocado', '1710034066'],
+    ['de una provincia que no existe', '2510034065'],
+    ['de nueve dígitos', '171003406'],
+    ['de tercer dígito 6, que es de un RUC', '1760013210'],
+  ])(
+    'BI-159 rechaza una cédula %s sobre receiver.identification',
+    (_, cedula) => {
+      const thrown = thrownBy({ ...receiver, identification: cedula });
+
+      expect(thrown).toBeInstanceOf(InvalidCedulaError);
+      expect((thrown as InvalidCedulaError).fieldErrors?.[0]).toMatchObject({
+        field: 'receiver.identification',
+        code: 'INVALID_CEDULA',
+      });
+    },
+  );
+
+  it.each([
+    ['sociedad privada con la numeración de 2021', '1793189906001'],
+    ['sociedad de Guayas', '0993366721001'],
+    ['persona natural', '1710034065001'],
+    ['entidad del sector público', '1760013210001'],
+    ['persona inscrita en el exterior (provincia 30)', '3001234560001'],
+  ])('BI-159 admite el RUC de una %s', (_, ruc) => {
+    expect(
+      resolveReceiver({ ...receiver, identificationType: '04', identification: ` ${ruc} ` }, context()), // prettier-ignore
+    ).toMatchObject({
+      buyerIdentificationType: '04',
+      buyerIdentification: ruc,
+    });
+  });
+
+  it.each([
+    ['de Pichincha', '1710034065'],
+    [
+      'de la provincia 30, la de quien se inscribió en el exterior',
+      '3001234560',
+    ],
+  ])('BI-159 admite la cédula ecuatoriana válida %s', (_, cedula) => {
+    expect(
+      resolveReceiver({ ...receiver, identification: cedula }, context()),
+    ).toMatchObject({ buyerIdentificationType: '05', buyerIdentification: cedula }); // prettier-ignore
+  });
+
+  it.each([
+    ['06', 'AB123456'],
+    ['08', '1234567890'],
+  ] as const)(
+    'BI-159 no impone forma al documento %s, que emite otro país',
+    (type, identification) => {
+      const resolved = resolveReceiver(
+        { ...receiver, identificationType: type, identification },
+        context(),
+      );
+      expect(resolved).toMatchObject({
+        buyerIdentificationType: type,
+        buyerIdentification: identification,
+      });
+    },
+  );
 });
 
 describe('BI-081 «Consumidor Final» es una excepción explícita', () => {

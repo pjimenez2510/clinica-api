@@ -772,6 +772,60 @@ describe('la facturación por HTTP', () => {
     });
   });
 
+  describe('BI-159 el RUC y la cédula del receptor, antes de emitir', () => {
+    const issueTo = (
+      accountId: string,
+      identificationType: '04' | '05',
+      identification: string,
+    ) =>
+      api()
+        .post(`/api/v1/billing/sites/${siteId}/invoices`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({
+          accountId,
+          emissionPointId,
+          receiver: { identificationType, identification, name: 'Receptor' },
+        });
+
+    it.each([
+      ['sin establecimiento', '1790012345000'],
+      ['de una provincia que no existe', '2590000000001'],
+    ])(
+      'BI-159 rechaza un RUC %s sin emitir ni gastar el secuencial',
+      async (_, ruc) => {
+        const accountId = await openAccount();
+        await addCharge(accountId);
+
+        const refused = await issueTo(accountId, '04', ruc).expect(422);
+
+        const problem = refused.body as Problem;
+        expect(problem.code).toBe('INVALID_RUC');
+        expect(problem.errors?.[0]?.field).toBe('receiver.identification');
+        expect(await prisma.invoice.count({ where: { accountId } })).toBe(0);
+
+        // Control: the same account with a RUC the SRI accepts is issued, and
+        // takes the FIRST sequential — the refusal consumed none.
+        const issued = await issueTo(accountId, '04', '1793189906001').expect(201); // prettier-ignore
+        expect(issued.body).toMatchObject({ sequential: '000000001' });
+      },
+    );
+
+    it('BI-159 rechaza una cédula con verificador equivocado', async () => {
+      const accountId = await openAccount();
+      await addCharge(accountId);
+
+      const refused = await issueTo(accountId, '05', '1710034066').expect(422);
+
+      const problem = refused.body as Problem;
+      expect(problem.code).toBe('INVALID_CEDULA');
+      expect(problem.errors?.[0]?.field).toBe('receiver.identification');
+      expect(await prisma.invoice.count({ where: { accountId } })).toBe(0);
+
+      const issued = await issueTo(accountId, '05', '1710034065').expect(201);
+      expect(issued.body).toMatchObject({ sequential: '000000001' });
+    });
+  });
+
   describe('BI-090, BI-130, BI-131, BI-135 la superficie de la API', () => {
     it('BI-090 no expone ninguna ruta que modifique o borre una factura emitida', async () => {
       const accountId = await openAccount();

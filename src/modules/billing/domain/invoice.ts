@@ -1,4 +1,12 @@
 import {
+  Cedula,
+  InvalidCedulaError,
+} from '../../../shared/domain/value-objects/cedula.vo';
+import {
+  InvalidRucError,
+  Ruc,
+} from '../../../shared/domain/value-objects/ruc.vo';
+import {
   FinalConsumerNotConfirmedError,
   InvoiceReceiverIsPayerError,
   InvoiceReceiverRequiredError,
@@ -104,7 +112,7 @@ export function proposeReceiver(context: ReceiverContext): ReceiverRequest {
 }
 
 /**
- * BI-080, BI-081, BI-087. Turns what was sent into the receiver block, or
+ * BI-080, BI-081, BI-087, BI-159. Turns what was sent into the receiver block, or
  * refuses.
  *
  * The order matters: the final-consumer branch is checked FIRST, because a
@@ -142,6 +150,8 @@ export function resolveReceiver(
     throw new FinalConsumerNotConfirmedError('receiver.identificationType');
   }
 
+  checkIdentificationShape(identificationType, identification.trim());
+
   /**
    * BI-087. Not in the insurer's name, ever.
    *
@@ -165,6 +175,38 @@ export function resolveReceiver(
     buyerEmail: request.email?.trim() ? request.email.trim() : null,
     isFinalConsumer: false,
   };
+}
+
+/** Where a receiver's identification error is shown (BI-080, BI-159). */
+const RECEIVER_IDENTIFICATION_FIELD = 'receiver.identification';
+
+/**
+ * BI-159. The two identifications whose shape Ecuador defines — the RUC (`04`)
+ * and the Ecuadorian cedula (`05`) — go through the value objects every other
+ * register uses, and the error points at the receiver's field.
+ *
+ * The SRI checks both, but only AFTER the invoice is issued: by then it holds
+ * its sequential and cannot be edited (BI-084), so a typo here costs a credit
+ * note or a void. `06` (passport) and `08` (abroad) are issued by another
+ * country and carry no shape this system can know.
+ */
+function checkIdentificationShape(
+  type: BuyerIdentificationType,
+  identification: string,
+): void {
+  try {
+    if (type === '04') Ruc.create(identification);
+    if (type === '05') Cedula.create(identification);
+  } catch (error) {
+    // Re-thrown with the field and the same reason; the number is never in it.
+    if (error instanceof InvalidRucError) {
+      throw new InvalidRucError(String(error.params.reason), RECEIVER_IDENTIFICATION_FIELD); // prettier-ignore
+    }
+    if (error instanceof InvalidCedulaError) {
+      throw new InvalidCedulaError(String(error.params.reason), RECEIVER_IDENTIFICATION_FIELD); // prettier-ignore
+    }
+    throw error;
+  }
 }
 
 /**
