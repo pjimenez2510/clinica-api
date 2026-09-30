@@ -81,8 +81,10 @@ export interface TokenIssuerPort {
 
 /**
  * AU-004: rotating, single-use refresh tokens grouped in families. Reuse of a
- * spent token revokes the whole family; `revokeAllForUser` closes every session
- * of the account (AU-023, AU-036).
+ * spent token revokes the whole family — except AU-039: the token just rotated,
+ * presented again within the grace window by the same client, re-issues the
+ * session instead (its response was lost). `revokeAllForUser` closes every
+ * session of the account (AU-023).
  */
 export interface RefreshTokenPort {
   issueForNewSession(

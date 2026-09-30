@@ -10,7 +10,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
+import { RefreshTokenReuseError } from '../../src/modules/auth/domain/auth.errors';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
+import { PrismaAccountAdminRepository } from '../../src/modules/auth/infrastructure/prisma-account-admin.repository';
+import { PrismaAuthUserRepository } from '../../src/modules/auth/infrastructure/prisma-auth-user.repository';
+import { PrismaCredentialInvitationRepository } from '../../src/modules/auth/infrastructure/prisma-credential-invitation.repository';
 import { RefreshTokenService } from '../../src/modules/auth/infrastructure/refresh-token.service';
 import { TokenService } from '../../src/modules/auth/infrastructure/token.service';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
@@ -310,14 +314,14 @@ describe('session over HTTP', () => {
         .get('JWT_REFRESH_REUSE_GRACE_SECONDS', { infer: true });
     }
 
-    async function signIn(): Promise<{
+    async function signIn(userAgent = BROWSER): Promise<{
       cookies: string[];
       accessToken: string;
     }> {
       await createAccount();
       const response = await request(app.getHttpServer())
         .post('/api/v1/auth/login')
-        .set('User-Agent', BROWSER)
+        .set('User-Agent', userAgent)
         .send({ email: 'ana.torres@clinica.ec', password: PASSWORD })
         .expect(200);
       return {
@@ -371,14 +375,22 @@ describe('session over HTTP', () => {
      * lock. A condition, not a delay: it returns the moment the revocation is
      * provably queued behind the open transaction, and fails if it never is.
      */
-    async function blockedOnALock(): Promise<void> {
-      for (let attempt = 0; attempt < 500; attempt++) {
+    async function blockedOnALock(waiters = 1): Promise<void> {
+      // Only OTHER sessions, only statements on `refresh_token`: the waiters
+      // this test provoked, not whatever else the database is doing.
+      const deadline = Date.now() + 5_000;
+      while (Date.now() < deadline) {
         const [row] = await prisma.$queryRaw<{ waiting: bigint }[]>`
           SELECT count(*) AS waiting FROM pg_stat_activity
-           WHERE datname = current_database() AND wait_event_type = 'Lock'`;
-        if ((row?.waiting ?? 0n) > 0n) return;
+           WHERE datname = current_database()
+             AND pid <> pg_backend_pid()
+             AND wait_event_type = 'Lock'
+             AND query ILIKE '%refresh_token%'`;
+        if ((row?.waiting ?? 0n) >= BigInt(waiters)) return;
       }
-      throw new Error('la revocación nunca quedó esperando el bloqueo');
+      throw new Error(
+        `nunca hubo ${waiters} sentencia(s) esperando un bloqueo`,
+      );
     }
 
     it('AU-039 la configuración de la prueba tiene ventana: sin ella nada de esto prueba la gracia', () => {
@@ -511,24 +523,73 @@ describe('session over HTTP', () => {
       );
     });
 
-    it('AU-039 una familia cerrada por AU-036 o por un cambio de contraseña no revive por la gracia', async () => {
-      // `revokeAllForUser` es el camino de AU-036, AU-023 y el cambio de
-      // contraseña: se llama tal cual, con el motivo de AU-036.
-      const { cookies: first } = await signIn();
-      await rotate(first);
-      const { userId, familyId } = await rowOf(first);
+    /**
+     * EVERY path that closes sessions, called through the code that really
+     * runs — not a stand-in. The first version of these tests only exercised
+     * `RefreshTokenService`, and three of these five paths revoked on their
+     * own and stayed exposed (clean-context review, 30-09-2026).
+     */
+    const revocations: {
+      name: string;
+      revoke: (row: { userId: string; familyId: string }) => Promise<unknown>;
+    }[] = [
+      {
+        name: 'el cierre de sesión',
+        revoke: (row) =>
+          app.get(RefreshTokenService).revokeFamily(row.familyId, 'SIGN_OUT'),
+      },
+      {
+        name: 'la desactivación de la cuenta (AU-023)',
+        revoke: (row) =>
+          app
+            .get(RefreshTokenService)
+            .revokeAllForUser(row.userId, 'ACCOUNT_DEACTIVATED'),
+      },
+      {
+        name: 'el cambio de contraseña',
+        revoke: async (row) => {
+          const { passwordHash } = await prisma.user.findUniqueOrThrow({
+            where: { id: row.userId },
+          });
+          return app
+            .get(PrismaAuthUserRepository)
+            .rotateCredentials(row.userId, passwordHash, 'PASSWORD_CHANGE');
+        },
+      },
+      {
+        name: 'el reinicio del segundo factor (AU-036)',
+        revoke: (row) =>
+          app
+            .get(PrismaAccountAdminRepository)
+            .resetMfa(row.userId, 'MFA_RESET', { userId: row.userId }),
+      },
+      {
+        name: 'el canje de una invitación de credencial',
+        revoke: async (row) => {
+          const { passwordHash } = await prisma.user.findUniqueOrThrow({
+            where: { id: row.userId },
+          });
+          const invitation = await prisma.credentialInvitation.create({
+            data: {
+              userId: row.userId,
+              tokenHash: TokenService.hashRefreshToken(
+                `invitacion-${row.familyId}`,
+              ),
+              expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+            },
+          });
+          return app.get(PrismaCredentialInvitationRepository).redeem({
+            invitationId: invitation.id,
+            userId: row.userId,
+            passwordHash: passwordHash,
+            now: new Date(),
+          });
+        },
+      },
+    ];
 
-      await app.get(RefreshTokenService).revokeAllForUser(userId, 'MFA_RESET');
-
-      await refresh(first).expect(401);
-      expect(await liveRows(familyId)).toBe(0);
-      expect(await app.get(RefreshTokenService).isFamilyOpen(familyId)).toBe(
-        false,
-      );
-    });
-
-    for (const revocation of ['revokeFamily', 'revokeAllForUser'] as const) {
-      it(`AU-039 una revocación (${revocation}) que llega mientras se emite un sucesor no lo deja vivo`, async () => {
+    for (const { name, revoke } of revocations) {
+      it(`AU-039 ${name} que llega mientras se emite un sucesor no lo deja vivo`, async () => {
         /**
          * LA CARRERA, forzada en el orden malo en vez de esperada. Renovar
          * (normal o por gracia) bloquea el refresco presentado e inserta el
@@ -542,9 +603,8 @@ describe('session over HTTP', () => {
          */
         const { cookies } = await signIn();
         const presented = await rowOf(cookies);
-        const sessions = app.get(RefreshTokenService);
 
-        let revoking: Promise<void> | undefined;
+        let revoking: Promise<unknown> | undefined;
         await prisma.$transaction(async (tx) => {
           await tx.$queryRaw`
             SELECT id FROM refresh_token WHERE id = ${presented.id}::uuid FOR UPDATE`;
@@ -560,18 +620,158 @@ describe('session over HTTP', () => {
             },
           });
 
-          revoking =
-            revocation === 'revokeFamily'
-              ? sessions.revokeFamily(presented.familyId, 'SIGN_OUT')
-              : sessions.revokeAllForUser(presented.userId, 'MFA_RESET');
+          revoking = revoke(presented);
           await blockedOnALock();
         });
         await revoking;
 
         expect(await liveRows(presented.familyId)).toBe(0);
-        expect(await sessions.isFamilyOpen(presented.familyId)).toBe(false);
+        expect(
+          await app.get(RefreshTokenService).isFamilyOpen(presented.familyId),
+        ).toBe(false);
       });
     }
+
+    for (const { name, revoke } of revocations) {
+      it(`AU-039 una familia cerrada por ${name} no revive por la gracia`, async () => {
+        // Todo lo que el positivo pide —el último usado, dentro de la ventana,
+        // el mismo navegador— salvo la familia abierta.
+        const { cookies: first } = await signIn();
+        await rotate(first);
+        const presented = await rowOf(first);
+
+        await revoke(presented);
+
+        await refresh(first).expect(401);
+        expect(await liveRows(presented.familyId)).toBe(0);
+        expect(
+          await app.get(RefreshTokenService).isFamilyOpen(presented.familyId),
+        ).toBe(false);
+      });
+    }
+
+    it('AU-039 reclamar y emitir van juntos: una revocación durante una rotación normal no deja el sucesor vivo', async () => {
+      /**
+       * La otra mitad de la carrera: que la ROTACIÓN reclame y emita en una
+       * sola transacción. Se sostiene la fila de la cuenta, así que el INSERT
+       * del sucesor —su clave foránea— espera con el refresco ya reclamado y
+       * bloqueado. Entonces llega la revocación, y tiene que esperar a ese
+       * refresco. Con reclamar y emitir en dos sentencias sueltas no esperaría:
+       * revocaría y el sucesor nacería vivo después.
+       */
+      const { cookies } = await signIn();
+      const presented = await rowOf(cookies);
+
+      let rotating: Promise<request.Response> | undefined;
+      let revoking: Promise<void> | undefined;
+      await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`
+          SELECT id FROM app_user WHERE id = ${presented.userId}::uuid FOR UPDATE`;
+        rotating = refresh(cookies).then((response) => response);
+        await blockedOnALock(1);
+
+        revoking = app
+          .get(RefreshTokenService)
+          .revokeFamily(presented.familyId, 'SIGN_OUT');
+        await blockedOnALock(2);
+      });
+      await Promise.all([rotating, revoking]);
+
+      expect(await liveRows(presented.familyId)).toBe(0);
+    });
+
+    it('AU-039 dos gracias seguidas: la segunda retira el sucesor de la primera', async () => {
+      const { cookies: first } = await signIn();
+      await rotate(first);
+      const firstRegrant = (await refresh(first).expect(200)).get(
+        'Set-Cookie',
+      )!;
+      const secondRegrant = (await refresh(first).expect(200)).get(
+        'Set-Cookie',
+      )!;
+
+      expect((await rowOf(firstRegrant)).revocationReason).toBe('SUPERSEDED');
+      expect((await rowOf(secondRegrant)).revokedAt).toBeNull();
+      expect(await liveRows((await rowOf(first)).familyId)).toBe(1);
+    });
+
+    it('AU-039 sin agente de usuario no hay gracia, aunque el que lo recibió tampoco lo enviara', async () => {
+      // Sin la comprobación explícita, '' = '' cumpliría «el mismo agente».
+      const { cookies: first } = await signIn('');
+      await rotate(first);
+
+      await refresh(first, '').expect(401);
+      expect(await liveRows((await rowOf(first)).familyId)).toBe(0);
+    });
+
+    it('AU-039 con la ventana a 0 rige AU-004 estricto: el mismo refresco no vale dos veces', async () => {
+      // El mismo servicio, construido con la gracia apagada; lo demás es el de
+      // la aplicación y la misma base.
+      await createAccount();
+      const { id: userId } = await prisma.user.findUniqueOrThrow({
+        where: { email: 'ana.torres@clinica.ec' },
+      });
+      const config = app.get<ConfigService<Env, true>>(ConfigService);
+      const strict = new RefreshTokenService(
+        prisma as unknown as PrismaService,
+        app.get(TokenService),
+        app.get(RefreshTokenService)['logger'],
+        {
+          get: (key: keyof Env) =>
+            key === 'JWT_REFRESH_REUSE_GRACE_SECONDS'
+              ? 0
+              : config.get(key, { infer: true }),
+        } as unknown as ConfigService<Env, true>,
+      );
+
+      const issued = await strict.issueForNewSession(userId, {
+        userAgent: BROWSER,
+      });
+      await strict.rotate(issued.token, { userAgent: BROWSER });
+
+      await expect(
+        strict.rotate(issued.token, { userAgent: BROWSER }),
+      ).rejects.toBeInstanceOf(RefreshTokenReuseError);
+      expect(await liveRows(issued.familyId)).toBe(0);
+    });
+
+    it('AU-039 la gracia sobre un refresco cuyo sucesor se está usando no deja dos cabezas', async () => {
+      /**
+       * El dueño rota `second` → `third` y, en ese instante, alguien con copia
+       * de `first` y el mismo agente de usuario lo presenta dentro de la
+       * ventana. Si la gracia sólo bloquease `first`, vería `second` aún sin
+       * usar, lo daría por huérfano y la familia acabaría con DOS ramas vivas
+       * que no vuelven a presentar nada gastado. La prueba sostiene abierta la
+       * rotación del dueño, lanza la gracia, la ve esperar y confirma: al
+       * seguir, `first` ya no es el último usado y rige AU-004.
+       */
+      const { cookies: first } = await signIn();
+      const second = await rotate(first);
+      const secondRow = await rowOf(second);
+
+      let presenting: Promise<request.Response> | undefined;
+      await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`
+          UPDATE refresh_token
+             SET used_at = now(), revocation_reason = 'ROTATION'
+           WHERE id = ${secondRow.id}::uuid`;
+        await tx.refreshToken.create({
+          data: {
+            userId: secondRow.userId,
+            familyId: secondRow.familyId,
+            tokenHash: TokenService.hashRefreshToken(`tercero-${secondRow.id}`),
+            expiresAt: secondRow.expiresAt,
+            userAgent: BROWSER,
+          },
+        });
+
+        presenting = refresh(first).then((response) => response);
+        await blockedOnALock();
+      });
+
+      expect((await presenting!).status).toBe(401);
+      expect(await liveRows(secondRow.familyId)).toBe(0);
+    });
 
     it('AU-004 marca la familia como REUSE en la base, no solo la rechaza', async () => {
       // El motivo es lo que un responsable de seguridad lee después. Revocar

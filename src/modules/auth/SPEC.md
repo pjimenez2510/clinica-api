@@ -209,7 +209,12 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   > refresco recién usado con el mismo agente de usuario obtiene una sesión sin
   > disparar la alarma **en ese momento**; la dispara el primer uso del
   > sucesor que se le retire al otro portador, o cualquier reúso pasada la
-  > ventana. Es la concesión de Auth0 y Okta, acotada a segundos. Y si dos
+  > ventana. Es la concesión de Auth0 y Okta. **Lo acotado a segundos es la
+  > ventana para entrar, no la alarma**: si quien pierde su sucesor es el
+  > dueño y cierra el navegador al acabar el turno, la alarma suena cuando
+  > vuelva y renueve —puede ser días después—, y hasta entonces la otra rama
+  > vive. Un tope de vida absoluto por familia lo acortaría; no existe hoy y
+  > queda anotado en D-063. Y si dos
   > pestañas renuevan a la vez con el mismo refresco y el navegador se queda
   > con la cookie del sucesor retirado —las respuestas llegaron en el orden
   > inverso—, la siguiente renovación es AU-004: el mismo cierre que hoy
@@ -220,14 +225,39 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   > sentencias, el sucesor nacía vivo en una familia revocada y la reabría —el
   > guardia de AU-036 la daba por abierta—. Pasaba ya con la rotación normal y
   > la gracia es un camino más de emisión. Desde esta entrega, renovar
-  > (normal o por gracia) es **una transacción** que bloquea el refresco
-  > presentado, y revocar bloquea primero las filas vivas de la familia —o de
-  > la cuenta— y actualiza después, con una lectura nueva que ya ve cualquier
-  > sucesor confirmado mientras esperaba.
+  > (normal o por gracia) es **una transacción**, y **los cinco caminos que
+  > cierran sesiones** —cierre de sesión, desactivación (AU-023), cambio de
+  > contraseña, reinicio del segundo factor (AU-036) y canje de una invitación
+  > de credencial— pasan por una sola función, `revokeLiveSessions`, que
+  > bloquea primero las filas vivas (de la más antigua a la más nueva) y
+  > actualiza después, con una lectura nueva que ya ve cualquier sucesor
+  > confirmado mientras esperaba. La revisión en contexto limpio encontró que
+  > tres de esos cinco revocaban por su cuenta con un `UPDATE` único.
+  >
+  > **LA GRACIA BLOQUEA LA FAMILIA ANTES DE COMPROBAR NADA.** Si sólo
+  > bloqueara el refresco presentado, una rotación de su sucesor en curso
+  > seguiría invisible para la comprobación, el sucesor parecería sin usar y
+  > la familia acabaría con dos cabezas. Bloqueando la familia en el mismo
+  > orden que las revocaciones, las cuatro condiciones se leen después, con
+  > todo lo confirmado a la vista, y no hay interbloqueo posible.
+  >
+  > **LA VENTANA SE MIDE CON EL RELOJ DE LA APLICACIÓN**, el mismo que escribe
+  > `used_at`. Con una sola instancia es exacto; con varias, un desfase entre
+  > relojes la estira o la acorta en esa medida.
   >
   > **CÓMO SE VE.** Una renovación por gracia deja un aviso en el registro
-  > (`REFRESH_TOKEN_REUSE_GRACE`) con la cuenta —nunca el token—;
-  > un reúso fuera de ella sigue siendo el error de prioridad alta de siempre.
+  > (`REFRESH_TOKEN_REUSE_GRACE`) con la cuenta y la familia —nunca el token—, para cruzarlo con un reúso posterior;
+  > un reúso fuera de ella sigue siendo el error de prioridad alta de siempre,
+  > **salvo que la familia ya estuviera cerrada** —cierre de sesión, cambio de
+  > contraseña, un incidente anterior—: entonces no había nada abierto que
+  > tomar y queda como aviso (`REFRESH_TOKEN_AFTER_CLOSE`), para no enseñar al
+  > responsable de seguridad a ignorar la alarma. La respuesta al cliente es
+  > la misma en los dos casos.
+  >
+  > **ES UNA DECISIÓN DE RIESGO Y ESTÁ REGISTRADA** en `DECISIONES-PENDIENTES.md`
+  > (D-063): tenerla activa por defecto, el tamaño, el agente de usuario como
+  > condición y el alcance de «la familia» en AU-004. Lo que tiene fuente es la
+  > cifra; aceptar el riesgo es del autor.
 - **AU-005** — El sistema DEBERÁ permitir matricular un segundo factor TOTP con
   códigos de respaldo, y DEBERÁ cifrar el secreto en la aplicación (ADR-008 §3).
 

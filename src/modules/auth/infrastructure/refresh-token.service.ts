@@ -22,6 +22,7 @@ import { PinoLogger } from 'nestjs-pino';
 import type { Env } from '../../../shared/config/env.schema';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 
+import { lockLiveSessions, revokeLiveSessions } from './session-revocation';
 import { TokenService } from './token.service';
 
 /** The service's own client, or the transaction a write must join. */
@@ -137,18 +138,40 @@ export class RefreshTokenService {
       existing?.revocationReason === RevocationReason.SUPERSEDED;
 
     if (existing && reused) {
-      await this.revokeFamily(existing.familyId, RevocationReason.REUSE);
-
-      // High priority: this is a security incident, not a failed sign-in.
-      // The security officer must review it.
-      this.logger.error(
-        {
-          user_id: existing.userId,
-          action: 'REFRESH_TOKEN_REUSE',
-          error_code: 'REFRESH_TOKEN_REUSE_DETECTED',
-        },
-        'refresh token reuse detected, family revoked',
+      const stillOpen = await this.prisma.$transaction((tx) =>
+        revokeLiveSessions(
+          tx,
+          { familyId: existing.familyId },
+          RevocationReason.REUSE,
+        ),
       );
+
+      if (stillOpen > 0) {
+        // High priority: this is a security incident, not a failed sign-in.
+        // The security officer must review it.
+        this.logger.error(
+          {
+            user_id: existing.userId,
+            family_id: existing.familyId,
+            action: 'REFRESH_TOKEN_REUSE',
+            error_code: 'REFRESH_TOKEN_REUSE_DETECTED',
+          },
+          'refresh token reuse detected, family revoked',
+        );
+      } else {
+        // The session was already closed — signed out, password changed, or
+        // an earlier incident. Nothing was open to take over, and raising the
+        // high-priority alarm for it would teach the security officer to
+        // ignore that alarm. Same answer to the client either way.
+        this.logger.warn(
+          {
+            user_id: existing.userId,
+            family_id: existing.familyId,
+            action: 'REFRESH_TOKEN_AFTER_CLOSE',
+          },
+          'spent refresh token of an already closed session presented',
+        );
+      }
 
       throw new RefreshTokenReuseError();
     }
@@ -160,15 +183,22 @@ export class RefreshTokenService {
    * AU-039. Re-issues the session when the token just rotated comes back
    * because its response was lost; `null` when any condition fails.
    *
-   * THE FOUR CONDITIONS, in one locking statement so none of them can change
-   * between checking and issuing:
+   * THE FAMILY IS LOCKED BEFORE ANYTHING IS CHECKED. The conditions are then
+   * read by a NEW statement, whose snapshot already includes whatever a
+   * concurrent rotation or revocation committed while this waited. Locking
+   * only the presented row was not enough (clean-context review, 30-09-2026):
+   * a rotation of its successor, in flight, was still invisible to the check,
+   * the successor looked unused, and the family ended with two live heads.
+   * Same lock order as every revocation (`lockLiveSessions`), so no deadlock.
+   *
+   * THE FOUR CONDITIONS:
    *   - used within the last `graceSeconds` — measured from the FIRST use,
    *     which is never moved, so repeating the token cannot stretch the window;
    *   - its family still open (`revoked_at IS NULL` on this row: every
    *     revocation writes it on every live row of the family);
-   *   - the LAST used token of its family: if its successor was used, the
-   *     response did arrive and the session moved on (Auth0: «only the
-   *     previous token can be reused»);
+   *   - the LAST used token of its family: if a token issued after it was
+   *     used, the response did arrive and the session moved on (Auth0: «only
+   *     the previous token can be reused»);
    *   - presented by the same user agent that received it.
    *
    * THE ORPHAN IS WITHDRAWN. Because the presented token is the last used one,
@@ -186,10 +216,17 @@ export class RefreshTokenService {
     const userAgent = ctx.userAgent?.slice(0, 512);
     if (this.graceSeconds === 0 || !userAgent) return null;
 
-    const now = new Date();
-    const usedSince = new Date(now.getTime() - this.graceSeconds * 1000);
-
     return this.prisma.$transaction(async (tx) => {
+      const known = await tx.refreshToken.findUnique({
+        where: { tokenHash: hash },
+        select: { familyId: true },
+      });
+      if (!known) return null;
+
+      await lockLiveSessions(tx, { familyId: known.familyId });
+
+      const now = new Date();
+      const usedSince = new Date(now.getTime() - this.graceSeconds * 1000);
       const [presented] = await tx.$queryRaw<
         { user_id: string; family_id: string }[]
       >`
@@ -204,8 +241,8 @@ export class RefreshTokenService {
                  SELECT 1
                    FROM refresh_token later
                   WHERE later.family_id = t.family_id
-                    AND later.used_at > t.used_at)
-           FOR UPDATE OF t`;
+                    AND later.created_at > t.created_at
+                    AND later.used_at IS NOT NULL)`;
       if (!presented) return null;
 
       const issued = await this.issue(
@@ -225,9 +262,14 @@ export class RefreshTokenService {
       });
 
       // Not an incident, but worth seeing: a burst of these for one account
-      // is either a very bad network or somebody racing its owner.
+      // is either a very bad network or somebody racing its owner. The family
+      // lets it be matched with a later REFRESH_TOKEN_REUSE.
       this.logger.warn(
-        { user_id: presented.user_id, action: 'REFRESH_TOKEN_REUSE_GRACE' },
+        {
+          user_id: presented.user_id,
+          family_id: presented.family_id,
+          action: 'REFRESH_TOKEN_REUSE_GRACE',
+        },
         'spent refresh token re-presented within the grace window, session re-issued',
       );
       return issued;
@@ -268,49 +310,26 @@ export class RefreshTokenService {
   }
 
   /**
-   * Closes one session. The other sessions of the user stay open.
-   *
-   * LOCK FIRST, WRITE AFTER, in two statements. A single `UPDATE` reads the
-   * family from the snapshot it started with: if a rotation or an AU-039
-   * re-issue was committing its successor meanwhile, the update waited on the
-   * presented row and then revoked it — but never saw the successor, which
-   * stayed alive and kept the session open. Locking the live rows makes this
-   * wait for that transaction; the `UPDATE` then starts with a fresh snapshot
-   * that includes whatever it committed. `ORDER BY created_at` locks in the
-   * same order the re-issue does (the presented token, then its successors),
-   * so the two cannot deadlock.
+   * Closes one session. The other sessions of the user stay open. Locks before
+   * writing: see `revokeLiveSessions` for why a single `UPDATE` let a
+   * concurrent rotation keep the session open.
    */
   async revokeFamily(familyId: string, reason: string): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`
-        SELECT id FROM refresh_token
-         WHERE family_id = ${familyId}::uuid AND revoked_at IS NULL
-         ORDER BY created_at, id
-           FOR UPDATE`;
-      await tx.refreshToken.updateMany({
-        where: { familyId, revokedAt: null },
-        data: { revokedAt: new Date(), revocationReason: reason },
-      });
-    });
+    await this.prisma.$transaction((tx) =>
+      revokeLiveSessions(tx, { familyId }, reason),
+    );
   }
 
   /**
-   * Closes every session. Used on password change, deactivation (AU-023) and
-   * second-factor reset (AU-036). Locks before writing, for the reason given
-   * on `revokeFamily`.
+   * Closes every session of the account. Used on deactivation (AU-023) and
+   * when an inactive account tries to refresh. The password change, the
+   * second-factor reset (AU-036) and credential redemption close sessions
+   * inside their own transactions, through the same `revokeLiveSessions`.
    */
   async revokeAllForUser(userId: string, reason: string): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`
-        SELECT id FROM refresh_token
-         WHERE user_id = ${userId}::uuid AND revoked_at IS NULL
-         ORDER BY created_at, id
-           FOR UPDATE`;
-      await tx.refreshToken.updateMany({
-        where: { userId, revokedAt: null },
-        data: { revokedAt: new Date(), revocationReason: reason },
-      });
-    });
+    await this.prisma.$transaction((tx) =>
+      revokeLiveSessions(tx, { userId }, reason),
+    );
   }
 
   /**

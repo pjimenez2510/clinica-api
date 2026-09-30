@@ -7,6 +7,7 @@ import type {
   LiveBackupCode,
 } from '../application/ports';
 import type { RoleAssignment } from '../../../shared/authorisation/principal';
+import { revokeLiveSessions } from './session-revocation';
 
 /**
  * Only the columns the use cases actually need are selected.
@@ -132,10 +133,7 @@ export class PrismaAuthUserRepository implements AuthUserRepositoryPort {
   ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { id: userId }, data: { passwordHash } });
-      await tx.refreshToken.updateMany({
-        where: { userId, revokedAt: null },
-        data: { revokedAt: new Date(), revocationReason },
-      });
+      await revokeLiveSessions(tx, { userId }, revocationReason);
     });
   }
 
