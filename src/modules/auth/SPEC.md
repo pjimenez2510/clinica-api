@@ -144,12 +144,16 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   abierta, que sea **el último usado de su familia**, que se usara hace
   **`JWT_REFRESH_REUSE_GRACE_SECONDS` segundos o menos** y que llegue con el
   **mismo agente de usuario** que lo recibió, el sistema DEBERÁ emitir un
-  refresco nuevo de esa misma familia y responder como una renovación normal,
-  sin revocar nada; y NO DEBERÁ mover el instante de uso del refresco
+  refresco nuevo de esa misma familia, **retirar con motivo `SUPERSEDED` el
+  sucesor que emitió la renovación cuya respuesta se perdió**, y responder como
+  una renovación normal; y NO DEBERÁ mover el instante de uso del refresco
   presentado, de modo que la ventana no se alargue repitiéndolo. SI falta
-  cualquiera de esas cuatro condiciones, ENTONCES rige AU-004. Una familia ya
-  revocada —cierre de sesión, cambio de contraseña, AU-023, AU-036, o AU-004—
-  NO DEBERÁ reabrirse por esta vía.
+  cualquiera de esas cuatro condiciones, ENTONCES rige AU-004. SI después se
+  presenta un sucesor retirado así, ENTONCES rige AU-004: la respuesta sí llegó
+  a alguien, y hay dos portadores de la misma sesión. Una familia ya revocada
+  —cierre de sesión, cambio de contraseña, AU-023, AU-036, o AU-004— NO DEBERÁ
+  reabrirse por esta vía, **tampoco cuando la revocación y la renovación
+  llegan a la vez**.
 
   > **QUÉ RESUELVE.** El servidor rota el refresco, la respuesta con la cookie
   > nueva no llega al navegador y éste vuelve a presentar el viejo. Visto desde
@@ -189,17 +193,40 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   > compara: cambia en un portátil que pasa de la wifi al cable, y el caso que
   > se arregla es justamente la red que falla.
   >
-  > **LO QUE CUESTA, dicho.** Durante la ventana, quien tenga una copia del
-  > refresco recién usado y el mismo agente de usuario obtiene una rama viva
-  > de la sesión sin disparar la alarma. Es la concesión de Auth0 y Okta,
-  > acotada a segundos; fuera de ella, el primero que vuelva a usar cualquier
-  > refresco gastado tumba la familia entera, ramas incluidas. El sucesor que
-  > se emitió en la renovación perdida queda vivo hasta caducar: nadie tiene
-  > su valor en claro y no hay enlace de padre a hijo para retirarlo sin
-  > cambiar el esquema.
+  > **POR QUÉ SE RETIRA EL SUCESOR, que ni Auth0 ni Okta dicen hacer.** Si la
+  > gracia sólo emitiera otro refresco, la familia quedaría con **dos ramas
+  > vivas**, y la detección de AU-004 depende de que alguien vuelva a
+  > presentar un token gastado: con dos ramas, el ladrón que rotó primero con
+  > la copia robada sigue por la suya, el dueño por la otra, y nadie vuelve a
+  > presentar nada gastado nunca. La alarma no sonaría jamás. Retirando el
+  > sucesor, la familia vuelve a tener **una sola cabeza** y el ladrón, la
+  > próxima vez que use la suya, presenta un retirado: AU-004, familia
+  > revocada. Identificarlo no necesita esquema nuevo: como el presentado es
+  > el último usado de su familia, las filas de la familia sin usar y sin
+  > revocar son exactamente sus sucesores.
+  >
+  > **LO QUE CUESTA, dicho.** Dentro de la ventana, una copia robada del
+  > refresco recién usado con el mismo agente de usuario obtiene una sesión sin
+  > disparar la alarma **en ese momento**; la dispara el primer uso del
+  > sucesor que se le retire al otro portador, o cualquier reúso pasada la
+  > ventana. Es la concesión de Auth0 y Okta, acotada a segundos. Y si dos
+  > pestañas renuevan a la vez con el mismo refresco y el navegador se queda
+  > con la cookie del sucesor retirado —las respuestas llegaron en el orden
+  > inverso—, la siguiente renovación es AU-004: el mismo cierre que hoy
+  > ocurre **siempre** en esa carrera, ahora sólo en su peor orden.
+  >
+  > **UNA REVOCACIÓN SIMULTÁNEA NO SE ESCAPA.** Renovar es reclamar un refresco
+  > y emitir su sucesor; si un cierre de sesión se confirmaba entre las dos
+  > sentencias, el sucesor nacía vivo en una familia revocada y la reabría —el
+  > guardia de AU-036 la daba por abierta—. Pasaba ya con la rotación normal y
+  > la gracia es un camino más de emisión. Desde esta entrega, renovar
+  > (normal o por gracia) es **una transacción** que bloquea el refresco
+  > presentado, y revocar bloquea primero las filas vivas de la familia —o de
+  > la cuenta— y actualiza después, con una lectura nueva que ya ve cualquier
+  > sucesor confirmado mientras esperaba.
   >
   > **CÓMO SE VE.** Una renovación por gracia deja un aviso en el registro
-  > (`REFRESH_TOKEN_REUSE_GRACE`) con la cuenta y la familia —nunca el token—;
+  > (`REFRESH_TOKEN_REUSE_GRACE`) con la cuenta —nunca el token—;
   > un reúso fuera de ella sigue siendo el error de prioridad alta de siempre.
 - **AU-005** — El sistema DEBERÁ permitir matricular un segundo factor TOTP con
   códigos de respaldo, y DEBERÁ cifrar el secreto en la aplicación (ADR-008 §3).
