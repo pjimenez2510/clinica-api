@@ -14,6 +14,7 @@ import { RevocationReason } from '../../../shared/request/client-context';
 import {
   InvalidRefreshTokenError,
   RefreshTokenReuseError,
+  SessionExpiredError,
 } from '../domain/auth.errors';
 import { ConfigService } from '@nestjs/config';
 import type { Prisma } from '@prisma/client';
@@ -28,11 +29,22 @@ import { TokenService } from './token.service';
 /** The service's own client, or the transaction a write must join. */
 type Db = PrismaService | Prisma.TransactionClient;
 
+/** What the JWT guard needs to know about a session family (AU-036, AU-040). */
+export type FamilyState = 'open' | 'revoked' | 'expired';
+
 /**
- * AU-004, AU-036, AU-039. The refresh-token registry: families, single-use
- * rotation, reuse detection with its grace window, and the per-request «is
- * this session still open?» the JWT guard asks. Only SHA-256 hashes are stored
- * (see `TokenService.hashRefreshToken`).
+ * AU-004, AU-036, AU-039, AU-040. The refresh-token registry: families,
+ * single-use rotation, reuse detection with its grace window, the lifetime
+ * ceiling of a family, and the per-request «is this session still open?» the
+ * JWT guard asks. Only SHA-256 hashes are stored (see
+ * `TokenService.hashRefreshToken`).
+ *
+ * AU-040: A FAMILY EXPIRES ONCE. Its expiry is fixed at sign-in and every
+ * successor INHERITS it — a normal rotation and an AU-039 re-issue alike.
+ * Before, each rotation set `now + JWT_REFRESH_TTL_DAYS` and a session used
+ * every day never expired. No column is needed: the claim and the grace
+ * already demand `expires_at > now`, so an expired family cannot renew by
+ * construction.
  */
 @Injectable()
 export class RefreshTokenService {
@@ -52,12 +64,16 @@ export class RefreshTokenService {
     this.logger.setContext(RefreshTokenService.name);
   }
 
-  /** Starts a new session family. Called on sign-in, not on refresh. */
+  /**
+   * Starts a new session family, and with it the instant the family expires
+   * (AU-040). Called on sign-in, not on refresh.
+   */
   async issueForNewSession(
     userId: string,
     ctx: ClientContext = {},
   ): Promise<IssuedRefreshToken> {
-    return this.issue(this.prisma, userId, randomUUID(), ctx);
+    const expiresAt = new Date(Date.now() + this.ttlDays * 24 * 60 * 60 * 1000);
+    return this.issue(this.prisma, userId, randomUUID(), expiresAt, ctx);
   }
 
   /**
@@ -105,9 +121,10 @@ export class RefreshTokenService {
 
       const token = await tx.refreshToken.findUniqueOrThrow({
         where: { tokenHash: hash },
-        select: { userId: true, familyId: true },
+        select: { userId: true, familyId: true, expiresAt: true },
       });
-      return this.issue(tx, token.userId, token.familyId, ctx);
+      // AU-040: the successor inherits the family's expiry, never extends it.
+      return this.issue(tx, token.userId, token.familyId, token.expiresAt, ctx);
     });
     if (rotated) return rotated;
 
@@ -124,6 +141,7 @@ export class RefreshTokenService {
         userId: true,
         familyId: true,
         usedAt: true,
+        expiresAt: true,
         revocationReason: true,
       },
     });
@@ -136,6 +154,27 @@ export class RefreshTokenService {
     const reused =
       existing?.usedAt != null ||
       existing?.revocationReason === RevocationReason.SUPERSEDED;
+
+    /**
+     * AU-040. The family ran out: every row shares this expiry. Nothing is
+     * revoked and no alarm is raised even for a spent token — there is nothing
+     * open left to take over, and the high-priority alarm for it would teach
+     * the security officer to ignore that alarm. A spent one is still worth a
+     * line, like `REFRESH_TOKEN_AFTER_CLOSE`.
+     */
+    if (existing && existing.expiresAt <= new Date()) {
+      if (reused) {
+        this.logger.warn(
+          {
+            user_id: existing.userId,
+            family_id: existing.familyId,
+            action: 'REFRESH_TOKEN_AFTER_EXPIRY',
+          },
+          'spent refresh token of an expired session presented',
+        );
+      }
+      throw new SessionExpiredError();
+    }
 
     if (existing && reused) {
       const stillOpen = await this.prisma.$transaction((tx) =>
@@ -228,9 +267,9 @@ export class RefreshTokenService {
       const now = new Date();
       const usedSince = new Date(now.getTime() - this.graceSeconds * 1000);
       const [presented] = await tx.$queryRaw<
-        { user_id: string; family_id: string }[]
+        { user_id: string; family_id: string; expires_at: Date }[]
       >`
-        SELECT t.user_id, t.family_id
+        SELECT t.user_id, t.family_id, t.expires_at
           FROM refresh_token t
          WHERE t.token_hash = ${hash}
            AND t.used_at >= ${usedSince}
@@ -245,10 +284,13 @@ export class RefreshTokenService {
                     AND later.used_at IS NOT NULL)`;
       if (!presented) return null;
 
+      // AU-040: `expires_at > now` above is what keeps an expired family out
+      // of the grace; the re-issue inherits the same expiry.
       const issued = await this.issue(
         tx,
         presented.user_id,
         presented.family_id,
+        presented.expires_at,
         ctx,
       );
       await tx.refreshToken.updateMany({
@@ -302,11 +344,27 @@ export class RefreshTokenService {
    * anybody whose client refreshed while a request was in flight.
    */
   async isFamilyOpen(familyId: string): Promise<boolean> {
-    const open = await this.prisma.refreshToken.findFirst({
+    return (await this.familyState(familyId)) === 'open';
+  }
+
+  /**
+   * AU-036, AU-040. `isFamilyOpen`, telling apart the two ways a family stops
+   * being open: somebody revoked it, or it reached its lifetime. The same one
+   * indexed lookup, aggregated: no live row is «revoked»; live rows whose
+   * latest expiry has passed are «expired». The LATEST, not any: rows issued
+   * before AU-040 each carried their own sliding expiry, and the newest one is
+   * the one the family lives by.
+   *
+   * Without the expiry here, an access token issued in the family's last
+   * minute would keep working a full `JWT_ACCESS_TTL` past the ceiling.
+   */
+  async familyState(familyId: string): Promise<FamilyState> {
+    const { _max } = await this.prisma.refreshToken.aggregate({
       where: { familyId, revokedAt: null },
-      select: { id: true },
+      _max: { expiresAt: true },
     });
-    return open !== null;
+    if (_max.expiresAt === null) return 'revoked';
+    return _max.expiresAt > new Date() ? 'open' : 'expired';
   }
 
   /**
@@ -355,15 +413,16 @@ export class RefreshTokenService {
    * One refresh row in the family: only the hash is stored, and the user agent
    * is cut to 512 characters before it reaches the column. `db` is the
    * transaction of the rotation that issues it, so both commit together.
+   * `expiresAt` is the FAMILY's (AU-040): computed once, at sign-in.
    */
   private async issue(
     db: Db,
     userId: string,
     familyId: string,
+    expiresAt: Date,
     ctx: ClientContext,
   ): Promise<IssuedRefreshToken> {
     const { token, hash } = this.tokens.generateRefreshToken();
-    const expiresAt = new Date(Date.now() + this.ttlDays * 24 * 60 * 60 * 1000);
 
     await db.refreshToken.create({
       data: {

@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { ConfigService } from '@nestjs/config';
 import { ThrottlerStorage } from '@nestjs/throttler';
 import { Test } from '@nestjs/testing';
@@ -375,9 +377,12 @@ describe('session over HTTP', () => {
      * lock. A condition, not a delay: it returns the moment the revocation is
      * provably queued behind the open transaction, and fails if it never is.
      */
-    async function blockedOnALock(waiters = 1): Promise<void> {
-      // Only OTHER sessions, only statements on `refresh_token`: the waiters
-      // this test provoked, not whatever else the database is doing.
+    async function blockedOnALock(
+      waiters = 1,
+      table = 'refresh_token',
+    ): Promise<void> {
+      // Only OTHER sessions, only statements on `table`: the waiters this
+      // test provoked, not whatever else the database is doing.
       const deadline = Date.now() + 5_000;
       while (Date.now() < deadline) {
         const [row] = await prisma.$queryRaw<{ waiting: bigint }[]>`
@@ -385,7 +390,7 @@ describe('session over HTTP', () => {
            WHERE datname = current_database()
              AND pid <> pg_backend_pid()
              AND wait_event_type = 'Lock'
-             AND query ILIKE '%refresh_token%'`;
+             AND query ILIKE ${`%${table}%`}`;
         if ((row?.waiting ?? 0n) >= BigInt(waiters)) return;
       }
       throw new Error(
@@ -834,6 +839,179 @@ describe('session over HTTP', () => {
       const { expiresIn } = sessionBody(resumed);
       expect(expiresIn).toBeGreaterThan(0);
       expect(expiresIn).toBeLessThanOrEqual(3600);
+    });
+
+    /**
+     * AU-040 — UN TOPE DE VIDA POR FAMILIA, CONTADO DESDE EL INICIO DE SESIÓN.
+     *
+     * Nada aquí escribe una fecha: la familia se ENVEJECE desplazando hacia
+     * atrás todas sus marcas —`created_at`, `used_at`, `expires_at`— los días
+     * de `JWT_REFRESH_TTL_DAYS` que lee la aplicación, más o menos unos
+     * segundos. Cada caso negativo tiene su control, a un lado u otro del tope.
+     */
+    describe('AU-040 tope de vida de la sesión', () => {
+      /** The session lifetime, in seconds, the running app was configured with. */
+      function lifetimeSeconds(): number {
+        return (
+          app
+            .get<ConfigService<Env, true>>(ConfigService)
+            .get('JWT_REFRESH_TTL_DAYS', { infer: true }) * 86_400
+        );
+      }
+
+      /**
+       * Moves every mark of the family `seconds` into the past, as if it had
+       * been signed into that much earlier. `used_at` stays put when
+       * `keepUse`: the last rotation happened just now, near the ceiling.
+       */
+      async function ageFamily(
+        familyId: string,
+        seconds: number,
+        { keepUse = false } = {},
+      ): Promise<void> {
+        const aged = await prisma.$executeRaw`
+          UPDATE refresh_token
+             SET created_at = created_at - make_interval(secs => ${seconds}),
+                 expires_at = expires_at - make_interval(secs => ${seconds}),
+                 used_at = CASE WHEN ${keepUse} THEN used_at
+                                ELSE used_at - make_interval(secs => ${seconds}) END
+           WHERE family_id = ${familyId}::uuid`;
+        expect(aged, 'la familia tiene filas que envejecer').toBeGreaterThan(0);
+      }
+
+      async function familyRows(familyId: string) {
+        return prisma.refreshToken.findMany({
+          where: { familyId },
+          orderBy: { createdAt: 'asc' },
+        });
+      }
+
+      /** `Expires` of the refresh cookie, as the browser will read it. */
+      function cookieExpiry(cookies: string[]): string | undefined {
+        const cookie = cookies.find((c) => /^(__Host-)?refresh=/.test(c));
+        return /;\s*Expires=([^;]+)/i.exec(cookie ?? '')?.[1];
+      }
+
+      it('AU-040 la caducidad se fija al iniciar sesión: la vida configurada desde ese instante', async () => {
+        const { cookies } = await signIn();
+        const row = await rowOf(cookies);
+
+        const lifetimeMs = row.expiresAt.getTime() - row.createdAt.getTime();
+        // `created_at` is the database clock at the INSERT; `expires_at` the
+        // application clock just before it. Same machine: seconds apart at most.
+        expect(Math.abs(lifetimeMs - lifetimeSeconds() * 1000)).toBeLessThan(
+          5_000,
+        );
+      });
+
+      it('AU-040 rotar no alarga la sesión: el sucesor y el de la gracia heredan la caducidad del inicio de sesión', async () => {
+        const { cookies: first } = await signIn();
+        const started = await rowOf(first);
+
+        const second = await rotate(first);
+        const third = await rotate(second);
+        await rotate(third); // la respuesta que «se perdió»
+        const regranted = (await refresh(third).expect(200)).get('Set-Cookie')!;
+
+        for (const cookies of [second, third, regranted]) {
+          expect((await rowOf(cookies)).expiresAt).toEqual(started.expiresAt);
+          // Y el navegador lo oye igual: la cookie no se alarga tampoco.
+          expect(cookieExpiry(cookies)).toBe(cookieExpiry(first));
+        }
+      });
+
+      it('AU-040 una sesión que se renueva hasta el último minuto caduca en el tope contado desde el inicio de sesión', async () => {
+        const { cookies: first } = await signIn();
+        const { familyId } = await rowOf(first);
+
+        // Control: a un minuto del tope, renueva. Con la caducidad renovada
+        // en cada rotación, esa renovación la habría alargado otra semana.
+        await ageFamily(familyId, lifetimeSeconds() - 60);
+        const lastMinute = await rotate(first);
+
+        // Dos minutos después: el tope pasó hace uno.
+        await ageFamily(familyId, 120);
+        const refused = await refresh(lastMinute).expect(401);
+        expect(refused.body).toMatchObject({ code: 'SESSION_EXPIRED' });
+      });
+
+      it('AU-040 una familia más allá del tope no emite nada, no se revoca y no da la alarma', async () => {
+        const { cookies: first } = await signIn();
+        const current = await rotate(first);
+        const { familyId } = await rowOf(first);
+        await ageFamily(familyId, lifetimeSeconds() + 1);
+        const before = await familyRows(familyId);
+
+        const refused = await refresh(current).expect(401);
+        expect(refused.body).toMatchObject({ code: 'SESSION_EXPIRED' });
+
+        // Ni fila nueva ni revocación: no quedaba nada abierto que cerrar.
+        const after = await familyRows(familyId);
+        expect(after).toEqual(before);
+        expect(after.every((row) => row.revokedAt === null)).toBe(true);
+      });
+
+      it('AU-040 un refresco ya usado de una familia caducada tampoco da la alarma de reúso', async () => {
+        const { cookies: first } = await signIn();
+        await rotate(first);
+        const { familyId } = await rowOf(first);
+        await ageFamily(familyId, lifetimeSeconds() + 1);
+
+        const refused = await refresh(first).expect(401);
+        expect(refused.body).toMatchObject({ code: 'SESSION_EXPIRED' });
+        expect(
+          (await familyRows(familyId)).some(
+            (row) => row.revocationReason === 'REUSE',
+          ),
+        ).toBe(false);
+      });
+
+      it('AU-040 la gracia de AU-039 no rescata una familia que pasó el tope', async () => {
+        // Todo lo que la gracia pide —el último usado, recién usado, el mismo
+        // navegador, la familia sin revocar— salvo la familia viva: empezó
+        // hace más que el tope, y la última renovación fue justo ahora.
+        const { cookies: first } = await signIn();
+        await rotate(first); // la respuesta que «se perdió»
+        const { familyId } = await rowOf(first);
+        await ageFamily(familyId, lifetimeSeconds() + 1, { keepUse: true });
+        const before = await familyRows(familyId);
+
+        const refused = await refresh(first).expect(401);
+        expect(refused.body).toMatchObject({ code: 'SESSION_EXPIRED' });
+        expect(await familyRows(familyId)).toEqual(before);
+      });
+
+      it('AU-040 control de la gracia: la misma respuesta perdida en una familia por debajo del tope sigue', async () => {
+        const { cookies: first } = await signIn();
+        await rotate(first);
+        const { familyId } = await rowOf(first);
+        await ageFamily(familyId, lifetimeSeconds() - 60, { keepUse: true });
+
+        await refresh(first).expect(200);
+      });
+
+      it('AU-040 el token de acceso de una familia caducada responde SESSION_EXPIRED antes de caducar él', async () => {
+        const { cookies, accessToken } = await signIn();
+        const { familyId } = await rowOf(cookies);
+        await ageFamily(familyId, lifetimeSeconds() + 1);
+
+        const refused = await request(app.getHttpServer())
+          .post('/api/v1/auth/logout')
+          .set('Authorization', `Bearer ${accessToken}`)
+          .expect(401);
+        expect(refused.body).toMatchObject({ code: 'SESSION_EXPIRED' });
+      });
+
+      it('AU-040 control del guardia: el token de acceso de una familia por debajo del tope sigue valiendo', async () => {
+        const { cookies, accessToken } = await signIn();
+        const { familyId } = await rowOf(cookies);
+        await ageFamily(familyId, lifetimeSeconds() - 60);
+
+        await request(app.getHttpServer())
+          .post('/api/v1/auth/logout')
+          .set('Authorization', `Bearer ${accessToken}`)
+          .expect(204);
+      });
     });
   });
 });

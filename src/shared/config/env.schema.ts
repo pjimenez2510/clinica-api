@@ -55,7 +55,13 @@ export const envSchema = z.object({
     .string()
     .regex(/^\d+[smhd]$/, 'debe ser una duración como 15m, 2h o 7d')
     .default('15m'),
-  JWT_REFRESH_TTL_DAYS: z.coerce.number().int().positive().default(7),
+  /**
+   * AU-040. The ABSOLUTE life of a session, counted from sign-in: every
+   * refresh token of the family inherits the expiry of the first, so rotating
+   * never extends it. Seven days is the author's decision (D-063); an
+   * installation may shorten it, never lengthen it.
+   */
+  JWT_REFRESH_TTL_DAYS: z.coerce.number().int().positive().max(7).default(7),
   /**
    * AU-039. Seconds during which the refresh token just rotated may be
    * presented again — by the same client — without revoking its family: the

@@ -198,8 +198,29 @@ export class SessionRevokedError extends UnauthorizedError {
 }
 
 /**
- * AU-004: the refresh token is unknown, expired, or revoked without having been
- * used. A token that WAS used raises `RefreshTokenReuseError` instead.
+ * AU-040. The session family reached its lifetime, counted from sign-in
+ * (D-063): nobody closed it, it simply ran out.
+ *
+ * NOT `SESSION_REVOKED`, whose sentence would be a lie here, and not
+ * `INVALID_REFRESH_TOKEN`, which the interface can only read as a broken
+ * session. Like `SESSION_REVOKED`, it tells whoever holds the token nothing
+ * they did not already know. Both the refresh endpoint and the guard answer
+ * it, so the interface recognises it BY CODE wherever it arrives.
+ */
+export class SessionExpiredError extends UnauthorizedError {
+  readonly code = 'SESSION_EXPIRED';
+  override readonly userTitle =
+    'Su sesión caducó. Vuelva a iniciar sesión para continuar';
+
+  constructor() {
+    super('The session family reached its maximum lifetime');
+  }
+}
+
+/**
+ * AU-004: the refresh token is unknown, or revoked without having been used.
+ * A token that WAS used raises `RefreshTokenReuseError` instead, and one of an
+ * expired family `SessionExpiredError` (AU-040).
  */
 export class InvalidRefreshTokenError extends UnauthorizedError {
   readonly code = 'INVALID_REFRESH_TOKEN';

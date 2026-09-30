@@ -117,6 +117,21 @@ describe('validateEnv', () => {
     );
   });
 
+  it('AU-040 la vida de una sesión vale 7 días por defecto y no pasa de 7', () => {
+    // D-063: the author fixed the ceiling at seven days from sign-in. An
+    // installation may shorten it — a shift, say — but a longer life is a
+    // longer stretch for a stolen branch, so it must fail at startup.
+    expect(validateEnv(base).JWT_REFRESH_TTL_DAYS).toBe(7);
+    expect(
+      validateEnv({ ...base, JWT_REFRESH_TTL_DAYS: '1' }).JWT_REFRESH_TTL_DAYS,
+    ).toBe(1);
+    for (const outOfRange of ['8', '0', '1.5']) {
+      expect(() =>
+        validateEnv({ ...base, JWT_REFRESH_TTL_DAYS: outOfRange }),
+      ).toThrow(/JWT_REFRESH_TTL_DAYS/);
+    }
+  });
+
   it('AU-039 la gracia de la rotación vale 30 s por defecto y no pasa de 60', () => {
     // 30 and 0–60 are Okta's default and range: the only sourced figure. A
     // larger window is a longer stretch in which a stolen copy raises no alarm,

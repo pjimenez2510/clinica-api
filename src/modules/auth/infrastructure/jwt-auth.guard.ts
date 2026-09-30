@@ -13,7 +13,11 @@ import { ClsService } from 'nestjs-cls';
 // unfinished second factor is a business rule, so `MfaRequiredError` does not
 // move.
 import { MissingTokenError } from '../../../shared/authorisation/current-user.service';
-import { MfaRequiredError, SessionRevokedError } from '../domain/auth.errors';
+import {
+  MfaRequiredError,
+  SessionExpiredError,
+  SessionRevokedError,
+} from '../domain/auth.errors';
 import { MFA_CHALLENGE_FAMILY } from '../domain/session';
 import {
   CURRENT_USER,
@@ -127,9 +131,13 @@ export class JwtAuthGuard implements CanActivate {
    */
   private async assertSessionStillOpen(familyId: string): Promise<void> {
     if (familyId === MFA_CHALLENGE_FAMILY) return;
-    if (await this.sessions.isFamilyOpen(familyId)) return;
 
-    throw new SessionRevokedError();
+    // AU-040: a family that reached its lifetime is closed too, and says so.
+    const state = await this.sessions.familyState(familyId);
+    if (state === 'open') return;
+    throw state === 'expired'
+      ? new SessionExpiredError()
+      : new SessionRevokedError();
   }
 
   /**

@@ -459,6 +459,10 @@ export const DOMAIN_ERROR_CODES = [
   // gana es que la interfaz mande a esa persona a iniciar sesión con la frase
   // que corresponde. Ver `SessionRevokedError`.
   'SESSION_REVOKED',
+  // AU-040. La sesión llegó a su tope de vida contado desde el inicio de
+  // sesión (D-063). No es `SESSION_REVOKED`: nadie la cerró, y la frase de
+  // aquél —«cambiaron su contraseña»— sería mentira. Ver `SessionExpiredError`.
+  'SESSION_EXPIRED',
   'SESSION_USER_MISSING',
   'SITE_SCOPE_DENIED',
   // Agenda: la hora de inicio no cae en el borde de un cupo de la regla. Es
