@@ -128,8 +128,9 @@ export const updateServiceSchema = z.object({
 export class UpdateServiceDto extends createZodDto(updateServiceSchema) {}
 
 export const createPayerSchema = z.object({
-  code: z.string().trim().min(1, 'Indique el código del pagador').max(32),
-  name: z.string().trim().min(1, 'Indique el nombre del pagador').max(160),
+  // D-057: the sentences of the form, so both sides say the same thing.
+  code: z.string().trim().min(1, 'Escriba el código del pagador').max(32),
+  name: z.string().trim().min(1, 'Escriba el nombre del pagador').max(160),
   /**
    * BI-030. A CLASSIFICATION, not the payer list. There can be many private
    * insurers and every one of them is `PRIVATE_INSURANCE`; adding one is a row,
@@ -141,11 +142,16 @@ export const createPayerSchema = z.object({
   ruc: z.string().trim().max(13).nullish(),
   agreementReference: z.string().trim().max(120).nullish(),
 });
-/** Body of POST /billing/payers. An institutional payer without a RUC is answered with `PAYER_RUC_REQUIRED` (BI-034), not by this schema. */
+/** Body of POST /billing/payers. An institutional payer without a RUC is answered with `PAYER_RUC_REQUIRED` (BI-034), and a malformed one with `INVALID_RUC` (BI-036), not by this schema. */
 export class CreatePayerDto extends createZodDto(createPayerSchema) {}
 
 export const updatePayerSchema = z.object({
-  name: z.string().trim().min(1).max(160).optional(),
+  name: z
+    .string()
+    .trim()
+    .min(1, 'Escriba el nombre del pagador')
+    .max(160)
+    .optional(),
   ruc: z.string().trim().max(13).nullish(),
   agreementReference: z.string().trim().max(120).nullish(),
   active: z.boolean().optional(),

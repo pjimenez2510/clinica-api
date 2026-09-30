@@ -20,8 +20,8 @@ import { PricingService } from './pricing.service';
 const requester = { userId: 'user-1' };
 
 /**
- * A REAL private-company RUC with its modulus-11 check digit computed, never
- * copied from a taxpayer: 1790012344001.
+ * A private-company RUC, never copied from a taxpayer: 1790012344001. Built
+ * with the former modulo 11 digit, which OR-009 no longer checks.
  */
 const VALID_RUC = '1790012344001';
 
@@ -100,7 +100,7 @@ describe('BI-030, BI-034 los pagadores son filas administrables', () => {
     ).rejects.toBeInstanceOf(PayerRucRequiredError);
   });
 
-  it('BI-034 comprueba el dígito verificador con el value object compartido', async () => {
+  it('BI-034 comprueba la forma con el value object compartido', async () => {
     // `INVALID_RUC` and `PAYER_RUC_REQUIRED` are different codes on purpose:
     // one says the number is wrong, the other that it is missing, and what the
     // user has to do is not the same.
@@ -108,10 +108,41 @@ describe('BI-030, BI-034 los pagadores son filas administrables', () => {
 
     await expect(
       pricing.createPayer(
-        { code: 'IESS', name: 'IESS', kind: 'PUBLIC_NETWORK', ruc: '1790012345001', agreementReference: null }, // prettier-ignore
+        { code: 'IESS', name: 'IESS', kind: 'PUBLIC_NETWORK', ruc: '179001234500', agreementReference: null }, // prettier-ignore
         requester,
       ),
     ).rejects.toBeInstanceOf(InvalidRucError);
+  });
+
+  it('BI-036 rechaza un RUC escrito mal también en el pagador que paga por sí mismo', async () => {
+    // «Particular» needs no RUC, but one that is written reaches an invoice
+    // like any other. Before D-057 the API took `12345` here.
+    const { service: pricing, mocks } = build();
+
+    await expect(
+      pricing.createPayer(
+        { code: 'PARTICULAR', name: 'Particular', kind: 'SELF_PAY', ruc: '12345', agreementReference: null }, // prettier-ignore
+        requester,
+      ),
+    ).rejects.toBeInstanceOf(InvalidRucError);
+    expect(mocks.createPayer).not.toHaveBeenCalled();
+  });
+
+  it('BI-036 admite una sociedad cuyo RUC no pasa módulo 11, y un «Particular» sin RUC', async () => {
+    const { service: pricing } = build();
+
+    await expect(
+      pricing.createPayer(
+        { code: 'SEGURO-N', name: 'Seguro nuevo', kind: 'PRIVATE_INSURANCE', ruc: '1793189906001', agreementReference: null }, // prettier-ignore
+        requester,
+      ),
+    ).resolves.toMatchObject({ ruc: '1793189906001' });
+    await expect(
+      pricing.createPayer(
+        { code: 'PARTICULAR', name: 'Particular', kind: 'SELF_PAY', ruc: '  ', agreementReference: null }, // prettier-ignore
+        requester,
+      ),
+    ).resolves.toBeDefined();
   });
 
   it('BI-034 no exige RUC al pagador que representa al paciente que paga por sí mismo', async () => {
@@ -156,6 +187,25 @@ describe('BI-030, BI-034 los pagadores son filas administrables', () => {
     await expect(
       pricing.updatePayer('payer-particular', { active: false }, requester),
     ).resolves.toMatchObject({ active: false });
+  });
+
+  it('BI-036 al editar, rechaza el RUC mal escrito de «Particular» y no escribe nada', async () => {
+    const { service: pricing, mocks } = build();
+
+    await expect(
+      pricing.updatePayer('payer-particular', { ruc: '12345' }, requester),
+    ).rejects.toBeInstanceOf(InvalidRucError);
+    expect(mocks.updatePayer).not.toHaveBeenCalled();
+  });
+
+  it('BI-036 al editar, guarda el RUC recortado, y el vacío como ausente', async () => {
+    const { service: pricing, mocks } = build();
+
+    await pricing.updatePayer('payer-particular', { ruc: ' 1793189906001 ' }, requester); // prettier-ignore
+    await pricing.updatePayer('payer-particular', { ruc: '' }, requester);
+
+    expect(mocks.updatePayer).toHaveBeenNthCalledWith(1, 'payer-particular', { ruc: '1793189906001' }); // prettier-ignore
+    expect(mocks.updatePayer).toHaveBeenNthCalledWith(2, 'payer-particular', { ruc: null }); // prettier-ignore
   });
 
   it('BI-032 se niega a retirar un pagador con cuentas o listas de precios', async () => {

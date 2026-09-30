@@ -223,7 +223,7 @@ describe('OrganizationService', () => {
       ]);
     });
 
-    it('OR-008 rechaza con INVALID_RUC un RUC que no supera la validación del SRI', async () => {
+    it('OR-009 rechaza con INVALID_RUC el RUC de persona natural con verificador equivocado', async () => {
       answers.findEstablishment = null;
       const { service, calls } = build();
 
@@ -233,7 +233,8 @@ describe('OrganizationService', () => {
             mspUnicode: 'MSP-0001',
             typology: 'Centro de Salud Tipo A',
             legalName: 'Clínica de Prueba S.A.',
-            ruc: '1790001560001',
+            // The cedula 1710034065 with its check digit altered.
+            ruc: '1710034060001',
           },
           REQUESTER,
         ),

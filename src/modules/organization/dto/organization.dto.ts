@@ -20,8 +20,8 @@ export class ListQueryDto extends createZodDto(listQuerySchema) {}
 
 /**
  * OR-008. The DTO caps the LENGTH and nothing else: the thirteen digits, the
- * province, the three check-digit algorithms and the establishment code are
- * the `Ruc` value object's, and splitting the rule in two would let the two
+ * province, the kind, the natural person's check digit and the establishment
+ * code are the `Ruc` value object's (OR-008, OR-009), and splitting the rule in two would let the two
  * halves disagree. Everything the value object refuses answers `INVALID_RUC`
  * with a field error, which is the code the SPEC fixes.
  *

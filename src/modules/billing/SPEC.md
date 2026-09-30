@@ -126,7 +126,7 @@ fecha de servicio sale al precio viejo. Contra PostgreSQL real, porque el
 no-solapamiento de vigencias lo garantiza la base.
 
 **Cubre:** BI-001, BI-002, BI-005, BI-006, BI-010 a BI-016, BI-020 a BI-026,
-BI-030 a BI-035, BI-040 a BI-048, BI-050 a BI-059, BI-070 a BI-074, BI-120 a
+BI-030 a BI-036, BI-040 a BI-048, BI-050 a BI-059, BI-070 a BI-074, BI-120 a
 BI-122.
 
 > **Lo entregado el 20-08-2026, y lo que se quedó fuera con su motivo.**
@@ -586,11 +586,21 @@ es falsa, hay requisitos que cambian.
   > necesita que el cambio arrastre y reprecie los cargos automáticamente, es
   > una decisión de negocio con consecuencias contables — va a
   > `DECISIONES-PENDIENTES.md`.
-- **BI-034** — SI un pagador es institucional y se guarda sin `RUC` válido,
-  ENTONCES el sistema DEBERÁ rechazarlo con `PAYER_RUC_REQUIRED`.
-  > El dígito verificador lo comprueba el value object `Ruc` que ya existe en
-  > `shared` (OR-008). Es la única ramificación por `kind` de todo el módulo, y
+- **BI-034** — SI un pagador es institucional y se guarda sin `RUC`,
+  ENTONCES el sistema DEBERÁ rechazarlo con `PAYER_RUC_REQUIRED`; uno escrito
+  pero mal formado es BI-036 (`INVALID_RUC`).
+  > La forma la comprueba el value object `Ruc` que ya existe en `shared`
+  > (OR-008, OR-009). Es la única ramificación por `kind` de todo el módulo, y
   > es de validación: un convenio de empresa sin RUC no puede recibir factura.
+- **BI-036** — SI se guarda un pagador, de cualquier clase, con un `RUC`
+  escrito que no supera OR-008 y OR-009, ENTONCES el sistema DEBERÁ rechazarlo
+  con `INVALID_RUC` sobre el campo `ruc`; y la base DEBERÁ rechazar por su
+  cuenta un `ruc` de pagador que no sean trece dígitos (`payer_ruc_format`).
+  > D-057: la interfaz ya exigía trece dígitos y la API sólo un máximo de 13
+  > caracteres, así que «Particular» admitía `12345`. Un RUC mal escrito llega a
+  > la factura electrónica y el SRI la rechaza meses después. El `CHECK` es la
+  > misma forma que `site_ruc_format` y entra validado: antes se listaron los
+  > pagadores que no cumplían, y no había ninguno.
 - **BI-035** — El sistema NO DEBERÁ tomar el pagador de la cuenta como emisor ni
   como receptor de la factura por sí solo: el receptor se declara en BI-080.
   > El pagador dice **de qué lista sale el precio**. Quién figura en la factura
@@ -906,6 +916,11 @@ es falsa, hay requisitos que cambian.
 - **BI-082** — El sistema DEBERÁ ofrecer como receptor los datos de
   identificación del paciente de la cuenta, y DEBERÁ permitir sustituirlos por
   los de otra persona identificada que vaya a deducir el gasto.
+  > El tipo que se propone sale de la tabla 6 del SRI: `05` sólo para la
+  > cédula emitida por `ECU`; una cédula de otro país, como el documento
+  > extranjero y el carné de refugiado, es `08` (identificación del
+  > exterior). Desde D-057 el alta admite una cédula colombiana, y como `05`
+  > llegaría al SRI como cédula ecuatoriana que no pasa el módulo 10.
 - **BI-083** — El sistema DEBERÁ desglosar el impuesto **por ítem**, con la
   tarifa congelada de cada línea, y NO DEBERÁ aplicar una única tarifa al total.
   > REQ-083. Y no es un formalismo: una factura con una consulta al 0 % y un
@@ -1415,6 +1430,7 @@ registrados en `infrastructure/billing.constraints.ts`.
 | `BILLABLE_SERVICE_CODE_DUPLICATE` | 409 | `billable_service_code_unique` | BI-010 |
 | `PAYER_CODE_DUPLICATE` | 409 | `payer_code_unique` | BI-030 |
 | `INVALID_PAYER_KIND` | 422 | `payer_kind_is_known` | BI-030 |
+| `INVALID_RUC` | 422 | `payer_ruc_format` | BI-036 |
 | `INVALID_CHARGE_QUANTITY` | 422 | `charge_item_quantity_is_positive` | BI-057 |
 | `DISCOUNT_REASON_REQUIRED` | 422 | `charge_item_discount_states_a_reason` | BI-061 |
 | `DISCOUNT_EXCEEDS_LINE_AMOUNT` | 422 | `charge_item_discount_within_line` | BI-065 |
