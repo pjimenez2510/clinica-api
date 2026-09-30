@@ -717,7 +717,7 @@ describe('session over HTTP', () => {
       // El mismo servicio, construido con la gracia apagada; lo demás es el de
       // la aplicación y la misma base.
       await createAccount();
-      const { id: userId } = await prisma.user.findUniqueOrThrow({
+      const { id: userId, sessionEpoch } = await prisma.user.findUniqueOrThrow({
         where: { email: 'ana.torres@clinica.ec' },
       });
       const config = app.get<ConfigService<Env, true>>(ConfigService);
@@ -733,9 +733,9 @@ describe('session over HTTP', () => {
         } as unknown as ConfigService<Env, true>,
       );
 
-      const issued = await strict.issueForNewSession(userId, {
+      const issued = (await strict.issueForNewSession(userId, sessionEpoch, {
         userAgent: BROWSER,
-      });
+      }))!;
       await strict.rotate(issued.token, { userAgent: BROWSER });
 
       await expect(
@@ -1011,6 +1011,127 @@ describe('session over HTTP', () => {
           .post('/api/v1/auth/logout')
           .set('Authorization', `Bearer ${accessToken}`)
           .expect(204);
+      });
+    });
+
+    /**
+     * AU-041 — LA CARRERA ENTRE INICIAR SESIÓN Y CERRAR TODAS LAS SESIONES.
+     *
+     * Forzada en el orden malo, no esperada, como las de AU-039. La prueba
+     * sostiene una transacción que bloquea la sesión que ya existe: el cierre
+     * incrementa la época de la cuenta y se queda esperando a esa fila, con la
+     * cuenta bloqueada. Entonces entra el inicio de sesión: lee las
+     * credenciales —y la época vieja— y espera a su vez sobre la cuenta.
+     * Cuando la prueba confirma, el cierre termina primero.
+     */
+    describe('AU-041 iniciar sesión mientras se cierran todas las sesiones', () => {
+      const accountWide = revocations.filter(
+        ({ name }) => name !== 'el cierre de sesión',
+      );
+
+      async function liveRowsOfUser(userId: string): Promise<number> {
+        return prisma.refreshToken.count({
+          where: { userId, revokedAt: null, usedAt: null },
+        });
+      }
+
+      const signInAgain = () =>
+        request(app.getHttpServer())
+          .post('/api/v1/auth/login')
+          .set('User-Agent', BROWSER)
+          .send({ email: 'ana.torres@clinica.ec', password: PASSWORD });
+
+      for (const { name, revoke } of accountWide) {
+        it(`AU-041 ${name} confirmado entre leer las credenciales y emitir la sesión: no queda ninguna abierta`, async () => {
+          const { cookies } = await signIn();
+          const existing = await rowOf(cookies);
+
+          let revoking: Promise<unknown> | undefined;
+          let signingIn: Promise<request.Response> | undefined;
+          await prisma.$transaction(async (tx) => {
+            await tx.$queryRaw`
+              SELECT id FROM refresh_token WHERE id = ${existing.id}::uuid FOR UPDATE`;
+
+            revoking = revoke(existing);
+            await blockedOnALock(1, 'refresh_token');
+
+            signingIn = signInAgain().then((response) => response);
+            await blockedOnALock(1, 'app_user');
+          });
+          await revoking;
+          const response = await signingIn!;
+
+          expect(response.status).toBe(401);
+          expect(await liveRowsOfUser(existing.userId)).toBe(0);
+        });
+      }
+
+      it('AU-041 un cierre que llega mientras se emite la sesión la alcanza', async () => {
+        /**
+         * El otro orden. La prueba ES la emisión: bloquea la cuenta FOR SHARE,
+         * como la de verdad, e inserta la familia. El cierre tiene que esperar
+         * a que se confirme y verla al revocar. **Control:** incrementando la
+         * época después del `UPDATE` que revoca, queda 1 fila viva.
+         */
+        const { cookies } = await signIn();
+        const existing = await rowOf(cookies);
+
+        let revoking: Promise<unknown> | undefined;
+        await prisma.$transaction(async (tx) => {
+          await tx.$queryRaw`
+            SELECT id FROM app_user WHERE id = ${existing.userId}::uuid FOR SHARE`;
+          await tx.refreshToken.create({
+            data: {
+              userId: existing.userId,
+              familyId: randomUUID(),
+              tokenHash: TokenService.hashRefreshToken(`nueva-${existing.id}`),
+              expiresAt: existing.expiresAt,
+              userAgent: BROWSER,
+            },
+          });
+
+          revoking = app
+            .get(RefreshTokenService)
+            .revokeAllForUser(existing.userId, 'ACCOUNT_DEACTIVATED');
+          await blockedOnALock(1, 'app_user');
+        });
+        await revoking;
+
+        expect(await liveRowsOfUser(existing.userId)).toBe(0);
+      });
+
+      it('AU-041 control: sin un cierre de por medio, iniciar sesión otra vez funciona y deja dos sesiones', async () => {
+        const { cookies } = await signIn();
+        const { userId } = await rowOf(cookies);
+
+        await signInAgain().expect(200);
+
+        expect(await liveRowsOfUser(userId)).toBe(2);
+      });
+
+      it('AU-041 cerrar todas las sesiones avanza la época de la cuenta; cerrar una sola no', async () => {
+        const { cookies } = await signIn();
+        const existing = await rowOf(cookies);
+        const epochOf = async () =>
+          (
+            await prisma.user.findUniqueOrThrow({
+              where: { id: existing.userId },
+              select: { sessionEpoch: true },
+            })
+          ).sessionEpoch;
+
+        const start = await epochOf();
+        await app
+          .get(RefreshTokenService)
+          .revokeFamily(existing.familyId, 'SIGN_OUT');
+        expect(await epochOf()).toBe(start);
+
+        let expected = start;
+        for (const { name, revoke } of accountWide) {
+          await revoke(existing);
+          expected += 1;
+          expect(await epochOf(), name).toBe(expected);
+        }
       });
     });
   });

@@ -320,8 +320,9 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   > cuatro pasan por ahí. El inicio de sesión lee la época con las
   > credenciales y emite la familia en una transacción que bloquea la cuenta
   > `FOR SHARE` y compara. Si cambió, no emite. Si no, el bloqueo compartido
-  > hace esperar a una revocación que llegue después hasta que la familia
-  > esté confirmada, y ésta la ve al bloquear las filas vivas.
+  > hace esperar el incremento de una revocación que llegue después hasta que
+  > la familia esté confirmada, y el `UPDATE` que revoca —que va detrás— la
+  > ve. Incrementar después de revocar la dejaría viva: la prueba lo comprueba.
   >
   > **UN CONTADOR, NO UN INSTANTE**: la comparación es de igualdad, y un
   > contador no tiene empates de reloj ni depende de que `now()` sea el

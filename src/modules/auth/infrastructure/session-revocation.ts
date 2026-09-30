@@ -41,6 +41,18 @@ export async function lockLiveSessions(
  * before its successors — so two of them cannot deadlock. A path that kept its
  * own `updateMany` would lock in index order and could.
  *
+ * AU-041: EVERY SESSION OF AN ACCOUNT ALSO MOVES ITS EPOCH, and FIRST. A
+ * sign-in that read its credentials before this cannot issue a family after
+ * it: the issue compares the epoch under a shared lock on the account row
+ * (`RefreshTokenService.issueForNewSession`). The order is the point: the
+ * increment must come BEFORE the `UPDATE` that revokes. It waits on the
+ * shared lock of a sign-in issuing right now, so that family is committed
+ * before the `UPDATE` — a fresh statement — looks for live rows and revokes
+ * it. Incremented after the revocation, the family would be committed after
+ * the `UPDATE` had looked, and survive (the integration test proves both
+ * orders). Doing it here, in the one function every such path calls, is what
+ * keeps a future path from forgetting.
+ *
  * Returns how many rows were still live: 0 means the scope was already closed.
  */
 export async function revokeLiveSessions(
@@ -49,6 +61,12 @@ export async function revokeLiveSessions(
   reason: string,
   at: Date = new Date(),
 ): Promise<number> {
+  if ('userId' in scope) {
+    await tx.user.updateMany({
+      where: { id: scope.userId },
+      data: { sessionEpoch: { increment: 1 } },
+    });
+  }
   await lockLiveSessions(tx, scope);
 
   const { count } = await tx.refreshToken.updateMany({

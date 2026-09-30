@@ -48,6 +48,7 @@ function buildUser(overrides: Partial<AuthUser> = {}): AuthUser {
     mfaLastStep: null,
     failedAttempts: 0,
     lockedUntil: null,
+    sessionEpoch: 0,
     ...overrides,
   };
 }
@@ -65,6 +66,7 @@ describe('sign-in does not reveal who works here', () => {
   let verify: Mock<PasswordHasherPort['verify']>;
   let burnTime: Mock<PasswordHasherPort['burnTime']>;
   let warn: Mock<(context: object, message: string) => void>;
+  let issueForNewSession: Mock<RefreshTokenPort['issueForNewSession']>;
   let service: AuthService;
 
   beforeEach(() => {
@@ -118,12 +120,15 @@ describe('sign-in does not reveal who works here', () => {
     const tokens: TokenIssuerPort = {
       issueAccessToken: vi.fn().mockResolvedValue('access-token'),
     };
-    const refreshTokens: RefreshTokenPort = {
-      issueForNewSession: vi.fn().mockResolvedValue({
+    issueForNewSession = vi
+      .fn<RefreshTokenPort['issueForNewSession']>()
+      .mockResolvedValue({
         token: 'refresh-token',
         familyId: 'fam-1',
         expiresAt: new Date('2026-12-31'),
-      }),
+      });
+    const refreshTokens: RefreshTokenPort = {
+      issueForNewSession,
       rotate: vi.fn(),
       revokeFamily: vi.fn(),
       revokeAllForUser: vi.fn(),
@@ -238,6 +243,29 @@ describe('sign-in does not reveal who works here', () => {
 
     expect(session).toMatchObject({ accessToken: 'access-token' });
     expect(clearFailedAttempts).toHaveBeenCalledWith('user-1');
+  });
+
+  it('AU-041 emite la sesión con la época leída junto a las credenciales', async () => {
+    findByEmail.mockResolvedValue(buildUser({ sessionEpoch: 3 }));
+
+    await service.signIn('medico@clinica.ec', CORRECT);
+
+    expect(issueForNewSession).toHaveBeenCalledWith('user-1', 3, {});
+  });
+
+  it('AU-041 si se cerraron todas las sesiones mientras tanto, responde como AU-002 y lo registra', async () => {
+    // The adapter found the epoch moved: a password change, a deactivation, a
+    // reset or a redeemed invitation landed between reading and issuing.
+    issueForNewSession.mockResolvedValue(null);
+    warn.mockClear();
+
+    expect(await codeFor(buildUser(), CORRECT)).toBe('INVALID_CREDENTIALS');
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error_code: 'SESSIONS_CLOSED_DURING_SIGN_IN',
+      }),
+      expect.any(String),
+    );
   });
 
   it('la sesión dice que esta cuenta NO tiene segundo factor', async () => {

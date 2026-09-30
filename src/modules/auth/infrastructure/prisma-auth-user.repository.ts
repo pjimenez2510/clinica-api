@@ -31,6 +31,7 @@ const AUTH_USER_FIELDS = {
   mfaLastStep: true,
   failedAttempts: true,
   lockedUntil: true,
+  sessionEpoch: true,
 } as const;
 
 /**

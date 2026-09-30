@@ -328,12 +328,29 @@ export class AuthService {
   /**
    * Opens a new refresh family and signs an access token tied to it with `mfa:
    * true`. Only reached once every required factor has been proved.
+   *
+   * AU-041: `user` is the account as it was read with the credentials just
+   * proved. If every session of it was closed since — a password change, a
+   * deactivation, a second-factor reset, a redeemed invitation — no family is
+   * issued, and the answer is AU-002's: the credentials that were checked may
+   * be exactly the ones that were just replaced.
    */
   private async issueSession(
     user: AuthUser,
     ctx: ClientContext,
   ): Promise<AuthenticatedSession> {
-    const refresh = await this.refreshTokens.issueForNewSession(user.id, ctx);
+    const refresh = await this.refreshTokens.issueForNewSession(
+      user.id,
+      user.sessionEpoch,
+      ctx,
+    );
+    if (!refresh) {
+      this.logger.warn(
+        { user_id: user.id, error_code: 'SESSIONS_CLOSED_DURING_SIGN_IN' },
+        'sign-in refused: every session of the account was closed meanwhile',
+      );
+      throw new InvalidCredentialsError();
+    }
 
     const accessToken = await this.tokens.issueAccessToken({
       sub: user.id,

@@ -67,13 +67,29 @@ export class RefreshTokenService {
   /**
    * Starts a new session family, and with it the instant the family expires
    * (AU-040). Called on sign-in, not on refresh.
+   *
+   * AU-041: `null`, and nothing issued, if every session of the account was
+   * closed after `sessionEpoch` was read with the credentials. The account row
+   * is locked `FOR SHARE` for the rest of the transaction: a closure that
+   * already moved the epoch makes this wait and then read its value, and one
+   * that arrives later waits, at its increment, for this family to commit and
+   * then revokes it (see `revokeLiveSessions`). `FOR SHARE` and not `FOR UPDATE`: two
+   * sign-ins of the same account do not need to queue behind each other.
    */
   async issueForNewSession(
     userId: string,
+    sessionEpoch: number,
     ctx: ClientContext = {},
-  ): Promise<IssuedRefreshToken> {
+  ): Promise<IssuedRefreshToken | null> {
     const expiresAt = new Date(Date.now() + this.ttlDays * 24 * 60 * 60 * 1000);
-    return this.issue(this.prisma, userId, randomUUID(), expiresAt, ctx);
+
+    return this.prisma.$transaction(async (tx) => {
+      const [account] = await tx.$queryRaw<{ session_epoch: number }[]>`
+        SELECT session_epoch FROM app_user WHERE id = ${userId}::uuid FOR SHARE`;
+      if (account?.session_epoch !== sessionEpoch) return null;
+
+      return this.issue(tx, userId, randomUUID(), expiresAt, ctx);
+    });
   }
 
   /**

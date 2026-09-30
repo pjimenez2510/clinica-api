@@ -45,6 +45,12 @@ export interface AuthUser {
   mfaLastStep: bigint | null;
   failedAttempts: number;
   lockedUntil: Date | null;
+  /**
+   * AU-041. How many times every session of the account has been closed.
+   * Read WITH the credentials, so a new session can be refused if the count
+   * moved before it was issued.
+   */
+  sessionEpoch: number;
 }
 
 /**
@@ -87,10 +93,16 @@ export interface TokenIssuerPort {
  * session of the account (AU-023).
  */
 export interface RefreshTokenPort {
+  /**
+   * `sessionEpoch` is the one read with the credentials just proved. `null`
+   * when every session of the account was closed since (AU-041): the family
+   * was not issued, and the sign-in must fail like a wrong password.
+   */
   issueForNewSession(
     userId: string,
+    sessionEpoch: number,
     ctx?: ClientContext,
-  ): Promise<IssuedRefreshToken>;
+  ): Promise<IssuedRefreshToken | null>;
   rotate(
     presentedToken: string,
     ctx?: ClientContext,
