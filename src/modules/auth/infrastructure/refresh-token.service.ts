@@ -348,7 +348,24 @@ export class RefreshTokenService {
   }
 
   /**
-   * AU-036. Is this session family still open?
+   * AU-041. Whether an MFA challenge still stands: the account is active and
+   * no «close every session» happened since the challenge's epoch was read.
+   * One lookup by primary key; a challenge without an epoch never stands.
+   */
+  async isChallengeCurrent(
+    userId: string,
+    challengeEpoch: number | undefined,
+  ): Promise<boolean> {
+    if (challengeEpoch === undefined) return false;
+    const account = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { active: true, sessionEpoch: true },
+    });
+    return account?.active === true && account.sessionEpoch === challengeEpoch;
+  }
+
+  /**
+   * AU-036, AU-040. Is this session family still open — and if not, why?
    *
    * ═══════════════════════════════════════════════════════════════════════════
    * WHAT IT IS FOR, AND WHY THE ACCESS TOKEN NEEDS IT.
@@ -371,39 +388,14 @@ export class RefreshTokenService {
    * Rotation marks `used_at` and leaves `revoked_at` alone precisely so reuse
    * stays detectable, so requiring an unused row would kill the session of
    * anybody whose client refreshed while a request was in flight.
-   */
-  /**
-   * AU-041. Whether an MFA challenge still stands: the account is active and
-   * no «close every session» happened since the challenge's epoch was read.
-   * One lookup by primary key; a challenge without an epoch never stands.
-   */
-  async isChallengeCurrent(
-    userId: string,
-    challengeEpoch: number | undefined,
-  ): Promise<boolean> {
-    if (challengeEpoch === undefined) return false;
-    const account = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { active: true, sessionEpoch: true },
-    });
-    return account?.active === true && account.sessionEpoch === challengeEpoch;
-  }
-
-  /** `familyState` as a yes/no; the integration tests ask it this way. */
-  async isFamilyOpen(familyId: string): Promise<boolean> {
-    return (await this.familyState(familyId)) === 'open';
-  }
-
-  /**
-   * AU-036, AU-040. `isFamilyOpen`, telling apart the two ways a family stops
-   * being open: somebody revoked it, or it reached its lifetime. The same one
-   * indexed lookup, aggregated: no live row is «revoked»; live rows whose
-   * latest expiry has passed are «expired». The LATEST, not any: rows issued
-   * before AU-040 each carried their own sliding expiry, and the newest one is
-   * the one the family lives by.
    *
-   * Without the expiry here, an access token issued in the family's last
-   * minute would keep working a full `JWT_ACCESS_TTL` past the ceiling.
+   * AU-040: THREE STATES, not two — somebody revoked it, or it reached its
+   * lifetime. The same one indexed lookup, aggregated: no live row is
+   * «revoked»; live rows whose latest expiry has passed are «expired». The
+   * LATEST, not any: rows issued before AU-040 each carried their own sliding
+   * expiry, and the newest one is the one the family lives by. Without the
+   * expiry here, an access token issued in the family's last minute would keep
+   * working a full `JWT_ACCESS_TTL` past the ceiling.
    */
   async familyState(familyId: string): Promise<FamilyState> {
     const { _max } = await this.prisma.refreshToken.aggregate({
@@ -412,6 +404,11 @@ export class RefreshTokenService {
     });
     if (_max.expiresAt === null) return 'revoked';
     return _max.expiresAt > new Date() ? 'open' : 'expired';
+  }
+
+  /** `familyState` as a yes/no; the integration tests ask it this way. */
+  async isFamilyOpen(familyId: string): Promise<boolean> {
+    return (await this.familyState(familyId)) === 'open';
   }
 
   /**

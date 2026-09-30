@@ -121,13 +121,14 @@ export class JwtAuthGuard implements CanActivate {
    * WHAT IS DELIBERATELY NOT CACHED: nothing. A cache here is a window, and the
    * window is the entire defect.
    *
-   * THE ONE EXEMPTION IS THE MFA CHALLENGE TOKEN. It carries the magic family
-   * of `MFA_CHALLENGE_FAMILY` and has no `refresh_token` row by construction —
-   * the row is created when the second factor completes — so checking it would
-   * make signing in with MFA impossible. It grants nothing beyond the MFA flow,
-   * it is only obtainable by presenting the password, and whoever holds the
-   * password can obtain a fresh one at any time, so nothing is lost by
-   * exempting it.
+   * THE MFA CHALLENGE TOKEN IS CHECKED DIFFERENTLY, NOT EXEMPTED. It carries
+   * the magic family `MFA_CHALLENGE_FAMILY` and has no `refresh_token` row by
+   * construction — the row is created when the second factor completes — so
+   * the family check cannot apply. It was once exempted on the grounds that
+   * whoever holds the password can get a fresh one anyway; that stops being
+   * true the moment the password changes or the factor is reset, and an
+   * exempted challenge then still reached `mfa/enroll` (clean-context review,
+   * 30-09-2026). It is checked against the session epoch it carries (AU-041).
    */
   private async assertSessionStillOpen(
     familyId: string,
