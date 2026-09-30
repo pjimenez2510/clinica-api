@@ -296,13 +296,13 @@ describe('la organización por HTTP', () => {
       ).rejects.toThrowError(/establishment_msp_unicode_unique|Unique/i);
     });
 
-    it('OR-008 rechaza con INVALID_RUC un RUC que no supera la validación del SRI', async () => {
+    it('OR-009 rechaza con INVALID_RUC el RUC de persona natural con verificador equivocado', async () => {
       const response = await put('/establishment', {
         mspUnicode: 'MSP-EST-001',
         typology: 'Centro de Salud Tipo A',
         legalName: 'Clínica de Prueba S.A.',
-        // Same number with the check digit altered by one.
-        ruc: '1790001560001',
+        // The cedula 1710034065 with its check digit altered by one.
+        ruc: '1710034060001',
       }).expect(422);
 
       const problem = response.body as Problem;
@@ -313,6 +313,28 @@ describe('la organización por HTTP', () => {
 
     it('OR-008 admite las tres clases de RUC del SRI: natural, público y privado', async () => {
       for (const ruc of ['1710034065001', VALID_PUBLIC_RUC, VALID_RUC]) {
+        const saved = await saveEstablishment({ ruc });
+        expect(
+          await prisma.establishment.findUniqueOrThrow({
+            where: { id: saved.id },
+            select: { ruc: true },
+          }),
+        ).toEqual({ ruc });
+      }
+    });
+
+    it('OR-009 guarda el RUC de una sociedad que no pasa módulo 11, como los emite el SRI desde 2021', async () => {
+      // Published by the Mintel as SRI-issued numbers (D-057). The control:
+      // the same request with a malformed RUC is refused, so what makes the
+      // difference is the check digit and nothing else.
+      await put('/establishment', {
+        mspUnicode: 'MSP-EST-001',
+        typology: 'Centro de Salud Tipo A',
+        legalName: 'Clínica de Prueba S.A.',
+        ruc: '179318990600',
+      }).expect(422);
+
+      for (const ruc of ['1793189906001', '0993366721001']) {
         const saved = await saveEstablishment({ ruc });
         expect(
           await prisma.establishment.findUniqueOrThrow({
@@ -386,6 +408,21 @@ describe('la organización por HTTP', () => {
       const problem = response.body as Problem;
       expect(problem.code).toBe('MSP_UNICODE_DUPLICATE');
       expect(problem.errors?.[0]?.field).toBe('mspUnicode');
+    });
+
+    it('OR-009 admite en una sede el RUC de una sociedad que no pasa módulo 11', async () => {
+      const response = await post('/sites', {
+        mspUnicode: nextMspCode(),
+        name: 'Sede de sociedad nueva',
+        ruc: '1793189906001',
+      }).expect(201);
+
+      expect(
+        await prisma.site.findUniqueOrThrow({
+          where: { id: (response.body as { id: string }).id },
+          select: { ruc: true },
+        }),
+      ).toEqual({ ruc: '1793189906001' });
     });
 
     it('OR-008 rechaza con INVALID_RUC el RUC de una sede que factura', async () => {
