@@ -121,6 +121,10 @@ export class InvoiceDocumentsController {
     sendStored(res, stored);
   }
 
+  /**
+   * Who is asking, scoped by `billing:read` — the permission the RIDE is served
+   * under, never `record:read` (DOC-090).
+   */
   private requester(req: Request): Requester {
     const permission: Permission = 'billing:read';
     const scope = this.currentUser.requirePrincipal().sitesFor(permission);

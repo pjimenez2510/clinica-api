@@ -260,6 +260,11 @@ export async function seedDevelopment(prisma: PrismaClient): Promise<void> {
   await prisma.refreshToken.deleteMany({});
 }
 
+/**
+ * Entry point of `pnpm db:seed`. Prints the shared development password and
+ * the permissions the superuser role deliberately lacks; `seedDevelopment`
+ * itself refuses a production `NODE_ENV`.
+ */
 async function main(): Promise<void> {
   const prisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),

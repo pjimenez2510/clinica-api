@@ -24,9 +24,11 @@ import type { RdacaaRequiredField } from './rdacaa-completeness';
 /** Sex as recorded. Never inferred, never defaulted. */
 export type PatientSex = 'MALE' | 'FEMALE' | 'INTERSEX' | 'UNKNOWN';
 
+/** PA-010. `PROVISIONAL` is a marker, not a document: it never makes a chart definitive. */
 export type IdentifierType =
   'CEDULA' | 'PASSPORT' | 'REFUGEE_CARD' | 'FOREIGN_ID' | 'PROVISIONAL';
 
+/** PA-010. A document is identified by the whole triple, never by its value alone. */
 export interface PatientIdentifier {
   type: IdentifierType;
   /** ISO 3166-1 alpha-3. Two passports may share a number across countries. */
@@ -239,6 +241,11 @@ export interface SexualOrientationRead {
   orientation: CatalogConceptReference | null;
 }
 
+/**
+ * The whole chart, as its own screen shows it. The sexual orientation is not
+ * here: it is read through `findSexualOrientation`, under its own permission
+ * (PA-058).
+ */
 export interface PatientDetail extends PatientSummary {
   phone: string | null;
   email: string | null;
@@ -313,6 +320,7 @@ export interface PatientDetail extends PatientSummary {
 export type PatientSortField = 'name' | 'mrn' | 'birthDate';
 export type SortDirection = 'asc' | 'desc';
 
+/** One page of the patient search, with the ordering picked from a closed list. */
 export interface PatientSearchCriteria {
   sortBy: PatientSortField;
   sortDirection: SortDirection;
@@ -332,11 +340,17 @@ export interface PatientSearchCriteria {
   motherId?: string;
 }
 
+/** `total` counts every match, not just this page's items. */
 export interface PatientPage {
   items: readonly PatientSummary[];
   total: number;
 }
 
+/**
+ * A registration. No MRN: it comes from the database sequence inside the
+ * insert (PA-001). At most one identifier, and none at all is a legitimate
+ * registration (PA-003).
+ */
 export interface NewPatient {
   familyName: string;
   secondFamilyName?: string;
@@ -673,6 +687,7 @@ export interface PriorityGroupRecord {
   closedAt: Date | null;
 }
 
+/** A priority group being recorded; `recordedById` is the session's user, set by the service. */
 export interface NewPriorityGroup {
   patientId: string;
   group: PriorityGroup;
@@ -689,6 +704,7 @@ export interface PatientPriorityInput {
   recorded: readonly RecordedPriorityGroup[];
 }
 
+// The port described at the top of this file.
 export interface PatientRepository {
   search(criteria: PatientSearchCriteria): Promise<PatientPage>;
   findById(id: string): Promise<PatientDetail | null>;

@@ -33,11 +33,18 @@ interface RawRequest {
   route?: { path?: string };
 }
 
+/**
+ * The response as pino-http hands it to the `res` serializer; same reason as
+ * `RawRequest`.
+ */
 interface RawResponse {
   statusCode?: number;
   raw?: { statusCode?: number };
 }
 
+/**
+ * The error as the `err` serializer receives it; same reason as `RawRequest`.
+ */
 interface RawError {
   name?: string;
   constructor?: { name?: string };

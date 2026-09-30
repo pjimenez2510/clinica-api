@@ -30,14 +30,26 @@ import { AuthAdminAuditTrail, type Requester } from './auth-admin-audit.trail';
 /** The permission whose loss locks the installation (AU-024). */
 const ADMINISTERS_USERS = 'user:manage';
 
+/**
+ * AU-033: the catalogue declared in code (D-002). Checked before any write so a
+ * typo is refused instead of half-applying the role.
+ */
 const KNOWN_PERMISSIONS: ReadonlySet<string> = new Set(PERMISSIONS);
 
+/**
+ * AU-030. A clinic-defined role; its permissions are set separately through
+ * `replacePermissions`.
+ */
 export interface CreateRoleCommand {
   code: string;
   name: string;
   description?: string | null;
 }
 
+/**
+ * AU-030, AU-031. `active: false` is how a role that cannot be deleted — a
+ * system role, or one with live grants — is retired.
+ */
 export interface UpdateRoleCommand {
   name?: string;
   description?: string | null;

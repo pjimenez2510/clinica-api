@@ -103,6 +103,7 @@ export const dailyAgendaQuerySchema = z.object({
   /** AG-018. */
   includeReleased: explicitFlag,
 });
+/** Query of GET /agenda/sites/:siteId/entries. */
 export class DailyAgendaQueryDto extends createZodDto(dailyAgendaQuerySchema) {}
 
 /**
@@ -218,6 +219,7 @@ export const bookAppointmentSchema = z
       }
     }
   });
+/** Body of POST /agenda/sites/:siteId/entries. */
 export class BookAppointmentDto extends createZodDto(bookAppointmentSchema) {}
 
 /**
@@ -256,6 +258,7 @@ export const blockAgendaSchema = z
     error: 'La hora de fin debe ser posterior a la de inicio',
     path: ['endsAt'],
   });
+/** Body of POST /agenda/sites/:siteId/blocks. */
 export class BlockAgendaDto extends createZodDto(blockAgendaSchema) {}
 
 /**
@@ -368,6 +371,7 @@ export const transitionStatusSchema = z
       });
     }
   });
+/** Body of POST /agenda/sites/:siteId/entries/:entryId/status. */
 export class TransitionStatusDto extends createZodDto(transitionStatusSchema) {}
 
 export const agendaEntrySchema = z.object({
@@ -470,6 +474,7 @@ export const agendaEntrySchema = z.object({
   rescheduledFromId: z.uuid().nullable(),
   rescheduledToId: z.uuid().nullable(),
 });
+/** One entry as every listing serves it; also the response of creating and releasing a block. */
 export class AgendaEntryDto extends createZodDto(agendaEntrySchema) {}
 
 /**
@@ -494,6 +499,7 @@ export class AgendaEntryDto extends createZodDto(agendaEntrySchema) {}
 export const bookedAppointmentSchema = agendaEntrySchema.extend({
   warnings: z.array(z.string()).readonly(),
 });
+/** Response of POST /agenda/sites/:siteId/entries. */
 export class BookedAppointmentDto extends createZodDto(
   bookedAppointmentSchema,
 ) {}
@@ -516,6 +522,7 @@ export class BookedAppointmentDto extends createZodDto(
 export const transitionOutcomeSchema = agendaEntrySchema.extend({
   warnings: z.array(z.string()).readonly(),
 });
+/** Response of POST /agenda/sites/:siteId/entries/:entryId/status. */
 export class TransitionOutcomeDto extends createZodDto(
   transitionOutcomeSchema,
 ) {}
@@ -578,6 +585,7 @@ export const rescheduleAppointmentSchema = z.object({
     .min(1, 'Indique el motivo de la reprogramación')
     .max(512, 'El motivo no puede superar 512 caracteres'),
 });
+/** Body of POST /agenda/sites/:siteId/entries/:entryId/reschedule. */
 export class RescheduleAppointmentDto extends createZodDto(
   rescheduleAppointmentSchema,
 ) {}
@@ -598,6 +606,7 @@ export const rescheduledAppointmentSchema = z.object({
   created: agendaEntrySchema,
   warnings: z.array(z.string()).readonly(),
 });
+/** Response of the reschedule route. */
 export class RescheduledAppointmentDto extends createZodDto(
   rescheduledAppointmentSchema,
 ) {}
@@ -630,6 +639,7 @@ export const availabilityQuerySchema = z
     error: `El rango no puede superar ${MAX_RANGE_DAYS} días`,
     path: ['to'],
   });
+/** Query of GET /agenda/sites/:siteId/availability. */
 export class AvailabilityQueryDto extends createZodDto(
   availabilityQuerySchema,
 ) {}
@@ -722,6 +732,7 @@ export const availabilitySchema = z.object({
    */
   yearsWithoutCalendar: z.array(z.number().int()),
 });
+/** Response of GET /agenda/sites/:siteId/availability. */
 export class AvailabilityDto extends createZodDto(availabilitySchema) {}
 
 /**
@@ -742,6 +753,7 @@ export const durationProposalQuerySchema = z.object({
   /** Absent until recepción chooses a type: the rule's slot then answers. */
   serviceTypeId: z.uuid('Seleccione un tipo de atención válido').optional(),
 });
+/** Query of GET /agenda/sites/:siteId/duration. */
 export class DurationProposalQueryDto extends createZodDto(
   durationProposalQuerySchema,
 ) {}
@@ -759,6 +771,7 @@ export const durationProposalSchema = z.object({
    */
   minutes: z.number().int().positive().nullable(),
 });
+/** Response of GET /agenda/sites/:siteId/duration, and the type the controller returns for it. */
 export class DurationProposalDto extends createZodDto(durationProposalSchema) {}
 export type DurationProposalResponse = z.infer<typeof durationProposalSchema>;
 
@@ -770,6 +783,7 @@ export const dailyAgendaSchema = z.object({
   /** Echoed so the client never has to remember what it asked for. */
   includeReleased: z.boolean(),
 });
+/** Response of GET /agenda/sites/:siteId/entries. */
 export class DailyAgendaDto extends createZodDto(dailyAgendaSchema) {}
 
 /**
@@ -792,11 +806,13 @@ export const agendaSiteSchema = z.object({
   id: z.uuid(),
   name: z.string(),
 });
+/** One row of `AgendaSitesDto`; no route returns it on its own. */
 export class AgendaSiteDto extends createZodDto(agendaSiteSchema) {}
 
 export const agendaSitesSchema = z.object({
   items: z.array(agendaSiteSchema).readonly(),
 });
+/** Response of GET /agenda/sites (AG-107). */
 export class AgendaSitesDto extends createZodDto(agendaSitesSchema) {}
 
 /**
@@ -830,6 +846,7 @@ export const schedulablePractitionerSchema = z.object({
    */
   specialties: z.array(agendaSpecialtySchema).readonly(),
 });
+/** One row of `SchedulablePractitionersDto`; no route returns it on its own. */
 export class SchedulablePractitionerDto extends createZodDto(
   schedulablePractitionerSchema,
 ) {}
@@ -837,6 +854,7 @@ export class SchedulablePractitionerDto extends createZodDto(
 export const schedulablePractitionersSchema = z.object({
   items: z.array(schedulablePractitionerSchema).readonly(),
 });
+/** Response of GET /agenda/sites/:siteId/practitioners. */
 export class SchedulablePractitionersDto extends createZodDto(
   schedulablePractitionersSchema,
 ) {}
@@ -860,6 +878,7 @@ export const agendaServiceTypeSchema = z.object({
 export const agendaServiceTypesSchema = z.object({
   items: z.array(agendaServiceTypeSchema).readonly(),
 });
+/** Response of GET /agenda/sites/:siteId/specialties/:specialtyId/service-types. */
 export class AgendaServiceTypesDto extends createZodDto(
   agendaServiceTypesSchema,
 ) {}
@@ -890,6 +909,7 @@ export const noShowMetricQuerySchema = z
     error: `El rango no puede superar ${MAX_RANGE_DAYS} días`,
     path: ['to'],
   });
+/** Query of GET /agenda/metrics/no-show. */
 export class NoShowMetricQueryDto extends createZodDto(
   noShowMetricQuerySchema,
 ) {}
@@ -962,14 +982,18 @@ export const noShowMetricSchema = z.object({
   byPractitioner: z.array(noShowByPractitionerSchema).readonly(),
   byChannel: z.array(noShowByChannelSchema).readonly(),
 });
+/** Response of GET /agenda/metrics/no-show. */
 export class NoShowMetricDto extends createZodDto(noShowMetricSchema) {}
 
+/** What the metrics controller returns, inferred from the schema Swagger publishes. */
 export type NoShowMetricResponse = z.infer<typeof noShowMetricSchema>;
 
+/** What the reference routes return, inferred from the schemas Swagger publishes. */
 export type AgendaSitesResponse = z.infer<typeof agendaSitesSchema>;
 export type SchedulablePractitionersResponse = z.infer<
   typeof schedulablePractitionersSchema
 >;
+/** Likewise, for the attention types of a specialty. */
 export type AgendaServiceTypesResponse = z.infer<
   typeof agendaServiceTypesSchema
 >;
@@ -1047,6 +1071,7 @@ export class EnrolInWaitlistDto extends createZodDto(enrolInWaitlistSchema) {}
 export const recordContactAttemptSchema = z.object({
   outcome: CONTACT_OUTCOME,
 });
+/** Body of POST /agenda/sites/:siteId/waitlist/:entryId/contact-attempts. */
 export class RecordContactAttemptDto extends createZodDto(
   recordContactAttemptSchema,
 ) {}
@@ -1061,6 +1086,7 @@ export class RecordContactAttemptDto extends createZodDto(
 export const convertWaitlistEntrySchema = z.object({
   appointmentId: z.uuid('Seleccione la cita creada para este paciente'),
 });
+/** Body of POST /agenda/sites/:siteId/waitlist/:entryId/conversion. */
 export class ConvertWaitlistEntryDto extends createZodDto(
   convertWaitlistEntrySchema,
 ) {}
@@ -1091,6 +1117,7 @@ export const waitlistEntrySchema = z.object({
   lastContactedAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
 });
+/** Response of enrolling, recording a contact attempt and converting. */
 export class WaitlistEntryDto extends createZodDto(waitlistEntrySchema) {}
 
 /**
@@ -1116,6 +1143,7 @@ export const waitlistCandidateSchema = z.object({
   contactAttempts: z.number().int().nonnegative(),
   lastContactedAt: z.iso.datetime().nullable(),
 });
+/** One ranked candidate; the waitlist controller's `toCandidateResponse` returns this type. */
 export class WaitlistCandidateDto extends createZodDto(
   waitlistCandidateSchema,
 ) {}
@@ -1125,6 +1153,7 @@ export const waitlistSchema = z.object({
   siteId: z.uuid(),
   items: z.array(waitlistCandidateSchema).readonly(),
 });
+/** Response of GET /agenda/sites/:siteId/waitlist. */
 export class WaitlistDto extends createZodDto(waitlistSchema) {}
 
 /**
@@ -1147,10 +1176,12 @@ export const waitlistCandidatesSchema = z.object({
   }),
   items: z.array(waitlistCandidateSchema).readonly(),
 });
+/** Response of GET /agenda/sites/:siteId/waitlist/candidates/:releasedEntryId. */
 export class WaitlistCandidatesDto extends createZodDto(
   waitlistCandidatesSchema,
 ) {}
 
+/** What the waitlist controller returns, inferred from the schemas Swagger publishes. */
 export type WaitlistEntryResponse = z.infer<typeof waitlistEntrySchema>;
 export type WaitlistResponse = z.infer<typeof waitlistSchema>;
 export type WaitlistCandidatesResponse = z.infer<

@@ -123,6 +123,7 @@ const DURATION_EXCEPTIONS: readonly {
   },
 ];
 
+/** What one run wrote, as counts for the console summary. */
 export interface StaffSeedResult {
   habilitated: number;
   siteAssignments: number;
@@ -133,6 +134,13 @@ export interface StaffSeedResult {
   durationExceptions: number;
 }
 
+/**
+ * Writes the demo ACESS data, site assignments, Sunday schedule rules, primary
+ * specialties and duration exception described at the top of this file,
+ * skipping any account, specialty or service type that has not been seeded
+ * yet. Idempotent on the keys listed there. Demo data: `main` refuses a
+ * production `NODE_ENV`.
+ */
 export async function seedStaff(
   prisma: PrismaClient,
 ): Promise<StaffSeedResult> {

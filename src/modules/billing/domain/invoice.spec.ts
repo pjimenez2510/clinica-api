@@ -13,6 +13,13 @@ import {
   resolveReceiver,
 } from './invoice';
 
+/**
+ * Who an invoice is issued to — the proposed and the required receiver,
+ * «Consumidor Final» only on purpose, never the payer by default — and the
+ * nine-digit sequential of an emission point. Pure domain unit; cites BI-035,
+ * BI-080, BI-081, BI-082, BI-085 and BI-087.
+ */
+
 const context = (
   overrides: Partial<ReceiverContext> = {},
 ): ReceiverContext => ({

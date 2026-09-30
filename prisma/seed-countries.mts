@@ -76,6 +76,7 @@ const EFFECTIVE_FROM = new Date(
   `${process.env.COUNTRY_EFFECTIVE_YEAR ?? '2024'}-01-01T00:00:00Z`,
 );
 
+/** One data line of the file: the ISO alpha-3 code and the Spanish name, exactly as written there. */
 interface Pais {
   alpha3: string;
   nombre: string;
@@ -216,6 +217,10 @@ export async function seedCountries(prisma: PrismaClient): Promise<void> {
   );
 }
 
+/**
+ * Entry point of `pnpm db:seed:countries`. Reference data, not demo data, so
+ * there is no production guard; idempotency is `seedCountries`'s.
+ */
 async function main(): Promise<void> {
   const prisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),

@@ -42,6 +42,7 @@ export interface PrescriptionAge {
   text: string;
 }
 
+/** `1 año`, `34 años`: the figure followed by the singular or plural word. */
 const plural = (value: number, one: string, many: string): string =>
   `${value} ${value === 1 ? one : many}`;
 

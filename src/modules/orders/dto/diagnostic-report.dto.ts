@@ -15,6 +15,10 @@ const ABNORMAL_FLAG = z.enum([
   'CRITICAL_HIGH',
 ]);
 
+/**
+ * An instant with its offset REQUIRED, the same rule as the agenda's: without
+ * one, a time means whatever the reader's clock says.
+ */
 const instant = (label: string) =>
   z.iso.datetime({
     offset: true,
@@ -94,6 +98,7 @@ export const registerReportSchema = z.object({
     .min(1, 'Registre al menos una determinación')
     .max(200, 'Un informe no puede llevar más de 200 determinaciones'),
 });
+/** Body of POST /orders/:orderId/reports. */
 export class RegisterReportDto extends createZodDto(registerReportSchema) {}
 
 /**
@@ -148,11 +153,13 @@ export const diagnosticReportSchema = z.object({
   supersededAt: z.iso.datetime().nullable(),
   results: z.array(observationSchema),
 });
+/** Response of registering, correcting and matching: the report as it stands afterwards. */
 export class DiagnosticReportDto extends createZodDto(diagnosticReportSchema) {}
 
 export const diagnosticReportListSchema = z.object({
   items: z.array(diagnosticReportSchema),
 });
+/** Response of GET /orders/:orderId/reports. */
 export class DiagnosticReportListDto extends createZodDto(
   diagnosticReportListSchema,
 ) {}
@@ -175,6 +182,7 @@ export const flaggedResultSchema = z.object({
 export const flaggedResultListSchema = z.object({
   items: z.array(flaggedResultSchema),
 });
+/** Response of the two safety worklists, GET /orders/results/unmatched and /orders/results/critical. */
 export class FlaggedResultListDto extends createZodDto(
   flaggedResultListSchema,
 ) {}
@@ -197,6 +205,7 @@ export class FlaggedResultListDto extends createZodDto(
 export const matchResultSchema = z.object({
   orderItemId: z.uuid('Elija la línea de la orden que este resultado responde'),
 });
+/** Body of POST /orders/results/:resultId/match. */
 export class MatchResultDto extends createZodDto(matchResultSchema) {}
 
 /** ORD-040, ORD-060. How much of a safety worklist to bring back. */
@@ -208,10 +217,13 @@ export const worklistQuerySchema = z.object({
     .max(200, 'No se pueden listar más de 200 resultados de una vez')
     .default(100),
 });
+/** Query of both safety worklists. */
 export class WorklistQueryDto extends createZodDto(worklistQuerySchema) {}
 
+/** Response types the controller returns, inferred from the schemas Swagger publishes. */
 export type DiagnosticReportResponse = z.infer<typeof diagnosticReportSchema>;
 export type DiagnosticReportListResponse = z.infer<
   typeof diagnosticReportListSchema
 >;
+/** Likewise, for both safety worklists. */
 export type FlaggedResultListResponse = z.infer<typeof flaggedResultListSchema>;

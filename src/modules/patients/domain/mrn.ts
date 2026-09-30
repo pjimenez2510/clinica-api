@@ -18,6 +18,11 @@
 export const MRN_PREFIX = 'HC';
 const MRN_DIGITS = 10;
 
+/**
+ * PA-001. The MRN for one value of `patient_mrn_seq`. It refuses a sequence
+ * value that cannot be real rather than print a number no other chart could
+ * be told apart from, or one the twelve-character column would not hold.
+ */
 export function formatMrn(sequence: number): string {
   if (!Number.isInteger(sequence) || sequence < 1) {
     throw new RangeError(

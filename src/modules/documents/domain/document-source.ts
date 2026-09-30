@@ -185,6 +185,7 @@ export type DocumentSubject =
   | { kind: 'MEDICAL_CERTIFICATE'; data: CertificatePrintData }
   | { kind: 'INVOICE_RIDE'; data: InvoicePrintData };
 
+/** One subject, looked up within the caller's own site scope (DOC-012). */
 export interface SubjectQuery {
   kind: DocumentKind;
   subjectId: string;

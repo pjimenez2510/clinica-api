@@ -499,24 +499,26 @@ export const PERMISSION_CATALOGUE = [
   },
 ] as const satisfies readonly CatalogueEntry[];
 
+/**
+ * The closed union of every permission code: a typo in `@RequirePermission()`
+ * or `can()` does not compile.
+ */
 export type Permission = (typeof PERMISSION_CATALOGUE)[number]['code'];
 
+/**
+ * Every code, for membership tests. A seed wanting «all the permissions» must
+ * use `SEEDABLE_PERMISSIONS` instead — see below.
+ */
 export const PERMISSIONS: readonly Permission[] = PERMISSION_CATALOGUE.map(
   (definition) => definition.code,
 );
 
 /**
- * The ones a person has to grant deliberately. See `explicitGrantOnly`.
- *
- * DERIVED, never written by hand: the marks are the source, and a hand-kept
- * copy would be the second list this exists to avoid.
- */
-/**
  * The two lists below, from the one mark.
  *
- * The predicate is typed as `PermissionDefinition` on purpose: `as const`
- * narrows each entry to its own literal type, where an optional field that is
- * absent does not exist at all, and reading it off the union does not compile.
+ * The predicate is typed as `CatalogueEntry` on purpose: `as const` narrows
+ * each entry to its own literal type, where an optional field that is absent
+ * does not exist at all, and reading it off the union does not compile.
  */
 const marked = (wanted: boolean): readonly Permission[] =>
   PERMISSION_CATALOGUE.filter(
@@ -524,6 +526,12 @@ const marked = (wanted: boolean): readonly Permission[] =>
       Boolean(definition.explicitGrantOnly) === wanted,
   ).map((definition) => definition.code);
 
+/**
+ * The ones a person has to grant deliberately. See `explicitGrantOnly`.
+ *
+ * DERIVED, never written by hand: the marks are the source, and a hand-kept
+ * copy would be the second list this exists to avoid.
+ */
 export const EXPLICIT_GRANT_ONLY_PERMISSIONS: readonly Permission[] =
   marked(true);
 

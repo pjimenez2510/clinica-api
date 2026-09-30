@@ -10,6 +10,11 @@ import { configureApp } from './bootstrap';
 import { enableBigIntSerialisation } from './shared/bigint-json';
 import type { Env } from './shared/config/env.schema';
 
+/**
+ * Process entry point: build the application, apply `configureApp`, listen.
+ * Everything a test also needs lives in `configureApp` (see `bootstrap.ts`), so
+ * this function holds only what a test must not do — bind a port.
+ */
 async function bootstrap(): Promise<void> {
   // Before anything can serialise a response: Prisma returns BigInt for
   // bigserial ids and JSON.stringify throws on them.

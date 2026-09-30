@@ -52,6 +52,7 @@ export interface StoredDocument extends DocumentRenderSummary {
   content: Buffer;
 }
 
+/** One artefact by id, within the caller's site scope (DOC-012). */
 export interface RenderQuery {
   renderId: string;
   sites: SiteScopeFilter;
@@ -108,6 +109,10 @@ export interface DisclosureRecord {
   userAgent?: string;
 }
 
+/**
+ * Storage for artefacts, template versions and images. There is no method that
+ * updates or deletes an artefact, and there never will be (DOC-011).
+ */
 export interface DocumentRepository {
   /**
    * DOC-002, DOC-091. Writes the artefact AND its disclosure, atomically.
@@ -154,6 +159,7 @@ export interface DocumentRepository {
    */
   findCurrentTemplate(kind: DocumentKind): Promise<DocumentTemplate | null>;
 
+  /** DOC-030. Every version of every kind. */
   listTemplates(): Promise<readonly DocumentTemplate[]>;
 
   /** DOC-030. Publishes the next version of a kind, whatever number that is. */

@@ -159,6 +159,10 @@ export interface CancelOrderItem {
   sites: SiteScopeFilter;
 }
 
+/**
+ * The port for orders and their lines. Every read and write takes the caller's
+ * site scope (ORD-090).
+ */
 export interface ServiceOrderRepository {
   /**
    * ORD-001 to ORD-006. Writes one order and its lines.

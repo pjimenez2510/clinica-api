@@ -47,6 +47,11 @@ function calendarDate(date: Date): string {
   return `${day}/${month}/${year}`;
 }
 
+/**
+ * DOC-071. The header repeated on every page: the establishment's name always,
+ * and RUC, address and phone only when the template's switches ask for them
+ * (DOC-034).
+ */
 function headerOf(
   context: DocumentContext,
   template: DocumentTemplate,
@@ -71,6 +76,10 @@ function headerOf(
   };
 }
 
+/**
+ * The patient's block: name, identifying document when there is one, and age —
+ * «—» when nobody recorded it.
+ */
 function patientBlock(patient: PatientIdentity): Block {
   const entries: LabelledValue[] = [
     { label: 'Apellidos y nombres', value: patient.fullName },
@@ -85,6 +94,10 @@ function patientBlock(patient: PatientIdentity): Block {
   return { kind: 'fields', columns: 2, entries };
 }
 
+/**
+ * Art. 5.d. The prescriber's name and ACESS registration, printed as «—» when
+ * missing so the gap is visible.
+ */
 function prescriberBlock(prescriber: PractitionerIdentity): Block {
   return {
     kind: 'fields',

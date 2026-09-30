@@ -192,12 +192,14 @@ export class PricingService {
     Ruc.create(ruc);
   }
 
+  /** The payer, or `PayerNotFoundError`. */
   private async requirePayer(payerId: string): Promise<PayerView> {
     const payer = await this.catalogue.findPayer(payerId);
     if (!payer) throw new PayerNotFoundError();
     return payer;
   }
 
+  /** BI-040. The payer's one list, or `PriceListNotFoundError`. */
   private async requirePriceList(payerId: string): Promise<PriceListView> {
     const priceList = await this.catalogue.findPriceListOfPayer(payerId);
     if (!priceList) throw new PriceListNotFoundError();

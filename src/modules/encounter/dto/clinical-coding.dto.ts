@@ -92,6 +92,7 @@ export const recordDiagnosisSchema = z.object({
     .max(2000, 'La nota del diagnóstico no puede superar 2000 caracteres')
     .optional(),
 });
+/** Body of POST /encounters/:encounterId/diagnoses. */
 export class RecordDiagnosisDto extends createZodDto(recordDiagnosisSchema) {}
 
 /**
@@ -126,6 +127,7 @@ export const recordProcedureSchema = z.object({
     .max(2000, 'La nota del procedimiento no puede superar 2000 caracteres')
     .optional(),
 });
+/** Body of POST /encounters/:encounterId/procedures. */
 export class RecordProcedureDto extends createZodDto(recordProcedureSchema) {}
 
 /** One diagnosis as a client reads it. */
@@ -154,11 +156,13 @@ export const diagnosisSchema = z.object({
   note: z.string().nullable(),
   recordedAt: z.iso.datetime(),
 });
+/** Response of recording a diagnosis. */
 export class DiagnosisDto extends createZodDto(diagnosisSchema) {}
 
 export const diagnosisListSchema = z.object({
   items: z.array(diagnosisSchema),
 });
+/** Response of GET /encounters/:encounterId/diagnoses. */
 export class DiagnosisListDto extends createZodDto(diagnosisListSchema) {}
 
 /** One procedure as a client reads it. NO AMOUNT (EN-051). */
@@ -173,13 +177,16 @@ export const procedureSchema = z.object({
   performedAt: z.iso.datetime(),
   note: z.string().nullable(),
 });
+/** Response of recording a procedure. */
 export class ProcedureDto extends createZodDto(procedureSchema) {}
 
 export const procedureListSchema = z.object({
   items: z.array(procedureSchema),
 });
+/** Response of GET /encounters/:encounterId/procedures. */
 export class ProcedureListDto extends createZodDto(procedureListSchema) {}
 
+/** Response types the controller returns, inferred from the schemas Swagger publishes. */
 export type DiagnosisResponse = z.infer<typeof diagnosisSchema>;
 export type DiagnosisListResponse = z.infer<typeof diagnosisListSchema>;
 export type ProcedureResponse = z.infer<typeof procedureSchema>;

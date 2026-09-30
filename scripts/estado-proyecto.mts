@@ -61,6 +61,7 @@ const TEST_TITLE =
 const ENDPOINT = /^\s+"(\/api\/[^"]+)"/gm;
 const OUTCOME_PREFIXES = new Set(['SC']);
 
+/** `statSync` throws on a missing path; this answers `false` instead. */
 function exists(path: string): boolean {
   try {
     statSync(path);
@@ -70,6 +71,10 @@ function exists(path: string): boolean {
   }
 }
 
+/**
+ * Every file ending in `ext` under `dir`, recursively. Skips `.nuxt` as well
+ * as `node_modules` and `dist`, because it also walks `clinica-web`.
+ */
 function walk(dir: string, ext: string): string[] {
   if (!exists(dir)) return [];
   let found: string[] = [];
@@ -102,6 +107,7 @@ function testedIn(roots: string[]): Set<string> {
   return tested;
 }
 
+/** The same expansion as `expand` in `estado.mts`: a range yields only the ids actually declared. */
 function expand(text: string, declared: Set<string>): string[] {
   const ids = new Set<string>();
   let rest = text;
@@ -126,6 +132,7 @@ const exposed = new Set(
     .filter(Boolean),
 );
 
+/** A four-cell progress bar; dots only when there is nothing to count. */
 const bar = (done: number, total: number): string =>
   total === 0
     ? '····'

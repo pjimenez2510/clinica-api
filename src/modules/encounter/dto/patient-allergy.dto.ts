@@ -77,6 +77,7 @@ export const recordAllergySchema = z.object({
     .optional(),
   criticality: ALLERGY_CRITICALITY,
 });
+/** Body of POST /patients/:patientId/allergies. */
 export class RecordAllergyDto extends createZodDto(recordAllergySchema) {}
 
 /**
@@ -97,6 +98,7 @@ export const refuteAllergySchema = z.object({
     .min(1, 'Escriba por qué se descarta la alergia')
     .max(2000, 'El motivo no puede superar 2000 caracteres'),
 });
+/** Body of POST /patients/:patientId/allergies/:allergyId/refute. */
 export class RefuteAllergyDto extends createZodDto(refuteAllergySchema) {}
 
 /**
@@ -122,6 +124,7 @@ export const activeAllergySchema = z.object({
   criticality: ALLERGY_CRITICALITY,
   recordedAt: z.iso.datetime(),
 });
+/** No route returns it alone: it travels inside the attention detail and the chart summary. */
 export class ActiveAllergyDto extends createZodDto(activeAllergySchema) {}
 
 /** EN-082. The same allergy in the listing, where the refuted ones live too. */
@@ -130,6 +133,7 @@ export const allergySchema = activeAllergySchema.extend({
   refutedAt: z.iso.datetime().nullable(),
   refutedNotes: z.string().nullable(),
 });
+/** Response of recording and of refuting an allergy. */
 export class AllergyDto extends createZodDto(allergySchema) {}
 
 /**
@@ -161,6 +165,7 @@ export const noKnownAllergiesSchema = z.object({
   assertedByName: z.string(),
   assertedAt: z.iso.datetime(),
 });
+/** Response of POST /patients/:patientId/allergies/none-known. */
 export class NoKnownAllergiesDto extends createZodDto(noKnownAllergiesSchema) {}
 
 /**
@@ -195,8 +200,10 @@ export const allergyListSchema = z.object({
   /** EN-087. `null` es «no se preguntó», nunca «no tiene». */
   noKnownAllergies: noKnownAllergiesSchema.nullable(),
 });
+/** Response of GET /patients/:patientId/allergies. */
 export class AllergyListDto extends createZodDto(allergyListSchema) {}
 
+/** Response types inferred from the schemas; `ActiveAllergyResponse` is what `active-allergy.mapper.ts` returns. */
 export type ActiveAllergyResponse = z.infer<typeof activeAllergySchema>;
 export type NoKnownAllergiesResponse = z.infer<typeof noKnownAllergiesSchema>;
 export type AllergyResponse = z.infer<typeof allergySchema>;

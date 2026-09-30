@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import { formatMrn, isMrn, MRN_PREFIX } from './mrn';
 
+/**
+ * The MRN format of `mrn.ts` (PA-001): fixed width, recognised by `isMrn`, and
+ * refused rather than truncated or invented. Pure domain unit; the titles cite
+ * no requirement ID.
+ */
+
 describe('the medical record number', () => {
   it('pads to a fixed width so every number reads the same', () => {
     // Fixed width is not cosmetic: these are read aloud over the phone and off

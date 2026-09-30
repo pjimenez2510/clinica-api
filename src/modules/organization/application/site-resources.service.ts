@@ -167,6 +167,10 @@ export class SiteResourcesService {
     await this.recordMutation('UPDATE', id, requester);
   }
 
+  /**
+   * Asked BEFORE writing, so a wrong site in the URL answers 404 instead of the
+   * foreign key's 422 — see `SiteResourcesRepository.siteExists`.
+   */
   private async requireSite(siteId: string): Promise<void> {
     const exists = await this.repository.siteExists(siteId);
     if (!exists) throw new SiteNotFoundError();

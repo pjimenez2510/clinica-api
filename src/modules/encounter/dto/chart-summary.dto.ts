@@ -146,7 +146,9 @@ export const chartSummarySchema = z.object({
    */
   totalEncounters: z.number().int(),
 });
+/** Response of GET /encounters/:encounterId/chart-summary. */
 export class ChartSummaryDto extends createZodDto(chartSummarySchema) {}
 
+/** What the controller returns, and the type of one `previousEncounters` entry, inferred from the schemas. Nothing outside this file imports the second today. */
 export type ChartSummaryResponse = z.infer<typeof chartSummarySchema>;
 export type PreviousEncounterResponse = z.infer<typeof previousEncounterSchema>;

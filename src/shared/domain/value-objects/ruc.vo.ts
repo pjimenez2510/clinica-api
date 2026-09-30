@@ -1,6 +1,10 @@
 import { ValidationError } from '../errors/domain-error';
 import { Cedula } from './cedula.vo';
 
+/**
+ * `INVALID_RUC` (OR-008). Carries the reason, never the number, and a field
+ * error the form can place.
+ */
 export class InvalidRucError extends ValidationError {
   readonly code = 'INVALID_RUC';
   override readonly userTitle =
@@ -70,6 +74,11 @@ export class Ruc {
 
   private constructor(private readonly value: string) {}
 
+  /**
+   * The only way to obtain a `Ruc`: trims, then validates length, province,
+   * establishment code, kind and check digit, throwing `InvalidRucError` on the
+   * first failure.
+   */
   static create(input: string): Ruc {
     const cleaned = (input ?? '').trim();
 
@@ -146,10 +155,15 @@ export class Ruc {
     }
   }
 
+  /** The two-digit province code the number starts with. */
   get province(): number {
     return Number.parseInt(this.value.slice(0, 2), 10);
   }
 
+  /**
+   * Decided by the third digit: 6 public sector, 9 private company, otherwise a
+   * natural person (`create` refused every other digit).
+   */
   get kind(): RucKind {
     const thirdDigit = Number.parseInt(this.value.charAt(2), 10);
     if (thirdDigit === Ruc.PUBLIC_SECTOR_DIGIT) return 'PUBLIC_SECTOR';
@@ -168,10 +182,15 @@ export class Ruc {
       : this.value.slice(10);
   }
 
+  /**
+   * The full thirteen digits, trimmed. For a natural person the first ten are
+   * their cedula: treat it with the same care.
+   */
   toString(): string {
     return this.value;
   }
 
+  /** Equal by value: two instances of the same number are the same RUC. */
   equals(other: Ruc): boolean {
     return this.value === other.value;
   }

@@ -48,6 +48,11 @@ const ID = /\b[A-Z]{2,4}-\d{3}\b/g;
 const TEST_TITLE =
   /\b(?:it|test|describe)(?:\.\w+)*\s*\(\s*(['"`])([^'"`]+)\1/g;
 
+/**
+ * The area a REQ is grouped under, by the number bands of the sections of
+ * REQUISITOS.md. Only the number is read: a REQ numbered outside its
+ * section's band is grouped by its number, not by where it is written.
+ */
 const AREA_OF = (n: number): string =>
   n < 20
     ? 'Historia clínica'
@@ -79,6 +84,7 @@ const AREAS = [
   'No funcionales',
 ];
 
+/** `statSync` throws on a missing path; this answers `false` instead. */
 function exists(path: string): boolean {
   try {
     statSync(path);
@@ -88,6 +94,7 @@ function exists(path: string): boolean {
   }
 }
 
+/** Every `.ts` file under `dir`, recursively, skipping `node_modules` and `dist`. */
 function walkTypeScript(dir: string): string[] {
   let found: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -146,6 +153,7 @@ const source = readFileSync(REQUIREMENTS_FILE, 'utf8');
 const moduleRequirements = readModuleRequirements();
 const tested = readTestedIds();
 
+/** One row of the REQ table: its id, its area and the module requirements it names as refinements. */
 interface Requirement {
   id: string;
   area: string;

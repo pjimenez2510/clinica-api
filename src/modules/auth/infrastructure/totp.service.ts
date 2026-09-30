@@ -7,6 +7,10 @@ import { Secret, TOTP } from 'otpauth';
 import type { Env } from '../../../shared/config/env.schema';
 import { UnauthorizedError } from '../../../shared/domain/errors/domain-error';
 
+/**
+ * Thrown for a wrong code and for a replayed step alike: the response does not
+ * say which.
+ */
 export class InvalidTotpCodeError extends UnauthorizedError {
   readonly code = 'INVALID_TOTP_CODE';
 
@@ -15,6 +19,11 @@ export class InvalidTotpCodeError extends UnauthorizedError {
   }
 }
 
+/**
+ * `ISSUER` is only the label the authenticator app shows. `DIGITS` and
+ * `PERIOD_SECONDS` travel in the enrolment URI and are then fixed on the
+ * person's phone: changing them here breaks every existing enrolment.
+ */
 const ISSUER = 'Clinica';
 const DIGITS = 6;
 const PERIOD_SECONDS = 30;
@@ -28,10 +37,19 @@ const PERIOD_SECONDS = 30;
  */
 const WINDOW = 1;
 
+/**
+ * Layout of the stored secret: `iv | authTag | ciphertext`. The tag is what
+ * makes a tampered ciphertext fail instead of decrypting to garbage.
+ */
 const ALGORITHM = 'aes-256-gcm';
 const IV_BYTES = 12;
 const AUTH_TAG_BYTES = 16;
 
+/**
+ * AU-005. TOTP enrolment and verification, with the secret encrypted in the
+ * application under `MFA_ENCRYPTION_KEY` (ADR-008 §3). The key length is
+ * checked at construction, so a bad key stops the boot.
+ */
 @Injectable()
 export class TotpService {
   private readonly encryptionKey: Buffer;
@@ -101,6 +119,9 @@ export class TotpService {
     return usedStep;
   }
 
+  /**
+   * Issuer and label are what the authenticator app displays next to the code.
+   */
   private build(secret: Secret, email: string): TOTP {
     return new TOTP({
       issuer: ISSUER,
@@ -130,6 +151,10 @@ export class TotpService {
     );
   }
 
+  /**
+   * Inverse of `encrypt`. `final()` throws when the tag does not match, so a
+   * tampered or wrongly-keyed secret never yields a code.
+   */
   private decrypt(payload: string): string {
     const buffer = Buffer.from(payload, 'base64');
     const iv = buffer.subarray(0, IV_BYTES);

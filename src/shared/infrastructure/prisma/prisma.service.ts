@@ -40,11 +40,13 @@ export class PrismaService
     });
   }
 
+  /** Connects when the module starts, before the first request needs it. */
   async onModuleInit(): Promise<void> {
     await this.$connect();
     this.logger.log('Conectado a PostgreSQL');
   }
 
+  /** Releases the connections when the application shuts down. */
   async onModuleDestroy(): Promise<void> {
     await this.$disconnect();
   }

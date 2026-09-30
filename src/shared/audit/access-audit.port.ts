@@ -47,6 +47,11 @@ export type AuditAction =
  */
 export type AuditSnapshot = Readonly<Record<string, unknown>>;
 
+/**
+ * One row of `access_audit`, the append-only trail the LOPDP obliges us to
+ * keep. Carries identifiers only: never a cedula, and never a clinical snapshot
+ * (see `before`).
+ */
 export interface AccessAuditEntry {
   /** Who. The internal user id, NEVER their cedula. */
   userId: string | null;
@@ -84,6 +89,10 @@ export interface AccessAuditEntry {
   after?: AuditSnapshot;
 }
 
+/**
+ * The write side of the trail. Its failure policy — log, never throw — is the
+ * contract; see `record`.
+ */
 export interface AccessAuditRecorder {
   /**
    * Writes one entry.

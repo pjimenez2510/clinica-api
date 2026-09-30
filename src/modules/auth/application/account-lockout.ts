@@ -42,9 +42,17 @@ export const MAX_FAILED_ATTEMPTS = 5;
  * to brute-force than the first.
  */
 export const MAX_MFA_ATTEMPTS = 3;
+/**
+ * Base and ceiling of the backoff in `registerFailedAttempt`: 60 s at the
+ * threshold, doubling with each further failure, capped at 15 minutes.
+ */
 const BASE_LOCK_SECONDS = 60;
 const MAX_LOCK_SECONDS = 15 * 60;
 
+/**
+ * See the header above: one lockout shared by the password, the second factor
+ * at sign-in, and the proof AU-037 demands before a re-enrolment.
+ */
 @Injectable()
 export class AccountLockout {
   constructor(

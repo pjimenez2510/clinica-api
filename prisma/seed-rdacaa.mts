@@ -302,6 +302,7 @@ const CATALOGOS: readonly CatalogoPlano[] = [
   },
 ];
 
+/** One data line of a `codigo;nombre` file; the code stays a string (see `leer`). */
 interface Concepto {
   codigo: string;
   nombre: string;
@@ -371,6 +372,12 @@ function conEntorno(catalogo: CatalogoPlano): CatalogoPlano {
   };
 }
 
+/**
+ * Imports one flat catalogue as a new release. Idempotent on (system, version):
+ * the same file again is a no-op, a different file under the same version is
+ * refused. A new release retires the concepts in force instead of deleting
+ * them, and refuses to run when one of them starts on or after its cut-off.
+ */
 async function sembrarUno(
   prisma: PrismaClient,
   definicion: CatalogoPlano,
@@ -548,6 +555,7 @@ export async function seedRdacaa(prisma: PrismaClient): Promise<void> {
   }
 }
 
+/** Entry point of `pnpm db:seed:rdacaa`. Reference data from the ministry's instructivo, not demo data. */
 async function main(): Promise<void> {
   const prisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),

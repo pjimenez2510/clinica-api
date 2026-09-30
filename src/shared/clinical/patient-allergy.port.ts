@@ -81,6 +81,10 @@ export interface ActiveAllergy {
   recordedAt: Date;
 }
 
+/**
+ * Read-only access to the allergies a prescriber must see, for modules that do
+ * not own `patient_allergy` (EN-081, EN-084).
+ */
 export interface ActiveAllergyReader {
   /**
    * EN-081, EN-084. The chart's unrefuted allergies, worst first.

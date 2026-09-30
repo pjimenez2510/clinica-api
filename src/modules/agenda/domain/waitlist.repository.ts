@@ -80,6 +80,7 @@ export interface WaitlistEntryView {
   createdAt: Date;
 }
 
+/** AG-071. An entry is always looked up inside a site, never by id alone. */
 export interface WaitlistEntryQuery {
   siteId: string;
   entryId: string;
@@ -108,6 +109,7 @@ export interface WaitlistConversion {
   appointmentId: string;
 }
 
+// The port described at the top of this file.
 export interface WaitlistRepository {
   /**
    * AG-060. Writes the enrolment.

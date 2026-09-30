@@ -39,6 +39,10 @@ import {
  * committed. Only the base can arbitrate the last one.
  */
 
+/**
+ * One selection for every read. The `_count` is restricted to unrevoked
+ * grants, so `liveGrants` says who holds the role NOW, not who ever did.
+ */
 const ROLE_SELECT = {
   id: true,
   code: true,
@@ -49,6 +53,7 @@ const ROLE_SELECT = {
   _count: { select: { grants: { where: { revokedAt: null } } } },
 } satisfies Prisma.RoleSelect;
 
+/** The row `ROLE_SELECT` produces, with Prisma's `_count` still attached. */
 interface RoleRow {
   id: string;
   code: string;
@@ -59,6 +64,10 @@ interface RoleRow {
   _count: { grants: number };
 }
 
+/**
+ * `_count.grants` becomes `liveGrants`, the number AU-031 decides deletability
+ * with.
+ */
 function toView(row: RoleRow): RoleView {
   return {
     id: row.id,
@@ -71,6 +80,10 @@ function toView(row: RoleRow): RoleView {
   };
 }
 
+/**
+ * Prisma adapter for `RoleAdminRepositoryPort`. See the header for which
+ * PostgreSQL refusal becomes which domain error.
+ */
 @Injectable()
 export class PrismaRoleAdminRepository implements RoleAdminRepositoryPort {
   constructor(private readonly prisma: PrismaService) {}
@@ -85,6 +98,7 @@ export class PrismaRoleAdminRepository implements RoleAdminRepositoryPort {
     return rows.map(toView);
   }
 
+  /** `null` for an unknown id; the service decides the refusal. */
   async findById(id: string): Promise<RoleView | null> {
     const row = await this.prisma.role.findUnique({
       where: { id },
@@ -144,6 +158,10 @@ export class PrismaRoleAdminRepository implements RoleAdminRepositoryPort {
     }
   }
 
+  /**
+   * The codes as stored, sorted so the screen and the audit trail list them in
+   * a stable order.
+   */
   async listPermissions(roleId: string): Promise<readonly string[]> {
     const rows = await this.prisma.rolePermission.findMany({
       where: { roleId },
@@ -227,6 +245,10 @@ export class PrismaRoleAdminRepository implements RoleAdminRepositoryPort {
     return rows.map(toView);
   }
 
+  /**
+   * Deduplicated: the same role granted at two sites is still one role for
+   * AU-024's question.
+   */
   async liveRoleIdsOf(userId: string): Promise<readonly string[]> {
     const rows = await this.prisma.userRoleGrant.findMany({
       where: { userId, revokedAt: null },

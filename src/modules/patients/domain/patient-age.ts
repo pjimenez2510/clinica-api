@@ -35,6 +35,10 @@ import { ageInYearsOn } from '../../../shared/domain/priority-level';
  */
 export const NEONATE_MAX_AGE_DAYS = 29;
 
+/**
+ * PA-030. The age in the units the RDACAA and a dose table read: years, plus
+ * exactly one finer unit while the patient is young enough for it to matter.
+ */
 export interface PatientAge {
   /** Completed years, on the calendar. */
   years: number;

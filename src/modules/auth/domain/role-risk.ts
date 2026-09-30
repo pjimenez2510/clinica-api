@@ -34,6 +34,7 @@ const CLINICAL_RECORD_PERMISSIONS: readonly Permission[] = [
   'prescription:write',
 ];
 
+/** AU-024's permission, and one half of AU-034's pair. */
 const ADMINISTERS_USERS: Permission = 'user:manage';
 
 /**
@@ -43,6 +44,10 @@ const ADMINISTERS_USERS: Permission = 'user:manage';
 const RECORD_AND_ADMIN_WARNING =
   'Este rol administra usuarios y además accede a la historia clínica. Podría concederse a sí mismo el acceso y retirarlo después, y es la separación que una auditoría de la SPDP pregunta primero. Puede guardarlo igualmente si su clínica lo necesita.';
 
+/**
+ * Prefix match OR the explicit list: see `CLINICAL_RECORD_PERMISSIONS` for the
+ * permissions the prefix misses.
+ */
 function holdsAnyClinicalRecord(permissions: readonly string[]): boolean {
   return permissions.some(
     (code) =>

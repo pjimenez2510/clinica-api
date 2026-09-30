@@ -59,6 +59,7 @@ export const BOOKING_CHANNELS = [
   'REFERRAL',
 ] as const;
 
+/** Derived from the tuple above, so the type and the runtime check cannot drift. */
 export type BookingChannel = (typeof BOOKING_CHANNELS)[number];
 
 /** AG-034: returns the channel or refuses. No default, on purpose. */
@@ -93,6 +94,7 @@ export function checkRoomBelongsToSite(
   }
 }
 
+/** The interval being judged: who, where, and from when to when. */
 export interface BookingRequest {
   practitionerId: string;
   siteId: string;
@@ -100,6 +102,7 @@ export interface BookingRequest {
   endsAt: Date;
 }
 
+/** Everything `checkBookingFitsSchedule` needs, resolved by the caller beforehand. */
 export interface BookingScheduleCheck {
   request: BookingRequest;
   rules: readonly ScheduleRule[];
@@ -540,6 +543,7 @@ export function resolveBookingParameters(
   };
 }
 
+/** AG-031 to AG-033. What `checkBookingWindow` judges, with the clock passed in. */
 export interface BookingWindowCheck {
   startsAt: Date;
   /** The current instant, INJECTED. The domain owns no clock. */

@@ -91,6 +91,7 @@ export const MEDICATION_ROUTES = {
   INHALATION: 'Vía inhalatoria',
 } as const;
 
+/** PR-029. One of the codes of `MEDICATION_ROUTES`. */
 export type MedicationRoute = keyof typeof MEDICATION_ROUTES;
 
 /** The routes, as a list, for a schema that has to enumerate them. */

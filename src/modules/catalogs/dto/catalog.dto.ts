@@ -75,12 +75,14 @@ const sistemaEnRuta = z
   .pipe(catalogSystemSchema);
 
 export const catalogPathSchema = z.object({ system: sistemaEnRuta });
+/** Route parameters of GET /catalogs/:system and GET /catalogs/:system/roots. */
 export class CatalogPathDto extends createZodDto(catalogPathSchema) {}
 
 export const catalogCodePathSchema = z.object({
   system: sistemaEnRuta,
   code: z.string().min(1).max(20),
 });
+/** Route parameters of GET /catalogs/:system/:code. */
 export class CatalogCodePathDto extends createZodDto(catalogCodePathSchema) {}
 
 export const searchCatalogSchema = z.object({
@@ -119,6 +121,7 @@ export const searchCatalogSchema = z.object({
   parentId: z.uuid().optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
+/** Query of GET /catalogs/:system. */
 export class SearchCatalogDto extends createZodDto(searchCatalogSchema) {}
 
 /**
@@ -146,6 +149,7 @@ export const browseCatalogSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(500).default(100),
 });
+/** Query of GET /catalogs/:system/roots and GET /catalogs/concepts/:id/children. */
 export class BrowseCatalogDto extends createZodDto(browseCatalogSchema) {}
 
 /**
@@ -160,6 +164,7 @@ export class BrowseCatalogDto extends createZodDto(browseCatalogSchema) {}
 export const resolveCatalogSchema = z.object({
   on: z.iso.date().optional(),
 });
+/** Query of GET /catalogs/:system/:code. */
 export class ResolveCatalogDto extends createZodDto(resolveCatalogSchema) {}
 
 export const catalogConceptSchema = z.object({
@@ -193,11 +198,13 @@ export const catalogConceptSchema = z.object({
    */
   selectable: z.boolean(),
 });
+/** One concept; no route returns it alone, it is the row of every list below. */
 export class CatalogConceptDto extends createZodDto(catalogConceptSchema) {}
 
 export const catalogSearchResultSchema = z.object({
   items: z.array(catalogConceptSchema).readonly(),
 });
+/** Response of GET /catalogs/:system: at most `limit` rows and no total. */
 export class CatalogSearchResultDto extends createZodDto(
   catalogSearchResultSchema,
 ) {}
@@ -206,6 +213,7 @@ export const catalogConceptDetailSchema = catalogConceptSchema.extend({
   /** De capítulo a padre inmediato, para situar el código en su rama. */
   ancestors: z.array(catalogConceptSchema).readonly(),
 });
+/** Response of GET /catalogs/concepts/:id and GET /catalogs/:system/:code. */
 export class CatalogConceptDetailDto extends createZodDto(
   catalogConceptDetailSchema,
 ) {}
@@ -224,6 +232,7 @@ export const catalogPageSchema = z.object({
   page: z.number().int().positive(),
   pageSize: z.number().int().positive(),
 });
+/** Response of the two tree-browsing routes. */
 export class CatalogPageDto extends createZodDto(catalogPageSchema) {}
 
 /** Response types inferred from the published schemas; see agenda.dto.ts. */

@@ -72,6 +72,10 @@ export class Principal {
     readonly grants: readonly ResolvedGrant[],
   ) {}
 
+  /**
+   * Whether the permission is held at ANY site. Enough for routes with no site
+   * dimension; everything else must also ask `canAtSite` or `sitesFor`.
+   */
   can(permission: Permission): boolean {
     return this.grants.some((grant) => grant.permissions.includes(permission));
   }
@@ -98,6 +102,10 @@ export class Principal {
     ];
   }
 
+  /**
+   * AU-011. A global grant (`siteId: null`) covers every site; otherwise the
+   * site must be named by a grant holding this permission.
+   */
   canAtSite(permission: Permission, siteId: string): boolean {
     const scope = this.sitesFor(permission);
     return scope === ALL_SITES || scope.includes(siteId);

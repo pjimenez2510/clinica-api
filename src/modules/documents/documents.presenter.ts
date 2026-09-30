@@ -22,6 +22,10 @@ import type {
  * calendar date.
  */
 
+/**
+ * An artefact's metadata — never its `content` — with the issuing instant as an
+ * ISO string (DOC-092).
+ */
 export function toRenderResponse(
   render: DocumentRenderSummary,
 ): DocumentRenderResponse {
@@ -42,6 +46,10 @@ export function toRenderResponse(
   };
 }
 
+/**
+ * One template version, slot by slot (DOC-034), header fields copied rather
+ * than passed through.
+ */
 export function toTemplateResponse(
   template: DocumentTemplate,
 ): DocumentTemplateResponse {
@@ -62,6 +70,9 @@ export function toTemplateResponse(
   };
 }
 
+/**
+ * A stored image's description; the bytes are never part of a JSON response.
+ */
 export function toImageResponse(
   image: StoredImageSummary,
 ): DocumentImageResponse {

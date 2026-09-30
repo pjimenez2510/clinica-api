@@ -51,6 +51,7 @@ import type {
 /** The catalogue an order line has to be invoiced under (ORD-004). */
 const TARIFF = 'TARIFF';
 
+/** One order line with its frozen code and display (ORD-002). */
 const ITEM_SELECT = {
   id: true,
   testCode: true,
@@ -61,6 +62,7 @@ const ITEM_SELECT = {
   createdAt: true,
 } satisfies Prisma.ServiceOrderItemSelect;
 
+/** An order with its lines in the order they were created. */
 const ORDER_SELECT = {
   id: true,
   encounterId: true,
@@ -77,6 +79,7 @@ const ORDER_SELECT = {
   items: { orderBy: { createdAt: 'asc' }, select: ITEM_SELECT },
 } satisfies Prisma.ServiceOrderSelect;
 
+/** The shape `ORDER_SELECT` produces. */
 type OrderRow = Prisma.ServiceOrderGetPayload<{ select: typeof ORDER_SELECT }>;
 
 /** What one statement can say about a tariff concept, in an attention's date. */
@@ -87,6 +90,7 @@ interface ConceptRow {
   in_force: boolean;
 }
 
+/** The `ServiceOrderRepository` adapter. */
 @Injectable()
 export class PrismaServiceOrderRepository implements ServiceOrderRepository {
   constructor(private readonly prisma: PrismaService) {}

@@ -35,6 +35,11 @@ import './pending-constraints';
  * them fails the build instead of silently degrading to 500s.
  */
 
+/**
+ * What the problem-details filter renders for a database refusal. Every field
+ * is written by hand here; nothing is copied from the driver (see the PHI
+ * warning above).
+ */
 export interface DatabaseProblem {
   status: HttpStatus;
   slug: string;
@@ -69,6 +74,7 @@ interface PrismaErrorLike {
  * does not exist yet.
  */
 
+/** The two status families the SQLSTATE table below reuses. */
 const INVALID_DATA = {
   status: HttpStatus.UNPROCESSABLE_ENTITY,
   slug: 'validation',
@@ -229,6 +235,10 @@ const UNAVAILABLE = new Set([
 const IMMUTABILITY_TRIGGER =
   /append-only|never deleted|cannot be modified|is signed/i;
 
+/**
+ * Duck-typed on what every Prisma client error carries — a `P` code of four
+ * digits and a `clientVersion` — so this layer needs no Prisma import.
+ */
 function isPrismaError(
   exception: unknown,
 ): exception is PrismaErrorLike & { code: string } {
@@ -275,6 +285,11 @@ function constraintName(
   )?.[1];
 }
 
+/**
+ * The problem for a Prisma error, or `undefined` when the exception is not one
+ * and the filter must keep looking. Only the SQLSTATE and the constraint name
+ * are read.
+ */
 export function extractDatabaseProblem(
   exception: unknown,
 ): DatabaseProblem | undefined {

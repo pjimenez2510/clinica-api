@@ -168,6 +168,10 @@ export interface CodingQuery {
   sites: SiteScopeFilter;
 }
 
+/**
+ * Block K's port, described at the top of this file. Its questions are about
+ * catalogue concepts, and none of them prices anything.
+ */
 export interface ClinicalCodingRepository {
   /**
    * EN-040 to EN-049. Writes one diagnosis.

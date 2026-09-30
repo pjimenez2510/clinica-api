@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import { extractMiddlewareProblem } from './middleware-problem';
 
+/**
+ * Which errors thrown by Express middleware reach the client with their own
+ * 4xx status, and which fall through to the generic branch. Pure unit against
+ * `http-errors`-shaped objects; the titles cite no requirement ID.
+ */
+
 describe('errors raised by Express middleware', () => {
   it('recognises the body parser rejecting an oversized payload', () => {
     // The real shape, taken from a 2 MB request against the running API. It

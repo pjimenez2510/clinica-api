@@ -251,6 +251,7 @@ export class PractitionerAssignmentsService {
     }
   }
 
+  /** 404 before any assignment is touched, so a write never reaches an unknown practitioner. */
   private async requirePractitioner(practitionerId: string): Promise<void> {
     const practitioner = await this.repository.findPractitioner(practitionerId);
     if (!practitioner) throw new PractitionerNotFoundError();

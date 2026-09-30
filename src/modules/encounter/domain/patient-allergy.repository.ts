@@ -113,6 +113,10 @@ export interface RefuteAllergy {
   now: Date;
 }
 
+/**
+ * EN-080 to EN-083. Writing, refuting and the full list including refuted
+ * allergies; the active list is the shared reader's (EN-084), not this port's.
+ */
 export interface PatientAllergyRepository {
   /**
    * EN-080, EN-083. Writes one allergy.

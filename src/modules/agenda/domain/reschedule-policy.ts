@@ -22,6 +22,7 @@ import {
 import type { StatusChange, TransitionRead } from './agenda.repository';
 import { assertTransition, effectsOf } from './status-machine';
 
+/** AG-050. What `planReschedule` needs to judge the original entry. */
 export interface RescheduleDecision {
   /** The entry as it is inside the adapter's transaction. */
   entry: TransitionRead;

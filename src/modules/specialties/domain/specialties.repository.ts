@@ -30,6 +30,11 @@ export interface ServiceTypeView {
   active: boolean;
 }
 
+/**
+ * Specialties and their service types with their base durations (SP-020).
+ * Duplicates and references are arbitrated by the database, never checked
+ * first; see the header.
+ */
 export interface SpecialtiesRepository {
   /** SP-007: `includeInactive` decides whether deactivated rows travel. */
   listSpecialties(includeInactive: boolean): Promise<readonly SpecialtyView[]>;

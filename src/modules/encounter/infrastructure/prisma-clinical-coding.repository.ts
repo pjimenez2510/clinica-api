@@ -80,6 +80,7 @@ const DIAGNOSIS_SELECT = {
   recordedAt: true,
 } satisfies Prisma.EncounterDiagnosisSelect;
 
+/** The row `DIAGNOSIS_SELECT` yields, derived from it so the two cannot drift. */
 type DiagnosisRow = Prisma.EncounterDiagnosisGetPayload<{
   select: typeof DIAGNOSIS_SELECT;
 }>;
@@ -100,6 +101,7 @@ const PROCEDURE_SELECT = {
   note: true,
 } satisfies Prisma.EncounterProcedureSelect;
 
+/** The row `PROCEDURE_SELECT` yields — without `tariffAmount`, because the select omits it. */
 type ProcedureRow = Prisma.EncounterProcedureGetPayload<{
   select: typeof PROCEDURE_SELECT;
 }>;
@@ -112,6 +114,10 @@ interface ConceptRow {
   in_force: boolean;
 }
 
+/**
+ * Block K over PostgreSQL. Each write checks scope and catalogue inside its
+ * own transaction, and `tariff_amount` is never read (EN-051).
+ */
 @Injectable()
 export class PrismaClinicalCodingRepository implements ClinicalCodingRepository {
   constructor(private readonly prisma: PrismaService) {}

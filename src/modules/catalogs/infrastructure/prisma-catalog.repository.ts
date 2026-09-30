@@ -150,6 +150,11 @@ const CONCEPT_SOURCE = Prisma.sql`
   ) capitulo ON TRUE
 `;
 
+/**
+ * Raw SQL adapter for `CatalogRepository`: every query is built from
+ * `CONCEPT_COLUMNS` and `CONCEPT_SOURCE`, so each one returns the same
+ * `FilaConcepto` shape with the chapter's name resolved.
+ */
 @Injectable()
 export class PrismaCatalogRepository implements CatalogRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -347,6 +352,11 @@ export class PrismaCatalogRepository implements CatalogRepository {
     };
   }
 
+  /**
+   * The typed code is stripped of dots and spaces and upper-cased, and the
+   * stored one of dots, so `J18.9` and `j189` find the same concept.
+   * `valid_period @> on` is the validity at that date.
+   */
   async findByCode(
     systemCode: string,
     code: string,
@@ -447,6 +457,10 @@ export class PrismaCatalogRepository implements CatalogRepository {
   }
 }
 
+/**
+ * The single conversion from row to domain concept; see the field comments for
+ * `chapterDisplay` and `selectable`.
+ */
 function toConcept(fila: FilaConcepto): CatalogConcept {
   return {
     id: fila.id,

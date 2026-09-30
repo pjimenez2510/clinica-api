@@ -39,6 +39,10 @@ declare const CLINICAL_DATE_BRAND: unique symbol;
  */
 export type ClinicalDate = string & { readonly [CLINICAL_DATE_BRAND]: true };
 
+/**
+ * Formats and unit constants. The patterns check shape only;
+ * `parseClinicalDate` and `WallClockTime.of` check the calendar and the ranges.
+ */
 const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const TIME_PATTERN = /^(\d{2}):(\d{2})(?::(\d{2}))?$/;
 const MINUTES_PER_DAY = 24 * 60;
@@ -89,6 +93,10 @@ export function zoneOffsetMinutes(instant: Date, timeZone: string): number {
     second: '2-digit',
   }).formatToParts(instant);
 
+  /**
+   * A numeric part of the formatted instant. `NaN` when the part is missing,
+   * which propagates into the result instead of reading as zero.
+   */
   const field = (type: Intl.DateTimeFormatPartTypes): number => {
     const found = parts.find((part) => part.type === type)?.value;
     return found === undefined ? Number.NaN : Number.parseInt(found, 10);
@@ -269,6 +277,7 @@ export class WallClockTime {
     Object.freeze(this);
   }
 
+  /** `HH:MM` or `HH:MM:SS`; the ranges are checked by `of`. */
   static parse(value: string): WallClockTime {
     const match = TIME_PATTERN.exec(value);
     if (!match) {
@@ -282,6 +291,7 @@ export class WallClockTime {
     );
   }
 
+  /** Range-checks every field before building; `24:00` is refused. */
   static of(hour: number, minute: number, second = 0): WallClockTime {
     const valid =
       Number.isInteger(hour) &&
@@ -302,6 +312,10 @@ export class WallClockTime {
     return new WallClockTime(hour, minute, second);
   }
 
+  /**
+   * A whole minute inside the day; anything that would land on or past midnight
+   * throws.
+   */
   static fromMinutes(minutesFromMidnight: number): WallClockTime {
     if (
       !Number.isInteger(minutesFromMidnight) ||
@@ -343,6 +357,7 @@ export class WallClockTime {
     );
   }
 
+  /** Seconds are ignored here; `secondsFromMidnight` keeps them. */
   get minutesFromMidnight(): number {
     return this.hour * 60 + this.minute;
   }
@@ -351,10 +366,18 @@ export class WallClockTime {
     return this.minutesFromMidnight * 60 + this.second;
   }
 
+  /**
+   * Seconds are dropped, and passing midnight throws `RangeError` rather than
+   * wrapping into the next day.
+   */
   plusMinutes(minutes: number): WallClockTime {
     return WallClockTime.fromMinutes(this.minutesFromMidnight + minutes);
   }
 
+  /**
+   * Compared to the second, so `09:00:30` is not before `09:00:30` but is after
+   * `09:00`.
+   */
   isBefore(other: WallClockTime): boolean {
     return this.secondsFromMidnight < other.secondsFromMidnight;
   }

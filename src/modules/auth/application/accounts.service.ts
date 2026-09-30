@@ -33,6 +33,11 @@ import { REFRESH_TOKENS, type RefreshTokenPort } from './ports';
 /** The permission whose loss locks the installation (AU-024). */
 const ADMINISTERS_USERS = 'user:manage';
 
+/**
+ * AU-020. No password field: AU-021 forbids the administrator choosing one. The
+ * cedula is optional because reception and billing sign nothing; when present
+ * it is validated by the `Cedula` value object in the DTO.
+ */
 export interface CreateAccountCommand {
   email: string;
   firstName: string;
@@ -40,6 +45,11 @@ export interface CreateAccountCommand {
   cedula?: string | null;
 }
 
+/**
+ * AU-025. No `email`: it is the sign-in identifier and appears in every audit
+ * row this person produced. For `cedula`, `undefined` leaves it alone and
+ * `null` clears it — see `update`.
+ */
 export interface UpdateAccountCommand {
   firstName?: string;
   lastName?: string;
@@ -99,6 +109,10 @@ export class AccountsService {
     return this.accounts.list(filter);
   }
 
+  /**
+   * 404 when the id names no account; never a view of the hash (`AccountView`
+   * has no field for it).
+   */
   async get(id: string): Promise<AccountView> {
     const account = await this.accounts.findById(id);
     if (!account) throw new UserNotFoundError();

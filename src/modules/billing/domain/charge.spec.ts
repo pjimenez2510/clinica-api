@@ -13,6 +13,12 @@ import {
 } from './charge';
 import { Money, Percentage, Quantity } from './money';
 
+/**
+ * The charge as a frozen copy of the price, and the arithmetic of lines and
+ * document totals, in exact `Money`. Pure domain unit, no database; cites
+ * BI-020, BI-025, BI-045, BI-050, BI-052, BI-057, BI-058, BI-074 and BI-083.
+ */
+
 const SERVICE_DATE = parseClinicalDate('2026-05-11');
 
 const resolution = (

@@ -22,10 +22,18 @@ import {
  */
 @Injectable()
 export class CredentialTokenService implements CredentialTokenPort {
+  /**
+   * A fresh token and its hash; the token goes into the e-mail, only the hash
+   * is persisted (AU-021).
+   */
   generate(): { token: string; hash: string } {
     return generateCredentialToken();
   }
 
+  /**
+   * How a presented link is looked up: by the hash, the same one stored at
+   * issue time, never by the token.
+   */
   hash(token: string): string {
     return hashCredentialToken(token);
   }

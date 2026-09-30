@@ -29,6 +29,10 @@ import {
  * indexes, not by a read that was stale before it returned.
  */
 
+/**
+ * The selections are the views: every column the domain shape declares and
+ * nothing else.
+ */
 const SPECIALTY_SELECT = {
   id: true,
   code: true,
@@ -44,6 +48,10 @@ const SERVICE_TYPE_SELECT = {
   active: true,
 } satisfies Prisma.ServiceTypeSelect;
 
+/**
+ * Prisma adapter for `SpecialtiesRepository`; see the header for the refusals
+ * translated here.
+ */
 @Injectable()
 export class PrismaSpecialtiesRepository implements SpecialtiesRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -59,6 +67,7 @@ export class PrismaSpecialtiesRepository implements SpecialtiesRepository {
     });
   }
 
+  /** `null` for an unknown id; the service decides the refusal. */
   async findSpecialty(id: string): Promise<SpecialtyView | null> {
     return this.prisma.specialty.findUnique({
       where: { id },
@@ -81,6 +90,10 @@ export class PrismaSpecialtiesRepository implements SpecialtiesRepository {
     }
   }
 
+  /**
+   * SP-006 answered by the unique indexes on code and name. `null` when the row
+   * is gone.
+   */
   async updateSpecialty(
     id: string,
     patch: { name?: string; active?: boolean },
@@ -109,6 +122,10 @@ export class PrismaSpecialtiesRepository implements SpecialtiesRepository {
     }
   }
 
+  /**
+   * Deactivated types travel only when asked for. Ordered by name so the screen
+   * is stable between requests.
+   */
   async listServiceTypes(
     specialtyId: string,
     includeInactive: boolean,

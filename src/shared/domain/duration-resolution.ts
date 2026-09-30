@@ -18,6 +18,10 @@
  * `clinic-time` took, and for the same reason.
  */
 
+/**
+ * D-010's three sources, most specific first. `null` and absent mean the same:
+ * this source has no opinion.
+ */
 export interface DurationSources {
   /** The practitioner's own exception for this specialty·type, if any. */
   exceptionMinutes?: number | null;

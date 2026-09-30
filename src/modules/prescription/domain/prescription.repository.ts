@@ -287,6 +287,10 @@ export interface PrescriptionRecordSource extends Omit<
   chartId: string;
 }
 
+/**
+ * The port the prescription services depend on; `PrismaPrescriptionRepository`
+ * implements it.
+ */
 export interface PrescriptionRepository {
   /** PR-001, PR-002. The attention within the caller's scope, or `null`. */
   findEncounterForPrescribing(

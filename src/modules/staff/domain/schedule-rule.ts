@@ -138,6 +138,7 @@ export function scheduleRuleProblems(
 export type ScheduleRuleClosure =
   { kind: 'CLOSE'; validTo: ClinicalDate } | { kind: 'DEACTIVATE' };
 
+/** ST-041. The closure above, decided for one rule on one Ecuadorian date. */
 export function closeScheduleRuleOn(
   rule: Pick<ScheduleRuleDraft, 'validFrom' | 'validTo'>,
   on: ClinicalDate,

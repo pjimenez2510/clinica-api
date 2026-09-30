@@ -35,6 +35,10 @@ import type { PriceChange, PriceRow } from './price-list';
 // What the clinic charges for
 // ───────────────────────────────────────────────────────────────────────────
 
+/**
+ * BI-020. One SRI rate with its validity; historical rates (12%, 14%) are rows
+ * whose `validTo` is set, kept so an old invoice stays readable.
+ */
 export interface TaxRateView {
   id: string;
   sriCode: string;
@@ -67,6 +71,11 @@ export interface BillableServiceView {
   visitSequence: VisitSequence | null;
 }
 
+/**
+ * BI-030. Who the price list belongs to — a row, never an enum. `ruc` is
+ * required only for institutional kinds (BI-034); the payer is NOT the invoice
+ * receiver (BI-035).
+ */
 export interface PayerView {
   id: string;
   code: string;
@@ -88,8 +97,14 @@ export const PAYER_KINDS = [
   'PRIVATE_INSURANCE',
   'COMPANY_AGREEMENT',
 ] as const;
+/** One of `PAYER_KINDS`. */
 export type PayerKind = (typeof PAYER_KINDS)[number];
 
+/**
+ * BI-040. `siteId` null means every site, which is the list this delivery
+ * resolves prices from. `publiclyListed` is `price_list.publicly_listed`, the
+ * LOS art. 184 obligation to display the tariff to the public (delivery B5).
+ */
 export interface PriceListView {
   id: string;
   name: string;
@@ -99,6 +114,10 @@ export interface PriceListView {
   active: boolean;
 }
 
+/**
+ * BI-010, BI-013. A new service: the tax rate is mandatory, and there is no
+ * amount on it — prices live in the price lists (BI-006).
+ */
 export interface NewBillableService {
   code: string;
   name: string;
@@ -118,6 +137,10 @@ export interface ConsultationMapping {
   visitSequence: VisitSequence;
 }
 
+/**
+ * A partial update: an absent field is left alone. `code` is not here, so the
+ * identifier a charge was raised against cannot be renamed.
+ */
 export interface BillableServiceUpdate {
   name?: string;
   category?: string;
@@ -128,6 +151,10 @@ export interface BillableServiceUpdate {
   consultation?: ConsultationMapping | null;
 }
 
+/**
+ * BI-030. A new payer; the service checks the RUC for institutional kinds
+ * before this reaches storage (BI-034).
+ */
 export interface NewPayer {
   code: string;
   name: string;
@@ -136,6 +163,7 @@ export interface NewPayer {
   agreementReference: string | null;
 }
 
+/** A partial update. `code` and `kind` are not editable here. */
 export interface PayerUpdate {
   name?: string;
   ruc?: string | null;
@@ -143,6 +171,10 @@ export interface PayerUpdate {
   active?: boolean;
 }
 
+/**
+ * The port for WHAT THE CLINIC CHARGES FOR: tax rates, services, payers and
+ * their price lists. Implemented by `PrismaBillingCatalogueRepository`.
+ */
 export interface BillingCatalogueRepository {
   /** BI-020, BI-021. The SRI's rates, as rows. */
   listTaxRates(): Promise<TaxRateView[]>;
@@ -241,6 +273,11 @@ export const BILLING_CATALOGUE_REPOSITORY = Symbol(
 // What one visit owes
 // ───────────────────────────────────────────────────────────────────────────
 
+/**
+ * BI-070. An account groups one patient's charges against one payer. The price
+ * list is fixed when it opens, and there is no total field: it is derived from
+ * the charges (BI-074).
+ */
 export interface AccountView {
   id: string;
   siteId: string;
@@ -257,6 +294,10 @@ export interface AccountView {
 export const ACCOUNT_STATUSES = ['OPEN', 'SETTLED', 'CANCELLED'] as const;
 export type AccountStatus = (typeof ACCOUNT_STATUSES)[number];
 
+/**
+ * A charge as stored, frozen block included (BI-050). The void columns are null
+ * unless `status` is `CANCELLED`.
+ */
 export interface ChargeView {
   id: string;
   accountId: string;
@@ -282,6 +323,9 @@ export interface ChargeView {
   voidReason: string | null;
 }
 
+/**
+ * BI-070. The payer and its price list are decided when the account is opened.
+ */
 export interface NewAccount {
   siteId: string;
   patientId: string;
@@ -333,6 +377,10 @@ export interface AccountPatientIdentification {
   fullName: string;
 }
 
+/**
+ * An issued invoice. There are no lines: its items are the account's `BILLED`
+ * charges, and what is frozen here again are the totals and the receiver.
+ */
 export interface InvoiceView {
   id: string;
   accountId: string;
@@ -357,6 +405,10 @@ export interface InvoiceIssuance {
   issuedById: string;
 }
 
+/**
+ * The port for WHAT ONE VISIT OWES: accounts, charges and invoices. Every read
+ * is scoped by site. Implemented by `PrismaBillingAccountRepository`.
+ */
 export interface BillingAccountRepository {
   /** BI-070, BI-121. */
   openAccount(account: NewAccount): Promise<AccountView>;

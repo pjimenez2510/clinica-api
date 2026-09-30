@@ -47,6 +47,11 @@ export interface AuthUser {
   lockedUntil: Date | null;
 }
 
+/**
+ * AU-001. Argon2id behind a port so sign-in tests do not spend ~100 ms per hash
+ * (see the header). `needsRehash` lets sign-in upgrade parameters at the only
+ * moment the plaintext is available.
+ */
 export interface PasswordHasherPort {
   hash(plain: string): Promise<string>;
   verify(hash: string, plain: string): Promise<boolean>;
@@ -55,6 +60,10 @@ export interface PasswordHasherPort {
   burnTime(): Promise<void>;
 }
 
+/**
+ * What `AuthService` asks to be signed. `grants` are role ids and sites, never
+ * permissions: those are resolved per request (AU-012).
+ */
 export interface AccessTokenClaimsInput {
   sub: string;
   fam: string;
@@ -62,10 +71,19 @@ export interface AccessTokenClaimsInput {
   mfa: boolean;
 }
 
+/**
+ * AU-004: the short-lived half of a session. Verification stays in the guard's
+ * adapter; the use cases only issue.
+ */
 export interface TokenIssuerPort {
   issueAccessToken(claims: AccessTokenClaimsInput): Promise<string>;
 }
 
+/**
+ * AU-004: rotating, single-use refresh tokens grouped in families. Reuse of a
+ * spent token revokes the whole family; `revokeAllForUser` closes every session
+ * of the account (AU-023, AU-036).
+ */
 export interface RefreshTokenPort {
   issueForNewSession(
     userId: string,
@@ -79,6 +97,10 @@ export interface RefreshTokenPort {
   revokeAllForUser(userId: string, reason: string): Promise<void>;
 }
 
+/**
+ * AU-005. The secret leaves `enroll` in clear exactly once, for the QR code;
+ * only `encrypted` is ever stored.
+ */
 export interface TotpPort {
   enroll(email: string): { secret: string; encrypted: string; uri: string };
   /** Returns the consumed time step; the caller must persist it. */

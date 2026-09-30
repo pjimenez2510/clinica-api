@@ -68,6 +68,7 @@ const ADMITS_ORDERS: Readonly<Record<EncounterStatus, boolean>> = {
   ENTERED_IN_ERROR: false,
 };
 
+/** ORD-005. The lookup into `ADMITS_ORDERS`. */
 export function admitsNewOrders(status: EncounterStatus): boolean {
   return ADMITS_ORDERS[status];
 }

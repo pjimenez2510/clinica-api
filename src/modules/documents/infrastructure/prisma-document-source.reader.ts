@@ -48,6 +48,7 @@ import type {
  * database.
  */
 
+/** An image WITH its bytes: the renderer embeds them. */
 const IMAGE_SELECT = {
   id: true,
   mimeType: true,
@@ -58,8 +59,13 @@ const IMAGE_SELECT = {
   height: true,
 } satisfies Prisma.DocumentImageSelect;
 
+/** The shape `IMAGE_SELECT` produces. */
 type ImageRow = Prisma.DocumentImageGetPayload<{ select: typeof IMAGE_SELECT }>;
 
+/**
+ * An optional relation to an image, or `null`: a missing logo, seal or
+ * signature is legitimate (DOC-059, DOC-060).
+ */
 function toStoredImage(row: ImageRow | null | undefined): StoredImage | null {
   if (row == null) return null;
   return {
@@ -94,6 +100,10 @@ function fullNameOf(patient: {
     .join(' ');
 }
 
+/**
+ * The patient as the documents print them: the name parts and at most one
+ * OFFICIAL identifier.
+ */
 const PATIENT_SELECT = {
   familyName: true,
   secondFamilyName: true,
@@ -106,6 +116,10 @@ const PATIENT_SELECT = {
   },
 } satisfies Prisma.PatientSelect;
 
+/**
+ * Art. 5.d. The prescriber's name, ACESS registration and MSP code, with the
+ * seal and signature images.
+ */
 const PRACTITIONER_SELECT = {
   mspCode: true,
   user: {
@@ -115,10 +129,15 @@ const PRACTITIONER_SELECT = {
   signatureImage: { select: IMAGE_SELECT },
 } satisfies Prisma.PractitionerSelect;
 
+/** The shape `PRACTITIONER_SELECT` produces. */
 type PractitionerRow = Prisma.PractitionerGetPayload<{
   select: typeof PRACTITIONER_SELECT;
 }>;
 
+/**
+ * Row to identity. A missing seal or signature stays `null`; nothing is drawn
+ * in its place (DOC-060).
+ */
 function toPractitioner(row: PractitionerRow): PractitionerIdentity {
   return {
     // Art. 5.d.i. Surnames first, like the patient's.
@@ -130,8 +149,12 @@ function toPractitioner(row: PractitionerRow): PractitionerIdentity {
   };
 }
 
+/** The shape `PATIENT_SELECT` produces. */
 type PatientRow = Prisma.PatientGetPayload<{ select: typeof PATIENT_SELECT }>;
 
+/**
+ * Row to identity. The identifier is `null` when the chart has no official one.
+ */
 function toPatient(
   row: PatientRow,
   ageYears: number | null,
@@ -168,16 +191,28 @@ interface StoredAllergy {
   refutedAt: Date | null;
 }
 
+/**
+ * The CIE10 code and display of each diagnosis of the attention, and its rank
+ * for ordering.
+ */
 const DIAGNOSIS_SELECT = {
   cie10Code: true,
   cie10Display: true,
   rank: true,
 } satisfies Prisma.EncounterDiagnosisSelect;
 
+/**
+ * The `DocumentSourceReader` adapter: one read method per document kind, each
+ * scoped by site in its `where`.
+ */
 @Injectable()
 export class PrismaDocumentSourceReader implements DocumentSourceReader {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Dispatches on the kind; the `switch` is exhaustive over `DocumentKind`, so
+   * a fifth document does not compile until it is handled here.
+   */
   async findSubject(query: SubjectQuery): Promise<DocumentSubject | null> {
     switch (query.kind) {
       case 'PRESCRIPTION':
@@ -191,6 +226,10 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
     }
   }
 
+  /**
+   * The establishment identity printed on every document of a site, including
+   * the RIDE's fiscal flags (DOC-077). `null` for an unknown site.
+   */
   async contextForSite(siteId: string): Promise<DocumentContext | null> {
     const site = await this.prisma.site.findUnique({
       where: { id: siteId },
@@ -242,6 +281,10 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
 
   // ── prescription ─────────────────────────────────────────────────────────
 
+  /**
+   * DOC-072. Everything the receta prints, in one query, scoped by the
+   * attention's site.
+   */
   private async findPrescription(
     subjectId: string,
     sites: SiteScopeFilter,
@@ -369,6 +412,10 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
 
   // ── service order ────────────────────────────────────────────────────────
 
+  /**
+   * The order, its patient, its diagnoses and its lines, scoped by the order's
+   * own site.
+   */
   private async findServiceOrder(
     subjectId: string,
     sites: SiteScopeFilter,
@@ -428,6 +475,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
 
   // ── medical certificate ──────────────────────────────────────────────────
 
+  /** The certificate, scoped by the attention's site. */
   private async findCertificate(
     subjectId: string,
     sites: SiteScopeFilter,
@@ -490,6 +538,11 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
 
   // ── invoice (RIDE) ───────────────────────────────────────────────────────
 
+  /**
+   * DOC-076. The RIDE's data, scoped by the invoice's site. The lines are the
+   * account's `BILLED` charges with their frozen values; the totals are the
+   * invoice's stored ones, as strings.
+   */
   private async findInvoice(
     subjectId: string,
     sites: SiteScopeFilter,

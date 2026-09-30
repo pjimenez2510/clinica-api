@@ -41,6 +41,7 @@ export const listPractitionersQuerySchema = z.object({
   /** ST-010: a deactivated practitioner travels only when asked for. */
   includeInactive: explicitFlag,
 });
+/** Query of GET /staff/practitioners. */
 export class ListPractitionersQueryDto extends createZodDto(
   listPractitionersQuerySchema,
 ) {}
@@ -49,6 +50,7 @@ export const listScheduleRulesQuerySchema = z.object({
   /** ST-041: rules already closed explain last month's agenda. */
   includeClosed: explicitFlag,
 });
+/** Query of GET /staff/practitioners/:practitionerId/schedule-rules. */
 export class ListScheduleRulesQueryDto extends createZodDto(
   listScheduleRulesQuerySchema,
 ) {}
@@ -98,6 +100,7 @@ export const createPractitionerSchema = z.object({
   mspCode: mspCodeSchema.nullish(),
   schedulable: z.boolean({ error: 'Indique si toma citas' }).optional(),
 });
+/** Body of POST /staff/practitioners (`staff:manage`). */
 export class CreatePractitionerDto extends createZodDto(
   createPractitionerSchema,
 ) {}
@@ -124,6 +127,7 @@ export const updatePractitionerSchema = z
       message: 'Indique al menos un cambio',
     },
   );
+/** Body of PATCH /staff/practitioners/:practitionerId; an empty body is refused rather than answered with an unchanged profile. */
 export class UpdatePractitionerDto extends createZodDto(
   updatePractitionerSchema,
 ) {}
@@ -156,11 +160,13 @@ export const practitionerSchema = z.object({
   /** ST-007. */
   siteIds: z.array(z.uuid()).readonly(),
 });
+/** Response of reading, creating and updating one practitioner. */
 export class PractitionerDto extends createZodDto(practitionerSchema) {}
 
 export const practitionerListSchema = z.object({
   items: z.array(practitionerSchema).readonly(),
 });
+/** Response of GET /staff/practitioners. */
 export class PractitionerListDto extends createZodDto(practitionerListSchema) {}
 
 // --- ACESS (ST-004, ST-005) ------------------------------------------------
@@ -178,6 +184,7 @@ export const acessExpiryQuerySchema = z.object({
     .max(365, 'El aviso no puede anticiparse más de un año')
     .default(30),
 });
+/** Query of GET /staff/practitioners/acess-expiring (ST-005). */
 export class AcessExpiryQueryDto extends createZodDto(acessExpiryQuerySchema) {}
 
 export const acessExpiryWarningSchema = z.object({
@@ -193,6 +200,7 @@ export const acessExpiryWarningSchema = z.object({
 export const acessExpiryListSchema = z.object({
   items: z.array(acessExpiryWarningSchema).readonly(),
 });
+/** Response of GET /staff/practitioners/acess-expiring. */
 export class AcessExpiryListDto extends createZodDto(acessExpiryListSchema) {}
 
 /**
@@ -208,6 +216,7 @@ export const signingEligibilitySchema = z.object({
   /** ST-005: valid, and worth warning about. */
   expiringSoon: z.boolean(),
 });
+/** Response of GET /staff/practitioners/:practitionerId/signing-eligibility. */
 export class SigningEligibilityDto extends createZodDto(
   signingEligibilitySchema,
 ) {}
@@ -222,6 +231,7 @@ export const assignSitesSchema = z.object({
    */
   siteIds: z.array(z.uuid('Seleccione una sede de la lista')),
 });
+/** Body of PUT /staff/practitioners/:practitionerId/sites. */
 export class AssignSitesDto extends createZodDto(assignSitesSchema) {}
 
 export const practitionerSiteSchema = z.object({
@@ -233,6 +243,7 @@ export const practitionerSiteSchema = z.object({
 export const practitionerSiteListSchema = z.object({
   items: z.array(practitionerSiteSchema).readonly(),
 });
+/** Response of reading and replacing a practitioner's sites. */
 export class PractitionerSiteListDto extends createZodDto(
   practitionerSiteListSchema,
 ) {}
@@ -261,6 +272,7 @@ export const assignSpecialtiesSchema = z.object({
       { message: 'Hay una especialidad repetida en la asignación' },
     ),
 });
+/** Body of PUT /staff/practitioners/:practitionerId/specialties. */
 export class AssignSpecialtiesDto extends createZodDto(
   assignSpecialtiesSchema,
 ) {}
@@ -276,6 +288,7 @@ export const practitionerSpecialtySchema = z.object({
 export const practitionerSpecialtyListSchema = z.object({
   items: z.array(practitionerSpecialtySchema).readonly(),
 });
+/** Response of reading and replacing a practitioner's specialties. */
 export class PractitionerSpecialtyListDto extends createZodDto(
   practitionerSpecialtyListSchema,
 ) {}
@@ -303,6 +316,7 @@ const durationMinutesSchema = z
 export const setDurationExceptionSchema = z.object({
   durationMinutes: durationMinutesSchema,
 });
+/** Body of PUT /staff/practitioners/:practitionerId/duration-exceptions/:serviceTypeId. */
 export class SetDurationExceptionDto extends createZodDto(
   setDurationExceptionSchema,
 ) {}
@@ -321,6 +335,7 @@ export const practitionerDurationSchema = z.object({
 export const practitionerDurationListSchema = z.object({
   items: z.array(practitionerDurationSchema).readonly(),
 });
+/** Response of GET /staff/practitioners/:practitionerId/duration-exceptions. */
 export class PractitionerDurationListDto extends createZodDto(
   practitionerDurationListSchema,
 ) {}
@@ -360,6 +375,7 @@ export const createScheduleRuleSchema = z.object({
   validFrom: clinicalDateField('Indique el inicio de vigencia en formato AAAA-MM-DD'), // prettier-ignore
   validTo: clinicalDateField('Indique el fin de vigencia en formato AAAA-MM-DD').nullish(), // prettier-ignore
 });
+/** Body of POST /staff/practitioners/:practitionerId/schedule-rules. */
 export class CreateScheduleRuleDto extends createZodDto(
   createScheduleRuleSchema,
 ) {}
@@ -379,6 +395,7 @@ export const updateScheduleRuleSchema = z
       message: 'Indique al menos un cambio',
     },
   );
+/** Body of PATCH /staff/schedule-rules/:ruleId; an empty body is refused. */
 export class UpdateScheduleRuleDto extends createZodDto(
   updateScheduleRuleSchema,
 ) {}
@@ -395,11 +412,13 @@ export const scheduleRuleSchema = z.object({
   validTo: z.iso.date().nullable(),
   active: z.boolean(),
 });
+/** One rule; no route returns it on its own, it travels inside the list and the outcome below. */
 export class ScheduleRuleDto extends createZodDto(scheduleRuleSchema) {}
 
 export const scheduleRuleListSchema = z.object({
   items: z.array(scheduleRuleSchema).readonly(),
 });
+/** Response of GET /staff/practitioners/:practitionerId/schedule-rules. */
 export class ScheduleRuleListDto extends createZodDto(scheduleRuleListSchema) {}
 
 /**
@@ -419,6 +438,7 @@ export const scheduleRuleOutcomeSchema = z.object({
   rule: scheduleRuleSchema,
   conflicts: z.array(scheduleConflictSchema).readonly(),
 });
+/** Response of creating, updating and closing a schedule rule. */
 export class ScheduleRuleOutcomeDto extends createZodDto(
   scheduleRuleOutcomeSchema,
 ) {}

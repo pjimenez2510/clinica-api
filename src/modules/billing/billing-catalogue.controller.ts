@@ -302,6 +302,10 @@ export class BillingCatalogueController {
   }
 }
 
+/**
+ * The service as served. The tax percentage leaves as a string (BI-001), and
+ * there is still no amount on it (BI-006).
+ */
 function toServiceResponse(service: BillableServiceView): ServiceResponse {
   return {
     id: service.id,
@@ -320,6 +324,7 @@ function toServiceResponse(service: BillableServiceView): ServiceResponse {
   };
 }
 
+/** The payer as served, field for field; nothing on a payer is money. */
 function toPayerResponse(payer: PayerView): PayerResponse {
   return {
     id: payer.id,
@@ -333,6 +338,7 @@ function toPayerResponse(payer: PayerView): PayerResponse {
   };
 }
 
+/** One price row with its `[validFrom, validTo)` validity (BI-041). */
 function toPriceResponse(price: PriceRow): PriceResponse {
   return {
     id: price.id,

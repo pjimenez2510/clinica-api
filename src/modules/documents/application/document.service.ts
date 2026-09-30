@@ -41,6 +41,10 @@ export interface Requester {
   userAgent?: string;
 }
 
+/**
+ * Which document of which subject: one kind and the id of its prescription,
+ * order, certificate or invoice (DOC-003).
+ */
 export interface RenderRequest {
   kind: DocumentKind;
   subjectId: string;
@@ -276,6 +280,10 @@ export class DocumentService {
     );
   }
 
+  /**
+   * DOC-030. Every published version of every kind, newest version first within
+   * a kind; the current one is the first of its kind (DOC-031).
+   */
   listTemplates(): Promise<readonly DocumentTemplate[]> {
     return this.documents.listTemplates();
   }

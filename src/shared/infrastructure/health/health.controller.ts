@@ -12,6 +12,10 @@ import { PinoLogger } from 'nestjs-pino';
 import { Public } from '../../http/auth.decorators';
 import { PrismaService } from '../prisma/prisma.service';
 
+/**
+ * Readiness endpoint, `@Public()` because the orchestrator probing it has no
+ * session. It reports dependency NAMES and states, never error messages.
+ */
 @ApiTags('health')
 @Controller({ path: 'health', version: '1' })
 @Public()
@@ -46,6 +50,10 @@ export class HealthController {
     ]);
   }
 
+  /**
+   * `up` or `down` for PostgreSQL. The reason goes to the log only; see the
+   * comment in the catch.
+   */
   private async checkDatabase(): Promise<HealthIndicatorResult> {
     try {
       await this.prisma.ping();

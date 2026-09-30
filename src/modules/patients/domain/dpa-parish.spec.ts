@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import { parishLocationOf } from './dpa-parish';
 
+/**
+ * Province and canton derived from a six-digit DPA parish code, and no
+ * answer at all for anything else. Pure domain unit; cites PA-028.
+ */
+
 describe('where a DPA parish code sits', () => {
   it('PA-028 derives province and canton from the six-digit code', () => {
     // 170150: province 17 (Pichincha), canton 1701 (Quito).

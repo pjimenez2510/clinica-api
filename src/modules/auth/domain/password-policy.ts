@@ -1,5 +1,9 @@
 import { ValidationError } from '../../../shared/domain/errors/domain-error';
 
+/**
+ * The password broke at least one rule. Every reason travels, in Spanish, as a
+ * field error — see the constructor for the split between log and response.
+ */
 export class WeakPasswordError extends ValidationError {
   readonly code = 'WEAK_PASSWORD';
 
@@ -54,6 +58,10 @@ const FORBIDDEN = new Set([
   'administrador',
 ]);
 
+/**
+ * The owner's data a password may not contain. Optional: a first credential or
+ * a password change supplies what it has.
+ */
 export interface UserDataForPassword {
   email?: string;
   firstName?: string;
@@ -61,6 +69,10 @@ export interface UserDataForPassword {
   cedula?: string;
 }
 
+/**
+ * Lowercase without accents, so `Contraseña` matches `contrasena` and a name
+ * cannot be sneaked in by changing an accent.
+ */
 function normalize(text: string): string {
   return text
     .toLowerCase()

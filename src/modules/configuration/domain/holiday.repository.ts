@@ -29,12 +29,20 @@ export interface HolidayView {
   workedBySiteIds: readonly string[];
 }
 
+/**
+ * CF-060: what a new holiday row carries. The site is already resolved: `null`
+ * means every site.
+ */
 export interface HolidayInput {
   date: string;
   name: string;
   siteId: string | null;
 }
 
+/**
+ * Absent fields are left untouched; `siteId: null` is a value (every site), not
+ * an omission.
+ */
 export interface HolidayPatch {
   date?: string;
   name?: string;
@@ -69,6 +77,10 @@ export interface HolidayChange {
   after: HolidayView;
 }
 
+/**
+ * Holiday storage (CF-060, CF-061, AG-092). Every mutation answers with what
+ * the trail needs (CF-066); no check-first query, see the header.
+ */
 export interface HolidayRepository {
   list(query: HolidayQuery): Promise<readonly HolidayView[]>;
 

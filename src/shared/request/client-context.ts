@@ -49,6 +49,7 @@ export const RevocationReason = {
   MFA_RESET: 'MFA_RESET',
 } as const;
 
+/** One of the values above, as stored in `refresh_token.revocation_reason`. */
 export type RevocationReason =
   (typeof RevocationReason)[keyof typeof RevocationReason];
 

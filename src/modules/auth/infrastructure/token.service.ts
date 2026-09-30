@@ -18,6 +18,10 @@ import {
 import type { Env } from '../../../shared/config/env.schema';
 import { UnauthorizedError } from '../../../shared/domain/errors/domain-error';
 
+/**
+ * 401 for a token that fails signature, issuer, audience, expiry or claim-shape
+ * checks.
+ */
 export class InvalidTokenError extends UnauthorizedError {
   readonly code = 'INVALID_TOKEN';
 
@@ -81,12 +85,21 @@ const accessClaimsSchema = z.object({
   mfa: z.boolean().default(false),
 });
 
+/**
+ * Stamped on every token `issueAccessToken` signs and required by
+ * `verifyAccessToken`.
+ */
 const ISSUER = 'clinica-api';
 const AUDIENCE = 'clinica-web';
 
 /** Bytes of entropy for the opaque refresh token. */
 const REFRESH_TOKEN_BYTES = 32;
 
+/**
+ * EdDSA access tokens and opaque refresh-token material (AU-004). Keys are
+ * imported once at module init, so a malformed PEM stops the boot instead of
+ * the first sign-in.
+ */
 @Injectable()
 export class TokenService implements OnModuleInit {
   private privateKey!: CryptoKey;
@@ -109,6 +122,10 @@ export class TokenService implements OnModuleInit {
     return this.accessTtlSecondsValue;
   }
 
+  /**
+   * PEM keys and the TTL are read here rather than in the constructor because
+   * `importPKCS8` and `importSPKI` are asynchronous.
+   */
   async onModuleInit(): Promise<void> {
     // PEM keys carry escaped newlines in the environment variable.
     const privatePem = this.config
@@ -147,6 +164,11 @@ export class TokenService implements OnModuleInit {
       .sign(this.privateKey);
   }
 
+  /**
+   * Signature, issuer, audience and expiry through `jose` with the algorithm
+   * pinned, then the claims parsed by `accessClaimsSchema`. Every failure
+   * becomes `InvalidTokenError`.
+   */
   async verifyAccessToken(token: string): Promise<AccessTokenClaims> {
     try {
       const { payload } = await jwtVerify(token, this.publicKey, {
@@ -170,8 +192,12 @@ export class TokenService implements OnModuleInit {
        */
       return accessClaimsSchema.parse(payload);
     } catch (error) {
-      // The library's reason is not propagated: it distinguishes "expired" from
-      // "bad signature", and that difference is useful to an attacker.
+      // The library's reason (`error.name`) distinguishes "expired" from "bad
+      // signature", and that difference is useful to an attacker. It goes into
+      // the technical message and `params` only: the problem-details filter
+      // sends the message as `detail` outside production alone and never
+      // serialises `params`, so a production client cannot tell the two apart.
+      // In development, `detail` shows it.
       const reason =
         error instanceof Error ? error.name : 'verification failed';
       throw new InvalidTokenError(reason);

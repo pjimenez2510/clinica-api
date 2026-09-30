@@ -145,6 +145,10 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     return rows.map(toAccountView);
   }
 
+  /**
+   * BI-033. Writes the payer and its list together; the service has already
+   * refused an account that holds charges.
+   */
   async changeAccountPayer(
     accountId: string,
     payer: { payerId: string; priceListId: string },
@@ -169,6 +173,10 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     return toAccountView(row);
   }
 
+  /**
+   * BI-074. Every charge of the account, voided ones included, in the order
+   * they were raised; which ones count is the caller's filter.
+   */
   async listCharges(accountId: string): Promise<ChargeView[]> {
     const rows = await this.prisma.chargeItem.findMany({
       where: { accountId },
@@ -654,6 +662,9 @@ function databaseMessageOf(error: unknown): string {
   return parts.join('\n');
 }
 
+/**
+ * Row to view. The `status` cast leans on `patient_account_status_is_known`.
+ */
 function toAccountView(row: PatientAccountRow): AccountView {
   return {
     id: row.id,
@@ -668,6 +679,12 @@ function toAccountView(row: PatientAccountRow): AccountView {
   };
 }
 
+/**
+ * Row to view, every amount through `Money`/`Percentage`/`Quantity` parsing.
+ * The quantity is rendered at its column's three decimals first; the string
+ * casts lean on `charge_item_status_is_known` and
+ * `charge_item_origin_is_known`.
+ */
 function toChargeView(row: ChargeItemRow): ChargeView {
   return {
     id: row.id,
@@ -695,6 +712,10 @@ function toChargeView(row: ChargeItemRow): ChargeView {
   };
 }
 
+/**
+ * Row to view. The totals are the STORED ones, read back as written at issuance
+ * and never recomputed from the charges (BI-086).
+ */
 function toInvoiceView(row: InvoiceRow): InvoiceView {
   const totals: DocumentTotals = {
     subtotalTaxed: Money.parse(row.subtotalTaxed),

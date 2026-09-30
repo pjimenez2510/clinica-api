@@ -42,6 +42,7 @@ import {
  * all, so the fix is to never let it acquire one.
  */
 
+/** One selection for every read, so every path yields the same view. */
 const HOLIDAY_SELECT = {
   id: true,
   date: true,
@@ -54,6 +55,7 @@ const HOLIDAY_SELECT = {
   workedBy: { select: { siteId: true }, orderBy: { siteId: 'asc' } },
 } satisfies Prisma.HolidaySelect;
 
+/** The row `HOLIDAY_SELECT` produces; `date` is a `Date` at midnight UTC. */
 interface HolidayRow {
   id: string;
   date: Date;
@@ -62,6 +64,10 @@ interface HolidayRow {
   workedBy: { siteId: string }[];
 }
 
+/**
+ * The day is read with `toISOString()`, never with local getters: see the
+ * header for why that is exact.
+ */
 function toView(row: HolidayRow): HolidayView {
   return {
     id: row.id,
@@ -77,6 +83,11 @@ function toColumn(date: string): Date {
   return new Date(`${date}T00:00:00.000Z`);
 }
 
+/**
+ * Prisma adapter for `HolidayRepository`. The unique index arbitrates
+ * duplicates (CF-061) and the foreign key arbitrates unknown sites; nothing
+ * here reads first.
+ */
 @Injectable()
 export class PrismaHolidayRepository implements HolidayRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -108,12 +119,15 @@ export class PrismaHolidayRepository implements HolidayRepository {
     return rows.map(toView);
   }
 
-  /** CF-061 answered by `holiday_date_scope_unique`. */
   /** CF-067. The authorisation read: whose holiday is this, before anything. */
   async findById(id: string): Promise<HolidayView | null> {
     return this.find(this.prisma, id);
   }
 
+  /**
+   * CF-060, CF-061: a duplicate date in the same scope is refused by
+   * `holiday_date_scope_unique` and translated to `HOLIDAY_DUPLICATE`.
+   */
   async create(input: HolidayInput): Promise<HolidayView> {
     try {
       const row = await this.prisma.holiday.create({

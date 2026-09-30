@@ -24,6 +24,10 @@ export class PrismaAccessAuditRecorder implements AccessAuditRecorder {
     this.logger.setContext(PrismaAccessAuditRecorder.name);
   }
 
+  /**
+   * Insert only. A failure is logged at error level and swallowed, as the port
+   * demands.
+   */
   async record(entry: AccessAuditEntry): Promise<void> {
     try {
       await this.prisma.accessAudit.create({

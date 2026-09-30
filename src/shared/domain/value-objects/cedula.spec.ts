@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import { Cedula, InvalidCedulaError } from './cedula.vo';
 
+/**
+ * The `Cedula` value object: format, province, third digit and modulo-10
+ * check digit, without leaking the rejected number. Pure unit with hand-made
+ * test numbers; the titles cite no requirement ID.
+ */
+
 describe('Cedula', () => {
   // Cedulas with a correct check digit, verified by hand against the modulo 10
   // algorithm. Test numbers, not real people.

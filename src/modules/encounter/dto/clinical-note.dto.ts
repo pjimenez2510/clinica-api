@@ -69,6 +69,7 @@ export const draftNoteSchema = z.object({
     .default('1'),
   content: noteContent,
 });
+/** Body of POST /encounters/:encounterId/notes. */
 export class DraftNoteDto extends createZodDto(draftNoteSchema) {}
 
 /** EN-023. Replacing the content of a draft. */
@@ -95,6 +96,7 @@ export class UpdateNoteDto extends createZodDto(updateNoteSchema) {}
 export const signNoteSchema = z.object({
   dischargeCondition: DISCHARGE_CONDITION.optional(),
 });
+/** Body of POST /encounters/:encounterId/notes/:noteId/sign (`record:sign`). */
 export class SignNoteDto extends createZodDto(signNoteSchema) {}
 
 /**
@@ -124,6 +126,7 @@ export const amendNoteSchema = z.object({
     .min(1, 'Indique el motivo de la enmienda')
     .max(2000, 'El motivo no puede superar 2000 caracteres'),
 });
+/** Body of POST /encounters/:encounterId/notes/:noteId/amend. */
 export class AmendNoteDto extends createZodDto(amendNoteSchema) {}
 
 /**
@@ -169,12 +172,15 @@ export const clinicalNoteSchema = z.object({
   amendmentReason: z.string().nullable(),
   createdAt: z.iso.datetime(),
 });
+/** Response of every write on a note: drafting, updating, signing, amending and retracting. */
 export class ClinicalNoteDto extends createZodDto(clinicalNoteSchema) {}
 
 export const clinicalNoteListSchema = z.object({
   items: z.array(clinicalNoteSchema),
 });
+/** Response of GET /encounters/:encounterId/notes. */
 export class ClinicalNoteListDto extends createZodDto(clinicalNoteListSchema) {}
 
+/** Response types the controller returns, inferred from the schemas Swagger publishes. */
 export type ClinicalNoteResponse = z.infer<typeof clinicalNoteSchema>;
 export type ClinicalNoteListResponse = z.infer<typeof clinicalNoteListSchema>;

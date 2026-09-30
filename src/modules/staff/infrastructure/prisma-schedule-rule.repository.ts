@@ -45,14 +45,17 @@ const RULE_SELECT = {
   active: true,
 } satisfies Prisma.PractitionerScheduleRuleSelect;
 
+/** The row `RULE_SELECT` yields; its times are still 1970-01-01 `Date`s here. */
 type RuleRow = Prisma.PractitionerScheduleRuleGetPayload<{
   select: typeof RULE_SELECT;
 }>;
 
+/** A `@db.Date` at UTC midnight: its ISO prefix is the calendar date stored. */
 function toClinicalDate(value: Date): ClinicalDate {
   return value.toISOString().slice(0, 10) as ClinicalDate;
 }
 
+/** The inverse: a calendar date as the UTC midnight the `date` column expects. */
 function fromClinicalDate(value: ClinicalDate): Date {
   return new Date(`${value}T00:00:00Z`);
 }
@@ -62,6 +65,7 @@ function toTimeColumn(value: string): Date {
   return new Date(`1970-01-01T${WallClockTime.parse(value).toString()}:00Z`);
 }
 
+/** Row to view; the `time` columns go through `WallClockTime.fromTimeColumn`, never local getters. */
 function toView(row: RuleRow): ScheduleRuleView {
   return {
     id: row.id,
@@ -76,6 +80,7 @@ function toView(row: RuleRow): ScheduleRuleView {
   };
 }
 
+/** The schedule-rule port over PostgreSQL, as the note at the top of this file describes. */
 @Injectable()
 export class PrismaScheduleRuleRepository implements ScheduleRuleRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -97,6 +102,7 @@ export class PrismaScheduleRuleRepository implements ScheduleRuleRepository {
     return rows.map(toView);
   }
 
+  /** Any rule, active or closed; `null` when there is none. */
   async findRule(id: string): Promise<ScheduleRuleView | null> {
     const row = await this.prisma.practitionerScheduleRule.findUnique({
       where: { id },
@@ -105,6 +111,7 @@ export class PrismaScheduleRuleRepository implements ScheduleRuleRepository {
     return row === null ? null : toView(row);
   }
 
+  /** ST-040. A plain insert: `schedule_rule_no_overlap` decides whether it fits (ST-042). */
   async create(rule: ScheduleRuleWrite): Promise<ScheduleRuleView> {
     const created = await this.prisma.practitionerScheduleRule.create({
       data: {

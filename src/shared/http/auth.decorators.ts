@@ -14,6 +14,7 @@ import type { Permission } from '../authorisation/permission.catalogue';
  * The guard that reads this metadata does live in the auth module.
  */
 
+/** Metadata keys the decorators below write and the guards read. */
 export const IS_PUBLIC_KEY = 'auth:public';
 export const MFA_FLOW_ONLY_KEY = 'auth:mfa_flow_only';
 export const REQUIRED_PERMISSION_KEY = 'auth:permission';
@@ -46,7 +47,6 @@ export const Public = (): MethodDecorator & ClassDecorator =>
 export const MfaFlowOnly = (): MethodDecorator =>
   SetMetadata(MFA_FLOW_ONLY_KEY, true);
 
-/** Key under which the authenticated identity is published in the request context. */
 /**
  * CLS key under which the permissions guard stores the resolved `Principal`.
  * Lives here, beside `CURRENT_USER`, so shared code can read it without
@@ -54,21 +54,9 @@ export const MfaFlowOnly = (): MethodDecorator =>
  */
 export const PRINCIPAL = 'principal';
 
+/** Key under which the authenticated identity is published in the request context. */
 export const CURRENT_USER = 'currentUser';
 
-/**
- * The permission a route demands. Every non-public route needs one.
- *
- * CLOSED BY DEFAULT: a route with neither this nor `@Public()` is REFUSED, it
- * is not allowed through. The alternative — treating an absent annotation as
- * "no restriction" — turns forgetting into a hole in the wall, and forgetting
- * is the failure mode application-level authorisation actually has. See
- * ADR-007 §3.
- *
- * The permission string is not free text: `Permission` is a closed union, so a
- * typo does not compile. That claim used to be false — the parameter was
- * `string` — and it was the comment itself that told the reader not to check.
- */
 /**
  * How a route handles the SITE dimension of authorisation.
  *
@@ -95,6 +83,22 @@ export const CURRENT_USER = 'currentUser';
  */
 export type SiteScopeDeclaration = `param:${string}` | 'query' | 'global';
 
+/**
+ * The permission a route demands, and its `SiteScopeDeclaration`, in one
+ * decorator, so a route cannot state a permission and forget the site
+ * dimension: both are required, and `PermissionsGuard` refuses a route missing
+ * either. Every non-public route needs one.
+ *
+ * CLOSED BY DEFAULT: a route with neither this nor `@Public()` is REFUSED, it
+ * is not allowed through. The alternative — treating an absent annotation as
+ * "no restriction" — turns forgetting into a hole in the wall, and forgetting
+ * is the failure mode application-level authorisation actually has. See
+ * ADR-007 §3.
+ *
+ * The permission string is not free text: `Permission` is a closed union, so a
+ * typo does not compile. That claim used to be false — the parameter was
+ * `string` — and it was the comment itself that told the reader not to check.
+ */
 export const RequirePermission = (
   permission: Permission,
   siteScope: SiteScopeDeclaration,

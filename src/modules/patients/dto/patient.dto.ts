@@ -124,6 +124,7 @@ const COUNTRY_CODE = z
   .toUpperCase()
   .regex(/^[A-Z]{3}$/, 'Elija el país de la lista');
 
+/** A required name part; `label` names the field in the Spanish messages. */
 const NAME = (label: string) =>
   z
     .string({ error: `${label} es obligatorio` })
@@ -258,6 +259,7 @@ export const createPatientSchema = z.object({
    */
   identifier: identifierSchema.optional(),
 });
+/** Body of POST /patients. */
 export class CreatePatientDto extends createZodDto(createPatientSchema) {}
 
 /**
@@ -352,6 +354,7 @@ export const correctPatientSchema = z
       error: 'Indique al menos un dato que corregir',
     },
   );
+/** Body of PATCH /patients/:id. */
 export class CorrectPatientDto extends createZodDto(correctPatientSchema) {}
 
 export const searchPatientsSchema = z.object({
@@ -381,6 +384,7 @@ export const searchPatientsSchema = z.object({
   sortBy: z.enum(['name', 'mrn', 'birthDate']).default('name'),
   sortDirection: z.enum(['asc', 'desc']).default('asc'),
 });
+/** Query of GET /patients. */
 export class SearchPatientsDto extends createZodDto(searchPatientsSchema) {}
 
 const identifierResponseSchema = z.object({
@@ -609,6 +613,7 @@ export const patientDetailSchema = patientSummarySchema.extend({
   absorbedCharts: absorbedChartsSchema,
   createdAt: z.iso.datetime(),
 });
+/** Response of reading, registering and correcting one chart, and of adding an identifier to it. */
 export class PatientDetailDto extends createZodDto(patientDetailSchema) {}
 
 /**
@@ -631,9 +636,11 @@ export class PatientDetailDto extends createZodDto(patientDetailSchema) {}
 export const sexualOrientationSchema = z.object({
   sexualOrientation: conceptResponseSchema.nullable(),
 });
+/** Response of GET /patients/:id/sexual-orientation (`patient:sexual-orientation`). */
 export class SexualOrientationDto extends createZodDto(
   sexualOrientationSchema,
 ) {}
+/** What that controller returns, inferred from the schema Swagger publishes. */
 export type SexualOrientationResponse = z.infer<typeof sexualOrientationSchema>;
 
 export const patientPageSchema = z.object({
@@ -642,6 +649,7 @@ export const patientPageSchema = z.object({
   page: z.number().int().positive(),
   pageSize: z.number().int().positive(),
 });
+/** Response of GET /patients: one page of summaries and the total to paginate over. */
 export class PatientPageDto extends createZodDto(patientPageSchema) {}
 
 // ---------------------------------------------------------------------------
@@ -675,9 +683,11 @@ export const mergePatientSchema = z.object({
   targetPatientId: z.uuid('Elija la historia que debe quedar vigente'),
   reason: MERGE_REASON,
 });
+/** Body of POST /patients/:id/merge, where `:id` is the chart being absorbed. */
 export class MergePatientDto extends createZodDto(mergePatientSchema) {}
 
 export const undoPatientMergeSchema = z.object({ reason: MERGE_REASON });
+/** Body of POST /patients/:id/merge/undo: only the reason, which PA-047 makes mandatory as well. */
 export class UndoPatientMergeDto extends createZodDto(undoPatientMergeSchema) {}
 
 /**
@@ -733,6 +743,7 @@ export const patientMergeSchema = z.object({
   performedAt: z.iso.datetime(),
   linkedRecords: mergeLinkedRecordsSchema,
 });
+/** Response of a merge and of its undo. */
 export class PatientMergeDto extends createZodDto(patientMergeSchema) {}
 
 // ---------------------------------------------------------------------------
@@ -773,6 +784,7 @@ export const recordPriorityGroupSchema = z.object({
   /** Carné del CONADIS, certificado médico. Obligatorio si es acreditado. */
   evidenceDocument: z.string().trim().max(160).nullish(),
 });
+/** Body of POST /patients/:id/priority-groups. */
 export class RecordPriorityGroupDto extends createZodDto(
   recordPriorityGroupSchema,
 ) {}
@@ -780,6 +792,7 @@ export class RecordPriorityGroupDto extends createZodDto(
 export const closePriorityGroupSchema = z.object({
   endsOn: z.iso.date('Ingrese la fecha en la que dejó de aplicar'),
 });
+/** Body of PATCH /patients/:id/priority-groups/:recordId: a record is closed with an end date, never deleted (PA-037). */
 export class ClosePriorityGroupDto extends createZodDto(
   closePriorityGroupSchema,
 ) {}
@@ -805,6 +818,7 @@ export const priorityGroupSchema = z.object({
   closedById: z.uuid().nullable(),
   closedAt: z.iso.datetime().nullable(),
 });
+/** Response of recording and closing a priority group. */
 export class PriorityGroupDto extends createZodDto(priorityGroupSchema) {}
 
 export const priorityGroupListSchema = z.object({
@@ -812,6 +826,7 @@ export const priorityGroupListSchema = z.object({
   asOf: z.iso.date(),
   items: z.array(priorityGroupSchema).readonly(),
 });
+/** Response of GET /patients/:id/priority-groups. */
 export class PriorityGroupListDto extends createZodDto(
   priorityGroupListSchema,
 ) {}

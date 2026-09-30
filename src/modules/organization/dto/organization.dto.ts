@@ -15,6 +15,7 @@ import { explicitFlag } from '../../../shared/http/query-flag';
 export const listQuerySchema = z.object({
   includeInactive: explicitFlag,
 });
+/** Query of every organization listing: sites, rooms and points of emission. */
 export class ListQueryDto extends createZodDto(listQuerySchema) {}
 
 /**
@@ -60,6 +61,7 @@ export const saveEstablishmentSchema = z.object({
   ruc: rucSchema.nullish(),
   active: z.boolean({ error: 'Indique si el establecimiento está activo' }).optional(), // prettier-ignore
 });
+/** Body of PUT /organization/establishment: there is one establishment, so it is saved whole rather than created. */
 export class SaveEstablishmentDto extends createZodDto(
   saveEstablishmentSchema,
 ) {}
@@ -72,11 +74,13 @@ export const establishmentSchema = z.object({
   legalName: z.string(),
   /**
    * OR-025: exposed to billing as data, with no sequential attached — and ONLY
-   * to billing. See `rucVisibility` below for why the field can be absent.
+   * to billing. See the block above `siteSchema` («WHY THE RUC IS OPTIONAL IN
+   * BOTH RESPONSES») for why the field can be absent.
    */
   ruc: z.string().nullable().optional(),
   active: z.boolean(),
 });
+/** Response of reading and saving the establishment. */
 export class EstablishmentDto extends createZodDto(establishmentSchema) {}
 
 // --- Sites (OR-004..OR-008) ------------------------------------------------
@@ -106,6 +110,7 @@ export const createSiteSchema = z.object({
   addressLine: addressLineSchema.nullish(),
   phone: phoneSchema.nullish(),
 });
+/** Body of POST /organization/sites. */
 export class CreateSiteDto extends createZodDto(createSiteSchema) {}
 
 /**
@@ -125,6 +130,7 @@ export const updateSiteSchema = z
   .refine((value) => Object.values(value).some((v) => v !== undefined), {
     message: 'Indique al menos un cambio',
   });
+/** Body of PATCH /organization/sites/:id; an empty body is refused. */
 export class UpdateSiteDto extends createZodDto(updateSiteSchema) {}
 
 /**
@@ -155,11 +161,13 @@ export const siteSchema = z.object({
   /** OR-007: `false` means it is not offered for new appointments. */
   active: z.boolean(),
 });
+/** Response of reading, creating and updating one site. */
 export class SiteDto extends createZodDto(siteSchema) {}
 
 export const siteListSchema = z.object({
   items: z.array(siteSchema).readonly(),
 });
+/** Response of GET /organization/sites. */
 export class SiteListDto extends createZodDto(siteListSchema) {}
 
 // --- Consulting rooms (OR-020..OR-022) -------------------------------------
@@ -171,6 +179,7 @@ const roomNameSchema = z
   .max(80, 'El nombre no puede superar 80 caracteres');
 
 export const createRoomSchema = z.object({ name: roomNameSchema });
+/** Body of POST /organization/sites/:siteId/rooms; the site is the route's. */
 export class CreateRoomDto extends createZodDto(createRoomSchema) {}
 
 export const updateRoomSchema = z
@@ -181,6 +190,7 @@ export const updateRoomSchema = z
   .refine((value) => value.name !== undefined || value.active !== undefined, {
     message: 'Indique al menos un cambio: nombre o estado',
   });
+/** Body of PATCH /organization/rooms/:id. */
 export class UpdateRoomDto extends createZodDto(updateRoomSchema) {}
 
 export const roomSchema = z.object({
@@ -189,11 +199,13 @@ export const roomSchema = z.object({
   name: z.string(),
   active: z.boolean(),
 });
+/** Response of creating and updating a consulting room. */
 export class RoomDto extends createZodDto(roomSchema) {}
 
 export const roomListSchema = z.object({
   items: z.array(roomSchema).readonly(),
 });
+/** Response of GET /organization/sites/:siteId/rooms. */
 export class RoomListDto extends createZodDto(roomListSchema) {}
 
 // --- Points of emission (OR-023..OR-025) -----------------------------------
@@ -217,6 +229,7 @@ export const createEmissionPointSchema = z.object({
   code: emissionPointCodeSchema,
   description: emissionPointDescriptionSchema.nullish(),
 });
+/** Body of POST /organization/sites/:siteId/emission-points; the site is the route's. */
 export class CreateEmissionPointDto extends createZodDto(
   createEmissionPointSchema,
 ) {}
@@ -235,6 +248,7 @@ export const updateEmissionPointSchema = z
     (value) => value.description !== undefined || value.active !== undefined,
     { message: 'Indique al menos un cambio: descripción o estado' },
   );
+/** Body of PATCH /organization/emission-points/:id. */
 export class UpdateEmissionPointDto extends createZodDto(
   updateEmissionPointSchema,
 ) {}
@@ -246,11 +260,13 @@ export const emissionPointSchema = z.object({
   description: z.string().nullable(),
   active: z.boolean(),
 });
+/** Response of creating and updating a point of emission. */
 export class EmissionPointDto extends createZodDto(emissionPointSchema) {}
 
 export const emissionPointListSchema = z.object({
   items: z.array(emissionPointSchema).readonly(),
 });
+/** Response of GET /organization/sites/:siteId/emission-points. */
 export class EmissionPointListDto extends createZodDto(
   emissionPointListSchema,
 ) {}

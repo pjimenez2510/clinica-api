@@ -74,6 +74,7 @@ export type PriorityGroupEvidenceKind = 'AGE' | 'ASSESSMENT' | 'STATE';
  */
 export type PriorityGroupReadingLevel = 'ORDINARY' | 'RESTRICTED';
 
+/** One entry of the catalogue below: its code, how it is evidenced, and which key reads it. */
 export interface PriorityGroupDefinition {
   code: string;
   evidence: PriorityGroupEvidenceKind;
@@ -112,6 +113,7 @@ export const PRIORITY_GROUP_CATALOGUE = [
   { code: 'DISASTER_VICTIM', evidence: 'STATE', reading: 'RESTRICTED' },
 ] as const satisfies readonly PriorityGroupDefinition[];
 
+/** One of the ten codes, derived from the catalogue so the two cannot drift. */
 export type PriorityGroup = (typeof PRIORITY_GROUP_CATALOGUE)[number]['code'];
 
 export const PRIORITY_GROUPS: readonly PriorityGroup[] =
@@ -154,6 +156,7 @@ export const RESTRICTED_PRIORITY_GROUPS: readonly PriorityGroup[] =
     (group) => group.reading === 'RESTRICTED',
   ).map((group) => group.code);
 
+/** Narrows a code to one that may be written as a row, i.e. not derived from the birth date. */
 export function isRecordablePriorityGroup(
   group: string,
 ): group is PriorityGroup {

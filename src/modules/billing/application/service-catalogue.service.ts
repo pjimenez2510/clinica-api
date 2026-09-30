@@ -162,6 +162,7 @@ export class ServiceCatalogueService {
     await this.recordChange(serviceId, 'UPDATE', requester);
   }
 
+  /** The service, or `BillableServiceNotFoundError`. */
   private async requireService(
     serviceId: string,
   ): Promise<BillableServiceView> {
@@ -170,6 +171,10 @@ export class ServiceCatalogueService {
     return service;
   }
 
+  /**
+   * BI-013. A service may only point at a tax rate that exists; checked before
+   * the write so the answer is a named error rather than a foreign-key failure.
+   */
   private async requireTaxRate(taxRateId: string): Promise<TaxRateView> {
     const rate = await this.catalogue.findTaxRate(taxRateId);
     if (!rate) throw new TaxRateNotFoundError();

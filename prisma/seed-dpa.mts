@@ -72,6 +72,7 @@ const EFFECTIVE_FROM = new Date(
 /** Provincia, cantón, parroquia. Es lo que el RDACAA nombra. */
 const NIVEL = { provincia: 0, canton: 1, parroquia: 2 } as const;
 
+/** One data line of the INEC file: the three levels, each with its code and name as the file states them. */
 interface Fila {
   provinciaCodigo: string;
   provinciaNombre: string;
@@ -134,6 +135,7 @@ function leer(contenido: string): { filas: Fila[]; descartadas: string[] } {
   return { filas, descartadas };
 }
 
+/** One level of the hierarchy as it will be inserted; `padre` is the parent's code, `null` for a province. */
 interface Concepto {
   codigo: string;
   nombre: string;
@@ -171,6 +173,8 @@ function construir(filas: Fila[]): {
   const conceptos: Concepto[] = [];
   const vistos = new Set<string>();
 
+  // Each code once: a province and a canton recur on every one of their
+  // parishes' rows.
   const añadir = (c: Concepto): void => {
     if (vistos.has(c.codigo)) return;
     vistos.add(c.codigo);
@@ -222,6 +226,12 @@ function construir(filas: Fila[]): {
   return { conceptos, incoherentes };
 }
 
+/**
+ * Entry point of `pnpm db:seed:dpa`. Reference data, not demo data. Idempotent
+ * on (system, version): the same file again is a no-op, and a different file
+ * under the same version is refused for a human to decide. The whole release
+ * is written in one transaction, level by level.
+ */
 async function main(): Promise<void> {
   const contenido = readFileSync(FILE, 'utf8');
   const checksum = createHash('sha256').update(contenido).digest('hex');

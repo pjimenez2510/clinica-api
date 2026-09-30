@@ -50,6 +50,7 @@ const NOTE_SELECT = {
   createdAt: true,
 } satisfies Prisma.ClinicalNoteSelect;
 
+/** The row `NOTE_SELECT` yields, derived from it so the two cannot drift. */
 type NoteRow = Prisma.ClinicalNoteGetPayload<{ select: typeof NOTE_SELECT }>;
 
 /** What the note's policy needs of the attention, read inside the transaction. */
@@ -62,6 +63,11 @@ const ENCOUNTER_FOR_NOTE = {
   agendaEntryId: true,
 } satisfies Prisma.EncounterSelect;
 
+/**
+ * The note chain over PostgreSQL. Every write is an insert, an update of a
+ * `DRAFT`, or one of the two moves `trg_clinical_note_immutable` admits on a
+ * signed row — see the note at the top of this file.
+ */
 @Injectable()
 export class PrismaClinicalNoteRepository implements ClinicalNoteRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -399,6 +405,7 @@ function whereNote(query: NoteQuery): Prisma.ClinicalNoteWhereInput {
   };
 }
 
+/** EN-121. The note, or `ClinicalNoteNotFoundError` whether it is missing or out of scope. */
 async function requireNote(
   tx: Prisma.TransactionClient,
   query: NoteQuery,
@@ -428,6 +435,7 @@ async function requireEncounter(
   return row;
 }
 
+/** The attention as the note policy judges it; `agendaEntryId` stays with the adapter, which moves the board. */
 function toEncounterRead(
   row: Prisma.EncounterGetPayload<{ select: typeof ENCOUNTER_FOR_NOTE }>,
 ): NoteEncounterRead {
@@ -478,6 +486,7 @@ async function stampSubjectStatus(
   });
 }
 
+/** EN-121. The caller's resolved scope as a `where` fragment; `'all'` adds no filter. */
 function siteFilter(sites: SiteScopeFilter): Prisma.EncounterWhereInput {
   return sites === 'all' ? {} : { siteId: { in: [...sites] } };
 }

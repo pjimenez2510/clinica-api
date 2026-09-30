@@ -352,6 +352,11 @@ export class PatientAccountService {
     return account;
   }
 
+  /**
+   * BI-040. The payer's price list, fixed onto the account when it opens or
+   * changes payer. An inactive payer is refused here, so no new account is
+   * priced from it.
+   */
   private async resolvePriceList(payerId: string): Promise<string> {
     const payer = await this.catalogue.findPayer(payerId);
     if (!payer) throw new PayerNotFoundError();

@@ -23,12 +23,19 @@
 
 /** The scale of every monetary column in this system: `numeric(12, 2)`. */
 const MONEY_SCALE = 2;
+/** Cents per dollar: every `Money` is held as an integer count of cents. */
 const MONEY_UNIT = 100n;
 
 /** `numeric(5, 2)`, the scale of `tax_rate.percentage`. */
 const PERCENTAGE_SCALE = 2;
+/** Hundredths of a per cent in one whole: `15.00` is 1500 of 10 000. */
 const PERCENTAGE_UNIT = 10_000n;
 
+/**
+ * An optional minus, digits, and an optional fraction. No exponent, no
+ * thousands separator, no leading `+`: anything else is refused, never guessed
+ * at.
+ */
 const DECIMAL_PATTERN = /^(-?)(\d+)(?:\.(\d+))?$/;
 
 /**
@@ -61,6 +68,7 @@ function formatScaled(units: bigint, scale: number, unit: bigint): string {
   const negative = units < 0n;
   const absolute = negative ? -units : units;
   const whole = absolute / unit;
+  /** Left-padded, so five cents prints `0.05` and not `0.5`. */
   const fraction = (absolute % unit).toString().padStart(scale, '0');
   return `${negative ? '-' : ''}${whole.toString()}.${fraction}`;
 }
@@ -79,17 +87,27 @@ export class Money {
     Object.freeze(this);
   }
 
+  /** The neutral element of `sum`, and the amount of an untaxed line's tax. */
   static readonly ZERO = new Money(0n);
 
+  /**
+   * The only way in. A driver `Decimal` is rendered at scale 2 first, so both
+   * shapes go through the same refusal of a third decimal.
+   */
   static parse(value: MoneyLike): Money {
     const text = typeof value === 'string' ? value : value.toFixed(MONEY_SCALE);
     return new Money(scaledUnitsOf(text, MONEY_SCALE, MONEY_UNIT));
   }
 
+  /** Exact: cents add as integers, with no rounding step to disagree about. */
   plus(other: Money): Money {
     return new Money(this.cents + other.cents);
   }
 
+  /**
+   * Exact, and may go negative; whether a negative amount is admissible is the
+   * caller's rule, not this type's.
+   */
   minus(other: Money): Money {
     return new Money(this.cents - other.cents);
   }
@@ -116,18 +134,22 @@ export class Money {
     );
   }
 
+  /** What `price-list` asks before admitting an amount (BI-043). */
   isNegative(): boolean {
     return this.cents < 0n;
   }
 
+  /** On the integer cents, so `0.00` and `-0.00` are both zero. */
   isZero(): boolean {
     return this.cents === 0n;
   }
 
+  /** Compares cents, never formatted strings: `'9.00' > '10.00'` as text. */
   isGreaterThan(other: Money): boolean {
     return this.cents > other.cents;
   }
 
+  /** Value equality; two `Money` instances are never compared by reference. */
   equals(other: Money): boolean {
     return this.cents === other.cents;
   }
@@ -137,6 +159,10 @@ export class Money {
     return formatScaled(this.cents, MONEY_SCALE, MONEY_UNIT);
   }
 
+  /**
+   * Zero for an empty list, so an account with no charges totals `0.00` rather
+   * than failing.
+   */
   static sum(amounts: readonly Money[]): Money {
     return amounts.reduce<Money>((total, amount) => total.plus(amount), Money.ZERO); // prettier-ignore
   }
@@ -157,16 +183,24 @@ export class Quantity {
     Object.freeze(this);
   }
 
+  /** One unit: the quantity of a consultation and of every exam line. */
   static readonly ONE = new Quantity(1000n);
 
+  /**
+   * Up to three decimals, the scale of the column; a fourth is refused rather
+   * than rounded. Sign is NOT checked here: `isPositive` is what `freezeCharge`
+   * asks.
+   */
   static parse(value: string): Quantity {
     return new Quantity(scaledUnitsOf(value, 3, 1000n));
   }
 
+  /** BI-057 as far as the column allows it: strictly above zero. */
   isPositive(): boolean {
     return this.thousandths > 0n;
   }
 
+  /** `'0.500'`: always three decimals, the scale of the column. */
   toString(): string {
     return formatScaled(this.thousandths, 3, 1000n);
   }
@@ -178,8 +212,12 @@ export class Percentage {
     Object.freeze(this);
   }
 
+  /** Zero per cent, a real rate (SRI code `0`) and not the absence of one. */
   static readonly ZERO = new Percentage(0n);
 
+  /**
+   * Two decimals, like `numeric(5,2)`; a third is refused rather than rounded.
+   */
   static parse(value: MoneyLike): Percentage {
     const text =
       typeof value === 'string' ? value : value.toFixed(PERCENTAGE_SCALE);
@@ -188,10 +226,15 @@ export class Percentage {
     );
   }
 
+  /**
+   * True for a 0% rate. A `null` percentage («no objeto», «exento») never
+   * reaches here.
+   */
   isZero(): boolean {
     return this.hundredths === 0n;
   }
 
+  /** `'15.00'`: always two decimals, never a JSON number. */
   toString(): string {
     return formatScaled(this.hundredths, PERCENTAGE_SCALE, PERCENTAGE_UNIT / 100n); // prettier-ignore
   }
@@ -201,6 +244,10 @@ export class Percentage {
 function divideHalfUp(numerator: bigint, denominator: bigint): bigint {
   const negative = numerator < 0n;
   const absolute = negative ? -numerator : numerator;
+  /**
+   * `floor(a / d + 1/2)` done in integers: halves go up on the magnitude, and
+   * the sign is put back afterwards, which is what makes it away from zero.
+   */
   const rounded = (absolute * 2n + denominator) / (denominator * 2n);
   return negative ? -rounded : rounded;
 }

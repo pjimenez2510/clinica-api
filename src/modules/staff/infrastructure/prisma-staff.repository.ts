@@ -57,6 +57,7 @@ const PRACTITIONER_INCLUDE = {
   },
 } satisfies Prisma.PractitionerInclude;
 
+/** The row `PRACTITIONER_INCLUDE` yields: the practitioner, its account's identity and its primary specialty. */
 type PractitionerRow = Prisma.PractitionerGetPayload<{
   include: typeof PRACTITIONER_INCLUDE;
 }>;
@@ -80,6 +81,7 @@ function fromClinicalDate(value: ClinicalDate | null): Date | null {
   return value === null ? null : new Date(`${value}T00:00:00Z`);
 }
 
+/** The staff port over PostgreSQL, as the note at the top of this file describes. */
 @Injectable()
 export class PrismaStaffRepository implements StaffRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -96,6 +98,7 @@ export class PrismaStaffRepository implements StaffRepository {
     return rows.map(toView);
   }
 
+  /** Active or not; `null` when there is none. */
   async findPractitioner(id: string): Promise<PractitionerView | null> {
     const row = await this.prisma.practitioner.findUnique({
       where: { id },
@@ -320,6 +323,7 @@ export class PrismaStaffRepository implements StaffRepository {
     }));
   }
 
+  /** ST-009. Lets the service answer 404 for an unknown service type before writing an exception for it. */
   async serviceTypeExists(id: string): Promise<boolean> {
     const row = await this.prisma.serviceType.findUnique({
       where: { id },
@@ -405,6 +409,10 @@ export class PrismaStaffRepository implements StaffRepository {
   }
 }
 
+/**
+ * Row to view. Cedula and ACESS come from the account, not the practitioner
+ * row (ST-001, ST-002); only the primary specialty is selected, hence `[0]`.
+ */
 function toView(row: PractitionerRow): PractitionerView {
   const primary = row.specialties[0]?.specialty ?? null;
   return {

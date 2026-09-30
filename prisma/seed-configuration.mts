@@ -70,10 +70,15 @@ function isoDay(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+/** Whole 24-hour days back from an instant; exact here because UTC has no daylight saving. */
 function daysBefore(date: Date, days: number): Date {
   return new Date(date.getTime() - days * 24 * 60 * 60 * 1000);
 }
 
+/**
+ * The fixed holidays plus the Easter-derived ones for `year`, WITHOUT the
+ * «ley de traslado» moves — a development fixture, see the warning above.
+ */
 export function ecuadorianHolidays(year: number): SeedHoliday[] {
   const easter = easterSunday(year);
 
@@ -94,6 +99,12 @@ export function ecuadorianHolidays(year: number): SeedHoliday[] {
   ];
 }
 
+/**
+ * Creates `year`'s holidays at every-site scope and counts site parameter rows
+ * without writing them (CF-062). Idempotent on (date, scope): a holiday already
+ * there, even renamed by the clinic, is left untouched. Demo data: `main`
+ * refuses a production `NODE_ENV`.
+ */
 export async function seedConfiguration(
   prisma: PrismaClient,
   year = new Date().getUTCFullYear(),

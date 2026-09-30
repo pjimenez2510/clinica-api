@@ -26,13 +26,9 @@ import { RolePermissionRegistry } from './role-permission.registry';
 import type { AccessTokenClaims } from './token.service';
 
 /**
- * Key under which the resolved principal is published in the request context.
- *
- * Declared BEFORE the class that uses it. It worked at the bottom of the file
- * thanks to module initialisation order, and that the linter said nothing was
- * the actual finding: `no-use-before-define` was missing from the config.
+ * 403 for a permission the caller does not hold. See the constructor for why
+ * the permission is named in the response.
  */
-
 export class PermissionDeniedError extends ForbiddenError {
   readonly code = 'PERMISSION_DENIED';
   constructor(permission: string) {
@@ -43,6 +39,10 @@ export class PermissionDeniedError extends ForbiddenError {
   }
 }
 
+/**
+ * AU-010. A route that declares no permission, or a permission without a site
+ * scope, is refused rather than let through: closed by default.
+ */
 export class RouteNotSecuredError extends ForbiddenError {
   readonly code = 'ROUTE_NOT_SECURED';
   constructor(missing: string) {
@@ -87,10 +87,16 @@ export class PermissionsGuard implements CanActivate {
     this.logger.setContext(PermissionsGuard.name);
   }
 
+  /** `Controller.handler`, for the error log that names an unsecured route. */
   private routeName(context: ExecutionContext): string {
     return `${context.getClass().name}.${context.getHandler().name}`;
   }
 
+  /**
+   * AU-010, AU-011, AU-012. Exemptions first (`@Public`, `@MfaFlowOnly`,
+   * `@OwnAccount`), then the permission, then the site. Every missing
+   * declaration ends in a refusal, never in a pass.
+   */
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const targets = [context.getHandler(), context.getClass()];
 

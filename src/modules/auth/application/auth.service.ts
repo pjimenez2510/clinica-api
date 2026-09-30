@@ -29,6 +29,10 @@ import {
   RevocationReason,
 } from '../../../shared/request/client-context';
 
+/**
+ * A complete session: the short-lived access token and the rotating refresh
+ * token of AU-004, plus what the client needs to greet the person.
+ */
 export interface AuthenticatedSession {
   accessToken: string;
   refreshToken: string;
@@ -60,6 +64,12 @@ export interface AuthenticatedSession {
   mfaEnabled: boolean;
 }
 
+/**
+ * Returned by `signIn` INSTEAD of a session when the account has a confirmed
+ * second factor. The challenge token carries `mfa: false` and no grants, so
+ * `JwtAuthGuard` admits it only on `@MfaFlowOnly()` routes; the real session
+ * is issued once the second factor is proved.
+ */
 export interface MfaChallenge {
   mfaRequired: true;
   challengeToken: string;
@@ -305,12 +315,20 @@ export class AuthService {
     );
   }
 
+  /**
+   * A missing account here means a valid token over a subject that no longer
+   * exists, so the answer is 401 `SessionUserMissingError`, not a 404.
+   */
   private async requireUser(userId: string): Promise<AuthUser> {
     const user = await this.users.findById(userId);
     if (!user) throw new SessionUserMissingError();
     return user;
   }
 
+  /**
+   * Opens a new refresh family and signs an access token tied to it with `mfa:
+   * true`. Only reached once every required factor has been proved.
+   */
   private async issueSession(
     user: AuthUser,
     ctx: ClientContext,

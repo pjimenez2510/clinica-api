@@ -67,6 +67,7 @@ export const listSpecialtiesQuerySchema = z.object({
   /** SP-007: deactivated rows only on explicit request. */
   includeInactive: explicitFlag,
 });
+/** Query of GET /specialties. */
 export class ListSpecialtiesQueryDto extends createZodDto(
   listSpecialtiesQuerySchema,
 ) {}
@@ -80,6 +81,7 @@ export class ListSpecialtiesQueryDto extends createZodDto(
 export const createSpecialtySchema = z.object({
   name: derivableSpecialtyNameSchema,
 });
+/** Body of POST /specialties (`config:manage`). */
 export class CreateSpecialtyDto extends createZodDto(createSpecialtySchema) {}
 
 /**
@@ -98,6 +100,7 @@ export const updateSpecialtySchema = z
   .refine((value) => value.name !== undefined || value.active !== undefined, {
     message: 'Indique al menos un cambio: nombre o estado',
   });
+/** Body of PATCH /specialties/:id. */
 export class UpdateSpecialtyDto extends createZodDto(updateSpecialtySchema) {}
 
 export const specialtySchema = z.object({
@@ -106,11 +109,13 @@ export const specialtySchema = z.object({
   name: z.string(),
   active: z.boolean(),
 });
+/** Response of creating and updating a specialty; `code` is where the derived code comes back. */
 export class SpecialtyDto extends createZodDto(specialtySchema) {}
 
 export const specialtyListSchema = z.object({
   items: z.array(specialtySchema).readonly(),
 });
+/** Response of GET /specialties. */
 export class SpecialtyListDto extends createZodDto(specialtyListSchema) {}
 
 // --- Service types (SP-020..SP-027) ----------------------------------------
@@ -118,6 +123,7 @@ export class SpecialtyListDto extends createZodDto(specialtyListSchema) {}
 export const listServiceTypesQuerySchema = z.object({
   includeInactive: explicitFlag,
 });
+/** Query of GET /specialties/:id/service-types. */
 export class ListServiceTypesQueryDto extends createZodDto(
   listServiceTypesQuerySchema,
 ) {}
@@ -126,6 +132,7 @@ export const createServiceTypeSchema = z.object({
   name: serviceTypeNameSchema,
   durationMinutes: durationMinutesSchema,
 });
+/** Body of POST /specialties/:id/service-types; the specialty is the route's. */
 export class CreateServiceTypeDto extends createZodDto(
   createServiceTypeSchema,
 ) {}
@@ -143,6 +150,7 @@ export const updateServiceTypeSchema = z
       value.active !== undefined,
     { message: 'Indique al menos un cambio: nombre, duración o estado' },
   );
+/** Body of PATCH /specialties/service-types/:id. */
 export class UpdateServiceTypeDto extends createZodDto(
   updateServiceTypeSchema,
 ) {}
@@ -154,11 +162,13 @@ export const serviceTypeSchema = z.object({
   durationMinutes: z.number().int(),
   active: z.boolean(),
 });
+/** Response of creating and updating a type of attention. */
 export class ServiceTypeDto extends createZodDto(serviceTypeSchema) {}
 
 export const serviceTypeListSchema = z.object({
   items: z.array(serviceTypeSchema).readonly(),
 });
+/** Response of GET /specialties/:id/service-types. */
 export class ServiceTypeListDto extends createZodDto(serviceTypeListSchema) {}
 
 /** Response types inferred from the published schemas; see agenda.dto.ts. */

@@ -20,6 +20,10 @@ interface HttpErrorLike {
   expose?: unknown;
 }
 
+/**
+ * The status of a client-facing middleware error (4xx with `expose: true`), or
+ * `undefined` so the filter falls through to its generic branch.
+ */
 export function extractMiddlewareProblem(
   exception: unknown,
 ): { status: HttpStatus } | undefined {

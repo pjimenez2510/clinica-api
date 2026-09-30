@@ -44,6 +44,10 @@ export interface EstablishmentInput {
   active: boolean;
 }
 
+/**
+ * OR-004: what a new site row carries, with the RUC already validated (OR-008)
+ * and the establishment already resolved.
+ */
 export interface SiteInput {
   mspUnicode: string;
   establishmentId: string | null;
@@ -65,6 +69,10 @@ export interface SiteInput {
  */
 export type SiteScopeFilter = 'all' | readonly string[];
 
+/**
+ * Absent fields are left untouched; `null` clears an optional one. The MSP code
+ * is not here: it cannot be edited.
+ */
 export interface SitePatch {
   name?: string;
   ruc?: string | null;
@@ -74,6 +82,11 @@ export interface SitePatch {
   active?: boolean;
 }
 
+/**
+ * The establishment and its sites (OR-001..OR-008). Duplicates and references
+ * are arbitrated by the database and translated by the adapter, never checked
+ * first.
+ */
 export interface OrganizationRepository {
   /**
    * The establishment, or `null` when none has been registered.

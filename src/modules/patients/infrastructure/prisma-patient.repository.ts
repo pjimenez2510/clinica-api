@@ -300,6 +300,12 @@ const SORT_COLUMNS: Record<PatientSortField, readonly string[]> = {
   birthDate: ['p.birth_date'],
 };
 
+/**
+ * The patient port over PostgreSQL. Search goes through raw SQL on the
+ * generated `search_name` column; uniqueness, merge chains and immutability
+ * are enforced by indexes and triggers, and this class translates their
+ * refusals into the domain's errors.
+ */
 @Injectable()
 export class PrismaPatientRepository implements PatientRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -512,6 +518,11 @@ export class PrismaPatientRepository implements PatientRepository {
     };
   }
 
+  /**
+   * The chart with every active identifier and its catalogue concepts joined
+   * as they were recorded. Merged charts are returned too, carrying the MRN of
+   * their survivor.
+   */
   async findById(id: string): Promise<PatientDetail | null> {
     const row = await this.prisma.patient.findUnique({
       where: { id },
@@ -706,6 +717,11 @@ export class PrismaPatientRepository implements PatientRepository {
     }
   }
 
+  /**
+   * The transaction `create` wraps: the MRN from `patient_mrn_seq` (PA-001),
+   * then the chart and its first identifier together. Translating a unique
+   * violation is left to `create`.
+   */
   private async insert(patient: NewPatient): Promise<PatientDetail> {
     const id = await this.prisma.$transaction(async (tx) => {
       const [{ nextval }] = await tx.$queryRaw<[{ nextval: bigint }]>`
@@ -883,6 +899,11 @@ export class PrismaPatientRepository implements PatientRepository {
     };
   }
 
+  /**
+   * A concept and the catalogue it belongs to, with its validity dates. Not
+   * filtered by validity: whether a retired concept is acceptable is the
+   * caller's decision.
+   */
   async findConceptReference(id: string): Promise<CatalogReference | null> {
     const row = await this.prisma.catalogConcept.findUnique({
       where: { id },
@@ -2157,6 +2178,7 @@ function columnValueOf(change: PatientFieldChange): unknown {
   }
 }
 
+/** The `type` cast rests on the PostgreSQL enum behind the column. */
 function toIdentifier(row: {
   type: string;
   issuingCountry: string;
@@ -2234,6 +2256,7 @@ function fromClinicalDate(date: ClinicalDate): Date {
   return new Date(`${date}T00:00:00Z`);
 }
 
+/** A priority group's period and nothing else: `priorityLevelOf` takes periods, never the group that says why (PA-041). */
 function toPeriod(row: { startsOn: Date; endsOn: Date | null }): {
   startsOn: ClinicalDate;
   endsOn: ClinicalDate | null;
@@ -2414,6 +2437,11 @@ async function lockChart(
   `;
 }
 
+/**
+ * Every message a rejection carries — the ORM's and the driver's original —
+ * joined, so the matchers below find a trigger's sentence or a constraint name
+ * whichever layer reported it.
+ */
 function databaseMessageOf(error: unknown): string {
   if (typeof error !== 'object' || error === null) return '';
 

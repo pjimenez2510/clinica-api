@@ -67,6 +67,7 @@ export const placeOrderSchema = z.object({
     .min(1, 'Añada al menos un examen a la orden')
     .max(40, 'Una orden no puede llevar más de 40 exámenes'),
 });
+/** Body of POST /encounters/:encounterId/orders. */
 export class PlaceOrderDto extends createZodDto(placeOrderSchema) {}
 
 /** ORD-002. One line as a client reads it. */
@@ -105,11 +106,13 @@ export const serviceOrderSchema = z.object({
   requestedAt: z.iso.datetime(),
   items: z.array(orderItemSchema),
 });
+/** Response of placing an order, reading one, and cancelling one of its lines. */
 export class ServiceOrderDto extends createZodDto(serviceOrderSchema) {}
 
 export const serviceOrderListSchema = z.object({
   items: z.array(serviceOrderSchema),
 });
+/** Response of GET /encounters/:encounterId/orders. */
 export class ServiceOrderListDto extends createZodDto(serviceOrderListSchema) {}
 
 /**
@@ -138,6 +141,7 @@ export const pendingOrdersQuerySchema = z.object({
     .max(200, 'No se pueden listar más de 200 pendientes de una vez')
     .default(100),
 });
+/** Query of GET /orders/pending. */
 export class PendingOrdersQueryDto extends createZodDto(
   pendingOrdersQuerySchema,
 ) {}
@@ -170,13 +174,16 @@ export const pendingOrderSchema = z.object({
   overdue: z.boolean().nullable(),
   dueAt: z.iso.datetime().nullable(),
 });
+/** One worklist entry; no route returns it alone, it is the row of `PendingOrderListDto`. */
 export class PendingOrderDto extends createZodDto(pendingOrderSchema) {}
 
 export const pendingOrderListSchema = z.object({
   items: z.array(pendingOrderSchema),
 });
+/** Response of GET /orders/pending. */
 export class PendingOrderListDto extends createZodDto(pendingOrderListSchema) {}
 
+/** Response types the controllers return, inferred from the schemas Swagger publishes. */
 export type ServiceOrderResponse = z.infer<typeof serviceOrderSchema>;
 export type ServiceOrderListResponse = z.infer<typeof serviceOrderListSchema>;
 export type PendingOrderListResponse = z.infer<typeof pendingOrderListSchema>;

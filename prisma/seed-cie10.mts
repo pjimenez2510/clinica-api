@@ -56,6 +56,11 @@ const EFFECTIVE_FROM = new Date(
   `${process.env.CIE10_EFFECTIVE_YEAR ?? '2019'}-01-01T00:00:00Z`,
 );
 
+/**
+ * The columns of the CIE-10 CSV this import reads, named as in its header:
+ * the code, its ancestors `code_0` to `code_4`, the description and the
+ * level (`0` is a chapter). Other columns are ignored.
+ */
 interface FilaCsv {
   code: string;
   code_0: string;
@@ -170,6 +175,12 @@ function padreDe(fila: FilaCsv): string | null {
   return cadena[0] ?? null;
 }
 
+/**
+ * Entry point of `pnpm db:seed:cie10`. Idempotent on (system, version): the
+ * same file again is a no-op, a different file under the same version is
+ * refused for a human to decide. Under a production `NODE_ENV` it refuses the
+ * bundled development file and runs only with `CIE10_FILE` set.
+ */
 async function main(): Promise<void> {
   if (process.env.NODE_ENV === 'production' && !process.env.CIE10_FILE) {
     throw new Error(

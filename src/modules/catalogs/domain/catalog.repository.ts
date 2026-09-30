@@ -60,6 +60,10 @@ export interface CatalogConcept {
   selectable: boolean;
 }
 
+/**
+ * One text search over one catalogue: codes still valid on `on` that resemble
+ * `query`, optionally narrowed to a branch of the tree.
+ */
 export interface CatalogSearchCriteria {
   systemCode: string;
   /** Texto libre: un código, un fragmento de código, o parte de la descripción. */
@@ -120,6 +124,11 @@ export interface CatalogPage {
   total: number;
 }
 
+/**
+ * Read-only access to the imported catalogues (CIE-10, DPA, the flat lists).
+ * Nothing here writes: catalogues are loaded by seed, not edited from the
+ * application.
+ */
 export interface CatalogRepository {
   search(criteria: CatalogSearchCriteria): Promise<readonly CatalogConcept[]>;
 

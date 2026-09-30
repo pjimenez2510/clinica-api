@@ -44,6 +44,7 @@ export const CHARGE_ORIGINS = [
   'PROCEDURE',
   'EXAM',
 ] as const;
+/** One of `CHARGE_ORIGINS`, as `charge_item.origin` stores it. */
 export type ChargeOrigin = (typeof CHARGE_ORIGINS)[number];
 
 /** The three a proposal can produce. `MANUAL` is what a person types. */
@@ -68,6 +69,7 @@ export const PROPOSAL_SKIP_REASONS = [
   /** Mapped and active, and no price in force on the service date (BI-047). */
   'NO_PRICE_FOR_DATE',
 ] as const;
+/** One of `PROPOSAL_SKIP_REASONS`. */
 export type ProposalSkipReason = (typeof PROPOSAL_SKIP_REASONS)[number];
 
 /** A line the proposal offers. Nothing here is an amount: the price is resolved
@@ -89,6 +91,11 @@ export interface SkippedAct {
   reason: ProposalSkipReason;
 }
 
+/**
+ * BI-152, BI-155. What the cashier reviews: the lines offered and the acts that
+ * produced none, each with its reason, so nothing the visit did disappears
+ * silently.
+ */
 export interface ChargeProposal {
   proposed: ProposedCharge[];
   skipped: SkippedAct[];
@@ -155,6 +162,14 @@ export function proposeCharges(
   const proposed: ProposedCharge[] = [];
   const skipped: SkippedAct[] = [];
 
+  /**
+   * Routes one act to `proposed` or to `skipped`.
+   *
+   * The checks run in a fixed order — already charged, cancelled, unmapped,
+   * inactive — so an act carries ONE reason, the first that applies: an act
+   * charged before is reported as charged even if its service has since been
+   * deactivated.
+   */
   const take = (
     origin: DerivedOrigin,
     source: { procedureId?: string; orderItemId?: string },

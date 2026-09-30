@@ -46,6 +46,7 @@ export const MAX_IMAGE_PIXELS = 40_000_000;
 /** DOC-050. The two the database also enforces (`document_image_mime_type_allowed`). */
 export const ALLOWED_IMAGE_MIME_TYPES = ['image/png', 'image/jpeg'] as const;
 
+/** One of `ALLOWED_IMAGE_MIME_TYPES`. */
 export type AllowedImageMimeType = (typeof ALLOWED_IMAGE_MIME_TYPES)[number];
 
 /** Which slot the image is being uploaded into. Only used to name the field. */

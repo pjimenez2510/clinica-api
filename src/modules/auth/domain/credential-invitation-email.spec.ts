@@ -5,6 +5,12 @@ import {
   credentialInvitationLink,
 } from './credential-invitation-email';
 
+/**
+ * The first-credential invitation e-mail as a pure rendering: who invites,
+ * from which clinic, where the link goes and when it expires, in both the
+ * HTML and the plain-text part. Pure domain unit; cites AU-021 and AU-026.
+ */
+
 const CONTENT = {
   recipientName: 'Ana Villacís',
   inviterName: 'Gabriela Mera',

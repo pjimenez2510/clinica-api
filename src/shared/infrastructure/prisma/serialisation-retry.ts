@@ -29,11 +29,19 @@
  */
 const TRANSIENT_SQLSTATES = new Set(['40001', '40P01']);
 
+/**
+ * Where the driver carries the SQLSTATE. Both keys are read; see
+ * `isSerialisationFailure`.
+ */
 interface SqlStateCause {
   code?: unknown;
   originalCode?: unknown;
 }
 
+/**
+ * The two shapes Prisma delivers a driver failure in, depending on how the
+ * statement ran.
+ */
 interface DriverErrorLike {
   /** A statement outside a transaction: Prisma wraps the driver error. */
   meta?: { driverAdapterError?: { cause?: SqlStateCause } };
@@ -74,6 +82,7 @@ export function isSerialisationFailure(error: unknown): boolean {
   );
 }
 
+/** Tuning for `withSerialisationRetry`; every field has a default. */
 export interface SerialisationRetryOptions {
   /**
    * Total attempts INCLUDING the first. Three by default: enough to survive
@@ -89,9 +98,14 @@ export interface SerialisationRetryOptions {
   onRetry?: (attempt: number) => void;
 }
 
+/**
+ * Three attempts starting at 20 ms; see `SerialisationRetryOptions.attempts`
+ * for why three.
+ */
 const DEFAULT_ATTEMPTS = 3;
 const DEFAULT_DELAY_MS = 20;
 
+/** The production sleep; tests inject their own through `options.sleep`. */
 const realSleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 

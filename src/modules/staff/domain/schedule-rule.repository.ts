@@ -32,6 +32,7 @@ export interface ScheduleRuleView {
   active: boolean;
 }
 
+/** A rule as it is written. No `active`: a new rule is active, and closing is `update`. */
 export interface ScheduleRuleWrite {
   practitionerId: string;
   siteId: string;
@@ -42,6 +43,7 @@ export interface ScheduleRuleWrite {
   validTo: ClinicalDate | null;
 }
 
+// The port described at the top of this file.
 export interface ScheduleRuleRepository {
   listByPractitioner(
     practitionerId: string,

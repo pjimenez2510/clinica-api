@@ -47,6 +47,9 @@ export const TEAR_OFF_HEIGHT_MM = 70;
 /** Points per millimetre. PDF user space is 72 dpi. */
 export const POINTS_PER_MM = 72 / 25.4;
 
+/**
+ * The norm and the margins are stated in millimetres; PDFKit draws in points.
+ */
 export function millimetresToPoints(millimetres: number): number {
   return millimetres * POINTS_PER_MM;
 }

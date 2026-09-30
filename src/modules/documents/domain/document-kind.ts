@@ -16,6 +16,7 @@ export const DOCUMENT_KINDS = [
   'INVOICE_RIDE',
 ] as const;
 
+/** One of `DOCUMENT_KINDS`, as `document_render.kind` stores it. */
 export type DocumentKind = (typeof DOCUMENT_KINDS)[number];
 
 /**
@@ -31,8 +32,13 @@ export const CLINICAL_DOCUMENT_KINDS = [
   'MEDICAL_CERTIFICATE',
 ] as const satisfies readonly DocumentKind[];
 
+/** One of `CLINICAL_DOCUMENT_KINDS`. */
 export type ClinicalDocumentKind = (typeof CLINICAL_DOCUMENT_KINDS)[number];
 
+/**
+ * DOC-091. The test that decides whether serving a document leaves an audit
+ * row: true for the three clinical kinds, false for the RIDE.
+ */
 export function isClinicalDocumentKind(
   kind: DocumentKind,
 ): kind is ClinicalDocumentKind {

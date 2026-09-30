@@ -84,8 +84,13 @@ const SUMMARY_SELECT = {
   vitals: SUMMARY_VITALS,
 } satisfies Prisma.EncounterSelect;
 
+/** The row `SUMMARY_SELECT` yields, derived from it so the two cannot drift. */
 type SummaryRow = Prisma.EncounterGetPayload<{ select: typeof SUMMARY_SELECT }>;
 
+/**
+ * EN-159 over PostgreSQL. The list and the count share one predicate
+ * (`previousEncountersWhere`), so «5 de 24» always reconciles.
+ */
 @Injectable()
 export class PrismaChartSummaryRepository implements ChartSummaryRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -156,6 +161,7 @@ function siteFilter(sites: SiteScopeFilter): Prisma.EncounterWhereInput {
   return sites === 'all' ? {} : { siteId: { in: [...sites] } };
 }
 
+/** One previous attention: its top diagnoses by rank and its vitals, nothing else. */
 function toPreviousEncounter(row: SummaryRow): PreviousEncounterSummary {
   return {
     id: row.id,

@@ -104,6 +104,7 @@ export const AGE_PRIORITY_BRACKETS = [
   'OLDER_ADULT',
   'CHILD_OR_ADOLESCENT',
 ] as const;
+/** One of the two brackets a birth date alone settles. */
 export type AgePriorityBracket = (typeof AGE_PRIORITY_BRACKETS)[number];
 
 /**
@@ -213,6 +214,10 @@ export function priorityLevelOf(
   return prioritised ? PRIORITY_LEVEL.PRIORITY : PRIORITY_LEVEL.STANDARD;
 }
 
+/**
+ * `[year, month, day]` of an already-validated date; `parseClinicalDate` throws
+ * before a malformed one is split.
+ */
 function splitDate(date: ClinicalDate): [number, number, number] {
   return parseClinicalDate(date)
     .split('-')

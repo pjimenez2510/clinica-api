@@ -40,6 +40,10 @@ export interface ExamAnalyteView {
   isReflex: boolean;
 }
 
+/**
+ * The read-only port over the exam catalogue. It never exposes an amount
+ * (ORD-002).
+ */
 export interface ExamCatalogueRepository {
   /** ORD-010 to ORD-012. Every active orderable, with its determinations. */
   active(): Promise<ExamDefinitionView[]>;

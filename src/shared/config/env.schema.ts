@@ -163,6 +163,10 @@ export const envSchema = z.object({
     .pipe(z.array(z.url()).describe('lista de orígenes permitidos')),
 });
 
+/**
+ * The configuration AFTER validation and defaults. Read through
+ * `ConfigService<Env, true>`, so every `get` is typed against the schema.
+ */
 export type Env = z.infer<typeof envSchema>;
 
 /**

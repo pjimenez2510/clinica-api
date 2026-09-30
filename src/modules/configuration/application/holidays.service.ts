@@ -16,6 +16,10 @@ import {
   type Requester,
 } from './configuration-audit.trail';
 
+/**
+ * CF-060. The date is a calendar day, `YYYY-MM-DD`. Writing a clinic-wide
+ * holiday (`siteId` null) demands a clinic-wide grant (CF-067).
+ */
 export interface CreateHolidayCommand {
   date: string;
   name: string;
@@ -23,6 +27,10 @@ export interface CreateHolidayCommand {
   siteId?: string | null;
 }
 
+/**
+ * CF-060. Absent fields keep their stored value; `siteId: null` moves the
+ * holiday to every site, which is a clinic-wide write (CF-067).
+ */
 export interface UpdateHolidayCommand {
   date?: string;
   name?: string;

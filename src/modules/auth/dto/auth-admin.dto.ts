@@ -20,6 +20,7 @@ import { Cedula } from '../../../shared/domain/value-objects/cedula.vo';
 
 // --- Accounts (AU-020..AU-025) ---------------------------------------------
 
+/** A first or last name; `what` names the field in the Spanish messages. */
 const nameSchema = (what: string) =>
   z
     .string({ error: `Indique el ${what}` })
@@ -59,6 +60,7 @@ export const listAccountsQuerySchema = z.object({
   /** Name or email. Never the cedula: that confirms a person, it does not browse. */
   search: z.string().trim().max(120).optional(),
 });
+/** Query of GET /auth/users. */
 export class ListAccountsQueryDto extends createZodDto(
   listAccountsQuerySchema,
 ) {}
@@ -71,6 +73,7 @@ export const createAccountSchema = z.object({
   lastName: nameSchema('apellido'),
   cedula: cedulaSchema.nullish(),
 });
+/** Body of POST /auth/users. No password field: AU-021 forbids an administrator choosing one. */
 export class CreateAccountDto extends createZodDto(createAccountSchema) {}
 
 /**
@@ -96,6 +99,7 @@ export const updateAccountSchema = z
   .refine((value) => Object.values(value).some((v) => v !== undefined), {
     message: 'Indique al menos un cambio',
   });
+/** Body of PATCH /auth/users/:id; an empty body is refused. */
 export class UpdateAccountDto extends createZodDto(updateAccountSchema) {}
 
 export const accountSchema = z.object({
@@ -136,6 +140,7 @@ export class UserAccountDto extends createZodDto(accountSchema) {}
 export const accountListSchema = z.object({
   items: z.array(accountSchema).readonly(),
 });
+/** Response of GET /auth/users. */
 export class UserAccountListDto extends createZodDto(accountListSchema) {}
 
 /**
@@ -159,6 +164,7 @@ export const invitationOutcomeSchema = z.object({
   /** When the link stops working, so the screen can say the date (72 h). */
   invitationExpiresAt: z.iso.datetime(),
 });
+/** Response of POST /auth/users/:id/invitation, the re-send. */
 export class InvitationOutcomeDto extends createZodDto(
   invitationOutcomeSchema,
 ) {}
@@ -167,6 +173,7 @@ export class InvitationOutcomeDto extends createZodDto(
 export const createdAccountSchema = accountSchema.extend(
   invitationOutcomeSchema.shape,
 );
+/** Response of POST /auth/users. */
 export class CreatedAccountDto extends createZodDto(createdAccountSchema) {}
 
 // --- Grants (AU-032) --------------------------------------------------------
@@ -178,11 +185,13 @@ export const grantSchema = z.object({
   /** `null` = todas las sedes. */
   siteId: z.uuid().nullable(),
 });
+/** One grant; no route returns it on its own, it travels inside `GrantListDto`. */
 export class GrantDto extends createZodDto(grantSchema) {}
 
 export const grantListSchema = z.object({
   items: z.array(grantSchema).readonly(),
 });
+/** Response of reading and replacing an account's roles. */
 export class GrantListDto extends createZodDto(grantListSchema) {}
 
 /**
@@ -205,6 +214,7 @@ export const replaceGrantsSchema = z.object({
     )
     .max(50, 'Demasiados roles para una sola cuenta'),
 });
+/** Body of PUT /auth/users/:id/roles. */
 export class ReplaceGrantsDto extends createZodDto(replaceGrantsSchema) {}
 
 // --- Roles (AU-030..AU-034) -------------------------------------------------
@@ -236,6 +246,7 @@ const roleDescriptionSchema = z
 export const listRolesQuerySchema = z.object({
   includeInactive: explicitFlag,
 });
+/** Query of GET /auth/roles. */
 export class ListRolesQueryDto extends createZodDto(listRolesQuerySchema) {}
 
 export const createRoleSchema = z.object({
@@ -243,6 +254,7 @@ export const createRoleSchema = z.object({
   name: roleNameSchema,
   description: roleDescriptionSchema.nullish(),
 });
+/** Body of POST /auth/roles. No `isSystem`: a role created here is the clinic's, and a system one could never be deleted (AU-031). */
 export class CreateRoleDto extends createZodDto(createRoleSchema) {}
 
 /**
@@ -264,6 +276,7 @@ export const updateRoleSchema = z
   .refine((value) => Object.values(value).some((v) => v !== undefined), {
     message: 'Indique al menos un cambio',
   });
+/** Body of PATCH /auth/roles/:id; an empty body is refused. */
 export class UpdateRoleDto extends createZodDto(updateRoleSchema) {}
 
 export const roleSchema = z.object({
@@ -277,11 +290,13 @@ export const roleSchema = z.object({
   /** How many accounts hold it right now. Zero is what makes it deletable. */
   liveGrants: z.number().int(),
 });
+/** Response of creating and updating a role. */
 export class RoleDto extends createZodDto(roleSchema) {}
 
 export const roleListSchema = z.object({
   items: z.array(roleSchema).readonly(),
 });
+/** Response of GET /auth/roles. */
 export class RoleListDto extends createZodDto(roleListSchema) {}
 
 /**
@@ -312,6 +327,7 @@ export const replacePermissionsSchema = z.object({
    */
   permissions: z.array(permissionCodeSchema).max(100),
 });
+/** Body of PUT /auth/roles/:id/permissions. */
 export class ReplacePermissionsDto extends createZodDto(
   replacePermissionsSchema,
 ) {}
@@ -329,6 +345,7 @@ export const rolePermissionsSchema = z.object({
    */
   warnings: z.array(z.string()).readonly(),
 });
+/** Response of reading and replacing a role's permissions. */
 export class RolePermissionsDto extends createZodDto(rolePermissionsSchema) {}
 
 export const permissionSchema = z.object({
@@ -338,11 +355,13 @@ export const permissionSchema = z.object({
   /** AU-033: what it allows, in Spanish, for whoever is granting it. */
   description: z.string(),
 });
+/** One catalogue entry; no route returns it on its own, it travels inside `PermissionListDto`. */
 export class PermissionDto extends createZodDto(permissionSchema) {}
 
 export const permissionListSchema = z.object({
   items: z.array(permissionSchema).readonly(),
 });
+/** Response of GET /auth/permissions, the catalogue the screen builds its checkboxes from. */
 export class PermissionListDto extends createZodDto(permissionListSchema) {}
 
 /** Response types inferred from the published schemas; see agenda.dto.ts. */

@@ -187,6 +187,7 @@ export interface PatientBookingStatus {
   mergedIntoMrn: string | null;
 }
 
+/** AG-012, AG-028: whose rules, at which site, on which day they are read for. */
 export interface ScheduleContextQuery {
   practitionerId: string;
   siteId: string;
@@ -665,6 +666,14 @@ export interface NoShowCountsQuery {
   untilExclusive: Date;
 }
 
+/**
+ * What the agenda needs from storage, stated without naming a database.
+ *
+ * `AgendaService` only ever sees this port, so the booking rules run against
+ * in-memory doubles; what must hold under concurrency — the overlaps, the
+ * transitions — is written and arbitrated inside the adapter, and proved
+ * against a real PostgreSQL.
+ */
 export interface AgendaRepository {
   /** AG-107. Sites in the caller's scope, by name, for the site selector. */
   listSites(scope: SiteScopeFilter): Promise<AgendaSite[]>;

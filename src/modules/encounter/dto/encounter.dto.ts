@@ -90,6 +90,7 @@ export const openEncounterSchema = z.object({
    */
   visitSequence: VISIT_SEQUENCE,
 });
+/** Body of POST /encounters (`encounter:open`). */
 export class OpenEncounterDto extends createZodDto(openEncounterSchema) {}
 
 /**
@@ -123,6 +124,7 @@ export const closeEncounterSchema = z.object({
     .max(500, 'El motivo no puede superar 500 caracteres')
     .optional(),
 });
+/** Body of POST /encounters/:id/close. */
 export class CloseEncounterDto extends createZodDto(closeEncounterSchema) {}
 
 /**
@@ -155,6 +157,7 @@ export const chartHistoryQuerySchema = z.object({
    */
   pageSize: z.coerce.number().int().min(1).max(50).default(20),
 });
+/** Query of GET /encounters. */
 export class ChartHistoryQueryDto extends createZodDto(
   chartHistoryQuerySchema,
 ) {}
@@ -164,6 +167,7 @@ export const openEncountersQuerySchema = z.object({
   /** Absent means «todas las de mi alcance», which is what a supervisor reads. */
   practitionerId: z.uuid('Seleccione un profesional de la lista').optional(),
 });
+/** Query of GET /encounters/open. */
 export class OpenEncountersQueryDto extends createZodDto(
   openEncountersQuerySchema,
 ) {}
@@ -217,6 +221,7 @@ export const recordVitalsSchema = z
    * to prevent.
    */
   .catchall(z.unknown());
+/** Body of PUT /encounters/:id/vitals. */
 export class RecordVitalsDto extends createZodDto(recordVitalsSchema) {}
 
 /**
@@ -267,11 +272,13 @@ export const encounterSchema = z.object({
   closedAt: z.iso.datetime().nullable(),
   closedBySubstituteReason: z.string().nullable(),
 });
+/** Response of opening and closing an attention, and of POST /encounters/:id/vitals/start (EN-135). */
 export class EncounterDto extends createZodDto(encounterSchema) {}
 
 export const encounterListSchema = z.object({
   items: z.array(encounterSchema),
 });
+/** Response of GET /encounters/open. */
 export class EncounterListDto extends createZodDto(encounterListSchema) {}
 
 /**
@@ -299,6 +306,7 @@ export const encounterPageSchema = z.object({
   page: z.number().int().positive(),
   pageSize: z.number().int().positive(),
 });
+/** Response of GET /encounters. */
 export class EncounterPageDto extends createZodDto(encounterPageSchema) {}
 
 /**
@@ -329,6 +337,7 @@ export const encounterDetailSchema = encounterSchema.extend({
   /** EN-081. The unrefuted ones, worst first. Never the refuted ones. */
   allergies: z.array(activeAllergySchema),
 });
+/** Response of GET /encounters/:id. */
 export class EncounterDetailDto extends createZodDto(encounterDetailSchema) {}
 
 /**
@@ -355,8 +364,10 @@ export const vitalSignsSchema = z.object({
   oxygenSaturation: z.number().int().nullable(),
   measuredAt: z.iso.datetime(),
 });
+/** Response of reading and recording block D. */
 export class VitalSignsDto extends createZodDto(vitalSignsSchema) {}
 
+/** Response types the controller returns, inferred from the schemas Swagger publishes. */
 export type EncounterResponse = z.infer<typeof encounterSchema>;
 export type EncounterDetailResponse = z.infer<typeof encounterDetailSchema>;
 export type EncounterListResponse = z.infer<typeof encounterListSchema>;

@@ -42,6 +42,10 @@ import {
  * `patient:priority:protected` where D-027 put them.
  */
 
+/**
+ * The life of an entry. `WAITING` and `CONTACTED` still compete for a slot;
+ * the other three are final, and `trg_waitlist_entry_closure_final` keeps them so.
+ */
 export type WaitlistStatus =
   'WAITING' | 'CONTACTED' | 'SCHEDULED' | 'EXPIRED' | 'CANCELLED';
 
@@ -65,6 +69,7 @@ export const WAITLIST_CONTACT_OUTCOMES: readonly WaitlistContactOutcome[] = [
  */
 export const OPEN_WAITLIST_STATUSES = ['WAITING', 'CONTACTED'] as const;
 
+/** AG-067. Whether an entry still competes for a slot. */
 export function isOpenWaitlistStatus(status: WaitlistStatus): boolean {
   return (OPEN_WAITLIST_STATUSES as readonly WaitlistStatus[]).includes(status);
 }
@@ -86,6 +91,7 @@ export const DEFAULT_WAITLIST_PARAMETERS: WaitlistSiteParameters = {
   maxContactAttempts: 3,
 };
 
+/** What a site's parameter row states; any field it leaves out takes the default. */
 export type StoredWaitlistParameters = Partial<WaitlistSiteParameters>;
 
 /**

@@ -68,6 +68,7 @@ const ENCOUNTER_SELECT = {
   closedBySubstituteReason: true,
 } satisfies Prisma.EncounterSelect;
 
+/** The row `ENCOUNTER_SELECT` yields, derived from it so the two cannot drift. */
 type EncounterRow = Prisma.EncounterGetPayload<{
   select: typeof ENCOUNTER_SELECT;
 }>;
@@ -88,6 +89,7 @@ const VITALS_SELECT = {
   measuredAt: true,
 } satisfies Prisma.EncounterVitalsSelect;
 
+/** The row `VITALS_SELECT` yields; its decimals are still Prisma's `Decimal`. */
 type VitalsRow = Prisma.EncounterVitalsGetPayload<{
   select: typeof VITALS_SELECT;
 }>;
@@ -113,6 +115,11 @@ const NOT_ATTENDABLE: readonly string[] = [
   'ENTERED_IN_ERROR',
 ];
 
+/**
+ * The attention's port over PostgreSQL. What it reads of patients, agenda and
+ * practitioners it reads from their tables directly, because no module
+ * imports another.
+ */
 @Injectable()
 export class PrismaEncounterRepository implements EncounterRepository {
   constructor(private readonly prisma: PrismaService) {}

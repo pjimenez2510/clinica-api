@@ -35,6 +35,10 @@ const ARGON2_OPTIONS = {
  */
 @Injectable()
 export class PasswordHasher {
+  /**
+   * AU-001. The salt and the parameters travel inside the returned string,
+   * which is what lets `needsRehash` spot an outdated hash later.
+   */
   async hash(plain: string): Promise<string> {
     return argon2.hash(plain, ARGON2_OPTIONS);
   }

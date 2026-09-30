@@ -46,6 +46,7 @@ export interface ProblemDetails extends ProblemDetailsBase {
   failedDependencies?: string[];
 }
 
+/** One invalid input, in the `errors` array of an RFC 9457 response. */
 export interface FieldError {
   /** Field path in dot notation: `patient.cedula`. */
   field: string;
@@ -60,4 +61,5 @@ export interface FieldError {
   rejectedValue?: unknown;
 }
 
+/** RFC 9457's media type, sent with every error response. */
 export const PROBLEM_CONTENT_TYPE = 'application/problem+json';

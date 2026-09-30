@@ -25,6 +25,14 @@ import { SharedInfrastructureModule } from './shared/infrastructure/shared-infra
 import type { Env } from './shared/config/env.schema';
 import { buildLoggerConfig } from './shared/observability/logger.config';
 
+/**
+ * The root composition: validated configuration, PHI-redacting logging,
+ * per-request context, rate limiting, every business module, and the global
+ * problem-details filter, throttler guard and timeout interceptor.
+ *
+ * The authentication and permission guards are NOT registered here:
+ * `AuthModule` registers them as `APP_GUARD`, in the order they must run.
+ */
 @Module({
   imports: [
     ConfigModule.forRoot({

@@ -31,9 +31,12 @@ export abstract class DomainError extends Error {
   abstract readonly code: string;
 
   /**
-   * Parameters for interpolating the translated message.
-   * NEVER put health data or national identifiers here: these values end up in
-   * the HTTP response and in support screenshots.
+   * Structured detail carried on the error for whoever catches it; the specs
+   * assert on it. Nothing serialises it today: the problem-details filter
+   * does not put it in the HTTP response, and the log serializer for `err`
+   * does not emit it.
+   * NEVER put health data or national identifiers here all the same: it is a
+   * public, enumerable property of an object that reaches the HTTP layer.
    */
   readonly params: Readonly<Record<string, string | number>>;
 

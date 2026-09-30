@@ -7,6 +7,12 @@ import {
   isPending,
 } from './service-order';
 
+/**
+ * The order's pure policies: when exams may be ordered, what counts as
+ * pending, which reports may be corrected, and when a line is complete. Pure
+ * domain unit; cites ORD-005, ORD-008, ORD-039 and ORD-053.
+ */
+
 describe('las políticas de la orden', () => {
   it('ORD-005 admite pedir exámenes mientras la atención sigue viva', () => {
     // `ON_HOLD` la admite porque la atención está SUSPENDIDA, no terminada: el

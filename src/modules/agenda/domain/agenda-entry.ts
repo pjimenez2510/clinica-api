@@ -8,8 +8,17 @@
  * re-exports them, and every existing importer keeps its path.
  */
 
+/**
+ * An appointment carries a patient and a booking channel; a block closes a
+ * stretch of the agenda and carries neither — the database's coherence
+ * constraints hold both halves.
+ */
 export type AgendaEntryKind = 'APPOINTMENT' | 'BLOCK';
 
+/**
+ * Every state an entry can be in. Which moves between them are legal is
+ * `status-machine.ts`, not this list.
+ */
 export type AgendaEntryStatus =
   | 'BOOKED'
   | 'CONFIRMED'

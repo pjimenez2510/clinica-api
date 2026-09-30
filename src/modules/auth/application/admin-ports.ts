@@ -32,6 +32,10 @@ export interface AccountView {
   credentialPending: boolean;
 }
 
+/**
+ * What the adapter inserts. The email arrives already lowercased by
+ * `AccountsService.create` — the normalisation sign-in applies too.
+ */
 export interface CreateAccountInput {
   email: string;
   firstName: string;
@@ -41,12 +45,19 @@ export interface CreateAccountInput {
   passwordHash: string;
 }
 
+/**
+ * AU-025. Absent fields are left untouched; `cedula: null` clears it. The email
+ * is deliberately absent — see the adapter's `update`.
+ */
 export interface AccountPatch {
   firstName?: string;
   lastName?: string;
   cedula?: string | null;
 }
 
+/**
+ * AU-020, AU-022: the listing criteria the administration screen can ask for.
+ */
 export interface AccountListFilter {
   /** AU-022: deactivated accounts travel only when explicitly asked for. */
   includeInactive: boolean;
@@ -63,6 +74,11 @@ export interface GrantView {
   siteId: string | null;
 }
 
+/**
+ * One desired grant for `replaceGrants`. `siteId: null` is a global grant —
+ * every site, present and future — which AU-038 reserves to clinic-level
+ * `user:manage`.
+ */
 export interface GrantInput {
   roleId: string;
   siteId: string | null;
@@ -84,6 +100,10 @@ export interface MfaResetAuthor {
   userAgent?: string;
 }
 
+/**
+ * The account half of administration (AU-020..AU-025, AU-032, AU-035). No «is
+ * this email free?» method, on purpose — see the file header.
+ */
 export interface AccountAdminRepositoryPort {
   list(filter: AccountListFilter): Promise<readonly AccountView[]>;
   findById(id: string): Promise<AccountView | null>;
@@ -180,18 +200,31 @@ export interface RoleView {
   liveGrants: number;
 }
 
+/**
+ * AU-030. The code is arbitrated by its unique index, which the adapter
+ * translates into `ROLE_CODE_DUPLICATE`.
+ */
 export interface CreateRoleInput {
   code: string;
   name: string;
   description: string | null;
 }
 
+/**
+ * AU-030, AU-031. The code is absent: it is the role's identity, and
+ * deactivating (`active: false`) is how a role in use is retired instead of
+ * deleted.
+ */
 export interface RolePatch {
   name?: string;
   description?: string | null;
   active?: boolean;
 }
 
+/**
+ * The role half of administration (AU-030..AU-034). Permissions come in as
+ * codes from the catalogue in the code (D-002); this port never creates one.
+ */
 export interface RoleAdminRepositoryPort {
   list(includeInactive: boolean): Promise<readonly RoleView[]>;
   findById(id: string): Promise<RoleView | null>;

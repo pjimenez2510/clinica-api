@@ -11,6 +11,12 @@ import {
   yearsWithoutCalendar,
 } from './holiday-calendar';
 
+/**
+ * Which holidays close which site, and what booking on one says — the pure
+ * reading of `holiday` rows in `holiday-calendar.ts`, with no clock and no
+ * database. Cites AG-015, AG-016, AG-091, AG-092, AG-093 and AG-110.
+ */
+
 const SITE = '018f1b3a-0000-7000-8000-000000000002';
 const OTHER_SITE = '018f1b3a-0000-7000-8000-000000000003';
 

@@ -32,10 +32,19 @@ const AUTH_USER_FIELDS = {
   lockedUntil: true,
 } as const;
 
+/**
+ * Prisma adapter for the session half's `AuthUserRepositoryPort`. Every read
+ * goes through `AUTH_USER_FIELDS`, so a new column never reaches the auth flow
+ * by accident.
+ */
 @Injectable()
 export class PrismaAuthUserRepository implements AuthUserRepositoryPort {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * `null` for an unknown address: `AuthService.signIn` then burns the same CPU
+   * as a real verification before refusing (AU-002).
+   */
   async findByEmail(email: string): Promise<AuthUser | null> {
     return this.prisma.user.findUnique({
       where: { email },
@@ -43,6 +52,10 @@ export class PrismaAuthUserRepository implements AuthUserRepositoryPort {
     });
   }
 
+  /**
+   * `null` when the account is gone; the callers turn that into
+   * `SessionUserMissingError`.
+   */
   async findById(id: string): Promise<AuthUser | null> {
     return this.prisma.user.findUnique({
       where: { id },
@@ -60,6 +73,11 @@ export class PrismaAuthUserRepository implements AuthUserRepositoryPort {
     return row?.user ?? null;
   }
 
+  /**
+   * The transparent rehash after a successful sign-in, when `needsRehash` says
+   * the parameters are outdated. Sessions are untouched: the password itself
+   * did not change.
+   */
   async updatePasswordHash(
     userId: string,
     passwordHash: string,
@@ -88,6 +106,10 @@ export class PrismaAuthUserRepository implements AuthUserRepositoryPort {
     return failedAttempts;
   }
 
+  /**
+   * AU-003. The instant comes from `AccountLockout`, which owns the backoff
+   * arithmetic; this only writes it.
+   */
   async applyLock(userId: string, lockedUntil: Date): Promise<void> {
     await this.prisma.user.update({
       where: { id: userId },
@@ -117,6 +139,10 @@ export class PrismaAuthUserRepository implements AuthUserRepositoryPort {
     });
   }
 
+  /**
+   * Resets the counter and lifts any lock together, so a successful proof
+   * leaves no stale partial count behind.
+   */
   async clearFailedAttempts(userId: string): Promise<void> {
     await this.prisma.user.update({
       where: { id: userId },
@@ -139,6 +165,10 @@ export class PrismaAuthUserRepository implements AuthUserRepositoryPort {
     });
   }
 
+  /**
+   * The step `TotpService.verify` just consumed. Persisting it is what makes a
+   * replayed code within its 30-second window fail.
+   */
   async recordMfaStep(userId: string, usedStep: bigint): Promise<void> {
     await this.prisma.user.update({
       where: { id: userId },

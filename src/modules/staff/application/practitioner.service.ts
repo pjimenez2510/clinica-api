@@ -64,6 +64,7 @@ export class PractitionerService {
     return this.repository.listPractitioners(includeInactive);
   }
 
+  /** One practitioner, active or not; `PractitionerNotFoundError` when there is none. */
   async get(id: string): Promise<PractitionerView> {
     const practitioner = await this.repository.findPractitioner(id);
     if (!practitioner) throw new PractitionerNotFoundError();

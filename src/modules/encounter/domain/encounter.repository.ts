@@ -218,6 +218,7 @@ export interface SubjectStatusStamp {
   now: Date;
 }
 
+/** The attention's port, described at the top of this file. */
 export interface EncounterRepository {
   /**
    * EN-001. The chart's merge state, or `null` when no such chart exists.

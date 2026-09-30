@@ -190,6 +190,10 @@ export interface OrderPatient extends PatientProfile {
   siteId: string;
 }
 
+/**
+ * The port for reports, their results and the two safety worklists. There is no
+ * method that updates a stored value: a correction is a new report (ORD-050).
+ */
 export interface DiagnosticReportRepository {
   /**
    * ORD-030 to ORD-042. Writes one report, its observations, and closes the

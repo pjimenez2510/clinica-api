@@ -1,5 +1,9 @@
 import { ValidationError } from '../errors/domain-error';
 
+/**
+ * `INVALID_CEDULA` (AU-020 and the patient register). Carries the reason, never
+ * the number.
+ */
 export class InvalidCedulaError extends ValidationError {
   readonly code = 'INVALID_CEDULA';
 
@@ -39,6 +43,11 @@ export class Cedula {
 
   private constructor(private readonly value: string) {}
 
+  /**
+   * The only way to obtain a `Cedula`: trims, then checks length, province,
+   * third digit and check digit, throwing `InvalidCedulaError` on the first
+   * failure.
+   */
   static create(input: string): Cedula {
     const cleaned = (input ?? '').trim();
 
@@ -97,6 +106,7 @@ export class Cedula {
     return (10 - (sum % 10)) % 10;
   }
 
+  /** The two-digit province code: 01-24, or 30 for foreigners. */
   get province(): number {
     return Number.parseInt(this.value.slice(0, 2), 10);
   }
@@ -106,10 +116,15 @@ export class Cedula {
     return `${this.value.slice(0, 3)}****${this.value.slice(7)}`;
   }
 
+  /**
+   * The full ten digits, trimmed. For screens that do not need all of it, use
+   * `masked()`.
+   */
   toString(): string {
     return this.value;
   }
 
+  /** Equal by value: two instances of the same number are the same cedula. */
   equals(other: Cedula): boolean {
     return this.value === other.value;
   }

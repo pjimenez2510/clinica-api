@@ -20,10 +20,18 @@
  * patch is visible where the process starts.
  */
 
+/**
+ * `BigInt.prototype` as seen by `JSON.stringify`, which looks for a `toJSON`
+ * method.
+ */
 interface BigIntWithJson {
   toJSON?: () => string;
 }
 
+/**
+ * Idempotent and process-wide; `main.ts` calls it before the application is
+ * created.
+ */
 export function enableBigIntSerialisation(): void {
   (BigInt.prototype as BigIntWithJson).toJSON = function toJSON(
     this: bigint,

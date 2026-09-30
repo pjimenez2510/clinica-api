@@ -48,6 +48,10 @@ import { type PriceChange, type PriceRow, toClinicalDate } from '../domain/price
 export class PrismaBillingCatalogueRepository implements BillingCatalogueRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * BI-020, BI-021. Every rate, historical ones included, grouped by SRI code
+   * with the newest validity first.
+   */
   async listTaxRates(): Promise<TaxRateView[]> {
     const rows = await this.prisma.taxRate.findMany({
       orderBy: [{ sriCode: 'asc' }, { validFrom: 'desc' }],
@@ -55,6 +59,7 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
     return rows.map(toTaxRateView);
   }
 
+  /** One rate by id, whatever its validity. */
   async findTaxRate(taxRateId: string): Promise<TaxRateView | null> {
     const row = await this.prisma.taxRate.findUnique({
       where: { id: taxRateId },
@@ -62,6 +67,10 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
     return row === null ? null : toTaxRateView(row);
   }
 
+  /**
+   * BI-026. Services only: a charge keeps the SRI code and percentage it froze,
+   * not a key to this row.
+   */
   async countServicesUsingTaxRate(taxRateId: string): Promise<number> {
     return this.prisma.billableService.count({ where: { taxRateId } });
   }
@@ -82,6 +91,7 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
     return rows.map(toServiceView);
   }
 
+  /** One service by id, active or not, with its tax rate joined in. */
   async findBillableService(
     serviceId: string,
   ): Promise<BillableServiceView | null> {
@@ -92,6 +102,11 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
     return row === null ? null : toServiceView(row);
   }
 
+  /**
+   * BI-010. The fields are copied one by one, so nothing outside
+   * `NewBillableService` reaches the insert. A duplicate `code` is refused by
+   * `billable_service_code_unique`.
+   */
   async createBillableService(
     service: NewBillableService,
   ): Promise<BillableServiceView> {
@@ -108,6 +123,10 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
     return toServiceView(row);
   }
 
+  /**
+   * A partial update: Prisma skips `undefined`, so an absent field is left as
+   * it is.
+   */
   async updateBillableService(
     serviceId: string,
     update: BillableServiceUpdate,
@@ -235,10 +254,17 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
     return prices + charges;
   }
 
+  /**
+   * BI-012. Called only after `countReferencesToService` answered zero; the
+   * `RESTRICT` keys refuse it anyway if something slipped in between.
+   */
   async deleteBillableService(serviceId: string): Promise<void> {
     await this.prisma.billableService.delete({ where: { id: serviceId } });
   }
 
+  /**
+   * BI-030. Active payers by default, alphabetically; inactive ones on request.
+   */
   async listPayers(filter: { includeInactive: boolean }): Promise<PayerView[]> {
     const rows = await this.prisma.payer.findMany({
       where: filter.includeInactive ? {} : { active: true },
@@ -247,15 +273,21 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
     return rows.map(toPayerView);
   }
 
+  /** One payer by id, active or not. */
   async findPayer(payerId: string): Promise<PayerView | null> {
     const row = await this.prisma.payer.findUnique({ where: { id: payerId } });
     return row === null ? null : toPayerView(row);
   }
 
+  /**
+   * BI-031. Asked before deactivating a payer: the last active one may not go,
+   * or no account could be opened.
+   */
   async countActivePayers(): Promise<number> {
     return this.prisma.payer.count({ where: { active: true } });
   }
 
+  /** BI-032. Price lists and accounts that name the payer. */
   async countReferencesToPayer(payerId: string): Promise<number> {
     const [lists, accounts] = await Promise.all([
       this.prisma.priceList.count({ where: { payerId } }),
@@ -264,6 +296,10 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
     return lists + accounts;
   }
 
+  /**
+   * BI-030. The RUC has already been checked by the service for institutional
+   * kinds (BI-034).
+   */
   async createPayer(payer: NewPayer): Promise<PayerView> {
     const row = await this.prisma.payer.create({
       data: {
@@ -277,6 +313,7 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
     return toPayerView(row);
   }
 
+  /** A partial update; `code` and `kind` are never written here. */
   async updatePayer(payerId: string, update: PayerUpdate): Promise<PayerView> {
     const row = await this.prisma.payer.update({
       where: { id: payerId },
@@ -307,6 +344,10 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
     return row === null ? null : toPriceListView(row);
   }
 
+  /**
+   * BI-041. The whole price history of one service in one list, newest validity
+   * first.
+   */
   async listPricesOfService(
     priceListId: string,
     billableServiceId: string,
@@ -318,6 +359,10 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
     return rows.map(toPriceRow);
   }
 
+  /**
+   * BI-040, BI-041. Every price of the list with every validity, grouped by
+   * service, newest first within each.
+   */
   async listPricesOfList(priceListId: string): Promise<PriceRow[]> {
     const rows = await this.prisma.price.findMany({
       where: { priceListId },
@@ -371,6 +416,10 @@ export function asDateColumn(date: ClinicalDate): Date {
   return new Date(`${date}T00:00:00Z`);
 }
 
+/**
+ * Row to view. A null percentage stays null: «no objeto» and «exento» are not
+ * 0%.
+ */
 function toTaxRateView(row: TaxRateRow): TaxRateView {
   return {
     id: row.id,
@@ -382,6 +431,10 @@ function toTaxRateView(row: TaxRateRow): TaxRateView {
   };
 }
 
+/**
+ * Row to view, with the tax code and percentage taken from the joined rate. The
+ * `visitSequence` cast leans on `billable_service_visit_sequence_is_known`.
+ */
 function toServiceView(
   row: BillableServiceRow & { taxRate: TaxRateRow },
 ): BillableServiceView {
@@ -403,6 +456,7 @@ function toServiceView(
   };
 }
 
+/** Row to view; the dates come back as `ClinicalDate`, never as an instant. */
 function toPayerView(row: PayerRow): PayerView {
   return {
     id: row.id,
@@ -419,6 +473,7 @@ function toPayerView(row: PayerRow): PayerView {
   };
 }
 
+/** Row to view, field for field. */
 function toPriceListView(row: PriceListRow): PriceListView {
   return {
     id: row.id,
@@ -430,6 +485,10 @@ function toPriceListView(row: PriceListRow): PriceListView {
   };
 }
 
+/**
+ * Row to view: the amount through `Money.parse`, the validity as
+ * `ClinicalDate`s with an open end kept as `null`.
+ */
 export function toPriceRow(row: PriceStoredRow): PriceRow {
   return {
     id: row.id,

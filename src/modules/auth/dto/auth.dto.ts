@@ -45,6 +45,7 @@ export const signInSchema = z.object({
     .min(1, 'La contraseña es obligatoria')
     .max(256, 'La contraseña no puede superar 256 caracteres'),
 });
+/** Body of POST /auth/login. */
 export class SignInDto extends createZodDto(signInSchema) {}
 
 /**
@@ -77,9 +78,11 @@ const MFA_CODE = z
   );
 
 export const verifyMfaSchema = z.object({ code: MFA_CODE });
+/** Body of POST /auth/mfa/verify: six digits or a backup code. */
 export class VerifyMfaDto extends createZodDto(verifyMfaSchema) {}
 
 export const confirmMfaSchema = z.object({ code: TOTP_CODE });
+/** Body of POST /auth/mfa/confirm and POST /auth/mfa/change/confirm: six digits only. */
 export class ConfirmMfaDto extends createZodDto(confirmMfaSchema) {}
 
 /**
@@ -111,6 +114,7 @@ export const changePasswordSchema = z.object({
     .min(1, 'La nueva contraseña es obligatoria')
     .max(256, 'La contraseña no puede superar 256 caracteres'),
 });
+/** Body of POST /auth/password. */
 export class ChangePasswordDto extends createZodDto(changePasswordSchema) {}
 
 /**
@@ -143,6 +147,7 @@ export const setCredentialSchema = z.object({
     .min(1, 'La contraseña es obligatoria')
     .max(256, 'La contraseña no puede superar 256 caracteres'),
 });
+/** Body of POST /auth/credential. */
 export class SetCredentialDto extends createZodDto(setCredentialSchema) {}
 
 /**
@@ -158,9 +163,11 @@ export const credentialTokenStatusSchema = z.object({
   /** `null` whenever `valid` is false. Never a reason. */
   expiresAt: z.iso.datetime().nullable(),
 });
+/** Response of GET /auth/credential/:token. */
 export class CredentialTokenStatusDto extends createZodDto(
   credentialTokenStatusSchema,
 ) {}
+/** What that handler returns, inferred from the schema. */
 export type CredentialTokenStatusResponse = z.infer<
   typeof credentialTokenStatusSchema
 >;
@@ -230,6 +237,7 @@ export const sessionResponseSchema = z.object({
     }),
   ),
 });
+/** Response of a completed sign-in, of POST /auth/mfa/verify and of POST /auth/refresh. The inferred type below is what the controller returns. */
 export class SessionResponseDto extends createZodDto(sessionResponseSchema) {}
 export type SessionResponse = z.infer<typeof sessionResponseSchema>;
 
@@ -239,9 +247,11 @@ export const mfaChallengeResponseSchema = z.object({
   /** Short-lived token that only opens the MFA endpoints. */
   challengeToken: z.string(),
 });
+/** The other branch of POST /auth/login. */
 export class MfaChallengeResponseDto extends createZodDto(
   mfaChallengeResponseSchema,
 ) {}
+/** What the login handler returns on that branch, inferred from the schema. */
 export type MfaChallengeResponse = z.infer<typeof mfaChallengeResponseSchema>;
 
 /**
@@ -259,6 +269,7 @@ export const mfaEnrolmentResponseSchema = z.object({
   secret: z.string(),
   uri: z.string(),
 });
+/** Response of POST /auth/mfa/enroll and of POST /auth/mfa/change. */
 export class MfaEnrolmentResponseDto extends createZodDto(
   mfaEnrolmentResponseSchema,
 ) {}
@@ -275,9 +286,11 @@ export const mfaConfirmationResponseSchema = z.object({
   /** Ten codes in the printed form `ABCDE-FGHJK`. */
   backupCodes: z.array(z.string()),
 });
+/** Response of confirming a first or a replacement authenticator. */
 export class MfaConfirmationResponseDto extends createZodDto(
   mfaConfirmationResponseSchema,
 ) {}
+/** What those two handlers return, inferred from the schema. */
 export type MfaConfirmationResponse = z.infer<
   typeof mfaConfirmationResponseSchema
 >;

@@ -37,6 +37,10 @@ export interface EstablishmentCommand {
   active?: boolean;
 }
 
+/**
+ * OR-004. No establishment id: the site hangs from the one registered, resolved
+ * by `createSite`. The RUC is validated before it is written (OR-008).
+ */
 export interface CreateSiteCommand {
   mspUnicode: string;
   name: string;
@@ -46,6 +50,10 @@ export interface CreateSiteCommand {
   phone?: string | null;
 }
 
+/**
+ * OR-004, OR-007. The MSP code is absent and cannot be patched; `active: false`
+ * is how a site that cannot be deleted is retired (OR-006).
+ */
 export interface UpdateSiteCommand {
   name?: string;
   ruc?: string | null;
@@ -145,6 +153,10 @@ export class OrganizationService {
     return this.repository.listSites(includeInactive, scope);
   }
 
+  /**
+   * 404 for an unknown id. The site-scope check already happened in the guard,
+   * from the route parameter.
+   */
   async getSite(id: string): Promise<SiteView> {
     const site = await this.repository.findSite(id);
     if (!site) throw new SiteNotFoundError();

@@ -34,6 +34,10 @@ import { duplicateErrorFrom, isRecordNotFound } from './auth-database-errors';
  * read that was stale before it returned (AU-020).
  */
 
+/**
+ * One selection for every read and write, so every path returns the same shape.
+ * `passwordHash` is selected only for `credentialPending`.
+ */
 const ACCOUNT_FIELDS = {
   id: true,
   email: true,
@@ -45,6 +49,10 @@ const ACCOUNT_FIELDS = {
   passwordHash: true,
 } satisfies Prisma.UserSelect;
 
+/**
+ * The row `ACCOUNT_FIELDS` selects, hash included. It never leaves this file:
+ * `toView` reduces the hash to a boolean.
+ */
 interface AccountRow {
   id: string;
   email: string;
@@ -56,6 +64,10 @@ interface AccountRow {
   passwordHash: string;
 }
 
+/**
+ * The only way out of this file for an account row. AU-005: `mfaEnabled`
+ * exposes whether the factor is confirmed, never the secret.
+ */
 function toView(row: AccountRow): AccountView {
   return {
     id: row.id,
@@ -71,12 +83,17 @@ function toView(row: AccountRow): AccountView {
   };
 }
 
+/** A grant with the role's code and name joined, for `GrantView`. */
 const GRANT_SELECT = {
   roleId: true,
   siteId: true,
   role: { select: { code: true, name: true } },
 } satisfies Prisma.UserRoleGrantSelect;
 
+/**
+ * Prisma adapter for `AccountAdminRepositoryPort`. Unique-index refusals are
+ * translated by `duplicateErrorFrom`, never pre-checked.
+ */
 @Injectable()
 export class PrismaAccountAdminRepository implements AccountAdminRepositoryPort {
   constructor(private readonly prisma: PrismaService) {}
@@ -109,6 +126,7 @@ export class PrismaAccountAdminRepository implements AccountAdminRepositoryPort 
     return rows.map(toView);
   }
 
+  /** `null` for an unknown id; the service decides the refusal. */
   async findById(id: string): Promise<AccountView | null> {
     const row = await this.prisma.user.findUnique({
       where: { id },

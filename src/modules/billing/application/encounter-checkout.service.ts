@@ -262,6 +262,10 @@ export class EncounterCheckoutService {
   }
 }
 
+/**
+ * Removes repeats before a batched lookup: two procedures of the same concept
+ * ask the catalogue once.
+ */
 function distinct(values: readonly string[]): string[] {
   return [...new Set(values)];
 }

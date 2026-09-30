@@ -35,6 +35,10 @@ export interface DocumentMetadata {
   createdAt: Date;
 }
 
+/**
+ * The port `PdfKitDocumentRenderer` implements. It paints a layout that is
+ * already decided; it composes nothing.
+ */
 export interface DocumentRenderer {
   /**
    * DOC-020 to DOC-024. Paints the layout and returns the PDF/A-1b bytes.
@@ -59,6 +63,10 @@ export interface NormalisedImage {
   height: number;
 }
 
+/**
+ * The port `SharpImageNormaliser` implements. Called before any image is stored
+ * (DOC-054).
+ */
 export interface ImageNormaliser {
   /**
    * DOC-053 to DOC-055. Decodes with a pixel cap, flattens the alpha channel

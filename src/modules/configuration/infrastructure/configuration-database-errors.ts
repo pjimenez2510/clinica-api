@@ -34,6 +34,11 @@ interface PrismaErrorLike {
   };
 }
 
+/**
+ * Duck-typed on what every Prisma client error carries — a `P` code of four
+ * digits and a `clientVersion` — so this file needs no Prisma import. Anything
+ * else is not ours to translate.
+ */
 function isPrismaError(exception: unknown): exception is PrismaErrorLike {
   if (typeof exception !== 'object' || exception === null) return false;
   const candidate = exception as PrismaErrorLike;
@@ -44,6 +49,10 @@ function isPrismaError(exception: unknown): exception is PrismaErrorLike {
   );
 }
 
+/**
+ * The PostgreSQL SQLSTATE, from wherever the driver adapter put it (`code` or
+ * `originalCode`).
+ */
 function sqlStateOf(error: PrismaErrorLike): string | undefined {
   const cause = error.meta?.driverAdapterError?.cause;
   const raw = cause?.code ?? cause?.originalCode;

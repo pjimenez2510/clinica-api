@@ -43,11 +43,20 @@ const MONEY_PATTERN = /^\d{1,10}(\.\d{1,2})?$/;
 /** `charge_item.quantity` is `numeric(10,3)`. */
 const QUANTITY_PATTERN = /^\d{1,7}(\.\d{1,3})?$/;
 
+/**
+ * BI-001. A monetary field: a decimal string, refused with a message that
+ * names the field rather than silently rounded.
+ */
 const money = (label: string) =>
   z
     .string({ error: `${label} es obligatorio` })
     .regex(MONEY_PATTERN, `${label} se escribe en dólares con dos decimales, por ejemplo 19.90`); // prettier-ignore
 
+/**
+ * A `YYYY-MM-DD` field branded as a `ClinicalDate`. The parser's exception
+ * becomes a per-field issue carrying `message`, so a date that does not exist
+ * is answered like any other validation error.
+ */
 const clinicalDateField = (message: string) =>
   z.iso.date(message).transform((value, ctx): ClinicalDate => {
     try {
@@ -66,6 +75,7 @@ export const catalogueQuerySchema = z.object({
   /** BI-014. Deactivated services stay readable, on request. */
   includeInactive: explicitFlag,
 });
+/** Query of GET /billing/services and GET /billing/payers. */
 export class CatalogueQueryDto extends createZodDto(catalogueQuerySchema) {}
 
 /**
@@ -84,6 +94,7 @@ export const createServiceSchema = z.object({
   tariffCode: z.string().trim().max(16).nullish(),
   taxRateId: z.uuid('Seleccione la tarifa de impuesto que aplica'),
 });
+/** Body of POST /billing/services (`billing:price-manage`, clinic-wide). */
 export class CreateServiceDto extends createZodDto(createServiceSchema) {}
 
 export const updateServiceSchema = z.object({
@@ -113,6 +124,7 @@ export const updateServiceSchema = z.object({
     })
     .nullish(),
 });
+/** Body of PATCH /billing/services/:serviceId. */
 export class UpdateServiceDto extends createZodDto(updateServiceSchema) {}
 
 export const createPayerSchema = z.object({
@@ -129,6 +141,7 @@ export const createPayerSchema = z.object({
   ruc: z.string().trim().max(13).nullish(),
   agreementReference: z.string().trim().max(120).nullish(),
 });
+/** Body of POST /billing/payers. An institutional payer without a RUC is answered with `PAYER_RUC_REQUIRED` (BI-034), not by this schema. */
 export class CreatePayerDto extends createZodDto(createPayerSchema) {}
 
 export const updatePayerSchema = z.object({
@@ -137,6 +150,7 @@ export const updatePayerSchema = z.object({
   agreementReference: z.string().trim().max(120).nullish(),
   active: z.boolean().optional(),
 });
+/** Body of PATCH /billing/payers/:payerId. */
 export class UpdatePayerDto extends createZodDto(updatePayerSchema) {}
 
 /**
@@ -152,6 +166,7 @@ export const setPriceSchema = z.object({
   amount: money('El precio'),
   effectiveFrom: clinicalDateField('Indique desde cuándo rige, en formato AAAA-MM-DD'), // prettier-ignore
 });
+/** Body of POST /billing/payers/:payerId/prices; the payer is the route's. */
 export class SetPriceDto extends createZodDto(setPriceSchema) {}
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -171,11 +186,13 @@ export const openAccountSchema = z.object({
   /** BI-070. Decided on arrival, not at the cashier. */
   payerId: z.uuid('Indique quién paga'),
 });
+/** Body of POST /billing/sites/:siteId/accounts. */
 export class OpenAccountDto extends createZodDto(openAccountSchema) {}
 
 export const changePayerSchema = z.object({
   payerId: z.uuid('Indique quién paga'),
 });
+/** Body of PATCH /billing/sites/:siteId/accounts/:accountId: refused once the account has a charge (BI-033). */
 export class ChangePayerDto extends createZodDto(changePayerSchema) {}
 
 export const addChargeSchema = z.object({
@@ -193,6 +210,10 @@ export const addChargeSchema = z.object({
     .regex(QUANTITY_PATTERN, 'La cantidad admite hasta tres decimales')
     .default('1'),
 });
+/**
+ * Body of POST …/accounts/:accountId/charges. No amount: the unit price is
+ * resolved by the service date and copied onto the charge (BI-050).
+ */
 export class AddChargeDto extends createZodDto(addChargeSchema) {}
 
 /**
@@ -213,6 +234,7 @@ export class AddChargeDto extends createZodDto(addChargeSchema) {}
 export const checkoutSchema = z.object({
   payerId: z.uuid('Indique quién paga').optional(),
 });
+/** Body of POST /billing/sites/:siteId/encounters/:encounterId/checkout. */
 export class CheckoutDto extends createZodDto(checkoutSchema) {}
 
 /**
@@ -229,12 +251,14 @@ export const voidChargeSchema = z.object({
     .min(3, 'Explique por qué no se cobra este cargo')
     .max(500),
 });
+/** Body of POST …/charges/:chargeId/void. */
 export class VoidChargeDto extends createZodDto(voidChargeSchema) {}
 
 export const accountQuerySchema = z.object({
   patientId: z.uuid().optional(),
   status: z.enum(['OPEN', 'SETTLED', 'CANCELLED']).optional(),
 });
+/** Query of GET /billing/sites/:siteId/accounts. */
 export class AccountQueryDto extends createZodDto(accountQuerySchema) {}
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -276,11 +300,13 @@ export const issueInvoiceSchema = z.object({
   emissionPointId: z.uuid('Seleccione el punto de emisión'),
   receiver: receiverSchema,
 });
+/** Body of POST /billing/sites/:siteId/invoices. */
 export class IssueInvoiceDto extends createZodDto(issueInvoiceSchema) {}
 
 export const invoiceQuerySchema = z.object({
   accountId: z.uuid().optional(),
 });
+/** Query of GET /billing/sites/:siteId/invoices. */
 export class InvoiceQueryDto extends createZodDto(invoiceQuerySchema) {}
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -296,9 +322,11 @@ const taxRateResponseSchema = z.object({
   validFrom: z.string(),
   validTo: z.string().nullable(),
 });
+/** Response of GET /billing/tax-rates (BI-020, BI-021). */
 export class TaxRateDto extends createZodDto(
   z.object({ items: z.array(taxRateResponseSchema) }),
 ) {}
+/** What the controller maps into; inferred, so it cannot drift from the published schema. */
 export type TaxRateResponse = z.infer<typeof taxRateResponseSchema>;
 
 const serviceResponseSchema = z.object({
@@ -315,10 +343,12 @@ const serviceResponseSchema = z.object({
   specialtyId: z.uuid().nullable(),
   visitSequence: z.enum(VISIT_SEQUENCES).nullable(),
 });
+/** One service, and the catalogue of GET /billing/services. */
 export class ServiceDto extends createZodDto(serviceResponseSchema) {}
 export class ServiceListDto extends createZodDto(
   z.object({ items: z.array(serviceResponseSchema) }),
 ) {}
+/** Return type of `toServiceResponse`, inferred from the published schema. */
 export type ServiceResponse = z.infer<typeof serviceResponseSchema>;
 
 const payerResponseSchema = z.object({
@@ -331,10 +361,12 @@ const payerResponseSchema = z.object({
   agreementValidTo: z.string().nullable(),
   active: z.boolean(),
 });
+/** One payer, and the list of GET /billing/payers. */
 export class PayerDto extends createZodDto(payerResponseSchema) {}
 export class PayerListDto extends createZodDto(
   z.object({ items: z.array(payerResponseSchema) }),
 ) {}
+/** Return type of the payer mapper, inferred from the published schema. */
 export type PayerResponse = z.infer<typeof payerResponseSchema>;
 
 const priceResponseSchema = z.object({
@@ -344,6 +376,7 @@ const priceResponseSchema = z.object({
   validFrom: z.string(),
   validTo: z.string().nullable(),
 });
+/** Response of POST /billing/payers/:payerId/prices: the validity just opened. */
 export class PriceDto extends createZodDto(priceResponseSchema) {}
 const priceListResponseSchema = z.object({
   priceListId: z.uuid(),
@@ -351,9 +384,11 @@ const priceListResponseSchema = z.object({
   publiclyListed: z.boolean(),
   items: z.array(priceResponseSchema),
 });
+/** Response of GET /billing/payers/:payerId/prices (BI-040, BI-041). */
 export class PriceListResponseDto extends createZodDto(
   priceListResponseSchema,
 ) {}
+/** Controller return types, inferred from the published schemas. */
 export type PriceResponse = z.infer<typeof priceResponseSchema>;
 export type PriceListResponse = z.infer<typeof priceListResponseSchema>;
 
@@ -368,10 +403,12 @@ const accountResponseSchema = z.object({
   openedAt: z.iso.datetime(),
   closedAt: z.iso.datetime().nullable(),
 });
+/** One account, and the list of GET /billing/sites/:siteId/accounts. */
 export class AccountDto extends createZodDto(accountResponseSchema) {}
 export class AccountListDto extends createZodDto(
   z.object({ items: z.array(accountResponseSchema) }),
 ) {}
+/** Return type of the account mapper, inferred from the published schema. */
 export type AccountResponse = z.infer<typeof accountResponseSchema>;
 
 /**
@@ -409,6 +446,7 @@ const chargeResponseSchema = z.object({
   lineTotal: z.string(),
   lineTax: z.string(),
 });
+/** Response of adding, confirming and voiding a charge. The inferred type below is what the mapper returns. */
 export class ChargeDto extends createZodDto(chargeResponseSchema) {}
 export type ChargeResponse = z.infer<typeof chargeResponseSchema>;
 
@@ -435,6 +473,7 @@ const statementSchema = z.object({
    */
   proposedTotals: totalsSchema,
 });
+/** Response of GET /billing/sites/:siteId/accounts/:accountId (BI-074). The inferred type below is what the controller returns. */
 export class AccountStatementDto extends createZodDto(statementSchema) {}
 export type AccountStatementResponse = z.infer<typeof statementSchema>;
 
@@ -459,6 +498,7 @@ const checkoutResponseSchema = z.object({
   raisedChargeIds: z.array(z.uuid()),
   skipped: z.array(skippedActSchema),
 });
+/** Response of the checkout route. The inferred type below is what the controller returns. */
 export class CheckoutResponseDto extends createZodDto(checkoutResponseSchema) {}
 export type CheckoutResponse = z.infer<typeof checkoutResponseSchema>;
 
@@ -479,10 +519,12 @@ const invoiceResponseSchema = z.object({
   issuedAt: z.iso.datetime().nullable(),
   authorisedAt: z.iso.datetime().nullable(),
 });
+/** One invoice, and the list of GET /billing/sites/:siteId/invoices. */
 export class InvoiceDto extends createZodDto(invoiceResponseSchema) {}
 export class InvoiceListDto extends createZodDto(
   z.object({ items: z.array(invoiceResponseSchema) }),
 ) {}
+/** Return type of the invoice mapper, inferred from the published schema. */
 export type InvoiceResponse = z.infer<typeof invoiceResponseSchema>;
 
 /** BI-082. What the screen offers, and what it never applies by itself. */
@@ -491,5 +533,6 @@ const receiverProposalSchema = z.object({
   identification: z.string().nullable(),
   name: z.string().nullable(),
 });
+/** Response of GET …/accounts/:accountId/invoice-receiver. The inferred type below is what the controller returns. */
 export class ReceiverProposalDto extends createZodDto(receiverProposalSchema) {}
 export type ReceiverProposalResponse = z.infer<typeof receiverProposalSchema>;

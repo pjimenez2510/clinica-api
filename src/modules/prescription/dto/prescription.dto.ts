@@ -178,6 +178,7 @@ export const composePrescriptionSchema = z.object({
     .min(1, 'Una receta lleva al menos un medicamento')
     .max(20, 'Una receta no puede llevar más de 20 medicamentos'),
 });
+/** Body of POST /encounters/:encounterId/prescriptions. */
 export class ComposePrescriptionDto extends createZodDto(
   composePrescriptionSchema,
 ) {}
@@ -206,6 +207,7 @@ export const discardPrescriptionSchema = z.object({
     // letting it through would refuse the row with a constraint name instead.
     .max(500, 'El motivo no puede superar 500 caracteres'),
 });
+/** Body of POST /prescriptions/:prescriptionId/discard. */
 export class DiscardPrescriptionDto extends createZodDto(
   discardPrescriptionSchema,
 ) {}
@@ -255,11 +257,13 @@ export const prescriptionSchema = z.object({
   discardReason: z.string().nullable(),
   items: z.array(prescriptionItemViewSchema),
 });
+/** Response of issuing, discarding and annulling a prescription. */
 export class PrescriptionDto extends createZodDto(prescriptionSchema) {}
 
 export const prescriptionListSchema = z.object({
   items: z.array(prescriptionSchema),
 });
+/** Response of GET /encounters/:encounterId/prescriptions. */
 export class PrescriptionListDto extends createZodDto(prescriptionListSchema) {}
 
 /**
@@ -281,6 +285,7 @@ export const composedPrescriptionSchema = z.object({
   /** PR-067. Informative here; the same coincidence refuses the ISSUE. */
   allergyAlerts: z.array(allergyAlertSchema),
 });
+/** Response of POST /encounters/:encounterId/prescriptions. */
 export class ComposedPrescriptionDto extends createZodDto(
   composedPrescriptionSchema,
 ) {}
@@ -342,15 +347,18 @@ export const prescriptionDocumentSchema = z.object({
     }),
   ),
 });
+/** Response of GET /prescriptions/:prescriptionId, the audited read (PR-092). */
 export class PrescriptionDocumentDto extends createZodDto(
   prescriptionDocumentSchema,
 ) {}
 
+/** Response types the controllers return, inferred from the schemas Swagger publishes. */
 export type PrescriptionResponse = z.infer<typeof prescriptionSchema>;
 export type PrescriptionListResponse = z.infer<typeof prescriptionListSchema>;
 export type ComposedPrescriptionResponse = z.infer<
   typeof composedPrescriptionSchema
 >;
+/** Likewise, for the document. */
 export type PrescriptionDocumentResponse = z.infer<
   typeof prescriptionDocumentSchema
 >;

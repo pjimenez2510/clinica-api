@@ -9,6 +9,12 @@ import {
 } from './permission.catalogue';
 import { ALL_SITES, Principal, type ResolvedGrant } from './principal';
 
+/**
+ * The permission catalogue's own consistency, and how `Principal` resolves
+ * grants into permissions and site scopes. Pure unit, no database; cites
+ * AU-011, AU-035 and AG-103.
+ */
+
 describe('the permission catalogue', () => {
   it('declares every code exactly once', () => {
     // A duplicate would silently override the earlier description in the

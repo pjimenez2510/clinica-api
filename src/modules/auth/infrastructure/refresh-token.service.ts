@@ -23,6 +23,12 @@ import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.serv
 
 import { TokenService } from './token.service';
 
+/**
+ * AU-004, AU-036. The refresh-token registry: families, single-use rotation,
+ * reuse detection, and the per-request «is this session still open?» the JWT
+ * guard asks. Only SHA-256 hashes are stored (see
+ * `TokenService.hashRefreshToken`).
+ */
 @Injectable()
 export class RefreshTokenService {
   private readonly ttlDays: number;
@@ -180,6 +186,10 @@ export class RefreshTokenService {
     return count;
   }
 
+  /**
+   * One refresh row in the family: only the hash is stored, and the user agent
+   * is cut to 512 characters before it reaches the column.
+   */
   private async issue(
     userId: string,
     familyId: string,

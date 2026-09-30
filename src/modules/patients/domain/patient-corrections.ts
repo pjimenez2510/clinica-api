@@ -81,9 +81,12 @@ export const CORRECTABLE_PATIENT_FIELDS = [
   'motherPatientId',
 ] as const;
 
+// PA-031. The fields a correction may touch, derived from the list above so
+// the type and the runtime check cannot drift.
 export type CorrectablePatientField =
   (typeof CORRECTABLE_PATIENT_FIELDS)[number];
 
+/** Narrows an arbitrary field name to one on the list, and nothing else. */
 export function isCorrectablePatientField(
   field: string,
 ): field is CorrectablePatientField {

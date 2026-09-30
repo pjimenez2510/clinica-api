@@ -101,6 +101,7 @@ export const listHolidaysQuerySchema = z.object({
    */
   siteId: z.uuid('Seleccione una sede de la lista').optional(),
 });
+/** Query of GET /configuration/holidays. */
 export class ListHolidaysQueryDto extends createZodDto(
   listHolidaysQuerySchema,
 ) {}
@@ -110,6 +111,7 @@ export const createHolidaySchema = z.object({
   name: holidayNameSchema,
   siteId: holidaySiteSchema,
 });
+/** Body of POST /configuration/holidays. */
 export class CreateHolidayDto extends createZodDto(createHolidaySchema) {}
 
 export const updateHolidaySchema = z
@@ -121,6 +123,7 @@ export const updateHolidaySchema = z
   .refine((value) => Object.values(value).some((v) => v !== undefined), {
     message: 'Indique al menos un cambio',
   });
+/** Body of PATCH /configuration/holidays/:id; an empty body is refused. */
 export class UpdateHolidayDto extends createZodDto(updateHolidaySchema) {}
 
 export const holidaySchema = z.object({
@@ -138,11 +141,13 @@ export const holidaySchema = z.object({
    */
   workedBySiteIds: z.array(z.uuid()).readonly(),
 });
+/** Response of creating and updating a holiday, and of marking or unmarking a site that works it. */
 export class HolidayDto extends createZodDto(holidaySchema) {}
 
 export const holidayListSchema = z.object({
   items: z.array(holidaySchema).readonly(),
 });
+/** Response of GET /configuration/holidays. */
 export class HolidayListDto extends createZodDto(holidayListSchema) {}
 
 // --- Site parameters (CF-062, CF-065) --------------------------------------
@@ -211,11 +216,6 @@ export const updateSiteParametersSchema = z
       .max(64, 'Un código de permiso no supera 64 caracteres')
       .optional(),
     /**
-     * One value today (D-001, D-004): the system does not delete. It travels
-     * in the contract anyway so the screen can show what the policy IS, and so
-     * the day a purge policy is added the field already exists.
-     */
-    /**
      * AG-066, AG-094. Cuántas llamadas agotan una entrada de lista de espera.
      *
      * Sin rango aquí, por lo mismo que los otros números: CF-065 tiene que
@@ -223,11 +223,17 @@ export const updateSiteParametersSchema = z
      * responde con el problema genérico de validación.
      */
     waitlistMaxContactAttempts: parameterSchema.optional(),
+    /**
+     * One value today (D-001, D-004): the system does not delete. It travels
+     * in the contract anyway so the screen can show what the policy IS, and so
+     * the day a purge policy is added the field already exists.
+     */
     cancelledRetention: z.enum(CANCELLED_RETENTION_POLICIES).optional(),
   })
   .refine((value) => Object.values(value).some((v) => v !== undefined), {
     message: 'Indique al menos un parámetro que cambiar',
   });
+/** Body of PUT /configuration/sites/:siteId/parameters: a partial set, of which at least one must be present. */
 export class UpdateSiteParametersDto extends createZodDto(
   updateSiteParametersSchema,
 ) {}
@@ -249,6 +255,7 @@ export const siteParametersSchema = z.object({
   waitlistMaxContactAttempts: z.number().int(),
   cancelledRetention: z.enum(CANCELLED_RETENTION_POLICIES),
 });
+/** Response of reading and saving a site's parameters: always the whole set. */
 export class SiteParametersDto extends createZodDto(siteParametersSchema) {}
 
 /** Response types inferred from the published schemas; see agenda.dto.ts. */

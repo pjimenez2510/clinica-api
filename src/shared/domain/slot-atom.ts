@@ -101,10 +101,15 @@ export function clinicSlotAtom(atoms: readonly number[]): number | null {
   return usable.reduce(lowestCommonMultiple);
 }
 
+/**
+ * Exact for positive integers, which `clinicSlotAtom` guarantees before
+ * reducing.
+ */
 function lowestCommonMultiple(a: number, b: number): number {
   return (a / greatestCommonDivisor(a, b)) * b;
 }
 
+/** Euclid's algorithm. */
 function greatestCommonDivisor(a: number, b: number): number {
   return b === 0 ? a : greatestCommonDivisor(b, a % b);
 }

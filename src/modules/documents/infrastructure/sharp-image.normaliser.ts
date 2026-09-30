@@ -52,6 +52,10 @@ import type { ImageSlot } from '../domain/document-image';
  */
 @Injectable()
 export class SharpImageNormaliser implements ImageNormaliser {
+  /**
+   * Runs the four steps above in order. Any decoder failure is reported as
+   * `DocumentImageUnreadableError` naming only the slot.
+   */
   async normalise(bytes: Buffer, slot: ImageSlot): Promise<NormalisedImage> {
     // Steps 1 and 2. Both are pure and live in the domain, so the order can be
     // asserted without a decoder.

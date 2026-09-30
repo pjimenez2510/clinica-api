@@ -20,18 +20,25 @@
  * generic message. The registry only upgrades the message.
  */
 
+/**
+ * What the response says for one constraint: the stable code, the field to
+ * highlight, and the Spanish sentence the user reads.
+ */
 export interface ConstraintMeaning {
   code: string;
   field: string;
   message: string;
 }
 
+/** Process-wide, filled at import time by each module's `*.constraints.ts`. */
 const MEANINGS = new Map<string, ConstraintMeaning>();
 
 /**
- * Duplicate registration throws at import time on purpose: two modules
- * claiming the same constraint is a wiring bug, and the first request that
- * hits it is the worst moment to discover which one won.
+ * Registering a constraint twice with DIFFERENT codes throws at import time on
+ * purpose: two modules claiming the same constraint is a wiring bug, and the
+ * first request that hits it is the worst moment to discover which one won.
+ * A second registration with the SAME code does not throw: it silently
+ * replaces the earlier entry, `field` and `message` included.
  */
 export function registerConstraintMeanings(
   entries: Record<string, ConstraintMeaning>,
@@ -48,6 +55,10 @@ export function registerConstraintMeanings(
   }
 }
 
+/**
+ * `undefined` for an unregistered constraint; the SQLSTATE fallback in
+ * `database-problem.ts` then answers with a generic message.
+ */
 export function constraintMeaningOf(
   constraint: string,
 ): ConstraintMeaning | undefined {

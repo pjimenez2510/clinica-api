@@ -46,6 +46,10 @@ export interface MailMessage {
   html?: string;
 }
 
+/**
+ * Outbound mail, with the OPPOSITE failure policy to the audit recorder: it
+ * throws. See `send`.
+ */
 export interface Mailer {
   /**
    * Hands one message over for delivery.

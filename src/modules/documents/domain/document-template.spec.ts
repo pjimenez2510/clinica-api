@@ -13,6 +13,13 @@ import {
   isClinicalDocumentKind,
 } from './document-kind';
 
+/**
+ * The validation of a template's configurable slots (accent colour, header
+ * fields), and the catalogue of document kinds: their Spanish titles and
+ * which permission serves each. Pure domain unit; cites DOC-035, DOC-036,
+ * DOC-070, DOC-079 and DOC-090.
+ */
+
 const slots = (overrides: Partial<TemplateSlots> = {}): TemplateSlots => ({
   accentColour: '#1f6f8b',
   footerText: null,

@@ -23,6 +23,7 @@ import type { AnalyteDefinition, ReferenceRange } from './analyte';
  * uuid in a fixture is a failure that reads differently every run.
  */
 
+/** A `REFERENCE` range with no age bounds; `sex` null applies to both. */
 const reference = (
   sex: 'MALE' | 'FEMALE' | null,
   low: number | null,

@@ -44,6 +44,7 @@ export interface AcessRegistration {
  */
 export type AcessIneligibility = 'MISSING' | 'EXPIRED';
 
+/** ST-002, ST-005. What the profile screen and the signature gate read about one registration. */
 export interface AcessStatus {
   /** ST-002: both the registration AND its expiry are needed to sign. */
   eligible: boolean;

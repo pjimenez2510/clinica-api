@@ -6,6 +6,13 @@ import {
   WeakPasswordError,
 } from './password-policy';
 
+/**
+ * The password policy as a pure function: length over composition, no
+ * trivial or personal passwords, every reason reported at once, and the
+ * password never carried in the error. Pure domain unit; the titles cite no
+ * requirement ID.
+ */
+
 describe('validatePassword', () => {
   it('accepts a long passphrase with no composition rules', () => {
     // No uppercase, no digits, no symbols — and still far stronger than

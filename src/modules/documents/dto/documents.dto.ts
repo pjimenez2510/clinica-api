@@ -39,6 +39,7 @@ const renderRequestSchema = z.object({
   subjectId: z.uuid('Seleccione el documento que quiere imprimir'),
 });
 
+/** Body of POST /documents/drafts and POST /documents/renders; `kind` admits only the clinical kinds. */
 export class RenderRequestDto extends createZodDto(renderRequestSchema) {}
 
 /**
@@ -58,6 +59,7 @@ const supersedeRequestSchema = renderRequestSchema.extend({
     .max(500, 'El motivo no puede superar 500 caracteres'),
 });
 
+/** Body of POST /documents/renders/supersede. */
 export class SupersedeRequestDto extends createZodDto(supersedeRequestSchema) {}
 
 /** DOC-034 to DOC-036. The closed set of slots. Nothing else is accepted. */
@@ -101,6 +103,7 @@ const templateSlotsSchema = z.object({
   showEstablishmentPhone: z.boolean().default(false),
 });
 
+/** Body of POST /documents/templates (`config:manage`). */
 export class PublishTemplateDto extends createZodDto(templateSlotsSchema) {}
 
 // ── responses ──────────────────────────────────────────────────────────────
@@ -130,7 +133,9 @@ const renderSummarySchema = z.object({
   supersedeReason: z.string().nullable(),
 });
 
+/** Response of every route that emits or reads an archived render, clinical documents and invoice RIDEs alike. */
 export class DocumentRenderDto extends createZodDto(renderSummarySchema) {}
+/** What the presenter returns for it, inferred from the schema. */
 export type DocumentRenderResponse = z.infer<typeof renderSummarySchema>;
 
 const templateSchema = z.object({
@@ -146,7 +151,9 @@ const templateSchema = z.object({
   publishedAt: z.iso.datetime(),
 });
 
+/** Response of listing and publishing templates. */
 export class DocumentTemplateDto extends createZodDto(templateSchema) {}
+/** What the templates controller returns, inferred from the schema. */
 export type DocumentTemplateResponse = z.infer<typeof templateSchema>;
 
 const imageSchema = z.object({
@@ -162,5 +169,7 @@ const imageSchema = z.object({
   height: z.number().int(),
 });
 
+/** Response of uploading a logo, a seal or a signature. */
 export class DocumentImageDto extends createZodDto(imageSchema) {}
+/** What the identity controller returns, inferred from the schema. */
 export type DocumentImageResponse = z.infer<typeof imageSchema>;

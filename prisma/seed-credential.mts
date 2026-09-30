@@ -86,6 +86,12 @@ const ACCOUNTS: {
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Upserts the four demo accounts by e-mail, deletes their invitations and
+ * writes the ones that leave each account in its state (the superseded one
+ * also gets its live replacement). Returns the clear tokens so `main` can
+ * print them. Demo data only: `main` refuses a production `NODE_ENV`.
+ */
 export async function seedCredentialInvitations(
   prisma: PrismaClient,
 ): Promise<

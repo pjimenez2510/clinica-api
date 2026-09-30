@@ -90,6 +90,10 @@ export interface EncounterActs {
   exams: OrderedExam[];
 }
 
+/**
+ * The read port billing's own adapter implements over the clinical tables. One
+ * method, a read: see the file header for why it can never grow a write.
+ */
 export interface ClinicalActsRepository {
   /**
    * BI-150. Everything one visit did, in a single question.

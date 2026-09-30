@@ -30,6 +30,7 @@ export interface EmissionPointView {
   active: boolean;
 }
 
+/** Rooms and SRI points of emission of a site (OR-020..OR-026). */
 export interface SiteResourcesRepository {
   /**
    * Whether the site named by the URL exists.

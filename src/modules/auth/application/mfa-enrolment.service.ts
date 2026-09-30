@@ -280,6 +280,10 @@ export class MfaEnrolmentService {
     return { batch, hashes };
   }
 
+  /**
+   * Same rule as `AuthService.requireUser`: a vanished account behind a valid
+   * token is an invalid session (401), not a missing resource.
+   */
   private async requireUser(userId: string): Promise<AuthUser> {
     const user = await this.users.findById(userId);
     if (!user) throw new SessionUserMissingError();

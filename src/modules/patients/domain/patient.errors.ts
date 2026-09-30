@@ -13,6 +13,7 @@ import {
  * where "404" means nothing.
  */
 
+/** No such chart, or one the caller may not see — the two answer alike, see `userTitle`. */
 export class PatientNotFoundError extends NotFoundError {
   readonly code = 'PATIENT_NOT_FOUND';
   /**
@@ -219,6 +220,12 @@ export class SexualOrientationBelowMinimumAgeError extends ValidationError {
   }
 }
 
+/**
+ * PA-013. Another live chart already holds this document. Thrown by the
+ * service's courtesy check and, when two registrations race past it, by the
+ * adapter translating `patient_identifier_active_unique` — one code for one
+ * fact, whoever won the race.
+ */
 export class DuplicateIdentifierError extends ConflictError {
   readonly code = 'PATIENT_IDENTIFIER_TAKEN';
   override readonly userTitle =

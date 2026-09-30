@@ -150,16 +150,20 @@ export interface NoShowRate {
   rate: number | null;
 }
 
+// AG-080. The three cuts of the same calculation: each row is one group's
+// rate, labelled with what it was grouped by.
 export interface NoShowBySite extends NoShowRate {
   siteId: string;
   siteName: string;
 }
 
+// Grouped by the practitioner who held the appointment.
 export interface NoShowByPractitioner extends NoShowRate {
   practitionerId: string;
   practitionerName: string;
 }
 
+// Grouped by the channel it was booked through (AG-034).
 export interface NoShowByChannel extends NoShowRate {
   bookingChannel: BookingChannel;
 }
@@ -285,6 +289,8 @@ function groupBy<T>(
 
 /** AG-080. The division, and the two numbers that justify it. */
 function rateOf(rows: readonly NoShowCountRow[]): NoShowRate {
+  // Adds up the `count` of the matching cells: each row is already a group
+  // of appointments, not one.
   const sum = (predicate: (row: NoShowCountRow) => boolean): number =>
     rows.filter(predicate).reduce((running, row) => running + row.count, 0);
 
@@ -306,6 +312,7 @@ function rateOf(rows: readonly NoShowCountRow[]): NoShowRate {
   };
 }
 
+/** To `RATE_DECIMALS` places, so every screen prints the same rate. */
 function round(value: number): number {
   const factor = 10 ** RATE_DECIMALS;
   return Math.round(value * factor) / factor;

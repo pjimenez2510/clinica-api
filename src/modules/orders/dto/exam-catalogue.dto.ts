@@ -44,15 +44,18 @@ export const examDefinitionSchema = z.object({
   externalLabName: z.string().nullable(),
   analytes: z.array(examAnalyteSchema),
 });
+/** One exam; no route returns it alone, it is the row of `ExamDefinitionListDto`. */
 export class ExamDefinitionDto extends createZodDto(examDefinitionSchema) {}
 
 export const examDefinitionListSchema = z.object({
   items: z.array(examDefinitionSchema),
 });
+/** Response of GET /exams. */
 export class ExamDefinitionListDto extends createZodDto(
   examDefinitionListSchema,
 ) {}
 
+/** What the controller returns, inferred from the schema Swagger publishes. */
 export type ExamDefinitionListResponse = z.infer<
   typeof examDefinitionListSchema
 >;

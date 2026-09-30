@@ -27,6 +27,7 @@ import { PrismaClient } from '@prisma/client';
  * want the seeded practitioners to have a specialty and a duration exception.
  */
 
+/** A specialty as it is seeded: its stable code and its display name. */
 interface SeedSpecialty {
   code: string;
   name: string;
@@ -74,6 +75,11 @@ const DEFAULT_SERVICE_TYPES = [
   { name: 'Control', durationMinutes: 20 },
 ] as const;
 
+/**
+ * Creates each missing specialty (matched by code, case-insensitively) and its
+ * missing default service types (matched by name within the specialty); never
+ * updates an existing row. Returns how many rows it created.
+ */
 export async function seedSpecialties(prisma: PrismaClient): Promise<{
   specialtiesCreated: number;
   serviceTypesCreated: number;

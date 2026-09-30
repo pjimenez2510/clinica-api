@@ -38,11 +38,20 @@ const KNOWN_PERMISSIONS: ReadonlySet<string> = new Set(PERMISSIONS);
  */
 const CACHE_TTL_MS = 30_000;
 
+/**
+ * What a role resolves to: its code, for `ResolvedGrant`, and only the
+ * permissions the catalogue still defines.
+ */
 interface CachedRole {
   code: string;
   permissions: Permission[];
 }
 
+/**
+ * The per-request resolver of AU-012, behind the 30-second cache described
+ * above. Also the adapter of `RolePermissionCachePort`: `invalidate()` is how
+ * an administrator's edit takes effect at once (AU-032).
+ */
 @Injectable()
 export class RolePermissionRegistry {
   private cache: Map<string, CachedRole> | null = null;
@@ -91,6 +100,10 @@ export class RolePermissionRegistry {
     });
   }
 
+  /**
+   * The cached map while fresh; otherwise one shared reload, however many
+   * requests ask at once.
+   */
   private async load(): Promise<Map<string, CachedRole>> {
     const fresh = this.cache && Date.now() - this.loadedAt < CACHE_TTL_MS;
     if (fresh && this.cache) return this.cache;
@@ -102,6 +115,10 @@ export class RolePermissionRegistry {
     return this.inFlight;
   }
 
+  /**
+   * Active roles only, filtered against the catalogue; both exclusions fail
+   * closed.
+   */
   private async read(): Promise<Map<string, CachedRole>> {
     // Inactive roles are excluded by the QUERY. Filtering afterwards is a step
     // somebody can forget, and the consequence is a deactivated role still

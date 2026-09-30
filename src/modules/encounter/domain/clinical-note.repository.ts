@@ -122,6 +122,11 @@ export interface NoteEncounterRead {
   dischargeCondition: string | null;
 }
 
+/**
+ * The note chain's port, described at the top of this file. It writes drafts
+ * and can move a signed version only to `SUPERSEDED` or `ENTERED_IN_ERROR`;
+ * rewriting one is not expressible.
+ */
 export interface ClinicalNoteRepository {
   /**
    * EN-020, EN-021, EN-137. Writes a draft and moves the board in the same

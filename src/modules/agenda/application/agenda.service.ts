@@ -66,6 +66,11 @@ export interface Requester {
   userId: string;
 }
 
+/**
+ * AG-017, AG-018. One site's day, optionally narrowed to a practitioner or a
+ * room. The date is Ecuadorian and becomes instants only inside the service
+ * (AG-001), never in the client.
+ */
 export interface DailyAgendaRequest {
   siteId: string;
   /** The Ecuadorian calendar date, `YYYY-MM-DD`. */
@@ -104,6 +109,11 @@ export interface NoShowRateResult extends NoShowReport {
   countedUntil: Date;
 }
 
+/**
+ * AG-003. One practitioner at one site over a range of dates. No room and no
+ * service type: availability is derived from that practitioner's schedule
+ * rules minus what is already taken.
+ */
 export interface AvailabilityRequest {
   siteId: string;
   practitionerId: string;
@@ -112,6 +122,11 @@ export interface AvailabilityRequest {
   to: ClinicalDate;
 }
 
+/**
+ * One appointment as the controller hands it over. Nothing here is trusted:
+ * the channel, the window, the grid and the chart are each judged by the
+ * booking policy, and the author travels apart as the `Requester`.
+ */
 export interface BookAppointmentRequest {
   siteId: string;
   practitionerId: string;
@@ -259,6 +274,10 @@ export interface RescheduledAppointment {
   warnings: readonly string[];
 }
 
+/**
+ * AG-040 to AG-045. One status change of one entry, plus the facts some
+ * targets demand and others must not carry — see each field.
+ */
 export interface TransitionRequest {
   siteId: string;
   entryId: string;

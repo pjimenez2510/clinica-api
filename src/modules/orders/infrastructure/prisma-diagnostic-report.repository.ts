@@ -50,6 +50,9 @@ import type { SiteScopeFilter } from '../domain/service-order.repository';
  * the one number that decides whether somebody is phoned tonight.
  */
 
+/**
+ * One stored result with its frozen unit, range and flag (ORD-034, ORD-037).
+ */
 const RESULT_SELECT = {
   id: true,
   orderItemId: true,
@@ -66,10 +69,15 @@ const RESULT_SELECT = {
   observedAt: true,
 } satisfies Prisma.ObservationResultSelect;
 
+/** The shape `RESULT_SELECT` produces. */
 type ResultRow = Prisma.ObservationResultGetPayload<{
   select: typeof RESULT_SELECT;
 }>;
 
+/**
+ * A report with its results in insertion order, and the correction that
+ * superseded it, if any.
+ */
 const REPORT_SELECT = {
   id: true,
   serviceOrderId: true,
@@ -84,10 +92,12 @@ const REPORT_SELECT = {
   results: { orderBy: { id: 'asc' }, select: RESULT_SELECT },
 } satisfies Prisma.DiagnosticReportSelect;
 
+/** The shape `REPORT_SELECT` produces. */
 type ReportRow = Prisma.DiagnosticReportGetPayload<{
   select: typeof REPORT_SELECT;
 }>;
 
+/** The `DiagnosticReportRepository` adapter. */
 @Injectable()
 export class PrismaDiagnosticReportRepository implements DiagnosticReportRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -368,7 +378,7 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
            * is worse than the silence the queue was built to prevent.
            *
            * A correction is a NEW report pointing at the old one through
-           * `supersedes_id`, and the old one stays readable on purpose (ORD-04x
+           * `supersedes_id`, and the old one stays readable on purpose (ORD-050, ORD-051
            * — a value that changes in silence is a safety incident). So the
            * record keeps both, and the WORKLIST shows only the one that still
            * stands.
@@ -384,6 +394,10 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
   }
 }
 
+/**
+ * What a safety-worklist entry carries: the value, its flag, and the ids needed
+ * to reach the order and the chart. No name and no diagnosis.
+ */
 const WORKLIST_SELECT = {
   id: true,
   reportId: true,
@@ -403,6 +417,7 @@ const WORKLIST_SELECT = {
   },
 } satisfies Prisma.ObservationResultSelect;
 
+/** The shape `WORKLIST_SELECT` produces. */
 type WorklistRow = Prisma.ObservationResultGetPayload<{
   select: typeof WORKLIST_SELECT;
 }>;
@@ -449,6 +464,10 @@ function siteFilter(sites: SiteScopeFilter): { siteId?: { in: string[] } } {
   return sites === 'all' ? {} : { siteId: { in: [...sites] } };
 }
 
+/**
+ * Row to view, with the superseding correction folded into `supersededById` and
+ * `supersededAt` (ORD-051).
+ */
 function toReportView(row: ReportRow): DiagnosticReportView {
   return {
     id: row.id,
@@ -469,6 +488,10 @@ function toReportView(row: ReportRow): DiagnosticReportView {
   };
 }
 
+/**
+ * Row to view; the stored flag is passed through as written, never recomputed
+ * (ORD-035).
+ */
 function toObservationView(row: ResultRow): ObservationView {
   return {
     // `observation_result.id` is a `bigint` — the one clinical table with
@@ -490,6 +513,10 @@ function toObservationView(row: ResultRow): ObservationView {
   };
 }
 
+/**
+ * Row to worklist entry: the result id as a string, the site and chart taken
+ * from the order it belongs to.
+ */
 function toWorklistEntry(row: WorklistRow): FlaggedResultEntry {
   return {
     resultId: row.id.toString(),

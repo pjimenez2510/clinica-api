@@ -137,6 +137,7 @@ export interface SummaryVitals {
   measuredAt: Date;
 }
 
+/** EN-159. The read model described at the top of this file: one statement, no note text. */
 export interface ChartSummaryRepository {
   /**
    * EN-159. The chart's previous attentions, newest first, in ONE statement.

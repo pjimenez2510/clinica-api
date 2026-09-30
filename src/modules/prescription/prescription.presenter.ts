@@ -15,6 +15,10 @@ import type {
  * not, because it is a calendar date and never an instant (PR-050).
  */
 
+/**
+ * The prescription as the API serves it, field by field. Instants leave as ISO
+ * strings.
+ */
 export function toPrescriptionResponse(
   prescription: PrescriptionView,
 ): PrescriptionResponse {

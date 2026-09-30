@@ -39,6 +39,11 @@ export class NodemailerMailer implements Mailer {
     this.logger.setContext(NodemailerMailer.name);
   }
 
+  /**
+   * AU-029: throws `MailNotConfiguredError` when there is no SMTP host, and
+   * `MailDeliveryFailedError` when the relay refuses. The caller decides what
+   * the response says.
+   */
   async send(message: MailMessage): Promise<void> {
     const from = this.config.get('SMTP_FROM', { infer: true });
     const transporter = this.transport();

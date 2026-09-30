@@ -23,6 +23,10 @@ import {
  * `agenda_entry.room_id` answers as `SITE_ROOM_IN_USE` (OR-022).
  */
 
+/**
+ * The selections are the views: every column the domain shape declares and
+ * nothing else.
+ */
 const ROOM_SELECT = {
   id: true,
   siteId: true,
@@ -38,10 +42,18 @@ const EMISSION_POINT_SELECT = {
   active: true,
 } satisfies Prisma.EmissionPointSelect;
 
+/**
+ * Prisma adapter for `SiteResourcesRepository`; see the header for the refusals
+ * translated here.
+ */
 @Injectable()
 export class PrismaSiteResourcesRepository implements SiteResourcesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * A primary-key read of the id alone; see the port for why the service asks
+   * first.
+   */
   async siteExists(siteId: string): Promise<boolean> {
     const row = await this.prisma.site.findUnique({
       where: { id: siteId },
@@ -59,6 +71,10 @@ export class PrismaSiteResourcesRepository implements SiteResourcesRepository {
     return row?.siteId ?? null;
   }
 
+  /**
+   * The site the point of emission hangs from, for the scope check of a route
+   * that names the point.
+   */
   async siteOfEmissionPoint(id: string): Promise<string | null> {
     const row = await this.prisma.emissionPoint.findUnique({
       where: { id },
@@ -67,6 +83,10 @@ export class PrismaSiteResourcesRepository implements SiteResourcesRepository {
     return row?.siteId ?? null;
   }
 
+  /**
+   * OR-020, OR-022: deactivated rooms travel only when asked for. Ordered by
+   * name so the screen is stable between requests.
+   */
   async listRooms(
     siteId: string,
     includeInactive: boolean,
@@ -155,6 +175,10 @@ export class PrismaSiteResourcesRepository implements SiteResourcesRepository {
     }
   }
 
+  /**
+   * OR-023. No duplicate branch: the code, the only unique column, is not in
+   * the patch. `null` when the row is gone.
+   */
   async updateEmissionPoint(
     id: string,
     patch: { description?: string | null; active?: boolean },

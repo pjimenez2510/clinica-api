@@ -24,6 +24,10 @@ export interface StoredCredentialInvitation {
   usedAt: Date | null;
 }
 
+/**
+ * AU-021, AU-026, AU-027. Carries the hash of the token, never the token: it
+ * exists in memory for one HTTP response and nowhere else.
+ */
 export interface IssueCredentialInvitationInput {
   userId: string;
   /** SHA-256 of the token. The token itself never reaches persistence. */
@@ -60,6 +64,10 @@ export interface CredentialRecipient {
   clinicName: string | null;
 }
 
+/**
+ * Persistence of first-credential invitations (D-013). No method returns or
+ * accepts a plaintext token; lookups are by its SHA-256.
+ */
 export interface CredentialInvitationRepositoryPort {
   /**
    * Supersedes any live invitation of this account and issues a new one, in

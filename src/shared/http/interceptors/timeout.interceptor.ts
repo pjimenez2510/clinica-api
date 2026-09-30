@@ -13,6 +13,7 @@ import { catchError, timeout } from 'rxjs/operators';
 /** Milliseconds before cutting a request off. Overridable per route. */
 export const DEFAULT_TIMEOUT_MS = 15_000;
 
+/** Metadata key written by `@Timeout()` and read by the interceptor. */
 const TIMEOUT_KEY = 'timeout_ms';
 
 /**
@@ -44,6 +45,10 @@ export const Timeout = (ms: number): MethodDecorator =>
 export class TimeoutInterceptor implements NestInterceptor {
   constructor(private readonly reflector: Reflector) {}
 
+  /**
+   * A per-handler `@Timeout()` wins; otherwise `DEFAULT_TIMEOUT_MS`. Only a
+   * timeout is converted; every other error passes through untouched.
+   */
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const ms =
       this.reflector.get<number | undefined>(

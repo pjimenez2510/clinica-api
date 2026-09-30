@@ -52,6 +52,7 @@ import type {
 /** PR-007. The catalogue a prescribed medicine has to come from. */
 const CNMB = 'CNMB';
 
+/** One prescription line with the medicine data frozen on it. */
 const ITEM_SELECT = {
   id: true,
   conceptId: true,
@@ -97,6 +98,7 @@ const PRESCRIPTION_SELECT = {
   },
 } satisfies Prisma.PrescriptionSelect;
 
+/** The shape `PRESCRIPTION_SELECT` produces. */
 type PrescriptionRow = Prisma.PrescriptionGetPayload<{
   select: typeof PRESCRIPTION_SELECT;
 }>;
@@ -109,6 +111,7 @@ interface ConceptRow {
   in_force: boolean;
 }
 
+/** The `PrescriptionRepository` adapter. */
 @Injectable()
 export class PrismaPrescriptionRepository implements PrescriptionRepository {
   constructor(private readonly prisma: PrismaService) {}

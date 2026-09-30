@@ -236,6 +236,10 @@ export class DocumentsController {
   }
 }
 
+/**
+ * DOC-090. Whether a path's `kind` is one of the three `record:read` covers.
+ * The RIDE is refused here as if it did not exist.
+ */
 function isAllowedHere(kind: string): kind is ClinicalDocumentKind {
   return (CLINICAL_DOCUMENT_KINDS as readonly string[]).includes(kind);
 }
@@ -256,6 +260,12 @@ export function sendPdf(res: Response, rendered: RenderedDocument): void {
     .end(rendered.content);
 }
 
+/**
+ * DOC-006. Serves an archived artefact exactly as stored, inline and uncached
+ * like `sendPdf`. `Content-Length` is the stored `byte_size`, which DOC-004
+ * keeps equal to the bytes. Exported so the RIDE controller serves its bytes
+ * the same way.
+ */
 export function sendStored(res: Response, stored: StoredDocument): void {
   res
     .status(HttpStatus.OK)

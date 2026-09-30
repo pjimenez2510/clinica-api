@@ -50,6 +50,7 @@ const ALLERGY_SELECT = {
   refutedNotes: true,
 } satisfies Prisma.PatientAllergySelect;
 
+/** The row `ALLERGY_SELECT` yields, derived from it so the two cannot drift. */
 type AllergyRow = Prisma.PatientAllergyGetPayload<{
   select: typeof ALLERGY_SELECT;
 }>;
@@ -70,10 +71,15 @@ const ABSENCE_SELECT = {
   assertedBy: { select: { firstName: true, lastName: true } },
 } satisfies Prisma.PatientAllergyAbsenceSelect;
 
+/** The row `ABSENCE_SELECT` yields, with the asserter's name and nothing else of the account. */
 type AbsenceRow = Prisma.PatientAllergyAbsenceGetPayload<{
   select: typeof ABSENCE_SELECT;
 }>;
 
+/**
+ * EN-080 to EN-083 over PostgreSQL. Every read goes through `chartScope`, as
+ * the note at the top of this file explains.
+ */
 @Injectable()
 export class PrismaPatientAllergyRepository implements PatientAllergyRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -325,6 +331,7 @@ function toAbsenceAssertion(row: AbsenceRow): AllergyAbsenceAssertion {
   };
 }
 
+/** An allergy row as the domain reads it, refuted or not. */
 function toAllergyView(row: AllergyRow): AllergyView {
   return {
     id: row.id,

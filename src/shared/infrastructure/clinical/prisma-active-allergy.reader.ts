@@ -93,10 +93,17 @@ const ALLERGY_SELECT = {
   recordedAt: true,
 } satisfies Prisma.PatientAllergySelect;
 
+/**
+ * The row `ALLERGY_SELECT` produces, typed by Prisma from the selection itself.
+ */
 type AllergyRow = Prisma.PatientAllergyGetPayload<{
   select: typeof ALLERGY_SELECT;
 }>;
 
+/**
+ * Field by field, so a column added to the selection does not reach callers
+ * until `ActiveAllergy` declares it.
+ */
 function toActiveAllergy(row: AllergyRow): ActiveAllergy {
   return {
     id: row.id,

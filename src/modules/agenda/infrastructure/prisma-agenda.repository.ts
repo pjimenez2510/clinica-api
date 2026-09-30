@@ -172,6 +172,15 @@ const HOLIDAY_SELECT = {
  */
 const BOOKING_ATTEMPTS = 3;
 
+/**
+ * The agenda's port over PostgreSQL.
+ *
+ * Writes that could collide are not checked first: they are inserted and the
+ * `EXCLUDE USING gist` constraints arbitrate them, so two receptionists racing
+ * for one slot cannot both win on a stale read. A serialization abort
+ * (`40001`) is retried up to `BOOKING_ATTEMPTS` times and then answered as
+ * exhaustion, never as a taken slot (AG-026).
+ */
 @Injectable()
 export class PrismaAgendaRepository implements AgendaRepository {
   constructor(
@@ -1439,6 +1448,7 @@ function toScheduleRule(row: {
   };
 }
 
+/** Row to view. The casts of `kind`, `status` and the channel rest on the PostgreSQL enums behind those columns. */
 function toEntryView(row: {
   id: string;
   kind: string;

@@ -147,6 +147,10 @@ export class OrganizationController {
     return { items: items.map((site) => this.visibleSite(site)) };
   }
 
+  /**
+   * OR-004. The guard checks the site in the URL against the caller's scope
+   * before the handler runs; the RUC is then filtered by `visibleSite`.
+   */
   @Get('sites/:id')
   @RequirePermission('site:read', 'param:id')
   @ApiOperation({ summary: 'Datos de una sede' })
@@ -247,6 +251,10 @@ export class OrganizationController {
     return this.administersSites() ? { ...rest, ruc } : rest;
   }
 
+  /**
+   * `site:manage` held at ANY site, not necessarily the one being read: it
+   * decides whether the RUC travels, not access to the row.
+   */
   private administersSites(): boolean {
     return this.currentUser.requirePrincipal().can('site:manage');
   }

@@ -29,12 +29,17 @@ import { CREDENTIAL_INVITATION_TTL_HOURS } from './credential-invitation';
  * clinic says to its staff.
  */
 
+/** What the mailer sends: a plain-text body and its HTML twin. */
 export interface CredentialInvitationMessage {
   subject: string;
   text: string;
   html: string;
 }
 
+/**
+ * Everything the message says that is not fixed wording. The names are typed by
+ * humans, which is why the HTML is escaped.
+ */
 export interface CredentialInvitationContent {
   /** Who is being invited, as they should be addressed. */
   recipientName: string;

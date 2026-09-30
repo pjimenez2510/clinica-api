@@ -320,12 +320,17 @@ export class ScheduleRulesService {
     }
   }
 
+  /** The stored rule, or `ScheduleRuleNotFoundError`. */
   private async requireRule(ruleId: string): Promise<ScheduleRuleView> {
     const rule = await this.rules.findRule(ruleId);
     if (!rule) throw new ScheduleRuleNotFoundError();
     return rule;
   }
 
+  /**
+   * The stored rule's editable fields: what `update` spreads the patch over
+   * and what `close` judges. Nothing that says whose rule it is.
+   */
   private draftOf(rule: ScheduleRuleView): {
     siteId: string;
     weekday: number;

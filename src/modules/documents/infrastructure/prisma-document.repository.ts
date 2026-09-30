@@ -62,6 +62,7 @@ const SUMMARY_SELECT = {
   supersedeReason: true,
 } satisfies Prisma.DocumentRenderSelect;
 
+/** The shape `SUMMARY_SELECT` produces: an artefact without its bytes. */
 type RenderRow = Prisma.DocumentRenderGetPayload<{
   select: typeof SUMMARY_SELECT;
 }>;
@@ -88,6 +89,9 @@ function subjectIdOf(row: RenderRow): string {
   }
 }
 
+/**
+ * Row to summary, with the four subject columns folded into one `subjectId`.
+ */
 function toSummary(row: RenderRow): DocumentRenderSummary {
   return {
     id: row.id,
@@ -136,6 +140,7 @@ function siteFilter(sites: SiteScopeFilter): Prisma.DocumentRenderWhereInput {
   return sites === 'all' ? {} : { siteId: { in: [...sites] } };
 }
 
+/** Row to template version. */
 function toTemplate(row: {
   id: string;
   kind: DocumentKind;
@@ -186,6 +191,7 @@ function auditRow(
   };
 }
 
+/** The `DocumentRepository` adapter. */
 @Injectable()
 export class PrismaDocumentRepository implements DocumentRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -238,6 +244,10 @@ export class PrismaDocumentRepository implements DocumentRepository {
     return toSummary(row);
   }
 
+  /**
+   * DOC-012, DOC-092. The metadata only, within the caller's scope. No audit
+   * row: nothing clinical leaves.
+   */
   async findRenderSummary(
     query: RenderQuery,
   ): Promise<DocumentRenderSummary | null> {
@@ -248,6 +258,10 @@ export class PrismaDocumentRepository implements DocumentRepository {
     return row === null ? null : toSummary(row);
   }
 
+  /**
+   * DOC-006, DOC-091. The stored bytes, and for a clinical kind the audit row,
+   * in one transaction.
+   */
   async findRenderContent(
     query: RenderQuery,
     disclosure: DisclosureRecord | null,
@@ -283,6 +297,7 @@ export class PrismaDocumentRepository implements DocumentRepository {
     };
   }
 
+  /** DOC-091. The audit row of a draft that is served and not stored. */
   async recordDisclosure(disclosure: DisclosureRecord): Promise<void> {
     // A single `INSERT` is atomic on its own, so there is no transaction to
     // open — and it still throws, which is the whole point: a draft that
@@ -290,6 +305,10 @@ export class PrismaDocumentRepository implements DocumentRepository {
     await this.prisma.accessAudit.create({ data: auditRow(disclosure) });
   }
 
+  /**
+   * Every artefact of one subject in scope, newest first, superseded ones
+   * included; without their bytes.
+   */
   async listRendersOfSubject(
     subjectId: string,
     kind: DocumentKind,
@@ -307,6 +326,10 @@ export class PrismaDocumentRepository implements DocumentRepository {
     return rows.map(toSummary);
   }
 
+  /**
+   * DOC-031, DOC-037. The highest version of the kind, or `null` when none was
+   * ever published.
+   */
   async findCurrentTemplate(
     kind: DocumentKind,
   ): Promise<DocumentTemplate | null> {
@@ -319,6 +342,7 @@ export class PrismaDocumentRepository implements DocumentRepository {
     return row === null ? null : toTemplate(row);
   }
 
+  /** DOC-030. Every version of every kind, newest first within each kind. */
   async listTemplates(): Promise<readonly DocumentTemplate[]> {
     const rows = await this.prisma.documentTemplate.findMany({
       orderBy: [{ kind: 'asc' }, { version: 'desc' }],
@@ -326,6 +350,10 @@ export class PrismaDocumentRepository implements DocumentRepository {
     return rows.map(toTemplate);
   }
 
+  /**
+   * DOC-030. Inserts the next version of the kind; nothing is ever updated
+   * (DOC-032).
+   */
   async publishTemplate(
     template: NewDocumentTemplate,
   ): Promise<DocumentTemplate> {
@@ -366,6 +394,10 @@ export class PrismaDocumentRepository implements DocumentRepository {
     return toTemplate(row);
   }
 
+  /**
+   * DOC-056, DOC-058. A new image row with its size taken from the bytes
+   * themselves. The mime type cast leans on `document_image_mime_type_allowed`.
+   */
   async saveImage(image: NewDocumentImage): Promise<StoredImageSummary> {
     const row = await this.prisma.documentImage.create({
       data: {
@@ -389,6 +421,10 @@ export class PrismaDocumentRepository implements DocumentRepository {
     return { ...row, mimeType: row.mimeType as AllowedImageMimeType };
   }
 
+  /**
+   * DOC-057. Points the establishment at the new logo; the old image row stays.
+   * `false` when no establishment has that id.
+   */
   async attachEstablishmentLogo(
     establishmentId: string,
     imageId: string,
@@ -400,6 +436,10 @@ export class PrismaDocumentRepository implements DocumentRepository {
     return count === 1;
   }
 
+  /**
+   * DOC-057. Points the practitioner at a new seal or signature; the old image
+   * row stays. `false` when no practitioner has that id.
+   */
   async attachPractitionerImage(
     practitionerId: string,
     slot: 'seal' | 'signature',

@@ -126,6 +126,7 @@ const LONG_AGO = '2000-01-01';
 // 1. `tax_rate` — los códigos reales de la tabla 17 de la Ficha Técnica
 // ───────────────────────────────────────────────────────────────────────────
 
+/** One period of one SRI rate code. Norm-fixed, so re-seeding overwrites it. */
 interface SeedTaxRate {
   /** `codigoPorcentaje` del comprobante electrónico. */
   sriCode: string;
@@ -225,6 +226,7 @@ const GENERAL_RATE = '4';
 // 2. `payer` — quién paga
 // ───────────────────────────────────────────────────────────────────────────
 
+/** A starting payer, keyed by `code`; created if missing, never overwritten. */
 interface SeedPayer {
   code: string;
   name: string;
@@ -299,6 +301,7 @@ const SELF_PAY_CODE = 'PARTICULAR';
 // 4. `billable_service` — el catálogo de arranque
 // ───────────────────────────────────────────────────────────────────────────
 
+/** A starting billable service and its PARTICULAR price; created if missing, never overwritten. */
 interface SeedService {
   code: string;
   name: string;
@@ -638,6 +641,7 @@ const SERVICES: SeedService[] = [
 // 6. Analitos, rangos y exámenes
 // ───────────────────────────────────────────────────────────────────────────
 
+/** One reference, critical or absolute range of an analyte, optionally per sex. */
 interface SeedRange {
   kind: 'REFERENCE' | 'CRITICAL' | 'ABSOLUTE';
   /** `MALE` / `FEMALE`, los mismos rótulos que el enum `patient_sex`. NULL = todos. */
@@ -647,6 +651,7 @@ interface SeedRange {
   text: string | null;
 }
 
+/** A starting laboratory analyte, keyed by `code`; created if missing, never overwritten. */
 interface SeedAnalyte {
   code: string;
   name: string;
@@ -936,6 +941,7 @@ const ANALYTES: SeedAnalyte[] = [
   },
 ];
 
+/** A starting exam: its 010A section, the service that bills it, and its analytes in print order. */
 interface SeedExam {
   code: string;
   name: string;
@@ -1014,6 +1020,7 @@ const EXAMS: SeedExam[] = [
 // Escritura
 // ───────────────────────────────────────────────────────────────────────────
 
+/** Every writer below runs inside the one transaction `seedBilling` opens. */
 type Client = Prisma.TransactionClient;
 
 /** Importe formateado a dos decimales SIN pasar nunca por coma flotante. */
@@ -1111,6 +1118,11 @@ async function ensurePriceList(
   return rows[0]!.id;
 }
 
+/**
+ * The service by `code`, created if missing. The `ON CONFLICT` update rewrites
+ * `updated_at` with itself: a no-op that still makes `RETURNING` hand back
+ * the existing id, which `DO NOTHING` would not.
+ */
 async function ensureService(
   tx: Client,
   service: SeedService,
@@ -1186,6 +1198,7 @@ async function ensurePrice(
           AND "billable_service_id" = ${serviceId}::uuid)`;
 }
 
+/** The analyte by `code`, created if missing; same no-op `ON CONFLICT` as `ensureService`. */
 async function ensureAnalyte(
   tx: Client,
   analyte: SeedAnalyte,
@@ -1252,6 +1265,7 @@ async function ensureExam(
   return rows[0]!.id;
 }
 
+/** Links an analyte to an exam at its print position; an existing link is left as it is. */
 async function ensureExamAnalyte(
   tx: Client,
   examId: string,
@@ -1408,6 +1422,7 @@ export async function seedBilling(prisma: PrismaClient): Promise<void> {
   );
 }
 
+/** Entry point when run on its own; `seed.mts` calls `seedBilling` with its own client. */
 async function main(): Promise<void> {
   const prisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),

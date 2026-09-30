@@ -39,6 +39,10 @@ import {
 
 import type { Requester } from './agenda.service';
 
+/**
+ * AG-060. A patient waiting for a slot somewhere in a range of Ecuadorian
+ * dates. Every optional field widens the match when absent.
+ */
 export interface EnrolRequest {
   siteId: string;
   patientId: string;
@@ -54,28 +58,43 @@ export interface EnrolRequest {
   serviceTypeId?: string;
 }
 
+/** AG-065 to AG-067. The site whose open entries are swept and ranked. */
 export interface WaitlistReviewRequest {
   siteId: string;
 }
 
+/**
+ * AG-061. Names the released entry, never an interval: the slot is derived
+ * from that row, so a client cannot ask about one that never came free.
+ */
 export interface CandidatesRequest {
   siteId: string;
   /** The entry whose slot came free (AG-061). */
   entryId: string;
 }
 
+/** AG-061. The freed interval and who is offered it, in order. */
 export interface CandidatesResult {
   /** The interval the candidates are being offered, as the entry states it. */
   slot: FreedSlot & { startsAt: Date; endsAt: Date };
   candidates: readonly RankedCandidate[];
 }
 
+/**
+ * AG-064. One call and what came of it. No author field: who called is taken
+ * from the session, because a trail whose author the client picks proves
+ * nothing.
+ */
 export interface ContactRequest {
   siteId: string;
   entryId: string;
   outcome: WaitlistContactOutcome;
 }
 
+/**
+ * AG-063. Links an entry to an appointment that was already booked through
+ * the ordinary route; converting books nothing itself.
+ */
 export interface ConversionRequest {
   siteId: string;
   entryId: string;

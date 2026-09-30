@@ -29,6 +29,11 @@ import { ParameterOutOfRangeError } from './configuration.errors';
 export const CANCELLED_RETENTION_POLICIES = ['NEVER'] as const;
 export type CancelledRetention = (typeof CANCELLED_RETENTION_POLICIES)[number];
 
+/**
+ * One site's operating parameters as stored in `site_parameter`. The ranges of
+ * the numeric ones live in `PARAMETER_RANGES` below, mirrored by CHECK
+ * constraints in the database.
+ */
 export interface SiteParameters {
   minLeadMinutes: number;
   maxLeadDays: number;
@@ -99,6 +104,10 @@ export interface SiteParameters {
 /** What the administrator may send; anything absent keeps its stored value. */
 export type SiteParametersPatch = Partial<SiteParameters>;
 
+/**
+ * A declared range: bounds, optional step, and the Spanish sentence
+ * `PARAM_OUT_OF_RANGE` shows.
+ */
 interface Range {
   min: number;
   max: number;
@@ -176,6 +185,10 @@ export const PARAMETER_RANGES = {
   },
 } as const satisfies Record<string, Range>;
 
+/**
+ * The parameters that have a declared range; the booleans, the permission code
+ * and the retention policy do not.
+ */
 export type RangedParameter = keyof typeof PARAMETER_RANGES;
 
 /**

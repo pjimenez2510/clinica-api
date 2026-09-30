@@ -206,6 +206,13 @@ function nacimientoPara(indice: number, hoy: Date): Date {
 
 const TOTAL = Number(process.env.SEED_PATIENTS ?? 800);
 
+/**
+ * Entry point of `pnpm db:seed:patients`. Repeatable by REPLACING, not by
+ * upserting: it deletes every patient and identifier, restarts
+ * `patient_mrn_seq`, and recreates `SEED_PATIENTS` (default 800) fictitious
+ * charts — the same ones on every run. Demo data: it refuses a production
+ * `NODE_ENV`.
+ */
 async function main(): Promise<void> {
   if (process.env.NODE_ENV === 'production') {
     throw new Error('El seed de pacientes nunca debe correr contra producción');

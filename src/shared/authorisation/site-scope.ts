@@ -3,6 +3,10 @@ import { ForbiddenError } from '../domain/errors/domain-error';
 import type { Permission } from './permission.catalogue';
 import { ALL_SITES, type Principal } from './principal';
 
+/**
+ * AU-011, 403. One class for the guard and for `siteScope()`, because clients
+ * branch on the code. It names the permission, never a site.
+ */
 export class SiteScopeDeniedError extends ForbiddenError {
   readonly code = 'SITE_SCOPE_DENIED';
   constructor(permission: string) {

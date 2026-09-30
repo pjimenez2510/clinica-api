@@ -59,6 +59,11 @@ const DEFAULT_EMISSION_POINT = {
   description: 'Punto de emisión principal',
 } as const;
 
+/**
+ * Applies the rules listed at the top of this file and reports what it created
+ * or adopted. Demo data — the establishment, its RUC and the fallback site are
+ * fictitious; `main` refuses a production `NODE_ENV`.
+ */
 export async function seedOrganization(prisma: PrismaClient): Promise<{
   establishmentCreated: boolean;
   sitesCreated: number;

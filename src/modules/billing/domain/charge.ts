@@ -152,6 +152,15 @@ export interface DocumentTotals {
   total: Money;
 }
 
+/**
+ * Sums the frozen lines into the five figures, keeping the identity
+ * `invoice_total_is_consistent` checks.
+ *
+ * Each line's tax is already rounded on its own line (`lineTax`), so the tax
+ * total is the sum of what is printed. A line joins the taxed subtotal only
+ * when it has a non-zero percentage: 0%, «no objeto» and «exento» all land in
+ * the untaxed one.
+ */
 export function totalsOf(lines: readonly ChargeLine[]): DocumentTotals {
   const subtotalTaxed = Money.sum(lines.filter(isTaxed).map(lineGross));
   const subtotalUntaxed = Money.sum(
@@ -188,6 +197,7 @@ export const CHARGE_STATUSES = [
   'CANCELLED',
 ] as const;
 
+/** One of `CHARGE_STATUSES`. */
 export type ChargeStatus = (typeof CHARGE_STATUSES)[number];
 
 /** The statuses that still owe money and therefore hold an account open. */

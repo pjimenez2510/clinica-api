@@ -36,6 +36,11 @@ function todayAt(time: string): Date {
   return new Date(`${todayInClinic()}T${time}:00-05:00`);
 }
 
+/**
+ * Entry point of `pnpm db:seed:agenda`. Refuses a production `NODE_ENV`:
+ * everything below — sites, practitioner profiles, schedules, today's sample
+ * appointments — is demo data, idempotent on the keys listed at the top.
+ */
 async function main() {
   if (process.env.NODE_ENV === 'production') {
     throw new Error('This seed is for development only.');

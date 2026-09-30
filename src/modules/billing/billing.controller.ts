@@ -418,6 +418,10 @@ export class BillingController {
   }
 }
 
+/**
+ * The account as served. Instants go out as ISO strings; there is no total on
+ * it (BI-074), the statement carries it.
+ */
 function toAccountResponse(account: AccountView): AccountResponse {
   return {
     id: account.id,
@@ -432,6 +436,10 @@ function toAccountResponse(account: AccountView): AccountResponse {
   };
 }
 
+/**
+ * The account, its charges (voided ones included, BI-055) and both derived
+ * totals: what counts, and what is still only proposed.
+ */
 function toStatementResponse(
   statement: AccountStatement,
 ): AccountStatementResponse {
@@ -443,6 +451,7 @@ function toStatementResponse(
   };
 }
 
+/** The five figures, each as a decimal string (BI-001). */
 function toTotalsResponse(
   totals: AccountStatement['totals'],
 ): AccountStatementResponse['totals'] {
@@ -455,6 +464,14 @@ function toTotalsResponse(
   };
 }
 
+/**
+ * A charge as served, every amount a string (BI-001).
+ *
+ * `lineTotal` is the line's base — gross minus discount, BEFORE tax — and
+ * `lineTax` its tax rounded on the line (BI-058); both come from the frozen
+ * columns. Who created the line and who authorised a discount are not in the
+ * response.
+ */
 function toChargeResponse(charge: ChargeView): ChargeResponse {
   const line = toLine(charge);
 
@@ -486,6 +503,10 @@ function toChargeResponse(charge: ChargeView): ChargeResponse {
   };
 }
 
+/**
+ * The invoice as served: the receiver block flattened and the five totals as
+ * strings (BI-001).
+ */
 function toInvoiceResponse(invoice: InvoiceView): InvoiceResponse {
   return {
     id: invoice.id,

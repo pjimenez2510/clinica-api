@@ -20,6 +20,7 @@
 /** Six digits. Anything else is not a DPA parish code. */
 const DPA_PARISH_CODE = /^\d{6}$/;
 
+/** PA-028. What the parish code says about province and canton, both derived from its prefix. */
 export interface ParishLocation {
   /** Two digits, or `null` when the code is not a DPA parish code. */
   provinceCode: string | null;

@@ -53,6 +53,10 @@ import {
 } from './dto/auth.dto';
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 
+/**
+ * 401 `MISSING_REFRESH_TOKEN` when `POST /auth/refresh` arrives without the
+ * refresh cookie.
+ */
 export class MissingRefreshCookieError extends UnauthorizedError {
   readonly code = 'MISSING_REFRESH_TOKEN';
   constructor() {
@@ -75,6 +79,15 @@ export class MissingRefreshCookieError extends UnauthorizedError {
 const REFRESH_COOKIE_SECURE = '__Host-refresh';
 const REFRESH_COOKIE_PLAIN = 'refresh';
 
+/**
+ * The SESSION half of the auth routes: sign-in, second factor, refresh,
+ * sign-out, own password, and the public first-credential flow. Every route is
+ * `@Public()`, `@MfaFlowOnly()` or `@OwnAccount()` — none of them needs a role;
+ * administration lives in `AuthAdminController`.
+ *
+ * The refresh token travels only in an httpOnly, SameSite=strict cookie and
+ * never in a body, so page script cannot read it.
+ */
 @ApiTags('auth')
 @Controller({ path: 'auth', version: '1' })
 export class AuthController {
@@ -321,6 +334,11 @@ export class AuthController {
     this.clearRefreshCookie(res);
   }
 
+  /**
+   * Changes the caller's own password after proving the current one; the new
+   * one goes through the same policy as a first credential, and every session
+   * is closed.
+   */
   @Post('password')
   @OwnAccount()
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -435,6 +453,10 @@ export class AuthController {
     });
   }
 
+  /**
+   * Same attributes as `setRefreshCookie`: a browser only clears a cookie whose
+   * name, path and flags match the one it holds.
+   */
   private clearRefreshCookie(res: Response): void {
     res.clearCookie(this.cookieName, {
       httpOnly: true,
@@ -444,6 +466,10 @@ export class AuthController {
     });
   }
 
+  /**
+   * The refresh token is read from the cookie only, never from the body, which
+   * is what keeps it out of reach of page script.
+   */
   private readRefreshCookie(req: Request): string {
     const token = (req.cookies as Record<string, string> | undefined)?.[
       this.cookieName
@@ -452,6 +478,10 @@ export class AuthController {
     return token;
   }
 
+  /**
+   * IP and user agent for the session row and the trail. `req.ip` is only the
+   * client's address when `TRUST_PROXY_HOPS` matches the proxies in front.
+   */
   private clientContext(req: Request): { ip?: string; userAgent?: string } {
     return { ip: req.ip, userAgent: req.get('user-agent') };
   }

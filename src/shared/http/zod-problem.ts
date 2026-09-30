@@ -16,6 +16,7 @@ interface ZodIssueLike {
   message?: string;
 }
 
+/** Just the part of a `ZodError` this file reads. */
 export interface ZodErrorLike {
   issues?: ZodIssueLike[];
 }
@@ -51,7 +52,13 @@ function toFieldPath(path: PropertyKey[] | undefined): string {
   }, '');
 }
 
+/**
+ * One field error per Zod issue, with our stable codes. An unknown issue code
+ * maps to `INVALID_VALUE` rather than leaking Zod's own name.
+ */
 export function zodIssuesToFieldErrors(error: unknown): DomainFieldError[] {
+  // The exception is untyped here: anything without an `issues` array yields
+  // no field errors instead of throwing inside the filter.
   const issues = (error as ZodErrorLike | undefined)?.issues;
   if (!Array.isArray(issues)) return [];
 

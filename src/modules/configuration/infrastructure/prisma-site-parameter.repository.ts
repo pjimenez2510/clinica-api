@@ -26,6 +26,7 @@ import { isRecordNotFound } from './configuration-database-errors';
  * `configuration.constraints.ts` already registers a message naming the range.
  */
 
+/** Every column of `SiteParameterView`, and nothing else from the row. */
 const PARAMETER_SELECT = {
   siteId: true,
   minLeadMinutes: true,
@@ -43,10 +44,19 @@ const PARAMETER_SELECT = {
   cancelledRetention: true,
 } satisfies Prisma.SiteParameterSelect;
 
+/**
+ * Prisma adapter for `SiteParameterRepository`. Also answers two questions
+ * about tables of other modules — configured durations and installed
+ * permissions — without importing their code.
+ */
 @Injectable()
 export class PrismaSiteParameterRepository implements SiteParameterRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * `null` means the site is unknown: the database writes this row with every
+   * site (CF-062).
+   */
   async find(siteId: string): Promise<SiteParameterView | null> {
     return this.prisma.siteParameter.findUnique({
       where: { siteId },

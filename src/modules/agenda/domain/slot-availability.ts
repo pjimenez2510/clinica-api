@@ -82,6 +82,10 @@ export interface Slot {
   slotMinutes: number;
 }
 
+/**
+ * AG-003. Everything `deriveAvailability` needs, already read by the caller:
+ * the function is pure and reads nothing itself.
+ */
 export interface AvailabilityQuery {
   practitioner: PractitionerAvailability;
   siteId: string;
@@ -118,6 +122,7 @@ export interface AvailabilityQuery {
   timeZone?: string;
 }
 
+/** AG-003. The derived answer: free slots, what occupies the range, and why days are empty. */
 export interface AvailabilityView {
   /** Free slots, ordered by instant. Derived, never stored. */
   slots: Slot[];

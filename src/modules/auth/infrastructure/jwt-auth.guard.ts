@@ -49,6 +49,12 @@ export class JwtAuthGuard implements CanActivate {
     private readonly cls: ClsService,
   ) {}
 
+  /**
+   * Order matters: `@Public()` short-circuits, a missing bearer is 401, a token
+   * that has not passed the second factor only reaches `@MfaFlowOnly()` routes,
+   * and a revoked family is refused even with a valid signature (AU-036). Only
+   * then are the claims published for `PermissionsGuard`.
+   */
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const targets = [context.getHandler(), context.getClass()];
 
@@ -126,6 +132,10 @@ export class JwtAuthGuard implements CanActivate {
     throw new SessionRevokedError();
   }
 
+  /**
+   * Only the `Bearer <token>` scheme, case-insensitive; anything else counts as
+   * no token at all.
+   */
   private extractBearer(header?: string): string | null {
     if (!header) return null;
     const [scheme, value] = header.split(' ');

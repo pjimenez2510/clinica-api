@@ -942,4 +942,8 @@ export const DOMAIN_ERROR_CODES = [
   'DOCUMENT_TEMPLATE_SLOT_INVALID',
 ] as const;
 
+/**
+ * The catalogue as a type. Nothing binds `DomainError.code` to it: what keeps
+ * the classes and this list in step is `error-catalogue.spec.ts`.
+ */
 export type DomainErrorCode = (typeof DOMAIN_ERROR_CODES)[number];

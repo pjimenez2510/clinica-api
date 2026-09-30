@@ -97,10 +97,23 @@ const CNMB_VERSION = 'DEV-2026-08';
 const TARIFF_VERSION = 'DEV-2026-08';
 const EFFECTIVE_FROM = new Date('2026-01-01T00:00:00Z');
 
+/**
+ * SHA-256 of the fixture as JSON, recorded as the release's `source_checksum`.
+ * It is provenance only: whether to seed is decided by the version alone.
+ */
 function checksumOf(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
+/**
+ * Creates the `DEV` releases of the CNMB and of the tariff, the latter derived
+ * from the active `exam_definition` rows (so it needs `seedBilling` first and
+ * is skipped when there are none). A new release retires the concepts in force
+ * instead of deleting them, because prescriptions point at them by id.
+ *
+ * Idempotent on (system, version): an existing release is left as it is, even
+ * if the fixture above has changed since. Development data only — see above.
+ */
 export async function seedClinicalCatalogues(prisma: PrismaClient) {
   // ── CNMB ────────────────────────────────────────────────────────────────
   const cnmb = await prisma.catalogSystem.upsert({

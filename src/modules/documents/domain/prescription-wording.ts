@@ -29,6 +29,7 @@
 /** Art. 5.b.ii draws the line at five years. */
 const MONTHS_REQUIRED_BELOW_YEARS = 5;
 
+/** `1 mes`, `3 meses`: the figure followed by the singular or plural word. */
 const plural = (value: number, one: string, many: string): string =>
   `${value} ${value === 1 ? one : many}`;
 
@@ -117,6 +118,10 @@ const HUNDREDS: Readonly<Record<number, string>> = {
 /** The largest quantity that can be spelled. Above it, only the figure prints. */
 export const MAX_SPELLABLE_QUANTITY = 999_999;
 
+/**
+ * Spells 0 to 999 in Spanish words, from the lookup tables above. The caller
+ * composes thousands on top of it.
+ */
 function spellBelowThousand(value: number): string {
   // `?? ''` on every lookup: `noUncheckedIndexedAccess` is on, and the tables
   // are total over the ranges each branch guards. An empty string would be a
@@ -198,6 +203,10 @@ const ROUTE_LABEL: Readonly<Record<string, string>> = {
   VAGINAL: 'Vía vaginal',
 };
 
+/**
+ * DOC-074, art. 13. The route spelled out; `null` for no code and for a code
+ * not in `ROUTE_LABEL`, so an unknown one is never printed raw.
+ */
 export function routeText(code: string | null): string | null {
   if (code === null) return null;
   return ROUTE_LABEL[code] ?? null;

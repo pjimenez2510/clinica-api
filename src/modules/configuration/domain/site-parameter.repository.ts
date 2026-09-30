@@ -10,6 +10,10 @@ import type { SiteParameters, SiteParametersPatch } from './site-parameters';
  * on who inserted the site.
  */
 
+/**
+ * A site's parameters with the site they belong to: one row per site, created
+ * by the database (CF-062).
+ */
 export interface SiteParameterView extends SiteParameters {
   siteId: string;
 }
@@ -30,6 +34,9 @@ export interface SiteParameterChange {
   after: SiteParameterView;
 }
 
+/**
+ * Storage of the per-site operating parameters. No `create`: see the header.
+ */
 export interface SiteParameterRepository {
   find(siteId: string): Promise<SiteParameterView | null>;
 

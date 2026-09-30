@@ -29,6 +29,10 @@ import {
  * arbitrated by the indexes, not by a read that was stale before it returned.
  */
 
+/**
+ * The selections are the views: every column the domain shape declares and
+ * nothing else.
+ */
 const ESTABLISHMENT_SELECT = {
   id: true,
   mspUnicode: true,
@@ -50,6 +54,10 @@ const SITE_SELECT = {
   active: true,
 } satisfies Prisma.SiteSelect;
 
+/**
+ * Prisma adapter for `OrganizationRepository`. Unique-index and RESTRICT
+ * refusals are translated in `organization-database-errors.ts`.
+ */
 @Injectable()
 export class PrismaOrganizationRepository implements OrganizationRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -81,6 +89,10 @@ export class PrismaOrganizationRepository implements OrganizationRepository {
     }
   }
 
+  /**
+   * OR-001; OR-002 answered by `establishment_msp_unicode_unique`. `null` when
+   * the row is gone.
+   */
   async updateEstablishment(
     id: string,
     input: EstablishmentInput,
@@ -115,6 +127,7 @@ export class PrismaOrganizationRepository implements OrganizationRepository {
     });
   }
 
+  /** `null` for an unknown id; the service decides the refusal. */
   async findSite(id: string): Promise<SiteView | null> {
     return this.prisma.site.findUnique({
       where: { id },

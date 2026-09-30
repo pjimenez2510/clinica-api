@@ -37,6 +37,10 @@ import { readFileSync } from 'node:fs';
  * embeds, so the buffer's size is not the PDF's size.
  */
 
+/**
+ * One TTF of `dejavu-fonts-ttf`, read synchronously. It runs at module load, so
+ * a missing font stops the process at boot rather than at the first document.
+ */
 function loadFont(file: string): Buffer {
   // `require.resolve` and not a path built by hand: pnpm's store puts the
   // package under a content-addressed directory, so `../../node_modules/…`

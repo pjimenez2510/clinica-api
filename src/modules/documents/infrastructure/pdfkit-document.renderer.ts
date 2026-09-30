@@ -62,6 +62,7 @@ import type {
  *     machine's clock (DOC-024).
  */
 
+/** Short alias: every coordinate below is written in millimetres. */
 const mm = millimetresToPoints;
 
 /** Type sizes, in points. One place, so a document cannot drift by section. */
@@ -71,12 +72,24 @@ const LINE_GAP = 2;
 /** DOC-071. Reserved at the foot of every page for the page number. */
 const FOOTER_HEIGHT_MM = 12;
 
+/**
+ * The vertical position on the current page, shared by reference between the
+ * painting steps so each one continues where the previous stopped.
+ */
 interface Cursor {
   y: number;
 }
 
+/**
+ * The `DocumentRenderer` adapter. It paints what `composeLayout` decided and
+ * decides nothing about what a document says.
+ */
 @Injectable()
 export class PdfKitDocumentRenderer implements DocumentRenderer {
+  /**
+   * Wraps every engine failure in `DocumentRenderFailedError`, the only error
+   * the port admits.
+   */
   async render(
     layout: DocumentLayout,
     images: LayoutImages,
@@ -91,6 +104,11 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     }
   }
 
+  /**
+   * Builds the whole PDF in memory and resolves with its bytes when PDFKit ends
+   * the stream. Body blocks flow page by page above the reserved footer and
+   * tear-off band; footers are painted last, once the page count is known.
+   */
   private compose(
     layout: DocumentLayout,
     images: LayoutImages,
@@ -247,6 +265,10 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     cursor.y = bottom + mm(5);
   }
 
+  /**
+   * The document's title in the template's accent colour, and the verification
+   * code under it when the subject has one.
+   */
   private paintTitle(
     doc: PDFKit.PDFDocument,
     layout: DocumentLayout,
@@ -276,6 +298,11 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
 
   // ── blocks ───────────────────────────────────────────────────────────────
 
+  /**
+   * Paints one block of the layout. Each kind calls `ensure` with its height
+   * first, so a block that does not fit starts a new page instead of running
+   * into the reserved band.
+   */
   private paintBlock(
     doc: PDFKit.PDFDocument,
     block: Block,
@@ -444,6 +471,10 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     }
   }
 
+  /**
+   * A table whose column widths are fractions of the text width. Rows are
+   * measured before painting and moved to the next page whole.
+   */
   private paintTable(
     doc: PDFKit.PDFDocument,
     columns: readonly TableColumn[],

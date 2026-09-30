@@ -66,6 +66,7 @@ const NEEDS_CLARIFICATION =
 const MISSING_SCHEMA = /\*\*Falta esquema\.\*\*[^\n]*(?:\n>\s*[^\n]*)*/g;
 const OUTCOME_PREFIXES = new Set(['SC']);
 
+/** `statSync` throws on a missing path; this answers `false` instead. */
 function exists(path: string): boolean {
   try {
     statSync(path);
@@ -75,6 +76,7 @@ function exists(path: string): boolean {
   }
 }
 
+/** Every `.ts` file under `dir`, recursively, skipping `node_modules` and `dist`. */
 function walkTypeScript(dir: string): string[] {
   let found: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -90,9 +92,9 @@ function walkTypeScript(dir: string): string[] {
  * Expands `AG-001 a AG-003` into the ids that actually exist.
  *
  * A range is written for humans and does not promise that every number inside
- * it was used: agenda declares AG-035 to AG-039 with no AG-034. Intersecting
- * with the declared set is what keeps a deliverable from claiming coverage of
- * requirements nobody ever wrote.
+ * it was used: an auth deliverable covers «AU-001 a AU-012», and auth declares
+ * no AU-006 to AU-009. Intersecting with the declared set is what keeps a
+ * deliverable from claiming coverage of requirements nobody ever wrote.
  */
 function expand(text: string, declared: Set<string>): string[] {
   const ids = new Set<string>();
@@ -111,6 +113,10 @@ function expand(text: string, declared: Set<string>): string[] {
   return [...ids].sort();
 }
 
+/**
+ * Every requirement id named in a test title under `src` and `test` — the
+ * same pattern `check-rtm.mts` reads, so both count coverage alike.
+ */
 function readTestedIds(): Set<string> {
   const tested = new Set<string>();
   for (const dir of ['src', 'test']
@@ -127,6 +133,10 @@ function readTestedIds(): Set<string> {
   return tested;
 }
 
+/**
+ * One `### <letter><n> — title` section of a SPEC.md: the ids its
+ * `**Cubre:**` line names, and which of those a test title cites.
+ */
 interface Deliverable {
   id: string;
   title: string;
@@ -135,6 +145,10 @@ interface Deliverable {
   tested: string[];
 }
 
+/**
+ * What the report says of one module: its declared ids, its deliverables,
+ * its open blockers, and the ids no deliverable covers.
+ */
 interface ModuleState {
   module: string;
   state: string;

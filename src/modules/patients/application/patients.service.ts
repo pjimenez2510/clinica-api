@@ -89,6 +89,7 @@ const EXPECTED_SYSTEM = {
   genderIdentityConceptId: 'GENDER_IDENTITY',
 } as const;
 
+/** One of the six catalogue references of the form, named as the request names it. */
 type ConceptField = keyof typeof EXPECTED_SYSTEM;
 
 /**

@@ -36,6 +36,11 @@ interface PrismaErrorLike {
   };
 }
 
+/**
+ * Duck-typed on what every Prisma client error carries — a `P` code of four
+ * digits and a `clientVersion` — so this file needs no Prisma import. Anything
+ * else is not ours to translate.
+ */
 function isPrismaError(exception: unknown): exception is PrismaErrorLike {
   if (typeof exception !== 'object' || exception === null) return false;
   const candidate = exception as PrismaErrorLike;
@@ -46,12 +51,21 @@ function isPrismaError(exception: unknown): exception is PrismaErrorLike {
   );
 }
 
+/**
+ * The PostgreSQL SQLSTATE, from wherever the driver adapter put it (`code` or
+ * `originalCode`).
+ */
 function sqlStateOf(error: PrismaErrorLike): string | undefined {
   const cause = error.meta?.driverAdapterError?.cause;
   const raw = cause?.code ?? cause?.originalCode;
   return typeof raw === 'string' ? raw : undefined;
 }
 
+/**
+ * Both messages, joined: a refused DELETE comes as a `P2039` with an empty
+ * `meta` (see `RESTRICTED_DELETE`), so the constraint or trigger wording may be
+ * in either one.
+ */
 function messageOf(error: PrismaErrorLike): string {
   const original = error.meta?.driverAdapterError?.cause?.originalMessage;
   const outer = error.message;
@@ -61,6 +75,11 @@ function messageOf(error: PrismaErrorLike): string {
   ].join(' ');
 }
 
+/**
+ * The constraint that fired: `constraint.index` for a unique index, otherwise
+ * parsed from the message, anchored on PostgreSQL's own wording so nothing else
+ * in it can pose as a constraint name.
+ */
 function constraintNameOf(error: PrismaErrorLike): string | undefined {
   const cause = error.meta?.driverAdapterError?.cause;
   if (!cause) return undefined;
@@ -85,6 +104,11 @@ const DUPLICATE_BY_CONSTRAINT: Record<string, () => DomainError> = {
   role_code_key: () => new RoleCodeDuplicateError(),
 };
 
+/**
+ * AU-020, AU-030: the domain error for a unique violation of THIS module, or
+ * `undefined` when the failure is somebody else's and must keep travelling
+ * untouched.
+ */
 export function duplicateErrorFrom(error: unknown): DomainError | undefined {
   if (!isPrismaError(error)) return undefined;
   if (sqlStateOf(error) !== '23505') return undefined;

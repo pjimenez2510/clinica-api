@@ -133,10 +133,16 @@ const CANDIDATE_SELECT = {
   patient: CANDIDATE_PATIENT_SELECT,
 } satisfies Prisma.WaitlistEntrySelect;
 
+/**
+ * The waiting list's port over PostgreSQL. Closed entries stay closed because
+ * `trg_waitlist_entry_closure_final` refuses to reopen them, not because this
+ * class remembers to check.
+ */
 @Injectable()
 export class PrismaWaitlistRepository implements WaitlistRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** AG-060. A plain insert: no check that the range has no free slot, see the port. */
   async enrolInWaitlist(entry: NewWaitlistEntry): Promise<WaitlistEntryView> {
     const row = await this.prisma.waitlistEntry.create({
       data: {
@@ -386,6 +392,10 @@ function civilDay(date: ClinicalDate): Date {
   return new Date(`${date}T00:00:00.000Z`);
 }
 
+/**
+ * Row to view. The attempt count and the last call are derived from the
+ * contact trail, not from columns of their own (see `CONTACT_TRAIL_SELECT`).
+ */
 function toEntryView(row: {
   id: string;
   siteId: string;

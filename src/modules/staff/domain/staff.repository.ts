@@ -91,6 +91,7 @@ export interface AcessExpiryRow {
   acessExpiresOn: ClinicalDate;
 }
 
+// The port described at the top of this file.
 export interface StaffRepository {
   /** ST-010: deactivated rows travel only when explicitly asked for. */
   listPractitioners(

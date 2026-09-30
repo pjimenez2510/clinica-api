@@ -29,6 +29,7 @@ import type {
  * screen.
  */
 
+/** An analyte with every range it declares, of whatever kind. */
 const ANALYTE_SELECT = {
   id: true,
   code: true,
@@ -50,10 +51,12 @@ const ANALYTE_SELECT = {
   },
 } satisfies Prisma.AnalyteDefinitionSelect;
 
+/** The shape `ANALYTE_SELECT` produces. */
 type AnalyteRow = Prisma.AnalyteDefinitionGetPayload<{
   select: typeof ANALYTE_SELECT;
 }>;
 
+/** An exam and its analytes, without `billable_service_id` (see above). */
 const EXAM_SELECT = {
   id: true,
   code: true,
@@ -76,8 +79,10 @@ const EXAM_SELECT = {
   },
 } satisfies Prisma.ExamDefinitionSelect;
 
+/** The shape `EXAM_SELECT` produces. */
 type ExamRow = Prisma.ExamDefinitionGetPayload<{ select: typeof EXAM_SELECT }>;
 
+/** The `ExamCatalogueRepository` adapter; it only reads. */
 @Injectable()
 export class PrismaExamCatalogueRepository implements ExamCatalogueRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -129,6 +134,7 @@ export class PrismaExamCatalogueRepository implements ExamCatalogueRepository {
   }
 }
 
+/** Row to view, analytes in their stored position. */
 function toExamView(row: ExamRow): ExamDefinitionView {
   return {
     id: row.id,
@@ -148,6 +154,7 @@ function toExamView(row: ExamRow): ExamDefinitionView {
   };
 }
 
+/** Row to domain analyte, with `allowed_values` and the ranges parsed. */
 function toAnalyte(row: AnalyteRow): AnalyteDefinition {
   return {
     id: row.id,
@@ -179,6 +186,11 @@ function toAllowedValues(value: Prisma.JsonValue): readonly string[] | null {
   return strings.length === value.length && strings.length > 0 ? strings : null;
 }
 
+/**
+ * Row to domain range. The kind cast leans on
+ * `analyte_reference_range_kind_is_known`; `sex` is a bare `varchar(16)` with no
+ * CHECK in the migrations, so the database does not guard that cast.
+ */
 function toRange(row: {
   rangeKind: string;
   sex: string | null;

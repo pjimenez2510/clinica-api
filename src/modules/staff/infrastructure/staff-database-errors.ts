@@ -33,6 +33,10 @@ interface PrismaErrorLike {
   };
 }
 
+/**
+ * A Prisma client error, recognised by its `P####` code and `clientVersion`
+ * without importing Prisma — anything else is never read as a refusal.
+ */
 function isPrismaError(exception: unknown): exception is PrismaErrorLike {
   if (typeof exception !== 'object' || exception === null) return false;
   const candidate = exception as PrismaErrorLike;
@@ -43,6 +47,7 @@ function isPrismaError(exception: unknown): exception is PrismaErrorLike {
   );
 }
 
+/** The SQLSTATE the driver adapter reported, under whichever of its two keys it came. */
 function sqlStateOf(error: PrismaErrorLike): string | undefined {
   const cause = error.meta?.driverAdapterError?.cause;
   const raw = cause?.code ?? cause?.originalCode;

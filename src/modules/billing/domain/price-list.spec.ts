@@ -12,6 +12,12 @@ import {
   toClinicalDate,
 } from './price-list';
 
+/**
+ * Price validity as `[from, to)`, resolving the price of a date, and changing
+ * a price by closing one period and opening the next. Pure domain unit; cites
+ * BI-002, BI-041, BI-043, BI-044 and BI-047.
+ */
+
 const on = (date: string) => parseClinicalDate(date);
 
 const price = (

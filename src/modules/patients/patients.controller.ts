@@ -283,6 +283,10 @@ function toSummaryResponse(patient: PatientSummary) {
   };
 }
 
+/**
+ * The summary plus the chart's own fields. The sexual orientation is not
+ * among them: it has its own route and permission (PA-058).
+ */
 function toDetailResponse(patient: PatientDetail) {
   return {
     ...toSummaryResponse(patient),

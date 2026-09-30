@@ -23,6 +23,7 @@ import {
  * place for the mapping to be wrong in exactly one direction.
  */
 export const BUYER_IDENTIFICATION_TYPES = ['04', '05', '06', '07', '08'] as const; // prettier-ignore
+/** One of `BUYER_IDENTIFICATION_TYPES`. */
 export type BuyerIdentificationType =
   (typeof BUYER_IDENTIFICATION_TYPES)[number];
 
@@ -166,6 +167,13 @@ export function resolveReceiver(
   };
 }
 
+/**
+ * BI-081. The final-consumer receiver, only with `confirmed === true` AND a
+ * non-blank reason; each missing half is refused naming its own field.
+ *
+ * The receiver block is fixed to the SRI placeholder and carries no email. The
+ * reason is demanded here and is not part of the returned block.
+ */
 function resolveFinalConsumer(exception: {
   confirmed?: boolean;
   reason?: string;
@@ -241,4 +249,5 @@ export const INVOICE_STATUSES = [
   'VOIDED',
 ] as const;
 
+/** One of `INVOICE_STATUSES`. */
 export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];

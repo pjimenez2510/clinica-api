@@ -71,6 +71,7 @@ export function requireOverbookingReason(reason: string | undefined): string {
   return trimmed;
 }
 
+/** AG-101, AG-103. The facts `checkOverbookingAuthoriser` decides on. */
 export interface OverbookingAuthorisation {
   /** The account named as authoriser, from the body. */
   authorisedById: string;

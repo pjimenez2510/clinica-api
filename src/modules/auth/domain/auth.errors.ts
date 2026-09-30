@@ -28,6 +28,10 @@ import {
  * adapter that parses it.
  */
 
+/**
+ * AU-002: one answer for unknown email, wrong password, locked account and
+ * inactive account.
+ */
 export class InvalidCredentialsError extends UnauthorizedError {
   readonly code = 'INVALID_CREDENTIALS';
   /**
@@ -77,6 +81,10 @@ export class SessionUserMissingError extends UnauthorizedError {
   }
 }
 
+/**
+ * AU-003: a wrong TOTP or backup code; the same answer whether the code was
+ * wrong or the second factor is locked.
+ */
 export class InvalidMfaCodeError extends UnauthorizedError {
   readonly code = 'INVALID_MFA_CODE';
   constructor() {
@@ -86,6 +94,10 @@ export class InvalidMfaCodeError extends UnauthorizedError {
   }
 }
 
+/**
+ * The operation needs a second factor the account does not have (confirming an
+ * enrolment never started, or proving a factor that was never set up).
+ */
 export class MfaNotEnrolledError extends UnauthorizedError {
   readonly code = 'MFA_NOT_ENROLLED';
   constructor() {
@@ -93,6 +105,10 @@ export class MfaNotEnrolledError extends UnauthorizedError {
   }
 }
 
+/**
+ * AU-005, AU-037: enrolling again over a confirmed factor. Replacing it goes
+ * through the change flow, which first proves the current factor.
+ */
 export class MfaAlreadyEnrolledError extends ConflictError {
   readonly code = 'MFA_ALREADY_ENROLLED';
   constructor() {
@@ -135,6 +151,11 @@ export class MfaChangeNotStartedError extends ConflictError {
   }
 }
 
+/**
+ * The access token has not passed the second factor, and the route is not part
+ * of the MFA flow. Raised by `JwtAuthGuard`; without it MFA would be
+ * decorative.
+ */
 export class MfaRequiredError extends UnauthorizedError {
   readonly code = 'MFA_REQUIRED';
   constructor() {
@@ -150,8 +171,11 @@ export class MfaRequiredError extends UnauthorizedError {
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * `InvalidTokenError` is «this string is not something we signed», and the
- * reason behind it is deliberately withheld because it distinguishes an
- * expired token from a forged one. This is a different fact: the token IS ours,
+ * reason behind it is withheld from the client in production because it
+ * distinguishes an expired token from a forged one: it travels only in the
+ * technical message, which the problem-details filter sends as `detail`
+ * outside production alone, and in `params`, which it never serialises (in
+ * development, `detail` shows it). This is a different fact: the token IS ours,
  * it IS still within its lifetime, and the session behind it was revoked —
  * because the second factor was reset (AU-036), the password changed, or the
  * account was deactivated (AU-023).
@@ -173,6 +197,10 @@ export class SessionRevokedError extends UnauthorizedError {
   }
 }
 
+/**
+ * AU-004: the refresh token is unknown, expired, or revoked without having been
+ * used. A token that WAS used raises `RefreshTokenReuseError` instead.
+ */
 export class InvalidRefreshTokenError extends UnauthorizedError {
   readonly code = 'INVALID_REFRESH_TOKEN';
   constructor() {

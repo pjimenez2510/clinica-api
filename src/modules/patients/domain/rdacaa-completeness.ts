@@ -40,8 +40,10 @@ export const RDACAA_REQUIRED_FIELDS = [
   'residenceParishConceptId',
 ] as const;
 
+/** One of the four, derived from the list so the type and the check cannot drift. */
 export type RdacaaRequiredField = (typeof RDACAA_REQUIRED_FIELDS)[number];
 
+/** What the indicator needs to know of a chart; no names and no document values. */
 export interface RdacaaChart {
   /**
    * The chart's country of nationality, `ISO 3166-1 alpha-3` or `null`.
