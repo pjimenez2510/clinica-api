@@ -117,6 +117,22 @@ describe('validateEnv', () => {
     );
   });
 
+  it('AU-039 la gracia de la rotación vale 30 s por defecto y no pasa de 60', () => {
+    // 30 and 0–60 are Okta's default and range: the only sourced figure. A
+    // larger window is a longer stretch in which a stolen copy raises no alarm,
+    // so it must fail at startup rather than be accepted silently.
+    expect(validateEnv(base).JWT_REFRESH_REUSE_GRACE_SECONDS).toBe(30);
+    expect(
+      validateEnv({ ...base, JWT_REFRESH_REUSE_GRACE_SECONDS: '0' })
+        .JWT_REFRESH_REUSE_GRACE_SECONDS,
+    ).toBe(0);
+    for (const outOfRange of ['61', '-1', '2.5']) {
+      expect(() =>
+        validateEnv({ ...base, JWT_REFRESH_REUSE_GRACE_SECONDS: outOfRange }),
+      ).toThrow(/JWT_REFRESH_REUSE_GRACE_SECONDS/);
+    }
+  });
+
   it('REFUSES an origin that is not a URL', () => {
     // A missing scheme or a stray character silently stopped that origin from
     // working, and the only symptom was a CORS failure in the browser.

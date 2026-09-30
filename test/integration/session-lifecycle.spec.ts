@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { ThrottlerStorage } from '@nestjs/throttler';
 import { Test } from '@nestjs/testing';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -9,8 +10,15 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
+import { RefreshTokenReuseError } from '../../src/modules/auth/domain/auth.errors';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
+import { PrismaAccountAdminRepository } from '../../src/modules/auth/infrastructure/prisma-account-admin.repository';
+import { PrismaAuthUserRepository } from '../../src/modules/auth/infrastructure/prisma-auth-user.repository';
+import { PrismaCredentialInvitationRepository } from '../../src/modules/auth/infrastructure/prisma-credential-invitation.repository';
+import { RefreshTokenService } from '../../src/modules/auth/infrastructure/refresh-token.service';
+import { TokenService } from '../../src/modules/auth/infrastructure/token.service';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
+import type { Env } from '../../src/shared/config/env.schema';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
@@ -273,8 +281,8 @@ describe('session over HTTP', () => {
   });
 
   /**
-   * AU-004 — «refrescos rotatorios, y SI un refresco se reutiliza, ENTONCES
-   * DEBERÁ invalidar toda la familia de sesiones de esa cuenta».
+   * AU-004 — refrescos de un solo uso que rotan, y un refresco ya usado fuera
+   * de la excepción de AU-039 revoca la familia entera.
    *
    * LA MITAD QUE IMPORTA NO ESTABA PROBADA. `RefreshTokenService` no tenía
    * NINGUNA prueba: ni la reclamación atómica, ni la detección de reúso, ni la
@@ -283,63 +291,502 @@ describe('session over HTTP', () => {
    * fallara nada — el comentario del servicio lo describía con detalle, que es
    * exactamente la clase de garantía que nadie vuelve a comprobar.
    *
-   * CONTRA LA BASE Y NO CONTRA UN DOBLE: la garantía vive en un `updateMany`
-   * condicional, y un doble que devuelve `count: 1` demuestra únicamente que
-   * el doble devuelve 1.
+   * CONTRA LA BASE Y NO CONTRA UN DOBLE: la garantía vive en sentencias
+   * condicionales y bloqueos, y un doble que devuelve `count: 1` demuestra
+   * únicamente que el doble devuelve 1.
+   *
+   * AU-039 — LA VENTANA DE GRACIA. Nada aquí escribe una hora: para salir de
+   * la ventana se ENVEJECE el `used_at` de la propia fila en `W + 1` segundos,
+   * con `W` leído de la misma configuración que usa el servicio. Cada caso
+   * negativo cambia UNA condición respecto al positivo, que pasa con todo lo
+   * demás igual: eso es el control.
    */
-  describe('AU-004 rotación de refrescos y detección de reúso', () => {
-    async function signIn(): Promise<string[]> {
+  describe('AU-004 y AU-039 rotación de refrescos, reúso y ventana de gracia', () => {
+    /** The browser that signed in. AU-039 compares it; supertest sends none. */
+    const BROWSER = 'Mozilla/5.0 (Macintosh) mostrador-recepcion';
+    /** Somebody else holding a copy of the cookie. */
+    const OTHER_CLIENT = 'curl/8.7.1';
+
+    /** `W`: the grace window the running application was configured with. */
+    function graceSeconds(): number {
+      return app
+        .get<ConfigService<Env, true>>(ConfigService)
+        .get('JWT_REFRESH_REUSE_GRACE_SECONDS', { infer: true });
+    }
+
+    async function signIn(userAgent = BROWSER): Promise<{
+      cookies: string[];
+      accessToken: string;
+    }> {
       await createAccount();
       const response = await request(app.getHttpServer())
         .post('/api/v1/auth/login')
+        .set('User-Agent', userAgent)
         .send({ email: 'ana.torres@clinica.ec', password: PASSWORD })
         .expect(200);
-      return response.get('Set-Cookie')!;
+      return {
+        cookies: response.get('Set-Cookie')!,
+        accessToken: sessionBody(response).accessToken,
+      };
     }
 
-    const refresh = (cookies: string[]) =>
+    const refresh = (cookies: string[], userAgent = BROWSER) =>
       request(app.getHttpServer())
         .post('/api/v1/auth/refresh')
+        .set('User-Agent', userAgent)
         .set('Cookie', cookies);
 
-    it('AU-004 gasta el refresco al usarlo: el mismo no vale dos veces', async () => {
-      const first = await signIn();
+    /** Refreshes and returns the cookie that carries the successor. */
+    async function rotate(cookies: string[]): Promise<string[]> {
+      return (await refresh(cookies).expect(200)).get('Set-Cookie')!;
+    }
 
-      const rotated = await refresh(first).expect(200);
-      expect(rotated.get('Set-Cookie'), 'refrescar entrega uno nuevo').toBeDefined(); // prettier-ignore
+    /** The stored row of the refresh token a cookie carries. */
+    function rowOf(cookies: string[]) {
+      const pair = cookies
+        .map((cookie) => cookie.split(';')[0]!)
+        .find((c) => /^(__Host-)?refresh=/.test(c));
+      expect(pair, 'la respuesta lleva la cookie de refresco').toBeDefined();
+      const token = decodeURIComponent(pair!.slice(pair!.indexOf('=') + 1));
+      return prisma.refreshToken.findUniqueOrThrow({
+        where: { tokenHash: TokenService.hashRefreshToken(token) },
+      });
+    }
 
-      // El segundo intento con el MISMO no es un 200 tardío: es el incidente.
-      await refresh(first).expect(401);
+    /** Moves this token's use `W + 1` seconds into the past: out of the window. */
+    async function leaveTheWindow(cookies: string[]): Promise<void> {
+      const { id } = await rowOf(cookies);
+      const aged = await prisma.$executeRaw`
+        UPDATE refresh_token
+           SET used_at = used_at - make_interval(secs => ${graceSeconds() + 1})
+         WHERE id = ${id}::uuid AND used_at IS NOT NULL`;
+      expect(aged, 'sólo se envejece un refresco ya usado').toBe(1);
+    }
+
+    /** Rows of the family that would still let somebody in. */
+    async function liveRows(familyId: string): Promise<number> {
+      return prisma.refreshToken.count({
+        where: { familyId, revokedAt: null, usedAt: null },
+      });
+    }
+
+    /**
+     * Resolves once another session of this database is waiting on a row
+     * lock. A condition, not a delay: it returns the moment the revocation is
+     * provably queued behind the open transaction, and fails if it never is.
+     */
+    async function blockedOnALock(waiters = 1): Promise<void> {
+      // Only OTHER sessions, only statements on `refresh_token`: the waiters
+      // this test provoked, not whatever else the database is doing.
+      const deadline = Date.now() + 5_000;
+      while (Date.now() < deadline) {
+        const [row] = await prisma.$queryRaw<{ waiting: bigint }[]>`
+          SELECT count(*) AS waiting FROM pg_stat_activity
+           WHERE datname = current_database()
+             AND pid <> pg_backend_pid()
+             AND wait_event_type = 'Lock'
+             AND query ILIKE '%refresh_token%'`;
+        if ((row?.waiting ?? 0n) >= BigInt(waiters)) return;
+      }
+      throw new Error(
+        `nunca hubo ${waiters} sentencia(s) esperando un bloqueo`,
+      );
+    }
+
+    it('AU-039 la configuración de la prueba tiene ventana: sin ella nada de esto prueba la gracia', () => {
+      expect(graceSeconds()).toBeGreaterThan(0);
     });
 
-    it('AU-004 un refresco reutilizado tumba TODA la familia, no solo el token repetido', async () => {
+    it('AU-039 respuesta perdida y el mismo refresco dentro de la ventana: la sesión sigue', async () => {
       /**
-       * EL ATAQUE, tal cual. El ladrón se lleva una copia y la usa; el dueño
-       * vuelve más tarde con el suyo, que es legítimo y sigue siendo válido.
-       * No hay forma de saber cuál de los dos es el impostor, así que la única
-       * respuesta segura es cerrar la sesión entera y obligar a entrar de
-       * nuevo — cosa que el dueño puede hacer y el ladrón no.
-       *
-       * Sin esto, el que refresca gana para siempre y nadie se entera.
+       * EL DEFECTO, tal cual lo vio el mostrador. El servidor rota `first`, la
+       * respuesta con la cookie nueva no llega, y el navegador vuelve con
+       * `first`. Antes esto revocaba la familia; ahora renueva.
        */
-      const stolen = await signIn();
+      const { cookies: first } = await signIn();
+      await rotate(first); // la respuesta que «se perdió»: su cookie se tira
 
-      // El ladrón rota una vez. Ahora `stolen` está gastado y hay uno vivo.
-      const live = (await refresh(stolen).expect(200)).get('Set-Cookie')!;
+      const recovered = await refresh(first).expect(200);
+      expect(sessionBody(recovered).user.email).toBe('ana.torres@clinica.ec');
 
-      // El dueño reaparece con la copia gastada: se detecta el reúso.
-      await refresh(stolen).expect(401);
+      // Y la sesión recuperada es una sesión de verdad: su cookie renueva.
+      await rotate(recovered.get('Set-Cookie')!);
+    });
 
-      // Y el que estaba vivo —el del ladrón— muere con la familia.
-      await refresh(live).expect(401);
+    it('AU-039 retira el sucesor huérfano: la familia vuelve a tener una sola cabeza', async () => {
+      const { cookies: first } = await signIn();
+      const lost = await rotate(first);
+      const recovered = (await refresh(first).expect(200)).get('Set-Cookie')!;
+
+      const lostRow = await rowOf(lost);
+      expect(lostRow.revokedAt).not.toBeNull();
+      expect(lostRow.revocationReason).toBe('SUPERSEDED');
+      expect((await rowOf(recovered)).revokedAt).toBeNull();
+      expect(await liveRows(lostRow.familyId)).toBe(1);
+    });
+
+    it('AU-039 repetirlo dentro de la ventana no la alarga: el instante de uso no se mueve', async () => {
+      const { cookies: first } = await signIn();
+      await rotate(first);
+      const usedAt = (await rowOf(first)).usedAt;
+      expect(usedAt).not.toBeNull();
+
+      await refresh(first).expect(200);
+      await refresh(first).expect(200);
+
+      expect((await rowOf(first)).usedAt).toEqual(usedAt);
+    });
+
+    it('AU-004 fuera de la ventana el mismo refresco es un reúso: 401 y familia REUSE', async () => {
+      // Control: el mismo recorrido que el positivo, con el uso envejecido.
+      const { cookies: first } = await signIn();
+      const successor = await rotate(first);
+      await leaveTheWindow(first);
+
+      const refused = await refresh(first).expect(401);
+      expect(refused.body).toMatchObject({
+        code: 'REFRESH_TOKEN_REUSE_DETECTED',
+      });
+
+      // La familia entera, con el motivo que lee el responsable de seguridad.
+      const { familyId } = await rowOf(first);
+      expect(await liveRows(familyId)).toBe(0);
+      expect((await rowOf(successor)).revocationReason).toBe('REUSE');
+      await refresh(successor).expect(401);
+    });
+
+    it('AU-004 dentro de la ventana pero desde otro cliente: familia revocada', async () => {
+      const { cookies: first } = await signIn();
+      const successor = await rotate(first);
+
+      await refresh(first, OTHER_CLIENT).expect(401);
+
+      await refresh(successor).expect(401);
+      expect(await liveRows((await rowOf(first)).familyId)).toBe(0);
+    });
+
+    it('AU-004 dentro de la ventana pero su sucesor ya se usó: el penúltimo es un reúso', async () => {
+      // Si el sucesor se usó, la respuesta SÍ llegó y la sesión siguió
+      // adelante: volver con el anterior ya no es una respuesta perdida.
+      const { cookies: first } = await signIn();
+      const second = await rotate(first);
+      const third = await rotate(second);
+
+      await refresh(first).expect(401);
+
+      await refresh(third).expect(401);
+      expect(await liveRows((await rowOf(first)).familyId)).toBe(0);
+    });
+
+    it('AU-039 un robo dentro de la ventana no se esconde: el sucesor retirado, si aparece, tumba la familia', async () => {
+      /**
+       * EL ATAQUE QUE LA GRACIA PODRÍA TAPAR. El ladrón rota primero con la
+       * copia robada; el dueño vuelve dentro de la ventana con la misma, desde
+       * su navegador, y la gracia le deja seguir. Si la rama del ladrón quedase
+       * viva, ninguno volvería a presentar nada gastado y la alarma no sonaría
+       * nunca. Se le retiró: en cuanto la usa, AU-004.
+       */
+      const { cookies: stolen } = await signIn();
+      const thiefBranch = (await refresh(stolen, OTHER_CLIENT).expect(200)).get(
+        'Set-Cookie',
+      )!;
+      const ownerBranch = (await refresh(stolen).expect(200)).get(
+        'Set-Cookie',
+      )!;
+
+      const refused = await refresh(thiefBranch, OTHER_CLIENT).expect(401);
+      expect(refused.body).toMatchObject({
+        code: 'REFRESH_TOKEN_REUSE_DETECTED',
+      });
+
+      await refresh(ownerBranch).expect(401);
+      expect(await liveRows((await rowOf(stolen)).familyId)).toBe(0);
+    });
+
+    it('AU-039 una familia cerrada con el cierre de sesión no revive por la gracia', async () => {
+      const { cookies: first } = await signIn();
+      const successor = await rotate(first);
+      const { accessToken } = sessionBody(await refresh(successor).expect(200));
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/logout')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(204);
+
+      // `successor` es ahora el último usado, dentro de la ventana, mismo
+      // navegador: todo lo que el positivo pide salvo la familia abierta.
+      await refresh(successor).expect(401);
+      const { familyId } = await rowOf(successor);
+      expect(await liveRows(familyId)).toBe(0);
+      expect(await app.get(RefreshTokenService).isFamilyOpen(familyId)).toBe(
+        false,
+      );
+    });
+
+    /**
+     * EVERY path that closes sessions, called through the code that really
+     * runs — not a stand-in. The first version of these tests only exercised
+     * `RefreshTokenService`, and three of these five paths revoked on their
+     * own and stayed exposed (clean-context review, 30-09-2026).
+     */
+    const revocations: {
+      name: string;
+      revoke: (row: { userId: string; familyId: string }) => Promise<unknown>;
+    }[] = [
+      {
+        name: 'el cierre de sesión',
+        revoke: (row) =>
+          app.get(RefreshTokenService).revokeFamily(row.familyId, 'SIGN_OUT'),
+      },
+      {
+        name: 'la desactivación de la cuenta (AU-023)',
+        revoke: (row) =>
+          app
+            .get(RefreshTokenService)
+            .revokeAllForUser(row.userId, 'ACCOUNT_DEACTIVATED'),
+      },
+      {
+        name: 'el cambio de contraseña',
+        revoke: async (row) => {
+          const { passwordHash } = await prisma.user.findUniqueOrThrow({
+            where: { id: row.userId },
+          });
+          return app
+            .get(PrismaAuthUserRepository)
+            .rotateCredentials(row.userId, passwordHash, 'PASSWORD_CHANGE');
+        },
+      },
+      {
+        name: 'el reinicio del segundo factor (AU-036)',
+        revoke: (row) =>
+          app
+            .get(PrismaAccountAdminRepository)
+            .resetMfa(row.userId, 'MFA_RESET', { userId: row.userId }),
+      },
+      {
+        name: 'el canje de una invitación de credencial',
+        revoke: async (row) => {
+          const { passwordHash } = await prisma.user.findUniqueOrThrow({
+            where: { id: row.userId },
+          });
+          const invitation = await prisma.credentialInvitation.create({
+            data: {
+              userId: row.userId,
+              tokenHash: TokenService.hashRefreshToken(
+                `invitacion-${row.familyId}`,
+              ),
+              expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+            },
+          });
+          return app.get(PrismaCredentialInvitationRepository).redeem({
+            invitationId: invitation.id,
+            userId: row.userId,
+            passwordHash: passwordHash,
+            now: new Date(),
+          });
+        },
+      },
+    ];
+
+    for (const { name, revoke } of revocations) {
+      it(`AU-039 ${name} que llega mientras se emite un sucesor no lo deja vivo`, async () => {
+        /**
+         * LA CARRERA, forzada en el orden malo en vez de esperada. Renovar
+         * (normal o por gracia) bloquea el refresco presentado e inserta el
+         * sucesor en una transacción. Aquí la prueba ES esa transacción: la
+         * deja abierta con el sucesor insertado, lanza la revocación, espera a
+         * VERLA bloqueada en `pg_stat_activity` y sólo entonces confirma.
+         *
+         * Un `UPDATE` único esperaba al refresco presentado y, al seguir, no
+         * veía el sucesor —no estaba en su instantánea—: la familia quedaba
+         * con una fila viva y el guardia de AU-036 la daba por abierta.
+         */
+        const { cookies } = await signIn();
+        const presented = await rowOf(cookies);
+
+        let revoking: Promise<unknown> | undefined;
+        await prisma.$transaction(async (tx) => {
+          await tx.$queryRaw`
+            SELECT id FROM refresh_token WHERE id = ${presented.id}::uuid FOR UPDATE`;
+          await tx.refreshToken.create({
+            data: {
+              userId: presented.userId,
+              familyId: presented.familyId,
+              tokenHash: TokenService.hashRefreshToken(
+                `sucesor-${presented.id}`,
+              ),
+              expiresAt: presented.expiresAt,
+              userAgent: BROWSER,
+            },
+          });
+
+          revoking = revoke(presented);
+          await blockedOnALock();
+        });
+        await revoking;
+
+        expect(await liveRows(presented.familyId)).toBe(0);
+        expect(
+          await app.get(RefreshTokenService).isFamilyOpen(presented.familyId),
+        ).toBe(false);
+      });
+    }
+
+    for (const { name, revoke } of revocations) {
+      it(`AU-039 una familia cerrada por ${name} no revive por la gracia`, async () => {
+        // Todo lo que el positivo pide —el último usado, dentro de la ventana,
+        // el mismo navegador— salvo la familia abierta.
+        const { cookies: first } = await signIn();
+        await rotate(first);
+        const presented = await rowOf(first);
+
+        await revoke(presented);
+
+        await refresh(first).expect(401);
+        expect(await liveRows(presented.familyId)).toBe(0);
+        expect(
+          await app.get(RefreshTokenService).isFamilyOpen(presented.familyId),
+        ).toBe(false);
+      });
+    }
+
+    it('AU-039 reclamar y emitir van juntos: una revocación durante una rotación normal no deja el sucesor vivo', async () => {
+      /**
+       * La otra mitad de la carrera: que la ROTACIÓN reclame y emita en una
+       * sola transacción. Se sostiene la fila de la cuenta, así que el INSERT
+       * del sucesor —su clave foránea— espera con el refresco ya reclamado y
+       * bloqueado. Entonces llega la revocación, y tiene que esperar a ese
+       * refresco. Con reclamar y emitir en dos sentencias sueltas no esperaría:
+       * revocaría y el sucesor nacería vivo después.
+       */
+      const { cookies } = await signIn();
+      const presented = await rowOf(cookies);
+
+      let rotating: Promise<request.Response> | undefined;
+      let revoking: Promise<void> | undefined;
+      await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`
+          SELECT id FROM app_user WHERE id = ${presented.userId}::uuid FOR UPDATE`;
+        rotating = refresh(cookies).then((response) => response);
+        await blockedOnALock(1);
+
+        revoking = app
+          .get(RefreshTokenService)
+          .revokeFamily(presented.familyId, 'SIGN_OUT');
+        await blockedOnALock(2);
+      });
+      await Promise.all([rotating, revoking]);
+
+      expect(await liveRows(presented.familyId)).toBe(0);
+    });
+
+    it('AU-039 dos gracias seguidas: la segunda retira el sucesor de la primera', async () => {
+      const { cookies: first } = await signIn();
+      await rotate(first);
+      const firstRegrant = (await refresh(first).expect(200)).get(
+        'Set-Cookie',
+      )!;
+      const secondRegrant = (await refresh(first).expect(200)).get(
+        'Set-Cookie',
+      )!;
+
+      expect((await rowOf(firstRegrant)).revocationReason).toBe('SUPERSEDED');
+      expect((await rowOf(secondRegrant)).revokedAt).toBeNull();
+      expect(await liveRows((await rowOf(first)).familyId)).toBe(1);
+    });
+
+    it('AU-039 sin agente de usuario no hay gracia, aunque el que lo recibió tampoco lo enviara', async () => {
+      // Sin la comprobación explícita, '' = '' cumpliría «el mismo agente».
+      const { cookies: first } = await signIn('');
+      await rotate(first);
+
+      await refresh(first, '').expect(401);
+      const { familyId } = await rowOf(first);
+      expect(await liveRows(familyId)).toBe(0);
+      expect(await app.get(RefreshTokenService).isFamilyOpen(familyId)).toBe(
+        false,
+      );
+    });
+
+    it('AU-039 con la ventana a 0 rige AU-004 estricto: el mismo refresco no vale dos veces', async () => {
+      // El mismo servicio, construido con la gracia apagada; lo demás es el de
+      // la aplicación y la misma base.
+      await createAccount();
+      const { id: userId } = await prisma.user.findUniqueOrThrow({
+        where: { email: 'ana.torres@clinica.ec' },
+      });
+      const config = app.get<ConfigService<Env, true>>(ConfigService);
+      const strict = new RefreshTokenService(
+        prisma as unknown as PrismaService,
+        app.get(TokenService),
+        app.get(RefreshTokenService)['logger'],
+        {
+          get: (key: keyof Env) =>
+            key === 'JWT_REFRESH_REUSE_GRACE_SECONDS'
+              ? 0
+              : config.get(key, { infer: true }),
+        } as unknown as ConfigService<Env, true>,
+      );
+
+      const issued = await strict.issueForNewSession(userId, {
+        userAgent: BROWSER,
+      });
+      await strict.rotate(issued.token, { userAgent: BROWSER });
+
+      await expect(
+        strict.rotate(issued.token, { userAgent: BROWSER }),
+      ).rejects.toBeInstanceOf(RefreshTokenReuseError);
+      expect(await liveRows(issued.familyId)).toBe(0);
+    });
+
+    it('AU-039 la gracia sobre un refresco cuyo sucesor se está usando no deja dos cabezas', async () => {
+      /**
+       * El dueño rota `second` → `third` y, en ese instante, alguien con copia
+       * de `first` y el mismo agente de usuario lo presenta dentro de la
+       * ventana. Si la gracia sólo bloquease `first`, vería `second` aún sin
+       * usar, lo daría por huérfano y la familia acabaría con DOS ramas vivas
+       * que no vuelven a presentar nada gastado. La prueba sostiene abierta la
+       * rotación del dueño, lanza la gracia, la ve esperar y confirma: al
+       * seguir, `first` ya no es el último usado y rige AU-004.
+       */
+      const { cookies: first } = await signIn();
+      const second = await rotate(first);
+      const secondRow = await rowOf(second);
+
+      let presenting: Promise<request.Response> | undefined;
+      await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`
+          UPDATE refresh_token
+             SET used_at = now(), revocation_reason = 'ROTATION'
+           WHERE id = ${secondRow.id}::uuid`;
+        await tx.refreshToken.create({
+          data: {
+            userId: secondRow.userId,
+            familyId: secondRow.familyId,
+            tokenHash: TokenService.hashRefreshToken(`tercero-${secondRow.id}`),
+            expiresAt: secondRow.expiresAt,
+            userAgent: BROWSER,
+          },
+        });
+
+        presenting = refresh(first).then((response) => response);
+        await blockedOnALock();
+      });
+
+      expect((await presenting!).status).toBe(401);
+      expect(await liveRows(secondRow.familyId)).toBe(0);
+      expect(
+        await app.get(RefreshTokenService).isFamilyOpen(secondRow.familyId),
+      ).toBe(false);
     });
 
     it('AU-004 marca la familia como REUSE en la base, no solo la rechaza', async () => {
       // El motivo es lo que un responsable de seguridad lee después. Revocar
       // sin decir por qué deja el incidente indistinguible de un cierre de
       // sesión corriente.
-      const cookies = await signIn();
-      await refresh(cookies).expect(200);
+      const { cookies } = await signIn();
+      await rotate(cookies);
+      await leaveTheWindow(cookies);
       await refresh(cookies).expect(401);
 
       const revoked = await prisma.refreshToken.findMany({
@@ -348,14 +795,31 @@ describe('session over HTTP', () => {
       expect(revoked.length).toBeGreaterThan(0);
     });
 
-    it('AU-004 en dos refrescos simultáneos con el mismo token gana exactamente uno', async () => {
-      // La reclamación es un `updateMany` condicional justamente por esto: un
-      // «leer, comprobar, escribir» dejaría pasar los dos y partiría la
-      // familia en dos ramas vivas. Se afirma CUÁNTOS ganan, no que «alguno
-      // falle»: dos ganadores es el fallo que se busca.
-      const cookies = await signIn();
+    it('AU-039 dos renovaciones simultáneas desde el mismo navegador: las dos siguen y queda una sola cabeza', async () => {
+      // La reclamación sigue siendo atómica —gana exactamente una rotación— y
+      // la otra entra por la gracia en vez de tumbar la sesión, que era lo que
+      // pasaba con dos pestañas a la vez. Lo que NO puede pasar es que la
+      // familia se parta en dos ramas vivas.
+      const { cookies } = await signIn();
 
       const outcomes = await Promise.all([refresh(cookies), refresh(cookies)]);
+
+      expect(outcomes.map((o) => o.status)).toEqual([200, 200]);
+      expect(await liveRows((await rowOf(cookies)).familyId)).toBe(1);
+    });
+
+    it('AU-004 en dos refrescos simultáneos desde clientes distintos gana exactamente uno', async () => {
+      // La reclamación es condicional justamente por esto: un «leer,
+      // comprobar, escribir» dejaría pasar los dos y partiría la familia en
+      // dos ramas vivas. Se afirma CUÁNTOS ganan, no que «alguno falle».
+      const { cookies } = await signIn();
+
+      // Ninguno de los dos es el navegador que lo recibió, así que el
+      // perdedor no puede entrar por la gracia: sólo cuenta la reclamación.
+      const outcomes = await Promise.all([
+        refresh(cookies, OTHER_CLIENT),
+        refresh(cookies, `${OTHER_CLIENT} (otra copia)`),
+      ]);
 
       const statuses = outcomes.map((o) => o.status).sort();
       expect(statuses).toEqual([200, 401]);
@@ -364,7 +828,7 @@ describe('session over HTTP', () => {
     it('AU-004 el token de acceso es de vida corta y la respuesta dice cuánto', async () => {
       // «Vida corta» sin número no es comprobable. Una hora es el techo que
       // hace que revocar un rol surta efecto en minutos y no en días.
-      const cookies = await signIn();
+      const { cookies } = await signIn();
       const resumed = await refresh(cookies).expect(200);
 
       const { expiresIn } = sessionBody(resumed);

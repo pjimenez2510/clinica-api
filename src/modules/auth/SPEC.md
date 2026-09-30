@@ -49,7 +49,7 @@ credencial del MSP.
 Inicio de sesión con Argon2id, segundo factor TOTP, rotación de refresco con
 detección de reutilización, bloqueo por intentos y cierre de sesión.
 
-**Cubre:** AU-001 a AU-012.
+**Cubre:** AU-001 a AU-012, AU-039.
 
 **Solo servidor:** AU-001, AU-003, AU-012. Cómo se hashea una contraseña no
 se ve; el bloqueo por intentos responde a la pantalla lo MISMO que una
@@ -127,8 +127,137 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
 - **AU-003** — El sistema DEBERÁ bloquear la cuenta tras un número de intentos
   fallidos y registrar el bloqueo.
 - **AU-004** — El sistema DEBERÁ emitir tokens de acceso de vida corta y
-  refrescos rotatorios, y SI un refresco se reutiliza, ENTONCES DEBERÁ
-  invalidar toda la familia de sesiones de esa cuenta.
+  refrescos de un solo uso que rotan en cada renovación; y SI se presenta un
+  refresco ya usado fuera de la excepción de AU-039, ENTONCES DEBERÁ invalidar
+  toda la familia de ese refresco —la sesión entera de la que desciende, con
+  motivo `REUSE`— y responder `REFRESH_TOKEN_REUSE_DETECTED`.
+
+  > **Afinado el 30-09-2026** (`fix/auth-refresh-gracia`). Decía «SI un
+  > refresco se reutiliza», sin excepción, y el código lo cumplía al pie de la
+  > letra: una renovación cuya respuesta se perdía —recarga en el peor
+  > momento, red que se cae— dejaba al navegador con el refresco viejo y el
+  > siguiente intento cerraba la sesión de alguien que no había hecho nada. La
+  > excepción es AU-039 y está escrita ahí, no escondida en el código.
+  > «La familia» es **la de ese refresco**, no todas las sesiones de la cuenta:
+  > las otras sesiones de la persona no tienen ninguna copia comprometida.
+- **AU-039** — CUANDO se presente un refresco ya usado cuya familia siga
+  abierta, que sea **el último usado de su familia**, que se usara hace
+  **`JWT_REFRESH_REUSE_GRACE_SECONDS` segundos o menos** y que llegue con el
+  **mismo agente de usuario** que lo recibió, el sistema DEBERÁ emitir un
+  refresco nuevo de esa misma familia, **retirar con motivo `SUPERSEDED` el
+  sucesor que emitió la renovación cuya respuesta se perdió**, y responder como
+  una renovación normal; y NO DEBERÁ mover el instante de uso del refresco
+  presentado, de modo que la ventana no se alargue repitiéndolo. SI falta
+  cualquiera de esas cuatro condiciones, ENTONCES rige AU-004. SI después se
+  presenta un sucesor retirado así, ENTONCES rige AU-004: la respuesta sí llegó
+  a alguien, y hay dos portadores de la misma sesión. Una familia ya revocada
+  —cierre de sesión, cambio de contraseña, AU-023, AU-036, o AU-004— NO DEBERÁ
+  reabrirse por esta vía, **tampoco cuando la revocación y la renovación
+  llegan a la vez**.
+
+  > **QUÉ RESUELVE.** El servidor rota el refresco, la respuesta con la cookie
+  > nueva no llega al navegador y éste vuelve a presentar el viejo. Visto desde
+  > el servidor es idéntico a un robo; visto desde el mostrador es una
+  > recepcionista a la que se le cierra la sesión sin motivo. La interfaz ya
+  > comparte una sola renovación entre las peticiones que reciben 401 a la vez
+  > (`clinica-web/app/shared/api/client.ts`), así que esto no es la carrera de
+  > pestañas: es la respuesta perdida.
+  >
+  > **DE DÓNDE SALE, CON LA FUENTE.**
+  > - *RFC 9700 (OAuth 2.0 Security BCP), §4.14.2*: para clientes públicos la
+  >   rotación con detección de reúso es obligatoria —o el refresco atado al
+  >   emisor— y, detectado el reúso, se revoca el refresco activo aunque eso
+  >   obligue al cliente legítimo a autenticarse de nuevo. **No trata la
+  >   respuesta perdida ni ninguna ventana de gracia**: ni la prohíbe ni la
+  >   exige.
+  > - *Auth0, «Configure Refresh Token Rotation»*: «Rotation Overlap Period»
+  >   (`leeway`, en segundos), **desactivado por defecto**; dentro de él no se
+  >   aplica la detección y **se emite un refresco rotatorio nuevo**, y **sólo
+  >   vale el inmediatamente anterior**: presentar el penúltimo dispara la
+  >   detección.
+  > - *Okta, «Refresh access tokens and rotate refresh tokens»*: «Grace period
+  >   for token rotation», **30 s por defecto, configurable de 0 a 60**, con el
+  >   mismo caso como motivo: los tokens nuevos pueden no llegar al cliente.
+  >
+  > **QUÉ SE TOMÓ DE CADA UNO.** De Auth0, que dentro de la ventana se emite un
+  > refresco **nuevo** —devolver «el mismo sucesor» es imposible aquí, porque
+  > de cada refresco sólo se guarda su SHA-256— y que **sólo vale el último
+  > usado**: si su sucesor ya se usó, alguien siguió adelante con la sesión y
+  > el viejo vuelve a ser un incidente. De Okta, el tamaño: **30 s por
+  > defecto, con techo de 60**, que es la única cifra con fuente de las tres;
+  > `0` desactiva la gracia y deja AU-004 tal como era. Añadido aquí y en
+  > ninguna de las tres fuentes: **el mismo agente de usuario**, para que el
+  > viejo presentado desde otro cliente siga revocando. No es una atadura
+  > criptográfica —un ladrón puede copiar la cabecera—; es lo que impide que un
+  > script con la cookie robada caiga en la ventana por accidente. La IP no se
+  > compara: cambia en un portátil que pasa de la wifi al cable, y el caso que
+  > se arregla es justamente la red que falla.
+  >
+  > **POR QUÉ SE RETIRA EL SUCESOR, que ni Auth0 ni Okta dicen hacer.** Si la
+  > gracia sólo emitiera otro refresco, la familia quedaría con **dos ramas
+  > vivas**, y la detección de AU-004 depende de que alguien vuelva a
+  > presentar un token gastado: con dos ramas, el ladrón que rotó primero con
+  > la copia robada sigue por la suya, el dueño por la otra, y nadie vuelve a
+  > presentar nada gastado nunca. La alarma no sonaría jamás. Retirando el
+  > sucesor, la familia vuelve a tener **una sola cabeza** y el ladrón, la
+  > próxima vez que use la suya, presenta un retirado: AU-004, familia
+  > revocada. Identificarlo no necesita esquema nuevo: como el presentado es
+  > el último usado de su familia, las filas de la familia sin usar y sin
+  > revocar son exactamente sus sucesores.
+  >
+  > **LO QUE CUESTA, dicho.** Dentro de la ventana, una copia robada del
+  > refresco recién usado con el mismo agente de usuario obtiene una sesión sin
+  > disparar la alarma **en ese momento**; la dispara el primer uso del
+  > sucesor que se le retire al otro portador, o cualquier reúso pasada la
+  > ventana. Es la concesión de Auth0 y Okta. **Lo acotado a segundos es la
+  > ventana para entrar, no la alarma**: si quien pierde su sucesor es el
+  > dueño y cierra el navegador al acabar el turno, la alarma suena cuando
+  > vuelva y renueve —puede ser días después—, y hasta entonces la otra rama
+  > vive. Un tope de vida absoluto por familia lo acortaría; no existe hoy y
+  > queda anotado en D-063. Y si dos
+  > pestañas renuevan a la vez con el mismo refresco y el navegador se queda
+  > con la cookie del sucesor retirado —las respuestas llegaron en el orden
+  > inverso—, la siguiente renovación es AU-004: el mismo cierre que hoy
+  > ocurre **siempre** en esa carrera, ahora sólo en su peor orden.
+  >
+  > **UNA REVOCACIÓN SIMULTÁNEA NO SE ESCAPA.** Renovar es reclamar un refresco
+  > y emitir su sucesor; si un cierre de sesión se confirmaba entre las dos
+  > sentencias, el sucesor nacía vivo en una familia revocada y la reabría —el
+  > guardia de AU-036 la daba por abierta—. Pasaba ya con la rotación normal y
+  > la gracia es un camino más de emisión. Desde esta entrega, renovar
+  > (normal o por gracia) es **una transacción**, y **los cinco caminos que
+  > cierran sesiones** —cierre de sesión, desactivación (AU-023), cambio de
+  > contraseña, reinicio del segundo factor (AU-036) y canje de una invitación
+  > de credencial— pasan por una sola función, `revokeLiveSessions`, que
+  > bloquea primero las filas vivas (de la más antigua a la más nueva) y
+  > actualiza después, con una lectura nueva que ya ve cualquier sucesor
+  > confirmado mientras esperaba. La revisión en contexto limpio encontró que
+  > tres de esos cinco revocaban por su cuenta con un `UPDATE` único.
+  >
+  > **LA GRACIA BLOQUEA LA FAMILIA ANTES DE COMPROBAR NADA.** Si sólo
+  > bloqueara el refresco presentado, una rotación de su sucesor en curso
+  > seguiría invisible para la comprobación, el sucesor parecería sin usar y
+  > la familia acabaría con dos cabezas. Bloqueando la familia en el mismo
+  > orden que las revocaciones, las cuatro condiciones se leen después, con
+  > todo lo confirmado a la vista, y no hay interbloqueo posible.
+  >
+  > **LA VENTANA SE MIDE CON EL RELOJ DE LA APLICACIÓN**, el mismo que escribe
+  > `used_at`. Con una sola instancia es exacto; con varias, un desfase entre
+  > relojes la estira o la acorta en esa medida.
+  >
+  > **CÓMO SE VE.** Una renovación por gracia deja un aviso en el registro
+  > (`REFRESH_TOKEN_REUSE_GRACE`) con la cuenta y la familia —nunca el token—, para cruzarlo con un reúso posterior;
+  > un reúso fuera de ella sigue siendo el error de prioridad alta de siempre,
+  > **salvo que la familia ya estuviera cerrada** —cierre de sesión, cambio de
+  > contraseña, un incidente anterior—: entonces no había nada abierto que
+  > tomar y queda como aviso (`REFRESH_TOKEN_AFTER_CLOSE`), para no enseñar al
+  > responsable de seguridad a ignorar la alarma. La respuesta al cliente es
+  > la misma en los dos casos.
+  >
+  > **ES UNA DECISIÓN DE RIESGO Y ESTÁ REGISTRADA** en `DECISIONES-PENDIENTES.md`
+  > (D-063): tenerla activa por defecto, el tamaño, el agente de usuario como
+  > condición y el alcance de «la familia» en AU-004. Lo que tiene fuente es la
+  > cifra; aceptar el riesgo es del autor.
 - **AU-005** — El sistema DEBERÁ permitir matricular un segundo factor TOTP con
   códigos de respaldo, y DEBERÁ cifrar el secreto en la aplicación (ADR-008 §3).
 

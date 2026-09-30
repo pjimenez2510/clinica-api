@@ -47,6 +47,13 @@ export const RevocationReason = {
    * question gets answered.
    */
   MFA_RESET: 'MFA_RESET',
+  /**
+   * AU-039: the successor issued by a rotation whose response never reached
+   * the client, withdrawn when the grace window re-issued the session. Its own
+   * reason because presenting one later is not «unknown token»: it means the
+   * response DID reach somebody, and AU-004 applies.
+   */
+  SUPERSEDED: 'SUPERSEDED',
 } as const;
 
 /** One of the values above, as stored in `refresh_token.revocation_reason`. */

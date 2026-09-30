@@ -19,6 +19,7 @@ import { AUTH_AUDIT_RESOURCE } from '../application/auth-admin-audit.trail';
 import { UNUSABLE_PASSWORD_HASH } from '../domain/password-hashing';
 
 import { duplicateErrorFrom, isRecordNotFound } from './auth-database-errors';
+import { revokeLiveSessions } from './session-revocation';
 
 /**
  * Rows in, domain shapes out, for the ACCOUNT half of administration.
@@ -254,10 +255,7 @@ export class PrismaAccountAdminRepository implements AccountAdminRepositoryPort 
 
         // AU-036. Same shape as `rotateCredentials`: the sessions that exist
         // because the old factor was satisfied do not outlive it.
-        await tx.refreshToken.updateMany({
-          where: { userId, revokedAt: null },
-          data: { revokedAt: new Date(), revocationReason },
-        });
+        await revokeLiveSessions(tx, { userId }, revocationReason);
 
         // AU-035. The entry is part of the act, not a note about it. Only who,
         // over whom and from where: there is no field here that could carry a

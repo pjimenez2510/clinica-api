@@ -51,6 +51,12 @@ export const ALLOWED_KEYS: ReadonlySet<string> = new Set([
   // Business: INTERNAL identifiers, never national ones
   'site_id',
   'user_id',
+  /**
+   * AU-039: the refresh-token family, i.e. one session. An internal UUID that
+   * says nothing outside this installation; without it a grace re-issue could
+   * not be matched with the reuse incident that may follow it.
+   */
+  'family_id',
   'role',
   'module',
   'patient_id',

@@ -8,6 +8,7 @@ import type {
   IssueCredentialInvitationInput,
   StoredCredentialInvitation,
 } from '../application/credential-ports';
+import { revokeLiveSessions } from './session-revocation';
 
 /**
  * Rows in, domain shapes out, for the first-credential half (AU-021, AU-026..AU-029).
@@ -111,13 +112,12 @@ export class PrismaCredentialInvitationRepository implements CredentialInvitatio
         },
       });
 
-      await tx.refreshToken.updateMany({
-        where: { userId: input.userId, revokedAt: null },
-        data: {
-          revokedAt: input.now,
-          revocationReason: RevocationReason.PASSWORD_CHANGE,
-        },
-      });
+      await revokeLiveSessions(
+        tx,
+        { userId: input.userId },
+        RevocationReason.PASSWORD_CHANGE,
+        input.now,
+      );
 
       return true;
     });
