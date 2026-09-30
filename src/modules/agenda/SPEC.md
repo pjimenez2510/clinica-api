@@ -560,11 +560,13 @@ es falsa, hay requisitos que cambian.
   > deja revelar ni que esa sede existe. La rejilla muestra el hueco ausente, no
   > el porqué.
 - **AG-145** — CUANDO se consulte la disponibilidad de un profesional en una
-  sede, el sistema DEBERÁ devolver en `unavailable` los intervalos del rango en
-  que ese profesional ocupa calendario en **otra** sede, fusionados cuando se
-  tocan o se solapan y recortados al rango consultado; y cada intervalo NO
-  DEBERÁ llevar más que su inicio y su fin — ni sede, ni motivo, ni paciente,
-  ni tipo de entrada, ni identificador.
+  sede, el sistema DEBERÁ devolver en `unavailable` los intervalos en que ese
+  profesional ocupa calendario en **otra** sede, recortados a las ventanas de
+  las reglas vigentes de **esta** sede en las fechas abiertas del rango y
+  fusionados cuando se tocan o se solapan; SI el profesional no es agendable o
+  no está vinculado a esta sede, ENTONCES DEBERÁ devolverlo vacío; y cada
+  intervalo NO DEBERÁ llevar más que su inicio y su fin — ni sede, ni motivo,
+  ni paciente, ni tipo de entrada, ni identificador.
   > **Añadido el 30-09-2026 por la revisión clínica de AG-144.** Sin esto, un
   > día que el profesional pasa entero en otra sede llegaba sin cupos y sin
   > ocupados, y la pantalla lo leía como «Sin horario · reservar aquí será
@@ -572,12 +574,20 @@ es falsa, hay requisitos que cambian.
   > ni el servidor frenan (D-069). Y en la rejilla, la hora ocupada fuera seguía
   > pareciendo libre.
   >
-  > **Por qué solo dos instantes, fusionados y recortados.** Quien consulta
-  > puede no tener `agenda:read` en la otra sede (AG-107). Lo que ya revelaba el
-  > `409 PRACTITIONER_SLOT_TAKEN` de cada intento es que esa hora no está libre,
-  > y eso es todo lo que viaja: la fusión oculta cuántas entradas hay y dónde
-  > empieza cada una, y el recorte oculta cuánto dura un bloqueo de vacaciones
-  > que empezó antes. «No disponible» es el estado; el porqué es de la otra sede.
+  > **Por qué solo dos instantes, fusionados y recortados al horario de aquí.**
+  > Quien consulta puede no tener `agenda:read` en la otra sede (AG-107). Lo
+  > que ya revelaba el `409 PRACTITIONER_SLOT_TAKEN` es que una hora **del
+  > horario de esta sede** no está libre, intento a intento, y eso es todo lo
+  > que viaja: la fusión oculta cuántas entradas hay; el recorte al horario
+  > oculta cuánto dura una licencia y todo lo que el profesional hace fuera de
+  > las horas que esta sede podría reservar. La segunda revisión clínica vio
+  > que la primera versión, recortada solo al rango, daba un año de la agenda
+  > de otra sede en una llamada, también de médicos no vinculados a esta.
+  >
+  > **Consecuencia que la pantalla usa:** una franja en una fecha implica que
+  > esta sede tiene horario esa fecha. Un día sin regla aquí sigue leyéndose
+  > «Sin horario», aunque el médico trabaje ese día en otra sede.
+  > «No disponible» es el estado; el porqué es de la otra sede.
 - **AG-107** — CUANDO se consulten las sedes de agenda, el sistema DEBERÁ listar
   únicamente aquellas donde quien llama tiene `agenda:read`, con identificador y
   nombre, y NO DEBERÁ revelar la existencia de las demás.

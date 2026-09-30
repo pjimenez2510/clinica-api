@@ -691,6 +691,19 @@ export const occupiedIntervalSchema = z.object({
 });
 
 /**
+ * AG-145. When the practitioner is taken at ANOTHER site. ITS OWN SCHEMA, AND
+ * STRICT, though today it has the same two fields as `occupied`: adding an
+ * `id` to this site's entries must never make the type ask for the other
+ * site's (AG-107).
+ */
+export const unavailableIntervalSchema = z
+  .object({
+    startsAt: z.iso.datetime(),
+    endsAt: z.iso.datetime(),
+  })
+  .strict();
+
+/**
  * AG-015. A date that offers nothing because the site observes a holiday, and
  * the reason to show for it.
  *
@@ -720,12 +733,12 @@ export const availabilitySchema = z.object({
    */
   occupied: z.array(occupiedIntervalSchema),
   /**
-   * AG-145. When the practitioner is taken at ANOTHER site: two instants per
-   * stretch, merged and clipped to the range — no site, no reason, no patient,
-   * no kind of entry (AG-107). A client paints it «No disponible» and never
-   * reads it as «sin horario».
+   * AG-145. When the practitioner is taken at ANOTHER site, within the hours
+   * of this site's rules: two instants per stretch, merged — no site, no
+   * reason, no patient, no kind of entry (AG-107). A stretch on a date means
+   * this site has a schedule that date; a client paints it «No disponible».
    */
-  unavailable: z.array(occupiedIntervalSchema),
+  unavailable: z.array(unavailableIntervalSchema),
   /**
    * AG-015, AG-016. The dates of the range with no slots on offer, and why.
    *

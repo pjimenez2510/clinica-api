@@ -266,9 +266,14 @@ describe('slot availability', () => {
     expect(result.slots).toHaveLength(1);
   });
 
-  it('AG-145 lists the time taken at another site as bare intervals, merged and clipped to the range', () => {
-    const start = occupancy().startsAt;
-    const { start: dayStart, end: dayEnd } = rangeOf();
+  /**
+   * AG-145. The default rule is Monday 08:00–09:00 in Guayaquil: the only
+   * window in which what the practitioner does elsewhere may be told here.
+   */
+  const at = (minutesFromEight: number) =>
+    plusMinutes(occupancy().startsAt, minutesFromEight);
+
+  it('AG-145 lists the time taken at another site as bare intervals, merged', () => {
     const result = availability({
       entries: [
         // Two entries that touch end to end: one interval, not two.
@@ -276,36 +281,110 @@ describe('slot availability', () => {
         occupancy({
           id: 'b',
           siteId: OTHER_SITE,
-          startsAt: plusMinutes(start, 20),
-          endsAt: plusMinutes(start, 40),
+          startsAt: at(20),
+          endsAt: at(40),
         }),
-        // A leave that began two days before the range and ends after it.
+      ],
+    });
+
+    expect(result.unavailable).toEqual([{ startsAt: at(0), endsAt: at(40) }]);
+    // Nothing but the two instants: no id, no site.
+    expect(Object.keys(result.unavailable[0]!).sort()).toEqual([
+      'endsAt',
+      'startsAt',
+    ]);
+  });
+
+  it('AG-145 clips to the schedule of THIS site, not to the range', () => {
+    const { start: dayStart } = rangeOf();
+    const result = availability({
+      entries: [
+        // A leave that began two days before and ends at 08:30.
         occupancy({
           id: 'leave',
           siteId: OTHER_SITE,
           startsAt: plusMinutes(dayStart, -2 * 24 * 60),
-          endsAt: plusMinutes(dayStart, 60),
+          endsAt: at(30),
+        }),
+        // Noon at the other site: there is no schedule here at noon, and what
+        // the practitioner does then is none of this site's business.
+        occupancy({
+          id: 'noon',
+          siteId: OTHER_SITE,
+          startsAt: at(240),
+          endsAt: at(300),
+        }),
+      ],
+    });
+
+    expect(result.unavailable).toEqual([{ startsAt: at(0), endsAt: at(30) }]);
+  });
+
+  it('AG-145 swallows an interval contained in another, and keeps apart two with a gap', () => {
+    const result = availability({
+      entries: [
+        occupancy({ id: 'wide', siteId: OTHER_SITE, endsAt: at(20) }),
+        occupancy({
+          id: 'inside',
+          siteId: OTHER_SITE,
+          startsAt: at(5),
+          endsAt: at(10),
         }),
         occupancy({
-          id: 'late',
+          id: 'later',
           siteId: OTHER_SITE,
-          startsAt: plusMinutes(dayEnd, -30),
-          endsAt: plusMinutes(dayEnd, 90),
+          startsAt: at(40),
+          endsAt: at(50),
         }),
       ],
     });
 
     expect(result.unavailable).toEqual([
-      { startsAt: dayStart, endsAt: plusMinutes(dayStart, 60) },
-      { startsAt: start, endsAt: plusMinutes(start, 40) },
-      { startsAt: plusMinutes(dayEnd, -30), endsAt: dayEnd },
+      { startsAt: at(0), endsAt: at(20) },
+      { startsAt: at(40), endsAt: at(50) },
     ]);
-    // Nothing but the two instants: no id, no site.
+  });
+
+  it('AG-145 splits a stretch that crosses midnight into the windows of each day', () => {
+    const result = availability({
+      to: '2026-09-15', // fecha-fija: el martes siguiente al lunes por defecto del archivo
+      rules: [rule(), rule({ id: 'rule-tuesday', weekday: 2 })],
+      entries: [
+        // Monday 08:30 to Tuesday 08:30 in Guayaquil.
+        occupancy({
+          siteId: OTHER_SITE,
+          startsAt: at(30),
+          endsAt: at(24 * 60 + 30),
+        }),
+      ],
+    });
+
+    expect(result.unavailable).toEqual([
+      { startsAt: at(30), endsAt: at(60) },
+      { startsAt: at(24 * 60), endsAt: at(24 * 60 + 30) },
+    ]);
+  });
+
+  it('AG-145 tells nothing about a practitioner who cannot be booked here, nor on a closed day', () => {
+    const away = [occupancy({ siteId: OTHER_SITE })];
+
     expect(
-      result.unavailable.every(
-        (interval) => Object.keys(interval).sort().join() === 'endsAt,startsAt',
-      ),
-    ).toBe(true);
+      availability({
+        entries: away,
+        practitioner: practitioner({ siteIds: [OTHER_SITE] }),
+      }).unavailable,
+    ).toEqual([]);
+    expect(
+      availability({
+        entries: away,
+        practitioner: practitioner({ schedulable: false }),
+      }).unavailable,
+    ).toEqual([]);
+    expect(
+      availability({ entries: away, holidays: [holiday()] }).unavailable,
+    ).toEqual([]);
+    // Control: the same entry, on an ordinary day, is told.
+    expect(availability({ entries: away }).unavailable).toHaveLength(1);
   });
 
   it('AG-145 leaves out this site, the released and the overbooked', () => {

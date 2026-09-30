@@ -553,6 +553,39 @@ describe('deriving availability against the database', () => {
       expect(view.slots[0]?.startsAt).toEqual(monday('10:00'));
     });
 
+    it('AG-145 tells the block at the other site only within the hours of this one', async () => {
+      const { prisma, site, other, practitioner } = await twoSites();
+
+      // From the Friday before at 08:00 to this Monday at 10:00 at the other
+      // site; this site works Mondays 08:00–12:00.
+      await prisma.agendaEntry.create({
+        data: {
+          kind: 'BLOCK',
+          status: 'BLOCKED',
+          siteId: other.id,
+          practitionerId: practitioner.id,
+          startsAt: atWallClock(
+            addDays(MONDAY, -3),
+            WallClockTime.parse('08:00'),
+            CLINIC_TIME_ZONE,
+          ),
+          endsAt: monday('10:00'),
+        },
+      });
+
+      const view = await agendaOf(prisma).availability({
+        siteId: site.id,
+        practitionerId: practitioner.id,
+        ...day,
+      });
+
+      // Not from midnight, not from Friday: from the first hour this site
+      // could have booked.
+      expect(view.unavailable).toEqual([
+        { startsAt: monday('08:00'), endsAt: monday('10:00') },
+      ]);
+    });
+
     it('AG-144 subtracts a block the practitioner holds at another site', async () => {
       const { prisma, site, other, practitioner } = await twoSites();
 
