@@ -325,7 +325,10 @@ export class ResultFlagIsDerivedError extends ValidationError {
  * main cause of duplicate records in the systems that do it the other way
  * round, and `patients` has a whole subsystem — `patient_merge`, PA-043 to
  * PA-060 — built to repair that damage. The way out is to register the patient
- * in the register, on purpose, and the message says so.
+ * in the register, on purpose — but only AFTER looking for them: since the
+ * lookup is the Ecuadorian cedula alone (ORD-081), a person registered with a
+ * foreign document is «not found» here while their chart exists, and a message
+ * that said «register them» would make exactly the duplicate ORD-080 forbids.
  *
  * 404 and not 422: the request is perfectly well formed and there is simply
  * nothing there.
@@ -333,7 +336,7 @@ export class ResultFlagIsDerivedError extends ValidationError {
 export class ResultChartUnmatchedError extends NotFoundError {
   readonly code = 'RESULT_CHART_UNMATCHED';
   override readonly userTitle =
-    'Ninguna historia clínica lleva esa cédula. Regístrela en el fichero antes de conciliar el informe';
+    'Ninguna historia clínica lleva esa cédula ecuatoriana. Busque a la persona en Pacientes por su nombre o por otro documento antes de registrarla: puede estar registrada con un documento extranjero';
 
   constructor() {
     super('No live patient chart holds that cedula');

@@ -3,11 +3,12 @@ import { describe, expect, it } from 'vitest';
 
 import { PrismaExamCatalogueRepository } from '../../src/modules/orders/infrastructure/prisma-exam-catalogue.repository';
 import { PrismaServiceOrderRepository } from '../../src/modules/orders/infrastructure/prisma-service-order.repository';
+import { PrismaPatientRepository } from '../../src/modules/patients/infrastructure/prisma-patient.repository';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { aScene, aTariffConcept } from './orders-fixtures';
 import { useDatabase } from './setup/database';
-import { createPatient, createSite } from './setup/fixtures';
+import { createPatient, createSite, createUser } from './setup/fixtures';
 
 /**
  * The order against a real PostgreSQL.
@@ -369,10 +370,11 @@ describe('la orden de exámenes contra PostgreSQL', () => {
   });
 
   /**
-   * ⚠️ THE FOREIGN ROW GOES IN FIRST, on purpose. Without `orderBy`, a lookup
-   * by the bare number returns whichever row the heap yields, which with
-   * `uuidv7()` ids is the oldest — so this order is the one that exposes it.
-   * The reverse order is asserted too, so a pass cannot be heap luck.
+   * ⚠️ THE FOREIGN ROW GOES IN FIRST, on purpose. Without `ORDER BY`, a lookup
+   * by the bare number returns whichever row the scan meets first, which on a
+   * freshly written table is usually the oldest — so this order is the one
+   * that exposes it. The reverse order is asserted too, so a pass cannot be
+   * physical-order luck.
    */
   it('ORD-081 abre la ficha de la cédula ECU aunque otra ficha lleve el mismo número emitido por COL', async () => {
     const prisma = db();
@@ -422,6 +424,67 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     expect(await prisma.patientIdentifier.count({ where: { value: CEDULA, issuingCountry: 'ECU' } })).toBe(2); // prettier-ignore
 
     expect(await ordersOf(prisma).chartByCedula(CEDULA)).toBe(holder.id);
+  });
+
+  /**
+   * ORD-081 THROUGH THE REAL MERGE, not a hand-written `merged_into_id`: the
+   * merge is what re-points the `OFFICIAL` row to the survivor and the trigger
+   * is what clears `patient_merged`, and the new filter depends on both. If
+   * either stopped, every merged patient would answer RESULT_CHART_UNMATCHED
+   * on the paper path.
+   */
+  it('ORD-081 lleva la cédula de la ficha absorbida a la superviviente, con sus órdenes, y la devuelve al deshacer', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const repository = ordersOf(prisma);
+    const patients = new PrismaPatientRepository(prisma as unknown as PrismaService); // prettier-ignore
+    const author = await createUser(prisma);
+    await prisma.patientIdentifier.create({
+      data: { patientId: scene.patient.id, type: 'CEDULA', value: CEDULA },
+    });
+    await repository.place({
+      encounterId: scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [{ examDefinitionId: scene.bh.id, conceptId: scene.concept.id }],
+      sites: 'all',
+    });
+    const survivor = await createPatient(prisma);
+
+    const merged = await patients.merge({
+      sourcePatientId: scene.patient.id,
+      targetPatientId: survivor.id,
+      reason: 'Ficha duplicada',
+      performedById: author.id,
+    });
+    expect(merged.status).toBe('MERGED');
+
+    // Control positivo: la fila oficial está ahora en la superviviente y viva.
+    expect(
+      await prisma.patientIdentifier.findMany({
+        where: { value: CEDULA },
+        select: { patientId: true, use: true, patientMerged: true },
+      }),
+    ).toEqual([{ patientId: survivor.id, use: 'OFFICIAL', patientMerged: false }]); // prettier-ignore
+
+    expect(await repository.chartByCedula(CEDULA)).toBe(survivor.id);
+    const worklist = await repository.pending({
+      sites: 'all',
+      chartId: survivor.id,
+      now: new Date(),
+      limit: 50,
+    });
+    expect(worklist.map((row) => row.testCode)).toEqual(['EX-BH']);
+
+    if (merged.status !== 'MERGED') return;
+    const undone = await patients.undoMerge({
+      sourcePatientId: scene.patient.id,
+      mergeId: merged.event.mergeId,
+      reason: 'Eran dos personas',
+      performedById: author.id,
+    });
+    expect(undone.status).toBe('UNDONE');
+    expect(await repository.chartByCedula(CEDULA)).toBe(scene.patient.id);
   });
 
   it('ORD-093 sigue el enlace de la fusión: la orden de la ficha absorbida es suya', async () => {

@@ -751,8 +751,23 @@ cuando la gráfica exista.
   > una ficha con la `OFFICIAL` en otra. Buscando solo el número, la base elige
   > una ficha cualquiera y la cola enseña **las órdenes de otra persona** a
   > quien tiene el informe en la mano. Con la terna y el predicado del índice,
-  > la base garantiza a lo sumo una fila. Un documento extranjero no entra por
-  > aquí: va a la cola manual (ORD-080), pendiente de D-066.
+  > la base garantiza a lo sumo una fila.
+  >
+  > **Lo que cuesta, y lo decide el autor (D-066):** la ficha que lleva el
+  > número solo como documento extranjero no se encuentra por aquí. No hay
+  > cola manual de informes en papel: quien tiene el papel busca a la persona
+  > en Pacientes, y el mensaje de `RESULT_CHART_UNMATCHED` se lo dice en vez de
+  > mandar a registrarla, que sería la ficha duplicada que ORD-080 prohíbe.
+  >
+  > **Sigue al índice, no a `valid_to`.** Nada escribe `valid_to` todavía; si
+  > una cédula cerrada sigue resolviendo a su ficha se decide con PA-014 en la
+  > entrega que escriba `valid_to` por primera vez.
+  >
+  > **Latente, con la fusión:** si la superviviente llevara el número con uso
+  > `OLD` o `TEMP` y la absorbida como `OFFICIAL`, la fusión no mueve la fila
+  > (su `NOT EXISTS` compara tipo, país y valor, no el uso) y esta búsqueda no
+  > encontraría ninguna ficha. Hoy ninguna ruta escribe un uso distinto de
+  > `OFFICIAL`; la entrega que lo haga tiene que resolverlo en la fusión.
 
   El alcance de ficha se resuelve con `chartScope` (PA-055, D-038): si la
   paciente tuvo dos fichas y se fusionaron, la orden que se emitió sobre la
@@ -814,7 +829,7 @@ contrato —`code`, estado y mensaje—.
 | `RESULT_VALUE_TYPE_MISMATCH` | 422 | El valor no corresponde al tipo que el analito declara | ORD-032 |
 | `RESULT_VALUE_NOT_ALLOWED` | 422 | El valor codificado no está en `allowed_values` | ORD-033 |
 | `RESULT_FLAG_IS_DERIVED` | 422 | Se envió la bandera de anormalidad. **Se rechaza, no se ignora** | ORD-035 |
-| `RESULT_CHART_UNMATCHED` | 404 | Ninguna ficha vigente lleva esa cédula. **Y no se crea ninguna** | ORD-081 |
+| `RESULT_CHART_UNMATCHED` | 404 | Ninguna ficha vigente lleva esa cédula **ecuatoriana**. **Y no se crea ninguna**: el mensaje manda buscar a la persona antes de registrarla, porque puede estar registrada con un documento extranjero | ORD-081 |
 | `RESULT_NOT_FOUND` | 404 | El resultado no existe o es de una sede fuera del alcance. **El mismo para ambas**, y también para un identificador que no es un número: `observation_result.id` es un `bigint` autoincremental, el más fácil de recorrer del sistema | ORD-043 |
 | `RESULT_ALREADY_MATCHED` | 409 | Ese resultado ya responde a una línea. Dos personas trabajando la misma cola es lo normal, y la que pierde no puede reapuntar una fila ya resuelta | ORD-043 |
 | `ORDER_ITEM_NOT_MATCHABLE` | 422 | La línea no es de la orden en la que llegó el resultado, o está anulada. **Uno solo para las dos**: lo que hay que hacer es idéntico, elegir otra línea de esta orden | ORD-043 |
