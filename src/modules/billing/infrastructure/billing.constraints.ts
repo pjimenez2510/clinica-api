@@ -49,6 +49,15 @@ registerConstraintMeanings({
     field: 'code',
     message: 'Ya existe una prestación con ese código',
   },
+  // BI-036: the shape of a payer's RUC, the same as the site's. `Ruc` refuses
+  // more than this long before the database is reached; this is what a path
+  // that skips it (an import, a script) is told.
+  payer_ruc_format: {
+    code: 'INVALID_RUC',
+    field: 'ruc',
+    message:
+      'El RUC son trece dígitos y termina en un código de establecimiento como 001',
+  },
   // ── Qué prestación es «la consulta» (BI-158) ────────────────────────────
   //
   // The pair travels together or not at all: half a mapping resolves nothing,

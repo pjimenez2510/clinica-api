@@ -963,8 +963,8 @@ model Establishment {
   /// MSP typology of A.M. 00000079: what determines the reporting duties.
   typology  String  @db.VarChar(64)
   legalName String  @map("legal_name") @db.VarChar(160)
-  /// Shape guaranteed by `establishment_ruc_format`; the SRI check digit by
-  /// the `Ruc` value object (OR-008).
+  /// Shape guaranteed by `establishment_ruc_format`; the rest of the SRI rule
+  /// by the `Ruc` value object (OR-008, OR-009).
   ruc       String? @db.VarChar(13)
 
   active Boolean @default(true)

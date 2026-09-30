@@ -187,7 +187,10 @@ export class InvoicingService {
     const payer = await this.catalogue.findPayer(account.payerId);
 
     return {
-      patientIdentificationType: buyerTypeOf(patient?.identifierType ?? null),
+      patientIdentificationType: buyerTypeOf(
+        patient?.identifierType ?? null,
+        patient?.identifierIssuingCountry ?? null,
+      ),
       patientIdentification: patient?.identifierValue ?? null,
       patientName: patient?.fullName ?? '',
       thirdPartyPayerRuc: payer && payer.kind !== 'SELF_PAY' ? payer.ruc : null,
@@ -206,10 +209,13 @@ export class InvoicingService {
  */
 function buyerTypeOf(
   type: 'CEDULA' | 'PASSPORT' | 'REFUGEE_CARD' | 'FOREIGN_ID' | 'PROVISIONAL' | null, // prettier-ignore
+  issuingCountry: string | null,
 ): BuyerIdentificationType | null {
   switch (type) {
+    // `05` is the ECUADORIAN cedula, and the SRI checks it modulo 10. A cedula
+    // issued elsewhere (PA-012, D-057) is a document from abroad: `08`.
     case 'CEDULA':
-      return '05';
+      return issuingCountry === 'ECU' ? '05' : '08';
     case 'PASSPORT':
       return '06';
     // Both are documents issued abroad or to a foreign national, which is what

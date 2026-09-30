@@ -325,13 +325,14 @@ describe('la organización por HTTP', () => {
 
     it('OR-009 guarda el RUC de una sociedad que no pasa módulo 11, como los emite el SRI desde 2021', async () => {
       // Published by the Mintel as SRI-issued numbers (D-057). The control:
-      // the same request with a malformed RUC is refused, so what makes the
-      // difference is the check digit and nothing else.
+      // the same request is refused for a RUC that `Ruc` still refuses (a
+      // province that does not exist), so the endpoint is not accepting
+      // anything; what the numbers below pass is the dropped modulo 11.
       await put('/establishment', {
         mspUnicode: 'MSP-EST-001',
         typology: 'Centro de Salud Tipo A',
         legalName: 'Clínica de Prueba S.A.',
-        ruc: '179318990600',
+        ruc: '2593189906001',
       }).expect(422);
 
       for (const ruc of ['1793189906001', '0993366721001']) {

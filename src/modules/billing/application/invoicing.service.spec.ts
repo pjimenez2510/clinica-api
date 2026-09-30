@@ -85,6 +85,7 @@ function build(options: { accounts?: Record<string, unknown> } = {}) {
     findAccountPatient: vi.fn().mockResolvedValue({
       patientId: 'patient-1',
       identifierType: 'CEDULA',
+      identifierIssuingCountry: 'ECU',
       identifierValue: '1710034065',
       fullName: 'Guamán Andrade, María José',
     }),
@@ -264,6 +265,26 @@ describe('BI-082, BI-087 el receptor propuesto', () => {
     });
 
     expect(proposal.identification).toBe('1710034065');
+  });
+
+  it('BI-082 propone una cédula que no emitió Ecuador como identificación del exterior (08)', async () => {
+    // D-057 let the registration take a Colombian cedula. Proposed as `05` it
+    // would reach the SRI as an Ecuadorian cedula that fails modulo 10.
+    const { service: invoicing } = build({
+      accounts: {
+        findAccountPatient: vi.fn().mockResolvedValue({
+          patientId: 'patient-1',
+          identifierType: 'CEDULA',
+          identifierIssuingCountry: 'COL',
+          identifierValue: '1700326084',
+          fullName: 'Prueba, Camila',
+        }),
+      },
+    });
+
+    await expect(
+      invoicing.proposedReceiver({ accountId: ACCOUNT, siteId: SITE }),
+    ).resolves.toMatchObject({ identificationType: '08' });
   });
 
   it('BI-082 no propone nada cuando la ficha no tiene identificación oficial', async () => {

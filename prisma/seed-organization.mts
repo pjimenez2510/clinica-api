@@ -27,8 +27,9 @@ import { PrismaClient } from '@prisma/client';
  */
 
 /**
- * A development RUC with a REAL check digit, computed with the SRI's
- * private-company algorithm — never a real taxpayer's. Third digit 9, province
+ * A development RUC built with the SRI's former private-company check digit
+ * (modulo 11) — never a real taxpayer's. Since D-057 no company digit is
+ * checked (OR-009); the number is kept as it is. Third digit 9, province
  * 17 (Pichincha), establishment 001.
  */
 const DEV_RUC = '1790001563001';

@@ -107,6 +107,12 @@ la mitad que sí se ve —no ofrecer lo que no se puede tocar— la cubre OR-020
   > primeros dígitos «de la provincia donde se obtuvo el documento de
   > identidad» o donde se inscribió el contribuyente. `Cedula` ya lo admitía;
   > `Ruc` se paraba en 24 y rechazaba el RUC de esas personas (D-057).
+  > Para una **sociedad** (tercer dígito `9`) con `30` —el extranjero sin
+  > cédula— las únicas fuentes halladas son secundarias (p. ej.
+  > [el algoritmo publicado por T. Jiménez, 2011](http://telesjimenez.blogspot.com/2011/05/algoritmo-de-verificacion-de-ruc_6120.html)).
+  > Se admite porque rechazarlo bloquearía un RUC emitido y admitirlo no
+  > deja pasar ninguna forma imposible; la comprobación de que un RUC existe
+  > es del SRI.
 - **OR-009** — SI el tercer dígito del RUC es menor que `6` (persona natural) y
   sus diez primeros dígitos no son una cédula con dígito verificador válido,
   ENTONCES el sistema DEBERÁ rechazarlo con `INVALID_RUC`; y NO DEBERÁ exigir

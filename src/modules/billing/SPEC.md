@@ -586,8 +586,9 @@ es falsa, hay requisitos que cambian.
   > necesita que el cambio arrastre y reprecie los cargos automáticamente, es
   > una decisión de negocio con consecuencias contables — va a
   > `DECISIONES-PENDIENTES.md`.
-- **BI-034** — SI un pagador es institucional y se guarda sin `RUC` válido,
-  ENTONCES el sistema DEBERÁ rechazarlo con `PAYER_RUC_REQUIRED`.
+- **BI-034** — SI un pagador es institucional y se guarda sin `RUC`,
+  ENTONCES el sistema DEBERÁ rechazarlo con `PAYER_RUC_REQUIRED`; uno escrito
+  pero mal formado es BI-036 (`INVALID_RUC`).
   > La forma la comprueba el value object `Ruc` que ya existe en `shared`
   > (OR-008, OR-009). Es la única ramificación por `kind` de todo el módulo, y
   > es de validación: un convenio de empresa sin RUC no puede recibir factura.
@@ -915,6 +916,11 @@ es falsa, hay requisitos que cambian.
 - **BI-082** — El sistema DEBERÁ ofrecer como receptor los datos de
   identificación del paciente de la cuenta, y DEBERÁ permitir sustituirlos por
   los de otra persona identificada que vaya a deducir el gasto.
+  > El tipo que se propone sale de la tabla 6 del SRI: `05` sólo para la
+  > cédula emitida por `ECU`; una cédula de otro país, como el documento
+  > extranjero y el carné de refugiado, es `08` (identificación del
+  > exterior). Desde D-057 el alta admite una cédula colombiana, y como `05`
+  > llegaría al SRI como cédula ecuatoriana que no pasa el módulo 10.
 - **BI-083** — El sistema DEBERÁ desglosar el impuesto **por ítem**, con la
   tarifa congelada de cada línea, y NO DEBERÁ aplicar una única tarifa al total.
   > REQ-083. Y no es un formalismo: una factura con una consulta al 0 % y un
@@ -1424,6 +1430,7 @@ registrados en `infrastructure/billing.constraints.ts`.
 | `BILLABLE_SERVICE_CODE_DUPLICATE` | 409 | `billable_service_code_unique` | BI-010 |
 | `PAYER_CODE_DUPLICATE` | 409 | `payer_code_unique` | BI-030 |
 | `INVALID_PAYER_KIND` | 422 | `payer_kind_is_known` | BI-030 |
+| `INVALID_RUC` | 422 | `payer_ruc_format` | BI-036 |
 | `INVALID_CHARGE_QUANTITY` | 422 | `charge_item_quantity_is_positive` | BI-057 |
 | `DISCOUNT_REASON_REQUIRED` | 422 | `charge_item_discount_states_a_reason` | BI-061 |
 | `DISCOUNT_EXCEEDS_LINE_AMOUNT` | 422 | `charge_item_discount_within_line` | BI-065 |

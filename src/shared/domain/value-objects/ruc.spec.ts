@@ -32,10 +32,10 @@ describe('Ruc', () => {
    */
   const SRI_ISSUED_WITHOUT_MODULUS_11 = ['1793189906001', '0993366721001'];
 
-  /** Third digit 6: coefficients 3 2 7 6 5 4 3 2, check digit in position 9. */
+  /** Third digit 6. Built with the former modulo 11 digit (no longer checked). */
   const PUBLIC_SECTOR = ['1760001550001', '0160012360001', '2460009990001'];
 
-  /** Third digit 9: coefficients 4 3 2 7 6 5 4 3 2, check digit in position 10. */
+  /** Third digit 9. Built with the former modulo 11 digit (no longer checked). */
   const PRIVATE_COMPANY = ['1790001563001', '0190012344001', '2490000189001'];
 
   describe('OR-008 accepts a natural person RUC, whose first ten digits are a cedula', () => {
