@@ -10,13 +10,17 @@ export class InvalidRucError extends ValidationError {
   override readonly userTitle =
     'Revise el RUC: son trece dígitos y terminan en un código de establecimiento como 001';
 
-  constructor(reason: string) {
+  /**
+   * `field` is where the form shows it: `ruc` on every register that stores
+   * one, `receiver.identification` on an invoice (BI-159).
+   */
+  constructor(reason: string, field = 'ruc') {
     // The rejected value is NOT included, for the same reason as `Cedula`: a
     // natural person's RUC contains their cedula, and this message ends up in
     // logs and support tickets.
     super(`Invalid Ecuadorian RUC: ${reason}`, { reason }, [
       {
-        field: 'ruc',
+        field,
         code: 'INVALID_RUC',
         message:
           'El RUC no supera la validación del SRI. Compruebe los trece dígitos y el código de establecimiento',
