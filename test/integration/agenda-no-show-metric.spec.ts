@@ -44,6 +44,8 @@ const EMAIL = 'recepcion@clinica.ec';
 
 interface Rate {
   noShow: number;
+  /** AG-140: fuera del numerador, dentro del denominador, y con recuento propio. */
+  leftWithoutBeingSeen: number;
   total: number;
   pending: number;
   rate: number | null;
@@ -187,7 +189,11 @@ describe('la tasa de inasistencia por HTTP', () => {
       | 'IN_PROGRESS'
       | 'FULFILLED'
       | 'CANCELLED'
-      | 'NO_SHOW';
+      | 'NO_SHOW'
+      // AG-140: los dos desenlaces nuevos entran en la métrica de formas
+      // opuestas, y ésa es la razón de que sean dos estados y no uno.
+      | 'LEFT_WITHOUT_BEING_SEEN'
+      | 'ENTERED_IN_ERROR';
     channel?: 'PHONE' | 'WALK_IN' | 'WEB' | 'REFERRAL';
     practitionerId?: string;
     siteId?: string;
@@ -204,11 +210,37 @@ describe('la tasa de inasistencia por HTTP', () => {
         status: input.status,
         bookingChannel: input.channel ?? 'PHONE',
         createdById: userId,
-        // AG-042, AG-044: los dos estados que devuelven el cupo lo marcan.
-        releasedAt:
-          input.status === 'NO_SHOW' || input.status === 'CANCELLED'
-            ? startsAt
-            : null,
+        // AG-042, AG-044, AG-116, AG-117: los cuatro estados que devuelven el
+        // cupo lo marcan.
+        releasedAt: (
+          [
+            'NO_SHOW',
+            'CANCELLED',
+            'LEFT_WITHOUT_BEING_SEEN',
+            'ENTERED_IN_ERROR',
+          ] as string[]
+        ).includes(input.status)
+          ? startsAt
+          : null,
+        // AG-121: la base exige que el estado del paciente y su instante estén
+        // los dos o ninguno, y quien se fue sin ser atendido salió (AG-127).
+        ...(input.status === 'LEFT_WITHOUT_BEING_SEEN'
+          ? {
+              subjectStatus: 'DEPARTED' as const,
+              subjectStatusAt: startsAt,
+              // AG-116: desde `20260820121023_agenda_outcomes_and_board` el
+              // desenlace tiene instante propio y la base lo exige, que es lo
+              // que permite a esta misma métrica filtrar por fecha sobre
+              // `agenda_entry` igual que hace con sus tres vecinos.
+              leftWithoutBeingSeenAt: startsAt,
+            }
+          : {}),
+        ...(input.status === 'ENTERED_IN_ERROR'
+          ? {
+              enteredInErrorAt: startsAt,
+              enteredInErrorReason: 'Registro de prueba',
+            }
+          : {}),
       },
     });
   }
@@ -414,11 +446,77 @@ describe('la tasa de inasistencia por HTTP', () => {
       // `0` diría «nadie faltó» en un mes en que la clínica no abrió.
       expect(body.overall).toEqual({
         noShow: 0,
+        leftWithoutBeingSeen: 0,
         total: 0,
         pending: 0,
         rate: null,
       });
       expect(body.bySite).toEqual([]);
+    });
+
+    it('AG-140 no cuenta como inasistencia a quien se fue sin ser atendido, y no mueve la tasa', async () => {
+      // Vino y llegó a su hora: sacarlo del denominador rebajaría el total
+      // sobre el que se mide y mejoraría la tasa de la clínica por el simple
+      // hecho de tener gente cansada de esperar.
+      await appointment({ startsAt: '2026-06-08T14:00:00Z', status: 'NO_SHOW' }); // prettier-ignore
+      await appointment({ startsAt: '2026-06-08T15:00:00Z', status: 'FULFILLED' }); // prettier-ignore
+      await appointment({ startsAt: '2026-06-08T16:00:00Z', status: 'LEFT_WITHOUT_BEING_SEEN' }); // prettier-ignore
+      await appointment({ startsAt: '2026-06-08T17:00:00Z', status: 'LEFT_WITHOUT_BEING_SEEN' }); // prettier-ignore
+
+      const body = (await metricOf('2026-06-01', '2026-06-30').expect(200))
+        .body as Metric;
+
+      expect(body.overall).toMatchObject({
+        noShow: 1,
+        leftWithoutBeingSeen: 2,
+        total: 4,
+        // Alguien registró lo que pasó: no es un desenlace pendiente.
+        pending: 0,
+        rate: 0.25,
+      });
+    });
+
+    it('AG-140 publica el recuento de quienes se fueron sin ser atendidos en los tres desgloses', async () => {
+      // Es lo que el usuario pidió: UNA MÉTRICA PARA PODER REDUCIRLA.
+      await appointment({
+        startsAt: '2026-06-08T16:00:00Z',
+        status: 'LEFT_WITHOUT_BEING_SEEN',
+        channel: 'WALK_IN',
+      });
+
+      const body = (await metricOf('2026-06-01', '2026-06-30').expect(200))
+        .body as Metric;
+
+      expect(body.bySite[0]).toMatchObject({ leftWithoutBeingSeen: 1, total: 1 }); // prettier-ignore
+      expect(body.byPractitioner[0]).toMatchObject({ leftWithoutBeingSeen: 1 });
+      expect(body.byChannel[0]).toMatchObject({
+        bookingChannel: 'WALK_IN',
+        leftWithoutBeingSeen: 1,
+      });
+    });
+
+    it('AG-140 saca ENTERED_IN_ERROR del conjunto entero: una cita que no ocurrió no mide a nadie', async () => {
+      await appointment({ startsAt: '2026-06-08T14:00:00Z', status: 'NO_SHOW' }); // prettier-ignore
+      await appointment({ startsAt: '2026-06-08T15:00:00Z', status: 'FULFILLED' }); // prettier-ignore
+      // Ocho errores de tecleo. Contarlos en el denominador mediría la clínica
+      // sobre pacientes imaginarios; contarlos como anulaciones leería la
+      // tarde como una tarde en que la clínica canceló a sus pacientes.
+      for (let hour = 16; hour < 24; hour += 1) {
+        await appointment({
+          startsAt: `2026-06-08T${String(hour).padStart(2, '0')}:00:00Z`,
+          status: 'ENTERED_IN_ERROR',
+        });
+      }
+
+      const body = (await metricOf('2026-06-01', '2026-06-30').expect(200))
+        .body as Metric;
+
+      expect(body.overall).toMatchObject({
+        noShow: 1,
+        leftWithoutBeingSeen: 0,
+        total: 2,
+        rate: 0.5,
+      });
     });
   });
 

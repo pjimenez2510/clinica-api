@@ -17,6 +17,9 @@ import {
   BookingRetryExhaustedError,
   BookingTooFarError,
   BookingTooSoonError,
+  CancellationReasonRequiredError,
+  EmergencyAssessmentRequiredError,
+  EnteredInErrorReasonRequiredError,
   InvalidAgendaTransitionError,
   InvalidBookingChannelError,
   InvalidSlotDurationError,
@@ -30,6 +33,7 @@ import {
   SelfAuthorisationDeniedError,
   SlotNotAlignedError,
   SlotNotReleasedError,
+  SubjectStatusNotDerivableError,
   WaitlistAcceptanceRequiredError,
   WaitlistEntryClosedError,
   WaitlistEntryNotFoundError,
@@ -570,5 +574,76 @@ describe('the booking window errors (AG-031 to AG-033)', () => {
     ]) {
       expect(DOMAIN_ERROR_CODES).toContain(code);
     }
+  });
+});
+
+/**
+ * E8: los tres códigos que traen los dos desenlaces nuevos y la calificación
+ * del art. 10 (AG-116, AG-117, AG-122, AG-128).
+ */
+describe('the arrival and outcome errors (E8)', () => {
+  it('AG-117 answers ENTERED_IN_ERROR_REASON_REQUIRED per field, apart from an annulment', () => {
+    const retraction = new EnteredInErrorReasonRequiredError();
+    const annulment = new CancellationReasonRequiredError();
+
+    expect(retraction.code).toBe('ENTERED_IN_ERROR_REASON_REQUIRED');
+    expect(retraction).toBeInstanceOf(ValidationError); // 422
+    expect(retraction.fieldErrors?.[0]?.field).toBe('reason');
+    /**
+     * DOS CÓDIGOS Y NO UNO, y es justo lo que el estado viene a separar:
+     * anular una cita real y retirar una que nunca debió existir son actos
+     * distintos, y un cliente que ramificara por el código común pediría «el
+     * motivo de la anulación» de una cita que nadie anula.
+     */
+    expect(retraction.code).not.toBe(annulment.code);
+    expect(retraction.userTitle).not.toBe(annulment.userTitle);
+  });
+
+  it('AG-128 answers EMERGENCY_ASSESSMENT_REQUIRED per field, naming the box that is missing', () => {
+    const error = new EmergencyAssessmentRequiredError();
+
+    expect(error.code).toBe('EMERGENCY_ASSESSMENT_REQUIRED');
+    expect(error).toBeInstanceOf(ValidationError); // 422
+    // Por campo: la pantalla de llegada resalta la casilla, no rechaza el
+    // formulario entero con una frase.
+    expect(error.fieldErrors?.[0]?.field).toBe('emergency');
+    // La razón viaja en el texto: es la Ley 77 art. 10, y el art. 13 la
+    // respalda con prisión.
+    expect(error.userTitle).toContain('emergencia');
+    // Nada del paciente llega al log.
+    expect(error.message).not.toMatch(/undefined/);
+  });
+
+  it('AG-122, AG-125, AG-127 answer SUBJECT_STATUS_NOT_DERIVABLE as a 409', () => {
+    const error = new SubjectStatusNotDerivableError('DEPARTED');
+
+    expect(error.code).toBe('SUBJECT_STATUS_NOT_DERIVABLE');
+    // La petición está bien formada: es el ESTADO de la cita el que la
+    // rechaza, igual que en `InvalidAgendaTransitionError`.
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.params).toEqual({ current: 'DEPARTED' });
+  });
+
+  it('AG-116, AG-117, AG-128 register the E8 codes in the frozen public catalogue', () => {
+    for (const code of [
+      'ENTERED_IN_ERROR_REASON_REQUIRED',
+      'EMERGENCY_ASSESSMENT_REQUIRED',
+      'SUBJECT_STATUS_NOT_DERIVABLE',
+    ]) {
+      expect(DOMAIN_ERROR_CODES).toContain(code);
+    }
+  });
+
+  it('AG-116 gives the two new statuses a Spanish label the counter can read', () => {
+    // AG-040 exige que el rechazo NOMBRE el estado actual, y
+    // «LEFT_WITHOUT_BEING_SEEN» lo nombra a un programador, no a recepción.
+    expect(
+      new InvalidAgendaTransitionError('LEFT_WITHOUT_BEING_SEEN', 'IN_PROGRESS')
+        .userTitle,
+    ).toContain('Se retiró sin ser atendida');
+    expect(
+      new InvalidAgendaTransitionError('ENTERED_IN_ERROR', 'CONFIRMED')
+        .userTitle,
+    ).toContain('Registrada por error');
   });
 });

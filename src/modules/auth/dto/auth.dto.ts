@@ -197,7 +197,7 @@ export const sessionResponseSchema = z.object({
    * nothing on screen needs it.
    *
    * It is here because it is the OWNER'S OWN DATA and needs no permission to
-   * read. The only other place it exists is `AccountDto`, behind `user:read`
+   * read. The only other place it exists is `UserAccountDto`, behind `user:read`
    * over the whole payroll, which is administration looking at somebody else.
    */
   mfaEnabled: z.boolean(),

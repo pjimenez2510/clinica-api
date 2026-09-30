@@ -1,0 +1,425 @@
+import type { PrismaClient } from '@prisma/client';
+import { describe, expect, it } from 'vitest';
+
+import { PrismaExamCatalogueRepository } from '../../src/modules/orders/infrastructure/prisma-exam-catalogue.repository';
+import { PrismaServiceOrderRepository } from '../../src/modules/orders/infrastructure/prisma-service-order.repository';
+import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
+
+import { aScene, aTariffConcept } from './orders-fixtures';
+import { useDatabase } from './setup/database';
+import { createPatient, createSite } from './setup/fixtures';
+
+/**
+ * The order against a real PostgreSQL.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * WHAT ONLY THE DATABASE CAN DEMONSTRATE HERE
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ *  - `trg_service_order_item_pending` keeping `pending_items` in step with the
+ *    lines. That counter exists ONLY so the worklist can be a partial index —
+ *    index predicates cannot contain subqueries — so if it drifts, the whole
+ *    worklist silently stops listing orders that are pending. A double
+ *    returning what we asked it for proves nothing about it.
+ *  - The tariff concept's validity resolved with `daterange @>` in
+ *    `America/Guayaquil`. Prisma models `valid_period` as `Unsupported`, so
+ *    this cannot even be expressed through the client.
+ *  - `chartScope` following a merge: an order placed on the chart that a merge
+ *    later absorbed is STILL that person's, and the link only exists in the
+ *    database.
+ *
+ * ⚠️ THE CEDULAS CARRY A COMPUTED CHECK DIGIT. `is_valid_cedula()` refuses made
+ * up ones, so a random number would fail for the wrong reason.
+ */
+const db = useDatabase();
+
+const CEDULA = '1710034065';
+const OTHER_CEDULA = '1713175071';
+
+const ordersOf = (prisma: PrismaClient) =>
+  new PrismaServiceOrderRepository(prisma as unknown as PrismaService);
+
+const catalogueOf = (prisma: PrismaClient) =>
+  new PrismaExamCatalogueRepository(prisma as unknown as PrismaService);
+
+describe('la orden de exámenes contra PostgreSQL', () => {
+  it('ORD-002 emite una línea por examen y congela su código y su nombre', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+
+    const order = await ordersOf(prisma).place({
+      encounterId: scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [
+        { examDefinitionId: scene.bh.id, conceptId: scene.concept.id },
+        { examDefinitionId: scene.glucose.id, conceptId: scene.concept.id },
+      ],
+      sites: 'all',
+    });
+
+    expect(order.items).toHaveLength(2);
+    expect(order.items.map((item) => item.testCode).sort()).toEqual([
+      'EX-BH',
+      'EX-GLUCOSA-AYUNAS',
+    ]);
+    // ORD-001. Firmada por el profesional DE LA ATENCIÓN, no por un id enviado.
+    expect(order.orderedById).toBe(scene.practitioner.id);
+    expect(order.siteId).toBe(scene.site.id);
+  });
+
+  it('ORD-002 mantiene `pending_items` en paso con las líneas, por disparador', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+
+    const order = await ordersOf(prisma).place({
+      encounterId: scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [
+        { examDefinitionId: scene.bh.id, conceptId: scene.concept.id },
+        { examDefinitionId: scene.glucose.id, conceptId: scene.concept.id },
+      ],
+      sites: 'all',
+    });
+
+    // `trg_service_order_item_pending` es lo único que hace posible que la
+    // cola sea un índice parcial: si se desfasa, la cola deja de listar
+    // órdenes pendientes SIN FALLAR.
+    const stored = await prisma.serviceOrder.findFirstOrThrow({
+      where: { id: order.id },
+      select: { pendingItems: true },
+    });
+    expect(stored.pendingItems).toBe(2);
+  });
+
+  it('ORD-007 anula una línea sin borrarla, y el contador baja solo', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const repository = ordersOf(prisma);
+
+    const order = await repository.place({
+      encounterId: scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [
+        { examDefinitionId: scene.bh.id, conceptId: scene.concept.id },
+        { examDefinitionId: scene.glucose.id, conceptId: scene.concept.id },
+      ],
+      sites: 'all',
+    });
+    const [first] = order.items;
+
+    const after = await repository.cancelItem({
+      orderId: order.id,
+      itemId: first?.id ?? '',
+      sites: 'all',
+    });
+
+    // La fila SIGUE: borrarla perdería que alguien pidió algo y se arrepintió.
+    expect(after.items).toHaveLength(2);
+    expect(after.pendingItems).toBe(1);
+    expect(after.items.find((item) => item.id === first?.id)).toMatchObject({
+      status: 'CANCELLED',
+    });
+    expect(after.items.find((item) => item.id === first?.id)?.completedAt).not.toBeNull(); // prettier-ignore
+  });
+
+  it('ORD-008 rechaza anular dos veces la misma línea', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const repository = ordersOf(prisma);
+
+    const order = await repository.place({
+      encounterId: scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [{ examDefinitionId: scene.bh.id, conceptId: scene.concept.id }],
+      sites: 'all',
+    });
+    const itemId = order.items[0]?.id ?? '';
+
+    await repository.cancelItem({ orderId: order.id, itemId, sites: 'all' });
+
+    await expect(
+      repository.cancelItem({ orderId: order.id, itemId, sites: 'all' }),
+    ).rejects.toMatchObject({ code: 'ORDER_ITEM_NOT_PENDING' });
+  });
+
+  it('ORD-003 rechaza la orden ENTERA si un examen está deshabilitado', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    await prisma.examDefinition.update({
+      where: { id: scene.glucose.id },
+      data: { active: false },
+    });
+
+    await expect(
+      ordersOf(prisma).place({
+        encounterId: scene.encounter.id,
+        category: 'LABORATORY',
+        priority: 'ROUTINE',
+        lines: [
+          { examDefinitionId: scene.bh.id, conceptId: scene.concept.id },
+          { examDefinitionId: scene.glucose.id, conceptId: scene.concept.id },
+        ],
+        sites: 'all',
+      }),
+    ).rejects.toMatchObject({ code: 'EXAM_NOT_ORDERABLE' });
+
+    // Ni la orden ni la línea buena: todo o nada.
+    expect(await prisma.serviceOrder.count()).toBe(0);
+    expect(await prisma.serviceOrderItem.count()).toBe(0);
+  });
+
+  it('ORD-004 rechaza un concepto que no es del tarifario', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const cie10 = await aTariffConcept(prisma, {
+      systemCode: 'CIE10',
+      code: 'J020',
+    });
+
+    // La clave foránea apunta a `catalog_concept`, que guarda TODOS los
+    // catálogos: sin esta comprobación una parroquia del DPA se pide como
+    // examen y lo es para siempre.
+    await expect(
+      ordersOf(prisma).place({
+        encounterId: scene.encounter.id,
+        category: 'LABORATORY',
+        priority: 'ROUTINE',
+        lines: [{ examDefinitionId: scene.bh.id, conceptId: cie10.id }],
+        sites: 'all',
+      }),
+    ).rejects.toMatchObject({ code: 'CATALOG_CONCEPT_NOT_FOUND' });
+  });
+
+  it('ORD-004 rechaza un concepto del tarifario retirado antes de la atención', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const retired = await aTariffConcept(prisma, {
+      code: 'T-RETIRADO',
+      validTo: new Date('2024-12-31'),
+    });
+
+    // La vigencia se evalúa con `daterange @>` sobre una columna GENERADA, que
+    // Prisma modela como `Unsupported`: no se puede ni expresar por el cliente.
+    await expect(
+      ordersOf(prisma).place({
+        encounterId: scene.encounter.id,
+        category: 'LABORATORY',
+        priority: 'ROUTINE',
+        lines: [{ examDefinitionId: scene.bh.id, conceptId: retired.id }],
+        sites: 'all',
+      }),
+    ).rejects.toMatchObject({ code: 'CATALOG_CONCEPT_NOT_IN_FORCE' });
+  });
+
+  it('ORD-005 rechaza pedir exámenes en una atención ya cerrada', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    await prisma.encounter.update({
+      where: { id: scene.encounter.id },
+      data: {
+        status: 'COMPLETED',
+        // Después de `started_at`, que el fixture pone en el 14-09-2026:
+        // `encounter_time_order` no admite una atención que termina antes de
+        // empezar, y con razón.
+        endedAt: new Date('2026-09-14T15:00:00Z'),
+        dischargeCondition: 'ALIVE',
+      },
+    });
+
+    await expect(
+      ordersOf(prisma).place({
+        encounterId: scene.encounter.id,
+        category: 'LABORATORY',
+        priority: 'ROUTINE',
+        lines: [{ examDefinitionId: scene.bh.id, conceptId: scene.concept.id }],
+        sites: 'all',
+      }),
+    ).rejects.toMatchObject({ code: 'ORDER_ENCOUNTER_NOT_OPEN' });
+  });
+
+  it('ORD-090 responde que la atención no existe cuando es de otra sede', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const otherSite = await createSite(prisma, 'Sede Norte');
+
+    await expect(
+      ordersOf(prisma).place({
+        encounterId: scene.encounter.id,
+        category: 'LABORATORY',
+        priority: 'ROUTINE',
+        lines: [{ examDefinitionId: scene.bh.id, conceptId: scene.concept.id }],
+        sites: [otherSite.id],
+      }),
+    ).rejects.toMatchObject({ code: 'ORDER_ENCOUNTER_NOT_FOUND' });
+  });
+
+  it('ORD-020 y ORD-021 listan lo pendiente de lo más antiguo a lo más nuevo, con sus días', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const repository = ordersOf(prisma);
+
+    const old = await repository.place({
+      encounterId: scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [{ examDefinitionId: scene.bh.id, conceptId: scene.concept.id }],
+      sites: 'all',
+    });
+    const fresh = await repository.place({
+      encounterId: scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [{ examDefinitionId: scene.glucose.id, conceptId: scene.concept.id }], // prettier-ignore
+      sites: 'all',
+    });
+
+    const now = new Date('2026-09-25T18:00:00Z');
+    await prisma.serviceOrder.update({
+      where: { id: old.id },
+      data: { requestedAt: new Date('2026-09-15T18:00:00Z') },
+    });
+    await prisma.serviceOrder.update({
+      where: { id: fresh.id },
+      data: { requestedAt: new Date('2026-09-25T14:00:00Z') },
+    });
+
+    const worklist = await repository.pending({ sites: 'all', now, limit: 50 });
+
+    expect(worklist.map((entry) => entry.orderId)).toEqual([old.id, fresh.id]);
+    expect(worklist[0]?.ageing.waitingDays).toBe(10);
+    expect(worklist[1]?.ageing.waitingDays).toBe(0);
+    // ORD-022. `EX-BH` promete cuatro horas: diez días después está vencida.
+    expect(worklist[0]?.ageing.overdue).toBe(true);
+    // Y el examen que no promete plazo contesta «no hay plazo», no «va bien».
+    expect(worklist[1]?.ageing.overdue).toBeNull();
+    expect(worklist[1]?.ageing.dueAt).toBeNull();
+  });
+
+  it('ORD-020 saca de la cola la línea que ya se resolvió, sin tocar la consulta', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const repository = ordersOf(prisma);
+
+    const order = await repository.place({
+      encounterId: scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [{ examDefinitionId: scene.bh.id, conceptId: scene.concept.id }],
+      sites: 'all',
+    });
+    await repository.cancelItem({
+      orderId: order.id,
+      itemId: order.items[0]?.id ?? '',
+      sites: 'all',
+    });
+
+    // La fila SALE del índice parcial al ponerse `completed_at`: es lo que
+    // mantiene la cola pequeña y en memoria por construcción.
+    const worklist = await repository.pending({
+      sites: 'all',
+      now: new Date(),
+      limit: 50,
+    });
+    expect(worklist).toEqual([]);
+  });
+
+  it('ORD-025 filtra la cola por examen sin perder el resto de la orden', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const repository = ordersOf(prisma);
+
+    await repository.place({
+      encounterId: scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [
+        { examDefinitionId: scene.bh.id, conceptId: scene.concept.id },
+        { examDefinitionId: scene.glucose.id, conceptId: scene.concept.id },
+      ],
+      sites: 'all',
+    });
+
+    const worklist = await repository.pending({
+      sites: 'all',
+      examCode: 'EX-BH',
+      now: new Date(),
+      limit: 50,
+    });
+
+    expect(worklist).toHaveLength(1);
+    expect(worklist[0]?.testCode).toBe('EX-BH');
+  });
+
+  it('ORD-081 encuentra la ficha por su cédula, y ninguna por una que nadie lleva', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    await prisma.patientIdentifier.create({
+      data: { patientId: scene.patient.id, type: 'CEDULA', value: CEDULA },
+    });
+
+    const repository = ordersOf(prisma);
+    expect(await repository.chartByCedula(CEDULA)).toBe(scene.patient.id);
+    // ORD-080. No hay contraparte que cree ficha: la respuesta es «no está».
+    expect(await repository.chartByCedula(OTHER_CEDULA)).toBeUndefined();
+    expect(await prisma.patient.count()).toBe(1);
+  });
+
+  it('ORD-093 sigue el enlace de la fusión: la orden de la ficha absorbida es suya', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const repository = ordersOf(prisma);
+
+    // La orden se emite sobre la ficha que LUEGO absorbe una fusión.
+    await repository.place({
+      encounterId: scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [{ examDefinitionId: scene.bh.id, conceptId: scene.concept.id }],
+      sites: 'all',
+    });
+
+    const survivor = await createPatient(prisma, { sex: 'FEMALE' });
+    await prisma.patient.update({
+      where: { id: scene.patient.id },
+      // `patient_merged_at_matches_link` obliga a que el enlace y su instante
+      // vayan juntos: media fusión no es un estado que la base admita.
+      data: { mergedIntoId: survivor.id, mergedAt: new Date() },
+    });
+
+    // Leer por `patient_id` desnudo devolvería media historia SIN FALLAR, que
+    // es la peor forma de fallar: la orden simplemente dejaría de aparecer.
+    const worklist = await repository.pending({
+      sites: 'all',
+      chartId: survivor.id,
+      now: new Date(),
+      limit: 50,
+    });
+
+    expect(worklist).toHaveLength(1);
+    expect(worklist[0]?.testCode).toBe('EX-BH');
+  });
+
+  it('ORD-010 publica el catálogo con su preparación y sus determinaciones en orden', async () => {
+    const prisma = db();
+    await aScene(prisma);
+
+    const catalogue = await catalogueOf(prisma).active();
+    const bh = catalogue.find((exam) => exam.code === 'EX-BH');
+
+    expect(bh).toMatchObject({
+      form010Section: 'HEMATOLOGÍA',
+      specimenType: 'Sangre total con EDTA',
+      patientPreparation: 'No requiere ayuno.',
+      turnaroundHours: 4,
+      // D-A-012: que el laboratorio sea externo es el caso realista, así que
+      // es el valor por defecto y no la excepción.
+      performedExternally: true,
+    });
+    expect(bh?.analytes[0]?.analyte.code).toBe('HB');
+    expect(bh?.analytes[0]?.analyte.ranges).toHaveLength(2);
+  });
+});

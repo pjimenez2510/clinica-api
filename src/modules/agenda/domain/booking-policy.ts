@@ -31,6 +31,7 @@ import {
   atWallClock,
   clinicalDateOf,
 } from '../../../shared/domain/clinic-time';
+import { DEFAULT_LATE_ARRIVAL_GRACE_MINUTES } from './late-arrival';
 import {
   type PractitionerAvailability,
   type ScheduleRule,
@@ -424,6 +425,22 @@ export interface SiteBookingParameters {
    * application.
    */
   overbookingPermission: string;
+  /**
+   * AG-119, AG-142. Minutes of tolerance before an arrival is reported late.
+   *
+   * IT RIDES WITH THE BOOKING PARAMETERS AND DOES NOT GET A CHAIN OF ITS OWN.
+   * AG-142 asks for it «por la cadena de AG-095», and that chain is this type,
+   * this default and `resolveBookingParameters`. It is one more column of a
+   * row that is already fetched by primary key on the path that needs it, and
+   * a second round trip — plus a second copy of the site-then-default
+   * fallback — would be two ways of answering the same question, which is how
+   * two screens end up disagreeing about the same site.
+   *
+   * ZERO IS A LEGITIMATE VALUE (`site_parameter_grace_is_not_negative` admits
+   * it) and it is how a site switches the policy off without a migration —
+   * which is exactly why the resolution below uses `??` and not `||`.
+   */
+  lateArrivalGraceMinutes: number;
 }
 
 /**
@@ -478,6 +495,8 @@ export const DEFAULT_BOOKING_PARAMETERS: SiteBookingParameters = Object.freeze({
    * authorising, so the permission has to be the doctor's, never the booker's.
    */
   overbookingPermission: 'agenda:overbook',
+  // AG-142. The column default the migration wrote, stated once and shared.
+  lateArrivalGraceMinutes: DEFAULT_LATE_ARRIVAL_GRACE_MINUTES,
 });
 
 /**
@@ -515,6 +534,9 @@ export function resolveBookingParameters(
     overbookingPermission:
       stored?.overbookingPermission ??
       DEFAULT_BOOKING_PARAMETERS.overbookingPermission,
+    lateArrivalGraceMinutes:
+      stored?.lateArrivalGraceMinutes ??
+      DEFAULT_BOOKING_PARAMETERS.lateArrivalGraceMinutes,
   };
 }
 

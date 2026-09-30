@@ -18,6 +18,8 @@ import {
   SEEDABLE_PERMISSIONS,
 } from '../src/shared/authorisation/permission.catalogue.ts';
 import { syncAuthorisation } from './seed-authorisation.mts';
+import { seedBilling } from './seed-billing.mts';
+import { seedClinicalCatalogues } from './seed-clinical-catalogues.mts';
 import { seedCountries } from './seed-countries.mts';
 import { seedRdacaa } from './seed-rdacaa.mts';
 
@@ -161,6 +163,24 @@ export async function seedDevelopment(prisma: PrismaClient): Promise<void> {
    * con su checksum hace que la segunda ejecución no haga nada.
    */
   await seedRdacaa(prisma);
+
+  /**
+   * EL ARRANQUE DE FACTURACIÓN Y EL CATÁLOGO DE EXÁMENES.
+   *
+   * Va aquí, y no sólo en un `db:seed:billing` que alguien tiene que recordar,
+   * porque sin pagador y sin lista de precios el sistema no puede recibir a un
+   * paciente: `patient_account` exige `payer_id` y `price_list_id` NOT NULL, y
+   * quién paga se decide EN LA LLEGADA, no en la caja. Una base recién migrada
+   * sin esto no tiene una pantalla vacía, tiene un flujo que no arranca.
+   *
+   * Es idempotente y no pisa lo que la clínica haya cambiado —sólo actualiza
+   * `tax_rate`, que lo fija la norma y no ella—, así que ejecutarlo en cada
+   * `pnpm db:seed` no duplica nada.
+   */
+  await seedBilling(prisma);
+  // Después de `seedBilling`, y no antes: el tarifario se DERIVA de
+  // `exam_definition`, que aquella siembra crea.
+  await seedClinicalCatalogues(prisma);
 
   const superuser = await prisma.role.upsert({
     where: { code: DEV_SUPERUSER_ROLE.code },

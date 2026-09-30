@@ -45,22 +45,54 @@ async function main() {
   const prisma = new PrismaClient({ adapter });
 
   // --- Sites -----------------------------------------------------------
+  /**
+   * La parroquia de las sedes de desarrollo.
+   *
+   * NO ES DECORACIÓN: la receta imprime la ciudad, y la ciudad se resuelve
+   * subiendo por el DPA desde la parroquia de la sede. Sin ella, emitir
+   * cualquier receta responde `PRESCRIPTION_ESTABLISHMENT_INCOMPLETE` — que es
+   * lo correcto, porque el art. 5.a.ii la exige, pero deja el módulo
+   * inutilizable en desarrollo por un dato que nadie sabía que faltaba.
+   *
+   * Se busca por código y no por nombre: «QUITO» aparece tres veces en el DPA
+   * —también en «PUERTO QUITO» y en una parroquia de Chimborazo—.
+   */
+  const parish = await prisma.catalogConcept.findFirst({
+    where: { code: '1701', validTo: null, system: { code: 'DPA' } },
+    select: { id: true },
+  });
+
   const norte = await prisma.site.upsert({
     where: { mspUnicode: 'DEV-NORTE' },
-    update: {},
+    // También al actualizar: las sedes de una base ya sembrada existen sin
+    // parroquia, y `update: {}` sólo lo arreglaría borrando la base.
+    update: { parishConceptId: parish?.id ?? null },
     create: {
       mspUnicode: 'DEV-NORTE',
       name: 'Sede Norte',
       addressLine: 'Av. de los Granados y 6 de Diciembre, Quito',
+      parishConceptId: parish?.id ?? null,
     },
   });
+  // La sede que la interfaz abre por defecto es la PRIMERA por nombre, y esa
+  // es «Sede Central» (`seed-organization.mts`). Sembrar el día solo en «Sede
+  // Norte» dejaba el tablero vacío justo al abrirlo — la peor primera
+  // impresión posible, y una que hace pensar que el módulo no funciona.
+  //
+  // Puede no existir si `seed-organization` no ha corrido; entonces el día se
+  // siembra en Norte como siempre.
+  const central = await prisma.site.findUnique({
+    where: { mspUnicode: 'DEV-SEDE-01' },
+  });
+
   const sur = await prisma.site.upsert({
     where: { mspUnicode: 'DEV-SUR' },
-    update: {},
+    update: { parishConceptId: parish?.id ?? null },
     create: {
       mspUnicode: 'DEV-SUR',
       name: 'Sede Sur',
       addressLine: 'Av. Morán Valverde y Cóndor Ñan, Quito',
+      parishConceptId: parish?.id ?? null,
     },
   });
 
@@ -94,7 +126,9 @@ async function main() {
     });
     practitioners.push(practitioner);
 
-    for (const site of [norte, sur]) {
+    // `central` incluida: es donde se siembra el día, así que sin el vínculo
+    // el profesional no aparece en el filtro del tablero.
+    for (const site of central ? [central, norte, sur] : [norte, sur]) {
       await prisma.practitionerSite.upsert({
         where: {
           practitionerId_siteId: {
@@ -140,19 +174,30 @@ async function main() {
   }
 
   // --- Today's appointments, in the states E2 transitions from ------------
+  const stage = central ?? norte;
   const dayStart = todayAt('00:00');
   const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60_000);
   const alreadySeeded = await prisma.agendaEntry.count({
-    where: { siteId: norte.id, startsAt: { gte: dayStart, lt: dayEnd } },
+    where: { siteId: stage.id, startsAt: { gte: dayStart, lt: dayEnd } },
   });
 
   if (alreadySeeded > 0) {
     console.log(
-      `Agenda: hoy ya tiene ${alreadySeeded} entradas en ${norte.name}; no se duplican.`,
+      `Agenda: hoy ya tiene ${alreadySeeded} entradas en ${stage.name}; no se duplican.`,
     );
   } else {
+    // PACIENTES QUE NO TENGAN YA UNA CITA HOY, en ninguna sede.
+    //
+    // `agenda_entry_no_patient_overlap` rechaza —con razón— que la misma
+    // persona esté citada en dos sitios a la vez, y la primera versión de esto
+    // reutilizaba los cinco primeros por MRN: al sembrar una segunda sede
+    // chocaba consigo misma. La base lo dijo en voz alta; la lista de pacientes
+    // es larga y elegir libres es la respuesta, no relajar la garantía.
     const patients = await prisma.patient.findMany({
-      where: { mergedIntoId: null },
+      where: {
+        mergedIntoId: null,
+        agendaEntries: { none: { startsAt: { gte: dayStart, lt: dayEnd } } },
+      },
       orderBy: { mrn: 'asc' },
       take: 5,
       select: { id: true },
@@ -184,7 +229,7 @@ async function main() {
       await prisma.agendaEntry.create({
         data: {
           kind: 'APPOINTMENT',
-          siteId: norte.id,
+          siteId: stage.id,
           practitionerId: doctor.id,
           patientId: patients[index]!.id,
           startsAt,
@@ -205,7 +250,7 @@ async function main() {
     await prisma.agendaEntry.create({
       data: {
         kind: 'APPOINTMENT',
-        siteId: norte.id,
+        siteId: stage.id,
         practitionerId: doctor.id,
         patientId: patients[4]!.id,
         startsAt: cancelledStart,
@@ -220,7 +265,7 @@ async function main() {
     });
 
     console.log(
-      `Agenda: ${sample.length + 1} entradas de hoy en ${norte.name} (una por estado de E2).`,
+      `Agenda: ${sample.length + 1} entradas de hoy en ${stage.name} (una por estado de E2).`,
     );
   }
 

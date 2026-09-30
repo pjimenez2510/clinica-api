@@ -33,19 +33,54 @@ export type AgendaTransitionTarget =
   | 'IN_PROGRESS'
   | 'FULFILLED'
   | 'CANCELLED'
-  | 'NO_SHOW';
+  | 'NO_SHOW'
+  /** AG-116. Reachable from `CHECKED_IN` and from nowhere else. */
+  | 'LEFT_WITHOUT_BEING_SEEN'
+  /** AG-117. Unreachable once the patient arrived. */
+  | 'ENTERED_IN_ERROR';
 
-/** SPEC §5, row by row. An empty list is a terminal state. */
+/**
+ * SPEC §5, row by row. An empty list is a terminal state.
+ *
+ * `CHECKED_IN → NO_SHOW` IS GONE, and that removal is the whole of AG-116's
+ * first half. Marking «no vino» on somebody standing in the waiting room is
+ * not a shortcut: it writes a false fact about a person into an append-only
+ * history and drops them into the numerator of AG-080 beside the real
+ * absences. While that destination existed it was the ONLY one available, so
+ * it was the one that got used, and the rate stopped measuring what it claims
+ * to measure. Its replacement is `LEFT_WITHOUT_BEING_SEEN`, which says what
+ * happened and counts separately (AG-140).
+ *
+ * `LEFT_WITHOUT_BEING_SEEN` LEAVES ONLY `CHECKED_IN` (AG-116), and that is
+ * what makes the word mean something: «se fue sin ser atendido» presupposes
+ * arrival, and arrival is exactly what `CHECKED_IN` records (AG-041).
+ * Reachable from `BOOKED` it would be a second synonym for `NO_SHOW`, and
+ * which of the two got used would depend on who was typing.
+ *
+ * `ENTERED_IN_ERROR` STOPS AT `CHECKED_IN` (AG-117): once the patient is
+ * there, the appointment is no longer just a record — a person is in the room
+ * and an external fact occurred. What follows has its own outcomes. It is the
+ * same boundary AG-045 draws with the encounter: what already touched somebody
+ * is not erased.
+ */
 const ADMITTED: Readonly<
   Record<AgendaEntryStatus, readonly AgendaTransitionTarget[]>
 > = {
-  BOOKED: ['CONFIRMED', 'CHECKED_IN', 'CANCELLED', 'NO_SHOW'],
-  CONFIRMED: ['CHECKED_IN', 'CANCELLED', 'NO_SHOW'],
-  CHECKED_IN: ['IN_PROGRESS', 'CANCELLED', 'NO_SHOW'],
+  BOOKED: [
+    'CONFIRMED',
+    'CHECKED_IN',
+    'CANCELLED',
+    'NO_SHOW',
+    'ENTERED_IN_ERROR',
+  ],
+  CONFIRMED: ['CHECKED_IN', 'CANCELLED', 'NO_SHOW', 'ENTERED_IN_ERROR'],
+  CHECKED_IN: ['IN_PROGRESS', 'CANCELLED', 'LEFT_WITHOUT_BEING_SEEN'],
   IN_PROGRESS: ['FULFILLED'],
   FULFILLED: [],
   CANCELLED: [],
   NO_SHOW: [],
+  LEFT_WITHOUT_BEING_SEEN: [],
+  ENTERED_IN_ERROR: [],
   BLOCKED: [],
 };
 
@@ -53,10 +88,13 @@ const ADMITTED: Readonly<
  * AG-040, AG-046. Refuses any pair outside the table.
  *
  * A `BLOCK` refuses EVERY appointment transition, whatever its current
- * status: the six targets all state something about a patient — confirmed,
- * arrived, being seen, seen, did not come — and AG-021 guarantees a block
- * has none. `BLOCKED` itself is terminal, so there is nothing a block can
- * transition to through this machine.
+ * status: every target states something about a patient — confirmed, arrived,
+ * being seen, seen, did not come, left without being seen, never existed — and
+ * AG-021 guarantees a block has none. `BLOCKED` itself is terminal, so there
+ * is nothing a block can transition to through this machine. The two statuses
+ * added on 20-08-2026 are of `kind = APPOINTMENT` and of no other: a block
+ * created by mistake has its own way out since AG-114, which moves it to
+ * `CANCELLED` through a route of its own.
  */
 export function assertTransition(
   kind: AgendaEntryKind,
@@ -132,13 +170,16 @@ export function assertNoShowNotBeforeStart(startsAt: Date, now: Date): void {
 }
 
 /**
- * AG-041, AG-042, AG-044. What each arrival stamps, all at the same instant.
+ * AG-041, AG-042, AG-044, AG-116, AG-117, AG-127. What each arrival stamps,
+ * all at the same instant.
  *
  * `releasedAt` is the load-bearing effect: `blocks_calendar AND released_at
  * IS NULL` is the predicate of the three `EXCLUDE` constraints and of the
- * daily agenda's partial index, so "liberar el cupo" (AG-042, AG-044) MEANS
- * setting `released_at` — nothing is deleted, the row simply stops occupying
- * the calendar and the slot can be booked again.
+ * daily agenda's partial index, so "liberar el cupo" (AG-042, AG-044, AG-116,
+ * AG-117) MEANS setting `released_at` — nothing is deleted, the row simply
+ * stops occupying the calendar and the slot can be booked again. Releasing
+ * also inherits the waiting-list offer of AG-061 for free, which fires on any
+ * released entry.
  */
 export function effectsOf(
   to: AgendaTransitionTarget,
@@ -146,14 +187,60 @@ export function effectsOf(
 ): TransitionEffects {
   switch (to) {
     case 'CHECKED_IN':
-      // AG-041: the real instant of arrival.
-      return { checkedInAt: now };
+      /**
+       * AG-041: the real instant of arrival — and AG-127, the only subject
+       * status anybody types.
+       *
+       * The two travel together because they are ONE fact: the person crossed
+       * the door. Before `CHECKED_IN` an entry has no subject status at all
+       * (AG-127) — giving a `BOOKED` appointment `ARRIVED` by default would
+       * fill the board with people who have not come, which is the class of
+       * lie AG-122 exists to prevent. And `ARRIVED` is the ONE value that is
+       * typed rather than derived (AG-122), because the fact it stands for
+       * leaves no other trace anywhere in the system.
+       */
+      return { checkedInAt: now, subjectStatus: 'ARRIVED', subjectStatusAt: now }; // prettier-ignore
     case 'NO_SHOW':
       // AG-042: recorded and the slot given back.
       return { noShowAt: now, releasedAt: now };
     case 'CANCELLED':
       // AG-044: recorded and the slot given back.
       return { cancelledAt: now, releasedAt: now };
+    case 'LEFT_WITHOUT_BEING_SEEN':
+      /**
+       * AG-116, AG-127. The hour is empty in fact, so the slot goes back —
+       * the same reasoning as AG-042 — and the person is out of the building,
+       * so the board stops showing them.
+       *
+       * THE SECOND HALF CLOSES THE ONE OUTCOME THAT WOULD STRAND SOMEBODY ON
+       * THE BOARD FOREVER: whoever left without being seen never passes the
+       * cashier, so nothing of AG-125 ever fires for them.
+       *
+       * ITS OWN INSTANT since `20260820121023_agenda_outcomes_and_board`, and
+       * the database now REFUSES the status without it
+       * (`agenda_entry_left_without_being_seen_coherence`) — so the pairing is
+       * not a convention that a future branch could forget.
+       */
+      return { releasedAt: now, leftWithoutBeingSeenAt: now, subjectStatus: 'DEPARTED', subjectStatusAt: now }; // prettier-ignore
+    case 'ENTERED_IN_ERROR':
+      /**
+       * AG-117. The entry never should have existed, so it stops occupying
+       * the calendar.
+       *
+       * NO SUBJECT STATUS: this target is unreachable once the patient
+       * arrived (see `ADMITTED`), so there is never one to clear — and the
+       * database would refuse the pairing on a block anyway
+       * (`agenda_entry_subject_status_needs_a_patient`).
+       *
+       * ITS OWN INSTANT AND ITS OWN REASON since
+       * `20260820121023_agenda_outcomes_and_board`. The reason does NOT borrow
+       * `cancellation_note`: one column for both acts would make it unprovable
+       * from the row which of the two happened, which is exactly what this
+       * status came to separate. The database enforces both
+       * (`agenda_entry_entered_in_error_coherence` and
+       * `..._states_a_reason`).
+       */
+      return { releasedAt: now, enteredInErrorAt: now };
     case 'CONFIRMED':
     case 'IN_PROGRESS':
     case 'FULFILLED':

@@ -1,0 +1,598 @@
+import { describe, expect, it } from 'vitest';
+
+import { composeLayout } from './document-layout';
+import { TEAR_OFF_HEIGHT_MM, millimetresToPoints } from './page-layout';
+import type { DocumentTemplate } from './document-template';
+import type {
+  DocumentContext,
+  DocumentSubject,
+  PatientIdentity,
+  PractitionerIdentity,
+} from './document-source';
+import type { Block, DocumentLayout } from './page-layout';
+
+/**
+ * DOC-070 to DOC-078. The four documents, composed with plain objects.
+ *
+ * PURE IN, PURE OUT: no PDF engine, no database, no clock. That is what lets
+ * «¿lleva el documento el registro ACESS del prescriptor?» be asserted in a
+ * millisecond, which is the whole reason the layout is a data structure.
+ */
+
+const template: DocumentTemplate = {
+  id: 'template-1',
+  kind: 'PRESCRIPTION',
+  version: 3,
+  accentColour: '#1f6f8b',
+  footerText: 'Clínica de especialidades · Guayaquil',
+  headerFields: [{ label: 'Permiso ACESS', value: '0000-0000' }],
+  showEstablishmentRuc: false,
+  showEstablishmentAddress: false,
+  showEstablishmentPhone: false,
+  publishedAt: new Date('2026-08-01T12:00:00Z'),
+};
+
+const context: DocumentContext = {
+  siteName: 'Sede Centro',
+  establishment: {
+    name: 'Centro de Especialidades Bahía',
+    ruc: '0993123456001',
+    addressLine: 'Av. 9 de Octubre 123',
+    phone: '04-2345678',
+    logo: null,
+    keepsAccounting: true,
+    specialTaxpayerResolution: '1234',
+    withholdingAgentResolution: '5678',
+    rimpeRegime: 'ENTREPRENEUR',
+  },
+};
+
+const patient: PatientIdentity = {
+  fullName: 'Guamán Andrade María José',
+  identifier: '1710034065',
+  ageYears: 1,
+  ageMonths: 2,
+};
+
+const prescriber: PractitionerIdentity = {
+  fullName: 'Cedeño Rosa',
+  acessRegistration: 'ACESS-99887',
+  mspCode: 'MSP-1',
+  seal: null,
+  signature: null,
+};
+
+/** Every string the layout carries, flattened, so a field can be looked for. */
+function textOf(blocks: readonly Block[]): string {
+  return blocks
+    .map((block) => {
+      switch (block.kind) {
+        case 'heading':
+          return block.text;
+        case 'paragraph':
+          return block.text;
+        case 'fields':
+          return block.entries
+            .map((entry) => `${entry.label}=${entry.value}`)
+            .join('\n');
+        case 'table':
+          return [
+            block.columns.map((column) => column.header).join('|'),
+            ...block.rows.map((row) => row.join('|')),
+          ].join('\n');
+        case 'signature':
+          return block.caption;
+        case 'boxes':
+          return `${textOf(block.left)}\n${textOf(block.right)}`;
+        default:
+          return '';
+      }
+    })
+    .join('\n');
+}
+
+function wholeText(layout: DocumentLayout): string {
+  const tearOff =
+    layout.tearOff === null
+      ? ''
+      : [
+          layout.tearOff.caption,
+          layout.tearOff.identification
+            .map((entry) => `${entry.label}=${entry.value}`)
+            .join('\n'),
+          textOf(layout.tearOff.blocks),
+        ].join('\n');
+
+  return [
+    layout.title,
+    layout.reference ?? '',
+    layout.header.establishmentName,
+    layout.header.establishmentRuc ?? '',
+    layout.header.establishmentAddress ?? '',
+    layout.header.establishmentPhone ?? '',
+    ...layout.header.fields.map((field) => `${field.label}=${field.value}`),
+    textOf(layout.blocks),
+    tearOff,
+    layout.footerText ?? '',
+  ].join('\n');
+}
+
+const prescription = (
+  overrides: Partial<
+    Extract<DocumentSubject, { kind: 'PRESCRIPTION' }>['data']
+  > = {},
+): DocumentSubject => ({
+  kind: 'PRESCRIPTION',
+  data: {
+    subjectId: 'prescription-1',
+    siteId: 'site-1',
+    status: 'ACTIVE',
+    // 20:00 in Ecuador on the 20th. A `::date` in the session's zone would
+    // already be the 21st in UTC, which is the defect this fixture exists for.
+    issuedAt: new Date('2026-08-21T01:00:00Z'),
+    city: 'Guayaquil',
+    verificationCode: 'RX-7Q2K',
+    patient,
+    diagnoses: [{ code: 'J00', display: 'Rinofaringitis aguda' }],
+    allergies: [],
+    prescriber,
+    lines: [
+      {
+        genericName: 'Amoxicilina',
+        presentation: 'Tableta',
+        concentration: '500 mg',
+        routeCode: 'ORAL',
+        quantity: 20,
+        doseText: '1 tableta',
+        frequencyText: 'cada 8 horas',
+        durationDays: 7,
+        instructions: 'Tomar con alimentos',
+        offFormularyJustification: null,
+      },
+    ],
+    ...overrides,
+  },
+});
+
+describe('DOC-072 la receta lleva los cinco bloques del art. 5', () => {
+  it('DOC-072 imprime ciudad, fecha, establecimiento, paciente, diagnóstico, alergias, medicamento y prescriptor', () => {
+    const layout = composeLayout(prescription(), context, template);
+    const text = wholeText(layout);
+
+    // 5.a — datos generales.
+    expect(text).toContain('Guayaquil');
+    expect(text).toContain('Centro de Especialidades Bahía');
+    // 5.a.ii — the date, RESOLVED IN ECUADOR. 01:00 UTC on the 21st is 20:00 on
+    // the 20th in Guayaquil; a naive conversion prints tomorrow.
+    expect(text).toContain('20/08/2026');
+    // 5.b — datos del paciente, apellidos primero, edad en años y meses.
+    expect(text).toContain('Guamán Andrade María José');
+    expect(text).toContain('1 año 2 meses');
+    expect(text).toContain('J00');
+    // 5.c — datos del medicamento, con la cantidad en números y letras.
+    expect(text).toContain('Amoxicilina');
+    expect(text).toContain('20 (veinte)');
+    expect(text).toContain('Vía oral');
+    // 5.d — datos del prescriptor, con su registro ACESS.
+    expect(text).toContain('Cedeño Rosa');
+    expect(text).toContain('ACESS-99887');
+    // 5.e — indicaciones.
+    expect(text).toContain('Tomar con alimentos');
+  });
+
+  it('DOC-072 dice «Ninguna conocida» y no deja la casilla de alergias en blanco', () => {
+    // A blank says nobody asked, and this field exists precisely to record that
+    // somebody did (art. 5.b.iv).
+    const layout = composeLayout(prescription(), context, template);
+    expect(wholeText(layout)).toContain('Ninguna conocida');
+  });
+
+  it('DOC-072 enumera las alergias registradas cuando las hay', () => {
+    const layout = composeLayout(
+      prescription({ allergies: ['Penicilina', 'Látex'] }),
+      context,
+      template,
+    );
+    expect(wholeText(layout)).toContain('Penicilina, Látex');
+  });
+
+  it('DOC-072 deriva la vigencia y no la teclea', () => {
+    // Arts. 17–19. A validity somebody keys in is a validity somebody can
+    // extend; three days from the 20th ends on the 22nd, inclusive.
+    const layout = composeLayout(prescription(), context, template);
+    expect(wholeText(layout)).toContain('3 días — hasta el 22/08/2026');
+  });
+
+  it('DOC-072 imprime la justificación de una línea fuera del CNMB', () => {
+    const layout = composeLayout(
+      prescription({
+        lines: [
+          {
+            genericName: 'Medicamento no incluido',
+            presentation: null,
+            concentration: null,
+            routeCode: null,
+            quantity: 1,
+            doseText: '1 unidad',
+            frequencyText: 'cada día',
+            durationDays: null,
+            instructions: null,
+            offFormularyJustification: 'No hay alternativa en el cuadro',
+          },
+        ],
+      }),
+      context,
+      template,
+    );
+    expect(wholeText(layout)).toContain('No hay alternativa en el cuadro');
+  });
+
+  it('DOC-074 deja la vía en blanco antes que imprimir un código que no sabe nombrar', () => {
+    const layout = composeLayout(
+      prescription({
+        lines: [
+          {
+            genericName: 'Amoxicilina',
+            presentation: null,
+            concentration: null,
+            routeCode: 'SOMETHING_NEW',
+            quantity: 1,
+            doseText: '1',
+            frequencyText: 'cada día',
+            durationDays: null,
+            instructions: null,
+            offFormularyJustification: null,
+          },
+        ],
+      }),
+      context,
+      template,
+    );
+    expect(wholeText(layout)).not.toContain('SOMETHING_NEW');
+  });
+});
+
+describe('DOC-073 la banda desprendible del art. 5.e', () => {
+  it('DOC-073 existe, se llama por su nombre y repite paciente y fecha', () => {
+    // A detached strip with no name on it is a loose piece of paper that does
+    // not say whose it is.
+    const layout = composeLayout(prescription(), context, template);
+
+    expect(layout.tearOff).not.toBeNull();
+    expect(layout.tearOff?.caption).toMatch(/recorte/i);
+    const identification = layout.tearOff?.identification ?? [];
+    expect(identification.map((entry) => entry.value)).toContain(
+      'Guamán Andrade María José',
+    );
+    expect(identification.map((entry) => entry.value)).toContain('20/08/2026');
+  });
+
+  it('DOC-073 lleva el sello del prescriptor, que el art. 5 exige por segunda vez', () => {
+    // Art. 5 demands the seal TWICE: `d.iii` on the prescriber block and
+    // `e.iv` on the tear-off indications.
+    const layout = composeLayout(prescription(), context, template);
+    const seals = [...layout.blocks, ...(layout.tearOff?.blocks ?? [])].filter(
+      (block) => block.kind === 'signature',
+    );
+    expect(seals).toHaveLength(2);
+  });
+
+  it('DOC-060 deja el sello como recuadro vacío cuando el profesional no tiene uno', () => {
+    // The system cannot manufacture a seal, and art. 5.d.iii is textual: «no se
+    // aceptarán rúbricas o trazos por firma».
+    const layout = composeLayout(prescription(), context, template);
+    const signatures = layout.blocks.filter(
+      (block) => block.kind === 'signature',
+    );
+    expect(signatures.every((block) => block.image === null)).toBe(true);
+  });
+
+  it('DOC-060 usa el sello guardado cuando existe', () => {
+    const sealed = prescription({
+      prescriber: {
+        ...prescriber,
+        seal: {
+          id: 'image-1',
+          mimeType: 'image/png',
+          bytes: Buffer.alloc(4),
+          byteSize: 4,
+          sha256: 'a'.repeat(64),
+          width: 10,
+          height: 10,
+        },
+      },
+    });
+    const layout = composeLayout(sealed, context, template);
+    const signatures = layout.blocks.filter(
+      (block) => block.kind === 'signature',
+    );
+    expect(signatures.every((block) => block.image === 'seal')).toBe(true);
+  });
+
+  it('DOC-073 la banda tiene altura fija, que es lo que la hace recortable', () => {
+    // If the cut line landed where the text happened to end, it would not be
+    // detachable: the pharmacist cuts through the posology on one receta and
+    // through nothing on the next.
+    expect(TEAR_OFF_HEIGHT_MM).toBeGreaterThan(0);
+    expect(millimetresToPoints(TEAR_OFF_HEIGHT_MM)).toBeCloseTo(198.42, 1);
+  });
+
+  it('DOC-073 la banda dice que no hay indicaciones antes que quedarse vacía', () => {
+    const layout = composeLayout(
+      prescription({
+        lines: [
+          {
+            genericName: 'Amoxicilina',
+            presentation: null,
+            concentration: null,
+            routeCode: 'ORAL',
+            quantity: 1,
+            doseText: '1',
+            frequencyText: 'cada día',
+            durationDays: null,
+            instructions: null,
+            offFormularyJustification: null,
+          },
+        ],
+      }),
+      context,
+      template,
+    );
+    expect(textOf(layout.tearOff?.blocks ?? [])).toContain(
+      'Sin indicaciones adicionales',
+    );
+  });
+});
+
+describe('DOC-034 las ranuras de la plantilla', () => {
+  it('DOC-034 no imprime RUC, dirección ni teléfono si la clínica no lo pidió', () => {
+    // Art. 5 requires NONE of these three: the only establishment datum the
+    // receta must carry is the NAME. Printing them is a decision.
+    const layout = composeLayout(prescription(), context, template);
+    expect(layout.header.establishmentRuc).toBeNull();
+    expect(layout.header.establishmentAddress).toBeNull();
+    expect(layout.header.establishmentPhone).toBeNull();
+  });
+
+  it('DOC-034 los imprime cuando el interruptor está puesto', () => {
+    const layout = composeLayout(prescription(), context, {
+      ...template,
+      showEstablishmentRuc: true,
+      showEstablishmentAddress: true,
+      showEstablishmentPhone: true,
+    });
+    expect(layout.header.establishmentRuc).toBe('0993123456001');
+    expect(layout.header.establishmentAddress).toBe('Av. 9 de Octubre 123');
+    expect(layout.header.establishmentPhone).toBe('04-2345678');
+  });
+
+  it('DOC-034 lleva los campos clave-valor y el pie de la plantilla', () => {
+    const layout = composeLayout(prescription(), context, template);
+    expect(layout.header.fields).toEqual([
+      { label: 'Permiso ACESS', value: '0000-0000' },
+    ]);
+    expect(layout.footerText).toBe('Clínica de especialidades · Guayaquil');
+    expect(layout.accentColour).toBe('#1f6f8b');
+  });
+});
+
+describe('DOC-072 la orden de examen', () => {
+  it('DOC-072 lleva paciente, exámenes y profesional solicitante', () => {
+    const layout = composeLayout(
+      {
+        kind: 'SERVICE_ORDER',
+        data: {
+          subjectId: 'order-1',
+          siteId: 'site-1',
+          requestedAt: new Date('2026-08-21T01:00:00Z'),
+          category: 'LABORATORY',
+          priority: 'ROUTINE',
+          clinicalNoteText: 'Paciente en ayunas',
+          patient,
+          diagnoses: [{ code: 'E11', display: 'Diabetes mellitus tipo 2' }],
+          orderedBy: prescriber,
+          items: [{ display: 'Hemoglobina glicosilada', status: 'REQUESTED' }],
+        },
+      },
+      context,
+      template,
+    );
+    const text = wholeText(layout);
+
+    expect(layout.title).toBe('ORDEN DE EXÁMENES');
+    expect(layout.tearOff).toBeNull();
+    expect(text).toContain('Hemoglobina glicosilada');
+    expect(text).toContain('Paciente en ayunas');
+    expect(text).toContain('ACESS-99887');
+    expect(text).toContain('20/08/2026');
+  });
+});
+
+describe('DOC-075 el certificado sobre el formulario 117', () => {
+  const certificate = (
+    overrides: Partial<
+      Extract<DocumentSubject, { kind: 'MEDICAL_CERTIFICATE' }>['data']
+    > = {},
+  ): DocumentSubject => ({
+    kind: 'MEDICAL_CERTIFICATE',
+    data: {
+      subjectId: 'certificate-1',
+      siteId: 'site-1',
+      type: 'MEDICAL_REST',
+      issuedAt: new Date('2026-08-21T01:00:00Z'),
+      restFrom: new Date('2026-08-21T00:00:00Z'),
+      restTo: new Date('2026-08-23T00:00:00Z'),
+      includeDiagnosis: false,
+      diagnoses: [{ code: 'J00', display: 'Rinofaringitis aguda' }],
+      body: 'Se certifica que requiere reposo médico',
+      verificationCode: 'CM-4T7',
+      revokedAt: null,
+      patient,
+      issuedBy: prescriber,
+      ...overrides,
+    },
+  });
+
+  it('DOC-075 nombra el formulario y lleva el reposo y el código de verificación', () => {
+    const text = wholeText(composeLayout(certificate(), context, template));
+    expect(text).toContain('117');
+    expect(text).toContain('21/08/2026');
+    expect(text).toContain('23/08/2026');
+    expect(text).toContain('CM-4T7');
+  });
+
+  it('DOC-075 NO imprime el diagnóstico si el paciente no lo autorizó', () => {
+    // This is the document their EMPLOYER reads. Privacy by default is an LOPDP
+    // requirement, not a preference, and the schema defaults the flag to false.
+    const text = wholeText(composeLayout(certificate(), context, template));
+    expect(text).not.toContain('Rinofaringitis');
+  });
+
+  it('DOC-075 lo imprime cuando el paciente lo autorizó', () => {
+    const text = wholeText(
+      composeLayout(certificate({ includeDiagnosis: true }), context, template),
+    );
+    expect(text).toContain('Rinofaringitis aguda');
+  });
+
+  it('DOC-075 dice en la cara del documento que está anulado', () => {
+    // Somebody is holding the paper. A revoked certificate that printed like a
+    // valid one is the failure this line exists for.
+    const text = wholeText(
+      composeLayout(
+        certificate({ revokedAt: new Date('2026-08-25T15:00:00Z') }),
+        context,
+        template,
+      ),
+    );
+    expect(text).toMatch(/ANULADO/);
+  });
+});
+
+describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
+  const ride: DocumentSubject = {
+    kind: 'INVOICE_RIDE',
+    data: {
+      subjectId: 'invoice-1',
+      siteId: 'site-1',
+      documentNumber: '001-001-000000001',
+      accessKey: '4'.repeat(49),
+      status: 'AUTHORISED',
+      issuedAt: new Date('2026-08-21T01:00:00Z'),
+      authorisedAt: new Date('2026-08-21T01:05:00Z'),
+      buyerIdentificationType: '05',
+      buyerIdentification: '1710034065',
+      buyerName: 'Guamán Andrade María José',
+      buyerEmail: null,
+      lines: [
+        {
+          code: 'CONS-MG-PV',
+          description: 'Consulta de medicina general',
+          quantity: '1.00',
+          unitPrice: '30.00',
+          discount: '0.00',
+          total: '30.00',
+        },
+      ],
+      subtotalTaxed: '0.00',
+      subtotalUntaxed: '30.00',
+      discountTotal: '0.00',
+      taxTotal: '0.00',
+      total: '30.00',
+    },
+  };
+
+  it('DOC-076 lleva las dos cajas del Anexo 2, con RUC, número y clave de acceso', () => {
+    const layout = composeLayout(ride, context, template);
+    const boxes = layout.blocks.filter((block) => block.kind === 'boxes');
+    expect(boxes).toHaveLength(1);
+
+    const text = wholeText(layout);
+    expect(text).toContain('0993123456001');
+    expect(text).toContain('001-001-000000001');
+    expect(text).toContain('CLAVE DE ACCESO');
+    expect(text).toContain('4'.repeat(49));
+  });
+
+  it('DOC-077 imprime las banderas fiscales que el establecimiento tiene puestas', () => {
+    const text = wholeText(composeLayout(ride, context, template));
+    expect(text).toContain('OBLIGADO A LLEVAR CONTABILIDAD=SÍ');
+    expect(text).toContain('CONTRIBUYENTE ESPECIAL Nro.=1234');
+    expect(text).toContain('AGENTE DE RETENCIÓN Resolución No.=5678');
+    expect(text).toContain('RÉGIMEN RIMPE=EMPRENDEDOR');
+  });
+
+  it('DOC-077 omite las banderas que no aplican, en vez de imprimir «NO»', () => {
+    const plain = composeLayout(
+      ride,
+      {
+        ...context,
+        establishment: {
+          ...context.establishment,
+          keepsAccounting: false,
+          specialTaxpayerResolution: null,
+          withholdingAgentResolution: null,
+          rimpeRegime: 'NONE',
+        },
+      },
+      template,
+    );
+    const text = wholeText(plain);
+    // «Obligado a llevar contabilidad» is a yes/no legend the SRI always
+    // prints; the other three are only printed when they apply.
+    expect(text).toContain('OBLIGADO A LLEVAR CONTABILIDAD=NO');
+    expect(text).not.toContain('CONTRIBUYENTE ESPECIAL');
+    expect(text).not.toContain('AGENTE DE RETENCIÓN');
+    expect(text).not.toContain('RIMPE');
+  });
+
+  it('DOC-077 dice NEGOCIO POPULAR cuando ése es el régimen', () => {
+    const popular = composeLayout(
+      ride,
+      {
+        ...context,
+        establishment: {
+          ...context.establishment,
+          rimpeRegime: 'POPULAR_BUSINESS',
+        },
+      },
+      template,
+    );
+    expect(wholeText(popular)).toContain('RÉGIMEN RIMPE=NEGOCIO POPULAR');
+  });
+
+  it('DOC-078 NO lleva código QR ni código de barras', () => {
+    // «QR» does not appear once in the 142 pages of the SRI's Ficha Técnica,
+    // and the barcode is explicitly optional. This assertion exists because
+    // both are what somebody adds from memory after seeing other RIDEs.
+    const layout = composeLayout(ride, context, template);
+    const kinds = new Set<string>();
+    const walk = (blocks: readonly Block[]): void => {
+      for (const block of blocks) {
+        kinds.add(block.kind);
+        if (block.kind === 'boxes') {
+          walk(block.left);
+          walk(block.right);
+        }
+      }
+    };
+    walk(layout.blocks);
+
+    expect([...kinds]).not.toContain('barcode');
+    expect(wholeText(layout).toLowerCase()).not.toContain('qr');
+  });
+
+  it('DOC-076 imprime «—» mientras el SRI no ha autorizado, sin inventar una clave', () => {
+    const unauthorised = composeLayout(
+      {
+        kind: 'INVOICE_RIDE',
+        data: { ...ride.data, accessKey: null, authorisedAt: null },
+      },
+      context,
+      template,
+    );
+    const text = wholeText(unauthorised);
+    expect(text).toContain('NÚMERO DE AUTORIZACIÓN=—');
+    expect(text).not.toContain('4444');
+  });
+});

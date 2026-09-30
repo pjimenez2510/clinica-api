@@ -1,6 +1,6 @@
 # SPEC — Módulo `agenda`
 
-**Estado:** borrador para revisión · **Fecha:** 12 de agosto de 2026
+**Estado:** borrador para revisión · **Fecha:** 20 de agosto de 2026
 **Fase:** 1 — Núcleo operativo · **Formato:** EARS, según ADR-010
 
 Criterios de aceptación del módulo de agenda. Cada requisito lleva un ID estable
@@ -15,12 +15,19 @@ que **nunca se reutiliza** y que al menos una prueba debe nombrar.
 ## Alcance
 
 Reserva, modificación y seguimiento de citas y bloqueos de agenda por
-profesional, consultorio y sede, incluida la lista de espera y el registro de
-llegada.
+profesional, consultorio y sede, incluida la lista de espera, el registro de
+llegada con su calificación de emergencia, el estado del paciente dentro de la
+visita y el tablero del día.
 
 **Fuera de alcance de este módulo:** el contenido clínico de la atención
 (módulo `encounter`), la facturación, los recordatorios por WhatsApp
 (no confirmado, ROADMAP Fase 4) y la sincronización con calendarios externos.
+
+**El estado del paciente vive aquí aunque lo disparen hechos de `encounter`**
+(§5 bis). Es el eje del tablero, y el tablero es una lectura de la agenda del
+día: ponerlo en `encounter` obligaría a la agenda a importar de otro módulo, que
+`pnpm arch:check` prohíbe. Lo que la agenda guarda es **dónde está el paciente**;
+lo que se documentó de él sigue siendo de `encounter`, y la agenda nunca lo ve.
 
 **Depende de:** `patients`, `catalogs` (tipo de servicio), y del modelo
 `AgendaEntry` / `PractitionerScheduleRule` / `WaitlistEntry` ya migrado.
@@ -37,6 +44,11 @@ no está bloqueado por los catálogos.
 | **Liberado**         | `released_at IS NOT NULL`. El cupo vuelve a estar disponible aunque la fila siga existiendo |
 | **Bloqueo**          | `kind = BLOCK`: ausencia, quirófano, reunión. Sin paciente                                  |
 | **Fecha clínica**    | La fecha resuelta en `America/Guayaquil`, nunca en el huso de la sesión                     |
+| **Estado de la cita** | El estado administrativo del compromiso: `BOOKED` … `FULFILLED`. Es de la CITA, no del paciente |
+| **Estado del paciente** | Dónde está la persona dentro de la visita: `ARRIVED` … `DEPARTED`. Separado del anterior, §5 bis |
+| **Retraso de llegada** | `checked_in_at − starts_at` en minutos. Es un número calculado, nunca un estado (AG-118) |
+| **Calificación de emergencia** | La constancia de que la llegada se calificó, Ley 77 art. 10. **No es una escala de gravedad** |
+| **Proyección**       | Qué campos del tablero se sirven: `STAFF` o `PUBLIC`. Son dos rutas, no un interruptor      |
 
 ---
 
@@ -56,7 +68,8 @@ regla del módulo cuyo fallo produce dos pacientes en la misma silla.
 **Prueba independiente:** reservar contra un PostgreSQL real con dos clientes
 concurrentes y comprobar que gana exactamente uno.
 **Cubre:** AG-001 a AG-003, AG-010 a AG-014, AG-017, AG-018, AG-020 a AG-030,
-AG-034, AG-104, AG-105, AG-106, AG-109, AG-111, AG-112, AG-113.
+AG-034, AG-070 a AG-074, AG-104, AG-105, AG-106, AG-107, AG-108, AG-109,
+AG-111, AG-112, AG-113.
 
 > AG-111 y AG-112 se añadieron el 14-08-2026, y pertenecen aquí por lo mismo
 > que AG-107 y AG-108: son **las listas de referencia que la pantalla de
@@ -199,7 +212,7 @@ campos de grupo prioritario que la ficha no tenía (D-003), y los tiene desde el
 > «Proponer» necesita a quién proponerle, y este sistema no tiene canal al que
 > empujar —el portal es Fase 3 y los recordatorios Fase 4—: un efecto dentro de
 > la anulación calcularía una lista y la tiraría al suelo. Y un cupo se libera
-> de cuatro formas —anular (AG-041), inasistencia (AG-042), la mitad original
+> de cuatro formas —anular (AG-044), inasistencia (AG-042), la mitad original
 > de una reprogramación (AG-050), retirar un bloqueo (AG-114)—, y las cuatro
 > sellan `released_at` sobre una fila que ocupaba calendario. Nombrando ESA
 > FILA, una sola ruta sirve a las cuatro, presentes y futuras, en vez de cuatro
@@ -310,8 +323,122 @@ pantalla no puede enseñar.
 > lectura. Pertenecen aquí: sin el catálogo de feriados de E7 no se pueden
 > implementar.
 
-> Las AG-070 a AG-074 (autorización y bitácora) **no son una entrega**: aplican a
-> todas. Una ruta de E1 sin permiso declarado no pasa la prueba de rutas.
+### E8 — Desenlaces reales de la llegada _(P1)_
+
+El paciente llega, se le califica el estado de emergencia como manda la ley, y
+la cita termina en el desenlace que de verdad ocurrió: se le atendió, no vino,
+se fue sin ser atendido, o la cita nunca debió existir.
+
+**Por qué es P1 pese a ir después de E2:** una parte de esto es **obligación
+legal con pena de prisión** —Ley 77, art. 10 y art. 13, D-A-002—, y el resto es
+lo que impide que la única métrica del módulo mienta. Hoy a quien llegó y se
+marchó sólo se le puede poner `NO_SHOW`, que es registrar una falsedad sobre una
+persona que sí vino, y contarla en el mismo número que AG-032 se esforzó en no
+falsear con el canal `WALK_IN`. Un indicador envenenado es peor que ninguno,
+porque se actúa sobre él.
+
+**Prueba independiente:** llevar una cita de `CHECKED_IN` a
+`LEFT_WITHOUT_BEING_SEEN`, comprobar que el cupo quedó liberado, que
+`agenda_status_history` tiene su fila, que la tasa de inasistencia del día **no
+subió** y que el recuento propio sí; y registrar una llegada sin calificación de
+emergencia y comprobar que se rechaza.
+**Cubre:** AG-116 a AG-120, AG-128 a AG-132, AG-140, AG-141, AG-142.
+
+**Solo servidor:** AG-132, AG-140. La inmutabilidad del registro de la
+calificación son dos disparadores de PostgreSQL, por la misma razón que AG-005;
+y AG-140 es qué NO entra en una división, que es exactamente lo que ninguna
+pantalla puede enseñar —lo único visible es la cifra, y la cifra sale igual de
+bien calculada mal—.
+
+> **Lo demás SE VE, y es la mitad que decide si la ley se cumple.** AG-128 a
+> AG-131 viven en la pantalla de llegada: la casilla de emergencia que no se
+> puede omitir, el aviso al profesional de turno, y —lo más importante— que la
+> verificación de cobertura se pueda **saltar dejando el motivo**. El art. 9
+> prohíbe exigir documento de pago antes de recibir y estabilizar: una pantalla
+> que bloquee el paso hasta registrar la forma de pago es ilegal justo en el
+> caso en que más importa, y eso no lo puede garantizar el servidor solo — un
+> backend que acepta el campo vacío y una interfaz que no deja avanzar sin
+> llenarlo incumplen igual.
+
+### E9 — El tablero del día y el estado del paciente _(P2)_
+
+Dónde está cada paciente ahora mismo, en una lista ordenada por hora, y cuánto
+lleva ahí.
+
+**Por qué es P2:** es lo que convierte la agenda en la pantalla que el personal
+mira todo el día, y el estado del paciente es el eje que hoy no existe. No es P1
+porque la clínica opera sin él —con E1 y E2 ya sabe quién está en sala— y porque
+la mayor parte de sus estados los DERIVAN hechos del módulo `encounter`, que
+todavía no existe.
+
+**Prueba independiente:** abrir la toma de signos de una cita y comprobar que su
+estado de paciente pasó a `IN_PREPARATION` **sin que nadie lo teclee**, que el
+tablero lo ordena por hora de la cita, que el tiempo en el estado actual lo
+calcula el servidor, y que la proyección `PUBLIC` de esa misma fila no lleva
+nombre completo ni nota corta.
+**Cubre:** AG-121 a AG-127, AG-133 a AG-139.
+
+**Solo servidor:** AG-122, AG-126, AG-139. Que un estado NO se pueda teclear se
+demuestra por la ausencia de ruta —una pantalla no puede enseñar un botón que no
+existe—; el rastro append-only del estado del paciente es garantía de la base
+como el de AG-005; y quién consultó el tablero se escribe en `access_audit` sin
+que nadie lo vea.
+
+> **El esquema del eje entró el 20-08-2026 y no bloquea nada**
+> (`20260820052524_clinical_flow_states`): el enum `patient_subject_status`, las
+> dos columnas de `agenda_entry` y sus dos `CHECK` ya existen, igual que los dos
+> valores nuevos de `agenda_status` de E8, las columnas de la calificación de
+> emergencia y el umbral de llegada tardía. Lo que queda de esquema está anotado
+> requisito a requisito y es poco: el historial del estado del paciente
+> (AG-126), la nota del tablero (AG-134), las vistas por rol (AG-138) y las dos
+> mitades que la ley exige y la migración no cubre (AG-128, AG-132).
+>
+> **AG-121 a AG-127 dependen de `encounter` y no al revés.** Cinco de los seis
+> estados los dispara un hecho que documenta ese módulo —se abre la toma de
+> signos, se guardan, se abre la nota, se firma, se cierra la cuenta—, así que
+> E9 no se puede cerrar antes que H1 y H4. Lo que **sí** se puede construir
+> antes es la mitad que no depende de nadie: `ARRIVED` lo escribe el registro de
+> llegada de E8, y el tablero puede servir las filas con el estado de la CITA
+> mientras el del paciente esté vacío. Esa es la razón de que el tablero y el
+> estado vayan juntos en una entrega y no en dos: separarlos daría una entrega
+> con dos columnas y ninguna pantalla, y otra con una pantalla que enseña una
+> columna siempre vacía.
+>
+> **Y no es un kanban, por evidencia y no por gusto.** El kanban con evidencia
+> en salud es el de inventario y farmacia; para flujo de pacientes en consulta
+> externa no se encontró un solo estudio controlado, y todo lo que describe
+> columnas «Programado → En sala → Cerrado» para una clínica sale de blogs de
+> fabricantes de herramientas kanban. Epic, Cerner, NextGen y eClinicalWorks
+> convergen los cuatro en **lista ordenada por hora con columna de estado**. La
+> razón es estructural: en urgencias no hay plan y el tablero ES el orden; en
+> consulta externa el plan es la agenda, y lo valioso no es qué pacientes hay
+> —eso ya lo dice el calendario— sino **en qué se desvía la realidad del plan**.
+> Un kanban no representa el tiempo transcurrido, que es justo el dato que
+> importa, y el orden por hora —que es un compromiso con el paciente— se pierde
+> en cuanto alguien arrastra una tarjeta.
+
+> **AG-070 a AG-074, AG-107 y AG-108 pasan a E1 el 20-08-2026, y con el
+> argumento escrito.** Los siete estaban declarados y no pertenecían a ninguna
+> entrega; `pnpm estado` los cantaba como huérfanos, y un requisito que no es de
+> nadie no lo trabaja nadie. AG-107 y AG-108 son las listas de referencia que la
+> pantalla de reserva elige, exactamente por lo que ya decía la nota de AG-111 y
+> AG-112 —que las nombraba como precedente sin que ellas mismas tuvieran
+> entrega—.
+>
+> **AG-070 a AG-074 aplican a todas las entregas y aun así pertenecen a E1**, que
+> es donde nacen las primeras rutas: la prueba que las sostiene recorre las rutas
+> que NestJS registró de verdad, así que una ruta de E8 sin permiso declarado
+> hace fallar la misma prueba de E1. Declararlas «de todas» era declararlas de
+> ninguna. Cada entrega posterior las vuelve a atravesar; ninguna las vuelve a
+> cubrir.
+>
+> **AG-073 entra sin prueba, y eso es el hallazgo.** Los otros seis ya tienen
+> pruebas que los nombran; AG-073 —registrar en la bitácora la apertura de la
+> ficha desde la agenda— tiene cero, porque no existe todavía la ruta que abre
+> la ficha DESDE la agenda: hoy se navega a `patients`, y la bitácora que
+> escribe ese módulo no afirma «se llegó desde la agenda». E1 pasa por tanto de
+> 29/29 a 35/36, y esa fila roja es trabajo real que llevaba escondido detrás de
+> una nota.
 
 ## Criterios de éxito
 
@@ -851,14 +978,29 @@ es falsa, hay requisitos que cambian.
 
 Transiciones admitidas. Cualquier par no listado se rechaza.
 
-| Desde                               | Hacia                                             |
-| ----------------------------------- | ------------------------------------------------- |
-| `BOOKED`                            | `CONFIRMED`, `CHECKED_IN`, `CANCELLED`, `NO_SHOW` |
-| `CONFIRMED`                         | `CHECKED_IN`, `CANCELLED`, `NO_SHOW`              |
-| `CHECKED_IN`                        | `IN_PROGRESS`, `CANCELLED`, `NO_SHOW`             |
-| `IN_PROGRESS`                       | `FULFILLED`                                       |
-| `FULFILLED`, `CANCELLED`, `NO_SHOW` | _(terminal)_                                      |
-| `BLOCKED`                           | `CANCELLED` _(solo por AG-114, y solo `kind = BLOCK`)_ |
+| Desde         | Hacia                                                                     |
+| ------------- | ------------------------------------------------------------------------- |
+| `BOOKED`      | `CONFIRMED`, `CHECKED_IN`, `CANCELLED`, `NO_SHOW`, `ENTERED_IN_ERROR`     |
+| `CONFIRMED`   | `CHECKED_IN`, `CANCELLED`, `NO_SHOW`, `ENTERED_IN_ERROR`                  |
+| `CHECKED_IN`  | `IN_PROGRESS`, `CANCELLED`, `LEFT_WITHOUT_BEING_SEEN`                     |
+| `IN_PROGRESS` | `FULFILLED`                                                               |
+| `FULFILLED`, `CANCELLED`, `NO_SHOW`, `LEFT_WITHOUT_BEING_SEEN`, `ENTERED_IN_ERROR` | _(terminal)_ |
+| `BLOCKED`     | `CANCELLED` _(solo por AG-114, y solo `kind = BLOCK`)_                    |
+
+> **`CHECKED_IN → NO_SHOW` sale de la tabla con E8, y es el cambio entero.**
+> Marcar «no vino» a quien está de pie en la sala de espera no es un atajo: es
+> escribir en el historial un hecho falso sobre una persona, y meterlo en el
+> numerador de AG-080 junto a las inasistencias de verdad. Mientras ese destino
+> exista, es el que alguien va a usar —es el único que hay— y la tasa de
+> inasistencia deja de medir lo que dice medir, que es exactamente el daño que
+> AG-032 evitó al eximir al canal `WALK_IN`. Su reemplazo es
+> `LEFT_WITHOUT_BEING_SEEN` (AG-116), que dice lo que pasó y cuenta aparte.
+>
+> **Los dos estados nuevos son de `kind = APPOINTMENT` y de ningún otro.** Los
+> dos afirman algo de un paciente —se marchó, o la cita nunca debió existir— y
+> AG-021 garantiza que un bloqueo no lo tiene. Un bloqueo creado por error tiene
+> su propia salida desde el 14-08-2026 y no necesita palabra nueva: AG-114, que
+> lo pasa a `CANCELLED` por una ruta propia.
 
 **La ruta de transiciones sigue rechazando todo bloqueo** (AG-040 sobre
 `assertTransition`): los seis destinos que un cliente puede pedir afirman algo
@@ -906,6 +1048,519 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   > atendiendo, se le atendió, no vino— y AG-021 garantiza que un bloqueo no lo
   > tiene. Se enumeran los admitidos en vez de excluir los prohibidos para que
   > añadir un valor a `AgendaStatus` obligue a decidir aquí.
+
+- **AG-116** — CUANDO una cita pase a `LEFT_WITHOUT_BEING_SEEN`, el sistema
+  DEBERÁ registrar `left_without_being_seen_at`, DEBERÁ admitir un motivo
+  opcional y DEBERÁ liberar el cupo fijando `released_at`; y NO DEBERÁ admitir
+  esa transición desde ningún estado distinto de `CHECKED_IN`.
+  > **D-A-009, pedido por el usuario COMO MÉTRICA.** El paciente llega, espera,
+  > se cansa y se marcha. No es una inasistencia —vino— y no es una atención
+  > —nadie lo atendió—. Sin este desenlace alguien lo marca «no vino», y la
+  > métrica miente sobre la única persona que sí cumplió su parte.
+  >
+  > **Sólo desde `CHECKED_IN`, y es la mitad del requisito.** Es lo que hace que
+  > el estado signifique algo: «se fue sin ser atendido» presupone que llegó, y
+  > llegar es exactamente lo que `CHECKED_IN` registra (AG-041). Alcanzable
+  > desde `BOOKED` sería un segundo sinónimo de `NO_SHOW`, y entonces cuál se
+  > usa dependería de quién teclee.
+  >
+  > **El motivo es opcional a propósito**, al revés que en AG-044. Quien se
+  > marchó no siempre dice por qué —ése es justo el caso—, y una casilla
+  > obligatoria que nadie puede rellenar con la verdad se rellena con cualquier
+  > cosa. La constancia que importa la da la fila de `agenda_status_history`
+  > (AG-004): quién lo marcó y cuándo.
+  >
+  > **Libera el cupo como AG-042**, por el mismo motivo: la hora quedó vacía de
+  > hecho, y una fila que sigue ocupando calendario impide reservar sobre un
+  > tiempo que ya nadie usa. Con eso hereda gratis la propuesta de lista de
+  > espera de AG-061, que se dispara sobre cualquier entrada liberada.
+  >
+  > **El valor del enum existe desde el 20-08-2026** (migración
+  > `20260820052524_clinical_flow_states`): `agenda_status` ya lo admite.
+  > Y **AG-046 se cumple sin tocar nada**, que no era evidente: su `CHECK`
+  > `agenda_entry_kind_status_coherence` **enumera** los estados válidos para
+  > `kind = BLOCK` y sólo **excluye** `BLOCKED` para `APPOINTMENT`, así que un
+  > valor nuevo nace admitido para las citas y prohibido para los bloqueos, que
+  > es exactamente lo que este requisito quiere. La nota de AG-046 dice que se
+  > enumeran los admitidos «para que añadir un valor obligue a decidir aquí»:
+  > eso es cierto de la mitad `BLOCK` del `CHECK`, no de la otra.
+  >
+  > **Falta esquema.** Queda `agenda_entry.left_without_being_seen_reason`, y el
+  > instante: `agenda_entry` tiene `checked_in_at`, `no_show_at` y
+  > `cancelled_at`, y el desenlace nuevo no tiene el suyo. No basta con la fila
+  > de `agenda_status_history` —ahí está, pero AG-140 filtra por desenlace y
+  > fecha sobre `agenda_entry`, y obligarla a unir contra el historial haría de
+  > la métrica una consulta distinta a la de sus tres vecinas por una asimetría
+  > que no responde a nada—.
+- **AG-117** — CUANDO una cita pase a `ENTERED_IN_ERROR`, el sistema DEBERÁ
+  exigir motivo, DEBERÁ registrar `entered_in_error_at` y DEBERÁ liberar el
+  cupo; y NO DEBERÁ admitir esa transición sobre una cita que ya alcanzó
+  `CHECKED_IN`.
+  > **Anular una cita real y retirar una que nunca debió existir no son el mismo
+  > acto** (D-A-009). Hoy las dos salen `CANCELLED` y cuentan igual en la
+  > métrica de anulaciones, así que una tarde de errores de tecleo se lee como
+  > una tarde en que la clínica canceló a sus pacientes. `CANCELLED` es una
+  > decisión sobre una cita que existía —y por eso AG-044 exige motivo y el
+  > paciente merece la explicación—; `ENTERED_IN_ERROR` dice que el hecho
+  > registrado no ocurrió.
+  >
+  > **Exige motivo igual que AG-044, y por la razón contraria a AG-116**: aquí
+  > el motivo siempre se puede escribir —quien se equivocó sabe en qué—, y sin
+  > él «entrada por error» es una puerta para hacer desaparecer citas
+  > incómodas sin dejar constancia de por qué. La fila de historial es
+  > append-only (AG-005), así que el rastro sobrevive.
+  >
+  > **No después de `CHECKED_IN`**, porque en cuanto el paciente llegó la cita
+  > dejó de ser sólo un registro: hay una persona en la sala y un hecho externo
+  > que ocurrió. Lo que pase a partir de ahí tiene sus propios desenlaces
+  > —AG-116, `CANCELLED`, la atención—. Es el mismo límite que AG-045 pone con
+  > el `Encounter`: no se borra lo que ya tocó a alguien.
+  >
+  > **El valor del enum existe desde el 20-08-2026** (migración
+  > `20260820052524_clinical_flow_states`), y AG-046 lo admite para las
+  > citas y lo prohíbe para los bloqueos sin tocar el `CHECK`, por lo que se
+  > explica en AG-116.
+  >
+  > **Falta esquema.** `agenda_entry.entered_in_error_at` y su motivo. **No** se
+  > reutiliza la columna de motivo de anulación: el motivo de una retractación
+  > no es el de una anulación, y una sola columna haría incomprobable desde la
+  > fila cuál de los dos actos ocurrió — que es justo lo que este requisito
+  > viene a separar.
+- **AG-118** — CUANDO una cita pase a `CHECKED_IN`, el sistema DEBERÁ calcular
+  el retraso de llegada como la diferencia en minutos entre `starts_at` y
+  `checked_in_at`, DEBERÁ exponerlo en la respuesta y en el tablero, y NO DEBERÁ
+  representar la llegada tardía como estado de la cita ni del paciente.
+  > **La llegada tardía NO es un estado, y esto es lo que impide que se
+  > convierta en uno** (D-A-009). El dato ya existe: AG-041 guarda el instante
+  > real de llegada y la fila guarda la hora comprometida. Un estado
+  > `LATE_ARRIVAL` sería una tercera copia de una resta —tecleada, envejecida y
+  > discrepante— y además ocuparía el sitio del estado que sí hace falta:
+  > `CHECKED_IN` seguiría siendo verdad al mismo tiempo, y la máquina de estados
+  > tendría que estar en dos a la vez.
+  >
+  > **El signo importa y se conserva.** Un retraso negativo es el paciente que
+  > llegó antes de su hora, que es información útil en el mostrador y en la
+  > métrica de AG-141. Truncarlo a cero convertiría «llegó veinte minutos antes»
+  > en «llegó a la hora».
+  >
+  > Se resuelve en `America/Guayaquil` (AG-001) como todo instante clínico, y
+  > sale de los dos `timestamptz` de la fila: no hay nada que teclear ni nada
+  > que guardar, que es la propiedad que lo mantiene cierto.
+- **AG-119** — CUANDO el retraso de llegada supere el umbral de la sede
+  (AG-142), el sistema DEBERÁ advertirlo en la respuesta del registro de
+  llegada indicando el umbral y el retraso, y NO DEBERÁ rechazar el registro de
+  llegada.
+  > **Advierte sin impedir, que es la forma que este sistema ya usa** cuando una
+  > acción es legítima pero merece constancia (AG-110, AU-034). Y aquí hay una
+  > razón más dura que la costumbre: **la llegada es el momento en que la ley
+  > obliga a calificar el estado de emergencia** (AG-128, Ley 77 art. 10). Un
+  > registro de llegada que se pueda rechazar es un registro de llegada que
+  > algún día no se hace, y con él se pierde la calificación que el art. 13
+  > respalda con prisión. Lo que la política de la clínica decide es qué pasa
+  > DESPUÉS —AG-120—, no si la persona que está delante del mostrador consta
+  > como llegada.
+  >
+  > **No lleva código de error** porque no es un error: viaja en el cuerpo de la
+  > respuesta correcta, como la advertencia de feriado de AG-110.
+- **AG-120** — MIENTRAS el retraso de llegada de una cita supere el umbral de la
+  sede y quien solicita la transición no tenga el permiso que la sede configura
+  para admitirla (AG-142), el sistema DEBERÁ rechazar el paso a `IN_PROGRESS`
+  con `LATE_ARRIVAL_NOT_AUTHORISED`, y DEBERÁ registrar quién admitió la cita
+  fuera del umbral cuando sí lo tenga. DONDE la llegada esté calificada como
+  situación de emergencia (AG-128), el umbral NO DEBERÁ aplicarse.
+  > **La política es de la clínica; lo que el sistema aporta es poder aplicarla
+  > y dejar constancia.** Sin este requisito, «a partir de veinte minutos se
+  > reubica» es un cartel en la pared: se cumple con quien discute poco y se
+  > salta con quien discute mucho, y no queda rastro de ninguna de las dos
+  > cosas. Con él, saltárselo es un acto con nombre y hora.
+  >
+  > **El límite está en pasar a atención, no en llegar.** Reubicar a quien llegó
+  > tarde es reprogramar su cita (AG-050), que ya existe y ya deja rastro; lo
+  > que este requisito impide es que la reubicación se esquive en silencio.
+  >
+  > **La exención por emergencia no es un adorno: es el art. 12 de la Ley 77**
+  > —«bajo ningún motivo un centro de salud podrá negar la atención de un
+  > paciente en estado de emergencia»—, y su art. 13 lleva prisión. Un umbral
+  > administrativo que pudiera detener a un paciente calificado como emergencia
+  > convertiría un parámetro de sede mal puesto en un delito.
+  >
+  > Es el mismo patrón de AG-101 y AG-103: un permiso que la sede configura,
+  > 403, y el rastro de quién lo ejerció en ambos caminos.
+
+## 5 bis. El estado del paciente
+
+**Es un eje distinto del estado de la cita, y no un refinamiento suyo** (D-A-008).
+`CHECKED_IN` dice que el compromiso se cumplió; no dice si la persona está en
+preconsulta, esperando al médico, dentro del consultorio o en el laboratorio de
+al lado. El tablero del día necesita lo segundo, y ningún valor de `AgendaStatus`
+lo puede contestar sin multiplicarse por seis.
+
+**Sigue el estándar HL7 FHIR R5**, que separa `Encounter.status` —administrativo:
+planificado, en curso, completado— de `Encounter.subjectStatus` —dónde está el
+paciente—. No se adopta por simetría: es la separación que el estándar hizo
+después de ver que un solo campo no puede contestar las dos preguntas, y sus
+valores (`arrived`, `receiving-care`, `on-leave`, `departed`) son los mismos que
+el flujo ecuatoriano necesita, más los dos que la preparación del A.M. 00115-2021
+añade.
+
+| Estado           | Qué afirma                                              | Lo deriva                        |
+| ---------------- | ------------------------------------------------------- | -------------------------------- |
+| `ARRIVED`        | Está aquí, todavía no lo ha tomado nadie                | Recepción, a mano                |
+| `IN_PREPARATION` | Enfermería lo tiene en preconsulta                      | Se abre la toma de signos        |
+| `READY`          | Terminó la preparación, espera al médico                | Se guardan los signos            |
+| `RECEIVING_CARE` | La atención está en curso, esperas incluidas            | Se abre la nota clínica          |
+| `ON_LEAVE`       | Salió del establecimiento con la atención abierta       | Se registra la salida temporal   |
+| `DEPARTED`       | Terminó su paso por la clínica                          | Se cierra la cuenta              |
+
+- **AG-121** — El sistema DEBERÁ mantener el estado del paciente separado del
+  estado de la cita, con los valores `ARRIVED`, `IN_PREPARATION`, `READY`,
+  `RECEIVING_CARE`, `ON_LEAVE` y `DEPARTED`, y NO DEBERÁ derivar el estado de la
+  cita del estado del paciente ni al revés.
+  > **El esquema existe desde el 20-08-2026** (migración
+  > `20260820052524_clinical_flow_states`) y sus identificadores se citan
+  > literales: el enum es `patient_subject_status` con los seis valores de
+  > arriba, y las columnas son `agenda_entry.subject_status` y
+  > `agenda_entry.subject_status_at`, las dos anulables —una cita que aún no
+  > llegó no tiene estado de paciente, AG-127—.
+  >
+  > **Y la separación la garantiza la base, no la costumbre.**
+  > `agenda_entry_subject_status_needs_a_patient` impide que un bloqueo tenga
+  > estado de paciente —AG-021 otra vez: un quirófano no está en preconsulta— y
+  > `agenda_entry_subject_status_carries_its_instant` exige que el estado y su
+  > instante estén los dos o ninguno, que es lo que hace calculable AG-135.
+  >
+  > **Cuelga de `agenda_entry` y no de `encounter`, y es deliberado**: el
+  > paciente está en la sala de espera ANTES de que exista ninguna atención, y
+  > el que llega sin cita también tiene entrada de agenda (canal `WALK_IN`,
+  > AG-029). Colgándolo de la atención, el tablero no podría enseñar a quien
+  > acaba de llegar — que es la primera fila que alguien mira.
+- **AG-122** — El sistema DEBERÁ derivar todo estado del paciente distinto de
+  `ARRIVED` del hecho documentado que lo produce, y NO DEBERÁ exponer ninguna
+  ruta que fije directamente `IN_PREPARATION`, `READY`, `RECEIVING_CARE`,
+  `ON_LEAVE` ni `DEPARTED`.
+  > **El hallazgo más replicado de veinticinco años de investigación sobre
+  > tableros clínicos es que un tablero que se actualiza a mano miente.** En el
+  > estudio longitudinal de referencia, a los 8-9 meses de implantar la pizarra
+  > electrónica la única expectativa que NO se cumplió fue precisamente
+  > «mantener la información actualizada». Y el dato que lo remata: en un
+  > servicio que añadió un marcador al tablero, de 56 852 pacientes sólo el
+  > **6,9 %** fue marcado.
+  >
+  > **Por eso la regla es una prohibición de ruta y no una recomendación.** Si
+  > existe la casilla, un día se usa en vez del hecho y el tablero empieza a
+  > divergir de la historia clínica; a partir de ahí ninguna de las dos se puede
+  > creer. `ARRIVED` es la excepción porque el hecho que representa —la persona
+  > cruzó la puerta— **no deja ningún otro rastro en el sistema**: no hay
+  > alternativa, y por eso es el único que se teclea.
+  >
+  > **Que no haya ruta es lo que se prueba**, no que nadie la use: la prueba de
+  > rutas de AG-070 recorre lo que NestJS registró de verdad, así que este
+  > requisito se comprueba con la misma máquina que ya existe.
+- **AG-123** — MIENTRAS la atención esté abierta, el sistema DEBERÁ mantener al
+  paciente en `RECEIVING_CARE` durante las esperas entre pasos, y NO DEBERÁ
+  introducir para ellas ningún estado de espera propio.
+  > **Es la definición textual de FHIR R5 y conviene respetarla**:
+  > `receiving-care` incluye *«periods of waiting between care»*. Esperar entre
+  > un paso y el siguiente **es parte de la atención**, no un limbo entre dos
+  > atenciones. Un estado «esperando resultado» o «esperando al médico otra vez»
+  > partiría el tiempo de una misma visita en trozos, y entonces el tiempo en el
+  > estado actual (AG-135) —que es el dato por el que existe el tablero— se
+  > reiniciaría cada vez que alguien entra y sale del consultorio, justo cuando
+  > más importa que siga corriendo.
+  >
+  > `READY` no lo contradice: ésa es la espera **antes** de que la atención se
+  > abra, cuando todavía no hay nada en curso.
+- **AG-124** — CUANDO se registre que el paciente sale del establecimiento con
+  la atención abierta, el sistema DEBERÁ pasarlo a `ON_LEAVE`, DEBERÁ registrar
+  el hecho que originó la salida, y NO DEBERÁ cerrar la atención ni dar por
+  terminado su paso por la clínica.
+  > El caso real es el laboratorio externo y la imagen que se hace en la otra
+  > cuadra: el paciente se va y vuelve, y su atención sigue abierta. Sin este
+  > estado, el tablero lo enseña «en atención» ocupando un consultorio vacío
+  > durante una hora, o alguien lo cierra para que desaparezca de la lista y la
+  > atención queda sin cerrar de verdad.
+  >
+  > **Sigue derivándose de un hecho documentado** (AG-122) y no de una casilla:
+  > lo que lo dispara es la orden o la derivación que manda al paciente fuera,
+  > que es un registro clínico con autor e instante.
+  >
+  > **El hecho que lo dispara ya tiene forma desde el 20-08-2026**: la misma
+  > migración `20260820052524_clinical_flow_states` dio a `encounter` una
+  > columna `status` con el valor `ON_HOLD` —«empezada, suspendida
+  > temporalmente, SE ESPERA DE VUELTA»—, que es exactamente este caso visto
+  > desde el otro eje. `ON_LEAVE` es lo que el tablero enseña cuando la atención
+  > está `ON_HOLD`, y por eso los dos ejes no se pueden colapsar: el paciente
+  > puede estar `RECEIVING_CARE` con la atención `ON_HOLD` mientras baja a
+  > rayos.
+  >
+  > Lo que todavía no existe es la **orden de examen** que ponga la atención en
+  > `ON_HOLD`, que es de `encounter` y de su entrega H8. Hasta entonces
+  > `ON_LEAVE` es alcanzable en el modelo y no lo dispara nada — la respuesta
+  > honesta, no un hueco.
+- **AG-125** — CUANDO se cierre la cuenta de la atención, el sistema DEBERÁ
+  pasar al paciente a `DEPARTED`, y `DEPARTED` NO DEBERÁ admitir ninguna
+  transición posterior dentro de la misma cita.
+- **AG-126** — El sistema DEBERÁ registrar todo cambio de estado del paciente
+  con estado anterior, estado nuevo, autor, instante y el hecho que lo derivó, y
+  DEBERÁ tratar ese registro como append-only: ninguna operación lo actualiza ni
+  lo borra, y la base DEBERÁ rechazar el intento venga de donde venga.
+  > **Es la misma garantía que AG-005 y por la misma razón**, más una propia: el
+  > hecho que derivó cada cambio es lo único que permite comprobar que el
+  > tablero no se tecleó. Sin esa columna, «se deriva de un hecho documentado»
+  > es una afirmación sobre el código y no sobre los datos, y un día que alguien
+  > añada la ruta prohibida por AG-122 nada en la base lo delataría.
+  >
+  > **Falta esquema.** Es el hueco que queda del eje entero.
+  > `agenda_entry.subject_status_at` guarda **sólo el último** instante: al
+  > tercer cambio no se puede contestar cuándo fueron los dos primeros ni quién
+  > los provocó. Es literalmente el defecto que AG-064 tenía con
+  > `last_contacted_at` y que se cerró construyendo
+  > `waitlist_contact_attempt`. Hace falta `agenda_subject_status_history` con
+  > la forma y los disparadores de `agenda_status_history` —rechazo de `UPDATE`,
+  > `DELETE` y `TRUNCATE`, clave foránea `RESTRICT` (D-022)—, más la referencia
+  > al hecho que lo originó.
+  >
+  > **No se reutiliza `agenda_status_history`**: son dos ejes distintos (AG-121)
+  > y mezclarlos obligaría a que sus dos columnas de estado fueran anulables,
+  > que es como se pierde la garantía de que siempre hay una.
+  >
+  > La columna `subject_status_at` **se queda**, al revés que el contador de
+  > AG-064: no es una segunda verdad sobre el mismo hecho, es la caché de la
+  > última fila y es lo que hace que AG-135 se calcule sin unir contra la
+  > historia en cada carga del tablero.
+- **AG-127** — MIENTRAS la cita no haya alcanzado `CHECKED_IN`, el sistema NO
+  DEBERÁ asignarle estado de paciente; y CUANDO la cita pase a
+  `LEFT_WITHOUT_BEING_SEEN`, el estado del paciente DEBERÁ pasar a `DEPARTED`.
+  > El estado del paciente sólo existe **dentro de una llegada**. Una cita en
+  > `BOOKED` no tiene a nadie en ningún sitio, y darle `ARRIVED` por defecto
+  > llenaría el tablero de gente que no ha venido — que es exactamente la clase
+  > de mentira que AG-122 evita.
+  >
+  > La segunda mitad cierra el único desenlace que dejaría a alguien en el
+  > tablero para siempre: quien se marchó sin ser atendido no pasa por caja, así
+  > que nada de AG-125 se dispara nunca.
+
+## 5 ter. La calificación de emergencia al llegar
+
+**Esto no es opcional, no depende de que la clínica tenga urgencias y no es una
+elección de diseño.** La **Ley de Derechos y Amparo del Paciente (Ley 77**, R.O.
+Sup. 626 de 3-II-1995) obliga en su **art. 10**: *«El estado de emergencia del
+paciente será calificado por el centro de salud al momento de su arribo»*. Su
+**art. 1** enumera expresamente a las **clínicas** entre los establecimientos
+alcanzados, y su **art. 13** lo respalda con **prisión de 12 a 18 meses — de 4 a
+6 años si el paciente desatendido fallece** (D-A-002).
+
+**No es triaje y no es una escala de gravedad.** No reordena la agenda, no
+clasifica en niveles y no exige que nadie sepa medicina de urgencias: es la
+constancia de que la calificación del art. 10 se hizo. El día que alguien
+reclame, esa fila es la diferencia entre un incidente y una imputación penal.
+
+- **AG-128** — CUANDO se registre la llegada de un paciente, el sistema DEBERÁ
+  exigir la calificación de situación de emergencia como valor afirmativo o
+  negativo explícito, DEBERÁ registrar quién la hizo y en qué instante, y NO
+  DEBERÁ admitir el registro de llegada sin ella.
+  > **Explícito, y por eso no lleva valor por defecto.** Un campo que nace en
+  > «no» y se puede dejar como está no prueba que nadie calificara nada: prueba
+  > que nadie lo tocó. Lo que el art. 10 obliga a poder demostrar es que hubo
+  > una calificación, y una calificación es un acto de una persona en un
+  > instante.
+  >
+  > **Media pieza existe desde el 20-08-2026** (migración
+  > `20260820052524_clinical_flow_states`): `agenda_entry.emergency_flagged_at`,
+  > `emergency_flagged_by_id` —con `ON DELETE RESTRICT`, el rastro de quién
+  > calificó no se borra, como el autorizador de AG-035— y `emergency_note`,
+  > atados por `agenda_entry_emergency_flag_names_who_and_when`, que exige que
+  > el quién y el cuándo estén los dos o ninguno.
+  >
+  > **Falta esquema.** Y es justo la mitad que la ley exige: esas tres columnas
+  > registran la calificación **afirmativa** y nada más: con ellas, `NULL` no
+  > distingue «se calificó y no era una emergencia» de «nadie calificó nada», y
+  > lo que el art. 10 obliga a poder demostrar es lo segundo. Hacen falta las
+  > dos columnas del ACTO —quién calificó y cuándo, con independencia del
+  > resultado— y un `CHECK` que las exija presentes exactamente cuando la cita
+  > alcanzó `CHECKED_IN`, en la forma de `agenda_entry_overbooking_coherence`.
+  > Sin ese `CHECK` la exigencia vive sólo en el servicio, y una escritura por
+  > fuera del módulo deja una llegada sin calificar que nada delata.
+- **AG-129** — CUANDO la calificación de emergencia sea afirmativa, el sistema
+  DEBERÁ avisar al profesional de turno de la sede y DEBERÁ dejar constancia del
+  aviso con su destinatario y su instante.
+  > **La consecuencia es fija y no configurable**, al revés que casi todo lo de
+  > §10. Un aviso que una sede pueda apagar es un aviso que el día del incidente
+  > no existió, y lo que la ley no admite es que la calificación no tenga
+  > efecto: el art. 8 exige recibir **inmediatamente** y el art. 12 prohíbe
+  > negar la atención.
+  >
+  > **La constancia del aviso importa tanto como el aviso.** «Se avisó» sin
+  > destinatario ni hora no es prueba de nada; con ellos, la fila contesta a
+  > quién se avisó y cuándo, que es lo que se pregunta después.
+  >
+  > **Falta esquema.** No existe «profesional de turno» como dato: hoy la sede
+  > tiene profesionales agendables (AG-108) y reglas de horario, no un turno. Y
+  > no existe ningún canal de notificación en el sistema —el portal es Fase 3 y
+  > los recordatorios Fase 4—. Las dos piezas son de esta entrega y hay que
+  > construirlas; mientras no existan, el requisito no se puede cumplir a medias
+  > escribiendo sólo la fila.
+- **AG-130** — La calificación de emergencia NO DEBERÁ admitir grados ni
+  niveles, NO DEBERÁ alterar por sí sola el orden de la agenda ni la prioridad
+  de la lista de espera, y NO DEBERÁ exigir ningún permiso distinto del que
+  registra la llegada.
+  > **Los tres «no» son el requisito.** El primero impide que esto se convierta
+  > en el triaje que este sistema decidió no construir: si algún día se abre
+  > urgencias, la tipología obliga a **Manchester Modificado** acreditado ante
+  > la ACESS, y eso es una decisión de negocio con consecuencias regulatorias,
+  > no una casilla. El segundo lo separa de la marca de «atender primero», que
+  > ya está decidida aparte (D-033) y sí exige permiso y motivo. El tercero es
+  > el que lo hace exigible: un permiso propio significaría que hay
+  > recepcionistas que no pueden calificar, y entonces el art. 10 se incumple
+  > los días que esa persona está en el mostrador.
+- **AG-131** — El sistema DEBERÁ admitir que la verificación de cobertura se
+  omita en el registro de llegada dejando constancia del motivo, y NO DEBERÁ
+  condicionar el registro de llegada, la calificación de emergencia ni el paso a
+  `IN_PROGRESS` a que se haya registrado forma de pago.
+  > **El art. 9 de la Ley 77 prohíbe exigir cheque, tarjeta o cualquier
+  > documento de pago como condición previa a ser recibido y estabilizado**, y
+  > el art. 8 obliga a recibir al paciente en emergencia sin pago previo. Una
+  > pantalla de llegada que bloquee el paso hasta registrar la forma de pago
+  > sería ilegal **justo en el caso en que más importa**, que es el único en que
+  > alguien la va a mirar después.
+  >
+  > **Y aun así hay que preguntarlo, y al llegar.** Quién paga decide el precio
+  > de todo lo que venga después; preguntarlo en caja es valorar con el precio
+  > equivocado lo que ya se hizo. Lo que este requisito fija no es que se deje
+  > de preguntar: es que la respuesta pueda ser «ahora no» **con su motivo**,
+  > que es lo que distingue un dato que falta de un dato que se decidió no
+  > exigir.
+  >
+  > **El servidor no basta y por eso el requisito nombra las tres puertas.** Un
+  > backend que acepta el campo vacío y una interfaz que no deja avanzar sin
+  > llenarlo incumplen exactamente igual, y quien responde es la clínica.
+  >
+  > **El esquema existe desde el 20-08-2026** (migración
+  > `20260820052524_clinical_flow_states`):
+  > `agenda_entry.coverage_check_skipped_reason`, y su propio comentario cita el
+  > art. 9. Lo que falta no es columna: es que las dos capas dejen de exigir el
+  > dato, que es donde el requisito se incumple de verdad.
+- **AG-132** — El registro de la calificación de emergencia DEBERÁ ser
+  append-only: ninguna operación lo actualiza ni lo borra, y la base DEBERÁ
+  rechazar el intento venga de donde venga.
+  > Es la garantía de AG-005 aplicada a la fila que puede acabar delante de un
+  > juez. Una calificación que se pueda reescribir después del incidente no
+  > prueba lo que el art. 10 pide que se pruebe: la prueba es que la fila no ha
+  > podido cambiar.
+  >
+  > **Falta esquema.** Un disparador `BEFORE UPDATE` sobre `agenda_entry` que
+  > rechace modificar las tres columnas de AG-128 una vez escritas —no un
+  > disparador de tabla entera, porque la fila sí cambia por lo demás—, en la
+  > misma forma que `trg_agenda_status_history_immutable`.
+
+## 5 quater. El tablero del día
+
+**Una lista ordenada por hora, no un kanban** — el porqué está en la nota de E9,
+y es evidencia, no preferencia. Lo que el tablero aporta sobre el calendario no
+es qué pacientes hay, sino **en qué se está desviando la realidad del plan**:
+quién lleva cuarenta minutos esperando, qué consultorio está ocupado, qué cita se
+pasó de hora.
+
+- **AG-133** — CUANDO se consulte el tablero del día de una sede, el sistema
+  DEBERÁ devolver las citas cuya fecha clínica sea la solicitada, ordenadas por
+  instante de inicio, opcionalmente acotadas por especialidad y por profesional,
+  y DEBERÁ resolver los límites del día en `America/Guayaquil`.
+  > **El orden es por la hora de la cita y no por el estado**, porque la hora es
+  > el compromiso con el paciente y es lo único que no se mueve. Ordenar por
+  > estado agrupa lo que ya se distingue por color y esconde al que lleva más
+  > tiempo esperando entre los de su grupo.
+  >
+  > La sede va en la ruta —`param:siteId`, AG-071—; especialidad y profesional
+  > son filtros de consulta, que es lo que pidió el usuario y lo que hacen los
+  > cuatro sistemas de referencia.
+- **AG-134** — El tablero DEBERÁ incluir por cada fila la hora de la cita, la
+  identificación del paciente según la proyección, el profesional, el
+  consultorio, el estado de la cita, el estado del paciente, el tiempo en el
+  estado actual y la nota corta.
+  > **La nota corta recupera algo que se perdió al informatizar la pizarra.** Al
+  > sustituir la de rotulador por una electrónica se documentó la pérdida de
+  > funciones que nadie había escrito: los símbolos improvisados entre colegas,
+  > las señales visuales inmediatas. Un campo de texto corto y libre por fila es
+  > lo que las devuelve.
+  >
+  > **Falta esquema.** `agenda_entry.board_note`, texto corto. No se reutiliza
+  > `reason`: esa columna es donde recepción escribe el motivo de consulta y por
+  > eso quedó fuera de toda lectura (AG-036, AG-072, AG-074), y una nota de
+  > tablero que compartiera columna con un dato de salud volvería a meterlo en
+  > una pantalla que está a la vista.
+- **AG-135** — El sistema DEBERÁ calcular el tiempo transcurrido en el estado
+  actual a partir del instante del último cambio registrado, y NO DEBERÁ
+  admitirlo como dato de entrada en ninguna ruta.
+  > **Es lo que hace útil el tablero y es lo que nunca teclea nadie.** Un número
+  > que se escribe a mano envejece en el minuto siguiente; éste sale de las
+  > filas de AG-004 y AG-126, que ya existen y son append-only.
+  >
+  > Se calcula sobre el estado del PACIENTE cuando lo hay, y sobre el de la cita
+  > cuando todavía no —una cita que aún no llegó no tiene estado de paciente
+  > (AG-127)—.
+- **AG-136** — El sistema DEBERÁ servir el tablero en dos proyecciones,
+  `STAFF` y `PUBLIC`, cada una con su propia ruta y su propio permiso, y NO
+  DEBERÁ exponer ningún parámetro que convierta una en la otra.
+  > **Dos proyecciones, no un interruptor de «modo privacidad»: el interruptor
+  > se queda mal puesto.** Una pantalla colgada hacia la sala de espera se
+  > configura una vez y se olvida durante dos años; el día que alguien reinicia
+  > el equipo o abre la vista en otro navegador, un interruptor vuelve a su
+  > defecto y el nombre completo de cada paciente queda a la vista de la sala.
+  > Con dos rutas y dos permisos, la pantalla pública **no tiene forma** de
+  > pedir la otra: no es que no la muestre, es que su sesión no la puede leer.
+  >
+  > **Permiso nuevo, `agenda:board:public`**, en `permission.catalogue.ts`. Es
+  > cambio de código por lo mismo que AG-099: el catálogo es la enumeración
+  > contra la que se valida cada ruta. A qué rol se concede es configurable, y
+  > el rol que lo lleva es el de la pantalla de sala, que no lleva `agenda:read`.
+- **AG-137** — MIENTRAS la proyección sea `PUBLIC`, el sistema DEBERÁ reducir la
+  identificación del paciente al turno o al nombre y la inicial del primer
+  apellido, y NO DEBERÁ incluir documento, nombre completo, motivo de consulta,
+  diagnóstico, medicación ni la nota corta.
+  > **Es la única pantalla del sistema que ve gente que no es el paciente**, y
+  > por eso la línea de AG-109 —que concede el nombre al listado del día porque
+  > recepción llama a la gente por su nombre— no se puede estirar hasta aquí:
+  > allí quien mira es personal con permiso y alcance; aquí mira la sala de
+  > espera entera.
+  >
+  > La nota corta queda fuera aunque no sea un dato clínico por definición:
+  > es texto libre (AG-134) y nada impide que alguien escriba en ella lo que
+  > AG-072 y AG-074 mantienen fuera de las lecturas. Es el mismo razonamiento
+  > que dejó `reason` fuera del listado.
+  >
+  > > **[NECESITA ACLARACIÓN]** — turno o nombre e inicial: son dos formas
+  > > distintas y la clínica tiene que elegir una. El turno no identifica a
+  > > nadie pero obliga a repartir números en recepción; el nombre e inicial no
+  > > cambia el flujo pero sigue identificando a quien ya sabe a quién busca. Y
+  > > el razonamiento sobre qué puede verse en una pantalla a la vista está
+  > > tomado de la guía estadounidense de divulgaciones incidentales, que es el
+  > > estándar internacional de referencia: **HIPAA no aplica en Ecuador** y lo
+  > > vinculante aquí es la **LOPDP**, que hay que verificar antes de cerrar
+  > > esto. Es decisión de negocio y legal, no de un agente.
+- **AG-138** — El sistema DEBERÁ resolver el conjunto de campos de la proyección
+  `STAFF` a partir de una configuración por rol, administrable sin desplegar
+  código, y NO DEBERÁ servir el mismo conjunto a todos los roles.
+  > **Está medido que enfermería y médicos difieren significativamente en qué
+  > les resulta útil en un tablero**: no existe «una» vista buena para todos, y
+  > servir la unión de las dos es la forma de que ninguna de las dos se lea. Es
+  > el mismo razonamiento de AG-099 aplicado a columnas en vez de a permisos:
+  > qué campos existen es código, quién ve cuáles es configuración.
+  >
+  > **Falta esquema.** Una tabla `board_view_field` que ate rol y campo, con la
+  > semilla de las dos vistas de arranque. El conjunto de campos posibles es una
+  > unión cerrada en el código, como `permission.catalogue.ts`, para que un
+  > campo nuevo obligue a decidir quién lo ve.
+- **AG-139** — CUANDO se consulte el tablero, el sistema DEBERÁ registrar en la
+  bitácora de acceso quién lo consultó, cuándo, desde dónde y con qué
+  proyección, y NO DEBERÁ registrar un acceso por cada fila listada.
+  > **Las dos mitades son la misma decisión que AG-072 y AG-073**, aplicada a
+  > una pantalla que se abre una vez y se mira todo el día: una fila por consulta
+  > es lo que permite contestar quién estaba mirando el tablero a las once; una
+  > fila por cita convertiría la bitácora de historia clínica en ruido y haría
+  > fallar SC-004.
+  >
+  > **Y de paso contesta si el tablero se usa de verdad**, que es el dato que
+  > falta en todos los casos documentados de pizarra electrónica abandonada.
 
 ## 6. Reprogramación
 
@@ -1169,6 +1824,48 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   > `agenda_entry_booking_channel_coherence`), así que no hay celda donde
   > caiga. Nadie falta a un quirófano.
 
+- **AG-140** — El cálculo de inasistencia NO DEBERÁ contar como `NO_SHOW` las
+  citas en `LEFT_WITHOUT_BEING_SEEN`, DEBERÁ conservarlas en el denominador,
+  DEBERÁ excluir del denominador las citas en `ENTERED_IN_ERROR`, y DEBERÁ
+  publicar el recuento de `LEFT_WITHOUT_BEING_SEEN` junto a la tasa con los
+  mismos tres desgloses de AG-080.
+  > **Los dos estados nuevos entran en la métrica de formas opuestas, y ésa es
+  > la razón de que sean dos estados y no uno.** Quien se fue sin ser atendido
+  > **sí tenía cita y sí llegó a su hora**: sacarlo del denominador rebajaría el
+  > total sobre el que se mide y mejoraría la tasa de la clínica por el simple
+  > hecho de tener gente cansada de esperar. Se queda dentro, fuera del
+  > numerador, y con recuento propio — que es lo que el usuario pidió: **una
+  > métrica para poder reducirla**. Una cita `ENTERED_IN_ERROR` no ocurrió; deja
+  > el conjunto entero, porque contar en el denominador una cita que nunca
+  > existió mide la clínica sobre pacientes imaginarios.
+  >
+  > **Y `ENTERED_IN_ERROR` tampoco cuenta como anulación**, que es el otro
+  > número que hoy sale mal: AG-081 excluye las `CANCELLED` del denominador y no
+  > distingue por qué se anularon, así que una tarde de errores de tecleo se lee
+  > hoy como una tarde en que la clínica canceló a sus pacientes.
+  >
+  > **Los tres desgloses viajan juntos** por lo mismo que en AG-080: son cortes
+  > del mismo conjunto, y pedirlos por separado los calcularía sobre tres
+  > «ahora» distintos.
+- **AG-141** — El sistema DEBERÁ calcular la llegada tardía por sede, por
+  profesional y por rango de fechas, DEBERÁ servirla con el retraso mediano, el
+  recuento de llegadas por encima del umbral de la sede y su denominador, y NO
+  DEBERÁ derivarla de ningún dato tecleado.
+  > **Es la mitad que convierte AG-118 en algo accionable.** Un retraso por fila
+  > sirve en el mostrador; lo que permite cambiar la política de la clínica es
+  > saber que los martes por la tarde el retraso mediano es de veinticinco
+  > minutos con un profesional concreto.
+  >
+  > **La mediana y no la media**, por la misma razón por la que AG-080 sirve
+  > numerador y denominador: un paciente que llegó tres horas antes de su hora
+  > —o tres horas tarde y se le atendió— desplaza una media y no mueve una
+  > mediana. Y el denominador viaja siempre: «el 40 % llegó tarde» sobre cinco
+  > citas y sobre cuatrocientas es el mismo número y no el mismo hecho.
+  >
+  > Sale de dos `timestamptz` de la fila (AG-118) y del umbral vigente de la
+  > sede (AG-142). No hay ningún dato nuevo que capturar, que es lo que la hace
+  > cierta sin depender de que nadie se acuerde de nada.
+
 ## 10. Parametrización
 
 La clínica cambia sus reglas de operación sin que nadie despliegue código. Esto
@@ -1250,6 +1947,37 @@ decide que el valor es configurable.
   > esperando a compilar—. Se corrige aquí porque un identificador de código se
   > cita literal, y una spec que nombra un permiso inexistente manda a quien la
   > lee a buscar algo que no está.
+- **AG-142** — El sistema DEBERÁ tomar de la configuración de la sede, por la
+  cadena de AG-095, el umbral de llegada tardía en minutos y el permiso que
+  autoriza admitir a atención una cita cuya llegada lo superó, y NO DEBERÁ
+  fijarlos en el código.
+  > **La política de la llegada tardía es de la clínica y cambia por sede.** «A
+  > partir de cuántos minutos se reubica» y «quién puede saltárselo» son las dos
+  > preguntas que el usuario planteó, y ninguna la contesta un agente: son las
+  > mismas dos formas que ya tiene el sobrecupo —un número y un permiso, AG-039,
+  > AG-100, AG-101— y se administran por el mismo sitio.
+  >
+  > **El umbral existe desde el 20-08-2026** (migración
+  > `20260820052524_clinical_flow_states`):
+  > `site_parameter.late_arrival_grace_minutes`, `SMALLINT NOT NULL DEFAULT 15`,
+  > con `site_parameter_grace_is_not_negative`. El cero queda admitido, que es
+  > lo que permite a una sede desactivar la política sin migración. El
+  > identificador se cita literal y este requisito usa ése, no otro.
+  >
+  > **Falta esquema.** El permiso que lo salta no tiene columna:
+  > `late_arrival_override_permission`, hermana de la que la sede ya usa para
+  > autorizar el sobrecupo (AG-094, AG-101). Sin ella AG-120 no tiene contra qué
+  > comprobar y su rechazo quedaría con el permiso quemado en el código, que es
+  > lo que REQ-145 prohíbe.
+  >
+  > > **[NECESITA ACLARACIÓN]** — **qué permiso** salta el umbral, y si los 15
+  > > minutos que escribió la migración son los que la clínica quiere. Un umbral
+  > > demasiado corto empuja a recepción a reprogramar a medio mundo y a
+  > > saltárselo siempre, con lo que el control deja de existir; uno demasiado
+  > > largo no aplica ninguna política. Es decisión de negocio, y el valor de
+  > > arranque no la sustituye: lo que hace un defecto es que el sistema arranque,
+  > > no que alguien lo haya elegido. **No bloquea E8**: los 15 minutos permiten
+  > > construir y probar AG-119 y AG-120 hoy.
 - **AG-096** — El sistema DEBERÁ validar todo parámetro al guardarlo y DEBERÁ
   rechazar el guardado con un error por campo; NO DEBERÁ aceptar un valor
   inválido para descubrirlo al reservar.
@@ -1338,6 +2066,25 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `WAITLIST_SLOT_ALREADY_CLAIMED`| 409    | AG-063    |
 | `SLOT_NOT_RELEASED`            | 422    | AG-061    |
 | `RELEASED_SLOT_IN_THE_PAST`    | 422    | AG-061    |
+| `ENTERED_IN_ERROR_REASON_REQUIRED` | 422 | AG-117   |
+| `LATE_ARRIVAL_NOT_AUTHORISED`  | 403    | AG-120    |
+| `EMERGENCY_QUALIFICATION_REQUIRED` | 422 | AG-128   |
+| `COVERAGE_SKIP_REASON_REQUIRED` | 422   | AG-131    |
+
+> **Los cuatro de E8, y por qué ninguno reutiliza a un vecino.**
+> `ENTERED_IN_ERROR_REASON_REQUIRED` no es `CANCELLATION_REASON_REQUIRED`: son
+> dos actos distintos (AG-117) y un cliente que ramificara por el código de
+> anulación diría al usuario que está anulando una cita cuando lo que hace es
+> retirar una que nunca existió. `LATE_ARRIVAL_NOT_AUTHORISED` es 403 y sigue
+> exactamente la forma de `OVERBOOKING_NOT_AUTHORISED`: un permiso que la sede
+> configura y que quien llama no tiene. `EMERGENCY_QUALIFICATION_REQUIRED` y
+> `COVERAGE_SKIP_REASON_REQUIRED` son 422 por campo, como
+> `OVERBOOKING_REASON_REQUIRED`: lo que falta es un dato del formulario y quien
+> está en el mostrador tiene que saber cuál.
+>
+> **No hay código para el intento de teclear un estado de paciente derivado**
+> (AG-122), y es deliberado: lo que el requisito prohíbe es que exista la ruta.
+> Un código de error diría que la ruta existe y a veces contesta que no.
 
 > `BOOKING_RETRY_EXHAUSTED` lo fijó la implementación de E1: AG-026 nombra el
 > estado (503) y la cabecera (`Retry-After`) pero no el código, y sin uno el
@@ -1433,7 +2180,11 @@ aún no está validado.
 | `GET`    | `/agenda/sites/{siteId}/availability`                          | `agenda:read`    | `param:siteId`  | AG-003, AG-010 a AG-016, AG-093  |
 | `GET`    | `/agenda/sites/{siteId}/duration`                              | `agenda:read`    | `param:siteId`  | SP-023, SP-028                   |
 | `POST`   | `/agenda/sites/{siteId}/entries`                               | `agenda:write`   | `param:siteId`  | AG-020 a AG-035, AG-110          |
-| `POST`   | `/agenda/sites/{siteId}/entries/{entryId}/status`               | `agenda:write`   | `param:siteId`  | AG-040 a AG-046                  |
+| `POST`   | `/agenda/sites/{siteId}/entries/{entryId}/status`               | `agenda:write`   | `param:siteId`  | AG-040 a AG-046, AG-116, AG-117, AG-120 |
+| `POST`   | `/agenda/sites/{siteId}/entries/{entryId}/check-in`             | `agenda:write`   | `param:siteId`  | AG-041, AG-118, AG-119, AG-128 a AG-132 |
+| `GET`    | `/agenda/metrics/late-arrival`                                  | `agenda:read`    | `query`         | AG-141                           |
+| `GET`    | `/agenda/sites/{siteId}/board`                                  | `agenda:read`    | `param:siteId`  | AG-121, AG-123 a AG-135, AG-138, AG-139 |
+| `GET`    | `/agenda/sites/{siteId}/board/public`                           | `agenda:board:public` | `param:siteId` | AG-136, AG-137, AG-139         |
 | `POST`   | `/agenda/sites/{siteId}/entries/{entryId}/reschedule`           | `agenda:write`   | `param:siteId`  | AG-050 a AG-052, AG-115          |
 | `POST`   | `/agenda/sites/{siteId}/blocks`                                | `agenda:write`   | `param:siteId`  | AG-037, AG-038                   |
 | `DELETE` | `/agenda/sites/{siteId}/blocks/{entryId}`                       | `agenda:write`   | `param:siteId`  | AG-114                           |
@@ -1442,6 +2193,23 @@ aún no está validado.
 | `GET`    | `/agenda/sites/{siteId}/waitlist/candidates/{releasedEntryId}`  | `agenda:read`    | `param:siteId`  | AG-061, AG-062, AG-065 a AG-067  |
 | `POST`   | `/agenda/sites/{siteId}/waitlist/{entryId}/contact-attempts`    | `agenda:write`   | `param:siteId`  | AG-064, AG-066                   |
 | `POST`   | `/agenda/sites/{siteId}/waitlist/{entryId}/conversion`          | `agenda:write`   | `param:siteId`  | AG-063, AG-064                   |
+
+**El registro de llegada sale de `/status` y tiene ruta propia**, al revés de lo
+que hizo E2. No es simetría con `blocks`: `CHECKED_IN` dejó de ser una transición
+como las demás en cuanto lleva consigo la calificación de emergencia que la ley
+obliga a exigir (AG-128), el motivo de la cobertura omitida (AG-131) y una
+advertencia en la respuesta (AG-119). Meterlo en la ruta genérica de transiciones
+obligaría a que su DTO llevara campos que ninguna otra transición usa y a que la
+exigencia del art. 10 fuera condicional al valor de un campo — que es exactamente
+la forma en que una garantía deja de serlo. `/status` sigue admitiendo el resto,
+`CHECKED_IN` incluido en su forma actual hasta que E8 cierre.
+
+**El tablero público es la única ruta del módulo que no lleva `agenda:read`**, y
+es AG-136 en la tabla: la pantalla de la sala de espera se autentica con un rol
+que sólo tiene `agenda:board:public`, así que no puede pedir la proyección de
+personal aunque alguien le cambie la URL. Un `?public=true` sobre la ruta de
+siempre habría sido una línea menos de código y un interruptor que se queda mal
+puesto.
 
 **La lista de espera usa `agenda:read` / `agenda:write` y no un permiso propio.**
 Inscribir a quien se quedó sin cupo es el mismo acto que reservarlo, lo hace la
@@ -1493,6 +2261,16 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | AG-096, AG-097, AG-098, AG-102                  | Integración + contrato HTTP por campo                      |
 | AG-110                                          | Unitario de dominio + integración contra PostgreSQL real   |
 | AG-111, AG-112                                  | Contrato HTTP con una sesión de `RECEPCION` de verdad: el defecto era de permiso, y un doble con los grants puestos a mano no lo habría visto |
+| AG-116, AG-117                                  | Unitario de dominio (la máquina de estados) + integración contra PostgreSQL real: el valor nuevo del enum, el `CHECK` de AG-046 y el cupo que queda liberado de verdad |
+| AG-118, AG-141                                  | Unitario con huso alterado, como en `encounter_freeze_age`: una llegada a las 21:00 no puede cambiar de día |
+| AG-119, AG-120                                  | Contrato HTTP + unitario de dominio, más un caso con la calificación de emergencia afirmativa que comprueba que el umbral **no** se aplica |
+| AG-121 a AG-127                                 | Unitario de dominio (la derivación) + integración contra PostgreSQL real: el rastro es append-only y AG-122 se comprueba con la prueba de rutas de AG-070, que falla si aparece una que fije un estado derivado |
+| AG-128, AG-129, AG-131, AG-132                  | Integración contra PostgreSQL real + contrato HTTP: la constancia la garantizan un `CHECK` y un disparador, y la exigencia se comprueba mandando un registro de llegada sin calificación |
+| AG-130                                          | Seguridad dirigida: la calificación se hace con el permiso del registro de llegada y con ningún otro |
+| AG-133 a AG-135, AG-138                         | Contrato HTTP + unitario de dominio: el orden por hora, el tiempo calculado, y que dos roles distintos reciban conjuntos de campos distintos |
+| AG-136, AG-137                                  | Seguridad dirigida + contrato HTTP: una sesión con `agenda:board:public` y nada más no alcanza la proyección de personal, y la fila que recibe no lleva ninguno de los campos prohibidos |
+| AG-139, AG-140                                  | Integración contra PostgreSQL real: una consulta del tablero deja **una** fila de bitácora y no una por cita (SC-004), y la tasa no se mueve cuando una cita pasa a `LEFT_WITHOUT_BEING_SEEN` |
+| AG-142                                          | Integración: cambiar el umbral de una sede cambia la advertencia siguiente y no toca las llegadas ya registradas (AG-098) |
 
 ## Preguntas abiertas
 
@@ -1508,6 +2286,23 @@ en `../clinica-docs/DECISIONES-PENDIENTES.md`:
 | D-006 | Migraciones en dos tandas; el historial de contactos se rebaja                             |
 
 | D-005 | El sobrecupo **se mantiene**. Quien reserva no lo autoriza, salvo permiso `agenda:overbook:self` |
+
+**Decisiones del agente que E8 y E9 hacen cumplir**, registradas en
+`../clinica-docs/DECISIONES-TOMADAS-POR-EL-AGENTE.md`:
+
+| #       | Decisión                                                                                       |
+| ------- | ---------------------------------------------------------------------------------------------- |
+| D-A-002 | La calificación de emergencia al llegar **se construye siempre**, y la cobertura es saltable    |
+| D-A-008 | El estado del paciente es consecuencia de documentar, no una casilla: sólo «llegó» se teclea    |
+| D-A-009 | «Se fue sin ser atendido» es estado propio; la llegada tardía **no** es un estado, es una resta |
+
+**Abierta desde el 20-08-2026**, y las dos son de negocio o legales: el valor de
+arranque del umbral de llegada tardía y qué permiso lo salta (AG-142), y con qué
+se identifica al paciente en la pantalla que mira la sala de espera —turno, o
+nombre e inicial— una vez verificado qué exige la **LOPDP**, que es lo vinculante
+en Ecuador y no la guía estadounidense de la que sale el razonamiento (AG-137).
+**Ninguna de las dos bloquea E8 ni E9**: la primera tiene forma de parámetro y la
+segunda es una de dos proyecciones que hay que construir igual.
 
 **Abierta desde el 19-08-2026: D-040**, al construir el esquema de E5. Son dos
 números que la clínica tiene que elegir y que ningún agente decide: cuántos

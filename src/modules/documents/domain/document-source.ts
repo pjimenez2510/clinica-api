@@ -1,0 +1,202 @@
+import type { DocumentKind, SiteScopeFilter } from './document-kind';
+import type { StoredImage } from './document-image';
+
+/**
+ * THE PORTS. What this module needs to know about the rows it prints, stated
+ * without naming a table and without importing a single other module.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * WHY THERE ARE QUESTIONS ABOUT PRESCRIPTIONS, ORDERS, CERTIFICATES, INVOICES,
+ * ESTABLISHMENTS AND PRACTITIONERS IN A MODULE THAT OWNS NONE OF THEM
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Printing a document means reading the whole of it. NONE of that is obtained
+ * by importing `prescription`, `orders`, `encounter`, `billing`, `organization`
+ * or `staff`: no module imports another (CLAUDE.md §3), and the day that rule
+ * is bent «for just one lookup» the modules stop being modules. This module
+ * declares the facts it needs and its own adapter answers them — the route
+ * `prescription` took for the chart, the practitioner and the site.
+ *
+ * ⚠️ EVERY QUERY CARRIES THE CALLER'S SITE SCOPE (DOC-012). Not a site the
+ * caller named: the one their grants resolve to. A port that could be asked
+ * about a subject without a scope is a port through which the scope can be
+ * forgotten, once, in one call, for ever.
+ */
+
+/** One page of establishment identity, as every document prints it. */
+export interface EstablishmentIdentity {
+  /** Art. 5.a.iii. The ONLY establishment datum the receta must carry. */
+  name: string;
+  /** DOC-034. Read always, printed only if the template says so. */
+  ruc: string | null;
+  addressLine: string | null;
+  phone: string | null;
+  /** DOC-059. `null` prints no logo, which is legitimate. */
+  logo: StoredImage | null;
+  /** DOC-077. The fiscal legends of the RIDE. */
+  keepsAccounting: boolean;
+  specialTaxpayerResolution: string | null;
+  withholdingAgentResolution: string | null;
+  rimpeRegime: 'NONE' | 'ENTREPRENEUR' | 'POPULAR_BUSINESS';
+}
+
+/** Who signs, and what this system holds of their hand. */
+export interface PractitionerIdentity {
+  /** «Apellidos y nombres», in that order (art. 5.d.i). */
+  fullName: string;
+  /** Art. 5.d.ii. `null` prints the field empty rather than inventing one. */
+  acessRegistration: string | null;
+  mspCode: string | null;
+  /** DOC-060. `null` prints a labelled empty box. */
+  seal: StoredImage | null;
+  signature: StoredImage | null;
+}
+
+/** What every document says about the person it is about. */
+export interface PatientIdentity {
+  /** Art. 5.b.i — «Apellidos y nombres completos». In that order. */
+  fullName: string;
+  /** The identifier printed so a pharmacy or an employer can match the person. */
+  identifier: string | null;
+  /**
+   * Art. 5.b.ii. THE FROZEN AGE OF THE ATTENTION, never today's: a document
+   * filed five years ago has to keep saying the age the patient had that day.
+   */
+  ageYears: number | null;
+  ageMonths: number | null;
+}
+
+/** One line of a receta, as it is stored. */
+export interface PrescriptionLine {
+  /** Art. 5.c.i — the DCI, frozen when the receta was written. */
+  genericName: string;
+  presentation: string | null;
+  concentration: string | null;
+  /** The stored code. The layout spells it out; art. 13 forbids abbreviations. */
+  routeCode: string | null;
+  quantity: number | null;
+  doseText: string;
+  frequencyText: string;
+  durationDays: number | null;
+  /** Art. 5.e.iii — what goes on the tear-off band. */
+  instructions: string | null;
+  offFormularyJustification: string | null;
+}
+
+/** Everything the receta prints. */
+export interface PrescriptionPrintData {
+  subjectId: string;
+  siteId: string;
+  /** DOC-014. `ACTIVE`, `CANCELLED`… Only some of them may be filed. */
+  status: string;
+  /** `null` while it is a draft, which is what DOC-014 refuses to archive. */
+  issuedAt: Date | null;
+  /** Art. 5.a.i. The canton of the site's parish; `null` if the site has none. */
+  city: string | null;
+  verificationCode: string | null;
+  patient: PatientIdentity;
+  /** Art. 5.b.iii — the CIE of the attention, principal first. */
+  diagnoses: readonly { code: string; display: string }[];
+  /** Art. 5.b.iv — «Antecedentes de alergias». */
+  allergies: readonly string[];
+  prescriber: PractitionerIdentity;
+  lines: readonly PrescriptionLine[];
+}
+
+/** Everything the exam request prints. No norm fixes its format (DOC-072). */
+export interface ServiceOrderPrintData {
+  subjectId: string;
+  siteId: string;
+  requestedAt: Date;
+  category: string;
+  priority: string;
+  clinicalNoteText: string | null;
+  patient: PatientIdentity;
+  diagnoses: readonly { code: string; display: string }[];
+  orderedBy: PractitionerIdentity;
+  items: readonly { display: string; status: string }[];
+}
+
+/** Everything the certificate prints, over the structure of form 117. */
+export interface CertificatePrintData {
+  subjectId: string;
+  siteId: string;
+  type: string;
+  issuedAt: Date;
+  restFrom: Date | null;
+  restTo: Date | null;
+  /** The patient decides whether their employer reads the diagnosis. */
+  includeDiagnosis: boolean;
+  diagnoses: readonly { code: string; display: string }[];
+  body: string;
+  verificationCode: string;
+  revokedAt: Date | null;
+  patient: PatientIdentity;
+  issuedBy: PractitionerIdentity;
+}
+
+/** One line of the RIDE's detail table. */
+export interface InvoiceLine {
+  code: string;
+  description: string;
+  quantity: string;
+  unitPrice: string;
+  discount: string;
+  total: string;
+}
+
+/** Everything the RIDE prints (SRI, Ficha Técnica, Anexo 2). */
+export interface InvoicePrintData {
+  subjectId: string;
+  siteId: string;
+  /** `001-001-000000001`, composed from the establishment and emission point. */
+  documentNumber: string;
+  /** The 49-digit access key, once the SRI authorises it. */
+  accessKey: string | null;
+  status: string;
+  issuedAt: Date | null;
+  authorisedAt: Date | null;
+  buyerIdentificationType: string;
+  buyerIdentification: string;
+  buyerName: string;
+  buyerEmail: string | null;
+  lines: readonly InvoiceLine[];
+  subtotalTaxed: string;
+  subtotalUntaxed: string;
+  discountTotal: string;
+  taxTotal: string;
+  total: string;
+}
+
+/** What every document needs before it can be composed. */
+export interface DocumentContext {
+  establishment: EstablishmentIdentity;
+  siteName: string;
+}
+
+/**
+ * The union the service works with. Discriminated by `kind`, so adding a fifth
+ * document is a compile error everywhere it has to be handled rather than a
+ * silent gap.
+ */
+export type DocumentSubject =
+  | { kind: 'PRESCRIPTION'; data: PrescriptionPrintData }
+  | { kind: 'SERVICE_ORDER'; data: ServiceOrderPrintData }
+  | { kind: 'MEDICAL_CERTIFICATE'; data: CertificatePrintData }
+  | { kind: 'INVOICE_RIDE'; data: InvoicePrintData };
+
+export interface SubjectQuery {
+  kind: DocumentKind;
+  subjectId: string;
+  sites: SiteScopeFilter;
+}
+
+/** The port that answers «what does this document say?». */
+export interface DocumentSourceReader {
+  /** `null` when it does not exist OR is out of the caller's scope (DOC-012). */
+  findSubject(query: SubjectQuery): Promise<DocumentSubject | null>;
+  /** The establishment and site identity behind one site. */
+  contextForSite(siteId: string): Promise<DocumentContext | null>;
+}
+
+export const DOCUMENT_SOURCE_READER = Symbol('DOCUMENT_SOURCE_READER');

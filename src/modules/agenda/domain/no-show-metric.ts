@@ -10,7 +10,7 @@
  * happens here, where a test can break it.
  *
  * THE CUBE DOES NOT GROW WITH THE CLINIC'S HISTORY. Its size is
- * sites × practitioners × 4 channels × 8 statuses, so a year of appointments
+ * sites × practitioners × 4 channels × 10 statuses, so a year of appointments
  * and a day of them cross the wire the same way. That is what makes «count in
  * SQL, decide in the domain» affordable rather than a purity tax.
  */
@@ -26,23 +26,57 @@ import type { AgendaEntryStatus } from './agenda-entry';
 import { BOOKING_CHANNELS, type BookingChannel } from './booking-policy';
 
 /**
- * AG-081, first clause. An annulled appointment is not an absence: nobody was
+ * AG-081 first clause, and AG-140 third. What leaves the calculation entirely.
+ *
+ * `CANCELLED`: an annulled appointment is not an absence — nobody was
  * expected. A rescheduled original is annulled too (AG-050), so this single
  * exclusion is also what stops «recepción movió la hora» being reported as
  * «el paciente no vino».
+ *
+ * `ENTERED_IN_ERROR` (AG-140): the appointment did not happen and never
+ * existed. Leaving it in the denominator would measure the clinic over
+ * imaginary patients. IT IS ALSO NOT AN ANNULMENT, which is the other figure
+ * that used to come out wrong: AG-081 drops the `CANCELLED` rows without
+ * asking why they were cancelled, so before this status existed an afternoon
+ * of typing mistakes read as an afternoon in which the clinic cancelled on its
+ * patients.
  */
-const EXCLUDED_STATUSES: readonly AgendaEntryStatus[] = ['CANCELLED'];
+const EXCLUDED_STATUSES: readonly AgendaEntryStatus[] = [
+  'CANCELLED',
+  'ENTERED_IN_ERROR',
+];
 
 /** The status that IS the absence (AG-042). */
 const NO_SHOW_STATUS: AgendaEntryStatus = 'NO_SHOW';
 
 /**
- * The two statuses that state an outcome. Everything else in the denominator
- * is an appointment whose hour passed and that nobody closed — see `pending`.
+ * AG-116, AG-140. The patient who came, waited and left before being seen.
+ *
+ * IN THE DENOMINATOR, OUT OF THE NUMERATOR, AND COUNTED ON ITS OWN — the three
+ * halves are the requirement, and they are why this is a second status rather
+ * than a flag on `NO_SHOW`. They HAD an appointment and they DID reach their
+ * hour, so taking them out of the denominator would shrink the total the rate
+ * is measured over and improve the clinic's figure for the sole reason that
+ * people got tired of waiting. And the count travels beside the rate because
+ * that is what the user asked this for: A METRIC THAT CAN BE REDUCED. A number
+ * nobody can see is a number nobody works on.
+ */
+const LEFT_WITHOUT_BEING_SEEN_STATUS: AgendaEntryStatus =
+  'LEFT_WITHOUT_BEING_SEEN';
+
+/**
+ * The statuses that state an outcome. Everything else in the denominator is an
+ * appointment whose hour passed and that nobody closed — see `pending`.
+ *
+ * `LEFT_WITHOUT_BEING_SEEN` IS ONE OF THEM: somebody recorded what happened,
+ * which is the whole difference between this status and the silence of an
+ * appointment nobody closed. Counting it as `pending` would say the outcome is
+ * unknown when it is precisely known.
  */
 const RESOLVED_STATUSES: readonly AgendaEntryStatus[] = [
   'FULFILLED',
   'NO_SHOW',
+  'LEFT_WITHOUT_BEING_SEEN',
 ];
 
 /**
@@ -84,6 +118,15 @@ export interface NoShowCountRow {
 export interface NoShowRate {
   /** AG-080, the numerator: appointments marked `NO_SHOW`. */
   noShow: number;
+  /**
+   * AG-140. Of `total`, those who came and left before being seen.
+   *
+   * NOT PART OF `noShow` AND NOT SUBTRACTED FROM `total`. It is served beside
+   * the rate, with the same three breakdowns, because it is the number the
+   * clinic acts on: waiting times are the only cause it has, and unlike the
+   * absences it is entirely the establishment's to fix.
+   */
+  leftWithoutBeingSeen: number;
   /** AG-081, the denominator: reached their hour and were not annulled. */
   total: number;
   /**
@@ -247,12 +290,18 @@ function rateOf(rows: readonly NoShowCountRow[]): NoShowRate {
 
   const total = sum(() => true);
   const noShow = sum((row) => row.status === NO_SHOW_STATUS);
+  const leftWithoutBeingSeen = sum(
+    (row) => row.status === LEFT_WITHOUT_BEING_SEEN_STATUS,
+  );
   const pending = sum((row) => !RESOLVED_STATUSES.includes(row.status));
 
   return {
     noShow,
+    leftWithoutBeingSeen,
     total,
     pending,
+    // AG-140: the numerator is `noShow` ALONE. Whoever left without being seen
+    // stays in `total` and never here — they came.
     rate: total === 0 ? null : round(noShow / total),
   };
 }

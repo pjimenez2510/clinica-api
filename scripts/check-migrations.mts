@@ -79,6 +79,18 @@ const PROTECTED = [
   // viva (AU-027). Sin él, dos reenvíos simultáneos dejan dos enlaces válidos
   // y el que se envió por error sigue sirviendo.
   'credential_invitation_one_live_per_user',
+  // Los tres índices únicos PARCIALES que hacen que «pulsar dos veces enviar a
+  // caja» no duplique cargos (BI-154). Sus predicados —`… IS NOT NULL` y
+  // `origin = 'CONSULTATION'`— no caben en `schema.prisma`, así que Prisma los
+  // lee como sobrantes; y sin ellos la idempotencia vuelve a ser una lectura
+  // previa, que bajo dos peticiones simultáneas no garantiza nada.
+  'charge_item_one_per_encounter_procedure',
+  'charge_item_one_per_service_order_item',
+  'charge_item_one_consultation_per_encounter',
+  // Índice único PARCIAL (`WHERE specialty_id IS NOT NULL`): UNA prestación por
+  // (especialidad, secuencia de visita), que es lo que hace inequívoca la
+  // propuesta del cargo de la consulta (BI-158).
+  'billable_service_one_per_consultation',
 ];
 
 /**

@@ -67,11 +67,34 @@ export function useDatabase(): () => PrismaClient {
     // COMMIT or the ROLLBACK — so no failure path can leave replica mode on,
     // and no `finally` is needed. `lock_timeout` stops an open transaction
     // elsewhere from stalling the run for the full three-minute hook timeout.
-    await prisma.$transaction(async (tx) => {
-      await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`); // prettier-ignore
-      await tx.$executeRawUnsafe(`SET LOCAL lock_timeout = '5s'`);
-      await tx.$executeRawUnsafe(truncateStatement);
-    });
+    await prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`); // prettier-ignore
+        await tx.$executeRawUnsafe(`SET LOCAL lock_timeout = '5s'`);
+        await tx.$executeRawUnsafe(truncateStatement);
+      },
+      /**
+       * AN EXPLICIT TIMEOUT, BECAUSE PRISMA'S DEFAULT IS 5 SECONDS AND THIS
+       * TRUNCATE ALREADY TAKES LONGER THAN THAT.
+       *
+       * Measured at 9.7 s once the `documents` tables landed, against a
+       * default that aborts at 5 s — so the cleanup between tests started
+       * failing at random, and the test that happened to run next got the
+       * blame for a helper it never touched.
+       *
+       * That failure mode is worse than a slow suite. A gate that fails
+       * randomly is a gate people learn to re-run instead of read, and the
+       * day it fails for a REAL reason nobody believes it.
+       *
+       * The number is deliberately far above the measurement rather than
+       * just above it: the statement grows with every table this schema
+       * gains, and a ceiling that tracks the current cost would need moving
+       * again on the next migration. `lock_timeout` above is what actually
+       * bounds the pathological case — an open transaction elsewhere — and
+       * it stays at five seconds.
+       */
+      { timeout: 60_000 },
+    );
   });
 
   afterAll(async () => {

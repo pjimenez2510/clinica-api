@@ -4,6 +4,7 @@ import {
   AgendaEntryHasEncounterError,
   AgendaEntryNotFoundError,
   InvalidAgendaTransitionError,
+  SubjectStatusNotDerivableError,
 } from '../domain/agenda.errors';
 import type { StatusChange } from '../domain/agenda.repository';
 import { PrismaAgendaRepository } from './prisma-agenda.repository';
@@ -44,6 +45,13 @@ function entryRow(overrides: Record<string, unknown> = {}) {
     status: 'BOOKED',
     blocksCalendar: true,
     releasedAt: null,
+    // AG-041, AG-121, AG-128: what `ENTRY_SELECT` reads of the arrival axis
+    // on an appointment nobody has arrived for yet.
+    checkedInAt: null,
+    subjectStatus: null,
+    subjectStatusAt: null,
+    emergencyAssessedAt: null,
+    emergencyFlaggedAt: null,
     bookingChannel: 'PHONE',
     serviceTypeConceptId: null,
     createdById: USER,
@@ -440,5 +448,111 @@ describe('the reschedule transaction', () => {
     ).rejects.toBeInstanceOf(AgendaEntryNotFoundError);
 
     expect(calls.map((call) => call.method)).toEqual(['entry.findFirst']);
+  });
+});
+
+/**
+ * AG-122 a AG-127. El eje del paciente, contra el doble del cliente Prisma.
+ *
+ * LO QUE ESTE ARCHIVO PRUEBA Y NO OTRO: que el `UPDATE` va CONDICIONADO al
+ * estado de paciente que se leyó —dos hechos que llegan a la vez producen un
+ * ganador y el perdedor se rechaza con lo que dejó el ganador, no con lo que
+ * leímos— y que las dos columnas se escriben juntas, que es lo que exige
+ * `agenda_entry_subject_status_carries_its_instant`.
+ */
+describe('recording a derived subject status', () => {
+  const SUBJECT_COMMAND = {
+    siteId: SITE,
+    entryId: ENTRY_ID,
+    changedById: USER,
+    fact: 'CLINICAL_NOTE_OPENED' as const,
+    at: NOW,
+  };
+
+  it('AG-121 writes the state and its instant together, conditioned on what it read', async () => {
+    const { calls, repository } = prismaDouble({
+      reads: [
+        entryRow({ status: 'CHECKED_IN', subjectStatus: 'ARRIVED' }),
+        entryRow({ status: 'CHECKED_IN', subjectStatus: 'RECEIVING_CARE' }),
+      ],
+    });
+
+    await repository.recordSubjectStatus(SUBJECT_COMMAND, () => 'RECEIVING_CARE'); // prettier-ignore
+
+    const update = calls.find((call) => call.method === 'entry.updateMany');
+    // Conditioned on the state that was read: the loser of a race matches
+    // zero rows instead of overwriting the winner.
+    expect(update?.args).toMatchObject({
+      where: { id: ENTRY_ID, siteId: SITE, subjectStatus: 'ARRIVED' },
+      data: { subjectStatus: 'RECEIVING_CARE', subjectStatusAt: NOW },
+    });
+  });
+
+  it('AG-071 answers a foreign or missing entry the same way', async () => {
+    const { repository } = prismaDouble({ reads: [null] });
+
+    await expect(
+      repository.recordSubjectStatus(SUBJECT_COMMAND, () => 'READY'),
+    ).rejects.toBeInstanceOf(AgendaEntryNotFoundError);
+  });
+
+  it('AG-125 refuses with the state SOMEBODY ELSE left when the update matches nothing', async () => {
+    const { repository } = prismaDouble({
+      reads: [
+        entryRow({ status: 'CHECKED_IN', subjectStatus: 'ARRIVED' }),
+        { subjectStatus: 'DEPARTED' },
+      ],
+      updatedCount: 0,
+    });
+
+    const rejection = await repository
+      .recordSubjectStatus(SUBJECT_COMMAND, () => 'RECEIVING_CARE')
+      .catch((error: unknown) => error);
+
+    expect(rejection).toBeInstanceOf(SubjectStatusNotDerivableError);
+    expect((rejection as SubjectStatusNotDerivableError).params).toEqual({
+      current: 'DEPARTED',
+    });
+  });
+
+  it('AG-122 writes nothing when the policy refuses', async () => {
+    const { calls, repository } = prismaDouble({
+      reads: [entryRow({ status: 'BOOKED', subjectStatus: null })],
+    });
+
+    await expect(
+      repository.recordSubjectStatus(SUBJECT_COMMAND, () => {
+        throw new SubjectStatusNotDerivableError(null);
+      }),
+    ).rejects.toBeInstanceOf(SubjectStatusNotDerivableError);
+
+    expect(calls.some((call) => call.method === 'entry.updateMany')).toBe(
+      false,
+    );
+  });
+
+  it('AG-121 never writes to `agenda_status_history`: the two axes are separate', async () => {
+    /**
+     * No se reutiliza la tabla del otro eje. Son dos ejes distintos (AG-121) y
+     * mezclarlos obligaría a que sus dos columnas de estado fueran anulables,
+     * que es como se pierde la garantía de que siempre hay una.
+     *
+     * AG-126 —el rastro completo del eje del paciente— NO ESTÁ CUBIERTO Y
+     * FALTA ESQUEMA: pide `agenda_subject_status_history` con la forma y los
+     * disparadores de `agenda_status_history` (rechazo de UPDATE, DELETE y
+     * TRUNCATE) más la referencia al hecho que originó el cambio. Hoy sólo se
+     * guarda la CACHÉ de la última fila (`subject_status_at`), así que al
+     * tercer cambio no se puede contestar cuándo fueron los dos primeros.
+     */
+    const { calls, repository } = prismaDouble({
+      reads: [
+        entryRow({ status: 'CHECKED_IN', subjectStatus: 'ARRIVED' }),
+        entryRow({ status: 'CHECKED_IN', subjectStatus: 'RECEIVING_CARE' }),
+      ],
+    });
+
+    await repository.recordSubjectStatus(SUBJECT_COMMAND, () => 'RECEIVING_CARE'); // prettier-ignore
+
+    expect(calls.some((call) => call.method === 'history.create')).toBe(false);
   });
 });

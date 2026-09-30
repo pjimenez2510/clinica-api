@@ -1,0 +1,287 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import {
+  AccountNotFoundError,
+  EmissionPointInactiveError,
+  FinalConsumerNotConfirmedError,
+  InvoiceNotFoundError,
+} from '../domain/billing.errors';
+import type {
+  AccountView,
+  BillingAccountRepository,
+  BillingCatalogueRepository,
+  InvoiceView,
+  PayerView,
+} from '../domain/billing.repository';
+import { Money } from '../domain/money';
+import { InvoicingService } from './invoicing.service';
+
+const SITE = 'site-1';
+const ACCOUNT = 'account-1';
+const EMISSION_POINT = 'emission-1';
+
+const account: AccountView = {
+  id: ACCOUNT,
+  siteId: SITE,
+  patientId: 'patient-1',
+  encounterId: null,
+  payerId: 'payer-particular',
+  priceListId: 'list-particular',
+  status: 'OPEN',
+  openedAt: new Date('2026-05-11T14:00:00Z'),
+  closedAt: null,
+};
+
+const payer = (overrides: Partial<PayerView> = {}): PayerView => ({
+  id: 'payer-particular',
+  code: 'PARTICULAR',
+  name: 'Particular (paga el paciente)',
+  kind: 'SELF_PAY',
+  ruc: null,
+  agreementReference: null,
+  agreementValidTo: null,
+  active: true,
+  ...overrides,
+});
+
+const invoice: InvoiceView = {
+  id: 'invoice-1',
+  accountId: ACCOUNT,
+  siteId: SITE,
+  emissionPointId: EMISSION_POINT,
+  sequential: '000000001',
+  accessKey: null,
+  receiver: {
+    buyerIdentificationType: '05',
+    buyerIdentification: '1710034065',
+    buyerName: 'Guamán Andrade, María José',
+    buyerEmail: null,
+    isFinalConsumer: false,
+  },
+  totals: {
+    subtotalTaxed: Money.ZERO,
+    subtotalUntaxed: Money.parse('30.00'),
+    discountTotal: Money.ZERO,
+    taxTotal: Money.ZERO,
+    total: Money.parse('30.00'),
+  },
+  status: 'ISSUED',
+  issuedAt: new Date('2026-05-11T15:00:00Z'),
+  authorisedAt: null,
+  issuedById: 'user-1',
+};
+
+/**
+ * The ports as doubles, with every mock held in a NAMED local — see the note
+ * in `patient-account.service.spec.ts` for why `expect(port.method)` is not
+ * spelled that way here.
+ */
+function build(options: { accounts?: Record<string, unknown> } = {}) {
+  const mocks = {
+    findAccount: vi.fn().mockResolvedValue(account),
+    findEmissionPoint: vi
+      .fn()
+      .mockResolvedValue({ id: EMISSION_POINT, code: '001', active: true }),
+    findAccountPatient: vi.fn().mockResolvedValue({
+      patientId: 'patient-1',
+      identifierType: 'CEDULA',
+      identifierValue: '1710034065',
+      fullName: 'Guamán Andrade, María José',
+    }),
+    issueInvoice: vi.fn().mockResolvedValue(invoice),
+    findInvoice: vi.fn().mockResolvedValue(invoice),
+    listInvoices: vi.fn().mockResolvedValue([invoice]),
+    findPayer: vi.fn().mockResolvedValue(payer()),
+    record: vi.fn().mockResolvedValue(undefined),
+    ...options.accounts,
+  };
+
+  return {
+    service: new InvoicingService(
+      mocks as unknown as BillingAccountRepository,
+      mocks as unknown as BillingCatalogueRepository,
+      mocks,
+    ),
+    mocks,
+  };
+}
+
+const requester = { userId: 'user-1' };
+const receiver = {
+  identificationType: '05' as const,
+  identification: '1710034065',
+  name: 'Guamán Andrade, María José',
+};
+
+describe('BI-080 a BI-089 emitir la factura', () => {
+  it('BI-080 emite con el receptor declarado y lo pasa ya resuelto al adaptador', async () => {
+    const { service: invoicing, mocks } = build();
+
+    await invoicing.issueInvoice(
+      { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver }, // prettier-ignore
+      requester,
+    );
+
+    expect(mocks.issueInvoice).toHaveBeenCalledWith(
+      expect.objectContaining({
+        receiver: expect.objectContaining({
+          buyerIdentification: '1710034065',
+          isFinalConsumer: false,
+        }),
+      }),
+    );
+  });
+
+  it('BI-081 rechaza «Consumidor Final» sin confirmación y sin motivo', async () => {
+    const { service: invoicing, mocks } = build();
+
+    await expect(
+      invoicing.issueInvoice(
+        {
+          accountId: ACCOUNT,
+          siteId: SITE,
+          emissionPointId: EMISSION_POINT,
+          receiver: { finalConsumer: { confirmed: true } },
+        },
+        requester,
+      ),
+    ).rejects.toBeInstanceOf(FinalConsumerNotConfirmedError);
+
+    // AND NOTHING WAS ISSUED. The refusal happens before the transaction, so
+    // no sequential is burned on a document that never existed.
+    expect(mocks.issueInvoice).not.toHaveBeenCalled();
+  });
+
+  it('BI-085 rechaza facturar por un punto de emisión desactivado', async () => {
+    const { service: invoicing } = build({
+      accounts: {
+        findEmissionPoint: vi.fn().mockResolvedValue({
+          id: EMISSION_POINT,
+          code: '001',
+          active: false,
+        }),
+      },
+    });
+
+    await expect(
+      invoicing.issueInvoice(
+        { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver }, // prettier-ignore
+        requester,
+      ),
+    ).rejects.toBeInstanceOf(EmissionPointInactiveError);
+  });
+
+  it('BI-135 calla igual ante un punto de emisión de otra sede que ante uno inexistente', async () => {
+    const { service: invoicing } = build({
+      accounts: { findEmissionPoint: vi.fn().mockResolvedValue(null) },
+    });
+
+    await expect(
+      invoicing.issueInvoice(
+        { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver }, // prettier-ignore
+        requester,
+      ),
+    ).rejects.toBeInstanceOf(InvoiceNotFoundError);
+  });
+
+  it('BI-135 rechaza facturar una cuenta que no es de esta sede', async () => {
+    const { service: invoicing } = build({
+      accounts: { findAccount: vi.fn().mockResolvedValue(null) },
+    });
+
+    await expect(
+      invoicing.issueInvoice(
+        { accountId: ACCOUNT, siteId: 'other', emissionPointId: EMISSION_POINT, receiver }, // prettier-ignore
+        requester,
+      ),
+    ).rejects.toBeInstanceOf(AccountNotFoundError);
+  });
+
+  it('BI-132 deja constancia de quién emitió, sin cargar la ficha en la bitácora', async () => {
+    const { service: invoicing, mocks } = build();
+
+    await invoicing.issueInvoice(
+      { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver }, // prettier-ignore
+      requester,
+    );
+
+    expect(mocks.record).toHaveBeenCalledWith({
+      userId: 'user-1',
+      resourceType: 'invoice',
+      resourceId: 'invoice-1',
+      action: 'CREATE',
+      ip: undefined,
+      userAgent: undefined,
+    });
+  });
+
+  it('BI-090 no expone ninguna operación que modifique una factura emitida', () => {
+    // The absence IS the requirement (D-A-007). A route that existed without a
+    // screen would be used anyway, so what is asserted is the whole public
+    // surface of the service that owns invoices.
+    const surface = Object.getOwnPropertyNames(InvoicingService.prototype)
+      .filter((name) => name !== 'constructor')
+      .sort();
+
+    expect(surface).toEqual([
+      'findInvoice',
+      'issueInvoice',
+      'listInvoices',
+      'proposedReceiver',
+      'receiverContext',
+      'requireAccount',
+    ]);
+  });
+});
+
+describe('BI-082, BI-087 el receptor propuesto', () => {
+  it('BI-082 propone la identificación del paciente de la cuenta', async () => {
+    const { service: invoicing } = build();
+
+    await expect(
+      invoicing.proposedReceiver({ accountId: ACCOUNT, siteId: SITE }),
+    ).resolves.toEqual({
+      identificationType: '05',
+      identification: '1710034065',
+      name: 'Guamán Andrade, María José',
+    });
+  });
+
+  it('BI-087 no propone jamás al pagador institucional como receptor', async () => {
+    // A reimbursement invoice made out to the insurer is not the patient's
+    // expense, and the insurer rejects it (REQ-084).
+    const { service: invoicing } = build({
+      accounts: {
+        findPayer: vi
+          .fn()
+          .mockResolvedValue(payer({ kind: 'PRIVATE_INSURANCE', ruc: '1790012344001' })), // prettier-ignore
+      },
+    });
+
+    const proposal = await invoicing.proposedReceiver({
+      accountId: ACCOUNT,
+      siteId: SITE,
+    });
+
+    expect(proposal.identification).toBe('1710034065');
+  });
+
+  it('BI-082 no propone nada cuando la ficha no tiene identificación oficial', async () => {
+    const { service: invoicing } = build({
+      accounts: {
+        findAccountPatient: vi.fn().mockResolvedValue({
+          patientId: 'patient-1',
+          identifierType: null,
+          identifierValue: null,
+          fullName: 'Sin, Identificar',
+        }),
+      },
+    });
+
+    // EMPTY, and not «a cedula with an empty number»: the cashier states who
+    // is paying, which BI-080 demands anyway.
+    await expect(
+      invoicing.proposedReceiver({ accountId: ACCOUNT, siteId: SITE }),
+    ).resolves.toEqual({});
+  });
+});

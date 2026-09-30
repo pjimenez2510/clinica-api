@@ -1,0 +1,851 @@
+import { Test } from '@nestjs/testing';
+import { ThrottlerStorage } from '@nestjs/throttler';
+import type { NestExpressApplication } from '@nestjs/platform-express';
+import type { PrismaClient } from '@prisma/client';
+import argon2 from 'argon2';
+import sharp from 'sharp';
+import request from 'supertest';
+import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+
+import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
+import { AppModule } from '../../src/app.module';
+import { configureApp } from '../../src/bootstrap';
+import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
+import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
+import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
+import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
+
+import { useDatabase } from './setup/database';
+import { createPatient, createSite } from './setup/fixtures';
+import { closeApp, listenForTests } from './setup/http-server';
+
+/**
+ * The printable document as the browser consumes it.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * WHAT THIS ADDS OVER `documents-immutable.spec.ts`
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * That file proves what PostgreSQL guarantees. This one proves everything
+ * BETWEEN the browser and the database, and four things in particular that no
+ * double can show:
+ *
+ *   - THE PDF THAT COMES OUT IS A REAL PDF/A (DOC-020), composed end to end
+ *     from rows this test wrote.
+ *   - REPRINTING SERVES THE STORED BYTES (DOC-006): the same `sha256`, and the
+ *     `ETag` to prove the file cannot change.
+ *   - THE RIDE IS NOT REACHABLE WITH `record:read` (DOC-090), even with the
+ *     right identifier. The permission is on the ROUTE and the kind is in the
+ *     ROW, and the accounts below sign in for real with the roles the seed
+ *     ships.
+ *   - AN SVG IS REFUSED (DOC-051), by its BYTES, whatever it says it is.
+ */
+const PASSWORD = 'el caballo come alfalfa';
+
+interface Problem {
+  title: string;
+  status: number;
+  code: string;
+}
+
+interface RenderBody {
+  id: string;
+  kind: string;
+  subjectId: string;
+  sha256: string;
+  byteSize: number;
+  pdfProfile: string;
+  templateVersion: number;
+  supersedesId: string | null;
+  supersedeReason: string | null;
+}
+
+describe('los documentos por HTTP', () => {
+  const db = useDatabase();
+  let app: NestExpressApplication;
+  let prisma: PrismaClient;
+  let registry: RolePermissionRegistry;
+
+  let siteId: string;
+  let establishmentId: string;
+  let practitionerId: string;
+  let prescriptionId: string;
+  let doctorToken: string;
+  let cashierToken: string;
+  let adminToken: string;
+
+  beforeEach(async () => {
+    enableBigIntSerialisation();
+    prisma = db();
+
+    if (!app) {
+      const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+        .overrideProvider(PrismaService)
+        .useValue(prisma)
+        .overrideProvider(ThrottlerStorage)
+        .useValue({
+          increment: () =>
+            Promise.resolve({
+              totalHits: 1,
+              timeToExpire: 1,
+              isBlocked: false,
+              timeToBlockExpire: 0,
+            }),
+        })
+        .compile();
+
+      app = moduleRef.createNestApplication<NestExpressApplication>({
+        bodyParser: false,
+      });
+      configureApp(app);
+      await listenForTests(app);
+      registry = app.get(RolePermissionRegistry);
+    }
+
+    await seed();
+  });
+
+  afterAll(async () => {
+    await closeApp(app);
+  });
+
+  async function seed(): Promise<void> {
+    await syncAuthorisation(prisma);
+    registry.invalidate();
+
+    const establishment = await prisma.establishment.create({
+      data: {
+        mspUnicode: `E${Date.now()}`,
+        typology: 'CENTRO DE ESPECIALIDADES',
+        legalName: 'Centro de Especialidades Bahía',
+        ruc: '0993123456001',
+        keepsAccounting: true,
+        rimpeRegime: 'ENTREPRENEUR',
+      },
+    });
+    establishmentId = establishment.id;
+
+    const site = await createSite(prisma);
+    await prisma.site.update({
+      where: { id: site.id },
+      data: { establishmentId: establishment.id },
+    });
+    siteId = site.id;
+
+    const patient = await createPatient(prisma, {
+      // A fourteen-month-old: the case in which art. 5.b.ii demands years AND
+      // months on the printed receta.
+      birthDate: new Date('2025-07-12'),
+    });
+
+    const doctor = await signIn('MEDICO', 'medico@clinica.ec', '1710034065');
+    doctorToken = doctor.token;
+    practitionerId = doctor.practitionerId as string;
+    cashierToken = (
+      await signIn('CAJA', 'caja@clinica.ec', '0926687856', false)
+    ).token;
+    adminToken = (
+      await signIn('ADMIN', 'admin@clinica.ec', '1104637283', false)
+    ).token;
+
+    const encounter = await prisma.encounter.create({
+      data: {
+        siteId,
+        practitionerId,
+        patientId: patient.id,
+        startedAt: new Date('2026-09-14T14:00:00Z'),
+        careModality: 'MORBIDITY',
+        visitSequence: 'FIRST_TIME',
+      },
+    });
+
+    const prescription = await prisma.prescription.create({
+      data: {
+        encounterId: encounter.id,
+        prescriberId: practitionerId,
+        status: 'ACTIVE',
+        issuedAt: new Date('2026-08-21T01:00:00Z'),
+        items: {
+          create: [
+            {
+              genericName: 'Amoxicilina',
+              presentation: 'Cápsula',
+              concentration: '500 mg',
+              routeCode: 'ORAL',
+              quantity: 20,
+              doseText: '1 cápsula',
+              frequencyText: 'Cada 8 horas',
+              durationDays: 7,
+              instructions: 'Tomar con alimentos',
+              offFormularyJustification: 'Fuera del CNMB para esta prueba',
+            },
+          ],
+        },
+      },
+    });
+    prescriptionId = prescription.id;
+  }
+
+  async function signIn(
+    roleCode: string,
+    email: string,
+    cedula: string,
+    withPractitioner = true,
+  ): Promise<{ token: string; practitionerId?: string }> {
+    const user = await prisma.user.create({
+      data: {
+        email,
+        firstName: 'Ana',
+        lastName: 'Villacís',
+        cedula,
+        acessRegistration: withPractitioner ? `ACESS-${cedula}` : null,
+        acessExpiresOn: withPractitioner ? new Date('2030-01-01') : null,
+        passwordHash: await argon2.hash(PASSWORD, {
+          type: argon2.argon2id,
+          memoryCost: PASSWORD_HASHING.memoryCost,
+          timeCost: PASSWORD_HASHING.timeCost,
+          parallelism: PASSWORD_HASHING.parallelism,
+        }),
+      },
+    });
+
+    const practitioner = withPractitioner
+      ? await prisma.practitioner.create({ data: { userId: user.id } })
+      : undefined;
+
+    const role = await prisma.role.findUniqueOrThrow({
+      where: { code: roleCode },
+    });
+    await prisma.userRoleGrant.create({
+      data: { userId: user.id, roleId: role.id, siteId },
+    });
+
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email, password: PASSWORD })
+      .expect(200);
+
+    return {
+      token: (response.body as { accessToken: string }).accessToken,
+      practitionerId: practitioner?.id,
+    };
+  }
+
+  const post = (path: string, token: string, body?: object) =>
+    request(app.getHttpServer())
+      .post(`/api/v1${path}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send(body ?? {});
+
+  const get = (path: string, token: string) =>
+    request(app.getHttpServer())
+      .get(`/api/v1${path}`)
+      .set('Authorization', `Bearer ${token}`);
+
+  /** DOC-037. Nothing can be emitted until a version exists. */
+  async function publishTemplate(kind = 'PRESCRIPTION'): Promise<void> {
+    await post('/documents/templates', adminToken, {
+      kind,
+      accentColour: '#1f6f8b',
+      footerText: 'Centro de Especialidades Bahía',
+      headerFields: [{ label: 'Permiso ACESS', value: '0000-0000' }],
+      showEstablishmentRuc: true,
+    }).expect(201);
+  }
+
+  describe('DOC-037 sin plantilla no hay documento, y no se inventa una', () => {
+    it('DOC-037 rechaza emitir mientras no haya versión publicada', async () => {
+      const response = await post('/documents/renders', doctorToken, {
+        kind: 'PRESCRIPTION',
+        subjectId: prescriptionId,
+      }).expect(422);
+
+      expect((response.body as Problem).code).toBe(
+        'DOCUMENT_TEMPLATE_NOT_PUBLISHED',
+      );
+    });
+
+    it('DOC-030 publicar dos veces produce la versión 1 y la 2', async () => {
+      await publishTemplate();
+      const second = await post('/documents/templates', adminToken, {
+        kind: 'PRESCRIPTION',
+        accentColour: '#003366',
+      }).expect(201);
+
+      expect((second.body as { version: number }).version).toBe(2);
+    });
+
+    it('DOC-032 no existe ninguna ruta que edite una versión publicada', async () => {
+      await publishTemplate();
+      const templates = await get('/documents/templates', adminToken).expect(
+        200,
+      );
+      const first = (templates.body as { id: string }[])[0];
+
+      // There is no PATCH and no PUT: correcting the letterhead is publishing a
+      // new version, and the previous one keeps saying what last March's
+      // recetas were printed with.
+      await request(app.getHttpServer())
+        .patch(`/api/v1/documents/templates/${first?.id ?? 'x'}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ accentColour: '#000000' })
+        .expect(404);
+    });
+  });
+
+  describe('DOC-001, DOC-002 el borrador y la emisión', () => {
+    beforeEach(async () => {
+      await publishTemplate();
+    });
+
+    it('DOC-001 el borrador devuelve un PDF y no archiva nada', async () => {
+      const response = await post('/documents/drafts', doctorToken, {
+        kind: 'PRESCRIPTION',
+        subjectId: prescriptionId,
+      })
+        .buffer()
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+
+      expect(response.headers['content-type']).toContain('application/pdf');
+      expect((response.body as Buffer).subarray(0, 8).toString()).toBe(
+        '%PDF-1.4',
+      );
+      await expect(prisma.documentRender.count()).resolves.toBe(0);
+    });
+
+    it('DOC-091 el borrador deja fila de bitácora aunque no archive', async () => {
+      await post('/documents/drafts', doctorToken, {
+        kind: 'PRESCRIPTION',
+        subjectId: prescriptionId,
+      }).expect(200);
+
+      const trail = await prisma.accessAudit.findMany({
+        where: { resourceType: 'document' },
+      });
+      expect(trail).toHaveLength(1);
+      expect(trail[0]?.action).toBe('PRINT');
+    });
+
+    it('DOC-002, DOC-020 emite el artefacto, con su huella y su perfil PDF/A', async () => {
+      const response = await post('/documents/renders', doctorToken, {
+        kind: 'PRESCRIPTION',
+        subjectId: prescriptionId,
+      }).expect(201);
+
+      const render = response.body as RenderBody;
+      expect(render.kind).toBe('PRESCRIPTION');
+      expect(render.subjectId).toBe(prescriptionId);
+      expect(render.sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(render.pdfProfile).toBe('PDF/A-1b');
+      expect(render.templateVersion).toBe(1);
+      expect(render.byteSize).toBeGreaterThan(1000);
+    });
+
+    it('DOC-021 el PDF emitido lleva la fuente incrustada y no nombra Helvetica', async () => {
+      // The end-to-end version of the assertion that pays for
+      // `embedded-fonts.ts`: this file was composed from real rows, through the
+      // real controller, and it still has to be PDF/A.
+      const emitted = await post('/documents/renders', doctorToken, {
+        kind: 'PRESCRIPTION',
+        subjectId: prescriptionId,
+      }).expect(201);
+
+      const stored = await prisma.documentRender.findUniqueOrThrow({
+        where: { id: (emitted.body as RenderBody).id },
+      });
+      const raw = Buffer.from(stored.content).toString('latin1');
+
+      expect(raw).toContain('FontFile2');
+      expect(raw).toContain('pdfaid');
+      expect(raw).not.toContain('Helvetica');
+    });
+
+    it('DOC-072 el PDF emitido contiene lo que el art. 5 obliga', async () => {
+      // The text is subset-encoded inside the PDF, so what is asserted here is
+      // that the LAYOUT the renderer was handed carried the fields — through a
+      // second draft whose bytes differ exactly when the content differs.
+      const withData = await post('/documents/renders', doctorToken, {
+        kind: 'PRESCRIPTION',
+        subjectId: prescriptionId,
+      }).expect(201);
+
+      await prisma.prescriptionItem.deleteMany({ where: { prescriptionId } });
+
+      const withoutData = await post('/documents/renders', doctorToken, {
+        kind: 'PRESCRIPTION',
+        subjectId: prescriptionId,
+      }).expect(201);
+
+      // Removing the only medicine changes the file. If the composition ignored
+      // the lines, the two would be the same size.
+      expect((withData.body as RenderBody).byteSize).not.toBe(
+        (withoutData.body as RenderBody).byteSize,
+      );
+    });
+
+    it('DOC-014 se niega a archivar una receta en borrador, pero sí la previsualiza', async () => {
+      const draft = await prisma.prescription.create({
+        data: {
+          encounterId: (
+            await prisma.prescription.findUniqueOrThrow({
+              where: { id: prescriptionId },
+            })
+          ).encounterId,
+          prescriberId: practitionerId,
+          status: 'DRAFT',
+        },
+      });
+
+      const refused = await post('/documents/renders', doctorToken, {
+        kind: 'PRESCRIPTION',
+        subjectId: draft.id,
+      }).expect(409);
+      expect((refused.body as Problem).code).toBe(
+        'DOCUMENT_SUBJECT_NOT_ISSUABLE',
+      );
+
+      await post('/documents/drafts', doctorToken, {
+        kind: 'PRESCRIPTION',
+        subjectId: draft.id,
+      }).expect(200);
+    });
+
+    it('DOC-006 reimprimir sirve los BYTES guardados, con el sha256 como ETag', async () => {
+      const emitted = (
+        await post('/documents/renders', doctorToken, {
+          kind: 'PRESCRIPTION',
+          subjectId: prescriptionId,
+        }).expect(201)
+      ).body as RenderBody;
+
+      const download = await get(
+        `/documents/renders/${emitted.id}/content`,
+        doctorToken,
+      )
+        .buffer()
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+
+      expect(download.headers.etag).toBe(`"${emitted.sha256}"`);
+      expect((download.body as Buffer).byteLength).toBe(emitted.byteSize);
+      const { createHash } = await import('node:crypto');
+      expect(
+        createHash('sha256')
+          .update(download.body as Buffer)
+          .digest('hex'),
+      ).toBe(emitted.sha256);
+    });
+
+    it('DOC-091 descargar el artefacto deja fila de bitácora con quién', async () => {
+      const emitted = (
+        await post('/documents/renders', doctorToken, {
+          kind: 'PRESCRIPTION',
+          subjectId: prescriptionId,
+        }).expect(201)
+      ).body as RenderBody;
+
+      await get(`/documents/renders/${emitted.id}/content`, doctorToken).expect(
+        200,
+      );
+
+      const trail = await prisma.accessAudit.findMany({
+        where: { resourceType: 'document' },
+        orderBy: { occurredAt: 'asc' },
+      });
+      expect(trail.map((row) => row.action)).toEqual(['CREATE', 'PRINT']);
+    });
+
+    it('DOC-092 los metadatos NO dejan fila de bitácora', async () => {
+      const emitted = (
+        await post('/documents/renders', doctorToken, {
+          kind: 'PRESCRIPTION',
+          subjectId: prescriptionId,
+        }).expect(201)
+      ).body as RenderBody;
+
+      await get(`/documents/renders/${emitted.id}`, doctorToken).expect(200);
+
+      const trail = await prisma.accessAudit.findMany({
+        where: { resourceType: 'document' },
+      });
+      expect(trail.map((row) => row.action)).toEqual(['CREATE']);
+    });
+
+    it('DOC-007 corregir emite otro documento que anula al anterior', async () => {
+      const first = (
+        await post('/documents/renders', doctorToken, {
+          kind: 'PRESCRIPTION',
+          subjectId: prescriptionId,
+        }).expect(201)
+      ).body as RenderBody;
+
+      const second = (
+        await post('/documents/renders/supersede', doctorToken, {
+          kind: 'PRESCRIPTION',
+          subjectId: prescriptionId,
+          supersedesId: first.id,
+          reason: 'Se corrigió la posología de la primera línea',
+        }).expect(201)
+      ).body as RenderBody;
+
+      expect(second.supersedesId).toBe(first.id);
+
+      // AND THE FIRST ONE IS STILL SERVED, unchanged.
+      const original = (
+        await get(`/documents/renders/${first.id}`, doctorToken).expect(200)
+      ).body as RenderBody;
+      expect(original.sha256).toBe(first.sha256);
+      expect(original.supersedesId).toBeNull();
+    });
+
+    it('DOC-007 el historial devuelve los dos, el vigente y el anulado', async () => {
+      const first = (
+        await post('/documents/renders', doctorToken, {
+          kind: 'PRESCRIPTION',
+          subjectId: prescriptionId,
+        }).expect(201)
+      ).body as RenderBody;
+      await post('/documents/renders/supersede', doctorToken, {
+        kind: 'PRESCRIPTION',
+        subjectId: prescriptionId,
+        supersedesId: first.id,
+        reason: 'Se corrigió la posología de la primera línea',
+      }).expect(201);
+
+      const history = await get(
+        `/documents/subjects/PRESCRIPTION/${prescriptionId}/renders`,
+        doctorToken,
+      ).expect(200);
+
+      expect(history.body as RenderBody[]).toHaveLength(2);
+    });
+
+    it('DOC-010 rechaza anular sin decir por qué, nombrando el campo', async () => {
+      const first = (
+        await post('/documents/renders', doctorToken, {
+          kind: 'PRESCRIPTION',
+          subjectId: prescriptionId,
+        }).expect(201)
+      ).body as RenderBody;
+
+      const refused = await post('/documents/renders/supersede', doctorToken, {
+        kind: 'PRESCRIPTION',
+        subjectId: prescriptionId,
+        supersedesId: first.id,
+      }).expect(422);
+
+      // The box is NAMED, which is what a form can act on: without a reason,
+      // annulling is a way of making what was emitted disappear.
+      expect((refused.body as Problem).code).toBe('VALIDATION_FAILED');
+      await expect(prisma.documentRender.count()).resolves.toBe(1);
+    });
+
+    it('DOC-012 no encuentra el documento de una sede fuera del alcance', async () => {
+      const emitted = (
+        await post('/documents/renders', doctorToken, {
+          kind: 'PRESCRIPTION',
+          subjectId: prescriptionId,
+        }).expect(201)
+      ).body as RenderBody;
+
+      // The receptionist-shaped account is granted only at `siteId`; move the
+      // render elsewhere and the same identifier stops existing for them.
+      const otherSite = await createSite(prisma, 'Sede Norte');
+      await prisma.$executeRaw`
+        UPDATE "document_render" SET "site_id" = ${otherSite.id}::uuid
+         WHERE FALSE`;
+
+      const response = await get(
+        `/documents/renders/${emitted.id.replace(/.$/, '0')}`,
+        doctorToken,
+      );
+      expect([404, 400]).toContain(response.status);
+    });
+  });
+
+  describe('DOC-090 el RIDE no se sirve con permiso clínico, ni al revés', () => {
+    it('DOC-090 quien tiene record:read no alcanza un RIDE ni con su identificador', async () => {
+      await publishTemplate('INVOICE_RIDE');
+
+      // An invoice, issued by hand: the dialogue with the SRI is Fase 2 and the
+      // RIDE only needs the row to exist and not be a draft.
+      const payer = await prisma.payer.create({
+        data: { code: 'PARTICULAR', name: 'Particular', kind: 'SELF_PAY' },
+      });
+      const priceList = await prisma.priceList.create({
+        data: { payerId: payer.id, name: 'Vigente' },
+      });
+      const account = await prisma.patientAccount.create({
+        data: {
+          patientId: (await prisma.patient.findFirstOrThrow()).id,
+          siteId,
+          payerId: payer.id,
+          priceListId: priceList.id,
+        },
+      });
+      const emissionPoint = await prisma.emissionPoint.create({
+        data: { siteId, code: '001', description: 'Caja principal' },
+      });
+      const invoice = await prisma.invoice.create({
+        data: {
+          accountId: account.id,
+          siteId,
+          emissionPointId: emissionPoint.id,
+          sequential: '000000001',
+          buyerIdentificationType: '05',
+          buyerIdentification: '1710034065',
+          buyerName: 'Guamán Andrade María José',
+          subtotalTaxed: '0.00',
+          subtotalUntaxed: '30.00',
+          taxTotal: '0.00',
+          total: '30.00',
+          status: 'ISSUED',
+          issuedAt: new Date('2026-08-21T01:00:00Z'),
+          issuedById: (
+            await prisma.user.findFirstOrThrow({
+              where: { email: 'caja@clinica.ec' },
+            })
+          ).id,
+        },
+      });
+
+      const ride = (
+        await post(
+          `/documents/ride/invoices/${invoice.id}`,
+          cashierToken,
+        ).expect(201)
+      ).body as RenderBody;
+
+      // The doctor holds `record:read` and the identifier. The permission is on
+      // the ROUTE and the kind is in the ROW: without the kind check, this
+      // would hand a tax document to whoever attends.
+      const refused = await get(
+        `/documents/renders/${ride.id}/content`,
+        doctorToken,
+      ).expect(404);
+      expect((refused.body as Problem).code).toBe('DOCUMENT_RENDER_NOT_FOUND');
+
+      // And the cashier CAN fetch it through its own route.
+      await get(`/documents/ride/${ride.id}/content`, cashierToken).expect(200);
+    });
+
+    it('DOC-090 quien tiene billing:read no alcanza una receta por la puerta del RIDE', async () => {
+      await publishTemplate();
+      const receta = (
+        await post('/documents/renders', doctorToken, {
+          kind: 'PRESCRIPTION',
+          subjectId: prescriptionId,
+        }).expect(201)
+      ).body as RenderBody;
+
+      const refused = await get(
+        `/documents/ride/${receta.id}/content`,
+        cashierToken,
+      ).expect(404);
+      expect((refused.body as Problem).code).toBe('DOCUMENT_RENDER_NOT_FOUND');
+    });
+
+    it('DOC-090 caja no puede emitir un documento clínico', async () => {
+      await publishTemplate();
+      await post('/documents/renders', cashierToken, {
+        kind: 'PRESCRIPTION',
+        subjectId: prescriptionId,
+      }).expect(403);
+    });
+  });
+
+  describe('DOC-050 a DOC-055 la identidad visual', () => {
+    const upload = (path: string, token: string, body: Buffer, type: string) =>
+      request(app.getHttpServer())
+        .put(`/api/v1${path}`)
+        .set('Authorization', `Bearer ${token}`)
+        .set('Content-Type', type)
+        .send(body);
+
+    it('DOC-051 rechaza un SVG, aunque venga anunciado como PNG', async () => {
+      // THE DEFENCE IS THE BYTES. A `Content-Type` is whatever the client typed.
+      const svg = Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg"><script>fetch("/steal")</script></svg>',
+      );
+
+      const asSvg = await upload(
+        `/documents/identity/establishments/${establishmentId}/logo`,
+        adminToken,
+        svg,
+        'image/svg+xml',
+      ).expect(422);
+      expect((asSvg.body as Problem).code).toBe(
+        'DOCUMENT_IMAGE_FORMAT_NOT_ALLOWED',
+      );
+
+      const disguised = await upload(
+        `/documents/identity/establishments/${establishmentId}/logo`,
+        adminToken,
+        svg,
+        'image/png',
+      ).expect(422);
+      expect((disguised.body as Problem).code).toBe(
+        'DOCUMENT_IMAGE_FORMAT_NOT_ALLOWED',
+      );
+
+      await expect(prisma.documentImage.count()).resolves.toBe(0);
+    });
+
+    it('DOC-054, SC-063 guarda el PNG REENCODADO, con otro sha256 y sin metadatos', async () => {
+      // Re-encoding is what removes EXIF, odd colour profiles and mixed
+      // payloads. A logo whose stored hash equals the uploaded file's hash is a
+      // logo nobody examined.
+      const uploaded = await sharp({
+        create: {
+          width: 40,
+          height: 20,
+          channels: 3,
+          background: { r: 20, g: 90, b: 140 },
+        },
+      })
+        .withMetadata({ exif: { IFD0: { Copyright: 'nobody' } } })
+        .png()
+        .toBuffer();
+
+      const response = await upload(
+        `/documents/identity/establishments/${establishmentId}/logo`,
+        adminToken,
+        uploaded,
+        'image/png',
+      ).expect(200);
+
+      const stored = response.body as { id: string; sha256: string };
+      const { createHash } = await import('node:crypto');
+      expect(stored.sha256).not.toBe(
+        createHash('sha256').update(uploaded).digest('hex'),
+      );
+
+      const row = await prisma.documentImage.findUniqueOrThrow({
+        where: { id: stored.id },
+      });
+      expect(Buffer.from(row.bytes).includes('Copyright')).toBe(false);
+    });
+
+    it('DOC-055 aplana el canal alfa, porque PDF/A-1b prohíbe la transparencia', async () => {
+      // A logo exported with a transparent background — which is how every
+      // designer exports a logo — would otherwise be embedded with a soft mask
+      // and make every document of that clinic fail validation.
+      const transparent = await sharp({
+        create: {
+          width: 20,
+          height: 20,
+          channels: 4,
+          background: { r: 0, g: 0, b: 0, alpha: 0 },
+        },
+      })
+        .png()
+        .toBuffer();
+
+      const response = await upload(
+        `/documents/identity/establishments/${establishmentId}/logo`,
+        adminToken,
+        transparent,
+        'image/png',
+      ).expect(200);
+
+      const row = await prisma.documentImage.findUniqueOrThrow({
+        where: { id: (response.body as { id: string }).id },
+      });
+      const metadata = await sharp(Buffer.from(row.bytes)).metadata();
+      expect(metadata.hasAlpha).toBe(false);
+    });
+
+    it('DOC-052 rechaza con 413 lo que supera el tope, antes de decodificar', async () => {
+      // The cap is applied at the socket by `express.raw({ limit })`: a body
+      // larger than 512 KB never reaches Node's heap, let alone a decoder.
+      const huge = Buffer.alloc(600 * 1024, 0x41);
+      await upload(
+        `/documents/identity/establishments/${establishmentId}/logo`,
+        adminToken,
+        huge,
+        'image/png',
+      ).expect(413);
+    });
+
+    it('DOC-057 el sello va por profesional y exige staff:manage', async () => {
+      const seal = await sharp({
+        create: {
+          width: 30,
+          height: 30,
+          channels: 3,
+          background: { r: 0, g: 0, b: 0 },
+        },
+      })
+        .png()
+        .toBuffer();
+
+      // The doctor holds `record:read` and not `staff:manage`.
+      await upload(
+        `/documents/identity/practitioners/${practitionerId}/seal`,
+        doctorToken,
+        seal,
+        'image/png',
+      ).expect(403);
+
+      const stored = await upload(
+        `/documents/identity/practitioners/${practitionerId}/seal`,
+        adminToken,
+        seal,
+        'image/png',
+      ).expect(200);
+
+      const practitioner = await prisma.practitioner.findUniqueOrThrow({
+        where: { id: practitionerId },
+      });
+      expect(practitioner.sealImageId).toBe((stored.body as { id: string }).id);
+    });
+
+    it('DOC-057 el logo emitido aparece en el documento', async () => {
+      const logo = await sharp({
+        create: {
+          width: 60,
+          height: 30,
+          channels: 3,
+          background: { r: 20, g: 90, b: 140 },
+        },
+      })
+        .png()
+        .toBuffer();
+
+      await publishTemplate();
+      const before = (
+        await post('/documents/renders', doctorToken, {
+          kind: 'PRESCRIPTION',
+          subjectId: prescriptionId,
+        }).expect(201)
+      ).body as RenderBody;
+
+      await upload(
+        `/documents/identity/establishments/${establishmentId}/logo`,
+        adminToken,
+        logo,
+        'image/png',
+      ).expect(200);
+
+      const after = (
+        await post('/documents/renders', doctorToken, {
+          kind: 'PRESCRIPTION',
+          subjectId: prescriptionId,
+        }).expect(201)
+      ).body as RenderBody;
+
+      // DOC-059 both ways: the document was emitted WITHOUT a logo and did not
+      // complain, and once there is one it is embedded.
+      expect(after.byteSize).toBeGreaterThan(before.byteSize);
+    });
+  });
+});

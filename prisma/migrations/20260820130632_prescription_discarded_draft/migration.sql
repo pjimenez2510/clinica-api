@@ -1,0 +1,23 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- A DRAFT PRESCRIPTION HAD NO WAY OUT
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- Found while building the module, not in review, which is why it is worth
+-- writing down: `prescription_issued_coherence` reads
+--
+--     (status = 'DRAFT') = (issued_at IS NULL)
+--
+-- so EVERY status other than DRAFT demands an issue instant. Combined with the
+-- rule that nothing clinical is deleted, a prescription typed by mistake could
+-- neither be issued (it is wrong), nor cancelled (that needs `issued_at`), nor
+-- removed. It stayed in the chart forever, and the next doctor had no way to
+-- tell it from one the patient is actually taking.
+--
+-- ⚠️ AND `CANCELLED` IS NOT THE ANSWER, which is the whole reason this needs a
+-- status of its own. Cancelling an ISSUED prescription is an act with weight:
+-- the paper is in the patient's hand, the pharmacy may already have dispensed
+-- against it, and art. 70 describes a procedure for it. Discarding a draft is
+-- housekeeping — nothing left the room. Collapsing the two would make «esta
+-- receta se anuló» unable to answer which of the two happened, the same defect
+-- `ENTERED_IN_ERROR` was created to avoid in the agenda.
+ALTER TYPE "prescription_status" ADD VALUE IF NOT EXISTS 'DISCARDED';

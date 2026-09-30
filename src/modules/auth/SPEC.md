@@ -169,7 +169,7 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   > NULL`, que es la misma condición con la que se guarda la matrícula, así
   > que «falso» significa que matricular será aceptado.
   >
-  > **POR QUÉ NO BASTABA CON `AccountDto`.** Saber si la PROPIA cuenta tiene
+  > **POR QUÉ NO BASTABA CON `UserAccountDto`.** Saber si la PROPIA cuenta tiene
   > segundo factor es un dato de uno mismo y no exige ningún permiso, pero el
   > único sitio donde viajaba era `GET /auth/users` —administración, con
   > `user:read` sobre toda la plantilla—. Sin el campo, `/mi-cuenta` tenía que

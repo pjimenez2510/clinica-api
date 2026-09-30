@@ -28,6 +28,8 @@ const TARGETS: readonly AgendaTransitionTarget[] = [
   'FULFILLED',
   'CANCELLED',
   'NO_SHOW',
+  'LEFT_WITHOUT_BEING_SEEN',
+  'ENTERED_IN_ERROR',
 ];
 
 const STATES: readonly AgendaEntryStatus[] = [
@@ -39,20 +41,31 @@ const STATES: readonly AgendaEntryStatus[] = [
   'CANCELLED',
   'NO_SHOW',
   'BLOCKED',
+  'LEFT_WITHOUT_BEING_SEEN',
+  'ENTERED_IN_ERROR',
 ];
 
-/** SPEC §5 verbatim. The test states the table so the code cannot be its own oracle. */
+/**
+ * SPEC §5 verbatim. The test states the table so the code cannot be its own
+ * oracle.
+ *
+ * `['CHECKED_IN', 'NO_SHOW']` IS ABSENT AND ITS ABSENCE IS AG-116. The pair
+ * used to be here; taking it out of this list is what makes the exhaustive
+ * complement below assert that the machine now REFUSES it.
+ */
 const ADMITTED: readonly [AgendaEntryStatus, AgendaTransitionTarget][] = [
   ['BOOKED', 'CONFIRMED'],
   ['BOOKED', 'CHECKED_IN'],
   ['BOOKED', 'CANCELLED'],
   ['BOOKED', 'NO_SHOW'],
+  ['BOOKED', 'ENTERED_IN_ERROR'],
   ['CONFIRMED', 'CHECKED_IN'],
   ['CONFIRMED', 'CANCELLED'],
   ['CONFIRMED', 'NO_SHOW'],
+  ['CONFIRMED', 'ENTERED_IN_ERROR'],
   ['CHECKED_IN', 'IN_PROGRESS'],
   ['CHECKED_IN', 'CANCELLED'],
-  ['CHECKED_IN', 'NO_SHOW'],
+  ['CHECKED_IN', 'LEFT_WITHOUT_BEING_SEEN'],
   ['IN_PROGRESS', 'FULFILLED'],
 ];
 
@@ -162,8 +175,43 @@ describe('the no-show clock rule', () => {
 describe('the effects of each arrival', () => {
   const now = new Date('2026-09-14T13:05:00Z');
 
-  it('AG-041 stamps the real arrival instant on CHECKED_IN', () => {
-    expect(effectsOf('CHECKED_IN', now)).toEqual({ checkedInAt: now });
+  it('AG-041, AG-127 stamp the arrival instant and the only typed subject status', () => {
+    // The two are ONE fact — the person crossed the door — and `ARRIVED` is
+    // the single value AG-122 lets anybody type, because it is the only one
+    // that leaves no other trace in the system.
+    expect(effectsOf('CHECKED_IN', now)).toEqual({
+      checkedInAt: now,
+      subjectStatus: 'ARRIVED',
+      subjectStatusAt: now,
+    });
+  });
+
+  it('AG-116 releases the slot and marks the patient DEPARTED', () => {
+    // The hour is empty in fact (AG-042's reasoning), and AG-127 closes the
+    // one outcome that would otherwise strand somebody on the board forever:
+    // whoever left without being seen never passes the cashier.
+    expect(effectsOf('LEFT_WITHOUT_BEING_SEEN', now)).toEqual({
+      releasedAt: now,
+      // Its OWN instant since `20260820121023_agenda_outcomes_and_board`, and
+      // the database now refuses the status without it: AG-140 filters this
+      // outcome by date over `agenda_entry`, like its three neighbours, and
+      // making it alone join against the trail would have made the metric a
+      // different query for an asymmetry that answers nothing.
+      leftWithoutBeingSeenAt: now,
+      subjectStatus: 'DEPARTED',
+      subjectStatusAt: now,
+    });
+  });
+
+  it('AG-117 releases the slot and stamps nothing that belongs to an annulment', () => {
+    // `cancelled_at` is what says «se anuló una cita que existía»; this says
+    // the recorded fact never happened, and one column for both acts would
+    // make the row unable to answer which of the two occurred. Hence its own
+    // instant — and, one layer up, its own reason column too.
+    expect(effectsOf('ENTERED_IN_ERROR', now)).toEqual({
+      releasedAt: now,
+      enteredInErrorAt: now,
+    });
   });
 
   it('AG-042 stamps the no-show and releases the slot in the same stroke', () => {

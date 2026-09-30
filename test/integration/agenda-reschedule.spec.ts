@@ -673,7 +673,7 @@ describe('la reprogramación de una cita por HTTP', () => {
       await request(app.getHttpServer())
         .post(`/api/v1/agenda/sites/${siteId}/entries/${originalId}/status`)
         .set('Authorization', `Bearer ${token}`)
-        .send({ to: 'CHECKED_IN' })
+        .send({ to: 'CHECKED_IN', emergency: false })
         .expect(200);
       await createEncounter(prisma, {
         siteId,

@@ -930,6 +930,9 @@ describe('the booking window of the site', () => {
         overbookingEnabled: true,
         overbookingCap: 2,
         overbookingPermission: 'agenda:overbook',
+        // AG-142: los quince minutos que escribió la migración, resueltos por
+        // la misma cadena y no quemados en el código.
+        lateArrivalGraceMinutes: 15,
       });
     });
 
@@ -945,6 +948,7 @@ describe('the booking window of the site', () => {
         overbookingEnabled: true,
         overbookingCap: 2,
         overbookingPermission: 'agenda:overbook',
+        lateArrivalGraceMinutes: 15,
       });
     });
 
@@ -973,6 +977,10 @@ describe('the booking window of the site', () => {
         // este parámetro es `true` — así que aquí el operador SÍ discrimina.
         overbookingEnabled: false,
         overbookingCap: 0,
+        // AG-142: cero es un valor legítimo —`site_parameter_grace_is_not_
+        // negative` lo admite— y es como una sede desactiva la política sin
+        // migración. Con `||` volvería a 15, que es justo el fallo.
+        lateArrivalGraceMinutes: 0,
       });
       expect(resolved).toEqual({
         minLeadMinutes: 0,
@@ -982,6 +990,7 @@ describe('the booking window of the site', () => {
         overbookingEnabled: false,
         overbookingCap: 0,
         overbookingPermission: 'agenda:overbook',
+        lateArrivalGraceMinutes: 0,
       });
     });
 

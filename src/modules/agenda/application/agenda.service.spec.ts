@@ -24,6 +24,7 @@ import type {
   NoShowCountRow,
   NoShowCountsQuery,
   OverbookingCountQuery,
+  PatientSubjectStatus,
   AvailabilityContext,
   AvailabilityContextQuery,
   DailyAgendaQuery,
@@ -37,6 +38,8 @@ import type {
   StatusChange,
   StoredDurationSources,
   StoredSiteParameters,
+  SubjectStatusCommand,
+  SubjectStatusRead,
   TransitionCommand,
   TransitionRead,
 } from '../domain/agenda.repository';
@@ -45,8 +48,11 @@ import {
   AgendaEntryNotFoundError,
   BlockOverlapsAppointmentsError,
   CancellationReasonRequiredError,
+  EmergencyAssessmentRequiredError,
+  EnteredInErrorReasonRequiredError,
   InvalidAgendaTransitionError,
   NoShowBeforeStartError,
+  SubjectStatusNotDerivableError,
   OverbookingLimitReachedError,
   OverbookingNotAllowedError,
   OverbookingNotAuthorisedError,
@@ -122,6 +128,13 @@ function anEntry(overrides: Partial<AgendaEntryView> = {}): AgendaEntryView {
     overbookingReason: null,
     overbookingAuthorisedById: null,
     releasedAt: null,
+    // AG-041, AG-118, AG-121, AG-128: an appointment nobody has arrived for
+    // has no arrival instant, no patient-axis state and no emergency call.
+    checkedInAt: null,
+    subjectStatus: null,
+    subjectStatusAt: null,
+    emergencyAssessedAt: null,
+    emergencyFlaggedAt: null,
     bookingChannel: 'PHONE',
     serviceTypeId: null,
     createdById: USER,
@@ -176,6 +189,14 @@ interface Recorded {
   authoriserQueries: AuthoriserPermissionsQuery[];
   transitions: { command: TransitionCommand; change: StatusChange }[];
   /**
+   * AG-122 to AG-127: the derived movements of the PATIENT axis, and the
+   * state the policy decided for each documented fact.
+   */
+  subjectStatusChanges: {
+    command: SubjectStatusCommand;
+    to: PatientSubjectStatus;
+  }[];
+  /**
    * AG-052: what the ONE atomic port call was told, and nothing about the
    * order of two calls — because there must not be two. `transitions` and
    * `booked` staying empty during a reschedule is the assertion.
@@ -202,6 +223,21 @@ function aTransitionRead(
   };
 }
 
+/** The row `recordSubjectStatus` hands the policy, as the adapter would. */
+function aSubjectStatusRead(
+  overrides: Partial<SubjectStatusRead> = {},
+): SubjectStatusRead {
+  return {
+    id: 'entry-1',
+    kind: 'APPOINTMENT',
+    status: 'CHECKED_IN',
+    // AG-127: the check-in effect wrote it, which is what makes the axis
+    // movable at all.
+    subjectStatus: 'ARRIVED',
+    ...overrides,
+  };
+}
+
 function repositoryDouble(
   overrides: {
     entries?: AgendaEntryView[];
@@ -215,6 +251,8 @@ function repositoryDouble(
     availability?: Partial<AvailabilityContext>;
     roomSiteId?: string | null;
     transitionRead?: TransitionRead;
+    /** AG-125, AG-127: the row the patient-axis policy judges. */
+    subjectStatusRead?: SubjectStatusRead;
     /** AG-050: the entry a reschedule reads before it decides, or `null`. */
     entry?: AgendaEntryView | null;
     /** AG-094, AG-095: what the site has stored, `null` when it has no row. */
@@ -251,6 +289,7 @@ function repositoryDouble(
     overbookingCounts: [],
     authoriserQueries: [],
     transitions: [],
+    subjectStatusChanges: [],
     reschedules: [],
   };
 
@@ -410,10 +449,34 @@ function repositoryDouble(
     // A policy that throws leaves nothing recorded, which is the assertion
     // half these tests make.
     transition: (command, decide) => {
-      const change = decide(overrides.transitionRead ?? aTransitionRead());
+      const read = overrides.transitionRead ?? aTransitionRead();
+      const change = decide(read);
       recorded.transitions.push({ command, change });
       return Promise.resolve(
-        anEntry({ status: change.to, releasedAt: change.effects.releasedAt ?? null }), // prettier-ignore
+        anEntry({
+          // The hour the entry was PROMISED, so AG-118's subtraction has the
+          // same two operands the real row would give it.
+          startsAt: read.startsAt,
+          status: change.to,
+          releasedAt: change.effects.releasedAt ?? null,
+          // AG-118: the arrival instant the effects stamped, so the service
+          // has something to subtract from `startsAt`.
+          checkedInAt: change.effects.checkedInAt ?? null,
+          subjectStatus: change.effects.subjectStatus ?? null,
+          subjectStatusAt: change.effects.subjectStatusAt ?? null,
+        }),
+      );
+    },
+    /**
+     * AG-122 to AG-127. Like the real adapter: reads, hands the row to the
+     * policy, records the state it derived. A policy that throws records
+     * nothing, which is what the AG-125 and AG-127 cases assert.
+     */
+    recordSubjectStatus: (command, decide) => {
+      const to = decide(overrides.subjectStatusRead ?? aSubjectStatusRead());
+      recorded.subjectStatusChanges.push({ command, to });
+      return Promise.resolve(
+        anEntry({ subjectStatus: to, subjectStatusAt: command.at }),
       );
     },
     findEntry: (query) =>
@@ -967,8 +1030,21 @@ describe('proposing the duration of an appointment', () => {
  * no-show clock, the encounter veto, and which effects each target stamps.
  */
 describe('transitioning an appointment', () => {
-  /** Started long ago: the no-show clock rule cannot interfere. */
+  /**
+   * Started long ago: the no-show clock rule cannot interfere.
+   *
+   * `CONFIRMED` AND NO LONGER `CHECKED_IN`, since AG-116 took
+   * `CHECKED_IN → NO_SHOW` out of the table: marking «no vino» on somebody
+   * standing in the waiting room is the lie that requirement exists to stop.
+   * Its own case is below.
+   */
   const STARTED = aTransitionRead({
+    status: 'CONFIRMED',
+    startsAt: new Date('2026-01-05T13:00:00Z'),
+  });
+
+  /** AG-116: arrived, and the patient axis says so (AG-127). */
+  const IN_THE_WAITING_ROOM = aTransitionRead({
     status: 'CHECKED_IN',
     startsAt: new Date('2026-01-05T13:00:00Z'),
   });
@@ -983,8 +1059,10 @@ describe('transitioning an appointment', () => {
   it('AG-041 stamps the arrival instant when the patient checks in', async () => {
     const { service, recorded } = serviceWith();
 
-    const entry = await service.transition(
-      { ...aTransition(), to: 'CHECKED_IN' },
+    const outcome = await service.transition(
+      // AG-128: the article-10 call travels with every arrival, and `false`
+      // is the ordinary answer.
+      { ...aTransition(), to: 'CHECKED_IN', emergency: false },
       REQUESTER,
     );
 
@@ -998,7 +1076,7 @@ describe('transitioning an appointment', () => {
     expect(change?.effects.checkedInAt).toBeInstanceOf(Date);
     // Arriving occupies the slot MORE, not less: nothing is released.
     expect(change?.effects.releasedAt).toBeUndefined();
-    expect(entry.status).toBe('CHECKED_IN');
+    expect(outcome.entry.status).toBe('CHECKED_IN');
   });
 
   it('AG-042 marks the no-show and releases the slot in one decision', async () => {
@@ -1137,7 +1215,10 @@ describe('transitioning an appointment', () => {
     });
 
     await expect(
-      service.transition({ ...aTransition(), to: 'CHECKED_IN' }, REQUESTER),
+      service.transition(
+        { ...aTransition(), to: 'CHECKED_IN', emergency: false },
+        REQUESTER,
+      ),
     ).rejects.toBeInstanceOf(InvalidAgendaTransitionError);
   });
 
@@ -1155,6 +1236,446 @@ describe('transitioning an appointment', () => {
     expect(logged).not.toContain('Motivo con dato de salud');
     expect(logged).not.toContain(PATIENT);
     expect(logged).not.toContain(PRACTITIONER);
+  });
+
+  /* ─── E8: los dos desenlaces nuevos ─────────────────────────────────── */
+
+  it('AG-116 releases the slot and takes the patient off the board when they leave without being seen', async () => {
+    const { service, recorded } = serviceWith({
+      transitionRead: IN_THE_WAITING_ROOM,
+    });
+
+    await service.transition(
+      { ...aTransition(), to: 'LEFT_WITHOUT_BEING_SEEN' },
+      REQUESTER,
+    );
+
+    const change = recorded.transitions[0]?.change;
+    // The hour is empty in fact, so it goes back — the reasoning of AG-042.
+    expect(change?.effects.releasedAt).toBeInstanceOf(Date);
+    // AG-127: whoever left never passes the cashier, so nothing of AG-125
+    // would ever fire for them. Without this they stay on the board forever.
+    expect(change?.effects.subjectStatus).toBe('DEPARTED');
+    expect(change?.effects.subjectStatusAt).toEqual(change?.effects.releasedAt);
+    // NOT an absence: nothing of the no-show path is stamped.
+    expect(change?.effects.noShowAt).toBeUndefined();
+    expect(change?.effects.cancelledAt).toBeUndefined();
+  });
+
+  it('AG-116 admits leaving without being seen with NO reason at all', async () => {
+    // OPTIONAL ON PURPOSE, the opposite of AG-044: whoever walked out does not
+    // always say why — that is precisely the case — and a mandatory box nobody
+    // can fill truthfully gets filled with anything. Who marked it and when is
+    // the history row (AG-004).
+    const { service, recorded } = serviceWith({
+      transitionRead: IN_THE_WAITING_ROOM,
+    });
+
+    await service.transition(
+      { ...aTransition(), to: 'LEFT_WITHOUT_BEING_SEEN' },
+      REQUESTER,
+    );
+
+    expect(recorded.transitions).toHaveLength(1);
+    expect(recorded.transitions[0]?.change.historyNote).toBeUndefined();
+  });
+
+  it('AG-116 refuses LEFT_WITHOUT_BEING_SEEN from any state other than CHECKED_IN', async () => {
+    // «Se fue sin ser atendido» presupposes arriving. Reachable from BOOKED it
+    // would be a second synonym for NO_SHOW, and which one got used would
+    // depend on who was typing.
+    for (const status of ['BOOKED', 'CONFIRMED', 'IN_PROGRESS'] as const) {
+      const { service, recorded } = serviceWith({
+        transitionRead: aTransitionRead({ status }),
+      });
+
+      await expect(
+        service.transition(
+          { ...aTransition(), to: 'LEFT_WITHOUT_BEING_SEEN' },
+          REQUESTER,
+        ),
+      ).rejects.toBeInstanceOf(InvalidAgendaTransitionError);
+      expect(recorded.transitions).toEqual([]);
+    }
+  });
+
+  it('AG-116 no longer admits NO_SHOW on somebody who checked in', async () => {
+    // THE REMOVAL IS THE REQUIREMENT: marking «no vino» on a person standing
+    // in the waiting room writes a false fact into an append-only history and
+    // poisons the numerator of AG-080.
+    const { service, recorded } = serviceWith({
+      transitionRead: IN_THE_WAITING_ROOM,
+    });
+
+    const rejection = await service
+      .transition({ ...aTransition(), to: 'NO_SHOW' }, REQUESTER)
+      .catch((error: unknown) => error);
+
+    expect(rejection).toBeInstanceOf(InvalidAgendaTransitionError);
+    expect((rejection as InvalidAgendaTransitionError).params).toEqual({
+      from: 'CHECKED_IN',
+      to: 'NO_SHOW',
+    });
+    expect(recorded.transitions).toEqual([]);
+  });
+
+  it('AG-117 requires a reason to retract an entry, even for internal callers', async () => {
+    const { service, recorded } = serviceWith();
+
+    await expect(
+      service.transition({ ...aTransition(), to: 'ENTERED_IN_ERROR' }, REQUESTER), // prettier-ignore
+    ).rejects.toBeInstanceOf(EnteredInErrorReasonRequiredError);
+    await expect(
+      service.transition(
+        { ...aTransition(), to: 'ENTERED_IN_ERROR', reason: '   ' },
+        REQUESTER,
+      ),
+    ).rejects.toBeInstanceOf(EnteredInErrorReasonRequiredError);
+    expect(recorded.transitions).toHaveLength(0);
+  });
+
+  it('AG-117 releases the slot and keeps the reason out of the cancellation note', async () => {
+    const { service, recorded } = serviceWith();
+
+    await service.transition(
+      { ...aTransition(), to: 'ENTERED_IN_ERROR', reason: 'Cédula equivocada' },
+      REQUESTER,
+    );
+
+    const change = recorded.transitions[0]?.change;
+    expect(change?.effects.releasedAt).toBeInstanceOf(Date);
+    // NOT `cancellation_note`: one column for both acts would make it
+    // unprovable from the row which of the two happened, which is exactly what
+    // this status came to separate.
+    expect(change?.cancellationNote).toBeUndefined();
+    expect(change?.effects.cancelledAt).toBeUndefined();
+    // The trail is the append-only history row (AG-004, AG-005).
+    expect(change?.historyNote).toBe('Cédula equivocada');
+  });
+
+  it('AG-117 refuses ENTERED_IN_ERROR once the appointment reached CHECKED_IN', async () => {
+    // Once the patient is there the appointment stopped being only a record:
+    // there is a person in the room. It is the boundary AG-045 draws with the
+    // encounter — what already touched somebody is not erased.
+    for (const status of ['CHECKED_IN', 'IN_PROGRESS', 'FULFILLED'] as const) {
+      const { service, recorded } = serviceWith({
+        transitionRead: aTransitionRead({ status }),
+      });
+
+      await expect(
+        service.transition(
+          { ...aTransition(), to: 'ENTERED_IN_ERROR', reason: 'Error' },
+          REQUESTER,
+        ),
+      ).rejects.toBeInstanceOf(InvalidAgendaTransitionError);
+      expect(recorded.transitions).toEqual([]);
+    }
+  });
+
+  /* ─── E8: la llegada ────────────────────────────────────────────────── */
+
+  it('AG-118 answers the arrival delay computed from the row, with its sign', async () => {
+    const { service } = serviceWith({ transitionRead: STARTED });
+
+    const outcome = await service.transition(
+      { ...aTransition(), to: 'CHECKED_IN', emergency: false },
+      REQUESTER,
+    );
+
+    // Promised on 5 January 2026 and arrived just now: the delay is a large
+    // POSITIVE number, and — the point — it is a number and not a status.
+    // `CHECKED_IN` stays true at the same time, which is exactly why a
+    // `LATE_ARRIVAL` state would put the machine in two places at once.
+    expect(outcome.arrivalDelayMinutes).toBeGreaterThan(0);
+    expect(outcome.entry.status).toBe('CHECKED_IN');
+  });
+
+  it('AG-118 keeps the sign when the patient arrives EARLY', async () => {
+    // Truncating at zero would turn «llegó veinte minutos antes» into «llegó
+    // a la hora», which is a different and false statement — and it is useful
+    // at the counter and in the median of AG-141.
+    const { service } = serviceWith({
+      transitionRead: aTransitionRead({
+        startsAt: new Date('2100-01-01T13:00:00Z'),
+      }),
+    });
+
+    const outcome = await service.transition(
+      { ...aTransition(), to: 'CHECKED_IN', emergency: false },
+      REQUESTER,
+    );
+
+    expect(outcome.arrivalDelayMinutes).toBeLessThan(0);
+  });
+
+  it('AG-119 warns about a late arrival and records it anyway', async () => {
+    const { service } = serviceWith({
+      transitionRead: STARTED,
+      // AG-142: the site's threshold, through the chain of AG-095.
+      siteParameters: { lateArrivalGraceMinutes: 15 },
+    });
+
+    const outcome = await service.transition(
+      { ...aTransition(), to: 'CHECKED_IN', emergency: false },
+      REQUESTER,
+    );
+
+    // WARNED, NOT REFUSED: the arrival is the moment Ley 77 art. 10 obliges
+    // the emergency call to be made, so a check-in that can be rejected is a
+    // check-in that some day does not happen.
+    expect(outcome.entry.status).toBe('CHECKED_IN');
+    expect(outcome.warnings).toHaveLength(1);
+    expect(outcome.warnings[0]).toContain('15');
+  });
+
+  it('AG-119 says nothing when the arrival is inside the site threshold', async () => {
+    const { service } = serviceWith({
+      transitionRead: STARTED,
+      // A threshold nothing can exceed: the warning is about the number, not
+      // about the transition having happened.
+      siteParameters: { lateArrivalGraceMinutes: 10_000_000 },
+    });
+
+    const outcome = await service.transition(
+      { ...aTransition(), to: 'CHECKED_IN', emergency: false },
+      REQUESTER,
+    );
+
+    expect(outcome.warnings).toEqual([]);
+  });
+
+  it('AG-119 warns on no transition other than the arrival', async () => {
+    const { service } = serviceWith();
+
+    const outcome = await service.transition(aTransition(), REQUESTER);
+
+    expect(outcome.warnings).toEqual([]);
+  });
+
+  /* ─── E8: la calificación del art. 10 ───────────────────────────────── */
+
+  it('AG-128 refuses an arrival with no emergency assessment, and writes nothing', async () => {
+    const { service, recorded } = serviceWith();
+
+    await expect(
+      service.transition({ ...aTransition(), to: 'CHECKED_IN' }, REQUESTER),
+    ).rejects.toBeInstanceOf(EmergencyAssessmentRequiredError);
+
+    expect(recorded.transitions).toEqual([]);
+  });
+
+  it('AG-128 records the assessment itself on a NEGATIVE call, and no flag', async () => {
+    // THE HALF THE LAW ACTUALLY NEEDS. With only the flag, NULL cannot tell
+    // «se calificó y no era una emergencia» from «nadie calificó nada», and it
+    // is the second that art. 13 turns into a prison sentence.
+    const { service, recorded } = serviceWith();
+
+    await service.transition(
+      { ...aTransition(), to: 'CHECKED_IN', emergency: false },
+      REQUESTER,
+    );
+
+    const effects = recorded.transitions[0]?.change.effects;
+    expect(effects?.emergencyAssessedAt).toBeInstanceOf(Date);
+    expect(effects?.emergencyAssessedById).toBe(USER);
+    expect(effects?.emergencyFlaggedAt).toBeUndefined();
+    expect(effects?.emergencyFlaggedById).toBeUndefined();
+  });
+
+  it('AG-128 records the assessment AND the flag on an affirmative call', async () => {
+    const { service, recorded } = serviceWith();
+
+    await service.transition(
+      {
+        ...aTransition(),
+        to: 'CHECKED_IN',
+        emergency: true,
+        emergencyNote: 'Dolor torácico',
+      },
+      REQUESTER,
+    );
+
+    const effects = recorded.transitions[0]?.change.effects;
+    // `agenda_entry_emergency_flag_follows_assessment` refuses a flag with no
+    // assessment behind it: the outcome presupposes the act.
+    expect(effects?.emergencyAssessedAt).toBeInstanceOf(Date);
+    expect(effects?.emergencyFlaggedAt).toEqual(effects?.emergencyAssessedAt);
+    expect(effects?.emergencyFlaggedById).toBe(USER);
+    expect(effects?.emergencyNote).toBe('Dolor torácico');
+  });
+
+  it('AG-128 asks for the call on the arrival and on no other transition', async () => {
+    const { service, recorded } = serviceWith();
+
+    await service.transition(aTransition(), REQUESTER);
+
+    const effects = recorded.transitions[0]?.change.effects;
+    expect(effects?.emergencyAssessedAt).toBeUndefined();
+  });
+
+  it('AG-130 demands no permission beyond the one that registers the arrival', async () => {
+    // THE THIRD «no» IS WHAT MAKES ART. 10 ENFORCEABLE: a permission of its
+    // own would mean receptionists who cannot make the call, and then the
+    // article goes unmet on the days that person is at the counter. The
+    // service asks storage for nothing about the caller's grants.
+    const { service, recorded } = serviceWith();
+
+    await service.transition(
+      { ...aTransition(), to: 'CHECKED_IN', emergency: true },
+      REQUESTER,
+    );
+
+    expect(recorded.authoriserQueries).toEqual([]);
+  });
+
+  it('AG-131 registers the arrival with coverage skipped and its reason, and demands no payment', async () => {
+    // Ley 77 art. 9 forbids demanding a cheque, a card or any document of
+    // payment as a condition of being received and stabilised. The reason is
+    // what tells a datum that is MISSING from one the clinic decided not to
+    // demand.
+    const { service, recorded } = serviceWith();
+
+    const outcome = await service.transition(
+      {
+        ...aTransition(),
+        to: 'CHECKED_IN',
+        emergency: false,
+        coverageCheckSkippedReason: 'Paciente sin documentos, se estabiliza',
+      },
+      REQUESTER,
+    );
+
+    expect(outcome.entry.status).toBe('CHECKED_IN');
+    expect(
+      recorded.transitions[0]?.change.effects.coverageCheckSkippedReason,
+    ).toBe('Paciente sin documentos, se estabiliza');
+  });
+
+  it('AG-131 does not condition IN_PROGRESS on any payment having been registered', async () => {
+    const { service, recorded } = serviceWith({
+      transitionRead: IN_THE_WAITING_ROOM,
+    });
+
+    await service.transition(
+      { ...aTransition(), to: 'IN_PROGRESS' },
+      REQUESTER,
+    );
+
+    expect(recorded.transitions[0]?.change.to).toBe('IN_PROGRESS');
+  });
+});
+
+/**
+ * AG-121 to AG-127. The PATIENT axis, which no route may type.
+ *
+ * WHAT THIS FILE CAN PROVE and what it cannot. The rules — not before the
+ * arrival, not after the departure, never on a block, and the fact-to-state
+ * mapping — are decided here against the double. That NO ROUTE EXISTS is
+ * proved in `test/integration/agenda-subject-status.spec.ts`, which walks the
+ * routes NestJS actually registered (AG-070's machine), because the absence of
+ * something cannot be asserted against a double of it.
+ */
+describe('deriving the patient subject status', () => {
+  const aSubjectStatus = (overrides: Record<string, unknown> = {}) => ({
+    siteId: SITE,
+    entryId: 'entry-1',
+    fact: 'CLINICAL_NOTE_OPENED' as const,
+    ...overrides,
+  });
+
+  it('AG-122 derives each state from the documented fact that produces it', async () => {
+    const expected = [
+      ['VITALS_STARTED', 'IN_PREPARATION'],
+      ['VITALS_RECORDED', 'READY'],
+      ['CLINICAL_NOTE_OPENED', 'RECEIVING_CARE'],
+      ['TEMPORARY_LEAVE_RECORDED', 'ON_LEAVE'],
+      ['ACCOUNT_CLOSED', 'DEPARTED'],
+    ] as const;
+
+    for (const [fact, status] of expected) {
+      const { service, recorded } = serviceWith();
+
+      const entry = await service.recordSubjectStatus(
+        aSubjectStatus({ fact }),
+        REQUESTER,
+      );
+
+      expect(recorded.subjectStatusChanges[0]?.to).toBe(status);
+      expect(recorded.subjectStatusChanges[0]?.command.fact).toBe(fact);
+      expect(entry.subjectStatus).toBe(status);
+    }
+  });
+
+  it('AG-124 puts the patient ON_LEAVE without closing anything', async () => {
+    // The real case is the outside laboratory and the imaging place across the
+    // street: the patient goes and comes back, and their attention stays open.
+    const { service, recorded } = serviceWith();
+
+    await service.recordSubjectStatus(
+      aSubjectStatus({ fact: 'TEMPORARY_LEAVE_RECORDED' }),
+      REQUESTER,
+    );
+
+    expect(recorded.subjectStatusChanges[0]?.to).toBe('ON_LEAVE');
+    // The APPOINTMENT axis is untouched: the two are not derived from each
+    // other (AG-121), and this port writes only the patient's.
+    expect(recorded.transitions).toEqual([]);
+  });
+
+  it('AG-125 admits no further movement once the patient departed', async () => {
+    const { service, recorded } = serviceWith({
+      subjectStatusRead: aSubjectStatusRead({ subjectStatus: 'DEPARTED' }),
+    });
+
+    await expect(
+      service.recordSubjectStatus(aSubjectStatus(), REQUESTER),
+    ).rejects.toBeInstanceOf(SubjectStatusNotDerivableError);
+    expect(recorded.subjectStatusChanges).toEqual([]);
+  });
+
+  it('AG-127 refuses a subject status before the appointment reached CHECKED_IN', async () => {
+    // The patient axis only exists INSIDE an arrival. A BOOKED appointment has
+    // nobody anywhere, and putting somebody on the board who has not come is
+    // the class of lie AG-122 exists to prevent.
+    const { service, recorded } = serviceWith({
+      subjectStatusRead: aSubjectStatusRead({
+        status: 'BOOKED',
+        subjectStatus: null,
+      }),
+    });
+
+    await expect(
+      service.recordSubjectStatus(aSubjectStatus(), REQUESTER),
+    ).rejects.toBeInstanceOf(SubjectStatusNotDerivableError);
+    expect(recorded.subjectStatusChanges).toEqual([]);
+  });
+
+  it('AG-021 refuses a subject status on a block', async () => {
+    // A theatre is not in pre-consultation. The database refuses it too
+    // (`agenda_entry_subject_status_needs_a_patient`); this refuses it with a
+    // sentence instead of a constraint name.
+    const { service } = serviceWith({
+      subjectStatusRead: aSubjectStatusRead({
+        kind: 'BLOCK',
+        status: 'BLOCKED',
+        subjectStatus: null,
+      }),
+    });
+
+    await expect(
+      service.recordSubjectStatus(aSubjectStatus(), REQUESTER),
+    ).rejects.toBeInstanceOf(SubjectStatusNotDerivableError);
+  });
+
+  it('AG-074 logs the fact and the derived state, never the patient', async () => {
+    const { service, lines } = serviceWith();
+
+    await service.recordSubjectStatus(aSubjectStatus(), REQUESTER);
+
+    const logged = JSON.stringify(lines);
+    expect(logged).toContain('AGENDA_SUBJECT_STATUS_CHANGED');
+    expect(logged).toContain('RECEIVING_CARE');
+    expect(logged).not.toContain(PATIENT);
   });
 });
 

@@ -1,0 +1,107 @@
+import type { ClinicalDate } from '../../../shared/domain/clinic-time';
+
+/**
+ * WHAT WAS DONE, as the money side needs to read it — and nothing more.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ⚠️ WHY THIS PORT EXISTS INSTEAD OF AN IMPORT FROM `modules/encounter`
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * No module imports another (ADR-008 §3), and «just for one lookup» is how
+ * modules stop being modules. Billing declares here the facts it needs about a
+ * visit and ITS OWN adapter answers them, exactly as it already does for the
+ * patient's identification (BI-082) and as `agenda` does for the merge state
+ * of a chart.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ⚠️ AND EVERY METHOD HERE IS A READ. THERE IS NO WRITE AND THERE NEVER WILL BE
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * BI-004: «what was done» and «what is charged» are two records that must
+ * never become one. Voiding a charge cannot delete the procedure, and
+ * amending a note cannot move money by itself. A port that cannot write
+ * cannot break that rule by accident — and a port with no
+ * `mayThisEncounterBeClosed` cannot grow into the payment gate that Ley 77
+ * art. 9 forbids (BI-003, BI-120, BI-156).
+ *
+ * ⚠️ NOTHING HERE CARRIES A DIAGNOSIS OR A REASON FOR THE VISIT (BI-007).
+ * What travels is what has to appear on an invoice — the name of a service —
+ * plus the identifiers needed to tie a charge to the act it came from.
+ */
+
+/** `visit_sequence`, the two values the clinical side records. */
+export const VISIT_SEQUENCES = ['FIRST_TIME', 'SUBSEQUENT'] as const;
+export type VisitSequence = (typeof VISIT_SEQUENCES)[number];
+
+/**
+ * A procedure recorded during the visit.
+ *
+ * `serviceDate` is the date the procedure was PERFORMED, resolved in
+ * `America/Guayaquil` by the adapter (BI-002, BI-052) — not the date the
+ * cashier is looking at the screen. On almost every day the two coincide,
+ * which is exactly why the difference has to be carried explicitly.
+ */
+export interface PerformedProcedure {
+  encounterProcedureId: string;
+  /** `catalog_concept` of the procedure; the tie to a service goes through it. */
+  conceptId: string;
+  serviceDate: ClinicalDate;
+  /** `encounter_procedure.quantity`, a whole number of times it was done. */
+  quantity: number;
+}
+
+/**
+ * A test asked for during the visit — ONE LINE of a service order.
+ *
+ * The tie to what it costs is `exam_definition.billable_service_id`, and the
+ * way from this line to that definition is the CODE, which is what
+ * `service_order_item.test_code` freezes. Reading it back through the order's
+ * catalogue concept would ask a different question.
+ */
+export interface OrderedExam {
+  serviceOrderItemId: string;
+  /** `exam_definition.code`, frozen on the order line as `test_code`. */
+  testCode: string;
+  serviceDate: ClinicalDate;
+  /** `CANCELLED` lines are not proposed: nobody did them. */
+  cancelled: boolean;
+}
+
+/**
+ * A visit, seen from the money side: what decides WHAT to propose, and never
+ * whether care may proceed.
+ *
+ * `specialtyId` is `null` more often than it looks — a walk-in with no
+ * appointment has no service type to read it from — and that is a proposal
+ * with one line missing, never an error: BI-155.
+ */
+export interface EncounterActs {
+  encounterId: string;
+  siteId: string;
+  patientId: string;
+  /** `encounter_status`. Only `ENTERED_IN_ERROR` changes what is proposed. */
+  status: string;
+  /** The date of the visit itself, in Ecuador. Prices the consultation line. */
+  serviceDate: ClinicalDate;
+  visitSequence: VisitSequence;
+  /** From the appointment's service type. `null` for a walk-in. */
+  specialtyId: string | null;
+  procedures: PerformedProcedure[];
+  exams: OrderedExam[];
+}
+
+export interface ClinicalActsRepository {
+  /**
+   * BI-150. Everything one visit did, in a single question.
+   *
+   * Scoped by site for the same reason every read in this module is: a visit
+   * of another site answers `null`, indistinguishable from one that does not
+   * exist (BI-135).
+   */
+  findEncounterActs(query: {
+    encounterId: string;
+    siteId: string;
+  }): Promise<EncounterActs | null>;
+}
+
+export const CLINICAL_ACTS_REPOSITORY = Symbol('ClinicalActsRepository');

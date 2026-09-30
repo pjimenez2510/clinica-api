@@ -22,6 +22,7 @@ import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import { AgendaService } from './application/agenda.service';
 import type { AgendaEntryView } from './domain/agenda.repository';
+import { arrivalDelayMinutes } from './domain/late-arrival';
 import type { AvailabilityView } from './domain/slot-availability';
 import {
   AgendaEntryDto,
@@ -36,10 +37,12 @@ import {
   DurationProposalQueryDto,
   RescheduleAppointmentDto,
   RescheduledAppointmentDto,
+  TransitionOutcomeDto,
   TransitionStatusDto,
   type AgendaEntryResponse,
   type AvailabilityResponse,
   type BookedAppointmentResponse,
+  type TransitionOutcomeResponse,
   type DailyAgendaResponse,
   type DurationProposalResponse,
   type RescheduledAppointmentResponse,
@@ -324,19 +327,38 @@ export class AgendaController {
   @RequirePermission('agenda:write', 'param:siteId')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Cambiar el estado de una cita' })
-  @ApiOkResponse({ type: AgendaEntryDto })
+  @ApiOkResponse({ type: TransitionOutcomeDto })
   async transition(
     @Param('siteId', ParseUUIDPipe) siteId: string,
     @Param('entryId', ParseUUIDPipe) entryId: string,
     @Body() dto: TransitionStatusDto,
-  ): Promise<AgendaEntryResponse> {
-    const entry = await this.agenda.transition(
-      { siteId, entryId, to: dto.to, reason: dto.reason },
-      // AG-004: the author comes from the session, never from the body.
+  ): Promise<TransitionOutcomeResponse> {
+    const outcome = await this.agenda.transition(
+      {
+        siteId,
+        entryId,
+        to: dto.to,
+        reason: dto.reason,
+        /**
+         * AG-128, AG-130, AG-131. The article-10 call and the two things that
+         * hang off it.
+         *
+         * NO PERMISSION OF ITS OWN (AG-130): the route's `agenda:write` is the
+         * one that registers the arrival, and a permission of its own would
+         * mean receptionists who cannot make the call — and then art. 10 goes
+         * unmet on the days that person is at the counter.
+         */
+        emergency: dto.emergency,
+        emergencyNote: dto.emergencyNote,
+        coverageCheckSkippedReason: dto.coverageCheckSkippedReason,
+      },
+      // AG-004: the author comes from the session, never from the body. That
+      // is also who art. 10 records as having made the call.
       { userId: this.currentUser.requireUserId() },
     );
 
-    return toEntryResponse(entry);
+    // AG-118, AG-119: the delay is on the entry and the warning beside it.
+    return { ...toEntryResponse(outcome.entry), warnings: outcome.warnings };
   }
 
   /**
@@ -442,6 +464,17 @@ function toEntryResponse(entry: AgendaEntryView) {
     overbookingAuthorisedById: entry.overbookingAuthorisedById,
     // AG-018: what tells a released entry apart from a live one.
     releasedAt: entry.releasedAt?.toISOString() ?? null,
+    // AG-041, AG-118. The instant, and the subtraction that is computed here
+    // and stored nowhere — which is what keeps late arrival from becoming a
+    // status. The sign is kept: negative means the patient came early.
+    checkedInAt: entry.checkedInAt?.toISOString() ?? null,
+    arrivalDelayMinutes: arrivalDelayMinutes(entry),
+    // AG-121. The patient axis, separate from the appointment's.
+    subjectStatus: entry.subjectStatus,
+    subjectStatusAt: entry.subjectStatusAt?.toISOString() ?? null,
+    // AG-128. The act, and its outcome. Never the note (AG-074).
+    emergencyAssessedAt: entry.emergencyAssessedAt?.toISOString() ?? null,
+    emergencyFlaggedAt: entry.emergencyFlaggedAt?.toISOString() ?? null,
     bookingChannel: entry.bookingChannel,
     serviceTypeId: entry.serviceTypeId,
     createdById: entry.createdById,

@@ -116,12 +116,27 @@ export const accountSchema = z.object({
    */
   credentialPending: z.boolean(),
 });
-export class AccountDto extends createZodDto(accountSchema) {}
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * `UserAccountDto` Y NO `AccountDto`, PORQUE «CUENTA» SIGNIFICA DOS COSAS
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Una CUENTA DE USUARIO es quien entra al sistema. Una CUENTA DEL PACIENTE
+ * —`billing/dto/billing.dto.ts`— es lo que se le cobra. Las dos se llamaban
+ * `AccountDto`, y el nombre de una clase ES el nombre del esquema en el
+ * documento OpenAPI: la segunda sobrescribía a la primera, así que
+ * `GET /api/v1/auth/users/{id}` quedaba publicado devolviendo `payerId` y
+ * `priceListId`. La interfaz, que genera sus tipos de ese documento, dejó de
+ * compilar entera — y lo habría hecho igual un cliente ajeno, sin aviso.
+ *
+ * El prefijo no es decoración: es lo único que impide que el choque vuelva.
+ */
+export class UserAccountDto extends createZodDto(accountSchema) {}
 
 export const accountListSchema = z.object({
   items: z.array(accountSchema).readonly(),
 });
-export class AccountListDto extends createZodDto(accountListSchema) {}
+export class UserAccountListDto extends createZodDto(accountListSchema) {}
 
 /**
  * What creating an account answers, and what re-sending its invitation

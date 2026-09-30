@@ -186,6 +186,7 @@ describe('la tasa de inasistencia', () => {
       // second reports a clinic behaving perfectly on a day it did not open.
       expect(report.overall).toEqual({
         noShow: 0,
+        leftWithoutBeingSeen: 0,
         total: 0,
         pending: 0,
         rate: null,
@@ -223,6 +224,97 @@ describe('la tasa de inasistencia', () => {
       // 1/3 is not representable: served raw it reaches the screen as
       // 0.3333333333333333 and every client rounds it differently.
       expect(report.overall.rate).toBe(0.3333);
+    });
+
+    it('AG-140 deja LEFT_WITHOUT_BEING_SEEN fuera del numerador y DENTRO del denominador', () => {
+      // Vino y llegó a su hora: sacarlo del denominador rebajaría el total
+      // sobre el que se mide y mejoraría la tasa de la clínica por el simple
+      // hecho de tener gente cansada de esperar.
+      const report = summariseNoShow([
+        row({ status: 'NO_SHOW', count: 2 }),
+        row({ status: 'FULFILLED', count: 6 }),
+        row({ status: 'LEFT_WITHOUT_BEING_SEEN', count: 2 }),
+      ]);
+
+      expect(report.overall).toMatchObject({
+        noShow: 2,
+        leftWithoutBeingSeen: 2,
+        total: 10,
+        rate: 0.2,
+      });
+    });
+
+    it('AG-140 publica el recuento de LEFT_WITHOUT_BEING_SEEN en los tres desgloses', () => {
+      // Es lo que el usuario pidió: UNA MÉTRICA PARA PODER REDUCIRLA. Un
+      // número que no se ve es un número en el que nadie trabaja, y los tres
+      // cortes viajan juntos por lo mismo que en AG-080.
+      const report = summariseNoShow([
+        row({ ...NORTE, ...ANA, bookingChannel: 'WEB', status: 'LEFT_WITHOUT_BEING_SEEN', count: 3 }), // prettier-ignore
+        row({ ...SUR, ...LUIS, bookingChannel: 'PHONE', status: 'FULFILLED', count: 1 }), // prettier-ignore
+      ]);
+
+      expect(report.bySite).toContainEqual(
+        expect.objectContaining({
+          siteId: 'site-norte',
+          leftWithoutBeingSeen: 3,
+          total: 3,
+        }),
+      );
+      expect(report.byPractitioner).toContainEqual(
+        expect.objectContaining({
+          practitionerId: 'prac-ana',
+          leftWithoutBeingSeen: 3,
+        }),
+      );
+      expect(report.byChannel).toContainEqual(
+        expect.objectContaining({ bookingChannel: 'WEB', leftWithoutBeingSeen: 3 }), // prettier-ignore
+      );
+    });
+
+    it('AG-140 no cuenta como pendiente a quien se fue sin ser atendido', () => {
+      // Alguien registró lo que pasó, que es toda la diferencia entre este
+      // estado y el silencio de una cita que nadie cerró.
+      const report = summariseNoShow([
+        row({ status: 'LEFT_WITHOUT_BEING_SEEN', count: 4 }),
+      ]);
+
+      expect(report.overall.pending).toBe(0);
+    });
+
+    it('AG-140 saca ENTERED_IN_ERROR del conjunto entero, numerador y denominador', () => {
+      // Una cita que nunca ocurrió no puede medir a la clínica: contarla en el
+      // denominador sería medirla sobre pacientes imaginarios.
+      const report = summariseNoShow([
+        row({ status: 'NO_SHOW', count: 1 }),
+        row({ status: 'FULFILLED', count: 1 }),
+        row({ status: 'ENTERED_IN_ERROR', count: 8 }),
+      ]);
+
+      expect(report.overall).toMatchObject({
+        noShow: 1,
+        leftWithoutBeingSeen: 0,
+        total: 2,
+        pending: 0,
+        rate: 0.5,
+      });
+    });
+
+    it('AG-140 no confunde una retractación con una anulación', () => {
+      // Es el otro número que salía mal: AG-081 excluye las CANCELLED sin
+      // distinguir por qué, así que una tarde de errores de tecleo se leía
+      // como una tarde en que la clínica canceló a sus pacientes. Los dos
+      // salen del cálculo, pero por puertas distintas y con estados distintos.
+      const onlyTypos = summariseNoShow([
+        row({ status: 'ENTERED_IN_ERROR', count: 5 }),
+      ]);
+      const onlyAnnulments = summariseNoShow([
+        row({ status: 'CANCELLED', count: 5 }),
+      ]);
+
+      // Ninguno de los dos entra, y el estado sigue siendo distinguible en la
+      // fila, que es lo que permite contar las anulaciones de verdad aparte.
+      expect(onlyTypos.overall.total).toBe(0);
+      expect(onlyAnnulments.overall.total).toBe(0);
     });
 
     it('AG-080 ordena los canales como los enumera AG-034, no por su nombre', () => {

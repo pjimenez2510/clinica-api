@@ -1305,6 +1305,21 @@ describe('la configuración por HTTP', () => {
         // parámetros: la columna entra con la migración de E5 y el DTO, con el
         // servicio.
         'waitlistMaxContactAttempts',
+        // 20-08-2026, el flujo de atención. Las cuatro pasan la misma prueba
+        // que las anteriores —ninguna apaga el solapamiento, la inmutabilidad
+        // del historial ni el cierre por defecto—; la justificación larga de
+        // cada una está en la prueba de columnas de abajo.
+        //
+        // Y una que NO está aquí y es deliberado: la calificación de emergencia
+        // del art. 10 de la Ley 77 no es configurable. Vive en `agenda_entry`,
+        // se hace en toda llegada, y no depende de que el triaje esté
+        // encendido. Un parámetro que la apagara sería exactamente el
+        // interruptor que este requisito prohíbe.
+        'triageEnabled',
+        'requireCertifiedSignature',
+        'recordRetentionYears',
+        'lateArrivalGraceMinutes',
+        'lateArrivalOverridePermission',
         'cancelledRetention',
         'createdAt',
         'updatedAt',
@@ -1347,6 +1362,38 @@ describe('la configuración por HTTP', () => {
         'allow_past_booking',
         'cancelled_retention',
         'created_at',
+        // 20-08-2026. Las cuatro columnas del flujo de atención, y por qué
+        // ninguna apaga una de las tres garantías que CF-063 nombra
+        // —no-solapamiento, inmutabilidad del historial, cierre por defecto—:
+        //
+        //   * `late_arrival_grace_minutes` es un UMBRAL, no un interruptor. La
+        //     llegada tardía no es un estado: es la diferencia entre la hora de
+        //     la cita y el check-in, y esto solo dice a partir de cuándo la
+        //     clínica la considera tarde.
+        //   * `record_retention_years` no relaja nada: la LOPDP art. 10.i
+        //     OBLIGA a fijar un plazo y el art. 51 a declararlo. No fijarlo era
+        //     el incumplimiento; el defecto es 15 años y nada se purga solo.
+        //   * `require_certified_signature` viene ENCENDIDA. Apagarla no toca
+        //     ninguna de las tres: la nota se sigue firmando, sigue siendo
+        //     inmutable una vez firmada, y la ruta sigue exigiendo permiso. Lo
+        //     que cambia es la FUERZA de la atribución, y la propia norma de
+        //     farmacias privadas (ARCSA-DE-2022-012-AKRG, Disp. Gral. Décima)
+        //     acepta para la receta electrónica «la signatura realizada en el
+        //     sistema informático mediante el registro con usuario y clave».
+        //     Apagada queda constancia explícita de que la firma no lleva
+        //     certificado: no se disimula.
+        //   * `triage_enabled` ENCIENDE una capacidad y viene apagada: ninguna
+        //     norma exige triaje a un establecimiento ambulatorio (A.M.
+        //     00030-2020 art. 27 no lo incluye en la cartera del centro de
+        //     especialidades). Lo que NO es opcional, y por eso no está aquí,
+        //     es la calificación de emergencia del art. 10 de la Ley 77: esa
+        //     vive en `agenda_entry` y se hace siempre.
+        'late_arrival_grace_minutes',
+        // AG-120. Hermana de `overbooking_permission`, y pasa su misma prueba:
+        // elegir QUIÉN autoriza una excepción no configura la excepción. Por
+        // defecto apunta al mismo permiso del sobrecupo, porque dejar pasar a
+        // alguien fuera de plazo ES romper la rejilla.
+        'late_arrival_override_permission',
         'max_lead_days',
         'min_lead_minutes',
         'overbooking_cap',
@@ -1360,6 +1407,8 @@ describe('la configuración por HTTP', () => {
         // lo rechaza en la base.
         'overbooking_enabled',
         'overbooking_permission',
+        'record_retention_years',
+        'require_certified_signature',
         'site_id',
         // D-021. Es un parámetro legítimo por la misma razón que
         // `allow_past_booking`, y con más motivo: configurarlo no pierde
@@ -1367,6 +1416,7 @@ describe('la configuración por HTTP', () => {
         // fallar por configuración, porque toda duración se guarda como
         // múltiplo suyo.
         'slot_atom_minutes',
+        'triage_enabled',
         'updated_at',
         // E5 (AG-066, AG-094). El octavo y último parámetro que AG-094 enumera
         // —«el número máximo de intentos de contacto de la lista de espera»— y

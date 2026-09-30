@@ -31,8 +31,8 @@ import { CredentialInvitationsService } from './application/credential-invitatio
 import { MfaResetService } from './application/mfa-reset.service';
 import { RolesService } from './application/roles.service';
 import {
-  AccountDto,
-  AccountListDto,
+  UserAccountDto,
+  UserAccountListDto,
   CreateAccountDto,
   CreatedAccountDto,
   CreateRoleDto,
@@ -136,7 +136,7 @@ export class AuthAdminController {
   @Get('users')
   @RequirePermission('user:read', 'global')
   @ApiOperation({ summary: 'Listar cuentas del personal' })
-  @ApiOkResponse({ type: AccountListDto })
+  @ApiOkResponse({ type: UserAccountListDto })
   async listUsers(
     @Query() query: ListAccountsQueryDto,
   ): Promise<AccountListResponse> {
@@ -150,7 +150,7 @@ export class AuthAdminController {
   @Get('users/:id')
   @RequirePermission('user:read', 'global')
   @ApiOperation({ summary: 'Datos de una cuenta' })
-  @ApiOkResponse({ type: AccountDto })
+  @ApiOkResponse({ type: UserAccountDto })
   async getUser(
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<AccountResponse> {
@@ -243,7 +243,7 @@ export class AuthAdminController {
   @Patch('users/:id')
   @RequirePermission('user:manage', 'global')
   @ApiOperation({ summary: 'Editar los datos de una cuenta' })
-  @ApiOkResponse({ type: AccountDto })
+  @ApiOkResponse({ type: UserAccountDto })
   async updateUser(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateAccountDto,
@@ -276,7 +276,7 @@ export class AuthAdminController {
   // of its fields — see the DTO for why `active` is not editable there.
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Desactivar una cuenta y cerrar sus sesiones' })
-  @ApiOkResponse({ type: AccountDto })
+  @ApiOkResponse({ type: UserAccountDto })
   async deactivateUser(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: Request,
@@ -312,7 +312,7 @@ export class AuthAdminController {
   @ApiOperation({
     summary: 'Reiniciar el segundo factor de una cuenta y cerrar sus sesiones',
   })
-  @ApiOkResponse({ type: AccountDto })
+  @ApiOkResponse({ type: UserAccountDto })
   async resetUserMfa(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: Request,
@@ -325,7 +325,7 @@ export class AuthAdminController {
   @RequirePermission('user:manage', 'global')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Reactivar una cuenta' })
-  @ApiOkResponse({ type: AccountDto })
+  @ApiOkResponse({ type: UserAccountDto })
   async activateUser(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: Request,

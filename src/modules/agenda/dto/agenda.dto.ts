@@ -50,6 +50,30 @@ const STATUS = z.enum([
   'CANCELLED',
   'NO_SHOW',
   'BLOCKED',
+  // AG-116, AG-117. The two outcomes the machine did not have. They appear in
+  // the RESPONSE union because a stored entry can be in either; whether a
+  // client may ASK for them is `transitionStatusSchema`'s business.
+  'LEFT_WITHOUT_BEING_SEEN',
+  'ENTERED_IN_ERROR',
+]);
+
+/**
+ * AG-121. Where the patient is, on the axis the appointment status does not
+ * carry.
+ *
+ * READ-ONLY IN THIS FILE, AND THAT IS THE REQUIREMENT. No request schema
+ * accepts one of these values: AG-122 forbids any route that sets
+ * `IN_PREPARATION`, `READY`, `RECEIVING_CARE`, `ON_LEAVE` or `DEPARTED`,
+ * because a board that can be typed is a board that drifts from the record.
+ * `ARRIVED` is written by the check-in effect and is not typed here either.
+ */
+const SUBJECT_STATUS = z.enum([
+  'ARRIVED',
+  'IN_PREPARATION',
+  'READY',
+  'RECEIVING_CARE',
+  'ON_LEAVE',
+  'DEPARTED',
 ]);
 
 const BOOKING_CHANNEL = z.enum(['PHONE', 'WALK_IN', 'WEB', 'REFERRAL']);
@@ -255,6 +279,11 @@ export const transitionStatusSchema = z
         'FULFILLED',
         'CANCELLED',
         'NO_SHOW',
+        // AG-116, AG-117. Which of the two is admissible FROM WHERE is the
+        // status machine's decision, not this schema's: it is a state
+        // conflict (409) and not a malformed body.
+        'LEFT_WITHOUT_BEING_SEEN',
+        'ENTERED_IN_ERROR',
       ],
       { error: 'Indique el estado al que pasa la cita' },
     ),
@@ -268,6 +297,35 @@ export const transitionStatusSchema = z
       .trim()
       .max(512, 'El motivo no puede superar 512 caracteres')
       .optional(),
+    /**
+     * AG-128, Ley 77 art. 10. The emergency call, on the arrival and nowhere
+     * else. NO DEFAULT: a box that is born «no» and can be left alone proves
+     * that nobody touched it, not that anybody assessed anything.
+     */
+    emergency: z.boolean().optional(),
+    /**
+     * AG-128. What whoever made the call wrote. Free text about a patient's
+     * condition: stored, never logged, never served back (AG-074).
+     */
+    emergencyNote: z
+      .string()
+      .trim()
+      .max(500, 'La nota no puede superar 500 caracteres')
+      .optional(),
+    /**
+     * AG-131, Ley 77 art. 9. Why coverage was not verified.
+     *
+     * OPTIONAL, AND NOTHING IN THIS SCHEMA MAKES ANY PAYMENT FIELD REQUIRED —
+     * that absence IS the requirement. Art. 9 forbids demanding a cheque, a
+     * card or any document of payment as a condition of being received and
+     * stabilised, so a body that could not be sent without one would be
+     * illegal in exactly the case that matters most.
+     */
+    coverageCheckSkippedReason: z
+      .string()
+      .trim()
+      .max(500, 'El motivo no puede superar 500 caracteres')
+      .optional(),
   })
   .superRefine((value, ctx) => {
     // AG-044: an annulment without a reason is refused PER FIELD, so the
@@ -277,6 +335,36 @@ export const transitionStatusSchema = z
         code: 'custom',
         path: ['reason'],
         message: 'Indique el motivo de la anulación',
+      });
+    }
+    /**
+     * AG-117, and per field for the same reason.
+     *
+     * AG-116 IS NOT HERE, AND ITS ABSENCE IS DELIBERATE: the reason for
+     * leaving without being seen is OPTIONAL. Whoever walked out does not
+     * always say why — that is precisely the case — and a mandatory box
+     * nobody can fill truthfully gets filled with anything. The constancy
+     * that matters is the history row: who marked it and when (AG-004).
+     */
+    if (value.to === 'ENTERED_IN_ERROR' && !value.reason) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['reason'],
+        message: 'Indique por qué la cita se registró por error',
+      });
+    }
+    /**
+     * AG-128. The arrival carries the call or it is not recorded.
+     *
+     * `undefined` AND NOT FALSY: `false` is the ordinary answer and has to be
+     * recordable, because «se calificó y no era una emergencia» is the half
+     * of art. 10 that proves the call was made at all.
+     */
+    if (value.to === 'CHECKED_IN' && value.emergency === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['emergency'],
+        message: 'Indique sí o no: la calificación es obligatoria al llegar',
       });
     }
   });
@@ -319,6 +407,37 @@ export const agendaEntrySchema = z.object({
    * appears only sometimes is a field that gets forgotten.
    */
   releasedAt: z.iso.datetime().nullable(),
+  /** AG-041. The real instant of arrival, `null` until it happens. */
+  checkedInAt: z.iso.datetime().nullable(),
+  /**
+   * AG-118. `checkedInAt − startsAt` in minutes, WITH ITS SIGN — negative
+   * means the patient arrived early — and `null` while nobody has arrived.
+   *
+   * COMPUTED ON EVERY READ AND STORED NOWHERE, which is the property that
+   * keeps it true. It is also why late arrival is not a status: a stored copy
+   * of this subtraction would age, and `CHECKED_IN` would have to be true at
+   * the same time as `LATE_ARRIVAL`.
+   */
+  arrivalDelayMinutes: z.number().int().nullable(),
+  /**
+   * AG-121. Where the PATIENT is, and when they got there — a different axis
+   * from `status`, never derived from it nor it from this. Both `null` before
+   * the arrival (AG-127) and on every block (AG-021).
+   */
+  subjectStatus: SUBJECT_STATUS.nullable(),
+  subjectStatusAt: z.iso.datetime().nullable(),
+  /**
+   * AG-128, Ley 77 art. 10. That the emergency call was made at the arrival,
+   * and separately whether it came out affirmative.
+   *
+   * TWO FIELDS, because one cannot tell «se calificó y no era una emergencia»
+   * from «nadie calificó nada», and proving the second is the whole of art.
+   * 10. The NOTE is not served: it is free text about a patient's condition
+   * and this response is read by anyone with `agenda:read` over the site,
+   * with no row in `access_audit` (AG-072, AG-074).
+   */
+  emergencyAssessedAt: z.iso.datetime().nullable(),
+  emergencyFlaggedAt: z.iso.datetime().nullable(),
   bookingChannel: BOOKING_CHANNEL.nullable(),
   /** SP-028: the type recepción chose, `service_type.id`. */
   serviceTypeId: z.uuid().nullable(),
@@ -377,6 +496,28 @@ export const bookedAppointmentSchema = agendaEntrySchema.extend({
 });
 export class BookedAppointmentDto extends createZodDto(
   bookedAppointmentSchema,
+) {}
+
+/**
+ * AG-118, AG-119. What a status change answers with.
+ *
+ * THE SAME SHAPE AS A BOOKING, and for the same reason: the warning rides in
+ * the 200 and never in a problem document. AG-119 says so in as many words —
+ * the late arrival is warned about and the check-in is NOT refused — and the
+ * reason is AG-128: the arrival is the moment Ley 77 art. 10 obliges the
+ * emergency call to be made, so a check-in that can be rejected is a check-in
+ * that some day does not happen, and with it goes the assessment art. 13 backs
+ * with prison. What the clinic's policy decides is what happens afterwards
+ * (AG-120), not whether the person at the counter is recorded as having come.
+ *
+ * NO ERROR CODE ON THE WARNING, because it is not an error — exactly like the
+ * holiday warning of AG-110.
+ */
+export const transitionOutcomeSchema = agendaEntrySchema.extend({
+  warnings: z.array(z.string()).readonly(),
+});
+export class TransitionOutcomeDto extends createZodDto(
+  transitionOutcomeSchema,
 ) {}
 
 /**
@@ -641,6 +782,7 @@ export type DailyAgendaResponse = z.infer<typeof dailyAgendaSchema>;
 export type AvailabilityResponse = z.infer<typeof availabilitySchema>;
 export type AgendaEntryResponse = z.infer<typeof agendaEntrySchema>;
 export type BookedAppointmentResponse = z.infer<typeof bookedAppointmentSchema>;
+export type TransitionOutcomeResponse = z.infer<typeof transitionOutcomeSchema>;
 export type RescheduledAppointmentResponse = z.infer<
   typeof rescheduledAppointmentSchema
 >;
@@ -763,6 +905,17 @@ export class NoShowMetricQueryDto extends createZodDto(
 const noShowRateFields = {
   /** Appointments marked `NO_SHOW`. */
   noShow: z.number().int().nonnegative(),
+  /**
+   * AG-140. Of `total`, those who came and left before being seen.
+   *
+   * OUT OF THE NUMERATOR, INSIDE THE DENOMINATOR, AND COUNTED ON ITS OWN. They
+   * had an appointment and they did reach their hour, so removing them would
+   * shrink the total the rate is measured over and improve the clinic's figure
+   * for the sole reason that people got tired of waiting. It travels with the
+   * same three breakdowns because it is what the clinic acts on — the user
+   * asked for this as A METRIC TO REDUCE.
+   */
+  leftWithoutBeingSeen: z.number().int().nonnegative(),
   /** AG-081: reached their hour and were not annulled. */
   total: z.number().int().nonnegative(),
   /** Of `total`, those whose outcome nobody recorded. */

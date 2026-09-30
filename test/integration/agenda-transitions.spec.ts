@@ -252,7 +252,8 @@ describe('las transiciones de estado de la cita por HTTP', () => {
       });
       expect(afterFirst[0]?.changedAt).toBeInstanceOf(Date);
 
-      await transition(entryId, { to: 'CHECKED_IN' }).expect(200);
+      // AG-128: toda llegada lleva la calificación del art. 10.
+      await transition(entryId, { to: 'CHECKED_IN', emergency: false }).expect(200); // prettier-ignore
       const afterSecond = await historyOf(entryId);
       expect(afterSecond).toHaveLength(2);
       expect(afterSecond[1]).toMatchObject({
@@ -282,9 +283,10 @@ describe('las transiciones de estado de la cita por HTTP', () => {
     it('AG-041 fija checked_in_at al registrar la llegada', async () => {
       const entryId = await bookedEntry();
 
-      const response = await transition(entryId, { to: 'CHECKED_IN' }).expect(
-        200,
-      );
+      const response = await transition(entryId, {
+        to: 'CHECKED_IN',
+        emergency: false,
+      }).expect(200);
 
       expect((response.body as EntryBody).status).toBe('CHECKED_IN');
       const stored = await prisma.agendaEntry.findUniqueOrThrow({
@@ -410,12 +412,12 @@ describe('las transiciones de estado de la cita por HTTP', () => {
       expect(stored.releasedAt).toBeNull();
     });
 
-    it('AG-045 rechaza anular o marcar inasistencia cuando ya hay una atención registrada', async () => {
+    it('AG-045 rechaza anular cuando ya hay una atención registrada', async () => {
       // El encuentro se cuelga de una cita en CHECKED_IN a propósito:
       // IN_PROGRESS → CANCELLED ni siquiera está en la tabla, y esta prueba
       // debe aislar el veto de AG-045 del rechazo de tabla de AG-040.
       const checkedIn = await bookedEntry();
-      await transition(checkedIn, { to: 'CHECKED_IN' }).expect(200);
+      await transition(checkedIn, { to: 'CHECKED_IN', emergency: false }).expect(200); // prettier-ignore
       await createEncounter(prisma, {
         siteId,
         practitionerId,
@@ -434,9 +436,6 @@ describe('las transiciones de estado de la cita por HTTP', () => {
         'La cita ya tiene una atención registrada: no puede anularse ni marcarse como inasistencia',
       );
 
-      const noShow = await transition(checkedIn, { to: 'NO_SHOW' }).expect(409);
-      expect((noShow.body as Problem).code).toBe('AGENDA_ENTRY_HAS_ENCOUNTER');
-
       // Y la cita sigue donde estaba: nada se liberó.
       const stored = await prisma.agendaEntry.findUniqueOrThrow({
         where: { id: checkedIn },
@@ -445,12 +444,39 @@ describe('las transiciones de estado de la cita por HTTP', () => {
       expect(stored.releasedAt).toBeNull();
     });
 
+    it('AG-045 rechaza marcar inasistencia cuando ya hay una atención registrada', async () => {
+      /**
+       * DESDE `CONFIRMED` Y YA NO DESDE `CHECKED_IN`, y el cambio es AG-116:
+       * `CHECKED_IN → NO_SHOW` salió de la tabla, así que sobre una cita a la
+       * que el paciente llegó el rechazo vendría de AG-040 y esta prueba
+       * dejaría de comprobar el veto de AG-045. La atención se cuelga de una
+       * cita CONFIRMADA —nada impide abrirla— y el veto se aísla.
+       */
+      const entryId = await bookedEntry();
+      await transition(entryId, { to: 'CONFIRMED' }).expect(200);
+      await createEncounter(prisma, {
+        siteId,
+        practitionerId,
+        patientId,
+        agendaEntryId: entryId,
+      });
+
+      const noShow = await transition(entryId, { to: 'NO_SHOW' }).expect(409);
+      expect((noShow.body as Problem).code).toBe('AGENDA_ENTRY_HAS_ENCOUNTER');
+
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(stored.status).toBe('CONFIRMED');
+      expect(stored.releasedAt).toBeNull();
+    });
+
     it('AG-040 en la carrera de dos recepcionistas gana exactamente una y la otra recibe 409', async () => {
       const entryId = await bookedEntry();
 
       const [first, second] = await Promise.all([
-        transition(entryId, { to: 'CHECKED_IN' }),
-        transition(entryId, { to: 'CHECKED_IN' }),
+        transition(entryId, { to: 'CHECKED_IN', emergency: false }),
+        transition(entryId, { to: 'CHECKED_IN', emergency: false }),
       ]);
 
       // Quién gana lo decide el UPDATE condicional; la prueba afirma QUIÉN:
@@ -640,6 +666,429 @@ describe('las transiciones de estado de la cita por HTTP', () => {
           `/api/v1/agenda/sites/${siteId}/blocks/${(blocked.body as EntryBody).id}`,
         )
         .expect(401);
+    });
+  });
+
+  /**
+   * E8: los dos desenlaces nuevos, la llegada y la calificación del art. 10,
+   * contra PostgreSQL de verdad.
+   *
+   * LO QUE SÓLO ESTA SUITE PRUEBA: que `LEFT_WITHOUT_BEING_SEEN` y
+   * `ENTERED_IN_ERROR` son valores que el enum `agenda_status` ADMITE de
+   * verdad para una cita, que su `released_at` libera los tres `EXCLUDE USING
+   * gist` —el mismo cupo se vuelve a reservar—, que `agenda_entry_kind_status
+   * _coherence` los prohíbe en un bloqueo sin que nadie tocara el CHECK, y que
+   * las columnas del art. 10 quedan escritas con su autor bajo
+   * `agenda_entry_emergency_flag_follows_assessment`.
+   */
+  describe('los desenlaces nuevos y la llegada (E8)', () => {
+    /** Reserva, registra la llegada con la calificación, y devuelve el id. */
+    async function arrivedEntry(
+      overrides: Record<string, unknown> = {},
+    ): Promise<string> {
+      const entryId = await bookedEntry();
+      await transition(entryId, {
+        to: 'CHECKED_IN',
+        emergency: false,
+        ...overrides,
+      }).expect(200);
+      return entryId;
+    }
+
+    it('AG-116 libera el cupo al marcar que se fue sin ser atendido, y el cupo se vuelve a reservar', async () => {
+      const entryId = await arrivedEntry();
+
+      const response = await transition(entryId, {
+        to: 'LEFT_WITHOUT_BEING_SEEN',
+      }).expect(200);
+
+      expect((response.body as EntryBody).status).toBe(
+        'LEFT_WITHOUT_BEING_SEEN',
+      );
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(stored.releasedAt).toBeInstanceOf(Date);
+      // AG-127: y sale del tablero, que es el único desenlace que si no
+      // dejaría a alguien ahí para siempre — no pasa por caja.
+      expect(stored.subjectStatus).toBe('DEPARTED');
+      expect(stored.subjectStatusAt).toBeInstanceOf(Date);
+
+      // LA PRUEBA DE QUE LIBERAR LIBERA DE VERDAD: el mismo profesional, el
+      // mismo paciente y el mismo horario vuelven a pasar por los tres
+      // `EXCLUDE USING gist`. Si `released_at` no fuera su predicado, esto
+      // respondería 409.
+      await book().expect(201);
+    });
+
+    it('AG-116 admite el motivo opcional y lo deja en el historial', async () => {
+      const withReason = await arrivedEntry();
+      await transition(withReason, {
+        to: 'LEFT_WITHOUT_BEING_SEEN',
+        reason: 'Se cansó de esperar',
+      }).expect(200);
+
+      const rows = await historyOf(withReason);
+      expect(rows.at(-1)).toMatchObject({
+        fromStatus: 'CHECKED_IN',
+        toStatus: 'LEFT_WITHOUT_BEING_SEEN',
+        changedById: userId,
+        note: 'Se cansó de esperar',
+      });
+    });
+
+    it('AG-116 rechaza marcar inasistencia a quien registró su llegada', async () => {
+      // EL CAMBIO ENTERO: marcar «no vino» a quien está de pie en la sala de
+      // espera escribe un hecho falso en un historial append-only y lo mete en
+      // el numerador de AG-080 junto a las inasistencias de verdad.
+      const entryId = await arrivedEntry();
+
+      const response = await transition(entryId, { to: 'NO_SHOW' }).expect(409);
+
+      expect((response.body as Problem).code).toBe('INVALID_AGENDA_TRANSITION');
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(stored.status).toBe('CHECKED_IN');
+      expect(stored.noShowAt).toBeNull();
+      expect(stored.releasedAt).toBeNull();
+    });
+
+    it('AG-116 rechaza el desenlace desde una cita a la que nadie llegó', async () => {
+      const entryId = await bookedEntry();
+
+      const response = await transition(entryId, {
+        to: 'LEFT_WITHOUT_BEING_SEEN',
+      }).expect(409);
+
+      expect((response.body as Problem).code).toBe('INVALID_AGENDA_TRANSITION');
+    });
+
+    it('AG-117 exige motivo por campo para retractar una cita', async () => {
+      const entryId = await bookedEntry();
+
+      const response = await transition(entryId, {
+        to: 'ENTERED_IN_ERROR',
+      }).expect(422);
+
+      /**
+       * POR CAMPO, y el `code` es el genérico del transporte a propósito: el
+       * DTO rechaza esto antes de que el servicio corra, exactamente como
+       * hace AG-044 con la anulación, así que sobre HTTP el contrato es el
+       * 422 por campo con su frase. `ENTERED_IN_ERROR_REASON_REQUIRED` —el
+       * código estable del catálogo— es el que ve un LLAMANTE INTERNO, y su
+       * contrato lo fija `agenda.service.spec.ts`.
+       */
+      const problem = response.body as Problem;
+      expect(problem.errors?.[0]?.field).toBe('reason');
+      expect(problem.errors?.[0]?.message).toBe(
+        'Indique por qué la cita se registró por error',
+      );
+      // Y no se retractó nada.
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(stored.status).toBe('BOOKED');
+    });
+
+    it('AG-117 libera el cupo sin escribir nada de una anulación', async () => {
+      const entryId = await bookedEntry();
+
+      await transition(entryId, {
+        to: 'ENTERED_IN_ERROR',
+        reason: 'Cédula equivocada',
+      }).expect(200);
+
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(stored.status).toBe('ENTERED_IN_ERROR');
+      expect(stored.releasedAt).toBeInstanceOf(Date);
+      // NO es una anulación: `cancellation_note` es donde se explica por qué
+      // se anuló una cita que existía, y una sola columna para los dos actos
+      // haría incomprobable desde la fila cuál de ellos ocurrió.
+      expect(stored.cancelledAt).toBeNull();
+      expect(stored.cancellationNote).toBeNull();
+      // El rastro es la fila append-only del historial (AG-004, AG-005).
+      const rows = await historyOf(entryId);
+      expect(rows.at(-1)?.note).toBe('Cédula equivocada');
+      // Y el cupo queda libre de verdad.
+      await book().expect(201);
+    });
+
+    it('AG-117 rechaza retractar una cita a la que el paciente ya llegó', async () => {
+      const entryId = await arrivedEntry();
+
+      const response = await transition(entryId, {
+        to: 'ENTERED_IN_ERROR',
+        reason: 'Me equivoqué',
+      }).expect(409);
+
+      expect((response.body as Problem).code).toBe('INVALID_AGENDA_TRANSITION');
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(stored.status).toBe('CHECKED_IN');
+    });
+
+    it('AG-046 la base sigue prohibiendo los dos estados nuevos en un bloqueo', async () => {
+      /**
+       * `agenda_entry_kind_status_coherence` ENUMERA los estados válidos para
+       * `kind = BLOCK` y sólo EXCLUYE `BLOCKED` para `APPOINTMENT`, así que un
+       * valor nuevo nace admitido para las citas y prohibido para los
+       * bloqueos. Eso es una afirmación sobre la BASE y no sobre el código, y
+       * la única forma honesta de comprobarla es escribir por debajo del
+       * módulo y ver que PostgreSQL la rechaza.
+       */
+      const blocked = await block().expect(201);
+      const blockId = (blocked.body as EntryBody).id;
+
+      // La fila se escribe VÁLIDA POR LO DEMÁS —con el instante y el motivo
+      // que `20260820121023_agenda_outcomes_and_board` exige— para que lo que
+      // la rechace sea la incoherencia de `kind`, que es lo que se comprueba,
+      // y no un `CHECK` de coherencia del desenlace disparando antes.
+      const columns: Record<string, string> = {
+        LEFT_WITHOUT_BEING_SEEN: `"left_without_being_seen_at" = now()`,
+        ENTERED_IN_ERROR: `"entered_in_error_at" = now(), "entered_in_error_reason" = 'prueba'`,
+      };
+      for (const status of ['LEFT_WITHOUT_BEING_SEEN', 'ENTERED_IN_ERROR']) {
+        await expect(
+          prisma.$executeRawUnsafe(
+            `UPDATE "agenda_entry"
+                SET "status" = $1::"agenda_status", ${columns[status]}
+              WHERE "id" = $2::uuid`,
+            status,
+            blockId,
+          ),
+        ).rejects.toThrow(/agenda_entry_kind_status_coherence/);
+      }
+    });
+
+    it('AG-118 devuelve el retraso de llegada calculado, con su signo', async () => {
+      // La cita es del 5 de enero de 2026 y la llegada es ahora: el retraso es
+      // un número grande y POSITIVO, y sigue siendo un número y no un estado
+      // —`CHECKED_IN` es cierto al mismo tiempo—.
+      const entryId = await bookedEntry();
+
+      const response = await transition(entryId, {
+        to: 'CHECKED_IN',
+        emergency: false,
+      }).expect(200);
+
+      const body = response.body as EntryBody & {
+        arrivalDelayMinutes: number;
+        checkedInAt: string;
+        subjectStatus: string;
+        warnings: string[];
+      };
+      expect(body.status).toBe('CHECKED_IN');
+      expect(body.arrivalDelayMinutes).toBeGreaterThan(0);
+      expect(body.checkedInAt).toEqual(expect.any(String));
+      // AG-127: el único estado de paciente que se teclea, escrito por el
+      // efecto de la llegada.
+      expect(body.subjectStatus).toBe('ARRIVED');
+
+      // Y NO ES UNA COLUMNA: el retraso no se guarda en ninguna parte.
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(Object.keys(stored)).not.toContain('arrivalDelayMinutes');
+    });
+
+    it('AG-119, AG-142 advierten con el umbral de la sede y NO rechazan la llegada', async () => {
+      const entryId = await bookedEntry();
+
+      const response = await transition(entryId, {
+        to: 'CHECKED_IN',
+        emergency: false,
+      }).expect(200);
+
+      const body = response.body as EntryBody & { warnings: string[] };
+      // Advierte, y la llegada queda registrada: un registro de llegada que se
+      // pueda rechazar es un registro que algún día no se hace, y con él se
+      // pierde la calificación del art. 10 que el art. 13 respalda con prisión.
+      expect(body.status).toBe('CHECKED_IN');
+      expect(body.warnings).toHaveLength(1);
+      // El umbral de fábrica de `site_parameter.late_arrival_grace_minutes`.
+      expect(body.warnings[0]).toContain('15');
+    });
+
+    it('AG-142, AG-098 cambiar el umbral cambia la advertencia siguiente y no toca las llegadas ya registradas', async () => {
+      /**
+       * LAS CITAS SE ESCRIBEN DIRECTAMENTE Y NO POR LA RUTA DE RESERVA, y es
+       * lo que hace comprobable el umbral: las del resto del fichero son del
+       * 5 de enero de 2026 a propósito, así que su retraso es de meses y
+       * ningún valor que quepa en el `SMALLINT` de la columna lo cubre. Aquí
+       * hacen falta dos llegadas a un lado y otro de un umbral realista.
+       */
+      const entryAt = async (minutesAgo: number): Promise<string> => {
+        const startsAt = new Date(Date.now() - minutesAgo * 60_000);
+        const created = await prisma.agendaEntry.create({
+          data: {
+            kind: 'APPOINTMENT',
+            siteId,
+            practitionerId,
+            patientId,
+            startsAt,
+            endsAt: new Date(startsAt.getTime() + 20 * 60_000),
+            bookingChannel: 'PHONE',
+            createdById: userId,
+          },
+        });
+        return created.id;
+      };
+
+      // Con los quince minutos de fábrica, una llegada cuarenta minutos tarde
+      // se advierte.
+      const late = await entryAt(40);
+      const lateResponse = await transition(late, {
+        to: 'CHECKED_IN',
+        emergency: false,
+      }).expect(200);
+      expect((lateResponse.body as { warnings: string[] }).warnings).toHaveLength(1); // prettier-ignore
+      const lateStored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: late },
+      });
+
+      // La sede sube el margen. AG-095: es la sede la que decide, no el
+      // código, y REQ-145 prohíbe que el número viva en un `if`.
+      await prisma.siteParameter.update({
+        where: { siteId },
+        data: { lateArrivalGraceMinutes: 200 },
+      });
+
+      /**
+       * UN RETRASO MAYOR QUE EL PRIMERO Y AUN ASÍ SIN ADVERTENCIA, que es lo
+       * que hace la prueba concluyente: la única explicación posible de que
+       * calle es el umbral. (Los intervalos no se solapan porque
+       * `agenda_entry_no_practitioner_overlap` no lo admitiría, y esa
+       * restricción está probada aparte.)
+       */
+      const alsoLate = await entryAt(100);
+      const secondResponse = await transition(alsoLate, {
+        to: 'CHECKED_IN',
+        emergency: false,
+      }).expect(200);
+      expect((secondResponse.body as { warnings: string[] }).warnings).toEqual([]); // prettier-ignore
+
+      // AG-098: la llegada ya registrada no se movió al cambiar el parámetro.
+      const stillThere = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: late },
+      });
+      expect(stillThere.checkedInAt).toEqual(lateStored.checkedInAt);
+    });
+
+    it('AG-128 rechaza por campo el registro de llegada sin calificación de emergencia', async () => {
+      const entryId = await bookedEntry();
+
+      const response = await transition(entryId, { to: 'CHECKED_IN' }).expect(
+        422,
+      );
+
+      // Por campo, para que la pantalla de llegada resalte la casilla. El
+      // `code` es el genérico del transporte porque el DTO rechaza antes que
+      // el servicio, como en AG-044; el código estable
+      // `EMERGENCY_ASSESSMENT_REQUIRED` lo ve el llamante interno.
+      const problem = response.body as Problem;
+      expect(problem.errors?.[0]?.field).toBe('emergency');
+      expect(problem.errors?.[0]?.message).toBe(
+        'Indique sí o no: la calificación es obligatoria al llegar',
+      );
+      // Y no se registró llegada ninguna: la Ley 77 art. 10 obliga a calificar
+      // AL ARRIBO, así que una llegada sin calificar no puede quedar escrita.
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(stored.status).toBe('BOOKED');
+      expect(stored.emergencyAssessedAt).toBeNull();
+    });
+
+    it('AG-128 escribe el ACTO de calificar aunque la respuesta sea negativa', async () => {
+      // LA MITAD QUE LA LEY NECESITA: con sólo la marca afirmativa, `NULL` no
+      // distingue «se calificó y no era una emergencia» de «nadie calificó
+      // nada», y es lo segundo lo que el art. 13 convierte en prisión.
+      const entryId = await arrivedEntry();
+
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(stored.emergencyAssessedAt).toBeInstanceOf(Date);
+      expect(stored.emergencyAssessedById).toBe(userId);
+      expect(stored.emergencyFlaggedAt).toBeNull();
+      expect(stored.emergencyFlaggedById).toBeNull();
+    });
+
+    it('AG-128 escribe el acto y su resultado cuando la calificación es afirmativa', async () => {
+      const entryId = await arrivedEntry({
+        emergency: true,
+        emergencyNote: 'Dolor torácico',
+      });
+
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      // `agenda_entry_emergency_flag_follows_assessment` rechaza una marca sin
+      // calificación detrás: el resultado presupone el acto.
+      expect(stored.emergencyAssessedAt).toBeInstanceOf(Date);
+      expect(stored.emergencyFlaggedAt).toBeInstanceOf(Date);
+      expect(stored.emergencyFlaggedById).toBe(userId);
+      expect(stored.emergencyNote).toBe('Dolor torácico');
+    });
+
+    it('AG-128 la base rechaza una marca de emergencia sin calificación detrás', async () => {
+      // Es garantía de la base y no del servicio: una escritura por fuera del
+      // módulo tiene que chocar igual.
+      const entryId = await bookedEntry();
+
+      await expect(
+        prisma.$executeRawUnsafe(
+          `UPDATE "agenda_entry"
+             SET "emergency_flagged_at" = NOW(), "emergency_flagged_by_id" = $1::uuid
+           WHERE "id" = $2::uuid`,
+          userId,
+          entryId,
+        ),
+      ).rejects.toThrow(/agenda_entry_emergency_flag_follows_assessment/);
+    });
+
+    it('AG-130 no exige ningún permiso distinto del que registra la llegada', async () => {
+      // EL TERCER «no» ES EL QUE LO HACE EXIGIBLE: un permiso propio
+      // significaría recepcionistas que no pueden calificar, y entonces el
+      // art. 10 se incumple los días que esa persona está en el mostrador. La
+      // sesión de este fichero es RECEPCION y nada más.
+      const entryId = await bookedEntry();
+
+      await transition(entryId, { to: 'CHECKED_IN', emergency: true }).expect(
+        200,
+      );
+    });
+
+    it('AG-131 registra la llegada con la cobertura sin verificar y su motivo', async () => {
+      // Ley 77 art. 9: prohibido exigir cheque, tarjeta o cualquier documento
+      // de pago antes de recibir y estabilizar. El motivo es lo que distingue
+      // un dato que FALTA de uno que se decidió no exigir.
+      const entryId = await arrivedEntry({
+        coverageCheckSkippedReason: 'Paciente sin documentos, se estabiliza',
+      });
+
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(stored.coverageCheckSkippedReason).toBe(
+        'Paciente sin documentos, se estabiliza',
+      );
+      expect(stored.status).toBe('CHECKED_IN');
+    });
+
+    it('AG-131 no condiciona el paso a IN_PROGRESS a que haya forma de pago', async () => {
+      const entryId = await arrivedEntry();
+
+      await transition(entryId, { to: 'IN_PROGRESS' }).expect(200);
+
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(stored.status).toBe('IN_PROGRESS');
     });
   });
 });

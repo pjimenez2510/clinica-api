@@ -12,6 +12,7 @@ import {
   AgendaEntryNotFoundError,
   BookingRetryExhaustedError,
   InvalidAgendaTransitionError,
+  SubjectStatusNotDerivableError,
 } from '../domain/agenda.errors';
 import type {
   AgendaEntryView,
@@ -35,6 +36,7 @@ import type {
   NoShowCountsQuery,
   OverbookingCountQuery,
   PatientBookingStatus,
+  PatientSubjectStatus,
   RescheduleOutcome,
   RescheduledBooking,
   ScheduleContext,
@@ -42,6 +44,8 @@ import type {
   StatusChange,
   StoredDurationSources,
   StoredSiteParameters,
+  SubjectStatusCommand,
+  SubjectStatusRead,
   TransitionCommand,
   TransitionRead,
 } from '../domain/agenda.repository';
@@ -100,6 +104,19 @@ const ENTRY_SELECT = {
   overbookingReason: true,
   overbookingAuthorisedById: true,
   releasedAt: true,
+  // AG-041, AG-118. The arrival instant, so the delay can be COMPUTED by
+  // whoever serves the row. Nothing stores the subtraction: a third copy of a
+  // fact that two columns already hold is a copy that ages and disagrees.
+  checkedInAt: true,
+  // AG-121. The patient axis and its instant. The database refuses one
+  // without the other, so they are read as the pair they are.
+  subjectStatus: true,
+  subjectStatusAt: true,
+  // AG-128, Ley 77 art. 10. That the call WAS MADE, and separately whether it
+  // came out positive. `emergency_note` stays out for the same reason as
+  // `reason`: it is free text about a patient's condition.
+  emergencyAssessedAt: true,
+  emergencyFlaggedAt: true,
   bookingChannel: true,
   serviceTypeId: true,
   createdById: true,
@@ -532,6 +549,11 @@ export class PrismaAgendaRepository implements AgendaRepository {
         overbookingEnabled: true,
         overbookingCap: true,
         overbookingPermission: true,
+        // AG-142. The late-arrival threshold, on the SAME trip as the window
+        // and for the same reason as the three above: it is one more column
+        // of a row already being fetched by primary key, and AG-095 resolves
+        // it through the same chain.
+        lateArrivalGraceMinutes: true,
       },
     });
   }
@@ -1036,6 +1058,72 @@ export class PrismaAgendaRepository implements AgendaRepository {
   }
 
   /**
+   * AG-122 to AG-127. Moves the PATIENT axis from a documented fact.
+   *
+   * NO ROUTE REACHES THIS METHOD, and that is AG-122 rather than an unfinished
+   * edge: the five derived statuses have no endpoint that sets them, and the
+   * callers are the facts of `encounter`, which has no code yet.
+   *
+   * THE UPDATE DOES NOT TRUST THE READ, exactly like `applyStatusChange`: it
+   * is conditioned on the subject status that was read, so two facts arriving
+   * at once produce one winner and the loser is refused with the state the
+   * winner left, never with a stale one.
+   *
+   * WHAT THIS DOES NOT YET WRITE, and it has to be said out loud: the trail of
+   * AG-126. `subject_status_at` is the instant of the LAST change — a cache of
+   * the last row, which is what makes AG-135 computable without a join — and
+   * at the third change nothing can answer when the first two happened or who
+   * caused them. `agenda_subject_status_history` is the «Falta esquema» of
+   * AG-126 and lands with the encounter facts that will call this.
+   */
+  async recordSubjectStatus(
+    command: SubjectStatusCommand,
+    decide: (entry: SubjectStatusRead) => PatientSubjectStatus,
+  ): Promise<AgendaEntryView> {
+    return this.prisma.$transaction(async (tx) => {
+      const row = await tx.agendaEntry.findFirst({
+        where: { id: command.entryId, siteId: command.siteId },
+        select: { id: true, kind: true, status: true, subjectStatus: true },
+      });
+      // AG-071: an entry of another site answers exactly like a missing one.
+      if (!row) throw new AgendaEntryNotFoundError();
+
+      const to = decide({
+        id: row.id,
+        kind: row.kind,
+        status: row.status,
+        subjectStatus: row.subjectStatus,
+      });
+
+      const updated = await tx.agendaEntry.updateMany({
+        where: {
+          id: command.entryId,
+          siteId: command.siteId,
+          subjectStatus: row.subjectStatus,
+        },
+        // The two columns move together or the CHECK
+        // `agenda_entry_subject_status_carries_its_instant` refuses the row.
+        data: { subjectStatus: to, subjectStatusAt: command.at },
+      });
+      if (updated.count === 0) {
+        // Somebody else moved the patient axis between our read and our
+        // write. The refusal names what IS there now, not what we read.
+        const current = await tx.agendaEntry.findUniqueOrThrow({
+          where: { id: command.entryId },
+          select: { subjectStatus: true },
+        });
+        throw new SubjectStatusNotDerivableError(current.subjectStatus);
+      }
+
+      const entry = await tx.agendaEntry.findUniqueOrThrow({
+        where: { id: command.entryId },
+        select: ENTRY_SELECT,
+      });
+      return toEntryView(entry);
+    });
+  }
+
+  /**
    * AG-071. One entry of one site, or `null` for anything else.
    *
    * A READ AND NOT A LOCK. Rescheduling needs the practitioner and the patient
@@ -1364,6 +1452,11 @@ function toEntryView(row: {
   status: string;
   blocksCalendar: boolean;
   releasedAt: Date | null;
+  checkedInAt: Date | null;
+  subjectStatus: string | null;
+  subjectStatusAt: Date | null;
+  emergencyAssessedAt: Date | null;
+  emergencyFlaggedAt: Date | null;
   bookingChannel: string | null;
   serviceTypeId: string | null;
   createdById: string | null;
@@ -1392,6 +1485,14 @@ function toEntryView(row: {
     overbookingReason: row.overbookingReason,
     overbookingAuthorisedById: row.overbookingAuthorisedById,
     releasedAt: row.releasedAt,
+    // AG-118: the instant, never the subtraction.
+    checkedInAt: row.checkedInAt,
+    // AG-121: the patient axis, which the appointment status does not carry.
+    subjectStatus: row.subjectStatus as AgendaEntryView['subjectStatus'],
+    subjectStatusAt: row.subjectStatusAt,
+    // AG-128: the act, and its outcome.
+    emergencyAssessedAt: row.emergencyAssessedAt,
+    emergencyFlaggedAt: row.emergencyFlaggedAt,
     bookingChannel: row.bookingChannel as AgendaEntryView['bookingChannel'],
     serviceTypeId: row.serviceTypeId,
     createdById: row.createdById,

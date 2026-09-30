@@ -1,0 +1,155 @@
+import { describe, expect, it } from 'vitest';
+
+import { DOMAIN_ERROR_CODES } from '../../../shared/domain/errors/error-catalogue';
+import {
+  ConflictError,
+  DomainError,
+  NotFoundError,
+  ValidationError,
+} from '../../../shared/domain/errors/domain-error';
+
+import {
+  ExamNotOrderableError,
+  OrderEncounterNotFoundError,
+  OrderEncounterNotOpenError,
+  OrderItemNotMatchableError,
+  OrderItemNotPendingError,
+  OrderNotFoundError,
+  ReportAlreadyCorrectedError,
+  ReportNotCorrectableError,
+  ReportNotFoundError,
+  ResultAlreadyMatchedError,
+  ResultAnalyteUnknownError,
+  ResultChartUnmatchedError,
+  ResultFlagIsDerivedError,
+  ResultNotFoundError,
+  ResultValueNotAllowedError,
+  ResultValueTypeMismatchError,
+} from './orders.errors';
+
+/**
+ * The error contract: a stable code, the CATEGORY that decides the HTTP status,
+ * and a sentence the user can act on.
+ *
+ * The status is asserted through the category because the mapping lives in
+ * `problem-details.filter.ts` — `ValidationError` is 422 there, `ConflictError`
+ * 409 and `NotFoundError` 404.
+ */
+const EVERY_ERROR: readonly DomainError[] = [
+  new OrderNotFoundError(),
+  new OrderEncounterNotFoundError(),
+  new ReportNotFoundError(),
+  new ExamNotOrderableError(),
+  new OrderEncounterNotOpenError('COMPLETED'),
+  new OrderItemNotPendingError(),
+  new ReportAlreadyCorrectedError(),
+  new ReportNotCorrectableError('PARTIAL'),
+  new ResultAnalyteUnknownError(),
+  new ResultValueTypeMismatchError('HB', 'NUMERIC'),
+  new ResultValueTypeMismatchError('EMO-NITRITOS', 'CODED'),
+  new ResultValueTypeMismatchError('CULTIVO', 'TEXT'),
+  new ResultValueNotAllowedError('EMO-NITRITOS', ['Negativo', 'Positivo']),
+  new ResultFlagIsDerivedError(),
+  new ResultChartUnmatchedError(),
+  new ResultNotFoundError(),
+  new ResultAlreadyMatchedError(),
+  new OrderItemNotMatchableError(),
+];
+
+describe('el contrato de errores de las órdenes', () => {
+  it('ORD-090 declara todos sus códigos en el catálogo congelado', () => {
+    for (const error of EVERY_ERROR) {
+      expect(
+        DOMAIN_ERROR_CODES,
+        `${error.code} no está en el catálogo`,
+      ).toContain(error.code);
+    }
+  });
+
+  it('ORD-024 no deja viajar ningún valor de laboratorio ni dato del paciente', () => {
+    /**
+     * Estas frases llegan a un log y a una captura de soporte. Lo que aquí se
+     * filtraría es un resultado de laboratorio, que es lo que querrían leer un
+     * empleador o una aseguradora.
+     *
+     * ⚠️ EL CÓDIGO DEL ANALITO SÍ PUEDE APARECER en `params` —`HB`, `GLU`— y no
+     * es dato del paciente: es metadato de catálogo. Lo prohibido es un
+     * NÚMERO, que es la lectura.
+     */
+    for (const error of EVERY_ERROR) {
+      const sentences = [error.userTitle ?? '', ...(error.fieldErrors ?? []).map((f) => f.message)].join(' '); // prettier-ignore
+      expect(sentences, error.code).not.toMatch(/\d+[,.]\d+/);
+      expect(Object.values(error.params).join(' '), error.code).not.toMatch(
+        /\d+[,.]\d+/,
+      );
+    }
+  });
+
+  it('ORD-009 responde lo mismo para «no existe» y para «es de otra sede»', () => {
+    // Distinguirlas confirmaría órdenes ajenas a quien prueba identificadores
+    // de uno en uno. Es la línea de `ENCOUNTER_NOT_FOUND`.
+    const order = new OrderNotFoundError();
+    expect(order).toBeInstanceOf(NotFoundError);
+    expect(order.userTitle).toContain('sedes a las que usted tiene acceso');
+  });
+
+  it('ORD-003 rechaza la orden entera y señala el campo de los exámenes', () => {
+    const error = new ExamNotOrderableError();
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.fieldErrors?.[0]?.field).toBe('items');
+  });
+
+  it('ORD-005 y ORD-008 son conflictos de estado, no de contenido', () => {
+    // 409 y no 422: lo enviado es correcto, y lo que lo impide es el estado.
+    expect(new OrderEncounterNotOpenError('COMPLETED')).toBeInstanceOf(
+      ConflictError,
+    );
+    expect(new OrderItemNotPendingError()).toBeInstanceOf(ConflictError);
+    expect(new ReportAlreadyCorrectedError()).toBeInstanceOf(ConflictError);
+    expect(new ReportNotCorrectableError('PARTIAL')).toBeInstanceOf(
+      ConflictError,
+    );
+  });
+
+  it('ORD-035 dice que la marca la calcula el sistema y señala el campo enviado', () => {
+    const error = new ResultFlagIsDerivedError();
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.fieldErrors?.[0]?.field).toBe('results.abnormalFlag');
+    expect(error.userTitle).toContain('la calcula el sistema');
+  });
+
+  it('ORD-032 dice qué hacer según el tipo que declara la determinación', () => {
+    // Quien lo lee está transcribiendo un informe impreso: «el valor no
+    // corresponde al tipo» no le dice qué corregir.
+    expect(new ResultValueTypeMismatchError('HB', 'NUMERIC').userTitle).toContain('número'); // prettier-ignore
+    expect(new ResultValueTypeMismatchError('EMO-NITRITOS', 'CODED').userTitle).toContain('opciones'); // prettier-ignore
+    expect(new ResultValueTypeMismatchError('CULTIVO', 'TEXT').userTitle).toContain('texto'); // prettier-ignore
+    // Un tipo que el catálogo aún no conoce no puede dejar al usuario sin frase.
+    expect(
+      new ResultValueTypeMismatchError('X', 'RATIO').userTitle,
+    ).toBeTruthy();
+  });
+
+  it('ORD-043 dice qué hacer al que trabaja la cola de resultados sin orden', () => {
+    // 404 y 409 y 422, y cada uno por su razón: no está, alguien se te
+    // adelantó, o la línea que elegiste no es de esta orden.
+    expect(new ResultNotFoundError()).toBeInstanceOf(NotFoundError);
+    expect(new ResultNotFoundError().userTitle).toContain(
+      'sedes a las que usted tiene acceso',
+    );
+
+    expect(new ResultAlreadyMatchedError()).toBeInstanceOf(ConflictError);
+    expect(new ResultAlreadyMatchedError().userTitle).toContain('ya está emparejado'); // prettier-ignore
+
+    const line = new OrderItemNotMatchableError();
+    expect(line).toBeInstanceOf(ValidationError);
+    expect(line.fieldErrors?.[0]?.field).toBe('orderItemId');
+    expect(line.userTitle).toContain('Elija una línea de esta orden');
+  });
+
+  it('ORD-080 dice que hay que registrar al paciente, nunca que se creará solo', () => {
+    const error = new ResultChartUnmatchedError();
+    expect(error).toBeInstanceOf(NotFoundError);
+    expect(error.userTitle).toContain('Regístrela en el fichero');
+  });
+});

@@ -20,6 +20,7 @@
 import type { BookingChannel, StoredSiteParameters } from './booking-policy';
 import type { Holiday } from './holiday-calendar';
 import type { NoShowCountRow } from './no-show-metric';
+import type { SubjectStatusFact } from './subject-status';
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import type {
   AgendaOccupancy,
@@ -27,15 +28,24 @@ import type {
   ScheduleRule,
 } from './slot-availability';
 
-import type { AgendaEntryKind, AgendaEntryStatus } from './agenda-entry';
+import type {
+  AgendaEntryKind,
+  AgendaEntryStatus,
+  PatientSubjectStatus,
+} from './agenda-entry';
 
-export type { AgendaEntryKind, AgendaEntryStatus } from './agenda-entry';
+export type {
+  AgendaEntryKind,
+  AgendaEntryStatus,
+  PatientSubjectStatus,
+} from './agenda-entry';
 
 // Re-exported for the same reason as the two above: it is part of THIS port's
 // signature, so an adapter or a double should not have to know which domain
 // file the booking window happens to live in.
 export type { StoredSiteParameters } from './booking-policy';
 export type { NoShowCountRow } from './no-show-metric';
+export type { SubjectStatusFact } from './subject-status';
 
 /**
  * An agenda entry as the day's list shows it.
@@ -80,6 +90,43 @@ export interface AgendaEntryView {
   overbookingAuthorisedById: string | null;
   /** AG-018: set when the slot was given back. */
   releasedAt: Date | null;
+  /**
+   * AG-041, AG-118. The real instant of arrival, `null` until it happens.
+   *
+   * IT IS SERVED SO THE DELAY CAN BE COMPUTED AND NEVER STORED. AG-118 is the
+   * difference between this and `startsAt`, and it exists as a derivation
+   * precisely so nothing types it: a stored copy of a subtraction is a third
+   * version of a fact that ages and then disagrees with the two columns it
+   * came from.
+   */
+  checkedInAt: Date | null;
+  /**
+   * AG-121. Where the PATIENT is, on the axis the status does not carry, and
+   * the instant of the last change.
+   *
+   * BOTH `null` OR NEITHER — `agenda_entry_subject_status_carries_its_instant`
+   * guarantees the pairing, and it is what makes «tiempo en el estado actual»
+   * (AG-135) calculable without joining anything. `null` on a block (a theatre
+   * is not in pre-consultation) and on every appointment that has not arrived
+   * yet (AG-127).
+   */
+  subjectStatus: PatientSubjectStatus | null;
+  subjectStatusAt: Date | null;
+  /**
+   * AG-128, Ley 77 art. 10. That the emergency call WAS MADE at arrival, and
+   * separately whether it came out positive.
+   *
+   * TWO FIELDS AND NOT ONE, because `emergencyFlaggedAt` alone cannot tell
+   * «assessed, not an emergency» from «nobody assessed anybody», and proving
+   * the second is what art. 10 obliges and art. 13 backs with prison.
+   *
+   * `emergencyNote` IS NOT HERE. It is free text somebody types about a
+   * patient's condition, which is health data, and this view is read by anyone
+   * holding `agenda:read` over the site with no row in `access_audit` — the
+   * same reasoning that keeps `reason` out (AG-072, AG-074, SC-006).
+   */
+  emergencyAssessedAt: Date | null;
+  emergencyFlaggedAt: Date | null;
   bookingChannel: BookingChannel | null;
   /**
    * SP-028: the service type recepción chose, `service_type.id`.
@@ -332,10 +379,79 @@ export interface TransitionRead {
   hasEncounter: boolean;
 }
 
-/** The columns a transition stamps. Shared with the pure status machine. */
-export type TransitionEffects = Partial<
-  Record<'checkedInAt' | 'noShowAt' | 'cancelledAt' | 'releasedAt', Date>
->;
+/**
+ * The columns a transition stamps. Shared with the pure status machine.
+ *
+ * AN INTERFACE AND NO LONGER A `Record` OF DATES, since the arrival stopped
+ * being only an instant: AG-127 moves the subject status on the same write,
+ * and AG-128 records the article-10 assessment on it. Every key is a column of
+ * `agenda_entry`, spread straight into the update — a name that is not one
+ * would not compile in the adapter, which is what keeps this honest.
+ */
+export interface TransitionEffects {
+  /** AG-041. The real instant of arrival. */
+  checkedInAt?: Date;
+  /** AG-042. */
+  noShowAt?: Date;
+  /** AG-044. */
+  cancelledAt?: Date;
+  /** AG-042, AG-044, AG-116, AG-117: what «liberar el cupo» means. */
+  releasedAt?: Date;
+  /**
+   * AG-116. The instant somebody gave up waiting, in its own column.
+   *
+   * Not the history row: AG-140 filters outcomes by date over `agenda_entry`,
+   * and forcing this one outcome to join against the trail would make the
+   * metric a different query from its three neighbours for an asymmetry that
+   * answers nothing.
+   */
+  leftWithoutBeingSeenAt?: Date;
+  /** AG-116. Optional: asking a receptionist WHY somebody got tired of
+   * waiting produces a blank field or a guess. */
+  leftWithoutBeingSeenReason?: string;
+  /** AG-117. Its own instant, and its own reason. */
+  enteredInErrorAt?: Date;
+  /**
+   * AG-117. ⚠️ NOT `cancellationNote`. One column for both acts would make it
+   * unprovable from the row which of the two happened, which is exactly what
+   * this status came to separate.
+   */
+  enteredInErrorReason?: string;
+  /**
+   * AG-127. The patient axis, moved by the appointment axis exactly twice:
+   * `ARRIVED` on check-in and `DEPARTED` on `LEFT_WITHOUT_BEING_SEEN`. Every
+   * other value is derived from a documented fact and never from here
+   * (AG-122).
+   */
+  subjectStatus?: PatientSubjectStatus;
+  /**
+   * AG-121. Its instant. The database refuses one without the other
+   * (`agenda_entry_subject_status_carries_its_instant`), so the two are always
+   * written together.
+   */
+  subjectStatusAt?: Date;
+  /**
+   * AG-128, Ley 77 art. 10. THE ASSESSMENT ITSELF — who made the call and
+   * when — recorded on every arrival whatever the answer was.
+   */
+  emergencyAssessedAt?: Date;
+  emergencyAssessedById?: string;
+  /**
+   * AG-128. THE POSITIVE OUTCOME, and a different pair of columns on purpose:
+   * with only these, `NULL` cannot tell «se calificó y no era una emergencia»
+   * from «nadie calificó nada», and the second is what art. 13 turns into a
+   * prison sentence.
+   */
+  emergencyFlaggedAt?: Date;
+  emergencyFlaggedById?: string;
+  emergencyNote?: string;
+  /**
+   * AG-131, Ley 77 art. 9. Why the coverage check was not done. Its presence
+   * is what tells a datum that is MISSING from one the clinic decided not to
+   * demand — and demanding it would be illegal in the case that matters most.
+   */
+  coverageCheckSkippedReason?: string;
+}
 
 /**
  * What the policy decided: the new status, its stamps, and the two notes.
@@ -349,6 +465,36 @@ export interface StatusChange {
   effects: TransitionEffects;
   cancellationNote?: string;
   historyNote?: string;
+}
+
+/**
+ * AG-122, AG-126. One derived movement of the patient axis.
+ *
+ * `fact` AND NOT `subjectStatus`: see `recordSubjectStatus`. `changedById` is
+ * the author of the fact, taken from the session and never from a body, like
+ * every other author in this module (AG-004).
+ */
+export interface SubjectStatusCommand {
+  siteId: string;
+  entryId: string;
+  changedById: string;
+  fact: SubjectStatusFact;
+  /** The instant the fact was recorded, taken ONCE by the caller. */
+  at: Date;
+}
+
+/**
+ * AG-125, AG-127. What the patient-axis policy needs of the row, read INSIDE
+ * the adapter's transaction — the same shape and the same reason as
+ * `TransitionRead`: a decision taken on a read from a moment earlier is a
+ * decision two callers can both take.
+ */
+export interface SubjectStatusRead {
+  id: string;
+  kind: AgendaEntryKind;
+  status: AgendaEntryStatus;
+  /** `null` until the appointment reaches `CHECKED_IN` (AG-127). */
+  subjectStatus: PatientSubjectStatus | null;
 }
 
 /** AG-004: who asks for which entry. The author comes from the session. */
@@ -708,6 +854,36 @@ export interface AgendaRepository {
     booking: RescheduledBooking,
     decide: (entry: TransitionRead) => StatusChange,
   ): Promise<RescheduleOutcome>;
+  /**
+   * AG-122 to AG-127. Moves the PATIENT axis from a documented fact.
+   *
+   * THE PORT IS DECLARED AND NO ROUTE REACHES IT, and that is the requirement
+   * rather than an unfinished edge. AG-122 forbids exposing any route that
+   * sets `IN_PREPARATION`, `READY`, `RECEIVING_CARE`, `ON_LEAVE` or
+   * `DEPARTED`: five of the six are consequences of work that gets documented
+   * elsewhere — vitals opened and saved, the clinical note opened, the order
+   * that sends the patient out, the account settled — and the sixth,
+   * `ARRIVED`, is written by the check-in effect because the fact it stands
+   * for leaves no other trace. The callers are the facts of `encounter`, and
+   * `encounter` has no code yet: AG-121 to AG-127 depend on it and not the
+   * other way round.
+   *
+   * THE FACT IS THE ARGUMENT, NOT THE STATE. A signature that took a
+   * `PatientSubjectStatus` would be the forbidden box wearing a different
+   * name; what a caller may say is which fact occurred, and what the board
+   * shows for it is `subjectStatusOf`'s decision.
+   *
+   * THE TRAIL OF AG-126 IS NOT COMPLETE AND THIS IS WHERE IT SHOWS. The two
+   * columns hold the CURRENT state and its instant — a cache of the last row,
+   * which is what makes AG-135 computable without a join — but at the third
+   * change nothing can answer when the first two happened or who caused them.
+   * `agenda_subject_status_history` is the «Falta esquema» of AG-126 and
+   * belongs to the same delivery as the encounter facts that will call this.
+   */
+  recordSubjectStatus(
+    command: SubjectStatusCommand,
+    decide: (entry: SubjectStatusRead) => PatientSubjectStatus,
+  ): Promise<AgendaEntryView>;
 }
 
 /** Injection token. The application never names the adapter. */

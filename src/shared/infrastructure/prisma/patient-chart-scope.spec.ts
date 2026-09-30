@@ -82,12 +82,33 @@ const SCHEMA = join(REPO_ROOT, 'prisma', 'schema.prisma');
 const HISTORY_TABLES: readonly string[] = [
   'patient_priority_group',
   'patient_allergy',
+  // 20-08-2026, con EN-087. «Sin alergias conocidas» es una afirmación sobre la
+  // PERSONA, no sobre el papel en el que se escribió, y las dos mitades de la
+  // lectura la necesitan: la afirmación puede estar en la ficha absorbida, y —
+  // lo peligroso — la alergia que la deja sin efecto también. Leer la segunda
+  // por el `patient_id` desnudo mantiene viva una afirmación de «ninguna» sobre
+  // una ficha cuya alergia a la penicilina vive en la absorbida.
+  'patient_allergy_absence',
   'patient_contact',
   'agenda_entry',
   'waitlist_entry',
   'encounter',
   'medical_certificate',
   'referral',
+  // 20-08-2026, con la migración de facturación. Una cuenta es la consecuencia
+  // económica de una atención, y `encounter` ya está en esta lista: si la
+  // atención sigue el enlace de la fusión y su cuenta no, la visita se ve y su
+  // deuda no. Eso es exactamente la forma de PA-009 — algo que le ocurrió a la
+  // persona dejando de ser alcanzable por el único camino que tenía.
+  //
+  // Y el daño aquí es de los que nadie reporta como defecto: una cuenta
+  // impagada de la ficha absorbida simplemente deja de aparecer, así que no se
+  // cobra y nadie sabe que existió.
+  //
+  // `charge_item`, `invoice` y `credit_note` NO están en ninguna de las dos
+  // listas y es correcto: cuelgan de la cuenta, no de la ficha, así que el
+  // analizador no las ve y llegar a ellas ya pasa por aquí.
+  'patient_account',
 ];
 
 /**

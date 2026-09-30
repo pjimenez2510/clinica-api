@@ -148,6 +148,13 @@ function agendaEntry(
     overbookingReason: null,
     overbookingAuthorisedById: null,
     releasedAt: inMinutes(-60),
+    // AG-041, AG-121, AG-128: nothing of the arrival axis on an entry that
+    // was annulled before anybody came.
+    checkedInAt: null,
+    subjectStatus: null,
+    subjectStatusAt: null,
+    emergencyAssessedAt: null,
+    emergencyFlaggedAt: null,
     bookingChannel: 'PHONE',
     serviceTypeId: 'service-general',
     createdById: RECEPTIONIST,

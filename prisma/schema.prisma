@@ -118,10 +118,41 @@ model User {
   /// useless one.
   patientMerges PatientMerge[] @relation("PatientMergeAuthor")
 
+  /// EN-087. The «sin alergias conocidas» assertions this person made. The
+  /// standard demands a named clinician behind each one, so this relation is
+  /// the requirement rather than a convenience.
+  allergyAbsencesAsserted PatientAllergyAbsence[] @relation("AllergyAbsenceAsserter")
+
   /// AG-064. The waiting-list calls this person made. `RESTRICT` on the way
   /// back: the trail names whoever called, and an account is deactivated, never
   /// deleted (AU-024).
   waitlistContacts WaitlistContactAttempt[] @relation("WaitlistContactRecorder")
+
+  /// Ley 77 art. 10. Who made the emergency call on arrival. Named, because
+  /// art. 13 turns «nobody assessed them» into a criminal matter.
+  emergencyFlagsRaised           AgendaEntry[]                @relation("EmergencyFlagger")
+  prescriptionsDiscarded         Prescription[]               @relation("PrescriptionDiscarder")
+  subjectStatusChanges           AgendaSubjectStatusHistory[] @relation("SubjectStatusChanger")
+  chargeItemsVoided              ChargeItem[]                 @relation("ChargeVoider")
+  billableServicesTaxReviewed    BillableService[]            @relation("TaxRateReviewer")
+  agendaEntriesEmergencyAssessed AgendaEntry[]                @relation("EmergencyAssessor")
+
+  /// Money. Two lists over `charge_item` and not one, because raising a charge
+  /// and authorising a discount above the role's ceiling are two acts by two
+  /// people — the second pair of eyes only counts if it is a different pair.
+  chargeItemsCreated  ChargeItem[] @relation("ChargeItemAuthor")
+  discountsAuthorised ChargeItem[] @relation("ChargeItemDiscountAuthoriser")
+  invoicesIssued      Invoice[]    @relation("InvoiceIssuer")
+  creditNotesIssued   CreditNote[] @relation("CreditNoteIssuer")
+
+  /// DOC-002, DOC-030, DOC-056. The printable side of the system: the
+  /// artefacts this person emitted, the template versions they published and
+  /// the identity images they uploaded. All three are `RESTRICT` on the way
+  /// back — an account is deactivated, never deleted (AU-024), and an archive
+  /// whose author disappeared cannot answer «¿quién emitió esto?».
+  documentRendersIssued      DocumentRender[]   @relation("DocumentRenderIssuer")
+  documentTemplatesPublished DocumentTemplate[] @relation("DocumentTemplatePublisher")
+  documentImagesUploaded     DocumentImage[]    @relation("DocumentImageUploader")
 
   @@index([email])
   @@map("app_user")
@@ -138,7 +169,7 @@ model Permission {
   code String @id @db.VarChar(64)
 
   /// Grouping for the administration screen: patient, agenda, record, billing.
-  resource String @db.VarChar(32)
+  resource    String @db.VarChar(32)
   /// What it allows, in Spanish, for whoever assigns it.
   description String @db.VarChar(255)
 
@@ -157,8 +188,8 @@ model Role {
   id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
 
   /// Stable identifier used in seeds and logs. Uppercase, no spaces.
-  code String @unique @db.VarChar(48)
-  name String @db.VarChar(120)
+  code        String  @unique @db.VarChar(48)
+  name        String  @db.VarChar(120)
   description String? @db.Text
 
   /// Ships with the product. Its permissions remain editable, but it cannot be
@@ -170,8 +201,9 @@ model Role {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  permissions RolePermission[]
-  grants      UserRoleGrant[]
+  permissions   RolePermission[]
+  grants        UserRoleGrant[]
+  discountLimit RoleDiscountLimit?
 
   @@map("role")
 }
@@ -457,8 +489,38 @@ enum AgendaStatus {
   /// migration: the other five statuses assert something about a patient, and a
   /// block has none.
   BLOCKED
+  /// The patient CAME and left before being attended. It exists because both
+  /// alternatives were lies: NO_SHOW asserts they never came — and poisons the
+  /// no-show rate of AG-080 that AG-032 went to lengths to keep honest — and
+  /// closing the visit asserts an encounter that may never have been opened.
+  LEFT_WITHOUT_BEING_SEEN
+  /// The entry should never have existed. Voiding a real appointment and
+  /// deleting one created by mistake are different events, and counting them
+  /// together corrupts the cancellation metric.
+  ENTERED_IN_ERROR
 
   @@map("agenda_status")
+}
+
+/// WHERE THE PATIENT IS, which is a different axis from what the clinical act
+/// is doing (`EncounterStatus`). HL7 FHIR R5 split the two that R4 had merged,
+/// and this is the split the day board needs: a patient can be RECEIVING_CARE
+/// while the encounter is ON_HOLD because they went down for an X-ray.
+///
+/// It hangs off `agenda_entry` and NOT off `encounter` on purpose: the patient
+/// is in the waiting room before any encounter exists, and a walk-in gets an
+/// agenda entry too (AG-029). On the encounter, the board could not show the
+/// person who has just arrived.
+enum PatientSubjectStatus {
+  ARRIVED
+  IN_PREPARATION
+  READY
+  RECEIVING_CARE
+  /// Out of the building and EXPECTED BACK within this same visit.
+  ON_LEAVE
+  DEPARTED
+
+  @@map("patient_subject_status")
 }
 
 /// How the clinic was asked for the appointment. A closed list because AG-080
@@ -492,6 +554,34 @@ enum VisitSequence {
   SUBSEQUENT
 
   @@map("visit_sequence")
+}
+
+/// The ADMINISTRATIVE state of the clinical ACT, the other half of the pair
+/// with `PatientSubjectStatus`.
+///
+/// Before this column, "open" meant `ended_at IS NULL`. That works for two
+/// states and breaks at five, and five is what the flow has. What it could not
+/// express is the stretch that costs the clinic money: the doctor has signed
+/// and the patient is still at the cashier.
+enum EncounterStatus {
+  OPEN
+  /// Suspended and EXPECTED BACK — the patient stepped out for a test and
+  /// returns to this same encounter.
+  ON_HOLD
+  /// Begun and NOT able to be completed, for a reason that may be the clinic's
+  /// — an emergency call, a power cut — and not only the patient's. Folding it
+  /// into ABANDONED erases an operational problem worth seeing.
+  DISCONTINUED
+  /// CLINICALLY complete and signed, administratively pending: charges,
+  /// invoice, documents to hand over, next appointment.
+  DISCHARGED
+  /// Everything done. The patient has left and the account is settled.
+  COMPLETED
+  /// Should never have existed, and deliberately distinct from a real closure
+  /// so that it does not count as one.
+  ENTERED_IN_ERROR
+
+  @@map("encounter_status")
 }
 
 enum DischargeCondition {
@@ -556,6 +646,15 @@ enum PrescriptionStatus {
   ACTIVE
   COMPLETED
   CANCELLED
+
+  /// Un borrador que se tecleó mal y nunca salió de la consulta.
+  ///
+  /// ⚠️ NO es `CANCELLED`, y por eso existe. Anular una receta EMITIDA es un
+  /// acto con peso: el papel está en la mano del paciente y la farmacia puede
+  /// haber dispensado contra él. Descartar un borrador es limpieza — nada
+  /// salió de la sala. Juntar los dos dejaría «esta receta se anuló» sin poder
+  /// contestar cuál de los dos ocurrió.
+  DISCARDED
 
   @@map("prescription_status")
 }
@@ -804,6 +903,7 @@ model CatalogConcept {
   allergies               PatientAllergy[]
   referrals               Referral[]                 @relation("ReferralSpecialty")
   interconsultations      Interconsultation[]        @relation("InterconsultationSpecialty")
+  billableServices        BillableService[]
 
   @@index([systemId, code])
   @@index([parentId])
@@ -836,6 +936,29 @@ model Establishment {
   ruc       String? @db.VarChar(13)
 
   active Boolean @default(true)
+
+  /// DOC-057. The clinic's logo, printed at the head of every document and, on
+  /// the RIDE, at the position the SRI's Anexo 2 marks. PNG or JPEG only, and
+  /// re-encoded on the way in — never the bytes that arrived (DOC-050 to
+  /// DOC-054). NULL is legitimate and is what a fresh installation looks like:
+  /// the logo is not a mandatory field of any of the four documents (DOC-059).
+  logoImageId String?        @map("logo_image_id") @db.Uuid
+  logoImage   DocumentImage? @relation("EstablishmentLogo", fields: [logoImageId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "establishment_logo_image_fk")
+
+  /// DOC-077. THE FISCAL LEGENDS THE RIDE HAS TO CARRY, from the SRI's Ficha
+  /// Técnica Anexo 2. They are not decoration: their absence on a printed RIDE
+  /// is what a review looks at, and until this migration there was not even a
+  /// column for them.
+  ///
+  /// The two resolution numbers are NULLABLE STRINGS AND NOT BOOLEANS on
+  /// purpose: the legend the SRI prints is «Contribuyente Especial Nro. 1234»,
+  /// so a boolean would say the establishment is one and be unable to print
+  /// which one. Present means yes, and `establishment_special_taxpayer_format`
+  /// keeps the value to digits.
+  keepsAccounting            Boolean     @default(false) @map("keeps_accounting")
+  specialTaxpayerResolution  String?     @map("special_taxpayer_resolution") @db.VarChar(16)
+  withholdingAgentResolution String?     @map("withholding_agent_resolution") @db.VarChar(16)
+  rimpeRegime                RimpeRegime @default(NONE) @map("rimpe_regime")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -884,6 +1007,10 @@ model Site {
   encounters      Encounter[]
   waitlistEntries WaitlistEntry[]
   serviceOrders   ServiceOrder[]
+  priceLists      PriceList[]
+  patientAccounts PatientAccount[]
+  invoices        Invoice[]
+  documentRenders DocumentRender[]
 
   @@map("site")
 }
@@ -929,6 +1056,9 @@ model EmissionPoint {
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  invoices    Invoice[]
+  creditNotes CreditNote[]
 
   @@unique([siteId, code], map: "emission_point_code_unique_per_site")
   @@map("emission_point")
@@ -1064,6 +1194,41 @@ model SiteParameter {
   /// makes a wrong default cost a screen instead of a migration.
   waitlistMaxContactAttempts Int @default(3) @map("waitlist_max_contact_attempts")
 
+  /// D-A-001. OFF by default: no norm requires triage of an outpatient
+  /// establishment — A.M. 00030-2020 art. 27 lists no emergency service in the
+  /// «centro de especialidades» portfolio — and no validated scale exists for
+  /// scheduled outpatient care. Switched on, the scale is Manchester, the
+  /// vocabulary the Ecuadorian typology itself uses, never ESI, which defines
+  /// itself as an emergency-department tool.
+  triageEnabled Boolean @default(false) @map("triage_enabled")
+
+  /// D-A-005. ON by default because this clinic's doctors do hold
+  /// certificates. A PARAMETER and not a constant so a clinic without them is
+  /// not left unable to work: for the electronic prescription,
+  /// ARCSA-DE-2022-012-AKRG (Disposición General Décima) accepts «la signatura
+  /// realizada en el sistema informático mediante el registro con usuario y
+  /// clave de acceso».
+  requireCertifiedSignature Boolean @default(true) @map("require_certified_signature")
+
+  /// D-A-011. Fifteen years from the last encounter: 5 active + 10 passive.
+  /// NOT setting a period is what breaches the LOPDP — art. 10.i obliges the
+  /// controller to «establecer plazos para su supresión o revisión periódica»
+  /// and art. 51 to declare them. Nothing is ever purged automatically: this
+  /// drives the review, not a delete.
+  recordRetentionYears Int @default(15) @map("record_retention_years") @db.SmallInt
+
+  /// Late arrival is NOT a status. It is the difference between the
+  /// appointment time and the check-in instant, both of which are already
+  /// stored; this is only the threshold above which the difference means
+  /// something, and the clinic decides it.
+  lateArrivalGraceMinutes Int @default(15) @map("late_arrival_grace_minutes") @db.SmallInt
+
+  /// AG-120. Qué permiso salta el umbral de llegada tardía, hermana de la que
+  /// la sede ya usa para el sobrecupo. Por defecto la misma: dejar pasar a
+  /// alguien fuera de plazo ES romper la rejilla, y una clínica que ya decidió
+  /// quién puede una cosa ha contestado la otra. Cada sede puede cambiarla.
+  lateArrivalOverridePermission String @default("agenda:overbook") @map("late_arrival_override_permission") @db.VarChar(64)
+
   cancelledRetention CancelledRetentionPolicy @default(NEVER) @map("cancelled_retention")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -1092,6 +1257,21 @@ model Practitioner {
   schedulable Boolean @default(true)
   active      Boolean @default(true)
 
+  /// DOC-057, DOC-060. THE PRESCRIBER'S SEAL AND SIGNATURE, which art. 5 of the
+  /// Resolución ACESS-2023-0030 demands TWICE — `d.iii` on the prescriber block
+  /// and `e.iv` on the tear-off indications — and for which there was not even
+  /// a column until this migration.
+  ///
+  /// PER PRACTITIONER AND NOT PER ESTABLISHMENT: the seal says who signed, not
+  /// where. NULL is legitimate and prints a labelled empty box — the system
+  /// cannot manufacture a seal, and a drawn one would be a forged one. Art.
+  /// 5.d.iii is textual: «no se aceptarán rúbricas o trazos por firma».
+  sealImageId String?        @map("seal_image_id") @db.Uuid
+  sealImage   DocumentImage? @relation("PractitionerSeal", fields: [sealImageId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "practitioner_seal_image_fk")
+
+  signatureImageId String?        @map("signature_image_id") @db.Uuid
+  signatureImage   DocumentImage? @relation("PractitionerSignature", fields: [signatureImageId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "practitioner_signature_image_fk")
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -1099,18 +1279,23 @@ model Practitioner {
   scheduleRules      PractitionerScheduleRule[]
   agendaEntries      AgendaEntry[]
   encounters         Encounter[]
-  authoredNotes      ClinicalNote[]            @relation("NoteAuthor")
-  signedNotes        ClinicalNote[]            @relation("NoteSigner")
+  authoredNotes      ClinicalNote[]             @relation("NoteAuthor")
+  signedNotes        ClinicalNote[]             @relation("NoteSigner")
   prescriptions      Prescription[]
   serviceOrders      ServiceOrder[]
   diagnosticReports  DiagnosticReport[]
   certificates       MedicalCertificate[]
-  referralsIssued    Referral[]                @relation("ReferralIssuer")
-  interconsultAsked  Interconsultation[]       @relation("InterconsultRequester")
-  interconsultAnswer Interconsultation[]       @relation("InterconsultResponder")
+  referralsIssued    Referral[]                 @relation("ReferralIssuer")
+  interconsultAsked  Interconsultation[]        @relation("InterconsultRequester")
+  interconsultAnswer Interconsultation[]        @relation("InterconsultResponder")
   waitlistEntries    WaitlistEntry[]
   specialties        PractitionerSpecialty[]
   durationExceptions DurationException[]
+
+  /// D-A-010. NOT the same list as `encounters`: that one is who opened them,
+  /// this one is who closed them, and keeping the two apart is what lets the
+  /// substitute closure be seen at all.
+  encountersClosed Encounter[] @relation("EncounterCloser")
 
   @@map("practitioner")
 }
@@ -1131,8 +1316,12 @@ model Specialty {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  practitioners PractitionerSpecialty[]
-  serviceTypes  ServiceType[]
+  practitioners    PractitionerSpecialty[]
+  serviceTypes     ServiceType[]
+  /// BI-158. The consultation services of this specialty, first-visit and
+  /// subsequent. `RESTRICT`: a specialty somebody charges for is deactivated,
+  /// never deleted.
+  billableServices BillableService[]
 
   @@map("specialty")
 }
@@ -1390,13 +1579,16 @@ model Patient {
   changeHistory   PatientChangeHistory[]
   contacts        PatientContact[]
   allergies       PatientAllergy[]
+  /// EN-087. The «sin alergias conocidas» assertions written on this chart.
+  allergyAbsences PatientAllergyAbsence[]
   agendaEntries   AgendaEntry[]
   encounters      Encounter[]
   waitlistEntries WaitlistEntry[]
   certificates    MedicalCertificate[]
   referrals       Referral[]
-  mergesAsSource  PatientMerge[]       @relation("MergeSource")
-  mergesAsTarget  PatientMerge[]       @relation("MergeTarget")
+  mergesAsSource  PatientMerge[]          @relation("MergeSource")
+  mergesAsTarget  PatientMerge[]          @relation("MergeTarget")
+  accounts        PatientAccount[]
 
   @@index([familyName, givenName])
   @@index([birthDate])
@@ -1614,6 +1806,39 @@ model PatientAllergy {
   @@map("patient_allergy")
 }
 
+/// EN-087, D-A-018. «Sin alergias conocidas», AFIRMADO POR UN CLÍNICO.
+///
+/// The `nilknown` of HL7's International Patient Summary, whose definition is
+/// the reason this is a table and not a boolean on `patient`: «una afirmación
+/// positiva por parte de un usuario clínico, y no una posición por defecto
+/// afirmada por un sistema informático a falta de otra información». What has
+/// to be kept is an ACT — who said it and when — because «sin alergias
+/// conocidas (Dra. Villacís, 14-03-2026)» and «alergias: no registradas» are
+/// two different things to read mid-consultation.
+///
+/// The guarantees live in `20260820171859_patient_allergy_absence` and NOT in
+/// this file, which cannot describe them: the trigger that refuses UPDATE,
+/// DELETE and TRUNCATE, and the one that refuses an assertion over a chart —
+/// or a chart it absorbed — that still has an unrefuted allergy.
+model PatientAllergyAbsence {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  patientId String  @map("patient_id") @db.Uuid
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  /// EN-087. The clinician who asserted it. NOT NULL with a foreign key: this
+  /// column is why the table exists. Without it the row says «el sistema no
+  /// encontró nada», which is exactly what the standard forbids calling «sin
+  /// alergias conocidas».
+  assertedById String @map("asserted_by") @db.Uuid
+  assertedBy   User   @relation("AllergyAbsenceAsserter", fields: [assertedById], references: [id], onDelete: Restrict)
+
+  assertedAt DateTime @default(now()) @map("asserted_at") @db.Timestamptz(6)
+
+  @@index([patientId, assertedAt(sort: Desc)], map: "patient_allergy_absence_by_chart")
+  @@map("patient_allergy_absence")
+}
+
 /// What a `patient_merge` row records: the merge, or undoing it.
 enum PatientMergeEvent {
   MERGE
@@ -1656,8 +1881,8 @@ model PatientMerge {
   /// PA-044. NOT NULL and with a foreign key: merging joins two people's
   /// clinical records, and the question to answer twelve months later is who
   /// did it.
-  performedBy String   @map("performed_by") @db.Uuid
-  performedByUser User @relation("PatientMergeAuthor", fields: [performedBy], references: [id], onDelete: Restrict)
+  performedBy     String @map("performed_by") @db.Uuid
+  performedByUser User   @relation("PatientMergeAuthor", fields: [performedBy], references: [id], onDelete: Restrict)
 
   performedAt DateTime @default(now()) @map("performed_at") @db.Timestamptz(6)
 
@@ -1743,6 +1968,69 @@ model AgendaEntry {
 
   status AgendaStatus @default(BOOKED)
 
+  /// Where the PATIENT is — the axis `status` does not carry. The two columns
+  /// move together or not at all
+  /// (`agenda_entry_subject_status_carries_its_instant`), and neither is
+  /// allowed on a BLOCK (`agenda_entry_subject_status_needs_a_patient`): a
+  /// block is not a person.
+  subjectStatus   PatientSubjectStatus? @map("subject_status")
+  subjectStatusAt DateTime?             @map("subject_status_at") @db.Timestamptz(6)
+
+  /// Ley de Derechos y Amparo del Paciente (Ley 77) art. 10: «El estado de
+  /// emergencia del paciente será calificado por el centro de salud AL MOMENTO
+  /// DE SU ARRIBO». Art. 1 names «Clínicas», so it reaches this
+  /// establishment, and art. 13 backs it with prison.
+  ///
+  /// THIS IS NOT TRIAGE. It scores no severity and reorders no queue, and
+  /// unlike triage (D-A-001) it is not optional and not conditional on triage
+  /// being switched on. It is the record that the call was made, by whom, at
+  /// what instant — and `agenda_entry_emergency_flag_names_who_and_when`
+  /// refuses one without the other.
+  /// THE ASSESSMENT ITSELF, and it is not the same column as its outcome.
+  ///
+  /// Recording only the flag conflates «assessed, and it was not an emergency»
+  /// with «nobody assessed anybody» — and what art. 10 obliges the
+  /// establishment to be able to prove is THAT THE CALL WAS MADE, the
+  /// negatives as much as the positives. Proving it for the flagged patients
+  /// says nothing about the one who was waved through, who is precisely the
+  /// patient art. 13 turns into a prison sentence.
+  emergencyAssessedAt   DateTime? @map("emergency_assessed_at") @db.Timestamptz(6)
+  emergencyAssessedById String?   @map("emergency_assessed_by_id") @db.Uuid
+  emergencyAssessedBy   User?     @relation("EmergencyAssessor", fields: [emergencyAssessedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "agenda_entry_emergency_assessment_fk")
+
+  emergencyFlaggedAt   DateTime? @map("emergency_flagged_at") @db.Timestamptz(6)
+  emergencyFlaggedById String?   @map("emergency_flagged_by_id") @db.Uuid
+  emergencyFlaggedBy   User?     @relation("EmergencyFlagger", fields: [emergencyFlaggedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "agenda_entry_emergency_flag_fk")
+  emergencyNote        String?   @map("emergency_note") @db.VarChar(500)
+
+  /// Art. 9 forbids demanding any means of payment as a condition of being
+  /// received and stabilised. Coverage verification therefore HAS to be
+  /// skippable, and the skip has to leave a trace: otherwise the screen that
+  /// blocks on payment is illegal in exactly the case that matters most.
+  coverageCheckSkippedReason String? @map("coverage_check_skipped_reason") @db.VarChar(500)
+
+  /// AG-116, AG-117. Cada desenlace con su instante y su motivo propio.
+  ///
+  /// ⚠️ `enteredInErrorReason` NO comparte columna con la anulación, y es la
+  /// mitad importante: el motivo de una retractación no es el de una anulación,
+  /// y una sola columna haría imposible saber DESDE LA FILA cuál de los dos
+  /// actos ocurrió — que es justo lo que estos dos estados vienen a separar.
+  leftWithoutBeingSeenAt     DateTime? @map("left_without_being_seen_at") @db.Timestamptz(6)
+  leftWithoutBeingSeenReason String?   @map("left_without_being_seen_reason") @db.VarChar(500)
+  enteredInErrorAt           DateTime? @map("entered_in_error_at") @db.Timestamptz(6)
+  enteredInErrorReason       String?   @map("entered_in_error_reason") @db.VarChar(500)
+
+  /// AG-134. Lo que la pizarra de rotulador tenía y el tablero electrónico
+  /// perdió: los símbolos improvisados que el equipo se dejaba entre sí.
+  ///
+  /// ⚠️ NO es `reason`. Ahí escribe recepción el MOTIVO DE CONSULTA, que quedó
+  /// fuera de toda lectura por ser dato de salud (AG-036, AG-072, AG-074). Una
+  /// nota de tablero compartiendo esa columna devolvería un diagnóstico a una
+  /// pantalla que da a la sala de espera.
+  boardNote String? @map("board_note") @db.VarChar(120)
+
+  subjectStatusHistory AgendaSubjectStatusHistory[]
+
   /// SP-028: el tipo de atención que recepción eligió al reservar, y con el
   /// que se resolvió la duración (SP-023). `RESTRICT` es lo que produce
   /// SP-025 — borrar un tipo con citas se rechaza en la base, no en TypeScript.
@@ -1801,7 +2089,7 @@ model AgendaEntry {
 model AgendaStatusHistory {
   id BigInt @id @default(autoincrement())
 
-  agendaEntryId String @map("agenda_entry_id") @db.Uuid
+  agendaEntryId String      @map("agenda_entry_id") @db.Uuid
   /// `Restrict` and not `Cascade` (D-022): deleting an appointment used to take
   /// its whole trail with it, in silence, which contradicts SPEC §5 — an
   /// appointment is not deleted, it is cancelled, released or marked.
@@ -1937,6 +2225,13 @@ model Encounter {
   startedAt DateTime  @map("started_at") @db.Timestamptz(6)
   endedAt   DateTime? @map("ended_at") @db.Timestamptz(6)
 
+  /// The administrative state of the act, which `endedAt` alone could only
+  /// express as a boolean. The two are kept in lockstep IN BOTH DIRECTIONS by
+  /// `encounter_status_matches_ended_at` (manual migration); without that
+  /// check this column becomes a second source of truth and drifts from the
+  /// timestamp it replaces.
+  status EncounterStatus @default(OPEN)
+
   careModality CareModality
   careSetting  CareSetting  @default(INTRAMURAL)
 
@@ -1952,7 +2247,29 @@ model Encounter {
   ageMonths Int? @map("age_months") @db.SmallInt
   ageDays   Int? @map("age_days") @db.SmallInt
 
+  /// Required on DISCHARGED and COMPLETED by
+  /// `encounter_discharged_states_state_a_condition` (manual migration):
+  /// EN-009 demands a discharge condition to close, and a closed encounter
+  /// without one is a clinical fact nobody stated. DISCONTINUED and
+  /// ENTERED_IN_ERROR are exempt — nothing clinical concluded, so there is
+  /// nothing to state.
   dischargeCondition DischargeCondition?
+
+  /// D-A-010: whoever closes is whoever opened. STORED rather than derived
+  /// from `practitionerId`, because the substitution rule has to be able to
+  /// record that the closer was NOT the author — and when it was somebody
+  /// else, `encounter_substitute_closure_states_reason` requires
+  /// `closedBySubstituteReason`. That reason is the whole point of allowing
+  /// the substitution.
+  ///
+  /// There is no automatic closure to fill these in: a nightly job closing
+  /// yesterday's encounters would have to INVENT the discharge condition
+  /// EN-009 demands. What replaces it is a list of what is still open, which
+  /// `encounter_still_open_by_practitioner` serves.
+  closedById               String?       @map("closed_by_id") @db.Uuid
+  closedBy                 Practitioner? @relation("EncounterCloser", fields: [closedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "encounter_closed_by_fk")
+  closedAt                 DateTime?     @map("closed_at") @db.Timestamptz(6)
+  closedBySubstituteReason String?       @map("closed_by_substitute_reason") @db.VarChar(500)
 
   /// When this encounter was included in an RDACAA/PRAS submission. NULL means
   /// not yet reported, and drives the pending-report partial index.
@@ -1972,7 +2289,13 @@ model Encounter {
   certificates       MedicalCertificate[]
   referrals          Referral[]
   interconsultations Interconsultation[]
+  accounts           PatientAccount[]
+  chargeItems        ChargeItem[]
 
+  /// `encounter_still_open_by_practitioner` is NOT here and cannot be: it is
+  /// PARTIAL (`WHERE status IN ('OPEN','ON_HOLD')`), which is what keeps it
+  /// small enough to be the working list of what nobody closed. Declared here
+  /// it would index every encounter ever recorded. It lives in the migration.
   @@index([patientId, startedAt(sort: Desc)])
   @@index([practitionerId, startedAt(sort: Desc)])
   @@index([siteId, startedAt])
@@ -2211,6 +2534,20 @@ model Prescription {
 
   items PrescriptionItem[]
 
+  /// DOC-003. The archived artefacts of this prescription: the emitted PDF and
+  /// any that superseded it (DOC-007). A REAL FOREIGN KEY and not a
+  /// `(type, id)` pair, so the archive can never point at a prescription that
+  /// does not exist.
+  documentRenders DocumentRender[]
+
+  /// Descartar exige decir quién, cuándo y por qué —los tres o ninguno, y la
+  /// base lo exige—, por la misma razón que anular una cita: sin motivo, es
+  /// una forma de hacer desaparecer lo que se escribió.
+  discardedAt   DateTime? @map("discarded_at") @db.Timestamptz(6)
+  discardedById String?   @map("discarded_by_id") @db.Uuid
+  discardedBy   User?     @relation("PrescriptionDiscarder", fields: [discardedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "prescription_discarded_by_fk")
+  discardReason String?   @map("discard_reason") @db.VarChar(500)
+
   @@index([encounterId])
   @@map("prescription")
 }
@@ -2279,6 +2616,9 @@ model ServiceOrder {
 
   items   ServiceOrderItem[]
   reports DiagnosticReport[]
+
+  /// DOC-003. The archived exam request as it was handed to the patient.
+  documentRenders DocumentRender[]
 
   @@index([encounterId])
   @@index([siteId, requestedAt])
@@ -2419,6 +2759,9 @@ model MedicalCertificate {
   revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(6)
   revocationReason String?   @map("revocation_reason") @db.Text
 
+  /// DOC-003, DOC-075. The archived form 117 as it was handed over.
+  documentRenders DocumentRender[]
+
   @@index([patientId, issuedAt(sort: Desc)])
   @@map("medical_certificate")
 }
@@ -2494,4 +2837,962 @@ model Interconsultation {
   @@index([encounterId])
   @@index([status, requestedAt])
   @@map("interconsultation")
+}
+
+// ---------------------------------------------------------------------------
+// MONEY — four pieces people collapse into one
+// ---------------------------------------------------------------------------
+//
+// The classic mistake is putting the price ON the service. It breaks the first
+// day an insurer pays differently, and it breaks again when prices rise and
+// every past invoice silently changes with them. So:
+//
+//   1. `BillableService` — what the clinic knows how to do. NO PRICE.
+//   2. `PriceList` + `Price` — a price per service PER PAYER, over a validity
+//      range that cannot overlap, guaranteed by PostgreSQL rather than by code.
+//   3. `ChargeItem` — this patient, this encounter, this service, with the
+//      price FROZEN as it stood on the date of service.
+//   4. `Invoice` — the tax document, and immutable.
+
+/// Who pays.
+///
+/// A TABLE AND NOT AN ENUM, deliberately: this system runs in more than one
+/// clinic, and the insurers, public networks and company agreements each of
+/// them deals with are different lists that change without a deploy. An enum
+/// would make «add the new insurer» a migration.
+model Payer {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  code String @unique(map: "payer_code_unique") @db.VarChar(32)
+  name String @db.VarChar(160)
+
+  /// Distinguishes «the patient pays» from a third party, because the two
+  /// behave differently at the cashier and on the invoice. This is NOT the
+  /// payer list: there can be many private insurers, all of them THIRD_PARTY
+  /// in behaviour. Constrained to SELF_PAY, PUBLIC_NETWORK, PRIVATE_INSURANCE
+  /// and COMPANY_AGREEMENT by `payer_kind_is_known`, and kept as a CHECK
+  /// rather than an enum for the same reason the table exists.
+  kind String @db.VarChar(24)
+
+  /// RUC of the third party, when there is one. The patient's own document
+  /// lives on `patient`.
+  ruc String? @db.VarChar(13)
+
+  /// Informational, and what makes «convenio vencido» an answerable question.
+  agreementReference String?   @map("agreement_reference") @db.VarChar(120)
+  agreementValidTo   DateTime? @map("agreement_valid_to") @db.Date
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  priceLists PriceList[]
+  accounts   PatientAccount[]
+
+  @@map("payer")
+}
+
+/// A VAT rate as the SRI publishes it, with the period it was in force.
+///
+/// D-A-006. Health services are 0% (LRTI art. 56.2), but the 0% depends on the
+/// PROVIDER and not on the service: art. 191 of the regulation conditions it on
+/// an authorised establishment and a professional with a registered
+/// third-level degree, and it EXCLUDES cosmetic surgery and cosmetology, which
+/// go to the general rate. The system therefore does NOT infer the rate —
+/// every service carries its own, editable, in plain sight, for someone with
+/// accounting judgement to review.
+model TaxRate {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  /// The SRI's `codigoPorcentaje` from the electronic-voucher technical sheet
+  /// (table 17): 0 → 0%, 2 → 12%, 3 → 14%, 4 → 15%, 5 → 5%, 6 → no objeto,
+  /// 7 → exento, 8 → diferenciado, 10 → 13%. Codes 6 and 7 are NOT synonyms of
+  /// 0% and must never be used as a convenience.
+  sriCode String @map("sri_code") @db.VarChar(4)
+  name    String @db.VarChar(80)
+
+  /// NULL for «no objeto» and «exento», where no percentage applies at all.
+  percentage Decimal? @db.Decimal(5, 2)
+
+  validFrom DateTime  @map("valid_from") @db.Date
+  /// NULL means still in force.
+  validTo   DateTime? @map("valid_to") @db.Date
+
+  /// GENERATED ALWAYS AS daterange(valid_from, valid_to, '[)') STORED, written
+  /// by the migration. Prisma has no syntax for a generated column — it would
+  /// read the column as a stray one and drop it — so it is declared here as
+  /// `Unsupported` purely so that it survives. STORED and not VIRTUAL because
+  /// PostgreSQL 18 cannot constrain a virtual column, and constraining it is
+  /// the entire reason it exists: `tax_rate_code_temporal_unique` is a
+  /// `UNIQUE (sri_code, valid_period WITHOUT OVERLAPS)`, which is what stops
+  /// one SRI code from having two simultaneous percentages.
+  validPeriod Unsupported("daterange")?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  billableServices BillableService[]
+
+  @@map("tax_rate")
+}
+
+/// What the clinic knows how to do — and WITHOUT A PRICE, which is the point.
+model BillableService {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  code String @unique(map: "billable_service_code_unique") @db.VarChar(32)
+  name String @db.VarChar(200)
+
+  /// Grouping for the screen and for reporting. A table of its own would be
+  /// over-engineering: this is a label, not an entity.
+  category String @db.VarChar(60)
+
+  /// The MSP tariff code, when the service has one. NOMENCLATURE ONLY — the
+  /// Tarifario does NOT set what a private patient is charged, its scope having
+  /// been narrowed by A.M. 0046-2017 to dealings inside the public network. It
+  /// is kept because it is what makes billing TO that network possible.
+  tariffCode String? @map("tariff_code") @db.VarChar(16)
+
+  /// D-A-006: the rate is a property OF THE SERVICE, and editable.
+  taxRateId String  @map("tax_rate_id") @db.Uuid
+  taxRate   TaxRate @relation(fields: [taxRateId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "billable_service_tax_rate_fk")
+
+  /// Ties the service to what actually happened, so a charge can be raised from
+  /// the encounter instead of typed at the cashier. Optional because a service
+  /// may be no procedure at all — a room fee, a supply.
+  procedureConceptId String?         @map("procedure_concept_id") @db.Uuid
+  procedureConcept   CatalogConcept? @relation(fields: [procedureConceptId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "billable_service_procedure_fk")
+
+  /// BI-158. WHICH SERVICE IS «THE CONSULTATION» of a specialty, and whether
+  /// it is the first visit or a subsequent one.
+  ///
+  /// A ROW AND NOT A RULE OVER THE CODE. Reading `CONS-DER-PV` as «dermatology,
+  /// first visit» works with the seed and fails silently at the first clinic
+  /// that uses its own coding: the consultation charge would simply stop being
+  /// proposed, and an unbilled consultation raises no error at all — only less
+  /// money. Same reasoning as BI-005 on not inferring the tax rate.
+  ///
+  /// Both or neither (`billable_service_consultation_states_both`), and one
+  /// service per pair (`billable_service_one_per_consultation`, PARTIAL, in
+  /// the migration).
+  specialtyId   String?    @map("specialty_id") @db.Uuid
+  specialty     Specialty? @relation(fields: [specialtyId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "billable_service_specialty_fk")
+  /// `FIRST_TIME` or `SUBSEQUENT`, as text and not as the clinical
+  /// `visit_sequence` enum: the economic catalogue must be able to evolve
+  /// without depending on a type of the clinical schema, and
+  /// `billable_service_visit_sequence_is_known` refuses anything else just as
+  /// early.
+  visitSequence String?    @map("visit_sequence") @db.VarChar(16)
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  prices          Price[]
+  chargeItems     ChargeItem[]
+  examDefinitions ExamDefinition[]
+  /// WHO CHECKED THIS RATE, which is the whole point of D-A-006.
+  ///
+  /// The seed ships a DEFAULT: 0% for health services (LRTI art. 56.2), the
+  /// general rate for supplies and cosmetic work (art. 191 of the regulation).
+  /// A default is not a fiscal classification, and the system deliberately
+  /// does NOT infer one — the 0% depends on the PROVIDER holding a current
+  /// permit and a registered third-level degree, which no column can know.
+  ///
+  /// Until these existed there was no way to tell a rate somebody checked from
+  /// one nobody has looked at since it was seeded. That difference is what an
+  /// inspection asks about.
+  taxReviewedAt   DateTime?        @map("tax_reviewed_at") @db.Timestamptz(6)
+  taxReviewedById String?          @map("tax_reviewed_by_id") @db.Uuid
+  taxReviewedBy   User?            @relation("TaxRateReviewer", fields: [taxReviewedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "billable_service_tax_reviewer_fk")
+
+  @@index([category, name], map: "billable_service_by_category")
+  @@map("billable_service")
+}
+
+/// A set of prices belonging to one payer. Self-pay is a payer like any other,
+/// which is what keeps «the normal price» from being a special case in code.
+model PriceList {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  name String @db.VarChar(120)
+
+  payerId String @map("payer_id") @db.Uuid
+  payer   Payer  @relation(fields: [payerId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "price_list_payer_fk")
+
+  /// NULL means every site. A clinic whose branches charge differently sets it;
+  /// one that does not never sees the field.
+  siteId String? @map("site_id") @db.Uuid
+  site   Site?   @relation(fields: [siteId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "price_list_site_fk")
+
+  /// LOS art. 184 obliges the clinic to «exhibir en sitios visibles para el
+  /// público las tarifas que se cobran». A list marked public is what that
+  /// screen reads.
+  publiclyListed Boolean @default(false) @map("publicly_listed")
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  prices   Price[]
+  accounts PatientAccount[]
+
+  @@map("price_list")
+}
+
+/// What one service costs in one list, over one period.
+model Price {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  priceListId String    @map("price_list_id") @db.Uuid
+  priceList   PriceList @relation(fields: [priceListId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "price_list_fk")
+
+  billableServiceId String          @map("billable_service_id") @db.Uuid
+  billableService   BillableService @relation(fields: [billableServiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "price_service_fk")
+
+  /// Decimal, never Float. Money in binary floating point is a defect waiting
+  /// for the invoice that is off by a cent.
+  amount Decimal @db.Decimal(12, 2)
+
+  validFrom DateTime  @map("valid_from") @db.Date
+  validTo   DateTime? @map("valid_to") @db.Date
+
+  /// GENERATED ALWAYS AS daterange(valid_from, valid_to, '[)') STORED, written
+  /// by the migration. Prisma cannot express a generated column, so it is
+  /// declared `Unsupported` only so that Prisma leaves it alone instead of
+  /// dropping it as a column the schema does not know about.
+  ///
+  /// It carries THE guarantee of this table: `price_temporal_unique` is
+  /// `UNIQUE (price_list_id, billable_service_id, valid_period WITHOUT
+  /// OVERLAPS)`, so one service cannot hold two simultaneous prices in the same
+  /// list. Enforced by PostgreSQL, so no application path can create the
+  /// ambiguity that would make «what did this cost that day» unanswerable.
+  validPeriod Unsupported("daterange")?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  chargeItems ChargeItem[]
+
+  @@map("price")
+}
+
+/// What one visit owes.
+model PatientAccount {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  patientId String  @map("patient_id") @db.Uuid
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "patient_account_patient_fk")
+
+  siteId String @map("site_id") @db.Uuid
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "patient_account_site_fk")
+
+  /// NULL for an account opened outside a clinical act — a walk-in lab test
+  /// bought at the counter.
+  encounterId String?    @map("encounter_id") @db.Uuid
+  encounter   Encounter? @relation(fields: [encounterId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "patient_account_encounter_fk")
+
+  /// WHO PAYS, decided at arrival and not at the cashier. Asking at the end is
+  /// asking too late: it is what decides the price of everything before it.
+  payerId     String    @map("payer_id") @db.Uuid
+  payer       Payer     @relation(fields: [payerId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "patient_account_payer_fk")
+  priceListId String    @map("price_list_id") @db.Uuid
+  priceList   PriceList @relation(fields: [priceListId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "patient_account_price_list_fk")
+
+  /// OPEN, SETTLED or CANCELLED (`patient_account_status_is_known`), and
+  /// `patient_account_closed_states_its_instant` ties it to `closedAt` in both
+  /// directions.
+  status String @default("OPEN") @db.VarChar(16)
+
+  openedAt DateTime  @default(now()) @map("opened_at") @db.Timestamptz(6)
+  closedAt DateTime? @map("closed_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  chargeItems ChargeItem[]
+  invoices    Invoice[]
+
+  /// `patient_account_one_open_per_encounter` — one OPEN account per encounter,
+  /// because two would make «what does this visit owe» ambiguous — is NOT here
+  /// and cannot be: it is a PARTIAL unique index (`WHERE status = 'OPEN' AND
+  /// encounter_id IS NOT NULL`), and a plain `@@unique` would forbid the second
+  /// account even after the first was settled. It lives in the migration.
+  @@index([patientId, openedAt(sort: Desc)], map: "patient_account_by_patient")
+  @@map("patient_account")
+}
+
+/// «This patient, this encounter, this service» — and the piece that prevents
+/// every later problem.
+///
+/// What was done and what is charged are two records and must never be one:
+/// the clinical fact does not change because the patient did not pay, and
+/// deleting a charge cannot delete the act.
+model ChargeItem {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  accountId String         @map("account_id") @db.Uuid
+  account   PatientAccount @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "charge_item_account_fk")
+
+  billableServiceId String          @map("billable_service_id") @db.Uuid
+  billableService   BillableService @relation(fields: [billableServiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "charge_item_service_fk")
+
+  /// Where it came from clinically. Optional because not every charge is a
+  /// procedure and not every procedure is charged.
+  encounterId String?    @map("encounter_id") @db.Uuid
+  encounter   Encounter? @relation(fields: [encounterId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "charge_item_encounter_fk")
+
+  /// Scalars with NO relation and NO foreign key, matching the migration: the
+  /// billing side must not be able to hold a clinical row hostage under
+  /// `RESTRICT`. Declaring the relation here would make Prisma create the key.
+  encounterProcedureId String? @map("encounter_procedure_id") @db.Uuid
+  serviceOrderItemId   String? @map("service_order_item_id") @db.Uuid
+
+  /// BI-153. Where the line came from: MANUAL, CONSULTATION, PROCEDURE or EXAM
+  /// (`charge_item_origin_is_known`), with
+  /// `charge_item_origin_names_its_act` keeping it in agreement with the two
+  /// identifiers above.
+  ///
+  /// It is a column and NOT «whichever identifier is filled in», because the
+  /// consultation has no clinical row of its own to point at — the act IS the
+  /// encounter — so without it «la consulta» and «una gasa que la cajera
+  /// añadió» are indistinguishable, and
+  /// `charge_item_one_consultation_per_encounter` could not be written.
+  origin String @default("MANUAL") @db.VarChar(16)
+
+  /// THE DATE THAT RESOLVES THE PRICE. Clinical, in `America/Guayaquil`, and
+  /// not the instant the cashier typed it.
+  serviceDate DateTime @map("service_date") @db.Date
+
+  quantity Decimal @default(1) @db.Decimal(10, 3)
+
+  /// FROZEN, and this is the whole reason the table exists. The unit price is
+  /// the one resolved from the price list ON `serviceDate`, copied here — not
+  /// looked up when the invoice prints. Without the copy, raising a tariff
+  /// tomorrow rewrites every past invoice, and a visit from three months ago
+  /// billed today is charged at today's rate. `resolvedPriceId` keeps the row
+  /// it came from so the resolution is auditable years later.
+  unitAmount      Decimal @map("unit_amount") @db.Decimal(12, 2)
+  resolvedPriceId String? @map("resolved_price_id") @db.Uuid
+  resolvedPrice   Price?  @relation(fields: [resolvedPriceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "charge_item_price_fk")
+
+  /// Frozen too, for the same reason as `procedure_display` elsewhere in this
+  /// schema: renaming a service in the catalogue — or losing the catalogue —
+  /// must not change what a past invoice says was sold.
+  serviceDisplay String @map("service_display") @db.VarChar(200)
+
+  /// The tax rate AS IT APPLIED THAT DAY, copied and not joined. Rates change,
+  /// and a 2024 invoice has to keep saying 12% forever.
+  taxSriCode    String   @map("tax_sri_code") @db.VarChar(4)
+  taxPercentage Decimal? @map("tax_percentage") @db.Decimal(5, 2)
+
+  /// The money taken off, NEVER a percentage: a percentage re-derived at print
+  /// time drifts by rounding. `charge_item_discount_states_a_reason` refuses a
+  /// discount nobody can explain, and
+  /// `charge_item_discount_within_line` refuses one larger than the line.
+  discountAmount Decimal @default(0) @map("discount_amount") @db.Decimal(12, 2)
+  discountReason String? @map("discount_reason") @db.VarChar(300)
+
+  /// Who authorised a discount above the role's ceiling, NULL when it was
+  /// within it. This is the second pair of eyes, so it is a different column
+  /// from `createdById` on purpose.
+  discountAuthorisedById String? @map("discount_authorised_by_id") @db.Uuid
+  discountAuthorisedBy   User?   @relation("ChargeItemDiscountAuthoriser", fields: [discountAuthorisedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "charge_item_discount_authorised_by_fk")
+
+  /// PLANNED, BILLABLE, NOT_BILLABLE, BILLED or CANCELLED
+  /// (`charge_item_status_is_known`).
+  status String @default("BILLABLE") @db.VarChar(16)
+
+  /// VOIDING A CHARGE, with the reason actually kept.
+  ///
+  /// The three travel together — `charge_item_void_states_who_when_and_why`
+  /// refuses one without the others — because demanding a reason the system
+  /// then throws away is worse than not asking: it looks like an audit trail
+  /// and is not one.
+  ///
+  /// And this is NOT an invoice being edited. A charge is voided BEFORE it
+  /// reaches an invoice; once billed the only correction is a credit note, and
+  /// `charge_item_billed_is_not_voided` makes that structural.
+  voidedAt   DateTime? @map("voided_at") @db.Timestamptz(6)
+  voidedById String?   @map("voided_by_id") @db.Uuid
+  voidedBy   User?     @relation("ChargeVoider", fields: [voidedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "charge_item_voided_by_fk")
+  voidReason String?   @map("void_reason") @db.VarChar(500)
+
+  createdById String   @map("created_by_id") @db.Uuid
+  createdBy   User     @relation("ChargeItemAuthor", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "charge_item_created_by_fk")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  /// `charge_item_by_encounter` is not here: it is partial
+  /// (`WHERE encounter_id IS NOT NULL`), which is what keeps it from indexing
+  /// every counter sale. It lives in the migration. Neither are the three
+  /// PARTIAL UNIQUE indexes that make BI-154 true —
+  /// `charge_item_one_per_encounter_procedure`,
+  /// `charge_item_one_per_service_order_item` and
+  /// `charge_item_one_consultation_per_encounter` — nor
+  /// `charge_item_derived_by_encounter`: a plain `@@unique` would forbid every
+  /// counter sale with a NULL identifier from having a second sibling.
+  @@index([accountId], map: "charge_item_by_account")
+  @@map("charge_item")
+}
+
+/// The tax document, and IMMUTABLE.
+///
+/// D-A-007. The SRI does not allow modifying or deleting an authorised
+/// invoice: online voiding runs until the 10th of the following month, after
+/// that only a credit note, for twelve months — and from 2026 invoices issued
+/// to «Consumidor Final» cannot be voided at all.
+///
+/// So this system has no «edit invoice» screen. It has «issue a credit note»,
+/// a different screen with a different permission and a mandatory reason.
+/// `trg_invoice_immutable` freezes every meaningful column once the status is
+/// AUTHORISED or VOIDED, and `trg_invoice_no_delete` refuses DELETE outright,
+/// which is what makes that true in the DATABASE and not merely in the UI.
+/// Neither trigger is expressible here — see the migration.
+model Invoice {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  accountId String         @map("account_id") @db.Uuid
+  account   PatientAccount @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "invoice_account_fk")
+
+  siteId String @map("site_id") @db.Uuid
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "invoice_site_fk")
+
+  /// SRI sequence: establishment · emission point · sequential.
+  emissionPointId String        @map("emission_point_id") @db.Uuid
+  emissionPoint   EmissionPoint @relation(fields: [emissionPointId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "invoice_emission_point_fk")
+  sequential      String        @db.VarChar(9)
+
+  /// The 49-digit access key, once the SRI authorises the voucher.
+  accessKey String? @map("access_key") @db.VarChar(49)
+
+  /// WHO THE INVOICE IS MADE OUT TO, and deliberately not nullable: issuing to
+  /// «consumidor final» destroys the patient's personal-expense rebate and,
+  /// since 2026, cannot even be voided. It has to be a choice somebody makes,
+  /// which is why `isFinalConsumer` is a flag surfaced as an exception rather
+  /// than the comfortable default — and why
+  /// `invoice_final_consumer_identification` forces the SRI's own placeholder
+  /// identification when it is set.
+  buyerIdentificationType String  @map("buyer_identification_type") @db.VarChar(2)
+  buyerIdentification     String  @map("buyer_identification") @db.VarChar(20)
+  buyerName               String  @map("buyer_name") @db.VarChar(300)
+  buyerEmail              String? @map("buyer_email") @db.VarChar(320)
+  isFinalConsumer         Boolean @default(false) @map("is_final_consumer")
+
+  /// `invoice_total_is_consistent` keeps the five in agreement in the database,
+  /// so a rounding bug cannot leave a document the SRI will reject.
+  subtotalTaxed   Decimal @map("subtotal_taxed") @db.Decimal(12, 2)
+  subtotalUntaxed Decimal @map("subtotal_untaxed") @db.Decimal(12, 2)
+  discountTotal   Decimal @default(0) @map("discount_total") @db.Decimal(12, 2)
+  taxTotal        Decimal @map("tax_total") @db.Decimal(12, 2)
+  total           Decimal @db.Decimal(12, 2)
+
+  /// DRAFT, ISSUED, AUTHORISED, REJECTED or VOIDED
+  /// (`invoice_status_is_known`). AUTHORISED carries its access key and its
+  /// instant, or it is not authorised (`invoice_authorised_carries_its_key`).
+  status String @default("DRAFT") @db.VarChar(24)
+
+  issuedAt     DateTime? @map("issued_at") @db.Timestamptz(6)
+  authorisedAt DateTime? @map("authorised_at") @db.Timestamptz(6)
+
+  issuedById String   @map("issued_by_id") @db.Uuid
+  issuedBy   User     @relation("InvoiceIssuer", fields: [issuedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "invoice_issued_by_fk")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  creditNotes CreditNote[]
+
+  /// DOC-003, DOC-076. The archived RIDE. The invoice itself is the electronic
+  /// voucher; this is the printable representation the SRI's Anexo 2 describes.
+  documentRenders DocumentRender[]
+
+  @@unique([emissionPointId, sequential], map: "invoice_sequential_unique")
+  @@index([accountId], map: "invoice_by_account")
+  @@map("invoice")
+}
+
+/// The one legal way to correct an authorised invoice.
+model CreditNote {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  invoiceId String  @map("invoice_id") @db.Uuid
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "credit_note_invoice_fk")
+
+  emissionPointId String        @map("emission_point_id") @db.Uuid
+  emissionPoint   EmissionPoint @relation(fields: [emissionPointId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "credit_note_emission_point_fk")
+  sequential      String        @db.VarChar(9)
+  accessKey       String?       @map("access_key") @db.VarChar(49)
+
+  /// NEVER optional. A correction with no stated motive is indistinguishable
+  /// from an error being buried.
+  reason String @db.VarChar(500)
+
+  amount Decimal @db.Decimal(12, 2)
+
+  /// DRAFT, ISSUED, AUTHORISED or REJECTED (`credit_note_status_is_known`).
+  /// There is no VOIDED: a credit note that was wrong is corrected by the
+  /// documents that follow it, never by unwinding this one.
+  status String @default("DRAFT") @db.VarChar(24)
+
+  issuedById String    @map("issued_by_id") @db.Uuid
+  issuedBy   User      @relation("CreditNoteIssuer", fields: [issuedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "credit_note_issued_by_fk")
+  issuedAt   DateTime? @map("issued_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([emissionPointId, sequential], map: "credit_note_sequential_unique")
+  @@map("credit_note")
+}
+
+// ---------------------------------------------------------------------------
+// WHAT CAN BE ORDERED, AND WHAT COMES BACK
+// ---------------------------------------------------------------------------
+//
+// The distinction that decides this whole design: what is ORDERED and what is
+// RESULTED are different things, 1:N. «Biometría hemática» is one line on the
+// order and one line on the invoice, and it returns twenty analytes, each with
+// its own unit, reference range and abnormal flag.
+//
+// Every standard separates them — HL7 v2 puts them in different segments,
+// LOINC classifies them with a field of its own — and the MSP already did too:
+// form 010A is a closed list of «determinaciones» ticked with an X, and form
+// 010B reports DETERMINACIÓN · RESULTADO · UNIDAD DE MEDIDA · VALOR DE
+// REFERENCIA. Ordering by free text was already impossible here; what did not
+// exist is the DEFINITION of what an order yields.
+
+/// An analyte: the thing that returns a value.
+model AnalyteDefinition {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  code String @unique(map: "analyte_definition_code_unique") @db.VarChar(32)
+  name String @db.VarChar(160)
+
+  /// OPTIONAL ON PURPOSE, and it stays that way. No Ecuadorian norm requires
+  /// LOINC: form 010 has no code column at all, and the only official mention
+  /// is in the telehealth norm, binding only on whoever provides telehealth.
+  /// Mapping is expert human work — automated mapping scores around 0.59
+  /// precision — so requiring it would either stall the catalogue or fill it
+  /// with wrong codes. It is a SECONDARY code for the 20–60 analytes worth the
+  /// effort, never the identity of the row: `code` is.
+  loincCode String? @map("loinc_code") @db.VarChar(16)
+
+  /// UCUM, so that 'mg/dL' means one thing. Required for NUMERIC analytes by
+  /// `analyte_definition_numeric_carries_a_unit`: a number with no unit is not
+  /// a result.
+  unit String? @db.VarChar(32)
+
+  /// NUMERIC, CODED, TEXT or ORDINAL
+  /// (`analyte_definition_value_type_is_known`).
+  valueType String @map("value_type") @db.VarChar(16)
+  decimals  Int?   @db.SmallInt
+
+  /// The allowed answers when the type is coded: positive/negative, S/I/R.
+  allowedValues Json? @map("allowed_values") @db.JsonB
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  referenceRanges AnalyteReferenceRange[]
+  exams           ExamDefinitionAnalyte[]
+
+  @@map("analyte_definition")
+}
+
+/// A reference range qualified by sex and age. The reason `abnormal_flag` can
+/// be computed at all rather than typed by whoever reads the report.
+model AnalyteReferenceRange {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  analyteDefinitionId String            @map("analyte_definition_id") @db.Uuid
+  analyteDefinition   AnalyteDefinition @relation(fields: [analyteDefinitionId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "analyte_reference_range_analyte_fk")
+
+  /// NULL means it applies to everyone. Age in DAYS, not years, because the
+  /// ranges that differ most are a neonate's.
+  sex        String? @db.VarChar(16)
+  ageMinDays Int?    @map("age_min_days")
+  ageMaxDays Int?    @map("age_max_days")
+
+  /// REFERENCE, CRITICAL or ABSOLUTE
+  /// (`analyte_reference_range_kind_is_known`). CRITICAL is not a narrower
+  /// REFERENCE: it is the band that has to reach a human today.
+  rangeKind String @default("REFERENCE") @map("range_kind") @db.VarChar(16)
+
+  /// At least one of the three is present
+  /// (`analyte_reference_range_says_something`) — a range that says nothing is
+  /// a row that costs a join and answers no question. `text` carries the
+  /// qualitative ones, where there are no bounds to compare against.
+  low  Decimal? @db.Decimal(14, 4)
+  high Decimal? @db.Decimal(14, 4)
+  text String?  @db.VarChar(200)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([analyteDefinitionId], map: "analyte_reference_range_by_analyte")
+  @@map("analyte_reference_range")
+}
+
+/// The orderable: what the doctor asks for and what the invoice charges. One
+/// of these yields many `AnalyteDefinition`s.
+model ExamDefinition {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  code String @unique(map: "exam_definition_code_unique") @db.VarChar(32)
+  name String @db.VarChar(200)
+
+  /// The section of MSP form 010A this belongs to, so that a compliant order
+  /// can be printed. That form binds the private sector too:
+  /// A.M. 00002393 art. 42.
+  form010Section String? @map("form_010_section") @db.VarChar(60)
+
+  /// What the patient must do beforehand, printed on the order itself.
+  specimenType       String? @map("specimen_type") @db.VarChar(80)
+  patientPreparation String? @map("patient_preparation") @db.VarChar(500)
+  turnaroundHours    Int?    @map("turnaround_hours") @db.SmallInt
+
+  /// Which lab performs it. External is the realistic case (D-A-012), so it is
+  /// the default rather than the exception.
+  performedExternally Boolean @default(true) @map("performed_externally")
+  externalLabName     String? @map("external_lab_name") @db.VarChar(160)
+  externalLabCode     String? @map("external_lab_code") @db.VarChar(64)
+
+  /// What it costs — by pointing at the same four-piece model as everything
+  /// else. The price is NOT here; it is in a price list, per payer, per period.
+  billableServiceId String?          @map("billable_service_id") @db.Uuid
+  billableService   BillableService? @relation(fields: [billableServiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "exam_definition_service_fk")
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  analytes ExamDefinitionAnalyte[]
+
+  @@map("exam_definition")
+}
+
+/// Which analytes an exam yields — the relation without which a result has
+/// nothing to be validated against.
+model ExamDefinitionAnalyte {
+  examDefinitionId String         @map("exam_definition_id") @db.Uuid
+  examDefinition   ExamDefinition @relation(fields: [examDefinitionId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "exam_definition_analyte_exam_fk")
+
+  analyteDefinitionId String            @map("analyte_definition_id") @db.Uuid
+  analyteDefinition   AnalyteDefinition @relation(fields: [analyteDefinitionId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "exam_definition_analyte_analyte_fk")
+
+  /// The order they are printed and displayed in. Stored, because a laboratory
+  /// report read in alphabetical order is a report nobody can scan.
+  position Int @db.SmallInt
+
+  /// A reflex analyte is only produced when another comes back positive, so it
+  /// is expected to be missing and its absence is not an incomplete result.
+  isReflex Boolean @default(false) @map("is_reflex")
+
+  @@id([examDefinitionId, analyteDefinitionId])
+  @@map("exam_definition_analyte")
+}
+
+/// How much each role may discount without asking a second person.
+///
+/// A ROW and not a constant, because the user's answer on discounts was
+/// «flexible, el admin asigna» — and roles are already data in this system, so
+/// a limit keyed to a hardcoded role list would be the one piece that still
+/// needed a deploy.
+///
+/// Above the ceiling the answer is not «no»: it is «ask someone else», which
+/// is what `billing:discount-override` exists for.
+model RoleDiscountLimit {
+  roleId String @id @map("role_id") @db.Uuid
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "role_discount_limit_role_fk")
+
+  /// A percentage and not an amount: a fixed sum means something different on
+  /// a $25 consultation than on a $600 procedure, and the clinic thinks in
+  /// percentages.
+  maxDiscountPercentage Decimal @map("max_discount_percentage") @db.Decimal(5, 2)
+
+  /// Below this, no second signature at all. Lets a clinic waive rounding
+  /// without turning every cent into a two-person ceremony.
+  autoApproveBelowAmount Decimal @default(0) @map("auto_approve_below_amount") @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("role_discount_limit")
+}
+
+/// El rastro del estado del paciente, que `subject_status_at` no puede dar.
+///
+/// Esa columna guarda SÓLO el último instante: al tercer cambio ya no se puede
+/// contestar cuándo fueron los dos primeros. Es literalmente el defecto que
+/// `last_contacted_at` tenía y que se cerró construyendo
+/// `waitlist_contact_attempt`.
+///
+/// «Cuánto esperó esta persona» es la pregunta para la que existe el tablero
+/// entero, y una sola columna sólo la contesta para el tramo actual.
+model AgendaSubjectStatusHistory {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  agendaEntryId String      @map("agenda_entry_id") @db.Uuid
+  agendaEntry   AgendaEntry @relation(fields: [agendaEntryId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "agenda_subject_status_history_entry_fk")
+
+  fromStatus PatientSubjectStatus? @map("from_status")
+  toStatus   PatientSubjectStatus  @map("to_status")
+
+  /// QUÉ LO CAUSÓ, no quién lo tecleó. Sólo `ARRIVED` se teclea; los otros
+  /// cinco son consecuencia de documentar algo, así que la columna útil es el
+  /// hecho —«se guardaron los signos», «se abrió la nota»— y el actor es quien
+  /// realizó ese acto.
+  causedBy    String  @map("caused_by") @db.VarChar(64)
+  changedById String? @map("changed_by_id") @db.Uuid
+  changedBy   User?   @relation("SubjectStatusChanger", fields: [changedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "agenda_subject_status_history_actor_fk")
+
+  occurredAt DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  /// Append-only por disparador: un rastro que se puede reescribir no es un
+  /// rastro. Prisma no expresa el disparador; vive en la migración.
+  @@index([agendaEntryId, occurredAt], map: "agenda_subject_status_history_by_entry")
+  @@map("agenda_subject_status_history")
+}
+
+// ---------------------------------------------------------------------------
+// DOCUMENTS — the printable representation, and the artefact that stays
+// ---------------------------------------------------------------------------
+//
+// D-A-014, D-A-015. Ley 67 art. 8(b) says a data message is kept «con el
+// formato en el que se haya generado … o con algún formato que sea demostrable
+// que reproduce con exactitud», and ACESS-2023-0030 art. 9 says a prescription
+// «debe contar con una copia de respaldo para su archivo». Neither is satisfied
+// by re-drawing an HTML page on demand, and ETSI EN 319 142-1 closes the
+// discussion: a PAdES signature «shall cover the entire file», so signing and
+// regenerating are mutually exclusive.
+//
+// This project already freezes the DATA — the diagnosis snapshot, the DCI of a
+// prescription, the age of an attention. What was missing was freezing the
+// REPRESENTATION.
+
+/// DOC-003. What an artefact represents. One value per subject table, so
+/// `document_render_kind_matches_subject` can hold the two in agreement.
+enum DocumentKind {
+  PRESCRIPTION
+  SERVICE_ORDER
+  MEDICAL_CERTIFICATE
+  INVOICE_RIDE
+
+  @@map("document_kind")
+}
+
+/// DOC-077. The RIMPE regime legend the RIDE carries, per the SRI's Ficha
+/// Técnica Anexo 2. `NONE` is the general regime and prints nothing.
+enum RimpeRegime {
+  NONE
+  ENTREPRENEUR
+  POPULAR_BUSINESS
+
+  @@map("rimpe_regime")
+}
+
+/// DOC-050 to DOC-058. An image printed on a document: the establishment's
+/// logo, or a practitioner's seal or signature.
+///
+/// ═══════════════════════════════════════════════════════════════════════════
+/// ONE TABLE FOR THE THREE, AND WHY THAT IS NOT PREMATURE SHARING
+/// ═══════════════════════════════════════════════════════════════════════════
+///
+/// The three carry the SAME six facts and pass through the SAME hostile-input
+/// pipeline — byte cap before decoding, pixel cap against decompression bombs,
+/// re-encode from pixels, flatten the alpha channel because PDF/A-1b forbids
+/// transparency. Repeating six columns three times across two tables would be
+/// three places to forget one of those steps, and the step nobody would repeat
+/// is the alpha flattening, whose absence produces PDFs that look right and do
+/// not validate. WHOSE image it is stays where it belongs: on the foreign key.
+///
+/// THE BYTES LIVE HERE AND NOT ON A DISK (D-A-015): `pg_dump` and a filesystem
+/// copy are not a coherent snapshot of each other, so restoring the database at
+/// 03:00 and the disk at 03:15 leaves rows pointing at files that do not exist.
+/// A 200 KB logo goes out of line via TOAST and leaves 18 bytes in the row.
+model DocumentImage {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  /// DOC-050. `image/png` or `image/jpeg` and nothing else
+  /// (`document_image_mime_type_allowed`). NEVER `image/svg+xml`: an SVG DOES
+  /// execute scripts when navigated to directly, and «we only paint it in an
+  /// `img`» holds until somebody opens the image in a new tab.
+  mimeType String @map("mime_type") @db.VarChar(32)
+
+  /// DOC-054. The RE-ENCODED bytes. Never the ones that arrived: re-encoding is
+  /// what removes metadata, odd colour profiles and mixed payloads.
+  bytes Bytes
+
+  /// `document_image_byte_size_is_consistent` keeps this equal to
+  /// `octet_length(bytes)`. It exists so a listing can show the size without
+  /// dragging the image out of TOAST.
+  byteSize Int @map("byte_size")
+
+  /// Lowercase hex, 64 characters (`document_image_sha256_format`).
+  sha256 String @db.Char(64)
+
+  width  Int
+  height Int
+
+  uploadedAt   DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+  uploadedById String   @map("uploaded_by_id") @db.Uuid
+  uploadedBy   User     @relation("DocumentImageUploader", fields: [uploadedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "document_image_uploaded_by_fk")
+
+  /// DOC-058. Insert-only by trigger. Replacing an image means inserting a new
+  /// row and repointing the reference — an image that changes underneath would
+  /// change what a seal says with nothing recording it, and the seal is one of
+  /// the two things art. 5 asks for twice.
+  establishmentLogos     Establishment[] @relation("EstablishmentLogo")
+  practitionerSeals      Practitioner[]  @relation("PractitionerSeal")
+  practitionerSignatures Practitioner[]  @relation("PractitionerSignature")
+
+  @@map("document_image")
+}
+
+/// DOC-030 to DOC-037. The versioned template of one class of document.
+///
+/// ⚠️ FIXED SLOTS, NOT AN EDITABLE TEMPLATE. The general risk has a name —
+/// INTERNAL PLATFORM EFFECT: making something so configurable that it becomes a
+/// badly-made programming language inside your application — but the argument
+/// this project owns is stronger: A VERIFIABLE EARS REQUIREMENT CANNOT BE
+/// WRITTEN AGAINST A TEMPLATE THE CLINIC REWROTE ON TUESDAY. The chain
+/// normativa → REQ → DOC → prueba stops being checkable the moment the
+/// structure of the document is tenant data. What is parameterised is exactly
+/// what Stripe parameterises, and it is enough.
+///
+/// ⚠️ THE CURRENT VERSION IS THE HIGHEST ONE, AND THERE IS NO `active` COLUMN.
+/// A flag would need an `UPDATE` to move, and an `UPDATE` on a versions table
+/// is precisely the change-underneath-your-feet this module exists to prevent.
+/// Insert-only by trigger (`trg_document_template_immutable`).
+model DocumentTemplate {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  kind    DocumentKind
+  version Int
+
+  /// DOC-035. `#rrggbb`, lowercase (`document_template_accent_colour_format`).
+  accentColour String @map("accent_colour") @db.Char(7)
+
+  /// DOC-034. Free text at the foot of every page. Spanish: the patient reads it.
+  footerText String? @map("footer_text") @db.VarChar(500)
+
+  /// DOC-036. At most SIX `{ "label": …, "value": … }` entries
+  /// (`document_template_header_fields_bounded`). The cap IS the slot made into
+  /// a rule: without it, «a few key-value fields» becomes the free-form table
+  /// this design refuses, one field a week.
+  headerFields Json @default("[]") @map("header_fields")
+
+  /// DOC-034. THE THREE FIELDS ART. 5 DOES NOT REQUIRE. The only establishment
+  /// datum the prescription must carry is the NAME; RUC, address and telephone
+  /// are the clinic's choice, so they are switches and not columns of the
+  /// document.
+  showEstablishmentRuc     Boolean @default(false) @map("show_establishment_ruc")
+  showEstablishmentAddress Boolean @default(false) @map("show_establishment_address")
+  showEstablishmentPhone   Boolean @default(false) @map("show_establishment_phone")
+
+  publishedAt   DateTime @default(now()) @map("published_at") @db.Timestamptz(6)
+  publishedById String   @map("published_by_id") @db.Uuid
+  publishedBy   User     @relation("DocumentTemplatePublisher", fields: [publishedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "document_template_published_by_fk")
+
+  renders DocumentRender[]
+
+  @@unique([kind, version], map: "document_template_kind_version_unique")
+  @@map("document_template")
+}
+
+/// DOC-002 to DOC-014. THE ARTEFACT: the bytes that were emitted, and the proof
+/// they have not moved since.
+///
+/// ═══════════════════════════════════════════════════════════════════════════
+/// IMMUTABLE. NO `UPDATE`, NO `DELETE`, BY TRIGGER.
+/// ═══════════════════════════════════════════════════════════════════════════
+///
+/// Ley 67 art. 7 requires being able to show the document «ha conservado la
+/// integridad de la información … desde que se generó en su forma definitiva».
+/// An `UPDATE` nobody prevents makes that claim impossible to assert — not for
+/// the row that changed, but for every row, because nothing distinguishes them.
+///
+/// Reprinting is serving these bytes. Correcting is emitting a NEW artefact
+/// that declares `supersedes_id` over this one and says why; this one is never
+/// touched. That is the pattern `prescription.discarded_at` and the credit note
+/// already use: in a clinical system nothing is deleted.
+///
+/// ⚠️ NO `updated_at`, AND ITS ABSENCE IS THE POINT. Every other table here
+/// carries one; a table that cannot be updated has nothing to put in it, and a
+/// column Prisma would try to write on every save would fight the trigger.
+///
+/// > **Falta esquema.** There is NO column for an electronic signature: not the
+/// > certificate, not the instant, not the time-stamp token, not the validation
+/// > outcome. PAdES «shall cover the entire file», so a signature either arrives
+/// > with the bytes or needs a superseding row — and neither is decided. The
+/// > candidate library covers only the basic level, WITHOUT time-stamping, and
+/// > it is not verified that time-stamping authorities operate in Ecuador. A
+/// > signature that stops validating when the doctor's certificate expires — two
+/// > years — while the archive has to last five (art. 15) is worse than none,
+/// > because it looks valid.
+model DocumentRender {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  kind DocumentKind
+
+  templateId String           @map("template_id") @db.Uuid
+  template   DocumentTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "document_render_template_fk")
+
+  /// DOC-033. The version NUMBER, copied. The foreign key says WHICH template;
+  /// this says what number it was, and keeps saying it. Same argument as the
+  /// prescription freezing the DCI while holding `concept_id`.
+  templateVersion Int @map("template_version")
+
+  /// DOC-003. EXACTLY ONE of the four (`document_render_one_subject`), and it
+  /// has to match `kind` (`document_render_kind_matches_subject`).
+  ///
+  /// FOUR COLUMNS AND NOT A `(type, id)` PAIR: with real columns there are real
+  /// foreign keys, so the archive can never point at a prescription that does
+  /// not exist. A polymorphic pair has none, and the day a row is removed the
+  /// archive points at nothing and nothing complains.
+  prescriptionId String?       @map("prescription_id") @db.Uuid
+  prescription   Prescription? @relation(fields: [prescriptionId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "document_render_prescription_fk")
+
+  serviceOrderId String?       @map("service_order_id") @db.Uuid
+  serviceOrder   ServiceOrder? @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "document_render_service_order_fk")
+
+  certificateId String?             @map("certificate_id") @db.Uuid
+  certificate   MedicalCertificate? @relation(fields: [certificateId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "document_render_certificate_fk")
+
+  invoiceId String?  @map("invoice_id") @db.Uuid
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "document_render_invoice_fk")
+
+  /// DOC-012. The site the subject belongs to, copied so the scope filter does
+  /// not have to join four tables to answer «is this one of mine?».
+  siteId String @map("site_id") @db.Uuid
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "document_render_site_fk")
+
+  /// The file itself.
+  content  Bytes
+  byteSize Int    @map("byte_size")
+  /// DOC-002. Lowercase hex, 64 characters
+  /// (`document_render_sha256_format`). SC-061 is measured over this column.
+  sha256   String @db.Char(64)
+  mimeType String @default("application/pdf") @map("mime_type") @db.VarChar(64)
+
+  /// DOC-020. `PDF/A-1b`. Stored rather than assumed: the day a second profile
+  /// exists, the archived rows still say which one they are.
+  pdfProfile String @default("PDF/A-1b") @map("pdf_profile") @db.VarChar(16)
+
+  issuedAt   DateTime @default(now()) @map("issued_at") @db.Timestamptz(6)
+  issuedById String   @map("issued_by_id") @db.Uuid
+  issuedBy   User     @relation("DocumentRenderIssuer", fields: [issuedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "document_render_issued_by_fk")
+
+  /// DOC-007 to DOC-010. The artefact this one annuls, and why. UNIQUE both
+  /// ways: an artefact annuls at most one and is annulled by at most one, or
+  /// «which is the current document?» has two answers.
+  supersedesId    String?         @unique(map: "document_render_supersedes_unique") @map("supersedes_id") @db.Uuid
+  supersedes      DocumentRender? @relation("DocumentSupersession", fields: [supersedesId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "document_render_supersedes_fk")
+  supersededBy    DocumentRender? @relation("DocumentSupersession")
+  supersedeReason String?         @map("supersede_reason") @db.VarChar(500)
+
+  @@index([prescriptionId], map: "document_render_by_prescription")
+  @@index([invoiceId], map: "document_render_by_invoice")
+  @@index([siteId, issuedAt(sort: Desc)], map: "document_render_by_site")
+  @@map("document_render")
 }

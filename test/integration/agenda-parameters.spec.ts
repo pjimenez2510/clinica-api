@@ -422,6 +422,9 @@ describe('los parámetros de reserva de la sede', () => {
         overbookingEnabled: stored.overbookingEnabled,
         overbookingCap: stored.overbookingCap,
         overbookingPermission: stored.overbookingPermission,
+        // AG-142: el umbral de llegada tardía se resuelve por la misma cadena
+        // y su defecto de código tiene que ser el de la columna.
+        lateArrivalGraceMinutes: stored.lateArrivalGraceMinutes,
       }).toEqual(DEFAULT_BOOKING_PARAMETERS);
     });
   });

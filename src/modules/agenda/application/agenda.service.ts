@@ -15,6 +15,8 @@ import {
   AgendaEntryNotFoundError,
   BlockOverlapsAppointmentsError,
   CancellationReasonRequiredError,
+  EmergencyAssessmentRequiredError,
+  EnteredInErrorReasonRequiredError,
   InvalidAgendaTransitionError,
 } from '../domain/agenda.errors';
 import { checkBookingChannel, checkBookingFitsSchedule, checkBookingWindow, checkRoomBelongsToSite, resolveBookingParameters, ruleGoverningStart, type BookingChannel, type SiteBookingParameters } from '../domain/booking-policy'; // prettier-ignore
@@ -44,6 +46,15 @@ import {
   deriveAvailability,
 } from '../domain/slot-availability';
 import { bookingWarningsFor } from '../domain/holiday-calendar';
+import {
+  arrivalDelayMinutes,
+  lateArrivalWarningsFor,
+} from '../domain/late-arrival';
+import {
+  assertSubjectStatusMayMove,
+  subjectStatusOf,
+  type SubjectStatusFact,
+} from '../domain/subject-status';
 import {
   type NoShowReport,
   noShowWindow,
@@ -253,11 +264,71 @@ export interface TransitionRequest {
   entryId: string;
   to: AgendaTransitionTarget;
   /**
-   * Free text. Required by the DTO exactly when `to` is CANCELLED (AG-044);
-   * whenever it comes it lands in the history's `note`, and on a
-   * cancellation also in `cancellation_note`. Never in a log (AG-074).
+   * Free text. Required by the DTO exactly when `to` is CANCELLED (AG-044) or
+   * `ENTERED_IN_ERROR` (AG-117), and OPTIONAL on `LEFT_WITHOUT_BEING_SEEN`
+   * (AG-116) — whoever walked out does not always say why, and a mandatory box
+   * nobody can fill truthfully gets filled with anything. Whenever it comes it
+   * lands in the history's `note`, and on a cancellation also in
+   * `cancellation_note`. Never in a log (AG-074).
    */
   reason?: string;
+  /**
+   * AG-128, Ley 77 art. 10. The emergency call, REQUIRED on `CHECKED_IN` and
+   * meaningless anywhere else.
+   *
+   * `boolean` AND NOT AN OPTIONAL FLAG: `false` is an answer — «se calificó y
+   * no era una emergencia» — and its absence is the refusal. That distinction
+   * is the entire point of the requirement.
+   */
+  emergency?: boolean;
+  /**
+   * AG-128. What the person who made the call wrote, when the answer was yes.
+   * Health data: stored, never logged, never served back in a listing.
+   */
+  emergencyNote?: string;
+  /**
+   * AG-131, Ley 77 art. 9. Why coverage was not verified at the counter.
+   *
+   * ITS EXISTENCE IS THE REQUIREMENT. Art. 9 forbids demanding a cheque, card
+   * or any document of payment as a condition of being received and
+   * stabilised, so the check HAS to be skippable — and a skip with no reason
+   * cannot be told apart from a datum somebody simply forgot.
+   */
+  coverageCheckSkippedReason?: string;
+}
+
+/**
+ * AG-118, AG-119. What a transition answers with: the entry, the arrival delay
+ * it implies, and whatever is worth saying about it.
+ *
+ * THE SAME SHAPE AS A BOOKING (`BookedAppointment`), and for the same reason:
+ * the warnings ride in the successful response and never in a problem
+ * document. Present and empty when there is nothing to say — a field that
+ * appears only sometimes is a field clients forget to read.
+ */
+export interface TransitionOutcome {
+  entry: AgendaEntryView;
+  /**
+   * AG-118. `checkedInAt − startsAt` in minutes, WITH ITS SIGN, or `null`
+   * while nobody has arrived. Computed, never stored and never accepted as
+   * input — which is what keeps it from becoming a state.
+   */
+  arrivalDelayMinutes: number | null;
+  /** AG-119. Spanish, read by whoever registered the arrival (ADR-005). */
+  warnings: string[];
+}
+
+/**
+ * AG-122 to AG-127. One derived movement of the patient axis.
+ *
+ * NO `subjectStatus` FIELD, and that absence IS the requirement: a caller says
+ * which documented fact occurred, and what the board shows for it is
+ * `subjectStatusOf`'s decision. See `recordSubjectStatus` below.
+ */
+export interface SubjectStatusRequest {
+  siteId: string;
+  entryId: string;
+  fact: SubjectStatusFact;
 }
 
 /**
@@ -1029,16 +1100,39 @@ export class AgendaService {
   async transition(
     request: TransitionRequest,
     requester: Requester,
-  ): Promise<AgendaEntryView> {
+  ): Promise<TransitionOutcome> {
     const now = new Date();
     let from: AgendaEntryStatus | undefined;
 
-    // AG-044 lives HERE, not only in the DTO (adversarial review of E2,
-    // P2-3): E3 will cancel the original entry from inside the service, and
-    // an internal caller must hit the same DEBERÁ the HTTP boundary enforces.
-    // Before any read: a refusal that costs a transaction is a worse refusal.
+    /**
+     * THE THREE REFUSALS THAT COST NOTHING GO FIRST, before any read: a
+     * refusal that spends a transaction is a worse refusal. All three live
+     * HERE and not only in the DTO (adversarial review of E2, P2-3) — E3
+     * cancels the original entry from inside this service, and a DEBERÁ that
+     * only the HTTP boundary enforces stops being enforced the day another
+     * use case calls in.
+     */
+    // AG-044: an annulment is a decision about an appointment that existed,
+    // and the patient is owed the explanation.
     if (request.to === 'CANCELLED' && !request.reason?.trim()) {
       throw new CancellationReasonRequiredError();
+    }
+    // AG-117: and a retraction says the recorded fact never happened, which
+    // without a reason is a door for making appointments disappear.
+    if (request.to === 'ENTERED_IN_ERROR' && !request.reason?.trim()) {
+      throw new EnteredInErrorReasonRequiredError();
+    }
+    /**
+     * AG-128, Ley 77 art. 10. No arrival is recorded without the emergency
+     * call having been made, affirmatively or negatively, by somebody.
+     *
+     * `undefined` AND NOT FALSY: `false` is a legitimate answer and the most
+     * common one. Testing truthiness here would refuse every ordinary arrival
+     * and, worse, would make «no era una emergencia» unrecordable — which is
+     * the half of art. 10 that proves the call happened at all.
+     */
+    if (request.to === 'CHECKED_IN' && request.emergency === undefined) {
+      throw new EmergencyAssessmentRequiredError();
     }
 
     const entry = await this.agenda.transition(
@@ -1049,13 +1143,25 @@ export class AgendaService {
       },
       (read) => {
         from = read.status;
-        // AG-040, AG-046: the table of SPEC §5, and BLOCKED is blocks-only.
+        // AG-040, AG-046, AG-116, AG-117: the table of SPEC §5. It is what
+        // refuses `CHECKED_IN → NO_SHOW`, `ENTERED_IN_ERROR` after an
+        // arrival, and `LEFT_WITHOUT_BEING_SEEN` from anywhere but the
+        // waiting room. BLOCKED is blocks-only.
         assertTransition(read.kind, read.status, request.to);
         // AG-043: nobody is a no-show before the appointment starts.
         if (request.to === 'NO_SHOW') {
           assertNoShowNotBeforeStart(read.startsAt, now);
         }
-        // AG-045: a documented attention outweighs the agenda.
+        /**
+         * AG-045: a documented attention outweighs the agenda.
+         *
+         * `LEFT_WITHOUT_BEING_SEEN` IS NOT ON THIS LIST, and it is not an
+         * oversight: the table already forbids it from any state but
+         * `CHECKED_IN`, and an entry that reached `IN_PROGRESS` — the only
+         * one that can plausibly carry an encounter — cannot get here at
+         * all. `ENTERED_IN_ERROR` is not on it either, and cannot be: it
+         * stops at `CHECKED_IN`, which is upstream of every encounter.
+         */
         if (
           (request.to === 'CANCELLED' || request.to === 'NO_SHOW') &&
           read.hasEncounter
@@ -1065,11 +1171,40 @@ export class AgendaService {
 
         return {
           to: request.to,
-          effects: effectsOf(request.to, now),
+          effects: {
+            ...effectsOf(request.to, now),
+            // AG-128, AG-131. Only an arrival carries them, and the arrival
+            // always carries the assessment.
+            ...(request.to === 'CHECKED_IN'
+              ? this.arrivalRecord(request, requester, now)
+              : {}),
+            /**
+             * AG-116, AG-117. The reason lands in the outcome's OWN column,
+             * never in `cancellation_note`.
+             *
+             * Since `20260820121023_agenda_outcomes_and_board` the database
+             * refuses a retraction without one
+             * (`agenda_entry_entered_in_error_states_a_reason`), so the check
+             * above is no longer the only thing standing between «esta cita
+             * nunca ocurrió» and a row nobody can explain.
+             */
+            ...(request.to === 'LEFT_WITHOUT_BEING_SEEN'
+              ? {
+                  leftWithoutBeingSeenReason:
+                    request.reason?.trim() || undefined,
+                }
+              : {}),
+            ...(request.to === 'ENTERED_IN_ERROR'
+              ? { enteredInErrorReason: request.reason?.trim() }
+              : {}),
+          },
           // AG-044: the reason lands on the entry only when it is annulled.
+          // AG-117 does NOT borrow this column — see `effectsOf`.
           cancellationNote:
             request.to === 'CANCELLED' ? request.reason : undefined,
-          // AG-004: and in the history whenever the caller gave one.
+          // AG-004: and in the history whenever the caller gave one. It is
+          // where the optional reason of AG-116 and the required one of
+          // AG-117 both land, with who wrote it and when.
           historyNote: request.reason,
         };
       },
@@ -1079,6 +1214,10 @@ export class AgendaService {
      * AG-074. Site, action and the two states, in stable codes. No patient,
      * no reason: "la cita pasó a otra sala" is operational, who missed which
      * doctor is health data.
+     *
+     * AND NOT THE EMERGENCY CALL EITHER. Whether this particular person
+     * arrived in an emergency is a statement about their condition, which is
+     * health data (AG-074); its record is the row, not the log.
      */
     this.logger.info(
       {
@@ -1088,6 +1227,137 @@ export class AgendaService {
         to_status: request.to,
       },
       'agenda entry status changed',
+    );
+
+    /**
+     * AG-118, AG-119. The delay is computed from the row that came back and
+     * the threshold the site has stored, and the warning rides in the
+     * successful response.
+     *
+     * THE PARAMETERS ARE READ ONLY ON AN ARRIVAL, and after the write rather
+     * than before it: nothing about this decides whether the arrival is
+     * recorded — AG-119 says so in as many words, and the reason is AG-128.
+     * A check-in that can be refused is a check-in that some day does not
+     * happen, and with it goes the assessment art. 13 backs with prison.
+     */
+    const delay = arrivalDelayMinutes(entry);
+    if (request.to !== 'CHECKED_IN') {
+      return { entry, arrivalDelayMinutes: delay, warnings: [] };
+    }
+
+    const parameters = resolveBookingParameters(
+      await this.agenda.siteParametersFor(request.siteId),
+    );
+
+    return {
+      entry,
+      arrivalDelayMinutes: delay,
+      warnings: lateArrivalWarningsFor(
+        delay,
+        parameters.lateArrivalGraceMinutes,
+      ),
+    };
+  }
+
+  /**
+   * AG-128, AG-130, AG-131. What an arrival records besides the hour: the
+   * article-10 call, its outcome, and why coverage was not checked.
+   *
+   * THE ACT AND ITS OUTCOME ARE DIFFERENT COLUMNS, and that is the correction
+   * `20260820055257_emergency_assessment_and_names` exists for. Written only
+   * on the flag, `NULL` cannot tell «se calificó y no era una emergencia» from
+   * «nadie calificó nada», and it is the second that art. 13 turns into a
+   * prison sentence — proving it for the flagged patients says nothing about
+   * the one who was waved through.
+   *
+   * NO PERMISSION OF ITS OWN (AG-130). The route's `agenda:write` is the one
+   * that registers the arrival and it is the one that registers this: a
+   * permission of its own would mean receptionists who cannot make the call,
+   * and then art. 10 goes unmet on the days that person is at the counter.
+   *
+   * THE AUTHOR IS THE SESSION, never a body field, like every author in this
+   * module (AG-004): whoever made the call is whoever is logged in.
+   */
+  private arrivalRecord(
+    request: TransitionRequest,
+    requester: Requester,
+    now: Date,
+  ) {
+    return {
+      // The act, unconditionally. The service already refused an arrival that
+      // did not carry it.
+      emergencyAssessedAt: now,
+      emergencyAssessedById: requester.userId,
+      // The outcome, only when it was affirmative —
+      // `agenda_entry_emergency_flag_follows_assessment` refuses a flag with
+      // no assessment behind it, and the pairing above is what satisfies it.
+      ...(request.emergency === true
+        ? {
+            emergencyFlaggedAt: now,
+            emergencyFlaggedById: requester.userId,
+            emergencyNote: request.emergencyNote,
+          }
+        : {}),
+      // AG-131. Present exactly when somebody said why, absent otherwise:
+      // there is nothing to record about a coverage check that was done.
+      ...(request.coverageCheckSkippedReason
+        ? { coverageCheckSkippedReason: request.coverageCheckSkippedReason }
+        : {}),
+    };
+  }
+
+  /**
+   * AG-122 to AG-127. Moves the PATIENT axis from a documented fact.
+   *
+   * NO ROUTE REACHES THIS, and that is the requirement rather than an
+   * unfinished edge: AG-122 forbids exposing any route that sets
+   * `IN_PREPARATION`, `READY`, `RECEIVING_CARE`, `ON_LEAVE` or `DEPARTED`,
+   * because a board that can be typed is a board that drifts from the record —
+   * the single most replicated finding in the literature on clinical
+   * whiteboards. The callers are the documented facts of `encounter`, a module
+   * that has no code yet; AG-121 to AG-127 depend on it and not the reverse.
+   *
+   * `ARRIVED` DOES NOT COME THROUGH HERE. It is written by the check-in effect
+   * (`effectsOf`), because the fact it stands for — the person crossed the
+   * door — leaves no other trace in the system and therefore has nothing to be
+   * derived from.
+   */
+  async recordSubjectStatus(
+    request: SubjectStatusRequest,
+    requester: Requester,
+  ): Promise<AgendaEntryView> {
+    const entry = await this.agenda.recordSubjectStatus(
+      {
+        siteId: request.siteId,
+        entryId: request.entryId,
+        changedById: requester.userId,
+        fact: request.fact,
+        // Taken ONCE here, like every other instant in this service: the
+        // domain owns no clock.
+        at: new Date(),
+      },
+      // The policy judges the row as it is INSIDE the transaction, exactly as
+      // `transition` does and for the same reason.
+      (read) => {
+        // AG-125, AG-127, AG-021: not before arrival, not after departure,
+        // never on a block.
+        assertSubjectStatusMayMove(read);
+        return subjectStatusOf(request.fact);
+      },
+    );
+
+    /**
+     * AG-074. The fact and the state it derived, in stable codes. Not the
+     * patient: where a named person is standing is health data.
+     */
+    this.logger.info(
+      {
+        site_id: entry.siteId,
+        action: 'AGENDA_SUBJECT_STATUS_CHANGED',
+        fact: request.fact,
+        to_status: subjectStatusOf(request.fact),
+      },
+      'patient subject status derived from a documented fact',
     );
 
     return entry;

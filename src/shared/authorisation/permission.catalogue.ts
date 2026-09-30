@@ -270,9 +270,54 @@ export const PERMISSION_CATALOGUE = [
     description: 'Registrar signos vitales y antropometría',
   },
   {
+    // D-A-003. Opening a chart is an ADMINISTRATIVE act, not a clinical one:
+    // A.M. 00115-2021 art. 11 puts it on «personal de Gestión de Admisiones».
+    // Without this, nursing could not take vital signs before the doctor walked
+    // in — `encounter_vitals` hangs off an encounter that has to exist first,
+    // and creating one required `record:write`, which only MEDICO carries.
+    code: 'encounter:open',
+    resource: 'record',
+    description: 'Abrir una atención (no autoriza a escribir en la historia)',
+  },
+  {
+    // D-A-004. The forms the A.M. 00115-2021 instructivo assigns to nursing:
+    // 020 (vital signs), 120 (nursing interventions), 022 (drug
+    // administration), plus the compliance check on 005. Deliberately NOT
+    // `record:write`: nursing neither diagnoses nor prescribes, which is what
+    // LOS art. 198 requires («limitar sus acciones al área que el título les
+    // asigne»).
+    code: 'nursing:write',
+    resource: 'record',
+    description: 'Registrar y firmar los formularios propios de enfermería',
+  },
+  {
     code: 'prescription:write',
     resource: 'record',
     description: 'Emitir recetas',
+  },
+  {
+    // ORD-094. Transcribir y corregir un resultado de laboratorio.
+    //
+    // ⚠️ DELIBERADAMENTE FUERA DE `record:write`, y el argumento es el mismo
+    // que produjo `nursing:write` y `encounter:open`: quien teclea un informe
+    // de laboratorio puede ser un técnico o el personal de admisiones, y
+    // `record:write` es lo que permite DIAGNOSTICAR. El art. 198 de la Ley
+    // Orgánica de Salud obliga a «limitar sus acciones al área que el título
+    // les asigne», y copiar un número no es diagnosticar.
+    //
+    // ⚠️ LEER UN RESULTADO SIGUE SIENDO `record:read`, y la asimetría es
+    // deliberada: el resultado es contenido clínico de la historia, así que
+    // todo el que puede abrirla puede leerlo. Aquí transcribir es un acto MÁS
+    // estrecho que leer, al revés que en `patient:sexual-orientation`.
+    //
+    // ⚠️ NINGÚN ROL LO TRAE DE FÁBRICA, y eso NO es `explicitGrantOnly`: no es
+    // un permiso de suplantación, es que quién teclea los informes es una
+    // decisión de la clínica y todavía no está tomada. Queda anotado en las
+    // preguntas abiertas del SPEC de `orders` con su recomendación.
+    code: 'result:write',
+    resource: 'record',
+    description:
+      'Registrar y corregir los resultados de laboratorio que devuelve el informe. No autoriza a escribir en la historia ni a diagnosticar',
   },
   {
     code: 'billing:read',
@@ -283,6 +328,28 @@ export const PERMISSION_CATALOGUE = [
     code: 'billing:write',
     resource: 'billing',
     description: 'Emitir comprobantes y registrar cobros',
+  },
+  {
+    // Prices move money, so changing them is a permission of its own — never
+    // bundled with issuing an invoice. D-049: the clinic decides who holds it.
+    code: 'billing:price-manage',
+    resource: 'billing',
+    description: 'Crear y modificar listas de precios y tarifas',
+  },
+  {
+    // A discount beyond the role's own ceiling needs a SECOND person. Without a
+    // separate permission there is nobody to ask.
+    code: 'billing:discount-override',
+    resource: 'billing',
+    description: 'Autorizar un descuento por encima del límite del rol',
+  },
+  {
+    // D-A-007. There is no «edit invoice» anywhere in this system: the SRI does
+    // not allow modifying an authorised invoice, only a credit note. This is
+    // that, and it is deliberately not `billing:write`.
+    code: 'billing:credit-note',
+    resource: 'billing',
+    description: 'Emitir notas de crédito para corregir una factura',
   },
   {
     code: 'catalog:read',

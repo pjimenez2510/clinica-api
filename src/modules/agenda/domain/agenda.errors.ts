@@ -359,6 +359,11 @@ const STATUS_LABEL: Readonly<Record<AgendaEntryStatus, string>> = {
   CANCELLED: 'Anulada',
   NO_SHOW: 'No asistió',
   BLOCKED: 'Bloqueada',
+  // AG-116, AG-117. Two words the screen did not have, and each says exactly
+  // what happened: the patient came and left, or the entry never should have
+  // existed. Neither is «anulada» and neither is «no asistió».
+  LEFT_WITHOUT_BEING_SEEN: 'Se retiró sin ser atendida',
+  ENTERED_IN_ERROR: 'Registrada por error',
 };
 
 /**
@@ -440,6 +445,99 @@ export class CancellationReasonRequiredError extends ValidationError {
 
   constructor() {
     super('CANCELLED requested without a reason');
+  }
+}
+
+/**
+ * AG-117. A retraction with no reason, refused where it cannot be walked
+ * around.
+ *
+ * REQUIRED, AND FOR THE OPPOSITE REASON TO AG-116's optional one. Whoever
+ * mistyped knows what they mistyped, so the reason can ALWAYS be written; and
+ * without it «entrada por error» is a door for making inconvenient
+ * appointments disappear with no record of why. The history row is append-only
+ * (AG-005), so the trail survives whatever happens next.
+ *
+ * A CODE OF ITS OWN AND NOT `CANCELLATION_REASON_REQUIRED`, because the two
+ * acts are what this status came to separate: a client that branched on the
+ * shared code would be told to ask for «el motivo de la anulación» about an
+ * appointment nobody is annulling.
+ */
+export class EnteredInErrorReasonRequiredError extends ValidationError {
+  readonly code = 'ENTERED_IN_ERROR_REASON_REQUIRED';
+  override readonly userTitle =
+    'Indique por qué la cita se registró por error. Queda en el historial de la cita';
+  override readonly fieldErrors = [
+    {
+      field: 'reason',
+      code: 'ENTERED_IN_ERROR_REASON_REQUIRED',
+      message: 'Indique por qué la cita se registró por error',
+    },
+  ];
+
+  constructor() {
+    super('ENTERED_IN_ERROR requested without a reason');
+  }
+}
+
+/**
+ * AG-128, Ley 77 art. 10. An arrival registered without the emergency call
+ * having been made.
+ *
+ * WHY IT IS REFUSED RATHER THAN DEFAULTED TO «no». A field that is born false
+ * and can be left alone proves that nobody touched it, not that anybody
+ * assessed anything — and what art. 10 obliges the establishment to be able to
+ * demonstrate is that A CALL WAS MADE, by a person, at an instant. Art. 13
+ * backs that with 12 to 18 months of prison, and 4 to 6 years if a patient
+ * turned away dies.
+ *
+ * PER FIELD, so the arrival screen highlights the one box that is missing
+ * rather than refusing the whole form with a sentence. And enforced in the
+ * SERVICE and not only in the DTO, for the same reason as
+ * `CANCELLATION_REASON_REQUIRED`: a DEBERÁ that only the transport layer keeps
+ * stops being kept the day another use case calls in from inside.
+ */
+export class EmergencyAssessmentRequiredError extends ValidationError {
+  readonly code = 'EMERGENCY_ASSESSMENT_REQUIRED';
+  override readonly userTitle =
+    'Indique si el paciente llega en situación de emergencia. La ley obliga a calificarlo al momento del arribo';
+  override readonly fieldErrors = [
+    {
+      field: 'emergency',
+      code: 'EMERGENCY_ASSESSMENT_REQUIRED',
+      message: 'Indique sí o no: la calificación es obligatoria al llegar',
+    },
+  ];
+
+  constructor() {
+    super('CHECKED_IN requested without an explicit emergency assessment');
+  }
+}
+
+/**
+ * AG-122, AG-125, AG-127. The patient axis cannot move on this entry.
+ *
+ * ONE CODE FOR THE THREE CASES — not arrived yet, already departed, not a
+ * person — because what the caller has to do about it is the same in all
+ * three: nothing. This is never a receptionist's mistake; it is a documented
+ * fact arriving for an entry that cannot carry it, which is a defect in the
+ * caller and not a decision anyone at the counter can retry.
+ *
+ * 409 AND NOT 422: the request is well formed and it is the STATE of the entry
+ * that refuses it, exactly as in `InvalidAgendaTransitionError`.
+ */
+export class SubjectStatusNotDerivableError extends ConflictError {
+  readonly code = 'SUBJECT_STATUS_NOT_DERIVABLE';
+  override readonly userTitle =
+    'La cita no admite un cambio de estado del paciente: aún no ha llegado o ya terminó su paso por la clínica';
+
+  constructor(current: string | null) {
+    // The current subject status only: nothing here names a patient or an
+    // hour. `'NONE'` rather than a missing key, so a client that branches on
+    // it can tell «todavía no ha llegado» from «ya salió».
+    super('Subject status cannot move on this entry', {
+      current: current ?? 'NONE',
+    });
   }
 }
 

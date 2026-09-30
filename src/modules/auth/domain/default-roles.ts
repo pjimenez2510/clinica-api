@@ -53,6 +53,18 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       // compensa esa concentración.
       'settings:read',
       'settings:manage',
+      // 20-08-2026. Respuesta del usuario a D-049 sobre quién toca los precios:
+      // «flexible, el admin asigna». Hasta hoy ADMIN no llevaba NINGÚN permiso
+      // de facturación, así que el catálogo de prestaciones, las tarifas de IVA
+      // y las listas de precios no los podía mantener nadie — y son justo lo
+      // que cambia entre clínicas.
+      //
+      // Lo que NO recibe, y es deliberado: `billing:write` ni
+      // `billing:credit-note`. Parametrizar los precios y cobrar son cosas
+      // distintas, y la descripción de este rol —«no accede a historias
+      // clínicas»— vale igual para la caja.
+      'billing:read',
+      'billing:price-manage',
       // D-005, AG-101. La dirección también autoriza sobrecupos: el caso de
       // «la sede está llena y la dirección decide atender a alguien más» es
       // uno de los tres que D-005 enumera. Como el médico, sin
@@ -129,6 +141,9 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       // con `user:reset-mfa`), porque salta la separación de personas.
       'agenda:overbook',
       'record:read',
+      'encounter:open',
+      // El médico también los transcribe cuando no hay nadie más (D-A-013).
+      'result:write',
       'record:write',
       'record:sign',
       'vitals:write',
@@ -157,6 +172,27 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       'agenda:read',
       'record:read',
       'vitals:write',
+      // D-A-003, 20-08-2026. Without this, EN-066 was impossible to satisfy:
+      // it says nursing takes the vital signs BEFORE the doctor walks in, but
+      // `encounter_vitals` hangs off an encounter that must already exist and
+      // creating one required `record:write`. Opening is administrative —
+      // A.M. 00115-2021 art. 11 puts it on admissions — so it gets its own
+      // permission rather than widening `record:write`.
+      'encounter:open',
+      // D-A-004. The forms the instructivo assigns to nursing: 020 (vital
+      // signs), 120 (nursing interventions), 022 (drug administration). Art. 4
+      // obliges whoever intervenes to sign what they wrote, so nursing must be
+      // able to sign ITS OWN forms — without ever reaching diagnosis or
+      // prescription.
+      'nursing:write',
+      // D-A-013, 20-08-2026. Transcribir un informe de laboratorio.
+      //
+      // El resultado llega en PDF de un laboratorio externo (D-A-012), y quien
+      // lo recibe en el mostrador es quien transcribe los pocos valores que se
+      // van a graficar o alertar. Deliberadamente NO es `record:write`:
+      // transcribir un número que otro midió no es diagnosticar, y confundirlo
+      // pondría a enfermería fuera del ámbito de su título (LOS art. 198).
+      'result:write',
       'catalog:read',
       'site:read',
     ],
@@ -171,6 +207,11 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       'patient:write',
       'agenda:read',
       'agenda:write',
+      // D-A-003. A.M. 00115-2021 art. 11: «La apertura de la historia clínica
+      // única … la realizará el personal de Gestión de Admisiones». That is
+      // this role. Note the description above still holds: opening a chart is
+      // NOT writing in it.
+      'encounter:open',
       'catalog:read',
       'site:read',
     ],
@@ -179,7 +220,20 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
     code: 'CAJA',
     name: 'Caja y facturación',
     description: 'Emite comprobantes y registra cobros.',
-    permissions: ['patient:read', 'billing:read', 'billing:write', 'catalog:read'], // prettier-ignore
+    // D-A-007: there is no «edit invoice». Correcting one is a credit note,
+    // and it is a separate permission on purpose. `price:manage` and
+    // `discount:override` are NOT here — the clinic's admin hands those out
+    // deliberately (user's answer: «flexible, el admin asigna»).
+    // 20-08-2026. `site:read` NO es opcional para este rol, y faltaba: cobrar
+    // exige saber EN QUÉ SEDE se cobra —la ruta de cuentas lleva `siteId`— y
+    // emitir exige el punto de emisión del SRI, que cuelga de la sede. Sin él
+    // la pantalla de caja no abre para una cajera; lo destapó construirla.
+    //
+    // No es un permiso clínico: da nombre, dirección y punto de emisión de las
+    // sedes que esta persona ya tiene asignadas, acotado por su alcance. La
+    // alternativa —un `GET /billing/sites` propio— duplicaría la misma lectura
+    // con otro nombre para no conceder un permiso que igualmente hace falta.
+    permissions: ['patient:read', 'site:read', 'billing:read', 'billing:write', 'billing:credit-note', 'catalog:read'], // prettier-ignore
   },
   {
     code: 'AUDITOR',

@@ -41,7 +41,7 @@ export interface AuthenticatedSession {
    * IT IS THE OWNER'S OWN DATA, AND IT TRAVELS WITH THE SESSION FOR THAT
    * ═════════════════════════════════════════════════════════════════════════
    *
-   * The only place it could be read before was `AccountDto`, from
+   * The only place it could be read before was `UserAccountDto`, from
    * `GET /auth/users` — administration, `user:read` over the whole payroll. So
    * a person could not find out about THEIR OWN account without a permission
    * to inspect everybody else's, and the screen offering «matricular» and
