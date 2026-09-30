@@ -414,6 +414,58 @@ describe('deriving availability against the database', () => {
       expect(view.occupied).toEqual([]);
     });
 
+    it('AG-144 offers at the other site only what is left of a day filled at one site (the 43 of 48 of 30-09-2026)', async () => {
+      // The development data of 30-09-2026: the walks of every session had
+      // filled 43 of the 48 slots of medico@ at Sede Norte, and Sede Sur still
+      // offered all 48. Same shape here: a day of two shifts on a ten-minute
+      // atom at both sites, 43 slots taken at one of them.
+      const { prisma, site, other, practitioner, patient } = await twoSites();
+      for (const siteId of [site.id, other.id]) {
+        await setSlotAtom(prisma, siteId, 10);
+        await createScheduleRule(
+          prisma,
+          { practitionerId: practitioner.id, siteId },
+          { weekday: 1, startTime: '14:00', endTime: '18:00' },
+        );
+      }
+
+      const request = (siteId: string) =>
+        agendaOf(prisma).availability({
+          siteId,
+          practitionerId: practitioner.id,
+          ...day,
+        });
+
+      const grid = (await request(other.id)).slots;
+      expect(grid).toHaveLength(48);
+      const taken = grid.slice(0, 43);
+      for (const slot of taken) {
+        await prisma.agendaEntry.create({
+          data: {
+            kind: 'APPOINTMENT',
+            bookingChannel: 'PHONE',
+            status: 'CHECKED_IN',
+            siteId: other.id,
+            practitionerId: practitioner.id,
+            patientId: patient.id,
+            startsAt: slot.startsAt,
+            endsAt: slot.endsAt,
+          },
+        });
+      }
+
+      const here = await request(site.id);
+      const there = await request(other.id);
+
+      // Control: where the appointments are, five are left.
+      expect(there.slots).toHaveLength(5);
+      // And here, the same five — not forty-eight.
+      expect(here.slots.map((slot) => slot.startsAt)).toEqual(
+        there.slots.map((slot) => slot.startsAt),
+      );
+      expect(here.occupied).toEqual([]);
+    });
+
     it('AG-144 gives back the slot when the entry at the other site is released, like the EXCLUDE', async () => {
       const { prisma, site, other, practitioner, patient } = await twoSites();
 
