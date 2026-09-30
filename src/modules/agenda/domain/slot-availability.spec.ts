@@ -312,7 +312,11 @@ describe('slot availability', () => {
     const result = availability({
       entries: [
         occupancy({ id: 'here' }),
-        occupancy({ id: 'overbooked', siteId: OTHER_SITE, blocksCalendar: false }),
+        occupancy({
+          id: 'overbooked',
+          siteId: OTHER_SITE,
+          blocksCalendar: false,
+        }),
         occupancy({
           id: 'released',
           siteId: OTHER_SITE,
