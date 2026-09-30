@@ -147,9 +147,10 @@ describe('el contrato de errores de las órdenes', () => {
     expect(line.userTitle).toContain('Elija una línea de esta orden');
   });
 
-  it('ORD-080 dice que hay que registrar al paciente, nunca que se creará solo', () => {
+  it('ORD-080 manda buscar a la persona antes de registrarla, nunca dice que se creará sola', () => {
     const error = new ResultChartUnmatchedError();
     expect(error).toBeInstanceOf(NotFoundError);
-    expect(error.userTitle).toContain('Regístrela en el fichero');
+    expect(error.userTitle).toContain('Busque a la persona en Pacientes');
+    expect(error.userTitle).toContain('antes de registrarla');
   });
 });

@@ -384,12 +384,18 @@ describe('el adaptador de la orden', () => {
     ).rejects.toMatchObject({ code: 'ORDER_ITEM_NOT_PENDING' });
   });
 
-  it('ORD-081 busca la cédula sólo en las fichas que ninguna fusión absorbió', async () => {
+  it('ORD-081 busca la cédula ECU oficial sólo en las fichas que ninguna fusión absorbió', async () => {
     const { repository, callTo } = prismaDouble();
 
     expect(await repository.chartByCedula('1710034065')).toBe('chart-1');
     expect(callTo('patientIdentifier.findFirst')?.args).toMatchObject({
-      where: { type: 'CEDULA', value: '1710034065', patientMerged: false },
+      where: {
+        type: 'CEDULA',
+        issuingCountry: 'ECU',
+        value: '1710034065',
+        use: 'OFFICIAL',
+        patientMerged: false,
+      },
     });
 
     const none = prismaDouble({ identifier: null });

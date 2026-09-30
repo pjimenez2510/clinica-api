@@ -327,17 +327,38 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
   /**
    * ORD-080, ORD-081. The LIVE chart that holds this cedula.
    *
-   * ⚠️ `patient_merged: false` IS THE WHOLE QUERY. `patient_identifier` is the
-   * one child table a merge re-points (PA-043), and the denormalised flag is
+   * ⚠️ `patient_merged: false` IS WHAT KEEPS THE ABSORBED CHART OUT.
+   * `patient_identifier` is the one child table a merge re-points (PA-043),
+   * and the denormalised flag is
    * what lets the surviving chart keep the cedula while the absorbed one
    * releases it. Asking without it would return the absorbed chart and send a
    * paper report to a record nobody opens.
+   *
+   * ⚠️ AND THE WHERE IS THE KEY AND PREDICATE OF
+   * `patient_identifier_active_unique` (its `type <> 'PROVISIONAL'` is implied
+   * by `type = 'CEDULA'`). The index is unique on (type, issuing_country,
+   * value) and only for `OFFICIAL` rows, so the bare number may sit on two
+   * charts: a `COL` cedula and an `ECU` one, or an `OLD` row and the
+   * `OFFICIAL` one. Asking for less than the index lets the scan pick the
+   * chart, and the paper report lands on somebody else. The cedula of this
+   * path is the Ecuadorian one (ORD-081); a chart holding the number only as
+   * a foreign document is not found here (D-066).
+   *
+   * It follows the INDEX, not `valid_to`: nothing writes `valid_to` yet, and
+   * whether a closed cedula still resolves is PA-014's decision, to be taken
+   * with document replacement.
    *
    * ⚠️ AND THERE IS NO `create` ANYWHERE NEAR THIS METHOD (ORD-080).
    */
   async chartByCedula(cedula: string): Promise<string | undefined> {
     const row = await this.prisma.patientIdentifier.findFirst({
-      where: { type: 'CEDULA', value: cedula, patientMerged: false },
+      where: {
+        type: 'CEDULA',
+        issuingCountry: 'ECU',
+        value: cedula,
+        use: 'OFFICIAL',
+        patientMerged: false,
+      },
       select: { patientId: true },
     });
     return row?.patientId;
