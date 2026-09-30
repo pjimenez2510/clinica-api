@@ -72,13 +72,14 @@ que entra el lunes, sigue exigiendo tocar la base de datos a mano.
 **Prueba independiente:** crear una cuenta, concederle un rol en una sede, y
 comprobar que sus permisos efectivos cambian **sin reiniciar** y que la
 concesión aparece en la bitácora.
-**Cubre:** AU-020 a AU-034, AU-038.
+**Cubre:** AU-020 a AU-034, AU-038, AU-042.
 
-**Solo servidor:** AU-025, AU-026, AU-027 y AU-038. Los dos primeros son
+**Solo servidor:** AU-025, AU-026, AU-027, AU-038 y AU-042. Los dos primeros son
 bitácora y el plazo de caducidad definido en un único sitio; AU-027 es un
 índice único parcial. La pantalla no puede enseñar ninguno: por AU-028, un
 enlace caducado, gastado o inventado responden lo mismo. AU-038 es alcance por
 sede sobre una escritura, y quien escala privilegios no usa la pantalla.
+AU-042 ocurre al desplegar, no desde una pantalla.
 
 ### A3 — Primera credencial por correo _(P1, 13-08-2026)_
 
@@ -610,6 +611,39 @@ enlace que no sirve y con un correo que no sale.
   > concesiones haría que la pantalla guardara un conjunto incompleto — que es
   > justo el borrado silencioso que este requisito impide.
 
+- **AU-042** — CUANDO se sincronicen los permisos (`syncAuthorisation`) y la
+  base no haya recibido todavía esta concesión, el sistema DEBERÁ conceder
+  `background:write` a **todo** rol que tenga `record:write` —del sistema o
+  propio de la clínica—, y DEBERÁ hacerlo **una sola vez por base**: un rol al
+  que después se le quite NO DEBERÁ recuperarlo en ninguna sincronización
+  posterior. DEBERÁ informar en la salida de qué roles lo recibieron.
+  > **D-062, punto 2, consecuencia técnica (resuelta el 30-09-2026).** Registrar
+  > alergias y antecedentes pasó de `record:write` a `background:write` en
+  > `feat/f03-preparacion` (EN-164). D-012 sólo reparte un código **nuevo**, y
+  > sólo a los roles **del sistema**: un rol propio que registraba alergias
+  > perdió ese registro al desplegar. El argumento de D-012 —«nadie pudo
+  > revocar un código que no existía»— cubre también esto: tener
+  > `record:write` ya era registrar alergias.
+  >
+  > **Por qué una fila y no la regla de D-012.** `background:write` ya existe
+  > en toda base sincronizada desde aquella rama, así que para D-012 no es
+  > nuevo. Y repartirlo en cada sincronización devolvería lo que una clínica
+  > quitó, que es lo que D-012 prohíbe. «Una vez» lo recuerda
+  > `authorisation_one_off`, escrita en la misma transacción que la concesión.
+  >
+  > **Lo que no cambia:** la tercera regla de D-012 sigue siendo estrecha; esto
+  > no la amplía, es una concesión fechada con su propia memoria.
+  >
+  > **Lo que cuesta:** la **primera** sincronización no distingue «nunca lo
+  > tuvo» de «se lo quitaron» antes de que existiera la fila. Un rol que
+  > recibió `background:write` por D-012 y lo perdió a mano entre
+  > `feat/f03-preparacion` y este despliegue lo recupera una vez. Ninguna
+  > instalación fuera de desarrollo corrió aquella rama.
+  >
+  > **Lo que no cubre:** un rol propio creado **después** con `record:write` y
+  > sin `background:write` no lo recibe: la concesión ya se hizo. Qué hacer con
+  > él es D-071.
+
 ### Recuperación del segundo factor (REQ-154, D-014)
 
 - **AU-035** — CUANDO quien tenga el permiso `user:reset-mfa` lo pida sobre otra
@@ -877,3 +911,13 @@ las re-implemente:
 > exigiría consultar las concesiones en cada petición, que es justo el coste que
 > `role-permission.registry.ts` documenta haber evitado. Las dos mitades tienen
 > prueba de integración con ese nombre.
+
+**AU-042 necesitó tabla nueva**, en `20260930221225_authorisation_one_off`:
+`authorisation_one_off (name varchar(64) PRIMARY KEY, applied_at timestamptz)`,
+las concesiones únicas que `syncAuthorisation` ya hizo en esta base. La clave
+primaria es la reclamación: la fila se inserta con `ON CONFLICT DO NOTHING` en la
+misma transacción que concede, así que dos sincronizaciones a la vez conceden
+una vez, y si la fila existe no se concede nada aunque al rol le falte el
+permiso —que entonces es porque la clínica se lo quitó—. `granted text[]`
+guarda qué concedió (`ROL → permiso`): cambia quién escribe en la historia
+clínica, y la auditoría no puede depender de la consola de un despliegue.

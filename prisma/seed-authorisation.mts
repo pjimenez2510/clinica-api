@@ -74,6 +74,10 @@ const BACKFILL_19_08_2026: readonly { role: string; permission: string }[] = [
  * Granting only BRAND-NEW codes is what keeps the second rule intact: a code
  * that never existed cannot have been revoked by anybody, so there is no human
  * decision to overwrite. One the clinic removed stays removed forever.
+ *
+ * Beside the three, one-off grants that D-012 cannot deliver: the dated list
+ * above, and AU-042's, which is remembered in `authorisation_one_off` and so
+ * happens once per database (`grantBackgroundWriteOnce`).
  */
 export async function syncAuthorisation(prisma: PrismaClient): Promise<{
   permissions: number;
@@ -83,6 +87,8 @@ export async function syncAuthorisation(prisma: PrismaClient): Promise<{
   grantedToSystemRoles: string[];
   /** `ROLE → permission` granted by the dated list above, and nothing else. */
   backfilled: string[];
+  /** `ROLE → permission` granted by a one-off of AU-042, on its first run only. */
+  grantedOnce: string[];
 }> {
   // Read BEFORE upserting: afterwards every code exists and «new» is no
   // longer answerable. This snapshot is the whole basis of D-012's third rule.
@@ -216,7 +222,66 @@ export async function syncAuthorisation(prisma: PrismaClient): Promise<{
     orphanPermissions,
     grantedToSystemRoles,
     backfilled,
+    grantedOnce: await grantBackgroundWriteOnce(prisma),
   };
+}
+
+const BACKGROUND_WRITE_ONE_OFF = 'background-write-to-record-writers';
+
+/**
+ * AU-042, D-062 point 2: `background:write` reaches EVERY role that holds
+ * `record:write` — the clinic's own roles too — once per database.
+ *
+ * The allergy and history routes moved from `record:write` to
+ * `background:write` in `feat/f03-preparacion`. D-012 handed the new code to
+ * the system roles only, so a clinic's own role that recorded allergies lost
+ * that on deploy. D-012's argument covers this one too: holding `record:write`
+ * already meant recording allergies, so nobody decided to take it away.
+ *
+ * ONCE, and the row in `authorisation_one_off` is what makes it once. It is
+ * claimed in the same transaction as the grant, so two syncs at the same time
+ * grant once; and a role the clinic later strips of `background:write` keeps
+ * it stripped, which is exactly what `BACKFILL_19_08_2026` cannot promise.
+ *
+ * ⚠️ WHAT IT COSTS: the FIRST run cannot tell «never had it» from «the clinic
+ * took it away» before this row existed. A role that received
+ * `background:write` from D-012 and lost it by hand between
+ * `feat/f03-preparacion` and this deploy gets it back once. No installation
+ * outside development ran that branch (`database-phase.mjs`: development).
+ */
+
+async function grantBackgroundWriteOnce(
+  prisma: PrismaClient,
+): Promise<string[]> {
+  return prisma.$transaction(async (tx) => {
+    const claimed = await tx.authorisationOneOff.createMany({
+      data: [{ name: BACKGROUND_WRITE_ONE_OFF }],
+      skipDuplicates: true,
+    });
+    if (claimed.count === 0) return [];
+
+    const writers = await tx.role.findMany({
+      where: {
+        permissions: { some: { permissionCode: 'record:write' } },
+        NOT: { permissions: { some: { permissionCode: 'background:write' } } },
+      },
+      select: { id: true, code: true },
+      orderBy: { code: 'asc' },
+    });
+    await tx.rolePermission.createMany({
+      data: writers.map((role) => ({
+        roleId: role.id,
+        permissionCode: 'background:write',
+      })),
+      skipDuplicates: true,
+    });
+    const granted = writers.map((role) => `${role.code} → background:write`);
+    await tx.authorisationOneOff.update({
+      where: { name: BACKGROUND_WRITE_ONE_OFF },
+      data: { granted },
+    });
+    return granted;
+  });
 }
 
 /** Entry point for `pnpm db:seed:auth`. */
@@ -242,6 +307,11 @@ async function main(): Promise<void> {
     if (result.backfilled.length > 0) {
       console.log(
         `Permisos repartidos por la decisión del 19-08-2026 (D-034, D-039): ${result.backfilled.join(', ')}.`,
+      );
+    }
+    if (result.grantedOnce.length > 0) {
+      console.log(
+        `Permisos concedidos una sola vez a quien tenía record:write (AU-042, D-062): ${result.grantedOnce.join(', ')}.`,
       );
     }
     if (result.orphanPermissions.length > 0) {

@@ -238,6 +238,22 @@ model RolePermission {
   @@map("role_permission")
 }
 
+/// A one-off grant that `syncAuthorisation` has already made on THIS database.
+///
+/// «Once» cannot be inferred from the grants themselves: a permission missing
+/// from a role may never have been granted, or may have been taken away by the
+/// clinic, and only the second is a decision to respect. The row is what tells
+/// them apart (AU-042).
+model AuthorisationOneOff {
+  name      String   @id @db.VarChar(64)
+  appliedAt DateTime @default(now()) @map("applied_at") @db.Timestamptz(6)
+  /// What it granted, `ROLE → permission`: the audit trail of who started
+  /// writing in the clinical record because of it.
+  granted   String[] @default([])
+
+  @@map("authorisation_one_off")
+}
+
 /// A role held by a user, scoped to one site or granted globally.
 ///
 /// Permissions are NOT stored: they are derived from the role in code. A
