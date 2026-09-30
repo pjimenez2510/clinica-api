@@ -56,6 +56,19 @@ export const envSchema = z.object({
     .regex(/^\d+[smhd]$/, 'debe ser una duración como 15m, 2h o 7d')
     .default('15m'),
   JWT_REFRESH_TTL_DAYS: z.coerce.number().int().positive().default(7),
+  /**
+   * AU-039. Seconds during which the refresh token just rotated may be
+   * presented again — by the same client — without revoking its family: the
+   * response carrying its successor may never have reached the browser.
+   * Default and ceiling are Okta's (30 s, 0–60); 0 turns the grace off and
+   * leaves AU-004 strict. The reasoning and sources are in the auth SPEC.
+   */
+  JWT_REFRESH_REUSE_GRACE_SECONDS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(60)
+    .default(30),
 
   /**
    * Encrypts TOTP secrets at rest. AES-256-GCM, so it must DECODE to 32 bytes.
