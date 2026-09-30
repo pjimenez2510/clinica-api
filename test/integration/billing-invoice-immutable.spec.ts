@@ -517,3 +517,65 @@ describe('BI-081 «Consumidor Final» lleva la identificación del SRI o no exis
     expect(invoice.receiver.buyerIdentification).toBe('9999999999999');
   });
 });
+
+describe('BI-159 la base rechaza un RUC o una cédula de receptor sin su forma', () => {
+  /**
+   * Straight through the repository, UNDER `resolveReceiver`: what is proved
+   * here is what an import or a script that skips the value objects is told.
+   * Each rejection has its control beside it — the same insert with a number
+   * of the right shape goes in — so a CHECK that refused every `04` would fail.
+   */
+  const issueTo = async (
+    buyerIdentificationType: '04' | '05',
+    buyerIdentification: string,
+  ) =>
+    context.accounts.issueInvoice({
+      accountId: await anAccountReadyToInvoice(),
+      siteId: context.siteId,
+      emissionPointId: context.emissionPointId,
+      receiver: { ...receiver, buyerIdentificationType, buyerIdentification },
+      issuedById: context.userId,
+    });
+
+  it.each([
+    ['sin establecimiento (000)', '1790012345000'],
+    ['de doce dígitos', '179001234500'],
+    ['con letras', '17900123450O1'],
+  ])('BI-159 rechaza un RUC %s (invoice_buyer_ruc_format)', async (_, ruc) => {
+    const rejection = await rejectionOf(issueTo('04', ruc));
+
+    expect(extractDatabaseProblem(rejection)).toMatchObject({
+      code: 'INVALID_RUC',
+    });
+    expect(String((rejection as Error).message)).toMatch(
+      /invoice_buyer_ruc_format/,
+    );
+  });
+
+  it('BI-159 admite el RUC con su forma (control positivo)', async () => {
+    const invoice = await issueTo('04', '1793189906001');
+    expect(invoice.receiver.buyerIdentification).toBe('1793189906001');
+  });
+
+  it.each([
+    ['de nueve dígitos', '171003406'],
+    ['de trece dígitos', '1710034065001'],
+  ])(
+    'BI-159 rechaza una cédula %s (invoice_buyer_cedula_format)',
+    async (_, cedula) => {
+      const rejection = await rejectionOf(issueTo('05', cedula));
+
+      expect(extractDatabaseProblem(rejection)).toMatchObject({
+        code: 'INVALID_CEDULA',
+      });
+      expect(String((rejection as Error).message)).toMatch(
+        /invoice_buyer_cedula_format/,
+      );
+    },
+  );
+
+  it('BI-159 admite la cédula con su forma (control positivo)', async () => {
+    const invoice = await issueTo('05', '1710034065');
+    expect(invoice.receiver.buyerIdentification).toBe('1710034065');
+  });
+});
