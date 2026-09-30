@@ -127,7 +127,9 @@ export interface AvailabilityView {
   /** Free slots, ordered by instant. Derived, never stored. */
   slots: Slot[];
   /**
-   * The entries that occupy the calendar in the range, ordered by start.
+   * The entries that occupy the calendar in the range AT THIS SITE, ordered by
+   * start. Since AG-144 a slot can be missing from both lists: the time taken
+   * at another site is in `unavailable`.
    *
    * They are listed independently of the rules ON PURPOSE (AG-011): an
    * appointment booked last month under a rule that has since expired is still
@@ -136,6 +138,16 @@ export interface AvailabilityView {
    * else.
    */
   occupied: AgendaOccupancy[];
+  /**
+   * AG-145. When the practitioner is taken at ANOTHER site: bare intervals,
+   * merged where they touch or overlap and clipped to the range.
+   *
+   * `occupied` is this site's only (AG-107), so without this a day spent
+   * entirely elsewhere arrived with no slots and nothing occupied, and read as
+   * «sin horario». Two instants and nothing else: merging hides how many
+   * entries there are, clipping hides how long a leave lasts.
+   */
+  unavailable: TimeInterval[];
   /**
    * AG-015. The dates of the range that offer nothing because the site
    * observes a holiday, each with the name of that holiday as the reason.
@@ -155,6 +167,35 @@ export interface AvailabilityView {
    * holidays that year».
    */
   yearsWithoutCalendar: number[];
+}
+
+/** A stretch of time and nothing else (AG-145). */
+export interface TimeInterval {
+  startsAt: Date;
+  endsAt: Date;
+}
+
+/**
+ * AG-145. Entries reduced to their instants, clipped to `[start, end)` and
+ * merged where they touch or overlap. Expects them sorted by start.
+ */
+function bareIntervals(
+  entries: readonly AgendaOccupancy[],
+  start: Date,
+  end: Date,
+): TimeInterval[] {
+  const merged: TimeInterval[] = [];
+  for (const entry of entries) {
+    const startsAt = entry.startsAt < start ? start : entry.startsAt;
+    const endsAt = entry.endsAt > end ? end : entry.endsAt;
+    const last = merged.at(-1);
+    if (last && startsAt.getTime() <= last.endsAt.getTime()) {
+      if (endsAt > last.endsAt) last.endsAt = endsAt;
+    } else {
+      merged.push({ startsAt, endsAt });
+    }
+  }
+  return merged;
 }
 
 /**
@@ -283,29 +324,36 @@ export function deriveAvailability(query: AvailabilityQuery): AvailabilityView {
    * practitioner has one calendar. Offering the hour they spend at another
    * site is offering a slot the database will refuse.
    */
-  const busy =
+  const range =
     firstDate === undefined || lastDate === undefined
+      ? null
+      : {
+          start: clinicalDayBounds(firstDate, timeZone).startsAt,
+          end: clinicalDayBounds(lastDate, timeZone).endsAtExclusive,
+        };
+  const busy =
+    range === null
       ? []
-      : (() => {
-          const rangeStart = clinicalDayBounds(firstDate, timeZone).startsAt;
-          const rangeEnd = clinicalDayBounds(
-            lastDate,
-            timeZone,
-          ).endsAtExclusive;
-
-          return query.entries
-            .filter(
-              (entry) =>
-                entry.practitionerId === practitioner.practitionerId &&
-                occupiesCalendar(entry) &&
-                overlaps(entry.startsAt, entry.endsAt, rangeStart, rangeEnd),
-            )
-            .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
-        })();
+      : query.entries
+          .filter(
+            (entry) =>
+              entry.practitionerId === practitioner.practitionerId &&
+              occupiesCalendar(entry) &&
+              overlaps(entry.startsAt, entry.endsAt, range.start, range.end),
+          )
+          .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
 
   // What is SHOWN is this site's only: the caller may hold no `agenda:read`
   // at the other one, and AG-107 does not let us reveal that it exists.
   const occupied = busy.filter((entry) => entry.siteId === siteId);
+  const unavailable =
+    range === null
+      ? []
+      : bareIntervals(
+          busy.filter((entry) => entry.siteId !== siteId),
+          range.start,
+          range.end,
+        );
 
   /**
    * AG-015, AG-016, AG-093: what the SITE's calendar says about these dates.
@@ -326,6 +374,7 @@ export function deriveAvailability(query: AvailabilityQuery): AvailabilityView {
     return {
       slots: [],
       occupied,
+      unavailable,
       closedDates,
       yearsWithoutCalendar: uncoveredYears,
     };
@@ -369,6 +418,7 @@ export function deriveAvailability(query: AvailabilityQuery): AvailabilityView {
   return {
     slots,
     occupied,
+    unavailable,
     closedDates,
     yearsWithoutCalendar: uncoveredYears,
   };

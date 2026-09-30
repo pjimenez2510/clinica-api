@@ -713,8 +713,19 @@ export const availabilitySchema = z.object({
   to: z.iso.date(),
   /** Free slots, ordered by instant. Derived, never stored (AG-003). */
   slots: z.array(availabilitySlotSchema),
-  /** AG-011: what is taken, including entries booked under expired rules. */
+  /**
+   * AG-011: what is taken AT THIS SITE, including entries booked under expired
+   * rules. Since AG-144 a slot can be missing from both `slots` and this list:
+   * the practitioner is taken elsewhere, and that is `unavailable`.
+   */
   occupied: z.array(occupiedIntervalSchema),
+  /**
+   * AG-145. When the practitioner is taken at ANOTHER site: two instants per
+   * stretch, merged and clipped to the range — no site, no reason, no patient,
+   * no kind of entry (AG-107). A client paints it «No disponible» and never
+   * reads it as «sin horario».
+   */
+  unavailable: z.array(occupiedIntervalSchema),
   /**
    * AG-015, AG-016. The dates of the range with no slots on offer, and why.
    *

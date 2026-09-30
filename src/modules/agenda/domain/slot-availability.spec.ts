@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   WallClockTime,
+  clinicalDayBounds,
   parseClinicalDate,
 } from '../../../shared/domain/clinic-time';
 import type { Holiday } from './holiday-calendar';
@@ -114,6 +115,12 @@ const availability = (input: {
 
 const plusMinutes = (instant: Date, minutes: number): Date =>
   new Date(instant.getTime() + minutes * 60_000);
+
+/** The instants that bound the default range of `availability()`, in Ecuador. */
+const rangeOf = () => {
+  const bounds = clinicalDayBounds(parseClinicalDate('2026-09-14')); // fecha-fija: el lunes por defecto de `availability()` en este archivo
+  return { start: bounds.startsAt, end: bounds.endsAtExclusive };
+};
 
 const startsOf = (slots: readonly { startsAt: Date }[]): string[] =>
   slots.map((slot) => slot.startsAt.toISOString());
@@ -240,6 +247,81 @@ describe('slot availability', () => {
     });
 
     expect(slots).toHaveLength(3);
+  });
+
+  it('AG-144 keeps this site in occupied while subtracting the other one', () => {
+    const result = availability({
+      entries: [
+        occupancy({ id: 'here' }),
+        occupancy({
+          id: 'elsewhere',
+          siteId: OTHER_SITE,
+          startsAt: occupancy().endsAt,
+          endsAt: plusMinutes(occupancy().endsAt, 20),
+        }),
+      ],
+    });
+
+    expect(result.occupied.map((entry) => entry.id)).toEqual(['here']);
+    expect(result.slots).toHaveLength(1);
+  });
+
+  it('AG-145 lists the time taken at another site as bare intervals, merged and clipped to the range', () => {
+    const start = occupancy().startsAt;
+    const { start: dayStart, end: dayEnd } = rangeOf();
+    const result = availability({
+      entries: [
+        // Two entries that touch end to end: one interval, not two.
+        occupancy({ id: 'a', siteId: OTHER_SITE }),
+        occupancy({
+          id: 'b',
+          siteId: OTHER_SITE,
+          startsAt: plusMinutes(start, 20),
+          endsAt: plusMinutes(start, 40),
+        }),
+        // A leave that began two days before the range and ends after it.
+        occupancy({
+          id: 'leave',
+          siteId: OTHER_SITE,
+          startsAt: plusMinutes(dayStart, -2 * 24 * 60),
+          endsAt: plusMinutes(dayStart, 60),
+        }),
+        occupancy({
+          id: 'late',
+          siteId: OTHER_SITE,
+          startsAt: plusMinutes(dayEnd, -30),
+          endsAt: plusMinutes(dayEnd, 90),
+        }),
+      ],
+    });
+
+    expect(result.unavailable).toEqual([
+      { startsAt: dayStart, endsAt: plusMinutes(dayStart, 60) },
+      { startsAt: start, endsAt: plusMinutes(start, 40) },
+      { startsAt: plusMinutes(dayEnd, -30), endsAt: dayEnd },
+    ]);
+    // Nothing but the two instants: no id, no site.
+    expect(
+      result.unavailable.every(
+        (interval) => Object.keys(interval).sort().join() === 'endsAt,startsAt',
+      ),
+    ).toBe(true);
+  });
+
+  it('AG-145 leaves out this site, the released and the overbooked', () => {
+    const result = availability({
+      entries: [
+        occupancy({ id: 'here' }),
+        occupancy({ id: 'overbooked', siteId: OTHER_SITE, blocksCalendar: false }),
+        occupancy({
+          id: 'released',
+          siteId: OTHER_SITE,
+          releasedAt: plusMinutes(occupancy().startsAt, -60),
+        }),
+      ],
+    });
+
+    expect(result.unavailable).toEqual([]);
   });
 
   it('AG-010 offers slots only on the weekday and validity window of the rule', () => {

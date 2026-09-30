@@ -318,6 +318,63 @@ describe('la agenda por HTTP', () => {
       await expect(prisma.agendaEntry.count()).resolves.toBe(0);
     });
 
+    it('AG-145 dice «no disponible» con dos instantes y nada más, a quien solo tiene permiso en esta sede', async () => {
+      // El usuario de este fichero es recepción SOLO en esta sede (AG-071).
+      // El profesional pasa la mañana entera en la otra: un bloqueo, con su
+      // motivo, y una cita con paciente, pegados.
+      const firstStart = new Date(FIRST_SLOT.startsAt);
+      const plus = (minutes: number) =>
+        new Date(firstStart.getTime() + minutes * 60_000);
+      const block = await prisma.agendaEntry.create({
+        data: {
+          kind: 'BLOCK',
+          status: 'BLOCKED',
+          siteId: otherSiteId,
+          practitionerId,
+          startsAt: plus(0),
+          endsAt: plus(120),
+          reason: 'Vacaciones',
+        },
+      });
+      const appointment = await prisma.agendaEntry.create({
+        data: {
+          kind: 'APPOINTMENT',
+          bookingChannel: 'PHONE',
+          siteId: otherSiteId,
+          practitionerId,
+          patientId,
+          startsAt: plus(120),
+          endsAt: plus(240),
+          reason: 'Dolor torácico',
+        },
+      });
+
+      const response = await availabilityOf().expect(200);
+      const body = response.body as AvailabilityBody & {
+        unavailable: Record<string, unknown>[];
+      };
+
+      expect(body.slots).toEqual([]);
+      expect(body.occupied).toEqual([]);
+      // Una sola franja: la fusión no deja contar cuántas entradas hay.
+      expect(body.unavailable).toEqual([
+        { startsAt: plus(0).toISOString(), endsAt: plus(240).toISOString() },
+      ]);
+      // Y nada de la otra sede en ningún rincón de la respuesta.
+      const raw = JSON.stringify(response.body);
+      for (const secret of [
+        otherSiteId,
+        block.id,
+        appointment.id,
+        patientId,
+        'Vacaciones',
+        'Dolor torácico',
+        'BLOCK',
+      ]) {
+        expect(raw).not.toContain(secret);
+      }
+    });
+
     it('AG-003 resta de los cupos la cita que ocupa calendario', async () => {
       await book(anAppointment()).expect(201);
 

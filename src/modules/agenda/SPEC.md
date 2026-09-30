@@ -69,7 +69,7 @@ regla del módulo cuyo fallo produce dos pacientes en la misma silla.
 concurrentes y comprobar que gana exactamente uno.
 **Cubre:** AG-001 a AG-003, AG-010 a AG-014, AG-017, AG-018, AG-020 a AG-030,
 AG-034, AG-070 a AG-074, AG-104, AG-105, AG-106, AG-107, AG-108, AG-109,
-AG-111, AG-112, AG-113, AG-144.
+AG-111, AG-112, AG-113, AG-144, AG-145.
 
 > AG-111 y AG-112 se añadieron el 14-08-2026, y pertenecen aquí por lo mismo
 > que AG-107 y AG-108: son **las listas de referencia que la pantalla de
@@ -494,7 +494,8 @@ es falsa, hay requisitos que cambian.
 - **AG-002** — El sistema DEBERÁ almacenar todo instante de agenda como
   `timestamptz` y toda regla de horario semanal como hora de pared.
 - **AG-003** — El sistema DEBERÁ derivar los cupos disponibles de las reglas de
-  horario vigentes menos las entradas que ocupan calendario, y NO DEBERÁ
+  horario vigentes menos las entradas que ocupan calendario (del profesional, en
+  cualquier sede: AG-144), y NO DEBERÁ
   materializar cupos libres como filas.
 - **AG-004** — El sistema DEBERÁ registrar en `agenda_status_history` toda
   transición de estado, con estado anterior, estado nuevo, autor e instante.
@@ -558,6 +559,25 @@ es falsa, hay requisitos que cambian.
   > viaja porque quien consulta puede no tener `agenda:read` allí, y AG-107 no
   > deja revelar ni que esa sede existe. La rejilla muestra el hueco ausente, no
   > el porqué.
+- **AG-145** — CUANDO se consulte la disponibilidad de un profesional en una
+  sede, el sistema DEBERÁ devolver en `unavailable` los intervalos del rango en
+  que ese profesional ocupa calendario en **otra** sede, fusionados cuando se
+  tocan o se solapan y recortados al rango consultado; y cada intervalo NO
+  DEBERÁ llevar más que su inicio y su fin — ni sede, ni motivo, ni paciente,
+  ni tipo de entrada, ni identificador.
+  > **Añadido el 30-09-2026 por la revisión clínica de AG-144.** Sin esto, un
+  > día que el profesional pasa entero en otra sede llegaba sin cupos y sin
+  > ocupados, y la pantalla lo leía como «Sin horario · reservar aquí será
+  > sobrecupo»: un motivo falso que empujaba a la única vía que ni el `EXCLUDE`
+  > ni el servidor frenan (D-069). Y en la rejilla, la hora ocupada fuera seguía
+  > pareciendo libre.
+  >
+  > **Por qué solo dos instantes, fusionados y recortados.** Quien consulta
+  > puede no tener `agenda:read` en la otra sede (AG-107). Lo que ya revelaba el
+  > `409 PRACTITIONER_SLOT_TAKEN` de cada intento es que esa hora no está libre,
+  > y eso es todo lo que viaja: la fusión oculta cuántas entradas hay y dónde
+  > empieza cada una, y el recorte oculta cuánto dura un bloqueo de vacaciones
+  > que empezó antes. «No disponible» es el estado; el porqué es de la otra sede.
 - **AG-107** — CUANDO se consulten las sedes de agenda, el sistema DEBERÁ listar
   únicamente aquellas donde quien llama tiene `agenda:read`, con identificador y
   nombre, y NO DEBERÁ revelar la existencia de las demás.
