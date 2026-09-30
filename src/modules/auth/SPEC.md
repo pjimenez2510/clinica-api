@@ -633,6 +633,16 @@ enlace que no sirve y con un correo que no sale.
   >
   > **Lo que no cambia:** la tercera regla de D-012 sigue siendo estrecha; esto
   > no la amplía, es una concesión fechada con su propia memoria.
+  >
+  > **Lo que cuesta:** la **primera** sincronización no distingue «nunca lo
+  > tuvo» de «se lo quitaron» antes de que existiera la fila. Un rol que
+  > recibió `background:write` por D-012 y lo perdió a mano entre
+  > `feat/f03-preparacion` y este despliegue lo recupera una vez. Ninguna
+  > instalación fuera de desarrollo corrió aquella rama.
+  >
+  > **Lo que no cubre:** un rol propio creado **después** con `record:write` y
+  > sin `background:write` no lo recibe: la concesión ya se hizo. Qué hacer con
+  > él es D-071.
 
 ### Recuperación del segundo factor (REQ-154, D-014)
 
@@ -908,4 +918,6 @@ las concesiones únicas que `syncAuthorisation` ya hizo en esta base. La clave
 primaria es la reclamación: la fila se inserta con `ON CONFLICT DO NOTHING` en la
 misma transacción que concede, así que dos sincronizaciones a la vez conceden
 una vez, y si la fila existe no se concede nada aunque al rol le falte el
-permiso —que entonces es porque la clínica se lo quitó—.
+permiso —que entonces es porque la clínica se lo quitó—. `granted text[]`
+guarda qué concedió (`ROL → permiso`): cambia quién escribe en la historia
+clínica, y la auditoría no puede depender de la consola de un despliegue.

@@ -247,6 +247,9 @@ model RolePermission {
 model AuthorisationOneOff {
   name      String   @id @db.VarChar(64)
   appliedAt DateTime @default(now()) @map("applied_at") @db.Timestamptz(6)
+  /// What it granted, `ROLE → permission`: the audit trail of who started
+  /// writing in the clinical record because of it.
+  granted   String[] @default([])
 
   @@map("authorisation_one_off")
 }

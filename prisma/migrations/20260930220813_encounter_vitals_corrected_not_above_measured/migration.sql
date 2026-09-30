@@ -15,10 +15,13 @@
 -- Si falta cualquiera de las dos no hay nada que comparar: la corregida sin
 -- medida ya la rechaza `encounter_vitals_corrected_needs_hemoglobin`.
 --
--- VALIDADA, no `NOT VALID` como las de D-058: una toma se corrige (EN-143), así
--- que una fila que no cumple tiene arreglo, y arrastrarla dejaría una anemia
--- oculta en la historia. Una base que tenga una hace fallar esta migración
--- nombrando la restricción; se corrige esa toma y se vuelve a desplegar.
+-- VALIDADA, no `NOT VALID` como las de D-058: mientras la atención está
+-- abierta una toma se corrige (EN-143), y arrastrar el cruce dejaría una
+-- anemia oculta en la historia. Las columnas nacen hoy y ninguna instalación
+-- fuera de desarrollo tiene tomas. Una base con una fila que no cumple hace
+-- fallar esta migración nombrando la restricción; si esa toma es de una
+-- atención CERRADA, no se corrige desde la aplicación, y qué hacer (enmienda o
+-- `NOT VALID`) es decisión clínica, no del despliegue.
 
 ALTER TABLE "encounter_vitals"
   ADD CONSTRAINT "encounter_vitals_corrected_not_above_measured" CHECK (

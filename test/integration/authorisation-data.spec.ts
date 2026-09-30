@@ -326,6 +326,11 @@ describe('roles are data, permissions are a contract', () => {
     expect(first.grantedOnce).toContain('MEDICO → background:write');
     expect(await holders(own.id)).toContain('background:write');
     expect(await holders(reader.id)).not.toContain('background:write');
+    // The row says what it granted: who started writing allergies, and when.
+    const ledger = await prisma.authorisationOneOff.findUniqueOrThrow({
+      where: { name: 'background-write-to-record-writers' },
+    });
+    expect(ledger.granted).toEqual(first.grantedOnce);
 
     // The clinic takes it away: that is a decision, and it stays made.
     await prisma.rolePermission.delete({
@@ -341,6 +346,35 @@ describe('roles are data, permissions are a contract', () => {
 
     expect(second.grantedOnce).toEqual([]);
     expect(await holders(own.id)).not.toContain('background:write');
+  });
+
+  it('AU-042 dos sincronizaciones a la vez conceden una sola vez: gana exactamente una', async () => {
+    const prisma = db();
+    await syncAuthorisation(prisma);
+    await prisma.rolePermission.deleteMany({
+      where: { permissionCode: 'background:write' },
+    });
+    await prisma.authorisationOneOff.deleteMany();
+    await prisma.role.create({
+      data: {
+        code: 'MEDICO_RURAL',
+        name: 'Médico rural',
+        isSystem: false,
+        permissions: { create: [{ permissionCode: 'record:write' }] },
+      },
+    });
+
+    const [one, other] = await Promise.all([
+      syncAuthorisation(prisma),
+      syncAuthorisation(prisma),
+    ]);
+
+    const winners = [one, other].filter((run) => run.grantedOnce.length > 0);
+    expect(winners).toHaveLength(1);
+    expect(winners[0]?.grantedOnce).toContain(
+      'MEDICO_RURAL → background:write',
+    );
+    await expect(prisma.authorisationOneOff.count()).resolves.toBe(1);
   });
 
   it('PA-040 reparte los dos permisos tambien en una instalacion anterior a la decision', async () => {

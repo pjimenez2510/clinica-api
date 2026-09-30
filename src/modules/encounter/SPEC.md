@@ -1363,8 +1363,16 @@ requisitos que cambian.
   > el umbral de 11,0 g/dl se compara con la cifra equivocada.
   >
   > **Garantía de la base:** `encounter_vitals_corrected_not_above_measured`,
-  > **validada** (no `NOT VALID` como las de D-058): una toma se corrige
-  > (EN-143), así que una fila que no cumple tiene arreglo y no se arrastra.
+  > **validada** (no `NOT VALID` como las de D-058): mientras la atención
+  > está abierta una toma se corrige (EN-143), y una anemia oculta no se
+  > arrastra. Las columnas nacen el 30-09-2026 y ninguna instalación fuera de
+  > desarrollo tiene tomas; si alguna base tuviera una fila que no cumple en
+  > una atención **cerrada**, la migración falla nombrando la restricción y
+  > qué hacer (enmienda o `NOT VALID`) es decisión clínica, no del despliegue.
+  >
+  > Si la corregida además está fuera de 1–25, PostgreSQL informa de una sola
+  > de las dos restricciones; las dos frases son verdad y señalan la misma
+  > casilla.
   > Sin medida ya la rechaza `encounter_vitals_corrected_needs_hemoglobin`. El
   > mensaje dice que pudieron ingresarse al revés, como la sistólica menor que
   > la diastólica.

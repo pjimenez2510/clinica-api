@@ -17,9 +17,15 @@
 -- a disparar. Sin esta fila, repetir la concesión en cada despliegue
 -- devolvería lo que una clínica quitó.
 
+--
+-- `granted` guarda qué se concedió (`ROL → permiso`): cambia quién escribe en
+-- la historia clínica, y una auditoría tiene que poder preguntar desde cuándo
+-- un rol registra alergias sin depender de la consola de un despliegue.
+
 CREATE TABLE "authorisation_one_off" (
   "name" VARCHAR(64) NOT NULL,
   "applied_at" TIMESTAMPTZ(6) NOT NULL DEFAULT now(),
+  "granted" TEXT[] NOT NULL DEFAULT '{}',
 
   CONSTRAINT "authorisation_one_off_pkey" PRIMARY KEY ("name")
 );

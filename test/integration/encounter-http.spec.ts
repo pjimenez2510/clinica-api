@@ -639,6 +639,66 @@ describe('la atención por HTTP', () => {
       expect(body.recordedBy.id).toBe(nurse.id);
     });
 
+    it('EN-063 exige por HTTP el perimetro cefalico a un menor de 5 años, con la edad que congela la base, y no a un adulto', async () => {
+      /**
+       * The F-03 walk now books its own adult patient, so it no longer meets
+       * this rule by chance. This is where the whole chain is shown: the age
+       * `trg_encounter_freeze_age` writes when the attention opens, the
+       * service, and the 422 per box. Ages derive from the opening instant.
+       */
+      const opened = new Date(openBody().startedAt);
+      const yearsBefore = (years: number) =>
+        new Date(
+          Date.UTC(
+            opened.getUTCFullYear() - years,
+            opened.getUTCMonth(),
+            opened.getUTCDate(),
+          ),
+        );
+      const taking = {
+        weightKg: 12.1,
+        heightCm: 86,
+        heightPosition: 'STANDING',
+      };
+
+      const child = await createPatient(prisma, { birthDate: yearsBefore(2) });
+      const childEncounter = await openEncounter(nurseToken, {
+        patientId: child.id,
+      });
+      const refused = await put(
+        `/encounters/${childEncounter}/vitals`,
+        nurseToken,
+        taking,
+      ).expect(422);
+      const problem = refused.body as Problem;
+      expect(problem.code).toBe('VITALS_REQUIRED');
+      expect(problem.errors?.map((error) => error.field)).toEqual([
+        'headCircumferenceCm',
+      ]);
+      await expect(
+        prisma.encounterVitals.count({
+          where: { encounterId: childEncounter },
+        }),
+      ).resolves.toBe(0);
+
+      // Positive control, same child: with the head circumference it saves.
+      await put(`/encounters/${childEncounter}/vitals`, nurseToken, {
+        ...taking,
+        headCircumferenceCm: 48,
+      }).expect(200);
+
+      // And an adult is not asked for it.
+      const adult = await createPatient(prisma, { birthDate: yearsBefore(40) });
+      const adultEncounter = await openEncounter(nurseToken, {
+        patientId: adult.id,
+      });
+      await put(
+        `/encounters/${adultEncounter}/vitals`,
+        nurseToken,
+        taking,
+      ).expect(200);
+    });
+
     it('EN-064 rechaza por HTTP una talla sin posicion, senalando la casilla', async () => {
       const encounterId = await openEncounter(nurseToken);
 

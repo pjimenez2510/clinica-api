@@ -73,7 +73,8 @@ const BACKFILL_19_08_2026: readonly { role: string; permission: string }[] = [
  *
  * Granting only BRAND-NEW codes is what keeps the second rule intact: a code
  * that never existed cannot have been revoked by anybody, so there is no human
- * decision to overwrite. One the clinic removed stays removed forever. *
+ * decision to overwrite. One the clinic removed stays removed forever.
+ *
  * Beside the three, one-off grants that D-012 cannot deliver: the dated list
  * above, and AU-042's, which is remembered in `authorisation_one_off` and so
  * happens once per database (`grantBackgroundWriteOnce`).
@@ -225,6 +226,8 @@ export async function syncAuthorisation(prisma: PrismaClient): Promise<{
   };
 }
 
+const BACKGROUND_WRITE_ONE_OFF = 'background-write-to-record-writers';
+
 /**
  * AU-042, D-062 point 2: `background:write` reaches EVERY role that holds
  * `record:write` — the clinic's own roles too — once per database.
@@ -239,8 +242,13 @@ export async function syncAuthorisation(prisma: PrismaClient): Promise<{
  * claimed in the same transaction as the grant, so two syncs at the same time
  * grant once; and a role the clinic later strips of `background:write` keeps
  * it stripped, which is exactly what `BACKFILL_19_08_2026` cannot promise.
+ *
+ * ⚠️ WHAT IT COSTS: the FIRST run cannot tell «never had it» from «the clinic
+ * took it away» before this row existed. A role that received
+ * `background:write` from D-012 and lost it by hand between
+ * `feat/f03-preparacion` and this deploy gets it back once. No installation
+ * outside development ran that branch (`database-phase.mjs`: development).
  */
-const BACKGROUND_WRITE_ONE_OFF = 'background-write-to-record-writers';
 
 async function grantBackgroundWriteOnce(
   prisma: PrismaClient,
@@ -267,7 +275,12 @@ async function grantBackgroundWriteOnce(
       })),
       skipDuplicates: true,
     });
-    return writers.map((role) => `${role.code} → background:write`);
+    const granted = writers.map((role) => `${role.code} → background:write`);
+    await tx.authorisationOneOff.update({
+      where: { name: BACKGROUND_WRITE_ONE_OFF },
+      data: { granted },
+    });
+    return granted;
   });
 }
 
