@@ -432,6 +432,9 @@ que nadie lo vea.
 > ninguna. Cada entrega posterior las vuelve a atravesar; ninguna las vuelve a
 > cubrir.
 >
+> _(Resuelto el 30-09-2026 en `feat/f01-dar-cita`: la bitácora gana el contexto
+> de la cita; ver la nota bajo AG-073.)_
+>
 > **AG-073 entra sin prueba, y eso es el hallazgo.** Los otros seis ya tienen
 > pruebas que los nombran; AG-073 —registrar en la bitácora la apertura de la
 > ficha desde la agenda— tiene cero, porque no existe todavía la ruta que abre
@@ -1776,7 +1779,29 @@ pasó de hora.
   registrar un acceso a historia clínica por cada fila listada.
 - **AG-073** — CUANDO se abra la ficha de un paciente desde la agenda, el
   sistema DEBERÁ registrar el acceso en la bitácora con quién, qué, cuándo y
-  desde dónde.
+  desde dónde: la IP y el agente del dispositivo, y en la misma fila la cita
+  desde la que se abrió (`context_type = 'agenda_entry'`, `context_id`).
+  SI la cita nombrada no existe, no es de ese paciente o está en una sede sin
+  `agenda:read` para quien llama, ENTONCES el sistema DEBERÁ rechazar la
+  apertura con `ACCESS_CONTEXT_NOT_FOUND` sin registrar el acceso ni revelar
+  cuál de las tres causas fue.
+  > Afinado el 30-09-2026 al construir F-01, con decisión del autor sobre la
+  > lectura de «desde dónde». REQ-110 dice «desde qué IP» y `GET /patients/:id`
+  > ya la guardaba; lo que faltaba es que la fila **diga que se llegó desde la
+  > agenda**, porque «¿quién abrió esta ficha sin tener cita con ella?» es la
+  > pregunta de una investigación por acceso indebido y sin el contexto no se
+  > puede contestar. Patrón de FHIR `AuditEvent.entity` e IHE BALP: una sola
+  > fila que nombra el recurso leído y aquel desde el que se llegó — dos filas
+  > relacionadas por la hora se separan en cuanto hay dos pestañas abiertas.
+  >
+  > **La ruta es la de siempre**, `GET /patients/{id}?agendaEntryId=…`: otra
+  > ruta que devolviera la ficha sería una segunda puerta a los mismos datos.
+  > **El contexto se comprueba, no se cree**: una fila de bitácora es
+  > evidencia, y un parámetro que el cliente pone sin verificar la convertiría
+  > en lo que el cliente quisiera decir. Por eso una cita ajena se rechaza en
+  > lugar de anotarse, y el rechazo es uno solo para las tres causas: separar
+  > «no existe» de «es de otro paciente» respondería «esta cita es de otra
+  > persona» a quien prueba identificadores (AG-071).
 - **AG-074** — El sistema NO DEBERÁ incluir nombre, documento ni motivo de
   consulta del paciente en ningún registro de log.
 
@@ -2059,6 +2084,7 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `NO_SHOW_BEFORE_START`         | 422    | AG-043    |
 | `CANCELLATION_REASON_REQUIRED` | 422    | AG-044    |
 | `AGENDA_ENTRY_NOT_FOUND`       | 404    | AG-071    |
+| `ACCESS_CONTEXT_NOT_FOUND`     | 404    | AG-073    |
 | `WAITLIST_ENTRY_NOT_FOUND`     | 404    | AG-071    |
 | `WAITLIST_ENTRY_CLOSED`        | 409    | AG-067    |
 | `WAITLIST_ACCEPTANCE_REQUIRED` | 422    | AG-064    |
