@@ -48,7 +48,7 @@ function vitalsOutOfRange(field: string, message: string) {
 registerConstraintMeanings({
   encounter_vitals_ranges_weight_kg: vitalsOutOfRange(
     'weightKg',
-    'El peso debe estar entre 0,3 y 400 kg: revise el valor ingresado',
+    'El peso debe estar entre 0.3 y 400 kg: revise el valor ingresado',
   ),
   encounter_vitals_ranges_height_cm: vitalsOutOfRange(
     'heightCm',

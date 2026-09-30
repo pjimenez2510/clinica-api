@@ -568,7 +568,7 @@ describe('la atención por HTTP', () => {
       expect(problem.code).toBe('VITALS_OUT_OF_RANGE');
       // «Por campo, señalando cuál»: the nurse is told WHICH box, not «alguno».
       expect(problem.errors?.[0]?.field).toBe('weightKg');
-      expect(problem.errors?.[0]?.message).toContain('entre 0,3 y 400 kg');
+      expect(problem.errors?.[0]?.message).toContain('entre 0.3 y 400 kg');
     });
 
     it('EN-062 rechaza una temperatura de 370 °C señalando la temperatura (D-058)', async () => {

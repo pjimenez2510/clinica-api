@@ -205,7 +205,7 @@ describe('los signos vitales de la atención', () => {
       { field: 'respiratoryRate', min: 4, max: 100, step: 1, range: 'entre 4 y 100 rpm' }, // prettier-ignore
       { field: 'headCircumferenceCm', min: 20, max: 80, step: 0.1, range: 'entre 20 y 80 cm' }, // prettier-ignore
       { field: 'abdominalCircumferenceCm', min: 20, max: 250, step: 0.1, range: 'entre 20 y 250 cm' }, // prettier-ignore
-      { field: 'weightKg', min: 0.3, max: 400, step: 0.001, range: 'entre 0,3 y 400 kg' }, // prettier-ignore
+      { field: 'weightKg', min: 0.3, max: 400, step: 0.001, range: 'entre 0.3 y 400 kg' }, // prettier-ignore
       { field: 'heightCm', min: 20, max: 260, step: 0.1, range: 'entre 20 y 260 cm' }, // prettier-ignore
       { field: 'systolicBp', min: 40, max: 300, step: 1, range: 'entre 40 y 300 mmHg' }, // prettier-ignore
       { field: 'diastolicBp', min: 20, max: 200, step: 1, range: 'entre 20 y 200 mmHg' }, // prettier-ignore

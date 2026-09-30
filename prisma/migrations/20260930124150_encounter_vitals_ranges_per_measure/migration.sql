@@ -18,6 +18,11 @@
 -- lpm entran: la hipotermia profunda y la taquicardia del neonato son lecturas
 -- reales (D-058, opción A).
 --
+-- PARA DESHACERLA: quitar las once `encounter_vitals_ranges_*` y volver a
+-- añadir `encounter_vitals_ranges` tal como la creó
+-- `20260806022956_clinical_core_constraints` (líneas 283-290). Las cinco
+-- nuevas son NOT VALID, así que quitarlas no toca ninguna fila.
+--
 -- POR QUÉ UNA RESTRICCIÓN POR MEDIDA Y NO UNA SOLA. `encounter_vitals_ranges`
 -- era un único CHECK con todas las condiciones unidas por AND, y PostgreSQL
 -- sólo dice el NOMBRE de la restricción que falló. El valor que la hizo fallar
