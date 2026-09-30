@@ -6,7 +6,14 @@ import { AgendaService } from '../../src/modules/agenda/application/agenda.servi
 import { PrismaAgendaRepository } from '../../src/modules/agenda/infrastructure/prisma-agenda.repository';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
-import { parseClinicalDate } from '../../src/shared/domain/clinic-time';
+import {
+  WallClockTime,
+  addDays,
+  atWallClock,
+  clinicalDateOf,
+  isoWeekdayOf,
+  parseClinicalDate,
+} from '../../src/shared/domain/clinic-time';
 import { useDatabase } from './setup/database';
 import {
   createPatient,
@@ -300,8 +307,23 @@ describe('holidays in the availability query', () => {
    * whatever it was given and proves none of the three, which is exactly the
    * drift D-019 was written about.
    *
-   * 08:00 in Ecuador is 13:00Z, and the rule of `twoSites` covers Mondays.
+   * The rule of `twoSites` covers Mondays.
+   *
+   * THE MONDAY IS COMPUTED, NOT WRITTEN: the first one at least 14 days ahead.
+   * These tests book through the service, which refuses an interval in the
+   * past (`BookingInThePastError`), so a fixed date turned all four red the
+   * day it was overtaken — 14-09-2026. The other tests in this file read
+   * availability or insert rows directly and never meet that check.
    */
+  const MONDAY = (() => {
+    let date = addDays(clinicalDateOf(new Date()), 14);
+    while (isoWeekdayOf(date) !== 1) date = addDays(date, 1);
+    return date;
+  })();
+  /** That Monday at that wall-clock time in Ecuador, as the real instant. */
+  const onMonday = (time: string): Date =>
+    atWallClock(MONDAY, WallClockTime.parse(time));
+
   const bookMondayMorning = async (
     prisma: PrismaClient,
     ids: { siteId: string; practitionerId: string; patientId: string },
@@ -309,8 +331,8 @@ describe('holidays in the availability query', () => {
     agendaOf(prisma).book(
       {
         ...ids,
-        startsAt: new Date('2026-09-14T13:00:00Z'),
-        endsAt: new Date('2026-09-14T13:20:00Z'),
+        startsAt: onMonday('08:00'),
+        endsAt: onMonday('08:20'),
         bookingChannel: 'PHONE',
       },
       { userId: (await prisma.user.findFirstOrThrow()).id },
@@ -319,7 +341,7 @@ describe('holidays in the availability query', () => {
   it('AG-110 books on a holiday and warns with the reason instead of refusing', async () => {
     const { prisma, north, practitioner, patient } = await twoSites();
     await declareHoliday(prisma, {
-      date: '2026-09-14',
+      date: MONDAY,
       name: 'Feriado nacional',
     });
 
@@ -357,7 +379,7 @@ describe('holidays in the availability query', () => {
   it('AG-110 says nothing to the site that works that holiday, and warns the one that does not', async () => {
     const { prisma, north, south, practitioner, patient } = await twoSites();
     const national = await declareHoliday(prisma, {
-      date: '2026-09-14',
+      date: MONDAY,
       name: 'Feriado nacional',
     });
     // AG-092. Urgencias opens at the north site, so booking there is ordinary
@@ -380,8 +402,8 @@ describe('holidays in the availability query', () => {
         patientId: patient.id,
         // Another hour of the same Monday: the patient cannot hold two
         // appointments over one interval (AG-030).
-        startsAt: new Date('2026-09-14T14:00:00Z'),
-        endsAt: new Date('2026-09-14T14:20:00Z'),
+        startsAt: onMonday('09:00'),
+        endsAt: onMonday('09:20'),
         bookingChannel: 'PHONE',
       },
       { userId: (await prisma.user.findFirstOrThrow()).id },
@@ -404,7 +426,7 @@ describe('holidays in the availability query', () => {
       { weekday: 1, startTime: '19:00', endTime: '21:00' },
     );
     await declareHoliday(prisma, {
-      date: '2026-09-14',
+      date: MONDAY,
       name: 'Feriado nacional',
     });
 
@@ -413,8 +435,8 @@ describe('holidays in the availability query', () => {
         siteId: north.id,
         practitionerId: practitioner.id,
         patientId: patient.id,
-        startsAt: new Date('2026-09-15T01:30:00Z'),
-        endsAt: new Date('2026-09-15T02:00:00Z'),
+        startsAt: onMonday('20:30'),
+        endsAt: onMonday('21:00'),
         bookingChannel: 'PHONE',
       },
       { userId: (await prisma.user.findFirstOrThrow()).id },

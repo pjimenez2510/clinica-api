@@ -557,18 +557,40 @@ describe('los documentos por HTTP', () => {
         }).expect(201)
       ).body as RenderBody;
 
-      // The receptionist-shaped account is granted only at `siteId`; move the
-      // render elsewhere and the same identifier stops existing for them.
-      const otherSite = await createSite(prisma, 'Sede Norte');
-      await prisma.$executeRaw`
-        UPDATE "document_render" SET "site_id" = ${otherSite.id}::uuid
-         WHERE FALSE`;
+      // Positive control: inside the scope the SAME identifier is served. Without
+      // it a 404 below could come from a mistyped path and prove nothing.
+      await get(`/documents/renders/${emitted.id}`, doctorToken).expect(200);
 
+      // The document cannot move — `trg_document_render_immutable` refuses any
+      // change to an emitted render — so it is the REQUESTER who moves: the
+      // doctor's only grant goes to another site, and a fresh sign-in carries
+      // the new scope whether grants travel in the token or are read per call.
+      const otherSite = await createSite(prisma, 'Sede Norte');
+      const doctor = await prisma.user.findUniqueOrThrow({
+        where: { email: 'medico@clinica.ec' },
+      });
+      await prisma.userRoleGrant.updateMany({
+        where: { userId: doctor.id },
+        data: { siteId: otherSite.id },
+      });
+      const outsider = (
+        (
+          await request(app.getHttpServer())
+            .post('/api/v1/auth/login')
+            .send({ email: 'medico@clinica.ec', password: PASSWORD })
+            .expect(200)
+        ).body as { accessToken: string }
+      ).accessToken;
+
+      // The real identifier, not a made-up one: this is about scope, and a
+      // document that does not exist would answer 404 for another reason.
       const response = await get(
-        `/documents/renders/${emitted.id.replace(/.$/, '0')}`,
-        doctorToken,
-      );
-      expect([404, 400]).toContain(response.status);
+        `/documents/renders/${emitted.id}`,
+        outsider,
+      ).expect(404);
+      // DOC-012: the same answer as a document that does not exist, so probing
+      // identifiers one by one confirms nothing about another site.
+      expect((response.body as Problem).code).toBe('DOCUMENT_RENDER_NOT_FOUND');
     });
   });
 

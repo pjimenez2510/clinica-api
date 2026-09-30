@@ -13,6 +13,13 @@ import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
+import {
+  WallClockTime,
+  addDays,
+  atWallClock,
+  clinicalDateOf,
+  isoWeekdayOf,
+} from '../../src/shared/domain/clinic-time';
 
 import { useDatabase } from './setup/database';
 import {
@@ -49,11 +56,22 @@ import { closeApp, listenForTests } from './setup/http-server';
 
 const PASSWORD = 'el caballo come alfalfa';
 const EMAIL = 'recepcion@clinica.ec';
-/** Lunes 14 de septiembre de 2026, 08:00 en Guayaquil. */
-const SLOT = {
-  startsAt: '2026-09-14T13:00:00Z',
-  endsAt: '2026-09-14T13:20:00Z',
-};
+/**
+ * The first Monday at least 14 days ahead, 08:00–08:20 in Guayaquil.
+ *
+ * Computed from today and not written as a date: the booking refuses an
+ * interval in the past (`BookingInThePastError`), so a fixed Monday turns this
+ * test red the day it is overtaken — which is what happened with 14-09-2026.
+ * Same helper as the overbooking and parameters specs.
+ */
+const SLOT = (() => {
+  let monday = addDays(clinicalDateOf(new Date()), 14);
+  while (isoWeekdayOf(monday) !== 1) monday = addDays(monday, 1);
+  return {
+    startsAt: atWallClock(monday, WallClockTime.parse('08:00')).toISOString(),
+    endsAt: atWallClock(monday, WallClockTime.parse('08:20')).toISOString(),
+  };
+})();
 
 interface CreatedPatient {
   id: string;
