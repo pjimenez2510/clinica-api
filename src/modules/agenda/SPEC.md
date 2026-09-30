@@ -1832,13 +1832,13 @@ pasó de hora.
   > del autor: D-059 y D-060 en `DECISIONES-PENDIENTES.md`.
   >
   > **Una fila por petición, no por gesto** (D-060, opción A, 30-09-2026).
-  > Cada `GET /patients/{id}?agendaEntryId=…` deja su fila `READ` con el
-  > contexto, también cuando la pantalla vuelve a pedir la ficha sola —al
-  > volver a la pestaña, tras corregirla, al caducar su minuto de caché—; al
-  > revés, reabrirla dentro de ese minuto no pide nada y no deja fila. Quien
-  > investiga lee varias filas seguidas del mismo usuario, ficha y cita como
-  > una sesión de lectura. La fila por apertura explícita (opción B) se
-  > replantea al construir la consulta de la bitácora (REQ-110).
+  > Cada `GET /patients/{id}?agendaEntryId=…` que devuelve la ficha intenta
+  > dejar su fila `READ` con el contexto, también cuando la interfaz vuelve a
+  > pedirla sola. Qué peticiones hay y cuáles no, y el caso en que la fila
+  > falta aunque la ficha se sirvió, están en la nota de PA-022, que es la
+  > misma ruta. Quien investiga lee varias filas seguidas del mismo usuario,
+  > ficha y cita como una sesión de lectura. La fila por apertura explícita
+  > (opción B) se replantea al construir la consulta de la bitácora (REQ-110).
 - **AG-074** — El sistema NO DEBERÁ incluir nombre, documento ni motivo de
   consulta del paciente en ningún registro de log.
 

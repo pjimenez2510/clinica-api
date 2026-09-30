@@ -537,15 +537,28 @@ requisitos que cambian.
   > nuestra propia infraestructura.
   >
   > **«Una apertura» es una petición** (D-060, opción A, 30-09-2026). Cada
-  > petición de `GET /patients/:id` que devuelve la ficha deja una fila
-  > `READ`, sea un gesto del usuario o un refresco que la pantalla hace sola
-  > —al volver a la pestaña, tras corregir la ficha, al caducar su caché—; y
-  > reabrirla mientras la pantalla la tiene en caché no pide nada ni deja
-  > fila. Quien investiga lee varias filas seguidas del mismo usuario y la
-  > misma ficha como una sesión de lectura, no como aperturas distintas. No es
-  > un defecto que corregir aquí: anotar sólo los gestos (opción B) exigiría
-  > creer al cliente sobre qué es un gesto, y se replantea al construir la
-  > consulta de la bitácora (REQ-110).
+  > petición de `GET /patients/:id` que devuelve la ficha escribe una fila
+  > `READ`, la pida un gesto del usuario o la interfaz sola. La interfaz
+  > guarda la ficha un minuto en una caché que comparten todas las pantallas
+  > que muestran al paciente (la ficha, la atención, la orden, la cuenta de
+  > caja), y vuelve a pedirla al montar una de ellas, al volver a la pestaña,
+  > al recuperar la conexión y tras corregirla, **solo si pasó más de ese
+  > minuto** desde la última petición; dentro del minuto no pide nada y no
+  > deja fila. Así que una fila no dice qué pantalla la abrió, y abrir la
+  > ficha en Pacientes justo después de verla en caja no deja una segunda.
+  > Quien investiga lee varias filas seguidas del mismo usuario y la misma
+  > ficha como una sesión de lectura, no como aperturas distintas.
+  >
+  > **La bitácora falla abierta.** Si la escritura en `access_audit` falla,
+  > la ficha se sirve igual y el fallo queda solo en el log de error
+  > (`AccessAuditRecorder.record`: negar una ficha a un médico porque la
+  > tabla no responde es el peor intercambio en una clínica). Por eso **la
+  > ausencia de fila no prueba ausencia de acceso** sin revisar esos errores
+  > del mismo intervalo.
+  >
+  > Anotar solo los gestos (opción B) exigiría creer al cliente sobre qué es
+  > un gesto, y se replantea al construir la consulta de la bitácora
+  > (REQ-110).
 - **PA-023** — El sistema NO DEBERÁ registrar en la bitácora una fila por cada
   resultado de una búsqueda o de un listado (REQ-111).
   > Se teclea letra a letra: auditar cada pulsación escribe miles de filas al
