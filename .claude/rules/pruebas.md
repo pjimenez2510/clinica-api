@@ -30,6 +30,16 @@ excepción por comodidad.
   `America/Guayaquil`, IVA por ítem.
 - Una prueba de concurrencia afirma **quién gana**, no que «al menos uno falle».
   Dos ganadores es el fallo que se busca.
+- **Prohibido escribir fechas a mano.** Toda fecha de una prueba sale de un
+  reloj inyectado o se calcula a partir de él (el primer lunes a 14 días vista,
+  en `America/Guayaquil`). Dos pruebas que reservaban «el lunes 14-09-2026» se
+  pusieron rojas el día que el calendario lo alcanzó (commit c4e68da).
+  `pnpm verify:tocado` rechaza la línea nueva que lo haga; una fecha fija
+  legítima (una fecha de nacimiento) lleva `// fecha-fija: <por qué>`.
+- **Cada prueba de integración lleva su control positivo.** Antes de afirmar
+  que algo se rechaza, la misma prueba demuestra que el caso permitido pasa por
+  el mismo camino: sin él, un 404 puede venir de una ruta mal escrita y un
+  `UPDATE … WHERE FALSE` «no mueve nada» sin probar el disparador (c4e68da).
 
 ## Trazabilidad
 

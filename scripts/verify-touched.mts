@@ -35,7 +35,7 @@ const git = (...args: string[]): string =>
 
 function touchedFiles(): string[] {
   const files = new Set<string>();
-  let mergeBase = '';
+  let mergeBase: string;
   try {
     mergeBase = git('merge-base', 'HEAD', BASE);
   } catch {
@@ -55,7 +55,7 @@ function touchedFiles(): string[] {
 /** Lines added to test files that write an absolute date by hand. */
 function handWrittenDates(tests: string[]): string[] {
   if (tests.length === 0) return [];
-  let diff = '';
+  let diff: string;
   try {
     const mergeBase = git('merge-base', 'HEAD', BASE);
     diff = execFileSync('git', ['diff', '-U0', mergeBase, '--', ...tests], {
