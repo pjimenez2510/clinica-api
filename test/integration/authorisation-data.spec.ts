@@ -278,6 +278,71 @@ describe('roles are data, permissions are a contract', () => {
     }
   });
 
+  it('AU-042 concede background:write UNA vez a todo rol con record:write, también a uno propio, y no lo devuelve si se le quita', async () => {
+    /**
+     * D-062, punto 2. `background:write` ya existe en toda base sincronizada
+     * desde `feat/f03-preparacion`, así que para D-012 no es nuevo, y un rol
+     * propio que registraba alergias con `record:write` lo perdió al
+     * desplegar. Se reproduce esa base: el código ya está en el catálogo y
+     * ningún rol lo tiene, y la concesión única no se ha hecho todavía.
+     */
+    const prisma = db();
+    await syncAuthorisation(prisma);
+    await prisma.rolePermission.deleteMany({
+      where: { permissionCode: 'background:write' },
+    });
+    await prisma.authorisationOneOff.deleteMany();
+
+    const own = await prisma.role.create({
+      data: {
+        code: 'MEDICO_RURAL',
+        name: 'Médico rural',
+        description: 'Rol propio de la clínica',
+        isSystem: false,
+        permissions: { create: [{ permissionCode: 'record:write' }] },
+      },
+    });
+    // Control: a role without `record:write` gets nothing.
+    const reader = await prisma.role.create({
+      data: {
+        code: 'AUDITORIA',
+        name: 'Auditoría',
+        description: 'Rol propio de la clínica',
+        isSystem: false,
+        permissions: { create: [{ permissionCode: 'record:read' }] },
+      },
+    });
+    const holders = async (roleId: string) =>
+      (
+        await prisma.rolePermission.findMany({
+          where: { roleId },
+          select: { permissionCode: true },
+        })
+      ).map((grant) => grant.permissionCode);
+
+    const first = await syncAuthorisation(prisma);
+
+    expect(first.grantedOnce).toContain('MEDICO_RURAL → background:write');
+    expect(first.grantedOnce).toContain('MEDICO → background:write');
+    expect(await holders(own.id)).toContain('background:write');
+    expect(await holders(reader.id)).not.toContain('background:write');
+
+    // The clinic takes it away: that is a decision, and it stays made.
+    await prisma.rolePermission.delete({
+      where: {
+        roleId_permissionCode: {
+          roleId: own.id,
+          permissionCode: 'background:write',
+        },
+      },
+    });
+
+    const second = await syncAuthorisation(prisma);
+
+    expect(second.grantedOnce).toEqual([]);
+    expect(await holders(own.id)).not.toContain('background:write');
+  });
+
   it('PA-040 reparte los dos permisos tambien en una instalacion anterior a la decision', async () => {
     /**
      * EL CASO QUE D-012 NO PUEDE CUBRIR, Y POR EL QUE EXISTE LA LISTA FECHADA.
