@@ -5,6 +5,7 @@ import {
   activeAllergySchema,
   noKnownAllergiesSchema,
 } from './patient-allergy.dto';
+import { historySchema } from './patient-history.dto';
 
 /**
  * EN-159 to EN-161. The patient's history, as it is read DURING the
@@ -22,9 +23,9 @@ import {
  * ⚠️ AND WHAT IS ABSENT IS AS DELIBERATE AS WHAT IS PRESENT. No note text
  * (EN-160): 46% of a clinical note today is copied and 36% imported, and each
  * 1% of imported text adds 1,5% of length. This payload carries identifiers
- * and structured values; the note is opened through its own route. No
- * antecedentes: **falta esquema** (EN-085), and an empty field would read as
- * «no consta ninguno». No prescriptions: they belong to `prescription`, and
+ * and structured values; the note is opened through its own route. The
+ * antecedentes travel as structured entries (EN-085), live ones only. No
+ * prescriptions: they belong to `prescription`, and
  * they arrive here the way the allergies do — through a shared port.
  */
 
@@ -135,6 +136,12 @@ export const chartSummarySchema = z.object({
    * afirmándola por iniciativa propia.
    */
   noKnownAllergies: noKnownAllergiesSchema.nullable(),
+  /**
+   * EN-085. The personal and family history that has not been ruled out, of
+   * the chart and the charts it absorbed. An empty list means «no consta
+   * ninguno», which is what it says: there is no «sin antecedentes» assertion.
+   */
+  history: z.array(historySchema),
   /** EN-159. The previous attentions, newest first, bounded. */
   previousEncounters: z.array(previousEncounterSchema),
   /**

@@ -17,6 +17,10 @@ import { EncounterController } from './encounter.controller';
 import { EncounterService } from './application/encounter.service';
 import { PatientAllergyController } from './patient-allergy.controller';
 import { PatientAllergyService } from './application/patient-allergy.service';
+import { PatientHistoryController } from './patient-history.controller';
+import { PatientHistoryService } from './application/patient-history.service';
+import { PATIENT_HISTORY_REPOSITORY } from './domain/patient-history.repository';
+import { PrismaPatientHistoryRepository } from './infrastructure/prisma-patient-history.repository';
 import { CHART_SUMMARY_REPOSITORY } from './domain/chart-summary.repository';
 import { CLINICAL_CODING_REPOSITORY } from './domain/clinical-coding.repository';
 import { CLINICAL_NOTE_REPOSITORY } from './domain/clinical-note.repository';
@@ -66,6 +70,7 @@ import { PrismaPatientAllergyRepository } from './infrastructure/prisma-patient-
     ClinicalNoteController,
     ClinicalCodingController,
     PatientAllergyController,
+    PatientHistoryController,
     ChartSummaryController,
   ],
   providers: [
@@ -73,6 +78,7 @@ import { PrismaPatientAllergyRepository } from './infrastructure/prisma-patient-
     ClinicalNoteService,
     ClinicalCodingService,
     PatientAllergyService,
+    PatientHistoryService,
     ChartSummaryService,
     CurrentUserService,
     { provide: ENCOUNTER_REPOSITORY, useClass: PrismaEncounterRepository },
@@ -87,6 +93,10 @@ import { PrismaPatientAllergyRepository } from './infrastructure/prisma-patient-
     {
       provide: PATIENT_ALLERGY_REPOSITORY,
       useClass: PrismaPatientAllergyRepository,
+    },
+    {
+      provide: PATIENT_HISTORY_REPOSITORY,
+      useClass: PrismaPatientHistoryRepository,
     },
     {
       provide: CHART_SUMMARY_REPOSITORY,

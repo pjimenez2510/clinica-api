@@ -128,6 +128,23 @@ registerConstraintMeanings({
     field: 'presentingComplaint',
     message: 'Escriba el motivo o deje la casilla vacía',
   },
+  /** EN-085. A family history says whose; a personal one names no relative. */
+  patient_history_family_names_relative: {
+    code: 'VALIDATION_FAILED',
+    field: 'relative',
+    message: 'Indique de qué familiar es el antecedente, y sólo en los familiares', // prettier-ignore
+  },
+  patient_history_description_not_blank: {
+    code: 'VALIDATION_FAILED',
+    field: 'description',
+    message: 'Describa el antecedente',
+  },
+  /** EN-085. Refuting is a whole act: when, why and who, or nothing. */
+  patient_history_refutation_is_whole: {
+    code: 'REFUTATION_REASON_REQUIRED',
+    field: 'notes',
+    message: 'Indique por qué se descarta este antecedente',
+  },
   /**
    * EN-143. Every taking since the column names who took it. The service
    * always passes the session's account; this is for the writer that did not

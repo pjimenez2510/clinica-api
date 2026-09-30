@@ -718,6 +718,14 @@ export const DOMAIN_ERROR_CODES = [
   'CHART_HAS_ALLERGIES',
   'PATIENT_ALLERGY_NOT_FOUND',
   'REFUTATION_REASON_REQUIRED',
+  // ── H6: antecedentes (EN-085), con el régimen de las alergias ───────────
+  //   * `PATIENT_HISTORY_NOT_FOUND` (404) — el mismo para «no existe» y «es
+  //     de otra ficha», por lo mismo que `PATIENT_ALLERGY_NOT_FOUND`.
+  //   * `HISTORY_ALREADY_REFUTED` (409) — no es idempotente: reescribiría
+  //     quién lo descartó y por qué. Lo arbitra además
+  //     `trg_patient_history_append_only`.
+  'HISTORY_ALREADY_REFUTED',
+  'PATIENT_HISTORY_NOT_FOUND',
   // ── Receta médica (módulo `prescription`, PR-001 a PR-094) ──────────────
   //
   // La norma que los funda es la **Resolución ACESS-2023-0030** (A.M.

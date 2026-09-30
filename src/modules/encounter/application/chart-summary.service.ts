@@ -24,6 +24,12 @@ import {
   type AllergyAbsenceAssertion,
   type PatientAllergyRepository,
 } from '../domain/patient-allergy.repository';
+import {
+  PATIENT_HISTORY_REPOSITORY,
+  type HistoryView,
+  type PatientHistoryRepository,
+} from '../domain/patient-history.repository';
+
 import type { Requester } from './encounter.service';
 
 /**
@@ -89,6 +95,8 @@ export interface ChartSummary {
    * an empty list into «ninguna» would be inventing exactly that.
    */
   noKnownAllergies: AllergyAbsenceAssertion | null;
+  /** EN-085. The live history entries of the chart and those it absorbed. */
+  history: readonly HistoryView[];
   /** EN-159. Newest first, bounded by `PREVIOUS_ENCOUNTERS`. */
   previousEncounters: readonly PreviousEncounterSummary[];
   /** EN-159. So a screen can say «5 de 23» instead of implying there are 5. */
@@ -121,7 +129,7 @@ export interface ChartSummary {
  *    imported; each 1% of imported text adds 1,5% of length and the redundancy
  *    of the average note has reached 58,8%. The rule §7 bis draws is the one
  *    this obeys: «se enlazan o se muestran al lado, nunca se pegan».
- *  - NO ANTECEDENTES (EN-085). **Falta esquema** — there is no table, and the
+ *  - ANTECEDENTES (EN-085), live ones only, from `patient_history` — and the
  *    `antecedentes` section of the last signed 002 is NOT a substitute: a note
  *    is immutable (EN-023), so what was true in March would keep coming back
  *    as March's answer for ever. An empty field would read as «no consta
@@ -155,6 +163,8 @@ export class ChartSummaryService {
      */
     @Inject(PATIENT_ALLERGY_REPOSITORY)
     private readonly allergyRecords: PatientAllergyRepository,
+    @Inject(PATIENT_HISTORY_REPOSITORY)
+    private readonly historyRecords: PatientHistoryRepository,
     @Inject(ENCOUNTER_REPOSITORY)
     private readonly encounters: EncounterRepository,
     @Inject(ACCESS_AUDIT_RECORDER)
@@ -205,13 +215,19 @@ export class ChartSummaryService {
      * that opens on every consultation — and a panel that arrives late is a
      * panel people learn to work without.
      */
-    const [allergies, noKnownAllergies, previousEncounters, totalEncounters] =
-      await Promise.all([
-        this.allergies.activeFor(encounter.patientId),
-        this.allergyRecords.standingAbsenceFor(encounter.patientId),
-        this.summaries.previousEncounters(query),
-        this.summaries.countEncounters(query),
-      ]);
+    const [
+      allergies,
+      noKnownAllergies,
+      history,
+      previousEncounters,
+      totalEncounters,
+    ] = await Promise.all([
+      this.allergies.activeFor(encounter.patientId),
+      this.allergyRecords.standingAbsenceFor(encounter.patientId),
+      this.historyRecords.listFor(encounter.patientId),
+      this.summaries.previousEncounters(query),
+      this.summaries.countEncounters(query),
+    ]);
 
     await this.audit.record({
       userId: requester.userId,
@@ -227,6 +243,9 @@ export class ChartSummaryService {
       patientId: encounter.patientId,
       allergies,
       noKnownAllergies,
+      // EN-085. A ruled-out entry stays in the record and out of the summary,
+      // as a refuted allergy does: the summary is what still counts.
+      history: history.filter((entry) => entry.refutedAt === null),
       previousEncounters,
       totalEncounters,
     };

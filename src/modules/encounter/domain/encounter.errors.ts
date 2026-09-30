@@ -801,18 +801,59 @@ export class AllergyAlreadyRefutedError extends ConflictError {
  */
 export class RefutationReasonRequiredError extends ValidationError {
   readonly code = 'REFUTATION_REASON_REQUIRED';
+  override readonly userTitle: string;
+  override readonly fieldErrors: {
+    field: string;
+    code: string;
+    message: string;
+  }[];
+
+  /**
+   * The same rule for an allergy and for a history entry (EN-085), so ONE
+   * code; the sentence names which of the two, because «descarta la alergia»
+   * read over a family history is a screen that does not know what it holds.
+   */
+  constructor(subject: 'la alergia' | 'el antecedente' = 'la alergia') {
+    super('Refuting requires a written reason');
+    const noun = subject === 'la alergia' ? 'esta alergia' : 'este antecedente';
+    this.userTitle = `Escriba por qué se descarta ${subject}: quien lo lea dentro de dos años necesita saberlo`;
+    this.fieldErrors = [
+      {
+        field: 'notes',
+        code: 'REFUTATION_REASON_REQUIRED',
+        message: `Indique por qué se descarta ${noun}`,
+      },
+    ];
+  }
+}
+
+/**
+ * EN-085. The history entry is on neither this chart nor one it absorbed.
+ * One answer for «no existe» and «es de otra ficha», the line
+ * `PATIENT_ALLERGY_NOT_FOUND` already took.
+ */
+export class PatientHistoryNotFoundError extends NotFoundError {
+  readonly code = 'PATIENT_HISTORY_NOT_FOUND';
   override readonly userTitle =
-    'Escriba por qué se descarta la alergia: quien la lea dentro de dos años necesita saberlo';
-  override readonly fieldErrors = [
-    {
-      field: 'notes',
-      code: 'REFUTATION_REASON_REQUIRED',
-      message: 'Indique por qué se descarta esta alergia',
-    },
-  ];
+    'Ese antecedente no consta en la historia de este paciente. Actualice la lista';
 
   constructor() {
-    super('Refuting an allergy requires a written reason');
+    super('History entry not found within the chart scope');
+  }
+}
+
+/**
+ * EN-085. The entry had already been ruled out. NOT idempotent, for the
+ * reason `ALLERGY_ALREADY_REFUTED` gives: a second refutation would overwrite
+ * who ruled it out and why.
+ */
+export class HistoryAlreadyRefutedError extends ConflictError {
+  readonly code = 'HISTORY_ALREADY_REFUTED';
+  override readonly userTitle =
+    'Ese antecedente ya estaba descartado, con su fecha y su motivo. Si hay algo nuevo que decir, regístrelo otra vez';
+
+  constructor() {
+    super('History entry has already been refuted');
   }
 }
 

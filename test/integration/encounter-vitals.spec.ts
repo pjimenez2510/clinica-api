@@ -2,6 +2,7 @@ import { HttpStatus } from '@nestjs/common';
 import type { PrismaClient } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
+import { PrismaChartSummaryRepository } from '../../src/modules/encounter/infrastructure/prisma-chart-summary.repository';
 import { PrismaEncounterRepository } from '../../src/modules/encounter/infrastructure/prisma-encounter.repository';
 import { extractDatabaseProblem } from '../../src/shared/http/database-problem';
 import '../../src/modules/encounter/infrastructure/encounter.constraints';
@@ -518,5 +519,61 @@ describe('los signos vitales de la atención', () => {
     expect(vitals.presentingComplaint).toBe(
       'Me duele la cabeza hace tres días',
     );
+  });
+
+  it('EN-068 expone los signos de las atenciones anteriores del paciente, de la mas reciente a la mas antigua, incluidas las de la ficha absorbida', async () => {
+    const prisma = db();
+    const site = await createSite(prisma);
+    const practitioner = await createPractitioner(prisma);
+    const survivor = await createPatient(prisma);
+    const absorbed = await createPatient(prisma);
+    const repository = repositoryOf(prisma);
+    const day = 86_400_000;
+    const now = Date.now();
+
+    /** An attention `daysAgo` days back, on `patientId`, weighing `weightKg`. */
+    const takenOn = async (
+      patientId: string,
+      daysAgo: number,
+      weightKg: number,
+    ) => {
+      const encounter = await repository.open({
+        siteId: site.id,
+        practitionerId: practitioner.id,
+        patientId,
+        startedAt: new Date(now - daysAgo * day),
+        careModality: 'MORBIDITY',
+        careSetting: 'INTRAMURAL',
+        visitSequence: 'SUBSEQUENT',
+      });
+      await repository.saveVitals(
+        { encounterId: encounter.id, sites: [site.id] },
+        { weightKg },
+        practitioner.userId,
+      );
+      return encounter;
+    };
+
+    await takenOn(absorbed.id, 60, 72);
+    await takenOn(survivor.id, 30, 70);
+    const today = await takenOn(survivor.id, 0, 68);
+    await prisma.patient.update({
+      where: { id: absorbed.id },
+      data: { mergedIntoId: survivor.id, mergedAt: new Date(now) },
+    });
+
+    const previous = await new PrismaChartSummaryRepository(
+      prisma as unknown as PrismaService,
+    ).previousEncounters({
+      patientId: survivor.id,
+      sites: [site.id],
+      excludeEncounterId: today.id,
+      limit: 5,
+    });
+
+    // Cuatro kilos en dos meses: el dato que un peso suelto no dice.
+    expect(previous.map((encounter) => encounter.vitals?.weightKg)).toEqual([
+      70, 72,
+    ]);
   });
 });

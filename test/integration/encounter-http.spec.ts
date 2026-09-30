@@ -688,6 +688,58 @@ describe('la atención por HTTP', () => {
       ).expect(200);
     });
 
+    it('EN-085 enfermeria registra un antecedente familiar y lo ve en el resumen de la consulta; descartarlo no', async () => {
+      const recorded = await post(
+        `/patients/${patientId}/history`,
+        nurseToken,
+        {
+          kind: 'FAMILY',
+          description: 'Diabetes tipo 2',
+          relative: 'Madre',
+        },
+      ).expect(201);
+      const historyId = (recorded.body as { id: string }).id;
+
+      const encounterId = await openEncounter(nurseToken);
+      const summary = await get(
+        `/encounters/${encounterId}/chart-summary`,
+        doctorToken,
+      ).expect(200);
+      expect(
+        (summary.body as { history: { id: string }[] }).history.map(
+          (entry) => entry.id,
+        ),
+      ).toEqual([historyId]);
+
+      await post(
+        `/patients/${patientId}/history/${historyId}/refute`,
+        nurseToken,
+        {
+          notes: 'Era la tía',
+        },
+      ).expect(403);
+      await post(
+        `/patients/${patientId}/history/${historyId}/refute`,
+        doctorToken,
+        {
+          notes: 'Era la tía',
+        },
+      ).expect(200);
+    });
+
+    it('EN-085 exige el parentesco en un antecedente familiar', async () => {
+      const response = await post(
+        `/patients/${patientId}/history`,
+        nurseToken,
+        {
+          kind: 'FAMILY',
+          description: 'Diabetes tipo 2',
+        },
+      ).expect(422);
+
+      expect((response.body as Problem).errors?.[0]?.field).toBe('relative');
+    });
+
     it('EN-164 recepcion no registra alergias: el permiso nuevo no se reparte a quien no lo declara', async () => {
       await post(`/patients/${patientId}/allergies`, receptionToken, {
         substanceText: 'Penicilina',
