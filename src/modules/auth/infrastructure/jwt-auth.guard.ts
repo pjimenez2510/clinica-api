@@ -81,7 +81,7 @@ export class JwtAuthGuard implements CanActivate {
     );
     if (!claims.mfa && !mfaOptional) throw new MfaRequiredError();
 
-    await this.assertSessionStillOpen(claims.fam);
+    await this.assertSessionStillOpen(claims.fam, claims.sub, claims.sep);
 
     this.cls.set(CURRENT_USER, claims);
     return true;
@@ -129,8 +129,26 @@ export class JwtAuthGuard implements CanActivate {
    * password can obtain a fresh one at any time, so nothing is lost by
    * exempting it.
    */
-  private async assertSessionStillOpen(familyId: string): Promise<void> {
-    if (familyId === MFA_CHALLENGE_FAMILY) return;
+  private async assertSessionStillOpen(
+    familyId: string,
+    userId: string,
+    challengeEpoch: number | undefined,
+  ): Promise<void> {
+    /**
+     * AU-041. The challenge has no family, but it is not exempt: it carries
+     * the session epoch read with the password. Closing every session of the
+     * account (a reset, a password change, a deactivation) voids it, and so
+     * does the account being inactive. Without this, a challenge obtained
+     * before a second-factor reset still reached `mfa/enroll` — its holder,
+     * with the password and without the phone, could enrol THEIR authenticator
+     * on the account support had just given back.
+     */
+    if (familyId === MFA_CHALLENGE_FAMILY) {
+      if (await this.sessions.isChallengeCurrent(userId, challengeEpoch)) {
+        return;
+      }
+      throw new SessionRevokedError();
+    }
 
     // AU-040: a family that reached its lifetime is closed too, and says so.
     const state = await this.sessions.familyState(familyId);

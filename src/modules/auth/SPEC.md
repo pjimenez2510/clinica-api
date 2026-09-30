@@ -355,7 +355,12 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   > época leída con la contraseña viaja en el token de desafío (`sep`), y la
   > sesión se emite contra ESA, no contra la que se lee al completar el
   > código: cerrar todas las sesiones en medio anula el desafío. Además, una
-  > cuenta inactiva no completa el segundo factor. La revisión en contexto
+  > cuenta inactiva no completa el segundo factor. **Y el guardia lo comprueba
+  > en cada ruta del desafío**, no sólo al completar el código: un desafío
+  > anterior a un reinicio del segundo factor ya no llega a `mfa/enroll`, donde
+  > quien tuviera la contraseña sin el teléfono podía matricular su propio
+  > autenticador en la cuenta que soporte acababa de devolver. El código se
+  > comprueba después: un desafío anulado no gasta un código de respaldo. La revisión en contexto
   > limpio encontró que, sin esto, una cuenta dada de baja con el desafío en
   > la mano obtenía una sesión completa con su propio teléfono.
   >

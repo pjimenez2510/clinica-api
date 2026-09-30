@@ -1003,6 +1003,19 @@ describe('session over HTTP', () => {
         await refresh(successor).expect(401);
       });
 
+      it('AU-040 una familia REVOCADA cuyo refresco además pasó su caducidad no se hace pasar por caducada', async () => {
+        // Cerrada por el cierre de sesión: lo que responde es lo de una
+        // familia cerrada, no «caducó» — que abriría el diálogo de volver a
+        // entrar en vez de terminar la sesión.
+        const { cookies } = await signIn();
+        const { familyId } = await rowOf(cookies);
+        await app.get(RefreshTokenService).revokeFamily(familyId, 'SIGN_OUT');
+        await ageFamily(familyId, lifetimeSeconds() + 1);
+
+        const refused = await refresh(cookies).expect(401);
+        expect(refused.body).not.toMatchObject({ code: 'SESSION_EXPIRED' });
+      });
+
       it('AU-040 la gracia de AU-039 no rescata una familia que pasó el tope', async () => {
         // Todo lo que la gracia pide —el último usado, recién usado, el mismo
         // navegador, la familia sin revocar— salvo la familia viva: empezó

@@ -175,7 +175,9 @@ export class RefreshTokenService {
      * AU-040. The FAMILY ran out — decided by the family, not by this row.
      * Rows issued before AU-040 carried their own sliding expiry, so a spent
      * row can be past its own while its successor lives: that is reuse, and
-     * falls through to AU-004 below.
+     * falls through to AU-004 below. And a family that was REVOKED is not
+     * «expired» even if this row's expiry has passed: it falls through too,
+     * to the answer and the log line of a closed session.
      *
      * Nothing is revoked and no alarm is raised even for a spent token — there
      * is nothing open left to take over, and the high-priority alarm for it
@@ -187,7 +189,7 @@ export class RefreshTokenService {
     if (
       existing &&
       existing.expiresAt <= new Date() &&
-      (await this.familyState(existing.familyId)) !== 'open'
+      (await this.familyState(existing.familyId)) === 'expired'
     ) {
       if (reused) {
         this.logger.warn(
@@ -370,6 +372,23 @@ export class RefreshTokenService {
    * stays detectable, so requiring an unused row would kill the session of
    * anybody whose client refreshed while a request was in flight.
    */
+  /**
+   * AU-041. Whether an MFA challenge still stands: the account is active and
+   * no «close every session» happened since the challenge's epoch was read.
+   * One lookup by primary key; a challenge without an epoch never stands.
+   */
+  async isChallengeCurrent(
+    userId: string,
+    challengeEpoch: number | undefined,
+  ): Promise<boolean> {
+    if (challengeEpoch === undefined) return false;
+    const account = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { active: true, sessionEpoch: true },
+    });
+    return account?.active === true && account.sessionEpoch === challengeEpoch;
+  }
+
   /** `familyState` as a yes/no; the integration tests ask it this way. */
   async isFamilyOpen(familyId: string): Promise<boolean> {
     return (await this.familyState(familyId)) === 'open';

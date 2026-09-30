@@ -14,6 +14,9 @@ import { BACKUP_CODE_COUNT } from '../../src/modules/auth/domain/backup-code';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
 import { PrismaAuthUserRepository } from '../../src/modules/auth/infrastructure/prisma-auth-user.repository';
 import { RefreshTokenService } from '../../src/modules/auth/infrastructure/refresh-token.service';
+import { PrismaAccountAdminRepository } from '../../src/modules/auth/infrastructure/prisma-account-admin.repository';
+import { TokenService } from '../../src/modules/auth/infrastructure/token.service';
+import { MFA_CHALLENGE_FAMILY } from '../../src/modules/auth/domain/session';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
@@ -945,12 +948,66 @@ describe('AU-005 códigos de respaldo del segundo factor', () => {
         .get(RefreshTokenService)
         .revokeAllForUser(account.userId, 'ACCOUNT_DEACTIVATED');
 
-      const refused = await verify(
-        pending,
-        totpFor(account.uri, NEXT_STEP),
-      ).expect(401);
-      expect(refused.body).toMatchObject({ code: 'INVALID_CREDENTIALS' });
+      await verify(pending, totpFor(account.uri, NEXT_STEP)).expect(401);
       expect(await liveSessions(account.userId)).toBe(0);
+    });
+
+    it('AU-041 una cuenta inactiva no completa el segundo factor aunque nadie cerrara sus sesiones', async () => {
+      // Sólo `active = false`, sin revocar: la época no cambia, así que lo
+      // que rechaza es el estado de la cuenta.
+      const account = await enrol();
+      const pending = await challenge();
+      await prisma.user.update({
+        where: { id: account.userId },
+        data: { active: false },
+      });
+
+      await verify(pending, totpFor(account.uri, NEXT_STEP)).expect(401);
+      expect(await liveSessions(account.userId)).toBe(1);
+    });
+
+    it('AU-041 un desafío sin época no completa el segundo factor', async () => {
+      const account = await enrol();
+      const withoutEpoch = await app.get(TokenService).issueAccessToken({
+        sub: account.userId,
+        fam: MFA_CHALLENGE_FAMILY,
+        grants: [],
+        mfa: false,
+      });
+
+      await verify(withoutEpoch, totpFor(account.uri, NEXT_STEP)).expect(401);
+      expect(await liveSessions(account.userId)).toBe(1);
+    });
+
+    it('AU-041 un desafío anterior a un reinicio del segundo factor no abre la matrícula', async () => {
+      /**
+       * Con la contraseña y sin el teléfono se consigue un desafío. Si soporte
+       * reinicia el segundo factor (AU-036), la cuenta queda sin matricular y
+       * `mfa/enroll` aceptaría: el dueño del desafío viejo instalaría SU
+       * autenticador. El guardia compara la época del desafío.
+       */
+      const account = await enrol();
+      const pending = await challenge();
+      await app
+        .get(PrismaAccountAdminRepository)
+        .resetMfa(account.userId, 'MFA_RESET', { userId: account.userId });
+
+      await request(server())
+        .post('/api/v1/auth/mfa/enroll')
+        .set('Authorization', `Bearer ${pending}`)
+        .expect(401);
+    });
+
+    it('AU-041 control: el mismo desafío sin reinicio sí llega a la matrícula (que responde que ya hay factor)', async () => {
+      const account = await enrol();
+      const pending = await challenge();
+
+      const answered = await request(server())
+        .post('/api/v1/auth/mfa/enroll')
+        .set('Authorization', `Bearer ${pending}`)
+        .expect(409);
+      expect(answered.body).toMatchObject({ code: 'MFA_ALREADY_ENROLLED' });
+      expect(account.userId).toBeDefined();
     });
 
     it('AU-041 un cambio de contraseña después del desafío lo anula', async () => {

@@ -220,14 +220,19 @@ export class AuthService {
     ctx: ClientContext = {},
   ): Promise<AuthenticatedSession> {
     const user = await this.requireUser(userId);
-    if (!user.active || challengeEpoch === undefined) {
+    // Checked BEFORE the code: a voided challenge must not spend a backup
+    // code or a TOTP step. The guard already refuses these; this is the same
+    // rule where the session is actually issued.
+    if (
+      !user.active ||
+      challengeEpoch === undefined ||
+      user.sessionEpoch !== challengeEpoch
+    ) {
       await this.hasher.burnTime();
       this.logger.warn(
         {
           user_id: user.id,
-          error_code: user.active
-            ? 'MFA_CHALLENGE_WITHOUT_EPOCH'
-            : 'ACCOUNT_INACTIVE',
+          error_code: user.active ? 'MFA_CHALLENGE_VOIDED' : 'ACCOUNT_INACTIVE',
         },
         'second factor refused before verification',
       );
