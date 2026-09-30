@@ -519,6 +519,99 @@ describe('la facturación por HTTP', () => {
     });
   });
 
+  describe('BI-036 el RUC de un pagador, como lo exige la interfaz', () => {
+    const createPayer = (body: Record<string, unknown>) =>
+      api()
+        .post('/api/v1/billing/payers')
+        .set('Authorization', `Bearer ${tariffToken}`)
+        .send({ name: 'Aseguradora de prueba', kind: 'PRIVATE_INSURANCE', ...body }); // prettier-ignore
+
+    it('BI-036 rechaza un RUC de doce dígitos en su campo, y no guarda nada', async () => {
+      // An institutional payer went through `Ruc` before D-057 too: this one
+      // pins the field and the absence of a row. What is NEW is that every
+      // kind does (the «Particular» cases below) and the database (last one).
+      const before = await prisma.payer.count();
+
+      const response = await createPayer({ code: 'SEG-12', ruc: '179318990600' }).expect(422); // prettier-ignore
+
+      const problem = response.body as Problem;
+      expect(problem.code).toBe('INVALID_RUC');
+      expect(problem.errors?.[0]?.field).toBe('ruc');
+      expect(await prisma.payer.count()).toBe(before);
+    });
+
+    it('BI-036 rechaza también el RUC mal escrito de «Particular»', async () => {
+      const response = await createPayer({ code: 'PART-2', kind: 'SELF_PAY', ruc: '12345' }).expect(422); // prettier-ignore
+
+      expect((response.body as Problem).code).toBe('INVALID_RUC');
+    });
+
+    it('BI-036 al editar «Particular», rechaza un RUC mal escrito y deja el guardado como estaba', async () => {
+      const response = await api()
+        .patch(`/api/v1/billing/payers/${payerId}`)
+        .set('Authorization', `Bearer ${tariffToken}`)
+        .send({ ruc: '12345' })
+        .expect(422);
+
+      const problem = response.body as Problem;
+      expect(problem.code).toBe('INVALID_RUC');
+      expect(problem.errors?.[0]?.field).toBe('ruc');
+      expect(
+        await prisma.payer.findUniqueOrThrow({
+          where: { id: payerId },
+          select: { ruc: true },
+        }),
+      ).toEqual({ ruc: null });
+
+      // Control: the same PATCH with a well-formed RUC is saved.
+      await api()
+        .patch(`/api/v1/billing/payers/${payerId}`)
+        .set('Authorization', `Bearer ${tariffToken}`)
+        .send({ ruc: '1793189906001' })
+        .expect(200);
+      expect(
+        await prisma.payer.findUniqueOrThrow({
+          where: { id: payerId },
+          select: { ruc: true },
+        }),
+      ).toEqual({ ruc: '1793189906001' });
+    });
+
+    it('BI-036 guarda el RUC de una sociedad que no pasa módulo 11', async () => {
+      const response = await createPayer({ code: 'SEG-N', ruc: '1793189906001' }).expect(201); // prettier-ignore
+
+      expect(
+        await prisma.payer.findUniqueOrThrow({
+          where: { id: (response.body as { id: string }).id },
+          select: { ruc: true },
+        }),
+      ).toEqual({ ruc: '1793189906001' });
+    });
+
+    it('BI-036 la base rechaza por su cuenta un RUC de pagador que no son trece dígitos', async () => {
+      // Control first: the same INSERT with thirteen digits goes in, so what
+      // refuses the second one is the shape and nothing else.
+      await prisma.$executeRaw`
+        INSERT INTO payer (code, name, kind, ruc, updated_at)
+        VALUES ('RAW-13', 'Directo', 'PRIVATE_INSURANCE', '1793189906001', now())
+      `;
+      await expect(
+        prisma.$executeRaw`
+          INSERT INTO payer (code, name, kind, ruc, updated_at)
+          VALUES ('RAW-12', 'Directo', 'PRIVATE_INSURANCE', '179318990600', now())
+        `,
+      ).rejects.toThrowError(/payer_ruc_format/);
+      // And the other half of the shape: thirteen digits ending in `000`,
+      // which is no establishment code.
+      await expect(
+        prisma.$executeRaw`
+          INSERT INTO payer (code, name, kind, ruc, updated_at)
+          VALUES ('RAW-000', 'Directo', 'PRIVATE_INSURANCE', '1793189906000', now())
+        `,
+      ).rejects.toThrowError(/payer_ruc_format/);
+    });
+  });
+
   describe('BI-046, BI-134 quien factura no fija precios', () => {
     it('BI-134 niega a caja el cambio de una tarifa, con el permiso propio', async () => {
       // No factory role carries `billing:write` and `billing:price-manage` at

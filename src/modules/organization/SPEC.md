@@ -58,7 +58,7 @@ sedes con parroquia, dirección y RUC.
 y `encounter` no puede cerrarse sin él.
 **Prueba independiente:** crear dos sedes del mismo establecimiento y comprobar
 que el código único del MSP no admite repetido.
-**Cubre:** OR-001 a OR-008.
+**Cubre:** OR-001 a OR-009.
 
 **Solo servidor:** OR-005. Bitácora.
 
@@ -97,8 +97,38 @@ la mitad que sí se ve —no ofrecer lo que no se puede tocar— la cubre OR-020
   ofrecerla para nuevas citas ni asignaciones, y DEBERÁ conservar intactas las
   referencias existentes.
 - **OR-008** — El sistema DEBERÁ almacenar el **RUC** del establecimiento y de
-  cada sede que facture, validando que tenga trece dígitos y termine en un
-  código de establecimiento del SRI.
+  cada sede que facture, validando que tenga trece dígitos, empiece por un
+  código de provincia que el Registro Civil o el SRI emiten (`01`-`24`, o `30`),
+  lleve un tercer dígito que nombre una clase de contribuyente (`0`-`5` persona
+  natural, `6` sector público, `9` sociedad) y termine en un código de
+  establecimiento del SRI (`001` en adelante).
+  > **El `30` no es una provincia:** es el código con el que el Registro Civil
+  > inscribe a quien obtuvo su documento en el exterior, y el SRI toma los dos
+  > primeros dígitos «de la provincia donde se obtuvo el documento de
+  > identidad» o donde se inscribió el contribuyente. `Cedula` ya lo admitía;
+  > `Ruc` se paraba en 24 y rechazaba el RUC de esas personas (D-057).
+  > Para una **sociedad** (tercer dígito `9`) con `30` —el extranjero sin
+  > cédula— las únicas fuentes halladas son secundarias (p. ej.
+  > [el algoritmo publicado por T. Jiménez, 2011](http://telesjimenez.blogspot.com/2011/05/algoritmo-de-verificacion-de-ruc_6120.html)).
+  > Se admite porque rechazarlo bloquearía un RUC emitido y admitirlo no
+  > deja pasar ninguna forma imposible; la comprobación de que un RUC existe
+  > es del SRI.
+- **OR-009** — SI el tercer dígito del RUC es menor que `6` (persona natural) y
+  sus diez primeros dígitos no son una cédula con dígito verificador válido,
+  ENTONCES el sistema DEBERÁ rechazarlo con `INVALID_RUC`; y NO DEBERÁ exigir
+  dígito verificador alguno al RUC de una sociedad privada o pública (tercer
+  dígito `9` o `6`).
+  > **Por qué no hay módulo 11 para sociedades (D-057).** Desde octubre de 2021
+  > el SRI no aplica el módulo 11 cuando el secuencial pasa de seis dígitos,
+  > porque ocupa la posición que antes era el verificador, y declara que «no se
+  > ha establecido algoritmo de validación» para esos registros; recomienda
+  > verificar contra sus servicios web. Aplica a «sociedades privadas,
+  > públicas y personas naturales extranjeras (sin un número de cédula)».
+  > Fuente: [Mintel, gobec_forms #32](https://minka.gob.ec/mintel/ge/rutr/gobec_forms/-/issues/32),
+  > que da como RUC reales `1793189906001` y `0993366721001` — ninguno pasa el
+  > módulo 11. Un número de sociedad no permite distinguir el esquema viejo del
+  > nuevo, así que la comprobación no puede quedarse «a veces»: se quita. La
+  > comprobación contra el SRI queda fuera de esta entrega.
 
 ### Consultorios y puntos de emisión (REQ-042, REQ-085)
 

@@ -372,6 +372,8 @@ export interface AccountPatientIdentification {
   patientId: string;
   /** `patient_identifier.type` of the OFFICIAL identifier, when there is one. */
   identifierType: 'CEDULA' | 'PASSPORT' | 'REFUGEE_CARD' | 'FOREIGN_ID' | 'PROVISIONAL' | null; // prettier-ignore
+  /** ISO 3166-1 alpha-3 of whoever issued it: a `CEDULA` not issued by `ECU` is foreign. */
+  identifierIssuingCountry: string | null;
   identifierValue: string | null;
   /** Filing order, as it is printed: «Guamán Andrade, María José». */
   fullName: string;

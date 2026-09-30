@@ -415,7 +415,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         where: { use: 'OFFICIAL', patientMerged: false } as const,
         orderBy: { createdAt: 'asc' } as const,
         take: 1,
-        select: { type: true, value: true },
+        select: { type: true, issuingCountry: true, value: true },
       },
     } as const;
 
@@ -449,6 +449,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     return {
       patientId: account.patient.mergedIntoId ?? account.patientId,
       identifierType: identifier?.type ?? null,
+      identifierIssuingCountry: identifier?.issuingCountry ?? null,
       identifierValue: identifier?.value ?? null,
       // Filing order, which is how it is printed on the document.
       fullName: `${family}, ${given}`,

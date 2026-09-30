@@ -32,7 +32,7 @@ registerConstraintMeanings({
     field: 'code',
     message: 'El punto de emisión son exactamente tres dígitos, como 001',
   },
-  // OR-008: the shape of a RUC. The check digit is the `Ruc` value object's,
+  // OR-008: the shape of a RUC. The rest of the rule is the `Ruc` value object's,
   // which answers per-field long before the base is reached.
   establishment_ruc_format: {
     code: 'INVALID_RUC',
