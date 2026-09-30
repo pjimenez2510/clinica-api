@@ -360,6 +360,32 @@ describe('roles are data, permissions are a contract', () => {
     ).toBe(0);
   });
 
+  it('EN-066 la semilla trae una cuenta de enfermeria con el rol ENFERMERIA y ningun otro', async () => {
+    // F-03 lo recorre enfermería. Sin esta cuenta el recorrido tenía que
+    // tomar prestado al superusuario, que sólo demuestra que quien tiene
+    // todos los permisos puede tomar los signos — no que enfermería pueda
+    // sin `record:write`, que es lo que EN-066 exige.
+    const prisma = db();
+    await seedDevelopment(prisma);
+
+    const grants = await prisma.userRoleGrant.findMany({
+      where: { user: { email: 'enfermeria@clinica.ec' }, revokedAt: null },
+      select: {
+        role: {
+          select: {
+            code: true,
+            permissions: { select: { permissionCode: true } },
+          },
+        },
+      },
+    });
+
+    expect(grants.map((grant) => grant.role.code)).toEqual(['ENFERMERIA']);
+    const held = grants[0]!.role.permissions.map((p) => p.permissionCode);
+    expect(held).toContain('vitals:write');
+    expect(held).not.toContain('record:write');
+  });
+
   it('AU-035 still offers `user:reset-mfa` in the catalogue, so a clinic can grant it', () => {
     // No concedido no es no existente: si el código no lo declarase, la
     // pantalla de administración no podría concedérselo a nadie y el permiso
