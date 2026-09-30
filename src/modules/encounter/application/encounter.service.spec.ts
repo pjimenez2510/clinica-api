@@ -84,6 +84,7 @@ class FakeEncounters implements EncounterRepository {
   stored: EncounterView = anEncounter();
   opened: NewEncounter[] = [];
   savedVitals: VitalSigns[] = [];
+  vitalsAuthors: string[] = [];
   stamps: SubjectStatusStamp[] = [];
 
   findPatientChart(): Promise<PatientChartStatus | null> {
@@ -144,13 +145,16 @@ class FakeEncounters implements EncounterRepository {
   saveVitals(
     _query: EncounterQuery,
     vitals: VitalSigns,
+    recordedById: string,
   ): Promise<VitalSignsView> {
     this.savedVitals.push(vitals);
+    this.vitalsAuthors.push(recordedById);
     return Promise.resolve({
       ...vitals,
       encounterId: this.stored.id,
       bmi: null,
       measuredAt: vitals.measuredAt ?? new Date('2026-09-14T14:05:00Z'),
+      recordedBy: { id: recordedById, name: 'Carmen Salazar' },
     });
   }
 
@@ -427,17 +431,16 @@ describe('los casos de uso de la atención', () => {
     expect(repository.savedVitals).toHaveLength(1);
   });
 
-  it('EN-143 deja constancia en la bitácora de quién registró los signos', async () => {
+  it('EN-143 escribe el autor en el propio dato con la cuenta de la sesion, y deja la bitacora', async () => {
     /**
-     * ⚠️ ES LA MITAD DE EN-143, Y SE DICE EN VOZ ALTA. El requisito pide que
-     * la autoría viva EN EL PROPIO DATO —«quién tomó el peso y cuándo»— y
-     * `encounter_vitals` tiene `measured_at` y NINGUNA columna de autor
-     * («Falta esquema» en el requisito). Mientras no exista, la pregunta se
-     * responde desde el rastro y no desde el dato, con su `resourceType`
-     * propio para que «¿quién abrió la atención?» y «¿quién tomó los signos?»
-     * no se confundan.
+     * D-048: la autoría vive EN EL DATO —quién tomó el peso—, y sale de la
+     * sesión, nunca del cuerpo. La bitácora sigue, con su `resourceType`
+     * propio, porque la fila sólo guarda al autor de la toma VIGENTE y la de
+     * antes se corrigió encima.
      */
     await service.recordVitals('encounter-1', { weightKg: 68.4 }, requester);
+
+    expect(repository.vitalsAuthors).toEqual([USER]);
 
     expect(audit.entries).toContainEqual(
       expect.objectContaining({

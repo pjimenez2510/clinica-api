@@ -162,6 +162,7 @@ export class PatientAllergyService {
       substanceText: request.substanceText,
       reaction: request.reaction,
       criticality: request.criticality,
+      recordedById: requester.userId,
     });
 
     await this.audit.record({
@@ -220,6 +221,7 @@ export class PatientAllergyService {
       // Taken once and handed down: the domain owns no clock, and two readings
       // could straddle a second for no reason.
       now: new Date(),
+      refutedById: requester.userId,
     });
 
     // `null` is «not on this chart nor on any it absorbed». One answer for

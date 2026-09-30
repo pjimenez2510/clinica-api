@@ -136,19 +136,19 @@ export class PatientAllergyController {
   }
 
   /**
-   * EN-080, EN-083, EN-086. Records one allergy.
+   * EN-080, EN-083, EN-086, EN-164. Records one allergy.
    *
-   * `record:write` AND NOT `nursing:write` OR `vitals:write`. Nursing takes
-   * the weight; deciding that a patient is allergic to something, with a
-   * criticality attached, is a clinical judgement that goes on the record
-   * permanently and drives what may be prescribed. Neither of the two nursing
-   * permissions appears on any route of this file, and that absence is EN-142
-   * as a table of routes rather than a paragraph somebody has to remember.
+   * `background:write` AND NOT `record:write` (EN-164). Recording what the
+   * patient declares is anamnesis, and F-03 puts it in preparation: nursing
+   * takes it without holding the permission that diagnoses and prescribes
+   * (EN-142). What stays a clinical judgement — ruling an allergy OUT — keeps
+   * `record:write` on the refutation route below. The author is the session's
+   * account, written in the row (EN-086).
    *
    * 201, because what it leaves behind is a row that did not exist.
    */
   @Post('allergies')
-  @RequirePermission('record:write', 'global')
+  @RequirePermission('background:write', 'global')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Registrar una alergia del paciente' })
   @ApiCreatedResponse({ type: AllergyDto })
@@ -202,7 +202,7 @@ export class PatientAllergyController {
    * 201, because what it leaves behind is a row that did not exist.
    */
   @Post('allergies/none-known')
-  @RequirePermission('record:write', 'global')
+  @RequirePermission('background:write', 'global')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Afirmar que el paciente no tiene alergias conocidas',
@@ -288,5 +288,8 @@ function toAllergyResponse(allergy: AllergyView): AllergyResponse {
     // out and wrote why. The row is never absent.
     refutedAt: allergy.refutedAt?.toISOString() ?? null,
     refutedNotes: allergy.refutedNotes,
+    // EN-086. `null` only for rows older than the column.
+    recordedBy: allergy.recordedBy,
+    refutedBy: allergy.refutedBy,
   };
 }

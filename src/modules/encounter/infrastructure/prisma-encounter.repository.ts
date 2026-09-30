@@ -87,6 +87,11 @@ const VITALS_SELECT = {
   temperatureC: true,
   oxygenSaturation: true,
   measuredAt: true,
+  heightPosition: true,
+  hemoglobinGDl: true,
+  hemoglobinCorrectedGDl: true,
+  presentingComplaint: true,
+  recordedBy: { select: { id: true, firstName: true, lastName: true } },
 } satisfies Prisma.EncounterVitalsSelect;
 
 /** The row `VITALS_SELECT` yields; its decimals are still Prisma's `Decimal`. */
@@ -459,10 +464,12 @@ export class PrismaEncounterRepository implements EncounterRepository {
   async saveVitals(
     query: EncounterQuery,
     vitals: VitalSigns,
+    recordedById: string,
   ): Promise<VitalSignsView> {
     const measurements = {
       weightKg: vitals.weightKg,
       heightCm: vitals.heightCm,
+      heightPosition: vitals.heightPosition,
       headCircumferenceCm: vitals.headCircumferenceCm,
       abdominalCircumferenceCm: vitals.abdominalCircumferenceCm,
       systolicBp: vitals.systolicBp,
@@ -471,6 +478,12 @@ export class PrismaEncounterRepository implements EncounterRepository {
       respiratoryRate: vitals.respiratoryRate,
       temperatureC: vitals.temperatureC,
       oxygenSaturation: vitals.oxygenSaturation,
+      hemoglobinGDl: vitals.hemoglobinGDl,
+      hemoglobinCorrectedGDl: vitals.hemoglobinCorrectedGDl,
+      presentingComplaint: vitals.presentingComplaint,
+      // EN-143. The author travels with the figures: a corrected reading is a
+      // new reading, and who corrected it is who stands behind it now.
+      recordedById,
       // EN-060. The instant of the MEASUREMENT, which is not the instant of
       // the typing: nursing weighs at 08:10 and the network returns at 08:40.
       measuredAt: vitals.measuredAt ?? new Date(),
@@ -645,6 +658,17 @@ function toVitalsView(row: VitalsRow): VitalSignsView {
     respiratoryRate: row.respiratoryRate ?? undefined,
     temperatureC: decimal(row.temperatureC),
     oxygenSaturation: row.oxygenSaturation ?? undefined,
+    heightPosition: row.heightPosition ?? undefined,
+    hemoglobinGDl: decimal(row.hemoglobinGDl),
+    hemoglobinCorrectedGDl: decimal(row.hemoglobinCorrectedGDl),
+    presentingComplaint: row.presentingComplaint ?? undefined,
     measuredAt: row.measuredAt,
+    recordedBy:
+      row.recordedBy === null
+        ? null
+        : {
+            id: row.recordedBy.id,
+            name: `${row.recordedBy.firstName} ${row.recordedBy.lastName}`,
+          },
   };
 }

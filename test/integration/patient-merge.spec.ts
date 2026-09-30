@@ -27,6 +27,7 @@ import {
   createSite,
   hourSlot,
   linkPractitionerToSite,
+  createUser,
 } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
@@ -2304,6 +2305,7 @@ describe('fusión de duplicados: el contrato y su permiso', () => {
     });
     await prismaClient.patientAllergy.create({
       data: {
+        recordedById: (await createUser(prismaClient)).id,
         patientId: source.id,
         substanceText: 'penicilina',
         criticality: 'HIGH',
@@ -2413,6 +2415,7 @@ describe('fusión de duplicados: el contrato y su permiso', () => {
     const target = await createPatient(prismaClient);
     await prismaClient.patientAllergy.create({
       data: {
+        recordedById: (await createUser(prismaClient)).id,
         patientId: source.id,
         substanceText: 'penicilina',
         criticality: 'HIGH',

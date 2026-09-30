@@ -251,17 +251,23 @@ describe('las alergias y la historia de la consulta por HTTP', () => {
         .expect(401);
     });
 
-    it('EN-142 no deja a ENFERMERÍA registrar una alergia: no es tomar un peso', async () => {
+    it('EN-164 deja a ENFERMERIA registrar la alergia que el paciente declara, y no descartarla', async () => {
       /**
-       * ⚠️ LO QUE EL PERMISO NIEGA ES TAN IMPORTANTE COMO LO QUE CONCEDE.
-       * `nursing:write` y `vitals:write` no aparecen en ninguna ruta de este
-       * fichero: decidir que un paciente es alérgico a algo, con una
-       * criticidad puesta, es un juicio clínico que queda en el expediente y
-       * gobierna lo que puede recetarse.
+       * F-03: la preparación recoge las alergias que el paciente declara
+       * (FLUJO-DE-LA-ATENCION.md, paso 2). Es anamnesis, con
+       * `background:write` y sin `record:write`. Lo que sigue siendo juicio
+       * clínico —DESCARTARLA— queda fuera de enfermería.
        */
-      await recordAllergy(
+      const response = await recordAllergy(
         { substanceText: 'Penicilina', criticality: 'HIGH' },
         nurseToken,
+      ).expect(201);
+      const allergyId = (response.body as AllergyBody).id;
+
+      await post(
+        `/patients/${patientId}/allergies/${allergyId}/refute`,
+        nurseToken,
+        { notes: 'Prueba cutánea negativa' },
       ).expect(403);
     });
 
@@ -273,14 +279,19 @@ describe('las alergias y la historia de la consulta por HTTP', () => {
       await get(`/patients/${patientId}/allergies`, receptionToken).expect(403);
     });
 
-    it('EN-087 no deja a ENFERMERÍA afirmar «sin alergias conocidas»', async () => {
+    it('EN-164 deja a ENFERMERIA afirmar sin alergias conocidas, con su nombre en la afirmacion', async () => {
       /**
-       * Es el mismo juicio clínico visto del otro lado: afirmar que un paciente
-       * no tiene alergias conocidas gobierna lo que puede recetarse igual que
-       * registrar una. La línea sigue estando en escribir y no en mirar —
-       * enfermería lee el resumen y no escribe esto.
+       * «Sin alergias conocidas» es la respuesta del paciente a la pregunta de
+       * la preparación (F-03), y EN-087 exige que la afirme una persona con
+       * nombre: la que preguntó.
        */
-      await assertNoKnownAllergies(nurseToken).expect(403);
+      const response = await assertNoKnownAllergies(nurseToken).expect(201);
+      const nurse = await prisma.user.findUniqueOrThrow({
+        where: { email: 'enfermeria@clinica.ec' },
+      });
+      expect((response.body as { assertedById: string }).assertedById).toBe(
+        nurse.id,
+      );
     });
 
     it('EN-080 deja al MÉDICO registrar la alergia con `record:write`', async () => {
@@ -709,7 +720,7 @@ describe('las alergias y la historia de la consulta por HTTP', () => {
       expect(await auditRows('patient_chart_summary')).toBe(0);
     });
 
-    it('EN-142 ENFERMERÍA SÍ lee el resumen, y sigue sin poder escribir una alergia', async () => {
+    it('EN-142 ENFERMERIA SI lee el resumen, y sigue sin poder descartar una alergia', async () => {
       /**
        * ⚠️ Y ES DELIBERADO, no un descuido del reparto de permisos.
        * `ENFERMERIA` lleva `record:read` desde el sembrado, con su motivo
@@ -718,16 +729,22 @@ describe('las alergias y la historia de la consulta por HTTP', () => {
        * — es exactamente el dato que §7 bis pone primero en la lista de lo
        * que los clínicos echaban en falta.
        *
-       * Lo que separa los dos roles es la ESCRITURA, y esta prueba lo afirma
-       * en la misma respiración para que la lectura no se lea como un agujero:
-       * `record:write` no lo tiene, así que no registra alergias.
+       * Lo que separa los dos roles es el JUICIO CLÍNICO, y esta prueba lo
+       * afirma en la misma respiración para que la lectura no se lea como un
+       * agujero: registra lo que el paciente declara (EN-164), pero no lleva
+       * `record:write`, así que no descarta una alergia.
        */
       const today = await openEncounter();
 
       await get(`/encounters/${today}/chart-summary`, nurseToken).expect(200);
-      await recordAllergy(
-        { substanceText: 'Penicilina', criticality: 'HIGH' },
+      const recorded = await recordAllergy({
+        substanceText: 'Penicilina',
+        criticality: 'HIGH',
+      }).expect(201);
+      await post(
+        `/patients/${patientId}/allergies/${(recorded.body as AllergyBody).id}/refute`,
         nurseToken,
+        { notes: 'Prueba cutánea negativa' },
       ).expect(403);
     });
   });

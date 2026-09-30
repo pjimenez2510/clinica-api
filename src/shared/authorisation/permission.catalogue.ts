@@ -291,6 +291,17 @@ export const PERMISSION_CATALOGUE = [
     description: 'Registrar y firmar los formularios propios de enfermería',
   },
   {
+    // EN-164. Recording what the patient DECLARES — an allergy, «sin alergias
+    // conocidas», a personal or family history — is anamnesis, and preparation
+    // is where it is taken (F-03, the MSP's «Enfermera de Preconsulta»). It is
+    // its own permission and not `record:write`, which would drag diagnosing
+    // and prescribing along with it (EN-142, LOS art. 198). RULING ONE OUT is
+    // a clinical judgement and stays under `record:write`.
+    code: 'background:write',
+    resource: 'record',
+    description: 'Registrar alergias y antecedentes del paciente',
+  },
+  {
     code: 'prescription:write',
     resource: 'record',
     description: 'Emitir recetas',

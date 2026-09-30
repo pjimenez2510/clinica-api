@@ -37,6 +37,15 @@ export interface AllergyView extends ActiveAllergy {
   refutedAt: Date | null;
   /** EN-082. Why it was ruled out. Mandatory when `refutedAt` is present. */
   refutedNotes: string | null;
+  /** EN-086. `null` only for rows older than the column: nobody invents one. */
+  recordedBy: AllergyAuthor | null;
+  refutedBy: AllergyAuthor | null;
+}
+
+/** EN-086. Who stands behind an allergy, or ruled it out. */
+export interface AllergyAuthor {
+  id: string;
+  name: string;
 }
 
 /** EN-080, EN-083. Everything an allergy is born with. */
@@ -63,6 +72,8 @@ export interface NewAllergy {
    * requires it explicitly.
    */
   criticality: AllergyCriticality;
+  /** EN-086. The session's account; never a field of the request body. */
+  recordedById: string;
 }
 
 /**
@@ -111,6 +122,8 @@ export interface RefuteAllergy {
   notes: string;
   /** Taken once by the caller: the domain owns no clock. */
   now: Date;
+  /** EN-086. The session's account. */
+  refutedById: string;
 }
 
 /**

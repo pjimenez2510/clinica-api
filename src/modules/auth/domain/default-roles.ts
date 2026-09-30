@@ -147,6 +147,9 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       'record:write',
       'record:sign',
       'vitals:write',
+      // EN-164. The doctor keeps recording allergies and history: this is the
+      // permission those routes ask for now, instead of `record:write`.
+      'background:write',
       'prescription:write',
       'catalog:read',
       // Every role that reads the agenda also gets to read the clinic's map:
@@ -185,6 +188,9 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       // able to sign ITS OWN forms — without ever reaching diagnosis or
       // prescription.
       'nursing:write',
+      // EN-164, F-03. Preparation takes the allergies and the history the
+      // patient declares. Ruling one out stays with `record:write`.
+      'background:write',
       // D-A-013, 20-08-2026. Transcribir un informe de laboratorio.
       //
       // El resultado llega en PDF de un laboratorio externo (D-A-012), y quien

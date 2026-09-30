@@ -38,9 +38,19 @@ import { BmiIsDerivedError, VitalsRequiredError } from './encounter.errors';
  * a check: `assertBmiNotSupplied` exists for the ONE caller that can still
  * carry it, the raw HTTP body.
  */
+/** EN-064. Column 23 of the RDACAA: 1 standing, 2 lying down. */
+export type HeightPosition = 'STANDING' | 'LYING';
+
 export interface VitalSigns {
   weightKg?: number;
   heightCm?: number;
+  /**
+   * EN-064. HOW the height was taken — mandatory with a height, and the
+   * database says so (`encounter_vitals_height_needs_position`). Never
+   * deduced from the age: the instructivo's cut-off is how it SHOULD be
+   * measured, and the record says how it WAS.
+   */
+  heightPosition?: HeightPosition;
   headCircumferenceCm?: number;
   abdominalCircumferenceCm?: number;
   systolicBp?: number;
@@ -49,6 +59,16 @@ export interface VitalSigns {
   respiratoryRate?: number;
   temperatureC?: number;
   oxygenSaturation?: number;
+  /** EN-065. Both typed: correcting needs the site's altitude. g/dl. */
+  hemoglobinGDl?: number;
+  hemoglobinCorrectedGDl?: number;
+  /**
+   * EN-163. The reason for the visit in the patient's own words, taken in
+   * preparation. It is not the 002's `motivoConsulta`: that one is the
+   * doctor's, and opening the note would move the patient to
+   * `RECEIVING_CARE` before the doctor called them.
+   */
+  presentingComplaint?: string;
   /**
    * EN-060. WHEN the measurement was taken, which is not when it was typed.
    *

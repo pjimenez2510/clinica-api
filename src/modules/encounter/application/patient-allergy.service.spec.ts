@@ -67,6 +67,8 @@ const anAllergy = (overrides: Partial<AllergyView> = {}): AllergyView => ({
   recordedAt: new Date('2026-08-14T14:00:00Z'),
   refutedAt: null,
   refutedNotes: null,
+  recordedBy: null,
+  refutedBy: null,
   ...overrides,
 });
 
@@ -253,14 +255,16 @@ describe('las alergias del paciente', () => {
     expect(allergies.written).toHaveLength(0);
   });
 
-  it('EN-086 deja constancia de quién registró la alergia, que hoy es la única respuesta', async () => {
+  it('EN-086 escribe en la fila a quien registra la alergia, desde la sesion, y deja la bitacora', async () => {
     /**
-     * `patient_allergy` tiene `recorded_at` y NO tiene autor —falta esquema—,
-     * así que «¿quién dijo que era alérgico?» sólo se contesta desde la
-     * bitácora. Es más débil que el requisito y es lo que lo mantiene
-     * contestable.
+     * «¿Quién dijo que era alérgico?» se contesta desde la fila
+     * (`recorded_by`), y el autor sale de la sesión —nunca del cuerpo—. La
+     * bitácora sigue: es la que responde por las filas anteriores a la
+     * columna.
      */
     const recorded = await service.record(aRequest(), requester);
+
+    expect(allergies.written.map((row) => row.recordedById)).toEqual([USER]);
 
     expect(audit.entries).toEqual([
       expect.objectContaining({
@@ -286,6 +290,8 @@ describe('las alergias del paciente', () => {
       patientId: PATIENT,
       allergyId: 'allergy-1',
       notes: 'Prueba cutánea negativa',
+      // EN-086. Quién la descartó, desde la sesión.
+      refutedById: USER,
     });
     expect(refuted.refutedAt).not.toBeNull();
     // No hay método de borrado en el puerto, y esta es la comprobación de que

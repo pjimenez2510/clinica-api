@@ -207,6 +207,18 @@ export const recordVitalsSchema = z
     respiratoryRate: z.number().int().positive('La frecuencia respiratoria debe ser un número entero positivo').optional(), // prettier-ignore
     temperatureC: z.number().positive('La temperatura debe ser un número positivo').optional(), // prettier-ignore
     oxygenSaturation: z.number().int().positive('La saturación debe ser un número entero positivo').optional(), // prettier-ignore
+    /** EN-064. Mandatory with a height; the database refuses one without the other. */
+    heightPosition: z.enum(['STANDING', 'LYING']).optional(),
+    /** EN-065. g/dl, both typed; ranges are the database's (D-058). */
+    hemoglobinGDl: z.number().positive('La hemoglobina debe ser un número positivo').optional(), // prettier-ignore
+    hemoglobinCorrectedGDl: z.number().positive('La hemoglobina corregida debe ser un número positivo').optional(), // prettier-ignore
+    /** EN-163. The reason in the patient's own words, trimmed; blank is absent. */
+    presentingComplaint: z
+      .string()
+      .trim()
+      .max(500, 'El motivo no puede superar 500 caracteres')
+      .transform((value) => (value === '' ? undefined : value))
+      .optional(),
     /**
      * EN-060. WHEN the measurement was taken, which is not when it was typed.
      * Absent means «ahora», which is the ordinary case at the bedside.
@@ -362,7 +374,14 @@ export const vitalSignsSchema = z.object({
   respiratoryRate: z.number().int().nullable(),
   temperatureC: z.number().nullable(),
   oxygenSaturation: z.number().int().nullable(),
+  heightPosition: z.enum(['STANDING', 'LYING']).nullable(),
+  hemoglobinGDl: z.number().nullable(),
+  hemoglobinCorrectedGDl: z.number().nullable(),
+  /** EN-163. Clinical content: served here and never in a listing. */
+  presentingComplaint: z.string().nullable(),
   measuredAt: z.iso.datetime(),
+  /** EN-143. Who took this reading; `null` only for takings older than the column. */
+  recordedBy: z.object({ id: z.uuid(), name: z.string() }).nullable(),
 });
 /** Response of reading and recording block D. */
 export class VitalSignsDto extends createZodDto(vitalSignsSchema) {}

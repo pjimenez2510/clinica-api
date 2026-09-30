@@ -194,6 +194,11 @@ export interface VitalSignsView extends VitalSigns {
   /** `null` while either the weight or the height is missing. */
   bmi: number | null;
   measuredAt: Date;
+  /**
+   * EN-143. Who took the current reading, IN the datum (D-048). `null` only
+   * for takings older than the column, which nobody can give an author to.
+   */
+  recordedBy: { id: string; name: string } | null;
 }
 
 /**
@@ -326,17 +331,14 @@ export interface EncounterRepository {
    * outpatient care that is right; the day the clinic monitors blood pressure
    * for an hour it needs another table.
    *
-   * ⚠️ THE AUTHOR OF THE MEASUREMENT IS NOT A PARAMETER, AND EN-143 SAYS IT
-   * SHOULD BE. `encounter_vitals` has `measured_at` and NO author column —
-   * «Falta esquema» on the requirement — so «quién tomó el peso» cannot be
-   * stored beside the datum today. It is not silently dropped: the recording
-   * leaves its `CREATE` row in `access_audit` with the account that wrote it,
-   * which answers the question from the trail instead of from the datum. The
-   * difference matters and is why EN-143 stays open.
+   * EN-143. `recordedById` is the account that took THIS reading, and it
+   * replaces the previous author along with the previous figures: the row is
+   * one taking, and the trail keeps who wrote the one before.
    */
   saveVitals(
     query: EncounterQuery,
     vitals: VitalSigns,
+    recordedById: string,
   ): Promise<VitalSignsView>;
 
   /** EN-068. The vital signs of one attention, or `null` when none were taken. */

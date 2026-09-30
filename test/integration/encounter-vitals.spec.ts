@@ -36,6 +36,30 @@ const db = useDatabase();
 const repositoryOf = (prisma: PrismaClient) =>
   new PrismaEncounterRepository(prisma as unknown as PrismaService);
 
+type Vitals = Parameters<PrismaEncounterRepository['saveVitals']>[1];
+
+/**
+ * EN-064 and EN-143 apply to every taking written since
+ * `20260930160703_patient_preparation`: a height goes with its position, and
+ * the row names who took it. The tests that are about something else say so
+ * once here instead of in every call, and the tests about THOSE two rules call
+ * the repository directly.
+ */
+function recordedBy(prisma: PrismaClient, authorId: string) {
+  const repository = repositoryOf(prisma);
+  return {
+    repository,
+    save: (query: { encounterId: string; sites: string[] }, vitals: Vitals) =>
+      repository.saveVitals(
+        query,
+        vitals.heightCm === undefined || vitals.heightPosition !== undefined
+          ? vitals
+          : { ...vitals, heightPosition: 'STANDING' },
+        authorId,
+      ),
+  };
+}
+
 async function anEncounter(prisma: PrismaClient) {
   const site = await createSite(prisma);
   const practitioner = await createPractitioner(prisma);
@@ -51,7 +75,13 @@ async function anEncounter(prisma: PrismaClient) {
     visitSequence: 'FIRST_TIME',
   });
 
-  return { site, practitioner, patient, encounter };
+  return {
+    site,
+    practitioner,
+    patient,
+    encounter,
+    ...recordedBy(prisma, practitioner.userId),
+  };
 }
 
 /** Runs an operation expected to fail and maps whatever it threw. */
@@ -67,9 +97,9 @@ async function problemFrom(operation: Promise<unknown>) {
 describe('los signos vitales de la atención', () => {
   it('EN-061 devuelve el IMC CALCULADO por la base a partir del peso y la talla', async () => {
     const prisma = db();
-    const { site, encounter } = await anEncounter(prisma);
+    const { site, encounter, save } = await anEncounter(prisma);
 
-    const vitals = await repositoryOf(prisma).saveVitals(
+    const vitals = await save(
       { encounterId: encounter.id, sites: [site.id] },
       { weightKg: 68.4, heightCm: 165 },
     );
@@ -87,12 +117,14 @@ describe('los signos vitales de la atención', () => {
      * escribió creyendo lo contrario.
      */
     const prisma = db();
-    const { encounter } = await anEncounter(prisma);
+    const { encounter, practitioner } = await anEncounter(prisma);
 
     await prisma.$executeRawUnsafe(
-      `INSERT INTO encounter_vitals (encounter_id, weight_kg, height_cm, bmi)
-       VALUES ($1, 68.4, 165, 99.99)`,
+      `INSERT INTO encounter_vitals
+         (encounter_id, weight_kg, height_cm, height_position, recorded_by, bmi)
+       VALUES ($1, 68.4, 165, 'STANDING', $2::uuid, 99.99)`,
       encounter.id,
+      practitioner.userId,
     );
 
     const [row] = await prisma.$queryRawUnsafe<{ bmi: string }[]>(
@@ -104,12 +136,11 @@ describe('los signos vitales de la atención', () => {
 
   it('EN-061 recalcula el IMC cuando se corrige el peso', async () => {
     const prisma = db();
-    const { site, encounter } = await anEncounter(prisma);
-    const repository = repositoryOf(prisma);
+    const { site, encounter, save } = await anEncounter(prisma);
     const query = { encounterId: encounter.id, sites: [site.id] };
 
-    await repository.saveVitals(query, { weightKg: 68.4, heightCm: 165 });
-    const corrected = await repository.saveVitals(query, {
+    await save(query, { weightKg: 68.4, heightCm: 165 });
+    const corrected = await save(query, {
       weightKg: 72,
       heightCm: 165,
     });
@@ -119,9 +150,9 @@ describe('los signos vitales de la atención', () => {
 
   it('EN-061 deja el IMC vacío mientras falte el peso o la talla', async () => {
     const prisma = db();
-    const { site, encounter } = await anEncounter(prisma);
+    const { site, encounter, save } = await anEncounter(prisma);
 
-    const vitals = await repositoryOf(prisma).saveVitals(
+    const vitals = await save(
       { encounterId: encounter.id, sites: [site.id] },
       { weightKg: 68.4 },
     );
@@ -132,10 +163,10 @@ describe('los signos vitales de la atención', () => {
 
   it('EN-062 rechaza en la BASE un peso de 750 kg, que es el dedo que tecleó 750 en vez de 75', async () => {
     const prisma = db();
-    const { site, encounter } = await anEncounter(prisma);
+    const { site, encounter, save } = await anEncounter(prisma);
 
     const problem = await problemFrom(
-      repositoryOf(prisma).saveVitals(
+      save(
         { encounterId: encounter.id, sites: [site.id] },
         { weightKg: 750, heightCm: 175 },
       ),
@@ -149,10 +180,10 @@ describe('los signos vitales de la atención', () => {
     // Deliberately wide ranges, and this is the one pairing among them: 80/120
     // is not a low blood pressure, it is two boxes filled the wrong way round.
     const prisma = db();
-    const { site, encounter } = await anEncounter(prisma);
+    const { site, encounter, save } = await anEncounter(prisma);
 
     const problem = await problemFrom(
-      repositoryOf(prisma).saveVitals(
+      save(
         { encounterId: encounter.id, sites: [site.id] },
         { systolicBp: 80, diastolicBp: 120 },
       ),
@@ -168,9 +199,9 @@ describe('los signos vitales de la atención', () => {
      * discutir de fisiología con la clínica». Un prematuro de 800 gramos entra.
      */
     const prisma = db();
-    const { site, encounter } = await anEncounter(prisma);
+    const { site, encounter, save } = await anEncounter(prisma);
 
-    const vitals = await repositoryOf(prisma).saveVitals(
+    const vitals = await save(
       { encounterId: encounter.id, sites: [site.id] },
       { weightKg: 0.8, heightCm: 32 },
     );
@@ -179,8 +210,18 @@ describe('los signos vitales de la atención', () => {
   });
 
   describe('EN-062 cada medida tiene su rango, y el rechazo señala su casilla (D-058)', () => {
-    type Vitals = Parameters<PrismaEncounterRepository['saveVitals']>[1];
-    type Measure = Exclude<keyof Vitals, 'measuredAt'>;
+    type Measure =
+      | 'temperatureC'
+      | 'heartRate'
+      | 'respiratoryRate'
+      | 'headCircumferenceCm'
+      | 'abdominalCircumferenceCm'
+      | 'weightKg'
+      | 'heightCm'
+      | 'systolicBp'
+      | 'diastolicBp'
+      | 'oxygenSaturation'
+      | 'hemoglobinGDl';
 
     /**
      * Every bound of `20260930124150_encounter_vitals_ranges_per_measure`,
@@ -210,6 +251,8 @@ describe('los signos vitales de la atención', () => {
       { field: 'systolicBp', min: 40, max: 300, step: 1, range: 'entre 40 y 300 mmHg' }, // prettier-ignore
       { field: 'diastolicBp', min: 20, max: 200, step: 1, range: 'entre 20 y 200 mmHg' }, // prettier-ignore
       { field: 'oxygenSaturation', min: 30, max: 100, step: 1, range: 'entre 30 y 100 %' }, // prettier-ignore
+      // EN-065, con el criterio de D-058.
+      { field: 'hemoglobinGDl', min: 1, max: 25, step: 0.1, range: 'entre 1 y 25 g/dl' }, // prettier-ignore
     ];
 
     /** Rounded to the step so 45 + 0.1 is 45.1 and not 45.100000000000001. */
@@ -219,12 +262,11 @@ describe('los signos vitales de la atención', () => {
     for (const { field, min, max, step, range } of bounds) {
       it(`EN-062 admite ${field} en los dos bordes, ${min} y ${max}`, async () => {
         const prisma = db();
-        const { site, encounter } = await anEncounter(prisma);
-        const repository = repositoryOf(prisma);
+        const { site, encounter, save } = await anEncounter(prisma);
         const query = { encounterId: encounter.id, sites: [site.id] };
 
         for (const edge of [min, max]) {
-          const vitals = await repository.saveVitals(query, { [field]: edge });
+          const vitals = await save(query, { [field]: edge });
           expect(vitals[field]).toBe(edge);
         }
       });
@@ -235,10 +277,10 @@ describe('los signos vitales de la atención', () => {
       ] as const) {
         it(`EN-062 rechaza ${field} ${side} del rango (${value}) señalando la casilla`, async () => {
           const prisma = db();
-          const { site, encounter } = await anEncounter(prisma);
+          const { site, encounter, save } = await anEncounter(prisma);
 
           const problem = await problemFrom(
-            repositoryOf(prisma).saveVitals(
+            save(
               { encounterId: encounter.id, sites: [site.id] },
               { [field]: value },
             ),
@@ -259,10 +301,10 @@ describe('los signos vitales de la atención', () => {
 
     it('EN-062 señala la sistólica cuando es menor que la diastólica', async () => {
       const prisma = db();
-      const { site, encounter } = await anEncounter(prisma);
+      const { site, encounter, save } = await anEncounter(prisma);
 
       const problem = await problemFrom(
-        repositoryOf(prisma).saveVitals(
+        save(
           { encounterId: encounter.id, sites: [site.id] },
           { systolicBp: 80, diastolicBp: 120 },
         ),
@@ -284,12 +326,11 @@ describe('los signos vitales de la atención', () => {
      * falta otra tabla.
      */
     const prisma = db();
-    const { site, encounter } = await anEncounter(prisma);
-    const repository = repositoryOf(prisma);
+    const { site, encounter, save, repository } = await anEncounter(prisma);
     const query = { encounterId: encounter.id, sites: [site.id] };
 
-    await repository.saveVitals(query, { weightKg: 68.4, heartRate: 72 });
-    await repository.saveVitals(query, { weightKg: 68.9 });
+    await save(query, { weightKg: 68.4, heartRate: 72 });
+    await save(query, { weightKg: 68.9 });
 
     await expect(
       prisma.encounterVitals.count({ where: { encounterId: encounter.id } }),
@@ -308,10 +349,10 @@ describe('los signos vitales de la atención', () => {
 
   it('EN-060 conserva el instante de la TOMA y no el del tecleo', async () => {
     const prisma = db();
-    const { site, encounter } = await anEncounter(prisma);
+    const { site, encounter, save } = await anEncounter(prisma);
     const measuredAt = new Date('2026-08-14T13:10:00Z');
 
-    const vitals = await repositoryOf(prisma).saveVitals(
+    const vitals = await save(
       { encounterId: encounter.id, sites: [site.id] },
       { weightKg: 68.4, measuredAt },
     );
@@ -321,11 +362,11 @@ describe('los signos vitales de la atención', () => {
 
   it('EN-121 no devuelve los signos de una atención de otra sede', async () => {
     const prisma = db();
-    const { site, encounter } = await anEncounter(prisma);
+    const { site, encounter, save } = await anEncounter(prisma);
     const otherSite = await createSite(prisma, 'Sede Sur');
     const repository = repositoryOf(prisma);
 
-    await repository.saveVitals(
+    await save(
       { encounterId: encounter.id, sites: [site.id] },
       { weightKg: 68.4 },
     );
@@ -338,5 +379,144 @@ describe('los signos vitales de la atención', () => {
         sites: [otherSite.id],
       }),
     ).resolves.toBeNull();
+  });
+
+  it('EN-064 la base rechaza una talla sin su posicion, y acepta la misma talla medida de pie', async () => {
+    const prisma = db();
+    const { site, encounter, practitioner } = await anEncounter(prisma);
+    const repository = repositoryOf(prisma);
+    const query = { encounterId: encounter.id, sites: [site.id] };
+
+    // Control positivo: el mismo camino, con la posición, pasa.
+    const standing = await repository.saveVitals(
+      query,
+      { heightCm: 165, heightPosition: 'STANDING' },
+      practitioner.userId,
+    );
+    expect(standing.heightPosition).toBe('STANDING');
+
+    const problem = await problemFrom(
+      repository.saveVitals(query, { heightCm: 165 }, practitioner.userId),
+    );
+    expect(problem?.status).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
+    expect(problem?.errors?.[0]?.field).toBe('heightPosition');
+    expect(problem?.code).toBe('VITALS_HEIGHT_POSITION_REQUIRED');
+  });
+
+  it('EN-064 la base rechaza una posicion sin talla: no describe ninguna medida', async () => {
+    const prisma = db();
+    const { site, encounter, practitioner } = await anEncounter(prisma);
+
+    const problem = await problemFrom(
+      repositoryOf(prisma).saveVitals(
+        { encounterId: encounter.id, sites: [site.id] },
+        { weightKg: 12, heightPosition: 'LYING' },
+        practitioner.userId,
+      ),
+    );
+    expect(problem?.code).toBe('VITALS_HEIGHT_POSITION_REQUIRED');
+  });
+
+  it('EN-065 guarda la hemoglobina y la corregida, y la base rechaza la corregida sin la medida', async () => {
+    const prisma = db();
+    const { site, encounter, save } = await anEncounter(prisma);
+    const query = { encounterId: encounter.id, sites: [site.id] };
+
+    const vitals = await save(query, {
+      hemoglobinGDl: 12.4,
+      hemoglobinCorrectedGDl: 10.9,
+    });
+    expect(vitals.hemoglobinGDl).toBe(12.4);
+    expect(vitals.hemoglobinCorrectedGDl).toBe(10.9);
+
+    const problem = await problemFrom(
+      save(query, { hemoglobinCorrectedGDl: 10.9 }),
+    );
+    expect(problem?.status).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
+    expect(problem?.errors?.[0]?.field).toBe('hemoglobinCorrectedGDl');
+  });
+
+  it('EN-065 rechaza en la base una hemoglobina de 115, que es 11.5 sin la coma', async () => {
+    const prisma = db();
+    const { site, encounter, save } = await anEncounter(prisma);
+    const query = { encounterId: encounter.id, sites: [site.id] };
+
+    await expect(save(query, { hemoglobinGDl: 11.5 })).resolves.toMatchObject({
+      hemoglobinGDl: 11.5,
+    });
+    const problem = await problemFrom(save(query, { hemoglobinGDl: 115 }));
+    expect(problem?.code).toBe('VITALS_OUT_OF_RANGE');
+    expect(problem?.errors?.[0]?.field).toBe('hemoglobinGDl');
+  });
+
+  it('EN-143 la toma nombra en la fila a quien la guardo, y quien la corrige pasa a ser su autor', async () => {
+    const prisma = db();
+    const { site, encounter, practitioner } = await anEncounter(prisma);
+    const nurse = await prisma.user.create({
+      data: {
+        email: 'enfermera.en143@clinica.ec',
+        passwordHash: 'not-a-real-hash',
+        firstName: 'Carmen',
+        lastName: 'Salazar',
+      },
+    });
+    const repository = repositoryOf(prisma);
+    const query = { encounterId: encounter.id, sites: [site.id] };
+
+    const taken = await repository.saveVitals(
+      query,
+      { weightKg: 68 },
+      nurse.id,
+    );
+    expect(taken.recordedBy).toEqual({
+      id: nurse.id,
+      name: 'Carmen Salazar',
+    });
+
+    const corrected = await repository.saveVitals(
+      query,
+      { weightKg: 68.5 },
+      practitioner.userId,
+    );
+    expect(corrected.recordedBy?.id).toBe(practitioner.userId);
+    await expect(repository.findVitals(query)).resolves.toMatchObject({
+      recordedBy: { id: practitioner.userId },
+    });
+  });
+
+  it('EN-143 la base rechaza una toma escrita sin autor', async () => {
+    const prisma = db();
+    const { encounter, practitioner } = await anEncounter(prisma);
+
+    // Control positivo: la misma sentencia con autor entra.
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO encounter_vitals (encounter_id, weight_kg, recorded_by)
+       VALUES ($1, 68, $2::uuid)`,
+      encounter.id,
+      practitioner.userId,
+    );
+    await expect(
+      prisma.$executeRawUnsafe(
+        `UPDATE encounter_vitals SET recorded_by = NULL WHERE encounter_id = $1`,
+        encounter.id,
+      ),
+    ).rejects.toThrow(/encounter_vitals_names_its_author/);
+  });
+
+  it('EN-163 guarda con la toma el motivo en palabras del paciente', async () => {
+    const prisma = db();
+    const { site, encounter, save } = await anEncounter(prisma);
+
+    const vitals = await save(
+      { encounterId: encounter.id, sites: [site.id] },
+      {
+        weightKg: 68,
+        presentingComplaint: 'Me duele la cabeza hace tres días',
+      },
+    );
+
+    expect(vitals.presentingComplaint).toBe(
+      'Me duele la cabeza hace tres días',
+    );
   });
 });

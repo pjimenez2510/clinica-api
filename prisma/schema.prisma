@@ -123,6 +123,14 @@ model User {
   /// the requirement rather than a convenience.
   allergyAbsencesAsserted PatientAllergyAbsence[] @relation("AllergyAbsenceAsserter")
 
+  /// EN-086, EN-143, EN-085. Who wrote each nursing and background datum:
+  /// D-048 puts the authorship IN the datum, not in the form that carries it.
+  allergiesRecorded PatientAllergy[]  @relation("AllergyRecorder")
+  allergiesRefuted  PatientAllergy[]  @relation("AllergyRefuter")
+  vitalsRecorded    EncounterVitals[] @relation("VitalsRecorder")
+  historyRecorded   PatientHistory[]  @relation("HistoryRecorder")
+  historyRefuted    PatientHistory[]  @relation("HistoryRefuter")
+
   /// AG-064. The waiting-list calls this person made. `RESTRICT` on the way
   /// back: the trail names whoever called, and an account is deactivated, never
   /// deleted (AU-024).
@@ -768,6 +776,22 @@ enum WaitlistContactOutcome {
   DECLINED
 
   @@map("waitlist_contact_outcome")
+}
+
+/// EN-064. Column 23 of the RDACAA: 1 standing, 2 lying down.
+enum HeightPosition {
+  STANDING
+  LYING
+
+  @@map("height_position")
+}
+
+/// EN-085. Whose history it is: the patient's own or a relative's.
+enum PatientHistoryKind {
+  PERSONAL
+  FAMILY
+
+  @@map("patient_history_kind")
 }
 
 enum AllergyCriticality {
@@ -1588,6 +1612,8 @@ model Patient {
   allergies       PatientAllergy[]
   /// EN-087. The «sin alergias conocidas» assertions written on this chart.
   allergyAbsences PatientAllergyAbsence[]
+  /// EN-085. Personal and family history that persists between attentions.
+  history         PatientHistory[]
   agendaEntries   AgendaEntry[]
   encounters      Encounter[]
   waitlistEntries WaitlistEntry[]
@@ -1804,13 +1830,59 @@ model PatientAllergy {
 
   recordedAt DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
 
+  /// EN-086. Who recorded it. Nullable only because the rows written before
+  /// `20260930160703_patient_preparation` never had an author and nobody can
+  /// invent one; `patient_allergy_names_its_author` (NOT VALID) demands it on
+  /// every write since.
+  recordedById String? @map("recorded_by") @db.Uuid
+  recordedBy   User?   @relation("AllergyRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
+
   /// Refuted allergies are marked, never deleted: knowing an allergy was ruled
   /// out is clinical information in its own right.
   refutedAt    DateTime? @map("refuted_at") @db.Timestamptz(6)
   refutedNotes String?   @map("refuted_notes") @db.Text
+  /// EN-086. Who ruled it out. Same NOT VALID regime as `recordedBy`.
+  refutedById  String?   @map("refuted_by") @db.Uuid
+  refutedBy    User?     @relation("AllergyRefuter", fields: [refutedById], references: [id], onDelete: Restrict)
 
   @@index([patientId, refutedAt])
   @@map("patient_allergy")
+}
+
+/// EN-085. Personal and family history, per patient and not per note.
+///
+/// Inside a note's JSON a history entry is frozen with the note (EN-023):
+/// right for the act, useless as the state of the patient — March's finding
+/// would not show in April unless somebody re-read March. Sister of
+/// `patient_allergy`, with the same regime: refuted, never deleted.
+///
+/// The guarantees live in `20260930160703_patient_preparation`:
+/// `trg_patient_history_append_only` refuses DELETE, TRUNCATE and any UPDATE
+/// other than refuting a live row once.
+model PatientHistory {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  patientId String  @map("patient_id") @db.Uuid
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  kind        PatientHistoryKind
+  description String             @db.VarChar(500)
+  /// Mandatory for FAMILY, absent for PERSONAL
+  /// (`patient_history_family_names_relative`).
+  relative    String?            @db.VarChar(80)
+
+  recordedById String   @map("recorded_by") @db.Uuid
+  recordedBy   User     @relation("HistoryRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
+  recordedAt   DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
+
+  /// All three or none (`patient_history_refutation_is_whole`).
+  refutedAt    DateTime? @map("refuted_at") @db.Timestamptz(6)
+  refutedNotes String?   @map("refuted_notes") @db.Text
+  refutedById  String?   @map("refuted_by") @db.Uuid
+  refutedBy    User?     @relation("HistoryRefuter", fields: [refutedById], references: [id], onDelete: Restrict)
+
+  @@index([patientId, refutedAt])
+  @@map("patient_history")
 }
 
 /// EN-087, D-A-018. «Sin alergias conocidas», AFIRMADO POR UN CLÍNICO.
@@ -2334,6 +2406,24 @@ model EncounterVitals {
   oxygenSaturation Int?     @map("oxygen_saturation") @db.SmallInt
 
   measuredAt DateTime @default(now()) @map("measured_at") @db.Timestamptz(6)
+
+  /// EN-064. How the height was taken; mandatory with a height
+  /// (`encounter_vitals_height_needs_position`, NOT VALID for older rows).
+  heightPosition HeightPosition? @map("height_position")
+
+  /// EN-065. Both typed: correcting needs the site's altitude, which the
+  /// schema does not hold. 1–25 g/dl, D-058's criterion.
+  hemoglobinGDl          Decimal? @map("hemoglobin_g_dl") @db.Decimal(4, 1)
+  hemoglobinCorrectedGDl Decimal? @map("hemoglobin_corrected_g_dl") @db.Decimal(4, 1)
+
+  /// EN-163. The reason for the visit in the patient's own words, taken in
+  /// preparation. NOT the 002's `motivoConsulta`, which the doctor writes.
+  presentingComplaint String? @map("presenting_complaint") @db.VarChar(500)
+
+  /// EN-143. Who took the CURRENT reading (one per attention, EN-067).
+  /// Nullable only for rows older than the column; NOT VALID check since.
+  recordedById String? @map("recorded_by") @db.Uuid
+  recordedBy   User?   @relation("VitalsRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
 
   @@map("encounter_vitals")
 }
