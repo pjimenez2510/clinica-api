@@ -155,6 +155,12 @@ por sede.
 sus bytes y borrarla, y comprobar que las dos se rechazan **y que la fila no se
 movió**.
 
+**Cubre:** DOC-001 a DOC-014, DOC-090 a DOC-093.
+**Solo servidor:** DOC-004, DOC-005, DOC-011, DOC-013, DOC-090, DOC-092. Son el
+tamaño guardado, los disparadores que impiden `UPDATE` y `DELETE`, la ausencia
+de ruta de borrado y de purga, el permiso de cada ruta y la bitácora: ninguno se
+ve en una pantalla.
+
 ### H2 — El PDF es PDF/A-1b de verdad _(P1)_
 
 Fuentes incrustadas, `OutputIntent` con el perfil sRGB, `pdfaid` en el XMP, sin
@@ -164,6 +170,10 @@ estándar son sólo métricas y NO se pueden incrustar** (§6).
 **Prueba independiente:** generar un documento y comprobar que el fichero
 contiene `FontFile2` —la fuente incrustada— y `OutputIntent`, y que no queda
 ninguna referencia a `Helvetica`.
+
+**Cubre:** DOC-020 a DOC-024.
+**Solo servidor:** DOC-020 a DOC-024. La conformidad PDF/A se comprueba en los
+bytes del fichero, no mirándolo.
 
 ### H3 — La identidad visual, sin abrir un agujero _(P1)_
 
@@ -175,6 +185,10 @@ límite de píxeles contra bombas de descompresión. **SVG se rechaza.**
 `DOCUMENT_IMAGE_FORMAT_NOT_ALLOWED`; subir un PNG con metadatos y comprobar que
 lo guardado **no** los contiene y que su `sha256` no es el del fichero enviado.
 
+**Cubre:** DOC-030 a DOC-037, DOC-050 a DOC-060.
+**Solo servidor:** DOC-032, DOC-054, DOC-055, DOC-056, DOC-058. Inmutabilidad de
+plantillas e imágenes y el reencodado, que se prueban sobre los bytes guardados.
+
 ### H4 — Los cuatro documentos, con lo que la norma pide de cada uno _(P1)_
 
 Receta con los cinco bloques del art. 5 y su banda desprendible; orden de
@@ -185,12 +199,16 @@ y las banderas fiscales. **Sin QR y sin código de barras.**
 lleva el nombre del establecimiento, el registro ACESS del prescriptor y la
 línea de corte; emitir un RIDE y comprobar que **no** contiene ningún QR.
 
+**Cubre:** DOC-070 a DOC-079.
+
 ### H5 — La firma electrónica: el hueco declarado _(P3)_
 
 **No se construye.** §7 dice qué falta, qué no está verificado y por qué
 simularlo sería peor que no tenerlo.
 
 **Prueba independiente:** no la tiene, y decirlo es el punto.
+
+**Cubre:** DOC-100.
 
 ---
 
