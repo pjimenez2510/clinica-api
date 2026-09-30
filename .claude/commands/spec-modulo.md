@@ -39,12 +39,10 @@ Estado actual del repositorio:
 5. **Actualizar `../clinica-docs/REQUISITOS.md`**: rellenar la columna
    «Refinado en» de cada REQ que este módulo cubra, y correr `pnpm rtm:write`.
 
-## Si prefieres usar Spec Kit para el borrador
+## El nombre del archivo
 
-`/speckit-specify` genera bien las historias priorizadas y los criterios de
-éxito. Su salida va a `.specify/drafts/$1/` y se fusiona a mano al `SPEC.md`.
-**Nunca escribir `spec.md` dentro de `src/modules/`**: este sistema de archivos
-no distingue mayúsculas y destruiría el `SPEC.md`. Un hook lo bloquea.
+Siempre `SPEC.md`. **Nunca `spec.md` dentro de `src/modules/`**: este sistema de
+archivos no distingue mayúsculas y destruiría el `SPEC.md`. Un hook lo bloquea.
 
 ## Lo que no debe pasar
 

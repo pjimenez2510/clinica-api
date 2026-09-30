@@ -29,10 +29,9 @@ const MIGRATION = /prisma[\\/]migrations[\\/][^\\/]+[\\/].+\.sql$/;
  * A module spec written under any casing other than `SPEC.md`.
  *
  * macOS mounts APFS case-insensitively by default, so `spec.md` and `SPEC.md`
- * are THE SAME FILE. Spec Kit writes `spec.md`; the traceability test reads
- * `SPEC.md`. Pointing Spec Kit at a module directory would therefore overwrite
- * the module specification with a template — silently, with no git conflict and
- * no error. Drafts belong in `.specify/drafts/<module>/` and are merged by hand.
+ * are THE SAME FILE. The traceability test reads `SPEC.md`; any tool that writes
+ * the conventional lowercase `spec.md` into a module directory would overwrite
+ * the module specification silently, with no git conflict and no error.
  */
 const MODULE_SPEC = /src[\\/]modules[\\/][^\\/]+[\\/]spec\.md$/i;
 
@@ -51,8 +50,7 @@ if (MODULE_SPEC.test(filePath) && !filePath.endsWith('SPEC.md')) {
   process.stderr.write(
     `Bloqueado: en este sistema de archivos \`spec.md\` y \`SPEC.md\` son el mismo archivo, ` +
       'así que escribir ahí destruiría la especificación del módulo sin dejar rastro.\n' +
-      'Los borradores de Spec Kit van a `.specify/drafts/<módulo>/`; el SPEC.md se actualiza ' +
-      'fusionando a mano lo que valga la pena.\n',
+      'La especificación del módulo se edita en `SPEC.md`, en mayúsculas.\n',
   );
   process.exit(2);
 }

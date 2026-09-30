@@ -1,7 +1,6 @@
 ---
 paths:
   - "src/modules/*/SPEC.md"
-  - ".specify/drafts/**/*.md"
 ---
 
 # Especificaciones de módulo
@@ -64,8 +63,8 @@ niveles de prueba por requisito · preguntas abiertas.
 - Enumerar en lugar de referenciar: «los grupos prioritarios de la Constitución»
   no es especificar; la lista sí.
 
-## Borradores de Spec Kit
+## El nombre del archivo
 
-Van a `.specify/drafts/<módulo>/` y se fusionan a mano al `SPEC.md`. **Nunca se
-escribe `spec.md` dentro de `src/modules/`**: este sistema de archivos no
-distingue mayúsculas y destruiría el `SPEC.md`. Un hook lo bloquea.
+Siempre `SPEC.md`. **Nunca se escribe `spec.md` dentro de `src/modules/`**: este
+sistema de archivos no distingue mayúsculas y destruiría el `SPEC.md`. Un hook
+lo bloquea.
