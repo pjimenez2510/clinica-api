@@ -323,7 +323,7 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   > (otra pestaña puede haber vuelto a entrar ya) y, si no, pide volver a
   > entrar **en un diálogo encima**, con la misma cuenta, y reintenta lo que
   > se estaba guardando. Alinear el corte a una hora fija de la clínica es una
-  > decisión del autor (D-064).
+  > decisión del autor (D-065).
 - **AU-041** — CUANDO se cierren todas las sesiones de una cuenta —cambio de
   contraseña, AU-023, AU-036 o canje de una invitación— mientras un inicio de
   sesión de esa cuenta está en curso, el sistema NO DEBERÁ dejar abierta la
