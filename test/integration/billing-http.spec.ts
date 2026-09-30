@@ -819,8 +819,10 @@ describe('la facturación por HTTP', () => {
       const problem = refused.body as Problem;
       expect(problem.code).toBe('INVALID_CEDULA');
       expect(problem.errors?.[0]?.field).toBe('receiver.identification');
+      expect(await prisma.invoice.count({ where: { accountId } })).toBe(0);
 
-      await issueTo(accountId, '05', '1710034065').expect(201);
+      const issued = await issueTo(accountId, '05', '1710034065').expect(201);
+      expect(issued.body).toMatchObject({ sequential: '000000001' });
     });
   });
 

@@ -24,8 +24,7 @@ export class InvalidCedulaError extends ValidationError {
             {
               field,
               code: 'INVALID_CEDULA',
-              message:
-                'La cédula no supera la validación: revise los diez dígitos, el último es de control',
+              message: 'La cédula no es válida: revise los diez dígitos',
             },
           ],
     );
