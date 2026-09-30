@@ -19,6 +19,7 @@ import {
   ChartSummaryDto,
   type ChartSummaryResponse,
 } from './dto/chart-summary.dto';
+import { toHistoryResponse } from './dto/patient-history.mapper';
 
 /**
  * EN-159 to EN-161. The patient's history, without leaving the consultation.
@@ -128,6 +129,8 @@ function toChartSummaryResponse(summary: ChartSummary): ChartSummaryResponse {
       summary.noKnownAllergies === null
         ? null
         : toNoKnownAllergiesResponse(summary.noKnownAllergies),
+    // EN-085. The same presenter as `GET /patients/:id/history`.
+    history: summary.history.map(toHistoryResponse),
     previousEncounters: summary.previousEncounters.map((encounter) => ({
       id: encounter.id,
       siteId: encounter.siteId,

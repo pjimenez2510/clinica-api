@@ -13,6 +13,7 @@ import {
   createPatient,
   createPractitioner,
   createSite,
+  createUser,
   hourSlot,
 } from './setup/fixtures';
 
@@ -253,7 +254,13 @@ describe('database errors become usable responses', () => {
 
     const problem = await problemFrom(
       prisma.encounterVitals.create({
-        data: { encounterId: encounter.id, weightKg: 750, heightCm: 175 },
+        data: {
+          encounterId: encounter.id,
+          weightKg: 750,
+          heightCm: 175,
+          heightPosition: 'STANDING',
+          recordedById: (await createUser(prisma)).id,
+        },
       }),
     );
 

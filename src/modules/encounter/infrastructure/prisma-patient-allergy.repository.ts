@@ -48,6 +48,8 @@ const ALLERGY_SELECT = {
   recordedAt: true,
   refutedAt: true,
   refutedNotes: true,
+  recordedBy: { select: { id: true, firstName: true, lastName: true } },
+  refutedBy: { select: { id: true, firstName: true, lastName: true } },
 } satisfies Prisma.PatientAllergySelect;
 
 /** The row `ALLERGY_SELECT` yields, derived from it so the two cannot drift. */
@@ -115,6 +117,8 @@ export class PrismaPatientAllergyRepository implements PatientAllergyRepository 
           substanceText: allergy.substanceText,
           reaction: allergy.reaction,
           criticality: allergy.criticality,
+          // EN-086. «¿Quién dijo que era alérgico?», answered by the row.
+          recordedById: allergy.recordedById,
           // `recorded_at` is left to the column default: the instant of the
           // WRITE is the instant of the record here, unlike `started_at` or
           // `measured_at`, which are facts about the world that happened
@@ -159,6 +163,7 @@ export class PrismaPatientAllergyRepository implements PatientAllergyRepository 
         data: {
           refutedAt: refutation.now,
           refutedNotes: refutation.notes,
+          refutedById: refutation.refutedById,
         },
       });
 
@@ -343,5 +348,16 @@ function toAllergyView(row: AllergyRow): AllergyView {
     recordedAt: row.recordedAt,
     refutedAt: row.refutedAt,
     refutedNotes: row.refutedNotes,
+    recordedBy: authorOf(row.recordedBy),
+    refutedBy: authorOf(row.refutedBy),
   };
+}
+
+/** EN-086. The account behind a row, by name, or `null` for older rows. */
+function authorOf(
+  user: { id: string; firstName: string; lastName: string } | null,
+): AllergyView['recordedBy'] {
+  return user === null
+    ? null
+    : { id: user.id, name: `${user.firstName} ${user.lastName}` };
 }

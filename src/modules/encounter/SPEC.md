@@ -329,7 +329,7 @@ tiene nada que hacer en el sistema.
 **Prueba independiente:** registrar peso y talla y comprobar que el IMC **vuelve
 calculado** y que enviarlo en la petición no lo cambia; y que un peso de 750 kg
 —el dedo que tecleó 750 en vez de 75— se rechaza por la base y no por el DTO.
-**Cubre:** EN-060 a EN-068.
+**Cubre:** EN-060 a EN-068, EN-163.
 
 **Solo servidor:** EN-061, EN-062. El IMC lo escribe un disparador y el rango lo
 impone un `CHECK`: un doble que devuelve lo que le pedimos no demuestra ninguna
@@ -375,12 +375,10 @@ una atención del mismo paciente y comprobar que viaja en la respuesta de apertu
 de contar como activa.
 **Cubre:** EN-080 a EN-084, **EN-087** —«sin alergias conocidas» como
 afirmación de una persona y no como casilla vacía— y **EN-159 a EN-161** —la
-historia a la vista durante la consulta—. **EN-085 y EN-086 quedan bloqueadas
-por esquema** y no se aproximan: no hay tabla de antecedentes y
-`patient_allergy` no tiene autor. Se deja escrito en cada requisito, y mientras
-tanto **la bitácora es la única respuesta a «¿quién dijo que era alérgico?»**,
-que es más débil que el requisito —el rastro no es el dato— y es lo que mantiene
-la pregunta contestable.
+historia a la vista durante la consulta—, **EN-164** —enfermería registra
+alergias y antecedentes sin `record:write`—, y **EN-085 y EN-086**, que
+estuvieron bloqueadas por esquema hasta `feat/f03-preparacion`: la tabla de
+antecedentes y el autor de la alergia.
 
 **Solo servidor:** EN-082. Que refutar **no borre** sólo se ve contando filas.
 **EN-087** lo es por lo mismo: la inmutabilidad de la afirmación y el rechazo
@@ -1318,15 +1316,24 @@ requisitos que cambian.
   > era verdad ese día.
 - **EN-064** — El sistema DEBERÁ registrar **cómo se tomó la talla**: **1 de
   pie** o **2 acostado**.
-  > **Falta esquema.** Columna 23. No existe la columna. No es un detalle
+  > Columna 23 del RDACAA. No es un detalle
   > cosmético: la talla acostado y de pie **no son la misma medida** y el
   > instructivo fija el corte por edad —acostado hasta 1 año 5 meses 29 días, de pie
   > a partir de 1 año 6 meses 0 días—, así que sin este dato una curva de
   > crecimiento mezcla dos escalas en el punto exacto donde el niño cambia de una a
   > otra.
+  >
+  > **Esquema (`feat/f03-preparacion`):** `encounter_vitals.height_position`,
+  > enum `height_position` (`STANDING` = 1, `LYING` = 2). **Garantía de la
+  > base:** `encounter_vitals_height_needs_position` —con talla, la posición es
+  > obligatoria, y sin talla no hay posición—, creada `NOT VALID` por lo mismo
+  > que las cinco de D-058: las tallas ya guardadas no tienen posición y nadie
+  > puede inventársela. **El sistema no la deduce de la edad**: el corte del
+  > instructivo es la regla de cómo DEBERÍA medirse, y lo que se registra es
+  > cómo SE midió; la pantalla recuerda el corte, no lo aplica.
 - **EN-065** — El sistema DEBERÁ registrar el valor de **hemoglobina** y el de
   **hemoglobina corregida por altitud**.
-  > **Falta esquema.** Columnas 27 y 28. No existen las columnas. El instructivo
+  > Columnas 27 y 28 del RDACAA. El instructivo
   > marca `< 11,0 g/dl` como riesgo y explica que la corregida es *«el ajuste que se
   > realiza a los resultados de la hemoglobina de acuerdo a donde se encuentra
   > ubicado el establecimiento (altitud sobre el nivel del mar)»* — en Ecuador eso
@@ -1334,6 +1341,17 @@ requisitos que cambian.
   > cambia. Van en `encounter_vitals` y no en `observation_result` aunque sean de
   > laboratorio, porque el RDACAA los pide **por atención** y en la fila del reporte
   > están junto al peso y la talla.
+  >
+  > **Esquema (`feat/f03-preparacion`):** `hemoglobin_g_dl` y
+  > `hemoglobin_corrected_g_dl`, `numeric(4,1)`. **Las dos se teclean**:
+  > calcular la corregida exigiría la altitud de la sede, que no es un dato del
+  > esquema, y la tabla de ajuste del MSP. **Garantía de la base:**
+  > `encounter_vitals_ranges_hemoglobin_g_dl` y
+  > `encounter_vitals_ranges_hemoglobin_corrected_g_dl`, **1–25 g/dl**, con el
+  > criterio de D-058 —amplio: caza el 115 tecleado por 11,5 y no discute de
+  > fisiología—, y `encounter_vitals_corrected_needs_hemoglobin`: no hay valor
+  > corregido sin el valor que se corrigió. Los rangos salen por el mismo 422
+  > `VITALS_OUT_OF_RANGE`, por campo.
 - **EN-066** — El sistema DEBERÁ permitir registrar los signos vitales **sin
   abrir ni firmar la nota clínica**, con el permiso `nursing:write` y sin
   `record:write`, sobre una atención abierta con `encounter:open`.
@@ -1368,6 +1386,26 @@ requisitos que cambian.
   > Un peso suelto no dice nada; un peso que bajó cuatro kilos en dos meses sí. Es
   > la mitad del bloque D que sirve para atender y no sólo para reportar, y depende
   > de EN-015 —incluidas las fichas absorbidas—.
+  >
+  > Se sirve en el resumen de la historia (EN-159): cada atención anterior
+  > lleva su toma, **de la más reciente a la más antigua**, y la pantalla de
+  > signos las pone junto a la toma de hoy.
+- **EN-163** — El sistema DEBERÁ permitir registrar, con la toma de signos
+  vitales y con el mismo permiso, el **motivo de la consulta en las palabras
+  del paciente**, con su autor, y DEBERÁ mostrarlo a quien atienda junto a los
+  signos.
+  > **Paso 2 de FLUJO-DE-LA-ATENCION.md y F-03**: la preconsulta recoge el
+  > motivo «en las palabras del paciente». No puede vivir en la sección
+  > `motivoConsulta` del 002: esa nota la escribe el médico con
+  > `record:write` (EN-020), y **abrirla** lleva al paciente a
+  > `RECEIVING_CARE` (EN-137), así que la enfermera que anotase el motivo
+  > sacaría al paciente de «listo» antes de que el médico lo llame.
+  >
+  > **Esquema (`feat/f03-preparacion`):** `encounter_vitals.presenting_complaint`,
+  > texto de hasta 500 caracteres, con el autor de EN-143. **No sustituye al
+  > motivo del 002**, que sigue siendo obligatorio y del médico: éste es lo que
+  > dijo el paciente al llegar, aquél es lo que el médico registra. Es contenido
+  > clínico: no viaja en listados ni en logs (EN-124).
 
 ## 5. Tamizaje de violencia — bloque F (REQ-025, REQ-115)
 
@@ -1515,18 +1553,43 @@ requisitos que cambian.
   > (EN-020), y la parte que hay que decidir es qué persiste **entre atenciones**:
   > un antecedente familiar de diabetes no se vuelve a preguntar cada vez.
   >
-  > **Falta esquema.** No hay tabla de antecedentes. Dejarlos sólo dentro del JSON
+  > Dejarlos sólo dentro del JSON
   > de cada nota los hace inmutables con la nota (EN-023), que es correcto para el
   > acto clínico y **inservible como estado del paciente**: el antecedente
   > descubierto en marzo no aparecería en la consulta de abril salvo que el médico
   > relea marzo. Hace falta una tabla por paciente, hermana de `patient_allergy` y
   > con su mismo régimen —se refutan, no se borran—, cuya instantánea se copie a la
   > nota al firmarla.
+  >
+  > **Esquema (`feat/f03-preparacion`):** `patient_history` —tipo
+  > (`PERSONAL` o `FAMILY`), descripción, parentesco **obligatorio en los
+  > familiares** (`patient_history_family_names_relative`), autor
+  > (`recorded_by`, `NOT NULL` con clave foránea), instante, y refutación con
+  > instante, motivo y autor, las tres o ninguna
+  > (`patient_history_refutation_is_whole`)—. **Garantía de la base:**
+  > `trg_patient_history_append_only` rechaza `DELETE`, `TRUNCATE` y todo
+  > `UPDATE` que no sea refutar una fila vigente, así que refutar dos veces o
+  > reescribir la descripción fallan venga de donde venga. Se leen con
+  > `chartScope` —la ficha y las que absorbió—, y viajan en el resumen de la
+  > historia de toda atención (EN-159) y en `GET /patients/:id/history`.
+  >
+  > **Queda pendiente la instantánea en la nota al firmarla**: es parte de la
+  > firma del 002 (F-04), no de la preparación, y se construye con ella.
 - **EN-086** — Toda mutación de una alergia o de un antecedente DEBERÁ conservar
   quién la hizo y cuándo.
-  > **Falta esquema.** `patient_allergy` tiene `recorded_at` y **no tiene autor**.
   > Es dato clínico que decide si un paciente recibe un antibiótico: la pregunta
   > «¿quién dijo que era alérgico?» tiene que tener respuesta.
+  >
+  > **Esquema (`feat/f03-preparacion`):** `patient_allergy.recorded_by` y
+  > `refuted_by`, claves foráneas a `app_user` con `RESTRICT`. **Garantía de la
+  > base:** `trg_patient_allergy_guard` exige el autor **al insertar** y sólo
+  > admite después una escritura —refutar una alergia vigente, sin tocar nada
+  > más—; rechaza `DELETE` y `TRUNCATE`. No es un `CHECK NOT VALID` sobre
+  > `recorded_by`, que se evalúa en cada `UPDATE` y dejaba sin poder refutar
+  > las alergias anteriores a la columna.
+  > `patient_allergy_refutation_names_its_author` exige quién la descartó. Las
+  > filas anteriores no se inventan autor; para ellas la bitácora sigue siendo
+  > la única respuesta.
 - **EN-087** — CUANDO un clínico afirme que el paciente **no tiene alergias
   conocidas**, el sistema DEBERÁ registrar esa afirmación **con su autor y su
   instante**, y DEBERÁ servirla junto a la lista de alergias. El sistema NO
@@ -1584,8 +1647,24 @@ requisitos que cambian.
   > con `record:write`—, que es lo que hace alcanzable el tercer estado: sin ella
   > la columna sería decorativa.
   >
-  > ⚠️ **Esto NO resuelve EN-086**, que sigue bloqueada por esquema: la
-  > afirmación de ausencia lleva su autor y `patient_allergy` sigue sin llevarlo.
+  > La afirmación lleva su autor desde que existe; `patient_allergy` lo lleva
+  > desde `feat/f03-preparacion` (EN-086).
+- **EN-164** — Registrar una alergia, afirmar «sin alergias conocidas» y
+  registrar un antecedente DEBERÁN exigir el permiso `background:write`, que
+  DEBERÁN llevar `MEDICO` y `ENFERMERIA`; **refutar** una alergia o un
+  antecedente DEBERÁ seguir exigiendo `record:write`.
+  > **F-03 y el paso 2 del flujo de la atención**: enfermería registra
+  > «alergias y antecedentes» en la preconsulta. Con `record:write` en esas
+  > rutas no podía —el rol no lo lleva, y dárselo arrastraría diagnosticar y
+  > prescribir (EN-142, LOS art. 198)—. Registrar lo que el paciente declara es
+  > anamnesis; **descartar** una alergia o un antecedente es un juicio clínico
+  > sobre él (EN-082), y por eso la refutación no cambia de permiso.
+  >
+  > Es un código **nuevo**, así que `syncAuthorisation` lo concede a los dos
+  > roles de sistema que lo declaran también en bases ya sembradas (D-012). ⚠️
+  > Un rol **propio** de una clínica que registraba alergias con `record:write`
+  > deja de poder hacerlo hasta que se le conceda: los roles son datos, y
+  > concederlo en silencio a quien no lo declara es lo que D-012 prohíbe.
 
 ## 7. Los bloques de programa: obstétricos, SIVAN, vacunas y VIH
 
@@ -2242,7 +2321,16 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   > escritura de enfermería sobre un documento ajeno y por eso se nombra aparte.
 - **EN-143** — Todo dato registrado por enfermería DEBERÁ guardar **en el propio
   dato** quién lo tomó y cuándo.
-  > **Falta esquema.** `encounter_vitals` tiene `measured_at` y **no tiene autor**.
+  > **Esquema (`feat/f03-preparacion`):** `encounter_vitals.recorded_by`,
+  > clave foránea a `app_user` —y no a `practitioner`: enfermería no tiene
+  > perfil clínico agendable— con `RESTRICT`, y
+  > `encounter_vitals_names_its_author`, `NOT VALID` por la misma razón que en
+  > EN-086. **Corregir no es tomar**: quien corrige queda en `corrected_by` y
+  > `corrected_at`, y ni el autor ni el instante de la toma cambian
+  > (`trg_encounter_vitals_keeps_its_author`). La primera versión hacía autor
+  > de todas las cifras a quien corregía una sola; la revisión clínica del
+  > 30-09-2026 lo paró. **La autoría por medida** —el médico que rehace la
+  > temperatura es autor de la temperatura y no del peso— **es D-062**.
   >
   > **Esto es lo que resuelve la contradicción del formulario 002**, que el flujo
   > dejó anotada: el instructivo del 002 dice que *«este formulario debe ser
@@ -2582,6 +2670,9 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `PATIENT_ALLERGY_NOT_FOUND` | 404 | Se refutó una alergia que no existe en esa ficha ni en las que absorbió. **El mismo para «no existe» y «es de otra ficha»**, por lo mismo que `ENCOUNTER_NOT_FOUND` | EN-082 |
 | `ALLERGY_ALREADY_REFUTED` | 409 | Se refutó una alergia ya refutada. **No es idempotencia**: la segunda refutación reescribiría la fecha y el motivo de la primera, y quién la descartó y por qué es información clínica por derecho propio | EN-082 |
 | `REFUTATION_REASON_REQUIRED` | 422 | Refutar sin escribir por qué. Se exige **en el servicio** además del DTO, por lo mismo que `AMENDMENT_REASON_REQUIRED` | EN-082 |
+| `PATIENT_HISTORY_NOT_FOUND` | 404 | Se refutó un antecedente que no existe en esa ficha ni en las que absorbió. El mismo para las dos, por lo mismo que `PATIENT_ALLERGY_NOT_FOUND` | EN-085 |
+| `HISTORY_ALREADY_REFUTED` | 409 | Se refutó un antecedente ya refutado. Lo arbitra además `trg_patient_history_append_only` | EN-085 |
+| `VITALS_HEIGHT_POSITION_REQUIRED` | 422 | Talla sin posición, o posición sin talla. Del mapeo de constraints (`encounter_vitals_height_needs_position`), señala `heightPosition` | EN-064 |
 | `CHART_HAS_ALLERGIES` | 409 | Se afirmó «sin alergias conocidas» sobre una ficha con alergias sin descartar. Las dos no pueden ser ciertas a la vez, y quien lee la primera deja de mirar la lista. La salida es refutarlas **una a una con su motivo**, que es un juicio clínico por alergia y no el efecto colateral de marcar una casilla. Lo arbitra además `trg_patient_allergy_absence_empty_chart` | EN-087 |
 
 **Los que NO entran en el catálogo congelado** son los derivados del mapeo de
@@ -2616,7 +2707,8 @@ parroquia y la etnia en 3 fichas», no cuáles.
 ## Notas de esquema
 
 Las notas de esquema pendiente de este documento, agrupadas por lo que hay que
-escribir: **treinta y cuatro** filas. **Ninguna es una migración correctiva**: la
+escribir: **treinta** filas —las de EN-064, EN-065, EN-085, EN-086 y EN-143
+las cerró `feat/f03-preparacion`—. **Ninguna es una migración correctiva**: la
 base está en fase `development` (`scripts/database-phase.mjs`), así que el bucle
 es editar el SQL y `pnpm db:reset`, y varias migraciones se pueden fusionar en
 una.
@@ -2632,11 +2724,8 @@ una.
 | Lugar de atención: catálogo de **13** valores en vez del enum de 2 | `encounter`, `catalog_system` | EN-012 |
 | Estrategia «Médico del Barrio» | `encounter` | EN-013 |
 | Anulación de la atención con motivo y autor, y disparador de inmutabilidad | `encounter` | EN-018 |
-| Toma de medida de pie / acostado | `encounter_vitals` | EN-064 |
-| Hemoglobina y hemoglobina corregida | `encounter_vitals` | EN-065 |
 | CEO-D y CPO-D | tabla nueva o `encounter` | EN-052 |
 | Marca de código notificable como propiedad del **concepto** | `catalog_concept` | EN-049 |
-| Autor de la alergia; tabla de **antecedentes** | `patient_allergy`, tabla nueva | EN-085, EN-086 |
 | Autor del tamizaje con clave foránea y `NOT NULL`; bloque de notificación de violencia con sus tres catálogos | `violence_screening` | EN-074, EN-076 |
 | Permiso propio del tamizaje y del bloque VIH | `permission.catalogue.ts` | EN-072, EN-095 |
 | **Bloque obstétrico** completo y laboratorio de gestantes | tabla nueva | EN-090, EN-091 |
@@ -2651,7 +2740,6 @@ una.
 | Motivo, autor e instante de la **suspensión** (`ON_HOLD`) | `encounter` | EN-128 |
 | Motivo, autor e **origen** de la interrupción —paciente o establecimiento— | `encounter` | EN-129 |
 | **Historial de estados** con el hecho que disparó cada cambio | tabla nueva | EN-133 |
-| Autor del dato de enfermería —quién tomó los signos— | `encounter_vitals` | EN-143 |
 | **Nivel de triaje** asignado, con autor e instante | tabla nueva | EN-148 |
 | Calificación de emergencia en la **atención espontánea**, la que no tiene fila de agenda | `encounter` | EN-150 |
 | **Consentimiento informado**: clasificación de riesgo de la prestación, formulario 024 atado al procedimiento, negativa y revocación | catálogo de prestaciones, tabla nueva | EN-152, EN-153 |
@@ -2712,8 +2800,8 @@ que es global: una atención ocurre en un sitio.
 | `POST` | `/encounters/:id/notes/:noteId/sign` | `record:sign` | EN-027 a EN-029 |
 | `POST` | `/encounters/:id/notes/:noteId/amend` | `record:sign` | EN-025 |
 | `POST` | `/encounters/:id/notes/:noteId/retract` | `record:sign` | EN-026 |
-| `PUT` | `/encounters/:id/vitals` | `nursing:write` | EN-060 a EN-067, EN-136, EN-142, EN-143 |
-| `POST` | `/encounters/:id/vitals/start` | `nursing:write` | EN-135 |
+| `PUT` | `/encounters/:id/vitals` | `vitals:write` | EN-060 a EN-067, EN-136, EN-142, EN-143, **EN-163** |
+| `POST` | `/encounters/:id/vitals/start` | `vitals:write` | EN-135 |
 | `POST` | `/encounters/:id/nursing-notes` | `nursing:write` | EN-142 *(formulario 120)* |
 | `POST` | `/encounters/:id/medication-administrations` | `nursing:write` | EN-142 *(formulario 022)* |
 | `PUT` | `/encounters/:id/triage` | `nursing:write` | EN-148, EN-149 *(sólo DONDE la capacidad esté habilitada)* |
@@ -2724,9 +2812,12 @@ que es global: una atención ocurre en un sitio.
 | `GET` | `/encounters/:id/violence-screening` | `record:read` + la segunda llave | EN-070 a EN-076 |
 | `PUT` | `/encounters/:id/violence-screening` | `record:write` + la segunda llave | EN-070 a EN-077 |
 | `GET` | `/patients/:id/allergies` | `record:read` | EN-080 a EN-083, **EN-087** |
-| `POST` | `/patients/:id/allergies` | `record:write` | EN-080, EN-086 |
-| `POST` | `/patients/:id/allergies/none-known` | `record:write` | EN-087 |
-| `POST` | `/patients/:id/allergies/:allergyId/refute` | `record:write` | EN-082 |
+| `POST` | `/patients/:id/allergies` | `background:write` | EN-080, EN-086, **EN-164** |
+| `POST` | `/patients/:id/allergies/none-known` | `background:write` | EN-087, **EN-164** |
+| `POST` | `/patients/:id/allergies/:allergyId/refute` | `record:write` | EN-082, EN-086 |
+| `GET` | `/patients/:id/history` | `record:read` | **EN-085** |
+| `POST` | `/patients/:id/history` | `background:write` | **EN-085**, EN-164 |
+| `POST` | `/patients/:id/history/:historyId/refute` | `record:write` | **EN-085**, EN-164 |
 | `GET` | `/encounters/:id/chart-summary` | `record:read` | EN-159 a EN-161 |
 | `PUT` | `/encounters/:id/obstetric` | `record:write` | EN-090, EN-091 |
 | `PUT` | `/encounters/:id/nutrition` | `nursing:write` | EN-092, EN-096 |
@@ -2821,6 +2912,9 @@ prueba o el CI falla**.
 | EN-133, EN-134 a EN-139 | **Integración contra PostgreSQL real, contando filas del historial**: recorrer una atención entera —abrir, tomar signos, guardarlos, abrir la nota, firmarla, cerrar la cuenta— y comprobar que cada estado tiene su fila con **el hecho que lo disparó**, y que ninguna ruta admite fijar el estado directamente |
 | EN-141, EN-142 | **Seguridad dirigida con sesión real**, no con un doble: una sesión de `ENFERMERIA` abre la atención y escribe los formularios 020, 120 y 022, y **falla** al registrar un diagnóstico, un procedimiento o una receta con `NURSING_SCOPE_DENIED`. El defecto de AG-111 fue confiar en un doble con los permisos puestos a mano |
 | EN-143 | Integración: los signos guardados por enfermería llevan **su** autor, y firmar el formulario 002 con la sesión del médico **no lo sobrescribe** |
+| EN-064, EN-065 | **Integración contra PostgreSQL real, con control positivo**: la base rechaza talla sin posición y hemoglobina 115, y acepta la toma buena en la misma prueba |
+| EN-085 | **Integración contra PostgreSQL real**: el antecedente reaparece en la atención siguiente y desde la ficha que absorbió la suya; refutarlo no borra (contar filas); `DELETE`, `TRUNCATE` y reescribir la descripción fallan atacando la base |
+| EN-163, EN-164 | Contrato HTTP con sesión real: enfermería guarda el motivo con los signos y registra alergia, afirmación y antecedente; **falla** al refutar |
 | EN-144, EN-145, EN-147 | Integración y **observación**: cierra quien abrió; otro con `record:sign` cierra dejando la constancia de sustitución; otro sin él falla; y una atención abierta hace cuarenta días **sigue abierta**, porque no existe ningún proceso que la cierre |
 | EN-148, EN-149 | Contrato HTTP con la capacidad **apagada** —que es el defecto—: la ruta de triaje responde `TRIAGE_NOT_ENABLED` y **ninguna respuesta del módulo lleva nivel de triaje**, afirmado sobre el cuerpo. Con la capacidad encendida, el nivel se registra con su autor |
 | EN-151, EN-152, EN-153, EN-154 | Contrato HTTP: un procedimiento de riesgo mínimo se registra **sin consentimiento alguno**; uno de riesgo mayor sin 024 se rechaza; la negativa **no cierra** la atención; y revocar deja el consentimiento anterior legible (contar filas) |

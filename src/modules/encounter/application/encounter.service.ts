@@ -47,9 +47,8 @@ const RESOURCE_TYPE = 'encounter';
  * Its own resource type for block D, and the argument is the same one PA-040
  * made for the priority groups: the vital signs are written by nursing under a
  * different permission through a different route, and an audit that recorded
- * them as «encounter» could not answer «¿quién tomó los signos?» — which is
- * exactly the question EN-143 asks and that the schema cannot yet answer from
- * the datum itself.
+ * them as «encounter» could not answer «¿quién tomó los signos?». The row
+ * names who took it and who corrected it last (EN-143); the trail keeps all.
  */
 const VITALS_RESOURCE_TYPE = 'encounter_vitals';
 
@@ -445,9 +444,12 @@ export class EncounterService {
       days: encounter.ageDays,
     });
 
+    // EN-143, D-048. The author goes IN the datum, from the session and never
+    // from the body: the author of a first taking, the corrector of a later one.
     const saved = await this.encounters.saveVitals(
       { encounterId: encounter.id, sites: requester.sites },
       vitals,
+      requester.userId,
     );
 
     // EN-136. The board moves because the signs were SAVED — the fact proves
@@ -459,12 +461,8 @@ export class EncounterService {
     });
 
     /**
-     * EN-143, and the entry is what stands in for the column that does not
-     * exist. `encounter_vitals` has `measured_at` and NO author, so «quién
-     * tomó el peso» can only be answered from the trail today. It is a weaker
-     * answer than the requirement asks for — the trail is not the datum — and
-     * writing it is what keeps the question answerable at all until the column
-     * lands.
+     * EN-143. The row names who took the reading and who corrected it last;
+     * the trail keeps every write in between.
      */
     await this.audit.record({
       userId: requester.userId,

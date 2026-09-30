@@ -533,7 +533,7 @@ describe('la atención por HTTP', () => {
       const response = await put(
         `/encounters/${encounterId}/vitals`,
         nurseToken,
-        { weightKg: 68.4, heightCm: 165 },
+        { weightKg: 68.4, heightCm: 165, heightPosition: 'STANDING' },
       ).expect(200);
 
       expect(response.body).toMatchObject({ weightKg: 68.4, bmi: 25.12 });
@@ -545,7 +545,12 @@ describe('la atención por HTTP', () => {
       const response = await put(
         `/encounters/${encounterId}/vitals`,
         nurseToken,
-        { weightKg: 68.4, heightCm: 165, bmi: 99.9 },
+        {
+          weightKg: 68.4,
+          heightCm: 165,
+          heightPosition: 'STANDING',
+          bmi: 99.9,
+        },
       ).expect(422);
 
       const problem = response.body as Problem;
@@ -561,7 +566,7 @@ describe('la atención por HTTP', () => {
       const response = await put(
         `/encounters/${encounterId}/vitals`,
         nurseToken,
-        { weightKg: 750, heightCm: 175 },
+        { weightKg: 750, heightCm: 175, heightPosition: 'STANDING' },
       ).expect(422);
 
       const problem = response.body as Problem;
@@ -599,6 +604,146 @@ describe('la atención por HTTP', () => {
       await post(`/encounters/${encounterId}/notes`, nurseToken, {
         formCode: '002',
         content: COMPLETE_002,
+      }).expect(403);
+    });
+  });
+
+  describe('la preparación de enfermería (F-03)', () => {
+    it('EN-163 enfermeria guarda el motivo con los signos, y la toma la nombra a ella', async () => {
+      const encounterId = await openEncounter(nurseToken);
+
+      const response = await put(
+        `/encounters/${encounterId}/vitals`,
+        nurseToken,
+        {
+          weightKg: 68.4,
+          heightCm: 165,
+          heightPosition: 'STANDING',
+          hemoglobinGDl: 12.4,
+          presentingComplaint: '  Dolor de cabeza desde el lunes  ',
+        },
+      ).expect(200);
+
+      const body = response.body as {
+        presentingComplaint: string;
+        heightPosition: string;
+        hemoglobinGDl: number;
+        recordedBy: { id: string; name: string };
+      };
+      expect(body.presentingComplaint).toBe('Dolor de cabeza desde el lunes');
+      expect(body.heightPosition).toBe('STANDING');
+      expect(body.hemoglobinGDl).toBe(12.4);
+      const nurse = await prisma.user.findUniqueOrThrow({
+        where: { email: 'enfermeria@clinica.ec' },
+      });
+      expect(body.recordedBy.id).toBe(nurse.id);
+    });
+
+    it('EN-064 rechaza por HTTP una talla sin posicion, senalando la casilla', async () => {
+      const encounterId = await openEncounter(nurseToken);
+
+      const response = await put(
+        `/encounters/${encounterId}/vitals`,
+        nurseToken,
+        {
+          heightCm: 165,
+        },
+      ).expect(422);
+
+      const problem = response.body as Problem;
+      expect(problem.code).toBe('VITALS_HEIGHT_POSITION_REQUIRED');
+      expect(problem.errors?.[0]?.field).toBe('heightPosition');
+    });
+
+    it('EN-164 enfermeria registra una alergia y afirma sin alergias conocidas, y no puede descartarlas', async () => {
+      const other = await createPatient(prisma);
+
+      const recorded = await post(
+        `/patients/${patientId}/allergies`,
+        nurseToken,
+        {
+          substanceText: 'Penicilina',
+          criticality: 'HIGH',
+        },
+      ).expect(201);
+      const allergyId = (recorded.body as { id: string }).id;
+
+      await post(`/patients/${other.id}/allergies/none-known`, nurseToken).expect(201); // prettier-ignore
+
+      // Descartar es juicio clínico: sigue con `record:write`. Control
+      // positivo: el médico, por la misma ruta, sí.
+      await post(
+        `/patients/${patientId}/allergies/${allergyId}/refute`,
+        nurseToken,
+        {
+          notes: 'Prueba cutánea negativa',
+        },
+      ).expect(403);
+      await post(
+        `/patients/${patientId}/allergies/${allergyId}/refute`,
+        doctorToken,
+        {
+          notes: 'Prueba cutánea negativa',
+        },
+      ).expect(200);
+    });
+
+    it('EN-085 enfermeria registra un antecedente familiar y lo ve en el resumen de la consulta; descartarlo no', async () => {
+      const recorded = await post(
+        `/patients/${patientId}/history`,
+        nurseToken,
+        {
+          kind: 'FAMILY',
+          description: 'Diabetes tipo 2',
+          relative: 'Madre',
+        },
+      ).expect(201);
+      const historyId = (recorded.body as { id: string }).id;
+
+      const encounterId = await openEncounter(nurseToken);
+      const summary = await get(
+        `/encounters/${encounterId}/chart-summary`,
+        doctorToken,
+      ).expect(200);
+      expect(
+        (summary.body as { history: { id: string }[] }).history.map(
+          (entry) => entry.id,
+        ),
+      ).toEqual([historyId]);
+
+      await post(
+        `/patients/${patientId}/history/${historyId}/refute`,
+        nurseToken,
+        {
+          notes: 'Era la tía',
+        },
+      ).expect(403);
+      await post(
+        `/patients/${patientId}/history/${historyId}/refute`,
+        doctorToken,
+        {
+          notes: 'Era la tía',
+        },
+      ).expect(200);
+    });
+
+    it('EN-085 exige el parentesco en un antecedente familiar', async () => {
+      const response = await post(
+        `/patients/${patientId}/history`,
+        nurseToken,
+        {
+          kind: 'FAMILY',
+          description: 'Diabetes tipo 2',
+        },
+      ).expect(422);
+
+      expect((response.body as Problem).errors?.[0]?.field).toBe('relative');
+    });
+
+    it('EN-164 recepcion no registra alergias: el permiso nuevo no se reparte a quien no lo declara', async () => {
+      await post(`/patients/${patientId}/allergies`, receptionToken, {
+        substanceText: 'Penicilina',
+        criticality: 'HIGH',
       }).expect(403);
     });
   });
@@ -1003,6 +1148,7 @@ describe('la atención por HTTP', () => {
       await put(`/encounters/${encounterId}/vitals`, nurseToken, {
         weightKg: 68.4,
         heightCm: 165,
+        heightPosition: 'STANDING',
       }).expect(200);
       expect(await subjectStatus()).toBe('READY');
 

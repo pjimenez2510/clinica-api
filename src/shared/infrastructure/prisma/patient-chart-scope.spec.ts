@@ -89,6 +89,10 @@ const HISTORY_TABLES: readonly string[] = [
   // por el `patient_id` desnudo mantiene viva una afirmación de «ninguna» sobre
   // una ficha cuya alergia a la penicilina vive en la absorbida.
   'patient_allergy_absence',
+  // 30-09-2026, con EN-085. Un antecedente familiar de diabetes es de la
+  // PERSONA: escrito en la ficha que luego se absorbió, tiene que verse desde
+  // la superviviente igual que su alergia.
+  'patient_history',
   'patient_contact',
   'agenda_entry',
   'waitlist_entry',

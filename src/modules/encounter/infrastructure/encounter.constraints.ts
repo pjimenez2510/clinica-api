@@ -95,6 +95,59 @@ registerConstraintMeanings({
     'oxygenSaturation',
     'La saturación de oxígeno debe estar entre 30 y 100 %: revise el valor ingresado', // prettier-ignore
   ),
+  // EN-065, with D-058's criterion: wide, it catches 115 typed for 11,5.
+  encounter_vitals_ranges_hemoglobin_g_dl: vitalsOutOfRange(
+    'hemoglobinGDl',
+    'La hemoglobina debe estar entre 1 y 25 g/dl: revise el valor ingresado',
+  ),
+  encounter_vitals_ranges_hemoglobin_corrected_g_dl: vitalsOutOfRange(
+    'hemoglobinCorrectedGDl',
+    'La hemoglobina corregida debe estar entre 1 y 25 g/dl: revise el valor ingresado', // prettier-ignore
+  ),
+});
+
+registerConstraintMeanings({
+  /**
+   * EN-064. A height and its position go together: one without the other
+   * mixes two scales at exactly the age a child changes from one to the other.
+   */
+  encounter_vitals_height_needs_position: {
+    code: 'VITALS_HEIGHT_POSITION_REQUIRED',
+    field: 'heightPosition',
+    message: 'Indique si la talla se tomó de pie o acostado: son medidas distintas', // prettier-ignore
+  },
+  /**
+   * EN-065. There is no corrected value without the value it corrects. Named
+   * on the MEASURED box, which is the one to fill — the screen says the same.
+   */
+  encounter_vitals_corrected_needs_hemoglobin: {
+    code: 'VALIDATION_FAILED',
+    field: 'hemoglobinGDl',
+    message: 'Registre la hemoglobina medida antes de la corregida por altitud',
+  },
+  /** EN-163. A blank reason is not a reason: it either says something or is absent. */
+  encounter_vitals_presenting_complaint_not_blank: {
+    code: 'VALIDATION_FAILED',
+    field: 'presentingComplaint',
+    message: 'Escriba el motivo o deje la casilla vacía',
+  },
+  /** EN-085. A family history says whose; a personal one names no relative. */
+  patient_history_family_names_relative: {
+    code: 'VALIDATION_FAILED',
+    field: 'relative',
+    message: 'Indique de qué familiar es el antecedente, y sólo en los familiares', // prettier-ignore
+  },
+  patient_history_description_not_blank: {
+    code: 'VALIDATION_FAILED',
+    field: 'description',
+    message: 'Describa el antecedente',
+  },
+  /** EN-085. Refuting is a whole act: when, why and who, or nothing. */
+  patient_history_refutation_is_whole: {
+    code: 'REFUTATION_REASON_REQUIRED',
+    field: 'notes',
+    message: 'Indique por qué se descarta este antecedente',
+  },
 });
 
 registerConstraintMeanings({

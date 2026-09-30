@@ -32,6 +32,8 @@ import {
   PatientChartNotOpenError,
   PractitionerNotLicensedError,
   RefutationReasonRequiredError,
+  PatientHistoryNotFoundError,
+  HistoryAlreadyRefutedError,
   PractitionerProfileRequiredError,
   SubstituteClosureReasonRequiredError,
   UnknownClinicalFormError,
@@ -82,6 +84,10 @@ const EVERY_ERROR: readonly DomainError[] = [
   new PatientAllergyNotFoundError(),
   new AllergyAlreadyRefutedError(),
   new RefutationReasonRequiredError(),
+  // EN-085. Los antecedentes, con el régimen de las alergias.
+  new RefutationReasonRequiredError('el antecedente'),
+  new PatientHistoryNotFoundError(),
+  new HistoryAlreadyRefutedError(),
 ];
 
 describe('el contrato de errores de la atención', () => {

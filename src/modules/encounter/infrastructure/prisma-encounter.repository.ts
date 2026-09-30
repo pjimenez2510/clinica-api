@@ -87,6 +87,13 @@ const VITALS_SELECT = {
   temperatureC: true,
   oxygenSaturation: true,
   measuredAt: true,
+  heightPosition: true,
+  hemoglobinGDl: true,
+  hemoglobinCorrectedGDl: true,
+  presentingComplaint: true,
+  recordedBy: { select: { id: true, firstName: true, lastName: true } },
+  correctedBy: { select: { id: true, firstName: true, lastName: true } },
+  correctedAt: true,
 } satisfies Prisma.EncounterVitalsSelect;
 
 /** The row `VITALS_SELECT` yields; its decimals are still Prisma's `Decimal`. */
@@ -459,10 +466,12 @@ export class PrismaEncounterRepository implements EncounterRepository {
   async saveVitals(
     query: EncounterQuery,
     vitals: VitalSigns,
+    authorId: string,
   ): Promise<VitalSignsView> {
     const measurements = {
       weightKg: vitals.weightKg,
       heightCm: vitals.heightCm,
+      heightPosition: vitals.heightPosition,
       headCircumferenceCm: vitals.headCircumferenceCm,
       abdominalCircumferenceCm: vitals.abdominalCircumferenceCm,
       systolicBp: vitals.systolicBp,
@@ -471,14 +480,23 @@ export class PrismaEncounterRepository implements EncounterRepository {
       respiratoryRate: vitals.respiratoryRate,
       temperatureC: vitals.temperatureC,
       oxygenSaturation: vitals.oxygenSaturation,
-      // EN-060. The instant of the MEASUREMENT, which is not the instant of
-      // the typing: nursing weighs at 08:10 and the network returns at 08:40.
-      measuredAt: vitals.measuredAt ?? new Date(),
+      hemoglobinGDl: vitals.hemoglobinGDl,
+      hemoglobinCorrectedGDl: vitals.hemoglobinCorrectedGDl,
+      presentingComplaint: vitals.presentingComplaint,
     };
+    const now = new Date();
 
     const row = await this.prisma.encounterVitals.upsert({
       where: { encounterId: query.encounterId },
-      create: { encounterId: query.encounterId, ...measurements },
+      create: {
+        encounterId: query.encounterId,
+        ...measurements,
+        // EN-143. Whoever writes the first taking is who took it.
+        recordedById: authorId,
+        // EN-060. The instant of the MEASUREMENT, which is not the instant of
+        // the typing: nursing weighs at 08:10 and the network returns at 08:40.
+        measuredAt: vitals.measuredAt ?? now,
+      },
       /**
        * EVERY COLUMN IS WRITTEN ON THE UPDATE, including the ones that arrived
        * `undefined`. A `PUT` replaces the resource: a partial update would let
@@ -486,12 +504,27 @@ export class PrismaEncounterRepository implements EncounterRepository {
        * first taking's figure beside the second taking's weight, and the row
        * would then describe a measurement nobody performed.
        */
-      update: Object.fromEntries(
-        Object.entries(measurements).map(([field, value]) => [
-          field,
-          value ?? null,
-        ]),
-      ),
+      update: {
+        ...Object.fromEntries(
+          Object.entries(measurements).map(([field, value]) => [
+            field,
+            value ?? null,
+          ]),
+        ),
+        /**
+         * ⚠️ A CORRECTION IS NOT A TAKING (EN-143, D-048). The author and the
+         * instant of the taking stay; who corrected it goes beside them.
+         * Rewriting `recorded_by` made the doctor who fixed a temperature the
+         * author of the weight nursing took (clinical review, 30-09-2026), and
+         * the database now refuses it (`trg_encounter_vitals_keeps_its_author`).
+         * Per-measure authorship is D-062.
+         */
+        correctedById: authorId,
+        correctedAt: now,
+        ...(vitals.measuredAt === undefined
+          ? {}
+          : { measuredAt: vitals.measuredAt }),
+      },
       select: VITALS_SELECT,
     });
 
@@ -645,6 +678,22 @@ function toVitalsView(row: VitalsRow): VitalSignsView {
     respiratoryRate: row.respiratoryRate ?? undefined,
     temperatureC: decimal(row.temperatureC),
     oxygenSaturation: row.oxygenSaturation ?? undefined,
+    heightPosition: row.heightPosition ?? undefined,
+    hemoglobinGDl: decimal(row.hemoglobinGDl),
+    hemoglobinCorrectedGDl: decimal(row.hemoglobinCorrectedGDl),
+    presentingComplaint: row.presentingComplaint ?? undefined,
     measuredAt: row.measuredAt,
+    recordedBy: personOf(row.recordedBy),
+    correctedBy: personOf(row.correctedBy),
+    correctedAt: row.correctedAt,
   };
+}
+
+/** EN-143. An account as the screen names it, or `null` when there is none. */
+function personOf(
+  user: { id: string; firstName: string; lastName: string } | null,
+): { id: string; name: string } | null {
+  return user === null
+    ? null
+    : { id: user.id, name: `${user.firstName} ${user.lastName}` };
 }

@@ -10,6 +10,10 @@ import {
   AllergyAlreadyRefutedError,
   ConceptWrongCatalogueError,
 } from '../../src/modules/encounter/domain/encounter.errors';
+import type {
+  NewAllergy,
+  RefuteAllergy,
+} from '../../src/modules/encounter/domain/patient-allergy.repository';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
@@ -17,6 +21,7 @@ import {
   createPatient,
   createPractitioner,
   createSite,
+  createUser,
 } from './setup/fixtures';
 
 /**
@@ -46,8 +51,35 @@ import {
  */
 const db = useDatabase();
 
-const allergiesOf = (prisma: PrismaClient) =>
-  new PrismaPatientAllergyRepository(prisma as unknown as PrismaService);
+/**
+ * The adapter, with EN-086's author filled in for the tests that are about
+ * something else. The tests about the author pass one explicitly.
+ */
+class AuthoredAllergies extends PrismaPatientAllergyRepository {
+  constructor(private readonly client: PrismaClient) {
+    super(client as unknown as PrismaService);
+  }
+
+  override async record(
+    allergy: Omit<NewAllergy, 'recordedById'> & { recordedById?: string },
+  ) {
+    return super.record({
+      ...allergy,
+      recordedById: allergy.recordedById ?? (await createUser(this.client)).id,
+    });
+  }
+
+  override async refute(
+    refutation: Omit<RefuteAllergy, 'refutedById'> & { refutedById?: string },
+  ) {
+    return super.refute({
+      ...refutation,
+      refutedById: refutation.refutedById ?? (await createUser(this.client)).id,
+    });
+  }
+}
+
+const allergiesOf = (prisma: PrismaClient) => new AuthoredAllergies(prisma);
 
 const activeOf = (prisma: PrismaClient) =>
   new PrismaActiveAllergyReader(prisma as unknown as PrismaService);
@@ -439,11 +471,13 @@ describe('las alergias del paciente contra PostgreSQL', () => {
       {
         weightKg: 68.4,
         heightCm: 165,
+        heightPosition: 'STANDING',
         systolicBp: 120,
         diastolicBp: 80,
         temperatureC: 36.8,
         measuredAt: new Date('2026-05-11T14:05:00Z'),
       },
+      practitioner.userId,
     );
 
     const [previous] = await summariesOf(prisma).previousEncounters({
@@ -641,6 +675,7 @@ describe('las alergias del paciente contra PostgreSQL', () => {
 
     const allergy = await prisma.patientAllergy.create({
       data: {
+        recordedById: (await createUser(prisma)).id,
         patientId: patient.id,
         substanceText: 'Penicilina',
         criticality: 'HIGH',
@@ -716,5 +751,122 @@ describe('las alergias del paciente contra PostgreSQL', () => {
     ).rejects.toThrow();
 
     expect(await prisma.patientAllergyAbsence.count()).toBe(1);
+  });
+
+  it('EN-086 la alergia nombra en la fila a quien la registro y a quien la descarto', async () => {
+    const prisma = db();
+    const patient = await createPatient(prisma);
+    const nurse = await createUser(prisma);
+    const doctor = await createUser(prisma);
+    const repository = allergiesOf(prisma);
+
+    const recorded = await repository.record({
+      patientId: patient.id,
+      substanceText: 'Penicilina',
+      criticality: 'HIGH',
+      recordedById: nurse.id,
+    });
+    expect(recorded.recordedBy).toEqual({
+      id: nurse.id,
+      name: 'Carmen Salazar',
+    });
+    expect(recorded.refutedBy).toBeNull();
+
+    const refuted = await repository.refute({
+      patientId: patient.id,
+      allergyId: recorded.id,
+      notes: 'Prueba cutánea negativa',
+      now: new Date(),
+      refutedById: doctor.id,
+    });
+    expect(refuted?.recordedBy?.id).toBe(nurse.id);
+    expect(refuted?.refutedBy?.id).toBe(doctor.id);
+  });
+
+  it('EN-086 la base rechaza una alergia escrita sin autor, y la descartada sin quien la descarto', async () => {
+    const prisma = db();
+    const patient = await createPatient(prisma);
+    const author = await createUser(prisma);
+
+    // Control positivo: la misma fila con autor entra.
+    const allergy = await prisma.patientAllergy.create({
+      data: {
+        patientId: patient.id,
+        substanceText: 'Látex',
+        criticality: 'LOW',
+        recordedById: author.id,
+      },
+    });
+    await expect(
+      prisma.patientAllergy.create({
+        data: {
+          patientId: patient.id,
+          substanceText: 'Látex',
+          criticality: 'LOW',
+        },
+      }),
+    ).rejects.toThrow(/must name its author/);
+    await expect(
+      prisma.patientAllergy.update({
+        where: { id: allergy.id },
+        data: { refutedAt: new Date(), refutedNotes: 'No era alergia' },
+      }),
+    ).rejects.toThrow(/patient_allergy_refutation_names_its_author/);
+  });
+
+  it('EN-082 EN-086 una alergia anterior a la columna, sin autor, se sigue pudiendo descartar', async () => {
+    const prisma = db();
+    const patient = await createPatient(prisma);
+    const doctor = await createUser(prisma);
+    // Una fila como las de antes de la migración: sin autor. `replica` apaga
+    // los disparadores, que es lo único que permite recrear el pasado.
+    const [, legacy] = await prisma.$transaction([
+      prisma.$executeRawUnsafe(
+        `SET LOCAL session_replication_role = 'replica'`,
+      ),
+      prisma.$queryRawUnsafe<{ id: string }[]>(
+        `INSERT INTO patient_allergy (patient_id, substance_text, criticality)
+         VALUES ($1::uuid, 'Penicilina', 'HIGH') RETURNING id`,
+        patient.id,
+      ),
+    ]);
+
+    const refuted = await allergiesOf(prisma).refute({
+      patientId: patient.id,
+      allergyId: legacy[0]!.id,
+      notes: 'Prueba de provocación negativa',
+      now: new Date(),
+      refutedById: doctor.id,
+    });
+
+    expect(refuted?.recordedBy).toBeNull();
+    expect(refuted?.refutedBy?.id).toBe(doctor.id);
+  });
+
+  it('EN-082 la base rechaza borrar, truncar y reescribir una alergia', async () => {
+    const prisma = db();
+    const patient = await createPatient(prisma);
+    const recorded = await allergiesOf(prisma).record({
+      patientId: patient.id,
+      substanceText: 'Penicilina',
+      criticality: 'HIGH',
+    });
+
+    await expect(
+      prisma.$executeRawUnsafe(
+        `UPDATE patient_allergy SET criticality = 'LOW' WHERE id = $1::uuid`,
+        recorded.id,
+      ),
+    ).rejects.toThrow(/append-only/);
+    await expect(
+      prisma.$executeRawUnsafe(
+        `DELETE FROM patient_allergy WHERE id = $1::uuid`,
+        recorded.id,
+      ),
+    ).rejects.toThrow(/append-only/);
+    await expect(
+      prisma.$executeRawUnsafe(`TRUNCATE patient_allergy CASCADE`),
+    ).rejects.toThrow(/append-only/);
+    await expect(prisma.patientAllergy.count()).resolves.toBe(1);
   });
 });

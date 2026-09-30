@@ -132,6 +132,9 @@ export const allergySchema = activeAllergySchema.extend({
   /** EN-082. Present exactly when the allergy has been ruled out. */
   refutedAt: z.iso.datetime().nullable(),
   refutedNotes: z.string().nullable(),
+  /** EN-086. Who recorded it and who ruled it out; `null` for older rows. */
+  recordedBy: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+  refutedBy: z.object({ id: z.uuid(), name: z.string() }).nullable(),
 });
 /** Response of recording and of refuting an allergy. */
 export class AllergyDto extends createZodDto(allergySchema) {}

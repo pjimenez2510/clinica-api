@@ -112,6 +112,17 @@ const USERS = [
     acessRegistration: null,
     role: 'CAJA',
   },
+  {
+    // F-03 is walked by nursing. Its point is that vital signs, allergies and
+    // history can be taken WITHOUT `record:write` (EN-066, EN-164), and only
+    // an account holding exactly the ENFERMERIA role can prove that.
+    email: 'enfermeria@clinica.ec',
+    firstName: 'Carmen',
+    lastName: 'Salazar',
+    cedula: '1712345683',
+    acessRegistration: null,
+    role: 'ENFERMERIA',
+  },
 ];
 
 /**

@@ -23,6 +23,11 @@ import type {
   AllergyAbsenceAssertion,
   PatientAllergyRepository,
 } from '../domain/patient-allergy.repository';
+import type {
+  HistoryView,
+  PatientHistoryRepository,
+} from '../domain/patient-history.repository';
+
 import { ChartSummaryService } from './chart-summary.service';
 import type { Requester } from './encounter.service';
 
@@ -165,6 +170,31 @@ class FakeActiveReader implements ActiveAllergyReader {
  * read model that quietly wrote an allergy is a defect a double should make
  * loud, not absorb.
  */
+/** EN-085. Only `listFor`, which is all the summary reads. */
+class FakeHistory {
+  rows: HistoryView[] = [];
+
+  activeFor(): Promise<HistoryView[]> {
+    // The adapter filters in the database; the fake does the same, so the
+    // summary is tested for passing on what it is given.
+    return Promise.resolve(this.rows.filter((row) => row.refutedAt === null));
+  }
+}
+
+const anEntry = (overrides: Partial<HistoryView> = {}): HistoryView => ({
+  id: 'history-1',
+  patientId: PATIENT,
+  kind: 'FAMILY',
+  description: 'Diabetes tipo 2',
+  relative: 'Madre',
+  recordedAt: new Date(0),
+  recordedBy: { id: 'user-nurse', name: 'Carmen Salazar' },
+  refutedAt: null,
+  refutedNotes: null,
+  refutedBy: null,
+  ...overrides,
+});
+
 class FakeAllergyRecords {
   asked: string[] = [];
   standing: AllergyAbsenceAssertion | null = null;
@@ -193,12 +223,14 @@ describe('la historia a la vista durante la consulta', () => {
   let allergyRecords: FakeAllergyRecords;
   let audit: AccessAuditRecorder & { entries: AccessAuditEntry[] };
   let service: ChartSummaryService;
+  let history: FakeHistory;
 
   beforeEach(() => {
     encounters = new FakeEncounters();
     summaries = new FakeSummaries();
     reader = new FakeActiveReader();
     allergyRecords = new FakeAllergyRecords();
+    history = new FakeHistory();
     const entries: AccessAuditEntry[] = [];
     audit = {
       entries,
@@ -212,6 +244,7 @@ describe('la historia a la vista durante la consulta', () => {
       summaries,
       reader,
       allergyRecords as unknown as PatientAllergyRepository,
+      history as unknown as PatientHistoryRepository,
       encounters as unknown as EncounterRepository,
       audit,
     );
@@ -280,9 +313,25 @@ describe('la historia a la vista durante la consulta', () => {
     expect(previous?.id).toBe('encounter-old');
     expect(Object.keys(previous ?? {})).not.toContain('notes');
     expect(Object.keys(previous ?? {})).not.toContain('content');
-    // Y tampoco antecedentes: falta esquema (EN-085) y un campo vacío se
-    // leería como «no consta ninguno».
-    expect(Object.keys(summary)).not.toContain('antecedentes');
+  });
+
+  it('EN-085 lleva los antecedentes vigentes que le da el repositorio', async () => {
+    history.rows = [
+      anEntry(),
+      anEntry({
+        id: 'history-2',
+        kind: 'PERSONAL',
+        description: 'Asma',
+        relative: null,
+        refutedAt: new Date(0),
+        refutedNotes: 'Espirometría normal',
+        refutedBy: { id: 'user-doctor', name: 'Ana Torres' },
+      }),
+    ];
+
+    const summary = await service.forEncounter(ENCOUNTER, requester);
+
+    expect(summary.history.map((entry) => entry.id)).toEqual(['history-1']);
   });
 
   it('EN-161 deja UNA fila de bitácora y no una por atención listada', async () => {

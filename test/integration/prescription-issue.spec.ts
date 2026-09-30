@@ -12,7 +12,7 @@ import type { AccessAuditRecorder } from '../../src/shared/audit/access-audit.po
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
-import { createPatient, createSite } from './setup/fixtures';
+import { createPatient, createSite, createUser } from './setup/fixtures';
 
 /**
  * The prescription against a real PostgreSQL.
@@ -672,6 +672,7 @@ describe('la receta contra PostgreSQL', () => {
     // La alergia se queda donde se escribió, en la ficha absorbida.
     await prisma.patientAllergy.create({
       data: {
+        recordedById: (await createUser(prisma)).id,
         patientId: absorbed.id,
         substanceConceptId: concept.id,
         substanceText: 'Penicilina',
@@ -728,11 +729,13 @@ describe('la receta contra PostgreSQL', () => {
 
     await prisma.patientAllergy.create({
       data: {
+        recordedById: (await createUser(prisma)).id,
         patientId: patient.id,
         substanceConceptId: concept.id,
         substanceText: 'Penicilina',
         refutedAt: new Date('2026-08-01T12:00:00Z'),
         refutedNotes: 'Prueba de provocación negativa',
+        refutedById: (await createUser(prisma)).id,
       },
     });
 
@@ -773,6 +776,7 @@ describe('la receta contra PostgreSQL', () => {
 
     await prisma.patientAllergy.create({
       data: {
+        recordedById: (await createUser(prisma)).id,
         patientId: absorbed.id,
         substanceText: 'Maní',
         criticality: 'HIGH',

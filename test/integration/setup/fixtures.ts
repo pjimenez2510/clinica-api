@@ -51,6 +51,22 @@ export async function createRoom(prisma: PrismaClient, siteId: string) {
   });
 }
 
+/**
+ * An account with no role, for the columns that only need somebody behind a
+ * datum (EN-086, EN-143, EN-085): who recorded an allergy, a history entry or
+ * a vital sign.
+ */
+export async function createUser(prisma: PrismaClient) {
+  return prisma.user.create({
+    data: {
+      email: `autor${next()}@clinica.ec`,
+      passwordHash: 'not-a-real-hash',
+      firstName: 'Carmen',
+      lastName: 'Salazar',
+    },
+  });
+}
+
 export async function createPractitioner(prisma: PrismaClient) {
   const user = await prisma.user.create({
     data: {

@@ -6,6 +6,7 @@ import {
   createPatient,
   createPractitioner,
   createSite,
+  createUser,
 } from './setup/fixtures';
 
 /**
@@ -166,7 +167,13 @@ describe('clinical record integrity', () => {
       const { prisma, encounter } = await vitalsContext();
 
       const vitals = await prisma.encounterVitals.create({
-        data: { encounterId: encounter.id, weightKg: 70, heightCm: 175 },
+        data: {
+          encounterId: encounter.id,
+          weightKg: 70,
+          heightCm: 175,
+          heightPosition: 'STANDING',
+          recordedById: (await createUser(prisma)).id,
+        },
       });
 
       // Exact, not `toBeCloseTo`: the unrounded value is 22.8571…, which is
@@ -178,7 +185,13 @@ describe('clinical record integrity', () => {
     it('recomputes BMI when the weight is corrected', async () => {
       const { prisma, encounter } = await vitalsContext();
       await prisma.encounterVitals.create({
-        data: { encounterId: encounter.id, weightKg: 70, heightCm: 175 },
+        data: {
+          encounterId: encounter.id,
+          weightKg: 70,
+          heightCm: 175,
+          heightPosition: 'STANDING',
+          recordedById: (await createUser(prisma)).id,
+        },
       });
 
       const corrected = await prisma.encounterVitals.update({
@@ -193,7 +206,11 @@ describe('clinical record integrity', () => {
       const { prisma, encounter } = await vitalsContext();
 
       const vitals = await prisma.encounterVitals.create({
-        data: { encounterId: encounter.id, weightKg: 70 },
+        data: {
+          encounterId: encounter.id,
+          weightKg: 70,
+          recordedById: (await createUser(prisma)).id,
+        },
       });
 
       expect(vitals.bmi).toBeNull();
@@ -205,7 +222,13 @@ describe('clinical record integrity', () => {
 
       await expect(
         prisma.encounterVitals.create({
-          data: { encounterId: encounter.id, weightKg: 750, heightCm: 175 },
+          data: {
+            encounterId: encounter.id,
+            weightKg: 750,
+            heightCm: 175,
+            heightPosition: 'STANDING',
+            recordedById: (await createUser(prisma)).id,
+          },
         }),
       ).rejects.toThrow(/encounter_vitals_ranges_weight_kg/);
     });
@@ -215,7 +238,12 @@ describe('clinical record integrity', () => {
 
       await expect(
         prisma.encounterVitals.create({
-          data: { encounterId: encounter.id, systolicBp: 80, diastolicBp: 120 },
+          data: {
+            encounterId: encounter.id,
+            systolicBp: 80,
+            diastolicBp: 120,
+            recordedById: (await createUser(prisma)).id,
+          },
         }),
       ).rejects.toThrow(/encounter_vitals_ranges_systolic_above_diastolic/);
     });

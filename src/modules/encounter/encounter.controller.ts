@@ -348,10 +348,10 @@ export class EncounterController {
    * table of routes.
    *
    * ═══════════════════════════════════════════════════════════════════════════
-   * ⚠️ Y LA SPEC DICE `nursing:write` EN ESTA RUTA. SE DIVERGE A PROPÓSITO.
+   * ⚠️ `vitals:write` Y NO `nursing:write`, Y LA TABLA DE RUTAS YA LO DICE.
    * ═══════════════════════════════════════════════════════════════════════════
    *
-   * EN-066 y la tabla de rutas nombran `nursing:write`, y de fábrica lo lleva
+   * EN-066 nombraba `nursing:write`, y de fábrica lo lleva
    * SÓLO `ENFERMERIA` (`default-roles.ts`). Con ese permiso, EL MÉDICO NO
    * PUEDE REGISTRAR LOS SIGNOS — y en una consulta sin enfermería presente, o
    * en la clínica pequeña donde el médico pesa al niño él mismo, el bloque D
@@ -406,6 +406,10 @@ export class EncounterController {
         respiratoryRate: dto.respiratoryRate,
         temperatureC: dto.temperatureC,
         oxygenSaturation: dto.oxygenSaturation,
+        heightPosition: dto.heightPosition,
+        hemoglobinGDl: dto.hemoglobinGDl,
+        hemoglobinCorrectedGDl: dto.hemoglobinCorrectedGDl,
+        presentingComplaint: dto.presentingComplaint,
         measuredAt:
           dto.measuredAt === undefined ? undefined : new Date(dto.measuredAt),
       },
@@ -503,6 +507,13 @@ function toVitalsResponse(vitals: VitalSignsView): VitalSignsResponse {
     respiratoryRate: vitals.respiratoryRate ?? null,
     temperatureC: vitals.temperatureC ?? null,
     oxygenSaturation: vitals.oxygenSaturation ?? null,
+    heightPosition: vitals.heightPosition ?? null,
+    hemoglobinGDl: vitals.hemoglobinGDl ?? null,
+    hemoglobinCorrectedGDl: vitals.hemoglobinCorrectedGDl ?? null,
+    presentingComplaint: vitals.presentingComplaint ?? null,
     measuredAt: vitals.measuredAt.toISOString(),
+    recordedBy: vitals.recordedBy,
+    correctedBy: vitals.correctedBy,
+    correctedAt: vitals.correctedAt?.toISOString() ?? null,
   };
 }

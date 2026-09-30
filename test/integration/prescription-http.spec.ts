@@ -15,7 +15,7 @@ import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
-import { createPatient, createSite } from './setup/fixtures';
+import { createPatient, createSite, createUser } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
 /**
@@ -523,6 +523,7 @@ describe('la receta por HTTP', () => {
   it('PR-060 y PR-067 informa al componer e INTERRUMPE al emitir', async () => {
     await prisma.patientAllergy.create({
       data: {
+        recordedById: (await createUser(prisma)).id,
         patientId,
         substanceConceptId: conceptId,
         substanceText: 'Amoxicilina',
