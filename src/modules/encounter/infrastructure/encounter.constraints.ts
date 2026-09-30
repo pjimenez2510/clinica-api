@@ -104,6 +104,15 @@ registerConstraintMeanings({
     'hemoglobinCorrectedGDl',
     'La hemoglobina corregida debe estar entre 1 y 25 g/dl: revise el valor ingresado', // prettier-ignore
   ),
+  /**
+   * EN-165, D-062. The altitude correction only ever subtracts, so a corrected
+   * value above the measured one is the pair typed the wrong way round. Named
+   * on the CORRECTED box, the one that cannot be what it says it is.
+   */
+  encounter_vitals_corrected_not_above_measured: vitalsOutOfRange(
+    'hemoglobinCorrectedGDl',
+    'La hemoglobina corregida por altitud no puede ser mayor que la medida: revise si las ingresó al revés', // prettier-ignore
+  ),
 });
 
 registerConstraintMeanings({

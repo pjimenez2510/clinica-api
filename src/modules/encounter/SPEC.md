@@ -329,7 +329,7 @@ tiene nada que hacer en el sistema.
 **Prueba independiente:** registrar peso y talla y comprobar que el IMC **vuelve
 calculado** y que enviarlo en la petición no lo cambia; y que un peso de 750 kg
 —el dedo que tecleó 750 en vez de 75— se rechaza por la base y no por el DTO.
-**Cubre:** EN-060 a EN-068, EN-163.
+**Cubre:** EN-060 a EN-068, EN-163, EN-165.
 
 **Solo servidor:** EN-061, EN-062. El IMC lo escribe un disparador y el rango lo
 impone un `CHECK`: un doble que devuelve lo que le pedimos no demuestra ninguna
@@ -1352,6 +1352,25 @@ requisitos que cambian.
   > fisiología—, y `encounter_vitals_corrected_needs_hemoglobin`: no hay valor
   > corregido sin el valor que se corrigió. Los rangos salen por el mismo 422
   > `VITALS_OUT_OF_RANGE`, por campo.
+- **EN-165** — SI la hemoglobina corregida por altitud es **mayor** que la
+  hemoglobina medida, ENTONCES el sistema DEBERÁ rechazar la toma entera con
+  `VITALS_OUT_OF_RANGE`, señalando la casilla de la **corregida**, sin guardar
+  nada; igual o menor DEBERÁ aceptarla.
+  > **D-062, punto 3, opción B (resuelta el 30-09-2026).** La corrección de la
+  > OMS 2024 —la que el INEC adoptó para la ENDI— **siempre resta**, y al nivel
+  > del mar resta cero: por eso igual se admite. Una corregida mayor sólo sale
+  > de teclear las dos cifras al revés, y en Quito eso **oculta una anemia**:
+  > el umbral de 11,0 g/dl se compara con la cifra equivocada.
+  >
+  > **Garantía de la base:** `encounter_vitals_corrected_not_above_measured`,
+  > **validada** (no `NOT VALID` como las de D-058): una toma se corrige
+  > (EN-143), así que una fila que no cumple tiene arreglo y no se arrastra.
+  > Sin medida ya la rechaza `encounter_vitals_corrected_needs_hemoglobin`. El
+  > mensaje dice que pudieron ingresarse al revés, como la sistólica menor que
+  > la diastólica.
+  >
+  > **Lo que no hace:** calcular la corregida con la altitud de la sede (D-062,
+  > punto 3, C). Cuando llegue, esta garantía sigue valiendo.
 - **EN-066** — El sistema DEBERÁ permitir registrar los signos vitales **sin
   abrir ni firmar la nota clínica**, con el permiso `nursing:write` y sin
   `record:write`, sobre una atención abierta con `encounter:open`.
@@ -2913,6 +2932,7 @@ prueba o el CI falla**.
 | EN-141, EN-142 | **Seguridad dirigida con sesión real**, no con un doble: una sesión de `ENFERMERIA` abre la atención y escribe los formularios 020, 120 y 022, y **falla** al registrar un diagnóstico, un procedimiento o una receta con `NURSING_SCOPE_DENIED`. El defecto de AG-111 fue confiar en un doble con los permisos puestos a mano |
 | EN-143 | Integración: los signos guardados por enfermería llevan **su** autor, y firmar el formulario 002 con la sesión del médico **no lo sobrescribe** |
 | EN-064, EN-065 | **Integración contra PostgreSQL real, con control positivo**: la base rechaza talla sin posición y hemoglobina 115, y acepta la toma buena en la misma prueba |
+| EN-165 | **Integración contra PostgreSQL real, con control positivo**: 10,9 medida y 12,4 corregida se rechaza señalando la corregida y no guarda nada; 12,4/12,4 y 12,4/10,9 se aceptan |
 | EN-085 | **Integración contra PostgreSQL real**: el antecedente reaparece en la atención siguiente y desde la ficha que absorbió la suya; refutarlo no borra (contar filas); `DELETE`, `TRUNCATE` y reescribir la descripción fallan atacando la base |
 | EN-163, EN-164 | Contrato HTTP con sesión real: enfermería guarda el motivo con los signos y registra alergia, afirmación y antecedente; **falla** al refutar |
 | EN-144, EN-145, EN-147 | Integración y **observación**: cierra quien abrió; otro con `record:sign` cierra dejando la constancia de sustitución; otro sin él falla; y una atención abierta hace cuarenta días **sigue abierta**, porque no existe ningún proceso que la cierre |

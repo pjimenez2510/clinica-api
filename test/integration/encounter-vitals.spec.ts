@@ -438,6 +438,37 @@ describe('los signos vitales de la atención', () => {
     expect(problem?.errors?.[0]?.field).toBe('hemoglobinGDl');
   });
 
+  it('EN-165 la base rechaza una corregida mayor que la medida, señalando la corregida, y acepta igual o menor', async () => {
+    // D-062, punto 3 B: the WHO adjustment only ever subtracts. A corrected
+    // value above the measured one is the two figures typed the wrong way
+    // round, which in Quito hides an anaemia.
+    const prisma = db();
+    const { site, encounter, save } = await anEncounter(prisma);
+    const query = { encounterId: encounter.id, sites: [site.id] };
+
+    await expect(
+      save(query, { hemoglobinGDl: 12.4, hemoglobinCorrectedGDl: 12.4 }),
+    ).resolves.toMatchObject({ hemoglobinCorrectedGDl: 12.4 });
+    await expect(
+      save(query, { hemoglobinGDl: 12.4, hemoglobinCorrectedGDl: 10.9 }),
+    ).resolves.toMatchObject({ hemoglobinCorrectedGDl: 10.9 });
+
+    const problem = await problemFrom(
+      save(query, { hemoglobinGDl: 10.9, hemoglobinCorrectedGDl: 12.4 }),
+    );
+    expect(problem?.status).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
+    expect(problem?.code).toBe('VITALS_OUT_OF_RANGE');
+    expect(problem?.errors?.[0]?.field).toBe('hemoglobinCorrectedGDl');
+    expect(problem?.errors?.[0]?.message).toMatch(/al revés/);
+
+    // Nothing of the refused taking was kept: the accepted one stands.
+    const stored = await prisma.encounterVitals.findUniqueOrThrow({
+      where: { encounterId: encounter.id },
+    });
+    expect(stored.hemoglobinGDl?.toString()).toBe('12.4');
+    expect(stored.hemoglobinCorrectedGDl?.toString()).toBe('10.9');
+  });
+
   it('EN-065 rechaza en la base una hemoglobina de 115, que es 11.5 sin la coma', async () => {
     const prisma = db();
     const { site, encounter, save } = await anEncounter(prisma);
