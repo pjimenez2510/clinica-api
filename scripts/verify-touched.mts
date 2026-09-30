@@ -87,7 +87,7 @@ function handWrittenDates(tests: string[]): string[] {
     }
   }
   const DATE =
-    /(new Date\(\s*['"`]?\d{4}[-,]|Date\.UTC\(\s*\d{4}|['"`]\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?['"`])/;
+    /(new Date\(\s*['"`]?\d{4}[-,]|Date\.UTC\(\s*\d{4}|['"`]\d{4}-\d{2}-\d{2}[^'"`]*['"`])/;
   return added
     .filter(({ line }) => DATE.test(line) && !/fecha-fija:/.test(line))
     .map(({ file, line }) => `${file}: ${line.trim()}`);

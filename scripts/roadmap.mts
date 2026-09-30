@@ -56,6 +56,11 @@ const MONTHS = [
   'noviembre',
   'diciembre',
 ];
+/** «setiembre» is how Ecuador writes it; both spellings are the ninth month. */
+const monthIndex = (name: string): number => {
+  const m = name.toLowerCase();
+  return m === 'setiembre' ? 8 : MONTHS.indexOf(m);
+};
 const DATE_LINE =
   /^\*\*Última actualización:\*\*\s*(\d{1,2}) de (\w+) de (\d{4})/m;
 
@@ -83,7 +88,21 @@ function renderBlock(): string {
   const api = gitSource(where.api, REF);
   const web = gitSource(where.web, REF);
   const board = computeBoard(api, web);
-  const flows = computeFlows(workingTree(where.docs), web, board);
+  const flows = computeFlows(workingTree(where.docs), web, board, (result) => {
+    if (!result.commit || result.dirty) return false;
+    try {
+      execFileSync(
+        'git',
+        ['-C', where.web, 'merge-base', '--is-ancestor', result.commit, REF],
+        {
+          stdio: 'ignore',
+        },
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  });
 
   const lines = [
     `${START} — generado por \`pnpm roadmap:write\` en clinica-api sobre \`main\`; no se edita a mano -->`,
@@ -97,9 +116,11 @@ function renderBlock(): string {
         ? `✔ ${f.result!.date}`
         : !f.walkExists
           ? '✘ sin recorrido'
-          : f.result
-            ? `✘ falló el ${f.result.date}`
-            : '✘ sin correr';
+          : f.result?.passed
+            ? `✘ pasó el ${f.result.date}, pero no sobre un commit limpio de main`
+            : f.result
+              ? `✘ falló el ${f.result.date}`
+              : '✘ sin correr';
       return `| ${f.id} ${f.title} | ${f.actor} | ${screen} | ${f.complete}/${f.known} |`;
     }),
     '',
@@ -145,7 +166,7 @@ const lastMain = [lastCommitDay(where.api), lastCommitDay(where.web)]
   .at(-1)!;
 const dateMatch = DATE_LINE.exec(roadmap);
 const roadmapDay = dateMatch
-  ? `${dateMatch[3]}-${String(MONTHS.indexOf(dateMatch[2]!.toLowerCase()) + 1).padStart(2, '0')}-${dateMatch[1]!.padStart(2, '0')}`
+  ? `${dateMatch[3]}-${String(monthIndex(dateMatch[2]!) + 1).padStart(2, '0')}-${dateMatch[1]!.padStart(2, '0')}`
   : '';
 
 if (MODE === 'write') {
@@ -157,7 +178,14 @@ if (MODE === 'write') {
   if (current) next = next.replace(current, expected);
   else {
     // First time: the block goes right after «Estado global».
-    const anchor = next.indexOf('\n---\n', next.indexOf('## Estado global'));
+    const global = next.indexOf('## Estado global');
+    const anchor = global >= 0 ? next.indexOf('\n---\n', global) : -1;
+    if (anchor < 0) {
+      console.error(
+        'No encuentro «## Estado global» seguido de `---` para colocar el bloque.',
+      );
+      process.exit(1);
+    }
     next = `${next.slice(0, anchor)}\n\n## Estado calculado\n\n${expected}\n${next.slice(anchor)}`;
   }
   writeFileSync(ROADMAP, next);
@@ -194,6 +222,7 @@ if (problems.length > 0) {
   console.error(
     'Corre `pnpm roadmap:write` (solo la sesión principal) y ajusta la prosa.',
   );
-  process.exit(1);
+  // 3, not 1: a crash also exits 1, and the Stop hook must not call a crash «desfasado».
+  process.exit(3);
 }
 console.log(`✔ ROADMAP al día con main (último commit ${lastMain}).`);

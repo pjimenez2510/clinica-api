@@ -78,7 +78,10 @@ export function gitSource(repo: string, ref: string): Source {
       .split('\n')
       .filter(Boolean);
   } catch {
-    files = [];
+    // A missing repository or ref used to read as «0 de 0» and pass for a state.
+    throw new Error(
+      `No se puede leer ${ref} en ${repo}: ¿existe el repositorio y la rama?`,
+    );
   }
   const wanted = files.filter(
     (f) => /\.(ts|md|json)$/.test(f) && !f.split('/').some((s) => SKIP.has(s)),
@@ -298,6 +301,10 @@ export interface WalkResult {
   /** `YYYY-MM-DD`, in America/Guayaquil. */
   date: string;
   tests: number;
+  /** HEAD of the interface checkout that ran the walk. */
+  commit?: string;
+  /** Whether that checkout had uncommitted changes: then HEAD is not what ran. */
+  dirty?: boolean;
 }
 
 export interface Flow {
@@ -315,10 +322,17 @@ export interface Flow {
   reachable: boolean;
 }
 
+/**
+ * `ranOn(result)` decides whether a recorded walk counts. `pnpm estado` accepts
+ * any (it reports the working tree); the ROADMAP accepts only walks whose
+ * commit is in `main` and ran on a clean tree — otherwise «en pantalla en main»
+ * would mean «passed somewhere, once».
+ */
 export function computeFlows(
   docs: Source,
   web: Source,
   board: ModuleBoard[],
+  ranOn: (result: WalkResult) => boolean = () => true,
 ): Flow[] {
   const text = docs.read('FLUJOS.md') ?? '';
   let results: Record<string, WalkResult> = {};
@@ -363,7 +377,7 @@ export function computeFlows(
         walk,
         walkExists,
         result,
-        reachable: walkExists && result?.passed === true,
+        reachable: walkExists && result?.passed === true && ranOn(result),
       };
     })
     .filter((f): f is Flow => f !== null);
