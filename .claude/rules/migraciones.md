@@ -1,7 +1,7 @@
 ---
 paths:
-  - "prisma/migrations/**/*.sql"
-  - "prisma/schema.prisma"
+  - "clinica-api*/prisma/migrations/**/*.sql"
+  - "clinica-api*/prisma/schema.prisma"
 ---
 
 # Migraciones y esquema

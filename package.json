@@ -28,7 +28,7 @@
     "db:studio": "prisma studio",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
-    "verify": "pnpm format:check && pnpm typecheck && pnpm lint:check && pnpm arch:check && pnpm migrations:check && pnpm rtm && pnpm test:cov && node .claude/hooks/stamp-verify.mjs",
+    "verify": "pnpm format:check && pnpm typecheck && pnpm lint:check && pnpm arch:check && pnpm migrations:check && pnpm rtm && pnpm test:cov && node scripts/stamp-verify.mjs",
     "db:seed": "node --env-file=.env --experimental-strip-types prisma/seed.mts",
     "db:reset": "pnpm migrations:check && prisma migrate reset --force && pnpm db:seed",
     "test:integration": "vitest run --config vitest.integration.config.mts",
@@ -52,7 +52,10 @@
     "db:seed:credential": "node --env-file=.env --experimental-strip-types prisma/seed-credential.mts",
     "db:seed:dpa": "node --env-file=.env --experimental-strip-types prisma/seed-dpa.mts",
     "db:seed:countries": "node --env-file=.env --experimental-strip-types prisma/seed-countries.mts",
-    "db:seed:rdacaa": "node --env-file=.env --experimental-strip-types prisma/seed-rdacaa.mts"
+    "db:seed:rdacaa": "node --env-file=.env --experimental-strip-types prisma/seed-rdacaa.mts",
+    "verify:tocado": "node --experimental-strip-types scripts/verify-touched.mts",
+    "roadmap:check": "node --experimental-strip-types scripts/roadmap.mts --check",
+    "roadmap:write": "node --experimental-strip-types scripts/roadmap.mts --write"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.28",

@@ -101,6 +101,17 @@ const USERS = [
     acessRegistration: null,
     role: 'RECEPCION',
   },
+  {
+    // F-06 is walked by the cashier. Without this account the Playwright walk
+    // of the flow had to borrow the development superuser, which proves only
+    // that someone with every permission can see the bill.
+    email: 'caja@clinica.ec',
+    firstName: 'Rosa',
+    lastName: 'Vera',
+    cedula: '1714023577',
+    acessRegistration: null,
+    role: 'CAJA',
+  },
 ];
 
 /**

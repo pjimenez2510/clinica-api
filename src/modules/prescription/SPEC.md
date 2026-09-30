@@ -173,6 +173,11 @@ tomadas del CNMB, emitirla, anularla y leerla. Aquí van la coherencia
 **Prueba independiente:** abrir una atención, componer una receta de dos líneas,
 emitirla, y comprobar que una tercera línea después de emitir se rechaza.
 
+**Cubre:** PR-001 a PR-011, PR-080, PR-081, PR-090 a PR-094.
+**Solo servidor:** PR-081, PR-090 a PR-093. Son el permiso declarado en cada
+ruta, el alcance por sede y las filas de bitácora: se prueban contando filas y
+recorriendo las rutas registradas, no en una pantalla.
+
 ### H2 — El contenido mínimo del art. 5 _(P1)_
 
 Los veinte campos del art. 5, comprobados al emitir y servidos en el documento:
@@ -184,6 +189,8 @@ dosis, frecuencia, duración, nombres del prescriptor y **su registro ACESS**.
 **Prueba independiente:** emitir una receta a un lactante de catorce meses y
 comprobar que el documento dice «1 año 2 meses» y «veinte (20)».
 
+**Cubre:** PR-020 a PR-040.
+
 ### H3 — Vigencia y archivo _(P1)_
 
 Tres días desde la fecha de prescripción, resuelta en `America/Guayaquil`, en el
@@ -192,6 +199,9 @@ conservación de quince ya cubre.
 
 **Prueba independiente:** emitir a las 21:00 hora de Ecuador y comprobar que la
 vigencia se cuenta desde ESE día y no desde el siguiente.
+
+**Cubre:** PR-050 a PR-055.
+**Solo servidor:** PR-054. Que nada se borre se demuestra contando filas.
 
 ### H4 — La alerta de alergia que sí es nuestra _(P1)_
 
@@ -203,6 +213,8 @@ cruzada, que se declaran y no se simulan.
 ficha en otra, recetar ese mismo concepto **desde la superviviente** y comprobar
 que la emisión se rechaza.
 
+**Cubre:** PR-060 a PR-067.
+
 ### H5 — Controlados: el documento que NO emitimos _(P3)_
 
 El registro interno del talonario físico y el reporte mensual a la ACESS.
@@ -210,6 +222,8 @@ El registro interno del talonario físico y el reporte mensual a la ACESS.
 está enunciada, no construida, y el §5 dice exactamente qué falta.
 
 **Prueba independiente:** no la tiene todavía, y decirlo es el punto.
+
+**Cubre:** PR-070 a PR-073.
 
 ### Fuera de las cinco
 

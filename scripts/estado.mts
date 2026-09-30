@@ -17,6 +17,13 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
+import {
+  computeBoard,
+  computeFlows,
+  workingTree,
+  workspaceOf,
+} from './board.mts';
+
 const REPO_ROOT = process.cwd();
 const MODULES_DIR = join(REPO_ROOT, 'src', 'modules');
 const JSON_OUTPUT = process.argv.includes('--json');
@@ -218,6 +225,38 @@ if (JSON_OUTPUT) {
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * FLOWS FIRST. The work is planned by flows (METODO §1): a flow is on screen
+ * only when its Playwright walk passed, whatever its requirements say. Reading
+ * modules first is how «requisitos casi al 100 %» got reported for a feature
+ * nobody could reach.
+ */
+const where = workspaceOf(REPO_ROOT);
+const web = workingTree(where.web);
+const flows = computeFlows(
+  workingTree(where.docs),
+  web,
+  computeBoard(workingTree(REPO_ROOT), web),
+);
+if (flows.length > 0) {
+  console.log(
+    'FLUJOS (clinica-docs/FLUJOS.md) — en pantalla = su recorrido Playwright pasó',
+  );
+  for (const flow of flows) {
+    const screen = flow.reachable
+      ? `✔ ${flow.result!.date}`
+      : !flow.walkExists
+        ? '✘ sin recorrido'
+        : flow.result
+          ? `✘ falló ${flow.result.date}`
+          : '✘ sin correr';
+    console.log(
+      `  ${screen.padEnd(16)} ${flow.id} ${flow.title}  ·  ${flow.complete}/${flow.known} entregas completas  ·  ${flow.actor}`,
+    );
+  }
+  console.log('');
+}
 
 if (modules.length === 0) {
   console.log(
