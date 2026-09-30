@@ -576,9 +576,12 @@ es falsa, hay requisitos que cambian.
   >
   > **Por qué solo dos instantes, fusionados y recortados al horario de aquí.**
   > Quien consulta puede no tener `agenda:read` en la otra sede (AG-107). Lo
-  > que ya revelaba el `409 PRACTITIONER_SLOT_TAKEN` es que una hora **del
-  > horario de esta sede** no está libre, intento a intento, y eso es todo lo
-  > que viaja: la fusión oculta cuántas entradas hay; el recorte al horario
+  > que revelaba el `409 PRACTITIONER_SLOT_TAKEN` es que una hora **del
+  > horario de esta sede** no está libre, intento a intento, y eso es lo que
+  > viaja — con una diferencia que se acepta por escrito: el 409 solo llegaba
+  > dentro de la ventana de reserva (AG-031, AG-033), y esto responde también
+  > para fechas pasadas y hasta el rango máximo de la consulta (366 días), de
+  > una vez. Siguen siendo dos instantes, sin sede ni paciente: la fusión oculta cuántas entradas hay; el recorte al horario
   > oculta cuánto dura una licencia y todo lo que el profesional hace fuera de
   > las horas que esta sede podría reservar. La segunda revisión clínica vio
   > que la primera versión, recortada solo al rango, daba un año de la agenda
