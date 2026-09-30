@@ -904,6 +904,19 @@ describe('session over HTTP', () => {
         );
       });
 
+      it('AU-040 la cookie dura un día más que la sesión, para que el navegador pueda oír que caducó', async () => {
+        // Con la cookie muriendo a la vez que la familia, el navegador ya no
+        // la envía al pasar el tope: la API responde «no hay cookie» y nadie
+        // sabe que la sesión caducó (revisión en contexto limpio, 30-09-2026).
+        const { cookies } = await signIn();
+        const row = await rowOf(cookies);
+
+        const cookieMs = Date.parse(cookieExpiry(cookies)!);
+        const marginMs = cookieMs - row.expiresAt.getTime();
+        // `Expires` has second resolution.
+        expect(Math.abs(marginMs - 86_400_000)).toBeLessThan(1_000);
+      });
+
       it('AU-040 rotar no alarga la sesión: el sucesor y el de la gracia heredan la caducidad del inicio de sesión', async () => {
         const { cookies: first } = await signIn();
         const started = await rowOf(first);
@@ -966,6 +979,30 @@ describe('session over HTTP', () => {
         ).toBe(false);
       });
 
+      it('AU-004 una familia anterior al tope, con caducidades distintas por fila, sigue dando la alarma de reúso', async () => {
+        /**
+         * Antes de AU-040 cada rotación daba a su fila `ahora + 7 días`. En
+         * una familia así, el refresco ya usado puede haber caducado mientras
+         * su sucesor sigue vivo: presentarlo es un reúso, no una sesión
+         * caducada, y tiene que revocar la familia como siempre.
+         */
+        const { cookies: first } = await signIn();
+        const successor = await rotate(first);
+        const used = await rowOf(first);
+        // Sólo la fila usada caduca: la de su sucesor sigue en el futuro.
+        await prisma.$executeRaw`
+          UPDATE refresh_token
+             SET expires_at = now() - make_interval(secs => 1)
+           WHERE id = ${used.id}::uuid`;
+
+        const refused = await refresh(first).expect(401);
+        expect(refused.body).toMatchObject({
+          code: 'REFRESH_TOKEN_REUSE_DETECTED',
+        });
+        expect(await liveRows(used.familyId)).toBe(0);
+        await refresh(successor).expect(401);
+      });
+
       it('AU-040 la gracia de AU-039 no rescata una familia que pasó el tope', async () => {
         // Todo lo que la gracia pide —el último usado, recién usado, el mismo
         // navegador, la familia sin revocar— salvo la familia viva: empezó
@@ -1021,7 +1058,9 @@ describe('session over HTTP', () => {
      * sostiene una transacción que bloquea la sesión que ya existe: el cierre
      * incrementa la época de la cuenta y se queda esperando a esa fila, con la
      * cuenta bloqueada. Entonces entra el inicio de sesión: lee las
-     * credenciales —y la época vieja— y espera a su vez sobre la cuenta.
+     * credenciales —y la época vieja— y espera a su vez sobre la cuenta (en
+     * `clearFailedAttempts`, antes de llegar al `FOR SHARE` de la emisión: lo
+     * que la prueba fija es que la época que compara se leyó antes del cierre).
      * Cuando la prueba confirma, el cierre termina primero.
      */
     describe('AU-041 iniciar sesión mientras se cierran todas las sesiones', () => {
@@ -1098,6 +1137,41 @@ describe('session over HTTP', () => {
         await revoking;
 
         expect(await liveRowsOfUser(existing.userId)).toBe(0);
+      });
+
+      it('AU-041 el rehash de un inicio de sesión no pisa una contraseña cambiada mientras tanto', async () => {
+        /**
+         * El inicio de sesión que rehace el hash (parámetros de Argon2 más
+         * fuertes) escribía el de la contraseña que acababa de comprobar, sin
+         * condición. Si en medio se confirmaba un cambio de contraseña, la
+         * VIEJA volvía a valer. Ahora sólo escribe si el hash sigue siendo el
+         * que leyó.
+         */
+        const { cookies } = await signIn();
+        const { userId } = await rowOf(cookies);
+        const repository = app.get(PrismaAuthUserRepository);
+        const { passwordHash: read } = await prisma.user.findUniqueOrThrow({
+          where: { id: userId },
+        });
+
+        await repository.rotateCredentials(
+          userId,
+          'hash-nuevo',
+          'PASSWORD_CHANGE',
+        );
+        await repository.updatePasswordHash(userId, 'rehash-de-la-vieja', read);
+
+        const { passwordHash } = await prisma.user.findUniqueOrThrow({
+          where: { id: userId },
+        });
+        expect(passwordHash).toBe('hash-nuevo');
+
+        // Control: con el hash que sigue ahí, el rehash sí se escribe.
+        await repository.updatePasswordHash(userId, 'rehash', 'hash-nuevo');
+        expect(
+          (await prisma.user.findUniqueOrThrow({ where: { id: userId } }))
+            .passwordHash,
+        ).toBe('rehash');
       });
 
       it('AU-041 control: sin un cierre de por medio, iniciar sesión otra vez funciona y deja dos sesiones', async () => {

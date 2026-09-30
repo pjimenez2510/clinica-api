@@ -30,6 +30,7 @@ import {
 } from '../../shared/http/auth.decorators';
 
 import { AuthService } from './application/auth.service';
+import { REFRESH_COOKIE_MARGIN_MS } from './domain/session';
 import { CredentialInvitationsService } from './application/credential-invitations.service';
 import { MfaEnrolmentService } from './application/mfa-enrolment.service';
 import { RolePermissionRegistry } from './infrastructure/role-permission.registry';
@@ -179,8 +180,11 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<SessionResponse> {
     const userId = this.currentUser.requireUserId();
+    // AU-041: the session epoch the challenge was issued under.
+    const challengeEpoch = this.currentUser.get()?.sep;
     const session = await this.auth.verifyMfa(
       userId,
+      typeof challengeEpoch === 'number' ? challengeEpoch : undefined,
       dto.code,
       this.clientContext(req),
     );
@@ -449,7 +453,8 @@ export class AuthController {
       secure: this.isProduction,
       sameSite: 'strict',
       path: '/',
-      expires: expiresAt,
+      // AU-040: past the family's expiry, so its refusal can say why.
+      expires: new Date(expiresAt.getTime() + REFRESH_COOKIE_MARGIN_MS),
     });
   }
 

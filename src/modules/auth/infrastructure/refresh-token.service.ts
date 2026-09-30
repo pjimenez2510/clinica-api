@@ -172,19 +172,30 @@ export class RefreshTokenService {
       existing?.revocationReason === RevocationReason.SUPERSEDED;
 
     /**
-     * AU-040. The family ran out: every row shares this expiry. Nothing is
-     * revoked and no alarm is raised even for a spent token — there is nothing
-     * open left to take over, and the high-priority alarm for it would teach
-     * the security officer to ignore that alarm. A spent one is still worth a
-     * line, like `REFRESH_TOKEN_AFTER_CLOSE`.
+     * AU-040. The FAMILY ran out — decided by the family, not by this row.
+     * Rows issued before AU-040 carried their own sliding expiry, so a spent
+     * row can be past its own while its successor lives: that is reuse, and
+     * falls through to AU-004 below.
+     *
+     * Nothing is revoked and no alarm is raised even for a spent token — there
+     * is nothing open left to take over, and the high-priority alarm for it
+     * would teach the security officer to ignore that alarm. A spent one is
+     * still worth a line with its own code, so it can be alerted on: the
+     * legitimate browser does not present a spent token after the family
+     * expired, so it most likely comes from a copy.
      */
-    if (existing && existing.expiresAt <= new Date()) {
+    if (
+      existing &&
+      existing.expiresAt <= new Date() &&
+      (await this.familyState(existing.familyId)) !== 'open'
+    ) {
       if (reused) {
         this.logger.warn(
           {
             user_id: existing.userId,
             family_id: existing.familyId,
             action: 'REFRESH_TOKEN_AFTER_EXPIRY',
+            error_code: 'REFRESH_TOKEN_REUSE_AFTER_EXPIRY',
           },
           'spent refresh token of an expired session presented',
         );
@@ -359,6 +370,7 @@ export class RefreshTokenService {
    * stays detectable, so requiring an unused row would kill the session of
    * anybody whose client refreshed while a request was in flight.
    */
+  /** `familyState` as a yes/no; the integration tests ask it this way. */
   async isFamilyOpen(familyId: string): Promise<boolean> {
     return (await this.familyState(familyId)) === 'open';
   }
@@ -417,6 +429,12 @@ export class RefreshTokenService {
    * Used tokens are NOT deleted before they expire: they are what makes reuse
    * detectable. Removing them early would turn an attack into a plain
    * "unknown token".
+   *
+   * ⚠️ AU-040: when this gets scheduled, keep rows until `expires_at +
+   * REFRESH_COOKIE_MARGIN_MS`. The cookie outlives the family by that margin
+   * precisely so the refusal can say «expired»; purging at `expires_at` would
+   * turn it back into «unknown token», and the guard would call an expired
+   * family «revoked» — whose sentence blames a password change.
    */
   async purgeExpired(): Promise<number> {
     const { count } = await this.prisma.refreshToken.deleteMany({

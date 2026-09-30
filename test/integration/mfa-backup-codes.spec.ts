@@ -13,6 +13,7 @@ import { configureApp } from '../../src/bootstrap';
 import { BACKUP_CODE_COUNT } from '../../src/modules/auth/domain/backup-code';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
 import { PrismaAuthUserRepository } from '../../src/modules/auth/infrastructure/prisma-auth-user.repository';
+import { RefreshTokenService } from '../../src/modules/auth/infrastructure/refresh-token.service';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
@@ -914,6 +915,65 @@ describe('AU-005 códigos de respaldo del segundo factor', () => {
       expect(user.mfaSecretEncrypted).toBe('el-secreto-viejo');
       expect(user.mfaPendingSecretEncrypted).toBe('el-segundo-pendiente');
       expect(await prisma.backupCode.count({ where: { userId } })).toBe(0);
+    });
+  });
+
+  /**
+   * AU-041 por el camino del segundo factor. Entre la contraseña y el código
+   * pueden pasar minutos, y el desafío no tiene fila que revocar: lleva la
+   * época leída con la contraseña, y completar el código la compara. Sin eso,
+   * una cuenta dada de baja con el desafío en la mano obtenía una sesión
+   * completa con su propio teléfono (revisión en contexto limpio, 30-09-2026).
+   */
+  describe('AU-041 cerrar todas las sesiones anula el desafío del segundo factor', () => {
+    const liveSessions = (userId: string) =>
+      prisma.refreshToken.count({
+        where: { userId, revokedAt: null, usedAt: null },
+      });
+
+    it('AU-041 una cuenta desactivada después del desafío no completa el segundo factor', async () => {
+      const account = await enrol();
+      const pending = await challenge();
+
+      // Lo que hace desactivarla (AU-023): la cuenta inactiva y todas sus
+      // sesiones cerradas.
+      await prisma.user.update({
+        where: { id: account.userId },
+        data: { active: false },
+      });
+      await app
+        .get(RefreshTokenService)
+        .revokeAllForUser(account.userId, 'ACCOUNT_DEACTIVATED');
+
+      const refused = await verify(
+        pending,
+        totpFor(account.uri, NEXT_STEP),
+      ).expect(401);
+      expect(refused.body).toMatchObject({ code: 'INVALID_CREDENTIALS' });
+      expect(await liveSessions(account.userId)).toBe(0);
+    });
+
+    it('AU-041 un cambio de contraseña después del desafío lo anula', async () => {
+      const account = await enrol();
+      const pending = await challenge();
+
+      const { passwordHash } = await prisma.user.findUniqueOrThrow({
+        where: { id: account.userId },
+      });
+      await app
+        .get(PrismaAuthUserRepository)
+        .rotateCredentials(account.userId, passwordHash, 'PASSWORD_CHANGE');
+
+      await verify(pending, totpFor(account.uri, NEXT_STEP)).expect(401);
+      expect(await liveSessions(account.userId)).toBe(0);
+    });
+
+    it('AU-041 control: sin cierre de por medio, el mismo desafío completa la sesión', async () => {
+      const account = await enrol();
+      const pending = await challenge();
+
+      await verify(pending, totpFor(account.uri, NEXT_STEP)).expect(200);
+      expect(await liveSessions(account.userId)).toBe(2);
     });
   });
 });

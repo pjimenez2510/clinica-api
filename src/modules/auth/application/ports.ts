@@ -75,6 +75,8 @@ export interface AccessTokenClaimsInput {
   fam: string;
   grants: RoleAssignment[];
   mfa: boolean;
+  /** AU-041: the session epoch, carried by the MFA challenge only. */
+  sep?: number;
 }
 
 /**
@@ -137,7 +139,16 @@ export interface AuthUserRepositoryPort {
   findByEmail(email: string): Promise<AuthUser | null>;
   findById(id: string): Promise<AuthUser | null>;
   findByRefreshFamily(familyId: string): Promise<AuthUser | null>;
-  updatePasswordHash(userId: string, passwordHash: string): Promise<void>;
+  /**
+   * The transparent rehash. Writes only while the stored hash is still
+   * `expectedCurrent` — the one just verified — so a password changed in the
+   * meantime is never overwritten with a hash of the old one (AU-041).
+   */
+  updatePasswordHash(
+    userId: string,
+    passwordHash: string,
+    expectedCurrent: string,
+  ): Promise<void>;
   /**
    * Increments the failure counter and returns the NEW value.
    *

@@ -284,9 +284,9 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   > caducada no renueva **por construcción**.
   >
   > **CONFIGURABLE CON TECHO.** La misma variable, que ya valía 7, pasa a
-  > significar vida absoluta. Una instalación puede **acortarla** (un turno,
-  > por ejemplo) y no alargar lo que decidió el autor: el esquema de entorno
-  > rechaza más de 7 y no arranca. No hay además caducidad por inactividad:
+  > significar vida absoluta. Una instalación puede **acortarla**, en días
+  > enteros (1 como mínimo), y no alargar lo que decidió el autor: el esquema
+  > de entorno rechaza más de 7 y no arranca. No hay además caducidad por inactividad:
   > con las dos en 7 días, la de inactividad no actuaría nunca.
   >
   > **EL GUARDIA TAMBIÉN LA VE.** Sin él, un token de acceso emitido el último
@@ -301,7 +301,29 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   > nada: quien lo lee tiene el token en la mano. Una familia caducada **no se
   > revoca ni da la alarma de reúso** aunque el refresco presentado estuviera
   > usado: no queda nada abierto que tomar. Eso queda como aviso
-  > (`REFRESH_TOKEN_AFTER_EXPIRY`), igual que `REFRESH_TOKEN_AFTER_CLOSE`.
+  > (`REFRESH_TOKEN_AFTER_EXPIRY`, con su propio `error_code` para poder
+  > alertar sobre él: el navegador legítimo no presenta un refresco usado de
+  > una familia caducada), igual que `REFRESH_TOKEN_AFTER_CLOSE`.
+  >
+  > **«CADUCADA» SE DECIDE POR LA FAMILIA, NO POR LA FILA.** Las familias
+  > anteriores a AU-040 tienen una caducidad por fila: un refresco usado puede
+  > haber caducado con su sucesor aún vivo, y presentarlo es AU-004, no una
+  > sesión caducada.
+  >
+  > **LA COOKIE DURA UN DÍA MÁS QUE LA FAMILIA.** Si caducaran a la vez, el
+  > navegador dejaría de enviarla justo al llegar el tope, la API sólo podría
+  > contestar «no hay cookie» y nadie sabría que la sesión caducó. El servidor
+  > sigue rechazando por la fila; la cookie sólo le deja decir por qué. Cuando
+  > se programe la purga de refrescos, tiene que conservar las filas ese mismo
+  > día de margen.
+  >
+  > **LO QUE PASA EN PANTALLA.** El corte cae a la misma hora en que se inició
+  > sesión, así que a menudo en plena consulta. La interfaz **no saca a nadie
+  > de la pantalla** por `SESSION_EXPIRED`: primero intenta una renovación
+  > (otra pestaña puede haber vuelto a entrar ya) y, si no, pide volver a
+  > entrar **en un diálogo encima**, con la misma cuenta, y reintenta lo que
+  > se estaba guardando. Alinear el corte a una hora fija de la clínica es una
+  > decisión del autor (D-064).
 - **AU-041** — CUANDO se cierren todas las sesiones de una cuenta —cambio de
   contraseña, AU-023, AU-036 o canje de una invitación— mientras un inicio de
   sesión de esa cuenta está en curso, el sistema NO DEBERÁ dejar abierta la
@@ -328,12 +350,19 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   > contador no tiene empates de reloj ni depende de que `now()` sea el
   > inicio de la transacción.
   >
-  > **LO QUE NO CUBRE, dicho:** el desafío del segundo factor. Completar el
-  > código TOTP relee la cuenta y compara con la época de ese momento —la
-  > carrera de milisegundos queda cerrada—, pero un cambio de contraseña
-  > confirmado entre el desafío y el código no anula el desafío, que sigue
-  > exigiendo el segundo factor. Cerrarlo pide llevar la época dentro del
-  > token de desafío, que cambia la forma de sus claims.
+  > **EL DESAFÍO DEL SEGUNDO FACTOR LLEVA LA ÉPOCA.** Entre la contraseña y
+  > el código pueden pasar minutos, y el desafío no tiene fila que revocar. La
+  > época leída con la contraseña viaja en el token de desafío (`sep`), y la
+  > sesión se emite contra ESA, no contra la que se lee al completar el
+  > código: cerrar todas las sesiones en medio anula el desafío. Además, una
+  > cuenta inactiva no completa el segundo factor. La revisión en contexto
+  > limpio encontró que, sin esto, una cuenta dada de baja con el desafío en
+  > la mano obtenía una sesión completa con su propio teléfono.
+  >
+  > **EL REHASH NO PISA UNA CONTRASEÑA NUEVA.** El inicio de sesión que rehace
+  > el hash con parámetros más fuertes sólo escribe si el hash sigue siendo el
+  > que comprobó; sin condición, un cambio de contraseña confirmado en medio
+  > se sobrescribía con un hash de la vieja, que volvía a valer.
 - **AU-005** — El sistema DEBERÁ permitir matricular un segundo factor TOTP con
   códigos de respaldo, y DEBERÁ cifrar el secreto en la aplicación (ADR-008 §3).
 

@@ -505,7 +505,7 @@ describe('AU-005 el segundo factor acepta un código de respaldo', () => {
   it('AU-005 completa el segundo factor con un código de respaldo cuando el TOTP no sirve', async () => {
     // Exactly the situation the requirement exists for: the phone is gone, so
     // there is no authenticator to read a code from.
-    const session = await service.verifyMfa('user-1', LIVE_CODE);
+    const session = await service.verifyMfa('user-1', 0, LIVE_CODE);
 
     expect(session.accessToken).toBe('access-token');
     expect(consumeBackupCode).toHaveBeenCalledWith('code-7');
@@ -515,10 +515,26 @@ describe('AU-005 el segundo factor acepta un código de respaldo', () => {
     expect(recordMfaStep).not.toHaveBeenCalled();
   });
 
+  it('AU-041 una cuenta desactivada no completa el segundo factor, ni con el código bueno', async () => {
+    findById.mockResolvedValue({ ...enrolled, active: false });
+
+    await expect(
+      service.verifyMfa('user-1', 0, LIVE_CODE),
+    ).rejects.toBeInstanceOf(InvalidCredentialsError);
+    expect(totpVerify).not.toHaveBeenCalled();
+  });
+
+  it('AU-041 un desafío sin época se rechaza igual: no hay con qué comparar', async () => {
+    await expect(
+      service.verifyMfa('user-1', undefined, LIVE_CODE),
+    ).rejects.toBeInstanceOf(InvalidCredentialsError);
+    expect(totpVerify).not.toHaveBeenCalled();
+  });
+
   it('la sesión dice que esta cuenta SÍ tiene segundo factor', async () => {
     // El otro estado del mismo campo. Con los dos escritos, un `mfaEnabled`
     // constante —el error fácil— no puede pasar las dos pruebas.
-    const session = await service.verifyMfa('user-1', LIVE_CODE);
+    const session = await service.verifyMfa('user-1', 0, LIVE_CODE);
 
     expect(session.mfaEnabled).toBe(true);
   });
@@ -526,7 +542,7 @@ describe('AU-005 el segundo factor acepta un código de respaldo', () => {
   it('AU-005 es de un solo uso: el código gastado ya no está entre los vivos', async () => {
     findLiveBackupCodes.mockResolvedValue([]);
 
-    await expect(service.verifyMfa('user-1', LIVE_CODE)).rejects.toBe(
+    await expect(service.verifyMfa('user-1', 0, LIVE_CODE)).rejects.toBe(
       totpRefusal,
     );
     expect(consumeBackupCode).not.toHaveBeenCalled();
@@ -538,7 +554,7 @@ describe('AU-005 el segundo factor acepta un código de respaldo', () => {
     // and it answers accordingly.
     consumeBackupCode.mockResolvedValue(false);
 
-    await expect(service.verifyMfa('user-1', LIVE_CODE)).rejects.toBe(
+    await expect(service.verifyMfa('user-1', 0, LIVE_CODE)).rejects.toBe(
       totpRefusal,
     );
   });
@@ -546,10 +562,10 @@ describe('AU-005 el segundo factor acepta un código de respaldo', () => {
   it('AU-005 un código de respaldo incorrecto responde EXACTAMENTE igual que un TOTP incorrecto', async () => {
     // Two different answers would say whether the account has live backup
     // codes, which is a fact about somebody who works here.
-    await expect(service.verifyMfa('user-1', 'ZZZZZ-ZZZZZ')).rejects.toBe(
+    await expect(service.verifyMfa('user-1', 0, 'ZZZZZ-ZZZZZ')).rejects.toBe(
       totpRefusal,
     );
-    await expect(service.verifyMfa('user-1', '123456')).rejects.toBe(
+    await expect(service.verifyMfa('user-1', 0, '123456')).rejects.toBe(
       totpRefusal,
     );
   });
@@ -559,7 +575,7 @@ describe('AU-005 el segundo factor acepta un código de respaldo', () => {
     // 50 bits, while the six-digit TOTP locks after three.
     registerFailure.mockResolvedValue(3);
 
-    await expect(service.verifyMfa('user-1', 'ZZZZZ-ZZZZZ')).rejects.toBe(
+    await expect(service.verifyMfa('user-1', 0, 'ZZZZZ-ZZZZZ')).rejects.toBe(
       totpRefusal,
     );
 
@@ -571,7 +587,7 @@ describe('AU-005 el segundo factor acepta un código de respaldo', () => {
     // Verifying costs one Argon2 per live code, so a mistyped TOTP must not
     // reach the loop. The decision is made on the SHAPE OF THE INPUT, which is
     // the caller's own doing and reveals nothing about the account.
-    await expect(service.verifyMfa('user-1', '123456')).rejects.toBe(
+    await expect(service.verifyMfa('user-1', 0, '123456')).rejects.toBe(
       totpRefusal,
     );
 
@@ -598,7 +614,9 @@ describe('AU-005 el segundo factor acepta un código de respaldo', () => {
         })),
       );
 
-      await service.verifyMfa('user-1', 'ZZZZZ-ZZZZZ').catch(() => undefined);
+      await service
+        .verifyMfa('user-1', 0, 'ZZZZZ-ZZZZZ')
+        .catch(() => undefined);
       return verifyHash.mock.calls.length + burnTime.mock.calls.length;
     };
 
@@ -633,7 +651,9 @@ describe('AU-005 el segundo factor acepta un código de respaldo', () => {
         })),
       );
 
-      await service.verifyMfa('user-1', 'ZZZZZ-ZZZZZ').catch(() => undefined);
+      await service
+        .verifyMfa('user-1', 0, 'ZZZZZ-ZZZZZ')
+        .catch(() => undefined);
       return verifyHash.mock.calls.length + burnTime.mock.calls.length;
     };
 
