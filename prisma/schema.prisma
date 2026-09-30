@@ -423,6 +423,13 @@ model AccessAudit {
   before Json? @db.JsonB
   after  Json? @db.JsonB
 
+  /// AG-073. From which resource the access was reached — today, the
+  /// appointment a chart was opened from (`agenda_entry`). Identifiers only.
+  /// Both or neither: `access_audit_context_both_or_neither`, in
+  /// `20260930140057_access_audit_context`.
+  contextType String? @map("context_type") @db.VarChar(64)
+  contextId   String? @map("context_id") @db.VarChar(64)
+
   @@index([resourceType, resourceId, occurredAt(sort: Desc)])
   @@index([userId, occurredAt(sort: Desc)])
   @@index([occurredAt(sort: Desc)])
