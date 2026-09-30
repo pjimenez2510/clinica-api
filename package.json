@@ -53,7 +53,9 @@
     "db:seed:dpa": "node --env-file=.env --experimental-strip-types prisma/seed-dpa.mts",
     "db:seed:countries": "node --env-file=.env --experimental-strip-types prisma/seed-countries.mts",
     "db:seed:rdacaa": "node --env-file=.env --experimental-strip-types prisma/seed-rdacaa.mts",
-    "verify:tocado": "node --experimental-strip-types scripts/verify-touched.mts"
+    "verify:tocado": "node --experimental-strip-types scripts/verify-touched.mts",
+    "roadmap:check": "node --experimental-strip-types scripts/roadmap.mts --check",
+    "roadmap:write": "node --experimental-strip-types scripts/roadmap.mts --write"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.28",
