@@ -333,11 +333,25 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
    * releases it. Asking without it would return the absorbed chart and send a
    * paper report to a record nobody opens.
    *
+   * ⚠️ AND THE WHERE IS `patient_identifier_active_unique`, WORD FOR WORD.
+   * The index is unique on (type, issuing_country, value) and only for
+   * `OFFICIAL` rows, so the bare number may sit on two charts: a `COL` cedula
+   * and an `ECU` one, or an `OLD` row and the `OFFICIAL` one. Asking for less
+   * than the index lets the heap pick the chart, and the paper report lands on
+   * somebody else. The cedula of this path is the Ecuadorian one (ORD-081);
+   * a foreign document goes to the manual queue.
+   *
    * ⚠️ AND THERE IS NO `create` ANYWHERE NEAR THIS METHOD (ORD-080).
    */
   async chartByCedula(cedula: string): Promise<string | undefined> {
     const row = await this.prisma.patientIdentifier.findFirst({
-      where: { type: 'CEDULA', value: cedula, patientMerged: false },
+      where: {
+        type: 'CEDULA',
+        issuingCountry: 'ECU',
+        value: cedula,
+        use: 'OFFICIAL',
+        patientMerged: false,
+      },
       select: { patientId: true },
     });
     return row?.patientId;

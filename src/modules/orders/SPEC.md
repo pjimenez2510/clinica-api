@@ -740,6 +740,20 @@ cuando la gráfica exista.
   fichas que absorbió una fusión**, y SI ninguna ficha vigente lleva esa cédula
   ENTONCES DEBERÁ responder `RESULT_CHART_UNMATCHED`.
 
+  La `Cedula` de este camino es el documento **ecuatoriano**: el sistema DEBERÁ
+  buscarla como `CEDULA` emitida en `ECU`, de uso `OFFICIAL` y en una ficha no
+  fusionada, que es exactamente la terna y el predicado de
+  `patient_identifier_active_unique` (PA-010, PA-013, PA-014), y NO DEBERÁ
+  resolver por el número suelto.
+
+  > **Por qué no el número suelto.** El índice deja coexistir una cédula `COL`
+  > y una `ECU` con el mismo número en dos fichas, y una `ECU` de uso `OLD` en
+  > una ficha con la `OFFICIAL` en otra. Buscando solo el número, la base elige
+  > una ficha cualquiera y la cola enseña **las órdenes de otra persona** a
+  > quien tiene el informe en la mano. Con la terna y el predicado del índice,
+  > la base garantiza a lo sumo una fila. Un documento extranjero no entra por
+  > aquí: va a la cola manual (ORD-080), pendiente de D-066.
+
   El alcance de ficha se resuelve con `chartScope` (PA-055, D-038): si la
   paciente tuvo dos fichas y se fusionaron, la orden que se emitió sobre la
   absorbida **sigue siendo suya** y tiene que aparecer. Leer por `patient_id`

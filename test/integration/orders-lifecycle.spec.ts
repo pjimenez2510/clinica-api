@@ -368,6 +368,62 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     expect(await prisma.patient.count()).toBe(1);
   });
 
+  /**
+   * ⚠️ THE FOREIGN ROW GOES IN FIRST, on purpose. Without `orderBy`, a lookup
+   * by the bare number returns whichever row the heap yields, which with
+   * `uuidv7()` ids is the oldest — so this order is the one that exposes it.
+   * The reverse order is asserted too, so a pass cannot be heap luck.
+   */
+  it('ORD-081 abre la ficha de la cédula ECU aunque otra ficha lleve el mismo número emitido por COL', async () => {
+    const prisma = db();
+
+    for (const foreignFirst of [true, false]) {
+      await prisma.patientIdentifier.deleteMany();
+      const foreign = await createPatient(prisma);
+      const ecuadorian = await createPatient(prisma);
+      const rows = [
+        { patientId: foreign.id, type: 'CEDULA' as const, issuingCountry: 'COL', value: CEDULA }, // prettier-ignore
+        { patientId: ecuadorian.id, type: 'CEDULA' as const, issuingCountry: 'ECU', value: CEDULA }, // prettier-ignore
+      ];
+      for (const data of foreignFirst ? rows : rows.reverse()) {
+        await prisma.patientIdentifier.create({ data });
+      }
+
+      // Control positivo: la base deja coexistir las dos (PA-010, PA-013).
+      expect(await prisma.patientIdentifier.count({ where: { value: CEDULA } })).toBe(2); // prettier-ignore
+
+      expect(await ordersOf(prisma).chartByCedula(CEDULA)).toBe(ecuadorian.id);
+    }
+  });
+
+  it('ORD-081 no abre la ficha que lleva el número como cédula extranjera: va a la cola manual', async () => {
+    const prisma = db();
+    const foreign = await createPatient(prisma);
+    await prisma.patientIdentifier.create({
+      data: { patientId: foreign.id, type: 'CEDULA', issuingCountry: 'COL', value: CEDULA }, // prettier-ignore
+    });
+
+    expect(await prisma.patientIdentifier.count({ where: { value: CEDULA } })).toBe(1); // prettier-ignore
+    expect(await ordersOf(prisma).chartByCedula(CEDULA)).toBeUndefined();
+  });
+
+  it('ORD-081 abre la ficha de la cédula OFFICIAL y no la de quien la lleva como OLD', async () => {
+    const prisma = db();
+    const stale = await createPatient(prisma);
+    const holder = await createPatient(prisma);
+    await prisma.patientIdentifier.create({
+      data: { patientId: stale.id, type: 'CEDULA', value: CEDULA, use: 'OLD' },
+    });
+    await prisma.patientIdentifier.create({
+      data: { patientId: holder.id, type: 'CEDULA', value: CEDULA },
+    });
+
+    // Control positivo: el índice parcial no alcanza a `OLD` (PA-014).
+    expect(await prisma.patientIdentifier.count({ where: { value: CEDULA, issuingCountry: 'ECU' } })).toBe(2); // prettier-ignore
+
+    expect(await ordersOf(prisma).chartByCedula(CEDULA)).toBe(holder.id);
+  });
+
   it('ORD-093 sigue el enlace de la fusión: la orden de la ficha absorbida es suya', async () => {
     const prisma = db();
     const scene = await aScene(prisma);
