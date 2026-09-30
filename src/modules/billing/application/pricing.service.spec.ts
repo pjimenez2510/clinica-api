@@ -100,7 +100,7 @@ describe('BI-030, BI-034 los pagadores son filas administrables', () => {
     ).rejects.toBeInstanceOf(PayerRucRequiredError);
   });
 
-  it('BI-034 comprueba el dígito verificador con el value object compartido', async () => {
+  it('BI-034 comprueba la forma con el value object compartido', async () => {
     // `INVALID_RUC` and `PAYER_RUC_REQUIRED` are different codes on purpose:
     // one says the number is wrong, the other that it is missing, and what the
     // user has to do is not the same.
@@ -108,10 +108,41 @@ describe('BI-030, BI-034 los pagadores son filas administrables', () => {
 
     await expect(
       pricing.createPayer(
-        { code: 'IESS', name: 'IESS', kind: 'PUBLIC_NETWORK', ruc: '1790012345001', agreementReference: null }, // prettier-ignore
+        { code: 'IESS', name: 'IESS', kind: 'PUBLIC_NETWORK', ruc: '179001234500', agreementReference: null }, // prettier-ignore
         requester,
       ),
     ).rejects.toBeInstanceOf(InvalidRucError);
+  });
+
+  it('BI-036 rechaza un RUC escrito mal también en el pagador que paga por sí mismo', async () => {
+    // «Particular» needs no RUC, but one that is written reaches an invoice
+    // like any other. Before D-057 the API took `12345` here.
+    const { service: pricing, mocks } = build();
+
+    await expect(
+      pricing.createPayer(
+        { code: 'PARTICULAR', name: 'Particular', kind: 'SELF_PAY', ruc: '12345', agreementReference: null }, // prettier-ignore
+        requester,
+      ),
+    ).rejects.toBeInstanceOf(InvalidRucError);
+    expect(mocks.createPayer).not.toHaveBeenCalled();
+  });
+
+  it('BI-036 admite una sociedad cuyo RUC no pasa módulo 11, y un «Particular» sin RUC', async () => {
+    const { service: pricing } = build();
+
+    await expect(
+      pricing.createPayer(
+        { code: 'SEGURO-N', name: 'Seguro nuevo', kind: 'PRIVATE_INSURANCE', ruc: '1793189906001', agreementReference: null }, // prettier-ignore
+        requester,
+      ),
+    ).resolves.toMatchObject({ ruc: '1793189906001' });
+    await expect(
+      pricing.createPayer(
+        { code: 'PARTICULAR', name: 'Particular', kind: 'SELF_PAY', ruc: '  ', agreementReference: null }, // prettier-ignore
+        requester,
+      ),
+    ).resolves.toBeDefined();
   });
 
   it('BI-034 no exige RUC al pagador que representa al paciente que paga por sí mismo', async () => {

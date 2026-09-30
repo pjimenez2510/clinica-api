@@ -2979,7 +2979,7 @@ model Payer {
   kind String @db.VarChar(24)
 
   /// RUC of the third party, when there is one. The patient's own document
-  /// lives on `patient`.
+  /// lives on `patient`. Its shape is `payer_ruc_format` (BI-036).
   ruc String? @db.VarChar(13)
 
   /// Informational, and what makes «convenio vencido» an answerable question.

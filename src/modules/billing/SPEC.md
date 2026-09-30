@@ -597,9 +597,9 @@ es falsa, hay requisitos que cambian.
   cuenta un `ruc` de pagador que no sean trece dígitos (`payer_ruc_format`).
   > D-057: la interfaz ya exigía trece dígitos y la API sólo un máximo de 13
   > caracteres, así que «Particular» admitía `12345`. Un RUC mal escrito llega a
-  > la factura electrónica y el SRI la rechaza meses después. El `CHECK` entra
-  > `NOT VALID`: rige para toda escritura nueva sin romper la migración por una
-  > fila vieja; las que no cumplan se listan antes y se corrigen a mano.
+  > la factura electrónica y el SRI la rechaza meses después. El `CHECK` es la
+  > misma forma que `site_ruc_format` y entra validado: antes se listaron los
+  > pagadores que no cumplían, y no había ninguno.
 - **BI-035** — El sistema NO DEBERÁ tomar el pagador de la cuenta como emisor ni
   como receptor de la factura por sí solo: el receptor se declara en BI-080.
   > El pagador dice **de qué lista sale el precio**. Quién figura en la factura

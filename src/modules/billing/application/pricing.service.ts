@@ -65,17 +65,17 @@ export class PricingService {
     return this.catalogue.listPayers(options);
   }
 
-  /** BI-030, BI-034. */
+  /** BI-030, BI-034, BI-036. */
   async createPayer(payer: NewPayer, requester: Requester): Promise<PayerView> {
-    this.checkInstitutionalRuc(payer.kind, payer.ruc);
+    const ruc = this.checkPayerRuc(payer.kind, payer.ruc);
 
-    const created = await this.catalogue.createPayer(payer);
+    const created = await this.catalogue.createPayer({ ...payer, ruc });
     await this.record(PAYER_RESOURCE_TYPE, created.id, 'CREATE', requester);
     return created;
   }
 
   /**
-   * BI-031, BI-032, BI-034.
+   * BI-031, BI-032, BI-034, BI-036.
    *
    * THE LAST ACTIVE PAYER IS NOT DEACTIVATED, and that check is here rather
    * than in the database because it is a count over the table rather than a
@@ -90,16 +90,17 @@ export class PricingService {
   ): Promise<PayerView> {
     const payer = await this.requirePayer(payerId);
 
-    if (update.ruc !== undefined) {
-      this.checkInstitutionalRuc(payer.kind, update.ruc);
-    }
+    const changes =
+      update.ruc === undefined
+        ? update
+        : { ...update, ruc: this.checkPayerRuc(payer.kind, update.ruc) };
 
     if (update.active === false && payer.active) {
       const active = await this.catalogue.countActivePayers();
       if (active <= 1) throw new LastActivePayerError();
     }
 
-    const updated = await this.catalogue.updatePayer(payerId, update);
+    const updated = await this.catalogue.updatePayer(payerId, changes);
     await this.record(PAYER_RESOURCE_TYPE, payerId, 'UPDATE', requester);
     return updated;
   }
@@ -178,18 +179,23 @@ export class PricingService {
   }
 
   /**
-   * BI-034. The ONE branch this module takes on `payer.kind`.
+   * BI-034, BI-036. The ONE branch this module takes on `payer.kind`, and the
+   * RUC as it is stored: trimmed, or `null` when none was written.
    *
-   * The check digit is `Ruc` in `shared` (OR-008) and answers `INVALID_RUC`;
-   * what is added here is the ABSENCE, which is a different thing for the user
-   * to fix. Self-pay never needs one: the patient's own document lives on
-   * `patient`, and demanding a RUC of «Particular» would block the first
-   * account of a fresh installation.
+   * The shape is `Ruc` in `shared` (OR-008, OR-009) and answers `INVALID_RUC`
+   * for EVERY kind (BI-036): a RUC written on «Particular» reaches an invoice
+   * like any other. What the kind adds is the ABSENCE, which is a different
+   * thing for the user to fix. Self-pay never needs one: the patient's own
+   * document lives on `patient`, and demanding a RUC of «Particular» would
+   * block the first account of a fresh installation.
    */
-  private checkInstitutionalRuc(kind: string, ruc: string | null): void {
-    if (kind === 'SELF_PAY') return;
-    if (ruc === null || ruc.trim() === '') throw new PayerRucRequiredError();
-    Ruc.create(ruc);
+  private checkPayerRuc(kind: string, ruc: string | null): string | null {
+    const written = ruc?.trim() ?? '';
+    if (written === '') {
+      if (kind !== 'SELF_PAY') throw new PayerRucRequiredError();
+      return null;
+    }
+    return Ruc.create(written).toString();
   }
 
   /** The payer, or `PayerNotFoundError`. */
