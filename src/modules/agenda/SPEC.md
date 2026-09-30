@@ -107,7 +107,7 @@ historial de cada transición.
 **Por qué es P2:** sin E2 la agenda es una lista de intenciones; con ella la
 clínica sabe quién está en sala. **Prueba independiente:** recorrer la máquina
 de estados y verificar que cada transición dejó fila en `agenda_status_history`.
-**Cubre:** AG-004, AG-005, AG-040 a AG-046.
+**Cubre:** AG-004, AG-005, AG-040 a AG-046, AG-143.
 
 **Solo servidor:** AG-004, AG-005, AG-045. La fila de `agenda_status_history` y
 su inmutabilidad son garantías de la base —dos disparadores y un `RESTRICT`,
@@ -557,6 +557,25 @@ es falsa, hay requisitos que cambian.
   > su nombre. La línea queda donde estaba para lo demás: la identificación es
   > operativa; el documento y el motivo son de la ficha, que se abre por su
   > ruta auditada (AG-073). AG-072 no cambia: listar sigue sin auditar por fila.
+- **AG-143** — CUANDO recepción consulte el resumen de un día en la agenda, el
+  sistema DEBERÁ nombrar, junto a la cifra de inasistencias, a cada paciente
+  cuya cita de ese día esté en `NO_SHOW`, con su nombre en orden de archivo, la
+  hora de inicio de la cita en `America/Guayaquil` y el profesional, con el
+  mismo alcance de profesionales que los recuentos del resumen, y NO DEBERÁ
+  mostrar su documento ni el motivo de consulta.
+  > D-061, opción C (30-09-2026, decisión del autor). La rejilla no cambia:
+  > una cita liberada bajo una cita viva cede carril y texto
+  > (`fix/agenda-carriles`), así que si el paciente A de las 08:00 quedó como
+  > inasistencia y su hora ya es de B, en la rejilla sólo se lee B. Cuando A
+  > llega a las 08:15 diciendo «tenía cita a las 8», recepción lo lee en el
+  > resumen sin abrir nada.
+  >
+  > **El límite es el de AG-109**, por la misma razón: el nombre es operativo;
+  > documento y motivo son de la ficha, que se abre por su ruta auditada
+  > (AG-073). No hace falta dato nuevo: la agenda del día con las liberadas ya
+  > trae nombre, estado, hora y profesional. **`LEFT_WITHOUT_BEING_SEEN` no
+  > entra**: esa persona sí llegó, y AG-140 ya la separa de la inasistencia;
+  > nombrarla aquí haría que la lista no cuadrara con la cifra que acompaña.
 - **AG-108** — CUANDO se consulten los profesionales agendables de una sede, el
   sistema DEBERÁ listar identificador y nombre de los que están activos, con
   `schedulable = true` y vinculados a esa sede, y NO DEBERÁ incluir cédula,
@@ -1811,6 +1830,15 @@ pasó de hora.
   > vale como contexto —una anulada, una de hace un año— y qué cuenta como
   > «una apertura» cuando la pantalla vuelve a pedir la ficha son decisiones
   > del autor: D-059 y D-060 en `DECISIONES-PENDIENTES.md`.
+  >
+  > **Una fila por petición, no por gesto** (D-060, opción A, 30-09-2026).
+  > Cada `GET /patients/{id}?agendaEntryId=…` deja su fila `READ` con el
+  > contexto, también cuando la pantalla vuelve a pedir la ficha sola —al
+  > volver a la pestaña, tras corregirla, al caducar su minuto de caché—; al
+  > revés, reabrirla dentro de ese minuto no pide nada y no deja fila. Quien
+  > investiga lee varias filas seguidas del mismo usuario, ficha y cita como
+  > una sesión de lectura. La fila por apertura explícita (opción B) se
+  > replantea al construir la consulta de la bitácora (REQ-110).
 - **AG-074** — El sistema NO DEBERÁ incluir nombre, documento ni motivo de
   consulta del paciente en ningún registro de log.
 

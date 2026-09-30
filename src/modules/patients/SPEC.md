@@ -535,6 +535,17 @@ requisitos que cambian.
   > cliente real porque `trust proxy` está configurado con un **número de
   > saltos**; sin eso, el rastro que la LOPDP espera que sigamos apunta a
   > nuestra propia infraestructura.
+  >
+  > **«Una apertura» es una petición** (D-060, opción A, 30-09-2026). Cada
+  > petición de `GET /patients/:id` que devuelve la ficha deja una fila
+  > `READ`, sea un gesto del usuario o un refresco que la pantalla hace sola
+  > —al volver a la pestaña, tras corregir la ficha, al caducar su caché—; y
+  > reabrirla mientras la pantalla la tiene en caché no pide nada ni deja
+  > fila. Quien investiga lee varias filas seguidas del mismo usuario y la
+  > misma ficha como una sesión de lectura, no como aperturas distintas. No es
+  > un defecto que corregir aquí: anotar sólo los gestos (opción B) exigiría
+  > creer al cliente sobre qué es un gesto, y se replantea al construir la
+  > consulta de la bitácora (REQ-110).
 - **PA-023** — El sistema NO DEBERÁ registrar en la bitácora una fila por cada
   resultado de una búsqueda o de un listado (REQ-111).
   > Se teclea letra a letra: auditar cada pulsación escribe miles de filas al
