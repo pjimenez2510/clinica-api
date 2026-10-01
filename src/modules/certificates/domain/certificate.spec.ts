@@ -661,11 +661,13 @@ describe('D-109 y D-110 lo que acota el reposo de maternidad', () => {
       check({ from: today, to: today }, addDays(today, -85)),
     );
     expect(refusal).toBeInstanceOf(CertificateMaternityDatesTooOldError);
+    // Nombra el primer parto que de verdad sirve: el de hace 84 días ya no
+    // deja emitir nada (CER-047).
     expect(
       (refusal as CertificateMaternityDatesTooOldError).fieldErrors[0],
     ).toMatchObject({
       field: 'birthOn',
-      message: `La fecha del parto debe ser, como muy pronto, el ${label(addDays(today, -84))}`,
+      message: `La fecha del parto debe ser, como muy pronto, el ${label(addDays(today, -83))}`,
     });
   });
 
@@ -757,6 +759,12 @@ describe('D-109 y D-110 lo que acota el reposo de maternidad', () => {
     expect(check(period, birth, { others: chained(birth) })).not.toThrow();
     const longAgo = addDays(addMonths(birth, -9), -1);
     expect(check(period, birth, { others: chained(longAgo) })).not.toThrow();
+    const later = addDays(addMonths(birth, 9), 1);
+    expect(check(period, birth, { others: chained(later) })).not.toThrow();
+    // Los bordes, en los dos sentidos: a 9 meses justos es el mismo embarazo.
+    expect(check(period, birth, { others: chained(addMonths(birth, 9)) })).toThrow(
+      CertificateMaternityBirthMismatchError,
+    );
     const close = addMonths(birth, -9);
     const refusal = refusalOf(check(period, birth, { others: chained(close) }));
     expect(refusal).toBeInstanceOf(CertificateMaternityBirthMismatchError);
@@ -780,5 +788,25 @@ describe('D-109 y D-110 lo que acota el reposo de maternidad', () => {
     expect(() =>
       assertRestDoesNotOverlapMaternity(period, [maternity]),
     ).toThrow(CertificateRestOverlapsError);
+  });
+
+  it('CER-050 no depende del orden de emision: el recorte de fin de mes se juzga desde los dos partos', () => {
+    // fecha-fija: el caso es el calendario mismo (31 de agosto frente a 30 de
+    // noviembre). 31-08 − 9 meses = 30-11 del año anterior, pero 30-11 + 9 meses
+    // = 30-08: sólo un sentido los junta.
+    const august = '2026-08-31' as ClinicalDate; // fecha-fija: fin de mes
+    const november = '2025-11-30' as ClinicalDate; // fecha-fija: fin de mes
+    const one = (b: ClinicalDate) => [{ from: b, to: b, maternityBirthOn: b }];
+    const at = (b: ClinicalDate) => () =>
+      assertMaternityWithinLeave(
+        { from: b, to: b },
+        maternityFrom(b),
+        b,
+        b,
+        OBSTETRIC,
+        one(b === august ? november : august),
+      );
+    expect(at(august)).toThrow(CertificateMaternityBirthMismatchError);
+    expect(at(november)).toThrow(CertificateMaternityBirthMismatchError);
   });
 });

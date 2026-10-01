@@ -167,8 +167,13 @@ BEGIN
            AND c."contingency_type" = 'MATERNITY'
            AND c."revoked_at" IS NULL
            AND c."birth_on" <> NEW."birth_on"
-           AND c."birth_on" BETWEEN (NEW."birth_on" - interval '9 months')::date
-                                AND (NEW."birth_on" + interval '9 months')::date
+           -- Desde los DOS partos: el recorte de fin de mes hace asimétrico
+           -- «9 meses después» (31-08 − 9 = 30-11, pero 30-11 + 9 = 30-08), y
+           -- el resultado no puede depender de cuál se emitió antes.
+           AND (c."birth_on" BETWEEN (NEW."birth_on" - interval '9 months')::date
+                                 AND (NEW."birth_on" + interval '9 months')::date
+                OR NEW."birth_on" BETWEEN (c."birth_on" - interval '9 months')::date
+                                      AND (c."birth_on" + interval '9 months')::date)
       ) THEN
         RAISE EXCEPTION 'medical_certificate_maternity_same_birth: the maternity rests of one pregnancy share the birth'
           USING ERRCODE = 'exclusion_violation',

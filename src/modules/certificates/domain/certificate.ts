@@ -321,7 +321,7 @@ export const MAX_DAYS_TO_ISSUE_REST = 8;
  * however long ago, and has no eight-day limit: the mother who gave birth in a
  * hospital comes days later, and the leave chains certificates (CER-043). Any
  * other day still keeps the three days, so a prenatal rest is as it was
- * (D-106 §2). What bounds those dates is D-109, pending.
+ * (D-106 §2). What bounds those dates are CER-046 to CER-050 (D-109, D-110).
  */
 export function assertRestWithinAttention(
   period: RestPeriod,
@@ -382,6 +382,19 @@ const overlaps = (period: RestPeriod) => (other: RestPeriod) =>
   other.from <= period.to && period.from <= other.to;
 
 /**
+ * CER-050. Whether two births are nine calendar months apart or less, judged
+ * from EACH: the end-of-month clamp makes «nine months after» asymmetric
+ * (31-08 − 9 = 30-11, but 30-11 + 9 = 30-08), and the answer must not depend
+ * on which rest was issued first.
+ */
+function sameMonthsApart(a: ClinicalDate, b: ClinicalDate): boolean {
+  const within = (x: ClinicalDate, y: ClinicalDate) =>
+    y >= addMonths(x, -MONTHS_BETWEEN_PREGNANCIES) &&
+    y <= addMonths(x, MONTHS_BETWEEN_PREGNANCIES);
+  return within(a, b) || within(b, a);
+}
+
+/**
  * CER-046 to CER-050, D-109, D-110 (provisional until the IESS confirms the
  * procedure, D-105 §6). What bounds a maternity rest once D-108 took the three
  * and eight days away:
@@ -405,8 +418,11 @@ export function assertMaternityWithinLeave(
 ): void {
   const birth = maternity.birthOn;
   const earliest = addDays(attentionDate, -MATERNITY_LEAVE_DAYS);
-  if (birth < earliest)
-    throw new CertificateMaternityDatesTooOldError(earliest);
+  // Refused from 85 days; the message names 83 days, the first birth that
+  // still leaves a day to issue on (the leave ends at birth + 83, CER-047).
+  if (birth < earliest) {
+    throw new CertificateMaternityDatesTooOldError(addDays(earliest, 1));
+  }
   const latest = addDays(attentionDate, MAX_BIRTH_DAYS_AFTER_ATTENTION);
   if (birth > latest) throw new CertificateMaternityBirthTooFarError(latest);
   const lastDay = addDays(birth, MATERNITY_LEAVE_DAYS - 1);
@@ -416,11 +432,9 @@ export function assertMaternityWithinLeave(
   if (!diagnosisCodes.some(isObstetricCie10)) {
     throw new CertificateMaternityDiagnosisRequiredError();
   }
-  const from = addMonths(birth, -MONTHS_BETWEEN_PREGNANCIES);
-  const to = addMonths(birth, MONTHS_BETWEEN_PREGNANCIES);
   const other = otherRests.find(
     ({ maternityBirthOn: b }) =>
-      b !== null && b !== birth && b >= from && b <= to,
+      b !== null && b !== birth && sameMonthsApart(birth, b),
   );
   if (other?.maternityBirthOn) {
     throw new CertificateMaternityBirthMismatchError(other.maternityBirthOn);
