@@ -2197,12 +2197,14 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   > paciente equivocado.
   >
   > **3.ª revisión, m5 (01-10-2026, a petición de la principal).** También un
-  > certificado sin revocar, una referencia vigente (`ISSUED`, `ACCEPTED`) y
-  > una interconsulta pendiente (`REQUESTED`): un certificado de reposo del
-  > IESS a nombre del paciente equivocado se puede presentar, y otro
-  > establecimiento o un colega están esperando. Si deben bloquear también la
-  > interconsulta contestada y la referencia cerrada, y cómo se retracta una
-  > referencia, que hoy no tiene estado para ello, es D-103.
+  > certificado sin revocar, una referencia emitida, aceptada o ya atendida
+  > (`ISSUED`, `ACCEPTED`, `COMPLETED`) y una interconsulta pedida o
+  > contestada (`REQUESTED`, `ANSWERED`): un certificado de reposo del IESS a
+  > nombre del paciente equivocado se puede presentar; lo atendido en otro
+  > establecimiento y la opinión escrita de un colega no se deshacen (D-103,
+  > resuelta por el autor). Solo dejan pasar `REJECTED`, `EXPIRED` y
+  > `CANCELLED`. Una referencia emitida aún no tiene cómo retirarse: su
+  > `CANCELLED` llega con la entrega que construya las referencias.
 - **EN-167** — CUANDO quien tenga `record:sign` interrumpa una atención `OPEN`
   u `ON_HOLD` (EN-129) siendo su profesional —o, si es otro, con motivo de
   sustitución (EN-147)—, el sistema DEBERÁ exigir motivo escrito y origen
@@ -2783,7 +2785,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `ENCOUNTER_ALREADY_REPORTED`             | 409  | Incluir en un envío una atención ya reportada                                                                                                                                                                                                                                                                                                                                                                               | EN-111                 |
 | `RDACAA_FIELDS_MISSING`                  | 422  | Exportar con fichas incompletas. Nombra **los campos**, nunca a los pacientes                                                                                                                                                                                                                                                                                                                                               | EN-115                 |
 | `ENCOUNTER_STATE_TRANSITION_INVALID`     | 409  | Transición de estado que la tabla de EN-132 no admite: reabrir una cerrada, saltarse el alta clínica, suspender una ya dada de alta. **Un solo código para todas**: el mensaje dice en qué estado está y qué se puede hacer desde ahí                                                                                                                                                                                       | EN-132                 |
-| `ENCOUNTER_HAS_LIVE_ACTS`                | 409  | Anular una atención en curso que ya tiene receta activa o en borrador, orden pendiente, nota firmada, certificado sin revocar, referencia vigente o interconsulta pendiente: se retractan antes (D-099 §1)                                                                                                                                                                                                                                                                                        | EN-166                 |
+| `ENCOUNTER_HAS_LIVE_ACTS`                | 409  | Anular una atención en curso que ya tiene receta activa o en borrador, orden pendiente, nota firmada, certificado sin revocar, referencia o interconsulta (D-103): se retractan antes (D-099 §1)                                                                                                                                                                                                                                                                                        | EN-166                 |
 | `APPOINTMENT_ARRIVAL_NOT_RECORDED`       | 409  | Interrumpir la atención de una cita sin llegada registrada (D-099 §2)                                                                                                                                                                                                                                                                                                                                                       | EN-167                 |
 | `ENCOUNTER_HAS_OTHERS_DRAFTS`            | 409  | Interrumpir una atención con un borrador de otra persona, que quedaría sin firma para siempre (D-085 §2)                                                                                                                                                                                                                                                                                                                    | EN-167                 |
 | `ENCOUNTER_ANNULMENT_REASON_REQUIRED`    | 422  | Anular una atención sin motivo escrito. Se exige **en el servicio** además del DTO                                                                                                                                                                                                                                                                                                                                          | EN-166                 |

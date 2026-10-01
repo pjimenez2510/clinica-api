@@ -596,7 +596,7 @@ export interface LiveActs {
 /**
  * EN-166, D-099 §1. The attention already left something in the chart —a
  * prescription active or in draft, an order still pending, a signed note, a
- * certificate not revoked, a referral or an interconsultation in force— and it
+ * certificate not revoked, a referral or an interconsultation (D-103)— and it
  * is retracted by its own door before the attention is annulled.
  */
 export class EncounterHasLiveActsError extends ConflictError {
@@ -615,9 +615,9 @@ export class EncounterHasLiveActsError extends ConflictError {
       acts.certificates > 0
         ? `${acts.certificates} certificado(s) sin revocar`
         : null,
-      acts.referrals > 0 ? `${acts.referrals} referencia(s) vigente(s)` : null,
+      acts.referrals > 0 ? `${acts.referrals} referencia(s) emitida(s)` : null,
       acts.interconsultations > 0
-        ? `${acts.interconsultations} interconsulta(s) pendiente(s)`
+        ? `${acts.interconsultations} interconsulta(s) pedida(s) o contestada(s)`
         : null,
     ].filter(Boolean);
     this.userTitle = `La atención tiene ${parts.join(', ')}. Anúlelas o retráctelas antes de anular la atención`;

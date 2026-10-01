@@ -258,12 +258,16 @@ async function lockAndRead(
  * - a signed note (EN-026);
  * - a certificate not revoked — an IESS rest certificate on the wrong
  *   patient is a document someone can still present (3.ª revisión, m5);
- * - a referral still in force, `ISSUED` or `ACCEPTED`: another establishment
- *   is expecting the patient;
- * - an interconsultation still `REQUESTED`: a colleague is about to answer it.
+ * - a referral `ISSUED` or `ACCEPTED` —another establishment is expecting
+ *   the patient— or `COMPLETED` —the patient was seen there, which no
+ *   annulment undoes (D-103 §2);
+ * - an interconsultation `REQUESTED` —a colleague is about to answer it— or
+ *   `ANSWERED` —a colleague wrote an opinion on this patient, which stands
+ *   like a signed note (D-103 §1).
  *
- * Which of the closed states should ALSO block —an answered
- * interconsultation, a completed referral— is D-103, a clinical decision.
+ * Only `REJECTED`/`EXPIRED` and `CANCELLED` let it through. An issued referral
+ * has no way to be withdrawn yet; `CANCELLED` comes with the delivery that
+ * builds referrals (D-103 §3), and until then no route creates one.
  */
 async function liveActsOf(
   tx: Prisma.TransactionClient,
@@ -289,10 +293,13 @@ async function liveActsOf(
     tx.clinicalNote.count({ where: { encounterId, status: 'SIGNED' } }),
     tx.medicalCertificate.count({ where: { encounterId, revokedAt: null } }),
     tx.referral.count({
-      where: { encounterId, status: { in: ['ISSUED', 'ACCEPTED'] } },
+      where: {
+        encounterId,
+        status: { in: ['ISSUED', 'ACCEPTED', 'COMPLETED'] },
+      },
     }),
     tx.interconsultation.count({
-      where: { encounterId, status: 'REQUESTED' },
+      where: { encounterId, status: { in: ['REQUESTED', 'ANSWERED'] } },
     }),
   ]);
   return {

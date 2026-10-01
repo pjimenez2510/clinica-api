@@ -755,7 +755,7 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
     ).toBe('ENTERED_IN_ERROR');
   });
 
-  it('EN-166 un certificado no revocado, una referencia vigente o una interconsulta pendiente impiden anular; retractados, se anula (D-099 §1)', async () => {
+  it('EN-166 un certificado no revocado, una referencia emitida o atendida y una interconsulta pedida o contestada impiden anular; revocado, rechazada y cancelada, se anula (D-099 §1, D-103)', async () => {
     const prisma = db();
     const { encounter, requester, ids } = await inAttentionWithNote(prisma);
     const annul = () =>
@@ -804,6 +804,12 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
       data: { status: 'ACCEPTED' },
     });
     expect(await liveActs()).toContain('referencia');
+    // D-103 §2: ya atendida en el otro establecimiento, tampoco.
+    await prisma.referral.update({
+      where: { id: referral.id },
+      data: { status: 'COMPLETED', resolvedAt: new Date() },
+    });
+    expect(await liveActs()).toContain('referencia');
     await prisma.referral.update({
       where: { id: referral.id },
       data: { status: 'REJECTED', resolvedAt: new Date() },
@@ -814,6 +820,16 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
         encounterId: encounter.id,
         requestedById: ids.practitionerId,
         reason: 'Opinión de cardiología',
+      },
+    });
+    expect(await liveActs()).toContain('interconsulta');
+    // D-103 §1: contestada, la opinión del colega queda como una nota firmada.
+    await prisma.interconsultation.update({
+      where: { id: interconsultation.id },
+      data: {
+        status: 'ANSWERED',
+        opinion: 'Sin hallazgos',
+        respondedAt: new Date(),
       },
     });
     expect(await liveActs()).toContain('interconsulta');
