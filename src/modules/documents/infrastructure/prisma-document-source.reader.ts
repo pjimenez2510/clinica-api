@@ -1,6 +1,6 @@
 import { composeForm117 } from '../../../shared/domain/form-117/form-117';
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import {
@@ -13,6 +13,8 @@ import type {
   AllowedImageMimeType,
   StoredImage,
 } from '../domain/document-image';
+import { DOCUMENT_VERIFICATION_BASE_URL } from '../domain/document-source';
+import type { VerificationFacts } from '../domain/document-verification';
 import type {
   DocumentContext,
   DocumentSourceReader,
@@ -211,7 +213,11 @@ const DIAGNOSIS_SELECT = {
  */
 @Injectable()
 export class PrismaDocumentSourceReader implements DocumentSourceReader {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(DOCUMENT_VERIFICATION_BASE_URL)
+    private readonly verificationBaseUrl: string,
+  ) {}
 
   /**
    * Dispatches on the kind; the `switch` is exhaustive over `DocumentKind`, so
@@ -239,12 +245,17 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       where: { id: siteId },
       select: {
         name: true,
+        mspUnicode: true,
         ruc: true,
         addressLine: true,
         phone: true,
+        establishmentId: true,
         establishment: {
           select: {
             legalName: true,
+            tradeName: true,
+            contactEmail: true,
+            operatingPermit: true,
             ruc: true,
             keepsAccounting: true,
             specialTaxpayerResolution: true,
@@ -268,6 +279,9 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
      */
     const establishment: EstablishmentIdentity = {
       name: site.establishment?.legalName ?? site.name,
+      tradeName: site.establishment?.tradeName ?? null,
+      email: site.establishment?.contactEmail ?? null,
+      operatingPermit: site.establishment?.operatingPermit ?? null,
       ruc: site.ruc ?? site.establishment?.ruc ?? null,
       addressLine: site.addressLine,
       phone: site.phone,
@@ -280,7 +294,124 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       rimpeRegime: site.establishment?.rimpeRegime ?? 'NONE',
     };
 
-    return { establishment, siteName: site.name };
+    /**
+     * DOC-081, D-095.4. The site line only when there is more than one ACTIVE
+     * site: with one, «Sede Matriz» under the clinic's name reads to a patient
+     * as a second place. A deactivated site does not count — nobody walks into
+     * it.
+     */
+    const activeSites = await this.prisma.site.count({
+      where: { active: true, establishmentId: site.establishmentId },
+    });
+
+    return {
+      establishment,
+      siteName: site.name,
+      siteLine:
+        activeSites > 1 ? `${site.name} · Unicódigo ${site.mspUnicode}` : null,
+      verificationBaseUrl: this.verificationBaseUrl,
+    };
+  }
+
+  /** DOC-038. The first active site by name, for a template preview. */
+  async firstActiveSiteId(): Promise<string | null> {
+    const site = await this.prisma.site.findFirst({
+      where: { active: true },
+      orderBy: { name: 'asc' },
+      select: { id: true },
+    });
+    return site?.id ?? null;
+  }
+
+  /**
+   * DOC-094. A receta, a certificate or an order by its code. Only FILED
+   * states of a receta: a draft is not a document anybody can be holding. The
+   * establishment's trade name, as the header printed it.
+   */
+  async findForVerification(code: string): Promise<VerificationFacts | null> {
+    const place = {
+      select: {
+        name: true,
+        establishment: { select: { legalName: true, tradeName: true } },
+      },
+    } as const;
+    const signer = { select: { user: { select: { firstName: true, lastName: true } } } } as const; // prettier-ignore
+
+    const prescription = await this.prisma.prescription.findFirst({
+      where: {
+        // A pharmacy may type the code from the paper in lowercase.
+        verificationCode: { equals: code, mode: 'insensitive' },
+        status: { in: ['ACTIVE', 'COMPLETED', 'CANCELLED'] },
+        issuedAt: { not: null },
+      },
+      select: {
+        status: true,
+        issuedAt: true,
+        prescriber: signer,
+        encounter: { select: { site: place } },
+      },
+    });
+    if (prescription?.issuedAt != null) {
+      const site = prescription.encounter.site;
+      return {
+        kind: 'PRESCRIPTION',
+        issuedAt: prescription.issuedAt,
+        annulled: prescription.status === 'CANCELLED',
+        // The receta does not record WHEN it was cancelled.
+        annulledAt: null,
+        establishmentName: nameOf(site),
+        siteName: site.name,
+        practitionerName: `${prescription.prescriber.user.lastName} ${prescription.prescriber.user.firstName}`,
+      };
+    }
+
+    const certificate = await this.prisma.medicalCertificate.findFirst({
+      where: { verificationCode: { equals: code, mode: 'insensitive' } },
+      select: {
+        issuedAt: true,
+        revokedAt: true,
+        issuedBy: signer,
+        encounter: { select: { site: place } },
+      },
+    });
+    if (certificate !== null) {
+      const site = certificate.encounter.site;
+      return {
+        kind: 'MEDICAL_CERTIFICATE',
+        issuedAt: certificate.issuedAt,
+        annulled: certificate.revokedAt !== null,
+        annulledAt: certificate.revokedAt,
+        establishmentName: nameOf(site),
+        siteName: site.name,
+        practitionerName: `${certificate.issuedBy.user.lastName} ${certificate.issuedBy.user.firstName}`,
+      };
+    }
+
+    // ORD-006, D-095. The order prints its code too, and the laboratory that
+    // scans it must get an answer, not «no document has this code».
+    const order = await this.prisma.serviceOrder.findFirst({
+      where: { verificationCode: { equals: code, mode: 'insensitive' } },
+      select: {
+        requestedAt: true,
+        orderedBy: signer,
+        site: place,
+        items: { select: { status: true } },
+      },
+    });
+    if (order === null) return null;
+    return {
+      kind: 'SERVICE_ORDER',
+      issuedAt: order.requestedAt,
+      // Nothing left to perform: every exam was cancelled. The order does not
+      // record WHEN.
+      annulled:
+        order.items.length > 0 &&
+        order.items.every((item) => item.status === 'CANCELLED'),
+      annulledAt: null,
+      establishmentName: nameOf(order.site),
+      siteName: order.site.name,
+      practitionerName: `${order.orderedBy.user.lastName} ${order.orderedBy.user.firstName}`,
+    };
   }
 
   // ── prescription ─────────────────────────────────────────────────────────
@@ -787,4 +918,14 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       },
     };
   }
+}
+
+/** DOC-080, OR-010. The name the paper carried: trade name, else legal name. */
+function nameOf(site: {
+  name: string;
+  establishment: { legalName: string; tradeName: string | null } | null;
+}): string {
+  return (
+    site.establishment?.tradeName ?? site.establishment?.legalName ?? site.name
+  );
 }

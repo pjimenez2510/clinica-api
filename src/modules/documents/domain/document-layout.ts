@@ -5,7 +5,7 @@ import {
 import type { DateInNumbersAndWords } from '../../../shared/domain/form-117/date-in-words';
 import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
 
-import { DOCUMENT_TITLE } from './document-kind';
+import { composeFrame } from './document-frame';
 import {
   OUTPATIENT_VALIDITY_DAYS,
   ageText,
@@ -24,12 +24,7 @@ import type {
   PrescriptionPrintData,
   ServiceOrderPrintData,
 } from './document-source';
-import type {
-  Block,
-  DocumentHeader,
-  DocumentLayout,
-  LabelledValue,
-} from './page-layout';
+import type { Block, DocumentLayout, LabelledValue } from './page-layout';
 
 /**
  * DOC-070 to DOC-078. The four documents, composed into a layout.
@@ -44,35 +39,6 @@ import type {
 function ecuadorianDate(instant: Date): string {
   const [year, month, day] = clinicalDateOf(instant).split('-');
   return `${day}/${month}/${year}`;
-}
-
-/**
- * DOC-071. The header repeated on every page: the establishment's name always,
- * and RUC, address and phone only when the template's switches ask for them
- * (DOC-034).
- */
-function headerOf(
-  context: DocumentContext,
-  template: DocumentTemplate,
-): DocumentHeader {
-  const { establishment } = context;
-  return {
-    establishmentName: establishment.name,
-    // DOC-034. Read always, printed only when the clinic asked for it: art. 5
-    // requires none of these three.
-    establishmentRuc: template.showEstablishmentRuc ? establishment.ruc : null,
-    establishmentAddress: template.showEstablishmentAddress
-      ? establishment.addressLine
-      : null,
-    establishmentPhone: template.showEstablishmentPhone
-      ? establishment.phone
-      : null,
-    hasLogo: establishment.logo !== null,
-    fields: template.headerFields.map((field) => ({
-      label: field.label,
-      value: field.value,
-    })),
-  };
 }
 
 /**
@@ -254,14 +220,15 @@ export function composePrescriptionLayout(
   }));
 
   /**
-   * PR-020. The number first —it is what the ACESS reads to detect a gap—
-   * and the pharmacy's check code beside it, each with its own name. A draft
-   * previewed before the issue has neither, and says so instead of «null».
+   * PR-020. The number beside the title —it is what the ACESS reads to detect
+   * a gap—; the pharmacy's check code goes to the frame's footer, with its QR.
+   * A draft previewed before the issue has neither, and says so instead of
+   * «null».
    */
   const reference =
     data.sequenceNumber === null || data.verificationCode === null
       ? 'Borrador — sin número'
-      : `Receta N.º ${data.sequenceNumber} · Código de verificación: ${data.verificationCode}`;
+      : `Receta N.º ${data.sequenceNumber}`;
 
   /**
    * PR-038, PR-039. Art. 5.e — what the PATIENT takes home, so it travels in
@@ -286,10 +253,12 @@ export function composePrescriptionLayout(
   };
 
   return {
-    title: DOCUMENT_TITLE.PRESCRIPTION,
-    reference,
-    accentColour: template.accentColour,
-    header: headerOf(context, template),
+    frame: composeFrame(context, template, {
+      kind: 'PRESCRIPTION',
+      reference,
+      confidential: data.diagnoses.length > 0,
+      verificationCode: data.verificationCode,
+    }),
     blocks,
     tearOff: {
       caption: 'Indicaciones para el paciente — recorte por esta línea',
@@ -319,7 +288,6 @@ export function composePrescriptionLayout(
         },
       ],
     },
-    footerText: template.footerText,
   };
 }
 
@@ -435,15 +403,16 @@ export function composeServiceOrderLayout(
   ];
 
   return {
-    title: DOCUMENT_TITLE.SERVICE_ORDER,
-    // ORD-006 and D-095: the number, and the code a laboratory checks the
-    // order with.
-    reference: `Orden N.º ${data.number} · Código de verificación: ${data.verificationCode}`,
-    accentColour: template.accentColour,
-    header: headerOf(context, template),
+    // ORD-006 and D-095: the number on top, and in the footer the code a
+    // laboratory checks the order with.
+    frame: composeFrame(context, template, {
+      kind: 'SERVICE_ORDER',
+      reference: `Orden N.º ${data.number}`,
+      confidential: data.diagnoses.length > 0,
+      verificationCode: data.verificationCode,
+    }),
     blocks,
     tearOff: null,
-    footerText: template.footerText,
   };
 }
 
@@ -469,9 +438,7 @@ const CERTIFICATE_TYPE_LABEL: Record<string, string> = {
  * number of days.
  *
  * ⚠️ «CONFIDENCIAL» exactly when the diagnosis is printed (CER-033, A.M.
- * 5216-A art. 33). The header and footer are the common frame's
- * (`feat/documentos-identidad`); until it lands, the legend goes at the top of
- * the body.
+ * 5216-A art. 33). The common frame prints it, beside the title.
  */
 export function composeCertificateLayout(
   data: CertificatePrintData,
@@ -481,9 +448,6 @@ export function composeCertificateLayout(
   const form = data.form;
   const blocks: Block[] = [];
 
-  if (form.confidential) {
-    blocks.push({ kind: 'paragraph', text: 'CONFIDENCIAL', emphasis: true });
-  }
   if (form.revocation !== null) {
     // A revoked certificate that printed like a valid one is the failure this
     // line exists for: somebody is holding the paper.
@@ -667,13 +631,15 @@ export function composeCertificateLayout(
   );
 
   return {
-    title: DOCUMENT_TITLE.MEDICAL_CERTIFICATE,
-    reference: `Certificado N.º ${form.number} · Código de verificación: ${form.verificationCode}`,
-    accentColour: template.accentColour,
-    header: headerOf(context, template),
+    frame: composeFrame(context, template, {
+      kind: 'MEDICAL_CERTIFICATE',
+      reference: `Certificado N.º ${form.number}`,
+      // CER-033, DOC-082. Exactly when the diagnosis is printed.
+      confidential: form.confidential,
+      verificationCode: form.verificationCode,
+    }),
     blocks,
     tearOff: null,
-    footerText: template.footerText,
   };
 }
 
@@ -762,10 +728,12 @@ export function composeInvoiceLayout(
   ];
 
   return {
-    title: DOCUMENT_TITLE.INVOICE_RIDE,
-    reference: `N.º ${data.documentNumber}`,
-    accentColour: template.accentColour,
-    header: headerOf(context, template),
+    frame: composeFrame(context, template, {
+      kind: 'INVOICE_RIDE',
+      reference: data.documentNumber,
+      confidential: false,
+      verificationCode: null,
+    }),
     blocks: [
       { kind: 'boxes', left: issuerBox, right: voucherBox },
       { kind: 'heading', text: 'Datos del comprador' },
@@ -818,7 +786,6 @@ export function composeInvoiceLayout(
       },
     ],
     tearOff: null,
-    footerText: template.footerText,
   };
 }
 

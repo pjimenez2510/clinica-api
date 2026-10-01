@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { Test } from '@nestjs/testing';
 import { ThrottlerStorage } from '@nestjs/throttler';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -5,6 +7,7 @@ import type { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
 import sharp from 'sharp';
 import request from 'supertest';
+import { extractText, getDocumentProxy } from 'unpdf';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
@@ -14,6 +17,8 @@ import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
+
+import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
 
 import { useDatabase } from './setup/database';
 import { createPatient, createSite } from './setup/fixtures';
@@ -46,6 +51,7 @@ interface Problem {
   title: string;
   status: number;
   code: string;
+  errors?: { field: string; code: string; message: string }[];
 }
 
 interface RenderBody {
@@ -294,6 +300,328 @@ describe('los documentos por HTTP', () => {
     });
   });
 
+  describe('DOC-038, DOC-039 vista previa y publicación de la identidad', () => {
+    const slots = {
+      accentColour: '#7a3b2e',
+      footerText: 'Pie de la vista previa',
+      headerFields: [],
+      showEstablishmentRuc: true,
+    };
+
+    it('DOC-038 la vista previa devuelve el PDF de muestra con la identidad real y no guarda nada', async () => {
+      const response = await post('/documents/templates/preview', adminToken, {
+        kind: 'PRESCRIPTION',
+        ...slots,
+      })
+        .buffer()
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+
+      expect(response.headers['content-type']).toContain('application/pdf');
+      const proxy = await getDocumentProxy(
+        new Uint8Array(response.body as Buffer),
+      );
+      const { text } = await extractText(proxy, { mergePages: true });
+      expect(text).toContain('Centro de Especialidades Bahía');
+      expect(text).toContain('MUESTRA');
+      expect(text).toContain('Pie de la vista previa');
+
+      await expect(prisma.documentRender.count()).resolves.toBe(0);
+      await expect(prisma.documentTemplate.count()).resolves.toBe(0);
+    });
+
+    it('DOC-038 la vista previa rechaza una ranura inválida y nombra el campo', async () => {
+      const response = await post('/documents/templates/preview', adminToken, {
+        kind: 'PRESCRIPTION',
+        ...slots,
+        accentColour: 'granate',
+      }).expect(422);
+
+      expect(
+        (response.body as Problem).errors?.map((error) => error.field),
+      ).toContain('accentColour');
+    });
+
+    it('DOC-090 la vista previa exige config:read: el médico no la ve', async () => {
+      await post('/documents/templates/preview', adminToken, {
+        kind: 'PRESCRIPTION',
+        ...slots,
+      }).expect(200);
+
+      await post('/documents/templates/preview', doctorToken, {
+        kind: 'PRESCRIPTION',
+        ...slots,
+      }).expect(403);
+    });
+
+    it('DOC-039 publica la versión siguiente de las cuatro clases a la vez', async () => {
+      await publishTemplate('PRESCRIPTION');
+
+      const response = await post(
+        '/documents/templates/all-kinds',
+        adminToken,
+        slots,
+      ).expect(201);
+
+      const published = response.body as { kind: string; version: number }[];
+      expect(
+        published.map((one) => `${one.kind}:${one.version}`).sort(),
+      ).toEqual([
+        'INVOICE_RIDE:1',
+        'MEDICAL_CERTIFICATE:1',
+        'PRESCRIPTION:2',
+        'SERVICE_ORDER:1',
+      ]);
+      await expect(prisma.documentTemplate.count()).resolves.toBe(5);
+    });
+
+    it('DOC-039 si una inserción falla EN LA BASE, no queda publicada ninguna', async () => {
+      // Positive control: the same request publishes four.
+      await post('/documents/templates/all-kinds', adminToken, slots).expect(
+        201,
+      );
+      await expect(prisma.documentTemplate.count()).resolves.toBe(4);
+
+      // The THIRD insert fails inside PostgreSQL, after the first two went
+      // through: only a real transaction leaves none of the three behind.
+      await prisma.$executeRawUnsafe(`
+        CREATE FUNCTION test_refuse_certificate() RETURNS trigger AS $$
+        BEGIN RAISE EXCEPTION 'refused by the test'; END $$ LANGUAGE plpgsql`);
+      await prisma.$executeRawUnsafe(`
+        CREATE TRIGGER test_refuse_certificate BEFORE INSERT ON document_template
+        FOR EACH ROW WHEN (NEW.kind = 'MEDICAL_CERTIFICATE')
+        EXECUTE FUNCTION test_refuse_certificate()`);
+      try {
+        const refused = await post(
+          '/documents/templates/all-kinds',
+          adminToken,
+          { ...slots, accentColour: '#003366' },
+        );
+        expect(refused.status).toBeGreaterThanOrEqual(400);
+        await expect(prisma.documentTemplate.count()).resolves.toBe(4);
+      } finally {
+        await prisma.$executeRawUnsafe(
+          'DROP TRIGGER test_refuse_certificate ON document_template',
+        );
+        await prisma.$executeRawUnsafe(
+          'DROP FUNCTION test_refuse_certificate()',
+        );
+      }
+    });
+
+    it('DOC-035 DOC-039 una ranura inválida no publica ninguna', async () => {
+      await post('/documents/templates/all-kinds', adminToken, {
+        ...slots,
+        accentColour: '#ZZZZZZ',
+      }).expect(422);
+      await expect(prisma.documentTemplate.count()).resolves.toBe(0);
+    });
+
+    it('DOC-090 publicar las cuatro exige config:manage', async () => {
+      await post('/documents/templates/all-kinds', doctorToken, slots).expect(
+        403,
+      );
+      await expect(prisma.documentTemplate.count()).resolves.toBe(0);
+    });
+  });
+
+  describe('DOC-094 a DOC-096 la verificación pública', () => {
+    const verify = (code: string) =>
+      request(app.getHttpServer()).get(`/api/v1/documents/verify/${code}`);
+
+    it('DOC-094 sin sesión dice clase, fecha, establecimiento, sede, profesional y vigencia', async () => {
+      const issuedAt = new Date();
+      await prisma.prescription.update({
+        where: { id: prescriptionId },
+        data: { verificationCode: 'ABCD1234EF567890', issuedAt },
+      });
+
+      const response = await verify('ABCD1234EF567890').expect(200);
+
+      expect(response.body).toMatchObject({
+        kind: 'PRESCRIPTION',
+        issuedOn: clinicalDateOf(issuedAt),
+        establishmentName: 'Centro de Especialidades Bahía',
+        status: 'VALID',
+        annulledOn: null,
+      });
+    });
+
+    it('DOC-094 una receta pasada su vigencia se dice caducada', async () => {
+      // The seeded receta was issued weeks before any run of this suite.
+      await prisma.prescription.update({
+        where: { id: prescriptionId },
+        data: {
+          verificationCode: 'ABCD1234EF567890',
+          issuedAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
+        },
+      });
+
+      const response = await verify('ABCD1234EF567890').expect(200);
+      expect((response.body as { status: string }).status).toBe('EXPIRED');
+    });
+
+    it('DOC-094 el código se acepta escrito en minúsculas', async () => {
+      await prisma.prescription.update({
+        where: { id: prescriptionId },
+        data: { verificationCode: 'ABCD1234EF567890', issuedAt: new Date() },
+      });
+      await verify('abcd1234ef567890').expect(200);
+    });
+
+    it('DOC-096 una receta en borrador con código responde como un código inexistente', async () => {
+      const unknown = await verify('ZZZZ9999ZZZZ9999').expect(404);
+      await prisma.prescription.update({
+        where: { id: prescriptionId },
+        data: { verificationCode: 'ABCD1234EF567890', issuedAt: new Date() },
+      });
+      // Positive control: the same receta, issued, is found.
+      await verify('ABCD1234EF567890').expect(200);
+
+      await prisma.prescription.update({
+        where: { id: prescriptionId },
+        data: { status: 'DRAFT', issuedAt: null },
+      });
+      const draft = await verify('ABCD1234EF567890').expect(404);
+
+      expect((draft.body as Problem).code).toBe((unknown.body as Problem).code);
+      expect((draft.body as Problem).title).toBe(
+        (unknown.body as Problem).title,
+      );
+    });
+
+    it('DOC-094 un certificado revocado se dice anulado con su fecha', async () => {
+      const encounter = await prisma.encounter.findFirstOrThrow({
+        select: { id: true, patientId: true, siteId: true },
+      });
+      const revokedAt = new Date();
+      await prisma.medicalCertificate.create({
+        data: {
+          encounterId: encounter.id,
+          siteId: encounter.siteId,
+          patientId: encounter.patientId,
+          issuedById: practitionerId,
+          type: 'ATTENDANCE',
+          verificationCode: 'CERT1234CERT5678',
+          revokedAt,
+          revocationReason: 'Emitido por error en la prueba',
+        },
+      });
+
+      const response = await verify('CERT1234CERT5678').expect(200);
+      expect(response.body).toMatchObject({
+        kind: 'MEDICAL_CERTIFICATE',
+        status: 'ANNULLED',
+        annulledOn: clinicalDateOf(revokedAt),
+      });
+    });
+
+    it('DOC-095 la respuesta no lleva nada del paciente', async () => {
+      await prisma.prescription.update({
+        where: { id: prescriptionId },
+        data: { verificationCode: 'ABCD1234EF567890' },
+      });
+      const patient = await prisma.patient.findFirstOrThrow({
+        select: { familyName: true, givenName: true },
+      });
+
+      const response = await verify('ABCD1234EF567890').expect(200);
+      const body = JSON.stringify(response.body);
+
+      expect(Object.keys(response.body as object).sort()).toEqual([
+        'annulledOn',
+        'establishmentName',
+        'issuedOn',
+        'kind',
+        'practitionerName',
+        'siteName',
+        'status',
+      ]);
+      expect(body).not.toContain(patient.familyName);
+      expect(body).not.toContain(patient.givenName);
+      expect(body).not.toContain('Amoxicilina');
+    });
+
+    it('DOC-094 una receta anulada se dice anulada', async () => {
+      await prisma.prescription.update({
+        where: { id: prescriptionId },
+        data: { verificationCode: 'ABCD1234EF567890', status: 'CANCELLED' },
+      });
+
+      const response = await verify('ABCD1234EF567890').expect(200);
+      expect((response.body as { status: string }).status).toBe('ANNULLED');
+    });
+
+    it('DOC-094 ORD-006 el código impreso en una orden se verifica, y se dice anulada sin exámenes que hacer', async () => {
+      const encounter = await prisma.encounter.findFirstOrThrow({
+        select: { id: true, siteId: true },
+      });
+      const concept = await prisma.catalogConcept.findFirstOrThrow({
+        select: { id: true },
+      });
+      const order = await prisma.serviceOrder.create({
+        data: {
+          encounterId: encounter.id,
+          siteId: encounter.siteId,
+          orderedById: practitionerId,
+          category: 'LABORATORY',
+          items: {
+            create: {
+              conceptId: concept.id,
+              testCode: 'BH',
+              testDisplay: 'Biometría hemática completa',
+            },
+          },
+        },
+        select: { id: true, verificationCode: true, requestedAt: true },
+      });
+
+      // Positive control: the same code, while the exam is still to be done.
+      const valid = await verify(order.verificationCode).expect(200);
+      expect(valid.body).toMatchObject({
+        kind: 'SERVICE_ORDER',
+        issuedOn: clinicalDateOf(order.requestedAt),
+        status: 'VALID',
+        annulledOn: null,
+      });
+      expect(JSON.stringify(valid.body)).not.toContain('Biometría');
+
+      await prisma.serviceOrderItem.updateMany({
+        where: { serviceOrderId: order.id },
+        data: { status: 'CANCELLED' },
+      });
+      const annulled = await verify(order.verificationCode).expect(200);
+      expect((annulled.body as { status: string }).status).toBe('ANNULLED');
+    });
+
+    it('DOC-096 un código inventado y uno sin forma dicen exactamente lo mismo', async () => {
+      // Positive control: the route exists and answers a real code.
+      await prisma.prescription.update({
+        where: { id: prescriptionId },
+        data: { verificationCode: 'ABCD1234EF567890' },
+      });
+      await verify('ABCD1234EF567890').expect(200);
+
+      const unknown = await verify('ZZZZ9999ZZZZ9999').expect(404);
+      const malformed = await verify('x%20y').expect(404);
+
+      // `instance` and `traceId` differ in every problem+json and say nothing
+      // about the document; everything else must match.
+      const comparable = (body: unknown) => {
+        const problem = body as Record<string, unknown>;
+        return [problem.status, problem.code, problem.title, problem.detail];
+      };
+      expect((unknown.body as Problem).code).toBe(
+        'DOCUMENT_VERIFICATION_NOT_FOUND',
+      );
+      expect(comparable(malformed.body)).toEqual(comparable(unknown.body));
+    });
+  });
+
   describe('DOC-001, DOC-002 el borrador y la emisión', () => {
     beforeEach(async () => {
       await publishTemplate();
@@ -387,6 +715,65 @@ describe('los documentos por HTTP', () => {
       expect((withData.body as RenderBody).byteSize).not.toBe(
         (withoutData.body as RenderBody).byteSize,
       );
+    });
+
+    /** The text a reader sees in the draft of this test's receta. */
+    async function draftText(): Promise<string> {
+      const response = await post('/documents/drafts', doctorToken, {
+        kind: 'PRESCRIPTION',
+        subjectId: prescriptionId,
+      })
+        .buffer()
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+      const proxy = await getDocumentProxy(
+        new Uint8Array(response.body as Buffer),
+      );
+      return (await extractText(proxy, { mergePages: true })).text;
+    }
+
+    it('DOC-081 con una sola sede activa la cabecera no lleva línea de sede, y con dos sí', async () => {
+      const site = await prisma.site.findUniqueOrThrow({
+        where: { id: siteId },
+      });
+      expect(await draftText()).not.toContain('Unicódigo');
+
+      const other = await createSite(prisma);
+      await prisma.site.update({
+        where: { id: other.id },
+        data: { establishmentId },
+      });
+
+      expect(await draftText()).toContain(
+        `${site.name} · Unicódigo ${site.mspUnicode}`,
+      );
+
+      // A deactivated site does not count: nobody walks into it.
+      await prisma.site.update({
+        where: { id: other.id },
+        data: { active: false },
+      });
+      expect(await draftText()).not.toContain('Unicódigo');
+    });
+
+    it('DOC-080 OR-010 la cabecera imprime el nombre comercial, el correo y el permiso guardados', async () => {
+      await prisma.establishment.update({
+        where: { id: establishmentId },
+        data: {
+          tradeName: 'Bahía Especialidades',
+          contactEmail: 'contacto@example.com',
+          operatingPermit: 'ACESS-2026-0456',
+        },
+      });
+
+      const text = await draftText();
+      expect(text).toContain('Bahía Especialidades');
+      expect(text).toContain('contacto@example.com');
+      expect(text).toContain('Permiso de funcionamiento ACESS-2026-0456');
     });
 
     it('DOC-014 se niega a archivar una receta en borrador, pero sí la previsualiza', async () => {
@@ -830,6 +1217,61 @@ describe('los documentos por HTTP', () => {
         where: { id: practitionerId },
       });
       expect(practitioner.sealImageId).toBe((stored.body as { id: string }).id);
+    });
+
+    it('DOC-061 sirve el logo vigente tal como se guardó, con nosniff, y 404 mientras no hay', async () => {
+      const path = `/documents/identity/establishments/${establishmentId}/logo`;
+      const missing = await get(path, adminToken).expect(404);
+      expect((missing.body as Problem).code).toBe('DOCUMENT_IMAGE_NOT_FOUND');
+
+      const logo = await sharp({
+        create: {
+          width: 40,
+          height: 20,
+          channels: 3,
+          background: { r: 15, g: 107, b: 92 },
+        },
+      })
+        .png()
+        .toBuffer();
+      const stored = await upload(path, adminToken, logo, 'image/png').expect(
+        200,
+      );
+
+      const served = await get(path, adminToken)
+        .buffer()
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+
+      expect(served.headers['content-type']).toBe('image/png');
+      expect(served.headers['x-content-type-options']).toBe('nosniff');
+      expect(
+        createHash('sha256')
+          .update(served.body as Buffer)
+          .digest('hex'),
+      ).toBe((stored.body as { sha256: string }).sha256);
+    });
+
+    it('DOC-061 el sello vigente exige staff:read: el médico no lo ve, administración sí', async () => {
+      const path = `/documents/identity/practitioners/${practitionerId}/seal`;
+      const seal = await sharp({
+        create: { width: 30, height: 30, channels: 3, background: '#000000' },
+      })
+        .png()
+        .toBuffer();
+      await upload(path, adminToken, seal, 'image/png').expect(200);
+
+      await get(path, adminToken).expect(200);
+      await get(path, doctorToken).expect(403);
+      const signature = await get(
+        `/documents/identity/practitioners/${practitionerId}/signature`,
+        adminToken,
+      ).expect(404);
+      expect((signature.body as Problem).code).toBe('DOCUMENT_IMAGE_NOT_FOUND');
     });
 
     it('DOC-057 el logo emitido aparece en el documento', async () => {

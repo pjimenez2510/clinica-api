@@ -2,10 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
+import { withSerialisationRetry } from '../../../shared/infrastructure/prisma/serialisation-retry';
 import { isClinicalDocumentKind } from '../domain/document-kind';
 import type { DocumentKind, SiteScopeFilter } from '../domain/document-kind';
 import type {
   AllowedImageMimeType,
+  StoredImage,
   StoredImageSummary,
 } from '../domain/document-image';
 import type {
@@ -395,6 +397,50 @@ export class PrismaDocumentRepository implements DocumentRepository {
   }
 
   /**
+   * DOC-039. Every kind's next version in ONE serialisable transaction: if any
+   * insert fails, none of them is published.
+   */
+  async publishTemplates(
+    templates: readonly NewDocumentTemplate[],
+  ): Promise<DocumentTemplate[]> {
+    // Two administrators publishing at once: one transaction loses the
+    // serialisable race and is retried, rather than answered with a 500.
+    const rows = await withSerialisationRetry(() =>
+      this.prisma.$transaction(
+        async (tx) => {
+          const created = [];
+          for (const template of templates) {
+            const latest = await tx.documentTemplate.findFirst({
+              where: { kind: template.kind },
+              orderBy: { version: 'desc' },
+              select: { version: true },
+            });
+            created.push(
+              await tx.documentTemplate.create({
+                data: {
+                  kind: template.kind,
+                  version: (latest?.version ?? 0) + 1,
+                  accentColour: template.accentColour,
+                  footerText: template.footerText,
+                  headerFields: template.headerFields as unknown as Prisma.InputJsonValue, // prettier-ignore
+                  showEstablishmentRuc: template.showEstablishmentRuc,
+                  showEstablishmentAddress: template.showEstablishmentAddress,
+                  showEstablishmentPhone: template.showEstablishmentPhone,
+                  publishedById: template.publishedById,
+                },
+              }),
+            );
+          }
+          return created;
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      ),
+    );
+
+    return rows.map(toTemplate);
+  }
+
+  /**
    * DOC-056, DOC-058. A new image row with its size taken from the bytes
    * themselves. The mime type cast leans on `document_image_mime_type_allowed`.
    */
@@ -419,6 +465,37 @@ export class PrismaDocumentRepository implements DocumentRepository {
       },
     });
     return { ...row, mimeType: row.mimeType as AllowedImageMimeType };
+  }
+
+  /** DOC-061. `null` when there is no establishment or it has no logo. */
+  async findEstablishmentLogo(
+    establishmentId: string,
+  ): Promise<StoredImage | null> {
+    const row = await this.prisma.establishment.findUnique({
+      where: { id: establishmentId },
+      select: { logoImage: { select: STORED_IMAGE_SELECT } },
+    });
+    return toStored(row?.logoImage);
+  }
+
+  /** DOC-061. `null` when there is no practitioner or the slot is empty. */
+  async findPractitionerImage(
+    practitionerId: string,
+    slot: 'seal' | 'signature',
+  ): Promise<StoredImage | null> {
+    // Only the slot asked for: the other image's bytes stay in TOAST.
+    if (slot === 'seal') {
+      const row = await this.prisma.practitioner.findUnique({
+        where: { id: practitionerId },
+        select: { sealImage: { select: STORED_IMAGE_SELECT } },
+      });
+      return toStored(row?.sealImage);
+    }
+    const row = await this.prisma.practitioner.findUnique({
+      where: { id: practitionerId },
+      select: { signatureImage: { select: STORED_IMAGE_SELECT } },
+    });
+    return toStored(row?.signatureImage);
   }
 
   /**
@@ -454,4 +531,34 @@ export class PrismaDocumentRepository implements DocumentRepository {
     });
     return count === 1;
   }
+}
+
+/** DOC-061. Every column of a stored image, its bytes included. */
+const STORED_IMAGE_SELECT = {
+  id: true,
+  mimeType: true,
+  bytes: true,
+  byteSize: true,
+  sha256: true,
+  width: true,
+  height: true,
+} satisfies Prisma.DocumentImageSelect;
+
+/** The mime type cast leans on `document_image_mime_type_allowed`. */
+function toStored(
+  row:
+    | Prisma.DocumentImageGetPayload<{ select: typeof STORED_IMAGE_SELECT }>
+    | null
+    | undefined,
+): StoredImage | null {
+  if (row == null) return null;
+  return {
+    id: row.id,
+    mimeType: row.mimeType as AllowedImageMimeType,
+    bytes: Buffer.from(row.bytes),
+    byteSize: row.byteSize,
+    sha256: row.sha256,
+    width: row.width,
+    height: row.height,
+  };
 }

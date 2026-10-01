@@ -15,7 +15,7 @@ import type {
   PatientIdentity,
   PractitionerIdentity,
 } from './document-source';
-import type { Block, DocumentLayout } from './page-layout';
+import type { Block, DocumentHeader, DocumentLayout } from './page-layout';
 
 /**
  * DOC-070 to DOC-078. The four documents, composed with plain objects.
@@ -40,6 +40,8 @@ const template: DocumentTemplate = {
 
 const context: DocumentContext = {
   siteName: 'Sede Centro',
+  siteLine: null,
+  verificationBaseUrl: 'https://clinica.example/verificar',
   establishment: {
     name: 'Centro de Especialidades Bahía',
     ruc: '0993123456001',
@@ -50,6 +52,9 @@ const context: DocumentContext = {
     specialTaxpayerResolution: '1234',
     withholdingAgentResolution: '5678',
     rimpeRegime: 'ENTREPRENEUR',
+    tradeName: null,
+    email: null,
+    operatingPermit: null,
   },
 };
 
@@ -110,18 +115,25 @@ function wholeText(layout: DocumentLayout): string {
           textOf(layout.tearOff.blocks),
         ].join('\n');
 
+  const header = layout.frame.header;
   return [
-    layout.title,
-    layout.reference ?? '',
-    layout.header.establishmentName,
-    layout.header.establishmentRuc ?? '',
-    layout.header.establishmentAddress ?? '',
-    layout.header.establishmentPhone ?? '',
-    ...layout.header.fields.map((field) => `${field.label}=${field.value}`),
+    layout.frame.title,
+    layout.frame.reference ?? '',
+    header?.establishmentName ?? '',
+    header?.establishmentRuc ?? '',
+    header?.establishmentAddress ?? '',
+    header?.establishmentPhone ?? '',
+    ...(header?.fields ?? []).map((field) => `${field.label}=${field.value}`),
     textOf(layout.blocks),
     tearOff,
-    layout.footerText ?? '',
+    layout.frame.footer.text ?? '',
   ].join('\n');
+}
+
+/** The establishment's header; the three clinical documents always have one. */
+function headerOf(layout: DocumentLayout): DocumentHeader {
+  if (layout.frame.header === null) throw new Error('expected a header');
+  return layout.frame.header;
 }
 
 const prescription = (
@@ -303,12 +315,11 @@ describe('DOC-072 la tabla de la receta, como la plantilla aprobada (D-095)', ()
 });
 
 describe('PR-020 PR-038 PR-039 la receta impresa lleva su número y sus indicaciones', () => {
-  it('PR-020 la referencia es el número de la receta, y el código de verificación va con su nombre', () => {
-    const layout = composeLayout(prescription(), context, template);
+  it('PR-020 la referencia es el número de la receta, y el código de verificación va al pie', () => {
+    const { frame } = composeLayout(prescription(), context, template);
 
-    expect(layout.reference).toBe(
-      'Receta N.º 120 · Código de verificación: RX-7Q2K',
-    );
+    expect(frame.reference).toBe('Receta N.º 120');
+    expect(frame.footer.verification?.code).toBe('RX-7Q2K');
   });
 
   it('PR-020 una previsualización de borrador no imprime «null» ni un número que no tiene', () => {
@@ -318,7 +329,8 @@ describe('PR-020 PR-038 PR-039 la receta impresa lleva su número y sus indicaci
       template,
     );
 
-    expect(layout.reference).toBe('Borrador — sin número');
+    expect(layout.frame.reference).toBe('Borrador — sin número');
+    expect(layout.frame.footer.verification).toBeNull();
   });
 
   it('PR-037 la banda lleva, de cada línea, sus indicaciones completas y sin abreviaturas', () => {
@@ -448,9 +460,9 @@ describe('DOC-034 las ranuras de la plantilla', () => {
     // Art. 5 requires NONE of these three: the only establishment datum the
     // receta must carry is the NAME. Printing them is a decision.
     const layout = composeLayout(prescription(), context, template);
-    expect(layout.header.establishmentRuc).toBeNull();
-    expect(layout.header.establishmentAddress).toBeNull();
-    expect(layout.header.establishmentPhone).toBeNull();
+    expect(headerOf(layout).establishmentRuc).toBeNull();
+    expect(headerOf(layout).establishmentAddress).toBeNull();
+    expect(headerOf(layout).establishmentPhone).toBeNull();
   });
 
   it('DOC-034 los imprime cuando el interruptor está puesto', () => {
@@ -460,18 +472,20 @@ describe('DOC-034 las ranuras de la plantilla', () => {
       showEstablishmentAddress: true,
       showEstablishmentPhone: true,
     });
-    expect(layout.header.establishmentRuc).toBe('0993123456001');
-    expect(layout.header.establishmentAddress).toBe('Av. 9 de Octubre 123');
-    expect(layout.header.establishmentPhone).toBe('04-2345678');
+    expect(headerOf(layout).establishmentRuc).toBe('0993123456001');
+    expect(headerOf(layout).establishmentAddress).toBe('Av. 9 de Octubre 123');
+    expect(headerOf(layout).establishmentPhone).toBe('04-2345678');
   });
 
   it('DOC-034 lleva los campos clave-valor y el pie de la plantilla', () => {
     const layout = composeLayout(prescription(), context, template);
-    expect(layout.header.fields).toEqual([
+    expect(headerOf(layout).fields).toEqual([
       { label: 'Permiso ACESS', value: '0000-0000' },
     ]);
-    expect(layout.footerText).toBe('Clínica de especialidades · Guayaquil');
-    expect(layout.accentColour).toBe('#1f6f8b');
+    expect(layout.frame.footer.text).toBe(
+      'Clínica de especialidades · Guayaquil',
+    );
+    expect(layout.frame.accentColour).toBe('#1f6f8b');
   });
 });
 
@@ -508,7 +522,7 @@ describe('DOC-072 la orden de examen', () => {
     );
     const text = wholeText(layout);
 
-    expect(layout.title).toBe('ORDEN DE EXÁMENES');
+    expect(layout.frame.title).toBe('ORDEN DE EXÁMENES');
     expect(layout.tearOff).toBeNull();
     expect(text).toContain('Hemoglobina glicosilada');
     expect(text).toContain('Paciente en ayunas');
@@ -556,10 +570,11 @@ describe('ORD-006 DOC-072 la orden impresa, como la plantilla aprobada (D-095)',
     },
   });
 
-  it('ORD-006 la referencia es el número de la orden y su código de verificación', () => {
-    expect(composeLayout(order(), context, template).reference).toBe(
-      'Orden N.º 41 · Código de verificación: OR-9Z8Y',
-    );
+  it('ORD-006 la referencia es el número de la orden y su código de verificación va al pie', () => {
+    const { frame } = composeLayout(order(), context, template);
+
+    expect(frame.reference).toBe('Orden N.º 41');
+    expect(frame.footer.verification?.code).toBe('OR-9Z8Y');
   });
 
   it('ORD-006 la categoría y la prioridad se imprimen en castellano, no como el enum', () => {
@@ -775,9 +790,10 @@ describe('DOC-075 el certificado sobre el formulario 117 y la plantilla aprobada
       template,
     );
 
-    expect(wholeText(withDiagnosis)).toContain('CONFIDENCIAL');
+    // The common frame prints the legend beside the title (DOC-082).
+    expect(withDiagnosis.frame.confidential).toBe(true);
     expect(wholeText(withDiagnosis)).toContain('J00');
-    expect(wholeText(without)).not.toContain('CONFIDENCIAL');
+    expect(without.frame.confidential).toBe(false);
     expect(wholeText(without)).not.toContain('J00');
   });
 
@@ -819,10 +835,11 @@ describe('DOC-075 el certificado sobre el formulario 117 y la plantilla aprobada
     expect(text).toContain('ANULADO');
   });
 
-  it('CER-029 la referencia es el número del certificado y su código de verificación', () => {
-    expect(composeLayout(certificate(), context, template).reference).toBe(
-      'Certificado N.º 7 · Código de verificación: CM-4T7',
-    );
+  it('CER-029 la referencia es el número del certificado y su código de verificación va al pie', () => {
+    const { frame } = composeLayout(certificate(), context, template);
+
+    expect(frame.reference).toBe('Certificado N.º 7');
+    expect(frame.footer.verification?.code).toBe('CM-4T7');
   });
 });
 
@@ -890,6 +907,9 @@ describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
           specialTaxpayerResolution: null,
           withholdingAgentResolution: null,
           rimpeRegime: 'NONE',
+          tradeName: null,
+          email: null,
+          operatingPermit: null,
         },
       },
       template,
@@ -911,6 +931,9 @@ describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
         establishment: {
           ...context.establishment,
           rimpeRegime: 'POPULAR_BUSINESS',
+          tradeName: null,
+          email: null,
+          operatingPermit: null,
         },
       },
       template,

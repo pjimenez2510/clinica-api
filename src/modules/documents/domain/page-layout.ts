@@ -94,17 +94,33 @@ export type Block =
    * that is a geometry, not a flow. Generic rather than `rideHeader` because
    * nothing about two boxes is specific to a tax document.
    */
-  | { readonly kind: 'boxes'; readonly left: readonly Block[]; readonly right: readonly Block[] }; // prettier-ignore
+  | { readonly kind: 'boxes'; readonly left: readonly Block[]; readonly right: readonly Block[] } // prettier-ignore
+  /**
+   * DOC-078. A Code 128 barcode of `value` with the value printed under it.
+   *
+   * It exists for the RIDE's access key: the SRI's Ficha Técnica (v2.34,
+   * §9.20–9.21 and the notes of Anexo 2) allows it beside the key in text, and
+   * the approved template draws it (D-095 §5). Plain Code 128 — no GS1
+   * application identifier — so a handheld reader returns the 49 digits as
+   * they are. Generic rather than `accessKey`: nothing about bars is fiscal.
+   */
+  | { readonly kind: 'barcode'; readonly value: string };
 
-/** DOC-071. What repeats on every page. */
+/** DOC-071, DOC-080. The establishment's header, on every page. */
 export interface DocumentHeader {
-  /** Art. 5.a.iii — the only establishment datum the receta MUST carry. */
+  /** OR-010. The trade name; the legal name when there is none. */
   establishmentName: string;
+  /** DOC-081. Only with more than one active site. */
+  siteLine: string | null;
   /** DOC-034. Printed only when the template's switch says so. */
   establishmentRuc: string | null;
   establishmentAddress: string | null;
   establishmentPhone: string | null;
-  /** DOC-059. `null` prints no logo, and that is legitimate. */
+  /** OR-011. Printed when there is one. */
+  establishmentEmail: string | null;
+  /** OR-012. Printed when there is one. */
+  operatingPermit: string | null;
+  /** DOC-059. `false` prints no logo, and that is legitimate. */
   hasLogo: boolean;
   /** DOC-036. The template's key-value slots. */
   fields: readonly LabelledValue[];
@@ -122,19 +138,57 @@ export interface TearOffBand {
   blocks: readonly Block[];
 }
 
-/** A whole document, ready to be painted. */
-export interface DocumentLayout {
+/** DOC-083. What repeats at the foot of every page, besides «Página x de y». */
+export interface DocumentFooter {
+  /** DOC-034. The template's free footer. */
+  text: string | null;
+  /**
+   * The code a recipient checks the document with, and the public page that
+   * answers. `null` when the document has none — and then it carries no QR: a
+   * QR that leads nowhere would be a small forged seal.
+   */
+  verification: { code: string; url: string } | null;
+  /** The class's own note: what norm keeps it, how it is numbered. */
+  notes: readonly string[];
+}
+
+/**
+ * DOC-071, DOC-080 to DOC-084. Header and footer, composed ONCE by
+ * `composeFrame` for every class of document.
+ */
+export interface DocumentFrame {
   title: string;
   /**
-   * The line under the title that identifies this document, LABELLED: «N.º 41»,
-   * «Código de verificación: RX-7Q2K». The renderer prints it as is; a label it
-   * added itself once called the RIDE number a verification code.
+   * The line beside the title that identifies this document, written by the
+   * document's own composer: «Receta N.º 128», «N.º 342».
    */
   reference: string | null;
+  /** DOC-082. The document prints a diagnosis. */
+  confidential: boolean;
   accentColour: string;
-  header: DocumentHeader;
+  /** DOC-024. The PDF's author, whatever the header looks like. */
+  establishmentName: string;
+  /** DOC-080. `null` where a norm fixes its own header (DOC-084, the RIDE). */
+  header: DocumentHeader | null;
+  /**
+   * DOC-059, DOC-076. Whether the establishment has a logo — the RIDE prints
+   * it too, above its own boxes, though it has no common header.
+   */
+  hasLogo: boolean;
+  footer: DocumentFooter;
+  /**
+   * DOC-038. Printed across EVERY page, under the content: «MUESTRA SIN
+   * VALIDEZ» on a preview, so a sample with the clinic's real letterhead can
+   * never pass for a document. `null` on everything that is issued.
+   */
+  watermark: string | null;
+}
+
+/** A whole document, ready to be painted. */
+export interface DocumentLayout {
+  /** Shared by every class: see `composeFrame`. */
+  frame: DocumentFrame;
   blocks: readonly Block[];
   /** Only the receta has one. */
   tearOff: TearOffBand | null;
-  footerText: string | null;
 }
