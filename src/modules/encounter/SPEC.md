@@ -247,12 +247,13 @@ abierta, una que se interrumpió y una que se dio de alta y nadie cobró, y no h
 dato que las distinga. Es de la misma familia que REQ-020 y REQ-021: no se
 captura retroactivamente.
 
-**Solo servidor:** EN-005, EN-008, EN-010, EN-017, EN-132, EN-145. La carrera con
+**Solo servidor:** EN-005, EN-008, EN-010, EN-017, EN-132, EN-145, EN-168. La carrera con
 la anulación, la edad que escribe un disparador, el orden de los instantes, la
 fila de bitácora, las transiciones que el servidor rechaza y **la ausencia de
 cierre automático** son garantías de almacenamiento: ninguna pantalla puede
 enseñar que un `UPDATE` perdió una carrera, ni que un proceso nocturno **no**
-existe.
+existe. EN-168, una atención viva por cita, la garantiza un índice
+único parcial: la pantalla nunca ofrece abrir la segunda.
 
 ### H2 — La nota clínica firmada y su enmienda _(P1)_
 

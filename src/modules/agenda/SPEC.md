@@ -160,6 +160,9 @@ comprobar que el cupo original quedó libre y ambas entradas se referencian.
 **Por qué es P3:** son la vía documentada para romper la regla; sin ellos el
 personal la rompe por fuera del sistema. **Cubre:** AG-035 a AG-039, AG-100,
 AG-101, AG-103, AG-114, AG-151, AG-152.
+**Solo servidor:** AG-152. El diálogo de bloqueo ya enumera lo que el servidor
+devuelve con `BLOCK_OVERLAPS_APPOINTMENTS` (AG-038); AG-152 añade el sobrecupo
+a esa lista y la pantalla no cambia.
 
 ### E5 — Lista de espera _(P4)_
 

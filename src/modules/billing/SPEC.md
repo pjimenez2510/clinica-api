@@ -270,6 +270,8 @@ vuelve**; y comprobar contra PostgreSQL que el segundo cargo del mismo acto lo
 rechaza la BASE y no una lectura previa.
 
 **Cubre:** BI-150 a BI-158, BI-180, y da ruta por fin a BI-055, BI-056 y BI-059.
+**Solo servidor:** BI-180. Cambia qué propone el servidor, no la pantalla: caja
+muestra la propuesta que recibe, y sin acto clínico la recibe vacía.
 
 > **Lo entregado el 20-08-2026.** La ruta de paso a caja, idempotente en sus dos
 > mitades; la derivación de las tres fuentes sobre las ataduras que ya existían
