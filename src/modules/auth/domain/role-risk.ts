@@ -47,9 +47,8 @@ const RECORD_AND_ADMIN_WARNING =
 /**
  * AU-045 (D-071). Permissions whose holder is in front of the allergy — who
  * prescribes, who writes the note — and the one that records it, which is
- * the letter of D-071. Signing does not write. Whether a custom NURSING role
- * (`nursing:write`) without the allergy record should warn too is a question
- * D-071 raised and did not resolve: it is with the author, not decided here.
+ * the letter of D-071. Signing does not write. A custom NURSING role without
+ * it warns too, in its own words (D-094, point 3).
  */
 const WRITES_THE_RECORD: readonly Permission[] = [
   'prescription:write',
@@ -57,9 +56,16 @@ const WRITES_THE_RECORD: readonly Permission[] = [
 ];
 const RECORDS_ALLERGIES: Permission = 'background:write';
 
+/** AU-045 for nursing: preparation is where the allergy is taken (D-094). */
+const WRITES_NURSING_FORMS: Permission = 'nursing:write';
+
 /** AU-045's sentence, as the author fixed it (D-071, 30-09-2026). */
 const NO_ALLERGY_RECORD_WARNING =
   'Este rol receta o escribe en la historia clínica pero no puede registrar alergias ni antecedentes. Puede guardarlo igualmente.';
+
+/** The nursing sentence, fixed by the author (D-094, 30-09-2026). */
+const NURSING_NO_ALLERGY_RECORD_WARNING =
+  'Este rol registra los formularios de enfermería pero no puede registrar alergias ni antecedentes. Puede guardarlo igualmente.';
 
 /**
  * Prefix match OR the explicit list: see `CLINICAL_RECORD_PERMISSIONS` for the
@@ -96,12 +102,14 @@ export function warningsFor(permissions: readonly string[]): string[] {
   // AU-034. WARNS, never refuses.
   if (administersUsers && readsRecord) warnings.push(RECORD_AND_ADMIN_WARNING);
 
-  // AU-045. After AU-034, so each says its own thing once.
-  if (
-    WRITES_THE_RECORD.some((code) => held.has(code)) &&
-    !held.has(RECORDS_ALLERGIES)
-  ) {
-    warnings.push(NO_ALLERGY_RECORD_WARNING);
+  // AU-045. After AU-034, so each says its own thing once; and ONE sentence
+  // per role about the gap — the prescribing one already names it.
+  if (!held.has(RECORDS_ALLERGIES)) {
+    if (WRITES_THE_RECORD.some((code) => held.has(code))) {
+      warnings.push(NO_ALLERGY_RECORD_WARNING);
+    } else if (held.has(WRITES_NURSING_FORMS)) {
+      warnings.push(NURSING_NO_ALLERGY_RECORD_WARNING);
+    }
   }
 
   for (const combination of RISKY_COMBINATIONS) {

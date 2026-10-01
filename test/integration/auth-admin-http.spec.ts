@@ -984,6 +984,22 @@ describe('la administración de cuentas y roles por HTTP', () => {
       ]);
     });
 
+    it('AU-045 ADVIERTE del rol de enfermería sin background:write, con su frase, y guarda igualmente', async () => {
+      const role = await createRole();
+
+      const response = await put(`/roles/${role.id}/permissions`, {
+        permissions: ['nursing:write', 'vitals:write'],
+      }).expect(200);
+
+      expect((response.body as RolePermissionsBody).warnings).toEqual([
+        'Este rol registra los formularios de enfermería pero no puede registrar alergias ni antecedentes. Puede guardarlo igualmente.',
+      ]);
+      const stored = await prisma.rolePermission.count({
+        where: { roleId: role.id },
+      });
+      expect(stored).toBe(2);
+    });
+
     it('AU-045 control: con background:write no advierte nada', async () => {
       const role = await createRole();
 

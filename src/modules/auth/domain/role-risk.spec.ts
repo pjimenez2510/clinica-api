@@ -114,11 +114,27 @@ describe('AU-045 el rol que receta sin poder registrar alergias', () => {
     ).toEqual([]);
   });
 
-  it('AU-045 control: firmar o enfermería sin background:write no advierten', () => {
-    // Firmar no escribe; un rol de enfermería sin el registro de alergias es
-    // lo que D-062 dejó a la clínica.
+  it('AU-045 control: firmar sin background:write no advierte', () => {
+    // Firmar no escribe.
     expect(warningsFor(['record:read', 'record:sign'])).toEqual([]);
-    expect(warningsFor(['record:read', 'nursing:write'])).toEqual([]);
+  });
+
+  it('AU-045 advierte del rol de enfermería sin background:write, con su propia frase (D-094)', () => {
+    expect(warningsFor(['nursing:write', 'vitals:write'])).toEqual([
+      'Este rol registra los formularios de enfermería pero no puede registrar alergias ni antecedentes. Puede guardarlo igualmente.',
+    ]);
+  });
+
+  it('AU-045 control: enfermería con background:write no advierte', () => {
+    expect(
+      warningsFor(['nursing:write', 'vitals:write', 'background:write']),
+    ).toEqual([]);
+  });
+
+  it('AU-045 una sola advertencia por rol: si además receta, basta la de recetar', () => {
+    expect(warningsFor(['nursing:write', 'prescription:write'])).toEqual([
+      expect.stringContaining('receta o escribe'),
+    ]);
   });
 
   it('AU-045 se suma a AU-034 sin pisarla: cada una dice lo suyo, una vez', () => {
