@@ -837,7 +837,10 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         if (images.logo === null) return;
         ensure(mm(RIDE_LOGO_HEIGHT_MM) + mm(2.5));
         const size = this.fitted(images.logo, width, mm(RIDE_LOGO_HEIGHT_MM)); // prettier-ignore
-        doc.image(images.logo.bytes, left, cursor.y + (mm(RIDE_LOGO_HEIGHT_MM) - size.height) / 2, size); // prettier-ignore
+        // Centred in its column both ways, as the author asked (01-10-2026).
+        const x = left + (width - size.width) / 2;
+        const y = cursor.y + (mm(RIDE_LOGO_HEIGHT_MM) - size.height) / 2;
+        doc.image(images.logo.bytes, x, y, size);
         cursor.y += mm(RIDE_LOGO_HEIGHT_MM) + mm(2.5);
         return;
       }

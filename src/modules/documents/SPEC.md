@@ -777,7 +777,7 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
   > plantilla los abrevia («C. REPOSO») y ahí gana el formulario.
 
 - **DOC-106** — El **RIDE** DEBERÁ seguir la página «Factura» de la plantilla:
-  el logo **encima** del recuadro del emisor en la columna izquierda; los
+  el logo **encima** del recuadro del emisor y centrado en la columna izquierda; los
   recuadros del emisor, del comprobante y del comprador con **bordes
   redondeados**; «FACTURA» en serif y color de acento; la clave de acceso una
   sola vez, **bajo** su código de barras y centrada; el detalle como **tabla con

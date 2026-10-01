@@ -932,6 +932,26 @@ describe('DOC-103 DOC-104 la cabecera y los títulos como la plantilla', () => {
     ).toBeLessThan(1.5);
   });
 
+  it('DOC-106 el logo del RIDE va centrado en su columna', async () => {
+    const content = contentOf(
+      await renderer.render(
+        { ...layout, tearOff: null, frame: { ...layout.frame, header: null }, blocks: [{ kind: 'logo' }] }, // prettier-ignore
+        { logo, seal: null, signature: null },
+        metadata,
+      ),
+    );
+    const image = /([\d.]+) 0 0 (-[\d.]+) ([\d.]+) ([\d.]+) cm\n\/I\d+ Do/.exec(content); // prettier-ignore
+    expect(image).not.toBeNull();
+    const width = Number(image?.[1]);
+    const x = Number(image?.[3]);
+    const margin = millimetresToPoints(15);
+    const column = millimetresToPoints(210 - 30);
+    // As much room on its left as on its right.
+    expect(Math.abs(x - margin - (margin + column - (x + width)))).toBeLessThan(
+      1,
+    );
+  });
+
   it('DOC-104 DOC-085 los títulos de sección van en el color de acento', async () => {
     const fills = [
       ...contentOf(await renderer.render(layout, images, metadata)).matchAll(
