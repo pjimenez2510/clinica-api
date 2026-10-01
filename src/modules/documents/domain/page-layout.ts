@@ -96,15 +96,21 @@ export type Block =
    */
   | { readonly kind: 'boxes'; readonly left: readonly Block[]; readonly right: readonly Block[] }; // prettier-ignore
 
-/** DOC-071. What repeats on every page. */
+/** DOC-071, DOC-080. The establishment's header, on every page. */
 export interface DocumentHeader {
-  /** Art. 5.a.iii — the only establishment datum the receta MUST carry. */
+  /** OR-010. The trade name; the legal name when there is none. */
   establishmentName: string;
+  /** DOC-081. Only with more than one active site. */
+  siteLine: string | null;
   /** DOC-034. Printed only when the template's switch says so. */
   establishmentRuc: string | null;
   establishmentAddress: string | null;
   establishmentPhone: string | null;
-  /** DOC-059. `null` prints no logo, and that is legitimate. */
+  /** OR-011. Printed when there is one. */
+  establishmentEmail: string | null;
+  /** OR-012. Printed when there is one. */
+  operatingPermit: string | null;
+  /** DOC-059. `false` prints no logo, and that is legitimate. */
   hasLogo: boolean;
   /** DOC-036. The template's key-value slots. */
   fields: readonly LabelledValue[];
@@ -127,11 +133,13 @@ export interface DocumentFooter {
   /** DOC-034. The template's free footer. */
   text: string | null;
   /**
-   * The code a recipient can check the document with. `null` when the document
-   * has none — and then it carries no QR either: a QR that leads nowhere would
-   * be a small forged seal.
+   * The code a recipient checks the document with, and the public page that
+   * answers. `null` when the document has none — and then it carries no QR: a
+   * QR that leads nowhere would be a small forged seal.
    */
-  verificationCode: string | null;
+  verification: { code: string; url: string } | null;
+  /** The class's own note: what norm keeps it, how it is numbered. */
+  notes: readonly string[];
 }
 
 /**
@@ -152,6 +160,11 @@ export interface DocumentFrame {
   establishmentName: string;
   /** DOC-080. `null` where a norm fixes its own header (DOC-084, the RIDE). */
   header: DocumentHeader | null;
+  /**
+   * DOC-059, DOC-076. Whether the establishment has a logo — the RIDE prints
+   * it too, above its own boxes, though it has no common header.
+   */
+  hasLogo: boolean;
   footer: DocumentFooter;
 }
 

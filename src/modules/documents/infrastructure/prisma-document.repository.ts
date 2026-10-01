@@ -395,6 +395,46 @@ export class PrismaDocumentRepository implements DocumentRepository {
   }
 
   /**
+   * DOC-039. Every kind's next version in ONE serialisable transaction: if any
+   * insert fails, none of them is published.
+   */
+  async publishTemplates(
+    templates: readonly NewDocumentTemplate[],
+  ): Promise<DocumentTemplate[]> {
+    const rows = await this.prisma.$transaction(
+      async (tx) => {
+        const created = [];
+        for (const template of templates) {
+          const latest = await tx.documentTemplate.findFirst({
+            where: { kind: template.kind },
+            orderBy: { version: 'desc' },
+            select: { version: true },
+          });
+          created.push(
+            await tx.documentTemplate.create({
+              data: {
+                kind: template.kind,
+                version: (latest?.version ?? 0) + 1,
+                accentColour: template.accentColour,
+                footerText: template.footerText,
+                headerFields: template.headerFields as unknown as Prisma.InputJsonValue, // prettier-ignore
+                showEstablishmentRuc: template.showEstablishmentRuc,
+                showEstablishmentAddress: template.showEstablishmentAddress,
+                showEstablishmentPhone: template.showEstablishmentPhone,
+                publishedById: template.publishedById,
+              },
+            }),
+          );
+        }
+        return created;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+
+    return rows.map(toTemplate);
+  }
+
+  /**
    * DOC-056, DOC-058. A new image row with its size taken from the bytes
    * themselves. The mime type cast leans on `document_image_mime_type_allowed`.
    */

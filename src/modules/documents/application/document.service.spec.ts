@@ -63,6 +63,8 @@ const template: DocumentTemplate = {
 
 const context: DocumentContext = {
   siteName: 'Sede Centro',
+  siteLine: null,
+  verificationBaseUrl: 'https://clinica.example/verificar',
   establishment: {
     name: 'Centro de Especialidades Bahía',
     ruc: '0993123456001',
@@ -73,6 +75,9 @@ const context: DocumentContext = {
     specialTaxpayerResolution: null,
     withholdingAgentResolution: null,
     rimpeRegime: 'NONE',
+    tradeName: null,
+    email: null,
+    operatingPermit: null,
   },
 };
 
@@ -227,6 +232,14 @@ class FakeRepository implements DocumentRepository {
     return created;
   }
 
+  async publishTemplates(
+    published: readonly NewDocumentTemplate[],
+  ): Promise<DocumentTemplate[]> {
+    const created: DocumentTemplate[] = [];
+    for (const one of published) created.push(await this.publishTemplate(one));
+    return created;
+  }
+
   saveImage(image: NewDocumentImage): Promise<StoredImageSummary> {
     const stored: StoredImageSummary = {
       id: `image-${this.images.length + 1}`,
@@ -273,8 +286,16 @@ class FakeSources implements DocumentSourceReader {
     );
   }
 
-  contextForSite(): Promise<DocumentContext | null> {
+  readonly contextSites: string[] = [];
+  defaultSite: string | null = 'site-1';
+
+  contextForSite(siteId: string): Promise<DocumentContext | null> {
+    this.contextSites.push(siteId);
     return Promise.resolve(this.context);
+  }
+
+  firstActiveSiteId(): Promise<string | null> {
+    return Promise.resolve(this.defaultSite);
   }
 }
 
@@ -687,5 +708,93 @@ describe('DOC-054 la identidad visual se reencoda siempre', () => {
         'user-1',
       ),
     ).rejects.toThrow(DocumentSubjectNotFoundError);
+  });
+});
+
+const slots = {
+  accentColour: '#0f6b5c',
+  footerText: 'Pie nuevo',
+  headerFields: [],
+  showEstablishmentRuc: true,
+  showEstablishmentAddress: true,
+  showEstablishmentPhone: true,
+};
+
+describe('DOC-038 la vista previa la pinta el mismo generador, y no guarda nada', () => {
+  it('DOC-038 compone la clase pedida con las ranuras propuestas y contenido de muestra', async () => {
+    const preview = await service.previewTemplate(
+      'MEDICAL_CERTIFICATE',
+      { ...slots, accentColour: '#7a3b2e' },
+      null,
+    );
+
+    expect(preview.mimeType).toBe('application/pdf');
+    const { layout } = renderer.calls[0] ?? {};
+    expect(layout?.frame.title).toBe('CERTIFICADO MÉDICO');
+    expect(layout?.frame.accentColour).toBe('#7a3b2e');
+    expect(JSON.stringify(layout?.blocks)).toContain('MUESTRA');
+  });
+
+  it('DOC-038 no escribe ni artefacto, ni plantilla, ni bitácora', async () => {
+    await service.previewTemplate('PRESCRIPTION', slots, null);
+
+    expect(repository.renders).toHaveLength(0);
+    expect(repository.templates).toHaveLength(1);
+    expect(repository.disclosures).toHaveLength(0);
+  });
+
+  it('DOC-038 usa la sede pedida, o la primera activa si no piden ninguna', async () => {
+    await service.previewTemplate('PRESCRIPTION', slots, 'site-9');
+    await service.previewTemplate('PRESCRIPTION', slots, null);
+
+    expect(sources.contextSites).toEqual(['site-9', 'site-1']);
+  });
+
+  it('DOC-038 rechaza las ranuras inválidas igual que al publicar', async () => {
+    await expect(
+      service.previewTemplate(
+        'PRESCRIPTION',
+        { ...slots, accentColour: 'verde' },
+        null,
+      ),
+    ).rejects.toThrow(/DOCUMENT_TEMPLATE_SLOT_INVALID|Invalid template slot/);
+    expect(renderer.calls).toHaveLength(0);
+  });
+
+  it('DOC-038 sin ninguna sede no hay identidad que mostrar', async () => {
+    sources.defaultSite = null;
+    await expect(
+      service.previewTemplate('PRESCRIPTION', slots, null),
+    ).rejects.toThrow(DocumentSubjectNotFoundError);
+  });
+});
+
+describe('DOC-039 una sola identidad para las cuatro clases', () => {
+  it('DOC-039 publica la versión siguiente de cada clase', async () => {
+    const published = await service.publishTemplateForAllKinds(
+      slots,
+      requester,
+    );
+
+    expect(published.map((one) => one.kind).sort()).toEqual([
+      'INVOICE_RIDE',
+      'MEDICAL_CERTIFICATE',
+      'PRESCRIPTION',
+      'SERVICE_ORDER',
+    ]);
+    expect(published.find((one) => one.kind === 'PRESCRIPTION')?.version).toBe(
+      3,
+    );
+    expect(published.every((one) => one.accentColour === '#0f6b5c')).toBe(true);
+  });
+
+  it('DOC-039 DOC-035 una ranura inválida no publica ninguna', async () => {
+    await expect(
+      service.publishTemplateForAllKinds(
+        { ...slots, accentColour: '#ZZZ' },
+        requester,
+      ),
+    ).rejects.toThrow(/DOCUMENT_TEMPLATE_SLOT_INVALID|Invalid template slot/);
+    expect(repository.templates).toHaveLength(1);
   });
 });

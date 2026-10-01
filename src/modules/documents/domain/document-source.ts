@@ -25,8 +25,17 @@ import type { StoredImage } from './document-image';
 
 /** One page of establishment identity, as every document prints it. */
 export interface EstablishmentIdentity {
-  /** Art. 5.a.iii. The ONLY establishment datum the receta must carry. */
+  /**
+   * Art. 5.a.iii. The ONLY establishment datum the receta must carry. The
+   * LEGAL name (razón social): the RIDE prints it as such (DOC-076).
+   */
   name: string;
+  /** OR-010, DOC-080. What the header prints instead of `name` when present. */
+  tradeName: string | null;
+  /** OR-011, DOC-080. */
+  email: string | null;
+  /** OR-012, DOC-080. The ACESS operating permit number. */
+  operatingPermit: string | null;
   /** DOC-034. Read always, printed only if the template says so. */
   ruc: string | null;
   addressLine: string | null;
@@ -172,6 +181,16 @@ export interface InvoicePrintData {
 export interface DocumentContext {
   establishment: EstablishmentIdentity;
   siteName: string;
+  /**
+   * DOC-081. «Sede Norte · Unicódigo 012345» when the establishment has MORE
+   * THAN ONE active site, `null` when it has one (D-095.4).
+   */
+  siteLine: string | null;
+  /**
+   * DOC-083. Where the public verification page lives, without the code:
+   * `https://clinica.example/verificar`. A datum of the installation.
+   */
+  verificationBaseUrl: string;
 }
 
 /**
@@ -198,6 +217,16 @@ export interface DocumentSourceReader {
   findSubject(query: SubjectQuery): Promise<DocumentSubject | null>;
   /** The establishment and site identity behind one site. */
   contextForSite(siteId: string): Promise<DocumentContext | null>;
+  /**
+   * DOC-038. The site a template preview borrows its identity from when the
+   * administrator names none: the first active one, by name.
+   */
+  firstActiveSiteId(): Promise<string | null>;
 }
 
 export const DOCUMENT_SOURCE_READER = Symbol('DOCUMENT_SOURCE_READER');
+
+/** DOC-083. Injected into the reader: the base of `verificationBaseUrl`. */
+export const DOCUMENT_VERIFICATION_BASE_URL = Symbol(
+  'DOCUMENT_VERIFICATION_BASE_URL',
+);

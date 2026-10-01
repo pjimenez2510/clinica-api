@@ -165,6 +165,14 @@ export interface DocumentRepository {
   /** DOC-030. Publishes the next version of a kind, whatever number that is. */
   publishTemplate(template: NewDocumentTemplate): Promise<DocumentTemplate>;
 
+  /**
+   * DOC-039. The next version of several kinds, in ONE transaction: all of
+   * them or none.
+   */
+  publishTemplates(
+    templates: readonly NewDocumentTemplate[],
+  ): Promise<DocumentTemplate[]>;
+
   /** DOC-056, DOC-058. Inserts a new image row. Nothing is ever updated. */
   saveImage(image: NewDocumentImage): Promise<StoredImageSummary>;
 

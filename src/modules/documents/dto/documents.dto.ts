@@ -106,6 +106,19 @@ const templateSlotsSchema = z.object({
 /** Body of POST /documents/templates (`config:manage`). */
 export class PublishTemplateDto extends createZodDto(templateSlotsSchema) {}
 
+/** DOC-039. Body of POST /documents/templates/all-kinds: the slots, no kind. */
+export class PublishAllKindsDto extends createZodDto(
+  templateSlotsSchema.omit({ kind: true }),
+) {}
+
+/**
+ * DOC-038. Body of POST /documents/templates/preview: a kind, the slots as the
+ * form has them now, and optionally the site whose identity to borrow.
+ */
+export class PreviewTemplateDto extends createZodDto(
+  templateSlotsSchema.extend({ siteId: z.uuid().nullable().default(null) }),
+) {}
+
 // ── responses ──────────────────────────────────────────────────────────────
 
 const renderSummarySchema = z.object({

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
+import QRCode from 'qrcode';
 
 import { DocumentRenderFailedError } from '../domain/document.errors';
 import {
@@ -13,15 +14,11 @@ import type {
   DocumentRenderer,
   LayoutImages,
 } from '../domain/document-rendering.port';
-import type {
-  Block,
-  DocumentHeader,
-  DocumentLayout,
-  TableColumn,
-} from '../domain/page-layout';
+import type { Block, DocumentLayout, TableColumn } from '../domain/page-layout';
 
 /**
- * DOC-020 to DOC-024, DOC-070 to DOC-078. The layout, painted as PDF/A-1b.
+ * DOC-020 to DOC-025, DOC-070 to DOC-085. The layout, painted as PDF/A-1b in
+ * the frame of the approved template (D-095).
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * WHY PDFKIT, AND WHAT IT WAS CHOSEN AGAINST
@@ -59,18 +56,48 @@ import type {
 
 /** DOC-025. The faces of `embedded-fonts.ts`, by the role they play. */
 const SANS: FontName = 'sans';
+const SANS_SEMIBOLD: FontName = 'sansSemibold';
 const SANS_BOLD: FontName = 'sansBold';
 const SERIF_BOLD: FontName = 'serifBold';
+
+/**
+ * DOC-085. The approved template's palette (D-095). The accent comes from the
+ * template; red is reserved for CONFIDENCIAL and what a composer emphasises.
+ */
+const INK = '#1d2422';
+const LABEL = '#4a5450';
+const RULE_STRONG = '#b7c0bc';
+const RULE_LIGHT = '#dde3e0';
+const EMPTY_BOX = '#8a948f';
+const ALERT = '#8a2c1f';
 
 /** Short alias: every coordinate below is written in millimetres. */
 const mm = millimetresToPoints;
 
-/** Type sizes, in points. One place, so a document cannot drift by section. */
-const SIZE = { title: 15, heading: 10, body: 9, small: 7.5 } as const;
-const LINE_GAP = 2;
+/**
+ * Type sizes, in points: the template's pixels × 0.75 (794 px = 210 mm). One
+ * place, so a document cannot drift by section.
+ */
+const SIZE = {
+  name: 15,
+  title: 13.5,
+  heading: 10.5,
+  reference: 9.75,
+  body: 9,
+  label: 7.5,
+} as const;
+const LINE_GAP = 1.5;
 
-/** DOC-071. Reserved at the foot of every page for the page number. */
-const FOOTER_HEIGHT_MM = 12;
+/** DOC-071, DOC-083. Reserved at the foot of every page. */
+const FOOTER_HEIGHT_MM = 15;
+/** DOC-083. The QR's side. Readable by a phone at arm's length. */
+const QR_SIZE_MM = 13;
+/** DOC-059. The logo's box in the common header: the template's 88 × 64 px. */
+const LOGO_BOX_MM = { width: 23, height: 17 } as const;
+/** DOC-076. The RIDE's logo, above its boxes: the template's 84 px high. */
+const RIDE_LOGO_BOX_MM = { width: 60, height: 22 } as const;
+/** DOC-080. The right-hand column: title, reference, CONFIDENCIAL. */
+const TITLE_COLUMN_MM = 62;
 
 /**
  * The vertical position on the current page, shared by reference between the
@@ -162,9 +189,10 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
      * line that follows the text is not detachable: the pharmacist cuts through
      * the posology on one receta and through nothing on the next.
      */
-    const reserved =
-      mm(FOOTER_HEIGHT_MM) + (layout.tearOff === null ? 0 : mm(TEAR_OFF_HEIGHT_MM)); // prettier-ignore
-    const bottomLimit = doc.page.height - mm(PAGE_MARGIN_MM) - reserved;
+    const bottomLimit =
+      layout.tearOff === null
+        ? doc.page.height - mm(PAGE_MARGIN_MM) - mm(FOOTER_HEIGHT_MM) - mm(3)
+        : doc.page.height - mm(TEAR_OFF_HEIGHT_MM) - mm(3);
 
     const cursor: Cursor = { y: 0 };
 
@@ -180,7 +208,6 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     };
 
     startPage();
-    this.paintTitle(doc, layout, left, contentWidth, cursor);
 
     for (const block of layout.blocks) {
       this.paintBlock(doc, block, images, left, contentWidth, cursor, ensure);
@@ -201,7 +228,8 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
   // ── header ───────────────────────────────────────────────────────────────
 
   /**
-   * DOC-071. The establishment on EVERY page.
+   * DOC-071, DOC-080 to DOC-082. The establishment and the document's title on
+   * EVERY page.
    *
    * This is what `@media print` cannot promise: WebKit has never repeated
    * `<thead>` when printing — the bug has been open since 2008 — so a clinic on
@@ -215,92 +243,123 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     width: number,
     cursor: Cursor,
   ): void {
-    const header: DocumentHeader | null = layout.frame.header;
-    if (header === null) return;
-    const logoWidth = mm(28);
-    const logoHeight = mm(16);
-    let textLeft = left;
-    let textWidth = width;
+    const { frame } = layout;
+    const header = frame.header;
 
-    if (header.hasLogo && images.logo !== null) {
-      doc.image(images.logo.bytes, left, cursor.y, {
-        fit: [logoWidth, logoHeight],
-      });
-      textLeft = left + logoWidth + mm(4);
-      textWidth = width - logoWidth - mm(4);
+    if (header === null) {
+      // DOC-076, DOC-084. The RIDE has its own head (Anexo 2): only its logo
+      // is the frame's, above the boxes its composer draws.
+      if (frame.hasLogo && images.logo !== null) {
+        doc.image(images.logo.bytes, left, cursor.y, {
+          fit: [mm(RIDE_LOGO_BOX_MM.width), mm(RIDE_LOGO_BOX_MM.height)],
+        });
+        cursor.y += mm(RIDE_LOGO_BOX_MM.height) + mm(4);
+      }
+      return;
     }
 
-    doc
-      .font(SANS_BOLD)
-      .fontSize(SIZE.heading)
-      .fillColor('#000000')
-      .text(header.establishmentName, textLeft, cursor.y, { width: textWidth });
+    const top = cursor.y;
+    const titleWidth = mm(TITLE_COLUMN_MM);
+    const titleLeft = left + width - titleWidth;
+    let textLeft = left;
+    let bottom = top;
 
-    const details = [
+    // DOC-059. No logo, nothing drawn: not an empty box on the paper.
+    if (header.hasLogo && images.logo !== null) {
+      doc.image(images.logo.bytes, left, top, {
+        fit: [mm(LOGO_BOX_MM.width), mm(LOGO_BOX_MM.height)],
+      });
+      textLeft = left + mm(LOGO_BOX_MM.width) + mm(4);
+      bottom = top + mm(LOGO_BOX_MM.height);
+    }
+    const textWidth = titleLeft - mm(4) - textLeft;
+
+    doc
+      .font(SERIF_BOLD)
+      .fontSize(SIZE.name)
+      .fillColor(INK)
+      .text(header.establishmentName, textLeft, top, { width: textWidth });
+
+    // DOC-081. Only with several sites; the composer of the frame decided it.
+    if (header.siteLine !== null) {
+      doc
+        .font(SANS_SEMIBOLD)
+        .fontSize(SIZE.body)
+        .fillColor(frame.accentColour)
+        .text(header.siteLine, textLeft, doc.y + 1, { width: textWidth });
+    }
+
+    const contact = [
+      header.establishmentAddress,
+      header.establishmentPhone,
+      header.establishmentEmail,
+    ];
+    const registry = [
       header.establishmentRuc === null
         ? null
         : `RUC ${header.establishmentRuc}`,
-      header.establishmentAddress,
-      header.establishmentPhone,
+      header.operatingPermit === null
+        ? null
+        : `Permiso de funcionamiento ${header.operatingPermit}`,
       ...header.fields.map((field) => `${field.label}: ${field.value}`),
-    ].filter((entry): entry is string => entry !== null && entry !== '');
-
-    if (details.length > 0) {
+    ];
+    for (const line of [contact, registry]) {
+      const text = line
+        .filter((entry): entry is string => entry !== null && entry !== '')
+        .join(' · ');
+      if (text === '') continue;
       doc
         .font(SANS)
-        .fontSize(SIZE.small)
-        .text(details.join(' · '), textLeft, doc.y, { width: textWidth });
+        .fontSize(SIZE.body)
+        .fillColor(LABEL)
+        .text(text, textLeft, doc.y + 1, { width: textWidth });
     }
+    bottom = Math.max(bottom, doc.y);
 
-    const bottom = Math.max(
-      doc.y,
-      header.hasLogo && images.logo !== null ? cursor.y + logoHeight : doc.y,
-    );
-
-    doc
-      .moveTo(left, bottom + mm(2))
-      .lineTo(left + width, bottom + mm(2))
-      .lineWidth(1)
-      .strokeColor(layout.frame.accentColour)
-      .stroke();
-
-    cursor.y = bottom + mm(5);
-  }
-
-  /**
-   * The document's title in the template's accent colour, and the verification
-   * code under it when the subject has one.
-   */
-  private paintTitle(
-    doc: PDFKit.PDFDocument,
-    layout: DocumentLayout,
-    left: number,
-    width: number,
-    cursor: Cursor,
-  ): void {
+    // ── the right-hand column: what this paper is ──
     doc
       .font(SERIF_BOLD)
       .fontSize(SIZE.title)
-      .fillColor(layout.frame.accentColour)
-      .text(layout.frame.title, left, cursor.y, { width, align: 'center' });
-
-    if (layout.frame.reference !== null) {
+      .fillColor(frame.accentColour)
+      .text(frame.title, titleLeft, top, {
+        width: titleWidth,
+        align: 'right',
+        characterSpacing: 0.4,
+      });
+    if (frame.reference !== null) {
       doc
-        .font(SANS)
-        .fontSize(SIZE.small)
-        .fillColor('#000000')
-        .text(
-          `Código de verificación: ${layout.frame.reference}`,
-          left,
-          doc.y,
-          {
-            width,
-            align: 'center',
-          },
-        );
+        .font(SANS_BOLD)
+        .fontSize(SIZE.reference)
+        .fillColor(INK)
+        .text(frame.reference, titleLeft, doc.y + 2, {
+          width: titleWidth,
+          align: 'right',
+        });
     }
+    // DOC-082. A.M. 5216-A art. 33: health information is confidential, and
+    // the legend says so on exactly the papers that carry a diagnosis.
+    if (frame.confidential) {
+      doc
+        .font(SANS_BOLD)
+        .fontSize(SIZE.label)
+        .fillColor(ALERT)
+        .text('CONFIDENCIAL', titleLeft, doc.y + 2, {
+          width: titleWidth,
+          align: 'right',
+          characterSpacing: 0.6,
+        });
+    }
+    bottom = Math.max(bottom, doc.y);
 
-    cursor.y = doc.y + mm(4);
+    const ruleY = bottom + mm(3);
+    doc
+      .moveTo(left, ruleY)
+      .lineTo(left + width, ruleY)
+      .lineWidth(1.5)
+      .strokeColor(frame.accentColour)
+      .stroke();
+
+    cursor.y = ruleY + mm(5);
   }
 
   // ── blocks ───────────────────────────────────────────────────────────────
@@ -318,6 +377,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     width: number,
     cursor: Cursor,
     ensure: (height: number) => void,
+    accent = INK,
   ): void {
     switch (block.kind) {
       case 'spacer':
@@ -329,18 +389,18 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         doc
           .moveTo(left, cursor.y)
           .lineTo(left + width, cursor.y)
-          .lineWidth(0.5)
-          .strokeColor('#999999')
+          .lineWidth(0.75)
+          .strokeColor(RULE_STRONG)
           .stroke();
         cursor.y += mm(3);
         return;
 
       case 'heading':
-        ensure(mm(8));
+        ensure(mm(9));
         doc
           .font(SERIF_BOLD)
           .fontSize(SIZE.heading)
-          .fillColor('#000000')
+          .fillColor(accent)
           .text(block.text, left, cursor.y, { width });
         cursor.y = doc.y + mm(1.5);
         return;
@@ -350,7 +410,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         doc
           .font(block.emphasis === true ? SANS_BOLD : SANS)
           .fontSize(SIZE.body)
-          .fillColor('#000000')
+          .fillColor(INK)
           .text(block.text, left, cursor.y, { width, lineGap: LINE_GAP });
         cursor.y = doc.y + mm(2);
         return;
@@ -370,14 +430,14 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
           const x = left + column * columnWidth;
           doc
             .font(SANS_BOLD)
-            .fontSize(SIZE.small)
-            .fillColor('#555555')
+            .fontSize(SIZE.label)
+            .fillColor(LABEL)
             .text(entry.label, x, rowTop, { width: columnWidth - mm(3) });
           doc
             .font(SANS)
             .fontSize(SIZE.body)
-            .fillColor('#000000')
-            .text(entry.value, x, doc.y, {
+            .fillColor(INK)
+            .text(entry.value, x, doc.y + 0.5, {
               width: columnWidth - mm(3),
               lineGap: LINE_GAP,
             });
@@ -386,10 +446,10 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
           column += 1;
           if (column === block.columns) {
             column = 0;
-            cursor.y = rowBottom + mm(2);
+            cursor.y = rowBottom + mm(2.5);
           }
         }
-        if (column !== 0) cursor.y = rowBottom + mm(2);
+        if (column !== 0) cursor.y = rowBottom + mm(2.5);
         return;
       }
 
@@ -398,9 +458,11 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         return;
 
       case 'signature': {
-        ensure(mm(24));
-        const boxWidth = mm(60);
-        const boxHeight = mm(16);
+        ensure(mm(26));
+        // DOC-057, DOC-060. The template's box on the right: where a hand signs.
+        const boxWidth = mm(55);
+        const boxHeight = mm(18);
+        const boxLeft = left + width - boxWidth;
         const chosen =
           block.image === 'seal'
             ? images.seal
@@ -409,8 +471,10 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
               : null;
 
         if (chosen !== null) {
-          doc.image(chosen.bytes, left, cursor.y, {
+          doc.image(chosen.bytes, boxLeft, cursor.y, {
             fit: [boxWidth, boxHeight],
+            align: 'center',
+            valign: 'center',
           });
         } else {
           // DOC-060. A LABELLED EMPTY BOX, never a drawn seal. The system
@@ -418,9 +482,9 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
           // aceptarán rúbricas o trazos por firma». An empty box is a document
           // missing a seal; a squiggle would be a forged one.
           doc
-            .rect(left, cursor.y, boxWidth, boxHeight)
-            .lineWidth(0.5)
-            .strokeColor('#bbbbbb')
+            .rect(boxLeft, cursor.y, boxWidth, boxHeight)
+            .lineWidth(0.75)
+            .strokeColor(EMPTY_BOX)
             .dash(2, { space: 2 })
             .stroke()
             .undash();
@@ -428,10 +492,11 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
 
         doc
           .font(SANS)
-          .fontSize(SIZE.small)
-          .fillColor('#555555')
-          .text(block.caption, left, cursor.y + boxHeight + mm(1), {
+          .fontSize(SIZE.label)
+          .fillColor(LABEL)
+          .text(block.caption, boxLeft, cursor.y + boxHeight + mm(1), {
             width: boxWidth,
+            align: 'center',
           });
         cursor.y = doc.y + mm(3);
         return;
@@ -468,8 +533,8 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         doc
           .rect(left, top, half, bottom - top)
           .rect(left + half + gap, top, half, bottom - top)
-          .lineWidth(0.5)
-          .strokeColor('#999999')
+          .lineWidth(0.75)
+          .strokeColor(INK)
           .stroke();
 
         cursor.y = bottom + mm(4);
@@ -479,8 +544,9 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
   }
 
   /**
-   * A table whose column widths are fractions of the text width. Rows are
-   * measured before painting and moved to the next page whole.
+   * DOC-085. A table whose column widths are fractions of the text width, with
+   * a header row and 1 px rules. Rows are measured before painting and moved
+   * to the next page whole.
    */
   private paintTable(
     doc: PDFKit.PDFDocument,
@@ -502,23 +568,30 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     /** `noUncheckedIndexedAccess` is on, and the two arrays are the same length. */
     const widthAt = (index: number): number => widths[index] ?? 0;
 
+    const rule = (y: number, colour: string): void => {
+      doc
+        .moveTo(left, y)
+        .lineTo(left + width, y)
+        .lineWidth(0.75)
+        .strokeColor(colour)
+        .stroke();
+    };
+
     const paintHeaderRow = (): void => {
+      rule(cursor.y, INK);
+      cursor.y += mm(1.5);
       let x = left;
-      doc.font(SANS_BOLD).fontSize(SIZE.small).fillColor('#555555');
+      doc.font(SANS_BOLD).fontSize(SIZE.label).fillColor(LABEL);
       columns.forEach((column, index) => {
         doc.text(column.header, x, cursor.y, {
-          width: widthAt(index) - mm(1),
+          width: widthAt(index) - mm(1.5),
           align: align(column),
         });
         x += widthAt(index);
       });
-      cursor.y += mm(5);
-      doc
-        .moveTo(left, cursor.y - mm(1))
-        .lineTo(left + width, cursor.y - mm(1))
-        .lineWidth(0.5)
-        .strokeColor('#cccccc')
-        .stroke();
+      cursor.y += mm(4.5);
+      rule(cursor.y, RULE_STRONG);
+      cursor.y += mm(1.5);
     };
 
     ensure(mm(14));
@@ -531,25 +604,27 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         doc
           .font(SANS)
           .fontSize(SIZE.body)
-          .heightOfString(cell, { width: widthAt(index) - mm(1) }),
+          .heightOfString(cell, { width: widthAt(index) - mm(1.5) }),
       );
-      const rowHeight = Math.max(...heights, mm(5));
+      const rowHeight = Math.max(...heights, mm(4.5));
 
       // A row that does not fit moves WHOLE to the next page: half a
       // prescription line across a page break is a line somebody misreads.
-      ensure(rowHeight + mm(2));
+      ensure(rowHeight + mm(3));
 
       let x = left;
-      doc.font(SANS).fontSize(SIZE.body).fillColor('#000000');
+      doc.font(SANS).fontSize(SIZE.body).fillColor(INK);
       row.forEach((cell, index) => {
         const column = columns[index];
         doc.text(cell, x, cursor.y, {
-          width: widthAt(index) - mm(1),
+          width: widthAt(index) - mm(1.5),
           align: column === undefined ? 'left' : align(column),
         });
         x += widthAt(index);
       });
       cursor.y += rowHeight + mm(1.5);
+      rule(cursor.y, RULE_LIGHT);
+      cursor.y += mm(1.5);
     }
 
     cursor.y += mm(2);
@@ -581,7 +656,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
       .moveTo(left, cutY)
       .lineTo(left + width, cutY)
       .lineWidth(0.75)
-      .strokeColor('#666666')
+      .strokeColor(LABEL)
       .dash(4, { space: 3 })
       .stroke()
       .undash();
@@ -590,53 +665,151 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
 
     doc
       .font(SANS_BOLD)
-      .fontSize(SIZE.small)
-      .fillColor('#666666')
-      .text(band.caption, left, cursor.y, { width });
-    cursor.y = doc.y + mm(1);
+      .fontSize(SIZE.label)
+      .fillColor(LABEL)
+      .text(band.caption, left, cursor.y, { width, align: 'center' });
+    cursor.y = doc.y + mm(1.5);
+
+    /**
+     * THE SEAL SITS BESIDE THE INDICATIONS, NOT UNDER THEM. Art. 5.e.iv asks
+     * for it in the band, and the band ends where the footer begins: stacked
+     * below, a box 18 mm tall would run into the verification lines.
+     */
+    const seals = band.blocks.filter((block) => block.kind === 'signature');
+    const text = band.blocks.filter((block) => block.kind !== 'signature');
+    const textWidth = seals.length === 0 ? width : width - mm(60);
+    const sealCursor: Cursor = { y: cursor.y };
 
     this.paintBlock(
       doc,
       { kind: 'fields', columns: 2, entries: band.identification },
       images,
       left,
-      width,
+      textWidth,
       cursor,
       () => undefined,
     );
 
-    for (const block of band.blocks) {
-      this.paintBlock(doc, block, images, left, width, cursor, () => undefined);
+    for (const block of text) {
+      this.paintBlock(
+        doc,
+        block,
+        images,
+        left,
+        textWidth,
+        cursor,
+        () => undefined,
+        layout.frame.accentColour,
+      );
+    }
+    for (const block of seals) {
+      this.paintBlock(doc, block, images, left, width, sealCursor, () => undefined); // prettier-ignore
     }
   }
 
-  /** DOC-071. «Página N de M» on every page, once the total is known. */
+  /**
+   * DOC-071, DOC-083. On EVERY page, once the total is known: the verification
+   * code and where to check it, the class's note, «Página x de y» and the QR.
+   */
   private paintFooters(
     doc: PDFKit.PDFDocument,
     layout: DocumentLayout,
     left: number,
     width: number,
   ): void {
+    const { footer } = layout.frame;
+    const qrSide = mm(QR_SIZE_MM);
+    const qrWidth = footer.verification === null ? 0 : qrSide + mm(3);
+    const pageLabelWidth = mm(24);
+    const textWidth = width - qrWidth - pageLabelWidth;
+
+    const lines = [
+      ...(footer.verification === null
+        ? []
+        : [
+            `Documento electrónico generado por el sistema · código de verificación ${footer.verification.code}`,
+            `Verifique en ${footer.verification.url}`,
+          ]),
+      ...footer.notes,
+      ...(footer.text === null || footer.text === '' ? [] : [footer.text]),
+    ];
+
     const range = doc.bufferedPageRange();
     for (let index = 0; index < range.count; index += 1) {
       doc.switchToPage(range.start + index);
-      const y = doc.page.height - mm(PAGE_MARGIN_MM) - mm(5);
-      const text = [
-        layout.frame.footer.text,
-        `Página ${index + 1} de ${range.count}`,
-      ]
-        .filter((entry): entry is string => entry !== null && entry !== '')
-        .join(' · ');
+      // The footer sits INSIDE the bottom margin, and PDFKit opens a new page
+      // for any text that crosses it. Lifting the margin while the footer is
+      // painted is what keeps «Página 1 de 1» from creating page 2.
+      const margins = doc.page.margins;
+      doc.page.margins = { ...margins, bottom: 0 };
+      const top = doc.page.height - mm(PAGE_MARGIN_MM) - mm(FOOTER_HEIGHT_MM);
+      const bottom = doc.page.height - mm(PAGE_MARGIN_MM);
 
       doc
-        .font(SANS)
-        .fontSize(SIZE.small)
-        .fillColor('#666666')
-        .text(text, left, y, { width, align: 'center' });
+        .moveTo(left, top)
+        .lineTo(left + width, top)
+        .lineWidth(0.75)
+        .strokeColor(RULE_STRONG)
+        .stroke();
+
+      let y = top + mm(2);
+      doc.font(SANS).fontSize(SIZE.label).fillColor(LABEL);
+      for (const line of lines) {
+        // `lineBreak: false` keeps a long line from pushing PDFKit into a new
+        // page of its own: the footer is the one place nothing may flow.
+        doc.text(line, left, y, { width: textWidth, lineBreak: false });
+        y += SIZE.label + 2;
+      }
+
+      doc.text(
+        `Página ${index + 1} de ${range.count}`,
+        left + textWidth,
+        bottom - SIZE.label - 1,
+        { width: pageLabelWidth, align: 'right', lineBreak: false },
+      );
+
+      if (footer.verification !== null) {
+        this.paintQr(
+          doc,
+          footer.verification.url,
+          left + width - qrSide,
+          bottom - qrSide,
+          qrSide,
+        );
+      }
+      doc.page.margins = margins;
     }
     // Without this, `end()` flushes while the cursor sits on the first page and
     // PDFKit appends nothing further — harmless today, and a trap for whoever
     // adds a final block later.
     doc.flushPages();
+  }
+
+  /**
+   * DOC-083. The QR as VECTOR rectangles, never as an image.
+   *
+   * An image is the way transparency gets into a PDF/A-1b (DOC-023), and a
+   * raster QR blurs when the paper is photocopied; filled squares in the page
+   * stream do neither. `qrcode` only computes the matrix — no canvas, no file.
+   * Error correction M (15 %): a smudged corner of a receta still reads.
+   */
+  private paintQr(
+    doc: PDFKit.PDFDocument,
+    text: string,
+    x: number,
+    y: number,
+    side: number,
+  ): void {
+    const { modules } = QRCode.create(text, { errorCorrectionLevel: 'M' });
+    const cell = side / modules.size;
+    for (let row = 0; row < modules.size; row += 1) {
+      for (let column = 0; column < modules.size; column += 1) {
+        if (modules.get(row, column)) {
+          // A hair wider than the cell so adjacent squares never show a seam.
+          doc.rect(x + column * cell, y + row * cell, cell + 0.05, cell + 0.05);
+        }
+      }
+    }
+    doc.fillColor(INK).fill();
   }
 }

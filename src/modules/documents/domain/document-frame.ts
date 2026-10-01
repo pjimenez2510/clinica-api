@@ -33,8 +33,26 @@ export interface FrameRequest {
 }
 
 /**
- * DOC-071, DOC-080. The establishment's header: the name always, and RUC,
- * address and phone only when the template's switches ask for them (DOC-034).
+ * DOC-083. The line each class carries at its foot. Written here, not by each
+ * composer, so the four footers read as one family.
+ */
+const FOOTER_NOTES: Readonly<Record<DocumentKind, readonly string[]>> = {
+  PRESCRIPTION: [
+    'Copia de respaldo conservada cinco años (Res. ACESS-2023-0030, art. 15)',
+  ],
+  SERVICE_ORDER: ['Numeración consecutiva por sede (A.M. 00002393, art. 43)'],
+  MEDICAL_CERTIFICATE: ['Documento sin enmiendas'],
+  INVOICE_RIDE: [
+    'Representación impresa del comprobante electrónico (RIDE) · Ficha técnica del SRI, Anexo 2',
+    'Consulte su validez en srienlinea.sri.gob.ec con la clave de acceso',
+  ],
+};
+
+/**
+ * DOC-071, DOC-080, DOC-081. The establishment's header: the trade name (the
+ * legal one when there is none), the site line only with several sites, RUC,
+ * address and phone only when the template's switches ask for them (DOC-034),
+ * and e-mail and permit whenever they exist.
  */
 function headerOf(
   context: DocumentContext,
@@ -42,7 +60,8 @@ function headerOf(
 ): DocumentHeader {
   const { establishment } = context;
   return {
-    establishmentName: establishment.name,
+    establishmentName: establishment.tradeName ?? establishment.name,
+    siteLine: context.siteLine,
     // DOC-034. Read always, printed only when the clinic asked for it: art. 5
     // requires none of these three.
     establishmentRuc: template.showEstablishmentRuc ? establishment.ruc : null,
@@ -52,6 +71,8 @@ function headerOf(
     establishmentPhone: template.showEstablishmentPhone
       ? establishment.phone
       : null,
+    establishmentEmail: establishment.email,
+    operatingPermit: establishment.operatingPermit,
     hasLogo: establishment.logo !== null,
     fields: template.headerFields.map((field) => ({
       label: field.label,
@@ -66,16 +87,33 @@ export function composeFrame(
   template: DocumentTemplate,
   request: FrameRequest,
 ): DocumentFrame {
+  /**
+   * DOC-084. THE RIDE KEEPS ITS OWN HEAD AND NO QR, WHATEVER IT IS HANDED.
+   * Its header is the SRI's Anexo 2 (DOC-076) and DOC-078 forbids a QR on it;
+   * deciding it here, not trusting the composer, is what keeps both true.
+   */
+  const fiscal = request.kind === 'INVOICE_RIDE';
+  const code = fiscal ? null : request.verificationCode;
+
   return {
     title: DOCUMENT_TITLE[request.kind],
     reference: request.reference,
     confidential: request.confidential,
     accentColour: template.accentColour,
+    // DOC-024. The legal person, which is who produced the file.
     establishmentName: context.establishment.name,
-    header: headerOf(context, template),
+    header: fiscal ? null : headerOf(context, template),
+    hasLogo: context.establishment.logo !== null,
     footer: {
       text: template.footerText,
-      verificationCode: request.verificationCode,
+      verification:
+        code === null
+          ? null
+          : {
+              code,
+              url: `${context.verificationBaseUrl}/${encodeURIComponent(code)}`,
+            },
+      notes: FOOTER_NOTES[request.kind],
     },
   };
 }

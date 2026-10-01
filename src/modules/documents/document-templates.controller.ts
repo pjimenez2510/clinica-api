@@ -1,19 +1,32 @@
-import { Body, Controller, Get, Post, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Req,
+  Res,
+} from '@nestjs/common';
 import {
   ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiProduces,
   ApiTags,
 } from '@nestjs/swagger';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import { DocumentService } from './application/document.service';
+import { sendPdf } from './documents.controller';
 import { toTemplateResponse } from './documents.presenter';
 import {
   DocumentTemplateDto,
+  PreviewTemplateDto,
+  PublishAllKindsDto,
   PublishTemplateDto,
   type DocumentTemplateResponse,
 } from './dto/documents.dto';
@@ -95,5 +108,68 @@ export class DocumentTemplatesController {
       },
     );
     return toTemplateResponse(published);
+  }
+  /**
+   * DOC-039. One identity for the four classes (D-095.3): the next version of
+   * each, all or none.
+   */
+  @Post('all-kinds')
+  @RequirePermission('config:manage', 'global')
+  @ApiOperation({
+    summary: 'Publicar la misma plantilla para las cuatro clases de documento',
+  })
+  @ApiCreatedResponse({ type: [DocumentTemplateDto] })
+  async publishAllKinds(
+    @Body() body: PublishAllKindsDto,
+    @Req() req: Request,
+  ): Promise<DocumentTemplateResponse[]> {
+    const published = await this.documents.publishTemplateForAllKinds(
+      {
+        accentColour: body.accentColour,
+        footerText: body.footerText,
+        headerFields: body.headerFields,
+        showEstablishmentRuc: body.showEstablishmentRuc,
+        showEstablishmentAddress: body.showEstablishmentAddress,
+        showEstablishmentPhone: body.showEstablishmentPhone,
+      },
+      {
+        userId: this.currentUser.requireUserId(),
+        sites: 'all',
+        ip: req.ip,
+        userAgent: req.get('user-agent'),
+      },
+    );
+    return published.map(toTemplateResponse);
+  }
+
+  /**
+   * DOC-038. What the slots on the form WOULD print, painted by the same
+   * generator that issues. `config:read`: looking at a sample changes nothing
+   * and carries nobody's data.
+   */
+  @Post('preview')
+  @RequirePermission('config:read', 'global')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Vista previa de una plantilla con datos de muestra',
+  })
+  @ApiProduces('application/pdf')
+  async preview(
+    @Body() body: PreviewTemplateDto,
+    @Res() res: Response,
+  ): Promise<void> {
+    const rendered = await this.documents.previewTemplate(
+      body.kind as DocumentKind,
+      {
+        accentColour: body.accentColour,
+        footerText: body.footerText,
+        headerFields: body.headerFields,
+        showEstablishmentRuc: body.showEstablishmentRuc,
+        showEstablishmentAddress: body.showEstablishmentAddress,
+        showEstablishmentPhone: body.showEstablishmentPhone,
+      },
+      body.siteId,
+    );
+    sendPdf(res, rendered);
   }
 }

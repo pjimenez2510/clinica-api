@@ -5,6 +5,7 @@ import type { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
 import sharp from 'sharp';
 import request from 'supertest';
+import { extractText, getDocumentProxy } from 'unpdf';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
@@ -46,6 +47,7 @@ interface Problem {
   title: string;
   status: number;
   code: string;
+  errors?: { field: string; code: string; message: string }[];
 }
 
 interface RenderBody {
@@ -293,6 +295,107 @@ describe('los documentos por HTTP', () => {
     });
   });
 
+  describe('DOC-038, DOC-039 vista previa y publicación de la identidad', () => {
+    const slots = {
+      accentColour: '#7a3b2e',
+      footerText: 'Pie de la vista previa',
+      headerFields: [],
+      showEstablishmentRuc: true,
+    };
+
+    it('DOC-038 la vista previa devuelve el PDF de muestra con la identidad real y no guarda nada', async () => {
+      const response = await post('/documents/templates/preview', adminToken, {
+        kind: 'PRESCRIPTION',
+        ...slots,
+      })
+        .buffer()
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+
+      expect(response.headers['content-type']).toContain('application/pdf');
+      const proxy = await getDocumentProxy(
+        new Uint8Array(response.body as Buffer),
+      );
+      const { text } = await extractText(proxy, { mergePages: true });
+      expect(text).toContain('Centro de Especialidades Bahía');
+      expect(text).toContain('MUESTRA');
+      expect(text).toContain('Pie de la vista previa');
+
+      await expect(prisma.documentRender.count()).resolves.toBe(0);
+      await expect(prisma.documentTemplate.count()).resolves.toBe(0);
+    });
+
+    it('DOC-038 la vista previa rechaza una ranura inválida y nombra el campo', async () => {
+      const response = await post('/documents/templates/preview', adminToken, {
+        kind: 'PRESCRIPTION',
+        ...slots,
+        accentColour: 'granate',
+      }).expect(422);
+
+      expect(
+        (response.body as Problem).errors?.map((error) => error.field),
+      ).toContain('accentColour');
+    });
+
+    it('DOC-090 la vista previa exige config:read: el médico no la ve', async () => {
+      await post('/documents/templates/preview', adminToken, {
+        kind: 'PRESCRIPTION',
+        ...slots,
+      }).expect(200);
+
+      await post('/documents/templates/preview', doctorToken, {
+        kind: 'PRESCRIPTION',
+        ...slots,
+      }).expect(403);
+    });
+
+    it('DOC-039 publica la versión siguiente de las cuatro clases a la vez', async () => {
+      await publishTemplate('PRESCRIPTION');
+
+      const response = await post(
+        '/documents/templates/all-kinds',
+        adminToken,
+        slots,
+      ).expect(201);
+
+      const published = response.body as { kind: string; version: number }[];
+      expect(
+        published.map((one) => `${one.kind}:${one.version}`).sort(),
+      ).toEqual([
+        'INVOICE_RIDE:1',
+        'MEDICAL_CERTIFICATE:1',
+        'PRESCRIPTION:2',
+        'SERVICE_ORDER:1',
+      ]);
+      await expect(prisma.documentTemplate.count()).resolves.toBe(5);
+    });
+
+    it('DOC-039 si una falla no queda publicada ninguna', async () => {
+      // Positive control: the same request with a valid colour publishes four.
+      await post('/documents/templates/all-kinds', adminToken, slots).expect(
+        201,
+      );
+      await expect(prisma.documentTemplate.count()).resolves.toBe(4);
+
+      await post('/documents/templates/all-kinds', adminToken, {
+        ...slots,
+        accentColour: '#ZZZZZZ',
+      }).expect(422);
+      await expect(prisma.documentTemplate.count()).resolves.toBe(4);
+    });
+
+    it('DOC-090 publicar las cuatro exige config:manage', async () => {
+      await post('/documents/templates/all-kinds', doctorToken, slots).expect(
+        403,
+      );
+      await expect(prisma.documentTemplate.count()).resolves.toBe(0);
+    });
+  });
+
   describe('DOC-001, DOC-002 el borrador y la emisión', () => {
     beforeEach(async () => {
       await publishTemplate();
@@ -386,6 +489,65 @@ describe('los documentos por HTTP', () => {
       expect((withData.body as RenderBody).byteSize).not.toBe(
         (withoutData.body as RenderBody).byteSize,
       );
+    });
+
+    /** The text a reader sees in the draft of this test's receta. */
+    async function draftText(): Promise<string> {
+      const response = await post('/documents/drafts', doctorToken, {
+        kind: 'PRESCRIPTION',
+        subjectId: prescriptionId,
+      })
+        .buffer()
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+      const proxy = await getDocumentProxy(
+        new Uint8Array(response.body as Buffer),
+      );
+      return (await extractText(proxy, { mergePages: true })).text;
+    }
+
+    it('DOC-081 con una sola sede activa la cabecera no lleva línea de sede, y con dos sí', async () => {
+      const site = await prisma.site.findUniqueOrThrow({
+        where: { id: siteId },
+      });
+      expect(await draftText()).not.toContain('Unicódigo');
+
+      const other = await createSite(prisma);
+      await prisma.site.update({
+        where: { id: other.id },
+        data: { establishmentId },
+      });
+
+      expect(await draftText()).toContain(
+        `${site.name} · Unicódigo ${site.mspUnicode}`,
+      );
+
+      // A deactivated site does not count: nobody walks into it.
+      await prisma.site.update({
+        where: { id: other.id },
+        data: { active: false },
+      });
+      expect(await draftText()).not.toContain('Unicódigo');
+    });
+
+    it('DOC-080 OR-010 la cabecera imprime el nombre comercial, el correo y el permiso guardados', async () => {
+      await prisma.establishment.update({
+        where: { id: establishmentId },
+        data: {
+          tradeName: 'Bahía Especialidades',
+          contactEmail: 'contacto@example.com',
+          operatingPermit: 'ACESS-2026-0456',
+        },
+      });
+
+      const text = await draftText();
+      expect(text).toContain('Bahía Especialidades');
+      expect(text).toContain('contacto@example.com');
+      expect(text).toContain('Permiso de funcionamiento ACESS-2026-0456');
     });
 
     it('DOC-014 se niega a archivar una receta en borrador, pero sí la previsualiza', async () => {

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import {
@@ -11,6 +11,7 @@ import type {
   AllowedImageMimeType,
   StoredImage,
 } from '../domain/document-image';
+import { DOCUMENT_VERIFICATION_BASE_URL } from '../domain/document-source';
 import type {
   DocumentContext,
   DocumentSourceReader,
@@ -207,7 +208,11 @@ const DIAGNOSIS_SELECT = {
  */
 @Injectable()
 export class PrismaDocumentSourceReader implements DocumentSourceReader {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(DOCUMENT_VERIFICATION_BASE_URL)
+    private readonly verificationBaseUrl: string,
+  ) {}
 
   /**
    * Dispatches on the kind; the `switch` is exhaustive over `DocumentKind`, so
@@ -235,12 +240,17 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       where: { id: siteId },
       select: {
         name: true,
+        mspUnicode: true,
         ruc: true,
         addressLine: true,
         phone: true,
+        establishmentId: true,
         establishment: {
           select: {
             legalName: true,
+            tradeName: true,
+            contactEmail: true,
+            operatingPermit: true,
             ruc: true,
             keepsAccounting: true,
             specialTaxpayerResolution: true,
@@ -264,6 +274,9 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
      */
     const establishment: EstablishmentIdentity = {
       name: site.establishment?.legalName ?? site.name,
+      tradeName: site.establishment?.tradeName ?? null,
+      email: site.establishment?.contactEmail ?? null,
+      operatingPermit: site.establishment?.operatingPermit ?? null,
       ruc: site.ruc ?? site.establishment?.ruc ?? null,
       addressLine: site.addressLine,
       phone: site.phone,
@@ -276,7 +289,33 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       rimpeRegime: site.establishment?.rimpeRegime ?? 'NONE',
     };
 
-    return { establishment, siteName: site.name };
+    /**
+     * DOC-081, D-095.4. The site line only when there is more than one ACTIVE
+     * site: with one, «Sede Matriz» under the clinic's name reads to a patient
+     * as a second place. A deactivated site does not count — nobody walks into
+     * it.
+     */
+    const activeSites = await this.prisma.site.count({
+      where: { active: true, establishmentId: site.establishmentId },
+    });
+
+    return {
+      establishment,
+      siteName: site.name,
+      siteLine:
+        activeSites > 1 ? `${site.name} · Unicódigo ${site.mspUnicode}` : null,
+      verificationBaseUrl: this.verificationBaseUrl,
+    };
+  }
+
+  /** DOC-038. The first active site by name, for a template preview. */
+  async firstActiveSiteId(): Promise<string | null> {
+    const site = await this.prisma.site.findFirst({
+      where: { active: true },
+      orderBy: { name: 'asc' },
+      select: { id: true },
+    });
+    return site?.id ?? null;
   }
 
   // ── prescription ─────────────────────────────────────────────────────────

@@ -34,6 +34,8 @@ const template: DocumentTemplate = {
 
 const context: DocumentContext = {
   siteName: 'Sede Centro',
+  siteLine: null,
+  verificationBaseUrl: 'https://clinica.example/verificar',
   establishment: {
     name: 'Centro de Especialidades Bahía',
     ruc: '0993123456001',
@@ -44,6 +46,9 @@ const context: DocumentContext = {
     specialTaxpayerResolution: '1234',
     withholdingAgentResolution: '5678',
     rimpeRegime: 'ENTREPRENEUR',
+    tradeName: null,
+    email: null,
+    operatingPermit: null,
   },
 };
 
@@ -542,6 +547,9 @@ describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
           specialTaxpayerResolution: null,
           withholdingAgentResolution: null,
           rimpeRegime: 'NONE',
+          tradeName: null,
+          email: null,
+          operatingPermit: null,
         },
       },
       template,
@@ -563,6 +571,9 @@ describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
         establishment: {
           ...context.establishment,
           rimpeRegime: 'POPULAR_BUSINESS',
+          tradeName: null,
+          email: null,
+          operatingPermit: null,
         },
       },
       template,
