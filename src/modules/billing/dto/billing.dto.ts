@@ -524,6 +524,30 @@ const invoiceResponseSchema = z.object({
   status: z.enum(['DRAFT', 'ISSUED', 'AUTHORISED', 'REJECTED', 'VOIDED']),
   issuedAt: z.iso.datetime().nullable(),
   authorisedAt: z.iso.datetime().nullable(),
+  /**
+   * SRI-060. Its electronic voucher before the SRI; `null` while there is none
+   * (the installation lacks a datum, SRI-008, or the sweep has not run yet).
+   */
+  electronic: z
+    .object({
+      voucherId: z.uuid(),
+      state: z.enum([
+        'PREPARED',
+        'SIGNED',
+        'RECEIVED',
+        'AUTHORISED',
+        'RETURNED',
+        'NOT_AUTHORISED',
+      ]),
+      blockedReason: z.string().nullable(),
+      accessKey: z.string(),
+      authorisedAt: z.iso.datetime().nullable(),
+      deliveryStatus: z.string().nullable(),
+      lastMessage: z
+        .object({ identifier: z.string(), message: z.string() })
+        .nullable(),
+    })
+    .nullable(),
 });
 /** One invoice, and the list of GET /billing/sites/:siteId/invoices. */
 export class InvoiceDto extends createZodDto(invoiceResponseSchema) {}

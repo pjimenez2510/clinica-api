@@ -582,8 +582,54 @@ describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
     expect(wholeText(layout).toLowerCase()).not.toContain('qr');
   });
 
-  it('DOC-076 imprime «—» mientras el SRI no ha autorizado, sin inventar una clave', () => {
-    const unauthorised = composeLayout(
+  it('SRI-071 mientras el SRI no autoriza dice «PENDIENTE DE AUTORIZACIÓN» y no inventa número ni fecha', () => {
+    const pending = composeLayout(
+      {
+        kind: 'INVOICE_RIDE',
+        data: { ...ride.data, accessKey: KEY_IN_TESTS, authorisedAt: null },
+      },
+      context,
+      template,
+    );
+    const text = wholeText(pending);
+    expect(text).toContain('NÚMERO DE AUTORIZACIÓN=PENDIENTE DE AUTORIZACIÓN');
+    expect(text).toContain(
+      'FECHA Y HORA DE AUTORIZACIÓN=PENDIENTE DE AUTORIZACIÓN',
+    );
+    // SRI-070. The key is printed anyway: the RIDE is handed over with it.
+    expect(text).toContain(`CLAVE DE ACCESO=${KEY_IN_TESTS}`);
+  });
+
+  it('SRI-070 imprime el ambiente que dice la clave, no «PRODUCCIÓN» por defecto', () => {
+    const testing = wholeText(
+      composeLayout(
+        {
+          kind: 'INVOICE_RIDE',
+          data: { ...ride.data, accessKey: KEY_IN_TESTS },
+        },
+        context,
+        template,
+      ),
+    );
+    expect(testing).toContain('AMBIENTE=PRUEBAS');
+
+    const production = `${KEY_IN_TESTS.slice(0, 23)}2${KEY_IN_TESTS.slice(24)}`;
+    expect(
+      wholeText(
+        composeLayout(
+          {
+            kind: 'INVOICE_RIDE',
+            data: { ...ride.data, accessKey: production },
+          },
+          context,
+          template,
+        ),
+      ),
+    ).toContain('AMBIENTE=PRODUCCIÓN');
+  });
+
+  it('DOC-076 sin clave todavía imprime «—», sin inventar una', () => {
+    const unprepared = composeLayout(
       {
         kind: 'INVOICE_RIDE',
         data: { ...ride.data, accessKey: null, authorisedAt: null },
@@ -591,8 +637,11 @@ describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
       context,
       template,
     );
-    const text = wholeText(unauthorised);
-    expect(text).toContain('NÚMERO DE AUTORIZACIÓN=—');
+    const text = wholeText(unprepared);
+    expect(text).toContain('CLAVE DE ACCESO=—');
     expect(text).not.toContain('4444');
   });
 });
+
+/** A key whose 24th digit says «pruebas», as `sri` composes them. */
+const KEY_IN_TESTS = '3009202601179000156300110010010000001230045678911';

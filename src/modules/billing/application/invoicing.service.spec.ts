@@ -94,6 +94,8 @@ function build(options: { accounts?: Record<string, unknown> } = {}) {
     listInvoices: vi.fn().mockResolvedValue([invoice]),
     findPayer: vi.fn().mockResolvedValue(payer()),
     record: vi.fn().mockResolvedValue(undefined),
+    prepare: vi.fn().mockResolvedValue(undefined),
+    summariesOf: vi.fn().mockResolvedValue(new Map()),
     ...options.accounts,
   };
 
@@ -101,6 +103,8 @@ function build(options: { accounts?: Record<string, unknown> } = {}) {
     service: new InvoicingService(
       mocks as unknown as BillingAccountRepository,
       mocks as unknown as BillingCatalogueRepository,
+      mocks,
+      mocks,
       mocks,
     ),
     mocks,
@@ -231,7 +235,44 @@ describe('BI-080 a BI-089 emitir la factura', () => {
       'proposedReceiver',
       'receiverContext',
       'requireAccount',
+      'withVouchers',
     ]);
+  });
+
+  it('SRI-041 avisa al comprobante electrónico DESPUÉS de emitir, y devuelve la factura con su estado', async () => {
+    const summary = {
+      voucherId: 'voucher-1',
+      state: 'SIGNED' as const,
+      blockedReason: null,
+      accessKey: '1'.repeat(49),
+      authorisedAt: null,
+      deliveryStatus: null,
+      lastMessage: null,
+    };
+    const { service: invoicing, mocks } = build({
+      accounts: {
+        summariesOf: vi
+          .fn()
+          .mockResolvedValue(new Map([[invoice.id, summary]])),
+      },
+    });
+
+    const issued = await invoicing.issueInvoice(
+      { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver }, // prettier-ignore
+      requester,
+    );
+
+    expect(mocks.prepare).toHaveBeenCalledWith(invoice.id);
+    expect(mocks.issueInvoice.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.prepare.mock.invocationCallOrder[0]!,
+    );
+    expect(issued.electronic).toEqual(summary);
+  });
+
+  it('SRI-060 la factura sin comprobante todavía lo dice con null, sin fallar', async () => {
+    const { service: invoicing } = build();
+    const [listed] = await invoicing.listInvoices({ siteId: SITE });
+    expect(listed?.electronic).toBeNull();
   });
 });
 

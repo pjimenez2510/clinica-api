@@ -21,17 +21,16 @@ import { CurrentUserService } from '../../shared/authorisation/current-user.serv
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import { EncounterCheckoutService } from './application/encounter-checkout.service';
-import { InvoicingService } from './application/invoicing.service';
+import {
+  InvoicingService,
+  type InvoiceWithVoucher,
+} from './application/invoicing.service';
 import {
   type AccountStatement,
   PatientAccountService,
   toLine,
 } from './application/patient-account.service';
-import type {
-  AccountView,
-  ChargeView,
-  InvoiceView,
-} from './domain/billing.repository';
+import type { AccountView, ChargeView } from './domain/billing.repository';
 import { lineBase, lineTax } from './domain/charge';
 import { Quantity } from './domain/money';
 import {
@@ -507,7 +506,7 @@ function toChargeResponse(charge: ChargeView): ChargeResponse {
  * The invoice as served: the receiver block flattened and the five totals as
  * strings (BI-001).
  */
-function toInvoiceResponse(invoice: InvoiceView): InvoiceResponse {
+function toInvoiceResponse(invoice: InvoiceWithVoucher): InvoiceResponse {
   return {
     id: invoice.id,
     accountId: invoice.accountId,
@@ -530,5 +529,11 @@ function toInvoiceResponse(invoice: InvoiceView): InvoiceResponse {
     status: invoice.status,
     issuedAt: invoice.issuedAt?.toISOString() ?? null,
     authorisedAt: invoice.authorisedAt?.toISOString() ?? null,
+    electronic: invoice.electronic
+      ? {
+          ...invoice.electronic,
+          authorisedAt: invoice.electronic.authorisedAt?.toISOString() ?? null,
+        }
+      : null,
   };
 }

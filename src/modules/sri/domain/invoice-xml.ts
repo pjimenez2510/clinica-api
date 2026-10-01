@@ -293,13 +293,11 @@ function additionalField(name: string, value: string): string {
  * SRI-010 to SRI-018. The unsigned XML. Throws `VoucherTotalsMismatchError`
  * before producing a document whose figures the SRI would reject.
  *
- * `paymentMethod` must be present: SRI-017 keeps a voucher without it from
- * being signed, and the application checks it before calling this.
+ * Without a declared payment method `pagos` is left out — the XSD admits it
+ * and the key still exists for the RIDE — and SRI-017 is enforced by the
+ * preparation, which refuses to SIGN such a voucher.
  */
 export function composeInvoiceXml(source: InvoiceVoucherSource): string {
-  if (source.paymentMethod === null) {
-    throw new Error('A voucher is not composed without its payment method');
-  }
   const computed = source.lines.map(computeLine);
   assertTotals(computed, source.totals);
 
@@ -344,13 +342,16 @@ export function composeInvoiceXml(source: InvoiceVoucherSource): string {
       text('propina', '0.00') +
       text('importeTotal', money(total)) +
       text('moneda', 'DOLAR') +
-      element(
-        'pagos',
-        element(
-          'pago',
-          text('formaPago', source.paymentMethod) + text('total', money(total)),
-        ),
-      ),
+      (source.paymentMethod === null
+        ? ''
+        : element(
+            'pagos',
+            element(
+              'pago',
+              text('formaPago', source.paymentMethod) +
+                text('total', money(total)),
+            ),
+          )),
   );
 
   const additional = [

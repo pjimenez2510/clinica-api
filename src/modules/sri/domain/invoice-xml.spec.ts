@@ -289,8 +289,10 @@ describe('SRI-016, SRI-017, SRI-018 los datos del emisor, el pago y la informaci
     ]);
   });
 
-  it('SRI-017 no compone un comprobante sin forma de pago declarada', () => {
-    expect(() => composeInvoiceXml(aSource({ paymentMethod: null }))).toThrow();
+  it('SRI-017 sin forma de pago declarada omite pagos y sigue siendo XML válido, para que la preparación lo bloquee', async () => {
+    const xml = composeInvoiceXml(aSource({ paymentMethod: null }));
+    expect(xml).not.toContain('<pagos>');
+    expect((await validateAgainstXsd(xml)).valid).toBe(true);
   });
 
   it('SRI-016 lleva el correo del receptor y, solo si está declarado, el «RUC Proveedor» literal del Anexo 26', () => {

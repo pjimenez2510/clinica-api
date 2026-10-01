@@ -491,8 +491,12 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
   cola resolverá sola (firmados y recibidos en espera).
 - **SRI-063** — El sistema DEBERÁ exponer en el monitor el aviso de caducidad del
   certificado (SRI-032) y la ausencia de certificado activo.
-- **SRI-064** — El sistema DEBERÁ exigir `sri:read` para el monitor y el estado,
-  y `sri:retry` para reintentar.
+- **SRI-064** — El sistema DEBERÁ exigir `billing:read` para el monitor, el
+  estado y la descarga de los XML, y `billing:write` para reintentar.
+  > **Ningún permiso nuevo, y es una decisión** (la misma de DOC-090): el
+  > monitor no revela nada que quien factura no pudiera ya leer, y reintentar es
+  > volver a emitir lo que ya emitió. Un `sri:*` que ningún rol trae dejaría a
+  > la clínica sin poder reintentar el día de la instalación.
 - **SRI-065** — SI un comprobante pertenece a una sede fuera del alcance del
   solicitante ENTONCES el sistema DEBERÁ responder como si no existiera
   (`SRI_VOUCHER_NOT_FOUND`).
@@ -503,7 +507,7 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
   dato clínico alguno.
   > BI-007.
 - **SRI-068** — El sistema DEBERÁ ofrecer el XML firmado y, cuando exista, el
-  autorizado, para descargarlos con `sri:read`.
+  autorizado, para descargarlos con `billing:read`.
 
 ## 6. El RIDE y la entrega al cliente
 
@@ -540,8 +544,10 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
 - **SRI-081** — SI la clave no abre el `.p12` o el fichero no es un PKCS#12 con
   clave RSA ENTONCES el sistema DEBERÁ rechazarlo con `SRI_CERTIFICATE_INVALID`
   sin distinguir entre las dos causas en el mensaje.
-- **SRI-082** — El sistema DEBERÁ exigir `sri:certificate-manage` para cargar y
-  para ver los certificados, y DEBERÁ registrar en la bitácora cada carga.
+- **SRI-082** — El sistema DEBERÁ exigir `config:manage` para cargar y para ver
+  los certificados, y DEBERÁ registrar en la bitácora cada carga.
+  > El certificado es un dato de la instalación, como la plantilla de los
+  > documentos (DOC-090), y lo administra quien la configura; caja no lo ve.
 - **SRI-083** — El sistema DEBERÁ rechazar un fichero de más de 64 KiB antes de
   intentar abrirlo, con `SRI_CERTIFICATE_TOO_LARGE`.
   > Un `.p12` de una entidad acreditada ronda 4–8 KiB.

@@ -502,6 +502,15 @@ function fiscalLegends(context: DocumentContext): LabelledValue[] {
   return legends;
 }
 
+/** SRI-071. What the RIDE says while the SRI has not authorised. */
+const PENDING_AUTHORISATION = 'PENDIENTE DE AUTORIZACIÓN';
+
+/** SRI-070. The 24th digit of the access key: `1` pruebas, `2` producción. */
+function environmentOf(accessKey: string | null): string {
+  if (accessKey === null || accessKey.length !== 49) return '—';
+  return accessKey[23] === '2' ? 'PRODUCCIÓN' : 'PRUEBAS';
+}
+
 /**
  * DOC-076 to DOC-078. The RIDE, following the SRI's Ficha Técnica, Anexo 2.
  *
@@ -536,18 +545,27 @@ export function composeInvoiceLayout(
       entries: [
         { label: 'R.U.C.', value: establishment.ruc ?? '—' },
         { label: 'FACTURA No.', value: data.documentNumber },
-        // The access key IS the authorisation number for the offline scheme,
-        // which is the one this system uses. Printing «—» while it is absent is
-        // honest: an unauthorised RIDE is not yet a voucher.
-        { label: 'NÚMERO DE AUTORIZACIÓN', value: data.accessKey ?? '—' },
+        // The access key IS the authorisation number for the offline scheme.
+        // SRI-071: until the SRI authorises, the RIDE is handed over saying
+        // so — never a number or a date that does not exist yet.
+        {
+          label: 'NÚMERO DE AUTORIZACIÓN',
+          value:
+            data.authorisedAt === null
+              ? PENDING_AUTHORISATION
+              : (data.accessKey ?? '—'),
+        },
         {
           label: 'FECHA Y HORA DE AUTORIZACIÓN',
           value:
             data.authorisedAt === null
-              ? '—'
+              ? PENDING_AUTHORISATION
               : ecuadorianDate(data.authorisedAt),
         },
-        { label: 'AMBIENTE', value: 'PRODUCCIÓN' },
+        // SRI-070. The environment is the one written INSIDE the key (its 24th
+        // digit), never a constant: a test voucher printed «PRODUCCIÓN» claims
+        // a validity it does not have.
+        { label: 'AMBIENTE', value: environmentOf(data.accessKey) },
         { label: 'EMISIÓN', value: 'NORMAL' },
         { label: 'CLAVE DE ACCESO', value: data.accessKey ?? '—' },
       ],
