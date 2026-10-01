@@ -25,7 +25,7 @@ export interface PatientConsentEntry extends PatientConsentView {
 }
 
 /**
- * The consent text and the patients' consents (PD1, PD2).
+ * The consent text and the patients' consents (D1, D2).
  *
  * The consent is NOT part of registering a patient (D-083 §5, LOPDP art.
  * 31.1): it is recorded on its own, after the chart exists, so a failure here

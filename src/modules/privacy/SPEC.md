@@ -73,7 +73,7 @@ clínica para contar días hábiles. Nadie depende de este módulo.
 
 ## Entregas priorizadas
 
-### PD1 — El texto del consentimiento, versionado y administrado sin desplegar _(P1)_
+### D1 — El texto del consentimiento, versionado y administrado sin desplegar _(P1)_
 
 Administración publica un texto nuevo desde la pantalla; queda como versión
 siguiente y vigente, y las anteriores siguen ahí, sin cambiar.
@@ -89,7 +89,7 @@ contra la base se rechaza.
 dos publicaciones y la fila de bitácora son garantías de almacenamiento que
 ninguna pantalla puede enseñar.
 
-### PD2 — El consentimiento del paciente, tomado al registrarlo _(P1)_
+### D2 — El consentimiento del paciente, tomado al registrarlo _(P1)_
 
 Recepción, al dar de alta al paciente (F-01) o después desde su ficha, registra
 el consentimiento con el medio y quién lo otorgó.
@@ -103,7 +103,7 @@ publicar la 2, y comprobar que el consentimiento sigue en la 1 con su texto.
 los ponga el servidor, que una versión nueva no toque lo consentido, que la
 fila no se pueda reescribir y que quede en la bitácora.
 
-### PD3 — Las solicitudes del titular, con su vencimiento y su respuesta _(P1)_
+### D3 — Las solicitudes del titular, con su vencimiento y su respuesta _(P1)_
 
 Se registra la solicitud con el derecho, quién la presenta, qué pide y cuándo
 llegó; el sistema fija su vencimiento; se responde con resultado y texto; y la
@@ -119,7 +119,7 @@ una segunda respuesta y una reescritura contra la base se rechazan.
 **Solo servidor:** PD-034, PD-037, PD-038. Una ausencia —que responder no
 borra nada—, la fila de bitácora y la inmutabilidad en la base.
 
-### PD4 — La exportación legible por máquina _(P1)_
+### D4 — La exportación legible por máquina _(P1)_
 
 Desde una solicitud de acceso o portabilidad se descarga un JSON con los datos
 del paciente, y la descarga queda en la bitácora.

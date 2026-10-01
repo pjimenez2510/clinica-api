@@ -38,7 +38,7 @@ export interface DataRequestEntry extends DataRequestView {
 }
 
 /**
- * The rights a data subject exercises over their data (PD3, PD4).
+ * The rights a data subject exercises over their data (D3, D4).
  *
  * NOTHING HERE DELETES ANYTHING (PD-034, D-055). Answering an erasure request
  * is writing what was answered and why; the chart and the clinical record are

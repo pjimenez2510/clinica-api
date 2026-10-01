@@ -74,7 +74,7 @@ export class PrivacyController {
     private readonly currentUser: CurrentUserService,
   ) {}
 
-  // --- PD1 ----------------------------------------------------------------------
+  // --- D1 ----------------------------------------------------------------------
 
   /** PD-001. What the desk shows the patient before recording the consent. */
   @Get('consent-texts/current')
@@ -110,7 +110,7 @@ export class PrivacyController {
     );
   }
 
-  // --- PD2 ----------------------------------------------------------------------
+  // --- D2 ----------------------------------------------------------------------
 
   /** PD-016. */
   @Get('patients/:patientId/consents')
@@ -147,7 +147,7 @@ export class PrivacyController {
     return consentResponse(recorded);
   }
 
-  // --- PD3 ----------------------------------------------------------------------
+  // --- D3 ----------------------------------------------------------------------
 
   /** PD-036. */
   @Get('patients/:patientId/requests')
@@ -228,7 +228,7 @@ export class PrivacyController {
     return requestResponse(answered);
   }
 
-  // --- PD4 ----------------------------------------------------------------------
+  // --- D4 ----------------------------------------------------------------------
 
   /**
    * PD-040 to PD-043. A download: the body is the document itself, named by the

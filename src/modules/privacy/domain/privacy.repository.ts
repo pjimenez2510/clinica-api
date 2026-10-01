@@ -37,7 +37,7 @@ export type ChartLookup =
   | { status: 'missing' }
   | { status: 'merged'; survivingMrn: string };
 
-// --- PD1, PD2 ------------------------------------------------------------------
+// --- D1, D2 ------------------------------------------------------------------
 
 export interface ConsentTextView {
   id: string;
@@ -94,7 +94,7 @@ export interface ConsentRepository {
 
 export const CONSENT_REPOSITORY = Symbol('ConsentRepository');
 
-// --- PD3, PD4 ------------------------------------------------------------------
+// --- D3, D4 ------------------------------------------------------------------
 
 export interface DataRequestAnswer {
   outcome: DataRequestOutcome;
