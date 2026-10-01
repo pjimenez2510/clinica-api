@@ -345,6 +345,21 @@ export const encounterSchema = z.object({
 /** Response of opening and closing an attention, and of POST /encounters/:id/vitals/start (EN-135). */
 export class EncounterDto extends createZodDto(encounterSchema) {}
 
+/**
+ * EN-167, D-099 §4. Response of interrupting: the attention, and the drafts
+ * left unsigned because nothing was written in them — the list the decision
+ * asks for, beside the audit row each one leaves.
+ */
+export const discontinuedEncounterSchema = encounterSchema.extend({
+  unsignedEmptyNoteIds: z.array(z.uuid()),
+});
+export class DiscontinuedEncounterDto extends createZodDto(
+  discontinuedEncounterSchema,
+) {}
+export type DiscontinuedEncounterResponse = z.infer<
+  typeof discontinuedEncounterSchema
+>;
+
 export const encounterListSchema = z.object({
   items: z.array(encounterSchema),
 });

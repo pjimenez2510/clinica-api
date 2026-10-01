@@ -1413,6 +1413,12 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   > **D-099 §3 (01-10-2026).** La cita la cierran firmar o interrumpir la
   > atención. Marcada a mano, una anulación posterior dejaría una cita
   > «Atendida» sin ninguna atención detrás, y al paciente fuera de la sala.
+  >
+  > **Interrumpir la cierra sola (AG-149); firmar no.** La firma da el alta a
+  > la atención (`DISCHARGED`) y desde ahí recepción la marca atendida, como
+  > antes de esta entrega: firmar deja de estar en curso y AG-153 lo admite.
+  > Que la firma cierre también la cita sería un cambio del flujo F-02 que
+  > no se ha decidido; el mensaje dice lo que hay.
 - **AG-150** — El sistema DEBERÁ publicar en cada cita el estado de su
   atención viva (`attention`: `null` o el `EncounterStatus`), y la pantalla
   DEBERÁ mostrar «Interrumpida» en una cita atendida cuya atención está

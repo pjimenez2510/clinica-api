@@ -17,10 +17,13 @@
 -- estaban ocupadas, pero una hora en blanco del horario de la Norte seguía
 -- pareciendo libre en la Sur, y el sobrecupo de la Sur podía caer dentro.
 --
--- QUÉ CAMBIA. El EXCLUDE pierde `site_id WITH =` y nada más: mismo predicado
--- (`active`), mismas columnas generadas, mismo `[)` en la franja y `[]` en la
--- vigencia. El nombre de la restricción se conserva para que `constraint-
--- meanings` la siga traduciendo a `SCHEDULE_RULE_OVERLAP`.
+-- QUÉ CAMBIA. `staff_schedule_rule_no_overlap` se queda COMO ESTABA (misma
+-- sede, sin fecha): sigue guardando el pasado de una sede. Se AÑADE
+-- `schedule_rule_no_overlap_across_sites` —mismo profesional, OTRA sede
+-- (`site_id WITH <>`), mismo día, franja y vigencia que se tocan—, y solo
+-- para las reglas activas vigentes desde la entrada en vigor, 2026-10-01
+-- (D-085 §6): dos reglas que convivieron antes fueron legales entonces.
+-- `constraint-meanings` traduce las dos a `SCHEDULE_RULE_OVERLAP`.
 --
 -- Después: pnpm migrations:check && pnpm db:deploy
 

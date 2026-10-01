@@ -388,13 +388,16 @@ export class InvalidAgendaTransitionError extends ConflictError {
 }
 
 /**
- * AG-153 (D-099 §3). «Marcar atendida» while the attention is still open:
- * the appointment is closed by signing or interrupting the attention.
+ * AG-153 (D-099 §3). «Marcar atendida» while the attention is still open.
+ * Interrupting closes the appointment by itself; signing does NOT — it
+ * discharges the attention and reception marks the appointment afterwards,
+ * as before this branch. The sentence says that, and nothing it does not do
+ * (3.ª revisión, M1).
  */
 export class AttentionStillInProgressError extends ConflictError {
   readonly code = 'ATTENTION_STILL_IN_PROGRESS';
   override readonly userTitle =
-    'La atención sigue en curso: la cita queda atendida cuando el médico firma la nota o interrumpe la atención';
+    'La atención sigue en curso: podrá marcarla atendida cuando el médico firme la nota';
 
   constructor() {
     super('Appointment cannot be fulfilled while its attention is in progress');

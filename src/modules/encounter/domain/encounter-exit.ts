@@ -12,6 +12,7 @@
  * PURE: no clock, no I/O.
  */
 
+import { isWritten } from '../../../shared/domain/written-text';
 import type { Closer } from './encounter-closure';
 import {
   EncounterCloserNotAuthorError,
@@ -53,11 +54,11 @@ export function assertAnnullable(from: EncounterStatus): void {
  * D-085 §5. A draft with nothing written is not signed: a signature over an
  * empty note states that a practitioner vouches for nothing. It stays a draft,
  * frozen inside the terminal attention (EN-169), and its emptiness is the
- * record.
+ * record. «Written» is `isWritten`, the rule `hasClinicalAct` asks in SQL.
  */
 export function hasWrittenContent(content: unknown): boolean {
   if (content === null || typeof content !== 'object') return false;
   return Object.values(content as Record<string, unknown>).some(
-    (value) => typeof value === 'string' && value.trim() !== '',
+    (value) => typeof value === 'string' && isWritten(value),
   );
 }

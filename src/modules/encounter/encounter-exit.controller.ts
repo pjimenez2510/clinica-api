@@ -20,7 +20,9 @@ import type { Requester } from './application/encounter.service';
 import {
   AnnulEncounterDto,
   DiscontinueEncounterDto,
+  DiscontinuedEncounterDto,
   EncounterDto,
+  type DiscontinuedEncounterResponse,
   type EncounterResponse,
 } from './dto/encounter.dto';
 import { toEncounterResponse } from './encounter.controller';
@@ -85,24 +87,26 @@ export class EncounterExitController {
   @RequirePermission('record:sign', 'query')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Interrumpir una atención que no puede terminarse' })
-  @ApiOkResponse({ type: EncounterDto })
+  @ApiOkResponse({ type: DiscontinuedEncounterDto })
   async discontinue(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: DiscontinueEncounterDto,
     @Req() req: Request,
-  ): Promise<EncounterResponse> {
-    return toEncounterResponse(
-      await this.exits.discontinue(
-        {
-          encounterId: id,
-          reason: dto.reason,
-          origin: dto.origin,
-          substituteReason: dto.substituteReason,
-          canSignRecords: true,
-        },
-        this.requester(req, 'record:sign'),
-      ),
+  ): Promise<DiscontinuedEncounterResponse> {
+    const { encounter, unsignedEmptyNoteIds } = await this.exits.discontinue(
+      {
+        encounterId: id,
+        reason: dto.reason,
+        origin: dto.origin,
+        substituteReason: dto.substituteReason,
+        canSignRecords: true,
+      },
+      this.requester(req, 'record:sign'),
     );
+    return {
+      ...toEncounterResponse(encounter),
+      unsignedEmptyNoteIds: [...unsignedEmptyNoteIds],
+    };
   }
 
   /** Where the caller holds `record:sign`: every site, or these. */

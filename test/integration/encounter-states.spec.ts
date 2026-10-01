@@ -20,6 +20,10 @@ import {
 import { PrismaClinicalActsRepository } from '../../src/modules/billing/infrastructure/prisma-clinical-acts.repository';
 import { PrismaEncounterExitRepository } from '../../src/modules/encounter/infrastructure/prisma-encounter-exit.repository';
 import { addDays, clinicalDateOf } from '../../src/shared/domain/clinic-time';
+import {
+  WRITTEN_TEXT_PATTERN,
+  isWritten,
+} from '../../src/shared/domain/written-text';
 import { PrismaClinicalCodingRepository } from '../../src/modules/encounter/infrastructure/prisma-clinical-coding.repository';
 import { PrismaClinicalNoteRepository } from '../../src/modules/encounter/infrastructure/prisma-clinical-note.repository';
 import { PrismaEncounterRepository } from '../../src/modules/encounter/infrastructure/prisma-encounter.repository';
@@ -362,6 +366,15 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
         substitute,
       ),
     ).rejects.toBeInstanceOf(EncounterCloserNotAuthorError);
+    // `record:sign` en OTRA sede no basta: sustituye quien firma en la de la
+    // atención (3.ª revisión, M3).
+    const elsewhere = await createSite(prisma, 'Sede Norte');
+    await expect(
+      serviceOf(prisma).annul(
+        { encounterId: encounter.id, reason: 'Ficha equivocada', signSites: [elsewhere.id], substituteReason: 'Salió de turno' }, // prettier-ignore
+        substitute,
+      ),
+    ).rejects.toBeInstanceOf(EncounterCloserNotAuthorError);
     await expect(
       serviceOf(prisma).annul(
         { encounterId: encounter.id, reason: 'Ficha equivocada', signSites: [encounter.siteId] }, // prettier-ignore
@@ -392,7 +405,7 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
     const { entry, encounter, note, requester, ids } =
       await inAttentionWithNote(prisma);
 
-    const discontinued = await serviceOf(prisma).discontinue(
+    const { encounter: discontinued } = await serviceOf(prisma).discontinue(
       {
         encounterId: encounter.id,
         reason: 'El paciente se retiró a mitad de la consulta',
@@ -477,7 +490,7 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
     ).rejects.toBeInstanceOf(EncounterHasOthersDraftsError);
   });
 
-  it('EN-167 un borrador vacío no se firma: queda como borrador (D-085 §5)', async () => {
+  it('EN-167 un borrador vacío no se firma: queda como borrador, con su fila en la bitácora y en la respuesta (D-085 §5, D-099 §4)', async () => {
     const prisma = db();
     const room = await inTheWaitingRoom(prisma);
     const empty = await notesOf(prisma).createDraft({
@@ -489,8 +502,20 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
       authorUserId: room.doctor.userId,
       sites: [room.ids.siteId],
     });
+    const recorded: { resourceId: string; action: string }[] = [];
+    const recording = new EncounterExitService(
+      new PrismaEncounterExitRepository(prisma as unknown as PrismaService),
+      new PrismaEncounterRepository(prisma as unknown as PrismaService),
+      {
+        record: (entry) => {
+          recorded.push(entry);
+          return Promise.resolve();
+        },
+      },
+      quietLogger,
+    );
 
-    await serviceOf(prisma).discontinue(
+    const outcome = await recording.discontinue(
       { encounterId: room.encounter.id, reason: 'Urgencia en sala', origin: 'ESTABLISHMENT', ...asAuthor }, // prettier-ignore
       room.requester,
     );
@@ -499,6 +524,12 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
       (await prisma.clinicalNote.findUniqueOrThrow({ where: { id: empty.id } }))
         .status,
     ).toBe('DRAFT');
+    expect(outcome.unsignedEmptyNoteIds).toEqual([empty.id]);
+    expect(
+      recorded.filter((entry) => entry.action === 'DRAFT_LEFT_UNSIGNED'),
+    ).toEqual([expect.objectContaining({ resourceId: empty.id })]);
+    // El borrador vacío no cuenta como firmado: la única fila UPDATE es la de la atención.
+    expect(recorded.filter((entry) => entry.action === 'UPDATE')).toEqual([expect.objectContaining({ resourceId: room.encounter.id })]); // prettier-ignore
   });
 
   it('AG-149 interrumpir sin ningún acto clínico con la cita en sala la deja «se fue sin ser atendido», con el cupo libre', async () => {
@@ -604,6 +635,124 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
       (await prisma.clinicalNote.findUniqueOrThrow({ where: { id: note.id } }))
         .content,
     ).toEqual({ motivoConsulta: 'Cefalea de cuatro días' });
+  });
+
+  it('EN-169 en una atención terminada, firmar el borrador cambiando a la vez su contenido se rechaza; firmarlo tal cual, no', async () => {
+    const prisma = db();
+    const { encounter, note, requester, ids } =
+      await inAttentionWithNote(prisma);
+    await serviceOf(prisma).annul(
+      { encounterId: encounter.id, reason: 'Ficha equivocada', ...asAuthor },
+      requester,
+    );
+    const signedAt = new Date();
+    const signature = {
+      status: 'SIGNED' as const,
+      signedById: ids.practitionerId,
+      signedAt,
+    };
+
+    // El hueco de la 2.ª revisión: el estado nuevo ya no es DRAFT, y el
+    // disparador lo dejaba pasar sin mirar el contenido que cambiaba.
+    const rewritten = { motivoConsulta: 'Otro texto' };
+    await expect(
+      prisma.clinicalNote.update({
+        where: { id: note.id },
+        data: {
+          ...signature,
+          content: rewritten,
+          contentHash: contentHashOf({ content: rewritten, ...signature }),
+        },
+      }),
+    ).rejects.toThrow(/belongs to an encounter that is over/);
+
+    // Control positivo: la misma firma, con el contenido intacto, entra
+    // (es lo que hace interrumpir, EN-167).
+    const kept = note.content;
+    await prisma.clinicalNote.update({
+      where: { id: note.id },
+      data: {
+        ...signature,
+        contentHash: contentHashOf({ content: kept, ...signature }),
+      },
+    });
+    const stored = await prisma.clinicalNote.findUniqueOrThrow({
+      where: { id: note.id },
+    });
+    expect(stored.status).toBe('SIGNED');
+    expect(stored.content).toEqual(kept);
+  });
+
+  it('EN-166 con una receta en borrador o una orden pendiente no se anula; descartada la receta y cancelada la orden, sí (D-099 §1)', async () => {
+    const prisma = db();
+    const { encounter, requester, ids } = await inAttentionWithNote(prisma);
+    const annul = () =>
+      serviceOf(prisma).annul(
+        { encounterId: encounter.id, reason: 'Ficha equivocada', ...asAuthor },
+        requester,
+      );
+    const prescription = await prisma.prescription.create({
+      data: { encounterId: encounter.id, prescriberId: ids.practitionerId },
+    });
+    const system = await prisma.catalogSystem.upsert({
+      where: { code: 'LAB' },
+      create: { code: 'LAB', name: 'Catálogo LAB' },
+      update: {},
+    });
+    const concept = await prisma.catalogConcept.create({
+      data: {
+        systemId: system.id,
+        code: 'HMG',
+        display: 'Biometría hemática',
+        validFrom: new Date(addDays(clinicalDateOf(encounter.startedAt), -365)),
+      },
+    });
+    const order = await prisma.serviceOrder.create({
+      data: {
+        encounterId: encounter.id,
+        siteId: encounter.siteId,
+        orderedById: encounter.practitionerId,
+        category: 'LABORATORY',
+        items: {
+          create: {
+            conceptId: concept.id,
+            testCode: concept.code,
+            testDisplay: concept.display,
+          },
+        },
+      },
+      include: { items: true },
+    });
+
+    await expect(annul()).rejects.toMatchObject({
+      code: 'ENCOUNTER_HAS_LIVE_ACTS',
+    });
+
+    // Retractada la receta, la orden sola sigue impidiéndolo.
+    await prisma.prescription.update({
+      where: { id: prescription.id },
+      data: {
+        status: 'DISCARDED',
+        discardedAt: new Date(),
+        discardedById: requester.userId,
+        discardReason: 'Se tecleó en la ficha equivocada',
+      },
+    });
+    await expect(annul()).rejects.toBeInstanceOf(EncounterHasLiveActsError);
+
+    // Control positivo: cancelada también la orden, se anula.
+    await prisma.serviceOrderItem.update({
+      where: { id: order.items[0]!.id },
+      data: { status: 'CANCELLED' },
+    });
+    await annul();
+    expect(
+      (
+        await prisma.encounter.findUniqueOrThrow({
+          where: { id: encounter.id },
+        })
+      ).status,
+    ).toBe('ENTERED_IN_ERROR');
   });
 
   it('EN-166 con una nota ya firmada en curso no se anula: se retracta antes (D-099 §1)', async () => {
@@ -976,5 +1125,85 @@ describe('escribir un diagnóstico o un procedimiento se serializa con anular e 
       expect(diagnoses).toBe(0);
       expect(stored.status).toBe('LEFT_WITHOUT_BEING_SEEN');
     }
+  });
+});
+
+/**
+ * 3.ª revisión, G1 (D-099 §5). «Algo escrito» is one rule: the SQL of
+ * `hasClinicalAct` and the TypeScript that decides which drafts are signed.
+ */
+describe('una nota con solo blancos no es acto clínico, en la base igual que en el código', () => {
+  const quietLogger = {
+    setContext: () => undefined,
+    info: () => undefined,
+  } as unknown as PinoLogger;
+  const asPrisma = (prisma: PrismaClient) => prisma as unknown as PrismaService;
+
+  it('EN-167 la base y el código dicen lo mismo de cada texto', async () => {
+    const prisma = db();
+    const samples = [
+      '\n',
+      '\t',
+      ' ',
+      '　',
+      '﻿',
+      ' \r\n ',
+      'a',
+      ' Cefalea ',
+      ' x',
+    ];
+
+    for (const sample of samples) {
+      const [row] = await prisma.$queryRaw<{ written: boolean }[]>`
+        SELECT ${sample}::text ~ ${WRITTEN_TEXT_PATTERN} AS written
+      `;
+      expect(row?.written, JSON.stringify(sample)).toBe(isWritten(sample));
+    }
+  });
+
+  it('AG-149 EN-167 interrumpir con una nota que solo tiene un Enter deja «se fue sin ser atendido» y no la firma', async () => {
+    const prisma = db();
+    const { ids, entry, encounter } = await anAttendedAppointment(prisma);
+    const doctor = await prisma.practitioner.findUniqueOrThrow({
+      where: { id: ids.practitionerId },
+    });
+    await prisma.agendaEntry.update({
+      where: { id: entry.id },
+      data: {
+        status: 'CHECKED_IN',
+        checkedInAt: encounter.startedAt,
+        subjectStatus: 'READY',
+        subjectStatusAt: encounter.startedAt,
+        emergencyAssessedAt: encounter.startedAt,
+        emergencyAssessedById: doctor.userId,
+      },
+    });
+    const notes = new PrismaClinicalNoteRepository(asPrisma(prisma));
+    const draft = (content: NoteContent) => ({
+      encounterId: encounter.id,
+      formCode: '002',
+      formVersion: '1',
+      content,
+      authorId: ids.practitionerId,
+      authorUserId: doctor.userId,
+      sites: [ids.siteId],
+    });
+    const note = await notes.createDraft(draft({ motivoConsulta: '\n', enfermedadActual: '\t ' })); // prettier-ignore
+    const exits = new EncounterExitService(
+      new PrismaEncounterExitRepository(asPrisma(prisma)),
+      new PrismaEncounterRepository(asPrisma(prisma)),
+      { record: () => Promise.resolve() },
+      quietLogger,
+    );
+
+    await exits.discontinue(
+      { encounterId: encounter.id, reason: 'Se retiró', origin: 'PATIENT', canSignRecords: true }, // prettier-ignore
+      { userId: doctor.userId, sites: [ids.siteId] },
+    );
+
+    expect((await prisma.agendaEntry.findUniqueOrThrow({ where: { id: entry.id } })).status).toBe('LEFT_WITHOUT_BEING_SEEN'); // prettier-ignore
+    expect((await prisma.clinicalNote.findUniqueOrThrow({ where: { id: note.id } })).status).toBe('DRAFT'); // prettier-ignore
+    const acts = await new PrismaClinicalActsRepository(asPrisma(prisma)).findEncounterActs({ encounterId: encounter.id, siteId: ids.siteId }); // prettier-ignore
+    expect(acts?.clinicallyAttended).toBe(false);
   });
 });

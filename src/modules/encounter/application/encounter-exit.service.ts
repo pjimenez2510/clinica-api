@@ -61,6 +61,15 @@ export interface DiscontinueEncounterRequest {
  * these two acts have a reason to change of their own — they are the only use
  * cases of the attention that also move the appointment.
  */
+/**
+ * EN-167, D-099 §4. The interrupted attention and the drafts it left unsigned
+ * because nothing was written in them.
+ */
+export interface DiscontinuedEncounter {
+  encounter: EncounterView;
+  unsignedEmptyNoteIds: readonly string[];
+}
+
 @Injectable()
 export class EncounterExitService {
   constructor(
@@ -153,7 +162,7 @@ export class EncounterExitService {
   async discontinue(
     request: DiscontinueEncounterRequest,
     requester: Requester,
-  ): Promise<EncounterView> {
+  ): Promise<DiscontinuedEncounter> {
     const signer = await this.encounters.findPractitionerByUser(
       requester.userId,
     );
@@ -239,6 +248,6 @@ export class EncounterExitService {
       });
     }
 
-    return discontinued;
+    return { encounter: discontinued, unsignedEmptyNoteIds };
   }
 }

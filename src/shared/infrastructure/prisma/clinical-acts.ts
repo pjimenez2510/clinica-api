@@ -1,5 +1,7 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 
+import { WRITTEN_TEXT_PATTERN } from '../../domain/written-text';
+
 /**
  * D-085 §3. «Was this patient attended?» — answered by the RECORD, once.
  *
@@ -24,14 +26,18 @@ export async function hasClinicalAct(
   encounterId: string,
 ): Promise<boolean> {
   // D-099 §5: a note counts only with something WRITTEN in it. Opening an
-  // empty note is not a consultation anybody can answer for.
+  // empty note is not a consultation anybody can answer for. «Written» is the
+  // rule of `written-text.ts`, the same one that decides which drafts are
+  // signed: only text sections, and blanks are every character `trim`
+  // removes — `btrim` alone took a lone Enter for writing (3.ª revisión, G1).
   const [written] = await client.$queryRaw<{ any: boolean }[]>`
     SELECT EXISTS (
       SELECT 1
         FROM clinical_note n,
-             jsonb_each_text(CASE WHEN jsonb_typeof(n.content) = 'object' THEN n.content ELSE '{}'::jsonb END) AS section
+             jsonb_each(CASE WHEN jsonb_typeof(n.content) = 'object' THEN n.content ELSE '{}'::jsonb END) AS section
        WHERE n.encounter_id = ${encounterId}::uuid
-         AND btrim(section.value) <> ''
+         AND jsonb_typeof(section.value) = 'string'
+         AND (section.value #>> '{}') ~ ${WRITTEN_TEXT_PATTERN}
     ) AS any
   `;
   if (written?.any) return true;
