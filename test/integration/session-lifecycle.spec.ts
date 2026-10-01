@@ -72,6 +72,8 @@ interface SessionBody {
   user: { id: string; email: string; firstName: string; lastName: string };
   /** AU-005, AU-037: si ESTA cuenta tiene segundo factor. Nada más de él. */
   mfaEnabled: boolean;
+  /** AU-046: segundos que le quedan a la familia de sesión. */
+  sessionExpiresIn: number;
   grants: { roleCode: string; siteId: string | null; permissions: string[] }[];
 }
 
@@ -977,6 +979,32 @@ describe('session over HTTP', () => {
           // Las 03:00 del último día caerían una hora después del tope.
           expect(row.expiresAt.getTime() - start.getTime()).toBe(
             (lifetimeSeconds() - 86_400 + 3_600) * 1000,
+          );
+        });
+
+        it('AU-046 el inicio de sesión y la renovación dicen los segundos que le quedan a la familia, sin alargarla', async () => {
+          const start = clockAt(8, 10);
+          await createAccount();
+          const signedIn = await request(app.getHttpServer())
+            .post('/api/v1/auth/login')
+            .set('User-Agent', BROWSER)
+            .send({ email: 'ana.torres@clinica.ec', password: PASSWORD })
+            .expect(200);
+          const first = signedIn.get('Set-Cookie')!;
+          const { expiresAt } = await rowOf(first);
+          expect(sessionBody(signedIn).sessionExpiresIn).toBe(
+            (expiresAt.getTime() - start.getTime()) / 1000,
+          );
+
+          // Una hora después, renovar: quedan 3600 s menos, y la fila no cambia
+          // de caducidad (control de que no se alarga).
+          vi.setSystemTime(start.getTime() + 3_600_000);
+          const renewed = await refresh(first).expect(200);
+          expect(sessionBody(renewed).sessionExpiresIn).toBe(
+            (expiresAt.getTime() - start.getTime()) / 1000 - 3600,
+          );
+          expect((await rowOf(renewed.get('Set-Cookie')!)).expiresAt).toEqual(
+            expiresAt,
           );
         });
 
