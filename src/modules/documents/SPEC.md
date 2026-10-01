@@ -607,6 +607,14 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
   > imprimía los datos del profesional en la página 1 y el recuadro del sello,
   > solo, en la 2. Un sello en una hoja vacía no respalda nada de lo escrito.
 
+- **DOC-102** — La cabecera de todo documento DEBERÁ llevar como nombre de la
+  clínica la **razón social del establecimiento** (art. 5.a.iii de la Res.
+  ACESS-2023-0030), y **NO DEBERÁ** caer en el nombre de la sede.
+
+  > Lo vio la principal en la evidencia de F-05: el lector caía en `site.name`
+  > cuando la sede no tenía establecimiento. Ahora toda sede lo tiene (OR-032,
+  > garantizado por la base), y el lector no tiene a qué caer.
+
 - **DOC-072** — La **receta** DEBERÁ llevar los cinco bloques del art. 5 en este
   orden: datos generales, datos del paciente, medicamento, prescriptor e
   indicaciones.

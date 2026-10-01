@@ -124,6 +124,19 @@ lactante de cuatro meses y comprobar que el documento dice «4» con la condici�
 «M», «72 (setenta y dos)» horas y las fechas de inicio y fin en letras.
 **Cubre:** CER-020 a CER-029.
 
+### C3 — Lo emite y lo anula quien debe, en su ventana _(P1, D-105)_
+
+**Por qué es P1:** un certificado de favor —emitido por quien no atendió,
+fechado a conveniencia o anulado por cualquiera— es lo que el IESS y un juez
+leen como fraude.
+**Prueba independiente:** contra la base, insertar un certificado de otro
+profesional sin motivo, un reposo que empieza dentro de tres días y uno emitido
+un día después de la atención sin motivo, y comprobar que los tres se rechazan,
+con su control positivo (con motivo, mañana, el mismo día); anular con otra
+cuenta sin el permiso y comprobar que se rechaza; imprimir uno anulado y
+comprobar que no lleva el motivo.
+**Cubre:** CER-030, CER-039 a CER-043.
+
 ---
 
 ## Requisitos
@@ -156,6 +169,8 @@ lactante de cuatro meses y comprobar que el documento dice «4» con la condici�
   sesión que lo emite, y SI esa cuenta no tiene ficha profesional activa,
   ENTONCES el sistema DEBERÁ rechazarlo con `CERTIFIER_PROFILE_REQUIRED`. El
   sistema **NO DEBERÁ** admitir un identificador de emisor en la petición.
+
+  > Que el emisor sea **el profesional de la atención** es CER-039 (D-105 §1).
 
 - **CER-005** — SI el tipo pedido no es `ATTENDANCE` ni `MEDICAL_REST`,
   ENTONCES el sistema DEBERÁ rechazar la emisión con
@@ -245,7 +260,8 @@ lactante de cuatro meses y comprobar que el documento dice «4» con la condici�
   DEBERÁ contener el nombre del paciente, su documento ni un código CIE-10.
 
 - **CER-015** — Toda ruta de este módulo DEBERÁ declarar permiso: emitir y anular
-  exigen `record:write`; leer exige `record:read`.
+  exigen `record:write`; leer exige `record:read`. A quién se le permite anular
+  **un certificado concreto** lo dice además CER-040.
 
   > `record:write` es el permiso que sólo trae `MEDICO`, y el instructivo dice
   > que el 117 lo llenan *«profesionales médicos especialistas, generales»*. No
@@ -312,7 +328,8 @@ PR-030).
 
 - **CER-029** — El certificado DEBERÁ servir su **número** y su **código de
   verificación**, y MIENTRAS esté anulado DEBERÁ servir la anulación con su
-  fecha, para que el documento no pueda leerse como válido.
+  fecha, para que el documento no pueda leerse como válido. Lo que el papel
+  imprime de la anulación es CER-042: la fecha, **nunca el motivo**.
 
   > **Esquema:** `medical_certificate.body` se eliminó: el 117 **no tiene**
   > campo de texto libre, y un párrafo libre es por donde un certificado dice
@@ -321,9 +338,22 @@ PR-030).
 ### 3. Lo que el IESS exige además del 117 (D-075, resuelta el 30-09-2026)
 
 - **CER-030** — SI el reposo empieza **antes** de la fecha clínica de la
-  atención, ENTONCES el sistema DEBERÁ exigir un **motivo escrito** de al menos
-  diez caracteres, guardarlo con el certificado y rechazar la emisión sin él con
-  `CERTIFICATE_BACKDATING_REASON_REQUIRED`.
+  atención, **o se emite un día posterior al de la atención** (D-105 §3),
+  ENTONCES el sistema DEBERÁ exigir un **motivo escrito** de al menos diez
+  caracteres, guardarlo con el certificado y rechazar la emisión sin él con
+  `CERTIFICATE_BACKDATING_REASON_REQUIRED`. SI no se da ninguno de los dos
+  casos, el certificado **NO DEBERÁ** guardar motivo.
+
+  > **D-105 §3** (el autor, 01-10-2026): un reposo emitido diez días después
+  > que empieza el día de la atención es tan retroactivo para quien lo recibe
+  > como uno que empieza antes, y antes no pedía motivo. Sólo en el reposo:
+  > D-105 §3 es «la ventana del reposo», y la asistencia certifica un hecho
+  > con su fecha impresa. «Hoy» y «la fecha de la atención» son fechas de
+  > calendario en `America/Guayaquil`. **Lo garantiza la base** desde
+  > `20261001090000_certificate_d105`: el disparador
+  > `medical_certificate_issue_rules` lee la atención y rechaza la fila; el
+  > servicio lo comprueba antes para nombrar el campo. La nota siguiente
+  > describe cómo era antes de D-105.
 
   > Un certificado retroactivo es la forma típica del certificado de favor; el
   > autor decidió que se admita sólo con el porqué escrito, que queda en la
@@ -394,6 +424,66 @@ PR-030).
   > `20261001070800_patient_employer_and_job_title`); domicilio y teléfono ya
   > existían. Se leen dentro de la transacción de la emisión.
 
+### 4. Quién emite, quién anula y cuándo (D-105, resuelta el 01-10-2026)
+
+- **CER-039** — SI quien emite no es el **profesional de la atención**
+  (`encounter.practitioner_id`), ENTONCES el sistema DEBERÁ exigir un **motivo
+  escrito** de al menos diez caracteres, guardarlo con el certificado
+  (`issued_by_other_reason`) y rechazar la emisión sin él con
+  `CERTIFICATE_ISSUER_REASON_REQUIRED`. SI quien emite es el profesional de la
+  atención, el certificado **NO DEBERÁ** guardar ese motivo.
+
+  > **D-105 §1.** El 117 dice «Certifico que…»: lo firma quien atendió. Un
+  > tercero —el colega que cubre el turno, la dirección médica— puede emitirlo,
+  > pero el porqué queda en el certificado y su emisión en la bitácora
+  > (CER-016). **Lo garantiza la base:** `medical_certificate_issue_rules`
+  > compara `issued_by_id` con el profesional de la atención, y
+  > `medical_certificate_issuer_reason_not_blank` impide el motivo vacío.
+
+- **CER-040** — CUANDO se anule un certificado, el sistema DEBERÁ admitirlo
+  sólo a la **cuenta del profesional que lo emitió** o a quien tenga, en la
+  sede del certificado, el permiso **`certificate:revoke-any`** (dirección
+  médica), y SI no es ninguno de los dos ENTONCES DEBERÁ rechazarlo con
+  `CERTIFICATE_REVOKE_FORBIDDEN`.
+
+  > **D-105 §2 y D-101 corregida.** «Dirección médica» **no es un rol**: los
+  > roles los arma cada clínica (en una de una sola persona, esa persona lo
+  > hace todo). Es un permiso del catálogo que **ningún rol de fábrica trae**
+  > salvo el de desarrollo; la clínica lo concede a quien dirija. La sede es la
+  > del certificado (`sitesFor('certificate:revoke-any')`), no cualquiera.
+
+- **CER-041** — SI el reposo empieza **después del día siguiente a la
+  emisión** —en fecha de calendario de `America/Guayaquil`—, ENTONCES el
+  sistema DEBERÁ rechazar la emisión con `CERTIFICATE_REST_START_TOO_LATE`,
+  nombrando el campo `restFrom` y la última fecha admitida.
+
+  > **D-105 §3.** Antes no había tope hacia el futuro: un reposo que empezaba
+  > dentro de 90 días se aceptaba. El día siguiente cabe porque el médico que
+  > atiende por la noche da el reposo desde mañana. **Lo garantiza la base:**
+  > `medical_certificate_issue_rules`, sobre `issued_at` en la zona de Ecuador.
+
+- **CER-042** — MIENTRAS un certificado esté anulado, el documento impreso
+  DEBERÁ decir **sólo «ANULADO el DD/MM/AAAA»** con la fecha de anulación en
+  `America/Guayaquil`, y **NO DEBERÁ** imprimir el motivo. El motivo DEBERÁ
+  quedar en la fila (`revocation_reason`) y en la pantalla de la atención para
+  quien tenga `record:read`, nunca en el papel ni en `/verificar`.
+
+  > **D-105 §5.** En un certificado de asistencia sin diagnóstico, un motivo
+  > como «era F32, no J06» se lo revela al empleador que tiene el papel.
+
+- **CER-043** — CUANDO se emita un reposo de contingencia **maternidad**, la
+  respuesta DEBERÁ llevar en `restNotices` el aviso de **confirmar con el IESS
+  el trámite** antes de emitir certificados sucesivos, sin impedir la emisión,
+  y la pantalla DEBERÁ enseñarlo al elegir esa contingencia.
+
+  > **D-105 §6.** La licencia (doce semanas) no cabe en el tope de 30 días
+  > (CER-031) y obliga a encadenar tres certificados o más; si el IESS la
+  > tramita por otra vía, la paciente recibiría tres papeles inútiles. El texto
+  > es exactamente «La licencia de maternidad dura doce semanas y cada
+  > certificado cubre como mucho 30 días. Antes de emitir los siguientes,
+  > confirme con el IESS si la maternidad se certifica en este formulario o por
+  > otro trámite.».
+
 ---
 
 ## Criterios de éxito
@@ -427,6 +517,9 @@ PR-030).
 | `CERTIFICATE_BACKDATING_REASON_REQUIRED` | 422 | CER-030 |
 | `CERTIFICATE_REST_TOO_LONG` | 422 | CER-031 |
 | `CERTIFICATE_ESTABLISHMENT_INCOMPLETE` | 422 | CER-036 |
+| `CERTIFICATE_ISSUER_REASON_REQUIRED` | 422 | CER-039 |
+| `CERTIFICATE_REVOKE_FORBIDDEN` | 403 | CER-040 |
+| `CERTIFICATE_REST_START_TOO_LATE` | 422 | CER-041 |
 
 ## Esquema
 
@@ -440,6 +533,8 @@ Todo lo que faltaba está en `20261001070500_certificate_number_and_revocation`.
 | Eliminar `body` | `medical_certificate` | CER-029 — hecho |
 | `contingency_type`, `rest_backdating_reason`, `maternity_admission_on`, `birth_on`, `maternity_discharge_on` | `medical_certificate` | CER-030, CER-034, CER-035 |
 | `employer_name`, `job_title` | `patient` | CER-038 — pendiente de coordinación con `feat/datos-consentimiento-arco` |
+| `issued_by_other_reason` + `medical_certificate_issuer_reason_not_blank` | `medical_certificate` | CER-039 |
+| Disparador `medical_certificate_issue_rules`: emisor, ventana y motivo | `medical_certificate` | CER-030, CER-039, CER-041 |
 
 ## Rutas
 
@@ -448,7 +543,7 @@ Todo lo que faltaba está en `20261001070500_certificate_number_and_revocation`.
 | `POST` | `/encounters/:encounterId/certificates` | `record:write` | CER-001 a CER-009, CER-013 |
 | `GET` | `/encounters/:encounterId/certificates` | `record:read` | CER-010 |
 | `GET` | `/certificates/:certificateId` | `record:read` | CER-010, CER-020 a CER-029 |
-| `POST` | `/certificates/:certificateId/revoke` | `record:write` | CER-011, CER-012 |
+| `POST` | `/certificates/:certificateId/revoke` | `record:write` | CER-011, CER-012, CER-040 |
 
 ## Niveles de prueba
 
