@@ -230,7 +230,9 @@ export interface AvailabilityContextQuery {
  *
  * The entries are NOT filtered by the rules (AG-011): an appointment booked
  * under a rule that has since expired is still an appointment, and the person
- * will turn up for it.
+ * will turn up for it. Nor by the site (AG-144): they are the practitioner's
+ * entries at EVERY site, because the `EXCLUDE` does not look at the site
+ * either. Which of them may be shown is the domain's decision.
  */
 export interface AvailabilityContext extends ScheduleContext {
   entries: readonly AgendaOccupancy[];
