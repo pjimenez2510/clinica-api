@@ -135,6 +135,12 @@ export const COVERS = /\*\*Cubre:\*\*\s*([^\n]*(?:\n(?!\s*\n|###|##)[^\n]*)*)/;
  * No declaration means no discount: silence owes interface.
  */
 export const SERVER_ONLY = /\*\*Solo servidor:\*\*\s*([^.]*)\./;
+/**
+ * `**Solo interfaz:** AU-044. Lo cuenta el navegador…` — the mirror image: a
+ * requirement whose whole behaviour lives in the browser. It leaves the
+ * BACKEND'S denominator, never the numerator. Same full-stop rule as above.
+ */
+export const SCREEN_ONLY = /\*\*Solo interfaz:\*\*\s*([^.]*)\./;
 export const RANGE = /\b([A-Z]{2,4})-(\d{3})\s+a\s+(?:[A-Z]{2,4}-)?(\d{3})/g;
 export const SINGLE = /\b([A-Z]{2,4}-\d{3})\b/g;
 export const DECLARATION = /^\s*[-*]\s*\*\*([A-Z]{2,4}-\d{3})\*\*/gm;
@@ -208,7 +214,7 @@ export interface Deliverable {
   id: string;
   title: string;
   priority: string;
-  /** All requirements the deliverable covers. */
+  /** Requirements with a backend half: covered minus «Solo interfaz». */
   total: number;
   /** Of those, named by a backend test. */
   back: number;
@@ -257,10 +263,25 @@ export function computeBoard(api: Source, web: Source): ModuleBoard[] {
       const serverOnly = new Set(
         expand(SERVER_ONLY.exec(raw)?.[1] ?? '', declared),
       );
+      const screenOnly = new Set(
+        expand(SCREEN_ONLY.exec(raw)?.[1] ?? '', declared),
+      );
+      /**
+       * A requirement declared on BOTH sides would leave both denominators and
+       * owe no test anywhere — a deliverable of only those would print
+       * «completo» with nothing tested. Refuse it, naming where.
+       */
+      const both = [...serverOnly].filter((id) => screenOnly.has(id));
+      if (both.length > 0) {
+        throw new Error(
+          `${module}/${parsed[1] ?? '?'}: ${both.join(', ')} declarado a la vez «Solo servidor» y «Solo interfaz»; un requisito tiene al menos una mitad que probar`,
+        );
+      }
       const visible = requirements.filter((id) => !serverOnly.has(id));
-      const back = requirements.filter((id) => backendTested.has(id)).length;
+      const served = requirements.filter((id) => !screenOnly.has(id));
+      const back = served.filter((id) => backendTested.has(id)).length;
       const front = visible.filter((id) => frontendTested.has(id)).length;
-      const total = requirements.length;
+      const total = served.length;
       const frontTotal = visible.length;
       /**
        * COMPLETE IS COMPLETE ON BOTH SIDES. This once read `back === total &&

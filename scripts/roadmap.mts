@@ -145,7 +145,7 @@ function renderBlock(): string {
     `**${flows.filter((f) => f.reachable).length} de ${flows.length} flujos en pantalla · ` +
       `${complete} de ${total} entregas completas de punta a punta.** En pantalla = su ` +
       'recorrido Playwright pasó en `main`. Completa = todos sus requisitos con prueba en los ' +
-      'dos lados, descontando lo declarado «Solo servidor».',
+      'dos lados, descontando lo declarado «Solo servidor» o «Solo interfaz».',
     '',
     END,
   );
