@@ -71,14 +71,14 @@ el que vuelva el resultado.
 
 ## La norma que este módulo hace cumplir
 
-**Acuerdo Ministerial 00002393** (_Reglamento para el funcionamiento de los
-laboratorios clínicos_), en dos artículos que deciden dos requisitos:
+**Acuerdo Ministerial 00002393** (*Reglamento para el funcionamiento de los
+laboratorios clínicos*), en dos artículos que deciden dos requisitos:
 
-- **Art. 43** — las órdenes deben estar _«codificadas de manera consecutiva»_.
+- **Art. 43** — las órdenes deben estar *«codificadas de manera consecutiva»*.
   Es la obligación legal detrás de ORD-006, el número de orden propio.
-- **Art. 39** — _«Los laboratorios clínicos que detectaren valores de alerta,
+- **Art. 39** — *«Los laboratorios clínicos que detectaren valores de alerta,
   deberán informar de manera urgente al médico tratante y/o al usuario, con la
-  finalidad de que éste busque atención emergente.»_ «Urgente» **sin minutos**,
+  finalidad de que éste busque atención emergente.»* «Urgente» **sin minutos**,
   así que el plazo lo pone la clínica (ORD-063) y lo que el sistema garantiza es
   que el valor crítico se **detecte** (ORD-035, ORD-036) y **se vea** (ORD-060).
 
@@ -136,20 +136,20 @@ una interoperación y afirma algo falso.
 
 ## Vocabulario
 
-| Término                      | Qué significa exactamente aquí                                                                                                                                         |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Ordenable**                | `exam_definition`. Lo que el médico pide y la factura cobra: una línea. «Biometría hemática completa» (`EX-BH`).                                                       |
-| **Resultable** / **analito** | `analyte_definition`. Lo que devuelve **un** valor, con su unidad y su tipo: «Hemoglobina» (`HB`), 13,4 g/dL.                                                          |
-| **Determinación**            | Cómo el formulario 010B llama a un analito. Se usa el término del ministerio en los textos que lee el usuario, y `analyte` en el código.                               |
-| **Orden**                    | `service_order`. La petición entera: una atención, un profesional, una sede, una fecha, y N líneas.                                                                    |
-| **Línea**                    | `service_order_item`. Un ordenable pedido. Es la unidad que **envejece**: `completed_at IS NULL` significa «no ha vuelto».                                             |
-| **Informe**                  | `diagnostic_report`. Lo que el laboratorio devuelve contra una orden. Tiene estado y puede sustituir a otro.                                                           |
-| **Resultado**                | `observation_result`. Un valor de un analito dentro de un informe.                                                                                                     |
-| **Rango de referencia**      | `analyte_reference_range` con `range_kind = 'REFERENCE'`. El intervalo normal, cualificado por sexo y por **edad en días**.                                            |
-| **Rango crítico**            | `analyte_reference_range` con `range_kind = 'CRITICAL'`. **No es un rango de referencia más estrecho**: es la banda que tiene que llegar hoy a una persona.            |
-| **Bandera**                  | `observation_result.abnormal_flag`. `NORMAL`, `LOW`, `HIGH`, `CRITICAL_LOW`, `CRITICAL_HIGH` — o **vacía**, que significa «no había con qué compararlo» y no «normal». |
-| **Cola de pendientes**       | Las órdenes con `pending_items > 0`. La pieza que casi nadie construye.                                                                                                |
-| **Resultado sin orden**      | Un `observation_result` con `order_item_id` nulo: volvió un valor que nadie pidió, o que nadie supo emparejar. **Nunca se descarta ni se empareja solo.**              |
+| Término | Qué significa exactamente aquí |
+| --- | --- |
+| **Ordenable** | `exam_definition`. Lo que el médico pide y la factura cobra: una línea. «Biometría hemática completa» (`EX-BH`). |
+| **Resultable** / **analito** | `analyte_definition`. Lo que devuelve **un** valor, con su unidad y su tipo: «Hemoglobina» (`HB`), 13,4 g/dL. |
+| **Determinación** | Cómo el formulario 010B llama a un analito. Se usa el término del ministerio en los textos que lee el usuario, y `analyte` en el código. |
+| **Orden** | `service_order`. La petición entera: una atención, un profesional, una sede, una fecha, y N líneas. |
+| **Línea** | `service_order_item`. Un ordenable pedido. Es la unidad que **envejece**: `completed_at IS NULL` significa «no ha vuelto». |
+| **Informe** | `diagnostic_report`. Lo que el laboratorio devuelve contra una orden. Tiene estado y puede sustituir a otro. |
+| **Resultado** | `observation_result`. Un valor de un analito dentro de un informe. |
+| **Rango de referencia** | `analyte_reference_range` con `range_kind = 'REFERENCE'`. El intervalo normal, cualificado por sexo y por **edad en días**. |
+| **Rango crítico** | `analyte_reference_range` con `range_kind = 'CRITICAL'`. **No es un rango de referencia más estrecho**: es la banda que tiene que llegar hoy a una persona. |
+| **Bandera** | `observation_result.abnormal_flag`. `NORMAL`, `LOW`, `HIGH`, `CRITICAL_LOW`, `CRITICAL_HIGH` — o **vacía**, que significa «no había con qué compararlo» y no «normal». |
+| **Cola de pendientes** | Las órdenes con `pending_items > 0`. La pieza que casi nadie construye. |
+| **Resultado sin orden** | Un `observation_result` con `order_item_id` nulo: volvió un valor que nadie pidió, o que nadie supo emparejar. **Nunca se descarta ni se empareja solo.** |
 
 ---
 
@@ -365,8 +365,8 @@ cuando la gráfica exista.
   > `patient_mrn_seq` no garantiza. `service_order_site_number_unique` y
   > `service_order_number_immutable` lo dicen una segunda vez. El disparador
   > **pisa** el valor que traiga la fila: nadie elige el número. El A.M.
-  > 00002393 **art. 43** exige que las órdenes estén _«codificadas de manera
-  > consecutiva»_, y el número es lo que se dicta por teléfono cuando el
+  > 00002393 **art. 43** exige que las órdenes estén *«codificadas de manera
+  > consecutiva»*, y el número es lo que se dicta por teléfono cuando el
   > informe vuelve en papel.
 
 - **ORD-007** — CUANDO se anula una línea pedida por error, el sistema DEBERÁ
@@ -693,8 +693,8 @@ cuando la gráfica exista.
   seguir en la cola hasta que esa constancia exista.
 
   > **Falta esquema, y es una obligación legal.** No hay tabla para la constancia
-  > del aviso. El **A.M. 00002393 art. 39** obliga a informar _«de manera
-  > urgente al médico tratante y/o al usuario»_, y **el aviso telefónico es un
+  > del aviso. El **A.M. 00002393 art. 39** obliga a informar *«de manera
+  > urgente al médico tratante y/o al usuario»*, y **el aviso telefónico es un
   > acto clínico, no una gestión**: sin constancia no se puede demostrar que
   > ocurrió, que es justo lo que se pregunta cuando algo sale mal. Hace falta
   > una tabla con el resultado, el destinatario, el emisor, el instante y el
@@ -822,24 +822,24 @@ cuando la gráfica exista.
 Todos entran en `shared/domain/errors/error-catalogue.ts` con su prueba de
 contrato —`code`, estado y mensaje—.
 
-| Código                       | HTTP | Cuándo                                                                                                                                                                                                                                        | Requisito        |
-| ---------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| `ORDER_NOT_FOUND`            | 404  | La orden no existe o es de una sede fuera del alcance. **El mismo para ambas**                                                                                                                                                                | ORD-009          |
-| `ORDER_ENCOUNTER_NOT_FOUND`  | 404  | La atención sobre la que se pide no existe o está fuera del alcance. **No es `ENCOUNTER_NOT_FOUND`**, que pertenece a `encounter`: ningún módulo importa de otro y dos clases con el mismo `code` rompen el catálogo. La frase sí es la misma | ORD-001, ORD-090 |
-| `EXAM_NOT_ORDERABLE`         | 422  | El ordenable no existe o está deshabilitado. Rechaza la orden **entera**                                                                                                                                                                      | ORD-003          |
-| `ORDER_ENCOUNTER_NOT_OPEN`   | 409  | La atención ya no admite contenido clínico nuevo                                                                                                                                                                                              | ORD-005          |
-| `ORDER_ITEM_NOT_PENDING`     | 409  | Se intentó anular una línea ya completada o ya anulada                                                                                                                                                                                        | ORD-008          |
-| `REPORT_NOT_FOUND`           | 404  | El informe no existe o es de una sede fuera del alcance                                                                                                                                                                                       | ORD-051          |
-| `REPORT_ALREADY_CORRECTED`   | 409  | Ese informe ya tiene una corrección. Lo arbitra el `UNIQUE` sobre `supersedes_id`                                                                                                                                                             | ORD-052          |
-| `REPORT_NOT_CORRECTABLE`     | 409  | Se intentó corregir un informe parcial o anulado                                                                                                                                                                                              | ORD-053          |
-| `RESULT_ANALYTE_UNKNOWN`     | 422  | El analito no está en el catálogo                                                                                                                                                                                                             | ORD-042          |
-| `RESULT_VALUE_TYPE_MISMATCH` | 422  | El valor no corresponde al tipo que el analito declara                                                                                                                                                                                        | ORD-032          |
-| `RESULT_VALUE_NOT_ALLOWED`   | 422  | El valor codificado no está en `allowed_values`                                                                                                                                                                                               | ORD-033          |
-| `RESULT_FLAG_IS_DERIVED`     | 422  | Se envió la bandera de anormalidad. **Se rechaza, no se ignora**                                                                                                                                                                              | ORD-035          |
-| `RESULT_CHART_UNMATCHED`     | 404  | Ninguna ficha vigente lleva esa cédula **ecuatoriana**. **Y no se crea ninguna**: el mensaje manda buscar a la persona antes de registrarla, porque puede estar registrada con un documento extranjero                                        | ORD-081          |
-| `RESULT_NOT_FOUND`           | 404  | El resultado no existe o es de una sede fuera del alcance. **El mismo para ambas**, y también para un identificador que no es un número: `observation_result.id` es un `bigint` autoincremental, el más fácil de recorrer del sistema         | ORD-043          |
-| `RESULT_ALREADY_MATCHED`     | 409  | Ese resultado ya responde a una línea. Dos personas trabajando la misma cola es lo normal, y la que pierde no puede reapuntar una fila ya resuelta                                                                                            | ORD-043          |
-| `ORDER_ITEM_NOT_MATCHABLE`   | 422  | La línea no es de la orden en la que llegó el resultado, o está anulada. **Uno solo para las dos**: lo que hay que hacer es idéntico, elegir otra línea de esta orden                                                                         | ORD-043          |
+| Código | HTTP | Cuándo | Requisito |
+| --- | --- | --- | --- |
+| `ORDER_NOT_FOUND` | 404 | La orden no existe o es de una sede fuera del alcance. **El mismo para ambas** | ORD-009 |
+| `ORDER_ENCOUNTER_NOT_FOUND` | 404 | La atención sobre la que se pide no existe o está fuera del alcance. **No es `ENCOUNTER_NOT_FOUND`**, que pertenece a `encounter`: ningún módulo importa de otro y dos clases con el mismo `code` rompen el catálogo. La frase sí es la misma | ORD-001, ORD-090 |
+| `EXAM_NOT_ORDERABLE` | 422 | El ordenable no existe o está deshabilitado. Rechaza la orden **entera** | ORD-003 |
+| `ORDER_ENCOUNTER_NOT_OPEN` | 409 | La atención ya no admite contenido clínico nuevo | ORD-005 |
+| `ORDER_ITEM_NOT_PENDING` | 409 | Se intentó anular una línea ya completada o ya anulada | ORD-008 |
+| `REPORT_NOT_FOUND` | 404 | El informe no existe o es de una sede fuera del alcance | ORD-051 |
+| `REPORT_ALREADY_CORRECTED` | 409 | Ese informe ya tiene una corrección. Lo arbitra el `UNIQUE` sobre `supersedes_id` | ORD-052 |
+| `REPORT_NOT_CORRECTABLE` | 409 | Se intentó corregir un informe parcial o anulado | ORD-053 |
+| `RESULT_ANALYTE_UNKNOWN` | 422 | El analito no está en el catálogo | ORD-042 |
+| `RESULT_VALUE_TYPE_MISMATCH` | 422 | El valor no corresponde al tipo que el analito declara | ORD-032 |
+| `RESULT_VALUE_NOT_ALLOWED` | 422 | El valor codificado no está en `allowed_values` | ORD-033 |
+| `RESULT_FLAG_IS_DERIVED` | 422 | Se envió la bandera de anormalidad. **Se rechaza, no se ignora** | ORD-035 |
+| `RESULT_CHART_UNMATCHED` | 404 | Ninguna ficha vigente lleva esa cédula **ecuatoriana**. **Y no se crea ninguna**: el mensaje manda buscar a la persona antes de registrarla, porque puede estar registrada con un documento extranjero | ORD-081 |
+| `RESULT_NOT_FOUND` | 404 | El resultado no existe o es de una sede fuera del alcance. **El mismo para ambas**, y también para un identificador que no es un número: `observation_result.id` es un `bigint` autoincremental, el más fácil de recorrer del sistema | ORD-043 |
+| `RESULT_ALREADY_MATCHED` | 409 | Ese resultado ya responde a una línea. Dos personas trabajando la misma cola es lo normal, y la que pierde no puede reapuntar una fila ya resuelta | ORD-043 |
+| `ORDER_ITEM_NOT_MATCHABLE` | 422 | La línea no es de la orden en la que llegó el resultado, o está anulada. **Uno solo para las dos**: lo que hay que hacer es idéntico, elegir otra línea de esta orden | ORD-043 |
 
 Se **reutilizan**, no se crean: `CATALOG_CONCEPT_NOT_FOUND` y
 `CATALOG_CONCEPT_NOT_IN_FORCE` de `shared/domain/errors`, que existen
@@ -852,20 +852,20 @@ precisamente para que más de un módulo pueda responderlos con el mismo `code`.
 **Doce** filas. Ninguna es una migración correctiva: la base está en fase
 `development`, así que el bucle es editar el SQL y `pnpm db:reset`.
 
-| Qué falta                                                                                                                                                                                                                                                                                                                                                             | Dónde                          | Requisito                 |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ------------------------- |
-| ~~Número de orden consecutivo~~ — construido: `document_counter` + disparador. **A.M. 00002393 art. 43**                                                                                                                                                                                                                                                              | `service_order`                | ORD-006                   |
-| **Constancia del aviso de un valor crítico**: destinatario, emisor, instante y medio. **A.M. 00002393 art. 39**                                                                                                                                                                                                                                                       | tabla nueva                    | ORD-062                   |
-| Adjunto del PDF del laboratorio, indexado por paciente, fecha y laboratorio                                                                                                                                                                                                                                                                                           | tabla nueva                    | ORD-070                   |
-| **`analyte_definition_id`**, para que el resultado apunte a su definición y no a un texto                                                                                                                                                                                                                                                                             | `observation_result`           | ORD-031                   |
-| Valor `ABNORMAL` en el enum, para la anormalidad cualitativa que no es alta ni baja                                                                                                                                                                                                                                                                                   | `abnormal_flag`                | ORD-038                   |
-| `concept_id` del tarifario, para no pedir dos identificadores por línea                                                                                                                                                                                                                                                                                               | `exam_definition`              | ORD-004                   |
-| Motivo de anulación de una línea                                                                                                                                                                                                                                                                                                                                      | `service_order_item`           | ORD-007                   |
-| Destinatario y horario de la política de críticos                                                                                                                                                                                                                                                                                                                     | `site_parameter` o tabla nueva | ORD-063                   |
-| **Resolución sin emparejar** de un resultado sin orden: **`resolved_at`, `resolved_by_id`, `resolution_reason`**. Sin ellas, el resultado que no es de nadie de aquí no puede salir de la cola —y una bandera sin autor ni motivo la vaciaría destruyendo la constancia de que se trabajó—. Las mismas columnas permitirían **deshacer** un emparejamiento equivocado | `observation_result`           | ORD-041, ORD-044, ORD-045 |
-| `CHECK` de que `order_item_id` pertenece a la **misma orden** que el informe de la fila. Sin él, emparejar contra la línea de otra orden cerraría una línea con la sangre de otra persona, y la única garantía es la negativa dentro de la transacción                                                                                                                | `observation_result`           | ORD-043                   |
-| Laboratorio que ejecutó **este** informe, que puede no ser el del catálogo                                                                                                                                                                                                                                                                                            | `diagnostic_report`            | ORD-070                   |
-| `CHECK` de que `supersedes_id` apunta a un informe de la **misma** orden                                                                                                                                                                                                                                                                                              | `diagnostic_report`            | ORD-050                   |
+| Qué falta | Dónde | Requisito |
+| --- | --- | --- |
+| ~~Número de orden consecutivo~~ — construido: `document_counter` + disparador. **A.M. 00002393 art. 43** | `service_order` | ORD-006 |
+| **Constancia del aviso de un valor crítico**: destinatario, emisor, instante y medio. **A.M. 00002393 art. 39** | tabla nueva | ORD-062 |
+| Adjunto del PDF del laboratorio, indexado por paciente, fecha y laboratorio | tabla nueva | ORD-070 |
+| **`analyte_definition_id`**, para que el resultado apunte a su definición y no a un texto | `observation_result` | ORD-031 |
+| Valor `ABNORMAL` en el enum, para la anormalidad cualitativa que no es alta ni baja | `abnormal_flag` | ORD-038 |
+| `concept_id` del tarifario, para no pedir dos identificadores por línea | `exam_definition` | ORD-004 |
+| Motivo de anulación de una línea | `service_order_item` | ORD-007 |
+| Destinatario y horario de la política de críticos | `site_parameter` o tabla nueva | ORD-063 |
+| **Resolución sin emparejar** de un resultado sin orden: **`resolved_at`, `resolved_by_id`, `resolution_reason`**. Sin ellas, el resultado que no es de nadie de aquí no puede salir de la cola —y una bandera sin autor ni motivo la vaciaría destruyendo la constancia de que se trabajó—. Las mismas columnas permitirían **deshacer** un emparejamiento equivocado | `observation_result` | ORD-041, ORD-044, ORD-045 |
+| `CHECK` de que `order_item_id` pertenece a la **misma orden** que el informe de la fila. Sin él, emparejar contra la línea de otra orden cerraría una línea con la sangre de otra persona, y la única garantía es la negativa dentro de la transacción | `observation_result` | ORD-043 |
+| Laboratorio que ejecutó **este** informe, que puede no ser el del catálogo | `diagnostic_report` | ORD-070 |
+| `CHECK` de que `supersedes_id` apunta a un informe de la **misma** orden | `diagnostic_report` | ORD-050 |
 
 ---
 
@@ -875,20 +875,20 @@ Todas bajo `/api/v1`. Alcance por **sede**, declarado `'query'` porque la sede n
 está en la URL: se toma de la atención y el manejador estrecha con el alcance
 resuelto de quien llama.
 
-| Método | Ruta                                    | Permiso        | Requisitos                          |
-| ------ | --------------------------------------- | -------------- | ----------------------------------- |
-| `POST` | `/encounters/:encounterId/orders`       | `record:write` | ORD-001 a ORD-006                   |
-| `GET`  | `/encounters/:encounterId/orders`       | `record:read`  | ORD-002, ORD-009                    |
-| `GET`  | `/orders/:orderId`                      | `record:read`  | ORD-009                             |
-| `POST` | `/orders/:orderId/items/:itemId/cancel` | `record:write` | ORD-007, ORD-008                    |
-| `GET`  | `/orders/pending`                       | `record:read`  | ORD-020 a ORD-025, ORD-081, ORD-092 |
-| `POST` | `/orders/:orderId/reports`              | `result:write` | ORD-030 a ORD-042, ORD-094          |
-| `GET`  | `/orders/:orderId/reports`              | `record:read`  | ORD-051, ORD-091                    |
-| `POST` | `/orders/reports/:reportId/correct`     | `result:write` | ORD-050 a ORD-054                   |
-| `GET`  | `/orders/results/unmatched`             | `record:read`  | ORD-040, ORD-041, ORD-092           |
-| `POST` | `/orders/results/:resultId/match`       | `result:write` | ORD-041, ORD-043, ORD-091           |
-| `GET`  | `/orders/results/critical`              | `record:read`  | ORD-060, ORD-061, ORD-092           |
-| `GET`  | `/exams`                                | `catalog:read` | ORD-010 a ORD-012                   |
+| Método | Ruta | Permiso | Requisitos |
+| --- | --- | --- | --- |
+| `POST` | `/encounters/:encounterId/orders` | `record:write` | ORD-001 a ORD-006 |
+| `GET` | `/encounters/:encounterId/orders` | `record:read` | ORD-002, ORD-009 |
+| `GET` | `/orders/:orderId` | `record:read` | ORD-009 |
+| `POST` | `/orders/:orderId/items/:itemId/cancel` | `record:write` | ORD-007, ORD-008 |
+| `GET` | `/orders/pending` | `record:read` | ORD-020 a ORD-025, ORD-081, ORD-092 |
+| `POST` | `/orders/:orderId/reports` | `result:write` | ORD-030 a ORD-042, ORD-094 |
+| `GET` | `/orders/:orderId/reports` | `record:read` | ORD-051, ORD-091 |
+| `POST` | `/orders/reports/:reportId/correct` | `result:write` | ORD-050 a ORD-054 |
+| `GET` | `/orders/results/unmatched` | `record:read` | ORD-040, ORD-041, ORD-092 |
+| `POST` | `/orders/results/:resultId/match` | `result:write` | ORD-041, ORD-043, ORD-091 |
+| `GET` | `/orders/results/critical` | `record:read` | ORD-060, ORD-061, ORD-092 |
+| `GET` | `/exams` | `catalog:read` | ORD-010 a ORD-012 |
 
 **`POST /orders/results/:resultId/match` lleva `result:write` y no
 `record:read`**: leer la cola es una lectura, pero emparejar ESCRIBE el
@@ -908,18 +908,18 @@ columnas donde registrar quién lo decidió y por qué.
 
 ## Niveles de prueba
 
-| Requisitos                 | Nivel       | Por qué                                                                                                                                                                                                                                                                               |
-| -------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ORD-036, ORD-038, ORD-039  | Unitario    | Son políticas puras: rango aplicable, bandera y completitud. Se prueban sin base, con los rangos reales de la siembra.                                                                                                                                                                |
-| ORD-021, ORD-022           | Unitario    | El envejecimiento es aritmética de fechas clínicas; el huso se prueba fijando la zona de la sesión.                                                                                                                                                                                   |
-| ORD-032, ORD-033           | Unitario    | La coherencia entre el tipo del analito y el valor enviado es una regla de dominio.                                                                                                                                                                                                   |
-| ORD-002, ORD-007, ORD-039  | Integración | `trg_service_order_item_pending` y el índice parcial son garantías de la base: se prueban contra PostgreSQL.                                                                                                                                                                          |
-| ORD-050, ORD-052           | Integración | El `UNIQUE` sobre `supersedes_id` lo arbitra la base.                                                                                                                                                                                                                                 |
-| ORD-043                    | Integración | No hay `CHECK` que ate `order_item_id` a la orden del informe, así que la negativa vive en la transacción que escribe: un doble que confirme que se llamó bien al adaptador no demuestra nada sobre la fila que aterriza. Y la reevaluación de ORD-039 sólo se ve en `pending_items`. |
-| ORD-004                    | Integración | La vigencia se evalúa con `daterange @>` sobre una columna generada, que Prisma no puede expresar.                                                                                                                                                                                    |
-| ORD-081, ORD-093           | Integración | El alcance de ficha sigue el enlace de fusión, que solo existe en la base.                                                                                                                                                                                                            |
-| ORD-090, ORD-094           | Integración | `route-authorisation.spec` recorre las rutas que NestJS registró de verdad.                                                                                                                                                                                                           |
-| Todos los códigos de error | Unitario    | Contrato: `code`, categoría y mensaje.                                                                                                                                                                                                                                                |
+| Requisitos | Nivel | Por qué |
+| --- | --- | --- |
+| ORD-036, ORD-038, ORD-039 | Unitario | Son políticas puras: rango aplicable, bandera y completitud. Se prueban sin base, con los rangos reales de la siembra. |
+| ORD-021, ORD-022 | Unitario | El envejecimiento es aritmética de fechas clínicas; el huso se prueba fijando la zona de la sesión. |
+| ORD-032, ORD-033 | Unitario | La coherencia entre el tipo del analito y el valor enviado es una regla de dominio. |
+| ORD-002, ORD-007, ORD-039 | Integración | `trg_service_order_item_pending` y el índice parcial son garantías de la base: se prueban contra PostgreSQL. |
+| ORD-050, ORD-052 | Integración | El `UNIQUE` sobre `supersedes_id` lo arbitra la base. |
+| ORD-043 | Integración | No hay `CHECK` que ate `order_item_id` a la orden del informe, así que la negativa vive en la transacción que escribe: un doble que confirme que se llamó bien al adaptador no demuestra nada sobre la fila que aterriza. Y la reevaluación de ORD-039 sólo se ve en `pending_items`. |
+| ORD-004 | Integración | La vigencia se evalúa con `daterange @>` sobre una columna generada, que Prisma no puede expresar. |
+| ORD-081, ORD-093 | Integración | El alcance de ficha sigue el enlace de fusión, que solo existe en la base. |
+| ORD-090, ORD-094 | Integración | `route-authorisation.spec` recorre las rutas que NestJS registró de verdad. |
+| Todos los códigos de error | Unitario | Contrato: `code`, categoría y mensaje. |
 
 ---
 
