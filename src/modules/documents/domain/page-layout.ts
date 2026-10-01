@@ -176,6 +176,12 @@ export interface DocumentFrame {
    */
   hasLogo: boolean;
   footer: DocumentFooter;
+  /**
+   * DOC-038. Printed across EVERY page, under the content: «MUESTRA SIN
+   * VALIDEZ» on a preview, so a sample with the clinic's real letterhead can
+   * never pass for a document. `null` on everything that is issued.
+   */
+  watermark: string | null;
 }
 
 /** A whole document, ready to be painted. */

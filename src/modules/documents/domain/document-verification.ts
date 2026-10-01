@@ -1,4 +1,6 @@
-import { clinicalDateOf } from '../../../shared/domain/clinic-time';
+import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
+
+import { OUTPATIENT_VALIDITY_DAYS } from './prescription-wording';
 
 /**
  * DOC-094 to DOC-096. What the public verification page may say about a
@@ -39,23 +41,34 @@ export interface DocumentVerification {
   establishmentName: string;
   siteName: string;
   practitionerName: string;
-  status: 'VALID' | 'ANNULLED';
+  /**
+   * `EXPIRED`: a receta past its validity (arts. 17–19 of the Res.
+   * ACESS-2023-0030) — «válido» there would tell a pharmacy to dispense it.
+   */
+  status: 'VALID' | 'ANNULLED' | 'EXPIRED';
   annulledOn: string | null;
 }
 
 /**
- * The facts, as the public may read them. Dates are resolved in
- * `America/Guayaquil`: a receta issued at 21:00 was issued that day, not the
- * next one in UTC.
+ * The facts, as the public may read them, at the instant `now`. Dates are
+ * resolved in `America/Guayaquil`: a receta issued at 21:00 was issued that
+ * day, not the next one in UTC.
  */
-export function toVerification(facts: VerificationFacts): DocumentVerification {
+export function toVerification(
+  facts: VerificationFacts,
+  now: Date,
+): DocumentVerification {
+  const issuedOn = clinicalDateOf(facts.issuedAt);
+  const expired =
+    facts.kind === 'PRESCRIPTION' &&
+    clinicalDateOf(now) > addDays(issuedOn, OUTPATIENT_VALIDITY_DAYS - 1);
   return {
     kind: facts.kind,
-    issuedOn: clinicalDateOf(facts.issuedAt),
+    issuedOn,
     establishmentName: facts.establishmentName,
     siteName: facts.siteName,
     practitionerName: facts.practitionerName,
-    status: facts.annulled ? 'ANNULLED' : 'VALID',
+    status: facts.annulled ? 'ANNULLED' : expired ? 'EXPIRED' : 'VALID',
     annulledOn:
       facts.annulledAt === null ? null : clinicalDateOf(facts.annulledAt),
   };

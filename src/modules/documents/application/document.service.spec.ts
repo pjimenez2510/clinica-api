@@ -746,6 +746,21 @@ describe('DOC-038 la vista previa la pinta el mismo generador, y no guarda nada'
     expect(JSON.stringify(layout?.blocks)).toContain('MUESTRA');
   });
 
+  it.each([
+    'PRESCRIPTION',
+    'SERVICE_ORDER',
+    'MEDICAL_CERTIFICATE',
+    'INVOICE_RIDE',
+  ] as const)(
+    'DOC-038 la muestra de %s lleva MUESTRA SIN VALIDEZ en el marco',
+    async (kind) => {
+      await service.previewTemplate(kind, slots);
+      expect(renderer.calls.at(-1)?.layout.frame.watermark).toBe(
+        'MUESTRA SIN VALIDEZ',
+      );
+    },
+  );
+
   it('DOC-038 no escribe ni artefacto, ni plantilla, ni bitácora', async () => {
     await service.previewTemplate('PRESCRIPTION', slots);
 

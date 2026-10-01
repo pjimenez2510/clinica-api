@@ -447,7 +447,7 @@ describe('every route declares its protection', () => {
      *
      * DOC-094: the verification a QR opens is public BY DECISION of the author
      * (30-09-2026). It answers with no patient data and the same body for every
-     * miss, and it is rate limited like `login`.
+     * miss, and it is capped at 30 requests a minute per IP.
      */
     expect(publicRoutes).toEqual([
       'AuthController.checkCredential',

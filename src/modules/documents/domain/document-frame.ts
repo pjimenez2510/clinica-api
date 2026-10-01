@@ -115,5 +115,7 @@ export function composeFrame(
             },
       notes: FOOTER_NOTES[request.kind],
     },
+    // Only a preview carries one (DOC-038); the service sets it.
+    watermark: null,
   };
 }

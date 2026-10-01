@@ -114,8 +114,9 @@ export class DocumentsModule implements NestModule {
    * sentence that explains why SVG is refused.
    *
    * ⚠️ IT DOES NOT AFFECT THE JSON ROUTES. `configureApp` registers the JSON
-   * parser for `application/json`, and these three paths are the only ones this
-   * middleware is mounted on.
+   * parser for `application/json`, and the identity controller is the only one
+   * this middleware is mounted on — its GETs too (DOC-061), where a body-less
+   * request makes it a no-op.
    */
   configure(consumer: MiddlewareConsumer): void {
     consumer

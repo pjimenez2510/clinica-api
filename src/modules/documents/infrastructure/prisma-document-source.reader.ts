@@ -335,7 +335,8 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
 
     const prescription = await this.prisma.prescription.findFirst({
       where: {
-        verificationCode: code,
+        // A pharmacy may type the code from the paper in lowercase.
+        verificationCode: { equals: code, mode: 'insensitive' },
         status: { in: ['ACTIVE', 'COMPLETED', 'CANCELLED'] },
         issuedAt: { not: null },
       },
@@ -360,8 +361,8 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       };
     }
 
-    const certificate = await this.prisma.medicalCertificate.findUnique({
-      where: { verificationCode: code },
+    const certificate = await this.prisma.medicalCertificate.findFirst({
+      where: { verificationCode: { equals: code, mode: 'insensitive' } },
       select: {
         issuedAt: true,
         revokedAt: true,

@@ -18,6 +18,8 @@ import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/ro
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
+import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
+
 import { useDatabase } from './setup/database';
 import { createPatient, createSite } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
@@ -376,18 +378,46 @@ describe('los documentos por HTTP', () => {
       await expect(prisma.documentTemplate.count()).resolves.toBe(5);
     });
 
-    it('DOC-039 si una falla no queda publicada ninguna', async () => {
-      // Positive control: the same request with a valid colour publishes four.
+    it('DOC-039 si una inserción falla EN LA BASE, no queda publicada ninguna', async () => {
+      // Positive control: the same request publishes four.
       await post('/documents/templates/all-kinds', adminToken, slots).expect(
         201,
       );
       await expect(prisma.documentTemplate.count()).resolves.toBe(4);
 
+      // The THIRD insert fails inside PostgreSQL, after the first two went
+      // through: only a real transaction leaves none of the three behind.
+      await prisma.$executeRawUnsafe(`
+        CREATE FUNCTION test_refuse_certificate() RETURNS trigger AS $$
+        BEGIN RAISE EXCEPTION 'refused by the test'; END $$ LANGUAGE plpgsql`);
+      await prisma.$executeRawUnsafe(`
+        CREATE TRIGGER test_refuse_certificate BEFORE INSERT ON document_template
+        FOR EACH ROW WHEN (NEW.kind = 'MEDICAL_CERTIFICATE')
+        EXECUTE FUNCTION test_refuse_certificate()`);
+      try {
+        const refused = await post(
+          '/documents/templates/all-kinds',
+          adminToken,
+          { ...slots, accentColour: '#003366' },
+        );
+        expect(refused.status).toBeGreaterThanOrEqual(400);
+        await expect(prisma.documentTemplate.count()).resolves.toBe(4);
+      } finally {
+        await prisma.$executeRawUnsafe(
+          'DROP TRIGGER test_refuse_certificate ON document_template',
+        );
+        await prisma.$executeRawUnsafe(
+          'DROP FUNCTION test_refuse_certificate()',
+        );
+      }
+    });
+
+    it('DOC-035 DOC-039 una ranura inválida no publica ninguna', async () => {
       await post('/documents/templates/all-kinds', adminToken, {
         ...slots,
         accentColour: '#ZZZZZZ',
       }).expect(422);
-      await expect(prisma.documentTemplate.count()).resolves.toBe(4);
+      await expect(prisma.documentTemplate.count()).resolves.toBe(0);
     });
 
     it('DOC-090 publicar las cuatro exige config:manage', async () => {
@@ -403,20 +433,89 @@ describe('los documentos por HTTP', () => {
       request(app.getHttpServer()).get(`/api/v1/documents/verify/${code}`);
 
     it('DOC-094 sin sesión dice clase, fecha, establecimiento, sede, profesional y vigencia', async () => {
+      const issuedAt = new Date();
       await prisma.prescription.update({
         where: { id: prescriptionId },
-        data: { verificationCode: 'ABCD1234EF567890' },
+        data: { verificationCode: 'ABCD1234EF567890', issuedAt },
       });
 
       const response = await verify('ABCD1234EF567890').expect(200);
 
       expect(response.body).toMatchObject({
         kind: 'PRESCRIPTION',
-        // 2026-08-21T01:00Z is the evening of the 20th in Ecuador.
-        issuedOn: '2026-08-20', // fecha-fija: the seed's issuedAt, 21:00 of the 20th in Ecuador
+        issuedOn: clinicalDateOf(issuedAt),
         establishmentName: 'Centro de Especialidades Bahía',
         status: 'VALID',
         annulledOn: null,
+      });
+    });
+
+    it('DOC-094 una receta pasada su vigencia se dice caducada', async () => {
+      // The seeded receta was issued weeks before any run of this suite.
+      await prisma.prescription.update({
+        where: { id: prescriptionId },
+        data: {
+          verificationCode: 'ABCD1234EF567890',
+          issuedAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
+        },
+      });
+
+      const response = await verify('ABCD1234EF567890').expect(200);
+      expect((response.body as { status: string }).status).toBe('EXPIRED');
+    });
+
+    it('DOC-094 el código se acepta escrito en minúsculas', async () => {
+      await prisma.prescription.update({
+        where: { id: prescriptionId },
+        data: { verificationCode: 'ABCD1234EF567890', issuedAt: new Date() },
+      });
+      await verify('abcd1234ef567890').expect(200);
+    });
+
+    it('DOC-096 una receta en borrador con código responde como un código inexistente', async () => {
+      const unknown = await verify('ZZZZ9999ZZZZ9999').expect(404);
+      await prisma.prescription.update({
+        where: { id: prescriptionId },
+        data: { verificationCode: 'ABCD1234EF567890', issuedAt: new Date() },
+      });
+      // Positive control: the same receta, issued, is found.
+      await verify('ABCD1234EF567890').expect(200);
+
+      await prisma.prescription.update({
+        where: { id: prescriptionId },
+        data: { status: 'DRAFT', issuedAt: null },
+      });
+      const draft = await verify('ABCD1234EF567890').expect(404);
+
+      expect((draft.body as Problem).code).toBe((unknown.body as Problem).code);
+      expect((draft.body as Problem).title).toBe(
+        (unknown.body as Problem).title,
+      );
+    });
+
+    it('DOC-094 un certificado revocado se dice anulado con su fecha', async () => {
+      const encounter = await prisma.encounter.findFirstOrThrow({
+        select: { id: true, patientId: true },
+      });
+      const revokedAt = new Date();
+      await prisma.medicalCertificate.create({
+        data: {
+          encounterId: encounter.id,
+          patientId: encounter.patientId,
+          issuedById: practitionerId,
+          type: 'ATTENDANCE',
+          body: 'Certificado de prueba',
+          verificationCode: 'CERT1234CERT5678',
+          revokedAt,
+          revocationReason: 'Emitido por error en la prueba',
+        },
+      });
+
+      const response = await verify('CERT1234CERT5678').expect(200);
+      expect(response.body).toMatchObject({
+        kind: 'MEDICAL_CERTIFICATE',
+        status: 'ANNULLED',
+        annulledOn: clinicalDateOf(revokedAt),
       });
     });
 

@@ -212,6 +212,24 @@ export function validateEnv(raw: Record<string, unknown>): Env {
             'debe declararse explícitamente en producción (0 si la API se expone directamente)',
         });
       }
+      /**
+       * DOC-083. The address every receta and certificate prints in its QR —
+       * on a document that is IMMUTABLE once issued (DOC-005). The development
+       * default in production would print `localhost` on papers that can never
+       * be corrected.
+       */
+      if (
+        env.NODE_ENV === 'production' &&
+        (raw.WEB_BASE_URL === undefined ||
+          !env.WEB_BASE_URL.startsWith('https://'))
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['WEB_BASE_URL'],
+          message:
+            'debe declararse en producción, con https: va impresa en el QR de cada documento',
+        });
+      }
     })
     .safeParse(raw);
 

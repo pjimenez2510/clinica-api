@@ -33,6 +33,7 @@ export class DocumentVerificationService {
     }
     const facts = await this.sources.findForVerification(code);
     if (facts === null) throw new DocumentVerificationNotFoundError();
-    return toVerification(facts);
+    // The verification is an answer about NOW: the clock is the honest instant.
+    return toVerification(facts, new Date());
   }
 }

@@ -77,6 +77,7 @@ describe('DOC-078 el código de barras de la clave de acceso', () => {
         header: null,
         hasLogo: false,
         footer: { text: null, verification: null, notes: [] },
+        watermark: null,
       },
       blocks: [{ kind: 'barcode', value: ACCESS_KEY }],
       tearOff: null,

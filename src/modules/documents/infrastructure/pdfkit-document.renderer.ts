@@ -71,6 +71,8 @@ const RULE_STRONG = '#b7c0bc';
 const RULE_LIGHT = '#dde3e0';
 const EMPTY_BOX = '#8a948f';
 const ALERT = '#8a2c1f';
+/** DOC-038. The sample mark: light enough to read the document through. */
+const WATERMARK = '#e1e6e4';
 
 /** Short alias: every coordinate below is written in millimetres. */
 const mm = millimetresToPoints;
@@ -192,15 +194,13 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
      * line that follows the text is not detachable: the pharmacist cuts through
      * the posology on one receta and through nothing on the next.
      */
-    const bottomLimit =
-      layout.tearOff === null
-        ? doc.page.height - mm(PAGE_MARGIN_MM) - mm(FOOTER_HEIGHT_MM) - mm(3)
-        : doc.page.height - mm(TEAR_OFF_HEIGHT_MM) - mm(3);
+    const bottomLimit = footerTopOf(doc, layout) - mm(3);
 
     const cursor: Cursor = { y: 0 };
 
     const startPage = (): void => {
       cursor.y = mm(PAGE_MARGIN_MM);
+      this.paintWatermark(doc, layout.frame.watermark);
       this.paintHeader(doc, layout, images, left, contentWidth, cursor);
     };
 
@@ -219,13 +219,42 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     // DOC-073. The band goes on the page the document ends on, at its fixed
     // position — not wherever the text stopped.
     if (layout.tearOff !== null) {
-      this.paintTearOff(doc, layout, images, left, contentWidth);
+      this.paintTearOff(doc, layout, images, left, contentWidth, () => {
+        doc.addPage();
+        startPage();
+        return { top: cursor.y, bottom: bottomLimit };
+      });
     }
 
     this.paintFooters(doc, layout, left, contentWidth);
 
     doc.end();
     return finished;
+  }
+
+  /**
+   * DOC-038. The sample mark, diagonal across the page and painted FIRST, so
+   * the content sits on top of it. A light opaque grey and not a transparent
+   * black: PDF/A-1b forbids transparency (DOC-023).
+   */
+  private paintWatermark(
+    doc: PDFKit.PDFDocument,
+    watermark: string | null,
+  ): void {
+    if (watermark === null) return;
+    const { width, height } = doc.page;
+    doc.save();
+    doc.rotate(-35, { origin: [width / 2, height / 2] });
+    doc
+      .font(SANS_BOLD)
+      .fontSize(54)
+      .fillColor(WATERMARK)
+      .text(watermark, 0, height / 2 - 30, {
+        width,
+        align: 'center',
+        lineBreak: false,
+      });
+    doc.restore();
   }
 
   // ── header ───────────────────────────────────────────────────────────────
@@ -424,9 +453,22 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         let rowTop = cursor.y;
         let rowBottom = cursor.y;
 
-        for (const entry of block.entries) {
+        /** The height a row of entries will take, measured before painting. */
+        const rowHeight = (from: number): number =>
+          Math.max(
+            ...block.entries.slice(from, from + block.columns).map((entry) => {
+              const inner = columnWidth - mm(3);
+              const label = doc.font(SANS_BOLD).fontSize(SIZE.label).heightOfString(entry.label, { width: inner }); // prettier-ignore
+              const value = doc.font(SANS).fontSize(SIZE.body).heightOfString(entry.value, { width: inner, lineGap: LINE_GAP }); // prettier-ignore
+              return label + value + 0.5;
+            }),
+          );
+
+        for (const [index, entry] of block.entries.entries()) {
           if (column === 0) {
-            ensure(mm(8));
+            // A row moves WHOLE to the next page: an indication split across
+            // two sheets is one somebody reads half of.
+            ensure(rowHeight(index) + mm(1));
             rowTop = cursor.y;
             rowBottom = cursor.y;
           }
@@ -662,6 +704,8 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     images: LayoutImages,
     left: number,
     width: number,
+    /** Opens a page with its header; returns where its body starts and stops. */
+    nextPage: () => { top: number; bottom: number },
   ): void {
     const band = layout.tearOff;
     if (band === null) return;
@@ -678,6 +722,11 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
       .undash();
 
     const cursor: Cursor = { y: cutY + mm(3) };
+    const identification: Block = {
+      kind: 'fields',
+      columns: 2,
+      entries: band.identification,
+    };
 
     doc
       .font(SANS_BOLD)
@@ -687,25 +736,44 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     cursor.y = doc.y + mm(1.5);
 
     /**
-     * THE SEAL SITS BESIDE THE INDICATIONS, NOT UNDER THEM. Art. 5.e.iv asks
-     * for it in the band, and the band ends where the footer begins: stacked
-     * below, a box 18 mm tall would run into the verification lines.
+     * THE SEAL SITS BESIDE THE INDICATIONS, NOT UNDER THEM, AND IT GOES FIRST.
+     * Art. 5.e.iv asks for it in the band; painted before the text it stays on
+     * this page whatever the text does next.
      */
     const seals = band.blocks.filter((block) => block.kind === 'signature');
     const text = band.blocks.filter((block) => block.kind !== 'signature');
     const textWidth = seals.length === 0 ? width : width - mm(60);
     const sealCursor: Cursor = { y: cursor.y };
+    for (const block of seals) {
+      this.paintBlock(doc, block, images, left, width, sealCursor, () => undefined); // prettier-ignore
+    }
 
-    this.paintBlock(
-      doc,
-      { kind: 'fields', columns: 2, entries: band.identification },
-      images,
-      left,
-      textWidth,
-      cursor,
-      () => undefined,
-    );
+    /**
+     * DOC-073. THE BAND NEVER RUNS INTO THE PAGE EDGE. What does not fit goes
+     * on to a new page — with the establishment's header (DOC-071) and the
+     * patient's name and date again, because a detached strip that does not
+     * say whose it is is a loose piece of paper. Overflowing was printing the
+     * last indications over the footer, and then on a page with nobody's name.
+     */
+    let bottom = doc.page.height - mm(PAGE_MARGIN_MM);
+    const ensure = (height: number): void => {
+      if (cursor.y + height <= bottom) return;
+      const page = nextPage();
+      cursor.y = page.top;
+      bottom = page.bottom;
+      doc
+        .font(SANS_BOLD)
+        .fontSize(SIZE.label)
+        .fillColor(LABEL)
+        .text(`${band.caption} (continuación)`, left, cursor.y, {
+          width,
+          align: 'center',
+        });
+      cursor.y = doc.y + mm(1.5);
+      this.paintBlock(doc, identification, images, left, width, cursor, () => undefined); // prettier-ignore
+    };
 
+    this.paintBlock(doc, identification, images, left, textWidth, cursor, ensure); // prettier-ignore
     for (const block of text) {
       this.paintBlock(
         doc,
@@ -714,12 +782,9 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         left,
         textWidth,
         cursor,
-        () => undefined,
+        ensure,
         layout.frame.accentColour,
       );
-    }
-    for (const block of seals) {
-      this.paintBlock(doc, block, images, left, width, sealCursor, () => undefined); // prettier-ignore
     }
   }
 
@@ -747,8 +812,14 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
             `Verifique en ${footer.verification.url}`,
           ]),
       ...footer.notes,
-      ...(footer.text === null || footer.text === '' ? [] : [footer.text]),
+      // The clinic's free footer, on ONE line: it may hold line breaks, and a
+      // footer that wraps runs off the page and opens blank ones.
+      ...(footer.text === null || footer.text.trim() === ''
+        ? []
+        : [footer.text.trim().replace(/\s*\n\s*/g, ' · ')]),
     ];
+    // At most what fits above the bottom edge; the rest is not printed.
+    const maxLines = Math.floor((mm(FOOTER_HEIGHT_MM) - mm(2)) / (SIZE.label + 2)); // prettier-ignore
 
     const range = doc.bufferedPageRange();
     for (let index = 0; index < range.count; index += 1) {
@@ -758,8 +829,8 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
       // painted is what keeps «Página 1 de 1» from creating page 2.
       const margins = doc.page.margins;
       doc.page.margins = { ...margins, bottom: 0 };
-      const top = doc.page.height - mm(PAGE_MARGIN_MM) - mm(FOOTER_HEIGHT_MM);
-      const bottom = doc.page.height - mm(PAGE_MARGIN_MM);
+      const top = footerTopOf(doc, layout);
+      const bottom = top + mm(FOOTER_HEIGHT_MM);
 
       doc
         .moveTo(left, top)
@@ -770,10 +841,15 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
 
       let y = top + mm(2);
       doc.font(SANS).fontSize(SIZE.label).fillColor(LABEL);
-      for (const line of lines) {
-        // `lineBreak: false` keeps a long line from pushing PDFKit into a new
-        // page of its own: the footer is the one place nothing may flow.
-        doc.text(line, left, y, { width: textWidth, lineBreak: false });
+      for (const line of lines.slice(0, maxLines)) {
+        // ONE row per line, cut with an ellipsis: `lineBreak: false` alone
+        // still wraps at `width`, and a wrapped footer opened blank pages.
+        doc.text(line, left, y, {
+          width: textWidth,
+          height: SIZE.label + 1,
+          ellipsis: true,
+          lineBreak: false,
+        });
         y += SIZE.label + 2;
       }
 
@@ -794,6 +870,10 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         );
       }
       doc.page.margins = margins;
+    }
+    // DOC-071. The footer may not change the page count it just printed.
+    if (doc.bufferedPageRange().count !== range.count) {
+      throw new Error('The footer opened a page of its own');
     }
     // Without this, `end()` flushes while the cursor sits on the first page and
     // PDFKit appends nothing further — harmless today, and a trap for whoever
@@ -869,4 +949,15 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
 export function barsOf(value: string): number[] {
   const [symbol] = bwipjs.raw({ bcid: 'code128', text: value, parse: false });
   return [...((symbol as { sbs?: number[] } | undefined)?.sbs ?? [])];
+}
+
+/**
+ * DOC-073, DOC-083. Where the footer starts. On a receta it sits ABOVE the cut
+ * line, so the part the pharmacy keeps carries the QR, the verification URL
+ * and «Página x de y»; the strip the patient takes is only theirs.
+ */
+function footerTopOf(doc: PDFKit.PDFDocument, layout: DocumentLayout): number {
+  return layout.tearOff === null
+    ? doc.page.height - mm(PAGE_MARGIN_MM) - mm(FOOTER_HEIGHT_MM)
+    : doc.page.height - mm(TEAR_OFF_HEIGHT_MM) - mm(2) - mm(FOOTER_HEIGHT_MM);
 }

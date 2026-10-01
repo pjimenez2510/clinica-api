@@ -15,8 +15,9 @@ import type { DocumentVerification } from './domain/document-verification';
  * author's decision of 30-09-2026). Whoever checks a document is a pharmacy or
  * an employer, without an account here. What keeps it narrow: the answer
  * carries nobody's health data (DOC-095), every miss answers the same
- * (DOC-096), the code is 64 random bits, and requests are rate limited per IP
- * like `login`.
+ * (DOC-096), the code is 64 random bits, and requests are capped at 30 a
+ * minute per IP — looser than `login`'s 10, because a pharmacy behind one
+ * address checks several recetas in a row, and nothing here can be guessed.
  */
 @ApiTags('documents')
 @Controller({ path: 'documents/verify', version: '1' })

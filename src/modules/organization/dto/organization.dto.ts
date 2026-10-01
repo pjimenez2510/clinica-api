@@ -98,7 +98,12 @@ export const saveDocumentIdentitySchema = z.object({
     .max(160, 'El nombre comercial no puede superar 160 caracteres')
     .nullable(),
   contactEmail: z
-    .union([z.literal(''), z.email('Ingrese un correo electrónico válido')])
+    .union([
+      z.literal(''),
+      z
+        .email('Ingrese un correo electrónico válido')
+        .max(254, 'El correo no puede superar 254 caracteres'),
+    ])
     .nullable(),
   operatingPermit: z
     .string()

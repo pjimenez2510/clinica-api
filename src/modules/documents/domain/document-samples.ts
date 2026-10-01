@@ -135,8 +135,9 @@ export function sampleSubject(
           status: 'DRAFT',
           issuedAt,
           authorisedAt: null,
-          buyerIdentificationType: 'CEDULA',
-          buyerIdentification: '1710034065',
+          // «Consumidor final»: no a person, unlike a cédula-shaped number.
+          buyerIdentificationType: 'CONSUMIDOR_FINAL',
+          buyerIdentification: '9999999999999',
           buyerName: SAMPLE_MARK,
           buyerEmail: null,
           lines: [

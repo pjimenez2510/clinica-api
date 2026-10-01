@@ -195,7 +195,7 @@ const verificationSchema = z.object({
   establishmentName: z.string(),
   siteName: z.string(),
   practitionerName: z.string(),
-  status: z.enum(['VALID', 'ANNULLED']),
+  status: z.enum(['VALID', 'ANNULLED', 'EXPIRED']),
   annulledOn: z.iso.date().nullable(),
 });
 

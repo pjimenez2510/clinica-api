@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
+import { withSerialisationRetry } from '../../../shared/infrastructure/prisma/serialisation-retry';
 import { isClinicalDocumentKind } from '../domain/document-kind';
 import type { DocumentKind, SiteScopeFilter } from '../domain/document-kind';
 import type {
@@ -402,34 +403,38 @@ export class PrismaDocumentRepository implements DocumentRepository {
   async publishTemplates(
     templates: readonly NewDocumentTemplate[],
   ): Promise<DocumentTemplate[]> {
-    const rows = await this.prisma.$transaction(
-      async (tx) => {
-        const created = [];
-        for (const template of templates) {
-          const latest = await tx.documentTemplate.findFirst({
-            where: { kind: template.kind },
-            orderBy: { version: 'desc' },
-            select: { version: true },
-          });
-          created.push(
-            await tx.documentTemplate.create({
-              data: {
-                kind: template.kind,
-                version: (latest?.version ?? 0) + 1,
-                accentColour: template.accentColour,
-                footerText: template.footerText,
-                headerFields: template.headerFields as unknown as Prisma.InputJsonValue, // prettier-ignore
-                showEstablishmentRuc: template.showEstablishmentRuc,
-                showEstablishmentAddress: template.showEstablishmentAddress,
-                showEstablishmentPhone: template.showEstablishmentPhone,
-                publishedById: template.publishedById,
-              },
-            }),
-          );
-        }
-        return created;
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    // Two administrators publishing at once: one transaction loses the
+    // serialisable race and is retried, rather than answered with a 500.
+    const rows = await withSerialisationRetry(() =>
+      this.prisma.$transaction(
+        async (tx) => {
+          const created = [];
+          for (const template of templates) {
+            const latest = await tx.documentTemplate.findFirst({
+              where: { kind: template.kind },
+              orderBy: { version: 'desc' },
+              select: { version: true },
+            });
+            created.push(
+              await tx.documentTemplate.create({
+                data: {
+                  kind: template.kind,
+                  version: (latest?.version ?? 0) + 1,
+                  accentColour: template.accentColour,
+                  footerText: template.footerText,
+                  headerFields: template.headerFields as unknown as Prisma.InputJsonValue, // prettier-ignore
+                  showEstablishmentRuc: template.showEstablishmentRuc,
+                  showEstablishmentAddress: template.showEstablishmentAddress,
+                  showEstablishmentPhone: template.showEstablishmentPhone,
+                  publishedById: template.publishedById,
+                },
+              }),
+            );
+          }
+          return created;
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      ),
     );
 
     return rows.map(toTemplate);
@@ -462,10 +467,6 @@ export class PrismaDocumentRepository implements DocumentRepository {
     return { ...row, mimeType: row.mimeType as AllowedImageMimeType };
   }
 
-  /**
-   * DOC-057. Points the establishment at the new logo; the old image row stays.
-   * `false` when no establishment has that id.
-   */
   /** DOC-061. `null` when there is no establishment or it has no logo. */
   async findEstablishmentLogo(
     establishmentId: string,
@@ -482,16 +483,25 @@ export class PrismaDocumentRepository implements DocumentRepository {
     practitionerId: string,
     slot: 'seal' | 'signature',
   ): Promise<StoredImage | null> {
+    // Only the slot asked for: the other image's bytes stay in TOAST.
+    if (slot === 'seal') {
+      const row = await this.prisma.practitioner.findUnique({
+        where: { id: practitionerId },
+        select: { sealImage: { select: STORED_IMAGE_SELECT } },
+      });
+      return toStored(row?.sealImage);
+    }
     const row = await this.prisma.practitioner.findUnique({
       where: { id: practitionerId },
-      select: {
-        sealImage: { select: STORED_IMAGE_SELECT },
-        signatureImage: { select: STORED_IMAGE_SELECT },
-      },
+      select: { signatureImage: { select: STORED_IMAGE_SELECT } },
     });
-    return toStored(slot === 'seal' ? row?.sealImage : row?.signatureImage);
+    return toStored(row?.signatureImage);
   }
 
+  /**
+   * DOC-057. Points the establishment at the new logo; the old image row stays.
+   * `false` when no establishment has that id.
+   */
   async attachEstablishmentLogo(
     establishmentId: string,
     imageId: string,

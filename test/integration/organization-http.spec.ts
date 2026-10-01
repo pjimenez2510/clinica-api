@@ -443,6 +443,31 @@ describe('la organización por HTTP', () => {
       ).rejects.toThrowError(/establishment_trade_name_not_blank/);
     });
 
+    it('OR-012 la base rechaza un permiso de funcionamiento en blanco', async () => {
+      const establishment = await saveEstablishment();
+      await prisma.$executeRaw`
+        UPDATE establishment SET operating_permit = 'ACESS-1'
+        WHERE id = ${establishment.id}::uuid
+      `;
+      await expect(
+        prisma.$executeRaw`
+          UPDATE establishment SET operating_permit = '  '
+          WHERE id = ${establishment.id}::uuid
+        `,
+      ).rejects.toThrowError(/establishment_operating_permit_not_blank/);
+    });
+
+    it('OR-011 un correo de más de 254 caracteres se rechaza en su campo, no en la base', async () => {
+      await saveEstablishment();
+      const response = await put('/establishment/document-identity', {
+        ...identity,
+        contactEmail: `${'a'.repeat(250)}@example.com`,
+      }).expect(422);
+      expect((response.body as Problem).errors?.map((e) => e.field)).toEqual([
+        'contactEmail',
+      ]);
+    });
+
     it('OR-012 exige site:manage: RECEPCION no puede cambiarlos', async () => {
       await saveEstablishment();
       const recepcion = await signIn(RECEPCION_EMAIL, 'RECEPCION', '0926687856'); // prettier-ignore

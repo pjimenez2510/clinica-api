@@ -5,6 +5,7 @@ import { extractText, getDocumentProxy } from 'unpdf';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { DocumentRenderFailedError } from '../domain/document.errors';
+import { TEAR_OFF_HEIGHT_MM, millimetresToPoints } from '../domain/page-layout';
 import { PdfKitDocumentRenderer } from './pdfkit-document.renderer';
 import type { LayoutImages } from '../domain/document-rendering.port';
 import type { StoredImage } from '../domain/document-image';
@@ -60,6 +61,7 @@ const layout: DocumentLayout = {
       },
       notes: ['Copia de respaldo conservada cinco años'],
     },
+    watermark: null,
   },
   blocks: [
     { kind: 'heading', text: 'Paciente' },
@@ -532,5 +534,130 @@ describe('DOC-080 a DOC-084 el marco aprobado, pintado', () => {
       'Representación impresa del comprobante electrónico',
     );
     expect(text).toContain('Página 1 de 1');
+  });
+});
+
+describe('DOC-083 el pie nunca abre páginas', () => {
+  it('DOC-071 DOC-083 un pie de seis líneas no añade páginas ni miente sobre el total', async () => {
+    const longFooter = Array.from(
+      { length: 6 },
+      (_, index) =>
+        `Línea ${index + 1} del pie que la clínica escribió en la plantilla`,
+    ).join('\n');
+    const pdf = await renderer.render(
+      {
+        ...layout,
+        frame: {
+          ...layout.frame,
+          footer: { ...layout.frame.footer, text: longFooter },
+        },
+      },
+      images,
+      metadata,
+    );
+
+    expect(pdf.toString('latin1')).toContain('/Count 1');
+    expect(await textOf(pdf)).toContain('Página 1 de 1');
+  });
+});
+
+describe('DOC-038 la muestra lo dice en cada página', () => {
+  it('DOC-038 pinta MUESTRA SIN VALIDEZ cuando el marco la trae, y nada cuando no', async () => {
+    const sample = await textOf(
+      await renderer.render(
+        {
+          ...layout,
+          frame: { ...layout.frame, watermark: 'MUESTRA SIN VALIDEZ' },
+        },
+        images,
+        metadata,
+      ),
+    );
+    const issued = await textOf(
+      await renderer.render(layout, images, metadata),
+    );
+
+    expect(sample).toContain('MUESTRA SIN VALIDEZ');
+    expect(issued).not.toContain('MUESTRA SIN VALIDEZ');
+  });
+});
+
+/** Where a text sits on page `n`, in points from the BOTTOM edge (PDF space). */
+async function heightOf(pdf: Buffer, needle: string, n = 1): Promise<number> {
+  const proxy = await getDocumentProxy(new Uint8Array(pdf));
+  const page = await proxy.getPage(n);
+  const content = await page.getTextContent();
+  const item = content.items.find(
+    (entry) => 'str' in entry && entry.str.includes(needle),
+  );
+  if (!item || !('transform' in item)) throw new Error(`no «${needle}»`);
+  return (item.transform as number[])[5] ?? 0;
+}
+
+const longIndication =
+  'Tome una tableta cada ocho horas con alimentos; no conduzca ni opere maquinaria; suspenda si aparece sarpullido y consulte.';
+
+function recetaWith(lines: number): DocumentLayout {
+  return {
+    ...layout,
+    tearOff: {
+      caption: 'Indicaciones para el paciente — recorte por esta línea',
+      identification: [
+        { label: 'Paciente', value: 'Guamán Andrade María José' },
+        { label: 'Fecha', value: '20/08/2026' },
+      ],
+      blocks: [
+        {
+          kind: 'fields',
+          columns: 1,
+          entries: Array.from({ length: lines }, (_, index) => ({
+            label: `Línea ${index + 1}`,
+            value: longIndication,
+          })),
+        },
+        { kind: 'signature', caption: 'Sello del profesional', image: null },
+      ],
+    },
+  };
+}
+
+describe('DOC-073 DOC-083 la banda desprendible y el pie de la receta', () => {
+  it('DOC-083 el pie de la receta queda por ENCIMA de la línea de corte: la farmacia conserva QR y página', async () => {
+    const pdf = await renderer.render(recetaWith(1), images, metadata);
+    const cut = millimetresToPoints(TEAR_OFF_HEIGHT_MM);
+
+    expect(await heightOf(pdf, 'Página 1 de 1')).toBeGreaterThan(cut);
+    expect(await heightOf(pdf, 'Verifique en')).toBeGreaterThan(cut);
+    expect(await heightOf(pdf, 'Indicaciones para el paciente')).toBeLessThan(
+      cut,
+    );
+  });
+
+  it('DOC-073 dos indicaciones largas caben en la banda de una sola página', async () => {
+    const pdf = await renderer.render(recetaWith(2), images, metadata);
+    const proxy = await getDocumentProxy(new Uint8Array(pdf));
+    expect(proxy.numPages).toBe(1);
+  });
+
+  it('DOC-071 DOC-073 si las indicaciones no caben, siguen en otra página con cabecera y con el nombre del paciente', async () => {
+    const pdf = await renderer.render(recetaWith(12), images, metadata);
+    const proxy = await getDocumentProxy(new Uint8Array(pdf));
+    expect(proxy.numPages).toBeGreaterThan(1);
+
+    for (let n = 2; n <= proxy.numPages; n += 1) {
+      const page = await proxy.getPage(n);
+      const text = (await page.getTextContent()).items
+        .map((item) => ('str' in item ? item.str : ''))
+        .join(' ');
+      expect(text).toContain('Centro de Especialidades Bahía');
+      expect(text).toContain('continuación');
+      expect(text).toContain('Guamán Andrade María José');
+      expect(text).toContain(`Página ${n} de ${proxy.numPages}`);
+    }
+    // Every indication is printed, and none twice.
+    const all = await textOf(pdf);
+    for (let line = 1; line <= 12; line += 1) {
+      expect(all).toContain(`Línea ${line}`);
+    }
   });
 });

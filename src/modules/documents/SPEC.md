@@ -746,11 +746,15 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
   `GET /v1/documents/verify/<código>` con el código de una receta o de un
   certificado, el sistema DEBERÁ responder la clase, la referencia, la fecha de
   emisión en `America/Guayaquil`, el establecimiento, la sede, el profesional y
-  el **estado**: vigente, o anulado con su fecha.
+  el **estado**: vigente; **caducada**, si es una receta pasada su vigencia
+  (arts. 17–19); o anulado, con su fecha cuando el documento la guarda (el
+  certificado; la receta hoy no la guarda).
 
   > Es **la única ruta pública** de este módulo, y la amplía a propósito (decisión
-  > del autor, 30-09-2026). Lleva tope de peticiones por IP como el inicio de
-  > sesión. El código son 64 bits aleatorios (`randomBytes(8)`): no se adivina.
+  > del autor, 30-09-2026). Lleva tope de 30 peticiones por minuto y por IP
+  > (el inicio de sesión, 10: una farmacia tras una sola dirección comprueba
+  > varias recetas seguidas). El código son 64 bits aleatorios
+  > (`randomBytes(8)`): no se adivina, y se acepta en minúsculas.
 
 - **DOC-095** — La respuesta de DOC-094 **NO DEBERÁ** contener ningún dato del
   paciente —nombre, documento, edad—, ni diagnóstico, ni medicamento, ni

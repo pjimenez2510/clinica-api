@@ -27,7 +27,7 @@ import {
   DocumentTemplateNotPublishedError,
 } from '../domain/document.errors';
 import { assertSlotsAreValid } from '../domain/document-template';
-import { sampleSubject } from '../domain/document-samples';
+import { SAMPLE_MARK, sampleSubject } from '../domain/document-samples';
 import {
   DOCUMENT_KINDS,
   isClinicalDocumentKind,
@@ -351,7 +351,12 @@ export class DocumentService {
       version: 0,
       publishedAt: now,
     };
-    const layout = composeLayout(sampleSubject(kind, now), context, template);
+    const composed = composeLayout(sampleSubject(kind, now), context, template);
+    // DOC-038. The letterhead is real; the paper must say it is not.
+    const layout = {
+      ...composed,
+      frame: { ...composed.frame, watermark: SAMPLE_MARK },
+    };
     const content = await this.renderer.render(
       layout,
       { logo: context.establishment.logo, seal: null, signature: null },
