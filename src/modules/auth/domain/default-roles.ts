@@ -99,6 +99,14 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       // sin desplegar nada.
       'patient:priority:protected',
       'patient:sexual-orientation',
+      // D-083 §4, decisión del autor (30-09-2026): publicar el texto del
+      // consentimiento y atender las solicitudes de los pacientes sobre sus
+      // datos —que incluye EXPORTAR LA FICHA ENTERA en JSON (PD-040)—.
+      // ⚠️ SIN `patient:read`: por la API registra, exporta y responde sobre
+      // cualquier ficha; en la pantalla no abre la ficha donde se hace. Lo
+      // que eso implica y la alternativa recomendada están en D-098 §6.
+      'patient:consent-text',
+      'patient:data-requests',
     ],
   },
   {
