@@ -37,9 +37,14 @@ describe('las advertencias al componer un rol', () => {
   });
 
   it('AU-034 no advierte nada cuando el rol sólo lee la historia clínica', () => {
-    expect(warningsFor(['record:read', 'record:write', 'agenda:read'])).toEqual(
-      [],
-    );
+    expect(
+      warningsFor([
+        'record:read',
+        'record:write',
+        'background:write',
+        'agenda:read',
+      ]),
+    ).toEqual([]);
   });
 
   it('AU-034 dice la combinación UNA vez, no dos veces con distintas palabras', () => {
@@ -74,5 +79,53 @@ describe('las advertencias al componer un rol', () => {
 
   it('AU-034 no advierte nada sobre un rol vacío', () => {
     expect(warningsFor([])).toEqual([]);
+  });
+});
+
+/**
+ * AU-045 — the custom role that prescribes but cannot record an allergy
+ * (D-071). Same shape as AU-034: a sentence back, never a refusal.
+ */
+describe('AU-045 el rol que receta sin poder registrar alergias', () => {
+  const GAP = 'no puede registrar alergias ni antecedentes';
+
+  it('AU-045 advierte cuando el rol receta sin background:write', () => {
+    const warnings = warningsFor(['record:read', 'prescription:write']);
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain(GAP);
+    expect(warnings[0]).toContain('Puede guardarlo igualmente');
+  });
+
+  it('AU-045 advierte cuando el rol escribe en la historia sin background:write', () => {
+    expect(warningsFor(['record:read', 'record:write'])).toEqual([
+      expect.stringContaining(GAP),
+    ]);
+  });
+
+  it('AU-045 control: con background:write no advierte nada', () => {
+    expect(
+      warningsFor([
+        'record:read',
+        'record:write',
+        'prescription:write',
+        'background:write',
+      ]),
+    ).toEqual([]);
+  });
+
+  it('AU-045 control: firmar o enfermería sin background:write no advierten', () => {
+    // Firmar no escribe; un rol de enfermería sin el registro de alergias es
+    // lo que D-062 dejó a la clínica.
+    expect(warningsFor(['record:read', 'record:sign'])).toEqual([]);
+    expect(warningsFor(['record:read', 'nursing:write'])).toEqual([]);
+  });
+
+  it('AU-045 se suma a AU-034 sin pisarla: cada una dice lo suyo, una vez', () => {
+    const warnings = warningsFor(['user:manage', 'prescription:write']);
+
+    expect(warnings).toHaveLength(2);
+    expect(warnings[0]).toContain('SPDP');
+    expect(warnings[1]).toContain(GAP);
   });
 });

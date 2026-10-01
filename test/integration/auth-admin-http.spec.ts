@@ -963,6 +963,47 @@ describe('la administración de cuentas y roles por HTTP', () => {
 
       expect((response.body as RolePermissionsBody).warnings).toEqual([]);
     });
+
+    it('AU-045 ADVIERTE del rol que receta sin background:write y guarda igualmente', async () => {
+      const role = await createRole();
+
+      const response = await put(`/roles/${role.id}/permissions`, {
+        permissions: ['record:read', 'prescription:write'],
+      }).expect(200);
+
+      expect((response.body as RolePermissionsBody).warnings).toEqual([
+        'Este rol receta o escribe en la historia clínica pero no puede registrar alergias ni antecedentes. Puede guardarlo igualmente.',
+      ]);
+      const stored = await prisma.rolePermission.findMany({
+        where: { roleId: role.id },
+        select: { permissionCode: true },
+      });
+      expect(stored.map((row) => row.permissionCode).sort()).toEqual([
+        'prescription:write',
+        'record:read',
+      ]);
+    });
+
+    it('AU-045 control: con background:write no advierte nada', async () => {
+      const role = await createRole();
+
+      const response = await put(`/roles/${role.id}/permissions`, {
+        permissions: ['record:read', 'prescription:write', 'background:write'],
+      }).expect(200);
+
+      expect((response.body as RolePermissionsBody).warnings).toEqual([]);
+    });
+
+    it('AU-045 la descripción de background:write dice que sin él no se registran alergias', async () => {
+      const catalogue = await get('/permissions').expect(200);
+      const description = (
+        catalogue.body as { items: { code: string; description: string }[] }
+      ).items.find((item) => item.code === 'background:write')?.description;
+
+      expect(description).toBe(
+        'Registrar alergias y antecedentes del paciente. Sin él no se registran alergias ni antecedentes',
+      );
+    });
   });
 
   describe('AU-032 · conceder un rol surte efecto sin volver a entrar', () => {

@@ -45,6 +45,22 @@ const RECORD_AND_ADMIN_WARNING =
   'Este rol administra usuarios y además accede a la historia clínica. Podría concederse a sí mismo el acceso y retirarlo después, y es la separación que una auditoría de la SPDP pregunta primero. Puede guardarlo igualmente si su clínica lo necesita.';
 
 /**
+ * AU-045 (D-071). Permissions whose holder is in front of the allergy — who
+ * prescribes, who writes the note — and the one that records it. Signing does
+ * not write, and a nursing role without the allergy record is what D-062 left
+ * to the clinic, so neither triggers it.
+ */
+const WRITES_THE_RECORD: readonly Permission[] = [
+  'prescription:write',
+  'record:write',
+];
+const RECORDS_ALLERGIES: Permission = 'background:write';
+
+/** AU-045's sentence, as the author fixed it (D-071, 30-09-2026). */
+const NO_ALLERGY_RECORD_WARNING =
+  'Este rol receta o escribe en la historia clínica pero no puede registrar alergias ni antecedentes. Puede guardarlo igualmente.';
+
+/**
  * Prefix match OR the explicit list: see `CLINICAL_RECORD_PERMISSIONS` for the
  * permissions the prefix misses.
  */
@@ -75,6 +91,14 @@ export function warningsFor(permissions: readonly string[]): string[] {
 
   // AU-034. WARNS, never refuses.
   if (administersUsers && readsRecord) warnings.push(RECORD_AND_ADMIN_WARNING);
+
+  // AU-045. After AU-034, so each says its own thing once.
+  if (
+    WRITES_THE_RECORD.some((code) => held.has(code)) &&
+    !held.has(RECORDS_ALLERGIES)
+  ) {
+    warnings.push(NO_ALLERGY_RECORD_WARNING);
+  }
 
   for (const combination of RISKY_COMBINATIONS) {
     // Already said, in its general form.
