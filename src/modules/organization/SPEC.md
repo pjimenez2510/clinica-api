@@ -80,7 +80,7 @@ SRI-001, SRI-009, SRI-018).
 
 **Prueba independiente:** guardar `01` como código SRI de una sede y ver el
 rechazo; guardar `002` y leerlo igual, con el cero.
-**Cubre:** OR-027, OR-028.
+**Cubre:** OR-027, OR-028, OR-029.
 
 > La edición desde la pantalla de Administración queda pendiente (F-08): en
 > `feat/sri-factura-electronica` se construye el dato, su garantía y la ruta.
@@ -189,6 +189,15 @@ rechazo; guardar `002` y leerlo igual, con el cero.
 
   > `dirMatriz` es obligatorio en la factura del SRI (sri/SPEC.md SRI-018), y no
   > es necesariamente la dirección de ninguna sede que atiende.
+- **OR-029** — El sistema DEBERÁ guardar y permitir editar, con el mismo
+  permiso que el resto del establecimiento, sus banderas fiscales: obligado a
+  llevar contabilidad, número de resolución de contribuyente especial, número
+  de resolución de agente de retención y régimen RIMPE (ninguno, emprendedor o
+  negocio popular); y un guardado que no las traiga DEBERÁ conservarlas.
+  > Las imprime el RIDE (DOC-077) y las declara el comprobante (`obligadoContabilidad`,
+  > `contribuyenteEspecial`, `agenteRetencion`, `contribuyenteRimpe`, SRI-018).
+  > Las columnas existían desde `documents`; no había forma de escribirlas sin
+  > SQL. Qué valor le corresponde a la clínica lo dice su RUC, no el sistema.
 
   > **Por qué se añade la segunda mitad.** `PATCH` y `DELETE` nombran el
   > consultorio, no la sede, así que el guard no puede comprobarla: corre antes

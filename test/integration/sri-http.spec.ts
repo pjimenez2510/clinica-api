@@ -568,6 +568,54 @@ describe('el comprobante electrónico por HTTP', () => {
       ).toBe('002');
     });
 
+    it('OR-029 administración guarda las banderas fiscales y el comprobante las declara', async () => {
+      const establishment = await api()
+        .get('/api/v1/organization/establishment')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      const current = establishment.body as {
+        mspUnicode: string;
+        typology: string;
+        legalName: string;
+      };
+      const saved = await api()
+        .put('/api/v1/organization/establishment')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          ...current,
+          keepsAccounting: true,
+          specialTaxpayerResolution: '5368',
+          rimpeRegime: 'ENTREPRENEUR',
+        })
+        .expect(200);
+      expect(saved.body).toMatchObject({
+        keepsAccounting: true,
+        specialTaxpayerResolution: '5368',
+        rimpeRegime: 'ENTREPRENEUR',
+      });
+
+      await uploadCertificate();
+      const invoice = await issueInvoice();
+      const voucher = await prisma.electronicVoucher.findUniqueOrThrow({
+        where: { invoiceId: invoice.id },
+      });
+      expect(voucher.signedXml).toContain(
+        '<obligadoContabilidad>SI</obligadoContabilidad>',
+      );
+      expect(voucher.signedXml).toContain(
+        '<contribuyenteEspecial>5368</contribuyenteEspecial>',
+      );
+      expect(voucher.signedXml).toContain(
+        '<contribuyenteRimpe>CONTRIBUYENTE RÉGIMEN RIMPE</contribuyenteRimpe>',
+      );
+
+      await api()
+        .put('/api/v1/organization/establishment')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ ...current, specialTaxpayerResolution: '12A' })
+        .expect(422);
+    });
+
     it('OR-028 un guardado del establecimiento sin la dirección de la matriz no la borra', async () => {
       const establishment = await api()
         .get('/api/v1/organization/establishment')

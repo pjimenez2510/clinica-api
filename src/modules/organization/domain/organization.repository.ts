@@ -20,8 +20,16 @@ export interface EstablishmentView {
   ruc: string | null;
   /** OR-028. `dirMatriz` of every electronic voucher. */
   headOfficeAddress: string | null;
+  /** OR-029. The fiscal flags the RIDE prints and the voucher declares. */
+  keepsAccounting: boolean;
+  specialTaxpayerResolution: string | null;
+  withholdingAgentResolution: string | null;
+  rimpeRegime: RimpeRegime;
   active: boolean;
 }
+
+/** OR-029. The SRI's RIMPE regime, as the schema's enum says it. */
+export type RimpeRegime = 'NONE' | 'ENTREPRENEUR' | 'POPULAR_BUSINESS';
 
 /** A site as the administration and selection screens list it (OR-004). */
 export interface SiteView {
@@ -46,6 +54,10 @@ export interface EstablishmentInput {
   legalName: string;
   ruc: string | null;
   headOfficeAddress: string | null;
+  keepsAccounting: boolean;
+  specialTaxpayerResolution: string | null;
+  withholdingAgentResolution: string | null;
+  rimpeRegime: RimpeRegime;
   active: boolean;
 }
 

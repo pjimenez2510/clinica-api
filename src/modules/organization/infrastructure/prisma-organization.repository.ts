@@ -40,6 +40,10 @@ const ESTABLISHMENT_SELECT = {
   legalName: true,
   ruc: true,
   headOfficeAddress: true,
+  keepsAccounting: true,
+  specialTaxpayerResolution: true,
+  withholdingAgentResolution: true,
+  rimpeRegime: true,
   active: true,
 } satisfies Prisma.EstablishmentSelect;
 

@@ -15,6 +15,7 @@ import {
   type EstablishmentInput,
   type EstablishmentView,
   type OrganizationRepository,
+  type RimpeRegime,
   type SiteInput,
   type SitePatch,
   type SiteScopeFilter,
@@ -36,6 +37,11 @@ export interface EstablishmentCommand {
   ruc?: string | null;
   /** OR-028. Absent keeps what is stored: the screen may not know the field. */
   headOfficeAddress?: string | null;
+  /** OR-029. Each absent flag keeps what is stored. */
+  keepsAccounting?: boolean;
+  specialTaxpayerResolution?: string | null;
+  withholdingAgentResolution?: string | null;
+  rimpeRegime?: RimpeRegime;
   active?: boolean;
 }
 
@@ -120,14 +126,32 @@ export class OrganizationService {
       legalName: command.legalName,
       ruc: OrganizationService.validRuc(command.ruc),
       headOfficeAddress: command.headOfficeAddress ?? null,
+      keepsAccounting: command.keepsAccounting ?? false,
+      specialTaxpayerResolution: command.specialTaxpayerResolution ?? null,
+      withholdingAgentResolution: command.withholdingAgentResolution ?? null,
+      rimpeRegime: command.rimpeRegime ?? 'NONE',
       active: command.active ?? true,
     };
 
     const current = await this.repository.findEstablishment();
-    // OR-028. A form that predates the field does not send it, and a PUT
-    // without it must not erase the head office the vouchers need.
-    if (current && command.headOfficeAddress === undefined) {
-      input.headOfficeAddress = current.headOfficeAddress;
+    // OR-028, OR-029. A form that predates a field does not send it, and a
+    // PUT without it must not erase what the vouchers declare.
+    if (current) {
+      if (command.headOfficeAddress === undefined) {
+        input.headOfficeAddress = current.headOfficeAddress;
+      }
+      if (command.keepsAccounting === undefined) {
+        input.keepsAccounting = current.keepsAccounting;
+      }
+      if (command.specialTaxpayerResolution === undefined) {
+        input.specialTaxpayerResolution = current.specialTaxpayerResolution;
+      }
+      if (command.withholdingAgentResolution === undefined) {
+        input.withholdingAgentResolution = current.withholdingAgentResolution;
+      }
+      if (command.rimpeRegime === undefined) {
+        input.rimpeRegime = current.rimpeRegime;
+      }
     }
     if (!current) {
       const created = await this.repository.createEstablishment(input);

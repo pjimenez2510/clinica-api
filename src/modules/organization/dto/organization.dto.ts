@@ -46,6 +46,14 @@ const mspUnicodeSchema = z
  * requirement says the system must not operate without them, and the cheapest
  * place to keep that true is the only door through which they are written.
  */
+/** OR-029. The SRI prints «Contribuyente Especial Nro. 1234»: digits only. */
+const resolutionSchema = z
+  .string()
+  .trim()
+  .regex(/^[0-9]{1,16}$/, 'El número de resolución son solo dígitos');
+
+const RIMPE_REGIMES = ['NONE', 'ENTREPRENEUR', 'POPULAR_BUSINESS'] as const;
+
 export const saveEstablishmentSchema = z.object({
   mspUnicode: mspUnicodeSchema,
   typology: z
@@ -66,6 +74,15 @@ export const saveEstablishmentSchema = z.object({
     .min(1, 'Escriba la dirección de la matriz')
     .max(300, 'La dirección de la matriz no puede superar 300 caracteres')
     .nullish(),
+  /** OR-029. Each absent flag keeps what is stored. */
+  keepsAccounting: z
+    .boolean({ error: 'Indique si está obligado a llevar contabilidad' })
+    .optional(),
+  specialTaxpayerResolution: resolutionSchema.nullish(),
+  withholdingAgentResolution: resolutionSchema.nullish(),
+  rimpeRegime: z
+    .enum(RIMPE_REGIMES, { error: 'Elija el régimen RIMPE' })
+    .optional(),
   active: z.boolean({ error: 'Indique si el establecimiento está activo' }).optional(), // prettier-ignore
 });
 /** Body of PUT /organization/establishment: there is one establishment, so it is saved whole rather than created. */
@@ -87,6 +104,11 @@ export const establishmentSchema = z.object({
   ruc: z.string().nullable().optional(),
   /** OR-028. `dirMatriz` of every electronic voucher. */
   headOfficeAddress: z.string().nullable(),
+  /** OR-029. */
+  keepsAccounting: z.boolean(),
+  specialTaxpayerResolution: z.string().nullable(),
+  withholdingAgentResolution: z.string().nullable(),
+  rimpeRegime: z.enum(RIMPE_REGIMES),
   active: z.boolean(),
 });
 /** Response of reading and saving the establishment. */

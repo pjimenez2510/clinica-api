@@ -40,6 +40,10 @@ const ESTABLISHMENT: EstablishmentView = {
   legalName: 'Clínica de Prueba S.A.',
   ruc: VALID_RUC,
   headOfficeAddress: 'Av. Amazonas y Naciones Unidas, Quito',
+  keepsAccounting: true,
+  specialTaxpayerResolution: '5368',
+  withholdingAgentResolution: null,
+  rimpeRegime: 'NONE',
   active: true,
 };
 
@@ -287,6 +291,46 @@ describe('OrganizationService', () => {
       const update = calls.find((c) => c.method === 'updateEstablishment');
       expect(update?.args[1]).toMatchObject({
         headOfficeAddress: 'Av. Amazonas y Naciones Unidas, Quito',
+      });
+    });
+
+    it('OR-029 un guardado sin las banderas fiscales conserva las guardadas, y las enviadas se guardan', async () => {
+      const kept = build();
+      await kept.service.saveEstablishment(
+        {
+          mspUnicode: 'MSP-0001',
+          typology: 'Centro de Salud Tipo A',
+          legalName: 'Clínica de Prueba S.A.',
+        },
+        REQUESTER,
+      );
+      expect(
+        kept.calls.find((c) => c.method === 'updateEstablishment')?.args[1],
+      ).toMatchObject({
+        keepsAccounting: true,
+        specialTaxpayerResolution: '5368',
+        withholdingAgentResolution: null,
+        rimpeRegime: 'NONE',
+      });
+
+      const changed = build();
+      await changed.service.saveEstablishment(
+        {
+          mspUnicode: 'MSP-0001',
+          typology: 'Centro de Salud Tipo A',
+          legalName: 'Clínica de Prueba S.A.',
+          keepsAccounting: false,
+          specialTaxpayerResolution: null,
+          rimpeRegime: 'ENTREPRENEUR',
+        },
+        REQUESTER,
+      );
+      expect(
+        changed.calls.find((c) => c.method === 'updateEstablishment')?.args[1],
+      ).toMatchObject({
+        keepsAccounting: false,
+        specialTaxpayerResolution: null,
+        rimpeRegime: 'ENTREPRENEUR',
       });
     });
 
