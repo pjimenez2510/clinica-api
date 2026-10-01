@@ -86,6 +86,12 @@ const target = await checkDevApiTarget({
   lookup: tokenIsIn,
 });
 if (!target.ok) {
+  // The login already happened over there: close that session, so the
+  // refusal leaves no open session in a database that is not ours.
+  await fetch(`${api}/api/v1/auth/logout`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  }).catch(() => undefined);
   console.error(target.reason);
   process.exit(1);
 }
