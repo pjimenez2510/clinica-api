@@ -35,6 +35,7 @@ import {
 import {
   type BuyerIdentificationType,
   type InvoiceStatus,
+  type PaymentMethod,
   nextSequential,
 } from '../domain/invoice';
 import { Money, Percentage, Quantity } from '../domain/money';
@@ -531,6 +532,8 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
             buyerName: issuance.receiver.buyerName,
             buyerEmail: issuance.receiver.buyerEmail,
             isFinalConsumer: issuance.receiver.isFinalConsumer,
+            // BI-170. Declared by the cashier; the base refuses another code.
+            paymentMethod: issuance.paymentMethod,
             subtotalTaxed: totals.subtotalTaxed.toString(),
             subtotalUntaxed: totals.subtotalUntaxed.toString(),
             discountTotal: totals.discountTotal.toString(),
@@ -746,6 +749,7 @@ function toInvoiceView(row: InvoiceRow): InvoiceView {
     },
     totals,
     status: row.status as InvoiceStatus,
+    paymentMethod: row.paymentMethod as PaymentMethod | null,
     issuedAt: row.issuedAt,
     authorisedAt: row.authorisedAt,
     issuedById: row.issuedById,

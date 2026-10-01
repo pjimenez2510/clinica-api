@@ -3434,6 +3434,12 @@ model Invoice {
   buyerEmail              String? @map("buyer_email") @db.VarChar(320)
   isFinalConsumer         Boolean @default(false) @map("is_final_consumer")
 
+  /// BI-170, D-092. How it was paid, SRI table 24 — asked of the cashier when
+  /// issuing, never assumed (`invoice_payment_method_is_known`). NULL only on
+  /// invoices issued before the column existed; it never changes once written
+  /// (`trg_invoice_payment_method_permanent`).
+  paymentMethod           String? @map("payment_method") @db.Char(2)
+
   /// `invoice_total_is_consistent` keeps the five in agreement in the database,
   /// so a rounding bug cannot leave a document the SRI will reject.
   subtotalTaxed   Decimal @map("subtotal_taxed") @db.Decimal(12, 2)

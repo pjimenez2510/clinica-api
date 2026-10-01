@@ -83,6 +83,7 @@ function source(overrides: Partial<PreparationSource> = {}): PreparationSource {
       taxTotal: '0.00',
       total: '30.00',
     },
+    paymentMethod: '01',
     ...overrides,
   };
 }
@@ -198,7 +199,6 @@ function fakes() {
   };
   const settings: SriSettings = {
     environment: '1',
-    paymentMethod: '01',
     softwareProviderRuc: null,
   };
   const preparation = new VoucherPreparationService(
@@ -352,7 +352,9 @@ describe('SRI-020 a SRI-031 la firma', () => {
     [
       'NO_PAYMENT_METHOD',
       (f: ReturnType<typeof fakes>) => {
-        f.settings.paymentMethod = null;
+        f.vouchers.preparationSource.mockResolvedValue(
+          source({ paymentMethod: null }),
+        );
       },
     ],
   ] as const)(

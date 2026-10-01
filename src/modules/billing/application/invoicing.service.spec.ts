@@ -66,6 +66,7 @@ const invoice: InvoiceView = {
     total: Money.parse('30.00'),
   },
   status: 'ISSUED',
+  paymentMethod: '01',
   issuedAt: new Date('2026-05-11T15:00:00Z'),
   authorisedAt: null,
   issuedById: 'user-1',
@@ -123,7 +124,7 @@ describe('BI-080 a BI-089 emitir la factura', () => {
     const { service: invoicing, mocks } = build();
 
     await invoicing.issueInvoice(
-      { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver }, // prettier-ignore
+      { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver, paymentMethod: '01' }, // prettier-ignore
       requester,
     );
 
@@ -146,6 +147,7 @@ describe('BI-080 a BI-089 emitir la factura', () => {
           accountId: ACCOUNT,
           siteId: SITE,
           emissionPointId: EMISSION_POINT,
+          paymentMethod: '01',
           receiver: { finalConsumer: { confirmed: true } },
         },
         requester,
@@ -170,7 +172,7 @@ describe('BI-080 a BI-089 emitir la factura', () => {
 
     await expect(
       invoicing.issueInvoice(
-        { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver }, // prettier-ignore
+        { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver, paymentMethod: '01' }, // prettier-ignore
         requester,
       ),
     ).rejects.toBeInstanceOf(EmissionPointInactiveError);
@@ -183,7 +185,7 @@ describe('BI-080 a BI-089 emitir la factura', () => {
 
     await expect(
       invoicing.issueInvoice(
-        { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver }, // prettier-ignore
+        { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver, paymentMethod: '01' }, // prettier-ignore
         requester,
       ),
     ).rejects.toBeInstanceOf(InvoiceNotFoundError);
@@ -196,7 +198,7 @@ describe('BI-080 a BI-089 emitir la factura', () => {
 
     await expect(
       invoicing.issueInvoice(
-        { accountId: ACCOUNT, siteId: 'other', emissionPointId: EMISSION_POINT, receiver }, // prettier-ignore
+        { accountId: ACCOUNT, siteId: 'other', emissionPointId: EMISSION_POINT, receiver, paymentMethod: '01' }, // prettier-ignore
         requester,
       ),
     ).rejects.toBeInstanceOf(AccountNotFoundError);
@@ -206,7 +208,7 @@ describe('BI-080 a BI-089 emitir la factura', () => {
     const { service: invoicing, mocks } = build();
 
     await invoicing.issueInvoice(
-      { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver }, // prettier-ignore
+      { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver, paymentMethod: '01' }, // prettier-ignore
       requester,
     );
 
@@ -258,7 +260,7 @@ describe('BI-080 a BI-089 emitir la factura', () => {
     });
 
     const issued = await invoicing.issueInvoice(
-      { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver }, // prettier-ignore
+      { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver, paymentMethod: '01' }, // prettier-ignore
       requester,
     );
 

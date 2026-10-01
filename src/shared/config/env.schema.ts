@@ -188,14 +188,6 @@ export const envSchema = z.object({
     emptyAsUndefined,
     z.string().min(1).optional(),
   ),
-  /**
-   * SRI-017, D-092. SRI table 24. A fiscal datum chosen by the clinic, so it
-   * has NO default: without it vouchers are not signed and the monitor says why.
-   */
-  SRI_DEFAULT_PAYMENT_METHOD: z.preprocess(
-    emptyAsUndefined,
-    z.enum(['01', '15', '16', '17', '18', '19', '20', '21']).optional(),
-  ),
   /** SRI-016, D-091. Anexo 26 «RUC Proveedor». Empty: the field is not emitted. */
   SRI_SOFTWARE_PROVIDER_RUC: z.preprocess(
     emptyAsUndefined,

@@ -421,6 +421,7 @@ describe('la facturación por HTTP', () => {
         .send({
           accountId: statement.account.id,
           emissionPointId,
+          paymentMethod: '01',
           receiver: {
             // `05` es la cédula en la tabla del SRI, no la palabra.
             identificationType: '05',
@@ -445,6 +446,7 @@ describe('la facturación por HTTP', () => {
         .send({
           accountId: statement.account.id,
           emissionPointId,
+          paymentMethod: '01',
           receiver: {
             // `05` es la cédula en la tabla del SRI, no la palabra.
             identificationType: '05',
@@ -471,6 +473,7 @@ describe('la facturación por HTTP', () => {
         .send({
           accountId,
           emissionPointId,
+          paymentMethod: '01',
           receiver: {
             // `05` es la cédula en la tabla del SRI, no la palabra.
             identificationType: '05',
@@ -696,7 +699,7 @@ describe('la facturación por HTTP', () => {
       const response = await api()
         .post(`/api/v1/billing/sites/${siteId}/invoices`)
         .set('Authorization', `Bearer ${cashierToken}`)
-        .send({ accountId, emissionPointId, receiver: {} })
+        .send({ accountId, emissionPointId, receiver: {}, paymentMethod: '01' })
         .expect(422);
 
       const problem = response.body as Problem;
@@ -717,6 +720,7 @@ describe('la facturación por HTTP', () => {
         .send({
           accountId,
           emissionPointId,
+          paymentMethod: '01',
           receiver: { finalConsumer: { confirmed: true } },
         })
         .expect(422);
@@ -755,6 +759,7 @@ describe('la facturación por HTTP', () => {
         .send({
           accountId,
           emissionPointId,
+          paymentMethod: '01',
           receiver: {
             identificationType: '05',
             identification: '1710034065',
@@ -784,6 +789,7 @@ describe('la facturación por HTTP', () => {
         .send({
           accountId,
           emissionPointId,
+          paymentMethod: '01',
           receiver: { identificationType, identification, name: 'Receptor' },
         });
 
@@ -837,6 +843,7 @@ describe('la facturación por HTTP', () => {
         .send({
           accountId,
           emissionPointId,
+          paymentMethod: '01',
           receiver: {
             identificationType: '05',
             identification: '1710034065',

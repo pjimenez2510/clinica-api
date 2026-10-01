@@ -305,7 +305,7 @@ SRI-012).
 
 **Prueba independiente:** facturar una cuenta, añadirle un cargo, facturarla
 otra vez, y comprobar que cada factura tiene exactamente sus líneas.
-**Cubre:** BI-169.
+**Cubre:** BI-169, BI-170.
 **Solo servidor:** BI-169. Es una garantía de almacenamiento.
 
 > Las BI-003, BI-004, BI-007 y BI-130 a BI-135 **no son una entrega**: aplican a
@@ -1065,6 +1065,17 @@ es falsa, hay requisitos que cambian.
   > necesitará para devolver los cargos al anular. La pidió el comprobante
   > electrónico: el XML lleva las líneas **de esa** factura, y deducirlas por la
   > cuenta da las de todas (error 52 del SRI).
+- **BI-170** — CUANDO se emita una factura, el sistema DEBERÁ exigir la forma
+  de pago con su código de la Tabla 24 del SRI —`01` sin utilización del
+  sistema financiero, `15` compensación de deudas, `16` tarjeta de débito, `17`
+  dinero electrónico, `18` tarjeta prepago, `19` tarjeta de crédito, `20` otros
+  con utilización del sistema financiero, `21` endoso de títulos—, NO DEBERÁ
+  suponer ninguna, y la base DEBERÁ rechazar otro código
+  (`invoice_payment_method_is_known`) y cambiarla una vez escrita.
+  > D-092, resuelta por el autor (opción B): se pregunta en el diálogo de caja al
+  > emitir. La Ficha v2.34 la exige en el comprobante (`pagos/pago/formaPago`,
+  > sri/SPEC.md SRI-017) y declarar efectivo lo que se pagó con tarjeta es un
+  > dato falso ante el SRI. Sin valor por defecto: la elige quien cobra.
 - **BI-089** — SI se intenta emitir una factura sin ninguna línea, ENTONCES el
   sistema DEBERÁ rechazarla con `INVOICE_HAS_NO_ITEMS`.
 - **BI-090** — El sistema NO DEBERÁ exponer ninguna operación que modifique el

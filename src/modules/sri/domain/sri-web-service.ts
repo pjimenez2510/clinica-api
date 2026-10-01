@@ -21,8 +21,6 @@ export const SRI_WEB_SERVICE = Symbol('SriWebService');
 /** The installation's SRI settings the application reads (SRI-016, SRI-017). */
 export interface SriSettings {
   environment: SriEnvironment;
-  /** SRI table 24, or `null` while D-092 is open. */
-  paymentMethod: string | null;
   /** Anexo 26, or `null` while D-091 is open. */
   softwareProviderRuc: string | null;
 }

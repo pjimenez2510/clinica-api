@@ -293,3 +293,22 @@ export const INVOICE_STATUSES = [
 
 /** One of `INVOICE_STATUSES`. */
 export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
+
+/**
+ * BI-170. The SRI's table 24 of payment methods, as `invoice_payment_method_is_known`
+ * admits them: 01 without the financial system, 15 debt compensation, 16 debit
+ * card, 17 electronic money, 18 prepaid card, 19 credit card, 20 others through
+ * the financial system, 21 endorsement of securities. Asked, never defaulted.
+ */
+export const PAYMENT_METHODS = [
+  '01',
+  '15',
+  '16',
+  '17',
+  '18',
+  '19',
+  '20',
+  '21',
+] as const;
+
+export type PaymentMethod = (typeof PAYMENT_METHODS)[number];

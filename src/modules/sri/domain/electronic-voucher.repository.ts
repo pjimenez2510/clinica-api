@@ -38,6 +38,8 @@ export interface PreparationSource {
   };
   lines: VoucherLine[];
   totals: VoucherTotals;
+  /** BI-170, SRI-017. Declared by caja; `null` only on older invoices. */
+  paymentMethod: string | null;
 }
 
 /** A voucher as the application handles it. */

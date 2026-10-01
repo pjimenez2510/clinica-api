@@ -171,7 +171,7 @@ describe('el comprobante electrónico por HTTP', () => {
       .send({ pkcs12Base64: p12.pkcs12.toString('base64'), password });
   }
 
-  async function issueInvoice(): Promise<{
+  async function issueInvoice(paymentMethod = '01'): Promise<{
     id: string;
     accessKey: string | null;
     electronic: { voucherId: string; state: string; accessKey: string } | null;
@@ -196,6 +196,7 @@ describe('el comprobante electrónico por HTTP', () => {
       .send({
         accountId,
         emissionPointId,
+        paymentMethod,
         receiver: {
           identificationType: '05',
           identification: '1710034065',
@@ -233,6 +234,50 @@ describe('el comprobante electrónico por HTTP', () => {
         (listed.body as { electronic: { blockedReason: string } }).electronic
           .blockedReason,
       ).toBe('NO_CERTIFICATE');
+    });
+  });
+
+  describe('BI-170 la forma de pago se declara al emitir', () => {
+    it('BI-170 sin forma de pago no se emite (422 sobre paymentMethod) y no se supone ninguna', async () => {
+      const account = await api()
+        .post(`/api/v1/billing/sites/${siteId}/accounts`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({ patientId, payerId })
+        .expect(201);
+      const accountId = (account.body as { id: string }).id;
+      await api()
+        .post(`/api/v1/billing/sites/${siteId}/accounts/${accountId}/charges`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({
+          billableServiceId: serviceId,
+          serviceDate: clinicalDateOf(new Date()),
+        })
+        .expect(201);
+      const refused = await api()
+        .post(`/api/v1/billing/sites/${siteId}/invoices`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({
+          accountId,
+          emissionPointId,
+          receiver: {
+            identificationType: '05',
+            identification: '1710034065',
+            name: 'Guamán Andrade, María José',
+          },
+        })
+        .expect(422);
+      expect(JSON.stringify(refused.body)).toContain('paymentMethod');
+      expect(await prisma.invoice.count()).toBe(0);
+    });
+
+    it('BI-170 SRI-017 la forma elegida viaja en la factura y en el XML del comprobante', async () => {
+      await uploadCertificate();
+      const invoice = await issueInvoice('19');
+      expect((invoice as { paymentMethod?: string }).paymentMethod).toBe('19');
+      const voucher = await prisma.electronicVoucher.findUniqueOrThrow({
+        where: { invoiceId: invoice.id },
+      });
+      expect(voucher.signedXml).toContain('<formaPago>19</formaPago>');
     });
   });
 

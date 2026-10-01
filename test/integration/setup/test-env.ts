@@ -71,7 +71,6 @@ for (const [key, value] of Object.entries(PLACEHOLDERS)) {
  *   double explicitly.
  * - A master passphrase in a throwaway file, so the certificate store works
  *   and nothing of a developer's `.dev-secrets/` is read.
- * - `01` as payment method: a TEST VALUE, not D-092's answer.
  */
 const sriMasterKeyFile = join(
   mkdtempSync(join(tmpdir(), 'sri-test-')),
@@ -81,7 +80,6 @@ writeFileSync(sriMasterKeyFile, 'frase-maestra-de-las-pruebas-de-integracion');
 
 process.env.SRI_QUEUE_ENABLED = 'false';
 process.env.SRI_CERTIFICATE_MASTER_KEY_FILE = sriMasterKeyFile;
-process.env.SRI_DEFAULT_PAYMENT_METHOD = '01';
 process.env.SRI_ALLOW_REMOTE = 'false';
 // EMPTY and not deleted: `ConfigModule` falls back to the `.env` file for a
 // variable the process does not have, and `KEY=` reads as «not declared».

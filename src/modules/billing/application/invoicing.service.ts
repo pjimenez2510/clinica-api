@@ -27,6 +27,7 @@ import {
 } from '../domain/billing.errors';
 import {
   type BuyerIdentificationType,
+  type PaymentMethod,
   type ReceiverContext,
   type ReceiverRequest,
   proposeReceiver,
@@ -104,6 +105,8 @@ export class InvoicingService {
       siteId: string;
       emissionPointId: string;
       receiver: ReceiverRequest;
+      /** BI-170. */
+      paymentMethod: PaymentMethod;
     },
     requester: Requester,
   ): Promise<InvoiceWithVoucher> {
@@ -128,6 +131,7 @@ export class InvoicingService {
       siteId: command.siteId,
       emissionPointId: command.emissionPointId,
       receiver,
+      paymentMethod: command.paymentMethod,
       issuedById: requester.userId,
     });
 

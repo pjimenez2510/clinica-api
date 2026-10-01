@@ -395,6 +395,7 @@ export class BillingController {
         siteId,
         emissionPointId: dto.emissionPointId,
         receiver: dto.receiver,
+        paymentMethod: dto.paymentMethod,
       },
       { userId: this.currentUser.requireUserId() },
     );
@@ -527,6 +528,7 @@ function toInvoiceResponse(invoice: InvoiceWithVoucher): InvoiceResponse {
       total: invoice.totals.total.toString(),
     },
     status: invoice.status,
+    paymentMethod: invoice.paymentMethod,
     issuedAt: invoice.issuedAt?.toISOString() ?? null,
     authorisedAt: invoice.authorisedAt?.toISOString() ?? null,
     electronic: invoice.electronic

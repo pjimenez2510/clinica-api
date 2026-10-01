@@ -312,16 +312,15 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
   > **[NECESITA ACLARACIÓN]** D-091: si esta instalación está obligada y con qué
   > RUC. Hasta entonces la variable va vacía y el campo no se emite.
 - **SRI-017** — El sistema DEBERÁ incluir en `infoFactura` `propina` en `0.00`
-  y `pagos` con un `pago` cuya forma es la de `SRI_DEFAULT_PAYMENT_METHOD`
-  (código de la Tabla 24) por el importe total; y SI esa forma de pago no está
-  declarada ENTONCES el sistema DEBERÁ crear el comprobante con su clave, NO
-  DEBERÁ firmarlo ni enviarlo, y DEBERÁ mostrarlo en el monitor con ese motivo.
-  > **[NECESITA ACLARACIÓN]** D-092. La Ficha v2.34 marca `pagos` y `propina`
-  > **obligatorios** en la factura 1.1.0 aunque el XSD los declare
-  > `minOccurs="0"`: gana la Ficha. **Falta esquema:** la factura no registra
-  > con qué se pagó (el cobro es billing/B6, no construido). Elegir la forma de
-  > pago es un dato fiscal y no lo elige un agente; las pruebas y el entorno de
-  > desarrollo declaran `01` como valor de prueba, no como decisión.
+  y `pagos` con un `pago` cuya forma es la que caja declaró al emitir la factura
+  (BI-170, código de la Tabla 24) por el importe total; y SI la factura no la
+  tiene ENTONCES el sistema DEBERÁ crear el comprobante con su clave, NO DEBERÁ
+  firmarlo ni enviarlo, y DEBERÁ mostrarlo en el monitor con ese motivo.
+  > D-092, resuelta por el autor (opción B): la forma de pago es un dato de la
+  > factura, preguntado en el diálogo de caja; no hay forma de pago por
+  > instalación. La Ficha v2.34 marca `pagos` y `propina` **obligatorios** en la
+  > factura 1.1.0 aunque el XSD los declare `minOccurs="0"`: gana la Ficha. Solo
+  > las facturas emitidas antes de BI-170 pueden carecer de ella.
 - **SRI-018** — El sistema DEBERÁ componer `infoTributaria` con la razón social
   y el RUC del establecimiento, `dirMatriz` con la dirección de la matriz del
   establecimiento, `agenteRetencion` y `contribuyenteRimpe` solo cuando las
@@ -577,14 +576,14 @@ el autor quiera hacerlo:
    `POST /v1/sri/certificates`.
 3. Declarar `SRI_RECEPTION_URL` y `SRI_AUTHORISATION_URL` con los endpoints de
    **pruebas** de ADR-004 (sin `?wsdl`), `SRI_ALLOW_REMOTE=true`,
-   `SRI_ENVIRONMENT=1`, `SRI_DEFAULT_PAYMENT_METHOD` según D-092 y
-   `SRI_SOFTWARE_PROVIDER_RUC` según D-091.
+   `SRI_ENVIRONMENT=1` y `SRI_SOFTWARE_PROVIDER_RUC` según D-091 (la forma de
+   pago la declara caja en cada factura, D-092).
 4. Emitir una factura de prueba y mirar el monitor: lo esperable en pruebas es
    la advertencia **60** (ambiente de pruebas), que no bloquea. Si los nombres
    de los elementos de la respuesta real difieren de los del doble, el intento
    queda como fallo de transporte con el cuerpo recibido: es la señal para
    ajustar el adaptador y el doble a la vez.
-5. Solo después, y con D-091 a D-093 resueltas, producción: URL de producción y
+5. Solo después, y con D-091 y D-093 resueltas, producción: URL de producción y
    `SRI_ENVIRONMENT=2`. **Cambiar el ambiente no toca los comprobantes ya
    preparados**: su clave dice `1` y se quedan en pruebas.
 
@@ -606,8 +605,8 @@ Las tres son fiscales y están en `DECISIONES-PENDIENTES.md` con recomendación:
 
 1. **D-091** — RUC del proveedor del software (Anexo 26), nombre del campo y
    entrada en vigor. Bloquea la segunda mitad de SRI-016.
-2. **D-092** — La forma de pago del comprobante mientras no exista el cobro.
-   Bloquea la conexión real (SRI-017), no las pruebas.
+2. **D-092** — Resuelta (B): la forma de pago se pregunta en caja al emitir
+   (BI-170, SRI-017).
 3. **D-093** — Qué se hace con una factura devuelta por un dato de la propia
    factura (receptor, importes), que no se puede editar. Bloquea qué hace la
    cajera después de SRI-046, no el registro del rechazo.

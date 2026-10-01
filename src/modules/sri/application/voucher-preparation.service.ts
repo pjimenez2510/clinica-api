@@ -174,8 +174,9 @@ export class VoucherPreparationService implements ElectronicVoucherPreparer {
     const source = await this.vouchers.preparationSource(voucher.invoiceId);
     if (!source) return voucher;
 
-    // SRI-017. A fiscal datum nobody has decided is not invented here.
-    if (this.settings.paymentMethod === null) {
+    // SRI-017, BI-170. The cashier declares it; an older invoice without it
+    // is not signed, and nothing here invents one.
+    if (source.paymentMethod === null) {
       return this.blocked(voucher, 'NO_PAYMENT_METHOD');
     }
 
@@ -303,7 +304,7 @@ export class VoucherPreparationService implements ElectronicVoucherPreparer {
       buyer: source.buyer,
       lines: source.lines,
       totals: source.totals,
-      paymentMethod: this.settings.paymentMethod,
+      paymentMethod: source.paymentMethod,
       softwareProviderRuc: this.settings.softwareProviderRuc,
     };
   }

@@ -97,6 +97,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
         buyerIdentification: true,
         buyerName: true,
         buyerEmail: true,
+        paymentMethod: true,
         subtotalTaxed: true,
         subtotalUntaxed: true,
         discountTotal: true,
@@ -185,6 +186,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
         taxTotal: money(row.taxTotal),
         total: money(row.total),
       },
+      paymentMethod: row.paymentMethod,
     };
   }
 

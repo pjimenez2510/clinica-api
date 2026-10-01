@@ -112,11 +112,7 @@ beforeEach(async () => {
   prisma = db();
   double.reset();
   mailer = new FakeMailer();
-  settings = {
-    environment: '1',
-    paymentMethod: '01',
-    softwareProviderRuc: null,
-  };
+  settings = { environment: '1', softwareProviderRuc: null };
 
   const service = prisma as unknown as PrismaService;
   const vouchers = new PrismaElectronicVoucherRepository(service);
@@ -209,6 +205,7 @@ async function issueInvoice(email: string | null = 'maria@example.com') {
     accountId: account.id,
     siteId,
     emissionPointId,
+    paymentMethod: '01',
     receiver: {
       buyerIdentificationType: '05',
       buyerIdentification: '1710034065',
@@ -276,10 +273,14 @@ describe('SRI-001, SRI-041 preparar al emitir, sin bloquear nunca la factura', (
     expect(signed.signedXml).toContain('ds:SignatureValue');
   });
 
-  it('SRI-017 sin forma de pago declarada no firma, y lo dice', async () => {
+  it('SRI-017 una factura sin forma de pago (anterior a BI-170) no se firma, y lo dice', async () => {
     await loadCertificate();
-    settings.paymentMethod = null;
     const invoice = await issueInvoice();
+    // As an invoice issued before the column existed: lifting the permanence
+    // trigger for the one statement that empties it.
+    await prisma.$executeRaw`ALTER TABLE "invoice" DISABLE TRIGGER trg_invoice_payment_method_permanent`;
+    await prisma.$executeRaw`UPDATE "invoice" SET "payment_method" = NULL WHERE "id" = ${invoice.id}::uuid`;
+    await prisma.$executeRaw`ALTER TABLE "invoice" ENABLE TRIGGER trg_invoice_payment_method_permanent`;
     await preparation.prepare(invoice.id);
     expect(await voucherOf(invoice.id)).toMatchObject({
       status: 'PREPARED',

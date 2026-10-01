@@ -106,6 +106,7 @@ async function issue(accountId: string) {
     accountId,
     siteId: context.siteId,
     emissionPointId: context.emissionPointId,
+    paymentMethod: '01',
     receiver: {
       buyerIdentificationType: '05',
       buyerIdentification: '1710034065',
@@ -442,5 +443,49 @@ describe('SRI-027, SRI-034 el certificado del emisor', () => {
           .$executeRaw`DELETE FROM "signing_certificate" WHERE "id" = ${id}::uuid`,
       ),
     ).toMatch(/signing_certificate_is_never_deleted/);
+  });
+});
+
+describe('BI-170 la forma de pago de la factura', () => {
+  it('BI-170 la emisión guarda la forma de pago y la base no deja cambiarla una vez escrita', async () => {
+    const invoice = await anIssuedInvoice();
+    expect(
+      (
+        await context.prisma.invoice.findUniqueOrThrow({
+          where: { id: invoice.id },
+        })
+      ).paymentMethod,
+    ).toBe('01');
+
+    expect(
+      await rejectionOf(
+        context.prisma.$executeRaw`
+          UPDATE "invoice" SET "payment_method" = '19' WHERE "id" = ${invoice.id}::uuid`,
+      ),
+    ).toMatch(/invoice_payment_method_is_permanent/);
+  });
+
+  it('BI-170 control: una factura antigua sin forma de pago rechaza un código fuera de la tabla', async () => {
+    const invoice = await anIssuedInvoice();
+    // An invoice issued before the column existed has NULL. Recreated by
+    // lifting the permanence trigger for one statement, which is what the
+    // migration left behind for such rows.
+    await context.prisma
+      .$executeRaw`ALTER TABLE "invoice" DISABLE TRIGGER trg_invoice_payment_method_permanent`;
+    await context.prisma
+      .$executeRaw`UPDATE "invoice" SET "payment_method" = NULL WHERE "id" = ${invoice.id}::uuid`;
+    await context.prisma
+      .$executeRaw`ALTER TABLE "invoice" ENABLE TRIGGER trg_invoice_payment_method_permanent`;
+
+    expect(
+      await rejectionOf(
+        context.prisma.$executeRaw`
+          UPDATE "invoice" SET "payment_method" = '99' WHERE "id" = ${invoice.id}::uuid`,
+      ),
+    ).toMatch(/invoice_payment_method_is_known/);
+    await expect(
+      context.prisma.$executeRaw`
+        UPDATE "invoice" SET "payment_method" = '19' WHERE "id" = ${invoice.id}::uuid`,
+    ).resolves.toBe(1);
   });
 });

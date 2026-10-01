@@ -152,6 +152,7 @@ async function issue(accountId: string) {
     accountId,
     siteId: context.siteId,
     emissionPointId: context.emissionPointId,
+    paymentMethod: '01',
     receiver,
     issuedById: context.userId,
   });
@@ -326,6 +327,7 @@ describe('BI-085 el secuencial por punto de emisión', () => {
             accountId: index === 0 ? one : other,
             siteId: context.siteId,
             emissionPointId: context.emissionPointId,
+            paymentMethod: '01',
             receiver,
             issuedById: context.userId,
           }),
@@ -500,6 +502,7 @@ describe('BI-081 «Consumidor Final» lleva la identificación del SRI o no exis
       accountId: await anAccountReadyToInvoice(),
       siteId: context.siteId,
       emissionPointId: context.emissionPointId,
+      paymentMethod: '01',
       receiver: {
         buyerIdentificationType: '07',
         buyerIdentification: '9999999999999',
@@ -532,6 +535,7 @@ describe('BI-159 la base rechaza un RUC o una cédula de receptor que el SRI no 
       accountId: await anAccountReadyToInvoice(),
       siteId: context.siteId,
       emissionPointId: context.emissionPointId,
+      paymentMethod: '01',
       receiver: { ...receiver, buyerIdentificationType, buyerIdentification },
       issuedById: context.userId,
     });

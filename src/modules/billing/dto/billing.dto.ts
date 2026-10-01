@@ -7,7 +7,7 @@ import {
 } from '../../../shared/domain/clinic-time';
 import { explicitFlag } from '../../../shared/http/query-flag';
 
-import { BUYER_IDENTIFICATION_TYPES } from '../domain/invoice';
+import { BUYER_IDENTIFICATION_TYPES, PAYMENT_METHODS } from '../domain/invoice';
 import { PAYER_KINDS } from '../domain/billing.repository';
 import {
   CHARGE_ORIGINS,
@@ -305,6 +305,10 @@ export const issueInvoiceSchema = z.object({
   accountId: z.uuid('Seleccione la cuenta que se factura'),
   emissionPointId: z.uuid('Seleccione el punto de emisión'),
   receiver: receiverSchema,
+  /** BI-170, D-092. Asked, never defaulted: SRI table 24. */
+  paymentMethod: z.enum(PAYMENT_METHODS, {
+    error: 'Indique la forma de pago',
+  }),
 });
 /** Body of POST /billing/sites/:siteId/invoices. */
 export class IssueInvoiceDto extends createZodDto(issueInvoiceSchema) {}
@@ -522,6 +526,8 @@ const invoiceResponseSchema = z.object({
   isFinalConsumer: z.boolean(),
   totals: totalsSchema,
   status: z.enum(['DRAFT', 'ISSUED', 'AUTHORISED', 'REJECTED', 'VOIDED']),
+  /** BI-170. `null` only on invoices issued before it was asked. */
+  paymentMethod: z.enum(PAYMENT_METHODS).nullable(),
   issuedAt: z.iso.datetime().nullable(),
   authorisedAt: z.iso.datetime().nullable(),
   /**
