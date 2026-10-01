@@ -577,6 +577,27 @@ describe('SRI-043 a SRI-052 cada respuesta del SRI, contra el doble', () => {
     expect((await invoiceRow(invoice.id)).status).toBe('ISSUED');
   });
 
+  it('SRI-059 SRI-051 un fault con un nulo y fuera de todo tope queda grabado: el intento no se pierde y espera', async () => {
+    const { invoice, voucher } = await aSignedVoucher();
+    double.setScenario(voucher.accessKey, 'ODD_FAULT');
+    const before = Date.now();
+    await dispatch.run('SEND', voucher.id);
+
+    const attempts = await prisma.electronicVoucherAttempt.findMany({
+      where: { voucherId: voucher.id },
+    });
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]).toMatchObject({
+      outcome: 'TRANSPORT_FAILURE',
+      httpStatus: 500,
+    });
+    const waiting = await voucherOf(invoice.id);
+    expect(waiting.attemptCount).toBe(1);
+    expect(waiting.nextAttemptAt!.getTime()).toBeGreaterThanOrEqual(
+      before + 29_000,
+    );
+  });
+
   it('SRI-059 lo guardado del intento nunca lleva la petición firmada, el certificado, su contraseña ni la frase maestra', async () => {
     const p12 = await loadCertificate();
     const invoice = await issueInvoice();

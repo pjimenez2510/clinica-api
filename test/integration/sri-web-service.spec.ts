@@ -211,14 +211,58 @@ describe('SRI-042 a SRI-050 el cliente del servicio web contra el doble local', 
     // Positive control: the double did put the request in its answer.
     expect(double.callsFor(KEY, 'RECEPTION')).toHaveLength(1);
     expect(stored).not.toContain(base64);
-    expect(stored).not.toContain(base64.slice(40, 140));
+    // A piece of it, glued to `xml=` so it is not a run of its own.
+    expect(stored).not.toContain(base64.slice(150, 350));
+    // The voucher, raw, escaped as text content, or decoded by the parser.
     expect(stored).not.toContain('<factura id="comprobante"');
+    expect(stored).not.toContain('&lt;factura id=');
     expect(stored).not.toContain('ds:Signature');
+    expect(stored).not.toContain(KEY);
     expect(answer.response?.faultCode).toBe('soap:Client');
     expect(answer.response?.faultString).toBe(
-      'No se pudo leer el comprobante [petición omitida]',
+      'No se pudo leer el comprobante [petición omitida] | [petición omitida]',
     );
+    expect(answer.response?.faultDetail).toContain('xml=[petición omitida]');
     expect(answer.response?.responseBody).toContain('[petición omitida]');
+  });
+
+  it('SRI-059 una autorización con el comprobante y una fecha ilegible es fallo, y no guarda el comprobante', async () => {
+    double.setScenario(KEY, 'AUTHORISED_BAD_DATE');
+    await client.receive(SIGNED);
+    const answer = await client.authorise(KEY);
+    if (answer.kind !== 'TRANSPORT_FAILURE') throw new Error(answer.kind);
+    const stored = JSON.stringify(answer);
+    expect(answer.response?.httpStatus).toBe(200);
+    // Positive control: the answer is there, without the voucher it carried.
+    expect(answer.response?.responseBody).toContain(
+      '<fechaAutorizacion>25/10/2026 10:00:00</fechaAutorizacion>',
+    );
+    expect(answer.response?.responseBody).toContain('[comprobante omitido]');
+    expect(stored).not.toContain('<factura id="comprobante"');
+    expect(stored).not.toContain('ds:Signature');
+  });
+
+  it('SRI-059 SRI-051 un fault con un nulo, un faultcode enorme y un faultstring pasado del tope cabe en la base', async () => {
+    double.setScenario(KEY, 'ODD_FAULT');
+    const answer = await client.receive(SIGNED);
+    if (answer.kind !== 'TRANSPORT_FAILURE') throw new Error(answer.kind);
+    const texts = [
+      answer.error,
+      answer.response?.faultCode,
+      answer.response?.faultString,
+      answer.response?.faultDetail,
+      answer.response?.responseBody,
+    ].filter((t): t is string => typeof t === 'string');
+    // What the CHECK `electronic_voucher_attempt_response_is_capped` allows.
+    for (const t of texts) expect(t.length).toBeLessThanOrEqual(16_640);
+    // PostgreSQL refuses 0x00 in TEXT: it is replaced, and the cut is said.
+    expect(JSON.stringify(answer)).not.toContain('\\u0000');
+    expect(answer.response?.faultString).toMatch(
+      /^Falla con un nulo \uFFFD en medio/,
+    );
+    expect(answer.response?.faultString).toMatch(/caracteres más\]$/);
+    expect(answer.response?.faultCode!.length).toBeLessThan(300);
+    expect(answer.error).toMatch(/caracteres más\]$/);
   });
 
   it('SRI-059 un fault de SOAP 1.2 se lee igual: Code, Reason y Detail', async () => {

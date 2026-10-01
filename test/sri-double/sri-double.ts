@@ -41,8 +41,19 @@ export type DoubleScenario =
   | 'HTML_500'
   /** HTTP 500 with a body far larger than what is kept (SRI-059's ceiling). */
   | 'HUGE_500'
-  /** HTTP 500 with a `soap:Fault` that repeats the request it was sent. */
-  | 'ECHO_FAULT';
+  /**
+   * HTTP 500 with a `soap:Fault` that repeats the request it was sent: its
+   * base64, a piece of it glued to other text, and the voucher escaped as
+   * text content usually is (`< > &`, quotes left alone).
+   */
+  | 'ECHO_FAULT'
+  /**
+   * HTTP 500 whose fault breaks every ceiling: a NUL in the body, a faultcode
+   * of hundreds of characters and a faultstring past 16 KiB.
+   */
+  | 'ODD_FAULT'
+  /** AUTORIZADO with the voucher and a `fechaAutorizacion` that does not parse. */
+  | 'AUTHORISED_BAD_DATE';
 
 export interface DoubleCall {
   operation: 'RECEPTION' | 'AUTHORISATION';
@@ -224,10 +235,25 @@ const PROXY_HTML =
 /** SRI-059. A failure that repeats what it was sent, in every form. */
 function echoFault(requestBody: string) {
   const base64 = between(requestBody, '<xml>', '</xml>') ?? '';
+  const voucher = Buffer.from(base64, 'base64').toString('utf8');
+  const asText = voucher
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
   return envelope(
     '<soap:Fault><faultcode>soap:Client</faultcode>' +
-      `<faultstring>No se pudo leer el comprobante ${base64}</faultstring>` +
-      `<detail><peticion><![CDATA[${requestBody}]]></peticion></detail></soap:Fault>`,
+      `<faultstring>No se pudo leer el comprobante ${base64} | ${asText}</faultstring>` +
+      `<detail><peticion><![CDATA[${requestBody}]]></peticion>` +
+      `<parametro>xml=${base64.slice(100, 400)}</parametro></detail></soap:Fault>`,
+  );
+}
+
+/** SRI-059. Past every ceiling the database keeps, and with a NUL. */
+function oddFault() {
+  return envelope(
+    `<soap:Fault><faultcode>soap:${'Servidor'.repeat(40)}</faultcode>` +
+      `<faultstring>Falla con un nulo \u0000 en medio ${'y'.repeat(17_000)}</faultstring>` +
+      '</soap:Fault>',
   );
 }
 
@@ -247,6 +273,7 @@ function failureReply(
     };
   if (scenario === 'ECHO_FAULT')
     return { status: 500, body: echoFault(requestBody) };
+  if (scenario === 'ODD_FAULT') return { status: 500, body: oddFault() };
   return null;
 }
 
@@ -436,9 +463,20 @@ export async function startSriDouble(
           if (seen <= pendingPolls)
             return reply(200, authorisation(accessKey, 'NONE', null, history));
         }
+        const authorised = authorisation(
+          accessKey,
+          'AUTORIZADO',
+          voucher,
+          history,
+        );
         return reply(
           200,
-          authorisation(accessKey, 'AUTORIZADO', voucher, history),
+          scenario === 'AUTHORISED_BAD_DATE'
+            ? authorised.replace(
+                /<fechaAutorizacion>[^<]*<\/fechaAutorizacion>/,
+                '<fechaAutorizacion>25/10/2026 10:00:00</fechaAutorizacion>',
+              )
+            : authorised,
         );
       }
 

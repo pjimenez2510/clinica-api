@@ -103,7 +103,12 @@ function bodyOf(xml: string, response: string, result: string): unknown {
 /** SRI-059. Each kept text's ceiling; the database allows it plus the mark. */
 export const KEPT_TEXT_LIMIT = 16_384;
 const SUMMARY_LIMIT = 500;
+/** A fault code is a qualified name; anything longer is not one. */
+const FAULT_CODE_LIMIT = 256;
 const REQUEST_MARK = '[petición omitida]';
+const VOUCHER_MARK = '[comprobante omitido]';
+/** Below this, a shared run of base64 can be chance; above, it is an echo. */
+const ECHO_WINDOW = 64;
 
 /** Cut at `limit`, saying how much was left out; never half a character. */
 function capped(text: string, limit = KEPT_TEXT_LIMIT): string {
@@ -113,27 +118,69 @@ function capped(text: string, limit = KEPT_TEXT_LIMIT): string {
   return `${text.slice(0, cut)}… [cortado: ${text.length - cut} caracteres más]`;
 }
 
-const escapedXml = (xml: string) =>
-  xml
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+/** PostgreSQL refuses 0x00 in TEXT: the attempt would not be kept at all. */
+const withoutNul = (text: string) => text.replaceAll('\u0000', '\uFFFD');
+
+/** What was sent and must never be kept (SRI-059). */
+interface SentRequest {
+  base64: string;
+  xml: string;
+  /** Every 64-character piece of the base64, to find a partial echo. */
+  windows: Set<string>;
+}
+
+function sentRequest(xml: string, base64: string): SentRequest {
+  const windows = new Set<string>();
+  for (let i = 0; i + ECHO_WINDOW <= base64.length; i++) {
+    windows.add(base64.slice(i, i + ECHO_WINDOW));
+  }
+  return { base64, xml, windows };
+}
 
 /**
- * SRI-059. The request out of an answer: the signed XML as sent, escaped, and
- * its base64 — whole, or any long piece of it.
+ * SRI-059. The request out of a text: the signed XML raw, escaped as an
+ * attribute or as text content, and its base64 — whole, or any piece of it
+ * long enough not to be chance, even glued to other characters (`xml=PD94…`).
  */
-function withoutRequest(body: string, request: readonly string[]): string {
-  let clean = body;
-  for (const sent of request) {
+function withoutRequest(text: string, request: SentRequest | null): string {
+  if (!request) return text;
+  let clean = text;
+  const asText = request.xml
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  for (const sent of [
+    request.base64,
+    request.xml,
+    asText,
+    asText.replace(/"/g, '&quot;'),
+  ]) {
     if (sent.length > 0) clean = clean.split(sent).join(REQUEST_MARK);
   }
-  const base64 = request.filter((sent) => /^[A-Za-z0-9+/=]+$/.test(sent));
-  return clean.replace(/[A-Za-z0-9+/=]{64,}/g, (run) =>
-    base64.some((sent) => sent.includes(run)) ? REQUEST_MARK : run,
-  );
+  return clean.replace(/[A-Za-z0-9+/=]{64,}/g, (run) => {
+    let first = -1;
+    let last = -1;
+    for (let i = 0; i + ECHO_WINDOW <= run.length; i++) {
+      if (request.windows.has(run.slice(i, i + ECHO_WINDOW))) {
+        if (first < 0) first = i;
+        last = i + ECHO_WINDOW;
+      }
+    }
+    return first < 0
+      ? run
+      : `${run.slice(0, first)}${REQUEST_MARK}${run.slice(last)}`;
+  });
 }
+
+/**
+ * SRI-059. An authorisation that is not one may still carry the signed
+ * voucher in `<comprobante>`: it is the request, and it is not kept.
+ */
+const withoutVoucher = (body: string) =>
+  body.replace(
+    /(<(?:[\w.-]+:)?comprobante\b[^>]*>)[\s\S]*?(<\/(?:[\w.-]+:)?comprobante\s*>)/g,
+    `$1${VOUCHER_MARK}$2`,
+  );
 
 const DETAIL =
   /<(?:[\w.-]+:)?detail\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?detail\s*>/i;
@@ -155,8 +202,8 @@ function readFault(body: string) {
     text(child(fault, 'faultstring')) ??
     text(child(child(fault, 'Reason'), 'Text'));
   return {
-    faultCode: code === null ? null : capped(code),
-    faultString: reason === null ? null : capped(reason),
+    faultCode: code,
+    faultString: reason,
     faultDetail: DETAIL.exec(body)?.[1]?.trim() || null,
   };
 }
@@ -164,15 +211,22 @@ function readFault(body: string) {
 function failedResponse(
   httpStatus: number,
   body: string,
-  request: readonly string[],
+  request: SentRequest | null,
+  options: { omitVoucher?: boolean } = {},
 ): SriFailedResponse {
-  const clean = withoutRequest(body, request);
+  let clean = withoutNul(body);
+  if (options.omitVoucher) clean = withoutVoucher(clean);
+  clean = withoutRequest(clean, request);
   const fault = readFault(clean);
+  // The parser decodes entities: what was escaped in the body may be the
+  // request again once read, so the read texts are cleaned too.
+  const kept = (value: string | null | undefined, limit = KEPT_TEXT_LIMIT) =>
+    value ? capped(withoutRequest(withoutNul(value), request), limit) : null;
   return {
     httpStatus,
-    faultCode: fault?.faultCode ?? null,
-    faultString: fault?.faultString ?? null,
-    faultDetail: fault?.faultDetail ? capped(fault.faultDetail) : null,
+    faultCode: kept(fault?.faultCode, FAULT_CODE_LIMIT),
+    faultString: kept(fault?.faultString),
+    faultDetail: kept(fault?.faultDetail),
     responseBody: capped(clean),
   };
 }
@@ -193,7 +247,10 @@ class TransportFailure extends Error {
     const reason =
       response.faultString === null
         ? `${what}: ${capped(response.responseBody, SUMMARY_LIMIT)}`
-        : `${what} · ${response.faultCode ?? 'sin faultcode'}: ${response.faultString}`;
+        : // Whole, but within the ceiling the database keeps (SRI-059).
+          capped(
+            `${what} · ${response.faultCode ?? 'sin faultcode'}: ${response.faultString}`,
+          );
     return new TransportFailure(reason, response);
   }
 }
@@ -214,7 +271,7 @@ export class FetchSriWebService implements SriWebService {
 
   async receive(signedXml: string): Promise<ReceptionAnswer> {
     const base64 = Buffer.from(signedXml, 'utf8').toString('base64');
-    const request = [base64, signedXml, escapedXml(signedXml)];
+    const request = sentRequest(signedXml, base64);
     try {
       const body = await this.call(
         this.config.get('SRI_RECEPTION_URL', { infer: true }),
@@ -247,7 +304,7 @@ export class FetchSriWebService implements SriWebService {
       const body = await this.call(
         this.config.get('SRI_AUTHORISATION_URL', { infer: true }),
         `<ec:autorizacionComprobante xmlns:ec="${AUTHORISATION_NS}"><claveAccesoComprobante>${accessKey}</claveAccesoComprobante></ec:autorizacionComprobante>`,
-        [],
+        null,
       );
       const answer = bodyOf(
         body,
@@ -256,7 +313,7 @@ export class FetchSriWebService implements SriWebService {
       );
       if (answer === undefined) {
         throw TransportFailure.of(
-          failedResponse(200, body, []),
+          failedResponse(200, body, null, { omitVoucher: true }),
           'unexpected authorisation body',
         );
       }
@@ -276,7 +333,7 @@ export class FetchSriWebService implements SriWebService {
         const voucherXml = text(child(authorised, 'comprobante'));
         if (Number.isNaN(authorisedAt.getTime()) || !voucherXml) {
           throw TransportFailure.of(
-            failedResponse(200, body, []),
+            failedResponse(200, body, null, { omitVoucher: true }),
             'authorised answer without date or voucher',
           );
         }
@@ -329,7 +386,7 @@ export class FetchSriWebService implements SriWebService {
   private async call(
     url: string | undefined,
     operation: string,
-    request: readonly string[],
+    request: SentRequest | null,
   ): Promise<string> {
     if (!url) throw new TransportFailure('web service URL not configured');
     const response = await fetch(url, {
@@ -350,7 +407,12 @@ export class FetchSriWebService implements SriWebService {
     });
     const body = await response.text();
     if (response.status !== 200) {
-      throw TransportFailure.of(failedResponse(response.status, body, request));
+      throw TransportFailure.of(
+        // An authorisation (no request to strip) may carry the voucher.
+        failedResponse(response.status, body, request, {
+          omitVoucher: request === null,
+        }),
+      );
     }
     return body;
   }
@@ -375,7 +437,7 @@ function describe(error: unknown): string {
   if (error instanceof Error) {
     const cause = (error as { cause?: { code?: string } }).cause?.code;
     return capped(
-      [error.name, error.message, cause].filter(Boolean).join(': '),
+      withoutNul([error.name, error.message, cause].filter(Boolean).join(': ')),
       SUMMARY_LIMIT,
     );
   }

@@ -435,10 +435,36 @@ describe('SRI-051, SC-083 cada llamada al SRI queda, con la clave de su comproba
     expect(await rejectionOf(insertFailure(42, body))).toMatch(
       /electronic_voucher_attempt_http_status_is_http/,
     );
-    // The body has a ceiling: 16 KiB of characters plus the cut's mark.
-    expect(await rejectionOf(insertFailure(500, 'x'.repeat(20_000)))).toMatch(
-      /electronic_voucher_attempt_response_is_capped/,
-    );
+    // Every text has the ceiling: 16 KiB of characters plus the cut's mark.
+    // Exactly at it, it goes in; one past it, in any column, it does not.
+    const atCeiling = 'x'.repeat(16_640);
+    const pastCeiling = `${atCeiling}x`;
+    const insertTexts = (texts: {
+      transportError?: string;
+      faultCode?: string;
+      faultString?: string;
+      faultDetail?: string;
+      responseBody?: string;
+    }) =>
+      context.prisma.$executeRaw`
+        INSERT INTO "electronic_voucher_attempt"
+          ("voucher_id", "access_key", "operation", "started_at", "duration_ms", "outcome",
+           "transport_error", "http_status", "fault_code", "fault_string", "fault_detail", "response_body")
+        VALUES (${voucher.id}::uuid, ${voucher.accessKey}, 'RECEPTION', CURRENT_TIMESTAMP, 40, 'TRANSPORT_FAILURE',
+                ${texts.transportError ?? 'HTTP 500'}, 500, ${texts.faultCode ?? null}, ${texts.faultString ?? null},
+                ${texts.faultDetail ?? null}, ${texts.responseBody ?? null})`;
+    for (const column of [
+      'transportError',
+      'faultCode',
+      'faultString',
+      'faultDetail',
+      'responseBody',
+    ] as const) {
+      await expect(insertTexts({ [column]: atCeiling })).resolves.toBe(1);
+      expect(await rejectionOf(insertTexts({ [column]: pastCeiling }))).toMatch(
+        /electronic_voucher_attempt_response_is_capped/,
+      );
+    }
     // An answer that was an answer carries no transport detail.
     expect(
       await rejectionOf(
