@@ -7,12 +7,7 @@ import {
   TEAR_OFF_HEIGHT_MM,
   millimetresToPoints,
 } from '../domain/page-layout';
-import {
-  BOLD_FONT,
-  FONT_BOLD,
-  FONT_REGULAR,
-  REGULAR_FONT,
-} from './embedded-fonts';
+import { FONTS, type FontName } from './embedded-fonts';
 import type {
   DocumentMetadata,
   DocumentRenderer,
@@ -61,6 +56,11 @@ import type {
  *   - `info.CreationDate` set to the instant of emission and not to the
  *     machine's clock (DOC-024).
  */
+
+/** DOC-025. The faces of `embedded-fonts.ts`, by the role they play. */
+const SANS: FontName = 'sans';
+const SANS_BOLD: FontName = 'sansBold';
+const SERIF_BOLD: FontName = 'serifBold';
 
 /** Short alias: every coordinate below is written in millimetres. */
 const mm = millimetresToPoints;
@@ -135,8 +135,9 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     // DOC-021. BEFORE THE FIRST CHARACTER. Registering after any text has been
     // written leaves that text set in a font that cannot be embedded, and the
     // file stops being PDF/A without anything saying so.
-    doc.registerFont(FONT_REGULAR, REGULAR_FONT);
-    doc.registerFont(FONT_BOLD, BOLD_FONT);
+    for (const name of Object.keys(FONTS) as FontName[]) {
+      doc.registerFont(name, FONTS[name]);
+    }
 
     const chunks: Buffer[] = [];
     const finished = new Promise<Buffer>((resolve, reject) => {
@@ -230,7 +231,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     }
 
     doc
-      .font(FONT_BOLD)
+      .font(SANS_BOLD)
       .fontSize(SIZE.heading)
       .fillColor('#000000')
       .text(header.establishmentName, textLeft, cursor.y, { width: textWidth });
@@ -246,7 +247,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
 
     if (details.length > 0) {
       doc
-        .font(FONT_REGULAR)
+        .font(SANS)
         .fontSize(SIZE.small)
         .text(details.join(' · '), textLeft, doc.y, { width: textWidth });
     }
@@ -278,14 +279,14 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     cursor: Cursor,
   ): void {
     doc
-      .font(FONT_BOLD)
+      .font(SERIF_BOLD)
       .fontSize(SIZE.title)
       .fillColor(layout.frame.accentColour)
       .text(layout.frame.title, left, cursor.y, { width, align: 'center' });
 
     if (layout.frame.reference !== null) {
       doc
-        .font(FONT_REGULAR)
+        .font(SANS)
         .fontSize(SIZE.small)
         .fillColor('#000000')
         .text(
@@ -337,7 +338,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
       case 'heading':
         ensure(mm(8));
         doc
-          .font(FONT_BOLD)
+          .font(SERIF_BOLD)
           .fontSize(SIZE.heading)
           .fillColor('#000000')
           .text(block.text, left, cursor.y, { width });
@@ -347,7 +348,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
       case 'paragraph':
         ensure(mm(6));
         doc
-          .font(block.emphasis === true ? FONT_BOLD : FONT_REGULAR)
+          .font(block.emphasis === true ? SANS_BOLD : SANS)
           .fontSize(SIZE.body)
           .fillColor('#000000')
           .text(block.text, left, cursor.y, { width, lineGap: LINE_GAP });
@@ -368,12 +369,12 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
           }
           const x = left + column * columnWidth;
           doc
-            .font(FONT_BOLD)
+            .font(SANS_BOLD)
             .fontSize(SIZE.small)
             .fillColor('#555555')
             .text(entry.label, x, rowTop, { width: columnWidth - mm(3) });
           doc
-            .font(FONT_REGULAR)
+            .font(SANS)
             .fontSize(SIZE.body)
             .fillColor('#000000')
             .text(entry.value, x, doc.y, {
@@ -426,7 +427,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         }
 
         doc
-          .font(FONT_REGULAR)
+          .font(SANS)
           .fontSize(SIZE.small)
           .fillColor('#555555')
           .text(block.caption, left, cursor.y + boxHeight + mm(1), {
@@ -503,7 +504,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
 
     const paintHeaderRow = (): void => {
       let x = left;
-      doc.font(FONT_BOLD).fontSize(SIZE.small).fillColor('#555555');
+      doc.font(SANS_BOLD).fontSize(SIZE.small).fillColor('#555555');
       columns.forEach((column, index) => {
         doc.text(column.header, x, cursor.y, {
           width: widthAt(index) - mm(1),
@@ -528,7 +529,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
       // prescription is ever split across two pages.
       const heights = row.map((cell, index) =>
         doc
-          .font(FONT_REGULAR)
+          .font(SANS)
           .fontSize(SIZE.body)
           .heightOfString(cell, { width: widthAt(index) - mm(1) }),
       );
@@ -539,7 +540,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
       ensure(rowHeight + mm(2));
 
       let x = left;
-      doc.font(FONT_REGULAR).fontSize(SIZE.body).fillColor('#000000');
+      doc.font(SANS).fontSize(SIZE.body).fillColor('#000000');
       row.forEach((cell, index) => {
         const column = columns[index];
         doc.text(cell, x, cursor.y, {
@@ -588,7 +589,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     const cursor: Cursor = { y: cutY + mm(3) };
 
     doc
-      .font(FONT_BOLD)
+      .font(SANS_BOLD)
       .fontSize(SIZE.small)
       .fillColor('#666666')
       .text(band.caption, left, cursor.y, { width });
@@ -628,7 +629,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         .join(' · ');
 
       doc
-        .font(FONT_REGULAR)
+        .font(SANS)
         .fontSize(SIZE.small)
         .fillColor('#666666')
         .text(text, left, y, { width, align: 'center' });

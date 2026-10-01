@@ -799,7 +799,8 @@ respuesta es idéntica byte a byte a la de otro código inventado.
   > un validador. Es la trampa más cara de esta librería y por eso es requisito
   > y no comentario.
   >
-  > **La fuente viaja con la aplicación**, en `dejavu-fonts-ttf` — DejaVu Sans,
+  > **La fuente viaja con la aplicación** —hoy Source Sans 3 y Source Serif 4,
+  > DOC-025; antes `dejavu-fonts-ttf`, DejaVu Sans,
   > licencia libre derivada de Bitstream Vera, cobertura latina completa
   > incluidas las tildes y la «ñ». Es un paquete de **datos**: no ejecuta nada,
   > no tiene dependencias y no necesita mantenimiento, así que su fecha de

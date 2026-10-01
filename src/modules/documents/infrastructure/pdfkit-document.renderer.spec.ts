@@ -114,6 +114,28 @@ describe('DOC-020 a DOC-024 el artefacto es PDF/A-1b de verdad', () => {
     expect(raw).not.toContain('Courier');
   });
 
+  it('DOC-025 incrusta Source Sans 3 y Source Serif 4, y ninguna otra fuente', async () => {
+    // D-095.2. The subset prefix varies (`ABCDEF+`); the family name does not.
+    const raw = (await renderer.render(layout, images, metadata)).toString(
+      'latin1',
+    );
+    const families = new Set(
+      [...raw.matchAll(/\/BaseFont \/(?:[A-Z]{6}\+)?([A-Za-z0-9-]+)/g)].map(
+        (match) => match[1],
+      ),
+    );
+
+    expect(families).toContain('SourceSans3-Regular');
+    expect(families).toContain('SourceSerif4-Bold');
+    expect(
+      [...families].every(
+        (family) =>
+          family?.startsWith('SourceSans3-') ||
+          family?.startsWith('SourceSerif4-'),
+      ),
+    ).toBe(true);
+  });
+
   it('DOC-022 lleva el OutputIntent con el perfil sRGB y los metadatos pdfaid', async () => {
     const raw = (await renderer.render(layout, images, metadata)).toString(
       'latin1',
