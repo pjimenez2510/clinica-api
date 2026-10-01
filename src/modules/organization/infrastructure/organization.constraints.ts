@@ -40,6 +40,13 @@ registerConstraintMeanings({
     message:
       'El RUC son trece dígitos y termina en un código de establecimiento como 001',
   },
+  // OR-027. The DTO refuses the shape first; this is the base's own refusal.
+  site_sri_establishment_code_format: {
+    code: 'INVALID_SRI_ESTABLISHMENT_CODE',
+    field: 'sriEstablishmentCode',
+    message:
+      'El código de establecimiento del SRI son exactamente tres dígitos, como 001',
+  },
   site_ruc_format: {
     code: 'INVALID_RUC',
     field: 'ruc',

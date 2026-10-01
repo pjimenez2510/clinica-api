@@ -1,11 +1,15 @@
 import './infrastructure/documents.constraints';
-import { Module, type MiddlewareConsumer, type NestModule } from '@nestjs/common'; // prettier-ignore
+import { Global, Module, type MiddlewareConsumer, type NestModule } from '@nestjs/common'; // prettier-ignore
 import { ConfigService } from '@nestjs/config';
 import express from 'express';
 
 import type { Env } from '../../shared/config/env.schema';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import {
+  RIDE_ISSUER,
+  type RideIssuer,
+} from '../../shared/documents/ride-issuer.port';
 
 import { DocumentIdentityController } from './document-identity.controller';
 import { DocumentTemplatesController } from './document-templates.controller';
@@ -59,6 +63,7 @@ import { SharpImageNormaliser } from './infrastructure/sharp-image.normaliser';
  * different reason: a logo is uploaded once a decade by whoever administers the
  * clinic, an artefact is emitted a hundred times a day by whoever attends.
  */
+@Global()
 @Module({
   controllers: [
     DocumentsController,
@@ -94,7 +99,33 @@ import { SharpImageNormaliser } from './infrastructure/sharp-image.normaliser';
      */
     { provide: DOCUMENT_RENDERER, useClass: PdfKitDocumentRenderer },
     { provide: IMAGE_NORMALISER, useClass: SharpImageNormaliser },
+    /**
+     * SRI-072. The RIDE `sri` attaches to the e-mail of an authorised voucher:
+     * emitted and FILED here like any other (DOC-002), in the name of whoever
+     * issued the invoice, and read back as the stored bytes. `@Global` exports
+     * this token and nothing else of the module.
+     */
+    {
+      provide: RIDE_ISSUER,
+      inject: [DocumentService],
+      useFactory: (documents: DocumentService): RideIssuer => ({
+        async issueRide(invoiceId, issuedById) {
+          const requester = { userId: issuedById, sites: 'all' as const };
+          const summary = await documents.emit(
+            { kind: 'INVOICE_RIDE', subjectId: invoiceId },
+            requester,
+          );
+          const stored = await documents.content(
+            summary.id,
+            ['INVOICE_RIDE'],
+            requester,
+          );
+          return { content: stored.content, fileName: `RIDE-${invoiceId}.pdf` };
+        },
+      }),
+    },
   ],
+  exports: [RIDE_ISSUER],
 })
 export class DocumentsModule implements NestModule {
   /**

@@ -3,7 +3,11 @@ import {
   type NotApplicable,
 } from '../../../shared/domain/form-117/form-117';
 import type { DateInNumbersAndWords } from '../../../shared/domain/form-117/date-in-words';
-import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
+import {
+  addDays,
+  clinicalDateOf,
+  wallClockOf,
+} from '../../../shared/domain/clinic-time';
 
 import { composeFrame } from './document-frame';
 import {
@@ -38,6 +42,20 @@ import type { Block, DocumentLayout, LabelledValue } from './page-layout';
 /** Every clinical date on every one of these documents, as a person reads it. */
 function ecuadorianDate(instant: Date): string {
   const [year, month, day] = clinicalDateOf(instant).split('-');
+  return `${day}/${month}/${year}`;
+}
+
+/** SRI-070. The authorisation is an instant: date and wall-clock time in Ecuador. */
+function ecuadorianDateTime(instant: Date): string {
+  const time = wallClockOf(instant);
+  const two = (n: number) => String(n).padStart(2, '0');
+  return `${ecuadorianDate(instant)} ${two(time.hour)}:${two(time.minute)}:${two(time.second)}`;
+}
+
+/** `2026-05-11` → `11/05/2026`, for a column that is already a calendar date. */
+function calendarDate(date: Date): string {
+  const iso = date.toISOString().slice(0, 10);
+  const [year, month, day] = iso.split('-');
   return `${day}/${month}/${year}`;
 }
 
@@ -721,31 +739,72 @@ function fiscalLegends(context: DocumentContext): LabelledValue[] {
   return legends;
 }
 
+/** SRI-071. What the RIDE says while the SRI has not authorised. */
+const PENDING_AUTHORISATION = 'PENDIENTE DE AUTORIZACIÓN';
+/** SRI-071, D-102. What it says once the SRI returned or refused it. */
+const NOT_AUTHORISED = 'NO AUTORIZADA POR EL SRI';
+
+/** SRI-070. The 24th digit of the access key: `1` pruebas, `2` producción. */
+function environmentOf(accessKey: string | null): string {
+  if (accessKey === null || accessKey.length !== 49) return '—';
+  return accessKey[23] === '2' ? 'PRODUCCIÓN' : 'PRUEBAS';
+}
+
 /**
  * DOC-076 to DOC-078. The RIDE, following the SRI's Ficha Técnica, Anexo 2.
  *
- * ⚠️ NO QR AND NO BARCODE, AND THAT IS A REQUIREMENT RATHER THAN AN OMISSION
- * (DOC-078). «QR» does not appear ONCE in the 142 pages of the Ficha Técnica,
- * and the barcode is explicitly optional. Both are what somebody would add from
- * memory after seeing other RIDEs, and an invented element on a tax document is
- * exactly what a review looks at.
+ * ⚠️ NO QR (DOC-078). «QR» does not appear ONCE in the 142 pages of the Ficha
+ * Técnica; it is what somebody would add from memory after seeing other RIDEs,
+ * and an invented element on a tax document is exactly what a review looks at.
+ *
+ * The barcode the Ficha does allow (§9.20–9.21, Anexo 2) is the access key in
+ * Code 128 subset C, without a GS1 application identifier (D-095 §5): the
+ * `barcode` block, right under the key in text in the voucher's box.
  */
 export function composeInvoiceLayout(
   data: InvoicePrintData,
   context: DocumentContext,
   template: DocumentTemplate,
 ): DocumentLayout {
+  // SRI-071. Pending only while it can still be authorised: a returned or
+  // refused invoice must not promise an authorisation that will not come.
+  const unauthorised =
+    data.status === 'REJECTED' ? NOT_AUTHORISED : PENDING_AUTHORISATION;
   const { establishment } = context;
 
+  // DOC-076. The issuer's box of the approved page «Factura» (D-095): legal
+  // name, trade name, head office and establishment addresses, and the fiscal
+  // legends that apply. The logo, when there is one, is the frame's, above it.
   const issuerBox: Block[] = [
     { kind: 'paragraph', text: establishment.name, emphasis: true },
-    ...(establishment.addressLine === null
+    ...(establishment.tradeName === null ||
+    establishment.tradeName === establishment.name
       ? []
-      : ([{ kind: 'paragraph', text: establishment.addressLine }] as Block[])),
-    ...(establishment.phone === null
-      ? []
-      : ([{ kind: 'paragraph', text: establishment.phone }] as Block[])),
-    { kind: 'fields', columns: 1, entries: fiscalLegends(context) },
+      : ([{ kind: 'paragraph', text: establishment.tradeName }] as Block[])),
+    {
+      kind: 'fields',
+      columns: 1,
+      entries: [
+        ...(establishment.headOfficeAddress === null
+          ? []
+          : [
+              {
+                label: 'DIRECCIÓN MATRIZ',
+                value: establishment.headOfficeAddress,
+              },
+            ]),
+        ...(establishment.addressLine === null ||
+        establishment.addressLine === establishment.headOfficeAddress
+          ? []
+          : [
+              {
+                label: 'DIRECCIÓN ESTABLECIMIENTO',
+                value: establishment.addressLine,
+              },
+            ]),
+        ...fiscalLegends(context),
+      ],
+    },
   ];
 
   const voucherBox: Block[] = [
@@ -755,23 +814,75 @@ export function composeInvoiceLayout(
       entries: [
         { label: 'R.U.C.', value: establishment.ruc ?? '—' },
         { label: 'FACTURA No.', value: data.documentNumber },
-        // The access key IS the authorisation number for the offline scheme,
-        // which is the one this system uses. Printing «—» while it is absent is
-        // honest: an unauthorised RIDE is not yet a voucher.
-        { label: 'NÚMERO DE AUTORIZACIÓN', value: data.accessKey ?? '—' },
+        // The access key IS the authorisation number for the offline scheme.
+        // SRI-071: until the SRI authorises, the RIDE is handed over saying
+        // so — never a number or a date that does not exist yet.
+        {
+          label: 'NÚMERO DE AUTORIZACIÓN',
+          value:
+            data.authorisedAt === null ? unauthorised : (data.accessKey ?? '—'),
+        },
         {
           label: 'FECHA Y HORA DE AUTORIZACIÓN',
           value:
             data.authorisedAt === null
-              ? '—'
-              : ecuadorianDate(data.authorisedAt),
+              ? unauthorised
+              : ecuadorianDateTime(data.authorisedAt),
         },
-        { label: 'AMBIENTE', value: 'PRODUCCIÓN' },
-        { label: 'EMISIÓN', value: 'NORMAL' },
-        { label: 'CLAVE DE ACCESO', value: data.accessKey ?? '—' },
+        // SRI-070. The environment is the one written INSIDE the key (its 24th
+        // digit), never a constant: a test voucher printed «PRODUCCIÓN» claims
+        // a validity it does not have.
       ],
     },
+    // Ambiente and emisión share a row, as on the approved page.
+    {
+      kind: 'fields',
+      columns: 2,
+      entries: [
+        { label: 'AMBIENTE', value: environmentOf(data.accessKey) },
+        { label: 'EMISIÓN', value: 'NORMAL' },
+      ],
+    },
+    {
+      kind: 'fields',
+      columns: 1,
+      entries: [{ label: 'CLAVE DE ACCESO', value: data.accessKey ?? '—' }],
+    },
+    // D-095 §5, DOC-078. The key again, as a Code 128 subset C barcode under
+    // the key in text — only when there is a key to encode.
+    ...(data.accessKey === null
+      ? []
+      : [{ kind: 'barcode' as const, value: data.accessKey }]),
   ];
+
+  // DOC-076 «Información adicional»: what the voucher's own fields do not say.
+  const additional: LabelledValue[] = [
+    ...(data.buyerEmail === null
+      ? []
+      : [{ label: 'Correo', value: data.buyerEmail }]),
+    ...(data.patient?.phone
+      ? [{ label: 'Teléfono', value: data.patient.phone }]
+      : []),
+    ...(data.patient === null
+      ? []
+      : [
+          {
+            label: 'Paciente',
+            // The HC as it is quoted: its number already says «HC».
+            value: `${data.patient.fullName} · ${data.patient.mrn}`,
+          },
+        ]),
+    ...(data.attendedOn === null
+      ? []
+      : [
+          {
+            label: 'Atención',
+            value: `${calendarDate(data.attendedOn)} · ${context.siteName}`,
+          },
+        ]),
+  ];
+
+  const sums = invoiceSubtotals(data);
 
   return {
     frame: composeFrame(context, template, {
@@ -782,7 +893,6 @@ export function composeInvoiceLayout(
     }),
     blocks: [
       { kind: 'boxes', left: issuerBox, right: voucherBox },
-      { kind: 'heading', text: 'Datos del comprador' },
       {
         kind: 'fields',
         columns: 2,
@@ -796,42 +906,149 @@ export function composeInvoiceLayout(
             label: 'Fecha de emisión',
             value: data.issuedAt === null ? '—' : ecuadorianDate(data.issuedAt),
           },
-          { label: 'Correo', value: data.buyerEmail ?? '—' },
+          ...(data.buyerAddress === null
+            ? []
+            : [{ label: 'Dirección', value: data.buyerAddress }]),
         ],
       },
-      { kind: 'heading', text: 'Detalle' },
       {
         kind: 'table',
         columns: [
-          { header: 'Cód.', width: 0.14 },
-          { header: 'Descripción', width: 0.4 },
-          { header: 'Cant.', width: 0.1, align: 'right' },
-          { header: 'P. unitario', width: 0.12, align: 'right' },
-          { header: 'Descuento', width: 0.12, align: 'right' },
-          { header: 'Total', width: 0.12, align: 'right' },
+          { header: 'Cód. principal', width: 0.13 },
+          { header: 'Cód. auxiliar', width: 0.1 },
+          { header: 'Cant.', width: 0.07, align: 'right' },
+          { header: 'Descripción', width: 0.34 },
+          { header: 'Precio unitario', width: 0.12, align: 'right' },
+          { header: 'Descuento', width: 0.11, align: 'right' },
+          { header: 'Precio total', width: 0.13, align: 'right' },
         ],
         rows: data.lines.map((line) => [
           line.code,
-          line.description,
+          line.auxiliaryCode ?? '—',
           line.quantity,
+          line.description,
           line.unitPrice,
           line.discount,
           line.total,
         ]),
       },
       {
-        kind: 'fields',
-        columns: 2,
-        entries: [
-          { label: 'SUBTOTAL 0%', value: data.subtotalUntaxed },
-          { label: 'SUBTOTAL GRAVADO', value: data.subtotalTaxed },
-          { label: 'DESCUENTO', value: data.discountTotal },
-          { label: 'IVA', value: data.taxTotal },
-          { label: 'VALOR TOTAL', value: data.total },
+        kind: 'boxes',
+        left: [
+          ...(additional.length === 0
+            ? []
+            : ([
+                {
+                  kind: 'paragraph',
+                  text: 'Información adicional',
+                  emphasis: true,
+                },
+                { kind: 'fields', columns: 1, entries: additional },
+              ] as Block[])),
+          // BI-170. The way it was paid, with its SRI table 24 code.
+          {
+            kind: 'table',
+            columns: [
+              { header: 'Forma de pago', width: 0.7 },
+              { header: 'Valor', width: 0.3, align: 'right' },
+            ],
+            rows: [
+              [
+                data.paymentMethod === null
+                  ? '—'
+                  : `${data.paymentMethod} · ${PAYMENT_METHOD_LABEL[data.paymentMethod] ?? data.paymentMethod}`,
+                data.total,
+              ],
+            ],
+          },
+        ],
+        // The subtotals the Anexo 2 lists, every one, aligned to the right.
+        right: [
+          {
+            kind: 'table',
+            dense: true,
+            columns: [
+              { header: 'Subtotales', width: 0.68 },
+              { header: 'Valor', width: 0.32, align: 'right' },
+            ],
+            rows: [
+              [`SUBTOTAL ${sums.rateLabel}%`, sums.taxed],
+              ['SUBTOTAL 0%', sums.zero],
+              ['SUBTOTAL NO OBJETO DE IVA', sums.notSubject],
+              ['SUBTOTAL EXENTO DE IVA', sums.exempt],
+              ['SUBTOTAL SIN IMPUESTOS', sums.withoutTaxes],
+              ['TOTAL DESCUENTO', data.discountTotal],
+              ['ICE', '0.00'],
+              [`IVA ${sums.rateLabel}%`, data.taxTotal],
+              ['PROPINA', '0.00'],
+              ['VALOR TOTAL', data.total],
+            ],
+          },
         ],
       },
     ],
     tearOff: null,
+  };
+}
+
+/** BI-170. SRI table 24, as the RIDE names each way of paying. */
+const PAYMENT_METHOD_LABEL: Readonly<Record<string, string>> = {
+  '01': 'Sin utilización del sistema financiero',
+  '15': 'Compensación de deudas',
+  '16': 'Tarjeta de débito',
+  '17': 'Dinero electrónico',
+  '18': 'Tarjeta prepago',
+  '19': 'Tarjeta de crédito',
+  '20': 'Otros con utilización del sistema financiero',
+  '21': 'Endoso de títulos',
+};
+
+/** SRI table 17: the codes that are not a rate. */
+const NOT_SUBJECT_CODE = '6';
+const EXEMPT_CODE = '7';
+const ZERO_CODE = '0';
+/** The general rate, printed when the invoice has nothing taxed. */
+const GENERAL_RATE = '15';
+
+/**
+ * DOC-076. The Anexo 2 subtotals, from the frozen lines (each line's net and
+ * its table 17 code), in cents so nothing rounds through a float.
+ */
+function invoiceSubtotals(data: InvoicePrintData): {
+  rateLabel: string;
+  taxed: string;
+  zero: string;
+  notSubject: string;
+  exempt: string;
+  withoutTaxes: string;
+} {
+  const cents = (amount: string): number => Math.round(Number(amount) * 100);
+  const money = (value: number): string => (value / 100).toFixed(2);
+  let taxed = 0;
+  let zero = 0;
+  let notSubject = 0;
+  let exempt = 0;
+  const rates = new Set<string>();
+  for (const line of data.lines) {
+    const net = cents(line.total);
+    if (line.taxSriCode === NOT_SUBJECT_CODE) notSubject += net;
+    else if (line.taxSriCode === EXEMPT_CODE) exempt += net;
+    else if (line.taxSriCode === ZERO_CODE) zero += net;
+    else {
+      taxed += net;
+      if (line.taxPercentage !== null) {
+        rates.add(String(Number(line.taxPercentage)));
+      }
+    }
+  }
+  return {
+    // One taxed rate is the norm; a mix is named as such rather than as 15.
+    rateLabel: rates.size === 0 ? GENERAL_RATE : [...rates].join('/'),
+    taxed: money(taxed),
+    zero: money(zero),
+    notSubject: money(notSubject),
+    exempt: money(exempt),
+    withoutTaxes: money(taxed + zero + notSubject + exempt),
   };
 }
 

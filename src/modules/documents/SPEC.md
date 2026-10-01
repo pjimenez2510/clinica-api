@@ -636,6 +636,16 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
 - **DOC-076** — El **RIDE** DEBERÁ colocar el logo, los datos del emisor, la
   clave de acceso, la autorización, el receptor, el detalle y los totales
   siguiendo el **Anexo 2 de la Ficha Técnica del SRI**.
+  > Con la página «Factura» de la plantilla aprobada (D-095): el emisor con
+  > razón social, nombre comercial, dirección matriz y del establecimiento y
+  > sus banderas (DOC-077); el comprador con su dirección cuando es el
+  > paciente; el detalle con código principal y auxiliar (el del tarifario);
+  > «Información adicional» —correo, teléfono cuando el comprador es el
+  > paciente, paciente con su HC y día y sede de la atención—; la forma de pago
+  > con su código de la tabla 24 (BI-170); y todos los subtotales del Anexo 2
+  > (15 %, 0 %, no objeto, exento, sin impuestos, descuento, ICE, IVA 15 %,
+  > propina, valor total), alineados a la derecha. Lo que no se conoce no se
+  > imprime, ni con un valor inventado.
 
 - **DOC-077** — El RIDE DEBERÁ imprimir las **banderas fiscales** del
   establecimiento que estén puestas: obligado a llevar contabilidad,

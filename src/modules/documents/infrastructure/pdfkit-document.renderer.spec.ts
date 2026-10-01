@@ -273,6 +273,7 @@ describe('DOC-073 PR-038 una receta corriente cabe en una hoja', () => {
           tradeName: null,
           email: null,
           operatingPermit: null,
+          headOfficeAddress: null,
         },
       },
       {
@@ -340,6 +341,63 @@ describe('DOC-101 la firma nunca queda sola en una página', () => {
     }
     // Control: the sweep does push the group to the second page.
     expect(movedWhole).toBeGreaterThan(0);
+  });
+});
+
+describe('DOC-076 las cajas no se parten ni pisan el pie', () => {
+  const boxes = {
+    kind: 'boxes' as const,
+    left: [{ kind: 'paragraph' as const, text: 'Información adicional' }],
+    right: [
+      {
+        kind: 'table' as const,
+        columns: [
+          { header: 'Subtotales', width: 0.7 },
+          { header: 'Valor', width: 0.3, align: 'right' as const },
+        ],
+        rows: Array.from({ length: 10 }, (_, index) => [
+          index === 9 ? 'VALOR TOTAL' : `SUBTOTAL ${index}`,
+          '0.00',
+        ]),
+      },
+    ],
+  };
+  const lines = (count: number) => ({
+    kind: 'table' as const,
+    columns: [{ header: 'Descripción', width: 1 }],
+    rows: Array.from({ length: count }, (_, index) => [`Línea ${index + 1}`]),
+  });
+  const pagesOf = async (pdf: Buffer): Promise<string[]> => {
+    const proxy = await getDocumentProxy(new Uint8Array(pdf));
+    return (await extractText(proxy, { mergePages: false })).text;
+  };
+
+  it('DOC-076 una pareja de cajas que no cabe en lo que queda pasa entera a la página siguiente', async () => {
+    const base: DocumentLayout = { ...layout, tearOff: null };
+    // The longest detail that still fits on ONE page by itself: right after
+    // it there is no room for the totals.
+    let fitting = 0;
+    for (let count = 10; count <= 80; count += 1) {
+      const alone = await renderer.render(
+        { ...base, blocks: [lines(count)] },
+        images,
+        metadata,
+      );
+      if ((await pagesOf(alone)).length > 1) break;
+      fitting = count;
+    }
+
+    const pages = await pagesOf(
+      await renderer.render(
+        { ...base, blocks: [lines(fitting), boxes] },
+        images,
+        metadata,
+      ),
+    );
+    expect(pages).toHaveLength(2);
+    expect(pages[0]).toContain(`Línea ${fitting}`);
+    expect(pages[0]).not.toContain('VALOR TOTAL');
+    expect(pages[1]).toContain('VALOR TOTAL');
   });
 });
 

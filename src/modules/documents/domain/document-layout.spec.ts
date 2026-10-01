@@ -46,6 +46,7 @@ const context: DocumentContext = {
     name: 'Centro de Especialidades Bahía',
     ruc: '0993123456001',
     addressLine: 'Av. 9 de Octubre 123',
+    headOfficeAddress: 'Av. Malecón 100, Guayaquil',
     phone: '04-2345678',
     logo: null,
     keepsAccounting: true,
@@ -905,35 +906,140 @@ describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
       buyerIdentificationType: '05',
       buyerIdentification: '1710034065',
       buyerName: 'Guamán Andrade María José',
-      buyerEmail: null,
+      buyerEmail: 'maria@example.com',
+      buyerAddress: 'Calle Ulloa N25-10, Quito',
+      paymentMethod: '19',
+      patient: {
+        fullName: 'GUAMÁN ANDRADE María José',
+        mrn: 'HC0000000801',
+        phone: '099 876 5432',
+      },
+      attendedOn: new Date('2026-08-20T00:00:00Z'), // fecha-fija: fecha de servicio, columna date
       lines: [
         {
           code: 'CONS-MG-PV',
+          auxiliaryCode: '99203',
           description: 'Consulta de medicina general',
           quantity: '1.00',
           unitPrice: '30.00',
           discount: '0.00',
           total: '30.00',
+          taxSriCode: '0',
+          taxPercentage: '0.00',
+        },
+        {
+          code: 'INS-GUANTES',
+          auxiliaryCode: null,
+          description: 'Guantes de examen',
+          quantity: '2.00',
+          unitPrice: '2.00',
+          discount: '0.00',
+          total: '4.00',
+          taxSriCode: '4',
+          taxPercentage: '15.00',
         },
       ],
-      subtotalTaxed: '0.00',
+      subtotalTaxed: '4.00',
       subtotalUntaxed: '30.00',
       discountTotal: '0.00',
-      taxTotal: '0.00',
-      total: '30.00',
+      taxTotal: '0.60',
+      total: '34.60',
     },
   };
 
   it('DOC-076 lleva las dos cajas del Anexo 2, con RUC, número y clave de acceso', () => {
     const layout = composeLayout(ride, context, template);
-    const boxes = layout.blocks.filter((block) => block.kind === 'boxes');
-    expect(boxes).toHaveLength(1);
+    // The issuer and the voucher head the page, side by side.
+    expect(layout.blocks[0]?.kind).toBe('boxes');
 
     const text = wholeText(layout);
     expect(text).toContain('0993123456001');
     expect(text).toContain('001-001-000000001');
     expect(text).toContain('CLAVE DE ACCESO');
     expect(text).toContain('4'.repeat(49));
+  });
+
+  it('DOC-076 sigue la página «Factura» aprobada (D-095): emisor, comprador, detalle, información adicional, forma de pago y subtotales', () => {
+    const layout = composeLayout(
+      ride,
+      {
+        ...context,
+        establishment: { ...context.establishment, tradeName: 'Bahía Salud' },
+      },
+      template,
+    );
+    const text = wholeText(layout);
+    // Emisor: razón social, nombre comercial, matriz y establecimiento.
+    expect(text).toContain('Centro de Especialidades Bahía');
+    expect(text).toContain('Bahía Salud');
+    expect(text).toContain('DIRECCIÓN MATRIZ=Av. Malecón 100, Guayaquil');
+    expect(text).toContain('DIRECCIÓN ESTABLECIMIENTO=Av. 9 de Octubre 123');
+    // Comprador, con su dirección.
+    expect(text).toContain('Dirección=Calle Ulloa N25-10, Quito');
+    // Detalle: código principal y auxiliar.
+    expect(text).toContain(
+      'Cód. principal|Cód. auxiliar|Cant.|Descripción|Precio unitario|Descuento|Precio total',
+    );
+    expect(text).toContain(
+      'CONS-MG-PV|99203|1.00|Consulta de medicina general',
+    );
+    expect(text).toContain('INS-GUANTES|—|2.00|Guantes de examen');
+    // Información adicional.
+    expect(text).toContain('Información adicional');
+    expect(text).toContain('Correo=maria@example.com');
+    expect(text).toContain('Teléfono=099 876 5432');
+    expect(text).toContain('Paciente=GUAMÁN ANDRADE María José · HC0000000801');
+    expect(text).toContain('Atención=20/08/2026 · Sede Centro');
+    // Forma de pago con su código de la tabla 24.
+    expect(text).toContain('19 · Tarjeta de crédito|34.60');
+    // Subtotales, todos, en el orden del Anexo 2.
+    const subtotals = [
+      'SUBTOTAL 15%|4.00',
+      'SUBTOTAL 0%|30.00',
+      'SUBTOTAL NO OBJETO DE IVA|0.00',
+      'SUBTOTAL EXENTO DE IVA|0.00',
+      'SUBTOTAL SIN IMPUESTOS|34.00',
+      'TOTAL DESCUENTO|0.00',
+      'ICE|0.00',
+      'IVA 15%|0.60',
+      'PROPINA|0.00',
+      'VALOR TOTAL|34.60',
+    ];
+    expect(text).toContain(subtotals.join('\n'));
+    // Set close, so the page fits on one sheet as the approved one does.
+    const totals = layout.blocks.at(-1);
+    expect(
+      totals?.kind === 'boxes' && totals.right[0]?.kind === 'table'
+        ? totals.right[0].dense
+        : undefined,
+    ).toBe(true);
+  });
+
+  it('DOC-076 lo que no se conoce no se imprime: sin comprador-paciente no hay dirección ni teléfono', () => {
+    const text = wholeText(
+      composeLayout(
+        {
+          kind: 'INVOICE_RIDE',
+          data: {
+            ...ride.data,
+            buyerAddress: null,
+            patient: { ...ride.data.patient!, phone: null },
+          },
+        },
+        context,
+        template,
+      ),
+    );
+    expect(text).not.toContain('Dirección=');
+    expect(text).not.toContain('Teléfono=');
+    expect(text).toContain('Paciente=');
+  });
+
+  it('SRI-070 la autorización lleva fecha Y hora, en la de Guayaquil', () => {
+    // 01:05 UTC of the 21st is 20:05 of the 20th in Ecuador: the day changes.
+    expect(wholeText(composeLayout(ride, context, template))).toContain(
+      'FECHA Y HORA DE AUTORIZACIÓN=20/08/2026 20:05:00',
+    );
   });
 
   it('DOC-077 imprime las banderas fiscales que el establecimiento tiene puestas', () => {
@@ -989,29 +1095,112 @@ describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
     expect(wholeText(popular)).toContain('RÉGIMEN RIMPE=NEGOCIO POPULAR');
   });
 
-  it('DOC-078 NO lleva código QR ni código de barras', () => {
-    // «QR» does not appear once in the 142 pages of the SRI's Ficha Técnica,
-    // and the barcode is explicitly optional. This assertion exists because
-    // both are what somebody adds from memory after seeing other RIDEs.
-    const layout = composeLayout(ride, context, template);
-    const kinds = new Set<string>();
-    const walk = (blocks: readonly Block[]): void => {
-      for (const block of blocks) {
-        kinds.add(block.kind);
-        if (block.kind === 'boxes') {
-          walk(block.left);
-          walk(block.right);
+  it('DOC-078 lleva la clave en código de barras bajo la clave en texto, y nunca QR', () => {
+    const blocksOf = (layout: ReturnType<typeof composeLayout>) => {
+      const found: Block[] = [];
+      const walk = (blocks: readonly Block[]): void => {
+        for (const block of blocks) {
+          found.push(block);
+          if (block.kind === 'boxes') {
+            walk(block.left);
+            walk(block.right);
+          }
         }
-      }
+      };
+      walk(layout.blocks);
+      return found;
     };
-    walk(layout.blocks);
 
-    expect([...kinds]).not.toContain('barcode');
-    expect(wholeText(layout).toLowerCase()).not.toContain('qr');
+    const keyed = composeLayout(
+      { kind: 'INVOICE_RIDE', data: { ...ride.data, accessKey: KEY_IN_TESTS } },
+      context,
+      template,
+    );
+    expect(blocksOf(keyed)).toContainEqual({
+      kind: 'barcode',
+      value: KEY_IN_TESTS,
+    });
+    expect(wholeText(keyed).toLowerCase()).not.toContain('qr');
+
+    // Without a key there is nothing to encode, and nothing is invented.
+    const unkeyed = composeLayout(
+      { kind: 'INVOICE_RIDE', data: { ...ride.data, accessKey: null } },
+      context,
+      template,
+    );
+    expect(blocksOf(unkeyed).map((b) => b.kind)).not.toContain('barcode');
   });
 
-  it('DOC-076 imprime «—» mientras el SRI no ha autorizado, sin inventar una clave', () => {
-    const unauthorised = composeLayout(
+  it('SRI-071 mientras el SRI no autoriza dice «PENDIENTE DE AUTORIZACIÓN» y no inventa número ni fecha', () => {
+    const pending = composeLayout(
+      {
+        kind: 'INVOICE_RIDE',
+        data: { ...ride.data, accessKey: KEY_IN_TESTS, authorisedAt: null },
+      },
+      context,
+      template,
+    );
+    const text = wholeText(pending);
+    expect(text).toContain('NÚMERO DE AUTORIZACIÓN=PENDIENTE DE AUTORIZACIÓN');
+    expect(text).toContain(
+      'FECHA Y HORA DE AUTORIZACIÓN=PENDIENTE DE AUTORIZACIÓN',
+    );
+    // SRI-070. The key is printed anyway: the RIDE is handed over with it.
+    expect(text).toContain(`CLAVE DE ACCESO=${KEY_IN_TESTS}`);
+  });
+
+  it('SRI-071 una factura que el SRI devolvió o no autorizó no promete una autorización', () => {
+    const refused = wholeText(
+      composeLayout(
+        {
+          kind: 'INVOICE_RIDE',
+          data: {
+            ...ride.data,
+            accessKey: KEY_IN_TESTS,
+            authorisedAt: null,
+            status: 'REJECTED',
+          },
+        },
+        context,
+        template,
+      ),
+    );
+    expect(refused).toContain(
+      'NÚMERO DE AUTORIZACIÓN=NO AUTORIZADA POR EL SRI',
+    );
+    expect(refused).not.toContain('PENDIENTE DE AUTORIZACIÓN');
+  });
+
+  it('SRI-070 imprime el ambiente que dice la clave, no «PRODUCCIÓN» por defecto', () => {
+    const testing = wholeText(
+      composeLayout(
+        {
+          kind: 'INVOICE_RIDE',
+          data: { ...ride.data, accessKey: KEY_IN_TESTS },
+        },
+        context,
+        template,
+      ),
+    );
+    expect(testing).toContain('AMBIENTE=PRUEBAS');
+
+    const production = `${KEY_IN_TESTS.slice(0, 23)}2${KEY_IN_TESTS.slice(24)}`;
+    expect(
+      wholeText(
+        composeLayout(
+          {
+            kind: 'INVOICE_RIDE',
+            data: { ...ride.data, accessKey: production },
+          },
+          context,
+          template,
+        ),
+      ),
+    ).toContain('AMBIENTE=PRODUCCIÓN');
+  });
+
+  it('DOC-076 sin clave todavía imprime «—», sin inventar una', () => {
+    const unprepared = composeLayout(
       {
         kind: 'INVOICE_RIDE',
         data: { ...ride.data, accessKey: null, authorisedAt: null },
@@ -1019,8 +1208,11 @@ describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
       context,
       template,
     );
-    const text = wholeText(unauthorised);
-    expect(text).toContain('NÚMERO DE AUTORIZACIÓN=—');
+    const text = wholeText(unprepared);
+    expect(text).toContain('CLAVE DE ACCESO=—');
     expect(text).not.toContain('4444');
   });
 });
+
+/** A key whose 24th digit says «pruebas», as `sri` composes them. */
+const KEY_IN_TESTS = '3009202601179000156300110010010000001230045678911';

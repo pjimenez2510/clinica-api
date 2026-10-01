@@ -46,6 +46,14 @@ const mspUnicodeSchema = z
  * requirement says the system must not operate without them, and the cheapest
  * place to keep that true is the only door through which they are written.
  */
+/** OR-029. The SRI prints «Contribuyente Especial Nro. 1234»: digits only. */
+const resolutionSchema = z
+  .string()
+  .trim()
+  .regex(/^[0-9]{1,16}$/, 'El número de resolución son solo dígitos');
+
+const RIMPE_REGIMES = ['NONE', 'ENTREPRENEUR', 'POPULAR_BUSINESS'] as const;
+
 export const saveEstablishmentSchema = z.object({
   mspUnicode: mspUnicodeSchema,
   typology: z
@@ -59,6 +67,28 @@ export const saveEstablishmentSchema = z.object({
     .min(2, 'La razón social debe tener al menos 2 caracteres')
     .max(160, 'La razón social no puede superar 160 caracteres'),
   ruc: rucSchema.nullish(),
+  /** OR-028. Absent keeps what is stored; `null` clears it. */
+  headOfficeAddress: z
+    .string()
+    .trim()
+    .min(1, 'Escriba la dirección de la matriz')
+    .max(300, 'La dirección de la matriz no puede superar 300 caracteres')
+    .nullish(),
+  /** OR-029. Each absent flag keeps what is stored. */
+  keepsAccounting: z
+    .boolean({ error: 'Indique si está obligado a llevar contabilidad' })
+    .optional(),
+  specialTaxpayerResolution: resolutionSchema.nullish(),
+  withholdingAgentResolution: resolutionSchema.nullish(),
+  rimpeRegime: z
+    .enum(RIMPE_REGIMES, { error: 'Elija el régimen RIMPE' })
+    .optional(),
+  /**
+   * OR-031. A person states that the fiscal flags were checked against the
+   * RUC. Sending the flags is not stating them: the form always sends them,
+   * with defaults, and that must not declare anything to the SRI.
+   */
+  confirmsFiscalProfile: z.boolean().optional(),
   active: z.boolean({ error: 'Indique si el establecimiento está activo' }).optional(), // prettier-ignore
 });
 /** Body of PUT /organization/establishment: there is one establishment, so it is saved whole rather than created. */
@@ -78,6 +108,18 @@ export const establishmentSchema = z.object({
    * BOTH RESPONSES») for why the field can be absent.
    */
   ruc: z.string().nullable().optional(),
+  /** OR-028. `dirMatriz` of every electronic voucher. */
+  headOfficeAddress: z.string().nullable(),
+  /** OR-029. */
+  keepsAccounting: z.boolean(),
+  specialTaxpayerResolution: z.string().nullable(),
+  withholdingAgentResolution: z.string().nullable(),
+  rimpeRegime: z.enum(RIMPE_REGIMES),
+  /**
+   * OR-031. When a person last declared the fiscal flags; `null` while nobody
+   * has, and then no electronic voucher is prepared (SRI-008).
+   */
+  fiscalProfileDeclaredAt: z.iso.datetime().nullable(),
   /** OR-010 to OR-012: what the documents' header prints. */
   tradeName: z.string().nullable(),
   contactEmail: z.string().nullable(),
@@ -129,6 +171,14 @@ const addressLineSchema = z
   .trim()
   .max(255, 'La dirección no puede superar 255 caracteres');
 
+/** OR-027. Three digits, the leading zero significant: «001» is not 1. */
+const sriEstablishmentCodeSchema = z
+  .string()
+  .regex(
+    /^[0-9]{3}$/,
+    'El código de establecimiento del SRI son exactamente tres dígitos, como 001',
+  );
+
 const phoneSchema = z
   .string()
   .trim()
@@ -142,6 +192,7 @@ export const createSiteSchema = z.object({
   parishConceptId: z.uuid('Seleccione una parroquia de la lista').nullish(),
   addressLine: addressLineSchema.nullish(),
   phone: phoneSchema.nullish(),
+  sriEstablishmentCode: sriEstablishmentCodeSchema.nullish(),
 });
 /** Body of POST /organization/sites. */
 export class CreateSiteDto extends createZodDto(createSiteSchema) {}
@@ -158,6 +209,7 @@ export const updateSiteSchema = z
     parishConceptId: z.uuid('Seleccione una parroquia de la lista').nullish(),
     addressLine: addressLineSchema.nullish(),
     phone: phoneSchema.nullish(),
+    sriEstablishmentCode: sriEstablishmentCodeSchema.nullish(),
     active: z.boolean({ error: 'Indique si la sede está activa' }).optional(),
   })
   .refine((value) => Object.values(value).some((v) => v !== undefined), {
@@ -191,6 +243,8 @@ export const siteSchema = z.object({
   parishConceptId: z.uuid().nullable(),
   addressLine: z.string().nullable(),
   phone: z.string().nullable(),
+  /** OR-027. The SRI's establishment code; `null` while nobody typed it. */
+  sriEstablishmentCode: z.string().nullable(),
   /** OR-007: `false` means it is not offered for new appointments. */
   active: z.boolean(),
 });

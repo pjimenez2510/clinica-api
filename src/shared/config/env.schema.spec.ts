@@ -156,6 +156,54 @@ describe('validateEnv', () => {
     ).toThrow();
   });
 
+  describe('SRI-053 SRI-055 the SRI web service', () => {
+    const PATH = '/comprobantes-electronicos-ws/RecepcionComprobantesOffline';
+
+    it('SRI-053 refuses a remote SRI unless SRI_ALLOW_REMOTE says so, and accepts a local double', () => {
+      expect(() =>
+        validateEnv({
+          ...base,
+          SRI_RECEPTION_URL: `https://celcer.sri.gob.ec${PATH}`,
+        }),
+      ).toThrow(/SRI_ALLOW_REMOTE/);
+      expect(
+        validateEnv({
+          ...base,
+          SRI_RECEPTION_URL: `http://localhost:8099${PATH}`,
+        }).SRI_RECEPTION_URL,
+      ).toContain('localhost');
+    });
+
+    it('SRI-053 toward the real SRI, only https', () => {
+      expect(() =>
+        validateEnv({
+          ...base,
+          SRI_ALLOW_REMOTE: 'true',
+          SRI_RECEPTION_URL: `http://celcer.sri.gob.ec${PATH}`,
+        }),
+      ).toThrow(/https/);
+    });
+
+    it('SRI-055 refuses an environment that is not the one of the SRI host, and accepts the matching one', () => {
+      expect(() =>
+        validateEnv({
+          ...base,
+          SRI_ALLOW_REMOTE: 'true',
+          SRI_ENVIRONMENT: '1',
+          SRI_RECEPTION_URL: `https://cel.sri.gob.ec${PATH}`,
+        }),
+      ).toThrow(/ambiente 2/);
+      expect(
+        validateEnv({
+          ...base,
+          SRI_ALLOW_REMOTE: 'true',
+          SRI_ENVIRONMENT: '1',
+          SRI_RECEPTION_URL: `https://celcer.sri.gob.ec${PATH}`,
+        }).SRI_ENVIRONMENT,
+      ).toBe('1');
+    });
+  });
+
   it('DEMANDS an explicit trust-proxy setting in production', () => {
     // The default of 0 is right in development and dangerous in production,
     // where it puts the whole clinic in one rate-limit bucket and records the

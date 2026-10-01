@@ -16,6 +16,7 @@ import {
   type EstablishmentInput,
   type EstablishmentView,
   type OrganizationRepository,
+  type RimpeRegime,
   type SiteInput,
   type SitePatch,
   type SiteScopeFilter,
@@ -35,6 +36,15 @@ export interface EstablishmentCommand {
   typology: string;
   legalName: string;
   ruc?: string | null;
+  /** OR-028. Absent keeps what is stored: the screen may not know the field. */
+  headOfficeAddress?: string | null;
+  /** OR-029. Each absent flag keeps what is stored. */
+  keepsAccounting?: boolean;
+  specialTaxpayerResolution?: string | null;
+  withholdingAgentResolution?: string | null;
+  rimpeRegime?: RimpeRegime;
+  /** OR-031. True only when a person ticked that the flags were checked. */
+  confirmsFiscalProfile?: boolean;
   active?: boolean;
 }
 
@@ -49,6 +59,7 @@ export interface CreateSiteCommand {
   parishConceptId?: string | null;
   addressLine?: string | null;
   phone?: string | null;
+  sriEstablishmentCode?: string | null;
 }
 
 /**
@@ -61,6 +72,8 @@ export interface UpdateSiteCommand {
   parishConceptId?: string | null;
   addressLine?: string | null;
   phone?: string | null;
+  /** OR-027. */
+  sriEstablishmentCode?: string | null;
   active?: boolean;
 }
 
@@ -115,10 +128,41 @@ export class OrganizationService {
       typology: command.typology,
       legalName: command.legalName,
       ruc: OrganizationService.validRuc(command.ruc),
+      headOfficeAddress: command.headOfficeAddress ?? null,
+      keepsAccounting: command.keepsAccounting ?? false,
+      specialTaxpayerResolution: command.specialTaxpayerResolution ?? null,
+      withholdingAgentResolution: command.withholdingAgentResolution ?? null,
+      rimpeRegime: command.rimpeRegime ?? 'NONE',
+      // OR-031. Declared only when a person says so, with the two flags that
+      // have a default in hand: a save that merely carries them (the form
+      // always does) states nothing to the SRI.
+      declaresFiscalProfile:
+        command.confirmsFiscalProfile === true &&
+        command.keepsAccounting !== undefined &&
+        command.rimpeRegime !== undefined,
       active: command.active ?? true,
     };
 
     const current = await this.repository.findEstablishment();
+    // OR-028, OR-029. A form that predates a field does not send it, and a
+    // PUT without it must not erase what the vouchers declare.
+    if (current) {
+      if (command.headOfficeAddress === undefined) {
+        input.headOfficeAddress = current.headOfficeAddress;
+      }
+      if (command.keepsAccounting === undefined) {
+        input.keepsAccounting = current.keepsAccounting;
+      }
+      if (command.specialTaxpayerResolution === undefined) {
+        input.specialTaxpayerResolution = current.specialTaxpayerResolution;
+      }
+      if (command.withholdingAgentResolution === undefined) {
+        input.withholdingAgentResolution = current.withholdingAgentResolution;
+      }
+      if (command.rimpeRegime === undefined) {
+        input.rimpeRegime = current.rimpeRegime;
+      }
+    }
     if (!current) {
       const created = await this.repository.createEstablishment(input);
       await this.recordMutation('CREATE', created.id, requester);
@@ -209,6 +253,7 @@ export class OrganizationService {
       parishConceptId: command.parishConceptId ?? null,
       addressLine: command.addressLine ?? null,
       phone: command.phone ?? null,
+      sriEstablishmentCode: command.sriEstablishmentCode ?? null,
     };
 
     const created = await this.repository.createSite(input);
@@ -227,6 +272,7 @@ export class OrganizationService {
       parishConceptId: command.parishConceptId,
       addressLine: command.addressLine,
       phone: command.phone,
+      sriEstablishmentCode: command.sriEstablishmentCode,
       active: command.active,
     };
     // Only when the caller sent the field: `undefined` means "leave it", and

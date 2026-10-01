@@ -36,14 +36,14 @@ parroquia del DPA del INEC.
 
 ## Vocabulario
 
-| Término               | Significado exacto en este módulo                                                     |
-| --------------------- | ------------------------------------------------------------------------------------- |
-| **Establecimiento**   | La entidad de salud ante el MSP: tipología, código único, RUC. Puede tener varias sedes |
-| **Tipología**         | Clasificación del MSP del establecimiento (A.M. 00000079): lo que determina qué reporta |
-| **Código único MSP**  | Identificador del establecimiento que el RDACAA exige en **cada** atención (REQ-020)   |
-| **Sede**              | Ubicación física donde se atiende. Es el eje del alcance de permisos y de la agenda     |
-| **Consultorio**       | Espacio dentro de una sede (`SiteRoom`). Dos profesionales no pueden ocupar el mismo    |
-| **Punto de emisión**  | Código de tres dígitos del SRI desde el que se emiten comprobantes                      |
+| Término              | Significado exacto en este módulo                                                       |
+| -------------------- | --------------------------------------------------------------------------------------- |
+| **Establecimiento**  | La entidad de salud ante el MSP: tipología, código único, RUC. Puede tener varias sedes |
+| **Tipología**        | Clasificación del MSP del establecimiento (A.M. 00000079): lo que determina qué reporta |
+| **Código único MSP** | Identificador del establecimiento que el RDACAA exige en **cada** atención (REQ-020)    |
+| **Sede**             | Ubicación física donde se atiende. Es el eje del alcance de permisos y de la agenda     |
+| **Consultorio**      | Espacio dentro de una sede (`SiteRoom`). Dos profesionales no pueden ocupar el mismo    |
+| **Punto de emisión** | Código de tres dígitos del SRI desde el que se emiten comprobantes                      |
 
 ---
 
@@ -71,6 +71,19 @@ consumirá.
 
 **Solo servidor:** OR-026. Bitácora y comprobación de alcance en el guard;
 la mitad que sí se ve —no ofrecer lo que no se puede tocar— la cubre OR-020.
+
+### O3 — Los datos del emisor que pide el SRI _(P1)_
+
+El código de establecimiento que el SRI asignó a cada sede y la dirección de la
+matriz: sin ellos no hay clave de acceso ni `infoTributaria` (sri/SPEC.md
+SRI-001, SRI-009, SRI-018).
+
+**Prueba independiente:** guardar `01` como código SRI de una sede y ver el
+rechazo; guardar `002` y leerlo igual, con el cero.
+**Cubre:** OR-027, OR-028, OR-029, OR-030, OR-031.
+
+> La edición desde la pantalla de Administración queda pendiente (F-08): en
+> `feat/sri-factura-electronica` se construye el dato, su garantía y la ruta.
 
 ---
 
@@ -170,6 +183,7 @@ la mitad que sí se ve —no ofrecer lo que no se puede tocar— la cubre OR-020
   > el que se enteran de qué sedes y consultorios existen para poder agendar—.
   > Agendar no es facturar. `null` sigue significando «esta sede no tiene RUC»,
   > que es un estado real sobre el que una pantalla actúa.
+
 - **OR-026** — Toda mutación de consultorios y puntos de emisión DEBERÁ quedar
   en la bitácora con autor, instante y valor anterior, y DEBERÁ comprobar que
   quien llama tenga alcance sobre la **sede dueña** del consultorio o del punto
@@ -185,24 +199,69 @@ la mitad que sí se ve —no ofrecer lo que no se puede tocar— la cubre OR-020
   > sí lo impedía. El listado de sedes se acota por la misma razón: quien puede
   > consultar una sede no puede enumerar las demás.
 
+- **OR-027** — El sistema DEBERÁ guardar en cada sede el **código de
+  establecimiento que asignó el SRI** como exactamente tres dígitos, con el cero
+  a la izquierda significativo, permitir editarlo con el mismo permiso que el
+  resto de la sede, y la base DEBERÁ rechazar cualquier otra forma
+  (`site_sri_establishment_code_format`).
+  > No es el código MSP (`msp_unicode`), que es otro registro: es el `estab` de
+  > la clave de acceso y el primer bloque del número `001-001-000000001`.
+  > `documents` imprimía `001` inventado por falta de esta columna (DOC-076).
+- **OR-028** — El sistema DEBERÁ guardar la **dirección de la matriz** del
+  establecimiento y permitir editarla con el mismo permiso que el resto del
+  establecimiento.
+
+  > `dirMatriz` es obligatorio en la factura del SRI (sri/SPEC.md SRI-018), y no
+  > es necesariamente la dirección de ninguna sede que atiende.
+
+- **OR-029** — El sistema DEBERÁ guardar y permitir editar, con el mismo
+  permiso que el resto del establecimiento, sus banderas fiscales: obligado a
+  llevar contabilidad, número de resolución de contribuyente especial, número
+  de resolución de agente de retención y régimen RIMPE (ninguno, emprendedor o
+  negocio popular); y un guardado que no las traiga DEBERÁ conservarlas.
+  > Las imprime el RIDE (DOC-077) y las declara el comprobante (`obligadoContabilidad`,
+  > `contribuyenteEspecial`, `agenteRetencion`, `contribuyenteRimpe`, SRI-018).
+  > Las columnas existían desde `documents`; no había forma de escribirlas sin
+  > SQL. Qué valor le corresponde a la clínica lo dice su RUC, no el sistema.
+- **OR-030** — Dos sedes que facturan con el mismo RUC NO DEBERÁN tener el
+  mismo código de establecimiento SRI, y la base DEBERÁ rechazarlo
+  (`site_sri_establishment_code_unique_per_ruc`, error
+  `SRI_ESTABLISHMENT_CODE_DUPLICATE`).
+  > Cada sede numera sus propios puntos de emisión: con el mismo código, las
+  > dos emitirían `001-001-000000001` con el mismo RUC y el SRI devolvería la
+  > segunda con el error 45. Revisión del 01-10-2026.
+- **OR-031** — El sistema DEBERÁ registrar cuándo una persona declaró las
+  banderas fiscales del establecimiento (un guardado que trae «obligado a llevar
+  contabilidad» y el régimen RIMPE y `confirmsFiscalProfile: true` —la persona
+  marca que las revisó con su RUC—; llevarlas sin esa marca no las declara),
+  conservarlo en un guardado que no las
+  trae, y exponerlo; y MIENTRAS no se hayan declarado nunca, NO DEBERÁ
+  prepararse ningún comprobante electrónico (sri SRI-008, dato
+  `FISCAL_PROFILE`).
+
+  > `keeps_accounting` es `false` y `rimpe_regime` `NONE` por defecto: sin esto
+  > el sistema declaraba al SRI «no obligado» en nombre de quien nunca lo dijo.
+  > Revisión del 01-10-2026.
+
 ---
 
 ## Códigos de error
 
-| Código                      | HTTP | Cuándo                                                     |
-| --------------------------- | ---- | ---------------------------------------------------------- |
-| `ESTABLISHMENT_NOT_FOUND`   | 404  | Todavía no se ha registrado el establecimiento (OR-001)    |
-| `SITE_NOT_FOUND`            | 404  | La sede indicada no existe                                 |
-| `SITE_ROOM_NOT_FOUND`       | 404  | El consultorio indicado no existe                          |
-| `EMISSION_POINT_NOT_FOUND`  | 404  | El punto de emisión indicado no existe                     |
-| `SITE_IN_USE`               | 409  | Borrar una sede referenciada (OR-006)                      |
-| `SITE_ROOM_IN_USE`          | 409  | Borrar un consultorio con citas (OR-022)                   |
-| `MSP_UNICODE_DUPLICATE`     | 409  | Código único del MSP repetido (OR-002)                     |
-| `SITE_ROOM_DUPLICATE`       | 409  | Nombre de consultorio repetido en la sede (OR-020)         |
-| `EMISSION_POINT_DUPLICATE`  | 409  | Punto de emisión repetido en la sede (OR-024)              |
-| `ROOM_NOT_IN_SITE`          | 422  | Consultorio de otra sede (OR-021)                          |
-| `INVALID_RUC`               | 422  | RUC que no supera la validación del SRI (OR-008)           |
-| `SITE_SCOPE_DENIED`         | 403  | Actuar sobre una sede fuera del alcance (OR-026, ADR-007)  |
+| Código                             | HTTP | Cuándo                                                    |
+| ---------------------------------- | ---- | --------------------------------------------------------- |
+| `ESTABLISHMENT_NOT_FOUND`          | 404  | Todavía no se ha registrado el establecimiento (OR-001)   |
+| `SITE_NOT_FOUND`                   | 404  | La sede indicada no existe                                |
+| `SITE_ROOM_NOT_FOUND`              | 404  | El consultorio indicado no existe                         |
+| `EMISSION_POINT_NOT_FOUND`         | 404  | El punto de emisión indicado no existe                    |
+| `SITE_IN_USE`                      | 409  | Borrar una sede referenciada (OR-006)                     |
+| `SITE_ROOM_IN_USE`                 | 409  | Borrar un consultorio con citas (OR-022)                  |
+| `MSP_UNICODE_DUPLICATE`            | 409  | Código único del MSP repetido (OR-002)                    |
+| `SITE_ROOM_DUPLICATE`              | 409  | Nombre de consultorio repetido en la sede (OR-020)        |
+| `EMISSION_POINT_DUPLICATE`         | 409  | Punto de emisión repetido en la sede (OR-024)             |
+| `SRI_ESTABLISHMENT_CODE_DUPLICATE` | 409  | Código SRI de otra sede del mismo RUC (OR-030)            |
+| `ROOM_NOT_IN_SITE`                 | 422  | Consultorio de otra sede (OR-021)                         |
+| `INVALID_RUC`                      | 422  | RUC que no supera la validación del SRI (OR-008)          |
+| `SITE_SCOPE_DENIED`                | 403  | Actuar sobre una sede fuera del alcance (OR-026, ADR-007) |
 
 `ROOM_NOT_IN_SITE` ya existe en `error-catalogue.ts`, emitido hoy desde
 `agenda`: la garantía se declara aquí y se comprueba allí, sin cambiar la cadena.
