@@ -18,6 +18,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
+  SCREEN_ONLY,
   computeBoard,
   computeFlows,
   workingTree,
@@ -150,6 +151,8 @@ interface Deliverable {
   priority: string;
   requirements: string[];
   tested: string[];
+  /** Every id the `Cubre` names, «Solo interfaz» included: what is covered. */
+  covers: string[];
 }
 
 /**
@@ -190,8 +193,14 @@ for (const entry of exists(MODULES_DIR)
     const parsed = DELIVERABLE.exec(header);
     if (!parsed) continue;
     const covers = COVERS.exec(raw)?.[1] ?? '';
-    const requirements = expand(covers, declared);
+    const all = expand(covers, declared);
+    // «Solo interfaz»: no backend half to test (board.mts, SCREEN_ONLY).
+    const screenOnly = new Set(
+      expand(SCREEN_ONLY.exec(raw)?.[1] ?? '', declared),
+    );
+    const requirements = all.filter((id) => !screenOnly.has(id));
     deliverables.push({
+      covers: all,
       id: parsed[1] ?? '',
       title: parsed[2] ?? '',
       priority: parsed[3] ?? 'P?',
@@ -200,7 +209,7 @@ for (const entry of exists(MODULES_DIR)
     });
   }
 
-  const covered = new Set(deliverables.flatMap((d) => d.requirements));
+  const covered = new Set(deliverables.flatMap((d) => d.covers));
   modules.push({
     module: entry.name,
     state: STATE_LINE.exec(source)?.[1]?.toLowerCase() ?? 'sin-estado',

@@ -64,6 +64,10 @@ es la hora a la que el servidor fija la caducidad: un recorrido no controla
 el reloj de la API, así que se prueba contra PostgreSQL con el reloj de la
 aplicación controlado; la pantalla de esa caducidad es la de AU-040.
 
+**Solo interfaz:** AU-044. Los 15 minutos del diálogo, limpiar la pantalla y
+el aviso los cuenta y los hace el navegador: el servidor ya cortó la sesión en
+AU-040 y AU-046 y no tiene nada más que observar.
+
 ### A2 — Administración de cuentas, roles y permisos _(P1)_
 
 Un administrador da de alta a una persona, le asigna roles —con su sede— y
