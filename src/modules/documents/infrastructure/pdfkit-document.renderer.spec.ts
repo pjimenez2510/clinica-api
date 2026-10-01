@@ -1141,3 +1141,171 @@ describe('DOC-071 DOC-105 un recuadro más alto que una página se parte, sin pi
     }
   });
 });
+
+describe('DOC-101 DOC-071 los trozos de un recuadro firmado', () => {
+  const itemsOf = async (pdf: Buffer) => {
+    const proxy = await getDocumentProxy(new Uint8Array(pdf));
+    const pages = [];
+    for (let number = 1; number <= proxy.numPages; number += 1) {
+      const page = await proxy.getPage(number);
+      pages.push(
+        (await page.getTextContent()).items.flatMap((item) =>
+          'str' in item && item.str.trim() !== ''
+            ? [{ text: item.str, y: item.transform[5] as number }]
+            : [],
+        ),
+      );
+    }
+    return pages;
+  };
+  const footerTop = millimetresToPoints(15 + 18);
+  const base: DocumentLayout = { ...layout, tearOff: null };
+  // A value that fits a full-width row and wraps beside the seal's column.
+  // One line at full width, two beside the seal's 53 mm column.
+  const wide = (n: number) =>
+    `Valor ${n} ${'abcdefg '.repeat(14)}que en el ancho completo cabe en una línea pero no al lado del sello`;
+  /** The footer's own lines, which live under its top by design. */
+  const footer =
+    /^(Documento electrónico|Verifique|Copia de respaldo|Clínica de especialidades|Página)/;
+
+  it('DOC-101 el último trozo de un bloque firmado se mide con su sello, y nada pisa el pie', async () => {
+    for (const count of [13, 15, 29, 44]) {
+      const pages = await itemsOf(
+        await renderer.render(
+          {
+            ...base,
+            blocks: [
+              {
+                kind: 'section',
+                title: 'E. Datos del profesional responsable',
+                rows: Array.from({ length: count }, (_, index) => ({
+                  kind: 'cells' as const,
+                  cells: [
+                    {
+                      label: `Dato ${index + 1}`,
+                      value: wide(index + 1),
+                      width: 1,
+                    },
+                  ],
+                })),
+                signature: { caption: 'Firma y sello del bloque', image: null },
+              },
+            ],
+          },
+          images,
+          metadata,
+        ),
+      );
+      for (const [index, page] of pages.entries()) {
+        // Every page is one the renderer opened: with its header.
+        expect(page.some((item) => item.text === 'RECETA MÉDICA'), `${count} filas, página ${index + 1}`).toBe(true); // prettier-ignore
+        const body = page.filter((item) => !footer.test(item.text));
+        expect(body.filter((item) => item.y <= footerTop), `${count} filas, página ${index + 1}`).toEqual([]); // prettier-ignore
+      }
+      // The seal shares its page with data it closes.
+      const sealed = pages.find((page) => page.some((item) => item.text.includes('Firma y sello del bloque'))); // prettier-ignore
+      expect(sealed?.some((item) => item.text.startsWith('Valor '))).toBe(true);
+    }
+  });
+
+  it('DOC-101 un recuadro con campos y sello que se parte no deja el sello solo', async () => {
+    const pages = await itemsOf(
+      await renderer.render(
+        {
+          ...base,
+          blocks: [
+            {
+              kind: 'box',
+              blocks: [
+                {
+                  kind: 'fields',
+                  columns: 1,
+                  entries: Array.from({ length: 38 }, (_, index) => ({
+                    label: `Campo ${index + 1}`,
+                    value: `Valor del campo ${index + 1}`,
+                  })),
+                },
+                {
+                  kind: 'signature',
+                  caption: 'Sello del recuadro',
+                  image: null,
+                },
+              ],
+            },
+          ],
+        },
+        images,
+        metadata,
+      ),
+    );
+    const sealed = pages.find((page) => page.some((item) => item.text.includes('Sello del recuadro'))); // prettier-ignore
+    expect(
+      sealed?.some((item) => item.text.startsWith('Valor del campo')),
+    ).toBe(true);
+  });
+
+  it('DOC-071 un bloque largo empieza en lo que queda de la página, no en la siguiente', async () => {
+    const pages = await itemsOf(
+      await renderer.render(
+        {
+          ...base,
+          blocks: [
+            {
+              kind: 'section',
+              title: 'A. Datos',
+              rows: Array.from({ length: 8 }, (_, index) => ({
+                kind: 'cells' as const,
+                cells: [{ label: `A${index + 1}`, value: 'x', width: 1 }],
+              })),
+            },
+            {
+              kind: 'section',
+              title: 'D. Diagnóstico',
+              rows: [
+                {
+                  kind: 'table',
+                  columns: [{ header: 'Diagnóstico', width: 1 }],
+                  rows: Array.from({ length: 80 }, (_, index) => [`Diagnóstico número ${index + 1}`]), // prettier-ignore
+                },
+              ],
+            },
+          ],
+        },
+        images,
+        metadata,
+      ),
+    );
+    expect(pages[0]?.some((item) => item.text === 'Diagnóstico número 1')).toBe(true); // prettier-ignore
+  });
+
+  it('DOC-072 la continuación de un recuadro sin título repite su rótulo', async () => {
+    const pages = await itemsOf(
+      await renderer.render(
+        {
+          ...base,
+          blocks: [
+            {
+              kind: 'box',
+              light: true,
+              blocks: [
+                { kind: 'caption', text: 'Indicaciones al paciente' },
+                {
+                  kind: 'fields',
+                  columns: 1,
+                  entries: Array.from({ length: 45 }, (_, index) => ({
+                    label: 'Preparación',
+                    value: `Preparación número ${index + 1}`,
+                  })),
+                },
+              ],
+            },
+          ],
+        },
+        images,
+        metadata,
+      ),
+    );
+    expect(pages.length).toBeGreaterThan(1);
+    expect(pages[1]?.some((item) => item.text.includes('Indicaciones al paciente (continuación)'))).toBe(true); // prettier-ignore
+  });
+});

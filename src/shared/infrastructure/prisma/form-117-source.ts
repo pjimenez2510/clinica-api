@@ -112,7 +112,7 @@ const CERTAINTIES: readonly DiagnosisCertainty[] = [
  * The frozen copy of the diagnoses, as `issue` wrote it. A copy written before
  * it kept the certainty has none, and stays without: `null`, not a guess.
  */
-function frozenDiagnoses(value: Prisma.JsonValue): Form117Diagnosis[] {
+export function frozenDiagnoses(value: Prisma.JsonValue): Form117Diagnosis[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((entry) =>
     entry !== null &&

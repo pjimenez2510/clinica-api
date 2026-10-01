@@ -159,6 +159,21 @@ type Ensure = (height: number) => boolean;
 /** Inside a box nothing turns a page: the box was measured whole beforehand. */
 const NEVER_BREAKS: Ensure = () => false;
 
+/** The blocks that are framed, and painted whole or in pieces. */
+type Framed = Extract<Block, { kind: 'box' | 'boxes' | 'section' }>;
+
+/**
+ * DOC-071. How much a framed block may take: a whole page's body, and what
+ * is left of the current one.
+ */
+interface Room {
+  page: number;
+  left: () => number;
+}
+
+/** Inside a box, or measuring: nothing is cut. */
+const UNBOUNDED: Room = { page: Infinity, left: () => Infinity };
+
 /** Tall enough that measuring a block never turns a page. */
 const MEASURING_PAGE_HEIGHT = 100_000;
 
@@ -273,8 +288,11 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     };
 
     startPage();
-    /** The room a page's body has: what a framed block must fit in, whole. */
-    const capacity = bottomLimit - bodyTop;
+    /** A page's body, and what is left of the current one. */
+    const room: Room = {
+      page: bottomLimit - bodyTop,
+      left: () => bottomLimit - cursor.y,
+    };
 
     for (let index = 0; index < layout.blocks.length; index += 1) {
       const group = this.signedGroupHeight(doc, layout.blocks, index, contentWidth); // prettier-ignore
@@ -282,7 +300,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
       if (group !== null && group < (bottomLimit - mm(PAGE_MARGIN_MM)) / 2) {
         ensure(group);
       }
-      index += this.paintBlockAt(doc, layout.blocks, index, images, left, contentWidth, cursor, ensure, accent, capacity); // prettier-ignore
+      index += this.paintBlockAt(doc, layout.blocks, index, images, left, contentWidth, cursor, ensure, accent, room); // prettier-ignore
     }
 
     // DOC-073. The band goes on the page the document ends on, at its fixed
@@ -549,7 +567,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     cursor: Cursor,
     ensure: Ensure,
     accent: string,
-    capacity = Infinity,
+    room: Room = UNBOUNDED,
   ): number {
     const block = blocks[index];
     const next = blocks[index + 1];
@@ -567,7 +585,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
       cursor.y = top + height;
       return 1;
     }
-    this.paintBlock(doc, block, images, left, width, cursor, ensure, accent, capacity); // prettier-ignore
+    this.paintBlock(doc, block, images, left, width, cursor, ensure, accent, room); // prettier-ignore
     return 0;
   }
 
@@ -652,7 +670,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     cursor: Cursor,
     ensure: Ensure,
     accent: string,
-    capacity = Infinity,
+    room: Room = UNBOUNDED,
   ): void {
     switch (block.kind) {
       case 'spacer':
@@ -834,19 +852,22 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
       case 'box':
       case 'boxes':
       case 'section': {
-        // DOC-071. Taller than a page, it is cut into pieces that each fit one
-        // — rows whole, each piece framed and titled — instead of spilling
-        // over the footer and PDFKit opening a page per line.
-        for (const piece of this.piecesOf(
-          block,
-          images,
-          width,
-          accent,
-          capacity,
-        )) {
-          // prettier-ignore
-          ensure(this.heightOfFramed(piece, images, width, accent) + mm(BLOCK_GAP_MM)); // prettier-ignore
-          cursor.y = this.paintFramed(doc, piece, images, left, width, cursor.y, accent) + mm(BLOCK_GAP_MM); // prettier-ignore
+        // DOC-071. Taller than a page, it is cut into pieces that each fit
+        // —rows whole, each piece framed and titled— instead of spilling over
+        // the footer and PDFKit opening a page per line.
+        const pieces = this.piecesOf(block, images, width, accent, room);
+        for (const { piece, height } of pieces) {
+          ensure(height);
+          const bottom = this.paintFramed(
+            doc,
+            piece,
+            images,
+            left,
+            width,
+            cursor.y,
+            accent,
+          );
+          cursor.y = bottom + mm(BLOCK_GAP_MM);
         }
         return;
       }
@@ -947,91 +968,137 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
   }
 
   /**
-   * DOC-071. A framed block cut, if it has to be, into pieces that each fit
-   * `capacity`: a section by its rows —a table row by row, under its header
-   * again—, a box by its blocks —a grid of fields row by row—. The pieces after
-   * the first say «(continuación)»; a section keeps its seal on the LAST
-   * piece, beside what it closes. Two columns are not cut: what the RIDE puts
-   * in them is short by construction (its totals and payment).
+   * DOC-071. A framed block cut, if it has to be, into pieces that fit: the
+   * first one in what is left of the page (when that is worth using), the
+   * rest in a whole page. A section is cut by its rows —a table line by line,
+   * under its header again—; a box by its blocks —a grid of fields row by
+   * row—. The pieces after the first say «(continuación)».
+   *
+   * A SEAL CLOSES WHAT IT SITS BESIDE (DOC-101): a section keeps it on the last
+   * piece, and every candidate is measured WITH it, since it narrows the rows
+   * beside it; in a box the seal travels with the last row of the fields it
+   * follows. Two columns are not cut: what the RIDE puts in them is short by
+   * construction (its totals and payment).
+   *
+   * Each piece comes with its height, so it is measured once.
    */
   private piecesOf(
-    block: Extract<Block, { kind: 'box' | 'boxes' | 'section' }>,
+    block: Framed,
     images: LayoutImages,
     width: number,
     accent: string,
-    capacity: number,
-  ): Extract<Block, { kind: 'box' | 'boxes' | 'section' }>[] {
-    const fits = (piece: Extract<Block, { kind: 'box' | 'section' }>): boolean =>
-      this.heightOfFramed(piece, images, width, accent) + mm(BLOCK_GAP_MM) <= capacity; // prettier-ignore
-    if (block.kind === 'boxes' || fits(block)) return [block];
-    const continued = (title: string | undefined, index: number) =>
-      title === undefined || index === 0 ? title : `${title} (continuación)`;
+    room: Room,
+  ): { piece: Framed; height: number }[] {
+    const heightOf = (piece: Framed): number =>
+      this.heightOfFramed(piece, images, width, accent) + mm(BLOCK_GAP_MM);
+    const whole = heightOf(block);
+    if (block.kind === 'boxes' || whole <= room.left()) {
+      return [{ piece: block, height: whole }];
+    }
+    if (whole <= room.page) return [{ piece: block, height: whole }];
 
-    /** Greedy: units in order, a new piece when the next one does not fit. */
-    const cut = <
-      Unit,
-      Piece extends Extract<Block, { kind: 'box' | 'section' }>,
-    >(
+    // The rest of this page is used only when it holds a useful piece.
+    const firstLimit = room.left() >= mm(40) ? room.left() : room.page;
+    const limitOf = (index: number): number =>
+      index === 0 ? firstLimit : room.page;
+    const continued = (text: string, index: number): string =>
+      index === 0 ? text : `${text} (continuación)`;
+
+    /** Greedy: units in order, a new piece when the next does not fit. */
+    const cut = <Unit>(
       units: readonly Unit[],
-      make: (units: readonly Unit[], index: number, last: boolean) => Piece,
-    ): Piece[] => {
-      const pieces: Piece[] = [];
+      make: (units: readonly Unit[], index: number) => Framed,
+    ): { piece: Framed; height: number }[] => {
+      const pieces: { piece: Framed; height: number }[] = [];
       let current: Unit[] = [];
       for (const unit of units) {
-        if (
-          current.length > 0 &&
-          !fits(make([...current, unit], pieces.length, false))
-        ) {
-          // prettier-ignore
-          pieces.push(make(current, pieces.length, false));
-          current = [];
+        if (current.length > 0) {
+          const candidate = make([...current, unit], pieces.length);
+          if (heightOf(candidate) > limitOf(pieces.length)) {
+            const piece = make(current, pieces.length);
+            pieces.push({ piece, height: heightOf(piece) });
+            current = [];
+          }
         }
         current.push(unit);
       }
-      pieces.push(make(current, pieces.length, true));
+      const piece = make(current, pieces.length);
+      pieces.push({ piece, height: heightOf(piece) });
       return pieces;
     };
 
     if (block.kind === 'section') {
-      // One unit per row, and per line of a table: the pieces join the lines
-      // of a table back under one header.
-      const units = block.rows.flatMap<SectionRow>(
-        (row) =>
-        row.kind === 'table' ? row.rows.map((line) => ({ ...row, rows: [line] })) : [row], // prettier-ignore
+      // One unit per row and per line of a table; a table with no lines
+      // keeps its header as a unit of its own.
+      const units = block.rows.flatMap<SectionRow>((row) =>
+        row.kind === 'table' && row.rows.length > 0
+          ? row.rows.map((line) => ({ ...row, rows: [line] }))
+          : [row],
       );
       const join = (rows: readonly SectionRow[]): SectionRow[] =>
         rows.reduce<SectionRow[]>((joined, row) => {
           const previous = joined.at(-1);
-          if (
+          const sameTable =
             row.kind === 'table' &&
             previous?.kind === 'table' &&
-            previous.columns === row.columns
-          ) {
-            // prettier-ignore
-            joined[joined.length - 1] = { ...previous, rows: [...previous.rows, ...row.rows] }; // prettier-ignore
+            previous.columns === row.columns;
+          if (sameTable) {
+            joined[joined.length - 1] = {
+              ...previous,
+              rows: [...previous.rows, ...row.rows],
+            };
           } else {
             joined.push(row);
           }
           return joined;
         }, []);
-      return cut(units, (rows, index, last) => ({
-        kind: 'section',
-        title: continued(block.title, index) ?? block.title,
+      // Measured with the seal on every candidate: the last piece is the one
+      // that carries it, and nobody knows which one is last until the end.
+      const pieces = cut(units, (rows, index) => ({
+        ...block,
+        title: continued(block.title, index),
         rows: join(rows),
-        ...(last && block.signature !== undefined ? { signature: block.signature } : {}), // prettier-ignore
       }));
+      return pieces.map(({ piece }, index) => {
+        if (piece.kind !== 'section' || index === pieces.length - 1) {
+          return { piece, height: heightOf(piece) };
+        }
+        const unsealed: Framed = { ...piece, signature: undefined };
+        return { piece: unsealed, height: heightOf(unsealed) };
+      });
     }
 
-    // A box: its blocks, and a grid of fields one row at a time.
-    const units = block.blocks.flatMap<Block>((child) =>
-      child.kind === 'fields'
-        ? this.fieldRows(child).map((row) => ({ ...child, entries: row.map(({ entry }) => entry) })) // prettier-ignore
-        : [child],
-    );
-    return cut(units, (blocks, index) => {
-      const title = continued(block.title, index);
-      return { ...block, blocks, ...(title === undefined ? {} : { title }) };
-    });
+    // A box: its blocks, a grid of fields one row at a time, and a seal glued
+    // to the row before it. A caption that heads the box heads every piece.
+    const groups: Block[][] = [];
+    for (const child of block.blocks) {
+      if (child.kind === 'signature' && groups.length > 0) {
+        groups[groups.length - 1]?.push(child);
+        continue;
+      }
+      if (child.kind === 'fields') {
+        for (const row of this.fieldRows(child)) {
+          groups.push([{ ...child, entries: row.map(({ entry }) => entry) }]);
+        }
+        continue;
+      }
+      groups.push([child]);
+    }
+    const [lead] = block.blocks;
+    const heading = lead?.kind === 'caption' ? lead.text : null;
+    const body = heading === null ? groups : groups.slice(1);
+    return cut(body, (chosen, index) => ({
+      ...block,
+      ...(block.title === undefined
+        ? {}
+        : { title: continued(block.title, index) }),
+      blocks: [
+        ...(heading === null
+          ? []
+          : [{ kind: 'caption' as const, text: continued(heading, index) }]),
+        ...chosen.flat(),
+      ],
+    }));
   }
 
   /**

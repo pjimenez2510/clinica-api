@@ -1630,16 +1630,25 @@ describe('DOC-107 el pintado no cambia lo que dice el documento', () => {
    * principal's decision (D-095, 01-10-2026) or because the template does not
    * repeat it. Old → what the paper says now.
    */
-  const CHANGED: Record<string, readonly string[]> = {
-    // D-095: the hour of issue or request, in Ecuador, beside the date.
-    'Fecha=20/08/2026': [
-      'Fecha de emisión=20/08/2026 · 20:00',
-      'Fecha de solicitud=20/08/2026 · 20:00',
-    ],
-    // The template's «FACTURA» title, then «No.».
-    'FACTURA No.=000-000-000000000': ['No.=000-000-000000000'],
+  const CHANGED: Record<
+    DocumentSubject['kind'],
+    Record<string, readonly string[]>
+  > = {
+    // D-095: the hour of issue, in Ecuador, beside the date. The tear-off
+    // band keeps its own «Fecha», which is why the old text is also checked.
+    PRESCRIPTION: {
+      'Fecha=20/08/2026': ['Fecha de emisión=20/08/2026 · 20:00'],
+    },
+    // D-095: the hour of the request.
+    SERVICE_ORDER: {
+      'Fecha=20/08/2026': ['Fecha de solicitud=20/08/2026 · 20:00'],
+    },
     // DOC-107: the subtitle the template drops; its four data are in block B.
-    'Datos laborales del paciente': [],
+    MEDICAL_CERTIFICATE: { 'Datos laborales del paciente': [] },
+    // The template's «FACTURA» title, then «No.».
+    INVOICE_RIDE: {
+      'FACTURA No.=000-000-000000000': ['No.=000-000-000000000'],
+    },
   };
 
   const context: DocumentContext = {
@@ -1722,7 +1731,7 @@ describe('DOC-107 el pintado no cambia lo que dice el documento', () => {
       ]);
       const missing = BEFORE[kind].filter((text) => {
         if (now.has(text)) return false;
-        const replacements = CHANGED[text];
+        const replacements = CHANGED[kind][text];
         if (replacements === undefined) return true;
         return replacements.length > 0 && !replacements.some((r) => now.has(r));
       });
