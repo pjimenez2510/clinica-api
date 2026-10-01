@@ -2992,22 +2992,22 @@ model MedicalCertificate {
   /// without receiving any clinical data.
   verificationCode String @unique @map("verification_code") @db.VarChar(24)
 
-  issuedAt         DateTime  @default(now()) @map("issued_at") @db.Timestamptz(6)
+  issuedAt             DateTime  @default(now()) @map("issued_at") @db.Timestamptz(6)
   /// CER-011. Who, when and why, the three together or none:
   /// `medical_certificate_revocation_states_who_when_and_why`. The row is never
   /// deleted. `revoked_by_id` is the ACCOUNT that annulled it.
-  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(6)
+  revokedAt            DateTime? @map("revoked_at") @db.Timestamptz(6)
   /// CER-027. The diagnoses it printed, copied at the issue (`[]` without them).
-  diagnoses            Json    @default("[]")
+  diagnoses            Json      @default("[]")
   /// CER-038. The chart's work and contact as they were at the issue.
-  employerName         String? @map("employer_name") @db.VarChar(160)
-  jobTitle             String? @map("job_title") @db.VarChar(120)
-  residenceAddressLine String? @map("residence_address_line") @db.VarChar(255)
-  patientPhone         String? @map("patient_phone") @db.VarChar(32)
+  employerName         String?   @map("employer_name") @db.VarChar(160)
+  jobTitle             String?   @map("job_title") @db.VarChar(120)
+  residenceAddressLine String?   @map("residence_address_line") @db.VarChar(255)
+  patientPhone         String?   @map("patient_phone") @db.VarChar(32)
 
-  revokedById      String?   @map("revoked_by_id") @db.Uuid
-  revokedBy        User?     @relation("CertificateRevoker", fields: [revokedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "medical_certificate_revoked_by_fk")
-  revocationReason String?   @map("revocation_reason") @db.Text
+  revokedById      String? @map("revoked_by_id") @db.Uuid
+  revokedBy        User?   @relation("CertificateRevoker", fields: [revokedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "medical_certificate_revoked_by_fk")
+  revocationReason String? @map("revocation_reason") @db.Text
 
   /// DOC-003, DOC-075. The archived form 117 as it was handed over.
   documentRenders DocumentRender[]
@@ -4170,7 +4170,15 @@ model ElectronicVoucherAttempt {
   /// RECIBIDA, DEVUELTA, AUTORIZADO, NO AUTORIZADO, PENDING or TRANSPORT_FAILURE.
   outcome        String   @db.VarChar(24)
   messages       Json     @default("[]") @db.JsonB
-  transportError String?  @map("transport_error") @db.VarChar(500)
+  /// SRI-059. Why it failed, in one line; whole (≤ 16 KiB, the cut marked).
+  transportError String?  @map("transport_error") @db.Text
+  /// SRI-059. Only on TRANSPORT_FAILURE: what the SRI answered, as it came.
+  httpStatus     Int?     @map("http_status")
+  faultCode      String?  @map("fault_code") @db.Text
+  faultString    String?  @map("fault_string") @db.Text
+  faultDetail    String?  @map("fault_detail") @db.Text
+  /// The response body, never the request (`…_response_is_capped`).
+  responseBody   String?  @map("response_body") @db.Text
 
   @@index([voucherId, startedAt], map: "electronic_voucher_attempt_by_voucher")
   @@map("electronic_voucher_attempt")
