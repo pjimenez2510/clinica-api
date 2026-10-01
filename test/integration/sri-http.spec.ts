@@ -533,6 +533,47 @@ describe('el comprobante electrónico por HTTP', () => {
       });
     });
 
+    it('SRI-069 D-107 el resumen cuenta caracteres como la base, también fuera del plano básico', async () => {
+      await uploadCertificate();
+      const invoice = await issueInvoice();
+      const voucherId = invoice.electronic!.voucherId;
+      const { accessKey } = await prisma.electronicVoucher.findUniqueOrThrow({
+        where: { id: voucherId },
+      });
+      // 501 characters, 1002 UTF-16 units: one character is left out.
+      const faultString = '😀'.repeat(501);
+      await prisma.electronicVoucherAttempt.create({
+        data: {
+          voucherId,
+          accessKey,
+          operation: 'RECEPTION',
+          startedAt: new Date(),
+          durationMs: 10,
+          outcome: 'TRANSPORT_FAILURE',
+          transportError: `HTTP 500 · soap:Server: ${faultString}`,
+          httpStatus: 500,
+          faultCode: 'soap:Server',
+          faultString,
+        },
+      });
+
+      const monitor = await api()
+        .get('/api/v1/sri/vouchers')
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(200);
+      const row = (
+        monitor.body as {
+          rows: {
+            invoiceId: string;
+            lastTransportFailure: { faultSummary: string } | null;
+          }[];
+        }
+      ).rows.find((r) => r.invoiceId === invoice.id);
+      expect(row?.lastTransportFailure?.faultSummary).toBe(
+        `${'😀'.repeat(500)}… [cortado: 1 caracteres más]`,
+      );
+    });
+
     it('SRI-069 una respuesta posterior que sí lo fue deja de enseñar el fallo', async () => {
       await uploadCertificate();
       const invoice = await issueInvoice();
