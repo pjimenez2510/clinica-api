@@ -15,6 +15,8 @@ import {
   createPatient,
   createPractitioner,
   createSite,
+  createDiagnosis,
+  createUser,
 } from './setup/fixtures';
 
 /**
@@ -34,6 +36,7 @@ const db = useDatabase();
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 interface Scene {
+  siteId: string;
   encounterId: string;
   patientId: string;
   /** Who attended. */
@@ -45,7 +48,10 @@ interface Scene {
   day: ClinicalDate;
 }
 
-async function aScene(prisma: PrismaClient): Promise<Scene> {
+async function aScene(
+  prisma: PrismaClient,
+  { diagnosis }: { diagnosis?: string } = {},
+): Promise<Scene> {
   const site = await createSite(prisma);
   const attending = await createPractitioner(prisma);
   const other = await createPractitioner(prisma);
@@ -55,7 +61,10 @@ async function aScene(prisma: PrismaClient): Promise<Scene> {
     practitionerId: attending.id,
     patientId: patient.id,
   });
+  if (diagnosis !== undefined)
+    await createDiagnosis(prisma, encounter.id, diagnosis);
   return {
+    siteId: site.id,
     encounterId: encounter.id,
     patientId: patient.id,
     attendingId: attending.id,
@@ -400,17 +409,18 @@ describe('D-108 en el reposo de maternidad no rigen los topes de D-106, garantiz
 
   it('CER-044 la maternidad empieza el día del parto al 5.º día, o el del ingreso; la enfermedad general igual se rechaza', async () => {
     const prisma = db();
-    const scene = await aScene(prisma);
+    const scene = await aScene(prisma, { diagnosis: 'O80' });
     const birth = addDays(scene.day, -5);
     const maternity = maternityFrom(birth);
     const from = (day: ClinicalDate) => ({ from: day, to: scene.day });
 
-    // Control positivo: maternity from birth, and from admission.
+    // Control positivo: maternity from birth, and —not overlapping it
+    // (CER-048)— from admission to the day before the birth.
     await expect(
       insert(prisma, scene, { rest: from(birth), maternity, backdatingReason: REASON_BIRTH }), // prettier-ignore
     ).resolves.toBe(1);
     await expect(
-      insert(prisma, scene, { rest: from(maternity.admissionOn), maternity, backdatingReason: REASON_BIRTH }), // prettier-ignore
+      insert(prisma, scene, { rest: { from: maternity.admissionOn, to: addDays(birth, -1) }, maternity, backdatingReason: REASON_BIRTH }), // prettier-ignore
     ).resolves.toBe(1);
     await expect(
       insert(prisma, scene, { rest: from(birth), backdatingReason: REASON_BIRTH }), // prettier-ignore
@@ -419,7 +429,7 @@ describe('D-108 en el reposo de maternidad no rigen los topes de D-106, garantiz
 
   it('CER-044 un día que no es ni el ingreso ni el parto se rechaza, y la prenatal conserva los 3 días', async () => {
     const prisma = db();
-    const scene = await aScene(prisma);
+    const scene = await aScene(prisma, { diagnosis: 'O80' });
     const maternity = maternityFrom(addDays(scene.day, -5));
 
     for (const day of [
@@ -443,7 +453,7 @@ describe('D-108 en el reposo de maternidad no rigen los topes de D-106, garantiz
 
   it('CER-030 la maternidad desde el parto sigue pidiendo el motivo', async () => {
     const prisma = db();
-    const scene = await aScene(prisma);
+    const scene = await aScene(prisma, { diagnosis: 'O80' });
     const birth = addDays(scene.day, -5);
 
     await expect(
@@ -453,7 +463,7 @@ describe('D-108 en el reposo de maternidad no rigen los topes de D-106, garantiz
 
   it('CER-045 un reposo de maternidad se emite pasados 8 días de la atención; el general, no', async () => {
     const prisma = db();
-    const scene = await aScene(prisma);
+    const scene = await aScene(prisma, { diagnosis: 'O80' });
     const twentieth = addDays(scene.day, 20);
     const rest = { from: twentieth, to: addDays(twentieth, 29) };
     const REASON_CHAIN = 'Segundo certificado de la licencia de maternidad';
@@ -473,7 +483,7 @@ describe('D-108 en el reposo de maternidad no rigen los topes de D-106, garantiz
 
   it('CER-035 la base exige ingreso ≤ parto ≤ alta, porque de esas fechas sale el inicio admitido', async () => {
     const prisma = db();
-    const scene = await aScene(prisma);
+    const scene = await aScene(prisma, { diagnosis: 'O80' });
     const birth = addDays(scene.day, -1);
     const rest = { from: scene.day, to: scene.day };
     const IN_ORDER = /medical_certificate_maternity_dates_in_order/;
@@ -482,11 +492,214 @@ describe('D-108 en el reposo de maternidad no rigen los topes de D-106, garantiz
     await expect(
       insert(prisma, scene, { rest, maternity: { admissionOn: birth, birthOn: birth, dischargeOn: birth } }), // prettier-ignore
     ).resolves.toBe(1);
+    // The refused ones on the next day, so no other rule (CER-048) gets there first.
+    const tomorrow = { from: addDays(scene.day, 1), to: addDays(scene.day, 1) };
     await expect(
-      insert(prisma, scene, { rest, maternity: { admissionOn: addDays(birth, 1), birthOn: birth, dischargeOn: addDays(birth, 1) } }), // prettier-ignore
+      insert(prisma, scene, { rest: tomorrow, maternity: { admissionOn: addDays(birth, 1), birthOn: birth, dischargeOn: addDays(birth, 1) } }), // prettier-ignore
     ).rejects.toThrow(IN_ORDER);
     await expect(
-      insert(prisma, scene, { rest, maternity: { admissionOn: birth, birthOn: birth, dischargeOn: addDays(birth, -1) } }), // prettier-ignore
+      insert(prisma, scene, { rest: tomorrow, maternity: { admissionOn: birth, birthOn: birth, dischargeOn: addDays(birth, -1) } }), // prettier-ignore
     ).rejects.toThrow(IN_ORDER);
+  });
+});
+
+describe('D-109 lo que acota el reposo de maternidad, garantizado por la base', () => {
+  /** Ingresó la víspera del parto y salió dos días después. */
+  const maternityFrom = (birth: ClinicalDate) => ({
+    admissionOn: addDays(birth, -1),
+    birthOn: birth,
+    dischargeOn: addDays(birth, 2),
+  });
+  const REASON = 'Dio a luz en el hospital antes de la atención';
+
+  it('CER-046 ingreso y parto como mucho 84 días antes de la atención; 85, no', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma, { diagnosis: 'O80' });
+    const today = { from: scene.day, to: scene.day };
+
+    // Control positivo: el ingreso justo 84 días antes.
+    await expect(
+      insert(prisma, scene, { rest: today, maternity: maternityFrom(addDays(scene.day, -83)) }), // prettier-ignore
+    ).resolves.toBe(1);
+    await expect(
+      insert(prisma, scene, { rest: today, maternity: maternityFrom(addDays(scene.day, -84)) }), // prettier-ignore
+    ).rejects.toThrow(/medical_certificate_maternity_dates_within_84_days/);
+  });
+
+  it('CER-047 el reposo termina como tarde en parto + 84 días y no se emite pasado ese día', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma, { diagnosis: 'O80' });
+    const birth = addDays(scene.day, -60);
+    const last = addDays(birth, 84);
+    const maternity = maternityFrom(birth);
+    const WITHIN = /medical_certificate_maternity_within_leave/;
+
+    await expect(
+      insert(prisma, scene, { rest: { from: scene.day, to: last }, maternity }),
+    ).resolves.toBe(1);
+    await expect(
+      insert(prisma, scene, { rest: { from: scene.day, to: addDays(last, 1) }, maternity }), // prettier-ignore
+    ).rejects.toThrow(WITHIN);
+
+    // Emitida el último día de la licencia pasa; el siguiente, no. Otra
+    // paciente: la de arriba ya tiene esos días (CER-048).
+    const late = await aScene(prisma, { diagnosis: 'O80' });
+    const lastDayRest = { from: last, to: last };
+    const daysTo = (day: ClinicalDate) =>
+      Math.round((Date.parse(day) - Date.parse(scene.day)) / DAY_MS);
+    await expect(
+      insert(prisma, late, { rest: lastDayRest, maternity, issuedDaysLater: daysTo(last) + 1, backdatingReason: REASON }), // prettier-ignore
+    ).rejects.toThrow(WITHIN);
+    await expect(
+      insert(prisma, late, { rest: lastDayRest, maternity, issuedDaysLater: daysTo(last), backdatingReason: REASON }), // prettier-ignore
+    ).resolves.toBe(1);
+  });
+
+  it('CER-049 la maternidad necesita un diagnóstico obstétrico en la atención', async () => {
+    const prisma = db();
+    const birth = (scene: Scene) => addDays(scene.day, -5);
+    const OBSTETRIC = /medical_certificate_maternity_obstetric_diagnosis/;
+
+    const cold = await aScene(prisma, { diagnosis: 'J00' });
+    await expect(
+      insert(prisma, cold, { rest: { from: birth(cold), to: cold.day }, maternity: maternityFrom(birth(cold)), backdatingReason: REASON }), // prettier-ignore
+    ).rejects.toThrow(OBSTETRIC);
+    // Un capítulo con forma de código no es un diagnóstico obstétrico.
+    await createDiagnosis(prisma, cold.encounterId, 'O00-O9A');
+    await expect(
+      insert(prisma, cold, { rest: { from: birth(cold), to: cold.day }, maternity: maternityFrom(birth(cold)), backdatingReason: REASON }), // prettier-ignore
+    ).rejects.toThrow(OBSTETRIC);
+    // Control positivo: con Z390 (posparto inmediato), pasa.
+    await createDiagnosis(prisma, cold.encounterId, 'Z390');
+    await expect(
+      insert(prisma, cold, { rest: { from: birth(cold), to: cold.day }, maternity: maternityFrom(birth(cold)), backdatingReason: REASON }), // prettier-ignore
+    ).resolves.toBe(1);
+  });
+
+  it('CER-048 no se solapa con otro reposo no anulado de la paciente, de otra atención; anulado o contiguo, sí', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma, { diagnosis: 'O80' });
+    // Otra atención de la misma paciente, con otro profesional.
+    const other = await createEncounter(prisma, {
+      siteId: scene.siteId,
+      practitionerId: scene.otherId,
+      patientId: scene.patientId,
+    });
+    await createDiagnosis(prisma, other.id, 'O80');
+    const elsewhere: Scene = { ...scene, encounterId: other.id, attendingId: scene.otherId }; // prettier-ignore
+    // Parto dos días antes de la atención: ninguna otra regla interviene.
+    const birth = addDays(scene.day, -2);
+    const maternity = maternityFrom(birth);
+    const OVERLAPS = /medical_certificate_maternity_rest_no_overlap/;
+
+    // Un reposo general en la otra atención, de la víspera del parto al parto.
+    await expect(
+      insert(prisma, elsewhere, { rest: { from: addDays(birth, -1), to: birth }, backdatingReason: REASON }), // prettier-ignore
+    ).resolves.toBe(1);
+    await expect(
+      insert(prisma, scene, { rest: { from: birth, to: scene.day }, maternity, backdatingReason: REASON }), // prettier-ignore
+    ).rejects.toThrow(OVERLAPS);
+    // Control positivo: contiguo —desde el día siguiente al parto— pasa.
+    await expect(
+      insert(prisma, scene, { rest: { from: addDays(birth, 1), to: scene.day }, maternity, backdatingReason: REASON }), // prettier-ignore
+    ).resolves.toBe(1);
+
+    // Anulado el general, el día del parto —que sólo pisaba ese— queda libre.
+    const revoker = await createUser(prisma);
+    await prisma.$executeRaw`
+      UPDATE medical_certificate
+         SET revoked_at = now(), revoked_by_id = ${revoker.id}::uuid,
+             revocation_reason = 'Emitido en la atención equivocada'
+       WHERE encounter_id = ${other.id}::uuid`;
+    await expect(
+      insert(prisma, scene, { rest: { from: birth, to: birth }, maternity, backdatingReason: REASON }), // prettier-ignore
+    ).resolves.toBe(1);
+  });
+
+  it('CER-048 cuentan los reposos de una ficha que la de la paciente absorbió (PA-055)', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma, { diagnosis: 'O80' });
+    // Una ficha duplicada de la misma paciente, con su atención y un reposo.
+    const duplicate = await createPatient(prisma);
+    const old = await createEncounter(prisma, {
+      siteId: scene.siteId,
+      practitionerId: scene.otherId,
+      patientId: duplicate.id,
+    });
+    const onDuplicate: Scene = { ...scene, encounterId: old.id, patientId: duplicate.id, attendingId: scene.otherId }; // prettier-ignore
+    const birth = addDays(scene.day, -2);
+    await expect(
+      insert(prisma, onDuplicate, { rest: { from: addDays(birth, -1), to: birth }, backdatingReason: REASON }), // prettier-ignore
+    ).resolves.toBe(1);
+    // Se fusiona en la ficha de la paciente.
+    await prisma.$executeRaw`
+      UPDATE patient SET merged_into_id = ${scene.patientId}::uuid, merged_at = now()
+       WHERE id = ${duplicate.id}::uuid`;
+
+    const maternity = maternityFrom(birth);
+    await expect(
+      insert(prisma, scene, { rest: { from: birth, to: scene.day }, maternity, backdatingReason: REASON }), // prettier-ignore
+    ).rejects.toThrow(/medical_certificate_maternity_rest_no_overlap/);
+    // Control positivo: desde el día siguiente al parto, no se pisa.
+    await expect(
+      insert(prisma, scene, { rest: { from: addDays(birth, 1), to: scene.day }, maternity, backdatingReason: REASON }), // prettier-ignore
+    ).resolves.toBe(1);
+    // Al revés: desde una atención de la ficha absorbida, el reposo de la
+    // superviviente también cuenta.
+    await createDiagnosis(prisma, old.id, 'O80');
+    await expect(
+      insert(prisma, onDuplicate, { rest: { from: scene.day, to: scene.day }, maternity, backdatingReason: REASON }), // prettier-ignore
+    ).rejects.toThrow(/medical_certificate_maternity_rest_no_overlap/);
+    // Deshecha la fusión, son dos fichas: la superviviente ya no pisa nada.
+    await prisma.$executeRaw`
+      UPDATE patient SET merged_into_id = NULL, merged_at = NULL
+       WHERE id = ${duplicate.id}::uuid`;
+    await expect(
+      insert(prisma, scene, { rest: { from: birth, to: birth }, maternity, backdatingReason: REASON }), // prettier-ignore
+    ).resolves.toBe(1);
+  });
+
+  it('CER-048 dos maternidades solapadas a la vez desde dos atenciones: gana la primera y la segunda se rechaza', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma, { diagnosis: 'O80' });
+    const other = await createEncounter(prisma, {
+      siteId: scene.siteId,
+      practitionerId: scene.otherId,
+      patientId: scene.patientId,
+    });
+    await createDiagnosis(prisma, other.id, 'O80');
+    const elsewhere: Scene = { ...scene, encounterId: other.id, attendingId: scene.otherId }; // prettier-ignore
+    const rest = { from: scene.day, to: addDays(scene.day, 10) };
+    const maternity = maternityFrom(addDays(scene.day, -1));
+
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    let firstInserted!: () => void;
+    const inserted = new Promise<void>((resolve) => (firstInserted = resolve));
+    // La primera inserta y NO confirma hasta que la segunda ya está esperando.
+    const first = prisma.$transaction(async (tx) => {
+      await insert(tx as unknown as PrismaClient, scene, { rest, maternity });
+      firstInserted();
+      await held;
+    });
+    await inserted;
+    const second = insert(prisma, elsewhere, { rest, maternity });
+    // La segunda espera el candado de la paciente: sigue pendiente.
+    const pending = await Promise.race([
+      second.then(
+        () => 'done',
+        () => 'done',
+      ),
+      new Promise((resolve) => setTimeout(() => resolve('waiting'), 300)),
+    ]);
+    expect(pending).toBe('waiting');
+    release();
+
+    await expect(first).resolves.toBeUndefined();
+    await expect(second).rejects.toThrow(
+      /medical_certificate_maternity_rest_no_overlap/,
+    );
+    const rows = await prisma.medicalCertificate.count({ where: { patientId: scene.patientId } }); // prettier-ignore
+    expect(rows).toBe(1);
   });
 });

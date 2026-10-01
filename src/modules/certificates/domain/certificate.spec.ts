@@ -18,6 +18,8 @@ import {
   backdatingReasonOf,
   assertRestStartsInTime,
   assertRestWithinAttention,
+  assertMaternityWithinLeave,
+  isObstetricCie10,
   lateIssueDayOf,
   issuerReasonOf,
   latestRestStartOf,
@@ -31,6 +33,10 @@ import {
 import {
   CertificateBackdatingReasonRequiredError,
   CertificateIssuerReasonRequiredError,
+  CertificateMaternityDatesTooOldError,
+  CertificateMaternityDiagnosisRequiredError,
+  CertificateMaternityLeaveExceededError,
+  CertificateRestOverlapsError,
   CertificateRestIssuedTooLateError,
   CertificateRestPeriodInvalidError,
   CertificateRestStartTooEarlyError,
@@ -602,5 +608,117 @@ describe('D-108 en el reposo de maternidad no rigen los topes de D-106', () => {
     expect(() =>
       assertRestWithinAttention(period, today, issueDay, null),
     ).toThrow(CertificateRestIssuedTooLateError);
+  });
+});
+
+describe('D-109 lo que acota el reposo de maternidad', () => {
+  const OBSTETRIC = ['J02', 'O80'];
+  /** Ingresó la víspera del parto y salió dos días después. */
+  const maternityFrom = (birth: ClinicalDate) => ({
+    admissionOn: addDays(birth, -1),
+    birthOn: birth,
+    dischargeOn: addDays(birth, 2),
+  });
+  /** A maternity rest checked against today's attention, issued today. */
+  const check =
+    (
+      period: { from: ClinicalDate; to: ClinicalDate },
+      birth: ClinicalDate,
+      {
+        issueDay = today,
+        codes = OBSTETRIC,
+        others = [] as { from: ClinicalDate; to: ClinicalDate }[],
+      } = {},
+    ) =>
+    () =>
+      assertMaternityWithinLeave(
+        period,
+        maternityFrom(birth),
+        today,
+        issueDay,
+        codes,
+        others,
+      );
+  const label = (day: ClinicalDate) => day.split('-').reverse().join('/');
+
+  it('CER-046 ingreso y parto como mucho 84 dias antes de la atencion; 85 se rechaza nombrando el campo', () => {
+    // Control positivo: el ingreso justo 84 días antes.
+    expect(
+      check({ from: today, to: today }, addDays(today, -83)),
+    ).not.toThrow();
+    let refusal: unknown;
+    try {
+      check({ from: today, to: today }, addDays(today, -84))();
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(CertificateMaternityDatesTooOldError);
+    expect(
+      (refusal as CertificateMaternityDatesTooOldError).fieldErrors[0],
+    ).toMatchObject({
+      field: 'maternityAdmissionOn',
+      message: `La fecha de ingreso debe ser, como muy pronto, el ${label(addDays(today, -84))}`,
+    });
+  });
+
+  it('CER-047 el reposo termina como tarde en parto + 84 dias, nombrando ese dia', () => {
+    const birth = addDays(today, -60);
+    const last = addDays(birth, 84);
+    expect(check({ from: today, to: last }, birth)).not.toThrow();
+    let refusal: unknown;
+    try {
+      check({ from: today, to: addDays(last, 1) }, birth)();
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(CertificateMaternityLeaveExceededError);
+    expect(
+      (refusal as CertificateMaternityLeaveExceededError).fieldErrors[0],
+    ).toMatchObject({
+      field: 'restTo',
+      message: `La licencia de maternidad termina el ${label(last)}`,
+    });
+  });
+
+  it('CER-047 no se emite pasado el ultimo dia de la licencia', () => {
+    const birth = addDays(today, -80);
+    const last = addDays(birth, 84);
+    const period = { from: last, to: last };
+    expect(check(period, birth, { issueDay: last })).not.toThrow();
+    expect(check(period, birth, { issueDay: addDays(last, 1) })).toThrow(
+      CertificateMaternityLeaveExceededError,
+    );
+  });
+
+  it('CER-049 la atencion necesita un diagnostico obstetrico', () => {
+    const birth = addDays(today, -5);
+    const period = { from: birth, to: today };
+    expect(check(period, birth, { codes: ['Z390'] })).not.toThrow();
+    expect(check(period, birth, { codes: ['J02', 'I10'] })).toThrow(
+      CertificateMaternityDiagnosisRequiredError,
+    );
+    expect(check(period, birth, { codes: [] })).toThrow(
+      CertificateMaternityDiagnosisRequiredError,
+    );
+  });
+
+  it('CER-049 obstetrico es O00 a O99 y Z34 a Z39, con sus subcategorias; no los capitulos', () => {
+    for (const code of ['O00', 'O80', 'O994', 'Z34', 'Z349', 'Z39', 'Z392']) {
+      expect(isObstetricCie10(code), code).toBe(true);
+    }
+    for (const code of ['O9A', 'O00-O9A', 'Z33', 'Z40', 'J02', 'N80', '']) {
+      expect(isObstetricCie10(code), code).toBe(false);
+    }
+  });
+
+  it('CER-048 no se solapa con otro reposo no anulado de la paciente; contiguo, si', () => {
+    const birth = addDays(today, -5);
+    const period = { from: birth, to: addDays(today, 10) };
+    const before = { from: addDays(birth, -10), to: addDays(birth, -1) };
+    const touching = { from: addDays(birth, -10), to: birth };
+    expect(check(period, birth, { others: [before] })).not.toThrow();
+    expect(check(period, birth, { others: [touching] })).toThrow(
+      CertificateRestOverlapsError,
+    );
   });
 });

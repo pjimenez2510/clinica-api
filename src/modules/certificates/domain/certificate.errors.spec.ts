@@ -15,6 +15,10 @@ import {
   CertificateBackdatingReasonRequiredError,
   CertificateEstablishmentIncompleteError,
   CertificateIssuerReasonRequiredError,
+  CertificateMaternityDatesTooOldError,
+  CertificateMaternityDiagnosisRequiredError,
+  CertificateMaternityLeaveExceededError,
+  CertificateRestOverlapsError,
   CertificateRestIssuedTooLateError,
   CertificateRestStartTooEarlyError,
   CertificateRestStartTooLateError,
@@ -157,6 +161,35 @@ const CONTRACT: readonly {
     code: 'CERTIFICATE_REST_TOO_LONG',
     category: ValidationError,
     says: '30 días',
+  },
+  {
+    error: new CertificateMaternityDatesTooOldError(
+      'birthOn',
+      '2026-07-09' as ClinicalDate, // fecha-fija: sólo se comprueba el formato DD/MM/AAAA
+    ),
+    code: 'CERTIFICATE_MATERNITY_DATES_TOO_OLD',
+    category: ValidationError,
+    says: '84 días',
+  },
+  {
+    error: new CertificateMaternityLeaveExceededError(
+      '2026-12-24' as ClinicalDate, // fecha-fija: sólo se comprueba el formato DD/MM/AAAA
+    ),
+    code: 'CERTIFICATE_MATERNITY_LEAVE_EXCEEDED',
+    category: ValidationError,
+    says: 'licencia de maternidad',
+  },
+  {
+    error: new CertificateRestOverlapsError(),
+    code: 'CERTIFICATE_REST_OVERLAPS',
+    category: ConflictError,
+    says: 'otro reposo',
+  },
+  {
+    error: new CertificateMaternityDiagnosisRequiredError(),
+    code: 'CERTIFICATE_MATERNITY_DIAGNOSIS_REQUIRED',
+    category: ValidationError,
+    says: 'diagnóstico obstétrico',
   },
   {
     error: new CertificateEstablishmentIncompleteError(),

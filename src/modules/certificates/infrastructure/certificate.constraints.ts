@@ -82,6 +82,30 @@ registerConstraintMeanings({
     field: 'type',
     message: 'Han pasado más de ocho días desde la atención: el reposo se emite desde una atención nueva', // prettier-ignore
   },
+  /** CER-046, D-109. Admission and birth at most 84 days before the attention. */
+  medical_certificate_maternity_dates_within_84_days: {
+    code: 'CERTIFICATE_MATERNITY_DATES_TOO_OLD',
+    field: 'maternityAdmissionOn',
+    message: 'El ingreso y el parto pueden ser, como mucho, 84 días anteriores a la atención', // prettier-ignore
+  },
+  /** CER-047, D-109. Within the leave, and issued before it ends. */
+  medical_certificate_maternity_within_leave: {
+    code: 'CERTIFICATE_MATERNITY_LEAVE_EXCEEDED',
+    field: 'restTo',
+    message: 'La licencia de maternidad termina 84 días después del parto: el reposo no pasa de ese día ni se emite después', // prettier-ignore
+  },
+  /** CER-048, D-109. No other rest of the patient, not revoked, on those days. */
+  medical_certificate_maternity_rest_no_overlap: {
+    code: 'CERTIFICATE_REST_OVERLAPS',
+    field: 'restFrom',
+    message: 'Se solapa con otro reposo vigente de la paciente', // prettier-ignore
+  },
+  /** CER-049, D-109. An obstetric diagnosis on the attention. */
+  medical_certificate_maternity_obstetric_diagnosis: {
+    code: 'CERTIFICATE_MATERNITY_DIAGNOSIS_REQUIRED',
+    field: 'contingencyType',
+    message: 'La atención no tiene un diagnóstico obstétrico', // prettier-ignore
+  },
   /** CER-041. A rest starts no later than the day after it is issued. */
   medical_certificate_rest_starts_by_next_day: {
     code: 'CERTIFICATE_REST_START_TOO_LATE',
