@@ -183,9 +183,15 @@ _Numeración conservada de `CF-040`..`CF-046` al mudarse desde `configuration`
 - **ST-041** — Toda regla DEBERÁ llevar vigencia; CUANDO se cierre una regla, el
   cierre DEBERÁ regir hacia adelante sin tocar días ya pasados.
 - **ST-042** — SI una regla nueva o editada solapa otra vigente del mismo
-  profesional y sede en el mismo día de la semana, ENTONCES el sistema DEBERÁ
-  rechazarla con `SCHEDULE_RULE_OVERLAP`, y la garantía DEBERÁ vivir en la base
-  como exclusión (AG-106).
+  profesional en el mismo día de la semana, **en cualquier sede**, ENTONCES el
+  sistema DEBERÁ rechazarla con `SCHEDULE_RULE_OVERLAP`, y la garantía DEBERÁ
+  vivir en la base como exclusión (AG-106).
+  > **Sin sede desde el 30-09-2026 (D-070 B).** Decía «del mismo profesional y
+  > sede», y la semilla daba a cada médico el mismo horario en tres sedes: la
+  > rejilla de cada una prometía horas que el médico pasaba en otra (AG-144).
+  > Un horario, un sitio. La migración
+  > `staff_schedule_rule_no_overlap_any_site` diagnostica las reglas que ya
+  > chocan y se niega a seguir hasta que alguien cierre una de cada par.
 - **ST-043** — CUANDO un cambio de horario deje citas ya reservadas fuera del
   nuevo horario, el sistema NO DEBERÁ anularlas ni moverlas solo: DEBERÁ
   listarlas como conflictos para gestión humana. CUANDO el cambio mueva la
