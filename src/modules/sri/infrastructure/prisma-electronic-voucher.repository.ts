@@ -174,7 +174,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
       lines: row.chargeItems.map((charge) => ({
         code: charge.billableService.code,
         description: charge.serviceDisplay,
-        quantity: Number(charge.quantity.toFixed(0)),
+        quantity: charge.quantity.toFixed(3),
         unitPrice: money(charge.unitAmount),
         discount: money(charge.discountAmount),
         taxSriCode: charge.taxSriCode,

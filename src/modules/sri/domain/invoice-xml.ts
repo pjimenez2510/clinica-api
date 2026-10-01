@@ -55,8 +55,11 @@ export interface VoucherIssuer {
 export interface VoucherLine {
   code: string;
   description: string;
-  /** A whole number of units (BI-057). */
-  quantity: number;
+  /**
+   * `charge_item.quantity` as a decimal string, up to three places: a
+   * consumable is dispensed in fractions (0.5 of a vial).
+   */
+  quantity: string;
   unitPrice: string;
   discount: string;
   /** SRI table 17 `codigoPorcentaje`, frozen on the charge. */
@@ -179,9 +182,24 @@ function money(cents: bigint): string {
   return `${negative ? '-' : ''}${units}.${fraction}`;
 }
 
-/** SRI-014. Six decimals for quantity and unit price. */
+/** SRI-014. Six decimals for the unit price. */
 function sixDecimals(cents: bigint): string {
   return `${money(cents)}0000`;
+}
+
+/** A quantity in thousandths, as billing's `Quantity` holds it. */
+function toThousandths(quantity: string): bigint {
+  const match = /^([0-9]+)(?:\.([0-9]{1,3}))?$/.exec(quantity);
+  if (!match) throw new Error('Quantity is not a decimal with three places');
+  const [, units, fraction = ''] = match;
+  return BigInt(units!) * 1000n + BigInt(fraction.padEnd(3, '0'));
+}
+
+/** SRI-014. Six decimals for the quantity. */
+function quantityText(thousandths: bigint): string {
+  const units = thousandths / 1000n;
+  const fraction = String(thousandths % 1000n).padStart(3, '0');
+  return `${units}.${fraction}000`;
 }
 
 // ── XML text ───────────────────────────────────────────────────────────────
@@ -237,7 +255,12 @@ interface ComputedLine {
 }
 
 function computeLine(line: VoucherLine): ComputedLine {
-  const gross = toCents(line.unitPrice) * BigInt(line.quantity);
+  // SRI-013. The line as billing computed it (`Money.times`): rounded half up
+  // to the cent, so a fraction of a unit adds up to what the invoice stored.
+  const gross = divideHalfUp(
+    toCents(line.unitPrice) * toThousandths(line.quantity),
+    1000n,
+  );
   const base = gross - toCents(line.discount);
   const tax = divideHalfUp(base * toHundredths(line.taxPercentage), 10_000n);
   return { line, base, tax };
@@ -309,7 +332,7 @@ function detail({ line, base, tax }: ComputedLine): string {
     'detalle',
     text('codigoPrincipal', line.code) +
       text('descripcion', line.description) +
-      text('cantidad', sixDecimals(BigInt(line.quantity) * 100n)) +
+      text('cantidad', quantityText(toThousandths(line.quantity))) +
       text('precioUnitario', sixDecimals(toCents(line.unitPrice))) +
       text('descuento', money(toCents(line.discount))) +
       text('precioTotalSinImpuesto', money(base)) +

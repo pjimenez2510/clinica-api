@@ -63,7 +63,7 @@ function anInvoiceXml(): string {
       {
         code: 'CONS-MG-PV',
         description: 'Consulta',
-        quantity: 1,
+        quantity: '1',
         unitPrice: '30.00',
         discount: '0.00',
         taxSriCode: '0',

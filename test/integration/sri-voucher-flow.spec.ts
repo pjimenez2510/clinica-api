@@ -185,7 +185,10 @@ async function loadCertificate(): Promise<void> {
   await certificates.upload(p12.pkcs12, p12.password, { userId });
 }
 
-async function issueInvoice(email: string | null = 'maria@example.com') {
+async function issueInvoice(
+  email: string | null = 'maria@example.com',
+  quantity: Quantity = Quantity.ONE,
+) {
   const account = await prisma.patientAccount.create({
     data: { patientId, siteId, payerId, priceListId },
   });
@@ -194,7 +197,7 @@ async function issueInvoice(email: string | null = 'maria@example.com') {
     billableServiceId: serviceId,
     encounterId: null,
     serviceDate: clinicalDateOf(NOW()),
-    quantity: Quantity.ONE,
+    quantity,
     createdById: userId,
     origin: 'MANUAL',
     encounterProcedureId: null,
@@ -307,6 +310,17 @@ describe('SRI-001, SRI-041 preparar al emitir, sin bloquear nunca la factura', (
     });
     await dispatch.sweep();
     expect((await voucherOf(invoice.id)).status).toBe('SIGNED');
+  });
+
+  it('SRI-013 SRI-014 una factura con media unidad de un insumo tiene su comprobante firmado, con la cantidad exacta', async () => {
+    await loadCertificate();
+    const invoice = await issueInvoice(
+      'maria@example.com',
+      Quantity.parse('0.500'),
+    );
+    const voucher = await preparation.prepareInvoice(invoice.id);
+    expect(voucher?.status).toBe('SIGNED');
+    expect(voucher?.signedXml).toContain('<cantidad>0.500000</cantidad>');
   });
 
   it('SRI-006 preparar dos veces la misma factura deja un solo comprobante y una sola clave', async () => {

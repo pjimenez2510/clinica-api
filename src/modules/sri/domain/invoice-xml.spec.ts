@@ -90,7 +90,7 @@ function aSource(
       {
         code: 'CONS-MG-PV',
         description: 'Consulta de medicina general',
-        quantity: 1,
+        quantity: '1',
         unitPrice: '30.00',
         discount: '0.00',
         taxSriCode: '0',
@@ -99,7 +99,7 @@ function aSource(
       {
         code: 'INS-GUANTES',
         description: 'Guantes de examen',
-        quantity: 3,
+        quantity: '3',
         unitPrice: '1.35',
         discount: '0.05',
         taxSriCode: '4',
@@ -270,6 +270,64 @@ describe('SRI-019 el contenido dice lo mismo que la clave', () => {
       );
     },
   );
+});
+
+describe('SRI-014 la cantidad fraccionaria de un insumo', () => {
+  it('SRI-013 SRI-014 media unidad a 10.00 suma 5.00 y se declara con seis decimales', async () => {
+    const half = aSource({
+      lines: [
+        {
+          code: 'INS-VIAL',
+          description: 'Vial',
+          quantity: '0.500',
+          unitPrice: '10.00',
+          discount: '0.00',
+          taxSriCode: '0',
+          taxPercentage: '0.00',
+        },
+      ],
+      totals: {
+        subtotalTaxed: '0.00',
+        subtotalUntaxed: '5.00',
+        discountTotal: '0.00',
+        taxTotal: '0.00',
+        total: '5.00',
+      },
+    });
+    const factura = parsed(composeInvoiceXml(half));
+    expect(factura.detalles.detalle[0]).toMatchObject({
+      cantidad: '0.500000',
+      precioUnitario: '10.000000',
+      precioTotalSinImpuesto: '5.00',
+    });
+    expect((await validateAgainstXsd(composeInvoiceXml(half))).valid).toBe(
+      true,
+    );
+  });
+
+  it('SRI-013 redondea la línea como billing: 0.333 × 1.00 es 0.33', () => {
+    const third = aSource({
+      lines: [
+        {
+          code: 'INS-X',
+          description: 'Insumo',
+          quantity: '0.333',
+          unitPrice: '1.00',
+          discount: '0.00',
+          taxSriCode: '0',
+          taxPercentage: '0.00',
+        },
+      ],
+      totals: {
+        subtotalTaxed: '0.00',
+        subtotalUntaxed: '0.33',
+        discountTotal: '0.00',
+        taxTotal: '0.00',
+        total: '0.33',
+      },
+    });
+    expect(() => composeInvoiceXml(third)).not.toThrow();
+  });
 });
 
 describe('SRI-014 formatos y escape', () => {

@@ -293,6 +293,9 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
   XML y la factura coincidan al centavo.
   > REQ-083. `invoice_total_is_consistent` ya garantiza los totales; aquí se
   > exige entre el XML y la factura.
+  > La cantidad es la del cargo, con sus tres decimales (0.5 de un vial), y la
+  > línea se redondea como en `billing` (`Money.times`). Revisión del
+  > 01-10-2026: tratarla como entera dejaba esas facturas sin comprobante.
 - **SRI-014** — El sistema DEBERÁ escribir las fechas como `dd/mm/aaaa`,
   cantidad y precio unitario con seis decimales, los demás importes con dos, y
   escapar los caracteres reservados de XML en todo texto que venga de una
