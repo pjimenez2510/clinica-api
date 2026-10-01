@@ -579,10 +579,11 @@ describe('la receta contra PostgreSQL', () => {
   it('PR-034 rechaza emitir con el registro ACESS vencido ayer, sin que nadie toque su fila', async () => {
     const prisma = db();
     const site = await aSiteWithCity(prisma);
-    const yesterday = new Date();
-    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    // Yesterday IN ECUADOR: from 19:00 in Guayaquil the UTC day before is
+    // today, and the registration would still be in force.
+    const yesterday = addDays(clinicalDateOf(new Date()), -1);
     const practitioner = await aPrescriber(prisma, {
-      acessExpiresOn: yesterday,
+      acessExpiresOn: new Date(`${yesterday}T00:00:00.000Z`),
     });
     const patient = await createPatient(prisma);
     const encounter = await prisma.encounter.create({

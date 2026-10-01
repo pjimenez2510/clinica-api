@@ -9,6 +9,7 @@ import type {
   ActiveAllergy,
   ActiveAllergyReader,
 } from '../../../shared/clinical/patient-allergy.port';
+import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
 import { PrescriptionService } from './prescription.service';
 import type {
   DiscardPlan,
@@ -376,8 +377,12 @@ describe('el servicio de recetas', () => {
   });
 
   it('PR-034 rechaza emitir con el registro ACESS vencido ayer', async () => {
-    const yesterday = new Date();
-    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    // Yesterday IN ECUADOR, which is what the service judges against: from
+    // 19:00 in Guayaquil the UTC date is already tomorrow, and «the UTC day
+    // before» is today — a registration still in force.
+    const yesterday = new Date(
+      `${addDays(clinicalDateOf(new Date()), -1)}T00:00:00.000Z`,
+    );
     repository.snapshot = aSnapshot({
       prescriber: {
         acessRegistration: 'ACESS-11223',
