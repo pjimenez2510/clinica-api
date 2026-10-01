@@ -68,7 +68,8 @@ export class CertificateController {
   }
 
   /**
-   * CER-011, CER-012, CER-016. Annuls a certificate with a written reason.
+   * CER-011, CER-012, CER-016, CER-040. Annuls a certificate with a written
+   * reason, if the caller issued it or directs its site.
    * NOTHING IS DELETED. 200: what comes back is the certificate in its new
    * state.
    */
@@ -82,10 +83,15 @@ export class CertificateController {
     @Body() body: RevokeCertificateDto,
     @Req() req: Request,
   ): Promise<CertificateResponse> {
+    const direction = this.currentUser
+      .requirePrincipal()
+      .sitesFor('certificate:revoke-any');
     const revoked = await this.certificates.revoke(
       certificateId,
       body.reason,
       this.requester(req, 'record:write'),
+      // CER-040. Where the caller is the medical direction; often nowhere.
+      direction === ALL_SITES ? 'all' : direction,
     );
     return toCertificateResponse(revoked);
   }

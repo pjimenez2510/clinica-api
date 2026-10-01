@@ -275,7 +275,8 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
 
     /**
      * THE SITE'S OWN DATA WINS OVER THE ESTABLISHMENT'S for address and phone,
-     * and the establishment's wins for the NAME.
+     * and the establishment's IS the NAME (DOC-102): every site has one since
+     * OR-032, so there is no falling back to the branch's name.
      *
      * A patient walks into a site, so the address and telephone printed on
      * their receta have to be the ones they can walk back to. The name is the
@@ -283,21 +284,19 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
      * art. 5.a.iii asks for the establishment, not for the branch.
      */
     const establishment: EstablishmentIdentity = {
-      name: site.establishment?.legalName ?? site.name,
-      tradeName: site.establishment?.tradeName ?? null,
-      email: site.establishment?.contactEmail ?? null,
-      operatingPermit: site.establishment?.operatingPermit ?? null,
-      ruc: site.ruc ?? site.establishment?.ruc ?? null,
+      name: site.establishment.legalName,
+      tradeName: site.establishment.tradeName,
+      email: site.establishment.contactEmail,
+      operatingPermit: site.establishment.operatingPermit,
+      ruc: site.ruc ?? site.establishment.ruc,
       addressLine: site.addressLine,
-      headOfficeAddress: site.establishment?.headOfficeAddress ?? null,
+      headOfficeAddress: site.establishment.headOfficeAddress,
       phone: site.phone,
-      logo: toStoredImage(site.establishment?.logoImage),
-      keepsAccounting: site.establishment?.keepsAccounting ?? false,
-      specialTaxpayerResolution:
-        site.establishment?.specialTaxpayerResolution ?? null,
-      withholdingAgentResolution:
-        site.establishment?.withholdingAgentResolution ?? null,
-      rimpeRegime: site.establishment?.rimpeRegime ?? 'NONE',
+      logo: toStoredImage(site.establishment.logoImage),
+      keepsAccounting: site.establishment.keepsAccounting,
+      specialTaxpayerResolution: site.establishment.specialTaxpayerResolution,
+      withholdingAgentResolution: site.establishment.withholdingAgentResolution,
+      rimpeRegime: site.establishment.rimpeRegime,
     };
 
     /**
@@ -841,12 +840,12 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
   }
 }
 
-/** DOC-080, OR-010. The name the paper carried: trade name, else legal name. */
+/**
+ * DOC-080, OR-010. The name the paper carried: trade name, else legal name.
+ * Never the site's (DOC-102, OR-032).
+ */
 function nameOf(site: {
-  name: string;
-  establishment: { legalName: string; tradeName: string | null } | null;
+  establishment: { legalName: string; tradeName: string | null };
 }): string {
-  return (
-    site.establishment?.tradeName ?? site.establishment?.legalName ?? site.name
-  );
+  return site.establishment.tradeName ?? site.establishment.legalName;
 }

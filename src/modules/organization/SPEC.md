@@ -239,6 +239,19 @@ rechazo; guardar `002` y leerlo igual, con el cero.
   prepararse ningún comprobante electrónico (sri SRI-008, dato
   `FISCAL_PROFILE`).
 
+- **OR-032** — Toda sede DEBERÁ pertenecer a un establecimiento, y SI se crea
+  una sede sin establecimiento registrado ENTONCES el sistema DEBERÁ rechazarlo
+  con `SITE_ESTABLISHMENT_REQUIRED`.
+
+  > `site.establishment_id` era nulo sólo para que sobrevivieran las filas
+  > anteriores a `establishment`, y `createSite` creaba sedes huérfanas para
+  > siempre: registrar el establecimiento después no las enlazaba. Los
+  > documentos caían entonces en el nombre de la sede como nombre de la clínica
+  > (DOC-102). **Lo garantiza la base** desde
+  > `20261001090100_site_establishment_required`: `NOT NULL`, tras enlazar las
+  > huérfanas al establecimiento si hay exactamente uno. Decidido en
+  > `fix/certificado-d105`.
+
   > `keeps_accounting` es `false` y `rimpe_regime` `NONE` por defecto: sin esto
   > el sistema declaraba al SRI «no obligado» en nombre de quien nunca lo dijo.
   > Revisión del 01-10-2026.
@@ -262,6 +275,7 @@ rechazo; guardar `002` y leerlo igual, con el cero.
 | `ROOM_NOT_IN_SITE`                 | 422  | Consultorio de otra sede (OR-021)                         |
 | `INVALID_RUC`                      | 422  | RUC que no supera la validación del SRI (OR-008)          |
 | `SITE_SCOPE_DENIED`                | 403  | Actuar sobre una sede fuera del alcance (OR-026, ADR-007) |
+| `SITE_ESTABLISHMENT_REQUIRED`      | 409  | Crear una sede sin establecimiento registrado (OR-032)    |
 
 `ROOM_NOT_IN_SITE` ya existe en `error-catalogue.ts`, emitido hoy desde
 `agenda`: la garantía se declara aquí y se comprueba allí, sin cambiar la cadena.

@@ -19,9 +19,36 @@ function next(): string {
   return String(sequence).padStart(6, '0');
 }
 
+/**
+ * OR-032. The establishment every site belongs to: the one already registered
+ * in this database, or a new one. One per database, as in a clinic.
+ */
+export async function establishmentId(prisma: PrismaClient): Promise<string> {
+  // The oldest: a test that registers a second one keeps its sites on the
+  // first, deterministically.
+  const existing = await prisma.establishment.findFirst({
+    select: { id: true },
+    orderBy: { id: 'asc' },
+  });
+  if (existing) return existing.id;
+  const created = await prisma.establishment.create({
+    data: {
+      mspUnicode: `E${next()}`,
+      typology: 'Consultorio de especialidad',
+      legalName: 'Clínica de Pruebas S.A.',
+    },
+    select: { id: true },
+  });
+  return created.id;
+}
+
 export async function createSite(prisma: PrismaClient, name = 'Sede Central') {
   return prisma.site.create({
-    data: { mspUnicode: `U${next()}`, name },
+    data: {
+      mspUnicode: `U${next()}`,
+      name,
+      establishmentId: await establishmentId(prisma),
+    },
   });
 }
 

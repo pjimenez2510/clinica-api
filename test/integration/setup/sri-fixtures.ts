@@ -124,10 +124,15 @@ export async function giveSiteAnIssuer(
   siteId: string,
   code = '001',
 ): Promise<void> {
-  sequence += 1;
-  const establishment = await prisma.establishment.create({
+  // OR-032. The site already belongs to the establishment of the database;
+  // it is THAT one which gets the issuer's data, as an administrator would.
+  const { establishmentId } = await prisma.site.findUniqueOrThrow({
+    where: { id: siteId },
+    select: { establishmentId: true },
+  });
+  const establishment = await prisma.establishment.update({
+    where: { id: establishmentId },
     data: {
-      mspUnicode: `EST-SRI-${String(sequence).padStart(5, '0')}`,
       typology: 'Centro de Salud Tipo A',
       legalName: 'Clínica de Pruebas & Asociados S.A.',
       ruc: TEST_ISSUER_RUC,

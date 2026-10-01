@@ -16,7 +16,11 @@ import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
-import { createPatient, createPractitioner } from './setup/fixtures';
+import {
+  createPatient,
+  createPractitioner,
+  establishmentId,
+} from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
 /**
@@ -199,6 +203,8 @@ describe('la organización por HTTP', () => {
   async function createSite(
     overrides: Record<string, unknown> = {},
   ): Promise<{ id: string; mspUnicode: string }> {
+    // OR-032. A site needs the establishment registered first.
+    await establishmentId(prisma);
     const response = await post('/sites', {
       mspUnicode: nextMspCode(),
       name: `Sede ${nextMspCode()}`,
@@ -522,6 +528,7 @@ describe('la organización por HTTP', () => {
     });
 
     it('OR-009 admite en una sede el RUC de una sociedad que no pasa módulo 11', async () => {
+      await establishmentId(prisma); // OR-032
       const response = await post('/sites', {
         mspUnicode: nextMspCode(),
         name: 'Sede de sociedad nueva',
@@ -1008,28 +1015,43 @@ describe('la organización por HTTP', () => {
   });
 
   describe('la semilla de desarrollo', () => {
-    it('OR-004 enlaza las sedes existentes al establecimiento y es idempotente', async () => {
-      // A site created BEFORE the seed, with no establishment: the backfill the
-      // nullable column exists for.
-      const orphan = await prisma.site.create({
-        data: { mspUnicode: 'MSP-ORPHAN', name: 'Sede huérfana' },
-      });
+    it('OR-032 la base no admite una sede sin establecimiento, y con él sí', async () => {
+      await expect(
+        prisma.$executeRaw`INSERT INTO site (msp_unicode, name, updated_at) VALUES ('MSP-ORPHAN', 'Sede huérfana', now())`,
+      ).rejects.toThrow(/establishment_id/);
 
+      // Control positivo: el mismo INSERT con su establecimiento.
+      await seedOrganization(prisma);
+      const establishment = await prisma.establishment.findFirstOrThrow({
+        select: { id: true },
+      });
+      await expect(
+        prisma.$executeRaw`INSERT INTO site (msp_unicode, name, establishment_id, updated_at) VALUES ('MSP-ADOPTED', 'Sede enlazada', ${establishment.id}::uuid, now())`,
+      ).resolves.toBe(1);
+    });
+
+    it('OR-032 sin establecimiento registrado, crear una sede responde 409 y no crea nada', async () => {
+      const refused = await post('/sites', {
+        mspUnicode: nextMspCode(),
+        name: 'Sede adelantada',
+      }).expect(409);
+      expect(refused.body).toMatchObject({
+        code: 'SITE_ESTABLISHMENT_REQUIRED',
+        title: expect.stringContaining('Registre primero el establecimiento'),
+      });
+      expect(await prisma.site.count()).toBe(0);
+
+      // Control positivo: registrado el establecimiento, el mismo POST crea.
+      await establishmentId(prisma);
+      await post('/sites', { mspUnicode: nextMspCode(), name: 'Sede a tiempo' }).expect(201); // prettier-ignore
+    });
+
+    it('OR-004 la semilla es idempotente', async () => {
       const first = await seedOrganization(prisma);
       expect(first.establishmentCreated).toBe(true);
-      expect(first.sitesBackfilled).toBe(1);
-      // No site was invented: there already was one.
-      expect(first.sitesCreated).toBe(0);
-
-      const adopted = await prisma.site.findUniqueOrThrow({
-        where: { id: orphan.id },
-        select: { establishmentId: true },
-      });
-      expect(adopted.establishmentId).not.toBeNull();
 
       const second = await seedOrganization(prisma);
       expect(second.establishmentCreated).toBe(false);
-      expect(second.sitesBackfilled).toBe(0);
       expect(second.roomsCreated).toBe(0);
       expect(second.emissionPointsCreated).toBe(0);
       expect(await prisma.establishment.count()).toBe(1);

@@ -607,6 +607,20 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
   > imprimía los datos del profesional en la página 1 y el recuadro del sello,
   > solo, en la 2. Un sello en una hoja vacía no respalda nada de lo escrito.
 
+- **DOC-102** — La cabecera **del papel** de todo documento —el membrete que
+  dibuja el marco común— DEBERÁ llevar como nombre de la clínica la **razón
+  social del establecimiento** (art. 5.a.iii de la Res. ACESS-2023-0030), y
+  **NO DEBERÁ** caer en el nombre de la sede.
+
+  > **Sólo el membrete.** La sección A del 117 («establecimiento de salud», con
+  > el unicódigo) nombra la **sede**, que es el establecimiento del MSP (D-074),
+  > y las vistas de pantalla de la receta y del 117 siguen esos datos de su
+  > módulo. Acotado en la revisión de `fix/certificado-d105`.
+
+  > Lo vio la principal en la evidencia de F-05: el lector caía en `site.name`
+  > cuando la sede no tenía establecimiento. Ahora toda sede lo tiene (OR-032,
+  > garantizado por la base), y el lector no tiene a qué caer.
+
 - **DOC-072** — La **receta** DEBERÁ llevar los cinco bloques del art. 5 en este
   orden: datos generales, datos del paciente, medicamento, prescriptor e
   indicaciones.

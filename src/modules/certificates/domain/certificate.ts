@@ -1,12 +1,17 @@
 import {
   addDays,
+  clinicalDateOf,
   clinicalDaySpan,
   type ClinicalDate,
 } from '../../../shared/domain/clinic-time';
 
 import {
   CertificateBackdatingReasonRequiredError,
+  CertificateIssuerReasonRequiredError,
+  CertificateRestIssuedTooLateError,
   CertificateRestPeriodInvalidError,
+  CertificateRestStartTooEarlyError,
+  CertificateRestStartTooLateError,
   CertificateRestTooLongError,
   CertificateTypeNotSupportedError,
   type PatientWorkField,
@@ -243,26 +248,105 @@ export function restDetailsOf(
   };
 }
 
-/** CER-030. The shortest reason that says something. */
+/** CER-030, CER-039. The shortest reason that says something. */
 export const MIN_BACKDATING_REASON_LENGTH = 10;
 
 /**
- * CER-030. The reason a rest starts before the clinical date of the attention
- * (in `America/Guayaquil`), trimmed, or a refusal without it.
+ * CER-030. The reason of a rest that starts before the clinical date of the
+ * attention, or is issued on a later day (D-105 §3), trimmed, or a refusal
+ * without it. Every date is a calendar date in `America/Guayaquil`.
  *
- * A rest that does not start before that day is not backdated and keeps NO
+ * A rest issued on the day of the attention and starting no earlier keeps NO
  * reason: a reason stored on a rest that needed none would read as a backdated
- * certificate that was not.
+ * certificate that was not. `medical_certificate_issue_rules` says the same in
+ * the database.
  */
 export function backdatingReasonOf(
   period: RestPeriod,
   attentionDate: ClinicalDate,
+  issueDate: ClinicalDate,
   reason: string | null,
 ): string | null {
-  if (period.from >= attentionDate) return null;
+  const backdated = period.from < attentionDate;
+  const late = issueDate > attentionDate;
+  if (!backdated && !late) return null;
   const written = reason?.trim() ?? '';
   if (written.length < MIN_BACKDATING_REASON_LENGTH) {
-    throw new CertificateBackdatingReasonRequiredError();
+    throw new CertificateBackdatingReasonRequiredError(
+      backdated ? 'BACKDATED' : 'LATE',
+    );
+  }
+  return written;
+}
+
+/**
+ * CER-041. The latest day a rest may start: the day after it is issued. The
+ * doctor who attends at night gives the rest from tomorrow; a rest that starts
+ * in three months is not a rest of this attention (D-105 §3).
+ */
+export function latestRestStartOf(issueDate: ClinicalDate): ClinicalDate {
+  return addDays(issueDate, 1);
+}
+
+/**
+ * CER-030, D-106 §5. The day an issue counts as, to judge whether it is late:
+ * Ecuador's calendar day, with the dawn —until 06:00— counted as the day
+ * before. A doctor who signs at 02:00 the rest of a night attention is not
+ * issuing late. Ecuador has no daylight saving: six hours are six hours.
+ */
+export const DAWN_HOURS = 6;
+export function lateIssueDayOf(issuedAt: Date): ClinicalDate {
+  return clinicalDateOf(new Date(issuedAt.getTime() - DAWN_HOURS * 60 * 60 * 1000)); // prettier-ignore
+}
+
+/** CER-044, D-106 §1. How many days before the attention a rest may start. */
+export const MAX_REST_DAYS_BEFORE_ATTENTION = 3;
+
+/** CER-045, D-106 §4. How many days after the attention a rest is issued. */
+export const MAX_DAYS_TO_ISSUE_REST = 8;
+
+/**
+ * CER-044, CER-045. The window of a rest around its attention: it starts at
+ * most three days before, and it is issued at most eight days after (with the
+ * dawn of CER-030). The reason of CER-030 does not widen either bound.
+ */
+export function assertRestWithinAttention(
+  period: RestPeriod,
+  attentionDate: ClinicalDate,
+  lateIssueDay: ClinicalDate,
+): void {
+  const earliest = addDays(attentionDate, -MAX_REST_DAYS_BEFORE_ATTENTION);
+  if (period.from < earliest) throw new CertificateRestStartTooEarlyError(earliest); // prettier-ignore
+  if (lateIssueDay > addDays(attentionDate, MAX_DAYS_TO_ISSUE_REST)) {
+    throw new CertificateRestIssuedTooLateError();
+  }
+}
+
+/** CER-041. Refuses a rest that starts after `latestRestStartOf`. */
+export function assertRestStartsInTime(
+  period: RestPeriod,
+  issueDate: ClinicalDate,
+): void {
+  const latest = latestRestStartOf(issueDate);
+  if (period.from > latest) throw new CertificateRestStartTooLateError(latest);
+}
+
+/**
+ * CER-039. Why someone other than the practitioner of the attention issues
+ * its certificate, trimmed, or a refusal without it (D-105 §1).
+ *
+ * The attending practitioner keeps NO reason, whatever the request carried: a
+ * third-party reason on their own certificate would say they did not attend.
+ */
+export function issuerReasonOf(
+  issuerId: string,
+  attendingId: string,
+  reason: string | null,
+): string | null {
+  if (issuerId === attendingId) return null;
+  const written = reason?.trim() ?? '';
+  if (written.length < MIN_BACKDATING_REASON_LENGTH) {
+    throw new CertificateIssuerReasonRequiredError();
   }
   return written;
 }
@@ -293,16 +377,28 @@ export function longRestNotice(days: number): string {
 }
 
 /**
- * CER-032. One notice when the rest exceeds the issuer's threshold, none
- * otherwise. It never refuses the issue.
+ * CER-043, D-105 §6. Maternity leave is twelve weeks and a certificate covers
+ * thirty days at most (CER-031), so it chains three or more; whether the IESS
+ * takes it on this form at all is what the doctor confirms first.
+ */
+export const MATERNITY_CHAIN_NOTICE =
+  'La licencia de maternidad dura doce semanas y cada certificado cubre como mucho 30 días. Antes de emitir los siguientes, confirme con el IESS si la maternidad se certifica en este formulario o por otro trámite.';
+
+/**
+ * CER-032, CER-043. One notice when the rest exceeds the issuer's threshold,
+ * and one on every maternity rest. They never refuse the issue.
  */
 export function restNoticesOf(
   days: number,
   primarySpecialtyCode: string | null,
+  contingencyType: ContingencyType,
 ): string[] {
-  return days > restNoticeThresholdOf(primarySpecialtyCode)
-    ? [longRestNotice(days)]
-    : [];
+  const notices =
+    days > restNoticeThresholdOf(primarySpecialtyCode)
+      ? [longRestNotice(days)]
+      : [];
+  if (contingencyType === 'MATERNITY') notices.push(MATERNITY_CHAIN_NOTICE);
+  return notices;
 }
 
 /**

@@ -82,6 +82,7 @@ export class EncounterCertificatesController {
         birthOn: (dto.birthOn ?? null) as ClinicalDate | null,
         maternityDischargeOn: (dto.maternityDischargeOn ?? null) as ClinicalDate | null, // prettier-ignore
         backdatingReason: dto.backdatingReason ?? null,
+        issuedByOtherReason: dto.issuedByOtherReason ?? null,
       },
       this.requester(req, 'record:write'),
     );

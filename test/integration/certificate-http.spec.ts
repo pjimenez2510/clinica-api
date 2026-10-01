@@ -14,7 +14,9 @@ import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/ro
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import {
   addDays,
+  atWallClock,
   clinicalDateOf,
+  WallClockTime,
   type ClinicalDate,
 } from '../../src/shared/domain/clinic-time';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
@@ -145,7 +147,15 @@ describe('el certificado medico por HTTP', () => {
 
     siteId = (await createSite(prisma)).id;
     await giveParish(siteId);
-    const started = new Date(Date.now() - 60 * 60 * 1000);
+    // An hour ago, but never before today's midnight in Ecuador: an attention
+    // of yesterday would make every rest issued here a late one (CER-030).
+    const now = new Date();
+    const started = new Date(
+      Math.max(
+        now.getTime() - 60 * 60 * 1000,
+        atWallClock(clinicalDateOf(now), WallClockTime.of(0, 0)).getTime(),
+      ),
+    );
     today = clinicalDateOf(started);
 
     patientId = (
@@ -570,6 +580,120 @@ describe('el certificado medico por HTTP', () => {
       { reason: 'Otra vez' },
     ).expect(409);
     expect((twice.body as Problem).code).toBe('CERTIFICATE_ALREADY_REVOKED');
+  });
+
+  it('CER-039 otro médico de la sede emite sobre la atención ajena sólo con motivo, y el motivo queda en la fila', async () => {
+    const colleague = await signIn('MEDICO', 'colega@clinica.ec', '1712345675');
+    const path = `/encounters/${encounterId}/certificates`;
+
+    const refused = await post(path, colleague.token, attendance()).expect(422);
+    expect((refused.body as Problem).code).toBe(
+      'CERTIFICATE_ISSUER_REASON_REQUIRED',
+    );
+    expect((refused.body as Problem).errors?.map((e) => e.field)).toEqual([
+      'issuedByOtherReason',
+    ]);
+    expect(await prisma.medicalCertificate.count()).toBe(0);
+
+    const issued = await post(
+      path,
+      colleague.token,
+      attendance({ issuedByOtherReason: 'Cubre el turno de la doctora' }),
+    ).expect(201);
+    const row = await prisma.medicalCertificate.findUniqueOrThrow({
+      where: { id: (issued.body as IssuedBody).certificate.id },
+      select: { issuedById: true, issuedByOtherReason: true },
+    });
+    expect(row).toEqual({
+      issuedById: colleague.practitionerId,
+      issuedByOtherReason: 'Cubre el turno de la doctora',
+    });
+  });
+
+  it('CER-044 un reposo que empieza 4 días antes de la atención responde 422 en restFrom, aun con motivo (D-106 §1)', async () => {
+    const response = await post(
+      `/encounters/${encounterId}/certificates`,
+      doctor.token,
+      restOf(5, {
+        restFrom: addDays(today, -4),
+        restTo: today,
+        backdatingReason: 'Fiebre desde hace cuatro días',
+      }),
+    ).expect(422);
+    expect((response.body as Problem).code).toBe(
+      'CERTIFICATE_REST_START_TOO_EARLY',
+    );
+    expect((response.body as Problem).errors?.[0]?.field).toBe('restFrom');
+    expect(await prisma.medicalCertificate.count()).toBe(0);
+  });
+
+  it('CER-045 un reposo sobre una atención de hace nueve días responde 422 en type (D-106 §4)', async () => {
+    const nineDaysAgo = atWallClock(addDays(clinicalDateOf(new Date()), -9), WallClockTime.of(12, 0)); // prettier-ignore
+    const old = await anEncounter(siteId, nineDaysAgo);
+
+    const response = await post(
+      `/encounters/${old.id}/certificates`,
+      doctor.token,
+      restOf(1, { backdatingReason: 'Volvió nueve días después' }),
+    ).expect(422);
+    expect((response.body as Problem).code).toBe(
+      'CERTIFICATE_REST_ISSUED_TOO_LATE',
+    );
+    expect((response.body as Problem).errors?.[0]?.field).toBe('type');
+  });
+
+  it('CER-041 un reposo que empieza en 90 días se rechaza nombrando restFrom, y uno desde mañana pasa', async () => {
+    const far = addDays(clinicalDateOf(new Date()), 90);
+    const refused = await post(
+      `/encounters/${encounterId}/certificates`,
+      doctor.token,
+      restOf(3, { restFrom: far, restTo: addDays(far, 2) }),
+    ).expect(422);
+    expect((refused.body as Problem).code).toBe(
+      'CERTIFICATE_REST_START_TOO_LATE',
+    );
+    expect((refused.body as Problem).errors?.[0]?.field).toBe('restFrom');
+
+    // Control positivo: desde mañana, con el diagnóstico que el reposo lleva.
+    await aDiagnosis(encounterId);
+    const tomorrow = addDays(clinicalDateOf(new Date()), 1);
+    await issue(restOf(1, { restFrom: tomorrow, restTo: tomorrow }));
+  });
+
+  it('CER-040 otro médico no anula un certificado ajeno y la fila queda intacta; con el permiso de dirección médica, sí', async () => {
+    const issued = await issue(attendance());
+    const path = `/certificates/${issued.certificate.id}/revoke`;
+    const reason = { reason: 'Emitido a la persona equivocada' };
+
+    const colleague = await signIn('MEDICO', 'colega@clinica.ec', '1712345675');
+    const refused = await post(path, colleague.token, reason).expect(403);
+    expect((refused.body as Problem).code).toBe('CERTIFICATE_REVOKE_FORBIDDEN');
+    expect(
+      await prisma.medicalCertificate.findUniqueOrThrow({
+        where: { id: issued.certificate.id },
+        select: { revokedAt: true, revokedById: true, revocationReason: true },
+      }),
+    ).toEqual({ revokedAt: null, revokedById: null, revocationReason: null });
+
+    // «Dirección médica» no es un rol de fábrica: la clínica arma uno.
+    const direction = await prisma.role.create({
+      data: { code: 'DIRECCION_MEDICA', name: 'Dirección médica' },
+    });
+    await prisma.rolePermission.createMany({
+      data: ['record:read', 'record:write', 'certificate:revoke-any'].map(
+        (permissionCode) => ({ roleId: direction.id, permissionCode }),
+      ),
+    });
+    registry.invalidate();
+    const director = await signIn(
+      'DIRECCION_MEDICA',
+      'direccion@clinica.ec',
+      '0923456784',
+    );
+    const revoked = await post(path, director.token, reason).expect(200);
+    expect((revoked.body as CertificateBody).revocationReason).toBe(
+      reason.reason,
+    );
   });
 
   it('CER-015 enfermeria lee pero no emite ni anula; recepcion no lee', async () => {
