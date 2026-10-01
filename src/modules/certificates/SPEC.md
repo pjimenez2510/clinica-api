@@ -489,25 +489,38 @@ PR-030).
 - **CER-044** — SI el reposo empieza **más de 3 días antes** de la fecha clínica
   de la atención, ENTONCES el sistema DEBERÁ rechazar la emisión con
   `CERTIFICATE_REST_START_TOO_EARLY`, nombrando el campo `restFrom` y la
-  primera fecha admitida, **aunque traiga el motivo** de CER-030.
+  primera fecha admitida, **aunque traiga el motivo** de CER-030. MIENTRAS la
+  contingencia sea **maternidad**, el reposo DEBERÁ admitirse además si empieza
+  **el día del ingreso o el del parto** (CER-035), por antiguo que sea, y el
+  rechazo DEBERÁ nombrar también esas dos fechas.
 
   > **D-106 §1** (el autor, 01-10-2026): el motivo admite el retroactivo, pero
   > no sin límite. **Lo garantiza la base:**
   > `medical_certificate_rest_starts_at_most_3_days_before`.
 
+  > **D-108** (el autor, 01-10-2026): la paciente que da a luz en un hospital y
+  > acude días después recibe el reposo desde el parto o el ingreso; un día
+  > cualquiera entre ellos y la atención, no. Los 3 días se conservan en la
+  > maternidad para que el reposo prenatal —el ingreso aún no ha ocurrido— siga
+  > como estaba (D-106 §2). El motivo de CER-030 se sigue pidiendo. **Lo
+  > garantiza la base**, que además exige ingreso ≤ parto ≤ alta
+  > (`medical_certificate_maternity_dates_in_order`).
+
+  > ⚠️ Nada acota todavía cuán atrás pueden estar el ingreso y el parto, ni
+  > cuántos certificados de maternidad da una atención: **D-109**, pendiente
+  > del autor.
+
 - **CER-045** — SI se emite un reposo **pasados 8 días** de la fecha clínica de
   la atención —con el día de emisión de CER-030, madrugada incluida—, ENTONCES
   el sistema DEBERÁ rechazarlo con `CERTIFICATE_REST_ISSUED_TOO_LATE`. El
-  certificado de asistencia **NO** tiene ese tope.
+  certificado de asistencia y el reposo de contingencia **maternidad** **NO**
+  tienen ese tope.
 
   > **D-106 §4 y §3.** Pasado ese plazo el paciente se ve en una atención
   > nueva. **Lo garantiza la base:**
-  > `medical_certificate_rest_issued_within_8_days`.
-
-  > ⚠️ **CER-044 y CER-045 rigen también para la maternidad.** Que el posparto
-  > tenga otro tope (la fecha de ingreso o del parto, sin plazo de 8 días) está
-  > en **D-108**, pendiente del autor; hasta entonces rige esto. La madrugada de
-  > CER-030 cuenta también para el plazo de 8 días (D-108 §2).
+  > `medical_certificate_rest_issued_within_8_days`. **D-108:** la maternidad
+  > encadena certificados (CER-043) y no lleva el plazo; la madrugada de
+  > CER-030 sigue contando para el plazo en los demás reposos (D-108 §2).
 
 ---
 
@@ -561,7 +574,8 @@ Todo lo que faltaba está en `20261001070500_certificate_number_and_revocation`.
 | `contingency_type`, `rest_backdating_reason`, `maternity_admission_on`, `birth_on`, `maternity_discharge_on` | `medical_certificate` | CER-030, CER-034, CER-035 |
 | `employer_name`, `job_title` | `patient` | CER-038 — pendiente de coordinación con `feat/datos-consentimiento-arco` |
 | `issued_by_other_reason` + `medical_certificate_issuer_reason_not_blank` | `medical_certificate` | CER-039 |
-| Disparador `medical_certificate_issue_rules`: emisor, ventana y motivo | `medical_certificate` | CER-030, CER-039, CER-041, CER-044, CER-045 |
+| Disparador `medical_certificate_issue_rules`: emisor, ventana y motivo | `medical_certificate` | CER-030, CER-039, CER-041, CER-044, CER-045 (maternidad, D-108) |
+| `CHECK medical_certificate_maternity_dates_in_order`: ingreso ≤ parto ≤ alta | `medical_certificate` | CER-035, D-108 |
 
 ## Rutas
 

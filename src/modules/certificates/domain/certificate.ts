@@ -309,14 +309,33 @@ export const MAX_DAYS_TO_ISSUE_REST = 8;
  * CER-044, CER-045. The window of a rest around its attention: it starts at
  * most three days before, and it is issued at most eight days after (with the
  * dawn of CER-030). The reason of CER-030 does not widen either bound.
+ *
+ * D-108. A maternity rest may also start ON the day of admission or of birth,
+ * however long ago, and has no eight-day limit: the mother who gave birth in a
+ * hospital comes days later, and the leave chains certificates (CER-043). Any
+ * other day still keeps the three days, so a prenatal rest is as it was
+ * (D-106 §2). What bounds those dates is D-109, pending.
  */
 export function assertRestWithinAttention(
   period: RestPeriod,
   attentionDate: ClinicalDate,
   lateIssueDay: ClinicalDate,
+  maternity: MaternityDates | null,
 ): void {
   const earliest = addDays(attentionDate, -MAX_REST_DAYS_BEFORE_ATTENTION);
-  if (period.from < earliest) throw new CertificateRestStartTooEarlyError(earliest); // prettier-ignore
+  const onMaternityDay =
+    maternity !== null &&
+    (period.from === maternity.admissionOn ||
+      period.from === maternity.birthOn);
+  if (period.from < earliest && !onMaternityDay) {
+    // Its days are named only when one of them is before the bound: a prenatal
+    // rest is offered no future day that CER-041 would refuse next.
+    const namesItsDays =
+      maternity !== null &&
+      (maternity.admissionOn < earliest || maternity.birthOn < earliest);
+    throw new CertificateRestStartTooEarlyError(earliest, namesItsDays ? maternity : null); // prettier-ignore
+  }
+  if (maternity !== null) return;
   if (lateIssueDay > addDays(attentionDate, MAX_DAYS_TO_ISSUE_REST)) {
     throw new CertificateRestIssuedTooLateError();
   }
