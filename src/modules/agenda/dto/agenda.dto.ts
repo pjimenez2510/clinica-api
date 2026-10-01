@@ -473,6 +473,14 @@ export const agendaEntrySchema = z.object({
    */
   rescheduledFromId: z.uuid().nullable(),
   rescheduledToId: z.uuid().nullable(),
+  /**
+   * AG-150. El estado de la atención VIVA de la cita, o `null`. Sólo el
+   * estado: el identificador de la atención no viaja con la agenda, que ve
+   * quien quizá no tiene `record:read`.
+   */
+  attention: z
+    .enum(['OPEN', 'ON_HOLD', 'DISCONTINUED', 'DISCHARGED', 'COMPLETED'])
+    .nullable(),
 });
 /** One entry as every listing serves it; also the response of creating and releasing a block. */
 export class AgendaEntryDto extends createZodDto(agendaEntrySchema) {}

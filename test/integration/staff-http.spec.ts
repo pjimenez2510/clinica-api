@@ -21,7 +21,11 @@ import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.ser
 import '../../src/modules/staff/infrastructure/staff.constraints';
 
 import { useDatabase } from './setup/database';
-import { createPatient, createSite } from './setup/fixtures';
+import {
+  createPatient,
+  createScheduleRule,
+  createSite,
+} from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
 /**
@@ -1099,7 +1103,56 @@ describe('el personal por HTTP', () => {
       expect((response.body as Problem).code).toBe('SCHEDULE_RULE_OVERLAP');
     });
 
-    it('ST-046 la misma franja en OTRA sede se admite: la regla pertenece a una sede', async () => {
+    it('ST-042 ST-046 la misma franja en OTRA sede se rechaza: un horario, un sitio (D-070)', async () => {
+      const practitioner = await createPractitioner();
+      const second = await createSite(prisma, 'Sede Sur');
+      await put(`/practitioners/${practitioner.id}/sites`, {
+        siteIds: [siteId, second.id],
+      }).expect(200);
+
+      await post(`/practitioners/${practitioner.id}/schedule-rules`, {
+        siteId,
+        ...RULE,
+      }).expect(201);
+      const refused = await post(
+        `/practitioners/${practitioner.id}/schedule-rules`,
+        { siteId: second.id, ...RULE, startTime: '11:00', endTime: '13:00' },
+      ).expect(409);
+
+      expect((refused.body as Problem).code).toBe('SCHEDULE_RULE_OVERLAP');
+      expect((refused.body as Problem).errors?.[0]?.message).toMatch(
+        /en otra sede/,
+      );
+      expect(await prisma.practitionerScheduleRule.count()).toBe(1);
+    });
+
+    it('ST-042 una regla cerrada antes del 2026-10-01 no choca: la exclusión rige desde la entrada en vigor (D-085 §6)', async () => {
+      const practitioner = await createPractitioner();
+      const second = await createSite(prisma, 'Sede Sur');
+      await put(`/practitioners/${practitioner.id}/sites`, {
+        siteIds: [siteId, second.id],
+      }).expect(200);
+      // Lo que la semilla antigua dejó y el arreglo cerró: la misma franja en
+      // la otra sede, vigente hasta el día antes de la entrada en vigor.
+      await createScheduleRule(
+        prisma,
+        { practitionerId: practitioner.id, siteId: second.id },
+        {
+          weekday: RULE.weekday,
+          startTime: RULE.startTime,
+          endTime: RULE.endTime,
+          validTo: new Date('2026-09-30T00:00:00Z'), // fecha-fija: el día antes de la entrada en vigor de D-070
+        },
+      );
+
+      await post(`/practitioners/${practitioner.id}/schedule-rules`, {
+        siteId,
+        ...RULE,
+      }).expect(201);
+    });
+
+    it('ST-046 la franja contigua en OTRA sede se admite: la regla sigue perteneciendo a una sede', async () => {
+      // Control positivo de la anterior: mañana en una sede, tarde en otra.
       const practitioner = await createPractitioner();
       const second = await createSite(prisma, 'Sede Sur');
       await put(`/practitioners/${practitioner.id}/sites`, {
@@ -1113,10 +1166,10 @@ describe('el personal por HTTP', () => {
       await post(`/practitioners/${practitioner.id}/schedule-rules`, {
         siteId: second.id,
         ...RULE,
+        startTime: '12:00',
+        endTime: '16:00',
       }).expect(201);
 
-      // The practitioner cannot actually be in both at once — that is the
-      // agenda's EXCLUDE on appointments, not this one's job (ST-046).
       expect(await prisma.practitionerScheduleRule.count()).toBe(2);
     });
 

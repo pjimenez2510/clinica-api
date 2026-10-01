@@ -467,7 +467,9 @@ export class EncounterController {
 }
 
 /** Instants leave as ISO 8601; the client renders them in Ecuadorian time. */
-function toEncounterResponse(encounter: EncounterView): EncounterResponse {
+export function toEncounterResponse(
+  encounter: EncounterView,
+): EncounterResponse {
   return {
     id: encounter.id,
     siteId: encounter.siteId,
@@ -488,6 +490,15 @@ function toEncounterResponse(encounter: EncounterView): EncounterResponse {
     closedById: encounter.closedById,
     closedAt: encounter.closedAt?.toISOString() ?? null,
     closedBySubstituteReason: encounter.closedBySubstituteReason,
+    annulment: encounter.annulment && {
+      reason: encounter.annulment.reason,
+      at: encounter.annulment.at.toISOString(),
+    },
+    interruption: encounter.interruption && {
+      reason: encounter.interruption.reason,
+      origin: encounter.interruption.origin,
+      at: encounter.interruption.at.toISOString(),
+    },
   };
 }
 

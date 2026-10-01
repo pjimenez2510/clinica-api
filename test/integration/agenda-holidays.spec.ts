@@ -55,8 +55,8 @@ function agendaOf(prisma: PrismaClient): AgendaService {
 }
 
 /**
- * Two sites, one practitioner who works at both, and the same Monday morning
- * at each.
+ * Two sites, one practitioner who works at both: the Monday morning at one
+ * and the afternoon at the other (D-070).
  *
  * TWO SITES FROM THE START, because every requirement in this file is about
  * who a holiday reaches: with one site, «aplica sólo a las sedes indicadas»
@@ -70,7 +70,13 @@ async function twoSites(weekday = 1) {
   const practitioner = await createPractitioner(prisma);
   const patient = await createPatient(prisma);
 
-  for (const site of [north, south]) {
+  // The morning at the north site and the afternoon at the south: since
+  // D-070 one practitioner has no schedule at the same hour in two sites
+  // (ST-042 without site). Four hours each, so both grids hold twelve slots.
+  for (const [site, startTime, endTime] of [
+    [north, '08:00', '12:00'],
+    [south, '14:00', '18:00'],
+  ] as const) {
     await linkPractitionerToSite(prisma, practitioner.id, site.id);
     // D-021: la rejilla es de la sede. Veinte minutos es lo que este fichero
     // leía de la regla antes de que el átomo subiera; la sede nace con diez.
@@ -78,7 +84,7 @@ async function twoSites(weekday = 1) {
     await createScheduleRule(
       prisma,
       { practitionerId: practitioner.id, siteId: site.id },
-      { weekday, startTime: '08:00', endTime: '12:00' },
+      { weekday, startTime, endTime },
     );
   }
 
@@ -400,10 +406,11 @@ describe('holidays in the availability query', () => {
         siteId: south.id,
         practitionerId: practitioner.id,
         patientId: patient.id,
-        // Another hour of the same Monday: the patient cannot hold two
+        // The afternoon, which is when the practitioner works at the south
+        // site (D-070); another hour anyway, since the patient cannot hold two
         // appointments over one interval (AG-030).
-        startsAt: onMonday('09:00'),
-        endsAt: onMonday('09:20'),
+        startsAt: onMonday('14:00'),
+        endsAt: onMonday('14:20'),
         bookingChannel: 'PHONE',
       },
       { userId: (await prisma.user.findFirstOrThrow()).id },

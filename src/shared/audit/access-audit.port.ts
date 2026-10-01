@@ -34,7 +34,18 @@
  * `record` below.
  */
 export type AuditAction =
-  'READ' | 'CREATE' | 'UPDATE' | 'EXPORT' | 'PRINT' | 'MFA_RESET';
+  | 'READ'
+  | 'CREATE'
+  | 'UPDATE'
+  | 'EXPORT'
+  | 'PRINT'
+  | 'MFA_RESET'
+  /**
+   * EN-167, D-085 §5, D-099 §4. A draft with nothing written, left unsigned
+   * when its attention was interrupted. Not an `UPDATE`: nothing changed in
+   * it, and the trail has to say that a note was deliberately NOT signed.
+   */
+  | 'DRAFT_LEFT_UNSIGNED';
 
 /**
  * A resource as it stood, in the shape the DOMAIN uses — never the ORM row.

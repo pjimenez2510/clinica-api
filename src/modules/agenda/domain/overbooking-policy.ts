@@ -26,13 +26,24 @@
  */
 
 import {
+  type OverbookingConflict,
   OverbookingLimitReachedError,
   OverbookingNotAllowedError,
   OverbookingNotAuthorisedError,
+  OverbookingPractitionerUnavailableError,
   OverbookingReasonRequiredError,
   SelfAuthorisationDeniedError,
 } from './agenda.errors';
 import type { Permission } from '../../../shared/authorisation/permission.catalogue';
+import {
+  atWallClock,
+  clinicalDateOf,
+} from '../../../shared/domain/clinic-time';
+import {
+  type ScheduleRule,
+  isWellFormedRule,
+  ruleAppliesOn,
+} from './slot-availability';
 
 /**
  * AG-103, D-005. The permission that lifts the separation between whoever
@@ -146,4 +157,91 @@ export function checkOverbookingCap(count: {
   if (count.used >= count.cap) {
     throw new OverbookingLimitReachedError(count.cap);
   }
+}
+
+/**
+ * AG-151. An entry of the practitioner that is still in force and touches the
+ * requested interval, AT ANY SITE. The adapter does that filtering — practitioner,
+ * `released_at IS NULL`, overlap `[)` — and this decides what it means.
+ */
+export interface PresenceEntry {
+  kind: 'APPOINTMENT' | 'BLOCK';
+  siteId: string;
+  blocksCalendar: boolean;
+  startsAt: Date;
+  endsAt: Date;
+}
+
+/**
+ * AG-151 (D-069, recommendation as extended and accepted on 30-09-2026). An
+ * overbooking squeezes somebody into the consultation of a practitioner WHO IS
+ * THERE (REQ-143). It is refused on top of:
+ *
+ *   1. a block of theirs, at ANY site — the holidays are not trodden on;
+ *   2. what occupies their calendar at ANOTHER site — nobody is in two places;
+ *   3. an overbooking of theirs at ANOTHER site — it occupies no calendar, so
+ *      without this the same hour is free on both sides;
+ *   4. their schedule in force at ANOTHER site — D-070 forbids two rules at the
+ *      same hour, but an overbooking is off the grid of its own site by
+ *      definition, and can land inside the other site's hours.
+ *
+ * Inside the SAME site it stays what it was made for: on top of appointments.
+ * The order is the order of the cases, so the sentence names the most telling
+ * one when several hold.
+ */
+export function checkPractitionerIsThere(input: {
+  siteId: string;
+  startsAt: Date;
+  endsAt: Date;
+  entries: readonly PresenceEntry[];
+  rulesElsewhere: readonly ScheduleRule[];
+}): void {
+  const conflict = conflictOf(input);
+  if (conflict !== null) {
+    throw new OverbookingPractitionerUnavailableError(conflict);
+  }
+}
+
+function conflictOf(input: {
+  siteId: string;
+  startsAt: Date;
+  endsAt: Date;
+  entries: readonly PresenceEntry[];
+  rulesElsewhere: readonly ScheduleRule[];
+}): OverbookingConflict | null {
+  const touching = input.entries.filter((entry) => overlaps(entry, input));
+  const elsewhere = touching.filter((entry) => entry.siteId !== input.siteId);
+
+  if (touching.some((entry) => entry.kind === 'BLOCK')) return 'BLOCK';
+  if (elsewhere.some((entry) => entry.blocksCalendar))
+    return 'OTHER_SITE_ENTRY';
+  if (elsewhere.length > 0) return 'OTHER_SITE_OVERBOOKING';
+
+  const date = clinicalDateOf(input.startsAt);
+  const inForce = input.rulesElsewhere.some(
+    (rule) =>
+      rule.siteId !== input.siteId &&
+      rule.active &&
+      isWellFormedRule(rule) &&
+      ruleAppliesOn(rule, date) &&
+      overlaps(
+        {
+          startsAt: atWallClock(date, rule.startTime),
+          endsAt: atWallClock(date, rule.endTime),
+        },
+        input,
+      ),
+  );
+  return inForce ? 'OTHER_SITE_SCHEDULE' : null;
+}
+
+/** Half-open `[)`, like every interval of the agenda: contiguous is not overlapping. */
+function overlaps(
+  a: { startsAt: Date; endsAt: Date },
+  b: { startsAt: Date; endsAt: Date },
+): boolean {
+  return (
+    a.startsAt.getTime() < b.endsAt.getTime() &&
+    b.startsAt.getTime() < a.endsAt.getTime()
+  );
 }

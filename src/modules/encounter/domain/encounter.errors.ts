@@ -559,6 +559,132 @@ export class AmendmentReasonRequiredError extends ValidationError {
 }
 
 /**
+ * EN-166 (D-077). An attention annulled without a written reason.
+ *
+ * Demanded in the service and not only in the DTO: «esta atención no debió
+ * existir» without a reason is a door for making a consultation disappear,
+ * and the database refuses it a third time
+ * (`encounter_entered_in_error_states_who_why_when`).
+ */
+export class EncounterAnnulmentReasonRequiredError extends ValidationError {
+  readonly code = 'ENCOUNTER_ANNULMENT_REASON_REQUIRED';
+  override readonly userTitle =
+    'Indique por qué anula la atención. Queda escrito con su nombre y la hora, y lo escrito en ella no se borra';
+  override readonly fieldErrors = [
+    {
+      field: 'reason',
+      code: 'ENCOUNTER_ANNULMENT_REASON_REQUIRED',
+      message: 'Indique el motivo de la anulación',
+    },
+  ];
+
+  constructor() {
+    super('Encounter annulment requested without a reason');
+  }
+}
+
+/** EN-166, D-099 §1. How many of each act still stands in the attention. */
+export interface LiveActs {
+  prescriptions: number;
+  orders: number;
+  signedNotes: number;
+  certificates: number;
+  referrals: number;
+  interconsultations: number;
+}
+
+/**
+ * EN-166, D-099 §1. The attention already left something in the chart —a
+ * prescription active or in draft, an order still pending, a signed note, a
+ * certificate not revoked, a referral or an interconsultation (D-103)— and it
+ * is retracted by its own door before the attention is annulled.
+ */
+export class EncounterHasLiveActsError extends ConflictError {
+  readonly code = 'ENCOUNTER_HAS_LIVE_ACTS';
+  override readonly userTitle: string;
+
+  constructor(acts: LiveActs) {
+    // Counts only: no patient, no drug, no exam reaches a log.
+    super('Encounter holds acts that have to be retracted first', { ...acts });
+    const parts = [
+      acts.prescriptions > 0
+        ? `${acts.prescriptions} receta(s) activa(s) o en borrador`
+        : null,
+      acts.orders > 0 ? `${acts.orders} orden(es) pendiente(s)` : null,
+      acts.signedNotes > 0 ? `${acts.signedNotes} nota(s) firmada(s)` : null,
+      acts.certificates > 0
+        ? `${acts.certificates} certificado(s) sin revocar`
+        : null,
+      acts.referrals > 0 ? `${acts.referrals} referencia(s)` : null,
+      acts.interconsultations > 0
+        ? `${acts.interconsultations} interconsulta(s)`
+        : null,
+    ].filter(Boolean);
+    // A referral already seen elsewhere or an answered interconsultation has
+    // no way back (D-103): the sentence says so instead of sending the user
+    // to a door that does not exist (4.ª revisión, m3).
+    this.userTitle = `La atención tiene ${parts.join(', ')}. Retire primero lo que se pueda retirar; si algo ya no se puede, esta atención no se anula`;
+  }
+}
+
+/**
+ * EN-167, D-099 §2. The appointment's arrival was never recorded, so it cannot
+ * be closed as attended nor as «se fue sin ser atendido».
+ */
+export class AppointmentArrivalNotRecordedError extends ConflictError {
+  readonly code = 'APPOINTMENT_ARRIVAL_NOT_RECORDED';
+  override readonly userTitle =
+    'La cita no tiene registrada la llegada. Regístrela (con la calificación de emergencia) antes de interrumpir la atención';
+
+  constructor() {
+    super('Appointment arrival is not recorded');
+  }
+}
+
+/**
+ * EN-167, D-085 §2. The attention holds a draft written by SOMEBODY
+ * ELSE. Interrupting signs the drafts of whoever interrupts (D-082); a draft of
+ * another author would stay unsigned inside a terminal attention, where nobody
+ * could sign it any more — the «texto sin responsable» D-082 rejected.
+ */
+export class EncounterHasOthersDraftsError extends ConflictError {
+  readonly code = 'ENCOUNTER_HAS_OTHERS_DRAFTS';
+  override readonly userTitle =
+    'La atención tiene una nota en borrador de otra persona. Que la firme o la descarte antes de interrumpir';
+
+  constructor() {
+    super('Encounter holds a draft note of another author');
+  }
+}
+
+/**
+ * EN-129, EN-167 (D-076, D-082). An interruption without its written reason
+ * or without saying where it came from — the patient or the clinic.
+ */
+export class EncounterInterruptionReasonRequiredError extends ValidationError {
+  readonly code = 'ENCOUNTER_INTERRUPTION_REASON_REQUIRED';
+  override readonly userTitle =
+    'Indique por qué se interrumpe la atención y si la interrupción vino del paciente o del establecimiento';
+  override readonly fieldErrors: {
+    field: string;
+    code: string;
+    message: string;
+  }[];
+
+  constructor(missing: { reason: boolean; origin: boolean }) {
+    super('Encounter interruption requested without a reason or an origin');
+    this.fieldErrors = [
+      ...(missing.reason
+        ? [{ field: 'reason', code: this.code, message: 'Indique el motivo de la interrupción' }] // prettier-ignore
+        : []),
+      ...(missing.origin
+        ? [{ field: 'origin', code: this.code, message: 'Indique si la interrupción vino del paciente o del establecimiento' }] // prettier-ignore
+        : []),
+    ];
+  }
+}
+
+/**
  * EN-025, EN-026. The version named cannot be amended or retracted: it is a
  * draft, it was already superseded, or it was already retracted.
  *

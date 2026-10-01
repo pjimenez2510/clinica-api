@@ -15,9 +15,15 @@
 
 import {
   DischargeConditionRequiredError,
+  EncounterAnnulmentReasonRequiredError,
+  EncounterInterruptionReasonRequiredError,
   InvalidEncounterTransitionError,
 } from './encounter.errors';
-import type { DischargeCondition, EncounterStatus } from './encounter';
+import type {
+  DischargeCondition,
+  DiscontinuedOrigin,
+  EncounterStatus,
+} from './encounter';
 
 /**
  * EN-132, row by row. An empty list is a terminal state.
@@ -179,4 +185,89 @@ export interface StateChange {
  */
 export function acceptsNewClinicalContent(status: EncounterStatus): boolean {
   return status === 'OPEN' || status === 'ON_HOLD';
+}
+
+/**
+ * EN-166 (D-077, D-080). Annulling an attention: «this should never have
+ * existed», with its reason, author and instant.
+ *
+ * The state machine admits it from any NON-terminal state (EN-018), and the
+ * exit narrows it to `OPEN`/`ON_HOLD` (`assertAnnullable`, D-085 §1): a signed
+ * attention is retracted note by note. `ended_at` is kept if the act had
+ * already ended and stamped now otherwise — `encounter_status_matches_ended_at`
+ * demands one on every state that is over.
+ *
+ * THE NOTES ARE NOT IN THIS PLAN, and that is the requirement: nothing written
+ * in the attention is deleted or changed. The attention says it should not
+ * have existed; what was written in it stays readable as what it was.
+ */
+export function planAnnulment(input: {
+  from: EncounterStatus;
+  endedAt: Date | null;
+  reason: string | undefined;
+  now: Date;
+}): AnnulmentPlan {
+  assertEncounterTransition(input.from, 'ENTERED_IN_ERROR');
+  const reason = input.reason?.trim();
+  if (!reason) throw new EncounterAnnulmentReasonRequiredError();
+
+  return {
+    to: 'ENTERED_IN_ERROR',
+    endedAt: endsTheAct(input.from) ? (input.endedAt ?? input.now) : input.now,
+    reason,
+    at: input.now,
+  };
+}
+
+/** What an annulment writes on the attention. */
+export interface AnnulmentPlan {
+  to: 'ENTERED_IN_ERROR';
+  endedAt: Date;
+  reason: string;
+  at: Date;
+}
+
+/**
+ * EN-129, EN-167 (D-076, D-082). Interrupting an attention that cannot be
+ * finished: its reason, its origin, its author and the instant.
+ *
+ * ONLY FROM `OPEN` OR `ON_HOLD`, which is the table of EN-132: once the note
+ * is signed the attention is `DISCHARGED`, the doctor finished, and there is
+ * nothing left to interrupt.
+ *
+ * NO DISCHARGE CONDITION, deliberately (EN-129): nothing clinical concluded,
+ * and what takes its place is the written reason. Signing the drafts «con lo
+ * hecho» is the adapter's half of the same act — see `discontinue`.
+ */
+export function planInterruption(input: {
+  from: EncounterStatus;
+  reason: string | undefined;
+  origin: DiscontinuedOrigin | undefined;
+  now: Date;
+}): InterruptionPlan {
+  assertEncounterTransition(input.from, 'DISCONTINUED');
+  const reason = input.reason?.trim();
+  if (!reason || input.origin === undefined) {
+    throw new EncounterInterruptionReasonRequiredError({
+      reason: !reason,
+      origin: input.origin === undefined,
+    });
+  }
+
+  return {
+    to: 'DISCONTINUED',
+    endedAt: input.now,
+    reason,
+    origin: input.origin,
+    at: input.now,
+  };
+}
+
+/** What an interruption writes on the attention. */
+export interface InterruptionPlan {
+  to: 'DISCONTINUED';
+  endedAt: Date;
+  reason: string;
+  origin: DiscontinuedOrigin;
+  at: Date;
 }

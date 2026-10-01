@@ -46,7 +46,7 @@ import type { VitalSigns } from '../domain/vital-signs';
  * response, a log or a support screenshot — the same line `agenda`'s
  * `ENTRY_SELECT` draws around `reason`.
  */
-const ENCOUNTER_SELECT = {
+export const ENCOUNTER_SELECT = {
   id: true,
   siteId: true,
   practitionerId: true,
@@ -66,6 +66,11 @@ const ENCOUNTER_SELECT = {
   closedById: true,
   closedAt: true,
   closedBySubstituteReason: true,
+  enteredInErrorReason: true,
+  enteredInErrorAt: true,
+  discontinuedReason: true,
+  discontinuedOrigin: true,
+  discontinuedAt: true,
 } satisfies Prisma.EncounterSelect;
 
 /** The row `ENCOUNTER_SELECT` yields, derived from it so the two cannot drift. */
@@ -620,12 +625,12 @@ async function stampSubjectStatus(
  * the permission at no site, precisely so that «no filter to apply» can never
  * be spelled as «every site».
  */
-function siteFilter(sites: SiteScopeFilter): Prisma.EncounterWhereInput {
+export function siteFilter(sites: SiteScopeFilter): Prisma.EncounterWhereInput {
   return sites === 'all' ? {} : { siteId: { in: [...sites] } };
 }
 
 /** An `encounter` row as the domain reads it. */
-function toEncounterView(row: EncounterRow): EncounterView {
+export function toEncounterView(row: EncounterRow): EncounterView {
   return {
     id: row.id,
     siteId: row.siteId,
@@ -645,6 +650,22 @@ function toEncounterView(row: EncounterRow): EncounterView {
     closedById: row.closedById,
     closedAt: row.closedAt,
     closedBySubstituteReason: row.closedBySubstituteReason,
+    // The CHECKs of `encounter_annulment_and_interruption` make each group
+    // all-or-nothing, so one column standing for the group is enough.
+    annulment:
+      row.enteredInErrorReason !== null && row.enteredInErrorAt !== null
+        ? { reason: row.enteredInErrorReason, at: row.enteredInErrorAt }
+        : null,
+    interruption:
+      row.discontinuedReason !== null &&
+      row.discontinuedOrigin !== null &&
+      row.discontinuedAt !== null
+        ? {
+            reason: row.discontinuedReason,
+            origin: row.discontinuedOrigin,
+            at: row.discontinuedAt,
+          }
+        : null,
   };
 }
 

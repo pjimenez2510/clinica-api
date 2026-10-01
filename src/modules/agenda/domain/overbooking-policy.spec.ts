@@ -4,6 +4,7 @@ import {
   OverbookingLimitReachedError,
   OverbookingNotAllowedError,
   OverbookingNotAuthorisedError,
+  OverbookingPractitionerUnavailableError,
   OverbookingReasonRequiredError,
   SelfAuthorisationDeniedError,
 } from './agenda.errors';
@@ -12,8 +13,18 @@ import {
   assertOverbookingAdmitted,
   checkOverbookingAuthoriser,
   checkOverbookingCap,
+  checkPractitionerIsThere,
+  type PresenceEntry,
   requireOverbookingReason,
 } from './overbooking-policy';
+import type { ScheduleRule } from './slot-availability';
+import {
+  WallClockTime,
+  addDays,
+  atWallClock,
+  clinicalDateOf,
+  isoWeekdayOf,
+} from '../../../shared/domain/clinic-time';
 
 /**
  * The rules of the deliberate exception (E4, D-005), with no database and no
@@ -207,5 +218,90 @@ describe('AG-100 the cap of the day', () => {
     expect(() => checkOverbookingCap({ used: 0, cap: 0 })).toThrow(
       OverbookingLimitReachedError,
     );
+  });
+});
+
+describe('AG-151 the practitioner has to be there (D-069)', () => {
+  const SITE = 'site-sur';
+  const OTHER = 'site-norte';
+  // The day and hour derive from the clock: a fixed date would expire.
+  const today = clinicalDateOf(new Date());
+  const at = (time: string) => atWallClock(today, WallClockTime.parse(time));
+  const request = { siteId: SITE, startsAt: at('10:00'), endsAt: at('10:20') };
+
+  const entry = (overrides: Partial<PresenceEntry> = {}): PresenceEntry => ({
+    kind: 'APPOINTMENT',
+    siteId: OTHER,
+    blocksCalendar: true,
+    startsAt: at('10:00'),
+    endsAt: at('10:20'),
+    ...overrides,
+  });
+
+  const rule = (overrides: Partial<ScheduleRule> = {}): ScheduleRule => ({
+    id: 'rule-1',
+    practitionerId: 'p-1',
+    siteId: OTHER,
+    serviceTypeConceptId: null,
+    weekday: isoWeekdayOf(today),
+    startTime: WallClockTime.parse('08:00'),
+    endTime: WallClockTime.parse('12:00'),
+    validFrom: addDays(today, -30),
+    validTo: null,
+    active: true,
+    ...overrides,
+  });
+
+  const conflictOf = (entries: PresenceEntry[], rules: ScheduleRule[] = []) => {
+    try {
+      checkPractitionerIsThere({ ...request, entries, rulesElsewhere: rules });
+      return null;
+    } catch (error) {
+      expect(error).toBeInstanceOf(OverbookingPractitionerUnavailableError);
+      return (error as OverbookingPractitionerUnavailableError).conflict;
+    }
+  };
+
+  it('AG-151 refuses an overbooking on top of a block of the practitioner, at this or any other site', () => {
+    expect(conflictOf([entry({ kind: 'BLOCK', siteId: SITE })])).toBe('BLOCK');
+    expect(conflictOf([entry({ kind: 'BLOCK' })])).toBe('BLOCK');
+  });
+
+  it('AG-151 refuses an overbooking on top of what occupies their calendar at another site', () => {
+    expect(conflictOf([entry()])).toBe('OTHER_SITE_ENTRY');
+  });
+
+  it('AG-151 refuses an overbooking on top of their overbooking at another site', () => {
+    expect(conflictOf([entry({ blocksCalendar: false })])).toBe(
+      'OTHER_SITE_OVERBOOKING',
+    );
+  });
+
+  it('AG-151 refuses an overbooking inside their schedule in force at another site', () => {
+    expect(conflictOf([], [rule()])).toBe('OTHER_SITE_SCHEDULE');
+  });
+
+  it('AG-151 still admits an overbooking on top of appointments of the SAME site: that is what it is for', () => {
+    expect(
+      conflictOf([
+        entry({ siteId: SITE }),
+        entry({ siteId: SITE, blocksCalendar: false }),
+      ]),
+    ).toBeNull();
+  });
+
+  it('AG-151 ignores what does not touch the interval: contiguous, another weekday, closed or inactive rules', () => {
+    expect(
+      conflictOf(
+        [entry({ startsAt: at('10:20'), endsAt: at('10:40') })],
+        [
+          rule({ startTime: WallClockTime.parse('10:20') }),
+          rule({ weekday: (isoWeekdayOf(today) % 7) + 1 }),
+          rule({ validTo: addDays(today, -1) }),
+          rule({ active: false }),
+          rule({ siteId: SITE }),
+        ],
+      ),
+    ).toBeNull();
   });
 });
