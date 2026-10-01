@@ -288,7 +288,7 @@ class RecordingRenderer implements DocumentRenderer {
   ): Promise<Buffer> {
     this.calls.push({ layout, metadata });
     return Promise.resolve(
-      Buffer.from(`pdf:${layout.title}:${this.calls.length}`),
+      Buffer.from(`pdf:${layout.frame.title}:${this.calls.length}`),
     );
   }
 }

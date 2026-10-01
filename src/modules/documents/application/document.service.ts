@@ -125,8 +125,8 @@ export class DocumentService {
     );
 
     const content = await this.renderer.render(layout, images, {
-      title: layout.title,
-      author: layout.header.establishmentName,
+      title: layout.frame.title,
+      author: layout.frame.establishmentName,
       // A draft has no instant of emission — that is what makes it a draft —
       // so the clock is the honest answer here and only here.
       createdAt: new Date(),
@@ -171,8 +171,8 @@ export class DocumentService {
 
     const issuedAt = new Date();
     const content = await this.renderer.render(layout, images, {
-      title: layout.title,
-      author: layout.header.establishmentName,
+      title: layout.frame.title,
+      author: layout.frame.establishmentName,
       // DOC-024. The instant of EMISSION, and the very same one that goes into
       // the row: two clocks would make the file and the archive disagree about
       // when the document was produced.

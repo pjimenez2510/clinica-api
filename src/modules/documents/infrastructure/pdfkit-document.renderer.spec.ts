@@ -5,7 +5,7 @@ import { DocumentRenderFailedError } from '../domain/document.errors';
 import { PdfKitDocumentRenderer } from './pdfkit-document.renderer';
 import type { LayoutImages } from '../domain/document-rendering.port';
 import type { StoredImage } from '../domain/document-image';
-import type { DocumentLayout } from '../domain/page-layout';
+import type { DocumentHeader, DocumentLayout } from '../domain/page-layout';
 
 /**
  * DOC-020 to DOC-024. THE PDF IS INSPECTED, NEVER BELIEVED.
@@ -28,17 +28,27 @@ import type { DocumentLayout } from '../domain/page-layout';
 
 const images: LayoutImages = { logo: null, seal: null, signature: null };
 
+const header: DocumentHeader = {
+  establishmentName: 'Centro de Especialidades Bahía',
+  establishmentRuc: null,
+  establishmentAddress: null,
+  establishmentPhone: null,
+  hasLogo: false,
+  fields: [{ label: 'Permiso ACESS', value: '0000-0000' }],
+};
+
 const layout: DocumentLayout = {
-  title: 'RECETA MÉDICA',
-  reference: 'RX-7Q2K',
-  accentColour: '#1f6f8b',
-  header: {
+  frame: {
+    title: 'RECETA MÉDICA',
+    reference: 'RX-7Q2K',
+    confidential: true,
+    accentColour: '#1f6f8b',
     establishmentName: 'Centro de Especialidades Bahía',
-    establishmentRuc: null,
-    establishmentAddress: null,
-    establishmentPhone: null,
-    hasLogo: false,
-    fields: [{ label: 'Permiso ACESS', value: '0000-0000' }],
+    header,
+    footer: {
+      text: 'Clínica de especialidades · Guayaquil',
+      verificationCode: 'RX-7Q2K',
+    },
   },
   blocks: [
     { kind: 'heading', text: 'Paciente' },
@@ -75,7 +85,6 @@ const layout: DocumentLayout = {
     ],
     blocks: [{ kind: 'paragraph', text: 'Tomar con alimentos' }],
   },
-  footerText: 'Clínica de especialidades · Guayaquil',
 };
 
 const metadata = {
@@ -251,7 +260,7 @@ describe('DOC-059, DOC-060 las imágenes de la identidad', () => {
   it('DOC-059 pinta el logo cuando lo hay', async () => {
     const withLogo: DocumentLayout = {
       ...layout,
-      header: { ...layout.header, hasLogo: true },
+      frame: { ...layout.frame, header: { ...header, hasLogo: true } },
     };
     const pdf = await renderer.render(
       withLogo,
@@ -293,7 +302,7 @@ describe('DOC-093 el fallo de composición no cuenta nada al llamador', () => {
     // still a sentence, not a decoder's stack.
     const withLogo: DocumentLayout = {
       ...layout,
-      header: { ...layout.header, hasLogo: true },
+      frame: { ...layout.frame, header: { ...header, hasLogo: true } },
     };
     const corrupt: StoredImage = {
       id: 'image-broken',

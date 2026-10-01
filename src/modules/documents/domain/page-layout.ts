@@ -122,15 +122,44 @@ export interface TearOffBand {
   blocks: readonly Block[];
 }
 
+/** DOC-083. What repeats at the foot of every page, besides «Página x de y». */
+export interface DocumentFooter {
+  /** DOC-034. The template's free footer. */
+  text: string | null;
+  /**
+   * The code a recipient can check the document with. `null` when the document
+   * has none — and then it carries no QR either: a QR that leads nowhere would
+   * be a small forged seal.
+   */
+  verificationCode: string | null;
+}
+
+/**
+ * DOC-071, DOC-080 to DOC-084. Header and footer, composed ONCE by
+ * `composeFrame` for every class of document.
+ */
+export interface DocumentFrame {
+  title: string;
+  /**
+   * The line beside the title that identifies this document, written by the
+   * document's own composer: «Receta N.º 128», «N.º 342».
+   */
+  reference: string | null;
+  /** DOC-082. The document prints a diagnosis. */
+  confidential: boolean;
+  accentColour: string;
+  /** DOC-024. The PDF's author, whatever the header looks like. */
+  establishmentName: string;
+  /** DOC-080. `null` where a norm fixes its own header (DOC-084, the RIDE). */
+  header: DocumentHeader | null;
+  footer: DocumentFooter;
+}
+
 /** A whole document, ready to be painted. */
 export interface DocumentLayout {
-  title: string;
-  /** The verification code, the sequential — whatever identifies this document. */
-  reference: string | null;
-  accentColour: string;
-  header: DocumentHeader;
+  /** Shared by every class: see `composeFrame`. */
+  frame: DocumentFrame;
   blocks: readonly Block[];
   /** Only the receta has one. */
   tearOff: TearOffBand | null;
-  footerText: string | null;
 }

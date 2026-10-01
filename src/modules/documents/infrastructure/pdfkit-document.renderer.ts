@@ -214,7 +214,8 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     width: number,
     cursor: Cursor,
   ): void {
-    const header: DocumentHeader = layout.header;
+    const header: DocumentHeader | null = layout.frame.header;
+    if (header === null) return;
     const logoWidth = mm(28);
     const logoHeight = mm(16);
     let textLeft = left;
@@ -259,7 +260,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
       .moveTo(left, bottom + mm(2))
       .lineTo(left + width, bottom + mm(2))
       .lineWidth(1)
-      .strokeColor(layout.accentColour)
+      .strokeColor(layout.frame.accentColour)
       .stroke();
 
     cursor.y = bottom + mm(5);
@@ -279,18 +280,23 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     doc
       .font(FONT_BOLD)
       .fontSize(SIZE.title)
-      .fillColor(layout.accentColour)
-      .text(layout.title, left, cursor.y, { width, align: 'center' });
+      .fillColor(layout.frame.accentColour)
+      .text(layout.frame.title, left, cursor.y, { width, align: 'center' });
 
-    if (layout.reference !== null) {
+    if (layout.frame.reference !== null) {
       doc
         .font(FONT_REGULAR)
         .fontSize(SIZE.small)
         .fillColor('#000000')
-        .text(`Código de verificación: ${layout.reference}`, left, doc.y, {
-          width,
-          align: 'center',
-        });
+        .text(
+          `Código de verificación: ${layout.frame.reference}`,
+          left,
+          doc.y,
+          {
+            width,
+            align: 'center',
+          },
+        );
     }
 
     cursor.y = doc.y + mm(4);
@@ -614,7 +620,10 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     for (let index = 0; index < range.count; index += 1) {
       doc.switchToPage(range.start + index);
       const y = doc.page.height - mm(PAGE_MARGIN_MM) - mm(5);
-      const text = [layout.footerText, `Página ${index + 1} de ${range.count}`]
+      const text = [
+        layout.frame.footer.text,
+        `Página ${index + 1} de ${range.count}`,
+      ]
         .filter((entry): entry is string => entry !== null && entry !== '')
         .join(' · ');
 
