@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { DEFAULT_ROLES } from './default-roles';
 import { warningsFor } from './role-risk';
 
 /**
@@ -143,5 +144,22 @@ describe('AU-045 el rol que receta sin poder registrar alergias', () => {
     expect(warnings).toHaveLength(2);
     expect(warnings[0]).toContain('SPDP');
     expect(warnings[1]).toContain(GAP);
+  });
+
+  it('AU-045 ningún rol de fábrica tiene el hueco: ni ADMIN con sus permisos de datos del titular', () => {
+    // Una advertencia que sale en la instalación recién montada es una que
+    // nadie vuelve a leer. ADMIN incluido, con los códigos que trajo
+    // feat/datos-consentimiento-arco (patient:consent-text, patient:data-requests).
+    const admin = DEFAULT_ROLES.find((role) => role.code === 'ADMIN');
+    expect(admin?.permissions).toContain('patient:consent-text');
+
+    for (const role of DEFAULT_ROLES) {
+      expect(
+        warningsFor(role.permissions).filter((warning) =>
+          warning.includes('no puede registrar alergias'),
+        ),
+        role.code,
+      ).toEqual([]);
+    }
   });
 });
