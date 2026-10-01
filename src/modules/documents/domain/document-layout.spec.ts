@@ -580,9 +580,7 @@ describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
     expect(text).toContain('Información adicional');
     expect(text).toContain('Correo=maria@example.com');
     expect(text).toContain('Teléfono=099 876 5432');
-    expect(text).toContain(
-      'Paciente=GUAMÁN ANDRADE María José · HC HC0000000801',
-    );
+    expect(text).toContain('Paciente=GUAMÁN ANDRADE María José · HC0000000801');
     expect(text).toContain('Atención=20/08/2026 · Sede Centro');
     // Forma de pago con su código de la tabla 24.
     expect(text).toContain('19 · Tarjeta de crédito|34.60');
@@ -600,6 +598,13 @@ describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
       'VALOR TOTAL|34.60',
     ];
     expect(text).toContain(subtotals.join('\n'));
+    // Set close, so the page fits on one sheet as the approved one does.
+    const totals = layout.blocks.at(-1);
+    expect(
+      totals?.kind === 'boxes' && totals.right[0]?.kind === 'table'
+        ? totals.right[0].dense
+        : undefined,
+    ).toBe(true);
   });
 
   it('DOC-076 lo que no se conoce no se imprime: sin comprador-paciente no hay dirección ni teléfono', () => {

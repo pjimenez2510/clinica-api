@@ -576,10 +576,21 @@ export function composeInvoiceLayout(
         // SRI-070. The environment is the one written INSIDE the key (its 24th
         // digit), never a constant: a test voucher printed «PRODUCCIÓN» claims
         // a validity it does not have.
+      ],
+    },
+    // Ambiente and emisión share a row, as on the approved page.
+    {
+      kind: 'fields',
+      columns: 2,
+      entries: [
         { label: 'AMBIENTE', value: environmentOf(data.accessKey) },
         { label: 'EMISIÓN', value: 'NORMAL' },
-        { label: 'CLAVE DE ACCESO', value: data.accessKey ?? '—' },
       ],
+    },
+    {
+      kind: 'fields',
+      columns: 1,
+      entries: [{ label: 'CLAVE DE ACCESO', value: data.accessKey ?? '—' }],
     },
     // D-095 §5, DOC-078. The key again, as a Code 128 subset C barcode under
     // the key in text — only when there is a key to encode.
@@ -601,7 +612,8 @@ export function composeInvoiceLayout(
       : [
           {
             label: 'Paciente',
-            value: `${data.patient.fullName} · HC ${data.patient.mrn}`,
+            // The HC as it is quoted: its number already says «HC».
+            value: `${data.patient.fullName} · ${data.patient.mrn}`,
           },
         ]),
     ...(data.attendedOn === null
@@ -670,7 +682,11 @@ export function composeInvoiceLayout(
           ...(additional.length === 0
             ? []
             : ([
-                { kind: 'heading', text: 'Información adicional' },
+                {
+                  kind: 'paragraph',
+                  text: 'Información adicional',
+                  emphasis: true,
+                },
                 { kind: 'fields', columns: 1, entries: additional },
               ] as Block[])),
           // BI-170. The way it was paid, with its SRI table 24 code.
@@ -694,6 +710,7 @@ export function composeInvoiceLayout(
         right: [
           {
             kind: 'table',
+            dense: true,
             columns: [
               { header: 'Subtotales', width: 0.68 },
               { header: 'Valor', width: 0.32, align: 'right' },

@@ -82,7 +82,12 @@ export type Block =
   | { readonly kind: 'heading'; readonly text: string }
   | { readonly kind: 'paragraph'; readonly text: string; readonly emphasis?: boolean } // prettier-ignore
   | { readonly kind: 'fields'; readonly columns: 1 | 2 | 3; readonly entries: readonly LabelledValue[] } // prettier-ignore
-  | { readonly kind: 'table'; readonly columns: readonly TableColumn[]; readonly rows: readonly (readonly string[])[] } // prettier-ignore
+  /**
+   * `dense`: rows set close, as a list of figures rather than lines somebody
+   * reads one by one — the RIDE's ten subtotals (DOC-076), which the approved
+   * page fits beside the payment box on one sheet.
+   */
+  | { readonly kind: 'table'; readonly columns: readonly TableColumn[]; readonly rows: readonly (readonly string[])[]; readonly dense?: boolean } // prettier-ignore
   | { readonly kind: 'spacer'; readonly millimetres: number }
   | { readonly kind: 'rule' }
   | { readonly kind: 'signature'; readonly caption: string; readonly image: SignatureImageSlot } // prettier-ignore
