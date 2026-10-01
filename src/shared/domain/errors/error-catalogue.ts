@@ -846,9 +846,6 @@ export const DOMAIN_ERROR_CODES = [
   'CERTIFICATE_ENCOUNTER_NOT_FOUND',
   'CERTIFICATE_ENCOUNTER_NOT_OPEN',
   'CERTIFICATE_NOT_FOUND',
-  // CER-038. Un reposo y la ficha sin empresa, puesto, domicilio o teléfono:
-  // se nombra cada campo, se corrige la ficha (PA-061) y se vuelve a emitir.
-  'CERTIFICATE_PATIENT_DATA_REQUIRED',
   'CERTIFICATE_REST_PERIOD_INVALID',
   'CERTIFICATE_TYPE_NOT_SUPPORTED',
   'CERTIFIER_PROFILE_REQUIRED',

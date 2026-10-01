@@ -115,6 +115,11 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
     description: 'Atiende, diagnostica, prescribe y firma documentos clínicos.',
     permissions: [
       'patient:read',
+      // D-101, 01-10-2026, decisión del autor (opción B). El certificado de
+      // reposo imprime empresa, puesto, domicilio y teléfono de la ficha
+      // (CER-038), y quien lo emite es el médico: corrige la ficha ENTERA por
+      // la ruta de corrección, que deja cada cambio en su histórico.
+      'patient:write',
       // D-029, 16-08-2026. El motivo de la prioridad (PA-040): quien atiende
       // necesita saber que la paciente está embarazada o que tiene una
       // enfermedad catastrófica. Recepción y caja NO lo llevan — les basta la

@@ -6,7 +6,6 @@ import {
 
 import {
   CertificateBackdatingReasonRequiredError,
-  CertificatePatientDataRequiredError,
   CertificateRestPeriodInvalidError,
   CertificateRestTooLongError,
   CertificateTypeNotSupportedError,
@@ -106,24 +105,43 @@ export interface PatientWork {
   phone: string | null;
 }
 
-/**
- * CER-038. A rest certificate needs the four, and a blank one is missing:
- * refused naming every field at once.
- */
-export function assertPatientWorkComplete(work: PatientWork): void {
+/** CER-038. How the notice names each field to the doctor. */
+const PATIENT_WORK_LABEL: Readonly<Record<PatientWorkField, string>> = {
+  employerName: 'la empresa',
+  jobTitle: 'el puesto de trabajo',
+  residenceAddressLine: 'el domicilio',
+  phone: 'el teléfono',
+};
+
+/** CER-038. The fields a rest prints and the chart lacks; blank is missing. */
+export function missingPatientWork(work: PatientWork): PatientWorkField[] {
   const fields: PatientWorkField[] = [
     'employerName',
     'jobTitle',
     'residenceAddressLine',
     'phone',
   ];
-  const missing = fields.filter((field) => {
+  return fields.filter((field) => {
     const value = work[field];
     return value === null || value.trim() === '';
   });
-  if (missing.length > 0) {
-    throw new CertificatePatientDataRequiredError(missing);
-  }
+}
+
+/**
+ * CER-038, D-101. The rest IS issued without them —the author decided it—, and
+ * the doctor is told which ones are missing and what it may cost. `null` when
+ * nothing is missing. Fields are named, values never (CER-014).
+ */
+export function patientWorkNotice(
+  missing: readonly PatientWorkField[],
+): string | null {
+  if (missing.length === 0) return null;
+  const names = missing.map((field) => PATIENT_WORK_LABEL[field]);
+  const listed =
+    names.length === 1
+      ? names[0]
+      : `${names.slice(0, -1).join(', ')} y ${names[names.length - 1]}`;
+  return `Falta en la ficha ${listed} del paciente. El IESS puede devolver el reposo sin estos datos; complételos en la ficha.`;
 }
 
 /** CER-031. The IESS validates rests of one to thirty days. */

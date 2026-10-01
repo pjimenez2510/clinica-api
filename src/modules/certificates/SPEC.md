@@ -377,9 +377,13 @@ PR-030).
 
 - **CER-038** — CUANDO se emita un certificado de reposo, el certificado DEBERÁ
   servir la **empresa**, el **puesto de trabajo**, el **domicilio** y el
-  **teléfono** del paciente leídos de su ficha, y SI falta alguno ENTONCES el
-  sistema DEBERÁ rechazar la emisión con `CERTIFICATE_PATIENT_DATA_REQUIRED`,
-  nombrando cada campo.
+  **teléfono** del paciente leídos de su ficha («NA» el que falte), y SI falta
+  alguno ENTONCES el sistema DEBERÁ emitirlo igualmente y devolver en
+  `restNotices` un aviso que nombre cada dato que falta y diga que el IESS puede
+  devolver el reposo sin ellos.
+
+  > **D-101** (el autor, 01-10-2026): no se rechaza por esto. El médico tiene
+  > `patient:write` de fábrica y los completa desde el mismo diálogo.
 
   > **Se piden al emitir y se guardan en la ficha** (D-075): la pantalla
   > corrige la ficha por la ruta de corrección de `patients` —con su rastro— y
@@ -421,7 +425,6 @@ PR-030).
 | `CERTIFICATE_BACKDATING_REASON_REQUIRED` | 422 | CER-030 |
 | `CERTIFICATE_REST_TOO_LONG` | 422 | CER-031 |
 | `CERTIFICATE_ESTABLISHMENT_INCOMPLETE` | 422 | CER-036 |
-| `CERTIFICATE_PATIENT_DATA_REQUIRED` | 422 | CER-038 |
 
 ## Esquema
 

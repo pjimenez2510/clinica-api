@@ -287,37 +287,6 @@ export class CertificateEstablishmentIncompleteError extends ValidationError {
 }
 
 /** CER-038. The fields of the chart a rest certificate prints. */
+/** CER-038. The four fields of the chart a rest prints. */
 export type PatientWorkField =
   'employerName' | 'jobTitle' | 'residenceAddressLine' | 'phone';
-
-const PATIENT_WORK_MESSAGE: Readonly<Record<PatientWorkField, string>> = {
-  employerName: 'Falta la empresa donde trabaja el paciente',
-  jobTitle: 'Falta el puesto de trabajo del paciente',
-  residenceAddressLine: 'Falta el domicilio del paciente',
-  phone: 'Falta el teléfono del paciente',
-};
-
-/**
- * CER-038. A rest certificate prints the employer, the job title, the
- * address and the phone of the patient, read from the chart, and the chart
- * lacks some of them. The way out is to correct the chart — with its trail —
- * and issue again; this module never writes them.
- *
- * ⚠️ THE FIELDS ARE NAMED AND THE VALUES ARE NOT (CER-014): nothing of the
- * patient reaches the message.
- */
-export class CertificatePatientDataRequiredError extends ValidationError {
-  readonly code = 'CERTIFICATE_PATIENT_DATA_REQUIRED';
-  override readonly userTitle =
-    'El certificado de reposo lleva la empresa, el puesto, el domicilio y el teléfono del paciente, y su ficha no los tiene todos. Corrija la ficha y vuelva a emitir';
-  override readonly fieldErrors: readonly DomainFieldError[];
-
-  constructor(missing: readonly PatientWorkField[]) {
-    super(`Rest certificate needs patient data: ${missing.join(', ')}`);
-    this.fieldErrors = missing.map((field) => ({
-      field,
-      code: 'CERTIFICATE_PATIENT_DATA_REQUIRED',
-      message: PATIENT_WORK_MESSAGE[field],
-    }));
-  }
-}

@@ -850,28 +850,33 @@ describe('el certificado medico por HTTP', () => {
     });
   });
 
-  it('CER-038 un reposo con la ficha sin empresa ni telefono se rechaza nombrando cada campo, y se emite al corregirla', async () => {
+  it('CER-038 un reposo con la ficha sin empresa ni telefono se emite con el aviso, y la ficha corregida lo imprime', async () => {
     await aDiagnosis(encounterId);
     await prisma.patient.update({
       where: { id: patientId },
       data: { employerName: null, phone: null },
     });
 
-    expect(await refused(restOf(3))).toEqual({
-      code: 'CERTIFICATE_PATIENT_DATA_REQUIRED',
-      fields: ['employerName', 'phone'],
-    });
-    expect(await prisma.medicalCertificate.count()).toBe(0);
+    // D-101: se emite igual, y el aviso dice qué falta.
+    const incomplete = await issue(restOf(3));
+    expect(incomplete.restNotices).toEqual([
+      'Falta en la ficha la empresa y el teléfono del paciente. El IESS puede devolver el reposo sin estos datos; complételos en la ficha.',
+    ]);
+    const blank = (
+      await get(
+        `/certificates/${incomplete.certificate.id}`,
+        doctor.token,
+      ).expect(200)
+    ).body as Form117Body;
+    expect(blank.work).toMatchObject({ employer: 'NA' });
 
-    // El certificado de asistencia no los necesita.
-    await issue(attendance());
-
-    // Control positivo: corregida la ficha, el mismo reposo se emite.
+    // Control positivo: corregida la ficha, el siguiente reposo los lleva y no avisa.
     await prisma.patient.update({
       where: { id: patientId },
       data: { employerName: 'Florícola del Valle', phone: '0991234567' },
     });
     const issued = await issue(restOf(3));
+    expect(issued.restNotices).toEqual([]);
     const form = (
       await get(`/certificates/${issued.certificate.id}`, doctor.token).expect(
         200,

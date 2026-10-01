@@ -14,7 +14,8 @@ import {
 } from '../../../shared/domain/clinic-time';
 import {
   admitsNewCertificates,
-  assertPatientWorkComplete,
+  missingPatientWork,
+  patientWorkNotice,
   assertIssuableType,
   backdatingReasonOf,
   iessValidationOf,
@@ -31,6 +32,7 @@ import {
   CertificateEstablishmentIncompleteError,
   CertificateNotFoundError,
   CertifierProfileRequiredError,
+  type PatientWorkField,
 } from '../domain/certificate.errors';
 import {
   composeForm117,
@@ -150,6 +152,8 @@ export class CertificateService {
     const issuedAt = new Date();
     const verificationCode = newVerificationCode();
 
+    // CER-038. Filled from the snapshot, inside the transaction.
+    let missingWork: PatientWorkField[] = [];
     const certificate = await this.certificates.issue(
       { encounterId: request.encounterId, sites: requester.sites },
       (snapshot) => {
@@ -160,9 +164,11 @@ export class CertificateService {
         if (snapshot.cityOfIssue === null) {
           throw new CertificateEstablishmentIncompleteError();
         }
-        // CER-038. A rest prints the patient's work and contact, read from
-        // the chart in this transaction; the chart is corrected, not this.
-        if (details !== null) assertPatientWorkComplete(snapshot.patientWork);
+        // CER-038, D-101. A rest prints the patient's work and contact, read
+        // from the chart in this transaction. What is missing does not stop
+        // the issue: the doctor is warned.
+        missingWork =
+          details === null ? [] : missingPatientWork(snapshot.patientWork);
         // CER-008. The diagnosis is read from the attention, never typed; a
         // rest always carries it (CER-007).
         const includeDiagnosis = details !== null || request.includeDiagnosis;
@@ -203,7 +209,12 @@ export class CertificateService {
       restNotices:
         details === null
           ? []
-          : restNoticesOf(details.days, certifier.primarySpecialtyCode),
+          : [
+              ...restNoticesOf(details.days, certifier.primarySpecialtyCode),
+              ...[patientWorkNotice(missingWork)].filter(
+                (notice): notice is string => notice !== null,
+              ),
+            ],
     };
   }
 

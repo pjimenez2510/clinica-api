@@ -536,7 +536,7 @@ describe('el servicio de certificados', () => {
     expect(repository.issued).toHaveLength(0);
   });
 
-  it('CER-038 un reposo sin empresa, puesto, domicilio o telefono en la ficha se rechaza nombrando cada campo', async () => {
+  it('CER-038 un reposo sin empresa, puesto o telefono en la ficha se emite, con el aviso que nombra lo que falta', async () => {
     repository.snapshot = aSnapshot({
       patientWork: {
         employerName: null,
@@ -546,18 +546,28 @@ describe('el servicio de certificados', () => {
       },
     });
 
-    await expect(service.issue(rest(3), requester)).rejects.toMatchObject({
-      code: 'CERTIFICATE_PATIENT_DATA_REQUIRED',
-      fieldErrors: [
-        expect.objectContaining({ field: 'employerName' }),
-        expect.objectContaining({ field: 'jobTitle' }),
-        expect.objectContaining({ field: 'phone' }),
-      ],
-    });
-    expect(repository.issued).toHaveLength(0);
+    const issued = await service.issue(rest(3), requester);
 
-    // Control positivo: el certificado de asistencia no los necesita.
-    await expect(service.issue(attendance(), requester)).resolves.toBeDefined();
+    expect(repository.issued).toHaveLength(1);
+    expect(issued.restNotices).toEqual([
+      'Falta en la ficha la empresa, el puesto de trabajo y el teléfono del paciente. El IESS puede devolver el reposo sin estos datos; complételos en la ficha.',
+    ]);
+  });
+
+  it('CER-038 control: con la ficha completa no hay aviso, y la asistencia nunca lo lleva', async () => {
+    expect((await service.issue(rest(3), requester)).restNotices).toEqual([]);
+
+    repository.snapshot = aSnapshot({
+      patientWork: {
+        employerName: null,
+        jobTitle: null,
+        residenceAddressLine: null,
+        phone: null,
+      },
+    });
+    expect((await service.issue(attendance(), requester)).restNotices).toEqual(
+      [],
+    );
   });
 
   it('CER-014 lo que se registra en el log es el acto, sin datos del paciente', async () => {

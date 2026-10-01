@@ -13,7 +13,6 @@ import {
   CertificateAlreadyRevokedError,
   CertificateBackdatingReasonRequiredError,
   CertificateEstablishmentIncompleteError,
-  CertificatePatientDataRequiredError,
   CertificateRestTooLongError,
   CertificateDiagnosisRequiredError,
   CertificateEncounterNotFoundError,
@@ -105,12 +104,6 @@ const CONTRACT: readonly {
     category: ValidationError,
     says: 'parroquia',
   },
-  {
-    error: new CertificatePatientDataRequiredError(['employerName', 'phone']),
-    code: 'CERTIFICATE_PATIENT_DATA_REQUIRED',
-    category: ValidationError,
-    says: 'Corrija la ficha',
-  },
 ];
 
 describe('el contrato de errores del certificado', () => {
@@ -170,22 +163,6 @@ describe('el contrato de errores del certificado', () => {
     expect(new CertificateRestTooLongError().fieldErrors?.[0]?.field).toBe(
       'restTo',
     );
-  });
-
-  it('CER-038 los datos de la ficha que faltan se nombran uno a uno', () => {
-    const error = new CertificatePatientDataRequiredError([
-      'employerName',
-      'jobTitle',
-      'residenceAddressLine',
-      'phone',
-    ]);
-    expect(error.fieldErrors?.map((field) => field.field)).toEqual([
-      'employerName',
-      'jobTitle',
-      'residenceAddressLine',
-      'phone',
-    ]);
-    expect(error.fieldErrors?.[0]?.message).toContain('empresa');
   });
 
   it('CER-005 el tipo no admitido señala el campo del tipo', () => {

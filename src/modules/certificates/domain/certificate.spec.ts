@@ -15,6 +15,8 @@ import {
   restNoticeThresholdOf,
   backdatingReasonOf,
   restDetailsOf,
+  missingPatientWork,
+  patientWorkNotice,
   restNoticesOf,
   type RestRequest,
 } from './certificate';
@@ -303,3 +305,29 @@ function captured(run: () => unknown): CertificateRestPeriodInvalidError {
   }
   throw new Error('expected a refusal and nothing was thrown');
 }
+
+describe('CER-038 los datos laborales que faltan no impiden el reposo: se avisan', () => {
+  const complete = {
+    employerName: 'Florícola del Valle',
+    jobTitle: 'Supervisora',
+    residenceAddressLine: 'Calle Sucre 4-12',
+    phone: '0991234567',
+  };
+
+  it('CER-038 un dato en blanco cuenta como que falta', () => {
+    expect(missingPatientWork(complete)).toEqual([]);
+    expect(
+      missingPatientWork({ ...complete, jobTitle: '   ', phone: null }),
+    ).toEqual(['jobTitle', 'phone']);
+  });
+
+  it('CER-038 el aviso nombra lo que falta y dice lo que puede costar, sin valores del paciente', () => {
+    expect(patientWorkNotice([])).toBeNull();
+    expect(patientWorkNotice(['phone'])).toBe(
+      'Falta en la ficha el teléfono del paciente. El IESS puede devolver el reposo sin estos datos; complételos en la ficha.',
+    );
+    expect(
+      patientWorkNotice(['employerName', 'jobTitle', 'residenceAddressLine']),
+    ).toContain('la empresa, el puesto de trabajo y el domicilio');
+  });
+});
