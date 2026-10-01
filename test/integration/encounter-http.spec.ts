@@ -1059,6 +1059,97 @@ describe('la atención por HTTP', () => {
     });
   });
 
+  describe('anular e interrumpir la atención (EN-166, EN-167)', () => {
+    it('EN-166 anula con motivo, responde la atención anulada y deja una fila de bitácora', async () => {
+      const encounterId = await openEncounter();
+      const before = await auditRows('encounter');
+
+      const annulled = await post(
+        `/encounters/${encounterId}/enter-in-error`,
+        doctorToken,
+        { reason: 'Se abrió a otro paciente' },
+      ).expect(200);
+
+      expect(annulled.body).toMatchObject({
+        status: 'ENTERED_IN_ERROR',
+        annulment: { reason: 'Se abrió a otro paciente' },
+      });
+      expect(await auditRows('encounter')).toBe(before + 1);
+    });
+
+    it('EN-166 sin motivo responde 422 por campo y no anula', async () => {
+      const encounterId = await openEncounter();
+
+      const refused = await post(
+        `/encounters/${encounterId}/enter-in-error`,
+        doctorToken,
+        {},
+      ).expect(422);
+
+      expect((refused.body as Problem).code).toBe(
+        'ENCOUNTER_ANNULMENT_REASON_REQUIRED',
+      );
+      expect((refused.body as Problem).errors?.[0]?.field).toBe('reason');
+    });
+
+    it('EN-166 EN-167 recepción no anula ni interrumpe: no tiene `record:write` ni `record:sign` (D-080 §2)', async () => {
+      const encounterId = await openEncounter();
+
+      await post(`/encounters/${encounterId}/enter-in-error`, receptionToken, {
+        reason: 'x',
+      }).expect(403);
+      await post(`/encounters/${encounterId}/discontinue`, receptionToken, {
+        reason: 'x',
+        origin: 'PATIENT',
+      }).expect(403);
+    });
+
+    it('EN-167 interrumpe con motivo y origen; sin origen responde 422 por campo', async () => {
+      const encounterId = await openEncounter();
+
+      const refused = await post(
+        `/encounters/${encounterId}/discontinue`,
+        doctorToken,
+        { reason: 'Se retiró' },
+      ).expect(422);
+      expect((refused.body as Problem).code).toBe(
+        'ENCOUNTER_INTERRUPTION_REASON_REQUIRED',
+      );
+      expect((refused.body as Problem).errors?.map((e) => e.field)).toEqual([
+        'origin',
+      ]);
+
+      const discontinued = await post(
+        `/encounters/${encounterId}/discontinue`,
+        doctorToken,
+        { reason: 'Se retiró', origin: 'PATIENT' },
+      ).expect(200);
+      expect(discontinued.body).toMatchObject({
+        status: 'DISCONTINUED',
+        interruption: { reason: 'Se retiró', origin: 'PATIENT' },
+      });
+    });
+
+    it('EN-167 la atención de otra sede responde 404, como una que no existe', async () => {
+      // Written directly: nobody here holds a grant at the other site.
+      const { id: encounterId } = await prisma.encounter.create({
+        data: {
+          siteId: otherSiteId,
+          practitionerId: doctorPractitionerId,
+          patientId,
+          startedAt: new Date(),
+          careModality: 'MORBIDITY',
+          visitSequence: 'FIRST_TIME',
+        },
+      });
+
+      await post(`/encounters/${encounterId}/discontinue`, doctorToken, {
+        reason: 'x',
+        origin: 'PATIENT',
+      }).expect(404);
+    });
+  });
+
   describe('cerrar la cuenta', () => {
     /** Opens, documents and signs, leaving the attention DISCHARGED. */
     async function discharged(token = doctorToken): Promise<string> {

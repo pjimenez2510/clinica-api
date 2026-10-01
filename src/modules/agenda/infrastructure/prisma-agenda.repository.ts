@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PinoLogger } from 'nestjs-pino';
 
+import { hasClinicalAct } from '../../../shared/infrastructure/prisma/clinical-acts';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
   isSerialisationFailure,
@@ -35,6 +36,7 @@ import type {
   NoShowCountRow,
   NoShowCountsQuery,
   OverbookingCountQuery,
+  PresenceQuery,
   PatientBookingStatus,
   PatientSubjectStatus,
   RescheduleOutcome,
@@ -59,6 +61,7 @@ import type {
   AgendaOccupancy,
   ScheduleRule,
 } from '../domain/slot-availability';
+import type { PresenceEntry } from '../domain/overbooking-policy';
 
 /**
  * Rows in, domain shapes out.
@@ -125,6 +128,12 @@ const ENTRY_SELECT = {
   // never more than one row — the constraint says so.
   rescheduledFromId: true,
   rescheduledTo: { select: { id: true } },
+  // AG-150. The live attention's state. `encounter_one_live_per_agenda_entry`
+  // makes this list empty or a single row, so reading `[0]` is «the one».
+  encounters: {
+    where: { status: { not: 'ENTERED_IN_ERROR' } },
+    select: { status: true },
+  },
 } satisfies Prisma.AgendaEntrySelect;
 
 /**
@@ -943,6 +952,49 @@ export class PrismaAgendaRepository implements AgendaRepository {
    * exception back; spending a cap on it would refuse a real urgency because
    * of an appointment nobody is attending.
    */
+  /**
+   * AG-151. The practitioner's entries in force touching the interval, at any
+   * site, and their rules in force that day at the OTHER sites.
+   *
+   * THE SAME PREDICATE AS `agenda_entry_no_practitioner_overlap` for «in
+   * force» —`released_at IS NULL`, `[)`— but WITHOUT `blocks_calendar`: an
+   * overbooking elsewhere occupies nothing and is exactly one of the cases.
+   * The two reads are independent and go together.
+   */
+  async presenceOf(query: PresenceQuery): Promise<{
+    entries: PresenceEntry[];
+    rulesElsewhere: ScheduleRule[];
+  }> {
+    const day = new Date(`${query.date}T00:00:00Z`);
+    const [entries, rules] = await Promise.all([
+      this.prisma.agendaEntry.findMany({
+        where: {
+          practitionerId: query.practitionerId,
+          releasedAt: null,
+          startsAt: { lt: query.endsAt },
+          endsAt: { gt: query.startsAt },
+        },
+        select: {
+          kind: true,
+          siteId: true,
+          blocksCalendar: true,
+          startsAt: true,
+          endsAt: true,
+        },
+      }),
+      this.prisma.practitionerScheduleRule.findMany({
+        where: {
+          practitionerId: query.practitionerId,
+          siteId: { not: query.siteId },
+          active: true,
+          validFrom: { lte: day },
+          OR: [{ validTo: null }, { validTo: { gte: day } }],
+        },
+      }),
+    ]);
+    return { entries, rulesElsewhere: rules.map(toScheduleRule) };
+  }
+
   async overbookingCount(query: OverbookingCountQuery): Promise<number> {
     return this.prisma.agendaEntry.count({
       where: {
@@ -1020,13 +1072,20 @@ export class PrismaAgendaRepository implements AgendaRepository {
   ): Promise<readonly BlockingAppointment[]> {
     return this.prisma.agendaEntry.findMany({
       where: {
-        siteId: query.siteId,
         practitionerId: query.practitionerId,
         kind: 'APPOINTMENT',
-        blocksCalendar: true,
         releasedAt: null,
         startsAt: { lt: query.endsAt },
         endsAt: { gt: query.startsAt },
+        OR: [
+          // AG-038: the appointments of this site.
+          { siteId: query.siteId, blocksCalendar: true },
+          // AG-152 (D-085 §7): an overbooking of the practitioner AT ANY SITE.
+          // It occupies no calendar, so the EXCLUDE never sees it; without
+          // this the holidays land on top of a patient who comes anyway — the
+          // reverse of D-069.
+          { blocksCalendar: false },
+        ],
       },
       orderBy: [{ startsAt: 'asc' }, { id: 'asc' }],
       select: { id: true, startsAt: true, endsAt: true },
@@ -1306,10 +1365,11 @@ async function applyStatusChange(
       status: true,
       startsAt: true,
       releasedAt: true,
-      encounter: { select: { id: true } },
     },
   });
   if (!row) throw new AgendaEntryNotFoundError();
+
+  const attention = await lockLiveAttention(tx, command.entryId);
 
   const fromStatus = row.status;
   const change = decide({
@@ -1318,31 +1378,38 @@ async function applyStatusChange(
     status: fromStatus,
     startsAt: row.startsAt,
     releasedAt: row.releasedAt,
-    hasEncounter: row.encounter !== null,
+    hasEncounter: attention !== null,
+    encounterHasClinicalAct: attention?.hasClinicalAct ?? false,
+    encounterInProgress: attention?.inProgress ?? false,
   });
 
   /**
    * EVERYTHING THE CLOSURE DECIDED ON is re-arbitrated by the WRITE, not
    * only `status` (adversarial review of E2, P1 and P2-1):
    *
-   *  - `encounter: { is: null }` when the move releases the slot. The
-   *    decide saw no encounter, but one can be committed between our read
-   *    and our write, and cancelling an attended appointment is exactly
-   *    what AG-045 prohibits. This narrows the window to intra-statement;
-   *    the residual gap (encounter created after this UPDATE commits) is
-   *    a DOCUMENTED ACCEPTED WINDOW until the encounter module closes it
-   *    from its side — see the `Falta esquema` note on AG-045 in SPEC.md.
+   *  - no live encounter when the move releases the slot. The decide saw
+   *    none, but one can be committed between our read and our write, and
+   *    cancelling an attended appointment is exactly what AG-045 prohibits.
+   *    An encounter that already existed is LOCKED above, so the only one
+   *    that can appear is a new one, and the predicate catches it.
+   *    AG-148 is the one release that keeps its live attention — the one it
+   *    is about to interrupt, locked above — so it does not ask for none.
    *  - `releasedAt: null` when the effects stamp a release. It is what stops
    *    a second reschedule of an entry that was already released from
    *    overwriting the first release instant.
    */
   const releasing = change.effects.releasedAt !== undefined;
+  // A live attention that EXISTED is locked above and no second one can be
+  // created while it lives (EN-168): only an appointment read WITHOUT one
+  // needs the write to re-check that none appeared.
+  const guardsAttention = releasing && attention === null;
   const updated = await tx.agendaEntry.updateMany({
     where: {
       id: command.entryId,
       siteId: command.siteId,
       status: fromStatus,
-      ...(releasing ? { releasedAt: null, encounter: { is: null } } : {}),
+      ...(releasing ? { releasedAt: null } : {}),
+      ...(guardsAttention ? { encounters: { none: LIVE_ENCOUNTER } } : {}),
     },
     data: {
       status: change.to,
@@ -1359,12 +1426,40 @@ async function applyStatusChange(
     // retry an action AG-045 forbids.
     const current = await tx.agendaEntry.findUniqueOrThrow({
       where: { id: command.entryId },
-      select: { status: true, encounter: { select: { id: true } } },
+      select: {
+        status: true,
+        encounters: { where: LIVE_ENCOUNTER, select: { id: true } },
+      },
     });
-    if (releasing && current.encounter !== null) {
+    if (guardsAttention && current.encounters.length > 0) {
       throw new AgendaEntryHasEncounterError();
     }
     throw new InvalidAgendaTransitionError(current.status, change.to);
+  }
+
+  /**
+   * AG-148 (D-081 §2). The attention was opened and nobody wrote a note:
+   * the patient left before the doctor. It is interrupted with origin
+   * `PATIENT`, by whoever recorded the departure, at the same instant —
+   * otherwise it would stay `OPEN` on nobody's desk for ever.
+   */
+  if (change.interruptAttention !== undefined && attention !== null) {
+    const { reason, at } = change.interruptAttention;
+    // Conditioned on the attention still being in progress: it is locked, so
+    // this cannot lose a race, and if it ever did the refusal is the honest
+    // answer rather than overwriting somebody else's interruption.
+    const interrupted = await tx.encounter.updateMany({
+      where: { id: attention.id, status: { in: ['OPEN', 'ON_HOLD'] } },
+      data: {
+        status: 'DISCONTINUED',
+        endedAt: at,
+        discontinuedReason: reason,
+        discontinuedOrigin: 'PATIENT',
+        discontinuedById: command.changedById,
+        discontinuedAt: at,
+      },
+    });
+    if (interrupted.count === 0) throw new AgendaEntryHasEncounterError();
   }
 
   await tx.agendaStatusHistory.create({
@@ -1376,6 +1471,52 @@ async function applyStatusChange(
       note: change.historyNote,
     },
   });
+}
+
+/** EN-168. An encounter that counts: every one but the annulled. */
+const LIVE_ENCOUNTER = {
+  status: { not: 'ENTERED_IN_ERROR' },
+} satisfies Prisma.EncounterWhereInput;
+
+/**
+ * AG-045, AG-148. The live attention of an appointment, LOCKED, whether it
+ * has any clinical act (D-085 §3: a note, a diagnosis, a procedure, a
+ * prescription or an order) and whether it is still in progress.
+ *
+ * TWO STATEMENTS ON PURPOSE. The lock comes first so that a note being opened
+ * at this very moment (`createDraft` locks the same row before it writes,
+ * AG-146) either commits before we look or waits until we are done. The note
+ * question is asked in LATER statements because, in READ COMMITTED, a
+ * statement that waited on a lock still reads with the snapshot it started
+ * with: asked in the same statement, «was there an act?» could answer no about
+ * a note that had just committed.
+ *
+ * THE ORDER OF LOCKS IS THE ATTENTION, THEN THE APPOINTMENT, in both modules.
+ * `createDraft` takes them in that order too, so the two cannot deadlock.
+ */
+async function lockLiveAttention(
+  tx: Prisma.TransactionClient,
+  agendaEntryId: string,
+): Promise<{
+  id: string;
+  hasClinicalAct: boolean;
+  inProgress: boolean;
+} | null> {
+  const locked = await tx.$queryRaw<{ id: string; status: string }[]>`
+    SELECT "id"::text AS id, "status"::text AS status
+      FROM "encounter"
+     WHERE "agenda_entry_id" = ${agendaEntryId}::uuid
+       AND "status" <> 'ENTERED_IN_ERROR'
+       FOR UPDATE
+  `;
+  const row = locked[0];
+  if (row === undefined) return null;
+
+  return {
+    id: row.id,
+    hasClinicalAct: await hasClinicalAct(tx, row.id),
+    inProgress: row.status === 'OPEN' || row.status === 'ON_HOLD',
+  };
 }
 
 /** `YYYY-MM-DD` as the instant PostgreSQL stores for that calendar day. */
@@ -1475,6 +1616,7 @@ function toEntryView(row: {
   overbookingAuthorisedById: string | null;
   rescheduledFromId: string | null;
   rescheduledTo: { id: string }[];
+  encounters: { status: string }[];
 }): AgendaEntryView {
   return {
     // Ecuadorian filing order, same as the register screen: surname first.
@@ -1512,5 +1654,10 @@ function toEntryView(row: {
     // of several" but "the one, or none".
     rescheduledFromId: row.rescheduledFromId,
     rescheduledToId: row.rescheduledTo[0]?.id ?? null,
+    // AG-150. The filter excludes `ENTERED_IN_ERROR`, which is what makes
+    // the cast honest.
+    attention:
+      (row.encounters[0]?.status as AgendaEntryView['attention'] | undefined) ??
+      null,
   };
 }

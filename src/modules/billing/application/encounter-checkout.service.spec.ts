@@ -49,6 +49,7 @@ const acts = (overrides: Partial<EncounterActs> = {}): EncounterActs => ({
   specialtyId: 'specialty-dermatology',
   procedures: [],
   exams: [],
+  clinicallyAttended: true,
   ...overrides,
 });
 

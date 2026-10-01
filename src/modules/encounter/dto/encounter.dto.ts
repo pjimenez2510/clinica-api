@@ -128,6 +128,54 @@ export const closeEncounterSchema = z.object({
 export class CloseEncounterDto extends createZodDto(closeEncounterSchema) {}
 
 /**
+ * EN-166 (D-077). Body of POST /encounters/:id/enter-in-error.
+ *
+ * The reason is OPTIONAL in the schema and obligatory in the service, like
+ * the amendment: the refusal then comes as one field error with the sentence
+ * of the domain, and not as a Zod message nobody wrote for this case.
+ */
+export const annulEncounterSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .max(500, 'El motivo no puede superar 500 caracteres')
+    .optional(),
+  /**
+   * EN-147 applied to the exits (D-085 §2): why somebody other than the
+   * attending practitioner does it. Required by the service exactly then.
+   */
+  substituteReason: z
+    .string()
+    .trim()
+    .max(500, 'El motivo no puede superar 500 caracteres')
+    .optional(),
+});
+export class AnnulEncounterDto extends createZodDto(annulEncounterSchema) {}
+
+/** EN-167 (D-076, D-082). Body of POST /encounters/:id/discontinue. */
+export const discontinueEncounterSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .max(500, 'El motivo no puede superar 500 caracteres')
+    .optional(),
+  /** EN-129. Where the interruption came from; obligatory in the service. */
+  origin: z.enum(['PATIENT', 'ESTABLISHMENT']).optional(),
+  /**
+   * EN-147 applied to the exits (D-085 §2): why somebody other than the
+   * attending practitioner does it. Required by the service exactly then.
+   */
+  substituteReason: z
+    .string()
+    .trim()
+    .max(500, 'El motivo no puede superar 500 caracteres')
+    .optional(),
+});
+export class DiscontinueEncounterDto extends createZodDto(
+  discontinueEncounterSchema,
+) {}
+
+/**
  * EN-015, EN-162. One PAGE of a chart's attentions, absorbed charts included.
  *
  * ═══════════════════════════════════════════════════════════════════════════
@@ -283,9 +331,34 @@ export const encounterSchema = z.object({
   closedById: z.uuid().nullable(),
   closedAt: z.iso.datetime().nullable(),
   closedBySubstituteReason: z.string().nullable(),
+  /** EN-166. Why and when it was annulled; `null` unless `ENTERED_IN_ERROR`. */
+  annulment: z.object({ reason: z.string(), at: z.iso.datetime() }).nullable(),
+  /** EN-167. Why, from where and when it was interrupted; `null` unless `DISCONTINUED`. */
+  interruption: z
+    .object({
+      reason: z.string(),
+      origin: z.enum(['PATIENT', 'ESTABLISHMENT']),
+      at: z.iso.datetime(),
+    })
+    .nullable(),
 });
 /** Response of opening and closing an attention, and of POST /encounters/:id/vitals/start (EN-135). */
 export class EncounterDto extends createZodDto(encounterSchema) {}
+
+/**
+ * EN-167, D-099 §4. Response of interrupting: the attention, and the drafts
+ * left unsigned because nothing was written in them — the list the decision
+ * asks for, beside the audit row each one leaves.
+ */
+export const discontinuedEncounterSchema = encounterSchema.extend({
+  unsignedEmptyNoteIds: z.array(z.uuid()),
+});
+export class DiscontinuedEncounterDto extends createZodDto(
+  discontinuedEncounterSchema,
+) {}
+export type DiscontinuedEncounterResponse = z.infer<
+  typeof discontinuedEncounterSchema
+>;
 
 export const encounterListSchema = z.object({
   items: z.array(encounterSchema),

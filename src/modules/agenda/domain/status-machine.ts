@@ -11,12 +11,15 @@
  */
 
 import {
+  AgendaEntryHasEncounterError,
+  AttentionStillInProgressError,
   AgendaEntryNotFoundError,
   InvalidAgendaTransitionError,
   NoShowBeforeStartError,
 } from './agenda.errors';
 import type { AgendaEntryKind, AgendaEntryStatus } from './agenda-entry';
 import type {
+  AttentionInterruption,
   StatusChange,
   TransitionEffects,
   TransitionRead,
@@ -247,4 +250,59 @@ export function effectsOf(
       // The history row (AG-004) is the record; no column of their own.
       return {};
   }
+}
+
+/**
+ * AG-045, AG-148 (D-076, D-081). What a live attention allows the appointment.
+ *
+ * Once there is a live attention the appointment is not annulled, not a
+ * no-show and not «never existed»: an act is documented against it, and if the
+ * attention should not exist it is the ATTENTION that is annulled (EN-166).
+ *
+ * «SE FUE SIN SER ATENDIDO» DEPENDS ON THE CLINICAL ACTS: the note D-076
+ * names, and since D-085 §3 any act of a practitioner — a diagnosis, a
+ * procedure, a prescription, an order —, because a prescription issued without
+ * opening the note is still a consultation. With it, there was a consultation and the answer is to
+ * interrupt the attention from the attention (EN-167). Without it —reception
+ * opened the attention, nursing took the vitals, the patient left before the
+ * doctor— nobody attended them, and the honest outcome is this one; the
+ * attention is interrupted in the same transaction so it does not dangle open
+ * on the board for ever.
+ *
+ * Returns the interruption to write, or `undefined` when there is none.
+ */
+export function planAttentionEffect(
+  read: TransitionRead,
+  to: AgendaTransitionTarget,
+  reason: string | undefined,
+  now: Date,
+): AttentionInterruption | undefined {
+  if (!read.hasEncounter) return undefined;
+
+  if (to === 'CANCELLED' || to === 'NO_SHOW' || to === 'ENTERED_IN_ERROR') {
+    throw new AgendaEntryHasEncounterError();
+  }
+  /**
+   * AG-153 (D-099 §3). «Atendida» is not typed while the attention is still
+   * in progress: signing or interrupting it is what ends it. Marked by hand,
+   * an annulment afterwards would leave an attended appointment with no
+   * attention behind it — the patient gone from the waiting room while their
+   * visit says it never happened.
+   */
+  if (to === 'FULFILLED' && read.encounterInProgress) {
+    throw new AttentionStillInProgressError();
+  }
+  if (to !== 'LEFT_WITHOUT_BEING_SEEN') return undefined;
+  if (read.encounterHasClinicalAct) throw new AgendaEntryHasEncounterError();
+  // Already interrupted (from the attention, without a note): the departure
+  // is still the truth, and the attention's own record is left as it is.
+  if (!read.encounterInProgress) return undefined;
+
+  /**
+   * EN-129 demands a written reason and AG-116 makes it optional at the
+   * counter, because asking why somebody got tired of waiting produces a
+   * blank or a guess. The fact ITSELF is the reason, so it is written when
+   * nobody added one.
+   */
+  return { reason: reason?.trim() || 'Se fue sin ser atendido', at: now };
 }

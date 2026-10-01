@@ -33,6 +33,8 @@ export const DOMAIN_ERROR_CODES = [
   // entrada no existe o es de otra sede (404, un solo mensaje para ambas:
   // distinguirlas confirmaría citas ajenas a quien adivina identificadores).
   'AGENDA_ENTRY_HAS_ENCOUNTER',
+  // AG-153 (D-099 §3): «Marcar atendida» con la atención aún en curso.
+  'ATTENTION_STILL_IN_PROGRESS',
   'AGENDA_ENTRY_NOT_FOUND',
   'INVALID_AGENDA_TRANSITION',
   'NO_SHOW_BEFORE_START',
@@ -106,6 +108,7 @@ export const DOMAIN_ERROR_CODES = [
   'OVERBOOKING_LIMIT_REACHED',
   'OVERBOOKING_NOT_ALLOWED',
   'OVERBOOKING_NOT_AUTHORISED',
+  'OVERBOOKING_PRACTITIONER_UNAVAILABLE',
   'OVERBOOKING_REASON_REQUIRED',
   'SELF_AUTHORISATION_DENIED',
   // Agenda, E5 (AG-060 a AG-067): la lista de espera, que reparte un recurso
@@ -669,6 +672,17 @@ export const DOMAIN_ERROR_CODES = [
   //     enmienda sin motivo, y la enmienda de un borrador, de una versión ya
   //     sustituida o de una retractada. El motivo se exige en el DTO, en el
   //     servicio y en la base, por lo mismo que `CANCELLATION_REASON_REQUIRED`.
+  // EN-166, EN-167 (D-077, D-080, D-082). Anular e interrumpir una atención
+  // exigen motivo escrito —e interrumpir, además, el origen—. 422 por campo:
+  // es el formulario el que se corrige. Y 409 cuando hay un borrador de otra
+  // persona que la interrupción dejaría sin firmar (D-085 §2); 409 si la
+  // atención tiene actos vivos que retractar antes de anularla (D-099 §1), y
+  // 409 si la cita no tiene registrada la llegada (D-099 §2).
+  'ENCOUNTER_ANNULMENT_REASON_REQUIRED',
+  'ENCOUNTER_HAS_LIVE_ACTS',
+  'ENCOUNTER_HAS_OTHERS_DRAFTS',
+  'APPOINTMENT_ARRIVAL_NOT_RECORDED',
+  'ENCOUNTER_INTERRUPTION_REASON_REQUIRED',
   'AMENDMENT_REASON_REQUIRED',
   'APPOINTMENT_NOT_ATTENDABLE',
   'BMI_IS_DERIVED',

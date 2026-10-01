@@ -26,6 +26,12 @@ registerConstraintMeanings({
     field: 'startTime',
     message: 'El profesional ya tiene otro horario en esa sede ese día a esa hora', // prettier-ignore
   },
+  // ST-042 entre sedes (D-070): el mismo código, porque es la misma regla.
+  schedule_rule_no_overlap_across_sites: {
+    code: 'SCHEDULE_RULE_OVERLAP',
+    field: 'startTime',
+    message: 'El profesional ya tiene horario ese día a esa hora en otra sede: un horario vive en un solo sitio', // prettier-ignore
+  },
   // D-021 se llevó `schedule_rule_slot_fits` y `schedule_rule_slot_positive`:
   // los dos leían `practitioner_schedule_rule.slot_minutes`, que ya no existe.
   // «El turno cabe en la franja» lo comprueba ahora `scheduleRuleProblems` con

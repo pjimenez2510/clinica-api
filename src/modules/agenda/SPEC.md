@@ -84,13 +84,21 @@ AG-111, AG-112, AG-113, AG-144, AG-145.
 > código, que es justo lo que REQ-145 prohíbe.
 
 **Solo servidor:** AG-001, AG-002, AG-003, AG-010, AG-020, AG-021, AG-022,
-AG-023, AG-024, AG-025, AG-026, AG-029, AG-034, AG-106. Son garantías de
+AG-023, AG-024, AG-025, AG-026, AG-029, AG-034, AG-106, AG-144. Son garantías de
 almacenamiento y de la base —el huso, el `timestamptz`, los `EXCLUDE`, el
 desempate entre reglas solapadas, la coherencia paciente/bloqueo y el orden de
 los tiempos—, concurrencia y reintento de serialización, o campos que se
 registran sin que nadie los vea. Se demuestran contra PostgreSQL con dos
 clientes a la vez, no en una pantalla: una interfaz que los «probara» estaría
 comprobando su propio doble.
+
+> **AG-144 entra en esta lista el 30-09-2026 (`fix/agenda-estados-y-sobrecupo`).**
+> Es una resta que hace el servidor: la interfaz pinta los cupos que recibe y
+> no tiene ninguna lógica que pueda equivocarse en ella, así que una prueba de
+> interfaz que lo citara comprobaría su propio doble. Lo que de AG-144 se ve
+> en la rejilla —«No disponible» donde el profesional está en otra sede— es
+> AG-145, que sí tiene su prueba de interfaz. Se demuestra contra PostgreSQL
+> (`agenda-availability`).
 
 > **Lo que sí tiene mitad visible y por qué esta lista es corta.** AG-011,
 > AG-012, AG-013, AG-014, AG-017, AG-018, AG-027, AG-028, AG-030, AG-104,
@@ -109,7 +117,7 @@ clínica sabe quién está en sala. **Prueba independiente:** recorrer la máqui
 de estados y verificar que cada transición dejó fila en `agenda_status_history`.
 **Cubre:** AG-004, AG-005, AG-040 a AG-046, AG-143.
 
-**Solo servidor:** AG-004, AG-005, AG-045. La fila de `agenda_status_history` y
+**Solo servidor:** AG-004, AG-005. La fila de `agenda_status_history` y
 su inmutabilidad son garantías de la base —dos disparadores y un `RESTRICT`,
 D-022— y, además, **no existe todavía ruta de lectura del historial**: no hay
 pantalla que pueda enseñarlo aunque quisiera. Con qué permiso se lee es decisión
@@ -135,6 +143,10 @@ sale de esta lista.
 > **Cuando `encounter` publique si una cita tiene atención, AG-045 recupera mitad
 > visible** —no ofrecerlas— y sale de esta lista, igual que AG-004 con la ruta de
 > historial.
+>
+> **Salió el 30-09-2026 (`fix/agenda-estados-y-sobrecupo`).** La entrada lleva
+> ya `attention` (AG-150) y el menú del tablero y del calendario deja de
+> ofrecer lo que AG-045 rechaza.
 
 ### E3 — Reprogramar y anular con rastro _(P3)_
 
@@ -147,7 +159,10 @@ comprobar que el cupo original quedó libre y ambas entradas se referencian.
 
 **Por qué es P3:** son la vía documentada para romper la regla; sin ellos el
 personal la rompe por fuera del sistema. **Cubre:** AG-035 a AG-039, AG-100,
-AG-101, AG-103, AG-114.
+AG-101, AG-103, AG-114, AG-151, AG-152.
+**Solo servidor:** AG-152. El diálogo de bloqueo ya enumera lo que el servidor
+devuelve con `BLOCK_OVERLAPS_APPOINTMENTS` (AG-038); AG-152 añade el sobrecupo
+a esa lista y la pantalla no cambia.
 
 ### E5 — Lista de espera _(P4)_
 
@@ -416,6 +431,25 @@ que nadie lo vea.
 > Un kanban no representa el tiempo transcurrido, que es justo el dato que
 > importa, y el orden por hora —que es un compromiso con el paciente— se pierde
 > en cuanto alguien arrastra una tarjeta.
+
+### E10 — Lo que la atención marca en la cita _(P1)_
+
+Abrir la nota pasa la cita a «en atención»; la atención anulada devuelve la
+cita a la sala; la interrumpida la deja atendida y marcada; y el paciente que
+se va con la atención abierta y sin nota queda «se fue sin ser atendido».
+
+**Por qué es P1:** es un defecto visto por el autor el 30-09-2026 —Carlos
+Álvarez «En atención» con «Pasar a atención», «Se fue sin ser atendido» y
+«Anular…» en el menú— y cada una de esas tres acciones escribía un hecho falso
+sobre una consulta que sí ocurrió. **Prueba independiente:** abrir la nota de
+una cita en sala, comprobar contra la base que la cita está `IN_PROGRESS` con
+su fila de historial, que el servidor rechaza `LEFT_WITHOUT_BEING_SEEN` y
+`CANCELLED` sobre ella, y que el menú ya no los ofrece.
+**Cubre:** AG-045, AG-146 a AG-150, AG-153. Decisiones D-076, D-077, D-080,
+D-081, D-082, D-085, D-099.
+
+> **AG-045 se cubre otra vez aquí** porque su mitad visible nace en esta
+> entrega; su mitad de servidor sigue en E2.
 
 > **AG-070 a AG-074, AG-107 y AG-108 pasan a E1 el 20-08-2026, y con el
 > argumento escrito.** Los siete estaban declarados y no pertenecían a ninguna
@@ -1047,6 +1081,37 @@ es falsa, hay requisitos que cambian.
   > ningún requisito exige es una casilla más en la pantalla cuyo objeto es
   > deshacer un error deprisa. Un paciente merece la explicación de una
   > anulación; un bloqueo no se la debe a nadie.
+- **AG-151** — SI un sobrecupo se solapa con un bloqueo del profesional en
+  cualquier sede, con una entrada suya que ocupa calendario en otra sede, con
+  su horario vigente en otra sede o con un sobrecupo suyo vigente en otra sede,
+  ENTONCES el sistema DEBERÁ rechazarlo con
+  `OVERBOOKING_PRACTITIONER_UNAVAILABLE`, diciendo cuál de los cuatro casos es
+  sin nombrar la otra sede; dentro de la misma sede DEBERÁ seguir admitiéndolo
+  encima de citas.
+  > **D-069, recomendación ampliada aceptada el 30-09-2026.** Un sobrecupo
+  > lleva `blocks_calendar = false`, así que el `EXCLUDE` por profesional no lo
+  > frena, y antes de esto se podía autorizar en la Sede Sur a la hora en que
+  > la médica tiene vacaciones o una cita en la Norte: el paciente llega y no
+  > hay nadie. El sobrecupo existe para meter a alguien más en la consulta de
+  > un médico **que está ahí** (REQ-143).
+  >
+  > **Sin nombrar la sede**, por AG-107: quien reserva puede no tener alcance
+  > sobre la otra. «El profesional atiende en otra sede a esa hora» basta para
+  > buscar otra hora.
+  >
+  > **Comprobación de la aplicación, con su ventana dicha.** Dos sobrecupos
+  > simultáneos en dos sedes, autorizados en el mismo instante, pueden pasar
+  > los dos: es la misma ventana que el tope de AG-101, que también cuenta y
+  > luego escribe. Con D-070 (ST-042 sin sede) el caso del horario ajeno ya no
+  > puede producirse entre dos reglas; lo que queda es el sobrecupo fuera de la
+  > rejilla de su propia sede.
+- **AG-152** — SI se intenta crear un bloqueo sobre un intervalo en que el
+  profesional tiene un sobrecupo vigente en cualquier sede, ENTONCES el sistema
+  DEBERÁ rechazarlo con `BLOCK_OVERLAPS_APPOINTMENTS` enumerando ese sobrecupo
+  como AG-038 enumera las citas.
+  > **D-085 §7 (01-10-2026), el camino inverso de D-069.** Un sobrecupo no
+  > ocupa calendario, así que el `EXCLUDE` no lo ve: las vacaciones puestas
+  > después caían encima de un paciente que viene igual.
 
 ## 5. Estados de la cita
 
@@ -1098,8 +1163,20 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   cita, ENTONCES el sistema DEBERÁ rechazarlo.
 - **AG-044** — CUANDO una cita pase a `CANCELLED`, el sistema DEBERÁ exigir
   motivo, DEBERÁ registrar `cancelled_at` y DEBERÁ liberar el cupo.
-- **AG-045** — MIENTRAS una cita tenga un `Encounter` asociado, el sistema NO
-  DEBERÁ permitir anularla ni marcarla como `NO_SHOW`.
+- **AG-045** — MIENTRAS una cita tenga una atención viva (un `Encounter` que no
+  esté `ENTERED_IN_ERROR`), el sistema NO DEBERÁ permitir anularla, marcarla
+  como `NO_SHOW`, marcarla `ENTERED_IN_ERROR` ni marcarla
+  `LEFT_WITHOUT_BEING_SEEN` salvo en el caso de AG-148; y la pantalla NO
+  DEBERÁ ofrecer esas acciones.
+  > **Ampliado el 30-09-2026 (D-076, D-077, D-081).** Decía «anularla ni
+  > marcarla como `NO_SHOW`». Con la nota abierta la médica tenía delante a
+  > un paciente «En atención» y el menú le ofrecía «Se fue sin ser atendido»
+  > y «Anular…» (captura del autor): la cita seguía `CHECKED_IN` porque nada
+  > la movía al abrir la nota (AG-146). Una vez abierta la nota hubo
+  > atención, y la cita ya no se anula ni se da por no atendida; si la
+  > atención no debió existir se anula **la atención** (EN-166), no la cita.
+  > «Viva» porque una atención anulada no cuenta (EN-168): la cita vuelve a
+  > estar como si no la hubiera tenido.
   > **Ventana aceptada, por escrito** (revisión adversarial de E2, P1). El
   > chequeo se decide dentro de la transacción y el `UPDATE` re-arbitra con
   > `encounter IS NULL`, así que la carrera anulación-vs-atención queda cerrada
@@ -1242,6 +1319,7 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   con `LATE_ARRIVAL_NOT_AUTHORISED`, y DEBERÁ registrar quién admitió la cita
   fuera del umbral cuando sí lo tenga. DONDE la llegada esté calificada como
   situación de emergencia (AG-128), el umbral NO DEBERÁ aplicarse.
+
   > **La política es de la clínica; lo que el sistema aporta es poder aplicarla
   > y dejar constancia.** Sin este requisito, «a partir de veinte minutos se
   > reubica» es un cartel en la pared: se cumple con quien discute poco y se
@@ -1260,6 +1338,101 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   >
   > Es el mismo patrón de AG-101 y AG-103: un permiso que la sede configura,
   > 403, y el rastro de quién lo ejerció en ambos caminos.
+
+- **AG-146** — CUANDO se abra la nota clínica de una atención cuya cita esté
+  `CHECKED_IN`, el sistema DEBERÁ pasar la cita a `IN_PROGRESS` en la misma
+  transacción que crea la nota, con su fila en `agenda_status_history` cuyo
+  autor es quien abre la nota.
+  > **El estado lo marca el trabajo (AG-122), no un botón.** El eje del
+  > paciente ya pasaba a `RECEIVING_CARE` al abrir la nota (EN-137) y el de la
+  > cita se quedaba en `CHECKED_IN` hasta que alguien pulsara «Pasar a
+  > atención», que nadie pulsa: la etiqueta leía un eje y el menú el otro.
+  > Desde aquí la pantalla no ofrece «Pasar a atención»; la ruta lo sigue
+  > admitiendo porque **AG-120** —sin construir— pone en ese paso el umbral de
+  > llegada tardía, y dónde se aplica ahora que el paso lo da la nota lo decide
+  > quien construya AG-120, no esta entrega.
+  >
+  > **Solo desde `CHECKED_IN`.** Una cita `BOOKED` o `CONFIRMED` cuya atención
+  > se abrió sin registrar la llegada no salta a `IN_PROGRESS`: la llegada lleva
+  > la calificación de emergencia (AG-128, Ley 77 art. 10) y saltarla la
+  > perdería. Esa cita queda como está y AG-045 la protege igual.
+- **AG-147** — CUANDO se anule la atención (EN-166) de una cita `IN_PROGRESS`,
+  el sistema DEBERÁ devolver la cita a `CHECKED_IN` y su estado de paciente a
+  `ARRIVED` en la misma transacción, con una fila en `agenda_status_history`
+  que lleva el motivo de la anulación; y la cita DEBERÁ admitir una atención
+  nueva (EN-168).
+  > **D-077, D-080 §1.** La médica abrió la nota de Carlos con Juan delante:
+  > el error fue abrir la atención, no dar la cita, y Carlos puede seguir en la
+  > sala. `ARRIVED` y no lo que hubiera antes porque todo lo documentado de él
+  > desde la llegada vivía en la atención anulada.
+  >
+  > **La fila de historial va hacia atrás y no borra nada**: AG-005 sigue
+  > intacto, y la secuencia `CHECKED_IN → IN_PROGRESS → CHECKED_IN` es
+  > exactamente lo que pasó. Si la cita ya está `FULFILLED` no se toca: la
+  > anulación de una atención firmada y cerrada la corrige la atención, y la
+  > cita ya no es el sitio.
+- **AG-148** — CUANDO una cita `CHECKED_IN` cuya atención viva no tiene
+  ningún acto clínico —nota con algo escrito, diagnóstico, procedimiento,
+  receta, orden, certificado sin revocar, referencia ni interconsulta—
+  pase a `LEFT_WITHOUT_BEING_SEEN`, el sistema DEBERÁ pasar esa atención, si
+  sigue `OPEN` u `ON_HOLD`, a `DISCONTINUED` con origen `PATIENT`, el motivo dado (o
+  «Se fue sin ser atendido» si no se dio), quien registra la salida y el mismo
+  instante, en la misma transacción —una atención ya interrumpida se deja como
+  está—; y CUANDO la atención tenga algún acto clínico, el sistema DEBERÁ
+  rechazar la transición con `AGENDA_ENTRY_HAS_ENCOUNTER`.
+  > **D-081 §2.** Recepción abrió la atención y enfermería tomó los signos,
+  > pero el médico no abrió la nota: no hubo consulta. La frontera es la nota
+  > (D-076). Sin esto el servidor rechazaba la salida y el paciente se quedaba
+  > en el tablero para siempre.
+  >
+  > **D-085 §3 (01-10-2026): la frontera es cualquier acto clínico**, no solo
+  > la nota: una receta emitida sin abrir la nota sigue siendo una consulta.
+  > Y la escritura es condicional a que la atención siga en curso: una ya
+  > interrumpida desde la atención conserva su motivo, su origen y su autor.
+  >
+  > **D-104 (01-10-2026).** También el certificado sin revocar, la referencia
+  > (`ISSUED`, `ACCEPTED`, `COMPLETED`) y la interconsulta (`REQUESTED`,
+  > `ANSWERED`): lo que impide anular la atención (D-103) cuenta como
+  > atendido, con los mismos estados. Un certificado de asistencia sin nota
+  > no deja la cita en «se fue sin ser atendido».
+- **AG-149** — CUANDO se interrumpa la atención (EN-167) de una cita
+  `IN_PROGRESS` o `CHECKED_IN`, el sistema DEBERÁ, en la misma transacción,
+  pasar la cita a `FULFILLED` y su estado de paciente a `DEPARTED` si hubo
+  algún acto clínico, y a `LEFT_WITHOUT_BEING_SEEN` con el cupo liberado si no
+  lo hubo, con sus filas en `agenda_status_history`.
+  > **D-076: hubo atención**, así que la cita nunca termina como «se fue sin
+  > ser atendido». Atendida, y lo que dice que fue a medias es el estado de la
+  > atención (`DISCONTINUED`, D-080 §3), que la cita publica (AG-150). Caja
+  > propone la consulta y la quita con motivo (D-054 §2) **solo si hubo algún
+  > acto clínico**; sin ninguno no propone nada (BI-180, D-085 §4).
+  >
+  > **D-099 §2 (01-10-2026).** Una cita `IN_PROGRESS` sin ningún acto vuelve
+  > por `CHECKED_IN` a «se fue sin ser atendido», con sus dos filas. Una cita
+  > `BOOKED` o `CONFIRMED` —la atención se abrió sin registrar la llegada— no
+  > se cierra con verdad: la interrupción se rechaza
+  > (`APPOINTMENT_ARRIVAL_NOT_RECORDED`) hasta registrar la llegada, que lleva
+  > la calificación de emergencia (Ley 77 art. 10).
+- **AG-153** — MIENTRAS la atención viva de una cita esté `OPEN` u `ON_HOLD`,
+  el sistema NO DEBERÁ admitir que la cita pase a `FULFILLED`, y DEBERÁ
+  rechazarlo con `ATTENTION_STILL_IN_PROGRESS`; la pantalla NO DEBERÁ
+  ofrecerlo.
+  > **D-099 §3 (01-10-2026).** La cita la cierran firmar o interrumpir la
+  > atención. Marcada a mano, una anulación posterior dejaría una cita
+  > «Atendida» sin ninguna atención detrás, y al paciente fuera de la sala.
+  >
+  > **Interrumpir la cierra sola (AG-149); firmar no.** La firma da el alta a
+  > la atención (`DISCHARGED`) y desde ahí recepción la marca atendida, como
+  > antes de esta entrega: firmar deja de estar en curso y AG-153 lo admite.
+  > Que la firma cierre también la cita sería un cambio del flujo F-02 que
+  > no se ha decidido; el mensaje dice lo que hay.
+- **AG-150** — El sistema DEBERÁ publicar en cada cita el estado de su
+  atención viva (`attention`: `null` o el `EncounterStatus`), y la pantalla
+  DEBERÁ mostrar «Interrumpida» en una cita atendida cuya atención está
+  `DISCONTINUED`.
+  > Es el dato que AG-045 esperaba desde el 15-08-2026 para dejar de ofrecer
+  > lo que el servidor rechaza. Solo el estado: el identificador de la atención
+  > no viaja con la cita, porque quien ve la agenda puede no tener
+  > `record:read`.
 
 ## 5 bis. El estado del paciente
 
@@ -2151,40 +2324,42 @@ Convertirlo en configuración sería regalar la garantía.
 
 Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 
-| Código                         | Estado | Requisito |
-| ------------------------------ | ------ | --------- |
-| `INVALID_AGENDA_TRANSITION`    | 409    | AG-040    |
-| `OUTSIDE_SCHEDULE_RULE`        | 422    | AG-028    |
-| `AGENDA_ENTRY_HAS_ENCOUNTER`   | 409    | AG-045    |
-| `BLOCK_OVERLAPS_APPOINTMENTS`  | 409    | AG-038    |
-| `BOOKING_IN_THE_PAST`          | 422    | AG-031    |
-| `BOOKING_TOO_SOON`             | 422    | AG-032    |
-| `BOOKING_TOO_FAR`              | 422    | AG-033    |
-| `INVALID_BOOKING_CHANNEL`      | 422    | AG-034    |
-| `INVALID_SLOT_DURATION`        | 422    | AG-012    |
-| `OVERBOOKING_NOT_ALLOWED`      | 422    | AG-039    |
-| `OVERBOOKING_REASON_REQUIRED`  | 422    | AG-035    |
-| `OVERBOOKING_LIMIT_REACHED`    | 409    | AG-100    |
-| `OVERBOOKING_NOT_AUTHORISED`   | 403    | AG-101    |
-| `SELF_AUTHORISATION_DENIED`    | 403    | AG-103    |
-| `SLOT_NOT_ALIGNED`             | 422    | AG-104    |
-| `ROOM_NOT_IN_SITE`             | 422    | AG-105    |
-| `BOOKING_RETRY_EXHAUSTED`      | 503    | AG-026    |
-| `NO_SHOW_BEFORE_START`         | 422    | AG-043    |
-| `CANCELLATION_REASON_REQUIRED` | 422    | AG-044    |
-| `AGENDA_ENTRY_NOT_FOUND`       | 404    | AG-071    |
-| `ACCESS_CONTEXT_NOT_FOUND`     | 404    | AG-073    |
-| `WAITLIST_ENTRY_NOT_FOUND`     | 404    | AG-071    |
-| `WAITLIST_ENTRY_CLOSED`        | 409    | AG-067    |
-| `WAITLIST_ACCEPTANCE_REQUIRED` | 422    | AG-064    |
-| `WAITLIST_PATIENT_MISMATCH`    | 422    | AG-063    |
-| `WAITLIST_SLOT_ALREADY_CLAIMED`| 409    | AG-063    |
-| `SLOT_NOT_RELEASED`            | 422    | AG-061    |
-| `RELEASED_SLOT_IN_THE_PAST`    | 422    | AG-061    |
-| `ENTERED_IN_ERROR_REASON_REQUIRED` | 422 | AG-117   |
-| `LATE_ARRIVAL_NOT_AUTHORISED`  | 403    | AG-120    |
-| `EMERGENCY_QUALIFICATION_REQUIRED` | 422 | AG-128   |
-| `COVERAGE_SKIP_REASON_REQUIRED` | 422   | AG-131    |
+| Código                                 | Estado | Requisito      |
+| -------------------------------------- | ------ | -------------- |
+| `INVALID_AGENDA_TRANSITION`            | 409    | AG-040         |
+| `OUTSIDE_SCHEDULE_RULE`                | 422    | AG-028         |
+| `AGENDA_ENTRY_HAS_ENCOUNTER`           | 409    | AG-045, AG-148 |
+| `ATTENTION_STILL_IN_PROGRESS`          | 409    | AG-153         |
+| `OVERBOOKING_PRACTITIONER_UNAVAILABLE` | 409    | AG-151         |
+| `BLOCK_OVERLAPS_APPOINTMENTS`          | 409    | AG-038, AG-152 |
+| `BOOKING_IN_THE_PAST`                  | 422    | AG-031         |
+| `BOOKING_TOO_SOON`                     | 422    | AG-032         |
+| `BOOKING_TOO_FAR`                      | 422    | AG-033         |
+| `INVALID_BOOKING_CHANNEL`              | 422    | AG-034         |
+| `INVALID_SLOT_DURATION`                | 422    | AG-012         |
+| `OVERBOOKING_NOT_ALLOWED`              | 422    | AG-039         |
+| `OVERBOOKING_REASON_REQUIRED`          | 422    | AG-035         |
+| `OVERBOOKING_LIMIT_REACHED`            | 409    | AG-100         |
+| `OVERBOOKING_NOT_AUTHORISED`           | 403    | AG-101         |
+| `SELF_AUTHORISATION_DENIED`            | 403    | AG-103         |
+| `SLOT_NOT_ALIGNED`                     | 422    | AG-104         |
+| `ROOM_NOT_IN_SITE`                     | 422    | AG-105         |
+| `BOOKING_RETRY_EXHAUSTED`              | 503    | AG-026         |
+| `NO_SHOW_BEFORE_START`                 | 422    | AG-043         |
+| `CANCELLATION_REASON_REQUIRED`         | 422    | AG-044         |
+| `AGENDA_ENTRY_NOT_FOUND`               | 404    | AG-071         |
+| `ACCESS_CONTEXT_NOT_FOUND`             | 404    | AG-073         |
+| `WAITLIST_ENTRY_NOT_FOUND`             | 404    | AG-071         |
+| `WAITLIST_ENTRY_CLOSED`                | 409    | AG-067         |
+| `WAITLIST_ACCEPTANCE_REQUIRED`         | 422    | AG-064         |
+| `WAITLIST_PATIENT_MISMATCH`            | 422    | AG-063         |
+| `WAITLIST_SLOT_ALREADY_CLAIMED`        | 409    | AG-063         |
+| `SLOT_NOT_RELEASED`                    | 422    | AG-061         |
+| `RELEASED_SLOT_IN_THE_PAST`            | 422    | AG-061         |
+| `ENTERED_IN_ERROR_REASON_REQUIRED`     | 422    | AG-117         |
+| `LATE_ARRIVAL_NOT_AUTHORISED`          | 403    | AG-120         |
+| `EMERGENCY_QUALIFICATION_REQUIRED`     | 422    | AG-128         |
+| `COVERAGE_SKIP_REASON_REQUIRED`        | 422    | AG-131         |
 
 > **Los cuatro de E8, y por qué ninguno reutiliza a un vecino.**
 > `ENTERED_IN_ERROR_REASON_REQUIRED` no es `CANCELLATION_REASON_REQUIRED`: son
@@ -2386,6 +2561,9 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | AG-136, AG-137                                  | Seguridad dirigida + contrato HTTP: una sesión con `agenda:board:public` y nada más no alcanza la proyección de personal, y la fila que recibe no lleva ninguno de los campos prohibidos |
 | AG-139, AG-140                                  | Integración contra PostgreSQL real: una consulta del tablero deja **una** fila de bitácora y no una por cita (SC-004), y la tasa no se mueve cuando una cita pasa a `LEFT_WITHOUT_BEING_SEEN` |
 | AG-142                                          | Integración: cambiar el umbral de una sede cambia la advertencia siguiente y no toca las llegadas ya registradas (AG-098) |
+| AG-146 a AG-149                                 | Integración contra PostgreSQL real con control positivo: la cita y la atención se mueven en la misma transacción y la fila de historial existe; una prueba reproduce la captura del autor                        |
+| AG-150                                          | Contrato HTTP + prueba de interfaz: el menú de una cita con atención viva no ofrece lo que AG-045 rechaza                                                                                                        |
+| AG-151                                          | Integración contra PostgreSQL real: los cuatro casos rechazados y, como control positivo, el sobrecupo encima de una cita de la misma sede admitido                                                              |
 
 ## Preguntas abiertas
 

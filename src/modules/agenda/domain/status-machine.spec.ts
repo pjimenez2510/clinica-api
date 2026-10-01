@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AgendaEntryHasEncounterError,
+  AttentionStillInProgressError,
   AgendaEntryNotFoundError,
   InvalidAgendaTransitionError,
   NoShowBeforeStartError,
@@ -11,6 +13,7 @@ import {
   assertNoShowNotBeforeStart,
   assertTransition,
   effectsOf,
+  planAttentionEffect,
   planBlockRelease,
 } from './status-machine';
 
@@ -247,6 +250,8 @@ describe('deshacer un bloqueo (AG-114)', () => {
     startsAt: new Date('2026-09-14T13:00:00Z'),
     releasedAt: null,
     hasEncounter: false,
+    encounterHasClinicalAct: false,
+    encounterInProgress: false,
     ...overrides,
   });
 
@@ -274,5 +279,109 @@ describe('deshacer un bloqueo (AG-114)', () => {
     expect(() =>
       planBlockRelease(readOf({ kind: 'APPOINTMENT', status: 'BOOKED' }), now),
     ).toThrow(AgendaEntryNotFoundError);
+  });
+});
+
+describe('la atención manda sobre la cita (AG-045, AG-148)', () => {
+  const now = new Date();
+
+  const readOf = (overrides: Partial<TransitionRead> = {}): TransitionRead => ({
+    id: 'entry-1',
+    kind: 'APPOINTMENT',
+    status: 'CHECKED_IN',
+    startsAt: now,
+    releasedAt: null,
+    hasEncounter: true,
+    encounterHasClinicalAct: true,
+    encounterInProgress: true,
+    ...overrides,
+  });
+
+  it.each(['CANCELLED', 'NO_SHOW', 'ENTERED_IN_ERROR'] as const)(
+    'AG-045 refuses %s on an appointment with a live attention',
+    (to) => {
+      expect(() =>
+        planAttentionEffect(
+          readOf({ encounterHasClinicalAct: false }),
+          to,
+          undefined,
+          now,
+        ),
+      ).toThrow(AgendaEntryHasEncounterError);
+    },
+  );
+
+  it('AG-045 refuses «se fue sin ser atendido» once the note is open: there was a consultation (D-076)', () => {
+    expect(() =>
+      planAttentionEffect(readOf(), 'LEFT_WITHOUT_BEING_SEEN', undefined, now),
+    ).toThrow(AgendaEntryHasEncounterError);
+  });
+
+  it('AG-148 admits «se fue sin ser atendido» with the attention open and no note, and interrupts the attention', () => {
+    expect(
+      planAttentionEffect(
+        readOf({ encounterHasClinicalAct: false }),
+        'LEFT_WITHOUT_BEING_SEEN',
+        '  Se cansó de esperar ',
+        now,
+      ),
+    ).toEqual({ reason: 'Se cansó de esperar', at: now });
+  });
+
+  it('AG-148 writes the fact itself as the reason when reception gave none (EN-129 demands one)', () => {
+    expect(
+      planAttentionEffect(
+        readOf({ encounterHasClinicalAct: false }),
+        'LEFT_WITHOUT_BEING_SEEN',
+        '   ',
+        now,
+      ),
+    ).toEqual({ reason: 'Se fue sin ser atendido', at: now });
+  });
+
+  it('AG-148 does not interrupt again an attention already interrupted: its record stays as written', () => {
+    expect(
+      planAttentionEffect(
+        readOf({ encounterHasClinicalAct: false, encounterInProgress: false }),
+        'LEFT_WITHOUT_BEING_SEEN',
+        'Se cansó de esperar',
+        now,
+      ),
+    ).toBeUndefined();
+  });
+
+  it('AG-045 lets an appointment without a live attention go anywhere the table admits', () => {
+    for (const to of ['CANCELLED', 'LEFT_WITHOUT_BEING_SEEN'] as const) {
+      expect(
+        planAttentionEffect(
+          readOf({ hasEncounter: false, encounterHasClinicalAct: false }),
+          to,
+          undefined,
+          now,
+        ),
+      ).toBeUndefined();
+    }
+  });
+
+  it('AG-045 still lets an attended appointment move forward once the attention ended', () => {
+    expect(
+      planAttentionEffect(
+        readOf({ encounterInProgress: false }),
+        'FULFILLED',
+        undefined,
+        now,
+      ),
+    ).toBeUndefined();
+  });
+
+  it('AG-153 refuses «Marcar atendida» while the attention is still in progress (D-099 §3)', () => {
+    expect(() =>
+      planAttentionEffect(
+        readOf({ encounterInProgress: true }),
+        'FULFILLED',
+        undefined,
+        now,
+      ),
+    ).toThrow(AttentionStillInProgressError);
   });
 });

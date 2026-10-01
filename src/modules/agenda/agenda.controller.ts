@@ -488,5 +488,7 @@ function toEntryResponse(entry: AgendaEntryView) {
     // looked up to find out what happened to the other.
     rescheduledFromId: entry.rescheduledFromId,
     rescheduledToId: entry.rescheduledToId,
+    // AG-150: the state of its live attention, never its identifier.
+    attention: entry.attention,
   };
 }
