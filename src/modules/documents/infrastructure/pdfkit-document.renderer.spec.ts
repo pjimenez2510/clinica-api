@@ -5,6 +5,8 @@ import { extractText, getDocumentProxy } from 'unpdf';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { DocumentRenderFailedError } from '../domain/document.errors';
+import { composeLayout } from '../domain/document-layout';
+import { sampleSubject } from '../domain/document-samples';
 import { TEAR_OFF_HEIGHT_MM, millimetresToPoints } from '../domain/page-layout';
 import { PdfKitDocumentRenderer } from './pdfkit-document.renderer';
 import type { LayoutImages } from '../domain/document-rendering.port';
@@ -246,6 +248,51 @@ describe('DOC-070, DOC-071, DOC-073 la geometría de la página', () => {
     );
     expect(raw).not.toContain('/Count 1');
     expect(raw).toMatch(/\/Count [2-9]/);
+  });
+});
+
+describe('DOC-073 PR-038 una receta corriente cabe en una hoja', () => {
+  it('DOC-073 PR-038 PR-040 una línea con signos de alarma, teléfono y recomendaciones no abre una segunda página', async () => {
+    const issuedAt = new Date();
+    const composed = composeLayout(
+      sampleSubject('PRESCRIPTION', issuedAt),
+      {
+        siteName: 'Sede Centro',
+        siteLine: null,
+        verificationBaseUrl: 'https://clinica.example/verificar',
+        establishment: {
+          name: 'Centro de Especialidades Bahía',
+          ruc: '0993123456001',
+          addressLine: 'Av. 9 de Octubre 123',
+          phone: '04-2345678',
+          logo: null,
+          keepsAccounting: true,
+          specialTaxpayerResolution: null,
+          withholdingAgentResolution: null,
+          rimpeRegime: 'NONE',
+          tradeName: null,
+          email: null,
+          operatingPermit: null,
+        },
+      },
+      {
+        id: 'template-1',
+        kind: 'PRESCRIPTION',
+        version: 1,
+        accentColour: '#1f6f8b',
+        footerText: 'Clínica de especialidades · Guayaquil',
+        headerFields: [],
+        showEstablishmentRuc: true,
+        showEstablishmentAddress: true,
+        showEstablishmentPhone: true,
+        publishedAt: issuedAt,
+      },
+    );
+
+    const raw = (await renderer.render(composed, images, metadata)).toString(
+      'latin1',
+    );
+    expect(raw).toContain('/Count 1');
   });
 });
 

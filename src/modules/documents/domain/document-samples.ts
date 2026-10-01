@@ -73,7 +73,7 @@ export function sampleSubject(
           city: 'Quito',
           sequenceNumber: 1,
           verificationCode: SAMPLE_CODE,
-          warningSigns: `${SAMPLE_MARK}. Acuda a emergencias si tiene dolor de cabeza intenso o visión borrosa.`,
+          warningSigns: `${SAMPLE_MARK}. Dolor de cabeza intenso.`,
           nonPharmacologicalAdvice:
             'Reduzca la sal y camine treinta minutos al día.',
           patient,

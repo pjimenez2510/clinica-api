@@ -235,15 +235,21 @@ export function composePrescriptionLayout(
    * the detachable band. Demanded at the issue, so on an issued receta these
    * are never empty; a draft preview prints the gap with a dash.
    */
+  const phone = data.prescriber.contactPhone;
   const patientIndications: Block = {
+    // Side by side, in one row: one per row pushed an ordinary one-line receta
+    // onto a second sheet.
     kind: 'fields',
-    columns: 1,
+    columns: 2,
     entries: [
-      { label: 'Signos de alarma', value: data.warningSigns ?? '—' },
       {
-        // PR-040. Beside the warning signs, because it is who to call.
-        label: 'Teléfono del profesional',
-        value: data.prescriber.contactPhone ?? '—',
+        label: 'Signos de alarma',
+        // PR-040. IN the warning signs, because it is who to call when one
+        // appears.
+        value:
+          phone === null
+            ? (data.warningSigns ?? '—')
+            : `${data.warningSigns ?? '—'}\nSi aparece alguno, llame al ${phone}.`,
       },
       {
         label: 'Recomendaciones no farmacológicas',

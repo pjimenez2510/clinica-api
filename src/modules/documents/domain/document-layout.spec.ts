@@ -346,8 +346,7 @@ describe('PR-020 PR-038 PR-039 la receta impresa lleva su número y sus indicaci
     const layout = composeLayout(prescription(), context, template);
     const tearOff = textOf(layout.tearOff?.blocks ?? []);
 
-    expect(tearOff).toContain('Teléfono del profesional');
-    expect(tearOff).toContain('0991234567');
+    expect(tearOff).toContain('Si aparece alguno, llame al 0991234567.');
   });
 
   it('PR-038 PR-039 los signos de alarma y las recomendaciones van en la banda que se lleva el paciente', () => {
