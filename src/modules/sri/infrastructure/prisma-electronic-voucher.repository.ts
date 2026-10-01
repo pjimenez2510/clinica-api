@@ -632,13 +632,26 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
         has_response_body: boolean;
       }[]
     >`
-      SELECT DISTINCT ON ("voucher_id")
-             "voucher_id", "outcome", "started_at", "http_status", "fault_code",
-             "fault_string", "transport_error",
-             "response_body" IS NOT NULL AS "has_response_body"
-        FROM "electronic_voucher_attempt"
-       WHERE "voucher_id" IN (${Prisma.join(voucherIds.map((id) => Prisma.sql`${id}::uuid`))})
-       ORDER BY "voucher_id", "started_at" DESC, "id" DESC`;
+      SELECT v."id" AS "voucher_id", last."outcome", last."started_at",
+             last."http_status", last."fault_code", last."fault_string",
+             -- The one-line reason only when there is no fault string: it
+             -- repeats it whole, and 500 rows of a 6 KB trace twice is what
+             -- keeping the body out of the monitor was meant to avoid.
+             CASE WHEN last."fault_string" IS NULL THEN last."transport_error" END
+               AS "transport_error",
+             last."response_body" IS NOT NULL AS "has_response_body"
+        FROM "electronic_voucher" v
+        -- One row per voucher off the (voucher_id, started_at) index, not
+        -- every attempt of an append-only trail.
+        CROSS JOIN LATERAL (
+          SELECT a."outcome", a."started_at", a."http_status", a."fault_code",
+                 a."fault_string", a."transport_error", a."response_body"
+            FROM "electronic_voucher_attempt" a
+           WHERE a."voucher_id" = v."id"
+           ORDER BY a."started_at" DESC, a."id" DESC
+           LIMIT 1
+        ) last
+       WHERE v."id" IN (${Prisma.join(voucherIds.map((id) => Prisma.sql`${id}::uuid`))})`;
     return new Map(
       rows
         .filter((row) => row.outcome === 'TRANSPORT_FAILURE')
@@ -649,7 +662,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
             httpStatus: row.http_status,
             faultCode: row.fault_code,
             faultString: row.fault_string,
-            error: row.transport_error ?? '',
+            error: row.transport_error,
             hasResponseBody: row.has_response_body,
           },
         ]),

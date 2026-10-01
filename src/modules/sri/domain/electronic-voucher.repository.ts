@@ -122,15 +122,17 @@ export interface LastTransportFailure {
   httpStatus: number | null;
   faultCode: string | null;
   faultString: string | null;
-  error: string;
+  /** Why, in one line — only when there is no `faultString` to say it. */
+  error: string | null;
   hasResponseBody: boolean;
 }
 
 /** SRI-069. The same failure with its detail and its body. */
 export interface TransportFailureDetail extends Omit<
   LastTransportFailure,
-  'hasResponseBody'
+  'hasResponseBody' | 'error'
 > {
+  error: string;
   faultDetail: string | null;
   responseBody: string | null;
 }

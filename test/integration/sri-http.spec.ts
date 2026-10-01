@@ -506,7 +506,8 @@ describe('el comprobante electrónico por HTTP', () => {
         httpStatus: 500,
         faultCode: 'soap:Server',
         faultString: LONG_FAULT_STRING,
-        error: `HTTP 500 · soap:Server: ${LONG_FAULT_STRING}`,
+        // Not twice: the one-line reason would repeat the fault string.
+        error: null,
         hasResponseBody: true,
       });
       // The body does not travel with every refresh of the monitor.

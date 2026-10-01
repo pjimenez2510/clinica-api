@@ -92,7 +92,8 @@ const monitorRowSchema = z.object({
       httpStatus: z.number().int().nullable(),
       faultCode: z.string().nullable(),
       faultString: z.string().nullable(),
-      error: z.string(),
+      /** The failure in one line, only when there is no `faultString`. */
+      error: z.string().nullable(),
       hasResponseBody: z.boolean(),
     })
     .nullable(),
