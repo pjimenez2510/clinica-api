@@ -372,6 +372,25 @@ describe('SRI-020 a SRI-031 la firma', () => {
     expect(signer.sign).not.toHaveBeenCalled();
   });
 
+  it('SRI-028 con el certificado caducado o aún no vigente no firma, y lo deja dicho', async () => {
+    for (const validity of [
+      { notAfter: new Date(NOW.getTime() - DAY) },
+      { notBefore: new Date(NOW.getTime() + DAY) },
+    ]) {
+      const { preparation, certificates, signer, vouchers, queue } = fakes();
+      certificates.active.mockResolvedValue(certificate(validity));
+      const result = await preparation.sign(voucher());
+      expect(result.blockedReason).toBe('CERTIFICATE_NOT_VALID');
+      expect(vouchers.block).toHaveBeenCalledWith(
+        'voucher-1',
+        'CERTIFICATE_NOT_VALID',
+      );
+      expect(certificates.recordOpening).not.toHaveBeenCalled();
+      expect(signer.sign).not.toHaveBeenCalled();
+      expect(queue.schedule).not.toHaveBeenCalled();
+    }
+  });
+
   it('SRI-026 si la apertura no se puede registrar, no se descifra ni se firma', async () => {
     const { preparation, certificates, cipher, signer } = fakes();
     certificates.recordOpening.mockRejectedValue(new Error('audit down'));
@@ -423,7 +442,7 @@ describe('SRI-020 a SRI-031 la firma', () => {
       },
     ],
   ] as const)(
-    'SRI-017 SRI-028 a SRI-030 deja el comprobante sin firmar con el motivo %s, y no lo envía',
+    'SRI-017 SRI-028 SRI-029 SRI-030 deja el comprobante sin firmar con el motivo %s, y no lo envía',
     async (reason, arrange) => {
       const f = fakes();
       arrange(f);

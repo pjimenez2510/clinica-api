@@ -107,7 +107,7 @@ verificador con el algoritmo de la Ficha, validar el XML contra el XSD, e
 intentar por SQL directo cambiar la clave en `invoice` y en
 `electronic_voucher`: las dos se rechazan y la fila no se movió.
 
-**Cubre:** SRI-001 a SRI-018.
+**Cubre:** SRI-001 a SRI-019.
 **Solo servidor:** SRI-001 a SRI-018. Son la composición de la clave y del XML y
 las garantías de la base; la clave se ve en pantalla en S4 y S5.
 
