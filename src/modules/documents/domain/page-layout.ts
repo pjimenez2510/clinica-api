@@ -65,7 +65,24 @@ export interface TableColumn {
 export interface LabelledValue {
   label: string;
   value: string;
+  /** How many columns of a `fields` grid it takes. One when absent. */
+  span?: number;
+  /**
+   * DOC-085. Printed in the alert red: the allergies, and nothing a composer
+   * did not mark. Red everywhere is red nowhere.
+   */
+  alert?: boolean;
 }
+
+/**
+ * DOC-105. One row of a framed form section (the 117's blocks): cells side by
+ * side, a line of text across the whole width, or a table.
+ */
+export type SectionRow =
+  /** `width` is the cell's share of the row: the row's widths are summed. */
+  | { readonly kind: 'cells'; readonly cells: readonly (LabelledValue & { readonly width: number; readonly strong?: boolean })[] } // prettier-ignore
+  | { readonly kind: 'text'; readonly text: string }
+  | { readonly kind: 'table'; readonly columns: readonly TableColumn[]; readonly rows: readonly (readonly string[])[] }; // prettier-ignore
 
 /**
  * Which stored image a signature block should print, if there is one.
@@ -81,25 +98,63 @@ export type SignatureImageSlot = 'seal' | 'signature' | null;
 export type Block =
   | { readonly kind: 'heading'; readonly text: string }
   | { readonly kind: 'paragraph'; readonly text: string; readonly emphasis?: boolean } // prettier-ignore
-  | { readonly kind: 'fields'; readonly columns: 1 | 2 | 3; readonly entries: readonly LabelledValue[] } // prettier-ignore
+  /**
+   * `inline`: «Label: value» on one line, the label in bold — the RIDE's boxes
+   * (DOC-106). Otherwise the label sits small above its value.
+   */
+  | { readonly kind: 'fields'; readonly columns: 1 | 2 | 3 | 4; readonly entries: readonly LabelledValue[]; readonly inline?: boolean } // prettier-ignore
+  /**
+   * DOC-104. The general data of a document, on one grey band: city, date,
+   * validity; date, type, priority.
+   */
+  | { readonly kind: 'strip'; readonly entries: readonly LabelledValue[] }
   /**
    * `dense`: rows set close, as a list of figures rather than lines somebody
    * reads one by one — the RIDE's ten subtotals (DOC-076), which the approved
    * page fits beside the payment box on one sheet.
+   *
+   * `framed` (DOC-106): `grid` is the RIDE's detail —outer border, grey header,
+   * a rule between every cell—; `box` an outer border with rules between rows
+   * only. `headless` drops the header row; `emphasiseLast` sets the last row in
+   * bold on grey (VALOR TOTAL).
    */
-  | { readonly kind: 'table'; readonly columns: readonly TableColumn[]; readonly rows: readonly (readonly string[])[]; readonly dense?: boolean } // prettier-ignore
+  | { readonly kind: 'table'; readonly columns: readonly TableColumn[]; readonly rows: readonly (readonly string[])[]; readonly dense?: boolean; readonly framed?: 'grid' | 'box'; readonly headless?: boolean; readonly emphasiseLast?: boolean } // prettier-ignore
   | { readonly kind: 'spacer'; readonly millimetres: number }
   | { readonly kind: 'rule' }
   | { readonly kind: 'signature'; readonly caption: string; readonly image: SignatureImageSlot } // prettier-ignore
+  /** DOC-106. A document's own name inside its box: «FACTURA», in the accent. */
+  | { readonly kind: 'title'; readonly text: string }
+  /** DOC-106. A legal name heading a box: the issuer's razón social. */
+  | { readonly kind: 'name'; readonly text: string }
+  /** A small bold label standing alone: «CLAVE DE ACCESO» over its bars. */
+  | { readonly kind: 'caption'; readonly text: string }
   /**
-   * Two framed boxes side by side.
-   *
-   * It exists for the RIDE (DOC-076): the SRI's Anexo 2 puts the issuer's data
-   * and the voucher's identification in two boxes at the head of the page, and
-   * that is a geometry, not a flow. Generic rather than `rideHeader` because
-   * nothing about two boxes is specific to a tax document.
+   * DOC-059, DOC-106. The establishment's logo where a composer places it —
+   * the RIDE's, above the issuer. Nothing is drawn when there is none.
    */
-  | { readonly kind: 'boxes'; readonly left: readonly Block[]; readonly right: readonly Block[] } // prettier-ignore
+  | { readonly kind: 'logo' }
+  /**
+   * A framed group. `rounded` is the RIDE's box (DOC-106); `title` adds a grey
+   * title bar («Información adicional»); `light` frames with a light rule,
+   * for a note rather than a datum (the order's indications).
+   */
+  | { readonly kind: 'box'; readonly blocks: readonly Block[]; readonly rounded?: boolean; readonly title?: string; readonly light?: boolean } // prettier-ignore
+  /**
+   * Two columns side by side, starting at the same top.
+   *
+   * It exists for the RIDE (DOC-076, DOC-106): the SRI's Anexo 2 puts the
+   * issuer's data and the voucher's identification side by side, and that is a
+   * geometry, not a flow. A column that ENDS in a `box` has that box stretched
+   * to the bottom of the taller column, so the two boxes finish level.
+   * `leftShare` is the left column's share of the width; half when absent.
+   */
+  | { readonly kind: 'boxes'; readonly left: readonly Block[]; readonly right: readonly Block[]; readonly leftShare?: number } // prettier-ignore
+  /**
+   * DOC-105. One block of a form — the 117's A to E—: a framed box with a grey
+   * title bar and its data in cells. With `signature`, the box for the seal
+   * sits inside it, on the right, beside the rows.
+   */
+  | { readonly kind: 'section'; readonly title: string; readonly rows: readonly SectionRow[]; readonly signature?: { readonly caption: string; readonly image: SignatureImageSlot } } // prettier-ignore
   /**
    * DOC-078. A Code 128 barcode of `value` with the value printed under it.
    *

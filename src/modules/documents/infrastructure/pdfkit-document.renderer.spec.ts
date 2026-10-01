@@ -850,3 +850,101 @@ describe('DOC-085 la tinta y las etiquetas del marco aprobado', () => {
     expect(fills).not.toContain('0,0,0');
   });
 });
+
+/** Every content stream of the file, inflated: where the drawing operators are. */
+function contentOf(pdf: Buffer): string {
+  let streams = '';
+  for (const match of pdf
+    .toString('latin1')
+    .matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)) {
+    try {
+      streams += inflateSync(Buffer.from(match[1] ?? '', 'latin1')).toString(
+        'latin1',
+      );
+    } catch {
+      // Not a content stream (an embedded font, the ICC profile).
+    }
+  }
+  return streams;
+}
+
+describe('DOC-103 DOC-104 la cabecera y los títulos como la plantilla', () => {
+  let logo: StoredImage;
+
+  beforeAll(async () => {
+    const bytes = await sharp({
+      create: { width: 88, height: 64, channels: 3, background: '#0f6b5c' },
+    })
+      .png()
+      .toBuffer();
+    logo = {
+      id: 'logo',
+      mimeType: 'image/png',
+      bytes,
+      byteSize: bytes.byteLength,
+      sha256: 'b'.repeat(64),
+      width: 88,
+      height: 64,
+    };
+  });
+
+  it('DOC-103 el logo queda centrado verticalmente con el bloque del establecimiento', async () => {
+    // A header whose text is clearly taller than the logo's 17 mm.
+    const tall: DocumentLayout = {
+      ...layout,
+      frame: {
+        ...layout.frame,
+        hasLogo: true,
+        header: {
+          ...header,
+          hasLogo: true,
+          siteLine: 'Sede Norte · Unicódigo 012345',
+          establishmentAddress: 'Av. Amazonas N34-120 y Naciones Unidas, Quito',
+          establishmentPhone: '02-2456789',
+          establishmentEmail: 'contacto@clinica.example',
+          establishmentRuc: '1791234567001',
+          operatingPermit: 'ACESS-2026-0456',
+        },
+      },
+    };
+    const content = contentOf(
+      await renderer.render(
+        tall,
+        { logo, seal: null, signature: null },
+        metadata,
+      ),
+    );
+
+    const image = /([\d.]+) 0 0 (-[\d.]+) ([\d.]+) ([\d.]+) cm\n\/I\d+ Do/.exec(content); // prettier-ignore
+    const rule = /[\d.]+ ([\d.]+) m\n[\d.]+ [\d.]+ l\n1.5 w/.exec(content);
+    expect(image).not.toBeNull();
+    expect(rule).not.toBeNull();
+
+    const logoHeight = -Number(image?.[2]);
+    const logoTop = Number(image?.[4]) - logoHeight;
+    const headerTop = millimetresToPoints(15);
+    // The rule sits 3 mm under the tallest column of the header.
+    const headerBottom = Number(rule?.[1]) - millimetresToPoints(3);
+
+    expect(logoTop).toBeGreaterThan(headerTop + millimetresToPoints(1));
+    expect(
+      Math.abs(logoTop + logoHeight / 2 - (headerTop + headerBottom) / 2),
+    ).toBeLessThan(1.5);
+  });
+
+  it('DOC-104 DOC-085 los títulos de sección van en el color de acento', async () => {
+    const fills = [
+      ...contentOf(await renderer.render(layout, images, metadata)).matchAll(
+        /([\d.]+) ([\d.]+) ([\d.]+) scn/g,
+      ),
+    ].map((fill) =>
+      [fill[1], fill[2], fill[3]]
+        .map((channel) => Math.round(Number(channel) * 255))
+        .join(','),
+    );
+    // #1f6f8b is the accent of this layout: the title AND «Paciente».
+    expect(
+      fills.filter((fill) => fill === '31,111,139').length,
+    ).toBeGreaterThanOrEqual(2);
+  });
+});

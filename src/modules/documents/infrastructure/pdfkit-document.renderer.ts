@@ -16,7 +16,12 @@ import type {
   DocumentRenderer,
   LayoutImages,
 } from '../domain/document-rendering.port';
-import type { Block, DocumentLayout, TableColumn } from '../domain/page-layout';
+import type {
+  Block,
+  DocumentLayout,
+  LabelledValue,
+  TableColumn,
+} from '../domain/page-layout';
 
 /**
  * DOC-020 to DOC-025, DOC-070 to DOC-085. The layout, painted as PDF/A-1b in
@@ -72,6 +77,10 @@ const RULE_STRONG = '#b7c0bc';
 const RULE_LIGHT = '#dde3e0';
 const EMPTY_BOX = '#8a948f';
 const ALERT = '#8a2c1f';
+/** DOC-104. The band of general data. */
+const STRIP_FILL = '#f2f5f4';
+/** DOC-105, DOC-106. Title bars and table headers of the framed blocks. */
+const BAR_FILL = '#e6ecea';
 /** DOC-038. The sample mark: light enough to read the document through. */
 const WATERMARK = '#e1e6e4';
 
@@ -85,10 +94,14 @@ const mm = millimetresToPoints;
 const SIZE = {
   name: 15,
   title: 13.5,
+  /** DOC-106. The issuer's razón social in its box: the template's 15 px. */
+  boxName: 11.25,
   heading: 10.5,
   reference: 9.75,
   body: 9,
   label: 7.5,
+  /** DOC-105. The labels of a form's cells: the template's 9 px. */
+  cell: 6.75,
 } as const;
 const LINE_GAP = 1.5;
 
@@ -96,6 +109,10 @@ const LINE_GAP = 1.5;
 const HEADING_HEIGHT = mm(9);
 /** The signature box with its caption. */
 const SIGNATURE_HEIGHT = mm(26);
+/** DOC-057, DOC-060. The template's box for the seal: 210 × 70 px. */
+const SIGNATURE_BOX_MM = { width: 55, height: 18 } as const;
+/** The room between a block of fields and the seal beside it. */
+const SIGNATURE_GAP_MM = 5;
 
 /**
  * DOC-071, DOC-083. Reserved at the foot of every page: room for FOUR rows —
@@ -109,10 +126,16 @@ const BARCODE_HEIGHT_MM = 12;
 const QR_SIZE_MM = 13;
 /** DOC-059. The logo's box in the common header: the template's 88 × 64 px. */
 const LOGO_BOX_MM = { width: 23, height: 17 } as const;
-/** DOC-076. The RIDE's logo, above its boxes: the template's 84 px high. */
-const RIDE_LOGO_BOX_MM = { width: 60, height: 22 } as const;
+/** DOC-106. The RIDE's logo, above the issuer: the template's 84 px high. */
+const RIDE_LOGO_HEIGHT_MM = 22;
 /** DOC-080. The right-hand column: title, reference, CONFIDENCIAL. */
 const TITLE_COLUMN_MM = 62;
+/** DOC-106. The radius of the RIDE's boxes: the template's 6 px. */
+const BOX_RADIUS_MM = 1.6;
+/** DOC-104. The radius of the grey band: the template's 4 px. */
+const STRIP_RADIUS_MM = 1.1;
+/** The room left after a framed block, before whatever follows it. */
+const BLOCK_GAP_MM = 3;
 
 /**
  * The vertical position on the current page, shared by reference between the
@@ -122,8 +145,20 @@ interface Cursor {
   y: number;
 }
 
-/** Tall enough that measuring a pair of boxes never turns a page. */
+/**
+ * Makes room for `height` points; `true` when that took a new page. A table
+ * needs to know, to repeat its header and close its frame there.
+ */
+type Ensure = (height: number) => boolean;
+
+/** Inside a box nothing turns a page: the box was measured whole beforehand. */
+const NEVER_BREAKS: Ensure = () => false;
+
+/** Tall enough that measuring a block never turns a page. */
 const MEASURING_PAGE_HEIGHT = 100_000;
+
+/** A row of a `fields` grid: each entry with its first column and its span. */
+type FieldRow = { entry: LabelledValue; column: number; span: number }[];
 
 /**
  * The `DocumentRenderer` adapter. It paints what `composeLayout` decided and
@@ -192,6 +227,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     });
 
     const left = mm(PAGE_MARGIN_MM);
+    const accent = layout.frame.accentColour;
 
     // The first page is added by hand (`autoFirstPage: false`) so the fonts are
     // registered before anything can be written in one that cannot be embedded.
@@ -217,21 +253,22 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
       this.paintHeader(doc, layout, images, left, contentWidth, cursor);
     };
 
-    const ensure = (height: number): void => {
-      if (cursor.y + height <= bottomLimit) return;
+    const ensure: Ensure = (height) => {
+      if (cursor.y + height <= bottomLimit) return false;
       doc.addPage();
       startPage();
+      return true;
     };
 
     startPage();
 
-    for (const [index, block] of layout.blocks.entries()) {
+    for (let index = 0; index < layout.blocks.length; index += 1) {
       const group = this.signedGroupHeight(doc, layout.blocks, index, contentWidth); // prettier-ignore
       // Only a short group: a long one flows row by row, as any block does.
       if (group !== null && group < (bottomLimit - mm(PAGE_MARGIN_MM)) / 2) {
         ensure(group);
       }
-      this.paintBlock(doc, block, images, left, contentWidth, cursor, ensure);
+      index += this.paintBlockAt(doc, layout.blocks, index, images, left, contentWidth, cursor, ensure, accent); // prettier-ignore
     }
 
     // DOC-073. The band goes on the page the document ends on, at its fixed
@@ -284,6 +321,11 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
    * This is what `@media print` cannot promise: WebKit has never repeated
    * `<thead>` when printing — the bug has been open since 2008 — so a clinic on
    * Safari prints a broken receta and nobody finds out.
+   *
+   * DOC-103. THE THREE COLUMNS ARE CENTRED ON EACH OTHER, as the template's
+   * `align-items: center`: each one is measured first, the tallest sets the
+   * header's height, and the others are placed in its middle. Painting them
+   * from the same top left the logo stuck to the edge of a taller text block.
    */
   private paintHeader(
     doc: PDFKit.PDFDocument,
@@ -296,48 +338,22 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     const { frame } = layout;
     const header = frame.header;
 
-    if (header === null) {
-      // DOC-076, DOC-084. The RIDE has its own head (Anexo 2): only its logo
-      // is the frame's, above the boxes its composer draws.
-      if (frame.hasLogo && images.logo !== null) {
-        doc.image(images.logo.bytes, left, cursor.y, {
-          fit: [mm(RIDE_LOGO_BOX_MM.width), mm(RIDE_LOGO_BOX_MM.height)],
-        });
-        cursor.y += mm(RIDE_LOGO_BOX_MM.height) + mm(4);
-      }
-      return;
-    }
+    // DOC-076, DOC-084. The RIDE has its own head (Anexo 2), logo included:
+    // its composer places it, above the issuer's box (DOC-106).
+    if (header === null) return;
 
     const top = cursor.y;
     const titleWidth = mm(TITLE_COLUMN_MM);
     const titleLeft = left + width - titleWidth;
-    let textLeft = left;
-    let bottom = top;
 
     // DOC-059. No logo, nothing drawn: not an empty box on the paper.
-    if (header.hasLogo && images.logo !== null) {
-      doc.image(images.logo.bytes, left, top, {
-        fit: [mm(LOGO_BOX_MM.width), mm(LOGO_BOX_MM.height)],
-      });
-      textLeft = left + mm(LOGO_BOX_MM.width) + mm(4);
-      bottom = top + mm(LOGO_BOX_MM.height);
-    }
+    const logo =
+      header.hasLogo && images.logo !== null
+        ? { bytes: images.logo.bytes, ...this.fitted(images.logo, mm(LOGO_BOX_MM.width), mm(LOGO_BOX_MM.height)) } // prettier-ignore
+        : null;
+    const textLeft =
+      logo === null ? left : left + mm(LOGO_BOX_MM.width) + mm(4);
     const textWidth = titleLeft - mm(4) - textLeft;
-
-    doc
-      .font(SERIF_BOLD)
-      .fontSize(SIZE.name)
-      .fillColor(INK)
-      .text(header.establishmentName, textLeft, top, { width: textWidth });
-
-    // DOC-081. Only with several sites; the composer of the frame decided it.
-    if (header.siteLine !== null) {
-      doc
-        .font(SANS_SEMIBOLD)
-        .fontSize(SIZE.body)
-        .fillColor(frame.accentColour)
-        .text(header.siteLine, textLeft, doc.y + 1, { width: textWidth });
-    }
 
     const contact = [
       header.establishmentAddress,
@@ -353,55 +369,93 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         : `Permiso de funcionamiento ${header.operatingPermit}`,
       ...header.fields.map((field) => `${field.label}: ${field.value}`),
     ];
-    for (const line of [contact, registry]) {
-      const text = line
-        .filter((entry): entry is string => entry !== null && entry !== '')
-        .join(' · ');
-      if (text === '') continue;
-      doc
-        .font(SANS)
-        .fontSize(SIZE.body)
-        .fillColor(LABEL)
-        .text(text, textLeft, doc.y + 1, { width: textWidth });
-    }
-    bottom = Math.max(bottom, doc.y);
 
-    // ── the right-hand column: what this paper is ──
-    doc
-      .font(SERIF_BOLD)
-      .fontSize(SIZE.title)
-      .fillColor(frame.accentColour)
-      .text(frame.title, titleLeft, top, {
-        width: titleWidth,
-        align: 'right',
-        characterSpacing: 0.4,
+    /** One line of a column: its face, size, colour, and the room after it. */
+    type Line = {
+      text: string;
+      font: FontName;
+      size: number;
+      colour: string;
+      spacing?: number;
+      gap: number;
+    };
+    const establishment: Line[] = [
+      { text: header.establishmentName, font: SERIF_BOLD, size: SIZE.name, colour: INK, gap: 0 }, // prettier-ignore
+      // DOC-081. Only with several sites; the composer of the frame decided it.
+      ...(header.siteLine === null
+        ? []
+        : [{ text: header.siteLine, font: SANS_SEMIBOLD, size: SIZE.body, colour: frame.accentColour, gap: 1 }]), // prettier-ignore
+      ...[contact, registry]
+        .map((line) =>
+          line
+            .filter((entry): entry is string => entry !== null && entry !== '')
+            .join(' · '),
+        )
+        .filter((text) => text !== '')
+        .map((text) => ({ text, font: SANS, size: SIZE.body, colour: LABEL, gap: 1 })), // prettier-ignore
+    ];
+    const title: Line[] = [
+      { text: frame.title, font: SERIF_BOLD, size: SIZE.title, colour: frame.accentColour, spacing: 0.4, gap: 0 }, // prettier-ignore
+      ...(frame.reference === null
+        ? []
+        : [{ text: frame.reference, font: SANS_BOLD, size: SIZE.reference, colour: INK, gap: 2 }]), // prettier-ignore
+      // DOC-082. A.M. 5216-A art. 33: health information is confidential, and
+      // the legend says so on exactly the papers that carry a diagnosis.
+      ...(frame.confidential
+        ? [{ text: 'CONFIDENCIAL', font: SANS_BOLD, size: SIZE.label, colour: ALERT, spacing: 0.6, gap: 2 }] // prettier-ignore
+        : []),
+    ];
+
+    const heightOf = (lines: Line[], columnWidth: number): number =>
+      lines.reduce(
+        (total, line) =>
+          total +
+          line.gap +
+          doc
+            .font(line.font)
+            .fontSize(line.size)
+            .heightOfString(line.text, {
+              width: columnWidth,
+              characterSpacing: line.spacing ?? 0,
+            }),
+        0,
+      );
+    const paint = (
+      lines: Line[],
+      x: number,
+      y: number,
+      columnWidth: number,
+      align: 'left' | 'right',
+    ): void => {
+      let at = y;
+      for (const line of lines) {
+        doc
+          .font(line.font)
+          .fontSize(line.size)
+          .fillColor(line.colour)
+          .text(line.text, x, at + line.gap, {
+            width: columnWidth,
+            align,
+            characterSpacing: line.spacing ?? 0,
+          });
+        at = doc.y;
+      }
+    };
+
+    const textHeight = heightOf(establishment, textWidth);
+    const titleHeight = heightOf(title, titleWidth);
+    const height = Math.max(textHeight, titleHeight, logo?.height ?? 0);
+
+    if (logo !== null) {
+      doc.image(logo.bytes, left, top + (height - logo.height) / 2, {
+        width: logo.width,
+        height: logo.height,
       });
-    if (frame.reference !== null) {
-      doc
-        .font(SANS_BOLD)
-        .fontSize(SIZE.reference)
-        .fillColor(INK)
-        .text(frame.reference, titleLeft, doc.y + 2, {
-          width: titleWidth,
-          align: 'right',
-        });
     }
-    // DOC-082. A.M. 5216-A art. 33: health information is confidential, and
-    // the legend says so on exactly the papers that carry a diagnosis.
-    if (frame.confidential) {
-      doc
-        .font(SANS_BOLD)
-        .fontSize(SIZE.label)
-        .fillColor(ALERT)
-        .text('CONFIDENCIAL', titleLeft, doc.y + 2, {
-          width: titleWidth,
-          align: 'right',
-          characterSpacing: 0.6,
-        });
-    }
-    bottom = Math.max(bottom, doc.y);
+    paint(establishment, textLeft, top + (height - textHeight) / 2, textWidth, 'left'); // prettier-ignore
+    paint(title, titleLeft, top + (height - titleHeight) / 2, titleWidth, 'right'); // prettier-ignore
 
-    const ruleY = bottom + mm(3);
+    const ruleY = top + height + mm(3);
     doc
       .moveTo(left, ruleY)
       .lineTo(left + width, ruleY)
@@ -410,6 +464,16 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
       .stroke();
 
     cursor.y = ruleY + mm(5);
+  }
+
+  /** The size an image takes inside a box, keeping its proportions. */
+  private fitted(
+    image: { width: number; height: number },
+    boxWidth: number,
+    boxHeight: number,
+  ): { width: number; height: number } {
+    const scale = Math.min(boxWidth / image.width, boxHeight / image.height);
+    return { width: image.width * scale, height: image.height * scale };
   }
 
   // ── blocks ───────────────────────────────────────────────────────────────
@@ -432,16 +496,106 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
   ): number | null {
     const [first, second, third] = blocks.slice(index, index + 3);
     if (first?.kind === 'fields' && second?.kind === 'signature') {
-      return this.fieldsHeight(doc, first, width) + SIGNATURE_HEIGHT;
+      return this.signedFieldsHeight(doc, first, width);
     }
     if (
       first?.kind === 'heading' &&
       second?.kind === 'fields' &&
       third?.kind === 'signature'
     ) {
-      return HEADING_HEIGHT + this.fieldsHeight(doc, second, width) + SIGNATURE_HEIGHT; // prettier-ignore
+      return HEADING_HEIGHT + this.signedFieldsHeight(doc, second, width);
     }
     return null;
+  }
+
+  /** The fields beside their seal (the template's row), as one height. */
+  private signedFieldsHeight(
+    doc: PDFKit.PDFDocument,
+    fields: Extract<Block, { kind: 'fields' }>,
+    width: number,
+  ): number {
+    const beside = width - mm(SIGNATURE_BOX_MM.width) - mm(SIGNATURE_GAP_MM);
+    return Math.max(this.fieldsHeight(doc, fields, beside), SIGNATURE_HEIGHT);
+  }
+
+  /**
+   * Paints `blocks[index]` and returns how many FOLLOWING blocks it consumed.
+   *
+   * Fields followed by a signature are one row of the template: the data on
+   * the left, the box for the seal on the right, both standing on the same
+   * line (`align-items: flex-end`). One is returned for the signature.
+   */
+  private paintBlockAt(
+    doc: PDFKit.PDFDocument,
+    blocks: readonly Block[],
+    index: number,
+    images: LayoutImages,
+    left: number,
+    width: number,
+    cursor: Cursor,
+    ensure: Ensure,
+    accent: string,
+  ): number {
+    const block = blocks[index];
+    const next = blocks[index + 1];
+    if (block === undefined) return 0;
+    if (block.kind === 'fields' && next?.kind === 'signature') {
+      const height = this.signedFieldsHeight(doc, block, width);
+      ensure(height);
+      const top = cursor.y;
+      const beside = width - mm(SIGNATURE_BOX_MM.width) - mm(SIGNATURE_GAP_MM);
+      const fieldsHeight = this.fieldsHeight(doc, block, beside);
+      const fields: Cursor = { y: top + height - fieldsHeight };
+      this.paintBlock(doc, block, images, left, beside, fields, NEVER_BREAKS, accent); // prettier-ignore
+      const seal: Cursor = { y: top + height - SIGNATURE_HEIGHT };
+      this.paintBlock(doc, next, images, left, width, seal, NEVER_BREAKS, accent); // prettier-ignore
+      cursor.y = top + height;
+      return 1;
+    }
+    this.paintBlock(doc, block, images, left, width, cursor, ensure, accent);
+    return 0;
+  }
+
+  /** The rows of a `fields` grid: entries placed left to right, by span. */
+  private fieldRows(block: Extract<Block, { kind: 'fields' }>): FieldRow[] {
+    const rows: FieldRow[] = [];
+    let row: FieldRow = [];
+    let used = 0;
+    for (const entry of block.entries) {
+      const span = Math.min(entry.span ?? 1, block.columns);
+      if (used + span > block.columns) {
+        rows.push(row);
+        row = [];
+        used = 0;
+      }
+      row.push({ entry, column: used, span });
+      used += span;
+      if (used === block.columns) {
+        rows.push(row);
+        row = [];
+        used = 0;
+      }
+    }
+    if (row.length > 0) rows.push(row);
+    return rows;
+  }
+
+  /** The height of one entry of a `fields` grid in a cell `width` wide. */
+  private entryHeight(
+    doc: PDFKit.PDFDocument,
+    entry: LabelledValue,
+    width: number,
+    inline: boolean,
+  ): number {
+    if (inline) {
+      return doc
+        .font(SANS)
+        .fontSize(SIZE.body)
+        .heightOfString(`${entry.label}: ${entry.value}`, { width, lineGap: LINE_GAP }); // prettier-ignore
+    }
+    const label = doc.font(SANS_BOLD).fontSize(SIZE.label).heightOfString(entry.label, { width }); // prettier-ignore
+    const value = doc.font(SANS).fontSize(SIZE.body).heightOfString(entry.value, { width, lineGap: LINE_GAP }); // prettier-ignore
+    return label + value + 0.5;
   }
 
   /** What `paintBlock` advances for a `fields` block, measured before painting. */
@@ -450,19 +604,20 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     block: Extract<Block, { kind: 'fields' }>,
     width: number,
   ): number {
-    const inner = width / block.columns - mm(3);
-    let height = 0;
-    for (let from = 0; from < block.entries.length; from += block.columns) {
-      height +=
+    const columnWidth = width / block.columns;
+    const gap = block.inline === true ? mm(1) : mm(2.5);
+    return this.fieldRows(block).reduce(
+      (total, row) =>
+        total +
+        gap +
         Math.max(
-          ...block.entries.slice(from, from + block.columns).map((entry) => {
-            const label = doc.font(SANS_BOLD).fontSize(SIZE.label).heightOfString(entry.label, { width: inner }); // prettier-ignore
-            const value = doc.font(SANS).fontSize(SIZE.body).heightOfString(entry.value, { width: inner, lineGap: LINE_GAP }); // prettier-ignore
-            return label + value + 0.5;
-          }),
-        ) + mm(2.5);
-    }
-    return height;
+          ...row.map(
+            ({ entry, span }) =>
+            this.entryHeight(doc, entry, span * columnWidth - mm(3), block.inline === true), // prettier-ignore
+          ),
+        ),
+      0,
+    );
   }
 
   /**
@@ -477,8 +632,8 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     left: number,
     width: number,
     cursor: Cursor,
-    ensure: (height: number) => void,
-    accent = INK,
+    ensure: Ensure,
+    accent: string,
   ): void {
     switch (block.kind) {
       case 'spacer':
@@ -497,6 +652,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         return;
 
       case 'heading':
+        // DOC-085, DOC-104. Section titles in the accent, as the template.
         ensure(HEADING_HEIGHT);
         doc
           .font(SERIF_BOLD)
@@ -504,6 +660,33 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
           .fillColor(accent)
           .text(block.text, left, cursor.y, { width });
         cursor.y = doc.y + mm(1.5);
+        return;
+
+      case 'title':
+        doc
+          .font(SERIF_BOLD)
+          .fontSize(SIZE.title)
+          .fillColor(accent)
+          .text(block.text, left, cursor.y, { width, characterSpacing: 0.5 });
+        cursor.y = doc.y + mm(1.5);
+        return;
+
+      case 'name':
+        doc
+          .font(SERIF_BOLD)
+          .fontSize(SIZE.boxName)
+          .fillColor(INK)
+          .text(block.text, left, cursor.y, { width });
+        cursor.y = doc.y + mm(1.5);
+        return;
+
+      case 'caption':
+        doc
+          .font(SANS_BOLD)
+          .fontSize(SIZE.label)
+          .fillColor(LABEL)
+          .text(block.text, left, cursor.y, { width });
+        cursor.y = doc.y + mm(1);
         return;
 
       case 'paragraph':
@@ -518,100 +701,71 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
 
       case 'fields': {
         const columnWidth = width / block.columns;
-        let column = 0;
-        let rowTop = cursor.y;
-        let rowBottom = cursor.y;
-
-        /** The height a row of entries will take, measured before painting. */
-        const rowHeight = (from: number): number =>
-          Math.max(
-            ...block.entries.slice(from, from + block.columns).map((entry) => {
-              const inner = columnWidth - mm(3);
-              const label = doc.font(SANS_BOLD).fontSize(SIZE.label).heightOfString(entry.label, { width: inner }); // prettier-ignore
-              const value = doc.font(SANS).fontSize(SIZE.body).heightOfString(entry.value, { width: inner, lineGap: LINE_GAP }); // prettier-ignore
-              return label + value + 0.5;
-            }),
+        const inline = block.inline === true;
+        const gap = inline ? mm(1) : mm(2.5);
+        for (const row of this.fieldRows(block)) {
+          // A row moves WHOLE to the next page: an indication split across
+          // two sheets is one somebody reads half of.
+          const rowHeight = Math.max(
+            ...row.map(({ entry, span }) =>
+              this.entryHeight(doc, entry, span * columnWidth - mm(3), inline),
+            ),
           );
-
-        for (const [index, entry] of block.entries.entries()) {
-          if (column === 0) {
-            // A row moves WHOLE to the next page: an indication split across
-            // two sheets is one somebody reads half of.
-            ensure(rowHeight(index) + mm(1));
-            rowTop = cursor.y;
-            rowBottom = cursor.y;
+          ensure(rowHeight + mm(1));
+          const rowTop = cursor.y;
+          for (const { entry, column, span } of row) {
+            const x = left + column * columnWidth;
+            const cellWidth = span * columnWidth - mm(3);
+            const colour = entry.alert === true ? ALERT : INK;
+            if (inline) {
+              doc
+                .font(SANS_BOLD)
+                .fontSize(SIZE.body)
+                .fillColor(INK)
+                .text(`${entry.label}: `, x, rowTop, {
+                  width: cellWidth,
+                  lineGap: LINE_GAP,
+                  continued: true,
+                })
+                .font(entry.alert === true ? SANS_SEMIBOLD : SANS)
+                .fillColor(colour)
+                .text(entry.value);
+              continue;
+            }
+            doc
+              .font(SANS_BOLD)
+              .fontSize(SIZE.label)
+              .fillColor(LABEL)
+              .text(entry.label, x, rowTop, { width: cellWidth });
+            doc
+              .font(entry.alert === true ? SANS_SEMIBOLD : SANS)
+              .fontSize(SIZE.body)
+              .fillColor(colour)
+              .text(entry.value, x, doc.y + 0.5, {
+                width: cellWidth,
+                lineGap: LINE_GAP,
+              });
           }
-          const x = left + column * columnWidth;
-          doc
-            .font(SANS_BOLD)
-            .fontSize(SIZE.label)
-            .fillColor(LABEL)
-            .text(entry.label, x, rowTop, { width: columnWidth - mm(3) });
-          doc
-            .font(SANS)
-            .fontSize(SIZE.body)
-            .fillColor(INK)
-            .text(entry.value, x, doc.y + 0.5, {
-              width: columnWidth - mm(3),
-              lineGap: LINE_GAP,
-            });
-          rowBottom = Math.max(rowBottom, doc.y);
-
-          column += 1;
-          if (column === block.columns) {
-            column = 0;
-            cursor.y = rowBottom + mm(2.5);
-          }
+          cursor.y = rowTop + rowHeight + gap;
         }
-        if (column !== 0) cursor.y = rowBottom + mm(2.5);
         return;
       }
 
+      case 'strip':
+        this.paintStrip(doc, block, left, width, cursor, ensure);
+        return;
+
       case 'table':
-        this.paintTable(doc, block.columns, block.rows, left, width, cursor, ensure, block.dense === true); // prettier-ignore
+        this.paintTable(doc, block, left, width, cursor, ensure);
         return;
 
       case 'signature': {
         ensure(SIGNATURE_HEIGHT);
         // DOC-057, DOC-060. The template's box on the right: where a hand signs.
-        const boxWidth = mm(55);
-        const boxHeight = mm(18);
+        const boxWidth = mm(SIGNATURE_BOX_MM.width);
+        const boxHeight = mm(SIGNATURE_BOX_MM.height);
         const boxLeft = left + width - boxWidth;
-        const chosen =
-          block.image === 'seal'
-            ? images.seal
-            : block.image === 'signature'
-              ? images.signature
-              : null;
-
-        if (chosen !== null) {
-          doc.image(chosen.bytes, boxLeft, cursor.y, {
-            fit: [boxWidth, boxHeight],
-            align: 'center',
-            valign: 'center',
-          });
-        } else {
-          // DOC-060. A LABELLED EMPTY BOX, never a drawn seal. The system
-          // cannot manufacture one, and art. 5.d.iii is textual: «no se
-          // aceptarán rúbricas o trazos por firma». An empty box is a document
-          // missing a seal; a squiggle would be a forged one.
-          doc
-            .rect(boxLeft, cursor.y, boxWidth, boxHeight)
-            .lineWidth(0.75)
-            .strokeColor(EMPTY_BOX)
-            .dash(2, { space: 2 })
-            .stroke()
-            .undash();
-        }
-
-        doc
-          .font(SANS)
-          .fontSize(SIZE.label)
-          .fillColor(LABEL)
-          .text(block.caption, boxLeft, cursor.y + boxHeight + mm(1), {
-            width: boxWidth,
-            align: 'center',
-          });
+        this.paintSealBox(doc, block, images, boxLeft, cursor.y, boxWidth, boxHeight); // prettier-ignore
         cursor.y = doc.y + mm(3);
         return;
       }
@@ -629,71 +783,99 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         return;
       }
 
-      case 'boxes': {
-        // DOC-076. The SRI's Anexo 2 puts the issuer and the voucher side by
-        // side. Both boxes are painted from the same top, and the cursor moves
-        // to the taller of the two.
-        //
-        // A FRAMED BOX IS NOT SPLIT ACROSS PAGES, so it is measured first —
-        // painted on a throwaway document with the same fonts and widths —
-        // and moved to the next page whole when it does not fit. Without
-        // that, the RIDE's totals ran over the footer as soon as the detail
-        // had a few lines.
-        ensure(this.boxesHeight(block, images, width) + mm(4));
-        cursor.y = this.paintBoxes(doc, block, images, left, width, cursor.y);
+      case 'logo': {
+        // DOC-059. No logo, nothing: the RIDE's issuer box simply starts higher.
+        if (images.logo === null) return;
+        const size = this.fitted(images.logo, width, mm(RIDE_LOGO_HEIGHT_MM)); // prettier-ignore
+        doc.image(images.logo.bytes, left, cursor.y + (mm(RIDE_LOGO_HEIGHT_MM) - size.height) / 2, size); // prettier-ignore
+        cursor.y += mm(RIDE_LOGO_HEIGHT_MM) + mm(2.5);
+        return;
+      }
+
+      /**
+       * A FRAMED BLOCK IS NOT SPLIT ACROSS PAGES, so it is measured first —
+       * painted on a throwaway document with the same fonts and widths — and
+       * moved to the next page whole when it does not fit. Without that, the
+       * RIDE's totals ran over the footer as soon as the detail had a few
+       * lines.
+       */
+      case 'box':
+      case 'boxes':
+      case 'section': {
+        ensure(this.measure((scratch) => this.paintFramed(scratch, block, images, 0, width, 0, accent)) + mm(BLOCK_GAP_MM)); // prettier-ignore
+        cursor.y = this.paintFramed(doc, block, images, left, width, cursor.y, accent) + mm(BLOCK_GAP_MM); // prettier-ignore
         return;
       }
     }
   }
 
-  /** The two boxes of a `boxes` block, from `top`; returns the cursor after them. */
-  private paintBoxes(
+  /** The seal, or the labelled empty box where it goes, with its caption. */
+  private paintSealBox(
     doc: PDFKit.PDFDocument,
-    block: Extract<Block, { kind: 'boxes' }>,
+    block: { caption: string; image: Extract<Block, { kind: 'signature' }>['image'] }, // prettier-ignore
+    images: LayoutImages,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    captionSize: number = SIZE.label,
+  ): void {
+    const chosen =
+      block.image === 'seal'
+        ? images.seal
+        : block.image === 'signature'
+          ? images.signature
+          : null;
+
+    if (chosen !== null) {
+      doc.image(chosen.bytes, x, y, {
+        fit: [width, height],
+        align: 'center',
+        valign: 'center',
+      });
+    } else {
+      // DOC-060. A LABELLED EMPTY BOX, never a drawn seal. The system cannot
+      // manufacture one, and art. 5.d.iii is textual: «no se aceptarán
+      // rúbricas o trazos por firma». An empty box is a document missing a
+      // seal; a squiggle would be a forged one.
+      doc
+        .rect(x, y, width, height)
+        .lineWidth(0.75)
+        .strokeColor(EMPTY_BOX)
+        .dash(2, { space: 2 })
+        .stroke()
+        .undash();
+    }
+
+    doc
+      .font(SANS)
+      .fontSize(captionSize)
+      .fillColor(LABEL)
+      .text(block.caption, x, y + height + mm(1), { width, align: 'center' });
+  }
+
+  /** Paints a framed block from `top`; returns where it ends. */
+  private paintFramed(
+    doc: PDFKit.PDFDocument,
+    block: Extract<Block, { kind: 'box' | 'boxes' | 'section' }>,
     images: LayoutImages,
     left: number,
     width: number,
     top: number,
+    accent: string,
   ): number {
-    const gap = mm(4);
-    const half = (width - gap) / 2;
-
-    const paintColumn = (blocks: readonly Block[], x: number): number => {
-      const inner: Cursor = { y: top + mm(3) };
-      for (const child of blocks) {
-        this.paintBlock(
-          doc,
-          child,
-          images,
-          x + mm(3),
-          half - mm(6),
-          inner,
-          () => undefined,
-        );
-      }
-      return inner.y;
-    };
-
-    const leftBottom = paintColumn(block.left, left);
-    const rightBottom = paintColumn(block.right, left + half + gap);
-    const bottom = Math.max(leftBottom, rightBottom) + mm(2);
-
-    doc
-      .rect(left, top, half, bottom - top)
-      .rect(left + half + gap, top, half, bottom - top)
-      .lineWidth(0.75)
-      .strokeColor(INK)
-      .stroke();
-
-    return bottom + mm(4);
+    switch (block.kind) {
+      case 'box':
+        return this.paintBox(doc, block, images, left, width, top, accent);
+      case 'boxes':
+        return this.paintColumns(doc, block, images, left, width, top, accent);
+      case 'section':
+        return this.paintSection(doc, block, images, left, width, top);
+    }
   }
 
-  /** How tall a `boxes` block will be: painted once where nobody sees it. */
-  private boxesHeight(
-    block: Extract<Block, { kind: 'boxes' }>,
-    images: LayoutImages,
-    width: number,
-  ): number {
+  /** How tall something is: painted once where nobody sees it. */
+  private measure(paint: (scratch: PDFKit.PDFDocument) => number): number {
     const scratch = new PDFDocument({
       size: [mm(PAGE_WIDTH_MM), MEASURING_PAGE_HEIGHT],
       margin: 0,
@@ -703,50 +885,412 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
       scratch.registerFont(name, FONTS[name]);
     }
     scratch.addPage();
-    const bottom = this.paintBoxes(scratch, block, images, 0, width, 0);
+    const bottom = paint(scratch);
     scratch.end();
-    return bottom - mm(4);
+    return bottom;
+  }
+
+  /**
+   * A framed group: rounded for the RIDE (DOC-106), with a grey title bar when
+   * it has a title. Its content is painted first and the frame drawn round it,
+   * down to `stretchTo` when the box has to finish level with its neighbour.
+   */
+  private paintBox(
+    doc: PDFKit.PDFDocument,
+    block: Extract<Block, { kind: 'box' }>,
+    images: LayoutImages,
+    left: number,
+    width: number,
+    top: number,
+    accent: string,
+    stretchTo = 0,
+  ): number {
+    const padX = mm(3);
+    let y = top;
+    if (block.title !== undefined) {
+      const barHeight = SIZE.label + mm(2.6);
+      doc.rect(left, top, width, barHeight).fillColor(BAR_FILL).fill();
+      doc
+        .font(SANS_BOLD)
+        .fontSize(SIZE.label)
+        .fillColor(INK)
+        .text(block.title, left + mm(2.1), top + mm(1.3), {
+          width: width - mm(4.2),
+        });
+      y = top + barHeight;
+      doc
+        .moveTo(left, y)
+        .lineTo(left + width, y)
+        .lineWidth(0.75)
+        .strokeColor(RULE_STRONG)
+        .stroke();
+    }
+
+    const inner: Cursor = { y: y + mm(2.4) };
+    for (let index = 0; index < block.blocks.length; index += 1) {
+      index += this.paintBlockAt(doc, block.blocks, index, images, left + padX, width - 2 * padX, inner, NEVER_BREAKS, accent); // prettier-ignore
+    }
+    // The blocks leave their own gap under them; the frame closes just below.
+    const bottom = Math.max(inner.y, stretchTo);
+
+    const frame =
+      block.rounded === true
+        ? doc.roundedRect(left, top, width, bottom - top, mm(BOX_RADIUS_MM))
+        : doc.rect(left, top, width, bottom - top);
+    frame
+      .lineWidth(0.75)
+      .strokeColor(block.light === true ? RULE_STRONG : INK)
+      .stroke();
+    return bottom;
+  }
+
+  /**
+   * DOC-076, DOC-106. Two columns from the same top. A column that ends in a
+   * box has it stretched to the taller column's bottom, so the issuer's box
+   * and the voucher's finish level, as on the approved page.
+   */
+  private paintColumns(
+    doc: PDFKit.PDFDocument,
+    block: Extract<Block, { kind: 'boxes' }>,
+    images: LayoutImages,
+    left: number,
+    width: number,
+    top: number,
+    accent: string,
+  ): number {
+    const gap = mm(4);
+    const leftWidth = (width - gap) * (block.leftShare ?? 0.5);
+    const rightWidth = width - gap - leftWidth;
+
+    const paintColumn = (
+      target: PDFKit.PDFDocument,
+      blocks: readonly Block[],
+      x: number,
+      columnWidth: number,
+      stretchTo: number,
+    ): number => {
+      const inner: Cursor = { y: top };
+      let bottom = top;
+      for (let index = 0; index < blocks.length; index += 1) {
+        const child = blocks[index];
+        if (child?.kind === 'box') {
+          const last = index === blocks.length - 1;
+          bottom = this.paintBox(target, child, images, x, columnWidth, inner.y, accent, last ? stretchTo : 0); // prettier-ignore
+          inner.y = bottom + mm(BLOCK_GAP_MM);
+          continue;
+        }
+        index += this.paintBlockAt(target, blocks, index, images, x, columnWidth, inner, NEVER_BREAKS, accent); // prettier-ignore
+        bottom = inner.y;
+      }
+      return bottom;
+    };
+
+    const natural = (blocks: readonly Block[], columnWidth: number): number =>
+      this.measure((scratch) =>
+        paintColumn(scratch, blocks, 0, columnWidth, 0),
+      );
+    const bottom = Math.max(
+      natural(block.left, leftWidth),
+      natural(block.right, rightWidth),
+    );
+
+    paintColumn(doc, block.left, left, leftWidth, bottom);
+    paintColumn(doc, block.right, left + leftWidth + gap, rightWidth, bottom);
+    return bottom;
+  }
+
+  /**
+   * DOC-105. One block of the 117: a framed box, a grey title bar, and its
+   * data in cells divided by fine rules; the seal, when it has one, inside it
+   * on the right. Titles in capitals, as the form prints them.
+   */
+  private paintSection(
+    doc: PDFKit.PDFDocument,
+    block: Extract<Block, { kind: 'section' }>,
+    images: LayoutImages,
+    left: number,
+    width: number,
+    top: number,
+  ): number {
+    const padX = mm(2.1);
+    const padY = mm(1.3);
+    const signatureWidth = block.signature === undefined ? 0 : mm(53);
+    const rowsWidth = width - signatureWidth;
+
+    const barHeight = SIZE.label + 2 * mm(1.1);
+    doc.rect(left, top, width, barHeight).fillColor(BAR_FILL).fill();
+    doc
+      .font(SANS_BOLD)
+      .fontSize(SIZE.label)
+      .fillColor(INK)
+      .text(block.title.toUpperCase(), left + padX, top + mm(1.1), {
+        width: width - 2 * padX,
+        characterSpacing: 0.3,
+      });
+    let y = top + barHeight;
+    const bodyTop = y;
+
+    const hairline = (x1: number, y1: number, x2: number, y2: number): void => {
+      doc.moveTo(x1, y1).lineTo(x2, y2).lineWidth(0.5).strokeColor(RULE_STRONG).stroke(); // prettier-ignore
+    };
+
+    block.rows.forEach((row, index) => {
+      if (index > 0) hairline(left, y, left + rowsWidth, y);
+      switch (row.kind) {
+        case 'cells': {
+          const total = row.cells.reduce((sum, cell) => sum + cell.width, 0);
+          const widths = row.cells.map((cell) => (cell.width / total) * rowsWidth); // prettier-ignore
+          const heights = row.cells.map((cell, at) => {
+            const inner = (widths[at] ?? 0) - 2 * padX;
+            return (
+              doc.font(SANS_BOLD).fontSize(SIZE.cell).heightOfString(cell.label, { width: inner }) + // prettier-ignore
+              doc.font(cell.strong === true ? SANS_BOLD : SANS).fontSize(SIZE.body).heightOfString(cell.value, { width: inner }) // prettier-ignore
+            );
+          });
+          const height = Math.max(...heights) + 2 * padY;
+          let x = left;
+          row.cells.forEach((cell, at) => {
+            const cellWidth = widths[at] ?? 0;
+            doc
+              .font(SANS_BOLD)
+              .fontSize(SIZE.cell)
+              .fillColor(LABEL)
+              .text(cell.label, x + padX, y + padY, { width: cellWidth - 2 * padX }); // prettier-ignore
+            doc
+              .font(cell.strong === true ? SANS_BOLD : SANS)
+              .fontSize(SIZE.body)
+              .fillColor(cell.alert === true ? ALERT : INK)
+              .text(cell.value, x + padX, doc.y, { width: cellWidth - 2 * padX }); // prettier-ignore
+            x += cellWidth;
+            if (at < row.cells.length - 1) hairline(x, y, x, y + height);
+          });
+          y += height;
+          return;
+        }
+        case 'text': {
+          doc
+            .font(SANS)
+            .fontSize(SIZE.label + 0.75)
+            .fillColor(INK)
+            .text(row.text, left + padX, y + padY, { width: rowsWidth - 2 * padX }); // prettier-ignore
+          y = doc.y + padY;
+          return;
+        }
+        case 'table': {
+          const widths = row.columns.map((column) => column.width * rowsWidth);
+          const cells = (
+            texts: readonly string[],
+            font: FontName,
+            size: number,
+            colour: string,
+          ): number => {
+            // prettier-ignore
+            let x = left;
+            let bottom = y;
+            texts.forEach((text, at) => {
+              const column = row.columns[at];
+              doc
+                .font(font)
+                .fontSize(size)
+                .fillColor(colour)
+                .text(text, x + padX, y + padY, {
+                  width: (widths[at] ?? 0) - 2 * padX,
+                  align: column?.align === 'right' ? 'right' : column?.align === 'centre' ? 'center' : 'left', // prettier-ignore
+                });
+              bottom = Math.max(bottom, doc.y);
+              x += widths[at] ?? 0;
+            });
+            return bottom + padY;
+          };
+          y = cells(row.columns.map((column) => column.header), SANS_BOLD, SIZE.cell, LABEL); // prettier-ignore
+          hairline(left, y, left + rowsWidth, y);
+          for (const values of row.rows) {
+            y = cells(values, SANS, SIZE.body, INK);
+          }
+          return;
+        }
+      }
+    });
+
+    let bottom = y;
+    if (block.signature !== undefined) {
+      const x = left + rowsWidth;
+      const boxHeight = mm(20);
+      this.paintSealBox(doc, block.signature, images, x + mm(2.1), bodyTop + mm(1.6), signatureWidth - mm(4.2), boxHeight, SIZE.cell); // prettier-ignore
+      bottom = Math.max(bottom, doc.y + mm(1.6));
+      hairline(x, bodyTop, x, bottom);
+    }
+
+    doc
+      .moveTo(left, bodyTop)
+      .lineTo(left + width, bodyTop)
+      .lineWidth(0.75)
+      .strokeColor(INK)
+      .stroke();
+    doc.rect(left, top, width, bottom - top).lineWidth(0.75).strokeColor(INK).stroke(); // prettier-ignore
+    return bottom;
+  }
+
+  /**
+   * DOC-104. The general data on one grey band, in one row: labels in
+   * spaced capitals, the value under each.
+   */
+  private paintStrip(
+    doc: PDFKit.PDFDocument,
+    block: Extract<Block, { kind: 'strip' }>,
+    left: number,
+    width: number,
+    cursor: Cursor,
+    ensure: Ensure,
+  ): void {
+    const padX = mm(3.2);
+    const padY = mm(2.6);
+    const gap = mm(3.2);
+    const count = Math.max(block.entries.length, 1);
+    const columnWidth = (width - 2 * padX - (count - 1) * gap) / count;
+    const labelOptions = { width: columnWidth, characterSpacing: 0.45 };
+
+    const height =
+      Math.max(
+        ...block.entries.map(
+          (entry) =>
+            doc.font(SANS_BOLD).fontSize(SIZE.label).heightOfString(entry.label.toUpperCase(), labelOptions) + // prettier-ignore
+            doc
+              .font(SANS)
+              .fontSize(SIZE.body)
+              .heightOfString(entry.value, { width: columnWidth }) + // prettier-ignore
+            1,
+        ),
+      ) +
+      2 * padY;
+
+    ensure(height + mm(4));
+    const top = cursor.y;
+    doc
+      .roundedRect(left, top, width, height, mm(STRIP_RADIUS_MM))
+      .fillColor(STRIP_FILL)
+      .fill();
+    block.entries.forEach((entry, index) => {
+      const x = left + padX + index * (columnWidth + gap);
+      doc
+        .font(SANS_BOLD)
+        .fontSize(SIZE.label)
+        .fillColor(LABEL)
+        .text(entry.label.toUpperCase(), x, top + padY, labelOptions);
+      doc
+        .font(SANS)
+        .fontSize(SIZE.body)
+        .fillColor(INK)
+        .text(entry.value, x, doc.y + 1, { width: columnWidth });
+    });
+    cursor.y = top + height + mm(4);
   }
 
   /**
    * DOC-085. A table whose column widths are fractions of the text width, with
    * a header row and 1 px rules. Rows are measured before painting and moved
    * to the next page whole.
+   *
+   * DOC-106. FRAMED, it is the RIDE's: an outer border, a grey header and —
+   * `grid`— a rule between every cell. A framed table that turns a page
+   * repeats its header there, and each page's part of it is closed.
    */
   private paintTable(
     doc: PDFKit.PDFDocument,
-    columns: readonly TableColumn[],
-    rows: readonly (readonly string[])[],
+    block: Extract<Block, { kind: 'table' }>,
     left: number,
     width: number,
     cursor: Cursor,
-    ensure: (height: number) => void,
-    dense = false,
+    ensure: Ensure,
   ): void {
+    const { columns, rows } = block;
+    const dense = block.dense === true;
+    const framed = block.framed;
     const widths = columns.map((column) => column.width * width);
     /** Space above and below a row's text, and the least a row measures. */
-    const pad = dense ? mm(0.6) : mm(1.5);
-    const minimumRow = dense ? 0 : mm(4.5);
-    const align = (column: TableColumn): 'left' | 'right' | 'center' =>
-      column.align === 'right'
+    const pad = framed !== undefined ? (dense ? mm(1) : mm(1.3)) : dense ? mm(0.6) : mm(1.5); // prettier-ignore
+    const minimumRow = dense || framed !== undefined ? 0 : mm(4.5);
+    /** Framed cells keep their text off the rules, on both sides. */
+    const inset = framed === undefined ? 0 : mm(1.6);
+    const textWidth = (index: number): number =>
+      framed === undefined ? widthAt(index) - mm(1.5) : widthAt(index) - 2 * inset; // prettier-ignore
+    const align = (
+      column: TableColumn | undefined,
+    ): 'left' | 'right' | 'center' =>
+      column?.align === 'right'
         ? 'right'
-        : column.align === 'centre'
+        : column?.align === 'centre'
           ? 'center'
           : 'left';
 
     /** `noUncheckedIndexedAccess` is on, and the two arrays are the same length. */
     const widthAt = (index: number): number => widths[index] ?? 0;
 
-    const rule = (y: number, colour: string): void => {
+    const rule = (y: number, colour: string, lineWidth = 0.75): void => {
       doc
         .moveTo(left, y)
         .lineTo(left + width, y)
-        .lineWidth(0.75)
+        .lineWidth(lineWidth)
         .strokeColor(colour)
         .stroke();
     };
 
+    /** The sides of a framed row and, in a grid, the rules between its cells. */
+    const sides = (top: number, bottom: number): void => {
+      if (framed === undefined) return;
+      if (framed === 'grid') {
+        let x = left;
+        widths.slice(0, -1).forEach((each) => {
+          x += each;
+          doc.moveTo(x, top).lineTo(x, bottom).lineWidth(0.5).strokeColor(RULE_STRONG).stroke(); // prettier-ignore
+        });
+      }
+      doc.moveTo(left, top).lineTo(left, bottom).moveTo(left + width, top).lineTo(left + width, bottom) // prettier-ignore
+        .lineWidth(0.75).strokeColor(INK).stroke(); // prettier-ignore
+    };
+
+    const paintRow = (
+      cells: readonly string[],
+      font: FontName,
+      size: number,
+      colour: string,
+      fill: string | null,
+      height: number,
+    ): void => {
+      const top = cursor.y;
+      if (fill !== null)
+        doc.rect(left, top, width, height).fillColor(fill).fill();
+      let x = left;
+      doc.font(font).fontSize(size).fillColor(colour);
+      cells.forEach((cell, index) => {
+        doc.text(cell, x + inset, top + (framed === undefined ? 0 : pad), {
+          width: textWidth(index),
+          align: align(columns[index]),
+        });
+        x += widthAt(index);
+      });
+      sides(top, top + height);
+    };
+
+    const headerHeight = (): number =>
+      Math.max(
+        ...columns.map(
+          (column, index) =>
+          doc.font(SANS_BOLD).fontSize(SIZE.label).heightOfString(column.header, { width: textWidth(index) }), // prettier-ignore
+        ),
+      ) +
+      2 * mm(1.3);
+
     const paintHeaderRow = (): void => {
+      if (framed !== undefined) {
+        rule(cursor.y, INK);
+        if (block.headless === true) return;
+        const height = headerHeight();
+        paintRow(columns.map((c) => c.header), SANS_BOLD, SIZE.label, INK, BAR_FILL, height); // prettier-ignore
+        cursor.y += height;
+        rule(cursor.y, RULE_STRONG, 0.5);
+        return;
+      }
       rule(cursor.y, INK);
       cursor.y += mm(1.5);
       let x = left;
@@ -766,37 +1310,48 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     ensure(mm(14));
     paintHeaderRow();
 
-    for (const row of rows) {
+    rows.forEach((row, rowIndex) => {
+      const emphasised = block.emphasiseLast === true && rowIndex === rows.length - 1; // prettier-ignore
+      const font = emphasised ? SANS_BOLD : SANS;
       // Measure first: a row that does not fit moves whole, so no line of a
       // prescription is ever split across two pages.
-      const heights = row.map((cell, index) =>
-        doc
-          .font(SANS)
-          .fontSize(SIZE.body)
-          .heightOfString(cell, { width: widthAt(index) - mm(1.5) }),
+      const heights = row.map(
+        (cell, index) =>
+        doc.font(font).fontSize(SIZE.body).heightOfString(cell, { width: textWidth(index) }), // prettier-ignore
       );
-      const rowHeight = Math.max(...heights, minimumRow);
+      const textHeight = Math.max(...heights, minimumRow);
+
+      if (framed !== undefined) {
+        const height = textHeight + 2 * (emphasised ? pad * 1.5 : pad);
+        // A row that does not fit moves WHOLE, and the table goes on under
+        // its header again: a page of figures with no column names is a page
+        // somebody reads wrong.
+        if (ensure(height)) paintHeaderRow();
+        paintRow(
+          row,
+          font,
+          SIZE.body,
+          INK,
+          emphasised ? BAR_FILL : null,
+          height,
+        );
+        cursor.y += height;
+        const last = rowIndex === rows.length - 1;
+        if (!last) rule(cursor.y, framed === 'grid' ? RULE_STRONG : RULE_LIGHT, 0.5); // prettier-ignore
+        return;
+      }
 
       // A row that does not fit moves WHOLE to the next page: half a
       // prescription line across a page break is a line somebody misreads.
-      ensure(rowHeight + 2 * pad);
-
-      let x = left;
-      doc.font(SANS).fontSize(SIZE.body).fillColor(INK);
-      row.forEach((cell, index) => {
-        const column = columns[index];
-        doc.text(cell, x, cursor.y, {
-          width: widthAt(index) - mm(1.5),
-          align: column === undefined ? 'left' : align(column),
-        });
-        x += widthAt(index);
-      });
-      cursor.y += rowHeight + pad;
+      ensure(textHeight + 2 * pad);
+      paintRow(row, font, SIZE.body, INK, null, textHeight);
+      cursor.y += textHeight + pad;
       rule(cursor.y, RULE_LIGHT);
       cursor.y += pad;
-    }
+    });
 
-    cursor.y += mm(2);
+    if (framed !== undefined) rule(cursor.y, INK);
+    cursor.y += mm(framed === undefined ? 2 : BLOCK_GAP_MM);
   }
 
   // ── tear-off band and footers ────────────────────────────────────────────
@@ -822,29 +1377,35 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     if (band === null) return;
 
     const cutY = doc.page.height - mm(TEAR_OFF_HEIGHT_MM);
+    const accent = layout.frame.accentColour;
 
+    // The caption sits IN the cut line, as on the approved page: the line
+    // says where to cut and what the strip is, and takes no room of its own.
+    doc.font(SANS_BOLD).fontSize(SIZE.label);
+    const captionWidth = doc.widthOfString(band.caption);
+    const centre = left + width / 2;
     doc
       .moveTo(left, cutY)
+      .lineTo(centre - captionWidth / 2 - mm(2), cutY)
+      .moveTo(centre + captionWidth / 2 + mm(2), cutY)
       .lineTo(left + width, cutY)
       .lineWidth(0.75)
       .strokeColor(LABEL)
       .dash(4, { space: 3 })
       .stroke()
       .undash();
+    doc.fillColor(LABEL).text(band.caption, left, cutY - SIZE.label / 2 - 1, {
+      width,
+      align: 'center',
+      lineBreak: false,
+    });
 
-    const cursor: Cursor = { y: cutY + mm(3) };
+    const cursor: Cursor = { y: cutY + mm(4) };
     const identification: Block = {
       kind: 'fields',
       columns: 2,
       entries: band.identification,
     };
-
-    doc
-      .font(SANS_BOLD)
-      .fontSize(SIZE.label)
-      .fillColor(LABEL)
-      .text(band.caption, left, cursor.y, { width, align: 'center' });
-    cursor.y = doc.y + mm(1.5);
 
     /**
      * THE SEAL SITS BESIDE THE INDICATIONS, NOT UNDER THEM, AND IT GOES FIRST.
@@ -856,7 +1417,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     const textWidth = seals.length === 0 ? width : width - mm(60);
     const sealCursor: Cursor = { y: cursor.y };
     for (const block of seals) {
-      this.paintBlock(doc, block, images, left, width, sealCursor, () => undefined); // prettier-ignore
+      this.paintBlock(doc, block, images, left, width, sealCursor, NEVER_BREAKS, accent); // prettier-ignore
     }
 
     /**
@@ -867,8 +1428,8 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
      * last indications over the footer, and then on a page with nobody's name.
      */
     let bottom = doc.page.height - mm(PAGE_MARGIN_MM);
-    const ensure = (height: number): void => {
-      if (cursor.y + height <= bottom) return;
+    const ensure: Ensure = (height) => {
+      if (cursor.y + height <= bottom) return false;
       const page = nextPage();
       cursor.y = page.top;
       bottom = page.bottom;
@@ -881,21 +1442,13 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
           align: 'center',
         });
       cursor.y = doc.y + mm(1.5);
-      this.paintBlock(doc, identification, images, left, width, cursor, () => undefined); // prettier-ignore
+      this.paintBlock(doc, identification, images, left, width, cursor, NEVER_BREAKS, accent); // prettier-ignore
+      return true;
     };
 
-    this.paintBlock(doc, identification, images, left, textWidth, cursor, ensure); // prettier-ignore
+    this.paintBlock(doc, identification, images, left, textWidth, cursor, ensure, accent); // prettier-ignore
     for (const block of text) {
-      this.paintBlock(
-        doc,
-        block,
-        images,
-        left,
-        textWidth,
-        cursor,
-        ensure,
-        layout.frame.accentColour,
-      );
+      this.paintBlock(doc, block, images, left, textWidth, cursor, ensure, accent); // prettier-ignore
     }
   }
 
