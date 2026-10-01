@@ -1060,10 +1060,11 @@ model Site {
   /// field for RDACAA reporting.
   mspUnicode String @unique @map("msp_unicode") @db.VarChar(20)
 
-  /// NULLABLE only so the rows that predate `establishment` survived the
-  /// migration; `seed-organization.mts` backfills them (OR-004).
-  establishmentId String?        @map("establishment_id") @db.Uuid
-  establishment   Establishment? @relation(fields: [establishmentId], references: [id], onDelete: Restrict)
+  /// OR-032. Every site belongs to an establishment: its legal name is the
+  /// clinic's name on every document (DOC-102). NOT NULL since
+  /// `20261001090100_site_establishment_required`.
+  establishmentId String        @map("establishment_id") @db.Uuid
+  establishment   Establishment @relation(fields: [establishmentId], references: [id], onDelete: Restrict)
 
   name String  @db.VarChar(160)
   ruc  String? @db.VarChar(13)

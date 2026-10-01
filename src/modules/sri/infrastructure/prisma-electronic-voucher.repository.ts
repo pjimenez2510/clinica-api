@@ -667,7 +667,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
         emissionPointCode: invoice.emissionPoint.code,
         sequential: invoice.sequential,
       }),
-      establishmentName: site.establishment?.legalName ?? site.name,
+      establishmentName: site.establishment.legalName,
     };
   }
 }

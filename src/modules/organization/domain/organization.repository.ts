@@ -91,7 +91,8 @@ export interface DocumentIdentityInput {
  */
 export interface SiteInput {
   mspUnicode: string;
-  establishmentId: string | null;
+  /** OR-032. Never `null`: the site is refused before it gets here. */
+  establishmentId: string;
   name: string;
   ruc: string | null;
   parishConceptId: string | null;

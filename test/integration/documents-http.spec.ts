@@ -811,6 +811,23 @@ describe('los documentos por HTTP', () => {
       expect(await draftText()).not.toContain('Unicódigo');
     });
 
+    it('DOC-102 la cabecera nombra la clínica con la razón social del establecimiento, no con la sede', async () => {
+      const site = await prisma.site.findUniqueOrThrow({
+        where: { id: siteId },
+        select: { name: true },
+      });
+      await prisma.site.update({
+        where: { id: siteId },
+        data: { name: 'Sucursal Malecón' },
+      });
+
+      const text = await draftText();
+      expect(text).toContain('Centro de Especialidades Bahía');
+      expect(text).not.toContain('Sucursal Malecón');
+
+      await prisma.site.update({ where: { id: siteId }, data: site });
+    });
+
     it('DOC-080 OR-010 la cabecera imprime el nombre comercial, el correo y el permiso guardados', async () => {
       await prisma.establishment.update({
         where: { id: establishmentId },

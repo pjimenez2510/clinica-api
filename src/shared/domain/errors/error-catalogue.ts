@@ -340,6 +340,8 @@ export const DOMAIN_ERROR_CODES = [
   'SRI_VOUCHER_NOT_FOUND',
   'SRI_VOUCHER_NOT_RETRIABLE',
   'SITE_IN_USE',
+  // OR-032. La sede nace con su establecimiento: sin él, no hay sede.
+  'SITE_ESTABLISHMENT_REQUIRED',
   'SITE_NOT_FOUND',
   'SITE_ROOM_DUPLICATE',
   'SITE_ROOM_IN_USE',
