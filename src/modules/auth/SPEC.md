@@ -410,7 +410,7 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   > revisión de D-065, en `DECISIONES-PENDIENTES.md`.
   >
   > **LA HORA ES FIJA.** No mira el horario de cada sede: una con atención de
-  > madrugada cortaría en consulta. Queda para el autor en D-072.
+  > madrugada cortaría en consulta. Queda para el autor en D-094.
 - **AU-044** — MIENTRAS el diálogo de volver a entrar de AU-040 esté abierto,
   CUANDO lleve **15 minutos** abierto sin que la misma persona haya vuelto a
   entrar, la interfaz DEBERÁ terminar la sesión, quitar de la pantalla todo lo
@@ -442,7 +442,7 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   > atención abierta en un consultorio vacío— no abre el diálogo hasta que
   > alguien la toque, así que el límite no empieza a contar. Cubrirlo exige
   > que la interfaz conozca la caducidad de la familia (cambio de contrato) o
-  > un bloqueo por inactividad: decisión del autor, D-072.
+  > un bloqueo por inactividad: decisión del autor, D-094.
   >
   > **UNA ENTRADA EN VUELO AL CUMPLIRSE LOS 15 MINUTOS.** Si la contraseña se
   > envió justo antes y la respuesta llega después, la pantalla ya se limpió;
@@ -674,7 +674,7 @@ enlace que no sirve y con un correo que no sale.
   > receta o escribe la nota, que es quien está delante de la alergia.
   > `nursing:write` tampoco, **por ahora**: D-071 nombra el caso de un rol
   > propio de enfermería sin el registro de alergias y su decisión no lo
-  > resuelve. Si también debe advertir lo decide el autor (D-072); entretanto,
+  > resuelve. Si también debe advertir lo decide el autor (D-094); entretanto,
   > la descripción del permiso lo dice.
 
 - **AU-038** — CUANDO se fijen los roles de una cuenta, el sistema NO DEBERÁ
