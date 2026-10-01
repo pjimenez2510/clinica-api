@@ -2992,22 +2992,22 @@ model MedicalCertificate {
   /// without receiving any clinical data.
   verificationCode String @unique @map("verification_code") @db.VarChar(24)
 
-  issuedAt             DateTime  @default(now()) @map("issued_at") @db.Timestamptz(6)
+  issuedAt         DateTime  @default(now()) @map("issued_at") @db.Timestamptz(6)
   /// CER-011. Who, when and why, the three together or none:
   /// `medical_certificate_revocation_states_who_when_and_why`. The row is never
   /// deleted. `revoked_by_id` is the ACCOUNT that annulled it.
-  revokedAt            DateTime? @map("revoked_at") @db.Timestamptz(6)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(6)
   /// CER-027. The diagnoses it printed, copied at the issue (`[]` without them).
-  diagnoses            Json      @default("[]")
+  diagnoses            Json    @default("[]")
   /// CER-038. The chart's work and contact as they were at the issue.
-  employerName         String?   @map("employer_name") @db.VarChar(160)
-  jobTitle             String?   @map("job_title") @db.VarChar(120)
-  residenceAddressLine String?   @map("residence_address_line") @db.VarChar(255)
-  patientPhone         String?   @map("patient_phone") @db.VarChar(32)
+  employerName         String? @map("employer_name") @db.VarChar(160)
+  jobTitle             String? @map("job_title") @db.VarChar(120)
+  residenceAddressLine String? @map("residence_address_line") @db.VarChar(255)
+  patientPhone         String? @map("patient_phone") @db.VarChar(32)
 
-  revokedById      String? @map("revoked_by_id") @db.Uuid
-  revokedBy        User?   @relation("CertificateRevoker", fields: [revokedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "medical_certificate_revoked_by_fk")
-  revocationReason String? @map("revocation_reason") @db.Text
+  revokedById      String?   @map("revoked_by_id") @db.Uuid
+  revokedBy        User?     @relation("CertificateRevoker", fields: [revokedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "medical_certificate_revoked_by_fk")
+  revocationReason String?   @map("revocation_reason") @db.Text
 
   /// DOC-003, DOC-075. The archived form 117 as it was handed over.
   documentRenders DocumentRender[]
