@@ -491,7 +491,9 @@ const SERVICES: SeedService[] = [
     // juicio clínico de una persona, tiene que quedar escrita en la ficha y
     // auditable, y por eso son DOS prestaciones distintas en el catálogo y no
     // una casilla que alguien marca en caja.
-    code: 'PROC-ESTETICA-TOXINA-BOTULINICA',
+    // ≤25: the voucher's `codigoPrincipal` (BI-171). Was
+    // PROC-ESTETICA-TOXINA-BOTULINICA, renamed in place below.
+    code: 'PROC-ESTETICA-TOXINA-BOT',
     name: 'Aplicación de toxina botulínica con fin estético',
     category: 'Procedimientos',
     taxSriCode: GENERAL_RATE,
@@ -1287,6 +1289,11 @@ async function ensureExamAnalyte(
  * `payer_id` y `price_list_id` NOT NULL— y la caja no tiene nada que cobrar.
  * Eso no parece «falta una siembra», parece una aplicación rota.
  */
+/** BI-171. Codes the seed once had longer than the SRI's 25. */
+const RENAMED_SERVICE_CODES: readonly (readonly [string, string])[] = [
+  ['PROC-ESTETICA-TOXINA-BOTULINICA', 'PROC-ESTETICA-TOXINA-BOT'],
+];
+
 export async function seedBilling(prisma: PrismaClient): Promise<void> {
   // Filas GARANTIZADAS, no filas insertadas: en la segunda ejecución los
   // números son los mismos y eso es exactamente lo que se quiere poder leer.
@@ -1309,6 +1316,16 @@ export async function seedBilling(prisma: PrismaClient): Promise<void> {
       for (const rate of TAX_RATES) {
         taxRateIdByCode.set(rate.sriCode, await ensureTaxRate(tx, rate));
         counts.taxRates += 1;
+      }
+
+      // BI-171. Un código de antes del tope de 25 del SRI se renombra en su
+      // sitio, no se duplica: la fila, sus precios y sus cargos siguen siendo
+      // los mismos. Solo si el nuevo no existe todavía.
+      for (const [old, renamed] of RENAMED_SERVICE_CODES) {
+        await tx.$executeRaw`
+          UPDATE "billable_service" SET "code" = ${renamed}
+           WHERE "code" = ${old}
+             AND NOT EXISTS (SELECT 1 FROM "billable_service" WHERE "code" = ${renamed})`;
       }
 
       // 2 y 3. Pagadores y su lista de precios.

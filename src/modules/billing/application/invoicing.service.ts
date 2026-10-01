@@ -1,9 +1,17 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { PinoLogger } from 'nestjs-pino';
 
 import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
+import {
+  ELECTRONIC_VOUCHER_PREPARER,
+  ELECTRONIC_VOUCHER_STATUS,
+  type ElectronicVoucherPreparer,
+  type ElectronicVoucherStatusReader,
+  type ElectronicVoucherSummary,
+} from '../../../shared/billing/electronic-voucher.port';
 
 import {
   BILLING_ACCOUNT_REPOSITORY,
@@ -20,6 +28,7 @@ import {
 } from '../domain/billing.errors';
 import {
   type BuyerIdentificationType,
+  type PaymentMethod,
   type ReceiverContext,
   type ReceiverRequest,
   proposeReceiver,
@@ -28,6 +37,14 @@ import {
 import type { Requester } from './service-catalogue.service';
 
 const INVOICE_RESOURCE_TYPE = 'invoice';
+
+/**
+ * SRI-060. The invoice with its electronic voucher's state beside it, read
+ * through the shared port: `billing` does not know how the SRI is spoken to.
+ */
+export type InvoiceWithVoucher = InvoiceView & {
+  electronic: ElectronicVoucherSummary | null;
+};
 
 /**
  * Issuing the invoice, and getting the receiver right.
@@ -61,7 +78,14 @@ export class InvoicingService {
     private readonly catalogue: BillingCatalogueRepository,
     @Inject(ACCESS_AUDIT_RECORDER)
     private readonly audit: AccessAuditRecorder,
-  ) {}
+    @Inject(ELECTRONIC_VOUCHER_PREPARER)
+    private readonly vouchers: ElectronicVoucherPreparer,
+    @Inject(ELECTRONIC_VOUCHER_STATUS)
+    private readonly voucherStatus: ElectronicVoucherStatusReader,
+    private readonly logger: PinoLogger,
+  ) {
+    this.logger.setContext(InvoicingService.name);
+  }
 
   /**
    * BI-080 to BI-089. Issues the invoice of an account.
@@ -85,9 +109,11 @@ export class InvoicingService {
       siteId: string;
       emissionPointId: string;
       receiver: ReceiverRequest;
+      /** BI-170. */
+      paymentMethod: PaymentMethod;
     },
     requester: Requester,
-  ): Promise<InvoiceView> {
+  ): Promise<InvoiceWithVoucher> {
     const account = await this.requireAccount(command);
 
     const emissionPoint = await this.accounts.findEmissionPoint({
@@ -109,6 +135,7 @@ export class InvoicingService {
       siteId: command.siteId,
       emissionPointId: command.emissionPointId,
       receiver,
+      paymentMethod: command.paymentMethod,
       issuedById: requester.userId,
     });
 
@@ -127,7 +154,34 @@ export class InvoicingService {
       userAgent: requester.userAgent,
     });
 
-    return invoice;
+    /**
+     * SRI-041, REQ-086. AFTER the issuance committed, and it cannot fail
+     * here: the preparer never throws, and does no network call — it computes
+     * the key, composes and signs locally, and queues the sending. The
+     * invoice is re-read so the response carries the key the RIDE will print.
+     */
+    await this.vouchers.prepare(invoice.id);
+    try {
+      const issued =
+        (await this.accounts.findInvoice({
+          invoiceId: invoice.id,
+          siteId: command.siteId,
+        })) ?? invoice;
+      return (await this.withVouchers([issued]))[0]!;
+    } catch (error) {
+      // The invoice is committed and numbered: an error now would make the
+      // cashier issue it again. It answers without the key, which the list
+      // shows on its next read.
+      this.logger.error(
+        {
+          err: error,
+          invoice_id: invoice.id,
+          error_code: 'INVOICE_REREAD_FAILED',
+        },
+        'the issued invoice could not be re-read; answering without its voucher',
+      );
+      return { ...invoice, electronic: null };
+    }
   }
 
   /**
@@ -150,18 +204,31 @@ export class InvoicingService {
   async listInvoices(query: {
     siteId: string;
     accountId?: string;
-  }): Promise<InvoiceView[]> {
-    return this.accounts.listInvoices(query);
+  }): Promise<InvoiceWithVoucher[]> {
+    return this.withVouchers(await this.accounts.listInvoices(query));
   }
 
   /** BI-135. */
   async findInvoice(query: {
     invoiceId: string;
     siteId: string;
-  }): Promise<InvoiceView> {
+  }): Promise<InvoiceWithVoucher> {
     const invoice = await this.accounts.findInvoice(query);
     if (!invoice) throw new InvoiceNotFoundError();
-    return invoice;
+    return (await this.withVouchers([invoice]))[0]!;
+  }
+
+  /** SRI-060. One read for the whole list, never one per invoice. */
+  private async withVouchers(
+    invoices: InvoiceView[],
+  ): Promise<InvoiceWithVoucher[]> {
+    const summaries = await this.voucherStatus.summariesOf(
+      invoices.map((invoice) => invoice.id),
+    );
+    return invoices.map((invoice) => ({
+      ...invoice,
+      electronic: summaries.get(invoice.id) ?? null,
+    }));
   }
 
   private async requireAccount(query: {

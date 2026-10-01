@@ -39,7 +39,10 @@ export interface EstablishmentIdentity {
   operatingPermit: string | null;
   /** DOC-034. Read always, printed only if the template says so. */
   ruc: string | null;
+  /** The SITE's address: where the patient walks back to. */
   addressLine: string | null;
+  /** OR-028, DOC-076. The establishment's head office (`dirMatriz`). */
+  headOfficeAddress: string | null;
   phone: string | null;
   /** DOC-059. `null` prints no logo, which is legitimate. */
   logo: StoredImage | null;
@@ -148,11 +151,18 @@ export interface CertificatePrintData {
 /** One line of the RIDE's detail table. */
 export interface InvoiceLine {
   code: string;
+  /** DOC-076. The MSP tariff code, when the service has one. */
+  auxiliaryCode: string | null;
   description: string;
   quantity: string;
   unitPrice: string;
   discount: string;
+  /** The line's net: quantity × unit price − discount. */
   total: string;
+  /** SRI table 17 `codigoPorcentaje`, frozen on the charge. */
+  taxSriCode: string;
+  /** The frozen rate, `15.00`; `null` for «no objeto» and «exento». */
+  taxPercentage: string | null;
 }
 
 /** Everything the RIDE prints (SRI, Ficha Técnica, Anexo 2). */
@@ -170,6 +180,20 @@ export interface InvoicePrintData {
   buyerIdentification: string;
   buyerName: string;
   buyerEmail: string | null;
+  /** DOC-076. Only known when the buyer is the patient: their address. */
+  buyerAddress: string | null;
+  /** BI-170. SRI table 24 code; `null` on an invoice from before it. */
+  paymentMethod: string | null;
+  /** DOC-076 «Información adicional»: whom the attention was for. */
+  patient: {
+    fullName: string;
+    /** The medical record number humans quote (HC). */
+    mrn: string;
+    /** Printed only when the buyer is the patient. */
+    phone: string | null;
+  } | null;
+  /** The first service date of the lines: the day of the attention. */
+  attendedOn: Date | null;
   lines: readonly InvoiceLine[];
   subtotalTaxed: string;
   subtotalUntaxed: string;

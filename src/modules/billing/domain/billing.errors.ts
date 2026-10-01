@@ -562,6 +562,24 @@ export class InvoiceHasNoItemsError extends BusinessRuleViolation {
   }
 }
 
+/**
+ * BI-171. A charge's service has a catalogue code longer than the voucher's
+ * `codigoPrincipal` admits (25, mandatory in the Ficha): issuing would hand
+ * the SRI an XML it returns with error 35, after the sequential is spent.
+ */
+export class InvoiceServiceCodeTooLongError extends BusinessRuleViolation {
+  readonly code = 'INVOICE_SERVICE_CODE_TOO_LONG';
+  override readonly userTitle: string;
+
+  constructor(serviceName: string, serviceCode: string) {
+    super('Refusing to issue: a service code exceeds the SRI limit', {
+      serviceName,
+      serviceCode,
+    });
+    this.userTitle = `La prestación «${serviceName}» tiene el código ${serviceCode}, más largo de los 25 caracteres que acepta el SRI. Administración debe acortarlo en el catálogo antes de facturarla`;
+  }
+}
+
 /** BI-085. */
 export class EmissionPointInactiveError extends BusinessRuleViolation {
   readonly code = 'EMISSION_POINT_INACTIVE';

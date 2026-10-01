@@ -2,7 +2,7 @@ import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import type { ChargeStatus, DocumentTotals } from './charge';
 import type { ChargeOrigin, ServiceMatch } from './charge-proposal';
 import type { VisitSequence } from './clinical-acts.port';
-import type { InvoiceReceiver, InvoiceStatus } from './invoice';
+import type { InvoiceReceiver, InvoiceStatus, PaymentMethod } from './invoice';
 import type { Money, Percentage, Quantity } from './money';
 import type { PriceChange, PriceRow } from './price-list';
 
@@ -393,6 +393,8 @@ export interface InvoiceView {
   receiver: InvoiceReceiver;
   totals: DocumentTotals;
   status: InvoiceStatus;
+  /** BI-170. `null` only on invoices issued before it was asked. */
+  paymentMethod: PaymentMethod | null;
   issuedAt: Date | null;
   authorisedAt: Date | null;
   issuedById: string;
@@ -404,6 +406,8 @@ export interface InvoiceIssuance {
   siteId: string;
   emissionPointId: string;
   receiver: InvoiceReceiver;
+  /** BI-170. */
+  paymentMethod: PaymentMethod;
   issuedById: string;
 }
 

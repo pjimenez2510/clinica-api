@@ -40,6 +40,12 @@ const ESTABLISHMENT: EstablishmentView = {
   typology: 'Centro de Salud Tipo A',
   legalName: 'Clínica de Prueba S.A.',
   ruc: VALID_RUC,
+  headOfficeAddress: 'Av. Amazonas y Naciones Unidas, Quito',
+  keepsAccounting: true,
+  specialTaxpayerResolution: '5368',
+  withholdingAgentResolution: null,
+  rimpeRegime: 'NONE',
+  fiscalProfileDeclaredAt: null,
   tradeName: null,
   contactEmail: null,
   operatingPermit: null,
@@ -52,6 +58,7 @@ const SITE: SiteView = {
   mspUnicode: 'MSP-0001-N',
   name: 'Sede Norte',
   ruc: null,
+  sriEstablishmentCode: '001',
   parishConceptId: null,
   addressLine: 'Av. de los Granados',
   phone: '02 000 0000',
@@ -284,6 +291,100 @@ describe('OrganizationService', () => {
         REQUESTER,
       );
       expect(cleared.ruc).toBeNull();
+    });
+
+    it('OR-028 un guardado que no trae la dirección de la matriz conserva la guardada', async () => {
+      const { service, calls } = build();
+      await service.saveEstablishment(
+        {
+          mspUnicode: 'MSP-0001',
+          typology: 'Centro de Salud Tipo A',
+          legalName: 'Clínica de Prueba S.A.',
+        },
+        REQUESTER,
+      );
+      const update = calls.find((c) => c.method === 'updateEstablishment');
+      expect(update?.args[1]).toMatchObject({
+        headOfficeAddress: 'Av. Amazonas y Naciones Unidas, Quito',
+      });
+    });
+
+    it('OR-029 OR-031 un guardado sin las banderas fiscales conserva las guardadas sin declararlas, y las enviadas se guardan declaradas', async () => {
+      const kept = build();
+      await kept.service.saveEstablishment(
+        {
+          mspUnicode: 'MSP-0001',
+          typology: 'Centro de Salud Tipo A',
+          legalName: 'Clínica de Prueba S.A.',
+        },
+        REQUESTER,
+      );
+      expect(
+        kept.calls.find((c) => c.method === 'updateEstablishment')?.args[1],
+      ).toMatchObject({
+        keepsAccounting: true,
+        specialTaxpayerResolution: '5368',
+        withholdingAgentResolution: null,
+        rimpeRegime: 'NONE',
+        // OR-031. Kept is not declared: nobody stated them in this save.
+        declaresFiscalProfile: false,
+      });
+
+      const changed = build();
+      await changed.service.saveEstablishment(
+        {
+          mspUnicode: 'MSP-0001',
+          typology: 'Centro de Salud Tipo A',
+          legalName: 'Clínica de Prueba S.A.',
+          keepsAccounting: false,
+          specialTaxpayerResolution: null,
+          rimpeRegime: 'ENTREPRENEUR',
+          confirmsFiscalProfile: true,
+        },
+        REQUESTER,
+      );
+      expect(
+        changed.calls.find((c) => c.method === 'updateEstablishment')?.args[1],
+      ).toMatchObject({
+        keepsAccounting: false,
+        specialTaxpayerResolution: null,
+        rimpeRegime: 'ENTREPRENEUR',
+        declaresFiscalProfile: true,
+      });
+    });
+
+    it('OR-031 llevar las banderas no las declara: hace falta que alguien lo confirme', async () => {
+      const carried = build();
+      await carried.service.saveEstablishment(
+        {
+          mspUnicode: 'MSP-0001',
+          typology: 'Centro de Salud Tipo A',
+          legalName: 'Clínica de Prueba S.A.',
+          keepsAccounting: false,
+          rimpeRegime: 'NONE',
+        },
+        REQUESTER,
+      );
+      expect(
+        carried.calls.find((c) => c.method === 'updateEstablishment')?.args[1],
+      ).toMatchObject({ declaresFiscalProfile: false });
+    });
+
+    it('OR-028 una dirección de la matriz enviada se guarda', async () => {
+      const { service, calls } = build();
+      await service.saveEstablishment(
+        {
+          mspUnicode: 'MSP-0001',
+          typology: 'Centro de Salud Tipo A',
+          legalName: 'Clínica de Prueba S.A.',
+          headOfficeAddress: 'Calle Nueva 123, Quito',
+        },
+        REQUESTER,
+      );
+      const update = calls.find((c) => c.method === 'updateEstablishment');
+      expect(update?.args[1]).toMatchObject({
+        headOfficeAddress: 'Calle Nueva 123, Quito',
+      });
     });
   });
 

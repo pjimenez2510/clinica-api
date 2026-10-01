@@ -8,6 +8,15 @@ import { MailNotConfiguredError } from '../../mail/mail.errors';
 import { NodemailerMailer } from './nodemailer.mailer';
 
 /**
+ * Nodemailer itself, replaced: these tests never open a connection. Only the
+ * attachment test reaches `sendMail`; the others are refused before it.
+ */
+const sendMail = vi.hoisted(() => vi.fn().mockResolvedValue({}));
+vi.mock('nodemailer', () => ({
+  createTransport: () => ({ sendMail }),
+}));
+
+/**
  * The adapter's refusal path, without an SMTP server anywhere near it.
  *
  * WHAT THIS PINS DOWN: that an installation with no `SMTP_HOST` fails AT THE
@@ -66,6 +75,33 @@ describe('el adaptador de correo', () => {
       (error: unknown) =>
         error instanceof MailNotConfiguredError &&
         error.userTitle.includes('SMTP_HOST'),
+    );
+  });
+
+  it('SRI-072 entrega los adjuntos al transporte con su nombre y su tipo', async () => {
+    const mailer = new NodemailerMailer(configWithout('localhost'), logger());
+
+    await mailer.send({
+      ...MESSAGE,
+      attachments: [
+        {
+          fileName: 'factura.xml',
+          content: Buffer.from('<autorizacion/>'),
+          contentType: 'application/xml',
+        },
+      ],
+    });
+
+    expect(sendMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachments: [
+          {
+            filename: 'factura.xml',
+            content: Buffer.from('<autorizacion/>'),
+            contentType: 'application/xml',
+          },
+        ],
+      }),
     );
   });
 });

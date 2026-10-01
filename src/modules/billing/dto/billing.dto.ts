@@ -7,7 +7,11 @@ import {
 } from '../../../shared/domain/clinic-time';
 import { explicitFlag } from '../../../shared/http/query-flag';
 
-import { BUYER_IDENTIFICATION_TYPES } from '../domain/invoice';
+import {
+  BUYER_IDENTIFICATION_TYPES,
+  MAX_VOUCHER_SERVICE_CODE,
+  PAYMENT_METHODS,
+} from '../domain/invoice';
 import { PAYER_KINDS } from '../domain/billing.repository';
 import {
   CHARGE_ORIGINS,
@@ -87,7 +91,15 @@ export class CatalogueQueryDto extends createZodDto(catalogueQuerySchema) {}
  * transport boundary stops existing the moment a seed writes underneath it.
  */
 export const createServiceSchema = z.object({
-  code: z.string().trim().min(1, 'Indique el código de la prestación').max(32),
+  // BI-171. The voucher's `codigoPrincipal` is mandatory and admits 25.
+  code: z
+    .string()
+    .trim()
+    .min(1, 'Indique el código de la prestación')
+    .max(
+      MAX_VOUCHER_SERVICE_CODE,
+      'El código admite hasta 25 caracteres, lo que acepta el SRI',
+    ),
   name: z.string().trim().min(1, 'Indique el nombre de la prestación').max(200),
   category: z.string().trim().min(1, 'Indique la categoría').max(60),
   /** BI-011. Nomenclature only: no amount is ever taken from the Tarifario. */
@@ -305,6 +317,10 @@ export const issueInvoiceSchema = z.object({
   accountId: z.uuid('Seleccione la cuenta que se factura'),
   emissionPointId: z.uuid('Seleccione el punto de emisión'),
   receiver: receiverSchema,
+  /** BI-170, D-092. Asked, never defaulted: SRI table 24. */
+  paymentMethod: z.enum(PAYMENT_METHODS, {
+    error: 'Indique la forma de pago',
+  }),
 });
 /** Body of POST /billing/sites/:siteId/invoices. */
 export class IssueInvoiceDto extends createZodDto(issueInvoiceSchema) {}
@@ -522,8 +538,34 @@ const invoiceResponseSchema = z.object({
   isFinalConsumer: z.boolean(),
   totals: totalsSchema,
   status: z.enum(['DRAFT', 'ISSUED', 'AUTHORISED', 'REJECTED', 'VOIDED']),
+  /** BI-170. `null` only on invoices issued before it was asked. */
+  paymentMethod: z.enum(PAYMENT_METHODS).nullable(),
   issuedAt: z.iso.datetime().nullable(),
   authorisedAt: z.iso.datetime().nullable(),
+  /**
+   * SRI-060. Its electronic voucher before the SRI; `null` while there is none
+   * (the installation lacks a datum, SRI-008, or the sweep has not run yet).
+   */
+  electronic: z
+    .object({
+      voucherId: z.uuid(),
+      state: z.enum([
+        'PREPARED',
+        'SIGNED',
+        'RECEIVED',
+        'AUTHORISED',
+        'RETURNED',
+        'NOT_AUTHORISED',
+      ]),
+      blockedReason: z.string().nullable(),
+      accessKey: z.string(),
+      authorisedAt: z.iso.datetime().nullable(),
+      deliveryStatus: z.string().nullable(),
+      lastMessage: z
+        .object({ identifier: z.string(), message: z.string() })
+        .nullable(),
+    })
+    .nullable(),
 });
 /** One invoice, and the list of GET /billing/sites/:siteId/invoices. */
 export class InvoiceDto extends createZodDto(invoiceResponseSchema) {}

@@ -296,6 +296,18 @@ medios de pago). Sin ella esos valores quedan quemados en el código, que es lo
 que REQ-145 prohíbe y lo que el principio rector del usuario descarta. Entra
 **antes que B4**, aunque se especifique después. **Cubre:** BI-140 a BI-143.
 
+### B9 — Cada línea sabe de qué factura es _(P1)_
+
+La emisión deja escrito en cada cargo qué factura se lo llevó. Sin eso, una
+cuenta con dos facturas no puede decir qué líneas son de cuál, y el comprobante
+electrónico de la segunda saldría con las líneas de la primera (sri/SPEC.md
+SRI-012).
+
+**Prueba independiente:** facturar una cuenta, añadirle un cargo, facturarla
+otra vez, y comprobar que cada factura tiene exactamente sus líneas.
+**Cubre:** BI-169, BI-170, BI-171.
+**Solo servidor:** BI-169. Es una garantía de almacenamiento.
+
 > Las BI-003, BI-004, BI-007 y BI-130 a BI-135 **no son una entrega**: aplican a
 > todas. Una ruta de B1 sin permiso declarado no pasa la prueba de rutas, y una
 > pantalla de B6 que bloquee una atención por falta de pago es ilegal en B6
@@ -1045,6 +1057,33 @@ es falsa, hay requisitos que cambian.
   > no facturados al anular la factura necesita saber QUÉ factura se los llevó,
   > y hoy eso sólo se deduce por la cuenta. Por eso BI-088 y BI-096 se terminan
   > juntas, en B3.
+- **BI-169** — CUANDO se emita una factura, el sistema DEBERÁ escribir en cada
+  cargo que la emisión lleva a `BILLED` el identificador de esa factura, en la
+  misma transacción, y la base DEBERÁ rechazar un cargo `BILLED` sin factura y
+  uno con factura que no esté `BILLED` (`charge_item_billed_carries_its_invoice`).
+  > Es la mitad de esquema que faltaba en la nota de BI-088 y la que BI-096
+  > necesitará para devolver los cargos al anular. La pidió el comprobante
+  > electrónico: el XML lleva las líneas **de esa** factura, y deducirlas por la
+  > cuenta da las de todas (error 52 del SRI).
+- **BI-170** — CUANDO se emita una factura, el sistema DEBERÁ exigir la forma
+  de pago con su código de la Tabla 24 del SRI —`01` sin utilización del
+  sistema financiero, `15` compensación de deudas, `16` tarjeta de débito, `17`
+  dinero electrónico, `18` tarjeta prepago, `19` tarjeta de crédito, `20` otros
+  con utilización del sistema financiero, `21` endoso de títulos—, NO DEBERÁ
+  suponer ninguna, y la base DEBERÁ rechazar otro código
+  (`invoice_payment_method_is_known`) y cambiarla una vez escrita.
+  > D-092, resuelta por el autor (opción B): se pregunta en el diálogo de caja al
+  > emitir. La Ficha v2.34 la exige en el comprobante (`pagos/pago/formaPago`,
+  > sri/SPEC.md SRI-017) y declarar efectivo lo que se pagó con tarjeta es un
+  > dato falso ante el SRI. Sin valor por defecto: la elige quien cobra.
+- **BI-171** — SI alguna prestación de los cargos a facturar tiene un código de
+  más de 25 caracteres ENTONCES el sistema DEBERÁ rechazar la emisión con
+  `INVOICE_SERVICE_CODE_TOO_LONG`, nombrando la prestación y su código, antes
+  de tomar el secuencial; y el catálogo NO DEBERÁ admitir un código nuevo de
+  más de 25 caracteres.
+  > `codigoPrincipal` es obligatorio y de máximo 25 en la Ficha Técnica v2.34
+  > (tabla de campos de la factura, pág. 50); el XSD lo deja opcional, pero el
+  > SRI aplica la Ficha. Emitir enviaría un XML que vuelve con el error 35.
 - **BI-089** — SI se intenta emitir una factura sin ninguna línea, ENTONCES el
   sistema DEBERÁ rechazarla con `INVOICE_HAS_NO_ITEMS`.
 - **BI-090** — El sistema NO DEBERÁ exponer ninguna operación que modifique el
@@ -1437,6 +1476,7 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `INVOICE_IMMUTABLE` | 409 | BI-084, BI-090 |
 | `FINAL_CONSUMER_NOT_CONFIRMED` | 422 | BI-081 |
 | `INVOICE_HAS_NO_ITEMS` | 422 | BI-089 |
+| `INVOICE_SERVICE_CODE_TOO_LONG` | 422 | BI-171 |
 | `EMISSION_POINT_INACTIVE` | 422 | BI-085 |
 | `CREDIT_NOTE_REASON_REQUIRED` | 422 | BI-091 |
 | `VOID_WINDOW_EXPIRED` | 409 | BI-092 |
