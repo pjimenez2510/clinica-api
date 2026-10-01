@@ -644,6 +644,19 @@ describe('D-109 lo que acota el reposo de maternidad, garantizado por la base', 
     await expect(
       insert(prisma, scene, { rest: { from: addDays(birth, 1), to: scene.day }, maternity, backdatingReason: REASON }), // prettier-ignore
     ).resolves.toBe(1);
+    // Al revés: desde una atención de la ficha absorbida, el reposo de la
+    // superviviente también cuenta.
+    await createDiagnosis(prisma, old.id, 'O80');
+    await expect(
+      insert(prisma, onDuplicate, { rest: { from: scene.day, to: scene.day }, maternity, backdatingReason: REASON }), // prettier-ignore
+    ).rejects.toThrow(/medical_certificate_maternity_rest_no_overlap/);
+    // Deshecha la fusión, son dos fichas: la superviviente ya no pisa nada.
+    await prisma.$executeRaw`
+      UPDATE patient SET merged_into_id = NULL, merged_at = NULL
+       WHERE id = ${duplicate.id}::uuid`;
+    await expect(
+      insert(prisma, scene, { rest: { from: birth, to: birth }, maternity, backdatingReason: REASON }), // prettier-ignore
+    ).resolves.toBe(1);
   });
 
   it('CER-048 dos maternidades solapadas a la vez desde dos atenciones: gana la primera y la segunda se rechaza', async () => {

@@ -15,7 +15,8 @@
 --  · CER-047: el reposo termina, como tarde, el parto + 84 días, y no se emite
 --    pasado ese día (con la madrugada de D-106 §5, como CER-045).
 --  · CER-048: no se solapa con otro reposo no anulado de la paciente —su
---    ficha y las que absorbió—, de cualquier contingencia y atención. Un candado por paciente ordena las
+--    ficha y las que absorbió—, de cualquier contingencia y atención, AL
+--    EMITIR: una fusión posterior puede juntar reposos solapados (D-110 §7). Un candado por ficha ordena las
 --    emisiones concurrentes desde atenciones distintas.
 --  · CER-049: la atención tiene un diagnóstico CIE-10 obstétrico.
 --  · La ventana de 3 días del prenatal (CER-044) no cambia (D-109 §4).
@@ -149,8 +150,11 @@ BEGIN
       IF EXISTS (
         SELECT 1
           FROM "medical_certificate" c
-          JOIN "patient" p ON p."id" = c."patient_id"
-         WHERE COALESCE(p."merged_into_id", p."id") = chart
+         -- El predicado de `chartScopeIds`: la clave primaria y el índice
+         -- parcial `patient_absorbed_charts` dan las fichas, y el índice por
+         -- `patient_id` sus certificados. Se evalúa con el candado puesto.
+         WHERE c."patient_id" IN (SELECT p."id" FROM "patient" p
+                                   WHERE p."id" = chart OR p."merged_into_id" = chart)
            AND c."type" = 'MEDICAL_REST'
            AND c."revoked_at" IS NULL
            AND daterange(c."rest_from", c."rest_to", '[]')

@@ -174,7 +174,10 @@ export class PrismaCertificateRepository implements CertificateRepository {
        * every rest that can be there when this one is written.
        */
       // The patient is her CHART: the surviving one and those it absorbed
-      // (PA-055); the lock is the chart's too.
+      // (PA-055); the lock is the chart's too. Read without locking the
+      // patient row: this read gives the doctor the clear refusal, and the
+      // trigger, which reads the chart again under the same lock, is the
+      // guarantee.
       const chartId = encounter.patient.mergedIntoId ?? encounter.patientId;
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('medical_certificate_rest:' || ${chartId}::text, 0))`;
       const rests = await tx.medicalCertificate.findMany({

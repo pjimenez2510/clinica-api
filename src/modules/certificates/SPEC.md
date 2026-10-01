@@ -551,7 +551,9 @@ PR-030).
   de la paciente: dos a la vez desde dos atenciones no pasan las dos.
 
   > Un reposo anulado (CER-011) deja libre su período. Que un reposo de otra
-  > contingencia no se solape con una maternidad no lo decidió D-109.
+  > contingencia no se solape con una maternidad no lo decidió D-109. Se cumple
+  > **al emitir**: una fusión de fichas posterior puede juntar dos reposos que
+  > se solapan (D-110 §7).
 
 - **CER-049** — CUANDO se emita un reposo de contingencia **maternidad**, SI la
   atención no tiene **ningún diagnóstico CIE-10 obstétrico** —de O00 a O99 o de
