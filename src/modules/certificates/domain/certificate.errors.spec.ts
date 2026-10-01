@@ -8,12 +8,18 @@ import {
   type DomainError,
 } from '../../../shared/domain/errors/domain-error';
 import { DOMAIN_ERROR_CODES } from '../../../shared/domain/errors/error-catalogue';
+import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 
 import {
   CertificateAlreadyRevokedError,
   CertificateBackdatingReasonRequiredError,
   CertificateEstablishmentIncompleteError,
+  CertificateIssuerReasonRequiredError,
+  CertificateRestIssuedTooLateError,
+  CertificateRestStartTooEarlyError,
+  CertificateRestStartTooLateError,
   CertificateRestTooLongError,
+  CertificateRevokeForbiddenError,
   CertificateDiagnosisRequiredError,
   CertificateEncounterNotFoundError,
   CertificateEncounterNotOpenError,
@@ -36,6 +42,60 @@ const CONTRACT: readonly {
   category: { prototype: DomainError };
   says: string;
 }[] = [
+  {
+    error: new CertificateRestStartTooEarlyError(
+      '2026-09-28' as ClinicalDate, // fecha-fija: sólo se comprueba el formato DD/MM/AAAA
+      null,
+    ),
+    code: 'CERTIFICATE_REST_START_TOO_EARLY',
+    category: ValidationError,
+    says: 'tres días antes de la atención',
+  },
+  {
+    error: new CertificateRestStartTooEarlyError(
+      '2026-09-28' as ClinicalDate, // fecha-fija: sólo se comprueba el formato DD/MM/AAAA
+      {
+        admissionOn: '2026-09-20' as ClinicalDate, // fecha-fija: ídem
+        birthOn: '2026-09-21' as ClinicalDate, // fecha-fija: ídem
+        dischargeOn: '2026-09-23' as ClinicalDate, // fecha-fija: ídem
+      },
+    ),
+    code: 'CERTIFICATE_REST_START_TOO_EARLY',
+    category: ValidationError,
+    says: 'el día del ingreso o del parto',
+  },
+  {
+    error: new CertificateRestIssuedTooLateError(),
+    code: 'CERTIFICATE_REST_ISSUED_TOO_LATE',
+    category: ValidationError,
+    says: 'más de ocho días',
+  },
+  {
+    error: new CertificateRevokeForbiddenError(),
+    code: 'CERTIFICATE_REVOKE_FORBIDDEN',
+    category: ForbiddenError,
+    says: 'Lo anula quien lo emitió o la dirección médica',
+  },
+  {
+    error: new CertificateIssuerReasonRequiredError(),
+    code: 'CERTIFICATE_ISSUER_REASON_REQUIRED',
+    category: ValidationError,
+    says: 'la registró otro profesional',
+  },
+  {
+    error: new CertificateRestStartTooLateError(
+      '2026-10-02' as ClinicalDate, // fecha-fija: sólo se comprueba el formato DD/MM/AAAA
+    ),
+    code: 'CERTIFICATE_REST_START_TOO_LATE',
+    category: ValidationError,
+    says: 'el día siguiente a la emisión',
+  },
+  {
+    error: new CertificateBackdatingReasonRequiredError('LATE'),
+    code: 'CERTIFICATE_BACKDATING_REASON_REQUIRED',
+    category: ValidationError,
+    says: 'se emite después del día de la atención',
+  },
   {
     error: new CertificateEncounterNotFoundError(),
     code: 'CERTIFICATE_ENCOUNTER_NOT_FOUND',

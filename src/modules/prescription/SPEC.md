@@ -914,6 +914,18 @@ Hay tres niveles de comprobación y **sólo el primero se construye**:
   > diabetes y el efavirenz dice VIH. En este módulo el dato que se escapa no es
   > una hora, y por eso los mensajes hablan de campos y de líneas por su número.
 
+- **PR-095** — SI la atención no tiene ningún diagnóstico al emitir la receta,
+  ENTONCES el sistema DEBERÁ rechazar la emisión con
+  `PRESCRIPTION_DIAGNOSIS_REQUIRED`, nombrando el campo `diagnosis` y diciendo
+  dónde se registra.
+
+  > **Res. ACESS-2023-0030, art. 5.b.iii**, dentro de lo que la receta
+  > «contendrá, como mínimo»: «Diagnóstico del usuario/paciente según la
+  > Clasificación Internacional de Enfermedades-CIE». PR-026 ya lo exigía y la
+  > emisión no lo comprobaba: la evidencia de F-05 mostró una receta emitida
+  > con «Diagnóstico: —» (`fix/certificado-d105`). Se cuenta dentro de la
+  > transacción que emite, como el resto del snapshot. P-2 sigue abierta.
+
 ---
 
 ## Códigos de error nuevos
@@ -934,6 +946,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `ALLERGY_CONTRAINDICATION` | 409 | Coincidencia exacta con una alergia no refutada. **409 y no 422**: lo enviado es correcto y lo que lo impide es un hecho de la ficha; la salida es refutar la alergia, y el mensaje lo dice | PR-060 |
 | `PRESCRIBER_PROFILE_REQUIRED` | 403 | La cuenta no tiene ficha profesional activa. `prescription.prescriber_id` es clave foránea a `practitioner`, no a `app_user` | PR-004 |
 | `PRESCRIBER_NOT_LICENSED` | 403 | El prescriptor no tiene registro ACESS, o está vencido en la fecha clínica de la emisión. **Distinto de `PRACTITIONER_NOT_LICENSED`**: aquél no refuta al que no tiene registro anotado, y aquí el número va impreso en el documento | PR-034 |
+| `PRESCRIPTION_DIAGNOSIS_REQUIRED` | 422 | La atención no tiene diagnóstico CIE que imprimir en la receta | PR-095 |
 | `PRESCRIPTION_ESTABLISHMENT_INCOMPLETE` | 422 | La sede no tiene parroquia configurada, así que no hay ciudad de prescripción que imprimir | PR-021 |
 
 **Derivados de un `CHECK` y por eso fuera del catálogo congelado**, con su

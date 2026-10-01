@@ -13,17 +13,18 @@ import { PrismaClient } from '@prisma/client';
  *   - The establishment is matched by its MSP code and never overwritten — a
  *     clinic that edited its typology meant it (same rule as
  *     `seed-authorisation.mts`).
- *   - EVERY site without an establishment is backfilled, not just the ones
- *     this file knows about. Run it again after `db:seed:agenda` and the two
- *     new sites are adopted too.
+ *   - No site is backfilled: since OR-032 every site is born with its
+ *     establishment (`site.establishment_id` is NOT NULL), and
+ *     `seed-agenda.mts` takes the one registered here.
  *   - A site is created ONLY when there is none at all, so a fresh database
  *     still has a working screen without inventing a third site next to the
  *     two `seed-agenda.mts` creates.
  *   - Rooms and points of emission are matched by their unique key within the
  *     site, so re-running never duplicates and never renames.
  *
- * Chain: `pnpm db:seed` (users) → `pnpm db:seed:agenda` (sites, practitioners)
- * → `pnpm db:seed:organization`. Running it standalone also works.
+ * Chain: `pnpm db:seed` (users) → `pnpm db:seed:agenda` (sites, practitioners,
+ * and this establishment if there is none) → `pnpm db:seed:organization`.
+ * Running it standalone also works.
  */
 
 /**
@@ -70,22 +71,34 @@ const DEFAULT_EMISSION_POINT = {
  * or adopted. Demo data — the establishment, its RUC and the fallback site are
  * fictitious; `main` refuses a production `NODE_ENV`.
  */
-export async function seedOrganization(prisma: PrismaClient): Promise<{
-  establishmentCreated: boolean;
-  sitesCreated: number;
-  sitesBackfilled: number;
-  roomsCreated: number;
-  emissionPointsCreated: number;
-}> {
-  let establishment = await prisma.establishment.findUnique({
+/**
+ * OR-032. The development establishment, found by its MSP code or created.
+ * Exported because a site cannot be born without one: `seed-agenda.mts`
+ * calls it when the database has no establishment yet.
+ */
+export async function ensureDevelopmentEstablishment(
+  prisma: PrismaClient,
+): Promise<{ id: string; created: boolean }> {
+  const existing = await prisma.establishment.findUnique({
     where: { mspUnicode: ESTABLISHMENT.mspUnicode },
     select: { id: true },
   });
-  const establishmentCreated = establishment === null;
-  establishment ??= await prisma.establishment.create({
+  if (existing) return { id: existing.id, created: false };
+  const created = await prisma.establishment.create({
     data: ESTABLISHMENT,
     select: { id: true },
   });
+  return { id: created.id, created: true };
+}
+
+export async function seedOrganization(prisma: PrismaClient): Promise<{
+  establishmentCreated: boolean;
+  sitesCreated: number;
+  roomsCreated: number;
+  emissionPointsCreated: number;
+}> {
+  const { created: establishmentCreated, ...establishment } =
+    await ensureDevelopmentEstablishment(prisma);
 
   // OR-028. A database seeded before the column existed has the
   // establishment without it; only an empty value is filled.
@@ -117,14 +130,6 @@ export async function seedOrganization(prisma: PrismaClient): Promise<{
     });
     sitesCreated = 1;
   }
-
-  // OR-004: the backfill the nullable column exists for. `establishmentId`
-  // null is the only thing touched, so a site somebody moved to another
-  // establishment from the screen stays where they put it.
-  const { count: sitesBackfilled } = await prisma.site.updateMany({
-    where: { establishmentId: null },
-    data: { establishmentId: establishment.id },
-  });
 
   // --- Rooms and points of emission per site ----------------------------
   const sites = await prisma.site.findMany({ select: { id: true } });
@@ -184,7 +189,6 @@ export async function seedOrganization(prisma: PrismaClient): Promise<{
   return {
     establishmentCreated,
     sitesCreated,
-    sitesBackfilled,
     roomsCreated,
     emissionPointsCreated,
   };
@@ -207,7 +211,7 @@ async function main(): Promise<void> {
     const result = await seedOrganization(prisma);
     console.log(
       `Organización: establecimiento ${result.establishmentCreated ? 'creado' : 'ya presente'}, ` +
-        `${result.sitesCreated} sedes creadas, ${result.sitesBackfilled} sedes enlazadas al establecimiento, ` +
+        `${result.sitesCreated} sedes creadas, ` +
         `${result.roomsCreated} consultorios y ${result.emissionPointsCreated} puntos de emisión creados.`,
     );
   } finally {

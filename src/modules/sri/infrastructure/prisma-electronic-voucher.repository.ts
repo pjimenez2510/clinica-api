@@ -24,6 +24,7 @@ import {
   type SriMessage,
   type VoucherStatus,
 } from '../domain/voucher-lifecycle';
+import { summaryOf } from '../domain/kept-text';
 
 const VOUCHER_SELECT = {
   id: true,
@@ -163,17 +164,16 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
       issuer: {
         // The same precedence the RIDE prints (DOC-077): the site's own RUC,
         // else the establishment's; the legal name is the establishment's.
-        ruc: row.site.ruc ?? establishment?.ruc ?? null,
-        legalName: establishment?.legalName ?? null,
-        headOfficeAddress: establishment?.headOfficeAddress ?? null,
+        // OR-032: every site has its establishment.
+        ruc: row.site.ruc ?? establishment.ruc,
+        legalName: establishment.legalName,
+        headOfficeAddress: establishment.headOfficeAddress,
         establishmentAddress: row.site.addressLine,
-        keepsAccounting: establishment?.keepsAccounting ?? false,
-        specialTaxpayerResolution:
-          establishment?.specialTaxpayerResolution ?? null,
-        withholdingAgentResolution:
-          establishment?.withholdingAgentResolution ?? null,
-        rimpeRegime: establishment?.rimpeRegime ?? 'NONE',
-        fiscalProfileDeclared: Boolean(establishment?.fiscalProfileDeclaredAt),
+        keepsAccounting: establishment.keepsAccounting,
+        specialTaxpayerResolution: establishment.specialTaxpayerResolution,
+        withholdingAgentResolution: establishment.withholdingAgentResolution,
+        rimpeRegime: establishment.rimpeRegime,
+        fiscalProfileDeclared: establishment.fiscalProfileDeclaredAt !== null,
       },
       buyer: {
         identificationType: row.buyerIdentificationType,
@@ -627,13 +627,18 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
         started_at: Date;
         http_status: number | null;
         fault_code: string | null;
-        fault_string: string | null;
+        fault_head: string | null;
+        fault_left_out: number | null;
         transport_error: string | null;
         has_response_body: boolean;
       }[]
     >`
       SELECT v."id" AS "voucher_id", last."outcome", last."started_at",
-             last."http_status", last."fault_code", last."fault_string",
+             last."http_status", last."fault_code",
+             -- D-107. The list carries the first 500 characters; the whole
+             -- text is asked for apart, with the body.
+             left(last."fault_string", 500) AS "fault_head",
+             greatest(char_length(last."fault_string") - 500, 0)::int AS "fault_left_out",
              -- The one-line reason only when there is no fault string: it
              -- repeats it whole, and 500 rows of a 6 KB trace twice is what
              -- keeping the body out of the monitor was meant to avoid.
@@ -661,7 +666,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
             at: row.started_at,
             httpStatus: row.http_status,
             faultCode: row.fault_code,
-            faultString: row.fault_string,
+            faultSummary: summaryOf(row.fault_head, row.fault_left_out ?? 0),
             error: row.transport_error,
             hasResponseBody: row.has_response_body,
           },
@@ -769,7 +774,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
         emissionPointCode: invoice.emissionPoint.code,
         sequential: invoice.sequential,
       }),
-      establishmentName: site.establishment?.legalName ?? site.name,
+      establishmentName: site.establishment.legalName,
     };
   }
 }

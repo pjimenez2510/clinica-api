@@ -73,6 +73,12 @@ export const issueCertificateSchema = z.strictObject(
       .trim()
       .max(2000, 'El motivo no puede superar 2000 caracteres')
       .optional(),
+    /** CER-039. Demanded when the session did not attend. */
+    issuedByOtherReason: z
+      .string()
+      .trim()
+      .max(2000, 'El motivo no puede superar 2000 caracteres')
+      .optional(),
   },
   {
     error: (issue) =>
@@ -126,6 +132,8 @@ export const certificateSchema = z.object({
   maternityDischargeOn: z.string().nullable(),
   /** CER-030. Why the rest starts before the attention, or `null`. */
   backdatingReason: z.string().nullable(),
+  /** CER-039. Why someone who did not attend issued it, or `null`. */
+  issuedByOtherReason: z.string().nullable(),
   /** CER-011. `null` while valid. */
   revokedAt: z.iso.datetime().nullable(),
   revocationReason: z.string().nullable(),

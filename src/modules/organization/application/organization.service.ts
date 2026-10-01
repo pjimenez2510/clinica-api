@@ -8,6 +8,7 @@ import {
 import { Ruc } from '../../../shared/domain/value-objects/ruc.vo';
 import {
   EstablishmentNotFoundError,
+  SiteEstablishmentRequiredError,
   SiteNotFoundError,
 } from '../domain/organization.errors';
 import {
@@ -239,17 +240,19 @@ export class OrganizationService {
     command: CreateSiteCommand,
     requester: Requester,
   ): Promise<SiteView> {
-    // The site belongs to the establishment that is registered. `null` when
-    // none is — the column is nullable precisely so the rows that predate
-    // `establishment` survived, and refusing here would block the clinic from
-    // adding a site before filling the establishment form.
+    // OR-032. The site belongs to the establishment that is registered, and
+    // without one there is no site: its legal name is the clinic's name on
+    // every document (DOC-102), and an orphan site was never adopted later.
+    // OR-008 first: it depends on the request alone.
+    const ruc = OrganizationService.validRuc(command.ruc);
     const establishment = await this.repository.findEstablishment();
+    if (!establishment) throw new SiteEstablishmentRequiredError();
 
     const input: SiteInput = {
       mspUnicode: command.mspUnicode,
-      establishmentId: establishment?.id ?? null,
+      establishmentId: establishment.id,
       name: command.name,
-      ruc: OrganizationService.validRuc(command.ruc),
+      ruc,
       parishConceptId: command.parishConceptId ?? null,
       addressLine: command.addressLine ?? null,
       phone: command.phone ?? null,

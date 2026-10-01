@@ -787,6 +787,58 @@ describe('los documentos por HTTP', () => {
       return (await extractText(proxy, { mergePages: true })).text;
     }
 
+    it('CER-042 el 117 anulado dice «ANULADO el …» en el papel y nunca el motivo', async () => {
+      const issued = await prisma.prescription.findUniqueOrThrow({
+        where: { id: prescriptionId },
+        select: { encounter: { select: { id: true, patientId: true, siteId: true, practitionerId: true } } }, // prettier-ignore
+      });
+      const doctor = await prisma.practitioner.findUniqueOrThrow({
+        where: { id: issued.encounter.practitionerId },
+        select: { userId: true },
+      });
+      const reason = 'Era F32 y no J06, motivo centinela';
+      const revokedAt = new Date();
+      const certificate = await prisma.medicalCertificate.create({
+        data: {
+          encounterId: issued.encounter.id,
+          siteId: issued.encounter.siteId,
+          patientId: issued.encounter.patientId,
+          issuedById: issued.encounter.practitionerId,
+          type: 'ATTENDANCE',
+          verificationCode: 'ANUL1234ANUL5678',
+          revokedAt,
+          revokedById: doctor.userId,
+          revocationReason: reason,
+        },
+      });
+
+      await publishTemplate('MEDICAL_CERTIFICATE');
+      const response = await post('/documents/drafts', doctorToken, {
+        kind: 'MEDICAL_CERTIFICATE',
+        subjectId: certificate.id,
+      })
+        .buffer()
+
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+      const { text } = await extractText(
+        await getDocumentProxy(new Uint8Array(response.body as Buffer)),
+        { mergePages: true },
+      );
+
+      const revokedOn = clinicalDateOf(revokedAt)
+        .split('-')
+        .reverse()
+        .join('/');
+      expect(text).toContain(`ANULADO el ${revokedOn}`);
+      expect(text).not.toContain('centinela');
+      expect(text).not.toContain('F32');
+    });
+
     it('DOC-081 con una sola sede activa la cabecera no lleva línea de sede, y con dos sí', async () => {
       const site = await prisma.site.findUniqueOrThrow({
         where: { id: siteId },
@@ -809,6 +861,23 @@ describe('los documentos por HTTP', () => {
         data: { active: false },
       });
       expect(await draftText()).not.toContain('Unicódigo');
+    });
+
+    it('DOC-102 la cabecera nombra la clínica con la razón social del establecimiento, no con la sede', async () => {
+      const site = await prisma.site.findUniqueOrThrow({
+        where: { id: siteId },
+        select: { name: true },
+      });
+      await prisma.site.update({
+        where: { id: siteId },
+        data: { name: 'Sucursal Malecón' },
+      });
+
+      const text = await draftText();
+      expect(text).toContain('Centro de Especialidades Bahía');
+      expect(text).not.toContain('Sucursal Malecón');
+
+      await prisma.site.update({ where: { id: siteId }, data: site });
     });
 
     it('DOC-080 OR-010 la cabecera imprime el nombre comercial, el correo y el permiso guardados', async () => {

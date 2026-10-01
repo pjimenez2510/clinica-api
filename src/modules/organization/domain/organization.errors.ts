@@ -90,6 +90,23 @@ export class SiteInUseError extends ConflictError {
   }
 }
 
+/**
+ * OR-032. A site is created before the establishment is registered. Every
+ * document prints the establishment's legal name as the clinic's (DOC-102), so
+ * a site without one would print the branch's name in its place. 409: the
+ * installation is in a state that does not admit it yet, and the sentence says
+ * what comes first.
+ */
+export class SiteEstablishmentRequiredError extends ConflictError {
+  readonly code = 'SITE_ESTABLISHMENT_REQUIRED';
+  override readonly userTitle =
+    'Registre primero el establecimiento: cada sede pertenece a él y su razón social es el nombre de la clínica en los documentos';
+
+  constructor() {
+    super('A site needs the establishment registered first');
+  }
+}
+
 /** The consulting room does not exist. */
 export class SiteRoomNotFoundError extends NotFoundError {
   readonly code = 'SITE_ROOM_NOT_FOUND';

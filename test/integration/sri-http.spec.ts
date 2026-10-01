@@ -501,16 +501,19 @@ describe('el comprobante electrónico por HTTP', () => {
           rows: { invoiceId: string; lastTransportFailure: unknown }[];
         }
       ).rows.find((r) => r.invoiceId === invoice.id);
+      // D-107. The list carries the first 500 characters and says how many
+      // more there are; the whole text is one click away.
       expect(row?.lastTransportFailure).toEqual({
         at: failedAt.toISOString(),
         httpStatus: 500,
         faultCode: 'soap:Server',
-        faultString: LONG_FAULT_STRING,
+        faultSummary: `${LONG_FAULT_STRING.slice(0, 500)}… [cortado: ${LONG_FAULT_STRING.length - 500} caracteres más]`,
         // Not twice: the one-line reason would repeat the fault string.
         error: null,
         hasResponseBody: true,
       });
-      // The body does not travel with every refresh of the monitor.
+      // Neither the rest of the trace nor the body travel with the list.
+      expect(monitor.text).not.toContain(LONG_FAULT_STRING.slice(600, 700));
       expect(monitor.text).not.toContain('CUERPO-CRUDO-DEL-SRI');
 
       const detail = await api()
@@ -528,6 +531,47 @@ describe('el comprobante electrónico por HTTP', () => {
           responseBody: `<soap:Envelope>CUERPO-CRUDO-DEL-SRI ${LONG_FAULT_STRING}</soap:Envelope>`,
         },
       });
+    });
+
+    it('SRI-069 D-107 el resumen cuenta caracteres como la base, también fuera del plano básico', async () => {
+      await uploadCertificate();
+      const invoice = await issueInvoice();
+      const voucherId = invoice.electronic!.voucherId;
+      const { accessKey } = await prisma.electronicVoucher.findUniqueOrThrow({
+        where: { id: voucherId },
+      });
+      // 501 characters, 1002 UTF-16 units: one character is left out.
+      const faultString = '😀'.repeat(501);
+      await prisma.electronicVoucherAttempt.create({
+        data: {
+          voucherId,
+          accessKey,
+          operation: 'RECEPTION',
+          startedAt: new Date(),
+          durationMs: 10,
+          outcome: 'TRANSPORT_FAILURE',
+          transportError: `HTTP 500 · soap:Server: ${faultString}`,
+          httpStatus: 500,
+          faultCode: 'soap:Server',
+          faultString,
+        },
+      });
+
+      const monitor = await api()
+        .get('/api/v1/sri/vouchers')
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(200);
+      const row = (
+        monitor.body as {
+          rows: {
+            invoiceId: string;
+            lastTransportFailure: { faultSummary: string } | null;
+          }[];
+        }
+      ).rows.find((r) => r.invoiceId === invoice.id);
+      expect(row?.lastTransportFailure?.faultSummary).toBe(
+        `${'😀'.repeat(500)}… [cortado: 1 caracteres más]`,
+      );
     });
 
     it('SRI-069 una respuesta posterior que sí lo fue deja de enseñar el fallo', async () => {
@@ -730,7 +774,7 @@ describe('el comprobante electrónico por HTTP', () => {
         where: { id: siteId },
         include: { establishment: true },
       });
-      const issuerRuc = own.ruc ?? own.establishment!.ruc!;
+      const issuerRuc = own.ruc ?? own.establishment.ruc!;
       const sibling = await createSite(prisma, 'Sede con el RUC escrito');
       const rejectionOf = (promise: Promise<unknown>) =>
         promise.then(

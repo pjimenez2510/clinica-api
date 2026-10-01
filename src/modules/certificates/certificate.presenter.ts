@@ -35,6 +35,7 @@ export function toCertificateResponse(
     birthOn: certificate.maternity?.birthOn ?? null,
     maternityDischargeOn: certificate.maternity?.dischargeOn ?? null,
     backdatingReason: certificate.backdatingReason,
+    issuedByOtherReason: certificate.issuedByOtherReason,
     revokedAt: certificate.revokedAt?.toISOString() ?? null,
     revocationReason: certificate.revocationReason,
   };

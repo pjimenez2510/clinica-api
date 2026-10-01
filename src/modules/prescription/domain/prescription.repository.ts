@@ -212,6 +212,8 @@ export interface IssueSnapshot {
   allergies: readonly KnownAllergy[];
   /** PR-021. The canton of the site's DPA parish; `null` when unconfigured. */
   cityOfPrescription: string | null;
+  /** PR-095. How many diagnoses the attention has, read under the lock. */
+  diagnosisCount: number;
   /** PR-034. Read again here: a registration lapses without anybody writing. */
   prescriber: {
     acessRegistration: string | null;

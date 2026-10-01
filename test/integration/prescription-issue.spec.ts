@@ -183,6 +183,41 @@ async function aPrescriber(
 }
 
 /** An attention ready to be prescribed on, with everything art. 5 needs. */
+/**
+ * PR-095. The diagnosis art. 5.b.iii prints: without one the receta is not
+ * issued. One CIE-10 concept per database, found or created.
+ */
+async function aDiagnosisOn(prisma: PrismaClient, encounterId: string) {
+  const system = await prisma.catalogSystem.upsert({
+    where: { code: 'CIE10' },
+    create: { code: 'CIE10', name: 'CIE-10' },
+    update: {},
+  });
+  const concept =
+    (await prisma.catalogConcept.findFirst({
+      where: { systemId: system.id, code: 'J029' },
+    })) ??
+    (await prisma.catalogConcept.create({
+      data: {
+        systemId: system.id,
+        code: 'J029',
+        display: 'Faringitis aguda, no especificada',
+        validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+      },
+    }));
+  await prisma.encounterDiagnosis.create({
+    data: {
+      encounterId,
+      conceptId: concept.id,
+      cie10Code: 'J029',
+      cie10Display: 'Faringitis aguda, no especificada',
+      certainty: 'DEFINITIVE',
+      occurrence: 'FIRST_TIME',
+      rank: 1,
+    },
+  });
+}
+
 async function anEncounter(prisma: PrismaClient) {
   const site = await aSiteWithCity(prisma);
   const practitioner = await aPrescriber(prisma);
@@ -198,6 +233,7 @@ async function anEncounter(prisma: PrismaClient) {
       visitSequence: 'FIRST_TIME',
     },
   });
+  await aDiagnosisOn(prisma, encounter.id);
 
   return {
     site,
@@ -940,6 +976,7 @@ describe('la receta contra PostgreSQL', () => {
           visitSequence: 'FIRST_TIME',
         },
       });
+      await aDiagnosisOn(prisma, encounter.id);
       const concept = await aCnmbConcept(prisma, {
         code: 'J01CA04',
         display: 'Amoxicilina',
@@ -1050,6 +1087,7 @@ describe('la receta contra PostgreSQL', () => {
         visitSequence: 'FIRST_TIME',
       },
     });
+    await aDiagnosisOn(prisma, encounter.id);
 
     const service = serviceOf(prisma);
     const composed = await service.compose(

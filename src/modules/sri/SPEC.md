@@ -556,12 +556,15 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
 - **SRI-068** — El sistema DEBERÁ ofrecer el XML firmado y, cuando exista, el
   autorizado, para descargarlos con `billing:read`.
 - **SRI-069** — CUANDO el último intento de un comprobante haya sido un fallo
-  de transporte, el monitor DEBERÁ mostrar su estado HTTP y el `faultstring`
-  completo —o el motivo del fallo si no hubo respuesta— y DEBERÁ ofrecer, a
-  petición, el cuerpo de esa respuesta tal como se guardó (SRI-059), con
-  `billing:read` y el alcance de SRI-065.
-  > El cuerpo no viaja con el monitor: con el SRI caído, quinientas filas de
-  > 16 KiB serían 8 MB en cada refresco de la pantalla de caja.
+  de transporte, el monitor DEBERÁ mostrar su estado HTTP y un resumen del
+  `faultstring` —sus primeros 500 caracteres, con la marca de corte si lo hay—
+  o el motivo del fallo si no hubo respuesta; y DEBERÁ ofrecer, a petición, el
+  `faultstring` completo, su `detail` y el cuerpo de esa respuesta tal como se
+  guardaron (SRI-059), con `billing:read` y el alcance de SRI-065.
+  > D-107, resuelta por el autor: el texto entero no viaja con la lista. Con
+  > el SRI caído, quinientas filas con la traza de celcer (unos 6 KB cada una)
+  > eran unos 3 MB en cada refresco de la pantalla de caja, justo cuando más se
+  > mira.
 
 ## 6. El RIDE y la entrega al cliente
 

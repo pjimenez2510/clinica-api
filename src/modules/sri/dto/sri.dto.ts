@@ -84,14 +84,16 @@ const monitorRowSchema = z.object({
   needsAPerson: z.boolean(),
   /**
    * SRI-069. The last attempt, when it was a transport failure: the status
-   * and the fault's string whole. The body is asked for apart.
+   * and a summary of the fault's string. The whole of it, its detail and the
+   * body are asked for apart (D-107).
    */
   lastTransportFailure: z
     .object({
       at: z.iso.datetime(),
       httpStatus: z.number().int().nullable(),
       faultCode: z.string().nullable(),
-      faultString: z.string().nullable(),
+      /** D-107. The first 500 characters, with the cut mark; whole apart. */
+      faultSummary: z.string().nullable(),
       /** The failure in one line, only when there is no `faultString`. */
       error: z.string().nullable(),
       hasResponseBody: z.boolean(),

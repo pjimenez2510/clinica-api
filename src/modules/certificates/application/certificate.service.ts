@@ -17,8 +17,12 @@ import {
   missingPatientWork,
   patientWorkNotice,
   assertIssuableType,
+  assertRestStartsInTime,
+  assertRestWithinAttention,
   backdatingReasonOf,
+  lateIssueDayOf,
   iessValidationOf,
+  issuerReasonOf,
   restDetailsOf,
   restNoticesOf,
   type CertificateType,
@@ -31,6 +35,7 @@ import {
   CertificateEncounterNotOpenError,
   CertificateEstablishmentIncompleteError,
   CertificateNotFoundError,
+  CertificateRevokeForbiddenError,
   CertifierProfileRequiredError,
   type PatientWorkField,
 } from '../domain/certificate.errors';
@@ -39,7 +44,9 @@ import {
   type Form117,
 } from '../../../shared/domain/form-117/form-117';
 import {
+  CERTIFICATE_CLOCK,
   CERTIFICATE_REPOSITORY,
+  type CertificateClock,
   type CertificateRepository,
   type CertificateView,
   type SiteScopeFilter,
@@ -89,8 +96,13 @@ export interface IssueCertificateRequest {
   maternityAdmissionOn: ClinicalDate | null;
   birthOn: ClinicalDate | null;
   maternityDischargeOn: ClinicalDate | null;
-  /** CER-030. Demanded only when the rest starts before the attention. */
+  /**
+   * CER-030. Demanded only when the rest starts before the attention or is
+   * issued on a later day.
+   */
   backdatingReason: string | null;
+  /** CER-039. Demanded only when the issuer is not who attended. */
+  issuedByOtherReason: string | null;
 }
 
 /** CER-013. The certificate, and what the IESS needs to be said about it. */
@@ -121,6 +133,8 @@ export class CertificateService {
     @Inject(ACCESS_AUDIT_RECORDER)
     private readonly audit: AccessAuditRecorder,
     private readonly logger: PinoLogger,
+    @Inject(CERTIFICATE_CLOCK)
+    private readonly clock: CertificateClock,
   ) {
     this.logger.setContext(CertificateService.name);
   }
@@ -144,12 +158,18 @@ export class CertificateService {
     // alone can be judged on, refused before touching storage.
     const details = restDetailsOf(type, request);
 
+    const issuedAt = this.clock();
+    // CER-030, CER-041. The calendar date of the issue, in Ecuador.
+    const issueDate = clinicalDateOf(issuedAt);
+    if (details !== null) assertRestStartsInTime(details.period, issueDate);
+    // CER-030, D-106 §5. The issue's day for lateness, dawn counted as before.
+    const lateIssueDay = lateIssueDayOf(issuedAt);
+
     const certifier = await this.certificates.findCertifierByUser(
       requester.userId,
     );
     if (!certifier) throw new CertifierProfileRequiredError();
 
-    const issuedAt = new Date();
     const verificationCode = newVerificationCode();
 
     // CER-038. Filled from the snapshot, inside the transaction.
@@ -160,6 +180,23 @@ export class CertificateService {
         if (!admitsNewCertificates(snapshot.encounterStatus)) {
           throw new CertificateEncounterNotOpenError(snapshot.encounterStatus);
         }
+        // CER-044, CER-045 (D-106). The window around the attention, which no
+        // reason widens; maternity has its own (D-108).
+        const attentionDate = clinicalDateOf(snapshot.encounterStartedAt);
+        if (details !== null) {
+          assertRestWithinAttention(
+            details.period,
+            attentionDate,
+            lateIssueDay,
+            details.maternity,
+          );
+        }
+        // CER-039. Who attended is read under the lock, with the attention.
+        const issuedByOtherReason = issuerReasonOf(
+          certifier.practitionerId,
+          snapshot.attendingPractitionerId,
+          request.issuedByOtherReason,
+        );
         // CER-036. The place of issue is the canton of the site's parish.
         if (snapshot.cityOfIssue === null) {
           throw new CertificateEstablishmentIncompleteError();
@@ -182,15 +219,18 @@ export class CertificateService {
           contingencyType: details?.contingencyType ?? null,
           maternity: details?.maternity ?? null,
           // CER-030. Against the clinical date of the attention in Ecuador,
-          // read inside the transaction.
+          // read inside the transaction, and the day of the issue with its
+          // dawn (D-106 §5).
           backdatingReason:
             details === null
               ? null
               : backdatingReasonOf(
                   details.period,
-                  clinicalDateOf(snapshot.encounterStartedAt),
+                  attentionDate,
+                  lateIssueDay,
                   request.backdatingReason,
                 ),
+          issuedByOtherReason,
           issuedById: certifier.practitionerId,
           issuedAt,
           verificationCode,
@@ -210,7 +250,11 @@ export class CertificateService {
         details === null
           ? []
           : [
-              ...restNoticesOf(details.days, certifier.primarySpecialtyCode),
+              ...restNoticesOf(
+                details.days,
+                certifier.primarySpecialtyCode,
+                details.contingencyType,
+              ),
               ...[patientWorkNotice(missingWork)].filter(
                 (notice): notice is string => notice !== null,
               ),
@@ -253,23 +297,35 @@ export class CertificateService {
   }
 
   /**
-   * CER-011, CER-012, CER-016. Annuls a certificate. NOTHING IS DELETED.
+   * CER-011, CER-012, CER-016, CER-040. Annuls a certificate. NOTHING IS
+   * DELETED.
    *
    * Who, when and why are written together, which is also what
-   * `medical_certificate_revocation_states_who_when_and_why` demands.
+   * `medical_certificate_revocation_states_who_when_and_why` demands. Only the
+   * account that issued it, or whoever holds `certificate:revoke-any` at the
+   * certificate's site (`directionSites`), may do it (D-105 §2).
    */
   async revoke(
     certificateId: string,
     reason: string,
     requester: Requester,
+    directionSites: SiteScopeFilter,
   ): Promise<CertificateView> {
     const revoked = await this.certificates.revoke(
       { certificateId, sites: requester.sites },
       {
-        revokedAt: new Date(),
+        revokedAt: this.clock(),
         // The ACCOUNT, never a cedula and never the practitioner (REQ-110).
         revokedById: requester.userId,
         reason,
+      },
+      ({ issuerUserId, siteId }) => {
+        const issuedIt = issuerUserId === requester.userId;
+        const directsTheSite =
+          directionSites === 'all' || directionSites.includes(siteId);
+        if (!issuedIt && !directsTheSite) {
+          throw new CertificateRevokeForbiddenError();
+        }
       },
     );
 
