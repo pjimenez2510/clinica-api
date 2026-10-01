@@ -114,7 +114,8 @@ BEGIN
     -- luego la ficha; un INSERT directo toma la ficha aquí y la clave foránea
     -- de la atención después. Un INSERT por `psql` a la vez que una emisión por
     -- la API sobre la MISMA atención puede interbloquearse: PostgreSQL lo
-    -- detecta (40P01) y una de las dos se reintenta.
+    -- detecta (40P01) y una de las dos falla con un 409 (`CONCURRENT_UPDATE`)
+    -- que se repite a mano: no hay reintento automático.
     SELECT COALESCE(p."merged_into_id", p."id") INTO chart
       FROM "patient" p
      WHERE p."id" = NEW."patient_id";
@@ -125,7 +126,8 @@ BEGIN
     -- que no cambie: así se juzga la ficha que quedó, no la que había al
     -- llegar. Una emisión que ya tiene una ficha y espera otra puede chocar
     -- con una fusión o un deshacer que esperan la primera: PostgreSQL lo
-    -- detecta (40P01) y una de las dos se reintenta.
+    -- detecta (40P01) y una de las dos falla con un 409 (`CONCURRENT_UPDATE`)
+    -- que se repite a mano: no hay reintento automático.
     LOOP
       SELECT COALESCE(p."merged_into_id", p."id") INTO current_chart
         FROM "patient" p

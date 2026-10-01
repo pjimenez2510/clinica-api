@@ -1710,11 +1710,25 @@ export class PrismaPatientRepository implements PatientRepository {
          * about a constraint the desk has never heard of.
          */
         // PA-062. The rest locks of both charts first, as in the merge: an
-        // issue waiting on them then judges the chart the undo leaves.
-        const linked = await tx.$queryRaw<{ target: string | null }[]>`
-          SELECT merged_into_id::text AS target FROM patient
-           WHERE id = ${input.sourcePatientId}::uuid`;
-        await lockRestsOfCharts(tx, [input.sourcePatientId, ...(linked[0]?.target ? [linked[0].target] : [])]); // prettier-ignore
+        // issue waiting on them then judges the chart the undo leaves. The
+        // target is read again once locked, until it holds still: a merge
+        // that landed in between changed it, and its lock is taken too.
+        const targetOf = async () =>
+          (
+            await tx.$queryRaw<{ target: string | null }[]>`
+              SELECT merged_into_id::text AS target FROM patient
+               WHERE id = ${input.sourcePatientId}::uuid`
+          )[0]?.target ?? null;
+        let locked: string | null = await targetOf();
+        await lockRestsOfCharts(tx, [input.sourcePatientId, ...(locked ? [locked] : [])]); // prettier-ignore
+        for (
+          let now = await targetOf();
+          now !== locked;
+          now = await targetOf()
+        ) {
+          locked = now;
+          if (now) await lockRestsOfCharts(tx, [now]);
+        }
         await lockChart(tx, input.sourcePatientId);
 
         const state = await tx.$queryRaw<{ mergedIntoId: string | null }[]>`
