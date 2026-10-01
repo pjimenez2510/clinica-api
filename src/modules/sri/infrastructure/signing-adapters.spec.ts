@@ -103,7 +103,8 @@ function verify(
   )[0];
   if (!signature) throw new Error('no signature');
   const verifier = new SignedXml({ publicCert: certificatePem });
-  verifier.loadSignature(signature);
+  // @xmldom's Element and the DOM lib's Node are the same thing to xml-crypto.
+  verifier.loadSignature(signature as unknown as Node);
   const valid = verifier.checkSignature(signedXml);
 
   const method = signature.getElementsByTagNameNS(
@@ -260,7 +261,8 @@ describe('SRI-023, SRI-024, SRI-025 el cifrado del certificado', () => {
     const sealed = await cipher.seal(Buffer.from('secreto'), salt);
 
     const tampered = Buffer.from(sealed);
-    tampered[tampered.length - 1] ^= 0xff;
+    const last = tampered.length - 1;
+    tampered.writeUInt8(tampered.readUInt8(last) ^ 0xff, last);
     await expect(cipher.open(tampered, salt)).rejects.toThrow();
     await expect(
       cipherWith('otra-frase-maestra-distinta').open(sealed, salt),

@@ -126,8 +126,34 @@ const parser = new XMLParser({
     ['detalle', 'totalImpuesto', 'campoAdicional', 'pago'].includes(name),
 });
 
-function parsed(xml: string) {
-  return parser.parse(xml).factura;
+interface ParsedTax {
+  codigo: string;
+  codigoPorcentaje: string;
+  tarifa: string;
+  baseImponible: string;
+  valor: string;
+}
+
+/** The parts of the parsed voucher these tests read. */
+interface ParsedFactura {
+  infoTributaria: Record<string, unknown>;
+  infoFactura: {
+    [element: string]: unknown;
+    totalConImpuestos: { totalImpuesto: ParsedTax[] };
+    pagos: { pago: { formaPago: string; total: string }[] };
+  };
+  detalles: {
+    detalle: (Record<string, unknown> & {
+      impuestos: { impuesto: ParsedTax };
+    })[];
+  };
+  infoAdicional: {
+    campoAdicional: { '@_nombre': string; '#text': string }[];
+  };
+}
+
+function parsed(xml: string): ParsedFactura {
+  return (parser.parse(xml) as { factura: ParsedFactura }).factura;
 }
 
 describe('SRI-010 la factura 1.1.0 según el XSD oficial', () => {
@@ -173,6 +199,7 @@ describe('SRI-011, SRI-013 las líneas y los impuestos', () => {
   it('SRI-013 desglosa el IVA por línea y agrupa los totales por codigoPorcentaje', () => {
     const factura = parsed(composeInvoiceXml(aSource()));
     const [consultation, supply] = factura.detalles.detalle;
+    if (!consultation || !supply) throw new Error('two lines expected');
 
     expect(consultation.impuestos.impuesto).toMatchObject({
       codigo: '2',

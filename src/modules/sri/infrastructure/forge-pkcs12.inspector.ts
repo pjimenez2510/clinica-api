@@ -35,8 +35,7 @@ export class ForgePkcs12Inspector implements Pkcs12Inspector {
       ...(container.getBags({ bagType: shrouded })[shrouded] ?? []),
       ...(container.getBags({ bagType: plainKey })[plainKey] ?? []),
     ];
-    const key = keys.find((bag) => bag.key !== undefined)?.key as
-      forge.pki.rsa.PrivateKey | undefined;
+    const key = keys.find((bag) => bag.key !== undefined)?.key;
     if (!key || typeof (key as { n?: unknown }).n !== 'object') {
       throw new SigningCertificateInvalidError();
     }
