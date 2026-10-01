@@ -6,8 +6,11 @@ import {
   ConceptWrongCatalogueError,
   DiagnosisConceptNotInForceError,
   DiagnosisPrimaryTakenError,
+  EncounterAlreadyClosedError,
   EncounterNotFoundError,
 } from '../domain/encounter.errors';
+import type { EncounterStatus } from '../domain/encounter';
+import { acceptsNewClinicalContent } from '../domain/encounter-state';
 import {
   careModalityOfCie10,
   isPrimary,
@@ -303,6 +306,14 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
  * row that lands is the one that matters. It costs one indexed lookup and it
  * is the difference between an authorisation decision and an authorisation
  * hope.
+ *
+ * ⚠️ AND IT TAKES THE ATTENTION'S ROW `FOR UPDATE`, reading its status again
+ * under the lock (EN-009, D-099 §1, §2). Annulling and interrupting lock the
+ * same row (`lockAndRead`), so the two serialize: a diagnosis that waited for
+ * an interruption sees it closed and is refused, and an interruption that
+ * waited for a diagnosis sees the act and does not send the patient away as
+ * not seen. The service's own check, taken before the transaction, could not
+ * see either.
  */
 async function requireEncounterInScope(
   tx: Prisma.TransactionClient,
@@ -314,6 +325,17 @@ async function requireEncounterInScope(
     select: { id: true },
   });
   if (!encounter) throw new EncounterNotFoundError();
+
+  const [locked] = await tx.$queryRaw<{ status: EncounterStatus }[]>`
+    SELECT "status"::text AS "status"
+      FROM "encounter"
+     WHERE "id" = ${encounterId}::uuid
+       FOR UPDATE
+  `;
+  if (!locked) throw new EncounterNotFoundError();
+  if (!acceptsNewClinicalContent(locked.status)) {
+    throw new EncounterAlreadyClosedError(locked.status);
+  }
 }
 
 /**

@@ -2226,6 +2226,13 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   > cita queda «se fue sin ser atendido» y caja no propone la consulta. Con la
   > cita sin llegada registrada la interrupción se rechaza
   > (`APPOINTMENT_ARRIVAL_NOT_RECORDED`, AG-149).
+  >
+  > **Con lo que se escribe a la vez (M-A, 2.ª revisión).** Anular e interrumpir
+  > bloquean la fila de la atención (`FOR UPDATE`), y quien escribe un
+  > diagnóstico o un procedimiento bloquea la misma fila y vuelve a leer su
+  > estado: o el acto entra antes y la salida lo ve —la cita queda atendida—,
+  > o espera, la ve terminada y se rechaza (`ENCOUNTER_ALREADY_CLOSED`). La
+  > receta y las órdenes hacen lo mismo en sus módulos (F-05).
 - **EN-168** — El sistema DEBERÁ admitir como máximo una atención viva (no
   `ENTERED_IN_ERROR`) por cita, y la base DEBERÁ garantizarlo; una atención
   anulada DEBERÁ seguir atada a su cita.

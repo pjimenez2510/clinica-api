@@ -20,6 +20,7 @@ import {
 import { PrismaClinicalActsRepository } from '../../src/modules/billing/infrastructure/prisma-clinical-acts.repository';
 import { PrismaEncounterExitRepository } from '../../src/modules/encounter/infrastructure/prisma-encounter-exit.repository';
 import { addDays, clinicalDateOf } from '../../src/shared/domain/clinic-time';
+import { PrismaClinicalCodingRepository } from '../../src/modules/encounter/infrastructure/prisma-clinical-coding.repository';
 import { PrismaClinicalNoteRepository } from '../../src/modules/encounter/infrastructure/prisma-clinical-note.repository';
 import { PrismaEncounterRepository } from '../../src/modules/encounter/infrastructure/prisma-encounter.repository';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
@@ -770,5 +771,210 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
       status: 'DISCONTINUED',
       clinicallyAttended: false,
     });
+  });
+});
+
+/**
+ * M-A (2.ª revisión). A diagnosis or a procedure written WHILE the attention
+ * is being annulled or interrupted: the write takes the attention's row
+ * `FOR UPDATE` — the same row `lockAndRead` locks — and reads its status
+ * again under that lock. Without it the act landed on an attention already
+ * closed, or after the exit had read «sin acto» and sent the patient away as
+ * not seen.
+ */
+describe('escribir un diagnóstico o un procedimiento se serializa con anular e interrumpir', () => {
+  const quietLogger = {
+    setContext: () => undefined,
+    info: () => undefined,
+  } as unknown as PinoLogger;
+  const noAudit = { record: () => Promise.resolve() };
+  const asPrisma = (prisma: PrismaClient) => prisma as unknown as PrismaService;
+  const coding = (prisma: PrismaClient) =>
+    new PrismaClinicalCodingRepository(asPrisma(prisma));
+
+  /** A concept in force since a year before the attention. */
+  async function aConcept(
+    prisma: PrismaClient,
+    systemCode: string,
+    since: Date,
+  ): Promise<string> {
+    const system = await prisma.catalogSystem.upsert({
+      where: { code: systemCode },
+      create: { code: systemCode, name: `Catálogo ${systemCode}` },
+      update: {},
+    });
+    const concept = await prisma.catalogConcept.create({
+      data: {
+        systemId: system.id,
+        code: systemCode === 'CIE10' ? 'J020' : '99213',
+        display: 'Concepto de prueba',
+        validFrom: new Date(addDays(clinicalDateOf(since), -365)),
+      },
+    });
+    return concept.id;
+  }
+
+  /**
+   * Holds the attention's row as `lockAndRead` does, starts `write` while it
+   * is held, and then either interrupts the attention or leaves it open
+   * before letting go. The write cannot finish before the holder does: the
+   * row is locked, and even the foreign key of the insert waits for it.
+   */
+  async function writeWhileHeld<T>(
+    prisma: PrismaClient,
+    encounter: { id: string; startedAt: Date },
+    closeIt: boolean,
+    write: () => Promise<T>,
+  ): Promise<PromiseSettledResult<T>> {
+    const closer = await createUser(prisma);
+    let locked!: () => void;
+    const isLocked = new Promise<void>((resolve) => (locked = resolve));
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+
+    const holder = prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT 1 FROM "encounter" WHERE "id" = ${encounter.id}::uuid FOR UPDATE`;
+      locked();
+      await released;
+      if (!closeIt) return;
+      const endedAt = endOf(encounter.startedAt);
+      await tx.encounter.update({
+        where: { id: encounter.id },
+        data: {
+          status: 'DISCONTINUED',
+          endedAt,
+          discontinuedReason: 'El paciente se retiró',
+          discontinuedOrigin: 'PATIENT',
+          discontinuedById: closer.id,
+          discontinuedAt: endedAt,
+        },
+      });
+    });
+    await isLocked;
+    const written = write().then(
+      (value) => ({ status: 'fulfilled', value }) as const,
+      (reason: unknown) => ({ status: 'rejected', reason }) as const,
+    );
+    release();
+    await holder;
+    return written;
+  }
+
+  it('EN-009 EN-167 un diagnóstico que espera a una interrupción en curso se rechaza al verla terminada', async () => {
+    const prisma = db();
+    const { ids, encounter } = await anAttendedAppointment(prisma);
+    const conceptId = await aConcept(prisma, 'CIE10', encounter.startedAt);
+    const diagnosis = () =>
+      coding(prisma).addDiagnosis({
+        encounterId: encounter.id,
+        conceptId,
+        certainty: 'DEFINITIVE',
+        occurrence: 'FIRST_TIME',
+        sites: [ids.siteId],
+      });
+
+    const refused = await writeWhileHeld(prisma, encounter, true, diagnosis);
+
+    expect(refused.status).toBe('rejected');
+    expect(refused.status === 'rejected' && refused.reason).toBeInstanceOf(
+      EncounterAlreadyClosedError,
+    );
+    expect(await prisma.encounterDiagnosis.count({ where: { encounterId: encounter.id } })).toBe(0); // prettier-ignore
+
+    // Control positivo: por el mismo camino, con la atención que sigue abierta, se escribe.
+    const { ids: open, encounter: live } = await anAttendedAppointment(prisma);
+    const written = await writeWhileHeld(prisma, live, false, () =>
+      coding(prisma).addDiagnosis({
+        encounterId: live.id,
+        conceptId,
+        certainty: 'DEFINITIVE',
+        occurrence: 'FIRST_TIME',
+        sites: [open.siteId],
+      }),
+    );
+    expect(written.status).toBe('fulfilled');
+    expect(await prisma.encounterDiagnosis.count({ where: { encounterId: live.id } })).toBe(1); // prettier-ignore
+  });
+
+  it('EN-009 EN-167 un procedimiento que espera a una interrupción en curso se rechaza al verla terminada', async () => {
+    const prisma = db();
+    const { ids, encounter } = await anAttendedAppointment(prisma);
+    const conceptId = await aConcept(prisma, 'TARIFF', encounter.startedAt);
+    const procedure = (encounterId: string, siteId: string) => () =>
+      coding(prisma).addProcedure({
+        encounterId,
+        conceptId,
+        quantity: 1,
+        sites: [siteId],
+      });
+
+    const refused = await writeWhileHeld(prisma, encounter, true, procedure(encounter.id, ids.siteId)); // prettier-ignore
+    expect(refused.status === 'rejected' && refused.reason).toBeInstanceOf(
+      EncounterAlreadyClosedError,
+    );
+    expect(await prisma.encounterProcedure.count({ where: { encounterId: encounter.id } })).toBe(0); // prettier-ignore
+
+    // Control positivo.
+    const { ids: open, encounter: live } = await anAttendedAppointment(prisma);
+    const written = await writeWhileHeld(prisma, live, false, procedure(live.id, open.siteId)); // prettier-ignore
+    expect(written.status).toBe('fulfilled');
+  });
+
+  it('AG-149 EN-167 diagnosticar e interrumpir a la vez: o hubo acto y la cita queda atendida, o no lo hubo y se fue sin ser atendido', async () => {
+    const prisma = db();
+    const { ids, entry, encounter } = await anAttendedAppointment(prisma);
+    const doctor = await prisma.practitioner.findUniqueOrThrow({
+      where: { id: ids.practitionerId },
+    });
+    await prisma.agendaEntry.update({
+      where: { id: entry.id },
+      data: {
+        status: 'CHECKED_IN',
+        checkedInAt: encounter.startedAt,
+        subjectStatus: 'READY',
+        subjectStatusAt: encounter.startedAt,
+        emergencyAssessedAt: encounter.startedAt,
+        emergencyAssessedById: doctor.userId,
+      },
+    });
+    const conceptId = await aConcept(prisma, 'CIE10', encounter.startedAt);
+    const exits = new EncounterExitService(
+      new PrismaEncounterExitRepository(asPrisma(prisma)),
+      new PrismaEncounterRepository(asPrisma(prisma)),
+      noAudit,
+      quietLogger,
+    );
+
+    const [diagnosis, exit] = await Promise.allSettled([
+      coding(prisma).addDiagnosis({
+        encounterId: encounter.id,
+        conceptId,
+        certainty: 'DEFINITIVE',
+        occurrence: 'FIRST_TIME',
+        sites: [ids.siteId],
+      }),
+      exits.discontinue(
+        { encounterId: encounter.id, reason: 'Se retiró', origin: 'PATIENT', canSignRecords: true }, // prettier-ignore
+        { userId: doctor.userId, sites: [ids.siteId] },
+      ),
+    ]);
+
+    // La interrupción no tiene por qué perder: lo que no puede pasar es que la
+    // cita diga «no atendido» con un diagnóstico escrito en la atención.
+    expect(exit.status).toBe('fulfilled');
+    const stored = await prisma.agendaEntry.findUniqueOrThrow({
+      where: { id: entry.id },
+    });
+    const diagnoses = await prisma.encounterDiagnosis.count({
+      where: { encounterId: encounter.id },
+    });
+    if (diagnosis.status === 'fulfilled') {
+      expect(diagnoses).toBe(1);
+      expect(stored.status).toBe('FULFILLED');
+    } else {
+      expect(diagnosis.reason).toBeInstanceOf(EncounterAlreadyClosedError);
+      expect(diagnoses).toBe(0);
+      expect(stored.status).toBe('LEFT_WITHOUT_BEING_SEEN');
+    }
   });
 });
