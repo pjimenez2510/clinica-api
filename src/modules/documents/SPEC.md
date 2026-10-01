@@ -670,8 +670,11 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
   unicódigo; y MIENTRAS tenga **una sola**, **NO DEBERÁ** llevarla (D-095.4).
 
   > Con una sede, «Sede Matriz · Unicódigo 012345» bajo «Clínica Andina» es
-  > ruido que el paciente lee como dos sitios. El unicódigo que el formulario
-  > 117 y el SRI piden **va igual** en su bloque propio, que es contenido.
+  > ruido que el paciente lee como dos sitios. El unicódigo y la dirección que
+  > el formulario 117 y el SRI piden **tienen que ir** en su bloque propio, que
+  > es contenido: ⚠️ hoy `composeCertificateLayout` no los imprime, y con una
+  > sola sede el 117 sale sin unicódigo (revisión clínica, 01-10-2026). Es de
+  > `feat/f05-ordenes-receta`, que rehace el 117 (CER-020 a CER-029).
 
 - **DOC-082** — MIENTRAS el documento imprima **un diagnóstico**, la cabecera
   DEBERÁ llevar la leyenda **CONFIDENCIAL** en rojo `#8a2c1f`; y si no lo
