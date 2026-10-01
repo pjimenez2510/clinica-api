@@ -1004,6 +1004,25 @@ describe('la administración de cuentas y roles por HTTP', () => {
         'Registrar alergias y antecedentes del paciente. Sin él no se registran alergias ni antecedentes',
       );
     });
+
+    it('AU-045 una base que ya tenía la descripción vieja la recibe nueva al sincronizar', async () => {
+      // Control: la fila parte del texto de antes, como en una instalación
+      // desplegada. Sin esto, la prueba de arriba sólo diría que una base
+      // nueva nace bien.
+      await prisma.permission.update({
+        where: { code: 'background:write' },
+        data: { description: 'Registrar alergias y antecedentes del paciente' },
+      });
+
+      await syncAuthorisation(prisma);
+
+      const { description } = await prisma.permission.findUniqueOrThrow({
+        where: { code: 'background:write' },
+      });
+      expect(description).toBe(
+        'Registrar alergias y antecedentes del paciente. Sin él no se registran alergias ni antecedentes',
+      );
+    });
   });
 
   describe('AU-032 · conceder un rol surte efecto sin volver a entrar', () => {

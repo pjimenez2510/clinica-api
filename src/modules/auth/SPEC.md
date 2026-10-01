@@ -406,7 +406,11 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   > **LAS LLEGADAS DE LA MAÑANA DEL DÍA 7.** Todas las sesiones de la semana
   > caen a las 03:00, así que la mañana siguiente varias personas vuelven a
   > entrar casi a la vez desde la misma IP de la clínica. El tope de 10
-  > intentos por minuto por IP no cambia aquí; queda anotado en D-065.
+  > intentos por minuto por IP no cambia aquí; queda anotado en la segunda
+  > revisión de D-065, en `DECISIONES-PENDIENTES.md`.
+  >
+  > **LA HORA ES FIJA.** No mira el horario de cada sede: una con atención de
+  > madrugada cortaría en consulta. Queda para el autor en D-072.
 - **AU-044** — MIENTRAS el diálogo de volver a entrar de AU-040 esté abierto,
   CUANDO lleve **15 minutos** abierto sin que la misma persona haya vuelto a
   entrar, la interfaz DEBERÁ terminar la sesión, quitar de la pantalla todo lo
@@ -432,6 +436,19 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   >
   > **SÓLO INTERFAZ.** La familia ya había caducado en el servidor; lo que
   > queda abierto es la pantalla.
+  >
+  > **LO QUE AU-044 NO CUBRE.** El diálogo lo abre una petición que recibe
+  > `SESSION_EXPIRED`. Una pantalla que no consulta nada por sí sola —una
+  > atención abierta en un consultorio vacío— no abre el diálogo hasta que
+  > alguien la toque, así que el límite no empieza a contar. Cubrirlo exige
+  > que la interfaz conozca la caducidad de la familia (cambio de contrato) o
+  > un bloqueo por inactividad: decisión del autor, D-072.
+  >
+  > **UNA ENTRADA EN VUELO AL CUMPLIRSE LOS 15 MINUTOS.** Si la contraseña se
+  > envió justo antes y la respuesta llega después, la pantalla ya se limpió;
+  > la sesión nueva —de la misma cuenta, que acreditó su contraseña— queda y
+  > la recarga entra con ella. Lo escrito se perdió igualmente, como dice el
+  > aviso.
 - **AU-005** — El sistema DEBERÁ permitir matricular un segundo factor TOTP con
   códigos de respaldo, y DEBERÁ cifrar el secreto en la aplicación (ADR-008 §3).
 
@@ -655,9 +672,10 @@ enlace que no sirve y con un correo que no sale.
   >
   > **`record:sign` SOLO NO AVISA.** Firmar no escribe: el hueco es de quien
   > receta o escribe la nota, que es quien está delante de la alergia.
-  > `nursing:write` tampoco: un rol de enfermería sin el registro de alergias
-  > es lo que D-062 dejó a decisión de la clínica, y la descripción del
-  > permiso lo dice.
+  > `nursing:write` tampoco, **por ahora**: D-071 nombra el caso de un rol
+  > propio de enfermería sin el registro de alergias y su decisión no lo
+  > resuelve. Si también debe advertir lo decide el autor (D-072); entretanto,
+  > la descripción del permiso lo dice.
 
 - **AU-038** — CUANDO se fijen los roles de una cuenta, el sistema NO DEBERÁ
   admitir ninguna concesión cuyo alcance esté fuera del alcance de quien llama

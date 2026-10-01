@@ -46,9 +46,10 @@ const RECORD_AND_ADMIN_WARNING =
 
 /**
  * AU-045 (D-071). Permissions whose holder is in front of the allergy — who
- * prescribes, who writes the note — and the one that records it. Signing does
- * not write, and a nursing role without the allergy record is what D-062 left
- * to the clinic, so neither triggers it.
+ * prescribes, who writes the note — and the one that records it, which is
+ * the letter of D-071. Signing does not write. Whether a custom NURSING role
+ * (`nursing:write`) without the allergy record should warn too is a question
+ * D-071 raised and did not resolve: it is with the author, not decided here.
  */
 const WRITES_THE_RECORD: readonly Permission[] = [
   'prescription:write',
@@ -76,7 +77,10 @@ function holdsAnyClinicalRecord(permissions: readonly string[]): boolean {
  * Everything worth telling the administrator before this permission set is
  * saved. An empty array means nothing to say — never a refusal.
  *
- * TWO SOURCES, AND ONLY ONE OF THEM FIRES PER PAIR. AU-034 generalises the
+ * AU-045 IS ITS OWN SENTENCE, about a gap rather than a combination, and
+ * goes right after AU-034's.
+ *
+ * FOR THE PAIR OF AU-034, ONLY ONE SOURCE FIRES. AU-034 generalises the
  * first entry of `RISKY_COMBINATIONS` (`user:manage` + `record:read`) to the
  * whole `record:*` family, so that entry is skipped when the general rule
  * already covers it: two warnings about the same concern, worded differently,

@@ -29,7 +29,9 @@ function at(days: number, hour: number, minute = 0): Date {
 describe('AU-043 la caducidad de una familia de sesión', () => {
   const originalTz = process.env.TZ;
   afterEach(() => {
-    process.env.TZ = originalTz;
+    // Assigning `undefined` would leave the string "undefined", an invalid zone.
+    if (originalTz === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTz;
   });
 
   it('AU-043 quien entra a las 08:10 pierde la sesión a las 03:00 del día 7, no a las 08:10', () => {
@@ -48,16 +50,23 @@ describe('AU-043 la caducidad de una familia de sesión', () => {
     );
   });
 
-  it('AU-043 en cada minuto de un día: a las 03:00 de Guayaquil, nunca más de N días ni N−1 o menos', () => {
-    for (const days of [7, 3]) {
-      for (let minute = 0; minute < 24 * 60; minute++) {
-        const start = new Date(at(0, 0).getTime() + minute * 60_000);
-        const expiry = sessionFamilyExpiry(start, days);
-        const life = expiry.getTime() - start.getTime();
+  it('AU-043 en cada minuto de un día y con el servidor en otro huso: a las 03:00 de Guayaquil, nunca más de N días ni N−1 o menos', () => {
+    // N = 1 is allowed by the schema: its sessions live between 0 and 24 h
+    // (the SPEC says so); the rule still holds.
+    for (const zone of ['UTC', 'Asia/Tokyo', 'Pacific/Kiritimati']) {
+      process.env.TZ = zone;
+      for (const days of [7, 3, 1]) {
+        for (let minute = 0; minute < 24 * 60; minute++) {
+          const start = new Date(at(0, 0).getTime() + minute * 60_000);
+          const expiry = sessionFamilyExpiry(start, days);
+          const life = expiry.getTime() - start.getTime();
 
-        expect(life, start.toISOString()).toBeLessThanOrEqual(days * DAY_MS);
-        expect(life, start.toISOString()).toBeGreaterThan((days - 1) * DAY_MS);
-        expect(wallClockOf(expiry)).toEqual(WallClockTime.of(3, 0));
+          expect(life, start.toISOString()).toBeLessThanOrEqual(days * DAY_MS);
+          expect(life, start.toISOString()).toBeGreaterThan(
+            (days - 1) * DAY_MS,
+          );
+          expect(wallClockOf(expiry)).toEqual(WallClockTime.of(3, 0));
+        }
       }
     }
   });
