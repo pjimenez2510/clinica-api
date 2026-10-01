@@ -271,7 +271,7 @@ describe('CER-030 CER-041 el disparador cuenta los días en America/Guayaquil, n
     ).rejects.toThrow(/medical_certificate_rest_starts_by_next_day/);
   });
 
-  it('CER-030 una atención a las 23:00 de Ecuador: emitido a las 23:30 no pide motivo, a las 00:10 del día siguiente sí', async () => {
+  it('CER-030 una atención a las 23:00 de Ecuador: emitido a las 05:59 del día siguiente no es tardío, a las 06:00 sí (D-106 §5)', async () => {
     const prisma = db();
     const base = await aScene(prisma);
     const night = atWallClock(base.day, WallClockTime.of(23, 0));
@@ -280,21 +280,79 @@ describe('CER-030 CER-041 el disparador cuenta los días en America/Guayaquil, n
       data: { startedAt: night },
     });
     const scene = { ...base, startedAt: night };
-    const rest = { from: addDays(base.day, 1), to: addDays(base.day, 1) };
+    const nextDay = addDays(base.day, 1);
+    const rest = { from: nextDay, to: nextDay };
 
-    // Control positivo: 23:30 is still the attention's Ecuadorian day.
+    // Control positivo: the dawn still counts as the attention's day.
     await expect(
       insert(prisma, scene, {
         rest,
-        issuedAt: atWallClock(base.day, WallClockTime.of(23, 30)),
+        issuedAt: atWallClock(nextDay, WallClockTime.of(5, 59)),
       }),
     ).resolves.toBe(1);
-    // 00:10 is the next Ecuadorian day: a late issue, which needs its reason.
+    // From 06:00 it is a late issue, which needs its reason.
     await expect(
       insert(prisma, scene, {
         rest,
-        issuedAt: atWallClock(addDays(base.day, 1), WallClockTime.of(0, 10)),
+        issuedAt: atWallClock(nextDay, WallClockTime.of(6, 0)),
       }),
     ).rejects.toThrow(/medical_certificate_backdating_reason_required/);
+  });
+});
+
+describe('D-106 los límites de la ventana del reposo, garantizados por la base', () => {
+  const REASON_LATE = 'Volvió por el certificado días después';
+
+  it('CER-044 con motivo, el reposo empieza como mucho 3 días antes de la atención; 4 días antes se rechaza (D-106 §1)', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+
+    // Control positivo: three days before, with its reason.
+    await expect(
+      insert(prisma, scene, {
+        rest: { from: addDays(scene.day, -3), to: scene.day },
+        backdatingReason: 'Fiebre desde tres días antes',
+      }),
+    ).resolves.toBe(1);
+    await expect(
+      insert(prisma, scene, {
+        rest: { from: addDays(scene.day, -4), to: scene.day },
+        backdatingReason: 'Fiebre desde cuatro días antes',
+      }),
+    ).rejects.toThrow(/medical_certificate_rest_starts_at_most_3_days_before/);
+  });
+
+  it('CER-045 un reposo se emite hasta el octavo día después de la atención; el noveno se rechaza (D-106 §4)', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const startingThen = (days: number) => ({
+      from: addDays(scene.day, days),
+      to: addDays(scene.day, days),
+    });
+
+    // Control positivo: issued on day 8, starting that day, with its reason.
+    await expect(
+      insert(prisma, scene, {
+        rest: startingThen(8),
+        issuedDaysLater: 8,
+        backdatingReason: REASON_LATE,
+      }),
+    ).resolves.toBe(1);
+    await expect(
+      insert(prisma, scene, {
+        rest: startingThen(9),
+        issuedDaysLater: 9,
+        backdatingReason: REASON_LATE,
+      }),
+    ).rejects.toThrow(/medical_certificate_rest_issued_within_8_days/);
+  });
+
+  it('CER-045 la asistencia emitida pasados 8 días no tiene ese tope (D-106 §3)', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+
+    await expect(insert(prisma, scene, { issuedDaysLater: 20 })).resolves.toBe(
+      1,
+    );
   });
 });

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   addDays,
+  atWallClock,
+  WallClockTime,
   clinicalDateOf,
   type ClinicalDate,
 } from '../../../shared/domain/clinic-time';
@@ -15,6 +17,8 @@ import {
   restNoticeThresholdOf,
   backdatingReasonOf,
   assertRestStartsInTime,
+  assertRestWithinAttention,
+  lateIssueDayOf,
   issuerReasonOf,
   latestRestStartOf,
   MATERNITY_CHAIN_NOTICE,
@@ -27,7 +31,9 @@ import {
 import {
   CertificateBackdatingReasonRequiredError,
   CertificateIssuerReasonRequiredError,
+  CertificateRestIssuedTooLateError,
   CertificateRestPeriodInvalidError,
+  CertificateRestStartTooEarlyError,
   CertificateRestStartTooLateError,
   CertificateRestTooLongError,
   CertificateTypeNotSupportedError,
@@ -465,5 +471,58 @@ describe('CER-035 las fechas de maternidad van en orden', () => {
         ],
       }),
     );
+  });
+});
+
+describe('D-106 la ventana del reposo alrededor de la atención', () => {
+  it('CER-030 la madrugada, hasta las 06:00 de Ecuador, cuenta como el día anterior (D-106 §5)', () => {
+    const next = addDays(today, 1);
+    expect(lateIssueDayOf(atWallClock(next, WallClockTime.of(5, 59)))).toBe(
+      today,
+    );
+    expect(lateIssueDayOf(atWallClock(next, WallClockTime.of(6, 0)))).toBe(
+      next,
+    );
+  });
+
+  it('CER-044 con motivo, el reposo empieza como mucho 3 días antes de la atención; 4 se rechaza nombrando restFrom', () => {
+    expect(() =>
+      assertRestWithinAttention(
+        { from: addDays(today, -3), to: today },
+        today,
+        today,
+      ),
+    ).not.toThrow();
+    let refusal: unknown;
+    try {
+      assertRestWithinAttention(
+        { from: addDays(today, -4), to: today },
+        today,
+        today,
+      );
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(CertificateRestStartTooEarlyError);
+    expect(
+      (refusal as CertificateRestStartTooEarlyError).fieldErrors[0],
+    ).toMatchObject({
+      field: 'restFrom',
+      message: `El reposo debe empezar, como muy pronto, el ${addDays(today, -3).split('-').reverse().join('/')}`,
+    });
+  });
+
+  it('CER-045 un reposo se emite hasta el octavo día de la atención; el noveno se rechaza', () => {
+    const period = { from: addDays(today, 8), to: addDays(today, 8) };
+    expect(() =>
+      assertRestWithinAttention(period, today, addDays(today, 8)),
+    ).not.toThrow();
+    expect(() =>
+      assertRestWithinAttention(
+        { from: addDays(today, 9), to: addDays(today, 9) },
+        today,
+        addDays(today, 9),
+      ),
+    ).toThrow(CertificateRestIssuedTooLateError);
   });
 });

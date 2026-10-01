@@ -135,7 +135,7 @@ un día después de la atención sin motivo, y comprobar que los tres se rechaza
 con su control positivo (con motivo, mañana, el mismo día); anular con otra
 cuenta sin el permiso y comprobar que se rechaza; imprimir uno anulado y
 comprobar que no lleva el motivo.
-**Cubre:** CER-030, CER-039 a CER-043.
+**Cubre:** CER-030, CER-039 a CER-045.
 
 ---
 
@@ -342,7 +342,9 @@ PR-030).
   ENTONCES el sistema DEBERÁ exigir un **motivo escrito** de al menos diez
   caracteres, guardarlo con el certificado y rechazar la emisión sin él con
   `CERTIFICATE_BACKDATING_REASON_REQUIRED`. SI no se da ninguno de los dos
-  casos, el certificado **NO DEBERÁ** guardar motivo.
+  casos, el certificado **NO DEBERÁ** guardar motivo. Para juzgar si la
+  emisión es posterior, la **madrugada siguiente, hasta las 06:00** de
+  `America/Guayaquil`, DEBERÁ contar como el día de la atención (D-106 §5).
 
   > **D-105 §3** (el autor, 01-10-2026): un reposo emitido diez días después
   > que empieza el día de la atención es tan retroactivo para quien lo recibe
@@ -484,6 +486,24 @@ PR-030).
   > confirme con el IESS si la maternidad se certifica en este formulario o por
   > otro trámite.».
 
+- **CER-044** — SI el reposo empieza **más de 3 días antes** de la fecha clínica
+  de la atención, ENTONCES el sistema DEBERÁ rechazar la emisión con
+  `CERTIFICATE_REST_START_TOO_EARLY`, nombrando el campo `restFrom` y la
+  primera fecha admitida, **aunque traiga el motivo** de CER-030.
+
+  > **D-106 §1** (el autor, 01-10-2026): el motivo admite el retroactivo, pero
+  > no sin límite. **Lo garantiza la base:**
+  > `medical_certificate_rest_starts_at_most_3_days_before`.
+
+- **CER-045** — SI se emite un reposo **pasados 8 días** de la fecha clínica de
+  la atención —con el día de emisión de CER-030, madrugada incluida—, ENTONCES
+  el sistema DEBERÁ rechazarlo con `CERTIFICATE_REST_ISSUED_TOO_LATE`. El
+  certificado de asistencia **NO** tiene ese tope.
+
+  > **D-106 §4 y §3.** Pasado ese plazo el paciente se ve en una atención
+  > nueva. **Lo garantiza la base:**
+  > `medical_certificate_rest_issued_within_8_days`.
+
 ---
 
 ## Criterios de éxito
@@ -520,6 +540,8 @@ PR-030).
 | `CERTIFICATE_ISSUER_REASON_REQUIRED` | 422 | CER-039 |
 | `CERTIFICATE_REVOKE_FORBIDDEN` | 403 | CER-040 |
 | `CERTIFICATE_REST_START_TOO_LATE` | 422 | CER-041 |
+| `CERTIFICATE_REST_START_TOO_EARLY` | 422 | CER-044 |
+| `CERTIFICATE_REST_ISSUED_TOO_LATE` | 422 | CER-045 |
 
 ## Esquema
 
@@ -534,7 +556,7 @@ Todo lo que faltaba está en `20261001070500_certificate_number_and_revocation`.
 | `contingency_type`, `rest_backdating_reason`, `maternity_admission_on`, `birth_on`, `maternity_discharge_on` | `medical_certificate` | CER-030, CER-034, CER-035 |
 | `employer_name`, `job_title` | `patient` | CER-038 — pendiente de coordinación con `feat/datos-consentimiento-arco` |
 | `issued_by_other_reason` + `medical_certificate_issuer_reason_not_blank` | `medical_certificate` | CER-039 |
-| Disparador `medical_certificate_issue_rules`: emisor, ventana y motivo | `medical_certificate` | CER-030, CER-039, CER-041 |
+| Disparador `medical_certificate_issue_rules`: emisor, ventana y motivo | `medical_certificate` | CER-030, CER-039, CER-041, CER-044, CER-045 |
 
 ## Rutas
 

@@ -750,4 +750,36 @@ describe('el servicio de certificados', () => {
       service.revoke('certificate-1', 'Emitido a la persona equivocada', requester, 'all'), // prettier-ignore
     ).resolves.toBeDefined();
   });
+  it('CER-044 CER-045 el reposo empieza como mucho 3 días antes y se emite hasta el octavo día de la atención (D-106)', async () => {
+    await expect(
+      service.issue(
+        rest(5, { restFrom: addDays(today, -4), restTo: today, backdatingReason: 'Fiebre desde hace cuatro días' }), // prettier-ignore
+        requester,
+      ),
+    ).rejects.toMatchObject({ code: 'CERTIFICATE_REST_START_TOO_EARLY' });
+
+    // Mediodía en Ecuador: la madrugada (D-106 §5) no corre ningún día.
+    clockReads = atWallClock(today, WallClockTime.of(12, 0));
+    repository.snapshot = aSnapshot({
+      encounterStartedAt: atWallClock(
+        addDays(today, -9),
+        WallClockTime.of(12, 0),
+      ),
+    });
+    await expect(
+      service.issue(rest(1, { backdatingReason: 'Volvió nueve días después' }), requester), // prettier-ignore
+    ).rejects.toMatchObject({ code: 'CERTIFICATE_REST_ISSUED_TOO_LATE' });
+    expect(repository.issued).toHaveLength(0);
+
+    // Control positivo: el octavo día, con su motivo.
+    repository.snapshot = aSnapshot({
+      encounterStartedAt: atWallClock(
+        addDays(today, -8),
+        WallClockTime.of(12, 0),
+      ),
+    });
+    await expect(
+      service.issue(rest(1, { backdatingReason: 'Volvió ocho días después' }), requester), // prettier-ignore
+    ).resolves.toBeDefined();
+  });
 });

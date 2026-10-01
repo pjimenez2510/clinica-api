@@ -18,7 +18,12 @@
 --    reposo que empieza dentro de 90 días se aceptaba.
 --  · CER-030, ampliado: el reposo pide motivo cuando empieza antes del día de
 --    la atención O cuando se emite un día posterior al de la atención; sin
---    ninguno de los dos casos, no guarda motivo.
+--    ninguno de los dos casos, no guarda motivo. La madrugada siguiente, hasta
+--    las 06:00, cuenta como día de la atención (D-106 §5).
+--  · CER-044 (D-106 §1): aun con motivo, el reposo empieza como mucho tres
+--    días antes de la atención.
+--  · CER-045 (D-106 §4): un reposo no se emite pasados ocho días de la
+--    atención.
 --
 -- POR QUÉ UN DISPARADOR Y NO UN CHECK. Las tres reglas comparan la fila con
 -- su atención —quién la atendió, qué día—, y un CHECK no puede leer otra
@@ -63,6 +68,7 @@ DECLARE
   attending     uuid;
   attention_day date;
   issue_day     date;
+  late_day      date;
 BEGIN
   SELECT e."practitioner_id",
          (e."started_at" AT TIME ZONE 'America/Guayaquil')::date
@@ -74,6 +80,9 @@ BEGIN
     RETURN NEW;
   END IF;
   issue_day := (NEW."issued_at" AT TIME ZONE 'America/Guayaquil')::date;
+  -- D-106 §5: para juzgar si la emisión es tardía, la madrugada siguiente
+  -- (hasta las 06:00 en Ecuador) cuenta como el día anterior.
+  late_day := ((NEW."issued_at" AT TIME ZONE 'America/Guayaquil') - interval '6 hours')::date;
 
   -- CER-039.
   IF NEW."issued_by_id" <> attending AND NEW."issued_by_other_reason" IS NULL THEN
@@ -95,8 +104,22 @@ BEGIN
               CONSTRAINT = 'medical_certificate_rest_starts_by_next_day';
     END IF;
 
-    -- CER-030.
-    IF (NEW."rest_from" < attention_day OR issue_day > attention_day) THEN
+    -- CER-044 (D-106 §1): con motivo, como mucho tres días antes de la atención.
+    IF NEW."rest_from" < attention_day - 3 THEN
+      RAISE EXCEPTION 'medical_certificate_rest_starts_at_most_3_days_before: a rest starts at most three days before the attention'
+        USING ERRCODE = 'check_violation',
+              CONSTRAINT = 'medical_certificate_rest_starts_at_most_3_days_before';
+    END IF;
+
+    -- CER-045 (D-106 §4): pasados ocho días de la atención, una atención nueva.
+    IF late_day > attention_day + 8 THEN
+      RAISE EXCEPTION 'medical_certificate_rest_issued_within_8_days: a rest is issued within eight days of the attention'
+        USING ERRCODE = 'check_violation',
+              CONSTRAINT = 'medical_certificate_rest_issued_within_8_days';
+    END IF;
+
+    -- CER-030, con el día de la emisión de D-106 §5.
+    IF (NEW."rest_from" < attention_day OR late_day > attention_day) THEN
       IF NEW."rest_backdating_reason" IS NULL THEN
         RAISE EXCEPTION 'medical_certificate_backdating_reason_required: a backdated or late rest needs a reason'
           USING ERRCODE = 'check_violation',

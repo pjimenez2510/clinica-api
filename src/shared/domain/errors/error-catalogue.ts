@@ -872,6 +872,10 @@ export const DOMAIN_ERROR_CODES = [
   //     quien no atendió y no dice por qué.
   //   * `CERTIFICATE_REST_START_TOO_LATE` (422) — CER-041 (D-105 §3). El
   //     reposo empieza después del día siguiente a la emisión.
+  //   * `CERTIFICATE_REST_START_TOO_EARLY` (422) — CER-044 (D-106 §1). Aun
+  //     con motivo, más de tres días antes de la atención.
+  //   * `CERTIFICATE_REST_ISSUED_TOO_LATE` (422) — CER-045 (D-106 §4). Un
+  //     reposo pasados ocho días de la atención.
   //   * `CERTIFICATE_REVOKE_FORBIDDEN` (403) — CER-040 (D-105 §2). Anula quien
   //     no lo emitió y no tiene `certificate:revoke-any` en su sede.
   'CERTIFICATE_ALREADY_REVOKED',
@@ -879,6 +883,8 @@ export const DOMAIN_ERROR_CODES = [
   'CERTIFICATE_DIAGNOSIS_REQUIRED',
   'CERTIFICATE_ESTABLISHMENT_INCOMPLETE',
   'CERTIFICATE_ISSUER_REASON_REQUIRED',
+  'CERTIFICATE_REST_ISSUED_TOO_LATE',
+  'CERTIFICATE_REST_START_TOO_EARLY',
   'CERTIFICATE_REST_START_TOO_LATE',
   'CERTIFICATE_REST_TOO_LONG',
   'CERTIFICATE_REVOKE_FORBIDDEN',

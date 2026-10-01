@@ -1,5 +1,6 @@
 import {
   addDays,
+  clinicalDateOf,
   clinicalDaySpan,
   type ClinicalDate,
 } from '../../../shared/domain/clinic-time';
@@ -7,7 +8,9 @@ import {
 import {
   CertificateBackdatingReasonRequiredError,
   CertificateIssuerReasonRequiredError,
+  CertificateRestIssuedTooLateError,
   CertificateRestPeriodInvalidError,
+  CertificateRestStartTooEarlyError,
   CertificateRestStartTooLateError,
   CertificateRestTooLongError,
   CertificateTypeNotSupportedError,
@@ -283,6 +286,40 @@ export function backdatingReasonOf(
  */
 export function latestRestStartOf(issueDate: ClinicalDate): ClinicalDate {
   return addDays(issueDate, 1);
+}
+
+/**
+ * CER-030, D-106 §5. The day an issue counts as, to judge whether it is late:
+ * Ecuador's calendar day, with the dawn —until 06:00— counted as the day
+ * before. A doctor who signs at 02:00 the rest of a night attention is not
+ * issuing late. Ecuador has no daylight saving: six hours are six hours.
+ */
+export const DAWN_HOURS = 6;
+export function lateIssueDayOf(issuedAt: Date): ClinicalDate {
+  return clinicalDateOf(new Date(issuedAt.getTime() - DAWN_HOURS * 60 * 60 * 1000)); // prettier-ignore
+}
+
+/** CER-044, D-106 §1. How many days before the attention a rest may start. */
+export const MAX_REST_DAYS_BEFORE_ATTENTION = 3;
+
+/** CER-045, D-106 §4. How many days after the attention a rest is issued. */
+export const MAX_DAYS_TO_ISSUE_REST = 8;
+
+/**
+ * CER-044, CER-045. The window of a rest around its attention: it starts at
+ * most three days before, and it is issued at most eight days after (with the
+ * dawn of CER-030). The reason of CER-030 does not widen either bound.
+ */
+export function assertRestWithinAttention(
+  period: RestPeriod,
+  attentionDate: ClinicalDate,
+  lateIssueDay: ClinicalDate,
+): void {
+  const earliest = addDays(attentionDate, -MAX_REST_DAYS_BEFORE_ATTENTION);
+  if (period.from < earliest) throw new CertificateRestStartTooEarlyError(earliest); // prettier-ignore
+  if (lateIssueDay > addDays(attentionDate, MAX_DAYS_TO_ISSUE_REST)) {
+    throw new CertificateRestIssuedTooLateError();
+  }
 }
 
 /** CER-041. Refuses a rest that starts after `latestRestStartOf`. */

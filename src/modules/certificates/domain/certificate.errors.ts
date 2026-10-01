@@ -235,6 +235,42 @@ export class CertificateAlreadyRevokedError extends ConflictError {
 }
 
 /**
+ * CER-044, D-106 §1. Even with its reason, a rest starts at most three days
+ * before the attention; the earliest admitted day is named.
+ */
+export class CertificateRestStartTooEarlyError extends ValidationError {
+  readonly code = 'CERTIFICATE_REST_START_TOO_EARLY';
+  override readonly userTitle =
+    'El reposo puede empezar, como mucho, tres días antes de la atención';
+  override readonly fieldErrors: readonly DomainFieldError[];
+
+  constructor(earliest: ClinicalDate) {
+    super('A rest starts at most three days before the attention');
+    this.fieldErrors = [
+      {
+        field: 'restFrom',
+        code: 'CERTIFICATE_REST_START_TOO_EARLY',
+        message: `El reposo debe empezar, como muy pronto, el ${earliest.split('-').reverse().join('/')}`,
+      },
+    ];
+  }
+}
+
+/**
+ * CER-045, D-106 §4. More than eight days after the attention a rest is not
+ * issued on it: the patient is seen again, in a new attention.
+ */
+export class CertificateRestIssuedTooLateError extends ValidationError {
+  readonly code = 'CERTIFICATE_REST_ISSUED_TOO_LATE';
+  override readonly userTitle =
+    'Han pasado más de ocho días desde la atención: el reposo se emite desde una atención nueva';
+
+  constructor() {
+    super('A rest is issued within eight days of the attention');
+  }
+}
+
+/**
  * CER-040, D-105 §2. Annulling a certificate somebody else issued, without the
  * permission of the medical direction at its site. 403: the certificate is in
  * the caller's scope —they can read it—, but this act is not theirs.

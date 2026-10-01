@@ -15,6 +15,8 @@ import {
   CertificateBackdatingReasonRequiredError,
   CertificateEstablishmentIncompleteError,
   CertificateIssuerReasonRequiredError,
+  CertificateRestIssuedTooLateError,
+  CertificateRestStartTooEarlyError,
   CertificateRestStartTooLateError,
   CertificateRestTooLongError,
   CertificateRevokeForbiddenError,
@@ -40,6 +42,20 @@ const CONTRACT: readonly {
   category: { prototype: DomainError };
   says: string;
 }[] = [
+  {
+    error: new CertificateRestStartTooEarlyError(
+      '2026-09-28' as ClinicalDate, // fecha-fija: sólo se comprueba el formato DD/MM/AAAA
+    ),
+    code: 'CERTIFICATE_REST_START_TOO_EARLY',
+    category: ValidationError,
+    says: 'tres días antes de la atención',
+  },
+  {
+    error: new CertificateRestIssuedTooLateError(),
+    code: 'CERTIFICATE_REST_ISSUED_TOO_LATE',
+    category: ValidationError,
+    says: 'más de ocho días',
+  },
   {
     error: new CertificateRevokeForbiddenError(),
     code: 'CERTIFICATE_REVOKE_FORBIDDEN',

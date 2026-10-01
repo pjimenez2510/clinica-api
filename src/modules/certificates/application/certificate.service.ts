@@ -18,7 +18,9 @@ import {
   patientWorkNotice,
   assertIssuableType,
   assertRestStartsInTime,
+  assertRestWithinAttention,
   backdatingReasonOf,
+  lateIssueDayOf,
   iessValidationOf,
   issuerReasonOf,
   restDetailsOf,
@@ -160,6 +162,8 @@ export class CertificateService {
     // CER-030, CER-041. The calendar date of the issue, in Ecuador.
     const issueDate = clinicalDateOf(issuedAt);
     if (details !== null) assertRestStartsInTime(details.period, issueDate);
+    // CER-030, D-106 §5. The issue's day for lateness, dawn counted as before.
+    const lateIssueDay = lateIssueDayOf(issuedAt);
 
     const certifier = await this.certificates.findCertifierByUser(
       requester.userId,
@@ -175,6 +179,16 @@ export class CertificateService {
       (snapshot) => {
         if (!admitsNewCertificates(snapshot.encounterStatus)) {
           throw new CertificateEncounterNotOpenError(snapshot.encounterStatus);
+        }
+        // CER-044, CER-045 (D-106). The window around the attention, which no
+        // reason widens.
+        const attentionDate = clinicalDateOf(snapshot.encounterStartedAt);
+        if (details !== null) {
+          assertRestWithinAttention(
+            details.period,
+            attentionDate,
+            lateIssueDay,
+          );
         }
         // CER-039. Who attended is read under the lock, with the attention.
         const issuedByOtherReason = issuerReasonOf(
@@ -204,14 +218,15 @@ export class CertificateService {
           contingencyType: details?.contingencyType ?? null,
           maternity: details?.maternity ?? null,
           // CER-030. Against the clinical date of the attention in Ecuador,
-          // read inside the transaction, and the date of the issue.
+          // read inside the transaction, and the day of the issue with its
+          // dawn (D-106 §5).
           backdatingReason:
             details === null
               ? null
               : backdatingReasonOf(
                   details.period,
-                  clinicalDateOf(snapshot.encounterStartedAt),
-                  issueDate,
+                  attentionDate,
+                  lateIssueDay,
                   request.backdatingReason,
                 ),
           issuedByOtherReason,

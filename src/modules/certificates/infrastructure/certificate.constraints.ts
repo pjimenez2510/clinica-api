@@ -62,6 +62,18 @@ registerConstraintMeanings({
     field: 'issuedByOtherReason',
     message: 'Explique por qué emite el certificado de una atención que no registró', // prettier-ignore
   },
+  /** CER-044, D-106 §1. At most three days before the attention. */
+  medical_certificate_rest_starts_at_most_3_days_before: {
+    code: 'CERTIFICATE_REST_START_TOO_EARLY',
+    field: 'restFrom',
+    message: 'El reposo puede empezar, como mucho, tres días antes de la atención', // prettier-ignore
+  },
+  /** CER-045, D-106 §4. Within eight days of the attention. */
+  medical_certificate_rest_issued_within_8_days: {
+    code: 'CERTIFICATE_REST_ISSUED_TOO_LATE',
+    field: 'restFrom',
+    message: 'Han pasado más de ocho días desde la atención: el reposo se emite desde una atención nueva', // prettier-ignore
+  },
   /** CER-041. A rest starts no later than the day after it is issued. */
   medical_certificate_rest_starts_by_next_day: {
     code: 'CERTIFICATE_REST_START_TOO_LATE',
