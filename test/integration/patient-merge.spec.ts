@@ -2297,8 +2297,16 @@ describe('fusión de duplicados: el contrato y su permiso', () => {
     const body = await mergeCharts(source, target);
     // La fusión se hace (PA-043) y lo dice.
     expect(body.event).toBe('MERGE');
-    expect(body.restOverlapNotice).toContain('1 reposo');
-    expect(body.restOverlapNotice).toContain('maternidad');
+    // Nombra los dos reposos, por su número.
+    const general = await prismaClient.medicalCertificate.findFirstOrThrow({ where: { patientId: source.id } }); // prettier-ignore
+    const maternity = await prismaClient.medicalCertificate.findFirstOrThrow({ where: { patientId: target.id } }); // prettier-ignore
+    expect(body.restOverlapNotice).toContain(`el N.º ${general.number} (del`);
+    expect(body.restOverlapNotice).toContain(`con el N.º ${maternity.number} (maternidad`); // prettier-ignore
+    // Y deshacer no avisa de nada.
+    const undone = await undoRequest(source.id, admision)
+      .send({ reason: REASON })
+      .expect(200);
+    expect((undone.body as MergeBody).restOverlapNotice).toBeNull();
 
     // Control positivo: sin solape, sin aviso.
     const apart = await createPatient(prismaClient);
@@ -2306,6 +2314,39 @@ describe('fusión de duplicados: el contrato y su permiso', () => {
     await aRest(apart, { from: 0, to: 0 }, false);
     await aRest(survivor, { from: 1, to: 10 }, true);
     expect((await mergeCharts(apart, survivor)).restOverlapNotice).toBeNull();
+
+    // Un reposo anulado no cuenta, ni dos generales que se pisan.
+    const revoker = await createUser(prismaClient);
+    const withRevoked = await createPatient(prismaClient);
+    const keeper = await createPatient(prismaClient);
+    const revoked = await aRest(withRevoked, { from: 0, to: 1 }, false);
+    await prismaClient.medicalCertificate.update({
+      where: { id: revoked.id },
+      data: { revokedAt: new Date(), revokedById: revoker.id, revocationReason: 'Atención equivocada' }, // prettier-ignore
+    });
+    await aRest(keeper, { from: 0, to: 10 }, true);
+    expect(
+      (await mergeCharts(withRevoked, keeper)).restOverlapNotice,
+    ).toBeNull();
+    const generalOne = await createPatient(prismaClient);
+    const generalTwo = await createPatient(prismaClient);
+    await aRest(generalOne, { from: 0, to: 1 }, false);
+    await aRest(generalTwo, { from: 0, to: 1 }, false);
+    expect(
+      (await mergeCharts(generalOne, generalTwo)).restOverlapNotice,
+    ).toBeNull();
+
+    // La maternidad de una ficha que la superviviente ya había absorbido
+    // también cuenta.
+    const earlier = await createPatient(prismaClient);
+    const holder = await createPatient(prismaClient);
+    await aRest(earlier, { from: 0, to: 10 }, true);
+    await mergeCharts(earlier, holder);
+    const late = await createPatient(prismaClient);
+    await aRest(late, { from: 1, to: 3 }, false);
+    expect((await mergeCharts(late, holder)).restOverlapNotice).toContain(
+      'maternidad',
+    );
   });
 
   it('PA-049 cuenta TODO lo que se queda en la absorbida, las ALERGIAS incluidas', async () => {

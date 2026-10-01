@@ -115,17 +115,21 @@ BEGIN
       FROM "patient" p
      WHERE p."id" = NEW."patient_id";
     PERFORM pg_advisory_xact_lock(hashtextextended('medical_certificate_rest:' || chart::text, 0));
-    -- PA-062: una fusión toma los candados de las dos fichas antes de enlazar
-    -- una con otra. Si mientras se esperaba aquí una fusión cambió la ficha, se
-    -- vuelve a leer y se toma también el candado de la nueva: así se juzga la
-    -- ficha que quedó, no la que había al llegar.
-    SELECT COALESCE(p."merged_into_id", p."id") INTO current_chart
-      FROM "patient" p
-     WHERE p."id" = NEW."patient_id";
-    IF current_chart <> chart THEN
+    -- PA-062: una fusión, y su deshacer, toman los candados de las dos fichas
+    -- antes de cambiar el enlace. Si mientras se esperaba aquí cambió la
+    -- ficha, se vuelve a leer y se toma también el candado de la nueva, hasta
+    -- que no cambie: así se juzga la ficha que quedó, no la que había al
+    -- llegar. Una emisión que ya tiene una ficha y espera otra puede chocar
+    -- con una fusión o un deshacer que esperan la primera: PostgreSQL lo
+    -- detecta (40P01) y una de las dos se reintenta.
+    LOOP
+      SELECT COALESCE(p."merged_into_id", p."id") INTO current_chart
+        FROM "patient" p
+       WHERE p."id" = NEW."patient_id";
+      EXIT WHEN current_chart = chart;
       chart := current_chart;
       PERFORM pg_advisory_xact_lock(hashtextextended('medical_certificate_rest:' || chart::text, 0));
-    END IF;
+    END LOOP;
 
     -- D-109 y D-110: lo que acota la maternidad, una vez quitados los 3 y 8
     -- días. Con una fecha NULL estas comparaciones no rechazan; no hace falta

@@ -1,3 +1,4 @@
+import type { RestOverlap } from '../../../shared/domain/rest-overlap';
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import type { PatientAge } from './patient-age';
 import type {
@@ -580,7 +581,7 @@ export type MergeOutcome =
        * PA-062. Pairs of rests, neither revoked, one of them a maternity
        * rest, that the merge brought together overlapping.
        */
-      restOverlaps: number;
+      restOverlaps: RestOverlap[];
     }
   | {
       /**

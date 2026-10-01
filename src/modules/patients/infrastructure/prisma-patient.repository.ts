@@ -1,3 +1,4 @@
+import type { RestOverlap } from '../../../shared/domain/rest-overlap';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
@@ -1421,7 +1422,7 @@ export class PrismaPatientRepository implements PatientRepository {
   }): Promise<MergeOutcome> {
     let mergeId: bigint | 'SOURCE_MERGED';
     let survivingMrn = '';
-    let restOverlaps = 0;
+    let restOverlaps: RestOverlap[] = [];
     try {
       mergeId = await this.prisma.$transaction(async (tx) => {
         /**
@@ -1708,6 +1709,12 @@ export class PrismaPatientRepository implements PatientRepository {
          * the generic unique-violation map, which answers `DUPLICATE_VALUE`
          * about a constraint the desk has never heard of.
          */
+        // PA-062. The rest locks of both charts first, as in the merge: an
+        // issue waiting on them then judges the chart the undo leaves.
+        const linked = await tx.$queryRaw<{ target: string | null }[]>`
+          SELECT merged_into_id::text AS target FROM patient
+           WHERE id = ${input.sourcePatientId}::uuid`;
+        await lockRestsOfCharts(tx, [input.sourcePatientId, ...(linked[0]?.target ? [linked[0].target] : [])]); // prettier-ignore
         await lockChart(tx, input.sourcePatientId);
 
         const state = await tx.$queryRaw<{ mergedIntoId: string | null }[]>`

@@ -1,5 +1,8 @@
 import type { Prisma } from '@prisma/client';
 
+import type { ClinicalDate } from '../../domain/clinic-time';
+import type { RestOverlap } from '../../domain/rest-overlap';
+
 /**
  * What a merge of two charts does to the patient's REST CERTIFICATES
  * (PA-062, D-110 §7, provisional until the IESS confirms the procedure).
@@ -16,40 +19,62 @@ import type { Prisma } from '@prisma/client';
  */
 
 /**
- * The SAME key `medical_certificate_issue_rules` and the certificates
- * repository take: the chart's rest issues, one at a time.
- */
-const restKey = (chartId: string) => `medical_certificate_rest:${chartId}`;
-
-/**
  * Takes the rest locks of both charts, in a fixed order so two merges cannot
- * deadlock each other. Called FIRST in the merge's transaction, before the
- * chart row is locked: an issue takes its rest lock and only then touches the
+ * deadlock each other. The key is built IN THE DATABASE from `uuid::text`,
+ * exactly as `medical_certificate_issue_rules` and the certificates repository
+ * build it: an id that arrives in capitals would otherwise hash to another
+ * lock and wait for nobody.
+ *
+ * Called FIRST in the transaction of a merge or of its undo, before the chart
+ * row is locked: an issue takes its rest lock and only then touches the
  * patient row (its foreign key), so taking them in the same order here leaves
- * no cycle. An issue on either chart waits for the merge, and then reads the
- * chart as the merge left it.
+ * no cycle. An issue on either chart waits, and then reads the chart as the
+ * merge or the undo left it.
  */
 export async function lockRestsOfCharts(
   tx: Prisma.TransactionClient,
   chartIds: readonly string[],
 ): Promise<void> {
-  for (const id of [...chartIds].sort()) {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${restKey(id)}, 0))`;
+  for (const id of [...chartIds].map((id) => id.toLowerCase()).sort()) {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('medical_certificate_rest:' || ${id}::uuid::text, 0))`;
   }
 }
 
+/** PA-062. One side of an overlap, as the database gives it. */
+interface OverlapRow {
+  absorbedNumber: number;
+  absorbedFrom: Date;
+  absorbedTo: Date;
+  absorbedMaternity: boolean;
+  survivingNumber: number;
+  survivingFrom: Date;
+  survivingTo: Date;
+  survivingMaternity: boolean;
+}
+
+const dateOf = (value: Date) =>
+  value.toISOString().slice(0, 10) as ClinicalDate;
+
 /**
- * How many pairs of rests, one from each chart, neither revoked, overlap with
+ * The pairs of rests, one from each chart, neither revoked, that overlap with
  * one of the two a maternity rest — what CER-048 would have refused at issue.
  * The absorbed chart never holds others (no chains, PA-046); the survivor's
- * side is the survivor and what it absorbed before.
+ * side is the survivor and what it absorbed before. Ordered so the notice
+ * reads the same every time.
  */
 export async function maternityRestOverlapsOnMerge(
   tx: Prisma.TransactionClient,
   charts: { absorbedChartId: string; survivingChartId: string },
-): Promise<number> {
-  const rows = await tx.$queryRaw<{ overlaps: number }[]>`
-    SELECT count(*)::int AS overlaps
+): Promise<RestOverlap[]> {
+  const rows = await tx.$queryRaw<OverlapRow[]>`
+    SELECT absorbed.number AS "absorbedNumber",
+           absorbed.rest_from AS "absorbedFrom",
+           absorbed.rest_to AS "absorbedTo",
+           absorbed.contingency_type = 'MATERNITY' AS "absorbedMaternity",
+           surviving.number AS "survivingNumber",
+           surviving.rest_from AS "survivingFrom",
+           surviving.rest_to AS "survivingTo",
+           surviving.contingency_type = 'MATERNITY' AS "survivingMaternity"
       FROM medical_certificate AS absorbed
       JOIN medical_certificate AS surviving
         ON daterange(absorbed.rest_from, absorbed.rest_to, '[]')
@@ -66,6 +91,20 @@ export async function maternityRestOverlapsOnMerge(
        AND surviving.rest_to >= surviving.rest_from
        AND (absorbed.contingency_type = 'MATERNITY'
             OR surviving.contingency_type = 'MATERNITY')
+     ORDER BY absorbed.rest_from, absorbed.number, surviving.rest_from, surviving.number
   `;
-  return rows[0]?.overlaps ?? 0;
+  return rows.map((row) => ({
+    absorbed: {
+      number: row.absorbedNumber,
+      from: dateOf(row.absorbedFrom),
+      to: dateOf(row.absorbedTo),
+      maternity: row.absorbedMaternity,
+    },
+    surviving: {
+      number: row.survivingNumber,
+      from: dateOf(row.survivingFrom),
+      to: dateOf(row.survivingTo),
+      maternity: row.survivingMaternity,
+    },
+  }));
 }
