@@ -181,13 +181,14 @@ export class CertificateService {
           throw new CertificateEncounterNotOpenError(snapshot.encounterStatus);
         }
         // CER-044, CER-045 (D-106). The window around the attention, which no
-        // reason widens.
+        // reason widens; maternity has its own (D-108).
         const attentionDate = clinicalDateOf(snapshot.encounterStartedAt);
         if (details !== null) {
           assertRestWithinAttention(
             details.period,
             attentionDate,
             lateIssueDay,
+            details.maternity,
           );
         }
         // CER-039. Who attended is read under the lock, with the attention.

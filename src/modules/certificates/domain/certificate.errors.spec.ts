@@ -45,10 +45,20 @@ const CONTRACT: readonly {
   {
     error: new CertificateRestStartTooEarlyError(
       '2026-09-28' as ClinicalDate, // fecha-fija: sólo se comprueba el formato DD/MM/AAAA
+      'ATTENTION',
     ),
     code: 'CERTIFICATE_REST_START_TOO_EARLY',
     category: ValidationError,
     says: 'tres días antes de la atención',
+  },
+  {
+    error: new CertificateRestStartTooEarlyError(
+      '2026-09-28' as ClinicalDate, // fecha-fija: sólo se comprueba el formato DD/MM/AAAA
+      'MATERNITY',
+    ),
+    code: 'CERTIFICATE_REST_START_TOO_EARLY',
+    category: ValidationError,
+    says: 'fecha de ingreso o del parto',
   },
   {
     error: new CertificateRestIssuedTooLateError(),

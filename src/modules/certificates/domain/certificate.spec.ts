@@ -491,6 +491,7 @@ describe('D-106 la ventana del reposo alrededor de la atención', () => {
         { from: addDays(today, -3), to: today },
         today,
         today,
+        null,
       ),
     ).not.toThrow();
     let refusal: unknown;
@@ -499,6 +500,7 @@ describe('D-106 la ventana del reposo alrededor de la atención', () => {
         { from: addDays(today, -4), to: today },
         today,
         today,
+        null,
       );
     } catch (error) {
       refusal = error;
@@ -515,14 +517,88 @@ describe('D-106 la ventana del reposo alrededor de la atención', () => {
   it('CER-045 un reposo se emite hasta el octavo día de la atención; el noveno se rechaza', () => {
     const period = { from: addDays(today, 8), to: addDays(today, 8) };
     expect(() =>
-      assertRestWithinAttention(period, today, addDays(today, 8)),
+      assertRestWithinAttention(period, today, addDays(today, 8), null),
     ).not.toThrow();
     expect(() =>
       assertRestWithinAttention(
         { from: addDays(today, 9), to: addDays(today, 9) },
         today,
         addDays(today, 9),
+        null,
       ),
+    ).toThrow(CertificateRestIssuedTooLateError);
+  });
+});
+
+describe('D-108 en el reposo de maternidad no rigen los topes de D-106', () => {
+  /** Ingresó la víspera del parto y salió dos días después. */
+  const maternityFrom = (birth: ClinicalDate) => ({
+    admissionOn: addDays(birth, -1),
+    birthOn: birth,
+    dischargeOn: addDays(birth, 2),
+  });
+
+  it('CER-044 la maternidad empieza desde el parto o el ingreso aunque la atención sea cinco días después', () => {
+    const birth = addDays(today, -5);
+    const maternity = maternityFrom(birth);
+    expect(
+      () =>
+      assertRestWithinAttention({ from: birth, to: today }, today, today, maternity), // prettier-ignore
+    ).not.toThrow();
+    expect(
+      () =>
+      assertRestWithinAttention({ from: maternity.admissionOn, to: today }, today, today, maternity), // prettier-ignore
+    ).not.toThrow();
+    // Control: la enfermedad general con la misma fecha sigue rechazada.
+    expect(
+      () =>
+      assertRestWithinAttention({ from: birth, to: today }, today, today, null), // prettier-ignore
+    ).toThrow(CertificateRestStartTooEarlyError);
+  });
+
+  it('CER-044 antes del ingreso se rechaza nombrando el ingreso como primera fecha', () => {
+    const maternity = maternityFrom(addDays(today, -5));
+    let refusal: unknown;
+    try {
+      assertRestWithinAttention(
+        { from: addDays(maternity.admissionOn, -1), to: today },
+        today,
+        today,
+        maternity,
+      );
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(CertificateRestStartTooEarlyError);
+    const error = refusal as CertificateRestStartTooEarlyError;
+    expect(error.userTitle).toContain('ingreso');
+    expect(error.fieldErrors[0]).toMatchObject({
+      field: 'restFrom',
+      message: `El reposo debe empezar, como muy pronto, el ${maternity.admissionOn.split('-').reverse().join('/')}`,
+    });
+  });
+
+  it('CER-044 la maternidad prenatal conserva los 3 días antes de la atención (D-106 §2)', () => {
+    const maternity = maternityFrom(addDays(today, 20));
+    expect(
+      () =>
+      assertRestWithinAttention({ from: addDays(today, -3), to: today }, today, today, maternity), // prettier-ignore
+    ).not.toThrow();
+    expect(
+      () =>
+      assertRestWithinAttention({ from: addDays(today, -4), to: today }, today, today, maternity), // prettier-ignore
+    ).toThrow(CertificateRestStartTooEarlyError);
+  });
+
+  it('CER-045 un reposo de maternidad se emite pasados 8 días de la atención; el general no', () => {
+    const issueDay = addDays(today, 9);
+    const period = { from: issueDay, to: addDays(issueDay, 29) };
+    expect(
+      () =>
+      assertRestWithinAttention(period, today, issueDay, maternityFrom(addDays(today, -1))), // prettier-ignore
+    ).not.toThrow();
+    expect(() =>
+      assertRestWithinAttention(period, today, issueDay, null),
     ).toThrow(CertificateRestIssuedTooLateError);
   });
 });

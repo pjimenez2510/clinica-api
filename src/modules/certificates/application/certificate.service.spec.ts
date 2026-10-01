@@ -782,4 +782,34 @@ describe('el servicio de certificados', () => {
       service.issue(rest(1, { backdatingReason: 'Volvió ocho días después' }), requester), // prettier-ignore
     ).resolves.toBeDefined();
   });
+
+  it('CER-044 CER-045 el reposo de maternidad empieza desde el parto y se emite pasados 8 días; la enfermedad general igual se rechaza (D-108)', async () => {
+    const birth = addDays(today, -5);
+    const maternity = {
+      contingencyType: 'MATERNITY' as const,
+      maternityAdmissionOn: addDays(birth, -1),
+      birthOn: birth,
+      maternityDischargeOn: addDays(birth, 2),
+    };
+    const fromBirth = { restFrom: birth, restTo: today, backdatingReason: 'Dio a luz en el hospital hace cinco días' }; // prettier-ignore
+    await expect(
+      service.issue(rest(1, fromBirth), requester),
+    ).rejects.toMatchObject({ code: 'CERTIFICATE_REST_START_TOO_EARLY' });
+    await expect(
+      service.issue(rest(1, { ...fromBirth, ...maternity }), requester),
+    ).resolves.toBeDefined();
+
+    // Nueve días después de la atención, a mediodía en Ecuador.
+    clockReads = atWallClock(today, WallClockTime.of(12, 0));
+    repository.snapshot = aSnapshot({
+      encounterStartedAt: atWallClock(addDays(today, -9), WallClockTime.of(12, 0)), // prettier-ignore
+    });
+    const later = { restFrom: today, restTo: addDays(today, 29), backdatingReason: 'Segundo certificado de la licencia' }; // prettier-ignore
+    await expect(
+      service.issue(rest(1, later), requester),
+    ).rejects.toMatchObject({ code: 'CERTIFICATE_REST_ISSUED_TOO_LATE' });
+    await expect(
+      service.issue(rest(1, { ...later, ...maternity, maternityAdmissionOn: addDays(today, -15), birthOn: addDays(today, -14), maternityDischargeOn: addDays(today, -12) }), requester), // prettier-ignore
+    ).resolves.toBeDefined();
+  });
 });
