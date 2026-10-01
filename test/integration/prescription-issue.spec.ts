@@ -6,7 +6,12 @@ import { PrescriptionService } from '../../src/modules/prescription/application/
 import { PrismaPrescriptionRepository } from '../../src/modules/prescription/infrastructure/prisma-prescription.repository';
 import { PrismaActiveAllergyReader } from '../../src/shared/infrastructure/clinical/prisma-active-allergy.reader';
 import '../../src/modules/prescription/infrastructure/prescription.constraints';
-import { addDays, clinicalDateOf } from '../../src/shared/domain/clinic-time';
+import {
+  WallClockTime,
+  addDays,
+  atWallClock,
+  clinicalDateOf,
+} from '../../src/shared/domain/clinic-time';
 import { extractDatabaseProblem } from '../../src/shared/http/database-problem';
 import type { AccessAuditRecorder } from '../../src/shared/audit/access-audit.port';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
@@ -612,6 +617,52 @@ describe('la receta contra PostgreSQL', () => {
     await expect(
       service.issue(composed.prescription.id, requester),
     ).rejects.toMatchObject({ code: 'PRESCRIBER_NOT_LICENSED' });
+  });
+
+  it('PR-034 admite emitir el día en que caduca el registro, también a las 23:30 de Ecuador', async () => {
+    // The control of the case above, through the real `date` column: in force
+    // THROUGH its expiry date. At 23:30 in Guayaquil the UTC date is already
+    // tomorrow, which is where judging in UTC would refuse; the hour is
+    // derived from today and fixed, not left to the hour of the run.
+    const today = clinicalDateOf(new Date());
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(atWallClock(today, WallClockTime.of(23, 30)));
+    try {
+      const prisma = db();
+      const site = await aSiteWithCity(prisma);
+      const practitioner = await aPrescriber(prisma, {
+        acessExpiresOn: new Date(`${today}T00:00:00.000Z`),
+      });
+      const patient = await createPatient(prisma);
+      const encounter = await prisma.encounter.create({
+        data: {
+          siteId: site.id,
+          practitionerId: practitioner.id,
+          patientId: patient.id,
+          startedAt: ENCOUNTER_STARTED_AT,
+          careModality: 'MORBIDITY',
+          visitSequence: 'FIRST_TIME',
+        },
+      });
+      const concept = await aCnmbConcept(prisma, {
+        code: 'J01CA04',
+        display: 'Amoxicilina',
+        validFrom: new Date('2019-01-01'),
+      });
+      const service = serviceOf(prisma);
+      const requester = { userId: practitioner.userId, sites: [site.id] };
+
+      const composed = await service.compose(
+        { encounterId: encounter.id, items: [aLine(concept.id)] },
+        requester,
+      );
+
+      await expect(
+        service.issue(composed.prescription.id, requester),
+      ).resolves.toMatchObject({ status: 'ACTIVE' });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('PR-021 rechaza emitir desde una sede sin parroquia, porque no hay ciudad que imprimir', async () => {
