@@ -174,7 +174,7 @@ describe('los documentos por HTTP', () => {
       siteId: encounter.siteId,
       prescriberId: practitionerId,
       status: 'ACTIVE',
-      issuedAt: new Date('2026-08-21T01:00:00Z'),
+      issuedAt: new Date('2026-08-21T01:00:00Z'), // fecha-fija: la receta de la semilla, emitida antes de cualquier corrida
       items: {
         create: [
           {
