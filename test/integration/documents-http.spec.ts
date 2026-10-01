@@ -937,6 +937,8 @@ describe('los documentos por HTTP', () => {
     });
 
     it('DOC-008 tampoco hay dos originales de una orden ni de un certificado', async () => {
+      await publishTemplate('SERVICE_ORDER');
+      await publishTemplate('MEDICAL_CERTIFICATE');
       const encounter = await prisma.encounter.findFirstOrThrow({
         select: { id: true, siteId: true, patientId: true },
       });
