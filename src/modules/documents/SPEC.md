@@ -185,7 +185,7 @@ límite de píxeles contra bombas de descompresión. **SVG se rechaza.**
 `DOCUMENT_IMAGE_FORMAT_NOT_ALLOWED`; subir un PNG con metadatos y comprobar que
 lo guardado **no** los contiene y que su `sha256` no es el del fichero enviado.
 
-**Cubre:** DOC-030 a DOC-037, DOC-050 a DOC-060.
+**Cubre:** DOC-030 a DOC-039, DOC-050 a DOC-061.
 **Solo servidor:** DOC-032, DOC-054, DOC-055, DOC-056, DOC-058. Inmutabilidad de
 plantillas e imágenes y el reencodado, que se prueban sobre los bytes guardados.
 
@@ -210,6 +210,34 @@ simularlo sería peor que no tenerlo.
 
 **Cubre:** DOC-100.
 
+### H6 — El marco aprobado en los cuatro documentos (D-095) _(P1)_
+
+La plantilla que el autor aprobó el 30-09-2026 (`clinica-docs/investigacion/plantilla-documentos.md`)
+hecha generador: Source Sans 3 y Source Serif 4 incrustadas, cabecera con
+logo, nombre comercial, línea de sede **solo con varias sedes**, CONFIDENCIAL
+cuando hay diagnóstico, y pie con «Página x de y», verificación y QR. Cabecera y
+pie salen de **un solo** `composeFrame`, compartido por las cuatro clases: el
+contenido de cada documento lo compone su propia función.
+
+**Prueba independiente:** emitir una receta en una instalación con una sede y
+con dos, y comprobar en el texto extraído que la línea de sede sólo aparece en
+la segunda; validar el fichero con veraPDF.
+
+**Cubre:** DOC-025, DOC-080 a DOC-085.
+
+### H7 — La verificación pública del documento _(P1)_
+
+Quien recibe una receta o un certificado —una farmacia, un empleador— escanea
+el QR y ve si el documento existe y sigue vigente, **sin ver nada del
+paciente**. Es la única ruta pública de este módulo.
+
+**Prueba independiente:** pedir sin sesión la verificación de una receta
+emitida y comprobar que la respuesta no contiene el nombre, el documento ni el
+diagnóstico del paciente; pedir un código inventado y comprobar que la
+respuesta es idéntica byte a byte a la de otro código inventado.
+
+**Cubre:** DOC-094 a DOC-097.
+
 ---
 
 ## Criterios de éxito
@@ -226,10 +254,11 @@ simularlo sería peor que no tenerlo.
   validador externo (veraPDF). Se mide fuera del proceso: una prueba que use la
   misma librería que generó el fichero no demuestra conformidad, demuestra
   consistencia.
-  > **[NECESITA ACLARACIÓN]** veraPDF es Java y hoy no hay JVM en la imagen de
-  > CI. Mientras no la haya, este criterio se comprueba **a mano** al cerrar la
-  > entrega y las pruebas automáticas cubren los indicios de §6 (DOC-020 a
-  > DOC-024), que son necesarios y no suficientes.
+  > **Resuelto en `feat/documentos-identidad`:** `pnpm pdfa:check <fichero>`
+  > valida con la imagen oficial `verapdf/cli` en un contenedor, sin JVM en la
+  > máquina. Se corre al cerrar cada entrega que toque el generador; las pruebas
+  > automáticas siguen cubriendo los indicios de §6 (DOC-020 a DOC-024), que son
+  > necesarios y no suficientes.
 - **SC-063** — **Ninguna imagen guardada conserva los bytes que llegaron.** Se
   afirma sobre las filas: para toda `document_image`, el `sha256` almacenado es
   distinto del de cualquier fichero que un cliente pudiera haber enviado tal
@@ -437,6 +466,26 @@ simularlo sería peor que no tenerlo.
   > en el código sería la versión que ninguna fila registra, y el `sha256` de
   > los artefactos que produjera no sería reconstruible.
 
+- **DOC-038** — CUANDO quien tenga `config:read` pida la **vista previa** de
+  una clase con unas ranuras (publicadas o no), el sistema DEBERÁ devolver el
+  PDF de esa clase compuesto con **esas** ranuras, con la identidad real del
+  establecimiento y con **datos de ejemplo ficticios** rotulados «MUESTRA SIN
+  VALIDEZ», y **NO DEBERÁ** guardar ni artefacto ni plantilla.
+
+  > La vista previa la pinta **el mismo generador** que emite: una imitación en
+  > HTML sería otra vez la impresión desde el navegador que D-095 retiró, y lo
+  > que se viera no sería lo que sale. Las ranuras inválidas se rechazan igual
+  > que al publicar (DOC-035, DOC-036).
+
+- **DOC-039** — CUANDO se publique una plantilla para **varias clases a la
+  vez**, el sistema DEBERÁ crear la versión siguiente de **cada** una en una
+  sola transacción, y SI una falla, ENTONCES **ninguna** DEBERÁ quedar
+  publicada.
+
+  > La identidad es una sola (D-095.3): publicarla clase por clase dejaría
+  > recetas con el color nuevo y certificados con el viejo durante el rato que
+  > alguien tarde en volver a pulsar.
+
 ---
 
 ## 3. La identidad visual: logo, sello y firma (D-A-015)
@@ -523,6 +572,15 @@ simularlo sería peor que no tenerlo.
   > sería un sello falso. Además el art. 5.d.iii es textual: *«no se aceptarán
   > rúbricas o trazos por firma»*.
 
+- **DOC-061** — CUANDO quien pueda leer el establecimiento (`site:read`) o el
+  personal (`staff:read`) pida la imagen vigente del logo, o del sello o la
+  firma de un profesional, el sistema DEBERÁ servir los **bytes guardados** con
+  su `mime_type` y `X-Content-Type-Options: nosniff`, y SI no hay imagen,
+  ENTONCES DEBERÁ responder 404 con `DOCUMENT_IMAGE_NOT_FOUND`.
+
+  > Es lo que deja ver en pantalla qué está puesto antes de cambiarlo. Sirve los
+  > bytes **reencodados** (DOC-054), nunca un fichero que llegó.
+
 ---
 
 ## 4. La página: geometría y ranuras
@@ -590,6 +648,55 @@ simularlo sería peor que no tenerlo.
   > enteraría durante una inspección. Es el único documento cuyo QR **sí** es
   > obligatorio, con formato rígido del Estado — otra razón para no acercarse.
 
+
+## 4 bis. El marco común (D-095)
+
+- **DOC-080** — Todo documento **clínico** —receta, orden, certificado— DEBERÁ
+  llevar en **todas** sus páginas la cabecera común: el logo si lo hay
+  (DOC-059); el **nombre comercial** del establecimiento, o su razón social si
+  no tiene (OR-010); la dirección y el teléfono de la sede que emite y el correo
+  del establecimiento (OR-011), cada uno si existe y su interruptor lo permite
+  (DOC-034); el RUC si su interruptor lo permite, y el **permiso de
+  funcionamiento** de la ACESS si existe (OR-012); y a la derecha el título, la
+  referencia del documento y, bajo la cabecera, una raya del color de acento.
+
+- **DOC-081** — MIENTRAS el establecimiento tenga **más de una sede activa**, la
+  cabecera DEBERÁ llevar bajo el nombre la línea de la sede que emite con su
+  unicódigo; y MIENTRAS tenga **una sola**, **NO DEBERÁ** llevarla (D-095.4).
+
+  > Con una sede, «Sede Matriz · Unicódigo 012345» bajo «Clínica Andina» es
+  > ruido que el paciente lee como dos sitios. El unicódigo que el formulario
+  > 117 y el SRI piden **va igual** en su bloque propio, que es contenido.
+
+- **DOC-082** — MIENTRAS el documento imprima **un diagnóstico**, la cabecera
+  DEBERÁ llevar la leyenda **CONFIDENCIAL** en rojo `#8a2c1f`; y si no lo
+  imprime, **NO DEBERÁ** llevarla.
+
+  > A.M. 5216-A art. 33: la información de salud es confidencial. Un certificado
+  > sin diagnóstico —el que pide el empleador, y el de por defecto— no la lleva:
+  > rotular confidencial lo que no lo es enseña a ignorar la leyenda.
+
+- **DOC-083** — Todo documento DEBERÁ llevar en **todas** sus páginas el pie
+  con «Página x de y» y, DONDE el documento tenga **código de verificación**, el
+  código, la dirección `<WEB_BASE_URL>/verificar/<código>` y un **código QR**
+  que la contiene, dibujado como **trazos vectoriales** —nunca como imagen—, y la
+  nota de conservación de su clase.
+
+  > Vectores y no imagen porque PDF/A-1b prohíbe la transparencia (DOC-023) y
+  > una imagen es la vía por la que entra. Un documento sin código —hoy la
+  > orden— **no lleva QR**: un QR que no lleva a ningún sitio sería un sello
+  > falso en pequeño.
+
+- **DOC-084** — El **RIDE** **NO DEBERÁ** llevar la cabecera común ni QR: su
+  cabecera es la del Anexo 2 (DOC-076), DOC-078 sigue en pie, y su pie DEBERÁ
+  llevar la leyenda del RIDE y «Página x de y».
+
+- **DOC-085** — Todo documento DEBERÁ componerse en Source Sans 3 (cuerpo y
+  etiquetas) y Source Serif 4 (nombre del establecimiento, título y
+  encabezados), con tinta `#1d2422`, etiquetas `#4a5450` y tablas con fila de
+  cabecera y rayas de 1 px; el acento sólo en la raya de la cabecera, el título
+  y los encabezados.
+
 ---
 
 ## 5. Quién puede pedir qué
@@ -598,7 +705,9 @@ simularlo sería peor que no tenerlo.
   documentos clínicos —borrador, emisión, metadatos y bytes— DEBERÁN exigir
   `record:read`; las del RIDE, `billing:read`; las de la plantilla,
   `config:read` para leer y `config:manage` para publicar; las del logo,
-  `site:read` y `site:manage`; las del sello y la firma, `staff:manage`.
+  `site:read` y `site:manage`; las del sello y la firma, `staff:read` para leer
+  y `staff:manage` para cambiar; y la de verificación (DOC-094) es `@Public()`
+  con tope de peticiones, **la única**.
 
   > **Ningún permiso nuevo, y es una decisión.** Emitir el artefacto no revela
   > nada que quien lo pide no pudiera ya leer: es la misma información, en un
@@ -627,6 +736,32 @@ simularlo sería peor que no tenerlo.
 
   > Un nombre de medicamento **es un diagnóstico dicho de otra forma**. Estos
   > mensajes llegan a registros y a capturas de pantalla de soporte.
+
+- **DOC-094** — CUANDO **cualquiera, sin sesión,** pida
+  `GET /v1/documents/verify/<código>` con el código de una receta o de un
+  certificado, el sistema DEBERÁ responder la clase, la referencia, la fecha de
+  emisión en `America/Guayaquil`, el establecimiento, la sede, el profesional y
+  el **estado**: vigente, o anulado con su fecha.
+
+  > Es **la única ruta pública** de este módulo, y la amplía a propósito (decisión
+  > del autor, 30-09-2026). Lleva tope de peticiones por IP como el inicio de
+  > sesión. El código son 64 bits aleatorios (`randomBytes(8)`): no se adivina.
+
+- **DOC-095** — La respuesta de DOC-094 **NO DEBERÁ** contener ningún dato del
+  paciente —nombre, documento, edad—, ni diagnóstico, ni medicamento, ni
+  importe.
+
+  > Quien tiene el papel ya lo lee; quien sólo tiene el código no debe poder
+  > leer nada que el papel diga de una persona. Lo que se muestra del
+  > profesional es lo que su sello ya hace público. Qué más mostrar es D-096.
+
+- **DOC-096** — SI el código no existe, ENTONCES el sistema DEBERÁ responder 404
+  con `DOCUMENT_VERIFICATION_NOT_FOUND` y **el mismo cuerpo** para cualquier
+  código.
+
+- **DOC-097** — La página `/verificar/<código>` de la interfaz DEBERÁ ser
+  **pública**, sin el marco de la aplicación, y mostrar lo de DOC-094 o, si el
+  código no existe, que no hay ningún documento con ese código.
 
 ---
 
@@ -692,6 +827,15 @@ simularlo sería peor que no tenerlo.
 
 ---
 
+- **DOC-025** — Las fuentes incrustadas DEBERÁN ser **Source Sans 3** y
+  **Source Serif 4** (OFL-1.1) en sus TTF estáticos, leídas de los paquetes que
+  publica Adobe (`source-sans`, `source-serif`), y **NO DEBERÁ** quedar ninguna
+  otra fuente en el fichero.
+
+  > Sustituye a DejaVu Sans (D-095.2). Estáticos y no variables: PDFKit incrusta
+  > la instancia por defecto de una fuente variable, y el peso que se pidió no
+  > sería el que sale.
+
 ## 7. La firma electrónica: el hueco, declarado
 
 **No se construye, y no se simula.**
@@ -739,6 +883,8 @@ Por qué no se construye hoy:
 | `DOCUMENT_IMAGE_TOO_LARGE` | 422 | DOC-052, DOC-053. Por bytes **o** por píxeles, y el mensaje dice cuál |
 | `DOCUMENT_IMAGE_UNREADABLE` | 422 | El fichero dice ser PNG o JPEG y no se puede decodificar. **No es lo mismo** que el formato prohibido: aquí el formato es correcto y el contenido no |
 | `DOCUMENT_RENDER_FAILED` | 500 | La composición del PDF falló. Es lo único de este módulo que es un fallo nuestro |
+| `DOCUMENT_IMAGE_NOT_FOUND` | 404 | DOC-061. No hay logo, sello o firma puestos |
+| `DOCUMENT_VERIFICATION_NOT_FOUND` | 404 | DOC-096. Ningún documento con ese código. **El mismo cuerpo** para todos |
 
 ## 9. Niveles de prueba
 
@@ -747,7 +893,8 @@ Por qué no se construye hoy:
 | DOC-005, DOC-008, DOC-009, DOC-010 | **Integración contra PostgreSQL real, por SQL directo.** Lo garantiza la base y por debajo de todas las capas |
 | DOC-003, DOC-004, DOC-030, DOC-032, DOC-035, DOC-036 | Integración: son `CHECK`, `UNIQUE` y disparadores |
 | DOC-001, DOC-002, DOC-006, DOC-007, DOC-012, DOC-014 | Integración por HTTP: es donde el alcance de sedes y el permiso son reales |
-| DOC-020 a DOC-024, DOC-070 a DOC-078 | Unitarias sobre los bytes generados: el PDF se inspecciona, no se cree |
+| DOC-020 a DOC-025, DOC-070 a DOC-085 | Unitarias sobre los bytes generados: el PDF se inspecciona, no se cree; y veraPDF (`pnpm pdfa:check`) al cerrar |
+| DOC-038, DOC-039, DOC-061, DOC-094 a DOC-096 | Integración por HTTP: permiso, transacción y cuerpo de la respuesta reales |
 | DOC-050 a DOC-056 | Unitarias sobre el normalizador de imagen, con ficheros sintéticos |
 | DOC-013, DOC-079, DOC-100 | **Sin prueba, porque no hay código.** Están declarados y no construidos, y el `Estado: borrador` de este documento es lo que lo hace legítimo |
 
@@ -764,5 +911,7 @@ Por qué no se construye hoy:
 3. **¿Se firma electrónicamente, y con qué autoridad de sellado de tiempo?**
    (§7.) Necesita comprobar qué autoridades operan en Ecuador y con qué
    vigencia. **Decisión legal.**
-4. **¿Hay JVM en CI para veraPDF?** (SC-062.) Sin ella, la conformidad PDF/A se
-   comprueba a mano al cerrar la entrega.
+4. ~~¿Hay JVM en CI para veraPDF?~~ Resuelto: veraPDF corre en su contenedor
+   oficial (`pnpm pdfa:check`).
+5. **¿Qué más muestra la verificación pública?** (DOC-095, D-096.) Hoy, nada
+   del paciente. **Es privacidad y legal: no la toma un agente.**

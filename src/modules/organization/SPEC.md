@@ -58,7 +58,7 @@ sedes con parroquia, dirección y RUC.
 y `encounter` no puede cerrarse sin él.
 **Prueba independiente:** crear dos sedes del mismo establecimiento y comprobar
 que el código único del MSP no admite repetido.
-**Cubre:** OR-001 a OR-009.
+**Cubre:** OR-001 a OR-012.
 
 **Solo servidor:** OR-005. Bitácora.
 
@@ -129,6 +129,20 @@ la mitad que sí se ve —no ofrecer lo que no se puede tocar— la cubre OR-020
   > módulo 11. Un número de sociedad no permite distinguir el esquema viejo del
   > nuevo, así que la comprobación no puede quedarse «a veces»: se quita. La
   > comprobación contra el SRI queda fuera de esta entrega.
+- **OR-010** — El sistema DEBERÁ guardar, opcional, el **nombre comercial**
+  del establecimiento (hasta 160 caracteres), y los documentos DEBERÁN imprimir
+  ése en su cabecera y la razón social sólo si no lo hay (DOC-080).
+  > La razón social es la persona jurídica («CLÍNICA ANDINA CLIANDINA S.A.»); el
+  > paciente conoce la clínica por su nombre comercial. El SRI pide los dos en
+  > el RIDE (`nombreComercial` es opcional en el XML de la factura 1.1.0).
+- **OR-011** — El sistema DEBERÁ guardar, opcional, el **correo de contacto** del
+  establecimiento, y SI no tiene forma de correo, ENTONCES DEBERÁ rechazarlo con
+  `VALIDATION_FAILED` sobre el campo.
+- **OR-012** — El sistema DEBERÁ guardar, opcional, el número del **permiso de
+  funcionamiento** que emite la ACESS (hasta 40 caracteres), y los documentos
+  clínicos DEBERÁN imprimirlo en su cabecera cuando exista (DOC-080).
+  > Ninguno de los tres es obligatorio para recetar el primer día: un campo que
+  > falta no se imprime, nunca se inventa.
 
 ### Consultorios y puntos de emisión (REQ-042, REQ-085)
 
