@@ -442,6 +442,31 @@ export class PrescriberContactRequiredError extends ValidationError {
 }
 
 /**
+ * PR-095. The attention has no diagnosis, so the receta has none to print.
+ *
+ * Art. 5.b.iii of Res. ACESS-2023-0030 puts «Diagnóstico del usuario/paciente
+ * según la Clasificación Internacional de Enfermedades-CIE» in what the receta
+ * «contendrá, como mínimo». It is read from the attention, never typed here
+ * (PR-026), so the sentence says where it is recorded. NO CODE IN THE MESSAGE.
+ */
+export class PrescriptionDiagnosisRequiredError extends ValidationError {
+  readonly code = 'PRESCRIPTION_DIAGNOSIS_REQUIRED';
+  override readonly userTitle =
+    'La receta lleva el diagnóstico CIE-10 del paciente y esta atención no tiene ninguno. Regístrelo en «Diagnósticos» antes de emitir';
+  override readonly fieldErrors: readonly DomainFieldError[] = [
+    {
+      field: 'diagnosis',
+      code: 'PRESCRIPTION_DIAGNOSIS_REQUIRED',
+      message: 'Registre al menos un diagnóstico CIE-10 en la atención',
+    },
+  ];
+
+  constructor() {
+    super('The attention has no diagnosis to print on the prescription');
+  }
+}
+
+/**
  * PR-021. The site has no parish configured, so there is no city to print.
  *
  * ═══════════════════════════════════════════════════════════════════════════

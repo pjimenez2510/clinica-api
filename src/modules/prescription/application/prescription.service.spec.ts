@@ -137,6 +137,7 @@ const aSnapshot = (overrides: Partial<IssueSnapshot> = {}): IssueSnapshot => ({
   })),
   allergies: [],
   cityOfPrescription: 'Quito',
+  diagnosisCount: 1,
   prescriber: {
     acessRegistration: 'ACESS-11223',
     acessExpiresOn: new Date('2030-01-01T00:00:00Z'),
@@ -443,6 +444,19 @@ describe('el servicio de recetas', () => {
     await expect(service.issue(PRESCRIPTION, requester)).rejects.toMatchObject({
       code: 'PRESCRIPTION_ESTABLISHMENT_INCOMPLETE',
     });
+  });
+
+  it('PR-095 rechaza emitir sin diagnóstico en la atención, nombrando el campo (art. 5.b.iii)', async () => {
+    repository.snapshot = aSnapshot({ diagnosisCount: 0 });
+
+    await expect(service.issue(PRESCRIPTION, requester)).rejects.toMatchObject({
+      code: 'PRESCRIPTION_DIAGNOSIS_REQUIRED',
+      fieldErrors: [expect.objectContaining({ field: 'diagnosis' })],
+    });
+
+    // Control positivo: con un diagnóstico, emite.
+    repository.snapshot = aSnapshot({ diagnosisCount: 1 });
+    await expect(service.issue(PRESCRIPTION, requester)).resolves.toBeDefined();
   });
 
   it('PR-032 rechaza emitir con una línea incompleta, antes de mirar la alergia', async () => {

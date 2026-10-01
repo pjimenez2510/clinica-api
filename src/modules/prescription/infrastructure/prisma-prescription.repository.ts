@@ -353,6 +353,8 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
               patientId: true,
               status: true,
               site: { select: { parish: { select: { parentId: true } } } },
+              // PR-095. Art. 5.b.iii prints the CIE diagnosis.
+              _count: { select: { diagnoses: true } },
             },
           },
           prescriber: {
@@ -446,6 +448,7 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
         items: view.items.map(toItemContent),
         allergies,
         cityOfPrescription: canton?.display ?? null,
+        diagnosisCount: current.encounter._count.diagnoses,
         prescriber: {
           acessRegistration: current.prescriber.user.acessRegistration,
           acessExpiresOn: current.prescriber.user.acessExpiresOn,

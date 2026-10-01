@@ -823,6 +823,8 @@ export const DOMAIN_ERROR_CODES = [
   'PRESCRIPTION_ITEM_INCOMPLETE',
   'PRESCRIPTION_NOT_EDITABLE',
   'PRESCRIPTION_NOT_FOUND',
+  // PR-095. Art. 5.b.iii: la receta sin diagnóstico CIE no se emite.
+  'PRESCRIPTION_DIAGNOSIS_REQUIRED',
   // ── Certificado médico (módulo `certificates`, CER-001 a CER-016) ────────
   //
   // El formulario SNS-MSP/HCU-form.117/2021 del A.M. 00115-2021. Ninguno de
