@@ -226,8 +226,12 @@ _Numeración conservada de `CF-040`..`CF-046` al mudarse desde `configuration`
   > no está en el formulario, así que el fin de franja es lo único que quien
   > administra puede corregir desde esta pantalla.
 - **ST-046** — DONDE la clínica opere en más de una sede, una regla DEBERÁ
-  pertenecer a exactamente una sede; el no-solapamiento del profesional entre
-  sedes ya lo garantiza el `EXCLUDE` de citas.
+  pertenecer a exactamente una sede, y dos reglas del mismo profesional a la
+  misma hora NO DEBERÁN existir aunque sean de sedes distintas (ST-042).
+  > **Cambiado el 30-09-2026 (D-070 B).** Decía que el no-solapamiento entre
+  > sedes «ya lo garantiza el `EXCLUDE` de citas». Lo garantizaba para las
+  > citas, no para el horario: la rejilla de cada sede prometía horas que el
+  > médico pasaba en otra (AG-144) y un sobrecupo podía caer dentro (D-069).
 - **ST-048** — CUANDO se cree, edite o cierre una regla de horario, el sistema
   NO DEBERÁ admitir ninguna sede fuera del alcance de quien llama —ni la que se
   fija ni la que la regla ya tenía—, y DEBERÁ rechazarlo con

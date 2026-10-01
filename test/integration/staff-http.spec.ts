@@ -1074,7 +1074,31 @@ describe('el personal por HTTP', () => {
       expect((response.body as Problem).code).toBe('SCHEDULE_RULE_OVERLAP');
     });
 
-    it('ST-046 la misma franja en OTRA sede se admite: la regla pertenece a una sede', async () => {
+    it('ST-042 ST-046 la misma franja en OTRA sede se rechaza: un horario, un sitio (D-070)', async () => {
+      const practitioner = await createPractitioner();
+      const second = await createSite(prisma, 'Sede Sur');
+      await put(`/practitioners/${practitioner.id}/sites`, {
+        siteIds: [siteId, second.id],
+      }).expect(200);
+
+      await post(`/practitioners/${practitioner.id}/schedule-rules`, {
+        siteId,
+        ...RULE,
+      }).expect(201);
+      const refused = await post(
+        `/practitioners/${practitioner.id}/schedule-rules`,
+        { siteId: second.id, ...RULE, startTime: '11:00', endTime: '13:00' },
+      ).expect(409);
+
+      expect((refused.body as Problem).code).toBe('SCHEDULE_RULE_OVERLAP');
+      expect((refused.body as Problem).errors?.[0]?.message).toMatch(
+        /en esta sede o en otra/,
+      );
+      expect(await prisma.practitionerScheduleRule.count()).toBe(1);
+    });
+
+    it('ST-046 la franja contigua en OTRA sede se admite: la regla sigue perteneciendo a una sede', async () => {
+      // Control positivo de la anterior: mañana en una sede, tarde en otra.
       const practitioner = await createPractitioner();
       const second = await createSite(prisma, 'Sede Sur');
       await put(`/practitioners/${practitioner.id}/sites`, {
@@ -1088,10 +1112,10 @@ describe('el personal por HTTP', () => {
       await post(`/practitioners/${practitioner.id}/schedule-rules`, {
         siteId: second.id,
         ...RULE,
+        startTime: '12:00',
+        endTime: '16:00',
       }).expect(201);
 
-      // The practitioner cannot actually be in both at once — that is the
-      // agenda's EXCLUDE on appointments, not this one's job (ST-046).
       expect(await prisma.practitionerScheduleRule.count()).toBe(2);
     });
 

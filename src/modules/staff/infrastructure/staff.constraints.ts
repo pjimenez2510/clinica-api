@@ -24,7 +24,7 @@ registerConstraintMeanings({
   schedule_rule_no_overlap: {
     code: 'SCHEDULE_RULE_OVERLAP',
     field: 'startTime',
-    message: 'El profesional ya tiene otro horario en esa sede ese día a esa hora', // prettier-ignore
+    message: 'El profesional ya tiene horario ese día a esa hora, en esta sede o en otra: un horario vive en un solo sitio', // prettier-ignore
   },
   // D-021 se llevó `schedule_rule_slot_fits` y `schedule_rule_slot_positive`:
   // los dos leían `practitioner_schedule_rule.slot_minutes`, que ya no existe.
