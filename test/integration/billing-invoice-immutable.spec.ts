@@ -15,6 +15,7 @@ import type { PrismaService } from '../../src/shared/infrastructure/prisma/prism
 
 import { useDatabase } from './setup/database';
 import { createPatient, createSite } from './setup/fixtures';
+import { authoriseVoucher } from './setup/sri-fixtures';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -31,18 +32,16 @@ import { createPatient, createSite } from './setup/fixtures';
  * that the method does not exist, which is BI-090 and a different claim: this
  * one is that the row cannot change even for somebody with a `psql` prompt.
  *
- * The status is moved to AUTHORISED by hand because the dialogue with the SRI
- * is Fase 2 and does not exist yet — and the trigger only fires from
- * AUTHORISED or VOIDED, so an ISSUED invoice would prove nothing.
+ * The status is moved to AUTHORISED by raw SQL, as the SRI's answer would leave
+ * it, so this file does not depend on the queue that talks to the SRI — and
+ * the trigger only fires from AUTHORISED or VOIDED, so an ISSUED invoice would
+ * prove nothing.
  */
 const db = useDatabase();
 
 const SERVICE_CODE = 'CONS-MG-PV';
 const SUPPLY_CODE = 'INS-GUANTES-EXAMEN';
 const SERVICE_DATE = parseClinicalDate('2026-05-11');
-
-/** A 49-digit access key, as the SRI issues one. Synthetic, never a real one. */
-const ACCESS_KEY = '4'.repeat(49);
 
 interface Context {
   prisma: PrismaClient;
@@ -158,15 +157,13 @@ async function issue(accountId: string) {
   });
 }
 
-/** Moves the invoice to AUTHORISED, which is what arms the trigger. */
+/**
+ * Moves the invoice to AUTHORISED, which is what arms the trigger. Its key has
+ * to be its own voucher's since `invoice_access_key_is_its_vouchers` (SRI-007),
+ * so the voucher is written first, as the SRI's answer would leave it.
+ */
 async function authorise(invoiceId: string): Promise<void> {
-  await context.prisma.$executeRaw`
-    UPDATE "invoice"
-       SET "status" = 'AUTHORISED',
-           "access_key" = ${ACCESS_KEY},
-           "authorised_at" = CURRENT_TIMESTAMP,
-           "updated_at" = CURRENT_TIMESTAMP
-     WHERE "id" = ${invoiceId}::uuid`;
+  await authoriseVoucher(context.prisma, invoiceId);
 }
 
 async function rejectionOf(promise: Promise<unknown>): Promise<unknown> {

@@ -41,6 +41,8 @@ const ESTABLISHMENT = {
   typology: 'Centro de Salud Tipo A',
   legalName: 'Clínica de Desarrollo S.A.',
   ruc: DEV_RUC,
+  // OR-028. `dirMatriz` of every voucher (sri/SPEC.md SRI-018). Fictitious.
+  headOfficeAddress: 'Av. Amazonas y Naciones Unidas, Quito',
 } as const;
 
 /** The site created ONLY when the database has none at all. */
@@ -80,6 +82,13 @@ export async function seedOrganization(prisma: PrismaClient): Promise<{
   establishment ??= await prisma.establishment.create({
     data: ESTABLISHMENT,
     select: { id: true },
+  });
+
+  // OR-028. A database seeded before the column existed has the
+  // establishment without it; only an empty value is filled.
+  await prisma.establishment.updateMany({
+    where: { mspUnicode: ESTABLISHMENT.mspUnicode, headOfficeAddress: null },
+    data: { headOfficeAddress: ESTABLISHMENT.headOfficeAddress },
   });
 
   // --- Sites -----------------------------------------------------------
@@ -128,6 +137,30 @@ export async function seedOrganization(prisma: PrismaClient): Promise<{
       });
       emissionPointsCreated += 1;
     }
+  }
+
+  // OR-027. Every site without the SRI's establishment code gets the next free
+  // one, in creation order — «001» for the first. Development data: in a real
+  // installation the code is the one the SRI assigned, typed from the screen.
+  const coded = await prisma.site.findMany({
+    where: { sriEstablishmentCode: { not: null } },
+    select: { sriEstablishmentCode: true },
+  });
+  const taken = new Set(coded.map((site) => site.sriEstablishmentCode));
+  const uncoded = await prisma.site.findMany({
+    where: { sriEstablishmentCode: null },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true },
+  });
+  let next = 1;
+  for (const site of uncoded) {
+    while (taken.has(String(next).padStart(3, '0'))) next += 1;
+    const code = String(next).padStart(3, '0');
+    taken.add(code);
+    await prisma.site.update({
+      where: { id: site.id },
+      data: { sriEstablishmentCode: code },
+    });
   }
 
   return {

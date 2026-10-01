@@ -548,9 +548,12 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
           },
         });
 
+        // BI-169. Each charge names the invoice that took it, in the same
+        // statement that bills it (`charge_item_billed_carries_its_invoice`):
+        // the voucher's lines are read through it.
         await tx.chargeItem.updateMany({
           where: { id: { in: charges.map((charge) => charge.id) } },
-          data: { status: 'BILLED' },
+          data: { status: 'BILLED', invoiceId: invoice.id },
         });
 
         return toInvoiceView(invoice);

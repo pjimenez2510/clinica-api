@@ -570,20 +570,22 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         taxTotal: true,
         total: true,
         emissionPoint: {
-          select: { code: true, site: { select: { mspUnicode: true } } },
-        },
-        account: {
           select: {
-            chargeItems: {
-              where: { status: 'BILLED' },
-              select: {
-                serviceDisplay: true,
-                quantity: true,
-                unitAmount: true,
-                discountAmount: true,
-                billableService: { select: { code: true } },
-              },
-            },
+            code: true,
+            site: { select: { sriEstablishmentCode: true } },
+          },
+        },
+        // BI-169. THIS invoice's charges, not the account's billed ones: an
+        // account invoiced twice would print the first invoice's lines on the
+        // second.
+        chargeItems: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            serviceDisplay: true,
+            quantity: true,
+            unitAmount: true,
+            discountAmount: true,
+            billableService: { select: { code: true } },
           },
         },
       },
@@ -591,17 +593,15 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
     if (row === null) return null;
 
     /**
-     * `001-001-000000001`. The first block is the ESTABLISHMENT code the SRI
-     * assigned, and this system does not hold it: `msp_unicode` is the MSP's
-     * code, which is a different register.
-     *
-     * > **Falta esquema.** There is no `sri_establishment_code` column on
-     * > `site`. `001` is printed while there is none, and it is the only
-     * > invented value in this whole module — stated here so it is found rather
-     * > than trusted. It is a datum of the installation, like the fiscal flags,
-     * > and it belongs beside them.
+     * SRI-070, OR-027. `001-001-000000001`: the first block is the
+     * establishment code the SRI assigned to the site — not `msp_unicode`,
+     * which is the MSP's register. A site without it prints `???`, never an
+     * invented `001`: such an invoice cannot have a voucher either (SRI-008),
+     * and the SRI monitor says why.
      */
-    const documentNumber = `001-${row.emissionPoint.code}-${row.sequential}`;
+    const establishmentCode =
+      row.emissionPoint.site.sriEstablishmentCode ?? '???';
+    const documentNumber = `${establishmentCode}-${row.emissionPoint.code}-${row.sequential}`;
 
     const money = (value: Prisma.Decimal): string => value.toFixed(2);
 
@@ -619,7 +619,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         buyerIdentification: row.buyerIdentification,
         buyerName: row.buyerName,
         buyerEmail: row.buyerEmail,
-        lines: row.account.chargeItems.map((charge) => {
+        lines: row.chargeItems.map((charge) => {
           const lineTotal = charge.unitAmount
             .mul(charge.quantity)
             .sub(charge.discountAmount);
