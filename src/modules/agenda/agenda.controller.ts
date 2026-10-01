@@ -432,6 +432,12 @@ function toAvailabilityResponse(view: AvailabilityView) {
       startsAt: entry.startsAt.toISOString(),
       endsAt: entry.endsAt.toISOString(),
     })),
+    // AG-145. Built field by field like `occupied`: nothing of the other site
+    // can travel by accident.
+    unavailable: view.unavailable.map((interval) => ({
+      startsAt: interval.startsAt.toISOString(),
+      endsAt: interval.endsAt.toISOString(),
+    })),
     // AG-015. The date and the motive; the slots of that day are simply not
     // in `slots`, which is what "marcar los cupos como no disponibles" means
     // for an answer that never materialised a slot as a row (AG-003).

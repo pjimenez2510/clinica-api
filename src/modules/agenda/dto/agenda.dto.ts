@@ -691,6 +691,19 @@ export const occupiedIntervalSchema = z.object({
 });
 
 /**
+ * AG-145. When the practitioner is taken at ANOTHER site. ITS OWN SCHEMA, AND
+ * STRICT, though today it has the same two fields as `occupied`: adding an
+ * `id` to this site's entries must never make the type ask for the other
+ * site's (AG-107).
+ */
+export const unavailableIntervalSchema = z
+  .object({
+    startsAt: z.iso.datetime(),
+    endsAt: z.iso.datetime(),
+  })
+  .strict();
+
+/**
  * AG-015. A date that offers nothing because the site observes a holiday, and
  * the reason to show for it.
  *
@@ -713,8 +726,19 @@ export const availabilitySchema = z.object({
   to: z.iso.date(),
   /** Free slots, ordered by instant. Derived, never stored (AG-003). */
   slots: z.array(availabilitySlotSchema),
-  /** AG-011: what is taken, including entries booked under expired rules. */
+  /**
+   * AG-011: what is taken AT THIS SITE, including entries booked under expired
+   * rules. Since AG-144 a slot can be missing from both `slots` and this list:
+   * the practitioner is taken elsewhere, and that is `unavailable`.
+   */
   occupied: z.array(occupiedIntervalSchema),
+  /**
+   * AG-145. When the practitioner is taken at ANOTHER site, within the hours
+   * of this site's rules: two instants per stretch, merged — no site, no
+   * reason, no patient, no kind of entry (AG-107). A stretch on a date means
+   * this site has a schedule that date; a client paints it «No disponible».
+   */
+  unavailable: z.array(unavailableIntervalSchema),
   /**
    * AG-015, AG-016. The dates of the range with no slots on offer, and why.
    *
