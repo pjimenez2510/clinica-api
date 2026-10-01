@@ -393,6 +393,34 @@ export class PrescriberNotLicensedError extends ForbiddenError {
 }
 
 /**
+ * PR-070. The line names a narcotic or psychotropic of the CNMB.
+ *
+ * Not a refusal of the medicine: a refusal of THIS document. That receta is the
+ * ACESS's pre-printed pad (Res. ACESS-2022-0046), with its own numbering and
+ * custody, and the message says where it is written instead. It names the
+ * line, never the medicine (PR-094).
+ */
+export class ControlledSubstanceNotPrescribableError extends ValidationError {
+  readonly code = 'CONTROLLED_SUBSTANCE_NOT_PRESCRIBABLE';
+  override readonly userTitle =
+    'Un estupefaciente o psicotrópico no se receta en este sistema: se escribe en el recetario especial de la ACESS';
+  override readonly fieldErrors: readonly DomainFieldError[];
+
+  constructor(line: number) {
+    super('Concept is a controlled substance; its receta is the ACESS pad', {
+      line,
+    });
+    this.fieldErrors = [
+      {
+        field: `items.${line - 1}.conceptId`,
+        code: 'CONTROLLED_SUBSTANCE_NOT_PRESCRIBABLE',
+        message: `Se receta en el recetario especial de la ACESS (línea ${line})`,
+      },
+    ];
+  }
+}
+
+/**
  * PR-040. The prescriber has no permanent contact number to print.
  *
  * Art. 5.e.vi puts it beside the warning signs: what the patient has to do at

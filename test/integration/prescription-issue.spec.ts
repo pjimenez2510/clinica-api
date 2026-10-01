@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import type { PinoLogger } from 'nestjs-pino';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -77,7 +77,14 @@ const serviceOf = (prisma: PrismaClient) => {
 /** A CNMB medicine as the catalogue holds it: a system and a versioned concept. */
 async function aCnmbConcept(
   prisma: PrismaClient,
-  concept: { code: string; display: string; validFrom: Date; validTo?: Date },
+  concept: {
+    code: string;
+    display: string;
+    validFrom: Date;
+    validTo?: Date;
+    /** PR-070. `{ controlled: true }` marks a narcotic or psychotropic. */
+    attributes?: Prisma.InputJsonObject;
+  },
   systemCode = 'CNMB',
 ) {
   const system = await prisma.catalogSystem.upsert({
@@ -93,6 +100,7 @@ async function aCnmbConcept(
       display: concept.display,
       validFrom: concept.validFrom,
       validTo: concept.validTo ?? null,
+      ...(concept.attributes ? { attributes: concept.attributes } : {}),
     },
   });
 }
@@ -553,6 +561,48 @@ describe('la receta contra PostgreSQL', () => {
     ).resolves.toMatchObject({
       status: 'ACTIVE',
     });
+  });
+
+  it('PR-070 un estupefaciente o psicotrópico no se compone: se receta en el talonario de la ACESS', async () => {
+    const prisma = db();
+    const { encounter, requester } = await anEncounter(prisma);
+    const morphine = await aCnmbConcept(prisma, {
+      code: 'N02AA01',
+      display: 'Morfina',
+      validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+      attributes: { controlled: true },
+    });
+    const paracetamol = await aCnmbConcept(prisma, {
+      code: 'N02BE01',
+      display: 'Paracetamol',
+      validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+    });
+    const service = serviceOf(prisma);
+    const who = { userId: requester.userId, sites: [...requester.sites] };
+
+    await expect(
+      service.compose(
+        {
+          encounterId: encounter.id,
+          ...INDICATIONS,
+          items: [aLine(morphine.id)],
+        },
+        who,
+      ),
+    ).rejects.toMatchObject({ code: 'CONTROLLED_SUBSTANCE_NOT_PRESCRIBABLE' });
+    expect(await prisma.prescription.count()).toBe(0);
+
+    // Control positivo: el mismo camino con un medicamento sin la marca compone.
+    await expect(
+      service.compose(
+        {
+          encounterId: encounter.id,
+          ...INDICATIONS,
+          items: [aLine(paracetamol.id)],
+        },
+        who,
+      ),
+    ).resolves.toMatchObject({ prescription: { status: 'DRAFT' } });
   });
 
   it('PR-010 PR-054 anula una receta emitida sin borrar ninguna fila', async () => {

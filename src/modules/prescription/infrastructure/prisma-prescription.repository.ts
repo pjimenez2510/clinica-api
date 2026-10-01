@@ -6,6 +6,7 @@ import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.serv
 import { assertOffFormularyJustified } from '../domain/prescription-content';
 import {
   ConceptNotPrescribableError,
+  ControlledSubstanceNotPrescribableError,
   PrescriptionEncounterNotFoundError,
   PrescriptionNotEditableError,
   PrescriptionNotFoundError,
@@ -112,6 +113,8 @@ interface ConceptRow {
   system_code: string;
   display: string;
   in_force: boolean;
+  /** PR-070. `attributes.controlled` of the CNMB concept. */
+  controlled: boolean;
 }
 
 /** The `PrescriptionRepository` adapter. */
@@ -232,6 +235,18 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
           !concept.in_force
         ) {
           throw new ConceptNotPrescribableError(line);
+        }
+
+        /**
+         * PR-070. A narcotic or psychotropic is prescribed on the ACESS's own
+         * pre-printed pad, under the doctor's custody, and its original stays
+         * at the pharmacy. A document from here would not be that receta, so
+         * not even a draft is composed. The mark is
+         * `catalog_concept.attributes.controlled`: which medicines carry it
+         * comes with the real CNMB (D-084).
+         */
+        if (concept.controlled) {
+          throw new ControlledSubstanceNotPrescribableError(line);
         }
 
         return {
@@ -636,7 +651,9 @@ async function conceptsForEncounter(
            cs."code"::text    AS system_code,
            cc."display"::text AS display,
            (cc."valid_period" @> (e."started_at" AT TIME ZONE 'America/Guayaquil')::date)
-                              AS in_force
+                              AS in_force,
+           (cc."attributes" ->> 'controlled') = 'true'
+                              AS controlled
       FROM "encounter" AS e
       JOIN "catalog_concept" AS cc
         ON cc."id" = ANY(${[...new Set(conceptIds)]}::uuid[])
