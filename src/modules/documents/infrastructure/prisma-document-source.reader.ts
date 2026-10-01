@@ -113,6 +113,8 @@ function fullNameOf(patient: {
  * OFFICIAL identifier.
  */
 const PATIENT_SELECT = {
+  // D-078. The chart number, printed on the general data band.
+  mrn: true,
   familyName: true,
   secondFamilyName: true,
   givenName: true,
@@ -173,6 +175,7 @@ function toPatient(
   return {
     fullName: fullNameOf(row),
     identifier: row.identifiers[0]?.value ?? null,
+    mrn: row.mrn,
     // Art. 5.b.ii. THE FROZEN AGE OF THE ATTENTION, never derived from the
     // birth date today: correcting a mistyped birth date would otherwise
     // silently rewrite documents already handed to a pharmacy.

@@ -50,6 +50,13 @@ function ecuadorianDate(instant: Date): string {
   return `${day}/${month}/${year}`;
 }
 
+/** D-095. When a document was issued or requested: date · hh:mm in Ecuador. */
+function ecuadorianDateAndMinute(instant: Date): string {
+  const time = wallClockOf(instant);
+  const two = (n: number) => String(n).padStart(2, '0');
+  return `${ecuadorianDate(instant)} · ${two(time.hour)}:${two(time.minute)}`;
+}
+
 /** SRI-070. The authorisation is an instant: date and wall-clock time in Ecuador. */
 function ecuadorianDateTime(instant: Date): string {
   const time = wallClockOf(instant);
@@ -150,8 +157,8 @@ export function composePrescriptionLayout(
       entries: [
         { label: 'Ciudad', value: data.city ?? '—' },
         {
-          label: 'Fecha',
-          value: issuedAt === null ? '—' : ecuadorianDate(issuedAt),
+          label: 'Fecha de emisión',
+          value: issuedAt === null ? '—' : ecuadorianDateAndMinute(issuedAt),
         },
         {
           // Arts. 17–19. DERIVED, never typed: a validity somebody keys in is a
@@ -162,6 +169,8 @@ export function composePrescriptionLayout(
               ? '—'
               : `${OUTPATIENT_VALIDITY_DAYS} días — hasta el ${validThrough.split('-').reverse().join('/')}`,
         },
+        // D-078. The chart number on every printed document.
+        { label: 'Historia clínica', value: data.patient.mrn },
       ],
     },
 
@@ -400,7 +409,10 @@ export function composeServiceOrderLayout(
     {
       kind: 'strip',
       entries: [
-        { label: 'Fecha', value: ecuadorianDate(data.requestedAt) },
+        {
+          label: 'Fecha de solicitud',
+          value: ecuadorianDateAndMinute(data.requestedAt),
+        },
         {
           label: 'Tipo',
           value: ORDER_CATEGORY_LABEL[data.category] ?? data.category,
@@ -409,6 +421,8 @@ export function composeServiceOrderLayout(
           label: 'Prioridad',
           value: ORDER_PRIORITY_LABEL[data.priority] ?? data.priority,
         },
+        // D-078. The chart number on every printed document.
+        { label: 'Historia clínica', value: data.patient.mrn },
       ],
     },
     { kind: 'heading', text: 'Paciente' },

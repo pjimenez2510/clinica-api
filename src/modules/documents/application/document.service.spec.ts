@@ -97,6 +97,7 @@ const prescriptionSubject = (status = 'ACTIVE'): DocumentSubject => ({
     patient: {
       fullName: 'Guamán Andrade María José',
       identifier: '1710034065',
+      mrn: 'HC0000000801',
       ageYears: 34,
       ageMonths: 2,
     },

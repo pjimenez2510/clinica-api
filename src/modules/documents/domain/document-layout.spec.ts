@@ -62,6 +62,7 @@ const context: DocumentContext = {
 const patient: PatientIdentity = {
   fullName: 'Guamán Andrade María José',
   identifier: '1710034065',
+  mrn: 'HC0000000801',
   ageYears: 1,
   ageMonths: 2,
 };
@@ -207,12 +208,30 @@ const prescription = (
 });
 
 describe('DOC-104 los datos generales, en la franja gris de la plantilla', () => {
-  it('DOC-104 la receta abre con ciudad, fecha y vigencia en una franja', () => {
+  it('DOC-104 D-078 la receta abre con ciudad, fecha y hora de emisión, vigencia e historia clínica en una franja', () => {
     const [first] = composeLayout(prescription(), context, template).blocks;
     expect(first?.kind).toBe('strip');
+    // 01:00 UTC of the 21st is 20:00 of the 20th in Ecuador.
+    expect(first?.kind === 'strip' ? first.entries : []).toEqual([
+      { label: 'Ciudad', value: 'Guayaquil' },
+      { label: 'Fecha de emisión', value: '20/08/2026 · 20:00' },
+      { label: 'Vigencia', value: '3 días — hasta el 22/08/2026' },
+      { label: 'Historia clínica', value: 'HC0000000801' },
+    ]);
+  });
+
+  it('DOC-104 un borrador sin emitir no inventa fecha ni hora', () => {
+    const [first] = composeLayout(
+      prescription({ issuedAt: null }),
+      context,
+      template,
+    ).blocks;
     expect(
-      first?.kind === 'strip' ? first.entries.map((entry) => entry.label) : [],
-    ).toEqual(['Ciudad', 'Fecha', 'Vigencia']);
+      first?.kind === 'strip'
+        ? first.entries.find((entry) => entry.label === 'Fecha de emisión')
+            ?.value
+        : undefined,
+    ).toBe('—');
   });
 
   it('DOC-104 una receta anulada lo dice antes de la franja', () => {
@@ -647,11 +666,18 @@ describe('ORD-006 DOC-072 la orden impresa, como la plantilla aprobada (D-095)',
     },
   });
 
-  it('DOC-104 la orden abre con fecha, tipo y prioridad en una franja', () => {
-    const [first] = composeLayout(order(), context, template).blocks;
-    expect(
-      first?.kind === 'strip' ? first.entries.map((entry) => entry.label) : [],
-    ).toEqual(['Fecha', 'Tipo', 'Prioridad']);
+  it('DOC-104 D-078 la orden abre con fecha y hora de solicitud, tipo, prioridad e historia clínica en una franja', () => {
+    const [first] = composeLayout(
+      order({ requestedAt: new Date('2026-08-21T01:00:00Z') }),
+      context,
+      template,
+    ).blocks;
+    expect(first?.kind === 'strip' ? first.entries : []).toEqual([
+      { label: 'Fecha de solicitud', value: '20/08/2026 · 20:00' },
+      { label: 'Tipo', value: 'Laboratorio' },
+      { label: 'Prioridad', value: 'Urgente' },
+      { label: 'Historia clínica', value: 'HC0000000801' },
+    ]);
   });
 
   it('ORD-007 un examen cancelado no sale en el papel del laboratorio, y sin ninguno vivo la orden sale anulada', () => {

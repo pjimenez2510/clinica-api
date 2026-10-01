@@ -36,6 +36,7 @@ export const SAMPLE_CODE = 'MUESTRA';
 const patient: PatientIdentity = {
   fullName: 'MUESTRA PACIENTE Ejemplo',
   identifier: '1710034065',
+  mrn: 'HC0000000000',
   ageYears: 42,
   ageMonths: 3,
 };

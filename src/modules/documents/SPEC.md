@@ -749,11 +749,16 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
   `align-items: center`): el logo **NO DEBERÁ** quedar pegado arriba cuando el
   bloque de texto es más alto, ni el texto cuando lo es el logo.
 
-- **DOC-104** — Los **datos generales** de la receta (ciudad, fecha, vigencia) y
-  de la orden (fecha, tipo, prioridad) DEBERÁN ir en **una franja** de fondo
+- **DOC-104** — Los **datos generales** de la receta (ciudad, fecha y hora de
+  emisión, vigencia, historia clínica) y de la orden (fecha y hora de solicitud,
+  tipo, prioridad, historia clínica) DEBERÁN ir en **una franja** de fondo
   gris claro `#f2f5f4`, en una sola fila, con las etiquetas en mayúsculas
   espaciadas; y los títulos de sección del cuerpo DEBERÁN pintarse en el color
   de acento (DOC-085), no en tinta.
+
+  > La hora va en `America/Guayaquil`, como toda fecha clínica, y el número de
+  > historia clínica junto al documento de identidad es D-078. Los añadió la
+  > principal el 01-10-2026: la plantilla aprobada los trae.
 
 - **DOC-105** — El **certificado** DEBERÁ pintar cada bloque A a E del 117 en un
   **recuadro con borde** y **barra de título gris** `#e6ecea`, con sus datos en
