@@ -670,3 +670,31 @@ describe('DOC-073 DOC-083 la banda desprendible y el pie de la receta', () => {
     }
   });
 });
+
+describe('DOC-085 la tinta y las etiquetas del marco aprobado', () => {
+  it('DOC-085 pinta el texto en tinta #1d2422 y las etiquetas en #4a5450, no en negro puro', async () => {
+    const pdf = await renderer.render(layout, images, metadata);
+    let streams = '';
+    for (const match of pdf
+      .toString('latin1')
+      .matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)) {
+      try {
+        streams += inflateSync(Buffer.from(match[1] ?? '', 'latin1')).toString(
+          'latin1',
+        );
+      } catch {
+        // Not a content stream (an embedded font, the ICC profile).
+      }
+    }
+    const fills = [...streams.matchAll(/([\d.]+) ([\d.]+) ([\d.]+) scn/g)].map(
+      (fill) =>
+        [fill[1], fill[2], fill[3]]
+          .map((channel) => Math.round(Number(channel) * 255))
+          .join(','),
+    );
+
+    expect(fills).toContain('29,36,34'); // #1d2422
+    expect(fills).toContain('74,84,80'); // #4a5450
+    expect(fills).not.toContain('0,0,0');
+  });
+});

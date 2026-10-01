@@ -240,7 +240,10 @@ class FakeRepository implements DocumentRepository {
     return created;
   }
 
+  readonly savedImages: NewDocumentImage[] = [];
+
   saveImage(image: NewDocumentImage): Promise<StoredImageSummary> {
+    this.savedImages.push(image);
     const stored: StoredImageSummary = {
       id: `image-${this.images.length + 1}`,
       mimeType: image.mimeType as 'image/png',
@@ -677,6 +680,32 @@ describe('DOC-054 la identidad visual se reencoda siempre', () => {
     // client sent.
     expect(stored.sha256).not.toBe(hashOfOriginal);
     expect(repository.logoOf.get('establishment-1')).toBe(stored.id);
+  });
+
+  it('DOC-056 guarda de cada imagen sus bytes, tipo, tamaño, sha256, ancho, alto y quién la subió', async () => {
+    const identity = new DocumentIdentityService(
+      repository,
+      new FakeNormaliser(),
+    );
+
+    const stored = await identity.setEstablishmentLogo(
+      'establishment-1',
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 9]),
+      'user-7',
+    );
+
+    const reencoded = Buffer.concat([
+      Buffer.from('reencoded:'),
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 9]),
+    ]);
+    expect(stored).toMatchObject({
+      mimeType: 'image/png',
+      byteSize: reencoded.byteLength,
+      sha256: createHash('sha256').update(reencoded).digest('hex'),
+      width: 100,
+      height: 40,
+    });
+    expect(repository.savedImages.at(-1)?.uploadedById).toBe('user-7');
   });
 
   it('DOC-057 el sello y la firma van por profesional', async () => {
