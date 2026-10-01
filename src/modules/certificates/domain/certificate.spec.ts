@@ -14,6 +14,10 @@ import {
   longRestNotice,
   restNoticeThresholdOf,
   backdatingReasonOf,
+  assertRestStartsInTime,
+  issuerReasonOf,
+  latestRestStartOf,
+  MATERNITY_CHAIN_NOTICE,
   restDetailsOf,
   missingPatientWork,
   patientWorkNotice,
@@ -22,7 +26,9 @@ import {
 } from './certificate';
 import {
   CertificateBackdatingReasonRequiredError,
+  CertificateIssuerReasonRequiredError,
   CertificateRestPeriodInvalidError,
+  CertificateRestStartTooLateError,
   CertificateRestTooLongError,
   CertificateTypeNotSupportedError,
 } from './certificate.errors';
@@ -137,31 +143,110 @@ describe('CER-007 el diagnóstico en el reposo', () => {
   });
 });
 
-describe('CER-030 el reposo retroactivo', () => {
+describe('CER-030 el reposo retroactivo o emitido tarde', () => {
   const period = { from: addDays(today, -2), to: today };
 
   it('CER-030 un reposo que empieza antes del día de la atención exige un motivo de diez caracteres', () => {
     for (const reason of [null, '', 'corto']) {
-      expect(() => backdatingReasonOf(period, today, reason)).toThrow(
+      expect(() => backdatingReasonOf(period, today, today, reason)).toThrow(
         CertificateBackdatingReasonRequiredError,
       );
     }
     expect(
-      backdatingReasonOf(period, today, '  Acudió tarde por la fiebre  '),
+      backdatingReasonOf(
+        period,
+        today,
+        today,
+        '  Acudió tarde por la fiebre  ',
+      ),
     ).toBe('Acudió tarde por la fiebre');
   });
 
-  it('CER-030 el día de la atención y después no es retroactivo, y no guarda motivo', () => {
+  it('CER-030 emitido el día de la atención, desde ese día o después, no guarda motivo', () => {
     expect(
-      backdatingReasonOf({ from: today, to: today }, today, null),
+      backdatingReasonOf({ from: today, to: today }, today, today, null),
     ).toBeNull();
     expect(
       backdatingReasonOf(
         { from: addDays(today, 1), to: addDays(today, 1) },
         today,
+        today,
         'Motivo que no hace falta',
       ),
     ).toBeNull();
+  });
+
+  it('CER-030 emitido un día posterior al de la atención pide motivo aunque empiece ese día (D-105 §3)', () => {
+    const attention = addDays(today, -10);
+    const fromAttention = { from: attention, to: addDays(attention, 2) };
+
+    let refusal: unknown;
+    try {
+      backdatingReasonOf(fromAttention, attention, today, null);
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(CertificateBackdatingReasonRequiredError);
+    expect(
+      (refusal as CertificateBackdatingReasonRequiredError).userTitle,
+    ).toContain('se emite después del día de la atención');
+    expect(
+      backdatingReasonOf(
+        fromAttention,
+        attention,
+        today,
+        'Volvió por el papel diez días después',
+      ),
+    ).toBe('Volvió por el papel diez días después');
+  });
+});
+
+describe('CER-041 el reposo empieza, como tarde, el día siguiente a la emisión', () => {
+  it('CER-041 desde hoy o desde mañana pasa; desde pasado mañana se rechaza nombrando restFrom y la fecha tope', () => {
+    const tomorrow = addDays(today, 1);
+    expect(latestRestStartOf(today)).toBe(tomorrow);
+    expect(() =>
+      assertRestStartsInTime({ from: today, to: today }, today),
+    ).not.toThrow();
+    expect(() =>
+      assertRestStartsInTime({ from: tomorrow, to: tomorrow }, today),
+    ).not.toThrow();
+
+    let refusal: unknown;
+    try {
+      assertRestStartsInTime({ from: addDays(today, 90), to: addDays(today, 91) }, today); // prettier-ignore
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(CertificateRestStartTooLateError);
+    expect((refusal as CertificateRestStartTooLateError).fieldErrors).toEqual([
+      {
+        field: 'restFrom',
+        code: 'CERTIFICATE_REST_START_TOO_LATE',
+        message: `El reposo debe empezar, como muy tarde, el ${tomorrow.split('-').reverse().join('/')}`,
+      },
+    ]);
+  });
+});
+
+describe('CER-039 el 117 lo emite el profesional de la atención', () => {
+  it('CER-039 quien atendió no deja motivo, aunque la petición lo traiga', () => {
+    expect(issuerReasonOf('p-1', 'p-1', null)).toBeNull();
+    expect(issuerReasonOf('p-1', 'p-1', 'Un motivo que sobra')).toBeNull();
+  });
+
+  it('CER-039 un tercero sin motivo de diez caracteres se rechaza en issuedByOtherReason', () => {
+    for (const reason of [null, '', '  corto  ']) {
+      expect(() => issuerReasonOf('p-2', 'p-1', reason)).toThrow(
+        CertificateIssuerReasonRequiredError,
+      );
+    }
+    expect(
+      new CertificateIssuerReasonRequiredError().fieldErrors[0]?.field,
+    ).toBe('issuedByOtherReason');
+    expect(
+      issuerReasonOf('p-2', 'p-1', '  Cubre el turno de la doctora  '),
+    ).toBe('Cubre el turno de la doctora');
   });
 });
 
@@ -185,18 +270,34 @@ describe('CER-032 el aviso de reposo largo, segun la especialidad del emisor', (
   });
 
   it('CER-032 medicina general avisa a partir de 4 dias, una sola vez', () => {
-    expect(restNoticesOf(3, 'medicina-general')).toEqual([]);
-    expect(restNoticesOf(4, 'medicina-general')).toEqual([
+    expect(restNoticesOf(3, 'medicina-general', 'GENERAL_ILLNESS')).toEqual([]);
+    expect(restNoticesOf(4, 'medicina-general', 'GENERAL_ILLNESS')).toEqual([
       'Este reposo es de 4 días. El IESS puede pedir una cita de control o una justificación para validar reposos largos; compruebe que el paciente pueda validarlo.',
     ]);
-    expect(restNoticesOf(20, null)).toHaveLength(1);
+    expect(restNoticesOf(20, null, 'GENERAL_ILLNESS')).toHaveLength(1);
   });
 
   it('CER-032 un especialista avisa a partir de 8 dias, con el numero de dias en el texto', () => {
-    expect(restNoticesOf(7, 'pediatria')).toEqual([]);
-    expect(restNoticesOf(8, 'pediatria')).toEqual([longRestNotice(8)]);
+    expect(restNoticesOf(7, 'pediatria', 'GENERAL_ILLNESS')).toEqual([]);
+    expect(restNoticesOf(8, 'pediatria', 'GENERAL_ILLNESS')).toEqual([
+      longRestNotice(8),
+    ]);
     expect(longRestNotice(8)).toContain('Este reposo es de 8 días.');
     expect(longRestNotice(8)).not.toContain('provisional');
+  });
+});
+
+describe('CER-043 el aviso de encadenar maternidad', () => {
+  it('CER-043 todo reposo de maternidad lleva el aviso de confirmar con el IESS, y ningún otro lo lleva', () => {
+    expect(restNoticesOf(2, 'medicina-general', 'MATERNITY')).toEqual([
+      MATERNITY_CHAIN_NOTICE,
+    ]);
+    expect(restNoticesOf(30, 'medicina-general', 'MATERNITY')).toEqual([
+      longRestNotice(30),
+      MATERNITY_CHAIN_NOTICE,
+    ]);
+    expect(restNoticesOf(2, 'medicina-general', 'WORK_ACCIDENT')).toEqual([]);
+    expect(MATERNITY_CHAIN_NOTICE).toContain('confirme con el IESS');
   });
 });
 

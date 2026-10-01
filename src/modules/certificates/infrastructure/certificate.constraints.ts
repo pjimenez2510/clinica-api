@@ -40,6 +40,42 @@ registerConstraintMeanings({
     field: 'backdatingReason',
     message: 'Explique por qué el reposo empieza antes del día de la atención', // prettier-ignore
   },
+  /** CER-039. Issued by someone who did not attend, without saying why. */
+  medical_certificate_issuer_reason_required: {
+    code: 'CERTIFICATE_ISSUER_REASON_REQUIRED',
+    field: 'issuedByOtherReason',
+    message: 'Explique por qué emite el certificado de una atención que no registró', // prettier-ignore
+  },
+  /** CER-039. The attending practitioner keeps no third-party reason. */
+  medical_certificate_issuer_reason_only_for_others: {
+    code: 'CERTIFICATE_ISSUER_REASON_REQUIRED',
+    field: 'issuedByOtherReason',
+    message: 'Quien registró la atención no deja motivo de emitir en lugar de otro', // prettier-ignore
+  },
+  /** CER-039. The third-party reason is never stored blank. */
+  medical_certificate_issuer_reason_not_blank: {
+    code: 'CERTIFICATE_ISSUER_REASON_REQUIRED',
+    field: 'issuedByOtherReason',
+    message: 'Explique por qué emite el certificado de una atención que no registró', // prettier-ignore
+  },
+  /** CER-041. A rest starts no later than the day after it is issued. */
+  medical_certificate_rest_starts_by_next_day: {
+    code: 'CERTIFICATE_REST_START_TOO_LATE',
+    field: 'restFrom',
+    message: 'El reposo empieza, como muy tarde, el día siguiente a la emisión del certificado', // prettier-ignore
+  },
+  /** CER-030. A backdated or late rest without its reason. */
+  medical_certificate_backdating_reason_required: {
+    code: 'CERTIFICATE_BACKDATING_REASON_REQUIRED',
+    field: 'backdatingReason',
+    message: 'Explique por qué el reposo empieza antes del día de la atención o se emite después de ese día', // prettier-ignore
+  },
+  /** CER-030. A rest of the day, issued the day, keeps no reason. */
+  medical_certificate_backdating_reason_only_when_late: {
+    code: 'CERTIFICATE_BACKDATING_REASON_REQUIRED',
+    field: 'backdatingReason',
+    message: 'Un reposo emitido el día de la atención y que empieza ese día no lleva motivo de retroactividad', // prettier-ignore
+  },
   /**
    * CER-009. Two certificates of one site with the same number. The trigger
    * makes it unreachable; registered for the day something goes around it.

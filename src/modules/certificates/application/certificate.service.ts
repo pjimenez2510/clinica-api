@@ -17,8 +17,10 @@ import {
   missingPatientWork,
   patientWorkNotice,
   assertIssuableType,
+  assertRestStartsInTime,
   backdatingReasonOf,
   iessValidationOf,
+  issuerReasonOf,
   restDetailsOf,
   restNoticesOf,
   type CertificateType,
@@ -39,7 +41,9 @@ import {
   type Form117,
 } from '../../../shared/domain/form-117/form-117';
 import {
+  CERTIFICATE_CLOCK,
   CERTIFICATE_REPOSITORY,
+  type CertificateClock,
   type CertificateRepository,
   type CertificateView,
   type SiteScopeFilter,
@@ -89,8 +93,13 @@ export interface IssueCertificateRequest {
   maternityAdmissionOn: ClinicalDate | null;
   birthOn: ClinicalDate | null;
   maternityDischargeOn: ClinicalDate | null;
-  /** CER-030. Demanded only when the rest starts before the attention. */
+  /**
+   * CER-030. Demanded only when the rest starts before the attention or is
+   * issued on a later day.
+   */
   backdatingReason: string | null;
+  /** CER-039. Demanded only when the issuer is not who attended. */
+  issuedByOtherReason: string | null;
 }
 
 /** CER-013. The certificate, and what the IESS needs to be said about it. */
@@ -121,6 +130,8 @@ export class CertificateService {
     @Inject(ACCESS_AUDIT_RECORDER)
     private readonly audit: AccessAuditRecorder,
     private readonly logger: PinoLogger,
+    @Inject(CERTIFICATE_CLOCK)
+    private readonly clock: CertificateClock,
   ) {
     this.logger.setContext(CertificateService.name);
   }
@@ -144,12 +155,16 @@ export class CertificateService {
     // alone can be judged on, refused before touching storage.
     const details = restDetailsOf(type, request);
 
+    const issuedAt = this.clock();
+    // CER-030, CER-041. The calendar date of the issue, in Ecuador.
+    const issueDate = clinicalDateOf(issuedAt);
+    if (details !== null) assertRestStartsInTime(details.period, issueDate);
+
     const certifier = await this.certificates.findCertifierByUser(
       requester.userId,
     );
     if (!certifier) throw new CertifierProfileRequiredError();
 
-    const issuedAt = new Date();
     const verificationCode = newVerificationCode();
 
     // CER-038. Filled from the snapshot, inside the transaction.
@@ -160,6 +175,12 @@ export class CertificateService {
         if (!admitsNewCertificates(snapshot.encounterStatus)) {
           throw new CertificateEncounterNotOpenError(snapshot.encounterStatus);
         }
+        // CER-039. Who attended is read under the lock, with the attention.
+        const issuedByOtherReason = issuerReasonOf(
+          certifier.practitionerId,
+          snapshot.attendingPractitionerId,
+          request.issuedByOtherReason,
+        );
         // CER-036. The place of issue is the canton of the site's parish.
         if (snapshot.cityOfIssue === null) {
           throw new CertificateEstablishmentIncompleteError();
@@ -182,15 +203,17 @@ export class CertificateService {
           contingencyType: details?.contingencyType ?? null,
           maternity: details?.maternity ?? null,
           // CER-030. Against the clinical date of the attention in Ecuador,
-          // read inside the transaction.
+          // read inside the transaction, and the date of the issue.
           backdatingReason:
             details === null
               ? null
               : backdatingReasonOf(
                   details.period,
                   clinicalDateOf(snapshot.encounterStartedAt),
+                  issueDate,
                   request.backdatingReason,
                 ),
+          issuedByOtherReason,
           issuedById: certifier.practitionerId,
           issuedAt,
           verificationCode,
@@ -210,7 +233,11 @@ export class CertificateService {
         details === null
           ? []
           : [
-              ...restNoticesOf(details.days, certifier.primarySpecialtyCode),
+              ...restNoticesOf(
+                details.days,
+                certifier.primarySpecialtyCode,
+                details.contingencyType,
+              ),
               ...[patientWorkNotice(missingWork)].filter(
                 (notice): notice is string => notice !== null,
               ),
@@ -266,7 +293,7 @@ export class CertificateService {
     const revoked = await this.certificates.revoke(
       { certificateId, sites: requester.sites },
       {
-        revokedAt: new Date(),
+        revokedAt: this.clock(),
         // The ACCOUNT, never a cedula and never the practitioner (REQ-110).
         revokedById: requester.userId,
         reason,

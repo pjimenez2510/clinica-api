@@ -5,6 +5,7 @@ import {
   ValidationError,
   type DomainFieldError,
 } from '../../../shared/domain/errors/domain-error';
+import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 
 /**
  * What can go wrong when a medical certificate is issued, read or annulled, in
@@ -233,27 +234,84 @@ export class CertificateAlreadyRevokedError extends ConflictError {
   }
 }
 
+/** CER-030. Why the rest needs a reason: it starts early, or is issued late. */
+export type BackdatingCase = 'BACKDATED' | 'LATE';
+
+const BACKDATING_SENTENCE: Readonly<Record<BackdatingCase, string>> = {
+  BACKDATED: 'El reposo empieza antes del día de la atención',
+  LATE: 'El reposo se emite después del día de la atención',
+};
+
 /**
- * CER-030. The rest starts before the clinical date of the attention and no
- * written reason of at least ten characters says why. A backdated certificate
- * is the typical shape of a certificate of favour: it is admitted only with
- * the reason written, and the reason stays in the record.
+ * CER-030. The rest starts before the clinical date of the attention, or is
+ * issued on a later day (D-105 §3), and no written reason of at least ten
+ * characters says why. A backdated certificate is the typical shape of a
+ * certificate of favour: it is admitted only with the reason written, and the
+ * reason stays in the record.
  */
 export class CertificateBackdatingReasonRequiredError extends ValidationError {
   readonly code = 'CERTIFICATE_BACKDATING_REASON_REQUIRED';
+  override readonly userTitle: string;
+  override readonly fieldErrors: readonly DomainFieldError[];
+
+  constructor(backdatingCase: BackdatingCase = 'BACKDATED') {
+    super('A backdated or late rest needs a written reason');
+    const sentence = BACKDATING_SENTENCE[backdatingCase];
+    this.userTitle = `${sentence}. Escriba por qué, en al menos diez caracteres`;
+    this.fieldErrors = [
+      {
+        field: 'backdatingReason',
+        code: 'CERTIFICATE_BACKDATING_REASON_REQUIRED',
+        message: `${sentence}: explique por qué`,
+      },
+    ];
+  }
+}
+
+/**
+ * CER-039, D-105 §1. Someone other than the practitioner of the attention
+ * issues its certificate and no written reason of at least ten characters says
+ * why. The 117 says «Certifico que…»: whoever did not attend has to say why
+ * they certify it.
+ */
+export class CertificateIssuerReasonRequiredError extends ValidationError {
+  readonly code = 'CERTIFICATE_ISSUER_REASON_REQUIRED';
   override readonly userTitle =
-    'El reposo empieza antes del día de la atención. Escriba por qué, en al menos diez caracteres';
+    'Esta atención la registró otro profesional. Para emitir el certificado en su lugar, escriba por qué, en al menos diez caracteres';
   override readonly fieldErrors: readonly DomainFieldError[] = [
     {
-      field: 'backdatingReason',
-      code: 'CERTIFICATE_BACKDATING_REASON_REQUIRED',
+      field: 'issuedByOtherReason',
+      code: 'CERTIFICATE_ISSUER_REASON_REQUIRED',
       message:
-        'Explique por qué el reposo empieza antes del día de la atención',
+        'Explique por qué emite el certificado de una atención que no registró',
     },
   ];
 
   constructor() {
-    super('A backdated rest needs a written reason');
+    super('A certificate issued by someone other than the attending practitioner needs a reason'); // prettier-ignore
+  }
+}
+
+/**
+ * CER-041, D-105 §3. The rest starts after the day following the issue. The
+ * latest admitted day is named: «demasiado tarde» alone sends the doctor
+ * guessing. A date is not a patient datum (CER-014).
+ */
+export class CertificateRestStartTooLateError extends ValidationError {
+  readonly code = 'CERTIFICATE_REST_START_TOO_LATE';
+  override readonly userTitle =
+    'El reposo empieza, como muy tarde, el día siguiente a la emisión del certificado';
+  override readonly fieldErrors: readonly DomainFieldError[];
+
+  constructor(latest: ClinicalDate) {
+    super('A rest starts no later than the day after it is issued');
+    this.fieldErrors = [
+      {
+        field: 'restFrom',
+        code: 'CERTIFICATE_REST_START_TOO_LATE',
+        message: `El reposo debe empezar, como muy tarde, el ${latest.split('-').reverse().join('/')}`,
+      },
+    ];
   }
 }
 

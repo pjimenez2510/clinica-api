@@ -54,6 +54,7 @@ const CERTIFICATE_SELECT = {
   birthOn: true,
   maternityDischargeOn: true,
   restBackdatingReason: true,
+  issuedByOtherReason: true,
   revokedAt: true,
   revokedById: true,
   revocationReason: true,
@@ -128,6 +129,8 @@ export class PrismaCertificateRepository implements CertificateRepository {
           id: true,
           siteId: true,
           patientId: true,
+          // CER-039. Who attended, read under the lock.
+          practitionerId: true,
           status: true,
           startedAt: true,
           _count: { select: { diagnoses: true } },
@@ -162,6 +165,7 @@ export class PrismaCertificateRepository implements CertificateRepository {
 
       const plan = decide({
         encounterStatus: encounter.status,
+        attendingPractitionerId: encounter.practitionerId,
         diagnosisCount: encounter._count.diagnoses,
         encounterStartedAt: encounter.startedAt,
         cityOfIssue: encounter.site.parish?.parent?.display ?? null,
@@ -187,6 +191,7 @@ export class PrismaCertificateRepository implements CertificateRepository {
           birthOn: optionalDate(plan.maternity?.birthOn),
           maternityDischargeOn: optionalDate(plan.maternity?.dischargeOn),
           restBackdatingReason: plan.backdatingReason,
+          issuedByOtherReason: plan.issuedByOtherReason,
           verificationCode: plan.verificationCode,
           issuedAt: plan.issuedAt,
           // Only what it prints: a certificate without the diagnosis keeps none.
@@ -338,6 +343,7 @@ function toView(row: CertificateRow): CertificateView {
             dischargeOn: clinicalDateColumn(row.maternityDischargeOn) as ClinicalDate, // prettier-ignore
           },
     backdatingReason: row.restBackdatingReason,
+    issuedByOtherReason: row.issuedByOtherReason,
     revokedAt: row.revokedAt,
     revokedById: row.revokedById,
     revocationReason: row.revocationReason,

@@ -15,6 +15,7 @@ import {
 import {
   IESS_NOT_APPLICABLE_NOTICE,
   longRestNotice,
+  MATERNITY_CHAIN_NOTICE,
 } from '../domain/certificate';
 import {
   CertificateAlreadyRevokedError,
@@ -77,6 +78,7 @@ const aView = (overrides: Partial<CertificateView> = {}): CertificateView => ({
   contingencyType: null,
   maternity: null,
   backdatingReason: null,
+  issuedByOtherReason: null,
   revokedAt: null,
   revokedById: null,
   revocationReason: null,
@@ -126,6 +128,7 @@ const aSource = (view: CertificateView): Form117Source => ({
 /** What the issue reads inside its transaction, overridable. */
 const aSnapshot = (overrides: Partial<IssueSnapshot> = {}): IssueSnapshot => ({
   encounterStatus: 'OPEN',
+  attendingPractitionerId: PRACTITIONER,
   diagnosisCount: 1,
   encounterStartedAt: NOW,
   cityOfIssue: 'Quito',
@@ -181,6 +184,7 @@ class FakeRepository implements CertificateRepository {
         contingencyType: plan.contingencyType,
         maternity: plan.maternity,
         backdatingReason: plan.backdatingReason,
+        issuedByOtherReason: plan.issuedByOtherReason,
       }),
     );
   }
@@ -223,6 +227,7 @@ const attendance = (
   birthOn: null,
   maternityDischargeOn: null,
   backdatingReason: null,
+  issuedByOtherReason: null,
   ...overrides,
 });
 
@@ -241,8 +246,11 @@ describe('el servicio de certificados', () => {
   let entries: AccessAuditEntry[];
   let logged: unknown[][];
   let service: CertificateService;
+  /** What the injected clock answers; `NOW` unless a test moves it. */
+  let clockReads: Date;
 
   beforeEach(() => {
+    clockReads = NOW;
     repository = new FakeRepository();
     entries = [];
     logged = [];
@@ -256,11 +264,10 @@ describe('el servicio de certificados', () => {
       setContext: vi.fn(),
       info: (...args: unknown[]) => logged.push(args),
     } as unknown as PinoLogger;
-    service = new CertificateService(repository, audit, logger);
+    service = new CertificateService(repository, audit, logger, () => clockReads); // prettier-ignore
   });
 
   it('CER-001 registra el certificado con la atencion, el profesional de la sesion, el tipo y el instante', async () => {
-    const before = Date.now();
     const issued = await service.issue(attendance(), requester);
 
     expect(repository.issued).toHaveLength(1);
@@ -270,7 +277,8 @@ describe('el servicio de certificados', () => {
     expect(query).toEqual({ encounterId: ENCOUNTER, sites: [SITE] });
     expect(plan.type).toBe('ATTENDANCE');
     expect(plan.issuedById).toBe(PRACTITIONER);
-    expect(plan.issuedAt.getTime()).toBeGreaterThanOrEqual(before);
+    // CER-030, CER-041. The instant is the clock's, never read in the service.
+    expect(plan.issuedAt).toBe(NOW);
     expect(plan.verificationCode).toMatch(/^[0-9A-F]{16}$/);
     expect(issued.certificate.patientId).toBe(PATIENT);
   });
@@ -385,7 +393,6 @@ describe('el servicio de certificados', () => {
   });
 
   it('CER-011 anula con el motivo, la cuenta de la sesion y el instante', async () => {
-    const before = Date.now();
     const revoked = await service.revoke(
       'certificate-1',
       'Se emitió con el tipo equivocado',
@@ -398,7 +405,7 @@ describe('el servicio de certificados', () => {
     expect(query).toEqual({ certificateId: 'certificate-1', sites: [SITE] });
     expect(plan.revokedById).toBe(USER);
     expect(plan.reason).toBe('Se emitió con el tipo equivocado');
-    expect(plan.revokedAt.getTime()).toBeGreaterThanOrEqual(before);
+    expect(plan.revokedAt).toBe(NOW);
     expect(revoked.revocationReason).toBe('Se emitió con el tipo equivocado');
   });
 
@@ -472,6 +479,9 @@ describe('el servicio de certificados', () => {
         WallClockTime.of(21, 0),
       ),
     });
+    // Y se emite a las 23:00 de ese mismo día en Ecuador, 04:00 UTC del
+    // siguiente: ni retroactivo ni tardío (D-105 §3).
+    clockReads = atWallClock(addDays(today, -1), WallClockTime.of(23, 0));
     // El reposo empieza el día de la atención en Ecuador: no es retroactivo.
     await expect(
       service.issue(
@@ -615,5 +625,88 @@ describe('el servicio de certificados', () => {
     });
     await expect(service.issue(attendance(), requester)).rejects.toThrow();
     expect(entries).toEqual([]);
+  });
+  it('CER-039 sobre la atención de otro profesional exige motivo y lo guarda; quien atendió no guarda ninguno', async () => {
+    repository.snapshot = aSnapshot({ attendingPractitionerId: 'practitioner-who-attended' }); // prettier-ignore
+
+    await expect(service.issue(attendance(), requester)).rejects.toMatchObject({
+      code: 'CERTIFICATE_ISSUER_REASON_REQUIRED',
+    });
+    expect(repository.issued).toHaveLength(0);
+    expect(entries).toEqual([]);
+
+    const issued = await service.issue(
+      attendance({ issuedByOtherReason: 'Cubre el turno de la doctora que atendió' }), // prettier-ignore
+      requester,
+    );
+    expect(issued.certificate.issuedByOtherReason).toBe(
+      'Cubre el turno de la doctora que atendió',
+    );
+
+    // Control positivo: quien atendió no deja motivo aunque lo mande.
+    repository.snapshot = aSnapshot();
+    const own = await service.issue(
+      attendance({ issuedByOtherReason: 'Un motivo que sobra' }),
+      requester,
+    );
+    expect(own.certificate.issuedByOtherReason).toBeNull();
+  });
+
+  it('CER-041 un reposo que empieza en 90 días se rechaza antes de tocar la base, nombrando restFrom', async () => {
+    await expect(
+      service.issue(
+        rest(3, { restFrom: addDays(today, 90), restTo: addDays(today, 92) }),
+        requester,
+      ),
+    ).rejects.toMatchObject({
+      code: 'CERTIFICATE_REST_START_TOO_LATE',
+      fieldErrors: [expect.objectContaining({ field: 'restFrom' })],
+    });
+    expect(repository.issued).toHaveLength(0);
+
+    // Control positivo: desde mañana.
+    await expect(
+      service.issue(
+        rest(1, { restFrom: addDays(today, 1), restTo: addDays(today, 1) }),
+        requester,
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it('CER-030 emitido dos días después de la atención pide motivo aunque el reposo empiece ese día', async () => {
+    const attentionDay = addDays(today, -2);
+    repository.snapshot = aSnapshot({
+      encounterStartedAt: new Date(NOW.getTime() - 2 * 24 * 60 * 60 * 1000),
+    });
+    const late = rest(3, { restFrom: attentionDay, restTo: today });
+
+    await expect(service.issue(late, requester)).rejects.toMatchObject({
+      code: 'CERTIFICATE_BACKDATING_REASON_REQUIRED',
+    });
+
+    const issued = await service.issue(
+      {
+        ...late,
+        backdatingReason: 'Volvió por el certificado dos días después',
+      },
+      requester,
+    );
+    expect(issued.certificate.backdatingReason).toBe(
+      'Volvió por el certificado dos días después',
+    );
+  });
+
+  it('CER-043 un reposo de maternidad avisa de confirmar con el IESS, sin impedir la emisión', async () => {
+    const issued = await service.issue(
+      rest(28, {
+        contingencyType: 'MATERNITY',
+        maternityAdmissionOn: today,
+        birthOn: today,
+        maternityDischargeOn: today,
+      }),
+      requester,
+    );
+
+    expect(issued.restNotices).toContain(MATERNITY_CHAIN_NOTICE);
   });
 });

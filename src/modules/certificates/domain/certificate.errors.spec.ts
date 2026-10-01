@@ -8,11 +8,14 @@ import {
   type DomainError,
 } from '../../../shared/domain/errors/domain-error';
 import { DOMAIN_ERROR_CODES } from '../../../shared/domain/errors/error-catalogue';
+import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 
 import {
   CertificateAlreadyRevokedError,
   CertificateBackdatingReasonRequiredError,
   CertificateEstablishmentIncompleteError,
+  CertificateIssuerReasonRequiredError,
+  CertificateRestStartTooLateError,
   CertificateRestTooLongError,
   CertificateDiagnosisRequiredError,
   CertificateEncounterNotFoundError,
@@ -36,6 +39,26 @@ const CONTRACT: readonly {
   category: { prototype: DomainError };
   says: string;
 }[] = [
+  {
+    error: new CertificateIssuerReasonRequiredError(),
+    code: 'CERTIFICATE_ISSUER_REASON_REQUIRED',
+    category: ValidationError,
+    says: 'la registró otro profesional',
+  },
+  {
+    error: new CertificateRestStartTooLateError(
+      '2026-10-02' as ClinicalDate, // fecha-fija: sólo se comprueba el formato DD/MM/AAAA
+    ),
+    code: 'CERTIFICATE_REST_START_TOO_LATE',
+    category: ValidationError,
+    says: 'el día siguiente a la emisión',
+  },
+  {
+    error: new CertificateBackdatingReasonRequiredError('LATE'),
+    code: 'CERTIFICATE_BACKDATING_REASON_REQUIRED',
+    category: ValidationError,
+    says: 'se emite después del día de la atención',
+  },
   {
     error: new CertificateEncounterNotFoundError(),
     code: 'CERTIFICATE_ENCOUNTER_NOT_FOUND',

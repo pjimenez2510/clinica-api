@@ -489,6 +489,7 @@ describe('CER-003 la emisión y la anulación de la atención se serializan', ()
             contingencyType: null,
             maternity: null,
             backdatingReason: null,
+            issuedByOtherReason: null,
             issuedById: scene.practitionerId,
             issuedAt: new Date(),
             verificationCode: nextCode(),

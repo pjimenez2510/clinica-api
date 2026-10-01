@@ -180,7 +180,8 @@ describe('CER-030 el reposo pide motivo si empieza antes de la atención o se em
       insert(prisma, scene, {
         rest,
         issuedDaysLater: 1,
-        backdatingReason: 'El paciente volvió por el certificado al día siguiente',
+        backdatingReason:
+          'El paciente volvió por el certificado al día siguiente',
       }),
     ).resolves.toBe(1);
   });
@@ -211,8 +212,8 @@ describe('CER-030 el reposo pide motivo si empieza antes de la atención o se em
     const prisma = db();
     const scene = await aScene(prisma);
 
-    await expect(
-      insert(prisma, scene, { issuedDaysLater: 3 }),
-    ).resolves.toBe(1);
+    await expect(insert(prisma, scene, { issuedDaysLater: 3 })).resolves.toBe(
+      1,
+    );
   });
 });
