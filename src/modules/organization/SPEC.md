@@ -72,6 +72,19 @@ consumirá.
 **Solo servidor:** OR-026. Bitácora y comprobación de alcance en el guard;
 la mitad que sí se ve —no ofrecer lo que no se puede tocar— la cubre OR-020.
 
+### O3 — Los datos del emisor que pide el SRI _(P1)_
+
+El código de establecimiento que el SRI asignó a cada sede y la dirección de la
+matriz: sin ellos no hay clave de acceso ni `infoTributaria` (sri/SPEC.md
+SRI-001, SRI-009, SRI-018).
+
+**Prueba independiente:** guardar `01` como código SRI de una sede y ver el
+rechazo; guardar `002` y leerlo igual, con el cero.
+**Cubre:** OR-027, OR-028.
+
+> La edición desde la pantalla de Administración queda pendiente (F-08): en
+> `feat/sri-factura-electronica` se construye el dato, su garantía y la ruta.
+
 ---
 
 ## Requisitos
@@ -160,6 +173,20 @@ la mitad que sí se ve —no ofrecer lo que no se puede tocar— la cubre OR-020
   en la bitácora con autor, instante y valor anterior, y DEBERÁ comprobar que
   quien llama tenga alcance sobre la **sede dueña** del consultorio o del punto
   de emisión, respondiendo `SITE_SCOPE_DENIED` cuando no lo tenga (ADR-007).
+
+- **OR-027** — El sistema DEBERÁ guardar en cada sede el **código de
+  establecimiento que asignó el SRI** como exactamente tres dígitos, con el cero
+  a la izquierda significativo, permitir editarlo con el mismo permiso que el
+  resto de la sede, y la base DEBERÁ rechazar cualquier otra forma
+  (`site_sri_establishment_code_format`).
+  > No es el código MSP (`msp_unicode`), que es otro registro: es el `estab` de
+  > la clave de acceso y el primer bloque del número `001-001-000000001`.
+  > `documents` imprimía `001` inventado por falta de esta columna (DOC-076).
+- **OR-028** — El sistema DEBERÁ guardar la **dirección de la matriz** del
+  establecimiento y permitir editarla con el mismo permiso que el resto del
+  establecimiento.
+  > `dirMatriz` es obligatorio en la factura del SRI (sri/SPEC.md SRI-018), y no
+  > es necesariamente la dirección de ninguna sede que atiende.
 
   > **Por qué se añade la segunda mitad.** `PATCH` y `DELETE` nombran el
   > consultorio, no la sede, así que el guard no puede comprobarla: corre antes
