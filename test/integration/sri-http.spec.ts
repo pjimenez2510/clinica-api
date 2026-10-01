@@ -499,4 +499,67 @@ describe('el comprobante electrónico por HTTP', () => {
       expect((response.body as Problem).code).toBe('SRI_CERTIFICATE_TOO_LARGE');
     });
   });
+
+  describe('OR-027, OR-028 los datos del emisor desde la administración', () => {
+    it('OR-027 administración guarda el código SRI de la sede con su cero y rechaza otra forma', async () => {
+      const saved = await api()
+        .patch(`/api/v1/organization/sites/${siteId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ sriEstablishmentCode: '002' })
+        .expect(200);
+      expect(
+        (saved.body as { sriEstablishmentCode: string }).sriEstablishmentCode,
+      ).toBe('002');
+
+      const refused = await api()
+        .patch(`/api/v1/organization/sites/${siteId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ sriEstablishmentCode: '2' })
+        .expect(422);
+      expect(JSON.stringify(refused.body)).toContain('sriEstablishmentCode');
+      expect(
+        (await prisma.site.findUniqueOrThrow({ where: { id: siteId } }))
+          .sriEstablishmentCode,
+      ).toBe('002');
+    });
+
+    it('OR-028 un guardado del establecimiento sin la dirección de la matriz no la borra', async () => {
+      const establishment = await api()
+        .get('/api/v1/organization/establishment')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      const current = establishment.body as {
+        mspUnicode: string;
+        typology: string;
+        legalName: string;
+        headOfficeAddress: string;
+      };
+      expect(current.headOfficeAddress).toBe(
+        'Av. Amazonas y Naciones Unidas, Quito',
+      );
+
+      await api()
+        .put('/api/v1/organization/establishment')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          mspUnicode: current.mspUnicode,
+          typology: current.typology,
+          legalName: current.legalName,
+        })
+        .expect(200);
+      const after = await api()
+        .put('/api/v1/organization/establishment')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          mspUnicode: current.mspUnicode,
+          typology: current.typology,
+          legalName: current.legalName,
+          headOfficeAddress: 'Calle Nueva 123, Quito',
+        })
+        .expect(200);
+      expect(
+        (after.body as { headOfficeAddress: string }).headOfficeAddress,
+      ).toBe('Calle Nueva 123, Quito');
+    });
+  });
 });

@@ -36,14 +36,14 @@ parroquia del DPA del INEC.
 
 ## Vocabulario
 
-| Término               | Significado exacto en este módulo                                                     |
-| --------------------- | ------------------------------------------------------------------------------------- |
-| **Establecimiento**   | La entidad de salud ante el MSP: tipología, código único, RUC. Puede tener varias sedes |
-| **Tipología**         | Clasificación del MSP del establecimiento (A.M. 00000079): lo que determina qué reporta |
-| **Código único MSP**  | Identificador del establecimiento que el RDACAA exige en **cada** atención (REQ-020)   |
-| **Sede**              | Ubicación física donde se atiende. Es el eje del alcance de permisos y de la agenda     |
-| **Consultorio**       | Espacio dentro de una sede (`SiteRoom`). Dos profesionales no pueden ocupar el mismo    |
-| **Punto de emisión**  | Código de tres dígitos del SRI desde el que se emiten comprobantes                      |
+| Término              | Significado exacto en este módulo                                                       |
+| -------------------- | --------------------------------------------------------------------------------------- |
+| **Establecimiento**  | La entidad de salud ante el MSP: tipología, código único, RUC. Puede tener varias sedes |
+| **Tipología**        | Clasificación del MSP del establecimiento (A.M. 00000079): lo que determina qué reporta |
+| **Código único MSP** | Identificador del establecimiento que el RDACAA exige en **cada** atención (REQ-020)    |
+| **Sede**             | Ubicación física donde se atiende. Es el eje del alcance de permisos y de la agenda     |
+| **Consultorio**      | Espacio dentro de una sede (`SiteRoom`). Dos profesionales no pueden ocupar el mismo    |
+| **Punto de emisión** | Código de tres dígitos del SRI desde el que se emiten comprobantes                      |
 
 ---
 
@@ -169,6 +169,7 @@ rechazo; guardar `002` y leerlo igual, con el cero.
   > el que se enteran de qué sedes y consultorios existen para poder agendar—.
   > Agendar no es facturar. `null` sigue significando «esta sede no tiene RUC»,
   > que es un estado real sobre el que una pantalla actúa.
+
 - **OR-026** — Toda mutación de consultorios y puntos de emisión DEBERÁ quedar
   en la bitácora con autor, instante y valor anterior, y DEBERÁ comprobar que
   quien llama tenga alcance sobre la **sede dueña** del consultorio o del punto
@@ -185,6 +186,7 @@ rechazo; guardar `002` y leerlo igual, con el cero.
 - **OR-028** — El sistema DEBERÁ guardar la **dirección de la matriz** del
   establecimiento y permitir editarla con el mismo permiso que el resto del
   establecimiento.
+
   > `dirMatriz` es obligatorio en la factura del SRI (sri/SPEC.md SRI-018), y no
   > es necesariamente la dirección de ninguna sede que atiende.
 
@@ -202,20 +204,20 @@ rechazo; guardar `002` y leerlo igual, con el cero.
 
 ## Códigos de error
 
-| Código                      | HTTP | Cuándo                                                     |
-| --------------------------- | ---- | ---------------------------------------------------------- |
-| `ESTABLISHMENT_NOT_FOUND`   | 404  | Todavía no se ha registrado el establecimiento (OR-001)    |
-| `SITE_NOT_FOUND`            | 404  | La sede indicada no existe                                 |
-| `SITE_ROOM_NOT_FOUND`       | 404  | El consultorio indicado no existe                          |
-| `EMISSION_POINT_NOT_FOUND`  | 404  | El punto de emisión indicado no existe                     |
-| `SITE_IN_USE`               | 409  | Borrar una sede referenciada (OR-006)                      |
-| `SITE_ROOM_IN_USE`          | 409  | Borrar un consultorio con citas (OR-022)                   |
-| `MSP_UNICODE_DUPLICATE`     | 409  | Código único del MSP repetido (OR-002)                     |
-| `SITE_ROOM_DUPLICATE`       | 409  | Nombre de consultorio repetido en la sede (OR-020)         |
-| `EMISSION_POINT_DUPLICATE`  | 409  | Punto de emisión repetido en la sede (OR-024)              |
-| `ROOM_NOT_IN_SITE`          | 422  | Consultorio de otra sede (OR-021)                          |
-| `INVALID_RUC`               | 422  | RUC que no supera la validación del SRI (OR-008)           |
-| `SITE_SCOPE_DENIED`         | 403  | Actuar sobre una sede fuera del alcance (OR-026, ADR-007)  |
+| Código                     | HTTP | Cuándo                                                    |
+| -------------------------- | ---- | --------------------------------------------------------- |
+| `ESTABLISHMENT_NOT_FOUND`  | 404  | Todavía no se ha registrado el establecimiento (OR-001)   |
+| `SITE_NOT_FOUND`           | 404  | La sede indicada no existe                                |
+| `SITE_ROOM_NOT_FOUND`      | 404  | El consultorio indicado no existe                         |
+| `EMISSION_POINT_NOT_FOUND` | 404  | El punto de emisión indicado no existe                    |
+| `SITE_IN_USE`              | 409  | Borrar una sede referenciada (OR-006)                     |
+| `SITE_ROOM_IN_USE`         | 409  | Borrar un consultorio con citas (OR-022)                  |
+| `MSP_UNICODE_DUPLICATE`    | 409  | Código único del MSP repetido (OR-002)                    |
+| `SITE_ROOM_DUPLICATE`      | 409  | Nombre de consultorio repetido en la sede (OR-020)        |
+| `EMISSION_POINT_DUPLICATE` | 409  | Punto de emisión repetido en la sede (OR-024)             |
+| `ROOM_NOT_IN_SITE`         | 422  | Consultorio de otra sede (OR-021)                         |
+| `INVALID_RUC`              | 422  | RUC que no supera la validación del SRI (OR-008)          |
+| `SITE_SCOPE_DENIED`        | 403  | Actuar sobre una sede fuera del alcance (OR-026, ADR-007) |
 
 `ROOM_NOT_IN_SITE` ya existe en `error-catalogue.ts`, emitido hoy desde
 `agenda`: la garantía se declara aquí y se comprueba allí, sin cambiar la cadena.

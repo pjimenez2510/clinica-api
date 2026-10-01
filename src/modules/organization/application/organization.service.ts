@@ -34,6 +34,8 @@ export interface EstablishmentCommand {
   typology: string;
   legalName: string;
   ruc?: string | null;
+  /** OR-028. Absent keeps what is stored: the screen may not know the field. */
+  headOfficeAddress?: string | null;
   active?: boolean;
 }
 
@@ -48,6 +50,7 @@ export interface CreateSiteCommand {
   parishConceptId?: string | null;
   addressLine?: string | null;
   phone?: string | null;
+  sriEstablishmentCode?: string | null;
 }
 
 /**
@@ -60,6 +63,8 @@ export interface UpdateSiteCommand {
   parishConceptId?: string | null;
   addressLine?: string | null;
   phone?: string | null;
+  /** OR-027. */
+  sriEstablishmentCode?: string | null;
   active?: boolean;
 }
 
@@ -114,10 +119,16 @@ export class OrganizationService {
       typology: command.typology,
       legalName: command.legalName,
       ruc: OrganizationService.validRuc(command.ruc),
+      headOfficeAddress: command.headOfficeAddress ?? null,
       active: command.active ?? true,
     };
 
     const current = await this.repository.findEstablishment();
+    // OR-028. A form that predates the field does not send it, and a PUT
+    // without it must not erase the head office the vouchers need.
+    if (current && command.headOfficeAddress === undefined) {
+      input.headOfficeAddress = current.headOfficeAddress;
+    }
     if (!current) {
       const created = await this.repository.createEstablishment(input);
       await this.recordMutation('CREATE', created.id, requester);
@@ -183,6 +194,7 @@ export class OrganizationService {
       parishConceptId: command.parishConceptId ?? null,
       addressLine: command.addressLine ?? null,
       phone: command.phone ?? null,
+      sriEstablishmentCode: command.sriEstablishmentCode ?? null,
     };
 
     const created = await this.repository.createSite(input);
@@ -201,6 +213,7 @@ export class OrganizationService {
       parishConceptId: command.parishConceptId,
       addressLine: command.addressLine,
       phone: command.phone,
+      sriEstablishmentCode: command.sriEstablishmentCode,
       active: command.active,
     };
     // Only when the caller sent the field: `undefined` means "leave it", and

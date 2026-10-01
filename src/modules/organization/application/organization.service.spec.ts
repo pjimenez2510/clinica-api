@@ -39,6 +39,7 @@ const ESTABLISHMENT: EstablishmentView = {
   typology: 'Centro de Salud Tipo A',
   legalName: 'Clínica de Prueba S.A.',
   ruc: VALID_RUC,
+  headOfficeAddress: 'Av. Amazonas y Naciones Unidas, Quito',
   active: true,
 };
 
@@ -48,6 +49,7 @@ const SITE: SiteView = {
   mspUnicode: 'MSP-0001-N',
   name: 'Sede Norte',
   ruc: null,
+  sriEstablishmentCode: '001',
   parishConceptId: null,
   addressLine: 'Av. de los Granados',
   phone: '02 000 0000',
@@ -270,6 +272,39 @@ describe('OrganizationService', () => {
         REQUESTER,
       );
       expect(cleared.ruc).toBeNull();
+    });
+
+    it('OR-028 un guardado que no trae la dirección de la matriz conserva la guardada', async () => {
+      const { service, calls } = build();
+      await service.saveEstablishment(
+        {
+          mspUnicode: 'MSP-0001',
+          typology: 'Centro de Salud Tipo A',
+          legalName: 'Clínica de Prueba S.A.',
+        },
+        REQUESTER,
+      );
+      const update = calls.find((c) => c.method === 'updateEstablishment');
+      expect(update?.args[1]).toMatchObject({
+        headOfficeAddress: 'Av. Amazonas y Naciones Unidas, Quito',
+      });
+    });
+
+    it('OR-028 una dirección de la matriz enviada se guarda', async () => {
+      const { service, calls } = build();
+      await service.saveEstablishment(
+        {
+          mspUnicode: 'MSP-0001',
+          typology: 'Centro de Salud Tipo A',
+          legalName: 'Clínica de Prueba S.A.',
+          headOfficeAddress: 'Calle Nueva 123, Quito',
+        },
+        REQUESTER,
+      );
+      const update = calls.find((c) => c.method === 'updateEstablishment');
+      expect(update?.args[1]).toMatchObject({
+        headOfficeAddress: 'Calle Nueva 123, Quito',
+      });
     });
   });
 

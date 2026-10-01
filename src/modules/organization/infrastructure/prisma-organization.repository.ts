@@ -39,6 +39,7 @@ const ESTABLISHMENT_SELECT = {
   typology: true,
   legalName: true,
   ruc: true,
+  headOfficeAddress: true,
   active: true,
 } satisfies Prisma.EstablishmentSelect;
 
@@ -51,6 +52,7 @@ const SITE_SELECT = {
   parishConceptId: true,
   addressLine: true,
   phone: true,
+  sriEstablishmentCode: true,
   active: true,
 } satisfies Prisma.SiteSelect;
 

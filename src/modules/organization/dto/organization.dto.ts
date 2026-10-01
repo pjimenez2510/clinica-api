@@ -59,6 +59,13 @@ export const saveEstablishmentSchema = z.object({
     .min(2, 'La razón social debe tener al menos 2 caracteres')
     .max(160, 'La razón social no puede superar 160 caracteres'),
   ruc: rucSchema.nullish(),
+  /** OR-028. Absent keeps what is stored; `null` clears it. */
+  headOfficeAddress: z
+    .string()
+    .trim()
+    .min(1, 'Escriba la dirección de la matriz')
+    .max(300, 'La dirección de la matriz no puede superar 300 caracteres')
+    .nullish(),
   active: z.boolean({ error: 'Indique si el establecimiento está activo' }).optional(), // prettier-ignore
 });
 /** Body of PUT /organization/establishment: there is one establishment, so it is saved whole rather than created. */
@@ -78,6 +85,8 @@ export const establishmentSchema = z.object({
    * BOTH RESPONSES») for why the field can be absent.
    */
   ruc: z.string().nullable().optional(),
+  /** OR-028. `dirMatriz` of every electronic voucher. */
+  headOfficeAddress: z.string().nullable(),
   active: z.boolean(),
 });
 /** Response of reading and saving the establishment. */
@@ -96,6 +105,14 @@ const addressLineSchema = z
   .trim()
   .max(255, 'La dirección no puede superar 255 caracteres');
 
+/** OR-027. Three digits, the leading zero significant: «001» is not 1. */
+const sriEstablishmentCodeSchema = z
+  .string()
+  .regex(
+    /^[0-9]{3}$/,
+    'El código de establecimiento del SRI son exactamente tres dígitos, como 001',
+  );
+
 const phoneSchema = z
   .string()
   .trim()
@@ -109,6 +126,7 @@ export const createSiteSchema = z.object({
   parishConceptId: z.uuid('Seleccione una parroquia de la lista').nullish(),
   addressLine: addressLineSchema.nullish(),
   phone: phoneSchema.nullish(),
+  sriEstablishmentCode: sriEstablishmentCodeSchema.nullish(),
 });
 /** Body of POST /organization/sites. */
 export class CreateSiteDto extends createZodDto(createSiteSchema) {}
@@ -125,6 +143,7 @@ export const updateSiteSchema = z
     parishConceptId: z.uuid('Seleccione una parroquia de la lista').nullish(),
     addressLine: addressLineSchema.nullish(),
     phone: phoneSchema.nullish(),
+    sriEstablishmentCode: sriEstablishmentCodeSchema.nullish(),
     active: z.boolean({ error: 'Indique si la sede está activa' }).optional(),
   })
   .refine((value) => Object.values(value).some((v) => v !== undefined), {
@@ -158,6 +177,8 @@ export const siteSchema = z.object({
   parishConceptId: z.uuid().nullable(),
   addressLine: z.string().nullable(),
   phone: z.string().nullable(),
+  /** OR-027. The SRI's establishment code; `null` while nobody typed it. */
+  sriEstablishmentCode: z.string().nullable(),
   /** OR-007: `false` means it is not offered for new appointments. */
   active: z.boolean(),
 });

@@ -18,6 +18,8 @@ export interface EstablishmentView {
   legalName: string;
   /** Validated by the `Ruc` value object before it gets here (OR-008). */
   ruc: string | null;
+  /** OR-028. `dirMatriz` of every electronic voucher. */
+  headOfficeAddress: string | null;
   active: boolean;
 }
 
@@ -32,15 +34,18 @@ export interface SiteView {
   parishConceptId: string | null;
   addressLine: string | null;
   phone: string | null;
+  /** OR-027. The SRI's establishment code: three digits, leading zero kept. */
+  sriEstablishmentCode: string | null;
   active: boolean;
 }
 
-/** Everything the establishment form writes (OR-001, OR-008). */
+/** Everything the establishment form writes (OR-001, OR-008, OR-028). */
 export interface EstablishmentInput {
   mspUnicode: string;
   typology: string;
   legalName: string;
   ruc: string | null;
+  headOfficeAddress: string | null;
   active: boolean;
 }
 
@@ -56,6 +61,7 @@ export interface SiteInput {
   parishConceptId: string | null;
   addressLine: string | null;
   phone: string | null;
+  sriEstablishmentCode: string | null;
 }
 
 /**
@@ -79,6 +85,8 @@ export interface SitePatch {
   parishConceptId?: string | null;
   addressLine?: string | null;
   phone?: string | null;
+  /** OR-027. */
+  sriEstablishmentCode?: string | null;
   active?: boolean;
 }
 
