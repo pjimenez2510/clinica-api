@@ -121,7 +121,8 @@ export interface LastTransportFailure {
   at: Date;
   httpStatus: number | null;
   faultCode: string | null;
-  faultString: string | null;
+  /** D-107. The first 500 characters of the fault string, with the cut mark. */
+  faultSummary: string | null;
   /** Why, in one line — only when there is no `faultString` to say it. */
   error: string | null;
   hasResponseBody: boolean;
@@ -130,9 +131,11 @@ export interface LastTransportFailure {
 /** SRI-069. The same failure with its detail and its body. */
 export interface TransportFailureDetail extends Omit<
   LastTransportFailure,
-  'hasResponseBody' | 'error'
+  'hasResponseBody' | 'error' | 'faultSummary'
 > {
   error: string;
+  /** Whole, as SRI-059 kept it. */
+  faultString: string | null;
   faultDetail: string | null;
   responseBody: string | null;
 }

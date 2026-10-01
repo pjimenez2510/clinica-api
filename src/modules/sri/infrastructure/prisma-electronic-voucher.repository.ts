@@ -24,6 +24,7 @@ import {
   type SriMessage,
   type VoucherStatus,
 } from '../domain/voucher-lifecycle';
+import { cutMark } from '../domain/kept-text';
 
 const VOUCHER_SELECT = {
   id: true,
@@ -627,13 +628,18 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
         started_at: Date;
         http_status: number | null;
         fault_code: string | null;
-        fault_string: string | null;
+        fault_head: string | null;
+        fault_length: number | null;
         transport_error: string | null;
         has_response_body: boolean;
       }[]
     >`
       SELECT v."id" AS "voucher_id", last."outcome", last."started_at",
-             last."http_status", last."fault_code", last."fault_string",
+             last."http_status", last."fault_code",
+             -- D-107. The list carries the first 500 characters; the whole
+             -- text is asked for apart, with the body.
+             left(last."fault_string", 500) AS "fault_head",
+             char_length(last."fault_string") AS "fault_length",
              -- The one-line reason only when there is no fault string: it
              -- repeats it whole, and 500 rows of a 6 KB trace twice is what
              -- keeping the body out of the monitor was meant to avoid.
@@ -661,7 +667,12 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
             at: row.started_at,
             httpStatus: row.http_status,
             faultCode: row.fault_code,
-            faultString: row.fault_string,
+            faultSummary:
+              row.fault_head === null
+                ? null
+                : row.fault_length! > row.fault_head.length
+                  ? `${row.fault_head}${cutMark(row.fault_length! - row.fault_head.length)}`
+                  : row.fault_head,
             error: row.transport_error,
             hasResponseBody: row.has_response_body,
           },

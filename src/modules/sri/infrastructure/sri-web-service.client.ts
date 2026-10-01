@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { XMLParser } from 'fast-xml-parser';
 
 import type { Env } from '../../../shared/config/env.schema';
+import { capped as cutToLimit } from '../domain/kept-text';
 import type { SriWebService } from '../domain/sri-web-service';
 import type {
   AuthorisationAnswer,
@@ -110,13 +111,9 @@ const VOUCHER_MARK = '[comprobante omitido]';
 /** Below this, a shared run of base64 can be chance; above, it is an echo. */
 const ECHO_WINDOW = 64;
 
-/** Cut at `limit`, saying how much was left out; never half a character. */
-function capped(text: string, limit = KEPT_TEXT_LIMIT): string {
-  if (text.length <= limit) return text;
-  const code = text.charCodeAt(limit - 1);
-  const cut = code >= 0xd800 && code <= 0xdbff ? limit - 1 : limit;
-  return `${text.slice(0, cut)}… [cortado: ${text.length - cut} caracteres más]`;
-}
+/** Cut at `limit` with the mark (domain/kept-text.ts). */
+const capped = (text: string, limit = KEPT_TEXT_LIMIT) =>
+  cutToLimit(text, limit);
 
 /** PostgreSQL refuses 0x00 in TEXT: the attempt would not be kept at all. */
 const withoutNul = (text: string) => text.replaceAll('\u0000', '\uFFFD');
