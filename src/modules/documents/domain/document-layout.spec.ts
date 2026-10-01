@@ -673,7 +673,7 @@ describe('ORD-006 DOC-072 la orden impresa, como la plantilla aprobada (D-095)',
 
   it('DOC-104 D-078 la orden abre con fecha y hora de solicitud, tipo, prioridad e historia clínica en una franja', () => {
     const [first] = composeLayout(
-      order({ requestedAt: new Date('2026-08-21T01:00:00Z') }),
+      order({ requestedAt: new Date('2026-08-21T01:00:00Z') }), // fecha-fija: 20:00 of the day before in Ecuador
       context,
       template,
     ).blocks;
@@ -1706,7 +1706,7 @@ describe('DOC-107 el pintado no cambia lo que dice el documento', () => {
   it.each(Object.keys(BEFORE) as DocumentSubject['kind'][])(
     'DOC-107 %s imprime todo lo que imprimía, salvo lo anotado',
     (kind) => {
-      const at = new Date('2026-08-21T01:00:00Z');
+      const at = new Date('2026-08-21T01:00:00Z'); // fecha-fija: the instant BEFORE was captured with
       const layout = composeLayout(sampleSubject(kind, at), context, template);
       const now = new Set([
         ...printed(layout.blocks),
