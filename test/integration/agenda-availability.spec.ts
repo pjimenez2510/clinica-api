@@ -6,7 +6,13 @@ import { AgendaService } from '../../src/modules/agenda/application/agenda.servi
 import { PrismaAgendaRepository } from '../../src/modules/agenda/infrastructure/prisma-agenda.repository';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
-import { parseClinicalDate } from '../../src/shared/domain/clinic-time';
+import {
+  CLINIC_TIME_ZONE,
+  WallClockTime,
+  addDays,
+  atWallClock,
+  parseClinicalDate,
+} from '../../src/shared/domain/clinic-time';
 import { useDatabase } from './setup/database';
 import {
   createPatient,
@@ -332,5 +338,276 @@ describe('deriving availability against the database', () => {
       if (originalTz === undefined) delete process.env.TZ;
       else process.env.TZ = originalTz;
     }
+  });
+  /**
+   * AG-144, contra la base porque la garantía que la rejilla tiene que
+   * respetar ES el `EXCLUDE`: `agenda_entry_no_practitioner_overlap` compara
+   * el profesional y el intervalo, no la sede. Un profesional con horario en
+   * dos sedes a la misma hora —lo que la semilla de desarrollo hace— tiene UN
+   * solo calendario.
+   */
+  describe('AG-144 practitioner who also works at another site', () => {
+    // The derivation reads no clock: any Monday proves it, and this is the one
+    // every other case of the file uses.
+    const MONDAY = parseClinicalDate('2026-09-14'); // fecha-fija: la disponibilidad no lee el reloj; el lunes del resto del archivo
+    const monday = (hhmm: string) =>
+      atWallClock(MONDAY, WallClockTime.parse(hhmm), CLINIC_TIME_ZONE);
+    const day = { from: MONDAY, to: MONDAY };
+
+    async function twoSites() {
+      const base = await context();
+      const { prisma, practitioner } = base;
+      const other = await createSite(prisma, 'Sede Norte');
+      await linkPractitionerToSite(prisma, practitioner.id, other.id);
+      await setSlotAtom(prisma, other.id, 20);
+      await createScheduleRule(
+        prisma,
+        { practitionerId: practitioner.id, siteId: other.id },
+        { weekday: 1, startTime: '08:00', endTime: '12:00' },
+      );
+      return { ...base, other };
+    }
+
+    it('AG-144 does not offer the slot the practitioner holds at another site, and offers the next one', async () => {
+      const { prisma, site, other, practitioner, patient } = await twoSites();
+
+      await prisma.agendaEntry.create({
+        data: {
+          kind: 'APPOINTMENT',
+          bookingChannel: 'PHONE',
+          siteId: other.id,
+          practitionerId: practitioner.id,
+          patientId: patient.id,
+          startsAt: monday('08:00'),
+          endsAt: monday('08:20'),
+        },
+      });
+
+      // The premise, proved against the database: the same hour at THIS site
+      // is exactly what the EXCLUDE refuses.
+      const second = await createPatient(prisma);
+      await expect(
+        prisma.agendaEntry.create({
+          data: {
+            kind: 'APPOINTMENT',
+            bookingChannel: 'PHONE',
+            siteId: site.id,
+            practitionerId: practitioner.id,
+            patientId: second.id,
+            startsAt: monday('08:00'),
+            endsAt: monday('08:20'),
+          },
+        }),
+      ).rejects.toThrow(/agenda_entry_no_practitioner_overlap/);
+
+      const view = await agendaOf(prisma).availability({
+        siteId: site.id,
+        practitionerId: practitioner.id,
+        ...day,
+      });
+
+      const starts = view.slots.map((slot) => slot.startsAt.getTime());
+      expect(starts).not.toContain(monday('08:00').getTime());
+      // Positive control: the rest of the morning is still on offer.
+      expect(starts).toContain(monday('08:20').getTime());
+      expect(view.slots).toHaveLength(11);
+      // The other site's entry is not this site's to show (AG-107).
+      expect(view.occupied).toEqual([]);
+    });
+
+    it('AG-144 offers at the other site only what is left of a day filled at one site (the 43 of 48 of 30-09-2026)', async () => {
+      // The development data of 30-09-2026: the walks of every session had
+      // filled 43 of the 48 slots of medico@ at Sede Norte, and Sede Sur still
+      // offered all 48. Same shape here: a day of two shifts on a ten-minute
+      // atom at both sites, 43 slots taken at one of them.
+      const { prisma, site, other, practitioner, patient } = await twoSites();
+      for (const siteId of [site.id, other.id]) {
+        await setSlotAtom(prisma, siteId, 10);
+        await createScheduleRule(
+          prisma,
+          { practitionerId: practitioner.id, siteId },
+          { weekday: 1, startTime: '14:00', endTime: '18:00' },
+        );
+      }
+
+      const request = (siteId: string) =>
+        agendaOf(prisma).availability({
+          siteId,
+          practitionerId: practitioner.id,
+          ...day,
+        });
+
+      const grid = (await request(other.id)).slots;
+      expect(grid).toHaveLength(48);
+      const taken = grid.slice(0, 43);
+      for (const slot of taken) {
+        await prisma.agendaEntry.create({
+          data: {
+            kind: 'APPOINTMENT',
+            bookingChannel: 'PHONE',
+            status: 'CHECKED_IN',
+            siteId: other.id,
+            practitionerId: practitioner.id,
+            patientId: patient.id,
+            startsAt: slot.startsAt,
+            endsAt: slot.endsAt,
+          },
+        });
+      }
+
+      const here = await request(site.id);
+      const there = await request(other.id);
+
+      // Control: where the appointments are, five are left.
+      expect(there.slots).toHaveLength(5);
+      // And here, the same five — not forty-eight.
+      expect(here.slots.map((slot) => slot.startsAt)).toEqual(
+        there.slots.map((slot) => slot.startsAt),
+      );
+      expect(here.occupied).toEqual([]);
+    });
+
+    it('AG-144 gives back the slot when the entry at the other site is released, like the EXCLUDE', async () => {
+      const { prisma, site, other, practitioner, patient } = await twoSites();
+
+      await prisma.agendaEntry.create({
+        data: {
+          kind: 'APPOINTMENT',
+          bookingChannel: 'PHONE',
+          status: 'CANCELLED',
+          siteId: other.id,
+          practitionerId: practitioner.id,
+          patientId: patient.id,
+          startsAt: monday('08:00'),
+          endsAt: monday('08:20'),
+          releasedAt: monday('07:00'),
+        },
+      });
+
+      const view = await agendaOf(prisma).availability({
+        siteId: site.id,
+        practitionerId: practitioner.id,
+        ...day,
+      });
+
+      expect(view.slots).toHaveLength(12);
+      expect(view.slots[0]?.startsAt).toEqual(monday('08:00'));
+    });
+
+    it('AG-144 leaves the slot on offer under an overbooking at another site, like the EXCLUDE', async () => {
+      // `blocks_calendar = false` is the other half of the predicate, and the
+      // one decided by the SQL filter of the adapter, not by the domain.
+      const { prisma, site, other, practitioner, patient } = await twoSites();
+
+      await prisma.agendaEntry.create({
+        data: {
+          kind: 'APPOINTMENT',
+          bookingChannel: 'PHONE',
+          siteId: other.id,
+          practitionerId: practitioner.id,
+          patientId: patient.id,
+          startsAt: monday('08:00'),
+          endsAt: monday('08:20'),
+          blocksCalendar: false,
+          overbookingReason: 'Urgencia',
+          overbookingAuthorisedById: practitioner.userId,
+        },
+      });
+
+      const view = await agendaOf(prisma).availability({
+        siteId: site.id,
+        practitionerId: practitioner.id,
+        ...day,
+      });
+
+      expect(view.slots).toHaveLength(12);
+      expect(view.slots[0]?.startsAt).toEqual(monday('08:00'));
+    });
+
+    it('AG-144 subtracts a block at another site that began before the range', async () => {
+      const { prisma, site, other, practitioner } = await twoSites();
+
+      // From the Friday before at 08:00 to this Monday at 10:00.
+      await prisma.agendaEntry.create({
+        data: {
+          kind: 'BLOCK',
+          status: 'BLOCKED',
+          siteId: other.id,
+          practitionerId: practitioner.id,
+          startsAt: atWallClock(
+            addDays(MONDAY, -3),
+            WallClockTime.parse('08:00'),
+            CLINIC_TIME_ZONE,
+          ),
+          endsAt: monday('10:00'),
+        },
+      });
+
+      const view = await agendaOf(prisma).availability({
+        siteId: site.id,
+        practitionerId: practitioner.id,
+        ...day,
+      });
+
+      expect(view.slots).toHaveLength(6);
+      expect(view.slots[0]?.startsAt).toEqual(monday('10:00'));
+    });
+
+    it('AG-145 tells the block at the other site only within the hours of this one', async () => {
+      const { prisma, site, other, practitioner } = await twoSites();
+
+      // From the Friday before at 08:00 to this Monday at 10:00 at the other
+      // site; this site works Mondays 08:00–12:00.
+      await prisma.agendaEntry.create({
+        data: {
+          kind: 'BLOCK',
+          status: 'BLOCKED',
+          siteId: other.id,
+          practitionerId: practitioner.id,
+          startsAt: atWallClock(
+            addDays(MONDAY, -3),
+            WallClockTime.parse('08:00'),
+            CLINIC_TIME_ZONE,
+          ),
+          endsAt: monday('10:00'),
+        },
+      });
+
+      const view = await agendaOf(prisma).availability({
+        siteId: site.id,
+        practitionerId: practitioner.id,
+        ...day,
+      });
+
+      // Not from midnight, not from Friday: from the first hour this site
+      // could have booked.
+      expect(view.unavailable).toEqual([
+        { startsAt: monday('08:00'), endsAt: monday('10:00') },
+      ]);
+    });
+
+    it('AG-144 subtracts a block the practitioner holds at another site', async () => {
+      const { prisma, site, other, practitioner } = await twoSites();
+
+      await prisma.agendaEntry.create({
+        data: {
+          kind: 'BLOCK',
+          status: 'BLOCKED',
+          siteId: other.id,
+          practitionerId: practitioner.id,
+          startsAt: monday('10:00'),
+          endsAt: monday('12:00'),
+        },
+      });
+
+      const view = await agendaOf(prisma).availability({
+        siteId: site.id,
+        practitionerId: practitioner.id,
+        ...day,
+      });
+
+      expect(view.slots).toHaveLength(6);
+      expect(view.slots.at(-1)?.startsAt).toEqual(monday('09:40'));
+    });
   });
 });

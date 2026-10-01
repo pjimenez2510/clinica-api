@@ -599,8 +599,9 @@ export class PrismaAgendaRepository implements AgendaRepository {
           notBefore: new Date(`${query.fromDate}T00:00:00Z`),
         }),
         this.prisma.agendaEntry.findMany({
+          // AG-144: NO `siteId` here. The practitioner's time elsewhere is
+          // subtracted too; the domain keeps it out of what is shown.
           where: {
-            siteId: query.siteId,
             practitionerId: query.practitionerId,
             blocksCalendar: true,
             releasedAt: null,
