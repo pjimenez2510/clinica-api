@@ -538,6 +538,15 @@ describe('DOC-080 a DOC-084 el marco aprobado, pintado', () => {
 });
 
 describe('DOC-083 el pie nunca abre páginas', () => {
+  it('DOC-034 DOC-083 el pie de la clínica sale también en la receta, con verificación y nota', async () => {
+    const text = await textOf(
+      await renderer.render(recetaWith(1), images, metadata),
+    );
+    expect(text).toContain('Verifique en');
+    expect(text).toContain('Copia de respaldo conservada cinco años');
+    expect(text).toContain('Clínica de especialidades · Guayaquil');
+  });
+
   it('DOC-071 DOC-083 un pie de seis líneas no añade páginas ni miente sobre el total', async () => {
     const longFooter = Array.from(
       { length: 6 },

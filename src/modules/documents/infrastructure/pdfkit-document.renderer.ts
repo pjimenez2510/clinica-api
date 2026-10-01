@@ -91,8 +91,12 @@ const SIZE = {
 } as const;
 const LINE_GAP = 1.5;
 
-/** DOC-071, DOC-083. Reserved at the foot of every page. */
-const FOOTER_HEIGHT_MM = 15;
+/**
+ * DOC-071, DOC-083. Reserved at the foot of every page: room for FOUR rows —
+ * the code, the verification URL, the class's note and the clinic's own
+ * footer. With three, the clinic's footer was the one silently dropped.
+ */
+const FOOTER_HEIGHT_MM = 18;
 /** DOC-078. The height of the access key's bars. */
 const BARCODE_HEIGHT_MM = 12;
 /** DOC-083. The QR's side. Readable by a phone at arm's length. */
