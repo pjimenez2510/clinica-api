@@ -109,6 +109,8 @@ model User {
   /// booked — `agenda_entry.created_by_id` carries no relation, and keeping
   /// the two apart is the control itself (AG-103).
   overbookingsAuthorised AgendaEntry[] @relation("OverbookingAuthoriser")
+  encountersAnnulled     Encounter[]   @relation("EncounterAnnuller")
+  encountersDiscontinued Encounter[]   @relation("EncounterDiscontinuer")
 
   /// PA-039: the priority group records this person wrote, and the ones they
   /// closed. Two relations because they are two acts by two people at two
@@ -620,6 +622,15 @@ enum EncounterStatus {
   ENTERED_IN_ERROR
 
   @@map("encounter_status")
+}
+
+/// EN-129, EN-167. Where an interruption came from: a clinical fact about the
+/// patient, or an operational failure of the clinic. Counted apart.
+enum EncounterDiscontinuedOrigin {
+  PATIENT
+  ESTABLISHMENT
+
+  @@map("encounter_discontinued_origin")
 }
 
 enum DischargeCondition {
@@ -2169,7 +2180,11 @@ model AgendaEntry {
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   statusHistory  AgendaStatusHistory[]
-  encounter      Encounter?
+  /// EN-168. DECLARADA 1:N Y GARANTIZADA «UNA VIVA» POR LA BASE: el índice
+  /// único `encounter_one_live_per_agenda_entry` es parcial
+  /// (`WHERE status <> 'ENTERED_IN_ERROR'`). Las demás son atenciones anuladas
+  /// que siguen atadas a la cita como rastro (D-081).
+  encounters     Encounter[]
   waitlistOrigin WaitlistEntry[]
   /// AG-051, el sentido de ida: la cita que sustituyó a ésta. Cero o una.
   rescheduledTo  AgendaEntry[]         @relation("AgendaEntryReschedule")
@@ -2320,8 +2335,12 @@ model Encounter {
   patientId String  @map("patient_id") @db.Uuid
   patient   Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
 
-  /// Walk-ins have no appointment. One-to-one when it exists.
-  agendaEntryId String?      @unique @map("agenda_entry_id") @db.Uuid
+  /// Walk-ins have no appointment. At most ONE LIVE encounter per appointment
+  /// (EN-168, D-081): `encounter_one_live_per_agenda_entry` is a PARTIAL unique
+  /// index (`WHERE status <> 'ENTERED_IN_ERROR'`) that Prisma cannot express,
+  /// so the relation is declared one-to-many and the migration holds the rule.
+  /// An annulled encounter stays attached to its appointment as the trail.
+  agendaEntryId String?      @map("agenda_entry_id") @db.Uuid
   agendaEntry   AgendaEntry? @relation(fields: [agendaEntryId], references: [id], onDelete: Restrict)
 
   startedAt DateTime  @map("started_at") @db.Timestamptz(6)
@@ -2372,6 +2391,26 @@ model Encounter {
   closedBy                 Practitioner? @relation("EncounterCloser", fields: [closedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "encounter_closed_by_fk")
   closedAt                 DateTime?     @map("closed_at") @db.Timestamptz(6)
   closedBySubstituteReason String?       @map("closed_by_substitute_reason") @db.VarChar(500)
+
+  /// EN-166 (D-077, D-080). Why, who and when an encounter was annulled. All
+  /// three exactly on `ENTERED_IN_ERROR` and never otherwise
+  /// (`encounter_entered_in_error_states_who_why_when`). The author is a USER,
+  /// not a practitioner: see `discontinuedById`.
+  enteredInErrorReason String?   @map("entered_in_error_reason") @db.VarChar(500)
+  enteredInErrorById   String?   @map("entered_in_error_by_id") @db.Uuid
+  enteredInErrorBy     User?     @relation("EncounterAnnuller", fields: [enteredInErrorById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "encounter_entered_in_error_by_fk")
+  enteredInErrorAt     DateTime? @map("entered_in_error_at") @db.Timestamptz(6)
+
+  /// EN-167 (D-076, D-080, D-082). Why, where from, who and when an encounter
+  /// was interrupted; all four exactly on `DISCONTINUED`
+  /// (`encounter_discontinued_states_who_why_when`). A USER and not a
+  /// practitioner because reception records the patient who leaves with the
+  /// encounter open and no note (AG-148).
+  discontinuedReason String?                      @map("discontinued_reason") @db.VarChar(500)
+  discontinuedOrigin EncounterDiscontinuedOrigin? @map("discontinued_origin")
+  discontinuedById   String?                      @map("discontinued_by_id") @db.Uuid
+  discontinuedBy     User?                        @relation("EncounterDiscontinuer", fields: [discontinuedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "encounter_discontinued_by_fk")
+  discontinuedAt     DateTime?                    @map("discontinued_at") @db.Timestamptz(6)
 
   /// When this encounter was included in an RDACAA/PRAS submission. NULL means
   /// not yet reported, and drives the pending-report partial index.

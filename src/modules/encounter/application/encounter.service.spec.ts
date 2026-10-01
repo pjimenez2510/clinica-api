@@ -7,6 +7,8 @@ import type {
 } from '../../../shared/audit/access-audit.port';
 import {
   EncounterAlreadyClosedError,
+  EncounterAnnulmentReasonRequiredError,
+  EncounterInterruptionReasonRequiredError,
   EncounterNotFoundError,
   PatientChartNotOpenError,
   PractitionerProfileRequiredError,
@@ -25,6 +27,10 @@ import type {
   VitalSignsView,
 } from '../domain/encounter.repository';
 import type { ClosurePlan } from '../domain/encounter-closure';
+import type {
+  AnnulmentPlan,
+  InterruptionPlan,
+} from '../domain/encounter-state';
 import type { VitalSigns } from '../domain/vital-signs';
 import { EncounterService, type Requester } from './encounter.service';
 
@@ -72,6 +78,8 @@ const anEncounter = (
   closedById: null,
   closedAt: null,
   closedBySubstituteReason: null,
+  annulment: null,
+  interruption: null,
   ...overrides,
 });
 
@@ -138,6 +146,48 @@ class FakeEncounters implements EncounterRepository {
       closedById: plan.closedById,
       closedAt: plan.closedAt,
       closedBySubstituteReason: plan.substituteReason,
+    };
+    return Promise.resolve(this.stored);
+  }
+
+  /** EN-166, EN-167: the signatures the adapter would write, in order. */
+  signedDrafts: { signedById: string; contentHash: string }[] = [];
+  /** EN-167: drafts the adapter would find for the interrupting author. */
+  drafts: { content: unknown }[] = [];
+
+  annul(
+    _query: EncounterQuery,
+    decide: (encounter: EncounterView) => AnnulmentPlan,
+  ): Promise<EncounterView> {
+    const plan = decide(this.stored);
+    this.stored = {
+      ...this.stored,
+      status: plan.to,
+      endedAt: plan.endedAt,
+      annulment: { reason: plan.reason, at: plan.at },
+    };
+    return Promise.resolve(this.stored);
+  }
+
+  discontinue(
+    _query: EncounterQuery,
+    decide: (encounter: EncounterView) => InterruptionPlan,
+    drafts: {
+      authorId: string;
+      sign: (draft: { content: unknown }) => {
+        signedById: string;
+        signedAt: Date;
+        contentHash: string;
+      };
+    },
+  ): Promise<EncounterView> {
+    const plan = decide(this.stored);
+    for (const draft of this.drafts) this.signedDrafts.push(drafts.sign(draft));
+    this.stored = {
+      ...this.stored,
+      status: plan.to,
+      endedAt: plan.endedAt,
+      interruption: { reason: plan.reason, origin: plan.origin, at: plan.at },
     };
     return Promise.resolve(this.stored);
   }
@@ -355,6 +405,57 @@ describe('los casos de uso de la atención', () => {
     // And closing takes a REQUESTER: there is no signature a scheduler could
     // satisfy without a person's session behind it.
     expect(FakeEncounters.prototype.close.length).toBe(2);
+  });
+
+  it('EN-166 anula con el motivo y deja una fila de bitácora', async () => {
+    const annulled = await service.annul(
+      { encounterId: 'encounter-1', reason: ' Ficha de otro paciente ' },
+      requester,
+    );
+
+    expect(annulled.status).toBe('ENTERED_IN_ERROR');
+    expect(annulled.annulment?.reason).toBe('Ficha de otro paciente');
+    expect(audit.entries).toHaveLength(1);
+    expect(audit.entries[0]).toMatchObject({ action: 'UPDATE', resourceId: 'encounter-1' }); // prettier-ignore
+  });
+
+  it('EN-166 rechaza anular sin motivo y no escribe nada', async () => {
+    await expect(
+      service.annul({ encounterId: 'encounter-1', reason: '  ' }, requester),
+    ).rejects.toBeInstanceOf(EncounterAnnulmentReasonRequiredError);
+    expect(repository.stored.status).toBe('OPEN');
+    expect(audit.entries).toEqual([]);
+  });
+
+  it('EN-166 rechaza anular a quien no tiene ficha profesional', async () => {
+    repository.practitioner = null;
+    await expect(
+      service.annul({ encounterId: 'encounter-1', reason: 'x' }, requester),
+    ).rejects.toBeInstanceOf(PractitionerProfileRequiredError);
+  });
+
+  it('EN-167 interrumpe con motivo y origen y firma los borradores con lo escrito', async () => {
+    repository.drafts = [{ content: { motivoConsulta: 'Cefalea' } }];
+
+    const discontinued = await service.discontinue(
+      { encounterId: 'encounter-1', reason: 'Se retiró', origin: 'PATIENT' },
+      requester,
+    );
+
+    expect(discontinued.status).toBe('DISCONTINUED');
+    expect(discontinued.interruption).toMatchObject({ reason: 'Se retiró', origin: 'PATIENT' }); // prettier-ignore
+    expect(repository.signedDrafts).toHaveLength(1);
+    expect(repository.signedDrafts[0]?.signedById).toBe(PRACTITIONER);
+    expect(repository.signedDrafts[0]?.contentHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('EN-167 rechaza interrumpir sin origen', async () => {
+    await expect(
+      service.discontinue(
+        { encounterId: 'encounter-1', reason: 'Se retiró' },
+        requester,
+      ),
+    ).rejects.toBeInstanceOf(EncounterInterruptionReasonRequiredError);
   });
 
   it('EN-131 cierra la cuenta y registra quién y cuándo', async () => {

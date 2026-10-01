@@ -396,7 +396,7 @@ export class InvalidAgendaTransitionError extends ConflictError {
 export class AgendaEntryHasEncounterError extends ConflictError {
   readonly code = 'AGENDA_ENTRY_HAS_ENCOUNTER';
   override readonly userTitle =
-    'La cita ya tiene una atención registrada: no puede anularse ni marcarse como inasistencia';
+    'La cita ya tiene una atención: no puede anularse ni darse por no atendida. Si la atención se abrió por error, se anula desde la atención';
 
   constructor() {
     super('Agenda entry already has an encounter');
@@ -864,6 +864,49 @@ export class OverbookingLimitReachedError extends ConflictError {
         : `Este profesional ya tiene los ${cap} sobrecupos que admite la sede ese día`;
   }
 }
+
+/**
+ * AG-151 (D-069). Which of the four cases put the practitioner somewhere else.
+ */
+export type OverbookingConflict =
+  | 'BLOCK'
+  | 'OTHER_SITE_ENTRY'
+  | 'OTHER_SITE_OVERBOOKING'
+  | 'OTHER_SITE_SCHEDULE';
+
+/**
+ * AG-151 (D-069). An overbooking where the practitioner is not: on top of a
+ * block, or of what they hold at another site.
+ *
+ * 409 AND NOT 422, like `OVERBOOKING_LIMIT_REACHED`: what was sent is correct,
+ * and what prevents it is the state of the practitioner's day. THE OTHER SITE
+ * IS NEVER NAMED (AG-107): whoever books may have no scope there, and «atiende
+ * en otra sede» is enough to look for another hour.
+ */
+export class OverbookingPractitionerUnavailableError extends ConflictError {
+  readonly code = 'OVERBOOKING_PRACTITIONER_UNAVAILABLE';
+  override readonly userTitle: string;
+
+  constructor(readonly conflict: OverbookingConflict) {
+    super(`Practitioner is unavailable for an overbooking: ${conflict}`, {
+      conflict,
+    });
+    this.userTitle = OVERBOOKING_CONFLICT_TITLES[conflict];
+  }
+}
+
+const OVERBOOKING_CONFLICT_TITLES: Readonly<
+  Record<OverbookingConflict, string>
+> = {
+  BLOCK:
+    'El profesional tiene un bloqueo a esa hora (vacaciones, ausencia u otro motivo): el sobrecupo no puede ir encima',
+  OTHER_SITE_ENTRY:
+    'El profesional tiene una cita en otra sede a esa hora: el sobrecupo no puede ir encima',
+  OTHER_SITE_OVERBOOKING:
+    'El profesional tiene un sobrecupo en otra sede a esa hora: el sobrecupo no puede ir encima',
+  OTHER_SITE_SCHEDULE:
+    'El profesional atiende en otra sede a esa hora: el sobrecupo no puede ir encima',
+};
 
 /**
  * AG-038. A block over an interval that already holds appointments.

@@ -55,7 +55,7 @@ function entryRow(overrides: Record<string, unknown> = {}) {
     bookingChannel: 'PHONE',
     serviceTypeConceptId: null,
     createdById: USER,
-    encounter: null,
+    encounters: [],
     // AG-051: what `ENTRY_SELECT` reads of the reschedule chain. An empty list
     // is "nothing replaced this one", which the partial unique index makes the
     // only alternative to a single element.
@@ -76,6 +76,8 @@ function prismaDouble(options: {
   updatedCount?: number;
   /** AG-052: what the INSERT of the new entry throws, if it is to fail. */
   createFails?: Error;
+  /** AG-045, AG-148: the live attention the lock finds, and its notes. */
+  liveAttention?: { id: string; notes: number };
 }) {
   const calls: { method: string; args: Record<string, unknown> }[] = [];
   let readIndex = 0;
@@ -107,6 +109,21 @@ function prismaDouble(options: {
     agendaStatusHistory: {
       create: (args: Record<string, unknown>) => {
         calls.push({ method: 'history.create', args });
+        return Promise.resolve({});
+      },
+    },
+    // The LOCK of the live attention is a read and is not recorded: what the
+    // tests below pin is what is WRITTEN, and in which order.
+    $queryRaw: () =>
+      Promise.resolve(
+        options.liveAttention ? [{ id: options.liveAttention.id }] : [],
+      ),
+    clinicalNote: {
+      count: () => Promise.resolve(options.liveAttention?.notes ?? 0),
+    },
+    encounter: {
+      update: (args: Record<string, unknown>) => {
+        calls.push({ method: 'encounter.update', args });
         return Promise.resolve({});
       },
     },
@@ -267,7 +284,7 @@ describe('the transition transaction', () => {
         siteId: SITE,
         status: 'BOOKED',
         releasedAt: null,
-        encounter: { is: null },
+        encounters: { none: { status: { not: 'ENTERED_IN_ERROR' } } },
       },
     });
   });
@@ -276,7 +293,7 @@ describe('the transition transaction', () => {
     // The re-read finds the same status but a fresh encounter: telling the
     // receptionist to retry would ask her to do what AG-045 forbids.
     const { repository } = prismaDouble({
-      reads: [entryRow(), entryRow({ encounter: { id: 'enc-1' } })],
+      reads: [entryRow(), entryRow({ encounters: [{ id: 'enc-1' }] })],
       updatedCount: 0,
     });
 
@@ -288,6 +305,54 @@ describe('the transition transaction', () => {
       .catch((error: unknown) => error);
 
     expect(rejection).toBeInstanceOf(AgendaEntryHasEncounterError);
+  });
+
+  it('AG-148 reads the live attention and whether it has a note before the policy decides', async () => {
+    const { repository } = prismaDouble({
+      reads: [entryRow({ status: 'CHECKED_IN' }), entryRow()],
+      liveAttention: { id: 'enc-1', notes: 0 },
+    });
+    let seen: unknown;
+
+    await repository.transition(COMMAND, (read) => {
+      seen = { has: read.hasEncounter, note: read.encounterHasNote };
+      return { to: 'CONFIRMED', effects: {} };
+    });
+
+    expect(seen).toEqual({ has: true, note: false });
+  });
+
+  it('AG-148 interrupts the attention it locked, after the appointment, and does not demand there be none', async () => {
+    const { repository, calls } = prismaDouble({
+      reads: [entryRow({ status: 'CHECKED_IN' }), entryRow()],
+      liveAttention: { id: 'enc-1', notes: 0 },
+    });
+
+    await repository.transition(COMMAND, () => ({
+      to: 'LEFT_WITHOUT_BEING_SEEN',
+      effects: { releasedAt: NOW, leftWithoutBeingSeenAt: NOW },
+      interruptAttention: { reason: 'Se fue sin ser atendido', at: NOW },
+    }));
+
+    expect(calls.map((call) => call.method)).toEqual([
+      'entry.findFirst',
+      'entry.updateMany',
+      'encounter.update',
+      'history.create',
+      'entry.findUniqueOrThrow',
+    ]);
+    expect(calls[1]?.args).not.toHaveProperty('where.encounters');
+    expect(calls[2]?.args).toEqual({
+      where: { id: 'enc-1' },
+      data: {
+        status: 'DISCONTINUED',
+        endedAt: NOW,
+        discontinuedReason: 'Se fue sin ser atendido',
+        discontinuedOrigin: 'PATIENT',
+        discontinuedById: USER,
+        discontinuedAt: NOW,
+      },
+    });
   });
 });
 

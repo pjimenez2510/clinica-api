@@ -559,6 +559,58 @@ export class AmendmentReasonRequiredError extends ValidationError {
 }
 
 /**
+ * EN-166 (D-077). An attention annulled without a written reason.
+ *
+ * Demanded in the service and not only in the DTO: «esta atención no debió
+ * existir» without a reason is a door for making a consultation disappear,
+ * and the database refuses it a third time
+ * (`encounter_entered_in_error_states_who_why_when`).
+ */
+export class EncounterAnnulmentReasonRequiredError extends ValidationError {
+  readonly code = 'ENCOUNTER_ANNULMENT_REASON_REQUIRED';
+  override readonly userTitle =
+    'Indique por qué anula la atención. Queda escrito con su nombre y la hora, y lo escrito en ella no se borra';
+  override readonly fieldErrors = [
+    {
+      field: 'reason',
+      code: 'ENCOUNTER_ANNULMENT_REASON_REQUIRED',
+      message: 'Indique el motivo de la anulación',
+    },
+  ];
+
+  constructor() {
+    super('Encounter annulment requested without a reason');
+  }
+}
+
+/**
+ * EN-129, EN-167 (D-076, D-082). An interruption without its written reason
+ * or without saying where it came from — the patient or the clinic.
+ */
+export class EncounterInterruptionReasonRequiredError extends ValidationError {
+  readonly code = 'ENCOUNTER_INTERRUPTION_REASON_REQUIRED';
+  override readonly userTitle =
+    'Indique por qué se interrumpe la atención y si la interrupción vino del paciente o del establecimiento';
+  override readonly fieldErrors: {
+    field: string;
+    code: string;
+    message: string;
+  }[];
+
+  constructor(missing: { reason: boolean; origin: boolean }) {
+    super('Encounter interruption requested without a reason or an origin');
+    this.fieldErrors = [
+      ...(missing.reason
+        ? [{ field: 'reason', code: this.code, message: 'Indique el motivo de la interrupción' }] // prettier-ignore
+        : []),
+      ...(missing.origin
+        ? [{ field: 'origin', code: this.code, message: 'Indique si la interrupción vino del paciente o del establecimiento' }] // prettier-ignore
+        : []),
+    ];
+  }
+}
+
+/**
  * EN-025, EN-026. The version named cannot be amended or retracted: it is a
  * draft, it was already superseded, or it was already retracted.
  *

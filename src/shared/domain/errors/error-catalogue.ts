@@ -106,6 +106,7 @@ export const DOMAIN_ERROR_CODES = [
   'OVERBOOKING_LIMIT_REACHED',
   'OVERBOOKING_NOT_ALLOWED',
   'OVERBOOKING_NOT_AUTHORISED',
+  'OVERBOOKING_PRACTITIONER_UNAVAILABLE',
   'OVERBOOKING_REASON_REQUIRED',
   'SELF_AUTHORISATION_DENIED',
   // Agenda, E5 (AG-060 a AG-067): la lista de espera, que reparte un recurso
@@ -655,6 +656,11 @@ export const DOMAIN_ERROR_CODES = [
   //     enmienda sin motivo, y la enmienda de un borrador, de una versión ya
   //     sustituida o de una retractada. El motivo se exige en el DTO, en el
   //     servicio y en la base, por lo mismo que `CANCELLATION_REASON_REQUIRED`.
+  // EN-166, EN-167 (D-077, D-080, D-082). Anular e interrumpir una atención
+  // exigen motivo escrito —e interrumpir, además, el origen—. 422 por campo:
+  // es el formulario el que se corrige.
+  'ENCOUNTER_ANNULMENT_REASON_REQUIRED',
+  'ENCOUNTER_INTERRUPTION_REASON_REQUIRED',
   'AMENDMENT_REASON_REQUIRED',
   'APPOINTMENT_NOT_ATTENDABLE',
   'BMI_IS_DERIVED',

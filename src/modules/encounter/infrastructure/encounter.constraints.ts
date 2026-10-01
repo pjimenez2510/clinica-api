@@ -199,6 +199,32 @@ registerConstraintMeanings({
     field: 'substituteReason',
     message: 'Indique por qué cierra esta atención otra persona: queda registrado junto a la atención', // prettier-ignore
   },
+  /**
+   * EN-166. An annulled attention states why, who and when — and a live one
+   * states none of the three. The service refuses the missing reason first,
+   * with this same code; this is the rule for a writer that went around it.
+   */
+  encounter_entered_in_error_states_who_why_when: {
+    code: 'ENCOUNTER_ANNULMENT_REASON_REQUIRED',
+    field: 'reason',
+    message: 'Indique por qué anula la atención: queda escrito con su nombre y la hora', // prettier-ignore
+  },
+  /** EN-167. The same for an interruption, with its origin. */
+  encounter_discontinued_states_who_why_when: {
+    code: 'ENCOUNTER_INTERRUPTION_REASON_REQUIRED',
+    field: 'reason',
+    message: 'Indique por qué se interrumpe la atención y si vino del paciente o del establecimiento', // prettier-ignore
+  },
+  /**
+   * EN-168 (D-081). At most one LIVE attention per appointment. Reached when
+   * two people open the attention of the same appointment at once: the
+   * second is told the first already exists.
+   */
+  encounter_one_live_per_agenda_entry: {
+    code: 'APPOINTMENT_ALREADY_HAS_ENCOUNTER',
+    field: 'agendaEntryId',
+    message: 'Esta cita ya tiene una atención abierta: continúe en ella',
+  },
   /** EN-010. `encounter_time_order`: the end never precedes the beginning. */
   encounter_time_order: {
     code: 'INVALID_TIME_RANGE',

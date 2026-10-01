@@ -149,6 +149,7 @@ export class ClinicalNoteService {
       formVersion: request.formVersion,
       content: request.content,
       authorId: author.practitionerId,
+      authorUserId: requester.userId,
       sites: requester.sites,
     });
 

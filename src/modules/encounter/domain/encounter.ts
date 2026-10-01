@@ -43,6 +43,15 @@ export type EncounterStatus =
   | 'ENTERED_IN_ERROR';
 
 /**
+ * EN-129, EN-167. Where an interruption came from: the patient (they left, they
+ * were referred out mid-visit) or the establishment (an emergency took the
+ * doctor, the power went). Counted apart, because the second is an
+ * operational failure and writing it as the patient's would put in their
+ * history a fact that did not happen to them.
+ */
+export type DiscontinuedOrigin = 'PATIENT' | 'ESTABLISHMENT';
+
+/**
  * EN-009. How the attention ended, in the four ways the RDACAA distinguishes.
  *
  * Four values and not a boolean because three of them trigger something:

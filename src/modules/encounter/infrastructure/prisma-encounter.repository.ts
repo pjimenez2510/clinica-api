@@ -11,6 +11,11 @@ import {
 } from '../domain/encounter.errors';
 import { subjectStatusAfter } from '../domain/patient-flow';
 import type { ClosurePlan } from '../domain/encounter-closure';
+import type { EncounterStatus } from '../domain/encounter';
+import type {
+  AnnulmentPlan,
+  InterruptionPlan,
+} from '../domain/encounter-state';
 import type {
   ChartHistoryQuery,
   EncounterPage,
@@ -66,6 +71,11 @@ const ENCOUNTER_SELECT = {
   closedById: true,
   closedAt: true,
   closedBySubstituteReason: true,
+  enteredInErrorReason: true,
+  enteredInErrorAt: true,
+  discontinuedReason: true,
+  discontinuedOrigin: true,
+  discontinuedAt: true,
 } satisfies Prisma.EncounterSelect;
 
 /** The row `ENCOUNTER_SELECT` yields, derived from it so the two cannot drift. */
@@ -445,6 +455,122 @@ export class PrismaEncounterRepository implements EncounterRepository {
     });
   }
 
+  /** EN-166, AG-147. See the port. */
+  async annul(
+    query: EncounterQuery,
+    decide: (encounter: EncounterView) => AnnulmentPlan,
+    changedById: string,
+  ): Promise<EncounterView> {
+    return this.prisma.$transaction(async (tx) => {
+      const current = await lockAndRead(tx, query);
+      const plan = decide(current);
+
+      await moveConditionally(tx, query, current.status, plan.to, {
+        status: plan.to,
+        endedAt: plan.endedAt,
+        enteredInErrorReason: plan.reason,
+        enteredInErrorById: changedById,
+        enteredInErrorAt: plan.at,
+      });
+
+      /**
+       * AG-147. The appointment goes back to the waiting room: the error was
+       * opening the attention, not giving the appointment, and the patient
+       * may still be there. `ARRIVED` because everything documented about
+       * them since the arrival lived in the attention now annulled.
+       */
+      await moveAppointment(tx, {
+        agendaEntryId: current.agendaEntryId,
+        from: 'IN_PROGRESS',
+        to: 'CHECKED_IN',
+        subjectStatus: 'ARRIVED',
+        at: plan.at,
+        changedById,
+        note: plan.reason,
+      });
+
+      return readView(tx, query.encounterId);
+    });
+  }
+
+  /** EN-167, AG-149. See the port. */
+  async discontinue(
+    query: EncounterQuery,
+    decide: (encounter: EncounterView) => InterruptionPlan,
+    drafts: {
+      authorId: string;
+      sign: (draft: { content: unknown }) => {
+        signedById: string;
+        signedAt: Date;
+        contentHash: string;
+      };
+    },
+    changedById: string,
+  ): Promise<EncounterView> {
+    return this.prisma.$transaction(async (tx) => {
+      const current = await lockAndRead(tx, query);
+      const plan = decide(current);
+
+      await moveConditionally(tx, query, current.status, plan.to, {
+        status: plan.to,
+        endedAt: plan.endedAt,
+        discontinuedReason: plan.reason,
+        discontinuedOrigin: plan.origin,
+        discontinuedById: changedById,
+        discontinuedAt: plan.at,
+      });
+
+      /**
+       * D-082. «Con lo hecho»: each draft of whoever interrupts is signed as
+       * it stands, with no completeness demanded and no discharge — the
+       * attention is already `DISCONTINUED`, and the signature is what gives
+       * a responsible author to what was written. Drafts of somebody else
+       * stay drafts: signing another person's text attributes it to them.
+       *
+       * Conditioned on `DRAFT` like every signature, so a draft signed in the
+       * meantime is left as its author signed it.
+       */
+      const own = await tx.clinicalNote.findMany({
+        where: {
+          encounterId: current.id,
+          status: 'DRAFT',
+          authorId: drafts.authorId,
+        },
+        select: { id: true, content: true },
+      });
+      for (const draft of own) {
+        const signature = drafts.sign({ content: draft.content });
+        await tx.clinicalNote.updateMany({
+          where: { id: draft.id, status: 'DRAFT' },
+          data: {
+            status: 'SIGNED',
+            signedById: signature.signedById,
+            signedAt: signature.signedAt,
+            contentHash: signature.contentHash,
+          },
+        });
+      }
+
+      /**
+       * AG-149 (D-076). There was attention, so the appointment never ends as
+       * «se fue sin ser atendido»: it is attended, and what says it was cut
+       * short is the attention's own state, which the appointment publishes
+       * (AG-150). The patient has left the building.
+       */
+      await moveAppointment(tx, {
+        agendaEntryId: current.agendaEntryId,
+        from: 'IN_PROGRESS',
+        to: 'FULFILLED',
+        subjectStatus: 'DEPARTED',
+        at: plan.at,
+        changedById,
+        note: plan.reason,
+      });
+
+      return readView(tx, query.encounterId);
+    });
+  }
+
   /**
    * EN-060 to EN-062, EN-067. Writes the ONE set of vital signs.
    *
@@ -625,6 +751,110 @@ function siteFilter(sites: SiteScopeFilter): Prisma.EncounterWhereInput {
 }
 
 /** An `encounter` row as the domain reads it. */
+/**
+ * EN-166, EN-167. Locks the attention, THEN reads it within the caller's
+ * scope. Attention before appointment, the order every writer of the pair
+ * takes (AG-146, AG-148), so none of them can deadlock another.
+ */
+async function lockAndRead(
+  tx: Prisma.TransactionClient,
+  query: EncounterQuery,
+): Promise<EncounterView> {
+  await tx.$queryRaw`
+    SELECT 1 FROM "encounter" WHERE "id" = ${query.encounterId}::uuid FOR UPDATE
+  `;
+  const row = await tx.encounter.findFirst({
+    where: { id: query.encounterId, ...siteFilter(query.sites) },
+    select: ENCOUNTER_SELECT,
+  });
+  if (!row) throw new EncounterNotFoundError();
+  return toEncounterView(row);
+}
+
+/**
+ * The write of a state change, conditioned on the status that was read. The
+ * row is locked, so a zero count can only be a writer that bypassed the lock;
+ * the refusal still names the state THEY left.
+ */
+async function moveConditionally(
+  tx: Prisma.TransactionClient,
+  query: EncounterQuery,
+  from: EncounterStatus,
+  to: EncounterStatus,
+  data: Prisma.EncounterUncheckedUpdateManyInput,
+): Promise<void> {
+  const updated = await tx.encounter.updateMany({
+    where: { id: query.encounterId, ...siteFilter(query.sites), status: from },
+    data,
+  });
+  if (updated.count === 0) {
+    const now = await tx.encounter.findUniqueOrThrow({
+      where: { id: query.encounterId },
+      select: { status: true },
+    });
+    throw new InvalidEncounterTransitionError(now.status, to);
+  }
+}
+
+/**
+ * AG-147, AG-149. Moves the appointment of an attention, ONLY from the status
+ * named and in the same statement, with its history row (AG-004) and the
+ * patient axis. An appointment in any other status is left as it is: a walk-in
+ * has none, and one already `FULFILLED` is corrected by the attention, not by
+ * the agenda.
+ *
+ * WRITTEN HERE AND NOT THROUGH `agenda`: no module imports another. These are
+ * the statements its own adapter writes, so the trail reads the same.
+ */
+async function moveAppointment(
+  tx: Prisma.TransactionClient,
+  move: {
+    agendaEntryId: string | null;
+    from: 'IN_PROGRESS';
+    to: 'CHECKED_IN' | 'FULFILLED';
+    subjectStatus: 'ARRIVED' | 'DEPARTED';
+    at: Date;
+    changedById: string;
+    note: string;
+  },
+): Promise<void> {
+  if (move.agendaEntryId === null) return;
+
+  const moved = await tx.agendaEntry.updateMany({
+    where: { id: move.agendaEntryId, status: move.from },
+    data: {
+      status: move.to,
+      subjectStatus: move.subjectStatus,
+      subjectStatusAt: move.at,
+    },
+  });
+  if (moved.count === 0) return;
+
+  await tx.agendaStatusHistory.create({
+    data: {
+      agendaEntryId: move.agendaEntryId,
+      fromStatus: move.from,
+      toStatus: move.to,
+      changedById: move.changedById,
+      changedAt: move.at,
+      note: move.note,
+    },
+  });
+}
+
+/** The attention as it now stands, after the writes of the transaction. */
+async function readView(
+  tx: Prisma.TransactionClient,
+  encounterId: string,
+): Promise<EncounterView> {
+  return toEncounterView(
+    await tx.encounter.findUniqueOrThrow({
+      where: { id: encounterId },
+      select: ENCOUNTER_SELECT,
+    }),
+  );
+}
+
 function toEncounterView(row: EncounterRow): EncounterView {
   return {
     id: row.id,
@@ -645,6 +875,22 @@ function toEncounterView(row: EncounterRow): EncounterView {
     closedById: row.closedById,
     closedAt: row.closedAt,
     closedBySubstituteReason: row.closedBySubstituteReason,
+    // The CHECKs of `encounter_annulment_and_interruption` make each group
+    // all-or-nothing, so one column standing for the group is enough.
+    annulment:
+      row.enteredInErrorReason !== null && row.enteredInErrorAt !== null
+        ? { reason: row.enteredInErrorReason, at: row.enteredInErrorAt }
+        : null,
+    interruption:
+      row.discontinuedReason !== null &&
+      row.discontinuedOrigin !== null &&
+      row.discontinuedAt !== null
+        ? {
+            reason: row.discontinuedReason,
+            origin: row.discontinuedOrigin,
+            at: row.discontinuedAt,
+          }
+        : null,
   };
 }
 

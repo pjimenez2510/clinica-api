@@ -227,6 +227,17 @@ const EXEMPT: Record<string, string> = {
     'nunca copiaría nada porque cada entrada sería «equivalente a sí misma». ' +
     'Es el mismo motivo que `countLinkedRecords`: la fusión escribe, y una ' +
     'escritura nombra filas concretas por definición.',
+  'src/modules/agenda/infrastructure/prisma-agenda.repository.ts#applyStatusChange':
+    'AG-045, EN-168. `encounters` se lee desde la CITA, no desde la ficha: ' +
+    'son las atenciones colgadas de esa cita concreta, para saber si alguna ' +
+    'sigue viva antes de anularla. El nombre coincide con la relación de ' +
+    '`Patient` y por eso el escáner la marca; resolver el alcance de la ficha ' +
+    'traería atenciones de OTRAS citas del mismo paciente y vetaría anular ' +
+    'una cita por una atención que no es suya.',
+  'src/modules/agenda/infrastructure/prisma-agenda.repository.ts#ENTRY_SELECT':
+    'AG-150. Mismo caso que `applyStatusChange`: el estado de la atención ' +
+    'viva de ESTA cita, que es lo que el menú necesita. Las atenciones de ' +
+    'las fichas absorbidas no cuelgan de esta cita y no deben aparecer.',
 };
 
 // ---------------------------------------------------------------------------

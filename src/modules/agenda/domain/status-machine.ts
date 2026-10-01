@@ -11,12 +11,14 @@
  */
 
 import {
+  AgendaEntryHasEncounterError,
   AgendaEntryNotFoundError,
   InvalidAgendaTransitionError,
   NoShowBeforeStartError,
 } from './agenda.errors';
 import type { AgendaEntryKind, AgendaEntryStatus } from './agenda-entry';
 import type {
+  AttentionInterruption,
   StatusChange,
   TransitionEffects,
   TransitionRead,
@@ -247,4 +249,44 @@ export function effectsOf(
       // The history row (AG-004) is the record; no column of their own.
       return {};
   }
+}
+
+/**
+ * AG-045, AG-148 (D-076, D-081). What a live attention allows the appointment.
+ *
+ * Once there is a live attention the appointment is not annulled, not a
+ * no-show and not «never existed»: an act is documented against it, and if the
+ * attention should not exist it is the ATTENTION that is annulled (EN-166).
+ *
+ * «SE FUE SIN SER ATENDIDO» DEPENDS ON THE NOTE, and the note is the boundary
+ * D-076 draws. With it, there was a consultation and the answer is to
+ * interrupt the attention from the attention (EN-167). Without it —reception
+ * opened the attention, nursing took the vitals, the patient left before the
+ * doctor— nobody attended them, and the honest outcome is this one; the
+ * attention is interrupted in the same transaction so it does not dangle open
+ * on the board for ever.
+ *
+ * Returns the interruption to write, or `undefined` when there is none.
+ */
+export function planAttentionEffect(
+  read: TransitionRead,
+  to: AgendaTransitionTarget,
+  reason: string | undefined,
+  now: Date,
+): AttentionInterruption | undefined {
+  if (!read.hasEncounter) return undefined;
+
+  if (to === 'CANCELLED' || to === 'NO_SHOW' || to === 'ENTERED_IN_ERROR') {
+    throw new AgendaEntryHasEncounterError();
+  }
+  if (to !== 'LEFT_WITHOUT_BEING_SEEN') return undefined;
+  if (read.encounterHasNote) throw new AgendaEntryHasEncounterError();
+
+  /**
+   * EN-129 demands a written reason and AG-116 makes it optional at the
+   * counter, because asking why somebody got tired of waiting produces a
+   * blank or a guess. The fact ITSELF is the reason, so it is written when
+   * nobody added one.
+   */
+  return { reason: reason?.trim() || 'Se fue sin ser atendido', at: now };
 }

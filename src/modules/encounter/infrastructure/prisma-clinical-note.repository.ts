@@ -4,8 +4,10 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
   ClinicalNoteNotFoundError,
+  EncounterAlreadyClosedError,
   EncounterNotFoundError,
 } from '../domain/encounter.errors';
+import { TERMINAL_STATUSES } from '../domain/encounter-state';
 import { subjectStatusAfter } from '../domain/patient-flow';
 import type { NoteContent } from '../domain/clinical-note';
 import type {
@@ -92,11 +94,24 @@ export class PrismaClinicalNoteRepository implements ClinicalNoteRepository {
    */
   async createDraft(draft: NewClinicalNote): Promise<ClinicalNoteView> {
     return this.prisma.$transaction(async (tx) => {
+      // AG-146, AG-148. The attention is LOCKED before it is read, so a
+      // departure recorded at the counter at this same moment either finishes
+      // first —and this read sees the attention it interrupted— or waits for
+      // this note. Attention first, appointment second: the order the agenda
+      // adapter takes too, so the two cannot deadlock.
+      await tx.$queryRaw`
+        SELECT 1 FROM "encounter" WHERE "id" = ${draft.encounterId}::uuid FOR UPDATE
+      `;
       const encounter = await requireEncounter(
         tx,
         draft.encounterId,
         draft.sites,
       );
+      // A note inside an attention that is already over —interrupted, closed,
+      // annulled— documents nothing that happened in it.
+      if (TERMINAL_STATUSES.includes(encounter.status)) {
+        throw new EncounterAlreadyClosedError(encounter.status);
+      }
 
       const [generated] = await tx.$queryRaw<{ id: string }[]>`
         SELECT uuidv7()::text AS id
@@ -129,6 +144,7 @@ export class PrismaClinicalNoteRepository implements ClinicalNoteRepository {
       // patient is with the practitioner — and it rides in this transaction,
       // because a board written afterwards can disagree with the record.
       await stampSubjectStatus(tx, encounter.agendaEntryId, 'NOTE_OPENED');
+      await startAttendance(tx, encounter.agendaEntryId, draft.authorUserId);
 
       return toNoteView(created);
     });
@@ -483,6 +499,49 @@ async function stampSubjectStatus(
     // EN-140. `agenda_entry_subject_status_carries_its_instant` refuses a
     // state with no instant, so the two are always written together.
     data: { subjectStatus: next, subjectStatusAt: new Date() },
+  });
+}
+
+/**
+ * AG-146. Opening the note puts the APPOINTMENT in attendance, in the same
+ * transaction, with its history row (AG-004).
+ *
+ * The patient axis already moved here (EN-137) and the appointment axis did
+ * not: the board read «En atención» from one and the menu offered «Pasar a
+ * atención», «Se fue sin ser atendido» and «Anular…» from the other. Nobody
+ * presses «Pasar a atención»; the work marks the state (AG-122).
+ *
+ * ONLY FROM `CHECKED_IN`, conditioned in the `UPDATE` itself: an appointment
+ * whose arrival was never recorded keeps its status, because the arrival
+ * carries the emergency assessment of Ley 77 art. 10 (AG-128) and jumping it
+ * would lose that record. A second note on the same attention finds the
+ * appointment already `IN_PROGRESS` and writes nothing.
+ *
+ * WRITTEN HERE AND NOT THROUGH `agenda`: no module imports another, and the
+ * agenda port answers HTTP transitions in a transaction of its own. These are
+ * the same two statements its adapter writes — the conditional update and the
+ * history row — so the trail reads the same whichever side moved it.
+ */
+async function startAttendance(
+  tx: Prisma.TransactionClient,
+  agendaEntryId: string | null,
+  changedById: string,
+): Promise<void> {
+  if (agendaEntryId === null) return;
+
+  const moved = await tx.agendaEntry.updateMany({
+    where: { id: agendaEntryId, status: 'CHECKED_IN' },
+    data: { status: 'IN_PROGRESS' },
+  });
+  if (moved.count === 0) return;
+
+  await tx.agendaStatusHistory.create({
+    data: {
+      agendaEntryId,
+      fromStatus: 'CHECKED_IN',
+      toStatus: 'IN_PROGRESS',
+      changedById,
+    },
   });
 }
 

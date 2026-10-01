@@ -12,6 +12,7 @@ import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
+import { PrismaClinicalNoteRepository } from '../../src/modules/encounter/infrastructure/prisma-clinical-note.repository';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
@@ -433,7 +434,7 @@ describe('las transiciones de estado de la cita por HTTP', () => {
         'AGENDA_ENTRY_HAS_ENCOUNTER',
       );
       expect((cancelled.body as Problem).title).toBe(
-        'La cita ya tiene una atención registrada: no puede anularse ni marcarse como inasistencia',
+        'La cita ya tiene una atención: no puede anularse ni darse por no atendida. Si la atención se abrió por error, se anula desde la atención',
       );
 
       // Y la cita sigue donde estaba: nada se liberó.
@@ -1089,6 +1090,202 @@ describe('las transiciones de estado de la cita por HTTP', () => {
         where: { id: entryId },
       });
       expect(stored.status).toBe('IN_PROGRESS');
+    });
+  });
+
+  /**
+   * E10 (D-076, D-077, D-080, D-081). What the attention marks on the
+   * appointment, against PostgreSQL.
+   *
+   * THE CAPTURE OF THE AUTHOR (30-09-2026): Carlos Álvarez «En atención» —the
+   * doctor had opened his note— and the menu offering «Pasar a atención», «Se
+   * fue sin ser atendido» and «Anular…», because the appointment was still
+   * `CHECKED_IN`. These tests reproduce it and assert both halves: opening the
+   * note moves the appointment, and the server refuses the two outcomes that
+   * deny a consultation that happened.
+   */
+  describe('lo que la atención marca en la cita (E10)', () => {
+    /** Cita en sala, con su atención abierta: el paciente ya llegó. */
+    async function inTheWaitingRoomWithAttention() {
+      const entryId = await bookedEntry();
+      await transition(entryId, { to: 'CHECKED_IN', emergency: false }).expect(200); // prettier-ignore
+      const encounter = await createEncounter(prisma, {
+        siteId,
+        practitionerId,
+        patientId,
+        agendaEntryId: entryId,
+      });
+      return { entryId, encounter };
+    }
+
+    /** La médica abre la nota por el mismo adaptador que usa la API. */
+    async function openTheNote(encounterId: string) {
+      const doctor = await prisma.practitioner.findUniqueOrThrow({
+        where: { id: practitionerId },
+      });
+      return new PrismaClinicalNoteRepository(
+        prisma as unknown as PrismaService,
+      ).createDraft({
+        encounterId,
+        formCode: '002',
+        formVersion: '1',
+        content: { motivoConsulta: 'Dolor abdominal' },
+        authorId: practitionerId,
+        authorUserId: doctor.userId,
+        sites: [siteId],
+      });
+    }
+
+    it('AG-146 abrir la nota pasa la cita a IN_PROGRESS, con su fila de historial y su autor', async () => {
+      const { entryId, encounter } = await inTheWaitingRoomWithAttention();
+      const doctor = await prisma.practitioner.findUniqueOrThrow({
+        where: { id: practitionerId },
+      });
+
+      await openTheNote(encounter.id);
+
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(stored.status).toBe('IN_PROGRESS');
+      expect(stored.subjectStatus).toBe('RECEIVING_CARE');
+      const last = (await historyOf(entryId)).at(-1);
+      expect(last).toMatchObject({
+        fromStatus: 'CHECKED_IN',
+        toStatus: 'IN_PROGRESS',
+        changedById: doctor.userId,
+      });
+    });
+
+    it('AG-146 una segunda nota sobre la misma atención no escribe otra fila', async () => {
+      const { entryId, encounter } = await inTheWaitingRoomWithAttention();
+
+      await openTheNote(encounter.id);
+      const before = (await historyOf(entryId)).length;
+      await openTheNote(encounter.id);
+
+      expect(await historyOf(entryId)).toHaveLength(before);
+    });
+
+    it('AG-146 reproduce la captura del autor: con la nota abierta, ni «se fue sin ser atendido» ni «anular»', async () => {
+      const { entryId, encounter } = await inTheWaitingRoomWithAttention();
+      await openTheNote(encounter.id);
+
+      for (const body of [
+        { to: 'LEFT_WITHOUT_BEING_SEEN' },
+        { to: 'CANCELLED', reason: 'Se retiró' },
+      ]) {
+        const refused = await transition(entryId, body).expect(409);
+        expect((refused.body as Problem).code).toBe(
+          'INVALID_AGENDA_TRANSITION',
+        );
+      }
+
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(stored.status).toBe('IN_PROGRESS');
+      expect(stored.releasedAt).toBeNull();
+    });
+
+    it('AG-045 con nota y la cita aún en CHECKED_IN (filas de antes de AG-146), el servidor también lo rechaza', async () => {
+      // Las citas que se quedaron en sala con la nota abierta antes de esta
+      // entrega: la tabla admite la salida desde CHECKED_IN, así que el veto
+      // tiene que venir de la atención, no de la tabla.
+      const { entryId, encounter } = await inTheWaitingRoomWithAttention();
+      await prisma.clinicalNote.create({
+        data: {
+          id: encounter.id,
+          chainId: encounter.id,
+          version: 1,
+          encounterId: encounter.id,
+          formCode: '002',
+          formVersion: '1',
+          status: 'DRAFT',
+          content: {},
+          authorId: practitionerId,
+        },
+      });
+
+      for (const body of [
+        { to: 'LEFT_WITHOUT_BEING_SEEN' },
+        { to: 'CANCELLED', reason: 'Se retiró' },
+      ]) {
+        const refused = await transition(entryId, body).expect(409);
+        expect((refused.body as Problem).code).toBe(
+          'AGENDA_ENTRY_HAS_ENCOUNTER',
+        );
+      }
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(stored.status).toBe('CHECKED_IN');
+      expect(stored.releasedAt).toBeNull();
+    });
+
+    it('AG-148 sin nota, «se fue sin ser atendido» se admite e interrumpe la atención en la misma transacción', async () => {
+      // Control positivo de la anterior: la misma cita, la misma atención,
+      // sin nota. Nadie la atendió, así que la salida es la verdad.
+      const { entryId, encounter } = await inTheWaitingRoomWithAttention();
+
+      await transition(entryId, { to: 'LEFT_WITHOUT_BEING_SEEN' }).expect(200);
+
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(stored.status).toBe('LEFT_WITHOUT_BEING_SEEN');
+      expect(stored.releasedAt).not.toBeNull();
+      const interrupted = await prisma.encounter.findUniqueOrThrow({
+        where: { id: encounter.id },
+      });
+      expect(interrupted).toMatchObject({
+        status: 'DISCONTINUED',
+        discontinuedOrigin: 'PATIENT',
+        discontinuedReason: 'Se fue sin ser atendido',
+        discontinuedById: userId,
+      });
+      expect(interrupted.discontinuedAt).toEqual(stored.leftWithoutBeingSeenAt);
+    });
+
+    it('AG-150 la cita publica el estado de su atención viva, y no su identificador', async () => {
+      const { entryId, encounter } = await inTheWaitingRoomWithAttention();
+
+      const confirmed = await transition(entryId, {
+        to: 'IN_PROGRESS',
+      }).expect(200);
+
+      const body = confirmed.body as Record<string, unknown>;
+      expect(body.attention).toBe('OPEN');
+      expect(JSON.stringify(body)).not.toContain(encounter.id);
+
+      // Control positivo: una cita sin atención publica `null`.
+      const bare = await bookedEntry({
+        startsAt: PAST_SLOT.endsAt,
+        endsAt: new Date(
+          Date.parse(PAST_SLOT.endsAt) + 20 * 60_000,
+        ).toISOString(),
+      });
+      const confirmedBare = await transition(bare, { to: 'CONFIRMED' }).expect(200); // prettier-ignore
+      expect(
+        (confirmedBare.body as Record<string, unknown>).attention,
+      ).toBeNull();
+    });
+
+    it('AG-045 una atención anulada ya no frena la cita', async () => {
+      const { entryId, encounter } = await inTheWaitingRoomWithAttention();
+      const at = new Date();
+      await prisma.encounter.update({
+        where: { id: encounter.id },
+        data: {
+          status: 'ENTERED_IN_ERROR',
+          endedAt: at,
+          enteredInErrorReason: 'Ficha equivocada',
+          enteredInErrorById: userId,
+          enteredInErrorAt: at,
+        },
+      });
+
+      await transition(entryId, { to: 'CANCELLED', reason: 'Reagenda' }).expect(200); // prettier-ignore
     });
   });
 });

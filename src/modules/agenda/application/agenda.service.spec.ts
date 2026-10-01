@@ -60,7 +60,11 @@ import {
   SelfAuthorisationDeniedError,
 } from '../domain/agenda.errors';
 import type { Holiday } from '../domain/holiday-calendar';
-import type { AgendaOccupancy } from '../domain/slot-availability';
+import type {
+  AgendaOccupancy,
+  ScheduleRule,
+} from '../domain/slot-availability';
+import type { PresenceEntry } from '../domain/overbooking-policy';
 import { AgendaService, type Requester } from './agenda.service';
 
 /**
@@ -141,6 +145,7 @@ function anEntry(overrides: Partial<AgendaEntryView> = {}): AgendaEntryView {
     // AG-051: an appointment booked directly and never moved.
     rescheduledFromId: null,
     rescheduledToId: null,
+    attention: null,
     ...overrides,
   };
 }
@@ -219,6 +224,7 @@ function aTransitionRead(
     startsAt: EIGHT,
     releasedAt: null,
     hasEncounter: false,
+    encounterHasNote: false,
     ...overrides,
   };
 }
@@ -271,6 +277,8 @@ function repositoryDouble(
     overbookingCount?: number;
     /** AG-038: the appointments standing inside the interval to be blocked. */
     blockingAppointments?: readonly BlockingAppointment[];
+    /** AG-151: where the practitioner is during the interval. */
+    presence?: { entries: PresenceEntry[]; rulesElsewhere: ScheduleRule[] };
     /** AG-080: the counted cube the metric reduces. */
     noShowCounts?: readonly NoShowCountRow[];
   } = {},
@@ -428,6 +436,10 @@ function repositoryDouble(
         }),
       );
     },
+    presenceOf: () =>
+      Promise.resolve(
+        overrides.presence ?? { entries: [], rulesElsewhere: [] },
+      ),
     overbookingCount: (query) => {
       recorded.overbookingCounts.push(query);
       return Promise.resolve(overrides.overbookingCount ?? 0);

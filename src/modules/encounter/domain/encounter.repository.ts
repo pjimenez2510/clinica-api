@@ -25,10 +25,15 @@ import type {
   CareModality,
   CareSetting,
   DischargeCondition,
+  DiscontinuedOrigin,
   EncounterStatus,
   VisitSequence,
 } from './encounter';
-import type { StateChange } from './encounter-state';
+import type {
+  AnnulmentPlan,
+  InterruptionPlan,
+  StateChange,
+} from './encounter-state';
 import type { ClosurePlan } from './encounter-closure';
 import type { VitalSigns } from './vital-signs';
 import type { TriggeringFact } from './patient-flow';
@@ -68,6 +73,10 @@ export interface EncounterView {
   closedById: string | null;
   closedAt: Date | null;
   closedBySubstituteReason: string | null;
+  /** EN-166. Why and when it was annulled; `null` unless `ENTERED_IN_ERROR`. */
+  annulment: { reason: string; at: Date } | null;
+  /** EN-167. Why, from where and when it was interrupted; `null` unless `DISCONTINUED`. */
+  interruption: { reason: string; origin: DiscontinuedOrigin; at: Date } | null;
 }
 
 /**
@@ -291,6 +300,41 @@ export interface EncounterRepository {
    * the thing being forgotten is the oldest one.
    */
   listStillOpen(query: OpenEncountersQuery): Promise<EncounterView[]>;
+
+  /**
+   * EN-166, AG-147 (D-077, D-080). Annuls the attention and, in the SAME
+   * transaction, gives its appointment back to the waiting room when it was
+   * `IN_PROGRESS`, with the reason in the appointment's history.
+   *
+   * The attention row is LOCKED first, as every writer of this pair does
+   * (attention, then appointment), and the update is conditioned on the status
+   * that was read. Nothing written in the attention is touched.
+   */
+  annul(
+    query: EncounterQuery,
+    decide: (encounter: EncounterView) => AnnulmentPlan,
+    changedById: string,
+  ): Promise<EncounterView>;
+
+  /**
+   * EN-167, AG-149 (D-076, D-082). Interrupts the attention, signs the drafts
+   * of whoever interrupts «con lo hecho» —with the signature `sign` composes,
+   * no completeness demanded and no discharge— and, in the SAME transaction,
+   * marks its `IN_PROGRESS` appointment as attended and the patient as gone.
+   */
+  discontinue(
+    query: EncounterQuery,
+    decide: (encounter: EncounterView) => InterruptionPlan,
+    drafts: {
+      authorId: string;
+      sign: (draft: { content: unknown }) => {
+        signedById: string;
+        signedAt: Date;
+        contentHash: string;
+      };
+    },
+    changedById: string,
+  ): Promise<EncounterView>;
 
   /**
    * EN-009, EN-131, EN-132, EN-144, EN-147. One closure, one transaction.
