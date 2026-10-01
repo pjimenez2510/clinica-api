@@ -1108,6 +1108,59 @@ describe('el certificado medico por HTTP', () => {
     expect(next.work).toMatchObject({ employer: 'Otra empresa S.A.' });
   });
 
+  it('CER-027 la emisión congela la certeza de cada diagnóstico, y corregirla después no cambia el papel', async () => {
+    await aDiagnosis(encounterId);
+    const issued = await issue(restOf(3));
+
+    const frozen = async () =>
+      (
+        await prisma.medicalCertificate.findUniqueOrThrow({
+          where: { id: issued.certificate.id },
+          select: { diagnoses: true },
+        })
+      ).diagnoses;
+    // Copied at the issue with the attention's certainty (the fixture's DEF).
+    expect(await frozen()).toEqual([
+      { code: 'J00', display: 'Rinofaringitis aguda', certainty: 'DEFINITIVE' },
+    ]);
+
+    // Corrected afterwards on the attention: the issued copy does not move.
+    await prisma.encounterDiagnosis.updateMany({
+      where: { encounterId, cie10Code: 'J00' },
+      data: { certainty: 'PRESUMPTIVE' },
+    });
+    expect(await frozen()).toEqual([
+      { code: 'J00', display: 'Rinofaringitis aguda', certainty: 'DEFINITIVE' },
+    ]);
+
+    // Control: a certificate issued now copies the corrected one.
+    const next = await issue(restOf(3));
+    expect(
+      (
+        await prisma.medicalCertificate.findUniqueOrThrow({
+          where: { id: next.certificate.id },
+          select: { diagnoses: true },
+        })
+      ).diagnoses,
+    ).toEqual([
+      {
+        code: 'J00',
+        display: 'Rinofaringitis aguda',
+        certainty: 'PRESUMPTIVE',
+      },
+    ]);
+
+    // The screen's contract is unchanged: code and display (the DTO).
+    const form = (
+      await get(`/certificates/${issued.certificate.id}`, doctor.token).expect(
+        200,
+      )
+    ).body as Form117Body;
+    expect(form.diagnoses).toEqual([
+      { code: 'J00', display: 'Rinofaringitis aguda' },
+    ]);
+  });
+
   it('CER-036 una sede sin parroquia no emite certificados', async () => {
     // Control positivo: la sede con parroquia emite.
     await issue(attendance());
