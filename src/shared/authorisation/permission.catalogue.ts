@@ -299,7 +299,9 @@ export const PERMISSION_CATALOGUE = [
     // a clinical judgement and stays under `record:write`.
     code: 'background:write',
     resource: 'record',
-    description: 'Registrar alergias y antecedentes del paciente',
+    // AU-045 (D-071): the description is the safeguard a custom role reads.
+    description:
+      'Registrar alergias y antecedentes del paciente. Sin él no se registran alergias ni antecedentes',
   },
   {
     code: 'prescription:write',

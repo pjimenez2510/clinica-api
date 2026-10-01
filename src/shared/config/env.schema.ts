@@ -59,7 +59,9 @@ export const envSchema = z.object({
    * AU-040. The ABSOLUTE life of a session, counted from sign-in: every
    * refresh token of the family inherits the expiry of the first, so rotating
    * never extends it. Seven days is the author's decision (D-063); an
-   * installation may shorten it, in whole days, never lengthen it.
+   * installation may shorten it, in whole days, never lengthen it. The cut is
+   * brought FORWARD to the last 03:00 in Guayaquil before it (AU-043), so the
+   * real life lies between N − 1 and N days.
    */
   JWT_REFRESH_TTL_DAYS: z.coerce.number().int().positive().max(7).default(7),
   /**
