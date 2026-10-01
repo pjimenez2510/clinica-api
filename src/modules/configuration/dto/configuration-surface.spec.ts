@@ -79,6 +79,12 @@ describe('la superficie de configuración', () => {
     expect(Object.keys(updateSiteParametersSchema.shape).sort()).toEqual([
       'allowPastBooking',
       'cancelledRetention',
+      // ORD-063, ORD-065 y, más abajo, ORD-046: la política de las colas de
+      // resultados. Configurable porque D-050 la hizo de cada clínica, y nada
+      // deja de garantizarse por cambiarla: la constancia del aviso sigue
+      // siendo inmutable y la cola sigue enseñando lo que no se avisó.
+      'criticalEscalationRoleId',
+      'criticalNoticeWithinMinutes',
       'maxLeadDays',
       'minLeadMinutes',
       'overbookingCap',
@@ -99,6 +105,8 @@ describe('la superficie de configuración', () => {
       // revés: es lo que hace que AG-012 y AG-104 no puedan fallar por
       // configuración, porque toda duración se guarda como múltiplo suyo.
       'slotAtomMinutes',
+      'unmatchedResultDeadlineHours',
+      'unmatchedResultOwnerRoleId',
       // AG-066, AG-094 (E5): el octavo parámetro de AG-094, que sólo pudo
       // entrar cuando se abrió la lista de espera. Configurable por la misma
       // razón que los demás, y con una de más: D-040 (a) todavía no está

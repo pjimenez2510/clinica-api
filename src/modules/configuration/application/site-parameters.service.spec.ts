@@ -44,6 +44,10 @@ const CURRENT: SiteParameterView = {
   overbookingPermission: 'agenda:overbook',
   waitlistMaxContactAttempts: 3,
   cancelledRetention: 'NEVER',
+  criticalNoticeWithinMinutes: null,
+  criticalEscalationRoleId: null,
+  unmatchedResultOwnerRoleId: null,
+  unmatchedResultDeadlineHours: 24,
 };
 
 interface Call {
@@ -267,6 +271,38 @@ describe('los parámetros de operación de una sede', () => {
     });
   });
 
+  it('ORD-063 y ORD-046 guardan la política de las colas de resultados, y `null` quita el plazo', async () => {
+    repository.findAnswer = {
+      ...CURRENT,
+      criticalNoticeWithinMinutes: 60,
+      unmatchedResultOwnerRoleId: 'role-guardia',
+    };
+
+    const after = await service.update(
+      'site-1',
+      {
+        criticalNoticeWithinMinutes: null,
+        criticalEscalationRoleId: 'role-guardia',
+        unmatchedResultOwnerRoleId: null,
+        unmatchedResultDeadlineHours: 12,
+      },
+      REQUESTER,
+    );
+
+    // `null` llega a la fila: «sin plazo» y «quien pidió el examen» son
+    // valores que la sede eligió, no ausencias que haya que rellenar.
+    expect(after).toMatchObject({
+      criticalNoticeWithinMinutes: null,
+      criticalEscalationRoleId: 'role-guardia',
+      unmatchedResultOwnerRoleId: null,
+      unmatchedResultDeadlineHours: 12,
+    });
+    const update = repository.calls.find((call) => call.method === 'update');
+    expect(update?.args[1]).toMatchObject({
+      criticalNoticeWithinMinutes: null,
+    });
+  });
+
   it('AG-101 no pregunta por el catálogo cuando el permiso no se toca', async () => {
     // Una lectura por cada guardado de las antelaciones es una consulta que no
     // decide nada.
@@ -295,6 +331,10 @@ describe('los parámetros de operación de una sede', () => {
       overbookingPermission: 'agenda:overbook',
       waitlistMaxContactAttempts: 3,
       cancelledRetention: 'NEVER',
+      criticalNoticeWithinMinutes: null,
+      criticalEscalationRoleId: null,
+      unmatchedResultOwnerRoleId: null,
+      unmatchedResultDeadlineHours: 24,
     });
     expect(recorded[0]?.after).toMatchObject({ overbookingCap: 4 });
   });

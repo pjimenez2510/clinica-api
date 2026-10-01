@@ -142,6 +142,14 @@ export class SiteParametersService {
         patch.waitlistMaxContactAttempts ?? current.waitlistMaxContactAttempts,
       cancelledRetention:
         patch.cancelledRetention ?? current.cancelledRetention,
+      // `!== undefined` and not `??`: `null` is «sin plazo» or «quien pidió»,
+      // a value the site chose, and `??` would put back what the row had.
+      criticalNoticeWithinMinutes: chosen(patch.criticalNoticeWithinMinutes, current.criticalNoticeWithinMinutes), // prettier-ignore
+      criticalEscalationRoleId: chosen(patch.criticalEscalationRoleId, current.criticalEscalationRoleId), // prettier-ignore
+      unmatchedResultOwnerRoleId: chosen(patch.unmatchedResultOwnerRoleId, current.unmatchedResultOwnerRoleId), // prettier-ignore
+      unmatchedResultDeadlineHours:
+        patch.unmatchedResultDeadlineHours ??
+        current.unmatchedResultDeadlineHours,
     });
 
     const change = await this.repository.update(siteId, patch);
@@ -158,4 +166,9 @@ export class SiteParametersService {
     await this.trail.record('UPDATE', change.after.siteId, requester, change);
     return change.after;
   }
+}
+
+/** The patched value when one was sent — `null` included — else the stored one. */
+function chosen<T>(sent: T | undefined, stored: T): T {
+  return sent === undefined ? stored : sent;
 }

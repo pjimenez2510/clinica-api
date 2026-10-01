@@ -99,6 +99,24 @@ export interface SiteParameters {
    */
   waitlistMaxContactAttempts: number;
   cancelledRetention: CancelledRetention;
+  /**
+   * ORD-063, ORD-065. Minutes a critical laboratory value may wait for its
+   * notice before the worklist calls it overdue.
+   *
+   * ⚠️ `null` IS A VALUE AND THE DEFAULT: «la clínica no ha fijado plazo». The
+   * policy is each clinic's (D-050 §2) and its starting value is open (D-111);
+   * a default here would turn «not decided» into «va bien» or «va tarde».
+   */
+  criticalNoticeWithinMinutes: number | null;
+  /** ORD-063, ORD-065. The role an overdue critical value is escalated to. */
+  criticalEscalationRoleId: string | null;
+  /**
+   * ORD-046, D-050 §4. The role that answers for the unmatched-results queue;
+   * `null` is the decided default — the practitioner who placed the order.
+   */
+  unmatchedResultOwnerRoleId: string | null;
+  /** ORD-046, D-050 §4. Hours an unmatched result may wait; 24 by default. */
+  unmatchedResultDeadlineHours: number;
 }
 
 /** What the administrator may send; anything absent keeps its stored value. */
@@ -183,6 +201,28 @@ export const PARAMETER_RANGES = {
     describe: (min, max) =>
       `Los intentos de contacto de la lista de espera van de ${min} a ${max}`,
   },
+  /**
+   * ORD-063, ORD-065. Mirrors `site_parameter_critical_notice_within_minutes_range`.
+   * Below 5 minutes it is noise; above a day it is no longer «de manera
+   * urgente» (A.M. 00002393 art. 39). `null` — no deadline set — is not
+   * judged here: it is a value, not a number out of range.
+   */
+  criticalNoticeWithinMinutes: {
+    min: 5,
+    max: 1440,
+    describe: (min, max) =>
+      `El plazo para avisar un valor crítico va de ${min} a ${max} minutos (un día)`,
+  },
+  /**
+   * ORD-046. Mirrors `site_parameter_unmatched_result_deadline_hours_range`.
+   * A result nobody has looked at in a week is not on a queue: it is lost.
+   */
+  unmatchedResultDeadlineHours: {
+    min: 1,
+    max: 168,
+    describe: (min, max) =>
+      `El plazo de los resultados sin orden va de ${min} a ${max} horas (una semana)`,
+  },
 } as const satisfies Record<string, Range>;
 
 /**
@@ -221,6 +261,12 @@ export const DEFAULT_SITE_PARAMETERS: SiteParameters = {
   /** D-040 (a), recommendation pending the clinic's answer. The column default. */
   waitlistMaxContactAttempts: 3,
   cancelledRetention: 'NEVER',
+  /** D-111: not decided, so not invented. */
+  criticalNoticeWithinMinutes: null,
+  criticalEscalationRoleId: null,
+  /** D-050 §4: the ordering practitioner, with 24 hours. */
+  unmatchedResultOwnerRoleId: null,
+  unmatchedResultDeadlineHours: 24,
 };
 
 /**
@@ -264,7 +310,9 @@ export function assertParametersInRange(patch: SiteParametersPatch): void {
 
   for (const key of Object.keys(PARAMETER_RANGES) as RangedParameter[]) {
     const value = patch[key];
-    if (value === undefined) continue;
+    // `null` is «sin plazo», a value a site may choose (ORD-065), not a
+    // number outside a range.
+    if (value === undefined || value === null) continue;
 
     const range: Range = PARAMETER_RANGES[key];
     const step = range.step ?? 1;

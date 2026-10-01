@@ -42,6 +42,11 @@ const PARAMETER_SELECT = {
   // no tuvo hasta `agenda_waitlist_contact_trail`.
   waitlistMaxContactAttempts: true,
   cancelledRetention: true,
+  // ORD-046, ORD-063, ORD-065: la política de las colas de resultados.
+  criticalNoticeWithinMinutes: true,
+  criticalEscalationRoleId: true,
+  unmatchedResultOwnerRoleId: true,
+  unmatchedResultDeadlineHours: true,
 } satisfies Prisma.SiteParameterSelect;
 
 /**
@@ -119,6 +124,11 @@ export class PrismaSiteParameterRepository implements SiteParameterRepository {
              */
             overbookingPermission: patch.overbookingPermission,
             waitlistMaxContactAttempts: patch.waitlistMaxContactAttempts,
+            // `null` clears (sin plazo, quien pidió); `undefined` leaves alone.
+            criticalNoticeWithinMinutes: patch.criticalNoticeWithinMinutes,
+            criticalEscalationRoleId: patch.criticalEscalationRoleId,
+            unmatchedResultOwnerRoleId: patch.unmatchedResultOwnerRoleId,
+            unmatchedResultDeadlineHours: patch.unmatchedResultDeadlineHours,
           },
           select: PARAMETER_SELECT,
         });

@@ -259,6 +259,12 @@ export class ConfigurationController {
         // `site_parameter` no tuvo hasta que se abrió la lista de espera.
         waitlistMaxContactAttempts: dto.waitlistMaxContactAttempts,
         cancelledRetention: dto.cancelledRetention,
+        // ORD-046, ORD-063, ORD-065: la política de las colas de resultados
+        // (D-050 §2 y §4). `null` es un valor: sin plazo, o quien pidió.
+        criticalNoticeWithinMinutes: dto.criticalNoticeWithinMinutes,
+        criticalEscalationRoleId: dto.criticalEscalationRoleId,
+        unmatchedResultOwnerRoleId: dto.unmatchedResultOwnerRoleId,
+        unmatchedResultDeadlineHours: dto.unmatchedResultDeadlineHours,
       },
       this.requester(req),
     );

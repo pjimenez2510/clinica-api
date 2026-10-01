@@ -229,6 +229,21 @@ export const updateSiteParametersSchema = z
      * the day a purge policy is added the field already exists.
      */
     cancelledRetention: z.enum(CANCELLED_RETENTION_POLICIES).optional(),
+    /**
+     * ORD-063, ORD-065. `null` says «sin plazo» and is a value; absent says
+     * «no lo toque». Ranges are judged by the domain, which names them.
+     */
+    criticalNoticeWithinMinutes: parameterSchema.nullable().optional(),
+    criticalEscalationRoleId: z
+      .uuid('Elija el rol al que se escala')
+      .nullable()
+      .optional(),
+    /** ORD-046, D-050 §4. `null` = quien pidió el examen. */
+    unmatchedResultOwnerRoleId: z
+      .uuid('Elija el rol responsable')
+      .nullable()
+      .optional(),
+    unmatchedResultDeadlineHours: parameterSchema.optional(),
   })
   .refine((value) => Object.values(value).some((v) => v !== undefined), {
     message: 'Indique al menos un parámetro que cambiar',
@@ -254,6 +269,12 @@ export const siteParametersSchema = z.object({
   /** AG-066, AG-094. Viaja en la respuesta o la sede no puede verlo (D-040). */
   waitlistMaxContactAttempts: z.number().int(),
   cancelledRetention: z.enum(CANCELLED_RETENTION_POLICIES),
+  /** ORD-063, ORD-065. `null` = la clínica no ha fijado plazo (D-111). */
+  criticalNoticeWithinMinutes: z.number().int().nullable(),
+  criticalEscalationRoleId: z.uuid().nullable(),
+  /** ORD-046, D-050 §4. `null` = quien pidió el examen. */
+  unmatchedResultOwnerRoleId: z.uuid().nullable(),
+  unmatchedResultDeadlineHours: z.number().int(),
 });
 /** Response of reading and saving a site's parameters: always the whole set. */
 export class SiteParametersDto extends createZodDto(siteParametersSchema) {}
