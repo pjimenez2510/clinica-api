@@ -77,6 +77,8 @@ interface Row {
   rest?: { from: ClinicalDate; to: ClinicalDate } | null;
   backdatingReason?: string | null;
   otherReason?: string | null;
+  /** CER-035. A maternity rest, with its three dates. */
+  maternity?: { admissionOn: ClinicalDate; birthOn: ClinicalDate; dischargeOn: ClinicalDate }; // prettier-ignore
 }
 
 /** One certificate by raw SQL: no repository, no service. */
@@ -85,19 +87,26 @@ function insert(prisma: PrismaClient, scene: Scene, row: Row = {}) {
   const issuedAt =
     row.issuedAt ??
     new Date(scene.startedAt.getTime() + (row.issuedDaysLater ?? 0) * DAY_MS);
+  const maternity = row.maternity ?? null;
+  const contingency =
+    rest === null ? null : maternity === null ? 'GENERAL_ILLNESS' : 'MATERNITY';
   return prisma.$executeRaw`
     INSERT INTO medical_certificate
       (encounter_id, patient_id, issued_by_id, type, rest_from, rest_to,
        include_diagnosis, contingency_type, verification_code, issued_at,
-       rest_backdating_reason, issued_by_other_reason)
+       rest_backdating_reason, issued_by_other_reason,
+       maternity_admission_on, birth_on, maternity_discharge_on)
     VALUES (${scene.encounterId}::uuid, ${scene.patientId}::uuid,
             ${row.issuedById ?? scene.attendingId}::uuid,
             ${rest === null ? 'ATTENDANCE' : 'MEDICAL_REST'}::certificate_type,
             ${rest?.from ?? null}::date, ${rest?.to ?? null}::date,
             ${rest !== null},
-            ${rest === null ? null : 'GENERAL_ILLNESS'}::certificate_contingency_type,
+            ${contingency}::certificate_contingency_type,
             ${nextCode()}, ${issuedAt},
-            ${row.backdatingReason ?? null}, ${row.otherReason ?? null})
+            ${row.backdatingReason ?? null}, ${row.otherReason ?? null},
+            ${maternity?.admissionOn ?? null}::date,
+            ${maternity?.birthOn ?? null}::date,
+            ${maternity?.dischargeOn ?? null}::date)
   `;
 }
 
@@ -376,5 +385,87 @@ describe('D-106 los límites de la ventana del reposo, garantizados por la base'
     await expect(insert(prisma, scene, { issuedDaysLater: 20 })).resolves.toBe(
       1,
     );
+  });
+});
+
+describe('D-108 en el reposo de maternidad no rigen los topes de D-106, garantizado por la base', () => {
+  /** Ingresó la víspera del parto y salió dos días después. */
+  const maternityFrom = (birth: ClinicalDate) => ({
+    admissionOn: addDays(birth, -1),
+    birthOn: birth,
+    dischargeOn: addDays(birth, 2),
+  });
+  const REASON_BIRTH = 'Dio a luz en el hospital antes de la atención';
+
+  it('CER-044 la maternidad empieza desde el parto al 5.º día; la enfermedad general igual se rechaza', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const birth = addDays(scene.day, -5);
+    const rest = { from: birth, to: scene.day };
+
+    // Control positivo: maternity from birth, and from admission.
+    await expect(
+      insert(prisma, scene, { rest, maternity: maternityFrom(birth), backdatingReason: REASON_BIRTH }), // prettier-ignore
+    ).resolves.toBe(1);
+    await expect(
+      insert(prisma, scene, {
+        rest: { from: addDays(birth, -1), to: scene.day },
+        maternity: maternityFrom(birth),
+        backdatingReason: REASON_BIRTH,
+      }),
+    ).resolves.toBe(1);
+    await expect(
+      insert(prisma, scene, { rest, backdatingReason: REASON_BIRTH }),
+    ).rejects.toThrow(/medical_certificate_rest_starts_at_most_3_days_before/);
+  });
+
+  it('CER-044 la maternidad no empieza antes del ingreso, y la prenatal conserva los 3 días', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const birth = addDays(scene.day, -5);
+
+    await expect(
+      insert(prisma, scene, {
+        rest: { from: addDays(birth, -2), to: scene.day },
+        maternity: maternityFrom(birth),
+        backdatingReason: REASON_BIRTH,
+      }),
+    ).rejects.toThrow(/medical_certificate_rest_starts_at_most_3_days_before/);
+
+    const prenatal = maternityFrom(addDays(scene.day, 20));
+    await expect(
+      insert(prisma, scene, {
+        rest: { from: addDays(scene.day, -3), to: scene.day },
+        maternity: prenatal,
+        backdatingReason: 'Contracciones desde tres días antes',
+      }),
+    ).resolves.toBe(1);
+    await expect(
+      insert(prisma, scene, {
+        rest: { from: addDays(scene.day, -4), to: scene.day },
+        maternity: prenatal,
+        backdatingReason: 'Contracciones desde cuatro días antes',
+      }),
+    ).rejects.toThrow(/medical_certificate_rest_starts_at_most_3_days_before/);
+  });
+
+  it('CER-045 un reposo de maternidad se emite pasados 8 días de la atención; el general, no', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const twentieth = addDays(scene.day, 20);
+    const rest = { from: twentieth, to: addDays(twentieth, 29) };
+    const REASON_CHAIN = 'Segundo certificado de la licencia de maternidad';
+
+    await expect(
+      insert(prisma, scene, {
+        rest,
+        issuedDaysLater: 20,
+        maternity: maternityFrom(addDays(scene.day, -1)),
+        backdatingReason: REASON_CHAIN,
+      }),
+    ).resolves.toBe(1);
+    await expect(
+      insert(prisma, scene, { rest, issuedDaysLater: 20, backdatingReason: REASON_CHAIN }), // prettier-ignore
+    ).rejects.toThrow(/medical_certificate_rest_issued_within_8_days/);
   });
 });
