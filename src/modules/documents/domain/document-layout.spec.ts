@@ -528,6 +528,13 @@ describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
     expect(text).toContain('4'.repeat(49));
   });
 
+  it('SRI-070 la autorización lleva fecha Y hora, en la de Guayaquil', () => {
+    // 01:05 UTC of the 21st is 20:05 of the 20th in Ecuador: the day changes.
+    expect(wholeText(composeLayout(ride, context, template))).toContain(
+      'FECHA Y HORA DE AUTORIZACIÓN=20/08/2026 20:05:00',
+    );
+  });
+
   it('DOC-077 imprime las banderas fiscales que el establecimiento tiene puestas', () => {
     const text = wholeText(composeLayout(ride, context, template));
     expect(text).toContain('OBLIGADO A LLEVAR CONTABILIDAD=SÍ');

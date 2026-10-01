@@ -1,4 +1,8 @@
-import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
+import {
+  addDays,
+  clinicalDateOf,
+  wallClockOf,
+} from '../../../shared/domain/clinic-time';
 
 import { composeFrame } from './document-frame';
 import {
@@ -33,6 +37,13 @@ import type { Block, DocumentLayout, LabelledValue } from './page-layout';
 function ecuadorianDate(instant: Date): string {
   const [year, month, day] = clinicalDateOf(instant).split('-');
   return `${day}/${month}/${year}`;
+}
+
+/** SRI-070. The authorisation is an instant: date and wall-clock time in Ecuador. */
+function ecuadorianDateTime(instant: Date): string {
+  const time = wallClockOf(instant);
+  const two = (n: number) => String(n).padStart(2, '0');
+  return `${ecuadorianDate(instant)} ${two(time.hour)}:${two(time.minute)}:${two(time.second)}`;
 }
 
 /** `2026-05-11` → `11/05/2026`, for a column that is already a calendar date. */
@@ -536,7 +547,7 @@ export function composeInvoiceLayout(
           value:
             data.authorisedAt === null
               ? unauthorised
-              : ecuadorianDate(data.authorisedAt),
+              : ecuadorianDateTime(data.authorisedAt),
         },
         // SRI-070. The environment is the one written INSIDE the key (its 24th
         // digit), never a constant: a test voucher printed «PRODUCCIÓN» claims
