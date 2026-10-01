@@ -75,7 +75,8 @@ async function main() {
 
   // OR-032. Every site belongs to an establishment: the one the clinic
   // registered, or the development one of `seed-organization.mts` when the
-  // database has none yet. Never a site without it.
+  // database has none yet. Never a site without it. With several, the oldest
+  // (`uuidv7` orders by creation): a development seed has one clinic.
   const establishment =
     (await prisma.establishment.findFirst({
       select: { id: true },

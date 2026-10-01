@@ -161,17 +161,16 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
       issuer: {
         // The same precedence the RIDE prints (DOC-077): the site's own RUC,
         // else the establishment's; the legal name is the establishment's.
-        ruc: row.site.ruc ?? establishment?.ruc ?? null,
-        legalName: establishment?.legalName ?? null,
-        headOfficeAddress: establishment?.headOfficeAddress ?? null,
+        // OR-032: every site has its establishment.
+        ruc: row.site.ruc ?? establishment.ruc,
+        legalName: establishment.legalName,
+        headOfficeAddress: establishment.headOfficeAddress,
         establishmentAddress: row.site.addressLine,
-        keepsAccounting: establishment?.keepsAccounting ?? false,
-        specialTaxpayerResolution:
-          establishment?.specialTaxpayerResolution ?? null,
-        withholdingAgentResolution:
-          establishment?.withholdingAgentResolution ?? null,
-        rimpeRegime: establishment?.rimpeRegime ?? 'NONE',
-        fiscalProfileDeclared: Boolean(establishment?.fiscalProfileDeclaredAt),
+        keepsAccounting: establishment.keepsAccounting,
+        specialTaxpayerResolution: establishment.specialTaxpayerResolution,
+        withholdingAgentResolution: establishment.withholdingAgentResolution,
+        rimpeRegime: establishment.rimpeRegime,
+        fiscalProfileDeclared: establishment.fiscalProfileDeclaredAt !== null,
       },
       buyer: {
         identificationType: row.buyerIdentificationType,

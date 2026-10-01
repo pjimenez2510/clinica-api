@@ -36,11 +36,23 @@
 ALTER TABLE "medical_certificate"
   ADD COLUMN IF NOT EXISTS "issued_by_other_reason" TEXT;
 
+-- Los dos motivos, con el mínimo del servicio (diez caracteres sin los
+-- espacios de los extremos), también para un import o un `psql`: «x» no dice
+-- nada. El nombre se conserva para el de retroactividad, que ya existía como
+-- «no en blanco» y ahora pide lo mismo que el servicio.
 ALTER TABLE "medical_certificate"
   DROP CONSTRAINT IF EXISTS "medical_certificate_issuer_reason_not_blank";
 ALTER TABLE "medical_certificate"
   ADD CONSTRAINT "medical_certificate_issuer_reason_not_blank" CHECK (
-    "issued_by_other_reason" IS NULL OR btrim("issued_by_other_reason") <> ''
+    "issued_by_other_reason" IS NULL
+    OR char_length(btrim("issued_by_other_reason")) >= 10
+  );
+ALTER TABLE "medical_certificate"
+  DROP CONSTRAINT IF EXISTS "medical_certificate_backdating_reason_not_blank";
+ALTER TABLE "medical_certificate"
+  ADD CONSTRAINT "medical_certificate_backdating_reason_not_blank" CHECK (
+    "rest_backdating_reason" IS NULL
+    OR char_length(btrim("rest_backdating_reason")) >= 10
   );
 
 CREATE OR REPLACE FUNCTION medical_certificate_issue_rules()

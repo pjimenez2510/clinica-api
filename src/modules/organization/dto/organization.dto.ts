@@ -235,7 +235,8 @@ export class UpdateSiteDto extends createZodDto(updateSiteSchema) {}
  */
 export const siteSchema = z.object({
   id: z.uuid(),
-  establishmentId: z.uuid().nullable(),
+  /** OR-032. Never null: every site belongs to the establishment. */
+  establishmentId: z.uuid(),
   mspUnicode: z.string(),
   name: z.string(),
   /** Present only for a caller holding `site:manage`. See above. */

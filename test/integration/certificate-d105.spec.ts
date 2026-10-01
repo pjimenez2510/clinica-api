@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   addDays,
+  atWallClock,
   clinicalDateOf,
+  WallClockTime,
   type ClinicalDate,
 } from '../../src/shared/domain/clinic-time';
 
@@ -70,6 +72,8 @@ interface Row {
   issuedById?: string;
   /** Whole days after the attention's instant; 0 is the same instant. */
   issuedDaysLater?: number;
+  /** The exact instant of issue, when whole days are not the point. */
+  issuedAt?: Date;
   rest?: { from: ClinicalDate; to: ClinicalDate } | null;
   backdatingReason?: string | null;
   otherReason?: string | null;
@@ -78,9 +82,9 @@ interface Row {
 /** One certificate by raw SQL: no repository, no service. */
 function insert(prisma: PrismaClient, scene: Scene, row: Row = {}) {
   const rest = row.rest === undefined ? null : row.rest;
-  const issuedAt = new Date(
-    scene.startedAt.getTime() + (row.issuedDaysLater ?? 0) * DAY_MS,
-  );
+  const issuedAt =
+    row.issuedAt ??
+    new Date(scene.startedAt.getTime() + (row.issuedDaysLater ?? 0) * DAY_MS);
   return prisma.$executeRaw`
     INSERT INTO medical_certificate
       (encounter_id, patient_id, issued_by_id, type, rest_from, rest_to,
@@ -116,6 +120,29 @@ describe('CER-039 el 117 lo emite el profesional de la atención; un tercero, co
     ).rejects.toThrow(/medical_certificate_issuer_reason_required/);
     await expect(
       insert(prisma, scene, { issuedById: scene.otherId, otherReason: REASON }),
+    ).resolves.toBe(1);
+  });
+
+  it('CER-039 CER-030 un motivo de menos de diez caracteres tampoco lo admite la base', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+
+    await expect(
+      insert(prisma, scene, { issuedById: scene.otherId, otherReason: 'x' }),
+    ).rejects.toThrow(/medical_certificate_issuer_reason_not_blank/);
+    await expect(
+      insert(prisma, scene, {
+        rest: { from: scene.day, to: scene.day },
+        issuedDaysLater: 1,
+        backdatingReason: 'tarde',
+      }),
+    ).rejects.toThrow(/medical_certificate_backdating_reason_not_blank/);
+    // Control positivo: ten characters, the service's own minimum.
+    await expect(
+      insert(prisma, scene, {
+        issuedById: scene.otherId,
+        otherReason: 'Diez letra',
+      }),
     ).resolves.toBe(1);
   });
 
@@ -215,5 +242,59 @@ describe('CER-030 el reposo pide motivo si empieza antes de la atención o se em
     await expect(insert(prisma, scene, { issuedDaysLater: 3 })).resolves.toBe(
       1,
     );
+  });
+});
+
+describe('CER-030 CER-041 el disparador cuenta los días en America/Guayaquil, no en UTC', () => {
+  it('CER-041 CER-030 una atención a las 20:00 de Ecuador (ya el día siguiente en UTC) se juzga por su día ecuatoriano', async () => {
+    const prisma = db();
+    const base = await aScene(prisma);
+    // 20:00 in Ecuador is 01:00 UTC of the following day: a bare `::date`
+    // in UTC would move both the attention and the issue one day ahead.
+    const evening = atWallClock(base.day, WallClockTime.of(20, 0));
+    await prisma.encounter.update({
+      where: { id: base.encounterId },
+      data: { startedAt: evening },
+    });
+    const scene = { ...base, startedAt: evening };
+
+    // Control positivo: issued that evening, from that Ecuadorian day, with
+    // no reason. In UTC the rest would start «before the attention».
+    await expect(
+      insert(prisma, scene, { rest: { from: base.day, to: base.day } }),
+    ).resolves.toBe(1);
+    // And the latest start is the Ecuadorian next day, not the one after.
+    await expect(
+      insert(prisma, scene, {
+        rest: { from: addDays(base.day, 2), to: addDays(base.day, 2) },
+      }),
+    ).rejects.toThrow(/medical_certificate_rest_starts_by_next_day/);
+  });
+
+  it('CER-030 una atención a las 23:00 de Ecuador: emitido a las 23:30 no pide motivo, a las 00:10 del día siguiente sí', async () => {
+    const prisma = db();
+    const base = await aScene(prisma);
+    const night = atWallClock(base.day, WallClockTime.of(23, 0));
+    await prisma.encounter.update({
+      where: { id: base.encounterId },
+      data: { startedAt: night },
+    });
+    const scene = { ...base, startedAt: night };
+    const rest = { from: addDays(base.day, 1), to: addDays(base.day, 1) };
+
+    // Control positivo: 23:30 is still the attention's Ecuadorian day.
+    await expect(
+      insert(prisma, scene, {
+        rest,
+        issuedAt: atWallClock(base.day, WallClockTime.of(23, 30)),
+      }),
+    ).resolves.toBe(1);
+    // 00:10 is the next Ecuadorian day: a late issue, which needs its reason.
+    await expect(
+      insert(prisma, scene, {
+        rest,
+        issuedAt: atWallClock(addDays(base.day, 1), WallClockTime.of(0, 10)),
+      }),
+    ).rejects.toThrow(/medical_certificate_backdating_reason_required/);
   });
 });

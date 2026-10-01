@@ -46,7 +46,11 @@ registerConstraintMeanings({
     field: 'issuedByOtherReason',
     message: 'Explique por qué emite el certificado de una atención que no registró', // prettier-ignore
   },
-  /** CER-039. The attending practitioner keeps no third-party reason. */
+  /**
+   * CER-039. The attending practitioner keeps no third-party reason.
+   * UNREACHABLE through the service, which drops the reason when the issuer
+   * attended; it answers an import or a `psql`, and points at the field.
+   */
   medical_certificate_issuer_reason_only_for_others: {
     code: 'CERTIFICATE_ISSUER_REASON_REQUIRED',
     field: 'issuedByOtherReason',
@@ -70,7 +74,10 @@ registerConstraintMeanings({
     field: 'backdatingReason',
     message: 'Explique por qué el reposo empieza antes del día de la atención o se emite después de ese día', // prettier-ignore
   },
-  /** CER-030. A rest of the day, issued the day, keeps no reason. */
+  /**
+   * CER-030. A rest of the day, issued the day, keeps no reason.
+   * UNREACHABLE through the service, which drops it (`backdatingReasonOf`).
+   */
   medical_certificate_backdating_reason_only_when_late: {
     code: 'CERTIFICATE_BACKDATING_REASON_REQUIRED',
     field: 'backdatingReason',

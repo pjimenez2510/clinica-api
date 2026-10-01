@@ -19,6 +19,14 @@
 -- LAS HUÉRFANAS SE ENLAZAN SÓLO SI NO HAY DUDA: con exactamente un
 -- establecimiento, que es la clínica. Con cero o con varios, la migración
 -- se detiene y lo dice, en vez de inventar a qué clínica pertenece una sede.
+--
+-- SI SE DETIENE en una base de desarrollo (sedes sembradas sin
+-- establecimiento y ninguno registrado), PostgreSQL deshace el script entero
+-- pero `_prisma_migrations` la deja marcada como fallida. La salida:
+--   pnpm db:seed:organization        (registra el establecimiento de desarrollo)
+--   pnpm prisma migrate resolve --rolled-back 20261001090100_site_establishment_required
+--   pnpm db:deploy
+-- o `pnpm db:reset`, que la reconstruye de cero.
 
 UPDATE "site"
    SET "establishment_id" = (SELECT "id" FROM "establishment")
