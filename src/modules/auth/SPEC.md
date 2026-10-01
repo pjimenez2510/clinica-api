@@ -49,7 +49,7 @@ credencial del MSP.
 Inicio de sesión con Argon2id, segundo factor TOTP, rotación de refresco con
 detección de reutilización, bloqueo por intentos y cierre de sesión.
 
-**Cubre:** AU-001 a AU-012, AU-039 a AU-041, AU-043, AU-044.
+**Cubre:** AU-001 a AU-012, AU-039 a AU-041, AU-043, AU-044, AU-046.
 
 **Solo servidor:** AU-001, AU-003, AU-012, AU-039, AU-041, AU-043. Cómo se hashea una
 contraseña no se ve; el bloqueo por intentos responde a la pantalla lo MISMO
@@ -409,13 +409,17 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   > intentos por minuto por IP no cambia aquí; queda anotado en la segunda
   > revisión de D-065, en `DECISIONES-PENDIENTES.md`.
   >
-  > **LA HORA ES FIJA.** No mira el horario de cada sede: una con atención de
-  > madrugada cortaría en consulta. Queda para el autor en D-094.
+  > **LA HORA ES FIJA** (D-094, punto 4, decidido por el autor): no mira el
+  > horario de cada sede, mientras ninguna atienda de madrugada. Si alguna lo
+  > hace, la hora pasa a ser configurable por instalación.
 - **AU-044** — MIENTRAS el diálogo de volver a entrar de AU-040 esté abierto,
   CUANDO lleve **15 minutos** abierto sin que la misma persona haya vuelto a
   entrar, la interfaz DEBERÁ terminar la sesión, quitar de la pantalla todo lo
   cargado para esa persona y llevarla a iniciar sesión con el aviso «Su sesión
-  se cerró por seguridad. Lo que no estaba guardado se perdió.».
+  se cerró por seguridad. Lo que no estaba guardado se perdió.». Mientras
+  esté abierto, el diálogo DEBERÁ decir «No se ha perdido nada todavía. Tiene
+  15 minutos para volver a entrar; después, por seguridad, se cerrará la
+  pantalla.», sin cuenta atrás.
 
   > **DECIDIDO POR EL AUTOR** (D-065, segunda revisión, 30-09-2026; el texto,
   > el mismo día). Detrás del diálogo la pantalla del paciente sigue visible,
@@ -437,18 +441,46 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   > **SÓLO INTERFAZ.** La familia ya había caducado en el servidor; lo que
   > queda abierto es la pantalla.
   >
-  > **LO QUE AU-044 NO CUBRE.** El diálogo lo abre una petición que recibe
-  > `SESSION_EXPIRED`. Una pantalla que no consulta nada por sí sola —una
-  > atención abierta en un consultorio vacío— no abre el diálogo hasta que
-  > alguien la toque, así que el límite no empieza a contar. Cubrirlo exige
-  > que la interfaz conozca la caducidad de la familia (cambio de contrato) o
-  > un bloqueo por inactividad: decisión del autor, D-094.
+  > **LA FRASE DEL DIÁLOGO** (D-094, punto 2): antes decía «No se ha perdido
+  > nada de lo que tiene en pantalla», y a los 15 minutos sí se pierde.
+  >
+  > **LA PANTALLA QUE NO PIDE NADA** la cubre AU-046: el diálogo se abre a la
+  > hora de la caducidad aunque ninguna petición la descubra.
   >
   > **UNA ENTRADA EN VUELO AL CUMPLIRSE LOS 15 MINUTOS.** Si la contraseña se
   > envió justo antes y la respuesta llega después, la pantalla ya se limpió;
   > la sesión nueva —de la misma cuenta, que acreditó su contraseña— queda y
   > la recarga entra con ella. Lo escrito se perdió igualmente, como dice el
   > aviso.
+- **AU-046** — CUANDO se inicie sesión o se renueve, el sistema DEBERÁ
+  decir en la respuesta cuántos segundos le quedan a la familia de sesión
+  (`sessionExpiresIn`). CUANDO, con la pantalla abierta, el reloj de pared
+  alcance ese instante, la interfaz DEBERÁ intentar renovar y, si la sesión
+  caducó, abrir el diálogo de AU-040 —y con él el límite de AU-044— aunque la
+  pantalla no haya hecho ninguna petición. CUANDO en una pestaña la misma
+  persona vuelva a entrar, o la sesión termine, las demás pestañas del mismo
+  navegador DEBERÁN enterarse: un diálogo abierto se cierra con la sesión
+  renovada, o la pestaña termina con el mismo aviso.
+
+  > **DECIDIDO POR EL AUTOR** (D-094, punto 1, opción B, 30-09-2026). Una
+  > atención abierta en un consultorio vacío no consulta nada: a las 03:00 la
+  > sesión caducaba en el servidor y la historia seguía a la vista, sin
+  > desenfocar, hasta que alguien tocara algo. Con el corte de madrugada era
+  > justo el caso más probable.
+  >
+  > **SEGUNDOS QUE QUEDAN, NO UN INSTANTE.** Un instante obligaría a comparar
+  > el reloj del servidor con el del equipo de la clínica, que puede ir
+  > minutos desviado. Los segundos se suman al reloj del navegador al recibir
+  > la respuesta: el desvío no cuenta, sólo la latencia de esa respuesta.
+  >
+  > **PRIMERO RENOVAR.** Otra pestaña puede haber vuelto a entrar ya: su
+  > familia es nueva y vive más. Si la renovación sale bien, no se pregunta
+  > nada; si dice `SESSION_EXPIRED`, se abre el diálogo como si lo hubiera
+  > descubierto una petición.
+  >
+  > **LAS PESTAÑAS SE AVISAN** por un `BroadcastChannel` del mismo origen.
+  > Sólo viaja qué pasó y, al terminar, el código del aviso, como en la URL de
+  > `/acceso`: nunca el token ni datos del paciente.
 - **AU-005** — El sistema DEBERÁ permitir matricular un segundo factor TOTP con
   códigos de respaldo, y DEBERÁ cifrar el secreto en la aplicación (ADR-008 §3).
 
@@ -654,6 +686,9 @@ enlace que no sirve y con un correo que no sale.
   `prescription:write` o `record:write` y NO lleve `background:write`, el
   sistema DEBERÁ advertirlo sin impedirlo, con «Este rol receta o escribe en
   la historia clínica pero no puede registrar alergias ni antecedentes. Puede
+  guardarlo igualmente.»; CUANDO lleve `nursing:write` sin `background:write`
+  (y ninguno de los dos anteriores), con «Este rol registra los formularios de
+  enfermería pero no puede registrar alergias ni antecedentes. Puede
   guardarlo igualmente.»; y la descripción de `background:write` en el
   catálogo DEBERÁ ser «Registrar alergias y antecedentes del paciente. Sin él
   no se registran alergias ni antecedentes».
@@ -672,10 +707,11 @@ enlace que no sirve y con un correo que no sale.
   >
   > **`record:sign` SOLO NO AVISA.** Firmar no escribe: el hueco es de quien
   > receta o escribe la nota, que es quien está delante de la alergia.
-  > `nursing:write` tampoco, **por ahora**: D-071 nombra el caso de un rol
-  > propio de enfermería sin el registro de alergias y su decisión no lo
-  > resuelve. Si también debe advertir lo decide el autor (D-094); entretanto,
-  > la descripción del permiso lo dice.
+  > **ENFERMERÍA TAMBIÉN** (D-094, punto 3, con su propia frase): la enfermera
+  > de preconsulta de un rol propio sin el permiso recibe un 403 al anotar la
+  > alergia, y que llegue al médico depende de que se lo diga. UNA advertencia
+  > por rol: si además receta o escribe, basta la primera, que ya nombra el
+  > hueco.
 
 - **AU-038** — CUANDO se fijen los roles de una cuenta, el sistema NO DEBERÁ
   admitir ninguna concesión cuyo alcance esté fuera del alcance de quien llama
