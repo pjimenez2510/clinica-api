@@ -98,7 +98,11 @@ export class VoucherDispatchService {
 
     const startedAt = this.clock();
     const answer = await this.sri.authorise(voucher.accessKey);
-    const transition = afterAuthorisation(answer, voucher.attemptCount + 1);
+    const transition = afterAuthorisation(
+      answer,
+      voucher.attemptCount + 1,
+      voucher.signedAt,
+    );
 
     await this.apply(
       voucher,

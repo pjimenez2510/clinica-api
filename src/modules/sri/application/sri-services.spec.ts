@@ -114,6 +114,7 @@ function voucher(overrides: Partial<VoucherRecord> = {}): VoucherRecord {
     blockedReason: null,
     unsignedXml: '<factura id="comprobante"/>',
     signedXml: null,
+    signedAt: null,
     attemptCount: 0,
     nextAttemptAt: null,
     authorisedXml: null,

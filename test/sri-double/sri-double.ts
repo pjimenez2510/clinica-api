@@ -112,15 +112,44 @@ function guayaquilTimestamp(instant: Date) {
   return shifted.toISOString().replace('Z', '-05:00');
 }
 
+function refusalXml(at: Date, signedXml: string) {
+  return (
+    '<autorizacion><estado>RECHAZADO</estado>' +
+    `<fechaAutorizacion>${guayaquilTimestamp(at)}</fechaAutorizacion>` +
+    '<ambiente>PRUEBAS</ambiente>' +
+    `<comprobante><![CDATA[${signedXml}]]></comprobante>` +
+    '<mensajes>' +
+    messageXml(
+      '39',
+      'FIRMA INVALIDA',
+      'ERROR',
+      'La firma es invalida [doble local del SRI]',
+    ) +
+    '</mensajes></autorizacion>'
+  );
+}
+
+/**
+ * The SRI answers with EVERY authorisation it holds for the key: a voucher
+ * refused and re-sent comes back with its old refusal next to whatever the
+ * new one is — including nothing yet. `history` is those old refusals.
+ */
 function authorisation(
   accessKey: string,
   outcome: 'AUTORIZADO' | 'RECHAZADO' | 'NONE',
   signedXml: string | null,
+  history: readonly { at: Date; signedXml: string }[] = [],
 ) {
+  const past = history.map((r) => refusalXml(r.at, r.signedXml)).join('');
+  const count = history.length + (outcome === 'NONE' ? 0 : 1);
   const authorisations =
     outcome === 'NONE'
-      ? '<autorizaciones/>'
-      : '<autorizaciones><autorizacion>' +
+      ? past === ''
+        ? '<autorizaciones/>'
+        : `<autorizaciones>${past}</autorizaciones>`
+      : '<autorizaciones>' +
+        past +
+        '<autorizacion>' +
         `<estado>${outcome}</estado>` +
         (outcome === 'AUTORIZADO'
           ? `<numeroAutorizacion>${accessKey}</numeroAutorizacion>`
@@ -147,7 +176,7 @@ function authorisation(
     '<ns2:autorizacionComprobanteResponse xmlns:ns2="http://ec.gob.sri.ws.autorizacion">' +
       '<RespuestaAutorizacionComprobante>' +
       `<claveAccesoConsultada>${accessKey}</claveAccesoConsultada>` +
-      `<numeroComprobantes>${outcome === 'NONE' ? 0 : 1}</numeroComprobantes>` +
+      `<numeroComprobantes>${count}</numeroComprobantes>` +
       authorisations +
       '</RespuestaAutorizacionComprobante></ns2:autorizacionComprobanteResponse>',
   );
@@ -173,6 +202,7 @@ export async function startSriDouble(
   options: { port?: number } = {},
 ): Promise<SriDouble> {
   const scenarios = new Map<string, DoubleScenario>();
+  const refusals = new Map<string, { at: Date; signedXml: string }[]>();
   const received = new Map<string, string>();
   const polls = new Map<string, number>();
   const calls: DoubleCall[] = [];
@@ -311,17 +341,33 @@ export async function startSriDouble(
         const voucher = received.get(accessKey) ?? null;
         if (scenario === 'GARBAGE')
           return reply(200, '<html>mantenimiento</html>', 'text/html');
+        const history = refusals.get(accessKey) ?? [];
         if (!voucher || scenario === 'PENDING')
-          return reply(200, authorisation(accessKey, 'NONE', null));
-        if (scenario === 'NOT_AUTHORISED')
-          return reply(200, authorisation(accessKey, 'RECHAZADO', voucher));
+          return reply(200, authorisation(accessKey, 'NONE', null, history));
+        if (scenario === 'NOT_AUTHORISED') {
+          const answer = authorisation(
+            accessKey,
+            'RECHAZADO',
+            voucher,
+            history,
+          );
+          // From now on the SRI holds this refusal for the key.
+          refusals.set(accessKey, [
+            ...history,
+            { at: new Date(), signedXml: voucher },
+          ]);
+          return reply(200, answer);
+        }
         if (scenario === 'IN_PROCESS_70') {
           const seen = (polls.get(accessKey) ?? 0) + 1;
           polls.set(accessKey, seen);
           if (seen <= pendingPolls)
-            return reply(200, authorisation(accessKey, 'NONE', null));
+            return reply(200, authorisation(accessKey, 'NONE', null, history));
         }
-        return reply(200, authorisation(accessKey, 'AUTORIZADO', voucher));
+        return reply(
+          200,
+          authorisation(accessKey, 'AUTORIZADO', voucher, history),
+        );
       }
 
       reply(404, 'not found', 'text/plain');
@@ -362,6 +408,7 @@ export async function startSriDouble(
       scenarios.clear();
       received.clear();
       polls.clear();
+      refusals.clear();
       calls.length = 0;
       fallback = 'AUTHORISED';
       down = false;

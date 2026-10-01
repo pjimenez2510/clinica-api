@@ -63,7 +63,12 @@ export type AuthorisationAnswer =
       voucherXml: string;
       messages: SriMessage[];
     }
-  | { kind: 'NO AUTORIZADO'; messages: SriMessage[] }
+  | {
+      kind: 'NO AUTORIZADO';
+      /** `fechaAutorizacion` of the refusal; `null` if it did not parse. */
+      decidedAt: Date | null;
+      messages: SriMessage[];
+    }
   | { kind: 'PENDING' }
   | { kind: 'TRANSPORT_FAILURE'; error: string };
 
@@ -114,7 +119,13 @@ export function afterReception(
         },
       };
     case 'DEVUELTA': {
-      const codes = new Set(answer.messages.map((m) => m.identifier));
+      // A warning or an informative message beside a 43 does not make it a
+      // rejection: decide on the errors, when the SRI marked any.
+      const errors = answer.messages.filter(
+        (m) => m.type.toUpperCase() === 'ERROR',
+      );
+      const decisive = errors.length > 0 ? errors : answer.messages;
+      const codes = new Set(decisive.map((m) => m.identifier));
       const onlyAlreadySent =
         codes.size > 0 &&
         [...codes].every((code) => ALREADY_SENT_CODES.has(code));
@@ -156,7 +167,21 @@ export function afterReception(
 export function afterAuthorisation(
   answer: AuthorisationAnswer,
   attempt: number,
+  /**
+   * When the voucher now at the SRI was signed. A refusal decided before it
+   * is the one that led a person to re-send (SRI-058): the SRI keeps every
+   * authorisation of the key, so it comes back next to the new answer.
+   */
+  signedAt: Date | null = null,
 ): VoucherTransition {
+  if (
+    answer.kind === 'NO AUTORIZADO' &&
+    answer.decidedAt !== null &&
+    signedAt !== null &&
+    answer.decidedAt.getTime() < signedAt.getTime()
+  ) {
+    return afterAuthorisation({ kind: 'PENDING' }, attempt);
+  }
   switch (answer.kind) {
     case 'AUTORIZADO':
       return {

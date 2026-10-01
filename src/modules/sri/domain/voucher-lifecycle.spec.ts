@@ -40,6 +40,19 @@ describe('SRI-043 a SRI-046, SRI-050 lo que hace cada respuesta de recepción', 
     expect(transition.next?.step).toBe('AUTHORISE');
   });
 
+  it('SRI-044 un aviso o un informativo junto al 43 no lo convierten en devolución', () => {
+    const transition = afterReception(
+      'SIGNED',
+      {
+        kind: 'DEVUELTA',
+        messages: [message('43'), message('60', 'ADVERTENCIA')],
+      },
+      1,
+    );
+    expect(transition.status).toBe('RECEIVED');
+    expect(transition.invoiceStatus).toBeNull();
+  });
+
   it('SRI-045 DEVUELTA con 70 consulta con espera creciente y nunca reenvía', () => {
     const transition = afterReception(
       'SIGNED',
@@ -109,7 +122,11 @@ describe('SRI-047 a SRI-050 lo que hace cada respuesta de autorización', () => 
   it('SRI-048 NO AUTORIZADO deja el comprobante NOT_AUTHORISED y la factura REJECTED', () => {
     expect(
       afterAuthorisation(
-        { kind: 'NO AUTORIZADO', messages: [message('39')] },
+        {
+          kind: 'NO AUTORIZADO',
+          decidedAt: new Date(),
+          messages: [message('39')],
+        },
         1,
       ),
     ).toMatchObject({
@@ -117,6 +134,31 @@ describe('SRI-047 a SRI-050 lo que hace cada respuesta de autorización', () => 
       invoiceStatus: 'REJECTED',
       next: null,
     });
+  });
+
+  it('SRI-048 un NO AUTORIZADO anterior a la última firma es el de antes del reenvío: sigue esperando', () => {
+    const signedAt = new Date();
+    const before = new Date(signedAt.getTime() - 60_000);
+    const transition = afterAuthorisation(
+      { kind: 'NO AUTORIZADO', decidedAt: before, messages: [message('39')] },
+      1,
+      signedAt,
+    );
+    expect(transition).toMatchObject({
+      status: 'RECEIVED',
+      invoiceStatus: null,
+      next: { step: 'AUTHORISE', delaySeconds: 30 },
+    });
+
+    // Control: the same refusal decided AFTER the signature is the answer.
+    const after = new Date(signedAt.getTime() + 60_000);
+    expect(
+      afterAuthorisation(
+        { kind: 'NO AUTORIZADO', decidedAt: after, messages: [message('39')] },
+        1,
+        signedAt,
+      ).status,
+    ).toBe('NOT_AUTHORISED');
   });
 
   it('SRI-049 SRI-050 sin respuesta todavía, o sin conexión, vuelve a consultar y nunca reenvía', () => {

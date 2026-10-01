@@ -54,6 +54,8 @@ export interface VoucherRecord {
   blockedReason: BlockedReason | null;
   unsignedXml: string;
   signedXml: string | null;
+  /** SRI-048. When the voucher now at the SRI was signed. */
+  signedAt: Date | null;
   attemptCount: number;
   nextAttemptAt: Date | null;
   authorisedXml: string | null;

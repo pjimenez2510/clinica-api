@@ -175,11 +175,33 @@ export class FetchSriWebService implements SriWebService {
           messages: messagesIn(authorised),
         };
       }
-      const refused = authorisations.find((a) =>
-        ['NO AUTORIZADO', 'RECHAZADO'].includes(text(child(a, 'estado')) ?? ''),
-      );
-      if (refused)
-        return { kind: 'NO AUTORIZADO', messages: messagesIn(refused) };
+      // SRI-048. Of several refusals, the most recent; its date lets the
+      // lifecycle tell an old one, from before a re-send, from the answer.
+      const refusals = authorisations
+        .filter((a) =>
+          ['NO AUTORIZADO', 'RECHAZADO'].includes(
+            text(child(a, 'estado')) ?? '',
+          ),
+        )
+        .map((a) => {
+          const at = new Date(text(child(a, 'fechaAutorizacion')) ?? '');
+          return {
+            node: a,
+            decidedAt: Number.isNaN(at.getTime()) ? null : at,
+          };
+        })
+        .sort(
+          (x, y) =>
+            (y.decidedAt?.getTime() ?? 0) - (x.decidedAt?.getTime() ?? 0),
+        );
+      const refused = refusals[0];
+      if (refused) {
+        return {
+          kind: 'NO AUTORIZADO',
+          decidedAt: refused.decidedAt,
+          messages: messagesIn(refused.node),
+        };
+      }
       return { kind: 'PENDING' };
     } catch (error) {
       return { kind: 'TRANSPORT_FAILURE', error: describe(error) };

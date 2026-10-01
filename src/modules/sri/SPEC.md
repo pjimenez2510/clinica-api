@@ -416,7 +416,9 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
 - **SRI-043** — CUANDO la recepción conteste `RECIBIDA`, el sistema DEBERÁ pasar
   el comprobante a `RECEIVED` y programar la consulta de autorización.
 - **SRI-044** — CUANDO la recepción conteste `DEVUELTA` con el mensaje **43**
-  (clave de acceso registrada), el sistema DEBERÁ tratarlo como recibido:
+  (clave de acceso registrada) —contando solo los mensajes de tipo `ERROR` si
+  los hay, de modo que una `ADVERTENCIA` o un `INFORMATIVO` al lado no lo
+  cambien—, el sistema DEBERÁ tratarlo como recibido:
   pasarlo a `RECEIVED` y consultar la autorización **con la misma clave**.
   > ADR-004 §3: es lo que ocurre cuando un trabajo se reintenta tras un timeout
   > de red que llegó después de que el SRI lo guardara.
@@ -438,7 +440,12 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
   cliente (SRI-072).
 - **SRI-048** — CUANDO la autorización conteste `NO AUTORIZADO`, el sistema
   DEBERÁ pasar el comprobante a `NOT_AUTHORISED`, la factura a `REJECTED`, y
-  guardar sus mensajes.
+  guardar sus mensajes. Entre varios rechazos de la misma clave DEBERÁ tomar el
+  más reciente, y SI su `fechaAutorizacion` es anterior a la firma del
+  comprobante que está en el SRI ENTONCES DEBERÁ tratarlo como SRI-049.
+  > Revisión del 01-10-2026: el SRI devuelve todas las autorizaciones de la
+  > clave; tras reenviar un no autorizado (SRI-058), su rechazo antiguo volvía a
+  > rechazar la factura mientras el nuevo seguía en proceso.
 - **SRI-049** — CUANDO la autorización conteste sin ningún comprobante
   (`numeroComprobantes = 0`) o con un estado que no sea ninguno de los dos, el
   sistema DEBERÁ mantenerlo en `RECEIVED` y volver a consultar con espera

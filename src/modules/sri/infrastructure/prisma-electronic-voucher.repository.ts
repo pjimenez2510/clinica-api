@@ -32,6 +32,7 @@ const VOUCHER_SELECT = {
   blockedReason: true,
   unsignedXml: true,
   signedXml: true,
+  signedAt: true,
   attemptCount: true,
   nextAttemptAt: true,
   authorisedXml: true,

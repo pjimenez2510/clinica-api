@@ -416,6 +416,41 @@ describe('SRI-043 a SRI-052 cada respuesta del SRI, contra el doble', () => {
     expect((await invoiceRow(invoice.id)).status).toBe('REJECTED');
   });
 
+  it('SRI-048 SRI-058 reenviado un no autorizado, su rechazo antiguo no vuelve a rechazarlo: espera, y se autoriza', async () => {
+    const { invoice, voucher } = await aSignedVoucher();
+    double.setScenario(voucher.accessKey, 'NOT_AUTHORISED');
+    await dispatch.run('SEND', voucher.id);
+    await dispatch.run('AUTHORISE', voucher.id);
+    expect((await voucherOf(invoice.id)).status).toBe('NOT_AUTHORISED');
+
+    // A person re-sends it (SRI-058): same key, signed again.
+    const repository = new PrismaElectronicVoucherRepository(
+      prisma as unknown as PrismaService,
+    );
+    const record = (await repository.findById(voucher.id))!;
+    expect(
+      await repository.reopen(
+        voucher.id,
+        (await preparation.recompose(record))!,
+      ),
+    ).toBe(true);
+    await preparation.sign({ ...record, status: 'PREPARED', signedXml: null });
+
+    // The SRI has not decided the new one yet: it answers with the old
+    // refusal only. The voucher keeps waiting; the invoice is not REJECTED.
+    double.setScenario(voucher.accessKey, 'PENDING');
+    await dispatch.run('SEND', voucher.id);
+    await dispatch.run('AUTHORISE', voucher.id);
+    expect((await voucherOf(invoice.id)).status).toBe('RECEIVED');
+    expect((await invoiceRow(invoice.id)).status).toBe('ISSUED');
+
+    // Then it authorises it, with the old refusal still in the list.
+    double.setScenario(voucher.accessKey, 'AUTHORISED');
+    await dispatch.run('AUTHORISE', voucher.id);
+    expect((await voucherOf(invoice.id)).status).toBe('AUTHORISED');
+    expect((await invoiceRow(invoice.id)).status).toBe('AUTHORISED');
+  });
+
   it('SRI-050 SRI-052 SRI caído: el intento queda como fallo, el estado no cambia y se programa con espera; al volver, se recibe', async () => {
     const { invoice, voucher } = await aSignedVoucher();
     double.setDown(true);
