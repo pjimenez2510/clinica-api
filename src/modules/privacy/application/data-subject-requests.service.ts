@@ -1,5 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 
+import {
+  ACCESS_AUDIT_RECORDER,
+  type AccessAuditRecorder,
+} from '../../../shared/audit/access-audit.port';
 import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
 import { PatientMergedError } from '../../../shared/domain/errors/patient-merged.error';
 import { EXPORT_OMISSIONS, EXPORTABLE_RIGHTS } from '../domain/data-export';
@@ -45,6 +49,8 @@ export class DataSubjectRequestsService {
   constructor(
     @Inject(DATA_SUBJECT_REQUEST_REPOSITORY)
     private readonly requests: DataSubjectRequestRepository,
+    @Inject(ACCESS_AUDIT_RECORDER)
+    private readonly audit: AccessAuditRecorder,
   ) {}
 
   /** PD-030, PD-031, PD-032, PD-037. */
@@ -59,13 +65,12 @@ export class DataSubjectRequestsService {
     requester: Requester,
     now: Date = new Date(),
   ): Promise<DataRequestEntry> {
-    const receivedAt = input.receivedAt ?? now;
-    if (receivedAt.getTime() > now.getTime()) {
+    if (input.receivedAt && input.receivedAt.getTime() > now.getTime()) {
       throw new DataRequestReceivedInFutureError();
     }
     await this.assertActiveChart(input.patientId);
 
-    const receivedOn = clinicalDateOf(receivedAt);
+    const receivedOn = clinicalDateOf(input.receivedAt ?? now);
     const holidays = await this.requests.clinicWideHolidays(
       receivedOn,
       addDays(receivedOn, DUE_DATE_HORIZON_DAYS),
@@ -73,7 +78,7 @@ export class DataSubjectRequestsService {
     const dueOn = legalDueDate(input.right, receivedOn, holidays);
 
     const created = await this.requests.register(
-      { ...input, receivedAt, dueOn },
+      { ...input, dueOn },
       requester,
     );
     return this.entry(created, now);
@@ -100,11 +105,23 @@ export class DataSubjectRequestsService {
   /** PD-036. */
   async requestsOf(
     patientId: string,
+    requester: Requester,
     now: Date = new Date(),
   ): Promise<DataRequestEntry[]> {
     const chart = await this.requests.chartOf(patientId);
     if (chart.status === 'missing') throw new DataSubjectNotFoundError();
     const rows = await this.requests.requestsOf(patientId);
+    // What the patient asked can carry health data, so reading it is a READ
+    // of the chart (REQ-110), not a listing (REQ-111). Through the recorder,
+    // whose policy is the right one for a read: log, never refuse.
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: 'data_subject_request',
+      resourceId: patientId,
+      action: 'READ',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
     return rows.map((row) => this.entry(row, now));
   }
 
@@ -126,6 +143,7 @@ export class DataSubjectRequestsService {
       throw new DataExportNotApplicableError();
     }
     return this.requests.exportChart(
+      request.id,
       request.patientId,
       EXPORT_OMISSIONS,
       requester,

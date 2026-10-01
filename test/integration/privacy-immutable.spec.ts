@@ -215,4 +215,99 @@ describe('privacy: lo que prueba el consentimiento y las solicitudes no se reesc
     );
     await expect(row(now)).resolves.toBeTruthy();
   });
+
+  it('PD-038 PD-032 responder no puede mover el vencimiento ni lo registrado, ni siquiera con la respuesta completa', async () => {
+    const prisma = db();
+    const { clerk, request } = await openRequest(prisma);
+    const answer = {
+      outcome: 'GRANTED' as const,
+      response: 'Atendida',
+      answeredAt: new Date(),
+      answeredBy: clerk.id,
+    };
+    const later = new Date(request.dueOn.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    for (const change of [
+      { dueOn: later },
+      { right: 'ERASURE' as const },
+      { receivedAt: new Date(request.receivedAt.getTime() - 60_000) },
+    ]) {
+      await expect(
+        prisma.dataSubjectRequest.update({
+          where: { id: request.id },
+          data: { ...answer, ...change },
+        }),
+      ).rejects.toThrow(/admits only its answer/);
+    }
+    // Control: the same answer, alone, goes in.
+    await expect(
+      prisma.dataSubjectRequest.update({
+        where: { id: request.id },
+        data: answer,
+      }),
+    ).resolves.toBeTruthy();
+  });
+
+  it('PD-030 PD-033 la base rechaza descripción y respuesta en blanco, y un vencimiento anterior a la recepción', async () => {
+    const prisma = db();
+    const [patient, clerk] = await Promise.all([
+      createPatient(prisma),
+      createUser(prisma),
+    ]);
+    const now = new Date();
+    const row = (overrides: Record<string, unknown>) =>
+      prisma.dataSubjectRequest.create({
+        data: {
+          patientId: patient.id,
+          right: 'ACCESS',
+          requestedBy: 'HOLDER',
+          description: 'Copia',
+          receivedAt: now,
+          dueOn: now,
+          registeredBy: clerk.id,
+          ...overrides,
+        },
+      });
+
+    await expect(row({ description: '  ' })).rejects.toThrow(
+      /data_subject_request_description_valid/,
+    );
+    await expect(
+      row({ dueOn: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000) }),
+    ).rejects.toThrow(/data_subject_request_due_after_receipt/);
+    await expect(
+      row({
+        outcome: 'DENIED',
+        response: '   ',
+        answeredAt: now,
+        answeredBy: clerk.id,
+      }),
+    ).rejects.toThrow(/data_subject_request_response_valid/);
+    // Control: the same row, well formed, goes in.
+    await expect(row({})).resolves.toBeTruthy();
+  });
+
+  it('PD-001 la base rechaza un número de versión cero o negativo', async () => {
+    const prisma = db();
+    await expect(publish(prisma, 0, 'Texto')).rejects.toThrow(
+      /consent_text_version_number_positive|consent_text_version_is_next/,
+    );
+    await expect(publish(prisma, 1, 'Texto')).resolves.toBeTruthy();
+  });
+
+  it('PD-014 PD-038 la base rechaza vaciar de golpe consentimientos y solicitudes', async () => {
+    const prisma = db();
+    const first = await publish(prisma, 1, 'Texto');
+    await consentOn(prisma, first.id);
+    await openRequest(prisma);
+
+    await expect(
+      prisma.$executeRawUnsafe('TRUNCATE patient_consent'),
+    ).rejects.toThrow(/append-only/);
+    await expect(
+      prisma.$executeRawUnsafe('TRUNCATE data_subject_request'),
+    ).rejects.toThrow(/append-only/);
+    expect(await prisma.patientConsent.count()).toBe(1);
+    expect(await prisma.dataSubjectRequest.count()).toBe(1);
+  });
 });

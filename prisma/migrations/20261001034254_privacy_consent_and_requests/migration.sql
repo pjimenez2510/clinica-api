@@ -134,7 +134,9 @@ CREATE TABLE "data_subject_request" (
   "right"         "data_subject_right" NOT NULL,
   "requested_by"  "data_subject_party" NOT NULL,
   "description"   TEXT                 NOT NULL,
-  "received_at"   TIMESTAMPTZ(6)       NOT NULL,
+  -- Default: the same `now()` as `registered_at`, so «recibida ahora» never
+  -- trips the CHECK below because the API's clock runs ahead of the base's.
+  "received_at"   TIMESTAMPTZ(6)       NOT NULL DEFAULT now(),
   -- PD-032. Fecha clínica, fijada al registrar y nunca recalculada.
   "due_on"        DATE                 NOT NULL,
   "registered_at" TIMESTAMPTZ(6)       NOT NULL DEFAULT now(),

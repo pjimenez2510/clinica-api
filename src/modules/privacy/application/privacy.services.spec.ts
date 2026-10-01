@@ -175,12 +175,15 @@ describe('ConsentService', () => {
   });
 });
 
+const record = vi.fn().mockResolvedValue(undefined);
+function newRequestsService(repository: DataSubjectRequestRepository) {
+  return new DataSubjectRequestsService(repository, { record });
+}
+
 describe('DataSubjectRequestsService', () => {
   it('PD-031 una recepción posterior a ahora se rechaza antes de tocar nada', async () => {
     const register = vi.fn();
-    const service = new DataSubjectRequestsService(
-      requestRepository({ register }),
-    );
+    const service = newRequestsService(requestRepository({ register }));
     await expect(
       service.register(
         {
@@ -202,7 +205,7 @@ describe('DataSubjectRequestsService', () => {
     const repository = requestRepository({
       clinicWideHolidays: vi.fn().mockResolvedValue(new Set([holiday])),
     });
-    const service = new DataSubjectRequestsService(repository);
+    const service = newRequestsService(repository);
 
     const created = await service.register(
       {
@@ -221,7 +224,7 @@ describe('DataSubjectRequestsService', () => {
   });
 
   it('PD-033 traduce una respuesta repetida y una solicitud inexistente', async () => {
-    const already = new DataSubjectRequestsService(
+    const already = newRequestsService(
       requestRepository({
         answer: vi.fn().mockResolvedValue({ status: 'already-answered' }),
       }),
@@ -230,7 +233,7 @@ describe('DataSubjectRequestsService', () => {
       already.answer('r-1', { outcome: 'GRANTED', response: 'x' }, WHO),
     ).rejects.toBeInstanceOf(DataRequestAlreadyAnsweredError);
 
-    const missing = new DataSubjectRequestsService(
+    const missing = newRequestsService(
       requestRepository({
         answer: vi.fn().mockResolvedValue({ status: 'missing' }),
       }),
@@ -242,7 +245,7 @@ describe('DataSubjectRequestsService', () => {
 
   it('PD-035 marca vencida la abierta cuyo vencimiento es anterior a hoy, y nunca la respondida', async () => {
     const yesterday: ClinicalDate = addDays(TODAY, -1);
-    const service = new DataSubjectRequestsService(
+    const service = newRequestsService(
       requestRepository({
         open: vi
           .fn()
@@ -269,7 +272,13 @@ describe('DataSubjectRequestsService', () => {
       ['late', true],
       ['today', false],
     ]);
-    expect((await service.requestsOf('p-1', NOW))[0]!.isOverdue).toBe(false);
+    expect((await service.requestsOf('p-1', WHO, NOW))[0]!.isOverdue).toBe(
+      false,
+    );
+    // REQ-110: reading what the patient asked is a READ of the chart.
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'READ', resourceId: 'p-1' }),
+    );
   });
 
   it('PD-042 solo acceso y portabilidad se exportan; PD-041 con las omisiones declaradas', async () => {
@@ -279,7 +288,7 @@ describe('DataSubjectRequestsService', () => {
       .mockResolvedValueOnce(requestView({ right: 'ERASURE' }))
       .mockResolvedValueOnce(requestView({ right: 'PORTABILITY' }))
       .mockResolvedValueOnce(null);
-    const service = new DataSubjectRequestsService(
+    const service = newRequestsService(
       requestRepository({ find, exportChart }),
     );
 
@@ -289,7 +298,13 @@ describe('DataSubjectRequestsService', () => {
     expect(exportChart).not.toHaveBeenCalled();
 
     await service.export('r-1', WHO, NOW);
-    expect(exportChart).toHaveBeenCalledWith('p-1', EXPORT_OMISSIONS, WHO, NOW);
+    expect(exportChart).toHaveBeenCalledWith(
+      'r-1',
+      'p-1',
+      EXPORT_OMISSIONS,
+      WHO,
+      NOW,
+    );
 
     await expect(service.export('r-1', WHO, NOW)).rejects.toBeInstanceOf(
       DataRequestNotFoundError,

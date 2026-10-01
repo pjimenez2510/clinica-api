@@ -62,8 +62,8 @@ import {
  * (`patient:consent-text`) and handling requests (`patient:data-requests`, which
  * includes exporting a whole chart) are new; recording a consent rides on
  * `patient:write`, because it is part of registering the patient at the desk
- * and reception already holds it. Which shipped roles carry the new two is
- * D-083 §4.
+ * and reception already holds it. The shipped `ADMIN` role carries the new
+ * two (D-083 §4).
  */
 @ApiTags('privacy')
 @Controller({ path: 'privacy', version: '1' })
@@ -156,8 +156,12 @@ export class PrivacyController {
   @ApiOkResponse({ type: DataRequestListDto })
   async requestsOf(
     @Param('patientId', ParseUUIDPipe) patientId: string,
+    @Req() req: Request,
   ): Promise<{ items: DataRequestResponse[] }> {
-    const items = await this.requests.requestsOf(patientId);
+    const items = await this.requests.requestsOf(
+      patientId,
+      this.requester(req),
+    );
     return { items: items.map(requestResponse) };
   }
 

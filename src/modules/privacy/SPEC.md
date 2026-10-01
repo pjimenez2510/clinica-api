@@ -220,12 +220,16 @@ que si esa fila no se puede escribir no sale nada.
 - **PD-032** — CUANDO se registre una solicitud, el sistema DEBERÁ fijar su
   vencimiento y guardarlo en la fila; un cambio posterior de la regla o de los
   feriados NO DEBERÁ mover vencimientos ya fijados.
-  > **[NECESITA ACLARACIÓN] D-083 §1.** La regla construida es la opción A,
-  > provisional: acceso, rectificación, eliminación y oposición vencen el
-  > **anterior** entre 15 días calendario y 10 días hábiles desde la recepción;
-  > portabilidad, a los 10 días hábiles; suspensión, a los 3 días hábiles. Los
-  > días hábiles se cuentan desde el día hábil siguiente a la recepción.
-  > Vive en una sola función, `legalDueDate`.
+
+  > **Regla decidida por el autor el 30-09-2026 (D-083 §1, opción A)**, a
+  > ratificar por el asesor legal antes de producción: acceso, rectificación,
+  > eliminación y oposición vencen el **anterior** entre 15 días calendario y
+  > 10 días hábiles desde la recepción; portabilidad, a los 10 días hábiles;
+  > suspensión, a los 3 días hábiles. Los días hábiles se cuentan desde el día
+  > hábil siguiente a la recepción, saltando los feriados de toda la clínica
+  > (qué cierres cuentan es D-098 §2). Vive en una sola función,
+  > `legalDueDate`, que falla en vez de pasar del horizonte de feriados leídos.
+
 - **PD-033** — CUANDO alguien con `patient:data-requests` responda una
   solicitud, el sistema DEBERÁ guardar el resultado (`GRANTED`,
   `PARTIALLY_GRANTED` o `DENIED`), el texto de la respuesta (obligatorio, hasta
@@ -330,7 +334,9 @@ Todas con alcance `global`: una ficha es una en todo el sistema (PA-051).
 
 ## Preguntas abiertas
 
-Todas en **D-083**: la regla del vencimiento (PD-032), qué se responde a una
-eliminación (PD-034), qué más incluye la exportación (PD-041), qué roles de
-fábrica traen `patient:consent-text` y `patient:data-requests`, y menores y
-revocación. Ninguna bloquea lo construido.
+D-083 quedó resuelta por el autor el 30-09-2026 con las siete recomendaciones;
+`patient:consent-text` y `patient:data-requests` van al rol `ADMIN` de fábrica.
+Abiertas en **D-098**, sin bloquear lo construido: qué prueba basta para cada
+medio de consentimiento, qué cierres cuentan como inhábiles (PD-032), quién es
+el representante y cómo se verificó, la revocación junto al consentimiento, y
+lo que una respuesta de acceso debe contar.

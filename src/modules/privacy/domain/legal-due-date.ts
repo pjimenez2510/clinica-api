@@ -28,7 +28,9 @@ interface DueDateRule {
 }
 
 /**
- * ⚠️ PROVISIONAL — D-083 §1, OPTION A. A LEGAL DECISION THIS CODE DOES NOT OWN.
+ * ⚠️ PENDING RATIFICATION — D-083 §1, OPTION A, decided by the author on
+ * 30-09-2026 and to be ratified by the clinic's legal adviser BEFORE
+ * PRODUCTION. A legal decision this code does not own: it only carries it out.
  *
  * The law says «plazo de quince (15) días» in arts. 13-16 and «término de diez
  * (10) días» in art. 62, and nothing published reconciles them. Option A takes
@@ -50,6 +52,13 @@ const RULES: Readonly<Record<DataSubjectRight, DueDateRule>> = {
 };
 
 /**
+ * The furthest a due date can fall from its receipt, in calendar days: enough
+ * holidays to read for any rule. Ten working days span two weeks plus however
+ * many holidays fall in them; a month is generous on purpose.
+ */
+export const DUE_DATE_HORIZON_DAYS = 31;
+
+/**
  * PD-032. The clinical date by which a request must be answered.
  *
  * Working days are Monday to Friday that are not a holiday of the WHOLE clinic
@@ -68,8 +77,17 @@ export function legalDueDate(
 
   let day = receivedOn;
   let counted = 0;
+  const horizon = addDays(receivedOn, DUE_DATE_HORIZON_DAYS);
   while (counted < rule.businessDays) {
     day = addDays(day, 1);
+    // The holidays were read up to the horizon and no further: past it, a day
+    // would count as working only because nobody looked. Fail rather than
+    // fix a deadline that may be wrong.
+    if (day > horizon) {
+      throw new RangeError(
+        `Due date beyond the ${DUE_DATE_HORIZON_DAYS}-day holiday horizon`,
+      );
+    }
     if (isoWeekdayOf(day) <= 5 && !clinicWideHolidays.has(day)) counted += 1;
   }
 
@@ -77,10 +95,3 @@ export function legalDueDate(
   const calendar = addDays(receivedOn, rule.calendarDays);
   return calendar < day ? calendar : day;
 }
-
-/**
- * The furthest a due date can fall from its receipt, in calendar days: enough
- * holidays to read for any rule. Ten working days span two weeks plus however
- * many holidays fall in them; a month is generous on purpose.
- */
-export const DUE_DATE_HORIZON_DAYS = 31;

@@ -64,6 +64,9 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
           right: request.right,
           requestedBy: request.requestedBy,
           description: request.description,
+          // Absent = «ahora» as the BASE reads it, the same `now()` as
+          // `registered_at`: an application clock a few milliseconds ahead
+          // of the database's would otherwise trip the not-future CHECK.
           receivedAt: request.receivedAt,
           dueOn: fromClinicalDate(request.dueOn),
           registeredBy: requester.userId,
@@ -153,13 +156,23 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
   }
 
   async exportChart(
+    requestId: string,
     patientId: string,
     omitted: readonly ExportOmission[],
     requester: Requester,
     now: Date,
   ): Promise<DataExportDocument> {
     return this.prisma.$transaction(async (tx) => {
-      const ids = await chartIds(tx, patientId);
+      // THE CHART THE PERSON HAS TODAY, not the one the request was written
+      // on: if that chart was absorbed afterwards, its documents moved to the
+      // survivor (PA-043) and everything since lives there. Merges never chain
+      // (PA-046), so one hop is the whole resolution.
+      const written = await tx.patient.findUniqueOrThrow({
+        where: { id: patientId },
+        select: { mergedIntoId: true },
+      });
+      const rootId = written.mergedIntoId ?? patientId;
+      const ids = await chartIds(tx, rootId);
       // One after another: a transaction is one connection, and Prisma does
       // not run queries concurrently on it.
       const charts = await tx.patient.findMany({
@@ -171,23 +184,40 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
         orderBy: { createdAt: 'asc' },
       });
       const consents = await tx.patientConsent.findMany({
-        where: chartScope(patientId),
+        where: chartScope(rootId),
         orderBy: { recordedAt: 'asc' },
         include: { textVersion: { select: CONSENT_TEXT_SELECT } },
       });
       const requests = await tx.dataSubjectRequest.findMany({
-        where: chartScope(patientId),
+        where: chartScope(rootId),
         orderBy: { receivedAt: 'asc' },
       });
       const concepts = await conceptsOf(tx, charts);
       const mrnOf = new Map(charts.map((chart) => [chart.id, chart.mrn]));
-      const main = charts.find((chart) => chart.id === patientId)!;
+      const main = charts.find((chart) => chart.id === rootId)!;
 
       // PD-043. In the same transaction as the reads: if this row cannot be
       // written, the transaction fails and the document is never returned.
+      // One row per chart whose data left, the absorbed ones included: the
+      // trail of a chart absorbed later must still show that its data was
+      // handed over.
+      for (const chartId of ids) {
+        await writeTrail(
+          tx,
+          { resourceType: 'patient', resourceId: chartId, action: 'EXPORT' },
+          requester,
+        );
+      }
+      // And which request it answered: the trail says not only whose data
+      // left, but why (Reglamento D.E. 904 art. 15, «el detalle de la
+      // atención dada»).
       await writeTrail(
         tx,
-        { resourceType: 'patient', resourceId: patientId, action: 'EXPORT' },
+        {
+          resourceType: 'data_subject_request',
+          resourceId: requestId,
+          action: 'EXPORT',
+        },
         requester,
       );
 
@@ -198,7 +228,7 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
         patient: {
           ...exportedPatient(main, concepts),
           mergedCharts: charts
-            .filter((chart) => chart.id !== patientId)
+            .filter((chart) => chart.id !== rootId)
             .map((chart) => ({ mrn: chart.mrn, mergedAt: chart.mergedAt })),
         },
         identifiers: identifiers.map((row) => ({

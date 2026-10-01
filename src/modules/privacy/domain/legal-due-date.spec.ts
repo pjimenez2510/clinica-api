@@ -74,3 +74,19 @@ describe('legalDueDate — el vencimiento de una solicitud del titular', () => {
     );
   });
 });
+
+describe('legalDueDate — el horizonte de feriados', () => {
+  it('PD-032 si los feriados leídos no alcanzan, falla en vez de fijar un vencimiento que puede estar mal', () => {
+    const monday = next(MONDAY);
+    // Every day of the horizon is a holiday: no working day exists in it.
+    const allHolidays = new Set(
+      Array.from({ length: 40 }, (_, d) => addDays(monday, d + 1)),
+    );
+    expect(() => legalDueDate('SUSPENSION', monday, allHolidays)).toThrow(
+      RangeError,
+    );
+    // Control: with a week of holidays it still resolves.
+    const week = new Set([1, 2, 3, 4, 5].map((d) => addDays(monday, d)));
+    expect(legalDueDate('SUSPENSION', monday, week)).toBe(addDays(monday, 9));
+  });
+});

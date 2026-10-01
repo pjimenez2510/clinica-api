@@ -4012,7 +4012,7 @@ model DataSubjectRequest {
   right        DataSubjectRight
   requestedBy  DataSubjectParty    @map("requested_by")
   description  String              @db.Text
-  receivedAt   DateTime            @map("received_at") @db.Timestamptz(6)
+  receivedAt   DateTime            @default(now()) @map("received_at") @db.Timestamptz(6)
   /// PD-032. Clinical date, fixed on registration, never recomputed.
   dueOn        DateTime            @map("due_on") @db.Date
   registeredAt DateTime            @default(now()) @map("registered_at") @db.Timestamptz(6)

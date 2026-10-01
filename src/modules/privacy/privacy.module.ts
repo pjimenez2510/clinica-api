@@ -1,6 +1,9 @@
+import './infrastructure/privacy.constraints';
 import { Module } from '@nestjs/common';
 
+import { ACCESS_AUDIT_RECORDER } from '../../shared/audit/access-audit.port';
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import { PrismaAccessAuditRecorder } from '../../shared/infrastructure/audit/prisma-access-audit.recorder';
 
 import { ConsentService } from './application/consent.service';
 import { DataSubjectRequestsService } from './application/data-subject-requests.service';
@@ -21,7 +24,7 @@ import { PrivacyController } from './privacy.controller';
  * to change. One controller, because one URL space is one screen to the
  * person reading the OpenAPI.
  *
- * NO `ACCESS_AUDIT_RECORDER` HERE, on purpose. Every act of this module must
+ * `ACCESS_AUDIT_RECORDER` ONLY FOR THE READ. Every act of this module must
  * fail closed — a consent, an answer or an export without its trail row must
  * not exist — and that recorder's contract is to log and never throw. The
  * repositories write the row inside their own transaction instead
@@ -38,6 +41,9 @@ import { PrivacyController } from './privacy.controller';
     CurrentUserService,
     { provide: CONSENT_REPOSITORY, useClass: PrismaConsentRepository },
     { provide: DATA_SUBJECT_REQUEST_REPOSITORY, useClass: PrismaDataSubjectRequestRepository }, // prettier-ignore
+    // Only for the READ of a chart's requests: everything that WRITES writes
+    // its trail row in its own transaction instead (see `writeTrail`).
+    { provide: ACCESS_AUDIT_RECORDER, useClass: PrismaAccessAuditRecorder },
   ],
 })
 export class PrivacyModule {}

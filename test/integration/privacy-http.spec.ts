@@ -22,7 +22,7 @@ import {
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
-import { createPatient, createSite } from './setup/fixtures';
+import { createPatient, createSite, createUser } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
 const PASSWORD = 'el caballo come alfalfa';
@@ -125,6 +125,9 @@ describe('privacy por HTTP', () => {
         'patient:write',
         'patient:consent-text',
         'patient:data-requests',
+        // Only for PD-040's real merge: the export must follow PA-043's move
+        // of the documents, which only the real merge performs.
+        'patient:merge',
       ].map((permissionCode) => ({ roleId: officerRole.id, permissionCode })),
     });
     registry.invalidate();
@@ -229,11 +232,51 @@ describe('privacy por HTTP', () => {
     };
   }
 
+  /**
+   * Resolves once some backend is WAITING on a lock: the request under test
+   * has reached the point the race is about. A condition polled, not a sleep;
+   * bounded, so a request that never blocks fails the test instead of hanging.
+   */
+  async function untilSomeoneWaitsOnALock(): Promise<void> {
+    for (let attempt = 0; attempt < 500; attempt += 1) {
+      const [row] = await prisma.$queryRaw<{ waiting: bigint }[]>`
+        SELECT count(*) AS waiting FROM pg_locks WHERE NOT granted`;
+      if (Number(row!.waiting) > 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error('No request ever waited on a lock');
+  }
+
   function trail(resourceType: string, resourceId: string, action: string) {
     return prisma.accessAudit.findMany({
       where: { resourceType, resourceId, action },
     });
   }
+
+  describe('D-083 §4 qué roles de fábrica traen los permisos de privacy', () => {
+    it('PD-002 PD-030 ADMIN recibe patient:consent-text y patient:data-requests al sincronizar; RECEPCION, ninguno', async () => {
+      const held = async (code: string) =>
+        (
+          await prisma.rolePermission.findMany({
+            where: { role: { code } },
+            select: { permissionCode: true },
+          })
+        ).map((row) => row.permissionCode);
+
+      const admin = await held('ADMIN');
+      expect(admin).toEqual(
+        expect.arrayContaining([
+          'patient:consent-text',
+          'patient:data-requests',
+        ]),
+      );
+      const desk = await held('RECEPCION');
+      expect(desk).not.toContain('patient:consent-text');
+      expect(desk).not.toContain('patient:data-requests');
+      // Control: RECEPCION does hold what records the consent (PD-010).
+      expect(desk).toContain('patient:write');
+    });
+  });
 
   // --- PD1 -----------------------------------------------------------------------
 
@@ -295,27 +338,92 @@ describe('privacy por HTTP', () => {
       await post('/consent-texts', { body: 'x'.repeat(20_000) }).expect(201);
     });
 
-    it('PD-005 publicaciones simultáneas: cada una se publica o recibe CONSENT_TEXT_VERSION_CONFLICT, nunca un 500 ni un hueco', async () => {
-      const responses = await Promise.all(
-        [1, 2, 3, 4, 5].map((n) => post('/consent-texts', { body: `T${n}` })),
-      );
+    it('PD-005 si otra escritura gana el número mientras se publica, la publicación recibe CONSENT_TEXT_VERSION_CONFLICT y no escribe nada', async () => {
+      await publish('Texto uno');
+      const author = await createUser(prisma);
 
-      for (const response of responses) {
-        if (response.status !== 201) {
-          expect(response.status).toBe(409);
-          expect((response.body as Problem).code).toBe(
-            'CONSENT_TEXT_VERSION_CONFLICT',
+      // Another writer holds version 2, uncommitted, while the request runs.
+      let response: request.Response | undefined;
+      await prisma.$transaction(
+        async (tx) => {
+          await tx.consentTextVersion.create({
+            data: { version: 2, body: 'El otro', publishedBy: author.id },
+          });
+          const inFlight = post('/consent-texts', { body: 'Este' }).then(
+            (r) => (response = r),
           );
-        }
-      }
-      const published = responses.filter((r) => r.status === 201).length;
+          await untilSomeoneWaitsOnALock();
+          void inFlight;
+        },
+        { timeout: 20_000 },
+      );
+      await new Promise<void>((resolve) => {
+        const check = () => (response ? resolve() : setImmediate(check));
+        check();
+      });
+
+      expect(response!.status).toBe(409);
+      expect((response!.body as Problem).code).toBe(
+        'CONSENT_TEXT_VERSION_CONFLICT',
+      );
       const versions = await prisma.consentTextVersion.findMany({
         orderBy: { version: 'asc' },
-        select: { version: true },
+        select: { version: true, body: true },
       });
-      expect(versions.map((v) => v.version)).toEqual(
-        Array.from({ length: published }, (_, i) => i + 1),
+      expect(versions).toEqual([
+        { version: 1, body: 'Texto uno' },
+        { version: 2, body: 'El otro' },
+      ]);
+      // Control: once nobody holds the number, the same publication goes in.
+      await post('/consent-texts', { body: 'Este' }).expect(201);
+    });
+
+    it('PD-005 dos publicaciones desde la aplicación a la vez se ordenan: las dos salen, con números seguidos', async () => {
+      const [a, b] = await Promise.all([
+        post('/consent-texts', { body: 'A' }),
+        post('/consent-texts', { body: 'B' }),
+      ]);
+      expect([a.status, b.status]).toEqual([201, 201]);
+      expect(
+        [(a.body as TextBody).version, (b.body as TextBody).version].sort(),
+      ).toEqual([1, 2]);
+    });
+
+    it('PD-012 un consentimiento que llega mientras se publica una versión nueva espera y se rechaza: no queda ligado a la superada', async () => {
+      const first = await publish('Texto uno');
+      const patient = await createPatient(prisma);
+      const author = await createUser(prisma);
+
+      let response: request.Response | undefined;
+      await prisma.$transaction(
+        async (tx) => {
+          // What `publish` does: the exclusive lock, then the next version.
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(${0x70726976}::bigint)`;
+          await tx.consentTextVersion.create({
+            data: { version: 2, body: 'Texto dos', publishedBy: author.id },
+          });
+          const inFlight = post(
+            `/patients/${patient.id}/consents`,
+            {
+              textVersionId: first.id,
+              medium: 'ON_SCREEN',
+              grantedBy: 'HOLDER',
+            },
+            deskToken,
+          ).then((r) => (response = r));
+          await untilSomeoneWaitsOnALock();
+          void inFlight;
+        },
+        { timeout: 20_000 },
       );
+      await new Promise<void>((resolve) => {
+        const check = () => (response ? resolve() : setImmediate(check));
+        check();
+      });
+
+      expect(response!.status).toBe(409);
+      expect((response!.body as Problem).code).toBe('CONSENT_TEXT_OUTDATED');
+      expect(await prisma.patientConsent.count()).toBe(0);
     });
 
     it('PD-006 la publicación deja su fila en la bitácora, y sin bitácora no se publica', async () => {
@@ -660,6 +768,36 @@ describe('privacy por HTTP', () => {
       expect((missing.body as Problem).code).toBe('DATA_REQUEST_NOT_FOUND');
     });
 
+    it('PD-033 dos respuestas a la vez: exactamente una gana, y queda una sola fila de respuesta en la bitácora', async () => {
+      const patient = await createPatient(prisma);
+      const created = (
+        await register(patient.id, { right: 'ACCESS' }).expect(201)
+      ).body as RequestBody;
+
+      const responses = await Promise.all(
+        ['GRANTED', 'DENIED'].map((outcome) =>
+          post(`/requests/${created.id}/response`, {
+            outcome,
+            response: `Respuesta ${outcome}`,
+          }),
+        ),
+      );
+
+      expect(responses.map((r) => r.status).sort()).toEqual([200, 409]);
+      const loser = responses.find((r) => r.status === 409)!;
+      expect((loser.body as Problem).code).toBe(
+        'DATA_REQUEST_ALREADY_ANSWERED',
+      );
+      const winner = responses.find((r) => r.status === 200)!;
+      const stored = await prisma.dataSubjectRequest.findUniqueOrThrow({
+        where: { id: created.id },
+      });
+      expect(stored.outcome).toBe((winner.body as RequestBody).answer!.outcome);
+      expect(
+        await trail('data_subject_request', created.id, 'UPDATE'),
+      ).toHaveLength(1);
+    });
+
     it('PD-037 sin bitácora no se registra ni se responde', async () => {
       const patient = await createPatient(prisma);
       const restore = await refuseTrail('data_subject_request', 'CREATE');
@@ -816,9 +954,49 @@ describe('privacy por HTTP', () => {
       expect(document.omitted.map((o) => o.section)).toEqual([
         'clinical_record',
         'sexual_orientation',
-        'priority_group_reasons',
+        'priority_groups',
+        'contacts',
+        'appointments',
+        'billing',
+        'record_corrections',
+        'access_log',
       ]);
       expect(JSON.stringify(document)).not.toMatch(/sexualOrientation/);
+    });
+
+    it('PD-040 PD-043 una solicitud registrada en una ficha que luego se fusiona exporta la superviviente, con los documentos que la fusión le pasó', async () => {
+      const { survivor, absorbed } = await mergedPair();
+      await prisma.patientIdentifier.create({
+        data: { patientId: absorbed.id, type: 'PASSPORT', value: 'ZX98765' },
+      });
+      const access = await requestFor(absorbed.id, 'ACCESS');
+
+      // The REAL merge: it moves the official documents (PA-043).
+      await request(app.getHttpServer())
+        .post(`/api/v1/patients/${absorbed.id}/merge`)
+        .set('Authorization', `Bearer ${officerToken}`)
+        .send({ targetPatientId: survivor.id, reason: 'La misma persona' })
+        .expect(200);
+
+      const response = await get(`/requests/${access.id}/export`).expect(200);
+      const document = response.body as {
+        patient: { mrn: string; mergedCharts: { mrn: string }[] };
+        identifiers: { value: string }[];
+        requests: { right: string }[];
+      };
+      expect(document.patient.mrn).toBe(survivor.mrn);
+      expect(document.patient.mergedCharts.map((c) => c.mrn)).toEqual([
+        absorbed.mrn,
+      ]);
+      expect(document.identifiers.map((i) => i.value)).toContain('ZX98765');
+      expect(document.requests.map((r) => r.right)).toEqual(['ACCESS']);
+
+      // One EXPORT row per chart whose data left, and one naming the request.
+      expect(await trail('patient', survivor.id, 'EXPORT')).toHaveLength(1);
+      expect(await trail('patient', absorbed.id, 'EXPORT')).toHaveLength(1);
+      expect(
+        await trail('data_subject_request', access.id, 'EXPORT'),
+      ).toHaveLength(1);
     });
 
     it('PD-042 una solicitud que no es de acceso ni portabilidad no se exporta, ni deja rastro', async () => {

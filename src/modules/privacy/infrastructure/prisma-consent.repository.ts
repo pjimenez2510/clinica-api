@@ -24,6 +24,29 @@ import {
   writeTrail,
 } from './privacy-reads';
 
+/**
+ * PD-012. «Is this version still the current one?» and the INSERT of the
+ * consent must not be split by a publication: under READ COMMITTED a text
+ * published between the two would leave a consent bound to a superseded
+ * version with a later instant than the new one's publication.
+ *
+ * A transaction-scoped advisory lock serialises exactly that pair and nothing
+ * else: publishing takes it exclusive, recording takes it shared, so consents
+ * do not wait for each other. Released at COMMIT or ROLLBACK by PostgreSQL.
+ */
+const CONSENT_TEXT_LOCK = 0x70726976; // 'priv'
+
+async function lockConsentText(
+  tx: Prisma.TransactionClient,
+  mode: 'exclusive' | 'shared',
+): Promise<void> {
+  if (mode === 'exclusive') {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${CONSENT_TEXT_LOCK}::bigint)`;
+  } else {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock_shared(${CONSENT_TEXT_LOCK}::bigint)`;
+  }
+}
+
 const CONSENT_SELECT = {
   id: true,
   patientId: true,
@@ -70,6 +93,7 @@ export class PrismaConsentRepository implements ConsentRepository {
   async publish(body: string, requester: Requester): Promise<ConsentTextView> {
     try {
       const row = await this.prisma.$transaction(async (tx) => {
+        await lockConsentText(tx, 'exclusive');
         const last = await tx.consentTextVersion.findFirst({
           orderBy: { version: 'desc' },
           select: { version: true },
@@ -105,6 +129,7 @@ export class PrismaConsentRepository implements ConsentRepository {
     requester: Requester,
   ): Promise<RecordConsentResult> {
     const outcome = await this.prisma.$transaction(async (tx) => {
+      await lockConsentText(tx, 'shared');
       const current = await tx.consentTextVersion.findFirst({
         orderBy: { version: 'desc' },
         select: { id: true, version: true },

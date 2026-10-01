@@ -122,7 +122,8 @@ export interface NewDataRequest {
   right: DataSubjectRight;
   requestedBy: DataSubjectParty;
   description: string;
-  receivedAt: Date;
+  /** Absent = now, as the base reads it (`DEFAULT now()`). */
+  receivedAt?: Date;
   dueOn: ClinicalDate;
 }
 
@@ -181,6 +182,7 @@ export interface DataSubjectRequestRepository {
    * written, the transaction fails and nothing is returned.
    */
   exportChart(
+    requestId: string,
     patientId: string,
     omitted: readonly ExportOmission[],
     requester: Requester,

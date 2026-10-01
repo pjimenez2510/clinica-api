@@ -4,14 +4,15 @@ import type { ExportOmission } from './privacy.repository';
  * PD-041. What the export does NOT carry, said inside the document itself so
  * that nobody reading it mistakes a partial answer for a complete one.
  *
- * ⚠️ PROVISIONAL — D-083 §3. Each entry is a decision the author has not taken
- * yet, not a technical limit.
+ * D-083 §3, decided by the author: the administrative part now, the clinical
+ * record in FHIR R4 in a later delivery, and the two protected data only with
+ * their own permission. Each entry is that decision, not a technical limit.
  */
 export const EXPORT_OMISSIONS: readonly ExportOmission[] = [
   {
     section: 'clinical_record',
     reason:
-      'La historia clínica (atenciones, diagnósticos, notas, signos vitales, alergias y antecedentes) se entrega por otra vía mientras se decide su formato (D-083 §3).',
+      'La historia clínica (atenciones, diagnósticos, notas, signos vitales, alergias, antecedentes, recetas, órdenes, resultados, certificados y referencias) se entrega por otra vía mientras se decide su formato (D-083 §3).',
   },
   {
     section: 'sexual_orientation',
@@ -19,9 +20,33 @@ export const EXPORT_OMISSIONS: readonly ExportOmission[] = [
       'Tiene permiso propio (PA-058); no se exporta con el permiso de protección de datos (D-083 §3).',
   },
   {
-    section: 'priority_group_reasons',
+    section: 'priority_groups',
     reason:
-      'El motivo de prioridad tiene permiso propio (PA-042); no se exporta con el permiso de protección de datos (D-083 §3).',
+      'Los grupos prioritarios y su motivo tienen permiso propio (PA-042); no se exportan con el permiso de protección de datos (D-083 §3).',
+  },
+  {
+    section: 'contacts',
+    reason:
+      'Los contactos y el representante legal son datos de otras personas; se entregan tras decidir cómo (D-083 §3).',
+  },
+  {
+    section: 'appointments',
+    reason: 'Las citas y la lista de espera no se incluyen todavía (D-083 §3).',
+  },
+  {
+    section: 'billing',
+    reason:
+      'Las cuentas, facturas y notas de crédito no se incluyen todavía (D-083 §3).',
+  },
+  {
+    section: 'record_corrections',
+    reason:
+      'El histórico de correcciones de la ficha no se incluye todavía (D-083 §3).',
+  },
+  {
+    section: 'access_log',
+    reason:
+      'Quién consultó la ficha (bitácora de accesos) no se incluye todavía (D-083 §3).',
   },
 ];
 
