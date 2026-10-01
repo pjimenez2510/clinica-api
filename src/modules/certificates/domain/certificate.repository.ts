@@ -57,12 +57,17 @@ export interface IssueSnapshot {
   encounterStatus: EncounterStatus;
   /** CER-039. Who attended: the issuer, or someone who has to say why not. */
   attendingPractitionerId: string;
-  /** CER-008. How many diagnoses the attention has. */
-  diagnosisCount: number;
+  /** CER-008, CER-049. The CIE-10 codes of the attention's diagnoses. */
+  diagnosisCodes: string[];
   /** CER-030. When the attention started; its clinical date is Ecuador's. */
   encounterStartedAt: Date;
   /** CER-036. The canton of the site's parish; `null` without a parish. */
   cityOfIssue: string | null;
+  /**
+   * CER-048. The periods of the patient's rests that are not revoked, from
+   * any attention, read once the patient's issues are serialised.
+   */
+  patientRests: RestPeriod[];
   /** CER-038. Read from the chart of the attention, inside the issue. */
   patientWork: PatientWork;
 }

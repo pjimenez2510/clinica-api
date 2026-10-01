@@ -134,7 +134,6 @@ export class PrismaCertificateRepository implements CertificateRepository {
           practitionerId: true,
           status: true,
           startedAt: true,
-          _count: { select: { diagnoses: true } },
           // CER-027. What the certificate will print, COPIED below: added
           // later, a diagnosis would reach a paper the patient authorised
           // without it.
@@ -164,12 +163,34 @@ export class PrismaCertificateRepository implements CertificateRepository {
       });
       if (!encounter) throw new CertificateEncounterNotFoundError();
 
+      /**
+       * CER-048. THE PATIENT'S ISSUES, ONE AT A TIME. Two attentions of the
+       * same patient lock two different rows, so the lock above does not
+       * order them; this one does, with the SAME key
+       * `medical_certificate_issue_rules` takes, so the rests read below are
+       * every rest that can be there when this one is written.
+       */
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended('medical_certificate_rest:' || ${encounter.patientId}::text, 0))`;
+      const rests = await tx.medicalCertificate.findMany({
+        where: {
+          patientId: encounter.patientId,
+          type: 'MEDICAL_REST',
+          revokedAt: null,
+        },
+        select: { restFrom: true, restTo: true },
+      });
+
       const plan = decide({
         encounterStatus: encounter.status,
         attendingPractitionerId: encounter.practitionerId,
-        diagnosisCount: encounter._count.diagnoses,
+        diagnosisCodes: encounter.diagnoses.map((diagnosis) => diagnosis.cie10Code), // prettier-ignore
         encounterStartedAt: encounter.startedAt,
         cityOfIssue: encounter.site.parish?.parent?.display ?? null,
+        patientRests: rests.flatMap(({ restFrom, restTo }) => {
+          const from = clinicalDateColumn(restFrom);
+          const to = clinicalDateColumn(restTo);
+          return from === null || to === null ? [] : [{ from, to }];
+        }),
         patientWork: encounter.patient,
       });
 

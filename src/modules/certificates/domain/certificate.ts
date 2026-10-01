@@ -8,6 +8,10 @@ import {
 import {
   CertificateBackdatingReasonRequiredError,
   CertificateIssuerReasonRequiredError,
+  CertificateMaternityDatesTooOldError,
+  CertificateMaternityDiagnosisRequiredError,
+  CertificateMaternityLeaveExceededError,
+  CertificateRestOverlapsError,
   CertificateRestIssuedTooLateError,
   CertificateRestPeriodInvalidError,
   CertificateRestStartTooEarlyError,
@@ -339,6 +343,53 @@ export function assertRestWithinAttention(
   if (lateIssueDay > addDays(attentionDate, MAX_DAYS_TO_ISSUE_REST)) {
     throw new CertificateRestIssuedTooLateError();
   }
+}
+
+/** CER-046, CER-047, D-109. Maternity leave: twelve weeks. */
+export const MATERNITY_LEAVE_DAYS = 84;
+
+/**
+ * CER-049. An obstetric CIE-10: O00 to O99 or Z34 to Z39, with their
+ * subcategories, as the catalogue writes them (`O80`, `Z390`). A chapter
+ * range (`O00-O9A`) or the US-only `O9A` is not one.
+ */
+export function isObstetricCie10(code: string): boolean {
+  return /^(O[0-9]{2}|Z3[4-9])[0-9A-Z]*$/.test(code);
+}
+
+/**
+ * CER-046 to CER-049, D-109. What bounds a maternity rest once D-108 took the
+ * three and eight days away: its admission and birth at most 84 days before
+ * the attention, the rest within the leave (birth + 84 days) and issued before
+ * it ends (with the dawn of CER-030), an obstetric diagnosis on the attention,
+ * and no other rest of the patient, not revoked, over the same days.
+ */
+export function assertMaternityWithinLeave(
+  period: RestPeriod,
+  maternity: MaternityDates,
+  attentionDate: ClinicalDate,
+  lateIssueDay: ClinicalDate,
+  diagnosisCodes: readonly string[],
+  otherRests: readonly RestPeriod[],
+): void {
+  const earliest = addDays(attentionDate, -MATERNITY_LEAVE_DAYS);
+  if (maternity.admissionOn < earliest) {
+    throw new CertificateMaternityDatesTooOldError('maternityAdmissionOn', earliest); // prettier-ignore
+  }
+  if (maternity.birthOn < earliest) {
+    throw new CertificateMaternityDatesTooOldError('birthOn', earliest);
+  }
+  const lastDay = addDays(maternity.birthOn, MATERNITY_LEAVE_DAYS);
+  if (period.to > lastDay || lateIssueDay > lastDay) {
+    throw new CertificateMaternityLeaveExceededError(lastDay);
+  }
+  if (!diagnosisCodes.some(isObstetricCie10)) {
+    throw new CertificateMaternityDiagnosisRequiredError();
+  }
+  // Both ends included: a rest that ends the day this one starts overlaps.
+  if (otherRests.some((other) => other.from <= period.to && period.from <= other.to)) {
+    throw new CertificateRestOverlapsError();
+  } // prettier-ignore
 }
 
 /** CER-041. Refuses a rest that starts after `latestRestStartOf`. */

@@ -265,6 +265,99 @@ export class CertificateRestStartTooEarlyError extends ValidationError {
   }
 }
 
+/** DD/MM/AAAA, as the screen and the paper write a day. */
+const shownDay = (day: ClinicalDate): string =>
+  day.split('-').reverse().join('/');
+
+/**
+ * CER-046, D-109 §1. An admission or a birth more than 84 days before the
+ * attention is not a leave this attention certifies.
+ */
+export class CertificateMaternityDatesTooOldError extends ValidationError {
+  readonly code = 'CERTIFICATE_MATERNITY_DATES_TOO_OLD';
+  override readonly userTitle =
+    'El ingreso y el parto pueden ser, como mucho, 84 días anteriores a la atención';
+  override readonly fieldErrors: readonly DomainFieldError[];
+
+  constructor(
+    field: 'maternityAdmissionOn' | 'birthOn',
+    earliest: ClinicalDate,
+  ) {
+    super('Maternity admission and birth are at most 84 days before the attention'); // prettier-ignore
+    this.fieldErrors = [
+      {
+        field,
+        code: 'CERTIFICATE_MATERNITY_DATES_TOO_OLD',
+        message: `La fecha ${field === 'birthOn' ? 'del parto' : 'de ingreso'} debe ser, como muy pronto, el ${shownDay(earliest)}`,
+      },
+    ];
+  }
+}
+
+/**
+ * CER-047, D-109 §2. Maternity leave ends 84 days after the birth: no rest
+ * beyond it, and none issued once it is over.
+ */
+export class CertificateMaternityLeaveExceededError extends ValidationError {
+  readonly code = 'CERTIFICATE_MATERNITY_LEAVE_EXCEEDED';
+  override readonly userTitle =
+    'La licencia de maternidad termina 84 días después del parto: el reposo no pasa de ese día ni se emite después';
+  override readonly fieldErrors: readonly DomainFieldError[];
+
+  constructor(lastDay: ClinicalDate) {
+    super('A maternity rest ends, and is issued, within 84 days of the birth');
+    this.fieldErrors = [
+      {
+        field: 'restTo',
+        code: 'CERTIFICATE_MATERNITY_LEAVE_EXCEEDED',
+        message: `La licencia de maternidad termina el ${shownDay(lastDay)}`,
+      },
+    ];
+  }
+}
+
+/**
+ * CER-048, D-109 §2. A maternity rest over another rest of the patient that
+ * is not revoked: two papers for the same days.
+ */
+export class CertificateRestOverlapsError extends ConflictError {
+  readonly code = 'CERTIFICATE_REST_OVERLAPS';
+  override readonly userTitle =
+    'La paciente ya tiene otro reposo vigente en esas fechas. Ajuste el período, o anule antes el otro reposo';
+  override readonly fieldErrors: readonly DomainFieldError[] = [
+    {
+      field: 'restFrom',
+      code: 'CERTIFICATE_REST_OVERLAPS',
+      message: 'Se solapa con otro reposo vigente de la paciente',
+    },
+  ];
+
+  constructor() {
+    super('A maternity rest overlaps another rest of the patient');
+  }
+}
+
+/**
+ * CER-049, D-109 §3. A maternity rest on an attention without an obstetric
+ * diagnosis. Said in words: a message carries no diagnosis code (CER-014).
+ */
+export class CertificateMaternityDiagnosisRequiredError extends ValidationError {
+  readonly code = 'CERTIFICATE_MATERNITY_DIAGNOSIS_REQUIRED';
+  override readonly userTitle =
+    'El reposo de maternidad necesita un diagnóstico obstétrico en la atención —de embarazo, parto o puerperio, o de supervisión del embarazo o del posparto—. Regístrelo en Diagnósticos';
+  override readonly fieldErrors: readonly DomainFieldError[] = [
+    {
+      field: 'contingencyType',
+      code: 'CERTIFICATE_MATERNITY_DIAGNOSIS_REQUIRED',
+      message: 'La atención no tiene un diagnóstico obstétrico',
+    },
+  ];
+
+  constructor() {
+    super('A maternity rest needs an obstetric diagnosis on its encounter');
+  }
+}
+
 /**
  * CER-045, D-106 §4. More than eight days after the attention a rest is not
  * issued on it: the patient is seen again, in a new attention.
