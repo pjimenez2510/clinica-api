@@ -61,11 +61,19 @@ function calendarDate(date: Date): string {
 
 /**
  * The patient's block: name, identifying document when there is one, and age —
- * «—» when nobody recorded it.
+ * «—» when nobody recorded it — on the template's grid of four, followed by
+ * what each document adds about the patient, two columns each.
  */
-function patientBlock(patient: PatientIdentity): Block {
+function patientBlock(
+  patient: PatientIdentity,
+  more: readonly LabelledValue[] = [],
+): Block {
   const entries: LabelledValue[] = [
-    { label: 'Apellidos y nombres', value: patient.fullName },
+    {
+      label: 'Apellidos y nombres',
+      value: patient.fullName,
+      span: patient.identifier === null ? 3 : 2,
+    },
   ];
   if (patient.identifier !== null) {
     entries.push({ label: 'Documento', value: patient.identifier });
@@ -74,7 +82,8 @@ function patientBlock(patient: PatientIdentity): Block {
   // DOC-060's sibling rule: an absent datum prints as an empty field, never as
   // an invented one. «—» says «nobody recorded this»; «0 años» would assert it.
   entries.push({ label: 'Edad', value: age ?? '—' });
-  return { kind: 'fields', columns: 2, entries };
+  entries.push(...more.map((entry) => ({ ...entry, span: 2 })));
+  return { kind: 'fields', columns: 4, entries };
 }
 
 /**
@@ -130,10 +139,9 @@ export function composePrescriptionLayout(
           },
         ] as Block[])
       : []),
-    // ── Art. 5.a — datos generales.
+    // ── Art. 5.a — datos generales, on the template's grey band (DOC-104).
     {
-      kind: 'fields',
-      columns: 3,
+      kind: 'strip',
       entries: [
         { label: 'Ciudad', value: data.city ?? '—' },
         {
@@ -151,37 +159,30 @@ export function composePrescriptionLayout(
         },
       ],
     },
-    { kind: 'rule' },
 
     // ── Art. 5.b — datos del paciente.
     { kind: 'heading', text: 'Paciente' },
-    patientBlock(data.patient),
-    {
-      kind: 'fields',
-      columns: 1,
-      entries: [
-        {
-          // Art. 5.b.iii.
-          label: 'Diagnóstico',
-          value:
-            data.diagnoses.length === 0
-              ? '—'
-              : data.diagnoses
-                  .map((d) => `${d.code} · ${d.display}`)
-                  .join(' | '),
-        },
-        {
-          // Art. 5.b.iv. «Ninguna conocida» and not an empty box: a blank says
-          // nobody asked, and this field exists precisely to record that
-          // somebody did.
-          label: 'Antecedentes de alergias',
-          value:
-            data.allergies.length === 0
-              ? 'Ninguna conocida'
-              : data.allergies.join(', '),
-        },
-      ],
-    },
+    patientBlock(data.patient, [
+      {
+        // Art. 5.b.iii.
+        label: 'Diagnóstico',
+        value:
+          data.diagnoses.length === 0
+            ? '—'
+            : data.diagnoses.map((d) => `${d.code} · ${d.display}`).join(' | '),
+      },
+      {
+        // Art. 5.b.iv. «Ninguna conocida» and not an empty box: a blank says
+        // nobody asked, and this field exists precisely to record that
+        // somebody did. DOC-085: a recorded allergy is printed in red.
+        label: 'Antecedentes de alergias',
+        value:
+          data.allergies.length === 0
+            ? 'Ninguna conocida'
+            : data.allergies.join(', '),
+        ...(data.allergies.length === 0 ? {} : { alert: true }),
+      },
+    ]),
 
     // ── Art. 5.c — datos del medicamento.
     { kind: 'heading', text: 'Prescripción' },
@@ -316,8 +317,10 @@ export function composePrescriptionLayout(
         indications.length === 0
           ? { kind: 'paragraph', text: 'Sin indicaciones adicionales' }
           : {
+              // Two columns, as the template: one per row pushed a receta of
+              // three lines past the band.
               kind: 'fields',
-              columns: 1,
+              columns: 2,
               entries: indications.map((entry) => ({
                 label: `Línea ${entry.index}`,
                 value: entry.text,
@@ -388,9 +391,9 @@ export function composeServiceOrderLayout(
           },
         ] as Block[])
       : []),
+    // DOC-104. The general data on the template's grey band.
     {
-      kind: 'fields',
-      columns: 3,
+      kind: 'strip',
       entries: [
         { label: 'Fecha', value: ecuadorianDate(data.requestedAt) },
         {
@@ -403,32 +406,24 @@ export function composeServiceOrderLayout(
         },
       ],
     },
-    { kind: 'rule' },
     { kind: 'heading', text: 'Paciente' },
-    patientBlock(data.patient),
-    {
-      kind: 'fields',
-      columns: 1,
-      entries: [
-        {
-          label: 'Diagnóstico presuntivo',
-          value:
-            data.diagnoses.length === 0
-              ? '—'
-              : data.diagnoses
-                  .map((d) => `${d.code} · ${d.display}`)
-                  .join(' | '),
-        },
-        ...(data.clinicalNoteText === null
-          ? []
-          : [
-              {
-                label: 'Datos clínicos para el laboratorio',
-                value: data.clinicalNoteText,
-              },
-            ]),
-      ],
-    },
+    patientBlock(data.patient, [
+      {
+        label: 'Diagnóstico presuntivo',
+        value:
+          data.diagnoses.length === 0
+            ? '—'
+            : data.diagnoses.map((d) => `${d.code} · ${d.display}`).join(' | '),
+      },
+      ...(data.clinicalNoteText === null
+        ? []
+        : [
+            {
+              label: 'Datos clínicos para el laboratorio',
+              value: data.clinicalNoteText,
+            },
+          ]),
+    ]),
     { kind: 'heading', text: 'Exámenes solicitados' },
     {
       kind: 'table',
@@ -439,17 +434,24 @@ export function composeServiceOrderLayout(
       ],
       rows: live.map((item) => [item.code, item.display, item.specimen ?? '—']),
     },
-    { kind: 'heading', text: 'Indicaciones al paciente' },
-    preparations.length === 0
-      ? { kind: 'paragraph', text: 'No requiere preparación previa.' }
-      : {
-          kind: 'fields',
-          columns: 1,
-          entries: preparations.map((text) => ({
-            label: 'Preparación',
-            value: text,
-          })),
-        },
+    // The template's framed note: what the patient has to do before going.
+    {
+      kind: 'box',
+      light: true,
+      blocks: [
+        { kind: 'caption', text: 'Indicaciones al paciente' },
+        preparations.length === 0
+          ? { kind: 'paragraph', text: 'No requiere preparación previa.' }
+          : {
+              kind: 'fields',
+              columns: 1,
+              entries: preparations.map((text) => ({
+                label: 'Preparación',
+                value: text,
+              })),
+            },
+      ],
+    },
     { kind: 'heading', text: 'Médico solicitante' },
     prescriberBlock(data.orderedBy),
     {

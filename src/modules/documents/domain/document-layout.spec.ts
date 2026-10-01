@@ -206,6 +206,39 @@ const prescription = (
   },
 });
 
+describe('DOC-104 los datos generales, en la franja gris de la plantilla', () => {
+  it('DOC-104 la receta abre con ciudad, fecha y vigencia en una franja', () => {
+    const [first] = composeLayout(prescription(), context, template).blocks;
+    expect(first?.kind).toBe('strip');
+    expect(
+      first?.kind === 'strip' ? first.entries.map((entry) => entry.label) : [],
+    ).toEqual(['Ciudad', 'Fecha', 'Vigencia']);
+  });
+
+  it('DOC-104 una receta anulada lo dice antes de la franja', () => {
+    const blocks = composeLayout(
+      prescription({ status: 'CANCELLED' }),
+      context,
+      template,
+    ).blocks;
+    expect(blocks.map((block) => block.kind).slice(0, 2)).toEqual([
+      'paragraph',
+      'strip',
+    ]);
+  });
+
+  it('DOC-085 las alergias registradas van en rojo, y «Ninguna conocida» no', () => {
+    const allergyOf = (allergies: string[]) =>
+      composeLayout(prescription({ allergies }), context, template)
+        .blocks.flatMap((block) =>
+          block.kind === 'fields' ? block.entries : [],
+        )
+        .find((entry) => entry.label === 'Antecedentes de alergias');
+    expect(allergyOf(['Penicilina'])?.alert).toBe(true);
+    expect(allergyOf([])?.alert).not.toBe(true);
+  });
+});
+
 describe('DOC-072 la receta lleva los cinco bloques del art. 5', () => {
   it('DOC-072 imprime ciudad, fecha, establecimiento, paciente, diagnóstico, alergias, medicamento y prescriptor', () => {
     const layout = composeLayout(prescription(), context, template);
@@ -612,6 +645,13 @@ describe('ORD-006 DOC-072 la orden impresa, como la plantilla aprobada (D-095)',
       ],
       ...overrides,
     },
+  });
+
+  it('DOC-104 la orden abre con fecha, tipo y prioridad en una franja', () => {
+    const [first] = composeLayout(order(), context, template).blocks;
+    expect(
+      first?.kind === 'strip' ? first.entries.map((entry) => entry.label) : [],
+    ).toEqual(['Fecha', 'Tipo', 'Prioridad']);
   });
 
   it('ORD-007 un examen cancelado no sale en el papel del laboratorio, y sin ninguno vivo la orden sale anulada', () => {
