@@ -988,7 +988,7 @@ sequential)`, `invoice_total_is_consistent`,
   > consecuencia práctica de BI-035: el pagador dice de qué lista sale el
   > precio; no dice quién figura en el documento.
 - **BI-180** — CUANDO la atención esté `DISCONTINUED` sin ningún acto clínico
-  —nota, diagnóstico, procedimiento, receta ni orden—, el sistema NO DEBERÁ
+  —nota con algo escrito, diagnóstico, procedimiento, receta ni orden—, el sistema NO DEBERÁ
   proponer ningún cargo, tampoco la consulta.
   > **D-085 §4 (01-10-2026).** Es quien se fue antes de que el médico lo viera
   > (D-081 §2): no hubo consulta que proponer. La interrumpida con algún acto

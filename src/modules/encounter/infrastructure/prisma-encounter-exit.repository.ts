@@ -3,6 +3,8 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
+  AppointmentArrivalNotRecordedError,
+  EncounterHasLiveActsError,
   EncounterHasOthersDraftsError,
   EncounterNotFoundError,
   InvalidEncounterTransitionError,
@@ -56,6 +58,38 @@ export class PrismaEncounterExitRepository implements EncounterExitRepository {
     return this.prisma.$transaction(async (tx) => {
       const current = await lockAndRead(tx, query);
       const plan = decide(current);
+
+      /**
+       * D-099 §1. What the attention already left in the chart is retracted
+       * by its own door —the prescription (PR-010), the order (ORD-007), the
+       * signed note (EN-026)— before the attention can say it never existed.
+       * Annulled with it, a prescription would stay valid on paper in the
+       * wrong patient's name, and an order pending at the laboratory.
+       */
+      const [prescriptions, orders, signedNotes] = await Promise.all([
+        tx.prescription.count({
+          where: {
+            encounterId: current.id,
+            status: { in: ['DRAFT', 'ACTIVE'] },
+          },
+        }),
+        tx.serviceOrder.count({
+          where: {
+            encounterId: current.id,
+            items: { some: { status: { in: ['REQUESTED', 'IN_PROGRESS'] } } },
+          },
+        }),
+        tx.clinicalNote.count({
+          where: { encounterId: current.id, status: 'SIGNED' },
+        }),
+      ]);
+      if (prescriptions + orders + signedNotes > 0) {
+        throw new EncounterHasLiveActsError({
+          prescriptions,
+          orders,
+          signedNotes,
+        });
+      }
 
       await moveConditionally(tx, query, current.status, plan.to, {
         status: plan.to,
@@ -111,8 +145,7 @@ export class PrismaEncounterExitRepository implements EncounterExitRepository {
        * D-082 signs the drafts of WHOEVER INTERRUPTS. A draft of somebody
        * else would be left unsigned inside a terminal attention, where its
        * author can no longer sign it — the «texto sin responsable» D-082
-       * rejected. Until the author decides that case (D-083), the
-       * interruption is refused and says why.
+       * rejected; so the interruption is refused and says why (D-085 §2).
        */
       const othersDrafts = await tx.clinicalNote.count({
         where: {
@@ -126,6 +159,25 @@ export class PrismaEncounterExitRepository implements EncounterExitRepository {
       // D-085 §3: attended means any clinical act, asked BEFORE the state
       // changes and under the lock.
       const attended = await hasClinicalAct(tx, current.id);
+
+      /**
+       * D-099 §2. An appointment whose arrival was never recorded cannot be
+       * closed with the truth: «atendida» or «se fue sin ser atendido» both
+       * presuppose an arrival, and the arrival carries the emergency
+       * assessment of Ley 77 art. 10. The arrival is recorded first.
+       */
+      if (current.agendaEntryId !== null) {
+        const appointment = await tx.agendaEntry.findUnique({
+          where: { id: current.agendaEntryId },
+          select: { status: true },
+        });
+        if (
+          appointment?.status === 'BOOKED' ||
+          appointment?.status === 'CONFIRMED'
+        ) {
+          throw new AppointmentArrivalNotRecordedError();
+        }
+      }
 
       await moveConditionally(tx, query, current.status, plan.to, {
         status: plan.to,
@@ -152,9 +204,14 @@ export class PrismaEncounterExitRepository implements EncounterExitRepository {
         select: { id: true, content: true },
       });
       const signedNoteIds: string[] = [];
+      const unsignedEmptyNoteIds: string[] = [];
       for (const draft of own) {
-        // D-085 §5: an empty draft is not signed; it stays, frozen and empty.
-        if (!hasWrittenContent(draft.content)) continue;
+        // D-085 §5: an empty draft is not signed; it stays, frozen and empty,
+        // and the service leaves the trail of it (D-099 §4).
+        if (!hasWrittenContent(draft.content)) {
+          unsignedEmptyNoteIds.push(draft.id);
+          continue;
+        }
         const signature = drafts.sign({ content: draft.content });
         const signed = await tx.clinicalNote.updateMany({
           where: { id: draft.id, status: 'DRAFT' },
@@ -181,6 +238,7 @@ export class PrismaEncounterExitRepository implements EncounterExitRepository {
       return {
         encounter: await readView(tx, query.encounterId),
         signedNoteIds,
+        unsignedEmptyNoteIds,
       };
     });
   }
@@ -270,6 +328,15 @@ async function settleAppointment(
   };
 
   if (!settle.attended) {
+    // D-099 §2: one already in attendance with nothing documented —moved there
+    // through the API that AG-120 keeps— goes back to the room first, so the
+    // departure is told from where it really happened.
+    await moveAppointment(tx, {
+      ...common,
+      from: 'IN_PROGRESS',
+      to: 'CHECKED_IN',
+      subjectStatus: 'ARRIVED',
+    });
     await moveAppointment(tx, {
       ...common,
       from: 'CHECKED_IN',

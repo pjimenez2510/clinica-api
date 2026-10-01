@@ -1063,18 +1063,16 @@ describe('el personal por HTTP', () => {
       // half-open `daterange` these two would both be accepted while
       // `slot-availability.ts` considered both in force on 01-06.
       const practitioner = await createPractitioner();
-      // Vigencias desde hoy: la exclusión rige desde la entrada en vigor de
-      // D-070 (D-085 §6), así que el día compartido tiene que ser de ahora.
       await post(`/practitioners/${practitioner.id}/schedule-rules`, {
         siteId,
         ...RULE,
-        validFrom: clinicDay(0),
-        validTo: clinicDay(60),
+        validFrom: '2026-01-01',
+        validTo: '2026-06-01',
       }).expect(201);
 
       const response = await post(
         `/practitioners/${practitioner.id}/schedule-rules`,
-        { siteId, ...RULE, validFrom: clinicDay(60), validTo: null },
+        { siteId, ...RULE, validFrom: '2026-06-01', validTo: null },
       ).expect(409);
 
       expect((response.body as Problem).code).toBe('SCHEDULE_RULE_OVERLAP');
@@ -1098,7 +1096,7 @@ describe('el personal por HTTP', () => {
 
       expect((refused.body as Problem).code).toBe('SCHEDULE_RULE_OVERLAP');
       expect((refused.body as Problem).errors?.[0]?.message).toMatch(
-        /en esta sede o en otra/,
+        /en otra sede/,
       );
       expect(await prisma.practitionerScheduleRule.count()).toBe(1);
     });

@@ -79,7 +79,7 @@ BEGIN
   IF v_rows IS NOT NULL THEN
     RAISE EXCEPTION
       'encounter holds annulled or discontinued rows with no reason or author (encounter ids):%', E'\n' || v_rows
-      USING HINT = 'Those rows were written outside the application. Record who annulled or interrupted each one and why, then run this migration again.';
+      USING HINT = 'Those rows were written outside the application. Record who annulled or interrupted each one and why. Nothing was changed: mark this migration rolled back with `pnpm exec prisma migrate resolve --rolled-back 20261001034625_encounter_annulment_and_interruption` and run `pnpm db:deploy` again.';
   END IF;
 END;
 $$;
@@ -173,10 +173,15 @@ BEGIN
   -- Only DRAFTS: an amendment is inserted already signed and EN-025 admits it
   -- on a closed attention; a signed note's content is frozen by
   -- `trg_clinical_note_immutable` already.
-  IF NEW.status <> 'DRAFT' THEN
+  -- On INSERT, what is born: an amendment is born SIGNED and passes. On
+  -- UPDATE, what the row WAS: a draft whose content changes is judged even if
+  -- the same statement also takes it out of DRAFT.
+  IF TG_OP = 'INSERT' AND NEW.status <> 'DRAFT' THEN
     RETURN NEW;
   END IF;
-  IF TG_OP = 'UPDATE' AND NEW.content IS NOT DISTINCT FROM OLD.content THEN
+  IF TG_OP = 'UPDATE'
+     AND (OLD.status <> 'DRAFT' OR NEW.content IS NOT DISTINCT FROM OLD.content)
+  THEN
     RETURN NEW;
   END IF;
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   AgendaEntryHasEncounterError,
+  AttentionStillInProgressError,
   AgendaEntryNotFoundError,
   InvalidAgendaTransitionError,
   NoShowBeforeStartError,
@@ -362,9 +363,25 @@ describe('la atención manda sobre la cita (AG-045, AG-148)', () => {
     }
   });
 
-  it('AG-045 still lets an attended appointment move forward', () => {
+  it('AG-045 still lets an attended appointment move forward once the attention ended', () => {
     expect(
-      planAttentionEffect(readOf(), 'FULFILLED', undefined, now),
+      planAttentionEffect(
+        readOf({ encounterInProgress: false }),
+        'FULFILLED',
+        undefined,
+        now,
+      ),
     ).toBeUndefined();
+  });
+
+  it('AG-153 refuses «Marcar atendida» while the attention is still in progress (D-099 §3)', () => {
+    expect(() =>
+      planAttentionEffect(
+        readOf({ encounterInProgress: true }),
+        'FULFILLED',
+        undefined,
+        now,
+      ),
+    ).toThrow(AttentionStillInProgressError);
   });
 });

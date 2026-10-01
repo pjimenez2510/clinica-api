@@ -95,6 +95,26 @@ async function main(): Promise<void> {
       'Solo para desarrollo: con datos reales, qué horario se queda lo decide la clínica (D-070).',
     );
   }
+  /**
+   * NOT ENOUGH WITH `NODE_ENV`: a staging copy or a restored backup of a real
+   * clinic runs with it unset. Writing is refused against any host but this
+   * machine (or the throwaway PostgreSQL of the walks) unless the caller says
+   * so explicitly with `--host-remoto`, having read what it does.
+   */
+  const host = (() => {
+    try {
+      return new URL(process.env.DATABASE_URL ?? '').hostname;
+    } catch {
+      return '';
+    }
+  })();
+  const local = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(host);
+  if (!local && !process.argv.includes('--host-remoto')) {
+    throw new Error(
+      `La base está en «${host || 'desconocido'}», no en esta máquina. Este script es de desarrollo; ` +
+        'con datos reales la clínica decide qué horario se cierra (D-070, D-085 §6).',
+    );
+  }
   const apply = process.argv.includes('--apply');
   const prisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),

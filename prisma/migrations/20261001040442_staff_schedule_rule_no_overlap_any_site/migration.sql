@@ -88,32 +88,39 @@ END;
 $$;
 
 -- ===========================================================================
--- 2. La exclusión, sin sede
+-- 2. La exclusión entre sedes, desde la entrada en vigor
 -- ===========================================================================
 
+-- `schedule_rule_no_overlap` (por sede, sin fecha) SE QUEDA COMO ESTABA: dentro
+-- de una sede la garantía siempre fue completa, también en el pasado, y
+-- quitarla para añadir la de entre sedes dejaría pasar dos reglas solapadas
+-- de la misma sede con vigencias anteriores al corte.
+--
+-- D-085 §6. ENTRE SEDES, SOLO LAS VIGENCIAS QUE SIGUEN DESDE LA ENTRADA EN
+-- VIGOR (2026-10-01). Dos reglas que rigieron en el pasado a la misma hora en
+-- dos sedes eran legales entonces, y una exclusión sobre vigencias completas
+-- dejaría una sola salida: desactivar una regla, que la borra también de su
+-- pasado. Con este predicado la salida es la honesta —cerrar la antigua el
+-- 2026-09-30, que conserva su historia— y desde el corte la garantía es
+-- completa. La fecha es fija a propósito: es el día en que cambió la regla, no
+-- «hoy», que un predicado de índice no puede leer.
+--
+-- `site_id WITH <>` y no simplemente sin sede: el solape dentro de la misma
+-- sede ya lo juzga la exclusión de arriba, y esta no tiene que volver a
+-- juzgarlo con otro predicado.
 ALTER TABLE practitioner_schedule_rule
-  DROP CONSTRAINT schedule_rule_no_overlap;
-
--- D-085 §6. ONLY THE VALIDITIES STILL IN FORCE FROM D-070'S CUTOVER
--- (2026-10-01). Two rules that both ruled in the past at the same hours in two
--- sites were legal then, and an exclusion over whole validities would leave
--- the clinic only one way out: deactivating a rule, which also erases it from
--- the past it ruled. With this predicate the way out is the honest one —close
--- the older rule on 2026-09-30, which keeps its history— and from the cutover
--- on the guarantee is complete. The date is fixed on purpose: it is the day
--- the rule changed, not «today», which an index predicate cannot read anyway.
-ALTER TABLE practitioner_schedule_rule
-  ADD CONSTRAINT schedule_rule_no_overlap
+  ADD CONSTRAINT schedule_rule_no_overlap_across_sites
   EXCLUDE USING gist (
     practitioner_id WITH =,
+    site_id WITH <>,
     weekday WITH =,
     minutes_range WITH &&,
     validity WITH &&
   )
   WHERE (active AND (valid_to IS NULL OR valid_to >= DATE '2026-10-01'));
 
-COMMENT ON CONSTRAINT schedule_rule_no_overlap ON practitioner_schedule_rule IS
-  'ST-042 (AG-106), sin sede desde D-070: dos reglas vigentes del mismo '
-  'profesional y día de la semana no pueden solaparse en horas, en ninguna '
-  'sede, en las vigencias que siguen desde el 2026-10-01 (D-085 §6). El nombre viaja al cliente como SCHEDULE_RULE_OVERLAP a través de '
-  'constraint-meanings.';
+COMMENT ON CONSTRAINT schedule_rule_no_overlap_across_sites ON practitioner_schedule_rule IS
+  'ST-042 entre sedes (D-070): dos reglas vigentes del mismo profesional y día '
+  'de la semana no pueden solaparse en horas en dos sedes, en las vigencias '
+  'que siguen desde el 2026-10-01 (D-085 §6). Viaja al cliente como '
+  'SCHEDULE_RULE_OVERLAP a través de constraint-meanings.';

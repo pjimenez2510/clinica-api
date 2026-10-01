@@ -388,6 +388,20 @@ export class InvalidAgendaTransitionError extends ConflictError {
 }
 
 /**
+ * AG-153 (D-099 §3). «Marcar atendida» while the attention is still open:
+ * the appointment is closed by signing or interrupting the attention.
+ */
+export class AttentionStillInProgressError extends ConflictError {
+  readonly code = 'ATTENTION_STILL_IN_PROGRESS';
+  override readonly userTitle =
+    'La atención sigue en curso: la cita queda atendida cuando el médico firma la nota o interrumpe la atención';
+
+  constructor() {
+    super('Appointment cannot be fulfilled while its attention is in progress');
+  }
+}
+
+/**
  * AG-045. The appointment already has an encounter behind it.
  *
  * Cancelling or marking a no-show would deny an attention that is already

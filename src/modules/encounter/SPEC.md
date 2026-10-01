@@ -2186,7 +2186,15 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   > órdenes y sus diagnósticos ya están en la ficha y pueden estar facturados,
   > y lo firmado se retracta nota a nota (EN-026). Y la misma regla de quién que
   > el cierre, con sus mismos códigos (`ENCOUNTER_CLOSER_NOT_AUTHOR`,
-  > `SUBSTITUTE_CLOSURE_REASON_REQUIRED`).
+  > `SUBSTITUTE_CLOSURE_REASON_REQUIRED`); el sustituto firma en la sede de la
+  > atención.
+  >
+  > **D-099 §1 (01-10-2026).** Tampoco en curso si la atención ya dejó algo
+  > vivo en la ficha —receta activa o en borrador, orden con ítems pendientes,
+  > nota firmada—: se rechaza con `ENCOUNTER_HAS_LIVE_ACTS`, contándolos, y
+  > cada cosa se retracta antes por su vía (PR-010, ORD-007, EN-026). Anulado
+  > con la atención, lo emitido seguiría valiendo en papel a nombre del
+  > paciente equivocado.
 - **EN-167** — CUANDO quien tenga `record:sign` interrumpa una atención `OPEN`
   u `ON_HOLD` (EN-129) siendo su profesional —o, si es otro, con motivo de
   sustitución (EN-147)—, el sistema DEBERÁ exigir motivo escrito y origen
@@ -2211,6 +2219,13 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   >
   > **`record:sign` y no `record:write`** porque interrumpir firma; por la
   > ruta normal, quien no firma recibiría un 403.
+  >
+  > **D-099 §4 y §5 (01-10-2026).** Cada borrador vacío que no se firma deja
+  > su fila en la bitácora (`DRAFT_LEFT_UNSIGNED`), y la pantalla lo dice. Y
+  > una nota sin nada escrito no cuenta como acto clínico: sin otro acto, la
+  > cita queda «se fue sin ser atendido» y caja no propone la consulta. Con la
+  > cita sin llegada registrada la interrupción se rechaza
+  > (`APPOINTMENT_ARRIVAL_NOT_RECORDED`, AG-149).
 - **EN-168** — El sistema DEBERÁ admitir como máximo una atención viva (no
   `ENTERED_IN_ERROR`) por cita, y la base DEBERÁ garantizarlo; una atención
   anulada DEBERÁ seguir atada a su cita.
@@ -2753,6 +2768,8 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `ENCOUNTER_ALREADY_REPORTED`             | 409  | Incluir en un envío una atención ya reportada                                                                                                                                                                                                                                                                                                                                                                               | EN-111                 |
 | `RDACAA_FIELDS_MISSING`                  | 422  | Exportar con fichas incompletas. Nombra **los campos**, nunca a los pacientes                                                                                                                                                                                                                                                                                                                                               | EN-115                 |
 | `ENCOUNTER_STATE_TRANSITION_INVALID`     | 409  | Transición de estado que la tabla de EN-132 no admite: reabrir una cerrada, saltarse el alta clínica, suspender una ya dada de alta. **Un solo código para todas**: el mensaje dice en qué estado está y qué se puede hacer desde ahí                                                                                                                                                                                       | EN-132                 |
+| `ENCOUNTER_HAS_LIVE_ACTS`                | 409  | Anular una atención en curso que ya tiene receta activa o en borrador, orden pendiente o nota firmada: se retractan antes (D-099 §1)                                                                                                                                                                                                                                                                                        | EN-166                 |
+| `APPOINTMENT_ARRIVAL_NOT_RECORDED`       | 409  | Interrumpir la atención de una cita sin llegada registrada (D-099 §2)                                                                                                                                                                                                                                                                                                                                                       | EN-167                 |
 | `ENCOUNTER_HAS_OTHERS_DRAFTS`            | 409  | Interrumpir una atención con un borrador de otra persona, que quedaría sin firma para siempre (D-085 §2)                                                                                                                                                                                                                                                                                                                    | EN-167                 |
 | `ENCOUNTER_ANNULMENT_REASON_REQUIRED`    | 422  | Anular una atención sin motivo escrito. Se exige **en el servicio** además del DTO                                                                                                                                                                                                                                                                                                                                          | EN-166                 |
 | `ENCOUNTER_INTERRUPTION_REASON_REQUIRED` | 422  | Interrumpir una atención sin motivo escrito o sin origen (D-082: sin condición de egreso, que no se exige). Se exige **en el servicio** además del DTO, por lo mismo que `AMENDMENT_REASON_REQUIRED`                                                                                                                                                                                                                        | EN-129                 |

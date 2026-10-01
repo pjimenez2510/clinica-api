@@ -1202,7 +1202,8 @@ describe('las transiciones de estado de la cita por HTTP', () => {
           formCode: '002',
           formVersion: '1',
           status: 'DRAFT',
-          content: {},
+          // Con algo escrito: una nota vacía no es acto clínico (D-099 §5).
+          content: { motivoConsulta: 'Dolor abdominal' },
           authorId: practitionerId,
         },
       });
@@ -1345,6 +1346,24 @@ describe('las transiciones de estado de la cita por HTTP', () => {
         expect(attention.status).toBe('DISCONTINUED');
         expect(await prisma.clinicalNote.count({ where: { encounterId: encounter.id } })).toBe(0); // prettier-ignore
       }
+    });
+
+    it('AG-153 «Marcar atendida» se rechaza con la atención en curso y se admite cuando terminó (D-099 §3)', async () => {
+      const { entryId, encounter } = await inTheWaitingRoomWithAttention();
+      await openTheNote(encounter.id);
+
+      const refused = await transition(entryId, { to: 'FULFILLED' }).expect(409); // prettier-ignore
+      expect((refused.body as Problem).code).toBe(
+        'ATTENTION_STILL_IN_PROGRESS',
+      );
+
+      // Control positivo: firmada la nota, la atención está de alta y la cita
+      // ya se puede marcar atendida.
+      await prisma.encounter.update({
+        where: { id: encounter.id },
+        data: { status: 'DISCHARGED', endedAt: new Date(), dischargeCondition: 'ALIVE' }, // prettier-ignore
+      });
+      await transition(entryId, { to: 'FULFILLED' }).expect(200);
     });
 
     it('AG-045 una atención anulada ya no frena la cita', async () => {

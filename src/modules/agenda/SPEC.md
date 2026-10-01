@@ -442,8 +442,8 @@ sobre una consulta que sí ocurrió. **Prueba independiente:** abrir la nota de
 una cita en sala, comprobar contra la base que la cita está `IN_PROGRESS` con
 su fila de historial, que el servidor rechaza `LEFT_WITHOUT_BEING_SEEN` y
 `CANCELLED` sobre ella, y que el menú ya no los ofrece.
-**Cubre:** AG-045, AG-146 a AG-150. Decisiones D-076, D-077, D-080, D-081,
-D-082.
+**Cubre:** AG-045, AG-146 a AG-150, AG-153. Decisiones D-076, D-077, D-080,
+D-081, D-082, D-085, D-099.
 
 > **AG-045 se cubre otra vez aquí** porque su mitad visible nace en esta
 > entrega; su mitad de servidor sigue en E2.
@@ -1372,7 +1372,8 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   > anulación de una atención firmada y cerrada la corrige la atención, y la
   > cita ya no es el sitio.
 - **AG-148** — CUANDO una cita `CHECKED_IN` cuya atención viva no tiene
-  ningún acto clínico —nota, diagnóstico, procedimiento, receta ni orden—
+  ningún acto clínico —nota con algo escrito, diagnóstico, procedimiento,
+  receta ni orden—
   pase a `LEFT_WITHOUT_BEING_SEEN`, el sistema DEBERÁ pasar esa atención, si
   sigue `OPEN` u `ON_HOLD`, a `DISCONTINUED` con origen `PATIENT`, el motivo dado (o
   «Se fue sin ser atendido» si no se dio), quien registra la salida y el mismo
@@ -1396,8 +1397,22 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   > **D-076: hubo atención**, así que la cita nunca termina como «se fue sin
   > ser atendido». Atendida, y lo que dice que fue a medias es el estado de la
   > atención (`DISCONTINUED`, D-080 §3), que la cita publica (AG-150). Caja
-  > revisa el cobro como ya decidió D-054 §2: la consulta se propone y caja la
-  > quita con motivo.
+  > propone la consulta y la quita con motivo (D-054 §2) **solo si hubo algún
+  > acto clínico**; sin ninguno no propone nada (BI-180, D-085 §4).
+  >
+  > **D-099 §2 (01-10-2026).** Una cita `IN_PROGRESS` sin ningún acto vuelve
+  > por `CHECKED_IN` a «se fue sin ser atendido», con sus dos filas. Una cita
+  > `BOOKED` o `CONFIRMED` —la atención se abrió sin registrar la llegada— no
+  > se cierra con verdad: la interrupción se rechaza
+  > (`APPOINTMENT_ARRIVAL_NOT_RECORDED`) hasta registrar la llegada, que lleva
+  > la calificación de emergencia (Ley 77 art. 10).
+- **AG-153** — MIENTRAS la atención viva de una cita esté `OPEN` u `ON_HOLD`,
+  el sistema NO DEBERÁ admitir que la cita pase a `FULFILLED`, y DEBERÁ
+  rechazarlo con `ATTENTION_STILL_IN_PROGRESS`; la pantalla NO DEBERÁ
+  ofrecerlo.
+  > **D-099 §3 (01-10-2026).** La cita la cierran firmar o interrumpir la
+  > atención. Marcada a mano, una anulación posterior dejaría una cita
+  > «Atendida» sin ninguna atención detrás, y al paciente fuera de la sala.
 - **AG-150** — El sistema DEBERÁ publicar en cada cita el estado de su
   atención viva (`attention`: `null` o el `EncounterStatus`), y la pantalla
   DEBERÁ mostrar «Interrumpida» en una cita atendida cuya atención está
@@ -2304,6 +2319,7 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `INVALID_AGENDA_TRANSITION`            | 409    | AG-040         |
 | `OUTSIDE_SCHEDULE_RULE`                | 422    | AG-028         |
 | `AGENDA_ENTRY_HAS_ENCOUNTER`           | 409    | AG-045, AG-148 |
+| `ATTENTION_STILL_IN_PROGRESS`          | 409    | AG-153         |
 | `OVERBOOKING_PRACTITIONER_UNAVAILABLE` | 409    | AG-151         |
 | `BLOCK_OVERLAPS_APPOINTMENTS`          | 409    | AG-038, AG-152 |
 | `BOOKING_IN_THE_PAST`                  | 422    | AG-031         |

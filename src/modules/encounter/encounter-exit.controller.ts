@@ -65,9 +65,9 @@ export class EncounterExitController {
           encounterId: id,
           reason: dto.reason,
           substituteReason: dto.substituteReason,
-          canSignRecords: this.currentUser
-            .requirePrincipal()
-            .can('record:sign'),
+          // The sites where the caller SIGNS, not a yes/no: a substitute has
+          // to sign at the attention's own site (D-085 §2).
+          signSites: this.signSites(),
         },
         this.requester(req, 'record:write'),
       ),
@@ -103,6 +103,12 @@ export class EncounterExitController {
         this.requester(req, 'record:sign'),
       ),
     );
+  }
+
+  /** Where the caller holds `record:sign`: every site, or these. */
+  private signSites(): 'all' | string[] {
+    const scope = this.currentUser.requirePrincipal().sitesFor('record:sign');
+    return scope === ALL_SITES ? 'all' : [...scope];
   }
 
   /** The caller's identity and resolved scope for one permission. */

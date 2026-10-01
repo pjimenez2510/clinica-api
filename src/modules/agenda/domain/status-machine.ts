@@ -12,6 +12,7 @@
 
 import {
   AgendaEntryHasEncounterError,
+  AttentionStillInProgressError,
   AgendaEntryNotFoundError,
   InvalidAgendaTransitionError,
   NoShowBeforeStartError,
@@ -280,6 +281,16 @@ export function planAttentionEffect(
 
   if (to === 'CANCELLED' || to === 'NO_SHOW' || to === 'ENTERED_IN_ERROR') {
     throw new AgendaEntryHasEncounterError();
+  }
+  /**
+   * AG-153 (D-099 §3). «Atendida» is not typed while the attention is still
+   * in progress: signing or interrupting it is what ends it. Marked by hand,
+   * an annulment afterwards would leave an attended appointment with no
+   * attention behind it — the patient gone from the waiting room while their
+   * visit says it never happened.
+   */
+  if (to === 'FULFILLED' && read.encounterInProgress) {
+    throw new AttentionStillInProgressError();
   }
   if (to !== 'LEFT_WITHOUT_BEING_SEEN') return undefined;
   if (read.encounterHasClinicalAct) throw new AgendaEntryHasEncounterError();

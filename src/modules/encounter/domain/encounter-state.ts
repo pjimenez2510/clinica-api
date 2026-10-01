@@ -191,10 +191,11 @@ export function acceptsNewClinicalContent(status: EncounterStatus): boolean {
  * EN-166 (D-077, D-080). Annulling an attention: «this should never have
  * existed», with its reason, author and instant.
  *
- * From any NON-terminal state (EN-018): an attention opened on the wrong chart
- * is discovered at any point before it is finished. `ended_at` is kept if the
- * act had already ended (a signed `DISCHARGED`), and stamped now otherwise —
- * `encounter_status_matches_ended_at` demands one on every state that is over.
+ * The state machine admits it from any NON-terminal state (EN-018), and the
+ * exit narrows it to `OPEN`/`ON_HOLD` (`assertAnnullable`, D-085 §1): a signed
+ * attention is retracted note by note. `ended_at` is kept if the act had
+ * already ended and stamped now otherwise — `encounter_status_matches_ended_at`
+ * demands one on every state that is over.
  *
  * THE NOTES ARE NOT IN THIS PLAN, and that is the requirement: nothing written
  * in the attention is deleted or changed. The attention says it should not

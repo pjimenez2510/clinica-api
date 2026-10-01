@@ -33,8 +33,12 @@ export interface AnnulEncounterRequest {
   reason?: string;
   /** EN-147 applied to the exits (D-085 §2): why somebody else does it. */
   substituteReason?: string;
-  /** `record:sign`, resolved by the controller from the session. */
-  canSignRecords: boolean;
+  /**
+   * Where the caller holds `record:sign`, resolved by the controller from the
+   * session. A substitute must sign AT THE ATTENTION'S SITE: signing at
+   * another one is not the authority D-085 §2 grants.
+   */
+  signSites: 'all' | readonly string[];
 }
 
 /** EN-167. Interrupting an attention that cannot be finished. */
@@ -98,7 +102,9 @@ export class EncounterExitService {
         // closure: «esto no le toca a usted» is the answer whatever else.
         const substituteReason = planExitActor(encounter.practitionerId, {
           practitionerId: identity.practitionerId,
-          canSignRecords: request.canSignRecords,
+          canSignRecords:
+            request.signSites === 'all' ||
+            request.signSites.includes(encounter.siteId),
           substituteReason: request.substituteReason,
         });
         assertAnnullable(encounter.status);
@@ -154,39 +160,42 @@ export class EncounterExitService {
     if (!signer) throw new PractitionerProfileRequiredError();
     const now = new Date();
 
-    const { encounter: discontinued, signedNoteIds } =
-      await this.exits.discontinue(
-        { encounterId: request.encounterId, sites: requester.sites },
-        (encounter) => ({
-          substituteReason: planExitActor(encounter.practitionerId, {
-            practitionerId: signer.practitionerId,
-            canSignRecords: request.canSignRecords,
-            substituteReason: request.substituteReason,
-          }),
-          ...planInterruption({
-            from: encounter.status,
-            reason: request.reason,
-            origin: request.origin,
-            now,
-          }),
+    const {
+      encounter: discontinued,
+      signedNoteIds,
+      unsignedEmptyNoteIds,
+    } = await this.exits.discontinue(
+      { encounterId: request.encounterId, sites: requester.sites },
+      (encounter) => ({
+        substituteReason: planExitActor(encounter.practitionerId, {
+          practitionerId: signer.practitionerId,
+          canSignRecords: request.canSignRecords,
+          substituteReason: request.substituteReason,
         }),
-        {
-          authorId: signer.practitionerId,
-          sign: (draft) => {
-            assertLicensedOn(signer.acessExpiresOn, now);
-            return {
+        ...planInterruption({
+          from: encounter.status,
+          reason: request.reason,
+          origin: request.origin,
+          now,
+        }),
+      }),
+      {
+        authorId: signer.practitionerId,
+        sign: (draft) => {
+          assertLicensedOn(signer.acessExpiresOn, now);
+          return {
+            signedById: signer.practitionerId,
+            signedAt: now,
+            contentHash: contentHashOf({
+              content: (draft.content ?? {}) as NoteContent,
               signedById: signer.practitionerId,
               signedAt: now,
-              contentHash: contentHashOf({
-                content: (draft.content ?? {}) as NoteContent,
-                signedById: signer.practitionerId,
-                signedAt: now,
-              }),
-            };
-          },
+            }),
+          };
         },
-        requester.userId,
-      );
+      },
+      requester.userId,
+    );
 
     await this.audit.record({
       userId: requester.userId,
@@ -216,6 +225,18 @@ export class EncounterExitService {
         userAgent: requester.userAgent,
       });
       this.logger.info({ action: 'CLINICAL_NOTE_SIGNED' }, 'clinical note signed'); // prettier-ignore
+    }
+    // D-099 §4. The constancia of D-085 §5: which drafts were left unsigned
+    // because nothing was written in them, by whom and when.
+    for (const noteId of unsignedEmptyNoteIds) {
+      await this.audit.record({
+        userId: requester.userId,
+        resourceType: NOTE_RESOURCE_TYPE,
+        resourceId: noteId,
+        action: 'DRAFT_LEFT_UNSIGNED',
+        ip: requester.ip,
+        userAgent: requester.userAgent,
+      });
     }
 
     return discontinued;

@@ -584,7 +584,48 @@ export class EncounterAnnulmentReasonRequiredError extends ValidationError {
 }
 
 /**
- * EN-167, D-083 (pending). The attention holds a draft written by SOMEBODY
+ * EN-166, D-099 §1. The attention already left something in the chart —a
+ * prescription active or in draft, an order still pending, a signed note— and
+ * it is retracted by its own door before the attention is annulled.
+ */
+export class EncounterHasLiveActsError extends ConflictError {
+  readonly code = 'ENCOUNTER_HAS_LIVE_ACTS';
+  override readonly userTitle: string;
+
+  constructor(acts: {
+    prescriptions: number;
+    orders: number;
+    signedNotes: number;
+  }) {
+    // Counts only: no patient, no drug, no exam reaches a log.
+    super('Encounter holds acts that have to be retracted first', acts);
+    const parts = [
+      acts.prescriptions > 0
+        ? `${acts.prescriptions} receta(s) activa(s) o en borrador`
+        : null,
+      acts.orders > 0 ? `${acts.orders} orden(es) pendiente(s)` : null,
+      acts.signedNotes > 0 ? `${acts.signedNotes} nota(s) firmada(s)` : null,
+    ].filter(Boolean);
+    this.userTitle = `La atención tiene ${parts.join(', ')}. Anúlelas o retráctelas antes de anular la atención`;
+  }
+}
+
+/**
+ * EN-167, D-099 §2. The appointment's arrival was never recorded, so it cannot
+ * be closed as attended nor as «se fue sin ser atendido».
+ */
+export class AppointmentArrivalNotRecordedError extends ConflictError {
+  readonly code = 'APPOINTMENT_ARRIVAL_NOT_RECORDED';
+  override readonly userTitle =
+    'La cita no tiene registrada la llegada. Regístrela (con la calificación de emergencia) antes de interrumpir la atención';
+
+  constructor() {
+    super('Appointment arrival is not recorded');
+  }
+}
+
+/**
+ * EN-167, D-085 §2. The attention holds a draft written by SOMEBODY
  * ELSE. Interrupting signs the drafts of whoever interrupts (D-082); a draft of
  * another author would stay unsigned inside a terminal attention, where nobody
  * could sign it any more — the «texto sin responsable» D-082 rejected.

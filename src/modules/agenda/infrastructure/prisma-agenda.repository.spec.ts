@@ -114,11 +114,15 @@ function prismaDouble(options: {
     },
     // The LOCK of the live attention is a read and is not recorded: what the
     // tests below pin is what is WRITTEN, and in which order.
-    $queryRaw: () =>
+    $queryRaw: (strings: TemplateStringsArray) =>
       Promise.resolve(
-        options.liveAttention
-          ? [{ id: options.liveAttention.id, status: 'OPEN' }]
-          : [],
+        strings.join('').includes('EXISTS')
+          ? // `hasClinicalAct`: is there a note with something written?
+            [{ any: (options.liveAttention?.notes ?? 0) > 0 }]
+          : // `lockLiveAttention`
+            options.liveAttention
+            ? [{ id: options.liveAttention.id, status: 'OPEN' }]
+            : [],
       ),
     clinicalNote: {
       count: () => Promise.resolve(options.liveAttention?.notes ?? 0),

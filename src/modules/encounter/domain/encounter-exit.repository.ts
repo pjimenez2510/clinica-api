@@ -29,6 +29,8 @@ export interface DraftSigning {
 export interface InterruptionOutcome {
   encounter: EncounterView;
   signedNoteIds: string[];
+  /** D-085 §5, D-099 §4: the drafts with nothing written, left unsigned. */
+  unsignedEmptyNoteIds: string[];
 }
 
 /** EN-147 applied to the exits: the substitute's reason, or `null` for the author. */
