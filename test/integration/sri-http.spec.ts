@@ -606,7 +606,7 @@ describe('el comprobante electrónico por HTTP', () => {
         where: { id: siteId },
         include: { establishment: true },
       });
-      const issuerRuc = own.ruc ?? own.establishment!.ruc!;
+      const issuerRuc = own.ruc ?? own.establishment.ruc!;
       const sibling = await createSite(prisma, 'Sede con el RUC escrito');
       const rejectionOf = (promise: Promise<unknown>) =>
         promise.then(

@@ -204,6 +204,7 @@ describe('la receta por HTTP', () => {
         },
       })
     ).id;
+    await aDiagnosisOn(prisma, encounterId);
   }
 
   /**
@@ -360,6 +361,29 @@ describe('la receta por HTTP', () => {
         e.field.endsWith('offFormularyJustification'),
       ),
     ).toBe(true);
+  });
+
+  it('PR-095 sin diagnóstico en la atención la receta no se emite y se nombra el campo; con él, sí', async () => {
+    const composed = await composeAsDoctor();
+    await prisma.encounterDiagnosis.deleteMany({ where: { encounterId } });
+    const path = `/prescriptions/${composed.prescription.id}/issue`;
+
+    const refused = await post(path, doctorToken).expect(422);
+    const problem = refused.body as Problem;
+    expect(problem.code).toBe('PRESCRIPTION_DIAGNOSIS_REQUIRED');
+    expect(problem.errors?.map((e) => e.field)).toEqual(['diagnosis']);
+    expect(
+      (
+        await prisma.prescription.findUniqueOrThrow({
+          where: { id: composed.prescription.id },
+          select: { status: true },
+        })
+      ).status,
+    ).toBe('DRAFT');
+
+    // Control positivo: con el diagnóstico, el mismo camino emite.
+    await aDiagnosisOn(prisma, encounterId);
+    await post(path, doctorToken).expect(200);
   });
 
   it('PR-021 a PR-034 el documento lleva todo lo que el art. 5 exige', async () => {
@@ -695,3 +719,38 @@ describe('la receta por HTTP', () => {
     );
   });
 });
+
+/**
+ * PR-095. The diagnosis art. 5.b.iii prints: without one the receta is not
+ * issued. One CIE-10 concept per database, found or created.
+ */
+async function aDiagnosisOn(prisma: PrismaClient, encounterId: string) {
+  const system = await prisma.catalogSystem.upsert({
+    where: { code: 'CIE10' },
+    create: { code: 'CIE10', name: 'CIE-10' },
+    update: {},
+  });
+  const concept =
+    (await prisma.catalogConcept.findFirst({
+      where: { systemId: system.id, code: 'J029' },
+    })) ??
+    (await prisma.catalogConcept.create({
+      data: {
+        systemId: system.id,
+        code: 'J029',
+        display: 'Faringitis aguda, no especificada',
+        validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+      },
+    }));
+  await prisma.encounterDiagnosis.create({
+    data: {
+      encounterId,
+      conceptId: concept.id,
+      cie10Code: 'J029',
+      cie10Display: 'Faringitis aguda, no especificada',
+      certainty: 'DEFINITIVE',
+      occurrence: 'FIRST_TIME',
+      rank: 1,
+    },
+  });
+}

@@ -23,6 +23,7 @@ import {
   PrescriberProfileRequiredError,
   PrescriptionEncounterNotFoundError,
   PrescriptionEncounterNotOpenError,
+  PrescriptionDiagnosisRequiredError,
   PrescriptionEstablishmentIncompleteError,
   PrescriptionNotEditableError,
   PrescriptionNotFoundError,
@@ -274,6 +275,12 @@ export class PrescriptionService {
         // PR-021. Art. 5.a.ii wants the city, and there is none to print.
         if (snapshot.cityOfPrescription === null) {
           throw new PrescriptionEstablishmentIncompleteError();
+        }
+
+        // PR-095. Art. 5.b.iii wants the CIE diagnosis, read from the
+        // attention (PR-026): a receta with «Diagnóstico: —» is not issued.
+        if (snapshot.diagnosisCount === 0) {
+          throw new PrescriptionDiagnosisRequiredError();
         }
 
         // PR-032, PR-038, PR-039. The indications of art. 5.e and the whole

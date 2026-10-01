@@ -55,6 +55,8 @@ export interface CertifierIdentity {
  */
 export interface IssueSnapshot {
   encounterStatus: EncounterStatus;
+  /** CER-039. Who attended: the issuer, or someone who has to say why not. */
+  attendingPractitionerId: string;
   /** CER-008. How many diagnoses the attention has. */
   diagnosisCount: number;
   /** CER-030. When the attention started; its clinical date is Ecuador's. */
@@ -74,8 +76,10 @@ export interface CertificatePlan {
   contingencyType: ContingencyType | null;
   /** CER-035. Present exactly with `MATERNITY`. */
   maternity: MaternityDates | null;
-  /** CER-030. Present exactly when the rest starts before the attention. */
+  /** CER-030. Present exactly when the rest starts before the attention or is issued a later day. */
   backdatingReason: string | null;
+  /** CER-039. Present exactly when the issuer did not attend. */
+  issuedByOtherReason: string | null;
   /** CER-004. The practitioner of the session, never an id of the request. */
   issuedById: string;
   issuedAt: Date;
@@ -109,12 +113,24 @@ export interface CertificateView {
   contingencyType: ContingencyType | null;
   /** CER-035. Present exactly with `MATERNITY`. */
   maternity: MaternityDates | null;
-  /** CER-030. Why the rest starts before the attention, or `null`. */
+  /** CER-030. Why the rest starts before the attention or is issued late, or `null`. */
   backdatingReason: string | null;
+  /** CER-039. Why someone who did not attend issued it, or `null`. */
+  issuedByOtherReason: string | null;
   /** CER-011. Who, when and why — the three together or none. */
   revokedAt: Date | null;
   revokedById: string | null;
   revocationReason: string | null;
+}
+
+/**
+ * CER-040. What the annulment has to judge, read in the transaction that
+ * writes it: who issued the certificate, and at which site.
+ */
+export interface RevocationSnapshot {
+  /** The ACCOUNT of the practitioner who issued it. */
+  issuerUserId: string;
+  siteId: string;
 }
 
 /** CER-011. What annulling writes: the three together, never fewer. */
@@ -156,11 +172,13 @@ export interface CertificateRepository {
    *
    * Conditional on `revoked_at IS NULL`: of two people annulling at once one
    * wins and the other is refused with `CERTIFICATE_ALREADY_REVOKED`.
-   * Refuses with `CERTIFICATE_NOT_FOUND` outside the scope.
+   * Refuses with `CERTIFICATE_NOT_FOUND` outside the scope. `authorise`
+   * judges who may annul it (CER-040) before anything is written.
    */
   revoke(
     query: CertificateQuery,
     plan: RevocationPlan,
+    authorise: (snapshot: RevocationSnapshot) => void,
   ): Promise<CertificateView>;
 
   /**
@@ -173,3 +191,12 @@ export interface CertificateRepository {
 
 /** Injection token. The application never names the adapter. */
 export const CERTIFICATE_REPOSITORY = Symbol('CertificateRepository');
+
+/**
+ * CER-030, CER-041. The instant of issue and of annulment. A port so a test
+ * can say «issued two days after the attention» without travelling in time.
+ */
+export type CertificateClock = () => Date;
+
+/** Injection token of the clock. */
+export const CERTIFICATE_CLOCK = Symbol('CertificateClock');

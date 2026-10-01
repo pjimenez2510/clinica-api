@@ -49,6 +49,11 @@ interface Scene {
   userId: string;
   /** The clinical date of the attention, derived from the fixture's instant. */
   day: ClinicalDate;
+  /**
+   * CER-030. Certificates here are issued AT the attention: one issued a later
+   * day is a late rest that needs a reason (`certificate-d105.spec.ts`).
+   */
+  startedAt: Date;
 }
 
 async function aScene(prisma: PrismaClient): Promise<Scene> {
@@ -68,6 +73,7 @@ async function aScene(prisma: PrismaClient): Promise<Scene> {
     practitionerId: practitioner.id,
     userId: user.id,
     day: clinicalDateOf(encounter.startedAt),
+    startedAt: encounter.startedAt,
   };
 }
 
@@ -88,10 +94,10 @@ async function insertCertificate(
     { id: string; number: number; site_id: string }[]
   >`
     INSERT INTO medical_certificate
-      (encounter_id, patient_id, issued_by_id, type, rest_from, rest_to, verification_code)
+      (encounter_id, patient_id, issued_by_id, type, rest_from, rest_to, verification_code, issued_at)
     VALUES (${scene.encounterId}::uuid, ${scene.patientId}::uuid, ${scene.practitionerId}::uuid,
             ${rest === null ? 'ATTENDANCE' : 'MEDICAL_REST'}::certificate_type,
-            ${rest?.from ?? null}::date, ${rest?.to ?? null}::date, ${nextCode()})
+            ${rest?.from ?? null}::date, ${rest?.to ?? null}::date, ${nextCode()}, ${scene.startedAt})
     RETURNING id, number, site_id::text AS site_id
   `;
   return row!;
@@ -356,6 +362,8 @@ async function insertRest(
     birth?: string | null;
     discharge?: string | null;
     backdatingReason?: string | null;
+    /** Defaults to the attention's own instant: issued the same day. */
+    issuedAt?: Date;
   },
 ): Promise<number> {
   return prisma.$executeRaw`
@@ -363,12 +371,13 @@ async function insertRest(
       (encounter_id, patient_id, issued_by_id, type, rest_from, rest_to,
        include_diagnosis, verification_code, contingency_type,
        maternity_admission_on, birth_on, maternity_discharge_on,
-       rest_backdating_reason)
+       rest_backdating_reason, issued_at)
     VALUES (${scene.encounterId}::uuid, ${scene.patientId}::uuid, ${scene.practitionerId}::uuid,
             'MEDICAL_REST', ${scene.day}::date, ${scene.day}::date, true, ${nextCode()},
             ${extra.contingency ?? null}::certificate_contingency_type,
             ${extra.admission ?? null}::date, ${extra.birth ?? null}::date,
-            ${extra.discharge ?? null}::date, ${extra.backdatingReason ?? null})
+            ${extra.discharge ?? null}::date, ${extra.backdatingReason ?? null},
+            ${extra.issuedAt ?? scene.startedAt})
   `;
 }
 
@@ -434,11 +443,15 @@ describe('CER-030 el motivo del reposo retroactivo no se guarda vacio', () => {
     const prisma = db();
     const scene = await aScene(prisma);
 
+    // Issued two days after the attention: a reason is due (CER-030).
+    const issuedAt = new Date(scene.startedAt.getTime() + 2 * 24 * 60 * 60 * 1000); // prettier-ignore
+
     // Control positivo: con motivo.
     await expect(
       insertRest(prisma, scene, {
         contingency: 'GENERAL_ILLNESS',
         backdatingReason: 'Acudió dos días tarde por la fiebre',
+        issuedAt,
       }),
     ).resolves.toBe(1);
 
@@ -446,6 +459,7 @@ describe('CER-030 el motivo del reposo retroactivo no se guarda vacio', () => {
       insertRest(prisma, scene, {
         contingency: 'GENERAL_ILLNESS',
         backdatingReason: '   ',
+        issuedAt,
       }),
     ).rejects.toThrow(/medical_certificate_backdating_reason_not_blank/);
   });
@@ -475,6 +489,7 @@ describe('CER-003 la emisión y la anulación de la atención se serializan', ()
             contingencyType: null,
             maternity: null,
             backdatingReason: null,
+            issuedByOtherReason: null,
             issuedById: scene.practitionerId,
             issuedAt: new Date(),
             verificationCode: nextCode(),

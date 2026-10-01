@@ -469,19 +469,18 @@ describe('OrganizationService', () => {
       });
     });
 
-    it('OR-004 admite crear una sede antes de que exista el establecimiento', async () => {
-      // The column is nullable for exactly this: refusing here would block a
-      // clinic from adding a site before filling the establishment form.
+    it('OR-032 rechaza crear una sede antes de que exista el establecimiento, sin escribir nada', async () => {
       answers.findEstablishment = null;
       const { service, calls } = build();
 
-      await service.createSite(
-        { mspUnicode: 'MSP-0001-S', name: 'Sede Sur' },
-        REQUESTER,
-      );
-
-      const create = calls.find((c) => c.method === 'createSite');
-      expect(create?.args[0]).toMatchObject({ establishmentId: null });
+      await expect(
+        service.createSite(
+          { mspUnicode: 'MSP-0001-S', name: 'Sede Sur' },
+          REQUESTER,
+        ),
+      ).rejects.toMatchObject({ code: 'SITE_ESTABLISHMENT_REQUIRED' });
+      expect(calls.find((c) => c.method === 'createSite')).toBeUndefined();
+      expect(entries).toEqual([]);
     });
 
     it('OR-007 desactiva una sede sin tocar ninguna otra cosa', async () => {

@@ -1,6 +1,8 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
+import { ensureDevelopmentEstablishment } from './seed-organization.mts';
+
 /**
  * Development seed for the AGENDA screens (E1/E2).
  *
@@ -97,6 +99,16 @@ async function main() {
     select: { id: true },
   });
 
+  // OR-032. Every site belongs to an establishment: the one the clinic
+  // registered, or the development one of `seed-organization.mts` when the
+  // database has none yet. Never a site without it. With several, the oldest
+  // (`uuidv7` orders by creation): a development seed has one clinic.
+  const establishment =
+    (await prisma.establishment.findFirst({
+      select: { id: true },
+      orderBy: { id: 'asc' },
+    })) ?? (await ensureDevelopmentEstablishment(prisma));
+
   const norte = await prisma.site.upsert({
     where: { mspUnicode: 'DEV-NORTE' },
     // También al actualizar: las sedes de una base ya sembrada existen sin
@@ -104,6 +116,7 @@ async function main() {
     update: { parishConceptId: parish?.id ?? null },
     create: {
       mspUnicode: 'DEV-NORTE',
+      establishmentId: establishment.id,
       name: 'Sede Norte',
       addressLine: 'Av. de los Granados y 6 de Diciembre, Quito',
       parishConceptId: parish?.id ?? null,
@@ -135,6 +148,7 @@ async function main() {
     update: { parishConceptId: parish?.id ?? null },
     create: {
       mspUnicode: 'DEV-SUR',
+      establishmentId: establishment.id,
       name: 'Sede Sur',
       addressLine: 'Av. Morán Valverde y Cóndor Ñan, Quito',
       parishConceptId: parish?.id ?? null,

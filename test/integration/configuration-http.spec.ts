@@ -19,6 +19,7 @@ import {
   createPatient,
   createPractitioner,
   createRoom,
+  establishmentId,
 } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
@@ -205,6 +206,7 @@ describe('la configuración por HTTP', () => {
       data: {
         mspUnicode: `CFG-${String(siteSequence).padStart(4, '0')}`,
         name,
+        establishmentId: await establishmentId(prisma),
       },
       select: { id: true },
     });
@@ -769,6 +771,7 @@ describe('la configuración por HTTP', () => {
     it('CF-062 los escribe también cuando la sede la crea el módulo de organización', async () => {
       // El disparador es la garantía justamente porque el alta puede venir de
       // cualquier sitio: la pantalla, una importación o un `INSERT` a mano.
+      await establishmentId(prisma); // OR-032
       const created = await request(app.getHttpServer())
         .post('/api/v1/organization/sites')
         .set('Authorization', `Bearer ${token}`)

@@ -38,6 +38,7 @@ import {
   SubstituteClosureReasonRequiredError,
   UnknownClinicalFormError,
   VitalsRequiredError,
+  EncounterHasLiveActsError,
 } from './encounter.errors';
 
 /**
@@ -358,5 +359,23 @@ describe('el contrato de errores de la atención', () => {
     expect(error.code).toBe('PRACTITIONER_PROFILE_REQUIRED');
     expect(error).toBeInstanceOf(ForbiddenError); // 403
     expect(error.params).toEqual({});
+  });
+});
+
+describe('EN-166 la atención con actos vivos no se anula', () => {
+  it('EN-166 nombra el certificado con la palabra de su pantalla, «sin anular», y es un 409', () => {
+    const error = new EncounterHasLiveActsError({
+      prescriptions: 0,
+      orders: 0,
+      signedNotes: 0,
+      certificates: 1,
+      referrals: 0,
+      interconsultations: 0,
+    });
+
+    expect(error.code).toBe('ENCOUNTER_HAS_LIVE_ACTS');
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.userTitle).toContain('1 certificado(s) sin anular');
+    expect(error.userTitle).not.toContain('revocar');
   });
 });

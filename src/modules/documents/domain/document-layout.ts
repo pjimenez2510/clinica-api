@@ -511,9 +511,14 @@ export function composeCertificateLayout(
   if (form.revocation !== null) {
     // A revoked certificate that printed like a valid one is the failure this
     // line exists for: somebody is holding the paper.
+    //
+    // ⚠️ THE DATE AND NOTHING ELSE (CER-042, D-105 §5). The reason stays in the
+    // row and on the screen: on an attendance certificate without diagnosis,
+    // «era F32, no J06» tells the employer holding the paper what the patient
+    // chose not to.
     blocks.push({
       kind: 'paragraph',
-      text: `DOCUMENTO ANULADO el ${form.revocation.revokedOn.split('-').reverse().join('/')}: ${form.revocation.reason}. No tiene validez.`,
+      text: `ANULADO el ${form.revocation.revokedOn.split('-').reverse().join('/')}. No tiene validez.`,
       emphasis: true,
     });
   }

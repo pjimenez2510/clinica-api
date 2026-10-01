@@ -17,6 +17,7 @@ import type {
   EncounterCertificatesQuery,
   IssueSnapshot,
   RevocationPlan,
+  RevocationSnapshot,
   SiteScopeFilter,
 } from '../domain/certificate.repository';
 import type { Form117Source } from '../../../shared/domain/form-117/form-117';
@@ -54,6 +55,7 @@ const CERTIFICATE_SELECT = {
   birthOn: true,
   maternityDischargeOn: true,
   restBackdatingReason: true,
+  issuedByOtherReason: true,
   revokedAt: true,
   revokedById: true,
   revocationReason: true,
@@ -128,6 +130,8 @@ export class PrismaCertificateRepository implements CertificateRepository {
           id: true,
           siteId: true,
           patientId: true,
+          // CER-039. Who attended, read under the lock.
+          practitionerId: true,
           status: true,
           startedAt: true,
           _count: { select: { diagnoses: true } },
@@ -162,6 +166,7 @@ export class PrismaCertificateRepository implements CertificateRepository {
 
       const plan = decide({
         encounterStatus: encounter.status,
+        attendingPractitionerId: encounter.practitionerId,
         diagnosisCount: encounter._count.diagnoses,
         encounterStartedAt: encounter.startedAt,
         cityOfIssue: encounter.site.parish?.parent?.display ?? null,
@@ -187,6 +192,7 @@ export class PrismaCertificateRepository implements CertificateRepository {
           birthOn: optionalDate(plan.maternity?.birthOn),
           maternityDischargeOn: optionalDate(plan.maternity?.dischargeOn),
           restBackdatingReason: plan.backdatingReason,
+          issuedByOtherReason: plan.issuedByOtherReason,
           verificationCode: plan.verificationCode,
           issuedAt: plan.issuedAt,
           // Only what it prints: a certificate without the diagnosis keeps none.
@@ -248,13 +254,16 @@ export class PrismaCertificateRepository implements CertificateRepository {
   async revoke(
     query: CertificateQuery,
     plan: RevocationPlan,
+    authorise: (snapshot: RevocationSnapshot) => void,
   ): Promise<CertificateView> {
     const row = await this.prisma.$transaction(async (tx) => {
       const current = await tx.medicalCertificate.findFirst({
         where: { id: query.certificateId, ...siteFilter(query.sites) },
-        select: { id: true },
+        select: { id: true, siteId: true, issuedBy: { select: { userId: true } } }, // prettier-ignore
       });
       if (!current) throw new CertificateNotFoundError();
+      // CER-040. Before anything is written.
+      authorise({ issuerUserId: current.issuedBy.userId, siteId: current.siteId }); // prettier-ignore
 
       const updated = await tx.medicalCertificate.updateMany({
         where: { id: current.id, revokedAt: null },
@@ -338,6 +347,7 @@ function toView(row: CertificateRow): CertificateView {
             dischargeOn: clinicalDateColumn(row.maternityDischargeOn) as ClinicalDate, // prettier-ignore
           },
     backdatingReason: row.restBackdatingReason,
+    issuedByOtherReason: row.issuedByOtherReason,
     revokedAt: row.revokedAt,
     revokedById: row.revokedById,
     revocationReason: row.revocationReason,

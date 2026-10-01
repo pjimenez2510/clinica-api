@@ -1071,10 +1071,11 @@ model Site {
   /// field for RDACAA reporting.
   mspUnicode String @unique @map("msp_unicode") @db.VarChar(20)
 
-  /// NULLABLE only so the rows that predate `establishment` survived the
-  /// migration; `seed-organization.mts` backfills them (OR-004).
-  establishmentId String?        @map("establishment_id") @db.Uuid
-  establishment   Establishment? @relation(fields: [establishmentId], references: [id], onDelete: Restrict)
+  /// OR-032. Every site belongs to an establishment: its legal name is the
+  /// clinic's name on every document (DOC-102). NOT NULL since
+  /// `20261001090100_site_establishment_required`.
+  establishmentId String        @map("establishment_id") @db.Uuid
+  establishment   Establishment @relation(fields: [establishmentId], references: [id], onDelete: Restrict)
 
   name String  @db.VarChar(160)
   ruc  String? @db.VarChar(13)
@@ -3028,9 +3029,16 @@ model MedicalCertificate {
   birthOn              DateTime? @map("birth_on") @db.Date
   maternityDischargeOn DateTime? @map("maternity_discharge_on") @db.Date
 
-  /// CER-030. Why a rest starts before the clinical date of the attention.
-  /// Never blank (`medical_certificate_backdating_reason_not_blank`).
+  /// CER-030. Why a rest starts before the clinical date of the attention, or
+  /// is issued on a later day. Never blank
+  /// (`medical_certificate_backdating_reason_not_blank`); demanded exactly in
+  /// those two cases by `medical_certificate_issue_rules`.
   restBackdatingReason String? @map("rest_backdating_reason") @db.Text
+
+  /// CER-039. Why someone other than the attending practitioner issued it.
+  /// Present exactly in that case (`medical_certificate_issue_rules`), never
+  /// blank (`medical_certificate_issuer_reason_not_blank`).
+  issuedByOtherReason String? @map("issued_by_other_reason") @db.Text
 
   /// Printed as a QR so a third party can verify the certificate is genuine
   /// without receiving any clinical data.

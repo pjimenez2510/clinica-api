@@ -323,7 +323,7 @@ describe('SRI-001, SRI-041 preparar al emitir, sin bloquear nunca la factura', (
     await loadCertificate();
     const site = await prisma.site.findUniqueOrThrow({ where: { id: siteId } });
     await prisma.establishment.update({
-      where: { id: site.establishmentId! },
+      where: { id: site.establishmentId },
       data: { fiscalProfileDeclaredAt: null },
     });
     const invoice = await issueInvoice();
@@ -332,7 +332,7 @@ describe('SRI-001, SRI-041 preparar al emitir, sin bloquear nunca la factura', (
     expect((await invoiceRow(invoice.id)).accessKey).toBeNull();
 
     await prisma.establishment.update({
-      where: { id: site.establishmentId! },
+      where: { id: site.establishmentId },
       data: { fiscalProfileDeclaredAt: NOW() },
     });
     await dispatch.sweep();

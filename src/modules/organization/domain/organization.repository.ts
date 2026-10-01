@@ -45,7 +45,8 @@ export type RimpeRegime = 'NONE' | 'ENTREPRENEUR' | 'POPULAR_BUSINESS';
 /** A site as the administration and selection screens list it (OR-004). */
 export interface SiteView {
   id: string;
-  establishmentId: string | null;
+  /** OR-032. Never null since `20261001090100_site_establishment_required`. */
+  establishmentId: string;
   mspUnicode: string;
   name: string;
   ruc: string | null;
@@ -91,7 +92,8 @@ export interface DocumentIdentityInput {
  */
 export interface SiteInput {
   mspUnicode: string;
-  establishmentId: string | null;
+  /** OR-032. Never `null`: the site is refused before it gets here. */
+  establishmentId: string;
   name: string;
   ruc: string | null;
   parishConceptId: string | null;

@@ -7,7 +7,10 @@ import { PrismaAccessAuditRecorder } from '../../shared/infrastructure/audit/pri
 
 import { CertificateService } from './application/certificate.service';
 import { CertificateController } from './certificate.controller';
-import { CERTIFICATE_REPOSITORY } from './domain/certificate.repository';
+import {
+  CERTIFICATE_CLOCK,
+  CERTIFICATE_REPOSITORY,
+} from './domain/certificate.repository';
 import { EncounterCertificatesController } from './encounter-certificates.controller';
 import { PrismaCertificateRepository } from './infrastructure/prisma-certificate.repository';
 
@@ -29,6 +32,7 @@ import { PrismaCertificateRepository } from './infrastructure/prisma-certificate
     CurrentUserService,
     { provide: CERTIFICATE_REPOSITORY, useClass: PrismaCertificateRepository },
     { provide: ACCESS_AUDIT_RECORDER, useClass: PrismaAccessAuditRecorder },
+    { provide: CERTIFICATE_CLOCK, useValue: () => new Date() },
   ],
 })
 export class CertificatesModule {}

@@ -869,6 +869,21 @@ describe('DOC-075 el certificado sobre el formulario 117 y la plantilla aprobada
     expect(text).toContain('Fecha de alta');
   });
 
+  it('CER-042 el certificado anulado imprime sólo «ANULADO el DD/MM/AAAA», nunca el motivo', () => {
+    const reason = 'Era F32, no J06: motivo centinela';
+    const layout = composeLayout(
+      certificate(form({ revokedAt: now, revocationReason: reason })),
+      context,
+      template,
+    );
+    const text = wholeText(layout);
+
+    const revokedOn = clinicalDateOf(now).split('-').reverse().join('/');
+    expect(text).toContain(`ANULADO el ${revokedOn}. No tiene validez.`);
+    expect(text).not.toContain('Era F32');
+    expect(JSON.stringify(layout)).not.toContain('motivo centinela');
+  });
+
   it('CER-029 un certificado anulado lo dice en el propio papel, y en cada página', () => {
     const layout = composeLayout(
       certificate(form({ revokedAt: now, revocationReason: 'Se emitió a otro paciente' })), // prettier-ignore

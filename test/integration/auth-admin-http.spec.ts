@@ -21,6 +21,7 @@ import { MAILER } from '../../src/shared/mail/mail.port';
 
 import { useDatabase } from './setup/database';
 import { FakeMailer } from './setup/fake-mailer';
+import { establishmentId } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
 /**
@@ -1144,7 +1145,11 @@ describe('la administración de cuentas y roles por HTTP', () => {
 
     it('AU-032 conserva la sede de la concesión', async () => {
       const site = await prisma.site.create({
-        data: { mspUnicode: 'AUTH-0001', name: 'Sede Norte' },
+        data: {
+          mspUnicode: 'AUTH-0001',
+          establishmentId: await establishmentId(prisma),
+          name: 'Sede Norte',
+        },
         select: { id: true },
       });
       const account = await createAccount();
@@ -1234,11 +1239,19 @@ describe('la administración de cuentas y roles por HTTP', () => {
       scoped: string;
     }> {
       const norte = await prisma.site.create({
-        data: { mspUnicode: 'AUTH-9001', name: 'Sede Norte' },
+        data: {
+          mspUnicode: 'AUTH-9001',
+          establishmentId: await establishmentId(prisma),
+          name: 'Sede Norte',
+        },
         select: { id: true },
       });
       const sur = await prisma.site.create({
-        data: { mspUnicode: 'AUTH-9002', name: 'Sede Sur' },
+        data: {
+          mspUnicode: 'AUTH-9002',
+          establishmentId: await establishmentId(prisma),
+          name: 'Sede Sur',
+        },
         select: { id: true },
       });
       const scoped = await signIn(
