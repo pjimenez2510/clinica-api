@@ -719,6 +719,7 @@ describe('SRI-058, SRI-062 el monitor', () => {
         f.preparation,
         certificates as unknown as SigningCertificateService,
         () => NOW,
+        f.settings,
       ),
     };
   }
@@ -742,6 +743,7 @@ describe('SRI-058, SRI-062 el monitor', () => {
       lastMessages: [],
       attemptCount: 3,
       nextAttemptAt: null,
+      receivedAt: issuedAt,
     });
     f.vouchers.monitor.mockResolvedValue([
       received('fresh', hoursBefore(23)),
@@ -756,6 +758,62 @@ describe('SRI-058, SRI-062 el monitor', () => {
     // D-102: nobody re-sends it on its own.
     expect(f.queue.schedule).not.toHaveBeenCalled();
     expect(f.web.receive).not.toHaveBeenCalled();
+  });
+
+  it('SRI-062 el día sin respuesta cuenta desde que el SRI lo recibió, no desde la emisión', async () => {
+    const f = fakes();
+    const hoursBefore = (h: number) => new Date(NOW.getTime() - h * 3600_000);
+    f.vouchers.monitor.mockResolvedValue([
+      {
+        invoiceId: 'after-outage',
+        voucherId: 'v-1',
+        siteId: 'site-1',
+        documentNumber: '001-001-000000001',
+        buyerName: 'Ana',
+        buyerIdentification: '1710034065',
+        issuedAt: hoursBefore(30),
+        total: '30.00',
+        status: 'RECEIVED' as const,
+        blockedReason: null,
+        accessKey: KEY,
+        lastMessages: [],
+        attemptCount: 9,
+        nextAttemptAt: null,
+        receivedAt: hoursBefore(1),
+      },
+    ]);
+    const { rows } = await monitorWith(f).monitor.monitor('all');
+    expect(rows[0]?.needsAPerson).toBe(false);
+  });
+
+  it('SRI-055 D-102 un comprobante del otro ambiente necesita a alguien y lo dice', async () => {
+    const f = fakes();
+    // KEY is of environment 1; the installation is now configured for 2.
+    f.settings.environment = '2';
+    f.vouchers.monitor.mockResolvedValue([
+      {
+        invoiceId: 'testing',
+        voucherId: 'v-1',
+        siteId: 'site-1',
+        documentNumber: '001-001-000000001',
+        buyerName: 'Ana',
+        buyerIdentification: '1710034065',
+        issuedAt: NOW,
+        total: '30.00',
+        status: 'SIGNED' as const,
+        blockedReason: null,
+        accessKey: KEY,
+        lastMessages: [],
+        attemptCount: 0,
+        nextAttemptAt: null,
+        receivedAt: null,
+      },
+    ]);
+    const { rows } = await monitorWith(f).monitor.monitor('all');
+    expect(rows[0]).toMatchObject({
+      environmentMismatch: true,
+      needsAPerson: true,
+    });
   });
 
   it('SRI-065 un comprobante fuera del alcance es SRI_VOUCHER_NOT_FOUND', async () => {

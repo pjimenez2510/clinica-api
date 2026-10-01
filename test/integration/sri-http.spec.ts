@@ -601,6 +601,47 @@ describe('el comprobante electrónico por HTTP', () => {
         .expect(200);
     });
 
+    it('OR-030 compara el RUC con que la sede factura de verdad: heredado o escrito, es el mismo', async () => {
+      const own = await prisma.site.findUniqueOrThrow({
+        where: { id: siteId },
+        include: { establishment: true },
+      });
+      const issuerRuc = own.ruc ?? own.establishment!.ruc!;
+      const sibling = await createSite(prisma, 'Sede con el RUC escrito');
+      const rejectionOf = (promise: Promise<unknown>) =>
+        promise.then(
+          () => null,
+          (error: unknown) => String((error as Error).message),
+        );
+
+      // The site above inherits the establishment's RUC; this one WRITES it.
+      expect(
+        await rejectionOf(prisma.$executeRaw`
+          UPDATE "site"
+             SET "establishment_id" = ${own.establishmentId}::uuid,
+                 "ruc" = ${issuerRuc},
+                 "sri_establishment_code" = ${own.sriEstablishmentCode}
+           WHERE "id" = ${sibling.id}::uuid`),
+      ).toMatch(/site_sri_establishment_code_unique_per_ruc/);
+
+      // Control: under ANOTHER RUC the same code is that RUC's own 001.
+      const otherRuc = `${issuerRuc.slice(0, 10)}${issuerRuc.slice(10) === '002' ? '003' : '002'}`;
+      await expect(prisma.$executeRaw`
+        UPDATE "site"
+           SET "establishment_id" = ${own.establishmentId}::uuid,
+               "ruc" = ${otherRuc},
+               "sri_establishment_code" = ${own.sriEstablishmentCode}
+         WHERE "id" = ${sibling.id}::uuid`).resolves.toBe(1);
+
+      // And the establishment cannot take that RUC: its inheriting site would
+      // then collide with the sibling.
+      expect(
+        await rejectionOf(prisma.$executeRaw`
+          UPDATE "establishment" SET "ruc" = ${otherRuc}
+           WHERE "id" = ${own.establishmentId}::uuid`),
+      ).toMatch(/site_sri_establishment_code_unique_per_ruc/);
+    });
+
     it('OR-029 administración guarda las banderas fiscales y el comprobante las declara', async () => {
       const establishment = await api()
         .get('/api/v1/organization/establishment')

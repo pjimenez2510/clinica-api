@@ -109,14 +109,16 @@ export class VoucherDispatchService {
     const voucher = await this.vouchers.findById(voucherId);
     if (!voucher || voucher.status !== 'RECEIVED') return;
     if (!this.sri.isConfigured()) return;
+    // SRI-055. Asking the other environment's server about this key is as
+    // wrong as sending it there.
+    if (voucher.environment !== this.settings.environment) return;
 
     const startedAt = this.clock();
     const answer = await this.sri.authorise(voucher.accessKey);
-    const transition = afterAuthorisation(
-      answer,
-      voucher.attemptCount + 1,
-      voucher.signedAt,
-    );
+    const transition = afterAuthorisation(answer, voucher.attemptCount + 1, {
+      signedAt: voucher.signedAt,
+      signedXml: voucher.signedXml,
+    });
 
     await this.apply(
       voucher,
@@ -212,7 +214,11 @@ export class VoucherDispatchService {
    */
   async sweep(limit = 200): Promise<void> {
     const now = this.clock();
-    const work = await this.vouchers.pendingWork(limit, now);
+    const work = await this.vouchers.pendingWork(
+      limit,
+      now,
+      this.settings.environment,
+    );
     for (const invoiceId of work.invoicesWithoutVoucher) {
       await this.preparation.prepare(invoiceId);
     }

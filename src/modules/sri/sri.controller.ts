@@ -82,6 +82,7 @@ export class SriVouchersController {
         ...row,
         issuedAt: row.issuedAt.toISOString(),
         nextAttemptAt: row.nextAttemptAt?.toISOString() ?? null,
+        receivedAt: row.receivedAt?.toISOString() ?? null,
       })),
       certificate: {
         ...view.certificate,

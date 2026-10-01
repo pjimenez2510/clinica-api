@@ -63,6 +63,9 @@ function messagesOf(value: Prisma.JsonValue): SriMessage[] {
 const asJson = (messages: SriMessage[]): Prisma.InputJsonValue =>
   messages as unknown as Prisma.InputJsonValue;
 
+/** SRI-084. How often the sweep retries what only a certificate fixes. */
+const CERTIFICATE_RETRY_MS = 3600 * 1000;
+
 /** The statuses the queue is still working on (SRI-056). */
 const IN_FLIGHT: VoucherStatus[] = ['SIGNED', 'RECEIVED'];
 
@@ -263,9 +266,11 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
   }
 
   async block(id: string, reason: BlockedReason): Promise<void> {
+    // `updated_at` moves every time, same reason or not: the sweep retries a
+    // certificate's reason an hour after it was last seen (SRI-056).
     await this.prisma.electronicVoucher.updateMany({
       where: { id, status: 'PREPARED' },
-      data: { blockedReason: reason },
+      data: { blockedReason: reason, updatedAt: new Date() },
     });
   }
 
@@ -424,7 +429,8 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
     return count;
   }
 
-  async pendingWork(limit: number, now: Date) {
+  async pendingWork(limit: number, now: Date, environment: SriEnvironment) {
+    const anHourAgo = new Date(now.getTime() - CERTIFICATE_RETRY_MS);
     const [withoutVoucher, unsigned, inFlight, undelivered] = await Promise.all(
       [
         // SRI-008. An invoice whose site or establishment still lacks the
@@ -454,15 +460,29 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
             OR: [
               { blockedReason: null },
               { blockedReason: { in: [...SWEPT_REASONS] } },
+              // SRI-084. What only a certificate fixes is retried hourly as
+              // well: a certificate that became valid, a signature that failed
+              // for a defect since deployed, an upload that raced the block.
+              {
+                blockedReason: { in: [...CERTIFICATE_REASONS] },
+                updatedAt: { lte: anHourAgo },
+              },
             ],
           },
-          orderBy: { createdAt: 'asc' },
+          // What nobody blocked first: a broken site cannot hold the places.
+          orderBy: [
+            { blockedReason: { sort: 'asc', nulls: 'first' } },
+            { createdAt: 'asc' },
+          ],
           take: limit,
           select: VOUCHER_SELECT,
         }),
         this.prisma.electronicVoucher.findMany({
           where: {
             status: { in: IN_FLIGHT },
+            // SRI-055. A voucher of the other environment is not sent; it
+            // waits in the monitor for a person (D-102).
+            environment,
             OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
           },
           orderBy: { createdAt: 'asc' },
@@ -533,6 +553,17 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
             lastMessages: true,
             attemptCount: true,
             nextAttemptAt: true,
+            // SRI-062. When the SRI last took it in: a day without an answer
+            // is counted from here, not from the issuance.
+            attempts: {
+              where: {
+                operation: 'RECEPTION',
+                outcome: { in: ['RECIBIDA', 'DEVUELTA'] },
+              },
+              orderBy: { startedAt: 'desc' },
+              take: 1,
+              select: { startedAt: true },
+            },
           },
         },
       },
@@ -560,6 +591,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
         lastMessages: voucher ? messagesOf(voucher.lastMessages) : [],
         attemptCount: voucher?.attemptCount ?? 0,
         nextAttemptAt: voucher?.nextAttemptAt ?? null,
+        receivedAt: voucher?.attempts[0]?.startedAt ?? null,
       };
     });
   }

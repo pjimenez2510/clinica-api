@@ -91,6 +91,8 @@ export type AuthorisationAnswer =
       kind: 'NO AUTORIZADO';
       /** `fechaAutorizacion` of the refusal; `null` if it did not parse. */
       decidedAt: Date | null;
+      /** The voucher the refusal is about, as the SRI returned it. */
+      voucherXml: string | null;
       messages: SriMessage[];
     }
   | { kind: 'PENDING' }
@@ -192,17 +194,18 @@ export function afterAuthorisation(
   answer: AuthorisationAnswer,
   attempt: number,
   /**
-   * When the voucher now at the SRI was signed. A refusal decided before it
-   * is the one that led a person to re-send (SRI-058): the SRI keeps every
+   * The voucher now at the SRI. A refusal of ANOTHER signed voucher is the
+   * one that led a person to re-send (SRI-058): the SRI keeps every
    * authorisation of the key, so it comes back next to the new answer.
    */
-  signedAt: Date | null = null,
+  current: { signedAt: Date | null; signedXml: string | null } = {
+    signedAt: null,
+    signedXml: null,
+  },
 ): VoucherTransition {
   if (
     answer.kind === 'NO AUTORIZADO' &&
-    answer.decidedAt !== null &&
-    signedAt !== null &&
-    answer.decidedAt.getTime() < signedAt.getTime()
+    refusesAnotherVoucher(answer, current)
   ) {
     return afterAuthorisation({ kind: 'PENDING' }, attempt);
   }
@@ -255,6 +258,37 @@ export function deliveryRetrySeconds(
   return Math.min(
     DELIVERY_RETRY_CEILING_SECONDS,
     Math.max(DELIVERY_RETRY_FLOOR_SECONDS, elapsed),
+  );
+}
+
+/** A clinic clock ahead of the SRI's by less than this cannot fool the date check. */
+const CLOCK_MARGIN_MS = 5 * 60 * 1000;
+
+function signatureValueOf(xml: string | null): string | null {
+  if (xml === null) return null;
+  const match = /<(?:[A-Za-z0-9]+:)?SignatureValue[^>]*>([^<]+)</.exec(xml);
+  return match ? match[1]!.replace(/\s+/g, '') : null;
+}
+
+/**
+ * SRI-048. Whether a refusal is about a voucher other than the one now at the
+ * SRI. By CONTENT first: each authorisation carries the voucher it judged,
+ * and a re-signed voucher has another `SignatureValue`. Only when either
+ * signature is missing does the date decide — and then with a margin, so a
+ * clinic clock a few seconds ahead does not take a fresh refusal for an old
+ * one (a person re-sends minutes or hours later, never within the margin).
+ */
+function refusesAnotherVoucher(
+  answer: { decidedAt: Date | null; voucherXml: string | null },
+  current: { signedAt: Date | null; signedXml: string | null },
+): boolean {
+  const refused = signatureValueOf(answer.voucherXml);
+  const ours = signatureValueOf(current.signedXml);
+  if (refused !== null && ours !== null) return refused !== ours;
+  return (
+    answer.decidedAt !== null &&
+    current.signedAt !== null &&
+    answer.decidedAt.getTime() < current.signedAt.getTime() - CLOCK_MARGIN_MS
   );
 }
 

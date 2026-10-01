@@ -77,6 +77,10 @@ const monitorRowSchema = z.object({
   lastMessages: z.array(sriMessageSchema),
   attemptCount: z.number().int(),
   nextAttemptAt: z.iso.datetime().nullable(),
+  /** SRI-062. The SRI's last reception of it; a day without answer counts from here. */
+  receivedAt: z.iso.datetime().nullable(),
+  /** SRI-055, D-102. Its key belongs to the environment not configured now. */
+  environmentMismatch: z.boolean(),
   needsAPerson: z.boolean(),
 });
 

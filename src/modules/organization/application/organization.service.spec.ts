@@ -325,6 +325,7 @@ describe('OrganizationService', () => {
           keepsAccounting: false,
           specialTaxpayerResolution: null,
           rimpeRegime: 'ENTREPRENEUR',
+          confirmsFiscalProfile: true,
         },
         REQUESTER,
       );
@@ -336,6 +337,23 @@ describe('OrganizationService', () => {
         rimpeRegime: 'ENTREPRENEUR',
         declaresFiscalProfile: true,
       });
+    });
+
+    it('OR-031 llevar las banderas no las declara: hace falta que alguien lo confirme', async () => {
+      const carried = build();
+      await carried.service.saveEstablishment(
+        {
+          mspUnicode: 'MSP-0001',
+          typology: 'Centro de Salud Tipo A',
+          legalName: 'Clínica de Prueba S.A.',
+          keepsAccounting: false,
+          rimpeRegime: 'NONE',
+        },
+        REQUESTER,
+      );
+      expect(
+        carried.calls.find((c) => c.method === 'updateEstablishment')?.args[1],
+      ).toMatchObject({ declaresFiscalProfile: false });
     });
 
     it('OR-028 una dirección de la matriz enviada se guarda', async () => {

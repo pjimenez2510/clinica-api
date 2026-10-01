@@ -561,6 +561,87 @@ describe('SRI-043 a SRI-052 cada respuesta del SRI, contra el doble', () => {
   });
 });
 
+describe('SRI-056 lo que el barrido mira, contra la base', () => {
+  const repository = () =>
+    new PrismaElectronicVoucherRepository(prisma as unknown as PrismaService);
+
+  it('SRI-056 en vuelo: lo vencido sí, lo de un intento futuro no, y lo del otro ambiente tampoco', async () => {
+    const due = (await aSignedVoucher()).voucher;
+    const later = (await aSignedVoucher()).voucher;
+    await prisma.electronicVoucher.update({
+      where: { id: later.id },
+      data: { nextAttemptAt: new Date(NOW().getTime() + 3_600_000) },
+    });
+
+    const work = await repository().pendingWork(200, NOW(), '1');
+    const ids = work.inFlight.map((v) => v.id);
+    expect(ids).toContain(due.id);
+    expect(ids).not.toContain(later.id);
+
+    // SRI-055. Configured for production, testing-environment keys stay out.
+    const production = await repository().pendingWork(200, NOW(), '2');
+    expect(production.inFlight.map((v) => v.id)).not.toContain(due.id);
+  });
+
+  it('SRI-056 SRI-084 sin firmar: lo sin motivo sí; lo que solo arregla un certificado, solo pasada una hora; sin forma de pago, nunca', async () => {
+    const plain = await issueInvoice();
+    await preparation.prepare(plain.id); // no certificate: NO_CERTIFICATE
+    const blocked = await voucherOf(plain.id);
+    expect(blocked.blockedReason).toBe('NO_CERTIFICATE');
+
+    const freshIds = (
+      await repository().pendingWork(200, NOW(), '1')
+    ).unsigned.map((v) => v.id);
+    expect(freshIds).not.toContain(blocked.id);
+
+    // An hour later the sweep tries it again (a certificate may now be valid).
+    const inAnHour = new Date(NOW().getTime() + 3_600_000 + 1_000);
+    const hourIds = (
+      await repository().pendingWork(200, inAnHour, '1')
+    ).unsigned.map((v) => v.id);
+    expect(hourIds).toContain(blocked.id);
+
+    // Control and the other side: no reason is swept now; no payment method never.
+    await prisma.electronicVoucher.update({
+      where: { id: blocked.id },
+      data: { blockedReason: null },
+    });
+    expect(
+      (await repository().pendingWork(200, NOW(), '1')).unsigned.map(
+        (v) => v.id,
+      ),
+    ).toContain(blocked.id);
+    await prisma.electronicVoucher.update({
+      where: { id: blocked.id },
+      data: { blockedReason: 'NO_PAYMENT_METHOD' },
+    });
+    expect(
+      (await repository().pendingWork(200, inAnHour, '1')).unsigned.map(
+        (v) => v.id,
+      ),
+    ).not.toContain(blocked.id);
+  });
+
+  it('SRI-008 SRI-056 sin comprobante: la factura de una sede sin código no ocupa plaza; con código, sí', async () => {
+    await prisma.site.update({
+      where: { id: siteId },
+      data: { sriEstablishmentCode: null },
+    });
+    const invoice = await issueInvoice();
+    expect(
+      (await repository().pendingWork(200, NOW(), '1')).invoicesWithoutVoucher,
+    ).not.toContain(invoice.id);
+
+    await prisma.site.update({
+      where: { id: siteId },
+      data: { sriEstablishmentCode: '001' },
+    });
+    expect(
+      (await repository().pendingWork(200, NOW(), '1')).invoicesWithoutVoucher,
+    ).toContain(invoice.id);
+  });
+});
+
 describe('SRI-072 a SRI-076 la entrega al cliente', () => {
   async function anAuthorisedVoucher(
     email: string | null = 'maria@example.com',

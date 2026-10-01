@@ -42,6 +42,8 @@ export interface EstablishmentCommand {
   specialTaxpayerResolution?: string | null;
   withholdingAgentResolution?: string | null;
   rimpeRegime?: RimpeRegime;
+  /** OR-031. True only when a person ticked that the flags were checked. */
+  confirmsFiscalProfile?: boolean;
   active?: boolean;
 }
 
@@ -130,9 +132,11 @@ export class OrganizationService {
       specialTaxpayerResolution: command.specialTaxpayerResolution ?? null,
       withholdingAgentResolution: command.withholdingAgentResolution ?? null,
       rimpeRegime: command.rimpeRegime ?? 'NONE',
-      // OR-031. The two flags that have a default are what a person must
-      // state; a save that does not bring them states nothing.
+      // OR-031. Declared only when a person says so, with the two flags that
+      // have a default in hand: a save that merely carries them (the form
+      // always does) states nothing to the SRI.
       declaresFiscalProfile:
+        command.confirmsFiscalProfile === true &&
         command.keepsAccounting !== undefined &&
         command.rimpeRegime !== undefined,
       active: command.active ?? true,

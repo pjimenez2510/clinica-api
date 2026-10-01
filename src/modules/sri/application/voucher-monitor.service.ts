@@ -19,8 +19,10 @@ import {
 } from '../domain/sri.errors';
 import {
   SRI_CLOCK,
+  SRI_SETTINGS,
   SRI_WEB_SERVICE,
   type SriClock,
+  type SriSettings,
   type SriWebService,
 } from '../domain/sri-web-service';
 import {
@@ -48,7 +50,12 @@ export interface Requester {
 
 /** SRI-061 to SRI-063. The monitor, with what it says about the installation. */
 export interface MonitorView {
-  rows: (MonitorRow & { needsAPerson: boolean; missingData: string[] })[];
+  rows: (MonitorRow & {
+    needsAPerson: boolean;
+    missingData: string[];
+    /** SRI-055, D-102. Its key is of the environment not configured. */
+    environmentMismatch: boolean;
+  })[];
   certificate: CertificateHealth;
   /** SRI-054. The web service is not declared: vouchers wait signed. */
   webServiceConfigured: boolean;
@@ -68,21 +75,31 @@ export class VoucherMonitorService implements ElectronicVoucherStatusReader {
     private readonly preparation: VoucherPreparationService,
     private readonly certificates: SigningCertificateService,
     @Inject(SRI_CLOCK) private readonly clock: SriClock,
+    @Inject(SRI_SETTINGS) private readonly settings: SriSettings,
   ) {}
 
   /** SRI-061, SRI-062. People first, the queue's own work after. */
   async monitor(sites: Requester['sites']): Promise<MonitorView> {
     const now = this.clock();
     const rows = await Promise.all(
-      (await this.vouchers.monitor(sites)).map(async (row) => ({
-        ...row,
-        needsAPerson: needsAPerson(row.status, row.issuedAt, now),
-        // SRI-008. An invoice without a voucher says which datum it lacks.
-        missingData:
-          row.status === 'NO_VOUCHER'
-            ? await this.missingDataOf(row.invoiceId)
-            : [],
-      })),
+      (await this.vouchers.monitor(sites)).map(async (row) => {
+        // The 24th digit of the key is its environment (SRI-070).
+        const environmentMismatch =
+          row.accessKey !== null &&
+          row.accessKey.charAt(23) !== this.settings.environment;
+        return {
+          ...row,
+          environmentMismatch,
+          needsAPerson:
+            environmentMismatch ||
+            needsAPerson(row.status, row.receivedAt ?? row.issuedAt, now),
+          // SRI-008. An invoice without a voucher says which datum it lacks.
+          missingData:
+            row.status === 'NO_VOUCHER'
+              ? await this.missingDataOf(row.invoiceId)
+              : [],
+        };
+      }),
     );
     rows.sort((a, b) =>
       a.needsAPerson === b.needsAPerson

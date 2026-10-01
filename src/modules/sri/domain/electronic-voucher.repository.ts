@@ -126,6 +126,8 @@ export interface MonitorRow {
   lastMessages: SriMessage[];
   attemptCount: number;
   nextAttemptAt: Date | null;
+  /** SRI-062. The SRI's last reception of it; `null` while it has none. */
+  receivedAt: Date | null;
 }
 
 /** The voucher's state as `billing` shows it beside the invoice (SRI-060). */
@@ -201,6 +203,8 @@ export interface ElectronicVoucherRepository {
   pendingWork(
     limit: number,
     now: Date,
+    /** SRI-055. In-flight vouchers of the other environment are left out. */
+    environment: SriEnvironment,
   ): Promise<{
     invoicesWithoutVoucher: string[];
     unsigned: VoucherRecord[];

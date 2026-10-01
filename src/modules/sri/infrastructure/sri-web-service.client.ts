@@ -199,6 +199,7 @@ export class FetchSriWebService implements SriWebService {
         return {
           kind: 'NO AUTORIZADO',
           decidedAt: refused.decidedAt,
+          voucherXml: text(child(refused.node, 'comprobante')) ?? null,
           messages: messagesIn(refused.node),
         };
       }

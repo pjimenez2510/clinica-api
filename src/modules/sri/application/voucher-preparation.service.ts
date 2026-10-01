@@ -90,6 +90,12 @@ export function missingIssuerData(
  * certificate, a payment method or a head-office address must be signed with
  * what the installation says NOW. Once SIGNED, the bytes never change (SRI-031).
  */
+/** SRI-019. What a voucher reads from its own key, not from the site. */
+const KEYED_DATA: readonly MissingIssuerDatum[] = [
+  'ISSUER_RUC',
+  'SRI_ESTABLISHMENT_CODE',
+];
+
 @Injectable()
 export class VoucherPreparationService implements ElectronicVoucherPreparer {
   constructor(
@@ -180,9 +186,13 @@ export class VoucherPreparationService implements ElectronicVoucherPreparer {
     const source = await this.vouchers.preparationSource(voucher.invoiceId);
     if (!source) return voucher;
 
-    // SRI-008. A datum of the issuer removed after the voucher was created:
-    // it waits, said, rather than failing the sweep on every pass.
-    if (missingIssuerData(source).length > 0) {
+    // SRI-008, SRI-019. A datum of the issuer removed after the voucher was
+    // created: it waits, said, rather than failing the sweep on every pass.
+    // Only what does NOT come from the key: the RUC and the SRI code are in
+    // it, and emptying the site's code must not block what is already keyed.
+    if (
+      missingIssuerData(source).some((datum) => !KEYED_DATA.includes(datum))
+    ) {
       return this.blocked(voucher, 'MISSING_ISSUER_DATA');
     }
 
@@ -273,7 +283,12 @@ export class VoucherPreparationService implements ElectronicVoucherPreparer {
   /** SRI-058. The XML of a voucher, recomposed with its own key. */
   async recompose(voucher: VoucherRecord): Promise<string | null> {
     const source = await this.vouchers.preparationSource(voucher.invoiceId);
-    if (!source || missingIssuerData(source).length > 0) return null;
+    if (
+      !source ||
+      missingIssuerData(source).some((datum) => !KEYED_DATA.includes(datum))
+    ) {
+      return null;
+    }
     return composeInvoiceXml(this.voucherSource(source, voucher.accessKey));
   }
 

@@ -218,7 +218,9 @@ rechazo; guardar `002` y leerlo igual, con el cero.
   > segunda con el error 45. Revisión del 01-10-2026.
 - **OR-031** — El sistema DEBERÁ registrar cuándo una persona declaró las
   banderas fiscales del establecimiento (un guardado que trae «obligado a llevar
-  contabilidad» y el régimen RIMPE), conservarlo en un guardado que no las
+  contabilidad» y el régimen RIMPE y `confirmsFiscalProfile: true` —la persona
+  marca que las revisó con su RUC—; llevarlas sin esa marca no las declara),
+  conservarlo en un guardado que no las
   trae, y exponerlo; y MIENTRAS no se hayan declarado nunca, NO DEBERÁ
   prepararse ningún comprobante electrónico (sri SRI-008, dato
   `FISCAL_PROFILE`).

@@ -83,6 +83,12 @@ export const saveEstablishmentSchema = z.object({
   rimpeRegime: z
     .enum(RIMPE_REGIMES, { error: 'Elija el régimen RIMPE' })
     .optional(),
+  /**
+   * OR-031. A person states that the fiscal flags were checked against the
+   * RUC. Sending the flags is not stating them: the form always sends them,
+   * with defaults, and that must not declare anything to the SRI.
+   */
+  confirmsFiscalProfile: z.boolean().optional(),
   active: z.boolean({ error: 'Indique si el establecimiento está activo' }).optional(), // prettier-ignore
 });
 /** Body of PUT /organization/establishment: there is one establishment, so it is saved whole rather than created. */

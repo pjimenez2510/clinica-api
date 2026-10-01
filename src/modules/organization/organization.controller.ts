@@ -120,6 +120,7 @@ export class OrganizationController {
           specialTaxpayerResolution: dto.specialTaxpayerResolution,
           withholdingAgentResolution: dto.withholdingAgentResolution,
           rimpeRegime: dto.rimpeRegime,
+          confirmsFiscalProfile: dto.confirmsFiscalProfile,
           active: dto.active,
         },
         this.requester(req),

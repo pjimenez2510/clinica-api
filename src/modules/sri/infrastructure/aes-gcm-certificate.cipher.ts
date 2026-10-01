@@ -78,17 +78,26 @@ export class AesGcmCertificateCipher implements CertificateCipher {
    */
   async open(sealed: readonly Buffer[], salt: Buffer): Promise<Buffer[]> {
     const key = await this.deriveKey(salt);
+    const opened: Buffer[] = [];
     try {
-      return sealed.map((envelope) => {
+      for (const envelope of sealed) {
         const iv = envelope.subarray(0, IV_BYTES);
         const tag = envelope.subarray(IV_BYTES, IV_BYTES + TAG_BYTES);
         const decipher = createDecipheriv('aes-256-gcm', key, iv);
         decipher.setAuthTag(tag);
-        return Buffer.concat([
-          decipher.update(envelope.subarray(IV_BYTES + TAG_BYTES)),
-          decipher.final(),
-        ]);
-      });
+        opened.push(
+          Buffer.concat([
+            decipher.update(envelope.subarray(IV_BYTES + TAG_BYTES)),
+            decipher.final(),
+          ]),
+        );
+      }
+      return opened;
+    } catch (error) {
+      // SRI-025. The .p12 opened before a later envelope failed does not
+      // outlive the failure.
+      for (const plain of opened) plain.fill(0);
+      throw error;
     } finally {
       key.fill(0);
     }

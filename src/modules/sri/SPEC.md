@@ -518,6 +518,9 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
   (devueltos, no autorizados, sin firmar, sin comprobante, y recibidos hace más
   de 24 h sin respuesta) y después lo que la cola resolverá sola (firmados y
   recibidos en espera).
+  > Las 24 h cuentan desde la última recepción del SRI, no desde la emisión.
+  > Un comprobante cuyo ambiente no es el configurado también necesita a
+  > alguien, y el barrido no lo envía ni lo consulta (SRI-055).
   > D-102 (2), resuelta: a las 24 h pasa a «necesita a alguien» con su motivo, y
   > no se reenvía solo: el plazo para reenviar lo confirma el contador.
 - **SRI-063** — El sistema DEBERÁ exponer en el monitor el aviso de caducidad del
@@ -567,6 +570,11 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
   la factura, y DEBERÁ exponer en el comprobante si el correo salió.
 - **SRI-075** — El sistema NO DEBERÁ enviar dos veces el correo de un mismo
   comprobante por un reintento de la cola.
+  > Lo garantiza el estado de la entrega: un fallo al anotar `SENT` después de
+  > que el correo salió no se toma por correo fallido. Si esa anotación no
+  > llega nunca a la base, el barrido lo reenvía: la entrega es «al menos una
+  > vez», y un segundo correo idéntico es preferible a ninguno (revisión del
+  > 01-10-2026).
 - **SRI-076** — DONDE la factura no tenga correo del receptor, el sistema NO
   DEBERÁ intentar la entrega y DEBERÁ exponerlo como «sin correo».
 

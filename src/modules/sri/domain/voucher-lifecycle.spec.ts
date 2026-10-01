@@ -126,6 +126,7 @@ describe('SRI-047 a SRI-050 lo que hace cada respuesta de autorización', () => 
         {
           kind: 'NO AUTORIZADO',
           decidedAt: new Date(),
+          voucherXml: null,
           messages: [message('39')],
         },
         1,
@@ -137,13 +138,23 @@ describe('SRI-047 a SRI-050 lo que hace cada respuesta de autorización', () => 
     });
   });
 
-  it('SRI-048 un NO AUTORIZADO anterior a la última firma es el de antes del reenvío: sigue esperando', () => {
-    const signedAt = new Date();
-    const before = new Date(signedAt.getTime() - 60_000);
+  const signed = (value: string) =>
+    `<factura id="comprobante"><ds:Signature><ds:SignatureValue>${value}</ds:SignatureValue></ds:Signature></factura>`;
+  const refusal = (voucherXml: string | null, decidedAt: Date | null) => ({
+    kind: 'NO AUTORIZADO' as const,
+    decidedAt,
+    voucherXml,
+    messages: [message('39')],
+  });
+
+  it('SRI-048 el rechazo de OTRO comprobante firmado es el de antes del reenvío: sigue esperando, aunque su hora diga lo contrario', () => {
+    const now = new Date();
+    const current = { signedAt: now, signedXml: signed('NUEVA') };
+    // Dated AFTER the signature (a clock ahead): the content still decides.
     const transition = afterAuthorisation(
-      { kind: 'NO AUTORIZADO', decidedAt: before, messages: [message('39')] },
+      refusal(signed('ANTIGUA'), new Date(now.getTime() + 60_000)),
       1,
-      signedAt,
+      current,
     );
     expect(transition).toMatchObject({
       status: 'RECEIVED',
@@ -151,15 +162,31 @@ describe('SRI-047 a SRI-050 lo que hace cada respuesta de autorización', () => 
       next: { step: 'AUTHORISE', delaySeconds: 30 },
     });
 
-    // Control: the same refusal decided AFTER the signature is the answer.
-    const after = new Date(signedAt.getTime() + 60_000);
+    // Control: the refusal of THIS signed voucher is the answer, even dated
+    // seconds before the signature by a clinic clock ahead of the SRI's.
     expect(
       afterAuthorisation(
-        { kind: 'NO AUTORIZADO', decidedAt: after, messages: [message('39')] },
+        refusal(signed('NUEVA'), new Date(now.getTime() - 5_000)),
         1,
-        signedAt,
+        current,
       ).status,
     ).toBe('NOT_AUTHORISED');
+  });
+
+  it('SRI-048 sin firma que comparar decide la fecha, con margen; sin fecha tampoco, es la respuesta', () => {
+    const now = new Date();
+    const current = { signedAt: now, signedXml: null };
+    const hoursAgo = new Date(now.getTime() - 3 * 3600_000);
+    expect(afterAuthorisation(refusal(null, hoursAgo), 1, current).status).toBe(
+      'RECEIVED',
+    );
+    const secondsAgo = new Date(now.getTime() - 10_000);
+    expect(
+      afterAuthorisation(refusal(null, secondsAgo), 1, current).status,
+    ).toBe('NOT_AUTHORISED');
+    expect(afterAuthorisation(refusal(null, null), 1, current).status).toBe(
+      'NOT_AUTHORISED',
+    );
   });
 
   it('SRI-049 SRI-050 sin respuesta todavía, o sin conexión, vuelve a consultar y nunca reenvía', () => {
