@@ -15,6 +15,7 @@ import {
   CertificateBackdatingReasonRequiredError,
   CertificateEstablishmentIncompleteError,
   CertificateIssuerReasonRequiredError,
+  CertificateMaternityAdmissionTooEarlyError,
   CertificateMaternityBirthMismatchError,
   CertificateMaternityBirthTooFarError,
   CertificateMaternityDatesTooOldError,
@@ -171,6 +172,14 @@ const CONTRACT: readonly {
     code: 'CERTIFICATE_MATERNITY_DATES_TOO_OLD',
     category: ValidationError,
     says: '84 días',
+  },
+  {
+    error: new CertificateMaternityAdmissionTooEarlyError(
+      '2026-09-16' as ClinicalDate, // fecha-fija: sólo se comprueba el formato DD/MM/AAAA
+    ),
+    code: 'CERTIFICATE_MATERNITY_ADMISSION_TOO_EARLY',
+    category: ValidationError,
+    says: '14 días',
   },
   {
     error: new CertificateMaternityBirthTooFarError(

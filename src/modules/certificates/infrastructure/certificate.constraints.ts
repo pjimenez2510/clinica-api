@@ -88,6 +88,12 @@ registerConstraintMeanings({
     field: 'birthOn',
     message: 'El parto puede ser, como mucho, 84 días anterior a la atención', // prettier-ignore
   },
+  /** CER-051, D-112 §1. The admission at most 14 days before the birth. */
+  medical_certificate_maternity_admission_within_14_days: {
+    code: 'CERTIFICATE_MATERNITY_ADMISSION_TOO_EARLY',
+    field: 'maternityAdmissionOn',
+    message: 'El ingreso puede ser, como mucho, 14 días anterior al parto', // prettier-ignore
+  },
   /** CER-046, D-110 §1. The birth at most four weeks after the attention. */
   medical_certificate_maternity_birth_within_4_weeks: {
     code: 'CERTIFICATE_MATERNITY_BIRTH_TOO_FAR',

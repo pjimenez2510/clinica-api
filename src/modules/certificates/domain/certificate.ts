@@ -9,6 +9,7 @@ import {
 import {
   CertificateBackdatingReasonRequiredError,
   CertificateIssuerReasonRequiredError,
+  CertificateMaternityAdmissionTooEarlyError,
   CertificateMaternityBirthMismatchError,
   CertificateMaternityBirthTooFarError,
   CertificateMaternityDatesTooOldError,
@@ -357,6 +358,12 @@ export const MATERNITY_LEAVE_DAYS = 84;
 /** CER-046, D-110 §1. How many days after the attention the birth may be. */
 export const MAX_BIRTH_DAYS_AFTER_ATTENTION = 28;
 
+/**
+ * CER-051, D-112 §1. How many days before the birth the admission may be: the
+ * rest may start on the admission (D-108), so it bounds how far back it goes.
+ */
+export const MAX_ADMISSION_DAYS_BEFORE_BIRTH = 14;
+
 /** CER-050, D-110 §2. Two births closer than this are one pregnancy. */
 export const MONTHS_BETWEEN_PREGNANCIES = 9;
 
@@ -399,8 +406,8 @@ function sameMonthsApart(a: ClinicalDate, b: ClinicalDate): boolean {
  * procedure, D-105 §6). What bounds a maternity rest once D-108 took the three
  * and eight days away:
  *
- * - its birth at most 84 days before the attention and 28 after it (the
- *   admission does not count);
+ * - its birth at most 84 days before the attention and 28 after it, and its
+ *   admission at most 14 days before the birth (D-112 §1);
  * - the rest within the leave, twelve weeks counting the birth's day (last day
  *   birth + 83), and issued before it ends (with the dawn of CER-030);
  * - an obstetric diagnosis on the attention;
@@ -425,6 +432,10 @@ export function assertMaternityWithinLeave(
   }
   const latest = addDays(attentionDate, MAX_BIRTH_DAYS_AFTER_ATTENTION);
   if (birth > latest) throw new CertificateMaternityBirthTooFarError(latest);
+  const earliestAdmission = addDays(birth, -MAX_ADMISSION_DAYS_BEFORE_BIRTH);
+  if (maternity.admissionOn < earliestAdmission) {
+    throw new CertificateMaternityAdmissionTooEarlyError(earliestAdmission);
+  }
   const lastDay = addDays(birth, MATERNITY_LEAVE_DAYS - 1);
   if (period.to > lastDay || lateIssueDay > lastDay) {
     throw new CertificateMaternityLeaveExceededError(lastDay);

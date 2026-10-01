@@ -135,7 +135,7 @@ un día después de la atención sin motivo, y comprobar que los tres se rechaza
 con su control positivo (con motivo, mañana, el mismo día); anular con otra
 cuenta sin el permiso y comprobar que se rechaza; imprimir uno anulado y
 comprobar que no lleva el motivo.
-**Cubre:** CER-030, CER-039 a CER-050.
+**Cubre:** CER-030, CER-039 a CER-051.
 
 ---
 
@@ -587,6 +587,19 @@ PR-030).
   > **D-110 §2:** un embarazo, un parto. Sin esto, cada certificado declaraba
   > un parto nuevo y la licencia se encadenaba cada 84 días.
 
+- **CER-051** — CUANDO se emita un reposo de contingencia **maternidad**, SI la
+  fecha de **ingreso** es anterior en **más de 14 días** a la del parto,
+  ENTONCES el sistema DEBERÁ rechazarlo con
+  `CERTIFICATE_MATERNITY_ADMISSION_TOO_EARLY`, nombrando `maternityAdmissionOn`
+  y la primera fecha admitida. **Base:**
+  `medical_certificate_maternity_admission_within_14_days`.
+
+  > **D-112 §1** (el autor, 01-10-2026): el reposo puede empezar el día del
+  > ingreso (D-108), y sin cota el ingreso daba un reposo retroactivo desde una
+  > fecha inventada, y una cadena de ellos. El resto de D-112 —el parto probable
+  > frente al real, un embarazo nuevo a menos de 9 meses— queda **congelado**
+  > hasta que el IESS confirme cómo se certifica la maternidad (D-105 §6).
+
 ---
 
 ## Criterios de éxito
@@ -627,6 +640,7 @@ PR-030).
 | `CERTIFICATE_REST_ISSUED_TOO_LATE` | 422 | CER-045 |
 | `CERTIFICATE_MATERNITY_DATES_TOO_OLD` | 422 | CER-046 |
 | `CERTIFICATE_MATERNITY_BIRTH_TOO_FAR` | 422 | CER-046 |
+| `CERTIFICATE_MATERNITY_ADMISSION_TOO_EARLY` | 422 | CER-051 |
 | `CERTIFICATE_MATERNITY_BIRTH_MISMATCH` | 409 | CER-050 |
 | `CERTIFICATE_MATERNITY_LEAVE_EXCEEDED` | 422 | CER-047 |
 | `CERTIFICATE_REST_OVERLAPS` | 409 | CER-048 |
@@ -647,7 +661,7 @@ Todo lo que faltaba está en `20261001070500_certificate_number_and_revocation`.
 | `issued_by_other_reason` + `medical_certificate_issuer_reason_not_blank` | `medical_certificate` | CER-039 |
 | Disparador `medical_certificate_issue_rules`: emisor, ventana y motivo | `medical_certificate` | CER-030, CER-039, CER-041, CER-044, CER-045 (maternidad, D-108) |
 | `CHECK medical_certificate_maternity_dates_in_order`: ingreso ≤ parto ≤ alta | `medical_certificate` | CER-035, D-108 |
-| Disparador `medical_certificate_issue_rules`: límites de la maternidad y candado por ficha | `medical_certificate` | CER-046 a CER-050, D-109, D-110 |
+| Disparador `medical_certificate_issue_rules`: límites de la maternidad y candado por ficha | `medical_certificate` | CER-046 a CER-051, D-109, D-110, D-112 |
 
 ## Rutas
 

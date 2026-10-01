@@ -14,6 +14,10 @@
 --    no cuenta: rechazaba el último tramo de una licencia con ingreso antiguo—
 --    y como mucho 28 días después: un parto prenatal declarado lejos daba
 --    reposos mes a mes desde una sola consulta.
+--  · CER-051 (D-112 §1, resuelta por el autor el 01-10-2026): el ingreso, como
+--    mucho 14 días antes del parto: libre, daba un reposo retroactivo desde un
+--    ingreso inventado, y una cadena de ellos. El resto de D-112 queda
+--    congelado hasta que el IESS confirme el trámite de maternidad.
 --  · CER-047: la licencia son doce semanas contando el día del parto; su último
 --    día es parto + 83 (era + 84).
 --  · CER-050: todas las maternidades no anuladas de la paciente comparten el
@@ -148,6 +152,15 @@ BEGIN
         RAISE EXCEPTION 'medical_certificate_maternity_birth_within_4_weeks: a maternity birth is at most four weeks after the attention'
           USING ERRCODE = 'check_violation',
                 CONSTRAINT = 'medical_certificate_maternity_birth_within_4_weeks';
+      END IF;
+
+      -- CER-051 (D-112 §1): el ingreso, como mucho 14 días antes del parto. El
+      -- reposo puede empezar el día del ingreso (D-108): libre, un ingreso
+      -- declarado de hace un año daba un reposo retroactivo, y una cadena.
+      IF NEW."maternity_admission_on" < NEW."birth_on" - 14 THEN
+        RAISE EXCEPTION 'medical_certificate_maternity_admission_within_14_days: a maternity admission is at most 14 days before the birth'
+          USING ERRCODE = 'check_violation',
+                CONSTRAINT = 'medical_certificate_maternity_admission_within_14_days';
       END IF;
 
       -- CER-047 (D-110 §6): doce semanas contando el día del parto, el último

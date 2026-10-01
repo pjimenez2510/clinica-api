@@ -526,10 +526,11 @@ describe('D-109 y D-110 lo que acota el reposo de maternidad, garantizado por la
       dischargeOn: addDays(birth, 2),
     });
 
-    // Control positivo: parto 83 días antes con un ingreso mucho más antiguo
-    // —el último tramo de una licencia con preeclampsia— pasa.
+    // Control positivo: parto 83 días antes con un ingreso de más de 84 días
+    // —el último tramo de una licencia con preeclampsia; 14 días antes del
+    // parto, el máximo de CER-051— pasa.
     await expect(
-      insert(prisma, scene, { rest: today, maternity: withBirth(addDays(scene.day, -83), addDays(scene.day, -120)) }), // prettier-ignore
+      insert(prisma, scene, { rest: today, maternity: withBirth(addDays(scene.day, -83), addDays(scene.day, -97)) }), // prettier-ignore
     ).resolves.toBe(1);
     await expect(
       insert(prisma, scene, { rest: today, maternity: withBirth(addDays(scene.day, -85)) }), // prettier-ignore
@@ -543,6 +544,26 @@ describe('D-109 y D-110 lo que acota el reposo de maternidad, garantizado por la
     ).rejects.toThrow(/medical_certificate_maternity_birth_within_4_weeks/);
     await expect(
       insert(prisma, prenatal, { rest: day, maternity: withBirth(addDays(prenatal.day, 28)) }), // prettier-ignore
+    ).resolves.toBe(1);
+  });
+
+  it('CER-051 el ingreso como mucho 14 días antes del parto; 15, no (D-112 §1)', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma, { diagnosis: 'O80' });
+    const birth = addDays(scene.day, -1);
+    const admittedBefore = (days: number) => ({
+      admissionOn: addDays(birth, -days),
+      birthOn: birth,
+      dischargeOn: addDays(birth, 2),
+    });
+    const day = { from: scene.day, to: scene.day };
+
+    await expect(
+      insert(prisma, scene, { rest: day, maternity: admittedBefore(15) }),
+    ).rejects.toThrow(/medical_certificate_maternity_admission_within_14_days/);
+    // Control positivo: 14 días antes.
+    await expect(
+      insert(prisma, scene, { rest: day, maternity: admittedBefore(14) }),
     ).resolves.toBe(1);
   });
 

@@ -292,6 +292,29 @@ export class CertificateMaternityDatesTooOldError extends ValidationError {
 }
 
 /**
+ * CER-051, D-112 §1. An admission more than 14 days before the birth: with the
+ * admission free, a maternity rest started on an admission declared a year back
+ * was a retroactive rest, and a chain of them.
+ */
+export class CertificateMaternityAdmissionTooEarlyError extends ValidationError {
+  readonly code = 'CERTIFICATE_MATERNITY_ADMISSION_TOO_EARLY';
+  override readonly userTitle =
+    'El ingreso puede ser, como mucho, 14 días anterior al parto';
+  override readonly fieldErrors: readonly DomainFieldError[];
+
+  constructor(earliest: ClinicalDate) {
+    super('A maternity admission is at most 14 days before the birth');
+    this.fieldErrors = [
+      {
+        field: 'maternityAdmissionOn',
+        code: 'CERTIFICATE_MATERNITY_ADMISSION_TOO_EARLY',
+        message: `La fecha de ingreso debe ser, como muy pronto, el ${shownDay(earliest)}`,
+      },
+    ];
+  }
+}
+
+/**
  * CER-046, D-110 §1. A birth declared more than four weeks after the
  * attention: a prenatal rest on a birth that far away chained certificates
  * from one consultation.

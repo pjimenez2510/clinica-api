@@ -35,6 +35,7 @@ import {
 import {
   CertificateBackdatingReasonRequiredError,
   CertificateIssuerReasonRequiredError,
+  CertificateMaternityAdmissionTooEarlyError,
   CertificateMaternityBirthMismatchError,
   CertificateMaternityBirthTooFarError,
   CertificateMaternityDatesTooOldError,
@@ -808,5 +809,31 @@ describe('D-109 y D-110 lo que acota el reposo de maternidad', () => {
       );
     expect(at(august)).toThrow(CertificateMaternityBirthMismatchError);
     expect(at(november)).toThrow(CertificateMaternityBirthMismatchError);
+  });
+
+  it('CER-051 el ingreso como mucho 14 dias antes del parto; 15 se rechaza nombrando el campo (D-112 §1)', () => {
+    const birth = addDays(today, -5);
+    const withAdmission = (daysBefore: number) => ({
+      admissionOn: addDays(birth, -daysBefore),
+      birthOn: birth,
+      dischargeOn: addDays(birth, 2),
+    });
+    // Control positivo: 14 días antes, y el reposo desde ese ingreso.
+    const fourteen = withAdmission(14);
+    expect(
+      check({ from: today, to: today }, birth, { maternity: fourteen }),
+    ).not.toThrow();
+    const refusal = refusalOf(
+      check({ from: today, to: today }, birth, {
+        maternity: withAdmission(15),
+      }),
+    );
+    expect(refusal).toBeInstanceOf(CertificateMaternityAdmissionTooEarlyError);
+    expect(
+      (refusal as CertificateMaternityAdmissionTooEarlyError).fieldErrors[0],
+    ).toMatchObject({
+      field: 'maternityAdmissionOn',
+      message: `La fecha de ingreso debe ser, como muy pronto, el ${label(fourteen.admissionOn)}`,
+    });
   });
 });

@@ -882,6 +882,8 @@ export const DOMAIN_ERROR_CODES = [
   //     D-110 §3). Parto más de 84 días antes de la atención.
   //   * `CERTIFICATE_MATERNITY_BIRTH_TOO_FAR` (422) — CER-046 (D-110 §1).
   //     Parto más de 4 semanas después de la atención.
+  //   * `CERTIFICATE_MATERNITY_ADMISSION_TOO_EARLY` (422) — CER-051 (D-112
+  //     §1). Ingreso más de 14 días antes del parto.
   //   * `CERTIFICATE_MATERNITY_BIRTH_MISMATCH` (409) — CER-050 (D-110 §2).
   //     Otra maternidad de la paciente con otro parto a 9 meses o menos.
   //   * `CERTIFICATE_MATERNITY_LEAVE_EXCEEDED` (422) — CER-047 (D-109 §2,
@@ -895,6 +897,7 @@ export const DOMAIN_ERROR_CODES = [
   'CERTIFICATE_DIAGNOSIS_REQUIRED',
   'CERTIFICATE_ESTABLISHMENT_INCOMPLETE',
   'CERTIFICATE_ISSUER_REASON_REQUIRED',
+  'CERTIFICATE_MATERNITY_ADMISSION_TOO_EARLY',
   'CERTIFICATE_MATERNITY_BIRTH_MISMATCH',
   'CERTIFICATE_MATERNITY_BIRTH_TOO_FAR',
   'CERTIFICATE_MATERNITY_DATES_TOO_OLD',
