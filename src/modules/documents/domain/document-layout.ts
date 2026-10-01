@@ -708,8 +708,10 @@ export function composeCertificateLayout(
   // eight days after the rest ends), its 2024 guide (a hand signature goes to
   // the counter; online needs a digital signature, which a credential is not)
   // and its 2025 digital validation (who it does not apply to). Only on a
-  // rest: an attendance certificate is not validated.
-  if (form.type === 'MEDICAL_REST') {
+  // rest: an attendance certificate is not validated. And never on a revoked
+  // one: instructions to validate a void certificate are the opposite of what
+  // its «ANULADO» says (CER-029).
+  if (form.type === 'MEDICAL_REST' && form.revocation === null) {
     blocks.push({
       kind: 'note',
       lines: [
@@ -960,7 +962,8 @@ export function composeInvoiceLayout(
       {
         kind: 'boxes',
         left: [
-          { kind: 'logo' },
+          // DOC-059. Only with a logo: the decision is the composer's.
+          ...(establishment.logo === null ? [] : [{ kind: 'logo' } as const]),
           { kind: 'box', rounded: true, blocks: issuerBox },
         ],
         right: [{ kind: 'box', rounded: true, blocks: voucherBox }],

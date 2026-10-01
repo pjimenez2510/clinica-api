@@ -237,8 +237,9 @@ export interface DocumentFrame {
   /** DOC-080. `null` where a norm fixes its own header (DOC-084, the RIDE). */
   header: DocumentHeader | null;
   /**
-   * DOC-059, DOC-076. Whether the establishment has a logo — the RIDE prints
-   * it too, above its own boxes, though it has no common header.
+   * DOC-059. Whether the establishment has a logo. The common header reads
+   * `header.hasLogo`; on the RIDE the composer places a `logo` block only when
+   * there is one (DOC-106).
    */
   hasLogo: boolean;
   footer: DocumentFooter;

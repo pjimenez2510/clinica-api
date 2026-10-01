@@ -20,6 +20,7 @@ import type {
   Block,
   DocumentLayout,
   LabelledValue,
+  SectionRow,
   TableColumn,
 } from '../domain/page-layout';
 
@@ -113,6 +114,8 @@ const HEADING_HEIGHT = mm(9);
 const SIGNATURE_HEIGHT = mm(26);
 /** DOC-057, DOC-060. The template's box for the seal: 210 × 70 px. */
 const SIGNATURE_BOX_MM = { width: 55, height: 18 } as const;
+/** DOC-105. The seal's column inside block E of the 117, and its box. */
+const SECTION_SIGNATURE_MM = { column: 53, height: 20 } as const;
 /** The room between a block of fields and the seal beside it. */
 const SIGNATURE_GAP_MM = 5;
 
@@ -248,21 +251,30 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     const bottomLimit = footerTopOf(doc, layout) - mm(3);
 
     const cursor: Cursor = { y: 0 };
+    /** Where the body of the current page starts, under its header. */
+    let bodyTop = 0;
 
     const startPage = (): void => {
       cursor.y = mm(PAGE_MARGIN_MM);
       this.paintWatermark(doc, layout.frame.watermark);
       this.paintHeader(doc, layout, images, left, contentWidth, cursor);
+      bodyTop = cursor.y;
     };
 
     const ensure: Ensure = (height) => {
       if (cursor.y + height <= bottomLimit) return false;
+      // Already at the top of an empty page, a new one would only leave this
+      // one blank: whatever does not fit here does not fit anywhere, and the
+      // caller has to cut it (`piecesOf`).
+      if (cursor.y <= bodyTop) return false;
       doc.addPage();
       startPage();
       return true;
     };
 
     startPage();
+    /** The room a page's body has: what a framed block must fit in, whole. */
+    const capacity = bottomLimit - bodyTop;
 
     for (let index = 0; index < layout.blocks.length; index += 1) {
       const group = this.signedGroupHeight(doc, layout.blocks, index, contentWidth); // prettier-ignore
@@ -270,7 +282,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
       if (group !== null && group < (bottomLimit - mm(PAGE_MARGIN_MM)) / 2) {
         ensure(group);
       }
-      index += this.paintBlockAt(doc, layout.blocks, index, images, left, contentWidth, cursor, ensure, accent); // prettier-ignore
+      index += this.paintBlockAt(doc, layout.blocks, index, images, left, contentWidth, cursor, ensure, accent, capacity); // prettier-ignore
     }
 
     // DOC-073. The band goes on the page the document ends on, at its fixed
@@ -537,6 +549,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     cursor: Cursor,
     ensure: Ensure,
     accent: string,
+    capacity = Infinity,
   ): number {
     const block = blocks[index];
     const next = blocks[index + 1];
@@ -554,7 +567,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
       cursor.y = top + height;
       return 1;
     }
-    this.paintBlock(doc, block, images, left, width, cursor, ensure, accent);
+    this.paintBlock(doc, block, images, left, width, cursor, ensure, accent, capacity); // prettier-ignore
     return 0;
   }
 
@@ -639,6 +652,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     cursor: Cursor,
     ensure: Ensure,
     accent: string,
+    capacity = Infinity,
   ): void {
     switch (block.kind) {
       case 'spacer':
@@ -668,6 +682,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         return;
 
       case 'title':
+        ensure(mm(8));
         doc
           .font(SERIF_BOLD)
           .fontSize(SIZE.title)
@@ -677,6 +692,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         return;
 
       case 'name':
+        ensure(mm(7));
         doc
           .font(SERIF_BOLD)
           .fontSize(SIZE.boxName)
@@ -686,6 +702,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         return;
 
       case 'caption':
+        ensure(mm(5));
         doc
           .font(SANS_BOLD)
           .fontSize(SIZE.label)
@@ -800,6 +817,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
       case 'logo': {
         // DOC-059. No logo, nothing: the RIDE's issuer box simply starts higher.
         if (images.logo === null) return;
+        ensure(mm(RIDE_LOGO_HEIGHT_MM) + mm(2.5));
         const size = this.fitted(images.logo, width, mm(RIDE_LOGO_HEIGHT_MM)); // prettier-ignore
         doc.image(images.logo.bytes, left, cursor.y + (mm(RIDE_LOGO_HEIGHT_MM) - size.height) / 2, size); // prettier-ignore
         cursor.y += mm(RIDE_LOGO_HEIGHT_MM) + mm(2.5);
@@ -816,8 +834,20 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
       case 'box':
       case 'boxes':
       case 'section': {
-        ensure(this.measure((scratch) => this.paintFramed(scratch, block, images, 0, width, 0, accent)) + mm(BLOCK_GAP_MM)); // prettier-ignore
-        cursor.y = this.paintFramed(doc, block, images, left, width, cursor.y, accent) + mm(BLOCK_GAP_MM); // prettier-ignore
+        // DOC-071. Taller than a page, it is cut into pieces that each fit one
+        // — rows whole, each piece framed and titled — instead of spilling
+        // over the footer and PDFKit opening a page per line.
+        for (const piece of this.piecesOf(
+          block,
+          images,
+          width,
+          accent,
+          capacity,
+        )) {
+          // prettier-ignore
+          ensure(this.heightOfFramed(piece, images, width, accent) + mm(BLOCK_GAP_MM)); // prettier-ignore
+          cursor.y = this.paintFramed(doc, piece, images, left, width, cursor.y, accent) + mm(BLOCK_GAP_MM); // prettier-ignore
+        }
         return;
       }
     }
@@ -899,9 +929,109 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
       scratch.registerFont(name, FONTS[name]);
     }
     scratch.addPage();
-    const bottom = paint(scratch);
-    scratch.end();
-    return bottom;
+    // Never `end()`ed: ending subsets and embeds the four fonts of a file
+    // nobody reads. The document is dropped and collected as it is.
+    return paint(scratch);
+  }
+
+  /** How tall a framed block is, painted where nobody sees it. */
+  private heightOfFramed(
+    block: Extract<Block, { kind: 'box' | 'boxes' | 'section' }>,
+    images: LayoutImages,
+    width: number,
+    accent: string,
+  ): number {
+    return this.measure((scratch) =>
+      this.paintFramed(scratch, block, images, 0, width, 0, accent),
+    );
+  }
+
+  /**
+   * DOC-071. A framed block cut, if it has to be, into pieces that each fit
+   * `capacity`: a section by its rows —a table row by row, under its header
+   * again—, a box by its blocks —a grid of fields row by row—. The pieces after
+   * the first say «(continuación)»; a section keeps its seal on the LAST
+   * piece, beside what it closes. Two columns are not cut: what the RIDE puts
+   * in them is short by construction (its totals and payment).
+   */
+  private piecesOf(
+    block: Extract<Block, { kind: 'box' | 'boxes' | 'section' }>,
+    images: LayoutImages,
+    width: number,
+    accent: string,
+    capacity: number,
+  ): Extract<Block, { kind: 'box' | 'boxes' | 'section' }>[] {
+    const fits = (piece: Extract<Block, { kind: 'box' | 'section' }>): boolean =>
+      this.heightOfFramed(piece, images, width, accent) + mm(BLOCK_GAP_MM) <= capacity; // prettier-ignore
+    if (block.kind === 'boxes' || fits(block)) return [block];
+    const continued = (title: string | undefined, index: number) =>
+      title === undefined || index === 0 ? title : `${title} (continuación)`;
+
+    /** Greedy: units in order, a new piece when the next one does not fit. */
+    const cut = <
+      Unit,
+      Piece extends Extract<Block, { kind: 'box' | 'section' }>,
+    >(
+      units: readonly Unit[],
+      make: (units: readonly Unit[], index: number, last: boolean) => Piece,
+    ): Piece[] => {
+      const pieces: Piece[] = [];
+      let current: Unit[] = [];
+      for (const unit of units) {
+        if (
+          current.length > 0 &&
+          !fits(make([...current, unit], pieces.length, false))
+        ) {
+          // prettier-ignore
+          pieces.push(make(current, pieces.length, false));
+          current = [];
+        }
+        current.push(unit);
+      }
+      pieces.push(make(current, pieces.length, true));
+      return pieces;
+    };
+
+    if (block.kind === 'section') {
+      // One unit per row, and per line of a table: the pieces join the lines
+      // of a table back under one header.
+      const units = block.rows.flatMap<SectionRow>(
+        (row) =>
+        row.kind === 'table' ? row.rows.map((line) => ({ ...row, rows: [line] })) : [row], // prettier-ignore
+      );
+      const join = (rows: readonly SectionRow[]): SectionRow[] =>
+        rows.reduce<SectionRow[]>((joined, row) => {
+          const previous = joined.at(-1);
+          if (
+            row.kind === 'table' &&
+            previous?.kind === 'table' &&
+            previous.columns === row.columns
+          ) {
+            // prettier-ignore
+            joined[joined.length - 1] = { ...previous, rows: [...previous.rows, ...row.rows] }; // prettier-ignore
+          } else {
+            joined.push(row);
+          }
+          return joined;
+        }, []);
+      return cut(units, (rows, index, last) => ({
+        kind: 'section',
+        title: continued(block.title, index) ?? block.title,
+        rows: join(rows),
+        ...(last && block.signature !== undefined ? { signature: block.signature } : {}), // prettier-ignore
+      }));
+    }
+
+    // A box: its blocks, and a grid of fields one row at a time.
+    const units = block.blocks.flatMap<Block>((child) =>
+      child.kind === 'fields'
+        ? this.fieldRows(child).map((row) => ({ ...child, entries: row.map(({ entry }) => entry) })) // prettier-ignore
+        : [child],
+    );
+    return cut(units, (blocks, index) => {
+      const title = continued(block.title, index);
+      return { ...block, blocks, ...(title === undefined ? {} : { title }) };
+    });
   }
 
   /**
@@ -1028,7 +1158,8 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
   ): number {
     const padX = mm(2.1);
     const padY = mm(1.3);
-    const signatureWidth = block.signature === undefined ? 0 : mm(53);
+    const signatureWidth =
+      block.signature === undefined ? 0 : mm(SECTION_SIGNATURE_MM.column);
     const rowsWidth = width - signatureWidth;
 
     const barHeight = SIZE.label + 2 * mm(1.1);
@@ -1098,7 +1229,6 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
             size: number,
             colour: string,
           ): number => {
-            // prettier-ignore
             let x = left;
             let bottom = y;
             texts.forEach((text, at) => {
@@ -1129,7 +1259,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     let bottom = y;
     if (block.signature !== undefined) {
       const x = left + rowsWidth;
-      const boxHeight = mm(20);
+      const boxHeight = mm(SECTION_SIGNATURE_MM.height);
       this.paintSealBox(doc, block.signature, images, x + mm(2.1), bodyTop + mm(1.6), signatureWidth - mm(4.2), boxHeight, SIZE.cell); // prettier-ignore
       bottom = Math.max(bottom, doc.y + mm(1.6));
       hairline(x, bodyTop, x, bottom);
@@ -1209,7 +1339,8 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     const padX = mm(3.2);
     const padY = mm(2.6);
     const gap = mm(3.2);
-    const count = Math.max(block.entries.length, 1);
+    if (block.entries.length === 0) return;
+    const count = block.entries.length;
     const columnWidth = (width - 2 * padX - (count - 1) * gap) / count;
     const labelOptions = { width: columnWidth, characterSpacing: 0.45 };
 
@@ -1319,6 +1450,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
       colour: string,
       fill: string | null,
       height: number,
+      inner = pad,
     ): void => {
       const top = cursor.y;
       if (fill !== null)
@@ -1326,7 +1458,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
       let x = left;
       doc.font(font).fontSize(size).fillColor(colour);
       cells.forEach((cell, index) => {
-        doc.text(cell, x + inset, top + (framed === undefined ? 0 : pad), {
+        doc.text(cell, x + inset, top + (framed === undefined ? 0 : inner), {
           width: textWidth(index),
           align: align(columns[index]),
         });
@@ -1342,7 +1474,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
           doc.font(SANS_BOLD).fontSize(SIZE.label).heightOfString(column.header, { width: textWidth(index) }), // prettier-ignore
         ),
       ) +
-      2 * mm(1.3);
+      2 * pad;
 
     const paintHeaderRow = (): void => {
       if (framed !== undefined) {
@@ -1385,11 +1517,22 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
       const textHeight = Math.max(...heights, minimumRow);
 
       if (framed !== undefined) {
-        const height = textHeight + 2 * (emphasised ? pad * 1.5 : pad);
+        // VALOR TOTAL stands taller, its text centred in the extra room.
+        const inner = emphasised ? pad * 1.5 : pad;
+        const height = textHeight + 2 * inner;
         // A row that does not fit moves WHOLE, and the table goes on under
         // its header again: a page of figures with no column names is a page
         // somebody reads wrong.
-        if (ensure(height)) paintHeaderRow();
+        const leaving = { page: lastPage(doc), y: cursor.y };
+        if (ensure(height)) {
+          // The part left on the previous page is closed there in ink, as
+          // the template's border; this page's part opens under its header.
+          const fresh = lastPage(doc);
+          doc.switchToPage(leaving.page);
+          rule(leaving.y, INK);
+          doc.switchToPage(fresh);
+          paintHeaderRow();
+        }
         paintRow(
           row,
           font,
@@ -1397,6 +1540,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
           INK,
           emphasised ? BAR_FILL : null,
           height,
+          inner,
         );
         cursor.y += height;
         const last = rowIndex === rows.length - 1;
@@ -1676,6 +1820,15 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
 export function barsOf(value: string): number[] {
   const [symbol] = bwipjs.raw({ bcid: 'code128', text: value, parse: false });
   return [...((symbol as { sbs?: number[] } | undefined)?.sbs ?? [])];
+}
+
+/**
+ * The page the body is being painted on: always the last one, since the body
+ * only ever adds pages at the end (the footers switch back later).
+ */
+function lastPage(doc: PDFKit.PDFDocument): number {
+  const range = doc.bufferedPageRange();
+  return range.start + range.count - 1;
 }
 
 /**

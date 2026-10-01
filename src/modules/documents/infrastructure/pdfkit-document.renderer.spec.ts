@@ -1016,3 +1016,128 @@ describe('DOC-106 los campos «Etiqueta: valor» no se pisan', () => {
     expect(lowestOfFirst - second).toBeGreaterThan(8);
   });
 });
+
+describe('DOC-071 DOC-105 un recuadro más alto que una página se parte, sin pisar el pie', () => {
+  /** Each page's text items with their baseline, in points from the bottom. */
+  const itemsOf = async (pdf: Buffer) => {
+    const proxy = await getDocumentProxy(new Uint8Array(pdf));
+    const pages = [];
+    for (let number = 1; number <= proxy.numPages; number += 1) {
+      const page = await proxy.getPage(number);
+      pages.push(
+        (await page.getTextContent()).items.flatMap((item) =>
+          'str' in item && item.str.trim() !== ''
+            ? [{ text: item.str, y: item.transform[5] as number }]
+            : [],
+        ),
+      );
+    }
+    return pages;
+  };
+  /** The footer starts 15 + 18 mm above the bottom edge: the body stays above. */
+  const footerTop = millimetresToPoints(15 + 18);
+  const base: DocumentLayout = { ...layout, tearOff: null };
+
+  it('DOC-105 un bloque D con sesenta diagnósticos sigue en la página siguiente con su título', async () => {
+    const pages = await itemsOf(
+      await renderer.render(
+        {
+          ...base,
+          blocks: [
+            {
+              kind: 'section',
+              title: 'D. Diagnóstico',
+              rows: [
+                {
+                  kind: 'table',
+                  columns: [
+                    { header: 'Diagnóstico', width: 0.8 },
+                    { header: 'CIE', width: 0.2 },
+                  ],
+                  rows: Array.from({ length: 60 }, (_, index) => [
+                    `Diagnóstico número ${index + 1}`,
+                    'J00',
+                  ]),
+                },
+              ],
+            },
+          ],
+        },
+        images,
+        metadata,
+      ),
+    );
+
+    expect(pages.length).toBeLessThanOrEqual(3);
+    // The first page is not left empty: the block starts on it.
+    expect(pages[0]?.some((item) => item.text === 'Diagnóstico número 1')).toBe(true); // prettier-ignore
+    const rows = pages.flat().filter((item) => /^Diagnóstico número \d+$/.test(item.text)); // prettier-ignore
+    // Every row once, and none over the footer.
+    expect(new Set(rows.map((row) => row.text)).size).toBe(60);
+    expect(rows).toHaveLength(60);
+    expect(rows.every((row) => row.y > footerTop)).toBe(true);
+    // The continuation says what it is.
+    expect(pages[1]?.some((item) => item.text.includes('(CONTINUACIÓN)'))).toBe(true); // prettier-ignore
+  });
+
+  it('DOC-072 unas indicaciones de orden que no caben siguen en otro recuadro, sin pisar el pie', async () => {
+    const pages = await itemsOf(
+      await renderer.render(
+        {
+          ...base,
+          blocks: [
+            {
+              kind: 'box',
+              light: true,
+              blocks: [
+                { kind: 'caption', text: 'Indicaciones al paciente' },
+                {
+                  kind: 'fields',
+                  columns: 1,
+                  entries: Array.from({ length: 45 }, (_, index) => ({
+                    label: 'Preparación',
+                    value: `Preparación número ${index + 1}`,
+                  })),
+                },
+              ],
+            },
+          ],
+        },
+        images,
+        metadata,
+      ),
+    );
+
+    expect(pages.length).toBeLessThanOrEqual(3);
+    const rows = pages.flat().filter((item) => /^Preparación número \d+$/.test(item.text)); // prettier-ignore
+    expect(rows).toHaveLength(45);
+    expect(rows.every((row) => row.y > footerTop)).toBe(true);
+  });
+
+  it('DOC-106 un detalle de RIDE que cambia de página repite su cabecera', async () => {
+    const pages = await itemsOf(
+      await renderer.render(
+        {
+          ...base,
+          blocks: [
+            {
+              kind: 'table',
+              framed: 'grid',
+              columns: [
+                { header: 'Cód. principal', width: 0.3 },
+                { header: 'Descripción', width: 0.7 },
+              ],
+              rows: Array.from({ length: 70 }, (_, index) => [`C${index + 1}`, 'Línea']), // prettier-ignore
+            },
+          ],
+        },
+        images,
+        metadata,
+      ),
+    );
+    expect(pages.length).toBeGreaterThan(1);
+    for (const page of pages) {
+      expect(page.some((item) => item.text === 'Cód. principal')).toBe(true);
+    }
+  });
+});

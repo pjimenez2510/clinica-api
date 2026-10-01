@@ -789,11 +789,21 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
 
 - **DOC-107** — El pintado **NO DEBERÁ** cambiar el contenido: cada documento
   DEBERÁ seguir imprimiendo los mismos datos con las mismas etiquetas que antes
-  de DOC-103 a DOC-106. Solo desaparecen los rótulos que la plantilla no
-  repite: la clave de acceso en texto **sobre** el código de barras (sigue
-  debajo, y como número de autorización), la fila «Subtotales · Valor» y el
-  subtítulo «Datos laborales del paciente» (sus cuatro datos van en el bloque
-  B).
+  de DOC-103 a DOC-106, aunque cambien de sitio (en el 117, «Tipo» y
+  «Contingencia» pasan al bloque C y «Lugar de emisión» al E, como la
+  plantilla). Las únicas diferencias son:
+  - **Rótulos que la plantilla no repite:** la clave de acceso en texto **sobre**
+    el código de barras (sigue debajo, y como número de autorización), la fila
+    «Subtotales · Valor» y el subtítulo «Datos laborales del paciente» (sus
+    cuatro datos van en el bloque B).
+  - **Rótulos que cambian de forma:** «FACTURA No.» pasa a ser el título
+    «FACTURA» seguido de «No.», y el bloque D numera sus filas («#»), que es
+    un ordinal y no un dato.
+  - **Añadidos por decisión de la principal el 01-10-2026** (la plantilla
+    aprobada los trae): la hora de emisión o de solicitud, la historia clínica
+    en la franja (DOC-104), la nota del IESS (DOC-075) y PRE/DEF (CER-027).
+
+  > Lo comprueba `document-layout.spec.ts` contra lo que imprimía `main`.
 
 ---
 
