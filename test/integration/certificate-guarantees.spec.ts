@@ -183,15 +183,19 @@ describe('CER-009 el número del certificado: propio, por sede, sin huecos e inm
     const scene = await aScene(prisma);
     const certificate = await insertCertificate(prisma, scene);
 
-    // Control positivo: el mismo UPDATE sobre otra columna pasa por el mismo
-    // disparador y se admite.
+    // Control positivo: lo único que cambia de un certificado emitido, su
+    // anulación, pasa por los mismos disparadores (CER-011).
     await expect(
-      prisma.$executeRaw`UPDATE medical_certificate SET include_diagnosis = true WHERE id = ${certificate.id}::uuid`,
+      prisma.$executeRaw`
+        UPDATE medical_certificate
+           SET revoked_at = now(), revoked_by_id = ${scene.userId}::uuid,
+               revocation_reason = 'Emitido a la persona equivocada'
+         WHERE id = ${certificate.id}::uuid`,
     ).resolves.toBe(1);
 
     await expect(
       prisma.$executeRaw`UPDATE medical_certificate SET number = 99 WHERE id = ${certificate.id}::uuid`,
-    ).rejects.toThrow(/medical_certificate_number_immutable/);
+    ).rejects.toThrow(/medical_certificate_(frozen|number_immutable)/);
   });
 
   it('CER-009 control positivo: la unicidad por sede existe y rechaza un duplicado', async () => {
@@ -206,6 +210,7 @@ describe('CER-009 el número del certificado: propio, por sede, sin huecos e inm
     await expect(
       prisma.$transaction(async (tx) => {
         await tx.$executeRaw`ALTER TABLE medical_certificate DISABLE TRIGGER medical_certificate_number_immutable`;
+        await tx.$executeRaw`ALTER TABLE medical_certificate DISABLE TRIGGER medical_certificate_frozen`;
         await tx.$executeRaw`UPDATE medical_certificate SET number = 1 WHERE number = 2`;
       }),
     ).rejects.toThrow(/medical_certificate_site_number_unique/);

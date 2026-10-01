@@ -20,6 +20,10 @@ import type {
   SiteScopeFilter,
 } from '../domain/certificate.repository';
 import type { Form117Source } from '../../../shared/domain/form-117/form-117';
+import {
+  FORM_117_SOURCE_SELECT,
+  toForm117Source,
+} from '../../../shared/infrastructure/prisma/form-117-source';
 
 /**
  * The certificate's rows in, domain shapes out.
@@ -127,7 +131,16 @@ export class PrismaCertificateRepository implements CertificateRepository {
           status: true,
           startedAt: true,
           _count: { select: { diagnoses: true } },
-          // CER-038. The chart of the attention, read where the row is written.
+          // CER-027. What the certificate will print, COPIED below: added
+          // later, a diagnosis would reach a paper the patient authorised
+          // without it.
+          diagnoses: {
+            orderBy: [{ rank: 'asc' }, { recordedAt: 'asc' }],
+            select: { cie10Code: true, cie10Display: true },
+          },
+          // CER-038. The chart of the attention, read where the row is written
+          // and copied: a later correction of the chart does not rewrite an
+          // issued certificate.
           patient: {
             select: {
               employerName: true,
@@ -176,6 +189,17 @@ export class PrismaCertificateRepository implements CertificateRepository {
           restBackdatingReason: plan.backdatingReason,
           verificationCode: plan.verificationCode,
           issuedAt: plan.issuedAt,
+          // Only what it prints: a certificate without the diagnosis keeps none.
+          diagnoses: plan.includeDiagnosis
+            ? encounter.diagnoses.map((diagnosis) => ({
+                code: diagnosis.cie10Code,
+                display: diagnosis.cie10Display,
+              }))
+            : [],
+          employerName: encounter.patient.employerName,
+          jobTitle: encounter.patient.jobTitle,
+          residenceAddressLine: encounter.patient.residenceAddressLine,
+          patientPhone: encounter.patient.phone,
         },
         select: CERTIFICATE_SELECT,
       });
@@ -205,121 +229,9 @@ export class PrismaCertificateRepository implements CertificateRepository {
   ): Promise<Form117Source | null> {
     const row = await this.prisma.medicalCertificate.findFirst({
       where: { id: query.certificateId, ...siteFilter(query.sites) },
-      select: {
-        ...CERTIFICATE_SELECT,
-        // CER-020. The site is the «establecimiento de salud», with its own
-        // unicódigo (D-074).
-        // CER-036, CER-037. The canton for the place of issue, and the
-        // address and phone of the letterhead. The establishment has none of
-        // the three in the schema, so there is nothing to fall back to.
-        site: {
-          select: {
-            name: true,
-            mspUnicode: true,
-            addressLine: true,
-            phone: true,
-            parish: { select: { parent: { select: { display: true } } } },
-          },
-        },
-        patient: {
-          select: {
-            familyName: true,
-            secondFamilyName: true,
-            givenName: true,
-            secondGivenName: true,
-            sex: true,
-            mrn: true,
-            // CER-038. Printed on a rest (PA-061).
-            employerName: true,
-            jobTitle: true,
-            residenceAddressLine: true,
-            phone: true,
-            // CER-020. The official documents still in force on this chart;
-            // the domain picks the one the instructivo names.
-            identifiers: {
-              where: { use: 'OFFICIAL', patientMerged: false },
-              select: { type: true, value: true },
-            },
-          },
-        },
-        encounter: {
-          select: {
-            startedAt: true,
-            endedAt: true,
-            // CER-021. The FROZEN age of the attention, never today's.
-            ageYears: true,
-            ageMonths: true,
-            ageDays: true,
-            // CER-027. Principal first, with the code and description
-            // `trg_diagnosis_snapshot` froze.
-            diagnoses: {
-              orderBy: [{ rank: 'asc' }, { recordedAt: 'asc' }],
-              select: { cie10Code: true, cie10Display: true },
-            },
-          },
-        },
-        issuedBy: {
-          select: {
-            // CER-028. Whether there is a seal; the image itself is
-            // `documents`'. The drawn signature is deliberately NOT read.
-            sealImageId: true,
-            user: {
-              select: { firstName: true, lastName: true, cedula: true },
-            },
-            // CER-022. The PRIMARY specialty, if any.
-            specialties: {
-              where: { isPrimary: true },
-              select: { specialty: { select: { name: true } } },
-              take: 1,
-            },
-          },
-        },
-      },
+      select: FORM_117_SOURCE_SELECT,
     });
-    if (row === null) return null;
-
-    const view = toView(row);
-    return {
-      certificate: view,
-      site: {
-        name: row.site.name,
-        mspUnicode: row.site.mspUnicode,
-        city: row.site.parish?.parent?.display ?? null,
-        address: row.site.addressLine,
-        phone: row.site.phone,
-      },
-      patient: {
-        familyName: row.patient.familyName,
-        secondFamilyName: row.patient.secondFamilyName,
-        givenName: row.patient.givenName,
-        secondGivenName: row.patient.secondGivenName,
-        sex: row.patient.sex,
-        mrn: row.patient.mrn,
-        employerName: row.patient.employerName,
-        jobTitle: row.patient.jobTitle,
-        residenceAddressLine: row.patient.residenceAddressLine,
-        phone: row.patient.phone,
-        identifiers: row.patient.identifiers,
-      },
-      encounter: {
-        startedAt: row.encounter.startedAt,
-        endedAt: row.encounter.endedAt,
-        ageYears: row.encounter.ageYears,
-        ageMonths: row.encounter.ageMonths,
-        ageDays: row.encounter.ageDays,
-      },
-      diagnoses: row.encounter.diagnoses.map((diagnosis) => ({
-        code: diagnosis.cie10Code,
-        display: diagnosis.cie10Display,
-      })),
-      practitioner: {
-        givenNames: row.issuedBy.user.firstName,
-        familyNames: row.issuedBy.user.lastName,
-        cedula: row.issuedBy.user.cedula,
-        primarySpecialty: row.issuedBy.specialties[0]?.specialty.name ?? null,
-        hasSeal: row.issuedBy.sealImageId !== null,
-      },
-    };
+    return row === null ? null : toForm117Source(row);
   }
 
   /**

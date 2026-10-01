@@ -410,6 +410,32 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
         select: { id: true, substanceConceptId: true, substanceText: true },
       });
 
+      /**
+       * PR-070 AGAIN, AT THE ISSUE: «no generar, imprimir NI NUMERAR». A
+       * draft composed before the mark existed —or before a CNMB republication
+       * marked its medicine (D-084)— would otherwise take a number of the ACESS
+       * series here.
+       */
+      const conceptIds = view.items
+        .map((item) => item.conceptId)
+        .filter((id): id is string => id !== null);
+      if (conceptIds.length > 0) {
+        const controlled = new Set(
+          (
+            await tx.$queryRaw<{ id: string }[]>`
+              SELECT id::text AS id FROM catalog_concept
+               WHERE id = ANY(${conceptIds}::uuid[])
+                 AND (attributes ->> 'controlled') = 'true'
+            `
+          ).map((row) => row.id),
+        );
+        const line = view.items.findIndex(
+          (item) => item.conceptId !== null && controlled.has(item.conceptId),
+        );
+        if (line >= 0)
+          throw new ControlledSubstanceNotPrescribableError(line + 1);
+      }
+
       const plan = decide({
         status: view.status,
         warningSigns: view.warningSigns,

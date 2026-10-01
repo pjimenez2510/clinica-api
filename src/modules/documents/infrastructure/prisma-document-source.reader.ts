@@ -1,5 +1,8 @@
 import { composeForm117 } from '../../../shared/domain/form-117/form-117';
-import type { ClinicalDate } from '../../../shared/domain/clinic-time';
+import {
+  FORM_117_SOURCE_SELECT,
+  toForm117Source,
+} from '../../../shared/infrastructure/prisma/form-117-source';
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
@@ -329,6 +332,10 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
    * establishment's trade name, as the header printed it.
    */
   async findForVerification(code: string): Promise<VerificationFacts | null> {
+    // Every code is generated in capitals; a pharmacy may type it in lowercase.
+    // Matching the capitals EXACTLY is what lets the unique index answer,
+    // instead of three scans per public request.
+    const exact = code.toUpperCase();
     const place = {
       select: {
         name: true,
@@ -339,8 +346,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
 
     const prescription = await this.prisma.prescription.findFirst({
       where: {
-        // A pharmacy may type the code from the paper in lowercase.
-        verificationCode: { equals: code, mode: 'insensitive' },
+        verificationCode: exact,
         status: { in: ['ACTIVE', 'COMPLETED', 'CANCELLED'] },
         issuedAt: { not: null },
       },
@@ -366,7 +372,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
     }
 
     const certificate = await this.prisma.medicalCertificate.findFirst({
-      where: { verificationCode: { equals: code, mode: 'insensitive' } },
+      where: { verificationCode: exact },
       select: {
         issuedAt: true,
         revokedAt: true,
@@ -390,7 +396,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
     // ORD-006, D-095. The order prints its code too, and the laboratory that
     // scans it must get an answer, not «no document has this code».
     const order = await this.prisma.serviceOrder.findFirst({
-      where: { verificationCode: { equals: code, mode: 'insensitive' } },
+      where: { verificationCode: exact },
       select: {
         requestedAt: true,
         orderedBy: signer,
@@ -655,78 +661,19 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         ...(sites === 'all' ? {} : { siteId: { in: [...sites] } }),
       },
       select: {
-        id: true,
+        ...FORM_117_SOURCE_SELECT,
         siteId: true,
-        type: true,
-        number: true,
-        verificationCode: true,
-        issuedAt: true,
-        restFrom: true,
-        restTo: true,
-        includeDiagnosis: true,
-        contingencyType: true,
-        maternityAdmissionOn: true,
-        birthOn: true,
-        maternityDischargeOn: true,
-        revokedAt: true,
-        revocationReason: true,
-        site: {
-          select: {
-            name: true,
-            mspUnicode: true,
-            addressLine: true,
-            phone: true,
-            parish: { select: { parent: { select: { display: true } } } },
-          },
-        },
-        patient: {
-          select: {
-            familyName: true,
-            secondFamilyName: true,
-            givenName: true,
-            secondGivenName: true,
-            sex: true,
-            mrn: true,
-            // CER-038. Printed on a rest (PA-061).
-            employerName: true,
-            jobTitle: true,
-            residenceAddressLine: true,
-            phone: true,
-            identifiers: {
-              where: { use: 'OFFICIAL', patientMerged: false },
-              select: { type: true, value: true },
-            },
-          },
-        },
-        encounter: {
-          select: {
-            startedAt: true,
-            endedAt: true,
-            ageYears: true,
-            ageMonths: true,
-            ageDays: true,
-            diagnoses: {
-              orderBy: [{ rank: 'asc' }, { recordedAt: 'asc' }],
-              select: { cie10Code: true, cie10Display: true },
-            },
-          },
-        },
+        // The identity the frame and the seal box print; the 117 itself reads
+        // its own copy above.
         issuedBy: {
           select: {
+            ...FORM_117_SOURCE_SELECT.issuedBy.select,
             ...PRACTITIONER_SELECT,
-            sealImageId: true,
             user: {
               select: {
-                firstName: true,
-                lastName: true,
+                ...FORM_117_SOURCE_SELECT.issuedBy.select.user.select,
                 acessRegistration: true,
-                cedula: true,
               },
-            },
-            specialties: {
-              where: { isPrimary: true },
-              select: { specialty: { select: { name: true } } },
-              take: 1,
             },
           },
         },
@@ -734,79 +681,12 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
     });
     if (row === null) return null;
 
-    const dateOf = (value: Date): ClinicalDate =>
-      value.toISOString().slice(0, 10) as ClinicalDate;
-    const maternity =
-      row.maternityAdmissionOn === null ||
-      row.birthOn === null ||
-      row.maternityDischargeOn === null
-        ? null
-        : {
-            admissionOn: dateOf(row.maternityAdmissionOn),
-            birthOn: dateOf(row.birthOn),
-            dischargeOn: dateOf(row.maternityDischargeOn),
-          };
-
     return {
       kind: 'MEDICAL_CERTIFICATE',
       data: {
         subjectId: row.id,
         siteId: row.siteId,
-        form: composeForm117({
-          certificate: {
-            id: row.id,
-            number: row.number,
-            verificationCode: row.verificationCode,
-            type: row.type,
-            issuedAt: row.issuedAt,
-            restFrom: row.restFrom === null ? null : dateOf(row.restFrom),
-            restTo: row.restTo === null ? null : dateOf(row.restTo),
-            includeDiagnosis: row.includeDiagnosis,
-            contingencyType: row.contingencyType,
-            maternity,
-            revokedAt: row.revokedAt,
-            revocationReason: row.revocationReason,
-          },
-          site: {
-            name: row.site.name,
-            mspUnicode: row.site.mspUnicode,
-            city: row.site.parish?.parent?.display ?? null,
-            address: row.site.addressLine,
-            phone: row.site.phone,
-          },
-          patient: {
-            familyName: row.patient.familyName,
-            secondFamilyName: row.patient.secondFamilyName,
-            givenName: row.patient.givenName,
-            secondGivenName: row.patient.secondGivenName,
-            sex: row.patient.sex,
-            mrn: row.patient.mrn,
-            employerName: row.patient.employerName,
-            jobTitle: row.patient.jobTitle,
-            residenceAddressLine: row.patient.residenceAddressLine,
-            phone: row.patient.phone,
-            identifiers: row.patient.identifiers,
-          },
-          encounter: {
-            startedAt: row.encounter.startedAt,
-            endedAt: row.encounter.endedAt,
-            ageYears: row.encounter.ageYears,
-            ageMonths: row.encounter.ageMonths,
-            ageDays: row.encounter.ageDays,
-          },
-          diagnoses: row.encounter.diagnoses.map((diagnosis) => ({
-            code: diagnosis.cie10Code,
-            display: diagnosis.cie10Display,
-          })),
-          practitioner: {
-            givenNames: row.issuedBy.user.firstName,
-            familyNames: row.issuedBy.user.lastName,
-            cedula: row.issuedBy.user.cedula,
-            primarySpecialty:
-              row.issuedBy.specialties[0]?.specialty.name ?? null,
-            hasSeal: row.issuedBy.sealImageId !== null,
-          },
-        }),
+        form: composeForm117(toForm117Source(row)),
         issuedBy: toPractitioner(row.issuedBy),
       },
     };

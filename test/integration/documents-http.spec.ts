@@ -433,12 +433,39 @@ describe('los documentos por HTTP', () => {
     const verify = (code: string) =>
       request(app.getHttpServer()).get(`/api/v1/documents/verify/${code}`);
 
+    /**
+     * A receta issued for this test, with the code it needs. The seeded one is
+     * not edited: once issued, a receta only changes its status
+     * (`prescription_frozen`).
+     */
+    async function issuedReceta(
+      data: Partial<{ verificationCode: string; issuedAt: Date; status: 'ACTIVE' | 'CANCELLED' }>, // prettier-ignore
+    ): Promise<void> {
+      const seeded = await prisma.prescription.findUniqueOrThrow({
+        where: { id: prescriptionId },
+        select: { encounterId: true, siteId: true, prescriberId: true },
+      });
+      await prisma.prescription.create({
+        data: {
+          ...seeded,
+          status: 'ACTIVE',
+          issuedAt: new Date(),
+          ...data,
+          items: {
+            create: {
+              genericName: 'Amoxicilina',
+              doseText: '1 cápsula',
+              frequencyText: 'Cada 8 horas',
+              offFormularyJustification: 'Fuera del CNMB para esta prueba',
+            },
+          },
+        },
+      });
+    }
+
     it('DOC-094 sin sesión dice clase, fecha, establecimiento, sede, profesional y vigencia', async () => {
       const issuedAt = new Date();
-      await prisma.prescription.update({
-        where: { id: prescriptionId },
-        data: { verificationCode: 'ABCD1234EF567890', issuedAt },
-      });
+      await issuedReceta({ verificationCode: 'ABCD1234EF567890', issuedAt });
 
       const response = await verify('ABCD1234EF567890').expect(200);
 
@@ -453,12 +480,9 @@ describe('los documentos por HTTP', () => {
 
     it('DOC-094 una receta pasada su vigencia se dice caducada', async () => {
       // The seeded receta was issued weeks before any run of this suite.
-      await prisma.prescription.update({
-        where: { id: prescriptionId },
-        data: {
-          verificationCode: 'ABCD1234EF567890',
-          issuedAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
-        },
+      await issuedReceta({
+        verificationCode: 'ABCD1234EF567890',
+        issuedAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
       });
 
       const response = await verify('ABCD1234EF567890').expect(200);
@@ -466,18 +490,18 @@ describe('los documentos por HTTP', () => {
     });
 
     it('DOC-094 el código se acepta escrito en minúsculas', async () => {
-      await prisma.prescription.update({
-        where: { id: prescriptionId },
-        data: { verificationCode: 'ABCD1234EF567890', issuedAt: new Date() },
+      await issuedReceta({
+        verificationCode: 'ABCD1234EF567890',
+        issuedAt: new Date(),
       });
       await verify('abcd1234ef567890').expect(200);
     });
 
     it('DOC-096 una receta en borrador con código responde como un código inexistente', async () => {
       const unknown = await verify('ZZZZ9999ZZZZ9999').expect(404);
-      await prisma.prescription.update({
-        where: { id: prescriptionId },
-        data: { verificationCode: 'ABCD1234EF567890', issuedAt: new Date() },
+      await issuedReceta({
+        verificationCode: 'ABCD1234EF567890',
+        issuedAt: new Date(),
       });
       // Positive control: an issued receta is found by its code.
       await verify('ABCD1234EF567890').expect(200);
@@ -536,10 +560,7 @@ describe('los documentos por HTTP', () => {
     });
 
     it('DOC-095 la respuesta no lleva nada del paciente', async () => {
-      await prisma.prescription.update({
-        where: { id: prescriptionId },
-        data: { verificationCode: 'ABCD1234EF567890' },
-      });
+      await issuedReceta({ verificationCode: 'ABCD1234EF567890' });
       const patient = await prisma.patient.findFirstOrThrow({
         select: { familyName: true, givenName: true },
       });
@@ -562,9 +583,9 @@ describe('los documentos por HTTP', () => {
     });
 
     it('DOC-094 una receta anulada se dice anulada', async () => {
-      await prisma.prescription.update({
-        where: { id: prescriptionId },
-        data: { verificationCode: 'ABCD1234EF567890', status: 'CANCELLED' },
+      await issuedReceta({
+        verificationCode: 'ABCD1234EF567890',
+        status: 'CANCELLED',
       });
 
       const response = await verify('ABCD1234EF567890').expect(200);
@@ -624,10 +645,7 @@ describe('los documentos por HTTP', () => {
 
     it('DOC-096 un código inventado y uno sin forma dicen exactamente lo mismo', async () => {
       // Positive control: the route exists and answers a real code.
-      await prisma.prescription.update({
-        where: { id: prescriptionId },
-        data: { verificationCode: 'ABCD1234EF567890' },
-      });
+      await issuedReceta({ verificationCode: 'ABCD1234EF567890' });
       await verify('ABCD1234EF567890').expect(200);
 
       const unknown = await verify('ZZZZ9999ZZZZ9999').expect(404);
@@ -727,11 +745,19 @@ describe('los documentos por HTTP', () => {
         subjectId: prescriptionId,
       }).expect(201);
 
-      await prisma.prescriptionItem.deleteMany({ where: { prescriptionId } });
+      // The same receta without its medicine: another one, issued without
+      // lines — an issued receta's lines never change (`prescription_frozen`).
+      const seeded = await prisma.prescription.findUniqueOrThrow({
+        where: { id: prescriptionId },
+        select: { encounterId: true, siteId: true, prescriberId: true, issuedAt: true }, // prettier-ignore
+      });
+      const bare = await prisma.prescription.create({
+        data: { ...seeded, status: 'ACTIVE' },
+      });
 
       const withoutData = await post('/documents/renders', doctorToken, {
         kind: 'PRESCRIPTION',
-        subjectId: prescriptionId,
+        subjectId: bare.id,
       }).expect(201);
 
       // Removing the only medicine changes the file. If the composition ignored
@@ -890,6 +916,23 @@ describe('los documentos por HTTP', () => {
         where: { resourceType: 'document' },
       });
       expect(trail.map((row) => row.action)).toEqual(['CREATE']);
+    });
+
+    it('DOC-008 un segundo original del mismo documento se rechaza: se corrige el primero', async () => {
+      // Control positivo: el primero se archiva.
+      await post('/documents/renders', doctorToken, {
+        kind: 'PRESCRIPTION',
+        subjectId: prescriptionId,
+      }).expect(201);
+
+      const second = await post('/documents/renders', doctorToken, {
+        kind: 'PRESCRIPTION',
+        subjectId: prescriptionId,
+      }).expect(409);
+      expect((second.body as Problem).code).toBe('DOCUMENT_ALREADY_EMITTED');
+      await expect(
+        prisma.documentRender.count({ where: { prescriptionId } }),
+      ).resolves.toBe(1);
     });
 
     it('DOC-007 corregir emite otro documento que anula al anterior', async () => {
@@ -1325,10 +1368,14 @@ describe('los documentos por HTTP', () => {
         'image/png',
       ).expect(200);
 
+      // A second original is refused (DOC-008): the new identity goes into a
+      // correction of the first.
       const after = (
-        await post('/documents/renders', doctorToken, {
+        await post('/documents/renders/supersede', doctorToken, {
           kind: 'PRESCRIPTION',
           subjectId: prescriptionId,
+          supersedesId: before.id,
+          reason: 'Se reimprime con el logo de la clínica',
         }).expect(201)
       ).body as RenderBody;
 

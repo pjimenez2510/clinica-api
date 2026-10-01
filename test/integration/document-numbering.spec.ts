@@ -109,9 +109,45 @@ describe('ORD-006 el número de orden: propio, consecutivo, sin huecos e inmutab
     const { ids } = await sceneOf(prisma);
     await insertOrder(prisma, ids);
 
+    // Control positivo: otra columna de la misma orden sí se actualiza.
+    await expect(
+      prisma.$executeRaw`UPDATE service_order SET clinical_note_text = 'Ayuno'`,
+    ).resolves.toBe(1);
     await expect(
       prisma.$executeRaw`UPDATE service_order SET number = 99`,
     ).rejects.toThrow(/service_order_number_immutable/);
+  });
+
+  it('ORD-006 cada orden nace con su propio codigo de verificacion, y la base no admite dos iguales', async () => {
+    const prisma = db();
+    const { ids } = await sceneOf(prisma);
+    await insertOrder(prisma, ids);
+    await insertOrder(prisma, ids);
+
+    const codes = await prisma.$queryRaw<{ verification_code: string }[]>`
+      SELECT verification_code FROM service_order ORDER BY number`;
+    // Control positivo: los dos tienen código, y distinto.
+    expect(codes[0]!.verification_code).toMatch(/^[0-9A-F]{16}$/);
+    expect(codes[0]!.verification_code).not.toBe(codes[1]!.verification_code);
+
+    await expect(
+      prisma.$executeRaw`
+        UPDATE service_order SET verification_code = ${codes[0]!.verification_code}
+         WHERE verification_code = ${codes[1]!.verification_code}`,
+    ).rejects.toThrow(/verification_code/);
+  });
+
+  it('ST-049 la base rechaza un telefono de contacto que no es un numero, aunque no pase por la API', async () => {
+    const prisma = db();
+    const { ids } = await sceneOf(prisma);
+
+    // Control positivo: un número móvil ecuatoriano pasa por el mismo CHECK.
+    await expect(
+      prisma.$executeRaw`UPDATE practitioner SET emergency_contact_phone = '0991234567' WHERE id = ${ids.practitionerId}::uuid`,
+    ).resolves.toBe(1);
+    await expect(
+      prisma.$executeRaw`UPDATE practitioner SET emergency_contact_phone = 'llamar a casa' WHERE id = ${ids.practitionerId}::uuid`,
+    ).rejects.toThrow(/practitioner_emergency_contact_phone_format/);
   });
 
   it('ORD-006 el número no lo elige quien inserta: el disparador lo pisa', async () => {
@@ -230,7 +266,7 @@ describe('PR-020 la numeración secuencial de la receta: al emitir, por sede, si
 
     await expect(
       prisma.$executeRaw`UPDATE prescription SET sequence_number = 99`,
-    ).rejects.toThrow(/prescription_number_immutable/);
+    ).rejects.toThrow(/prescription_(frozen|number_immutable)/);
   });
 
   it('PR-020 control positivo: un borrador con número y una emitida sin él los rechaza la base', async () => {

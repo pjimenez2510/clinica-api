@@ -94,7 +94,11 @@ export class CertificateTypeNotSupportedError extends ValidationError {
 
 /** CER-006, CER-007, CER-034, CER-035. What is wrong with one field of the rest. */
 export type RestPeriodProblem =
-  'MISSING' | 'ENDS_BEFORE_START' | 'NOT_ALLOWED' | 'MUST_BE_INCLUDED';
+  | 'MISSING'
+  | 'ENDS_BEFORE_START'
+  | 'NOT_ALLOWED'
+  | 'MUST_BE_INCLUDED'
+  | 'OUT_OF_ORDER';
 
 /**
  * CER-006, CER-007, CER-034, CER-035. The fields that describe a rest: the
@@ -135,6 +139,10 @@ function restMessage(
       return field === 'restFrom'
         ? 'El reposo no puede empezar después de terminar'
         : 'El reposo no puede terminar antes de empezar';
+    case 'OUT_OF_ORDER':
+      return field === 'birthOn'
+        ? 'El parto no puede ser antes del ingreso'
+        : 'El alta no puede ser antes del parto';
     case 'MUST_BE_INCLUDED':
       return 'Un certificado de reposo lleva siempre el diagnóstico: el IESS no lo valida sin él';
     case 'NOT_ALLOWED':

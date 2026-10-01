@@ -322,6 +322,21 @@ describe('PR-020 PR-038 PR-039 la receta impresa lleva su número y sus indicaci
     expect(frame.footer.verification?.code).toBe('RX-7Q2K');
   });
 
+  it('PR-010 una receta anulada lo dice arriba y en cada página: no se dispensa', () => {
+    const cancelled = composeLayout(
+      prescription({ status: 'CANCELLED' }),
+      context,
+      template,
+    );
+    expect(cancelled.frame.watermark).toBe('RECETA ANULADA');
+    expect(textOf(cancelled.blocks)).toContain('RECETA ANULADA');
+
+    // Control positivo: la vigente no lleva ninguna marca.
+    const active = composeLayout(prescription(), context, template);
+    expect(active.frame.watermark).toBeNull();
+    expect(textOf(active.blocks)).not.toContain('ANULADA');
+  });
+
   it('PR-020 una previsualización de borrador no imprime «null» ni un número que no tiene', () => {
     const layout = composeLayout(
       prescription({ sequenceNumber: null, verificationCode: null }),
@@ -567,6 +582,37 @@ describe('ORD-006 DOC-072 la orden impresa, como la plantilla aprobada (D-095)',
       ],
       ...overrides,
     },
+  });
+
+  it('ORD-007 un examen cancelado no sale en el papel del laboratorio, y sin ninguno vivo la orden sale anulada', () => {
+    const withOneCancelled = composeLayout(
+      order({
+        items: [
+          { code: 'EX-GLUCOSA-AYUNAS', display: 'Glucosa en ayunas', specimen: 'Suero', preparation: 'Ayuno de 8 a 12 horas.', status: 'CANCELLED' }, // prettier-ignore
+          { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: null, status: 'REQUESTED' }, // prettier-ignore
+        ],
+      }),
+      context,
+      template,
+    );
+    const text = wholeText(withOneCancelled);
+    // Control positivo: el examen vivo sale.
+    expect(text).toContain('Biometría hemática completa');
+    expect(text).not.toContain('Glucosa en ayunas');
+    expect(text).not.toContain('Ayuno de 8 a 12 horas');
+    expect(withOneCancelled.frame.watermark).toBeNull();
+
+    const allCancelled = composeLayout(
+      order({
+        items: [
+          { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: null, status: 'CANCELLED' }, // prettier-ignore
+        ],
+      }),
+      context,
+      template,
+    );
+    expect(allCancelled.frame.watermark).toBe('ORDEN ANULADA');
+    expect(wholeText(allCancelled)).toContain('ORDEN ANULADA');
   });
 
   it('ORD-006 la referencia es el número de la orden y su código de verificación va al pie', () => {
@@ -822,16 +868,19 @@ describe('DOC-075 el certificado sobre el formulario 117 y la plantilla aprobada
     expect(text).toContain('Fecha de alta');
   });
 
-  it('CER-029 un certificado anulado lo dice en el propio papel', () => {
-    const text = wholeText(
-      composeLayout(
-        certificate(form({ revokedAt: now, revocationReason: 'Se emitió a otro paciente' })), // prettier-ignore
-        context,
-        template,
-      ),
+  it('CER-029 un certificado anulado lo dice en el propio papel, y en cada página', () => {
+    const layout = composeLayout(
+      certificate(form({ revokedAt: now, revocationReason: 'Se emitió a otro paciente' })), // prettier-ignore
+      context,
+      template,
     );
 
-    expect(text).toContain('ANULADO');
+    expect(wholeText(layout)).toContain('ANULADO');
+    expect(layout.frame.watermark).toBe('CERTIFICADO ANULADO');
+    // Control positivo: el vigente no lleva marca.
+    expect(
+      composeLayout(certificate(), context, template).frame.watermark,
+    ).toBeNull();
   });
 
   it('CER-029 la referencia es el número del certificado y su código de verificación va al pie', () => {

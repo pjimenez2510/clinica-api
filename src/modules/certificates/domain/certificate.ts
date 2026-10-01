@@ -199,6 +199,25 @@ export function restDetailsOf(
     if (isMaternity && value === null) problems.push({ field, problem: 'MISSING' }); // prettier-ignore
     if (!isMaternity && value !== null) problems.push({ field, problem: 'NOT_ALLOWED' }); // prettier-ignore
   }
+  // CER-035. Admission, birth and discharge, in that order: the IESS returns
+  // a maternity whose dates contradict each other.
+  const { maternityAdmissionOn: admission, birthOn: birth, maternityDischargeOn: discharge } = request; // prettier-ignore
+  if (
+    isMaternity &&
+    admission !== null &&
+    birth !== null &&
+    birth < admission
+  ) {
+    problems.push({ field: 'birthOn', problem: 'OUT_OF_ORDER' });
+  }
+  if (
+    isMaternity &&
+    birth !== null &&
+    discharge !== null &&
+    discharge < birth
+  ) {
+    problems.push({ field: 'maternityDischargeOn', problem: 'OUT_OF_ORDER' });
+  }
   if (from !== null && to !== null && to < from) {
     // `YYYY-MM-DD` compares as text exactly as it compares as a date.
     problems.push({ field: 'restTo', problem: 'ENDS_BEFORE_START' });

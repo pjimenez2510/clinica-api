@@ -331,3 +331,38 @@ describe('CER-038 los datos laborales que faltan no impiden el reposo: se avisan
     ).toContain('la empresa, el puesto de trabajo y el domicilio');
   });
 });
+
+describe('CER-035 las fechas de maternidad van en orden', () => {
+  it('CER-035 un parto antes del ingreso y un alta antes del parto se nombran por su campo', () => {
+    const day = today;
+    const request = (admission: number, birth: number, discharge: number) => ({
+      restFrom: day,
+      restTo: addDays(day, 5),
+      contingencyType: 'MATERNITY' as const,
+      maternityAdmissionOn: addDays(day, admission),
+      birthOn: addDays(day, birth),
+      maternityDischargeOn: addDays(day, discharge),
+      includeDiagnosis: true,
+    });
+
+    // Control positivo: ingreso, parto y alta en orden.
+    expect(
+      restDetailsOf('MEDICAL_REST', request(0, 1, 3))?.maternity,
+    ).not.toBeNull();
+
+    expect(() => restDetailsOf('MEDICAL_REST', request(2, 1, 0))).toThrow(
+      expect.objectContaining({
+        fieldErrors: [
+          expect.objectContaining({
+            field: 'birthOn',
+            message: 'El parto no puede ser antes del ingreso',
+          }),
+          expect.objectContaining({
+            field: 'maternityDischargeOn',
+            message: 'El alta no puede ser antes del parto',
+          }),
+        ],
+      }),
+    );
+  });
+});

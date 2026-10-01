@@ -95,7 +95,23 @@ export function composePrescriptionLayout(
       ? null
       : addDays(issuedDate, OUTPATIENT_VALIDITY_DAYS - 1);
 
+  /**
+   * Art. 70 of the Res. ACESS-2023-0030: a cancelled receta is not dispensed.
+   * Printed — or reprinted — after the cancellation, it must not read as one a
+   * pharmacy can fill: the legend heads the body and crosses every page.
+   */
+  const cancelled = data.status === 'CANCELLED';
+
   const blocks: Block[] = [
+    ...(cancelled
+      ? ([
+          {
+            kind: 'paragraph',
+            text: 'RECETA ANULADA: no tiene validez y no se dispensa.',
+            emphasis: true,
+          },
+        ] as Block[])
+      : []),
     // ── Art. 5.a — datos generales.
     {
       kind: 'fields',
@@ -259,12 +275,15 @@ export function composePrescriptionLayout(
   };
 
   return {
-    frame: composeFrame(context, template, {
-      kind: 'PRESCRIPTION',
-      reference,
-      confidential: data.diagnoses.length > 0,
-      verificationCode: data.verificationCode,
-    }),
+    frame: {
+      ...composeFrame(context, template, {
+        kind: 'PRESCRIPTION',
+        reference,
+        confidential: data.diagnoses.length > 0,
+        verificationCode: data.verificationCode,
+      }),
+      watermark: cancelled ? 'RECETA ANULADA' : null,
+    },
     blocks,
     tearOff: {
       caption: 'Indicaciones para el paciente — recorte por esta línea',
@@ -322,17 +341,35 @@ export function composeServiceOrderLayout(
   context: DocumentContext,
   template: DocumentTemplate,
 ): DocumentLayout {
+  /**
+   * ORD-007. A cancelled exam is not on the paper the laboratory receives —
+   * as it is not on the screen—: printed, it is a puncture and a charge for
+   * something nobody asked for any more. With every exam cancelled the order
+   * is annulled (DOC-094 says so too), and the paper says it.
+   */
+  const live = data.items.filter((item) => item.status !== 'CANCELLED');
+  const annulled = live.length === 0;
+
   // What the patient has to do before the extraction, once per distinct
   // instruction: an unstated fast is a second puncture (ORD-010).
   const preparations = [
     ...new Set(
-      data.items
+      live
         .map((item) => item.preparation)
         .filter((text): text is string => text !== null && text.trim() !== ''),
     ),
   ];
 
   const blocks: Block[] = [
+    ...(annulled
+      ? ([
+          {
+            kind: 'paragraph',
+            text: 'ORDEN ANULADA: todos sus exámenes están cancelados. No tiene validez.',
+            emphasis: true,
+          },
+        ] as Block[])
+      : []),
     {
       kind: 'fields',
       columns: 3,
@@ -382,11 +419,7 @@ export function composeServiceOrderLayout(
         { header: 'Examen', width: 0.44 },
         { header: 'Muestra', width: 0.28 },
       ],
-      rows: data.items.map((item) => [
-        item.code,
-        item.display,
-        item.specimen ?? '—',
-      ]),
+      rows: live.map((item) => [item.code, item.display, item.specimen ?? '—']),
     },
     { kind: 'heading', text: 'Indicaciones al paciente' },
     preparations.length === 0
@@ -411,12 +444,15 @@ export function composeServiceOrderLayout(
   return {
     // ORD-006 and D-095: the number on top, and in the footer the code a
     // laboratory checks the order with.
-    frame: composeFrame(context, template, {
-      kind: 'SERVICE_ORDER',
-      reference: `Orden N.º ${data.number}`,
-      confidential: data.diagnoses.length > 0,
-      verificationCode: data.verificationCode,
-    }),
+    frame: {
+      ...composeFrame(context, template, {
+        kind: 'SERVICE_ORDER',
+        reference: `Orden N.º ${data.number}`,
+        confidential: data.diagnoses.length > 0,
+        verificationCode: data.verificationCode,
+      }),
+      watermark: annulled ? 'ORDEN ANULADA' : null,
+    },
     blocks,
     tearOff: null,
   };
@@ -637,13 +673,17 @@ export function composeCertificateLayout(
   );
 
   return {
-    frame: composeFrame(context, template, {
-      kind: 'MEDICAL_CERTIFICATE',
-      reference: `Certificado N.º ${form.number}`,
-      // CER-033, DOC-082. Exactly when the diagnosis is printed.
-      confidential: form.confidential,
-      verificationCode: form.verificationCode,
-    }),
+    frame: {
+      ...composeFrame(context, template, {
+        kind: 'MEDICAL_CERTIFICATE',
+        reference: `Certificado N.º ${form.number}`,
+        // CER-033, DOC-082. Exactly when the diagnosis is printed.
+        confidential: form.confidential,
+        verificationCode: form.verificationCode,
+      }),
+      // CER-029. Across every page, not only the line at the top.
+      watermark: form.revocation === null ? null : 'CERTIFICADO ANULADO',
+    },
     blocks,
     tearOff: null,
   };

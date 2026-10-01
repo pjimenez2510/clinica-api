@@ -606,6 +606,54 @@ describe('la receta contra PostgreSQL', () => {
     ).resolves.toMatchObject({ prescription: { status: 'DRAFT' } });
   });
 
+  it('PR-070 un borrador cuyo medicamento se marco despues como controlado no se emite ni toma numero', async () => {
+    const prisma = db();
+    const { encounter, requester } = await anEncounter(prisma);
+    const later = await aCnmbConcept(prisma, {
+      code: 'N05BA01',
+      display: 'Diazepam',
+      validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+    });
+    const paracetamol = await aCnmbConcept(prisma, {
+      code: 'N02BE01',
+      display: 'Paracetamol',
+      validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+    });
+    const service = serviceOf(prisma);
+    const who = { userId: requester.userId, sites: [...requester.sites] };
+    const compose = (conceptId: string) =>
+      service.compose(
+        {
+          encounterId: encounter.id,
+          ...INDICATIONS,
+          items: [aLine(conceptId)],
+        },
+        who,
+      );
+    const marked = await compose(later.id);
+    const plain = await compose(paracetamol.id);
+
+    // A CNMB republication marks it after the draft was composed (D-084).
+    await prisma.catalogConcept.update({
+      where: { id: later.id },
+      data: { attributes: { controlled: true } },
+    });
+
+    await expect(
+      service.issue(marked.prescription.id, who),
+    ).rejects.toMatchObject({ code: 'CONTROLLED_SUBSTANCE_NOT_PRESCRIBABLE' });
+    const refused = await prisma.prescription.findUniqueOrThrow({
+      where: { id: marked.prescription.id },
+    });
+    expect(refused).toMatchObject({ status: 'DRAFT', sequenceNumber: null });
+
+    // Control positivo: el otro borrador se emite, y con el número 1: la serie
+    // no avanzó con la emisión rechazada.
+    expect(
+      (await service.issue(plain.prescription.id, who)).sequenceNumber,
+    ).toBe(1);
+  });
+
   it('PR-002 componer mientras la atención se anula: la receta no nace en una atención anulada', async () => {
     const prisma = db();
     const { encounter, requester } = await anEncounter(prisma);

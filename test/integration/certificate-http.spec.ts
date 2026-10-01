@@ -885,6 +885,60 @@ describe('el certificado medico por HTTP', () => {
     expect(form.work).toMatchObject({ employer: 'Florícola del Valle' });
   });
 
+  it('CER-027 CER-038 lo emitido no cambia: ni un diagnostico registrado despues ni la ficha corregida llegan al certificado', async () => {
+    await aDiagnosis(encounterId);
+    const issued = await issue(restOf(3));
+
+    // After the issue: a second diagnosis and a corrected chart.
+    const system = await prisma.catalogSystem.findUniqueOrThrow({
+      where: { code: 'CIE10' },
+    });
+    const later = await prisma.catalogConcept.create({
+      data: {
+        systemId: system.id,
+        code: 'F32',
+        display: 'Episodio depresivo',
+        validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+      },
+    });
+    await prisma.encounterDiagnosis.create({
+      data: {
+        encounterId,
+        conceptId: later.id,
+        cie10Code: 'F32',
+        cie10Display: 'Episodio depresivo',
+        certainty: 'DEFINITIVE',
+        occurrence: 'FIRST_TIME',
+        rank: 2,
+      },
+    });
+    await prisma.patient.update({
+      where: { id: patientId },
+      data: { employerName: 'Otra empresa S.A.' },
+    });
+
+    const form = (
+      await get(`/certificates/${issued.certificate.id}`, doctor.token).expect(
+        200,
+      )
+    ).body as Form117Body;
+    // Control positivo: lo que había al emitir sí está.
+    expect(form.diagnoses).toEqual([
+      { code: 'J00', display: 'Rinofaringitis aguda' },
+    ]);
+    expect(form.work).toMatchObject({ employer: 'Florícola del Valle' });
+
+    // Y un certificado nuevo sí lee la atención y la ficha de ahora.
+    const next = (
+      await get(
+        `/certificates/${(await issue(restOf(3))).certificate.id}`,
+        doctor.token,
+      ).expect(200)
+    ).body as Form117Body;
+    expect(next.diagnoses).toHaveLength(2);
+    expect(next.work).toMatchObject({ employer: 'Otra empresa S.A.' });
+  });
+
   it('CER-036 una sede sin parroquia no emite certificados', async () => {
     // Control positivo: la sede con parroquia emite.
     await issue(attendance());
