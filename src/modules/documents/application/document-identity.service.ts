@@ -10,8 +10,15 @@ import {
   DOCUMENT_REPOSITORY,
   type DocumentRepository,
 } from '../domain/document.repository';
-import { DocumentSubjectNotFoundError } from '../domain/document.errors';
-import type { ImageSlot, StoredImageSummary } from '../domain/document-image';
+import {
+  DocumentImageNotFoundError,
+  DocumentSubjectNotFoundError,
+} from '../domain/document.errors';
+import type {
+  ImageSlot,
+  StoredImage,
+  StoredImageSummary,
+} from '../domain/document-image';
 
 /**
  * DOC-050 to DOC-060. The clinic's visual identity: the establishment's logo
@@ -83,6 +90,26 @@ export class DocumentIdentityService {
     );
     if (!attached) throw new DocumentSubjectNotFoundError();
     return stored;
+  }
+
+  /** DOC-061. The current logo, so the screen shows what is set. */
+  async establishmentLogo(establishmentId: string): Promise<StoredImage> {
+    const image = await this.documents.findEstablishmentLogo(establishmentId);
+    if (image === null) throw new DocumentImageNotFoundError();
+    return image;
+  }
+
+  /** DOC-061. A practitioner's current seal or signature. */
+  async practitionerImage(
+    practitionerId: string,
+    slot: 'seal' | 'signature',
+  ): Promise<StoredImage> {
+    const image = await this.documents.findPractitionerImage(
+      practitionerId,
+      slot,
+    );
+    if (image === null) throw new DocumentImageNotFoundError();
+    return image;
   }
 
   private async store(

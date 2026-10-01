@@ -27,7 +27,11 @@ import {
   DocumentTemplateNotPublishedError,
 } from '../domain/document.errors';
 import { assertSlotsAreValid } from '../domain/document-template';
-import { isClinicalDocumentKind } from '../domain/document-kind';
+import { SAMPLE_MARK, sampleSubject } from '../domain/document-samples';
+import {
+  DOCUMENT_KINDS,
+  isClinicalDocumentKind,
+} from '../domain/document-kind';
 import type { DocumentKind, SiteScopeFilter } from '../domain/document-kind';
 import type { DocumentTemplate, TemplateSlots } from '../domain/document-template'; // prettier-ignore
 
@@ -125,8 +129,8 @@ export class DocumentService {
     );
 
     const content = await this.renderer.render(layout, images, {
-      title: layout.title,
-      author: layout.header.establishmentName,
+      title: layout.frame.title,
+      author: layout.frame.establishmentName,
       // A draft has no instant of emission — that is what makes it a draft —
       // so the clock is the honest answer here and only here.
       createdAt: new Date(),
@@ -171,8 +175,8 @@ export class DocumentService {
 
     const issuedAt = new Date();
     const content = await this.renderer.render(layout, images, {
-      title: layout.title,
-      author: layout.header.establishmentName,
+      title: layout.frame.title,
+      author: layout.frame.establishmentName,
       // DOC-024. The instant of EMISSION, and the very same one that goes into
       // the row: two clocks would make the file and the archive disagree about
       // when the document was produced.
@@ -300,6 +304,75 @@ export class DocumentService {
       kind,
       publishedById: requester.userId,
     });
+  }
+
+  /**
+   * DOC-039. One identity for the four classes (D-095.3): the next version of
+   * each, in one transaction, so no receta goes out with the new colour while
+   * the certificate still carries the old one.
+   */
+  async publishTemplateForAllKinds(
+    slots: TemplateSlots,
+    requester: Requester,
+  ): Promise<DocumentTemplate[]> {
+    assertSlotsAreValid(slots);
+    return this.documents.publishTemplates(
+      DOCUMENT_KINDS.map((kind) => ({
+        ...slots,
+        kind,
+        publishedById: requester.userId,
+      })),
+    );
+  }
+
+  /**
+   * DOC-038. The PDF a template WOULD produce: the clinic's real identity,
+   * these slots, and content that is invented and says so. Nothing is stored
+   * and nothing is audited — no person's data leaves in it.
+   */
+  async previewTemplate(
+    kind: DocumentKind,
+    slots: TemplateSlots,
+  ): Promise<RenderedDocument> {
+    assertSlotsAreValid(slots);
+
+    // The first active site: a global route takes no site (D-023, AU-011).
+    const site = await this.sources.firstActiveSiteId();
+    const context =
+      site === null ? null : await this.sources.contextForSite(site);
+    if (context === null) throw new DocumentSubjectNotFoundError();
+
+    // A preview is not an act: the clock is the honest instant, as in a draft.
+    const now = new Date();
+    const template: DocumentTemplate = {
+      ...slots,
+      id: 'preview',
+      kind,
+      version: 0,
+      publishedAt: now,
+    };
+    const composed = composeLayout(sampleSubject(kind, now), context, template);
+    // DOC-038. The letterhead is real; the paper must say it is not.
+    const layout = {
+      ...composed,
+      frame: { ...composed.frame, watermark: SAMPLE_MARK },
+    };
+    const content = await this.renderer.render(
+      layout,
+      { logo: context.establishment.logo, seal: null, signature: null },
+      {
+        title: layout.frame.title,
+        author: layout.frame.establishmentName,
+        createdAt: now,
+      },
+    );
+
+    return {
+      content,
+      mimeType: 'application/pdf',
+      sha256: sha256Of(content),
+      fileName: fileNameFor(kind, 0, 'muestra'),
+    };
   }
 
   // ── composition ──────────────────────────────────────────────────────────

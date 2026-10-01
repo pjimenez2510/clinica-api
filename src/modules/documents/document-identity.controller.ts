@@ -1,6 +1,21 @@
-import { Controller, Param, ParseUUIDPipe, Put, Req } from '@nestjs/common';
-import { ApiBody, ApiConsumes, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger'; // prettier-ignore
-import type { Request } from 'express';
+import {
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Put,
+  Req,
+  Res,
+} from '@nestjs/common';
+import {
+  ApiBody,
+  ApiConsumes,
+  ApiOkResponse,
+  ApiOperation,
+  ApiProduces,
+  ApiTags,
+} from '@nestjs/swagger';
+import type { Request, Response } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import { RequirePermission } from '../../shared/http/auth.decorators';
@@ -9,6 +24,7 @@ import { DocumentIdentityService } from './application/document-identity.service
 import { toImageResponse } from './documents.presenter';
 import { DocumentImageDto, type DocumentImageResponse } from './dto/documents.dto'; // prettier-ignore
 import { DocumentImageFormatNotAllowedError } from './domain/document.errors';
+import type { StoredImage } from './domain/document-image';
 
 /**
  * The clinic's visual identity: the establishment's logo and the
@@ -121,6 +137,48 @@ export class DocumentIdentityController {
     );
     return toImageResponse(stored);
   }
+
+  /** DOC-061. The current logo, as stored (re-encoded, DOC-054). */
+  @Get('establishments/:establishmentId/logo')
+  @RequirePermission('site:read', 'global')
+  @ApiOperation({ summary: 'Ver el logo vigente del establecimiento' })
+  @ApiProduces('image/png', 'image/jpeg')
+  async logo(
+    @Param('establishmentId', ParseUUIDPipe) establishmentId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    sendImage(res, await this.identity.establishmentLogo(establishmentId));
+  }
+
+  /** DOC-061. A practitioner's current seal. */
+  @Get('practitioners/:practitionerId/seal')
+  @RequirePermission('staff:read', 'global')
+  @ApiOperation({ summary: 'Ver el sello vigente del profesional' })
+  @ApiProduces('image/png', 'image/jpeg')
+  async seal(
+    @Param('practitionerId', ParseUUIDPipe) practitionerId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    sendImage(
+      res,
+      await this.identity.practitionerImage(practitionerId, 'seal'),
+    );
+  }
+
+  /** DOC-061. A practitioner's current scanned signature. */
+  @Get('practitioners/:practitionerId/signature')
+  @RequirePermission('staff:read', 'global')
+  @ApiOperation({ summary: 'Ver la firma vigente del profesional' })
+  @ApiProduces('image/png', 'image/jpeg')
+  async signature(
+    @Param('practitionerId', ParseUUIDPipe) practitionerId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    sendImage(
+      res,
+      await this.identity.practitionerImage(practitionerId, 'signature'),
+    );
+  }
 }
 
 /**
@@ -137,4 +195,19 @@ function rawBodyOf(req: Request, slot: 'logo' | 'seal' | 'signature'): Buffer {
     throw new DocumentImageFormatNotAllowedError(slot);
   }
   return body;
+}
+
+/**
+ * DOC-061. The stored bytes with their own type, and `nosniff` so no browser
+ * second-guesses it: what is served is always the re-encoded PNG or JPEG.
+ * `no-store` because a replaced seal must not survive in a cache.
+ */
+function sendImage(res: Response, image: StoredImage): void {
+  res
+    .status(200)
+    .setHeader('Content-Type', image.mimeType)
+    .setHeader('Content-Length', image.byteSize)
+    .setHeader('X-Content-Type-Options', 'nosniff')
+    .setHeader('Cache-Control', 'no-store, private')
+    .end(image.bytes);
 }

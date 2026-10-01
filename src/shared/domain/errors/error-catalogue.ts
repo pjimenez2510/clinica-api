@@ -948,7 +948,10 @@ export const DOMAIN_ERROR_CODES = [
   //     único de este módulo que es un fallo nuestro, y no lleva ningún detalle
   //     al llamador: una traza de un motor de PDF no le dice nada a una
   //     recepcionista y puede sacar el valor de un campo con ella.
+  //   * `DOCUMENT_IMAGE_NOT_FOUND` (404) — DOC-061: no hay logo, sello o firma
+  //     puestos. La pantalla dice «todavía no hay», no pinta una imagen rota.
   'DOCUMENT_IMAGE_FORMAT_NOT_ALLOWED',
+  'DOCUMENT_IMAGE_NOT_FOUND',
   'DOCUMENT_IMAGE_TOO_LARGE',
   'DOCUMENT_IMAGE_UNREADABLE',
   'DOCUMENT_RENDER_FAILED',
@@ -957,6 +960,10 @@ export const DOMAIN_ERROR_CODES = [
   'DOCUMENT_SUBJECT_NOT_ISSUABLE',
   'DOCUMENT_TEMPLATE_NOT_PUBLISHED',
   'DOCUMENT_TEMPLATE_SLOT_INVALID',
+  //   * `DOCUMENT_VERIFICATION_NOT_FOUND` (404) — DOC-096: ningún documento con
+  //     ese código, o un código sin forma de código. **El mismo cuerpo para
+  //     todos**: distinguirlos dejaría mapear qué códigos existen.
+  'DOCUMENT_VERIFICATION_NOT_FOUND',
   // Protección de datos (`privacy`, PD-001..PD-043).
   //   * `DATA_SUBJECT_NOT_FOUND` (404) — la ficha no existe. Propio y no
   //     `PATIENT_NOT_FOUND`, que es de `patients`: un código lo declara una sola

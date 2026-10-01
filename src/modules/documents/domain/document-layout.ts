@@ -1,6 +1,6 @@
 import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
 
-import { DOCUMENT_TITLE } from './document-kind';
+import { composeFrame } from './document-frame';
 import {
   OUTPATIENT_VALIDITY_DAYS,
   ageText,
@@ -18,12 +18,7 @@ import type {
   PrescriptionPrintData,
   ServiceOrderPrintData,
 } from './document-source';
-import type {
-  Block,
-  DocumentHeader,
-  DocumentLayout,
-  LabelledValue,
-} from './page-layout';
+import type { Block, DocumentLayout, LabelledValue } from './page-layout';
 
 /**
  * DOC-070 to DOC-078. The four documents, composed into a layout.
@@ -45,35 +40,6 @@ function calendarDate(date: Date): string {
   const iso = date.toISOString().slice(0, 10);
   const [year, month, day] = iso.split('-');
   return `${day}/${month}/${year}`;
-}
-
-/**
- * DOC-071. The header repeated on every page: the establishment's name always,
- * and RUC, address and phone only when the template's switches ask for them
- * (DOC-034).
- */
-function headerOf(
-  context: DocumentContext,
-  template: DocumentTemplate,
-): DocumentHeader {
-  const { establishment } = context;
-  return {
-    establishmentName: establishment.name,
-    // DOC-034. Read always, printed only when the clinic asked for it: art. 5
-    // requires none of these three.
-    establishmentRuc: template.showEstablishmentRuc ? establishment.ruc : null,
-    establishmentAddress: template.showEstablishmentAddress
-      ? establishment.addressLine
-      : null,
-    establishmentPhone: template.showEstablishmentPhone
-      ? establishment.phone
-      : null,
-    hasLogo: establishment.logo !== null,
-    fields: template.headerFields.map((field) => ({
-      label: field.label,
-      value: field.value,
-    })),
-  };
 }
 
 /**
@@ -254,10 +220,12 @@ export function composePrescriptionLayout(
     );
 
   return {
-    title: DOCUMENT_TITLE.PRESCRIPTION,
-    reference: data.verificationCode,
-    accentColour: template.accentColour,
-    header: headerOf(context, template),
+    frame: composeFrame(context, template, {
+      kind: 'PRESCRIPTION',
+      reference: data.verificationCode,
+      confidential: data.diagnoses.length > 0,
+      verificationCode: data.verificationCode,
+    }),
     blocks,
     tearOff: {
       caption: 'Indicaciones para el paciente — recorte por esta línea',
@@ -286,7 +254,6 @@ export function composePrescriptionLayout(
         },
       ],
     },
-    footerText: template.footerText,
   };
 }
 
@@ -297,10 +264,12 @@ export function composeServiceOrderLayout(
   template: DocumentTemplate,
 ): DocumentLayout {
   return {
-    title: DOCUMENT_TITLE.SERVICE_ORDER,
-    reference: null,
-    accentColour: template.accentColour,
-    header: headerOf(context, template),
+    frame: composeFrame(context, template, {
+      kind: 'SERVICE_ORDER',
+      reference: null,
+      confidential: data.diagnoses.length > 0,
+      verificationCode: null,
+    }),
     blocks: [
       {
         kind: 'fields',
@@ -366,7 +335,6 @@ export function composeServiceOrderLayout(
       },
     ],
     tearOff: null,
-    footerText: template.footerText,
   };
 }
 
@@ -460,13 +428,15 @@ export function composeCertificateLayout(
   );
 
   return {
-    title: DOCUMENT_TITLE.MEDICAL_CERTIFICATE,
-    reference: data.verificationCode,
-    accentColour: template.accentColour,
-    header: headerOf(context, template),
+    frame: composeFrame(context, template, {
+      kind: 'MEDICAL_CERTIFICATE',
+      reference: data.verificationCode,
+      // DOC-082. Only when the patient let the diagnosis be printed.
+      confidential: data.includeDiagnosis && data.diagnoses.length > 0,
+      verificationCode: data.verificationCode,
+    }),
     blocks,
     tearOff: null,
-    footerText: template.footerText,
   };
 }
 
@@ -555,10 +525,12 @@ export function composeInvoiceLayout(
   ];
 
   return {
-    title: DOCUMENT_TITLE.INVOICE_RIDE,
-    reference: data.documentNumber,
-    accentColour: template.accentColour,
-    header: headerOf(context, template),
+    frame: composeFrame(context, template, {
+      kind: 'INVOICE_RIDE',
+      reference: data.documentNumber,
+      confidential: false,
+      verificationCode: null,
+    }),
     blocks: [
       { kind: 'boxes', left: issuerBox, right: voucherBox },
       { kind: 'heading', text: 'Datos del comprador' },
@@ -611,7 +583,6 @@ export function composeInvoiceLayout(
       },
     ],
     tearOff: null,
-    footerText: template.footerText,
   };
 }
 

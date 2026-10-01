@@ -444,12 +444,17 @@ describe('every route declares its protection', () => {
      * answer the same thing for an unknown, a spent and an expired token
      * (AU-028), both are rate limited like `login`, and neither confirms that
      * any account exists.
+     *
+     * DOC-094: the verification a QR opens is public BY DECISION of the author
+     * (30-09-2026). It answers with no patient data and the same body for every
+     * miss, and it is capped at 30 requests a minute per IP.
      */
     expect(publicRoutes).toEqual([
       'AuthController.checkCredential',
       'AuthController.login',
       'AuthController.refresh',
       'AuthController.setCredential',
+      'DocumentVerificationController.verify',
       'HealthController.check',
       'LivenessController.ping',
     ]);

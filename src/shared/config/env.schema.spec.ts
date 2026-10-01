@@ -165,9 +165,32 @@ describe('validateEnv', () => {
     );
 
     expect(
-      validateEnv({ ...base, NODE_ENV: 'production', TRUST_PROXY_HOPS: '1' })
-        .TRUST_PROXY_HOPS,
+      validateEnv({
+        ...base,
+        NODE_ENV: 'production',
+        TRUST_PROXY_HOPS: '1',
+        WEB_BASE_URL: 'https://clinica.example',
+      }).TRUST_PROXY_HOPS,
     ).toBe(1);
+  });
+
+  it('DOC-083 en producción exige WEB_BASE_URL con https: va impresa en el QR de documentos inmutables', () => {
+    const production = {
+      ...base,
+      NODE_ENV: 'production',
+      TRUST_PROXY_HOPS: '1',
+    };
+    const withoutWeb: Record<string, string> = { ...production };
+    delete withoutWeb.WEB_BASE_URL;
+
+    expect(() => validateEnv(withoutWeb)).toThrow(/WEB_BASE_URL/);
+    expect(() =>
+      validateEnv({ ...production, WEB_BASE_URL: 'http://clinica.example' }),
+    ).toThrow(/WEB_BASE_URL/);
+    expect(
+      validateEnv({ ...production, WEB_BASE_URL: 'https://clinica.example' })
+        .WEB_BASE_URL,
+    ).toBe('https://clinica.example');
   });
 
   it('does not demand storage or mail configuration yet', () => {
