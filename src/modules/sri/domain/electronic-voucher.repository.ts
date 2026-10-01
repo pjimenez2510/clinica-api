@@ -113,6 +113,28 @@ export interface AttemptEffect {
   } | null;
 }
 
+/**
+ * SRI-069. The last attempt, when it was a transport failure: what the SRI
+ * said, without the body — that one is asked for apart.
+ */
+export interface LastTransportFailure {
+  at: Date;
+  httpStatus: number | null;
+  faultCode: string | null;
+  faultString: string | null;
+  error: string;
+  hasResponseBody: boolean;
+}
+
+/** SRI-069. The same failure with its detail and its body. */
+export interface TransportFailureDetail extends Omit<
+  LastTransportFailure,
+  'hasResponseBody'
+> {
+  faultDetail: string | null;
+  responseBody: string | null;
+}
+
 /** One row of the monitor (SRI-061). Never a clinical datum (SRI-067). */
 export interface MonitorRow {
   invoiceId: string;
@@ -131,6 +153,8 @@ export interface MonitorRow {
   nextAttemptAt: Date | null;
   /** SRI-062. The SRI's last reception of it; `null` while it has none. */
   receivedAt: Date | null;
+  /** SRI-069. `null` unless the last attempt was a transport failure. */
+  lastTransportFailure: LastTransportFailure | null;
 }
 
 /** The voucher's state as `billing` shows it beside the invoice (SRI-060). */
@@ -216,6 +240,10 @@ export interface ElectronicVoucherRepository {
   }>;
 
   monitor(sites: readonly string[] | 'all'): Promise<MonitorRow[]>;
+  /** SRI-069. The voucher's last attempt, if it was a transport failure. */
+  lastTransportFailure(
+    voucherId: string,
+  ): Promise<TransportFailureDetail | null>;
   statusOfInvoices(invoiceIds: readonly string[]): Promise<VoucherStatusView[]>;
 
   /** What `RIDE_ISSUER` and the e-mail need about the invoice (SRI-072). */
