@@ -318,7 +318,8 @@ PR-030).
 
 - **CER-027** — Bloque D: DONDE el certificado incluya el diagnóstico, DEBERÁ
   servir **todos** los diagnósticos de la atención con su código CIE, el
-  principal primero; DONDE no, el bloque DEBERÁ servirse «NA».
+  principal primero, y en el papel la **X en PRE o en DEF** según la certeza
+  que la emisión copió; DONDE no, el bloque DEBERÁ servirse «NA».
 
 - **CER-028** — Bloque E: el certificado DEBERÁ servir la **fecha** (aaaa-mm-dd)
   y la **hora** de 24 horas de emisión, **nombres y apellidos** del

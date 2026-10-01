@@ -28,7 +28,12 @@ import type {
   PrescriptionPrintData,
   ServiceOrderPrintData,
 } from './document-source';
-import type { Block, DocumentLayout, LabelledValue } from './page-layout';
+import type {
+  Block,
+  DocumentLayout,
+  LabelledValue,
+  SectionRow,
+} from './page-layout';
 
 /**
  * DOC-070 to DOC-078. The four documents, composed into a layout.
@@ -43,6 +48,13 @@ import type { Block, DocumentLayout, LabelledValue } from './page-layout';
 function ecuadorianDate(instant: Date): string {
   const [year, month, day] = clinicalDateOf(instant).split('-');
   return `${day}/${month}/${year}`;
+}
+
+/** D-095. When a document was issued or requested: date · hh:mm in Ecuador. */
+function ecuadorianDateAndMinute(instant: Date): string {
+  const time = wallClockOf(instant);
+  const two = (n: number) => String(n).padStart(2, '0');
+  return `${ecuadorianDate(instant)} · ${two(time.hour)}:${two(time.minute)}`;
 }
 
 /** SRI-070. The authorisation is an instant: date and wall-clock time in Ecuador. */
@@ -61,11 +73,19 @@ function calendarDate(date: Date): string {
 
 /**
  * The patient's block: name, identifying document when there is one, and age —
- * «—» when nobody recorded it.
+ * «—» when nobody recorded it — on the template's grid of four, followed by
+ * what each document adds about the patient, two columns each.
  */
-function patientBlock(patient: PatientIdentity): Block {
+function patientBlock(
+  patient: PatientIdentity,
+  more: readonly LabelledValue[] = [],
+): Block {
   const entries: LabelledValue[] = [
-    { label: 'Apellidos y nombres', value: patient.fullName },
+    {
+      label: 'Apellidos y nombres',
+      value: patient.fullName,
+      span: patient.identifier === null ? 3 : 2,
+    },
   ];
   if (patient.identifier !== null) {
     entries.push({ label: 'Documento', value: patient.identifier });
@@ -74,7 +94,8 @@ function patientBlock(patient: PatientIdentity): Block {
   // DOC-060's sibling rule: an absent datum prints as an empty field, never as
   // an invented one. «—» says «nobody recorded this»; «0 años» would assert it.
   entries.push({ label: 'Edad', value: age ?? '—' });
-  return { kind: 'fields', columns: 2, entries };
+  entries.push(...more.map((entry) => ({ ...entry, span: 2 })));
+  return { kind: 'fields', columns: 4, entries };
 }
 
 /**
@@ -130,15 +151,14 @@ export function composePrescriptionLayout(
           },
         ] as Block[])
       : []),
-    // ── Art. 5.a — datos generales.
+    // ── Art. 5.a — datos generales, on the template's grey band (DOC-104).
     {
-      kind: 'fields',
-      columns: 3,
+      kind: 'strip',
       entries: [
         { label: 'Ciudad', value: data.city ?? '—' },
         {
-          label: 'Fecha',
-          value: issuedAt === null ? '—' : ecuadorianDate(issuedAt),
+          label: 'Fecha de emisión',
+          value: issuedAt === null ? '—' : ecuadorianDateAndMinute(issuedAt),
         },
         {
           // Arts. 17–19. DERIVED, never typed: a validity somebody keys in is a
@@ -149,39 +169,34 @@ export function composePrescriptionLayout(
               ? '—'
               : `${OUTPATIENT_VALIDITY_DAYS} días — hasta el ${validThrough.split('-').reverse().join('/')}`,
         },
+        // D-078. The chart number on every printed document.
+        { label: 'Historia clínica', value: data.patient.mrn },
       ],
     },
-    { kind: 'rule' },
 
     // ── Art. 5.b — datos del paciente.
     { kind: 'heading', text: 'Paciente' },
-    patientBlock(data.patient),
-    {
-      kind: 'fields',
-      columns: 1,
-      entries: [
-        {
-          // Art. 5.b.iii.
-          label: 'Diagnóstico',
-          value:
-            data.diagnoses.length === 0
-              ? '—'
-              : data.diagnoses
-                  .map((d) => `${d.code} · ${d.display}`)
-                  .join(' | '),
-        },
-        {
-          // Art. 5.b.iv. «Ninguna conocida» and not an empty box: a blank says
-          // nobody asked, and this field exists precisely to record that
-          // somebody did.
-          label: 'Antecedentes de alergias',
-          value:
-            data.allergies.length === 0
-              ? 'Ninguna conocida'
-              : data.allergies.join(', '),
-        },
-      ],
-    },
+    patientBlock(data.patient, [
+      {
+        // Art. 5.b.iii.
+        label: 'Diagnóstico',
+        value:
+          data.diagnoses.length === 0
+            ? '—'
+            : data.diagnoses.map((d) => `${d.code} · ${d.display}`).join(' | '),
+      },
+      {
+        // Art. 5.b.iv. «Ninguna conocida» and not an empty box: a blank says
+        // nobody asked, and this field exists precisely to record that
+        // somebody did. DOC-085: a recorded allergy is printed in red.
+        label: 'Antecedentes de alergias',
+        value:
+          data.allergies.length === 0
+            ? 'Ninguna conocida'
+            : data.allergies.join(', '),
+        ...(data.allergies.length === 0 ? {} : { alert: true }),
+      },
+    ]),
 
     // ── Art. 5.c — datos del medicamento.
     { kind: 'heading', text: 'Prescripción' },
@@ -316,8 +331,10 @@ export function composePrescriptionLayout(
         indications.length === 0
           ? { kind: 'paragraph', text: 'Sin indicaciones adicionales' }
           : {
+              // Two columns, as the template: one per row pushed a receta of
+              // three lines past the band.
               kind: 'fields',
-              columns: 1,
+              columns: 2,
               entries: indications.map((entry) => ({
                 label: `Línea ${entry.index}`,
                 value: entry.text,
@@ -388,11 +405,14 @@ export function composeServiceOrderLayout(
           },
         ] as Block[])
       : []),
+    // DOC-104. The general data on the template's grey band.
     {
-      kind: 'fields',
-      columns: 3,
+      kind: 'strip',
       entries: [
-        { label: 'Fecha', value: ecuadorianDate(data.requestedAt) },
+        {
+          label: 'Fecha de solicitud',
+          value: ecuadorianDateAndMinute(data.requestedAt),
+        },
         {
           label: 'Tipo',
           value: ORDER_CATEGORY_LABEL[data.category] ?? data.category,
@@ -401,34 +421,28 @@ export function composeServiceOrderLayout(
           label: 'Prioridad',
           value: ORDER_PRIORITY_LABEL[data.priority] ?? data.priority,
         },
+        // D-078. The chart number on every printed document.
+        { label: 'Historia clínica', value: data.patient.mrn },
       ],
     },
-    { kind: 'rule' },
     { kind: 'heading', text: 'Paciente' },
-    patientBlock(data.patient),
-    {
-      kind: 'fields',
-      columns: 1,
-      entries: [
-        {
-          label: 'Diagnóstico presuntivo',
-          value:
-            data.diagnoses.length === 0
-              ? '—'
-              : data.diagnoses
-                  .map((d) => `${d.code} · ${d.display}`)
-                  .join(' | '),
-        },
-        ...(data.clinicalNoteText === null
-          ? []
-          : [
-              {
-                label: 'Datos clínicos para el laboratorio',
-                value: data.clinicalNoteText,
-              },
-            ]),
-      ],
-    },
+    patientBlock(data.patient, [
+      {
+        label: 'Diagnóstico presuntivo',
+        value:
+          data.diagnoses.length === 0
+            ? '—'
+            : data.diagnoses.map((d) => `${d.code} · ${d.display}`).join(' | '),
+      },
+      ...(data.clinicalNoteText === null
+        ? []
+        : [
+            {
+              label: 'Datos clínicos para el laboratorio',
+              value: data.clinicalNoteText,
+            },
+          ]),
+    ]),
     { kind: 'heading', text: 'Exámenes solicitados' },
     {
       kind: 'table',
@@ -439,17 +453,24 @@ export function composeServiceOrderLayout(
       ],
       rows: live.map((item) => [item.code, item.display, item.specimen ?? '—']),
     },
-    { kind: 'heading', text: 'Indicaciones al paciente' },
-    preparations.length === 0
-      ? { kind: 'paragraph', text: 'No requiere preparación previa.' }
-      : {
-          kind: 'fields',
-          columns: 1,
-          entries: preparations.map((text) => ({
-            label: 'Preparación',
-            value: text,
-          })),
-        },
+    // The template's framed note: what the patient has to do before going.
+    {
+      kind: 'box',
+      light: true,
+      blocks: [
+        { kind: 'caption', text: 'Indicaciones al paciente' },
+        preparations.length === 0
+          ? { kind: 'paragraph', text: 'No requiere preparación previa.' }
+          : {
+              kind: 'fields',
+              columns: 1,
+              entries: preparations.map((text) => ({
+                label: 'Preparación',
+                value: text,
+              })),
+            },
+      ],
+    },
     { kind: 'heading', text: 'Médico solicitante' },
     prescriberBlock(data.orderedBy),
     {
@@ -523,159 +544,152 @@ export function composeCertificateLayout(
     });
   }
 
-  blocks.push(
-    {
-      kind: 'fields',
-      columns: 3,
-      entries: [
-        { label: 'Lugar de emisión', value: form.placeOfIssue },
-        {
-          label: 'Tipo',
-          value: CERTIFICATE_TYPE_LABEL[form.type] ?? NA,
-        },
-        { label: 'Contingencia', value: form.contingency },
-      ],
-    },
-    { kind: 'rule' },
+  /** One row of cells of a block: label, value and its share of the row. */
+  const cells = (
+    ...entries: (LabelledValue & { width?: number; strong?: boolean })[]
+  ): SectionRow => ({
+    kind: 'cells',
+    cells: entries.map((entry) => ({ ...entry, width: entry.width ?? 1 })),
+  });
 
-    // ── A. Datos del establecimiento y usuario / paciente.
-    {
-      kind: 'heading',
-      text: 'A. Datos del establecimiento y usuario / paciente',
-    },
-    {
-      kind: 'fields',
-      columns: 3,
-      entries: [
-        {
-          label: 'Institución del sistema',
-          value: form.establishment.institution,
-        },
-        { label: 'Unicódigo', value: form.establishment.mspUnicode },
-        { label: 'Establecimiento de salud', value: form.establishment.name },
-        {
-          label: 'Número de historia clínica única',
-          value: form.establishment.clinicalRecordNumber,
-        },
-        { label: 'Número de archivo', value: form.establishment.archiveNumber },
-      ],
-    },
+  // DOC-105. Each block of the 117 in its framed box, with its title bar; the
+  // titles are the form's (DOC-075), which the template abbreviates.
+  // ── A. Datos del establecimiento y usuario / paciente.
+  blocks.push({
+    kind: 'section',
+    title: 'A. Datos del establecimiento y usuario / paciente',
+    rows: [
+      cells(
+        { label: 'Institución del sistema', value: form.establishment.institution, width: 1.1 }, // prettier-ignore
+        { label: 'Unicódigo', value: form.establishment.mspUnicode, width: 0.8 }, // prettier-ignore
+        { label: 'Establecimiento de salud', value: form.establishment.name, width: 1.4 }, // prettier-ignore
+        { label: 'Número de historia clínica única', value: form.establishment.clinicalRecordNumber, width: 1.1 }, // prettier-ignore
+        { label: 'Número de archivo', value: form.establishment.archiveNumber, width: 0.9 }, // prettier-ignore
+      ),
+    ],
+  });
 
-    // ── B. Certifico que.
-    { kind: 'heading', text: 'B. Certifico que' },
-    {
-      kind: 'fields',
-      columns: 3,
-      entries: [
+  // ── B. Certifico que.
+  blocks.push({
+    kind: 'section',
+    title: 'B. Certifico que',
+    rows: [
+      cells(
         { label: 'Primer apellido', value: form.patient.firstFamilyName },
         { label: 'Segundo apellido', value: form.patient.secondFamilyName },
         { label: 'Primer nombre', value: form.patient.firstGivenName },
         { label: 'Segundo nombre', value: form.patient.secondGivenName },
+      ),
+      cells(
         { label: 'Sexo', value: form.patient.sex },
-        {
-          label: 'Edad',
-          value: `${form.patient.age.value} (${form.patient.age.condition})`,
-        },
-        {
-          label: 'Fue atendido en el servicio de',
-          value: form.attention.service,
-        },
+        { label: 'Edad', value: `${form.patient.age.value} (${form.patient.age.condition})` }, // prettier-ignore
+        { label: 'Fue atendido en el servicio de', value: form.attention.service }, // prettier-ignore
         { label: 'Especialidad', value: form.attention.specialty },
-        { label: 'Fecha de atención', value: form117Date(form.attention.date) },
-        {
-          label: 'Hora de atención',
-          value: `desde ${form.attention.from} hasta ${form.attention.to}`,
-        },
-        { label: 'Fecha de ingreso', value: form.attention.admissionDate },
-        { label: 'Fecha de alta', value: form.attention.dischargeDate },
-      ],
-    },
-  );
+      ),
+      cells(
+        { label: 'Fecha de atención', value: form117Date(form.attention.date), width: 2 }, // prettier-ignore
+        { label: 'Hora de atención', value: `desde ${form.attention.from} hasta ${form.attention.to}` }, // prettier-ignore
+        { label: 'Fecha de ingreso', value: form.attention.admissionDate, width: 0.5 }, // prettier-ignore
+        { label: 'Fecha de alta', value: form.attention.dischargeDate, width: 0.5 }, // prettier-ignore
+      ),
+      // CER-038. The IESS asks for where the patient works on a rest
+      // certificate; the 117 has no box for it, so it closes block B, and only
+      // on a rest. On attendance an employer reads the paper and has no
+      // business here.
+      ...(form.work === NA
+        ? []
+        : [
+            cells(
+              { label: 'Domicilio', value: form.work.address },
+              { label: 'Teléfono', value: form.work.phone },
+            ),
+            cells(
+              { label: 'Empresa', value: form.work.employer },
+              { label: 'Puesto de trabajo', value: form.work.jobTitle },
+            ),
+          ]),
+    ],
+  });
 
-  // CER-038. The IESS asks for where the patient works on a rest certificate;
-  // the 117 has no box for it, so it goes right under block B, and only on a
-  // rest. On attendance an employer reads the paper and has no business here.
-  if (form.work !== NA) {
-    blocks.push(
-      { kind: 'paragraph', text: 'Datos laborales del paciente', emphasis: true }, // prettier-ignore
-      {
-        kind: 'fields',
-        columns: 2,
-        entries: [
-          { label: 'Empresa', value: form.work.employer },
-          { label: 'Puesto de trabajo', value: form.work.jobTitle },
-          { label: 'Domicilio', value: form.work.address },
-          { label: 'Teléfono', value: form.work.phone },
-        ],
-      },
-    );
-  }
-
-  // ── C. Se recomienda.
-  blocks.push(
-    { kind: 'heading', text: 'C. Se recomienda' },
-    {
-      kind: 'fields',
-      columns: 2,
-      entries: [
-        { label: 'Reposo', value: form.rest.rest },
+  // ── C. Se recomienda. The type and the contingency go with the rest, as
+  // the template's block C carries them.
+  blocks.push({
+    kind: 'section',
+    title: 'C. Se recomienda',
+    rows: [
+      cells(
+        { label: 'Tipo', value: CERTIFICATE_TYPE_LABEL[form.type] ?? NA },
+        { label: 'Reposo', value: form.rest.rest, strong: true, width: 0.6 },
         {
           label: 'Días de reposo',
           value:
             form.rest.days === NA
               ? NA
               : `${form.rest.days} (${form.rest.daysInWords})`,
+          strong: true,
         },
+        { label: 'Contingencia', value: form.contingency },
+      ),
+      cells(
         { label: 'Desde', value: form117Date(form.rest.from) },
         { label: 'Hasta', value: form117Date(form.rest.to) },
-      ],
-    },
-  );
-  if (form.rest.periodInWords !== NA) {
-    blocks.push({ kind: 'paragraph', text: form.rest.periodInWords });
-  }
-  if (form.maternity !== NA) {
-    blocks.push({
-      kind: 'fields',
-      columns: 3,
-      entries: [
-        { label: 'Fecha de ingreso', value: form117Date(form.maternity.admission) }, // prettier-ignore
-        { label: 'Fecha del parto', value: form117Date(form.maternity.birth) },
-        {
-          label: 'Fecha de alta',
-          value: form117Date(form.maternity.discharge),
-        },
-      ],
-    });
-  }
+      ),
+      ...(form.rest.periodInWords === NA
+        ? []
+        : [{ kind: 'text' as const, text: form.rest.periodInWords }]),
+      ...(form.maternity === NA
+        ? []
+        : [
+            cells(
+              { label: 'Fecha de ingreso', value: form117Date(form.maternity.admission) }, // prettier-ignore
+              { label: 'Fecha del parto', value: form117Date(form.maternity.birth) }, // prettier-ignore
+              { label: 'Fecha de alta', value: form117Date(form.maternity.discharge) }, // prettier-ignore
+            ),
+          ]),
+    ],
+  });
 
   // ── D. Diagnóstico, con su código CIE, o «NA».
-  blocks.push({ kind: 'heading', text: 'D. Diagnóstico' });
-  blocks.push(
-    form.diagnoses === NA
-      ? { kind: 'paragraph', text: NA }
-      : {
-          kind: 'table',
-          columns: [
-            { header: 'CIE', width: 0.18 },
-            { header: 'Diagnóstico', width: 0.82 },
-          ],
-          rows: form.diagnoses.map((d) => [d.code, d.display]),
-        },
-  );
+  blocks.push({
+    kind: 'section',
+    title: 'D. Diagnóstico',
+    rows: [
+      form.diagnoses === NA
+        ? { kind: 'text', text: NA }
+        : {
+            kind: 'table',
+            // CER-027. The X in PRE or in DEF, by the certainty the issue
+            // copied; neither when the copy has none.
+            columns: [
+              { header: '#', width: 0.05 },
+              { header: 'Diagnóstico', width: 0.67 },
+              { header: 'CIE', width: 0.12 },
+              { header: 'PRE', width: 0.08, align: 'centre' },
+              { header: 'DEF', width: 0.08, align: 'centre' },
+            ],
+            rows: form.diagnoses.map((d, index) => [
+              String(index + 1),
+              d.display,
+              d.code,
+              d.certainty === 'PRESUMPTIVE' ? 'X' : '',
+              d.certainty === 'DEFINITIVE' ? 'X' : '',
+            ]),
+          },
+    ],
+  });
 
-  // ── E. Datos del profesional responsable.
-  blocks.push(
-    { kind: 'heading', text: 'E. Datos del profesional responsable' },
-    {
-      kind: 'fields',
-      columns: 3,
-      entries: [
-        {
-          label: 'Fecha',
-          value: form.professional.date,
-        },
+  // ── E. Datos del profesional responsable, with the box for the seal inside
+  // it (DOC-105): the seal vouches for what is written beside it, and a box
+  // that cannot leave the block cannot end up alone on a page (DOC-101).
+  blocks.push({
+    kind: 'section',
+    title: 'E. Datos del profesional responsable',
+    rows: [
+      cells(
+        { label: 'Fecha', value: form.professional.date },
         { label: 'Hora', value: form.professional.time },
+      ),
+      cells(
         {
           label: 'Nombres y apellidos',
           value: `${form.professional.givenNames} ${form.professional.familyNames}`,
@@ -684,16 +698,43 @@ export function composeCertificateLayout(
           label: 'Número de documento de identificación',
           value: form.professional.identification,
         },
-      ],
-    },
-    {
-      // CER-028. The credential signed it; the box is for the seal, never a
-      // drawn stroke.
-      kind: 'signature',
+      ),
+      cells({ label: 'Lugar de emisión', value: form.placeOfIssue }),
+    ],
+    // CER-028. The credential signed it; the box is for the seal, never a
+    // drawn stroke.
+    signature: {
       caption: 'Firma (credencial del profesional en el sistema) y sello',
       image: data.issuedBy.seal !== null ? 'seal' : null,
     },
-  );
+  });
+
+  // DOC-075, CER-013 (D-095). How the rest is validated, on the paper the
+  // patient carries to the IESS. Sources in D-075: the IESS's procedure (up to
+  // eight days after the rest ends), its 2024 guide (a hand signature goes to
+  // the counter; online needs a digital signature, which a credential is not)
+  // and its 2025 digital validation (who it does not apply to). Only on a
+  // rest: an attendance certificate is not validated. And never on a revoked
+  // one: instructions to validate a void certificate are the opposite of what
+  // its «ANULADO» says (CER-029).
+  if (form.type === 'MEDICAL_REST' && form.revocation === null) {
+    blocks.push({
+      kind: 'note',
+      lines: [
+        {
+          label: 'Validación en el IESS: ',
+          text: 'hasta 8 días después del fin del reposo. Este certificado lleva firma por credencial: se valida en ventanilla, impreso y firmado a mano. La validación en línea exige firma electrónica del profesional.',
+        },
+        {
+          // A.M. 5216-A only where there is something it covers: a health
+          // datum, which is exactly when the diagnosis is printed.
+          text: form.confidential
+            ? 'No aplica a afiliados voluntarios, menores de edad, jubilados ni afiliados al Seguro Social Campesino. Contiene datos de salud: su uso lo autoriza el paciente (A.M. 5216-A).'
+            : 'No aplica a afiliados voluntarios, menores de edad, jubilados ni afiliados al Seguro Social Campesino.',
+        },
+      ],
+    });
+  }
 
   return {
     frame: {
@@ -777,11 +818,12 @@ export function composeInvoiceLayout(
     data.status === 'REJECTED' ? NOT_AUTHORISED : PENDING_AUTHORISATION;
   const { establishment } = context;
 
-  // DOC-076. The issuer's box of the approved page «Factura» (D-095): legal
-  // name, trade name, head office and establishment addresses, and the fiscal
-  // legends that apply. The logo, when there is one, is the frame's, above it.
+  // DOC-076, DOC-106. The issuer's box of the approved page «Factura»
+  // (D-095): legal name, trade name, head office and establishment
+  // addresses, and the fiscal legends that apply. The logo, when there is
+  // one, sits above it in the same column.
   const issuerBox: Block[] = [
-    { kind: 'paragraph', text: establishment.name, emphasis: true },
+    { kind: 'name', text: establishment.name },
     ...(establishment.tradeName === null ||
     establishment.tradeName === establishment.name
       ? []
@@ -789,6 +831,7 @@ export function composeInvoiceLayout(
     {
       kind: 'fields',
       columns: 1,
+      inline: true,
       entries: [
         ...(establishment.headOfficeAddress === null
           ? []
@@ -816,9 +859,21 @@ export function composeInvoiceLayout(
     {
       kind: 'fields',
       columns: 1,
+      inline: true,
+      entries: [{ label: 'R.U.C.', value: establishment.ruc ?? '—' }],
+    },
+    // DOC-106. The voucher's own name, large and in the accent.
+    { kind: 'title', text: 'FACTURA' },
+    {
+      kind: 'fields',
+      columns: 1,
+      inline: true,
+      entries: [{ label: 'No.', value: data.documentNumber }],
+    },
+    {
+      kind: 'fields',
+      columns: 1,
       entries: [
-        { label: 'R.U.C.', value: establishment.ruc ?? '—' },
-        { label: 'FACTURA No.', value: data.documentNumber },
         // The access key IS the authorisation number for the offline scheme.
         // SRI-071: until the SRI authorises, the RIDE is handed over saying
         // so — never a number or a date that does not exist yet.
@@ -827,6 +882,13 @@ export function composeInvoiceLayout(
           value:
             data.authorisedAt === null ? unauthorised : (data.accessKey ?? '—'),
         },
+      ],
+    },
+    {
+      kind: 'fields',
+      columns: 1,
+      inline: true,
+      entries: [
         {
           label: 'FECHA Y HORA DE AUTORIZACIÓN',
           value:
@@ -834,30 +896,35 @@ export function composeInvoiceLayout(
               ? unauthorised
               : ecuadorianDateTime(data.authorisedAt),
         },
-        // SRI-070. The environment is the one written INSIDE the key (its 24th
-        // digit), never a constant: a test voucher printed «PRODUCCIÓN» claims
-        // a validity it does not have.
       ],
     },
-    // Ambiente and emisión share a row, as on the approved page.
+    // SRI-070. The environment is the one written INSIDE the key (its 24th
+    // digit), never a constant: a test voucher printed «PRODUCCIÓN» claims a
+    // validity it does not have. Ambiente and emisión share a row, as on the
+    // approved page.
     {
       kind: 'fields',
       columns: 2,
+      inline: true,
       entries: [
         { label: 'AMBIENTE', value: environmentOf(data.accessKey) },
         { label: 'EMISIÓN', value: 'NORMAL' },
       ],
     },
-    {
-      kind: 'fields',
-      columns: 1,
-      entries: [{ label: 'CLAVE DE ACCESO', value: data.accessKey ?? '—' }],
-    },
-    // D-095 §5, DOC-078. The key again, as a Code 128 subset C barcode under
-    // the key in text — only when there is a key to encode.
+    // D-095 §5, DOC-078, DOC-106. The key ONCE, centred under its Code 128
+    // bars — only when there is a key to encode; «—» when there is none yet.
     ...(data.accessKey === null
-      ? []
-      : [{ kind: 'barcode' as const, value: data.accessKey }]),
+      ? ([
+          {
+            kind: 'fields',
+            columns: 1,
+            entries: [{ label: 'CLAVE DE ACCESO', value: '—' }],
+          },
+        ] as Block[])
+      : ([
+          { kind: 'caption', text: 'CLAVE DE ACCESO' },
+          { kind: 'barcode', value: data.accessKey },
+        ] as Block[])),
   ];
 
   // DOC-076 «Información adicional»: what the voucher's own fields do not say.
@@ -897,27 +964,45 @@ export function composeInvoiceLayout(
       verificationCode: null,
     }),
     blocks: [
-      { kind: 'boxes', left: issuerBox, right: voucherBox },
+      // DOC-106. The two boxes finish level: the issuer's is stretched.
       {
-        kind: 'fields',
-        columns: 2,
-        entries: [
+        kind: 'boxes',
+        left: [
+          // DOC-059. Only with a logo: the decision is the composer's.
+          ...(establishment.logo === null ? [] : [{ kind: 'logo' } as const]),
+          { kind: 'box', rounded: true, blocks: issuerBox },
+        ],
+        right: [{ kind: 'box', rounded: true, blocks: voucherBox }],
+      },
+      {
+        kind: 'box',
+        rounded: true,
+        blocks: [
           {
-            label: 'Razón social / Apellidos y nombres',
-            value: data.buyerName,
+            kind: 'fields',
+            columns: 2,
+            inline: true,
+            entries: [
+              {
+                label: 'Razón social / Apellidos y nombres',
+                value: data.buyerName,
+              },
+              { label: 'Identificación', value: data.buyerIdentification },
+              {
+                label: 'Fecha de emisión',
+                value:
+                  data.issuedAt === null ? '—' : ecuadorianDate(data.issuedAt),
+              },
+              ...(data.buyerAddress === null
+                ? []
+                : [{ label: 'Dirección', value: data.buyerAddress, span: 2 }]),
+            ],
           },
-          { label: 'Identificación', value: data.buyerIdentification },
-          {
-            label: 'Fecha de emisión',
-            value: data.issuedAt === null ? '—' : ecuadorianDate(data.issuedAt),
-          },
-          ...(data.buyerAddress === null
-            ? []
-            : [{ label: 'Dirección', value: data.buyerAddress }]),
         ],
       },
       {
         kind: 'table',
+        framed: 'grid',
         columns: [
           { header: 'Cód. principal', width: 0.13 },
           { header: 'Cód. auxiliar', width: 0.1 },
@@ -939,20 +1024,29 @@ export function composeInvoiceLayout(
       },
       {
         kind: 'boxes',
+        // The template's 1.15fr · 1fr.
+        leftShare: 0.535,
         left: [
           ...(additional.length === 0
             ? []
             : ([
                 {
-                  kind: 'paragraph',
-                  text: 'Información adicional',
-                  emphasis: true,
+                  kind: 'box',
+                  title: 'Información adicional',
+                  blocks: [
+                    {
+                      kind: 'fields',
+                      columns: 1,
+                      inline: true,
+                      entries: additional,
+                    },
+                  ],
                 },
-                { kind: 'fields', columns: 1, entries: additional },
               ] as Block[])),
           // BI-170. The way it was paid, with its SRI table 24 code.
           {
             kind: 'table',
+            framed: 'box',
             columns: [
               { header: 'Forma de pago', width: 0.7 },
               { header: 'Valor', width: 0.3, align: 'right' },
@@ -967,11 +1061,15 @@ export function composeInvoiceLayout(
             ],
           },
         ],
-        // The subtotals the Anexo 2 lists, every one, aligned to the right.
+        // The subtotals the Anexo 2 lists, every one, aligned to the right,
+        // with no header of their own and the total in bold on grey.
         right: [
           {
             kind: 'table',
             dense: true,
+            framed: 'box',
+            headless: true,
+            emphasiseLast: true,
             columns: [
               { header: 'Subtotales', width: 0.68 },
               { header: 'Valor', width: 0.32, align: 'right' },

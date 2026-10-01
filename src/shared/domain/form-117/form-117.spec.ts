@@ -83,8 +83,12 @@ const aSource = (
     ...overrides.encounter,
   },
   diagnoses: overrides.diagnoses ?? [
-    { code: 'J00', display: 'Rinofaringitis aguda' },
-    { code: 'R50.9', display: 'Fiebre, no especificada' },
+    { code: 'J00', display: 'Rinofaringitis aguda', certainty: 'DEFINITIVE' },
+    {
+      code: 'R50.9',
+      display: 'Fiebre, no especificada',
+      certainty: 'PRESUMPTIVE',
+    },
   ],
   practitioner: {
     givenNames: 'Ana Lucía',
@@ -370,8 +374,27 @@ describe('CER-027 bloque D: el diagnostico', () => {
       composeForm117(aSource({ certificate: { includeDiagnosis: true } }))
         .diagnoses,
     ).toEqual([
-      { code: 'J00', display: 'Rinofaringitis aguda' },
-      { code: 'R50.9', display: 'Fiebre, no especificada' },
+      { code: 'J00', display: 'Rinofaringitis aguda', certainty: 'DEFINITIVE' },
+      {
+        code: 'R50.9',
+        display: 'Fiebre, no especificada',
+        certainty: 'PRESUMPTIVE',
+      },
+    ]);
+  });
+
+  it('CER-027 un certificado emitido antes de copiar la certeza no la deduce: la sirve vacía', () => {
+    expect(
+      composeForm117(
+        aSource({
+          certificate: { includeDiagnosis: true },
+          diagnoses: [
+            { code: 'J00', display: 'Rinofaringitis aguda', certainty: null },
+          ],
+        }),
+      ).diagnoses,
+    ).toEqual([
+      { code: 'J00', display: 'Rinofaringitis aguda', certainty: null },
     ]);
   });
 

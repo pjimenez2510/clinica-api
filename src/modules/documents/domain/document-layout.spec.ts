@@ -7,6 +7,7 @@ import {
 import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
 
 import { composeLayout } from './document-layout';
+import { sampleSubject } from './document-samples';
 import { TEAR_OFF_HEIGHT_MM, millimetresToPoints } from './page-layout';
 import type { DocumentTemplate } from './document-template';
 import type {
@@ -62,6 +63,7 @@ const context: DocumentContext = {
 const patient: PatientIdentity = {
   fullName: 'Guamán Andrade María José',
   identifier: '1710034065',
+  mrn: 'HC0000000801',
   ageYears: 1,
   ageMonths: 2,
 };
@@ -97,6 +99,39 @@ function textOf(blocks: readonly Block[]): string {
           return block.caption;
         case 'boxes':
           return `${textOf(block.left)}\n${textOf(block.right)}`;
+        case 'box':
+          return [block.title ?? '', textOf(block.blocks)].join('\n');
+        case 'strip':
+          return block.entries
+            .map((entry) => `${entry.label}=${entry.value}`)
+            .join('\n');
+        case 'section':
+          return [
+            block.title,
+            ...block.rows.map((row) =>
+              row.kind === 'cells'
+                ? row.cells
+                    .map((cell) => `${cell.label}=${cell.value}`)
+                    .join('\n')
+                : row.kind === 'text'
+                  ? row.text
+                  : [
+                      row.columns.map((column) => column.header).join('|'),
+                      ...row.rows.map((cells) => cells.join('|')),
+                    ].join('\n'),
+            ),
+            block.signature?.caption ?? '',
+          ].join('\n');
+        case 'title':
+        case 'name':
+        case 'caption':
+          return block.text;
+        case 'barcode':
+          return block.value;
+        case 'note':
+          return block.lines
+            .map((line) => `${line.label ?? ''}${line.text}`)
+            .join('\n');
         default:
           return '';
       }
@@ -175,6 +210,57 @@ const prescription = (
     ],
     ...overrides,
   },
+});
+
+describe('DOC-104 los datos generales, en la franja gris de la plantilla', () => {
+  it('DOC-104 D-078 la receta abre con ciudad, fecha y hora de emisión, vigencia e historia clínica en una franja', () => {
+    const [first] = composeLayout(prescription(), context, template).blocks;
+    expect(first?.kind).toBe('strip');
+    // 01:00 UTC of the 21st is 20:00 of the 20th in Ecuador.
+    expect(first?.kind === 'strip' ? first.entries : []).toEqual([
+      { label: 'Ciudad', value: 'Guayaquil' },
+      { label: 'Fecha de emisión', value: '20/08/2026 · 20:00' },
+      { label: 'Vigencia', value: '3 días — hasta el 22/08/2026' },
+      { label: 'Historia clínica', value: 'HC0000000801' },
+    ]);
+  });
+
+  it('DOC-104 un borrador sin emitir no inventa fecha ni hora', () => {
+    const [first] = composeLayout(
+      prescription({ issuedAt: null }),
+      context,
+      template,
+    ).blocks;
+    expect(
+      first?.kind === 'strip'
+        ? first.entries.find((entry) => entry.label === 'Fecha de emisión')
+            ?.value
+        : undefined,
+    ).toBe('—');
+  });
+
+  it('DOC-104 una receta anulada lo dice antes de la franja', () => {
+    const blocks = composeLayout(
+      prescription({ status: 'CANCELLED' }),
+      context,
+      template,
+    ).blocks;
+    expect(blocks.map((block) => block.kind).slice(0, 2)).toEqual([
+      'paragraph',
+      'strip',
+    ]);
+  });
+
+  it('DOC-085 las alergias registradas van en rojo, y «Ninguna conocida» no', () => {
+    const allergyOf = (allergies: string[]) =>
+      composeLayout(prescription({ allergies }), context, template)
+        .blocks.flatMap((block) =>
+          block.kind === 'fields' ? block.entries : [],
+        )
+        .find((entry) => entry.label === 'Antecedentes de alergias');
+    expect(allergyOf(['Penicilina'])?.alert).toBe(true);
+    expect(allergyOf([])?.alert).not.toBe(true);
+  });
 });
 
 describe('DOC-072 la receta lleva los cinco bloques del art. 5', () => {
@@ -585,6 +671,20 @@ describe('ORD-006 DOC-072 la orden impresa, como la plantilla aprobada (D-095)',
     },
   });
 
+  it('DOC-104 D-078 la orden abre con fecha y hora de solicitud, tipo, prioridad e historia clínica en una franja', () => {
+    const [first] = composeLayout(
+      order({ requestedAt: new Date('2026-08-21T01:00:00Z') }), // fecha-fija: 20:00 of the day before in Ecuador
+      context,
+      template,
+    ).blocks;
+    expect(first?.kind === 'strip' ? first.entries : []).toEqual([
+      { label: 'Fecha de solicitud', value: '20/08/2026 · 20:00' },
+      { label: 'Tipo', value: 'Laboratorio' },
+      { label: 'Prioridad', value: 'Urgente' },
+      { label: 'Historia clínica', value: 'HC0000000801' },
+    ]);
+  });
+
   it('ORD-007 un examen cancelado no sale en el papel del laboratorio, y sin ninguno vivo la orden sale anulada', () => {
     const withOneCancelled = composeLayout(
       order({
@@ -678,59 +778,65 @@ describe('DOC-075 el certificado sobre el formulario 117 y la plantilla aprobada
   /** A form 117 as `certificates` composes it, the same function the PDF uses. */
   const form = (
     certificate: Partial<Form117Source['certificate']> = {},
-  ): Form117 =>
-    composeForm117({
-      certificate: {
-        id: 'certificate-1',
-        number: 7,
-        verificationCode: 'CM-4T7',
-        type: 'MEDICAL_REST',
-        issuedAt: now,
-        restFrom: day,
-        restTo: addDays(day, 2),
-        includeDiagnosis: true,
-        contingencyType: 'GENERAL_ILLNESS',
-        maternity: null,
-        revokedAt: null,
-        revocationReason: null,
-        ...certificate,
-      },
-      site: {
-        name: 'Sede Norte',
-        mspUnicode: '000123',
-        city: 'Quito',
-        address: 'Av. Amazonas N24-10',
-        phone: '022345678',
-      },
-      patient: {
-        familyName: 'Guamán',
-        secondFamilyName: 'Andrade',
-        givenName: 'María',
-        secondGivenName: 'José',
-        sex: 'FEMALE',
-        mrn: 'HC000042',
-        employerName: 'Florícola del Valle',
-        jobTitle: 'Supervisora de cultivo',
-        residenceAddressLine: 'Calle Sucre 4-12',
-        phone: '0991234567',
-        identifiers: [{ type: 'CEDULA', value: '1710034065' }],
-      },
-      encounter: {
-        startedAt: now,
-        endedAt: null,
-        ageYears: 34,
-        ageMonths: 2,
-        ageDays: 9,
-      },
-      diagnoses: [{ code: 'J00', display: 'Rinofaringitis aguda' }],
-      practitioner: {
-        givenNames: 'Rosa',
-        familyNames: 'Cedeño',
-        cedula: '1104637283',
-        primarySpecialty: 'Medicina familiar',
-        hasSeal: false,
-      },
-    });
+  ): Form117 => composeForm117(formSource(certificate));
+
+  /** What `composeForm117` reads, as `certificates` gathers it. */
+  const formSource = (
+    certificate: Partial<Form117Source['certificate']> = {},
+  ): Form117Source => ({
+    certificate: {
+      id: 'certificate-1',
+      number: 7,
+      verificationCode: 'CM-4T7',
+      type: 'MEDICAL_REST',
+      issuedAt: now,
+      restFrom: day,
+      restTo: addDays(day, 2),
+      includeDiagnosis: true,
+      contingencyType: 'GENERAL_ILLNESS',
+      maternity: null,
+      revokedAt: null,
+      revocationReason: null,
+      ...certificate,
+    },
+    site: {
+      name: 'Sede Norte',
+      mspUnicode: '000123',
+      city: 'Quito',
+      address: 'Av. Amazonas N24-10',
+      phone: '022345678',
+    },
+    patient: {
+      familyName: 'Guamán',
+      secondFamilyName: 'Andrade',
+      givenName: 'María',
+      secondGivenName: 'José',
+      sex: 'FEMALE',
+      mrn: 'HC000042',
+      employerName: 'Florícola del Valle',
+      jobTitle: 'Supervisora de cultivo',
+      residenceAddressLine: 'Calle Sucre 4-12',
+      phone: '0991234567',
+      identifiers: [{ type: 'CEDULA', value: '1710034065' }],
+    },
+    encounter: {
+      startedAt: now,
+      endedAt: null,
+      ageYears: 34,
+      ageMonths: 2,
+      ageDays: 9,
+    },
+    diagnoses: [
+      { code: 'J00', display: 'Rinofaringitis aguda', certainty: 'DEFINITIVE' },
+    ],
+    practitioner: {
+      givenNames: 'Rosa',
+      familyNames: 'Cedeño',
+      cedula: '1104637283',
+      primarySpecialty: 'Medicina familiar',
+      hasSeal: false,
+    },
+  });
 
   const certificate = (formData: Form117 = form()): DocumentSubject => ({
     kind: 'MEDICAL_CERTIFICATE',
@@ -742,12 +848,16 @@ describe('DOC-075 el certificado sobre el formulario 117 y la plantilla aprobada
     },
   });
 
-  it('DOC-075 CER-020 CER-028 lleva los cinco bloques del 117, de la A a la E', () => {
-    const headings = composeLayout(certificate(), context, template)
-      .blocks.filter((block) => block.kind === 'heading')
-      .map((block) => (block.kind === 'heading' ? block.text : ''));
+  /** The 117's blocks, by their title. */
+  const sectionsOf = (layout: DocumentLayout) =>
+    layout.blocks.flatMap((block) => (block.kind === 'section' ? [block] : []));
 
-    expect(headings).toEqual([
+  it('DOC-075 DOC-105 CER-020 CER-028 lleva los cinco bloques del 117, de la A a la E, cada uno en su recuadro', () => {
+    const titles = sectionsOf(
+      composeLayout(certificate(), context, template),
+    ).map((section) => section.title);
+
+    expect(titles).toEqual([
       'A. Datos del establecimiento y usuario / paciente',
       'B. Certifico que',
       'C. Se recomienda',
@@ -756,32 +866,116 @@ describe('DOC-075 el certificado sobre el formulario 117 y la plantilla aprobada
     ]);
   });
 
-  it('DOC-075 CER-038 el reposo imprime los datos laborales del paciente bajo el bloque B', () => {
+  it('DOC-105 DOC-101 la firma y el sello van dentro del bloque E', () => {
     const layout = composeLayout(certificate(), context, template);
-    const { blocks } = layout;
-    const text = wholeText(layout);
+    const closing = sectionsOf(layout).at(-1);
+    expect(closing?.signature).toEqual({
+      caption: 'Firma (credencial del profesional en el sistema) y sello',
+      image: null,
+    });
+    // Nothing of the professional's is left outside the box.
+    expect(layout.blocks.map((block) => block.kind)).not.toContain('signature');
+  });
 
-    expect(text).toContain('Datos laborales del paciente');
-    for (const value of [
-      'Florícola del Valle',
-      'Supervisora de cultivo',
-      'Calle Sucre 4-12',
-      '0991234567',
-    ]) {
-      expect(text).toContain(value);
-    }
+  it('DOC-105 CER-027 el diagnóstico es una tabla dentro del bloque D, con su código y la X en PRE o en DEF', () => {
+    const tableOf = (formData: Form117) => {
+      const diagnosis = sectionsOf(
+        composeLayout(certificate(formData), context, template),
+      ).find((section) => section.title === 'D. Diagnóstico');
+      const table = diagnosis?.rows.find((row) => row.kind === 'table');
+      if (table?.kind !== 'table') throw new Error('no table');
+      return table;
+    };
+    const table = tableOf(form());
+    expect(table.columns.map((column) => column.header)).toEqual([
+      '#',
+      'Diagnóstico',
+      'CIE',
+      'PRE',
+      'DEF',
+    ]);
+    expect(table.rows).toEqual([['1', 'Rinofaringitis aguda', 'J00', '', 'X']]);
 
-    // Bajo el bloque B y antes del C.
-    const order = blocks.map((block) =>
-      block.kind === 'heading'
-        ? block.text
-        : block.kind === 'paragraph'
-          ? block.text
-          : '',
+    // Control: a presumptive one marks the other column.
+    const presumptive = composeForm117({
+      ...formSource(),
+      diagnoses: [{ code: 'J00', display: 'Rinofaringitis aguda', certainty: 'PRESUMPTIVE' }], // prettier-ignore
+    });
+    expect(tableOf(presumptive).rows).toEqual([['1', 'Rinofaringitis aguda', 'J00', 'X', '']]); // prettier-ignore
+
+    // Issued before the certainty was copied: neither, never a guess.
+    const unknown = composeForm117({
+      ...formSource(),
+      diagnoses: [{ code: 'J00', display: 'Rinofaringitis aguda', certainty: null }], // prettier-ignore
+    });
+    expect(tableOf(unknown).rows).toEqual([['1', 'Rinofaringitis aguda', 'J00', '', '']]); // prettier-ignore
+  });
+
+  it('DOC-075 CER-038 el reposo imprime los datos laborales del paciente en el bloque B', () => {
+    const layout = composeLayout(certificate(), context, template);
+    const certify = sectionsOf(layout).find(
+      (section) => section.title === 'B. Certifico que',
     );
-    const work = order.indexOf('Datos laborales del paciente');
-    expect(work).toBeGreaterThan(order.indexOf('B. Certifico que'));
-    expect(work).toBeLessThan(order.indexOf('C. Se recomienda'));
+    const cells = (certify?.rows ?? []).flatMap((row) =>
+      row.kind === 'cells' ? row.cells : [],
+    );
+    for (const [label, value] of [
+      ['Empresa', 'Florícola del Valle'],
+      ['Puesto de trabajo', 'Supervisora de cultivo'],
+      ['Domicilio', 'Calle Sucre 4-12'],
+      ['Teléfono', '0991234567'],
+    ]) {
+      expect(cells).toContainEqual(expect.objectContaining({ label, value }));
+    }
+  });
+
+  it('DOC-075 CER-013 el reposo lleva al pie la nota de validación del IESS, y la asistencia no', () => {
+    const noteOf = (layout: DocumentLayout) =>
+      layout.blocks.flatMap((block) => (block.kind === 'note' ? [block] : []));
+
+    const rest = noteOf(composeLayout(certificate(), context, template));
+    expect(rest).toHaveLength(1);
+    const text = textOf(rest);
+    expect(text).toContain('hasta 8 días después del fin del reposo');
+    expect(text).toContain('se valida en ventanilla');
+    expect(text).toContain('Seguro Social Campesino');
+    // It prints a diagnosis, so it says whose consent covers it.
+    expect(text).toContain('A.M. 5216-A');
+    // Closes the document: after block E.
+    const blocks = composeLayout(certificate(), context, template).blocks;
+    expect(blocks.at(-1)?.kind).toBe('note');
+
+    const attendance = form({
+      type: 'ATTENDANCE',
+      restFrom: null,
+      restTo: null,
+      contingencyType: null,
+      includeDiagnosis: false,
+    });
+    expect(
+      noteOf(composeLayout(certificate(attendance), context, template)),
+    ).toEqual([]);
+  });
+
+  it('DOC-075 CER-029 un reposo anulado no lleva instrucciones para validarlo', () => {
+    const revoked = composeLayout(
+      certificate(form({ revokedAt: now, revocationReason: 'Se emitió a otro paciente' })), // prettier-ignore
+      context,
+      template,
+    );
+    expect(revoked.blocks.map((block) => block.kind)).not.toContain('note');
+  });
+
+  it('DOC-075 un reposo sin diagnóstico no dice que lleva datos de salud', () => {
+    const text = textOf(
+      composeLayout(
+        certificate(form({ includeDiagnosis: false })),
+        context,
+        template,
+      ).blocks.filter((block) => block.kind === 'note'),
+    );
+    expect(text).toContain('Seguro Social Campesino');
+    expect(text).not.toContain('A.M. 5216-A');
   });
 
   it('DOC-075 CER-038 el certificado de asistencia no imprime datos laborales', () => {
@@ -795,7 +989,7 @@ describe('DOC-075 el certificado sobre el formulario 117 y la plantilla aprobada
     const text = wholeText(
       composeLayout(certificate(attendance), context, template),
     );
-    expect(text).not.toContain('Datos laborales del paciente');
+    expect(text).not.toContain('Empresa=');
     expect(text).not.toContain('Florícola del Valle');
   });
 
@@ -1030,6 +1224,70 @@ describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
     ).toBe(true);
   });
 
+  it('DOC-106 la cabecera es la de la página «Factura»: logo sobre el emisor, recuadros redondeados y FACTURA en grande', () => {
+    const layout = composeLayout(ride, context, template);
+    const head = layout.blocks[0];
+    if (head?.kind !== 'boxes') throw new Error('expected the two columns');
+    // DOC-059. No logo, no slot for one: the issuer's box heads the column.
+    expect(head.left.map((block) => block.kind)).toEqual(['box']);
+    // With one, it goes above the issuer, in the left column.
+    const logo = {
+      id: 'logo',
+      mimeType: 'image/png' as const,
+      bytes: Buffer.from(''),
+      byteSize: 0,
+      sha256: 'c'.repeat(64),
+      width: 88,
+      height: 64,
+    };
+    const branded = composeLayout(
+      ride,
+      { ...context, establishment: { ...context.establishment, logo } },
+      template,
+    ).blocks[0];
+    expect(
+      branded?.kind === 'boxes' ? branded.left.map((block) => block.kind) : [],
+    ).toEqual(['logo', 'box']);
+    const [issuer] = head.left.filter((block) => block.kind === 'box');
+    const [voucher] = head.right;
+    expect(issuer?.kind === 'box' && issuer.rounded).toBe(true);
+    expect(voucher?.kind === 'box' && voucher.rounded).toBe(true);
+    // The razón social heads the issuer; «FACTURA» the voucher, as a title.
+    expect(issuer?.kind === 'box' && issuer.blocks[0]).toEqual({
+      kind: 'name',
+      text: 'Centro de Especialidades Bahía',
+    });
+    expect(
+      voucher?.kind === 'box' &&
+        voucher.blocks.find((block) => block.kind === 'title'),
+    ).toEqual({ kind: 'title', text: 'FACTURA' });
+    // The key as the authorisation number and once more under its bars —
+    // no third copy as a «CLAVE DE ACCESO» field above them.
+    const keyed = textOf(head.right);
+    expect(keyed.split('4'.repeat(49))).toHaveLength(3);
+    expect(keyed).not.toContain('CLAVE DE ACCESO=');
+  });
+
+  it('DOC-106 comprador en recuadro, detalle con borde y rejilla, información adicional con barra de título y VALOR TOTAL resaltado', () => {
+    const layout = composeLayout(ride, context, template);
+    const [, buyer, detail, bottom] = layout.blocks;
+    expect(buyer?.kind === 'box' && buyer.rounded).toBe(true);
+    expect(detail?.kind === 'table' && detail.framed).toBe('grid');
+    if (bottom?.kind !== 'boxes') throw new Error('expected the two columns');
+    const [additional, payment] = bottom.left;
+    expect(additional?.kind === 'box' && additional.title).toBe(
+      'Información adicional',
+    );
+    expect(payment?.kind === 'table' && payment.framed).toBe('box');
+    const [totals] = bottom.right;
+    expect(totals?.kind === 'table' && totals.framed).toBe('box');
+    expect(totals?.kind === 'table' && totals.headless).toBe(true);
+    expect(totals?.kind === 'table' && totals.emphasiseLast).toBe(true);
+    expect(totals?.kind === 'table' && totals.rows.at(-1)?.[0]).toBe(
+      'VALOR TOTAL',
+    );
+  });
+
   it('DOC-076 lo que no se conoce no se imprime: sin comprador-paciente no hay dirección ni teléfono', () => {
     const text = wholeText(
       composeLayout(
@@ -1120,6 +1378,7 @@ describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
             walk(block.left);
             walk(block.right);
           }
+          if (block.kind === 'box') walk(block.blocks);
         }
       };
       walk(layout.blocks);
@@ -1160,8 +1419,9 @@ describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
     expect(text).toContain(
       'FECHA Y HORA DE AUTORIZACIÓN=PENDIENTE DE AUTORIZACIÓN',
     );
-    // SRI-070. The key is printed anyway: the RIDE is handed over with it.
-    expect(text).toContain(`CLAVE DE ACCESO=${KEY_IN_TESTS}`);
+    // SRI-070. The key is printed anyway: the RIDE is handed over with it,
+    // under its bars (DOC-106).
+    expect(text).toContain(`CLAVE DE ACCESO\n${KEY_IN_TESTS}`);
   });
 
   it('SRI-071 una factura que el SRI devolvió o no autorizó no promete una autorización', () => {
@@ -1231,3 +1491,251 @@ describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
 
 /** A key whose 24th digit says «pruebas», as `sri` composes them. */
 const KEY_IN_TESTS = '3009202601179000156300110010010000001230045678911';
+
+describe('DOC-107 el pintado no cambia lo que dice el documento', () => {
+  /**
+   * What `main` printed of each sample BEFORE DOC-103 to DOC-106, captured
+   * from its compiled composer on 01-10-2026: every labelled value, every
+   * table cell, every heading and caption. A new page shape may move them; it
+   * may not drop one.
+   */
+  const BEFORE: Record<DocumentSubject['kind'], string[]> = {
+    PRESCRIPTION: [
+      'Ciudad=Quito',
+      'Fecha=20/08/2026',
+      'Vigencia=3 días — hasta el 22/08/2026',
+      'Paciente',
+      'Apellidos y nombres=MUESTRA PACIENTE Ejemplo',
+      'Documento=1710034065',
+      'Edad=42 años',
+      'Diagnóstico=I10 · Hipertensión esencial (primaria)',
+      'Antecedentes de alergias=Penicilina',
+      'Prescripción',
+      '1',
+      'Enalapril',
+      'Tableta 10 mg',
+      'Vía oral',
+      '30 (treinta)',
+      '1 tableta · cada 24 horas · por 30 días',
+      'Prescriptor',
+      'Profesional=MUESTRA PROFESIONAL Ejemplo',
+      'Registro ACESS=ACESS-0000-0000',
+      'Firma y sello del profesional',
+      'Indicaciones para el paciente — recorte por esta línea',
+      'Paciente=MUESTRA PACIENTE Ejemplo',
+      'Línea 1=Enalapril 10 mg: 1 tableta, cada 24 horas, por vía oral, durante 30 días. Tome 1 tableta cada mañana. No la suspenda.',
+      'Signos de alarma=MUESTRA SIN VALIDEZ. Dolor de cabeza intenso.\nSi aparece alguno, llame al 0990000000.',
+      'Recomendaciones no farmacológicas=Reduzca la sal y camine treinta minutos al día.',
+      'Sello del profesional',
+    ],
+    SERVICE_ORDER: [
+      'Fecha=20/08/2026',
+      'Tipo=Laboratorio',
+      'Prioridad=Rutina',
+      'Paciente',
+      'Apellidos y nombres=MUESTRA PACIENTE Ejemplo',
+      'Documento=1710034065',
+      'Edad=42 años',
+      'Diagnóstico presuntivo=I10 · Hipertensión esencial (primaria)',
+      'Datos clínicos para el laboratorio=MUESTRA SIN VALIDEZ',
+      'Exámenes solicitados',
+      'MUESTRA',
+      'Creatinina sérica',
+      'Sangre',
+      'Indicaciones al paciente',
+      'Preparación=Ayuno de 8 horas.',
+      'Médico solicitante',
+      'Profesional=MUESTRA PROFESIONAL Ejemplo',
+      'Registro ACESS=ACESS-0000-0000',
+      'Firma y sello del profesional',
+    ],
+    MEDICAL_CERTIFICATE: [
+      'Lugar de emisión=Quito',
+      'Tipo=Certificado de asistencia',
+      'Contingencia=NA',
+      'A. Datos del establecimiento y usuario / paciente',
+      'Institución del sistema=NA',
+      'Unicódigo=000000',
+      'Establecimiento de salud=MUESTRA',
+      'Número de historia clínica única=1710034065',
+      'Número de archivo=MUESTRA',
+      'B. Certifico que',
+      'Primer apellido=MUESTRA',
+      'Segundo apellido=NA',
+      'Primer nombre=PACIENTE',
+      'Segundo nombre=Ejemplo',
+      'Sexo=Mujer',
+      'Edad=42 (A)',
+      'Fue atendido en el servicio de=Consulta externa',
+      'Especialidad=NA',
+      'Fecha de atención=20/08/2026 — veinte de agosto de dos mil veintiséis',
+      'Hora de atención=desde 20:00 hasta 20:00',
+      'Fecha de ingreso=NA',
+      'Fecha de alta=NA',
+      'C. Se recomienda',
+      'Reposo=NO',
+      'Días de reposo=NA',
+      'Desde=NA',
+      'Hasta=NA',
+      'D. Diagnóstico',
+      'I10',
+      'Hipertensión esencial (primaria)',
+      'E. Datos del profesional responsable',
+      'Fecha=2026-08-20',
+      'Hora=20:00',
+      'Nombres y apellidos=MUESTRA PROFESIONAL Ejemplo',
+      'Número de documento de identificación=NA',
+      'Firma (credencial del profesional en el sistema) y sello',
+    ],
+    INVOICE_RIDE: [
+      'Centro de Especialidades Bahía',
+      'Bahía Salud',
+      'DIRECCIÓN MATRIZ=Av. Malecón 100, Guayaquil',
+      'DIRECCIÓN ESTABLECIMIENTO=Av. 9 de Octubre 123',
+      'OBLIGADO A LLEVAR CONTABILIDAD=SÍ',
+      'CONTRIBUYENTE ESPECIAL Nro.=123',
+      'R.U.C.=0993123456001',
+      'FACTURA No.=000-000-000000000',
+      'NÚMERO DE AUTORIZACIÓN=PENDIENTE DE AUTORIZACIÓN',
+      'FECHA Y HORA DE AUTORIZACIÓN=PENDIENTE DE AUTORIZACIÓN',
+      'AMBIENTE=—',
+      'EMISIÓN=NORMAL',
+      'CLAVE DE ACCESO=—',
+      'Razón social / Apellidos y nombres=MUESTRA SIN VALIDEZ',
+      'Identificación=9999999999999',
+      'Fecha de emisión=20/08/2026',
+      'MUESTRA',
+      '—',
+      '1',
+      'Consulta de medicina general',
+      '0.00',
+      'Información adicional',
+      'Atención=21/08/2026 · Sede Centro',
+      '01 · Sin utilización del sistema financiero',
+      'SUBTOTAL 15%',
+      'SUBTOTAL 0%',
+      'SUBTOTAL NO OBJETO DE IVA',
+      'SUBTOTAL EXENTO DE IVA',
+      'SUBTOTAL SIN IMPUESTOS',
+      'TOTAL DESCUENTO',
+      'ICE',
+      'IVA 15%',
+      'PROPINA',
+      'VALOR TOTAL',
+    ],
+  };
+
+  /**
+   * The only ones that changed, each for a reason written down: by the
+   * principal's decision (D-095, 01-10-2026) or because the template does not
+   * repeat it. Old → what the paper says now.
+   */
+  const CHANGED: Record<
+    DocumentSubject['kind'],
+    Record<string, readonly string[]>
+  > = {
+    // D-095: the hour of issue, in Ecuador, beside the date. The tear-off
+    // band keeps its own «Fecha», which is why the old text is also checked.
+    PRESCRIPTION: {
+      'Fecha=20/08/2026': ['Fecha de emisión=20/08/2026 · 20:00'],
+    },
+    // D-095: the hour of the request.
+    SERVICE_ORDER: {
+      'Fecha=20/08/2026': ['Fecha de solicitud=20/08/2026 · 20:00'],
+    },
+    // DOC-107: the subtitle the template drops; its four data are in block B.
+    MEDICAL_CERTIFICATE: { 'Datos laborales del paciente': [] },
+    // The template's «FACTURA» title, then «No.».
+    INVOICE_RIDE: {
+      'FACTURA No.=000-000-000000000': ['No.=000-000-000000000'],
+    },
+  };
+
+  const context: DocumentContext = {
+    siteName: 'Sede Centro',
+    siteLine: null,
+    verificationBaseUrl: 'https://clinica.example/verificar',
+    establishment: {
+      name: 'Centro de Especialidades Bahía',
+      tradeName: 'Bahía Salud',
+      ruc: '0993123456001',
+      addressLine: 'Av. 9 de Octubre 123',
+      headOfficeAddress: 'Av. Malecón 100, Guayaquil',
+      phone: '042000000',
+      email: null,
+      operatingPermit: null,
+      logo: null,
+      keepsAccounting: true,
+      specialTaxpayerResolution: '123',
+      withholdingAgentResolution: null,
+      rimpeRegime: 'NONE',
+    },
+  };
+
+  /** Everything the new layout prints, by the same measure as `BEFORE`. */
+  const printed = (blocks: readonly Block[]): string[] =>
+    blocks.flatMap((block): string[] => {
+      switch (block.kind) {
+        case 'heading':
+        case 'paragraph':
+        case 'caption':
+        case 'title':
+        case 'name':
+          return [block.text];
+        case 'fields':
+        case 'strip':
+          return block.entries.map((entry) => `${entry.label}=${entry.value}`);
+        case 'table':
+          return block.rows.flat();
+        case 'signature':
+          return [block.caption];
+        case 'boxes':
+          return [...printed(block.left), ...printed(block.right)];
+        case 'box':
+          return [...(block.title === undefined ? [] : [block.title]), ...printed(block.blocks)]; // prettier-ignore
+        case 'section':
+          return [
+            block.title,
+            ...block.rows.flatMap((row) =>
+              row.kind === 'cells'
+                ? row.cells.map((cell) => `${cell.label}=${cell.value}`)
+                : row.kind === 'text'
+                  ? [row.text]
+                  : row.rows.flat(),
+            ),
+            ...(block.signature === undefined ? [] : [block.signature.caption]),
+          ];
+        case 'barcode':
+          return [block.value];
+        default:
+          return [];
+      }
+    });
+
+  it.each(Object.keys(BEFORE) as DocumentSubject['kind'][])(
+    'DOC-107 %s imprime todo lo que imprimía, salvo lo anotado',
+    (kind) => {
+      const at = new Date('2026-08-21T01:00:00Z'); // fecha-fija: the instant BEFORE was captured with
+      const layout = composeLayout(sampleSubject(kind, at), context, template);
+      const now = new Set([
+        ...printed(layout.blocks),
+        ...(layout.tearOff === null
+          ? []
+          : [
+              layout.tearOff.caption,
+              ...layout.tearOff.identification.map(
+                (e) => `${e.label}=${e.value}`,
+              ),
+              ...printed(layout.tearOff.blocks),
+            ]),
+      ]);
+      const missing = BEFORE[kind].filter((text) => {
+        if (now.has(text)) return false;
+        const replacements = CHANGED[kind][text];
+        if (replacements === undefined) return true;
+        return replacements.length > 0 && !replacements.some((r) => now.has(r));
+      });
+      expect(missing).toEqual([]);
+    },
+  );
+});

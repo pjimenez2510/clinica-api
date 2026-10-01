@@ -850,3 +850,482 @@ describe('DOC-085 la tinta y las etiquetas del marco aprobado', () => {
     expect(fills).not.toContain('0,0,0');
   });
 });
+
+/** Every content stream of the file, inflated: where the drawing operators are. */
+function contentOf(pdf: Buffer): string {
+  let streams = '';
+  for (const match of pdf
+    .toString('latin1')
+    .matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)) {
+    try {
+      streams += inflateSync(Buffer.from(match[1] ?? '', 'latin1')).toString(
+        'latin1',
+      );
+    } catch {
+      // Not a content stream (an embedded font, the ICC profile).
+    }
+  }
+  return streams;
+}
+
+describe('DOC-103 DOC-104 la cabecera y los títulos como la plantilla', () => {
+  let logo: StoredImage;
+
+  beforeAll(async () => {
+    const bytes = await sharp({
+      create: { width: 88, height: 64, channels: 3, background: '#0f6b5c' },
+    })
+      .png()
+      .toBuffer();
+    logo = {
+      id: 'logo',
+      mimeType: 'image/png',
+      bytes,
+      byteSize: bytes.byteLength,
+      sha256: 'b'.repeat(64),
+      width: 88,
+      height: 64,
+    };
+  });
+
+  it('DOC-103 el logo queda centrado verticalmente con el bloque del establecimiento', async () => {
+    // A header whose text is clearly taller than the logo's 17 mm.
+    const tall: DocumentLayout = {
+      ...layout,
+      frame: {
+        ...layout.frame,
+        hasLogo: true,
+        header: {
+          ...header,
+          hasLogo: true,
+          siteLine: 'Sede Norte · Unicódigo 012345',
+          establishmentAddress: 'Av. Amazonas N34-120 y Naciones Unidas, Quito',
+          establishmentPhone: '02-2456789',
+          establishmentEmail: 'contacto@clinica.example',
+          establishmentRuc: '1791234567001',
+          operatingPermit: 'ACESS-2026-0456',
+        },
+      },
+    };
+    const content = contentOf(
+      await renderer.render(
+        tall,
+        { logo, seal: null, signature: null },
+        metadata,
+      ),
+    );
+
+    const image = /([\d.]+) 0 0 (-[\d.]+) ([\d.]+) ([\d.]+) cm\n\/I\d+ Do/.exec(content); // prettier-ignore
+    const rule = /[\d.]+ ([\d.]+) m\n[\d.]+ [\d.]+ l\n1.5 w/.exec(content);
+    expect(image).not.toBeNull();
+    expect(rule).not.toBeNull();
+
+    const logoHeight = -Number(image?.[2]);
+    const logoTop = Number(image?.[4]) - logoHeight;
+    const headerTop = millimetresToPoints(15);
+    // The rule sits 3 mm under the tallest column of the header.
+    const headerBottom = Number(rule?.[1]) - millimetresToPoints(3);
+
+    expect(logoTop).toBeGreaterThan(headerTop + millimetresToPoints(1));
+    expect(
+      Math.abs(logoTop + logoHeight / 2 - (headerTop + headerBottom) / 2),
+    ).toBeLessThan(1.5);
+  });
+
+  it('DOC-106 el logo del RIDE va centrado en su columna', async () => {
+    const content = contentOf(
+      await renderer.render(
+        { ...layout, tearOff: null, frame: { ...layout.frame, header: null }, blocks: [{ kind: 'logo' }] }, // prettier-ignore
+        { logo, seal: null, signature: null },
+        metadata,
+      ),
+    );
+    const image = /([\d.]+) 0 0 (-[\d.]+) ([\d.]+) ([\d.]+) cm\n\/I\d+ Do/.exec(content); // prettier-ignore
+    expect(image).not.toBeNull();
+    const width = Number(image?.[1]);
+    const x = Number(image?.[3]);
+    const margin = millimetresToPoints(15);
+    const column = millimetresToPoints(210 - 30);
+    // As much room on its left as on its right.
+    expect(Math.abs(x - margin - (margin + column - (x + width)))).toBeLessThan(
+      1,
+    );
+  });
+
+  it('DOC-104 DOC-085 los títulos de sección van en el color de acento', async () => {
+    const fills = [
+      ...contentOf(await renderer.render(layout, images, metadata)).matchAll(
+        /([\d.]+) ([\d.]+) ([\d.]+) scn/g,
+      ),
+    ].map((fill) =>
+      [fill[1], fill[2], fill[3]]
+        .map((channel) => Math.round(Number(channel) * 255))
+        .join(','),
+    );
+    // #1f6f8b is the accent of this layout: the title AND «Paciente».
+    expect(
+      fills.filter((fill) => fill === '31,111,139').length,
+    ).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('DOC-106 los campos «Etiqueta: valor» no se pisan', () => {
+  it('DOC-106 una dirección que se parte en dos líneas empuja a la siguiente, en un recuadro estrecho', async () => {
+    // Long enough that the bold label plus the value wrap within half a page.
+    const matriz = 'Av. Amazonas y Naciones Unidas, Quito';
+    const pdf = await renderer.render(
+      {
+        ...layout,
+        tearOff: null,
+        blocks: [
+          {
+            kind: 'boxes',
+            left: [
+              {
+                kind: 'box',
+                rounded: true,
+                blocks: [
+                  {
+                    kind: 'fields',
+                    columns: 1,
+                    inline: true,
+                    entries: [
+                      { label: 'DIRECCIÓN MATRIZ', value: matriz },
+                      { label: 'DIRECCIÓN ESTABLECIMIENTO', value: 'Av. de los Granados' }, // prettier-ignore
+                    ],
+                  },
+                ],
+              },
+            ],
+            right: [],
+          },
+        ],
+      },
+      images,
+      metadata,
+    );
+    const proxy = await getDocumentProxy(new Uint8Array(pdf));
+    const page = await proxy.getPage(1);
+    const items = (await page.getTextContent()).items.flatMap((item) =>
+      'str' in item && item.str.trim() !== ''
+        ? [{ text: item.str, y: item.transform[5] as number }]
+        : [],
+    );
+    const lineOf = (needle: string): number[] =>
+      items.filter((item) => item.text.includes(needle)).map((item) => item.y);
+
+    // Control: the first entry did wrap, so there is something to overlap.
+    const first = lineOf('DIRECCIÓN MATRIZ');
+    const firstLines = new Set(
+      items
+        .filter(
+          (item) => (first[0] ?? 0) - item.y < 30 && (first[0] ?? 0) >= item.y,
+        )
+        .filter(
+          (item) =>
+            matriz.includes(item.text.trim()) ||
+            item.text.includes('DIRECCIÓN MATRIZ'),
+        )
+        .map((item) => Math.round(item.y)),
+    );
+    expect(firstLines.size).toBeGreaterThan(1);
+
+    // PDF y grows upwards: the second entry starts below the first one's last line.
+    const lowestOfFirst = Math.min(...firstLines);
+    const second = Math.max(...lineOf('DIRECCIÓN ESTABLECIMIENTO'));
+    expect(lowestOfFirst - second).toBeGreaterThan(8);
+  });
+});
+
+describe('DOC-071 DOC-105 un recuadro más alto que una página se parte, sin pisar el pie', () => {
+  /** Each page's text items with their baseline, in points from the bottom. */
+  const itemsOf = async (pdf: Buffer) => {
+    const proxy = await getDocumentProxy(new Uint8Array(pdf));
+    const pages = [];
+    for (let number = 1; number <= proxy.numPages; number += 1) {
+      const page = await proxy.getPage(number);
+      pages.push(
+        (await page.getTextContent()).items.flatMap((item) =>
+          'str' in item && item.str.trim() !== ''
+            ? [{ text: item.str, y: item.transform[5] as number }]
+            : [],
+        ),
+      );
+    }
+    return pages;
+  };
+  /** The footer starts 15 + 18 mm above the bottom edge: the body stays above. */
+  const footerTop = millimetresToPoints(15 + 18);
+  const base: DocumentLayout = { ...layout, tearOff: null };
+
+  it('DOC-105 un bloque D con sesenta diagnósticos sigue en la página siguiente con su título', async () => {
+    const pages = await itemsOf(
+      await renderer.render(
+        {
+          ...base,
+          blocks: [
+            {
+              kind: 'section',
+              title: 'D. Diagnóstico',
+              rows: [
+                {
+                  kind: 'table',
+                  columns: [
+                    { header: 'Diagnóstico', width: 0.8 },
+                    { header: 'CIE', width: 0.2 },
+                  ],
+                  rows: Array.from({ length: 60 }, (_, index) => [
+                    `Diagnóstico número ${index + 1}`,
+                    'J00',
+                  ]),
+                },
+              ],
+            },
+          ],
+        },
+        images,
+        metadata,
+      ),
+    );
+
+    expect(pages.length).toBeLessThanOrEqual(3);
+    // The first page is not left empty: the block starts on it.
+    expect(pages[0]?.some((item) => item.text === 'Diagnóstico número 1')).toBe(true); // prettier-ignore
+    const rows = pages.flat().filter((item) => /^Diagnóstico número \d+$/.test(item.text)); // prettier-ignore
+    // Every row once, and none over the footer.
+    expect(new Set(rows.map((row) => row.text)).size).toBe(60);
+    expect(rows).toHaveLength(60);
+    expect(rows.every((row) => row.y > footerTop)).toBe(true);
+    // The continuation says what it is.
+    expect(pages[1]?.some((item) => item.text.includes('(CONTINUACIÓN)'))).toBe(true); // prettier-ignore
+  });
+
+  it('DOC-072 unas indicaciones de orden que no caben siguen en otro recuadro, sin pisar el pie', async () => {
+    const pages = await itemsOf(
+      await renderer.render(
+        {
+          ...base,
+          blocks: [
+            {
+              kind: 'box',
+              light: true,
+              blocks: [
+                { kind: 'caption', text: 'Indicaciones al paciente' },
+                {
+                  kind: 'fields',
+                  columns: 1,
+                  entries: Array.from({ length: 45 }, (_, index) => ({
+                    label: 'Preparación',
+                    value: `Preparación número ${index + 1}`,
+                  })),
+                },
+              ],
+            },
+          ],
+        },
+        images,
+        metadata,
+      ),
+    );
+
+    expect(pages.length).toBeLessThanOrEqual(3);
+    const rows = pages.flat().filter((item) => /^Preparación número \d+$/.test(item.text)); // prettier-ignore
+    expect(rows).toHaveLength(45);
+    expect(rows.every((row) => row.y > footerTop)).toBe(true);
+  });
+
+  it('DOC-106 un detalle de RIDE que cambia de página repite su cabecera', async () => {
+    const pages = await itemsOf(
+      await renderer.render(
+        {
+          ...base,
+          blocks: [
+            {
+              kind: 'table',
+              framed: 'grid',
+              columns: [
+                { header: 'Cód. principal', width: 0.3 },
+                { header: 'Descripción', width: 0.7 },
+              ],
+              rows: Array.from({ length: 70 }, (_, index) => [`C${index + 1}`, 'Línea']), // prettier-ignore
+            },
+          ],
+        },
+        images,
+        metadata,
+      ),
+    );
+    expect(pages.length).toBeGreaterThan(1);
+    for (const page of pages) {
+      expect(page.some((item) => item.text === 'Cód. principal')).toBe(true);
+    }
+  });
+});
+
+describe('DOC-101 DOC-071 los trozos de un recuadro firmado', () => {
+  const itemsOf = async (pdf: Buffer) => {
+    const proxy = await getDocumentProxy(new Uint8Array(pdf));
+    const pages = [];
+    for (let number = 1; number <= proxy.numPages; number += 1) {
+      const page = await proxy.getPage(number);
+      pages.push(
+        (await page.getTextContent()).items.flatMap((item) =>
+          'str' in item && item.str.trim() !== ''
+            ? [{ text: item.str, y: item.transform[5] as number }]
+            : [],
+        ),
+      );
+    }
+    return pages;
+  };
+  const footerTop = millimetresToPoints(15 + 18);
+  const base: DocumentLayout = { ...layout, tearOff: null };
+  // A value that fits a full-width row and wraps beside the seal's column.
+  // One line at full width, two beside the seal's 53 mm column.
+  const wide = (n: number) =>
+    `Valor ${n} ${'abcdefg '.repeat(14)}que en el ancho completo cabe en una línea pero no al lado del sello`;
+  /** The footer's own lines, which live under its top by design. */
+  const footer =
+    /^(Documento electrónico|Verifique|Copia de respaldo|Clínica de especialidades|Página)/;
+
+  it('DOC-101 el último trozo de un bloque firmado se mide con su sello, y nada pisa el pie', async () => {
+    for (const count of [13, 15, 29, 44]) {
+      const pages = await itemsOf(
+        await renderer.render(
+          {
+            ...base,
+            blocks: [
+              {
+                kind: 'section',
+                title: 'E. Datos del profesional responsable',
+                rows: Array.from({ length: count }, (_, index) => ({
+                  kind: 'cells' as const,
+                  cells: [
+                    {
+                      label: `Dato ${index + 1}`,
+                      value: wide(index + 1),
+                      width: 1,
+                    },
+                  ],
+                })),
+                signature: { caption: 'Firma y sello del bloque', image: null },
+              },
+            ],
+          },
+          images,
+          metadata,
+        ),
+      );
+      for (const [index, page] of pages.entries()) {
+        // Every page is one the renderer opened: with its header.
+        expect(page.some((item) => item.text === 'RECETA MÉDICA'), `${count} filas, página ${index + 1}`).toBe(true); // prettier-ignore
+        const body = page.filter((item) => !footer.test(item.text));
+        expect(body.filter((item) => item.y <= footerTop), `${count} filas, página ${index + 1}`).toEqual([]); // prettier-ignore
+      }
+      // The seal shares its page with data it closes.
+      const sealed = pages.find((page) => page.some((item) => item.text.includes('Firma y sello del bloque'))); // prettier-ignore
+      expect(sealed?.some((item) => item.text.startsWith('Valor '))).toBe(true);
+    }
+  });
+
+  it('DOC-101 un recuadro con campos y sello que se parte no deja el sello solo', async () => {
+    const pages = await itemsOf(
+      await renderer.render(
+        {
+          ...base,
+          blocks: [
+            {
+              kind: 'box',
+              blocks: [
+                {
+                  kind: 'fields',
+                  columns: 1,
+                  entries: Array.from({ length: 38 }, (_, index) => ({
+                    label: `Campo ${index + 1}`,
+                    value: `Valor del campo ${index + 1}`,
+                  })),
+                },
+                {
+                  kind: 'signature',
+                  caption: 'Sello del recuadro',
+                  image: null,
+                },
+              ],
+            },
+          ],
+        },
+        images,
+        metadata,
+      ),
+    );
+    const sealed = pages.find((page) => page.some((item) => item.text.includes('Sello del recuadro'))); // prettier-ignore
+    expect(
+      sealed?.some((item) => item.text.startsWith('Valor del campo')),
+    ).toBe(true);
+  });
+
+  it('DOC-071 un bloque largo empieza en lo que queda de la página, no en la siguiente', async () => {
+    const pages = await itemsOf(
+      await renderer.render(
+        {
+          ...base,
+          blocks: [
+            {
+              kind: 'section',
+              title: 'A. Datos',
+              rows: Array.from({ length: 8 }, (_, index) => ({
+                kind: 'cells' as const,
+                cells: [{ label: `A${index + 1}`, value: 'x', width: 1 }],
+              })),
+            },
+            {
+              kind: 'section',
+              title: 'D. Diagnóstico',
+              rows: [
+                {
+                  kind: 'table',
+                  columns: [{ header: 'Diagnóstico', width: 1 }],
+                  rows: Array.from({ length: 80 }, (_, index) => [`Diagnóstico número ${index + 1}`]), // prettier-ignore
+                },
+              ],
+            },
+          ],
+        },
+        images,
+        metadata,
+      ),
+    );
+    expect(pages[0]?.some((item) => item.text === 'Diagnóstico número 1')).toBe(true); // prettier-ignore
+  });
+
+  it('DOC-072 la continuación de un recuadro sin título repite su rótulo', async () => {
+    const pages = await itemsOf(
+      await renderer.render(
+        {
+          ...base,
+          blocks: [
+            {
+              kind: 'box',
+              light: true,
+              blocks: [
+                { kind: 'caption', text: 'Indicaciones al paciente' },
+                {
+                  kind: 'fields',
+                  columns: 1,
+                  entries: Array.from({ length: 45 }, (_, index) => ({
+                    label: 'Preparación',
+                    value: `Preparación número ${index + 1}`,
+                  })),
+                },
+              ],
+            },
+          ],
+        },
+        images,
+        metadata,
+      ),
+    );
+    expect(pages.length).toBeGreaterThan(1);
+    expect(pages[1]?.some((item) => item.text.includes('Indicaciones al paciente (continuación)'))).toBe(true); // prettier-ignore
+  });
+});

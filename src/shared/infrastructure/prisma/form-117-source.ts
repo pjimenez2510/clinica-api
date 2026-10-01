@@ -1,7 +1,11 @@
 import type { Prisma } from '@prisma/client';
 
 import type { ClinicalDate } from '../../domain/clinic-time';
-import type { Form117Source } from '../../domain/form-117/form-117';
+import type {
+  DiagnosisCertainty,
+  Form117Diagnosis,
+  Form117Source,
+} from '../../domain/form-117/form-117';
 
 /**
  * CER-020 to CER-038. What form 117 is composed from, read ONCE and the same
@@ -98,10 +102,17 @@ function calendarDate(value: Date): ClinicalDate {
   return value.toISOString().slice(0, 10) as ClinicalDate;
 }
 
-/** The frozen copy of the diagnoses, as `issue` wrote it. */
-function frozenDiagnoses(
-  value: Prisma.JsonValue,
-): { code: string; display: string }[] {
+/** CER-027. The certainties a frozen diagnosis may carry. */
+const CERTAINTIES: readonly DiagnosisCertainty[] = [
+  'PRESUMPTIVE',
+  'DEFINITIVE',
+];
+
+/**
+ * The frozen copy of the diagnoses, as `issue` wrote it. A copy written before
+ * it kept the certainty has none, and stays without: `null`, not a guess.
+ */
+export function frozenDiagnoses(value: Prisma.JsonValue): Form117Diagnosis[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((entry) =>
     entry !== null &&
@@ -109,7 +120,14 @@ function frozenDiagnoses(
     !Array.isArray(entry) &&
     typeof entry.code === 'string' &&
     typeof entry.display === 'string'
-      ? [{ code: entry.code, display: entry.display }]
+      ? [
+          {
+            code: entry.code,
+            display: entry.display,
+            certainty:
+              CERTAINTIES.find((known) => known === entry.certainty) ?? null,
+          },
+        ]
       : [],
   );
 }

@@ -140,7 +140,8 @@ export class PrismaCertificateRepository implements CertificateRepository {
           // without it.
           diagnoses: {
             orderBy: [{ rank: 'asc' }, { recordedAt: 'asc' }],
-            select: { cie10Code: true, cie10Display: true },
+            // CER-027. With its certainty, for the PRE and DEF columns.
+            select: { cie10Code: true, cie10Display: true, certainty: true },
           },
           // CER-038. The chart of the attention, read where the row is written
           // and copied: a later correction of the chart does not rewrite an
@@ -238,6 +239,7 @@ export class PrismaCertificateRepository implements CertificateRepository {
             ? encounter.diagnoses.map((diagnosis) => ({
                 code: diagnosis.cie10Code,
                 display: diagnosis.cie10Display,
+                certainty: diagnosis.certainty,
               }))
             : [],
           // Only on a rest, which is what prints them (CER-038): an attendance
