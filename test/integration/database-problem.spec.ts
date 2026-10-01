@@ -410,6 +410,15 @@ describe('database errors become usable responses', () => {
       practitionerId: practitioner.id,
       patientId: patient.id,
     });
+    // Control positivo: the practitioner who attended issues it without one.
+    await expect(
+      certificate(prisma, {
+        encounterId: encounter.id,
+        patientId: patient.id,
+        issuedById: practitioner.id,
+        issuedAt: encounter.startedAt,
+      }),
+    ).resolves.toBe(1);
 
     const problem = await problemFrom(
       certificate(prisma, {
@@ -501,6 +510,10 @@ describe('database errors become usable responses', () => {
       extractDatabaseProblem(raised('23514', 'nobody_registered_this: x'))
         ?.code,
     ).toBe('CHECK_FAILED');
+    expect(
+      extractDatabaseProblem(raised('23P01', 'nobody_registered_this: x'))
+        ?.code,
+    ).toBe('OVERLAPPING_RECORD');
     expect(
       extractDatabaseProblem(
         raised('23514', 'value medical_certificate_issuer_reason_required: x'),
