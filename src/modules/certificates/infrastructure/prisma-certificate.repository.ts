@@ -170,7 +170,7 @@ export class PrismaCertificateRepository implements CertificateRepository {
        * `medical_certificate_issue_rules` takes, so the rests read below are
        * every rest that can be there when this one is written.
        */
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended('medical_certificate_rest:' || ${encounter.patientId}::text, 0))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('medical_certificate_rest:' || ${encounter.patientId}::text, 0))`;
       const rests = await tx.medicalCertificate.findMany({
         where: {
           patientId: encounter.patientId,

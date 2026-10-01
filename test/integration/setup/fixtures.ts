@@ -196,6 +196,47 @@ export async function createEncounter(
   });
 }
 
+/**
+ * A CIE-10 diagnosis on an attention, its concept made if missing. Ranked
+ * after the ones already there: 1, the principal, is unique per attention.
+ */
+export async function createDiagnosis(
+  prisma: PrismaClient,
+  encounterId: string,
+  code: string,
+  display = `Diagnóstico ${code}`,
+) {
+  const system = await prisma.catalogSystem.upsert({
+    where: { code: 'CIE10' },
+    create: { code: 'CIE10', name: 'CIE-10' },
+    update: {},
+  });
+  const concept =
+    (await prisma.catalogConcept.findFirst({
+      where: { systemId: system.id, code },
+    })) ??
+    (await prisma.catalogConcept.create({
+      data: {
+        systemId: system.id,
+        code,
+        display,
+        validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+      },
+    }));
+  await prisma.encounterDiagnosis.create({
+    data: {
+      encounterId,
+      conceptId: concept.id,
+      cie10Code: code,
+      cie10Display: concept.display,
+      certainty: 'DEFINITIVE',
+      occurrence: 'FIRST_TIME',
+      // 1 is the principal diagnosis, unique per attention: the next ones follow.
+      rank: (await prisma.encounterDiagnosis.count({ where: { encounterId } })) + 1, // prettier-ignore
+    },
+  });
+}
+
 /** An hour of appointment, in UTC so the assertion does not depend on the host. */
 export function hourSlot(hour: number): { startsAt: Date; endsAt: Date } {
   return {

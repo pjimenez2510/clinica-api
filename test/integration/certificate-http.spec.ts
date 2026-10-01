@@ -22,7 +22,7 @@ import {
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
-import { createPatient, createSite } from './setup/fixtures';
+import { createDiagnosis, createPatient, createSite } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
 /**
@@ -319,31 +319,8 @@ describe('el certificado medico por HTTP', () => {
     return response.body as IssuedBody;
   }
 
-  async function aDiagnosis(encounter: string) {
-    const system = await prisma.catalogSystem.upsert({
-      where: { code: 'CIE10' },
-      create: { code: 'CIE10', name: 'CIE-10' },
-      update: {},
-    });
-    const concept = await prisma.catalogConcept.create({
-      data: {
-        systemId: system.id,
-        code: 'J00',
-        display: 'Rinofaringitis aguda',
-        validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
-      },
-    });
-    await prisma.encounterDiagnosis.create({
-      data: {
-        encounterId: encounter,
-        conceptId: concept.id,
-        cie10Code: 'J00',
-        cie10Display: 'Rinofaringitis aguda',
-        certainty: 'DEFINITIVE',
-        occurrence: 'FIRST_TIME',
-        rank: 1,
-      },
-    });
+  async function aDiagnosis(encounter: string, code = 'J00') {
+    await createDiagnosis(prisma, encounter, code, code === 'J00' ? 'Rinofaringitis aguda' : undefined); // prettier-ignore
   }
 
   it('CER-001 y CER-009 el medico emite certificados numerados 1 y 2 en su sede', async () => {
@@ -951,7 +928,8 @@ describe('el certificado medico por HTTP', () => {
   });
 
   it('CER-035 la maternidad sin fecha de parto se rechaza nombrandola, y con las tres se sirve en letras', async () => {
-    await aDiagnosis(encounterId);
+    // CER-049: la maternidad, sobre una atención con diagnóstico obstétrico.
+    await aDiagnosis(encounterId, 'O80');
     const maternity = restOf(30, {
       contingencyType: 'MATERNITY',
       maternityAdmissionOn: addDays(today, -1),

@@ -19,6 +19,7 @@ import {
   createPatient,
   createPractitioner,
   createSite,
+  createDiagnosis,
   createUser,
 } from './setup/fixtures';
 
@@ -404,7 +405,19 @@ describe('CER-034 y CER-035 la contingencia y la maternidad, garantizadas por la
   it('CER-035 la maternidad lleva sus tres fechas, y sin una de ellas la base la rechaza', async () => {
     const prisma = db();
     const scene = await aScene(prisma);
+    // CER-049: una maternidad sólo sobre una atención con diagnóstico obstétrico.
+    await createDiagnosis(prisma, scene.encounterId, 'O80');
     const before = (days: number) => addDays(scene.day, -days);
+
+    // The refusal first: the permitted row would make it overlap (CER-048),
+    // and the trigger would refuse it before the CHECK gets to.
+    await expect(
+      insertRest(prisma, scene, {
+        contingency: 'MATERNITY',
+        admission: before(3),
+        birth: before(2),
+      }),
+    ).rejects.toThrow(/medical_certificate_maternity_dates_together/);
 
     // Control positivo: ingreso, parto y alta.
     await expect(
@@ -415,14 +428,6 @@ describe('CER-034 y CER-035 la contingencia y la maternidad, garantizadas por la
         discharge: scene.day,
       }),
     ).resolves.toBe(1);
-
-    await expect(
-      insertRest(prisma, scene, {
-        contingency: 'MATERNITY',
-        admission: before(3),
-        birth: before(2),
-      }),
-    ).rejects.toThrow(/medical_certificate_maternity_dates_together/);
   });
 
   it('CER-035 las fechas de maternidad no caben en otra contingencia', async () => {
