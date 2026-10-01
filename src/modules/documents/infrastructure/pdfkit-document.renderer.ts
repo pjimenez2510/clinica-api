@@ -81,6 +81,8 @@ const ALERT = '#8a2c1f';
 const STRIP_FILL = '#f2f5f4';
 /** DOC-105, DOC-106. Title bars and table headers of the framed blocks. */
 const BAR_FILL = '#e6ecea';
+/** DOC-075. The ink of an informative note: the template's #3b4541. */
+const NOTE_INK = '#3b4541';
 /** DOC-038. The sample mark: light enough to read the document through. */
 const WATERMARK = '#e1e6e4';
 
@@ -763,6 +765,10 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         this.paintStrip(doc, block, left, width, cursor, ensure);
         return;
 
+      case 'note':
+        this.paintNote(doc, block, left, width, cursor, ensure);
+        return;
+
       case 'table':
         this.paintTable(doc, block, left, width, cursor, ensure);
         return;
@@ -1137,6 +1143,55 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
       .stroke();
     doc.rect(left, top, width, bottom - top).lineWidth(0.75).strokeColor(INK).stroke(); // prettier-ignore
     return bottom;
+  }
+
+  /**
+   * DOC-075. An informative note on the light grey band, small and in a
+   * softer ink: read by whoever holds the paper, not part of its data.
+   */
+  private paintNote(
+    doc: PDFKit.PDFDocument,
+    block: Extract<Block, { kind: 'note' }>,
+    left: number,
+    width: number,
+    cursor: Cursor,
+    ensure: Ensure,
+  ): void {
+    const padX = mm(2.6);
+    const padY = mm(2.1);
+    const inner = width - 2 * padX;
+    const lineOf = (line: { label?: string; text: string }): string =>
+      `${line.label ?? ''}${line.text}`;
+    // Measured in bold, the wider face: a label that wraps cannot run short.
+    const height =
+      block.lines.reduce(
+        (total, line) =>
+          total + 1 + doc.font(SANS_BOLD).fontSize(SIZE.label).heightOfString(lineOf(line), { width: inner }), // prettier-ignore
+        0,
+      ) +
+      2 * padY;
+
+    ensure(height + mm(3));
+    const top = cursor.y;
+    doc
+      .roundedRect(left, top, width, height, mm(STRIP_RADIUS_MM))
+      .fillColor(STRIP_FILL)
+      .fill();
+    let y = top + padY;
+    for (const line of block.lines) {
+      doc.fontSize(SIZE.label).fillColor(NOTE_INK);
+      if (line.label !== undefined) {
+        doc
+          .font(SANS_BOLD)
+          .text(line.label, left + padX, y, { width: inner, continued: true })
+          .font(SANS)
+          .text(line.text);
+      } else {
+        doc.font(SANS).text(line.text, left + padX, y, { width: inner });
+      }
+      y = doc.y + 1;
+    }
+    cursor.y = Math.max(top + height, y + padY) + mm(3);
   }
 
   /**

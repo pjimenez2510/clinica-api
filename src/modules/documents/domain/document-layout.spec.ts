@@ -127,6 +127,10 @@ function textOf(blocks: readonly Block[]): string {
           return block.text;
         case 'barcode':
           return block.value;
+        case 'note':
+          return block.lines
+            .map((line) => `${line.label ?? ''}${line.text}`)
+            .join('\n');
         default:
           return '';
       }
@@ -892,6 +896,46 @@ describe('DOC-075 el certificado sobre el formulario 117 y la plantilla aprobada
     ]) {
       expect(cells).toContainEqual(expect.objectContaining({ label, value }));
     }
+  });
+
+  it('DOC-075 CER-013 el reposo lleva al pie la nota de validación del IESS, y la asistencia no', () => {
+    const noteOf = (layout: DocumentLayout) =>
+      layout.blocks.flatMap((block) => (block.kind === 'note' ? [block] : []));
+
+    const rest = noteOf(composeLayout(certificate(), context, template));
+    expect(rest).toHaveLength(1);
+    const text = textOf(rest);
+    expect(text).toContain('hasta 8 días después del fin del reposo');
+    expect(text).toContain('se valida en ventanilla');
+    expect(text).toContain('Seguro Social Campesino');
+    // It prints a diagnosis, so it says whose consent covers it.
+    expect(text).toContain('A.M. 5216-A');
+    // Closes the document: after block E.
+    const blocks = composeLayout(certificate(), context, template).blocks;
+    expect(blocks.at(-1)?.kind).toBe('note');
+
+    const attendance = form({
+      type: 'ATTENDANCE',
+      restFrom: null,
+      restTo: null,
+      contingencyType: null,
+      includeDiagnosis: false,
+    });
+    expect(
+      noteOf(composeLayout(certificate(attendance), context, template)),
+    ).toEqual([]);
+  });
+
+  it('DOC-075 un reposo sin diagnóstico no dice que lleva datos de salud', () => {
+    const text = textOf(
+      composeLayout(
+        certificate(form({ includeDiagnosis: false })),
+        context,
+        template,
+      ).blocks.filter((block) => block.kind === 'note'),
+    );
+    expect(text).toContain('Seguro Social Campesino');
+    expect(text).not.toContain('A.M. 5216-A');
   });
 
   it('DOC-075 CER-038 el certificado de asistencia no imprime datos laborales', () => {

@@ -109,6 +109,12 @@ export type Block =
    */
   | { readonly kind: 'strip'; readonly entries: readonly LabelledValue[] }
   /**
+   * An informative note on a light grey band, small: what the paper's holder
+   * should know and is not data of the document — the IESS validation of a
+   * rest (DOC-075). `label`, when present, is set in bold before the text.
+   */
+  | { readonly kind: 'note'; readonly lines: readonly { readonly label?: string; readonly text: string }[] } // prettier-ignore
+  /**
    * `dense`: rows set close, as a list of figures rather than lines somebody
    * reads one by one — the RIDE's ten subtotals (DOC-076), which the approved
    * page fits beside the payment box on one sheet.

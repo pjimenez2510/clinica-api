@@ -703,6 +703,31 @@ export function composeCertificateLayout(
     },
   });
 
+  // DOC-075, CER-013 (D-095). How the rest is validated, on the paper the
+  // patient carries to the IESS. Sources in D-075: the IESS's procedure (up to
+  // eight days after the rest ends), its 2024 guide (a hand signature goes to
+  // the counter; online needs a digital signature, which a credential is not)
+  // and its 2025 digital validation (who it does not apply to). Only on a
+  // rest: an attendance certificate is not validated.
+  if (form.type === 'MEDICAL_REST') {
+    blocks.push({
+      kind: 'note',
+      lines: [
+        {
+          label: 'Validación en el IESS: ',
+          text: 'hasta 8 días después del fin del reposo. Este certificado lleva firma por credencial: se valida en ventanilla, impreso y firmado a mano. La validación en línea exige firma electrónica del profesional.',
+        },
+        {
+          // A.M. 5216-A only where there is something it covers: a health
+          // datum, which is exactly when the diagnosis is printed.
+          text: form.confidential
+            ? 'No aplica a afiliados voluntarios, menores de edad, jubilados ni afiliados al Seguro Social Campesino. Contiene datos de salud: su uso lo autoriza el paciente (A.M. 5216-A).'
+            : 'No aplica a afiliados voluntarios, menores de edad, jubilados ni afiliados al Seguro Social Campesino.',
+        },
+      ],
+    });
+  }
+
   return {
     frame: {
       ...composeFrame(context, template, {
