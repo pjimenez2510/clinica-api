@@ -206,7 +206,7 @@ export class VoucherDispatchService {
   }
 
   /**
-   * SRI-056, SC-072. The safety net under «the notice swallows the error»:
+   * SRI-056, SC-084. The safety net under «the notice swallows the error»:
    * prepares what was not prepared, signs what was waiting, and re-queues
    * what has no job. The queue's singleton key drops what is already queued.
    */
@@ -216,7 +216,7 @@ export class VoucherDispatchService {
     for (const invoiceId of work.invoicesWithoutVoucher) {
       await this.preparation.prepare(invoiceId);
     }
-    // SC-072. One voucher that throws —a figure that does not add up, an
+    // SC-084. One voucher that throws —a figure that does not add up, an
     // opening that cannot be written— is logged and skipped: it must not
     // stop the sweep from reaching the rest, every minute, for ever.
     for (const voucher of work.unsigned) {

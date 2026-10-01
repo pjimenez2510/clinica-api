@@ -518,7 +518,7 @@ describe('SRI-043 a SRI-052 cada respuesta del SRI, contra el doble', () => {
     expect((await voucherOf(invoice.id)).status).toBe('RECEIVED');
   });
 
-  it('SC-071 en todo el recorrido cada intento lleva la clave con que nació el comprobante', async () => {
+  it('SC-083 en todo el recorrido cada intento lleva la clave con que nació el comprobante', async () => {
     const { invoice, voucher } = await aSignedVoucher();
     double.setScenario(voucher.accessKey, 'IN_PROCESS_70');
     await dispatch.run('SEND', voucher.id);
@@ -639,7 +639,7 @@ describe('SRI-040, SRI-057 la cola persistente', () => {
     expect(await jobsFor(QUEUE_NAMES.SEND, voucher.accessKey)).toHaveLength(1);
   });
 
-  it('SRI-040 SC-072 el worker real lleva el comprobante solo de firmado a autorizado y entregado', async () => {
+  it('SRI-040 SC-084 el worker real lleva el comprobante solo de firmado a autorizado y entregado', async () => {
     const worker = new SriQueueWorker(connection, dispatch, silentLogger);
     await worker.start();
     const { invoice } = await aSignedVoucher();

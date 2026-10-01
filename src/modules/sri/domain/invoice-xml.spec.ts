@@ -14,6 +14,7 @@ import {
   hasVoucherRootId,
   INVOICE_SCHEMA_VERSION,
   VoucherKeyMismatchError,
+  VoucherLineCodeTooLongError,
   VoucherTotalsMismatchError,
   type InvoiceVoucherSource,
 } from './invoice-xml';
@@ -331,17 +332,26 @@ describe('SRI-014 la cantidad fraccionaria de un insumo', () => {
 });
 
 describe('SRI-011 el código de la prestación en el comprobante', () => {
-  it('SRI-011 un código de más de 25 caracteres se omite, sin recortarlo, y el XML valida', async () => {
+  it('SRI-011 el código es obligatorio (Ficha, pág. 50): uno de más de 25 se rechaza, ni se recorta ni se omite', () => {
     const long = aSource({
       lines: [
-        { ...aSource().lines[0]!, code: 'PROC-ESTETICA-TOXINA-BOTULINICA' },
+        { ...aSource().lines[0]!, code: 'C'.repeat(26) },
         aSource().lines[1]!,
       ],
     });
-    const xml = composeInvoiceXml(long);
-    expect(xml).not.toContain('PROC-ESTETICA-TOXINA');
-    expect(xml).toContain('<codigoPrincipal>INS-GUANTES</codigoPrincipal>');
-    expect((await validateAgainstXsd(xml)).valid).toBe(true);
+    expect(() => composeInvoiceXml(long)).toThrow(VoucherLineCodeTooLongError);
+    // Control: 25 is admitted and travels whole.
+    const xml = composeInvoiceXml(
+      aSource({
+        lines: [
+          { ...aSource().lines[0]!, code: 'C'.repeat(25) },
+          aSource().lines[1]!,
+        ],
+      }),
+    );
+    expect(xml).toContain(
+      `<codigoPrincipal>${'C'.repeat(25)}</codigoPrincipal>`,
+    );
   });
 });
 

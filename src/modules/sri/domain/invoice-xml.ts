@@ -341,19 +341,28 @@ function totalTaxes(computed: readonly ComputedLine[]): string {
     .join('');
 }
 
-/** The XSD's `codigoPrincipal`: at most 25 characters, and optional. */
+/**
+ * `codigoPrincipal`: the XSD marks it optional, but the Ficha Técnica v2.34
+ * makes it MANDATORY with at most 25 characters (the invoice's field table,
+ * p. 50). Billing refuses to issue with a longer one (BI-171); one that slips
+ * through is a defect, refused here rather than cut or left out.
+ */
 const MAX_PRINCIPAL_CODE = 25;
 
+export class VoucherLineCodeTooLongError extends Error {
+  constructor(readonly code: string) {
+    super('A line code exceeds the 25 characters of codigoPrincipal');
+    this.name = 'VoucherLineCodeTooLongError';
+  }
+}
+
 function detail({ line, base, tax }: ComputedLine): string {
+  if (line.code.length > MAX_PRINCIPAL_CODE) {
+    throw new VoucherLineCodeTooLongError(line.code);
+  }
   return element(
     'detalle',
-    // A catalogue code longer than the XSD admits is left out rather than
-    // cut: a truncated code could be another service's. The line is still
-    // identified by its description, which is mandatory.
-    optional(
-      'codigoPrincipal',
-      line.code.length <= MAX_PRINCIPAL_CODE ? line.code : null,
-    ) +
+    text('codigoPrincipal', line.code) +
       text('descripcion', line.description) +
       text('cantidad', quantityText(toThousandths(line.quantity))) +
       text('precioUnitario', sixDecimals(toCents(line.unitPrice))) +

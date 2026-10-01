@@ -184,15 +184,15 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
 
 ## Criterios de éxito
 
-- **SC-070** — Emitir una factura con el SRI caído tarda lo mismo que con el SRI
+- **SC-082** — Emitir una factura con el SRI caído tarda lo mismo que con el SRI
   arriba: la emisión no hace ninguna llamada de red. Se mide con el doble
   configurado para no contestar.
-- **SC-071** — El 100 % de los comprobantes conserva la clave con que nació:
+- **SC-083** — El 100 % de los comprobantes conserva la clave con que nació:
   ninguna fila de `electronic_voucher_attempt` lleva una clave distinta de la de
   su comprobante.
-- **SC-072** — Ningún comprobante en `SIGNED` o `RECEIVED` queda sin trabajo
+- **SC-084** — Ningún comprobante en `SIGNED` o `RECEIVED` queda sin trabajo
   programado: tras un reinicio del proceso, la cola o el barrido lo retoman.
-- **SC-073** — La factura que el SRI autoriza le llega al cliente con dirección
+- **SC-085** — La factura que el SRI autoriza le llega al cliente con dirección
   de correo, sin intervención de nadie.
 
 ## Supuestos
@@ -483,7 +483,7 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
   facturas emitidas sin comprobante, firme los preparados sin firma en cuanto
   haya certificado, y vuelva a programar los comprobantes `SIGNED` o `RECEIVED`
   que no tengan trabajo vivo en la cola.
-  > SC-072. Es lo que hace segura la frase «el aviso se traga el error».
+  > SC-084. Es lo que hace segura la frase «el aviso se traga el error».
   > Revisión del 01-10-2026: un comprobante que lanza se anota y se salta (no
   > detiene el resto); el barrido no reintenta lo que solo arregla cargar un
   > certificado (SRI-084) ni las facturas cuya sede aún no tiene los datos

@@ -588,7 +588,7 @@ describe('SRI-057 el despacho es idempotente', () => {
     expect(f.queue.schedule).not.toHaveBeenCalled();
   });
 
-  it('SC-072 un comprobante que falla no detiene el barrido: los demás siguen', async () => {
+  it('SC-084 un comprobante que falla no detiene el barrido: los demás siguen', async () => {
     const f = fakes();
     f.vouchers.pendingWork.mockResolvedValue({
       invoicesWithoutVoucher: [],

@@ -337,8 +337,8 @@ describe('SRI-047 un comprobante autorizado no se mueve', () => {
   });
 });
 
-describe('SRI-051, SC-071 cada llamada al SRI queda, con la clave de su comprobante', () => {
-  it('SRI-051 SC-071 la base admite el intento con su clave, rechaza la de otro y no deja tocarlo', async () => {
+describe('SRI-051, SC-083 cada llamada al SRI queda, con la clave de su comprobante', () => {
+  it('SRI-051 SC-083 la base admite el intento con su clave, rechaza la de otro y no deja tocarlo', async () => {
     const invoice = await anIssuedInvoice();
     const voucher = await insertVoucher(context.prisma, invoice.id);
     const other = await insertVoucher(

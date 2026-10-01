@@ -312,3 +312,10 @@ export const PAYMENT_METHODS = [
 ] as const;
 
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
+
+/**
+ * BI-171. The voucher's `codigoPrincipal`: mandatory, at most 25 characters
+ * (Ficha Técnica v2.34, the invoice's field table, p. 50). The catalogue
+ * admits no longer code, and an older one is refused at issuance.
+ */
+export const MAX_VOUCHER_SERVICE_CODE = 25;

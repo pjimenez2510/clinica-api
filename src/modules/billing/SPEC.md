@@ -305,7 +305,7 @@ SRI-012).
 
 **Prueba independiente:** facturar una cuenta, añadirle un cargo, facturarla
 otra vez, y comprobar que cada factura tiene exactamente sus líneas.
-**Cubre:** BI-169, BI-170.
+**Cubre:** BI-169, BI-170, BI-171.
 **Solo servidor:** BI-169. Es una garantía de almacenamiento.
 
 > Las BI-003, BI-004, BI-007 y BI-130 a BI-135 **no son una entrega**: aplican a
@@ -1076,6 +1076,14 @@ es falsa, hay requisitos que cambian.
   > emitir. La Ficha v2.34 la exige en el comprobante (`pagos/pago/formaPago`,
   > sri/SPEC.md SRI-017) y declarar efectivo lo que se pagó con tarjeta es un
   > dato falso ante el SRI. Sin valor por defecto: la elige quien cobra.
+- **BI-171** — SI alguna prestación de los cargos a facturar tiene un código de
+  más de 25 caracteres ENTONCES el sistema DEBERÁ rechazar la emisión con
+  `INVOICE_SERVICE_CODE_TOO_LONG`, nombrando la prestación y su código, antes
+  de tomar el secuencial; y el catálogo NO DEBERÁ admitir un código nuevo de
+  más de 25 caracteres.
+  > `codigoPrincipal` es obligatorio y de máximo 25 en la Ficha Técnica v2.34
+  > (tabla de campos de la factura, pág. 50); el XSD lo deja opcional, pero el
+  > SRI aplica la Ficha. Emitir enviaría un XML que vuelve con el error 35.
 - **BI-089** — SI se intenta emitir una factura sin ninguna línea, ENTONCES el
   sistema DEBERÁ rechazarla con `INVOICE_HAS_NO_ITEMS`.
 - **BI-090** — El sistema NO DEBERÁ exponer ninguna operación que modifique el
@@ -1468,6 +1476,7 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `INVOICE_IMMUTABLE` | 409 | BI-084, BI-090 |
 | `FINAL_CONSUMER_NOT_CONFIRMED` | 422 | BI-081 |
 | `INVOICE_HAS_NO_ITEMS` | 422 | BI-089 |
+| `INVOICE_SERVICE_CODE_TOO_LONG` | 422 | BI-171 |
 | `EMISSION_POINT_INACTIVE` | 422 | BI-085 |
 | `CREDIT_NOTE_REASON_REQUIRED` | 422 | BI-091 |
 | `VOID_WINDOW_EXPIRED` | 409 | BI-092 |

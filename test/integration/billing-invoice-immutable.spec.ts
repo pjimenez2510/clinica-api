@@ -436,6 +436,36 @@ describe('BI-083, BI-086, BI-088, BI-089 lo que la factura copia y lo que rechaz
     await expect(context.prisma.invoice.count()).resolves.toBe(0);
   });
 
+  it('BI-171 se niega a emitir si una prestación tiene un código que el SRI no acepta, y la nombra', async () => {
+    // A catalogue code from before the 25-character limit (sri SRI-011).
+    await context.prisma.$executeRaw`
+      UPDATE "billable_service" SET "code" = ${'C'.repeat(26)}
+       WHERE "id" = ${context.serviceId}::uuid`;
+    const service = await context.prisma.billableService.findUniqueOrThrow({
+      where: { id: context.serviceId },
+    });
+    const accountId = await anAccountReadyToInvoice();
+
+    const rejection = (await rejectionOf(issue(accountId))) as {
+      code: string;
+      params: Record<string, string>;
+      userTitle: string;
+    };
+    expect(rejection.code).toBe('INVOICE_SERVICE_CODE_TOO_LONG');
+    expect(rejection.userTitle).toContain(service.name);
+    expect(rejection.userTitle).toContain('C'.repeat(26));
+    // No sequential burned on a voucher the SRI would return (error 35).
+    await expect(context.prisma.invoice.count()).resolves.toBe(0);
+
+    // Control: at 25 characters the same account is invoiced.
+    await context.prisma.$executeRaw`
+      UPDATE "billable_service" SET "code" = ${'C'.repeat(25)}
+       WHERE "id" = ${context.serviceId}::uuid`;
+    await expect(issue(accountId)).resolves.toMatchObject({
+      status: 'ISSUED',
+    });
+  });
+
   it('BI-001 cuadra los totales o la base lo rechaza', async () => {
     // `invoice_total_is_consistent`. If the arithmetic ever disagreed with the
     // columns, the right outcome is that NO invoice exists: a document the SRI

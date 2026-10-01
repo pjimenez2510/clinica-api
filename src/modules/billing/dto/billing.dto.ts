@@ -7,7 +7,11 @@ import {
 } from '../../../shared/domain/clinic-time';
 import { explicitFlag } from '../../../shared/http/query-flag';
 
-import { BUYER_IDENTIFICATION_TYPES, PAYMENT_METHODS } from '../domain/invoice';
+import {
+  BUYER_IDENTIFICATION_TYPES,
+  MAX_VOUCHER_SERVICE_CODE,
+  PAYMENT_METHODS,
+} from '../domain/invoice';
 import { PAYER_KINDS } from '../domain/billing.repository';
 import {
   CHARGE_ORIGINS,
@@ -87,12 +91,15 @@ export class CatalogueQueryDto extends createZodDto(catalogueQuerySchema) {}
  * transport boundary stops existing the moment a seed writes underneath it.
  */
 export const createServiceSchema = z.object({
-  // SRI-011. The voucher's `codigoPrincipal` admits 25 characters.
+  // BI-171. The voucher's `codigoPrincipal` is mandatory and admits 25.
   code: z
     .string()
     .trim()
     .min(1, 'Indique el código de la prestación')
-    .max(25, 'El código admite hasta 25 caracteres, lo que acepta el SRI'),
+    .max(
+      MAX_VOUCHER_SERVICE_CODE,
+      'El código admite hasta 25 caracteres, lo que acepta el SRI',
+    ),
   name: z.string().trim().min(1, 'Indique el nombre de la prestación').max(200),
   category: z.string().trim().min(1, 'Indique la categoría').max(60),
   /** BI-011. Nomenclature only: no amount is ever taken from the Tarifario. */

@@ -24,8 +24,10 @@ import {
   ActAlreadyChargedError,
   InvoiceHasNoItemsError,
   InvoiceImmutableError,
+  InvoiceServiceCodeTooLongError,
   PriceNotFoundError,
 } from '../domain/billing.errors';
+import { MAX_VOUCHER_SERVICE_CODE } from '../domain/invoice';
 import type { ChargeOrigin } from '../domain/charge-proposal';
 import {
   type ChargeStatus,
@@ -500,9 +502,22 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         const charges = await tx.chargeItem.findMany({
           where: { accountId: issuance.accountId, status: 'BILLABLE' },
           orderBy: { createdAt: 'asc' },
+          include: { billableService: { select: { code: true, name: true } } },
         });
 
         if (charges.length === 0) throw new InvoiceHasNoItemsError();
+
+        // BI-171. Before the sequential is taken.
+        const tooLong = charges.find(
+          (charge) =>
+            charge.billableService.code.length > MAX_VOUCHER_SERVICE_CODE,
+        );
+        if (tooLong) {
+          throw new InvoiceServiceCodeTooLongError(
+            tooLong.billableService.name,
+            tooLong.billableService.code,
+          );
+        }
 
         const totals = totalsOf(
           charges.map((row) => {
