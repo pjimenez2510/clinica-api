@@ -3,6 +3,8 @@ import type { Prisma } from '@prisma/client';
 import type { ClinicalDate } from '../../domain/clinic-time';
 import type { RestOverlap } from '../../domain/rest-overlap';
 
+import { chartScopeIds } from './patient-chart-scope';
+
 /**
  * What a merge of two charts does to the patient's REST CERTIFICATES
  * (PA-062, D-110 §7, provisional until the IESS confirms the procedure).
@@ -58,8 +60,9 @@ const dateOf = (value: Date) =>
 /**
  * The pairs of rests, one from each chart, neither revoked, that overlap with
  * one of the two a maternity rest — what CER-048 would have refused at issue.
- * The absorbed chart never holds others (no chains, PA-046); the survivor's
- * side is the survivor and what it absorbed before. Ordered so the notice
+ * Each side through its chart's scope (PA-055): the absorbed chart never holds
+ * others (no chains, PA-046); the survivor's is the survivor and what it
+ * absorbed before. Ordered so the notice
  * reads the same every time.
  */
 export async function maternityRestOverlapsOnMerge(
@@ -79,12 +82,11 @@ export async function maternityRestOverlapsOnMerge(
       JOIN medical_certificate AS surviving
         ON daterange(absorbed.rest_from, absorbed.rest_to, '[]')
            && daterange(surviving.rest_from, surviving.rest_to, '[]')
-     WHERE absorbed.patient_id = ${charts.absorbedChartId}::uuid
-       AND surviving.patient_id IN (
-             SELECT id FROM patient
-              WHERE (id = ${charts.survivingChartId}::uuid
-                     OR merged_into_id = ${charts.survivingChartId}::uuid)
-                AND id <> ${charts.absorbedChartId}::uuid)
+     WHERE absorbed.patient_id IN ${chartScopeIds(charts.absorbedChartId)}
+       AND surviving.patient_id IN ${chartScopeIds(charts.survivingChartId)}
+       -- The absorbed chart already points at the survivor: its own rests are
+       -- the other side, not this one.
+       AND surviving.patient_id <> ${charts.absorbedChartId}::uuid
        AND absorbed.type = 'MEDICAL_REST' AND surviving.type = 'MEDICAL_REST'
        AND absorbed.revoked_at IS NULL AND surviving.revoked_at IS NULL
        AND absorbed.rest_to >= absorbed.rest_from
