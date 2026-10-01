@@ -836,7 +836,11 @@ describe('la receta contra PostgreSQL', () => {
       const requester = { userId: practitioner.userId, sites: [site.id] };
 
       const composed = await service.compose(
-        { encounterId: encounter.id, items: [aLine(concept.id)] },
+        {
+          encounterId: encounter.id,
+          ...INDICATIONS,
+          items: [aLine(concept.id)],
+        },
         requester,
       );
 
