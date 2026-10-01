@@ -295,6 +295,7 @@ describe('el adaptador del informe', () => {
           unit: 'mg/dL',
           abnormalFlag: 'CRITICAL_LOW',
           observedAt: new Date('2026-09-16T13:00:00Z'),
+          _count: { notices: 0 },
           report: {
             serviceOrderId: ORDER,
             serviceOrder: {

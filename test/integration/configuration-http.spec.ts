@@ -765,7 +765,7 @@ describe('la configuración por HTTP', () => {
         // pantalla y no una migración.
         waitlistMaxContactAttempts: 3,
         cancelledRetention: 'NEVER',
-        criticalNoticeWithinMinutes: null,
+        criticalNoticeWithinMinutes: 60,
         criticalEscalationRoleId: null,
         unmatchedResultOwnerRoleId: null,
         unmatchedResultDeadlineHours: 24,
@@ -795,7 +795,7 @@ describe('la configuración por HTTP', () => {
         overbookingEnabled: true,
         overbookingPermission: 'agenda:overbook',
         cancelledRetention: 'NEVER',
-        criticalNoticeWithinMinutes: null,
+        criticalNoticeWithinMinutes: 60,
         criticalEscalationRoleId: null,
         unmatchedResultOwnerRoleId: null,
         unmatchedResultDeadlineHours: 24,
@@ -958,13 +958,24 @@ describe('la configuración por HTTP', () => {
       ).resolves.toMatchObject({ maxLeadDays: 90 });
     });
 
-    it('ORD-063 y ORD-046 guardan el plazo de los críticos y los roles de las colas, y rechazan un rol que no existe', async () => {
+    it('ORD-063, ORD-046 y ORD-065 guardan el plazo de los críticos y los roles de las colas, y rechazan un rol que no existe o que no puede trabajarlas', async () => {
       const site = await createSite();
       const role = await prisma.role.create({
         data: {
           code: 'GUARDIA_CLINICA',
           name: 'Responsable clínico de guardia',
+          // ORD-046, ORD-065: un rol que responde de una cola tiene que poder
+          // verla y trabajarla.
+          permissions: {
+            create: [
+              { permissionCode: 'record:read' },
+              { permissionCode: 'result:write' },
+            ],
+          },
         },
+      });
+      const cashier = await prisma.role.create({
+        data: { code: 'CAJA_PRUEBA', name: 'Caja de prueba' },
       });
 
       // Control positivo: un rol que existe se guarda, y `null` quita el plazo.
@@ -993,7 +1004,8 @@ describe('la configuración por HTTP', () => {
         unmatchedResultOwnerRoleId: '00000000-0000-7000-8000-000000000000',
       });
       const problem = response.body as Problem;
-      expect(response.status).toBeGreaterThanOrEqual(400);
+      // 422 y no 404: la clave foránea responde sobre un CAMPO del cuerpo.
+      expect(response.status).toBe(422);
       expect(problem.code).toBe('ROLE_NOT_FOUND');
       expect(problem.errors?.[0]?.field).toBe('unmatchedResultOwnerRoleId');
       expect(
@@ -1003,6 +1015,15 @@ describe('la configuración por HTTP', () => {
           })
         ).unmatchedResultOwnerRoleId,
       ).toBe(role.id);
+
+      // Y un rol que no puede trabajar la cola se rechaza con su campo.
+      const unable = await put(`/sites/${site.id}/parameters`, {
+        criticalEscalationRoleId: cashier.id,
+      }).expect(422);
+      expect((unable.body as Problem).code).toBe('ROLE_CANNOT_WORK_RESULTS');
+      expect((unable.body as Problem).errors?.[0]?.field).toBe(
+        'criticalEscalationRoleId',
+      );
     });
 
     it('CF-065 rechaza un tope de sobrecupos fuera de rango nombrando el rango', async () => {
@@ -1262,7 +1283,7 @@ describe('la configuración por HTTP', () => {
         overbookingPermission: 'agenda:overbook',
         waitlistMaxContactAttempts: 3,
         cancelledRetention: 'NEVER',
-        criticalNoticeWithinMinutes: null,
+        criticalNoticeWithinMinutes: 60,
         criticalEscalationRoleId: null,
         unmatchedResultOwnerRoleId: null,
         unmatchedResultDeadlineHours: 24,

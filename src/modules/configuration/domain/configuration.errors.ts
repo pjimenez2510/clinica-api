@@ -100,3 +100,33 @@ export class ParameterOutOfRangeError extends ValidationError {
     super('One or more parameters are out of range', {}, fieldErrors);
   }
 }
+
+/**
+ * ORD-046, ORD-065 (revisión clínica de F-07). The role named to answer for a
+ * results worklist cannot work it: it lacks `record:read` to see the queue or
+ * `result:write` to record the notice or pair the value.
+ *
+ * A queue whose owner cannot open it has no owner — «una cola que es de todos
+ * no es de nadie», and one that is of somebody who cannot see it is worse,
+ * because it looks owned.
+ */
+export class RoleCannotWorkResultsError extends ValidationError {
+  readonly code = 'ROLE_CANNOT_WORK_RESULTS';
+  override readonly userTitle =
+    'Ese rol no puede trabajar las colas de resultados: necesita ver la historia clínica y registrar resultados. Elija otro o concédale esos permisos';
+
+  constructor(field: string, missing: readonly string[]) {
+    super(
+      `Role lacks ${missing.join(', ')} to work the results worklists`,
+      {},
+      [
+        {
+          field,
+          code: 'ROLE_CANNOT_WORK_RESULTS',
+          message:
+            'Elija un rol que vea la historia clínica y registre resultados',
+        },
+      ],
+    );
+  }
+}

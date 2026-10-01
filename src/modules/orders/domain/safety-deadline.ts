@@ -63,3 +63,37 @@ export function unmatchedWait(
   const dueAt = new Date(observedAt.getTime() + deadlineHours * HOUR);
   return { dueAt, overdue: now > dueAt };
 }
+
+/** ORD-065, ORD-068. Whom the notice of a critical value is due to now. */
+export type CriticalNoticeTarget =
+  'ORDERING_PRACTITIONER' | 'ON_CALL_ROLE' | 'PATIENT';
+
+/**
+ * ORD-065, ORD-068, D-111 §2 and §3. Whom to tell, and whether the site left
+ * the escalation without anybody.
+ *
+ *  - OUT OF HOURS: the site's on-call role; without one, the PATIENT — art. 39
+ *    allows «al médico tratante y/o al usuario», and the treating doctor is
+ *    not there.
+ *  - IN HOURS AND OVERDUE: the on-call role; without one the worklist SAYS SO
+ *    (`escalationMissing`) and keeps the ordering practitioner, because D-111
+ *    §2 forbids escalating to nobody on its own.
+ *  - OTHERWISE: the practitioner who placed the order.
+ */
+export function criticalNoticeTarget(state: {
+  overdue: boolean | null;
+  afterHours: boolean;
+  hasOnCallRole: boolean;
+}): { target: CriticalNoticeTarget; escalationMissing: boolean } {
+  if (state.afterHours) {
+    return state.hasOnCallRole
+      ? { target: 'ON_CALL_ROLE', escalationMissing: false }
+      : { target: 'PATIENT', escalationMissing: true };
+  }
+  if (state.overdue === true) {
+    return state.hasOnCallRole
+      ? { target: 'ON_CALL_ROLE', escalationMissing: false }
+      : { target: 'ORDERING_PRACTITIONER', escalationMissing: true };
+  }
+  return { target: 'ORDERING_PRACTITIONER', escalationMissing: false };
+}

@@ -11,11 +11,13 @@ import type { PrismaService } from '../../src/shared/infrastructure/prisma/prism
 
 import { aScene } from './orders-fixtures';
 import { useDatabase } from './setup/database';
-import { createSite, createUser } from './setup/fixtures';
+import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
+
+import { createScheduleRule, createSite, createUser } from './setup/fixtures';
 
 /**
  * The notice of a critical value against a real PostgreSQL (ORD-062 to
- * ORD-065, A.M. 00002393 art. 39).
+ * ORD-068, A.M. 00002393 art. 39, D-111).
  *
  * WHAT ONLY THE DATABASE CAN DEMONSTRATE HERE: that the notice cannot be
  * rewritten or removed once written (ORD-064) — the trigger, not the absence of
@@ -25,18 +27,6 @@ import { createSite, createUser } from './setup/fixtures';
 const db = useDatabase();
 
 const silentAudit: AccessAuditRecorder = { record: () => Promise.resolve() };
-
-/** The trail, captured: ORD-062 says the notice leaves a row. */
-function capturingAudit() {
-  const entries: Parameters<AccessAuditRecorder['record']>[0][] = [];
-  const recorder: AccessAuditRecorder = {
-    record: (entry) => {
-      entries.push(entry);
-      return Promise.resolve();
-    },
-  };
-  return { entries, recorder };
-}
 
 const noopLogger = {
   setContext: () => undefined,
@@ -91,10 +81,46 @@ async function aCriticalGlucose(prisma: PrismaClient, now: Date) {
   return { ...scene, order, report, result };
 }
 
+/**
+ * NOON IN ECUADOR, TODAY — derived from the clock, never written by hand. The
+ * hour every in-hours rule below covers, whatever time the suite runs.
+ */
+function clinicNoon(): { now: Date; isoWeekday: number; day: string } {
+  const day = clinicalDateOf(new Date());
+  const weekday = new Date(`${day}T12:00:00Z`).getUTCDay();
+  return {
+    now: new Date(`${day}T12:00:00-05:00`),
+    isoWeekday: weekday === 0 ? 7 : weekday,
+    day,
+  };
+}
+
+/** The site works at noon today: one of its practitioners has a rule then. */
+async function siteInHours(
+  prisma: PrismaClient,
+  scene: { site: { id: string }; practitioner: { id: string } },
+  isoWeekday: number,
+) {
+  await createScheduleRule(
+    prisma,
+    { practitionerId: scene.practitioner.id, siteId: scene.site.id },
+    { weekday: isoWeekday, startTime: '08:00', endTime: '17:00' },
+  );
+}
+
+/** A notice that was actually given, with the read-back D-111 §4 requires. */
+const given = {
+  outcome: 'NOTIFIED' as const,
+  readBack: true,
+  recipientKind: 'PATIENT' as const,
+  recipientName: 'La paciente, al teléfono de su ficha',
+  channel: 'PHONE' as const,
+};
+
 describe('la constancia del aviso de un valor crítico contra PostgreSQL', () => {
-  it('ORD-064 no deja reescribir ni borrar la constancia del aviso, ni por SQL directo', async () => {
+  it('ORD-064 no deja reescribir, borrar ni vaciar la constancia, ni por SQL directo', async () => {
     const prisma = db();
-    const now = new Date();
+    const { now } = clinicNoon();
     const scene = await aCriticalGlucose(prisma, now);
     const nurse = await createUser(prisma);
 
@@ -107,12 +133,13 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
         channel: 'PHONE',
         notifiedById: nurse.id,
         notifiedAt: now,
+        outcome: 'NOTIFIED',
+        readBackConfirmed: true,
+        afterHours: false,
       },
     });
     expect(await prisma.criticalResultNotice.count()).toBe(1);
 
-    // Y no se reescribe ni se borra: una constancia que se puede cambiar no
-    // prueba nada.
     await expect(
       prisma.$executeRaw`
         UPDATE "critical_result_notice" SET "recipient_name" = 'Otra persona'
@@ -122,6 +149,9 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
       prisma.$executeRaw`
         DELETE FROM "critical_result_notice" WHERE "id" = ${notice.id}::uuid`,
     ).rejects.toThrow(/append-only/);
+    await expect(
+      prisma.$executeRawUnsafe('TRUNCATE "critical_result_notice"'),
+    ).rejects.toThrow(/append-only/);
 
     const stored = await prisma.criticalResultNotice.findUniqueOrThrow({
       where: { id: notice.id },
@@ -129,40 +159,56 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     expect(stored.recipientName).toBe('La paciente');
   });
 
-  it('ORD-062 no admite una constancia sin nombre de a quién se avisó', async () => {
+  it('ORD-062 y ORD-066 la base no admite una constancia sin nombre, ni un aviso hecho sin read-back', async () => {
     const prisma = db();
-    const now = new Date();
+    const { now } = clinicNoon();
     const scene = await aCriticalGlucose(prisma, now);
     const nurse = await createUser(prisma);
-    const data = {
+    const base = {
       observationResultId: BigInt(scene.result.id),
       recipientKind: 'PATIENT' as const,
+      recipientName: 'La paciente',
       channel: 'PHONE' as const,
       notifiedById: nurse.id,
       notifiedAt: now,
+      afterHours: false,
     };
 
     await expect(
       prisma.criticalResultNotice.create({
-        data: { ...data, recipientName: '   ' },
+        data: { ...base, recipientName: '   ', outcome: 'NOTIFIED', readBackConfirmed: true }, // prettier-ignore
       }),
     ).rejects.toThrow();
-    // Control positivo: con nombre, entra por el mismo camino.
+    await expect(
+      prisma.criticalResultNotice.create({
+        data: { ...base, outcome: 'NOTIFIED', readBackConfirmed: null },
+      }),
+    ).rejects.toThrow(/critical_result_notice_read_back/);
+    await expect(
+      prisma.criticalResultNotice.create({
+        data: { ...base, outcome: 'NO_ANSWER', readBackConfirmed: true },
+      }),
+    ).rejects.toThrow(/critical_result_notice_read_back/);
+    expect(await prisma.criticalResultNotice.count()).toBe(0);
+
+    // Control positivo: un aviso con read-back y un intento sin él, entran.
     await prisma.criticalResultNotice.create({
-      data: { ...data, recipientName: 'La paciente' },
+      data: { ...base, outcome: 'NOTIFIED', readBackConfirmed: true },
     });
-    expect(await prisma.criticalResultNotice.count()).toBe(1);
+    await prisma.criticalResultNotice.create({
+      data: { ...base, outcome: 'NO_ANSWER', readBackConfirmed: null },
+    });
+    expect(await prisma.criticalResultNotice.count()).toBe(2);
   });
 
-  it('ORD-063 y ORD-046 acotan en la base el plazo de aviso y el de los sin orden', async () => {
+  it('ORD-063 y ORD-046 una sede nace con 60 minutos de aviso y 24 horas para los sin orden, y la base acota los dos', async () => {
     const prisma = db();
     const scene = await aScene(prisma);
     const where = { siteId: scene.site.id };
 
-    // Lo que trae una sede nueva: sin plazo de críticos (D-111) y 24 h para
-    // los sin orden (D-050 §4).
+    // D-111 §1 y D-050 §4.
     const fresh = await prisma.siteParameter.findUniqueOrThrow({ where });
-    expect(fresh.criticalNoticeWithinMinutes).toBeNull();
+    expect(fresh.criticalNoticeWithinMinutes).toBe(60);
     expect(fresh.unmatchedResultDeadlineHours).toBe(24);
     expect(fresh.unmatchedResultOwnerRoleId).toBeNull();
 
@@ -187,13 +233,13 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     ).rejects.toThrow();
   });
 
-  it('ORD-062 guarda a quién, quién, cuándo y por qué medio, y saca el valor de la cola de críticos', async () => {
+  it('ORD-062 guarda a quién, quién, cuándo y por qué medio, deja su fila en la bitácora y saca el valor de la cola', async () => {
     const prisma = db();
-    const now = new Date();
+    const { now, isoWeekday } = clinicNoon();
     const scene = await aCriticalGlucose(prisma, now);
+    await siteInHours(prisma, scene, isoWeekday);
     const nurse = await createUser(prisma);
-    const { entries, recorder } = capturingAudit();
-    const { reports, store } = serviceOf(prisma, recorder);
+    const { reports, store } = serviceOf(prisma);
     const requester: Requester = { userId: nurse.id, sites: 'all' };
 
     // Control positivo: antes del aviso, el valor está en la cola.
@@ -201,13 +247,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
 
     const calledAt = new Date(now.getTime() - 10 * 60_000);
     const notice = await reports.notify(
-      {
-        resultId: scene.result.id,
-        recipientKind: 'PATIENT',
-        recipientName: 'La paciente, al teléfono de su ficha',
-        channel: 'PHONE',
-        notifiedAt: calledAt,
-      },
+      { resultId: scene.result.id, ...given, notifiedAt: calledAt },
       requester,
       now,
     );
@@ -217,32 +257,84 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
       recipientKind: 'PATIENT',
       channel: 'PHONE',
       notifiedAt: calledAt,
-      // Quién avisó es la cuenta de la sesión, con su nombre.
+      outcome: 'NOTIFIED',
+      readBackConfirmed: true,
+      afterHours: false,
       notifiedBy: { id: nurse.id, name: 'Carmen Salazar' },
     });
     expect(await store.critical({ sites: 'all', limit: 50 })).toEqual([]);
 
-    // El informe lo cuenta junto al valor.
     const report = await store.byId({
       reportId: scene.report.id,
       sites: 'all',
     });
     expect(report?.results[0]?.notices).toEqual([notice]);
 
-    // Y deja fila en la bitácora: el aviso es un acto clínico (D-050 §2).
-    expect(entries).toContainEqual(
-      expect.objectContaining({
-        userId: nurse.id,
-        resourceType: 'critical_result_notice',
-        resourceId: notice.id,
-        action: 'CREATE',
-      }),
+    // La fila de la bitácora está EN LA BASE, escrita con el aviso.
+    const trail = await prisma.accessAudit.findMany({
+      where: { resourceType: 'critical_result_notice', resourceId: notice.id },
+    });
+    expect(trail).toHaveLength(1);
+    expect(trail[0]).toMatchObject({ userId: nurse.id, action: 'CREATE' });
+  });
+
+  it('ORD-066 un aviso hecho sin read-back se rechaza y no deja nada', async () => {
+    const prisma = db();
+    const { now } = clinicNoon();
+    const scene = await aCriticalGlucose(prisma, now);
+    const nurse = await createUser(prisma);
+    const { reports } = serviceOf(prisma);
+    const requester: Requester = { userId: nurse.id, sites: 'all' };
+
+    await expect(
+      reports.notify({ resultId: scene.result.id, ...given, readBack: false }, requester, now), // prettier-ignore
+    ).rejects.toMatchObject({ code: 'CRITICAL_READ_BACK_REQUIRED' });
+    await expect(
+      reports.notify({ resultId: scene.result.id, ...given, readBack: undefined }, requester, now), // prettier-ignore
+    ).rejects.toMatchObject({ code: 'CRITICAL_READ_BACK_REQUIRED' });
+    expect(await prisma.criticalResultNotice.count()).toBe(0);
+    expect(await prisma.accessAudit.count({ where: { resourceType: 'critical_result_notice' } })).toBe(0); // prettier-ignore
+
+    // Control positivo: con read-back, entra.
+    await reports.notify(
+      { resultId: scene.result.id, ...given },
+      requester,
+      now,
     );
+    expect(await prisma.criticalResultNotice.count()).toBe(1);
+  });
+
+  it('ORD-067 una llamada sin respuesta se registra, el valor sigue en la cola y la cola cuenta los intentos', async () => {
+    const prisma = db();
+    const { now } = clinicNoon();
+    const scene = await aCriticalGlucose(prisma, now);
+    const nurse = await createUser(prisma);
+    const { reports } = serviceOf(prisma);
+    const requester: Requester = { userId: nurse.id, sites: 'all' };
+    const attempt = {
+      resultId: scene.result.id,
+      outcome: 'NO_ANSWER' as const,
+      recipientKind: 'PATIENT' as const,
+      recipientName: 'La paciente, al teléfono de su ficha',
+      channel: 'PHONE' as const,
+    };
+
+    const first = await reports.notify(attempt, requester, now);
+    expect(first).toMatchObject({ outcome: 'NO_ANSWER', readBackConfirmed: null }); // prettier-ignore
+    await reports.notify(attempt, requester, now);
+
+    const [waiting] = await reports.critical(requester, 50, now);
+    expect(waiting?.resultId).toBe(scene.result.id);
+    expect(waiting?.noAnswerAttempts).toBe(2);
+
+    // Control positivo: el aviso hecho sí lo saca.
+    await reports.notify({ resultId: scene.result.id, ...given }, requester, now); // prettier-ignore
+    expect(await reports.critical(requester, 50, now)).toEqual([]);
   });
 
   it('ORD-062 rechaza el aviso de un valor que no es crítico', async () => {
     const prisma = db();
-    const now = new Date();
+    const { now } = clinicNoon();
     const scene = await aScene(prisma);
     const nurse = await createUser(prisma);
     const { reports, orders } = serviceOf(prisma);
@@ -266,39 +358,49 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     );
 
     await expect(
-      reports.notify(
-        {
-          resultId: report.results[0]!.id,
-          recipientKind: 'PATIENT',
-          recipientName: 'La paciente',
-          channel: 'PHONE',
-        },
-        requester,
-        now,
-      ),
+      reports.notify({ resultId: report.results[0]!.id, ...given }, requester, now), // prettier-ignore
     ).rejects.toMatchObject({ code: 'RESULT_NOT_CRITICAL' });
     expect(await prisma.criticalResultNotice.count()).toBe(0);
   });
 
+  it('ORD-062 no deja avisar de un valor que el laboratorio ya corrigió', async () => {
+    const prisma = db();
+    const { now } = clinicNoon();
+    const scene = await aCriticalGlucose(prisma, now);
+    const nurse = await createUser(prisma);
+    const { reports } = serviceOf(prisma);
+    const requester: Requester = { userId: nurse.id, sites: 'all' };
+
+    await reports.correct(
+      {
+        reportId: scene.report.id,
+        performedById: null,
+        issuedAt: new Date(now.getTime() - 30 * 60_000),
+        results: [{ analyteDefinitionId: scene.glu.id, valueNumeric: 30 }],
+      },
+      requester,
+    );
+
+    await expect(
+      reports.notify({ resultId: scene.result.id, ...given }, requester, now),
+    ).rejects.toMatchObject({ code: 'RESULT_SUPERSEDED' });
+
+    // Control positivo: el valor que lo sustituye, crítico también, sí.
+    const [standing] = await reports.critical(requester, 50, now);
+    expect(standing?.resultId).not.toBe(scene.result.id);
+    await reports.notify({ resultId: standing!.resultId, ...given }, requester, now); // prettier-ignore
+    expect(await prisma.criticalResultNotice.count()).toBe(1);
+  });
+
   it('ORD-062 rechaza una hora de aviso futura o anterior al resultado', async () => {
     const prisma = db();
-    const now = new Date();
+    const { now } = clinicNoon();
     const scene = await aCriticalGlucose(prisma, now);
     const nurse = await createUser(prisma);
     const { reports } = serviceOf(prisma);
     const requester: Requester = { userId: nurse.id, sites: 'all' };
     const at = (notifiedAt: Date) =>
-      reports.notify(
-        {
-          resultId: scene.result.id,
-          recipientKind: 'ORDERING_PRACTITIONER',
-          recipientName: 'La médica que pidió el examen',
-          channel: 'PHONE',
-          notifiedAt,
-        },
-        requester,
-        now,
-      );
+      reports.notify({ resultId: scene.result.id, ...given, notifiedAt }, requester, now); // prettier-ignore
 
     await expect(at(new Date(now.getTime() + 60_000))).rejects.toMatchObject({
       code: 'CRITICAL_NOTICE_TIME_INVALID',
@@ -308,37 +410,22 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     expect(await prisma.criticalResultNotice.count()).toBe(0);
 
     // Control positivo: sin hora declarada, la del reloj.
-    const notice = await reports.notify(
-      {
-        resultId: scene.result.id,
-        recipientKind: 'ORDERING_PRACTITIONER',
-        recipientName: 'La médica que pidió el examen',
-        channel: 'IN_PERSON',
-      },
-      requester,
-      now,
-    );
+    const notice = await reports.notify({ resultId: scene.result.id, ...given }, requester, now); // prettier-ignore
     expect(notice.notifiedAt).toEqual(now);
   });
 
   it('ORD-062 responde RESULT_NOT_FOUND por un resultado de una sede fuera del alcance', async () => {
     const prisma = db();
-    const now = new Date();
+    const { now } = clinicNoon();
     const scene = await aCriticalGlucose(prisma, now);
     const nurse = await createUser(prisma);
     const otherSite = await createSite(prisma, 'Sede Norte');
     const { reports } = serviceOf(prisma);
-    const request = {
-      resultId: scene.result.id,
-      recipientKind: 'PATIENT' as const,
-      recipientName: 'La paciente',
-      channel: 'PHONE' as const,
-    };
+    const request = { resultId: scene.result.id, ...given };
 
     await expect(
       reports.notify(request, { userId: nurse.id, sites: [otherSite.id] }, now),
     ).rejects.toMatchObject({ code: 'RESULT_NOT_FOUND' });
-    // Y uno que no es un número, igual.
     await expect(
       reports.notify({ ...request, resultId: 'abc' }, { userId: nurse.id, sites: 'all' }, now), // prettier-ignore
     ).rejects.toMatchObject({ code: 'RESULT_NOT_FOUND' });
@@ -348,54 +435,95 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     expect(await prisma.criticalResultNotice.count()).toBe(1);
   });
 
-  it('ORD-065 no inventa el plazo de un crítico; con el de la sede dice si venció y a qué rol se escala', async () => {
+  it('ORD-065 en horario, dice si venció y a quién toca: quien pidió, la guardia, o que no hay guardia y no escala sola', async () => {
     const prisma = db();
-    const now = new Date();
+    const { now, isoWeekday } = clinicNoon();
     const scene = await aCriticalGlucose(prisma, now);
+    await siteInHours(prisma, scene, isoWeekday);
     const { reports } = serviceOf(prisma);
     const requester: Requester = { userId: 'user-1', sites: 'all' };
 
-    // De fábrica: la clínica no ha fijado plazo (D-111) y la cola lo dice.
-    const [fresh] = await reports.critical(requester, 50, now);
-    expect(fresh).toMatchObject({
+    // 60 min de fábrica y el resultado tiene 60: aún dentro, a quien pidió.
+    const [onTime] = await reports.critical(requester, 50, now);
+    expect(onTime).toMatchObject({
       waitingMinutes: 60,
-      overdue: null,
-      noticeDueAt: null,
-      escalateTo: null,
+      overdue: false,
+      afterHours: false,
+      noticeTarget: 'ORDERING_PRACTITIONER',
+      escalationMissing: false,
     });
 
+    // Vencido y sin rol de guardia: lo dice, y sigue tocando a quien pidió.
+    await prisma.siteParameter.update({
+      where: { siteId: scene.site.id },
+      data: { criticalNoticeWithinMinutes: 30 },
+    });
+    const [lateNoRole] = await reports.critical(requester, 50, now);
+    expect(lateNoRole).toMatchObject({
+      overdue: true,
+      noticeTarget: 'ORDERING_PRACTITIONER',
+      escalationMissing: true,
+      escalateTo: null,
+    });
+    expect(lateNoRole?.noticeDueAt).toEqual(new Date(now.getTime() - 30 * 60_000)); // prettier-ignore
+
+    // Con rol de guardia, vencido, le toca a la guardia.
     const role = await prisma.role.create({
       data: { code: 'GUARDIA_CLINICA', name: 'Responsable clínico de guardia' },
     });
     await prisma.siteParameter.update({
       where: { siteId: scene.site.id },
-      data: {
-        criticalNoticeWithinMinutes: 30,
-        criticalEscalationRoleId: role.id,
-      },
+      data: { criticalEscalationRoleId: role.id },
     });
-
     const [late] = await reports.critical(requester, 50, now);
     expect(late).toMatchObject({
-      waitingMinutes: 60,
-      overdue: true,
+      noticeTarget: 'ON_CALL_ROLE',
+      escalationMissing: false,
       escalateTo: { roleId: role.id, name: 'Responsable clínico de guardia' },
     });
-    expect(late?.noticeDueAt).toEqual(new Date(now.getTime() - 30 * 60_000));
+  });
 
-    // Control: con un plazo que aún no se cumple, no está vencido.
+  it('ORD-068 fuera de horario toca a la guardia o, sin ella, al paciente, y la constancia lo dice', async () => {
+    const prisma = db();
+    const { now, isoWeekday, day } = clinicNoon();
+    const scene = await aCriticalGlucose(prisma, now);
+    const nurse = await createUser(prisma);
+    const { reports } = serviceOf(prisma);
+    const requester: Requester = { userId: nurse.id, sites: 'all' };
+
+    // Ninguna regla de horario cubre el mediodía: fuera de horario, sin guardia.
+    const [closed] = await reports.critical(requester, 50, now);
+    expect(closed).toMatchObject({ afterHours: true, noticeTarget: 'PATIENT' });
+
+    // Con guardia, a la guardia aunque no haya vencido.
+    const role = await prisma.role.create({
+      data: { code: 'GUARDIA_CLINICA', name: 'Responsable clínico de guardia' },
+    });
     await prisma.siteParameter.update({
       where: { siteId: scene.site.id },
-      data: { criticalNoticeWithinMinutes: 120 },
+      data: { criticalEscalationRoleId: role.id },
     });
-    expect((await reports.critical(requester, 50, now))[0]?.overdue).toBe(
-      false,
-    );
+    const [onCall] = await reports.critical(requester, 50, now);
+    expect(onCall).toMatchObject({ afterHours: true, overdue: false, noticeTarget: 'ON_CALL_ROLE' }); // prettier-ignore
+
+    // Control positivo del horario: con una regla que cubre el mediodía, en horario…
+    await siteInHours(prisma, scene, isoWeekday);
+    expect((await reports.critical(requester, 50, now))[0]?.afterHours).toBe(false); // prettier-ignore
+
+    // …salvo que hoy sea feriado para la sede.
+    await prisma.holiday.create({
+      data: { date: new Date(`${day}T00:00:00Z`), name: 'Feriado de prueba', siteId: scene.site.id }, // prettier-ignore
+    });
+    expect((await reports.critical(requester, 50, now))[0]?.afterHours).toBe(true); // prettier-ignore
+
+    // Y la constancia guarda que fue fuera de horario.
+    const notice = await reports.notify({ resultId: scene.result.id, ...given }, requester, now); // prettier-ignore
+    expect(notice.afterHours).toBe(true);
   });
 
   it('ORD-046 da a cada resultado sin orden su responsable y su plazo, de fábrica quien pidió con 24 h', async () => {
     const prisma = db();
-    const now = new Date();
+    const { now } = clinicNoon();
     const scene = await aScene(prisma);
     const { reports, orders } = serviceOf(prisma);
     const requester: Requester = { userId: 'user-1', sites: 'all' };
@@ -444,5 +572,88 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
       owner: { kind: 'ROLE', name: 'Recepción de resultados' },
       overdue: true,
     });
+  });
+
+  it('ORD-041 y ORD-043 un valor sin orden de un informe ya corregido sale de la cola y no se empareja', async () => {
+    const prisma = db();
+    const { now } = clinicNoon();
+    const scene = await aScene(prisma);
+    const { reports, orders } = serviceOf(prisma);
+    const requester: Requester = { userId: 'user-1', sites: 'all' };
+
+    const order = await orders.place({
+      encounterId: scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [{ examDefinitionId: scene.glucose.id }],
+      sites: 'all',
+    });
+    const first = await reports.register(
+      {
+        orderId: order.id,
+        performedById: null,
+        issuedAt: new Date(now.getTime() - 3 * 3_600_000),
+        results: [
+          { analyteDefinitionId: scene.glu.id, valueNumeric: 92 },
+          { analyteDefinitionId: scene.hb.id, valueNumeric: 13.4 },
+        ],
+      },
+      requester,
+    );
+    const retired = first.results.find((r) => r.analyteDisplay === 'Hemoglobina')!; // prettier-ignore
+    await reports.correct(
+      {
+        reportId: first.id,
+        performedById: null,
+        issuedAt: new Date(now.getTime() - 3_600_000),
+        results: [
+          { analyteDefinitionId: scene.glu.id, valueNumeric: 92 },
+          { analyteDefinitionId: scene.hb.id, valueNumeric: 9 },
+        ],
+      },
+      requester,
+    );
+
+    // Sólo queda en la cola la hemoglobina vigente, la de 9.
+    const queue = await reports.unmatched(requester, 50, now);
+    expect(queue.map((entry) => entry.valueNumeric)).toEqual([9]);
+
+    await expect(
+      reports.match({ resultId: retired.id, orderItemId: order.items[0]!.id }, requester), // prettier-ignore
+    ).rejects.toMatchObject({ code: 'RESULT_SUPERSEDED' });
+
+    // Control positivo: la vigente sí se empareja.
+    await reports.match({ resultId: queue[0]!.resultId, orderItemId: order.items[0]!.id }, requester); // prettier-ignore
+    expect(await reports.unmatched(requester, 50, now)).toEqual([]);
+  });
+
+  it('ORD-060 la cola de críticos pone primero el que más lleva esperando', async () => {
+    const prisma = db();
+    const { now } = clinicNoon();
+    const older = await aCriticalGlucose(prisma, new Date(now.getTime() - 3_600_000)); // prettier-ignore
+    const { reports, orders } = serviceOf(prisma);
+    const requester: Requester = { userId: 'user-1', sites: 'all' };
+    const order = await orders.place({
+      encounterId: older.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [{ examDefinitionId: older.glucose.id }],
+      sites: 'all',
+    });
+    const newer = await reports.register(
+      {
+        orderId: order.id,
+        performedById: null,
+        issuedAt: new Date(now.getTime() - 10 * 60_000),
+        results: [{ analyteDefinitionId: older.glu.id, valueNumeric: 20 }],
+      },
+      requester,
+    );
+
+    const queue = await reports.critical(requester, 50, now);
+    expect(queue.map((entry) => entry.resultId)).toEqual([
+      older.result.id,
+      newer.results[0]!.id,
+    ]);
   });
 });

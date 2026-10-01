@@ -103,9 +103,9 @@ export interface SiteParameters {
    * ORD-063, ORD-065. Minutes a critical laboratory value may wait for its
    * notice before the worklist calls it overdue.
    *
-   * ⚠️ `null` IS A VALUE AND THE DEFAULT: «la clínica no ha fijado plazo». The
-   * policy is each clinic's (D-050 §2) and its starting value is open (D-111);
-   * a default here would turn «not decided» into «va bien» or «va tarde».
+   * Sixty by default (D-111 §1). `null` is still a value a site may choose —
+   * «la clínica no ha fijado plazo» — and the worklist says so rather than
+   * inventing one.
    */
   criticalNoticeWithinMinutes: number | null;
   /** ORD-063, ORD-065. The role an overdue critical value is escalated to. */
@@ -261,8 +261,8 @@ export const DEFAULT_SITE_PARAMETERS: SiteParameters = {
   /** D-040 (a), recommendation pending the clinic's answer. The column default. */
   waitlistMaxContactAttempts: 3,
   cancelledRetention: 'NEVER',
-  /** D-111: not decided, so not invented. */
-  criticalNoticeWithinMinutes: null,
+  /** D-111 §1, decided by the author on 01-10-2026: sixty minutes. */
+  criticalNoticeWithinMinutes: 60,
   criticalEscalationRoleId: null,
   /** D-050 §4: the ordering practitioner, with 24 hours. */
   unmatchedResultOwnerRoleId: null,
@@ -392,4 +392,18 @@ export function assertLeadWindowCoherent(result: SiteParameters): void {
         'La antelación mínima no puede superar la máxima: la sede se quedaría sin ninguna hora reservable',
     },
   ]);
+}
+
+/**
+ * ORD-046, ORD-065. What a role needs to answer for a results worklist: to see
+ * it, and to record the notice or pair the value.
+ */
+export const RESULTS_WORK_PERMISSIONS = [
+  'record:read',
+  'result:write',
+] as const;
+
+/** The permissions a role lacks to work the results worklists; empty when none. */
+export function missingResultsWork(granted: readonly string[]): string[] {
+  return RESULTS_WORK_PERMISSIONS.filter((code) => !granted.includes(code));
 }

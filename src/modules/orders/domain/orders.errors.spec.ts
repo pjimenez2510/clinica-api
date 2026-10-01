@@ -10,6 +10,7 @@ import {
 
 import {
   CriticalNoticeTimeInvalidError,
+  CriticalReadBackRequiredError,
   ExamNotOrderableError,
   OrderEncounterNotFoundError,
   OrderEncounterNotOpenError,
@@ -25,6 +26,7 @@ import {
   ResultFlagIsDerivedError,
   ResultNotCriticalError,
   ResultNotFoundError,
+  ResultSupersededError,
   ResultValueNotAllowedError,
   ResultValueTypeMismatchError,
 } from './orders.errors';
@@ -58,6 +60,8 @@ const EVERY_ERROR: readonly DomainError[] = [
   new OrderItemNotMatchableError(),
   new ResultNotCriticalError(),
   new CriticalNoticeTimeInvalidError(),
+  new ResultSupersededError(),
+  new CriticalReadBackRequiredError(),
 ];
 
 describe('el contrato de errores de las órdenes', () => {
@@ -163,6 +167,20 @@ describe('el contrato de errores de las órdenes', () => {
     expect(time.code).toBe('CRITICAL_NOTICE_TIME_INVALID');
     expect(time.fieldErrors?.[0]?.field).toBe('notifiedAt');
     expect(time.userTitle).toContain('no puede ser futura');
+  });
+
+  it('ORD-066 pide el read-back y dice qué hacer si nadie contestó', () => {
+    const error = new CriticalReadBackRequiredError();
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.fieldErrors?.[0]?.field).toBe('readBack');
+    expect(error.userTitle).toContain('llamada sin respuesta');
+  });
+
+  it('ORD-062 un valor ya corregido manda a trabajar el vigente', () => {
+    const error = new ResultSupersededError();
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.code).toBe('RESULT_SUPERSEDED');
+    expect(error.userTitle).toContain('informe vigente');
   });
 
   it('ORD-080 manda buscar a la persona antes de registrarla, nunca dice que se creará sola', () => {

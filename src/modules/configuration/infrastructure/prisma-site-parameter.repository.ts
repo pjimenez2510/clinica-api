@@ -188,4 +188,12 @@ export class PrismaSiteParameterRepository implements SiteParameterRepository {
     });
     return rows.map((row) => row.code);
   }
+
+  async rolePermissions(roleId: string): Promise<readonly string[] | null> {
+    const role = await this.prisma.role.findUnique({
+      where: { id: roleId },
+      select: { permissions: { select: { permissionCode: true } } },
+    });
+    return role ? role.permissions.map((p) => p.permissionCode) : null;
+  }
 }

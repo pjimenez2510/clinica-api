@@ -13,6 +13,7 @@ import type { AnalyteDefinition } from '../domain/analyte';
 import type {
   DiagnosticReportRepository,
   CriticalNoticeView,
+  CriticalQueueRow,
   DiagnosticReportView,
   SafetyPolicy,
   ExpectedAnalytes,
@@ -154,8 +155,11 @@ class FakeReports implements Partial<DiagnosticReportRepository> {
   unmatched(): Promise<FlaggedResultEntry[]> {
     return Promise.resolve([]);
   }
-  critical(): Promise<FlaggedResultEntry[]> {
+  critical(): Promise<CriticalQueueRow[]> {
     return Promise.resolve([]);
+  }
+  sitesInHours(): Promise<ReadonlySet<string>> {
+    return Promise.resolve(new Set<string>());
   }
 
   /** ORD-043. The orphan result the queue is showing, or nothing. */
@@ -166,6 +170,8 @@ class FakeReports implements Partial<DiagnosticReportRepository> {
     orderItemId: null,
     abnormalFlag: null,
     observedAt: new Date(0),
+    siteId: SITE,
+    superseded: false,
   };
   matched: { command: MatchResultCommand; expected: ExpectedAnalytes }[] = [];
 
@@ -471,6 +477,8 @@ describe('el registro y la corrección de un resultado', () => {
       orderItemId: ITEM_BH,
       abnormalFlag: null,
       observedAt: new Date(0),
+      siteId: SITE,
+      superseded: false,
     };
 
     await expect(

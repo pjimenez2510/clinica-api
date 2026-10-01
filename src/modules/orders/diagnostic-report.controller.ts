@@ -224,6 +224,8 @@ export class DiagnosticReportController {
     const notice = await this.reports.notify(
       {
         resultId,
+        outcome: dto.outcome,
+        readBack: dto.readBack,
         recipientKind: dto.recipientKind,
         recipientName: dto.recipientName,
         channel: dto.channel,
@@ -328,6 +330,22 @@ export class DiagnosticReportController {
   }
 }
 
+/** The fields both safety worklists share. */
+type FlaggedResultResponse = Pick<
+  UnmatchedResultListResponse['items'][number],
+  | 'resultId'
+  | 'reportId'
+  | 'orderId'
+  | 'siteId'
+  | 'patientId'
+  | 'analyteDisplay'
+  | 'valueNumeric'
+  | 'valueCode'
+  | 'unit'
+  | 'abnormalFlag'
+  | 'observedAt'
+>;
+
 /** Instants leave as ISO 8601; the client renders them in Ecuadorian time. */
 function toReportResponse(
   report: DiagnosticReportView,
@@ -370,17 +388,14 @@ function toNoticeResponse(notice: CriticalNoticeView): CriticalNoticeResponse {
     notifiedAt: notice.notifiedAt.toISOString(),
     notifiedBy: notice.notifiedBy,
     note: notice.note,
+    outcome: notice.outcome,
+    readBackConfirmed: notice.readBackConfirmed,
+    afterHours: notice.afterHours,
   };
 }
 
 /** ORD-024. One worklist entry. The value travels; nothing else about the person does. */
-function toFlaggedResponse(
-  entry: FlaggedResultEntry,
-): Omit<
-  CriticalResultListResponse['items'][number],
-  'waitingMinutes' | 'noticeDueAt' | 'overdue' | 'escalateTo'
-> {
-  // prettier-ignore
+function toFlaggedResponse(entry: FlaggedResultEntry): FlaggedResultResponse {
   return {
     resultId: entry.resultId,
     reportId: entry.reportId,
@@ -406,6 +421,10 @@ function toCriticalResponse(
     noticeDueAt: entry.noticeDueAt?.toISOString() ?? null,
     overdue: entry.overdue,
     escalateTo: entry.escalateTo,
+    noAnswerAttempts: entry.noAnswerAttempts,
+    afterHours: entry.afterHours,
+    noticeTarget: entry.noticeTarget,
+    escalationMissing: entry.escalationMissing,
   };
 }
 

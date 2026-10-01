@@ -60,7 +60,7 @@ describe('los parámetros de operación de una sede', () => {
       overbookingPermission: 'agenda:overbook',
       waitlistMaxContactAttempts: 3,
       cancelledRetention: 'NEVER',
-      criticalNoticeWithinMinutes: null,
+      criticalNoticeWithinMinutes: 60,
       criticalEscalationRoleId: null,
       unmatchedResultOwnerRoleId: null,
       unmatchedResultDeadlineHours: 24,

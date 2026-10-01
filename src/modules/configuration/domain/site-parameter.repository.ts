@@ -84,6 +84,14 @@ export interface SiteParameterRepository {
    * (`UNKNOWN_PERMISSION` vs `PERMISSION_NOT_INSTALLED`).
    */
   installedPermissions(codes: readonly string[]): Promise<readonly string[]>;
+
+  /**
+   * ORD-046, ORD-065. The permission codes a role grants, or `null` when the
+   * role does not exist — which the foreign key then answers with
+   * `ROLE_NOT_FOUND`. Auth's table, read through our own adapter for the same
+   * reason as `installedPermissions`.
+   */
+  rolePermissions(roleId: string): Promise<readonly string[] | null>;
 }
 
 export const SITE_PARAMETER_REPOSITORY = Symbol('SiteParameterRepository');

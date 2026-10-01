@@ -120,6 +120,8 @@ const NOTICE_RECIPIENT = z.enum([
   'REPRESENTATIVE',
 ]);
 const NOTICE_CHANNEL = z.enum(['PHONE', 'IN_PERSON', 'VIDEO_CALL']);
+/** ORD-067. `NO_ANSWER` is an attempt: recorded, and the value stays queued. */
+const NOTICE_OUTCOME = z.enum(['NOTIFIED', 'NO_ANSWER']);
 
 /**
  * ORD-062. One notice of a critical value, as it was written. Never rewritten
@@ -136,6 +138,11 @@ export const criticalNoticeSchema = z.object({
   /** The session's account that gave it, with its name. */
   notifiedBy: z.object({ id: z.uuid(), name: z.string() }),
   note: z.string().nullable(),
+  outcome: NOTICE_OUTCOME,
+  /** ORD-066. `true` on a notice given, `null` on an unanswered call. */
+  readBackConfirmed: z.boolean().nullable(),
+  /** ORD-068. Given outside the site's hours. */
+  afterHours: z.boolean(),
 });
 /** Response of POST /orders/results/:resultId/notices. */
 export class CriticalNoticeDto extends createZodDto(criticalNoticeSchema) {}
@@ -146,6 +153,15 @@ export class CriticalNoticeDto extends createZodDto(criticalNoticeSchema) {}
  * ⚠️ NO `notifiedById`: who gave it is the session, never the body.
  */
 export const recordNoticeSchema = z.object({
+  /** ORD-067. Whether the person answered and was told. */
+  outcome: NOTICE_OUTCOME,
+  /**
+   * ORD-066. The recipient repeated the value. Required — and `true` — on a
+   * notice given; the domain answers `CRITICAL_READ_BACK_REQUIRED` naming it.
+   */
+  readBack: z
+    .boolean({ error: 'Indique si la persona repitió el valor' })
+    .optional(),
   recipientKind: NOTICE_RECIPIENT,
   recipientName: z
     .string()
@@ -242,6 +258,14 @@ export const criticalResultSchema = flaggedResultSchema.extend({
   noticeDueAt: z.iso.datetime().nullable(),
   overdue: z.boolean().nullable(),
   escalateTo: z.object({ roleId: z.uuid(), name: z.string() }).nullable(),
+  /** ORD-067. Unanswered calls so far; the value is still waiting. */
+  noAnswerAttempts: z.number().int(),
+  /** ORD-068. The site is out of hours now. */
+  afterHours: z.boolean(),
+  /** ORD-065, ORD-068. Whom the notice is due to now (D-111 §2, §3). */
+  noticeTarget: z.enum(['ORDERING_PRACTITIONER', 'ON_CALL_ROLE', 'PATIENT']),
+  /** ORD-065. The escalation is due and the site named no on-call role. */
+  escalationMissing: z.boolean(),
 });
 export const criticalResultListSchema = z.object({
   items: z.array(criticalResultSchema),

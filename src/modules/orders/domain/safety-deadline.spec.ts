@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { criticalWait, unmatchedWait } from './safety-deadline';
+import {
+  criticalNoticeTarget,
+  criticalWait,
+  unmatchedWait,
+} from './safety-deadline';
 
 /**
  * How long a value on a safety worklist has been waiting, and whether it is
@@ -42,5 +46,21 @@ describe('el plazo de las colas de seguridad', () => {
 
     const stale = unmatchedWait(minutesBefore(25 * 60), NOW, 24);
     expect(stale.overdue).toBe(true);
+  });
+
+  it('ORD-068 fuera de horario toca a la guardia, y sin guardia al paciente', () => {
+    expect(criticalNoticeTarget({ overdue: false, afterHours: true, hasOnCallRole: true })).toEqual({ target: 'ON_CALL_ROLE', escalationMissing: false }); // prettier-ignore
+    expect(criticalNoticeTarget({ overdue: false, afterHours: true, hasOnCallRole: false })).toEqual({ target: 'PATIENT', escalationMissing: true }); // prettier-ignore
+  });
+
+  it('ORD-065 en horario y vencido toca a la guardia; sin guardia lo dice y no escala sola', () => {
+    expect(criticalNoticeTarget({ overdue: true, afterHours: false, hasOnCallRole: true })).toEqual({ target: 'ON_CALL_ROLE', escalationMissing: false }); // prettier-ignore
+    expect(criticalNoticeTarget({ overdue: true, afterHours: false, hasOnCallRole: false })).toEqual({ target: 'ORDERING_PRACTITIONER', escalationMissing: true }); // prettier-ignore
+  });
+
+  it('ORD-065 en horario y dentro del plazo, o sin plazo, toca a quien pidió el examen', () => {
+    for (const overdue of [false, null]) {
+      expect(criticalNoticeTarget({ overdue, afterHours: false, hasOnCallRole: true })).toEqual({ target: 'ORDERING_PRACTITIONER', escalationMissing: false }); // prettier-ignore
+    }
   });
 });

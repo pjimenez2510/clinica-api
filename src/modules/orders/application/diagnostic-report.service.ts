@@ -8,6 +8,7 @@ import {
 import {
   DIAGNOSTIC_REPORT_REPOSITORY,
   type CriticalNoticeChannel,
+  type CriticalNoticeOutcome,
   type CriticalNoticeRecipient,
   type CriticalNoticeView,
   type CriticalWorklistEntry,
@@ -31,6 +32,7 @@ import {
 } from '../domain/service-order.repository';
 import {
   CriticalNoticeTimeInvalidError,
+  CriticalReadBackRequiredError,
   OrderItemNotMatchableError,
   OrderNotFoundError,
   ReportAlreadyCorrectedError,
@@ -41,21 +43,27 @@ import {
   ResultFlagIsDerivedError,
   ResultNotCriticalError,
   ResultNotFoundError,
+  ResultSupersededError,
 } from '../domain/orders.errors';
 import { isCorrectable, isLineComplete } from '../domain/service-order';
 import { resolveResult } from '../domain/result-value';
-import { criticalWait, unmatchedWait } from '../domain/safety-deadline';
+import {
+  criticalNoticeTarget,
+  criticalWait,
+  unmatchedWait,
+} from '../domain/safety-deadline';
 import type { DiagnosticReportStatus } from '../domain/service-order';
 import type { Requester } from './service-order.service';
 
 /**
- * ORD-046, ORD-065. What a site with no parameter row would have: no critical
- * deadline (D-111) and the ordering practitioner with 24 hours (D-050 §4).
+ * ORD-046, ORD-065. What a site with no parameter row would have: sixty
+ * minutes for a critical value (D-111 §1) and the ordering practitioner with
+ * 24 hours for an unmatched one (D-050 §4).
  * `trg_site_parameter_defaults` makes that row exist; this is the same
  * decision written once more, not a second policy.
  */
 const DEFAULT_POLICY: SafetyPolicy = {
-  criticalNoticeWithinMinutes: null,
+  criticalNoticeWithinMinutes: 60,
   criticalEscalationRole: null,
   unmatchedResultOwnerRole: null,
   unmatchedResultDeadlineHours: 24,
@@ -131,6 +139,10 @@ export interface MatchResultRequest {
  */
 export interface RecordNoticeRequest {
   resultId: string;
+  /** ORD-067. `NO_ANSWER` records the attempt and leaves the value queued. */
+  outcome: CriticalNoticeOutcome;
+  /** ORD-066. Required — and `true` — on a notice actually given. */
+  readBack?: boolean;
   recipientKind: CriticalNoticeRecipient;
   recipientName: string;
   channel: CriticalNoticeChannel;
@@ -381,6 +393,8 @@ export class DiagnosticReportService {
     // ORD-043. Refused here so the sentence is about the queue the caller is
     // working; the conditional update is what arbitrates the race.
     if (result.orderItemId !== null) throw new ResultAlreadyMatchedError();
+    // A value the laboratory retracted closes no line.
+    if (result.superseded) throw new ResultSupersededError();
 
     const order = await this.orders.byId({
       orderId: result.orderId,
@@ -451,18 +465,30 @@ export class DiagnosticReportService {
     now: Date,
   ): Promise<CriticalWorklistEntry[]> {
     const entries = await this.reports.critical({ sites: requester.sites, limit }); // prettier-ignore
-    const policies = await this.reports.safetyPolicies(entries.map((e) => e.siteId)); // prettier-ignore
+    const siteIds = entries.map((e) => e.siteId);
+    const policies = await this.reports.safetyPolicies(siteIds);
+    // ORD-068. One instant for the whole listing, as for the deadlines.
+    const inHours = await this.reports.sitesInHours(siteIds, now);
 
     return entries.map((entry) => {
       const policy = policies.get(entry.siteId) ?? DEFAULT_POLICY;
       const wait = criticalWait(entry.observedAt, now, policy.criticalNoticeWithinMinutes); // prettier-ignore
       const role = policy.criticalEscalationRole;
+      const afterHours = !inHours.has(entry.siteId);
+      const due = criticalNoticeTarget({
+        overdue: wait.overdue,
+        afterHours,
+        hasOnCallRole: role !== null,
+      });
       return {
         ...entry,
         waitingMinutes: wait.waitingMinutes,
         noticeDueAt: wait.dueAt,
         overdue: wait.overdue,
         escalateTo: role ? { roleId: role.id, name: role.name } : null,
+        afterHours,
+        noticeTarget: due.target,
+        escalationMissing: due.escalationMissing,
       };
     });
   }
@@ -498,11 +524,19 @@ export class DiagnosticReportService {
       sites: requester.sites,
     });
     if (!result) throw new ResultNotFoundError();
+    // ORD-062. The value the laboratory retracted is not phoned in.
+    if (result.superseded) throw new ResultSupersededError();
     if (
       result.abnormalFlag !== 'CRITICAL_LOW' &&
       result.abnormalFlag !== 'CRITICAL_HIGH'
     ) {
       throw new ResultNotCriticalError();
+    }
+    // ORD-066, D-111 §4. A notice given carries the read-back; an attempt has
+    // nobody who could have repeated anything.
+    const given = request.outcome === 'NOTIFIED';
+    if (given && request.readBack !== true) {
+      throw new CriticalReadBackRequiredError();
     }
 
     const notifiedAt = request.notifiedAt ?? now;
@@ -510,6 +544,10 @@ export class DiagnosticReportService {
       throw new CriticalNoticeTimeInvalidError();
     }
 
+    // ORD-068. Out of hours at the moment of the CALL, not of the typing.
+    const inHours = await this.reports.sitesInHours([result.siteId], notifiedAt); // prettier-ignore
+
+    // ORD-062, ORD-091. The trail row is written inside the same transaction.
     const notice = await this.reports.recordNotice({
       resultId: result.resultId,
       recipientKind: request.recipientKind,
@@ -518,18 +556,11 @@ export class DiagnosticReportService {
       notifiedById: requester.userId,
       notifiedAt,
       note: request.note ?? null,
+      outcome: request.outcome,
+      readBackConfirmed: given ? true : null,
+      afterHours: !inHours.has(result.siteId),
       sites: requester.sites,
-    });
-
-    // ORD-062, ORD-091. After the write, so a refused insert leaves no entry
-    // claiming somebody was told.
-    await this.audit.record({
-      userId: requester.userId,
-      resourceType: 'critical_result_notice',
-      resourceId: notice.id,
-      action: 'CREATE',
-      ip: requester.ip,
-      userAgent: requester.userAgent,
+      trail: { ip: requester.ip, userAgent: requester.userAgent },
     });
 
     // ORD-024. The site and the fact: never the value, never who was called.

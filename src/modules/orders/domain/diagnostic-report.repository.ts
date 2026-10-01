@@ -1,7 +1,11 @@
 import type { AbnormalFlag, PatientProfile } from './analyte';
 import type { DiagnosticReportStatus } from './service-order';
 import type { ResolvedResult } from './result-value';
-import type { CriticalWait, UnmatchedWait } from './safety-deadline';
+import type {
+  CriticalNoticeTarget,
+  CriticalWait,
+  UnmatchedWait,
+} from './safety-deadline';
 import type { SiteScopeFilter } from './service-order.repository';
 
 /**
@@ -83,6 +87,13 @@ export const CRITICAL_NOTICE_CHANNELS = [
 export type CriticalNoticeChannel = (typeof CRITICAL_NOTICE_CHANNELS)[number];
 
 /**
+ * ORD-067, D-111 §5. Whether somebody was actually told. An unanswered call is
+ * recorded too — and does not take the value off the worklist.
+ */
+export const CRITICAL_NOTICE_OUTCOMES = ['NOTIFIED', 'NO_ANSWER'] as const;
+export type CriticalNoticeOutcome = (typeof CRITICAL_NOTICE_OUTCOMES)[number];
+
+/**
  * ORD-062, ORD-064. The notice of a critical value, as it was written — and it
  * is never written again: `critical_result_notice` is append-only.
  */
@@ -97,6 +108,12 @@ export interface CriticalNoticeView {
   /** The account that gave it, with the name a reader recognises. */
   notifiedBy: { id: string; name: string };
   note: string | null;
+  /** ORD-067. `NO_ANSWER` is an attempt, not a notice. */
+  outcome: CriticalNoticeOutcome;
+  /** ORD-066. `true` on a notice, `null` on an attempt. */
+  readBackConfirmed: boolean | null;
+  /** ORD-068. Given outside the site's hours. */
+  afterHours: boolean;
 }
 
 /** ORD-062. What recording a notice writes. */
@@ -108,7 +125,16 @@ export interface NewCriticalNotice {
   notifiedById: string;
   notifiedAt: Date;
   note: string | null;
+  outcome: CriticalNoticeOutcome;
+  readBackConfirmed: boolean | null;
+  afterHours: boolean;
   sites: SiteScopeFilter;
+  /**
+   * ORD-062, ORD-091. The trail row is written IN THE SAME TRANSACTION as the
+   * notice: a notice that landed without its row — or a retry after a failed
+   * row — would be a second, indelible notice.
+   */
+  trail: { ip?: string; userAgent?: string };
 }
 
 /**
@@ -195,12 +221,23 @@ export interface SafetyPolicy {
 }
 
 /** ORD-060, ORD-065. A critical value with how long it has waited. */
-export interface CriticalWorklistEntry extends FlaggedResultEntry {
+/** ORD-067. A critical row as the adapter reads it: with its unanswered calls. */
+export interface CriticalQueueRow extends FlaggedResultEntry {
+  noAnswerAttempts: number;
+}
+
+export interface CriticalWorklistEntry extends CriticalQueueRow {
   waitingMinutes: CriticalWait['waitingMinutes'];
   noticeDueAt: CriticalWait['dueAt'];
   overdue: CriticalWait['overdue'];
-  /** The role an overdue value goes to, when the site names one. */
+  /** The site's on-call role, when it names one. */
   escalateTo: { roleId: string; name: string } | null;
+  /** ORD-068. The site is out of hours now. */
+  afterHours: boolean;
+  /** ORD-065, ORD-068. Whom the notice is due to now. */
+  noticeTarget: CriticalNoticeTarget;
+  /** ORD-065. The escalation is due and the site named nobody. */
+  escalationMissing: boolean;
 }
 
 /** ORD-040, ORD-046. An unmatched result with who answers for it, and by when. */
@@ -246,6 +283,10 @@ export interface MatchableResult {
   abnormalFlag: AbnormalFlag | null;
   /** ORD-062. A notice cannot precede the result it announces. */
   observedAt: Date;
+  /** ORD-068. Whose hours decide whether a notice is after hours. */
+  siteId: string;
+  /** ORD-043, ORD-062. A retracted value is neither paired nor notified. */
+  superseded: boolean;
 }
 
 /**
@@ -367,7 +408,7 @@ export interface DiagnosticReportRepository {
    * whoever answers. The `CRITICAL` rows of `analyte_reference_range` are the
    * net.
    */
-  critical(query: SafetyWorklistQuery): Promise<FlaggedResultEntry[]>;
+  critical(query: SafetyWorklistQuery): Promise<CriticalQueueRow[]>;
 
   /**
    * ORD-062. Writes the notice of a critical value.
@@ -387,6 +428,16 @@ export interface DiagnosticReportRepository {
   safetyPolicies(
     siteIds: readonly string[],
   ): Promise<ReadonlyMap<string, SafetyPolicy>>;
+
+  /**
+   * ORD-068. Which of these sites are IN HOURS at that instant: some active
+   * schedule rule of the site, valid that day, covers that weekday and time in
+   * `America/Guayaquil`, and the day is not a holiday the site keeps.
+   */
+  sitesInHours(
+    siteIds: readonly string[],
+    at: Date,
+  ): Promise<ReadonlySet<string>>;
 }
 
 /** Injection token. The application never names the adapter. */

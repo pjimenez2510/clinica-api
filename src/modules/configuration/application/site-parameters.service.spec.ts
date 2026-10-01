@@ -69,6 +69,17 @@ class RepositoryDouble implements SiteParameterRepository {
    */
   installedAnswer: readonly string[] | null = null;
 
+  /** ORD-046, ORD-065: what each role grants; absent = does not exist. */
+  rolesAnswer: Record<string, readonly string[]> = {
+    'role-guardia': ['record:read', 'result:write'],
+    'role-caja': ['billing:read'],
+  };
+
+  rolePermissions(roleId: string): Promise<readonly string[] | null> {
+    this.calls.push({ method: 'rolePermissions', args: [roleId] });
+    return Promise.resolve(this.rolesAnswer[roleId] ?? null);
+  }
+
   installedPermissions(codes: readonly string[]): Promise<readonly string[]> {
     this.calls.push({ method: 'installedPermissions', args: [codes] });
     return Promise.resolve(this.installedAnswer ?? codes);
@@ -301,6 +312,20 @@ describe('los parámetros de operación de una sede', () => {
     expect(update?.args[1]).toMatchObject({
       criticalNoticeWithinMinutes: null,
     });
+  });
+
+  it('ORD-046 y ORD-065 rechazan un rol que no puede trabajar las colas de resultados, y no escriben nada', async () => {
+    await expect(
+      service.update('site-1', { unmatchedResultOwnerRoleId: 'role-caja' }, REQUESTER), // prettier-ignore
+    ).rejects.toMatchObject({
+      code: 'ROLE_CANNOT_WORK_RESULTS',
+      fieldErrors: [expect.objectContaining({ field: 'unmatchedResultOwnerRoleId' })], // prettier-ignore
+    });
+    expect(repository.calls.some((call) => call.method === 'update')).toBe(false); // prettier-ignore
+
+    // Control positivo: el de guardia sí.
+    await service.update('site-1', { criticalEscalationRoleId: 'role-guardia' }, REQUESTER); // prettier-ignore
+    expect(repository.calls.some((call) => call.method === 'update')).toBe(true); // prettier-ignore
   });
 
   it('AG-101 no pregunta por el catálogo cuando el permiso no se toca', async () => {

@@ -462,3 +462,45 @@ export class CriticalNoticeTimeInvalidError extends ValidationError {
     super('The notice instant is in the future or before the result');
   }
 }
+
+/**
+ * ORD-062, ORD-043. The value belongs to a report the laboratory already
+ * corrected.
+ *
+ * Acting on a figure that was retracted means phoning a patient about a result
+ * that is not theirs, or closing a line with a value that no longer stands.
+ * The one to work is the value that replaced it.
+ */
+export class ResultSupersededError extends ValidationError {
+  readonly code = 'RESULT_SUPERSEDED';
+  override readonly userTitle =
+    'Ese valor pertenece a un informe que el laboratorio ya corrigió. Trabaje el valor del informe vigente';
+
+  constructor() {
+    super('The observation result belongs to a superseded report');
+  }
+}
+
+/**
+ * ORD-066, D-111 §4. A notice given without confirming that the recipient
+ * repeated the value back.
+ *
+ * The figure dictated over the phone is the one most often misheard; read-back
+ * is the standard safety practice for critical results given by voice.
+ */
+export class CriticalReadBackRequiredError extends ValidationError {
+  readonly code = 'CRITICAL_READ_BACK_REQUIRED';
+  override readonly userTitle =
+    'Confirme que quien recibió el aviso repitió el valor. Si nadie contestó, regístrelo como llamada sin respuesta';
+  override readonly fieldErrors = [
+    {
+      field: 'readBack',
+      code: 'CRITICAL_READ_BACK_REQUIRED',
+      message: 'Marque que la persona repitió el valor',
+    },
+  ];
+
+  constructor() {
+    super('A given notice requires the read-back confirmation');
+  }
+}

@@ -7,10 +7,12 @@ import {
   OrderNotFoundError,
   ResultAlreadyMatchedError,
   ResultNotFoundError,
+  ResultSupersededError,
 } from '../domain/orders.errors';
 import { isLineComplete } from '../domain/service-order';
 import type {
   CriticalNoticeView,
+  CriticalQueueRow,
   DiagnosticReportRepository,
   DiagnosticReportView,
   ExpectedAnalytes,
@@ -65,6 +67,9 @@ const NOTICE_SELECT = {
   channel: true,
   notifiedAt: true,
   note: true,
+  outcome: true,
+  readBackConfirmed: true,
+  afterHours: true,
   notifiedBy: { select: { id: true, firstName: true, lastName: true } },
 } satisfies Prisma.CriticalResultNoticeSelect;
 
@@ -264,9 +269,16 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
     const rows = await this.prisma.observationResult.findMany({
       where: {
         orderItemId: null,
-        report: { serviceOrder: siteFilter(query.sites) },
+        /**
+         * ORD-041, ORD-043. ONLY THE STANDING VERSION, as on the critical
+         * queue: a value the laboratory retracted is not somebody's to pair,
+         * and pairing it would close a line with a figure that no longer
+         * stands.
+         */
+        report: { serviceOrder: siteFilter(query.sites), supersededBy: null },
       },
-      orderBy: [{ observedAt: 'desc' }, { id: 'desc' }],
+      // Oldest first: what has waited longest is what is closest to lost.
+      orderBy: [{ observedAt: 'asc' }, { id: 'asc' }],
       take: query.limit,
       select: WORKLIST_SELECT,
     });
@@ -286,7 +298,13 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
         orderItemId: true,
         abnormalFlag: true,
         observedAt: true,
-        report: { select: { serviceOrderId: true } },
+        report: {
+          select: {
+            serviceOrderId: true,
+            serviceOrder: { select: { siteId: true } },
+            supersededBy: { select: { id: true } },
+          },
+        },
       },
     });
     if (!row) return undefined;
@@ -298,6 +316,8 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
       orderItemId: row.orderItemId,
       abnormalFlag: row.abnormalFlag,
       observedAt: row.observedAt,
+      siteId: row.report.serviceOrder.siteId,
+      superseded: row.report.supersededBy !== null,
     };
   }
 
@@ -348,6 +368,8 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
           report: {
             serviceOrderId: command.orderId,
             serviceOrder: siteFilter(command.sites),
+            // ORD-043. Never a retracted value, judged where the row lands.
+            supersededBy: null,
           },
         },
         data: { orderItemId: command.orderItemId },
@@ -361,9 +383,15 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
          */
         const current = await tx.observationResult.findFirst({
           where: { id, report: { serviceOrder: siteFilter(command.sites) } },
-          select: { orderItemId: true },
+          select: {
+            orderItemId: true,
+            report: { select: { supersededBy: { select: { id: true } } } },
+          },
         });
         if (!current) throw new ResultNotFoundError();
+        if (current.orderItemId === null && current.report.supersededBy) {
+          throw new ResultSupersededError();
+        }
         throw new ResultAlreadyMatchedError();
       }
 
@@ -392,7 +420,7 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
    * on anything the laboratory sent — many send only «alto/bajo», some send
    * nothing, and the ones that phone do it to whoever picks up.
    */
-  async critical(query: SafetyWorklistQuery): Promise<FlaggedResultEntry[]> {
+  async critical(query: SafetyWorklistQuery): Promise<CriticalQueueRow[]> {
     const rows = await this.prisma.observationResult.findMany({
       where: {
         abnormalFlag: { in: ['CRITICAL_LOW', 'CRITICAL_HIGH'] },
@@ -417,17 +445,28 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
           supersededBy: null,
         },
         /**
-         * ORD-062. NOT YET NOTIFIED. Any notice takes the value off: the
-         * obligation of art. 39 is to tell somebody, and once somebody was
-         * told, with a name and an hour, the value is no longer waiting.
+         * ORD-062, ORD-067. NOT YET NOTIFIED. A notice actually given takes the
+         * value off — somebody was told, with a name and an hour. An
+         * unanswered call does NOT (D-111 §5): more than 5 % of these calls go
+         * unanswered, and that value is still waiting.
          */
-        notices: { none: {} },
+        notices: { none: { outcome: 'NOTIFIED' } },
       },
-      orderBy: [{ observedAt: 'desc' }, { id: 'desc' }],
+      /**
+       * OLDEST FIRST, and it is the safety order: with more values waiting
+       * than the page holds, the one cut off must never be the most overdue.
+       */
+      orderBy: [{ observedAt: 'asc' }, { id: 'asc' }],
       take: query.limit,
-      select: WORKLIST_SELECT,
+      select: {
+        ...WORKLIST_SELECT,
+        _count: { select: { notices: { where: { outcome: 'NO_ANSWER' } } } },
+      },
     });
-    return rows.map(toWorklistEntry);
+    return rows.map((row) => ({
+      ...toWorklistEntry(row),
+      noAnswerAttempts: row._count.notices,
+    }));
   }
 
   /** ORD-046, ORD-063, ORD-065. Each site's worklist policy. */
@@ -460,6 +499,47 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
     );
   }
 
+  /**
+   * ORD-068. Sites in hours at `at`, judged in `America/Guayaquil`.
+   *
+   * NO OPENING HOURS EXIST IN THE MODEL, so the site's hours are its
+   * practitioners' (`practitioner_schedule_rule`): in hours when some active
+   * rule of the site, valid that day (`validity`, inclusive), covers that ISO
+   * weekday and wall-clock time, and the day is not a holiday the site keeps —
+   * national or its own, unless it works it (`holiday_site_exception`).
+   */
+  async sitesInHours(
+    siteIds: readonly string[],
+    at: Date,
+  ): Promise<ReadonlySet<string>> {
+    if (siteIds.length === 0) return new Set();
+
+    const rows = await this.prisma.$queryRaw<{ site_id: string }[]>`
+      WITH here AS (
+        SELECT (${at}::timestamptz AT TIME ZONE 'America/Guayaquil') AS local
+      )
+      SELECT s."id"::text AS site_id
+        FROM "site" s, here
+       WHERE s."id" = ANY(${[...new Set(siteIds)]}::uuid[])
+         AND EXISTS (
+               SELECT 1 FROM "practitioner_schedule_rule" r
+                WHERE r."site_id" = s."id"
+                  AND r."active"
+                  AND r."weekday" = EXTRACT(ISODOW FROM here.local)::int
+                  AND r."validity" @> here.local::date
+                  AND here.local::time >= r."start_time"
+                  AND here.local::time <  r."end_time")
+         AND NOT EXISTS (
+               SELECT 1 FROM "holiday" h
+                WHERE h."date" = here.local::date
+                  AND (h."site_id" IS NULL OR h."site_id" = s."id")
+                  AND NOT EXISTS (
+                        SELECT 1 FROM "holiday_site_exception" e
+                         WHERE e."holiday_id" = h."id" AND e."site_id" = s."id"))
+    `;
+    return new Set(rows.map((row) => row.site_id));
+  }
+
   /** ORD-062. The notice of a critical value; never rewritten (ORD-064). */
   async recordNotice(notice: NewCriticalNotice): Promise<CriticalNoticeView> {
     const row = await this.prisma.$transaction((tx) => writeNotice(tx, notice));
@@ -480,11 +560,13 @@ async function writeNotice(
 
   const result = await tx.observationResult.findFirst({
     where: { id, report: { serviceOrder: siteFilter(notice.sites) } },
-    select: { id: true },
+    select: { id: true, report: { select: { supersededBy: { select: { id: true } } } } }, // prettier-ignore
   });
   if (!result) throw new ResultNotFoundError();
+  // ORD-062. A retracted value is not phoned in, judged where the row lands.
+  if (result.report.supersededBy) throw new ResultSupersededError();
 
-  return tx.criticalResultNotice.create({
+  const written = await tx.criticalResultNotice.create({
     data: {
       observationResultId: id,
       recipientKind: notice.recipientKind,
@@ -493,9 +575,31 @@ async function writeNotice(
       notifiedById: notice.notifiedById,
       notifiedAt: notice.notifiedAt,
       note: notice.note,
+      outcome: notice.outcome,
+      readBackConfirmed: notice.readBackConfirmed,
+      afterHours: notice.afterHours,
     },
     select: NOTICE_SELECT,
   });
+
+  /**
+   * ORD-062, ORD-091. THE TRAIL ROW IN THE SAME TRANSACTION, as `MFA_RESET`
+   * does: a notice is indelible (ORD-064), so a trail failure after it would
+   * answer 500 to a notice that exists, and the retry would write a second.
+   * Identifiers only — never the value nor who was called.
+   */
+  await tx.accessAudit.create({
+    data: {
+      userId: notice.notifiedById,
+      resourceType: 'critical_result_notice',
+      resourceId: written.id,
+      action: 'CREATE',
+      ip: notice.trail.ip ?? null,
+      userAgent: notice.trail.userAgent ?? null,
+    },
+  });
+
+  return written;
 }
 
 /**
@@ -642,6 +746,9 @@ function toNoticeView(row: NoticeRow): CriticalNoticeView {
       name: `${row.notifiedBy.firstName} ${row.notifiedBy.lastName}`,
     },
     note: row.note,
+    outcome: row.outcome,
+    readBackConfirmed: row.readBackConfirmed,
+    afterHours: row.afterHours,
   };
 }
 
