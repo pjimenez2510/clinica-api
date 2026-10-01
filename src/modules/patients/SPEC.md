@@ -1784,6 +1784,22 @@ Ningún requisito de esta sección lo altera._
   > `patients/domain` —justo la capa que no puede nombrarlo— y cablearse desde
   > fuera de los dos módulos para evitar el import que existe para evitar.
 
+- **PA-062** — CUANDO se fusionen dos fichas, SI la fusión junta reposos
+  médicos **no anulados**, uno de cada ficha, que se **solapan** y uno de los dos
+  es de **maternidad** —lo que CER-048 rechaza al emitir—, ENTONCES el sistema
+  DEBERÁ fusionarlas igualmente y devolver en `restOverlapNotice` cuántos son y
+  que se anule desde su atención el que no corresponda; sin solapes, y siempre
+  al deshacer, `restOverlapNotice` DEBERÁ ser `null`.
+
+  > **D-110 §7** (el autor, 01-10-2026, provisional hasta el IESS): la fusión
+  > corrige una identidad duplicada y no se impide por esto. La transacción de
+  > la fusión toma **primero** el candado de reposos de las dos fichas —la
+  > misma clave que `medical_certificate_issue_rules`— y después la fila: el
+  > orden en que una emisión los toma, sin ciclo. Una emisión que esperaba
+  > vuelve a leer la ficha tras el candado y juzga la que quedó. Vive en
+  > `shared/infrastructure/prisma/rests-on-merge.ts` por el mismo motivo que
+  > PA-060: `medical_certificate` es de `certificates`.
+
 - **PA-061** — La ficha DEBERÁ guardar la **empresa** donde trabaja el paciente
   y su **puesto de trabajo**, los dos opcionales, y CUANDO se corrijan el
   sistema DEBERÁ dejar su fila en el histórico de la ficha como cualquier otro

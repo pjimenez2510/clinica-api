@@ -23,8 +23,9 @@
 --    anulando el anterior (D-110 §4). Por eso el candado de la ficha se toma
 --    ahora para todo reposo.
 --
--- Sólo al insertar, como el resto de la función. Lo de la fusión de fichas que
--- junta reposos solapados (D-110 §7) sigue pendiente.
+-- Sólo al insertar, como el resto de la función. La fusión de fichas que junta
+-- reposos solapados (D-110 §7) no se impide: avisa (PA-062, `rests-on-merge.ts`),
+-- y comparte con esta función el candado de reposos de cada ficha.
 -- Después: pnpm migrations:check && pnpm db:deploy
 
 
@@ -39,6 +40,7 @@ DECLARE
   late_day      date;
   is_maternity  boolean;
   chart         uuid;
+  current_chart uuid;
 BEGIN
   SELECT e."practitioner_id",
          (e."started_at" AT TIME ZONE 'America/Guayaquil')::date
@@ -113,6 +115,17 @@ BEGIN
       FROM "patient" p
      WHERE p."id" = NEW."patient_id";
     PERFORM pg_advisory_xact_lock(hashtextextended('medical_certificate_rest:' || chart::text, 0));
+    -- PA-062: una fusión toma los candados de las dos fichas antes de enlazar
+    -- una con otra. Si mientras se esperaba aquí una fusión cambió la ficha, se
+    -- vuelve a leer y se toma también el candado de la nueva: así se juzga la
+    -- ficha que quedó, no la que había al llegar.
+    SELECT COALESCE(p."merged_into_id", p."id") INTO current_chart
+      FROM "patient" p
+     WHERE p."id" = NEW."patient_id";
+    IF current_chart <> chart THEN
+      chart := current_chart;
+      PERFORM pg_advisory_xact_lock(hashtextextended('medical_certificate_rest:' || chart::text, 0));
+    END IF;
 
     -- D-109 y D-110: lo que acota la maternidad, una vez quitados los 3 y 8
     -- días. Con una fecha NULL estas comparaciones no rechazan; no hace falta

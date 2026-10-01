@@ -13,6 +13,7 @@ import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
 import { PatientMergeService } from '../../src/modules/patients/application/patient-merge.service';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
+import { addDays, clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import {
   chartScope,
   chartScopeIds,
@@ -21,6 +22,7 @@ import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.ser
 
 import { useDatabase } from './setup/database';
 import {
+  createDiagnosis,
   createEncounter,
   createPatient,
   createPractitioner,
@@ -71,6 +73,8 @@ interface Problem {
 /** La respuesta de las dos rutas, que es la misma: un suceso del registro. */
 interface MergeBody {
   mergeId: string;
+  /** PA-062. El aviso de reposos solapados con una maternidad, o `null`. */
+  restOverlapNotice: string | null;
   event: 'MERGE' | 'UNDO';
   sourcePatientId: string;
   sourceMrn: string;
@@ -2243,6 +2247,65 @@ describe('fusión de duplicados: el contrato y su permiso', () => {
     expect(
       await prismaClient.agendaEntry.count({ where: { patientId: target.id } }),
     ).toBe(0);
+  });
+
+  it('PA-062 la fusión que junta un reposo con una maternidad que se solapa se hace igual, y avisa', async () => {
+    const prismaClient = db();
+    const site = await createSite(prismaClient, 'Sede Norte');
+    const practitioner = await createPractitioner(prismaClient);
+
+    let codes = 0;
+    /** A rest on its own attention of `chart`, issued that same day. */
+    async function aRest(
+      chart: { id: string },
+      period: { from: number; to: number },
+      maternity: boolean,
+    ) {
+      const encounter = await createEncounter(prismaClient, {
+        siteId: site.id,
+        practitionerId: practitioner.id,
+        patientId: chart.id,
+      });
+      const day = clinicalDateOf(encounter.startedAt);
+      const date = (offset: number) => new Date(`${addDays(day, offset)}T00:00:00Z`); // prettier-ignore
+      if (maternity) await createDiagnosis(prismaClient, encounter.id, 'O80');
+      return prismaClient.medicalCertificate.create({
+        data: {
+          encounterId: encounter.id,
+          siteId: site.id,
+          patientId: chart.id,
+          issuedById: practitioner.id,
+          type: 'MEDICAL_REST',
+          restFrom: date(period.from),
+          restTo: date(period.to),
+          includeDiagnosis: true,
+          contingencyType: maternity ? 'MATERNITY' : 'GENERAL_ILLNESS',
+          ...(maternity
+            ? { maternityAdmissionOn: date(-1), birthOn: date(0), maternityDischargeOn: date(2) } // prettier-ignore
+            : {}),
+          verificationCode: `VC-PA062-${String(++codes).padStart(4, '0')}`,
+          issuedAt: encounter.startedAt,
+        },
+      });
+    }
+
+    // La duplicada tiene un reposo general; la de la paciente, su maternidad.
+    const source = await createPatient(prismaClient);
+    const target = await createPatient(prismaClient);
+    await aRest(source, { from: 0, to: 1 }, false);
+    await aRest(target, { from: 0, to: 10 }, true);
+    const body = await mergeCharts(source, target);
+    // La fusión se hace (PA-043) y lo dice.
+    expect(body.event).toBe('MERGE');
+    expect(body.restOverlapNotice).toContain('1 reposo');
+    expect(body.restOverlapNotice).toContain('maternidad');
+
+    // Control positivo: sin solape, sin aviso.
+    const apart = await createPatient(prismaClient);
+    const survivor = await createPatient(prismaClient);
+    await aRest(apart, { from: 0, to: 0 }, false);
+    await aRest(survivor, { from: 1, to: 10 }, true);
+    expect((await mergeCharts(apart, survivor)).restOverlapNotice).toBeNull();
   });
 
   it('PA-049 cuenta TODO lo que se queda en la absorbida, las ALERGIAS incluidas', async () => {

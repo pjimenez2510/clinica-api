@@ -573,7 +573,15 @@ export interface PatientMergeEvent {
  * service names the error.
  */
 export type MergeOutcome =
-  | { status: 'MERGED'; event: PatientMergeEvent }
+  | {
+      status: 'MERGED';
+      event: PatientMergeEvent;
+      /**
+       * PA-062. Pairs of rests, neither revoked, one of them a maternity
+       * rest, that the merge brought together overlapping.
+       */
+      restOverlaps: number;
+    }
   | {
       /**
        * PA-045. The SOURCE chart is already merged, so there is nothing to

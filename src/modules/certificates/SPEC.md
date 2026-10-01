@@ -569,7 +569,7 @@ PR-030).
   > nadie decidió lo contrario. **§4:** el choque se ratifica; se corrige
   > anulando el anterior (CER-011), que deja libre su período. Se cumple **al
   > emitir**: una fusión de fichas posterior puede juntar dos reposos que se
-  > solapan (D-110 §7, pendiente).
+  > solapan, y la fusión se hace igual y lo avisa (D-110 §7, PA-062).
 
 - **CER-049** — CUANDO se emita un reposo de contingencia **maternidad**, SI la
   atención no tiene **ningún diagnóstico CIE-10 obstétrico** —de O00 a O99 o de

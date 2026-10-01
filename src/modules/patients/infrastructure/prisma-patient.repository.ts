@@ -10,6 +10,10 @@ import {
 } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
+  lockRestsOfCharts,
+  maternityRestOverlapsOnMerge,
+} from '../../../shared/infrastructure/prisma/rests-on-merge';
+import {
   reEnrolOpenWaitlistEntries,
   reEnrolledWaitlistEntryIdsOf,
   reEnrolledWaitlistEntrySnapshot,
@@ -1417,6 +1421,7 @@ export class PrismaPatientRepository implements PatientRepository {
   }): Promise<MergeOutcome> {
     let mergeId: bigint | 'SOURCE_MERGED';
     let survivingMrn = '';
+    let restOverlaps = 0;
     try {
       mergeId = await this.prisma.$transaction(async (tx) => {
         /**
@@ -1446,6 +1451,9 @@ export class PrismaPatientRepository implements PatientRepository {
          * (a `patient.open_merge_id` column, or a trigger), and that is not
          * this batch's to write.
          */
+        // PA-062. The rest locks of both charts FIRST, before the chart row:
+        // the order an issue takes them in (see `rests-on-merge.ts`).
+        await lockRestsOfCharts(tx, [input.sourcePatientId, input.targetPatientId]); // prettier-ignore
         await lockChart(tx, input.sourcePatientId);
 
         const state = await tx.$queryRaw<{ survivingMrn: string | null }[]>`
@@ -1561,6 +1569,13 @@ export class PrismaPatientRepository implements PatientRepository {
           survivingChartId: input.targetPatientId,
         });
 
+        // PA-062, D-110 §7. Rests the merge brings together that CER-048 would
+        // have refused at issue: the merge goes ahead, and says so.
+        restOverlaps = await maternityRestOverlapsOnMerge(tx, {
+          absorbedChartId: input.sourcePatientId,
+          survivingChartId: input.targetPatientId,
+        });
+
         const row = await tx.patientMerge.create({
           data: {
             event: 'MERGE',
@@ -1638,7 +1653,11 @@ export class PrismaPatientRepository implements PatientRepository {
       return { status: 'SOURCE_MERGED', survivingMrn };
     }
 
-    return { status: 'MERGED', event: await this.mergeEventOf(mergeId) };
+    return {
+      status: 'MERGED',
+      event: await this.mergeEventOf(mergeId),
+      restOverlaps,
+    };
   }
 
   /**
