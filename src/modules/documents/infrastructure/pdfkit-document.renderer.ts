@@ -287,7 +287,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         .font(FONT_REGULAR)
         .fontSize(SIZE.small)
         .fillColor('#000000')
-        .text(`Código de verificación: ${layout.reference}`, left, doc.y, {
+        .text(layout.reference, left, doc.y, {
           width,
           align: 'center',
         });

@@ -86,11 +86,9 @@ export const orderItemSchema = z.object({
 /**
  * ORD-009. One order as a client reads it.
  *
- * ⚠️ NO `orderNumber`, AND ITS ABSENCE IS ORD-006 MADE VISIBLE. The A.M.
- * 00002393 art. 43 requires orders «codificadas de manera consecutiva» and
- * `service_order` has no such column. The technical id is served because a
- * client needs to address the row; it is NOT the legal number and is not
- * presented as one.
+ * `number` is ORD-006, the legal number of the A.M. 00002393 art. 43:
+ * consecutive per site and printed on the request. The technical id is served
+ * because a client needs to address the row; it is NOT the legal number.
  */
 export const serviceOrderSchema = z.object({
   id: z.uuid(),
@@ -98,6 +96,8 @@ export const serviceOrderSchema = z.object({
   siteId: z.uuid(),
   patientId: z.uuid(),
   orderedById: z.uuid(),
+  /** ORD-006. Consecutive per site; assigned by the database. */
+  number: z.number().int().positive(),
   category: CATEGORY,
   priority: PRIORITY,
   clinicalNoteText: z.string().nullable(),
@@ -155,6 +155,8 @@ export class PendingOrdersQueryDto extends createZodDto(
  */
 export const pendingOrderSchema = z.object({
   orderId: z.uuid(),
+  /** ORD-006. What a report that comes back on paper quotes. */
+  orderNumber: z.number().int().positive(),
   itemId: z.uuid(),
   siteId: z.uuid(),
   patientId: z.uuid(),

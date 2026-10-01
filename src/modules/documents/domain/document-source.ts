@@ -107,6 +107,8 @@ export interface PrescriptionPrintData {
 export interface ServiceOrderPrintData {
   subjectId: string;
   siteId: string;
+  /** ORD-006. The consecutive number per site, printed as the reference. */
+  number: number;
   requestedAt: Date;
   category: string;
   priority: string;

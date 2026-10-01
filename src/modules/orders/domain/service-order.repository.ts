@@ -35,10 +35,9 @@ export type SiteScopeFilter = 'all' | readonly string[];
  * does, and neither does what the line costs — that is `charge_item`, in
  * `billing`.
  *
- * ⚠️ AND NO `orderNumber`. **Falta esquema (ORD-006)**: `service_order` has no
- * consecutive number and the A.M. 00002393 art. 43 requires one. It is absent
- * here rather than faked from the uuid, because a field that looks like the
- * legal number and is not would be worse than the gap it hides.
+ * `number` is the legal number of ORD-006 (A.M. 00002393 art. 43): per site,
+ * consecutive, without gaps, assigned by the database. The uuid addresses the
+ * row; the number is what is printed and dictated over the phone.
  */
 export interface ServiceOrderView {
   id: string;
@@ -46,6 +45,8 @@ export interface ServiceOrderView {
   siteId: string;
   patientId: string;
   orderedById: string;
+  /** ORD-006. Assigned by `service_order_number_assigned`, never by the code. */
+  number: number;
   category: ServiceOrderCategory;
   priority: ServiceOrderPriority;
   clinicalNoteText: string | null;
@@ -121,6 +122,8 @@ export interface OrderQuery {
  */
 export interface PendingOrderEntry {
   orderId: string;
+  /** ORD-006. What a paper report quotes back. */
+  orderNumber: number;
   itemId: string;
   siteId: string;
   patientId: string;

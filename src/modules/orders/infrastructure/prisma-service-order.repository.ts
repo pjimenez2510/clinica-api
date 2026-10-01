@@ -68,6 +68,7 @@ const ORDER_SELECT = {
   encounterId: true,
   siteId: true,
   orderedById: true,
+  number: true,
   category: true,
   priority: true,
   clinicalNoteText: true,
@@ -230,6 +231,7 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
         siteId: true,
         encounterId: true,
         orderedById: true,
+        number: true,
         category: true,
         priority: true,
         requestedAt: true,
@@ -264,6 +266,7 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
     return rows.flatMap((order) =>
       order.items.map((item) => ({
         orderId: order.id,
+        orderNumber: order.number,
         itemId: item.id,
         siteId: order.siteId,
         patientId: order.encounter.patientId,
@@ -446,6 +449,7 @@ function toOrderView(row: OrderRow): ServiceOrderView {
     siteId: row.siteId,
     patientId: row.encounter.patientId,
     orderedById: row.orderedById,
+    number: row.number,
     category: row.category,
     priority: row.priority,
     clinicalNoteText: row.clinicalNoteText,

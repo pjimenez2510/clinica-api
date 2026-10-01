@@ -69,6 +69,29 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     expect(order.siteId).toBe(scene.site.id);
   });
 
+  it('ORD-006 la orden emitida vuelve con su número, y la segunda con el siguiente', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const place = () =>
+      ordersOf(prisma).place({
+        encounterId: scene.encounter.id,
+        category: 'LABORATORY',
+        priority: 'ROUTINE',
+        lines: [{ examDefinitionId: scene.bh.id, conceptId: scene.concept.id }],
+        sites: 'all',
+      });
+
+    const first = await place();
+    const second = await place();
+
+    expect(first.number).toBe(1);
+    expect(second.number).toBe(2);
+    expect(
+      (await ordersOf(prisma).byId({ orderId: second.id, sites: 'all' }))
+        ?.number,
+    ).toBe(2);
+  });
+
   it('ORD-002 mantiene `pending_items` en paso con las líneas, por disparador', async () => {
     const prisma = db();
     const scene = await aScene(prisma);

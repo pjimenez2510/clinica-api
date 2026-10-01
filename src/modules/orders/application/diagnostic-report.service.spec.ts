@@ -86,6 +86,7 @@ const anOrder = (): ServiceOrderView => ({
   siteId: SITE,
   patientId: 'chart-1',
   orderedById: 'practitioner-1',
+  number: 1,
   category: 'LABORATORY',
   priority: 'ROUTINE',
   clinicalNoteText: null,

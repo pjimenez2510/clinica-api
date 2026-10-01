@@ -353,14 +353,17 @@ cuando la gráfica exista.
   inmutable**, distinto de su identificador técnico, y ese número DEBERÁ
   imprimirse en la petición que se entrega al paciente.
 
-  > **Falta esquema, y es una obligación legal.** `service_order` no tiene
-  > columna de número y no hay secuencia. El **A.M. 00002393 art. 43** exige que
-  > las órdenes estén *«codificadas de manera consecutiva»*, y sin número no hay
-  > nada que conciliar cuando el informe vuelve en papel: el `uuidv7()` es único
-  > pero no es consecutivo ni se puede dictar por teléfono. La forma ya está
-  > resuelta en este mismo repositorio: `patient_mrn_seq` y su disparador
-  > (`20260808030000_patient_mrn_sequence`) son el patrón exacto a copiar.
-  > **Es la nota más importante de este documento.**
+  > **Construido** (`20261001031348_document_counter_and_order_number`).
+  > `service_order.number` lo asigna el disparador
+  > `service_order_number_assigned` desde `document_counter`, **por sede**
+  > (D-074), dentro de la transacción que emite: una emisión revertida devuelve
+  > su número y la serie no tiene huecos, que es lo que una `SEQUENCE` como
+  > `patient_mrn_seq` no garantiza. `service_order_site_number_unique` y
+  > `service_order_number_immutable` lo dicen una segunda vez. El disparador
+  > **pisa** el valor que traiga la fila: nadie elige el número. El A.M.
+  > 00002393 **art. 43** exige que las órdenes estén *«codificadas de manera
+  > consecutiva»*, y el número es lo que se dicta por teléfono cuando el
+  > informe vuelve en papel.
 
 - **ORD-007** — CUANDO se anula una línea pedida por error, el sistema DEBERÁ
   dejarla en `CANCELLED` con su `completed_at`, y la línea DEBERÁ desaparecer de
@@ -847,7 +850,7 @@ precisamente para que más de un módulo pueda responderlos con el mismo `code`.
 
 | Qué falta | Dónde | Requisito |
 | --- | --- | --- |
-| **Número de orden consecutivo** + secuencia + disparador. **A.M. 00002393 art. 43** | `service_order` | ORD-006 |
+| ~~Número de orden consecutivo~~ — construido: `document_counter` + disparador. **A.M. 00002393 art. 43** | `service_order` | ORD-006 |
 | **Constancia del aviso de un valor crítico**: destinatario, emisor, instante y medio. **A.M. 00002393 art. 39** | tabla nueva | ORD-062 |
 | Adjunto del PDF del laboratorio, indexado por paciente, fecha y laboratorio | tabla nueva | ORD-070 |
 | **`analyte_definition_id`**, para que el resultado apunte a su definición y no a un texto | `observation_result` | ORD-031 |

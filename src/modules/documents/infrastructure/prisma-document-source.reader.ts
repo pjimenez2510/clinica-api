@@ -428,6 +428,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       select: {
         id: true,
         siteId: true,
+        number: true,
         requestedAt: true,
         category: true,
         priority: true,
@@ -451,6 +452,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       data: {
         subjectId: row.id,
         siteId: row.siteId,
+        number: row.number,
         requestedAt: row.requestedAt,
         category: row.category,
         priority: row.priority,

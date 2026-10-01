@@ -1049,22 +1049,23 @@ model Site {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  rooms           SiteRoom[]
-  emissionPoints  EmissionPoint[]
-  holidays        Holiday[]
-  parameters      SiteParameter?
-  workedHolidays  HolidaySiteException[]
-  roleGrants      UserRoleGrant[]
-  practitioners   PractitionerSite[]
-  scheduleRules   PractitionerScheduleRule[]
-  agendaEntries   AgendaEntry[]
-  encounters      Encounter[]
-  waitlistEntries WaitlistEntry[]
-  serviceOrders   ServiceOrder[]
-  priceLists      PriceList[]
-  patientAccounts PatientAccount[]
-  invoices        Invoice[]
-  documentRenders DocumentRender[]
+  rooms            SiteRoom[]
+  emissionPoints   EmissionPoint[]
+  holidays         Holiday[]
+  parameters       SiteParameter?
+  workedHolidays   HolidaySiteException[]
+  roleGrants       UserRoleGrant[]
+  practitioners    PractitionerSite[]
+  scheduleRules    PractitionerScheduleRule[]
+  agendaEntries    AgendaEntry[]
+  encounters       Encounter[]
+  waitlistEntries  WaitlistEntry[]
+  serviceOrders    ServiceOrder[]
+  documentCounters DocumentCounter[]
+  priceLists       PriceList[]
+  patientAccounts  PatientAccount[]
+  invoices         Invoice[]
+  documentRenders  DocumentRender[]
 
   @@map("site")
 }
@@ -2726,6 +2727,12 @@ model ServiceOrder {
   orderedById String       @map("ordered_by_id") @db.Uuid
   orderedBy   Practitioner @relation(fields: [orderedById], references: [id], onDelete: Restrict)
 
+  /// ORD-006 (A.M. 00002393 art. 43). Consecutive per site, without gaps,
+  /// assigned by `service_order_number_assigned` from `document_counter` and
+  /// immutable (`service_order_number_immutable`). The database OVERWRITES
+  /// whatever a writer sends: the default only lets Prisma omit it.
+  number Int @default(0)
+
   category ServiceOrderCategory
   priority ServiceOrderPriority @default(ROUTINE)
 
@@ -2746,6 +2753,7 @@ model ServiceOrder {
   /// DOC-003. The archived exam request as it was handed to the patient.
   documentRenders DocumentRender[]
 
+  @@unique([siteId, number], map: "service_order_site_number_unique")
   @@index([encounterId])
   @@index([siteId, requestedAt])
   @@map("service_order")
@@ -3921,4 +3929,18 @@ model DocumentRender {
   @@index([invoiceId], map: "document_render_by_invoice")
   @@index([siteId, issuedAt(sort: Desc)], map: "document_render_by_site")
   @@map("document_render")
+}
+
+/// ORD-006, PR-020, CER-009. The last number handed out per site and document
+/// kind. Incremented INSIDE the issuing transaction by `next_document_number`,
+/// so a rolled-back issue gives its number back and the series has no gaps.
+/// Written only by triggers; the application never touches it.
+model DocumentCounter {
+  siteId     String @map("site_id") @db.Uuid
+  site       Site   @relation(fields: [siteId], references: [id], onDelete: Restrict, map: "document_counter_site_fk")
+  kind       String @db.VarChar(32)
+  lastNumber Int    @default(0) @map("last_number")
+
+  @@id([siteId, kind])
+  @@map("document_counter")
 }

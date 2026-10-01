@@ -255,7 +255,7 @@ export function composePrescriptionLayout(
 
   return {
     title: DOCUMENT_TITLE.PRESCRIPTION,
-    reference: data.verificationCode,
+    reference: `Código de verificación: ${data.verificationCode}`,
     accentColour: template.accentColour,
     header: headerOf(context, template),
     blocks,
@@ -290,7 +290,26 @@ export function composePrescriptionLayout(
   };
 }
 
-/** DOC-072. The exam request. No norm fixes its format. */
+/** How the request names its category: never the enum a clinician cannot read. */
+const ORDER_CATEGORY_LABEL: Record<string, string> = {
+  LABORATORY: 'Laboratorio',
+  IMAGING: 'Imagen',
+  PROCEDURE: 'Procedimiento',
+};
+
+const ORDER_PRIORITY_LABEL: Record<string, string> = {
+  ROUTINE: 'Rutina',
+  URGENT: 'Urgente',
+  STAT: 'Inmediata',
+};
+
+/**
+ * DOC-072. The exam request. No norm fixes its format.
+ *
+ * ORD-006. ITS NUMBER IS THE REFERENCE: the A.M. 00002393 art. 43 asks for
+ * orders «codificadas de manera consecutiva», and the number is what a report
+ * that comes back on paper quotes.
+ */
 export function composeServiceOrderLayout(
   data: ServiceOrderPrintData,
   context: DocumentContext,
@@ -298,7 +317,7 @@ export function composeServiceOrderLayout(
 ): DocumentLayout {
   return {
     title: DOCUMENT_TITLE.SERVICE_ORDER,
-    reference: null,
+    reference: `N.º ${data.number}`,
     accentColour: template.accentColour,
     header: headerOf(context, template),
     blocks: [
@@ -307,8 +326,14 @@ export function composeServiceOrderLayout(
         columns: 3,
         entries: [
           { label: 'Fecha', value: ecuadorianDate(data.requestedAt) },
-          { label: 'Categoría', value: data.category },
-          { label: 'Prioridad', value: data.priority },
+          {
+            label: 'Categoría',
+            value: ORDER_CATEGORY_LABEL[data.category] ?? data.category,
+          },
+          {
+            label: 'Prioridad',
+            value: ORDER_PRIORITY_LABEL[data.priority] ?? data.priority,
+          },
         ],
       },
       { kind: 'rule' },
@@ -461,7 +486,7 @@ export function composeCertificateLayout(
 
   return {
     title: DOCUMENT_TITLE.MEDICAL_CERTIFICATE,
-    reference: data.verificationCode,
+    reference: `Código de verificación: ${data.verificationCode}`,
     accentColour: template.accentColour,
     header: headerOf(context, template),
     blocks,
@@ -556,7 +581,7 @@ export function composeInvoiceLayout(
 
   return {
     title: DOCUMENT_TITLE.INVOICE_RIDE,
-    reference: data.documentNumber,
+    reference: `N.º ${data.documentNumber}`,
     accentColour: template.accentColour,
     header: headerOf(context, template),
     blocks: [

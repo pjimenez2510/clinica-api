@@ -384,6 +384,7 @@ describe('DOC-072 la orden de examen', () => {
         data: {
           subjectId: 'order-1',
           siteId: 'site-1',
+          number: 1,
           requestedAt: new Date('2026-08-21T01:00:00Z'),
           category: 'LABORATORY',
           priority: 'ROUTINE',
@@ -405,6 +406,41 @@ describe('DOC-072 la orden de examen', () => {
     expect(text).toContain('Paciente en ayunas');
     expect(text).toContain('ACESS-99887');
     expect(text).toContain('20/08/2026');
+  });
+});
+
+describe('ORD-006 la orden impresa lleva su número', () => {
+  const order = (): DocumentSubject => ({
+    kind: 'SERVICE_ORDER',
+    data: {
+      subjectId: 'order-1',
+      siteId: 'site-1',
+      number: 41,
+      requestedAt: new Date(0),
+      category: 'IMAGING',
+      priority: 'URGENT',
+      clinicalNoteText: null,
+      patient,
+      diagnoses: [],
+      orderedBy: prescriber,
+      items: [{ display: 'Radiografía de tórax', status: 'REQUESTED' }],
+    },
+  });
+
+  it('ORD-006 el número es la referencia del documento y se imprime', () => {
+    const layout = composeLayout(order(), context, template);
+
+    expect(layout.reference).toBe('N.º 41');
+    expect(wholeText(layout)).toContain('41');
+  });
+
+  it('ORD-006 la categoría y la prioridad se imprimen en castellano, no como el enum', () => {
+    const text = wholeText(composeLayout(order(), context, template));
+
+    expect(text).toContain('Imagen');
+    expect(text).toContain('Urgente');
+    expect(text).not.toContain('IMAGING');
+    expect(text).not.toContain('URGENT');
   });
 });
 

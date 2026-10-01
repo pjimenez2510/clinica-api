@@ -125,7 +125,11 @@ export interface TearOffBand {
 /** A whole document, ready to be painted. */
 export interface DocumentLayout {
   title: string;
-  /** The verification code, the sequential — whatever identifies this document. */
+  /**
+   * The line under the title that identifies this document, LABELLED: «N.º 41»,
+   * «Código de verificación: RX-7Q2K». The renderer prints it as is; a label it
+   * added itself once called the RIDE number a verification code.
+   */
   reference: string | null;
   accentColour: string;
   header: DocumentHeader;
