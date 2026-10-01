@@ -1004,9 +1004,10 @@ es falsa, hay requisitos que cambian.
   > la cédula que va al SRI la garantiza la base igual que la del paciente.
 - **BI-160** — CUANDO quien cobra vaya a emitir una factura a un receptor de
   tipo `06` (pasaporte) u `08` (identificación del exterior) cuyo número tenga
-  forma de cédula o RUC ecuatoriano —sólo dígitos, diez o trece, y los dos
-  primeros una provincia válida (`01`–`24` o `30`)—, la pantalla de caja DEBERÁ
-  preguntar «¿Es una cédula ecuatoriana?» antes de enviarla, y DEBERÁ permitir
+  forma de cédula o RUC ecuatoriano —leído sin guiones, puntos ni espacios,
+  sólo dígitos, diez o trece, y los dos primeros una provincia válida (`01`–`24`
+  o `30`)—, la pantalla de caja DEBERÁ preguntar «¿Es una cédula ecuatoriana?»
+  (o «¿Es un RUC ecuatoriano?» con trece) antes de enviarla, y DEBERÁ permitir
   tanto corregir el tipo como seguir y emitir con el tipo elegido. NO DEBERÁ
   bloquear la emisión, y NO DEBERÁ preguntar cuando el número no tenga esa
   forma.
@@ -1015,7 +1016,16 @@ es falsa, hay requisitos que cambian.
   > el paciente delante es cambiar el tipo a pasaporte. La factura sale sin la
   > cédula del paciente, que pierde la rebaja de gastos personales, y no se
   > corrige (BI-084). **No se comprueba el dígito verificador** a propósito: el
-  > caso que importa es justo el del verificador equivocado.
+  > caso que importa es justo el del verificador equivocado. Los separadores se
+  > quitan por la misma razón: la cédula copiada como viene impresa
+  > (`171003406-6`) la rechaza BI-159 por longitud, y es la que luego se teclea
+  > como pasaporte (revisión de `fix-billing-aviso-documento`).
+  >
+  > **Ninguna respuesta es la de por defecto**: el foco va a la pregunta. «Sí»
+  > ante una cédula colombiana (`10…`, `11…`) inventa una cédula ecuatoriana;
+  > «No» ante una mal tecleada le quita la rebaja al paciente. Siguen abiertas
+  > D-072 (callar cuando la ficha ya dice que es extranjera) y D-073 (los
+  > errores de longitud).
   >
   > **Es de la interfaz y no del servidor**, al revés que BI-081, y es
   > deliberado: un aviso que no bloquea no tiene nada que exigir en la ruta. Un
