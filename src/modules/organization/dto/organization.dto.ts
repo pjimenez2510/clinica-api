@@ -78,10 +78,38 @@ export const establishmentSchema = z.object({
    * BOTH RESPONSES») for why the field can be absent.
    */
   ruc: z.string().nullable().optional(),
+  /** OR-010 to OR-012: what the documents' header prints. */
+  tradeName: z.string().nullable(),
+  contactEmail: z.string().nullable(),
+  operatingPermit: z.string().nullable(),
   active: z.boolean(),
 });
 /** Response of reading and saving the establishment. */
 export class EstablishmentDto extends createZodDto(establishmentSchema) {}
+
+/**
+ * OR-010 to OR-012. The three are sent every time — `null` clears one — so the
+ * request says the whole state of what the documents' header prints.
+ */
+export const saveDocumentIdentitySchema = z.object({
+  tradeName: z
+    .string()
+    .trim()
+    .max(160, 'El nombre comercial no puede superar 160 caracteres')
+    .nullable(),
+  contactEmail: z
+    .union([z.literal(''), z.email('Ingrese un correo electrónico válido')])
+    .nullable(),
+  operatingPermit: z
+    .string()
+    .trim()
+    .max(40, 'El permiso de funcionamiento no puede superar 40 caracteres')
+    .nullable(),
+});
+/** Body of PUT /organization/establishment/document-identity. */
+export class SaveDocumentIdentityDto extends createZodDto(
+  saveDocumentIdentitySchema,
+) {}
 
 // --- Sites (OR-004..OR-008) ------------------------------------------------
 

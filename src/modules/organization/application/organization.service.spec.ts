@@ -7,6 +7,7 @@ import {
   SiteNotFoundError,
 } from '../domain/organization.errors';
 import type {
+  DocumentIdentityInput,
   EstablishmentInput,
   EstablishmentView,
   OrganizationRepository,
@@ -39,6 +40,9 @@ const ESTABLISHMENT: EstablishmentView = {
   typology: 'Centro de Salud Tipo A',
   legalName: 'Clínica de Prueba S.A.',
   ruc: VALID_RUC,
+  tradeName: null,
+  contactEmail: null,
+  operatingPermit: null,
   active: true,
 };
 
@@ -58,6 +62,7 @@ const SITE: SiteView = {
 interface Answers {
   findEstablishment: EstablishmentView | null;
   updateEstablishment: EstablishmentView | null;
+  updateDocumentIdentity: EstablishmentView | null;
   findSite: SiteView | null;
   updateSite: SiteView | null;
   deleteSite: boolean;
@@ -92,6 +97,14 @@ function makeDouble(answers: Answers): {
       return Promise.resolve(
         answers.updateEstablishment
           ? { ...answers.updateEstablishment, ...input }
+          : null,
+      );
+    },
+    updateDocumentIdentity: (id: string, input: DocumentIdentityInput) => {
+      note('updateDocumentIdentity', id, input);
+      return Promise.resolve(
+        answers.updateDocumentIdentity
+          ? { ...answers.updateDocumentIdentity, ...input }
           : null,
       );
     },
@@ -140,6 +153,7 @@ describe('OrganizationService', () => {
     answers = {
       findEstablishment: ESTABLISHMENT,
       updateEstablishment: ESTABLISHMENT,
+      updateDocumentIdentity: ESTABLISHMENT,
       findSite: SITE,
       updateSite: SITE,
       deleteSite: true,
@@ -270,6 +284,58 @@ describe('OrganizationService', () => {
         REQUESTER,
       );
       expect(cleared.ruc).toBeNull();
+    });
+  });
+
+  describe('los datos de cabecera de los documentos', () => {
+    it('OR-010 OR-011 OR-012 guarda nombre comercial, correo y permiso en el establecimiento registrado', async () => {
+      const { service, calls } = build();
+
+      const saved = await service.saveDocumentIdentity(
+        {
+          tradeName: 'Clínica Andina',
+          contactEmail: 'contacto@example.com',
+          operatingPermit: 'ACESS-2026-0456',
+        },
+        REQUESTER,
+      );
+
+      expect(calls.map((c) => c.method)).toEqual([
+        'findEstablishment',
+        'updateDocumentIdentity',
+      ]);
+      expect(saved.tradeName).toBe('Clínica Andina');
+      expect(saved.contactEmail).toBe('contacto@example.com');
+      expect(saved.operatingPermit).toBe('ACESS-2026-0456');
+      expect(entries.map((entry) => entry.action)).toEqual(['UPDATE']);
+    });
+
+    it('OR-010 guarda vacío como ausente: lo que falta no se imprime', async () => {
+      const { service, calls } = build();
+
+      await service.saveDocumentIdentity(
+        { tradeName: '  ', contactEmail: null, operatingPermit: '' },
+        REQUESTER,
+      );
+
+      expect(calls[1]?.args[1]).toEqual({
+        tradeName: null,
+        contactEmail: null,
+        operatingPermit: null,
+      });
+    });
+
+    it('OR-010 responde ESTABLISHMENT_NOT_FOUND si no hay establecimiento', async () => {
+      answers.findEstablishment = null;
+      const { service } = build();
+
+      await expect(
+        service.saveDocumentIdentity(
+          { tradeName: 'X', contactEmail: null, operatingPermit: null },
+          REQUESTER,
+        ),
+      ).rejects.toThrow(EstablishmentNotFoundError);
+      expect(entries).toEqual([]);
     });
   });
 
