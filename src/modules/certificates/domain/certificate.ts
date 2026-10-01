@@ -328,7 +328,12 @@ export function assertRestWithinAttention(
     (period.from === maternity.admissionOn ||
       period.from === maternity.birthOn);
   if (period.from < earliest && !onMaternityDay) {
-    throw new CertificateRestStartTooEarlyError(earliest, maternity);
+    // Its days are named only when one of them is before the bound: a prenatal
+    // rest is offered no future day that CER-041 would refuse next.
+    const namesItsDays =
+      maternity !== null &&
+      (maternity.admissionOn < earliest || maternity.birthOn < earliest);
+    throw new CertificateRestStartTooEarlyError(earliest, namesItsDays ? maternity : null); // prettier-ignore
   }
   if (maternity !== null) return;
   if (lateIssueDay > addDays(attentionDate, MAX_DAYS_TO_ISSUE_REST)) {

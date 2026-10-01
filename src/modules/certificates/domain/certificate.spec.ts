@@ -575,11 +575,20 @@ describe('D-108 en el reposo de maternidad no rigen los topes de D-106', () => {
     }
   });
 
-  it('CER-044 la maternidad conserva los 3 dias antes de la atencion: la prenatal, como estaba (D-106 §2)', () => {
+  it('CER-044 la maternidad conserva los 3 dias antes de la atencion: la prenatal, como estaba, sin proponer dias futuros (D-106 §2)', () => {
     const prenatal = maternityFrom(addDays(today, 20));
     expect(startingOn(addDays(today, -3), prenatal)).not.toThrow();
-    expect(startingOn(addDays(today, -4), prenatal)).toThrow(
-      CertificateRestStartTooEarlyError,
+    let refusal: unknown;
+    try {
+      startingOn(addDays(today, -4), prenatal)();
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(CertificateRestStartTooEarlyError);
+    expect(
+      (refusal as CertificateRestStartTooEarlyError).fieldErrors[0]?.message,
+    ).toBe(
+      `El reposo debe empezar, como muy pronto, el ${addDays(today, -3).split('-').reverse().join('/')}`,
     );
   });
 
