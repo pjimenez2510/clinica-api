@@ -78,7 +78,7 @@ export function sampleSubject(
               genericName: 'Enalapril',
               presentation: 'Tableta',
               concentration: '10 mg',
-              routeCode: 'PO',
+              routeCode: 'ORAL',
               quantity: 30,
               doseText: '1 tableta',
               frequencyText: 'cada 24 horas',
