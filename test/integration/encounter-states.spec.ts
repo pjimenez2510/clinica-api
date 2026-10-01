@@ -755,6 +755,84 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
     ).toBe('ENTERED_IN_ERROR');
   });
 
+  it('EN-166 un certificado no revocado, una referencia vigente o una interconsulta pendiente impiden anular; retractados, se anula (D-099 §1)', async () => {
+    const prisma = db();
+    const { encounter, requester, ids } = await inAttentionWithNote(prisma);
+    const annul = () =>
+      serviceOf(prisma).annul(
+        { encounterId: encounter.id, reason: 'Ficha equivocada', ...asAuthor },
+        requester,
+      );
+    const liveActs = async () => {
+      const refused = await annul().then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(refused).toBeInstanceOf(EncounterHasLiveActsError);
+      return (refused as EncounterHasLiveActsError).userTitle;
+    };
+
+    // Cada uno, solo, lo impide: se crea, se comprueba y se retracta.
+    const certificate = await prisma.medicalCertificate.create({
+      data: {
+        encounterId: encounter.id,
+        patientId: ids.patientId,
+        issuedById: ids.practitionerId,
+        type: 'ATTENDANCE',
+        body: 'Asistió a consulta',
+        verificationCode: `C-${encounter.id.slice(-12)}`,
+      },
+    });
+    expect(await liveActs()).toContain('certificado');
+    await prisma.medicalCertificate.update({
+      where: { id: certificate.id },
+      data: { revokedAt: new Date(), revocationReason: 'Paciente equivocado' },
+    });
+
+    const referral = await prisma.referral.create({
+      data: {
+        encounterId: encounter.id,
+        patientId: ids.patientId,
+        issuedById: ids.practitionerId,
+        direction: 'REFERRAL',
+        reason: 'Valoración por especialista',
+      },
+    });
+    expect(await liveActs()).toContain('referencia');
+    await prisma.referral.update({
+      where: { id: referral.id },
+      data: { status: 'ACCEPTED' },
+    });
+    expect(await liveActs()).toContain('referencia');
+    await prisma.referral.update({
+      where: { id: referral.id },
+      data: { status: 'REJECTED', resolvedAt: new Date() },
+    });
+
+    const interconsultation = await prisma.interconsultation.create({
+      data: {
+        encounterId: encounter.id,
+        requestedById: ids.practitionerId,
+        reason: 'Opinión de cardiología',
+      },
+    });
+    expect(await liveActs()).toContain('interconsulta');
+    await prisma.interconsultation.update({
+      where: { id: interconsultation.id },
+      data: { status: 'CANCELLED' },
+    });
+
+    // Control positivo: revocado, rechazada y cancelada, la atención se anula.
+    await annul();
+    expect(
+      (
+        await prisma.encounter.findUniqueOrThrow({
+          where: { id: encounter.id },
+        })
+      ).status,
+    ).toBe('ENTERED_IN_ERROR');
+  });
+
   it('EN-166 con una nota ya firmada en curso no se anula: se retracta antes (D-099 §1)', async () => {
     const prisma = db();
     const { encounter, note, requester, ids } =

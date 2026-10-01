@@ -79,7 +79,7 @@ BEGIN
   IF v_rows IS NOT NULL THEN
     RAISE EXCEPTION
       'encounter holds annulled or discontinued rows with no reason or author (encounter ids):%', E'\n' || v_rows
-      USING HINT = 'Those rows were written outside the application. Record who annulled or interrupted each one and why. Nothing was changed: mark this migration rolled back with `pnpm exec prisma migrate resolve --rolled-back 20261001034625_encounter_annulment_and_interruption` and run `pnpm db:deploy` again.';
+      USING HINT = 'Those rows were written outside the application. Record who annulled or interrupted each one and why. Nothing was changed: mark this migration rolled back with `pnpm exec prisma migrate resolve --rolled-back 20261001070800_encounter_annulment_and_interruption` and run `pnpm db:deploy` again.';
   END IF;
 END;
 $$;

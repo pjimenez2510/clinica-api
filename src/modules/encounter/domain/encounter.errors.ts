@@ -583,28 +583,42 @@ export class EncounterAnnulmentReasonRequiredError extends ValidationError {
   }
 }
 
+/** EN-166, D-099 §1. How many of each act still stands in the attention. */
+export interface LiveActs {
+  prescriptions: number;
+  orders: number;
+  signedNotes: number;
+  certificates: number;
+  referrals: number;
+  interconsultations: number;
+}
+
 /**
  * EN-166, D-099 §1. The attention already left something in the chart —a
- * prescription active or in draft, an order still pending, a signed note— and
- * it is retracted by its own door before the attention is annulled.
+ * prescription active or in draft, an order still pending, a signed note, a
+ * certificate not revoked, a referral or an interconsultation in force— and it
+ * is retracted by its own door before the attention is annulled.
  */
 export class EncounterHasLiveActsError extends ConflictError {
   readonly code = 'ENCOUNTER_HAS_LIVE_ACTS';
   override readonly userTitle: string;
 
-  constructor(acts: {
-    prescriptions: number;
-    orders: number;
-    signedNotes: number;
-  }) {
+  constructor(acts: LiveActs) {
     // Counts only: no patient, no drug, no exam reaches a log.
-    super('Encounter holds acts that have to be retracted first', acts);
+    super('Encounter holds acts that have to be retracted first', { ...acts });
     const parts = [
       acts.prescriptions > 0
         ? `${acts.prescriptions} receta(s) activa(s) o en borrador`
         : null,
       acts.orders > 0 ? `${acts.orders} orden(es) pendiente(s)` : null,
       acts.signedNotes > 0 ? `${acts.signedNotes} nota(s) firmada(s)` : null,
+      acts.certificates > 0
+        ? `${acts.certificates} certificado(s) sin revocar`
+        : null,
+      acts.referrals > 0 ? `${acts.referrals} referencia(s) vigente(s)` : null,
+      acts.interconsultations > 0
+        ? `${acts.interconsultations} interconsulta(s) pendiente(s)`
+        : null,
     ].filter(Boolean);
     this.userTitle = `La atención tiene ${parts.join(', ')}. Anúlelas o retráctelas antes de anular la atención`;
   }

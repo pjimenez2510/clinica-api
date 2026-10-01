@@ -5,6 +5,7 @@ import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.serv
 import {
   AppointmentArrivalNotRecordedError,
   EncounterHasLiveActsError,
+  type LiveActs,
   EncounterHasOthersDraftsError,
   EncounterNotFoundError,
   InvalidEncounterTransitionError,
@@ -66,29 +67,9 @@ export class PrismaEncounterExitRepository implements EncounterExitRepository {
        * Annulled with it, a prescription would stay valid on paper in the
        * wrong patient's name, and an order pending at the laboratory.
        */
-      const [prescriptions, orders, signedNotes] = await Promise.all([
-        tx.prescription.count({
-          where: {
-            encounterId: current.id,
-            status: { in: ['DRAFT', 'ACTIVE'] },
-          },
-        }),
-        tx.serviceOrder.count({
-          where: {
-            encounterId: current.id,
-            items: { some: { status: { in: ['REQUESTED', 'IN_PROGRESS'] } } },
-          },
-        }),
-        tx.clinicalNote.count({
-          where: { encounterId: current.id, status: 'SIGNED' },
-        }),
-      ]);
-      if (prescriptions + orders + signedNotes > 0) {
-        throw new EncounterHasLiveActsError({
-          prescriptions,
-          orders,
-          signedNotes,
-        });
+      const acts = await liveActsOf(tx, current.id);
+      if (Object.values(acts).some((count) => count > 0)) {
+        throw new EncounterHasLiveActsError(acts);
       }
 
       await moveConditionally(tx, query, current.status, plan.to, {
@@ -266,6 +247,62 @@ async function lockAndRead(
     SELECT 1 FROM "encounter" WHERE "id" = ${query.encounterId}::uuid FOR UPDATE
   `;
   return readView(tx, query.encounterId);
+}
+
+/**
+ * D-099 §1. What the attention left standing in the chart, counted under the
+ * attention's lock so a writer that locks it too cannot slip one in between.
+ *
+ * - a prescription active or still in draft (retracted by PR-010);
+ * - an order with an item the laboratory still sees (ORD-007);
+ * - a signed note (EN-026);
+ * - a certificate not revoked — an IESS rest certificate on the wrong
+ *   patient is a document someone can still present (3.ª revisión, m5);
+ * - a referral still in force, `ISSUED` or `ACCEPTED`: another establishment
+ *   is expecting the patient;
+ * - an interconsultation still `REQUESTED`: a colleague is about to answer it.
+ *
+ * Which of the closed states should ALSO block —an answered
+ * interconsultation, a completed referral— is D-103, a clinical decision.
+ */
+async function liveActsOf(
+  tx: Prisma.TransactionClient,
+  encounterId: string,
+): Promise<LiveActs> {
+  const [
+    prescriptions,
+    orders,
+    signedNotes,
+    certificates,
+    referrals,
+    interconsultations,
+  ] = await Promise.all([
+    tx.prescription.count({
+      where: { encounterId, status: { in: ['DRAFT', 'ACTIVE'] } },
+    }),
+    tx.serviceOrder.count({
+      where: {
+        encounterId,
+        items: { some: { status: { in: ['REQUESTED', 'IN_PROGRESS'] } } },
+      },
+    }),
+    tx.clinicalNote.count({ where: { encounterId, status: 'SIGNED' } }),
+    tx.medicalCertificate.count({ where: { encounterId, revokedAt: null } }),
+    tx.referral.count({
+      where: { encounterId, status: { in: ['ISSUED', 'ACCEPTED'] } },
+    }),
+    tx.interconsultation.count({
+      where: { encounterId, status: 'REQUESTED' },
+    }),
+  ]);
+  return {
+    prescriptions,
+    orders,
+    signedNotes,
+    certificates,
+    referrals,
+    interconsultations,
+  };
 }
 
 /**
