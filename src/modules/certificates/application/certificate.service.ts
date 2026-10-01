@@ -20,6 +20,7 @@ import {
   assertRestStartsInTime,
   assertRestWithinAttention,
   assertMaternityWithinLeave,
+  assertRestDoesNotOverlapMaternity,
   backdatingReasonOf,
   lateIssueDayOf,
   iessValidationOf,
@@ -191,7 +192,8 @@ export class CertificateService {
             lateIssueDay,
             details.maternity,
           );
-          // CER-046 to CER-049 (D-109). What bounds a maternity rest.
+          // CER-046 to CER-050 (D-109, D-110). What bounds a maternity rest;
+          // any other rest does not fall on a maternity rest (D-110 §5).
           if (details.maternity !== null) {
             assertMaternityWithinLeave(
               details.period,
@@ -199,6 +201,11 @@ export class CertificateService {
               attentionDate,
               lateIssueDay,
               snapshot.diagnosisCodes,
+              snapshot.patientRests,
+            );
+          } else {
+            assertRestDoesNotOverlapMaternity(
+              details.period,
               snapshot.patientRests,
             );
           }

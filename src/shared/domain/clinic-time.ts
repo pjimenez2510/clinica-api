@@ -232,6 +232,23 @@ export function addDays(date: ClinicalDate, days: number): ClinicalDate {
 }
 
 /**
+ * Calendar months on the date itself, the day clamped to the end of a shorter
+ * month — exactly what PostgreSQL's `date + interval 'N months'` gives, so a
+ * rule written in both places agrees on every day.
+ */
+export function addMonths(date: ClinicalDate, months: number): ClinicalDate {
+  const [year, month, day] = parseClinicalDate(date).split('-').map(Number) as [number, number, number]; // prettier-ignore
+  const index = year * 12 + (month - 1) + months;
+  const targetYear = Math.floor(index / 12);
+  const targetMonth = index - targetYear * 12; // 0-based
+  const lastDay = new Date(
+    Date.UTC(targetYear, targetMonth + 1, 0),
+  ).getUTCDate();
+  const clamped = Math.min(day, lastDay);
+  return `${String(targetYear).padStart(4, '0')}-${String(targetMonth + 1).padStart(2, '0')}-${String(clamped).padStart(2, '0')}` as ClinicalDate; // prettier-ignore
+}
+
+/**
  * How many dates the inclusive range covers; `0` when `to` precedes `from`.
  *
  * Counted on the calendar and not in hours: no zone is involved, so a day that

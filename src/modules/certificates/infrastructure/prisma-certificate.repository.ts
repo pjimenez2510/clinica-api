@@ -186,7 +186,7 @@ export class PrismaCertificateRepository implements CertificateRepository {
           type: 'MEDICAL_REST',
           revokedAt: null,
         },
-        select: { restFrom: true, restTo: true },
+        select: { restFrom: true, restTo: true, contingencyType: true, birthOn: true }, // prettier-ignore
       });
 
       const plan = decide({
@@ -195,11 +195,19 @@ export class PrismaCertificateRepository implements CertificateRepository {
         diagnosisCodes: encounter.diagnoses.map((diagnosis) => diagnosis.cie10Code), // prettier-ignore
         encounterStartedAt: encounter.startedAt,
         cityOfIssue: encounter.site.parish?.parent?.display ?? null,
-        patientRests: rests.flatMap(({ restFrom, restTo }) => {
-          const from = clinicalDateColumn(restFrom);
-          const to = clinicalDateColumn(restTo);
-          return from === null || to === null ? [] : [{ from, to }];
-        }),
+        patientRests: rests.flatMap(
+          ({ restFrom, restTo, contingencyType, birthOn }) => {
+            const from = clinicalDateColumn(restFrom);
+            const to = clinicalDateColumn(restTo);
+            const maternityBirthOn =
+              contingencyType === 'MATERNITY'
+                ? clinicalDateColumn(birthOn)
+                : null;
+            return from === null || to === null
+              ? []
+              : [{ from, to, maternityBirthOn }];
+          },
+        ),
         patientWork: encounter.patient,
       });
 

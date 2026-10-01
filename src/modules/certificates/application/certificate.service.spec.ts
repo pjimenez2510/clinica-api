@@ -838,7 +838,7 @@ describe('el servicio de certificados', () => {
     });
     repository.snapshot = aSnapshot({
       diagnosisCodes: ['J02', 'O80'],
-      patientRests: [{ from: addDays(today, 10), to: addDays(today, 12) }],
+      patientRests: [{ from: addDays(today, 10), to: addDays(today, 12), maternityBirthOn: null }], // prettier-ignore
     });
     await expect(service.issue(request, requester)).rejects.toMatchObject({
       code: 'CERTIFICATE_REST_OVERLAPS',
@@ -848,7 +848,7 @@ describe('el servicio de certificados', () => {
     // Control positivo: el otro reposo empieza el día siguiente.
     repository.snapshot = aSnapshot({
       diagnosisCodes: ['J02', 'O80'],
-      patientRests: [{ from: addDays(today, 11), to: addDays(today, 12) }],
+      patientRests: [{ from: addDays(today, 11), to: addDays(today, 12), maternityBirthOn: null }], // prettier-ignore
     });
     await expect(service.issue(request, requester)).resolves.toBeDefined();
   });
@@ -867,11 +867,47 @@ describe('el servicio de certificados', () => {
     await expect(
       service.issue(maternityOf(addDays(today, -85), today), requester),
     ).rejects.toMatchObject({ code: 'CERTIFICATE_MATERNITY_DATES_TOO_OLD' });
-    await expect(
-      service.issue(maternityOf(addDays(today, -70), addDays(today, 15)), requester), // prettier-ignore
-    ).rejects.toMatchObject({ code: 'CERTIFICATE_MATERNITY_LEAVE_EXCEEDED' });
+    // D-110 §6: el último día es parto + 83.
     await expect(
       service.issue(maternityOf(addDays(today, -70), addDays(today, 14)), requester), // prettier-ignore
+    ).rejects.toMatchObject({ code: 'CERTIFICATE_MATERNITY_LEAVE_EXCEEDED' });
+    await expect(
+      service.issue(maternityOf(addDays(today, -70), addDays(today, 13)), requester), // prettier-ignore
+    ).resolves.toBeDefined();
+    // D-110 §1: el parto, como mucho 4 semanas después de la atención.
+    await expect(
+      service.issue(maternityOf(addDays(today, 29), today), requester),
+    ).rejects.toMatchObject({ code: 'CERTIFICATE_MATERNITY_BIRTH_TOO_FAR' });
+  });
+
+  it('CER-048 CER-050 un reposo general no cabe sobre una maternidad vigente, y las maternidades de un embarazo comparten el parto (D-110)', async () => {
+    const birth = addDays(today, -5);
+    const maternityRest = { from: birth, to: addDays(today, 20), maternityBirthOn: birth }; // prettier-ignore
+    repository.snapshot = aSnapshot({ patientRests: [maternityRest] });
+    await expect(service.issue(rest(3), requester)).rejects.toMatchObject({
+      code: 'CERTIFICATE_REST_OVERLAPS',
+    });
+    // Control positivo: el general, después de la licencia emitida.
+    repository.snapshot = aSnapshot({ patientRests: [{ ...maternityRest, to: addDays(today, -1) }] }); // prettier-ignore
+    await expect(service.issue(rest(3), requester)).resolves.toBeDefined();
+
+    // Otra maternidad sobre otro parto del mismo embarazo.
+    repository.snapshot = aSnapshot({
+      diagnosisCodes: ['O80'],
+      patientRests: [{ ...maternityRest, to: addDays(today, -1) }],
+    });
+    const second = (declaredBirth: ClinicalDate) =>
+      rest(10, {
+        contingencyType: 'MATERNITY',
+        maternityAdmissionOn: declaredBirth,
+        birthOn: declaredBirth,
+        maternityDischargeOn: declaredBirth,
+      });
+    await expect(
+      service.issue(second(addDays(birth, 1)), requester),
+    ).rejects.toMatchObject({ code: 'CERTIFICATE_MATERNITY_BIRTH_MISMATCH' });
+    await expect(
+      service.issue(second(birth), requester),
     ).resolves.toBeDefined();
   });
 });

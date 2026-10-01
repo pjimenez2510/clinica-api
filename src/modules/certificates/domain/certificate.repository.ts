@@ -17,6 +17,7 @@ import type {
   ContingencyType,
   EncounterStatus,
   MaternityDates,
+  PatientRest,
   PatientWork,
   IssuableCertificateType,
   RestPeriod,
@@ -64,10 +65,11 @@ export interface IssueSnapshot {
   /** CER-036. The canton of the site's parish; `null` without a parish. */
   cityOfIssue: string | null;
   /**
-   * CER-048. The periods of the patient's rests that are not revoked, from
-   * any attention, read once the patient's issues are serialised.
+   * CER-048, CER-050. The patient's rests that are not revoked —her chart and
+   * the charts it absorbed, any attention—, each with its birth when it is a
+   * maternity rest; read once the chart's issues are serialised.
    */
-  patientRests: RestPeriod[];
+  patientRests: PatientRest[];
   /** CER-038. Read from the chart of the attention, inside the issue. */
   patientWork: PatientWork;
 }
