@@ -269,7 +269,7 @@ las líneas propuestas con su motivo y volver a enviar, y comprobar que **no
 vuelve**; y comprobar contra PostgreSQL que el segundo cargo del mismo acto lo
 rechaza la BASE y no una lectura previa.
 
-**Cubre:** BI-150 a BI-158, BI-170, y da ruta por fin a BI-055, BI-056 y BI-059.
+**Cubre:** BI-150 a BI-158, BI-180, y da ruta por fin a BI-055, BI-056 y BI-059.
 
 > **Lo entregado el 20-08-2026.** La ruta de paso a caja, idempotente en sus dos
 > mitades; la derivación de las tres fuentes sobre las ataduras que ya existían
@@ -987,7 +987,7 @@ sequential)`, `invoice_total_is_consistent`,
   > REQ-084, y su origen es el rechazo habitual de las aseguradoras. Es la
   > consecuencia práctica de BI-035: el pagador dice de qué lista sale el
   > precio; no dice quién figura en el documento.
-- **BI-170** — CUANDO la atención esté `DISCONTINUED` sin ningún acto clínico
+- **BI-180** — CUANDO la atención esté `DISCONTINUED` sin ningún acto clínico
   —nota, diagnóstico, procedimiento, receta ni orden—, el sistema NO DEBERÁ
   proponer ningún cargo, tampoco la consulta.
   > **D-085 §4 (01-10-2026).** Es quien se fue antes de que el médico lo viera

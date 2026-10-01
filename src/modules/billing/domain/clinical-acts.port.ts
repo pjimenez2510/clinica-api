@@ -89,7 +89,7 @@ export interface EncounterActs {
   procedures: PerformedProcedure[];
   exams: OrderedExam[];
   /**
-   * BI-170 (D-085 §3, §4). Whether any practitioner documented anything — a
+   * BI-180 (D-085 §3, §4). Whether any practitioner documented anything — a
    * note, a diagnosis, a procedure, a prescription or an order. An attention
    * interrupted without one is a patient who left before being seen.
    */

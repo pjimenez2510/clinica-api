@@ -327,8 +327,8 @@ describe('BI-156 lo económico no reescribe lo clínico', () => {
   });
 });
 
-describe('BI-170 la atención interrumpida sin ningún acto clínico no propone la consulta (D-085 §4)', () => {
-  it('BI-170 quien se fue antes de que el médico lo viera no deja nada que cobrar', () => {
+describe('BI-180 la atención interrumpida sin ningún acto clínico no propone la consulta (D-085 §4)', () => {
+  it('BI-180 quien se fue antes de que el médico lo viera no deja nada que cobrar', () => {
     expect(
       proposeCharges(
         acts({ status: 'DISCONTINUED', clinicallyAttended: false }),
@@ -338,7 +338,7 @@ describe('BI-170 la atención interrumpida sin ningún acto clínico no propone 
     ).toEqual({ proposed: [], skipped: [] });
   });
 
-  it('BI-170 la interrumpida CON algún acto clínico sigue proponiendo la consulta (D-054 §2)', () => {
+  it('BI-180 la interrumpida CON algún acto clínico sigue proponiendo la consulta (D-054 §2)', () => {
     const { proposed } = proposeCharges(
       acts({ status: 'DISCONTINUED', clinicallyAttended: true }),
       mapping(),

@@ -145,7 +145,7 @@ const ONE = Quantity.parse('1');
  * BI-151, BI-152, BI-155. What this visit suggests charging for.
  *
  * ⚠️ AN ENCOUNTER MARKED `ENTERED_IN_ERROR` PROPOSES NOTHING, and neither does
- * one interrupted before any clinical act (BI-170). It is the one
+ * one interrupted before any clinical act (BI-180). It is the one
  * encounter status this function branches on, and the reason is not
  * bookkeeping: that status exists precisely so a visit that should never have
  * been recorded does not count as one, and charging for it would be the system
@@ -160,7 +160,7 @@ export function proposeCharges(
 ): ChargeProposal {
   if (acts.status === 'ENTERED_IN_ERROR') return { proposed: [], skipped: [] };
   /**
-   * BI-170 (D-085 §4). An attention INTERRUPTED with no clinical act at all is
+   * BI-180 (D-085 §4). An attention INTERRUPTED with no clinical act at all is
    * the patient who left before the doctor saw them (D-081 §2): there was no
    * consultation to propose, and proposing it would have the cashier decide,
    * line by line, what the record already says.
