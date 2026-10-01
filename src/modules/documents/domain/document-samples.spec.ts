@@ -17,6 +17,7 @@ const sampleContext: DocumentContext = {
     operatingPermit: null,
     ruc: null,
     addressLine: null,
+    headOfficeAddress: null,
     phone: null,
     logo: null,
     keepsAccounting: false,

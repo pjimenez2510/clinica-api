@@ -254,6 +254,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
             contactEmail: true,
             operatingPermit: true,
             ruc: true,
+            headOfficeAddress: true,
             keepsAccounting: true,
             specialTaxpayerResolution: true,
             withholdingAgentResolution: true,
@@ -281,6 +282,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       operatingPermit: site.establishment?.operatingPermit ?? null,
       ruc: site.ruc ?? site.establishment?.ruc ?? null,
       addressLine: site.addressLine,
+      headOfficeAddress: site.establishment?.headOfficeAddress ?? null,
       phone: site.phone,
       logo: toStoredImage(site.establishment?.logoImage),
       keepsAccounting: site.establishment?.keepsAccounting ?? false,
@@ -669,6 +671,20 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         buyerIdentification: true,
         buyerName: true,
         buyerEmail: true,
+        paymentMethod: true,
+        // DOC-076 «Información adicional»: whom the attention was for.
+        account: {
+          select: {
+            patient: {
+              select: {
+                ...PATIENT_SELECT,
+                mrn: true,
+                phone: true,
+                residenceAddressLine: true,
+              },
+            },
+          },
+        },
         subtotalTaxed: true,
         subtotalUntaxed: true,
         discountTotal: true,
@@ -687,15 +703,25 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
           orderBy: { createdAt: 'asc' },
           select: {
             serviceDisplay: true,
+            serviceDate: true,
             quantity: true,
             unitAmount: true,
             discountAmount: true,
-            billableService: { select: { code: true } },
+            taxSriCode: true,
+            taxPercentage: true,
+            billableService: { select: { code: true, tariffCode: true } },
           },
         },
       },
     });
     if (row === null) return null;
+
+    // The buyer is the patient when the invoice carries the patient's own
+    // official identifier: only then are their address and phone the
+    // buyer's to print.
+    const patient = row.account.patient;
+    const buyerIsPatient =
+      patient.identifiers[0]?.value === row.buyerIdentification;
 
     // SRI-019, SRI-070, OR-027. From the key once there is one.
     const documentNumber = invoiceDocumentNumber({
@@ -721,12 +747,29 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         buyerIdentification: row.buyerIdentification,
         buyerName: row.buyerName,
         buyerEmail: row.buyerEmail,
+        buyerAddress: buyerIsPatient ? patient.residenceAddressLine : null,
+        paymentMethod: row.paymentMethod,
+        patient: {
+          fullName: fullNameOf(patient),
+          mrn: patient.mrn,
+          phone: buyerIsPatient ? patient.phone : null,
+        },
+        attendedOn: row.chargeItems.reduce<Date | null>(
+          (first, charge) =>
+            first === null || charge.serviceDate < first
+              ? charge.serviceDate
+              : first,
+          null,
+        ),
         lines: row.chargeItems.map((charge) => {
           const lineTotal = charge.unitAmount
             .mul(charge.quantity)
             .sub(charge.discountAmount);
           return {
             code: charge.billableService.code,
+            auxiliaryCode: charge.billableService.tariffCode,
+            taxSriCode: charge.taxSriCode,
+            taxPercentage: charge.taxPercentage?.toFixed(2) ?? null,
             // The FROZEN display, not the current catalogue name: the invoice
             // has to keep saying what was sold.
             description: charge.serviceDisplay,

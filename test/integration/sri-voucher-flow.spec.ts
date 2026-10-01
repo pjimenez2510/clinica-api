@@ -13,6 +13,7 @@ import {
 
 import { seedBilling } from '../../prisma/seed-billing.mts';
 import { Quantity } from '../../src/modules/billing/domain/money';
+import { PrismaDocumentSourceReader } from '../../src/modules/documents/infrastructure/prisma-document-source.reader';
 import { PrismaBillingAccountRepository } from '../../src/modules/billing/infrastructure/prisma-billing-account.repository';
 import { SigningCertificateService } from '../../src/modules/sri/application/signing-certificate.service';
 import { VoucherDispatchService } from '../../src/modules/sri/application/voucher-dispatch.service';
@@ -639,6 +640,37 @@ describe('SRI-056 lo que el barrido mira, contra la base', () => {
     expect(
       (await repository().pendingWork(200, NOW(), '1')).invoicesWithoutVoucher,
     ).toContain(invoice.id);
+  });
+});
+
+describe('DOC-076 lo que el RIDE lee de la base', () => {
+  it('DOC-076 BI-170 la factura emitida trae forma de pago, paciente con su HC, día de la atención, emisor e impuesto por línea', async () => {
+    const invoice = await issueInvoice();
+    const reader = new PrismaDocumentSourceReader(
+      prisma as unknown as PrismaService,
+      'https://clinica.example/verificar',
+    );
+    const subject = await reader.findSubject({
+      kind: 'INVOICE_RIDE',
+      subjectId: invoice.id,
+      sites: 'all',
+    });
+    if (subject?.kind !== 'INVOICE_RIDE') throw new Error('no RIDE subject');
+    const patient = await prisma.patient.findUniqueOrThrow({
+      where: { id: patientId },
+    });
+
+    expect(subject.data.paymentMethod).toBe('01');
+    expect(subject.data.patient).toMatchObject({ mrn: patient.mrn });
+    expect(subject.data.attendedOn).not.toBeNull();
+    expect(subject.data.lines[0]).toMatchObject({
+      taxSriCode: expect.any(String) as string,
+    });
+
+    const context = await reader.contextForSite(siteId);
+    expect(context?.establishment.headOfficeAddress).toBe(
+      'Av. Amazonas y Naciones Unidas, Quito',
+    );
   });
 });
 
