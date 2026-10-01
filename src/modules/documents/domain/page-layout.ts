@@ -94,7 +94,17 @@ export type Block =
    * that is a geometry, not a flow. Generic rather than `rideHeader` because
    * nothing about two boxes is specific to a tax document.
    */
-  | { readonly kind: 'boxes'; readonly left: readonly Block[]; readonly right: readonly Block[] }; // prettier-ignore
+  | { readonly kind: 'boxes'; readonly left: readonly Block[]; readonly right: readonly Block[] } // prettier-ignore
+  /**
+   * DOC-078. A Code 128 barcode of `value` with the value printed under it.
+   *
+   * It exists for the RIDE's access key: the SRI's Ficha Técnica (v2.34,
+   * §9.20–9.21 and the notes of Anexo 2) allows it beside the key in text, and
+   * the approved template draws it (D-095 §5). Plain Code 128 — no GS1
+   * application identifier — so a handheld reader returns the 49 digits as
+   * they are. Generic rather than `accessKey`: nothing about bars is fiscal.
+   */
+  | { readonly kind: 'barcode'; readonly value: string };
 
 /** DOC-071, DOC-080. The establishment's header, on every page. */
 export interface DocumentHeader {

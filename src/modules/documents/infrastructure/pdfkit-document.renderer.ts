@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
+import bwipjs from 'bwip-js';
 import QRCode from 'qrcode';
 
 import { DocumentRenderFailedError } from '../domain/document.errors';
@@ -90,6 +91,8 @@ const LINE_GAP = 1.5;
 
 /** DOC-071, DOC-083. Reserved at the foot of every page. */
 const FOOTER_HEIGHT_MM = 15;
+/** DOC-078. The height of the access key's bars. */
+const BARCODE_HEIGHT_MM = 12;
 /** DOC-083. The QR's side. Readable by a phone at arm's length. */
 const QR_SIZE_MM = 13;
 /** DOC-059. The logo's box in the common header: the template's 88 × 64 px. */
@@ -502,6 +505,19 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         return;
       }
 
+      case 'barcode': {
+        ensure(mm(BARCODE_HEIGHT_MM + 8));
+        this.paintBarcode(doc, block.value, left, cursor.y, width);
+        cursor.y += mm(BARCODE_HEIGHT_MM) + mm(1);
+        doc
+          .font(SANS)
+          .fontSize(SIZE.label)
+          .fillColor(INK)
+          .text(block.value, left, cursor.y, { width, align: 'center' });
+        cursor.y = doc.y + mm(2);
+        return;
+      }
+
       case 'boxes': {
         // DOC-076. The SRI's Anexo 2 puts the issuer and the voucher side by
         // side. Both boxes are painted from the same top, and the cursor moves
@@ -786,6 +802,38 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
   }
 
   /**
+   * DOC-078. Code 128 as VECTOR bars, never as an image — the same reason as
+   * the QR: an image is how transparency gets into a PDF/A-1b (DOC-023).
+   *
+   * bwip-js (ADR-004) computes the symbol — start code, the switch to subset C
+   * for the digit pairs, the check character, stop — and hands back the
+   * widths of bars and spaces (`sbs`, bar first). This only draws them, with
+   * the quiet zone of ten modules a reader needs on each side, and never
+   * narrower than 0.19 mm a module (ISO/IEC 15417's practical minimum for
+   * office printers): a key that does not fit is drawn at the minimum and
+   * left to overflow its box rather than shrunk into something unreadable.
+   */
+  private paintBarcode(
+    doc: PDFKit.PDFDocument,
+    value: string,
+    x: number,
+    y: number,
+    width: number,
+  ): void {
+    const widths = barsOf(value);
+    const modules = widths.reduce((total, each) => total + each, 0) + 20;
+    const module = Math.max(width / modules, mm(0.19));
+    const symbolWidth = modules * module;
+    let at = x + (width - symbolWidth) / 2 + 10 * module;
+    widths.forEach((each, index) => {
+      if (index % 2 === 0)
+        doc.rect(at, y, each * module, mm(BARCODE_HEIGHT_MM));
+      at += each * module;
+    });
+    doc.fillColor(INK).fill();
+  }
+
+  /**
    * DOC-083. The QR as VECTOR rectangles, never as an image.
    *
    * An image is the way transparency gets into a PDF/A-1b (DOC-023), and a
@@ -812,4 +860,13 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     }
     doc.fillColor(INK).fill();
   }
+}
+
+/**
+ * DOC-078. The widths of the Code 128 symbol of `value`, bar first, in modules.
+ * Exported for the test that reads the symbol back.
+ */
+export function barsOf(value: string): number[] {
+  const [symbol] = bwipjs.raw({ bcid: 'code128', text: value, parse: false });
+  return [...((symbol as { sbs?: number[] } | undefined)?.sbs ?? [])];
 }

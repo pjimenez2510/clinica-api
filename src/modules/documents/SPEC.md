@@ -60,8 +60,9 @@ enseñar a un inspector. Este módulo lo funda, y D-A-014 es su decisión.
   Anexo 2**, que marca las posiciones, **incluida la del logo**.
   - ⚠️ **El QR NO es obligatorio.** «QR» no aparece **ni una vez** en las 142
     páginas de la Ficha Técnica, y el código de barras es **explícitamente
-    opcional**. Este módulo no pinta ninguno de los dos, y DOC-078 lo dice como
-    requisito para que nadie los añada «porque los RIDE que he visto lo llevan».
+    opcional**. Este módulo no pinta QR, y DOC-078 lo dice como requisito para
+    que nadie lo añada «porque los RIDE que he visto lo llevan»; la clave de
+    acceso en Code 128 sí puede ir (D-095 §5).
   - Las **banderas fiscales** —obligado a llevar contabilidad, contribuyente
     especial, agente de retención, régimen RIMPE— son leyendas que el Anexo 2
     coloca en la cabecera del emisor, y hoy **no hay ni columna** para ninguna.
@@ -193,7 +194,8 @@ plantillas e imágenes y el reencodado, que se prueban sobre los bytes guardados
 
 Receta con los cinco bloques del art. 5 y su banda desprendible; orden de
 examen; certificado sobre el formulario 117; RIDE con las posiciones del Anexo 2
-y las banderas fiscales. **Sin QR y sin código de barras.**
+y las banderas fiscales. **Sin QR**; la clave de acceso, si se quiere, en Code
+128 (DOC-078).
 
 **Prueba independiente:** emitir una receta y comprobar que el texto extraído
 lleva el nombre del establecimiento, el registro ACESS del prescriptor y la
@@ -631,14 +633,16 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
   contribuyente especial con su número de resolución, agente de retención con la
   suya y régimen RIMPE.
 
-- **DOC-078** — El sistema **NO DEBERÁ** imprimir código QR ni código de barras
-  en el RIDE.
+- **DOC-078** — El RIDE PODRÁ imprimir la clave de acceso en código de barras
+  **Code 128**, legible con lector, junto a la clave en texto; **NO DEBERÁ**
+  imprimir QR.
 
-  > **«QR» no aparece ni una vez en las 142 páginas de la Ficha Técnica**, y el
-  > código de barras es **explícitamente opcional**. Está escrito como requisito
-  > —en negativo— porque es lo que alguien añadiría de memoria al ver otros
-  > RIDE, y un elemento inventado en un documento tributario es exactamente lo
-  > que una revisión del SRI mira.
+  > **Reescrito el 01-10-2026 (D-095 §5).** La Ficha Técnica v2.34 (§9.20–9.21
+  > y las notas del Anexo 2) admite la clave en código de barras, y la
+  > plantilla aprobada lo dibuja. Code 128 sin identificador GS1, para que un
+  > lector devuelva los 49 dígitos tal cual; dibujado con trazos, no con una
+  > imagen (DOC-023). «QR» sigue sin aparecer en la Ficha, y por eso se queda
+  > prohibido: es lo que alguien añadiría de memoria al ver otros RIDE.
 
 - **DOC-079** — El sistema **NO DEBERÁ** generar la receta especial de
   estupefacientes y psicotrópicos.
