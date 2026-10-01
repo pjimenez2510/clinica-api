@@ -353,7 +353,13 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
           durationMs: attempt.durationMs,
           outcome: attempt.outcome,
           messages: asJson(attempt.messages),
-          transportError: attempt.transportError?.slice(0, 500) ?? null,
+          // SRI-059. Whole: the client already capped it, with the cut marked.
+          transportError: attempt.transportError,
+          httpStatus: attempt.transportResponse?.httpStatus ?? null,
+          faultCode: attempt.transportResponse?.faultCode ?? null,
+          faultString: attempt.transportResponse?.faultString ?? null,
+          faultDetail: attempt.transportResponse?.faultDetail ?? null,
+          responseBody: attempt.transportResponse?.responseBody ?? null,
         },
       });
 

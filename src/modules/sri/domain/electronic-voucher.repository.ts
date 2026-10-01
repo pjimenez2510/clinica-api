@@ -3,6 +3,7 @@ import type { RimpeRegime, VoucherLine, VoucherTotals } from './invoice-xml';
 import type {
   BlockedReason,
   QueueStep,
+  SriFailedResponse,
   SriMessage,
   VoucherStatus,
 } from './voucher-lifecycle';
@@ -93,6 +94,8 @@ export interface AttemptRecord {
     | 'TRANSPORT_FAILURE';
   messages: SriMessage[];
   transportError: string | null;
+  /** SRI-059. What the SRI answered, when the failure had an answer. */
+  transportResponse: SriFailedResponse | null;
 }
 
 /** What an attempt changes, applied in one transaction with the attempt row. */

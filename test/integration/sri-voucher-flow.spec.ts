@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import type { ConfigService } from '@nestjs/config';
 import type { PrismaClient } from '@prisma/client';
 import type { PinoLogger } from 'nestjs-pino';
@@ -34,7 +36,12 @@ import { FetchSriWebService } from '../../src/modules/sri/infrastructure/sri-web
 import type { Env } from '../../src/shared/config/env.schema';
 import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
-import { startSriDouble, type SriDouble } from '../sri-double/sri-double';
+import {
+  LONG_FAULT_DETAIL,
+  LONG_FAULT_STRING,
+  startSriDouble,
+  type SriDouble,
+} from '../sri-double/sri-double';
 import { createTestPkcs12 } from '../support/test-pkcs12';
 
 import { useDatabase } from './setup/database';
@@ -182,9 +189,10 @@ beforeEach(async () => {
   ).id;
 });
 
-async function loadCertificate(): Promise<void> {
+async function loadCertificate() {
   const p12 = createTestPkcs12({ now: NOW() });
   await certificates.upload(p12.pkcs12, p12.password, { userId });
+  return p12;
 }
 
 async function issueInvoice(
@@ -517,6 +525,100 @@ describe('SRI-043 a SRI-052 cada respuesta del SRI, contra el doble', () => {
     double.setDown(false);
     await dispatch.run('SEND', voucher.id);
     expect((await voucherOf(invoice.id)).status).toBe('RECEIVED');
+  });
+
+  it('SRI-059 SRI-050 SRI-052 un 500 con soap:Fault largo queda entero en el intento; la clave, los bytes y la espera creciente no cambian', async () => {
+    const { invoice, voucher } = await aSignedVoucher();
+    const signed = await prisma.electronicVoucher.findUniqueOrThrow({
+      where: { id: voucher.id },
+      select: { signedXml: true },
+    });
+    double.setScenario(voucher.accessKey, 'FAULT_500');
+
+    const firstAt = Date.now();
+    await dispatch.run('SEND', voucher.id);
+    const first = await voucherOf(invoice.id);
+    const secondAt = Date.now();
+    await dispatch.run('SEND', voucher.id);
+    const second = await voucherOf(invoice.id);
+
+    const attempts = await prisma.electronicVoucherAttempt.findMany({
+      where: { voucherId: voucher.id },
+      orderBy: { startedAt: 'asc' },
+    });
+    expect(attempts).toHaveLength(2);
+    for (const attempt of attempts) {
+      expect(attempt).toMatchObject({
+        outcome: 'TRANSPORT_FAILURE',
+        accessKey: voucher.accessKey,
+        httpStatus: 500,
+        faultCode: 'soap:Server',
+        faultString: LONG_FAULT_STRING,
+        faultDetail: LONG_FAULT_DETAIL,
+        transportError: `HTTP 500 · soap:Server: ${LONG_FAULT_STRING}`,
+      });
+      expect(attempt.responseBody).toContain(LONG_FAULT_STRING);
+    }
+
+    // SRI-050. Same key, same bytes; the voucher waits SIGNED, longer each time.
+    expect(second.status).toBe('SIGNED');
+    expect(second.accessKey).toBe(voucher.accessKey);
+    expect(
+      (
+        await prisma.electronicVoucher.findUniqueOrThrow({
+          where: { id: voucher.id },
+          select: { signedXml: true },
+        })
+      ).signedXml,
+    ).toBe(signed.signedXml);
+    expect(second.nextAttemptAt!.getTime() - secondAt).toBeGreaterThan(
+      first.nextAttemptAt!.getTime() - firstAt,
+    );
+    expect((await invoiceRow(invoice.id)).status).toBe('ISSUED');
+  });
+
+  it('SRI-059 lo guardado del intento nunca lleva la petición firmada, el certificado, su contraseña ni la frase maestra', async () => {
+    const p12 = await loadCertificate();
+    const invoice = await issueInvoice();
+    const voucher = (await preparation.prepareInvoice(invoice.id))!;
+    const { signedXml } = await prisma.electronicVoucher.findUniqueOrThrow({
+      where: { id: voucher.id },
+      select: { signedXml: true },
+    });
+    const masterKey = readFileSync(
+      process.env.SRI_CERTIFICATE_MASTER_KEY_FILE!,
+      'utf8',
+    );
+    const x509 = /<ds:X509Certificate>([^<]+)</.exec(signedXml!)?.[1];
+    expect(x509?.length).toBeGreaterThan(100);
+
+    double.setScenario(voucher.accessKey, 'ECHO_FAULT');
+    await dispatch.run('SEND', voucher.id);
+
+    // The whole row, every column, as the database holds it.
+    const [row] = await prisma.$queryRaw<{ stored: string }[]>`
+      SELECT row_to_json(a)::text AS "stored"
+        FROM "electronic_voucher_attempt" a
+       WHERE "voucher_id" = ${voucher.id}::uuid`;
+    const stored = row!.stored;
+    // Positive control: the echo came back and was replaced, not lost.
+    expect(stored).toContain(
+      'No se pudo leer el comprobante [petición omitida]',
+    );
+    expect(stored.split('[petición omitida]').length).toBeGreaterThan(3);
+
+    for (const secret of [
+      Buffer.from(signedXml!, 'utf8').toString('base64'),
+      Buffer.from(signedXml!, 'utf8').toString('base64').slice(500, 600),
+      signedXml!,
+      x509!,
+      p12.pkcs12.toString('base64'),
+      p12.pkcs12.toString('base64').slice(100, 200),
+      p12.password,
+      masterKey,
+    ]) {
+      expect(stored).not.toContain(secret);
+    }
   });
 
   it('SC-083 en todo el recorrido cada intento lleva la clave con que nació el comprobante', async () => {
