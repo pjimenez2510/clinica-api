@@ -2192,10 +2192,12 @@ describe('fusión de duplicados: el contrato y su permiso', () => {
     const certificate = await prismaClient.medicalCertificate.create({
       data: {
         encounterId: encounter.id,
+        // CER-009. `medical_certificate_number_assigned` takes it from the
+        // attention whatever is sent.
+        siteId: site.id,
         patientId: source.id,
         issuedById: practitioner.id,
         type: 'ATTENDANCE',
-        body: 'Asistió a consulta',
         verificationCode: 'VC-0000000001',
       },
     });
@@ -2287,10 +2289,12 @@ describe('fusión de duplicados: el contrato y su permiso', () => {
     await prismaClient.medicalCertificate.create({
       data: {
         encounterId: encounter.id,
+        // CER-009. `medical_certificate_number_assigned` takes it from the
+        // attention whatever is sent.
+        siteId: site.id,
         patientId: source.id,
         issuedById: practitioner.id,
         type: 'ATTENDANCE',
-        body: 'Asistió a consulta',
         verificationCode: 'VC-0000000002',
       },
     });

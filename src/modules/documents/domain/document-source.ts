@@ -138,7 +138,6 @@ export interface CertificatePrintData {
   /** The patient decides whether their employer reads the diagnosis. */
   includeDiagnosis: boolean;
   diagnoses: readonly { code: string; display: string }[];
-  body: string;
   verificationCode: string;
   revokedAt: Date | null;
   patient: PatientIdentity;

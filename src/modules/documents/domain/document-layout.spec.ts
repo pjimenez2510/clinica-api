@@ -513,7 +513,6 @@ describe('DOC-075 el certificado sobre el formulario 117', () => {
       restTo: new Date('2026-08-23T00:00:00Z'),
       includeDiagnosis: false,
       diagnoses: [{ code: 'J00', display: 'Rinofaringitis aguda' }],
-      body: 'Se certifica que requiere reposo médico',
       verificationCode: 'CM-4T7',
       revokedAt: null,
       patient,

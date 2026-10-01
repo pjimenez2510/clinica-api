@@ -480,11 +480,6 @@ export function composeCertificateLayout(
     });
   }
 
-  blocks.push(
-    { kind: 'heading', text: 'Certificación' },
-    { kind: 'paragraph', text: data.body },
-  );
-
   if (data.revokedAt !== null) {
     // A revoked certificate that printed like a valid one is the failure this
     // line exists for: somebody is holding the paper.

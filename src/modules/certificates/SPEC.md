@@ -199,9 +199,12 @@ lactante de cuatro meses y comprobar que el documento dice «4» con la condici�
   > (`UPDATE … RETURNING`): si la emisión se revierte, el número vuelve. Es el
   > mismo mecanismo que PR-020 y ORD-006, y comparten tabla.
   >
-  > ⚠️ **Falta esquema.** `medical_certificate.number`, la unicidad
-  > `(site_id, number)` y el contador. Y `site_id` en `medical_certificate`, que
-  > hoy se deduce por la atención.
+  > **Esquema:** `20261001043001_certificate_number_and_revocation`.
+  > `medical_certificate.number` y `site_id` los pone el disparador
+  > `medical_certificate_number_assigned` al insertar —la sede desde la
+  > atención, el número de `next_document_number(site_id,
+  > 'MEDICAL_CERTIFICATE')`—, `medical_certificate_site_number_unique` y
+  > `medical_certificate_number_immutable`.
   >
   > ⚠️ **[NECESITA ACLARACIÓN]** — D-074. ¿Por sede (unicódigo del MSP) o por
   > establecimiento (persona jurídica)? Se construye por sede, que es el
@@ -215,9 +218,9 @@ lactante de cuatro meses y comprobar que el documento dice «4» con la condici�
   **motivo escrito**, guardar quién lo anuló, cuándo y por qué, y **NO DEBERÁ**
   borrar ninguna fila.
 
-  > ⚠️ **Falta esquema.** Existen `revoked_at` y `revocation_reason`; falta
-  > `revoked_by_id` y el `CHECK` que exija los tres juntos, como
-  > `prescription_discard_states_who_when_and_why`.
+  > **Esquema:** `revoked_by_id` (clave foránea a `app_user`) y
+  > `medical_certificate_revocation_states_who_when_and_why`, que exige los
+  > tres juntos y el motivo no vacío.
 
 - **CER-012** — SI el certificado ya está anulado, ENTONCES el sistema DEBERÁ
   rechazar la anulación con `CERTIFICATE_ALREADY_REVOKED`.
@@ -299,9 +302,9 @@ PR-030).
   verificación**, y MIENTRAS esté anulado DEBERÁ servir la anulación con su
   fecha, para que el documento no pueda leerse como válido.
 
-  > ⚠️ **Sobra esquema.** `medical_certificate.body` es `NOT NULL` y el 117 **no
-  > tiene** campo de texto libre. Un párrafo libre es por donde un certificado
-  > dice lo que el formulario no permite decir. La columna se elimina.
+  > **Esquema:** `medical_certificate.body` se eliminó: el 117 **no tiene**
+  > campo de texto libre, y un párrafo libre es por donde un certificado dice
+  > lo que el formulario no permite decir.
 
 ---
 
@@ -335,14 +338,16 @@ PR-030).
 | `CERTIFICATE_NOT_FOUND` | 404 | CER-010 |
 | `CERTIFICATE_ALREADY_REVOKED` | 409 | CER-012 |
 
-## Esquema que falta
+## Esquema
+
+Todo lo que faltaba está en `20261001043001_certificate_number_and_revocation`.
 
 | Qué | Dónde | Requisito |
 | --- | --- | --- |
-| `number`, `site_id`, `UNIQUE (site_id, number)` | `medical_certificate` | CER-009 |
-| Contador por sede sin huecos, compartido con receta y orden | `document_counter (site_id, kind)` | CER-009, PR-020, ORD-006 |
-| `revoked_by_id` + `CHECK` de los tres juntos | `medical_certificate` | CER-011 |
-| Eliminar `body` | `medical_certificate` | CER-029 |
+| `number`, `site_id`, `UNIQUE (site_id, number)` | `medical_certificate` | CER-009 — hecho |
+| Contador por sede sin huecos, compartido con receta y orden | `document_counter (site_id, kind)` | CER-009, PR-020, ORD-006 — hecho |
+| `revoked_by_id` + `CHECK` de los tres juntos | `medical_certificate` | CER-011 — hecho |
+| Eliminar `body` | `medical_certificate` | CER-029 — hecho |
 
 ## Rutas
 

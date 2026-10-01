@@ -502,7 +502,6 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         restFrom: true,
         restTo: true,
         includeDiagnosis: true,
-        body: true,
         verificationCode: true,
         revokedAt: true,
         patient: { select: PATIENT_SELECT },
@@ -533,7 +532,6 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
           code: diagnosis.cie10Code,
           display: diagnosis.cie10Display,
         })),
-        body: row.body,
         verificationCode: row.verificationCode,
         revokedAt: row.revokedAt,
         patient: toPatient(

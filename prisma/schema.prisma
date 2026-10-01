@@ -147,6 +147,7 @@ model User {
   /// art. 13 turns «nobody assessed them» into a criminal matter.
   emergencyFlagsRaised           AgendaEntry[]                @relation("EmergencyFlagger")
   prescriptionsDiscarded         Prescription[]               @relation("PrescriptionDiscarder")
+  certificatesRevoked            MedicalCertificate[]         @relation("CertificateRevoker")
   subjectStatusChanges           AgendaSubjectStatusHistory[] @relation("SubjectStatusChanger")
   chargeItemsVoided              ChargeItem[]                 @relation("ChargeVoider")
   billableServicesTaxReviewed    BillableService[]            @relation("TaxRateReviewer")
@@ -1063,6 +1064,7 @@ model Site {
   serviceOrders    ServiceOrder[]
   documentCounters DocumentCounter[]
   prescriptions    Prescription[]
+  certificates     MedicalCertificate[]
   priceLists       PriceList[]
   patientAccounts  PatientAccount[]
   invoices         Invoice[]
@@ -2893,6 +2895,17 @@ model MedicalCertificate {
   encounterId String    @map("encounter_id") @db.Uuid
   encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
 
+  /// CER-009. The site of the attention, set by `medical_certificate_number_assigned`
+  /// from the encounter whatever the row carries. It exists so the number can
+  /// be unique per site (D-074).
+  siteId String @map("site_id") @db.Uuid
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Restrict, map: "medical_certificate_site_fk")
+
+  /// CER-009 (REQ-074). Consecutive per site, without gaps, assigned by the
+  /// trigger at insert from `document_counter` and immutable afterwards. The
+  /// default only lets Prisma omit it; the trigger always overwrites it.
+  number Int @default(0)
+
   patientId String  @map("patient_id") @db.Uuid
   patient   Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
 
@@ -2911,19 +2924,23 @@ model MedicalCertificate {
   /// requirement, not a preference.
   includeDiagnosis Boolean @default(false) @map("include_diagnosis")
 
-  body String @db.Text
-
   /// Printed as a QR so a third party can verify the certificate is genuine
   /// without receiving any clinical data.
   verificationCode String @unique @map("verification_code") @db.VarChar(24)
 
   issuedAt         DateTime  @default(now()) @map("issued_at") @db.Timestamptz(6)
+  /// CER-011. Who, when and why, the three together or none:
+  /// `medical_certificate_revocation_states_who_when_and_why`. The row is never
+  /// deleted. `revoked_by_id` is the ACCOUNT that annulled it.
   revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(6)
+  revokedById      String?   @map("revoked_by_id") @db.Uuid
+  revokedBy        User?     @relation("CertificateRevoker", fields: [revokedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "medical_certificate_revoked_by_fk")
   revocationReason String?   @map("revocation_reason") @db.Text
 
   /// DOC-003, DOC-075. The archived form 117 as it was handed over.
   documentRenders DocumentRender[]
 
+  @@unique([siteId, number], map: "medical_certificate_site_number_unique")
   @@index([patientId, issuedAt(sort: Desc)])
   @@map("medical_certificate")
 }
