@@ -810,6 +810,36 @@ export const DOMAIN_ERROR_CODES = [
   'PRESCRIPTION_ITEM_INCOMPLETE',
   'PRESCRIPTION_NOT_EDITABLE',
   'PRESCRIPTION_NOT_FOUND',
+  // ── Certificado médico (módulo `certificates`, CER-001 a CER-016) ────────
+  //
+  // El formulario SNS-MSP/HCU-form.117/2021 del A.M. 00115-2021. Ninguno de
+  // estos reutiliza un código de `encounter` ni de `prescription`, por lo
+  // mismo que la receta: ningún módulo importa de otro y dos clases con un
+  // mismo código son dos situaciones que el cliente no puede distinguir.
+  //
+  //   * `CERTIFICATE_ENCOUNTER_NOT_FOUND` (404) — CER-002. La atención no
+  //     existe o es de otra sede; un solo mensaje para las dos.
+  //   * `CERTIFICATE_ENCOUNTER_NOT_OPEN` (409) — CER-003. `COMPLETED`,
+  //     `DISCONTINUED` o `ENTERED_IN_ERROR`: los tres estados de ORD-005.
+  //   * `CERTIFIER_PROFILE_REQUIRED` (403) — CER-004. La cuenta no tiene ficha
+  //     profesional activa; `issued_by_id` apunta a `practitioner`.
+  //   * `CERTIFICATE_TYPE_NOT_SUPPORTED` (422) — CER-005. `FITNESS` y
+  //     `DISABILITY_SUPPORT` no son un 117: el de discapacidad es el 116.
+  //   * `CERTIFICATE_REST_PERIOD_INVALID` (422, por campo) — CER-006. Lo dice
+  //     además `medical_certificate_rest_range` en la base.
+  //   * `CERTIFICATE_DIAGNOSIS_REQUIRED` (422) — CER-008. Se pidió el
+  //     diagnóstico y la atención no tiene ninguno: no se teclea.
+  //   * `CERTIFICATE_NOT_FOUND` (404) — CER-010. No existe o es de otra sede.
+  //   * `CERTIFICATE_ALREADY_REVOKED` (409) — CER-012. Anular dos veces
+  //     reescribiría quién lo anuló y por qué.
+  'CERTIFICATE_ALREADY_REVOKED',
+  'CERTIFICATE_DIAGNOSIS_REQUIRED',
+  'CERTIFICATE_ENCOUNTER_NOT_FOUND',
+  'CERTIFICATE_ENCOUNTER_NOT_OPEN',
+  'CERTIFICATE_NOT_FOUND',
+  'CERTIFICATE_REST_PERIOD_INVALID',
+  'CERTIFICATE_TYPE_NOT_SUPPORTED',
+  'CERTIFIER_PROFILE_REQUIRED',
   // ─── Orders, E1 a E6 (ORD-003 a ORD-009, ORD-032 a ORD-053, ORD-081).
   // Pedir un examen y recibir su resultado.
   //
