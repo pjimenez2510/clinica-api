@@ -22,7 +22,12 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 
 const require = createRequire(import.meta.url);
-const IMAGE = 'verapdf/cli:latest';
+/**
+ * Pinned by digest (the `latest` of 03-06-2026): a validator that changes under
+ * the check would turn a red into a green with nobody noticing.
+ */
+const IMAGE =
+  'verapdf/cli@sha256:d5ee329657cf9bc4b2400392dd54c7d0a0ce9980ff6fa2da5590eebeec007cdb';
 
 /** Renders one sample PDF of each class with the compiled generator. */
 async function renderSamples(outDir) {
@@ -52,6 +57,36 @@ async function renderSamples(outDir) {
       rimpeRegime: 'NONE',
     },
   };
+  const { SharpImageNormaliser } = require(
+    `${dist}/infrastructure/sharp-image.normaliser.js`,
+  );
+  const sharp = require('sharp');
+  // The two risky paths: a logo WITH an alpha channel, through the same
+  // normaliser uploads go through (DOC-055), and a long multi-line footer.
+  const transparentLogo = await sharp({
+    create: {
+      width: 176,
+      height: 128,
+      channels: 4,
+      background: { r: 15, g: 107, b: 92, alpha: 0.5 },
+    },
+  })
+    .png()
+    .toBuffer();
+  const normalised = await new SharpImageNormaliser().normalise(
+    transparentLogo,
+    'logo',
+  );
+  const logo = {
+    id: 'sample-logo',
+    mimeType: normalised.mimeType,
+    bytes: normalised.bytes,
+    byteSize: normalised.bytes.length,
+    sha256: 'sample',
+    width: normalised.width,
+    height: normalised.height,
+  };
+  context.establishment.logo = logo;
   const renderer = new PdfKitDocumentRenderer();
   const issuedAt = new Date();
   const files = [];
@@ -68,7 +103,10 @@ async function renderSamples(outDir) {
       version: 1,
       publishedAt: issuedAt,
       accentColour: '#0f6b5c',
-      footerText: 'Pie de muestra',
+      footerText: Array.from(
+        { length: 6 },
+        (_, i) => `Línea ${i + 1} de un pie largo de muestra`,
+      ).join('\n'),
       headerFields: [],
       showEstablishmentRuc: true,
       showEstablishmentAddress: true,
