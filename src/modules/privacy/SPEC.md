@@ -55,19 +55,19 @@ clínica para contar días hábiles. Nadie depende de este módulo.
 
 ## Vocabulario
 
-| Término | Significado exacto en este módulo |
-|---|---|
-| **Texto vigente** | La versión de número más alto. Una sola a la vez, sin borradores |
-| **Consentimiento** | Fila de `patient_consent`: quién lo otorgó, sobre qué versión, por qué medio, cuándo y ante quién. Nunca se modifica |
-| **Medio** | `SIGNED_PAPER` (papel firmado) u `ON_SCREEN` (aceptado en pantalla) |
-| **Otorgante** | `HOLDER` (el titular) o `REPRESENTATIVE` (su representante legal) |
-| **Solicitud** | Fila de `data_subject_request`: un derecho ejercido sobre una ficha |
-| **Derecho** | `ACCESS`, `RECTIFICATION`, `ERASURE`, `OBJECTION`, `PORTABILITY`, `SUSPENSION` (LOPDP arts. 13-17 y 19) |
-| **Vencimiento** | Fecha clínica en que vence la respuesta. Se fija al registrar y se guarda |
-| **Día hábil** | Lunes a viernes que no es feriado de **toda** la clínica (`holiday.site_id IS NULL`), en `America/Guayaquil` |
-| **Respondida** | La solicitud tiene resultado, texto, instante y autor. Ya no cambia |
-| **Vencida** | Sin responder y con su vencimiento anterior a la fecha clínica de hoy |
-| **Ficha y absorbidas** | La ficha pedida y las que se fusionaron en ella (PA-055): lo que leen PD-016, PD-036 y PD-040 |
+| Término                | Significado exacto en este módulo                                                                                    |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| **Texto vigente**      | La versión de número más alto. Una sola a la vez, sin borradores                                                     |
+| **Consentimiento**     | Fila de `patient_consent`: quién lo otorgó, sobre qué versión, por qué medio, cuándo y ante quién. Nunca se modifica |
+| **Medio**              | `SIGNED_PAPER` (papel firmado) u `ON_SCREEN` (aceptado en pantalla)                                                  |
+| **Otorgante**          | `HOLDER` (el titular) o `REPRESENTATIVE` (su representante legal)                                                    |
+| **Solicitud**          | Fila de `data_subject_request`: un derecho ejercido sobre una ficha                                                  |
+| **Derecho**            | `ACCESS`, `RECTIFICATION`, `ERASURE`, `OBJECTION`, `PORTABILITY`, `SUSPENSION` (LOPDP arts. 13-17 y 19)              |
+| **Vencimiento**        | Fecha clínica en que vence la respuesta. Se fija al registrar y se guarda                                            |
+| **Día hábil**          | Lunes a viernes que no es feriado de **toda** la clínica (`holiday.site_id IS NULL`), en `America/Guayaquil`         |
+| **Respondida**         | La solicitud tiene resultado, texto, instante y autor. Ya no cambia                                                  |
+| **Vencida**            | Sin responder y con su vencimiento anterior a la fecha clínica de hoy                                                |
+| **Ficha y absorbidas** | La ficha pedida y las que se fusionaron en ella (PA-055): lo que leen PD-016, PD-036 y PD-040                        |
 
 ---
 
@@ -164,8 +164,10 @@ que si esa fila no se puede escribir no sale nada.
 - **PD-001** — El sistema DEBERÁ conservar cada versión del texto del
   consentimiento con su número, su texto, el instante de publicación y quién
   la publicó; los números DEBERÁN ser correlativos desde 1, y la vigente es la
-  de número más alto.
-- **PD-002** — CUANDO alguien con `consent-text:manage` publique un texto, el
+  de número más alto. MIENTRAS no haya ninguna publicada, pedir la vigente
+  DEBERÁ responder que no hay ninguna, sin error: registrar pacientes no
+  depende de ella.
+- **PD-002** — CUANDO alguien con `patient:consent-text` publique un texto, el
   sistema DEBERÁ crear la versión siguiente, que DEBERÁ ser la vigente desde ese
   instante, sin desplegar ni reiniciar nada.
 - **PD-003** — Una versión publicada NO DEBERÁ poder modificarse ni borrarse,
@@ -196,7 +198,7 @@ que si esa fila no se puede escribir no sale nada.
 - **PD-014** — Un consentimiento registrado NO DEBERÁ poder modificarse ni
   borrarse, tampoco desde SQL.
 - **PD-015** — SI la ficha no existe, ENTONCES el sistema DEBERÁ responder
-  `PATIENT_NOT_FOUND` (404); SI fue absorbida en una fusión, ENTONCES
+  `DATA_SUBJECT_NOT_FOUND` (404); SI fue absorbida en una fusión, ENTONCES
   `PATIENT_MERGED` (409) nombrando la superviviente, sin escribir nada.
 - **PD-016** — CUANDO alguien con `patient:read` pida los consentimientos de
   una ficha, el sistema DEBERÁ devolverlos —los de la ficha y sus absorbidas—
@@ -207,7 +209,7 @@ que si esa fila no se puede escribir no sale nada.
 
 ## 3. Las solicitudes del titular (REQ-113)
 
-- **PD-030** — CUANDO alguien con `data-subject:manage` registre una solicitud,
+- **PD-030** — CUANDO alguien con `patient:data-requests` registre una solicitud,
   el sistema DEBERÁ guardar la ficha, el derecho, quién la presenta (`HOLDER` o
   `REPRESENTATIVE`), qué pide (texto obligatorio, hasta 4 000 caracteres), el
   instante en que se recibió y quién la registró. Ficha inexistente o
@@ -224,7 +226,7 @@ que si esa fila no se puede escribir no sale nada.
   > portabilidad, a los 10 días hábiles; suspensión, a los 3 días hábiles. Los
   > días hábiles se cuentan desde el día hábil siguiente a la recepción.
   > Vive en una sola función, `legalDueDate`.
-- **PD-033** — CUANDO alguien con `data-subject:manage` responda una
+- **PD-033** — CUANDO alguien con `patient:data-requests` responda una
   solicitud, el sistema DEBERÁ guardar el resultado (`GRANTED`,
   `PARTIALLY_GRANTED` o `DENIED`), el texto de la respuesta (obligatorio, hasta
   4 000 caracteres), el instante y quién respondió; SI ya estaba respondida,
@@ -233,11 +235,11 @@ que si esa fila no se puede escribir no sale nada.
 - **PD-034** — Responder una solicitud, de cualquier derecho y con cualquier
   resultado, NO DEBERÁ borrar ni modificar ningún dato de la ficha ni de la
   historia clínica (D-055).
-- **PD-035** — CUANDO alguien con `data-subject:manage` pida las solicitudes
+- **PD-035** — CUANDO alguien con `patient:data-requests` pida las solicitudes
   abiertas, el sistema DEBERÁ devolver las no respondidas de toda la clínica
   ordenadas por vencimiento, la más próxima primero, cada una marcando si está
   vencida según la fecha clínica de hoy.
-- **PD-036** — CUANDO alguien con `data-subject:manage` pida las solicitudes de
+- **PD-036** — CUANDO alguien con `patient:data-requests` pida las solicitudes de
   una ficha, el sistema DEBERÁ devolver las de la ficha y sus absorbidas, de la
   más reciente a la más antigua, respondidas o no.
 - **PD-037** — Todo registro y toda respuesta DEBERÁN dejar una fila (`CREATE`
@@ -249,7 +251,7 @@ que si esa fila no se puede escribir no sale nada.
 
 ## 4. La exportación (REQ-113)
 
-- **PD-040** — CUANDO alguien con `data-subject:manage` pida la exportación de
+- **PD-040** — CUANDO alguien con `patient:data-requests` pida la exportación de
   una solicitud de acceso o de portabilidad, el sistema DEBERÁ devolver un
   documento JSON descargable con: el formato y su versión, el instante, la
   ficha administrativa, sus documentos de identidad con su vigencia, los
@@ -269,18 +271,23 @@ que si esa fila no se puede escribir no sale nada.
 
 ## Códigos de error
 
-| Código | HTTP | Cuándo |
-|---|---|---|
-| `CONSENT_TEXT_INVALID` | 422 | Texto vacío o demasiado largo (PD-004) |
-| `CONSENT_TEXT_VERSION_CONFLICT` | 409 | Dos publicaciones a la vez (PD-005) |
-| `CONSENT_TEXT_NOT_PUBLISHED` | 404 | Se pide el texto vigente y no hay ninguno, o la versión enviada no existe |
-| `CONSENT_TEXT_OUTDATED` | 409 | Se consiente una versión que ya no es la vigente (PD-012) |
-| `DATA_REQUEST_NOT_FOUND` | 404 | La solicitud no existe |
-| `DATA_REQUEST_RECEIVED_IN_FUTURE` | 422 | Recepción futura (PD-031) |
-| `DATA_REQUEST_ALREADY_ANSWERED` | 409 | Segunda respuesta (PD-033) |
-| `DATA_EXPORT_NOT_APPLICABLE` | 422 | Exportar una solicitud que no es de acceso ni de portabilidad (PD-042) |
+| Código                            | HTTP | Cuándo                                                                 |
+| --------------------------------- | ---- | ---------------------------------------------------------------------- |
+| `DATA_SUBJECT_NOT_FOUND`          | 404  | La ficha no existe (PD-015, PD-030)                                    |
+| `CONSENT_TEXT_INVALID`            | 422  | Texto vacío o demasiado largo (PD-004)                                 |
+| `CONSENT_TEXT_VERSION_CONFLICT`   | 409  | Dos publicaciones a la vez (PD-005)                                    |
+| `CONSENT_TEXT_NOT_PUBLISHED`      | 404  | Se consiente sobre una versión que no existe (PD-012)                  |
+| `CONSENT_TEXT_OUTDATED`           | 409  | Se consiente una versión que ya no es la vigente (PD-012)              |
+| `DATA_REQUEST_NOT_FOUND`          | 404  | La solicitud no existe                                                 |
+| `DATA_REQUEST_RECEIVED_IN_FUTURE` | 422  | Recepción futura (PD-031)                                              |
+| `DATA_REQUEST_ALREADY_ANSWERED`   | 409  | Segunda respuesta (PD-033)                                             |
+| `DATA_EXPORT_NOT_APPLICABLE`      | 422  | Exportar una solicitud que no es de acceso ni de portabilidad (PD-042) |
 
-`PATIENT_NOT_FOUND` y `PATIENT_MERGED` son de `patients` y se reutilizan.
+`PATIENT_MERGED` es compartido (`shared/domain/errors`) y se reutiliza.
+`DATA_SUBJECT_NOT_FOUND` es propio y no `PATIENT_NOT_FOUND`: ese código lo
+declara `patients`, un código lo declara una sola clase y ningún módulo importa
+a otro. Dice lo mismo, por la misma razón (no distingue «no existe» de «no
+puede verla»).
 
 ## Notas de esquema
 
@@ -297,33 +304,33 @@ que si esa fila no se puede escribir no sale nada.
 
 ## Rutas
 
-| Método | Ruta | Permiso | Requisitos |
-|---|---|---|---|
-| `GET` | `/privacy/consent-texts/current` | `patient:read` | PD-001 |
-| `GET` | `/privacy/consent-texts` | `consent-text:manage` | PD-001 |
-| `POST` | `/privacy/consent-texts` | `consent-text:manage` | PD-002 a PD-006 |
-| `GET` | `/privacy/patients/:patientId/consents` | `patient:read` | PD-016 |
-| `POST` | `/privacy/patients/:patientId/consents` | `patient:write` | PD-010 a PD-015, PD-017 |
-| `GET` | `/privacy/patients/:patientId/requests` | `data-subject:manage` | PD-036 |
-| `POST` | `/privacy/patients/:patientId/requests` | `data-subject:manage` | PD-030 a PD-032, PD-037 |
-| `GET` | `/privacy/requests` | `data-subject:manage` | PD-035 |
-| `POST` | `/privacy/requests/:requestId/response` | `data-subject:manage` | PD-033, PD-034, PD-037, PD-038 |
-| `GET` | `/privacy/requests/:requestId/export` | `data-subject:manage` | PD-040 a PD-043 |
+| Método | Ruta                                    | Permiso                 | Requisitos                     |
+| ------ | --------------------------------------- | ----------------------- | ------------------------------ |
+| `GET`  | `/privacy/consent-texts/current`        | `patient:read`          | PD-001                         |
+| `GET`  | `/privacy/consent-texts`                | `patient:consent-text`  | PD-001                         |
+| `POST` | `/privacy/consent-texts`                | `patient:consent-text`  | PD-002 a PD-006                |
+| `GET`  | `/privacy/patients/:patientId/consents` | `patient:read`          | PD-016                         |
+| `POST` | `/privacy/patients/:patientId/consents` | `patient:write`         | PD-010 a PD-015, PD-017        |
+| `GET`  | `/privacy/patients/:patientId/requests` | `patient:data-requests` | PD-036                         |
+| `POST` | `/privacy/patients/:patientId/requests` | `patient:data-requests` | PD-030 a PD-032, PD-037        |
+| `GET`  | `/privacy/requests`                     | `patient:data-requests` | PD-035                         |
+| `POST` | `/privacy/requests/:requestId/response` | `patient:data-requests` | PD-033, PD-034, PD-037, PD-038 |
+| `GET`  | `/privacy/requests/:requestId/export`   | `patient:data-requests` | PD-040 a PD-043                |
 
 Todas con alcance `global`: una ficha es una en todo el sistema (PA-051).
 
 ## Niveles de prueba
 
-| Requisitos | Nivel |
-|---|---|
-| PD-032 (regla de vencimiento) | Unitaria, sobre la función pura con feriados de entrada; integración para que se guarde |
-| PD-003, PD-005, PD-013, PD-014, PD-038 | Integración contra PostgreSQL, con control positivo |
-| PD-006, PD-017, PD-037, PD-043 | Integración: la fila de bitácora existe, y sin ella no se escribe ni se entrega nada |
-| El resto | Integración HTTP con sesión real; y en pantalla, F-01 y F-08 |
+| Requisitos                             | Nivel                                                                                   |
+| -------------------------------------- | --------------------------------------------------------------------------------------- |
+| PD-032 (regla de vencimiento)          | Unitaria, sobre la función pura con feriados de entrada; integración para que se guarde |
+| PD-003, PD-005, PD-013, PD-014, PD-038 | Integración contra PostgreSQL, con control positivo                                     |
+| PD-006, PD-017, PD-037, PD-043         | Integración: la fila de bitácora existe, y sin ella no se escribe ni se entrega nada    |
+| El resto                               | Integración HTTP con sesión real; y en pantalla, F-01 y F-08                            |
 
 ## Preguntas abiertas
 
 Todas en **D-083**: la regla del vencimiento (PD-032), qué se responde a una
 eliminación (PD-034), qué más incluye la exportación (PD-041), qué roles de
-fábrica traen `consent-text:manage` y `data-subject:manage`, y menores y
+fábrica traen `patient:consent-text` y `patient:data-requests`, y menores y
 revocación. Ninguna bloquea lo construido.
