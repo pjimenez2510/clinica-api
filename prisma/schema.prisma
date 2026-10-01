@@ -3575,6 +3575,12 @@ model ExamDefinition {
   code String @unique(map: "exam_definition_code_unique") @db.VarChar(32)
   name String @db.VarChar(200)
 
+  /// ORD-004. The code of the tariff service this exam IS. A code and not a
+  /// concept id because the tariff is versioned: the concept in force on the
+  /// attention's clinical date is resolved when the order is placed. NULL means
+  /// the exam cannot be ordered yet.
+  tariffCode String? @map("tariff_code") @db.VarChar(32)
+
   /// The section of MSP form 010A this belongs to, so that a compliant order
   /// can be printed. That form binds the private sector too:
   /// A.M. 00002393 art. 42.

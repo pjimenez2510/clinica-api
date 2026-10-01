@@ -170,10 +170,7 @@ describe('la emisión y el seguimiento de una orden', () => {
     encounterId: ENCOUNTER,
     category: 'LABORATORY' as const,
     priority: 'ROUTINE' as const,
-    lines: [
-      { examDefinitionId: EXAM_BH, conceptId: CONCEPT },
-      { examDefinitionId: EXAM_GLU, conceptId: CONCEPT },
-    ],
+    lines: [{ examDefinitionId: EXAM_BH }, { examDefinitionId: EXAM_GLU }],
   };
 
   it('ORD-002 emite una línea por examen pedido', async () => {

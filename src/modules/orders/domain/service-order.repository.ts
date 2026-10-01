@@ -89,19 +89,15 @@ export interface NewServiceOrder {
 }
 
 /**
- * ORD-002, ORD-004. One line of the request.
+ * ORD-002, ORD-004. One line of the request: THE EXAM, and nothing else.
  *
- * ⚠️ TWO IDENTIFIERS AND IT SHOULD BE ONE. **Falta esquema (ORD-004)**:
- * `exam_definition` has no `concept_id`, and `service_order_item.concept_id` is
- * `NOT NULL` against `catalog_concept`, so the caller has to supply both the
- * orderable and the tariff concept it is invoiced under. The relation is fixed
- * and belongs on the exam; until the column exists, sending them separately is
- * the only way to satisfy the foreign key, and it is the one place in this
- * module where two things that cannot disagree still can.
+ * The tariff service it is invoiced under is a property of the exam
+ * (`exam_definition.tariff_code`) resolved in force on the attention's
+ * clinical date inside the transaction. A client that could send it could
+ * pair a blood count with the price of a glucose.
  */
 export interface NewOrderLine {
   examDefinitionId: string;
-  conceptId: string;
 }
 
 /** ORD-009. One order, by id, within the caller's scope. */

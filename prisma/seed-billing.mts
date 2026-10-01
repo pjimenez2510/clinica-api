@@ -1252,13 +1252,18 @@ async function ensureExam(
   const rows = await tx.$queryRaw<{ id: string }[]>`
     INSERT INTO "exam_definition"
       ("code", "name", "form_010_section", "specimen_type", "patient_preparation",
-       "turnaround_hours", "billable_service_id", "updated_at")
+       "turnaround_hours", "billable_service_id", "tariff_code", "updated_at")
     VALUES (${exam.code}, ${exam.name}, ${exam.form010Section}, ${exam.specimenType},
             ${exam.patientPreparation}, ${exam.turnaroundHours}, ${billableServiceId}::uuid,
-            CURRENT_TIMESTAMP)
+            ${exam.code}, CURRENT_TIMESTAMP)
     ON CONFLICT ("code") DO UPDATE
       SET "billable_service_id" = COALESCE("exam_definition"."billable_service_id",
                                            EXCLUDED."billable_service_id"),
+          -- ORD-004. The tariff that seed-clinical-catalogues derives from the
+          -- exams uses the exam's own code; a clinic that pointed it elsewhere
+          -- is respected.
+          "tariff_code" = COALESCE("exam_definition"."tariff_code",
+                                   EXCLUDED."tariff_code"),
           "updated_at" = CURRENT_TIMESTAMP
     RETURNING "id"`;
 
