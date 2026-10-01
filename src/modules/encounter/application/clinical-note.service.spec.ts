@@ -5,7 +5,12 @@ import type {
   AccessAuditEntry,
   AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
-import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
+import {
+  WallClockTime,
+  addDays,
+  atWallClock,
+  clinicalDateOf,
+} from '../../../shared/domain/clinic-time';
 import {
   AmendmentReasonRequiredError,
   DischargeConditionRequiredError,
@@ -381,23 +386,30 @@ describe('los casos de uso de la nota clínica', () => {
     ).rejects.toBeInstanceOf(PractitionerNotLicensedError);
   });
 
-  it('EN-029 admite firmar el mismo día en que caduca el registro', async () => {
+  it('EN-029 admite firmar el mismo día en que caduca el registro, también a las 23:30 de Ecuador', async () => {
     // The registration is in force THROUGH its expiry date: a column of type
     // `date` names a whole day, and refusing on that day would withdraw a
-    // licence twenty-four hours early. Today IN ECUADOR: the UTC date is
-    // already tomorrow from 19:00, and that would test the day after.
+    // licence twenty-four hours early. Signed at 23:30 in Guayaquil, when the
+    // UTC date is already tomorrow: the hour at which judging against the UTC
+    // date shows, fixed here from today rather than left to the run's hour.
     const today = clinicalDateOf(new Date());
-    encounters.practitioner = {
-      practitionerId: PRACTITIONER,
-      acessExpiresOn: new Date(`${today}T00:00:00.000Z`),
-    };
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(atWallClock(today, WallClockTime.of(23, 30)));
+    try {
+      encounters.practitioner = {
+        practitionerId: PRACTITIONER,
+        acessExpiresOn: new Date(`${today}T00:00:00.000Z`),
+      };
 
-    await expect(
-      service.sign(
-        { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, // prettier-ignore
-        requester,
-      ),
-    ).resolves.toMatchObject({ status: 'SIGNED' });
+      await expect(
+        service.sign(
+          { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, // prettier-ignore
+          requester,
+        ),
+      ).resolves.toMatchObject({ status: 'SIGNED' });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('EN-029 no exige registro ACESS a quien no tiene ninguno anotado', async () => {

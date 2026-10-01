@@ -1656,6 +1656,9 @@ model Patient {
   mergesAsSource  PatientMerge[]          @relation("MergeSource")
   mergesAsTarget  PatientMerge[]          @relation("MergeTarget")
   accounts        PatientAccount[]
+  /// `privacy`, PD-016, PD-036: read through `chartScope` like the rest of the person's history.
+  consents            PatientConsent[]
+  dataSubjectRequests DataSubjectRequest[]
 
   @@index([familyName, givenName])
   @@index([birthDate])
@@ -3965,4 +3968,106 @@ model DocumentRender {
   @@index([invoiceId], map: "document_render_by_invoice")
   @@index([siteId, issuedAt(sort: Desc)], map: "document_render_by_site")
   @@map("document_render")
+}
+
+// ===========================================================================
+// PRIVACY (LOPDP) — module `privacy`, PD-001..PD-043
+//
+// The relation to `patient` IS declared: PA-055 reads a person's history
+// through `chartScope`, which filters on it. The foreign keys to `app_user`
+// exist in SQL (`20261001034254_privacy_consent_and_requests`) and are NOT
+// declared as relations: that would add back-relation fields to `User`, a
+// model owned by `auth`, for queries nobody makes from that side. All three
+// tables are append-only by trigger.
+// ===========================================================================
+
+enum ConsentMedium {
+  SIGNED_PAPER
+  ON_SCREEN
+
+  @@map("consent_medium")
+}
+
+/// Who acts: the data subject or their legal representative.
+enum DataSubjectParty {
+  HOLDER
+  REPRESENTATIVE
+
+  @@map("data_subject_party")
+}
+
+/// LOPDP arts. 13 to 17 and 19.
+enum DataSubjectRight {
+  ACCESS
+  RECTIFICATION
+  ERASURE
+  OBJECTION
+  PORTABILITY
+  SUSPENSION
+
+  @@map("data_subject_right")
+}
+
+enum DataRequestOutcome {
+  GRANTED
+  PARTIALLY_GRANTED
+  DENIED
+
+  @@map("data_request_outcome")
+}
+
+/// PD-001..PD-006. A published consent text. Consecutive version numbers
+/// (trigger `consent_text_version_is_next`), never rewritten. The current one
+/// is the highest version.
+model ConsentTextVersion {
+  id          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  version     Int      @unique(map: "consent_text_version_number_unique")
+  body        String   @db.Text
+  /// DEFAULT statement_timestamp() in SQL (PD-012); `now()` here only tells
+  /// Prisma there is a default.
+  publishedAt DateTime @default(now()) @map("published_at") @db.Timestamptz(6)
+  publishedBy String   @map("published_by") @db.Uuid
+
+  consents PatientConsent[]
+
+  @@map("consent_text_version")
+}
+
+/// PD-010..PD-017. A patient's consent, bound to the exact text version shown.
+model PatientConsent {
+  id            String             @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  patientId     String             @map("patient_id") @db.Uuid
+  patient       Patient            @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  textVersionId String             @map("text_version_id") @db.Uuid
+  textVersion   ConsentTextVersion @relation(fields: [textVersionId], references: [id], onDelete: Restrict)
+  medium        ConsentMedium
+  grantedBy     DataSubjectParty   @map("granted_by")
+  recordedAt    DateTime           @default(now()) @map("recorded_at") @db.Timestamptz(6)
+  recordedBy    String             @map("recorded_by") @db.Uuid
+
+  @@index([patientId, recordedAt(sort: Desc)], map: "patient_consent_by_patient")
+  @@map("patient_consent")
+}
+
+/// PD-030..PD-038. A right exercised by the data subject. The only update the
+/// base admits is the answer, whole and once.
+model DataSubjectRequest {
+  id           String              @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  patientId    String              @map("patient_id") @db.Uuid
+  patient      Patient             @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  right        DataSubjectRight
+  requestedBy  DataSubjectParty    @map("requested_by")
+  description  String              @db.Text
+  receivedAt   DateTime            @default(now()) @map("received_at") @db.Timestamptz(6)
+  /// PD-032. Clinical date, fixed on registration, never recomputed.
+  dueOn        DateTime            @map("due_on") @db.Date
+  registeredAt DateTime            @default(now()) @map("registered_at") @db.Timestamptz(6)
+  registeredBy String              @map("registered_by") @db.Uuid
+  outcome      DataRequestOutcome?
+  response     String?             @db.Text
+  answeredAt   DateTime?           @map("answered_at") @db.Timestamptz(6)
+  answeredBy   String?             @map("answered_by") @db.Uuid
+
+  @@index([patientId, receivedAt(sort: Desc)], map: "data_subject_request_by_patient")
+  @@map("data_subject_request")
 }
