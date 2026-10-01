@@ -63,7 +63,11 @@ async function main() {
    * —también en «PUERTO QUITO» y en una parroquia de Chimborazo—.
    */
   const parish = await prisma.catalogConcept.findFirst({
-    where: { code: '1701', validTo: null, system: { code: 'DPA' } },
+    // UNA PARROQUIA (6 dígitos) y no el cantón: la receta toma la ciudad del
+    // PADRE de la parroquia (PR-021), y con el cantón 1701 como «parroquia»
+    // imprimía la provincia, «PICHINCHA», como ciudad. 170102 es Carcelén,
+    // en el cantón Quito.
+    where: { code: '170102', validTo: null, system: { code: 'DPA' } },
     select: { id: true },
   });
 
