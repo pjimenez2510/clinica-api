@@ -37,6 +37,7 @@ import type {
 import {
   CreateSiteDto,
   EstablishmentDto,
+  SaveDocumentIdentityDto,
   // NO `import type` for parameter DTOs: with `type` the class is erased at
   // compile time, `design:paramtypes` emits `Object`, and Swagger documents
   // the endpoint WITHOUT its parameters — silently, end to end. See
@@ -122,6 +123,32 @@ export class OrganizationController {
           rimpeRegime: dto.rimpeRegime,
           confirmsFiscalProfile: dto.confirmsFiscalProfile,
           active: dto.active,
+        },
+        this.requester(req),
+      ),
+    );
+  }
+
+  /**
+   * OR-010 to OR-012. Apart from the PUT above so the establishment form, which
+   * does not show these three, cannot clear them by leaving them out.
+   */
+  @Put('establishment/document-identity')
+  @RequirePermission('site:manage', 'global')
+  @ApiOperation({
+    summary: 'Nombre comercial, correo y permiso que imprimen los documentos',
+  })
+  @ApiOkResponse({ type: EstablishmentDto })
+  async saveDocumentIdentity(
+    @Body() dto: SaveDocumentIdentityDto,
+    @Req() req: Request,
+  ): Promise<EstablishmentResponse> {
+    return this.visibleEstablishment(
+      await this.organization.saveDocumentIdentity(
+        {
+          tradeName: dto.tradeName,
+          contactEmail: dto.contactEmail,
+          operatingPermit: dto.operatingPermit,
         },
         this.requester(req),
       ),

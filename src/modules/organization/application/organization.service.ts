@@ -12,6 +12,7 @@ import {
 } from '../domain/organization.errors';
 import {
   ORGANIZATION_REPOSITORY,
+  type DocumentIdentityInput,
   type EstablishmentInput,
   type EstablishmentView,
   type OrganizationRepository,
@@ -174,6 +175,31 @@ export class OrganizationService {
     );
     // Somebody deleted it between the read and the write. Answering 404 is
     // truthful; retrying would be guessing what the caller wanted.
+    if (!updated) throw new EstablishmentNotFoundError();
+
+    await this.recordMutation('UPDATE', updated.id, requester);
+    return updated;
+  }
+
+  /**
+   * OR-010 to OR-012. What the documents' header prints. Blank is absent: a
+   * field nobody filled is not printed, never invented (DOC-080).
+   */
+  async saveDocumentIdentity(
+    command: DocumentIdentityInput,
+    requester: Requester,
+  ): Promise<EstablishmentView> {
+    const current = await this.repository.findEstablishment();
+    if (!current) throw new EstablishmentNotFoundError();
+
+    const present = (value: string | null): string | null =>
+      value === null || value.trim() === '' ? null : value.trim();
+
+    const updated = await this.repository.updateDocumentIdentity(current.id, {
+      tradeName: present(command.tradeName),
+      contactEmail: present(command.contactEmail),
+      operatingPermit: present(command.operatingPermit),
+    });
     if (!updated) throw new EstablishmentNotFoundError();
 
     await this.recordMutation('UPDATE', updated.id, requester);

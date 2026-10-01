@@ -1,6 +1,9 @@
 import './infrastructure/documents.constraints';
 import { Global, Module, type MiddlewareConsumer, type NestModule } from '@nestjs/common'; // prettier-ignore
+import { ConfigService } from '@nestjs/config';
 import express from 'express';
+
+import type { Env } from '../../shared/config/env.schema';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import {
@@ -10,12 +13,17 @@ import {
 
 import { DocumentIdentityController } from './document-identity.controller';
 import { DocumentTemplatesController } from './document-templates.controller';
+import { DocumentVerificationController } from './document-verification.controller';
 import { DocumentsController } from './documents.controller';
 import { InvoiceDocumentsController } from './invoice-documents.controller';
 import { DocumentIdentityService } from './application/document-identity.service';
 import { DocumentService } from './application/document.service';
+import { DocumentVerificationService } from './application/document-verification.service';
 import { DOCUMENT_RENDERER, IMAGE_NORMALISER } from './domain/document-rendering.port'; // prettier-ignore
-import { DOCUMENT_SOURCE_READER } from './domain/document-source';
+import {
+  DOCUMENT_SOURCE_READER,
+  DOCUMENT_VERIFICATION_BASE_URL,
+} from './domain/document-source';
 import { DOCUMENT_REPOSITORY } from './domain/document.repository';
 import { MAX_IMAGE_BYTES } from './domain/document-image';
 import { PdfKitDocumentRenderer } from './infrastructure/pdfkit-document.renderer';
@@ -62,13 +70,25 @@ import { SharpImageNormaliser } from './infrastructure/sharp-image.normaliser';
     InvoiceDocumentsController,
     DocumentTemplatesController,
     DocumentIdentityController,
+    DocumentVerificationController,
   ],
   providers: [
     DocumentService,
     DocumentIdentityService,
+    DocumentVerificationService,
     CurrentUserService,
     { provide: DOCUMENT_REPOSITORY, useClass: PrismaDocumentRepository },
     { provide: DOCUMENT_SOURCE_READER, useClass: PrismaDocumentSourceReader },
+    /**
+     * DOC-083. The public verification page of the web app. Read from the
+     * validated environment, like the credential links of `auth`.
+     */
+    {
+      provide: DOCUMENT_VERIFICATION_BASE_URL,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>): string =>
+        `${config.get('WEB_BASE_URL', { infer: true })}/verificar`,
+    },
     /**
      * DOC-020 to DOC-024. PDFKit, because it is the ONLY JavaScript library
      * that generates native PDF/A — and IHE requires PDF/A-1b for shared
@@ -125,8 +145,9 @@ export class DocumentsModule implements NestModule {
    * sentence that explains why SVG is refused.
    *
    * ⚠️ IT DOES NOT AFFECT THE JSON ROUTES. `configureApp` registers the JSON
-   * parser for `application/json`, and these three paths are the only ones this
-   * middleware is mounted on.
+   * parser for `application/json`, and the identity controller is the only one
+   * this middleware is mounted on — its GETs too (DOC-061), where a body-less
+   * request makes it a no-op.
    */
   configure(consumer: MiddlewareConsumer): void {
     consumer

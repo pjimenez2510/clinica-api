@@ -58,7 +58,9 @@
     "roadmap:check": "node --experimental-strip-types scripts/roadmap.mts --check",
     "roadmap:write": "node --experimental-strip-types scripts/roadmap.mts --write",
     "sri:double": "node --experimental-strip-types scripts/sri-double.mts",
-    "sri:certificate:dev": "node --env-file=.env --experimental-strip-types scripts/sri-certificate-dev.mts"
+    "sri:certificate:dev": "node --env-file=.env --experimental-strip-types scripts/sri-certificate-dev.mts",
+    "pdfa:check": "node scripts/pdfa-check.mjs",
+    "db:seed:document-templates": "node --env-file=.env --experimental-strip-types prisma/seed-document-templates.mts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.28",
@@ -71,8 +73,8 @@
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
     "argon2": "^0.45.1",
+    "bwip-js": "4.11.4",
     "cookie-parser": "^1.4.7",
-    "dejavu-fonts-ttf": "2.37.3",
     "ec-sri-invoice-signer": "1.8.2",
     "express": "5.2.1",
     "fast-xml-parser": "5.11.2",
@@ -89,9 +91,12 @@
     "pg-boss": "12.35.0",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
+    "qrcode": "1.5.4",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "sharp": "0.35.3",
+    "source-sans": "3.52.0",
+    "source-serif": "4.5.1",
     "zod": "4.4.3"
   },
   "devDependencies": {
@@ -109,9 +114,11 @@
     "@types/nodemailer": "^8.0.1",
     "@types/pdfkit": "^0.17.6",
     "@types/pg": "^8.20.4",
+    "@types/qrcode": "1.5.6",
     "@types/supertest": "^7.0.0",
     "@vitest/coverage-v8": "^4.1.10",
     "@xmldom/xmldom": "^0.9.12",
+    "@zxing/library": "0.23.0",
     "dependency-cruiser": "^18.1.1",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
@@ -128,6 +135,7 @@
     "tsconfig-paths": "^4.2.0",
     "typescript": "5.9.3",
     "typescript-eslint": "^8.20.0",
+    "unpdf": "1.8.1",
     "unplugin-swc": "^1.5.10",
     "vitest": "^4.1.10",
     "xml-crypto": "^6.3.2",

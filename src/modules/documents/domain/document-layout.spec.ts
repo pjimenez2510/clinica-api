@@ -9,7 +9,7 @@ import type {
   PatientIdentity,
   PractitionerIdentity,
 } from './document-source';
-import type { Block, DocumentLayout } from './page-layout';
+import type { Block, DocumentHeader, DocumentLayout } from './page-layout';
 
 /**
  * DOC-070 to DOC-078. The four documents, composed with plain objects.
@@ -34,6 +34,8 @@ const template: DocumentTemplate = {
 
 const context: DocumentContext = {
   siteName: 'Sede Centro',
+  siteLine: null,
+  verificationBaseUrl: 'https://clinica.example/verificar',
   establishment: {
     name: 'Centro de Especialidades Bahía',
     ruc: '0993123456001',
@@ -44,6 +46,9 @@ const context: DocumentContext = {
     specialTaxpayerResolution: '1234',
     withholdingAgentResolution: '5678',
     rimpeRegime: 'ENTREPRENEUR',
+    tradeName: null,
+    email: null,
+    operatingPermit: null,
   },
 };
 
@@ -103,18 +108,25 @@ function wholeText(layout: DocumentLayout): string {
           textOf(layout.tearOff.blocks),
         ].join('\n');
 
+  const header = layout.frame.header;
   return [
-    layout.title,
-    layout.reference ?? '',
-    layout.header.establishmentName,
-    layout.header.establishmentRuc ?? '',
-    layout.header.establishmentAddress ?? '',
-    layout.header.establishmentPhone ?? '',
-    ...layout.header.fields.map((field) => `${field.label}=${field.value}`),
+    layout.frame.title,
+    layout.frame.reference ?? '',
+    header?.establishmentName ?? '',
+    header?.establishmentRuc ?? '',
+    header?.establishmentAddress ?? '',
+    header?.establishmentPhone ?? '',
+    ...(header?.fields ?? []).map((field) => `${field.label}=${field.value}`),
     textOf(layout.blocks),
     tearOff,
-    layout.footerText ?? '',
+    layout.frame.footer.text ?? '',
   ].join('\n');
+}
+
+/** The establishment's header; the three clinical documents always have one. */
+function headerOf(layout: DocumentLayout): DocumentHeader {
+  if (layout.frame.header === null) throw new Error('expected a header');
+  return layout.frame.header;
 }
 
 const prescription = (
@@ -349,9 +361,9 @@ describe('DOC-034 las ranuras de la plantilla', () => {
     // Art. 5 requires NONE of these three: the only establishment datum the
     // receta must carry is the NAME. Printing them is a decision.
     const layout = composeLayout(prescription(), context, template);
-    expect(layout.header.establishmentRuc).toBeNull();
-    expect(layout.header.establishmentAddress).toBeNull();
-    expect(layout.header.establishmentPhone).toBeNull();
+    expect(headerOf(layout).establishmentRuc).toBeNull();
+    expect(headerOf(layout).establishmentAddress).toBeNull();
+    expect(headerOf(layout).establishmentPhone).toBeNull();
   });
 
   it('DOC-034 los imprime cuando el interruptor está puesto', () => {
@@ -361,18 +373,20 @@ describe('DOC-034 las ranuras de la plantilla', () => {
       showEstablishmentAddress: true,
       showEstablishmentPhone: true,
     });
-    expect(layout.header.establishmentRuc).toBe('0993123456001');
-    expect(layout.header.establishmentAddress).toBe('Av. 9 de Octubre 123');
-    expect(layout.header.establishmentPhone).toBe('04-2345678');
+    expect(headerOf(layout).establishmentRuc).toBe('0993123456001');
+    expect(headerOf(layout).establishmentAddress).toBe('Av. 9 de Octubre 123');
+    expect(headerOf(layout).establishmentPhone).toBe('04-2345678');
   });
 
   it('DOC-034 lleva los campos clave-valor y el pie de la plantilla', () => {
     const layout = composeLayout(prescription(), context, template);
-    expect(layout.header.fields).toEqual([
+    expect(headerOf(layout).fields).toEqual([
       { label: 'Permiso ACESS', value: '0000-0000' },
     ]);
-    expect(layout.footerText).toBe('Clínica de especialidades · Guayaquil');
-    expect(layout.accentColour).toBe('#1f6f8b');
+    expect(layout.frame.footer.text).toBe(
+      'Clínica de especialidades · Guayaquil',
+    );
+    expect(layout.frame.accentColour).toBe('#1f6f8b');
   });
 });
 
@@ -399,7 +413,7 @@ describe('DOC-072 la orden de examen', () => {
     );
     const text = wholeText(layout);
 
-    expect(layout.title).toBe('ORDEN DE EXÁMENES');
+    expect(layout.frame.title).toBe('ORDEN DE EXÁMENES');
     expect(layout.tearOff).toBeNull();
     expect(text).toContain('Hemoglobina glicosilada');
     expect(text).toContain('Paciente en ayunas');
@@ -533,6 +547,9 @@ describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
           specialTaxpayerResolution: null,
           withholdingAgentResolution: null,
           rimpeRegime: 'NONE',
+          tradeName: null,
+          email: null,
+          operatingPermit: null,
         },
       },
       template,
@@ -554,6 +571,9 @@ describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
         establishment: {
           ...context.establishment,
           rimpeRegime: 'POPULAR_BUSINESS',
+          tradeName: null,
+          email: null,
+          operatingPermit: null,
         },
       },
       template,
@@ -561,25 +581,40 @@ describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
     expect(wholeText(popular)).toContain('RÉGIMEN RIMPE=NEGOCIO POPULAR');
   });
 
-  it('DOC-078 NO lleva código QR ni código de barras', () => {
-    // «QR» does not appear once in the 142 pages of the SRI's Ficha Técnica,
-    // and the barcode is explicitly optional. This assertion exists because
-    // both are what somebody adds from memory after seeing other RIDEs.
-    const layout = composeLayout(ride, context, template);
-    const kinds = new Set<string>();
-    const walk = (blocks: readonly Block[]): void => {
-      for (const block of blocks) {
-        kinds.add(block.kind);
-        if (block.kind === 'boxes') {
-          walk(block.left);
-          walk(block.right);
+  it('DOC-078 lleva la clave en código de barras bajo la clave en texto, y nunca QR', () => {
+    const blocksOf = (layout: ReturnType<typeof composeLayout>) => {
+      const found: Block[] = [];
+      const walk = (blocks: readonly Block[]): void => {
+        for (const block of blocks) {
+          found.push(block);
+          if (block.kind === 'boxes') {
+            walk(block.left);
+            walk(block.right);
+          }
         }
-      }
+      };
+      walk(layout.blocks);
+      return found;
     };
-    walk(layout.blocks);
 
-    expect([...kinds]).not.toContain('barcode');
-    expect(wholeText(layout).toLowerCase()).not.toContain('qr');
+    const keyed = composeLayout(
+      { kind: 'INVOICE_RIDE', data: { ...ride.data, accessKey: KEY_IN_TESTS } },
+      context,
+      template,
+    );
+    expect(blocksOf(keyed)).toContainEqual({
+      kind: 'barcode',
+      value: KEY_IN_TESTS,
+    });
+    expect(wholeText(keyed).toLowerCase()).not.toContain('qr');
+
+    // Without a key there is nothing to encode, and nothing is invented.
+    const unkeyed = composeLayout(
+      { kind: 'INVOICE_RIDE', data: { ...ride.data, accessKey: null } },
+      context,
+      template,
+    );
+    expect(blocksOf(unkeyed).map((b) => b.kind)).not.toContain('barcode');
   });
 
   it('SRI-071 mientras el SRI no autoriza dice «PENDIENTE DE AUTORIZACIÓN» y no inventa número ni fecha', () => {
