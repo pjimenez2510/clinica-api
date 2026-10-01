@@ -31,7 +31,10 @@ import {
   CertificateNotFoundError,
   CertifierProfileRequiredError,
 } from '../domain/certificate.errors';
-import { composeForm117, type Form117 } from '../domain/form-117';
+import {
+  composeForm117,
+  type Form117,
+} from '../../../shared/domain/form-117/form-117';
 import {
   CERTIFICATE_REPOSITORY,
   type CertificateRepository,

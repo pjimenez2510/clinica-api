@@ -19,7 +19,7 @@ import type {
   RevocationPlan,
   SiteScopeFilter,
 } from '../domain/certificate.repository';
-import type { Form117Source } from '../domain/form-117';
+import type { Form117Source } from '../../../shared/domain/form-117/form-117';
 
 /**
  * The certificate's rows in, domain shapes out.

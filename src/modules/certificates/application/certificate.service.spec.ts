@@ -21,7 +21,7 @@ import {
   CertificateAlreadyRevokedError,
   CertificateEncounterNotFoundError,
 } from '../domain/certificate.errors';
-import type { Form117Source } from '../domain/form-117';
+import type { Form117Source } from '../../../shared/domain/form-117/form-117';
 import type {
   CertificatePlan,
   CertificateQuery,

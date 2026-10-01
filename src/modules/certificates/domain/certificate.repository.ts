@@ -20,7 +20,7 @@ import type {
   IssuableCertificateType,
   RestPeriod,
 } from './certificate';
-import type { Form117Source } from './form-117';
+import type { Form117Source } from '../../../shared/domain/form-117/form-117';
 
 /**
  * The caller's site scope, as `Principal.sitesFor` states it: every site, or

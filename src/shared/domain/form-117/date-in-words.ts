@@ -1,8 +1,5 @@
-import {
-  parseClinicalDate,
-  type ClinicalDate,
-} from '../../../shared/domain/clinic-time';
-import { spellQuantity } from '../../../shared/domain/quantity-in-words';
+import { parseClinicalDate, type ClinicalDate } from '../clinic-time';
+import { spellQuantity } from '../quantity-in-words';
 
 /**
  * CER-023, CER-026. A date «en números y en letras», as form 117 asks for the

@@ -1,6 +1,6 @@
 import type { IessValidation } from './domain/certificate';
 import type { CertificateView } from './domain/certificate.repository';
-import type { Form117 } from './domain/form-117';
+import type { Form117 } from '../../shared/domain/form-117/form-117';
 import type {
   CertificateResponse,
   Form117Response,

@@ -3,15 +3,15 @@ import {
   clinicalDaySpan,
   wallClockOf,
   type ClinicalDate,
-} from '../../../shared/domain/clinic-time';
-import { spellQuantity } from '../../../shared/domain/quantity-in-words';
+} from '../clinic-time';
+import { spellQuantity } from '../quantity-in-words';
 
 import {
   CONTINGENCY_LABEL,
   type CertificateType,
   type ContingencyType,
   type MaternityDates,
-} from './certificate';
+} from './vocabulary';
 import {
   dateInNumbersAndWords,
   type DateInNumbersAndWords,

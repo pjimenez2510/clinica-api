@@ -12,6 +12,18 @@ import {
   type RestPeriodField,
   type RestPeriodProblem,
 } from './certificate.errors';
+export {
+  CONTINGENCY_LABEL,
+  CONTINGENCY_TYPES,
+  type CertificateType,
+  type ContingencyType,
+  type MaternityDates,
+} from '../../../shared/domain/form-117/vocabulary';
+import type {
+  CertificateType,
+  ContingencyType,
+  MaternityDates,
+} from '../../../shared/domain/form-117/vocabulary';
 
 /**
  * The medical certificate of form SNS-MSP/HCU-form.117/2021: its types, its
@@ -21,10 +33,6 @@ import {
  * in Ecuador — because `rest_from` and `rest_to` are `date` columns, not
  * instants.
  */
-
-/** `CertificateType` of the schema. Declared here: no module imports another. */
-export type CertificateType =
-  'ATTENDANCE' | 'MEDICAL_REST' | 'FITNESS' | 'DISABILITY_SUPPORT';
 
 /** Every value of the enum, for the transport to validate against. */
 export const CERTIFICATE_TYPES: readonly CertificateType[] = [
@@ -65,36 +73,6 @@ export function assertIssuableType(
 export interface RestPeriod {
   from: ClinicalDate;
   to: ClinicalDate;
-}
-
-/**
- * CER-034. The contingency the IESS asks for on a rest certificate. The list
- * comes from the IESS page D-075 cites (2023) and is to be confirmed against
- * its form.
- */
-export type ContingencyType =
-  'GENERAL_ILLNESS' | 'WORK_ACCIDENT' | 'OCCUPATIONAL_DISEASE' | 'MATERNITY';
-
-export const CONTINGENCY_TYPES: readonly ContingencyType[] = [
-  'GENERAL_ILLNESS',
-  'WORK_ACCIDENT',
-  'OCCUPATIONAL_DISEASE',
-  'MATERNITY',
-];
-
-/** CER-034. How the form names each contingency. */
-export const CONTINGENCY_LABEL: Readonly<Record<ContingencyType, string>> = {
-  GENERAL_ILLNESS: 'Enfermedad general',
-  WORK_ACCIDENT: 'Accidente de trabajo',
-  OCCUPATIONAL_DISEASE: 'Enfermedad profesional',
-  MATERNITY: 'Maternidad',
-};
-
-/** CER-035. The three dates of a maternity, each a calendar date in Ecuador. */
-export interface MaternityDates {
-  admissionOn: ClinicalDate;
-  birthOn: ClinicalDate;
-  dischargeOn: ClinicalDate;
 }
 
 /** CER-006, CER-007, CER-034, CER-035. What the request says about the rest. */
