@@ -1373,7 +1373,7 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   > cita ya no es el sitio.
 - **AG-148** — CUANDO una cita `CHECKED_IN` cuya atención viva no tiene
   ningún acto clínico —nota con algo escrito, diagnóstico, procedimiento,
-  receta ni orden—
+  receta, orden, certificado sin revocar, referencia ni interconsulta—
   pase a `LEFT_WITHOUT_BEING_SEEN`, el sistema DEBERÁ pasar esa atención, si
   sigue `OPEN` u `ON_HOLD`, a `DISCONTINUED` con origen `PATIENT`, el motivo dado (o
   «Se fue sin ser atendido» si no se dio), quien registra la salida y el mismo
@@ -1389,6 +1389,12 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   > la nota: una receta emitida sin abrir la nota sigue siendo una consulta.
   > Y la escritura es condicional a que la atención siga en curso: una ya
   > interrumpida desde la atención conserva su motivo, su origen y su autor.
+  >
+  > **D-104 (01-10-2026).** También el certificado sin revocar, la referencia
+  > (`ISSUED`, `ACCEPTED`, `COMPLETED`) y la interconsulta (`REQUESTED`,
+  > `ANSWERED`): lo que impide anular la atención (D-103) cuenta como
+  > atendido, con los mismos estados. Un certificado de asistencia sin nota
+  > no deja la cita en «se fue sin ser atendido».
 - **AG-149** — CUANDO se interrumpa la atención (EN-167) de una cita
   `IN_PROGRESS` o `CHECKED_IN`, el sistema DEBERÁ, en la misma transacción,
   pasar la cita a `FULFILLED` y su estado de paciente a `DEPARTED` si hubo

@@ -549,6 +549,61 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
     expect(left.releasedAt).not.toBeNull();
   });
 
+  it.each([
+    ['un certificado sin revocar', 'certificate'],
+    ['una referencia emitida', 'referral'],
+    ['una interconsulta pedida', 'interconsultation'],
+  ] as const)(
+    'AG-149 BI-180 interrumpir con solo %s, sin nota: la cita queda atendida y caja la cobra (D-104)',
+    async (_label, act) => {
+      const prisma = db();
+      const { entry, encounter, requester, ids } =
+        await inTheWaitingRoom(prisma);
+      const owner = { encounterId: encounter.id };
+      if (act === 'certificate') {
+        await prisma.medicalCertificate.create({
+          data: {
+            ...owner,
+            patientId: ids.patientId,
+            issuedById: ids.practitionerId,
+            type: 'ATTENDANCE',
+            body: 'Asistió a consulta',
+            verificationCode: `C-${encounter.id.slice(-12)}`,
+          },
+        });
+      } else if (act === 'referral') {
+        await prisma.referral.create({
+          data: {
+            ...owner,
+            patientId: ids.patientId,
+            issuedById: ids.practitionerId,
+            direction: 'REFERRAL',
+            reason: 'Valoración por especialista',
+          },
+        });
+      } else {
+        await prisma.interconsultation.create({
+          data: {
+            ...owner,
+            requestedById: ids.practitionerId,
+            reason: 'Opinión de cardiología',
+          },
+        });
+      }
+
+      await serviceOf(prisma).discontinue(
+        { encounterId: encounter.id, reason: 'Se retiró', origin: 'PATIENT', ...asAuthor }, // prettier-ignore
+        requester,
+      );
+
+      expect((await appointment(prisma, entry.id)).status).toBe('FULFILLED');
+      const acts = await new PrismaClinicalActsRepository(
+        prisma as unknown as PrismaService,
+      ).findEncounterActs({ encounterId: encounter.id, siteId: ids.siteId });
+      expect(acts?.clinicallyAttended).toBe(true);
+    },
+  );
+
   it('AG-149 con un acto clínico y la cita aún en sala, la cita queda atendida pasando por «en atención»', async () => {
     const prisma = db();
     const { entry, encounter, requester } = await inTheWaitingRoom(prisma);
@@ -1063,6 +1118,24 @@ describe('escribir un diagnóstico o un procedimiento se serializa con anular e 
    * before letting go. The write cannot finish before the holder does: the
    * row is locked, and even the foreign key of the insert waits for it.
    */
+  /** Until some backend is waiting on a lock held by `holderPid`. */
+  async function waitUntilBlockedBy(
+    prisma: PrismaClient,
+    holderPid: number,
+  ): Promise<void> {
+    const deadline = Date.now() + 10_000;
+    for (;;) {
+      const [row] = await prisma.$queryRaw<{ waiting: bigint }[]>`
+        SELECT count(*) AS waiting FROM pg_stat_activity
+         WHERE ${holderPid}::int = ANY (pg_blocking_pids(pid))`;
+      if (Number(row?.waiting ?? 0) > 0) return;
+      if (Date.now() > deadline) {
+        throw new Error('La escritura nunca esperó el bloqueo de la atención');
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+
   async function writeWhileHeld<T>(
     prisma: PrismaClient,
     encounter: { id: string; startedAt: Date },
@@ -1070,14 +1143,16 @@ describe('escribir un diagnóstico o un procedimiento se serializa con anular e 
     write: () => Promise<T>,
   ): Promise<PromiseSettledResult<T>> {
     const closer = await createUser(prisma);
-    let locked!: () => void;
-    const isLocked = new Promise<void>((resolve) => (locked = resolve));
+    let locked!: (pid: number) => void;
+    const isLocked = new Promise<number>((resolve) => (locked = resolve));
     let release!: () => void;
     const released = new Promise<void>((resolve) => (release = resolve));
 
     const holder = prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT 1 FROM "encounter" WHERE "id" = ${encounter.id}::uuid FOR UPDATE`;
-      locked();
+      const [held] = await tx.$queryRaw<{ pid: number }[]>`
+        SELECT pg_backend_pid() AS pid
+          FROM "encounter" WHERE "id" = ${encounter.id}::uuid FOR UPDATE`;
+      locked(held!.pid);
       await released;
       if (!closeIt) return;
       const endedAt = endOf(encounter.startedAt);
@@ -1093,11 +1168,16 @@ describe('escribir un diagnóstico o un procedimiento se serializa con anular e 
         },
       });
     });
-    await isLocked;
+    const holderPid = await isLocked;
     const written = write().then(
       (value) => ({ status: 'fulfilled', value }) as const,
       (reason: unknown) => ({ status: 'rejected', reason }) as const,
     );
+    // Released only once the write is WAITING on the holder (4.ª revisión,
+    // M1): otherwise the holder could commit before the write even asked for
+    // the row, and the test would prove the re-read of the status, not the
+    // lock. A bounded wait for a condition, not a sleep.
+    await waitUntilBlockedBy(prisma, holderPid);
     release();
     await holder;
     return written;

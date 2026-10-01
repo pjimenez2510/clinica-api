@@ -615,12 +615,15 @@ export class EncounterHasLiveActsError extends ConflictError {
       acts.certificates > 0
         ? `${acts.certificates} certificado(s) sin revocar`
         : null,
-      acts.referrals > 0 ? `${acts.referrals} referencia(s) emitida(s)` : null,
+      acts.referrals > 0 ? `${acts.referrals} referencia(s)` : null,
       acts.interconsultations > 0
-        ? `${acts.interconsultations} interconsulta(s) pedida(s) o contestada(s)`
+        ? `${acts.interconsultations} interconsulta(s)`
         : null,
     ].filter(Boolean);
-    this.userTitle = `La atención tiene ${parts.join(', ')}. Anúlelas o retráctelas antes de anular la atención`;
+    // A referral already seen elsewhere or an answered interconsultation has
+    // no way back (D-103): the sentence says so instead of sending the user
+    // to a door that does not exist (4.ª revisión, m3).
+    this.userTitle = `La atención tiene ${parts.join(', ')}. Retire primero lo que se pueda retirar; si algo ya no se puede, esta atención no se anula`;
   }
 }
 

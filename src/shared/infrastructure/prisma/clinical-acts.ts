@@ -7,7 +7,9 @@ import { WRITTEN_TEXT_PATTERN } from '../../domain/written-text';
  *
  * Any clinical act of a practitioner in the attention counts: a note WITH
  * SOMETHING WRITTEN (draft or signed; an empty note is not one, D-099 §5), a
- * diagnosis, a procedure, a prescription or an order. Vital signs do NOT: they are the preparation,
+ * diagnosis, a procedure, a prescription or an order; and, by D-104, a
+ * certificate not revoked, a referral or an interconsultation that stands.
+ * Vital signs do NOT: they are the preparation,
  * and a patient who leaves after them was not seen by the doctor (D-081 §2).
  *
  * IN `shared` BECAUSE THREE MODULES ASK IT and no module imports another: the
@@ -21,6 +23,22 @@ import { WRITTEN_TEXT_PATTERN } from '../../domain/written-text';
  * Takes any client, so a caller already inside a transaction asks with its
  * own snapshot and locks.
  */
+/**
+ * D-103, D-104. The referrals and interconsultations that STAND: the same
+ * states make the patient attended (here) and keep the attention from being
+ * annulled (`liveActsOf`, encounter). One list, so the two answers cannot
+ * drift — the 4.ª revisión found them counting different things.
+ */
+export const STANDING_REFERRAL_STATUSES = [
+  'ISSUED',
+  'ACCEPTED',
+  'COMPLETED',
+] as const;
+export const STANDING_INTERCONSULTATION_STATUSES = [
+  'REQUESTED',
+  'ANSWERED',
+] as const;
+
 export async function hasClinicalAct(
   client: Prisma.TransactionClient | PrismaClient,
   encounterId: string,
@@ -47,6 +65,20 @@ export async function hasClinicalAct(
     client.encounterProcedure.count({ where: { encounterId } }),
     client.prescription.count({ where: { encounterId } }),
     client.serviceOrder.count({ where: { encounterId } }),
+    // D-104: a certificate states there was an attention; a referral and an
+    // interconsultation are clinical decisions about the patient.
+    client.medicalCertificate.count({
+      where: { encounterId, revokedAt: null },
+    }),
+    client.referral.count({
+      where: { encounterId, status: { in: [...STANDING_REFERRAL_STATUSES] } },
+    }),
+    client.interconsultation.count({
+      where: {
+        encounterId,
+        status: { in: [...STANDING_INTERCONSULTATION_STATUSES] },
+      },
+    }),
   ]);
   return counts.some((count) => count > 0);
 }

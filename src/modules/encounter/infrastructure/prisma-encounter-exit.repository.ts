@@ -22,7 +22,11 @@ import type {
   Substitution,
 } from '../domain/encounter-exit.repository';
 import { hasWrittenContent } from '../domain/encounter-exit';
-import { hasClinicalAct } from '../../../shared/infrastructure/prisma/clinical-acts';
+import {
+  STANDING_INTERCONSULTATION_STATUSES,
+  STANDING_REFERRAL_STATUSES,
+  hasClinicalAct,
+} from '../../../shared/infrastructure/prisma/clinical-acts';
 import type {
   EncounterQuery,
   EncounterView,
@@ -295,11 +299,14 @@ async function liveActsOf(
     tx.referral.count({
       where: {
         encounterId,
-        status: { in: ['ISSUED', 'ACCEPTED', 'COMPLETED'] },
+        status: { in: [...STANDING_REFERRAL_STATUSES] },
       },
     }),
     tx.interconsultation.count({
-      where: { encounterId, status: { in: ['REQUESTED', 'ANSWERED'] } },
+      where: {
+        encounterId,
+        status: { in: [...STANDING_INTERCONSULTATION_STATUSES] },
+      },
     }),
   ]);
   return {
