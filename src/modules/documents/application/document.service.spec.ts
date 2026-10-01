@@ -12,7 +12,7 @@ import {
 } from '../domain/document.errors';
 import { CLINICAL_DOCUMENT_KINDS } from '../domain/document-kind';
 import type { DocumentKind } from '../domain/document-kind';
-import type { StoredImageSummary } from '../domain/document-image';
+import type { StoredImage, StoredImageSummary } from '../domain/document-image';
 import type {
   DocumentContext,
   DocumentSourceReader,
@@ -63,6 +63,8 @@ const template: DocumentTemplate = {
 
 const context: DocumentContext = {
   siteName: 'Sede Centro',
+  siteLine: null,
+  verificationBaseUrl: 'https://clinica.example/verificar',
   establishment: {
     name: 'Centro de Especialidades Bahía',
     ruc: '0993123456001',
@@ -73,6 +75,9 @@ const context: DocumentContext = {
     specialTaxpayerResolution: null,
     withholdingAgentResolution: null,
     rimpeRegime: 'NONE',
+    tradeName: null,
+    email: null,
+    operatingPermit: null,
   },
 };
 
@@ -227,7 +232,18 @@ class FakeRepository implements DocumentRepository {
     return created;
   }
 
+  async publishTemplates(
+    published: readonly NewDocumentTemplate[],
+  ): Promise<DocumentTemplate[]> {
+    const created: DocumentTemplate[] = [];
+    for (const one of published) created.push(await this.publishTemplate(one));
+    return created;
+  }
+
+  readonly savedImages: NewDocumentImage[] = [];
+
   saveImage(image: NewDocumentImage): Promise<StoredImageSummary> {
+    this.savedImages.push(image);
     const stored: StoredImageSummary = {
       id: `image-${this.images.length + 1}`,
       mimeType: image.mimeType as 'image/png',
@@ -238,6 +254,14 @@ class FakeRepository implements DocumentRepository {
     };
     this.images.push(stored);
     return Promise.resolve(stored);
+  }
+
+  findEstablishmentLogo(): Promise<StoredImage | null> {
+    return Promise.resolve(null);
+  }
+
+  findPractitionerImage(): Promise<StoredImage | null> {
+    return Promise.resolve(null);
   }
 
   attachEstablishmentLogo(
@@ -273,8 +297,20 @@ class FakeSources implements DocumentSourceReader {
     );
   }
 
-  contextForSite(): Promise<DocumentContext | null> {
+  readonly contextSites: string[] = [];
+  defaultSite: string | null = 'site-1';
+
+  contextForSite(siteId: string): Promise<DocumentContext | null> {
+    this.contextSites.push(siteId);
     return Promise.resolve(this.context);
+  }
+
+  firstActiveSiteId(): Promise<string | null> {
+    return Promise.resolve(this.defaultSite);
+  }
+
+  findForVerification(): Promise<null> {
+    return Promise.resolve(null);
   }
 }
 
@@ -288,7 +324,7 @@ class RecordingRenderer implements DocumentRenderer {
   ): Promise<Buffer> {
     this.calls.push({ layout, metadata });
     return Promise.resolve(
-      Buffer.from(`pdf:${layout.title}:${this.calls.length}`),
+      Buffer.from(`pdf:${layout.frame.title}:${this.calls.length}`),
     );
   }
 }
@@ -646,6 +682,32 @@ describe('DOC-054 la identidad visual se reencoda siempre', () => {
     expect(repository.logoOf.get('establishment-1')).toBe(stored.id);
   });
 
+  it('DOC-056 guarda de cada imagen sus bytes, tipo, tamaño, sha256, ancho, alto y quién la subió', async () => {
+    const identity = new DocumentIdentityService(
+      repository,
+      new FakeNormaliser(),
+    );
+
+    const stored = await identity.setEstablishmentLogo(
+      'establishment-1',
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 9]),
+      'user-7',
+    );
+
+    const reencoded = Buffer.concat([
+      Buffer.from('reencoded:'),
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 9]),
+    ]);
+    expect(stored).toMatchObject({
+      mimeType: 'image/png',
+      byteSize: reencoded.byteLength,
+      sha256: createHash('sha256').update(reencoded).digest('hex'),
+      width: 100,
+      height: 40,
+    });
+    expect(repository.savedImages.at(-1)?.uploadedById).toBe('user-7');
+  });
+
   it('DOC-057 el sello y la firma van por profesional', async () => {
     const identity = new DocumentIdentityService(
       repository,
@@ -687,5 +749,105 @@ describe('DOC-054 la identidad visual se reencoda siempre', () => {
         'user-1',
       ),
     ).rejects.toThrow(DocumentSubjectNotFoundError);
+  });
+});
+
+const slots = {
+  accentColour: '#0f6b5c',
+  footerText: 'Pie nuevo',
+  headerFields: [],
+  showEstablishmentRuc: true,
+  showEstablishmentAddress: true,
+  showEstablishmentPhone: true,
+};
+
+describe('DOC-038 la vista previa la pinta el mismo generador, y no guarda nada', () => {
+  it('DOC-038 compone la clase pedida con las ranuras propuestas y contenido de muestra', async () => {
+    const preview = await service.previewTemplate('MEDICAL_CERTIFICATE', {
+      ...slots,
+      accentColour: '#7a3b2e',
+    });
+
+    expect(preview.mimeType).toBe('application/pdf');
+    const { layout } = renderer.calls[0] ?? {};
+    expect(layout?.frame.title).toBe('CERTIFICADO MÉDICO');
+    expect(layout?.frame.accentColour).toBe('#7a3b2e');
+    expect(JSON.stringify(layout?.blocks)).toContain('MUESTRA');
+  });
+
+  it.each([
+    'PRESCRIPTION',
+    'SERVICE_ORDER',
+    'MEDICAL_CERTIFICATE',
+    'INVOICE_RIDE',
+  ] as const)(
+    'DOC-038 la muestra de %s lleva MUESTRA SIN VALIDEZ en el marco',
+    async (kind) => {
+      await service.previewTemplate(kind, slots);
+      expect(renderer.calls.at(-1)?.layout.frame.watermark).toBe(
+        'MUESTRA SIN VALIDEZ',
+      );
+    },
+  );
+
+  it('DOC-038 no escribe ni artefacto, ni plantilla, ni bitácora', async () => {
+    await service.previewTemplate('PRESCRIPTION', slots);
+
+    expect(repository.renders).toHaveLength(0);
+    expect(repository.templates).toHaveLength(1);
+    expect(repository.disclosures).toHaveLength(0);
+  });
+
+  it('DOC-038 toma la identidad de la primera sede activa', async () => {
+    await service.previewTemplate('PRESCRIPTION', slots);
+
+    expect(sources.contextSites).toEqual(['site-1']);
+  });
+
+  it('DOC-038 rechaza las ranuras inválidas igual que al publicar', async () => {
+    await expect(
+      service.previewTemplate('PRESCRIPTION', {
+        ...slots,
+        accentColour: 'verde',
+      }),
+    ).rejects.toThrow(/DOCUMENT_TEMPLATE_SLOT_INVALID|Invalid template slot/);
+    expect(renderer.calls).toHaveLength(0);
+  });
+
+  it('DOC-038 sin ninguna sede no hay identidad que mostrar', async () => {
+    sources.defaultSite = null;
+    await expect(
+      service.previewTemplate('PRESCRIPTION', slots),
+    ).rejects.toThrow(DocumentSubjectNotFoundError);
+  });
+});
+
+describe('DOC-039 una sola identidad para las cuatro clases', () => {
+  it('DOC-039 publica la versión siguiente de cada clase', async () => {
+    const published = await service.publishTemplateForAllKinds(
+      slots,
+      requester,
+    );
+
+    expect(published.map((one) => one.kind).sort()).toEqual([
+      'INVOICE_RIDE',
+      'MEDICAL_CERTIFICATE',
+      'PRESCRIPTION',
+      'SERVICE_ORDER',
+    ]);
+    expect(published.find((one) => one.kind === 'PRESCRIPTION')?.version).toBe(
+      3,
+    );
+    expect(published.every((one) => one.accentColour === '#0f6b5c')).toBe(true);
+  });
+
+  it('DOC-039 DOC-035 una ranura inválida no publica ninguna', async () => {
+    await expect(
+      service.publishTemplateForAllKinds(
+        { ...slots, accentColour: '#ZZZ' },
+        requester,
+      ),
+    ).rejects.toThrow(/DOCUMENT_TEMPLATE_SLOT_INVALID|Invalid template slot/);
+    expect(repository.templates).toHaveLength(1);
   });
 });

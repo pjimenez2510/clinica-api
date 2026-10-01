@@ -374,6 +374,116 @@ describe('la organización por HTTP', () => {
     });
   });
 
+  describe('los datos de cabecera de los documentos', () => {
+    const identity = {
+      tradeName: 'Clínica Andina',
+      contactEmail: 'contacto@example.com',
+      operatingPermit: 'ACESS-2026-0456',
+    };
+
+    it('OR-010 OR-011 OR-012 guarda nombre comercial, correo y permiso, y el GET los devuelve', async () => {
+      await saveEstablishment();
+
+      await put('/establishment/document-identity', identity).expect(200);
+
+      const response = await get('/establishment').expect(200);
+      expect(response.body).toMatchObject(identity);
+    });
+
+    it('OR-010 el PUT del establecimiento no los borra aunque no los mande', async () => {
+      await saveEstablishment();
+      await put('/establishment/document-identity', identity).expect(200);
+
+      await saveEstablishment({ typology: 'Hospital Básico' });
+
+      const response = await get('/establishment').expect(200);
+      expect(response.body).toMatchObject(identity);
+    });
+
+    it('OR-011 rechaza un correo sin forma de correo y nombra el campo', async () => {
+      await saveEstablishment();
+
+      const response = await put('/establishment/document-identity', {
+        ...identity,
+        contactEmail: 'contacto-arroba-clinica',
+      }).expect(422);
+
+      const problem = response.body as Problem;
+      expect(problem.code).toBe('VALIDATION_FAILED');
+      expect(problem.errors?.map((e) => e.field)).toEqual(['contactEmail']);
+    });
+
+    it('OR-011 la base rechaza por su cuenta un correo con forma imposible', async () => {
+      const establishment = await saveEstablishment();
+      // Positive control: the same statement with a well-formed address goes
+      // through, so the refusal below is the CHECK and not a broken query.
+      await prisma.$executeRaw`
+        UPDATE establishment SET contact_email = 'a@b.ec'
+        WHERE id = ${establishment.id}::uuid
+      `;
+      await expect(
+        prisma.$executeRaw`
+          UPDATE establishment SET contact_email = 'sin-arroba'
+          WHERE id = ${establishment.id}::uuid
+        `,
+      ).rejects.toThrowError(/establishment_contact_email_format/);
+    });
+
+    it('OR-010 la base rechaza un nombre comercial en blanco', async () => {
+      const establishment = await saveEstablishment();
+      await prisma.$executeRaw`
+        UPDATE establishment SET trade_name = 'Clínica'
+        WHERE id = ${establishment.id}::uuid
+      `;
+      await expect(
+        prisma.$executeRaw`
+          UPDATE establishment SET trade_name = '   '
+          WHERE id = ${establishment.id}::uuid
+        `,
+      ).rejects.toThrowError(/establishment_trade_name_not_blank/);
+    });
+
+    it('OR-012 la base rechaza un permiso de funcionamiento en blanco', async () => {
+      const establishment = await saveEstablishment();
+      await prisma.$executeRaw`
+        UPDATE establishment SET operating_permit = 'ACESS-1'
+        WHERE id = ${establishment.id}::uuid
+      `;
+      await expect(
+        prisma.$executeRaw`
+          UPDATE establishment SET operating_permit = '  '
+          WHERE id = ${establishment.id}::uuid
+        `,
+      ).rejects.toThrowError(/establishment_operating_permit_not_blank/);
+    });
+
+    it('OR-011 un correo de más de 254 caracteres se rechaza en su campo, no en la base', async () => {
+      await saveEstablishment();
+      const response = await put('/establishment/document-identity', {
+        ...identity,
+        contactEmail: `${'a'.repeat(250)}@example.com`,
+      }).expect(422);
+      expect((response.body as Problem).errors?.map((e) => e.field)).toEqual([
+        'contactEmail',
+      ]);
+    });
+
+    it('OR-012 exige site:manage: RECEPCION no puede cambiarlos', async () => {
+      await saveEstablishment();
+      const recepcion = await signIn(RECEPCION_EMAIL, 'RECEPCION', '0926687856'); // prettier-ignore
+      // Positive control: the same request with the administrator goes through.
+      await put('/establishment/document-identity', identity).expect(200);
+
+      const response = await put(
+        '/establishment/document-identity',
+        { ...identity, tradeName: 'Otra' },
+        recepcion,
+      ).expect(403);
+
+      expect((response.body as Problem).code).toBe('PERMISSION_DENIED');
+    });
+  });
+
   describe('las sedes', () => {
     it('OR-004 crea una sede con nombre, dirección, teléfono y parroquia del DPA', async () => {
       const establishment = await saveEstablishment();

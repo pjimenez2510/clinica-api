@@ -18,6 +18,12 @@ export interface EstablishmentView {
   legalName: string;
   /** Validated by the `Ruc` value object before it gets here (OR-008). */
   ruc: string | null;
+  /** OR-010. Printed at the head of every document; `legalName` when null. */
+  tradeName: string | null;
+  /** OR-011. */
+  contactEmail: string | null;
+  /** OR-012. The ACESS operating permit number. */
+  operatingPermit: string | null;
   active: boolean;
 }
 
@@ -42,6 +48,17 @@ export interface EstablishmentInput {
   legalName: string;
   ruc: string | null;
   active: boolean;
+}
+
+/**
+ * OR-010 to OR-012. The establishment's data the documents' header prints and
+ * nothing else needs. Written apart from `EstablishmentInput` so the
+ * establishment form, which does not show them, cannot clear them by omission.
+ */
+export interface DocumentIdentityInput {
+  tradeName: string | null;
+  contactEmail: string | null;
+  operatingPermit: string | null;
 }
 
 /**
@@ -105,6 +122,12 @@ export interface OrganizationRepository {
   updateEstablishment(
     id: string,
     input: EstablishmentInput,
+  ): Promise<EstablishmentView | null>;
+
+  /** OR-010 to OR-012. `null` when the row is gone. */
+  updateDocumentIdentity(
+    id: string,
+    input: DocumentIdentityInput,
   ): Promise<EstablishmentView | null>;
 
   /**

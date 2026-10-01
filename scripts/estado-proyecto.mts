@@ -74,5 +74,5 @@ console.log(
   `  ${flows.filter((f) => f.reachable).length} de ${flows.length} flujos alcanzables en pantalla · ` +
     `${complete} de ${total} entregas completas de punta a punta.\n` +
     '  En pantalla = su recorrido Playwright pasó. Completa = TODOS sus requisitos con\n' +
-    '  prueba en los DOS lados («Solo servidor» declarado en el SPEC.md, aparte).\n',
+    '  prueba en los DOS lados («Solo servidor» y «Solo interfaz» declarados en el SPEC.md, aparte).\n',
 );

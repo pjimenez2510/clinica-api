@@ -1000,6 +1000,15 @@ model Establishment {
   /// by the `Ruc` value object (OR-008, OR-009).
   ruc       String? @db.VarChar(13)
 
+  /// OR-010, DOC-080. The name the patient knows the clinic by, printed at the
+  /// head of every document; `legal_name` when NULL. Shape guaranteed by
+  /// `establishment_trade_name_not_blank`.
+  tradeName       String? @map("trade_name") @db.VarChar(160)
+  /// OR-011. `establishment_contact_email_format`.
+  contactEmail    String? @map("contact_email") @db.VarChar(254)
+  /// OR-012. The ACESS operating permit number, printed when present.
+  operatingPermit String? @map("operating_permit") @db.VarChar(40)
+
   active Boolean @default(true)
 
   /// DOC-057. The clinic's logo, printed at the head of every document and, on

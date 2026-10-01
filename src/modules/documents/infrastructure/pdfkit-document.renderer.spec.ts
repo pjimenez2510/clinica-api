@@ -1,11 +1,15 @@
+import { inflateSync } from 'node:zlib';
+
 import sharp from 'sharp';
+import { extractText, getDocumentProxy } from 'unpdf';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { DocumentRenderFailedError } from '../domain/document.errors';
+import { TEAR_OFF_HEIGHT_MM, millimetresToPoints } from '../domain/page-layout';
 import { PdfKitDocumentRenderer } from './pdfkit-document.renderer';
 import type { LayoutImages } from '../domain/document-rendering.port';
 import type { StoredImage } from '../domain/document-image';
-import type { DocumentLayout } from '../domain/page-layout';
+import type { DocumentHeader, DocumentLayout } from '../domain/page-layout';
 
 /**
  * DOC-020 to DOC-024. THE PDF IS INSPECTED, NEVER BELIEVED.
@@ -28,17 +32,36 @@ import type { DocumentLayout } from '../domain/page-layout';
 
 const images: LayoutImages = { logo: null, seal: null, signature: null };
 
+const header: DocumentHeader = {
+  establishmentName: 'Centro de Especialidades Bahía',
+  siteLine: null,
+  establishmentRuc: null,
+  establishmentAddress: null,
+  establishmentPhone: null,
+  establishmentEmail: null,
+  operatingPermit: null,
+  hasLogo: false,
+  fields: [{ label: 'Permiso ACESS', value: '0000-0000' }],
+};
+
 const layout: DocumentLayout = {
-  title: 'RECETA MÉDICA',
-  reference: 'RX-7Q2K',
-  accentColour: '#1f6f8b',
-  header: {
+  frame: {
+    title: 'RECETA MÉDICA',
+    reference: 'RX-7Q2K',
+    confidential: true,
+    accentColour: '#1f6f8b',
     establishmentName: 'Centro de Especialidades Bahía',
-    establishmentRuc: null,
-    establishmentAddress: null,
-    establishmentPhone: null,
+    header,
     hasLogo: false,
-    fields: [{ label: 'Permiso ACESS', value: '0000-0000' }],
+    footer: {
+      text: 'Clínica de especialidades · Guayaquil',
+      verification: {
+        code: 'RX-7Q2K',
+        url: 'https://clinica.example/verificar/RX-7Q2K',
+      },
+      notes: ['Copia de respaldo conservada cinco años'],
+    },
+    watermark: null,
   },
   blocks: [
     { kind: 'heading', text: 'Paciente' },
@@ -75,7 +98,6 @@ const layout: DocumentLayout = {
     ],
     blocks: [{ kind: 'paragraph', text: 'Tomar con alimentos' }],
   },
-  footerText: 'Clínica de especialidades · Guayaquil',
 };
 
 const metadata = {
@@ -103,6 +125,28 @@ describe('DOC-020 a DOC-024 el artefacto es PDF/A-1b de verdad', () => {
     expect(raw).not.toContain('Helvetica');
     expect(raw).not.toContain('Times-Roman');
     expect(raw).not.toContain('Courier');
+  });
+
+  it('DOC-025 incrusta Source Sans 3 y Source Serif 4, y ninguna otra fuente', async () => {
+    // D-095.2. The subset prefix varies (`ABCDEF+`); the family name does not.
+    const raw = (await renderer.render(layout, images, metadata)).toString(
+      'latin1',
+    );
+    const families = new Set(
+      [...raw.matchAll(/\/BaseFont \/(?:[A-Z]{6}\+)?([A-Za-z0-9-]+)/g)].map(
+        (match) => match[1],
+      ),
+    );
+
+    expect(families).toContain('SourceSans3-Regular');
+    expect(families).toContain('SourceSerif4-Bold');
+    expect(
+      [...families].every(
+        (family) =>
+          family?.startsWith('SourceSans3-') ||
+          family?.startsWith('SourceSerif4-'),
+      ),
+    ).toBe(true);
   });
 
   it('DOC-022 lleva el OutputIntent con el perfil sRGB y los metadatos pdfaid', async () => {
@@ -251,7 +295,11 @@ describe('DOC-059, DOC-060 las imágenes de la identidad', () => {
   it('DOC-059 pinta el logo cuando lo hay', async () => {
     const withLogo: DocumentLayout = {
       ...layout,
-      header: { ...layout.header, hasLogo: true },
+      frame: {
+        ...layout.frame,
+        hasLogo: true,
+        header: { ...header, hasLogo: true },
+      },
     };
     const pdf = await renderer.render(
       withLogo,
@@ -293,7 +341,11 @@ describe('DOC-093 el fallo de composición no cuenta nada al llamador', () => {
     // still a sentence, not a decoder's stack.
     const withLogo: DocumentLayout = {
       ...layout,
-      header: { ...layout.header, hasLogo: true },
+      frame: {
+        ...layout.frame,
+        hasLogo: true,
+        header: { ...header, hasLogo: true },
+      },
     };
     const corrupt: StoredImage = {
       id: 'image-broken',
@@ -314,5 +366,335 @@ describe('DOC-093 el fallo de composición no cuenta nada al llamador', () => {
         metadata,
       ),
     ).rejects.toThrow(DocumentRenderFailedError);
+  });
+});
+
+/** The text a person reads on the page, extracted by a PDF reader. */
+async function textOf(pdf: Buffer): Promise<string> {
+  const proxy = await getDocumentProxy(new Uint8Array(pdf));
+  const { text } = await extractText(proxy, { mergePages: true });
+  return text;
+}
+
+/** How many rectangles the page streams draw: a QR is hundreds of them. */
+function rectanglesIn(pdf: Buffer): number {
+  const raw = pdf.toString('latin1');
+  let count = 0;
+  for (const match of raw.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)) {
+    const body = Buffer.from(match[1] ?? '', 'latin1');
+    let content: string;
+    try {
+      content = inflateSync(body).toString('latin1');
+    } catch {
+      continue;
+    }
+    count += (content.match(/ re\b/g) ?? []).length;
+  }
+  return count;
+}
+
+describe('DOC-080 a DOC-084 el marco aprobado, pintado', () => {
+  it('DOC-080 la cabecera lleva nombre, título, referencia, correo y permiso', async () => {
+    const text = await textOf(
+      await renderer.render(
+        {
+          ...layout,
+          frame: {
+            ...layout.frame,
+            reference: 'Receta N.º 128',
+            header: {
+              ...header,
+              establishmentEmail: 'contacto@example.com',
+              operatingPermit: 'ACESS-2026-0456',
+            },
+          },
+        },
+        images,
+        metadata,
+      ),
+    );
+
+    expect(text).toContain('Centro de Especialidades Bahía');
+    expect(text).toContain('RECETA MÉDICA');
+    expect(text).toContain('Receta N.º 128');
+    expect(text).toContain('contacto@example.com');
+    expect(text).toContain('ACESS-2026-0456');
+  });
+
+  it('DOC-081 pinta la línea de sede sólo cuando el marco la trae', async () => {
+    const without = await textOf(
+      await renderer.render(layout, images, metadata),
+    );
+    const withSite = await textOf(
+      await renderer.render(
+        {
+          ...layout,
+          frame: {
+            ...layout.frame,
+            header: { ...header, siteLine: 'Sede Norte · Unicódigo 012345' },
+          },
+        },
+        images,
+        metadata,
+      ),
+    );
+
+    expect(without).not.toContain('Unicódigo');
+    expect(withSite).toContain('Sede Norte · Unicódigo 012345');
+  });
+
+  it('DOC-082 rotula CONFIDENCIAL sólo cuando el documento lleva diagnóstico', async () => {
+    const confidential = await textOf(
+      await renderer.render(layout, images, metadata),
+    );
+    const plain = await textOf(
+      await renderer.render(
+        { ...layout, frame: { ...layout.frame, confidential: false } },
+        images,
+        metadata,
+      ),
+    );
+
+    expect(confidential).toContain('CONFIDENCIAL');
+    expect(plain).not.toContain('CONFIDENCIAL');
+  });
+
+  it('DOC-071 DOC-083 el pie lleva página x de y, el código, la dirección y la nota', async () => {
+    const text = await textOf(await renderer.render(layout, images, metadata));
+
+    expect(text).toContain('Página 1 de 1');
+    expect(text).toContain('RX-7Q2K');
+    expect(text).toContain('https://clinica.example/verificar/RX-7Q2K');
+    expect(text).toContain('Copia de respaldo conservada cinco años');
+  });
+
+  it('DOC-071 numera cada página sobre el total cuando el documento ocupa varias', async () => {
+    const long: DocumentLayout = {
+      ...layout,
+      blocks: Array.from({ length: 80 }, (_, index) => ({
+        kind: 'paragraph' as const,
+        text: `Párrafo ${index + 1} de un documento largo`,
+      })),
+    };
+    const text = await textOf(await renderer.render(long, images, metadata));
+
+    expect(text).toContain('Página 1 de');
+    expect(text).toMatch(/Página (\d+) de \1/);
+  });
+
+  it('DOC-083 dibuja el QR como trazos, y no lo dibuja sin verificación', async () => {
+    const withQr = rectanglesIn(
+      await renderer.render(layout, images, metadata),
+    );
+    const withoutQr = rectanglesIn(
+      await renderer.render(
+        {
+          ...layout,
+          frame: {
+            ...layout.frame,
+            footer: { ...layout.frame.footer, verification: null },
+          },
+        },
+        images,
+        metadata,
+      ),
+    );
+
+    // A version-2 QR has 25×25 modules and roughly half of them are dark.
+    expect(withQr - withoutQr).toBeGreaterThan(150);
+  });
+
+  it('DOC-084 sin cabecera común no pinta ni título ni CONFIDENCIAL: el RIDE trae los suyos', async () => {
+    const text = await textOf(
+      await renderer.render(
+        {
+          ...layout,
+          tearOff: null,
+          frame: {
+            ...layout.frame,
+            title: 'FACTURA',
+            confidential: false,
+            header: null,
+            footer: {
+              text: null,
+              verification: null,
+              notes: [
+                'Representación impresa del comprobante electrónico (RIDE)',
+              ],
+            },
+          },
+        },
+        images,
+        metadata,
+      ),
+    );
+
+    expect(text).not.toContain('Centro de Especialidades Bahía');
+    expect(text).toContain(
+      'Representación impresa del comprobante electrónico',
+    );
+    expect(text).toContain('Página 1 de 1');
+  });
+});
+
+describe('DOC-083 el pie nunca abre páginas', () => {
+  it('DOC-034 DOC-083 el pie de la clínica sale también en la receta, con verificación y nota', async () => {
+    const text = await textOf(
+      await renderer.render(recetaWith(1), images, metadata),
+    );
+    expect(text).toContain('Verifique en');
+    expect(text).toContain('Copia de respaldo conservada cinco años');
+    expect(text).toContain('Clínica de especialidades · Guayaquil');
+  });
+
+  it('DOC-071 DOC-083 un pie de seis líneas no añade páginas ni miente sobre el total', async () => {
+    const longFooter = Array.from(
+      { length: 6 },
+      (_, index) =>
+        `Línea ${index + 1} del pie que la clínica escribió en la plantilla`,
+    ).join('\n');
+    const pdf = await renderer.render(
+      {
+        ...layout,
+        frame: {
+          ...layout.frame,
+          footer: { ...layout.frame.footer, text: longFooter },
+        },
+      },
+      images,
+      metadata,
+    );
+
+    expect(pdf.toString('latin1')).toContain('/Count 1');
+    expect(await textOf(pdf)).toContain('Página 1 de 1');
+  });
+});
+
+describe('DOC-038 la muestra lo dice en cada página', () => {
+  it('DOC-038 pinta MUESTRA SIN VALIDEZ cuando el marco la trae, y nada cuando no', async () => {
+    const sample = await textOf(
+      await renderer.render(
+        {
+          ...layout,
+          frame: { ...layout.frame, watermark: 'MUESTRA SIN VALIDEZ' },
+        },
+        images,
+        metadata,
+      ),
+    );
+    const issued = await textOf(
+      await renderer.render(layout, images, metadata),
+    );
+
+    expect(sample).toContain('MUESTRA SIN VALIDEZ');
+    expect(issued).not.toContain('MUESTRA SIN VALIDEZ');
+  });
+});
+
+/** Where a text sits on page `n`, in points from the BOTTOM edge (PDF space). */
+async function heightOf(pdf: Buffer, needle: string, n = 1): Promise<number> {
+  const proxy = await getDocumentProxy(new Uint8Array(pdf));
+  const page = await proxy.getPage(n);
+  const content = await page.getTextContent();
+  const item = content.items.find(
+    (entry) => 'str' in entry && entry.str.includes(needle),
+  );
+  if (!item || !('transform' in item)) throw new Error(`no «${needle}»`);
+  return (item.transform as number[])[5] ?? 0;
+}
+
+const longIndication =
+  'Tome una tableta cada ocho horas con alimentos; no conduzca ni opere maquinaria; suspenda si aparece sarpullido y consulte.';
+
+function recetaWith(lines: number): DocumentLayout {
+  return {
+    ...layout,
+    tearOff: {
+      caption: 'Indicaciones para el paciente — recorte por esta línea',
+      identification: [
+        { label: 'Paciente', value: 'Guamán Andrade María José' },
+        { label: 'Fecha', value: '20/08/2026' },
+      ],
+      blocks: [
+        {
+          kind: 'fields',
+          columns: 1,
+          entries: Array.from({ length: lines }, (_, index) => ({
+            label: `Línea ${index + 1}`,
+            value: longIndication,
+          })),
+        },
+        { kind: 'signature', caption: 'Sello del profesional', image: null },
+      ],
+    },
+  };
+}
+
+describe('DOC-073 DOC-083 la banda desprendible y el pie de la receta', () => {
+  it('DOC-083 el pie de la receta queda por ENCIMA de la línea de corte: la farmacia conserva QR y página', async () => {
+    const pdf = await renderer.render(recetaWith(1), images, metadata);
+    const cut = millimetresToPoints(TEAR_OFF_HEIGHT_MM);
+
+    expect(await heightOf(pdf, 'Página 1 de 1')).toBeGreaterThan(cut);
+    expect(await heightOf(pdf, 'Verifique en')).toBeGreaterThan(cut);
+    expect(await heightOf(pdf, 'Indicaciones para el paciente')).toBeLessThan(
+      cut,
+    );
+  });
+
+  it('DOC-073 dos indicaciones largas caben en la banda de una sola página', async () => {
+    const pdf = await renderer.render(recetaWith(2), images, metadata);
+    const proxy = await getDocumentProxy(new Uint8Array(pdf));
+    expect(proxy.numPages).toBe(1);
+  });
+
+  it('DOC-071 DOC-073 si las indicaciones no caben, siguen en otra página con cabecera y con el nombre del paciente', async () => {
+    const pdf = await renderer.render(recetaWith(12), images, metadata);
+    const proxy = await getDocumentProxy(new Uint8Array(pdf));
+    expect(proxy.numPages).toBeGreaterThan(1);
+
+    for (let n = 2; n <= proxy.numPages; n += 1) {
+      const page = await proxy.getPage(n);
+      const text = (await page.getTextContent()).items
+        .map((item) => ('str' in item ? item.str : ''))
+        .join(' ');
+      expect(text).toContain('Centro de Especialidades Bahía');
+      expect(text).toContain('continuación');
+      expect(text).toContain('Guamán Andrade María José');
+      expect(text).toContain(`Página ${n} de ${proxy.numPages}`);
+    }
+    // Every indication is printed, and none twice.
+    const all = await textOf(pdf);
+    for (let line = 1; line <= 12; line += 1) {
+      expect(all).toContain(`Línea ${line}`);
+    }
+  });
+});
+
+describe('DOC-085 la tinta y las etiquetas del marco aprobado', () => {
+  it('DOC-085 pinta el texto en tinta #1d2422 y las etiquetas en #4a5450, no en negro puro', async () => {
+    const pdf = await renderer.render(layout, images, metadata);
+    let streams = '';
+    for (const match of pdf
+      .toString('latin1')
+      .matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)) {
+      try {
+        streams += inflateSync(Buffer.from(match[1] ?? '', 'latin1')).toString(
+          'latin1',
+        );
+      } catch {
+        // Not a content stream (an embedded font, the ICC profile).
+      }
+    }
+    const fills = [...streams.matchAll(/([\d.]+) ([\d.]+) ([\d.]+) scn/g)].map(
+      (fill) =>
+        [fill[1], fill[2], fill[3]]
+          .map((channel) => Math.round(Number(channel) * 255))
+          .join(','),
+    );
+
+    expect(fills).toContain('29,36,34'); // #1d2422
+    expect(fills).toContain('74,84,80'); // #4a5450
+    expect(fills).not.toContain('0,0,0');
   });
 });

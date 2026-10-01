@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import { SiteInUseError } from '../domain/organization.errors';
 import type {
+  DocumentIdentityInput,
   EstablishmentInput,
   EstablishmentView,
   OrganizationRepository,
@@ -39,6 +40,9 @@ const ESTABLISHMENT_SELECT = {
   typology: true,
   legalName: true,
   ruc: true,
+  tradeName: true,
+  contactEmail: true,
+  operatingPermit: true,
   active: true,
 } satisfies Prisma.EstablishmentSelect;
 
@@ -106,6 +110,23 @@ export class PrismaOrganizationRepository implements OrganizationRepository {
     } catch (error) {
       if (isRecordNotFound(error)) return null;
       throw duplicateErrorFrom(error) ?? error;
+    }
+  }
+
+  /** OR-010 to OR-012. The shape is guarded again by the `CHECK`s. */
+  async updateDocumentIdentity(
+    id: string,
+    input: DocumentIdentityInput,
+  ): Promise<EstablishmentView | null> {
+    try {
+      return await this.prisma.establishment.update({
+        where: { id },
+        data: input,
+        select: ESTABLISHMENT_SELECT,
+      });
+    } catch (error) {
+      if (isRecordNotFound(error)) return null;
+      throw error;
     }
   }
 
