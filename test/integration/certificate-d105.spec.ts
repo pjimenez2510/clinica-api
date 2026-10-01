@@ -389,64 +389,66 @@ describe('D-106 los límites de la ventana del reposo, garantizados por la base'
 });
 
 describe('D-108 en el reposo de maternidad no rigen los topes de D-106, garantizado por la base', () => {
-  /** Ingresó la víspera del parto y salió dos días después. */
+  /** Ingresó dos días antes del parto y salió dos días después. */
   const maternityFrom = (birth: ClinicalDate) => ({
-    admissionOn: addDays(birth, -1),
+    admissionOn: addDays(birth, -2),
     birthOn: birth,
     dischargeOn: addDays(birth, 2),
   });
   const REASON_BIRTH = 'Dio a luz en el hospital antes de la atención';
+  const TOO_EARLY = /medical_certificate_rest_starts_at_most_3_days_before/;
 
-  it('CER-044 la maternidad empieza desde el parto al 5.º día; la enfermedad general igual se rechaza', async () => {
+  it('CER-044 la maternidad empieza el día del parto al 5.º día, o el del ingreso; la enfermedad general igual se rechaza', async () => {
     const prisma = db();
     const scene = await aScene(prisma);
     const birth = addDays(scene.day, -5);
-    const rest = { from: birth, to: scene.day };
+    const maternity = maternityFrom(birth);
+    const from = (day: ClinicalDate) => ({ from: day, to: scene.day });
 
     // Control positivo: maternity from birth, and from admission.
     await expect(
-      insert(prisma, scene, { rest, maternity: maternityFrom(birth), backdatingReason: REASON_BIRTH }), // prettier-ignore
+      insert(prisma, scene, { rest: from(birth), maternity, backdatingReason: REASON_BIRTH }), // prettier-ignore
     ).resolves.toBe(1);
     await expect(
-      insert(prisma, scene, {
-        rest: { from: addDays(birth, -1), to: scene.day },
-        maternity: maternityFrom(birth),
-        backdatingReason: REASON_BIRTH,
-      }),
+      insert(prisma, scene, { rest: from(maternity.admissionOn), maternity, backdatingReason: REASON_BIRTH }), // prettier-ignore
     ).resolves.toBe(1);
     await expect(
-      insert(prisma, scene, { rest, backdatingReason: REASON_BIRTH }),
-    ).rejects.toThrow(/medical_certificate_rest_starts_at_most_3_days_before/);
+      insert(prisma, scene, { rest: from(birth), backdatingReason: REASON_BIRTH }), // prettier-ignore
+    ).rejects.toThrow(TOO_EARLY);
   });
 
-  it('CER-044 la maternidad no empieza antes del ingreso, y la prenatal conserva los 3 días', async () => {
+  it('CER-044 un día que no es ni el ingreso ni el parto se rechaza, y la prenatal conserva los 3 días', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const maternity = maternityFrom(addDays(scene.day, -5));
+
+    for (const day of [
+      addDays(maternity.admissionOn, 1),
+      addDays(maternity.admissionOn, -1),
+    ]) {
+      await expect(
+        insert(prisma, scene, { rest: { from: day, to: scene.day }, maternity, backdatingReason: REASON_BIRTH }), // prettier-ignore
+      ).rejects.toThrow(TOO_EARLY);
+    }
+
+    const prenatal = maternityFrom(addDays(scene.day, 20));
+    const CONTRACTIONS = 'Contracciones desde días antes';
+    await expect(
+      insert(prisma, scene, { rest: { from: addDays(scene.day, -3), to: scene.day }, maternity: prenatal, backdatingReason: CONTRACTIONS }), // prettier-ignore
+    ).resolves.toBe(1);
+    await expect(
+      insert(prisma, scene, { rest: { from: addDays(scene.day, -4), to: scene.day }, maternity: prenatal, backdatingReason: CONTRACTIONS }), // prettier-ignore
+    ).rejects.toThrow(TOO_EARLY);
+  });
+
+  it('CER-030 la maternidad desde el parto sigue pidiendo el motivo', async () => {
     const prisma = db();
     const scene = await aScene(prisma);
     const birth = addDays(scene.day, -5);
 
     await expect(
-      insert(prisma, scene, {
-        rest: { from: addDays(birth, -2), to: scene.day },
-        maternity: maternityFrom(birth),
-        backdatingReason: REASON_BIRTH,
-      }),
-    ).rejects.toThrow(/medical_certificate_rest_starts_at_most_3_days_before/);
-
-    const prenatal = maternityFrom(addDays(scene.day, 20));
-    await expect(
-      insert(prisma, scene, {
-        rest: { from: addDays(scene.day, -3), to: scene.day },
-        maternity: prenatal,
-        backdatingReason: 'Contracciones desde tres días antes',
-      }),
-    ).resolves.toBe(1);
-    await expect(
-      insert(prisma, scene, {
-        rest: { from: addDays(scene.day, -4), to: scene.day },
-        maternity: prenatal,
-        backdatingReason: 'Contracciones desde cuatro días antes',
-      }),
-    ).rejects.toThrow(/medical_certificate_rest_starts_at_most_3_days_before/);
+      insert(prisma, scene, { rest: { from: birth, to: scene.day }, maternity: maternityFrom(birth) }), // prettier-ignore
+    ).rejects.toThrow(/medical_certificate_backdating_reason_required/);
   });
 
   it('CER-045 un reposo de maternidad se emite pasados 8 días de la atención; el general, no', async () => {
@@ -467,5 +469,24 @@ describe('D-108 en el reposo de maternidad no rigen los topes de D-106, garantiz
     await expect(
       insert(prisma, scene, { rest, issuedDaysLater: 20, backdatingReason: REASON_CHAIN }), // prettier-ignore
     ).rejects.toThrow(/medical_certificate_rest_issued_within_8_days/);
+  });
+
+  it('CER-035 la base exige ingreso ≤ parto ≤ alta, porque de esas fechas sale el inicio admitido', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const birth = addDays(scene.day, -1);
+    const rest = { from: scene.day, to: scene.day };
+    const IN_ORDER = /medical_certificate_maternity_dates_in_order/;
+
+    // Control positivo: the three on the same day are in order.
+    await expect(
+      insert(prisma, scene, { rest, maternity: { admissionOn: birth, birthOn: birth, dischargeOn: birth } }), // prettier-ignore
+    ).resolves.toBe(1);
+    await expect(
+      insert(prisma, scene, { rest, maternity: { admissionOn: addDays(birth, 1), birthOn: birth, dischargeOn: addDays(birth, 1) } }), // prettier-ignore
+    ).rejects.toThrow(IN_ORDER);
+    await expect(
+      insert(prisma, scene, { rest, maternity: { admissionOn: birth, birthOn: birth, dischargeOn: addDays(birth, -1) } }), // prettier-ignore
+    ).rejects.toThrow(IN_ORDER);
   });
 });

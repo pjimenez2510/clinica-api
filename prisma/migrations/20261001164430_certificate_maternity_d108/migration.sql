@@ -9,12 +9,15 @@
 
 -- QUÉ GARANTIZA (D-108, resuelta por el autor el 01-10-2026):
 --
---  · CER-044: en un reposo de contingencia MATERNIDAD el inicio puede ser la
---    fecha de ingreso o la del parto, aunque sea más de tres días antes de la
---    atención. La paciente que da a luz en un hospital acude días después por
---    su 117 desde el parto, y se rechazaba. Los tres días se conservan también
---    en la maternidad: el reposo prenatal, con el ingreso aún por llegar, sigue
---    como estaba (D-106 §2).
+--  · CER-044: en un reposo de contingencia MATERNIDAD el inicio puede ser el
+--    día del ingreso o el del parto, aunque sea más de tres días antes de la
+--    atención; un día cualquiera entre ellos, no. La paciente que da a luz en
+--    un hospital acude días después por su 117 desde el parto, y se rechazaba.
+--    Los tres días se conservan también en la maternidad: el reposo prenatal,
+--    con el ingreso aún por llegar, sigue como estaba (D-106 §2).
+--  · CER-035: ingreso ≤ parto ≤ alta. Lo comprobaba sólo el servicio; ahora
+--    que esas fechas deciden el inicio admitido, también la base. Cuán atrás
+--    pueden estar es D-109, pendiente del autor.
 --  · CER-045: el reposo de maternidad no tiene el plazo de ocho días para
 --    emitirse: la licencia (doce semanas) encadena certificados (CER-043).
 --  · Los demás reposos no cambian, y el motivo de CER-030 se sigue pidiendo.
@@ -31,7 +34,6 @@ DECLARE
   attention_day date;
   issue_day     date;
   late_day      date;
-  earliest      date;
   is_maternity  boolean;
 BEGIN
   SELECT e."practitioner_id",
@@ -72,13 +74,13 @@ BEGIN
     is_maternity := NEW."contingency_type" IS NOT DISTINCT FROM 'MATERNITY';
 
     -- CER-044 (D-106 §1): con motivo, como mucho tres días antes de la atención.
-    -- D-108: la maternidad, también desde el ingreso o el parto si son antes.
-    -- LEAST ignora los NULL: sin fechas de maternidad, quedan los tres días.
-    earliest := attention_day - 3;
-    IF is_maternity THEN
-      earliest := LEAST(earliest, NEW."maternity_admission_on", NEW."birth_on");
-    END IF;
-    IF NEW."rest_from" < earliest THEN
+    -- D-108: la maternidad, también el día del ingreso o el del parto. Una
+    -- maternidad lleva siempre las dos fechas
+    -- (`medical_certificate_maternity_dates_together`); aun así, el COALESCE
+    -- hace que una fecha NULL no admita nada en lugar de saltarse la regla.
+    IF NEW."rest_from" < attention_day - 3
+       AND NOT (is_maternity
+                AND COALESCE(NEW."rest_from" IN (NEW."maternity_admission_on", NEW."birth_on"), false)) THEN
       RAISE EXCEPTION 'medical_certificate_rest_starts_at_most_3_days_before: a rest starts at most three days before the attention'
         USING ERRCODE = 'check_violation',
               CONSTRAINT = 'medical_certificate_rest_starts_at_most_3_days_before';
@@ -110,3 +112,12 @@ BEGIN
 END;
 $$;
 
+-- CER-035. Las fechas de maternidad, en orden. NULL pasa: que vayan las tres
+-- juntas lo exige `medical_certificate_maternity_dates_together`.
+ALTER TABLE "medical_certificate"
+  DROP CONSTRAINT IF EXISTS "medical_certificate_maternity_dates_in_order";
+ALTER TABLE "medical_certificate"
+  ADD CONSTRAINT "medical_certificate_maternity_dates_in_order" CHECK (
+    "maternity_admission_on" <= "birth_on"
+    AND "birth_on" <= "maternity_discharge_on"
+  );

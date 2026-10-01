@@ -574,7 +574,8 @@ Todo lo que faltaba está en `20261001070500_certificate_number_and_revocation`.
 | `contingency_type`, `rest_backdating_reason`, `maternity_admission_on`, `birth_on`, `maternity_discharge_on` | `medical_certificate` | CER-030, CER-034, CER-035 |
 | `employer_name`, `job_title` | `patient` | CER-038 — pendiente de coordinación con `feat/datos-consentimiento-arco` |
 | `issued_by_other_reason` + `medical_certificate_issuer_reason_not_blank` | `medical_certificate` | CER-039 |
-| Disparador `medical_certificate_issue_rules`: emisor, ventana y motivo | `medical_certificate` | CER-030, CER-039, CER-041, CER-044, CER-045 |
+| Disparador `medical_certificate_issue_rules`: emisor, ventana y motivo | `medical_certificate` | CER-030, CER-039, CER-041, CER-044, CER-045 (maternidad, D-108) |
+| `CHECK medical_certificate_maternity_dates_in_order`: ingreso ≤ parto ≤ alta | `medical_certificate` | CER-035, D-108 |
 
 ## Rutas
 

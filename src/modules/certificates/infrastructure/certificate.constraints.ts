@@ -34,6 +34,12 @@ registerConstraintMeanings({
     field: 'birthOn',
     message: 'Las fechas de ingreso, parto y alta van las tres juntas, y sólo con la contingencia de maternidad', // prettier-ignore
   },
+  /** CER-035, D-108. Admission, birth and discharge, in that order. */
+  medical_certificate_maternity_dates_in_order: {
+    code: 'CERTIFICATE_REST_PERIOD_INVALID',
+    field: 'birthOn',
+    message: 'El parto no puede ser anterior al ingreso, ni el alta anterior al parto', // prettier-ignore
+  },
   /** CER-030. The backdating reason is never stored blank. */
   medical_certificate_backdating_reason_not_blank: {
     code: 'CERTIFICATE_BACKDATING_REASON_REQUIRED',
@@ -62,11 +68,11 @@ registerConstraintMeanings({
     field: 'issuedByOtherReason',
     message: 'Explique por qué emite el certificado de una atención que no registró', // prettier-ignore
   },
-  /** CER-044, D-106 §1, D-108. Three days before; maternity, its admission. */
+  /** CER-044, D-106 §1, D-108. Three days before; maternity, also its admission or birth day. */
   medical_certificate_rest_starts_at_most_3_days_before: {
     code: 'CERTIFICATE_REST_START_TOO_EARLY',
     field: 'restFrom',
-    message: 'El reposo puede empezar, como mucho, tres días antes de la atención; el de maternidad, desde la fecha de ingreso o del parto', // prettier-ignore
+    message: 'El reposo puede empezar, como mucho, tres días antes de la atención; el de maternidad, también el día del ingreso o del parto', // prettier-ignore
   },
   /** CER-045, D-106 §4. Within eight days of the attention. */
   // On `type`: it is the rest itself that no longer fits this attention, and
