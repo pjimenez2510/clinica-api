@@ -58,6 +58,11 @@ export class NodemailerMailer implements Mailer {
         subject: message.subject,
         text: message.text,
         html: message.html,
+        attachments: message.attachments?.map((attachment) => ({
+          filename: attachment.fileName,
+          content: attachment.content,
+          contentType: attachment.contentType,
+        })),
       });
     } catch (error) {
       /**

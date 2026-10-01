@@ -34,7 +34,7 @@ import { seedRdacaa } from './seed-rdacaa.mts';
  * against a production NODE_ENV.
  */
 
-const DEV_PASSWORD = 'el caballo come alfalfa';
+export const DEV_PASSWORD = 'el caballo come alfalfa';
 
 /** Strips the seed-only `role` field before writing to the user table. */
 function userColumns({ role: _role, ...columns }: (typeof USERS)[number]) {

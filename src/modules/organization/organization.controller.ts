@@ -116,6 +116,12 @@ export class OrganizationController {
           typology: dto.typology,
           legalName: dto.legalName,
           ruc: dto.ruc,
+          headOfficeAddress: dto.headOfficeAddress,
+          keepsAccounting: dto.keepsAccounting,
+          specialTaxpayerResolution: dto.specialTaxpayerResolution,
+          withholdingAgentResolution: dto.withholdingAgentResolution,
+          rimpeRegime: dto.rimpeRegime,
+          confirmsFiscalProfile: dto.confirmsFiscalProfile,
           active: dto.active,
         },
         this.requester(req),
@@ -205,6 +211,7 @@ export class OrganizationController {
           parishConceptId: dto.parishConceptId,
           addressLine: dto.addressLine,
           phone: dto.phone,
+          sriEstablishmentCode: dto.sriEstablishmentCode,
         },
         this.requester(req),
       ),
@@ -230,6 +237,7 @@ export class OrganizationController {
           parishConceptId: dto.parishConceptId,
           addressLine: dto.addressLine,
           phone: dto.phone,
+          sriEstablishmentCode: dto.sriEstablishmentCode,
           active: dto.active,
         },
         this.requester(req),
@@ -274,7 +282,11 @@ export class OrganizationController {
   private visibleEstablishment(
     establishment: EstablishmentView,
   ): EstablishmentResponse {
-    const { ruc, ...rest } = establishment;
+    const { ruc, fiscalProfileDeclaredAt, ...columns } = establishment;
+    const rest = {
+      ...columns,
+      fiscalProfileDeclaredAt: fiscalProfileDeclaredAt?.toISOString() ?? null,
+    };
     return this.administersSites() ? { ...rest, ruc } : rest;
   }
 

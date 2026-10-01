@@ -6,6 +6,7 @@ import QRCode from 'qrcode';
 import { DocumentRenderFailedError } from '../domain/document.errors';
 import {
   PAGE_MARGIN_MM,
+  PAGE_WIDTH_MM,
   TEAR_OFF_HEIGHT_MM,
   millimetresToPoints,
 } from '../domain/page-layout';
@@ -115,6 +116,9 @@ const TITLE_COLUMN_MM = 62;
 interface Cursor {
   y: number;
 }
+
+/** Tall enough that measuring a pair of boxes never turns a page. */
+const MEASURING_PAGE_HEIGHT = 100_000;
 
 /**
  * The `DocumentRenderer` adapter. It paints what `composeLayout` decided and
@@ -503,7 +507,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
       }
 
       case 'table':
-        this.paintTable(doc, block.columns, block.rows, left, width, cursor, ensure); // prettier-ignore
+        this.paintTable(doc, block.columns, block.rows, left, width, cursor, ensure, block.dense === true); // prettier-ignore
         return;
 
       case 'signature': {
@@ -568,41 +572,79 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         // DOC-076. The SRI's Anexo 2 puts the issuer and the voucher side by
         // side. Both boxes are painted from the same top, and the cursor moves
         // to the taller of the two.
-        const gap = mm(4);
-        const half = (width - gap) / 2;
-        const top = cursor.y;
-
-        const paintColumn = (blocks: readonly Block[], x: number): number => {
-          const inner: Cursor = { y: top + mm(3) };
-          for (const child of blocks) {
-            this.paintBlock(
-              doc,
-              child,
-              images,
-              x + mm(3),
-              half - mm(6),
-              inner,
-              () => undefined,
-            );
-          }
-          return inner.y;
-        };
-
-        const leftBottom = paintColumn(block.left, left);
-        const rightBottom = paintColumn(block.right, left + half + gap);
-        const bottom = Math.max(leftBottom, rightBottom) + mm(2);
-
-        doc
-          .rect(left, top, half, bottom - top)
-          .rect(left + half + gap, top, half, bottom - top)
-          .lineWidth(0.75)
-          .strokeColor(INK)
-          .stroke();
-
-        cursor.y = bottom + mm(4);
+        //
+        // A FRAMED BOX IS NOT SPLIT ACROSS PAGES, so it is measured first —
+        // painted on a throwaway document with the same fonts and widths —
+        // and moved to the next page whole when it does not fit. Without
+        // that, the RIDE's totals ran over the footer as soon as the detail
+        // had a few lines.
+        ensure(this.boxesHeight(block, images, width) + mm(4));
+        cursor.y = this.paintBoxes(doc, block, images, left, width, cursor.y);
         return;
       }
     }
+  }
+
+  /** The two boxes of a `boxes` block, from `top`; returns the cursor after them. */
+  private paintBoxes(
+    doc: PDFKit.PDFDocument,
+    block: Extract<Block, { kind: 'boxes' }>,
+    images: LayoutImages,
+    left: number,
+    width: number,
+    top: number,
+  ): number {
+    const gap = mm(4);
+    const half = (width - gap) / 2;
+
+    const paintColumn = (blocks: readonly Block[], x: number): number => {
+      const inner: Cursor = { y: top + mm(3) };
+      for (const child of blocks) {
+        this.paintBlock(
+          doc,
+          child,
+          images,
+          x + mm(3),
+          half - mm(6),
+          inner,
+          () => undefined,
+        );
+      }
+      return inner.y;
+    };
+
+    const leftBottom = paintColumn(block.left, left);
+    const rightBottom = paintColumn(block.right, left + half + gap);
+    const bottom = Math.max(leftBottom, rightBottom) + mm(2);
+
+    doc
+      .rect(left, top, half, bottom - top)
+      .rect(left + half + gap, top, half, bottom - top)
+      .lineWidth(0.75)
+      .strokeColor(INK)
+      .stroke();
+
+    return bottom + mm(4);
+  }
+
+  /** How tall a `boxes` block will be: painted once where nobody sees it. */
+  private boxesHeight(
+    block: Extract<Block, { kind: 'boxes' }>,
+    images: LayoutImages,
+    width: number,
+  ): number {
+    const scratch = new PDFDocument({
+      size: [mm(PAGE_WIDTH_MM), MEASURING_PAGE_HEIGHT],
+      margin: 0,
+      autoFirstPage: false,
+    });
+    for (const name of Object.keys(FONTS) as FontName[]) {
+      scratch.registerFont(name, FONTS[name]);
+    }
+    scratch.addPage();
+    const bottom = this.paintBoxes(scratch, block, images, 0, width, 0);
+    scratch.end();
+    return bottom - mm(4);
   }
 
   /**
@@ -618,8 +660,12 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     width: number,
     cursor: Cursor,
     ensure: (height: number) => void,
+    dense = false,
   ): void {
     const widths = columns.map((column) => column.width * width);
+    /** Space above and below a row's text, and the least a row measures. */
+    const pad = dense ? mm(0.6) : mm(1.5);
+    const minimumRow = dense ? 0 : mm(4.5);
     const align = (column: TableColumn): 'left' | 'right' | 'center' =>
       column.align === 'right'
         ? 'right'
@@ -668,11 +714,11 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
           .fontSize(SIZE.body)
           .heightOfString(cell, { width: widthAt(index) - mm(1.5) }),
       );
-      const rowHeight = Math.max(...heights, mm(4.5));
+      const rowHeight = Math.max(...heights, minimumRow);
 
       // A row that does not fit moves WHOLE to the next page: half a
       // prescription line across a page break is a line somebody misreads.
-      ensure(rowHeight + mm(3));
+      ensure(rowHeight + 2 * pad);
 
       let x = left;
       doc.font(SANS).fontSize(SIZE.body).fillColor(INK);
@@ -684,9 +730,9 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         });
         x += widthAt(index);
       });
-      cursor.y += rowHeight + mm(1.5);
+      cursor.y += rowHeight + pad;
       rule(cursor.y, RULE_LIGHT);
-      cursor.y += mm(1.5);
+      cursor.y += pad;
     }
 
     cursor.y += mm(2);

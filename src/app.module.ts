@@ -18,6 +18,7 @@ import { OrganizationModule } from './modules/organization/organization.module';
 import { PatientsModule } from './modules/patients/patients.module';
 import { PrescriptionModule } from './modules/prescription/prescription.module';
 import { SpecialtiesModule } from './modules/specialties/specialties.module';
+import { SriModule } from './modules/sri/sri.module';
 import { StaffModule } from './modules/staff/staff.module';
 import { validateEnv } from './shared/config/env.schema';
 import { TimeoutInterceptor } from './shared/http/interceptors/timeout.interceptor';
@@ -93,6 +94,7 @@ import { buildLoggerConfig } from './shared/observability/logger.config';
     AgendaModule,
     CatalogsModule,
     BillingModule,
+    SriModule,
     EncounterModule,
     OrdersModule,
     PrescriptionModule,

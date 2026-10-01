@@ -1,3 +1,4 @@
+import type { PinoLogger } from 'nestjs-pino';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -66,6 +67,7 @@ const invoice: InvoiceView = {
     total: Money.parse('30.00'),
   },
   status: 'ISSUED',
+  paymentMethod: '01',
   issuedAt: new Date('2026-05-11T15:00:00Z'),
   authorisedAt: null,
   issuedById: 'user-1',
@@ -94,6 +96,9 @@ function build(options: { accounts?: Record<string, unknown> } = {}) {
     listInvoices: vi.fn().mockResolvedValue([invoice]),
     findPayer: vi.fn().mockResolvedValue(payer()),
     record: vi.fn().mockResolvedValue(undefined),
+    prepare: vi.fn().mockResolvedValue(undefined),
+    summariesOf: vi.fn().mockResolvedValue(new Map()),
+    logError: vi.fn(),
     ...options.accounts,
   };
 
@@ -102,6 +107,12 @@ function build(options: { accounts?: Record<string, unknown> } = {}) {
       mocks as unknown as BillingAccountRepository,
       mocks as unknown as BillingCatalogueRepository,
       mocks,
+      mocks,
+      mocks,
+      {
+        setContext: vi.fn(),
+        error: mocks.logError,
+      } as unknown as PinoLogger,
     ),
     mocks,
   };
@@ -119,7 +130,7 @@ describe('BI-080 a BI-089 emitir la factura', () => {
     const { service: invoicing, mocks } = build();
 
     await invoicing.issueInvoice(
-      { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver }, // prettier-ignore
+      { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver, paymentMethod: '01' }, // prettier-ignore
       requester,
     );
 
@@ -142,6 +153,7 @@ describe('BI-080 a BI-089 emitir la factura', () => {
           accountId: ACCOUNT,
           siteId: SITE,
           emissionPointId: EMISSION_POINT,
+          paymentMethod: '01',
           receiver: { finalConsumer: { confirmed: true } },
         },
         requester,
@@ -166,7 +178,7 @@ describe('BI-080 a BI-089 emitir la factura', () => {
 
     await expect(
       invoicing.issueInvoice(
-        { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver }, // prettier-ignore
+        { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver, paymentMethod: '01' }, // prettier-ignore
         requester,
       ),
     ).rejects.toBeInstanceOf(EmissionPointInactiveError);
@@ -179,7 +191,7 @@ describe('BI-080 a BI-089 emitir la factura', () => {
 
     await expect(
       invoicing.issueInvoice(
-        { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver }, // prettier-ignore
+        { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver, paymentMethod: '01' }, // prettier-ignore
         requester,
       ),
     ).rejects.toBeInstanceOf(InvoiceNotFoundError);
@@ -192,7 +204,7 @@ describe('BI-080 a BI-089 emitir la factura', () => {
 
     await expect(
       invoicing.issueInvoice(
-        { accountId: ACCOUNT, siteId: 'other', emissionPointId: EMISSION_POINT, receiver }, // prettier-ignore
+        { accountId: ACCOUNT, siteId: 'other', emissionPointId: EMISSION_POINT, receiver, paymentMethod: '01' }, // prettier-ignore
         requester,
       ),
     ).rejects.toBeInstanceOf(AccountNotFoundError);
@@ -202,7 +214,7 @@ describe('BI-080 a BI-089 emitir la factura', () => {
     const { service: invoicing, mocks } = build();
 
     await invoicing.issueInvoice(
-      { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver }, // prettier-ignore
+      { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver, paymentMethod: '01' }, // prettier-ignore
       requester,
     );
 
@@ -231,7 +243,60 @@ describe('BI-080 a BI-089 emitir la factura', () => {
       'proposedReceiver',
       'receiverContext',
       'requireAccount',
+      'withVouchers',
     ]);
+  });
+
+  it('SRI-041 avisa al comprobante electrónico DESPUÉS de emitir, y devuelve la factura con su estado', async () => {
+    const summary = {
+      voucherId: 'voucher-1',
+      state: 'SIGNED' as const,
+      blockedReason: null,
+      accessKey: '1'.repeat(49),
+      authorisedAt: null,
+      deliveryStatus: null,
+      lastMessage: null,
+    };
+    const { service: invoicing, mocks } = build({
+      accounts: {
+        summariesOf: vi
+          .fn()
+          .mockResolvedValue(new Map([[invoice.id, summary]])),
+      },
+    });
+
+    const issued = await invoicing.issueInvoice(
+      { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver, paymentMethod: '01' }, // prettier-ignore
+      requester,
+    );
+
+    expect(mocks.prepare).toHaveBeenCalledWith(invoice.id);
+    expect(mocks.issueInvoice.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.prepare.mock.invocationCallOrder[0]!,
+    );
+    expect(issued.electronic).toEqual(summary);
+  });
+
+  it('SRI-041 si la relectura falla tras emitir, responde la factura emitida sin su comprobante, sin error', async () => {
+    const { service: invoicing, mocks } = build({
+      accounts: {
+        summariesOf: vi.fn().mockRejectedValue(new Error('db hiccup')),
+      },
+    });
+
+    const issued = await invoicing.issueInvoice(
+      { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver, paymentMethod: '01' }, // prettier-ignore
+      requester,
+    );
+
+    expect(issued).toMatchObject({ id: invoice.id, electronic: null });
+    expect(mocks.logError).toHaveBeenCalled();
+  });
+
+  it('SRI-060 la factura sin comprobante todavía lo dice con null, sin fallar', async () => {
+    const { service: invoicing } = build();
+    const [listed] = await invoicing.listInvoices({ siteId: SITE });
+    expect(listed?.electronic).toBeNull();
   });
 });
 

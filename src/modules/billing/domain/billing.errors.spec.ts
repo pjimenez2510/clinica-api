@@ -147,3 +147,19 @@ describe('el contrato de los errores de facturación', () => {
     }
   });
 });
+
+describe('BI-171 el código de prestación que el SRI no acepta', () => {
+  it('BI-171 INVOICE_SERVICE_CODE_TOO_LONG es una regla de negocio (422) y nombra la prestación y su código', () => {
+    const error = new errors.InvoiceServiceCodeTooLongError(
+      'Aplicación de toxina botulínica con fin estético',
+      'PROC-ESTETICA-TOXINA-BOTULINICA',
+    );
+    expect(error.code).toBe('INVOICE_SERVICE_CODE_TOO_LONG');
+    expect(error).toBeInstanceOf(BusinessRuleViolation);
+    expect(error.userTitle).toContain(
+      '«Aplicación de toxina botulínica con fin estético»',
+    );
+    expect(error.userTitle).toContain('PROC-ESTETICA-TOXINA-BOTULINICA');
+    expect(error.userTitle).toContain('25 caracteres');
+  });
+});

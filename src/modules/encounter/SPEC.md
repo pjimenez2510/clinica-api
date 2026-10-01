@@ -50,16 +50,16 @@ en el **Acuerdo Ministerial 000138 de 1 de abril de 2008**. Ese acuerdo **está
 derogado**.
 
 - **Acuerdo Ministerial 00115-2021** (Registro Oficial 378, **26 de enero de
-  2021**), _Reglamento para el Manejo de la Historia Clínica Única_. Su
+  2021**), *Reglamento para el Manejo de la Historia Clínica Única*. Su
   **Disposición Derogatoria Única** deroga expresamente el A.M. 0138 de 2008 y el
   A.M. 0000116 de 2007. Los formularios pasaron de **16 a 51**.
 - **Art. 2** — cumplimiento **obligatorio para todos los profesionales del
   Sistema Nacional de Salud**, que **incluye al sector privado**. Esta clínica no
   está fuera.
 - **Art. 4** — la HCU es de **apertura obligatoria ANTES de iniciar la
-  atención**, y _«todo profesional de salud que intervenga en la atención debe
+  atención**, y *«todo profesional de salud que intervenga en la atención debe
   hacer constar su identificación… con firma autógrafa o electrónica, si se trata
-  de un sistema informático»_. El formato electrónico lo remite a su norma propia.
+  de un sistema informático»*. El formato electrónico lo remite a su norma propia.
 - **Art. 5** — orden **cronológico**; datos **objetivos, científicos y veraces**;
   **llenada de forma simultánea a la atención, cuando sea posible**; y refleja
   **todas las fases médicas que comprende un acto clínico**.
@@ -72,9 +72,9 @@ derogado**.
 - **Art. 10** — la HCU se identifica con **el número de cédula**, pasaporte o
   carnet de refugiado, o 17 dígitos temporales, según el A.M. 4934 «Uso de un solo
   código de Historia Clínica». La tensión con PA-002 se trata en EN-002.
-- **Definición de «consulta médica»** — _«si un usuario/paciente recibe varias
+- **Definición de «consulta médica»** — *«si un usuario/paciente recibe varias
   atenciones en un mismo día, ya sea en la misma sala o servicio, deberá
-  registrarse **tantas consultas como atenciones médicas recibidas**»_. Es EN-006,
+  registrarse **tantas consultas como atenciones médicas recibidas**»*. Es EN-006,
   y es el requisito que impide la unicidad «una atención por paciente y día» que
   cualquiera pondría por instinto.
 - **Disposición Transitoria Primera** — delega a una norma posterior «el archivo,
@@ -82,9 +82,9 @@ derogado**.
   retención no está fijado**, y no por descuido: ver EN-032.
 
 **Acuerdo Ministerial 0009-2017** (Registro Oficial 968, 22 de marzo de 2017),
-_Reglamento para el manejo de la Historia Clínica Electrónica_, **no derogado**.
-Su art. 3 define la historia clínica electrónica como un registro _«certificado
-con la **firma electrónica** del profesional de la salud»_.
+*Reglamento para el manejo de la Historia Clínica Electrónica*, **no derogado**.
+Su art. 3 define la historia clínica electrónica como un registro *«certificado
+con la **firma electrónica** del profesional de la salud»*.
 
 > ⚠️ **Pendiente de verificar: no se ha leído el texto completo del A.M.
 > 0009-2017.** Lo citado es su art. 3. Todo lo que este documento apoya en esa
@@ -178,28 +178,28 @@ EN-005 y EN-016.
 
 ## Vocabulario
 
-| Término                          | Significado exacto en este módulo                                                                                                                                                                                                                                                                                |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Atención**                     | La fila de `encounter`. **Un acto clínico**, no un día ni una cita: si el paciente vuelve por la tarde, son dos                                                                                                                                                                                                  |
-| **HCU**                          | Historia Clínica Única. El conjunto de todo lo que este módulo escribe sobre un paciente a lo largo del tiempo, no una tabla                                                                                                                                                                                     |
-| **Consulta de primera vez**      | La primera atención por **una determinada enfermedad o acción de salud y en un determinado servicio**. Otro problema en el mismo servicio vuelve a ser de primera vez (instructivo, p. 11)                                                                                                                       |
-| **Subsecuente**                  | La segunda o ulterior atención **por ese mismo problema**. `VisitSequence` en la atención; `DiagnosisOccurrence` por diagnóstico, que es otra cosa                                                                                                                                                               |
-| **Nota clínica**                 | Una fila de `clinical_note`: un formulario de la HCU en una versión. `chain_id` la ata a sus enmiendas                                                                                                                                                                                                           |
-| **Cadena**                       | Todas las versiones de una misma nota. Una sola vigente (`clinical_note_one_current_per_chain`)                                                                                                                                                                                                                  |
-| **Enmienda**                     | Una versión nueva que **sustituye** a una firmada, con motivo obligatorio. Nunca una edición                                                                                                                                                                                                                     |
-| **Retractación**                 | `ENTERED_IN_ERROR`: se retira sin reemplazo. Distinta de `SUPERSEDED`, que siempre apunta a quien la relevó                                                                                                                                                                                                      |
-| **Fecha clínica**                | La fecha resuelta con `AT TIME ZONE 'America/Guayaquil'`, nunca con el huso de la sesión                                                                                                                                                                                                                         |
-| **Edad congelada**               | `age_years`/`age_months`/`age_days`, calculados una vez por `trg_encounter_freeze_age` el día de la atención y nunca recalculados                                                                                                                                                                                |
-| **Prevención / morbilidad**      | La clasificación del RDACAA: prevención son los códigos **Z00–Z99**; morbilidad, todos los demás. Es **por diagnóstico**, no por atención (instructivo, p. 62)                                                                                                                                                   |
-| **Condición del diagnóstico**    | Los cuatro valores del instructivo (p. 63): presuntivo, definitivo inicial, definitivo inicial confirmado por laboratorio, definitivo control                                                                                                                                                                    |
-| **Bloque de programa**           | Los cuatro bloques del RDACAA que sólo aplican a una población: obstétricos (G), SIVAN (H), vacunas (I) y VIH (J)                                                                                                                                                                                                |
-| **Referencia inversa**           | El usuario que **se autorrefiere** a la emergencia de un establecimiento de mayor nivel. Es una de las cuatro direcciones del subsistema, no un sinónimo de contrarreferencia                                                                                                                                    |
-| **Estado de la atención**        | `OPEN`, `ON_HOLD`, `DISCONTINUED`, `DISCHARGED`, `COMPLETED`. Es el estado **administrativo** del acto clínico, el que dice si sigue vivo (EN-126). No es el estado de la cita (`AgendaStatus`) ni el avance del paciente por el flujo                                                                           |
-| **Estado de avance**             | Dónde está el paciente dentro de la atención: llegó · en preparación · listo · en atención · alta clínica · cerrada. **Se deriva de lo que se documenta** (EN-134) y no se teclea                                                                                                                                |
-| **Alta clínica**                 | `DISCHARGED`: el médico firmó la nota y clínicamente el paciente puede irse. **Queda lo administrativo** —cobro, factura, entrega de órdenes, próxima cita—. Es el tramo entre que el médico firma y el paciente sale por la puerta                                                                              |
-| **Cerrada**                      | `COMPLETED`: no queda nada, ni clínico ni administrativo, y tiene condición de egreso (EN-009)                                                                                                                                                                                                                   |
-| **Preparación**                  | _«Conjunto de actividades de enfermería realizadas antes de la consulta, para la atención de salud necesaria. La información se registra en la HCU»_ — art. 3 del A.M. 00115-2021, literal. Es el nombre del paso de enfermería cuando la capacidad de triaje está apagada, que es el valor por defecto (EN-149) |
-| **Riesgo mayor / riesgo mínimo** | La distinción del A.M. 5316. **Riesgo mínimo** es _«cuando la posibilidad de daño no es mayor de lo que se presenta durante un examen físico de rutina»_ y **no exige consentimiento suscrito**; el riesgo mayor sí, con el formulario **024** (EN-151, EN-152)                                                  |
+| Término | Significado exacto en este módulo |
+| --- | --- |
+| **Atención** | La fila de `encounter`. **Un acto clínico**, no un día ni una cita: si el paciente vuelve por la tarde, son dos |
+| **HCU** | Historia Clínica Única. El conjunto de todo lo que este módulo escribe sobre un paciente a lo largo del tiempo, no una tabla |
+| **Consulta de primera vez** | La primera atención por **una determinada enfermedad o acción de salud y en un determinado servicio**. Otro problema en el mismo servicio vuelve a ser de primera vez (instructivo, p. 11) |
+| **Subsecuente** | La segunda o ulterior atención **por ese mismo problema**. `VisitSequence` en la atención; `DiagnosisOccurrence` por diagnóstico, que es otra cosa |
+| **Nota clínica** | Una fila de `clinical_note`: un formulario de la HCU en una versión. `chain_id` la ata a sus enmiendas |
+| **Cadena** | Todas las versiones de una misma nota. Una sola vigente (`clinical_note_one_current_per_chain`) |
+| **Enmienda** | Una versión nueva que **sustituye** a una firmada, con motivo obligatorio. Nunca una edición |
+| **Retractación** | `ENTERED_IN_ERROR`: se retira sin reemplazo. Distinta de `SUPERSEDED`, que siempre apunta a quien la relevó |
+| **Fecha clínica** | La fecha resuelta con `AT TIME ZONE 'America/Guayaquil'`, nunca con el huso de la sesión |
+| **Edad congelada** | `age_years`/`age_months`/`age_days`, calculados una vez por `trg_encounter_freeze_age` el día de la atención y nunca recalculados |
+| **Prevención / morbilidad** | La clasificación del RDACAA: prevención son los códigos **Z00–Z99**; morbilidad, todos los demás. Es **por diagnóstico**, no por atención (instructivo, p. 62) |
+| **Condición del diagnóstico** | Los cuatro valores del instructivo (p. 63): presuntivo, definitivo inicial, definitivo inicial confirmado por laboratorio, definitivo control |
+| **Bloque de programa** | Los cuatro bloques del RDACAA que sólo aplican a una población: obstétricos (G), SIVAN (H), vacunas (I) y VIH (J) |
+| **Referencia inversa** | El usuario que **se autorrefiere** a la emergencia de un establecimiento de mayor nivel. Es una de las cuatro direcciones del subsistema, no un sinónimo de contrarreferencia |
+| **Estado de la atención** | `OPEN`, `ON_HOLD`, `DISCONTINUED`, `DISCHARGED`, `COMPLETED`. Es el estado **administrativo** del acto clínico, el que dice si sigue vivo (EN-126). No es el estado de la cita (`AgendaStatus`) ni el avance del paciente por el flujo |
+| **Estado de avance** | Dónde está el paciente dentro de la atención: llegó · en preparación · listo · en atención · alta clínica · cerrada. **Se deriva de lo que se documenta** (EN-134) y no se teclea |
+| **Alta clínica** | `DISCHARGED`: el médico firmó la nota y clínicamente el paciente puede irse. **Queda lo administrativo** —cobro, factura, entrega de órdenes, próxima cita—. Es el tramo entre que el médico firma y el paciente sale por la puerta |
+| **Cerrada** | `COMPLETED`: no queda nada, ni clínico ni administrativo, y tiene condición de egreso (EN-009) |
+| **Preparación** | *«Conjunto de actividades de enfermería realizadas antes de la consulta, para la atención de salud necesaria. La información se registra en la HCU»* — art. 3 del A.M. 00115-2021, literal. Es el nombre del paso de enfermería cuando la capacidad de triaje está apagada, que es el valor por defecto (EN-149) |
+| **Riesgo mayor / riesgo mínimo** | La distinción del A.M. 5316. **Riesgo mínimo** es *«cuando la posibilidad de daño no es mayor de lo que se presenta durante un examen físico de rutina»* y **no exige consentimiento suscrito**; el riesgo mayor sí, con el formulario **024** (EN-151, EN-152) |
 
 ---
 
@@ -606,10 +606,10 @@ requisitos que cambian.
 - **EN-006** — El sistema DEBERÁ admitir **tantas atenciones como consultas
   reciba el paciente en un mismo día**, del mismo o de distinto profesional, y NO
   DEBERÁ imponer unicidad por paciente y fecha.
-  > **Es literal del A.M. 00115-2021** y del instructivo (p. 11): _«si un
+  > **Es literal del A.M. 00115-2021** y del instructivo (p. 11): *«si un
   > usuario/paciente recibe varias atenciones en un mismo día, ya sea en la misma
   > sala o servicio, deberá registrarse tantas consultas como atenciones médicas
-  > recibidas»_. Se escribe como requisito **negativo** porque la restricción que
+  > recibidas»*. Se escribe como requisito **negativo** porque la restricción que
   > prohíbe es la que cualquiera añadiría por instinto —«un paciente, un día, una
   > atención»— para evitar duplicados de tecleo. Con ella, la paciente que ve al
   > ginecólogo por la mañana y al pediatra de su hijo por la tarde pierde una de
@@ -624,11 +624,11 @@ requisitos que cambian.
   vez** o **subsecuente** (`VisitSequence`), referida al problema de salud y al
   servicio, y NO DEBERÁ derivarla de que existan atenciones anteriores del
   paciente.
-  > **La definición del ministerio no es «¿ha venido antes?».** Es _«la consulta
+  > **La definición del ministerio no es «¿ha venido antes?».** Es *«la consulta
   > brindada a un paciente por primera vez por una determinada enfermedad o acción
-  > de salud y en un determinado servicio»_, y añade: _«en el caso de que el
+  > de salud y en un determinado servicio»*, y añade: *«en el caso de que el
   > paciente concurra al mismo servicio o a otro por otra enfermedad o acción de
-  > salud, se registra nuevamente como consulta de primera vez»_ (instructivo,
+  > salud, se registra nuevamente como consulta de primera vez»* (instructivo,
   > p. 11). Derivarlo del historial da la respuesta contraria en el caso más
   > corriente: un paciente con veinte atenciones que viene hoy por un problema
   > nuevo es **de primera vez**, y el sistema diría subsecuente.
@@ -707,9 +707,9 @@ requisitos que cambian.
   > y absorbe con un `INSERT` la categoría que el ministerio añada. **El enum
   > actual no se borra**: pasa a derivarse del código elegido.
   >
-  > Y hay una regla del instructivo que va con esto: _«cuando el profesional
+  > Y hay una regla del instructivo que va con esto: *«cuando el profesional
   > brinde consulta/atención en dos o más lugares el mismo día, utilice diferentes
-  > formularios RDACAA»_ — es decir, el lugar es de la **atención**, no de la
+  > formularios RDACAA»* — es decir, el lugar es de la **atención**, no de la
   > sede, y por eso vive aquí y no en `organization`.
 - **EN-013** — El sistema DEBERÁ registrar en cada atención si pertenece a la
   **estrategia «Médico del Barrio»** del MSP.
@@ -777,10 +777,10 @@ requisitos que cambian.
 - **EN-016** — El sistema DEBERÁ publicar, para una cita, si tiene atención
   registrada.
   > **Esto cierra la segunda mitad de AG-045**, la que la puso en la lista de
-  > «solo servidor» de `agenda` el 15-08-2026: _«`AgendaEntryDto` no lleva ningún
+  > «solo servidor» de `agenda` el 15-08-2026: *«`AgendaEntryDto` no lleva ningún
   > campo que diga si la cita tiene un `Encounter` asociado, y no es un descuido
   > del DTO: el módulo `encounter` todavía no existe, así que no hay siquiera dato
-  > que publicar»_. Con este campo, la pantalla puede **no ofrecer** «Anular…» ni
+  > que publicar»*. Con este campo, la pantalla puede **no ofrecer** «Anular…» ni
   > «No asistió», que es la mitad visible, y AG-045 sale de esa lista.
   >
   > Es un booleano y **no** el identificador de la atención: quien tiene
@@ -827,9 +827,9 @@ requisitos que cambian.
   > sólo se lee y se imprime, y viven en `clinical_note.content` validado contra
   > un JSON Schema por `(form_code, form_version)`.
   >
-  > La frontera es la que el comentario del esquema ya fija: _«las columnas
+  > La frontera es la que el comentario del esquema ya fija: *«las columnas
   > tipadas llevan todo lo que el ministerio reporta o el sistema consulta; la
-  > prosa que sólo se muestra e imprime vive aquí»_. Meter el motivo de consulta en
+  > prosa que sólo se muestra e imprime vive aquí»*. Meter el motivo de consulta en
   > una columna no compraría nada; sacar el diagnóstico del JSON haría imposible
   > el reporte mensual.
 - **EN-021** — El sistema DEBERÁ identificar cada nota por su **código de
@@ -849,8 +849,8 @@ requisitos que cambian.
   >
   > **Corregido el 19-08-2026.** Se citaba el formulario **004**, que **no existe**
   > en el Anexo 1 —la lista salta del 003 al 005—; los signos vitales son el
-  > **020**. Y la equivalencia «053 = antiguo 011» es falsa: el 011 era la _Hoja de
-  > Pegado de Exámenes_, y el 053 nació de desagregar el **006**. Como `form_code`
+  > **020**. Y la equivalencia «053 = antiguo 011» es falsa: el 011 era la *Hoja de
+  > Pegado de Exámenes*, y el 053 nació de desagregar el **006**. Como `form_code`
   > se graba en `clinical_note`, esto habría quedado en los datos.
   >
   > **Y aquí hay un hecho que cambia el tamaño del problema: el A.M. 00115-2021
@@ -901,12 +901,12 @@ requisitos que cambian.
   **versión nueva** que apunte a la anterior, DEBERÁ exigir un **motivo escrito**,
   y la versión anterior DEBERÁ seguir siendo legible e imprimible (REQ-005).
   > **Garantía de la base:** `clinical_note_amendment_reason` —`supersedes_id IS
-NULL OR amendment_reason IS NOT NULL`— y `supersedes_id` es `@unique`, así que
+  > NULL OR amendment_reason IS NOT NULL`— y `supersedes_id` es `@unique`, así que
   > una versión no puede ser enmendada dos veces en paralelo.
   >
   > **El motivo es texto libre obligatorio y no un desplegable**, y el comentario
-  > del esquema dice por qué: _«un desplegable se rellena en piloto automático; un
-  > cuadro de texto no»_. La misma decisión que `CANCELLATION_REASON_REQUIRED` en
+  > del esquema dice por qué: *«un desplegable se rellena en piloto automático; un
+  > cuadro de texto no»*. La misma decisión que `CANCELLATION_REASON_REQUIRED` en
   > la agenda, y por la misma razón: se exige **en el servicio** y no sólo en el
   > DTO, porque un `DEBERÁ` que sólo hace cumplir la capa de transporte deja de
   > cumplirse el día que otro caso de uso llame por dentro.
@@ -936,11 +936,11 @@ NULL OR amendment_reason IS NOT NULL`— y `supersedes_id` es `@unique`, así qu
   > recalcula en SC-012.
 - **EN-028** — El sistema DEBERÁ hacer constar la identificación del profesional
   que interviene en cada nota, con **firma electrónica certificada**.
-  > **Art. 4 del A.M. 00115-2021**: _«todo profesional de salud que intervenga en
+  > **Art. 4 del A.M. 00115-2021**: *«todo profesional de salud que intervenga en
   > la atención debe hacer constar su identificación… con firma autógrafa o
-  > electrónica, si se trata de un sistema informático»_. Y el **A.M. 0009-2017,
-  > art. 3** define la historia clínica electrónica como un registro _«certificado
-  > con la **firma electrónica** del profesional de la salud»_. (Pendiente de
+  > electrónica, si se trata de un sistema informático»*. Y el **A.M. 0009-2017,
+  > art. 3** define la historia clínica electrónica como un registro *«certificado
+  > con la **firma electrónica** del profesional de la salud»*. (Pendiente de
   > verificar: no se ha leído el texto completo de esa norma; ver el aviso del
   > preámbulo.)
   >
@@ -989,8 +989,8 @@ NULL OR amendment_reason IS NOT NULL`— y `supersedes_id` es `@unique`, así qu
   > **Corregido el 20-08-2026 — D-A-011, y cierra D-044.** Este requisito decía
   > «el plazo legal vigente» y su nota decía que **no fijábamos plazo**. Eso era un
   > error, y no uno menor: **no fijarlo incumple la LOPDP**, cuyo **art. 10.i**
-  > obliga al responsable a _«establecer plazos para su supresión o revisión
-  > periódica»_ y cuyo **art. 51** obliga a **declararlos**. Es decir: el vacío del
+  > obliga al responsable a *«establecer plazos para su supresión o revisión
+  > periódica»* y cuyo **art. 51** obliga a **declararlos**. Es decir: el vacío del
   > reglamento sectorial no nos exime, nos traslada la obligación de fijarlo
   > nosotros. El plazo es **quince años (5 de archivo activo + 10 de pasivo)**,
   > **sin purgado automático**, como parámetro de instalación — EN-157 y EN-158.
@@ -1117,12 +1117,12 @@ NULL OR amendment_reason IS NOT NULL`— y `supersedes_id` es `@unique`, así qu
   > diagnóstico») tiene **cuatro**. Las definiciones están en el propio
   > instructivo (pp. 12 y 13):
   >
-  > | Código | Valor                                         | Qué significa exactamente                                                                                                                      |
-  > | ------ | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-  > | 1      | Presuntivo                                    | Reconocimiento por signos y síntomas **que requiere confirmación** por proceso auxiliar                                                        |
-  > | 2      | Definitivo inicial                            | Reconocimiento por signos y síntomas, sin apoyo de laboratorio                                                                                 |
-  > | 3      | Definitivo inicial confirmado por laboratorio | Con resultado de laboratorio, imagen u otro                                                                                                    |
-  > | 4      | Definitivo control                            | **La consulta posterior a la primera** de definitivo inicial o confirmado, de la misma patología. Interesa en crónicos: diabetes, hipertensión |
+  > | Código | Valor | Qué significa exactamente |
+  > | --- | --- | --- |
+  > | 1 | Presuntivo | Reconocimiento por signos y síntomas **que requiere confirmación** por proceso auxiliar |
+  > | 2 | Definitivo inicial | Reconocimiento por signos y síntomas, sin apoyo de laboratorio |
+  > | 3 | Definitivo inicial confirmado por laboratorio | Con resultado de laboratorio, imagen u otro |
+  > | 4 | Definitivo control | **La consulta posterior a la primera** de definitivo inicial o confirmado, de la misma patología. Interesa en crónicos: diabetes, hipertensión |
   >
   > Colapsar los cuatro en dos no es una simplificación inocente: el valor 4
   > distingue el control del crónico de un diagnóstico nuevo, que es la mitad de la
@@ -1131,8 +1131,8 @@ NULL OR amendment_reason IS NOT NULL`— y `supersedes_id` es `@unique`, así qu
   > La corrección es ampliar el enum; mientras la base esté en fase `development`
   > eso es editar el SQL y `pnpm db:reset`, no una migración de compatibilidad.
   >
-  > **Y sólo aplica a morbilidad:** el instructivo dice _«únicamente en morbilidad
-  > se registra condición de diagnóstico»_. En prevención la casilla va vacía.
+  > **Y sólo aplica a morbilidad:** el instructivo dice *«únicamente en morbilidad
+  > se registra condición de diagnóstico»*. En prevención la casilla va vacía.
 - **EN-045** — El sistema DEBERÁ registrar, **por diagnóstico**, si es de primera
   vez o subsecuente, y NO DEBERÁ derivarlo de `VisitSequence` de la atención.
   > Son dos preguntas distintas y el esquema ya las separa
@@ -1197,8 +1197,8 @@ NULL OR amendment_reason IS NOT NULL`— y `supersedes_id` es `@unique`, así qu
   su código del **tarifario de prestaciones del Sistema Nacional de Salud** y la
   **cantidad** de veces que se realizó cada uno.
   > Columnas 95 a 97 (procedimientos) y 98 a 100 (actividades) del formulario: el
-  > instructivo aclara que _«por cada procedimiento se genera una o más actividades
-  > las cuales debe registrar la cantidad realizada»_, con el ejemplo de dos
+  > instructivo aclara que *«por cada procedimiento se genera una o más actividades
+  > las cuales debe registrar la cantidad realizada»*, con el ejemplo de dos
   > exodoncias en la misma atención. `encounter_procedure.quantity` es esa cantidad.
   > El tarifario es el **bloqueante externo #5**: Registro Oficial 751, A.M. 0286,
   > edición 2018 según el instructivo, sin edición posterior confirmada.
@@ -1211,8 +1211,8 @@ NULL OR amendment_reason IS NOT NULL`— y `supersedes_id` es `@unique`, así qu
   > concepto acaben diciendo cosas distintas. Hoy la copia la hace el adaptador
   > del concepto que acaba de leer en la misma transacción, que cubre a esta
   > aplicación y no a un import ni a un `psql`. Es exactamente el argumento que
-  > EN-041 dejó escrito: _esa misma redundancia es por donde entraría la
-  > mentira_.
+  > EN-041 dejó escrito: *esa misma redundancia es por donde entraría la
+  > mentira*.
   >
   > **Falta esquema — la cantidad no tiene `CHECK`.** `quantity` es un
   > `smallint` con `DEFAULT 1` y sin cota inferior, así que la base admite `0` y
@@ -1229,8 +1229,8 @@ NULL OR amendment_reason IS NOT NULL`— y `supersedes_id` es `@unique`, así qu
   > columna **existe** —es de `20260806022931_clinical_core`, anterior a la
   > migración de facturación— y este módulo **no la lee ni la escribe**. Congela
   > un importe dentro de una tabla clínica, que es justo la separación que este
-  > requisito defiende: _«lo que se hizo» y «lo que se cobra» son dos registros
-  > y no pueden ser el mismo_. El hecho clínico no cambia porque el paciente no
+  > requisito defiende: *«lo que se hizo» y «lo que se cobra» son dos registros
+  > y no pueden ser el mismo*. El hecho clínico no cambia porque el paciente no
   > pague, y borrar un cargo no puede borrar el acto.
   >
   > **Y ya no hace falta**, que es lo que la convierte en deuda y no en
@@ -1264,8 +1264,8 @@ NULL OR amendment_reason IS NOT NULL`— y `supersedes_id` es `@unique`, así qu
   pacientes de más de 6 meses y menos de 11 años; y cariados, perdidos y obturados
   a partir de 12 años.
   > **Falta esquema.** Columnas 101 a 104 del formulario. No hay ninguna columna, y
-  > el instructivo lo restringe a _«profesionales con especialidad odontólogo y
-  > odontólogo rural»_. Los rangos de edad son del propio instructivo (p. 66) y se
+  > el instructivo lo restringe a *«profesionales con especialidad odontólogo y
+  > odontólogo rural»*. Los rangos de edad son del propio instructivo (p. 66) y se
   > evalúan con la **edad congelada** de EN-008, no con la de hoy: un niño de 10
   > años atendido en marzo sigue teniendo 10 en la fila de marzo para siempre — el
   > mismo razonamiento que PA-005 dejó escrito para «intersexual en menores de un
@@ -1283,7 +1283,7 @@ NULL OR amendment_reason IS NOT NULL`— y `supersedes_id` es `@unique`, así qu
 - **EN-061** — El sistema DEBERÁ calcular el **índice de masa corporal** a partir
   del peso y la talla, y NO DEBERÁ aceptarlo como dato de entrada.
   > **Garantía de la base:** `trg_encounter_vitals_bmi`, `BEFORE INSERT OR UPDATE
-OF weight_kg, height_cm`. Es un disparador y no una columna generada de
+  > OF weight_kg, height_cm`. Es un disparador y no una columna generada de
   > PostgreSQL 18 por dos razones que el esquema deja escritas: Prisma no modela
   > las generadas e intentaría hacer `INSERT` en ella, y una columna `VIRTUAL` no se
   > puede indexar — y el IMC se filtra en el tamizaje nutricional.
@@ -1313,10 +1313,10 @@ OF weight_kg, height_cm`. Es un disparador y no una columna generada de
 - **EN-063** — MIENTRAS el paciente sea **menor de 5 años** o tenga registrado el
   grupo prioritario **embarazada**, el sistema DEBERÁ exigir peso, talla y
   perímetro cefálico; para el resto DEBERÁN ser opcionales.
-  > Es literal de la nota del instructivo al bloque D (p. 44): _«los datos
+  > Es literal de la nota del instructivo al bloque D (p. 44): *«los datos
   > antropométricos con \* es obligatorio para usuarios menores de 5 años o que
   > corresponda al grupo prioritario "Embarazadas"; para el resto de usuarios el
-  > registro es opcional»_. La edad es la **congelada** de EN-008 y el grupo se lee
+  > registro es opcional»*. La edad es la **congelada** de EN-008 y el grupo se lee
   > de `encounter_priority_group` (EN-099), no de la ficha: lo que cuenta es lo que
   > era verdad ese día.
 - **EN-064** — El sistema DEBERÁ registrar **cómo se tomó la talla**: **1 de
@@ -1339,9 +1339,9 @@ OF weight_kg, height_cm`. Es un disparador y no una columna generada de
 - **EN-065** — El sistema DEBERÁ registrar el valor de **hemoglobina** y el de
   **hemoglobina corregida por altitud**.
   > Columnas 27 y 28 del RDACAA. El instructivo
-  > marca `< 11,0 g/dl` como riesgo y explica que la corregida es _«el ajuste que se
+  > marca `< 11,0 g/dl` como riesgo y explica que la corregida es *«el ajuste que se
   > realiza a los resultados de la hemoglobina de acuerdo a donde se encuentra
-  > ubicado el establecimiento (altitud sobre el nivel del mar)»_ — en Ecuador eso
+  > ubicado el establecimiento (altitud sobre el nivel del mar)»* — en Ecuador eso
   > no es opcional: entre Guayaquil y Quito hay 2.800 metros y el umbral de anemia
   > cambia. Van en `encounter_vitals` y no en `observation_result` aunque sean de
   > laboratorio, porque el RDACAA los pide **por atención** y en la fila del reporte
@@ -1462,9 +1462,9 @@ OF weight_kg, height_cm`. Es un disparador y no una columna generada de
   tamizaje DEBERÁ **omitirse** de la respuesta en lugar de rechazarla.
   > **Falta esquema.** Y el propio esquema lo admite: el comentario de
   > `ViolenceScreening` dice que tiene tabla propia «porque su régimen de acceso es
-  > distinto» y a continuación reconoce: _«TODO: no existe todavía ningún REVOKE,
+  > distinto» y a continuación reconoce: *«TODO: no existe todavía ningún REVOKE,
   > ni permiso separado, ni flujo distinto. La separación es una intención de
-  > diseño, no una propiedad que el esquema tenga hoy»_. Este requisito es lo que la
+  > diseño, no una propiedad que el esquema tenga hoy»*. Este requisito es lo que la
   > convierte en propiedad.
   >
   > **Se resuelve como `patients` resolvió los grupos restringidos**, que es el
@@ -1501,8 +1501,8 @@ OF weight_kg, height_cm`. Es un disparador y no una columna generada de
   > (p. 49):
   >
   > - **Lesiones por presunta violencia** — 1 daño · 2 enfermedad · **3 incapacidad
-  >   (más de 3 días)**. El instructivo define los dos primeros: _daño_ es el
-  >   perjuicio «aunque la usuaria luego no necesite reposo médico», e _incapacidad_
+  >   (más de 3 días)**. El instructivo define los dos primeros: *daño* es el
+  >   perjuicio «aunque la usuaria luego no necesite reposo médico», e *incapacidad*
   >   es reposo «siempre mayor a 3 días, o hasta toda la vida».
   > - **Identifica al presunto agresor** — 1 sí · 2 no · 3 no sabe / no responde.
   > - **Parentesco con el agresor** — 1 amigo · 2 conocido · 3 desconocido ·
@@ -1540,17 +1540,17 @@ OF weight_kg, height_cm`. Es un disparador y no una columna generada de
 - **EN-080** — El sistema DEBERÁ registrar las alergias del paciente de forma
   **estructurada**, con la sustancia, la reacción y su criticidad, y NO DEBERÁ
   guardarlas únicamente como prosa dentro de la nota.
-  > **La razón está escrita en el esquema y es la que importa:** _«estructurada y
+  > **La razón está escrita en el esquema y es la que importa:** *«estructurada y
   > no enterrada en el JSON del formulario 002 porque prescribir tiene que
   > comprobarla, y "comprobarla" significa una consulta, no una persona leyendo
-  > prosa»_. `patient_allergy` existe desde la primera migración con
+  > prosa»*. `patient_allergy` existe desde la primera migración con
   > `substance_concept_id` al CNMB cuando el alérgeno es un fármaco, y
   > `substance_text` cuando no lo es —alimentos, látex, picaduras—.
   >
   > **Y hoy no tiene una sola línea de código.** Ni ruta, ni servicio, ni DTO.
   > REQ-008 vale cero desde que existe el proyecto, y `patients` lo dejó
-  > explícitamente fuera de su alcance porque _«sólo se puede comprobar cuando
-  > exista la consulta»_. Esta entrega es esa comprobación.
+  > explícitamente fuera de su alcance porque *«sólo se puede comprobar cuando
+  > exista la consulta»*. Esta entrega es esa comprobación.
 - **EN-081** — CUANDO se abra una atención, el sistema DEBERÁ devolver las
   alergias **activas** del paciente en la misma respuesta, sin que haya que
   pedirlas aparte.
@@ -1563,8 +1563,8 @@ OF weight_kg, height_cm`. Es un disparador y no una columna generada de
   DEBERÁ marcarse como **refutada**, con la fecha y la nota de por qué, y DEBERÁ
   dejar de contar como activa.
   > `refuted_at` y `refuted_notes` existen, y el comentario del esquema dice el
-  > porqué: _«saber que una alergia se descartó es información clínica por derecho
-  > propio»_. El paciente al que le dijeron que era alérgico a la penicilina y
+  > porqué: *«saber que una alergia se descartó es información clínica por derecho
+  > propio»*. El paciente al que le dijeron que era alérgico a la penicilina y
   > resultó no serlo necesita que eso conste, o dentro de dos años alguien vuelve a
   > escribirlo y vuelve a no darle el antibiótico correcto.
 - **EN-083** — El sistema DEBERÁ registrar la **criticidad** de cada alergia
@@ -1626,18 +1626,18 @@ OF weight_kg, height_cm`. Es un disparador y no una columna generada de
   conocidas**, el sistema DEBERÁ registrar esa afirmación **con su autor y su
   instante**, y DEBERÁ servirla junto a la lista de alergias. El sistema NO
   DEBERÁ afirmar «sin alergias conocidas» a partir de una lista vacía.
-  > **Son tres estados, no dos (D-A-018).** El _International Patient Summary_
+  > **Son tres estados, no dos (D-A-018).** El *International Patient Summary*
   > de HL7 —alineado con ISO 27269— distingue `nilknown` de `notasked`, y define
   > el primero así, textualmente:
   >
-  > > _«Esto es una afirmación positiva por parte de un usuario clínico, **y no
+  > > *«Esto es una afirmación positiva por parte de un usuario clínico, **y no
   > > una posición por defecto afirmada por un sistema informático a falta de
-  > > otra información**.»_
+  > > otra información**.»*
   >
   > **Una casilla de alergias vacía no significa «sin alergias». Significa «no lo
   > sabemos».** Los tres estados que la banda tiene que poder distinguir son:
-  > _tiene alergias registradas_; _sin alergias conocidas, afirmado por un
-  > clínico —con quién y cuándo—_; y _no se preguntó_. «Sin alergias conocidas
+  > *tiene alergias registradas*; *sin alergias conocidas, afirmado por un
+  > clínico —con quién y cuándo—*; y *no se preguntó*. «Sin alergias conocidas
   > (Dra. X, 14-03-2026)» **no es lo mismo** que «alergias: no registradas», y el
   > sistema que no las distingue produce el falso negativo que hace daño: el
   > médico que lee «ninguna» y prescribe.
@@ -1722,8 +1722,8 @@ transcribir y no volver a leer el instructivo._
   >   año-mes-día.
   > - **Semanas de gestación** — entero, **de 1 a 42**.
   >
-  > La condición es literal: _«registre la siguiente información únicamente si el
-  > grupo prioritario que elige es "embarazadas"»_. Se comprueba contra
+  > La condición es literal: *«registre la siguiente información únicamente si el
+  > grupo prioritario que elige es "embarazadas"»*. Se comprueba contra
   > `encounter_priority_group` (EN-099) y no contra la ficha, por lo mismo que
   > EN-063.
 - **EN-091** — MIENTRAS la paciente esté embarazada, el sistema DEBERÁ registrar
@@ -1772,11 +1772,11 @@ transcribir y no volver a leer el instructivo._
   >
   > **Y hay reglas de coherencia entre vacuna y grupo de riesgo**, que el
   > instructivo enumera y que el sistema debe hacer cumplir: dT adulto admite
-  > _edades en riesgo_ y _embarazadas_; influenza admite además _puérperas_,
-  > _personal de la salud_, _enfermedades crónicas_, _privados de libertad_ y
-  > _discapacidad_; HB admite _personal de la salud_, _privados de libertad_,
-  > _viviendo con VIH_, _trabajadores sexuales_ y _otros_; SR y fiebre amarilla
-  > admiten _edades en riesgo_ y _viajeros_.
+  > *edades en riesgo* y *embarazadas*; influenza admite además *puérperas*,
+  > *personal de la salud*, *enfermedades crónicas*, *privados de libertad* y
+  > *discapacidad*; HB admite *personal de la salud*, *privados de libertad*,
+  > *viviendo con VIH*, *trabajadores sexuales* y *otros*; SR y fiebre amarilla
+  > admiten *edades en riesgo* y *viajeros*.
   >
   > La lista de vacunas es un **catálogo** y no un enum —el esquema de vacunación
   > cambia por acuerdo ministerial y no debe costar una migración—; la dosis y el
@@ -1825,9 +1825,9 @@ transcribir y no volver a leer el instructivo._
   > contradecirla.
 - **EN-097** — El sistema NO DEBERÁ exigir ningún bloque de programa a una
   atención cuya población no lo alcanza.
-  > Es la regla general del instructivo: _«cuando la información solicitada no
+  > Es la regla general del instructivo: *«cuando la información solicitada no
   > aplique a la atención, el profesional debe dejar el espacio en blanco, excepto
-  > en las variables cuyos catálogos tengan la categoría "0. No aplica"»_. Se
+  > en las variables cuyos catálogos tengan la categoría "0. No aplica"»*. Se
   > escribe como requisito porque el fallo contrario —exigir el bloque obstétrico a
   > todo el mundo— es el que produce pantallas que el personal aprende a rellenar
   > con cualquier cosa.
@@ -1859,9 +1859,9 @@ transcribir y no volver a leer el instructivo._
   > **psicológica** · 10 víctimas de violencia **sexual** · 11 trabajador/a
   > sexual\* · 12 expuesto perinatal\* · 13 planificación familiar\* · 14 HSH\*.
   >
-  > El propio instructivo marca con asterisco los cuatro últimos: _«estos grupos no
+  > El propio instructivo marca con asterisco los cuatro últimos: *«estos grupos no
   > constan en el Art. 35 de la Constitución Ecuatoriana; sin embargo, se incluyó
-  > con la finalidad de contar con información»_. Y las diferencias con PA-034 son
+  > con la finalidad de contar con información»*. Y las diferencias con PA-034 son
   > estructurales, no de redacción: el RDACAA **no** lista adultos mayores ni niños
   > y adolescentes —los deriva de la edad, igual que PA-035—, **parte** las
   > víctimas de violencia en tres, y **añade** cuatro categorías que la Constitución
@@ -1887,9 +1887,9 @@ transcribir y no volver a leer el instructivo._
   > tuberculosis · 14 riesgo laboral o contacto con enfermedades crónicas
   > transmisibles · 15 contacto con pacientes TB resistente · 16 comorbilidad.
   >
-  > El instructivo los define como _«personas que aparte de pertenecer a un grupo
+  > El instructivo los define como *«personas que aparte de pertenecer a un grupo
   > prioritario presentan condiciones particulares debilitantes o de riesgo… tienen
-  > la más alta prioridad para la atención»_. Al menos cinco de los dieciséis —VIH,
+  > la más alta prioridad para la atención»*. Al menos cinco de los dieciséis —VIH,
   > intentos autolíticos, tuberculosis, drogas, TB resistente— **exigen el régimen
   > de EN-072**, y por eso este requisito está en H7 y no en H1: registrarlos sin
   > ese régimen sería peor que no tenerlos.
@@ -1904,19 +1904,19 @@ transcribir y no volver a leer el instructivo._
   > 109, instructivo p. 69). No es un sinónimo de ninguna de las otras tres: la
   > **Norma Técnica del Subsistema de Referencia, Derivación, Contrarreferencia,
   > Referencia Inversa y Transferencia del Sistema Nacional de Salud (2014)**,
-  > citada por el instructivo, la define como _«cuando un usuario se autorrefiere
+  > citada por el instructivo, la define como *«cuando un usuario se autorrefiere
   > al servicio de emergencia de un establecimiento de segundo o tercer nivel, en
   > el que debe ser atendido… y de ninguna manera se negará la asistencia sanitaria
-  > por no tener una referencia»_.
+  > por no tener una referencia»*.
   >
   > Las cuatro, con la definición de la misma norma:
   >
-  > | Código | Dirección          | Qué es                                                                                                                           |
-  > | ------ | ------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
-  > | 1      | Referencia         | Envío a un establecimiento de **mayor o igual** complejidad porque la capacidad instalada no resuelve el problema                |
-  > | 2      | Contrarreferencia  | **Obligatorio**: el usuario referido **vuelve** al establecimiento de menor nivel con la información de lo que se le hizo        |
-  > | 3      | Derivación         | Envío a un prestador **externo** —de la Red Pública o de la complementaria— del mismo o mayor nivel, **con autorización previa** |
-  > | 4      | Referencia inversa | El usuario **se autorrefiere** a la emergencia de un nivel superior                                                              |
+  > | Código | Dirección | Qué es |
+  > | --- | --- | --- |
+  > | 1 | Referencia | Envío a un establecimiento de **mayor o igual** complejidad porque la capacidad instalada no resuelve el problema |
+  > | 2 | Contrarreferencia | **Obligatorio**: el usuario referido **vuelve** al establecimiento de menor nivel con la información de lo que se le hizo |
+  > | 3 | Derivación | Envío a un prestador **externo** —de la Red Pública o de la complementaria— del mismo o mayor nivel, **con autorización previa** |
+  > | 4 | Referencia inversa | El usuario **se autorrefiere** a la emergencia de un nivel superior |
   >
   > Sin el cuarto valor, la referencia inversa se registraría como referencia y el
   > reporte diría que esta clínica envió a un paciente que en realidad se presentó
@@ -1990,8 +1990,8 @@ transcribir y no volver a leer el instructivo._
   >
   > Es el **bloqueante externo #4** y sigue abierto. Lo verificado: el instructivo que
   > este documento usa es el del **formulario físico** SNS-MSP / Form. 504 / 2019,
-  > que el propio MSP describe como _«información similar al aplicativo RDACAA
-  > v. 2.0»_ — **similar, no idéntica**, y eso es exactamente lo que no se puede
+  > que el propio MSP describe como *«información similar al aplicativo RDACAA
+  > v. 2.0»* — **similar, no idéntica**, y eso es exactamente lo que no se puede
   > adivinar. El PRAS (Plataforma de Registro de Atenciones en Salud) es su sucesor
   > y no se ha localizado su especificación.
   >
@@ -2022,10 +2022,10 @@ transcribir y no volver a leer el instructivo._
   formulario y aplicar la condición del ministerio de que **«intersexual» sólo se
   registra en menores de un año**, evaluada con la **edad de la atención**.
   > **Es el sitio que PA-005 dejó anotado y no construido**, y lo dijo con estas
-  > palabras: _«dónde vive entonces, si el ministerio lo exige: en la capa de
+  > palabras: *«dónde vive entonces, si el ministerio lo exige: en la capa de
   > exportación… la fila del RDACAA se compone con la edad del día de la atención
   > que se reporta, no con la de hoy, así que allí la condición se puede evaluar sin
-  > que caduque»_. Aquí está esa capa. Un neonato intersexual atendido en marzo
+  > que caduque»*. Aquí está esa capa. Un neonato intersexual atendido en marzo
   > sigue teniendo menos de un año en la fila de marzo para siempre.
 - **EN-115** — La exportación DEBERÁ llevar el documento del paciente, su sexo,
   su autoidentificación étnica, su nacionalidad, su residencia por parroquia DPA y
@@ -2308,15 +2308,15 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   `ENCOUNTER_STATE_TRANSITION_INVALID` y NO DEBERÁ cambiar el estado.
   > Las únicas transiciones que existen, y se enumeran en lugar de referenciarlas:
   >
-  > | Desde                  | Hacia              | Lo dispara                          |
-  > | ---------------------- | ------------------ | ----------------------------------- |
-  > | _(no existe)_          | `OPEN`             | Abrir la atención (EN-127)          |
-  > | `OPEN`                 | `ON_HOLD`          | El paciente sale y volverá (EN-128) |
-  > | `ON_HOLD`              | `OPEN`             | El paciente vuelve (EN-128)         |
-  > | `OPEN`, `ON_HOLD`      | `DISCONTINUED`     | No se puede terminar (EN-129)       |
-  > | `OPEN`                 | `DISCHARGED`       | Se firma la nota clínica (EN-130)   |
-  > | `DISCHARGED`           | `COMPLETED`        | Se cierra la cuenta (EN-131)        |
-  > | Cualquiera no terminal | `ENTERED_IN_ERROR` | Se anula la atención (EN-018)       |
+  > | Desde | Hacia | Lo dispara |
+  > | --- | --- | --- |
+  > | *(no existe)* | `OPEN` | Abrir la atención (EN-127) |
+  > | `OPEN` | `ON_HOLD` | El paciente sale y volverá (EN-128) |
+  > | `ON_HOLD` | `OPEN` | El paciente vuelve (EN-128) |
+  > | `OPEN`, `ON_HOLD` | `DISCONTINUED` | No se puede terminar (EN-129) |
+  > | `OPEN` | `DISCHARGED` | Se firma la nota clínica (EN-130) |
+  > | `DISCHARGED` | `COMPLETED` | Se cierra la cuenta (EN-131) |
+  > | Cualquiera no terminal | `ENTERED_IN_ERROR` | Se anula la atención (EN-018) |
   >
   > **`DISCONTINUED`, `COMPLETED` y `ENTERED_IN_ERROR` son terminales.** Todo lo
   > demás —reabrir,
@@ -2369,15 +2369,15 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   >
   > La correspondencia entre los dos, que es lo que hay que implementar:
   >
-  > | Avance (`PatientSubjectStatus`)           | Estado (EN-126)                                     | Lo dispara                             |
-  > | ----------------------------------------- | --------------------------------------------------- | -------------------------------------- |
-  > | `ARRIVED`                                 | la atención puede no existir aún; si existe, `OPEN` | Recepción, a mano — no hay alternativa |
-  > | `IN_PREPARATION`                          | `OPEN`                                              | Abrir la toma de signos (EN-135)       |
-  > | `READY`                                   | `OPEN`                                              | Guardar los signos (EN-136)            |
-  > | `RECEIVING_CARE`                          | `OPEN`                                              | Abrir la nota clínica (EN-137)         |
-  > | `ON_LEAVE`                                | `ON_HOLD`                                           | El paciente sale y volverá (EN-128)    |
-  > | `RECEIVING_CARE` _(sigue en el edificio)_ | `DISCHARGED`                                        | Firmar la nota (EN-138)                |
-  > | `DEPARTED`                                | `COMPLETED`                                         | Cerrar la cuenta (EN-139)              |
+  > | Avance (`PatientSubjectStatus`) | Estado (EN-126) | Lo dispara |
+  > | --- | --- | --- |
+  > | `ARRIVED` | la atención puede no existir aún; si existe, `OPEN` | Recepción, a mano — no hay alternativa |
+  > | `IN_PREPARATION` | `OPEN` | Abrir la toma de signos (EN-135) |
+  > | `READY` | `OPEN` | Guardar los signos (EN-136) |
+  > | `RECEIVING_CARE` | `OPEN` | Abrir la nota clínica (EN-137) |
+  > | `ON_LEAVE` | `ON_HOLD` | El paciente sale y volverá (EN-128) |
+  > | `RECEIVING_CARE` *(sigue en el edificio)* | `DISCHARGED` | Firmar la nota (EN-138) |
+  > | `DEPARTED` | `COMPLETED` | Cerrar la cuenta (EN-139) |
   >
   > La fila del alta clínica es la que prueba que **los dos ejes hacen falta**:
   > el médico terminó y el paciente sigue aquí, en caja. Con un solo eje esa
@@ -2418,9 +2418,9 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   DEBERÁN llevar `RECEPCION`, `ENFERMERIA` y `MEDICO`, y ese permiso NO DEBERÁ
   autorizar a escribir en la historia clínica.
   > **D-A-003, y es lo que desbloquea EN-066.** No es criterio nuestro: el **art.
-  > 11 del A.M. 00115-2021** dice que _«la apertura de la historia clínica única…
-  > la realizará el **personal de Gestión de Admisiones**»_, y que donde no lo haya
-  > _«lo realizará el personal de salud disponible»_. **Abrir es un acto
+  > 11 del A.M. 00115-2021** dice que *«la apertura de la historia clínica única…
+  > la realizará el **personal de Gestión de Admisiones**»*, y que donde no lo haya
+  > *«lo realizará el personal de salud disponible»*. **Abrir es un acto
   > administrativo**, y por eso es un permiso propio en lugar de ensanchar
   > `record:write`, que arrastraría consigo diagnosticar y prescribir.
   >
@@ -2434,11 +2434,11 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   `nursing:write`; ese permiso NO DEBERÁ autorizar registrar diagnósticos,
   procedimientos ni recetas.
   > **D-A-004.** Los tres son los que el instructivo del A.M. 00115-2021 asigna a
-  > enfermería, y el **art. 4** obliga a que _«todo profesional de salud que
+  > enfermería, y el **art. 4** obliga a que *«todo profesional de salud que
   > intervenga haga constar su identificación… con firma autógrafa o
-  > electrónica»_: quien llena, firma. Lo que el requisito **niega** es tan
-  > importante como lo que concede — la **LOS art. 198** exige _«limitar sus
-  > acciones al área que el título les asigne»_, así que `nursing:write` no puede
+  > electrónica»*: quien llena, firma. Lo que el requisito **niega** es tan
+  > importante como lo que concede — la **LOS art. 198** exige *«limitar sus
+  > acciones al área que el título les asigne»*, así que `nursing:write` no puede
   > ser un `record:write` con otro nombre.
   >
   > El visto del 005 es control de cumplimiento de la prescripción del médico —la
@@ -2458,8 +2458,8 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   > temperatura es autor de la temperatura y no del peso— **es D-062**.
   >
   > **Esto es lo que resuelve la contradicción del formulario 002**, que el flujo
-  > dejó anotada: el instructivo del 002 dice que _«este formulario debe ser
-  > llenado por los médicos»_ y su bloque E son justamente las constantes vitales
+  > dejó anotada: el instructivo del 002 dice que *«este formulario debe ser
+  > llenado por los médicos»* y su bloque E son justamente las constantes vitales
   > que en la práctica toma enfermería en preparación. La salida no es partir el
   > formulario ni inventar una segunda atención: **la autoría vive en el dato**
   > —quién tomó el peso y cuándo—, y el formulario sigue siendo del médico que lo
@@ -2486,11 +2486,11 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   atenciones **sin cerrar**, con el instante de apertura y el estado de cada una.
   > **Garantía de la base:** el índice parcial
   > `encounter_still_open_by_practitioner` sobre `(practitioner_id, started_at)
-WHERE status IN ('OPEN','ON_HOLD')`. Es parcial para que **se mantenga
+  > WHERE status IN ('OPEN','ON_HOLD')`. Es parcial para que **se mantenga
   > pequeño por construcción**: las atenciones salen del índice al cerrarse, igual
   > que `encounter_pending_report` (EN-111).
   >
-  > Es el _Open Items_ del sector: el trabajo sin hora comprometida —notas sin
+  > Es el *Open Items* del sector: el trabajo sin hora comprometida —notas sin
   > firmar, atenciones sin cerrar— no cabe en la lista del día porque no tiene
   > hora que lo ordene. Y es la única defensa que queda si no hay cierre
   > automático: lo que no se cierra solo, alguien tiene que poder verlo.
@@ -2526,7 +2526,7 @@ programada._
   > tipología de establecimientos (**A.M. 00030-2020**) define la cartera de
   > **urgencia por C, D, E** y la de **emergencia por A, B, C** — es el
   > vocabulario que la norma ecuatoriana ya usa. El ESI se define a sí mismo como
-  > herramienta _«para el triaje del servicio de urgencias»_ y por debajo del nivel
+  > herramienta *«para el triaje del servicio de urgencias»* y por debajo del nivel
   > 2 clasifica por **número de recursos previstos**, que en consulta externa
   > predice ocupación de agenda y no riesgo.
 - **EN-149** — DONDE la sede **no** tenga habilitada la capacidad de triaje —que
@@ -2534,9 +2534,9 @@ programada._
   en ninguna respuesta, y el paso de enfermería DEBERÁ llamarse
   **«Preparación»**.
   > El nombre no es cosmética: es el **art. 3 del A.M. 00115-2021**, literal —
-  > _«**Preparación:** conjunto de actividades de enfermería realizadas antes de la
+  > *«**Preparación:** conjunto de actividades de enfermería realizadas antes de la
   > consulta, para la atención de salud necesaria. La información se registra en la
-  > HCU»_—. El mismo glosario define «Posconsulta» y **no define «triaje»**, y
+  > HCU»*—. El mismo glosario define «Posconsulta» y **no define «triaje»**, y
   > ningún formulario ambulatorio tiene campo de nivel.
   >
   > **Y apagada por defecto porque encenderla donde no corresponde no es neutro:**
@@ -2555,8 +2555,8 @@ programada._
   > la calificación no llega a la atención.
   >
   > Y es lo único de esta sección que **no** es opcional:
-  > la **Ley 77, art. 10** obliga a que _«el estado de emergencia del paciente será
-  > calificado por el centro de salud **al momento de su arribo**»_; su art. 1
+  > la **Ley 77, art. 10** obliga a que *«el estado de emergencia del paciente será
+  > calificado por el centro de salud **al momento de su arribo**»*; su art. 1
   > nombra expresamente a las clínicas y su **art. 13 lo respalda con prisión de 12
   > a 18 meses — de 4 a 6 años si el paciente desatendido fallece** (D-A-002).
   >
@@ -2571,12 +2571,12 @@ programada._
 - **EN-151** — El sistema NO DEBERÁ exigir consentimiento informado suscrito para
   una intervención de **riesgo mínimo**, ni para una consulta ambulatoria de
   rutina.
-  > **Es textual del A.M. 5316** (_Modelo de Gestión de Aplicación del
-  > Consentimiento Informado_, R.O. E.E. 510 de 22-II-2016), de obligatoria
-  > observancia para todo el Sistema Nacional de Salud, sección **7.6.d**: _«**No
+  > **Es textual del A.M. 5316** (*Modelo de Gestión de Aplicación del
+  > Consentimiento Informado*, R.O. E.E. 510 de 22-II-2016), de obligatoria
+  > observancia para todo el Sistema Nacional de Salud, sección **7.6.d**: *«**No
   > se requiere un consentimiento informado suscrito en las intervenciones de
-  > riesgo mínimo**»_. Y define riesgo mínimo como _«cuando la posibilidad de daño
-  > no es mayor de lo que se presenta durante un examen físico de rutina»_,
+  > riesgo mínimo**»*. Y define riesgo mínimo como *«cuando la posibilidad de daño
+  > no es mayor de lo que se presenta durante un examen físico de rutina»*,
   > incluyendo expresamente análisis de orina, punción venosa, EEG y pruebas de
   > alergia.
   >
@@ -2602,7 +2602,7 @@ programada._
   registrar la **negativa** con su instante y su autor, y NO DEBERÁ impedir que la
   atención continúe.
   > **Falta esquema.** La segunda mitad es la sección **7.8** del A.M. 5316: si el
-  > paciente rechaza, _«no significa que el profesional dejará de dar atención»_ —
+  > paciente rechaza, *«no significa que el profesional dejará de dar atención»* —
   > hay que ofrecer alternativas y registrarlo. Un sistema que cierre la atención
   > al registrar la negativa convierte una decisión del paciente en una expulsión.
 - **EN-154** — CUANDO el paciente revoque un consentimiento ya otorgado, el
@@ -2646,8 +2646,8 @@ programada._
   > **Por qué es parametrizable pese a que aquí sí tienen certificado:** el sistema
   > es multi-instalación, y la norma de farmacias privadas
   > (**ARCSA-DE-2022-012-AKRG, Disposición General Décima**) admite para la receta
-  > electrónica _«la signatura realizada en el sistema informático mediante el
-  > registro con usuario y clave»_. Una clínica sin certificados no puede quedarse
+  > electrónica *«la signatura realizada en el sistema informático mediante el
+  > registro con usuario y clave»*. Una clínica sin certificados no puede quedarse
   > sin poder trabajar — pero tampoco puede producir un archivo que **se crea**
   > historia clínica electrónica válida sin serlo, y eso es lo que la constancia
   > evita.
@@ -2671,8 +2671,8 @@ programada._
   > mientras la columna viva en `site_parameter`, la regla del máximo es lo que lo
   > hace equivalente.
   >
-  > **La LOPDP obliga a fijarlo**: su **art. 10.i** exige _«establecer plazos para
-  > su supresión o revisión periódica»_. No fijar plazo no es prudencia, es
+  > **La LOPDP obliga a fijarlo**: su **art. 10.i** exige *«establecer plazos para
+  > su supresión o revisión periódica»*. No fijar plazo no es prudencia, es
   > incumplimiento — y era lo que este documento decía hasta el 20-08-2026
   > (EN-032). Quince años porque es el plazo que el MSP tuvo escrito hasta 2021 y
   > porque cubre la ventana penal del **COIP art. 417.3.a**, que impide que la
@@ -2735,9 +2735,9 @@ pantalla aparte a la que hay que ir: es parte de la consulta»._
   > escribió su autor**: el 46% está copiado y el 36% importado. En una década la
   > longitud mediana subió un 60% y la redundancia llegó al 58,8%, y la causa
   > está cuantificada — **cada 1% más de texto importado añade 1,5% de longitud**.
-  > La regla que §7 bis saca de ahí es la de este requisito: _«ningún formulario
+  > La regla que §7 bis saca de ahí es la de este requisito: *«ningún formulario
   > copia datos que ya están en el sistema dentro de un texto. Se enlazan o se
-  > muestran al lado, nunca se pegan»_.
+  > muestran al lado, nunca se pegan»*.
   >
   > Por eso el resumen lleva **identificadores y datos estructurados** —el id de
   > la atención, el código CIE-10, la cifra del peso— y no prosa: lo que se
@@ -2758,51 +2758,51 @@ pantalla aparte a la que hay que ir: es parte de la consulta»._
 Todos entran en `shared/domain/errors/error-catalogue.ts` con su prueba de
 contrato —`code`, estado y mensaje—, salvo los que se indican.
 
-| Código                                   | HTTP | Cuándo                                                                                                                                                                                                                                                                                                                                                                                                                      | Requisito              |
-| ---------------------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| `ENCOUNTER_NOT_FOUND`                    | 404  | La atención no existe o es de una sede fuera del alcance. **El mismo para ambas**: distinguirlas confirmaría atenciones ajenas a quien adivina identificadores                                                                                                                                                                                                                                                              | EN-121                 |
-| `PATIENT_CHART_NOT_OPEN`                 | 409  | Se intentó abrir una atención de una ficha inexistente o absorbida por una fusión                                                                                                                                                                                                                                                                                                                                           | EN-001                 |
-| `ENCOUNTER_APPOINTMENT_MISMATCH`         | 422  | La cita nombrada es de otro paciente                                                                                                                                                                                                                                                                                                                                                                                        | EN-004                 |
-| `APPOINTMENT_NOT_ATTENDABLE`             | 409  | La cita está anulada o marcada como inasistencia. **Es el reverso de `AGENDA_ENTRY_HAS_ENCOUNTER`**, que ya existe: aquélla la emite `agenda` al anular, ésta la emite este módulo al atender                                                                                                                                                                                                                               | EN-005                 |
-| `ENCOUNTER_ALREADY_CLOSED`               | 409  | Se intentó registrar contenido clínico en una atención ya cerrada                                                                                                                                                                                                                                                                                                                                                           | EN-009                 |
-| `DISCHARGE_CONDITION_REQUIRED`           | 422  | Cerrar sin condición de egreso                                                                                                                                                                                                                                                                                                                                                                                              | EN-009                 |
-| `REFERRAL_REQUIRED_ON_DISCHARGE`         | 422  | Egreso `REFERRED` sin referencia emitida                                                                                                                                                                                                                                                                                                                                                                                    | EN-105                 |
-| `NOTE_ALREADY_SIGNED`                    | 409  | Editar una nota firmada. **Traducido por el servicio**, no por el mapa de constraints: el disparador levanta `insufficient_privilege`, que a secas saldría como 403 y diría al médico que no tiene permisos cuando lo que pasa es que la nota está firmada                                                                                                                                                                  | EN-023                 |
-| `AMENDMENT_REASON_REQUIRED`              | 422  | Enmendar sin motivo. Se exige **en el servicio** además del DTO, por lo mismo que `CANCELLATION_REASON_REQUIRED`                                                                                                                                                                                                                                                                                                            | EN-025                 |
-| `NOTE_NOT_AMENDABLE`                     | 409  | Enmendar un borrador, una nota ya sustituida o una retractada                                                                                                                                                                                                                                                                                                                                                               | EN-025, EN-026         |
-| `PRACTITIONER_NOT_LICENSED`              | 403  | Firmar con registro ACESS vencido. **Ya existe** en `staff` (ST-004); se cita, no se crea                                                                                                                                                                                                                                                                                                                                   | EN-029                 |
-| `CONCEPT_WRONG_CATALOGUE`                | 422  | El concepto existe y es de otro catálogo —una parroquia del DPA archivada como enfermedad, un diagnóstico registrado como procedimiento, una enfermedad CIE-10 archivada como la sustancia a la que alguien es alérgico—. **Uno solo para los tres**: lo que hay que hacer es idéntico, elegir de la lista correcta, y el mensaje nombra **cuál**. En la alergia el campo señalado es `substanceConceptId` y no `conceptId` | EN-040, EN-050, EN-080 |
-| `DIAGNOSIS_PRIMARY_TAKEN`                | 409  | Segundo diagnóstico principal. Lo arbitra `encounter_diagnosis_one_primary`; el adaptador lee el rango en uso dentro de la misma transacción para que el rechazo sea una frase, así que el código llega por **las dos vías**                                                                                                                                                                                                | EN-043                 |
-| `DIAGNOSIS_CONCEPT_NOT_IN_FORCE`         | 422  | El código CIE-10 no estaba vigente en la fecha de la atención. **Lo emite el adaptador**, no el mapeo de constraints: `trg_diagnosis_concept_in_force` levanta `integrity_constraint_violation` desde PL/pgSQL, así que el nombre del disparador nunca viaja al cliente                                                                                                                                                     | EN-042                 |
-| `VITALS_OUT_OF_RANGE`                    | 422  | Medida fuera de rango. Del mapeo de constraints: `encounter_vitals_ranges_*`, una por medida (D-058). **Por campo**, señalando cuál y diciendo el rango                                                                                                                                                                                                                                                                     | EN-062                 |
-| `VITALS_REQUIRED`                        | 422  | Falta antropometría obligatoria en menor de 5 años o embarazada                                                                                                                                                                                                                                                                                                                                                             | EN-063                 |
-| `BMI_IS_DERIVED`                         | 422  | Se envió el IMC en la petición                                                                                                                                                                                                                                                                                                                                                                                              | EN-061                 |
-| `VIOLENCE_SCREENING_RESTRICTED`          | 403  | Se intentó **registrar** el tamizaje sin la segunda llave. Al **leer** no se rechaza: se omite                                                                                                                                                                                                                                                                                                                              | EN-072                 |
-| `HIV_DATA_RESTRICTED`                    | 403  | Lo mismo para el bloque de VIH                                                                                                                                                                                                                                                                                                                                                                                              | EN-095                 |
-| `PROGRAM_BLOCK_NOT_APPLICABLE`           | 422  | Se registró un bloque de programa que la población de la atención no alcanza —obstétrico sin embarazo, SIVAN fuera del rango de edad—                                                                                                                                                                                                                                                                                       | EN-090, EN-092, EN-097 |
-| `CONFIRMATORY_TEST_WITHOUT_SCREENING`    | 422  | Segunda prueba de VIH sin primera reactiva                                                                                                                                                                                                                                                                                                                                                                                  | EN-094                 |
-| `COUNTER_REFERRAL_WITHOUT_REFERRAL`      | 422  | Contrarreferencia que no responde a ninguna referencia. Del mapeo de constraints: `referral_thread_coherence`                                                                                                                                                                                                                                                                                                               | EN-102                 |
-| `ENCOUNTER_ALREADY_REPORTED`             | 409  | Incluir en un envío una atención ya reportada                                                                                                                                                                                                                                                                                                                                                                               | EN-111                 |
-| `RDACAA_FIELDS_MISSING`                  | 422  | Exportar con fichas incompletas. Nombra **los campos**, nunca a los pacientes                                                                                                                                                                                                                                                                                                                                               | EN-115                 |
-| `ENCOUNTER_STATE_TRANSITION_INVALID`     | 409  | Transición de estado que la tabla de EN-132 no admite: reabrir una cerrada, saltarse el alta clínica, suspender una ya dada de alta. **Un solo código para todas**: el mensaje dice en qué estado está y qué se puede hacer desde ahí                                                                                                                                                                                       | EN-132                 |
+| Código | HTTP | Cuándo | Requisito |
+| --- | --- | --- | --- |
+| `ENCOUNTER_NOT_FOUND` | 404 | La atención no existe o es de una sede fuera del alcance. **El mismo para ambas**: distinguirlas confirmaría atenciones ajenas a quien adivina identificadores | EN-121 |
+| `PATIENT_CHART_NOT_OPEN` | 409 | Se intentó abrir una atención de una ficha inexistente o absorbida por una fusión | EN-001 |
+| `ENCOUNTER_APPOINTMENT_MISMATCH` | 422 | La cita nombrada es de otro paciente | EN-004 |
+| `APPOINTMENT_NOT_ATTENDABLE` | 409 | La cita está anulada o marcada como inasistencia. **Es el reverso de `AGENDA_ENTRY_HAS_ENCOUNTER`**, que ya existe: aquélla la emite `agenda` al anular, ésta la emite este módulo al atender | EN-005 |
+| `ENCOUNTER_ALREADY_CLOSED` | 409 | Se intentó registrar contenido clínico en una atención ya cerrada | EN-009 |
+| `DISCHARGE_CONDITION_REQUIRED` | 422 | Cerrar sin condición de egreso | EN-009 |
+| `REFERRAL_REQUIRED_ON_DISCHARGE` | 422 | Egreso `REFERRED` sin referencia emitida | EN-105 |
+| `NOTE_ALREADY_SIGNED` | 409 | Editar una nota firmada. **Traducido por el servicio**, no por el mapa de constraints: el disparador levanta `insufficient_privilege`, que a secas saldría como 403 y diría al médico que no tiene permisos cuando lo que pasa es que la nota está firmada | EN-023 |
+| `AMENDMENT_REASON_REQUIRED` | 422 | Enmendar sin motivo. Se exige **en el servicio** además del DTO, por lo mismo que `CANCELLATION_REASON_REQUIRED` | EN-025 |
+| `NOTE_NOT_AMENDABLE` | 409 | Enmendar un borrador, una nota ya sustituida o una retractada | EN-025, EN-026 |
+| `PRACTITIONER_NOT_LICENSED` | 403 | Firmar con registro ACESS vencido. **Ya existe** en `staff` (ST-004); se cita, no se crea | EN-029 |
+| `CONCEPT_WRONG_CATALOGUE` | 422 | El concepto existe y es de otro catálogo —una parroquia del DPA archivada como enfermedad, un diagnóstico registrado como procedimiento, una enfermedad CIE-10 archivada como la sustancia a la que alguien es alérgico—. **Uno solo para los tres**: lo que hay que hacer es idéntico, elegir de la lista correcta, y el mensaje nombra **cuál**. En la alergia el campo señalado es `substanceConceptId` y no `conceptId` | EN-040, EN-050, EN-080 |
+| `DIAGNOSIS_PRIMARY_TAKEN` | 409 | Segundo diagnóstico principal. Lo arbitra `encounter_diagnosis_one_primary`; el adaptador lee el rango en uso dentro de la misma transacción para que el rechazo sea una frase, así que el código llega por **las dos vías** | EN-043 |
+| `DIAGNOSIS_CONCEPT_NOT_IN_FORCE` | 422 | El código CIE-10 no estaba vigente en la fecha de la atención. **Lo emite el adaptador**, no el mapeo de constraints: `trg_diagnosis_concept_in_force` levanta `integrity_constraint_violation` desde PL/pgSQL, así que el nombre del disparador nunca viaja al cliente | EN-042 |
+| `VITALS_OUT_OF_RANGE` | 422 | Medida fuera de rango. Del mapeo de constraints: `encounter_vitals_ranges_*`, una por medida (D-058). **Por campo**, señalando cuál y diciendo el rango | EN-062 |
+| `VITALS_REQUIRED` | 422 | Falta antropometría obligatoria en menor de 5 años o embarazada | EN-063 |
+| `BMI_IS_DERIVED` | 422 | Se envió el IMC en la petición | EN-061 |
+| `VIOLENCE_SCREENING_RESTRICTED` | 403 | Se intentó **registrar** el tamizaje sin la segunda llave. Al **leer** no se rechaza: se omite | EN-072 |
+| `HIV_DATA_RESTRICTED` | 403 | Lo mismo para el bloque de VIH | EN-095 |
+| `PROGRAM_BLOCK_NOT_APPLICABLE` | 422 | Se registró un bloque de programa que la población de la atención no alcanza —obstétrico sin embarazo, SIVAN fuera del rango de edad— | EN-090, EN-092, EN-097 |
+| `CONFIRMATORY_TEST_WITHOUT_SCREENING` | 422 | Segunda prueba de VIH sin primera reactiva | EN-094 |
+| `COUNTER_REFERRAL_WITHOUT_REFERRAL` | 422 | Contrarreferencia que no responde a ninguna referencia. Del mapeo de constraints: `referral_thread_coherence` | EN-102 |
+| `ENCOUNTER_ALREADY_REPORTED` | 409 | Incluir en un envío una atención ya reportada | EN-111 |
+| `RDACAA_FIELDS_MISSING` | 422 | Exportar con fichas incompletas. Nombra **los campos**, nunca a los pacientes | EN-115 |
+| `ENCOUNTER_STATE_TRANSITION_INVALID` | 409 | Transición de estado que la tabla de EN-132 no admite: reabrir una cerrada, saltarse el alta clínica, suspender una ya dada de alta. **Un solo código para todas**: el mensaje dice en qué estado está y qué se puede hacer desde ahí | EN-132 |
 | `ENCOUNTER_HAS_LIVE_ACTS`                | 409  | Anular una atención en curso que ya tiene receta activa o en borrador, orden pendiente, nota firmada, certificado sin revocar, referencia o interconsulta (D-103): se retractan antes (D-099 §1)                                                                                                                                                                                                                                                                                        | EN-166                 |
 | `APPOINTMENT_ARRIVAL_NOT_RECORDED`       | 409  | Interrumpir la atención de una cita sin llegada registrada (D-099 §2)                                                                                                                                                                                                                                                                                                                                                       | EN-167                 |
 | `ENCOUNTER_HAS_OTHERS_DRAFTS`            | 409  | Interrumpir una atención con un borrador de otra persona, que quedaría sin firma para siempre (D-085 §2)                                                                                                                                                                                                                                                                                                                    | EN-167                 |
 | `ENCOUNTER_ANNULMENT_REASON_REQUIRED`    | 422  | Anular una atención sin motivo escrito. Se exige **en el servicio** además del DTO                                                                                                                                                                                                                                                                                                                                          | EN-166                 |
 | `ENCOUNTER_INTERRUPTION_REASON_REQUIRED` | 422  | Interrumpir una atención sin motivo escrito o sin origen (D-082: sin condición de egreso, que no se exige). Se exige **en el servicio** además del DTO, por lo mismo que `AMENDMENT_REASON_REQUIRED`                                                                                                                                                                                                                        | EN-129                 |
-| `ENCOUNTER_CLOSER_NOT_AUTHOR`            | 403  | Cierra alguien que no la abrió y no lleva `record:sign`. Con `record:sign` **no falla**: cierra dejando constancia de la sustitución                                                                                                                                                                                                                                                                                        | EN-144, EN-147         |
-| `NURSING_SCOPE_DENIED`                   | 403  | Se intentó registrar diagnóstico, procedimiento o receta con `nursing:write`. **Distinto de un 403 genérico de permiso**: dice que el acto está fuera del ámbito del título, no que falte una casilla en el rol                                                                                                                                                                                                             | EN-142                 |
-| `CERTIFIED_SIGNATURE_REQUIRED`           | 422  | Firmar sin certificado vigente con `requireCertifiedSignature` habilitado. **No es 403**: el profesional tiene permiso para firmar; lo que falta es el certificado                                                                                                                                                                                                                                                          | EN-155                 |
-| `CONSENT_REQUIRED_FOR_PROCEDURE`         | 422  | Registrar como realizado un procedimiento de riesgo mayor sin el formulario 024 suscrito ni la exención de emergencia fundamentada                                                                                                                                                                                                                                                                                          | EN-152                 |
-| `TRIAGE_NOT_ENABLED`                     | 404  | Se llamó a una ruta de triaje en una sede sin la capacidad habilitada. **404 y no 403**: en esa instalación la ruta no existe, y un 403 diría que existe y está cerrada                                                                                                                                                                                                                                                     | EN-148, EN-149         |
-| `RETENTION_PERIOD_TOO_SHORT`             | 422  | Configurar el plazo de conservación por debajo de quince años                                                                                                                                                                                                                                                                                                                                                               | EN-157                 |
-| `PATIENT_ALLERGY_NOT_FOUND`              | 404  | Se refutó una alergia que no existe en esa ficha ni en las que absorbió. **El mismo para «no existe» y «es de otra ficha»**, por lo mismo que `ENCOUNTER_NOT_FOUND`                                                                                                                                                                                                                                                         | EN-082                 |
-| `ALLERGY_ALREADY_REFUTED`                | 409  | Se refutó una alergia ya refutada. **No es idempotencia**: la segunda refutación reescribiría la fecha y el motivo de la primera, y quién la descartó y por qué es información clínica por derecho propio                                                                                                                                                                                                                   | EN-082                 |
-| `REFUTATION_REASON_REQUIRED`             | 422  | Refutar sin escribir por qué. Se exige **en el servicio** además del DTO, por lo mismo que `AMENDMENT_REASON_REQUIRED`                                                                                                                                                                                                                                                                                                      | EN-082                 |
-| `PATIENT_HISTORY_NOT_FOUND`              | 404  | Se refutó un antecedente que no existe en esa ficha ni en las que absorbió. El mismo para las dos, por lo mismo que `PATIENT_ALLERGY_NOT_FOUND`                                                                                                                                                                                                                                                                             | EN-085                 |
-| `HISTORY_ALREADY_REFUTED`                | 409  | Se refutó un antecedente ya refutado. Lo arbitra además `trg_patient_history_append_only`                                                                                                                                                                                                                                                                                                                                   | EN-085                 |
-| `VITALS_HEIGHT_POSITION_REQUIRED`        | 422  | Talla sin posición, o posición sin talla. Del mapeo de constraints (`encounter_vitals_height_needs_position`), señala `heightPosition`                                                                                                                                                                                                                                                                                      | EN-064                 |
-| `CHART_HAS_ALLERGIES`                    | 409  | Se afirmó «sin alergias conocidas» sobre una ficha con alergias sin descartar. Las dos no pueden ser ciertas a la vez, y quien lee la primera deja de mirar la lista. La salida es refutarlas **una a una con su motivo**, que es un juicio clínico por alergia y no el efecto colateral de marcar una casilla. Lo arbitra además `trg_patient_allergy_absence_empty_chart`                                                 | EN-087                 |
+| `ENCOUNTER_CLOSER_NOT_AUTHOR` | 403 | Cierra alguien que no la abrió y no lleva `record:sign`. Con `record:sign` **no falla**: cierra dejando constancia de la sustitución | EN-144, EN-147 |
+| `NURSING_SCOPE_DENIED` | 403 | Se intentó registrar diagnóstico, procedimiento o receta con `nursing:write`. **Distinto de un 403 genérico de permiso**: dice que el acto está fuera del ámbito del título, no que falte una casilla en el rol | EN-142 |
+| `CERTIFIED_SIGNATURE_REQUIRED` | 422 | Firmar sin certificado vigente con `requireCertifiedSignature` habilitado. **No es 403**: el profesional tiene permiso para firmar; lo que falta es el certificado | EN-155 |
+| `CONSENT_REQUIRED_FOR_PROCEDURE` | 422 | Registrar como realizado un procedimiento de riesgo mayor sin el formulario 024 suscrito ni la exención de emergencia fundamentada | EN-152 |
+| `TRIAGE_NOT_ENABLED` | 404 | Se llamó a una ruta de triaje en una sede sin la capacidad habilitada. **404 y no 403**: en esa instalación la ruta no existe, y un 403 diría que existe y está cerrada | EN-148, EN-149 |
+| `RETENTION_PERIOD_TOO_SHORT` | 422 | Configurar el plazo de conservación por debajo de quince años | EN-157 |
+| `PATIENT_ALLERGY_NOT_FOUND` | 404 | Se refutó una alergia que no existe en esa ficha ni en las que absorbió. **El mismo para «no existe» y «es de otra ficha»**, por lo mismo que `ENCOUNTER_NOT_FOUND` | EN-082 |
+| `ALLERGY_ALREADY_REFUTED` | 409 | Se refutó una alergia ya refutada. **No es idempotencia**: la segunda refutación reescribiría la fecha y el motivo de la primera, y quién la descartó y por qué es información clínica por derecho propio | EN-082 |
+| `REFUTATION_REASON_REQUIRED` | 422 | Refutar sin escribir por qué. Se exige **en el servicio** además del DTO, por lo mismo que `AMENDMENT_REASON_REQUIRED` | EN-082 |
+| `PATIENT_HISTORY_NOT_FOUND` | 404 | Se refutó un antecedente que no existe en esa ficha ni en las que absorbió. El mismo para las dos, por lo mismo que `PATIENT_ALLERGY_NOT_FOUND` | EN-085 |
+| `HISTORY_ALREADY_REFUTED` | 409 | Se refutó un antecedente ya refutado. Lo arbitra además `trg_patient_history_append_only` | EN-085 |
+| `VITALS_HEIGHT_POSITION_REQUIRED` | 422 | Talla sin posición, o posición sin talla. Del mapeo de constraints (`encounter_vitals_height_needs_position`), señala `heightPosition` | EN-064 |
+| `CHART_HAS_ALLERGIES` | 409 | Se afirmó «sin alergias conocidas» sobre una ficha con alergias sin descartar. Las dos no pueden ser ciertas a la vez, y quien lee la primera deja de mirar la lista. La salida es refutarlas **una a una con su motivo**, que es un juicio clínico por alergia y no el efecto colateral de marcar una casilla. Lo arbitra además `trg_patient_allergy_absence_empty_chart` | EN-087 |
 
 **Los que NO entran en el catálogo congelado** son los derivados del mapeo de
 PostgreSQL —`VITALS_OUT_OF_RANGE`, `COUNTER_REFERRAL_WITHOUT_REFERRAL`—: tienen
@@ -2842,38 +2842,38 @@ base está en fase `development` (`scripts/database-phase.mjs`), así que el buc
 es editar el SQL y `pnpm db:reset`, y varias migraciones se pueden fusionar en
 una.
 
-| Qué falta                                                                                                                            | Dónde                                                                | Requisitos     |
-| ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- | -------------- |
-| Ampliar `DiagnosisCertainty` de 2 a **4** valores                                                                                    | enum                                                                 | EN-044         |
-| Marca prevención/morbilidad **por diagnóstico**, derivada del código Z00–Z99                                                         | `encounter_diagnosis`                                                | EN-046         |
-| Sexo y rango de edad aplicables a cada código, para la coherencia clínica                                                            | `catalog_concept.attributes`                                         | EN-040         |
-| Disparador de instantánea del procedimiento, que el diagnóstico sí tiene                                                             | `encounter_procedure`                                                | EN-050         |
-| `CHECK (quantity >= 1)`: «se realizó cero veces» no es una actividad                                                                 | `encounter_procedure`                                                | EN-050         |
-| Retirar `tariff_amount`, que congela dinero en una tabla clínica                                                                     | `encounter_procedure`                                                | EN-051         |
-| Lugar de atención: catálogo de **13** valores en vez del enum de 2                                                                   | `encounter`, `catalog_system`                                        | EN-012         |
-| Estrategia «Médico del Barrio»                                                                                                       | `encounter`                                                          | EN-013         |
-| Anulación de la atención con motivo y autor, y disparador de inmutabilidad                                                           | `encounter`                                                          | EN-018         |
-| CEO-D y CPO-D                                                                                                                        | tabla nueva o `encounter`                                            | EN-052         |
-| Marca de código notificable como propiedad del **concepto**                                                                          | `catalog_concept`                                                    | EN-049         |
-| Autor del tamizaje con clave foránea y `NOT NULL`; bloque de notificación de violencia con sus tres catálogos                        | `violence_screening`                                                 | EN-074, EN-076 |
-| Permiso propio del tamizaje y del bloque VIH                                                                                         | `permission.catalogue.ts`                                            | EN-072, EN-095 |
-| **Bloque obstétrico** completo y laboratorio de gestantes                                                                            | tabla nueva                                                          | EN-090, EN-091 |
-| **SIVAN**                                                                                                                            | tabla nueva                                                          | EN-092         |
-| **Vacunas**: catálogo, dosis, grupo de riesgo y sus reglas de coherencia                                                             | tablas y catálogo nuevos                                             | EN-093         |
-| **VIH**: motivo, dos pruebas, vía de transmisión, carga viral y CD4                                                                  | tabla nueva                                                          | EN-094         |
-| Prescripción de suplementos                                                                                                          | `encounter`                                                          | EN-096         |
-| Catálogos de **grupos prioritarios (14)** y **grupos vulnerables (16)** del RDACAA                                                   | `catalogSystemSchema`, `catalog_concept`, tabla nueva de vulnerables | EN-099         |
-| `REVERSE_REFERRAL` en `ReferralDirection`; anulación en `ReferralStatus`                                                             | enums                                                                | EN-100, EN-107 |
-| Interconsulta solicitada / recibida                                                                                                  | `interconsultation`                                                  | EN-103         |
-| Registro de entrega de la historia al paciente                                                                                       | tabla nueva                                                          | EN-033         |
-| Motivo, autor e instante de la **suspensión** (`ON_HOLD`)                                                                            | `encounter`                                                          | EN-128         |
-| Motivo, autor e **origen** de la interrupción —paciente o establecimiento—                                                           | `encounter`                                                          | EN-129         |
-| **Historial de estados** con el hecho que disparó cada cambio                                                                        | tabla nueva                                                          | EN-133         |
-| **Nivel de triaje** asignado, con autor e instante                                                                                   | tabla nueva                                                          | EN-148         |
-| Calificación de emergencia en la **atención espontánea**, la que no tiene fila de agenda                                             | `encounter`                                                          | EN-150         |
-| **Consentimiento informado**: clasificación de riesgo de la prestación, formulario 024 atado al procedimiento, negativa y revocación | catálogo de prestaciones, tabla nueva                                | EN-152, EN-153 |
-| Firma electrónica en la nota y **constancia de firma sin certificado**                                                               | `clinical_note`                                                      | EN-155, EN-156 |
-| Mínimo de quince años en el `CHECK` del plazo de conservación                                                                        | `site_parameter`                                                     | EN-157         |
+| Qué falta | Dónde | Requisitos |
+| --- | --- | --- |
+| Ampliar `DiagnosisCertainty` de 2 a **4** valores | enum | EN-044 |
+| Marca prevención/morbilidad **por diagnóstico**, derivada del código Z00–Z99 | `encounter_diagnosis` | EN-046 |
+| Sexo y rango de edad aplicables a cada código, para la coherencia clínica | `catalog_concept.attributes` | EN-040 |
+| Disparador de instantánea del procedimiento, que el diagnóstico sí tiene | `encounter_procedure` | EN-050 |
+| `CHECK (quantity >= 1)`: «se realizó cero veces» no es una actividad | `encounter_procedure` | EN-050 |
+| Retirar `tariff_amount`, que congela dinero en una tabla clínica | `encounter_procedure` | EN-051 |
+| Lugar de atención: catálogo de **13** valores en vez del enum de 2 | `encounter`, `catalog_system` | EN-012 |
+| Estrategia «Médico del Barrio» | `encounter` | EN-013 |
+| Anulación de la atención con motivo y autor, y disparador de inmutabilidad | `encounter` | EN-018 |
+| CEO-D y CPO-D | tabla nueva o `encounter` | EN-052 |
+| Marca de código notificable como propiedad del **concepto** | `catalog_concept` | EN-049 |
+| Autor del tamizaje con clave foránea y `NOT NULL`; bloque de notificación de violencia con sus tres catálogos | `violence_screening` | EN-074, EN-076 |
+| Permiso propio del tamizaje y del bloque VIH | `permission.catalogue.ts` | EN-072, EN-095 |
+| **Bloque obstétrico** completo y laboratorio de gestantes | tabla nueva | EN-090, EN-091 |
+| **SIVAN** | tabla nueva | EN-092 |
+| **Vacunas**: catálogo, dosis, grupo de riesgo y sus reglas de coherencia | tablas y catálogo nuevos | EN-093 |
+| **VIH**: motivo, dos pruebas, vía de transmisión, carga viral y CD4 | tabla nueva | EN-094 |
+| Prescripción de suplementos | `encounter` | EN-096 |
+| Catálogos de **grupos prioritarios (14)** y **grupos vulnerables (16)** del RDACAA | `catalogSystemSchema`, `catalog_concept`, tabla nueva de vulnerables | EN-099 |
+| `REVERSE_REFERRAL` en `ReferralDirection`; anulación en `ReferralStatus` | enums | EN-100, EN-107 |
+| Interconsulta solicitada / recibida | `interconsultation` | EN-103 |
+| Registro de entrega de la historia al paciente | tabla nueva | EN-033 |
+| Motivo, autor e instante de la **suspensión** (`ON_HOLD`) | `encounter` | EN-128 |
+| Motivo, autor e **origen** de la interrupción —paciente o establecimiento— | `encounter` | EN-129 |
+| **Historial de estados** con el hecho que disparó cada cambio | tabla nueva | EN-133 |
+| **Nivel de triaje** asignado, con autor e instante | tabla nueva | EN-148 |
+| Calificación de emergencia en la **atención espontánea**, la que no tiene fila de agenda | `encounter` | EN-150 |
+| **Consentimiento informado**: clasificación de riesgo de la prestación, formulario 024 atado al procedimiento, negativa y revocación | catálogo de prestaciones, tabla nueva | EN-152, EN-153 |
+| Firma electrónica en la nota y **constancia de firma sin certificado** | `clinical_note` | EN-155, EN-156 |
+| Mínimo de quince años en el `CHECK` del plazo de conservación | `site_parameter` | EN-157 |
 
 **Lo que la revisión del 20-08-2026 encontró YA construido**, y por eso no lleva
 nota: `encounter.status` con `encounter_status_matches_ended_at` y
@@ -2912,54 +2912,54 @@ emergencia en la llegada (EN-150), y los tres parámetros de sede
 Todas bajo `/api/v1`. Alcance por **sede** (EN-121), a diferencia de `patients`,
 que es global: una atención ocurre en un sitio.
 
-| Método  | Ruta                                                      | Permiso                           | Requisitos                                                 |
-| ------- | --------------------------------------------------------- | --------------------------------- | ---------------------------------------------------------- |
-| `GET`   | `/encounters`                                             | `record:read`                     | EN-015, EN-098, EN-123, **EN-162**                         |
-| `POST`  | `/encounters`                                             | `encounter:open`                  | EN-001 a EN-014, EN-017, EN-127, EN-141                    |
-| `GET`   | `/encounters/:id`                                         | `record:read`                     | EN-081, EN-122                                             |
-| `PATCH` | `/encounters/:id`                                         | `record:write`                    | EN-009, EN-010, EN-018                                     |
-| `GET`   | `/encounters/open`                                        | `record:read`                     | EN-146                                                     |
-| `POST`  | `/encounters/:id/hold`                                    | `encounter:open`                  | EN-128                                                     |
-| `POST`  | `/encounters/:id/resume`                                  | `encounter:open`                  | EN-128                                                     |
+| Método | Ruta | Permiso | Requisitos |
+| --- | --- | --- | --- |
+| `GET` | `/encounters` | `record:read` | EN-015, EN-098, EN-123, **EN-162** |
+| `POST` | `/encounters` | `encounter:open` | EN-001 a EN-014, EN-017, EN-127, EN-141 |
+| `GET` | `/encounters/:id` | `record:read` | EN-081, EN-122 |
+| `PATCH` | `/encounters/:id` | `record:write` | EN-009, EN-010, EN-018 |
+| `GET` | `/encounters/open` | `record:read` | EN-146 |
+| `POST` | `/encounters/:id/hold` | `encounter:open` | EN-128 |
+| `POST` | `/encounters/:id/resume` | `encounter:open` | EN-128 |
 | `POST`  | `/encounters/:id/discontinue`                             | `record:sign`                     | EN-129, EN-132, **EN-167**                                 |
 | `POST`  | `/encounters/:id/enter-in-error`                          | `record:write`                    | EN-018, **EN-166**                                         |
-| `POST`  | `/encounters/:id/close`                                   | `record:write`                    | EN-009, EN-131, EN-144, EN-147                             |
-| `GET`   | `/patients/:id/encounters`                                | `record:read`                     | EN-015, EN-068                                             |
-| `POST`  | `/encounters/:id/notes`                                   | `record:write`                    | EN-020 a EN-022                                            |
-| `PATCH` | `/encounters/:id/notes/:noteId`                           | `record:write`                    | EN-023 (borrador)                                          |
-| `POST`  | `/encounters/:id/notes/:noteId/sign`                      | `record:sign`                     | EN-027 a EN-029                                            |
-| `POST`  | `/encounters/:id/notes/:noteId/amend`                     | `record:sign`                     | EN-025                                                     |
-| `POST`  | `/encounters/:id/notes/:noteId/retract`                   | `record:sign`                     | EN-026                                                     |
-| `PUT`   | `/encounters/:id/vitals`                                  | `vitals:write`                    | EN-060 a EN-067, EN-136, EN-142, EN-143, **EN-163**        |
-| `POST`  | `/encounters/:id/vitals/start`                            | `vitals:write`                    | EN-135                                                     |
-| `POST`  | `/encounters/:id/nursing-notes`                           | `nursing:write`                   | EN-142 _(formulario 120)_                                  |
-| `POST`  | `/encounters/:id/medication-administrations`              | `nursing:write`                   | EN-142 _(formulario 022)_                                  |
-| `PUT`   | `/encounters/:id/triage`                                  | `nursing:write`                   | EN-148, EN-149 _(sólo DONDE la capacidad esté habilitada)_ |
-| `POST`  | `/encounters/:id/diagnoses`                               | `record:write`                    | EN-040 a EN-049                                            |
-| `GET`   | `/encounters/:id/diagnoses`                               | `record:read`                     | EN-043, EN-046, EN-047                                     |
-| `POST`  | `/encounters/:id/procedures`                              | `record:write`                    | EN-050, EN-151                                             |
-| `GET`   | `/encounters/:id/procedures`                              | `record:read`                     | EN-050                                                     |
-| `GET`   | `/encounters/:id/violence-screening`                      | `record:read` + la segunda llave  | EN-070 a EN-076                                            |
-| `PUT`   | `/encounters/:id/violence-screening`                      | `record:write` + la segunda llave | EN-070 a EN-077                                            |
-| `GET`   | `/patients/:id/allergies`                                 | `record:read`                     | EN-080 a EN-083, **EN-087**                                |
-| `POST`  | `/patients/:id/allergies`                                 | `background:write`                | EN-080, EN-086, **EN-164**                                 |
-| `POST`  | `/patients/:id/allergies/none-known`                      | `background:write`                | EN-087, **EN-164**                                         |
-| `POST`  | `/patients/:id/allergies/:allergyId/refute`               | `record:write`                    | EN-082, EN-086                                             |
-| `GET`   | `/patients/:id/history`                                   | `record:read`                     | **EN-085**                                                 |
-| `POST`  | `/patients/:id/history`                                   | `background:write`                | **EN-085**, EN-164                                         |
-| `POST`  | `/patients/:id/history/:historyId/refute`                 | `record:write`                    | **EN-085**, EN-164                                         |
-| `GET`   | `/encounters/:id/chart-summary`                           | `record:read`                     | EN-159 a EN-161                                            |
-| `PUT`   | `/encounters/:id/obstetric`                               | `record:write`                    | EN-090, EN-091                                             |
-| `PUT`   | `/encounters/:id/nutrition`                               | `nursing:write`                   | EN-092, EN-096                                             |
-| `POST`  | `/encounters/:id/vaccinations`                            | `nursing:write`                   | EN-093                                                     |
-| `PUT`   | `/encounters/:id/hiv`                                     | `record:write` + la segunda llave | EN-094, EN-095                                             |
-| `POST`  | `/encounters/:id/referrals`                               | `record:sign`                     | EN-100 a EN-102, EN-106                                    |
-| `POST`  | `/encounters/:id/interconsultations`                      | `record:write`                    | EN-103, EN-104, EN-106                                     |
-| `POST`  | `/encounters/:id/procedures/:procedureId/consent`         | `record:write`                    | EN-152 _(formulario 024)_                                  |
-| `POST`  | `/encounters/:id/procedures/:procedureId/consent/refusal` | `record:write`                    | EN-153                                                     |
-| `POST`  | `/encounters/:id/consents/:consentId/revoke`              | `record:write`                    | EN-154                                                     |
-| `GET`   | `/reports/rdacaa`                                         | `audit:read` _(por decidir)_      | EN-110, EN-115                                             |
-| `POST`  | `/reports/rdacaa/submissions`                             | `audit:read` _(por decidir)_      | EN-111                                                     |
+| `POST` | `/encounters/:id/close` | `record:write` | EN-009, EN-131, EN-144, EN-147 |
+| `GET` | `/patients/:id/encounters` | `record:read` | EN-015, EN-068 |
+| `POST` | `/encounters/:id/notes` | `record:write` | EN-020 a EN-022 |
+| `PATCH` | `/encounters/:id/notes/:noteId` | `record:write` | EN-023 (borrador) |
+| `POST` | `/encounters/:id/notes/:noteId/sign` | `record:sign` | EN-027 a EN-029 |
+| `POST` | `/encounters/:id/notes/:noteId/amend` | `record:sign` | EN-025 |
+| `POST` | `/encounters/:id/notes/:noteId/retract` | `record:sign` | EN-026 |
+| `PUT` | `/encounters/:id/vitals` | `vitals:write` | EN-060 a EN-067, EN-136, EN-142, EN-143, **EN-163** |
+| `POST` | `/encounters/:id/vitals/start` | `vitals:write` | EN-135 |
+| `POST` | `/encounters/:id/nursing-notes` | `nursing:write` | EN-142 *(formulario 120)* |
+| `POST` | `/encounters/:id/medication-administrations` | `nursing:write` | EN-142 *(formulario 022)* |
+| `PUT` | `/encounters/:id/triage` | `nursing:write` | EN-148, EN-149 *(sólo DONDE la capacidad esté habilitada)* |
+| `POST` | `/encounters/:id/diagnoses` | `record:write` | EN-040 a EN-049 |
+| `GET` | `/encounters/:id/diagnoses` | `record:read` | EN-043, EN-046, EN-047 |
+| `POST` | `/encounters/:id/procedures` | `record:write` | EN-050, EN-151 |
+| `GET` | `/encounters/:id/procedures` | `record:read` | EN-050 |
+| `GET` | `/encounters/:id/violence-screening` | `record:read` + la segunda llave | EN-070 a EN-076 |
+| `PUT` | `/encounters/:id/violence-screening` | `record:write` + la segunda llave | EN-070 a EN-077 |
+| `GET` | `/patients/:id/allergies` | `record:read` | EN-080 a EN-083, **EN-087** |
+| `POST` | `/patients/:id/allergies` | `background:write` | EN-080, EN-086, **EN-164** |
+| `POST` | `/patients/:id/allergies/none-known` | `background:write` | EN-087, **EN-164** |
+| `POST` | `/patients/:id/allergies/:allergyId/refute` | `record:write` | EN-082, EN-086 |
+| `GET` | `/patients/:id/history` | `record:read` | **EN-085** |
+| `POST` | `/patients/:id/history` | `background:write` | **EN-085**, EN-164 |
+| `POST` | `/patients/:id/history/:historyId/refute` | `record:write` | **EN-085**, EN-164 |
+| `GET` | `/encounters/:id/chart-summary` | `record:read` | EN-159 a EN-161 |
+| `PUT` | `/encounters/:id/obstetric` | `record:write` | EN-090, EN-091 |
+| `PUT` | `/encounters/:id/nutrition` | `nursing:write` | EN-092, EN-096 |
+| `POST` | `/encounters/:id/vaccinations` | `nursing:write` | EN-093 |
+| `PUT` | `/encounters/:id/hiv` | `record:write` + la segunda llave | EN-094, EN-095 |
+| `POST` | `/encounters/:id/referrals` | `record:sign` | EN-100 a EN-102, EN-106 |
+| `POST` | `/encounters/:id/interconsultations` | `record:write` | EN-103, EN-104, EN-106 |
+| `POST` | `/encounters/:id/procedures/:procedureId/consent` | `record:write` | EN-152 *(formulario 024)* |
+| `POST` | `/encounters/:id/procedures/:procedureId/consent/refusal` | `record:write` | EN-153 |
+| `POST` | `/encounters/:id/consents/:consentId/revoke` | `record:write` | EN-154 |
+| `GET` | `/reports/rdacaa` | `audit:read` *(por decidir)* | EN-110, EN-115 |
+| `POST` | `/reports/rdacaa/submissions` | `audit:read` *(por decidir)* | EN-111 |
 
 **Las tres rutas de alergias son las únicas de alcance `'global'`, y es
 deliberado.** Una atención ocurre en una sede; el sistema inmunitario de una
@@ -3014,43 +3014,43 @@ it('EN-042 refuses a diagnosis whose CIE-10 code expired before the encounter', 
 cite un ID inexistente; el día que pase a `vigente`, **cada `EN-###` necesita su
 prueba o el CI falla**.
 
-| Requisitos                                                     | Nivel de prueba obligatorio                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| EN-004, EN-008, EN-010, EN-041, EN-042, EN-043, EN-061, EN-062 | **Integración contra PostgreSQL real.** Son disparadores, `CHECK` e índices parciales: un doble que devuelve lo que le pedimos no demuestra que existan. Regla de `CLAUDE.md` §5, sin excepción por comodidad                                                                                                                                                                                                                                                    |
-| EN-008                                                         | Además, **unitario con el huso alterado**, como `clinical-date-timezone.spec.ts`: la misma atención bajo `UTC` y bajo `Asia/Tokyo` da el mismo `age_days`. Es el defecto real que originó REQ-160                                                                                                                                                                                                                                                                |
-| EN-005                                                         | **Concurrencia contra PostgreSQL real**, afirmando **quién gana**: anular y atender a la vez, exactamente un ganador. «Al menos una falla» no es la aserción; dos ganadores es el fallo que se busca                                                                                                                                                                                                                                                             |
-| EN-023, EN-024, EN-030                                         | **Integración**, atacando la base directamente: `UPDATE` del contenido de una nota firmada, segunda versión vigente en la misma cadena, `DELETE` y `TRUNCATE`. Las cuatro tienen que fallar, y la de `TRUNCATE` es la que un `DELETE` por fila no cubre                                                                                                                                                                                                          |
-| EN-025, EN-026, EN-027                                         | Contrato HTTP + integración: la enmienda deja legible la versión anterior, la retractada no desaparece, y el hash se recalcula y coincide                                                                                                                                                                                                                                                                                                                        |
-| EN-006, EN-007, EN-045                                         | **Unitario de dominio**: dos atenciones el mismo día existen las dos; primera vez / subsecuente **no** se deriva del historial; y el caso del esquema —diabetes de primera vez en una visita subsecuente por hipertensión—                                                                                                                                                                                                                                       |
-| EN-046, EN-048                                                 | Unitario de dominio: la clasificación prevención/morbilidad se deriva del rango `Z00`–`Z99` y **no** de lo que teclee nadie, con los códigos adaptados de cinco caracteres entre los casos                                                                                                                                                                                                                                                                       |
-| EN-063, EN-090, EN-092, EN-096, EN-097                         | Unitario de dominio **con la edad congelada de la atención**, no con la de hoy: los cuatro son condiciones por población y todos caducan si se evalúan contra la fecha actual. Es el mismo razonamiento que PA-005 dejó escrito                                                                                                                                                                                                                                  |
-| EN-072, EN-073, EN-095, EN-098                                 | **Seguridad dirigida, con sesión real.** Sin la llave el dato **se omite** y no hay 403; con ella se ve y deja **una** fila de bitácora; y no viaja en ningún listado bajo ninguna combinación de permisos, afirmado sobre la respuesta. Con sesión de verdad y no con un doble con los permisos puestos a mano — el defecto de AG-111 fue exactamente eso                                                                                                       |
-| EN-017, EN-075, EN-122, EN-123                                 | Seguridad dirigida: **contar filas** de bitácora. Abrir deja una; listar cincuenta atenciones deja cero; un 404 no deja ninguna                                                                                                                                                                                                                                                                                                                                  |
-| EN-015, EN-068                                                 | Integración contra PostgreSQL real: tras fusionar A→B, la historia leída desde B **incluye las atenciones de A**, y `patient-chart-scope.spec.ts` caza la lectura por `patient_id` desnudo. Un doble no puede demostrarlo: depende de que el enlace se recorra en la base                                                                                                                                                                                        |
-| EN-162                                                         | Integración contra PostgreSQL real: la página y el `total` salen del **mismo predicado** —hay una atención de otra sede que ni cuenta ni aparece—, y tres páginas seguidas no repiten ni pierden ninguna. Contrato HTTP: el defecto es la primera página, `pageSize` por encima del tope es 422, y la página **sigue sin llevar contenido clínico**                                                                                                              |
-| EN-020, EN-021                                                 | Contrato HTTP + unitario: el JSON Schema del formulario 002 rechaza una nota sin motivo de consulta, y el código de formulario viaja como dato                                                                                                                                                                                                                                                                                                                   |
-| EN-016, EN-081                                                 | Contrato HTTP: la respuesta de la cita lleva el booleano y **no** el identificador de la atención; la apertura de atención lleva las alergias activas sin pedirlas aparte                                                                                                                                                                                                                                                                                        |
-| EN-029                                                         | Integración: un profesional con registro ACESS vencido **ayer** no puede firmar hoy, sin que nadie haya tocado su fila                                                                                                                                                                                                                                                                                                                                           |
-| EN-082, EN-086, EN-107, EN-018                                 | Integración: **contar filas** tras refutar, anular y cerrar. Que algo no se borre sólo se demuestra contando                                                                                                                                                                                                                                                                                                                                                     |
-| EN-087                                                         | **Integración contra PostgreSQL real.** Lo garantiza la base y sólo la base: el disparador de inmutabilidad —`UPDATE`, `DELETE` y `TRUNCATE`, y el de `TRUNCATE` no lo cubre un `DELETE` por fila—, el que rechaza la afirmación sobre una ficha con alergias **incluidas las de la ficha absorbida**, y la regla de que una alergia posterior deja de servirla aunque después se refute. Un doble devuelve lo que se le pida y no demuestra ninguna de las tres |
-| EN-100 a EN-106                                                | Contrato HTTP + integración: la contrarreferencia apunta a su referencia, una segunda respuesta se rechaza, y el egreso `REFERRED` sin referencia también                                                                                                                                                                                                                                                                                                        |
-| EN-110, EN-111, EN-113, EN-114                                 | Integración: recomponer la fila de una atención de hace un año tras cambiar la fecha de nacimiento del paciente y recargar el catálogo CIE-10, y comprobar que **es idéntica**                                                                                                                                                                                                                                                                                   |
-| EN-120, EN-121, EN-124, EN-125                                 | Contrato HTTP + `route-authorisation.spec.ts` sobre las rutas que NestJS registró de verdad, y una prueba dirigida que afirma que **ningún** mensaje de error de este módulo contiene nombre, documento ni código CIE-10                                                                                                                                                                                                                                         |
-| EN-126, EN-132                                                 | **Unitario de dominio exhaustivo sobre la máquina de estados**: las seis transiciones de la tabla de EN-132 se admiten y **todas las demás combinaciones se rechazan**, generadas del producto de los cinco estados. Enumerar sólo las que se recuerdan es cómo se cuela la reapertura de una atención cerrada                                                                                                                                                   |
-| EN-128, EN-129, EN-131                                         | Contrato HTTP + integración: suspender y reanudar **no** crea una segunda atención (contar filas de `encounter`); interrumpir sin motivo, sin origen o sin condición de egreso falla; y una `COMPLETED` rechaza todo cambio posterior                                                                                                                                                                                                                            |
-| EN-130                                                         | Contrato HTTP: MIENTRAS la atención está `DISCHARGED` el cobro, la factura y el agendado de la próxima cita **siguen admitiéndose**, y registrar contenido clínico nuevo se rechaza salvo por enmienda. Es la prueba que demuestra que los dos estados no son uno                                                                                                                                                                                                |
-| EN-133, EN-134 a EN-139                                        | **Integración contra PostgreSQL real, contando filas del historial**: recorrer una atención entera —abrir, tomar signos, guardarlos, abrir la nota, firmarla, cerrar la cuenta— y comprobar que cada estado tiene su fila con **el hecho que lo disparó**, y que ninguna ruta admite fijar el estado directamente                                                                                                                                                |
-| EN-141, EN-142                                                 | **Seguridad dirigida con sesión real**, no con un doble: una sesión de `ENFERMERIA` abre la atención y escribe los formularios 020, 120 y 022, y **falla** al registrar un diagnóstico, un procedimiento o una receta con `NURSING_SCOPE_DENIED`. El defecto de AG-111 fue confiar en un doble con los permisos puestos a mano                                                                                                                                   |
-| EN-143                                                         | Integración: los signos guardados por enfermería llevan **su** autor, y firmar el formulario 002 con la sesión del médico **no lo sobrescribe**                                                                                                                                                                                                                                                                                                                  |
-| EN-064, EN-065                                                 | **Integración contra PostgreSQL real, con control positivo**: la base rechaza talla sin posición y hemoglobina 115, y acepta la toma buena en la misma prueba                                                                                                                                                                                                                                                                                                    |
-| EN-165                                                         | **Integración contra PostgreSQL real, con control positivo**: 10,9 medida y 12,4 corregida se rechaza señalando la corregida y no guarda nada; 12,4/12,4 y 12,4/10,9 se aceptan                                                                                                                                                                                                                                                                                  |
-| EN-085                                                         | **Integración contra PostgreSQL real**: el antecedente reaparece en la atención siguiente y desde la ficha que absorbió la suya; refutarlo no borra (contar filas); `DELETE`, `TRUNCATE` y reescribir la descripción fallan atacando la base                                                                                                                                                                                                                     |
-| EN-163, EN-164                                                 | Contrato HTTP con sesión real: enfermería guarda el motivo con los signos y registra alergia, afirmación y antecedente; **falla** al refutar                                                                                                                                                                                                                                                                                                                     |
-| EN-144, EN-145, EN-147                                         | Integración y **observación**: cierra quien abrió; otro con `record:sign` cierra dejando la constancia de sustitución; otro sin él falla; y una atención abierta hace cuarenta días **sigue abierta**, porque no existe ningún proceso que la cierre                                                                                                                                                                                                             |
-| EN-148, EN-149                                                 | Contrato HTTP con la capacidad **apagada** —que es el defecto—: la ruta de triaje responde `TRIAGE_NOT_ENABLED` y **ninguna respuesta del módulo lleva nivel de triaje**, afirmado sobre el cuerpo. Con la capacidad encendida, el nivel se registra con su autor                                                                                                                                                                                                |
-| EN-151, EN-152, EN-153, EN-154                                 | Contrato HTTP: un procedimiento de riesgo mínimo se registra **sin consentimiento alguno**; uno de riesgo mayor sin 024 se rechaza; la negativa **no cierra** la atención; y revocar deja el consentimiento anterior legible (contar filas)                                                                                                                                                                                                                      |
-| EN-155, EN-156                                                 | Integración con el parámetro en sus dos posiciones: encendido, firmar sin certificado vigente falla; apagado, la nota se firma **y la constancia de que no lleva certificado viaja en la nota**, no en la pantalla                                                                                                                                                                                                                                               |
-| EN-157, EN-158                                                 | Unitario + integración: configurar catorce años se rechaza; y **contar filas** después de vencer el plazo sobre datos de prueba envejecidos — no se borra ninguna                                                                                                                                                                                                                                                                                                |
+| Requisitos | Nivel de prueba obligatorio |
+| --- | --- |
+| EN-004, EN-008, EN-010, EN-041, EN-042, EN-043, EN-061, EN-062 | **Integración contra PostgreSQL real.** Son disparadores, `CHECK` e índices parciales: un doble que devuelve lo que le pedimos no demuestra que existan. Regla de `CLAUDE.md` §5, sin excepción por comodidad |
+| EN-008 | Además, **unitario con el huso alterado**, como `clinical-date-timezone.spec.ts`: la misma atención bajo `UTC` y bajo `Asia/Tokyo` da el mismo `age_days`. Es el defecto real que originó REQ-160 |
+| EN-005 | **Concurrencia contra PostgreSQL real**, afirmando **quién gana**: anular y atender a la vez, exactamente un ganador. «Al menos una falla» no es la aserción; dos ganadores es el fallo que se busca |
+| EN-023, EN-024, EN-030 | **Integración**, atacando la base directamente: `UPDATE` del contenido de una nota firmada, segunda versión vigente en la misma cadena, `DELETE` y `TRUNCATE`. Las cuatro tienen que fallar, y la de `TRUNCATE` es la que un `DELETE` por fila no cubre |
+| EN-025, EN-026, EN-027 | Contrato HTTP + integración: la enmienda deja legible la versión anterior, la retractada no desaparece, y el hash se recalcula y coincide |
+| EN-006, EN-007, EN-045 | **Unitario de dominio**: dos atenciones el mismo día existen las dos; primera vez / subsecuente **no** se deriva del historial; y el caso del esquema —diabetes de primera vez en una visita subsecuente por hipertensión— |
+| EN-046, EN-048 | Unitario de dominio: la clasificación prevención/morbilidad se deriva del rango `Z00`–`Z99` y **no** de lo que teclee nadie, con los códigos adaptados de cinco caracteres entre los casos |
+| EN-063, EN-090, EN-092, EN-096, EN-097 | Unitario de dominio **con la edad congelada de la atención**, no con la de hoy: los cuatro son condiciones por población y todos caducan si se evalúan contra la fecha actual. Es el mismo razonamiento que PA-005 dejó escrito |
+| EN-072, EN-073, EN-095, EN-098 | **Seguridad dirigida, con sesión real.** Sin la llave el dato **se omite** y no hay 403; con ella se ve y deja **una** fila de bitácora; y no viaja en ningún listado bajo ninguna combinación de permisos, afirmado sobre la respuesta. Con sesión de verdad y no con un doble con los permisos puestos a mano — el defecto de AG-111 fue exactamente eso |
+| EN-017, EN-075, EN-122, EN-123 | Seguridad dirigida: **contar filas** de bitácora. Abrir deja una; listar cincuenta atenciones deja cero; un 404 no deja ninguna |
+| EN-015, EN-068 | Integración contra PostgreSQL real: tras fusionar A→B, la historia leída desde B **incluye las atenciones de A**, y `patient-chart-scope.spec.ts` caza la lectura por `patient_id` desnudo. Un doble no puede demostrarlo: depende de que el enlace se recorra en la base |
+| EN-162 | Integración contra PostgreSQL real: la página y el `total` salen del **mismo predicado** —hay una atención de otra sede que ni cuenta ni aparece—, y tres páginas seguidas no repiten ni pierden ninguna. Contrato HTTP: el defecto es la primera página, `pageSize` por encima del tope es 422, y la página **sigue sin llevar contenido clínico** |
+| EN-020, EN-021 | Contrato HTTP + unitario: el JSON Schema del formulario 002 rechaza una nota sin motivo de consulta, y el código de formulario viaja como dato |
+| EN-016, EN-081 | Contrato HTTP: la respuesta de la cita lleva el booleano y **no** el identificador de la atención; la apertura de atención lleva las alergias activas sin pedirlas aparte |
+| EN-029 | Integración: un profesional con registro ACESS vencido **ayer** no puede firmar hoy, sin que nadie haya tocado su fila |
+| EN-082, EN-086, EN-107, EN-018 | Integración: **contar filas** tras refutar, anular y cerrar. Que algo no se borre sólo se demuestra contando |
+| EN-087 | **Integración contra PostgreSQL real.** Lo garantiza la base y sólo la base: el disparador de inmutabilidad —`UPDATE`, `DELETE` y `TRUNCATE`, y el de `TRUNCATE` no lo cubre un `DELETE` por fila—, el que rechaza la afirmación sobre una ficha con alergias **incluidas las de la ficha absorbida**, y la regla de que una alergia posterior deja de servirla aunque después se refute. Un doble devuelve lo que se le pida y no demuestra ninguna de las tres |
+| EN-100 a EN-106 | Contrato HTTP + integración: la contrarreferencia apunta a su referencia, una segunda respuesta se rechaza, y el egreso `REFERRED` sin referencia también |
+| EN-110, EN-111, EN-113, EN-114 | Integración: recomponer la fila de una atención de hace un año tras cambiar la fecha de nacimiento del paciente y recargar el catálogo CIE-10, y comprobar que **es idéntica** |
+| EN-120, EN-121, EN-124, EN-125 | Contrato HTTP + `route-authorisation.spec.ts` sobre las rutas que NestJS registró de verdad, y una prueba dirigida que afirma que **ningún** mensaje de error de este módulo contiene nombre, documento ni código CIE-10 |
+| EN-126, EN-132 | **Unitario de dominio exhaustivo sobre la máquina de estados**: las seis transiciones de la tabla de EN-132 se admiten y **todas las demás combinaciones se rechazan**, generadas del producto de los cinco estados. Enumerar sólo las que se recuerdan es cómo se cuela la reapertura de una atención cerrada |
+| EN-128, EN-129, EN-131 | Contrato HTTP + integración: suspender y reanudar **no** crea una segunda atención (contar filas de `encounter`); interrumpir sin motivo, sin origen o sin condición de egreso falla; y una `COMPLETED` rechaza todo cambio posterior |
+| EN-130 | Contrato HTTP: MIENTRAS la atención está `DISCHARGED` el cobro, la factura y el agendado de la próxima cita **siguen admitiéndose**, y registrar contenido clínico nuevo se rechaza salvo por enmienda. Es la prueba que demuestra que los dos estados no son uno |
+| EN-133, EN-134 a EN-139 | **Integración contra PostgreSQL real, contando filas del historial**: recorrer una atención entera —abrir, tomar signos, guardarlos, abrir la nota, firmarla, cerrar la cuenta— y comprobar que cada estado tiene su fila con **el hecho que lo disparó**, y que ninguna ruta admite fijar el estado directamente |
+| EN-141, EN-142 | **Seguridad dirigida con sesión real**, no con un doble: una sesión de `ENFERMERIA` abre la atención y escribe los formularios 020, 120 y 022, y **falla** al registrar un diagnóstico, un procedimiento o una receta con `NURSING_SCOPE_DENIED`. El defecto de AG-111 fue confiar en un doble con los permisos puestos a mano |
+| EN-143 | Integración: los signos guardados por enfermería llevan **su** autor, y firmar el formulario 002 con la sesión del médico **no lo sobrescribe** |
+| EN-064, EN-065 | **Integración contra PostgreSQL real, con control positivo**: la base rechaza talla sin posición y hemoglobina 115, y acepta la toma buena en la misma prueba |
+| EN-165 | **Integración contra PostgreSQL real, con control positivo**: 10,9 medida y 12,4 corregida se rechaza señalando la corregida y no guarda nada; 12,4/12,4 y 12,4/10,9 se aceptan |
+| EN-085 | **Integración contra PostgreSQL real**: el antecedente reaparece en la atención siguiente y desde la ficha que absorbió la suya; refutarlo no borra (contar filas); `DELETE`, `TRUNCATE` y reescribir la descripción fallan atacando la base |
+| EN-163, EN-164 | Contrato HTTP con sesión real: enfermería guarda el motivo con los signos y registra alergia, afirmación y antecedente; **falla** al refutar |
+| EN-144, EN-145, EN-147 | Integración y **observación**: cierra quien abrió; otro con `record:sign` cierra dejando la constancia de sustitución; otro sin él falla; y una atención abierta hace cuarenta días **sigue abierta**, porque no existe ningún proceso que la cierre |
+| EN-148, EN-149 | Contrato HTTP con la capacidad **apagada** —que es el defecto—: la ruta de triaje responde `TRIAGE_NOT_ENABLED` y **ninguna respuesta del módulo lleva nivel de triaje**, afirmado sobre el cuerpo. Con la capacidad encendida, el nivel se registra con su autor |
+| EN-151, EN-152, EN-153, EN-154 | Contrato HTTP: un procedimiento de riesgo mínimo se registra **sin consentimiento alguno**; uno de riesgo mayor sin 024 se rechaza; la negativa **no cierra** la atención; y revocar deja el consentimiento anterior legible (contar filas) |
+| EN-155, EN-156 | Integración con el parámetro en sus dos posiciones: encendido, firmar sin certificado vigente falla; apagado, la nota se firma **y la constancia de que no lleva certificado viaja en la nota**, no en la pantalla |
+| EN-157, EN-158 | Unitario + integración: configurar catorce años se rechaza; y **contar filas** después de vencer el plazo sobre datos de prueba envejecidos — no se borra ninguna |
 
 **Ninguna prueba usa datos de una persona real.** Las cédulas llevan dígito
 verificador calculado, y los diagnósticos de prueba son códigos CIE-10 reales
@@ -3062,19 +3062,19 @@ sobre pacientes inventados.
 algo, y registradas en `../../../../clinica-docs/DECISIONES-PENDIENTES.md` con su
 recomendación y sus consecuencias:
 
-| #         | Pregunta                                                                                                             | Dónde  | Bloquea                                                                           |
-| --------- | -------------------------------------------------------------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------- |
-| **D-045** | **El formato de la exportación mensual**: RDACAA 2.0 o PRAS, y con qué layout                                        | EN-112 | La entrega H9 entera. Bloqueante externo **#4**                                   |
+| # | Pregunta | Dónde | Bloquea |
+| --- | --- | --- | --- |
+| **D-045** | **El formato de la exportación mensual**: RDACAA 2.0 o PRAS, y con qué layout | EN-112 | La entrega H9 entera. Bloqueante externo **#4** |
 | **D-047** | **El art. 10 identifica la HCU con la cédula y nosotros anclamos en el MRN.** Qué habría que verificar del A.M. 4934 | EN-002 | Nada. Si los 17 dígitos son obligatorios, es una fila más en `patient_identifier` |
 
 **Cerradas el 20-08-2026**, y se dejan escritas para que nadie las reabra por
 inercia:
 
-| #            | Pregunta                                                      | Resuelta por                                                                                                                                                           | Dónde quedó                    |
-| ------------ | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| **D-044**    | El plazo de retención de la historia clínica                  | **D-A-011**: quince años desde la última atención (5 activo + 10 pasivo), sin purgado, como parámetro de instalación. No fijarlo **incumplía la LOPDP art. 10.i y 51** | EN-032, EN-157, EN-158         |
-| **D-046**    | ¿Tienen certificado de firma electrónica los médicos?         | **D-A-005**: sí lo tienen. Se exige firma certificada, con `requireCertifiedSignature` por sede encendido por defecto                                                  | EN-028, EN-155, EN-156         |
-| **D-051 §1** | Enfermería no podía abrir la atención donde colgar los signos | **D-A-003** y **D-A-004**: permiso `encounter:open` para `RECEPCION`, `ENFERMERIA` y `MEDICO`; `nursing:write` para los formularios 020, 120 y 022                     | EN-066, EN-141, EN-142, EN-143 |
+| # | Pregunta | Resuelta por | Dónde quedó |
+| --- | --- | --- | --- |
+| **D-044** | El plazo de retención de la historia clínica | **D-A-011**: quince años desde la última atención (5 activo + 10 pasivo), sin purgado, como parámetro de instalación. No fijarlo **incumplía la LOPDP art. 10.i y 51** | EN-032, EN-157, EN-158 |
+| **D-046** | ¿Tienen certificado de firma electrónica los médicos? | **D-A-005**: sí lo tienen. Se exige firma certificada, con `requireCertifiedSignature` por sede encendido por defecto | EN-028, EN-155, EN-156 |
+| **D-051 §1** | Enfermería no podía abrir la atención donde colgar los signos | **D-A-003** y **D-A-004**: permiso `encounter:open` para `RECEPCION`, `ENFERMERIA` y `MEDICO`; `nursing:write` para los formularios 020, 120 y 022 | EN-066, EN-141, EN-142, EN-143 |
 
 **Y una quinta que no es una pregunta al usuario sino una decisión de ingeniería
 que este documento deja tomada, dicha en voz alta:** los grupos prioritarios de

@@ -46,14 +46,14 @@ catálogo del que elige).
 
 ## Vocabulario
 
-| Término              | Significado exacto en este módulo                                                      |
-| -------------------- | -------------------------------------------------------------------------------------- |
-| **Profesional**      | Perfil clínico de una cuenta: quien atiende, prescribe o firma. No es la cuenta        |
-| **Registro ACESS**   | Habilitación profesional con fecha de caducidad. Sin ella no se firma (REQ-041)        |
-| **Código MSP**       | Código del profesional que el RDACAA exige en cada atención (REQ-021)                  |
-| **Agendable**        | Si el profesional toma citas. Un patólogo tiene perfil clínico y no tiene agenda       |
-| **Regla de horario** | Plantilla semanal por sede con vigencia. Los cupos se derivan de ella, no se almacenan |
-| **Vigencia**         | `daterange` de una regla de horario: desde cuándo y hasta cuándo rige                  |
+| Término               | Significado exacto en este módulo                                                       |
+| --------------------- | --------------------------------------------------------------------------------------- |
+| **Profesional**       | Perfil clínico de una cuenta: quien atiende, prescribe o firma. No es la cuenta          |
+| **Registro ACESS**    | Habilitación profesional con fecha de caducidad. Sin ella no se firma (REQ-041)          |
+| **Código MSP**        | Código del profesional que el RDACAA exige en cada atención (REQ-021)                    |
+| **Agendable**         | Si el profesional toma citas. Un patólogo tiene perfil clínico y no tiene agenda          |
+| **Regla de horario**  | Plantilla semanal por sede con vigencia. Los cupos se derivan de ella, no se almacenan   |
+| **Vigencia**          | `daterange` de una regla de horario: desde cuándo y hasta cuándo rige                    |
 
 ---
 
@@ -122,7 +122,6 @@ negativa que el servidor no produce.
 - **ST-047** — CUANDO se fijen las sedes donde atiende un profesional, el sistema
   NO DEBERÁ admitir ninguna sede fuera del alcance de quien llama, y DEBERÁ
   rechazarlo sin escribir nada.
-
   > **Defecto de seguridad, encontrado por el usuario el 14-08-2026.** La ruta
   > declara alcance `global` y las sedes viajan **en el cuerpo**, donde el guard
   > de alcance no mira — sólo sabe leer `param:` y `query`. Así, quien tenga
@@ -209,11 +208,10 @@ _Numeración conservada de `CF-040`..`CF-046` al mudarse desde `configuration`
   > **Por qué se dice explícitamente.** Los conflictos se calculaban contra la
   > sede que la regla tiene DESPUÉS del cambio, así que
   > `PATCH /staff/schedule-rules/{id} {"siteId": …}` respondía `200
-{conflicts: []}` mientras las citas de la sede original se quedaban sin
+  > {conflicts: []}` mientras las citas de la sede original se quedaban sin
   > ninguna regla que las cubriera. Un sobrecupo (`blocks_calendar = false`) es
   > una cita con un paciente que espera y también cuenta; un bloqueo, no —eso
   > lo distingue `kind`—.
-
 - **ST-044** — Toda mutación de horario DEBERÁ quedar en la bitácora con autor,
   instante y regla anterior.
 - **ST-045** — El sistema DEBERÁ validar que la hora de fin sea posterior a la
@@ -281,21 +279,21 @@ _Numeración conservada de `CF-040`..`CF-046` al mudarse desde `configuration`
 
 ## Códigos de error
 
-| Código                         | HTTP | Cuándo                                                                                                  |
-| ------------------------------ | ---- | ------------------------------------------------------------------------------------------------------- |
-| `PRACTITIONER_NOT_FOUND`       | 404  | El profesional indicado no existe                                                                       |
-| `SCHEDULE_RULE_NOT_FOUND`      | 404  | La regla de horario indicada no existe                                                                  |
-| `SITE_SCOPE_DENIED`            | 403  | Fijar sedes, o tocar el horario de una sede, fuera del alcance de quien llama (ST-047, ST-048, ADR-007) |
-| `PRACTITIONER_IN_USE`          | 409  | Borrar un profesional con historial (ST-010)                                                            |
-| `SCHEDULE_RULE_OVERLAP`        | 409  | Regla de horario solapada (ST-042)                                                                      |
-| `ACESS_EXPIRED`                | 422  | Firmar con registro ACESS vencido (ST-004)                                                              |
-| `ACESS_MISSING`                | 422  | Firmar sin registro ACESS o sin caducidad (ST-002)                                                      |
-| `PRACTITIONER_NOT_IN_SITE`     | 422  | Regla en una sede donde no atiende (ST-007)                                                             |
-| `PRACTITIONER_NOT_SCHEDULABLE` | 422  | Regla nueva para quien no toma citas (ST-006)                                                           |
-| `INVALID_SCHEDULE_RULE`        | 422  | Horas invertidas, franja más corta que el turno o vigencia vacía (ST-045)                               |
-| `DURATION_NOT_SLOT_MULTIPLE`   | 422  | Excepción de duración que no es múltiplo del turno (ST-009, SP-022)                                     |
-| `PRIMARY_SPECIALTY_REQUIRED`   | 422  | La asignación no marca exactamente una principal (ST-008)                                               |
-| `SPECIALTY_INACTIVE`           | 422  | Asignar una especialidad desactivada a quien no la tenía                                                |
+| Código                        | HTTP | Cuándo                                                       |
+| ----------------------------- | ---- | ------------------------------------------------------------ |
+| `PRACTITIONER_NOT_FOUND`      | 404  | El profesional indicado no existe                            |
+| `SCHEDULE_RULE_NOT_FOUND`     | 404  | La regla de horario indicada no existe                       |
+| `SITE_SCOPE_DENIED`           | 403  | Fijar sedes, o tocar el horario de una sede, fuera del alcance de quien llama (ST-047, ST-048, ADR-007)|
+| `PRACTITIONER_IN_USE`         | 409  | Borrar un profesional con historial (ST-010)                 |
+| `SCHEDULE_RULE_OVERLAP`       | 409  | Regla de horario solapada (ST-042)                           |
+| `ACESS_EXPIRED`               | 422  | Firmar con registro ACESS vencido (ST-004)                   |
+| `ACESS_MISSING`               | 422  | Firmar sin registro ACESS o sin caducidad (ST-002)           |
+| `PRACTITIONER_NOT_IN_SITE`    | 422  | Regla en una sede donde no atiende (ST-007)                  |
+| `PRACTITIONER_NOT_SCHEDULABLE`| 422  | Regla nueva para quien no toma citas (ST-006)                |
+| `INVALID_SCHEDULE_RULE`       | 422  | Horas invertidas, franja más corta que el turno o vigencia vacía (ST-045)|
+| `DURATION_NOT_SLOT_MULTIPLE`  | 422  | Excepción de duración que no es múltiplo del turno (ST-009, SP-022)|
+| `PRIMARY_SPECIALTY_REQUIRED`  | 422  | La asignación no marca exactamente una principal (ST-008)    |
+| `SPECIALTY_INACTIVE`          | 422  | Asignar una especialidad desactivada a quien no la tenía     |
 
 `PRACTITIONER_NOT_FOUND`, `PRIMARY_SPECIALTY_REQUIRED` y `SPECIALTY_INACTIVE`
 ya existían en `error-catalogue.ts` emitidos desde `specialties`: al saldarse la
@@ -376,26 +374,26 @@ para trabajar — y esta ficha lleva la cédula y el registro ACESS de un emplea
 que es dato personal sin sitio en una pantalla de reservas. Una clínica que lo
 quiera puede concederlo: los roles son datos.
 
-| Método   | Ruta                                                    | Requisito        |
-| -------- | ------------------------------------------------------- | ---------------- |
-| `GET`    | `/practitioners?includeInactive=`                       | ST-001..003, 010 |
-| `GET`    | `/practitioners/acess-expiring?withinDays=`             | ST-005           |
-| `GET`    | `/practitioners/:id`                                    | ST-001..003      |
-| `POST`   | `/practitioners`                                        | ST-001..003, 006 |
-| `PATCH`  | `/practitioners/:id`                                    | ST-001..003, 010 |
-| `DELETE` | `/practitioners/:id`                                    | ST-010           |
-| `GET`    | `/practitioners/:id/signing-eligibility`                | ST-002, ST-004   |
-| `GET`    | `/practitioners/:id/sites`                              | ST-007           |
-| `PUT`    | `/practitioners/:id/sites`                              | ST-007           |
-| `GET`    | `/practitioners/:id/specialties`                        | ST-008           |
-| `PUT`    | `/practitioners/:id/specialties`                        | ST-008           |
-| `GET`    | `/practitioners/:id/duration-exceptions`                | ST-009           |
-| `PUT`    | `/practitioners/:id/duration-exceptions/:serviceTypeId` | ST-009           |
-| `DELETE` | `/practitioners/:id/duration-exceptions/:serviceTypeId` | ST-009           |
-| `GET`    | `/practitioners/:id/schedule-rules?includeClosed=`      | ST-040, ST-041   |
-| `POST`   | `/practitioners/:id/schedule-rules`                     | ST-040..046, 048 |
-| `PATCH`  | `/schedule-rules/:id`                                   | ST-040..046, 048 |
-| `DELETE` | `/schedule-rules/:id`                                   | ST-041, 043, 048 |
+| Método   | Ruta                                                                | Requisito        |
+| -------- | ------------------------------------------------------------------- | ---------------- |
+| `GET`    | `/practitioners?includeInactive=`                                   | ST-001..003, 010 |
+| `GET`    | `/practitioners/acess-expiring?withinDays=`                         | ST-005           |
+| `GET`    | `/practitioners/:id`                                                | ST-001..003      |
+| `POST`   | `/practitioners`                                                    | ST-001..003, 006 |
+| `PATCH`  | `/practitioners/:id`                                                | ST-001..003, 010 |
+| `DELETE` | `/practitioners/:id`                                                | ST-010           |
+| `GET`    | `/practitioners/:id/signing-eligibility`                            | ST-002, ST-004   |
+| `GET`    | `/practitioners/:id/sites`                                          | ST-007           |
+| `PUT`    | `/practitioners/:id/sites`                                          | ST-007           |
+| `GET`    | `/practitioners/:id/specialties`                                    | ST-008           |
+| `PUT`    | `/practitioners/:id/specialties`                                    | ST-008           |
+| `GET`    | `/practitioners/:id/duration-exceptions`                            | ST-009           |
+| `PUT`    | `/practitioners/:id/duration-exceptions/:serviceTypeId`             | ST-009           |
+| `DELETE` | `/practitioners/:id/duration-exceptions/:serviceTypeId`             | ST-009           |
+| `GET`    | `/practitioners/:id/schedule-rules?includeClosed=`                  | ST-040, ST-041   |
+| `POST`   | `/practitioners/:id/schedule-rules`                                 | ST-040..046, 048 |
+| `PATCH`  | `/schedule-rules/:id`                                               | ST-040..046, 048 |
+| `DELETE` | `/schedule-rules/:id`                                               | ST-041, 043, 048 |
 
 **`GET /signing-eligibility` es una consulta que RECHAZA**, y es el requisito:
 quien va a firmar pregunta, y un ACESS caducado tiene que detenerle. Responder

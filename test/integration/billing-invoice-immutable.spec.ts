@@ -15,6 +15,7 @@ import type { PrismaService } from '../../src/shared/infrastructure/prisma/prism
 
 import { useDatabase } from './setup/database';
 import { createPatient, createSite } from './setup/fixtures';
+import { authoriseVoucher } from './setup/sri-fixtures';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -31,18 +32,16 @@ import { createPatient, createSite } from './setup/fixtures';
  * that the method does not exist, which is BI-090 and a different claim: this
  * one is that the row cannot change even for somebody with a `psql` prompt.
  *
- * The status is moved to AUTHORISED by hand because the dialogue with the SRI
- * is Fase 2 and does not exist yet — and the trigger only fires from
- * AUTHORISED or VOIDED, so an ISSUED invoice would prove nothing.
+ * The status is moved to AUTHORISED by raw SQL, as the SRI's answer would leave
+ * it, so this file does not depend on the queue that talks to the SRI — and
+ * the trigger only fires from AUTHORISED or VOIDED, so an ISSUED invoice would
+ * prove nothing.
  */
 const db = useDatabase();
 
 const SERVICE_CODE = 'CONS-MG-PV';
 const SUPPLY_CODE = 'INS-GUANTES-EXAMEN';
 const SERVICE_DATE = parseClinicalDate('2026-05-11');
-
-/** A 49-digit access key, as the SRI issues one. Synthetic, never a real one. */
-const ACCESS_KEY = '4'.repeat(49);
 
 interface Context {
   prisma: PrismaClient;
@@ -153,20 +152,19 @@ async function issue(accountId: string) {
     accountId,
     siteId: context.siteId,
     emissionPointId: context.emissionPointId,
+    paymentMethod: '01',
     receiver,
     issuedById: context.userId,
   });
 }
 
-/** Moves the invoice to AUTHORISED, which is what arms the trigger. */
+/**
+ * Moves the invoice to AUTHORISED, which is what arms the trigger. Its key has
+ * to be its own voucher's since `invoice_access_key_is_its_vouchers` (SRI-007),
+ * so the voucher is written first, as the SRI's answer would leave it.
+ */
 async function authorise(invoiceId: string): Promise<void> {
-  await context.prisma.$executeRaw`
-    UPDATE "invoice"
-       SET "status" = 'AUTHORISED',
-           "access_key" = ${ACCESS_KEY},
-           "authorised_at" = CURRENT_TIMESTAMP,
-           "updated_at" = CURRENT_TIMESTAMP
-     WHERE "id" = ${invoiceId}::uuid`;
+  await authoriseVoucher(context.prisma, invoiceId);
 }
 
 async function rejectionOf(promise: Promise<unknown>): Promise<unknown> {
@@ -329,6 +327,7 @@ describe('BI-085 el secuencial por punto de emisión', () => {
             accountId: index === 0 ? one : other,
             siteId: context.siteId,
             emissionPointId: context.emissionPointId,
+            paymentMethod: '01',
             receiver,
             issuedById: context.userId,
           }),
@@ -437,6 +436,36 @@ describe('BI-083, BI-086, BI-088, BI-089 lo que la factura copia y lo que rechaz
     await expect(context.prisma.invoice.count()).resolves.toBe(0);
   });
 
+  it('BI-171 se niega a emitir si una prestación tiene un código que el SRI no acepta, y la nombra', async () => {
+    // A catalogue code from before the 25-character limit (sri SRI-011).
+    await context.prisma.$executeRaw`
+      UPDATE "billable_service" SET "code" = ${'C'.repeat(26)}
+       WHERE "id" = ${context.serviceId}::uuid`;
+    const service = await context.prisma.billableService.findUniqueOrThrow({
+      where: { id: context.serviceId },
+    });
+    const accountId = await anAccountReadyToInvoice();
+
+    const rejection = (await rejectionOf(issue(accountId))) as {
+      code: string;
+      params: Record<string, string>;
+      userTitle: string;
+    };
+    expect(rejection.code).toBe('INVOICE_SERVICE_CODE_TOO_LONG');
+    expect(rejection.userTitle).toContain(service.name);
+    expect(rejection.userTitle).toContain('C'.repeat(26));
+    // No sequential burned on a voucher the SRI would return (error 35).
+    await expect(context.prisma.invoice.count()).resolves.toBe(0);
+
+    // Control: at 25 characters the same account is invoiced.
+    await context.prisma.$executeRaw`
+      UPDATE "billable_service" SET "code" = ${'C'.repeat(25)}
+       WHERE "id" = ${context.serviceId}::uuid`;
+    await expect(issue(accountId)).resolves.toMatchObject({
+      status: 'ISSUED',
+    });
+  });
+
   it('BI-001 cuadra los totales o la base lo rechaza', async () => {
     // `invoice_total_is_consistent`. If the arithmetic ever disagreed with the
     // columns, the right outcome is that NO invoice exists: a document the SRI
@@ -503,6 +532,7 @@ describe('BI-081 «Consumidor Final» lleva la identificación del SRI o no exis
       accountId: await anAccountReadyToInvoice(),
       siteId: context.siteId,
       emissionPointId: context.emissionPointId,
+      paymentMethod: '01',
       receiver: {
         buyerIdentificationType: '07',
         buyerIdentification: '9999999999999',
@@ -535,6 +565,7 @@ describe('BI-159 la base rechaza un RUC o una cédula de receptor que el SRI no 
       accountId: await anAccountReadyToInvoice(),
       siteId: context.siteId,
       emissionPointId: context.emissionPointId,
+      paymentMethod: '01',
       receiver: { ...receiver, buyerIdentificationType, buyerIdentification },
       issuedById: context.userId,
     });

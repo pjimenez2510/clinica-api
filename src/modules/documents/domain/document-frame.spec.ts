@@ -35,6 +35,7 @@ const context: DocumentContext = {
     operatingPermit: 'ACESS-2026-0456',
     ruc: '1791234567001',
     addressLine: 'Av. Amazonas N34-120',
+    headOfficeAddress: null,
     phone: '02-2456789',
     logo: null,
     keepsAccounting: true,

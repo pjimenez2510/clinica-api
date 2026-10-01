@@ -162,6 +162,9 @@ model User {
   invoicesIssued      Invoice[]    @relation("InvoiceIssuer")
   creditNotesIssued   CreditNote[] @relation("CreditNoteIssuer")
 
+  /// REQ-090. Who loaded each issuer certificate (SRI-082).
+  signingCertificatesUploaded SigningCertificate[] @relation("SigningCertificateUploader")
+
   /// DOC-002, DOC-030, DOC-056. The printable side of the system: the
   /// artefacts this person emitted, the template versions they published and
   /// the identity images they uploaded. All three are `RESTRICT` on the way
@@ -1033,6 +1036,12 @@ model Establishment {
   specialTaxpayerResolution  String?     @map("special_taxpayer_resolution") @db.VarChar(16)
   withholdingAgentResolution String?     @map("withholding_agent_resolution") @db.VarChar(16)
   rimpeRegime                RimpeRegime @default(NONE) @map("rimpe_regime")
+  /// OR-031. When a person last declared the fiscal flags; NULL, never.
+  fiscalProfileDeclaredAt    DateTime?   @map("fiscal_profile_declared_at") @db.Timestamptz(6)
+
+  /// OR-028, SRI-018. The head office's address: `dirMatriz`, mandatory in
+  /// every voucher, and not necessarily the address of any site.
+  headOfficeAddress String? @map("head_office_address") @db.VarChar(300)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -1066,25 +1075,33 @@ model Site {
   phone       String? @db.VarChar(32)
   active      Boolean @default(true)
 
+  /// OR-027, SRI-009. The establishment code the SRI assigned to this site:
+  /// the `estab` of the access key and the first block of `001-001-000000001`.
+  /// NOT `mspUnicode`, which is the MSP's register. Three digits, leading zero
+  /// significant (`site_sri_establishment_code_format`). NULL means the site
+  /// cannot have vouchers yet, and the SRI monitor says so (SRI-008).
+  sriEstablishmentCode String? @map("sri_establishment_code") @db.Char(3)
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  rooms           SiteRoom[]
-  emissionPoints  EmissionPoint[]
-  holidays        Holiday[]
-  parameters      SiteParameter?
-  workedHolidays  HolidaySiteException[]
-  roleGrants      UserRoleGrant[]
-  practitioners   PractitionerSite[]
-  scheduleRules   PractitionerScheduleRule[]
-  agendaEntries   AgendaEntry[]
-  encounters      Encounter[]
-  waitlistEntries WaitlistEntry[]
-  serviceOrders   ServiceOrder[]
-  priceLists      PriceList[]
-  patientAccounts PatientAccount[]
-  invoices        Invoice[]
-  documentRenders DocumentRender[]
+  electronicVouchers ElectronicVoucher[]
+  rooms              SiteRoom[]
+  emissionPoints     EmissionPoint[]
+  holidays           Holiday[]
+  parameters         SiteParameter?
+  workedHolidays     HolidaySiteException[]
+  roleGrants         UserRoleGrant[]
+  practitioners      PractitionerSite[]
+  scheduleRules      PractitionerScheduleRule[]
+  agendaEntries      AgendaEntry[]
+  encounters         Encounter[]
+  waitlistEntries    WaitlistEntry[]
+  serviceOrders      ServiceOrder[]
+  priceLists         PriceList[]
+  patientAccounts    PatientAccount[]
+  invoices           Invoice[]
+  documentRenders    DocumentRender[]
 
   @@map("site")
 }
@@ -1648,23 +1665,23 @@ model Patient {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  identifiers     PatientIdentifier[]
-  priorityGroups  PatientPriorityGroup[]
-  changeHistory   PatientChangeHistory[]
-  contacts        PatientContact[]
-  allergies       PatientAllergy[]
+  identifiers         PatientIdentifier[]
+  priorityGroups      PatientPriorityGroup[]
+  changeHistory       PatientChangeHistory[]
+  contacts            PatientContact[]
+  allergies           PatientAllergy[]
   /// EN-087. The «sin alergias conocidas» assertions written on this chart.
-  allergyAbsences PatientAllergyAbsence[]
+  allergyAbsences     PatientAllergyAbsence[]
   /// EN-085. Personal and family history that persists between attentions.
-  history         PatientHistory[]
-  agendaEntries   AgendaEntry[]
-  encounters      Encounter[]
-  waitlistEntries WaitlistEntry[]
-  certificates    MedicalCertificate[]
-  referrals       Referral[]
-  mergesAsSource  PatientMerge[]          @relation("MergeSource")
-  mergesAsTarget  PatientMerge[]          @relation("MergeTarget")
-  accounts        PatientAccount[]
+  history             PatientHistory[]
+  agendaEntries       AgendaEntry[]
+  encounters          Encounter[]
+  waitlistEntries     WaitlistEntry[]
+  certificates        MedicalCertificate[]
+  referrals           Referral[]
+  mergesAsSource      PatientMerge[]          @relation("MergeSource")
+  mergesAsTarget      PatientMerge[]          @relation("MergeTarget")
+  accounts            PatientAccount[]
   /// `privacy`, PD-016, PD-036: read through `chartScope` like the rest of the person's history.
   consents            PatientConsent[]
   dataSubjectRequests DataSubjectRequest[]
@@ -3385,6 +3402,14 @@ model ChargeItem {
   /// (`charge_item_status_is_known`).
   status String @default("BILLABLE") @db.VarChar(16)
 
+  /// BI-169. The invoice that billed this charge — set in the issuance
+  /// transaction, and present if and only if the charge is BILLED
+  /// (`charge_item_billed_carries_its_invoice`). The electronic voucher's lines
+  /// are read through it: deducing them from the account gives the second
+  /// invoice of an account the lines of the first (the SRI's error 52).
+  invoiceId String?  @map("invoice_id") @db.Uuid
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "charge_item_invoice_fk")
+
   /// VOIDING A CHARGE, with the reason actually kept.
   ///
   /// The three travel together — `charge_item_void_states_who_when_and_why`
@@ -3445,7 +3470,13 @@ model Invoice {
   emissionPoint   EmissionPoint @relation(fields: [emissionPointId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "invoice_emission_point_fk")
   sequential      String        @db.VarChar(9)
 
-  /// The 49-digit access key, once the SRI authorises the voucher.
+  /// The 49-digit access key of its electronic voucher (sri/SPEC.md SRI-001).
+  /// Written by `sri` when the voucher is prepared — BEFORE authorisation, so
+  /// the RIDE handed over while the SRI is down already carries it — and never
+  /// changed afterwards (`trg_invoice_access_key_permanent`). It can only be
+  /// the key of THIS invoice's voucher: the composite key
+  /// `invoice_access_key_is_its_vouchers` lives in the migration, since Prisma
+  /// cannot express a relation in both directions over the same pair.
   accessKey String? @map("access_key") @db.VarChar(49)
 
   /// WHO THE INVOICE IS MADE OUT TO, and deliberately not nullable: issuing to
@@ -3460,6 +3491,12 @@ model Invoice {
   buyerName               String  @map("buyer_name") @db.VarChar(300)
   buyerEmail              String? @map("buyer_email") @db.VarChar(320)
   isFinalConsumer         Boolean @default(false) @map("is_final_consumer")
+
+  /// BI-170, D-092. How it was paid, SRI table 24 — asked of the cashier when
+  /// issuing, never assumed (`invoice_payment_method_is_known`). NULL only on
+  /// invoices issued before the column existed; it never changes once written
+  /// (`trg_invoice_payment_method_permanent`).
+  paymentMethod String? @map("payment_method") @db.Char(2)
 
   /// `invoice_total_is_consistent` keeps the five in agreement in the database,
   /// so a rounding bug cannot leave a document the SRI will reject.
@@ -3483,6 +3520,12 @@ model Invoice {
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   creditNotes CreditNote[]
+
+  /// BI-169. The charges this invoice billed: the lines of its voucher.
+  chargeItems ChargeItem[]
+
+  /// SRI-006. Its electronic voucher, one for ever, once prepared.
+  electronicVoucher ElectronicVoucher?
 
   /// DOC-003, DOC-076. The archived RIDE. The invoice itself is the electronic
   /// voucher; this is the printable representation the SRI's Anexo 2 describes.
@@ -3977,6 +4020,131 @@ model DocumentRender {
   @@index([invoiceId], map: "document_render_by_invoice")
   @@index([siteId, issuedAt(sort: Desc)], map: "document_render_by_site")
   @@map("document_render")
+}
+
+// ---------------------------------------------------------------------------
+// THE ELECTRONIC VOUCHER (sri/SPEC.md, ADR-004)
+// ---------------------------------------------------------------------------
+//
+// What turns an ISSUED invoice into a document the SRI authorises. The
+// guarantees that matter most live in the migration and not here —
+// `trg_electronic_voucher_permanent` (the key never changes),
+// `invoice_access_key_is_its_vouchers`, the append-only trails, the single
+// active certificate — because Prisma cannot express them.
+
+/// SRI-001 to SRI-008. One per invoice, for ever.
+model ElectronicVoucher {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  invoiceId String  @unique(map: "electronic_voucher_one_per_invoice") @map("invoice_id") @db.Uuid
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "electronic_voucher_invoice_fk")
+  siteId    String  @map("site_id") @db.Uuid
+  site      Site    @relation(fields: [siteId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "electronic_voucher_site_fk")
+
+  documentType  String @default("01") @map("document_type") @db.Char(2)
+  /// SRI-005. Never regenerated — not on a retry, not on 43, not on 70.
+  accessKey     String @unique(map: "electronic_voucher_access_key_unique") @map("access_key") @db.VarChar(49)
+  numericCode   String @map("numeric_code") @db.Char(8)
+  environment   String @db.Char(1)
+  schemaVersion String @map("schema_version") @db.VarChar(8)
+
+  /// PREPARED, SIGNED, RECEIVED, AUTHORISED, RETURNED or NOT_AUTHORISED.
+  status        String  @default("PREPARED") @db.VarChar(16)
+  blockedReason String? @map("blocked_reason") @db.VarChar(48)
+
+  unsignedXml          String              @map("unsigned_xml")
+  /// SRI-031. Sent byte for byte on every attempt.
+  signedXml            String?             @map("signed_xml")
+  signingCertificateId String?             @map("signing_certificate_id") @db.Uuid
+  signingCertificate   SigningCertificate? @relation(fields: [signingCertificateId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "electronic_voucher_certificate_fk")
+  signedAt             DateTime?           @map("signed_at") @db.Timestamptz(6)
+
+  lastMessages  Json      @default("[]") @map("last_messages") @db.JsonB
+  attemptCount  Int       @default(0) @map("attempt_count")
+  nextAttemptAt DateTime? @map("next_attempt_at") @db.Timestamptz(6)
+
+  authorisationNumber String?   @map("authorisation_number") @db.VarChar(49)
+  authorisedAt        DateTime? @map("authorised_at") @db.Timestamptz(6)
+  authorisedXml       String?   @map("authorised_xml")
+
+  deliveryStatus String?   @map("delivery_status") @db.VarChar(16)
+  deliveredAt    DateTime? @map("delivered_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  attempts ElectronicVoucherAttempt[]
+  openings SigningCertificateOpening[]
+
+  @@unique([invoiceId, accessKey], map: "electronic_voucher_invoice_key_pair")
+  @@unique([id, accessKey], map: "electronic_voucher_id_key_pair")
+  @@index([siteId, status], map: "electronic_voucher_by_site_status")
+  @@map("electronic_voucher")
+}
+
+/// SRI-051. Every call to the SRI and what it answered. Append-only.
+model ElectronicVoucherAttempt {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  voucherId String            @map("voucher_id") @db.Uuid
+  /// SC-071. Only this voucher's key fits (`electronic_voucher_attempt_voucher_fk`).
+  accessKey String            @map("access_key") @db.VarChar(49)
+  voucher   ElectronicVoucher @relation(fields: [voucherId, accessKey], references: [id, accessKey], onDelete: Restrict, onUpdate: NoAction, map: "electronic_voucher_attempt_voucher_fk")
+
+  /// RECEPTION or AUTHORISATION.
+  operation      String   @db.VarChar(16)
+  startedAt      DateTime @map("started_at") @db.Timestamptz(6)
+  durationMs     Int      @map("duration_ms")
+  /// RECIBIDA, DEVUELTA, AUTORIZADO, NO AUTORIZADO, PENDING or TRANSPORT_FAILURE.
+  outcome        String   @db.VarChar(24)
+  messages       Json     @default("[]") @db.JsonB
+  transportError String?  @map("transport_error") @db.VarChar(500)
+
+  @@index([voucherId, startedAt], map: "electronic_voucher_attempt_by_voucher")
+  @@map("electronic_voucher_attempt")
+}
+
+/// REQ-090, SRI-022 to SRI-034. The issuer's .p12, ONLY as AES-256-GCM
+/// envelopes; in clear only what anybody may know about it.
+model SigningCertificate {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  subject      String   @db.VarChar(500)
+  issuer       String   @db.VarChar(500)
+  serialNumber String   @map("serial_number") @db.VarChar(128)
+  notBefore    DateTime @map("not_before") @db.Timestamptz(6)
+  notAfter     DateTime @map("not_after") @db.Timestamptz(6)
+
+  encryptedPkcs12   Bytes @map("encrypted_pkcs12")
+  encryptedPassword Bytes @map("encrypted_password")
+  kdfSalt           Bytes @map("kdf_salt")
+
+  /// SRI-027. One active at a time (`signing_certificate_one_active`).
+  active        Boolean   @default(true)
+  deactivatedAt DateTime? @map("deactivated_at") @db.Timestamptz(6)
+
+  uploadedById String   @map("uploaded_by_id") @db.Uuid
+  uploadedBy   User     @relation("SigningCertificateUploader", fields: [uploadedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "signing_certificate_uploaded_by_fk")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  vouchers ElectronicVoucher[]
+  openings SigningCertificateOpening[]
+
+  @@map("signing_certificate")
+}
+
+/// SRI-026. Every time the certificate was decrypted, and for which voucher.
+model SigningCertificateOpening {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  certificateId String             @map("certificate_id") @db.Uuid
+  certificate   SigningCertificate @relation(fields: [certificateId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "signing_certificate_opening_certificate_fk")
+  voucherId     String             @map("voucher_id") @db.Uuid
+  voucher       ElectronicVoucher  @relation(fields: [voucherId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "signing_certificate_opening_voucher_fk")
+  openedAt      DateTime           @default(now()) @map("opened_at") @db.Timestamptz(6)
+
+  @@index([certificateId, openedAt], map: "signing_certificate_opening_by_certificate")
+  @@map("signing_certificate_opening")
 }
 
 // ===========================================================================

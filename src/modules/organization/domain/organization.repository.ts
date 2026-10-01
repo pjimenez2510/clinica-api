@@ -18,6 +18,18 @@ export interface EstablishmentView {
   legalName: string;
   /** Validated by the `Ruc` value object before it gets here (OR-008). */
   ruc: string | null;
+  /** OR-028. `dirMatriz` of every electronic voucher. */
+  headOfficeAddress: string | null;
+  /** OR-029. The fiscal flags the RIDE prints and the voucher declares. */
+  keepsAccounting: boolean;
+  specialTaxpayerResolution: string | null;
+  withholdingAgentResolution: string | null;
+  rimpeRegime: RimpeRegime;
+  /**
+   * OR-031. When a person last declared the fiscal flags; `null` while
+   * nobody has, and then no voucher is prepared (SRI-008).
+   */
+  fiscalProfileDeclaredAt: Date | null;
   /** OR-010. Printed at the head of every document; `legalName` when null. */
   tradeName: string | null;
   /** OR-011. */
@@ -26,6 +38,9 @@ export interface EstablishmentView {
   operatingPermit: string | null;
   active: boolean;
 }
+
+/** OR-029. The SRI's RIMPE regime, as the schema's enum says it. */
+export type RimpeRegime = 'NONE' | 'ENTREPRENEUR' | 'POPULAR_BUSINESS';
 
 /** A site as the administration and selection screens list it (OR-004). */
 export interface SiteView {
@@ -38,15 +53,24 @@ export interface SiteView {
   parishConceptId: string | null;
   addressLine: string | null;
   phone: string | null;
+  /** OR-027. The SRI's establishment code: three digits, leading zero kept. */
+  sriEstablishmentCode: string | null;
   active: boolean;
 }
 
-/** Everything the establishment form writes (OR-001, OR-008). */
+/** Everything the establishment form writes (OR-001, OR-008, OR-028). */
 export interface EstablishmentInput {
   mspUnicode: string;
   typology: string;
   legalName: string;
   ruc: string | null;
+  headOfficeAddress: string | null;
+  keepsAccounting: boolean;
+  specialTaxpayerResolution: string | null;
+  withholdingAgentResolution: string | null;
+  rimpeRegime: RimpeRegime;
+  /** OR-031. This save states the fiscal flags; the adapter stamps the instant. */
+  declaresFiscalProfile: boolean;
   active: boolean;
 }
 
@@ -73,6 +97,7 @@ export interface SiteInput {
   parishConceptId: string | null;
   addressLine: string | null;
   phone: string | null;
+  sriEstablishmentCode: string | null;
 }
 
 /**
@@ -96,6 +121,8 @@ export interface SitePatch {
   parishConceptId?: string | null;
   addressLine?: string | null;
   phone?: string | null;
+  /** OR-027. */
+  sriEstablishmentCode?: string | null;
   active?: boolean;
 }
 

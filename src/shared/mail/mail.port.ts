@@ -30,7 +30,14 @@
  * being swallowed here.
  */
 
-/** One message. No attachments yet: nothing this system sends needs them. */
+/** A file travelling with a message (SRI-072: the RIDE and the XML). */
+export interface MailAttachment {
+  fileName: string;
+  content: Buffer;
+  contentType: string;
+}
+
+/** One message. */
 export interface MailMessage {
   /** A single institutional address. Bulk sending is not this port's job. */
   to: string;
@@ -44,6 +51,7 @@ export interface MailMessage {
   text: string;
   /** The same content in minimal HTML, for clients that prefer it. */
   html?: string;
+  attachments?: readonly MailAttachment[];
 }
 
 /**

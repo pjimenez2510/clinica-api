@@ -24,8 +24,10 @@ import {
   ActAlreadyChargedError,
   InvoiceHasNoItemsError,
   InvoiceImmutableError,
+  InvoiceServiceCodeTooLongError,
   PriceNotFoundError,
 } from '../domain/billing.errors';
+import { MAX_VOUCHER_SERVICE_CODE } from '../domain/invoice';
 import type { ChargeOrigin } from '../domain/charge-proposal';
 import {
   type ChargeStatus,
@@ -35,6 +37,7 @@ import {
 import {
   type BuyerIdentificationType,
   type InvoiceStatus,
+  type PaymentMethod,
   nextSequential,
 } from '../domain/invoice';
 import { Money, Percentage, Quantity } from '../domain/money';
@@ -499,9 +502,22 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         const charges = await tx.chargeItem.findMany({
           where: { accountId: issuance.accountId, status: 'BILLABLE' },
           orderBy: { createdAt: 'asc' },
+          include: { billableService: { select: { code: true, name: true } } },
         });
 
         if (charges.length === 0) throw new InvoiceHasNoItemsError();
+
+        // BI-171. Before the sequential is taken.
+        const tooLong = charges.find(
+          (charge) =>
+            charge.billableService.code.length > MAX_VOUCHER_SERVICE_CODE,
+        );
+        if (tooLong) {
+          throw new InvoiceServiceCodeTooLongError(
+            tooLong.billableService.name,
+            tooLong.billableService.code,
+          );
+        }
 
         const totals = totalsOf(
           charges.map((row) => {
@@ -531,6 +547,8 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
             buyerName: issuance.receiver.buyerName,
             buyerEmail: issuance.receiver.buyerEmail,
             isFinalConsumer: issuance.receiver.isFinalConsumer,
+            // BI-170. Declared by the cashier; the base refuses another code.
+            paymentMethod: issuance.paymentMethod,
             subtotalTaxed: totals.subtotalTaxed.toString(),
             subtotalUntaxed: totals.subtotalUntaxed.toString(),
             discountTotal: totals.discountTotal.toString(),
@@ -548,9 +566,12 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
           },
         });
 
+        // BI-169. Each charge names the invoice that took it, in the same
+        // statement that bills it (`charge_item_billed_carries_its_invoice`):
+        // the voucher's lines are read through it.
         await tx.chargeItem.updateMany({
           where: { id: { in: charges.map((charge) => charge.id) } },
-          data: { status: 'BILLED' },
+          data: { status: 'BILLED', invoiceId: invoice.id },
         });
 
         return toInvoiceView(invoice);
@@ -743,6 +764,7 @@ function toInvoiceView(row: InvoiceRow): InvoiceView {
     },
     totals,
     status: row.status as InvoiceStatus,
+    paymentMethod: row.paymentMethod as PaymentMethod | null,
     issuedAt: row.issuedAt,
     authorisedAt: row.authorisedAt,
     issuedById: row.issuedById,

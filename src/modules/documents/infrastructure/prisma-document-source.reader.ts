@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { invoiceDocumentNumber } from '../../../shared/billing/document-number';
 import {
   chartScopeRows,
   chartScopeSelect,
@@ -253,6 +254,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
             contactEmail: true,
             operatingPermit: true,
             ruc: true,
+            headOfficeAddress: true,
             keepsAccounting: true,
             specialTaxpayerResolution: true,
             withholdingAgentResolution: true,
@@ -280,6 +282,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       operatingPermit: site.establishment?.operatingPermit ?? null,
       ruc: site.ruc ?? site.establishment?.ruc ?? null,
       addressLine: site.addressLine,
+      headOfficeAddress: site.establishment?.headOfficeAddress ?? null,
       phone: site.phone,
       logo: toStoredImage(site.establishment?.logoImage),
       keepsAccounting: site.establishment?.keepsAccounting ?? false,
@@ -668,44 +671,65 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         buyerIdentification: true,
         buyerName: true,
         buyerEmail: true,
+        paymentMethod: true,
+        // DOC-076 «Información adicional»: whom the attention was for.
+        account: {
+          select: {
+            patient: {
+              select: {
+                ...PATIENT_SELECT,
+                mrn: true,
+                phone: true,
+                residenceAddressLine: true,
+              },
+            },
+          },
+        },
         subtotalTaxed: true,
         subtotalUntaxed: true,
         discountTotal: true,
         taxTotal: true,
         total: true,
         emissionPoint: {
-          select: { code: true, site: { select: { mspUnicode: true } } },
-        },
-        account: {
           select: {
-            chargeItems: {
-              where: { status: 'BILLED' },
-              select: {
-                serviceDisplay: true,
-                quantity: true,
-                unitAmount: true,
-                discountAmount: true,
-                billableService: { select: { code: true } },
-              },
-            },
+            code: true,
+            site: { select: { sriEstablishmentCode: true } },
+          },
+        },
+        // BI-169. THIS invoice's charges, not the account's billed ones: an
+        // account invoiced twice would print the first invoice's lines on the
+        // second.
+        chargeItems: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            serviceDisplay: true,
+            serviceDate: true,
+            quantity: true,
+            unitAmount: true,
+            discountAmount: true,
+            taxSriCode: true,
+            taxPercentage: true,
+            billableService: { select: { code: true, tariffCode: true } },
           },
         },
       },
     });
     if (row === null) return null;
 
-    /**
-     * `001-001-000000001`. The first block is the ESTABLISHMENT code the SRI
-     * assigned, and this system does not hold it: `msp_unicode` is the MSP's
-     * code, which is a different register.
-     *
-     * > **Falta esquema.** There is no `sri_establishment_code` column on
-     * > `site`. `001` is printed while there is none, and it is the only
-     * > invented value in this whole module — stated here so it is found rather
-     * > than trusted. It is a datum of the installation, like the fiscal flags,
-     * > and it belongs beside them.
-     */
-    const documentNumber = `001-${row.emissionPoint.code}-${row.sequential}`;
+    // The buyer is the patient when the invoice carries the patient's own
+    // official identifier: only then are their address and phone the
+    // buyer's to print.
+    const patient = row.account.patient;
+    const buyerIsPatient =
+      patient.identifiers[0]?.value === row.buyerIdentification;
+
+    // SRI-019, SRI-070, OR-027. From the key once there is one.
+    const documentNumber = invoiceDocumentNumber({
+      accessKey: row.accessKey,
+      establishmentCode: row.emissionPoint.site.sriEstablishmentCode,
+      emissionPointCode: row.emissionPoint.code,
+      sequential: row.sequential,
+    });
 
     const money = (value: Prisma.Decimal): string => value.toFixed(2);
 
@@ -723,12 +747,29 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         buyerIdentification: row.buyerIdentification,
         buyerName: row.buyerName,
         buyerEmail: row.buyerEmail,
-        lines: row.account.chargeItems.map((charge) => {
+        buyerAddress: buyerIsPatient ? patient.residenceAddressLine : null,
+        paymentMethod: row.paymentMethod,
+        patient: {
+          fullName: fullNameOf(patient),
+          mrn: patient.mrn,
+          phone: buyerIsPatient ? patient.phone : null,
+        },
+        attendedOn: row.chargeItems.reduce<Date | null>(
+          (first, charge) =>
+            first === null || charge.serviceDate < first
+              ? charge.serviceDate
+              : first,
+          null,
+        ),
+        lines: row.chargeItems.map((charge) => {
           const lineTotal = charge.unitAmount
             .mul(charge.quantity)
             .sub(charge.discountAmount);
           return {
             code: charge.billableService.code,
+            auxiliaryCode: charge.billableService.tariffCode,
+            taxSriCode: charge.taxSriCode,
+            taxPercentage: charge.taxPercentage?.toFixed(2) ?? null,
             // The FROZEN display, not the current catalogue name: the invoice
             // has to keep saying what was sold.
             description: charge.serviceDisplay,
