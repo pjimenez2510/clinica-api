@@ -36,6 +36,7 @@ import {
   OrderItemNotMatchableError,
   OrderNotFoundError,
   ReportAlreadyCorrectedError,
+  ReportIssuedInFutureError,
   ReportNotCorrectableError,
   ReportNotFoundError,
   ResultAlreadyMatchedError,
@@ -211,7 +212,11 @@ export class DiagnosticReportService {
   async register(
     request: RegisterReportRequest,
     requester: Requester,
+    now: Date = new Date(),
   ): Promise<DiagnosticReportView> {
+    // ORD-030. The laboratory's issue date is what a critical value's
+    // deadline runs from; a future one would hide it as «dentro del plazo».
+    if (request.issuedAt > now) throw new ReportIssuedInFutureError();
     const prepared = await this.prepare(request.orderId, request.results, requester); // prettier-ignore
 
     const report = await this.reports.register(
@@ -241,7 +246,9 @@ export class DiagnosticReportService {
   async correct(
     request: CorrectReportRequest,
     requester: Requester,
+    now: Date = new Date(),
   ): Promise<DiagnosticReportView> {
+    if (request.issuedAt > now) throw new ReportIssuedInFutureError();
     const previous = await this.reports.byId({
       reportId: request.reportId,
       sites: requester.sites,

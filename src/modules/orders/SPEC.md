@@ -478,7 +478,8 @@ cuando la gráfica exista.
 
 - **ORD-026** — CUANDO la cola se consulta por la `Cedula` del informe
   (ORD-081), cada entrada DEBERÁ llevar el nombre del paciente de la orden, y SI
-  se consulta sin cédula ENTONCES NO DEBERÁ llevarlo.
+  se consulta sin cédula ENTONCES NO DEBERÁ llevarlo; y cada búsqueda por
+  cédula DEBERÁ dejar una fila en `access_audit` sobre esa ficha.
 
   Es la opción C de **D-068**. El laboratorio rotula el informe de un recién
   nacido sin cédula propia como «RN de …» con la cédula de la madre: el camino
@@ -488,7 +489,10 @@ cuando la gráfica exista.
   quién corresponde cada orden. Relaja ORD-024 **solo en ese caso**: quien
   busca ya tiene el documento de la persona, así que el nombre no le revela
   nada nuevo. El aviso por vínculo madre-hijo (D-068 B) espera a que el vínculo
-  exista en el modelo.
+  exista en el modelo. Y como enseña nombre y lo pendiente de una persona, es
+  un acceso a datos de salud identificados (LOPDP): deja rastro por búsqueda,
+  no por refresco de la cola sin filtro, que ORD-092 deja fuera. El nombre es
+  el completo, con los dos apellidos: es lo que distingue a dos homónimos.
 
 ---
 
@@ -496,7 +500,13 @@ cuando la gráfica exista.
 
 - **ORD-030** — CUANDO se registra un informe contra una orden, el sistema DEBERÁ
   crearlo con su estado —`PARTIAL` mientras falten determinaciones, `FINAL`
-  cuando estén todas—, quién lo emitió y cuándo.
+  cuando estén todas—, quién lo emitió y **cuándo lo emitió el laboratorio**, y
+  SI esa fecha es futura ENTONCES DEBERÁ rechazarlo con
+  `REPORT_ISSUED_IN_FUTURE`.
+
+  La fecha de emisión no es la de transcripción: el papel de anoche se teclea
+  esta mañana, y de la emisión corre el plazo de un crítico (ORD-065, D-113 a)
+  y a ella se acota la hora de su aviso (ORD-062).
 
 - **ORD-031** — Cada valor DEBERÁ registrarse contra un `analyte_definition`, y
   el sistema DEBERÁ congelar el nombre del analito en la fila
@@ -956,6 +966,7 @@ contrato —`code`, estado y mensaje—.
 | `ORDER_ITEM_NOT_MATCHABLE` | 422 | La línea no es de la orden en la que llegó el resultado, o está anulada. **Uno solo para las dos**: lo que hay que hacer es idéntico, elegir otra línea de esta orden | ORD-043 |
 | `RESULT_NOT_CRITICAL` | 422 | Se intentó registrar el aviso de un resultado sin bandera crítica. La constancia de ORD-062 es la de un valor de alerta, y una sobre un valor normal llenaría la cola de seguridad de ruido | ORD-062 |
 | `CRITICAL_NOTICE_TIME_INVALID` | 422 | El instante del aviso es futuro o anterior al resultado. Ninguno de los dos pudo ocurrir | ORD-062 |
+| `REPORT_ISSUED_IN_FUTURE` | 422 | La fecha de emisión del laboratorio es futura | ORD-030 |
 | `RESULT_SUPERSEDED` | 422 | Se intentó avisar de un valor cuyo informe ya fue corregido: se avisa el que lo sustituye | ORD-062 |
 | `CRITICAL_READ_BACK_REQUIRED` | 422 | Un aviso hecho sin confirmar que quien lo recibió repitió el valor | ORD-066 |
 

@@ -1001,6 +1001,9 @@ export const DOMAIN_ERROR_CODES = [
   //     quien lo recibió repitió el valor (D-111 §4).
   'CRITICAL_READ_BACK_REQUIRED',
   'RESULT_SUPERSEDED',
+  //   * `REPORT_ISSUED_IN_FUTURE` (422) — ORD-030. La emisión del laboratorio,
+  //     de la que corre el plazo de un crítico, no puede ser futura.
+  'REPORT_ISSUED_IN_FUTURE',
   // ─── Configuration (ORD-046, ORD-065). El rol que responde de una cola de
   //   resultados tiene que poder trabajarla: `record:read` y `result:write`.
   'ROLE_CANNOT_WORK_RESULTS',

@@ -25,6 +25,7 @@ import {
   ResultChartUnmatchedError,
   ResultFlagIsDerivedError,
   ResultNotCriticalError,
+  ReportIssuedInFutureError,
   ResultNotFoundError,
   ResultSupersededError,
   ResultValueNotAllowedError,
@@ -62,6 +63,7 @@ const EVERY_ERROR: readonly DomainError[] = [
   new CriticalNoticeTimeInvalidError(),
   new ResultSupersededError(),
   new CriticalReadBackRequiredError(),
+  new ReportIssuedInFutureError(),
 ];
 
 describe('el contrato de errores de las órdenes', () => {

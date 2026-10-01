@@ -175,11 +175,9 @@ export class DiagnosticReportController {
    * on anything the laboratory sent: many send only «alto/bajo», some send
    * nothing, and the A.M. 00002393 art. 39 obligation is ours either way.
    *
-   * ⚠️ WHAT IS MISSING IS THE OTHER HALF (ORD-062). There is no route to record
-   * that the call was made, because there is no table for it — and the phone
-   * call is a CLINICAL ACT, not an errand. Until it exists, this list cannot
-   * be emptied, and that is the honest state rather than a button that hides
-   * the row.
+   * ORD-062, ORD-065 to ORD-068. A value leaves this list with a notice
+   * actually given — with read-back —, never with an unanswered call; and each
+   * entry says whom the notice is due to now (D-111).
    */
   @Get('results/critical')
   @RequirePermission('record:read', 'query')

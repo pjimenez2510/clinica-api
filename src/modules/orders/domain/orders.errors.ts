@@ -504,3 +504,27 @@ export class CriticalReadBackRequiredError extends ValidationError {
     super('A given notice requires the read-back confirmation');
   }
 }
+
+/**
+ * ORD-030. The laboratory's issue date is in the future.
+ *
+ * The issue date is what a critical value's deadline runs from (ORD-065) and
+ * what bounds the instant of its notice (ORD-062): a future one would leave a
+ * critical value «dentro del plazo» and impossible to notify.
+ */
+export class ReportIssuedInFutureError extends ValidationError {
+  readonly code = 'REPORT_ISSUED_IN_FUTURE';
+  override readonly userTitle =
+    'La fecha de emisión del informe no puede ser futura. Escriba la que imprimió el laboratorio';
+  override readonly fieldErrors = [
+    {
+      field: 'issuedAt',
+      code: 'REPORT_ISSUED_IN_FUTURE',
+      message: 'La fecha y hora que imprimió el laboratorio, no una futura',
+    },
+  ];
+
+  constructor() {
+    super('The report issue date is in the future');
+  }
+}

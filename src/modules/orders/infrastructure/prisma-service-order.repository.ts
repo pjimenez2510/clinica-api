@@ -250,7 +250,14 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
             patientId: true,
             // ORD-026. Read only when asked: the plain worklist never sees it.
             patient: query.includePatientName
-              ? { select: { givenName: true, familyName: true } }
+              ? {
+                  select: {
+                    givenName: true,
+                    secondGivenName: true,
+                    familyName: true,
+                    secondFamilyName: true,
+                  },
+                }
               : false,
           },
         },
@@ -295,8 +302,16 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
         testCode: item.testCode,
         testDisplay: item.testDisplay,
         requestedAt: order.requestedAt,
+        // ORD-026. The whole name: two surnames are what tell namesakes apart.
         patientName: order.encounter.patient
-          ? `${order.encounter.patient.givenName} ${order.encounter.patient.familyName}`
+          ? [
+              order.encounter.patient.givenName,
+              order.encounter.patient.secondGivenName,
+              order.encounter.patient.familyName,
+              order.encounter.patient.secondFamilyName,
+            ]
+              .filter(Boolean)
+              .join(' ')
           : null,
         /**
          * ORD-022. `undefined` from the map — a code with no definition at all
