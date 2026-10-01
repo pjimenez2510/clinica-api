@@ -567,7 +567,7 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
             patientId: ids.patientId,
             issuedById: ids.practitionerId,
             type: 'ATTENDANCE',
-            body: 'Asistió a consulta',
+            siteId: encounter.siteId,
             verificationCode: `C-${encounter.id.slice(-12)}`,
           },
         });
@@ -613,9 +613,10 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
         patientId: ids.patientId,
         issuedById: ids.practitionerId,
         type: 'ATTENDANCE',
-        body: 'Asistió a consulta',
+        siteId: encounter.siteId,
         verificationCode: `R-${encounter.id.slice(-12)}`,
         revokedAt: new Date(),
+        revokedById: requester.userId,
         revocationReason: 'Paciente equivocado',
       },
     });
@@ -777,7 +778,11 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
         requester,
       );
     const prescription = await prisma.prescription.create({
-      data: { encounterId: encounter.id, prescriberId: ids.practitionerId },
+      data: {
+        encounterId: encounter.id,
+        siteId: encounter.siteId,
+        prescriberId: ids.practitionerId,
+      },
     });
     const system = await prisma.catalogSystem.upsert({
       where: { code: 'LAB' },
@@ -864,14 +869,18 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
         patientId: ids.patientId,
         issuedById: ids.practitionerId,
         type: 'ATTENDANCE',
-        body: 'Asistió a consulta',
+        siteId: encounter.siteId,
         verificationCode: `C-${encounter.id.slice(-12)}`,
       },
     });
     expect(await liveActs()).toContain('certificado');
     await prisma.medicalCertificate.update({
       where: { id: certificate.id },
-      data: { revokedAt: new Date(), revocationReason: 'Paciente equivocado' },
+      data: {
+        revokedAt: new Date(),
+        revokedById: requester.userId,
+        revocationReason: 'Paciente equivocado',
+      },
     });
 
     const referral = await prisma.referral.create({
