@@ -310,10 +310,11 @@ export const MAX_DAYS_TO_ISSUE_REST = 8;
  * most three days before, and it is issued at most eight days after (with the
  * dawn of CER-030). The reason of CER-030 does not widen either bound.
  *
- * D-108. A maternity rest may also start on the day of admission or of birth,
- * whichever is earlier, and has no eight-day limit: the mother who gave birth
- * in a hospital comes days later, and the leave chains certificates (CER-043).
- * The three days stay, so a prenatal rest is as it was (D-106 §2).
+ * D-108. A maternity rest may also start ON the day of admission or of birth,
+ * however long ago, and has no eight-day limit: the mother who gave birth in a
+ * hospital comes days later, and the leave chains certificates (CER-043). Any
+ * other day still keeps the three days, so a prenatal rest is as it was
+ * (D-106 §2). What bounds those dates is D-109, pending.
  */
 export function assertRestWithinAttention(
   period: RestPeriod,
@@ -321,17 +322,13 @@ export function assertRestWithinAttention(
   lateIssueDay: ClinicalDate,
   maternity: MaternityDates | null,
 ): void {
-  const threeDaysBefore = addDays(attentionDate, -MAX_REST_DAYS_BEFORE_ATTENTION); // prettier-ignore
-  const maternityStart =
-    maternity === null
-      ? null
-      : maternity.admissionOn < maternity.birthOn
-        ? maternity.admissionOn
-        : maternity.birthOn;
-  if (maternityStart !== null && maternityStart < threeDaysBefore) {
-    if (period.from < maternityStart) throw new CertificateRestStartTooEarlyError(maternityStart, 'MATERNITY'); // prettier-ignore
-  } else if (period.from < threeDaysBefore) {
-    throw new CertificateRestStartTooEarlyError(threeDaysBefore, 'ATTENTION');
+  const earliest = addDays(attentionDate, -MAX_REST_DAYS_BEFORE_ATTENTION);
+  const onMaternityDay =
+    maternity !== null &&
+    (period.from === maternity.admissionOn ||
+      period.from === maternity.birthOn);
+  if (period.from < earliest && !onMaternityDay) {
+    throw new CertificateRestStartTooEarlyError(earliest, maternity);
   }
   if (maternity !== null) return;
   if (lateIssueDay > addDays(attentionDate, MAX_DAYS_TO_ISSUE_REST)) {

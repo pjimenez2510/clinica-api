@@ -531,71 +531,64 @@ describe('D-106 la ventana del reposo alrededor de la atención', () => {
 });
 
 describe('D-108 en el reposo de maternidad no rigen los topes de D-106', () => {
-  /** Ingresó la víspera del parto y salió dos días después. */
+  /** Ingresó dos días antes del parto y salió dos días después. */
   const maternityFrom = (birth: ClinicalDate) => ({
-    admissionOn: addDays(birth, -1),
+    admissionOn: addDays(birth, -2),
     birthOn: birth,
     dischargeOn: addDays(birth, 2),
   });
+  /** A rest from `from` to today, issued today on today's attention. */
+  const startingOn =
+    (from: ClinicalDate, maternity: ReturnType<typeof maternityFrom> | null) =>
+    () =>
+      assertRestWithinAttention({ from, to: today }, today, today, maternity);
 
-  it('CER-044 la maternidad empieza desde el parto o el ingreso aunque la atención sea cinco días después', () => {
+  it('CER-044 la maternidad empieza el dia del parto o del ingreso aunque la atencion sea cinco dias despues', () => {
     const birth = addDays(today, -5);
     const maternity = maternityFrom(birth);
-    expect(
-      () =>
-      assertRestWithinAttention({ from: birth, to: today }, today, today, maternity), // prettier-ignore
-    ).not.toThrow();
-    expect(
-      () =>
-      assertRestWithinAttention({ from: maternity.admissionOn, to: today }, today, today, maternity), // prettier-ignore
-    ).not.toThrow();
+    expect(startingOn(birth, maternity)).not.toThrow();
+    expect(startingOn(maternity.admissionOn, maternity)).not.toThrow();
     // Control: la enfermedad general con la misma fecha sigue rechazada.
-    expect(
-      () =>
-      assertRestWithinAttention({ from: birth, to: today }, today, today, null), // prettier-ignore
-    ).toThrow(CertificateRestStartTooEarlyError);
+    expect(startingOn(birth, null)).toThrow(CertificateRestStartTooEarlyError);
   });
 
-  it('CER-044 antes del ingreso se rechaza nombrando el ingreso como primera fecha', () => {
+  it('CER-044 un dia que no es ni el ingreso ni el parto se rechaza, nombrando los dos', () => {
     const maternity = maternityFrom(addDays(today, -5));
-    let refusal: unknown;
-    try {
-      assertRestWithinAttention(
-        { from: addDays(maternity.admissionOn, -1), to: today },
-        today,
-        today,
-        maternity,
-      );
-    } catch (error) {
-      refusal = error;
+    const label = (day: ClinicalDate) => day.split('-').reverse().join('/');
+    for (const from of [
+      addDays(maternity.admissionOn, 1),
+      addDays(maternity.admissionOn, -1),
+    ]) {
+      let refusal: unknown;
+      try {
+        startingOn(from, maternity)();
+      } catch (error) {
+        refusal = error;
+      }
+      expect(refusal).toBeInstanceOf(CertificateRestStartTooEarlyError);
+      const error = refusal as CertificateRestStartTooEarlyError;
+      expect(error.userTitle).toContain('ingreso o del parto');
+      expect(error.fieldErrors[0]).toMatchObject({
+        field: 'restFrom',
+        message: `El reposo de maternidad empieza el día del ingreso (${label(maternity.admissionOn)}) o del parto (${label(maternity.birthOn)}), o como muy pronto el ${label(addDays(today, -3))}`,
+      });
     }
-    expect(refusal).toBeInstanceOf(CertificateRestStartTooEarlyError);
-    const error = refusal as CertificateRestStartTooEarlyError;
-    expect(error.userTitle).toContain('ingreso');
-    expect(error.fieldErrors[0]).toMatchObject({
-      field: 'restFrom',
-      message: `El reposo debe empezar, como muy pronto, el ${maternity.admissionOn.split('-').reverse().join('/')}`,
-    });
   });
 
-  it('CER-044 la maternidad prenatal conserva los 3 días antes de la atención (D-106 §2)', () => {
-    const maternity = maternityFrom(addDays(today, 20));
-    expect(
-      () =>
-      assertRestWithinAttention({ from: addDays(today, -3), to: today }, today, today, maternity), // prettier-ignore
-    ).not.toThrow();
-    expect(
-      () =>
-      assertRestWithinAttention({ from: addDays(today, -4), to: today }, today, today, maternity), // prettier-ignore
-    ).toThrow(CertificateRestStartTooEarlyError);
+  it('CER-044 la maternidad conserva los 3 dias antes de la atencion: la prenatal, como estaba (D-106 §2)', () => {
+    const prenatal = maternityFrom(addDays(today, 20));
+    expect(startingOn(addDays(today, -3), prenatal)).not.toThrow();
+    expect(startingOn(addDays(today, -4), prenatal)).toThrow(
+      CertificateRestStartTooEarlyError,
+    );
   });
 
-  it('CER-045 un reposo de maternidad se emite pasados 8 días de la atención; el general no', () => {
+  it('CER-045 un reposo de maternidad se emite pasados 8 dias de la atencion; el general no', () => {
     const issueDay = addDays(today, 9);
     const period = { from: issueDay, to: addDays(issueDay, 29) };
-    expect(
-      () =>
-      assertRestWithinAttention(period, today, issueDay, maternityFrom(addDays(today, -1))), // prettier-ignore
+    const maternity = maternityFrom(addDays(today, -1));
+    expect(() =>
+      assertRestWithinAttention(period, today, issueDay, maternity),
     ).not.toThrow();
     expect(() =>
       assertRestWithinAttention(period, today, issueDay, null),

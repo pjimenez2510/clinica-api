@@ -6,6 +6,7 @@ import {
   type DomainFieldError,
 } from '../../../shared/domain/errors/domain-error';
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
+import type { MaternityDates } from '../../../shared/domain/form-117/vocabulary';
 
 /**
  * What can go wrong when a medical certificate is issued, read or annulled, in
@@ -237,24 +238,28 @@ export class CertificateAlreadyRevokedError extends ConflictError {
 /**
  * CER-044, D-106 §1. Even with its reason, a rest starts at most three days
  * before the attention; the earliest admitted day is named. A maternity rest
- * may start earlier, on its admission or birth (D-108): the title says which.
+ * may also start on its admission or birth (D-108): both days are named too.
  */
 export class CertificateRestStartTooEarlyError extends ValidationError {
   readonly code = 'CERTIFICATE_REST_START_TOO_EARLY';
   override readonly userTitle: string;
   override readonly fieldErrors: readonly DomainFieldError[];
 
-  constructor(earliest: ClinicalDate, bound: 'ATTENTION' | 'MATERNITY') {
-    super('A rest starts at most three days before the attention, or on its maternity admission'); // prettier-ignore
+  constructor(earliest: ClinicalDate, maternity: MaternityDates | null) {
+    super('A rest starts at most three days before the attention, or on its maternity admission or birth'); // prettier-ignore
+    const label = (day: ClinicalDate) => day.split('-').reverse().join('/');
     this.userTitle =
-      bound === 'MATERNITY'
-        ? 'El reposo de maternidad puede empezar, como muy pronto, en la fecha de ingreso o del parto'
-        : 'El reposo puede empezar, como mucho, tres días antes de la atención';
+      maternity === null
+        ? 'El reposo puede empezar, como mucho, tres días antes de la atención'
+        : 'El reposo de maternidad empieza el día del ingreso o del parto, o como mucho tres días antes de la atención';
     this.fieldErrors = [
       {
         field: 'restFrom',
         code: 'CERTIFICATE_REST_START_TOO_EARLY',
-        message: `El reposo debe empezar, como muy pronto, el ${earliest.split('-').reverse().join('/')}`,
+        message:
+          maternity === null
+            ? `El reposo debe empezar, como muy pronto, el ${label(earliest)}`
+            : `El reposo de maternidad empieza el día del ingreso (${label(maternity.admissionOn)}) o del parto (${label(maternity.birthOn)}), o como muy pronto el ${label(earliest)}`,
       },
     ];
   }
