@@ -203,6 +203,13 @@ describe('SRI-058, SRI-062 qué reintenta una persona y qué va primero en el mo
     expect(needsAPerson('SIGNED')).toBe(false);
     expect(needsAPerson('RECEIVED')).toBe(false);
   });
+
+  it('SRI-062 un recibido sin respuesta en un día pasa a necesitar a alguien; antes, no', () => {
+    const now = new Date();
+    const hoursAgo = (h: number) => new Date(now.getTime() - h * 3600_000);
+    expect(needsAPerson('RECEIVED', hoursAgo(25), now)).toBe(true);
+    expect(needsAPerson('RECEIVED', hoursAgo(2), now)).toBe(false);
+  });
 });
 
 describe('SRI-073 el documento de autorización', () => {

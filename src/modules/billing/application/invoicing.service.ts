@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { PinoLogger } from 'nestjs-pino';
 
 import {
   ACCESS_AUDIT_RECORDER,
@@ -81,7 +82,10 @@ export class InvoicingService {
     private readonly vouchers: ElectronicVoucherPreparer,
     @Inject(ELECTRONIC_VOUCHER_STATUS)
     private readonly voucherStatus: ElectronicVoucherStatusReader,
-  ) {}
+    private readonly logger: PinoLogger,
+  ) {
+    this.logger.setContext(InvoicingService.name);
+  }
 
   /**
    * BI-080 to BI-089. Issues the invoice of an account.
@@ -157,12 +161,27 @@ export class InvoicingService {
      * invoice is re-read so the response carries the key the RIDE will print.
      */
     await this.vouchers.prepare(invoice.id);
-    const issued =
-      (await this.accounts.findInvoice({
-        invoiceId: invoice.id,
-        siteId: command.siteId,
-      })) ?? invoice;
-    return (await this.withVouchers([issued]))[0]!;
+    try {
+      const issued =
+        (await this.accounts.findInvoice({
+          invoiceId: invoice.id,
+          siteId: command.siteId,
+        })) ?? invoice;
+      return (await this.withVouchers([issued]))[0]!;
+    } catch (error) {
+      // The invoice is committed and numbered: an error now would make the
+      // cashier issue it again. It answers without the key, which the list
+      // shows on its next read.
+      this.logger.error(
+        {
+          err: error,
+          invoice_id: invoice.id,
+          error_code: 'INVOICE_REREAD_FAILED',
+        },
+        'the issued invoice could not be re-read; answering without its voucher',
+      );
+      return { ...invoice, electronic: null };
+    }
   }
 
   /**

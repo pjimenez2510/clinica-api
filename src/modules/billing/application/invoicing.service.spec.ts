@@ -1,3 +1,4 @@
+import type { PinoLogger } from 'nestjs-pino';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -97,6 +98,7 @@ function build(options: { accounts?: Record<string, unknown> } = {}) {
     record: vi.fn().mockResolvedValue(undefined),
     prepare: vi.fn().mockResolvedValue(undefined),
     summariesOf: vi.fn().mockResolvedValue(new Map()),
+    logError: vi.fn(),
     ...options.accounts,
   };
 
@@ -107,6 +109,10 @@ function build(options: { accounts?: Record<string, unknown> } = {}) {
       mocks,
       mocks,
       mocks,
+      {
+        setContext: vi.fn(),
+        error: mocks.logError,
+      } as unknown as PinoLogger,
     ),
     mocks,
   };
@@ -269,6 +275,22 @@ describe('BI-080 a BI-089 emitir la factura', () => {
       mocks.prepare.mock.invocationCallOrder[0]!,
     );
     expect(issued.electronic).toEqual(summary);
+  });
+
+  it('SRI-041 si la relectura falla tras emitir, responde la factura emitida sin su comprobante, sin error', async () => {
+    const { service: invoicing, mocks } = build({
+      accounts: {
+        summariesOf: vi.fn().mockRejectedValue(new Error('db hiccup')),
+      },
+    });
+
+    const issued = await invoicing.issueInvoice(
+      { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver, paymentMethod: '01' }, // prettier-ignore
+      requester,
+    );
+
+    expect(issued).toMatchObject({ id: invoice.id, electronic: null });
+    expect(mocks.logError).toHaveBeenCalled();
   });
 
   it('SRI-060 la factura sin comprobante todavía lo dice con null, sin fallar', async () => {

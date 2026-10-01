@@ -250,6 +250,12 @@ export const envSchema = z.object({
  */
 export type Env = z.infer<typeof envSchema>;
 
+/** SRI-055. The SRI's two hosts and the environment each one serves. */
+const SRI_HOST_ENVIRONMENT: Record<string, '1' | '2'> = {
+  'celcer.sri.gob.ec': '1',
+  'cel.sri.gob.ec': '2',
+};
+
 /** SRI-053. `localhost`, a loopback address, or a `.localhost`/`.test` name. */
 export function isLocalUrl(value: string): boolean {
   const host = new URL(value).hostname;
@@ -294,6 +300,29 @@ export function validateEnv(raw: Record<string, unknown>): Env {
             path: [key],
             message:
               'apunta a un servidor que no es local; declare SRI_ALLOW_REMOTE=true solo si de verdad quiere hablar con el SRI',
+          });
+        }
+        if (value === undefined || isLocalUrl(value)) continue;
+        // SRI-053. Toward the real SRI, only over TLS.
+        if (new URL(value).protocol !== 'https:') {
+          ctx.addIssue({
+            code: 'custom',
+            path: [key],
+            message: 'el servicio del SRI solo se llama por https',
+          });
+        }
+        // SRI-055. The environment is NOT deduced from the URL, but a key of
+        // one environment sent to the other's server is returned for ever:
+        // the two must agree, or the process does not start.
+        const environmentOfHost = SRI_HOST_ENVIRONMENT[new URL(value).hostname];
+        if (
+          environmentOfHost !== undefined &&
+          environmentOfHost !== env.SRI_ENVIRONMENT
+        ) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [key],
+            message: `es el servidor del ambiente ${environmentOfHost} y SRI_ENVIRONMENT dice ${env.SRI_ENVIRONMENT}: los comprobantes de un ambiente no se autorizan en el otro`,
           });
         }
       }

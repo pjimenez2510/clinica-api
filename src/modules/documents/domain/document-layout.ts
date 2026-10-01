@@ -504,6 +504,8 @@ function fiscalLegends(context: DocumentContext): LabelledValue[] {
 
 /** SRI-071. What the RIDE says while the SRI has not authorised. */
 const PENDING_AUTHORISATION = 'PENDIENTE DE AUTORIZACIÓN';
+/** SRI-071, D-102. What it says once the SRI returned or refused it. */
+const NOT_AUTHORISED = 'NO AUTORIZADA POR EL SRI';
 
 /** SRI-070. The 24th digit of the access key: `1` pruebas, `2` producción. */
 function environmentOf(accessKey: string | null): string {
@@ -529,6 +531,10 @@ export function composeInvoiceLayout(
   context: DocumentContext,
   template: DocumentTemplate,
 ): DocumentLayout {
+  // SRI-071. Pending only while it can still be authorised: a returned or
+  // refused invoice must not promise an authorisation that will not come.
+  const unauthorised =
+    data.status === 'REJECTED' ? NOT_AUTHORISED : PENDING_AUTHORISATION;
   const { establishment } = context;
 
   const issuerBox: Block[] = [
@@ -555,15 +561,13 @@ export function composeInvoiceLayout(
         {
           label: 'NÚMERO DE AUTORIZACIÓN',
           value:
-            data.authorisedAt === null
-              ? PENDING_AUTHORISATION
-              : (data.accessKey ?? '—'),
+            data.authorisedAt === null ? unauthorised : (data.accessKey ?? '—'),
         },
         {
           label: 'FECHA Y HORA DE AUTORIZACIÓN',
           value:
             data.authorisedAt === null
-              ? PENDING_AUTHORISATION
+              ? unauthorised
               : ecuadorianDate(data.authorisedAt),
         },
         // SRI-070. The environment is the one written INSIDE the key (its 24th

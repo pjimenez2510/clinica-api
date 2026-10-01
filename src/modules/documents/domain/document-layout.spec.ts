@@ -600,6 +600,28 @@ describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
     expect(text).toContain(`CLAVE DE ACCESO=${KEY_IN_TESTS}`);
   });
 
+  it('SRI-071 una factura que el SRI devolvió o no autorizó no promete una autorización', () => {
+    const refused = wholeText(
+      composeLayout(
+        {
+          kind: 'INVOICE_RIDE',
+          data: {
+            ...ride.data,
+            accessKey: KEY_IN_TESTS,
+            authorisedAt: null,
+            status: 'REJECTED',
+          },
+        },
+        context,
+        template,
+      ),
+    );
+    expect(refused).toContain(
+      'NÚMERO DE AUTORIZACIÓN=NO AUTORIZADA POR EL SRI',
+    );
+    expect(refused).not.toContain('PENDIENTE DE AUTORIZACIÓN');
+  });
+
   it('SRI-070 imprime el ambiente que dice la clave, no «PRODUCCIÓN» por defecto', () => {
     const testing = wholeText(
       composeLayout(

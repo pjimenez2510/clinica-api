@@ -144,6 +144,7 @@ beforeEach(async () => {
     },
     mailer,
     NOW,
+    settings,
     preparation,
     silentLogger,
   );

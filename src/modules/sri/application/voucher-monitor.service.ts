@@ -17,7 +17,12 @@ import {
   ElectronicVoucherNotFoundError,
   ElectronicVoucherNotRetriableError,
 } from '../domain/sri.errors';
-import { SRI_WEB_SERVICE, type SriWebService } from '../domain/sri-web-service';
+import {
+  SRI_CLOCK,
+  SRI_WEB_SERVICE,
+  type SriClock,
+  type SriWebService,
+} from '../domain/sri-web-service';
 import {
   isRetriableByAPerson,
   needsAPerson,
@@ -62,14 +67,16 @@ export class VoucherMonitorService implements ElectronicVoucherStatusReader {
     @Inject(ACCESS_AUDIT_RECORDER) private readonly audit: AccessAuditRecorder,
     private readonly preparation: VoucherPreparationService,
     private readonly certificates: SigningCertificateService,
+    @Inject(SRI_CLOCK) private readonly clock: SriClock,
   ) {}
 
   /** SRI-061, SRI-062. People first, the queue's own work after. */
   async monitor(sites: Requester['sites']): Promise<MonitorView> {
+    const now = this.clock();
     const rows = await Promise.all(
       (await this.vouchers.monitor(sites)).map(async (row) => ({
         ...row,
-        needsAPerson: needsAPerson(row.status),
+        needsAPerson: needsAPerson(row.status, row.issuedAt, now),
         // SRI-008. An invoice without a voucher says which datum it lacks.
         missingData:
           row.status === 'NO_VOUCHER'

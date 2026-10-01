@@ -467,11 +467,21 @@ describe('SRI-057 el despacho es idempotente', () => {
         },
         mailer,
         () => NOW,
+        f.settings,
         f.preparation,
         logger,
       ),
     };
   }
+
+  it('SRI-055 un comprobante del otro ambiente no se envía', async () => {
+    const f = fakes();
+    f.vouchers.findById.mockResolvedValue(
+      voucher({ status: 'SIGNED', signedXml: '<x/>', environment: '2' }),
+    );
+    await dispatchWith(f).dispatch.run('SEND', 'voucher-1');
+    expect(f.web.receive).not.toHaveBeenCalled();
+  });
 
   it('SRI-057 un SEND sobre un comprobante que ya no está SIGNED no llama al SRI', async () => {
     const f = fakes();
@@ -708,6 +718,7 @@ describe('SRI-058, SRI-062 el monitor', () => {
         audit,
         f.preparation,
         certificates as unknown as SigningCertificateService,
+        () => NOW,
       ),
     };
   }

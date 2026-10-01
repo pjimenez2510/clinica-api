@@ -469,12 +469,16 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
   `SRI_RECEPTION_URL` y `SRI_AUTHORISATION_URL`, y SI apuntan a un host que no
   es local ENTONCES NO DEBERÁ arrancar a menos que `SRI_ALLOW_REMOTE=true`.
   > Que nadie llegue al SRI real por un `.env` copiado. Conectarse de verdad es
-  > un acto deliberado del autor (§9).
+  > un acto deliberado del autor (§9). Hacia un host remoto, solo `https`.
 - **SRI-054** — SI `SRI_RECEPTION_URL` o `SRI_AUTHORISATION_URL` faltan ENTONCES
   el sistema DEBERÁ preparar y firmar igual, y NO DEBERÁ enviar: los
   comprobantes quedan firmados, a la vista en el monitor con ese motivo.
 - **SRI-055** — El sistema NO DEBERÁ deducir el ambiente de la URL: el ambiente
-  es el de la clave, fijado al preparar.
+  es el de la clave, fijado al preparar. SI la URL es la del servidor del SRI
+  de un ambiente y `SRI_ENVIRONMENT` dice el otro ENTONCES NO DEBERÁ arrancar,
+  y NO DEBERÁ enviar un comprobante cuyo ambiente no sea el configurado.
+  > Una clave de pruebas enviada a producción vuelve devuelta para siempre.
+  > Qué se hace con esas facturas es D-102.
 - **SRI-056** — El sistema DEBERÁ ejecutar un barrido periódico que prepare las
   facturas emitidas sin comprobante, firme los preparados sin firma en cuanto
   haya certificado, y vuelva a programar los comprobantes `SIGNED` o `RECEIVED`
@@ -511,8 +515,10 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
   emisión, estado, último mensaje del SRI (identificador y texto) o motivo
   local, número de intentos y próximo intento.
 - **SRI-062** — El monitor DEBERÁ ordenar primero lo que necesita una persona
-  (devueltos, no autorizados, sin firmar, sin comprobante) y después lo que la
-  cola resolverá sola (firmados y recibidos en espera).
+  (devueltos, no autorizados, sin firmar, sin comprobante, y recibidos hace más
+  de 24 h sin respuesta) y después lo que la cola resolverá sola (firmados y
+  recibidos en espera).
+  > El plazo de 24 h y qué se hace después es D-102.
 - **SRI-063** — El sistema DEBERÁ exponer en el monitor el aviso de caducidad del
   certificado (SRI-032) y la ausencia de certificado activo.
 - **SRI-064** — El sistema DEBERÁ exigir `billing:read` para el monitor, el
@@ -540,7 +546,8 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
   > Corrige el `001` inventado de DOC-076.
 - **SRI-071** — MIENTRAS el comprobante no esté autorizado, el RIDE DEBERÁ decir
   «Pendiente de autorización» en el lugar del número y la fecha de
-  autorización, y NO DEBERÁ imprimir un número de autorización.
+  autorización —o «No autorizada por el SRI» si la factura está `REJECTED`—, y
+  NO DEBERÁ imprimir un número de autorización.
   > REQ-086: se entrega igual. Un RIDE que afirma una autorización que no existe
   > es el mismo defecto que DOC-100.
 - **SRI-072** — CUANDO un comprobante quede autorizado y la factura tenga correo

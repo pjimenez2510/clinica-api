@@ -16,8 +16,10 @@ import {
 } from '../domain/electronic-voucher.repository';
 import {
   SRI_CLOCK,
+  SRI_SETTINGS,
   SRI_WEB_SERVICE,
   type SriClock,
+  type SriSettings,
   type SriWebService,
 } from '../domain/sri-web-service';
 import {
@@ -52,6 +54,7 @@ export class VoucherDispatchService {
     @Inject(RIDE_ISSUER) private readonly rides: RideIssuer,
     @Inject(MAILER) private readonly mailer: Mailer,
     @Inject(SRI_CLOCK) private readonly clock: SriClock,
+    @Inject(SRI_SETTINGS) private readonly settings: SriSettings,
     private readonly preparation: VoucherPreparationService,
     private readonly logger: PinoLogger,
   ) {
@@ -74,6 +77,19 @@ export class VoucherDispatchService {
     const voucher = await this.vouchers.findById(voucherId);
     if (!voucher || voucher.status !== 'SIGNED' || !voucher.signedXml) return;
     if (!this.sri.isConfigured()) return;
+    // SRI-055. A key of the testing environment sent to production (or the
+    // reverse) is returned for ever, and the key cannot change. It waits,
+    // logged, until a person decides what becomes of it (D-102).
+    if (voucher.environment !== this.settings.environment) {
+      this.logger.error(
+        {
+          voucher_id: voucher.id,
+          error_code: 'SRI_ENVIRONMENT_MISMATCH',
+        },
+        'the voucher belongs to the other SRI environment; it is not sent',
+      );
+      return;
+    }
 
     const startedAt = this.clock();
     const answer = await this.sri.receive(voucher.signedXml);

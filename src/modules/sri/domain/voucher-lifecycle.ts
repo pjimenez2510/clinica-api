@@ -261,11 +261,23 @@ export function isRetriableByAPerson(status: VoucherStatus): boolean {
   return status === 'RETURNED' || status === 'NOT_AUTHORISED';
 }
 
+/** SRI-062, D-102. A day received and no answer is no longer the queue's. */
+export const UNANSWERED_AFTER_MS = 24 * 3600 * 1000;
+
 /**
  * SRI-062. What needs somebody comes first; what the queue will resolve on its
- * own comes after.
+ * own comes after. A voucher the SRI received a day ago and still has not
+ * answered is shown with the first group: the queue keeps asking (SRI-049),
+ * but what to do next is a person's (D-102).
  */
-export function needsAPerson(status: VoucherStatus | 'NO_VOUCHER'): boolean {
+export function needsAPerson(
+  status: VoucherStatus | 'NO_VOUCHER',
+  issuedAt: Date | null = null,
+  now: Date | null = null,
+): boolean {
+  if (status === 'RECEIVED' && issuedAt !== null && now !== null) {
+    return now.getTime() - issuedAt.getTime() > UNANSWERED_AFTER_MS;
+  }
   return (
     status === 'NO_VOUCHER' ||
     status === 'PREPARED' ||
