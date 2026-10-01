@@ -616,6 +616,36 @@ describe('D-109 lo que acota el reposo de maternidad, garantizado por la base', 
     ).resolves.toBe(1);
   });
 
+  it('CER-048 cuentan los reposos de una ficha que la de la paciente absorbió (PA-055)', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma, { diagnosis: 'O80' });
+    // Una ficha duplicada de la misma paciente, con su atención y un reposo.
+    const duplicate = await createPatient(prisma);
+    const old = await createEncounter(prisma, {
+      siteId: scene.siteId,
+      practitionerId: scene.otherId,
+      patientId: duplicate.id,
+    });
+    const onDuplicate: Scene = { ...scene, encounterId: old.id, patientId: duplicate.id, attendingId: scene.otherId }; // prettier-ignore
+    const birth = addDays(scene.day, -2);
+    await expect(
+      insert(prisma, onDuplicate, { rest: { from: addDays(birth, -1), to: birth }, backdatingReason: REASON }), // prettier-ignore
+    ).resolves.toBe(1);
+    // Se fusiona en la ficha de la paciente.
+    await prisma.$executeRaw`
+      UPDATE patient SET merged_into_id = ${scene.patientId}::uuid, merged_at = now()
+       WHERE id = ${duplicate.id}::uuid`;
+
+    const maternity = maternityFrom(birth);
+    await expect(
+      insert(prisma, scene, { rest: { from: birth, to: scene.day }, maternity, backdatingReason: REASON }), // prettier-ignore
+    ).rejects.toThrow(/medical_certificate_maternity_rest_no_overlap/);
+    // Control positivo: desde el día siguiente al parto, no se pisa.
+    await expect(
+      insert(prisma, scene, { rest: { from: addDays(birth, 1), to: scene.day }, maternity, backdatingReason: REASON }), // prettier-ignore
+    ).resolves.toBe(1);
+  });
+
   it('CER-048 dos maternidades solapadas a la vez desde dos atenciones: gana la primera y la segunda se rechaza', async () => {
     const prisma = db();
     const scene = await aScene(prisma, { diagnosis: 'O80' });

@@ -14,8 +14,8 @@
 --  · CER-046: ingreso y parto, como mucho 84 días antes de la atención.
 --  · CER-047: el reposo termina, como tarde, el parto + 84 días, y no se emite
 --    pasado ese día (con la madrugada de D-106 §5, como CER-045).
---  · CER-048: no se solapa con otro reposo no anulado de la paciente, de
---    cualquier contingencia y atención. Un candado por paciente ordena las
+--  · CER-048: no se solapa con otro reposo no anulado de la paciente —su
+--    ficha y las que absorbió—, de cualquier contingencia y atención. Un candado por paciente ordena las
 --    emisiones concurrentes desde atenciones distintas.
 --  · CER-049: la atención tiene un diagnóstico CIE-10 obstétrico.
 --  · La ventana de 3 días del prenatal (CER-044) no cambia (D-109 §4).
@@ -35,6 +35,7 @@ DECLARE
   issue_day     date;
   late_day      date;
   is_maternity  boolean;
+  chart         uuid;
 BEGIN
   SELECT e."practitioner_id",
          (e."started_at" AT TIME ZONE 'America/Guayaquil')::date
@@ -139,11 +140,17 @@ BEGIN
       -- la atención después. Un INSERT por `psql` a la vez que una emisión por
       -- la API sobre la MISMA atención puede interbloquearse: PostgreSQL lo
       -- detecta (40P01) y una de las dos se reintenta.
-      PERFORM pg_advisory_xact_lock(hashtextextended('medical_certificate_rest:' || NEW."patient_id"::text, 0));
+      -- La paciente es su FICHA: la superviviente y las que absorbió (PA-055;
+      -- no hay cadenas de fusión, PA-046). El candado, también por ficha.
+      SELECT COALESCE(p."merged_into_id", p."id") INTO chart
+        FROM "patient" p
+       WHERE p."id" = NEW."patient_id";
+      PERFORM pg_advisory_xact_lock(hashtextextended('medical_certificate_rest:' || chart::text, 0));
       IF EXISTS (
         SELECT 1
           FROM "medical_certificate" c
-         WHERE c."patient_id" = NEW."patient_id"
+          JOIN "patient" p ON p."id" = c."patient_id"
+         WHERE COALESCE(p."merged_into_id", p."id") = chart
            AND c."type" = 'MEDICAL_REST'
            AND c."revoked_at" IS NULL
            AND daterange(c."rest_from", c."rest_to", '[]')

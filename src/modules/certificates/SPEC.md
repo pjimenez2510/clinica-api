@@ -543,8 +543,9 @@ PR-030).
   `medical_certificate_maternity_within_leave`.
 
 - **CER-048** — CUANDO se emita un reposo de contingencia **maternidad**, SI su
-  período se solapa con el de otro reposo **no anulado** de la misma paciente,
-  de cualquier contingencia y de cualquier atención, ENTONCES el sistema DEBERÁ
+  período se solapa con el de otro reposo **no anulado** de la misma paciente
+  —su ficha y las que absorbió (PA-055)—, de cualquier contingencia y de
+  cualquier atención, ENTONCES el sistema DEBERÁ
   rechazarlo con `CERTIFICATE_REST_OVERLAPS`. **Base:**
   `medical_certificate_maternity_rest_no_overlap`, que serializa las emisiones
   de la paciente: dos a la vez desde dos atenciones no pasan las dos.
