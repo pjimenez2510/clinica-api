@@ -1,5 +1,6 @@
 import type { DocumentKind, SiteScopeFilter } from './document-kind';
 import type { StoredImage } from './document-image';
+import type { VerificationFacts } from './document-verification';
 
 /**
  * THE PORTS. What this module needs to know about the rows it prints, stated
@@ -222,6 +223,11 @@ export interface DocumentSourceReader {
    * administrator names none: the first active one, by name.
    */
   firstActiveSiteId(): Promise<string | null>;
+  /**
+   * DOC-094. What may be said in public about the document behind a code.
+   * Not scoped: the code IS the credential, and the answer carries nobody.
+   */
+  findForVerification(code: string): Promise<VerificationFacts | null>;
 }
 
 export const DOCUMENT_SOURCE_READER = Symbol('DOCUMENT_SOURCE_READER');

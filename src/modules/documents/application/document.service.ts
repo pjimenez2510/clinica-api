@@ -333,11 +333,11 @@ export class DocumentService {
   async previewTemplate(
     kind: DocumentKind,
     slots: TemplateSlots,
-    siteId: string | null,
   ): Promise<RenderedDocument> {
     assertSlotsAreValid(slots);
 
-    const site = siteId ?? (await this.sources.firstActiveSiteId());
+    // The first active site: a global route takes no site (D-023, AU-011).
+    const site = await this.sources.firstActiveSiteId();
     const context =
       site === null ? null : await this.sources.contextForSite(site);
     if (context === null) throw new DocumentSubjectNotFoundError();

@@ -960,6 +960,10 @@ export const DOMAIN_ERROR_CODES = [
   'DOCUMENT_SUBJECT_NOT_ISSUABLE',
   'DOCUMENT_TEMPLATE_NOT_PUBLISHED',
   'DOCUMENT_TEMPLATE_SLOT_INVALID',
+  //   * `DOCUMENT_VERIFICATION_NOT_FOUND` (404) — DOC-096: ningún documento con
+  //     ese código, o un código sin forma de código. **El mismo cuerpo para
+  //     todos**: distinguirlos dejaría mapear qué códigos existen.
+  'DOCUMENT_VERIFICATION_NOT_FOUND',
 ] as const;
 
 /**

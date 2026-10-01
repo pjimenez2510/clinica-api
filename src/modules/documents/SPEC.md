@@ -233,8 +233,8 @@ paciente**. Es la única ruta pública de este módulo.
 
 **Prueba independiente:** pedir sin sesión la verificación de una receta
 emitida y comprobar que la respuesta no contiene el nombre, el documento ni el
-diagnóstico del paciente; pedir un código inventado y comprobar que la
-respuesta es idéntica byte a byte a la de otro código inventado.
+diagnóstico del paciente; pedir dos códigos inventados —uno con forma de
+código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
 
 **Cubre:** DOC-094 a DOC-097.
 
@@ -469,7 +469,8 @@ respuesta es idéntica byte a byte a la de otro código inventado.
 - **DOC-038** — CUANDO quien tenga `config:read` pida la **vista previa** de
   una clase con unas ranuras (publicadas o no), el sistema DEBERÁ devolver el
   PDF de esa clase compuesto con **esas** ranuras, con la identidad real del
-  establecimiento y con **datos de ejemplo ficticios** rotulados «MUESTRA SIN
+  establecimiento —la de su primera sede activa: la ruta es global y no recibe
+  sede (D-023)— y con **datos de ejemplo ficticios** rotulados «MUESTRA SIN
   VALIDEZ», y **NO DEBERÁ** guardar ni artefacto ni plantilla.
 
   > La vista previa la pinta **el mismo generador** que emite: una imitación en
@@ -755,9 +756,12 @@ respuesta es idéntica byte a byte a la de otro código inventado.
   > leer nada que el papel diga de una persona. Lo que se muestra del
   > profesional es lo que su sello ya hace público. Qué más mostrar es D-096.
 
-- **DOC-096** — SI el código no existe, ENTONCES el sistema DEBERÁ responder 404
-  con `DOCUMENT_VERIFICATION_NOT_FOUND` y **el mismo cuerpo** para cualquier
-  código.
+- **DOC-096** — SI el código no existe, o no tiene forma de código, ENTONCES el
+  sistema DEBERÁ responder 404 con `DOCUMENT_VERIFICATION_NOT_FOUND` y **el mismo
+  estado, código, título y detalle** para cualquiera de ellos.
+
+  > Sólo difieren `instance` y `traceId`, que todo problem+json lleva y no dicen
+  > nada del documento.
 
 - **DOC-097** — La página `/verificar/<código>` de la interfaz DEBERÁ ser
   **pública**, sin el marco de la aplicación, y mostrar lo de DOC-094 o, si el

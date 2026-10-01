@@ -305,6 +305,10 @@ class FakeSources implements DocumentSourceReader {
   firstActiveSiteId(): Promise<string | null> {
     return Promise.resolve(this.defaultSite);
   }
+
+  findForVerification(): Promise<null> {
+    return Promise.resolve(null);
+  }
 }
 
 class RecordingRenderer implements DocumentRenderer {
@@ -730,11 +734,10 @@ const slots = {
 
 describe('DOC-038 la vista previa la pinta el mismo generador, y no guarda nada', () => {
   it('DOC-038 compone la clase pedida con las ranuras propuestas y contenido de muestra', async () => {
-    const preview = await service.previewTemplate(
-      'MEDICAL_CERTIFICATE',
-      { ...slots, accentColour: '#7a3b2e' },
-      null,
-    );
+    const preview = await service.previewTemplate('MEDICAL_CERTIFICATE', {
+      ...slots,
+      accentColour: '#7a3b2e',
+    });
 
     expect(preview.mimeType).toBe('application/pdf');
     const { layout } = renderer.calls[0] ?? {};
@@ -744,27 +747,25 @@ describe('DOC-038 la vista previa la pinta el mismo generador, y no guarda nada'
   });
 
   it('DOC-038 no escribe ni artefacto, ni plantilla, ni bitácora', async () => {
-    await service.previewTemplate('PRESCRIPTION', slots, null);
+    await service.previewTemplate('PRESCRIPTION', slots);
 
     expect(repository.renders).toHaveLength(0);
     expect(repository.templates).toHaveLength(1);
     expect(repository.disclosures).toHaveLength(0);
   });
 
-  it('DOC-038 usa la sede pedida, o la primera activa si no piden ninguna', async () => {
-    await service.previewTemplate('PRESCRIPTION', slots, 'site-9');
-    await service.previewTemplate('PRESCRIPTION', slots, null);
+  it('DOC-038 toma la identidad de la primera sede activa', async () => {
+    await service.previewTemplate('PRESCRIPTION', slots);
 
-    expect(sources.contextSites).toEqual(['site-9', 'site-1']);
+    expect(sources.contextSites).toEqual(['site-1']);
   });
 
   it('DOC-038 rechaza las ranuras inválidas igual que al publicar', async () => {
     await expect(
-      service.previewTemplate(
-        'PRESCRIPTION',
-        { ...slots, accentColour: 'verde' },
-        null,
-      ),
+      service.previewTemplate('PRESCRIPTION', {
+        ...slots,
+        accentColour: 'verde',
+      }),
     ).rejects.toThrow(/DOCUMENT_TEMPLATE_SLOT_INVALID|Invalid template slot/);
     expect(renderer.calls).toHaveLength(0);
   });
@@ -772,7 +773,7 @@ describe('DOC-038 la vista previa la pinta el mismo generador, y no guarda nada'
   it('DOC-038 sin ninguna sede no hay identidad que mostrar', async () => {
     sources.defaultSite = null;
     await expect(
-      service.previewTemplate('PRESCRIPTION', slots, null),
+      service.previewTemplate('PRESCRIPTION', slots),
     ).rejects.toThrow(DocumentSubjectNotFoundError);
   });
 });

@@ -398,6 +398,88 @@ describe('los documentos por HTTP', () => {
     });
   });
 
+  describe('DOC-094 a DOC-096 la verificación pública', () => {
+    const verify = (code: string) =>
+      request(app.getHttpServer()).get(`/api/v1/documents/verify/${code}`);
+
+    it('DOC-094 sin sesión dice clase, fecha, establecimiento, sede, profesional y vigencia', async () => {
+      await prisma.prescription.update({
+        where: { id: prescriptionId },
+        data: { verificationCode: 'ABCD1234EF567890' },
+      });
+
+      const response = await verify('ABCD1234EF567890').expect(200);
+
+      expect(response.body).toMatchObject({
+        kind: 'PRESCRIPTION',
+        // 2026-08-21T01:00Z is the evening of the 20th in Ecuador.
+        issuedOn: '2026-08-20', // fecha-fija: the seed's issuedAt, 21:00 of the 20th in Ecuador
+        establishmentName: 'Centro de Especialidades Bahía',
+        status: 'VALID',
+        annulledOn: null,
+      });
+    });
+
+    it('DOC-095 la respuesta no lleva nada del paciente', async () => {
+      await prisma.prescription.update({
+        where: { id: prescriptionId },
+        data: { verificationCode: 'ABCD1234EF567890' },
+      });
+      const patient = await prisma.patient.findFirstOrThrow({
+        select: { familyName: true, givenName: true },
+      });
+
+      const response = await verify('ABCD1234EF567890').expect(200);
+      const body = JSON.stringify(response.body);
+
+      expect(Object.keys(response.body as object).sort()).toEqual([
+        'annulledOn',
+        'establishmentName',
+        'issuedOn',
+        'kind',
+        'practitionerName',
+        'siteName',
+        'status',
+      ]);
+      expect(body).not.toContain(patient.familyName);
+      expect(body).not.toContain(patient.givenName);
+      expect(body).not.toContain('Amoxicilina');
+    });
+
+    it('DOC-094 una receta anulada se dice anulada', async () => {
+      await prisma.prescription.update({
+        where: { id: prescriptionId },
+        data: { verificationCode: 'ABCD1234EF567890', status: 'CANCELLED' },
+      });
+
+      const response = await verify('ABCD1234EF567890').expect(200);
+      expect((response.body as { status: string }).status).toBe('ANNULLED');
+    });
+
+    it('DOC-096 un código inventado y uno sin forma dicen exactamente lo mismo', async () => {
+      // Positive control: the route exists and answers a real code.
+      await prisma.prescription.update({
+        where: { id: prescriptionId },
+        data: { verificationCode: 'ABCD1234EF567890' },
+      });
+      await verify('ABCD1234EF567890').expect(200);
+
+      const unknown = await verify('ZZZZ9999ZZZZ9999').expect(404);
+      const malformed = await verify('x%20y').expect(404);
+
+      // `instance` and `traceId` differ in every problem+json and say nothing
+      // about the document; everything else must match.
+      const comparable = (body: unknown) => {
+        const problem = body as Record<string, unknown>;
+        return [problem.status, problem.code, problem.title, problem.detail];
+      };
+      expect((unknown.body as Problem).code).toBe(
+        'DOCUMENT_VERIFICATION_NOT_FOUND',
+      );
+      expect(comparable(malformed.body)).toEqual(comparable(unknown.body));
+    });
+  });
+
   describe('DOC-001, DOC-002 el borrador y la emisión', () => {
     beforeEach(async () => {
       await publishTemplate();

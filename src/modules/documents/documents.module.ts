@@ -9,10 +9,12 @@ import { CurrentUserService } from '../../shared/authorisation/current-user.serv
 
 import { DocumentIdentityController } from './document-identity.controller';
 import { DocumentTemplatesController } from './document-templates.controller';
+import { DocumentVerificationController } from './document-verification.controller';
 import { DocumentsController } from './documents.controller';
 import { InvoiceDocumentsController } from './invoice-documents.controller';
 import { DocumentIdentityService } from './application/document-identity.service';
 import { DocumentService } from './application/document.service';
+import { DocumentVerificationService } from './application/document-verification.service';
 import { DOCUMENT_RENDERER, IMAGE_NORMALISER } from './domain/document-rendering.port'; // prettier-ignore
 import {
   DOCUMENT_SOURCE_READER,
@@ -63,10 +65,12 @@ import { SharpImageNormaliser } from './infrastructure/sharp-image.normaliser';
     InvoiceDocumentsController,
     DocumentTemplatesController,
     DocumentIdentityController,
+    DocumentVerificationController,
   ],
   providers: [
     DocumentService,
     DocumentIdentityService,
+    DocumentVerificationService,
     CurrentUserService,
     { provide: DOCUMENT_REPOSITORY, useClass: PrismaDocumentRepository },
     { provide: DOCUMENT_SOURCE_READER, useClass: PrismaDocumentSourceReader },

@@ -12,6 +12,7 @@ import type {
   StoredImage,
 } from '../domain/document-image';
 import { DOCUMENT_VERIFICATION_BASE_URL } from '../domain/document-source';
+import type { VerificationFacts } from '../domain/document-verification';
 import type {
   DocumentContext,
   DocumentSourceReader,
@@ -316,6 +317,69 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       select: { id: true },
     });
     return site?.id ?? null;
+  }
+
+  /**
+   * DOC-094. A receta or a certificate by its code. Only FILED states: a draft
+   * receta is not a document anybody can be holding. The establishment's trade
+   * name, as the header printed it.
+   */
+  async findForVerification(code: string): Promise<VerificationFacts | null> {
+    const place = {
+      select: {
+        name: true,
+        establishment: { select: { legalName: true, tradeName: true } },
+      },
+    } as const;
+    const signer = { select: { user: { select: { firstName: true, lastName: true } } } } as const; // prettier-ignore
+
+    const prescription = await this.prisma.prescription.findFirst({
+      where: {
+        verificationCode: code,
+        status: { in: ['ACTIVE', 'COMPLETED', 'CANCELLED'] },
+        issuedAt: { not: null },
+      },
+      select: {
+        status: true,
+        issuedAt: true,
+        prescriber: signer,
+        encounter: { select: { site: place } },
+      },
+    });
+    if (prescription?.issuedAt != null) {
+      const site = prescription.encounter.site;
+      return {
+        kind: 'PRESCRIPTION',
+        issuedAt: prescription.issuedAt,
+        annulled: prescription.status === 'CANCELLED',
+        // The receta does not record WHEN it was cancelled.
+        annulledAt: null,
+        establishmentName: nameOf(site),
+        siteName: site.name,
+        practitionerName: `${prescription.prescriber.user.lastName} ${prescription.prescriber.user.firstName}`,
+      };
+    }
+
+    const certificate = await this.prisma.medicalCertificate.findUnique({
+      where: { verificationCode: code },
+      select: {
+        issuedAt: true,
+        revokedAt: true,
+        issuedBy: signer,
+        encounter: { select: { site: place } },
+      },
+    });
+    if (certificate === null) return null;
+    const site = certificate.encounter.site;
+    return {
+      kind: 'MEDICAL_CERTIFICATE',
+      issuedAt: certificate.issuedAt,
+      annulled: certificate.revokedAt !== null,
+      annulledAt: certificate.revokedAt,
+      establishmentName: nameOf(site),
+      siteName: site.name,
+      practitionerName: `${certificate.issuedBy.user.lastName} ${certificate.issuedBy.user.firstName}`,
+    };
   }
 
   // ── prescription ─────────────────────────────────────────────────────────
@@ -681,4 +745,14 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       },
     };
   }
+}
+
+/** DOC-080, OR-010. The name the paper carried: trade name, else legal name. */
+function nameOf(site: {
+  name: string;
+  establishment: { legalName: string; tradeName: string | null } | null;
+}): string {
+  return (
+    site.establishment?.tradeName ?? site.establishment?.legalName ?? site.name
+  );
 }

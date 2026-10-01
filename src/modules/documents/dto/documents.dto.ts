@@ -112,12 +112,12 @@ export class PublishAllKindsDto extends createZodDto(
 ) {}
 
 /**
- * DOC-038. Body of POST /documents/templates/preview: a kind, the slots as the
- * form has them now, and optionally the site whose identity to borrow.
+ * DOC-038. Body of POST /documents/templates/preview: a kind and the slots as
+ * the form has them now. NO SITE: the route is `global`, and D-023 (AU-011)
+ * keeps a site out of the body of every global route — the preview borrows the
+ * identity of the first active site.
  */
-export class PreviewTemplateDto extends createZodDto(
-  templateSlotsSchema.extend({ siteId: z.uuid().nullable().default(null) }),
-) {}
+export class PreviewTemplateDto extends createZodDto(templateSlotsSchema) {}
 
 // ── responses ──────────────────────────────────────────────────────────────
 
@@ -186,3 +186,18 @@ const imageSchema = z.object({
 export class DocumentImageDto extends createZodDto(imageSchema) {}
 /** What the identity controller returns, inferred from the schema. */
 export type DocumentImageResponse = z.infer<typeof imageSchema>;
+
+/** DOC-094, DOC-095. The public answer: nothing about the patient. */
+const verificationSchema = z.object({
+  kind: z.enum(['PRESCRIPTION', 'MEDICAL_CERTIFICATE']),
+  /** A clinical date in `America/Guayaquil`, `YYYY-MM-DD`. */
+  issuedOn: z.iso.date(),
+  establishmentName: z.string(),
+  siteName: z.string(),
+  practitionerName: z.string(),
+  status: z.enum(['VALID', 'ANNULLED']),
+  annulledOn: z.iso.date().nullable(),
+});
+
+/** Response of GET /documents/verify/:code. */
+export class DocumentVerificationDto extends createZodDto(verificationSchema) {}

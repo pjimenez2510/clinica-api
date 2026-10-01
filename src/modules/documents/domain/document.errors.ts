@@ -227,3 +227,18 @@ export class DocumentImageNotFoundError extends NotFoundError {
     super('No stored image in that slot');
   }
 }
+
+/**
+ * DOC-096. No document has that code — or the code is malformed, which is
+ * answered the same way. ONE body for every miss: a difference between them
+ * would let somebody map which codes exist.
+ */
+export class DocumentVerificationNotFoundError extends NotFoundError {
+  readonly code = 'DOCUMENT_VERIFICATION_NOT_FOUND';
+  override readonly userTitle =
+    'No hay ningún documento con ese código de verificación';
+
+  constructor() {
+    super('No document with that verification code');
+  }
+}

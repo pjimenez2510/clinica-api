@@ -168,7 +168,6 @@ export class DocumentTemplatesController {
         showEstablishmentAddress: body.showEstablishmentAddress,
         showEstablishmentPhone: body.showEstablishmentPhone,
       },
-      body.siteId,
     );
     sendPdf(res, rendered);
   }
