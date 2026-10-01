@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   addDays,
+  addMonths,
   atWallClock,
   WallClockTime,
   clinicalDateOf,
@@ -19,6 +20,7 @@ import {
   assertRestStartsInTime,
   assertRestWithinAttention,
   assertMaternityWithinLeave,
+  assertRestDoesNotOverlapMaternity,
   isObstetricCie10,
   lateIssueDayOf,
   issuerReasonOf,
@@ -33,6 +35,8 @@ import {
 import {
   CertificateBackdatingReasonRequiredError,
   CertificateIssuerReasonRequiredError,
+  CertificateMaternityBirthMismatchError,
+  CertificateMaternityBirthTooFarError,
   CertificateMaternityDatesTooOldError,
   CertificateMaternityDiagnosisRequiredError,
   CertificateMaternityLeaveExceededError,
@@ -611,7 +615,7 @@ describe('D-108 en el reposo de maternidad no rigen los topes de D-106', () => {
   });
 });
 
-describe('D-109 lo que acota el reposo de maternidad', () => {
+describe('D-109 y D-110 lo que acota el reposo de maternidad', () => {
   const OBSTETRIC = ['J02', 'O80'];
   /** Ingresó la víspera del parto y salió dos días después. */
   const maternityFrom = (birth: ClinicalDate) => ({
@@ -619,6 +623,7 @@ describe('D-109 lo que acota el reposo de maternidad', () => {
     birthOn: birth,
     dischargeOn: addDays(birth, 2),
   });
+  type Other = { from: ClinicalDate; to: ClinicalDate; maternityBirthOn: ClinicalDate | null }; // prettier-ignore
   /** A maternity rest checked against today's attention, issued today. */
   const check =
     (
@@ -627,50 +632,70 @@ describe('D-109 lo que acota el reposo de maternidad', () => {
       {
         issueDay = today,
         codes = OBSTETRIC,
-        others = [] as { from: ClinicalDate; to: ClinicalDate }[],
+        others = [] as Other[],
+        maternity = maternityFrom(birth),
       } = {},
     ) =>
     () =>
-      assertMaternityWithinLeave(
-        period,
-        maternityFrom(birth),
-        today,
-        issueDay,
-        codes,
-        others,
-      );
+      assertMaternityWithinLeave(period, maternity, today, issueDay, codes, others); // prettier-ignore
   const label = (day: ClinicalDate) => day.split('-').reverse().join('/');
+  const refusalOf = (run: () => void): unknown => {
+    try {
+      run();
+    } catch (error) {
+      return error;
+    }
+    return undefined;
+  };
 
-  it('CER-046 ingreso y parto como mucho 84 dias antes de la atencion; 85 se rechaza nombrando el campo', () => {
-    // Control positivo: el ingreso justo 84 días antes.
+  it('CER-046 el parto como mucho 84 dias antes de la atencion; 85 se rechaza nombrando el campo', () => {
+    // Control positivo a 83 días: a 84, la licencia (parto + 83) ya acabó la
+    // víspera y lo rechaza CER-047; CER-046 da el motivo claro desde el 85.
     expect(
       check({ from: today, to: today }, addDays(today, -83)),
     ).not.toThrow();
-    let refusal: unknown;
-    try {
-      check({ from: today, to: today }, addDays(today, -84))();
-    } catch (error) {
-      refusal = error;
-    }
+    expect(check({ from: today, to: today }, addDays(today, -84))).toThrow(
+      CertificateMaternityLeaveExceededError,
+    );
+    const refusal = refusalOf(
+      check({ from: today, to: today }, addDays(today, -85)),
+    );
     expect(refusal).toBeInstanceOf(CertificateMaternityDatesTooOldError);
     expect(
       (refusal as CertificateMaternityDatesTooOldError).fieldErrors[0],
     ).toMatchObject({
-      field: 'maternityAdmissionOn',
-      message: `La fecha de ingreso debe ser, como muy pronto, el ${label(addDays(today, -84))}`,
+      field: 'birthOn',
+      message: `La fecha del parto debe ser, como muy pronto, el ${label(addDays(today, -84))}`,
     });
   });
 
-  it('CER-047 el reposo termina como tarde en parto + 84 dias, nombrando ese dia', () => {
+  it('CER-046 el ingreso no cuenta: el ultimo tramo de una licencia con ingreso antiguo se emite (D-110 §3)', () => {
+    const birth = addDays(today, -80);
+    const maternity = { admissionOn: addDays(birth, -10), birthOn: birth, dischargeOn: addDays(birth, 3) }; // prettier-ignore
+    expect(check({ from: today, to: addDays(birth, 83) }, birth, { maternity })).not.toThrow(); // prettier-ignore
+  });
+
+  it('CER-046 el parto como mucho 28 dias despues de la atencion; 29 se rechaza (D-110 §1)', () => {
+    expect(check({ from: today, to: today }, addDays(today, 28))).not.toThrow();
+    const refusal = refusalOf(
+      check({ from: today, to: today }, addDays(today, 29)),
+    );
+    expect(refusal).toBeInstanceOf(CertificateMaternityBirthTooFarError);
+    expect(
+      (refusal as CertificateMaternityBirthTooFarError).fieldErrors[0],
+    ).toMatchObject({
+      field: 'birthOn',
+      message: `La fecha del parto debe ser, como muy tarde, el ${label(addDays(today, 28))}`,
+    });
+  });
+
+  it('CER-047 el reposo termina como tarde en parto + 83 dias, nombrando ese dia (D-110 §6)', () => {
     const birth = addDays(today, -60);
-    const last = addDays(birth, 84);
+    const last = addDays(birth, 83);
     expect(check({ from: today, to: last }, birth)).not.toThrow();
-    let refusal: unknown;
-    try {
-      check({ from: today, to: addDays(last, 1) }, birth)();
-    } catch (error) {
-      refusal = error;
-    }
+    const refusal = refusalOf(
+      check({ from: today, to: addDays(last, 1) }, birth),
+    );
     expect(refusal).toBeInstanceOf(CertificateMaternityLeaveExceededError);
     expect(
       (refusal as CertificateMaternityLeaveExceededError).fieldErrors[0],
@@ -682,7 +707,7 @@ describe('D-109 lo que acota el reposo de maternidad', () => {
 
   it('CER-047 no se emite pasado el ultimo dia de la licencia', () => {
     const birth = addDays(today, -80);
-    const last = addDays(birth, 84);
+    const last = addDays(birth, 83);
     const period = { from: last, to: last };
     expect(check(period, birth, { issueDay: last })).not.toThrow();
     expect(check(period, birth, { issueDay: addDays(last, 1) })).toThrow(
@@ -714,11 +739,46 @@ describe('D-109 lo que acota el reposo de maternidad', () => {
   it('CER-048 no se solapa con otro reposo no anulado de la paciente; contiguo, si', () => {
     const birth = addDays(today, -5);
     const period = { from: birth, to: addDays(today, 10) };
-    const before = { from: addDays(birth, -10), to: addDays(birth, -1) };
-    const touching = { from: addDays(birth, -10), to: birth };
+    const before = { from: addDays(birth, -10), to: addDays(birth, -1), maternityBirthOn: null }; // prettier-ignore
+    const touching = { ...before, to: birth };
     expect(check(period, birth, { others: [before] })).not.toThrow();
     expect(check(period, birth, { others: [touching] })).toThrow(
       CertificateRestOverlapsError,
     );
+  });
+
+  it('CER-050 otra maternidad de la paciente con otro parto a 9 meses o menos se rechaza nombrando ese parto (D-110 §2)', () => {
+    const birth = addDays(today, -5);
+    const period = { from: birth, to: today };
+    const chained = (otherBirth: ClinicalDate) => [
+      { from: addDays(today, -200), to: addDays(today, -190), maternityBirthOn: otherBirth }, // prettier-ignore
+    ];
+    // Control positivo: el mismo parto, o uno a más de 9 meses.
+    expect(check(period, birth, { others: chained(birth) })).not.toThrow();
+    const longAgo = addDays(addMonths(birth, -9), -1);
+    expect(check(period, birth, { others: chained(longAgo) })).not.toThrow();
+    const close = addMonths(birth, -9);
+    const refusal = refusalOf(check(period, birth, { others: chained(close) }));
+    expect(refusal).toBeInstanceOf(CertificateMaternityBirthMismatchError);
+    expect(
+      (refusal as CertificateMaternityBirthMismatchError).fieldErrors[0],
+    ).toMatchObject({
+      field: 'birthOn',
+      message: `Otro reposo de maternidad de la paciente declara el parto el ${label(close)}`,
+    });
+  });
+
+  it('CER-048 un reposo de otra contingencia no cabe sobre una maternidad vigente; sobre otro general, si (D-110 §5)', () => {
+    const period = { from: today, to: addDays(today, 2) };
+    const maternity = { from: addDays(today, 2), to: addDays(today, 20), maternityBirthOn: addDays(today, 2) }; // prettier-ignore
+    const general = { ...maternity, maternityBirthOn: null };
+    expect(() => assertRestDoesNotOverlapMaternity(period, [general])).not.toThrow(); // prettier-ignore
+    expect(
+      () =>
+      assertRestDoesNotOverlapMaternity({ ...period, to: addDays(today, 1) }, [maternity]), // prettier-ignore
+    ).not.toThrow();
+    expect(() =>
+      assertRestDoesNotOverlapMaternity(period, [maternity]),
+    ).toThrow(CertificateRestOverlapsError);
   });
 });

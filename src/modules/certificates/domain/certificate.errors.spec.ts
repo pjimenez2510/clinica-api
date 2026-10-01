@@ -15,6 +15,8 @@ import {
   CertificateBackdatingReasonRequiredError,
   CertificateEstablishmentIncompleteError,
   CertificateIssuerReasonRequiredError,
+  CertificateMaternityBirthMismatchError,
+  CertificateMaternityBirthTooFarError,
   CertificateMaternityDatesTooOldError,
   CertificateMaternityDiagnosisRequiredError,
   CertificateMaternityLeaveExceededError,
@@ -164,12 +166,27 @@ const CONTRACT: readonly {
   },
   {
     error: new CertificateMaternityDatesTooOldError(
-      'birthOn',
       '2026-07-09' as ClinicalDate, // fecha-fija: sólo se comprueba el formato DD/MM/AAAA
     ),
     code: 'CERTIFICATE_MATERNITY_DATES_TOO_OLD',
     category: ValidationError,
     says: '84 días',
+  },
+  {
+    error: new CertificateMaternityBirthTooFarError(
+      '2026-10-29' as ClinicalDate, // fecha-fija: sólo se comprueba el formato DD/MM/AAAA
+    ),
+    code: 'CERTIFICATE_MATERNITY_BIRTH_TOO_FAR',
+    category: ValidationError,
+    says: '4 semanas',
+  },
+  {
+    error: new CertificateMaternityBirthMismatchError(
+      '2026-03-02' as ClinicalDate, // fecha-fija: sólo se comprueba el formato DD/MM/AAAA
+    ),
+    code: 'CERTIFICATE_MATERNITY_BIRTH_MISMATCH',
+    category: ConflictError,
+    says: 'mismo parto',
   },
   {
     error: new CertificateMaternityLeaveExceededError(

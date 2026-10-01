@@ -878,12 +878,16 @@ export const DOMAIN_ERROR_CODES = [
   //     reposo pasados ocho días de la atención.
   //   * `CERTIFICATE_REVOKE_FORBIDDEN` (403) — CER-040 (D-105 §2). Anula quien
   //     no lo emitió y no tiene `certificate:revoke-any` en su sede.
-  //   * `CERTIFICATE_MATERNITY_DATES_TOO_OLD` (422) — CER-046 (D-109 §1).
-  //     Ingreso o parto más de 84 días antes de la atención.
-  //   * `CERTIFICATE_MATERNITY_LEAVE_EXCEEDED` (422) — CER-047 (D-109 §2). El
-  //     reposo pasa del parto + 84 días, o se emite después.
-  //   * `CERTIFICATE_REST_OVERLAPS` (409) — CER-048 (D-109 §2). La maternidad
-  //     se solapa con otro reposo no anulado de la paciente.
+  //   * `CERTIFICATE_MATERNITY_DATES_TOO_OLD` (422) — CER-046 (D-109 §1,
+  //     D-110 §3). Parto más de 84 días antes de la atención.
+  //   * `CERTIFICATE_MATERNITY_BIRTH_TOO_FAR` (422) — CER-046 (D-110 §1).
+  //     Parto más de 4 semanas después de la atención.
+  //   * `CERTIFICATE_MATERNITY_BIRTH_MISMATCH` (409) — CER-050 (D-110 §2).
+  //     Otra maternidad de la paciente con otro parto a 9 meses o menos.
+  //   * `CERTIFICATE_MATERNITY_LEAVE_EXCEEDED` (422) — CER-047 (D-109 §2,
+  //     D-110 §6). El reposo pasa del parto + 83 días, o se emite después.
+  //   * `CERTIFICATE_REST_OVERLAPS` (409) — CER-048 (D-109 §2, D-110 §5). Una
+  //     maternidad y otro reposo no anulado de la paciente se solapan.
   //   * `CERTIFICATE_MATERNITY_DIAGNOSIS_REQUIRED` (422) — CER-049 (D-109 §3).
   //     La atención no tiene diagnóstico obstétrico.
   'CERTIFICATE_ALREADY_REVOKED',
@@ -891,6 +895,8 @@ export const DOMAIN_ERROR_CODES = [
   'CERTIFICATE_DIAGNOSIS_REQUIRED',
   'CERTIFICATE_ESTABLISHMENT_INCOMPLETE',
   'CERTIFICATE_ISSUER_REASON_REQUIRED',
+  'CERTIFICATE_MATERNITY_BIRTH_MISMATCH',
+  'CERTIFICATE_MATERNITY_BIRTH_TOO_FAR',
   'CERTIFICATE_MATERNITY_DATES_TOO_OLD',
   'CERTIFICATE_MATERNITY_DIAGNOSIS_REQUIRED',
   'CERTIFICATE_MATERNITY_LEAVE_EXCEEDED',
