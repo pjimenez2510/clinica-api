@@ -85,7 +85,7 @@ BEGIN
   IF v_conflicts IS NOT NULL THEN
     RAISE EXCEPTION
       'D-070: practitioner_schedule_rule holds rules of one practitioner at the same hours in two sites:%', E'\n' || v_conflicts
-      USING HINT = 'One schedule, one place (ST-042). Close one rule of each pair on 2026-09-30 (valid_to) and, if that schedule should go on, create it again from today at hours that do not collide (D-085 §6). In DEVELOPMENT: `pnpm db:fix:schedule-overlaps --apply` closes the newer rule of each pair on 2026-09-30, deletes nothing. With real data, which rule stays is decided by the clinic. Nothing was changed: mark this migration rolled back with `pnpm exec prisma migrate resolve --rolled-back 20261001070900_staff_schedule_rule_no_overlap_any_site` and run `pnpm db:deploy` again.';
+      USING HINT = 'One schedule, one place (ST-042). Close one rule of each pair on 2026-09-30 (valid_to) and, if that schedule should go on, create it again from today at hours that do not collide (D-085 §6). In DEVELOPMENT: `pnpm db:fix:schedule-overlaps --apply` closes the newer rule of each pair on 2026-09-30, deletes nothing. With real data, which rule stays is decided by the clinic. Nothing was changed: mark this migration rolled back with `pnpm exec prisma migrate resolve --rolled-back 20261001080100_staff_schedule_rule_no_overlap_any_site` and run `pnpm db:deploy` again.';
   END IF;
 END;
 $$;
