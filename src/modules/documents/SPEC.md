@@ -225,7 +225,13 @@ contenido de cada documento lo compone su propia función.
 con dos, y comprobar en el texto extraído que la línea de sede sólo aparece en
 la segunda; validar el fichero con veraPDF.
 
-**Cubre:** DOC-025, DOC-080 a DOC-085.
+**Cubre:** DOC-025, DOC-080 a DOC-085, DOC-103 a DOC-107.
+
+> **Fidelidad (`fix/documentos-fidelidad`, 01-10-2026).** El autor revisó los
+> PDF reales: «no se siguió lo que definimos, más que todo la factura». DOC-103
+> a DOC-107 fijan **cómo se pinta** lo que DOC-072 a DOC-078 ya dicen; ninguno
+> añade ni quita contenido. **Solo servidor:** todos; la vista previa de
+> Administración → Identidad enseña el mismo PDF.
 
 ### H7 — La verificación pública del documento _(P1)_
 
@@ -737,6 +743,41 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
   encabezados), con tinta `#1d2422`, etiquetas `#4a5450` y tablas con fila de
   cabecera y rayas de 1 px; el acento sólo en la raya de la cabecera, el título
   y los encabezados.
+
+- **DOC-103** — La cabecera común DEBERÁ centrar **verticalmente** entre sí el
+  logo, el bloque del establecimiento y la columna del título (plantilla:
+  `align-items: center`): el logo **NO DEBERÁ** quedar pegado arriba cuando el
+  bloque de texto es más alto, ni el texto cuando lo es el logo.
+
+- **DOC-104** — Los **datos generales** de la receta (ciudad, fecha, vigencia) y
+  de la orden (fecha, tipo, prioridad) DEBERÁN ir en **una franja** de fondo
+  gris claro `#f2f5f4`, en una sola fila, con las etiquetas en mayúsculas
+  espaciadas; y los títulos de sección del cuerpo DEBERÁN pintarse en el color
+  de acento (DOC-085), no en tinta.
+
+- **DOC-105** — El **certificado** DEBERÁ pintar cada bloque A a E del 117 en un
+  **recuadro con borde** y **barra de título gris** `#e6ecea`, con sus datos en
+  celdas separadas por rayas finas, el diagnóstico como tabla dentro del bloque
+  D y el recuadro de firma y sello **dentro** del bloque E, a la derecha.
+
+  > Los títulos de los bloques son los del 117 (DOC-075), en mayúsculas; la
+  > plantilla los abrevia («C. REPOSO») y ahí gana el formulario.
+
+- **DOC-106** — El **RIDE** DEBERÁ seguir la página «Factura» de la plantilla:
+  el logo **encima** del recuadro del emisor en la columna izquierda; los
+  recuadros del emisor, del comprobante y del comprador con **bordes
+  redondeados**; «FACTURA» en serif y color de acento; la clave de acceso una
+  sola vez, **bajo** su código de barras y centrada; el detalle como **tabla con
+  borde exterior**, cabecera gris `#e6ecea` y rayas entre celdas; «Información
+  adicional» en un recuadro con **barra de título gris**; la forma de pago como
+  tabla con borde; y los subtotales en una **tabla con borde**, sin cabecera, con
+  **VALOR TOTAL en negrita sobre gris**. Los dos recuadros de arriba DEBERÁN
+  acabar a la misma altura.
+
+- **DOC-107** — El pintado **NO DEBERÁ** cambiar el contenido: cada documento
+  DEBERÁ seguir imprimiendo los mismos textos que antes de DOC-103 a DOC-106,
+  salvo las cabeceras repetidas que la plantilla quita (la clave de acceso en
+  texto sobre el código de barras y la fila «Subtotales · Valor»).
 
 ---
 
