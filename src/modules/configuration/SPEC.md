@@ -17,9 +17,14 @@ D-001, D-002.
 
 ## Alcance
 
-Feriados, parámetros operativos por sede, política de retención y textos de
-consentimiento — su **administración**: crear, editar, desactivar, con garantías
-en la base y bitácora.
+Feriados, parámetros operativos por sede y política de retención — su
+**administración**: crear, editar, desactivar, con garantías en la base y
+bitácora.
+
+> **Los textos de consentimiento ya no son de aquí** (30-09-2026). Cada
+> consentimiento de un paciente referencia la versión del texto que firmó, y por
+> la regla de ADR-011 lo que una fila referencia no es un parámetro: los posee
+> `privacy` (PD-001 a PD-006).
 
 Reducido a esto, el nombre por fin describe lo que contiene (ADR-011). Un
 parámetro es un valor que cambia el comportamiento y que ninguna fila apunta;
