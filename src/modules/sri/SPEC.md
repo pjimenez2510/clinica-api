@@ -518,7 +518,8 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
   (devueltos, no autorizados, sin firmar, sin comprobante, y recibidos hace más
   de 24 h sin respuesta) y después lo que la cola resolverá sola (firmados y
   recibidos en espera).
-  > El plazo de 24 h y qué se hace después es D-102.
+  > D-102 (2), resuelta: a las 24 h pasa a «necesita a alguien» con su motivo, y
+  > no se reenvía solo: el plazo para reenviar lo confirma el contador.
 - **SRI-063** — El sistema DEBERÁ exponer en el monitor el aviso de caducidad del
   certificado (SRI-032) y la ausencia de certificado activo.
 - **SRI-064** — El sistema DEBERÁ exigir `billing:read` para el monitor, el
@@ -548,6 +549,8 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
   «Pendiente de autorización» en el lugar del número y la fecha de
   autorización —o «No autorizada por el SRI» si la factura está `REJECTED`—, y
   NO DEBERÁ imprimir un número de autorización.
+  > D-102 (3), resuelta: la de una factura devuelta o no autorizada no se ofrece
+  > en caja como comprobante.
   > REQ-086: se entrega igual. Un RIDE que afirma una autorización que no existe
   > es el mismo defecto que DOC-100.
 - **SRI-072** — CUANDO un comprobante quede autorizado y la factura tenga correo

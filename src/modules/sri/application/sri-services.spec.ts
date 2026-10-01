@@ -724,6 +724,40 @@ describe('SRI-058, SRI-062 el monitor', () => {
   }
   const requester = { userId: 'caja-1', sites: ['site-1'] };
 
+  it('SRI-062 D-102 con el reloj a 24 h y un poco más, el recibido sin autorizar pasa a necesitar a alguien; antes, no', async () => {
+    const f = fakes();
+    const hoursBefore = (h: number) => new Date(NOW.getTime() - h * 3600_000);
+    const received = (id: string, issuedAt: Date) => ({
+      invoiceId: id,
+      voucherId: `v-${id}`,
+      siteId: 'site-1',
+      documentNumber: '001-001-000000001',
+      buyerName: 'Ana',
+      buyerIdentification: '1710034065',
+      issuedAt,
+      total: '30.00',
+      status: 'RECEIVED' as const,
+      blockedReason: null,
+      accessKey: KEY,
+      lastMessages: [],
+      attemptCount: 3,
+      nextAttemptAt: null,
+    });
+    f.vouchers.monitor.mockResolvedValue([
+      received('fresh', hoursBefore(23)),
+      received('stale', hoursBefore(24.1)),
+    ]);
+    const { rows } = await monitorWith(f).monitor.monitor('all');
+    const byId = new Map(rows.map((row) => [row.invoiceId, row]));
+    expect(byId.get('stale')?.needsAPerson).toBe(true);
+    expect(byId.get('fresh')?.needsAPerson).toBe(false);
+    // People first (SRI-062): the stale one leads the list.
+    expect(rows[0]?.invoiceId).toBe('stale');
+    // D-102: nobody re-sends it on its own.
+    expect(f.queue.schedule).not.toHaveBeenCalled();
+    expect(f.web.receive).not.toHaveBeenCalled();
+  });
+
   it('SRI-065 un comprobante fuera del alcance es SRI_VOUCHER_NOT_FOUND', async () => {
     const f = fakes();
     f.vouchers.findByIdInSites.mockResolvedValue(null);
