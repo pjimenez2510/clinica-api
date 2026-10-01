@@ -843,9 +843,17 @@ describe('lo que el bloque K todavía no puede guardar', () => {
       `SELECT tablename FROM pg_tables WHERE schemaname = 'public'`,
     );
 
+    // NOT the consent to process personal data (LOPDP), which is a different
+    // thing with its own module: `privacy` (PD-001..PD-017) owns these two,
+    // and neither is the form 024 bound to a procedure that this guards.
+    const DATA_PROTECTION_CONSENT = new Set([
+      'consent_text_version',
+      'patient_consent',
+    ]);
     expect(
       tables
         .map((row) => row.tablename)
+        .filter((name) => !DATA_PROTECTION_CONSENT.has(name))
         .filter((name) => /consent|consentimiento/i.test(name)),
       'Llegó la tabla del consentimiento: implemente EN-152, EN-153 y EN-154',
     ).toEqual([]);
