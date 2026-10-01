@@ -162,6 +162,7 @@ describe('los documentos por HTTP', () => {
     const prescription = await prisma.prescription.create({
       data: {
         encounterId: encounter.id,
+        siteId: encounter.siteId,
         prescriberId: practitionerId,
         status: 'ACTIVE',
         issuedAt: new Date('2026-08-21T01:00:00Z'),
@@ -389,13 +390,13 @@ describe('los documentos por HTTP', () => {
     });
 
     it('DOC-014 se niega a archivar una receta en borrador, pero sí la previsualiza', async () => {
+      const issued = await prisma.prescription.findUniqueOrThrow({
+        where: { id: prescriptionId },
+      });
       const draft = await prisma.prescription.create({
         data: {
-          encounterId: (
-            await prisma.prescription.findUniqueOrThrow({
-              where: { id: prescriptionId },
-            })
-          ).encounterId,
+          encounterId: issued.encounterId,
+          siteId: issued.siteId,
           prescriberId: practitionerId,
           status: 'DRAFT',
         },

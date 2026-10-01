@@ -23,6 +23,9 @@ const source = (
     status: 'ACTIVE',
     issuedAt: ISSUED_AT,
     verificationCode: 'A1B2C3D4E5F60718',
+    sequenceNumber: 120,
+    warningSigns: 'Fiebre mayor de 39 °C o dificultad para respirar',
+    nonPharmacologicalAdvice: 'Abundantes líquidos y reposo relativo',
     createdAt: new Date('2026-09-14T19:50:00Z'),
     // PR-011. `null` on an issued prescription: the discard is a way out of a
     // DRAFT and never of a document that already left the room.
@@ -226,39 +229,29 @@ describe('la receta como documento', () => {
     expect(document.items[0]?.quantityInWords).toBeNull();
   });
 
-  it('PR-020, PR-038, PR-039 y PR-040 no fingen los campos que la base no puede guardar', () => {
-    /**
-     * ═══════════════════════════════════════════════════════════════════════
-     * MEJOR QUE EL CAMPO NO APAREZCA A QUE APAREZCA VACÍO
-     * ═══════════════════════════════════════════════════════════════════════
-     *
-     * Cuatro campos del art. 5 no tienen columna (⚠️ **Falta esquema**): el
-     * número secuencial (5.a.i), los signos de alarma (5.e.iv), las
-     * recomendaciones no farmacológicas (5.e.v) y el contacto permanente del
-     * prescriptor (5.e.vi).
-     *
-     * Servirlos en nulo o en blanco sería peor que no servirlos: una casilla
-     * «Signos de alarma» impresa vacía se lee como «no hay signos de alarma», y
-     * un teléfono en blanco junto a «llame ante estos signos» se lee como que
-     * no hay a quién llamar. La ausencia es visible; el hueco relleno de nada,
-     * no.
-     *
-     * Esta prueba es lo que impide que aparezcan «para que el formulario esté
-     * completo» sin la columna detrás, y falla el día que alguien los añada sin
-     * tener dónde guardarlos.
-     */
+  it('PR-020 lleva el número secuencial de la receta, distinto del código de verificación', () => {
     const document = composeDocument(source(), { context: 'AMBULATORY' });
-    const asRecord = document as unknown as Record<string, unknown>;
 
-    for (const absent of [
-      'sequenceNumber',
-      'warningSigns',
-      'nonPharmacologicalAdvice',
-    ]) {
-      expect(Object.hasOwn(asRecord, absent), absent).toBe(false);
-    }
-    // PR-040. Del prescriptor, y por eso se comprueba dentro de su bloque:
-    // `site.phone` no serviría aunque existiera.
+    expect(document.sequenceNumber).toBe(120);
+    expect(document.verificationCode).toBe('A1B2C3D4E5F60718');
+  });
+
+  it('PR-038 PR-039 lleva los signos de alarma y las recomendaciones no farmacológicas', () => {
+    const document = composeDocument(source(), { context: 'AMBULATORY' });
+
+    expect(document.warningSigns).toBe(
+      'Fiebre mayor de 39 °C o dificultad para respirar',
+    );
+    expect(document.nonPharmacologicalAdvice).toBe(
+      'Abundantes líquidos y reposo relativo',
+    );
+  });
+
+  it('PR-040 no finge el teléfono del prescriptor mientras no tenga dónde guardarse', () => {
+    // Un teléfono en blanco junto a «llame ante estos signos» se lee como que
+    // no hay a quién llamar: mejor que la casilla no exista.
+    const document = composeDocument(source(), { context: 'AMBULATORY' });
+
     expect(
       Object.hasOwn(document.prescriber, 'contactPhone'),
       'contactPhone',

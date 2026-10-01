@@ -146,3 +146,103 @@ describe('ORD-006 el número de orden: propio, consecutivo, sin huecos e inmutab
     ).rejects.toThrow(/service_order_site_number_unique/);
   });
 });
+
+/** A draft prescription inserted the way any writer can: raw SQL. */
+async function insertDraft(
+  prisma: PrismaClient,
+  ids: { encounterId: string; practitionerId: string },
+): Promise<string> {
+  const [row] = await prisma.$queryRaw<{ id: string }[]>`
+    INSERT INTO prescription (encounter_id, prescriber_id, status, updated_at)
+    VALUES (${ids.encounterId}::uuid, ${ids.practitionerId}::uuid, 'DRAFT', now())
+    RETURNING id
+  `;
+  return row!.id;
+}
+
+/** The issue as the database sees it: `DRAFT → ACTIVE` with its instant. */
+async function issueRaw(prisma: PrismaClient, id: string): Promise<number> {
+  const [row] = await prisma.$queryRaw<{ sequence_number: number }[]>`
+    UPDATE prescription
+       SET status = 'ACTIVE', issued_at = now(), verification_code = left(md5(id::text), 12)
+     WHERE id = ${id}::uuid
+    RETURNING sequence_number
+  `;
+  return row!.sequence_number;
+}
+
+describe('PR-020 la numeración secuencial de la receta: al emitir, por sede, sin huecos', () => {
+  it('PR-020 un borrador no tiene número; al emitirse recibe el siguiente de su sede', async () => {
+    const prisma = db();
+    const { ids } = await sceneOf(prisma);
+    const first = await insertDraft(prisma, ids);
+    const second = await insertDraft(prisma, ids);
+
+    const [draft] = await prisma.$queryRaw<{ sequence_number: number | null; site_id: string }[]>`
+      SELECT sequence_number, site_id FROM prescription WHERE id = ${first}::uuid
+    `; // prettier-ignore
+    expect(draft!.sequence_number).toBeNull();
+    // La sede la pone la base desde la atención: nadie la elige.
+    expect(draft!.site_id).toBe(ids.siteId);
+
+    // Se numera en el orden en que se EMITEN, no en el que se compusieron.
+    expect(await issueRaw(prisma, second)).toBe(1);
+    expect(await issueRaw(prisma, first)).toBe(2);
+  });
+
+  it('PR-020 un borrador descartado no consume número', async () => {
+    const prisma = db();
+    const { ids, practitioner } = await sceneOf(prisma);
+    const discarded = await insertDraft(prisma, ids);
+    const user = await prisma.practitioner.findUniqueOrThrow({
+      where: { id: practitioner.id },
+      select: { userId: true },
+    });
+    await prisma.$executeRaw`
+      UPDATE prescription
+         SET status = 'DISCARDED', discarded_at = now(),
+             discarded_by_id = ${user.userId}::uuid, discard_reason = 'Se tecleó mal'
+       WHERE id = ${discarded}::uuid
+    `;
+
+    expect(await issueRaw(prisma, await insertDraft(prisma, ids))).toBe(1);
+  });
+
+  it('PR-020 una emisión que se revierte devuelve su número', async () => {
+    const prisma = db();
+    const { ids } = await sceneOf(prisma);
+    const draft = await insertDraft(prisma, ids);
+
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await issueRaw(tx as PrismaClient, draft);
+        throw new Error('rollback');
+      }),
+    ).rejects.toThrow('rollback');
+
+    expect(await issueRaw(prisma, draft)).toBe(1);
+  });
+
+  it('PR-020 el número de una receta emitida no se cambia', async () => {
+    const prisma = db();
+    const { ids } = await sceneOf(prisma);
+    await issueRaw(prisma, await insertDraft(prisma, ids));
+
+    await expect(
+      prisma.$executeRaw`UPDATE prescription SET sequence_number = 99`,
+    ).rejects.toThrow(/prescription_number_immutable/);
+  });
+
+  it('PR-020 control positivo: un borrador con número y una emitida sin él los rechaza la base', async () => {
+    const prisma = db();
+    const { ids } = await sceneOf(prisma);
+    const draft = await insertDraft(prisma, ids);
+
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`ALTER TABLE prescription DISABLE TRIGGER prescription_number_immutable`;
+        await tx.$executeRaw`UPDATE prescription SET sequence_number = 7 WHERE id = ${draft}::uuid`;
+      }),
+    ).rejects.toThrow(/prescription_number_only_when_issued/);
+  });
+});

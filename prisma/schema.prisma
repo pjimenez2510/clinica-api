@@ -1062,6 +1062,7 @@ model Site {
   waitlistEntries  WaitlistEntry[]
   serviceOrders    ServiceOrder[]
   documentCounters DocumentCounter[]
+  prescriptions    Prescription[]
   priceLists       PriceList[]
   patientAccounts  PatientAccount[]
   invoices         Invoice[]
@@ -2649,6 +2650,25 @@ model Prescription {
   prescriberId String       @map("prescriber_id") @db.Uuid
   prescriber   Practitioner @relation(fields: [prescriberId], references: [id], onDelete: Restrict)
 
+  /// PR-020. The site of the attention, set by `prescription_site_assigned`
+  /// from the encounter (it OVERWRITES what a writer sends) and immutable. It
+  /// exists so the sequential number can be unique per site.
+  siteId String @map("site_id") @db.Uuid
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Restrict, map: "prescription_site_fk")
+
+  /// PR-020 (art. 5.a.i). Consecutive per site, without gaps, assigned at the
+  /// issue by `prescription_number_immutable` from `document_counter`. NULL
+  /// exactly while DRAFT or DISCARDED (`prescription_number_only_when_issued`).
+  sequenceNumber Int? @map("sequence_number")
+
+  /// PR-038 (art. 5.e.iv). «Manifestaciones ante las cuales el usuario/paciente
+  /// debe llamar al profesional prescriptor o acudir al servicio de
+  /// emergencia». Of the prescription, not of a line. Demanded at the issue.
+  warningSigns String? @map("warning_signs") @db.Text
+
+  /// PR-039 (art. 5.e.v). Non-pharmacological advice. Demanded at the issue.
+  nonPharmacologicalAdvice String? @map("non_pharmacological_advice") @db.Text
+
   status   PrescriptionStatus @default(DRAFT)
   issuedAt DateTime?          @map("issued_at") @db.Timestamptz(6)
 
@@ -2675,6 +2695,7 @@ model Prescription {
   discardedBy   User?     @relation("PrescriptionDiscarder", fields: [discardedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "prescription_discarded_by_fk")
   discardReason String?   @map("discard_reason") @db.VarChar(500)
 
+  @@unique([siteId, sequenceNumber], map: "prescription_site_number_unique")
   @@index([encounterId])
   @@map("prescription")
 }

@@ -132,6 +132,9 @@ const prescription = (
     issuedAt: new Date('2026-08-21T01:00:00Z'),
     city: 'Guayaquil',
     verificationCode: 'RX-7Q2K',
+    sequenceNumber: 120,
+    warningSigns: 'Fiebre mayor de 39 °C o dificultad para respirar',
+    nonPharmacologicalAdvice: 'Abundantes líquidos y reposo relativo',
     patient,
     diagnoses: [{ code: 'J00', display: 'Rinofaringitis aguda' }],
     allergies: [],
@@ -249,6 +252,38 @@ describe('DOC-072 la receta lleva los cinco bloques del art. 5', () => {
       template,
     );
     expect(wholeText(layout)).not.toContain('SOMETHING_NEW');
+  });
+});
+
+describe('PR-020 PR-038 PR-039 la receta impresa lleva su número y sus indicaciones', () => {
+  it('PR-020 la referencia es el número de la receta, y el código de verificación va con su nombre', () => {
+    const layout = composeLayout(prescription(), context, template);
+
+    expect(layout.reference).toBe(
+      'Receta N.º 120 · Código de verificación: RX-7Q2K',
+    );
+  });
+
+  it('PR-020 una previsualización de borrador no imprime «null» ni un número que no tiene', () => {
+    const layout = composeLayout(
+      prescription({ sequenceNumber: null, verificationCode: null }),
+      context,
+      template,
+    );
+
+    expect(layout.reference).toBe('Borrador — sin número');
+  });
+
+  it('PR-038 PR-039 los signos de alarma y las recomendaciones van en la banda que se lleva el paciente', () => {
+    const layout = composeLayout(prescription(), context, template);
+    const tearOff = textOf(layout.tearOff?.blocks ?? []);
+
+    expect(tearOff).toContain('Signos de alarma');
+    expect(tearOff).toContain(
+      'Fiebre mayor de 39 °C o dificultad para respirar',
+    );
+    expect(tearOff).toContain('Recomendaciones no farmacológicas');
+    expect(tearOff).toContain('Abundantes líquidos y reposo relativo');
   });
 });
 

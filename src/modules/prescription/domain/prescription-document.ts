@@ -69,8 +69,14 @@ export interface DocumentValidity {
 /** The prescription as art. 5 demands it. */
 export interface PrescriptionDocument {
   id: string;
-  /** PR-020. The pharmacy's check code. NOT the sequential number (⚠️ falta esquema). */
+  /** PR-020. The pharmacy's check code. NOT the sequential number. */
   verificationCode: string | null;
+  /** PR-020. Art. 5.a.i — consecutive per site. `null` on a draft. */
+  sequenceNumber: number | null;
+  /** PR-038. Art. 5.e.iv — signos de alarma. */
+  warningSigns: string | null;
+  /** PR-039. Art. 5.e.v — recomendaciones no farmacológicas. */
+  nonPharmacologicalAdvice: string | null;
   status: string;
   /** PR-021. Art. 5.a.ii — the instant, which the client renders as DD/MM/AAAA. */
   issuedAt: Date | null;
@@ -158,6 +164,9 @@ export function composeDocument(
   return {
     id: prescription.id,
     verificationCode: prescription.verificationCode,
+    sequenceNumber: prescription.sequenceNumber,
+    warningSigns: prescription.warningSigns,
+    nonPharmacologicalAdvice: prescription.nonPharmacologicalAdvice,
     status: prescription.status,
     issuedAt: prescription.issuedAt,
     city: site.city,

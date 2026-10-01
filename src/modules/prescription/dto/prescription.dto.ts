@@ -172,7 +172,29 @@ const prescriptionItemSchema = z
  * before typing — and a «añadir línea» route opens a window in which a
  * half-written prescription exists and somebody can issue it.
  */
+/** Optional free text: trimmed, and blank travels as absent. */
+const indicationText = (max: number, tooLong: string) =>
+  z
+    .string()
+    .trim()
+    .max(max, tooLong)
+    .transform((value) => (value === '' ? undefined : value))
+    .optional();
+
 export const composePrescriptionSchema = z.object({
+  /**
+   * PR-038 (art. 5.e.iv). Optional while composing, like every other field of
+   * art. 5: the issue is where the norm applies and where it is demanded.
+   */
+  warningSigns: indicationText(
+    2000,
+    'Los signos de alarma no pueden superar 2000 caracteres',
+  ),
+  /** PR-039 (art. 5.e.v). Same rule. */
+  nonPharmacologicalAdvice: indicationText(
+    2000,
+    'Las recomendaciones no pueden superar 2000 caracteres',
+  ),
   items: z
     .array(prescriptionItemSchema)
     .min(1, 'Una receta lleva al menos un medicamento')
@@ -245,6 +267,12 @@ export const prescriptionSchema = z.object({
   issuedAt: z.iso.datetime().nullable(),
   /** PR-020. The pharmacy's check code, NOT the sequential number of art. 5.a.i. */
   verificationCode: z.string().nullable(),
+  /** PR-020. Art. 5.a.i — consecutive per site; `null` until issued. */
+  sequenceNumber: z.number().int().positive().nullable(),
+  /** PR-038. Art. 5.e.iv. */
+  warningSigns: z.string().nullable(),
+  /** PR-039. Art. 5.e.v. */
+  nonPharmacologicalAdvice: z.string().nullable(),
   createdAt: z.iso.datetime(),
   /**
    * PR-011. When the draft was discarded, and why. `null` on every other state.
@@ -294,6 +322,12 @@ export class ComposedPrescriptionDto extends createZodDto(
 export const prescriptionDocumentSchema = z.object({
   id: z.uuid(),
   verificationCode: z.string().nullable(),
+  /** PR-020. Art. 5.a.i — `null` on a draft. */
+  sequenceNumber: z.number().int().positive().nullable(),
+  /** PR-038. Art. 5.e.iv. */
+  warningSigns: z.string().nullable(),
+  /** PR-039. Art. 5.e.v. */
+  nonPharmacologicalAdvice: z.string().nullable(),
   status: PRESCRIPTION_STATUS,
   /** PR-021. Art. 5.a.ii — the client renders it as DD/MM/AAAA. */
   issuedAt: z.iso.datetime().nullable(),

@@ -186,20 +186,34 @@ export class PrescriptionItemIncompleteError extends ValidationError {
     'Faltan datos obligatorios de la receta. Complete los campos señalados antes de emitirla';
   override readonly fieldErrors: readonly DomainFieldError[];
 
-  constructor(missing: readonly { line: number; field: string }[]) {
+  /**
+   * `line: null` is a field of the prescription itself — the warning signs and
+   * the advice of art. 5.e (PR-038, PR-039) — and its path is the bare field.
+   * The code stays `PRESCRIPTION_ITEM_INCOMPLETE`: it is public contract, and
+   * splitting it would make a client branch twice for one form.
+   */
+  constructor(missing: readonly { line: number | null; field: string }[]) {
     super(
-      `Prescription lines are missing mandatory fields: ${missing
-        .map(({ line, field }) => `${line}.${field}`)
+      `Prescription is missing mandatory fields: ${missing
+        .map(({ line, field }) => (line === null ? field : `${line}.${field}`))
         .join(', ')}`,
       { missing: missing.length },
     );
-    this.fieldErrors = missing.map(({ line, field }) => ({
-      // 0-based in the path because that is how the request carried them, and a
-      // client highlights the box it sent.
-      field: `items.${line - 1}.${field}`,
-      code: 'PRESCRIPTION_ITEM_INCOMPLETE',
-      message: `Obligatorio por la norma de receta médica (línea ${line})`,
-    }));
+    this.fieldErrors = missing.map(({ line, field }) =>
+      line === null
+        ? {
+            field,
+            code: 'PRESCRIPTION_ITEM_INCOMPLETE',
+            message: 'Obligatorio por la norma de receta médica',
+          }
+        : {
+            // 0-based in the path because that is how the request carried
+            // them, and a client highlights the box it sent.
+            field: `items.${line - 1}.${field}`,
+            code: 'PRESCRIPTION_ITEM_INCOMPLETE',
+            message: `Obligatorio por la norma de receta médica (línea ${line})`,
+          },
+    );
   }
 }
 

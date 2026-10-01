@@ -443,22 +443,20 @@ documento existe y es lo único que la ACESS puede inspeccionar.
 
 - **PR-020** — Toda receta emitida DEBERÁ llevar una **numeración secuencial**.
 
-  > ⚠️ **Falta esquema.** Falta la columna **`prescription.sequence_number`**,
-  > que es lo que pide el **art. 5.a.i** («numeración secuencial»), por
-  > establecimiento, con su unicidad y su asignación dentro de la transacción de
-  > la emisión.
+  > **Construido** (`prescription_number_and_indications`).
+  > `prescription.sequence_number` se asigna **al emitir** —la transición
+  > `DRAFT` → emitida— desde `document_counter`, **por sede** (D-074), dentro
+  > de la transacción: una emisión revertida devuelve su número y la serie no
+  > tiene huecos. Un borrador o un borrador descartado no consumen número, y
+  > `prescription_number_only_when_issued` lo garantiza en la base. El número
+  > no lo elige nadie: el disparador pisa lo que traiga la fila, y después es
+  > inmutable. Una receta que se inserta ya emitida —una importación— recibe el
+  > siguiente de su sede.
   >
-  > `prescription.verification_code` **no** sirve y no debe reutilizarse: es un
-  > código corto y **único** para que una farmacia compruebe la receta sin
-  > recibir dato clínico alguno, y **es deliberadamente aleatorio** porque se
-  > entrega a un tercero —un código secuencial impreso en un papel que sale del
-  > edificio deja enumerar los demás a quien tenga uno—. Un identificador único
-  > **no es una secuencia**, y lo que la ACESS lee para detectar un salto es la
-  > secuencia.
-  >
-  > **Y el documento no finge tenerla**: no hay campo de número secuencial en la
-  > respuesta de `GET /prescriptions/:id`. Un campo vacío en una receta impresa
-  > se lee como «no hay número», que es peor que no imprimir la casilla.
+  > `prescription.verification_code` **sigue sin ser** el número: es un código
+  > corto, único y **deliberadamente aleatorio** para que una farmacia compruebe
+  > la receta sin recibir dato clínico alguno. Un código secuencial impreso en
+  > un papel que sale del edificio dejaría enumerar los demás.
 
 - **PR-021** — Toda receta emitida DEBERÁ llevar la **ciudad y la fecha de
   prescripción**. La ciudad DEBERÁ derivarse del cantón de la parroquia DPA del
@@ -548,7 +546,8 @@ documento existe y es lo único que la ACESS puede inspeccionar.
   ENTONCES el sistema DEBERÁ rechazar la emisión con
   `PRESCRIPTION_ITEM_INCOMPLETE` **nombrando cada campo que falta y en qué
   línea**, y SI la receta no tiene ninguna línea, ENTONCES DEBERÁ rechazarla con
-  `PRESCRIPTION_EMPTY`.
+  `PRESCRIPTION_EMPTY`. Los campos de la receta entera que exigen PR-038 y
+  PR-039 se nombran en la misma respuesta, sin línea.
 
   > **Nombrando los campos, nunca el medicamento.** «Faltan la concentración y la
   > vía en la línea 2», no «faltan datos de la amoxicilina»: el mensaje viaja a
@@ -611,26 +610,21 @@ documento existe y es lo único que la ACESS puede inspeccionar.
   *«manifestaciones ante las cuales el usuario/paciente debe llamar al
   profesional prescriptor o acudir al servicio de emergencia»*.
 
-  > ⚠️ **Falta esquema.** Falta la columna **`prescription.warning_signs`**, que
-  > es lo que pide el **art. 5.e.iv**. `prescription_item.instructions` no
-  > sirve: es de la LÍNEA y esto es de la RECETA, y meterlo ahí lo haría
-  > irrecuperable —nadie puede recorrer un texto libre para comprobar que
-  > existe—.
-  >
-  > **Y el documento no finge tenerla**: el campo no aparece en la respuesta.
-  > Una casilla «Signos de alarma» impresa en blanco se lee como «no hay signos
-  > de alarma», y ése es exactamente el mensaje que no se puede dar.
+  > **Construido**: `prescription.warning_signs`, de la RECETA y no de la línea
+  > (`prescription_item.instructions` lo haría irrecuperable). Opcional al
+  > componer y **exigido al emitir** con `PRESCRIPTION_ITEM_INCOMPLETE`,
+  > nombrando el campo `warningSigns` en la misma respuesta que los campos que
+  > falten en las líneas (PR-032). Una casilla «Signos de alarma» impresa en
+  > blanco se lee como «no hay signos de alarma»: por eso no se emite sin ella.
 
 - **PR-039** — Toda receta emitida DEBERÁ llevar las **recomendaciones no
   farmacológicas**.
 
-  > ⚠️ **Falta esquema.** Falta la columna
-  > **`prescription.non_pharmacological_advice`**, que es lo que pide el **art.
-  > 5.e.v**. Y no es adorno: el art. 27.c pone «considerar las medidas no
-  > farmacológicas» **antes** de decidir si se usa un medicamento.
-  >
-  > **Y el documento no finge tenerla**: el campo no aparece en la respuesta,
-  > por lo mismo que en PR-038.
+  > **Construido**: `prescription.non_pharmacological_advice`, con la misma
+  > regla que PR-038 —opcional al componer, exigido al emitir, nombrado como
+  > `nonPharmacologicalAdvice`—. Y no es adorno: el art. 27.c pone «considerar
+  > las medidas no farmacológicas» **antes** de decidir si se usa un
+  > medicamento.
 
 - **PR-040** — Toda receta emitida DEBERÁ llevar el **número de contacto
   permanente del prescriptor**.
@@ -966,12 +960,12 @@ Ninguna es una migración correctiva: la base está en fase `development`
 
 | Qué falta | Dónde | Requisitos |
 | --- | --- | --- |
-| **Numeración secuencial** por establecimiento (**art. 5.a.i**), con su unicidad y su asignación dentro de la transacción de la emisión. Columna: **`sequence_number`**. No es `verification_code`, que es un identificador único y no una secuencia | `prescription` | PR-020 |
+| ✅ construido — **Numeración secuencial** por establecimiento (**art. 5.a.i**), con su unicidad y su asignación dentro de la transacción de la emisión. Columna: **`sequence_number`**. No es `verification_code`, que es un identificador único y no una secuencia | `prescription` | PR-020 |
 | Ciudad de prescripción: parroquia **obligatoria** en una sede que emite | `site` | PR-021 |
 | Instantánea de la línea protegida por disparador, que el diagnóstico sí tiene | `prescription_item` | PR-008 |
 | Catálogo de **vías de administración** en vez de un `varchar` libre | `catalog_system`, `prescription_item` | PR-029 |
-| **Signos de alarma** (**art. 5.e.iv**). Columna: **`warning_signs`**. De la receta y no de la línea, así que no cabe en `prescription_item.instructions` | `prescription` | PR-038 |
-| **Recomendaciones no farmacológicas** (**art. 5.e.v**, y el art. 27.c las pone *antes* de decidir el medicamento). Columna: **`non_pharmacological_advice`** | `prescription` | PR-039 |
+| ✅ construido — **Signos de alarma** (**art. 5.e.iv**). Columna: **`warning_signs`**. De la receta y no de la línea, así que no cabe en `prescription_item.instructions` | `prescription` | PR-038 |
+| ✅ construido — **Recomendaciones no farmacológicas** (**art. 5.e.v**, y el art. 27.c las pone *antes* de decidir el medicamento). Columna: **`non_pharmacological_advice`** | `prescription` | PR-039 |
 | **Teléfono de contacto permanente del prescriptor** (**art. 5.e.vi**). Columna: **`emergency_contact_phone`**. No sirve `site.phone`: la norma dice «del prescriptor», y a las tres de la mañana hay que llamar a alguien | `practitioner` | PR-040 |
 | Modo de firma, instante y serie del certificado; **constancia de firma sin certificado** | `prescription` | PR-036 |
 | Motivo, autor e instante de la **anulación** (**art. 70**), y el estado «notificada». Columnas: **`cancelled_at`, `cancelled_by_id`, `cancel_reason`**. Mientras no existan, `/cancel` **no pide motivo**: pedirlo y tirarlo haría creer que hay registro | `prescription` | PR-010, PR-073 |

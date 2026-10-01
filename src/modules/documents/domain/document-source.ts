@@ -94,6 +94,12 @@ export interface PrescriptionPrintData {
   /** Art. 5.a.i. The canton of the site's parish; `null` if the site has none. */
   city: string | null;
   verificationCode: string | null;
+  /** PR-020, art. 5.a.i. Consecutive per site; `null` on a draft. */
+  sequenceNumber: number | null;
+  /** PR-038, art. 5.e.iv — signos de alarma. */
+  warningSigns: string | null;
+  /** PR-039, art. 5.e.v — recomendaciones no farmacológicas. */
+  nonPharmacologicalAdvice: string | null;
   patient: PatientIdentity;
   /** Art. 5.b.iii — the CIE of the attention, principal first. */
   diagnoses: readonly { code: string; display: string }[];

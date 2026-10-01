@@ -85,6 +85,9 @@ const prescriptionSubject = (status = 'ACTIVE'): DocumentSubject => ({
     issuedAt: status === 'DRAFT' ? null : new Date('2026-08-21T01:00:00Z'),
     city: 'Guayaquil',
     verificationCode: 'RX-1',
+    sequenceNumber: 1,
+    warningSigns: 'Fiebre alta',
+    nonPharmacologicalAdvice: 'Reposo',
     patient: {
       fullName: 'Guamán Andrade María José',
       identifier: '1710034065',

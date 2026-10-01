@@ -13,7 +13,7 @@ import {
 } from '../../../shared/clinical/patient-allergy.port';
 import { clinicalDateOf } from '../../../shared/domain/clinic-time';
 import { exactAllergyMatches } from '../domain/allergy-check';
-import { assertItemsComplete } from '../domain/prescription-content';
+import { assertPrescriptionComplete } from '../domain/prescription-content';
 import { composeDocument } from '../domain/prescription-document';
 import {
   AllergyContraindicationError,
@@ -66,6 +66,9 @@ export interface Requester {
 /** PR-001 to PR-009. What composing a prescription needs to be told. */
 export interface ComposePrescriptionRequest {
   encounterId: string;
+  /** PR-038, PR-039. Optional while composing; the issue demands them. */
+  warningSigns?: string | null;
+  nonPharmacologicalAdvice?: string | null;
   items: readonly NewPrescriptionItem[];
 }
 
@@ -165,6 +168,8 @@ export class PrescriptionService {
     const prescription = await this.prescriptions.create({
       encounterId: encounter.id,
       prescriberId: prescriber.practitionerId,
+      warningSigns: request.warningSigns ?? null,
+      nonPharmacologicalAdvice: request.nonPharmacologicalAdvice ?? null,
       items: request.items,
       sites: requester.sites,
     });
@@ -262,8 +267,9 @@ export class PrescriptionService {
           throw new PrescriptionEstablishmentIncompleteError();
         }
 
-        // PR-032. The whole of art. 5.c, every line, in one answer.
-        assertItemsComplete(snapshot.items);
+        // PR-032, PR-038, PR-039. The indications of art. 5.e and the whole
+        // of art. 5.c on every line, in one answer.
+        assertPrescriptionComplete(snapshot);
 
         /**
          * PR-060. The one alert that interrupts. It is checked LAST of the

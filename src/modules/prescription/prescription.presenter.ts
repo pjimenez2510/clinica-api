@@ -29,6 +29,9 @@ export function toPrescriptionResponse(
     status: prescription.status,
     issuedAt: prescription.issuedAt?.toISOString() ?? null,
     verificationCode: prescription.verificationCode,
+    sequenceNumber: prescription.sequenceNumber,
+    warningSigns: prescription.warningSigns,
+    nonPharmacologicalAdvice: prescription.nonPharmacologicalAdvice,
     createdAt: prescription.createdAt.toISOString(),
     // PR-011. `null` on every state but `DISCARDED`, which the database keeps
     // true: `prescription_discard_only_from_draft` ties the instant to the
@@ -60,6 +63,9 @@ export function toDocumentResponse(
   return {
     id: document.id,
     verificationCode: document.verificationCode,
+    sequenceNumber: document.sequenceNumber,
+    warningSigns: document.warningSigns,
+    nonPharmacologicalAdvice: document.nonPharmacologicalAdvice,
     status: document.status as PrescriptionResponse['status'],
     issuedAt: document.issuedAt?.toISOString() ?? null,
     city: document.city,

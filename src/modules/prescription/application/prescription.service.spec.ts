@@ -86,6 +86,9 @@ const aPrescription = (
   status: 'DRAFT',
   issuedAt: null,
   verificationCode: null,
+  sequenceNumber: null,
+  warningSigns: 'Fiebre mayor de 39 °C o dificultad para respirar',
+  nonPharmacologicalAdvice: 'Abundantes líquidos y reposo relativo',
   createdAt: new Date('2026-09-14T14:05:00Z'),
   discardedAt: null,
   discardReason: null,
@@ -111,6 +114,8 @@ const aPrescription = (
 
 const aSnapshot = (overrides: Partial<IssueSnapshot> = {}): IssueSnapshot => ({
   status: 'DRAFT',
+  warningSigns: 'Fiebre mayor de 39 °C o dificultad para respirar',
+  nonPharmacologicalAdvice: 'Abundantes líquidos y reposo relativo',
   items: aPrescription().items.map((item) => ({
     line: item.line,
     genericName: item.genericName,
@@ -418,6 +423,24 @@ describe('el servicio de recetas', () => {
     await expect(service.issue(PRESCRIPTION, requester)).rejects.toMatchObject({
       code: 'PRESCRIPTION_ITEM_INCOMPLETE',
     });
+  });
+
+  it('PR-038 PR-039 rechaza emitir sin signos de alarma ni recomendaciones, nombrando los dos campos', async () => {
+    repository.snapshot = aSnapshot({
+      warningSigns: null,
+      nonPharmacologicalAdvice: '',
+    });
+
+    const refusal = await service
+      .issue(PRESCRIPTION, requester)
+      .catch((error: unknown) => error);
+
+    expect(refusal).toMatchObject({ code: 'PRESCRIPTION_ITEM_INCOMPLETE' });
+    expect(
+      (refusal as { fieldErrors: { field: string }[] }).fieldErrors.map(
+        (fieldError) => fieldError.field,
+      ),
+    ).toEqual(['warningSigns', 'nonPharmacologicalAdvice']);
   });
 
   it('PR-020 emite con un código de verificación, y nunca con uno secuencial', async () => {

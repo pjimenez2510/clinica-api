@@ -253,9 +253,36 @@ export function composePrescriptionLayout(
       (entry): entry is { index: number; text: string } => entry !== null,
     );
 
+  /**
+   * PR-020. The number first —it is what the ACESS reads to detect a gap—
+   * and the pharmacy's check code beside it, each with its own name. A draft
+   * previewed before the issue has neither, and says so instead of «null».
+   */
+  const reference =
+    data.sequenceNumber === null || data.verificationCode === null
+      ? 'Borrador — sin número'
+      : `Receta N.º ${data.sequenceNumber} · Código de verificación: ${data.verificationCode}`;
+
+  /**
+   * PR-038, PR-039. Art. 5.e — what the PATIENT takes home, so it travels in
+   * the detachable band. Demanded at the issue, so on an issued receta these
+   * are never empty; a draft preview prints the gap with a dash.
+   */
+  const patientIndications: Block = {
+    kind: 'fields',
+    columns: 1,
+    entries: [
+      { label: 'Signos de alarma', value: data.warningSigns ?? '—' },
+      {
+        label: 'Recomendaciones no farmacológicas',
+        value: data.nonPharmacologicalAdvice ?? '—',
+      },
+    ],
+  };
+
   return {
     title: DOCUMENT_TITLE.PRESCRIPTION,
-    reference: `Código de verificación: ${data.verificationCode}`,
+    reference,
     accentColour: template.accentColour,
     header: headerOf(context, template),
     blocks,
@@ -279,6 +306,7 @@ export function composePrescriptionLayout(
                 value: entry.text,
               })),
             },
+        patientIndications,
         {
           kind: 'signature',
           caption: 'Sello del profesional',

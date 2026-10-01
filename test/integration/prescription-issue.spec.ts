@@ -45,6 +45,12 @@ import { createPatient, createSite, createUser } from './setup/fixtures';
  */
 const db = useDatabase();
 
+/** PR-038, PR-039. Art. 5.e of the receta, demanded at the issue. */
+const INDICATIONS = {
+  warningSigns: 'Fiebre mayor de 39 °C o dificultad para respirar',
+  nonPharmacologicalAdvice: 'Abundantes líquidos y reposo relativo',
+};
+
 const ENCOUNTER_STARTED_AT = new Date('2026-09-14T14:00:00Z');
 
 const repositoryOf = (prisma: PrismaClient) =>
@@ -215,6 +221,7 @@ describe('la receta contra PostgreSQL', () => {
     const prescription = await repositoryOf(prisma).create({
       encounterId: encounter.id,
       prescriberId: practitioner.id,
+      ...INDICATIONS,
       items: [aLine(concept.id)],
       sites: [...requester.sites],
     });
@@ -251,7 +258,11 @@ describe('la receta contra PostgreSQL', () => {
     const { encounter, practitioner } = await anEncounter(prisma);
 
     const prescription = await prisma.prescription.create({
-      data: { encounterId: encounter.id, prescriberId: practitioner.id },
+      data: {
+        encounterId: encounter.id,
+        siteId: encounter.siteId,
+        prescriberId: practitioner.id,
+      },
     });
 
     const problem = await problemFrom(
@@ -275,6 +286,7 @@ describe('la receta contra PostgreSQL', () => {
       repositoryOf(prisma).create({
         encounterId: encounter.id,
         prescriberId: practitioner.id,
+        ...INDICATIONS,
         items: [aLine(null)],
         sites: [...requester.sites],
       }),
@@ -288,6 +300,7 @@ describe('la receta contra PostgreSQL', () => {
     const prescription = await repositoryOf(prisma).create({
       encounterId: encounter.id,
       prescriberId: practitioner.id,
+      ...INDICATIONS,
       items: [
         {
           ...aLine(null),
@@ -319,6 +332,7 @@ describe('la receta contra PostgreSQL', () => {
     const prescription = await repositoryOf(prisma).create({
       encounterId: encounter.id,
       prescriberId: practitioner.id,
+      ...INDICATIONS,
       items: [{ ...aLine(concept.id), genericName: 'Otra cosa' }],
       sites: [...requester.sites],
     });
@@ -345,6 +359,7 @@ describe('la receta contra PostgreSQL', () => {
       repositoryOf(prisma).create({
         encounterId: encounter.id,
         prescriberId: practitioner.id,
+        ...INDICATIONS,
         items: [aLine(notAMedicine.id)],
         sites: [...requester.sites],
       }),
@@ -365,6 +380,7 @@ describe('la receta contra PostgreSQL', () => {
       repositoryOf(prisma).create({
         encounterId: encounter.id,
         prescriberId: practitioner.id,
+        ...INDICATIONS,
         items: [aLine(retired.id)],
         sites: [...requester.sites],
       }),
@@ -385,6 +401,7 @@ describe('la receta contra PostgreSQL', () => {
       repositoryOf(prisma).create({
         encounterId: encounter.id,
         prescriberId: practitioner.id,
+        ...INDICATIONS,
         items: [aLine(concept.id)],
         sites: [otherSite.id],
       }),
@@ -402,7 +419,7 @@ describe('la receta contra PostgreSQL', () => {
     const service = serviceOf(prisma);
 
     const composed = await service.compose(
-      { encounterId: encounter.id, items: [aLine(concept.id)] },
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
       { userId: requester.userId, sites: [...requester.sites] },
     );
 
@@ -422,6 +439,67 @@ describe('la receta contra PostgreSQL', () => {
     ).rejects.toMatchObject({ code: 'PRESCRIPTION_NOT_EDITABLE' });
   });
 
+  it('PR-020 la receta emitida vuelve con su número; el borrador, sin él', async () => {
+    const prisma = db();
+    const { encounter, requester } = await anEncounter(prisma);
+    const concept = await aCnmbConcept(prisma, {
+      code: 'J01CA04',
+      display: 'Amoxicilina',
+      validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+    });
+    const service = serviceOf(prisma);
+    const who = { userId: requester.userId, sites: [...requester.sites] };
+
+    const first = await service.compose(
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
+      who,
+    );
+    const second = await service.compose(
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
+      who,
+    );
+    expect(first.prescription.sequenceNumber).toBeNull();
+
+    expect(
+      (await service.issue(second.prescription.id, who)).sequenceNumber,
+    ).toBe(1);
+    expect(
+      (await service.issue(first.prescription.id, who)).sequenceNumber,
+    ).toBe(2);
+  });
+
+  it('PR-038 PR-039 rechaza emitir el borrador que se compuso sin signos de alarma ni recomendaciones', async () => {
+    const prisma = db();
+    const { encounter, requester } = await anEncounter(prisma);
+    const concept = await aCnmbConcept(prisma, {
+      code: 'J01CA04',
+      display: 'Amoxicilina',
+      validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+    });
+    const service = serviceOf(prisma);
+    const who = { userId: requester.userId, sites: [...requester.sites] };
+
+    const bare = await service.compose(
+      { encounterId: encounter.id, items: [aLine(concept.id)] },
+      who,
+    );
+    await expect(
+      service.issue(bare.prescription.id, who),
+    ).rejects.toMatchObject({
+      code: 'PRESCRIPTION_ITEM_INCOMPLETE',
+    });
+    // Control positivo: el mismo camino, con las indicaciones, emite.
+    const complete = await service.compose(
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
+      who,
+    );
+    const issued = await service.issue(complete.prescription.id, who);
+    expect(issued.warningSigns).toBe(INDICATIONS.warningSigns);
+    expect(issued.nonPharmacologicalAdvice).toBe(
+      INDICATIONS.nonPharmacologicalAdvice,
+    );
+  });
+
   it('PR-010 anula una receta emitida sin borrar ninguna fila', async () => {
     // Que algo no se borre sólo se demuestra contando. Y se anula la EMITIDA:
     // `prescription_issued_coherence` obliga a que todo estado distinto de
@@ -437,7 +515,7 @@ describe('la receta contra PostgreSQL', () => {
     const service = serviceOf(prisma);
 
     const composed = await service.compose(
-      { encounterId: encounter.id, items: [aLine(concept.id)] },
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
       { userId: requester.userId, sites: [...requester.sites] },
     );
 
@@ -473,7 +551,7 @@ describe('la receta contra PostgreSQL', () => {
     const service = serviceOf(prisma);
 
     const composed = await service.compose(
-      { encounterId: encounter.id, items: [aLine(concept.id)] },
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
       { userId: requester.userId, sites: [...requester.sites] },
     );
 
@@ -509,7 +587,11 @@ describe('la receta contra PostgreSQL', () => {
     const prisma = db();
     const { encounter, practitioner } = await anEncounter(prisma);
     const prescription = await prisma.prescription.create({
-      data: { encounterId: encounter.id, prescriberId: practitioner.id },
+      data: {
+        encounterId: encounter.id,
+        siteId: encounter.siteId,
+        prescriberId: practitioner.id,
+      },
     });
 
     const problem = await problemFrom(
@@ -542,7 +624,7 @@ describe('la receta contra PostgreSQL', () => {
     const service = serviceOf(prisma);
 
     const composed = await service.compose(
-      { encounterId: encounter.id, items: [aLine(concept.id)] },
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
       { userId: requester.userId, sites: [...requester.sites] },
     );
     await service.issue(composed.prescription.id, {
@@ -604,7 +686,7 @@ describe('la receta contra PostgreSQL', () => {
     const requester = { userId: practitioner.userId, sites: [site.id] };
 
     const composed = await service.compose(
-      { encounterId: encounter.id, items: [aLine(concept.id)] },
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
       requester,
     );
 
@@ -637,7 +719,7 @@ describe('la receta contra PostgreSQL', () => {
     const requester = { userId: practitioner.userId, sites: [site.id] };
 
     const composed = await service.compose(
-      { encounterId: encounter.id, items: [aLine(concept.id)] },
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
       requester,
     );
 
@@ -700,7 +782,7 @@ describe('la receta contra PostgreSQL', () => {
 
     const service = serviceOf(prisma);
     const composed = await service.compose(
-      { encounterId: encounter.id, items: [aLine(concept.id)] },
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
       { userId: requester.userId, sites: [...requester.sites] },
     );
 
@@ -741,7 +823,7 @@ describe('la receta contra PostgreSQL', () => {
 
     const service = serviceOf(prisma);
     const composed = await service.compose(
-      { encounterId: encounter.id, items: [aLine(concept.id)] },
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
       { userId: requester.userId, sites: [...requester.sites] },
     );
 
@@ -816,7 +898,11 @@ describe('la receta contra PostgreSQL', () => {
       sites: [...requester.sites],
     };
     const composed = await service.compose(
-      { encounterId: encounter.id, items: [aLine(medicine.id)] },
+      {
+        encounterId: encounter.id,
+        ...INDICATIONS,
+        items: [aLine(medicine.id)],
+      },
       requesterArgs,
     );
     await service.issue(composed.prescription.id, requesterArgs);
@@ -862,7 +948,7 @@ describe('la receta contra PostgreSQL', () => {
     const service = serviceOf(prisma);
 
     const composed = await service.compose(
-      { encounterId: encounter.id, items: [aLine(concept.id)] },
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
       { userId: requester.userId, sites: [...requester.sites] },
     );
 

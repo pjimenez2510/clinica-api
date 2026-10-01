@@ -286,7 +286,12 @@ describe('la receta por HTTP', () => {
     const response = await post(
       `/encounters/${encounterId}/prescriptions`,
       doctorToken,
-      { items },
+      {
+        // PR-038, PR-039. Art. 5.e, demanded at the issue.
+        warningSigns: 'Fiebre mayor de 39 °C o dificultad para respirar',
+        nonPharmacologicalAdvice: 'Abundantes líquidos y reposo relativo',
+        items,
+      },
     ).expect(201);
     return response.body as ComposedBody;
   }

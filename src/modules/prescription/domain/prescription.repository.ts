@@ -111,6 +111,10 @@ export interface NewPrescriptionItem {
 export interface NewPrescription {
   encounterId: string;
   prescriberId: string;
+  /** PR-038. Optional while composing; the issue demands it. */
+  warningSigns: string | null;
+  /** PR-039. Optional while composing; the issue demands it. */
+  nonPharmacologicalAdvice: string | null;
   items: readonly NewPrescriptionItem[];
   /** PR-001, PR-006. The caller's own resolved scope, never a site they named. */
   sites: SiteScopeFilter;
@@ -154,11 +158,19 @@ export interface PrescriptionView {
    * PR-020. The short code a pharmacy checks the prescription with, WITHOUT
    * receiving any clinical datum. `null` while the prescription is a draft.
    *
-   * ⚠️ IT IS NOT THE SEQUENTIAL NUMBER art. 5.a.i demands (⚠️ **Falta
-   * esquema**, PR-020). A unique identifier is not a sequence, and a sequence
-   * is what lets the ACESS notice a gap.
+   * ⚠️ IT IS NOT THE SEQUENTIAL NUMBER: that is `sequenceNumber`. The code is
+   * random on purpose because it leaves the building on paper.
    */
   verificationCode: string | null;
+  /**
+   * PR-020 (art. 5.a.i). Consecutive per site, assigned by the database at the
+   * issue. `null` while DRAFT or DISCARDED.
+   */
+  sequenceNumber: number | null;
+  /** PR-038 (art. 5.e.iv). Demanded at the issue, not at composition. */
+  warningSigns: string | null;
+  /** PR-039 (art. 5.e.v). Demanded at the issue, not at composition. */
+  nonPharmacologicalAdvice: string | null;
   createdAt: Date;
   /**
    * PR-011. When the draft was discarded, and why.
@@ -191,6 +203,9 @@ export interface PrescriptionView {
  */
 export interface IssueSnapshot {
   status: PrescriptionStatus;
+  /** PR-038, PR-039. The indications of art. 5.e, judged with the lines. */
+  warningSigns: string | null;
+  nonPharmacologicalAdvice: string | null;
   /** PR-032. The lines as art. 5.c has to find them. */
   items: readonly ItemContent[];
   /** PR-062. The chart's allergies AND those of every chart it absorbed. */

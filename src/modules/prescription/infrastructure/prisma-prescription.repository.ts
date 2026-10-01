@@ -76,6 +76,9 @@ const PRESCRIPTION_SELECT = {
   status: true,
   issuedAt: true,
   verificationCode: true,
+  sequenceNumber: true,
+  warningSigns: true,
+  nonPharmacologicalAdvice: true,
   createdAt: true,
   // PR-011. The three columns of the discard register, minus the account:
   // `discarded_by_id` is the accountable «quién» and belongs in the trail, not
@@ -176,7 +179,7 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
           id: prescription.encounterId,
           ...encounterSiteFilter(prescription.sites),
         },
-        select: { id: true },
+        select: { id: true, siteId: true },
       });
       if (!encounter) throw new PrescriptionEncounterNotFoundError();
 
@@ -249,6 +252,11 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
         data: {
           encounterId: prescription.encounterId,
           prescriberId: prescription.prescriberId,
+          // PR-020. `prescription_site_assigned` takes it from the attention
+          // whatever is sent; sending the right one keeps Prisma's type honest.
+          siteId: encounter.siteId,
+          warningSigns: prescription.warningSigns,
+          nonPharmacologicalAdvice: prescription.nonPharmacologicalAdvice,
           // PR-003. Born `DRAFT` with no instant, which
           // `prescription_issued_coherence` also guarantees.
           items: { create: items },
@@ -348,6 +356,8 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
 
       const plan = decide({
         status: view.status,
+        warningSigns: view.warningSigns,
+        nonPharmacologicalAdvice: view.nonPharmacologicalAdvice,
         items: view.items.map(toItemContent),
         allergies,
         cityOfPrescription: canton?.display ?? null,
@@ -693,6 +703,9 @@ function toPrescriptionView(row: PrescriptionRow): PrescriptionView {
     status: row.status,
     issuedAt: row.issuedAt,
     verificationCode: row.verificationCode,
+    sequenceNumber: row.sequenceNumber,
+    warningSigns: row.warningSigns,
+    nonPharmacologicalAdvice: row.nonPharmacologicalAdvice,
     createdAt: row.createdAt,
     discardedAt: row.discardedAt,
     discardReason: row.discardReason,

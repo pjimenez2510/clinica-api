@@ -299,6 +299,9 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         status: true,
         issuedAt: true,
         verificationCode: true,
+        sequenceNumber: true,
+        warningSigns: true,
+        nonPharmacologicalAdvice: true,
         encounter: {
           select: {
             siteId: true,
@@ -361,6 +364,9 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         // somebody sees rather than a city somebody invented.
         city: await this.cantonOf(row.encounter.site.parish),
         verificationCode: row.verificationCode,
+        sequenceNumber: row.sequenceNumber,
+        warningSigns: row.warningSigns,
+        nonPharmacologicalAdvice: row.nonPharmacologicalAdvice,
         patient: toPatient(
           row.encounter.patient,
           row.encounter.ageYears,
