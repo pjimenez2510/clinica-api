@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { invoiceDocumentNumber } from '../../../shared/billing/document-number';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import type { SriEnvironment } from '../domain/access-key';
 import type {
@@ -493,7 +494,12 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
         invoiceId: row.id,
         voucherId: voucher?.id ?? null,
         siteId: row.siteId,
-        documentNumber: `${row.emissionPoint.site.sriEstablishmentCode ?? '???'}-${row.emissionPoint.code}-${row.sequential}`,
+        documentNumber: invoiceDocumentNumber({
+          accessKey: voucher?.accessKey ?? null,
+          establishmentCode: row.emissionPoint.site.sriEstablishmentCode,
+          emissionPointCode: row.emissionPoint.code,
+          sequential: row.sequential,
+        }),
         buyerName: row.buyerName,
         buyerIdentification: row.buyerIdentification,
         issuedAt: row.issuedAt ?? new Date(0),
@@ -545,6 +551,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
           select: {
             id: true,
             issuedById: true,
+            accessKey: true,
             buyerEmail: true,
             buyerName: true,
             sequential: true,
@@ -572,7 +579,12 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
       issuedById: invoice.issuedById,
       buyerEmail: invoice.buyerEmail,
       buyerName: invoice.buyerName,
-      documentNumber: `${site.sriEstablishmentCode ?? '???'}-${invoice.emissionPoint.code}-${invoice.sequential}`,
+      documentNumber: invoiceDocumentNumber({
+        accessKey: invoice.accessKey,
+        establishmentCode: site.sriEstablishmentCode,
+        emissionPointCode: invoice.emissionPoint.code,
+        sequential: invoice.sequential,
+      }),
       establishmentName: site.establishment?.legalName ?? site.name,
     };
   }

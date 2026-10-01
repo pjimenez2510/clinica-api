@@ -13,6 +13,7 @@ import {
   escapeXml,
   hasVoucherRootId,
   INVOICE_SCHEMA_VERSION,
+  VoucherKeyMismatchError,
   VoucherTotalsMismatchError,
   type InvoiceVoucherSource,
 } from './invoice-xml';
@@ -251,6 +252,24 @@ describe('SRI-011, SRI-013 las líneas y los impuestos', () => {
       descripcion: 'Consulta de medicina general',
     });
   });
+});
+
+describe('SRI-019 el contenido dice lo mismo que la clave', () => {
+  it.each([
+    ['ruc', { issuer: { ...aSource().issuer, ruc: '1790001564001' } }],
+    ['establishmentCode', { establishmentCode: '002' }],
+    ['emissionPointCode', { emissionPointCode: '001' }],
+    ['sequential', { sequential: '000000124' }],
+    ['issuedOn', { issuedOn: parseClinicalDate('2026-10-01') }], // fecha-fija: un día distinto del de la clave
+    ['environment', { environment: '2' as const }],
+  ] as const)(
+    'SRI-019 rechaza componer un XML cuyo %s no es el de su clave',
+    (part, override) => {
+      expect(() => composeInvoiceXml({ ...aSource(), ...override })).toThrow(
+        new VoucherKeyMismatchError(part),
+      );
+    },
+  );
 });
 
 describe('SRI-014 formatos y escape', () => {

@@ -33,6 +33,7 @@ export type BlockedReason =
   | 'CERTIFICATE_UNREADABLE'
   | 'CERTIFICATE_STORE_NOT_CONFIGURED'
   | 'NO_PAYMENT_METHOD'
+  | 'MISSING_ISSUER_DATA'
   | 'SIGNING_FAILED';
 
 /** One message of the SRI, as its web service returns it. */

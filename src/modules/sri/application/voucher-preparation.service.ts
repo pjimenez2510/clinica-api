@@ -5,7 +5,11 @@ import { PinoLogger } from 'nestjs-pino';
 
 import type { ElectronicVoucherPreparer } from '../../../shared/billing/electronic-voucher.port';
 import { clinicalDateOf } from '../../../shared/domain/clinic-time';
-import { composeAccessKey, numericCodeFrom } from '../domain/access-key';
+import {
+  accessKeyParts,
+  composeAccessKey,
+  numericCodeFrom,
+} from '../domain/access-key';
 import {
   ELECTRONIC_VOUCHER_REPOSITORY,
   SIGNING_CERTIFICATE_REPOSITORY,
@@ -155,9 +159,7 @@ export class VoucherPreparationService implements ElectronicVoucherPreparer {
       numericCode,
       environment: this.settings.environment,
       schemaVersion: INVOICE_SCHEMA_VERSION,
-      unsignedXml: composeInvoiceXml(
-        this.voucherSource(source, accessKey, this.settings.environment),
-      ),
+      unsignedXml: composeInvoiceXml(this.voucherSource(source, accessKey)),
       blockedReason: null,
     });
 
@@ -174,6 +176,12 @@ export class VoucherPreparationService implements ElectronicVoucherPreparer {
     const source = await this.vouchers.preparationSource(voucher.invoiceId);
     if (!source) return voucher;
 
+    // SRI-008. A datum of the issuer removed after the voucher was created:
+    // it waits, said, rather than failing the sweep on every pass.
+    if (missingIssuerData(source).length > 0) {
+      return this.blocked(voucher, 'MISSING_ISSUER_DATA');
+    }
+
     // SRI-017, BI-170. The cashier declares it; an older invoice without it
     // is not signed, and nothing here invents one.
     if (source.paymentMethod === null) {
@@ -187,7 +195,7 @@ export class VoucherPreparationService implements ElectronicVoucherPreparer {
     }
 
     const unsignedXml = composeInvoiceXml(
-      this.voucherSource(source, voucher.accessKey, voucher.environment),
+      this.voucherSource(source, voucher.accessKey),
     );
 
     // SRI-026. The opening is recorded BEFORE decrypting; if the row cannot be
@@ -263,10 +271,8 @@ export class VoucherPreparationService implements ElectronicVoucherPreparer {
   /** SRI-058. The XML of a voucher, recomposed with its own key. */
   async recompose(voucher: VoucherRecord): Promise<string | null> {
     const source = await this.vouchers.preparationSource(voucher.invoiceId);
-    if (!source) return null;
-    return composeInvoiceXml(
-      this.voucherSource(source, voucher.accessKey, voucher.environment),
-    );
+    if (!source || missingIssuerData(source).length > 0) return null;
+    return composeInvoiceXml(this.voucherSource(source, voucher.accessKey));
   }
 
   private async blocked(
@@ -279,16 +285,22 @@ export class VoucherPreparationService implements ElectronicVoucherPreparer {
     return { ...voucher, blockedReason: reason };
   }
 
+  /**
+   * SRI-019. What the voucher says about itself —date, RUC, environment,
+   * series, sequential— comes from its key, which never changes, and not from
+   * the site as it is today: a code corrected after issuing would otherwise
+   * produce a voucher the SRI returns and that can never be fixed.
+   */
   private voucherSource(
     source: PreparationSource,
     accessKey: string,
-    environment: VoucherRecord['environment'],
   ): InvoiceVoucherSource {
+    const key = accessKeyParts(accessKey);
     return {
-      environment,
+      environment: key.environment,
       accessKey,
       issuer: {
-        ruc: source.issuer.ruc!,
+        ruc: key.ruc,
         legalName: source.issuer.legalName!,
         headOfficeAddress: source.issuer.headOfficeAddress!,
         establishmentAddress: source.issuer.establishmentAddress,
@@ -297,10 +309,10 @@ export class VoucherPreparationService implements ElectronicVoucherPreparer {
         withholdingAgentResolution: source.issuer.withholdingAgentResolution,
         rimpeRegime: source.issuer.rimpeRegime,
       },
-      establishmentCode: source.establishmentCode!,
-      emissionPointCode: source.emissionPointCode,
-      sequential: source.sequential,
-      issuedOn: clinicalDateOf(source.issuedAt),
+      establishmentCode: key.establishmentCode,
+      emissionPointCode: key.emissionPointCode,
+      sequential: key.sequential,
+      issuedOn: key.issuedOn,
       buyer: source.buyer,
       lines: source.lines,
       totals: source.totals,

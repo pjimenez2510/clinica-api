@@ -328,6 +328,17 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
   sede, `contribuyenteEspecial` cuando exista y `obligadoContabilidad` `SI`/`NO`.
   > **Falta esquema** —se añade aquí—: `establishment.head_office_address`.
   > `dirMatriz` es obligatorio en el XSD y el sistema no lo tenía.
+- **SRI-019** — El sistema DEBERÁ tomar la fecha de emisión, el RUC, el
+  ambiente, el establecimiento, el punto de emisión y el secuencial del
+  comprobante **de su clave de acceso**, y no del estado actual de la sede o el
+  establecimiento, cada vez que componga o recomponga su XML y cada vez que
+  imprima o liste su número; y NO DEBERÁ componer un XML cuyo contenido no
+  coincida con su clave. SI falta después un dato del emisor (SRI-008) ENTONCES
+  DEBERÁ dejar el comprobante sin firmar con el motivo `MISSING_ISSUER_DATA`.
+  > Revisión del 01-10-2026: un código de sede corregido entre preparar y
+  > firmar firmaba `<estab>002</estab>` con una clave que dice `001`; el SRI lo
+  > devuelve y, como la clave no puede cambiar (SRI-005), la factura no se
+  > autorizaría nunca.
 
 ## 3. La firma y el certificado del emisor
 

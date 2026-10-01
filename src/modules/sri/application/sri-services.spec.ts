@@ -1,6 +1,8 @@
 import type { PinoLogger } from 'nestjs-pino';
 import { describe, expect, it, vi } from 'vitest';
 
+import { clinicalDateOf } from '../../../shared/domain/clinic-time';
+import { composeAccessKey } from '../domain/access-key';
 import type {
   PreparationSource,
   StoredCertificate,
@@ -88,12 +90,24 @@ function source(overrides: Partial<PreparationSource> = {}): PreparationSource {
   };
 }
 
+/** The key the preparation would have composed for `source()`. */
+const KEY = composeAccessKey({
+  issuedOn: clinicalDateOf(NOW),
+  documentType: '01',
+  ruc: '1790001563001',
+  environment: '1',
+  establishmentCode: '001',
+  emissionPointCode: '001',
+  sequential: '000000001',
+  numericCode: '00000001',
+});
+
 function voucher(overrides: Partial<VoucherRecord> = {}): VoucherRecord {
   return {
     id: 'voucher-1',
     invoiceId: 'invoice-1',
     siteId: 'site-1',
-    accessKey: '3'.repeat(49),
+    accessKey: KEY,
     numericCode: '00000001',
     environment: '1',
     status: 'PREPARED',
@@ -305,6 +319,36 @@ describe('SRI-020 a SRI-031 la firma', () => {
     expect(vouchers.markSigned).toHaveBeenCalled();
     expect(queue.schedule).toHaveBeenCalledWith('SEND', expect.anything(), 0);
     expect(signed.status).toBe('SIGNED');
+  });
+
+  it('SRI-019 una sede corregida tras emitir no cambia lo que el comprobante dice de sí mismo', async () => {
+    const { preparation, vouchers, signer } = fakes();
+    vouchers.preparationSource.mockResolvedValue(
+      source({
+        establishmentCode: '002',
+        emissionPointCode: '009',
+        issuer: { ...source().issuer, ruc: '1790001564001' },
+      }),
+    );
+    await preparation.sign(voucher());
+    const xml = signer.sign.mock.calls[0]![0] as string;
+    expect(xml).toContain('<estab>001</estab>');
+    expect(xml).toContain('<ptoEmi>001</ptoEmi>');
+    expect(xml).toContain('<ruc>1790001563001</ruc>');
+  });
+
+  it('SRI-008 un dato del emisor borrado tras crear el comprobante lo deja esperando, dicho', async () => {
+    const { preparation, vouchers, signer } = fakes();
+    vouchers.preparationSource.mockResolvedValue(
+      source({ issuer: { ...source().issuer, headOfficeAddress: null } }),
+    );
+    const result = await preparation.sign(voucher());
+    expect(result.blockedReason).toBe('MISSING_ISSUER_DATA');
+    expect(vouchers.block).toHaveBeenCalledWith(
+      'voucher-1',
+      'MISSING_ISSUER_DATA',
+    );
+    expect(signer.sign).not.toHaveBeenCalled();
   });
 
   it('SRI-026 si la apertura no se puede registrar, no se descifra ni se firma', async () => {

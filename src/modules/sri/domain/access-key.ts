@@ -1,4 +1,7 @@
-import type { ClinicalDate } from '../../../shared/domain/clinic-time';
+import {
+  parseClinicalDate,
+  type ClinicalDate,
+} from '../../../shared/domain/clinic-time';
 
 /**
  * SRI-001 to SRI-003. The 49-digit access key of an electronic voucher.
@@ -115,6 +118,40 @@ export function isValidAccessKey(key: string): boolean {
     /^[0-9]{49}$/.test(key) &&
     accessKeyCheckDigit(key.slice(0, 48)) === Number(key[48])
   );
+}
+
+/**
+ * SRI-019. The parts a stored key was composed from.
+ *
+ * What the voucher says about ITSELF —date, RUC, environment, series,
+ * sequential— is read from here and never from the site as it is today: the
+ * key cannot change (SRI-005) and the SRI returns a voucher whose content does
+ * not match its key, so a site whose code was corrected after issuing would
+ * otherwise leave the invoice impossible to authorise.
+ */
+export function accessKeyParts(key: string): AccessKeyParts {
+  if (!isValidAccessKey(key)) {
+    throw new Error('Not a valid access key');
+  }
+  const documentType = key.slice(8, 10);
+  const environment = key.slice(23, 24);
+  if (documentType !== '01')
+    throw new InvalidAccessKeyPartError('documentType');
+  if (environment !== '1' && environment !== '2') {
+    throw new InvalidAccessKeyPartError('environment');
+  }
+  return {
+    issuedOn: parseClinicalDate(
+      `${key.slice(4, 8)}-${key.slice(2, 4)}-${key.slice(0, 2)}`,
+    ),
+    documentType,
+    ruc: key.slice(10, 23),
+    environment,
+    establishmentCode: key.slice(24, 27),
+    emissionPointCode: key.slice(27, 30),
+    sequential: key.slice(30, 39),
+    numericCode: key.slice(39, 47),
+  };
 }
 
 /**

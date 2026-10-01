@@ -1,6 +1,6 @@
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 
-import type { SriEnvironment } from './access-key';
+import { accessKeyParts, type SriEnvironment } from './access-key';
 
 /**
  * SRI-010 to SRI-018. The XML of an invoice, version 1.1.0 of the SRI's schema.
@@ -106,6 +106,48 @@ export class VoucherTotalsMismatchError extends Error {
   constructor(readonly figure: keyof VoucherTotals) {
     super(`The voucher's ${figure} does not match the invoice's`);
     this.name = 'VoucherTotalsMismatchError';
+  }
+}
+
+/**
+ * SRI-019. A part of the content is not what the key says.
+ *
+ * The SRI returns such a voucher, and its key can never change (SRI-005):
+ * composing refuses so the mismatch is a defect found here, not an invoice
+ * rejected for ever.
+ */
+export class VoucherKeyMismatchError extends Error {
+  constructor(
+    readonly part:
+      | 'ruc'
+      | 'environment'
+      | 'establishmentCode'
+      | 'emissionPointCode'
+      | 'sequential'
+      | 'issuedOn',
+  ) {
+    super(`The voucher's ${part} is not the one in its access key`);
+    this.name = 'VoucherKeyMismatchError';
+  }
+}
+
+function assertMatchesKey(source: InvoiceVoucherSource): void {
+  const key = accessKeyParts(source.accessKey);
+  if (key.ruc !== source.issuer.ruc) throw new VoucherKeyMismatchError('ruc');
+  if (key.environment !== source.environment) {
+    throw new VoucherKeyMismatchError('environment');
+  }
+  if (key.establishmentCode !== source.establishmentCode) {
+    throw new VoucherKeyMismatchError('establishmentCode');
+  }
+  if (key.emissionPointCode !== source.emissionPointCode) {
+    throw new VoucherKeyMismatchError('emissionPointCode');
+  }
+  if (key.sequential !== source.sequential) {
+    throw new VoucherKeyMismatchError('sequential');
+  }
+  if (key.issuedOn !== source.issuedOn) {
+    throw new VoucherKeyMismatchError('issuedOn');
   }
 }
 
@@ -298,6 +340,7 @@ function additionalField(name: string, value: string): string {
  * preparation, which refuses to SIGN such a voucher.
  */
 export function composeInvoiceXml(source: InvoiceVoucherSource): string {
+  assertMatchesKey(source);
   const computed = source.lines.map(computeLine);
   assertTotals(computed, source.totals);
 

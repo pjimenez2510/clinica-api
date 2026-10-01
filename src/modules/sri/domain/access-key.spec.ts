@@ -4,6 +4,7 @@ import { parseClinicalDate } from '../../../shared/domain/clinic-time';
 
 import {
   accessKeyCheckDigit,
+  accessKeyParts,
   composeAccessKey,
   InvalidAccessKeyPartError,
   isValidAccessKey,
@@ -145,5 +146,30 @@ describe('SRI-003 código numérico', () => {
       return 0;
     });
     expect(asked).toBe(100_000_000);
+  });
+});
+
+describe('SRI-019 la clave dice de qué comprobante es', () => {
+  it('SRI-019 devuelve las partes con que se compuso la clave', () => {
+    expect(accessKeyParts(composeAccessKey(PARTS))).toEqual(PARTS);
+  });
+
+  it('SRI-019 lee una clave de la Ficha', () => {
+    expect(
+      accessKeyParts('0503201201176001321000110010030009900641234567814'),
+    ).toMatchObject({
+      issuedOn: '2012-03-05', // fecha-fija: la de una clave impresa en la Ficha del SRI
+      ruc: '1760013210001',
+      environment: '1',
+      establishmentCode: '001',
+      emissionPointCode: '003',
+      sequential: '000990064',
+    });
+  });
+
+  it('SRI-019 rechaza leer algo que no es una clave válida', () => {
+    expect(() =>
+      accessKeyParts('0503201201176001321000110010030009900641234567815'),
+    ).toThrow();
   });
 });

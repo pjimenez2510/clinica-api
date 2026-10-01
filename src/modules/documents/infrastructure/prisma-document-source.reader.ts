@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { invoiceDocumentNumber } from '../../../shared/billing/document-number';
 import {
   chartScopeRows,
   chartScopeSelect,
@@ -592,16 +593,13 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
     });
     if (row === null) return null;
 
-    /**
-     * SRI-070, OR-027. `001-001-000000001`: the first block is the
-     * establishment code the SRI assigned to the site — not `msp_unicode`,
-     * which is the MSP's register. A site without it prints `???`, never an
-     * invented `001`: such an invoice cannot have a voucher either (SRI-008),
-     * and the SRI monitor says why.
-     */
-    const establishmentCode =
-      row.emissionPoint.site.sriEstablishmentCode ?? '???';
-    const documentNumber = `${establishmentCode}-${row.emissionPoint.code}-${row.sequential}`;
+    // SRI-019, SRI-070, OR-027. From the key once there is one.
+    const documentNumber = invoiceDocumentNumber({
+      accessKey: row.accessKey,
+      establishmentCode: row.emissionPoint.site.sriEstablishmentCode,
+      emissionPointCode: row.emissionPoint.code,
+      sequential: row.sequential,
+    });
 
     const money = (value: Prisma.Decimal): string => value.toFixed(2);
 
