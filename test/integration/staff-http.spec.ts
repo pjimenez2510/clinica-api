@@ -316,6 +316,31 @@ describe('el personal por HTTP', () => {
       });
     });
 
+    it('ST-049 guarda el teléfono de contacto permanente del profesional y lo devuelve', async () => {
+      const practitioner = await createPractitioner();
+
+      await patch(`/practitioners/${practitioner.id}`, {
+        emergencyContactPhone: '0991234567',
+      }).expect(200);
+
+      const response = await get(`/practitioners/${practitioner.id}`).expect(200); // prettier-ignore
+      expect(response.body).toMatchObject({
+        emergencyContactPhone: '0991234567',
+      });
+    });
+
+    it('ST-049 rechaza por campo un teléfono que no es un número de teléfono', async () => {
+      const practitioner = await createPractitioner();
+
+      const response = await patch(`/practitioners/${practitioner.id}`, {
+        emergencyContactPhone: 'llamar a la clínica',
+      }).expect(422);
+
+      expect((response.body as Problem).errors?.[0]?.field).toBe(
+        'emergencyContactPhone',
+      );
+    });
+
     it('ST-006 marca si el profesional es agendable y lo conserva', async () => {
       const practitioner = await createPractitioner({ schedulable: false });
 

@@ -96,13 +96,13 @@ describe('el adaptador del catálogo de exámenes', () => {
     expect(exam?.analytes[0]?.position).toBe(1);
   });
 
-  it('ORD-010 publica la prestación del tarifario de cada examen, y `null` si no la tiene', async () => {
+  it('ORD-010 publica la prestación del tarifario de cada examen, o nada si no la tiene', async () => {
     const [exam] = await prismaDouble().repository.active();
 
     expect(exam?.tariffCode).toBe('EX-BH');
   });
 
-  it('ORD-012 publica como reflejo el analito marcado `is_reflex`, y como no reflejo el que no', async () => {
+  it('ORD-012 publica como reflejo el analito marcado is_reflex, y como no reflejo el que no', async () => {
     const reflex = await prismaDouble(analyteRow(), true).repository.active();
     const plain = await prismaDouble(analyteRow(), false).repository.active();
 

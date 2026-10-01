@@ -359,6 +359,8 @@ export const prescriptionDocumentSchema = z.object({
     fullName: z.string(),
     /** PR-034. Art. 5.d.ii — printed on the document. */
     acessRegistration: z.string().nullable(),
+    /** PR-040. Art. 5.e.vi — the permanent contact number. */
+    contactPhone: z.string().nullable(),
     /** PR-035. There is no drawn signature, and there never will be. */
     signedAt: z.iso.datetime().nullable(),
   }),
@@ -377,6 +379,8 @@ export const prescriptionDocumentSchema = z.object({
       frequencyText: z.string(),
       durationDays: z.number().int().nullable(),
       instructions: z.string().nullable(),
+      /** PR-037. Composed from the fields, never typed: no abbreviation. */
+      indications: z.string(),
       offFormularyJustification: z.string().nullable(),
     }),
   ),

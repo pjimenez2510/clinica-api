@@ -308,6 +308,8 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
           },
           prescriber: {
             select: {
+              // PR-040. Of the clinical profile, not of the account.
+              emergencyContactPhone: true,
               user: {
                 select: { acessRegistration: true, acessExpiresOn: true },
               },
@@ -364,6 +366,7 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
         prescriber: {
           acessRegistration: current.prescriber.user.acessRegistration,
           acessExpiresOn: current.prescriber.user.acessExpiresOn,
+          contactPhone: current.prescriber.emergencyContactPhone,
         },
       });
 
@@ -542,6 +545,7 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
         },
         prescriber: {
           select: {
+            emergencyContactPhone: true,
             user: {
               select: {
                 firstName: true,
@@ -584,6 +588,7 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
         givenName: row.prescriber.user.firstName,
         familyName: row.prescriber.user.lastName,
         acessRegistration: row.prescriber.user.acessRegistration,
+        contactPhone: row.prescriber.emergencyContactPhone,
       },
     };
   }

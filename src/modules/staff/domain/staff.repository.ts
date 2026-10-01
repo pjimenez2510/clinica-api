@@ -30,6 +30,8 @@ export interface PractitionerView {
   acessExpiresOn: ClinicalDate | null;
   /** ST-003: what RDACAA demands on every attention (REQ-021). */
   mspCode: string | null;
+  /** ST-049, PR-040. The permanent contact number the receta prints. */
+  emergencyContactPhone: string | null;
   /** ST-006. */
   schedulable: boolean;
   /** ST-010: deactivated, never deleted. */
@@ -125,6 +127,7 @@ export interface StaffRepository {
     id: string,
     patch: {
       mspCode?: string | null;
+      emergencyContactPhone?: string | null;
       schedulable?: boolean;
       active?: boolean;
       cedula?: string | null;

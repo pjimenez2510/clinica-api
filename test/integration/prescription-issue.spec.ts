@@ -134,7 +134,11 @@ async function aSiteWithCity(prisma: PrismaClient, city = 'Quito') {
 /** PR-004, PR-034. A prescriber with an ACESS registration in force. */
 async function aPrescriber(
   prisma: PrismaClient,
-  overrides: { acessRegistration?: string | null; acessExpiresOn?: Date | null } = {}, // prettier-ignore
+  overrides: {
+    acessRegistration?: string | null;
+    acessExpiresOn?: Date | null;
+    contactPhone?: string | null;
+  } = {},
 ) {
   const user = await prisma.user.create({
     data: {
@@ -152,7 +156,16 @@ async function aPrescriber(
           : overrides.acessExpiresOn,
     },
   });
-  return prisma.practitioner.create({ data: { userId: user.id } });
+  return prisma.practitioner.create({
+    data: {
+      userId: user.id,
+      // PR-040. Art. 5.e.vi — printed beside the warning signs.
+      emergencyContactPhone:
+        overrides.contactPhone === undefined
+          ? '0991234567'
+          : overrides.contactPhone,
+    },
+  });
 }
 
 /** An attention ready to be prescribed on, with everything art. 5 needs. */
@@ -500,7 +513,44 @@ describe('la receta contra PostgreSQL', () => {
     );
   });
 
-  it('PR-010 anula una receta emitida sin borrar ninguna fila', async () => {
+  it('PR-040 rechaza emitir si la ficha del prescriptor no tiene teléfono, y emite cuando lo tiene', async () => {
+    const prisma = db();
+    const { encounter, practitioner, requester } = await anEncounter(prisma);
+    const concept = await aCnmbConcept(prisma, {
+      code: 'J01CA04',
+      display: 'Amoxicilina',
+      validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+    });
+    const service = serviceOf(prisma);
+    const who = { userId: requester.userId, sites: [...requester.sites] };
+    await prisma.practitioner.update({
+      where: { id: practitioner.id },
+      data: { emergencyContactPhone: null },
+    });
+
+    const draft = await service.compose(
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
+      who,
+    );
+    await expect(
+      service.issue(draft.prescription.id, who),
+    ).rejects.toMatchObject({
+      code: 'PRESCRIBER_CONTACT_REQUIRED',
+    });
+
+    // Control positivo: el mismo borrador, con el teléfono en la ficha, emite.
+    await prisma.practitioner.update({
+      where: { id: practitioner.id },
+      data: { emergencyContactPhone: '0991234567' },
+    });
+    await expect(
+      service.issue(draft.prescription.id, who),
+    ).resolves.toMatchObject({
+      status: 'ACTIVE',
+    });
+  });
+
+  it('PR-010 PR-054 anula una receta emitida sin borrar ninguna fila', async () => {
     // Que algo no se borre sólo se demuestra contando. Y se anula la EMITIDA:
     // `prescription_issued_coherence` obliga a que todo estado distinto de
     // `DRAFT` lleve instante de emisión, así que un borrador no puede llegar a

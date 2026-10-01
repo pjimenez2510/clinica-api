@@ -53,8 +53,15 @@ export interface DocumentItem {
   doseText: string;
   frequencyText: string;
   durationDays: number | null;
-  /** PR-037. Art. 5.e.iii — the indications of this line. */
+  /** PR-037. Art. 5.e.iii — what the doctor added for this line, as typed. */
   instructions: string | null;
+  /**
+   * PR-037. Art. 5.e.iii — the indications of this line in plain words: DCI,
+   * dose, frequency, route and duration, COMPOSED from the fields and never
+   * typed, followed by what the doctor added. Composing it is what guarantees
+   * no abbreviation slips in: the route comes from the closed list, spelled.
+   */
+  indications: string;
   /** PR-009. Written when the medicine is outside the CNMB. */
   offFormularyJustification: string | null;
 }
@@ -101,6 +108,8 @@ export interface PrescriptionDocument {
     fullName: string;
     /** PR-034. Art. 5.d.ii — the ACESS registration, printed. */
     acessRegistration: string | null;
+    /** PR-040. Art. 5.e.vi — the permanent contact number. */
+    contactPhone: string | null;
     /**
      * PR-035, PR-036. Art. 5.d.iii. There is no drawn signature and there
      * never will be: «no se aceptarán rúbricas o trazos por firma». What
@@ -198,6 +207,7 @@ export function composeDocument(
     prescriber: {
       fullName: `${prescriber.familyName} ${prescriber.givenName}`,
       acessRegistration: prescriber.acessRegistration,
+      contactPhone: prescriber.contactPhone,
       signedAt: prescription.issuedAt,
     },
     items: prescription.items.map((item) => ({
@@ -213,7 +223,50 @@ export function composeDocument(
       frequencyText: item.frequencyText,
       durationDays: item.durationDays,
       instructions: item.instructions,
+      indications: indicationsOf({
+        genericName: item.genericName,
+        concentration: item.concentration,
+        doseText: item.doseText,
+        frequencyText: item.frequencyText,
+        route: labelOf(item.routeCode),
+        durationDays: item.durationDays,
+        instructions: item.instructions,
+      }),
       offFormularyJustification: item.offFormularyJustification,
     })),
   };
+}
+
+/**
+ * PR-037. «Amoxicilina 500 mg: 1 cápsula, cada 8 horas, por vía oral, durante
+ * 7 días. Tomar con alimentos». Each part only when it exists: a route this
+ * system cannot name is left out rather than printed as the stored code, which
+ * could be the very abbreviation art. 13 forbids.
+ */
+function indicationsOf(line: {
+  genericName: string;
+  concentration: string | null;
+  doseText: string;
+  frequencyText: string;
+  route: string | null;
+  durationDays: number | null;
+  instructions: string | null;
+}): string {
+  const medicine = [line.genericName, line.concentration]
+    .filter((part) => part !== null && part.trim() !== '')
+    .join(' ');
+  const how = [
+    line.doseText,
+    // Mid-sentence: «Cada 8 horas» as typed reads «cada 8 horas» here.
+    line.frequencyText.charAt(0).toLocaleLowerCase('es') +
+      line.frequencyText.slice(1),
+    line.route === null ? null : `por ${line.route.toLowerCase()}`,
+    line.durationDays === null
+      ? null
+      : `durante ${line.durationDays} ${line.durationDays === 1 ? 'día' : 'días'}`,
+  ]
+    .filter((part): part is string => part !== null && part.trim() !== '')
+    .join(', ');
+  const extra = line.instructions?.trim();
+  return `${medicine}: ${how}${extra ? `. ${extra}` : ''}`;
 }

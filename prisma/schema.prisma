@@ -1308,6 +1308,13 @@ model Practitioner {
   /// Cedula and ACESS registration already live on `app_user`, not duplicated.
   mspCode String? @map("msp_code") @db.VarChar(32)
 
+  /// PR-040, ST-049 (Res. ACESS-2023-0030 art. 5.e.vi). The prescriber's
+  /// permanent contact number, printed beside the warning signs. Of the
+  /// clinical profile and not of the account. Digits with an optional leading
+  /// `+` (`practitioner_emergency_contact_phone_format`). The issue of a
+  /// prescription demands it.
+  emergencyContactPhone String? @map("emergency_contact_phone") @db.VarChar(16)
+
   /// Whether this practitioner takes appointments. A pathologist has a clinical
   /// profile but no agenda.
   schedulable Boolean @default(true)

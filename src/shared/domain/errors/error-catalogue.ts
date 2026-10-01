@@ -790,6 +790,9 @@ export const DOMAIN_ERROR_CODES = [
   //     profesional que no tiene registro anotado —si hace falta tenerlo es
   //     pregunta de `staff`— y aquí el art. 5.d.ii imprime el número DENTRO del
   //     documento, así que sin número no hay receta que emitir.
+  //   * `PRESCRIBER_CONTACT_REQUIRED` (422) — la ficha profesional no tiene
+  //     teléfono de contacto permanente (art. 5.e.vi, PR-040): la receta lo
+  //     imprime junto a los signos de alarma y no se emite sin él.
   //   * `PRESCRIPTION_ESTABLISHMENT_INCOMPLETE` (422) — la sede no tiene
   //     parroquia, así que no hay ciudad de prescripción que imprimir (art.
   //     5.a.ii). 422 y no 500: no hay nada roto, falta un dato de la
@@ -797,6 +800,7 @@ export const DOMAIN_ERROR_CODES = [
   'ALLERGY_CONTRAINDICATION',
   'CONCEPT_NOT_PRESCRIBABLE',
   'OFF_FORMULARY_JUSTIFICATION_REQUIRED',
+  'PRESCRIBER_CONTACT_REQUIRED',
   'PRESCRIBER_NOT_LICENSED',
   'PRESCRIBER_PROFILE_REQUIRED',
   'PRESCRIPTION_EMPTY',

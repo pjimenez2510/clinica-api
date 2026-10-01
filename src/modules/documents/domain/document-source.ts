@@ -47,6 +47,8 @@ export interface PractitionerIdentity {
   /** Art. 5.d.ii. `null` prints the field empty rather than inventing one. */
   acessRegistration: string | null;
   mspCode: string | null;
+  /** PR-040. Art. 5.e.vi — the number the patient calls. */
+  contactPhone: string | null;
   /** DOC-060. `null` prints a labelled empty box. */
   seal: StoredImage | null;
   signature: StoredImage | null;

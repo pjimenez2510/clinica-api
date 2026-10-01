@@ -58,6 +58,7 @@ const prescriber: PractitionerIdentity = {
   fullName: 'Cedeño Rosa',
   acessRegistration: 'ACESS-99887',
   mspCode: 'MSP-1',
+  contactPhone: '0991234567',
   seal: null,
   signature: null,
 };
@@ -274,6 +275,23 @@ describe('PR-020 PR-038 PR-039 la receta impresa lleva su número y sus indicaci
     expect(layout.reference).toBe('Borrador — sin número');
   });
 
+  it('PR-037 la banda lleva, de cada línea, sus indicaciones completas y sin abreviaturas', () => {
+    const layout = composeLayout(prescription(), context, template);
+    const tearOff = textOf(layout.tearOff?.blocks ?? []);
+
+    expect(tearOff).toContain(
+      'Amoxicilina 500 mg: 1 tableta, cada 8 horas, por vía oral, durante 7 días. Tomar con alimentos',
+    );
+  });
+
+  it('PR-040 junto a los signos de alarma va el teléfono al que llamar, que es el del prescriptor', () => {
+    const layout = composeLayout(prescription(), context, template);
+    const tearOff = textOf(layout.tearOff?.blocks ?? []);
+
+    expect(tearOff).toContain('Teléfono del profesional');
+    expect(tearOff).toContain('0991234567');
+  });
+
   it('PR-038 PR-039 los signos de alarma y las recomendaciones van en la banda que se lleva el paciente', () => {
     const layout = composeLayout(prescription(), context, template);
     const tearOff = textOf(layout.tearOff?.blocks ?? []);
@@ -352,7 +370,7 @@ describe('DOC-073 la banda desprendible del art. 5.e', () => {
     expect(millimetresToPoints(TEAR_OFF_HEIGHT_MM)).toBeCloseTo(198.42, 1);
   });
 
-  it('DOC-073 la banda dice que no hay indicaciones antes que quedarse vacía', () => {
+  it('DOC-073 PR-037 la banda nunca queda vacía: una línea sin comentario lleva igual su frase compuesta', () => {
     const layout = composeLayout(
       prescription({
         lines: [
@@ -374,7 +392,7 @@ describe('DOC-073 la banda desprendible del art. 5.e', () => {
       template,
     );
     expect(textOf(layout.tearOff?.blocks ?? [])).toContain(
-      'Sin indicaciones adicionales',
+      'Amoxicilina: 1, cada día, por vía oral',
     );
   });
 });

@@ -629,16 +629,13 @@ documento existe y es lo único que la ACESS puede inspeccionar.
 - **PR-040** — Toda receta emitida DEBERÁ llevar el **número de contacto
   permanente del prescriptor**.
 
-  > ⚠️ **Falta esquema.** Falta la columna
-  > **`practitioner.emergency_contact_phone`**, que es lo que pide el **art.
-  > 5.e.vi**: ni `app_user` ni `practitioner` tienen teléfono. `site.phone`
-  > **no** sirve —la norma dice «del prescriptor»—, y lo que tiene que hacer el
-  > paciente a las tres de la mañana es llamar a alguien. Es el campo con más
-  > consecuencia clínica de los que faltan.
-  >
-  > **Y el documento no finge tenerlo**: el campo no aparece en la respuesta. Un
-  > teléfono en blanco junto a «llame ante estos signos» es peor que la ausencia
-  > de la casilla, porque el paciente lo lee como que no hay a quién llamar.
+  > **Construido**: `practitioner.emergency_contact_phone` (ST-049), del
+  > perfil clínico y no de la cuenta; `site.phone` **no** sirve —la norma dice
+  > «del prescriptor»—. La emisión lo lee en la misma transacción que el
+  > registro ACESS y, si falta, se rechaza con `PRESCRIBER_CONTACT_REQUIRED`
+  > (422): un «llame ante estos signos» sin número es peor que no emitir. El
+  > documento lo imprime junto a los signos de alarma, en la banda que se lleva
+  > el paciente.
 
 ## 3. Vigencia y archivo (art. 15, arts. 17 a 19)
 
@@ -966,7 +963,7 @@ Ninguna es una migración correctiva: la base está en fase `development`
 | Catálogo de **vías de administración** en vez de un `varchar` libre | `catalog_system`, `prescription_item` | PR-029 |
 | ✅ construido — **Signos de alarma** (**art. 5.e.iv**). Columna: **`warning_signs`**. De la receta y no de la línea, así que no cabe en `prescription_item.instructions` | `prescription` | PR-038 |
 | ✅ construido — **Recomendaciones no farmacológicas** (**art. 5.e.v**, y el art. 27.c las pone *antes* de decidir el medicamento). Columna: **`non_pharmacological_advice`** | `prescription` | PR-039 |
-| **Teléfono de contacto permanente del prescriptor** (**art. 5.e.vi**). Columna: **`emergency_contact_phone`**. No sirve `site.phone`: la norma dice «del prescriptor», y a las tres de la mañana hay que llamar a alguien | `practitioner` | PR-040 |
+| ✅ construido — **Teléfono de contacto permanente del prescriptor** (**art. 5.e.vi**). Columna: **`emergency_contact_phone`**. No sirve `site.phone`: la norma dice «del prescriptor», y a las tres de la mañana hay que llamar a alguien | `practitioner` | PR-040 |
 | Modo de firma, instante y serie del certificado; **constancia de firma sin certificado** | `prescription` | PR-036 |
 | Motivo, autor e instante de la **anulación** (**art. 70**), y el estado «notificada». Columnas: **`cancelled_at`, `cancelled_by_id`, `cancel_reason`**. Mientras no existan, `/cancel` **no pide motivo**: pedirlo y tirarlo haría creer que hay registro | `prescription` | PR-010, PR-073 |
 | **Número de línea** en la receta, hoy derivado del orden de `uuidv7()` | `prescription_item` | PR-032 |

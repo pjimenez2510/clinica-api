@@ -5,6 +5,7 @@ import {
   OUTPATIENT_VALIDITY_DAYS,
   ageText,
   quantityText,
+  indicationsText,
   routeText,
 } from './prescription-wording';
 import type { DocumentTemplate } from './document-template';
@@ -243,15 +244,12 @@ export function composePrescriptionLayout(
 
   // ── Art. 5.e — indicaciones, en la banda desprendible, con el sello otra vez
   //    (e.iv). El art. 5 lo pide DOS veces y ésta es la segunda.
-  const indications = data.lines
-    .map((line, index) =>
-      line.instructions === null
-        ? null
-        : { index: index + 1, text: line.instructions },
-    )
-    .filter(
-      (entry): entry is { index: number; text: string } => entry !== null,
-    );
+  // PR-037. EVERY line, composed: the dose and the duration are what the
+  // patient needs at home, whether or not the doctor added a remark.
+  const indications = data.lines.map((line, index) => ({
+    index: index + 1,
+    text: indicationsText(line),
+  }));
 
   /**
    * PR-020. The number first —it is what the ACESS reads to detect a gap—
@@ -273,6 +271,11 @@ export function composePrescriptionLayout(
     columns: 1,
     entries: [
       { label: 'Signos de alarma', value: data.warningSigns ?? '—' },
+      {
+        // PR-040. Beside the warning signs, because it is who to call.
+        label: 'Teléfono del profesional',
+        value: data.prescriber.contactPhone ?? '—',
+      },
       {
         label: 'Recomendaciones no farmacológicas',
         value: data.nonPharmacologicalAdvice ?? '—',

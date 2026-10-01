@@ -393,6 +393,27 @@ export class PrescriberNotLicensedError extends ForbiddenError {
 }
 
 /**
+ * PR-040. The prescriber has no permanent contact number to print.
+ *
+ * Art. 5.e.vi puts it beside the warning signs: what the patient has to do at
+ * three in the morning is call somebody. A receta that says «llame ante estos
+ * signos» with no number is worse than no receta, so it is not issued. 422 and
+ * not 403: nothing is forbidden, a datum of the profile is missing, and the
+ * message says who adds it and where.
+ *
+ * NO PHONE IN THE MESSAGE: it reaches the logs.
+ */
+export class PrescriberContactRequiredError extends ValidationError {
+  readonly code = 'PRESCRIBER_CONTACT_REQUIRED';
+  override readonly userTitle =
+    'La receta lleva impreso su teléfono de contacto permanente, y su ficha profesional no lo tiene. Pídalo a administración';
+
+  constructor() {
+    super('Prescriber has no permanent contact number on the clinical profile');
+  }
+}
+
+/**
  * PR-021. The site has no parish configured, so there is no city to print.
  *
  * ═══════════════════════════════════════════════════════════════════════════

@@ -83,6 +83,7 @@ export function toDocumentResponse(
     prescriber: {
       fullName: document.prescriber.fullName,
       acessRegistration: document.prescriber.acessRegistration,
+      contactPhone: document.prescriber.contactPhone,
       signedAt: document.prescriber.signedAt?.toISOString() ?? null,
     },
     items: [...document.items],

@@ -100,6 +100,7 @@ const prescriptionSubject = (status = 'ACTIVE'): DocumentSubject => ({
       fullName: 'Cedeño Rosa',
       acessRegistration: 'ACESS-1',
       mspCode: null,
+      contactPhone: null,
       seal: null,
       signature: null,
     },

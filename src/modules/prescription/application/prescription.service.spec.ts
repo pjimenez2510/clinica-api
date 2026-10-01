@@ -134,6 +134,7 @@ const aSnapshot = (overrides: Partial<IssueSnapshot> = {}): IssueSnapshot => ({
   prescriber: {
     acessRegistration: 'ACESS-11223',
     acessExpiresOn: new Date('2030-01-01T00:00:00Z'),
+    contactPhone: '0991234567',
   },
   ...overrides,
 });
@@ -372,7 +373,11 @@ describe('el servicio de recetas', () => {
     // MÁS ESTRICTO que EN-029 a propósito: allí no tener registro anotado no
     // impide firmar, y aquí el art. 5.d.ii imprime el número en el documento.
     repository.snapshot = aSnapshot({
-      prescriber: { acessRegistration: null, acessExpiresOn: null },
+      prescriber: {
+        acessRegistration: null,
+        acessExpiresOn: null,
+        contactPhone: '0991234567',
+      },
     });
 
     await expect(service.issue(PRESCRIPTION, requester)).rejects.toMatchObject({
@@ -387,6 +392,7 @@ describe('el servicio de recetas', () => {
       prescriber: {
         acessRegistration: 'ACESS-11223',
         acessExpiresOn: yesterday,
+        contactPhone: '0991234567',
       },
     });
 
@@ -423,6 +429,26 @@ describe('el servicio de recetas', () => {
     await expect(service.issue(PRESCRIPTION, requester)).rejects.toMatchObject({
       code: 'PRESCRIPTION_ITEM_INCOMPLETE',
     });
+  });
+
+  it('PR-040 rechaza emitir cuando el prescriptor no tiene teléfono de contacto permanente', async () => {
+    // Lo que el paciente tiene que hacer a las tres de la mañana ante un signo
+    // de alarma es llamar a alguien: sin número no hay receta que emitir.
+    repository.snapshot = aSnapshot({
+      prescriber: { ...aSnapshot().prescriber, contactPhone: null },
+    });
+
+    await expect(service.issue(PRESCRIPTION, requester)).rejects.toMatchObject({
+      code: 'PRESCRIBER_CONTACT_REQUIRED',
+    });
+
+    // Control positivo: el mismo prescriptor con su teléfono emite.
+    repository.snapshot = aSnapshot();
+    await expect(service.issue(PRESCRIPTION, requester)).resolves.toMatchObject(
+      {
+        status: 'ACTIVE',
+      },
+    );
   });
 
   it('PR-038 PR-039 rechaza emitir sin signos de alarma ni recomendaciones, nombrando los dos campos', async () => {
@@ -556,6 +582,7 @@ describe('el servicio de recetas', () => {
         givenName: 'Ana',
         familyName: 'Villacís',
         acessRegistration: 'ACESS-11223',
+        contactPhone: '0991234567',
       },
     };
 

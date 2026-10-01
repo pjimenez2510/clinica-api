@@ -213,6 +213,45 @@ export function routeText(code: string | null): string | null {
 }
 
 /**
+ * PR-037, art. 5.e.iii. One line's indications in plain words — «Amoxicilina
+ * 500 mg: 1 tableta, cada 8 horas, por vía oral, durante 7 días. Tomar con
+ * alimentos» — COMPOSED from the fields so no abbreviation can slip in, and
+ * followed by what the doctor added.
+ *
+ * ⚠️ THE SAME SENTENCE `prescription` COMPOSES for its own document, written a
+ * second time here because no module imports another (CLAUDE.md §3). If one
+ * changes, the other must: `document-layout.spec.ts` and
+ * `prescription-document.spec.ts` assert the same wording.
+ */
+export function indicationsText(line: {
+  genericName: string;
+  concentration: string | null;
+  routeCode: string | null;
+  doseText: string;
+  frequencyText: string;
+  durationDays: number | null;
+  instructions: string | null;
+}): string {
+  const route = routeText(line.routeCode);
+  const medicine = [line.genericName, line.concentration]
+    .filter((part) => part !== null && part.trim() !== '')
+    .join(' ');
+  const how = [
+    line.doseText,
+    line.frequencyText.charAt(0).toLocaleLowerCase('es') +
+      line.frequencyText.slice(1),
+    route === null ? null : `por ${route.toLowerCase()}`,
+    line.durationDays === null
+      ? null
+      : `durante ${line.durationDays} ${line.durationDays === 1 ? 'día' : 'días'}`,
+  ]
+    .filter((part): part is string => part !== null && part.trim() !== '')
+    .join(', ');
+  const extra = line.instructions?.trim();
+  return `${medicine}: ${how}${extra ? `. ${extra}` : ''}`;
+}
+
+/**
  * Arts. 17 to 19. How long a pharmacy may dispense.
  *
  * THREE DAYS, because this clinic is ambulatory: A.M. 00030-2020 types it as a

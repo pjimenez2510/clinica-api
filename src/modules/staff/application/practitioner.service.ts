@@ -95,6 +95,7 @@ export class PractitionerService {
     id: string,
     patch: {
       mspCode?: string | null;
+      emergencyContactPhone?: string | null;
       schedulable?: boolean;
       active?: boolean;
       cedula?: string | null;

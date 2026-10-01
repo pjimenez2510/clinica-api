@@ -68,6 +68,7 @@ const source = (
     givenName: 'Ana',
     familyName: 'Villacís',
     acessRegistration: 'ACESS-11223',
+    contactPhone: '0991234567',
   },
   ...overrides,
 });
@@ -200,6 +201,7 @@ describe('la receta como documento', () => {
     expect(Object.keys(document.prescriber)).toEqual([
       'fullName',
       'acessRegistration',
+      'contactPhone',
       'signedAt',
     ]);
   });
@@ -247,15 +249,49 @@ describe('la receta como documento', () => {
     );
   });
 
-  it('PR-040 no finge el teléfono del prescriptor mientras no tenga dónde guardarse', () => {
-    // Un teléfono en blanco junto a «llame ante estos signos» se lee como que
-    // no hay a quién llamar: mejor que la casilla no exista.
+  it('PR-028 cada línea lleva la DCI como la congeló el CNMB, entera', () => {
     const document = composeDocument(source(), { context: 'AMBULATORY' });
 
-    expect(
-      Object.hasOwn(document.prescriber, 'contactPhone'),
-      'contactPhone',
-    ).toBe(false);
+    expect(document.items[0]?.genericName).toBe('Amoxicilina');
+  });
+
+  it('PR-037 cada línea lleva sus indicaciones en una frase completa: DCI, dosis, frecuencia, vía y duración, sin abreviaturas', () => {
+    const document = composeDocument(source(), { context: 'AMBULATORY' });
+
+    expect(document.items[0]?.indications).toBe(
+      'Amoxicilina 500 mg: 1 cápsula, cada 8 horas, por vía oral, durante 7 días. Tomar con alimentos',
+    );
+  });
+
+  it('PR-037 una vía que el sistema no sabe nombrar no se imprime como sigla en las indicaciones', () => {
+    const base = source();
+    const document = composeDocument(
+      {
+        ...base,
+        prescription: {
+          ...base.prescription,
+          items: [
+            {
+              ...base.prescription.items[0]!,
+              routeCode: 'VO',
+              instructions: null,
+            },
+          ],
+        },
+      },
+      { context: 'AMBULATORY' },
+    );
+
+    expect(document.items[0]?.indications).toBe(
+      'Amoxicilina 500 mg: 1 cápsula, cada 8 horas, durante 7 días',
+    );
+    expect(document.items[0]?.indications).not.toContain('VO');
+  });
+
+  it('PR-040 lleva el teléfono de contacto permanente del prescriptor', () => {
+    const document = composeDocument(source(), { context: 'AMBULATORY' });
+
+    expect(document.prescriber.contactPhone).toBe('0991234567');
   });
 
   it('PR-052 acorta la vigencia cuando la receta lleva un antimicrobiano de emergencia', () => {

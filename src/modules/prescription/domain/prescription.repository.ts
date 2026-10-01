@@ -216,6 +216,8 @@ export interface IssueSnapshot {
   prescriber: {
     acessRegistration: string | null;
     acessExpiresOn: Date | null;
+    /** PR-040. Read again here, like the registration. */
+    contactPhone: string | null;
   };
 }
 
@@ -279,6 +281,8 @@ export interface PrescriptionDocumentSource {
     givenName: string;
     familyName: string;
     acessRegistration: string | null;
+    /** PR-040. Art. 5.e.vi — the permanent contact number. */
+    contactPhone: string | null;
   };
 }
 

@@ -68,7 +68,7 @@ agendable, sedes donde atiende y especialidades que ejerce.
 leyendo estos datos sin dueño.
 **Prueba independiente:** un profesional con ACESS caducado ayer no puede
 firmar; el mismo con ACESS vigente sí.
-**Cubre:** ST-001 a ST-010, ST-047.
+**Cubre:** ST-001 a ST-010, ST-047, ST-049.
 
 **Solo servidor:** ST-047. Alcance por sede de una escritura: la pantalla no
 puede enseñar la negativa sin que el servidor la produzca.
@@ -100,6 +100,16 @@ negativa que el servidor no produce.
   considerarse habilitado para firmar.
 - **ST-003** — El sistema DEBERÁ almacenar el código MSP del profesional y
   exponerlo a quien deba consignarlo en cada atención (REQ-021).
+- **ST-049** — El sistema DEBERÁ almacenar el **teléfono de contacto
+  permanente** del profesional en su ficha clínica, y SI no es un número de
+  teléfono —de 7 a 15 dígitos, con un `+` inicial opcional— ENTONCES DEBERÁ
+  rechazarlo nombrando el campo. `practitioner_emergency_contact_phone_format`
+  lo dice una segunda vez en la base.
+
+  > PR-040 (Res. ACESS-2023-0030 **art. 5.e.vi**): la receta lo imprime junto a
+  > los signos de alarma, y sin él no se emite (`PRESCRIBER_CONTACT_REQUIRED`).
+  > Es del perfil clínico y no de la cuenta: una recepcionista tiene cuenta y no
+  > receta.
 - **ST-004** — SI el registro ACESS de un profesional está vencido en la fecha
   clínica, ENTONCES el sistema DEBERÁ impedirle firmar notas clínicas, recetas y
   certificados, rechazándolo con `ACESS_EXPIRED` y nombrando la fecha de

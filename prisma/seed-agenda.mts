@@ -113,6 +113,12 @@ async function main() {
     });
   }
 
+  /**
+   * PR-040, ST-049. A placeholder of the right shape for the receta's «número
+   * de contacto permanente del prescriptor». Nobody answers it.
+   */
+  const DEV_CONTACT_PHONE = '0990000000';
+
   // --- Practitioners: every seeded doctor account gets a clinical profile --
   const doctors = await prisma.user.findMany({
     where: { email: { in: ['medico@clinica.ec', 'admin@clinica.ec'] } },
@@ -127,8 +133,20 @@ async function main() {
     const practitioner = await prisma.practitioner.upsert({
       where: { userId: doctor.id },
       update: { schedulable: true, active: true },
-      create: { userId: doctor.id, schedulable: true },
+      create: {
+        userId: doctor.id,
+        schedulable: true,
+        emergencyContactPhone: DEV_CONTACT_PHONE,
+      },
     });
+    // PR-040. Without it the doctor cannot issue a receta in development. Only
+    // where there is none: a number somebody typed on the staff screen stays.
+    if (practitioner.emergencyContactPhone === null) {
+      await prisma.practitioner.update({
+        where: { id: practitioner.id },
+        data: { emergencyContactPhone: DEV_CONTACT_PHONE },
+      });
+    }
     practitioners.push(practitioner);
 
     // `central` incluida: es donde se siembra el día, así que sin el vínculo

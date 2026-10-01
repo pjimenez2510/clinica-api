@@ -17,6 +17,7 @@ import { assertPrescriptionComplete } from '../domain/prescription-content';
 import { composeDocument } from '../domain/prescription-document';
 import {
   AllergyContraindicationError,
+  PrescriberContactRequiredError,
   PrescriberNotLicensedError,
   PrescriberProfileRequiredError,
   PrescriptionEncounterNotFoundError,
@@ -260,6 +261,13 @@ export class PrescriptionService {
           acessExpiresOn.toISOString().slice(0, 10) < today
         ) {
           throw new PrescriberNotLicensedError();
+        }
+
+        // PR-040. Art. 5.e.vi prints a number to call beside the warning
+        // signs; without one there is no prescription to issue.
+        const { contactPhone } = snapshot.prescriber;
+        if (contactPhone === null || contactPhone.trim() === '') {
+          throw new PrescriberContactRequiredError();
         }
 
         // PR-021. Art. 5.a.ii wants the city, and there is none to print.

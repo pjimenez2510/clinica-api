@@ -122,6 +122,7 @@ const PATIENT_SELECT = {
  */
 const PRACTITIONER_SELECT = {
   mspCode: true,
+  emergencyContactPhone: true,
   user: {
     select: { firstName: true, lastName: true, acessRegistration: true },
   },
@@ -144,6 +145,7 @@ function toPractitioner(row: PractitionerRow): PractitionerIdentity {
     fullName: `${row.user.lastName} ${row.user.firstName}`,
     acessRegistration: row.user.acessRegistration,
     mspCode: row.mspCode,
+    contactPhone: row.emergencyContactPhone,
     seal: toStoredImage(row.sealImage),
     signature: toStoredImage(row.signatureImage),
   };
