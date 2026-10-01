@@ -47,7 +47,11 @@ const parser = new XMLParser({
   ignoreAttributes: true,
   parseTagValue: false,
   trimValues: true,
-  isArray: (name) => ['comprobante', 'mensaje', 'autorizacion'].includes(name),
+  // Lists only where the SRI nests ELEMENTS: `<mensaje>` lives inside
+  // `<mensaje>`, and the authorised `<comprobante>` is text — those two leaves
+  // must stay strings.
+  isArray: (name, _path, isLeafNode) =>
+    !isLeafNode && ['comprobante', 'mensaje', 'autorizacion'].includes(name),
 });
 
 type Tree = Record<string, unknown>;
@@ -90,9 +94,12 @@ export class FetchSriWebService implements SriWebService {
   constructor(private readonly config: ConfigService<Env, true>) {}
 
   isConfigured(): boolean {
+    // Truthiness and not `!== undefined`: `ConfigService` falls back to the
+    // raw `process.env` when the validated value is undefined, so `KEY=`
+    // arrives here as ''.
     return (
-      this.config.get('SRI_RECEPTION_URL', { infer: true }) !== undefined &&
-      this.config.get('SRI_AUTHORISATION_URL', { infer: true }) !== undefined
+      Boolean(this.config.get('SRI_RECEPTION_URL', { infer: true })) &&
+      Boolean(this.config.get('SRI_AUTHORISATION_URL', { infer: true }))
     );
   }
 

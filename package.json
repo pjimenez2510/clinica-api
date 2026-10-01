@@ -55,7 +55,9 @@
     "db:seed:rdacaa": "node --env-file=.env --experimental-strip-types prisma/seed-rdacaa.mts",
     "verify:tocado": "node --experimental-strip-types scripts/verify-touched.mts",
     "roadmap:check": "node --experimental-strip-types scripts/roadmap.mts --check",
-    "roadmap:write": "node --experimental-strip-types scripts/roadmap.mts --write"
+    "roadmap:write": "node --experimental-strip-types scripts/roadmap.mts --write",
+    "sri:double": "node --experimental-strip-types scripts/sri-double.mts",
+    "sri:certificate:dev": "node --env-file=.env --experimental-strip-types scripts/sri-certificate-dev.mts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.28",

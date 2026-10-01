@@ -94,10 +94,12 @@ import {
       inject: [ConfigService],
       useFactory: (config: ConfigService<Env, true>): SriSettings => ({
         environment: config.get('SRI_ENVIRONMENT', { infer: true }),
+        // `||` and not `??`: an empty `KEY=` comes back from `ConfigService`
+        // as '' (it falls back to the raw environment), and '' is «not declared».
         paymentMethod:
-          config.get('SRI_DEFAULT_PAYMENT_METHOD', { infer: true }) ?? null,
+          config.get('SRI_DEFAULT_PAYMENT_METHOD', { infer: true }) || null,
         softwareProviderRuc:
-          config.get('SRI_SOFTWARE_PROVIDER_RUC', { infer: true }) ?? null,
+          config.get('SRI_SOFTWARE_PROVIDER_RUC', { infer: true }) || null,
       }),
     },
   ],

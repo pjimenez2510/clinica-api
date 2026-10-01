@@ -38,6 +38,7 @@ export const QUEUE_NAMES: Record<QueueStep, string> = {
   DELIVER: 'sri-deliver',
 };
 const SWEEP_QUEUE = 'sri-sweep';
+const WORK_OPTIONS = { batchSize: 10, pollingIntervalSeconds: 1 } as const;
 
 interface StepJob {
   voucherId: string;
@@ -153,7 +154,10 @@ export class SriQueueWorker implements OnApplicationBootstrap {
       QueueStep,
       string,
     ][]) {
-      await boss.work<StepJob>(name, async (jobs) => {
+      // Ten per fetch, polled every second: after an SRI outage the backlog
+      // drains in batches instead of one job every two seconds (pg-boss's
+      // default), and an idle queue costs one cheap query a second.
+      await boss.work<StepJob>(name, WORK_OPTIONS, async (jobs) => {
         for (const job of jobs) {
           await this.dispatch.run(step, job.data.voucherId);
         }

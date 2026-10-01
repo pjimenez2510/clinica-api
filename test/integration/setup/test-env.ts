@@ -1,4 +1,7 @@
 import { generateKeyPairSync } from 'node:crypto';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 /**
  * Environment for tests that boot the real `AppModule`.
@@ -54,3 +57,34 @@ const PLACEHOLDERS: Record<string, string> = {
 for (const [key, value] of Object.entries(PLACEHOLDERS)) {
   process.env[key] ??= value;
 }
+
+/**
+ * THE SRI, FORCED AND NOT DEFAULTED — the one exception to «a real environment
+ * wins», on purpose.
+ *
+ * - `SRI_QUEUE_ENABLED=false`: a developer's `.env` leaves it on, and an
+ *   `AppModule` booted here would start pg-boss against whatever
+ *   `DATABASE_URL` the config holds — the developer's own database. The specs
+ *   that exercise the queue start it themselves, against the container.
+ * - No web-service URLs: no spec that boots the application may reach any
+ *   SRI, local or not. The flow specs build their client against the local
+ *   double explicitly.
+ * - A master passphrase in a throwaway file, so the certificate store works
+ *   and nothing of a developer's `.dev-secrets/` is read.
+ * - `01` as payment method: a TEST VALUE, not D-092's answer.
+ */
+const sriMasterKeyFile = join(
+  mkdtempSync(join(tmpdir(), 'sri-test-')),
+  'master',
+);
+writeFileSync(sriMasterKeyFile, 'frase-maestra-de-las-pruebas-de-integracion');
+
+process.env.SRI_QUEUE_ENABLED = 'false';
+process.env.SRI_CERTIFICATE_MASTER_KEY_FILE = sriMasterKeyFile;
+process.env.SRI_DEFAULT_PAYMENT_METHOD = '01';
+process.env.SRI_ALLOW_REMOTE = 'false';
+// EMPTY and not deleted: `ConfigModule` falls back to the `.env` file for a
+// variable the process does not have, and `KEY=` reads as «not declared».
+process.env.SRI_RECEPTION_URL = '';
+process.env.SRI_AUTHORISATION_URL = '';
+process.env.SRI_SOFTWARE_PROVIDER_RUC = '';

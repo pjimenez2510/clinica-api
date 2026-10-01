@@ -113,3 +113,33 @@ async function anyCertificate(
   });
   return created.id;
 }
+
+/**
+ * OR-027, OR-028. A site with everything a voucher needs from the issuer: its
+ * SRI establishment code and an establishment with RUC, legal name and head
+ * office. Fictitious, like the development seed.
+ */
+export async function giveSiteAnIssuer(
+  prisma: PrismaClient,
+  siteId: string,
+  code = '001',
+): Promise<void> {
+  sequence += 1;
+  const establishment = await prisma.establishment.create({
+    data: {
+      mspUnicode: `EST-SRI-${String(sequence).padStart(5, '0')}`,
+      typology: 'Centro de Salud Tipo A',
+      legalName: 'Clínica de Pruebas & Asociados S.A.',
+      ruc: TEST_ISSUER_RUC,
+      headOfficeAddress: 'Av. Amazonas y Naciones Unidas, Quito',
+    },
+  });
+  await prisma.site.update({
+    where: { id: siteId },
+    data: {
+      establishmentId: establishment.id,
+      sriEstablishmentCode: code,
+      addressLine: 'Av. de los Granados y 6 de Diciembre, Quito',
+    },
+  });
+}
