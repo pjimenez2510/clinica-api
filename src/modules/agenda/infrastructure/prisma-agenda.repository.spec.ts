@@ -132,6 +132,9 @@ function prismaDouble(options: {
     encounterProcedure: { count: () => Promise.resolve(0) },
     prescription: { count: () => Promise.resolve(0) },
     serviceOrder: { count: () => Promise.resolve(0) },
+    medicalCertificate: { count: () => Promise.resolve(0) },
+    referral: { count: () => Promise.resolve(0) },
+    interconsultation: { count: () => Promise.resolve(0) },
     encounter: {
       updateMany: (args: Record<string, unknown>) => {
         calls.push({ method: 'encounter.update', args });
