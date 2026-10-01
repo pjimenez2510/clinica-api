@@ -742,6 +742,16 @@ enum AbnormalFlag {
   @@map("abnormal_flag")
 }
 
+/// CER-034. The contingency of a rest certificate, as the IESS lists it.
+enum CertificateContingencyType {
+  GENERAL_ILLNESS
+  WORK_ACCIDENT
+  OCCUPATIONAL_DISEASE
+  MATERNITY
+
+  @@map("certificate_contingency_type")
+}
+
 enum CertificateType {
   ATTENDANCE
   MEDICAL_REST
@@ -2919,10 +2929,25 @@ model MedicalCertificate {
   restFrom DateTime? @map("rest_from") @db.Date
   restTo   DateTime? @map("rest_to") @db.Date
 
-  /// The patient decides whether the diagnosis appears on the certificate their
-  /// employer will read. Defaults to hidden: privacy by default is an LOPDP
-  /// requirement, not a preference.
+  /// CER-007. Always true on a rest: the IESS does not validate one without its
+  /// CIE-10. On an attendance certificate the patient decides, and the request
+  /// has to say it; the default is never relied upon.
   includeDiagnosis Boolean @default(false) @map("include_diagnosis")
+
+  /// CER-034. Only on a rest (`medical_certificate_contingency_only_on_rest`);
+  /// that a rest always carries it is the service's guarantee.
+  contingencyType CertificateContingencyType? @map("contingency_type")
+
+  /// CER-035. Admission, birth and discharge of a maternity, the three together
+  /// exactly when the contingency is MATERNITY
+  /// (`medical_certificate_maternity_dates_together`).
+  maternityAdmissionOn DateTime? @map("maternity_admission_on") @db.Date
+  birthOn              DateTime? @map("birth_on") @db.Date
+  maternityDischargeOn DateTime? @map("maternity_discharge_on") @db.Date
+
+  /// CER-030. Why a rest starts before the clinical date of the attention.
+  /// Never blank (`medical_certificate_backdating_reason_not_blank`).
+  restBackdatingReason String? @map("rest_backdating_reason") @db.Text
 
   /// Printed as a QR so a third party can verify the certificate is genuine
   /// without receiving any clinical data.

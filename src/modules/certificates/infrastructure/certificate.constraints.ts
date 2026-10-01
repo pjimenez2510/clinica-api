@@ -22,6 +22,24 @@ registerConstraintMeanings({
     field: 'reason',
     message: 'Para anular un certificado hay que decir quién lo anula, cuándo y por qué', // prettier-ignore
   },
+  /** CER-034. A contingency only on a rest certificate. */
+  medical_certificate_contingency_only_on_rest: {
+    code: 'CERTIFICATE_REST_PERIOD_INVALID',
+    field: 'contingencyType',
+    message: 'Un certificado de asistencia no lleva tipo de contingencia', // prettier-ignore
+  },
+  /** CER-035. Admission, birth and discharge together, exactly with maternity. */
+  medical_certificate_maternity_dates_together: {
+    code: 'CERTIFICATE_REST_PERIOD_INVALID',
+    field: 'birthOn',
+    message: 'Las fechas de ingreso, parto y alta van las tres juntas, y sólo con la contingencia de maternidad', // prettier-ignore
+  },
+  /** CER-030. The backdating reason is never stored blank. */
+  medical_certificate_backdating_reason_not_blank: {
+    code: 'CERTIFICATE_BACKDATING_REASON_REQUIRED',
+    field: 'backdatingReason',
+    message: 'Explique por qué el reposo empieza antes del día de la atención', // prettier-ignore
+  },
   /**
    * CER-009. Two certificates of one site with the same number. The trigger
    * makes it unreachable; registered for the day something goes around it.

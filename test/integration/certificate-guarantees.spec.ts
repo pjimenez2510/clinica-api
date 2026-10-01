@@ -334,3 +334,108 @@ describe('CER-029 el certificado no tiene texto libre', () => {
     expect(names).not.toContain('body');
   });
 });
+
+/** A rest certificate with what the IESS asks for, by raw SQL. */
+async function insertRest(
+  prisma: PrismaClient,
+  scene: Scene,
+  extra: {
+    contingency?: string | null;
+    admission?: string | null;
+    birth?: string | null;
+    discharge?: string | null;
+    backdatingReason?: string | null;
+  },
+): Promise<number> {
+  return prisma.$executeRaw`
+    INSERT INTO medical_certificate
+      (encounter_id, patient_id, issued_by_id, type, rest_from, rest_to,
+       include_diagnosis, verification_code, contingency_type,
+       maternity_admission_on, birth_on, maternity_discharge_on,
+       rest_backdating_reason)
+    VALUES (${scene.encounterId}::uuid, ${scene.patientId}::uuid, ${scene.practitionerId}::uuid,
+            'MEDICAL_REST', ${scene.day}::date, ${scene.day}::date, true, ${nextCode()},
+            ${extra.contingency ?? null}::certificate_contingency_type,
+            ${extra.admission ?? null}::date, ${extra.birth ?? null}::date,
+            ${extra.discharge ?? null}::date, ${extra.backdatingReason ?? null})
+  `;
+}
+
+describe('CER-034 y CER-035 la contingencia y la maternidad, garantizadas por la base', () => {
+  it('CER-034 admite la contingencia en un reposo y la rechaza en un certificado de asistencia', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+
+    // Control positivo: un reposo por enfermedad general.
+    await expect(
+      insertRest(prisma, scene, { contingency: 'GENERAL_ILLNESS' }),
+    ).resolves.toBe(1);
+
+    await expect(
+      prisma.$executeRaw`
+        INSERT INTO medical_certificate
+          (encounter_id, patient_id, issued_by_id, type, verification_code, contingency_type)
+        VALUES (${scene.encounterId}::uuid, ${scene.patientId}::uuid, ${scene.practitionerId}::uuid,
+                'ATTENDANCE', ${nextCode()}, 'GENERAL_ILLNESS')
+      `,
+    ).rejects.toThrow(/medical_certificate_contingency_only_on_rest/);
+  });
+
+  it('CER-035 la maternidad lleva sus tres fechas, y sin una de ellas la base la rechaza', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const before = (days: number) => addDays(scene.day, -days);
+
+    // Control positivo: ingreso, parto y alta.
+    await expect(
+      insertRest(prisma, scene, {
+        contingency: 'MATERNITY',
+        admission: before(3),
+        birth: before(2),
+        discharge: scene.day,
+      }),
+    ).resolves.toBe(1);
+
+    await expect(
+      insertRest(prisma, scene, {
+        contingency: 'MATERNITY',
+        admission: before(3),
+        birth: before(2),
+      }),
+    ).rejects.toThrow(/medical_certificate_maternity_dates_together/);
+  });
+
+  it('CER-035 las fechas de maternidad no caben en otra contingencia', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+
+    await expect(
+      insertRest(prisma, scene, {
+        contingency: 'GENERAL_ILLNESS',
+        birth: scene.day,
+      }),
+    ).rejects.toThrow(/medical_certificate_maternity_dates_together/);
+  });
+});
+
+describe('CER-030 el motivo del reposo retroactivo no se guarda vacio', () => {
+  it('CER-030 admite un motivo escrito y rechaza uno en blanco', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+
+    // Control positivo: con motivo.
+    await expect(
+      insertRest(prisma, scene, {
+        contingency: 'GENERAL_ILLNESS',
+        backdatingReason: 'Acudió dos días tarde por la fiebre',
+      }),
+    ).resolves.toBe(1);
+
+    await expect(
+      insertRest(prisma, scene, {
+        contingency: 'GENERAL_ILLNESS',
+        backdatingReason: '   ',
+      }),
+    ).rejects.toThrow(/medical_certificate_backdating_reason_not_blank/);
+  });
+});
