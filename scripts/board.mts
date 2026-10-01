@@ -214,7 +214,7 @@ export interface Deliverable {
   id: string;
   title: string;
   priority: string;
-  /** All requirements the deliverable covers. */
+  /** Requirements with a backend half: covered minus «Solo interfaz». */
   total: number;
   /** Of those, named by a backend test. */
   back: number;
@@ -266,6 +266,17 @@ export function computeBoard(api: Source, web: Source): ModuleBoard[] {
       const screenOnly = new Set(
         expand(SCREEN_ONLY.exec(raw)?.[1] ?? '', declared),
       );
+      /**
+       * A requirement declared on BOTH sides would leave both denominators and
+       * owe no test anywhere — a deliverable of only those would print
+       * «completo» with nothing tested. Refuse it, naming where.
+       */
+      const both = [...serverOnly].filter((id) => screenOnly.has(id));
+      if (both.length > 0) {
+        throw new Error(
+          `${module}/${parsed[1] ?? '?'}: ${both.join(', ')} declarado a la vez «Solo servidor» y «Solo interfaz»; un requisito tiene al menos una mitad que probar`,
+        );
+      }
       const visible = requirements.filter((id) => !serverOnly.has(id));
       const served = requirements.filter((id) => !screenOnly.has(id));
       const back = served.filter((id) => backendTested.has(id)).length;

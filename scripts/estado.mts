@@ -19,6 +19,7 @@ import { join } from 'node:path';
 
 import {
   SCREEN_ONLY,
+  SERVER_ONLY,
   computeBoard,
   computeFlows,
   workingTree,
@@ -198,6 +199,13 @@ for (const entry of exists(MODULES_DIR)
     const screenOnly = new Set(
       expand(SCREEN_ONLY.exec(raw)?.[1] ?? '', declared),
     );
+    for (const id of expand(SERVER_ONLY.exec(raw)?.[1] ?? '', declared)) {
+      if (screenOnly.has(id)) {
+        throw new Error(
+          `${entry.name}/${parsed[1] ?? '?'}: ${id} declarado a la vez «Solo servidor» y «Solo interfaz»`,
+        );
+      }
+    }
     const requirements = all.filter((id) => !screenOnly.has(id));
     deliverables.push({
       covers: all,
