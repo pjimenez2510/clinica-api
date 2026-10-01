@@ -8,6 +8,7 @@ import { addDays, clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { aScene, aTariffConcept } from './orders-fixtures';
+import { attemptWhileAnnulled } from './setup/encounter-race';
 import { useDatabase } from './setup/database';
 import { createPatient, createSite, createUser } from './setup/fixtures';
 
@@ -94,6 +95,34 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       (await ordersOf(prisma).byId({ orderId: second.id, sites: 'all' }))
         ?.number,
     ).toBe(2);
+  });
+
+  it('ORD-005 pedir mientras la atención se anula: la orden no nace en una atención anulada', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const place = () =>
+      ordersOf(prisma).place({
+        encounterId: scene.encounter.id,
+        category: 'LABORATORY',
+        priority: 'ROUTINE',
+        lines: [{ examDefinitionId: scene.bh.id }],
+        sites: 'all',
+      });
+
+    // Control positivo: sin carrera, el mismo camino emite.
+    await expect(place()).resolves.toMatchObject({ number: 1 });
+
+    const outcome = await attemptWhileAnnulled(
+      prisma,
+      scene.encounter.id,
+      place,
+    );
+
+    expect(outcome).toMatchObject({
+      status: 'rejected',
+      reason: { code: 'ORDER_ENCOUNTER_NOT_OPEN' },
+    });
+    expect(await prisma.serviceOrder.count()).toBe(1);
   });
 
   it('ORD-002 mantiene `pending_items` en paso con las líneas, por disparador', async () => {

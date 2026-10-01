@@ -16,6 +16,7 @@ import { extractDatabaseProblem } from '../../src/shared/http/database-problem';
 import type { AccessAuditRecorder } from '../../src/shared/audit/access-audit.port';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
+import { attemptWhileAnnulled } from './setup/encounter-race';
 import { useDatabase } from './setup/database';
 import { createPatient, createSite, createUser } from './setup/fixtures';
 
@@ -603,6 +604,71 @@ describe('la receta contra PostgreSQL', () => {
         who,
       ),
     ).resolves.toMatchObject({ prescription: { status: 'DRAFT' } });
+  });
+
+  it('PR-002 componer mientras la atención se anula: la receta no nace en una atención anulada', async () => {
+    const prisma = db();
+    const { encounter, requester } = await anEncounter(prisma);
+    const concept = await aCnmbConcept(prisma, {
+      code: 'J01CA04',
+      display: 'Amoxicilina',
+      validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+    });
+    const service = serviceOf(prisma);
+    const who = { userId: requester.userId, sites: [...requester.sites] };
+    const compose = () =>
+      service.compose(
+        {
+          encounterId: encounter.id,
+          ...INDICATIONS,
+          items: [aLine(concept.id)],
+        },
+        who,
+      );
+
+    // Control positivo: sin carrera, el mismo camino compone.
+    await expect(compose()).resolves.toMatchObject({
+      prescription: { status: 'DRAFT' },
+    });
+
+    const outcome = await attemptWhileAnnulled(prisma, encounter.id, compose);
+
+    expect(outcome).toMatchObject({
+      status: 'rejected',
+      reason: { code: 'PRESCRIPTION_ENCOUNTER_NOT_OPEN' },
+    });
+    expect(
+      await prisma.prescription.count({ where: { encounterId: encounter.id } }),
+    ).toBe(1);
+  });
+
+  it('PR-002 emitir mientras la atención se anula: el borrador no se emite en una atención anulada', async () => {
+    const prisma = db();
+    const { encounter, requester } = await anEncounter(prisma);
+    const concept = await aCnmbConcept(prisma, {
+      code: 'J01CA04',
+      display: 'Amoxicilina',
+      validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+    });
+    const service = serviceOf(prisma);
+    const who = { userId: requester.userId, sites: [...requester.sites] };
+    const draft = await service.compose(
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
+      who,
+    );
+
+    const outcome = await attemptWhileAnnulled(prisma, encounter.id, () =>
+      service.issue(draft.prescription.id, who),
+    );
+
+    expect(outcome).toMatchObject({
+      status: 'rejected',
+      reason: { code: 'PRESCRIPTION_ENCOUNTER_NOT_OPEN' },
+    });
+    const stored = await prisma.prescription.findUniqueOrThrow({
+      where: { id: draft.prescription.id },
+    });
+    expect(stored.status).toBe('DRAFT');
   });
 
   it('PR-010 PR-054 anula una receta emitida sin borrar ninguna fila', async () => {

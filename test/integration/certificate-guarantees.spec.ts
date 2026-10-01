@@ -7,6 +7,12 @@ import {
   type ClinicalDate,
 } from '../../src/shared/domain/clinic-time';
 
+import { admitsNewCertificates } from '../../src/modules/certificates/domain/certificate';
+import { CertificateEncounterNotOpenError } from '../../src/modules/certificates/domain/certificate.errors';
+import { PrismaCertificateRepository } from '../../src/modules/certificates/infrastructure/prisma-certificate.repository';
+import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
+
+import { attemptWhileAnnulled } from './setup/encounter-race';
 import { useDatabase } from './setup/database';
 import {
   createEncounter,
@@ -437,5 +443,57 @@ describe('CER-030 el motivo del reposo retroactivo no se guarda vacio', () => {
         backdatingReason: '   ',
       }),
     ).rejects.toThrow(/medical_certificate_backdating_reason_not_blank/);
+  });
+});
+
+describe('CER-003 la emisión y la anulación de la atención se serializan', () => {
+  it('CER-003 emitir mientras la atención se anula: el certificado no nace en una atención anulada', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const repository = new PrismaCertificateRepository(
+      prisma as unknown as PrismaService,
+    );
+    // The same judgement the service passes, on the snapshot read under lock.
+    const issue = () =>
+      repository.issue(
+        { encounterId: scene.encounterId, sites: 'all' },
+        (snapshot) => {
+          if (!admitsNewCertificates(snapshot.encounterStatus)) {
+            throw new CertificateEncounterNotOpenError(
+              snapshot.encounterStatus,
+            );
+          }
+          return {
+            type: 'ATTENDANCE',
+            rest: null,
+            includeDiagnosis: false,
+            contingencyType: null,
+            maternity: null,
+            backdatingReason: null,
+            issuedById: scene.practitionerId,
+            issuedAt: new Date(),
+            verificationCode: nextCode(),
+          };
+        },
+      );
+
+    // Control positivo: sin carrera, el mismo camino emite.
+    await expect(issue()).resolves.toMatchObject({ number: 1 });
+
+    const outcome = await attemptWhileAnnulled(
+      prisma,
+      scene.encounterId,
+      issue,
+    );
+
+    expect(outcome).toMatchObject({
+      status: 'rejected',
+      reason: { code: 'CERTIFICATE_ENCOUNTER_NOT_OPEN' },
+    });
+    expect(
+      await prisma.medicalCertificate.count({
+        where: { encounterId: scene.encounterId },
+      }),
+    ).toBe(1);
   });
 });

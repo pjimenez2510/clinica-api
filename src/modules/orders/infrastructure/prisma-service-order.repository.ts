@@ -100,6 +100,16 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
   async place(order: NewServiceOrder): Promise<ServiceOrderView> {
     const row = await this.prisma.$transaction(async (tx) => {
       /**
+       * THE ATTENTION'S ROW, LOCKED FIRST. Agenda locks it FOR UPDATE when
+       * reception marks «se fue sin ser atendido» or the doctor annuls the
+       * attention; locking it here serialises the two, and every read below
+       * —this transaction is READ COMMITTED— sees the attention as it ended
+       * up. Without it, a write that read «open» an instant before the
+       * annulment committed lands in an annulled attention.
+       */
+      await tx.$queryRaw`SELECT id FROM "encounter" WHERE id = ${order.encounterId}::uuid FOR UPDATE`;
+
+      /**
        * ORD-005, ORD-090. The attention, inside the caller's scope, WITH ITS
        * STATE — and the site comes from here rather than from the request. An
        * order emitted at one site and stored under another breaks the scope of

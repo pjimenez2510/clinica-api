@@ -117,3 +117,11 @@ export function routeLabel(route: MedicationRoute): string {
  * on PR-051.
  */
 export type DispensingContext = 'AMBULATORY' | 'EMERGENCY' | 'HOSPITALISATION';
+
+/**
+ * PR-002. Whether the attention still admits a prescription: open or on hold.
+ * Discharged, completed, discontinued or entered in error, it does not.
+ */
+export function admitsPrescribing(status: string): boolean {
+  return status === 'OPEN' || status === 'ON_HOLD';
+}

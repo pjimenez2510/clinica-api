@@ -290,6 +290,13 @@ sistemas propios y ninguna es obligación de una clínica sin farmacia.
   `DISCHARGED`, `COMPLETED`, `DISCONTINUED` o `ENTERED_IN_ERROR`—, ENTONCES el
   sistema DEBERÁ rechazar la composición con `PRESCRIPTION_ENCOUNTER_NOT_OPEN`.
 
+  > **Y la atención se bloquea antes de escribir** (`SELECT … FOR UPDATE` sobre
+  > su fila, dentro de la transacción). Agenda bloquea la misma fila al marcar
+  > «se fue sin ser atendido» o al anular la atención; sin el bloqueo, lo que
+  > se escribe en el mismo instante quedaba vivo en una atención anulada.
+  > Hallado en la revisión clínica de `fix/agenda-estados-y-sobrecupo`; lo
+  > prueba una carrera contra la base.
+
   > **Y no comparte código con `ENCOUNTER_ALREADY_CLOSED`**, que dice lo mismo en
   > `encounter`. Ningún módulo importa de otro y ninguna clase de error puede
   > repetir un `code` —`error-catalogue.spec.ts` falla por ambas cosas—, así que

@@ -1,3 +1,4 @@
+import { admitsPrescribing } from '../domain/prescription';
 import { randomBytes } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
@@ -528,7 +529,7 @@ export class PrescriptionService {
     requester: Requester,
   ) {
     const encounter = await this.requireEncounter(encounterId, requester);
-    if (encounter.status !== 'OPEN' && encounter.status !== 'ON_HOLD') {
+    if (!admitsPrescribing(encounter.status)) {
       throw new PrescriptionEncounterNotOpenError(encounter.status);
     }
     return encounter;

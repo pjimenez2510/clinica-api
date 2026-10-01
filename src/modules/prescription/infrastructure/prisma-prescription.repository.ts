@@ -1,3 +1,4 @@
+import { admitsPrescribing } from '../domain/prescription';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
@@ -8,6 +9,7 @@ import {
   ConceptNotPrescribableError,
   ControlledSubstanceNotPrescribableError,
   PrescriptionEncounterNotFoundError,
+  PrescriptionEncounterNotOpenError,
   PrescriptionNotEditableError,
   PrescriptionNotFoundError,
 } from '../domain/prescription.errors';
@@ -177,14 +179,29 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
   /** PR-003, PR-007 to PR-009. Writes the prescription and its lines. */
   async create(prescription: NewPrescription): Promise<PrescriptionView> {
     const row = await this.prisma.$transaction(async (tx) => {
+      /**
+       * THE ATTENTION'S ROW, LOCKED FIRST. Agenda locks it FOR UPDATE when
+       * reception marks «se fue sin ser atendido» or the doctor annuls the
+       * attention; locking it here serialises the two, and every read below
+       * —this transaction is READ COMMITTED— sees the attention as it ended
+       * up. Without it, a write that read «open» an instant before the
+       * annulment committed lands in an annulled attention.
+       */
+      await tx.$queryRaw`SELECT id FROM "encounter" WHERE id = ${prescription.encounterId}::uuid FOR UPDATE`;
+
       const encounter = await tx.encounter.findFirst({
         where: {
           id: prescription.encounterId,
           ...encounterSiteFilter(prescription.sites),
         },
-        select: { id: true, siteId: true },
+        select: { id: true, siteId: true, status: true },
       });
       if (!encounter) throw new PrescriptionEncounterNotFoundError();
+      // PR-002, judged again on the locked row: the service's check ran before
+      // this transaction and could be stale.
+      if (!admitsPrescribing(encounter.status)) {
+        throw new PrescriptionEncounterNotOpenError(encounter.status);
+      }
 
       /**
        * PR-007, PR-008. Every concept resolved in ONE statement inside this
@@ -311,6 +328,22 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
     decide: (snapshot: IssueSnapshot) => IssuePlan,
   ): Promise<PrescriptionView> {
     const row = await this.prisma.$transaction(async (tx) => {
+      /**
+       * THE ATTENTION'S ROW, LOCKED FIRST. Agenda locks it FOR UPDATE when
+       * reception marks «se fue sin ser atendido» or the doctor annuls the
+       * attention; locking it here serialises the two, and every read below
+       * —this transaction is READ COMMITTED— sees the attention as it ended
+       * up. Without it, a write that read «open» an instant before the
+       * annulment committed lands in an annulled attention.
+       * The prescription names its attention, so the lock goes through it.
+       */
+      await tx.$queryRaw`
+        SELECT e.id FROM "encounter" e
+          JOIN "prescription" p ON p.encounter_id = e.id
+         WHERE p.id = ${query.prescriptionId}::uuid
+           FOR UPDATE OF e
+      `;
+
       const current = await tx.prescription.findFirst({
         where: { id: query.prescriptionId, ...siteFilter(query.sites) },
         select: {
@@ -318,6 +351,7 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
           encounter: {
             select: {
               patientId: true,
+              status: true,
               site: { select: { parish: { select: { parentId: true } } } },
             },
           },
@@ -333,6 +367,11 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
         },
       });
       if (!current) throw new PrescriptionNotFoundError();
+      // PR-002. An attention annulled or abandoned while the draft waited
+      // issues nothing: the locked row says so.
+      if (!admitsPrescribing(current.encounter.status)) {
+        throw new PrescriptionEncounterNotOpenError(current.encounter.status);
+      }
 
       const view = toPrescriptionView(current);
 

@@ -99,7 +99,13 @@ function prismaDouble(
       },
     },
     $queryRaw: (strings: TemplateStringsArray, ...values: unknown[]) => {
-      record('$queryRaw', { sql: strings.join('?'), values });
+      const sql = strings.join('?');
+      // The lock on the attention's row is its own call (the race with agenda's
+      // annulment); the tariff lookup is the one these tests read.
+      record(sql.includes('FOR UPDATE') ? '$queryRaw:lock' : '$queryRaw', {
+        sql,
+        values,
+      });
       return Promise.resolve(
         options.concepts ?? [
           { id: CONCEPT, concept_code: 'T-100', system_code: 'TARIFF', in_force: true }, // prettier-ignore
@@ -257,6 +263,18 @@ describe('el adaptador de la orden', () => {
     ).rejects.toMatchObject({
       code: 'CATALOG_CONCEPT_NOT_FOUND',
     });
+  });
+
+  it('ORD-005 bloquea la fila de la atención antes de leer su estado', async () => {
+    const { repository, calls } = prismaDouble();
+
+    await repository.place(aRequest);
+
+    const methods = calls.map((call) => call.method);
+    expect(methods.indexOf('$queryRaw:lock')).toBeGreaterThanOrEqual(0);
+    expect(methods.indexOf('$queryRaw:lock')).toBeLessThan(
+      methods.indexOf('encounter.findFirst'),
+    );
   });
 
   it('ORD-004 sólo busca la prestación en el TARIFARIO, nunca en otro catálogo', async () => {

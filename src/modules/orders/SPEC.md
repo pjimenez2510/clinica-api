@@ -349,6 +349,13 @@ cuando la gráfica exista.
 - **ORD-005** — SI la atención ya no admite contenido clínico nuevo, ENTONCES el
   sistema DEBERÁ rechazar la orden con `ORDER_ENCOUNTER_NOT_OPEN`.
 
+  > **Y la atención se bloquea antes de escribir** (`SELECT … FOR UPDATE` sobre
+  > su fila, dentro de la transacción). Agenda bloquea la misma fila al marcar
+  > «se fue sin ser atendido» o al anular la atención; sin el bloqueo, lo que
+  > se escribe en el mismo instante quedaba vivo en una atención anulada.
+  > Hallado en la revisión clínica de `fix/agenda-estados-y-sobrecupo`; lo
+  > prueba una carrera contra la base.
+
   Los estados que la admiten son `OPEN`, `ON_HOLD` y `DISCHARGED`; los tres
   terminales —`COMPLETED`, `DISCONTINUED`, `ENTERED_IN_ERROR`— no. La regla se
   declara aquí y no se importa de `encounter`: **ningún módulo importa de otro**.

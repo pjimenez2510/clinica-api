@@ -108,6 +108,16 @@ export class PrismaCertificateRepository implements CertificateRepository {
     decide: (snapshot: IssueSnapshot) => CertificatePlan,
   ): Promise<CertificateView> {
     const row = await this.prisma.$transaction(async (tx) => {
+      /**
+       * THE ATTENTION'S ROW, LOCKED FIRST. Agenda locks it FOR UPDATE when
+       * reception marks «se fue sin ser atendido» or the doctor annuls the
+       * attention; locking it here serialises the two, and every read below
+       * —this transaction is READ COMMITTED— sees the attention as it ended
+       * up. Without it, a write that read «open» an instant before the
+       * annulment committed lands in an annulled attention.
+       */
+      await tx.$queryRaw`SELECT id FROM "encounter" WHERE id = ${query.encounterId}::uuid FOR UPDATE`;
+
       const encounter = await tx.encounter.findFirst({
         where: { id: query.encounterId, ...encounterSiteFilter(query.sites) },
         select: {
