@@ -20,6 +20,7 @@
 import type { BookingChannel, StoredSiteParameters } from './booking-policy';
 import type { Holiday } from './holiday-calendar';
 import type { NoShowCountRow } from './no-show-metric';
+import type { PresenceEntry } from './overbooking-policy';
 import type { SubjectStatusFact } from './subject-status';
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import type {
@@ -159,7 +160,24 @@ export interface AgendaEntryView {
    */
   rescheduledFromId: string | null;
   rescheduledToId: string | null;
+  /**
+   * AG-150. The state of the appointment's LIVE attention, or `null`.
+   *
+   * THE STATE AND NOT THE ATTENTION: whoever sees the agenda may hold no
+   * `record:read`, and the identifier would be the key to a clinical record.
+   * The state is what the menu needs —AG-045 refuses what a live attention
+   * forbids— and what the board needs to say «Interrumpida» (D-076).
+   */
+  attention: AttentionStatus | null;
 }
+
+/**
+ * AG-150. The states an attention can be in, as the agenda reads them. A
+ * union of its own and not an import from `encounter`: no module imports
+ * another, and the database enum is the shared contract.
+ */
+export type AttentionStatus =
+  'OPEN' | 'ON_HOLD' | 'DISCONTINUED' | 'DISCHARGED' | 'COMPLETED';
 
 /**
  * The day, already resolved to instants.
@@ -378,8 +396,33 @@ export interface TransitionRead {
   status: AgendaEntryStatus;
   startsAt: Date;
   releasedAt: Date | null;
-  /** AG-045: whether an encounter already hangs off this entry. */
+  /**
+   * AG-045: whether a LIVE encounter (not `ENTERED_IN_ERROR`) hangs off this
+   * entry. An annulled one does not count (EN-168).
+   */
   hasEncounter: boolean;
+  /**
+   * AG-148: whether that live encounter has any clinical act — a note, a
+   * diagnosis, a procedure, a prescription or an order (D-085 §3). Without
+   * one there was no consultation.
+   */
+  encounterHasClinicalAct: boolean;
+  /**
+   * AG-148. Whether that live attention is still OPEN or ON_HOLD. One already
+   * interrupted is not interrupted again: its reason, origin and author are
+   * the record of an act, and a second write would replace them.
+   */
+  encounterInProgress: boolean;
+}
+
+/**
+ * AG-148. The live attention to interrupt in the same transaction, with origin
+ * `PATIENT` and the author of the transition: the patient left before the
+ * doctor opened the note.
+ */
+export interface AttentionInterruption {
+  reason: string;
+  at: Date;
 }
 
 /**
@@ -468,6 +511,8 @@ export interface StatusChange {
   effects: TransitionEffects;
   cancellationNote?: string;
   historyNote?: string;
+  /** AG-148. Present only when the move interrupts the live attention. */
+  interruptAttention?: AttentionInterruption;
 }
 
 /**
@@ -498,6 +543,16 @@ export interface SubjectStatusRead {
   status: AgendaEntryStatus;
   /** `null` until the appointment reaches `CHECKED_IN` (AG-127). */
   subjectStatus: PatientSubjectStatus | null;
+}
+
+/** AG-151. The interval an overbooking is asked for, and for whom. */
+export interface PresenceQuery {
+  practitionerId: string;
+  siteId: string;
+  startsAt: Date;
+  endsAt: Date;
+  /** The Ecuadorian date of `startsAt`, which decides the rules in force. */
+  date: ClinicalDate;
 }
 
 /** AG-004: who asks for which entry. The author comes from the session. */
@@ -780,6 +835,16 @@ export interface AgendaRepository {
    * would spend a cap on an appointment nobody is going to attend.
    */
   overbookingCount(query: OverbookingCountQuery): Promise<number>;
+  /**
+   * AG-151. Where the practitioner is during the interval: their entries still
+   * in force that touch it, AT ANY SITE (blocks, appointments, overbookings),
+   * and their schedule rules in force that day AT OTHER SITES. The policy
+   * (`checkPractitionerIsThere`) decides what each means.
+   */
+  presenceOf(query: PresenceQuery): Promise<{
+    entries: PresenceEntry[];
+    rulesElsewhere: ScheduleRule[];
+  }>;
   /**
    * AG-101. The permission codes the NAMED AUTHORISER holds over this site.
    *

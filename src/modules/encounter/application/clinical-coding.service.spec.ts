@@ -74,6 +74,8 @@ const anEncounter = (
   closedById: null,
   closedAt: null,
   closedBySubstituteReason: null,
+  annulment: null,
+  interruption: null,
   ...overrides,
 });
 

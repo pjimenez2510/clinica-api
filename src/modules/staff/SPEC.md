@@ -193,9 +193,22 @@ _Numeración conservada de `CF-040`..`CF-046` al mudarse desde `configuration`
 - **ST-041** — Toda regla DEBERÁ llevar vigencia; CUANDO se cierre una regla, el
   cierre DEBERÁ regir hacia adelante sin tocar días ya pasados.
 - **ST-042** — SI una regla nueva o editada solapa otra vigente del mismo
-  profesional y sede en el mismo día de la semana, ENTONCES el sistema DEBERÁ
-  rechazarla con `SCHEDULE_RULE_OVERLAP`, y la garantía DEBERÁ vivir en la base
-  como exclusión (AG-106).
+  profesional en el mismo día de la semana, **en cualquier sede**, ENTONCES el
+  sistema DEBERÁ rechazarla con `SCHEDULE_RULE_OVERLAP`, y la garantía DEBERÁ
+  vivir en la base como exclusión (AG-106).
+  > **Sin sede desde el 30-09-2026 (D-070 B).** Decía «del mismo profesional y
+  > sede», y la semilla daba a cada médico el mismo horario en tres sedes: la
+  > rejilla de cada una prometía horas que el médico pasaba en otra (AG-144).
+  > Un horario, un sitio. La migración
+  > `staff_schedule_rule_no_overlap_any_site` diagnostica las reglas que ya
+  > chocan —profesional, sedes, día y franjas— y se niega a seguir hasta que
+  > alguien cierre una de cada par.
+  >
+  > **Desde la entrada en vigor, 2026-10-01 (D-085 §6).** La exclusión cubre
+  > las vigencias que siguen desde esa fecha: dos reglas que convivieron antes
+  > fueron legales entonces, y la salida es cerrar la antigua el 2026-09-30
+  > —conserva su pasado— y, si ese horario sigue, crearlo de nuevo desde hoy a
+  > una hora que no choque. En desarrollo, `pnpm db:fix:schedule-overlaps`.
 - **ST-043** — CUANDO un cambio de horario deje citas ya reservadas fuera del
   nuevo horario, el sistema NO DEBERÁ anularlas ni moverlas solo: DEBERÁ
   listarlas como conflictos para gestión humana. CUANDO el cambio mueva la
@@ -230,8 +243,12 @@ _Numeración conservada de `CF-040`..`CF-046` al mudarse desde `configuration`
   > no está en el formulario, así que el fin de franja es lo único que quien
   > administra puede corregir desde esta pantalla.
 - **ST-046** — DONDE la clínica opere en más de una sede, una regla DEBERÁ
-  pertenecer a exactamente una sede; el no-solapamiento del profesional entre
-  sedes ya lo garantiza el `EXCLUDE` de citas.
+  pertenecer a exactamente una sede, y dos reglas del mismo profesional a la
+  misma hora NO DEBERÁN existir aunque sean de sedes distintas (ST-042).
+  > **Cambiado el 30-09-2026 (D-070 B).** Decía que el no-solapamiento entre
+  > sedes «ya lo garantiza el `EXCLUDE` de citas». Lo garantizaba para las
+  > citas, no para el horario: la rejilla de cada sede prometía horas que el
+  > médico pasaba en otra (AG-144) y un sobrecupo podía caer dentro (D-069).
 - **ST-048** — CUANDO se cree, edite o cierre una regla de horario, el sistema
   NO DEBERÁ admitir ninguna sede fuera del alcance de quien llama —ni la que se
   fija ni la que la regla ya tenía—, y DEBERÁ rechazarlo con

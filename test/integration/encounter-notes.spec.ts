@@ -74,6 +74,7 @@ async function aDraft(prisma: PrismaClient) {
     formVersion: '1',
     content: COMPLETE_002,
     authorId: practitioner.id,
+    authorUserId: practitioner.userId,
     sites: [site.id],
   });
 
@@ -296,6 +297,7 @@ describe('la nota clínica firmada', () => {
         formVersion: previous.formVersion,
         content: corrected,
         authorId: practitioner.id,
+        authorUserId: practitioner.userId,
         signature: {
           signedById: practitioner.id,
           signedAt: new Date('2026-08-15T09:00:00Z'),
@@ -355,6 +357,7 @@ describe('la nota clínica firmada', () => {
       formVersion: '1',
       content: COMPLETE_002,
       authorId: practitioner.id,
+      authorUserId: practitioner.userId,
       signature: {
         signedById: practitioner.id,
         signedAt: new Date('2026-08-15T09:00:00Z'),
@@ -449,6 +452,7 @@ describe('la nota clínica firmada', () => {
       formVersion: '1',
       content: { evolucion: 'Se retira el vendaje sin incidencias' },
       authorId: practitioner.id,
+      authorUserId: practitioner.userId,
       sites: [site.id],
     });
 
@@ -464,6 +468,7 @@ describe('la nota clínica firmada', () => {
         formVersion: previous.formVersion,
         content: COMPLETE_002,
         authorId: practitioner.id,
+        authorUserId: practitioner.userId,
         signature: {
           signedById: practitioner.id,
           signedAt: new Date('2026-08-16T09:00:00Z'),

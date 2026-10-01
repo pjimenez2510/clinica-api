@@ -160,6 +160,7 @@ function agendaEntry(
     createdById: RECEPTIONIST,
     rescheduledFromId: null,
     rescheduledToId: null,
+    attention: null,
     ...overrides,
   };
 }

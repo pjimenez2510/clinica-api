@@ -58,7 +58,8 @@ export interface ScheduleRulePatch {
  * Editing a practitioner's schedule from the application (S2, ST-040..ST-046).
  *
  * THE HEADLINE GUARANTEE IS NOT IN THIS FILE. ST-042 — two rules in force for
- * the same practitioner, site and weekday may not overlap — lives in the base
+ * the same practitioner and weekday may not overlap, in any site since D-070 —
+ * lives in the base
  * as `schedule_rule_no_overlap`, and it has to: two administrators editing the
  * same doctor's Monday both read "no overlap" and both write. Nothing here
  * checks it first, so nothing here can lose that race.

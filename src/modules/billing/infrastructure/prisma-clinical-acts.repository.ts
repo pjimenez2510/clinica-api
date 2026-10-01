@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
+import { hasClinicalAct } from '../../../shared/infrastructure/prisma/clinical-acts';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import { clinicalDateOf } from '../../../shared/domain/clinic-time';
 
@@ -101,6 +102,7 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
     });
 
     if (row === null) return null;
+    const clinicallyAttended = await hasClinicalAct(this.prisma, row.id);
 
     return {
       encounterId: row.id,
@@ -110,6 +112,7 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
       serviceDate: clinicalDateOf(row.startedAt),
       visitSequence: row.visitSequence,
       specialtyId: row.agendaEntry?.serviceType?.specialtyId ?? null,
+      clinicallyAttended,
       procedures: row.procedures.map((procedure): PerformedProcedure => ({
         encounterProcedureId: procedure.id,
         conceptId: procedure.conceptId,

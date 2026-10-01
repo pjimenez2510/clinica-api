@@ -11,7 +11,6 @@ import {
   type SiteScopeFilter,
 } from '../domain/agenda.repository';
 import {
-  AgendaEntryHasEncounterError,
   AgendaEntryNotFoundError,
   BlockOverlapsAppointmentsError,
   CancellationReasonRequiredError,
@@ -24,6 +23,7 @@ import {
   assertOverbookingAdmitted,
   checkOverbookingAuthoriser,
   checkOverbookingCap,
+  checkPractitionerIsThere,
   requireOverbookingReason,
 } from '../domain/overbooking-policy';
 import { planReschedule } from '../domain/reschedule-policy';
@@ -34,6 +34,7 @@ import {
   assertNoShowNotBeforeStart,
   assertTransition,
   effectsOf,
+  planAttentionEffect,
   planBlockRelease,
 } from '../domain/status-machine';
 import {
@@ -789,6 +790,26 @@ export class AgendaService {
 
     if (input.overbooking === undefined || reason === undefined) return undefined; // prettier-ignore
 
+    /**
+     * AG-151 (D-069). The overbooking squeezes somebody into the consultation
+     * of a practitioner WHO IS THERE: not on top of a block, and not where
+     * they are at another site. After the grid check because that one is
+     * pure and already in hand; before the authoriser, because «la médica no
+     * está» is the answer the receptionist acts on first.
+     */
+    checkPractitionerIsThere({
+      siteId: input.siteId,
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+      ...(await this.agenda.presenceOf({
+        practitionerId: input.practitionerId,
+        siteId: input.siteId,
+        startsAt: input.startsAt,
+        endsAt: input.endsAt,
+        date: clinicalDateOf(input.startsAt),
+      })),
+    });
+
     return this.authoriseOverbooking({
       siteId: input.siteId,
       practitionerId: input.practitionerId,
@@ -1172,21 +1193,17 @@ export class AgendaService {
           assertNoShowNotBeforeStart(read.startsAt, now);
         }
         /**
-         * AG-045: a documented attention outweighs the agenda.
-         *
-         * `LEFT_WITHOUT_BEING_SEEN` IS NOT ON THIS LIST, and it is not an
-         * oversight: the table already forbids it from any state but
-         * `CHECKED_IN`, and an entry that reached `IN_PROGRESS` — the only
-         * one that can plausibly carry an encounter — cannot get here at
-         * all. `ENTERED_IN_ERROR` is not on it either, and cannot be: it
-         * stops at `CHECKED_IN`, which is upstream of every encounter.
+         * AG-045, AG-148: a documented attention outweighs the agenda. A live
+         * attention forbids annulling, the no-show and the retraction; it
+         * allows «se fue sin ser atendido» only while no note exists, and then
+         * the attention is interrupted in the same transaction (D-081).
          */
-        if (
-          (request.to === 'CANCELLED' || request.to === 'NO_SHOW') &&
-          read.hasEncounter
-        ) {
-          throw new AgendaEntryHasEncounterError();
-        }
+        const interruptAttention = planAttentionEffect(
+          read,
+          request.to,
+          request.reason,
+          now,
+        );
 
         return {
           to: request.to,
@@ -1225,6 +1242,7 @@ export class AgendaService {
           // where the optional reason of AG-116 and the required one of
           // AG-117 both land, with who wrote it and when.
           historyNote: request.reason,
+          interruptAttention,
         };
       },
     );

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   DischargeConditionRequiredError,
+  EncounterAnnulmentReasonRequiredError,
+  EncounterInterruptionReasonRequiredError,
   InvalidEncounterTransitionError,
 } from './encounter.errors';
 import {
@@ -9,6 +11,8 @@ import {
   acceptsNewClinicalContent,
   assertEncounterTransition,
   endsTheAct,
+  planAnnulment,
+  planInterruption,
   planStateChange,
   requiresDischargeCondition,
 } from './encounter-state';
@@ -232,5 +236,89 @@ describe('la máquina de estados de la atención', () => {
       'OPEN',
       'ON_HOLD',
     ]);
+  });
+});
+
+describe('anular la atención (EN-166)', () => {
+  const now = new Date();
+
+  it.each(['OPEN', 'ON_HOLD', 'DISCHARGED'] as const)(
+    'EN-166 anula desde %s con el motivo recortado, quién y cuándo',
+    (from) => {
+      const endedAt = from === 'DISCHARGED' ? new Date(now.getTime() - 60_000) : null; // prettier-ignore
+      expect(
+        planAnnulment({ from, endedAt, reason: '  Ficha equivocada ', now }),
+      ).toEqual({
+        to: 'ENTERED_IN_ERROR',
+        endedAt: endedAt ?? now,
+        reason: 'Ficha equivocada',
+        at: now,
+      });
+    },
+  );
+
+  it('EN-166 exige motivo escrito', () => {
+    expect(() =>
+      planAnnulment({ from: 'OPEN', endedAt: null, reason: '   ', now }),
+    ).toThrow(EncounterAnnulmentReasonRequiredError);
+  });
+
+  it.each(['DISCONTINUED', 'COMPLETED', 'ENTERED_IN_ERROR'] as const)(
+    'EN-166 no anula una atención terminal (%s)',
+    (from) => {
+      expect(() =>
+        planAnnulment({ from, endedAt: now, reason: 'x', now }),
+      ).toThrow(InvalidEncounterTransitionError);
+    },
+  );
+});
+
+describe('interrumpir la atención (EN-167)', () => {
+  const now = new Date();
+
+  it.each(['OPEN', 'ON_HOLD'] as const)(
+    'EN-167 interrumpe desde %s con motivo, origen e instante, y sin condición de egreso',
+    (from) => {
+      expect(
+        planInterruption({
+          from,
+          reason: ' El paciente se retiró ',
+          origin: 'PATIENT',
+          now,
+        }),
+      ).toEqual({
+        to: 'DISCONTINUED',
+        endedAt: now,
+        reason: 'El paciente se retiró',
+        origin: 'PATIENT',
+        at: now,
+      });
+    },
+  );
+
+  it('EN-167 exige motivo y origen, y dice cuál falta', () => {
+    let missing: unknown;
+    try {
+      planInterruption({ from: 'OPEN', reason: ' ', origin: undefined, now });
+    } catch (error) {
+      missing = error;
+    }
+    expect(missing).toBeInstanceOf(EncounterInterruptionReasonRequiredError);
+    expect(
+      (missing as EncounterInterruptionReasonRequiredError).fieldErrors.map(
+        (e) => e.field,
+      ),
+    ).toEqual(['reason', 'origin']);
+  });
+
+  it('EN-167 no interrumpe una atención ya dada de alta: firmó y terminó', () => {
+    expect(() =>
+      planInterruption({
+        from: 'DISCHARGED',
+        reason: 'x',
+        origin: 'PATIENT',
+        now,
+      }),
+    ).toThrow(InvalidEncounterTransitionError);
   });
 });

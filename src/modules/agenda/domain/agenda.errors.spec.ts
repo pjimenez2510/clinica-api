@@ -193,7 +193,7 @@ describe('the transition errors (E2)', () => {
     expect(error.code).toBe('AGENDA_ENTRY_HAS_ENCOUNTER');
     expect(error).toBeInstanceOf(ConflictError); // 409
     expect(error.userTitle).toBe(
-      'La cita ya tiene una atención registrada: no puede anularse ni marcarse como inasistencia',
+      'La cita ya tiene una atención: no puede anularse ni darse por no atendida. Si la atención se abrió por error, se anula desde la atención',
     );
   });
 

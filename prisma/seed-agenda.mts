@@ -37,6 +37,32 @@ function todayAt(time: string): Date {
 }
 
 /**
+ * The hours of each development site, Monday to Saturday (D-070).
+ *
+ * Central —where the day is seeded and the walks run— keeps the full day;
+ * Norte the midday and Sur the evening, so the three never overlap and an
+ * overbooking at Central over midday lands inside Norte's hours (AG-151).
+ * Without Central (a database seeded before it existed), Norte takes the day.
+ */
+function HOURS_OF(
+  site: { id: string; mspUnicode: string },
+  central: { id: string } | null,
+): readonly (readonly [string, string])[] {
+  if (central && site.id === central.id) {
+    return [
+      ['08:00', '12:00'],
+      ['14:00', '18:00'],
+    ];
+  }
+  if (site.mspUnicode === 'DEV-SUR') return [['18:00', '20:00']];
+  if (central) return [['12:00', '14:00']];
+  return [
+    ['08:00', '12:00'],
+    ['14:00', '18:00'],
+  ];
+}
+
+/**
  * Entry point of `pnpm db:seed:agenda`. Refuses a production `NODE_ENV`:
  * everything below — sites, practitioner profiles, schedules, today's sample
  * appointments — is demo data, idempotent on the keys listed at the top.
@@ -177,13 +203,14 @@ async function main() {
         create: { practitionerId: practitioner.id, siteId: site.id },
       });
 
-      // Monday to Saturday, morning and afternoon, 20-minute slots: whatever
-      // day you open the screen, availability has something to offer.
+      // Monday to Saturday, so whatever day you open the screen availability
+      // has something to offer — and EACH SITE AT ITS OWN HOURS (D-070, ST-042
+      // without site): the database refuses one practitioner with a schedule
+      // at the same hour in two sites. This seed used to give the same hours
+      // at three, and that is what made every grid promise hours the doctor
+      // spent elsewhere (AG-144).
       for (const weekday of [1, 2, 3, 4, 5, 6]) {
-        for (const [start, end] of [
-          ['08:00', '12:00'],
-          ['14:00', '18:00'],
-        ] as const) {
+        for (const [start, end] of HOURS_OF(site, central)) {
           const existing = await prisma.practitionerScheduleRule.findFirst({
             where: {
               practitionerId: practitioner.id,
@@ -307,7 +334,7 @@ async function main() {
   }
 
   console.log(
-    `Agenda seed lista: 2 sedes, ${practitioners.length} profesionales agendables, reglas L-S 08:00-12:00 y 14:00-18:00.`,
+    `Agenda seed lista: 2 sedes, ${practitioners.length} profesionales agendables, reglas L-S, cada sede a su hora (Central 08-12 y 14-18, Norte 12-14, Sur 18-20; sin Central, Norte el día entero).`,
   );
   await prisma.$disconnect();
 }

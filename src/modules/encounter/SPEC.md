@@ -234,7 +234,10 @@ día con el mismo profesional y comprobar que **las dos existen**; abrir una a l
 con la sesión en `UTC` y en `Asia/Tokyo`; y anular una cita mientras se confirma
 su atención, comprobando que exactamente una de las dos operaciones gana.
 **Cubre:** EN-001 a EN-018, **EN-126 a EN-140** —el estado explícito y su
-derivación— y **EN-141 a EN-147** —quién abre, quién escribe y quién cierra—.
+derivación— y **EN-141 a EN-147** —quién abre, quién escribe y quién cierra—,
+**EN-166 a EN-169** —anular e interrumpir con constancia, una atención viva por
+cita, lo escrito en una atención terminada no se reescribe (D-080 a D-082,
+D-085)—.
 
 **Por qué el estado entra en H1 y no después:** el estado de hoy es implícito
 —`ended_at IS NULL`— y con cinco estados eso deja de funcionar. Añadirlo cuando
@@ -244,12 +247,13 @@ abierta, una que se interrumpió y una que se dio de alta y nadie cobró, y no h
 dato que las distinga. Es de la misma familia que REQ-020 y REQ-021: no se
 captura retroactivamente.
 
-**Solo servidor:** EN-005, EN-008, EN-010, EN-017, EN-132, EN-145. La carrera con
+**Solo servidor:** EN-005, EN-008, EN-010, EN-017, EN-132, EN-145, EN-168. La carrera con
 la anulación, la edad que escribe un disparador, el orden de los instantes, la
 fila de bitácora, las transiciones que el servidor rechaza y **la ausencia de
 cierre automático** son garantías de almacenamiento: ninguna pantalla puede
 enseñar que un `UPDATE` perdió una carrera, ni que un proceso nocturno **no**
-existe.
+existe. EN-168, una atención viva por cita, la garantiza un índice
+único parcial: la pantalla nunca ofrece abrir la segunda.
 
 ### H2 — La nota clínica firmada y su enmienda _(P1)_
 
@@ -801,7 +805,9 @@ requisitos que cambian.
   > equivocada—, y es a `encounter` lo que `ENTERED_IN_ERROR` es a la nota
   > clínica (EN-026). Son dos columnas y dos preguntas distintas.
   >
-  > **Falta esquema.** Una columna de anulación con
+  > **El motivo y el autor entraron el 30-09-2026 (EN-166).** Lo que sigue
+  > faltando es el disparador que impida el `DELETE` de una atención vacía.
+  > Antes: **Falta esquema.** Una columna de anulación con
   > motivo y autor, y un disparador de inmutabilidad como el de `clinical_note`.
   > Sin él, la atención abierta por error se borra y desaparece del recuento de
   > producción del mes sin dejar rastro.
@@ -2137,7 +2143,8 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   vaya a volver, el sistema DEBERÁ pasarla a `DISCONTINUED` exigiendo **motivo
   escrito**, **quién lo decidió** y el instante, y DEBERÁ distinguir si la
   interrupción se originó **en el paciente** o **en el establecimiento**.
-  > **Falta esquema.** El valor existe; **el motivo y el origen no**.
+  > **Esquema y ruta desde el 30-09-2026 (EN-167, `fix/agenda-estados-y-sobrecupo`).**
+  > Antes: el valor existía; el motivo y el origen no.
   >
   > **`DISCONTINUED` está exento de condición de egreso**, y es deliberado:
   > `encounter_discharged_states_state_a_condition` la exige a `DISCHARGED` y a
@@ -2162,6 +2169,98 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   > `DISCONTINUED` **cuenta como atención**: ocurrió, consta por qué no terminó y
   > va al reporte. No confundir con anular (EN-018), que dice que la atención no
   > debió existir.
+- **EN-166** — CUANDO quien tenga `record:write` anule una atención `OPEN` u
+  `ON_HOLD` (EN-018) siendo su profesional —o, si es otro, con `record:sign` y
+  motivo de sustitución (EN-144, EN-147)—, el sistema DEBERÁ exigir motivo
+  escrito, DEBERÁ guardar en la propia
+  fila el motivo, quién la anuló y el instante, y NO DEBERÁ borrar ni cambiar
+  sus notas, signos ni diagnósticos; la base DEBERÁ rechazar una atención
+  `ENTERED_IN_ERROR` sin esos tres datos.
+  > **D-077, D-080 §1 y §2.** La nota abierta al paciente equivocado: lo que no
+  > debió existir es la atención, no la cita (AG-147 la devuelve a la sala).
+  > `record:write` y no `agenda:write`, porque es un acto sobre la historia
+  > clínica; recepción ve el resultado. La nota borrador se queda donde está,
+  > legible, dentro de una atención que dice que no debió existir: borrarla
+  > haría desaparecer que alguien escribió en la historia equivocada.
+  >
+  > **D-085 §1 y §2 (01-10-2026).** Solo en curso: firmada, su receta, sus
+  > órdenes y sus diagnósticos ya están en la ficha y pueden estar facturados,
+  > y lo firmado se retracta nota a nota (EN-026). Y la misma regla de quién que
+  > el cierre, con sus mismos códigos (`ENCOUNTER_CLOSER_NOT_AUTHOR`,
+  > `SUBSTITUTE_CLOSURE_REASON_REQUIRED`); el sustituto firma en la sede de la
+  > atención.
+  >
+  > **D-099 §1 (01-10-2026).** Tampoco en curso si la atención ya dejó algo
+  > vivo en la ficha —receta activa o en borrador, orden con ítems pendientes,
+  > nota firmada—: se rechaza con `ENCOUNTER_HAS_LIVE_ACTS`, contándolos, y
+  > cada cosa se retracta antes por su vía (PR-010, ORD-007, EN-026). Anulado
+  > con la atención, lo emitido seguiría valiendo en papel a nombre del
+  > paciente equivocado.
+  >
+  > **3.ª revisión, m5 (01-10-2026, a petición de la principal).** También un
+  > certificado sin revocar, una referencia emitida, aceptada o ya atendida
+  > (`ISSUED`, `ACCEPTED`, `COMPLETED`) y una interconsulta pedida o
+  > contestada (`REQUESTED`, `ANSWERED`): un certificado de reposo del IESS a
+  > nombre del paciente equivocado se puede presentar; lo atendido en otro
+  > establecimiento y la opinión escrita de un colega no se deshacen (D-103,
+  > resuelta por el autor). Solo dejan pasar `REJECTED`, `EXPIRED` y
+  > `CANCELLED`. Una referencia emitida aún no tiene cómo retirarse: su
+  > `CANCELLED` llega con la entrega que construya las referencias.
+- **EN-167** — CUANDO quien tenga `record:sign` interrumpa una atención `OPEN`
+  u `ON_HOLD` (EN-129) siendo su profesional —o, si es otro, con motivo de
+  sustitución (EN-147)—, el sistema DEBERÁ exigir motivo escrito y origen
+  (`PATIENT` o `ESTABLISHMENT`), DEBERÁ guardar el motivo, el origen, quién la
+  interrumpió y el instante, y DEBERÁ firmar en el mismo acto las notas en
+  borrador de quien interrumpe con lo escrito, sin exigir el contenido mínimo
+  de cierre ni condición de egreso y sin dar el alta; la base DEBERÁ rechazar
+  una atención `DISCONTINUED` sin motivo, origen, autor e instante.
+  > **D-076, D-080 §3, D-082.** El paciente se va a mitad: la médica cierra la
+  > nota con lo que hizo y la atención queda interrumpida. Firmar es lo que da
+  > responsable a lo escrito; exigir el diagnóstico obligaría a escribir algo
+  > que no ocurrió. La firma no da el alta (EN-138) porque nada concluyó. La
+  > nota firmada se enmienda como cualquier otra (EN-025).
+  >
+  > **Solo los borradores de quien interrumpe, y solo los que tienen algo
+  > escrito**: firmar el texto de otro es atribuirle lo que no firmó, y firmar
+  > un borrador vacío es responder de nada (D-085 §5) —el vacío queda como
+  > borrador congelado, y su vacío es la constancia (EN-169)—. **Con un
+  > borrador de otra persona la interrupción se rechaza** con
+  > `ENCOUNTER_HAS_OTHERS_DRAFTS` (D-085 §2): quedaría sin firma para siempre,
+  > el «texto sin responsable» que D-082 descartó.
+  >
+  > **`record:sign` y no `record:write`** porque interrumpir firma; por la
+  > ruta normal, quien no firma recibiría un 403.
+  >
+  > **D-099 §4 y §5 (01-10-2026).** Cada borrador vacío que no se firma deja
+  > su fila en la bitácora (`DRAFT_LEFT_UNSIGNED`), y la pantalla lo dice. Y
+  > una nota sin nada escrito no cuenta como acto clínico: sin otro acto, la
+  > cita queda «se fue sin ser atendido» y caja no propone la consulta. Con la
+  > cita sin llegada registrada la interrupción se rechaza
+  > (`APPOINTMENT_ARRIVAL_NOT_RECORDED`, AG-149).
+  >
+  > **Con lo que se escribe a la vez (M-A, 2.ª revisión).** Anular e interrumpir
+  > bloquean la fila de la atención (`FOR UPDATE`), y quien escribe un
+  > diagnóstico o un procedimiento bloquea la misma fila y vuelve a leer su
+  > estado: o el acto entra antes y la salida lo ve —la cita queda atendida—,
+  > o espera, la ve terminada y se rechaza (`ENCOUNTER_ALREADY_CLOSED`). La
+  > receta y las órdenes hacen lo mismo en sus módulos (F-05).
+- **EN-168** — El sistema DEBERÁ admitir como máximo una atención viva (no
+  `ENTERED_IN_ERROR`) por cita, y la base DEBERÁ garantizarlo; una atención
+  anulada DEBERÁ seguir atada a su cita.
+  > **D-081 §1.** Hasta el 30-09-2026 `agenda_entry_id` era `UNIQUE` y la cita
+  > tenía una atención para siempre: anulada la de Carlos, no se le podía abrir
+  > la buena sobre su misma cita. El índice pasa a parcial y la relación a 1:n;
+  > la anulada queda colgada de la cita como rastro.
+- **EN-169** — MIENTRAS una atención esté `DISCONTINUED`, `COMPLETED` o
+  `ENTERED_IN_ERROR`, el sistema NO DEBERÁ admitir una nota nueva en borrador
+  ni cambiar el contenido de un borrador suyo, y la base DEBERÁ garantizarlo;
+  las enmiendas (EN-025) y la firma de los borradores al interrumpir (EN-167)
+  quedan fuera, porque no escriben contenido nuevo en un borrador.
+  > **Revisión clínica de `fix/agenda-estados-y-sobrecupo`.** `trg_clinical_note_immutable`
+  > deja mutar todo borrador, y con la anulación y la interrupción puede quedar
+  > uno dentro de una atención terminada: un `PATCH` con `content: {}` vaciaba
+  > lo escrito en la ficha equivocada, que D-077 manda conservar.
+  > `trg_clinical_note_frozen_in_terminal_encounter` lo impide.
 - **EN-130** — CUANDO se firme la nota clínica de la atención, el sistema DEBERÁ
   pasarla a `DISCHARGED`; MIENTRAS la atención esté `DISCHARGED`, el sistema
   DEBERÁ seguir admitiendo el **cobro**, la **emisión de la factura**, la
@@ -2687,7 +2786,11 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `ENCOUNTER_ALREADY_REPORTED` | 409 | Incluir en un envío una atención ya reportada | EN-111 |
 | `RDACAA_FIELDS_MISSING` | 422 | Exportar con fichas incompletas. Nombra **los campos**, nunca a los pacientes | EN-115 |
 | `ENCOUNTER_STATE_TRANSITION_INVALID` | 409 | Transición de estado que la tabla de EN-132 no admite: reabrir una cerrada, saltarse el alta clínica, suspender una ya dada de alta. **Un solo código para todas**: el mensaje dice en qué estado está y qué se puede hacer desde ahí | EN-132 |
-| `ENCOUNTER_INTERRUPTION_REASON_REQUIRED` | 422 | Interrumpir una atención sin motivo escrito, sin origen o sin condición de egreso. Se exige **en el servicio** además del DTO, por lo mismo que `AMENDMENT_REASON_REQUIRED` | EN-129 |
+| `ENCOUNTER_HAS_LIVE_ACTS`                | 409  | Anular una atención en curso que ya tiene receta activa o en borrador, orden pendiente, nota firmada, certificado sin revocar, referencia o interconsulta (D-103): se retractan antes (D-099 §1)                                                                                                                                                                                                                                                                                        | EN-166                 |
+| `APPOINTMENT_ARRIVAL_NOT_RECORDED`       | 409  | Interrumpir la atención de una cita sin llegada registrada (D-099 §2)                                                                                                                                                                                                                                                                                                                                                       | EN-167                 |
+| `ENCOUNTER_HAS_OTHERS_DRAFTS`            | 409  | Interrumpir una atención con un borrador de otra persona, que quedaría sin firma para siempre (D-085 §2)                                                                                                                                                                                                                                                                                                                    | EN-167                 |
+| `ENCOUNTER_ANNULMENT_REASON_REQUIRED`    | 422  | Anular una atención sin motivo escrito. Se exige **en el servicio** además del DTO                                                                                                                                                                                                                                                                                                                                          | EN-166                 |
+| `ENCOUNTER_INTERRUPTION_REASON_REQUIRED` | 422  | Interrumpir una atención sin motivo escrito o sin origen (D-082: sin condición de egreso, que no se exige). Se exige **en el servicio** además del DTO, por lo mismo que `AMENDMENT_REASON_REQUIRED`                                                                                                                                                                                                                        | EN-129                 |
 | `ENCOUNTER_CLOSER_NOT_AUTHOR` | 403 | Cierra alguien que no la abrió y no lleva `record:sign`. Con `record:sign` **no falla**: cierra dejando constancia de la sustitución | EN-144, EN-147 |
 | `NURSING_SCOPE_DENIED` | 403 | Se intentó registrar diagnóstico, procedimiento o receta con `nursing:write`. **Distinto de un 403 genérico de permiso**: dice que el acto está fuera del ámbito del título, no que falte una casilla en el rol | EN-142 |
 | `CERTIFIED_SIGNATURE_REQUIRED` | 422 | Firmar sin certificado vigente con `requireCertifiedSignature` habilitado. **No es 403**: el profesional tiene permiso para firmar; lo que falta es el certificado | EN-155 |
@@ -2819,7 +2922,8 @@ que es global: una atención ocurre en un sitio.
 | `GET` | `/encounters/open` | `record:read` | EN-146 |
 | `POST` | `/encounters/:id/hold` | `encounter:open` | EN-128 |
 | `POST` | `/encounters/:id/resume` | `encounter:open` | EN-128 |
-| `POST` | `/encounters/:id/discontinue` | `record:write` | EN-129, EN-132 |
+| `POST`  | `/encounters/:id/discontinue`                             | `record:sign`                     | EN-129, EN-132, **EN-167**                                 |
+| `POST`  | `/encounters/:id/enter-in-error`                          | `record:write`                    | EN-018, **EN-166**                                         |
 | `POST` | `/encounters/:id/close` | `record:write` | EN-009, EN-131, EN-144, EN-147 |
 | `GET` | `/patients/:id/encounters` | `record:read` | EN-015, EN-068 |
 | `POST` | `/encounters/:id/notes` | `record:write` | EN-020 a EN-022 |
@@ -2878,8 +2982,8 @@ las tres exigen `record:sign`, que `ENFERMERIA` no lleva.
 `DISCHARGED` y las tres fases de avance **no se piden**: las produce firmar la
 nota, abrir la toma de signos, guardarlos y abrir la nota (EN-135 a EN-139). Sólo
 tienen ruta los cambios que **no** se derivan de documentar nada porque son
-hechos externos —suspender, reanudar, interrumpir— y el cierre de la cuenta, que
-es un hecho de caja. Una ruta `PATCH /encounters/:id/status` sería exactamente la
+hechos externos —suspender, reanudar, interrumpir, anular— y el cierre de la
+cuenta, que es un hecho de caja. Una ruta `PATCH /encounters/:id/status` sería exactamente la
 casilla que EN-134 prohíbe.
 
 **`POST /encounters` pasa a exigir `encounter:open` y no `record:write`**
