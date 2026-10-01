@@ -233,7 +233,7 @@ primera es la que produce el resultado huérfano; la segunda es el art. 39.
 queda con `order_item_id` nulo y sale en la cola de sin orden. Y el aviso de la
 glucosa queda registrado con a quién, quién, cuándo y por qué medio: desde ese
 momento sale de la cola, y la constancia no se puede cambiar.
-**Cubre:** ORD-040 a ORD-043, ORD-046, ORD-060 a ORD-065.
+**Cubre:** ORD-040 a ORD-043, ORD-046, ORD-060 a ORD-068.
 
 **Solo servidor:** ORD-061, ORD-064. Que la cola se construya sobre los umbrales
 propios y que la constancia no se pueda reescribir son garantías del cálculo y
@@ -654,8 +654,7 @@ cuando la gráfica exista.
   > Tampoco se borra la fila: aquí no se borra nada.
   >
   > Mientras tanto ese resultado **se queda en la cola**, que es el estado
-  > honesto y no un botón que esconde la fila. Es la misma línea que ORD-062
-  > toma con los críticos.
+  > honesto y no un botón que esconde la fila.
 
 - **ORD-045** — El sistema DEBERÁ permitir **deshacer** un emparejamiento
   equivocado, registrando quién lo deshizo y por qué.
@@ -740,12 +739,13 @@ cuando la gráfica exista.
 
 - **ORD-062** — CUANDO se registra el aviso de un valor crítico, el sistema
   DEBERÁ guardar **a quién se avisó** (tipo y nombre), **quién avisó**, **cuándo**
-  y **por qué medio**, y DEBERÁ dejar fila en `access_audit`; el valor DEBERÁ
-  seguir en la cola de ORD-060 hasta que exista una constancia, y salir de ella
-  en cuanto exista. SI el resultado no lleva bandera crítica ENTONCES DEBERÁ
-  rechazarse con `RESULT_NOT_CRITICAL`; SI el instante declarado es futuro o
-  anterior al resultado, con `CRITICAL_NOTICE_TIME_INVALID`; SI el resultado no
-  existe o es de una sede fuera del alcance, con `RESULT_NOT_FOUND`.
+  y **por qué medio**, DEBERÁ exigir `result:write` y DEBERÁ dejar fila en
+  `access_audit`; el valor DEBERÁ seguir en la cola de ORD-060 hasta que exista
+  un aviso hecho, y salir de ella en cuanto exista. SI el resultado no lleva
+  bandera crítica ENTONCES DEBERÁ rechazarse con `RESULT_NOT_CRITICAL`; SI su
+  informe ya fue corregido, con `RESULT_SUPERSEDED`; SI el instante declarado es
+  futuro o anterior al resultado, con `CRITICAL_NOTICE_TIME_INVALID`; SI el
+  resultado no existe o es de una sede fuera del alcance, con `RESULT_NOT_FOUND`.
 
   El **A.M. 00002393 art. 39** obliga a informar *«de manera urgente al médico
   tratante y/o al usuario»*, y **el aviso telefónico es un acto clínico, no una
@@ -757,33 +757,70 @@ cuando la gráfica exista.
   la misma regla que `orderedById` en ORD-001. **Cuándo** sí lo declara quien
   registra, porque la llamada de las 03:00 se anota a las 08:00 y la constancia
   tiene que decir las 03:00; por eso se acota entre el resultado y el ahora.
-  Lo que la política aún no fija —«read-back», intentos fallidos— está en
-  **D-111**.
+  **Quién puede registrarlo** es quien tiene `result:write` (D-111 §6): la
+  enfermera que llama es lo corriente. Y un valor que el laboratorio ya
+  retractó no se avisa: se avisa el que lo sustituye, si es crítico.
 
 - **ORD-063** — La política de valores críticos —qué analitos, qué umbrales, a
   quién se avisa y qué pasa fuera de horario— DEBERÁ ser configuración de la
-  clínica y no una constante del código.
+  clínica y no una constante del código, y una sede nueva DEBERÁ nacer con
+  **60 minutos** de plazo de aviso.
 
   Los umbrales son datos (`analyte_reference_range` con
-  `range_kind = 'CRITICAL'`), y el plazo de aviso y el rol al que se escala son
-  parámetros de la sede (`site_parameter.critical_notice_within_minutes`,
-  `critical_escalation_role_id`), vacíos de fábrica. Qué valores deberían traer
-  y qué pasa fuera de horario es **D-111**.
+  `range_kind = 'CRITICAL'`); el plazo y el rol de guardia, parámetros de la
+  sede (`site_parameter.critical_notice_within_minutes`,
+  `critical_escalation_role_id`). Los 60 minutos son **D-111 §1**: la
+  notificación ambulatoria tarda de media ~14 minutos, y 60 deja margen sin
+  normalizar el retraso. La sede lo cambia en Parámetros.
 
-- **ORD-064** — La constancia del aviso NO DEBERÁ poder modificarse ni
-  borrarse; un aviso mal registrado se corrige registrando otro.
+- **ORD-064** — La constancia del aviso, y la del intento sin respuesta, NO
+  DEBERÁN poder modificarse ni borrarse; un registro equivocado se corrige
+  registrando otro.
 
   Lo garantiza `critical_result_notice_append_only`, un disparador de la base:
   una constancia que se puede reescribir no constituye prueba de nada.
 
 - **ORD-065** — Cada entrada de la cola de críticos DEBERÁ decir cuántos
   minutos lleva esperando aviso, y DONDE la sede fija un plazo DEBERÁ decir si
-  está vencida y a qué rol se escala; SI la sede no lo fija ENTONCES DEBERÁ
-  decir que la clínica no ha fijado plazo, y NO DEBERÁ inventar uno.
+  está vencida; SI la sede no lo fija ENTONCES DEBERÁ decir que la clínica no ha
+  fijado plazo, y NO DEBERÁ inventar uno. CUANDO está vencida, DEBERÁ decir a
+  qué rol de guardia toca avisar, y SI la sede no designó ninguno ENTONCES
+  DEBERÁ decirlo y NO DEBERÁ escalar a nadie por su cuenta.
 
-  Es el argumento de ORD-022 aplicado a la cola que más importa: un plazo por
-  defecto convierte «la clínica no lo ha decidido» en «va bien» o en «va tarde»,
-  y las dos son mentira. Los minutos se cuentan desde `observed_at`.
+  Es el argumento de ORD-022 aplicado a la cola que más importa, y **D-111
+  §2**: sin rol de guardia, la cola lo dice. Los minutos se cuentan desde
+  `observed_at`, que es cuando el laboratorio emitió el informe: un informe en
+  papel de hace tres días entra ya vencido, y es verdad.
+
+- **ORD-066** — CUANDO se registra un aviso hecho, el sistema DEBERÁ exigir la
+  confirmación de que quien lo recibió **repitió el valor** («read-back»), y SI
+  no se confirma ENTONCES DEBERÁ rechazarlo con `CRITICAL_READ_BACK_REQUIRED`.
+
+  **D-111 §4.** Es la práctica de seguridad estándar para resultados críticos
+  comunicados de palabra (Joint Commission NPSG.02.03.01): el número que se
+  dicta por teléfono es el que más se oye mal. La base lo garantiza también:
+  `critical_result_notice_read_back` no deja guardar un aviso hecho sin ella.
+
+- **ORD-067** — CUANDO se registra un intento sin respuesta, el sistema DEBERÁ
+  guardarlo con a quién se llamó, quién llamó, cuándo y por qué medio, y el
+  valor DEBERÁ seguir en la cola de críticos; cada entrada de la cola DEBERÁ
+  decir cuántos intentos sin respuesta lleva.
+
+  **D-111 §5.** Más del 5 % de las llamadas queda sin respuesta, y sin registro
+  no se puede demostrar que se intentó. Un intento no es un aviso: no saca el
+  valor de la cola, ni lleva «read-back».
+
+- **ORD-068** — MIENTRAS la sede está **fuera de horario**, cada entrada de la
+  cola de críticos DEBERÁ indicar que el aviso toca al rol de guardia que la
+  sede designe, y SI no designó ninguno, al **paciente**; y CUANDO se registra un
+  aviso o un intento, el sistema DEBERÁ guardar si fue fuera de horario.
+
+  **D-111 §3**, y el art. 39 lo permite: *«al médico tratante y/o al usuario»*.
+  **Qué es «fuera de horario»**, sin dato propio en el modelo: la sede está en
+  horario en un instante si alguna regla de horario activa de esa sede
+  (`practitioner_schedule_rule`, vigente ese día) cubre ese día de la semana y
+  esa hora en `America/Guayaquil`, y ese día no es feriado para ella. Si la
+  clínica quiere un horario de sede propio, es una columna más.
 
 ---
 
@@ -919,6 +956,8 @@ contrato —`code`, estado y mensaje—.
 | `ORDER_ITEM_NOT_MATCHABLE` | 422 | La línea no es de la orden en la que llegó el resultado, o está anulada. **Uno solo para las dos**: lo que hay que hacer es idéntico, elegir otra línea de esta orden | ORD-043 |
 | `RESULT_NOT_CRITICAL` | 422 | Se intentó registrar el aviso de un resultado sin bandera crítica. La constancia de ORD-062 es la de un valor de alerta, y una sobre un valor normal llenaría la cola de seguridad de ruido | ORD-062 |
 | `CRITICAL_NOTICE_TIME_INVALID` | 422 | El instante del aviso es futuro o anterior al resultado. Ninguno de los dos pudo ocurrir | ORD-062 |
+| `RESULT_SUPERSEDED` | 422 | Se intentó avisar de un valor cuyo informe ya fue corregido: se avisa el que lo sustituye | ORD-062 |
+| `CRITICAL_READ_BACK_REQUIRED` | 422 | Un aviso hecho sin confirmar que quien lo recibió repitió el valor | ORD-066 |
 
 Se **reutilizan**, no se crean: `CATALOG_CONCEPT_NOT_FOUND` y
 `CATALOG_CONCEPT_NOT_IN_FORCE` de `shared/domain/errors`, que existen
@@ -940,7 +979,7 @@ precisamente para que más de un módulo pueda responderlos con el mismo `code`.
 | Valor `ABNORMAL` en el enum, para la anormalidad cualitativa que no es alta ni baja | `abnormal_flag` | ORD-038 |
 | `concept_id` del tarifario, para no pedir dos identificadores por línea | `exam_definition` | ORD-004 |
 | Motivo de anulación de una línea | `service_order_item` | ORD-007 |
-| ~~Plazo y escalado de la política de críticos~~ — construido: `critical_notice_within_minutes`, `critical_escalation_role_id`. **Fuera de horario sigue sin dato** (D-111) | `site_parameter` | ORD-063, ORD-065 |
+| ~~Plazo y escalado de la política de críticos~~ — construido: `critical_notice_within_minutes` (60 de fábrica), `critical_escalation_role_id`. **Fuera de horario se deduce del horario de los profesionales de la sede** (ORD-068): no hay horario de sede propio | `site_parameter` | ORD-063, ORD-065, ORD-068 |
 | ~~Responsable y plazo de la cola sin orden~~ — construido: `unmatched_result_owner_role_id`, `unmatched_result_deadline_hours` (D-050 §4) | `site_parameter` | ORD-046 |
 | **Resolución sin emparejar** de un resultado sin orden: **`resolved_at`, `resolved_by_id`, `resolution_reason`**. Sin ellas, el resultado que no es de nadie de aquí no puede salir de la cola —y una bandera sin autor ni motivo la vaciaría destruyendo la constancia de que se trabajó—. Las mismas columnas permitirían **deshacer** un emparejamiento equivocado | `observation_result` | ORD-041, ORD-044, ORD-045 |
 | `CHECK` de que `order_item_id` pertenece a la **misma orden** que el informe de la fila. Sin él, emparejar contra la línea de otra orden cerraría una línea con la sangre de otra persona, y la única garantía es la negativa dentro de la transacción | `observation_result` | ORD-043 |
@@ -1009,12 +1048,9 @@ columnas donde registrar quién lo decidió y por qué.
 
 ## Preguntas abiertas
 
-> **[NECESITA ACLARACIÓN — ORD-063, ORD-065] → D-111.** D-050 §2 decidió que
-> la política es de cada clínica y que la llamada es un acto clínico con
-> constancia (construido). Siguen abiertos el plazo y el escalado que traen
-> las sedes de fábrica, qué pasa fuera de horario, el «read-back» y los
-> intentos fallidos. Lo construido no inventa ninguno: sin plazo, la cola dice
-> que la clínica no lo ha fijado.
+> **Resuelto — D-111 (01-10-2026):** 60 minutos de fábrica, escalado al rol de
+> guardia de la sede, fuera de horario a la guardia o al paciente, «read-back»
+> obligatorio, intentos sin respuesta registrados. Ver ORD-063 y ORD-065 a ORD-068.
 
 > **[NECESITA ACLARACIÓN — ORD-094]** ¿Qué rol trae `result:write` de fábrica?
 > El permiso se declara en el catálogo y **ningún rol lo lleva** hasta que la
