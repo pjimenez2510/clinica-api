@@ -251,6 +251,9 @@ export interface PatientDetail extends PatientSummary {
   email: string | null;
   bloodType: string | null;
   residenceAddressLine: string | null;
+  /** PA-061. Corrected, never asked at registration. */
+  employerName: string | null;
+  jobTitle: string | null;
   /** PA-026. Self-declared by the patient, chosen from a catalogue. */
   ethnicity: CatalogConceptReference | null;
   /** PA-027. */

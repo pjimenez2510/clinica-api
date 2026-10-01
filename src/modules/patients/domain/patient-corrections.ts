@@ -79,6 +79,13 @@ export const CORRECTABLE_PATIENT_FIELDS = [
    */
   'countryOfNationalityCode',
   'motherPatientId',
+  /**
+   * PA-061, CER-038. Where the patient works and what as. Asked when a rest
+   * certificate is issued and kept in the chart, corrected here with its trail;
+   * never asked at registration.
+   */
+  'employerName',
+  'jobTitle',
 ] as const;
 
 // PA-031. The fields a correction may touch, derived from the list above so
@@ -150,6 +157,10 @@ export interface PatientCorrectionRequest {
   /** PA-053. `ISO 3166-1 alpha-3`, ya en mayúsculas: lo normaliza el DTO. */
   countryOfNationalityCode?: string | null;
   motherPatientId?: string | null;
+  /** PA-061. The employer, as the rest certificate prints it. */
+  employerName?: string | null;
+  /** PA-061. The job title, as the rest certificate prints it. */
+  jobTitle?: string | null;
 }
 
 /**

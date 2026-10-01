@@ -1784,6 +1784,16 @@ Ningún requisito de esta sección lo altera._
   > `patients/domain` —justo la capa que no puede nombrarlo— y cablearse desde
   > fuera de los dos módulos para evitar el import que existe para evitar.
 
+- **PA-061** — La ficha DEBERÁ guardar la **empresa** donde trabaja el paciente
+  y su **puesto de trabajo**, los dos opcionales, y CUANDO se corrijan el
+  sistema DEBERÁ dejar su fila en el histórico de la ficha como cualquier otro
+  dato (PA-031). El alta de paciente **NO DEBERÁ** pedirlos.
+  > Los exige el certificado de reposo que valida el IESS (CER-038, D-075): la
+  > pantalla los corrige en la ficha antes de emitir y `certificates` sólo los
+  > lee. **Esquema:** `patient.employer_name` (160) y `patient.job_title` (120),
+  > admitidos en `patient_change_history_field_known`
+  > (`20261001060754_patient_employer_and_job_title`).
+
 ## 8. Autorización y trazabilidad (REQ-118)
 
 - **PA-050** — El sistema NO DEBERÁ exponer ninguna ruta de este módulo sin

@@ -1618,6 +1618,11 @@ model Patient {
   residenceParish          CatalogConcept? @relation("PatientResidenceParish", fields: [residenceParishConceptId], references: [id], onDelete: Restrict)
 
   residenceAddressLine String? @map("residence_address_line") @db.VarChar(255)
+  /// PA-061, CER-038. Where the patient works and what as: the rest
+  /// certificate the IESS validates prints both. Corrected with a trail, never
+  /// asked at registration.
+  employerName         String? @map("employer_name") @db.VarChar(160)
+  jobTitle             String? @map("job_title") @db.VarChar(120)
   phone                String? @db.VarChar(32)
   email                String? @db.VarChar(255)
   bloodType            String? @map("blood_type") @db.VarChar(3)
