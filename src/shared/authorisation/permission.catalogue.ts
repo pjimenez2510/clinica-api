@@ -265,6 +265,16 @@ export const PERMISSION_CATALOGUE = [
     description: 'Firmar notas clínicas y certificados',
   },
   {
+    // CER-040, D-105 §2. «La dirección médica» anula un certificado que emitió
+    // otro profesional. Un PERMISO y no un rol: los roles los arma cada clínica
+    // (D-101 corregida), y en una de una sola persona esa persona lo es todo.
+    // Ningún rol de fábrica lo trae: la clínica lo concede a quien dirija.
+    code: 'certificate:revoke-any',
+    resource: 'record',
+    description:
+      'Anular certificados médicos emitidos por otro profesional (dirección médica)',
+  },
+  {
     code: 'vitals:write',
     resource: 'record',
     description: 'Registrar signos vitales y antropometría',

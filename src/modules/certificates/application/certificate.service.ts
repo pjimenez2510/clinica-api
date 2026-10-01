@@ -33,6 +33,7 @@ import {
   CertificateEncounterNotOpenError,
   CertificateEstablishmentIncompleteError,
   CertificateNotFoundError,
+  CertificateRevokeForbiddenError,
   CertifierProfileRequiredError,
   type PatientWorkField,
 } from '../domain/certificate.errors';
@@ -280,15 +281,19 @@ export class CertificateService {
   }
 
   /**
-   * CER-011, CER-012, CER-016. Annuls a certificate. NOTHING IS DELETED.
+   * CER-011, CER-012, CER-016, CER-040. Annuls a certificate. NOTHING IS
+   * DELETED.
    *
    * Who, when and why are written together, which is also what
-   * `medical_certificate_revocation_states_who_when_and_why` demands.
+   * `medical_certificate_revocation_states_who_when_and_why` demands. Only the
+   * account that issued it, or whoever holds `certificate:revoke-any` at the
+   * certificate's site (`directionSites`), may do it (D-105 §2).
    */
   async revoke(
     certificateId: string,
     reason: string,
     requester: Requester,
+    directionSites: SiteScopeFilter,
   ): Promise<CertificateView> {
     const revoked = await this.certificates.revoke(
       { certificateId, sites: requester.sites },
@@ -297,6 +302,14 @@ export class CertificateService {
         // The ACCOUNT, never a cedula and never the practitioner (REQ-110).
         revokedById: requester.userId,
         reason,
+      },
+      ({ issuerUserId, siteId }) => {
+        const issuedIt = issuerUserId === requester.userId;
+        const directsTheSite =
+          directionSites === 'all' || directionSites.includes(siteId);
+        if (!issuedIt && !directsTheSite) {
+          throw new CertificateRevokeForbiddenError();
+        }
       },
     );
 

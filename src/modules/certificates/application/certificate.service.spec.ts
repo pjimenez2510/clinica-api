@@ -31,6 +31,7 @@ import type {
   EncounterCertificatesQuery,
   IssueSnapshot,
   RevocationPlan,
+  RevocationSnapshot,
 } from '../domain/certificate.repository';
 
 import { CertificateService } from './certificate.service';
@@ -193,10 +194,15 @@ class FakeRepository implements CertificateRepository {
     return Promise.resolve([aView(), aView({ id: 'certificate-2' })]);
   }
 
+  /** CER-040. Who issued the stored certificate, and where. */
+  revocationSnapshot: RevocationSnapshot = { issuerUserId: USER, siteId: SITE };
+
   revoke(
     query: CertificateQuery,
     plan: RevocationPlan,
+    authorise: (snapshot: RevocationSnapshot) => void,
   ): Promise<CertificateView> {
+    authorise(this.revocationSnapshot);
     if (this.alreadyRevoked) throw new CertificateAlreadyRevokedError();
     this.revoked.push({ query, plan });
     return Promise.resolve(
@@ -397,6 +403,7 @@ describe('el servicio de certificados', () => {
       'certificate-1',
       'Se emitió con el tipo equivocado',
       requester,
+      [],
     );
 
     const [{ query, plan }] = repository.revoked as [
@@ -413,7 +420,7 @@ describe('el servicio de certificados', () => {
     repository.alreadyRevoked = true;
 
     await expect(
-      service.revoke('certificate-1', 'Otra vez', requester),
+      service.revoke('certificate-1', 'Otra vez', requester, []),
     ).rejects.toMatchObject({ code: 'CERTIFICATE_ALREADY_REVOKED' });
     expect(entries).toEqual([]);
   });
@@ -582,7 +589,12 @@ describe('el servicio de certificados', () => {
 
   it('CER-014 lo que se registra en el log es el acto, sin datos del paciente', async () => {
     await service.issue(rest(3, { includeDiagnosis: true }), requester);
-    await service.revoke('certificate-1', 'Motivo con texto libre', requester);
+    await service.revoke(
+      'certificate-1',
+      'Motivo con texto libre',
+      requester,
+      [],
+    );
 
     expect(logged.length).toBeGreaterThan(0);
     for (const [payload, message] of logged) {
@@ -599,7 +611,7 @@ describe('el servicio de certificados', () => {
     const issued = await service.issue(attendance(), requester);
     await service.form117(issued.certificate.id, requester);
     await service.listOfEncounter(ENCOUNTER, requester);
-    await service.revoke(issued.certificate.id, 'Motivo', requester);
+    await service.revoke(issued.certificate.id, 'Motivo', requester, []);
 
     expect(
       entries.map(({ resourceType, resourceId, action, userId }) => ({
@@ -708,5 +720,34 @@ describe('el servicio de certificados', () => {
     );
 
     expect(issued.restNotices).toContain(MATERNITY_CHAIN_NOTICE);
+  });
+  it('CER-040 anula quien lo emitió; otro médico sin el permiso de dirección médica recibe 403 y nada se escribe', async () => {
+    // Control positivo: la cuenta que lo emitió.
+    await expect(
+      service.revoke('certificate-1', 'Tipo equivocado', requester, []),
+    ).resolves.toBeDefined();
+
+    repository.revocationSnapshot = { issuerUserId: 'user-who-issued', siteId: SITE }; // prettier-ignore
+    repository.revoked = [];
+    entries.length = 0;
+    await expect(
+      service.revoke('certificate-1', 'Tipo equivocado', requester, []),
+    ).rejects.toMatchObject({ code: 'CERTIFICATE_REVOKE_FORBIDDEN' });
+    expect(repository.revoked).toEqual([]);
+    expect(entries).toEqual([]);
+  });
+
+  it('CER-040 la dirección médica anula el de otro en su sede, y no en otra', async () => {
+    repository.revocationSnapshot = { issuerUserId: 'user-who-issued', siteId: SITE }; // prettier-ignore
+
+    await expect(
+      service.revoke('certificate-1', 'Emitido a la persona equivocada', requester, ['another-site']), // prettier-ignore
+    ).rejects.toMatchObject({ code: 'CERTIFICATE_REVOKE_FORBIDDEN' });
+    await expect(
+      service.revoke('certificate-1', 'Emitido a la persona equivocada', requester, [SITE]), // prettier-ignore
+    ).resolves.toBeDefined();
+    await expect(
+      service.revoke('certificate-1', 'Emitido a la persona equivocada', requester, 'all'), // prettier-ignore
+    ).resolves.toBeDefined();
   });
 });

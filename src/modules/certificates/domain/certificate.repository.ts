@@ -123,6 +123,16 @@ export interface CertificateView {
   revocationReason: string | null;
 }
 
+/**
+ * CER-040. What the annulment has to judge, read in the transaction that
+ * writes it: who issued the certificate, and at which site.
+ */
+export interface RevocationSnapshot {
+  /** The ACCOUNT of the practitioner who issued it. */
+  issuerUserId: string;
+  siteId: string;
+}
+
 /** CER-011. What annulling writes: the three together, never fewer. */
 export interface RevocationPlan {
   revokedAt: Date;
@@ -162,11 +172,13 @@ export interface CertificateRepository {
    *
    * Conditional on `revoked_at IS NULL`: of two people annulling at once one
    * wins and the other is refused with `CERTIFICATE_ALREADY_REVOKED`.
-   * Refuses with `CERTIFICATE_NOT_FOUND` outside the scope.
+   * Refuses with `CERTIFICATE_NOT_FOUND` outside the scope. `authorise`
+   * judges who may annul it (CER-040) before anything is written.
    */
   revoke(
     query: CertificateQuery,
     plan: RevocationPlan,
+    authorise: (snapshot: RevocationSnapshot) => void,
   ): Promise<CertificateView>;
 
   /**

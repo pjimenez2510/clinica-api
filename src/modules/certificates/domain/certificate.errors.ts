@@ -234,6 +234,21 @@ export class CertificateAlreadyRevokedError extends ConflictError {
   }
 }
 
+/**
+ * CER-040, D-105 §2. Annulling a certificate somebody else issued, without the
+ * permission of the medical direction at its site. 403: the certificate is in
+ * the caller's scope —they can read it—, but this act is not theirs.
+ */
+export class CertificateRevokeForbiddenError extends ForbiddenError {
+  readonly code = 'CERTIFICATE_REVOKE_FORBIDDEN';
+  override readonly userTitle =
+    'Este certificado lo emitió otro profesional. Lo anula quien lo emitió o la dirección médica';
+
+  constructor() {
+    super('Only the issuer or the medical direction annuls a certificate');
+  }
+}
+
 /** CER-030. Why the rest needs a reason: it starts early, or is issued late. */
 export type BackdatingCase = 'BACKDATED' | 'LATE';
 

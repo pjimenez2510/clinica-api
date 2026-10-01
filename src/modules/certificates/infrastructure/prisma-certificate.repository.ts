@@ -17,6 +17,7 @@ import type {
   EncounterCertificatesQuery,
   IssueSnapshot,
   RevocationPlan,
+  RevocationSnapshot,
   SiteScopeFilter,
 } from '../domain/certificate.repository';
 import type { Form117Source } from '../../../shared/domain/form-117/form-117';
@@ -253,13 +254,16 @@ export class PrismaCertificateRepository implements CertificateRepository {
   async revoke(
     query: CertificateQuery,
     plan: RevocationPlan,
+    authorise: (snapshot: RevocationSnapshot) => void,
   ): Promise<CertificateView> {
     const row = await this.prisma.$transaction(async (tx) => {
       const current = await tx.medicalCertificate.findFirst({
         where: { id: query.certificateId, ...siteFilter(query.sites) },
-        select: { id: true },
+        select: { id: true, siteId: true, issuedBy: { select: { userId: true } } }, // prettier-ignore
       });
       if (!current) throw new CertificateNotFoundError();
+      // CER-040. Before anything is written.
+      authorise({ issuerUserId: current.issuedBy.userId, siteId: current.siteId }); // prettier-ignore
 
       const updated = await tx.medicalCertificate.updateMany({
         where: { id: current.id, revokedAt: null },

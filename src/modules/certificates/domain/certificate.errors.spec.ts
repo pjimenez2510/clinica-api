@@ -17,6 +17,7 @@ import {
   CertificateIssuerReasonRequiredError,
   CertificateRestStartTooLateError,
   CertificateRestTooLongError,
+  CertificateRevokeForbiddenError,
   CertificateDiagnosisRequiredError,
   CertificateEncounterNotFoundError,
   CertificateEncounterNotOpenError,
@@ -39,6 +40,12 @@ const CONTRACT: readonly {
   category: { prototype: DomainError };
   says: string;
 }[] = [
+  {
+    error: new CertificateRevokeForbiddenError(),
+    code: 'CERTIFICATE_REVOKE_FORBIDDEN',
+    category: ForbiddenError,
+    says: 'Lo anula quien lo emitió o la dirección médica',
+  },
   {
     error: new CertificateIssuerReasonRequiredError(),
     code: 'CERTIFICATE_ISSUER_REASON_REQUIRED',
