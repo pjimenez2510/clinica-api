@@ -90,6 +90,8 @@ export class EncounterPrescriptionsController {
     const composed = await this.prescriptions.compose(
       {
         encounterId,
+        warningSigns: dto.warningSigns ?? null,
+        nonPharmacologicalAdvice: dto.nonPharmacologicalAdvice ?? null,
         items: dto.items.map((item) => ({
           conceptId: item.conceptId ?? null,
           // PR-008. Only read when there is no concept: with one, the DCI comes

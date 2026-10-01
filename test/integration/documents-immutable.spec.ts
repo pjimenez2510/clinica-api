@@ -79,6 +79,7 @@ beforeEach(async () => {
   const prescription = await prisma.prescription.create({
     data: {
       encounterId: encounter.id,
+      siteId: encounter.siteId,
       prescriberId: practitioner.id,
       status: 'ACTIVE',
       issuedAt: new Date('2026-08-21T01:00:00Z'),
@@ -87,6 +88,7 @@ beforeEach(async () => {
   const otherPrescription = await prisma.prescription.create({
     data: {
       encounterId: encounter.id,
+      siteId: encounter.siteId,
       prescriberId: practitioner.id,
       status: 'ACTIVE',
       issuedAt: new Date('2026-08-21T02:00:00Z'),

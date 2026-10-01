@@ -34,7 +34,12 @@ import {
 /** A tariff concept, which is what `service_order_item.concept_id` demands. */
 export async function aTariffConcept(
   prisma: PrismaClient,
-  options: { code?: string; systemCode?: string; validTo?: Date } = {},
+  options: {
+    code?: string;
+    systemCode?: string;
+    validFrom?: Date;
+    validTo?: Date;
+  } = {},
 ) {
   const systemCode = options.systemCode ?? 'TARIFF';
   const system = await prisma.catalogSystem.upsert({
@@ -48,7 +53,9 @@ export async function aTariffConcept(
       systemId: system.id,
       code: options.code ?? `T-${Math.floor(Math.random() * 1e6)}`,
       display: 'Biometría hemática',
-      validFrom: new Date('2020-01-01'),
+      // Vigente desde mucho antes de cualquier atención de los fixtures; las
+      // pruebas que miran la vigencia pasan la suya.
+      validFrom: options.validFrom ?? new Date('2020-01-01'), // fecha-fija: vigente desde siempre
       validTo: options.validTo ?? null,
     },
   });
@@ -97,6 +104,9 @@ export async function seedExams(prisma: PrismaClient) {
   const bh = await prisma.examDefinition.create({
     data: {
       code: 'EX-BH',
+      // ORD-004. The tariff service the exam IS, by code: the catalogue is
+      // versioned and the concept in force on the clinical date is resolved.
+      tariffCode: 'EX-BH',
       name: 'Biometría hemática completa',
       form010Section: 'HEMATOLOGÍA',
       specimenType: 'Sangre total con EDTA',
@@ -109,6 +119,7 @@ export async function seedExams(prisma: PrismaClient) {
   const glucose = await prisma.examDefinition.create({
     data: {
       code: 'EX-GLUCOSA-AYUNAS',
+      tariffCode: 'EX-GLUCOSA-AYUNAS',
       name: 'Glucosa en ayunas',
       form010Section: 'BIOQUÍMICA',
       patientPreparation: 'Ayuno de 8 a 12 horas.',
@@ -133,7 +144,9 @@ export async function aScene(
     patientId: patient.id,
   });
   const exams = await seedExams(prisma);
-  const concept = await aTariffConcept(prisma);
+  // ORD-004. One tariff service per exam, under the exam's tariff code.
+  const concept = await aTariffConcept(prisma, { code: 'EX-BH' });
+  await aTariffConcept(prisma, { code: 'EX-GLUCOSA-AYUNAS' });
 
   return { site, practitioner, patient, encounter, ...exams, concept };
 }

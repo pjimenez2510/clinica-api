@@ -166,6 +166,7 @@ export function toOrderResponse(order: ServiceOrderView): ServiceOrderResponse {
     siteId: order.siteId,
     patientId: order.patientId,
     orderedById: order.orderedById,
+    number: order.number,
     category: order.category,
     priority: order.priority,
     clinicalNoteText: order.clinicalNoteText,
@@ -189,6 +190,7 @@ function toPendingResponse(
 ): PendingOrderListResponse['items'][number] {
   return {
     orderId: entry.orderId,
+    orderNumber: entry.orderNumber,
     itemId: entry.itemId,
     siteId: entry.siteId,
     patientId: entry.patientId,

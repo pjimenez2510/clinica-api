@@ -238,7 +238,10 @@ describe('la receta por HTTP', () => {
     });
 
     const practitioner = withPractitioner
-      ? await prisma.practitioner.create({ data: { userId: user.id } })
+      ? await prisma.practitioner.create({
+          // PR-040. El art. 5.e.vi imprime el teléfono junto a los signos de alarma.
+          data: { userId: user.id, emergencyContactPhone: '0991234567' },
+        })
       : undefined;
 
     const role = await prisma.role.findUniqueOrThrow({
@@ -286,7 +289,12 @@ describe('la receta por HTTP', () => {
     const response = await post(
       `/encounters/${encounterId}/prescriptions`,
       doctorToken,
-      { items },
+      {
+        // PR-038, PR-039. Art. 5.e, demanded at the issue.
+        warningSigns: 'Fiebre mayor de 39 °C o dificultad para respirar',
+        nonPharmacologicalAdvice: 'Abundantes líquidos y reposo relativo',
+        items,
+      },
     ).expect(201);
     return response.body as ComposedBody;
   }
@@ -548,6 +556,44 @@ describe('la receta por HTTP', () => {
     // PR-061: la salida es refutar la alergia, y el mensaje lo dice.
     expect(problem.title).toContain('refútela');
     expect(JSON.stringify(problem)).not.toContain('Amoxicilina');
+  });
+
+  it('PR-061 la alerta no se salta desde la petición: la única salida es refutar la alergia', async () => {
+    const allergy = await prisma.patientAllergy.create({
+      data: {
+        recordedById: (await createUser(prisma)).id,
+        patientId,
+        substanceConceptId: conceptId,
+        substanceText: 'Amoxicilina',
+        criticality: 'HIGH',
+      },
+    });
+    const composed = await composeAsDoctor();
+
+    // Un motivo para «emitir de todas formas» no tiene dónde guardarse, y la
+    // ruta no lo admite: la emisión se interrumpe igual.
+    const insisted = await post(
+      `/prescriptions/${composed.prescription.id}/issue`,
+      doctorToken,
+      { overrideAllergy: true, reason: 'Desensibilización programada' },
+    );
+    expect(insisted.status).not.toBe(200);
+    expect(insisted.status).not.toBe(201);
+    expect(await prisma.prescription.count({ where: { status: 'ACTIVE' } })).toBe(0); // prettier-ignore
+
+    // Control positivo: refutada la alergia, el mismo borrador se emite.
+    await prisma.patientAllergy.update({
+      where: { id: allergy.id },
+      data: {
+        refutedAt: new Date(),
+        refutedById: (await createUser(prisma)).id,
+        refutedNotes: 'Tolerada en tratamiento previo',
+      },
+    });
+    await post(
+      `/prescriptions/${composed.prescription.id}/issue`,
+      doctorToken,
+    ).expect(200);
   });
 
   it('PR-091 no sirve la receta a un médico de otra sede', async () => {

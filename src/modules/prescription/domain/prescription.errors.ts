@@ -186,20 +186,34 @@ export class PrescriptionItemIncompleteError extends ValidationError {
     'Faltan datos obligatorios de la receta. Complete los campos señalados antes de emitirla';
   override readonly fieldErrors: readonly DomainFieldError[];
 
-  constructor(missing: readonly { line: number; field: string }[]) {
+  /**
+   * `line: null` is a field of the prescription itself — the warning signs and
+   * the advice of art. 5.e (PR-038, PR-039) — and its path is the bare field.
+   * The code stays `PRESCRIPTION_ITEM_INCOMPLETE`: it is public contract, and
+   * splitting it would make a client branch twice for one form.
+   */
+  constructor(missing: readonly { line: number | null; field: string }[]) {
     super(
-      `Prescription lines are missing mandatory fields: ${missing
-        .map(({ line, field }) => `${line}.${field}`)
+      `Prescription is missing mandatory fields: ${missing
+        .map(({ line, field }) => (line === null ? field : `${line}.${field}`))
         .join(', ')}`,
       { missing: missing.length },
     );
-    this.fieldErrors = missing.map(({ line, field }) => ({
-      // 0-based in the path because that is how the request carried them, and a
-      // client highlights the box it sent.
-      field: `items.${line - 1}.${field}`,
-      code: 'PRESCRIPTION_ITEM_INCOMPLETE',
-      message: `Obligatorio por la norma de receta médica (línea ${line})`,
-    }));
+    this.fieldErrors = missing.map(({ line, field }) =>
+      line === null
+        ? {
+            field,
+            code: 'PRESCRIPTION_ITEM_INCOMPLETE',
+            message: 'Obligatorio por la norma de receta médica',
+          }
+        : {
+            // 0-based in the path because that is how the request carried
+            // them, and a client highlights the box it sent.
+            field: `items.${line - 1}.${field}`,
+            code: 'PRESCRIPTION_ITEM_INCOMPLETE',
+            message: `Obligatorio por la norma de receta médica (línea ${line})`,
+          },
+    );
   }
 }
 
@@ -375,6 +389,55 @@ export class PrescriberNotLicensedError extends ForbiddenError {
 
   constructor() {
     super('Prescriber holds no ACESS registration in force');
+  }
+}
+
+/**
+ * PR-070. The line names a narcotic or psychotropic of the CNMB.
+ *
+ * Not a refusal of the medicine: a refusal of THIS document. That receta is the
+ * ACESS's pre-printed pad (Res. ACESS-2022-0046), with its own numbering and
+ * custody, and the message says where it is written instead. It names the
+ * line, never the medicine (PR-094).
+ */
+export class ControlledSubstanceNotPrescribableError extends ValidationError {
+  readonly code = 'CONTROLLED_SUBSTANCE_NOT_PRESCRIBABLE';
+  override readonly userTitle =
+    'Un estupefaciente o psicotrópico no se receta en este sistema: se escribe en el recetario especial de la ACESS';
+  override readonly fieldErrors: readonly DomainFieldError[];
+
+  constructor(line: number) {
+    super('Concept is a controlled substance; its receta is the ACESS pad', {
+      line,
+    });
+    this.fieldErrors = [
+      {
+        field: `items.${line - 1}.conceptId`,
+        code: 'CONTROLLED_SUBSTANCE_NOT_PRESCRIBABLE',
+        message: `Se receta en el recetario especial de la ACESS (línea ${line})`,
+      },
+    ];
+  }
+}
+
+/**
+ * PR-040. The prescriber has no permanent contact number to print.
+ *
+ * Art. 5.e.vi puts it beside the warning signs: what the patient has to do at
+ * three in the morning is call somebody. A receta that says «llame ante estos
+ * signos» with no number is worse than no receta, so it is not issued. 422 and
+ * not 403: nothing is forbidden, a datum of the profile is missing, and the
+ * message says who adds it and where.
+ *
+ * NO PHONE IN THE MESSAGE: it reaches the logs.
+ */
+export class PrescriberContactRequiredError extends ValidationError {
+  readonly code = 'PRESCRIBER_CONTACT_REQUIRED';
+  override readonly userTitle =
+    'La receta lleva impreso su teléfono de contacto permanente, y su ficha profesional no lo tiene. Pídalo a administración';
+
+  constructor() {
+    super('Prescriber has no permanent contact number on the clinical profile');
   }
 }
 

@@ -4,9 +4,11 @@ import { describe, expect, it } from 'vitest';
 import { PrismaExamCatalogueRepository } from '../../src/modules/orders/infrastructure/prisma-exam-catalogue.repository';
 import { PrismaServiceOrderRepository } from '../../src/modules/orders/infrastructure/prisma-service-order.repository';
 import { PrismaPatientRepository } from '../../src/modules/patients/infrastructure/prisma-patient.repository';
+import { addDays, clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { aScene, aTariffConcept } from './orders-fixtures';
+import { attemptWhileAnnulled } from './setup/encounter-race';
 import { useDatabase } from './setup/database';
 import { createPatient, createSite, createUser } from './setup/fixtures';
 
@@ -37,6 +39,9 @@ const db = useDatabase();
 const CEDULA = '1710034065';
 const OTHER_CEDULA = '1713175071';
 
+/** A `date` column for a clinical date: midnight UTC is that calendar day. */
+const dateColumn = (day: string) => new Date(day);
+
 const ordersOf = (prisma: PrismaClient) =>
   new PrismaServiceOrderRepository(prisma as unknown as PrismaService);
 
@@ -53,8 +58,8 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       category: 'LABORATORY',
       priority: 'ROUTINE',
       lines: [
-        { examDefinitionId: scene.bh.id, conceptId: scene.concept.id },
-        { examDefinitionId: scene.glucose.id, conceptId: scene.concept.id },
+        { examDefinitionId: scene.bh.id },
+        { examDefinitionId: scene.glucose.id },
       ],
       sites: 'all',
     });
@@ -69,6 +74,57 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     expect(order.siteId).toBe(scene.site.id);
   });
 
+  it('ORD-006 la orden emitida vuelve con su número, y la segunda con el siguiente', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const place = () =>
+      ordersOf(prisma).place({
+        encounterId: scene.encounter.id,
+        category: 'LABORATORY',
+        priority: 'ROUTINE',
+        lines: [{ examDefinitionId: scene.bh.id }],
+        sites: 'all',
+      });
+
+    const first = await place();
+    const second = await place();
+
+    expect(first.number).toBe(1);
+    expect(second.number).toBe(2);
+    expect(
+      (await ordersOf(prisma).byId({ orderId: second.id, sites: 'all' }))
+        ?.number,
+    ).toBe(2);
+  });
+
+  it('ORD-005 pedir mientras la atención se anula: la orden no nace en una atención anulada', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const place = () =>
+      ordersOf(prisma).place({
+        encounterId: scene.encounter.id,
+        category: 'LABORATORY',
+        priority: 'ROUTINE',
+        lines: [{ examDefinitionId: scene.bh.id }],
+        sites: 'all',
+      });
+
+    // Control positivo: sin carrera, el mismo camino emite.
+    await expect(place()).resolves.toMatchObject({ number: 1 });
+
+    const outcome = await attemptWhileAnnulled(
+      prisma,
+      scene.encounter.id,
+      place,
+    );
+
+    expect(outcome).toMatchObject({
+      status: 'rejected',
+      reason: { code: 'ORDER_ENCOUNTER_NOT_OPEN' },
+    });
+    expect(await prisma.serviceOrder.count()).toBe(1);
+  });
+
   it('ORD-002 mantiene `pending_items` en paso con las líneas, por disparador', async () => {
     const prisma = db();
     const scene = await aScene(prisma);
@@ -78,8 +134,8 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       category: 'LABORATORY',
       priority: 'ROUTINE',
       lines: [
-        { examDefinitionId: scene.bh.id, conceptId: scene.concept.id },
-        { examDefinitionId: scene.glucose.id, conceptId: scene.concept.id },
+        { examDefinitionId: scene.bh.id },
+        { examDefinitionId: scene.glucose.id },
       ],
       sites: 'all',
     });
@@ -104,8 +160,8 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       category: 'LABORATORY',
       priority: 'ROUTINE',
       lines: [
-        { examDefinitionId: scene.bh.id, conceptId: scene.concept.id },
-        { examDefinitionId: scene.glucose.id, conceptId: scene.concept.id },
+        { examDefinitionId: scene.bh.id },
+        { examDefinitionId: scene.glucose.id },
       ],
       sites: 'all',
     });
@@ -135,7 +191,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.bh.id, conceptId: scene.concept.id }],
+      lines: [{ examDefinitionId: scene.bh.id }],
       sites: 'all',
     });
     const itemId = order.items[0]?.id ?? '';
@@ -161,8 +217,8 @@ describe('la orden de exámenes contra PostgreSQL', () => {
         category: 'LABORATORY',
         priority: 'ROUTINE',
         lines: [
-          { examDefinitionId: scene.bh.id, conceptId: scene.concept.id },
-          { examDefinitionId: scene.glucose.id, conceptId: scene.concept.id },
+          { examDefinitionId: scene.bh.id },
+          { examDefinitionId: scene.glucose.id },
         ],
         sites: 'all',
       }),
@@ -173,34 +229,89 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     expect(await prisma.serviceOrderItem.count()).toBe(0);
   });
 
-  it('ORD-004 rechaza un concepto que no es del tarifario', async () => {
+  it('ORD-004 la línea toma la prestación del tarifario VIGENTE del examen, sin que el cliente la envíe', async () => {
     const prisma = db();
     const scene = await aScene(prisma);
-    const cie10 = await aTariffConcept(prisma, {
-      systemCode: 'CIE10',
-      code: 'J020',
+    const clinicalDay = clinicalDateOf(scene.encounter.startedAt);
+    // Una versión anterior de la misma prestación, retirada antes de la
+    // atención: el catálogo se versiona y el examen apunta al CÓDIGO. La
+    // vigente empieza después, porque la base no deja que dos versiones de un
+    // código se solapen.
+    await prisma.catalogConcept.update({
+      where: { id: scene.concept.id },
+      data: { validFrom: dateColumn(addDays(clinicalDay, -100)) },
+    });
+    await aTariffConcept(prisma, {
+      code: 'EX-BH',
+      validFrom: dateColumn(addDays(clinicalDay, -400)),
+      validTo: dateColumn(addDays(clinicalDay, -200)),
     });
 
-    // La clave foránea apunta a `catalog_concept`, que guarda TODOS los
-    // catálogos: sin esta comprobación una parroquia del DPA se pide como
-    // examen y lo es para siempre.
+    const order = await ordersOf(prisma).place({
+      encounterId: scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [{ examDefinitionId: scene.bh.id }],
+      sites: 'all',
+    });
+
+    expect(order.items[0]?.conceptId).toBe(scene.concept.id);
+  });
+
+  it('ORD-004 rechaza un examen que no tiene prestación en el tarifario', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    await prisma.examDefinition.update({
+      where: { id: scene.bh.id },
+      data: { tariffCode: null },
+    });
+
     await expect(
       ordersOf(prisma).place({
         encounterId: scene.encounter.id,
         category: 'LABORATORY',
         priority: 'ROUTINE',
-        lines: [{ examDefinitionId: scene.bh.id, conceptId: cie10.id }],
+        lines: [{ examDefinitionId: scene.bh.id }],
+        sites: 'all',
+      }),
+    ).rejects.toMatchObject({ code: 'CATALOG_CONCEPT_NOT_FOUND' });
+    expect(await prisma.serviceOrder.count()).toBe(0);
+  });
+
+  it('ORD-004 rechaza un examen cuyo código no está en el TARIFARIO aunque exista en otro catálogo', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    await aTariffConcept(prisma, { systemCode: 'CIE10', code: 'J020' });
+    await prisma.examDefinition.update({
+      where: { id: scene.bh.id },
+      data: { tariffCode: 'J020' },
+    });
+
+    // La clave foránea apunta a `catalog_concept`, que guarda TODOS los
+    // catálogos: sin esta comprobación un código CIE-10 se pide como examen.
+    await expect(
+      ordersOf(prisma).place({
+        encounterId: scene.encounter.id,
+        category: 'LABORATORY',
+        priority: 'ROUTINE',
+        lines: [{ examDefinitionId: scene.bh.id }],
         sites: 'all',
       }),
     ).rejects.toMatchObject({ code: 'CATALOG_CONCEPT_NOT_FOUND' });
   });
 
-  it('ORD-004 rechaza un concepto del tarifario retirado antes de la atención', async () => {
+  it('ORD-004 rechaza la prestación retirada antes del día de la atención', async () => {
     const prisma = db();
     const scene = await aScene(prisma);
-    const retired = await aTariffConcept(prisma, {
+    const clinicalDay = clinicalDateOf(scene.encounter.startedAt);
+    await prisma.examDefinition.update({
+      where: { id: scene.bh.id },
+      data: { tariffCode: 'T-RETIRADO' },
+    });
+    await aTariffConcept(prisma, {
       code: 'T-RETIRADO',
-      validTo: new Date('2024-12-31'),
+      validFrom: dateColumn(addDays(clinicalDay, -400)),
+      validTo: dateColumn(addDays(clinicalDay, -1)),
     });
 
     // La vigencia se evalúa con `daterange @>` sobre una columna GENERADA, que
@@ -210,7 +321,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
         encounterId: scene.encounter.id,
         category: 'LABORATORY',
         priority: 'ROUTINE',
-        lines: [{ examDefinitionId: scene.bh.id, conceptId: retired.id }],
+        lines: [{ examDefinitionId: scene.bh.id }],
         sites: 'all',
       }),
     ).rejects.toMatchObject({ code: 'CATALOG_CONCEPT_NOT_IN_FORCE' });
@@ -236,7 +347,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
         encounterId: scene.encounter.id,
         category: 'LABORATORY',
         priority: 'ROUTINE',
-        lines: [{ examDefinitionId: scene.bh.id, conceptId: scene.concept.id }],
+        lines: [{ examDefinitionId: scene.bh.id }],
         sites: 'all',
       }),
     ).rejects.toMatchObject({ code: 'ORDER_ENCOUNTER_NOT_OPEN' });
@@ -252,7 +363,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
         encounterId: scene.encounter.id,
         category: 'LABORATORY',
         priority: 'ROUTINE',
-        lines: [{ examDefinitionId: scene.bh.id, conceptId: scene.concept.id }],
+        lines: [{ examDefinitionId: scene.bh.id }],
         sites: [otherSite.id],
       }),
     ).rejects.toMatchObject({ code: 'ORDER_ENCOUNTER_NOT_FOUND' });
@@ -267,14 +378,14 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.bh.id, conceptId: scene.concept.id }],
+      lines: [{ examDefinitionId: scene.bh.id }],
       sites: 'all',
     });
     const fresh = await repository.place({
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.glucose.id, conceptId: scene.concept.id }], // prettier-ignore
+      lines: [{ examDefinitionId: scene.glucose.id }], // prettier-ignore
       sites: 'all',
     });
 
@@ -309,7 +420,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.bh.id, conceptId: scene.concept.id }],
+      lines: [{ examDefinitionId: scene.bh.id }],
       sites: 'all',
     });
     await repository.cancelItem({
@@ -338,8 +449,8 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       category: 'LABORATORY',
       priority: 'ROUTINE',
       lines: [
-        { examDefinitionId: scene.bh.id, conceptId: scene.concept.id },
-        { examDefinitionId: scene.glucose.id, conceptId: scene.concept.id },
+        { examDefinitionId: scene.bh.id },
+        { examDefinitionId: scene.glucose.id },
       ],
       sites: 'all',
     });
@@ -446,7 +557,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.bh.id, conceptId: scene.concept.id }],
+      lines: [{ examDefinitionId: scene.bh.id }],
       sites: 'all',
     });
     const survivor = await createPatient(prisma);
@@ -497,7 +608,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.bh.id, conceptId: scene.concept.id }],
+      lines: [{ examDefinitionId: scene.bh.id }],
       sites: 'all',
     });
 

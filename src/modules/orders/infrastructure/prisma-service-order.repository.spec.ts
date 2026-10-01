@@ -94,12 +94,18 @@ function prismaDouble(
       findMany: (args: unknown) => {
         record('examDefinition.findMany', args);
         return Promise.resolve(
-          options.exams ?? [{ id: EXAM, code: 'EX-BH', name: 'Biometría hemática completa' }], // prettier-ignore
+          options.exams ?? [{ id: EXAM, code: 'EX-BH', name: 'Biometría hemática completa', tariffCode: 'T-100' }], // prettier-ignore
         );
       },
     },
     $queryRaw: (strings: TemplateStringsArray, ...values: unknown[]) => {
-      record('$queryRaw', { sql: strings.join('?'), values });
+      const sql = strings.join('?');
+      // The lock on the attention's row is its own call (the race with agenda's
+      // annulment); the tariff lookup is the one these tests read.
+      record(sql.includes('FOR UPDATE') ? '$queryRaw:lock' : '$queryRaw', {
+        sql,
+        values,
+      });
       return Promise.resolve(
         options.concepts ?? [
           { id: CONCEPT, concept_code: 'T-100', system_code: 'TARIFF', in_force: true }, // prettier-ignore
@@ -182,7 +188,7 @@ const aRequest = {
   encounterId: ENCOUNTER,
   category: 'LABORATORY' as const,
   priority: 'ROUTINE' as const,
-  lines: [{ examDefinitionId: EXAM, conceptId: CONCEPT }],
+  lines: [{ examDefinitionId: EXAM }],
   sites: 'all' as const,
 };
 
@@ -242,20 +248,57 @@ describe('el adaptador de la orden', () => {
     expect(callTo('serviceOrder.create')).toBeUndefined();
   });
 
-  it('ORD-004 rechaza igual el concepto ausente y el de otro catálogo', async () => {
-    // Distinguirlos convertiría el endpoint en un oráculo del catálogo entero,
-    // recorrido probando identificadores.
+  it('ORD-004 rechaza igual el examen sin prestación y la prestación ausente del tarifario', async () => {
+    // Distinguirlos convertiría el endpoint en un oráculo del catálogo entero.
     const absent = prismaDouble({ concepts: [] });
     await expect(absent.repository.place(aRequest)).rejects.toMatchObject({
       code: 'CATALOG_CONCEPT_NOT_FOUND',
     });
 
-    const foreign = prismaDouble({
-      concepts: [{ id: CONCEPT, concept_code: 'J020', system_code: 'CIE10', in_force: true }], // prettier-ignore
+    const withoutTariff = prismaDouble({
+      exams: [{ id: EXAM, code: 'EX-BH', name: 'Biometría hemática completa', tariffCode: null }], // prettier-ignore
     });
-    await expect(foreign.repository.place(aRequest)).rejects.toMatchObject({
+    await expect(
+      withoutTariff.repository.place(aRequest),
+    ).rejects.toMatchObject({
       code: 'CATALOG_CONCEPT_NOT_FOUND',
     });
+  });
+
+  it('ORD-005 bloquea la fila de la atención antes de leer su estado', async () => {
+    const { repository, calls } = prismaDouble();
+
+    await repository.place(aRequest);
+
+    const methods = calls.map((call) => call.method);
+    expect(methods.indexOf('$queryRaw:lock')).toBeGreaterThanOrEqual(0);
+    expect(methods.indexOf('$queryRaw:lock')).toBeLessThan(
+      methods.indexOf('encounter.findFirst'),
+    );
+  });
+
+  it('ORD-004 sólo busca la prestación en el TARIFARIO, nunca en otro catálogo', async () => {
+    const { repository, callTo } = prismaDouble();
+
+    await repository.place(aRequest);
+
+    const query = callTo('$queryRaw')?.args as { values: unknown[] };
+    expect(query.values).toContain('TARIFF');
+  });
+
+  it('ORD-004 la línea guarda la versión VIGENTE de la prestación, no la retirada', async () => {
+    const { repository, callTo } = prismaDouble({
+      concepts: [
+        { id: 'concept-old', concept_code: 'T-100', system_code: 'TARIFF', in_force: false }, // prettier-ignore
+        { id: CONCEPT, concept_code: 'T-100', system_code: 'TARIFF', in_force: true }, // prettier-ignore
+      ],
+    });
+
+    await repository.place(aRequest);
+
+    const data = (callTo('serviceOrder.create')?.args as { data: Record<string, unknown> }).data; // prettier-ignore
+    const lines = (data.items as { create: Record<string, unknown>[] }).create;
+    expect(lines[0]?.conceptId).toBe(CONCEPT);
   });
 
   it('ORD-004 rechaza el concepto que no estaba vigente en la fecha de la atención', async () => {

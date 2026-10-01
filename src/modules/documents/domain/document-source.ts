@@ -1,3 +1,4 @@
+import type { Form117 } from '../../../shared/domain/form-117/form-117';
 import type { DocumentKind, SiteScopeFilter } from './document-kind';
 import type { StoredImage } from './document-image';
 import type { VerificationFacts } from './document-verification';
@@ -60,6 +61,8 @@ export interface PractitionerIdentity {
   /** Art. 5.d.ii. `null` prints the field empty rather than inventing one. */
   acessRegistration: string | null;
   mspCode: string | null;
+  /** PR-040. Art. 5.e.vi — the number the patient calls. */
+  contactPhone: string | null;
   /** DOC-060. `null` prints a labelled empty box. */
   seal: StoredImage | null;
   signature: StoredImage | null;
@@ -107,6 +110,12 @@ export interface PrescriptionPrintData {
   /** Art. 5.a.i. The canton of the site's parish; `null` if the site has none. */
   city: string | null;
   verificationCode: string | null;
+  /** PR-020, art. 5.a.i. Consecutive per site; `null` on a draft. */
+  sequenceNumber: number | null;
+  /** PR-038, art. 5.e.iv — signos de alarma. */
+  warningSigns: string | null;
+  /** PR-039, art. 5.e.v — recomendaciones no farmacológicas. */
+  nonPharmacologicalAdvice: string | null;
   patient: PatientIdentity;
   /** Art. 5.b.iii — the CIE of the attention, principal first. */
   diagnoses: readonly { code: string; display: string }[];
@@ -120,6 +129,10 @@ export interface PrescriptionPrintData {
 export interface ServiceOrderPrintData {
   subjectId: string;
   siteId: string;
+  /** ORD-006. The consecutive number per site, printed as the reference. */
+  number: number;
+  /** D-095. The short random code a laboratory checks the order with. */
+  verificationCode: string;
   requestedAt: Date;
   category: string;
   priority: string;
@@ -127,24 +140,29 @@ export interface ServiceOrderPrintData {
   patient: PatientIdentity;
   diagnoses: readonly { code: string; display: string }[];
   orderedBy: PractitionerIdentity;
-  items: readonly { display: string; status: string }[];
+  /**
+   * DOC-072. Each exam with its frozen code and name, and the specimen and the
+   * patient's preparation as the catalogue holds them today.
+   */
+  items: readonly {
+    code: string;
+    display: string;
+    specimen: string | null;
+    preparation: string | null;
+    status: string;
+  }[];
 }
 
-/** Everything the certificate prints, over the structure of form 117. */
+/**
+ * DOC-075, CER-020 to CER-037. Everything the certificate prints: form 117 as
+ * `composeForm117` composes it — the SAME function the certificate's screen
+ * reads, so the paper and the screen cannot say two things — plus the
+ * practitioner whose seal goes in block E.
+ */
 export interface CertificatePrintData {
   subjectId: string;
   siteId: string;
-  type: string;
-  issuedAt: Date;
-  restFrom: Date | null;
-  restTo: Date | null;
-  /** The patient decides whether their employer reads the diagnosis. */
-  includeDiagnosis: boolean;
-  diagnoses: readonly { code: string; display: string }[];
-  body: string;
-  verificationCode: string;
-  revokedAt: Date | null;
-  patient: PatientIdentity;
+  form: Form117;
   issuedBy: PractitionerIdentity;
 }
 

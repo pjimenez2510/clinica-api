@@ -162,6 +162,7 @@ export class StaffController {
         cedula: dto.cedula,
         acessRegistration: dto.acessRegistration,
         acessExpiresOn: dto.acessExpiresOn,
+        emergencyContactPhone: dto.emergencyContactPhone,
       },
       this.requester(req),
     );

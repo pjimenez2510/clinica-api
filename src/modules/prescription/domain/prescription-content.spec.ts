@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assertItemsComplete,
   assertOffFormularyJustified,
+  assertPrescriptionComplete,
 } from './prescription-content';
 import {
   OffFormularyJustificationRequiredError,
@@ -130,5 +131,56 @@ describe('el contenido mínimo del art. 5', () => {
     expect(thrown?.fieldErrors?.[0]?.field).toBe(
       'items.1.offFormularyJustification',
     );
+  });
+});
+
+describe('las indicaciones del art. 5.e, que son de la receta y no de la línea', () => {
+  const indications = {
+    warningSigns: 'Fiebre mayor de 39 °C o dificultad para respirar',
+    nonPharmacologicalAdvice: 'Abundantes líquidos y reposo relativo',
+  };
+
+  /** The field paths of the refusal, or `[]` when it was accepted. */
+  function missingOf(
+    content: Parameters<typeof assertPrescriptionComplete>[0],
+  ) {
+    try {
+      assertPrescriptionComplete(content);
+      return [];
+    } catch (error) {
+      return (error as PrescriptionItemIncompleteError).fieldErrors.map(
+        (fieldError) => fieldError.field,
+      );
+    }
+  }
+
+  it('PR-038 PR-039 acepta una receta con signos de alarma y recomendaciones', () => {
+    expect(missingOf({ ...indications, items: [complete()] })).toEqual([]);
+  });
+
+  it('PR-038 rechaza emitir sin signos de alarma y nombra el campo', () => {
+    expect(
+      missingOf({ ...indications, warningSigns: null, items: [complete()] }),
+    ).toEqual(['warningSigns']);
+  });
+
+  it('PR-039 rechaza emitir sin recomendaciones no farmacológicas y nombra el campo', () => {
+    expect(
+      missingOf({ ...indications, nonPharmacologicalAdvice: '   ', items: [complete()] }), // prettier-ignore
+    ).toEqual(['nonPharmacologicalAdvice']);
+  });
+
+  it('PR-032 PR-038 nombra los de la receta y los de las líneas en UNA sola respuesta', () => {
+    expect(
+      missingOf({
+        warningSigns: '',
+        nonPharmacologicalAdvice: null,
+        items: [complete({ routeCode: null })],
+      }),
+    ).toEqual([
+      'warningSigns',
+      'nonPharmacologicalAdvice',
+      'items.0.routeCode',
+    ]);
   });
 });

@@ -92,6 +92,9 @@ const aPrescription = (
   status: 'DRAFT',
   issuedAt: null,
   verificationCode: null,
+  sequenceNumber: null,
+  warningSigns: 'Fiebre mayor de 39 °C o dificultad para respirar',
+  nonPharmacologicalAdvice: 'Abundantes líquidos y reposo relativo',
   createdAt: new Date('2026-09-14T14:05:00Z'),
   discardedAt: null,
   discardReason: null,
@@ -117,6 +120,8 @@ const aPrescription = (
 
 const aSnapshot = (overrides: Partial<IssueSnapshot> = {}): IssueSnapshot => ({
   status: 'DRAFT',
+  warningSigns: 'Fiebre mayor de 39 °C o dificultad para respirar',
+  nonPharmacologicalAdvice: 'Abundantes líquidos y reposo relativo',
   items: aPrescription().items.map((item) => ({
     line: item.line,
     genericName: item.genericName,
@@ -135,6 +140,7 @@ const aSnapshot = (overrides: Partial<IssueSnapshot> = {}): IssueSnapshot => ({
   prescriber: {
     acessRegistration: 'ACESS-11223',
     acessExpiresOn: new Date('2030-01-01T00:00:00Z'),
+    contactPhone: '0991234567',
   },
   ...overrides,
 });
@@ -373,7 +379,11 @@ describe('el servicio de recetas', () => {
     // MÁS ESTRICTO que EN-029 a propósito: allí no tener registro anotado no
     // impide firmar, y aquí el art. 5.d.ii imprime el número en el documento.
     repository.snapshot = aSnapshot({
-      prescriber: { acessRegistration: null, acessExpiresOn: null },
+      prescriber: {
+        acessRegistration: null,
+        acessExpiresOn: null,
+        contactPhone: '0991234567',
+      },
     });
 
     await expect(service.issue(PRESCRIPTION, requester)).rejects.toMatchObject({
@@ -392,6 +402,7 @@ describe('el servicio de recetas', () => {
       prescriber: {
         acessRegistration: 'ACESS-11223',
         acessExpiresOn: yesterday,
+        contactPhone: '0991234567',
       },
     });
 
@@ -414,6 +425,7 @@ describe('el servicio de recetas', () => {
         prescriber: {
           acessRegistration: 'ACESS-11223',
           acessExpiresOn: new Date(`${today}T00:00:00.000Z`),
+          contactPhone: '0991234567',
         },
       });
 
@@ -453,6 +465,44 @@ describe('el servicio de recetas', () => {
     await expect(service.issue(PRESCRIPTION, requester)).rejects.toMatchObject({
       code: 'PRESCRIPTION_ITEM_INCOMPLETE',
     });
+  });
+
+  it('PR-040 rechaza emitir cuando el prescriptor no tiene teléfono de contacto permanente', async () => {
+    // Lo que el paciente tiene que hacer a las tres de la mañana ante un signo
+    // de alarma es llamar a alguien: sin número no hay receta que emitir.
+    repository.snapshot = aSnapshot({
+      prescriber: { ...aSnapshot().prescriber, contactPhone: null },
+    });
+
+    await expect(service.issue(PRESCRIPTION, requester)).rejects.toMatchObject({
+      code: 'PRESCRIBER_CONTACT_REQUIRED',
+    });
+
+    // Control positivo: el mismo prescriptor con su teléfono emite.
+    repository.snapshot = aSnapshot();
+    await expect(service.issue(PRESCRIPTION, requester)).resolves.toMatchObject(
+      {
+        status: 'ACTIVE',
+      },
+    );
+  });
+
+  it('PR-038 PR-039 rechaza emitir sin signos de alarma ni recomendaciones, nombrando los dos campos', async () => {
+    repository.snapshot = aSnapshot({
+      warningSigns: null,
+      nonPharmacologicalAdvice: '',
+    });
+
+    const refusal = await service
+      .issue(PRESCRIPTION, requester)
+      .catch((error: unknown) => error);
+
+    expect(refusal).toMatchObject({ code: 'PRESCRIPTION_ITEM_INCOMPLETE' });
+    expect(
+      (refusal as { fieldErrors: { field: string }[] }).fieldErrors.map(
+        (fieldError) => fieldError.field,
+      ),
+    ).toEqual(['warningSigns', 'nonPharmacologicalAdvice']);
   });
 
   it('PR-020 emite con un código de verificación, y nunca con uno secuencial', async () => {
@@ -568,6 +618,7 @@ describe('el servicio de recetas', () => {
         givenName: 'Ana',
         familyName: 'Villacís',
         acessRegistration: 'ACESS-11223',
+        contactPhone: '0991234567',
       },
     };
 

@@ -1,3 +1,4 @@
+import { admitsPrescribing } from '../domain/prescription';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
@@ -6,7 +7,9 @@ import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.serv
 import { assertOffFormularyJustified } from '../domain/prescription-content';
 import {
   ConceptNotPrescribableError,
+  ControlledSubstanceNotPrescribableError,
   PrescriptionEncounterNotFoundError,
+  PrescriptionEncounterNotOpenError,
   PrescriptionNotEditableError,
   PrescriptionNotFoundError,
 } from '../domain/prescription.errors';
@@ -76,6 +79,9 @@ const PRESCRIPTION_SELECT = {
   status: true,
   issuedAt: true,
   verificationCode: true,
+  sequenceNumber: true,
+  warningSigns: true,
+  nonPharmacologicalAdvice: true,
   createdAt: true,
   // PR-011. The three columns of the discard register, minus the account:
   // `discarded_by_id` is the accountable «quién» and belongs in the trail, not
@@ -109,6 +115,8 @@ interface ConceptRow {
   system_code: string;
   display: string;
   in_force: boolean;
+  /** PR-070. `attributes.controlled` of the CNMB concept. */
+  controlled: boolean;
 }
 
 /** The `PrescriptionRepository` adapter. */
@@ -171,14 +179,29 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
   /** PR-003, PR-007 to PR-009. Writes the prescription and its lines. */
   async create(prescription: NewPrescription): Promise<PrescriptionView> {
     const row = await this.prisma.$transaction(async (tx) => {
+      /**
+       * THE ATTENTION'S ROW, LOCKED FIRST. Agenda locks it FOR UPDATE when
+       * reception marks «se fue sin ser atendido» or the doctor annuls the
+       * attention; locking it here serialises the two, and every read below
+       * —this transaction is READ COMMITTED— sees the attention as it ended
+       * up. Without it, a write that read «open» an instant before the
+       * annulment committed lands in an annulled attention.
+       */
+      await tx.$queryRaw`SELECT id FROM "encounter" WHERE id = ${prescription.encounterId}::uuid FOR UPDATE`;
+
       const encounter = await tx.encounter.findFirst({
         where: {
           id: prescription.encounterId,
           ...encounterSiteFilter(prescription.sites),
         },
-        select: { id: true },
+        select: { id: true, siteId: true, status: true },
       });
       if (!encounter) throw new PrescriptionEncounterNotFoundError();
+      // PR-002, judged again on the locked row: the service's check ran before
+      // this transaction and could be stale.
+      if (!admitsPrescribing(encounter.status)) {
+        throw new PrescriptionEncounterNotOpenError(encounter.status);
+      }
 
       /**
        * PR-007, PR-008. Every concept resolved in ONE statement inside this
@@ -231,6 +254,18 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
           throw new ConceptNotPrescribableError(line);
         }
 
+        /**
+         * PR-070. A narcotic or psychotropic is prescribed on the ACESS's own
+         * pre-printed pad, under the doctor's custody, and its original stays
+         * at the pharmacy. A document from here would not be that receta, so
+         * not even a draft is composed. The mark is
+         * `catalog_concept.attributes.controlled`: which medicines carry it
+         * comes with the real CNMB (D-084).
+         */
+        if (concept.controlled) {
+          throw new ControlledSubstanceNotPrescribableError(line);
+        }
+
         return {
           conceptId: item.conceptId,
           /**
@@ -249,6 +284,11 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
         data: {
           encounterId: prescription.encounterId,
           prescriberId: prescription.prescriberId,
+          // PR-020. `prescription_site_assigned` takes it from the attention
+          // whatever is sent; sending the right one keeps Prisma's type honest.
+          siteId: encounter.siteId,
+          warningSigns: prescription.warningSigns,
+          nonPharmacologicalAdvice: prescription.nonPharmacologicalAdvice,
           // PR-003. Born `DRAFT` with no instant, which
           // `prescription_issued_coherence` also guarantees.
           items: { create: items },
@@ -288,6 +328,22 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
     decide: (snapshot: IssueSnapshot) => IssuePlan,
   ): Promise<PrescriptionView> {
     const row = await this.prisma.$transaction(async (tx) => {
+      /**
+       * THE ATTENTION'S ROW, LOCKED FIRST. Agenda locks it FOR UPDATE when
+       * reception marks «se fue sin ser atendido» or the doctor annuls the
+       * attention; locking it here serialises the two, and every read below
+       * —this transaction is READ COMMITTED— sees the attention as it ended
+       * up. Without it, a write that read «open» an instant before the
+       * annulment committed lands in an annulled attention.
+       * The prescription names its attention, so the lock goes through it.
+       */
+      await tx.$queryRaw`
+        SELECT e.id FROM "encounter" e
+          JOIN "prescription" p ON p.encounter_id = e.id
+         WHERE p.id = ${query.prescriptionId}::uuid
+           FOR UPDATE OF e
+      `;
+
       const current = await tx.prescription.findFirst({
         where: { id: query.prescriptionId, ...siteFilter(query.sites) },
         select: {
@@ -295,11 +351,14 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
           encounter: {
             select: {
               patientId: true,
+              status: true,
               site: { select: { parish: { select: { parentId: true } } } },
             },
           },
           prescriber: {
             select: {
+              // PR-040. Of the clinical profile, not of the account.
+              emergencyContactPhone: true,
               user: {
                 select: { acessRegistration: true, acessExpiresOn: true },
               },
@@ -308,6 +367,11 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
         },
       });
       if (!current) throw new PrescriptionNotFoundError();
+      // PR-002. An attention annulled or abandoned while the draft waited
+      // issues nothing: the locked row says so.
+      if (!admitsPrescribing(current.encounter.status)) {
+        throw new PrescriptionEncounterNotOpenError(current.encounter.status);
+      }
 
       const view = toPrescriptionView(current);
 
@@ -346,14 +410,46 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
         select: { id: true, substanceConceptId: true, substanceText: true },
       });
 
+      /**
+       * PR-070 AGAIN, AT THE ISSUE: «no generar, imprimir NI NUMERAR». A
+       * draft composed before its concept carried the mark would otherwise
+       * take a number of the ACESS series here.
+       *
+       * ⚠️ IT READS THE LINE'S OWN CONCEPT. A CNMB republication that creates
+       * a NEW version of the concept (D-084) is not seen through an old draft;
+       * when the real import exists, this has to look up the code in force.
+       */
+      const conceptIds = view.items
+        .map((item) => item.conceptId)
+        .filter((id): id is string => id !== null);
+      if (conceptIds.length > 0) {
+        const controlled = new Set(
+          (
+            await tx.$queryRaw<{ id: string }[]>`
+              SELECT id::text AS id FROM catalog_concept
+               WHERE id = ANY(${conceptIds}::uuid[])
+                 AND (attributes ->> 'controlled') = 'true'
+            `
+          ).map((row) => row.id),
+        );
+        const line = view.items.findIndex(
+          (item) => item.conceptId !== null && controlled.has(item.conceptId),
+        );
+        if (line >= 0)
+          throw new ControlledSubstanceNotPrescribableError(line + 1);
+      }
+
       const plan = decide({
         status: view.status,
+        warningSigns: view.warningSigns,
+        nonPharmacologicalAdvice: view.nonPharmacologicalAdvice,
         items: view.items.map(toItemContent),
         allergies,
         cityOfPrescription: canton?.display ?? null,
         prescriber: {
           acessRegistration: current.prescriber.user.acessRegistration,
           acessExpiresOn: current.prescriber.user.acessExpiresOn,
+          contactPhone: current.prescriber.emergencyContactPhone,
         },
       });
 
@@ -532,6 +628,7 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
         },
         prescriber: {
           select: {
+            emergencyContactPhone: true,
             user: {
               select: {
                 firstName: true,
@@ -574,6 +671,7 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
         givenName: row.prescriber.user.firstName,
         familyName: row.prescriber.user.lastName,
         acessRegistration: row.prescriber.user.acessRegistration,
+        contactPhone: row.prescriber.emergencyContactPhone,
       },
     };
   }
@@ -621,7 +719,9 @@ async function conceptsForEncounter(
            cs."code"::text    AS system_code,
            cc."display"::text AS display,
            (cc."valid_period" @> (e."started_at" AT TIME ZONE 'America/Guayaquil')::date)
-                              AS in_force
+                              AS in_force,
+           (cc."attributes" ->> 'controlled') = 'true'
+                              AS controlled
       FROM "encounter" AS e
       JOIN "catalog_concept" AS cc
         ON cc."id" = ANY(${[...new Set(conceptIds)]}::uuid[])
@@ -693,6 +793,9 @@ function toPrescriptionView(row: PrescriptionRow): PrescriptionView {
     status: row.status,
     issuedAt: row.issuedAt,
     verificationCode: row.verificationCode,
+    sequenceNumber: row.sequenceNumber,
+    warningSigns: row.warningSigns,
+    nonPharmacologicalAdvice: row.nonPharmacologicalAdvice,
     createdAt: row.createdAt,
     discardedAt: row.discardedAt,
     discardReason: row.discardReason,

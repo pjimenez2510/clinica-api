@@ -22,19 +22,18 @@ const ITEM_STATUS = z.enum([
 ]);
 
 /**
- * ORD-002, ORD-004. One line of the request.
+ * ORD-002, ORD-004. One line of the request: the exam.
  *
- * ⚠️ TWO IDENTIFIERS WHERE THERE SHOULD BE ONE, and it is written down rather
- * than hidden: **falta esquema (ORD-004)**. `exam_definition` has no
- * `concept_id` and `service_order_item.concept_id` is `NOT NULL`, so the
- * tariff concept has to travel beside the orderable. The relation is fixed and
- * belongs on the exam; the day the column exists, `conceptId` leaves this
- * contract.
+ * ⚠️ NO `conceptId`. The tariff service is the exam's own
+ * (`exam_definition.tariff_code`), resolved by the server on the clinical date
+ * of the attention. `.strict()` so a client still sending one hears about it
+ * instead of believing it chose the price.
  */
-export const orderLineSchema = z.object({
-  examDefinitionId: z.uuid('Seleccione el examen en el catálogo'),
-  conceptId: z.uuid('Seleccione la prestación en el tarifario'),
-});
+export const orderLineSchema = z
+  .object({
+    examDefinitionId: z.uuid('Seleccione el examen en el catálogo'),
+  })
+  .strict();
 
 /**
  * ORD-001 to ORD-006. Emitting one order.
@@ -86,11 +85,9 @@ export const orderItemSchema = z.object({
 /**
  * ORD-009. One order as a client reads it.
  *
- * ⚠️ NO `orderNumber`, AND ITS ABSENCE IS ORD-006 MADE VISIBLE. The A.M.
- * 00002393 art. 43 requires orders «codificadas de manera consecutiva» and
- * `service_order` has no such column. The technical id is served because a
- * client needs to address the row; it is NOT the legal number and is not
- * presented as one.
+ * `number` is ORD-006, the legal number of the A.M. 00002393 art. 43:
+ * consecutive per site and printed on the request. The technical id is served
+ * because a client needs to address the row; it is NOT the legal number.
  */
 export const serviceOrderSchema = z.object({
   id: z.uuid(),
@@ -98,6 +95,8 @@ export const serviceOrderSchema = z.object({
   siteId: z.uuid(),
   patientId: z.uuid(),
   orderedById: z.uuid(),
+  /** ORD-006. Consecutive per site; assigned by the database. */
+  number: z.number().int().positive(),
   category: CATEGORY,
   priority: PRIORITY,
   clinicalNoteText: z.string().nullable(),
@@ -155,6 +154,8 @@ export class PendingOrdersQueryDto extends createZodDto(
  */
 export const pendingOrderSchema = z.object({
   orderId: z.uuid(),
+  /** ORD-006. What a report that comes back on paper quotes. */
+  orderNumber: z.number().int().positive(),
   itemId: z.uuid(),
   siteId: z.uuid(),
   patientId: z.uuid(),

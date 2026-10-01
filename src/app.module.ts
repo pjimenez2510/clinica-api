@@ -9,6 +9,7 @@ import { AgendaModule } from './modules/agenda/agenda.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { CatalogsModule } from './modules/catalogs/catalogs.module';
+import { CertificatesModule } from './modules/certificates/certificates.module';
 import { ConfigurationModule } from './modules/configuration/configuration.module';
 import { DocumentsModule } from './modules/documents/documents.module';
 import { PrivacyModule } from './modules/privacy/privacy.module';
@@ -98,6 +99,7 @@ import { buildLoggerConfig } from './shared/observability/logger.config';
     EncounterModule,
     OrdersModule,
     PrescriptionModule,
+    CertificatesModule,
     SpecialtiesModule,
     OrganizationModule,
     StaffModule,

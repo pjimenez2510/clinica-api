@@ -1,3 +1,8 @@
+import { composeForm117 } from '../../../shared/domain/form-117/form-117';
+import {
+  FORM_117_SOURCE_SELECT,
+  toForm117Source,
+} from '../../../shared/infrastructure/prisma/form-117-source';
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
@@ -125,6 +130,7 @@ const PATIENT_SELECT = {
  */
 const PRACTITIONER_SELECT = {
   mspCode: true,
+  emergencyContactPhone: true,
   user: {
     select: { firstName: true, lastName: true, acessRegistration: true },
   },
@@ -147,6 +153,7 @@ function toPractitioner(row: PractitionerRow): PractitionerIdentity {
     fullName: `${row.user.lastName} ${row.user.firstName}`,
     acessRegistration: row.user.acessRegistration,
     mspCode: row.mspCode,
+    contactPhone: row.emergencyContactPhone,
     seal: toStoredImage(row.sealImage),
     signature: toStoredImage(row.signatureImage),
   };
@@ -323,11 +330,15 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
   }
 
   /**
-   * DOC-094. A receta or a certificate by its code. Only FILED states: a draft
-   * receta is not a document anybody can be holding. The establishment's trade
-   * name, as the header printed it.
+   * DOC-094. A receta, a certificate or an order by its code. Only FILED
+   * states of a receta: a draft is not a document anybody can be holding. The
+   * establishment's trade name, as the header printed it.
    */
   async findForVerification(code: string): Promise<VerificationFacts | null> {
+    // Every code is generated in capitals; a pharmacy may type it in lowercase.
+    // Matching the capitals EXACTLY is what lets the unique index answer,
+    // instead of three scans per public request.
+    const exact = code.toUpperCase();
     const place = {
       select: {
         name: true,
@@ -338,8 +349,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
 
     const prescription = await this.prisma.prescription.findFirst({
       where: {
-        // A pharmacy may type the code from the paper in lowercase.
-        verificationCode: { equals: code, mode: 'insensitive' },
+        verificationCode: exact,
         status: { in: ['ACTIVE', 'COMPLETED', 'CANCELLED'] },
         issuedAt: { not: null },
       },
@@ -365,7 +375,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
     }
 
     const certificate = await this.prisma.medicalCertificate.findFirst({
-      where: { verificationCode: { equals: code, mode: 'insensitive' } },
+      where: { verificationCode: exact },
       select: {
         issuedAt: true,
         revokedAt: true,
@@ -373,16 +383,43 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         encounter: { select: { site: place } },
       },
     });
-    if (certificate === null) return null;
-    const site = certificate.encounter.site;
+    if (certificate !== null) {
+      const site = certificate.encounter.site;
+      return {
+        kind: 'MEDICAL_CERTIFICATE',
+        issuedAt: certificate.issuedAt,
+        annulled: certificate.revokedAt !== null,
+        annulledAt: certificate.revokedAt,
+        establishmentName: nameOf(site),
+        siteName: site.name,
+        practitionerName: `${certificate.issuedBy.user.lastName} ${certificate.issuedBy.user.firstName}`,
+      };
+    }
+
+    // ORD-006, D-095. The order prints its code too, and the laboratory that
+    // scans it must get an answer, not «no document has this code».
+    const order = await this.prisma.serviceOrder.findFirst({
+      where: { verificationCode: exact },
+      select: {
+        requestedAt: true,
+        orderedBy: signer,
+        site: place,
+        items: { select: { status: true } },
+      },
+    });
+    if (order === null) return null;
     return {
-      kind: 'MEDICAL_CERTIFICATE',
-      issuedAt: certificate.issuedAt,
-      annulled: certificate.revokedAt !== null,
-      annulledAt: certificate.revokedAt,
-      establishmentName: nameOf(site),
-      siteName: site.name,
-      practitionerName: `${certificate.issuedBy.user.lastName} ${certificate.issuedBy.user.firstName}`,
+      kind: 'SERVICE_ORDER',
+      issuedAt: order.requestedAt,
+      // Nothing left to perform: every exam was cancelled. The order does not
+      // record WHEN.
+      annulled:
+        order.items.length > 0 &&
+        order.items.every((item) => item.status === 'CANCELLED'),
+      annulledAt: null,
+      establishmentName: nameOf(order.site),
+      siteName: order.site.name,
+      practitionerName: `${order.orderedBy.user.lastName} ${order.orderedBy.user.firstName}`,
     };
   }
 
@@ -406,6 +443,9 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         status: true,
         issuedAt: true,
         verificationCode: true,
+        sequenceNumber: true,
+        warningSigns: true,
+        nonPharmacologicalAdvice: true,
         encounter: {
           select: {
             siteId: true,
@@ -468,6 +508,9 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         // somebody sees rather than a city somebody invented.
         city: await this.cantonOf(row.encounter.site.parish),
         verificationCode: row.verificationCode,
+        sequenceNumber: row.sequenceNumber,
+        warningSigns: row.warningSigns,
+        nonPharmacologicalAdvice: row.nonPharmacologicalAdvice,
         patient: toPatient(
           row.encounter.patient,
           row.encounter.ageYears,
@@ -535,6 +578,8 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       select: {
         id: true,
         siteId: true,
+        number: true,
+        verificationCode: true,
         requestedAt: true,
         category: true,
         priority: true,
@@ -548,16 +593,35 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
           },
         },
         orderedBy: { select: PRACTITIONER_SELECT },
-        items: { select: { testDisplay: true, status: true } },
+        items: {
+          orderBy: { createdAt: 'asc' },
+          select: { testCode: true, testDisplay: true, status: true },
+        },
       },
     });
     if (row === null) return null;
+
+    /**
+     * DOC-072. The specimen and the patient's preparation of each exam, by its
+     * FROZEN code: an exam retired since is still resolved, and one the
+     * catalogue no longer has prints a dash rather than an invented specimen.
+     */
+    const exams = new Map(
+      (
+        await this.prisma.examDefinition.findMany({
+          where: { code: { in: row.items.map((item) => item.testCode) } },
+          select: { code: true, specimenType: true, patientPreparation: true },
+        })
+      ).map((exam) => [exam.code, exam]),
+    );
 
     return {
       kind: 'SERVICE_ORDER',
       data: {
         subjectId: row.id,
         siteId: row.siteId,
+        number: row.number,
+        verificationCode: row.verificationCode,
         requestedAt: row.requestedAt,
         category: row.category,
         priority: row.priority,
@@ -573,7 +637,10 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         })),
         orderedBy: toPractitioner(row.orderedBy),
         items: row.items.map((item) => ({
+          code: item.testCode,
           display: item.testDisplay,
+          specimen: exams.get(item.testCode)?.specimenType ?? null,
+          preparation: exams.get(item.testCode)?.patientPreparation ?? null,
           status: item.status,
         })),
       },
@@ -582,7 +649,11 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
 
   // ── medical certificate ──────────────────────────────────────────────────
 
-  /** The certificate, scoped by the attention's site. */
+  /**
+   * DOC-075, CER-020 to CER-037. The certificate as form 117, scoped by its
+   * site. The content is `composeForm117`'s —the same function the
+   * certificate's own screen reads— and this adapter only gathers its source.
+   */
   private async findCertificate(
     subjectId: string,
     sites: SiteScopeFilter,
@@ -590,28 +661,25 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
     const row = await this.prisma.medicalCertificate.findFirst({
       where: {
         id: subjectId,
-        encounter: sites === 'all' ? {} : { siteId: { in: [...sites] } },
+        ...(sites === 'all' ? {} : { siteId: { in: [...sites] } }),
       },
       select: {
-        id: true,
-        type: true,
-        issuedAt: true,
-        restFrom: true,
-        restTo: true,
-        includeDiagnosis: true,
-        body: true,
-        verificationCode: true,
-        revokedAt: true,
-        patient: { select: PATIENT_SELECT },
-        encounter: {
+        ...FORM_117_SOURCE_SELECT,
+        siteId: true,
+        // The identity the frame and the seal box print; the 117 itself reads
+        // its own copy above.
+        issuedBy: {
           select: {
-            siteId: true,
-            ageYears: true,
-            ageMonths: true,
-            diagnoses: { select: DIAGNOSIS_SELECT, orderBy: { rank: 'asc' } },
+            ...FORM_117_SOURCE_SELECT.issuedBy.select,
+            ...PRACTITIONER_SELECT,
+            user: {
+              select: {
+                ...FORM_117_SOURCE_SELECT.issuedBy.select.user.select,
+                acessRegistration: true,
+              },
+            },
           },
         },
-        issuedBy: { select: PRACTITIONER_SELECT },
       },
     });
     if (row === null) return null;
@@ -620,24 +688,8 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       kind: 'MEDICAL_CERTIFICATE',
       data: {
         subjectId: row.id,
-        siteId: row.encounter.siteId,
-        type: row.type,
-        issuedAt: row.issuedAt,
-        restFrom: row.restFrom,
-        restTo: row.restTo,
-        includeDiagnosis: row.includeDiagnosis,
-        diagnoses: row.encounter.diagnoses.map((diagnosis) => ({
-          code: diagnosis.cie10Code,
-          display: diagnosis.cie10Display,
-        })),
-        body: row.body,
-        verificationCode: row.verificationCode,
-        revokedAt: row.revokedAt,
-        patient: toPatient(
-          row.patient,
-          row.encounter.ageYears,
-          row.encounter.ageMonths,
-        ),
+        siteId: row.siteId,
+        form: composeForm117(toForm117Source(row)),
         issuedBy: toPractitioner(row.issuedBy),
       },
     };

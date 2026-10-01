@@ -5,6 +5,8 @@ import { extractText, getDocumentProxy } from 'unpdf';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { DocumentRenderFailedError } from '../domain/document.errors';
+import { composeLayout } from '../domain/document-layout';
+import { sampleSubject } from '../domain/document-samples';
 import { TEAR_OFF_HEIGHT_MM, millimetresToPoints } from '../domain/page-layout';
 import { PdfKitDocumentRenderer } from './pdfkit-document.renderer';
 import type { LayoutImages } from '../domain/document-rendering.port';
@@ -246,6 +248,99 @@ describe('DOC-070, DOC-071, DOC-073 la geometría de la página', () => {
     );
     expect(raw).not.toContain('/Count 1');
     expect(raw).toMatch(/\/Count [2-9]/);
+  });
+});
+
+describe('DOC-073 PR-038 una receta corriente cabe en una hoja', () => {
+  it('DOC-073 PR-038 PR-040 una línea con signos de alarma, teléfono y recomendaciones no abre una segunda página', async () => {
+    const issuedAt = new Date();
+    const composed = composeLayout(
+      sampleSubject('PRESCRIPTION', issuedAt),
+      {
+        siteName: 'Sede Centro',
+        siteLine: null,
+        verificationBaseUrl: 'https://clinica.example/verificar',
+        establishment: {
+          name: 'Centro de Especialidades Bahía',
+          ruc: '0993123456001',
+          addressLine: 'Av. 9 de Octubre 123',
+          phone: '04-2345678',
+          logo: null,
+          keepsAccounting: true,
+          specialTaxpayerResolution: null,
+          withholdingAgentResolution: null,
+          rimpeRegime: 'NONE',
+          tradeName: null,
+          email: null,
+          operatingPermit: null,
+          headOfficeAddress: null,
+        },
+      },
+      {
+        id: 'template-1',
+        kind: 'PRESCRIPTION',
+        version: 1,
+        accentColour: '#1f6f8b',
+        footerText: 'Clínica de especialidades · Guayaquil',
+        headerFields: [],
+        showEstablishmentRuc: true,
+        showEstablishmentAddress: true,
+        showEstablishmentPhone: true,
+        publishedAt: issuedAt,
+      },
+    );
+
+    const raw = (await renderer.render(composed, images, metadata)).toString(
+      'latin1',
+    );
+    expect(raw).toContain('/Count 1');
+  });
+});
+
+describe('DOC-101 la firma nunca queda sola en una página', () => {
+  it('DOC-101 CER-028 el título, los datos del profesional y la firma pasan juntos de página', async () => {
+    const closing = 'E. Datos del profesional responsable';
+    const caption = 'Firma (credencial del profesional en el sistema) y sello';
+    const pagesOf = async (filler: number): Promise<string[]> => {
+      const pdf = await renderer.render(
+        {
+          ...layout,
+          tearOff: null,
+          blocks: [
+            { kind: 'spacer', millimetres: filler },
+            { kind: 'heading', text: closing },
+            {
+              kind: 'fields',
+              columns: 3,
+              entries: [
+                { label: 'Fecha', value: '2026-10-01' }, // fecha-fija: texto impreso, no un instante
+                { label: 'Hora', value: '02:40' },
+                { label: 'Nombres y apellidos', value: 'Ana Torres' },
+                { label: 'Número de documento', value: '1710034065' },
+              ],
+            },
+            { kind: 'signature', caption, image: null },
+          ],
+        },
+        images,
+        metadata,
+      );
+      const proxy = await getDocumentProxy(new Uint8Array(pdf));
+      const { text } = await extractText(proxy, { mergePages: false });
+      return text;
+    };
+
+    let movedWhole = 0;
+    // Across the bottom edge of the first page, every few millimetres.
+    for (let filler = 170; filler <= 230; filler += 5) {
+      const pages = await pagesOf(filler);
+      const withHeading = pages.findIndex((page) => page.includes(closing));
+      const withBox = pages.findIndex((page) => page.includes('credencial'));
+      expect(withBox, `relleno de ${filler} mm`).toBe(withHeading);
+      if (withHeading === 1) movedWhole += 1;
+    }
+    // Control: the sweep does push the group to the second page.
+    expect(movedWhole).toBeGreaterThan(0);
   });
 });
 

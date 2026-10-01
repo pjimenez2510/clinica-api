@@ -80,7 +80,7 @@ async function anOrderedBloodCount(
     encounterId: scene.encounter.id,
     category: 'LABORATORY',
     priority: 'ROUTINE',
-    lines: [{ examDefinitionId: scene.bh.id, conceptId: scene.concept.id }],
+    lines: [{ examDefinitionId: scene.bh.id }],
     sites: 'all',
   });
 
@@ -153,7 +153,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
       encounterId: encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: she.bh.id, conceptId: she.concept.id }],
+      lines: [{ examDefinitionId: she.bh.id }],
       sites: 'all',
     });
     const his = await women.reports.register(
@@ -309,7 +309,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
       encounterId: otherEncounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: mine.bh.id, conceptId: mine.concept.id }],
+      lines: [{ examDefinitionId: mine.bh.id }],
       sites: 'all',
     });
 
@@ -440,7 +440,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.glucose.id, conceptId: scene.concept.id }], // prettier-ignore
+      lines: [{ examDefinitionId: scene.glucose.id }], // prettier-ignore
       sites: 'all',
     });
 
@@ -485,7 +485,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.glucose.id, conceptId: scene.concept.id }], // prettier-ignore
+      lines: [{ examDefinitionId: scene.glucose.id }], // prettier-ignore
       sites: 'all',
     });
 
@@ -648,7 +648,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.bh.id, conceptId: scene.concept.id }],
+      lines: [{ examDefinitionId: scene.bh.id }],
       sites: 'all',
     });
 
