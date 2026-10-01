@@ -165,21 +165,21 @@ lactante de cuatro meses y comprobar que el documento dice «4» con la condici�
   sea `ATTENDANCE`, **NO DEBERÁ** admitir período.
   `medical_certificate_rest_range` lo garantiza una segunda vez en la base.
 
-  > ⚠️ **[NECESITA ACLARACIÓN]** — D-075. Ni el inicio del reposo anterior a la
-  > fecha de la atención (un reposo retroactivo) ni un período de más de 30
-  > días (el IESS valida reposos de 1 a 30) se rechazan hoy. Las dos son
-  > política clínica y legal, no se deciden aquí.
+  > Los límites del período —el reposo retroactivo y el tope de 30 días— son
+  > CER-030 y CER-031 (D-075, resuelta).
 
-- **CER-007** — La petición DEBERÁ decir **explícitamente** si el diagnóstico se
-  incluye en el certificado, y SI no lo dice ENTONCES el sistema DEBERÁ
-  rechazarla con un error de validación sobre ese campo. El sistema **NO
-  DEBERÁ** suponer un valor.
+- **CER-007** — MIENTRAS el tipo sea `MEDICAL_REST`, el certificado DEBERÁ
+  llevar **siempre** el diagnóstico, y SI la petición dice que no ENTONCES el
+  sistema DEBERÁ rechazarla con un error de validación sobre ese campo.
+  MIENTRAS el tipo sea `ATTENDANCE`, la petición DEBERÁ decir
+  **explícitamente** si el diagnóstico se incluye —lo decide el paciente—, y el
+  sistema **NO DEBERÁ** suponer un valor.
 
-  > ⚠️ **[NECESITA ACLARACIÓN]** — D-075. El instructivo hace obligatorio el
-  > bloque D y el IESS exige el CIE-10 en el reposo; la LOPDP y el esquema
-  > (`include_diagnosis` por defecto `false`) protegen al paciente cuyo
-  > empleador lee el papel. Mientras el autor no decida, **el médico contesta
-  > en cada certificado** y nadie hereda un valor por defecto.
+  > **D-075, resuelta por el autor el 30-09-2026.** El IESS exige el CIE-10 en
+  > el certificado de reposo y no lo valida sin él; el de asistencia lo lee un
+  > empleador y la decisión es del paciente (LOPDP arts. 25 y 26.b). Lo que
+  > protege el papel que lleva diagnóstico es la leyenda «CONFIDENCIAL»
+  > (CER-033).
 
 - **CER-008** — SI la petición incluye el diagnóstico y la atención no tiene
   ninguno registrado, ENTONCES el sistema DEBERÁ rechazar la emisión con
@@ -206,9 +206,8 @@ lactante de cuatro meses y comprobar que el documento dice «4» con la condici�
   > 'MEDICAL_CERTIFICATE')`—, `medical_certificate_site_number_unique` y
   > `medical_certificate_number_immutable`.
   >
-  > ⚠️ **[NECESITA ACLARACIÓN]** — D-074. ¿Por sede (unicódigo del MSP) o por
-  > establecimiento (persona jurídica)? Se construye por sede, que es el
-  > «establecimiento de salud» del MSP con su propio unicódigo.
+  > **D-074, resuelta por el autor:** por sede, que es el «establecimiento de
+  > salud» del MSP con su propio unicódigo.
 
 - **CER-010** — El certificado DEBERÁ ser legible por su identificador y por la
   atención de la que nació, y SI no existe o es de una sede fuera del alcance de
@@ -228,7 +227,8 @@ lactante de cuatro meses y comprobar que el documento dice «4» con la condici�
 - **CER-013** — CUANDO se emita un certificado de reposo, la respuesta DEBERÁ
   incluir el **último día para validarlo en el IESS** —ocho días después de
   `rest_to`, en fecha ecuatoriana— y el aviso de que **no aplica** a afiliados
-  voluntarios, jubilados ni Seguro Social Campesino.
+  voluntarios, **menores de edad**, jubilados ni Seguro Social Campesino
+  (IESS, validación digital, 2025).
 
   > REQ-072 y REQ-073. La ficha no guarda el tipo de afiliación, así que el
   > aviso se da siempre en un certificado de reposo, no sólo a quien no le
@@ -284,9 +284,14 @@ PR-030).
   **NO**, nunca vacío.
 
 - **CER-026** — Bloque C: MIENTRAS el reposo sea SÍ, el certificado DEBERÁ
-  servir las **horas** de reposo —días del período, ambos extremos incluidos,
-  por veinticuatro— **en números y en letras**, y las fechas desde y hasta **en
-  números y en letras**. MIENTRAS sea NO, esos campos DEBERÁN servirse «NA».
+  servir el **total de días** de reposo —ambos extremos incluidos— **en números
+  y en letras**, y las fechas desde y hasta **en números y en letras**.
+  MIENTRAS sea NO, esos campos DEBERÁN servirse «NA». El sistema **NO DEBERÁ**
+  expresar el reposo en horas.
+
+  > **D-075.** La casilla del 117 dice «horas», y el IESS rechaza el
+  > certificado que expresa el reposo en horas («días en números y letras, no en
+  > horas», requisitos para evitar devoluciones, 2023). Se sirven días.
 
 - **CER-027** — Bloque D: DONDE el certificado incluya el diagnóstico, DEBERÁ
   servir **todos** los diagnósticos de la atención con su código CIE, el
@@ -306,6 +311,71 @@ PR-030).
   > campo de texto libre, y un párrafo libre es por donde un certificado dice
   > lo que el formulario no permite decir.
 
+### 3. Lo que el IESS exige además del 117 (D-075, resuelta el 30-09-2026)
+
+- **CER-030** — SI el reposo empieza **antes** de la fecha clínica de la
+  atención, ENTONCES el sistema DEBERÁ exigir un **motivo escrito** de al menos
+  diez caracteres, guardarlo con el certificado y rechazar la emisión sin él con
+  `CERTIFICATE_BACKDATING_REASON_REQUIRED`.
+
+  > Un certificado retroactivo es la forma típica del certificado de favor; el
+  > autor decidió que se admita sólo con el porqué escrito, que queda en la
+  > historia. **Esquema:** `medical_certificate.rest_backdating_reason`. Que
+  > se exija justo cuando el reposo empieza antes del día de la atención no lo
+  > puede expresar un `CHECK` sin leer la atención, así que lo garantiza el
+  > servicio; la base sólo impide guardarlo vacío.
+
+- **CER-031** — SI el período de reposo pasa de **30 días**, ENTONCES el sistema
+  DEBERÁ rechazar la emisión con `CERTIFICATE_REST_TOO_LONG`. Un reposo más
+  largo se cubre con certificados sucesivos.
+
+- **CER-032** — CUANDO se emita un reposo de más de **3** días, y otra vez de más
+  de **7**, la respuesta DEBERÁ llevar un **aviso**, sin impedir la emisión.
+
+  > ⚠️ **[NECESITA ACLARACIÓN]** — el texto del aviso. D-075 cita un instructivo
+  > del IESS de 2014 con esos topes, sin verificar su vigencia; el aviso se
+  > construye con los dos umbrales y un texto provisional que lo dice.
+
+- **CER-033** — DONDE el certificado lleve diagnóstico, el documento DEBERÁ
+  llevar la leyenda **«CONFIDENCIAL»** (A.M. 5216-A art. 33).
+
+- **CER-034** — MIENTRAS el tipo sea `MEDICAL_REST`, el certificado DEBERÁ
+  llevar el **tipo de contingencia** —enfermedad general, accidente de trabajo,
+  enfermedad profesional o maternidad—, y SI falta ENTONCES el sistema DEBERÁ
+  rechazarlo con un error de validación sobre ese campo.
+
+  > ⚠️ La lista de contingencias sale de la página del IESS de 2023 que D-075
+  > cita; confirmarla con su formulario es lo primero que se mira si el IESS
+  > devuelve un certificado.
+
+- **CER-035** — MIENTRAS la contingencia sea **maternidad**, el certificado
+  DEBERÁ llevar las fechas de **ingreso, parto y alta**, cada una en números y en
+  letras, y SI falta alguna ENTONCES el sistema DEBERÁ rechazarlo nombrando el
+  campo.
+
+- **CER-036** — El certificado DEBERÁ servir el **lugar de emisión** —la ciudad,
+  que es el cantón de la parroquia de la sede, como PR-021—, y SI la sede no
+  tiene parroquia ENTONCES el sistema DEBERÁ rechazar la emisión con
+  `CERTIFICATE_ESTABLISHMENT_INCOMPLETE`.
+
+- **CER-037** — El certificado DEBERÁ servir, para el membrete, la **dirección,
+  el teléfono y el correo** de la sede o, en su defecto, del establecimiento.
+
+  > El membrete lo dibuja el marco común de los documentos
+  > (`feat/documentos-identidad`); este módulo sirve los datos.
+
+- **CER-038** — CUANDO se emita un certificado de reposo, el certificado DEBERÁ
+  servir la **empresa**, el **puesto de trabajo**, el **domicilio** y el
+  **teléfono** del paciente leídos de su ficha, y SI falta alguno ENTONCES el
+  sistema DEBERÁ rechazar la emisión con `CERTIFICATE_PATIENT_DATA_REQUIRED`,
+  nombrando cada campo.
+
+  > **Se piden al emitir y se guardan en la ficha** (D-075): la pantalla
+  > corrige la ficha por la ruta de corrección de `patients` —con su rastro— y
+  > después emite. Este módulo sólo lee. ⚠️ **Falta esquema:**
+  > `patient.employer_name` y `patient.job_title`; domicilio y teléfono ya
+  > existen.
+
 ---
 
 ## Criterios de éxito
@@ -319,9 +389,8 @@ PR-030).
 ## Supuestos
 
 1. La clínica es **ambulatoria**: no hay ingresos ni altas hospitalarias.
-2. Un período de reposo se expresa en **días enteros**. Un reposo de horas
-   sueltas (cuatro horas tras una extracción) no cabe en `rest_from`/`rest_to`:
-   ⚠️ **Falta esquema** el día que haga falta, y entra en D-075.
+2. Un período de reposo se expresa en **días enteros**: no hay reposo por horas
+   (D-075).
 3. El documento de identidad del paciente es el que la ficha ya tiene
    (`patients`), sea cédula, pasaporte o carné de refugiado.
 
@@ -337,6 +406,10 @@ PR-030).
 | `CERTIFICATE_DIAGNOSIS_REQUIRED` | 422 | CER-008 |
 | `CERTIFICATE_NOT_FOUND` | 404 | CER-010 |
 | `CERTIFICATE_ALREADY_REVOKED` | 409 | CER-012 |
+| `CERTIFICATE_BACKDATING_REASON_REQUIRED` | 422 | CER-030 |
+| `CERTIFICATE_REST_TOO_LONG` | 422 | CER-031 |
+| `CERTIFICATE_ESTABLISHMENT_INCOMPLETE` | 422 | CER-036 |
+| `CERTIFICATE_PATIENT_DATA_REQUIRED` | 422 | CER-038 |
 
 ## Esquema
 
@@ -348,6 +421,8 @@ Todo lo que faltaba está en `20261001043001_certificate_number_and_revocation`.
 | Contador por sede sin huecos, compartido con receta y orden | `document_counter (site_id, kind)` | CER-009, PR-020, ORD-006 — hecho |
 | `revoked_by_id` + `CHECK` de los tres juntos | `medical_certificate` | CER-011 — hecho |
 | Eliminar `body` | `medical_certificate` | CER-029 — hecho |
+| `contingency_type`, `rest_backdating_reason`, `maternity_admission_on`, `birth_on`, `maternity_discharge_on` | `medical_certificate` | CER-030, CER-034, CER-035 |
+| `employer_name`, `job_title` | `patient` | CER-038 — pendiente de coordinación con `feat/datos-consentimiento-arco` |
 
 ## Rutas
 
@@ -370,8 +445,6 @@ Todo lo que faltaba está en `20261001043001_certificate_number_and_revocation`.
 
 ## Preguntas abiertas
 
-- **D-074** — Numeración por sede o por establecimiento (CER-009, PR-020,
-  ORD-006).
-- **D-075** — Diagnóstico en el certificado, reposo retroactivo, más de 30 días
-  y reposo por horas (CER-006, CER-007, supuesto 2).
+- **D-074** y **D-075**, resueltas por el autor el 30-09-2026.
+- El texto del aviso de CER-032 y la lista de contingencias de CER-034.
 - **Institución del sistema** para una clínica privada (CER-020).
