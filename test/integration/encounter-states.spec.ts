@@ -604,6 +604,36 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
     },
   );
 
+  it('AG-149 BI-180 un certificado revocado, solo, no cuenta: la cita queda «se fue sin ser atendido» y caja no propone nada (D-104)', async () => {
+    const prisma = db();
+    const { entry, encounter, requester, ids } = await inTheWaitingRoom(prisma);
+    await prisma.medicalCertificate.create({
+      data: {
+        encounterId: encounter.id,
+        patientId: ids.patientId,
+        issuedById: ids.practitionerId,
+        type: 'ATTENDANCE',
+        body: 'Asistió a consulta',
+        verificationCode: `R-${encounter.id.slice(-12)}`,
+        revokedAt: new Date(),
+        revocationReason: 'Paciente equivocado',
+      },
+    });
+
+    await serviceOf(prisma).discontinue(
+      { encounterId: encounter.id, reason: 'Se retiró', origin: 'PATIENT', ...asAuthor }, // prettier-ignore
+      requester,
+    );
+
+    expect((await appointment(prisma, entry.id)).status).toBe(
+      'LEFT_WITHOUT_BEING_SEEN',
+    );
+    const acts = await new PrismaClinicalActsRepository(
+      prisma as unknown as PrismaService,
+    ).findEncounterActs({ encounterId: encounter.id, siteId: ids.siteId });
+    expect(acts?.clinicallyAttended).toBe(false);
+  });
+
   it('AG-149 con un acto clínico y la cita aún en sala, la cita queda atendida pasando por «en atención»', async () => {
     const prisma = db();
     const { entry, encounter, requester } = await inTheWaitingRoom(prisma);
