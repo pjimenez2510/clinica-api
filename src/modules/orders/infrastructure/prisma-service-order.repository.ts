@@ -245,7 +245,15 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
         category: true,
         priority: true,
         requestedAt: true,
-        encounter: { select: { patientId: true } },
+        encounter: {
+          select: {
+            patientId: true,
+            // ORD-026. Read only when asked: the plain worklist never sees it.
+            patient: query.includePatientName
+              ? { select: { givenName: true, familyName: true } }
+              : false,
+          },
+        },
         items: {
           where: {
             completedAt: null,
@@ -287,6 +295,9 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
         testCode: item.testCode,
         testDisplay: item.testDisplay,
         requestedAt: order.requestedAt,
+        patientName: order.encounter.patient
+          ? `${order.encounter.patient.givenName} ${order.encounter.patient.familyName}`
+          : null,
         /**
          * ORD-022. `undefined` from the map — a code with no definition at all
          * — becomes `null`, «no hay plazo comprometido». It must not become a

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { PrismaExamCatalogueRepository } from '../../src/modules/orders/infrastructure/prisma-exam-catalogue.repository';
 import { PrismaServiceOrderRepository } from '../../src/modules/orders/infrastructure/prisma-service-order.repository';
+import { ServiceOrderService } from '../../src/modules/orders/application/service-order.service';
 import { PrismaPatientRepository } from '../../src/modules/patients/infrastructure/prisma-patient.repository';
 import { addDays, clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
@@ -464,6 +465,47 @@ describe('la orden de exámenes contra PostgreSQL', () => {
 
     expect(worklist).toHaveLength(1);
     expect(worklist[0]?.testCode).toBe('EX-BH');
+  });
+
+  /**
+   * D-068 C. El informe del recién nacido llega rotulado «RN de …» con la
+   * cédula de la madre; si la madre tiene pendiente el mismo examen, el
+   * resultado del bebé cabe en la orden de la madre. Con el nombre en la fila,
+   * quien tiene el papel ve a quién corresponde cada orden.
+   */
+  it('ORD-026 enseña el nombre de la paciente al buscar por cédula, y no en la cola sin filtro', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    await prisma.patientIdentifier.create({
+      data: { patientId: scene.patient.id, type: 'CEDULA', value: CEDULA },
+    });
+    await ordersOf(prisma).place({
+      encounterId: scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [{ examDefinitionId: scene.bh.id }],
+      sites: 'all',
+    });
+    const logger = { setContext: () => undefined, info: () => undefined };
+    const service = new ServiceOrderService(
+      ordersOf(prisma),
+      catalogueOf(prisma),
+      logger as never,
+    );
+    const requester = { userId: 'user-1', sites: 'all' as const };
+    const now = new Date();
+
+    const byCedula = await service.pending({ cedula: CEDULA, limit: 50 }, requester, now); // prettier-ignore
+    expect(byCedula).toHaveLength(1);
+    expect(byCedula[0]?.patientName).toBe(
+      `${scene.patient.givenName} ${scene.patient.familyName}`,
+    );
+
+    // ORD-024: la cola sin cédula la abre cualquiera con `record:read` en la
+    // sede, y no lleva a quién.
+    const unfiltered = await service.pending({ limit: 50 }, requester, now);
+    expect(unfiltered).toHaveLength(1);
+    expect(unfiltered[0]?.patientName).toBeNull();
   });
 
   it('ORD-081 encuentra la ficha por su cédula, y ninguna por una que nadie lleva', async () => {

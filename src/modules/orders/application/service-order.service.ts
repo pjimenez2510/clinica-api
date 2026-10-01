@@ -205,6 +205,13 @@ export class ServiceOrderService {
       category: request.category,
       examCode: request.examCode,
       chartId,
+      /**
+       * ORD-026, D-068 C. The name travels ONLY on the cedula path: whoever
+       * searches by it holds the person's document already, so the name tells
+       * them nothing new — and it is what lets them see that «RN de …» with
+       * the mother's cedula is not the mother's own pending blood count.
+       */
+      includePatientName: chartId !== undefined,
       now,
       limit: request.limit,
     });

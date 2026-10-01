@@ -264,6 +264,8 @@ describe('la emisión y el seguimiento de una orden', () => {
       'category',
       'chartId',
       'examCode',
+      // ORD-026: si la fila lleva el nombre, no por qué canal vuelve.
+      'includePatientName',
       'limit',
       'now',
       'sites',
