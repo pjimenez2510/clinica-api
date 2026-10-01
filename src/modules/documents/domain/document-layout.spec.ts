@@ -811,12 +811,16 @@ describe('DOC-075 el certificado sobre el formulario 117 y la plantilla aprobada
     },
   });
 
-  it('DOC-075 CER-020 CER-028 lleva los cinco bloques del 117, de la A a la E', () => {
-    const headings = composeLayout(certificate(), context, template)
-      .blocks.filter((block) => block.kind === 'heading')
-      .map((block) => (block.kind === 'heading' ? block.text : ''));
+  /** The 117's blocks, by their title. */
+  const sectionsOf = (layout: DocumentLayout) =>
+    layout.blocks.flatMap((block) => (block.kind === 'section' ? [block] : []));
 
-    expect(headings).toEqual([
+  it('DOC-075 DOC-105 CER-020 CER-028 lleva los cinco bloques del 117, de la A a la E, cada uno en su recuadro', () => {
+    const titles = sectionsOf(
+      composeLayout(certificate(), context, template),
+    ).map((section) => section.title);
+
+    expect(titles).toEqual([
       'A. Datos del establecimiento y usuario / paciente',
       'B. Certifico que',
       'C. Se recomienda',
@@ -825,32 +829,43 @@ describe('DOC-075 el certificado sobre el formulario 117 y la plantilla aprobada
     ]);
   });
 
-  it('DOC-075 CER-038 el reposo imprime los datos laborales del paciente bajo el bloque B', () => {
+  it('DOC-105 DOC-101 la firma y el sello van dentro del bloque E', () => {
     const layout = composeLayout(certificate(), context, template);
-    const { blocks } = layout;
-    const text = wholeText(layout);
+    const closing = sectionsOf(layout).at(-1);
+    expect(closing?.signature).toEqual({
+      caption: 'Firma (credencial del profesional en el sistema) y sello',
+      image: null,
+    });
+    // Nothing of the professional's is left outside the box.
+    expect(layout.blocks.map((block) => block.kind)).not.toContain('signature');
+  });
 
-    expect(text).toContain('Datos laborales del paciente');
-    for (const value of [
-      'Florícola del Valle',
-      'Supervisora de cultivo',
-      'Calle Sucre 4-12',
-      '0991234567',
-    ]) {
-      expect(text).toContain(value);
-    }
+  it('DOC-105 el diagnóstico es una tabla dentro del bloque D, con su código', () => {
+    const diagnosis = sectionsOf(
+      composeLayout(certificate(), context, template),
+    ).find((section) => section.title === 'D. Diagnóstico');
+    const table = diagnosis?.rows.find((row) => row.kind === 'table');
+    expect(table?.kind === 'table' ? table.rows : []).toEqual([
+      ['1', 'Rinofaringitis aguda', 'J00'],
+    ]);
+  });
 
-    // Bajo el bloque B y antes del C.
-    const order = blocks.map((block) =>
-      block.kind === 'heading'
-        ? block.text
-        : block.kind === 'paragraph'
-          ? block.text
-          : '',
+  it('DOC-075 CER-038 el reposo imprime los datos laborales del paciente en el bloque B', () => {
+    const layout = composeLayout(certificate(), context, template);
+    const certify = sectionsOf(layout).find(
+      (section) => section.title === 'B. Certifico que',
     );
-    const work = order.indexOf('Datos laborales del paciente');
-    expect(work).toBeGreaterThan(order.indexOf('B. Certifico que'));
-    expect(work).toBeLessThan(order.indexOf('C. Se recomienda'));
+    const cells = (certify?.rows ?? []).flatMap((row) =>
+      row.kind === 'cells' ? row.cells : [],
+    );
+    for (const [label, value] of [
+      ['Empresa', 'Florícola del Valle'],
+      ['Puesto de trabajo', 'Supervisora de cultivo'],
+      ['Domicilio', 'Calle Sucre 4-12'],
+      ['Teléfono', '0991234567'],
+    ]) {
+      expect(cells).toContainEqual(expect.objectContaining({ label, value }));
+    }
   });
 
   it('DOC-075 CER-038 el certificado de asistencia no imprime datos laborales', () => {
@@ -864,7 +879,7 @@ describe('DOC-075 el certificado sobre el formulario 117 y la plantilla aprobada
     const text = wholeText(
       composeLayout(certificate(attendance), context, template),
     );
-    expect(text).not.toContain('Datos laborales del paciente');
+    expect(text).not.toContain('Empresa=');
     expect(text).not.toContain('Florícola del Valle');
   });
 

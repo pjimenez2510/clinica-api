@@ -775,9 +775,12 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
   acabar a la misma altura.
 
 - **DOC-107** — El pintado **NO DEBERÁ** cambiar el contenido: cada documento
-  DEBERÁ seguir imprimiendo los mismos textos que antes de DOC-103 a DOC-106,
-  salvo las cabeceras repetidas que la plantilla quita (la clave de acceso en
-  texto sobre el código de barras y la fila «Subtotales · Valor»).
+  DEBERÁ seguir imprimiendo los mismos datos con las mismas etiquetas que antes
+  de DOC-103 a DOC-106. Solo desaparecen los rótulos que la plantilla no
+  repite: la clave de acceso en texto **sobre** el código de barras (sigue
+  debajo, y como número de autorización), la fila «Subtotales · Valor» y el
+  subtítulo «Datos laborales del paciente» (sus cuatro datos van en el bloque
+  B).
 
 ---
 

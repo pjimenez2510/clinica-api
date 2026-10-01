@@ -28,7 +28,12 @@ import type {
   PrescriptionPrintData,
   ServiceOrderPrintData,
 } from './document-source';
-import type { Block, DocumentLayout, LabelledValue } from './page-layout';
+import type {
+  Block,
+  DocumentLayout,
+  LabelledValue,
+  SectionRow,
+} from './page-layout';
 
 /**
  * DOC-070 to DOC-078. The four documents, composed into a layout.
@@ -525,159 +530,146 @@ export function composeCertificateLayout(
     });
   }
 
-  blocks.push(
-    {
-      kind: 'fields',
-      columns: 3,
-      entries: [
-        { label: 'Lugar de emisión', value: form.placeOfIssue },
-        {
-          label: 'Tipo',
-          value: CERTIFICATE_TYPE_LABEL[form.type] ?? NA,
-        },
-        { label: 'Contingencia', value: form.contingency },
-      ],
-    },
-    { kind: 'rule' },
+  /** One row of cells of a block: label, value and its share of the row. */
+  const cells = (
+    ...entries: (LabelledValue & { width?: number; strong?: boolean })[]
+  ): SectionRow => ({
+    kind: 'cells',
+    cells: entries.map((entry) => ({ ...entry, width: entry.width ?? 1 })),
+  });
 
-    // ── A. Datos del establecimiento y usuario / paciente.
-    {
-      kind: 'heading',
-      text: 'A. Datos del establecimiento y usuario / paciente',
-    },
-    {
-      kind: 'fields',
-      columns: 3,
-      entries: [
-        {
-          label: 'Institución del sistema',
-          value: form.establishment.institution,
-        },
-        { label: 'Unicódigo', value: form.establishment.mspUnicode },
-        { label: 'Establecimiento de salud', value: form.establishment.name },
-        {
-          label: 'Número de historia clínica única',
-          value: form.establishment.clinicalRecordNumber,
-        },
-        { label: 'Número de archivo', value: form.establishment.archiveNumber },
-      ],
-    },
+  // DOC-105. Each block of the 117 in its framed box, with its title bar; the
+  // titles are the form's (DOC-075), which the template abbreviates.
+  // ── A. Datos del establecimiento y usuario / paciente.
+  blocks.push({
+    kind: 'section',
+    title: 'A. Datos del establecimiento y usuario / paciente',
+    rows: [
+      cells(
+        { label: 'Institución del sistema', value: form.establishment.institution, width: 1.1 }, // prettier-ignore
+        { label: 'Unicódigo', value: form.establishment.mspUnicode, width: 0.8 }, // prettier-ignore
+        { label: 'Establecimiento de salud', value: form.establishment.name, width: 1.4 }, // prettier-ignore
+        { label: 'Número de historia clínica única', value: form.establishment.clinicalRecordNumber, width: 1.1 }, // prettier-ignore
+        { label: 'Número de archivo', value: form.establishment.archiveNumber, width: 0.9 }, // prettier-ignore
+      ),
+    ],
+  });
 
-    // ── B. Certifico que.
-    { kind: 'heading', text: 'B. Certifico que' },
-    {
-      kind: 'fields',
-      columns: 3,
-      entries: [
+  // ── B. Certifico que.
+  blocks.push({
+    kind: 'section',
+    title: 'B. Certifico que',
+    rows: [
+      cells(
         { label: 'Primer apellido', value: form.patient.firstFamilyName },
         { label: 'Segundo apellido', value: form.patient.secondFamilyName },
         { label: 'Primer nombre', value: form.patient.firstGivenName },
         { label: 'Segundo nombre', value: form.patient.secondGivenName },
+      ),
+      cells(
         { label: 'Sexo', value: form.patient.sex },
-        {
-          label: 'Edad',
-          value: `${form.patient.age.value} (${form.patient.age.condition})`,
-        },
-        {
-          label: 'Fue atendido en el servicio de',
-          value: form.attention.service,
-        },
+        { label: 'Edad', value: `${form.patient.age.value} (${form.patient.age.condition})` }, // prettier-ignore
+        { label: 'Fue atendido en el servicio de', value: form.attention.service }, // prettier-ignore
         { label: 'Especialidad', value: form.attention.specialty },
-        { label: 'Fecha de atención', value: form117Date(form.attention.date) },
-        {
-          label: 'Hora de atención',
-          value: `desde ${form.attention.from} hasta ${form.attention.to}`,
-        },
-        { label: 'Fecha de ingreso', value: form.attention.admissionDate },
-        { label: 'Fecha de alta', value: form.attention.dischargeDate },
-      ],
-    },
-  );
+      ),
+      cells(
+        { label: 'Fecha de atención', value: form117Date(form.attention.date), width: 2 }, // prettier-ignore
+        { label: 'Hora de atención', value: `desde ${form.attention.from} hasta ${form.attention.to}` }, // prettier-ignore
+        { label: 'Fecha de ingreso', value: form.attention.admissionDate, width: 0.5 }, // prettier-ignore
+        { label: 'Fecha de alta', value: form.attention.dischargeDate, width: 0.5 }, // prettier-ignore
+      ),
+      // CER-038. The IESS asks for where the patient works on a rest
+      // certificate; the 117 has no box for it, so it closes block B, and only
+      // on a rest. On attendance an employer reads the paper and has no
+      // business here.
+      ...(form.work === NA
+        ? []
+        : [
+            cells(
+              { label: 'Domicilio', value: form.work.address },
+              { label: 'Teléfono', value: form.work.phone },
+            ),
+            cells(
+              { label: 'Empresa', value: form.work.employer },
+              { label: 'Puesto de trabajo', value: form.work.jobTitle },
+            ),
+          ]),
+    ],
+  });
 
-  // CER-038. The IESS asks for where the patient works on a rest certificate;
-  // the 117 has no box for it, so it goes right under block B, and only on a
-  // rest. On attendance an employer reads the paper and has no business here.
-  if (form.work !== NA) {
-    blocks.push(
-      { kind: 'paragraph', text: 'Datos laborales del paciente', emphasis: true }, // prettier-ignore
-      {
-        kind: 'fields',
-        columns: 2,
-        entries: [
-          { label: 'Empresa', value: form.work.employer },
-          { label: 'Puesto de trabajo', value: form.work.jobTitle },
-          { label: 'Domicilio', value: form.work.address },
-          { label: 'Teléfono', value: form.work.phone },
-        ],
-      },
-    );
-  }
-
-  // ── C. Se recomienda.
-  blocks.push(
-    { kind: 'heading', text: 'C. Se recomienda' },
-    {
-      kind: 'fields',
-      columns: 2,
-      entries: [
-        { label: 'Reposo', value: form.rest.rest },
+  // ── C. Se recomienda. The type and the contingency go with the rest, as
+  // the template's block C carries them.
+  blocks.push({
+    kind: 'section',
+    title: 'C. Se recomienda',
+    rows: [
+      cells(
+        { label: 'Tipo', value: CERTIFICATE_TYPE_LABEL[form.type] ?? NA },
+        { label: 'Reposo', value: form.rest.rest, strong: true, width: 0.6 },
         {
           label: 'Días de reposo',
           value:
             form.rest.days === NA
               ? NA
               : `${form.rest.days} (${form.rest.daysInWords})`,
+          strong: true,
         },
+        { label: 'Contingencia', value: form.contingency },
+      ),
+      cells(
         { label: 'Desde', value: form117Date(form.rest.from) },
         { label: 'Hasta', value: form117Date(form.rest.to) },
-      ],
-    },
-  );
-  if (form.rest.periodInWords !== NA) {
-    blocks.push({ kind: 'paragraph', text: form.rest.periodInWords });
-  }
-  if (form.maternity !== NA) {
-    blocks.push({
-      kind: 'fields',
-      columns: 3,
-      entries: [
-        { label: 'Fecha de ingreso', value: form117Date(form.maternity.admission) }, // prettier-ignore
-        { label: 'Fecha del parto', value: form117Date(form.maternity.birth) },
-        {
-          label: 'Fecha de alta',
-          value: form117Date(form.maternity.discharge),
-        },
-      ],
-    });
-  }
+      ),
+      ...(form.rest.periodInWords === NA
+        ? []
+        : [{ kind: 'text' as const, text: form.rest.periodInWords }]),
+      ...(form.maternity === NA
+        ? []
+        : [
+            cells(
+              { label: 'Fecha de ingreso', value: form117Date(form.maternity.admission) }, // prettier-ignore
+              { label: 'Fecha del parto', value: form117Date(form.maternity.birth) }, // prettier-ignore
+              { label: 'Fecha de alta', value: form117Date(form.maternity.discharge) }, // prettier-ignore
+            ),
+          ]),
+    ],
+  });
 
   // ── D. Diagnóstico, con su código CIE, o «NA».
-  blocks.push({ kind: 'heading', text: 'D. Diagnóstico' });
-  blocks.push(
-    form.diagnoses === NA
-      ? { kind: 'paragraph', text: NA }
-      : {
-          kind: 'table',
-          columns: [
-            { header: 'CIE', width: 0.18 },
-            { header: 'Diagnóstico', width: 0.82 },
-          ],
-          rows: form.diagnoses.map((d) => [d.code, d.display]),
-        },
-  );
+  blocks.push({
+    kind: 'section',
+    title: 'D. Diagnóstico',
+    rows: [
+      form.diagnoses === NA
+        ? { kind: 'text', text: NA }
+        : {
+            kind: 'table',
+            columns: [
+              { header: '#', width: 0.05 },
+              { header: 'Diagnóstico', width: 0.8 },
+              { header: 'CIE', width: 0.15 },
+            ],
+            rows: form.diagnoses.map((d, index) => [
+              String(index + 1),
+              d.display,
+              d.code,
+            ]),
+          },
+    ],
+  });
 
-  // ── E. Datos del profesional responsable.
-  blocks.push(
-    { kind: 'heading', text: 'E. Datos del profesional responsable' },
-    {
-      kind: 'fields',
-      columns: 3,
-      entries: [
-        {
-          label: 'Fecha',
-          value: form.professional.date,
-        },
+  // ── E. Datos del profesional responsable, with the box for the seal inside
+  // it (DOC-105): the seal vouches for what is written beside it, and a box
+  // that cannot leave the block cannot end up alone on a page (DOC-101).
+  blocks.push({
+    kind: 'section',
+    title: 'E. Datos del profesional responsable',
+    rows: [
+      cells(
+        { label: 'Fecha', value: form.professional.date },
         { label: 'Hora', value: form.professional.time },
+      ),
+      cells(
         {
           label: 'Nombres y apellidos',
           value: `${form.professional.givenNames} ${form.professional.familyNames}`,
@@ -686,16 +678,16 @@ export function composeCertificateLayout(
           label: 'Número de documento de identificación',
           value: form.professional.identification,
         },
-      ],
-    },
-    {
-      // CER-028. The credential signed it; the box is for the seal, never a
-      // drawn stroke.
-      kind: 'signature',
+      ),
+      cells({ label: 'Lugar de emisión', value: form.placeOfIssue }),
+    ],
+    // CER-028. The credential signed it; the box is for the seal, never a
+    // drawn stroke.
+    signature: {
       caption: 'Firma (credencial del profesional en el sistema) y sello',
       image: data.issuedBy.seal !== null ? 'seal' : null,
     },
-  );
+  });
 
   return {
     frame: {
