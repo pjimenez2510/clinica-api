@@ -173,7 +173,11 @@ export function sampleSubject(
               ageMonths: patient.ageMonths,
               ageDays: null,
             },
-            diagnoses,
+            // CER-027. The sample marks DEF, so the preview shows the column.
+            diagnoses: diagnoses.map((d) => ({
+              ...d,
+              certainty: 'DEFINITIVE' as const,
+            })),
             practitioner: {
               givenNames: 'MUESTRA',
               familyNames: 'PROFESIONAL Ejemplo',

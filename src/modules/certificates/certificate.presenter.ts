@@ -58,7 +58,11 @@ export function toForm117Response(form: Form117): Form117Response {
             reason: form.revocation.reason,
           },
     diagnoses:
-      form.diagnoses === 'NA' ? 'NA' : form.diagnoses.map((d) => ({ ...d })),
+      // The screen's contract (CER-027 in the DTO): code and display. The
+      // certainty is the paper's PRE and DEF columns.
+      form.diagnoses === 'NA'
+        ? 'NA'
+        : form.diagnoses.map(({ code, display }) => ({ code, display })),
   };
 }
 

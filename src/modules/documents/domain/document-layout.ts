@@ -658,15 +658,21 @@ export function composeCertificateLayout(
         ? { kind: 'text', text: NA }
         : {
             kind: 'table',
+            // CER-027. The X in PRE or in DEF, by the certainty the issue
+            // copied; neither when the copy has none.
             columns: [
               { header: '#', width: 0.05 },
-              { header: 'Diagnóstico', width: 0.8 },
-              { header: 'CIE', width: 0.15 },
+              { header: 'Diagnóstico', width: 0.67 },
+              { header: 'CIE', width: 0.12 },
+              { header: 'PRE', width: 0.08, align: 'centre' },
+              { header: 'DEF', width: 0.08, align: 'centre' },
             ],
             rows: form.diagnoses.map((d, index) => [
               String(index + 1),
               d.display,
               d.code,
+              d.certainty === 'PRESUMPTIVE' ? 'X' : '',
+              d.certainty === 'DEFINITIVE' ? 'X' : '',
             ]),
           },
     ],

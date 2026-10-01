@@ -778,59 +778,65 @@ describe('DOC-075 el certificado sobre el formulario 117 y la plantilla aprobada
   /** A form 117 as `certificates` composes it, the same function the PDF uses. */
   const form = (
     certificate: Partial<Form117Source['certificate']> = {},
-  ): Form117 =>
-    composeForm117({
-      certificate: {
-        id: 'certificate-1',
-        number: 7,
-        verificationCode: 'CM-4T7',
-        type: 'MEDICAL_REST',
-        issuedAt: now,
-        restFrom: day,
-        restTo: addDays(day, 2),
-        includeDiagnosis: true,
-        contingencyType: 'GENERAL_ILLNESS',
-        maternity: null,
-        revokedAt: null,
-        revocationReason: null,
-        ...certificate,
-      },
-      site: {
-        name: 'Sede Norte',
-        mspUnicode: '000123',
-        city: 'Quito',
-        address: 'Av. Amazonas N24-10',
-        phone: '022345678',
-      },
-      patient: {
-        familyName: 'Guamán',
-        secondFamilyName: 'Andrade',
-        givenName: 'María',
-        secondGivenName: 'José',
-        sex: 'FEMALE',
-        mrn: 'HC000042',
-        employerName: 'Florícola del Valle',
-        jobTitle: 'Supervisora de cultivo',
-        residenceAddressLine: 'Calle Sucre 4-12',
-        phone: '0991234567',
-        identifiers: [{ type: 'CEDULA', value: '1710034065' }],
-      },
-      encounter: {
-        startedAt: now,
-        endedAt: null,
-        ageYears: 34,
-        ageMonths: 2,
-        ageDays: 9,
-      },
-      diagnoses: [{ code: 'J00', display: 'Rinofaringitis aguda' }],
-      practitioner: {
-        givenNames: 'Rosa',
-        familyNames: 'Cedeño',
-        cedula: '1104637283',
-        primarySpecialty: 'Medicina familiar',
-        hasSeal: false,
-      },
-    });
+  ): Form117 => composeForm117(formSource(certificate));
+
+  /** What `composeForm117` reads, as `certificates` gathers it. */
+  const formSource = (
+    certificate: Partial<Form117Source['certificate']> = {},
+  ): Form117Source => ({
+    certificate: {
+      id: 'certificate-1',
+      number: 7,
+      verificationCode: 'CM-4T7',
+      type: 'MEDICAL_REST',
+      issuedAt: now,
+      restFrom: day,
+      restTo: addDays(day, 2),
+      includeDiagnosis: true,
+      contingencyType: 'GENERAL_ILLNESS',
+      maternity: null,
+      revokedAt: null,
+      revocationReason: null,
+      ...certificate,
+    },
+    site: {
+      name: 'Sede Norte',
+      mspUnicode: '000123',
+      city: 'Quito',
+      address: 'Av. Amazonas N24-10',
+      phone: '022345678',
+    },
+    patient: {
+      familyName: 'Guamán',
+      secondFamilyName: 'Andrade',
+      givenName: 'María',
+      secondGivenName: 'José',
+      sex: 'FEMALE',
+      mrn: 'HC000042',
+      employerName: 'Florícola del Valle',
+      jobTitle: 'Supervisora de cultivo',
+      residenceAddressLine: 'Calle Sucre 4-12',
+      phone: '0991234567',
+      identifiers: [{ type: 'CEDULA', value: '1710034065' }],
+    },
+    encounter: {
+      startedAt: now,
+      endedAt: null,
+      ageYears: 34,
+      ageMonths: 2,
+      ageDays: 9,
+    },
+    diagnoses: [
+      { code: 'J00', display: 'Rinofaringitis aguda', certainty: 'DEFINITIVE' },
+    ],
+    practitioner: {
+      givenNames: 'Rosa',
+      familyNames: 'Cedeño',
+      cedula: '1104637283',
+      primarySpecialty: 'Medicina familiar',
+      hasSeal: false,
+    },
+  });
 
   const certificate = (formData: Form117 = form()): DocumentSubject => ({
     kind: 'MEDICAL_CERTIFICATE',
@@ -871,14 +877,38 @@ describe('DOC-075 el certificado sobre el formulario 117 y la plantilla aprobada
     expect(layout.blocks.map((block) => block.kind)).not.toContain('signature');
   });
 
-  it('DOC-105 el diagnóstico es una tabla dentro del bloque D, con su código', () => {
-    const diagnosis = sectionsOf(
-      composeLayout(certificate(), context, template),
-    ).find((section) => section.title === 'D. Diagnóstico');
-    const table = diagnosis?.rows.find((row) => row.kind === 'table');
-    expect(table?.kind === 'table' ? table.rows : []).toEqual([
-      ['1', 'Rinofaringitis aguda', 'J00'],
+  it('DOC-105 CER-027 el diagnóstico es una tabla dentro del bloque D, con su código y la X en PRE o en DEF', () => {
+    const tableOf = (formData: Form117) => {
+      const diagnosis = sectionsOf(
+        composeLayout(certificate(formData), context, template),
+      ).find((section) => section.title === 'D. Diagnóstico');
+      const table = diagnosis?.rows.find((row) => row.kind === 'table');
+      if (table?.kind !== 'table') throw new Error('no table');
+      return table;
+    };
+    const table = tableOf(form());
+    expect(table.columns.map((column) => column.header)).toEqual([
+      '#',
+      'Diagnóstico',
+      'CIE',
+      'PRE',
+      'DEF',
     ]);
+    expect(table.rows).toEqual([['1', 'Rinofaringitis aguda', 'J00', '', 'X']]);
+
+    // Control: a presumptive one marks the other column.
+    const presumptive = composeForm117({
+      ...formSource(),
+      diagnoses: [{ code: 'J00', display: 'Rinofaringitis aguda', certainty: 'PRESUMPTIVE' }], // prettier-ignore
+    });
+    expect(tableOf(presumptive).rows).toEqual([['1', 'Rinofaringitis aguda', 'J00', 'X', '']]); // prettier-ignore
+
+    // Issued before the certainty was copied: neither, never a guess.
+    const unknown = composeForm117({
+      ...formSource(),
+      diagnoses: [{ code: 'J00', display: 'Rinofaringitis aguda', certainty: null }], // prettier-ignore
+    });
+    expect(tableOf(unknown).rows).toEqual([['1', 'Rinofaringitis aguda', 'J00', '', '']]); // prettier-ignore
   });
 
   it('DOC-075 CER-038 el reposo imprime los datos laborales del paciente en el bloque B', () => {
