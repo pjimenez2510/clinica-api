@@ -6,6 +6,12 @@ import type {
   AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
 import {
+  WallClockTime,
+  addDays,
+  atWallClock,
+  clinicalDateOf,
+} from '../../../shared/domain/clinic-time';
+import {
   AmendmentReasonRequiredError,
   DischargeConditionRequiredError,
   EncounterAlreadyClosedError,
@@ -364,13 +370,12 @@ describe('los casos de uso de la nota clínica', () => {
      * registered: a registration that lapses on Tuesday stops enabling on
      * Wednesday without anybody touching a row.
      */
-    const yesterday = new Date();
-    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    // Yesterday IN ECUADOR: from 19:00 in Guayaquil the UTC day before is
+    // today, and the registration would still be in force.
+    const yesterday = addDays(clinicalDateOf(new Date()), -1);
     encounters.practitioner = {
       practitionerId: PRACTITIONER,
-      acessExpiresOn: new Date(
-        `${yesterday.toISOString().slice(0, 10)}T00:00:00.000Z`,
-      ),
+      acessExpiresOn: new Date(`${yesterday}T00:00:00.000Z`),
     };
 
     await expect(
@@ -381,22 +386,30 @@ describe('los casos de uso de la nota clínica', () => {
     ).rejects.toBeInstanceOf(PractitionerNotLicensedError);
   });
 
-  it('EN-029 admite firmar el mismo día en que caduca el registro', async () => {
+  it('EN-029 admite firmar el mismo día en que caduca el registro, también a las 23:30 de Ecuador', async () => {
     // The registration is in force THROUGH its expiry date: a column of type
     // `date` names a whole day, and refusing on that day would withdraw a
-    // licence twenty-four hours early.
-    const today = new Date().toISOString().slice(0, 10);
-    encounters.practitioner = {
-      practitionerId: PRACTITIONER,
-      acessExpiresOn: new Date(`${today}T00:00:00.000Z`),
-    };
+    // licence twenty-four hours early. Signed at 23:30 in Guayaquil, when the
+    // UTC date is already tomorrow: the hour at which judging against the UTC
+    // date shows, fixed here from today rather than left to the run's hour.
+    const today = clinicalDateOf(new Date());
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(atWallClock(today, WallClockTime.of(23, 30)));
+    try {
+      encounters.practitioner = {
+        practitionerId: PRACTITIONER,
+        acessExpiresOn: new Date(`${today}T00:00:00.000Z`),
+      };
 
-    await expect(
-      service.sign(
-        { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, // prettier-ignore
-        requester,
-      ),
-    ).resolves.toMatchObject({ status: 'SIGNED' });
+      await expect(
+        service.sign(
+          { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, // prettier-ignore
+          requester,
+        ),
+      ).resolves.toMatchObject({ status: 'SIGNED' });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('EN-029 no exige registro ACESS a quien no tiene ninguno anotado', async () => {
