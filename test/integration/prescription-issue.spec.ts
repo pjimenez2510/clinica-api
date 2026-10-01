@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import type { PinoLogger } from 'nestjs-pino';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -16,6 +16,7 @@ import { extractDatabaseProblem } from '../../src/shared/http/database-problem';
 import type { AccessAuditRecorder } from '../../src/shared/audit/access-audit.port';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
+import { attemptWhileAnnulled } from './setup/encounter-race';
 import { useDatabase } from './setup/database';
 import { createPatient, createSite, createUser } from './setup/fixtures';
 
@@ -50,6 +51,12 @@ import { createPatient, createSite, createUser } from './setup/fixtures';
  */
 const db = useDatabase();
 
+/** PR-038, PR-039. Art. 5.e of the receta, demanded at the issue. */
+const INDICATIONS = {
+  warningSigns: 'Fiebre mayor de 39 °C o dificultad para respirar',
+  nonPharmacologicalAdvice: 'Abundantes líquidos y reposo relativo',
+};
+
 const ENCOUNTER_STARTED_AT = new Date('2026-09-14T14:00:00Z');
 
 const repositoryOf = (prisma: PrismaClient) =>
@@ -71,7 +78,14 @@ const serviceOf = (prisma: PrismaClient) => {
 /** A CNMB medicine as the catalogue holds it: a system and a versioned concept. */
 async function aCnmbConcept(
   prisma: PrismaClient,
-  concept: { code: string; display: string; validFrom: Date; validTo?: Date },
+  concept: {
+    code: string;
+    display: string;
+    validFrom: Date;
+    validTo?: Date;
+    /** PR-070. `{ controlled: true }` marks a narcotic or psychotropic. */
+    attributes?: Prisma.InputJsonObject;
+  },
   systemCode = 'CNMB',
 ) {
   const system = await prisma.catalogSystem.upsert({
@@ -87,6 +101,7 @@ async function aCnmbConcept(
       display: concept.display,
       validFrom: concept.validFrom,
       validTo: concept.validTo ?? null,
+      ...(concept.attributes ? { attributes: concept.attributes } : {}),
     },
   });
 }
@@ -133,7 +148,11 @@ async function aSiteWithCity(prisma: PrismaClient, city = 'Quito') {
 /** PR-004, PR-034. A prescriber with an ACESS registration in force. */
 async function aPrescriber(
   prisma: PrismaClient,
-  overrides: { acessRegistration?: string | null; acessExpiresOn?: Date | null } = {}, // prettier-ignore
+  overrides: {
+    acessRegistration?: string | null;
+    acessExpiresOn?: Date | null;
+    contactPhone?: string | null;
+  } = {},
 ) {
   const user = await prisma.user.create({
     data: {
@@ -151,7 +170,16 @@ async function aPrescriber(
           : overrides.acessExpiresOn,
     },
   });
-  return prisma.practitioner.create({ data: { userId: user.id } });
+  return prisma.practitioner.create({
+    data: {
+      userId: user.id,
+      // PR-040. Art. 5.e.vi — printed beside the warning signs.
+      emergencyContactPhone:
+        overrides.contactPhone === undefined
+          ? '0991234567'
+          : overrides.contactPhone,
+    },
+  });
 }
 
 /** An attention ready to be prescribed on, with everything art. 5 needs. */
@@ -220,6 +248,7 @@ describe('la receta contra PostgreSQL', () => {
     const prescription = await repositoryOf(prisma).create({
       encounterId: encounter.id,
       prescriberId: practitioner.id,
+      ...INDICATIONS,
       items: [aLine(concept.id)],
       sites: [...requester.sites],
     });
@@ -256,7 +285,11 @@ describe('la receta contra PostgreSQL', () => {
     const { encounter, practitioner } = await anEncounter(prisma);
 
     const prescription = await prisma.prescription.create({
-      data: { encounterId: encounter.id, prescriberId: practitioner.id },
+      data: {
+        encounterId: encounter.id,
+        siteId: encounter.siteId,
+        prescriberId: practitioner.id,
+      },
     });
 
     const problem = await problemFrom(
@@ -280,6 +313,7 @@ describe('la receta contra PostgreSQL', () => {
       repositoryOf(prisma).create({
         encounterId: encounter.id,
         prescriberId: practitioner.id,
+        ...INDICATIONS,
         items: [aLine(null)],
         sites: [...requester.sites],
       }),
@@ -293,6 +327,7 @@ describe('la receta contra PostgreSQL', () => {
     const prescription = await repositoryOf(prisma).create({
       encounterId: encounter.id,
       prescriberId: practitioner.id,
+      ...INDICATIONS,
       items: [
         {
           ...aLine(null),
@@ -324,6 +359,7 @@ describe('la receta contra PostgreSQL', () => {
     const prescription = await repositoryOf(prisma).create({
       encounterId: encounter.id,
       prescriberId: practitioner.id,
+      ...INDICATIONS,
       items: [{ ...aLine(concept.id), genericName: 'Otra cosa' }],
       sites: [...requester.sites],
     });
@@ -350,6 +386,7 @@ describe('la receta contra PostgreSQL', () => {
       repositoryOf(prisma).create({
         encounterId: encounter.id,
         prescriberId: practitioner.id,
+        ...INDICATIONS,
         items: [aLine(notAMedicine.id)],
         sites: [...requester.sites],
       }),
@@ -370,6 +407,7 @@ describe('la receta contra PostgreSQL', () => {
       repositoryOf(prisma).create({
         encounterId: encounter.id,
         prescriberId: practitioner.id,
+        ...INDICATIONS,
         items: [aLine(retired.id)],
         sites: [...requester.sites],
       }),
@@ -390,6 +428,7 @@ describe('la receta contra PostgreSQL', () => {
       repositoryOf(prisma).create({
         encounterId: encounter.id,
         prescriberId: practitioner.id,
+        ...INDICATIONS,
         items: [aLine(concept.id)],
         sites: [otherSite.id],
       }),
@@ -407,7 +446,7 @@ describe('la receta contra PostgreSQL', () => {
     const service = serviceOf(prisma);
 
     const composed = await service.compose(
-      { encounterId: encounter.id, items: [aLine(concept.id)] },
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
       { userId: requester.userId, sites: [...requester.sites] },
     );
 
@@ -427,7 +466,260 @@ describe('la receta contra PostgreSQL', () => {
     ).rejects.toMatchObject({ code: 'PRESCRIPTION_NOT_EDITABLE' });
   });
 
-  it('PR-010 anula una receta emitida sin borrar ninguna fila', async () => {
+  it('PR-020 la receta emitida vuelve con su número; el borrador, sin él', async () => {
+    const prisma = db();
+    const { encounter, requester } = await anEncounter(prisma);
+    const concept = await aCnmbConcept(prisma, {
+      code: 'J01CA04',
+      display: 'Amoxicilina',
+      validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+    });
+    const service = serviceOf(prisma);
+    const who = { userId: requester.userId, sites: [...requester.sites] };
+
+    const first = await service.compose(
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
+      who,
+    );
+    const second = await service.compose(
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
+      who,
+    );
+    expect(first.prescription.sequenceNumber).toBeNull();
+
+    expect(
+      (await service.issue(second.prescription.id, who)).sequenceNumber,
+    ).toBe(1);
+    expect(
+      (await service.issue(first.prescription.id, who)).sequenceNumber,
+    ).toBe(2);
+  });
+
+  it('PR-038 PR-039 rechaza emitir el borrador que se compuso sin signos de alarma ni recomendaciones', async () => {
+    const prisma = db();
+    const { encounter, requester } = await anEncounter(prisma);
+    const concept = await aCnmbConcept(prisma, {
+      code: 'J01CA04',
+      display: 'Amoxicilina',
+      validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+    });
+    const service = serviceOf(prisma);
+    const who = { userId: requester.userId, sites: [...requester.sites] };
+
+    const bare = await service.compose(
+      { encounterId: encounter.id, items: [aLine(concept.id)] },
+      who,
+    );
+    await expect(
+      service.issue(bare.prescription.id, who),
+    ).rejects.toMatchObject({
+      code: 'PRESCRIPTION_ITEM_INCOMPLETE',
+    });
+    // Control positivo: el mismo camino, con las indicaciones, emite.
+    const complete = await service.compose(
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
+      who,
+    );
+    const issued = await service.issue(complete.prescription.id, who);
+    expect(issued.warningSigns).toBe(INDICATIONS.warningSigns);
+    expect(issued.nonPharmacologicalAdvice).toBe(
+      INDICATIONS.nonPharmacologicalAdvice,
+    );
+  });
+
+  it('PR-040 rechaza emitir si la ficha del prescriptor no tiene teléfono, y emite cuando lo tiene', async () => {
+    const prisma = db();
+    const { encounter, practitioner, requester } = await anEncounter(prisma);
+    const concept = await aCnmbConcept(prisma, {
+      code: 'J01CA04',
+      display: 'Amoxicilina',
+      validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+    });
+    const service = serviceOf(prisma);
+    const who = { userId: requester.userId, sites: [...requester.sites] };
+    await prisma.practitioner.update({
+      where: { id: practitioner.id },
+      data: { emergencyContactPhone: null },
+    });
+
+    const draft = await service.compose(
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
+      who,
+    );
+    await expect(
+      service.issue(draft.prescription.id, who),
+    ).rejects.toMatchObject({
+      code: 'PRESCRIBER_CONTACT_REQUIRED',
+    });
+
+    // Control positivo: el mismo borrador, con el teléfono en la ficha, emite.
+    await prisma.practitioner.update({
+      where: { id: practitioner.id },
+      data: { emergencyContactPhone: '0991234567' },
+    });
+    await expect(
+      service.issue(draft.prescription.id, who),
+    ).resolves.toMatchObject({
+      status: 'ACTIVE',
+    });
+  });
+
+  it('PR-070 un estupefaciente o psicotrópico no se compone: se receta en el talonario de la ACESS', async () => {
+    const prisma = db();
+    const { encounter, requester } = await anEncounter(prisma);
+    const morphine = await aCnmbConcept(prisma, {
+      code: 'N02AA01',
+      display: 'Morfina',
+      validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+      attributes: { controlled: true },
+    });
+    const paracetamol = await aCnmbConcept(prisma, {
+      code: 'N02BE01',
+      display: 'Paracetamol',
+      validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+    });
+    const service = serviceOf(prisma);
+    const who = { userId: requester.userId, sites: [...requester.sites] };
+
+    await expect(
+      service.compose(
+        {
+          encounterId: encounter.id,
+          ...INDICATIONS,
+          items: [aLine(morphine.id)],
+        },
+        who,
+      ),
+    ).rejects.toMatchObject({ code: 'CONTROLLED_SUBSTANCE_NOT_PRESCRIBABLE' });
+    expect(await prisma.prescription.count()).toBe(0);
+
+    // Control positivo: el mismo camino con un medicamento sin la marca compone.
+    await expect(
+      service.compose(
+        {
+          encounterId: encounter.id,
+          ...INDICATIONS,
+          items: [aLine(paracetamol.id)],
+        },
+        who,
+      ),
+    ).resolves.toMatchObject({ prescription: { status: 'DRAFT' } });
+  });
+
+  it('PR-070 un borrador cuyo medicamento se marco despues como controlado no se emite ni toma numero', async () => {
+    const prisma = db();
+    const { encounter, requester } = await anEncounter(prisma);
+    const later = await aCnmbConcept(prisma, {
+      code: 'N05BA01',
+      display: 'Diazepam',
+      validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+    });
+    const paracetamol = await aCnmbConcept(prisma, {
+      code: 'N02BE01',
+      display: 'Paracetamol',
+      validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+    });
+    const service = serviceOf(prisma);
+    const who = { userId: requester.userId, sites: [...requester.sites] };
+    const compose = (conceptId: string) =>
+      service.compose(
+        {
+          encounterId: encounter.id,
+          ...INDICATIONS,
+          items: [aLine(conceptId)],
+        },
+        who,
+      );
+    const marked = await compose(later.id);
+    const plain = await compose(paracetamol.id);
+
+    // A CNMB republication marks it after the draft was composed (D-084).
+    await prisma.catalogConcept.update({
+      where: { id: later.id },
+      data: { attributes: { controlled: true } },
+    });
+
+    await expect(
+      service.issue(marked.prescription.id, who),
+    ).rejects.toMatchObject({ code: 'CONTROLLED_SUBSTANCE_NOT_PRESCRIBABLE' });
+    const refused = await prisma.prescription.findUniqueOrThrow({
+      where: { id: marked.prescription.id },
+    });
+    expect(refused).toMatchObject({ status: 'DRAFT', sequenceNumber: null });
+
+    // Control positivo: el otro borrador se emite, y con el número 1: la serie
+    // no avanzó con la emisión rechazada.
+    expect(
+      (await service.issue(plain.prescription.id, who)).sequenceNumber,
+    ).toBe(1);
+  });
+
+  it('PR-002 componer mientras la atención se anula: la receta no nace en una atención anulada', async () => {
+    const prisma = db();
+    const { encounter, requester } = await anEncounter(prisma);
+    const concept = await aCnmbConcept(prisma, {
+      code: 'J01CA04',
+      display: 'Amoxicilina',
+      validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+    });
+    const service = serviceOf(prisma);
+    const who = { userId: requester.userId, sites: [...requester.sites] };
+    const compose = () =>
+      service.compose(
+        {
+          encounterId: encounter.id,
+          ...INDICATIONS,
+          items: [aLine(concept.id)],
+        },
+        who,
+      );
+
+    // Control positivo: sin carrera, el mismo camino compone.
+    await expect(compose()).resolves.toMatchObject({
+      prescription: { status: 'DRAFT' },
+    });
+
+    const outcome = await attemptWhileAnnulled(prisma, encounter.id, compose);
+
+    expect(outcome).toMatchObject({
+      status: 'rejected',
+      reason: { code: 'PRESCRIPTION_ENCOUNTER_NOT_OPEN' },
+    });
+    expect(
+      await prisma.prescription.count({ where: { encounterId: encounter.id } }),
+    ).toBe(1);
+  });
+
+  it('PR-002 emitir mientras la atención se anula: el borrador no se emite en una atención anulada', async () => {
+    const prisma = db();
+    const { encounter, requester } = await anEncounter(prisma);
+    const concept = await aCnmbConcept(prisma, {
+      code: 'J01CA04',
+      display: 'Amoxicilina',
+      validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+    });
+    const service = serviceOf(prisma);
+    const who = { userId: requester.userId, sites: [...requester.sites] };
+    const draft = await service.compose(
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
+      who,
+    );
+
+    const outcome = await attemptWhileAnnulled(prisma, encounter.id, () =>
+      service.issue(draft.prescription.id, who),
+    );
+
+    expect(outcome).toMatchObject({
+      status: 'rejected',
+      reason: { code: 'PRESCRIPTION_ENCOUNTER_NOT_OPEN' },
+    });
+    const stored = await prisma.prescription.findUniqueOrThrow({
+      where: { id: draft.prescription.id },
+    });
+    expect(stored.status).toBe('DRAFT');
+  });
+
+  it('PR-010 PR-054 anula una receta emitida sin borrar ninguna fila', async () => {
     // Que algo no se borre sólo se demuestra contando. Y se anula la EMITIDA:
     // `prescription_issued_coherence` obliga a que todo estado distinto de
     // `DRAFT` lleve instante de emisión, así que un borrador no puede llegar a
@@ -442,7 +734,7 @@ describe('la receta contra PostgreSQL', () => {
     const service = serviceOf(prisma);
 
     const composed = await service.compose(
-      { encounterId: encounter.id, items: [aLine(concept.id)] },
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
       { userId: requester.userId, sites: [...requester.sites] },
     );
 
@@ -478,7 +770,7 @@ describe('la receta contra PostgreSQL', () => {
     const service = serviceOf(prisma);
 
     const composed = await service.compose(
-      { encounterId: encounter.id, items: [aLine(concept.id)] },
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
       { userId: requester.userId, sites: [...requester.sites] },
     );
 
@@ -514,7 +806,11 @@ describe('la receta contra PostgreSQL', () => {
     const prisma = db();
     const { encounter, practitioner } = await anEncounter(prisma);
     const prescription = await prisma.prescription.create({
-      data: { encounterId: encounter.id, prescriberId: practitioner.id },
+      data: {
+        encounterId: encounter.id,
+        siteId: encounter.siteId,
+        prescriberId: practitioner.id,
+      },
     });
 
     const problem = await problemFrom(
@@ -547,7 +843,7 @@ describe('la receta contra PostgreSQL', () => {
     const service = serviceOf(prisma);
 
     const composed = await service.compose(
-      { encounterId: encounter.id, items: [aLine(concept.id)] },
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
       { userId: requester.userId, sites: [...requester.sites] },
     );
     await service.issue(composed.prescription.id, {
@@ -610,7 +906,7 @@ describe('la receta contra PostgreSQL', () => {
     const requester = { userId: practitioner.userId, sites: [site.id] };
 
     const composed = await service.compose(
-      { encounterId: encounter.id, items: [aLine(concept.id)] },
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
       requester,
     );
 
@@ -654,7 +950,11 @@ describe('la receta contra PostgreSQL', () => {
       const requester = { userId: practitioner.userId, sites: [site.id] };
 
       const composed = await service.compose(
-        { encounterId: encounter.id, items: [aLine(concept.id)] },
+        {
+          encounterId: encounter.id,
+          ...INDICATIONS,
+          items: [aLine(concept.id)],
+        },
         requester,
       );
 
@@ -690,7 +990,7 @@ describe('la receta contra PostgreSQL', () => {
     const requester = { userId: practitioner.userId, sites: [site.id] };
 
     const composed = await service.compose(
-      { encounterId: encounter.id, items: [aLine(concept.id)] },
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
       requester,
     );
 
@@ -753,7 +1053,7 @@ describe('la receta contra PostgreSQL', () => {
 
     const service = serviceOf(prisma);
     const composed = await service.compose(
-      { encounterId: encounter.id, items: [aLine(concept.id)] },
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
       { userId: requester.userId, sites: [...requester.sites] },
     );
 
@@ -794,7 +1094,7 @@ describe('la receta contra PostgreSQL', () => {
 
     const service = serviceOf(prisma);
     const composed = await service.compose(
-      { encounterId: encounter.id, items: [aLine(concept.id)] },
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
       { userId: requester.userId, sites: [...requester.sites] },
     );
 
@@ -869,7 +1169,11 @@ describe('la receta contra PostgreSQL', () => {
       sites: [...requester.sites],
     };
     const composed = await service.compose(
-      { encounterId: encounter.id, items: [aLine(medicine.id)] },
+      {
+        encounterId: encounter.id,
+        ...INDICATIONS,
+        items: [aLine(medicine.id)],
+      },
       requesterArgs,
     );
     await service.issue(composed.prescription.id, requesterArgs);
@@ -915,7 +1219,7 @@ describe('la receta contra PostgreSQL', () => {
     const service = serviceOf(prisma);
 
     const composed = await service.compose(
-      { encounterId: encounter.id, items: [aLine(concept.id)] },
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
       { userId: requester.userId, sites: [...requester.sites] },
     );
 

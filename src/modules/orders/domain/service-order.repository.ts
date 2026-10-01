@@ -35,10 +35,9 @@ export type SiteScopeFilter = 'all' | readonly string[];
  * does, and neither does what the line costs — that is `charge_item`, in
  * `billing`.
  *
- * ⚠️ AND NO `orderNumber`. **Falta esquema (ORD-006)**: `service_order` has no
- * consecutive number and the A.M. 00002393 art. 43 requires one. It is absent
- * here rather than faked from the uuid, because a field that looks like the
- * legal number and is not would be worse than the gap it hides.
+ * `number` is the legal number of ORD-006 (A.M. 00002393 art. 43): per site,
+ * consecutive, without gaps, assigned by the database. The uuid addresses the
+ * row; the number is what is printed and dictated over the phone.
  */
 export interface ServiceOrderView {
   id: string;
@@ -46,6 +45,8 @@ export interface ServiceOrderView {
   siteId: string;
   patientId: string;
   orderedById: string;
+  /** ORD-006. Assigned by `service_order_number_assigned`, never by the code. */
+  number: number;
   category: ServiceOrderCategory;
   priority: ServiceOrderPriority;
   clinicalNoteText: string | null;
@@ -88,19 +89,15 @@ export interface NewServiceOrder {
 }
 
 /**
- * ORD-002, ORD-004. One line of the request.
+ * ORD-002, ORD-004. One line of the request: THE EXAM, and nothing else.
  *
- * ⚠️ TWO IDENTIFIERS AND IT SHOULD BE ONE. **Falta esquema (ORD-004)**:
- * `exam_definition` has no `concept_id`, and `service_order_item.concept_id` is
- * `NOT NULL` against `catalog_concept`, so the caller has to supply both the
- * orderable and the tariff concept it is invoiced under. The relation is fixed
- * and belongs on the exam; until the column exists, sending them separately is
- * the only way to satisfy the foreign key, and it is the one place in this
- * module where two things that cannot disagree still can.
+ * The tariff service it is invoiced under is a property of the exam
+ * (`exam_definition.tariff_code`) resolved in force on the attention's
+ * clinical date inside the transaction. A client that could send it could
+ * pair a blood count with the price of a glucose.
  */
 export interface NewOrderLine {
   examDefinitionId: string;
-  conceptId: string;
 }
 
 /** ORD-009. One order, by id, within the caller's scope. */
@@ -121,6 +118,8 @@ export interface OrderQuery {
  */
 export interface PendingOrderEntry {
   orderId: string;
+  /** ORD-006. What a paper report quotes back. */
+  orderNumber: number;
   itemId: string;
   siteId: string;
   patientId: string;

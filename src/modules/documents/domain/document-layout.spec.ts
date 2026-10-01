@@ -1,4 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import {
+  composeForm117,
+  type Form117,
+  type Form117Source,
+} from '../../../shared/domain/form-117/form-117';
+import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
 
 import { composeLayout } from './document-layout';
 import { TEAR_OFF_HEIGHT_MM, millimetresToPoints } from './page-layout';
@@ -64,6 +70,7 @@ const prescriber: PractitionerIdentity = {
   fullName: 'Cedeño Rosa',
   acessRegistration: 'ACESS-99887',
   mspCode: 'MSP-1',
+  contactPhone: '0991234567',
   seal: null,
   signature: null,
 };
@@ -145,6 +152,9 @@ const prescription = (
     issuedAt: new Date('2026-08-21T01:00:00Z'),
     city: 'Guayaquil',
     verificationCode: 'RX-7Q2K',
+    sequenceNumber: 120,
+    warningSigns: 'Fiebre mayor de 39 °C o dificultad para respirar',
+    nonPharmacologicalAdvice: 'Abundantes líquidos y reposo relativo',
     patient,
     diagnoses: [{ code: 'J00', display: 'Rinofaringitis aguda' }],
     allergies: [],
@@ -265,6 +275,109 @@ describe('DOC-072 la receta lleva los cinco bloques del art. 5', () => {
   });
 });
 
+describe('DOC-072 la tabla de la receta, como la plantilla aprobada (D-095)', () => {
+  /** The prescription table of the layout. */
+  const tableOf = (layout: ReturnType<typeof composeLayout>) => {
+    const table = layout.blocks.find((block) => block.kind === 'table');
+    if (table?.kind !== 'table') throw new Error('no table');
+    return table;
+  };
+
+  it('DOC-072 las columnas son DCI, forma y concentración, vía, cantidad y posología, con cabeceras de una línea', () => {
+    const table = tableOf(composeLayout(prescription(), context, template));
+
+    expect(table.columns.map((column) => column.header)).toEqual([
+      '#',
+      'Medicamento (DCI)',
+      'Forma y concentración',
+      'Vía',
+      'Cantidad',
+      'Posología',
+    ]);
+    // La fila de cabecera mide una línea: una cabecera que salta a dos se
+    // monta sobre el valor, que es lo que se vio en la muestra.
+    for (const column of table.columns) {
+      expect(column.header.length / column.width).toBeLessThan(110);
+    }
+  });
+
+  it('DOC-072 la posología tiene sitio para dosis, frecuencia y duración', () => {
+    const table = tableOf(composeLayout(prescription(), context, template));
+    const posology = table.columns.find(
+      (column) => column.header === 'Posología',
+    );
+
+    expect(posology?.width).toBeGreaterThanOrEqual(0.26);
+    expect(
+      table.columns.reduce((sum, column) => sum + column.width, 0),
+    ).toBeCloseTo(1);
+    expect(table.rows[0]?.[5]).toBe('1 tableta · cada 8 horas · por 7 días');
+  });
+});
+
+describe('PR-020 PR-038 PR-039 la receta impresa lleva su número y sus indicaciones', () => {
+  it('PR-020 la referencia es el número de la receta, y el código de verificación va al pie', () => {
+    const { frame } = composeLayout(prescription(), context, template);
+
+    expect(frame.reference).toBe('Receta N.º 120');
+    expect(frame.footer.verification?.code).toBe('RX-7Q2K');
+  });
+
+  it('PR-010 una receta anulada lo dice arriba y en cada página: no se dispensa', () => {
+    const cancelled = composeLayout(
+      prescription({ status: 'CANCELLED' }),
+      context,
+      template,
+    );
+    expect(cancelled.frame.watermark).toBe('RECETA ANULADA');
+    expect(textOf(cancelled.blocks)).toContain('RECETA ANULADA');
+
+    // Control positivo: la vigente no lleva ninguna marca.
+    const active = composeLayout(prescription(), context, template);
+    expect(active.frame.watermark).toBeNull();
+    expect(textOf(active.blocks)).not.toContain('ANULADA');
+  });
+
+  it('PR-020 una previsualización de borrador no imprime «null» ni un número que no tiene', () => {
+    const layout = composeLayout(
+      prescription({ sequenceNumber: null, verificationCode: null }),
+      context,
+      template,
+    );
+
+    expect(layout.frame.reference).toBe('Borrador — sin número');
+    expect(layout.frame.footer.verification).toBeNull();
+  });
+
+  it('PR-037 la banda lleva, de cada línea, sus indicaciones completas y sin abreviaturas', () => {
+    const layout = composeLayout(prescription(), context, template);
+    const tearOff = textOf(layout.tearOff?.blocks ?? []);
+
+    expect(tearOff).toContain(
+      'Amoxicilina 500 mg: 1 tableta, cada 8 horas, por vía oral, durante 7 días. Tomar con alimentos',
+    );
+  });
+
+  it('PR-040 junto a los signos de alarma va el teléfono al que llamar, que es el del prescriptor', () => {
+    const layout = composeLayout(prescription(), context, template);
+    const tearOff = textOf(layout.tearOff?.blocks ?? []);
+
+    expect(tearOff).toContain('Si aparece alguno, llame al 0991234567.');
+  });
+
+  it('PR-038 PR-039 los signos de alarma y las recomendaciones van en la banda que se lleva el paciente', () => {
+    const layout = composeLayout(prescription(), context, template);
+    const tearOff = textOf(layout.tearOff?.blocks ?? []);
+
+    expect(tearOff).toContain('Signos de alarma');
+    expect(tearOff).toContain(
+      'Fiebre mayor de 39 °C o dificultad para respirar',
+    );
+    expect(tearOff).toContain('Recomendaciones no farmacológicas');
+    expect(tearOff).toContain('Abundantes líquidos y reposo relativo');
+  });
+});
+
 describe('DOC-073 la banda desprendible del art. 5.e', () => {
   it('DOC-073 existe, se llama por su nombre y repite paciente y fecha', () => {
     // A detached strip with no name on it is a loose piece of paper that does
@@ -330,7 +443,7 @@ describe('DOC-073 la banda desprendible del art. 5.e', () => {
     expect(millimetresToPoints(TEAR_OFF_HEIGHT_MM)).toBeCloseTo(198.42, 1);
   });
 
-  it('DOC-073 la banda dice que no hay indicaciones antes que quedarse vacía', () => {
+  it('DOC-073 PR-037 la banda nunca queda vacía: una línea sin comentario lleva igual su frase compuesta', () => {
     const layout = composeLayout(
       prescription({
         lines: [
@@ -352,7 +465,7 @@ describe('DOC-073 la banda desprendible del art. 5.e', () => {
       template,
     );
     expect(textOf(layout.tearOff?.blocks ?? [])).toContain(
-      'Sin indicaciones adicionales',
+      'Amoxicilina: 1, cada día, por vía oral',
     );
   });
 });
@@ -399,6 +512,7 @@ describe('DOC-072 la orden de examen', () => {
         data: {
           subjectId: 'order-1',
           siteId: 'site-1',
+          number: 1,
           requestedAt: new Date('2026-08-21T01:00:00Z'),
           category: 'LABORATORY',
           priority: 'ROUTINE',
@@ -406,7 +520,16 @@ describe('DOC-072 la orden de examen', () => {
           patient,
           diagnoses: [{ code: 'E11', display: 'Diabetes mellitus tipo 2' }],
           orderedBy: prescriber,
-          items: [{ display: 'Hemoglobina glicosilada', status: 'REQUESTED' }],
+          verificationCode: 'OR-1A2B',
+          items: [
+            {
+              code: 'EX-HBA1C',
+              display: 'Hemoglobina glicosilada',
+              specimen: 'Sangre total',
+              preparation: null,
+              status: 'REQUESTED',
+            },
+          ],
         },
       },
       context,
@@ -423,64 +546,349 @@ describe('DOC-072 la orden de examen', () => {
   });
 });
 
-describe('DOC-075 el certificado sobre el formulario 117', () => {
-  const certificate = (
+describe('ORD-006 DOC-072 la orden impresa, como la plantilla aprobada (D-095)', () => {
+  const order = (
     overrides: Partial<
-      Extract<DocumentSubject, { kind: 'MEDICAL_CERTIFICATE' }>['data']
+      Extract<DocumentSubject, { kind: 'SERVICE_ORDER' }>['data']
     > = {},
   ): DocumentSubject => ({
-    kind: 'MEDICAL_CERTIFICATE',
+    kind: 'SERVICE_ORDER',
     data: {
-      subjectId: 'certificate-1',
+      subjectId: 'order-1',
       siteId: 'site-1',
-      type: 'MEDICAL_REST',
-      issuedAt: new Date('2026-08-21T01:00:00Z'),
-      restFrom: new Date('2026-08-21T00:00:00Z'),
-      restTo: new Date('2026-08-23T00:00:00Z'),
-      includeDiagnosis: false,
-      diagnoses: [{ code: 'J00', display: 'Rinofaringitis aguda' }],
-      body: 'Se certifica que requiere reposo médico',
-      verificationCode: 'CM-4T7',
-      revokedAt: null,
+      number: 41,
+      verificationCode: 'OR-9Z8Y',
+      requestedAt: new Date(0),
+      category: 'LABORATORY',
+      priority: 'URGENT',
+      clinicalNoteText: 'Paciente en tratamiento con metformina',
       patient,
-      issuedBy: prescriber,
+      diagnoses: [{ code: 'E11', display: 'Diabetes mellitus tipo 2' }],
+      orderedBy: prescriber,
+      items: [
+        {
+          code: 'EX-GLUCOSA-AYUNAS',
+          display: 'Glucosa en ayunas',
+          specimen: 'Suero',
+          preparation: 'Ayuno de 8 a 12 horas.',
+          status: 'REQUESTED',
+        },
+        {
+          code: 'EX-BH',
+          display: 'Biometría hemática completa',
+          specimen: 'Sangre total con EDTA',
+          preparation: null,
+          status: 'REQUESTED',
+        },
+      ],
       ...overrides,
     },
   });
 
-  it('DOC-075 nombra el formulario y lleva el reposo y el código de verificación', () => {
-    const text = wholeText(composeLayout(certificate(), context, template));
-    expect(text).toContain('117');
-    expect(text).toContain('21/08/2026');
-    expect(text).toContain('23/08/2026');
-    expect(text).toContain('CM-4T7');
-  });
-
-  it('DOC-075 NO imprime el diagnóstico si el paciente no lo autorizó', () => {
-    // This is the document their EMPLOYER reads. Privacy by default is an LOPDP
-    // requirement, not a preference, and the schema defaults the flag to false.
-    const text = wholeText(composeLayout(certificate(), context, template));
-    expect(text).not.toContain('Rinofaringitis');
-  });
-
-  it('DOC-075 lo imprime cuando el paciente lo autorizó', () => {
-    const text = wholeText(
-      composeLayout(certificate({ includeDiagnosis: true }), context, template),
+  it('ORD-007 un examen cancelado no sale en el papel del laboratorio, y sin ninguno vivo la orden sale anulada', () => {
+    const withOneCancelled = composeLayout(
+      order({
+        items: [
+          { code: 'EX-GLUCOSA-AYUNAS', display: 'Glucosa en ayunas', specimen: 'Suero', preparation: 'Ayuno de 8 a 12 horas.', status: 'CANCELLED' }, // prettier-ignore
+          { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: null, status: 'REQUESTED' }, // prettier-ignore
+        ],
+      }),
+      context,
+      template,
     );
-    expect(text).toContain('Rinofaringitis aguda');
+    const text = wholeText(withOneCancelled);
+    // Control positivo: el examen vivo sale.
+    expect(text).toContain('Biometría hemática completa');
+    expect(text).not.toContain('Glucosa en ayunas');
+    expect(text).not.toContain('Ayuno de 8 a 12 horas');
+    expect(withOneCancelled.frame.watermark).toBeNull();
+
+    const allCancelled = composeLayout(
+      order({
+        items: [
+          { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: null, status: 'CANCELLED' }, // prettier-ignore
+        ],
+      }),
+      context,
+      template,
+    );
+    expect(allCancelled.frame.watermark).toBe('ORDEN ANULADA');
+    expect(wholeText(allCancelled)).toContain('ORDEN ANULADA');
   });
 
-  it('DOC-075 dice en la cara del documento que está anulado', () => {
-    // Somebody is holding the paper. A revoked certificate that printed like a
-    // valid one is the failure this line exists for.
+  it('ORD-006 la referencia es el número de la orden y su código de verificación va al pie', () => {
+    const { frame } = composeLayout(order(), context, template);
+
+    expect(frame.reference).toBe('Orden N.º 41');
+    expect(frame.footer.verification?.code).toBe('OR-9Z8Y');
+  });
+
+  it('ORD-006 la categoría y la prioridad se imprimen en castellano, no como el enum', () => {
+    const text = wholeText(composeLayout(order(), context, template));
+
+    expect(text).toContain('Laboratorio');
+    expect(text).toContain('Urgente');
+    expect(text).not.toMatch(/LABORATORY|URGENT/);
+  });
+
+  it('DOC-072 la tabla es código, examen y muestra, y la preparación va en las indicaciones al paciente', () => {
+    const layout = composeLayout(order(), context, template);
+    const table = layout.blocks.find((block) => block.kind === 'table');
+    if (table?.kind !== 'table') throw new Error('no table');
+
+    expect(table.columns.map((column) => column.header)).toEqual([
+      'Código',
+      'Examen',
+      'Muestra',
+    ]);
+    expect(table.rows[0]).toEqual(['EX-GLUCOSA-AYUNAS', 'Glucosa en ayunas', 'Suero']); // prettier-ignore
+    const text = wholeText(layout);
+    expect(text).toContain('Indicaciones al paciente');
+    expect(text).toContain('Ayuno de 8 a 12 horas.');
+  });
+
+  it('DOC-072 los datos clínicos van para el laboratorio, con su nombre', () => {
+    const text = wholeText(composeLayout(order(), context, template));
+
+    expect(text).toContain('Datos clínicos para el laboratorio');
+    expect(text).toContain('Paciente en tratamiento con metformina');
+  });
+
+  it('DOC-072 sin preparación que pedir, la orden lo dice en vez de dejar el bloque vacío', () => {
     const text = wholeText(
       composeLayout(
-        certificate({ revokedAt: new Date('2026-08-25T15:00:00Z') }),
+        order({
+          items: [
+            { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: null, status: 'REQUESTED' }, // prettier-ignore
+          ],
+        }),
         context,
         template,
       ),
     );
-    expect(text).toMatch(/ANULADO/);
+
+    expect(text).toContain('No requiere preparación');
+  });
+});
+
+describe('DOC-075 el certificado sobre el formulario 117 y la plantilla aprobada (D-095)', () => {
+  const now = new Date(0);
+  const day = clinicalDateOf(now);
+
+  /** A form 117 as `certificates` composes it, the same function the PDF uses. */
+  const form = (
+    certificate: Partial<Form117Source['certificate']> = {},
+  ): Form117 =>
+    composeForm117({
+      certificate: {
+        id: 'certificate-1',
+        number: 7,
+        verificationCode: 'CM-4T7',
+        type: 'MEDICAL_REST',
+        issuedAt: now,
+        restFrom: day,
+        restTo: addDays(day, 2),
+        includeDiagnosis: true,
+        contingencyType: 'GENERAL_ILLNESS',
+        maternity: null,
+        revokedAt: null,
+        revocationReason: null,
+        ...certificate,
+      },
+      site: {
+        name: 'Sede Norte',
+        mspUnicode: '000123',
+        city: 'Quito',
+        address: 'Av. Amazonas N24-10',
+        phone: '022345678',
+      },
+      patient: {
+        familyName: 'Guamán',
+        secondFamilyName: 'Andrade',
+        givenName: 'María',
+        secondGivenName: 'José',
+        sex: 'FEMALE',
+        mrn: 'HC000042',
+        employerName: 'Florícola del Valle',
+        jobTitle: 'Supervisora de cultivo',
+        residenceAddressLine: 'Calle Sucre 4-12',
+        phone: '0991234567',
+        identifiers: [{ type: 'CEDULA', value: '1710034065' }],
+      },
+      encounter: {
+        startedAt: now,
+        endedAt: null,
+        ageYears: 34,
+        ageMonths: 2,
+        ageDays: 9,
+      },
+      diagnoses: [{ code: 'J00', display: 'Rinofaringitis aguda' }],
+      practitioner: {
+        givenNames: 'Rosa',
+        familyNames: 'Cedeño',
+        cedula: '1104637283',
+        primarySpecialty: 'Medicina familiar',
+        hasSeal: false,
+      },
+    });
+
+  const certificate = (formData: Form117 = form()): DocumentSubject => ({
+    kind: 'MEDICAL_CERTIFICATE',
+    data: {
+      subjectId: 'certificate-1',
+      siteId: 'site-1',
+      form: formData,
+      issuedBy: prescriber,
+    },
+  });
+
+  it('DOC-075 CER-020 CER-028 lleva los cinco bloques del 117, de la A a la E', () => {
+    const headings = composeLayout(certificate(), context, template)
+      .blocks.filter((block) => block.kind === 'heading')
+      .map((block) => (block.kind === 'heading' ? block.text : ''));
+
+    expect(headings).toEqual([
+      'A. Datos del establecimiento y usuario / paciente',
+      'B. Certifico que',
+      'C. Se recomienda',
+      'D. Diagnóstico',
+      'E. Datos del profesional responsable',
+    ]);
+  });
+
+  it('DOC-075 CER-038 el reposo imprime los datos laborales del paciente bajo el bloque B', () => {
+    const layout = composeLayout(certificate(), context, template);
+    const { blocks } = layout;
+    const text = wholeText(layout);
+
+    expect(text).toContain('Datos laborales del paciente');
+    for (const value of [
+      'Florícola del Valle',
+      'Supervisora de cultivo',
+      'Calle Sucre 4-12',
+      '0991234567',
+    ]) {
+      expect(text).toContain(value);
+    }
+
+    // Bajo el bloque B y antes del C.
+    const order = blocks.map((block) =>
+      block.kind === 'heading'
+        ? block.text
+        : block.kind === 'paragraph'
+          ? block.text
+          : '',
+    );
+    const work = order.indexOf('Datos laborales del paciente');
+    expect(work).toBeGreaterThan(order.indexOf('B. Certifico que'));
+    expect(work).toBeLessThan(order.indexOf('C. Se recomienda'));
+  });
+
+  it('DOC-075 CER-038 el certificado de asistencia no imprime datos laborales', () => {
+    const attendance = form({
+      type: 'ATTENDANCE',
+      restFrom: null,
+      restTo: null,
+      contingencyType: null,
+      includeDiagnosis: false,
+    });
+    const text = wholeText(
+      composeLayout(certificate(attendance), context, template),
+    );
+    expect(text).not.toContain('Datos laborales del paciente');
+    expect(text).not.toContain('Florícola del Valle');
+  });
+
+  it('DOC-075 no imprime un enum en inglés ni un encabezado vacío', () => {
+    const text = wholeText(composeLayout(certificate(), context, template));
+
+    expect(text).not.toMatch(
+      /MEDICAL_REST|ATTENDANCE|\bREST\b|GENERAL_ILLNESS/,
+    );
+    expect(text).not.toContain('Certificación');
+    expect(text).toContain('Reposo médico');
+  });
+
+  it('CER-020 la sede y su unicódigo van en el bloque A, con la HC y el archivo', () => {
+    const text = wholeText(composeLayout(certificate(), context, template));
+
+    expect(text).toContain('Sede Norte');
+    expect(text).toContain('000123');
+    expect(text).toContain('1710034065');
+    expect(text).toContain('HC000042');
+  });
+
+  it('CER-026 el reposo en días, en números y en letras, con la frase del período', () => {
+    const text = wholeText(composeLayout(certificate(), context, template));
+
+    expect(text).toContain('3 (tres)');
+    expect(text).toContain('ambas fechas incluidas');
+    expect(text).not.toMatch(/horas/i);
+  });
+
+  it('CER-033 lleva la leyenda CONFIDENCIAL cuando imprime el diagnóstico, y no cuando no', () => {
+    const withDiagnosis = composeLayout(certificate(), context, template);
+    const without = composeLayout(
+      certificate(
+        form({ type: 'ATTENDANCE', restFrom: null, restTo: null, includeDiagnosis: false, contingencyType: null }), // prettier-ignore
+      ),
+      context,
+      template,
+    );
+
+    // The common frame prints the legend beside the title (DOC-082).
+    expect(withDiagnosis.frame.confidential).toBe(true);
+    expect(wholeText(withDiagnosis)).toContain('J00');
+    expect(without.frame.confidential).toBe(false);
+    expect(wholeText(without)).not.toContain('J00');
+  });
+
+  it('CER-034 CER-036 la contingencia y el lugar de emisión', () => {
+    const text = wholeText(composeLayout(certificate(), context, template));
+
+    expect(text).toContain('Enfermedad general');
+    expect(text).toContain('Quito');
+  });
+
+  it('CER-035 en maternidad imprime ingreso, parto y alta', () => {
+    const text = wholeText(
+      composeLayout(
+        certificate(
+          form({
+            contingencyType: 'MATERNITY',
+            maternity: { admissionOn: day, birthOn: day, dischargeOn: addDays(day, 2) }, // prettier-ignore
+          }),
+        ),
+        context,
+        template,
+      ),
+    );
+
+    expect(text).toContain('Fecha de ingreso');
+    expect(text).toContain('Fecha del parto');
+    expect(text).toContain('Fecha de alta');
+  });
+
+  it('CER-029 un certificado anulado lo dice en el propio papel, y en cada página', () => {
+    const layout = composeLayout(
+      certificate(form({ revokedAt: now, revocationReason: 'Se emitió a otro paciente' })), // prettier-ignore
+      context,
+      template,
+    );
+
+    expect(wholeText(layout)).toContain('ANULADO');
+    expect(layout.frame.watermark).toBe('CERTIFICADO ANULADO');
+    // Control positivo: el vigente no lleva marca.
+    expect(
+      composeLayout(certificate(), context, template).frame.watermark,
+    ).toBeNull();
+  });
+
+  it('CER-029 la referencia es el número del certificado y su código de verificación va al pie', () => {
+    const { frame } = composeLayout(certificate(), context, template);
+
+    expect(frame.reference).toBe('Certificado N.º 7');
+    expect(frame.footer.verification?.code).toBe('CM-4T7');
   });
 });
 

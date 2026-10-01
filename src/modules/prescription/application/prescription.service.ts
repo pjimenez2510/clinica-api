@@ -1,3 +1,4 @@
+import { admitsPrescribing } from '../domain/prescription';
 import { randomBytes } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
@@ -13,10 +14,11 @@ import {
 } from '../../../shared/clinical/patient-allergy.port';
 import { clinicalDateOf } from '../../../shared/domain/clinic-time';
 import { exactAllergyMatches } from '../domain/allergy-check';
-import { assertItemsComplete } from '../domain/prescription-content';
+import { assertPrescriptionComplete } from '../domain/prescription-content';
 import { composeDocument } from '../domain/prescription-document';
 import {
   AllergyContraindicationError,
+  PrescriberContactRequiredError,
   PrescriberNotLicensedError,
   PrescriberProfileRequiredError,
   PrescriptionEncounterNotFoundError,
@@ -66,6 +68,9 @@ export interface Requester {
 /** PR-001 to PR-009. What composing a prescription needs to be told. */
 export interface ComposePrescriptionRequest {
   encounterId: string;
+  /** PR-038, PR-039. Optional while composing; the issue demands them. */
+  warningSigns?: string | null;
+  nonPharmacologicalAdvice?: string | null;
   items: readonly NewPrescriptionItem[];
 }
 
@@ -165,6 +170,8 @@ export class PrescriptionService {
     const prescription = await this.prescriptions.create({
       encounterId: encounter.id,
       prescriberId: prescriber.practitionerId,
+      warningSigns: request.warningSigns ?? null,
+      nonPharmacologicalAdvice: request.nonPharmacologicalAdvice ?? null,
       items: request.items,
       sites: requester.sites,
     });
@@ -257,13 +264,21 @@ export class PrescriptionService {
           throw new PrescriberNotLicensedError();
         }
 
+        // PR-040. Art. 5.e.vi prints a number to call beside the warning
+        // signs; without one there is no prescription to issue.
+        const { contactPhone } = snapshot.prescriber;
+        if (contactPhone === null || contactPhone.trim() === '') {
+          throw new PrescriberContactRequiredError();
+        }
+
         // PR-021. Art. 5.a.ii wants the city, and there is none to print.
         if (snapshot.cityOfPrescription === null) {
           throw new PrescriptionEstablishmentIncompleteError();
         }
 
-        // PR-032. The whole of art. 5.c, every line, in one answer.
-        assertItemsComplete(snapshot.items);
+        // PR-032, PR-038, PR-039. The indications of art. 5.e and the whole
+        // of art. 5.c on every line, in one answer.
+        assertPrescriptionComplete(snapshot);
 
         /**
          * PR-060. The one alert that interrupts. It is checked LAST of the
@@ -514,7 +529,7 @@ export class PrescriptionService {
     requester: Requester,
   ) {
     const encounter = await this.requireEncounter(encounterId, requester);
-    if (encounter.status !== 'OPEN' && encounter.status !== 'ON_HOLD') {
+    if (!admitsPrescribing(encounter.status)) {
       throw new PrescriptionEncounterNotOpenError(encounter.status);
     }
     return encounter;

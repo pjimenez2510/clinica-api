@@ -1,3 +1,5 @@
+import { composeForm117 } from '../../../shared/domain/form-117/form-117';
+
 import type { DocumentKind } from './document-kind';
 import type {
   DocumentSubject,
@@ -44,6 +46,7 @@ const practitioner: PractitionerIdentity = {
   mspCode: null,
   seal: null,
   signature: null,
+  contactPhone: '0990000000',
 };
 
 const diagnoses = [
@@ -68,7 +71,11 @@ export function sampleSubject(
           status: 'ACTIVE',
           issuedAt,
           city: 'Quito',
+          sequenceNumber: 1,
           verificationCode: SAMPLE_CODE,
+          warningSigns: `${SAMPLE_MARK}. Dolor de cabeza intenso.`,
+          nonPharmacologicalAdvice:
+            'Reduzca la sal y camine treinta minutos al día.',
           patient,
           diagnoses,
           allergies: ['Penicilina'],
@@ -95,6 +102,8 @@ export function sampleSubject(
         data: {
           subjectId: 'sample',
           siteId: 'sample',
+          number: 1,
+          verificationCode: SAMPLE_CODE,
           requestedAt: issuedAt,
           category: 'LABORATORY',
           priority: 'ROUTINE',
@@ -102,7 +111,15 @@ export function sampleSubject(
           patient,
           diagnoses,
           orderedBy: practitioner,
-          items: [{ display: 'Creatinina sérica', status: 'REQUESTED' }],
+          items: [
+            {
+              code: 'MUESTRA',
+              display: 'Creatinina sérica',
+              specimen: 'Sangre',
+              preparation: 'Ayuno de 8 horas.',
+              status: 'REQUESTED',
+            },
+          ],
         },
       };
     case 'MEDICAL_CERTIFICATE':
@@ -111,16 +128,59 @@ export function sampleSubject(
         data: {
           subjectId: 'sample',
           siteId: 'sample',
-          type: 'ATTENDANCE',
-          issuedAt,
-          restFrom: null,
-          restTo: null,
-          includeDiagnosis: true,
-          diagnoses,
-          body: `${SAMPLE_MARK}. Certifico que la persona fue atendida en esta fecha.`,
-          verificationCode: SAMPLE_CODE,
-          revokedAt: null,
-          patient,
+          // The same composer the issued certificate goes through: a sample
+          // laid out by hand would preview a 117 nobody issues.
+          form: composeForm117({
+            certificate: {
+              id: 'sample',
+              number: 1,
+              verificationCode: SAMPLE_CODE,
+              type: 'ATTENDANCE',
+              issuedAt,
+              restFrom: null,
+              restTo: null,
+              includeDiagnosis: true,
+              contingencyType: null,
+              maternity: null,
+              revokedAt: null,
+              revocationReason: null,
+            },
+            site: {
+              name: 'MUESTRA',
+              mspUnicode: '000000',
+              city: 'Quito',
+              address: null,
+              phone: null,
+            },
+            patient: {
+              familyName: 'MUESTRA',
+              secondFamilyName: null,
+              givenName: 'PACIENTE',
+              secondGivenName: 'Ejemplo',
+              sex: 'FEMALE',
+              mrn: 'MUESTRA',
+              employerName: null,
+              jobTitle: null,
+              residenceAddressLine: null,
+              phone: null,
+              identifiers: [{ type: 'CEDULA', value: '1710034065' }],
+            },
+            encounter: {
+              startedAt: issuedAt,
+              endedAt: issuedAt,
+              ageYears: patient.ageYears,
+              ageMonths: patient.ageMonths,
+              ageDays: null,
+            },
+            diagnoses,
+            practitioner: {
+              givenNames: 'MUESTRA',
+              familyNames: 'PROFESIONAL Ejemplo',
+              cedula: null,
+              primarySpecialty: null,
+              hasSeal: false,
+            },
+          }),
           issuedBy: practitioner,
         },
       };

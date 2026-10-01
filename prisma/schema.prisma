@@ -149,6 +149,7 @@ model User {
   /// art. 13 turns «nobody assessed them» into a criminal matter.
   emergencyFlagsRaised           AgendaEntry[]                @relation("EmergencyFlagger")
   prescriptionsDiscarded         Prescription[]               @relation("PrescriptionDiscarder")
+  certificatesRevoked            MedicalCertificate[]         @relation("CertificateRevoker")
   subjectStatusChanges           AgendaSubjectStatusHistory[] @relation("SubjectStatusChanger")
   chargeItemsVoided              ChargeItem[]                 @relation("ChargeVoider")
   billableServicesTaxReviewed    BillableService[]            @relation("TaxRateReviewer")
@@ -755,6 +756,16 @@ enum AbnormalFlag {
   @@map("abnormal_flag")
 }
 
+/// CER-034. The contingency of a rest certificate, as the IESS lists it.
+enum CertificateContingencyType {
+  GENERAL_ILLNESS
+  WORK_ACCIDENT
+  OCCUPATIONAL_DISEASE
+  MATERNITY
+
+  @@map("certificate_contingency_type")
+}
+
 enum CertificateType {
   ATTENDANCE
   MEDICAL_REST
@@ -1102,6 +1113,9 @@ model Site {
   patientAccounts    PatientAccount[]
   invoices           Invoice[]
   documentRenders    DocumentRender[]
+  documentCounters   DocumentCounter[]
+  prescriptions      Prescription[]
+  certificates       MedicalCertificate[]
 
   @@map("site")
 }
@@ -1342,6 +1356,13 @@ model Practitioner {
   /// Professional code assigned by the MSP, required per attention by RDACAA.
   /// Cedula and ACESS registration already live on `app_user`, not duplicated.
   mspCode String? @map("msp_code") @db.VarChar(32)
+
+  /// PR-040, ST-049 (Res. ACESS-2023-0030 art. 5.e.vi). The prescriber's
+  /// permanent contact number, printed beside the warning signs. Of the
+  /// clinical profile and not of the account. Digits with an optional leading
+  /// `+` (`practitioner_emergency_contact_phone_format`). The issue of a
+  /// prescription demands it.
+  emergencyContactPhone String? @map("emergency_contact_phone") @db.VarChar(16)
 
   /// Whether this practitioner takes appointments. A pathologist has a clinical
   /// profile but no agenda.
@@ -1634,6 +1655,11 @@ model Patient {
   residenceParish          CatalogConcept? @relation("PatientResidenceParish", fields: [residenceParishConceptId], references: [id], onDelete: Restrict)
 
   residenceAddressLine String? @map("residence_address_line") @db.VarChar(255)
+  /// PA-061, CER-038. Where the patient works and what as: the rest
+  /// certificate the IESS validates prints both. Corrected with a trail, never
+  /// asked at registration.
+  employerName         String? @map("employer_name") @db.VarChar(160)
+  jobTitle             String? @map("job_title") @db.VarChar(120)
   phone                String? @db.VarChar(32)
   email                String? @db.VarChar(255)
   bloodType            String? @map("blood_type") @db.VarChar(3)
@@ -2721,6 +2747,25 @@ model Prescription {
   prescriberId String       @map("prescriber_id") @db.Uuid
   prescriber   Practitioner @relation(fields: [prescriberId], references: [id], onDelete: Restrict)
 
+  /// PR-020. The site of the attention, set by `prescription_site_assigned`
+  /// from the encounter (it OVERWRITES what a writer sends) and immutable. It
+  /// exists so the sequential number can be unique per site.
+  siteId String @map("site_id") @db.Uuid
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Restrict, map: "prescription_site_fk")
+
+  /// PR-020 (art. 5.a.i). Consecutive per site, without gaps, assigned at the
+  /// issue by `prescription_number_immutable` from `document_counter`. NULL
+  /// exactly while DRAFT or DISCARDED (`prescription_number_only_when_issued`).
+  sequenceNumber Int? @map("sequence_number")
+
+  /// PR-038 (art. 5.e.iv). «Manifestaciones ante las cuales el usuario/paciente
+  /// debe llamar al profesional prescriptor o acudir al servicio de
+  /// emergencia». Of the prescription, not of a line. Demanded at the issue.
+  warningSigns String? @map("warning_signs") @db.Text
+
+  /// PR-039 (art. 5.e.v). Non-pharmacological advice. Demanded at the issue.
+  nonPharmacologicalAdvice String? @map("non_pharmacological_advice") @db.Text
+
   status   PrescriptionStatus @default(DRAFT)
   issuedAt DateTime?          @map("issued_at") @db.Timestamptz(6)
 
@@ -2747,6 +2792,7 @@ model Prescription {
   discardedBy   User?     @relation("PrescriptionDiscarder", fields: [discardedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "prescription_discarded_by_fk")
   discardReason String?   @map("discard_reason") @db.VarChar(500)
 
+  @@unique([siteId, sequenceNumber], map: "prescription_site_number_unique")
   @@index([encounterId])
   @@map("prescription")
 }
@@ -2799,6 +2845,17 @@ model ServiceOrder {
   orderedById String       @map("ordered_by_id") @db.Uuid
   orderedBy   Practitioner @relation(fields: [orderedById], references: [id], onDelete: Restrict)
 
+  /// ORD-006 (A.M. 00002393 art. 43). Consecutive per site, without gaps,
+  /// assigned by `service_order_number_assigned` from `document_counter` and
+  /// immutable (`service_order_number_immutable`). The database OVERWRITES
+  /// whatever a writer sends: the default only lets Prisma omit it.
+  number Int @default(0)
+
+  /// D-095. The short RANDOM code a laboratory checks the order with, without
+  /// receiving any clinical datum. Generated by the database on insert; not
+  /// the number (ORD-006), which is consecutive and therefore guessable.
+  verificationCode String @unique @default(dbgenerated("upper(substr(md5((gen_random_uuid())::text), 1, 16))")) @map("verification_code") @db.VarChar(16)
+
   category ServiceOrderCategory
   priority ServiceOrderPriority @default(ROUTINE)
 
@@ -2819,6 +2876,7 @@ model ServiceOrder {
   /// DOC-003. The archived exam request as it was handed to the patient.
   documentRenders DocumentRender[]
 
+  @@unique([siteId, number], map: "service_order_site_number_unique")
   @@index([encounterId])
   @@index([siteId, requestedAt])
   @@map("service_order")
@@ -2930,6 +2988,17 @@ model MedicalCertificate {
   encounterId String    @map("encounter_id") @db.Uuid
   encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
 
+  /// CER-009. The site of the attention, set by `medical_certificate_number_assigned`
+  /// from the encounter whatever the row carries. It exists so the number can
+  /// be unique per site (D-074).
+  siteId String @map("site_id") @db.Uuid
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Restrict, map: "medical_certificate_site_fk")
+
+  /// CER-009 (REQ-074). Consecutive per site, without gaps, assigned by the
+  /// trigger at insert from `document_counter` and immutable afterwards. The
+  /// default only lets Prisma omit it; the trigger always overwrites it.
+  number Int @default(0)
+
   patientId String  @map("patient_id") @db.Uuid
   patient   Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
 
@@ -2943,24 +3012,51 @@ model MedicalCertificate {
   restFrom DateTime? @map("rest_from") @db.Date
   restTo   DateTime? @map("rest_to") @db.Date
 
-  /// The patient decides whether the diagnosis appears on the certificate their
-  /// employer will read. Defaults to hidden: privacy by default is an LOPDP
-  /// requirement, not a preference.
+  /// CER-007. Always true on a rest: the IESS does not validate one without its
+  /// CIE-10. On an attendance certificate the patient decides, and the request
+  /// has to say it; the default is never relied upon.
   includeDiagnosis Boolean @default(false) @map("include_diagnosis")
 
-  body String @db.Text
+  /// CER-034. Only on a rest (`medical_certificate_contingency_only_on_rest`);
+  /// that a rest always carries it is the service's guarantee.
+  contingencyType CertificateContingencyType? @map("contingency_type")
+
+  /// CER-035. Admission, birth and discharge of a maternity, the three together
+  /// exactly when the contingency is MATERNITY
+  /// (`medical_certificate_maternity_dates_together`).
+  maternityAdmissionOn DateTime? @map("maternity_admission_on") @db.Date
+  birthOn              DateTime? @map("birth_on") @db.Date
+  maternityDischargeOn DateTime? @map("maternity_discharge_on") @db.Date
+
+  /// CER-030. Why a rest starts before the clinical date of the attention.
+  /// Never blank (`medical_certificate_backdating_reason_not_blank`).
+  restBackdatingReason String? @map("rest_backdating_reason") @db.Text
 
   /// Printed as a QR so a third party can verify the certificate is genuine
   /// without receiving any clinical data.
   verificationCode String @unique @map("verification_code") @db.VarChar(24)
 
   issuedAt         DateTime  @default(now()) @map("issued_at") @db.Timestamptz(6)
+  /// CER-011. Who, when and why, the three together or none:
+  /// `medical_certificate_revocation_states_who_when_and_why`. The row is never
+  /// deleted. `revoked_by_id` is the ACCOUNT that annulled it.
   revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(6)
+  /// CER-027. The diagnoses it printed, copied at the issue (`[]` without them).
+  diagnoses            Json    @default("[]")
+  /// CER-038. The chart's work and contact as they were at the issue.
+  employerName         String? @map("employer_name") @db.VarChar(160)
+  jobTitle             String? @map("job_title") @db.VarChar(120)
+  residenceAddressLine String? @map("residence_address_line") @db.VarChar(255)
+  patientPhone         String? @map("patient_phone") @db.VarChar(32)
+
+  revokedById      String?   @map("revoked_by_id") @db.Uuid
+  revokedBy        User?     @relation("CertificateRevoker", fields: [revokedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "medical_certificate_revoked_by_fk")
   revocationReason String?   @map("revocation_reason") @db.Text
 
   /// DOC-003, DOC-075. The archived form 117 as it was handed over.
   documentRenders DocumentRender[]
 
+  @@unique([siteId, number], map: "medical_certificate_site_number_unique")
   @@index([patientId, issuedAt(sort: Desc)])
   @@map("medical_certificate")
 }
@@ -3666,6 +3762,12 @@ model ExamDefinition {
   code String @unique(map: "exam_definition_code_unique") @db.VarChar(32)
   name String @db.VarChar(200)
 
+  /// ORD-004. The code of the tariff service this exam IS. A code and not a
+  /// concept id because the tariff is versioned: the concept in force on the
+  /// attention's clinical date is resolved when the order is placed. NULL means
+  /// the exam cannot be ordered yet.
+  tariffCode String? @map("tariff_code") @db.VarChar(32)
+
   /// The section of MSP form 010A this belongs to, so that a compliant order
   /// can be printed. That form binds the private sector too:
   /// A.M. 00002393 art. 42.
@@ -4020,6 +4122,20 @@ model DocumentRender {
   @@index([invoiceId], map: "document_render_by_invoice")
   @@index([siteId, issuedAt(sort: Desc)], map: "document_render_by_site")
   @@map("document_render")
+}
+
+/// ORD-006, PR-020, CER-009. The last number handed out per site and document
+/// kind. Incremented INSIDE the issuing transaction by `next_document_number`,
+/// so a rolled-back issue gives its number back and the series has no gaps.
+/// Written only by triggers; the application never touches it.
+model DocumentCounter {
+  siteId     String @map("site_id") @db.Uuid
+  site       Site   @relation(fields: [siteId], references: [id], onDelete: Restrict, map: "document_counter_site_fk")
+  kind       String @db.VarChar(32)
+  lastNumber Int    @default(0) @map("last_number")
+
+  @@id([siteId, kind])
+  @@map("document_counter")
 }
 
 // ---------------------------------------------------------------------------

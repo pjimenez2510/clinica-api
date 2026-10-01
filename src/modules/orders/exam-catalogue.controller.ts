@@ -47,6 +47,7 @@ export class ExamCatalogueController {
         specimenType: exam.specimenType,
         patientPreparation: exam.patientPreparation,
         turnaroundHours: exam.turnaroundHours,
+        tariffCode: exam.tariffCode,
         performedExternally: exam.performedExternally,
         externalLabName: exam.externalLabName,
         analytes: exam.analytes.map((entry) => ({

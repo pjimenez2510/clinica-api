@@ -51,6 +51,26 @@ registerConstraintMeanings({
     message: 'Ese documento ya fue anulado por otro. Actualice la lista para ver el vigente', // prettier-ignore
   },
   /**
+   * DOC-008. `document_render_*_original_unique`: ONE original per subject;
+   * the others supersede it. The ordinary race —«Emitir» pressed twice, or from
+   * two tabs— and the answer is that the PDF already exists.
+   */
+  document_render_prescription_original_unique: {
+    code: 'DOCUMENT_ALREADY_EMITTED',
+    field: 'subjectId',
+    message: 'Este documento ya tiene su PDF archivado. Descárguelo, o corríjalo si hay que cambiarlo', // prettier-ignore
+  },
+  document_render_service_order_original_unique: {
+    code: 'DOCUMENT_ALREADY_EMITTED',
+    field: 'subjectId',
+    message: 'Este documento ya tiene su PDF archivado. Descárguelo, o corríjalo si hay que cambiarlo', // prettier-ignore
+  },
+  document_render_certificate_original_unique: {
+    code: 'DOCUMENT_ALREADY_EMITTED',
+    field: 'subjectId',
+    message: 'Este documento ya tiene su PDF archivado. Descárguelo, o corríjalo si hay que cambiarlo', // prettier-ignore
+  },
+  /**
    * DOC-003. `document_render_one_subject` and
    * `document_render_kind_matches_subject`.
    *

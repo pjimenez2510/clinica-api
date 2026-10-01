@@ -43,7 +43,7 @@ export interface PlaceOrderRequest {
   category: ServiceOrderCategory;
   priority: ServiceOrderPriority;
   clinicalNoteText?: string;
-  lines: readonly { examDefinitionId: string; conceptId: string }[];
+  lines: readonly { examDefinitionId: string }[];
 }
 
 /** ORD-020 to ORD-025, ORD-081. What the pending worklist is asked for. */

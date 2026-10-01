@@ -72,6 +72,7 @@ const examBh: ExamDefinitionView = {
   specimenType: 'Sangre total con EDTA',
   patientPreparation: null,
   turnaroundHours: 4,
+  tariffCode: null,
   performedExternally: true,
   externalLabName: null,
   analytes: [
@@ -86,6 +87,7 @@ const anOrder = (): ServiceOrderView => ({
   siteId: SITE,
   patientId: 'chart-1',
   orderedById: 'practitioner-1',
+  number: 1,
   category: 'LABORATORY',
   priority: 'ROUTINE',
   clinicalNoteText: null,

@@ -330,12 +330,16 @@ cuando la gráfica exista.
   sistema DEBERÁ rechazarla con `CATALOG_CONCEPT_NOT_FOUND` o
   `CATALOG_CONCEPT_NOT_IN_FORCE`.
 
-  > **Falta esquema.** `exam_definition` **no tiene `concept_id`**, y
-  > `service_order_item.concept_id` es `NOT NULL` contra `catalog_concept`. Hoy
-  > eso obliga a que el cliente envíe **dos** identificadores por línea —el
-  > ordenable y el concepto del tarifario— cuando la relación es fija y es una
-  > propiedad del ordenable. Añadir `exam_definition.concept_id` retira el
-  > segundo campo del contrato y hace imposible que se emparejen mal.
+  > **Construido** (`exam_definition_tariff_code`), con un **código** y no con
+  > `concept_id`: el tarifario se versiona —cada publicación crea filas nuevas y
+  > retira las anteriores—, así que un `concept_id` en el examen quedaría
+  > apuntando a una versión retirada en la siguiente publicación.
+  > `exam_definition.tariff_code` es estable, y la prestación **vigente en la
+  > fecha clínica de la atención** se resuelve al emitir, dentro de la
+  > transacción. El cliente envía sólo el examen: `conceptId` salió del contrato
+  > y la línea ya no puede emparejarse mal. Un examen sin `tariff_code`, o con un
+  > código que no está en el TARIFARIO, se rechaza con
+  > `CATALOG_CONCEPT_NOT_FOUND`.
 
   La vigencia se resuelve **en `America/Guayaquil`**, como
   `trg_diagnosis_concept_in_force`: un `::date` sobre un `timestamptz` a las
@@ -345,6 +349,13 @@ cuando la gráfica exista.
 - **ORD-005** — SI la atención ya no admite contenido clínico nuevo, ENTONCES el
   sistema DEBERÁ rechazar la orden con `ORDER_ENCOUNTER_NOT_OPEN`.
 
+  > **Y la atención se bloquea antes de escribir** (`SELECT … FOR UPDATE` sobre
+  > su fila, dentro de la transacción). Agenda bloquea la misma fila al marcar
+  > «se fue sin ser atendido» o al anular la atención; sin el bloqueo, lo que
+  > se escribe en el mismo instante quedaba vivo en una atención anulada.
+  > Hallado en la revisión clínica de `fix/agenda-estados-y-sobrecupo`; lo
+  > prueba una carrera contra la base.
+
   Los estados que la admiten son `OPEN`, `ON_HOLD` y `DISCHARGED`; los tres
   terminales —`COMPLETED`, `DISCONTINUED`, `ENTERED_IN_ERROR`— no. La regla se
   declara aquí y no se importa de `encounter`: **ningún módulo importa de otro**.
@@ -353,14 +364,17 @@ cuando la gráfica exista.
   inmutable**, distinto de su identificador técnico, y ese número DEBERÁ
   imprimirse en la petición que se entrega al paciente.
 
-  > **Falta esquema, y es una obligación legal.** `service_order` no tiene
-  > columna de número y no hay secuencia. El **A.M. 00002393 art. 43** exige que
-  > las órdenes estén *«codificadas de manera consecutiva»*, y sin número no hay
-  > nada que conciliar cuando el informe vuelve en papel: el `uuidv7()` es único
-  > pero no es consecutivo ni se puede dictar por teléfono. La forma ya está
-  > resuelta en este mismo repositorio: `patient_mrn_seq` y su disparador
-  > (`20260808030000_patient_mrn_sequence`) son el patrón exacto a copiar.
-  > **Es la nota más importante de este documento.**
+  > **Construido** (`20261001070100_document_counter_and_order_number`).
+  > `service_order.number` lo asigna el disparador
+  > `service_order_number_assigned` desde `document_counter`, **por sede**
+  > (D-074), dentro de la transacción que emite: una emisión revertida devuelve
+  > su número y la serie no tiene huecos, que es lo que una `SEQUENCE` como
+  > `patient_mrn_seq` no garantiza. `service_order_site_number_unique` y
+  > `service_order_number_immutable` lo dicen una segunda vez. El disparador
+  > **pisa** el valor que traiga la fila: nadie elige el número. El A.M.
+  > 00002393 **art. 43** exige que las órdenes estén *«codificadas de manera
+  > consecutiva»*, y el número es lo que se dicta por teléfono cuando el
+  > informe vuelve en papel.
 
 - **ORD-007** — CUANDO se anula una línea pedida por error, el sistema DEBERÁ
   dejarla en `CANCELLED` con su `completed_at`, y la línea DEBERÁ desaparecer de
@@ -847,7 +861,7 @@ precisamente para que más de un módulo pueda responderlos con el mismo `code`.
 
 | Qué falta | Dónde | Requisito |
 | --- | --- | --- |
-| **Número de orden consecutivo** + secuencia + disparador. **A.M. 00002393 art. 43** | `service_order` | ORD-006 |
+| ~~Número de orden consecutivo~~ — construido: `document_counter` + disparador. **A.M. 00002393 art. 43** | `service_order` | ORD-006 |
 | **Constancia del aviso de un valor crítico**: destinatario, emisor, instante y medio. **A.M. 00002393 art. 39** | tabla nueva | ORD-062 |
 | Adjunto del PDF del laboratorio, indexado por paciente, fecha y laboratorio | tabla nueva | ORD-070 |
 | **`analyte_definition_id`**, para que el resultado apunte a su definición y no a un texto | `observation_result` | ORD-031 |

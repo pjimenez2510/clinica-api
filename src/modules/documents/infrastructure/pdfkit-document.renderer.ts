@@ -92,6 +92,11 @@ const SIZE = {
 } as const;
 const LINE_GAP = 1.5;
 
+/** What a heading reserves before it is painted. */
+const HEADING_HEIGHT = mm(9);
+/** The signature box with its caption. */
+const SIGNATURE_HEIGHT = mm(26);
+
 /**
  * DOC-071, DOC-083. Reserved at the foot of every page: room for FOUR rows —
  * the code, the verification URL, the class's note and the clinic's own
@@ -220,7 +225,12 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
 
     startPage();
 
-    for (const block of layout.blocks) {
+    for (const [index, block] of layout.blocks.entries()) {
+      const group = this.signedGroupHeight(doc, layout.blocks, index, contentWidth); // prettier-ignore
+      // Only a short group: a long one flows row by row, as any block does.
+      if (group !== null && group < (bottomLimit - mm(PAGE_MARGIN_MM)) / 2) {
+        ensure(group);
+      }
       this.paintBlock(doc, block, images, left, contentWidth, cursor, ensure);
     }
 
@@ -405,6 +415,57 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
   // ── blocks ───────────────────────────────────────────────────────────────
 
   /**
+   * A SIGNATURE NEVER STANDS ALONE ON A PAGE. The box is where the seal goes,
+   * and a seal on an otherwise empty sheet vouches for nothing written on it:
+   * the 117 printed the professional's data on page 1 and the box on page 2.
+   *
+   * So the closing group — a heading, the fields it introduces and the
+   * signature, or just the fields and the signature — is measured as one, and
+   * `ensure`d before its first block: it moves whole to the next page or not
+   * at all. `null` when `index` does not start such a group.
+   */
+  private signedGroupHeight(
+    doc: PDFKit.PDFDocument,
+    blocks: readonly Block[],
+    index: number,
+    width: number,
+  ): number | null {
+    const [first, second, third] = blocks.slice(index, index + 3);
+    if (first?.kind === 'fields' && second?.kind === 'signature') {
+      return this.fieldsHeight(doc, first, width) + SIGNATURE_HEIGHT;
+    }
+    if (
+      first?.kind === 'heading' &&
+      second?.kind === 'fields' &&
+      third?.kind === 'signature'
+    ) {
+      return HEADING_HEIGHT + this.fieldsHeight(doc, second, width) + SIGNATURE_HEIGHT; // prettier-ignore
+    }
+    return null;
+  }
+
+  /** What `paintBlock` advances for a `fields` block, measured before painting. */
+  private fieldsHeight(
+    doc: PDFKit.PDFDocument,
+    block: Extract<Block, { kind: 'fields' }>,
+    width: number,
+  ): number {
+    const inner = width / block.columns - mm(3);
+    let height = 0;
+    for (let from = 0; from < block.entries.length; from += block.columns) {
+      height +=
+        Math.max(
+          ...block.entries.slice(from, from + block.columns).map((entry) => {
+            const label = doc.font(SANS_BOLD).fontSize(SIZE.label).heightOfString(entry.label, { width: inner }); // prettier-ignore
+            const value = doc.font(SANS).fontSize(SIZE.body).heightOfString(entry.value, { width: inner, lineGap: LINE_GAP }); // prettier-ignore
+            return label + value + 0.5;
+          }),
+        ) + mm(2.5);
+    }
+    return height;
+  }
+
+  /**
    * Paints one block of the layout. Each kind calls `ensure` with its height
    * first, so a block that does not fit starts a new page instead of running
    * into the reserved band.
@@ -436,7 +497,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         return;
 
       case 'heading':
-        ensure(mm(9));
+        ensure(HEADING_HEIGHT);
         doc
           .font(SERIF_BOLD)
           .fontSize(SIZE.heading)
@@ -511,7 +572,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         return;
 
       case 'signature': {
-        ensure(mm(26));
+        ensure(SIGNATURE_HEIGHT);
         // DOC-057, DOC-060. The template's box on the right: where a hand signs.
         const boxWidth = mm(55);
         const boxHeight = mm(18);

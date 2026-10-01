@@ -240,6 +240,8 @@ const CORRECTION_SELECT = {
   genderIdentityConceptId: true,
   countryOfNationalityCode: true,
   motherPatientId: true,
+  employerName: true,
+  jobTitle: true,
   mergedInto: { select: { mrn: true } },
 } satisfies Prisma.PatientSelect;
 
@@ -540,6 +542,9 @@ export class PrismaPatientRepository implements PatientRepository {
         email: true,
         bloodType: true,
         residenceAddressLine: true,
+        // PA-061.
+        employerName: true,
+        jobTitle: true,
         /**
          * Los conceptos elegidos, UNIDOS SÓLO AQUÍ (PA-026 a PA-029, PA-056).
          *
@@ -637,6 +642,8 @@ export class PrismaPatientRepository implements PatientRepository {
       email: row.email,
       bloodType: row.bloodType,
       residenceAddressLine: row.residenceAddressLine,
+      employerName: row.employerName,
+      jobTitle: row.jobTitle,
       ethnicity: toConceptReference(row.ethnicity),
       nationality: toConceptReference(row.nationality),
       people: toConceptReference(row.people),
@@ -2102,6 +2109,8 @@ function correctionSnapshotOf(row: {
   genderIdentityConceptId: string | null;
   countryOfNationalityCode: string | null;
   motherPatientId: string | null;
+  employerName: string | null;
+  jobTitle: string | null;
 }): PatientCorrectionSnapshot {
   return {
     familyName: row.familyName,
@@ -2122,6 +2131,8 @@ function correctionSnapshotOf(row: {
     sexualOrientationConceptId: row.sexualOrientationConceptId,
     residenceParishConceptId: row.residenceParishConceptId,
     genderIdentityConceptId: row.genderIdentityConceptId,
+    employerName: row.employerName,
+    jobTitle: row.jobTitle,
     countryOfNationalityCode: row.countryOfNationalityCode,
     motherPatientId: row.motherPatientId,
   };

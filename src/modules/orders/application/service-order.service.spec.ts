@@ -58,6 +58,7 @@ const anExam = (
   specimenType: 'Sangre total con EDTA',
   patientPreparation: 'No requiere ayuno.',
   turnaroundHours: 4,
+  tariffCode: null,
   performedExternally: true,
   externalLabName: null,
   analytes: analytes.map((analyte, index) => ({
@@ -131,6 +132,7 @@ const anOrder = (lines: number): ServiceOrderView => ({
   siteId: SITE,
   patientId: 'chart-1',
   orderedById: 'practitioner-1',
+  number: 1,
   category: 'LABORATORY',
   priority: 'ROUTINE',
   clinicalNoteText: null,
@@ -169,10 +171,7 @@ describe('la emisión y el seguimiento de una orden', () => {
     encounterId: ENCOUNTER,
     category: 'LABORATORY' as const,
     priority: 'ROUTINE' as const,
-    lines: [
-      { examDefinitionId: EXAM_BH, conceptId: CONCEPT },
-      { examDefinitionId: EXAM_GLU, conceptId: CONCEPT },
-    ],
+    lines: [{ examDefinitionId: EXAM_BH }, { examDefinitionId: EXAM_GLU }],
   };
 
   it('ORD-002 emite una línea por examen pedido', async () => {

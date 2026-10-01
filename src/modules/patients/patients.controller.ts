@@ -317,6 +317,8 @@ function toDetailResponse(patient: PatientDetail) {
     email: patient.email,
     bloodType: patient.bloodType,
     residenceAddressLine: patient.residenceAddressLine,
+    employerName: patient.employerName,
+    jobTitle: patient.jobTitle,
     ethnicity: patient.ethnicity,
     nationality: patient.nationality,
     /**

@@ -89,7 +89,11 @@ async function main() {
    * —también en «PUERTO QUITO» y en una parroquia de Chimborazo—.
    */
   const parish = await prisma.catalogConcept.findFirst({
-    where: { code: '1701', validTo: null, system: { code: 'DPA' } },
+    // UNA PARROQUIA (6 dígitos) y no el cantón: la receta toma la ciudad del
+    // PADRE de la parroquia (PR-021), y con el cantón 1701 como «parroquia»
+    // imprimía la provincia, «PICHINCHA», como ciudad. 170102 es Carcelén,
+    // en el cantón Quito.
+    where: { code: '170102', validTo: null, system: { code: 'DPA' } },
     select: { id: true },
   });
 
@@ -112,9 +116,19 @@ async function main() {
   //
   // Puede no existir si `seed-organization` no ha corrido; entonces el día se
   // siembra en Norte como siempre.
-  const central = await prisma.site.findUnique({
+  let central = await prisma.site.findUnique({
     where: { mspUnicode: 'DEV-SEDE-01' },
   });
+  // The same parish for Central, which `seed-organization` creates without
+  // one: on a database seeded from scratch it is where the médico attends,
+  // and no receta could be issued there. Only when it has none — a parish set
+  // from the screen is kept.
+  if (central !== null && central.parishConceptId === null && parish) {
+    central = await prisma.site.update({
+      where: { id: central.id },
+      data: { parishConceptId: parish.id },
+    });
+  }
 
   const sur = await prisma.site.upsert({
     where: { mspUnicode: 'DEV-SUR' },
@@ -139,6 +153,12 @@ async function main() {
     });
   }
 
+  /**
+   * PR-040, ST-049. A placeholder of the right shape for the receta's «número
+   * de contacto permanente del prescriptor». Nobody answers it.
+   */
+  const DEV_CONTACT_PHONE = '0990000000';
+
   // --- Practitioners: every seeded doctor account gets a clinical profile --
   const doctors = await prisma.user.findMany({
     where: { email: { in: ['medico@clinica.ec', 'admin@clinica.ec'] } },
@@ -153,8 +173,20 @@ async function main() {
     const practitioner = await prisma.practitioner.upsert({
       where: { userId: doctor.id },
       update: { schedulable: true, active: true },
-      create: { userId: doctor.id, schedulable: true },
+      create: {
+        userId: doctor.id,
+        schedulable: true,
+        emergencyContactPhone: DEV_CONTACT_PHONE,
+      },
     });
+    // PR-040. Without it the doctor cannot issue a receta in development. Only
+    // where there is none: a number somebody typed on the staff screen stays.
+    if (practitioner.emergencyContactPhone === null) {
+      await prisma.practitioner.update({
+        where: { id: practitioner.id },
+        data: { emergencyContactPhone: DEV_CONTACT_PHONE },
+      });
+    }
     practitioners.push(practitioner);
 
     // `central` incluida: es donde se siembra el día, así que sin el vínculo

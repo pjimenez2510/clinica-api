@@ -129,6 +129,7 @@ export class PrismaStaffRepository implements StaffRepository {
     id: string,
     patch: {
       mspCode?: string | null;
+      emergencyContactPhone?: string | null;
       schedulable?: boolean;
       active?: boolean;
       cedula?: string | null;
@@ -425,6 +426,7 @@ function toView(row: PractitionerRow): PractitionerView {
     acessRegistration: row.user.acessRegistration,
     acessExpiresOn: toClinicalDate(row.user.acessExpiresOn),
     mspCode: row.mspCode,
+    emergencyContactPhone: row.emergencyContactPhone,
     schedulable: row.schedulable,
     active: row.active,
     primarySpecialty: primary,

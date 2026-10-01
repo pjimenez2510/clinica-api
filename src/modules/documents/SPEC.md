@@ -598,6 +598,15 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
   > `<thead>` al imprimir** y el fallo lleva abierto desde 2008. Una clínica que
   > use Safari imprimiría una receta rota **y nadie se enteraría**.
 
+- **DOC-101** — SI el bloque que cierra un documento —un título, los campos que
+  introduce y el recuadro de firma, o los campos y la firma— no cabe en lo que
+  queda de la página, ENTONCES el sistema DEBERÁ pasarlo **entero** a la
+  siguiente: el recuadro de firma **NO DEBERÁ** quedar solo en una página.
+
+  > Lo encontró la verificación en pantalla de `feat/f05-ordenes-receta`: el 117
+  > imprimía los datos del profesional en la página 1 y el recuadro del sello,
+  > solo, en la 2. Un sello en una hoja vacía no respalda nada de lo escrito.
+
 - **DOC-072** — La **receta** DEBERÁ llevar los cinco bloques del art. 5 en este
   orden: datos generales, datos del paciente, medicamento, prescriptor e
   indicaciones.
@@ -756,12 +765,17 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
   > mensajes llegan a registros y a capturas de pantalla de soporte.
 
 - **DOC-094** — CUANDO **cualquiera, sin sesión,** pida
-  `GET /v1/documents/verify/<código>` con el código de una receta o de un
-  certificado, el sistema DEBERÁ responder la clase, la referencia, la fecha de
-  emisión en `America/Guayaquil`, el establecimiento, la sede, el profesional y
-  el **estado**: vigente; **caducada**, si es una receta pasada su vigencia
-  (arts. 17–19); o anulado, con su fecha cuando el documento la guarda (el
-  certificado; la receta hoy no la guarda).
+  `GET /v1/documents/verify/<código>` con el código de una receta, de un
+  certificado o de una orden de exámenes, el sistema DEBERÁ responder la clase,
+  la referencia, la fecha de emisión en `America/Guayaquil`, el establecimiento,
+  la sede, el profesional y el **estado**: vigente; **caducada**, si es una
+  receta pasada su vigencia (arts. 17–19); o anulado, con su fecha cuando el
+  documento la guarda (el certificado; la receta y la orden hoy no la guardan).
+  Una orden está anulada cuando todos sus exámenes están cancelados.
+
+  > La orden entra con `feat/f05-ordenes-receta` (ORD-006, D-095): imprime su
+  > código en el pie con el QR, y un QR que respondiera «no existe» sería un
+  > sello falso.
 
   > Es **la única ruta pública** de este módulo, y la amplía a propósito (decisión
   > del autor, 30-09-2026). Lleva tope de 30 peticiones por minuto y por IP

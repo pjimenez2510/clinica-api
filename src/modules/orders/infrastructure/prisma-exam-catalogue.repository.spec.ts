@@ -35,9 +35,10 @@ const analyteRow = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const examRow = (analyte: Record<string, unknown>) => ({
+const examRow = (analyte: Record<string, unknown>, isReflex = false) => ({
   id: 'exam-1',
   code: 'EX-BH',
+  tariffCode: 'EX-BH',
   name: 'Biometría hemática completa',
   form010Section: 'HEMATOLOGÍA',
   specimenType: 'Sangre total con EDTA',
@@ -45,17 +46,20 @@ const examRow = (analyte: Record<string, unknown>) => ({
   turnaroundHours: 4,
   performedExternally: true,
   externalLabName: null,
-  analytes: [{ position: 1, isReflex: false, analyteDefinition: analyte }],
+  analytes: [{ position: 1, isReflex, analyteDefinition: analyte }],
 });
 
-function prismaDouble(analyte: Record<string, unknown> = analyteRow()) {
+function prismaDouble(
+  analyte: Record<string, unknown> = analyteRow(),
+  isReflex = false,
+) {
   const calls: { method: string; args: unknown }[] = [];
 
   const prisma = {
     examDefinition: {
       findMany: (args: unknown) => {
         calls.push({ method: 'examDefinition.findMany', args });
-        return Promise.resolve([examRow(analyte)]);
+        return Promise.resolve([examRow(analyte, isReflex)]);
       },
     },
     analyteDefinition: {
@@ -90,6 +94,20 @@ describe('el adaptador del catálogo de exámenes', () => {
       text: null,
     });
     expect(exam?.analytes[0]?.position).toBe(1);
+  });
+
+  it('ORD-010 publica la prestación del tarifario de cada examen, o nada si no la tiene', async () => {
+    const [exam] = await prismaDouble().repository.active();
+
+    expect(exam?.tariffCode).toBe('EX-BH');
+  });
+
+  it('ORD-012 publica como reflejo el analito marcado is_reflex, y como no reflejo el que no', async () => {
+    const reflex = await prismaDouble(analyteRow(), true).repository.active();
+    const plain = await prismaDouble(analyteRow(), false).repository.active();
+
+    expect(reflex[0]?.analytes[0]?.isReflex).toBe(true);
+    expect(plain[0]?.analytes[0]?.isReflex).toBe(false);
   });
 
   it('ORD-033 lee la lista de valores admitidos y descarta cualquier payload que no lo sea', async () => {

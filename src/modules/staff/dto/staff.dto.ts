@@ -84,6 +84,18 @@ const acessRegistrationSchema = z
   .max(32, 'El registro ACESS no puede superar 32 caracteres')
   .transform((value) => (value === '' ? null : value));
 
+/**
+ * ST-049. Digits, with an optional leading `+`; spaces and dashes are dropped
+ * because that is how people type a phone. The database checks the same shape.
+ */
+const emergencyContactPhoneSchema = z
+  .string({ error: 'Indique el teléfono de contacto' })
+  .transform((value) => value.replace(/[\s-]/g, ''))
+  .refine((value) => value === '' || /^\+?[0-9]{7,15}$/.test(value), {
+    message: 'Escriba un número de teléfono: sólo dígitos, de 7 a 15',
+  })
+  .transform((value) => (value === '' ? null : value));
+
 const mspCodeSchema = z
   .string({ error: 'Indique el código MSP' })
   .trim()
@@ -120,6 +132,8 @@ export const updatePractitionerSchema = z
     acessExpiresOn: clinicalDateField(
       'Indique la caducidad del ACESS en formato AAAA-MM-DD',
     ).nullish(),
+    /** ST-049. The number printed on the receta beside the warning signs. */
+    emergencyContactPhone: emergencyContactPhoneSchema.nullish(),
   })
   .refine(
     (value) => Object.values(value).some((field) => field !== undefined),
@@ -151,6 +165,8 @@ export const practitionerSchema = z.object({
   acessExpiresOn: z.iso.date().nullable(),
   /** ST-003: what RDACAA demands on every attention (REQ-021). */
   mspCode: z.string().nullable(),
+  /** ST-049, PR-040. Printed on the receta beside the warning signs. */
+  emergencyContactPhone: z.string().nullable(),
   /** ST-006. */
   schedulable: z.boolean(),
   /** ST-010: `false` means deactivated, never deleted. */

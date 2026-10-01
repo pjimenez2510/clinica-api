@@ -42,6 +42,7 @@ const PRACTITIONER: PractitionerView = {
   acessRegistration: 'ACESS-1001',
   acessExpiresOn: on('2027-01-01'),
   mspCode: 'MSP-42',
+  emergencyContactPhone: null,
   schedulable: true,
   active: true,
   primarySpecialty: null,

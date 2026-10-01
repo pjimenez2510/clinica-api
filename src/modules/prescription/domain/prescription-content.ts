@@ -103,7 +103,14 @@ export function assertOffFormularyJustified(item: ItemContent): void {
  */
 export function assertItemsComplete(items: readonly ItemContent[]): void {
   if (items.length === 0) throw new PrescriptionEmptyError();
+  const missing = missingItemFields(items);
+  if (missing.length > 0) throw new PrescriptionItemIncompleteError(missing);
+}
 
+/** Every art. 5.c field missing on every line, in line order. */
+function missingItemFields(
+  items: readonly ItemContent[],
+): { line: number; field: string }[] {
   const missing: { line: number; field: string }[] = [];
   for (const item of items) {
     assertOffFormularyJustified(item);
@@ -111,6 +118,44 @@ export function assertItemsComplete(items: readonly ItemContent[]): void {
       if (isMissing(item[field])) missing.push({ line: item.line, field });
     }
   }
+  return missing;
+}
+
+/** What art. 5 demands of the prescription as a whole, at the issue. */
+export interface PrescriptionContent {
+  /** PR-038, art. 5.e.iv — signos de alarma. */
+  warningSigns: string | null;
+  /** PR-039, art. 5.e.v — recomendaciones no farmacológicas. */
+  nonPharmacologicalAdvice: string | null;
+  items: readonly ItemContent[];
+}
+
+/**
+ * The fields of art. 5.e that belong to the PRESCRIPTION and not to a line, in
+ * the order the norm lists them.
+ */
+const MANDATORY_PRESCRIPTION_FIELDS = [
+  'warningSigns',
+  'nonPharmacologicalAdvice',
+] as const;
+
+/**
+ * PR-032, PR-038, PR-039. Everything art. 5 demands at the moment of issue:
+ * the indications of the prescription and art. 5.c on every line.
+ *
+ * ONE ANSWER FOR BOTH, prescription first and then the lines, for the reason
+ * `assertItemsComplete` gives: a form that reports one missing box per round
+ * trip is a form somebody submits five times.
+ */
+export function assertPrescriptionComplete(content: PrescriptionContent): void {
+  if (content.items.length === 0) throw new PrescriptionEmptyError();
+
+  const missing: { line: number | null; field: string }[] = [
+    ...MANDATORY_PRESCRIPTION_FIELDS.filter((field) =>
+      isMissing(content[field]),
+    ).map((field) => ({ line: null, field })),
+    ...missingItemFields(content.items),
+  ];
 
   if (missing.length > 0) throw new PrescriptionItemIncompleteError(missing);
 }

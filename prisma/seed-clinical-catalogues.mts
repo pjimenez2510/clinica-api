@@ -39,7 +39,17 @@ import { PrismaClient } from '@prisma/client';
  */
 
 /** Principios activos por su Denominación Común Internacional. */
-const CNMB_DEV: readonly { code: string; display: string; form: string }[] = [
+const CNMB_DEV: readonly {
+  code: string;
+  display: string;
+  form: string;
+  /**
+   * PR-070. Estupefaciente o psicotrópico: se receta en el recetario especial
+   * de la ACESS y este sistema no compone esa receta. Cuáles lo son lo dirá el
+   * CNMB real (D-084); aquí sólo hay uno para que la regla se vea.
+   */
+  controlled?: true;
+}[] = [
   { code: 'PARACETAMOL', display: 'Paracetamol', form: 'tableta / jarabe' },
   { code: 'IBUPROFENO', display: 'Ibuprofeno', form: 'tableta / suspensión' },
   { code: 'AMOXICILINA', display: 'Amoxicilina', form: 'cápsula / suspensión' },
@@ -91,6 +101,7 @@ const CNMB_DEV: readonly { code: string; display: string; form: string }[] = [
     form: 'tableta / ampolla',
   },
   { code: 'TRAMADOL', display: 'Tramadol', form: 'cápsula / ampolla' },
+  { code: 'MORFINA', display: 'Morfina', form: 'ampolla / tableta', controlled: true }, // prettier-ignore
 ];
 
 const CNMB_VERSION = 'DEV-2026-08';
@@ -155,6 +166,7 @@ export async function seedClinicalCatalogues(prisma: PrismaClient) {
           attributes: {
             form: item.form,
             source: 'DEV FIXTURE — no es el CNMB',
+            ...(item.controlled ? { controlled: true } : {}),
           },
         })),
       });
@@ -164,6 +176,38 @@ export async function seedClinicalCatalogues(prisma: PrismaClient) {
     cnmbCount = await prisma.catalogConcept.count({
       where: { systemId: cnmb.id, validTo: null },
     });
+  }
+
+  // PR-070. Una base sembrada con esta versión antes de que existiera la
+  // marca no la recibiría: la versión ya existe y no se vuelve a sembrar. Se
+  // garantiza aparte, sin retirar nada.
+  for (const item of CNMB_DEV.filter((entry) => entry.controlled)) {
+    const current = await prisma.catalogConcept.findFirst({
+      where: { systemId: cnmb.id, code: item.code, validTo: null },
+      select: { id: true },
+    });
+    const attributes = {
+      form: item.form,
+      source: 'DEV FIXTURE — no es el CNMB',
+      controlled: true,
+    };
+    if (current) {
+      await prisma.catalogConcept.update({
+        where: { id: current.id },
+        data: { attributes },
+      });
+    } else {
+      await prisma.catalogConcept.create({
+        data: {
+          systemId: cnmb.id,
+          code: item.code,
+          display: item.display,
+          validFrom: EFFECTIVE_FROM,
+          attributes,
+        },
+      });
+      cnmbCount += 1;
+    }
   }
 
   // ── Tarifario, derivado de los exámenes que la clínica sabe hacer ───────

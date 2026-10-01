@@ -1309,6 +1309,66 @@ describe('la ficha del RDACAA y su corrección, contra la base', () => {
     expect(await prisma.patient.count()).toBe(0);
   });
 
+  it('PA-061 corrects the employer and the job title with their trail, and the chart serves them', async () => {
+    const patient = await registerPatient();
+    // El alta no los pide: la ficha nace sin ellos.
+    expect(
+      (await read(patient.id).expect(200)).body as Record<string, unknown>,
+    ).toMatchObject({ employerName: null, jobTitle: null });
+
+    const corrected = await correct(patient.id, {
+      employerName: '  Florícola del Valle  ',
+      jobTitle: 'Supervisora de cultivo',
+    }).expect(200);
+    expect(corrected.body as Record<string, unknown>).toMatchObject({
+      employerName: 'Florícola del Valle',
+      jobTitle: 'Supervisora de cultivo',
+    });
+
+    const history = await prisma.patientChangeHistory.findMany({
+      where: { patientId: patient.id, field: { in: ['employerName', 'jobTitle'] } },
+      orderBy: { field: 'asc' },
+      select: { field: true, valueBefore: true, valueAfter: true, changedById: true },
+    }); // prettier-ignore
+    expect(history).toEqual([
+      { field: 'employerName', valueBefore: null, valueAfter: 'Florícola del Valle', changedById: recepcionUserId }, // prettier-ignore
+      { field: 'jobTitle', valueBefore: null, valueAfter: 'Supervisora de cultivo', changedById: recepcionUserId }, // prettier-ignore
+    ]);
+
+    // Las columnas existen con su ancho: 160 y 120.
+    const columns = await prisma.$queryRaw<
+      { column_name: string; character_maximum_length: number }[]
+    >`
+      SELECT column_name::text AS column_name, character_maximum_length::int AS character_maximum_length
+        FROM information_schema.columns
+       WHERE table_name = 'patient' AND column_name IN ('employer_name', 'job_title')
+       ORDER BY column_name
+    `;
+    expect(columns).toEqual([
+      { column_name: 'employer_name', character_maximum_length: 160 },
+      { column_name: 'job_title', character_maximum_length: 120 },
+    ]);
+  });
+
+  it('PA-061 the database CHECK admits the two new fields in the trail and still refuses an unknown one', async () => {
+    const patient = await registerPatient();
+    const insert = (field: string) =>
+      prisma.$executeRawUnsafe(
+        `INSERT INTO patient_change_history (patient_id, field, value_before, value_after, changed_by)
+         VALUES ($1::uuid, $2, NULL, 'Valor', $3::uuid)`,
+        patient.id,
+        field,
+        recepcionUserId,
+      );
+
+    // Control positivo: los dos campos nuevos pasan por el mismo CHECK.
+    await expect(insert('employerName')).resolves.toBe(1);
+    await expect(insert('jobTitle')).resolves.toBe(1);
+    await expect(insert('employer')).rejects.toThrow(
+      /patient_change_history_field_known/,
+    );
+  });
+
   it('PA-053 leaves the previous country in the chart history when it is corrected', async () => {
     /**
      * Una nacionalidad mal tecleada en el mostrador es un dato que el paciente

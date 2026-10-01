@@ -318,6 +318,17 @@ const correctableFields = {
   phone: z.string().trim().max(32).nullish(),
   email: z.email('Ingrese un correo electrónico válido').nullish(),
   residenceAddressLine: z.string().trim().max(255).nullish(),
+  /** PA-061. Corrected here; the registration does not ask for them. */
+  employerName: z
+    .string()
+    .trim()
+    .max(160, 'La empresa no puede superar 160 caracteres')
+    .nullish(),
+  jobTitle: z
+    .string()
+    .trim()
+    .max(120, 'El puesto de trabajo no puede superar 120 caracteres')
+    .nullish(),
   bloodType: BLOOD_TYPE.nullish(),
   ethnicityConceptId: z.uuid().nullish(),
   nationalityConceptId: z.uuid().nullish(),
@@ -575,6 +586,9 @@ export const patientDetailSchema = patientSummarySchema.extend({
   email: z.string().nullable(),
   bloodType: z.string().nullable(),
   residenceAddressLine: z.string().nullable(),
+  /** PA-061, CER-038. La empresa y el puesto, `null` mientras no se corrijan. */
+  employerName: z.string().nullable(),
+  jobTitle: z.string().nullable(),
   /**
    * Los conceptos elegidos, con la redacción con la que se registraron
    * (PA-026 a PA-029, PA-056).

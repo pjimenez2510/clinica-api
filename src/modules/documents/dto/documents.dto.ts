@@ -189,7 +189,7 @@ export type DocumentImageResponse = z.infer<typeof imageSchema>;
 
 /** DOC-094, DOC-095. The public answer: nothing about the patient. */
 const verificationSchema = z.object({
-  kind: z.enum(['PRESCRIPTION', 'MEDICAL_CERTIFICATE']),
+  kind: z.enum(['PRESCRIPTION', 'MEDICAL_CERTIFICATE', 'SERVICE_ORDER']),
   /** A clinical date in `America/Guayaquil`, `YYYY-MM-DD`. */
   issuedOn: z.iso.date(),
   establishmentName: z.string(),

@@ -1,4 +1,9 @@
 import {
+  NA,
+  type NotApplicable,
+} from '../../../shared/domain/form-117/form-117';
+import type { DateInNumbersAndWords } from '../../../shared/domain/form-117/date-in-words';
+import {
   addDays,
   clinicalDateOf,
   wallClockOf,
@@ -9,6 +14,7 @@ import {
   OUTPATIENT_VALIDITY_DAYS,
   ageText,
   quantityText,
+  indicationsText,
   routeText,
 } from './prescription-wording';
 import type { DocumentTemplate } from './document-template';
@@ -107,7 +113,23 @@ export function composePrescriptionLayout(
       ? null
       : addDays(issuedDate, OUTPATIENT_VALIDITY_DAYS - 1);
 
+  /**
+   * Art. 70 of the Res. ACESS-2023-0030: a cancelled receta is not dispensed.
+   * Printed — or reprinted — after the cancellation, it must not read as one a
+   * pharmacy can fill: the legend heads the body and crosses every page.
+   */
+  const cancelled = data.status === 'CANCELLED';
+
   const blocks: Block[] = [
+    ...(cancelled
+      ? ([
+          {
+            kind: 'paragraph',
+            text: 'RECETA ANULADA: no tiene validez y no se dispensa.',
+            emphasis: true,
+          },
+        ] as Block[])
+      : []),
     // ── Art. 5.a — datos generales.
     {
       kind: 'fields',
@@ -165,13 +187,17 @@ export function composePrescriptionLayout(
     { kind: 'heading', text: 'Prescripción' },
     {
       kind: 'table',
+      // D-095. HEADERS OF ONE LINE: the header row is one line high, and the
+      // sample showed «Presentación y concentración» wrapping onto the first
+      // value. The posology carries dose, frequency AND duration, so it gets
+      // the room the DCI does not need.
       columns: [
-        { header: '#', width: 0.05, align: 'right' },
-        { header: 'Medicamento (DCI)', width: 0.35 },
-        { header: 'Presentación y concentración', width: 0.22 },
-        { header: 'Vía', width: 0.13 },
-        { header: 'Cantidad', width: 0.13 },
-        { header: 'Posología', width: 0.12 },
+        { header: '#', width: 0.04, align: 'right' },
+        { header: 'Medicamento (DCI)', width: 0.24 },
+        { header: 'Forma y concentración', width: 0.2 },
+        { header: 'Vía', width: 0.12 },
+        { header: 'Cantidad', width: 0.14 },
+        { header: 'Posología', width: 0.26 },
       ],
       rows: data.lines.map((line, index) => [
         String(index + 1),
@@ -220,23 +246,62 @@ export function composePrescriptionLayout(
 
   // ── Art. 5.e — indicaciones, en la banda desprendible, con el sello otra vez
   //    (e.iv). El art. 5 lo pide DOS veces y ésta es la segunda.
-  const indications = data.lines
-    .map((line, index) =>
-      line.instructions === null
-        ? null
-        : { index: index + 1, text: line.instructions },
-    )
-    .filter(
-      (entry): entry is { index: number; text: string } => entry !== null,
-    );
+  // PR-037. EVERY line, composed: the dose and the duration are what the
+  // patient needs at home, whether or not the doctor added a remark.
+  const indications = data.lines.map((line, index) => ({
+    index: index + 1,
+    text: indicationsText(line),
+  }));
+
+  /**
+   * PR-020. The number beside the title —it is what the ACESS reads to detect
+   * a gap—; the pharmacy's check code goes to the frame's footer, with its QR.
+   * A draft previewed before the issue has neither, and says so instead of
+   * «null».
+   */
+  const reference =
+    data.sequenceNumber === null || data.verificationCode === null
+      ? 'Borrador — sin número'
+      : `Receta N.º ${data.sequenceNumber}`;
+
+  /**
+   * PR-038, PR-039. Art. 5.e — what the PATIENT takes home, so it travels in
+   * the detachable band. Demanded at the issue, so on an issued receta these
+   * are never empty; a draft preview prints the gap with a dash.
+   */
+  const phone = data.prescriber.contactPhone;
+  const patientIndications: Block = {
+    // Side by side, in one row: one per row pushed an ordinary one-line receta
+    // onto a second sheet.
+    kind: 'fields',
+    columns: 2,
+    entries: [
+      {
+        label: 'Signos de alarma',
+        // PR-040. IN the warning signs, because it is who to call when one
+        // appears.
+        value:
+          phone === null
+            ? (data.warningSigns ?? '—')
+            : `${data.warningSigns ?? '—'}\nSi aparece alguno, llame al ${phone}.`,
+      },
+      {
+        label: 'Recomendaciones no farmacológicas',
+        value: data.nonPharmacologicalAdvice ?? '—',
+      },
+    ],
+  };
 
   return {
-    frame: composeFrame(context, template, {
-      kind: 'PRESCRIPTION',
-      reference: data.verificationCode,
-      confidential: data.diagnoses.length > 0,
-      verificationCode: data.verificationCode,
-    }),
+    frame: {
+      ...composeFrame(context, template, {
+        kind: 'PRESCRIPTION',
+        reference,
+        confidential: data.diagnoses.length > 0,
+        verificationCode: data.verificationCode,
+      }),
+      watermark: cancelled ? 'RECETA ANULADA' : null,
+    },
     blocks,
     tearOff: {
       caption: 'Indicaciones para el paciente — recorte por esta línea',
@@ -258,6 +323,7 @@ export function composePrescriptionLayout(
                 value: entry.text,
               })),
             },
+        patientIndications,
         {
           kind: 'signature',
           caption: 'Sello del profesional',
@@ -268,184 +334,374 @@ export function composePrescriptionLayout(
   };
 }
 
-/** DOC-072. The exam request. No norm fixes its format. */
+/** How the request names its category: never the enum a clinician cannot read. */
+const ORDER_CATEGORY_LABEL: Record<string, string> = {
+  LABORATORY: 'Laboratorio',
+  IMAGING: 'Imagen',
+  PROCEDURE: 'Procedimiento',
+};
+
+const ORDER_PRIORITY_LABEL: Record<string, string> = {
+  ROUTINE: 'Rutina',
+  URGENT: 'Urgente',
+  STAT: 'Inmediata',
+};
+
+/**
+ * DOC-072. The exam request. No norm fixes its format.
+ *
+ * ORD-006. ITS NUMBER IS THE REFERENCE: the A.M. 00002393 art. 43 asks for
+ * orders «codificadas de manera consecutiva», and the number is what a report
+ * that comes back on paper quotes.
+ */
 export function composeServiceOrderLayout(
   data: ServiceOrderPrintData,
   context: DocumentContext,
   template: DocumentTemplate,
 ): DocumentLayout {
-  return {
-    frame: composeFrame(context, template, {
-      kind: 'SERVICE_ORDER',
-      reference: null,
-      confidential: data.diagnoses.length > 0,
-      verificationCode: null,
-    }),
-    blocks: [
-      {
-        kind: 'fields',
-        columns: 3,
-        entries: [
-          { label: 'Fecha', value: ecuadorianDate(data.requestedAt) },
-          { label: 'Categoría', value: data.category },
-          { label: 'Prioridad', value: data.priority },
-        ],
-      },
-      { kind: 'rule' },
-      { kind: 'heading', text: 'Paciente' },
-      patientBlock(data.patient),
-      {
-        kind: 'fields',
-        columns: 1,
-        entries: [
+  /**
+   * ORD-007. A cancelled exam is not on the paper the laboratory receives —
+   * as it is not on the screen—: printed, it is a puncture and a charge for
+   * something nobody asked for any more. With every exam cancelled the order
+   * is annulled (DOC-094 says so too), and the paper says it.
+   */
+  const live = data.items.filter((item) => item.status !== 'CANCELLED');
+  const annulled = live.length === 0;
+
+  // What the patient has to do before the extraction, once per distinct
+  // instruction: an unstated fast is a second puncture (ORD-010).
+  const preparations = [
+    ...new Set(
+      live
+        .map((item) => item.preparation)
+        .filter((text): text is string => text !== null && text.trim() !== ''),
+    ),
+  ];
+
+  const blocks: Block[] = [
+    ...(annulled
+      ? ([
           {
-            label: 'Diagnóstico presuntivo',
-            value:
-              data.diagnoses.length === 0
-                ? '—'
-                : data.diagnoses
-                    .map((d) => `${d.code} · ${d.display}`)
-                    .join(' | '),
+            kind: 'paragraph',
+            text: 'ORDEN ANULADA: todos sus exámenes están cancelados. No tiene validez.',
+            emphasis: true,
           },
-        ],
-      },
-      { kind: 'heading', text: 'Exámenes solicitados' },
-      {
-        kind: 'table',
-        columns: [
-          { header: '#', width: 0.08, align: 'right' },
-          { header: 'Examen', width: 0.72 },
-          { header: 'Estado', width: 0.2 },
-        ],
-        rows: data.items.map((item, index) => [
-          String(index + 1),
-          item.display,
-          item.status,
-        ]),
-      },
-      ...(data.clinicalNoteText === null
-        ? []
-        : ([
-            {
-              kind: 'fields',
-              columns: 1,
-              entries: [
-                {
-                  label: 'Información clínica para el laboratorio',
-                  value: data.clinicalNoteText,
-                },
-              ],
-            },
-          ] as Block[])),
-      { kind: 'heading', text: 'Profesional solicitante' },
-      prescriberBlock(data.orderedBy),
-      {
-        kind: 'signature',
-        caption: 'Firma y sello del profesional',
-        image: data.orderedBy.seal !== null ? 'seal' : null,
-      },
-    ],
+        ] as Block[])
+      : []),
+    {
+      kind: 'fields',
+      columns: 3,
+      entries: [
+        { label: 'Fecha', value: ecuadorianDate(data.requestedAt) },
+        {
+          label: 'Tipo',
+          value: ORDER_CATEGORY_LABEL[data.category] ?? data.category,
+        },
+        {
+          label: 'Prioridad',
+          value: ORDER_PRIORITY_LABEL[data.priority] ?? data.priority,
+        },
+      ],
+    },
+    { kind: 'rule' },
+    { kind: 'heading', text: 'Paciente' },
+    patientBlock(data.patient),
+    {
+      kind: 'fields',
+      columns: 1,
+      entries: [
+        {
+          label: 'Diagnóstico presuntivo',
+          value:
+            data.diagnoses.length === 0
+              ? '—'
+              : data.diagnoses
+                  .map((d) => `${d.code} · ${d.display}`)
+                  .join(' | '),
+        },
+        ...(data.clinicalNoteText === null
+          ? []
+          : [
+              {
+                label: 'Datos clínicos para el laboratorio',
+                value: data.clinicalNoteText,
+              },
+            ]),
+      ],
+    },
+    { kind: 'heading', text: 'Exámenes solicitados' },
+    {
+      kind: 'table',
+      columns: [
+        { header: 'Código', width: 0.28 },
+        { header: 'Examen', width: 0.44 },
+        { header: 'Muestra', width: 0.28 },
+      ],
+      rows: live.map((item) => [item.code, item.display, item.specimen ?? '—']),
+    },
+    { kind: 'heading', text: 'Indicaciones al paciente' },
+    preparations.length === 0
+      ? { kind: 'paragraph', text: 'No requiere preparación previa.' }
+      : {
+          kind: 'fields',
+          columns: 1,
+          entries: preparations.map((text) => ({
+            label: 'Preparación',
+            value: text,
+          })),
+        },
+    { kind: 'heading', text: 'Médico solicitante' },
+    prescriberBlock(data.orderedBy),
+    {
+      kind: 'signature',
+      caption: 'Firma y sello del profesional',
+      image: data.orderedBy.seal !== null ? 'seal' : null,
+    },
+  ];
+
+  return {
+    // ORD-006 and D-095: the number on top, and in the footer the code a
+    // laboratory checks the order with.
+    frame: {
+      ...composeFrame(context, template, {
+        kind: 'SERVICE_ORDER',
+        reference: `Orden N.º ${data.number}`,
+        confidential: data.diagnoses.length > 0,
+        verificationCode: data.verificationCode,
+      }),
+      watermark: annulled ? 'ORDEN ANULADA' : null,
+    },
+    blocks,
     tearOff: null,
   };
 }
 
+/** How a date of form 117 prints: «21/05/2026 — veintiuno de mayo de …». */
+function form117Date(value: DateInNumbersAndWords | NotApplicable): string {
+  if (value === NA) return NA;
+  return `${value.iso.split('-').reverse().join('/')} — ${value.inWords}`;
+}
+
+/** The type of certificate in Spanish: never the enum (D-095). */
+const CERTIFICATE_TYPE_LABEL: Record<string, string> = {
+  ATTENDANCE: 'Certificado de asistencia',
+  MEDICAL_REST: 'Reposo médico',
+};
+
 /**
- * DOC-075. The certificate, over the structure of MSP form 117.
+ * DOC-075. The certificate over the structure of MSP form 117 —blocks A to E
+ * with their own titles— plus what the IESS asks for (D-075) and the approved
+ * template (D-095).
  *
- * ⚠️ THE DIAGNOSIS IS PRINTED ONLY IF THE PATIENT SAID SO. `include_diagnosis`
- * defaults to false in the schema, and this is the document their EMPLOYER
- * reads: privacy by default is an LOPDP requirement, not a preference.
+ * THE CONTENT IS `composeForm117`'s, the same the screen serves: this function
+ * only lays it out. Nothing here re-derives an age, a date in words or a
+ * number of days.
+ *
+ * ⚠️ «CONFIDENCIAL» exactly when the diagnosis is printed (CER-033, A.M.
+ * 5216-A art. 33). The common frame prints it, beside the title.
  */
 export function composeCertificateLayout(
   data: CertificatePrintData,
   context: DocumentContext,
   template: DocumentTemplate,
 ): DocumentLayout {
-  const restEntries: LabelledValue[] = [];
-  if (data.restFrom !== null && data.restTo !== null) {
-    restEntries.push(
-      { label: 'Reposo desde', value: calendarDate(data.restFrom) },
-      { label: 'Reposo hasta', value: calendarDate(data.restTo) },
-    );
-  }
+  const form = data.form;
+  const blocks: Block[] = [];
 
-  const blocks: Block[] = [
-    {
-      kind: 'fields',
-      columns: 3,
-      entries: [
-        { label: 'Formulario', value: '117 — Certificado médico' },
-        { label: 'Fecha de emisión', value: ecuadorianDate(data.issuedAt) },
-        { label: 'Tipo', value: data.type },
-      ],
-    },
-    { kind: 'rule' },
-    { kind: 'heading', text: 'Paciente' },
-    patientBlock(data.patient),
-  ];
-
-  if (restEntries.length > 0) {
-    blocks.push({ kind: 'fields', columns: 2, entries: restEntries });
-  }
-
-  if (data.includeDiagnosis && data.diagnoses.length > 0) {
-    blocks.push({
-      kind: 'fields',
-      columns: 1,
-      entries: [
-        {
-          label: 'Diagnóstico',
-          value: data.diagnoses
-            .map((d) => `${d.code} · ${d.display}`)
-            .join(' | '),
-        },
-      ],
-    });
-  }
-
-  blocks.push(
-    { kind: 'heading', text: 'Certificación' },
-    { kind: 'paragraph', text: data.body },
-  );
-
-  if (data.revokedAt !== null) {
+  if (form.revocation !== null) {
     // A revoked certificate that printed like a valid one is the failure this
     // line exists for: somebody is holding the paper.
     blocks.push({
       kind: 'paragraph',
-      text: `DOCUMENTO ANULADO el ${ecuadorianDate(data.revokedAt)}. No tiene validez.`,
+      text: `DOCUMENTO ANULADO el ${form.revocation.revokedOn.split('-').reverse().join('/')}: ${form.revocation.reason}. No tiene validez.`,
       emphasis: true,
     });
   }
 
   blocks.push(
-    { kind: 'heading', text: 'Profesional' },
-    prescriberBlock(data.issuedBy),
     {
-      kind: 'signature',
-      caption: 'Firma y sello del profesional',
-      image: data.issuedBy.seal !== null ? 'seal' : null,
+      kind: 'fields',
+      columns: 3,
+      entries: [
+        { label: 'Lugar de emisión', value: form.placeOfIssue },
+        {
+          label: 'Tipo',
+          value: CERTIFICATE_TYPE_LABEL[form.type] ?? NA,
+        },
+        { label: 'Contingencia', value: form.contingency },
+      ],
+    },
+    { kind: 'rule' },
+
+    // ── A. Datos del establecimiento y usuario / paciente.
+    {
+      kind: 'heading',
+      text: 'A. Datos del establecimiento y usuario / paciente',
     },
     {
       kind: 'fields',
-      columns: 1,
+      columns: 3,
       entries: [
         {
-          label: 'Código de verificación',
-          value: data.verificationCode,
+          label: 'Institución del sistema',
+          value: form.establishment.institution,
         },
+        { label: 'Unicódigo', value: form.establishment.mspUnicode },
+        { label: 'Establecimiento de salud', value: form.establishment.name },
+        {
+          label: 'Número de historia clínica única',
+          value: form.establishment.clinicalRecordNumber,
+        },
+        { label: 'Número de archivo', value: form.establishment.archiveNumber },
+      ],
+    },
+
+    // ── B. Certifico que.
+    { kind: 'heading', text: 'B. Certifico que' },
+    {
+      kind: 'fields',
+      columns: 3,
+      entries: [
+        { label: 'Primer apellido', value: form.patient.firstFamilyName },
+        { label: 'Segundo apellido', value: form.patient.secondFamilyName },
+        { label: 'Primer nombre', value: form.patient.firstGivenName },
+        { label: 'Segundo nombre', value: form.patient.secondGivenName },
+        { label: 'Sexo', value: form.patient.sex },
+        {
+          label: 'Edad',
+          value: `${form.patient.age.value} (${form.patient.age.condition})`,
+        },
+        {
+          label: 'Fue atendido en el servicio de',
+          value: form.attention.service,
+        },
+        { label: 'Especialidad', value: form.attention.specialty },
+        { label: 'Fecha de atención', value: form117Date(form.attention.date) },
+        {
+          label: 'Hora de atención',
+          value: `desde ${form.attention.from} hasta ${form.attention.to}`,
+        },
+        { label: 'Fecha de ingreso', value: form.attention.admissionDate },
+        { label: 'Fecha de alta', value: form.attention.dischargeDate },
       ],
     },
   );
 
+  // CER-038. The IESS asks for where the patient works on a rest certificate;
+  // the 117 has no box for it, so it goes right under block B, and only on a
+  // rest. On attendance an employer reads the paper and has no business here.
+  if (form.work !== NA) {
+    blocks.push(
+      { kind: 'paragraph', text: 'Datos laborales del paciente', emphasis: true }, // prettier-ignore
+      {
+        kind: 'fields',
+        columns: 2,
+        entries: [
+          { label: 'Empresa', value: form.work.employer },
+          { label: 'Puesto de trabajo', value: form.work.jobTitle },
+          { label: 'Domicilio', value: form.work.address },
+          { label: 'Teléfono', value: form.work.phone },
+        ],
+      },
+    );
+  }
+
+  // ── C. Se recomienda.
+  blocks.push(
+    { kind: 'heading', text: 'C. Se recomienda' },
+    {
+      kind: 'fields',
+      columns: 2,
+      entries: [
+        { label: 'Reposo', value: form.rest.rest },
+        {
+          label: 'Días de reposo',
+          value:
+            form.rest.days === NA
+              ? NA
+              : `${form.rest.days} (${form.rest.daysInWords})`,
+        },
+        { label: 'Desde', value: form117Date(form.rest.from) },
+        { label: 'Hasta', value: form117Date(form.rest.to) },
+      ],
+    },
+  );
+  if (form.rest.periodInWords !== NA) {
+    blocks.push({ kind: 'paragraph', text: form.rest.periodInWords });
+  }
+  if (form.maternity !== NA) {
+    blocks.push({
+      kind: 'fields',
+      columns: 3,
+      entries: [
+        { label: 'Fecha de ingreso', value: form117Date(form.maternity.admission) }, // prettier-ignore
+        { label: 'Fecha del parto', value: form117Date(form.maternity.birth) },
+        {
+          label: 'Fecha de alta',
+          value: form117Date(form.maternity.discharge),
+        },
+      ],
+    });
+  }
+
+  // ── D. Diagnóstico, con su código CIE, o «NA».
+  blocks.push({ kind: 'heading', text: 'D. Diagnóstico' });
+  blocks.push(
+    form.diagnoses === NA
+      ? { kind: 'paragraph', text: NA }
+      : {
+          kind: 'table',
+          columns: [
+            { header: 'CIE', width: 0.18 },
+            { header: 'Diagnóstico', width: 0.82 },
+          ],
+          rows: form.diagnoses.map((d) => [d.code, d.display]),
+        },
+  );
+
+  // ── E. Datos del profesional responsable.
+  blocks.push(
+    { kind: 'heading', text: 'E. Datos del profesional responsable' },
+    {
+      kind: 'fields',
+      columns: 3,
+      entries: [
+        {
+          label: 'Fecha',
+          value: form.professional.date,
+        },
+        { label: 'Hora', value: form.professional.time },
+        {
+          label: 'Nombres y apellidos',
+          value: `${form.professional.givenNames} ${form.professional.familyNames}`,
+        },
+        {
+          label: 'Número de documento de identificación',
+          value: form.professional.identification,
+        },
+      ],
+    },
+    {
+      // CER-028. The credential signed it; the box is for the seal, never a
+      // drawn stroke.
+      kind: 'signature',
+      caption: 'Firma (credencial del profesional en el sistema) y sello',
+      image: data.issuedBy.seal !== null ? 'seal' : null,
+    },
+  );
+
   return {
-    frame: composeFrame(context, template, {
-      kind: 'MEDICAL_CERTIFICATE',
-      reference: data.verificationCode,
-      // DOC-082. Only when the patient let the diagnosis be printed.
-      confidential: data.includeDiagnosis && data.diagnoses.length > 0,
-      verificationCode: data.verificationCode,
-    }),
+    frame: {
+      ...composeFrame(context, template, {
+        kind: 'MEDICAL_CERTIFICATE',
+        reference: `Certificado N.º ${form.number}`,
+        // CER-033, DOC-082. Exactly when the diagnosis is printed.
+        confidential: form.confidential,
+        verificationCode: form.verificationCode,
+      }),
+      // CER-029. Across every page, not only the line at the top.
+      watermark: form.revocation === null ? null : 'CERTIFICADO ANULADO',
+    },
     blocks,
     tearOff: null,
   };

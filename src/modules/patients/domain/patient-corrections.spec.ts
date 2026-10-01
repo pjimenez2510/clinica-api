@@ -35,6 +35,8 @@ const CURRENT: PatientCorrectionSnapshot = {
   genderIdentityConceptId: null,
   countryOfNationalityCode: null,
   motherPatientId: null,
+  employerName: null,
+  jobTitle: null,
 };
 
 describe('planning a correction of a chart', () => {
@@ -155,6 +157,22 @@ describe('planning a correction of a chart', () => {
       (match) => match[1],
     );
     expect(inDatabase).toEqual([...CORRECTABLE_PATIENT_FIELDS]);
+  });
+
+  it('PA-061 corrects the employer and the job title like any other datum, with their previous value', () => {
+    expect(
+      planCorrection(
+        { ...CURRENT, employerName: 'Textiles Andinos' },
+        { employerName: 'Florícola del Valle', jobTitle: 'Supervisora' },
+      ),
+    ).toEqual([
+      {
+        field: 'employerName',
+        valueBefore: 'Textiles Andinos',
+        valueAfter: 'Florícola del Valle',
+      },
+      { field: 'jobTitle', valueBefore: null, valueAfter: 'Supervisora' },
+    ]);
   });
 
   it('PA-053 records the country of nationality as the alpha-3 code it is', () => {

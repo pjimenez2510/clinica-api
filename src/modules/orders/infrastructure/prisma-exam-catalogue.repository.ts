@@ -65,6 +65,7 @@ const EXAM_SELECT = {
   specimenType: true,
   patientPreparation: true,
   turnaroundHours: true,
+  tariffCode: true,
   performedExternally: true,
   externalLabName: true,
   analytes: {
@@ -144,6 +145,7 @@ function toExamView(row: ExamRow): ExamDefinitionView {
     specimenType: row.specimenType,
     patientPreparation: row.patientPreparation,
     turnaroundHours: row.turnaroundHours,
+    tariffCode: row.tariffCode,
     performedExternally: row.performedExternally,
     externalLabName: row.externalLabName,
     analytes: row.analytes.map((entry) => ({
