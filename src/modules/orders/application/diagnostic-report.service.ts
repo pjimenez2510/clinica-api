@@ -10,12 +10,14 @@ import {
   type CriticalNoticeChannel,
   type CriticalNoticeRecipient,
   type CriticalNoticeView,
+  type CriticalWorklistEntry,
   type DiagnosticReportRepository,
   type DiagnosticReportView,
   type ExpectedAnalytes,
-  type FlaggedResultEntry,
   type OrderPatient,
   type ReportedResult,
+  type SafetyPolicy,
+  type UnmatchedWorklistEntry,
 } from '../domain/diagnostic-report.repository';
 import {
   EXAM_CATALOGUE_REPOSITORY,
@@ -42,8 +44,22 @@ import {
 } from '../domain/orders.errors';
 import { isCorrectable, isLineComplete } from '../domain/service-order';
 import { resolveResult } from '../domain/result-value';
+import { criticalWait, unmatchedWait } from '../domain/safety-deadline';
 import type { DiagnosticReportStatus } from '../domain/service-order';
 import type { Requester } from './service-order.service';
+
+/**
+ * ORD-046, ORD-065. What a site with no parameter row would have: no critical
+ * deadline (D-111) and the ordering practitioner with 24 hours (D-050 §4).
+ * `trg_site_parameter_defaults` makes that row exist; this is the same
+ * decision written once more, not a second policy.
+ */
+const DEFAULT_POLICY: SafetyPolicy = {
+  criticalNoticeWithinMinutes: null,
+  criticalEscalationRole: null,
+  unmatchedResultOwnerRole: null,
+  unmatchedResultDeadlineHours: 24,
+};
 
 /**
  * Its own resource type in the trail, and not `'encounter'`.
@@ -286,11 +302,30 @@ export class DiagnosticReportService {
    * NOT AUDITED PER ENTRY (ORD-092), and affordable because what travels is
    * thin — no diagnosis, no reason for the visit.
    */
-  unmatched(
+  async unmatched(
     requester: Requester,
     limit: number,
-  ): Promise<FlaggedResultEntry[]> {
-    return this.reports.unmatched({ sites: requester.sites, limit });
+    now: Date,
+  ): Promise<UnmatchedWorklistEntry[]> {
+    const entries = await this.reports.unmatched({ sites: requester.sites, limit }); // prettier-ignore
+    const policies = await this.reports.safetyPolicies(entries.map((e) => e.siteId)); // prettier-ignore
+
+    /**
+     * ORD-046, D-050 §4. Who answers for it, and by when: the site's role if
+     * it names one, the practitioner who placed the order if not — «una cola
+     * que es de todos no es de nadie».
+     */
+    return entries.map((entry) => {
+      const policy = policies.get(entry.siteId) ?? DEFAULT_POLICY;
+      const role = policy.unmatchedResultOwnerRole;
+      return {
+        ...entry,
+        ...unmatchedWait(entry.observedAt, now, policy.unmatchedResultDeadlineHours), // prettier-ignore
+        owner: role
+          ? { kind: 'ROLE' as const, name: role.name }
+          : { kind: 'ORDERING_PRACTITIONER' as const, name: entry.orderedBy.name }, // prettier-ignore
+      };
+    });
   }
 
   /**
@@ -405,9 +440,31 @@ export class DiagnosticReportService {
     return report;
   }
 
-  /** ORD-060, ORD-061. The values that have to reach a human today. */
-  critical(requester: Requester, limit: number): Promise<FlaggedResultEntry[]> {
-    return this.reports.critical({ sites: requester.sites, limit });
+  /**
+   * ORD-060, ORD-061, ORD-065. The values that have to reach a human today,
+   * with how long each has waited and — when the site set a deadline —
+   * whether it is late and whom it goes to. Without one, it says so (D-111).
+   */
+  async critical(
+    requester: Requester,
+    limit: number,
+    now: Date,
+  ): Promise<CriticalWorklistEntry[]> {
+    const entries = await this.reports.critical({ sites: requester.sites, limit }); // prettier-ignore
+    const policies = await this.reports.safetyPolicies(entries.map((e) => e.siteId)); // prettier-ignore
+
+    return entries.map((entry) => {
+      const policy = policies.get(entry.siteId) ?? DEFAULT_POLICY;
+      const wait = criticalWait(entry.observedAt, now, policy.criticalNoticeWithinMinutes); // prettier-ignore
+      const role = policy.criticalEscalationRole;
+      return {
+        ...entry,
+        waitingMinutes: wait.waitingMinutes,
+        noticeDueAt: wait.dueAt,
+        overdue: wait.overdue,
+        escalateTo: role ? { roleId: role.id, name: role.name } : null,
+      };
+    });
   }
 
   /**

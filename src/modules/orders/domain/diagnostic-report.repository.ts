@@ -1,6 +1,7 @@
 import type { AbnormalFlag, PatientProfile } from './analyte';
 import type { DiagnosticReportStatus } from './service-order';
 import type { ResolvedResult } from './result-value';
+import type { CriticalWait, UnmatchedWait } from './safety-deadline';
 import type { SiteScopeFilter } from './service-order.repository';
 
 /**
@@ -173,6 +174,39 @@ export interface FlaggedResultEntry {
   unit: string | null;
   abnormalFlag: AbnormalFlag | null;
   observedAt: Date;
+  /**
+   * ORD-046. The practitioner who placed the order: by default, the owner of
+   * an unmatched result (D-050 §4).
+   */
+  orderedBy: { id: string; name: string };
+}
+
+/**
+ * ORD-046, ORD-063, ORD-065. A site's policy for the two safety worklists, as
+ * `site_parameter` holds it, with the role names a reader recognises.
+ */
+export interface SafetyPolicy {
+  /** `null`: the clinic has set no deadline (D-111). */
+  criticalNoticeWithinMinutes: number | null;
+  criticalEscalationRole: { id: string; name: string } | null;
+  /** `null`: the practitioner who placed the order (D-050 §4). */
+  unmatchedResultOwnerRole: { id: string; name: string } | null;
+  unmatchedResultDeadlineHours: number;
+}
+
+/** ORD-060, ORD-065. A critical value with how long it has waited. */
+export interface CriticalWorklistEntry extends FlaggedResultEntry {
+  waitingMinutes: CriticalWait['waitingMinutes'];
+  noticeDueAt: CriticalWait['dueAt'];
+  overdue: CriticalWait['overdue'];
+  /** The role an overdue value goes to, when the site names one. */
+  escalateTo: { roleId: string; name: string } | null;
+}
+
+/** ORD-040, ORD-046. An unmatched result with who answers for it, and by when. */
+export interface UnmatchedWorklistEntry
+  extends FlaggedResultEntry, UnmatchedWait {
+  owner: { kind: 'ORDERING_PRACTITIONER' | 'ROLE'; name: string };
 }
 
 /** ORD-040, ORD-060. What a safety worklist is asked for. */
@@ -344,6 +378,15 @@ export interface DiagnosticReportRepository {
    * this adapter only refuses what is out of scope.
    */
   recordNotice(notice: NewCriticalNotice): Promise<CriticalNoticeView>;
+
+  /**
+   * ORD-046, ORD-063, ORD-065. The worklist policy of each site named. A site
+   * without a row — which `trg_site_parameter_defaults` makes impossible —
+   * is simply absent, and the caller applies the decided defaults.
+   */
+  safetyPolicies(
+    siteIds: readonly string[],
+  ): Promise<ReadonlyMap<string, SafetyPolicy>>;
 }
 
 /** Injection token. The application never names the adapter. */

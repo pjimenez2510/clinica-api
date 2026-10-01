@@ -27,15 +27,18 @@ import { DiagnosticReportService } from './application/diagnostic-report.service
 import type { Requester } from './application/service-order.service';
 import type {
   CriticalNoticeView,
+  CriticalWorklistEntry,
   DiagnosticReportView,
   FlaggedResultEntry,
+  UnmatchedWorklistEntry,
 } from './domain/diagnostic-report.repository';
 import {
   CorrectReportDto,
   CriticalNoticeDto,
   DiagnosticReportDto,
   DiagnosticReportListDto,
-  FlaggedResultListDto,
+  CriticalResultListDto,
+  UnmatchedResultListDto,
   MatchResultDto,
   RecordNoticeDto,
   RegisterReportDto,
@@ -43,7 +46,8 @@ import {
   type CriticalNoticeResponse,
   type DiagnosticReportListResponse,
   type DiagnosticReportResponse,
-  type FlaggedResultListResponse,
+  type CriticalResultListResponse,
+  type UnmatchedResultListResponse,
 } from './dto/diagnostic-report.dto';
 
 /**
@@ -102,16 +106,18 @@ export class DiagnosticReportController {
   @ApiOperation({
     summary: 'Listar los resultados que no corresponden a ninguna orden',
   })
-  @ApiOkResponse({ type: FlaggedResultListDto })
+  @ApiOkResponse({ type: UnmatchedResultListDto })
   async unmatched(
     @Query() query: WorklistQueryDto,
     @Req() req: Request,
-  ): Promise<FlaggedResultListResponse> {
+  ): Promise<UnmatchedResultListResponse> {
     const items = await this.reports.unmatched(
       this.requester(req, 'record:read'),
       query.limit,
+      // ORD-046. One instant for the whole listing.
+      new Date(),
     );
-    return { items: items.map(toFlaggedResponse) };
+    return { items: items.map(toUnmatchedResponse) };
   }
 
   /**
@@ -178,16 +184,18 @@ export class DiagnosticReportController {
   @Get('results/critical')
   @RequirePermission('record:read', 'query')
   @ApiOperation({ summary: 'Listar los valores críticos pendientes de avisar' })
-  @ApiOkResponse({ type: FlaggedResultListDto })
+  @ApiOkResponse({ type: CriticalResultListDto })
   async critical(
     @Query() query: WorklistQueryDto,
     @Req() req: Request,
-  ): Promise<FlaggedResultListResponse> {
+  ): Promise<CriticalResultListResponse> {
     const items = await this.reports.critical(
       this.requester(req, 'record:read'),
       query.limit,
+      // ORD-065. One instant for the whole listing.
+      new Date(),
     );
-    return { items: items.map(toFlaggedResponse) };
+    return { items: items.map(toCriticalResponse) };
   }
 
   /**
@@ -368,7 +376,11 @@ function toNoticeResponse(notice: CriticalNoticeView): CriticalNoticeResponse {
 /** ORD-024. One worklist entry. The value travels; nothing else about the person does. */
 function toFlaggedResponse(
   entry: FlaggedResultEntry,
-): FlaggedResultListResponse['items'][number] {
+): Omit<
+  CriticalResultListResponse['items'][number],
+  'waitingMinutes' | 'noticeDueAt' | 'overdue' | 'escalateTo'
+> {
+  // prettier-ignore
   return {
     resultId: entry.resultId,
     reportId: entry.reportId,
@@ -381,5 +393,30 @@ function toFlaggedResponse(
     unit: entry.unit,
     abnormalFlag: entry.abnormalFlag,
     observedAt: entry.observedAt.toISOString(),
+  };
+}
+
+/** ORD-065. A critical entry: the value, how long it waited, whom it goes to. */
+function toCriticalResponse(
+  entry: CriticalWorklistEntry,
+): CriticalResultListResponse['items'][number] {
+  return {
+    ...toFlaggedResponse(entry),
+    waitingMinutes: entry.waitingMinutes,
+    noticeDueAt: entry.noticeDueAt?.toISOString() ?? null,
+    overdue: entry.overdue,
+    escalateTo: entry.escalateTo,
+  };
+}
+
+/** ORD-046. An unmatched entry: the value, who answers for it, by when. */
+function toUnmatchedResponse(
+  entry: UnmatchedWorklistEntry,
+): UnmatchedResultListResponse['items'][number] {
+  return {
+    ...toFlaggedResponse(entry),
+    owner: entry.owner,
+    dueAt: entry.dueAt.toISOString(),
+    overdue: entry.overdue,
   };
 }

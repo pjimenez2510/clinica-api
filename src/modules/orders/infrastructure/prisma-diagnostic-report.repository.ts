@@ -23,6 +23,7 @@ import type {
   OrderPatient,
   ReportQuery,
   ResultQuery,
+  SafetyPolicy,
   SafetyWorklistQuery,
 } from '../domain/diagnostic-report.repository';
 import type { SiteScopeFilter } from '../domain/service-order.repository';
@@ -429,6 +430,36 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
     return rows.map(toWorklistEntry);
   }
 
+  /** ORD-046, ORD-063, ORD-065. Each site's worklist policy. */
+  async safetyPolicies(
+    siteIds: readonly string[],
+  ): Promise<ReadonlyMap<string, SafetyPolicy>> {
+    if (siteIds.length === 0) return new Map();
+
+    const rows = await this.prisma.siteParameter.findMany({
+      where: { siteId: { in: [...new Set(siteIds)] } },
+      select: {
+        siteId: true,
+        criticalNoticeWithinMinutes: true,
+        criticalEscalationRole: { select: { id: true, name: true } },
+        unmatchedResultOwnerRole: { select: { id: true, name: true } },
+        unmatchedResultDeadlineHours: true,
+      },
+    });
+
+    return new Map(
+      rows.map((row) => [
+        row.siteId,
+        {
+          criticalNoticeWithinMinutes: row.criticalNoticeWithinMinutes,
+          criticalEscalationRole: row.criticalEscalationRole,
+          unmatchedResultOwnerRole: row.unmatchedResultOwnerRole,
+          unmatchedResultDeadlineHours: row.unmatchedResultDeadlineHours,
+        },
+      ]),
+    );
+  }
+
   /** ORD-062. The notice of a critical value; never rewritten (ORD-064). */
   async recordNotice(notice: NewCriticalNotice): Promise<CriticalNoticeView> {
     const row = await this.prisma.$transaction((tx) => writeNotice(tx, notice));
@@ -484,7 +515,17 @@ const WORKLIST_SELECT = {
     select: {
       serviceOrderId: true,
       serviceOrder: {
-        select: { siteId: true, encounter: { select: { patientId: true } } },
+        select: {
+          siteId: true,
+          encounter: { select: { patientId: true } },
+          // ORD-046. Who placed it: the owner of an unmatched result by default.
+          orderedBy: {
+            select: {
+              id: true,
+              user: { select: { firstName: true, lastName: true } },
+            },
+          },
+        },
       },
     },
   },
@@ -621,6 +662,10 @@ function toWorklistEntry(row: WorklistRow): FlaggedResultEntry {
     unit: row.unit,
     abnormalFlag: row.abnormalFlag,
     observedAt: row.observedAt,
+    orderedBy: {
+      id: row.report.serviceOrder.orderedBy.id,
+      name: `${row.report.serviceOrder.orderedBy.user.firstName} ${row.report.serviceOrder.orderedBy.user.lastName}`,
+    },
   };
 }
 

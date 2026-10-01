@@ -231,12 +231,42 @@ export const flaggedResultSchema = z.object({
   observedAt: z.iso.datetime(),
 });
 
-export const flaggedResultListSchema = z.object({
-  items: z.array(flaggedResultSchema),
+/**
+ * ORD-060, ORD-065. A critical value waiting for its notice.
+ *
+ * `overdue` has THREE answers: `null` is «la clínica no ha fijado plazo», which
+ * is neither «va bien» nor «va tarde» (D-111).
+ */
+export const criticalResultSchema = flaggedResultSchema.extend({
+  waitingMinutes: z.number().int(),
+  noticeDueAt: z.iso.datetime().nullable(),
+  overdue: z.boolean().nullable(),
+  escalateTo: z.object({ roleId: z.uuid(), name: z.string() }).nullable(),
 });
-/** Response of the two safety worklists, GET /orders/results/unmatched and /orders/results/critical. */
-export class FlaggedResultListDto extends createZodDto(
-  flaggedResultListSchema,
+export const criticalResultListSchema = z.object({
+  items: z.array(criticalResultSchema),
+});
+/** Response of GET /orders/results/critical. */
+export class CriticalResultListDto extends createZodDto(
+  criticalResultListSchema,
+) {}
+
+/** ORD-040, ORD-046. A result nobody asked for, with who answers for it. */
+export const unmatchedResultSchema = flaggedResultSchema.extend({
+  owner: z.object({
+    /** `ORDERING_PRACTITIONER` unless the site names a role (D-050 §4). */
+    kind: z.enum(['ORDERING_PRACTITIONER', 'ROLE']),
+    name: z.string(),
+  }),
+  dueAt: z.iso.datetime(),
+  overdue: z.boolean(),
+});
+export const unmatchedResultListSchema = z.object({
+  items: z.array(unmatchedResultSchema),
+});
+/** Response of GET /orders/results/unmatched. */
+export class UnmatchedResultListDto extends createZodDto(
+  unmatchedResultListSchema,
 ) {}
 
 /**
@@ -278,5 +308,6 @@ export type DiagnosticReportListResponse = z.infer<
   typeof diagnosticReportListSchema
 >;
 /** Likewise, for both safety worklists. */
-export type FlaggedResultListResponse = z.infer<typeof flaggedResultListSchema>;
+export type CriticalResultListResponse = z.infer<typeof criticalResultListSchema>; // prettier-ignore
+export type UnmatchedResultListResponse = z.infer<typeof unmatchedResultListSchema>; // prettier-ignore
 export type CriticalNoticeResponse = z.infer<typeof criticalNoticeSchema>;

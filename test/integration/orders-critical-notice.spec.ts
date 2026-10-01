@@ -347,4 +347,102 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     await reports.notify(request, { userId: nurse.id, sites: [scene.site.id] }, now); // prettier-ignore
     expect(await prisma.criticalResultNotice.count()).toBe(1);
   });
+
+  it('ORD-065 no inventa el plazo de un crítico; con el de la sede dice si venció y a qué rol se escala', async () => {
+    const prisma = db();
+    const now = new Date();
+    const scene = await aCriticalGlucose(prisma, now);
+    const { reports } = serviceOf(prisma);
+    const requester: Requester = { userId: 'user-1', sites: 'all' };
+
+    // De fábrica: la clínica no ha fijado plazo (D-111) y la cola lo dice.
+    const [fresh] = await reports.critical(requester, 50, now);
+    expect(fresh).toMatchObject({
+      waitingMinutes: 60,
+      overdue: null,
+      noticeDueAt: null,
+      escalateTo: null,
+    });
+
+    const role = await prisma.role.create({
+      data: { code: 'GUARDIA_CLINICA', name: 'Responsable clínico de guardia' },
+    });
+    await prisma.siteParameter.update({
+      where: { siteId: scene.site.id },
+      data: {
+        criticalNoticeWithinMinutes: 30,
+        criticalEscalationRoleId: role.id,
+      },
+    });
+
+    const [late] = await reports.critical(requester, 50, now);
+    expect(late).toMatchObject({
+      waitingMinutes: 60,
+      overdue: true,
+      escalateTo: { roleId: role.id, name: 'Responsable clínico de guardia' },
+    });
+    expect(late?.noticeDueAt).toEqual(new Date(now.getTime() - 30 * 60_000));
+
+    // Control: con un plazo que aún no se cumple, no está vencido.
+    await prisma.siteParameter.update({
+      where: { siteId: scene.site.id },
+      data: { criticalNoticeWithinMinutes: 120 },
+    });
+    expect((await reports.critical(requester, 50, now))[0]?.overdue).toBe(
+      false,
+    );
+  });
+
+  it('ORD-046 da a cada resultado sin orden su responsable y su plazo, de fábrica quien pidió con 24 h', async () => {
+    const prisma = db();
+    const now = new Date();
+    const scene = await aScene(prisma);
+    const { reports, orders } = serviceOf(prisma);
+    const requester: Requester = { userId: 'user-1', sites: 'all' };
+    const observedAt = new Date(now.getTime() - 2 * 3_600_000);
+
+    const order = await orders.place({
+      encounterId: scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [{ examDefinitionId: scene.bh.id }],
+      sites: 'all',
+    });
+    await reports.register(
+      {
+        orderId: order.id,
+        performedById: null,
+        issuedAt: observedAt,
+        results: [
+          { analyteDefinitionId: scene.hb.id, valueNumeric: 13.4 },
+          { analyteDefinitionId: scene.glu.id, valueNumeric: 92 },
+        ],
+      },
+      requester,
+    );
+
+    const [byDefault] = await reports.unmatched(requester, 50, now);
+    expect(byDefault).toMatchObject({
+      owner: { kind: 'ORDERING_PRACTITIONER', name: 'Ana Villacís' },
+      overdue: false,
+    });
+    expect(byDefault?.dueAt).toEqual(new Date(observedAt.getTime() + 24 * 3_600_000)); // prettier-ignore
+
+    const role = await prisma.role.create({
+      data: { code: 'LAB_RECEPCION', name: 'Recepción de resultados' },
+    });
+    await prisma.siteParameter.update({
+      where: { siteId: scene.site.id },
+      data: {
+        unmatchedResultOwnerRoleId: role.id,
+        unmatchedResultDeadlineHours: 1,
+      },
+    });
+
+    const [byRole] = await reports.unmatched(requester, 50, now);
+    expect(byRole).toMatchObject({
+      owner: { kind: 'ROLE', name: 'Recepción de resultados' },
+      overdue: true,
+    });
+  });
 });

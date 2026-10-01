@@ -14,6 +14,7 @@ import type {
   DiagnosticReportRepository,
   CriticalNoticeView,
   DiagnosticReportView,
+  SafetyPolicy,
   ExpectedAnalytes,
   FlaggedResultEntry,
   MatchResultCommand,
@@ -182,6 +183,9 @@ class FakeReports implements Partial<DiagnosticReportRepository> {
   }
   recordNotice(): Promise<CriticalNoticeView> {
     return Promise.reject(new Error('not exercised here'));
+  }
+  safetyPolicies(): Promise<ReadonlyMap<string, SafetyPolicy>> {
+    return Promise.resolve(new Map<string, SafetyPolicy>());
   }
 }
 
@@ -510,8 +514,8 @@ describe('el registro y la corrección de un resultado', () => {
   it('ORD-092 no deja fila de bitácora por cada entrada de las dos colas', async () => {
     // Una lista que se refresca en una pantalla abierta produciría miles de
     // filas al día y enterraría las que importan. Misma decisión que EN-123.
-    await service.unmatched(requester, 50);
-    await service.critical(requester, 50);
+    await service.unmatched(requester, 50, new Date());
+    await service.critical(requester, 50, new Date());
 
     expect(audit.entries).toEqual([]);
   });

@@ -297,7 +297,11 @@ describe('el adaptador del informe', () => {
           observedAt: new Date('2026-09-16T13:00:00Z'),
           report: {
             serviceOrderId: ORDER,
-            serviceOrder: { siteId: 'site-1', encounter: { patientId: 'chart-1' } }, // prettier-ignore
+            serviceOrder: {
+              siteId: 'site-1',
+              encounter: { patientId: 'chart-1' },
+              orderedBy: { id: 'pr-1', user: { firstName: 'Ana', lastName: 'Villacís' } }, // prettier-ignore
+            },
           },
         },
       ],
