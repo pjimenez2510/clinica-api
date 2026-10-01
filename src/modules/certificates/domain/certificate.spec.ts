@@ -762,9 +762,9 @@ describe('D-109 y D-110 lo que acota el reposo de maternidad', () => {
     const later = addDays(addMonths(birth, 9), 1);
     expect(check(period, birth, { others: chained(later) })).not.toThrow();
     // Los bordes, en los dos sentidos: a 9 meses justos es el mismo embarazo.
-    expect(check(period, birth, { others: chained(addMonths(birth, 9)) })).toThrow(
-      CertificateMaternityBirthMismatchError,
-    );
+    expect(
+      check(period, birth, { others: chained(addMonths(birth, 9)) }),
+    ).toThrow(CertificateMaternityBirthMismatchError);
     const close = addMonths(birth, -9);
     const refusal = refusalOf(check(period, birth, { others: chained(close) }));
     expect(refusal).toBeInstanceOf(CertificateMaternityBirthMismatchError);
