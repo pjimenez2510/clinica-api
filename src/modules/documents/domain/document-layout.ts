@@ -189,13 +189,17 @@ export function composePrescriptionLayout(
     { kind: 'heading', text: 'Prescripción' },
     {
       kind: 'table',
+      // D-095. HEADERS OF ONE LINE: the header row is one line high, and the
+      // sample showed «Presentación y concentración» wrapping onto the first
+      // value. The posology carries dose, frequency AND duration, so it gets
+      // the room the DCI does not need.
       columns: [
-        { header: '#', width: 0.05, align: 'right' },
-        { header: 'Medicamento (DCI)', width: 0.35 },
-        { header: 'Presentación y concentración', width: 0.22 },
-        { header: 'Vía', width: 0.13 },
-        { header: 'Cantidad', width: 0.13 },
-        { header: 'Posología', width: 0.12 },
+        { header: '#', width: 0.04, align: 'right' },
+        { header: 'Medicamento (DCI)', width: 0.24 },
+        { header: 'Forma y concentración', width: 0.2 },
+        { header: 'Vía', width: 0.12 },
+        { header: 'Cantidad', width: 0.14 },
+        { header: 'Posología', width: 0.26 },
       ],
       rows: data.lines.map((line, index) => [
         String(index + 1),

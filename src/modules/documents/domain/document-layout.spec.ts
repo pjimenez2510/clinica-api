@@ -256,6 +256,46 @@ describe('DOC-072 la receta lleva los cinco bloques del art. 5', () => {
   });
 });
 
+describe('DOC-072 la tabla de la receta, como la plantilla aprobada (D-095)', () => {
+  /** The prescription table of the layout. */
+  const tableOf = (layout: ReturnType<typeof composeLayout>) => {
+    const table = layout.blocks.find((block) => block.kind === 'table');
+    if (table?.kind !== 'table') throw new Error('no table');
+    return table;
+  };
+
+  it('DOC-072 las columnas son DCI, forma y concentración, vía, cantidad y posología, con cabeceras de una línea', () => {
+    const table = tableOf(composeLayout(prescription(), context, template));
+
+    expect(table.columns.map((column) => column.header)).toEqual([
+      '#',
+      'Medicamento (DCI)',
+      'Forma y concentración',
+      'Vía',
+      'Cantidad',
+      'Posología',
+    ]);
+    // La fila de cabecera mide una línea: una cabecera que salta a dos se
+    // monta sobre el valor, que es lo que se vio en la muestra.
+    for (const column of table.columns) {
+      expect(column.header.length / column.width).toBeLessThan(110);
+    }
+  });
+
+  it('DOC-072 la posología tiene sitio para dosis, frecuencia y duración', () => {
+    const table = tableOf(composeLayout(prescription(), context, template));
+    const posology = table.columns.find(
+      (column) => column.header === 'Posología',
+    );
+
+    expect(posology?.width).toBeGreaterThanOrEqual(0.26);
+    expect(
+      table.columns.reduce((sum, column) => sum + column.width, 0),
+    ).toBeCloseTo(1);
+    expect(table.rows[0]?.[5]).toBe('1 tableta · cada 8 horas · por 7 días');
+  });
+});
+
 describe('PR-020 PR-038 PR-039 la receta impresa lleva su número y sus indicaciones', () => {
   it('PR-020 la referencia es el número de la receta, y el código de verificación va con su nombre', () => {
     const layout = composeLayout(prescription(), context, template);
