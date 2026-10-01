@@ -514,11 +514,15 @@ function environmentOf(accessKey: string | null): string {
 /**
  * DOC-076 to DOC-078. The RIDE, following the SRI's Ficha Técnica, Anexo 2.
  *
- * ⚠️ NO QR AND NO BARCODE, AND THAT IS A REQUIREMENT RATHER THAN AN OMISSION
- * (DOC-078). «QR» does not appear ONCE in the 142 pages of the Ficha Técnica,
- * and the barcode is explicitly optional. Both are what somebody would add from
- * memory after seeing other RIDEs, and an invented element on a tax document is
- * exactly what a review looks at.
+ * ⚠️ NO QR (DOC-078). «QR» does not appear ONCE in the 142 pages of the Ficha
+ * Técnica; it is what somebody would add from memory after seeing other RIDEs,
+ * and an invented element on a tax document is exactly what a review looks at.
+ *
+ * The barcode the Ficha does allow (§9.20–9.21, Anexo 2) is the access key in
+ * Code 128 subset C, without a GS1 application identifier (D-095 §5). Its
+ * `barcode` block lives in `feat/documentos-identidad`; until that branch is
+ * merged the voucher box carries only the key in text, and the block goes right
+ * after it — see the marker below.
  */
 export function composeInvoiceLayout(
   data: InvoicePrintData,
@@ -568,6 +572,9 @@ export function composeInvoiceLayout(
         { label: 'AMBIENTE', value: environmentOf(data.accessKey) },
         { label: 'EMISIÓN', value: 'NORMAL' },
         { label: 'CLAVE DE ACCESO', value: data.accessKey ?? '—' },
+        // D-095 §5, on merging `feat/documentos-identidad`: here, after the key
+        // in text and only when `data.accessKey !== null`,
+        // `{ kind: 'barcode', value: data.accessKey }`.
       ],
     },
   ];
