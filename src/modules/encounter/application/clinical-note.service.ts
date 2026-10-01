@@ -5,7 +5,6 @@ import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
-import { clinicalDateOf } from '../../../shared/domain/clinic-time';
 import {
   assertAmendable,
   assertContentComplete,
@@ -28,10 +27,10 @@ import {
 import {
   DischargeConditionRequiredError,
   EncounterAlreadyClosedError,
-  PractitionerNotLicensedError,
   PractitionerProfileRequiredError,
 } from '../domain/encounter.errors';
 import { acceptsNewClinicalContent } from '../domain/encounter-state';
+import { assertLicensedOn } from '../domain/practitioner-licence';
 import type { DischargeCondition } from '../domain/encounter';
 import type { Requester } from './encounter.service';
 
@@ -149,6 +148,7 @@ export class ClinicalNoteService {
       formVersion: request.formVersion,
       content: request.content,
       authorId: author.practitionerId,
+      authorUserId: requester.userId,
       sites: requester.sites,
     });
 
@@ -495,13 +495,7 @@ export class ClinicalNoteService {
    * registration that HAS a date and whose date has passed.
    */
   private assertLicensed(acessExpiresOn: Date | null): void {
-    if (acessExpiresOn === null) return;
-
-    const today = clinicalDateOf(new Date());
-    // The column round-trips as UTC midnight, so its ISO prefix IS the
-    // calendar day it names — no zone conversion, which is what would move it.
-    const expiresOn = acessExpiresOn.toISOString().slice(0, 10);
-    if (expiresOn < today) throw new PractitionerNotLicensedError();
+    assertLicensedOn(acessExpiresOn, new Date());
   }
 
   /** EN-011. The caller's clinical identity, or a refusal naming nothing. */

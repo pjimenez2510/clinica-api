@@ -269,7 +269,9 @@ las líneas propuestas con su motivo y volver a enviar, y comprobar que **no
 vuelve**; y comprobar contra PostgreSQL que el segundo cargo del mismo acto lo
 rechaza la BASE y no una lectura previa.
 
-**Cubre:** BI-150 a BI-158, y da ruta por fin a BI-055, BI-056 y BI-059.
+**Cubre:** BI-150 a BI-158, BI-180, y da ruta por fin a BI-055, BI-056 y BI-059.
+**Solo servidor:** BI-180. Cambia qué propone el servidor, no la pantalla: caja
+muestra la propuesta que recibe, y sin acto clínico la recibe vacía.
 
 > **Lo entregado el 20-08-2026.** La ruta de paso a caja, idempotente en sus dos
 > mitades; la derivación de las tres fuentes sobre las ataduras que ya existían
@@ -999,6 +1001,15 @@ es falsa, hay requisitos que cambian.
   > REQ-084, y su origen es el rechazo habitual de las aseguradoras. Es la
   > consecuencia práctica de BI-035: el pagador dice de qué lista sale el
   > precio; no dice quién figura en el documento.
+- **BI-180** — CUANDO la atención esté `DISCONTINUED` sin ningún acto clínico
+  —nota con algo escrito, diagnóstico, procedimiento, receta, orden,
+  certificado sin revocar, referencia ni interconsulta—, el sistema NO DEBERÁ
+  proponer ningún cargo, tampoco la consulta.
+  > **D-085 §4 (01-10-2026).** Es quien se fue antes de que el médico lo viera
+  > (D-081 §2): no hubo consulta que proponer. La interrumpida con algún acto
+  > sigue proponiendo la consulta y caja la quita con motivo (D-054 §2).
+  > **D-104:** un certificado, una referencia o una interconsulta también son
+  > acto clínico.
 - **BI-159** — SI se emite una factura a un receptor identificado con RUC
   (tipo `04`) que no supera OR-008 y OR-009, o con cédula (tipo `05`) que no
   supera el value object `Cedula`, ENTONCES el sistema DEBERÁ rechazarla con

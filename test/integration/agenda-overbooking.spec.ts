@@ -674,16 +674,20 @@ describe('el sobrecupo y los bloqueos', () => {
       }).expect(201);
     });
 
-    it('AG-038 no cuenta un sobrecupo: no ocupa calendario y no impide bloquear', async () => {
-      // Coherente con el `EXCLUDE`, que tampoco lo mira: el sobrecupo es una
-      // excepción declarada, y el bloqueo no tiene por qué arbitrar sobre ella.
+    it('AG-152 un sobrecupo de la misma sede sí impide bloquear: el paciente viene igual (D-085 §7)', async () => {
+      // Hasta D-085 se admitía, por coherencia con el `EXCLUDE`, que no lo
+      // mira. Pero el sobrecupo es un paciente citado: bloquear encima es
+      // dejarlo sin médico.
       await book(anOverbookingAt(at(monday, '08:10'))).expect(201);
 
-      await blockAgenda({
+      const refused = await blockAgenda({
         practitionerId,
         startsAt: at(monday, '08:00').toISOString(),
         endsAt: at(monday, '12:00').toISOString(),
-      }).expect(201);
+      }).expect(409);
+      expect((refused.body as Problem).code).toBe(
+        'BLOCK_OVERLAPS_APPOINTMENTS',
+      );
     });
 
     it('AG-022 rechaza por campo un bloqueo que termina antes de empezar', async () => {
@@ -694,6 +698,139 @@ describe('el sobrecupo y los bloqueos', () => {
       }).expect(422);
 
       expect((response.body as Problem).errors?.[0]?.field).toBe('endsAt');
+    });
+  });
+
+  /**
+   * AG-151 (D-069). The overbooking where the practitioner is not, against
+   * PostgreSQL: the four cases are refused, nothing is written, and the
+   * positive control —an overbooking on top of an appointment of the SAME
+   * site— still goes through the same path.
+   */
+  describe('AG-151 · el sobrecupo donde el profesional no está', () => {
+    let norteId: string;
+
+    beforeEach(async () => {
+      const norte = await createSite(prisma, 'Sede Norte');
+      norteId = norte.id;
+      await linkPractitionerToSite(prisma, practitionerId, norte.id);
+    });
+
+    /** Una entrada del profesional en la otra sede, escrita directamente. */
+    const elsewhere = async (
+      startsAt: Date,
+      data: Record<string, unknown> = {},
+    ) => {
+      const other = await createPatient(prisma);
+      return prisma.agendaEntry.create({
+        data: {
+          kind: 'APPOINTMENT',
+          bookingChannel: 'PHONE',
+          siteId: norteId,
+          practitionerId,
+          patientId: other.id,
+          startsAt,
+          endsAt: new Date(startsAt.getTime() + 20 * 60_000),
+          ...data,
+        },
+      });
+    };
+
+    const refusedAs = async (startsAt: Date, title: RegExp) => {
+      const before = await prisma.agendaEntry.count({ where: { siteId } });
+      const response = await book(anOverbookingAt(startsAt)).expect(409);
+      expect((response.body as Problem).code).toBe(
+        'OVERBOOKING_PRACTITIONER_UNAVAILABLE',
+      );
+      expect((response.body as Problem).title).toMatch(title);
+      // Sin nombrar la otra sede (AG-107).
+      expect(JSON.stringify(response.body)).not.toContain('Norte');
+      expect(await prisma.agendaEntry.count({ where: { siteId } })).toBe(
+        before,
+      );
+    };
+
+    it('AG-151 rechaza el sobrecupo encima de unas vacaciones del profesional en otra sede', async () => {
+      await prisma.agendaEntry.create({
+        data: {
+          kind: 'BLOCK',
+          status: 'BLOCKED',
+          siteId: norteId,
+          practitionerId,
+          startsAt: at(monday, '08:00'),
+          endsAt: at(monday, '12:00'),
+        },
+      });
+
+      await refusedAs(at(monday, '09:00'), /bloqueo/);
+    });
+
+    it('AG-151 rechaza el sobrecupo encima de una cita del profesional en otra sede', async () => {
+      await elsewhere(at(monday, '09:00'));
+
+      await refusedAs(at(monday, '09:00'), /cita en otra sede/);
+    });
+
+    it('AG-151 rechaza el sobrecupo encima de un sobrecupo del profesional en otra sede', async () => {
+      await elsewhere(at(monday, '09:00'), {
+        blocksCalendar: false,
+        overbookingReason: 'Urgencia',
+        overbookingAuthorisedById: doctorUserId,
+      });
+
+      await refusedAs(at(monday, '09:00'), /sobrecupo en otra sede/);
+    });
+
+    it('AG-151 rechaza el sobrecupo dentro del horario vigente del profesional en otra sede', async () => {
+      // A las 13:00: fuera del horario de esta sede (por eso es sobrecupo) y
+      // dentro del de la Norte.
+      await createScheduleRule(
+        prisma,
+        { practitionerId, siteId: norteId },
+        { weekday: 1, startTime: '12:00', endTime: '14:00' },
+      );
+
+      await refusedAs(at(monday, '13:00'), /atiende en otra sede/);
+    });
+
+    it('AG-152 rechaza unas vacaciones encima de un sobrecupo del profesional en otra sede, enumerándolo', async () => {
+      const overbooking = await elsewhere(at(monday, '09:00'), {
+        blocksCalendar: false,
+        overbookingReason: 'Urgencia',
+        overbookingAuthorisedById: doctorUserId,
+      });
+
+      const refused = await blockAgenda({
+        practitionerId,
+        startsAt: at(monday, '08:00').toISOString(),
+        endsAt: at(monday, '12:00').toISOString(),
+      }).expect(409);
+      expect((refused.body as Problem).code).toBe(
+        'BLOCK_OVERLAPS_APPOINTMENTS',
+      );
+      // Enumerado como AG-038: la hora, sin nombre ni motivo ni sede.
+      expect((refused.body as Problem).errors?.[0]?.message).toContain('09:00');
+      expect(overbooking.blocksCalendar).toBe(false);
+
+      // Control positivo: la tarde, sin sobrecupo, se bloquea.
+      await blockAgenda({
+        practitionerId,
+        startsAt: at(monday, '14:00').toISOString(),
+        endsAt: at(monday, '18:00').toISOString(),
+      }).expect(201);
+    });
+
+    it('AG-151 sigue admitiendo el sobrecupo encima de una cita de la MISMA sede, y lo liberado no cuenta', async () => {
+      await book(aSlotAt(at(monday, '09:00'))).expect(201);
+      // Una cita anulada en la otra sede no ocupa a nadie.
+      await elsewhere(at(monday, '09:00'), {
+        status: 'CANCELLED',
+        cancelledAt: at(monday, '07:00'),
+        releasedAt: at(monday, '07:00'),
+        cancellationNote: 'Reagenda',
+      });
+
+      await book(anOverbookingAt(at(monday, '09:00'))).expect(201);
     });
   });
 });

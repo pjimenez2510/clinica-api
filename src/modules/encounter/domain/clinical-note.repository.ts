@@ -71,6 +71,11 @@ export interface NewClinicalNote {
   formVersion: string;
   content: NoteContent;
   authorId: string;
+  /**
+   * AG-146. The USER behind the author: opening the note moves the
+   * appointment, and `agenda_status_history.changed_by_id` is a user.
+   */
+  authorUserId: string;
   sites: SiteScopeFilter;
 }
 

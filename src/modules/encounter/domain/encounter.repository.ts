@@ -25,6 +25,7 @@ import type {
   CareModality,
   CareSetting,
   DischargeCondition,
+  DiscontinuedOrigin,
   EncounterStatus,
   VisitSequence,
 } from './encounter';
@@ -68,6 +69,10 @@ export interface EncounterView {
   closedById: string | null;
   closedAt: Date | null;
   closedBySubstituteReason: string | null;
+  /** EN-166. Why and when it was annulled; `null` unless `ENTERED_IN_ERROR`. */
+  annulment: { reason: string; at: Date } | null;
+  /** EN-167. Why, from where and when it was interrupted; `null` unless `DISCONTINUED`. */
+  interruption: { reason: string; origin: DiscontinuedOrigin; at: Date } | null;
 }
 
 /**
@@ -257,7 +262,8 @@ export interface EncounterRepository {
    * ministry demands «tantas consultas como atenciones médicas recibidas», so
    * there is no uniqueness by patient and date to enforce and no method here
    * that could be mistaken for one. The real duplicate — two rows for one
-   * consultation — is prevented by `encounter.agenda_entry_id` being `@unique`.
+   * consultation — is prevented by `encounter_one_live_per_agenda_entry`: one
+   * LIVE attention per appointment (EN-168); an annulled one stays as trail.
    */
   open(encounter: NewEncounter): Promise<EncounterView>;
 

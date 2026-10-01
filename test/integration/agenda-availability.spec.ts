@@ -360,11 +360,10 @@ describe('deriving availability against the database', () => {
       const other = await createSite(prisma, 'Sede Norte');
       await linkPractitionerToSite(prisma, practitioner.id, other.id);
       await setSlotAtom(prisma, other.id, 20);
-      await createScheduleRule(
-        prisma,
-        { practitionerId: practitioner.id, siteId: other.id },
-        { weekday: 1, startTime: '08:00', endTime: '12:00' },
-      );
+      // NO SCHEDULE AT THE OTHER SITE AT THESE HOURS: since D-070 the database
+      // refuses it (ST-042 without site). What AG-144 subtracts is what the
+      // practitioner HOLDS there, and that is written directly below — a
+      // block, an entry from before the rule changed — whatever the rules say.
       return { ...base, other };
     }
 
@@ -415,31 +414,33 @@ describe('deriving availability against the database', () => {
       expect(view.occupied).toEqual([]);
     });
 
-    it('AG-144 offers at the other site only what is left of a day filled at one site (the 43 of 48 of 30-09-2026)', async () => {
+    it('AG-144 offers at this site only what is left of a day the practitioner filled at another (the 43 of 48 of 30-09-2026)', async () => {
       // The development data of 30-09-2026: the walks of every session had
       // filled 43 of the 48 slots of medico@ at Sede Norte, and Sede Sur still
-      // offered all 48. Same shape here: a day of two shifts on a ten-minute
-      // atom at both sites, 43 slots taken at one of them.
+      // offered all 48. Since D-070 the two sites cannot share the hours, so
+      // the 43 are written at the other site directly — what AG-144 has to
+      // subtract is what the practitioner holds there, whatever its origin.
       const { prisma, site, other, practitioner, patient } = await twoSites();
-      for (const siteId of [site.id, other.id]) {
-        await setSlotAtom(prisma, siteId, 10);
-        await createScheduleRule(
-          prisma,
-          { practitionerId: practitioner.id, siteId },
-          { weekday: 1, startTime: '14:00', endTime: '18:00' },
-        );
-      }
+      await setSlotAtom(prisma, site.id, 10);
+      await createScheduleRule(
+        prisma,
+        { practitionerId: practitioner.id, siteId: site.id },
+        { weekday: 1, startTime: '14:00', endTime: '18:00' },
+      );
 
-      const request = (siteId: string) =>
+      const request = () =>
         agendaOf(prisma).availability({
-          siteId,
+          siteId: site.id,
           practitionerId: practitioner.id,
           ...day,
         });
 
-      const grid = (await request(other.id)).slots;
-      expect(grid).toHaveLength(48);
-      const taken = grid.slice(0, 43);
+      const afternoon = (await request()).slots.filter(
+        (slot) => slot.startsAt.getTime() >= monday('14:00').getTime(),
+      );
+      // Control: the whole afternoon is on offer before anything is held.
+      expect(afternoon).toHaveLength(24);
+      const taken = afternoon.slice(0, 19);
       for (const slot of taken) {
         await prisma.agendaEntry.create({
           data: {
@@ -455,16 +456,12 @@ describe('deriving availability against the database', () => {
         });
       }
 
-      const here = await request(site.id);
-      const there = await request(other.id);
-
-      // Control: where the appointments are, five are left.
-      expect(there.slots).toHaveLength(5);
-      // And here, the same five — not forty-eight.
-      expect(here.slots.map((slot) => slot.startsAt)).toEqual(
-        there.slots.map((slot) => slot.startsAt),
+      const left = (await request()).slots.filter(
+        (slot) => slot.startsAt.getTime() >= monday('14:00').getTime(),
       );
-      expect(here.occupied).toEqual([]);
+      expect(left.map((slot) => slot.startsAt)).toEqual(
+        afternoon.slice(19).map((slot) => slot.startsAt),
+      );
     });
 
     it('AG-144 gives back the slot when the entry at the other site is released, like the EXCLUDE', async () => {
