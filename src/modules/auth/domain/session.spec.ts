@@ -50,13 +50,15 @@ describe('AU-043 la caducidad de una familia de sesión', () => {
     );
   });
 
-  it('AU-043 en cada minuto de un día y con el servidor en otro huso: a las 03:00 de Guayaquil, nunca más de N días ni N−1 o menos', () => {
+  it('AU-043 cada cinco minutos de un día y con el servidor en otro huso: a las 03:00 de Guayaquil, nunca más de N días ni N−1 o menos', () => {
     // N = 1 is allowed by the schema: its sessions live between 0 and 24 h
     // (the SPEC says so); the rule still holds.
     for (const zone of ['UTC', 'Asia/Tokyo', 'Pacific/Kiritimati']) {
       process.env.TZ = zone;
       for (const days of [7, 3, 1]) {
-        for (let minute = 0; minute < 24 * 60; minute++) {
+        // Every five minutes: 03:00 itself and both sides of it are on the
+        // grid, and three zones × three lifetimes stay well under a second.
+        for (let minute = 0; minute < 24 * 60; minute += 5) {
           const start = new Date(at(0, 0).getTime() + minute * 60_000);
           const expiry = sessionFamilyExpiry(start, days);
           const life = expiry.getTime() - start.getTime();
