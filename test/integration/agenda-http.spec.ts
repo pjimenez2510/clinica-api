@@ -318,6 +318,100 @@ describe('la agenda por HTTP', () => {
       await expect(prisma.agendaEntry.count()).resolves.toBe(0);
     });
 
+    it('AG-145 dice «no disponible» con dos instantes y nada más, a quien solo tiene permiso en esta sede', async () => {
+      // El usuario de este fichero es recepción SOLO en esta sede (AG-071).
+      // El profesional pasa la mañana entera en la otra: un bloqueo, con su
+      // motivo, y una cita con paciente, pegados.
+      const firstStart = new Date(FIRST_SLOT.startsAt);
+      const plus = (minutes: number) =>
+        new Date(firstStart.getTime() + minutes * 60_000);
+      const block = await prisma.agendaEntry.create({
+        data: {
+          kind: 'BLOCK',
+          status: 'BLOCKED',
+          siteId: otherSiteId,
+          practitionerId,
+          startsAt: plus(0),
+          endsAt: plus(120),
+          reason: 'Vacaciones',
+        },
+      });
+      const appointment = await prisma.agendaEntry.create({
+        data: {
+          kind: 'APPOINTMENT',
+          bookingChannel: 'PHONE',
+          siteId: otherSiteId,
+          practitionerId,
+          patientId,
+          startsAt: plus(120),
+          endsAt: plus(240),
+          reason: 'Dolor torácico',
+        },
+      });
+
+      const response = await availabilityOf().expect(200);
+      const body = response.body as AvailabilityBody & {
+        unavailable: Record<string, unknown>[];
+      };
+
+      expect(body.slots).toEqual([]);
+      expect(body.occupied).toEqual([]);
+      // Una sola franja: la fusión no deja contar cuántas entradas hay.
+      expect(body.unavailable).toEqual([
+        { startsAt: plus(0).toISOString(), endsAt: plus(240).toISOString() },
+      ]);
+      // Y nada de la otra sede en ningún rincón de la respuesta.
+      const raw = JSON.stringify(response.body);
+      for (const secret of [
+        otherSiteId,
+        block.id,
+        appointment.id,
+        patientId,
+        'Vacaciones',
+        'Dolor torácico',
+        'BLOCK',
+      ]) {
+        expect(raw).not.toContain(secret);
+      }
+    });
+
+    it('AG-145 no dice nada de un profesional que no está vinculado a esta sede', async () => {
+      // El segundo profesional trabaja aquí; se le desvincula, y tiene una
+      // licencia en la otra sede. Pedir un año entero no puede devolverla.
+      await prisma.practitionerSite.delete({
+        where: {
+          practitionerId_siteId: {
+            practitionerId: secondPractitionerId,
+            siteId,
+          },
+        },
+      });
+      const firstStart = new Date(FIRST_SLOT.startsAt);
+      await prisma.agendaEntry.create({
+        data: {
+          kind: 'BLOCK',
+          status: 'BLOCKED',
+          siteId: otherSiteId,
+          practitionerId: secondPractitionerId,
+          startsAt: firstStart,
+          endsAt: new Date(firstStart.getTime() + 30 * 24 * 3_600_000),
+          reason: 'Licencia',
+        },
+      });
+
+      const body = (
+        await availabilityOf({
+          practitionerId: secondPractitionerId,
+          to: new Date(firstStart.getTime() + 300 * 24 * 3_600_000)
+            .toISOString()
+            .slice(0, 10),
+        }).expect(200)
+      ).body as AvailabilityBody & { unavailable: unknown[] };
+
+      expect(body.slots).toEqual([]);
+      expect(body.unavailable).toEqual([]);
+    });
+
     it('AG-003 resta de los cupos la cita que ocupa calendario', async () => {
       await book(anAppointment()).expect(201);
 
