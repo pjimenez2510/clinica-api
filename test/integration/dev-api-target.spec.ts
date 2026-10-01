@@ -45,6 +45,9 @@ describe('la guarda de los guiones de desarrollo que llaman a la API', () => {
     expect(requireApiUrl({ API_URL: 'http://localhost:3600' })).toBe(
       'http://localhost:3600',
     );
+    expect(requireApiUrl({ API_URL: 'http://localhost:3600/' })).toBe(
+      'http://localhost:3600',
+    );
   });
 
   it('lee el refresh token de la cookie que puso el inicio de sesión', () => {

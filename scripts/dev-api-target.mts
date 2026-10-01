@@ -29,7 +29,8 @@ export function requireApiUrl(env: Record<string, string | undefined>): string {
         '(nunca la de main, :3000): este guion no supone ninguno.',
     );
   }
-  return url;
+  // The base, without a trailing `/`: callers append `/api/v1/...`.
+  return url.replace(/\/+$/, '');
 }
 
 /** The refresh token out of the login's `Set-Cookie` (`refresh` or `__Host-refresh`). */

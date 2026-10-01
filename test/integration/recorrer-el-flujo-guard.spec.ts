@@ -58,7 +58,18 @@ function runScript(
 ): Promise<{ code: number | null; stderr: string }> {
   return new Promise((resolve) => {
     const child = spawn('python3', ['scripts/recorrer-el-flujo.py'], {
-      env: { PATH: process.env.PATH ?? '', ...env },
+      env: {
+        PATH: process.env.PATH ?? '',
+        // Any request that is not for the stand-in goes to a dead proxy and
+        // fails. If someone hardcoded `localhost:3000` again, this test would
+        // otherwise write to the author's database while proving it doesn't.
+        http_proxy: 'http://127.0.0.1:9',
+        HTTP_PROXY: 'http://127.0.0.1:9',
+        no_proxy: '127.0.0.1',
+        NO_PROXY: '127.0.0.1',
+        NODE_USE_ENV_PROXY: '1',
+        ...env,
+      },
     });
     let stderr = '';
     child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()));

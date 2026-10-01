@@ -7,10 +7,11 @@ Recorre el flujo de atención completo contra la API que está corriendo.
 
 NUNCA EN LA BASE DEL AUTOR. Hace una docena de escrituras —una atención, su
 nota firmada, una receta, una cuenta—. No supone ningún puerto: exige
-`API_URL` (del entorno o del `.env` de este checkout) y, antes de escribir
-nada, `scripts/dev-api-login.mts` prueba que esa API escribe en la base de
-la `DATABASE_URL` de este checkout y rechaza la compartida `clinica`, salvo
-`--i-know-this-is-the-shared-db`. Es la guarda de `sri:certificate:dev`,
+`API_URL` y, antes de escribir nada, `scripts/dev-api-login.mts` prueba que
+esa API escribe en la base de `DATABASE_URL` y rechaza la compartida
+`clinica`, salvo `--i-know-this-is-the-shared-db`. Las dos se leen del `.env`
+de este checkout, salvo que la terminal ya las tenga exportadas: entonces
+mandan las exportadas, y la guarda prueba ESA base, no la del `.env`. Es la guarda de `sri:certificate:dev`,
 puesta tras el 01-10-2026.
 
 PARA QUÉ SIRVE, Y QUÉ NO ES. No sustituye a `pnpm test:integration`: aquella
@@ -68,7 +69,7 @@ login=subprocess.run(
   cwd=root,stdout=subprocess.PIPE,text=True)
 if login.returncode!=0: raise SystemExit(1)
 session=json.loads(login.stdout.strip().splitlines()[-1])
-API=session['apiUrl'].rstrip('/')+'/api/v1'; TOK=session['accessToken']
+API=session['apiUrl']+'/api/v1'; TOK=session['accessToken']
 print(f"── FLUJO DE ATENCIÓN, DE PRINCIPIO A FIN · {session['apiUrl']} ──\n")
 today=datetime.date.today().isoformat()
 st,sites=call('GET','/organization/sites')
