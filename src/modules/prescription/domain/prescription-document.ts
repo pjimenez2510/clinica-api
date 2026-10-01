@@ -24,7 +24,7 @@ import {
   type DispensingContext,
 } from './prescription';
 import { prescriptionAgeOf, type PrescriptionAge } from './prescription-age';
-import { spellQuantity } from './quantity-in-words';
+import { spellQuantity } from '../../../shared/domain/quantity-in-words';
 import { validThrough, validityDaysFor } from './prescription-validity';
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import type { MedicationRoute } from './prescription';

@@ -18,6 +18,7 @@ import type {
   IssuableCertificateType,
   RestPeriod,
 } from './certificate';
+import type { Form117Source } from './form-117';
 
 /**
  * The caller's site scope, as `Principal.sitesFor` states it: every site, or
@@ -139,8 +140,12 @@ export interface CertificateRepository {
     plan: RevocationPlan,
   ): Promise<CertificateView>;
 
-  /** CER-010. One certificate within the caller's scope, or `null`. */
-  findById(query: CertificateQuery): Promise<CertificateView | null>;
+  /**
+   * CER-010, CER-020 to CER-029. Everything form 117 prints about one
+   * certificate within the caller's scope, or `null`. ONE STATEMENT, so the
+   * answers describe the same instant.
+   */
+  form117SourceOf(query: CertificateQuery): Promise<Form117Source | null>;
 }
 
 /** Injection token. The application never names the adapter. */

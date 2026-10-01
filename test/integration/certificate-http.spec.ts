@@ -64,6 +64,19 @@ interface IssuedBody {
   iess: { lastValidationDay: string; notice: string } | null;
 }
 
+/** The form 117 as GET /certificates/:id serves it. */
+interface Form117Body {
+  number: number;
+  verificationCode: string;
+  revocation: { revokedAt: string; revokedOn: string; reason: string } | null;
+  establishment: Record<string, string>;
+  patient: Record<string, unknown>;
+  attention: Record<string, unknown> & { date: { iso: string } };
+  rest: Record<string, unknown>;
+  diagnoses: { code: string; display: string }[] | 'NA';
+  professional: Record<string, unknown>;
+}
+
 describe('el certificado medico por HTTP', () => {
   const db = useDatabase();
   let app: NestExpressApplication;
@@ -514,6 +527,118 @@ describe('el certificado medico por HTTP', () => {
     await get(`/encounters/${encounterId}/certificates`, receptionToken).expect(
       403,
     );
+  });
+
+  it('CER-020 a CER-029 el reposo de tres dias de un lactante de cuatro meses, sobre el formulario 117', async () => {
+    // CER-020. La cédula del paciente es su número de historia clínica única.
+    // Sintética, con dígito verificador calculado.
+    await prisma.patientIdentifier.create({
+      data: { patientId, type: 'CEDULA', value: '1712345675' },
+    });
+    // CER-022. La especialidad principal del profesional.
+    const specialty = await prisma.specialty.create({
+      data: { code: 'PEDIATRIA', name: 'Pediatría' },
+    });
+    await prisma.practitionerSpecialty.create({
+      data: {
+        practitionerId: doctor.practitionerId,
+        specialtyId: specialty.id,
+        isPrimary: true,
+      },
+    });
+    await aDiagnosis(encounterId);
+
+    const issued = await issue(restOf(3, { includeDiagnosis: true }));
+    const response = await get(
+      `/certificates/${issued.certificate.id}`,
+      doctor.token,
+    ).expect(200);
+    const form = response.body as Form117Body;
+
+    const site = await prisma.site.findUniqueOrThrow({ where: { id: siteId } });
+    const patient = await prisma.patient.findUniqueOrThrow({
+      where: { id: patientId },
+    });
+    expect(form.establishment).toEqual({
+      institution: 'NA',
+      mspUnicode: site.mspUnicode,
+      name: site.name,
+      clinicalRecordNumber: '1712345675',
+      archiveNumber: patient.mrn,
+    });
+    expect(form.patient).toEqual({
+      firstFamilyName: 'Guamán',
+      secondFamilyName: 'NA',
+      firstGivenName: 'María',
+      secondGivenName: 'NA',
+      sex: 'Mujer',
+      age: { value: '4', condition: 'M' },
+    });
+    expect(form.attention).toMatchObject({
+      service: 'Consulta externa',
+      specialty: 'Pediatría',
+      admissionDate: 'NA',
+      dischargeDate: 'NA',
+    });
+    expect(form.attention.date.iso).toBe(today);
+    expect(form.rest).toMatchObject({
+      rest: 'SÍ',
+      hours: '72',
+      hoursInWords: 'setenta y dos',
+    });
+    expect(form.rest.from).toMatchObject({ iso: today });
+    expect(form.rest.to).toMatchObject({ iso: addDays(today, 2) });
+    expect((form.rest.from as { inWords: string }).inWords).toMatch(
+      / de [a-z]+ de dos mil /,
+    );
+    expect(form.diagnoses).toEqual([
+      { code: 'J00', display: 'Rinofaringitis aguda' },
+    ]);
+    expect(form.professional).toMatchObject({
+      givenNames: 'Ana Lucía',
+      familyNames: 'Villacís Mora',
+      identification: '1710034065',
+      hasSeal: false,
+      signature: 'CREDENTIAL',
+    });
+    expect(form).toMatchObject({
+      number: 1,
+      verificationCode: issued.certificate.verificationCode,
+      revocation: null,
+    });
+
+    // CER-029. Anulado, el documento lo dice con su fecha.
+    await post(`/certificates/${issued.certificate.id}/revoke`, doctor.token, {
+      reason: 'Se emitió con el período equivocado',
+    }).expect(200);
+    const revoked = (
+      await get(`/certificates/${issued.certificate.id}`, doctor.token).expect(
+        200,
+      )
+    ).body as Form117Body;
+    expect(revoked.revocation).toMatchObject({
+      revokedOn: clinicalDateOf(new Date()),
+      reason: 'Se emitió con el período equivocado',
+    });
+  });
+
+  it('CER-027 sin incluir el diagnostico, el bloque D es NA aunque la atencion lo tenga', async () => {
+    await aDiagnosis(encounterId);
+    const issued = await issue(attendance());
+
+    const form = (
+      await get(`/certificates/${issued.certificate.id}`, doctor.token).expect(
+        200,
+      )
+    ).body as Form117Body;
+    expect(form.diagnoses).toBe('NA');
+    expect(form.rest).toEqual({
+      rest: 'NO',
+      hours: 'NA',
+      hoursInWords: 'NA',
+      from: 'NA',
+      to: 'NA',
+    });
   });
 
   it('CER-016 emitir, leer, listar y anular dejan su fila en la bitacora de acceso', async () => {

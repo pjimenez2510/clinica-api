@@ -129,7 +129,110 @@ export class IssuedCertificateDto extends createZodDto(
   issuedCertificateSchema,
 ) {}
 
+/** «NA = no aplica», as the instructivo of form 117 writes it. */
+const NA = z.literal('NA');
+
+/** CER-023, CER-026. The three boxes of a date and the sentence beside them. */
+const dateInNumbersAndWordsSchema = z.object({
+  /** `YYYY-MM-DD`, a calendar date in Ecuador. */
+  iso: z.string(),
+  year: z.number().int(),
+  month: z.number().int(),
+  day: z.number().int(),
+  /** Derived from the figures, never typed. */
+  inWords: z.string(),
+});
+
+/**
+ * CER-020 to CER-029. Form SNS-MSP/HCU-form.117/2021, block by block.
+ *
+ * Every printed value is a string or «NA»: the instructivo says «En caso de
+ * que existan variables que no pueden ser llenadas, se colocará NA», and an
+ * empty box on an official form is a box somebody can fill in afterwards.
+ */
+export const form117Schema = z.object({
+  id: z.uuid(),
+  /** CER-029. Consecutive per site. */
+  number: z.number().int().positive(),
+  /** CER-029. */
+  verificationCode: z.string(),
+  type: CERTIFICATE_TYPE,
+  /** CER-029. `null` while valid; the paper must not read as valid otherwise. */
+  revocation: z
+    .object({
+      revokedAt: z.iso.datetime(),
+      /** `YYYY-MM-DD`, in Ecuador. */
+      revokedOn: z.string(),
+      reason: z.string(),
+    })
+    .nullable(),
+  /** CER-020. Block A. */
+  establishment: z.object({
+    /** MSP, IESS, ISSFFA or ISPOL; a private clinic is none: «NA». */
+    institution: NA,
+    mspUnicode: z.string(),
+    name: z.string(),
+    /** The patient's identity document, or «NA». */
+    clinicalRecordNumber: z.string(),
+    /** The patient's `mrn`. */
+    archiveNumber: z.string(),
+  }),
+  /** CER-021. Block B, the person. */
+  patient: z.object({
+    firstFamilyName: z.string(),
+    secondFamilyName: z.string(),
+    firstGivenName: z.string(),
+    secondGivenName: z.string(),
+    sex: z.enum(['Hombre', 'Mujer', 'NA']),
+    /** The frozen age of the attention, with its condition H/D/M/A. */
+    age: z.object({
+      value: z.string(),
+      condition: z.enum(['H', 'D', 'M', 'A', 'NA']),
+    }),
+  }),
+  /** CER-022 to CER-024. Block B, the attention. */
+  attention: z.object({
+    service: z.string(),
+    specialty: z.string(),
+    date: dateInNumbersAndWordsSchema,
+    /** `HH:MM`, 24 hours, in Ecuador. */
+    from: z.string(),
+    to: z.string(),
+    admissionDate: NA,
+    dischargeDate: NA,
+  }),
+  /** CER-025, CER-026. Block C. */
+  rest: z.object({
+    rest: z.enum(['SÍ', 'NO']),
+    hours: z.string(),
+    hoursInWords: z.string(),
+    from: z.union([dateInNumbersAndWordsSchema, NA]),
+    to: z.union([dateInNumbersAndWordsSchema, NA]),
+  }),
+  /** CER-027. Block D: principal first, or «NA». */
+  diagnoses: z.union([
+    z.array(z.object({ code: z.string(), display: z.string() })),
+    NA,
+  ]),
+  /** CER-028. Block E. */
+  professional: z.object({
+    /** `YYYY-MM-DD` of the issue, in Ecuador. */
+    date: z.string(),
+    /** `HH:MM` of the issue, 24 hours, in Ecuador. */
+    time: z.string(),
+    givenNames: z.string(),
+    familyNames: z.string(),
+    identification: z.string(),
+    hasSeal: z.boolean(),
+    /** There is no drawn signature: the credential signs (as PR-035). */
+    signature: z.literal('CREDENTIAL'),
+  }),
+});
+/** Response of GET /certificates/:certificateId, the audited read. */
+export class Form117Dto extends createZodDto(form117Schema) {}
+
 /** Response types the controllers return. */
 export type CertificateResponse = z.infer<typeof certificateSchema>;
 export type CertificateListResponse = z.infer<typeof certificateListSchema>;
+export type Form117Response = z.infer<typeof form117Schema>;
 export type IssuedCertificateResponse = z.infer<typeof issuedCertificateSchema>;

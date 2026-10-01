@@ -19,6 +19,7 @@ import type {
   RevocationPlan,
   SiteScopeFilter,
 } from '../domain/certificate.repository';
+import type { Form117Source } from '../domain/form-117';
 
 /**
  * The certificate's rows in, domain shapes out.
@@ -141,13 +142,104 @@ export class PrismaCertificateRepository implements CertificateRepository {
     return rows.map(toView);
   }
 
-  /** CER-010. One certificate within the caller's scope, or `null`. */
-  async findById(query: CertificateQuery): Promise<CertificateView | null> {
+  /**
+   * CER-010, CER-020 to CER-029. Everything form 117 prints, in ONE statement
+   * (`relationJoins` is on), so the answers describe the same instant.
+   */
+  async form117SourceOf(
+    query: CertificateQuery,
+  ): Promise<Form117Source | null> {
     const row = await this.prisma.medicalCertificate.findFirst({
       where: { id: query.certificateId, ...siteFilter(query.sites) },
-      select: CERTIFICATE_SELECT,
+      select: {
+        ...CERTIFICATE_SELECT,
+        // CER-020. The site is the «establecimiento de salud», with its own
+        // unicódigo (D-074).
+        site: { select: { name: true, mspUnicode: true } },
+        patient: {
+          select: {
+            familyName: true,
+            secondFamilyName: true,
+            givenName: true,
+            secondGivenName: true,
+            sex: true,
+            mrn: true,
+            // CER-020. The official documents still in force on this chart;
+            // the domain picks the one the instructivo names.
+            identifiers: {
+              where: { use: 'OFFICIAL', patientMerged: false },
+              select: { type: true, value: true },
+            },
+          },
+        },
+        encounter: {
+          select: {
+            startedAt: true,
+            endedAt: true,
+            // CER-021. The FROZEN age of the attention, never today's.
+            ageYears: true,
+            ageMonths: true,
+            ageDays: true,
+            // CER-027. Principal first, with the code and description
+            // `trg_diagnosis_snapshot` froze.
+            diagnoses: {
+              orderBy: [{ rank: 'asc' }, { recordedAt: 'asc' }],
+              select: { cie10Code: true, cie10Display: true },
+            },
+          },
+        },
+        issuedBy: {
+          select: {
+            // CER-028. Whether there is a seal; the image itself is
+            // `documents`'. The drawn signature is deliberately NOT read.
+            sealImageId: true,
+            user: {
+              select: { firstName: true, lastName: true, cedula: true },
+            },
+            // CER-022. The PRIMARY specialty, if any.
+            specialties: {
+              where: { isPrimary: true },
+              select: { specialty: { select: { name: true } } },
+              take: 1,
+            },
+          },
+        },
+      },
     });
-    return row === null ? null : toView(row);
+    if (row === null) return null;
+
+    const view = toView(row);
+    return {
+      certificate: view,
+      site: row.site,
+      patient: {
+        familyName: row.patient.familyName,
+        secondFamilyName: row.patient.secondFamilyName,
+        givenName: row.patient.givenName,
+        secondGivenName: row.patient.secondGivenName,
+        sex: row.patient.sex,
+        mrn: row.patient.mrn,
+        identifiers: row.patient.identifiers,
+      },
+      encounter: {
+        startedAt: row.encounter.startedAt,
+        endedAt: row.encounter.endedAt,
+        ageYears: row.encounter.ageYears,
+        ageMonths: row.encounter.ageMonths,
+        ageDays: row.encounter.ageDays,
+      },
+      diagnoses: row.encounter.diagnoses.map((diagnosis) => ({
+        code: diagnosis.cie10Code,
+        display: diagnosis.cie10Display,
+      })),
+      practitioner: {
+        givenNames: row.issuedBy.user.firstName,
+        familyNames: row.issuedBy.user.lastName,
+        cedula: row.issuedBy.user.cedula,
+        primarySpecialty: row.issuedBy.specialties[0]?.specialty.name ?? null,
+        hasSeal: row.issuedBy.sealImageId !== null,
+      },
+    };
   }
 
   /**

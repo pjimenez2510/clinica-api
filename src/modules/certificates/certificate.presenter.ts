@@ -1,6 +1,10 @@
 import type { IessValidation } from './domain/certificate';
 import type { CertificateView } from './domain/certificate.repository';
-import type { CertificateResponse } from './dto/certificate.dto';
+import type { Form117 } from './domain/form-117';
+import type {
+  CertificateResponse,
+  Form117Response,
+} from './dto/certificate.dto';
 
 /**
  * Domain shapes out, JSON in. Shared by the two controllers of this module.
@@ -28,6 +32,27 @@ export function toCertificateResponse(
     includeDiagnosis: certificate.includeDiagnosis,
     revokedAt: certificate.revokedAt?.toISOString() ?? null,
     revocationReason: certificate.revocationReason,
+  };
+}
+
+/**
+ * CER-020 to CER-029. The form as composed; only the instant of the
+ * annulment changes shape, to ISO 8601 — its date is already served apart, in
+ * Ecuador.
+ */
+export function toForm117Response(form: Form117): Form117Response {
+  return {
+    ...form,
+    revocation:
+      form.revocation === null
+        ? null
+        : {
+            revokedAt: form.revocation.revokedAt.toISOString(),
+            revokedOn: form.revocation.revokedOn,
+            reason: form.revocation.reason,
+          },
+    diagnoses:
+      form.diagnoses === 'NA' ? 'NA' : form.diagnoses.map((d) => ({ ...d })),
   };
 }
 

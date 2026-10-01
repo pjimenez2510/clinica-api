@@ -13,6 +13,11 @@
  *
  * Deriving it removes the failure mode entirely, and it costs this file.
  *
+ * SHARED, NOT A PRESCRIPTION DETAIL. The medical certificate (form 117,
+ * CER-023 and CER-026) writes its hours and its dates «en números y letras»
+ * for the same reason, and one speller is what keeps the two documents from
+ * disagreeing about how «veintiuno» is written.
+ *
  * PURE: no clock, no locale lookup, no `Intl.NumberFormat` with a spelled-out
  * style (which does not exist for `es-EC` in Node's ICU and would be a runtime
  * dependency on the host's data if it did).

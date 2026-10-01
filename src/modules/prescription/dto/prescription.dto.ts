@@ -5,7 +5,7 @@ import {
   MEDICATION_ROUTE_CODES,
   MEDICATION_ROUTES,
 } from '../domain/prescription';
-import { MAX_SPELLABLE_QUANTITY } from '../domain/quantity-in-words';
+import { MAX_SPELLABLE_QUANTITY } from '../../../shared/domain/quantity-in-words';
 
 /**
  * The prescription's contract — art. 5 of the Resolución ACESS-2023-0030.

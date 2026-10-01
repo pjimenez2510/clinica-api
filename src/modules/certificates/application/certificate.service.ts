@@ -24,6 +24,7 @@ import {
   CertificateNotFoundError,
   CertifierProfileRequiredError,
 } from '../domain/certificate.errors';
+import { composeForm117, type Form117 } from '../domain/form-117';
 import {
   CERTIFICATE_REPOSITORY,
   type CertificateRepository,
@@ -172,19 +173,21 @@ export class CertificateService {
     return certificates;
   }
 
-  /** CER-010, CER-016. One certificate within the caller's scope. */
-  async findOne(
-    certificateId: string,
-    requester: Requester,
-  ): Promise<CertificateView> {
-    const certificate = await this.certificates.findById({
+  /**
+   * CER-010, CER-016, CER-020 to CER-029. One certificate within the caller's
+   * scope, as the five blocks of form 117. Audited: it is the name, the age,
+   * the days of rest and, if the doctor said so, the diagnosis of an
+   * identifiable person.
+   */
+  async form117(certificateId: string, requester: Requester): Promise<Form117> {
+    const source = await this.certificates.form117SourceOf({
       certificateId,
       sites: requester.sites,
     });
-    if (!certificate) throw new CertificateNotFoundError();
+    if (!source) throw new CertificateNotFoundError();
 
-    await this.trail(certificate.id, 'READ', requester);
-    return certificate;
+    await this.trail(source.certificate.id, 'READ', requester);
+    return composeForm117(source);
   }
 
   /**

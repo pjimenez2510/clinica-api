@@ -15,6 +15,7 @@ import {
   CertificateAlreadyRevokedError,
   CertificateEncounterNotFoundError,
 } from '../domain/certificate.errors';
+import type { Form117Source } from '../domain/form-117';
 import type {
   CertificatePlan,
   CertificateQuery,
@@ -74,11 +75,41 @@ const aView = (overrides: Partial<CertificateView> = {}): CertificateView => ({
   ...overrides,
 });
 
+/** What storage answers for the form 117 of `view`. */
+const aSource = (view: CertificateView): Form117Source => ({
+  certificate: view,
+  site: { name: 'Clínica Central', mspUnicode: '000123' },
+  patient: {
+    familyName: 'Guamán',
+    secondFamilyName: null,
+    givenName: 'María',
+    secondGivenName: null,
+    sex: 'FEMALE',
+    mrn: 'HC000042',
+    identifiers: [],
+  },
+  encounter: {
+    startedAt: NOW,
+    endedAt: null,
+    ageYears: 34,
+    ageMonths: 0,
+    ageDays: 0,
+  },
+  diagnoses: [],
+  practitioner: {
+    givenNames: 'Ana',
+    familyNames: 'Villacís',
+    cedula: null,
+    primarySpecialty: null,
+    hasSeal: false,
+  },
+});
+
 class FakeRepository implements CertificateRepository {
   certifier: CertifierIdentity | null = { practitionerId: PRACTITIONER };
   snapshot: IssueSnapshot = { encounterStatus: 'OPEN', diagnosisCount: 1 };
   encounterFound = true;
-  stored: CertificateView | null = aView();
+  stored: Form117Source | null = aSource(aView());
   alreadyRevoked = false;
   issued: { query: EncounterCertificatesQuery; plan: CertificatePlan }[] = [];
   revoked: { query: CertificateQuery; plan: RevocationPlan }[] = [];
@@ -131,7 +162,7 @@ class FakeRepository implements CertificateRepository {
     );
   }
 
-  findById(query: CertificateQuery): Promise<CertificateView | null> {
+  form117SourceOf(query: CertificateQuery): Promise<Form117Source | null> {
     this.asked.push(query);
     return Promise.resolve(this.stored);
   }
@@ -268,10 +299,11 @@ describe('el servicio de certificados', () => {
     ).resolves.toBeDefined();
   });
 
-  it('CER-010 lee un certificado dentro del alcance de quien pregunta', async () => {
-    const found = await service.findOne('certificate-1', requester);
+  it('CER-010 y CER-020 lee el formulario 117 de un certificado dentro del alcance de quien pregunta', async () => {
+    const found = await service.form117('certificate-1', requester);
 
     expect(found.id).toBe('certificate-1');
+    expect(found.establishment.mspUnicode).toBe('000123');
     expect(repository.asked).toEqual([
       { certificateId: 'certificate-1', sites: [SITE] },
     ]);
@@ -281,7 +313,7 @@ describe('el servicio de certificados', () => {
     repository.stored = null;
 
     await expect(
-      service.findOne('certificate-1', requester),
+      service.form117('certificate-1', requester),
     ).rejects.toMatchObject({ code: 'CERTIFICATE_NOT_FOUND' });
     expect(entries).toEqual([]);
   });
@@ -352,7 +384,7 @@ describe('el servicio de certificados', () => {
 
   it('CER-016 deja una fila de bitacora al emitir, al leer, al listar y al anular', async () => {
     const issued = await service.issue(attendance(), requester);
-    await service.findOne(issued.certificate.id, requester);
+    await service.form117(issued.certificate.id, requester);
     await service.listOfEncounter(ENCOUNTER, requester);
     await service.revoke(issued.certificate.id, 'Motivo', requester);
 

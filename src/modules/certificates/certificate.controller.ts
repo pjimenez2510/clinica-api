@@ -19,11 +19,16 @@ import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import { CertificateService } from './application/certificate.service';
 import type { Requester } from './application/certificate.service';
-import { toCertificateResponse } from './certificate.presenter';
+import {
+  toCertificateResponse,
+  toForm117Response,
+} from './certificate.presenter';
 import {
   CertificateDto,
+  Form117Dto,
   RevokeCertificateDto,
   type CertificateResponse,
+  type Form117Response,
 } from './dto/certificate.dto';
 
 /**
@@ -40,20 +45,26 @@ export class CertificateController {
     private readonly currentUser: CurrentUserService,
   ) {}
 
-  /** CER-010, CER-016. One certificate, audited. */
+  /**
+   * CER-010, CER-016, CER-020 to CER-029. One certificate as the five blocks
+   * of form 117. Audited: it is what is printed and handed over.
+   */
   @Get(':certificateId')
   @RequirePermission('record:read', 'query')
-  @ApiOperation({ summary: 'Obtener un certificado médico' })
-  @ApiOkResponse({ type: CertificateDto })
-  async findOne(
+  @ApiOperation({
+    summary:
+      'Obtener el certificado médico con el contenido del formulario 117',
+  })
+  @ApiOkResponse({ type: Form117Dto })
+  async form117(
     @Param('certificateId', ParseUUIDPipe) certificateId: string,
     @Req() req: Request,
-  ): Promise<CertificateResponse> {
-    const certificate = await this.certificates.findOne(
+  ): Promise<Form117Response> {
+    const form = await this.certificates.form117(
       certificateId,
       this.requester(req, 'record:read'),
     );
-    return toCertificateResponse(certificate);
+    return toForm117Response(form);
   }
 
   /**
