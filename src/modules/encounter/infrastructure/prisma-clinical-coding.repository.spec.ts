@@ -4,6 +4,7 @@ import {
   ConceptWrongCatalogueError,
   DiagnosisConceptNotInForceError,
   DiagnosisPrimaryTakenError,
+  EncounterAlreadyClosedError,
   EncounterNotFoundError,
 } from '../domain/encounter.errors';
 import { PrismaClinicalCodingRepository } from './prisma-clinical-coding.repository';
@@ -62,6 +63,8 @@ function conceptRow(overrides: Record<string, unknown> = {}) {
  */
 function prismaDouble(options: {
   encounter?: { id: string } | null;
+  /** The status read under the lock; `OPEN` unless a test says otherwise. */
+  status?: string;
   concept?: Record<string, unknown>[];
   ranks?: { rank: number }[];
 }) {
@@ -83,7 +86,13 @@ function prismaDouble(options: {
       },
     },
     $queryRaw: (strings: TemplateStringsArray, ...values: unknown[]) => {
-      record('$queryRaw', { sql: strings.join('?'), values });
+      const sql = strings.join('?');
+      // M-A: the attention's row, locked and read again before writing.
+      if (sql.includes('FOR UPDATE')) {
+        record('encounter.lock', { sql, values });
+        return Promise.resolve([{ status: options.status ?? 'OPEN' }]);
+      }
+      record('$queryRaw', { sql, values });
       return Promise.resolve(options.concept ?? [conceptRow()]);
     },
     encounterDiagnosis: {
@@ -215,6 +224,20 @@ describe('el adaptador del bloque K', () => {
     const sql = String(argsOf(calls, '$queryRaw')?.sql);
     expect(sql).toContain("AT TIME ZONE 'America/Guayaquil'");
     expect(sql).toContain('valid_period');
+  });
+
+  it('EN-009 EN-167 rechaza sin escribir si, bloqueada la atención, ya no está en curso', async () => {
+    const { prisma, calls } = prismaDouble({ status: 'DISCONTINUED' });
+
+    await expect(
+      new PrismaClinicalCodingRepository(prisma).addDiagnosis(aDiagnosis()),
+    ).rejects.toBeInstanceOf(EncounterAlreadyClosedError);
+    expect(String(argsOf(calls, 'encounter.lock')?.sql)).toContain(
+      'FOR UPDATE',
+    );
+    expect(calls.map((call) => call.method)).not.toContain(
+      'encounterDiagnosis.create',
+    );
   });
 
   it('EN-042 rechaza sin escribir cuando el concepto no regía ese día', async () => {
