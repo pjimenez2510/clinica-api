@@ -45,6 +45,29 @@ const RECORD_AND_ADMIN_WARNING =
   'Este rol administra usuarios y además accede a la historia clínica. Podría concederse a sí mismo el acceso y retirarlo después, y es la separación que una auditoría de la SPDP pregunta primero. Puede guardarlo igualmente si su clínica lo necesita.';
 
 /**
+ * AU-045 (D-071). Permissions whose holder is in front of the allergy — who
+ * prescribes, who writes the note — and the one that records it, which is
+ * the letter of D-071. Signing does not write. A custom NURSING role without
+ * it warns too, in its own words (D-094, point 3).
+ */
+const WRITES_THE_RECORD: readonly Permission[] = [
+  'prescription:write',
+  'record:write',
+];
+const RECORDS_ALLERGIES: Permission = 'background:write';
+
+/** AU-045 for nursing: preparation is where the allergy is taken (D-094). */
+const WRITES_NURSING_FORMS: Permission = 'nursing:write';
+
+/** AU-045's sentence, as the author fixed it (D-071, 30-09-2026). */
+const NO_ALLERGY_RECORD_WARNING =
+  'Este rol receta o escribe en la historia clínica pero no puede registrar alergias ni antecedentes. Puede guardarlo igualmente.';
+
+/** The nursing sentence, fixed by the author (D-094, 30-09-2026). */
+const NURSING_NO_ALLERGY_RECORD_WARNING =
+  'Este rol registra los formularios de enfermería pero no puede registrar alergias ni antecedentes. Puede guardarlo igualmente.';
+
+/**
  * Prefix match OR the explicit list: see `CLINICAL_RECORD_PERMISSIONS` for the
  * permissions the prefix misses.
  */
@@ -60,7 +83,10 @@ function holdsAnyClinicalRecord(permissions: readonly string[]): boolean {
  * Everything worth telling the administrator before this permission set is
  * saved. An empty array means nothing to say — never a refusal.
  *
- * TWO SOURCES, AND ONLY ONE OF THEM FIRES PER PAIR. AU-034 generalises the
+ * AU-045 IS ITS OWN SENTENCE, about a gap rather than a combination, and
+ * goes right after AU-034's.
+ *
+ * FOR THE PAIR OF AU-034, ONLY ONE SOURCE FIRES. AU-034 generalises the
  * first entry of `RISKY_COMBINATIONS` (`user:manage` + `record:read`) to the
  * whole `record:*` family, so that entry is skipped when the general rule
  * already covers it: two warnings about the same concern, worded differently,
@@ -75,6 +101,16 @@ export function warningsFor(permissions: readonly string[]): string[] {
 
   // AU-034. WARNS, never refuses.
   if (administersUsers && readsRecord) warnings.push(RECORD_AND_ADMIN_WARNING);
+
+  // AU-045. After AU-034, so each says its own thing once; and ONE sentence
+  // per role about the gap — the prescribing one already names it.
+  if (!held.has(RECORDS_ALLERGIES)) {
+    if (WRITES_THE_RECORD.some((code) => held.has(code))) {
+      warnings.push(NO_ALLERGY_RECORD_WARNING);
+    } else if (held.has(WRITES_NURSING_FORMS)) {
+      warnings.push(NURSING_NO_ALLERGY_RECORD_WARNING);
+    }
+  }
 
   for (const combination of RISKY_COMBINATIONS) {
     // Already said, in its general form.

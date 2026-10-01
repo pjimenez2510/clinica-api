@@ -230,6 +230,27 @@ describe('AU-005 códigos de respaldo del segundo factor', () => {
     expect(session.accessToken).toEqual(expect.any(String));
   });
 
+  it('AU-046 completar el segundo factor dice los segundos que le quedan a la familia nueva', async () => {
+    const { backupCodes } = await enrol();
+
+    const verified = await verify(await challenge(), backupCodes[0]!).expect(
+      200,
+    );
+    const { sessionExpiresIn } = verified.body as { sessionExpiresIn: number };
+
+    // La familia que se acaba de emitir: su fila dice la misma caducidad.
+    const cookie = verified
+      .get('Set-Cookie')!
+      .find((c) => /^(__Host-)?refresh=/.test(c))!;
+    const token = decodeURIComponent(cookie.split(';')[0]!.split('=')[1]!);
+    const { expiresAt } = await prisma.refreshToken.findUniqueOrThrow({
+      where: { tokenHash: TokenService.hashRefreshToken(token) },
+    });
+    const left = (expiresAt.getTime() - Date.now()) / 1000;
+    expect(Math.abs(sessionExpiresIn - left)).toBeLessThan(5);
+    expect(sessionExpiresIn).toBeGreaterThan(0);
+  });
+
   it('AU-005 el mismo código no vale dos veces', async () => {
     const { userId, backupCodes } = await enrol();
 

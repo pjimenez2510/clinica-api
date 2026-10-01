@@ -16,6 +16,7 @@ import {
   RefreshTokenReuseError,
   SessionExpiredError,
 } from '../domain/auth.errors';
+import { sessionFamilyExpiry } from '../domain/session';
 import { ConfigService } from '@nestjs/config';
 import type { Prisma } from '@prisma/client';
 import { PinoLogger } from 'nestjs-pino';
@@ -66,7 +67,7 @@ export class RefreshTokenService {
 
   /**
    * Starts a new session family, and with it the instant the family expires
-   * (AU-040). Called on sign-in, not on refresh.
+   * (AU-040, AU-043). Called on sign-in, not on refresh.
    *
    * AU-041: `null`, and nothing issued, if every session of the account was
    * closed after `sessionEpoch` was read with the credentials. The account row
@@ -81,7 +82,8 @@ export class RefreshTokenService {
     sessionEpoch: number,
     ctx: ClientContext = {},
   ): Promise<IssuedRefreshToken | null> {
-    const expiresAt = new Date(Date.now() + this.ttlDays * 24 * 60 * 60 * 1000);
+    // AU-043: the last 03:00 in Guayaquil before the ceiling, never after it.
+    const expiresAt = sessionFamilyExpiry(new Date(), this.ttlDays);
 
     return this.prisma.$transaction(async (tx) => {
       const [account] = await tx.$queryRaw<{ session_epoch: number }[]>`

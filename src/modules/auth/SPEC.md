@@ -49,9 +49,9 @@ credencial del MSP.
 Inicio de sesión con Argon2id, segundo factor TOTP, rotación de refresco con
 detección de reutilización, bloqueo por intentos y cierre de sesión.
 
-**Cubre:** AU-001 a AU-012, AU-039 a AU-041.
+**Cubre:** AU-001 a AU-012, AU-039 a AU-041, AU-043, AU-044, AU-046.
 
-**Solo servidor:** AU-001, AU-003, AU-012, AU-039, AU-041. Cómo se hashea una
+**Solo servidor:** AU-001, AU-003, AU-012, AU-039, AU-041, AU-043. Cómo se hashea una
 contraseña no se ve; el bloqueo por intentos responde a la pantalla lo MISMO
 que una contraseña incorrecta —eso es AU-002, y contarlo aparte lo delataría—;
 «por petición y no dentro del token» es una propiedad del servidor que un
@@ -59,7 +59,14 @@ navegador no puede observar. La gracia de AU-039 es **transparente** para la
 interfaz por diseño: el cliente reintenta con la cookie que tenga y la sesión
 sigue, así que lo único que una pantalla puede enseñar es que no pasó nada.
 AU-041 es el orden de dos transacciones de la base, y un inicio de sesión que
-pierde esa carrera responde lo mismo que una contraseña incorrecta (AU-002).
+pierde esa carrera responde lo mismo que una contraseña incorrecta (AU-002). AU-043
+es la hora a la que el servidor fija la caducidad: un recorrido no controla
+el reloj de la API, así que se prueba contra PostgreSQL con el reloj de la
+aplicación controlado; la pantalla de esa caducidad es la de AU-040.
+
+**Solo interfaz:** AU-044. Los 15 minutos del diálogo, limpiar la pantalla y
+el aviso los cuenta y los hace el navegador: el servidor ya cortó la sesión en
+AU-040 y AU-046 y no tiene nada más que observar.
 
 ### A2 — Administración de cuentas, roles y permisos _(P1)_
 
@@ -72,7 +79,7 @@ que entra el lunes, sigue exigiendo tocar la base de datos a mano.
 **Prueba independiente:** crear una cuenta, concederle un rol en una sede, y
 comprobar que sus permisos efectivos cambian **sin reiniciar** y que la
 concesión aparece en la bitácora.
-**Cubre:** AU-020 a AU-034, AU-038, AU-042.
+**Cubre:** AU-020 a AU-034, AU-038, AU-042, AU-045.
 
 **Solo servidor:** AU-025, AU-026, AU-027, AU-038 y AU-042. Los dos primeros son
 bitácora y el plazo de caducidad definido en un único sitio; AU-027 es un
@@ -318,13 +325,14 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   > se programe la purga de refrescos, tiene que conservar las filas ese mismo
   > día de margen.
   >
-  > **LO QUE PASA EN PANTALLA.** El corte cae a la misma hora en que se inició
-  > sesión, así que a menudo en plena consulta. La interfaz **no saca a nadie
+  > **LO QUE PASA EN PANTALLA.** Hasta AU-043 el corte caía a la misma hora
+  > en que se inició sesión, así que a menudo en plena consulta; sigue
+  > pudiendo caer con una pantalla abierta de madrugada. La interfaz **no saca a nadie
   > de la pantalla** por `SESSION_EXPIRED`: primero intenta una renovación
   > (otra pestaña puede haber vuelto a entrar ya) y, si no, pide volver a
   > entrar **en un diálogo encima**, con la misma cuenta, y reintenta lo que
-  > se estaba guardando. Alinear el corte a una hora fija de la clínica es una
-  > decisión del autor (D-065).
+  > se estaba guardando. El corte cae a las 03:00 de la clínica (AU-043) y el
+  > diálogo no queda abierto más de 15 minutos (AU-044).
 - **AU-041** — CUANDO se cierren todas las sesiones de una cuenta —cambio de
   contraseña, AU-023, AU-036 o canje de una invitación— mientras un inicio de
   sesión de esa cuenta está en curso, el sistema NO DEBERÁ dejar abierta la
@@ -369,6 +377,139 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   > el hash con parámetros más fuertes sólo escribe si el hash sigue siendo el
   > que comprobó; sin condición, un cambio de contraseña confirmado en medio
   > se sobrescribía con un hash de la vieja, que volvía a valer.
+- **AU-043** — CUANDO se inicie sesión, el sistema DEBERÁ fijar la caducidad
+  de la familia en **la última vez que el reloj de `America/Guayaquil` marque
+  las 03:00** no más tarde de `JWT_REFRESH_TTL_DAYS` días desde el inicio de
+  sesión. NO DEBERÁ fijarla nunca después de esos días contados al segundo, y
+  la caducidad así fijada es la de AU-040 a todos los efectos: se hereda, no se
+  alarga y la ve el guardia.
+
+  > **DECIDIDO POR EL AUTOR** (D-065, opción B, 30-09-2026; la hora, las
+  > 03:00, el mismo día). Con el tope contado al segundo, quien entra el lunes
+  > a las 08:10 perdía la sesión el lunes siguiente a las 08:10, en plena
+  > consulta, cada semana. Alineado, la pierde ese lunes a las 03:00, con la
+  > clínica cerrada.
+  >
+  > **SE ADELANTA, NUNCA SE RETRASA.** Se toma la madrugada anterior al tope,
+  > no la siguiente: el tope de D-063 es un máximo y no se alarga. La vida real
+  > queda entre `JWT_REFRESH_TTL_DAYS − 1` días y `JWT_REFRESH_TTL_DAYS` días
+  > (con 7, entre 6 y 7). Quien entra a las 02:00 del lunes pierde la sesión el
+  > domingo a las 03:00, seis días y una hora después. Exactamente a las 03:00
+  > el corte cae a los 7 días justos.
+  >
+  > **LO QUE CUESTA CON UN TOPE CORTO.** Una instalación que acorte la variable
+  > a 1 día obtiene sesiones de entre 0 y 24 horas: quien entra a las 02:59
+  > la pierde al minuto. No hay ninguna configurada así; si alguna lo pide, el
+  > mínimo útil es una decisión de operación, no de este requisito.
+  >
+  > **LA HORA, EN LA CLÍNICA Y NO EN EL SERVIDOR.** Se calcula con
+  > `America/Guayaquil` sea cual sea el huso de la máquina (REQ-160). Ecuador
+  > no cambia de hora; la conversión es la de `clinic-time.ts`, que lo
+  > resolvería igual si cambiara.
+  >
+  > **LAS LLEGADAS DE LA MAÑANA DEL DÍA 7.** Todas las sesiones de la semana
+  > caen a las 03:00, así que la mañana siguiente varias personas vuelven a
+  > entrar casi a la vez desde la misma IP de la clínica. El tope de 10
+  > intentos por minuto por IP no cambia aquí; queda anotado en la segunda
+  > revisión de D-065, en `DECISIONES-PENDIENTES.md`.
+  >
+  > **LA HORA ES FIJA** (D-094, punto 4, decidido por el autor): no mira el
+  > horario de cada sede, mientras ninguna atienda de madrugada. Si alguna lo
+  > hace, la hora pasa a ser configurable por instalación.
+- **AU-044** — MIENTRAS el diálogo de volver a entrar de AU-040 esté abierto,
+  CUANDO lleve **15 minutos** abierto —o hayan pasado 15 minutos desde el
+  corte de AU-046, lo que llegue antes— sin que la misma persona haya vuelto a
+  entrar, la interfaz DEBERÁ terminar la sesión, quitar de la pantalla todo lo
+  cargado para esa persona y llevarla a iniciar sesión con el aviso «Su sesión
+  se cerró por seguridad. Lo que no estaba guardado se perdió.». Mientras
+  esté abierto, el diálogo DEBERÁ decir «No se ha perdido nada todavía. Tiene
+  15 minutos para volver a entrar; después, por seguridad, se cerrará la
+  pantalla.», sin cuenta atrás; y su «Salir» DEBERÁ confirmar con «Si sale,
+  se cerrarán todas sus pestañas y se perderá lo que no se haya guardado.».
+
+  > **DECIDIDO POR EL AUTOR** (D-065, segunda revisión, 30-09-2026; el texto,
+  > el mismo día). Detrás del diálogo la pantalla del paciente sigue visible,
+  > desenfocada, sin límite de tiempo: en un consultorio vacío es la historia
+  > clínica de alguien a la vista de quien entre.
+  >
+  > **SE MIDE CON EL RELOJ DE PARED, NO CON UN TEMPORIZADOR.** Un portátil
+  > que se suspende detiene los temporizadores del navegador; al despertar
+  > una hora después, un `setTimeout` de 15 minutos aún esperaría. Se fija el
+  > instante límite al abrir el diálogo y se compara con la hora actual a
+  > intervalos cortos y al volver la pestaña a primer plano.
+  >
+  > **LIMPIAR ES RECARGAR.** Termina igual que «Salir de todos modos»: el
+  > mismo camino de AU-040 que borra la sesión y navega a `/acceso` con una
+  > recarga completa, que tira la caché con el paciente en pantalla. Lo único
+  > distinto es el aviso, que viaja como código (`motivo=sin-respuesta`),
+  > nunca como frase.
+  >
+  > **SÓLO INTERFAZ.** La familia ya había caducado en el servidor; lo que
+  > queda abierto es la pantalla.
+  >
+  > **LA FRASE DEL DIÁLOGO** (D-094, punto 2): antes decía «No se ha perdido
+  > nada de lo que tiene en pantalla», y a los 15 minutos sí se pierde.
+  >
+  > **DESDE EL CORTE REAL** (D-094, precisión del autor): un portátil
+  > dormido a las 03:00 y abierto a las 08:00 ya pasó el corte + 15 minutos,
+  > y la pantalla se limpia en el acto, sin diálogo. Se pierde lo escrito sin
+  > opción de volver a entrar; el autor lo prefiere a la historia a la vista.
+  >
+  > **LA PANTALLA QUE NO PIDE NADA** la cubre AU-046: el diálogo se abre a la
+  > hora de la caducidad aunque ninguna petición la descubra.
+  >
+  > **UNA ENTRADA EN VUELO AL CUMPLIRSE LOS 15 MINUTOS.** Si la contraseña se
+  > envió justo antes y la respuesta llega después, la pantalla ya se limpió;
+  > la sesión nueva —de la misma cuenta, que acreditó su contraseña— queda y
+  > la recarga entra con ella. Lo escrito se perdió igualmente, como dice el
+  > aviso.
+- **AU-046** — CUANDO se inicie sesión o se renueve, el sistema DEBERÁ
+  decir en la respuesta cuántos segundos le quedan a la familia de sesión
+  (`sessionExpiresIn`). CUANDO, con la pantalla abierta, el reloj de pared
+  alcance ese instante, la interfaz DEBERÁ intentar renovar y, si la sesión
+  caducó, abrir el diálogo de AU-040 —y con él el límite de AU-044— aunque la
+  pantalla no haya hecho ninguna petición —también si la renovación falla por
+  la red: pasado el corte, la familia ya caducó—. CUANDO en una pestaña la
+  misma persona vuelva a entrar, o la sesión termine, las demás pestañas del
+  mismo navegador DEBERÁN enterarse: un diálogo abierto se cierra con la
+  sesión renovada, o la pestaña termina con el mismo aviso; tras «Cerrar
+  sesión», sin aviso.
+
+  > **DECIDIDO POR EL AUTOR** (D-094, punto 1, opción B, 30-09-2026). Una
+  > atención abierta en un consultorio vacío no consulta nada: a las 03:00 la
+  > sesión caducaba en el servidor y la historia seguía a la vista, sin
+  > desenfocar, hasta que alguien tocara algo. Con el corte de madrugada era
+  > justo el caso más probable.
+  >
+  > **SEGUNDOS QUE QUEDAN, NO UN INSTANTE.** Un instante obligaría a comparar
+  > el reloj del servidor con el del equipo de la clínica, que puede ir
+  > minutos desviado. Los segundos se suman al reloj del navegador al recibir
+  > la respuesta: el desvío no cuenta, sólo la latencia de esa respuesta.
+  >
+  > **PRIMERO RENOVAR.** Otra pestaña puede haber vuelto a entrar ya: su
+  > familia es nueva y vive más. Si la renovación sale bien, no se pregunta
+  > nada; si dice `SESSION_EXPIRED`, se abre el diálogo como si lo hubiera
+  > descubierto una petición.
+  >
+  > **LAS PESTAÑAS SE AVISAN** por un `BroadcastChannel` del mismo origen.
+  > Viaja qué pasó, la cuenta a la que le pasó y, al terminar, el código del
+  > aviso, como en la URL de `/acceso`: nunca el token ni datos del paciente.
+  > La cuenta es lo que impide que una pestaña cierre o reabra la de OTRA
+  > persona que entró en el mismo navegador. Un código desconocido se ignora.
+  >
+  > **EL FIN SE INFORMA UNA VEZ.** Con el diálogo abierto, el fin de otra
+  > pestaña lo contesta el diálogo, con la frase de aquélla; dos informes
+  > pisaban el aviso y el dueño del `redirect` (revisión en contexto limpio).
+  > Sin diálogo, una pestaña renueva antes de terminar: si ahí la persona
+  > entró de nuevo, el diálogo viejo de otra no la cierra.
+  >
+  > **UNA RENOVACIÓN A LA VEZ ENTRE PESTAÑAS** (Web Locks): llegan juntas al
+  > corte, y dos renovaciones con la misma cookie que contestan en otro orden
+  > dejaban la cookie en un sucesor retirado —AU-004 revocaba la familia—.
+  >
+  > **«CERRAR SESIÓN» Y «SALIR» CIERRAN TODAS** las pestañas de la persona
+  > (D-094, precisiones del autor): la primera sin aviso, la segunda con el de
+  > caducada, y su confirmación lo dice.
 - **AU-005** — El sistema DEBERÁ permitir matricular un segundo factor TOTP con
   códigos de respaldo, y DEBERÁ cifrar el secreto en la aplicación (ADR-008 §3).
 
@@ -569,6 +710,37 @@ enlace que no sirve y con un correo que no sale.
   (`record:*`) y ese rol tenga además administración de usuarios, el sistema
   DEBERÁ advertirlo sin impedirlo: es la separación que una auditoría de la
   SPDP pregunta primero, y la clínica puede decidir asumirla.
+
+- **AU-045** — CUANDO se guarden los permisos de un rol que lleve
+  `prescription:write` o `record:write` y NO lleve `background:write`, el
+  sistema DEBERÁ advertirlo sin impedirlo, con «Este rol receta o escribe en
+  la historia clínica pero no puede registrar alergias ni antecedentes. Puede
+  guardarlo igualmente.»; CUANDO lleve `nursing:write` sin `background:write`
+  (y ninguno de los dos anteriores), con «Este rol registra los formularios de
+  enfermería pero no puede registrar alergias ni antecedentes. Puede
+  guardarlo igualmente.»; y la descripción de `background:write` en el
+  catálogo DEBERÁ ser «Registrar alergias y antecedentes del paciente. Sin él
+  no se registran alergias ni antecedentes».
+
+  > **DECIDIDO POR EL AUTOR** (D-071, A con el texto de B, 30-09-2026; los
+  > textos, el mismo día). AU-042 concedió `background:write` una sola vez a
+  > los roles que ya existían. Un rol propio creado después —«MÉDICO
+  > ESPECIALISTA» con `record:write` y `prescription:write`— receta
+  > amoxicilina y recibe un 403 al anotar que el paciente es alérgico a la
+  > penicilina.
+  >
+  > **COMO AU-034, EN EL MISMO SITIO.** La advertencia viaja en el 200 del
+  > guardado y la pantalla la pinta después de confirmar que se guardó. No
+  > se impide: una clínica puede tener un rol que recete y que no deba
+  > registrar antecedentes, y la decisión es suya.
+  >
+  > **`record:sign` SOLO NO AVISA.** Firmar no escribe: el hueco es de quien
+  > receta o escribe la nota, que es quien está delante de la alergia.
+  > **ENFERMERÍA TAMBIÉN** (D-094, punto 3, con su propia frase): la enfermera
+  > de preconsulta de un rol propio sin el permiso recibe un 403 al anotar la
+  > alergia, y que llegue al médico depende de que se lo diga. UNA advertencia
+  > por rol: si además receta o escribe, basta la primera, que ya nombra el
+  > hueco.
 
 - **AU-038** — CUANDO se fijen los roles de una cuenta, el sistema NO DEBERÁ
   admitir ninguna concesión cuyo alcance esté fuera del alcance de quien llama

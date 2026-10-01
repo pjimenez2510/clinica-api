@@ -1,3 +1,10 @@
+import {
+  addDays,
+  atWallClock,
+  clinicalDateOf,
+  WallClockTime,
+} from '../../../shared/domain/clinic-time';
+
 /**
  * The family value carried by a token that has not passed the second factor.
  *
@@ -24,3 +31,32 @@ export const MFA_CHALLENGE_FAMILY = 'pending-mfa';
  * rows must outlive their expiry by the same margin when they are purged.
  */
 export const REFRESH_COOKIE_MARGIN_MS = 24 * 60 * 60 * 1000;
+
+/** AU-043. The hour of the clinic at which a session family expires (D-065). */
+export const SESSION_CUTOFF = WallClockTime.of(3, 0);
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * AU-040, AU-043. When the family started at `startedAt` expires: the LAST
+ * 03:00 in `America/Guayaquil` no later than `lifetimeDays` days after it.
+ *
+ * Counted to the second, a Monday 08:10 sign-in expired the next Monday at
+ * 08:10, in the middle of a consultation, every week. Aligned, it expires that
+ * Monday at 03:00 with the clinic closed. ALWAYS EARLIER, NEVER LATER: the
+ * ceiling D-063 set is a maximum, so the real life lies between
+ * `lifetimeDays − 1` and `lifetimeDays` days.
+ *
+ * Pure, and in the clinic's zone whatever the server's (REQ-160).
+ */
+export function sessionFamilyExpiry(
+  startedAt: Date,
+  lifetimeDays: number,
+): Date {
+  const ceiling = new Date(startedAt.getTime() + lifetimeDays * MS_PER_DAY);
+  const date = clinicalDateOf(ceiling);
+  const sameDay = atWallClock(date, SESSION_CUTOFF);
+  return sameDay <= ceiling
+    ? sameDay
+    : atWallClock(addDays(date, -1), SESSION_CUTOFF);
+}

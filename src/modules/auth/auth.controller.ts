@@ -503,12 +503,18 @@ export class AuthController {
     accessToken: string;
     user: { id: string; email: string; firstName: string; lastName: string };
     mfaEnabled: boolean;
+    expiresAt: Date;
   }): Promise<SessionResponse> {
     const assignments = await this.auth.grantsFor(session.user.id);
 
     return {
       accessToken: session.accessToken,
       expiresIn: this.tokens.accessTokenSeconds,
+      // AU-046. Never negative: a family past its expiry does not get here.
+      sessionExpiresIn: Math.max(
+        0,
+        Math.floor((session.expiresAt.getTime() - Date.now()) / 1000),
+      ),
       user: session.user,
       /**
        * Travels in ALL THREE session responses — login, refresh and

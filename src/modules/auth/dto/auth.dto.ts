@@ -189,6 +189,13 @@ export const sessionResponseSchema = z.object({
   accessToken: z.string(),
   /** Seconds, not a timestamp. Read from the token service, never a literal. */
   expiresIn: z.number().int().positive(),
+  /**
+   * AU-046. Seconds left to the SESSION FAMILY (AU-040, AU-043), not to the
+   * access token. Seconds and not an instant: the client adds them to its own
+   * clock on receipt, so a clinic PC whose clock is minutes off still opens
+   * the dialog when the session really ends.
+   */
+  sessionExpiresIn: z.number().int().nonnegative(),
   user: z.object({
     id: z.uuid(),
     email: z.email(),
