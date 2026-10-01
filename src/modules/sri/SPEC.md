@@ -138,8 +138,8 @@ autorizada, devuelta (35), 43, 70, no autorizada, caído y luego vuelve— y
 comprobar el estado final de cada comprobante, que la clave no cambió en
 ninguno, y que el de 70 **no** se reenvió.
 
-**Cubre:** SRI-040 a SRI-058.
-**Solo servidor:** SRI-040 a SRI-057. La conversación con el SRI no tiene
+**Cubre:** SRI-040 a SRI-059.
+**Solo servidor:** SRI-040 a SRI-057, SRI-059. La conversación con el SRI no tiene
 pantalla; su resultado se ve en S4.
 
 ### S4 — Lo que ve caja: el estado electrónico y el monitor _(P1)_
@@ -152,7 +152,7 @@ permite reintentar el que se puede reintentar.
 monitor y ver esa factura con «35» y su mensaje; reintentar con el doble ya
 contestando «autorizada» y ver que sale del monitor.
 
-**Cubre:** SRI-060 a SRI-068.
+**Cubre:** SRI-060 a SRI-069.
 **Solo servidor:** SRI-065, SRI-066, SRI-067.
 
 ### S5 — El RIDE y el correo con el XML _(P1)_
@@ -500,6 +500,19 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
   > porque lo que se corrigió puede ser nuestro (un 35 por un defecto del XML).
   > **Qué hacer cuando lo que está mal es un dato de la factura** —que no se
   > edita (BI-084)— es D-093.
+- **SRI-059** — CUANDO una llamada al SRI termine en fallo de transporte
+  (SRI-050) con una respuesta HTTP, el sistema DEBERÁ guardar en su intento el
+  estado HTTP y el cuerpo de la respuesta tal como llegó, hasta 16 KiB; SI el
+  cuerpo es un `soap:Fault` ENTONCES DEBERÁ guardar además su `faultcode`, su
+  `faultstring` y su `detail` completos, cada uno hasta 16 KiB; y todo corte
+  DEBERÁ quedar marcado en el propio texto. El sistema NO DEBERÁ guardar nada
+  de la petición: si la respuesta repite el XML firmado que se envió, o su
+  base64, DEBERÁ sustituirlo por una marca.
+  > Revisión del 01-10-2026: la recepción de pruebas (celcer) contestó HTTP 500
+  > con un `soap:Fault` de `javax.persistence.PersistenceException`, y se
+  > guardaron 210 caracteres; la causa quedó cortada. Lo que se guarda es la
+  > respuesta del SRI: el certificado, su clave y la frase maestra no pasan por
+  > el cliente del servicio web, y la petición firmada no se copia.
 
 ## 5. Lo que ve caja
 
@@ -542,6 +555,16 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
   > BI-007.
 - **SRI-068** — El sistema DEBERÁ ofrecer el XML firmado y, cuando exista, el
   autorizado, para descargarlos con `billing:read`.
+- **SRI-069** — CUANDO el último intento de un comprobante haya sido un fallo
+  de transporte, el monitor DEBERÁ mostrar su estado HTTP y un resumen del
+  `faultstring` —sus primeros 500 caracteres, con la marca de corte si lo hay—
+  o el motivo del fallo si no hubo respuesta; y DEBERÁ ofrecer, a petición, el
+  `faultstring` completo, su `detail` y el cuerpo de esa respuesta tal como se
+  guardaron (SRI-059), con `billing:read` y el alcance de SRI-065.
+  > D-107, resuelta por el autor: el texto entero no viaja con la lista. Con
+  > el SRI caído, quinientas filas con la traza de celcer (unos 6 KB cada una)
+  > eran unos 3 MB en cada refresco de la pantalla de caja, justo cuando más se
+  > mira.
 
 ## 6. El RIDE y la entrega al cliente
 
@@ -628,8 +651,9 @@ el autor quiera hacerlo:
 4. Emitir una factura de prueba y mirar el monitor: lo esperable en pruebas es
    la advertencia **60** (ambiente de pruebas), que no bloquea. Si los nombres
    de los elementos de la respuesta real difieren de los del doble, el intento
-   queda como fallo de transporte con el cuerpo recibido: es la señal para
-   ajustar el adaptador y el doble a la vez.
+   queda como fallo de transporte con el estado HTTP, el `faultstring` y el
+   cuerpo recibido (SRI-059), a la vista en el monitor (SRI-069): es la señal
+   para ajustar el adaptador y el doble a la vez.
 5. Solo después, y con D-091 y D-093 resueltas, producción: URL de producción y
    `SRI_ENVIRONMENT=2`. **Cambiar el ambiente no toca los comprobantes ya
    preparados**: su clave dice `1` y se quedan en pruebas.
@@ -642,8 +666,8 @@ el autor quiera hacerlo:
 | SRI-005 a SRI-009, SRI-012, SRI-027, SRI-034, SRI-051  | **Integración contra PostgreSQL real, por SQL directo**, con control positivo                             |
 | SRI-020, SRI-021, SRI-031                              | Unitarias con un `.p12` que genera la prueba; la firma se **verifica** criptográficamente                 |
 | SRI-022 a SRI-026, SRI-028 a SRI-030, SRI-033          | Unitarias del servicio con puertos falsos e integración del repositorio                                   |
-| SRI-040 a SRI-058                                      | Integración: pg-boss real, PostgreSQL real y el doble del SRI por HTTP                                    |
-| SRI-060 a SRI-068, SRI-080 a SRI-084                   | Integración por HTTP (permiso, alcance, contrato) y e2e de la interfaz                                    |
+| SRI-040 a SRI-059                                      | Integración: pg-boss real, PostgreSQL real y el doble del SRI por HTTP                                    |
+| SRI-060 a SRI-069, SRI-080 a SRI-084                   | Integración por HTTP (permiso, alcance, contrato) y e2e de la interfaz                                    |
 | SRI-070 a SRI-076                                      | Unitarias sobre los bytes del RIDE; integración con un `Mailer` falso y e2e con Mailpit                   |
 
 ## 11. Preguntas abiertas

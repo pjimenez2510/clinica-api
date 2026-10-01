@@ -4222,7 +4222,15 @@ model ElectronicVoucherAttempt {
   /// RECIBIDA, DEVUELTA, AUTORIZADO, NO AUTORIZADO, PENDING or TRANSPORT_FAILURE.
   outcome        String   @db.VarChar(24)
   messages       Json     @default("[]") @db.JsonB
-  transportError String?  @map("transport_error") @db.VarChar(500)
+  /// SRI-059. Why it failed, in one line; whole (≤ 16 KiB, the cut marked).
+  transportError String?  @map("transport_error") @db.Text
+  /// SRI-059. Only on TRANSPORT_FAILURE: what the SRI answered, as it came.
+  httpStatus     Int?     @map("http_status")
+  faultCode      String?  @map("fault_code") @db.Text
+  faultString    String?  @map("fault_string") @db.Text
+  faultDetail    String?  @map("fault_detail") @db.Text
+  /// The response body, never the request (`…_response_is_capped`).
+  responseBody   String?  @map("response_body") @db.Text
 
   @@index([voucherId, startedAt], map: "electronic_voucher_attempt_by_voucher")
   @@map("electronic_voucher_attempt")

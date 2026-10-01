@@ -12,6 +12,7 @@ import {
   ELECTRONIC_VOUCHER_REPOSITORY,
   type ElectronicVoucherRepository,
   type MonitorRow,
+  type TransportFailureDetail,
 } from '../domain/electronic-voucher.repository';
 import {
   ElectronicVoucherNotFoundError,
@@ -153,6 +154,19 @@ export class VoucherMonitorService implements ElectronicVoucherStatusReader {
       unsignedXml,
       signedXml: null,
     });
+  }
+
+  /**
+   * SRI-069, SRI-065. What the SRI answered the last time it failed, body
+   * included; out of the requester's sites it does not exist.
+   */
+  async lastTransportFailure(
+    voucherId: string,
+    sites: Requester['sites'],
+  ): Promise<TransportFailureDetail | null> {
+    const voucher = await this.vouchers.findByIdInSites(voucherId, sites);
+    if (!voucher) throw new ElectronicVoucherNotFoundError();
+    return this.vouchers.lastTransportFailure(voucher.id);
   }
 
   /** SRI-068. The signed XML, or the authorisation document once there is one. */

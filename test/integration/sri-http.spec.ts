@@ -15,6 +15,7 @@ import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/ro
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
+import { LONG_FAULT_DETAIL, LONG_FAULT_STRING } from '../sri-double/sri-double';
 import { createTestPkcs12 } from '../support/test-pkcs12';
 
 import { useDatabase } from './setup/database';
@@ -450,6 +451,173 @@ describe('el comprobante electrónico por HTTP', () => {
       expect((foreign.body as Problem).code).toBe('SRI_VOUCHER_NOT_FOUND');
       const { code, title, status } = missing.body as Problem;
       expect(foreign.body).toMatchObject({ code, title, status });
+    });
+
+    /** SRI-059. A transport failure as the queue would leave it. */
+    async function aTransportFailure(
+      voucherId: string,
+      startedAt: Date,
+      outcome = 'TRANSPORT_FAILURE',
+    ) {
+      const { accessKey } = await prisma.electronicVoucher.findUniqueOrThrow({
+        where: { id: voucherId },
+      });
+      const failed = outcome === 'TRANSPORT_FAILURE';
+      await prisma.electronicVoucherAttempt.create({
+        data: {
+          voucherId,
+          accessKey,
+          operation: 'RECEPTION',
+          startedAt,
+          durationMs: 120,
+          outcome,
+          transportError: failed
+            ? `HTTP 500 · soap:Server: ${LONG_FAULT_STRING}`
+            : null,
+          httpStatus: failed ? 500 : null,
+          faultCode: failed ? 'soap:Server' : null,
+          faultString: failed ? LONG_FAULT_STRING : null,
+          faultDetail: failed ? LONG_FAULT_DETAIL : null,
+          responseBody: failed
+            ? `<soap:Envelope>CUERPO-CRUDO-DEL-SRI ${LONG_FAULT_STRING}</soap:Envelope>`
+            : null,
+        },
+      });
+    }
+
+    it('SRI-069 el monitor enseña el estado HTTP y el faultstring entero del último fallo; el cuerpo, solo a petición', async () => {
+      await uploadCertificate();
+      const invoice = await issueInvoice();
+      const voucherId = invoice.electronic!.voucherId;
+      const failedAt = new Date();
+      await aTransportFailure(voucherId, failedAt);
+
+      const monitor = await api()
+        .get('/api/v1/sri/vouchers')
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(200);
+      const row = (
+        monitor.body as {
+          rows: { invoiceId: string; lastTransportFailure: unknown }[];
+        }
+      ).rows.find((r) => r.invoiceId === invoice.id);
+      // D-107. The list carries the first 500 characters and says how many
+      // more there are; the whole text is one click away.
+      expect(row?.lastTransportFailure).toEqual({
+        at: failedAt.toISOString(),
+        httpStatus: 500,
+        faultCode: 'soap:Server',
+        faultSummary: `${LONG_FAULT_STRING.slice(0, 500)}… [cortado: ${LONG_FAULT_STRING.length - 500} caracteres más]`,
+        // Not twice: the one-line reason would repeat the fault string.
+        error: null,
+        hasResponseBody: true,
+      });
+      // Neither the rest of the trace nor the body travel with the list.
+      expect(monitor.text).not.toContain(LONG_FAULT_STRING.slice(600, 700));
+      expect(monitor.text).not.toContain('CUERPO-CRUDO-DEL-SRI');
+
+      const detail = await api()
+        .get(`/api/v1/sri/vouchers/${voucherId}/transport-failure`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(200);
+      expect(detail.body).toEqual({
+        failure: {
+          at: failedAt.toISOString(),
+          httpStatus: 500,
+          faultCode: 'soap:Server',
+          faultString: LONG_FAULT_STRING,
+          faultDetail: LONG_FAULT_DETAIL,
+          error: `HTTP 500 · soap:Server: ${LONG_FAULT_STRING}`,
+          responseBody: `<soap:Envelope>CUERPO-CRUDO-DEL-SRI ${LONG_FAULT_STRING}</soap:Envelope>`,
+        },
+      });
+    });
+
+    it('SRI-069 D-107 el resumen cuenta caracteres como la base, también fuera del plano básico', async () => {
+      await uploadCertificate();
+      const invoice = await issueInvoice();
+      const voucherId = invoice.electronic!.voucherId;
+      const { accessKey } = await prisma.electronicVoucher.findUniqueOrThrow({
+        where: { id: voucherId },
+      });
+      // 501 characters, 1002 UTF-16 units: one character is left out.
+      const faultString = '😀'.repeat(501);
+      await prisma.electronicVoucherAttempt.create({
+        data: {
+          voucherId,
+          accessKey,
+          operation: 'RECEPTION',
+          startedAt: new Date(),
+          durationMs: 10,
+          outcome: 'TRANSPORT_FAILURE',
+          transportError: `HTTP 500 · soap:Server: ${faultString}`,
+          httpStatus: 500,
+          faultCode: 'soap:Server',
+          faultString,
+        },
+      });
+
+      const monitor = await api()
+        .get('/api/v1/sri/vouchers')
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(200);
+      const row = (
+        monitor.body as {
+          rows: {
+            invoiceId: string;
+            lastTransportFailure: { faultSummary: string } | null;
+          }[];
+        }
+      ).rows.find((r) => r.invoiceId === invoice.id);
+      expect(row?.lastTransportFailure?.faultSummary).toBe(
+        `${'😀'.repeat(500)}… [cortado: 1 caracteres más]`,
+      );
+    });
+
+    it('SRI-069 una respuesta posterior que sí lo fue deja de enseñar el fallo', async () => {
+      await uploadCertificate();
+      const invoice = await issueInvoice();
+      const voucherId = invoice.electronic!.voucherId;
+      const failedAt = new Date();
+      await aTransportFailure(voucherId, failedAt);
+      await aTransportFailure(
+        voucherId,
+        new Date(failedAt.getTime() + 1000),
+        'RECIBIDA',
+      );
+
+      const monitor = await api()
+        .get('/api/v1/sri/vouchers')
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(200);
+      const row = (
+        monitor.body as {
+          rows: { invoiceId: string; lastTransportFailure: unknown }[];
+        }
+      ).rows.find((r) => r.invoiceId === invoice.id);
+      expect(row?.lastTransportFailure).toBeNull();
+      await api()
+        .get(`/api/v1/sri/vouchers/${voucherId}/transport-failure`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(200, { failure: null });
+    });
+
+    it('SRI-069 SRI-065 SRI-064 el cuerpo: 404 desde otra sede, 403 sin billing:read', async () => {
+      await uploadCertificate();
+      const invoice = await issueInvoice();
+      const voucherId = invoice.electronic!.voucherId;
+      await aTransportFailure(voucherId, new Date());
+
+      const foreign = await api()
+        .get(`/api/v1/sri/vouchers/${voucherId}/transport-failure`)
+        .set('Authorization', `Bearer ${otherCashierToken}`)
+        .expect(404);
+      expect((foreign.body as Problem).code).toBe('SRI_VOUCHER_NOT_FOUND');
+      expect(foreign.text).not.toContain('CUERPO-CRUDO-DEL-SRI');
+      await api()
+        .get(`/api/v1/sri/vouchers/${voucherId}/transport-failure`)
+        .set('Authorization', `Bearer ${receptionToken}`)
+        .expect(403);
     });
 
     it('SRI-064 recepción no puede reintentar (403)', async () => {

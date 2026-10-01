@@ -309,6 +309,8 @@ function receptionAttempt(
     outcome: answer.kind,
     messages: answer.kind === 'TRANSPORT_FAILURE' ? [] : answer.messages,
     transportError: answer.kind === 'TRANSPORT_FAILURE' ? answer.error : null,
+    transportResponse:
+      answer.kind === 'TRANSPORT_FAILURE' ? (answer.response ?? null) : null,
   };
 }
 
@@ -327,5 +329,7 @@ function authorisationAttempt(
         ? answer.messages
         : [],
     transportError: answer.kind === 'TRANSPORT_FAILURE' ? answer.error : null,
+    transportResponse:
+      answer.kind === 'TRANSPORT_FAILURE' ? (answer.response ?? null) : null,
   };
 }

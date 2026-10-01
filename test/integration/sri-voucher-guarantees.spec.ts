@@ -391,6 +391,90 @@ describe('SRI-051, SC-083 cada llamada al SRI queda, con la clave de su comproba
       ),
     ).toMatch(/electronic_voucher_attempt_transport_failure_says_why/);
   });
+
+  it('SRI-059 un fallo de transporte guarda entero lo que contestó el SRI, y solo un fallo lo lleva', async () => {
+    const voucher = await insertVoucher(
+      context.prisma,
+      (await anIssuedInvoice()).id,
+    );
+    // The shape celcer answered on 01-10-2026: a Java trace, far past 500.
+    const faultString =
+      'javax.persistence.PersistenceException: org.hibernate.exception.GenericJDBCException: could not execute statement ' +
+      'at org.hibernate.internal.ExceptionConverterImpl.convert(ExceptionConverterImpl.java:154) '.repeat(
+        120,
+      );
+    const body = `<soap:Envelope><soap:Body><soap:Fault><faultcode>soap:Server</faultcode><faultstring>${faultString}</faultstring></soap:Fault></soap:Body></soap:Envelope>`;
+    expect(faultString.length).toBeGreaterThan(10_000);
+
+    const insertFailure = (status: number, responseBody: string) =>
+      context.prisma.$executeRaw`
+        INSERT INTO "electronic_voucher_attempt"
+          ("voucher_id", "access_key", "operation", "started_at", "duration_ms", "outcome",
+           "transport_error", "http_status", "fault_code", "fault_string", "fault_detail", "response_body")
+        VALUES (${voucher.id}::uuid, ${voucher.accessKey}, 'RECEPTION', CURRENT_TIMESTAMP, 40, 'TRANSPORT_FAILURE',
+                ${`HTTP ${status} · soap:Server: ${faultString}`}, ${status}, 'soap:Server', ${faultString},
+                'detalle', ${responseBody})`;
+
+    await insertFailure(500, body);
+    const [stored] = await context.prisma.$queryRaw<
+      {
+        http_status: number;
+        fault_string: string;
+        transport_error: string;
+        response_body: string;
+      }[]
+    >`
+      SELECT "http_status", "fault_string", "transport_error", "response_body"
+        FROM "electronic_voucher_attempt" WHERE "voucher_id" = ${voucher.id}::uuid`;
+    expect(stored?.http_status).toBe(500);
+    expect(stored?.fault_string).toBe(faultString);
+    expect(stored?.transport_error).toContain(faultString);
+    expect(stored?.response_body).toBe(body);
+
+    // Control: the same statement, only the status out of HTTP's range.
+    expect(await rejectionOf(insertFailure(42, body))).toMatch(
+      /electronic_voucher_attempt_http_status_is_http/,
+    );
+    // Every text has the ceiling: 16 KiB of characters plus the cut's mark.
+    // Exactly at it, it goes in; one past it, in any column, it does not.
+    const atCeiling = 'x'.repeat(16_640);
+    const pastCeiling = `${atCeiling}x`;
+    const insertTexts = (texts: {
+      transportError?: string;
+      faultCode?: string;
+      faultString?: string;
+      faultDetail?: string;
+      responseBody?: string;
+    }) =>
+      context.prisma.$executeRaw`
+        INSERT INTO "electronic_voucher_attempt"
+          ("voucher_id", "access_key", "operation", "started_at", "duration_ms", "outcome",
+           "transport_error", "http_status", "fault_code", "fault_string", "fault_detail", "response_body")
+        VALUES (${voucher.id}::uuid, ${voucher.accessKey}, 'RECEPTION', CURRENT_TIMESTAMP, 40, 'TRANSPORT_FAILURE',
+                ${texts.transportError ?? 'HTTP 500'}, 500, ${texts.faultCode ?? null}, ${texts.faultString ?? null},
+                ${texts.faultDetail ?? null}, ${texts.responseBody ?? null})`;
+    for (const column of [
+      'transportError',
+      'faultCode',
+      'faultString',
+      'faultDetail',
+      'responseBody',
+    ] as const) {
+      await expect(insertTexts({ [column]: atCeiling })).resolves.toBe(1);
+      expect(await rejectionOf(insertTexts({ [column]: pastCeiling }))).toMatch(
+        /electronic_voucher_attempt_response_is_capped/,
+      );
+    }
+    // An answer that was an answer carries no transport detail.
+    expect(
+      await rejectionOf(
+        context.prisma.$executeRaw`
+          INSERT INTO "electronic_voucher_attempt"
+            ("voucher_id", "access_key", "operation", "started_at", "duration_ms", "outcome", "response_body")
+          VALUES (${voucher.id}::uuid, ${voucher.accessKey}, 'RECEPTION', CURRENT_TIMESTAMP, 5, 'RECIBIDA', '<x/>')`,
+      ),
+    ).toMatch(/electronic_voucher_attempt_detail_only_on_transport_failure/);
+  });
 });
 
 describe('SRI-027, SRI-034 el certificado del emisor', () => {

@@ -6,7 +6,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { FetchSriWebService } from '../../src/modules/sri/infrastructure/sri-web-service.client';
 import type { Env } from '../../src/shared/config/env.schema';
-import { startSriDouble, type SriDouble } from '../sri-double/sri-double';
+import {
+  LONG_FAULT_DETAIL,
+  LONG_FAULT_STRING,
+  startSriDouble,
+  type SriDouble,
+} from '../sri-double/sri-double';
 
 /**
  * SRI-042, SRI-049, SRI-050. The client against the LOCAL DOUBLE of the SRI,
@@ -133,13 +138,163 @@ describe('SRI-042 a SRI-050 el cliente del servicio web contra el doble local', 
     expect((await client.authorise(KEY)).kind).toBe('TRANSPORT_FAILURE');
   });
 
-  it('SRI-050 un cuerpo 200 que no es una respuesta (HTML) es fallo de transporte y se conserva su comienzo', async () => {
+  it('SRI-050 SRI-059 un cuerpo 200 que no es una respuesta (HTML) es fallo de transporte y se conserva entero', async () => {
     double.setScenario(KEY, 'GARBAGE');
     const answer = await client.receive(SIGNED);
     expect(answer.kind).toBe('TRANSPORT_FAILURE');
-    expect(answer.kind === 'TRANSPORT_FAILURE' && answer.error).toContain(
-      'mantenimiento',
+    if (answer.kind !== 'TRANSPORT_FAILURE') return;
+    expect(answer.error).toContain('mantenimiento');
+    expect(answer.response).toMatchObject({
+      httpStatus: 200,
+      faultString: null,
+      responseBody: '<html>mantenimiento</html>',
+    });
+  });
+
+  it('SRI-059 un 500 con soap:Fault largo (la forma de celcer) guarda estado, faultcode, faultstring y detail enteros', async () => {
+    double.setScenario(KEY, 'FAULT_500');
+    for (const answer of [
+      await client.receive(SIGNED),
+      await client.authorise(KEY),
+    ]) {
+      expect(answer.kind).toBe('TRANSPORT_FAILURE');
+      if (answer.kind !== 'TRANSPORT_FAILURE') return;
+      expect(LONG_FAULT_STRING.length).toBeGreaterThan(5000);
+      expect(answer.response).toMatchObject({
+        httpStatus: 500,
+        faultCode: 'soap:Server',
+        faultString: LONG_FAULT_STRING,
+        faultDetail: LONG_FAULT_DETAIL,
+      });
+      expect(answer.response?.responseBody).toContain(LONG_FAULT_STRING);
+      // The one-line reason carries the cause, not its first 200 characters.
+      expect(answer.error).toBe(`HTTP 500 · soap:Server: ${LONG_FAULT_STRING}`);
+      expect(answer.error).not.toMatch(/cortado/);
+    }
+  });
+
+  it('SRI-059 un 500 con la página HTML de un proxy guarda el estado y el HTML tal como llegó', async () => {
+    double.setScenario(KEY, 'HTML_500');
+    const answer = await client.receive(SIGNED);
+    expect(answer.kind).toBe('TRANSPORT_FAILURE');
+    if (answer.kind !== 'TRANSPORT_FAILURE') return;
+    expect(answer.response?.httpStatus).toBe(500);
+    expect(answer.response?.faultString).toBeNull();
+    expect(answer.response?.responseBody).toMatch(
+      /^<html><head><title>500 Internal Server Error<\/title>.*<\/html>$/,
     );
+    expect(answer.error).toMatch(/^HTTP 500: <html>/);
+  });
+
+  it('SRI-059 un cuerpo mayor que el tope se corta en 16 384 caracteres y el corte queda dicho', async () => {
+    double.setScenario(KEY, 'HUGE_500');
+    const answer = await client.receive(SIGNED);
+    if (answer.kind !== 'TRANSPORT_FAILURE') throw new Error(answer.kind);
+    const body = answer.response?.responseBody ?? '';
+    const mark = /… \[cortado: (\d+) caracteres más\]$/.exec(body);
+    expect(mark).not.toBeNull();
+    const kept = body.slice(0, mark!.index);
+    expect(kept).toHaveLength(16_384);
+    // What was kept plus what the mark counts is what came.
+    expect(kept.length + Number(mark![1])).toBe(
+      '<html><body></body></html>'.length +
+        'Error interno del servidor. '.length * 1500,
+    );
+  });
+
+  it('SRI-059 si el SRI repite la petición firmada, no se guarda: ni el XML ni su base64', async () => {
+    double.setScenario(KEY, 'ECHO_FAULT');
+    const base64 = Buffer.from(SIGNED, 'utf8').toString('base64');
+    const answer = await client.receive(SIGNED);
+    if (answer.kind !== 'TRANSPORT_FAILURE') throw new Error(answer.kind);
+    const stored = JSON.stringify(answer);
+    // Positive control: the double did put the request in its answer.
+    expect(double.callsFor(KEY, 'RECEPTION')).toHaveLength(1);
+    expect(stored).not.toContain(base64);
+    // A piece of it, glued to `xml=` so it is not a run of its own.
+    expect(stored).not.toContain(base64.slice(150, 350));
+    // The voucher, raw, escaped as text content, or decoded by the parser.
+    expect(stored).not.toContain('<factura id="comprobante"');
+    expect(stored).not.toContain('&lt;factura id=');
+    expect(stored).not.toContain('ds:Signature');
+    expect(stored).not.toContain(KEY);
+    expect(answer.response?.faultCode).toBe('soap:Client');
+    expect(answer.response?.faultString).toBe(
+      'No se pudo leer el comprobante [petición omitida] | [petición omitida]',
+    );
+    expect(answer.response?.faultDetail).toContain('xml=[petición omitida]');
+    expect(answer.response?.responseBody).toContain('[petición omitida]');
+  });
+
+  it('SRI-059 una autorización con el comprobante y una fecha ilegible es fallo, y no guarda el comprobante', async () => {
+    double.setScenario(KEY, 'AUTHORISED_BAD_DATE');
+    await client.receive(SIGNED);
+    const answer = await client.authorise(KEY);
+    if (answer.kind !== 'TRANSPORT_FAILURE') throw new Error(answer.kind);
+    const stored = JSON.stringify(answer);
+    expect(answer.response?.httpStatus).toBe(200);
+    // Positive control: the answer is there, without the voucher it carried.
+    expect(answer.response?.responseBody).toContain(
+      '<fechaAutorizacion>25/10/2026 10:00:00</fechaAutorizacion>',
+    );
+    expect(answer.response?.responseBody).toContain('[comprobante omitido]');
+    expect(stored).not.toContain('<factura id="comprobante"');
+    expect(stored).not.toContain('ds:Signature');
+  });
+
+  it('SRI-059 SRI-051 un fault con un nulo, un faultcode enorme y un faultstring pasado del tope cabe en la base', async () => {
+    double.setScenario(KEY, 'ODD_FAULT');
+    const answer = await client.receive(SIGNED);
+    if (answer.kind !== 'TRANSPORT_FAILURE') throw new Error(answer.kind);
+    const texts = [
+      answer.error,
+      answer.response?.faultCode,
+      answer.response?.faultString,
+      answer.response?.faultDetail,
+      answer.response?.responseBody,
+    ].filter((t): t is string => typeof t === 'string');
+    // What the CHECK `electronic_voucher_attempt_response_is_capped` allows.
+    for (const t of texts) expect(t.length).toBeLessThanOrEqual(16_640);
+    // PostgreSQL refuses 0x00 in TEXT: it is replaced, and the cut is said.
+    expect(JSON.stringify(answer)).not.toContain('\\u0000');
+    expect(answer.response?.faultString).toMatch(
+      /^Falla con un nulo \uFFFD en medio/,
+    );
+    expect(answer.response?.faultString).toMatch(/caracteres más\]$/);
+    expect(answer.response?.faultCode!.length).toBeLessThan(300);
+    expect(answer.error).toMatch(/caracteres más\]$/);
+  });
+
+  it('SRI-059 un fault de SOAP 1.2 se lee igual: Code, Reason y Detail', async () => {
+    const body =
+      '<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Body><env:Fault>' +
+      '<env:Code><env:Value>env:Receiver</env:Value></env:Code>' +
+      '<env:Reason><env:Text xml:lang="es">Base de datos no disponible</env:Text></env:Reason>' +
+      '<env:Detail><causa>ORA-12541</causa></env:Detail>' +
+      '</env:Fault></env:Body></env:Envelope>';
+    const server: Server = createServer((_request, response) => {
+      response.writeHead(500, { 'Content-Type': 'application/soap+xml' });
+      response.end(body);
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve),
+    );
+    const { port } = server.address() as AddressInfo;
+    const url = `http://127.0.0.1:${port}/x`;
+    const answer = await clientFor({
+      reception: url,
+      authorisation: url,
+    }).authorise(KEY);
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+
+    if (answer.kind !== 'TRANSPORT_FAILURE') throw new Error(answer.kind);
+    expect(answer.response).toEqual({
+      httpStatus: 500,
+      faultCode: 'env:Receiver',
+      faultString: 'Base de datos no disponible',
+      faultDetail: '<causa>ORA-12541</causa>',
+      responseBody: body,
+    });
   });
 
   it('SRI-050 una conexión rechazada es fallo de transporte', async () => {
@@ -151,6 +306,8 @@ describe('SRI-042 a SRI-050 el cliente del servicio web contra el doble local', 
       authorisation: url,
     }).receive(SIGNED);
     expect(answer.kind).toBe('TRANSPORT_FAILURE');
+    // No answer came, so there is no answer to keep.
+    expect(answer.kind === 'TRANSPORT_FAILURE' && answer.response).toBeNull();
   });
 
   it('SRI-042 SRI-050 un SRI que no contesta dentro del plazo es fallo de transporte, y no se espera más', async () => {

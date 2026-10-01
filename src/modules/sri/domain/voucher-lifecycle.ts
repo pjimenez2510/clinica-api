@@ -69,10 +69,33 @@ export interface SriMessage {
   type: string;
 }
 
+/**
+ * SRI-059. What the SRI answered when the answer was not one: the HTTP status,
+ * the `soap:Fault` read out of it when there is one, and the body as it came.
+ * Every text is whole up to 16 384 characters, and a cut says so in the text.
+ * Never anything of the request.
+ */
+export interface SriFailedResponse {
+  httpStatus: number;
+  faultCode: string | null;
+  faultString: string | null;
+  /** The `detail` element's content, as XML. */
+  faultDetail: string | null;
+  responseBody: string;
+}
+
+/** SRI-050. `response` is `null` when nothing came back: a timeout, no route. */
+export interface TransportFailureAnswer {
+  kind: 'TRANSPORT_FAILURE';
+  /** Why, in one line: the fault's string whole, or the network's error. */
+  error: string;
+  response?: SriFailedResponse | null;
+}
+
 export type ReceptionAnswer =
   | { kind: 'RECIBIDA'; messages: SriMessage[] }
   | { kind: 'DEVUELTA'; messages: SriMessage[] }
-  | { kind: 'TRANSPORT_FAILURE'; error: string };
+  | TransportFailureAnswer;
 
 export type AuthorisationAnswer =
   | {
@@ -96,7 +119,7 @@ export type AuthorisationAnswer =
       messages: SriMessage[];
     }
   | { kind: 'PENDING' }
-  | { kind: 'TRANSPORT_FAILURE'; error: string };
+  | TransportFailureAnswer;
 
 export type QueueStep = 'SEND' | 'AUTHORISE' | 'DELIVER';
 

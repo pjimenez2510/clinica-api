@@ -33,9 +33,11 @@ import { ElectronicVoucherNotFoundError } from './domain/sri.errors';
 import {
   CertificateDto,
   SriMonitorDto,
+  SriTransportFailureDto,
   UploadCertificateDto,
   type CertificateResponse,
   type SriMonitorResponse,
+  type SriTransportFailureResponse,
 } from './dto/sri.dto';
 
 function toCertificate(summary: CertificateSummary): CertificateResponse {
@@ -83,6 +85,12 @@ export class SriVouchersController {
         issuedAt: row.issuedAt.toISOString(),
         nextAttemptAt: row.nextAttemptAt?.toISOString() ?? null,
         receivedAt: row.receivedAt?.toISOString() ?? null,
+        lastTransportFailure: row.lastTransportFailure
+          ? {
+              ...row.lastTransportFailure,
+              at: row.lastTransportFailure.at.toISOString(),
+            }
+          : null,
       })),
       certificate: {
         ...view.certificate,
@@ -114,6 +122,27 @@ export class SriVouchersController {
       voucherId,
       this.requester(req, 'billing:write'),
     );
+  }
+
+  /** SRI-069, SRI-065. */
+  @Get(':voucherId/transport-failure')
+  @RequirePermission('billing:read', 'query')
+  @ApiOperation({
+    summary:
+      'Lo que contestó el SRI en el último intento fallido, con el cuerpo tal como llegó',
+  })
+  @ApiOkResponse({ type: SriTransportFailureDto })
+  async transportFailure(
+    @Param('voucherId', ParseUUIDPipe) voucherId: string,
+    @Req() req: Request,
+  ): Promise<SriTransportFailureResponse> {
+    const failure = await this.monitorService.lastTransportFailure(
+      voucherId,
+      this.requester(req, 'billing:read').sites,
+    );
+    return {
+      failure: failure ? { ...failure, at: failure.at.toISOString() } : null,
+    };
   }
 
   /** SRI-068. */

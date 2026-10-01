@@ -82,6 +82,23 @@ const monitorRowSchema = z.object({
   /** SRI-055, D-102. Its key belongs to the environment not configured now. */
   environmentMismatch: z.boolean(),
   needsAPerson: z.boolean(),
+  /**
+   * SRI-069. The last attempt, when it was a transport failure: the status
+   * and a summary of the fault's string. The whole of it, its detail and the
+   * body are asked for apart (D-107).
+   */
+  lastTransportFailure: z
+    .object({
+      at: z.iso.datetime(),
+      httpStatus: z.number().int().nullable(),
+      faultCode: z.string().nullable(),
+      /** D-107. The first 500 characters, with the cut mark; whole apart. */
+      faultSummary: z.string().nullable(),
+      /** The failure in one line, only when there is no `faultString`. */
+      error: z.string().nullable(),
+      hasResponseBody: z.boolean(),
+    })
+    .nullable(),
 });
 
 const monitorSchema = z.object({
@@ -100,3 +117,24 @@ const monitorSchema = z.object({
 });
 export class SriMonitorDto extends createZodDto(monitorSchema) {}
 export type SriMonitorResponse = z.infer<typeof monitorSchema>;
+
+/** SRI-069. The SRI's answer to the last failed attempt, as it was kept (SRI-059). */
+const transportFailureSchema = z.object({
+  failure: z
+    .object({
+      at: z.iso.datetime(),
+      httpStatus: z.number().int().nullable(),
+      faultCode: z.string().nullable(),
+      faultString: z.string().nullable(),
+      faultDetail: z.string().nullable(),
+      error: z.string(),
+      responseBody: z.string().nullable(),
+    })
+    .nullable(),
+});
+export class SriTransportFailureDto extends createZodDto(
+  transportFailureSchema,
+) {}
+export type SriTransportFailureResponse = z.infer<
+  typeof transportFailureSchema
+>;

@@ -5,6 +5,14 @@ import { dirname, resolve } from 'node:path';
 import { DEV_PASSWORD } from '../prisma/seed.mts';
 import { createTestPkcs12 } from '../test/support/test-pkcs12.ts';
 
+import {
+  ALLOW_SHARED_FLAG,
+  checkDevApiTarget,
+  refreshTokenFrom,
+  requireApiUrl,
+  tokenIsIn,
+} from './dev-api-target.mts';
+
 /**
  * `pnpm sri:certificate:dev` — a DEVELOPMENT certificate for the issuer, so the
  * vouchers of a local installation get signed.
@@ -17,6 +25,10 @@ import { createTestPkcs12 } from '../test/support/test-pkcs12.ts';
  *
  * ⚠️ NEVER THE AUTHOR'S CERTIFICATE. Loading the real one is a step of the
  * author's, from the administration screen (sri/SPEC.md §9).
+ *
+ * ⚠️ NEVER THE AUTHOR'S DATABASE. `API_URL` is required, with no default, and
+ * before uploading anything the script proves the API writes to the database
+ * of its own `DATABASE_URL`, and refuses `clinica` (`dev-api-target.mts`).
  */
 if (process.env.NODE_ENV === 'production') {
   console.error('Este guion es solo de desarrollo.');
@@ -32,8 +44,21 @@ if (!existsSync(keyFile)) {
   console.log(`Frase maestra de desarrollo creada en ${keyFile}`);
 }
 
-const api =
-  process.env.API_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
+let api: string;
+try {
+  api = requireApiUrl(process.env);
+} catch (error) {
+  console.error((error as Error).message);
+  process.exit(1);
+}
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) {
+  console.error(
+    'Falta DATABASE_URL: sin ella no se puede saber a qué base escribe la API.',
+  );
+  process.exit(1);
+}
+
 const login = await fetch(`${api}/api/v1/auth/login`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
@@ -46,6 +71,30 @@ if (!login.ok) {
   process.exit(1);
 }
 const { accessToken } = (await login.json()) as { accessToken: string };
+
+const refreshToken = refreshTokenFrom(login.headers.getSetCookie());
+if (!refreshToken) {
+  console.error(
+    'El inicio de sesión no devolvió la cookie de sesión: no se sigue.',
+  );
+  process.exit(1);
+}
+const target = await checkDevApiTarget({
+  databaseUrl,
+  refreshToken,
+  allowShared: process.argv.includes(ALLOW_SHARED_FLAG),
+  lookup: tokenIsIn,
+});
+if (!target.ok) {
+  // The login already happened over there: close that session, so the
+  // refusal leaves no open session in a database that is not ours.
+  await fetch(`${api}/api/v1/auth/logout`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  }).catch(() => undefined);
+  console.error(target.reason);
+  process.exit(1);
+}
 
 const p12 = createTestPkcs12({
   now: new Date(),

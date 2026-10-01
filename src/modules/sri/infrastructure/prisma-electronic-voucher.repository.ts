@@ -9,9 +9,11 @@ import type {
   AttemptRecord,
   DeliveryStatus,
   ElectronicVoucherRepository,
+  LastTransportFailure,
   MonitorRow,
   NewVoucher,
   PreparationSource,
+  TransportFailureDetail,
   VoucherRecord,
   VoucherStatusView,
 } from '../domain/electronic-voucher.repository';
@@ -22,6 +24,7 @@ import {
   type SriMessage,
   type VoucherStatus,
 } from '../domain/voucher-lifecycle';
+import { summaryOf } from '../domain/kept-text';
 
 const VOUCHER_SELECT = {
   id: true,
@@ -352,7 +355,13 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
           durationMs: attempt.durationMs,
           outcome: attempt.outcome,
           messages: asJson(attempt.messages),
-          transportError: attempt.transportError?.slice(0, 500) ?? null,
+          // SRI-059. Whole: the client already capped it, with the cut marked.
+          transportError: attempt.transportError,
+          httpStatus: attempt.transportResponse?.httpStatus ?? null,
+          faultCode: attempt.transportResponse?.faultCode ?? null,
+          faultString: attempt.transportResponse?.faultString ?? null,
+          faultDetail: attempt.transportResponse?.faultDetail ?? null,
+          responseBody: attempt.transportResponse?.responseBody ?? null,
         },
       });
 
@@ -568,6 +577,12 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
       },
     });
 
+    const failures = await this.lastTransportFailures(
+      rows.flatMap((row) =>
+        row.electronicVoucher ? [row.electronicVoucher.id] : [],
+      ),
+    );
+
     return rows.map((row) => {
       const voucher = row.electronicVoucher;
       return {
@@ -591,8 +606,101 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
         attemptCount: voucher?.attemptCount ?? 0,
         nextAttemptAt: voucher?.nextAttemptAt ?? null,
         receivedAt: voucher?.attempts[0]?.startedAt ?? null,
+        lastTransportFailure: (voucher && failures.get(voucher.id)) ?? null,
       };
     });
+  }
+
+  /**
+   * SRI-069. Each voucher's LAST attempt, kept only if it failed in transport:
+   * a later answer means the failure is over. The body stays in the database;
+   * the monitor learns only whether there is one.
+   */
+  private async lastTransportFailures(
+    voucherIds: readonly string[],
+  ): Promise<Map<string, LastTransportFailure>> {
+    if (voucherIds.length === 0) return new Map();
+    const rows = await this.prisma.$queryRaw<
+      {
+        voucher_id: string;
+        outcome: string;
+        started_at: Date;
+        http_status: number | null;
+        fault_code: string | null;
+        fault_head: string | null;
+        fault_left_out: number | null;
+        transport_error: string | null;
+        has_response_body: boolean;
+      }[]
+    >`
+      SELECT v."id" AS "voucher_id", last."outcome", last."started_at",
+             last."http_status", last."fault_code",
+             -- D-107. The list carries the first 500 characters; the whole
+             -- text is asked for apart, with the body.
+             left(last."fault_string", 500) AS "fault_head",
+             greatest(char_length(last."fault_string") - 500, 0)::int AS "fault_left_out",
+             -- The one-line reason only when there is no fault string: it
+             -- repeats it whole, and 500 rows of a 6 KB trace twice is what
+             -- keeping the body out of the monitor was meant to avoid.
+             CASE WHEN last."fault_string" IS NULL THEN last."transport_error" END
+               AS "transport_error",
+             last."response_body" IS NOT NULL AS "has_response_body"
+        FROM "electronic_voucher" v
+        -- One row per voucher off the (voucher_id, started_at) index, not
+        -- every attempt of an append-only trail.
+        CROSS JOIN LATERAL (
+          SELECT a."outcome", a."started_at", a."http_status", a."fault_code",
+                 a."fault_string", a."transport_error", a."response_body"
+            FROM "electronic_voucher_attempt" a
+           WHERE a."voucher_id" = v."id"
+           ORDER BY a."started_at" DESC, a."id" DESC
+           LIMIT 1
+        ) last
+       WHERE v."id" IN (${Prisma.join(voucherIds.map((id) => Prisma.sql`${id}::uuid`))})`;
+    return new Map(
+      rows
+        .filter((row) => row.outcome === 'TRANSPORT_FAILURE')
+        .map((row) => [
+          row.voucher_id,
+          {
+            at: row.started_at,
+            httpStatus: row.http_status,
+            faultCode: row.fault_code,
+            faultSummary: summaryOf(row.fault_head, row.fault_left_out ?? 0),
+            error: row.transport_error,
+            hasResponseBody: row.has_response_body,
+          },
+        ]),
+    );
+  }
+
+  async lastTransportFailure(
+    voucherId: string,
+  ): Promise<TransportFailureDetail | null> {
+    const last = await this.prisma.electronicVoucherAttempt.findFirst({
+      where: { voucherId },
+      orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
+      select: {
+        outcome: true,
+        startedAt: true,
+        httpStatus: true,
+        faultCode: true,
+        faultString: true,
+        faultDetail: true,
+        transportError: true,
+        responseBody: true,
+      },
+    });
+    if (!last || last.outcome !== 'TRANSPORT_FAILURE') return null;
+    return {
+      at: last.startedAt,
+      httpStatus: last.httpStatus,
+      faultCode: last.faultCode,
+      faultString: last.faultString,
+      faultDetail: last.faultDetail,
+      error: last.transportError ?? '',
+      responseBody: last.responseBody,
+    };
   }
 
   async statusOfInvoices(
