@@ -613,7 +613,7 @@ export class EncounterHasLiveActsError extends ConflictError {
       acts.orders > 0 ? `${acts.orders} orden(es) pendiente(s)` : null,
       acts.signedNotes > 0 ? `${acts.signedNotes} nota(s) firmada(s)` : null,
       acts.certificates > 0
-        ? `${acts.certificates} certificado(s) sin revocar`
+        ? `${acts.certificates} certificado(s) sin anular`
         : null,
       acts.referrals > 0 ? `${acts.referrals} referencia(s)` : null,
       acts.interconsultations > 0
