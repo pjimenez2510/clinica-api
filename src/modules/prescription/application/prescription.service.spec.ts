@@ -425,6 +425,7 @@ describe('el servicio de recetas', () => {
         prescriber: {
           acessRegistration: 'ACESS-11223',
           acessExpiresOn: new Date(`${today}T00:00:00.000Z`),
+          contactPhone: '0991234567',
         },
       });
 
