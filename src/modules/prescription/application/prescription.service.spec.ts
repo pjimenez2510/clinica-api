@@ -9,6 +9,12 @@ import type {
   ActiveAllergy,
   ActiveAllergyReader,
 } from '../../../shared/clinical/patient-allergy.port';
+import {
+  WallClockTime,
+  addDays,
+  atWallClock,
+  clinicalDateOf,
+} from '../../../shared/domain/clinic-time';
 import { PrescriptionService } from './prescription.service';
 import type {
   DiscardPlan,
@@ -376,8 +382,12 @@ describe('el servicio de recetas', () => {
   });
 
   it('PR-034 rechaza emitir con el registro ACESS vencido ayer', async () => {
-    const yesterday = new Date();
-    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    // Yesterday IN ECUADOR, which is what the service judges against: from
+    // 19:00 in Guayaquil the UTC date is already tomorrow, and «the UTC day
+    // before» is today — a registration still in force.
+    const yesterday = new Date(
+      `${addDays(clinicalDateOf(new Date()), -1)}T00:00:00.000Z`,
+    );
     repository.snapshot = aSnapshot({
       prescriber: {
         acessRegistration: 'ACESS-11223',
@@ -388,6 +398,31 @@ describe('el servicio de recetas', () => {
     await expect(service.issue(PRESCRIPTION, requester)).rejects.toMatchObject({
       code: 'PRESCRIBER_NOT_LICENSED',
     });
+  });
+
+  it('PR-034 admite emitir el mismo día en que caduca, también a las 23:30 de Ecuador', async () => {
+    // The registration is in force THROUGH its expiry date. At 23:30 in
+    // Guayaquil the UTC date is already tomorrow, so this is the hour at which
+    // judging against the UTC date would withdraw a licence still in force —
+    // and the hour is fixed here, derived from today, not left to whenever the
+    // suite happens to run.
+    const today = clinicalDateOf(new Date());
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(atWallClock(today, WallClockTime.of(23, 30)));
+    try {
+      repository.snapshot = aSnapshot({
+        prescriber: {
+          acessRegistration: 'ACESS-11223',
+          acessExpiresOn: new Date(`${today}T00:00:00.000Z`),
+        },
+      });
+
+      await expect(
+        service.issue(PRESCRIPTION, requester),
+      ).resolves.toMatchObject({ status: 'ACTIVE' });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('PR-021 rechaza emitir cuando la sede no tiene ciudad que imprimir', async () => {
