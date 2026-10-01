@@ -1,7 +1,13 @@
-import { addDays, type ClinicalDate } from '../../../shared/domain/clinic-time';
+import {
+  addDays,
+  clinicalDaySpan,
+  type ClinicalDate,
+} from '../../../shared/domain/clinic-time';
 
 import {
+  CertificateBackdatingReasonRequiredError,
   CertificateRestPeriodInvalidError,
+  CertificateRestTooLongError,
   CertificateTypeNotSupportedError,
   type RestPeriodField,
   type RestPeriodProblem,
@@ -62,44 +68,175 @@ export interface RestPeriod {
 }
 
 /**
- * CER-006. The rest period of a certificate, or a refusal naming each field.
- *
- * `MEDICAL_REST` demands both dates with the end on or after the start;
- * `ATTENDANCE` admits none. `medical_certificate_rest_range` guarantees the
- * same a second time in the database.
- *
- * ⚠️ NOTHING ELSE IS REFUSED, AND THAT IS D-075. A rest starting before the
- * attention (retroactive) and one longer than 30 days (the IESS validates 1 to
- * 30) are clinical and legal policy pending a decision, not rules to invent.
+ * CER-034. The contingency the IESS asks for on a rest certificate. The list
+ * comes from the IESS page D-075 cites (2023) and is to be confirmed against
+ * its form.
  */
-export function restPeriodOf(
+export type ContingencyType =
+  'GENERAL_ILLNESS' | 'WORK_ACCIDENT' | 'OCCUPATIONAL_DISEASE' | 'MATERNITY';
+
+export const CONTINGENCY_TYPES: readonly ContingencyType[] = [
+  'GENERAL_ILLNESS',
+  'WORK_ACCIDENT',
+  'OCCUPATIONAL_DISEASE',
+  'MATERNITY',
+];
+
+/** CER-034. How the form names each contingency. */
+export const CONTINGENCY_LABEL: Readonly<Record<ContingencyType, string>> = {
+  GENERAL_ILLNESS: 'Enfermedad general',
+  WORK_ACCIDENT: 'Accidente de trabajo',
+  OCCUPATIONAL_DISEASE: 'Enfermedad profesional',
+  MATERNITY: 'Maternidad',
+};
+
+/** CER-035. The three dates of a maternity, each a calendar date in Ecuador. */
+export interface MaternityDates {
+  admissionOn: ClinicalDate;
+  birthOn: ClinicalDate;
+  dischargeOn: ClinicalDate;
+}
+
+/** CER-006, CER-007, CER-034, CER-035. What the request says about the rest. */
+export interface RestRequest {
+  restFrom: ClinicalDate | null;
+  restTo: ClinicalDate | null;
+  contingencyType: ContingencyType | null;
+  maternityAdmissionOn: ClinicalDate | null;
+  birthOn: ClinicalDate | null;
+  maternityDischargeOn: ClinicalDate | null;
+  includeDiagnosis: boolean;
+}
+
+/** The rest, once every rule that needs no storage has accepted it. */
+export interface RestDetails {
+  period: RestPeriod;
+  /** CER-026, CER-031. Calendar days, both ends included. */
+  days: number;
+  contingencyType: ContingencyType;
+  /** CER-035. Present exactly with `MATERNITY`. */
+  maternity: MaternityDates | null;
+}
+
+/** CER-031. The IESS validates rests of one to thirty days. */
+export const MAX_REST_DAYS = 30;
+
+type Problem = { field: RestPeriodField; problem: RestPeriodProblem };
+
+/**
+ * CER-006, CER-007, CER-031, CER-034, CER-035. The rest of a certificate, or a
+ * refusal naming every field at once.
+ *
+ * `ATTENDANCE` admits nothing of the rest. `MEDICAL_REST` demands both dates
+ * in order, the diagnosis always (CER-007: the IESS does not validate a rest
+ * without its CIE-10), the contingency, and — with `MATERNITY` and only then —
+ * the dates of admission, birth and discharge. More than 30 days is its own
+ * refusal (CER-031). The backdating (CER-030) needs the attention's date and
+ * is judged apart, in `backdatingReasonOf`.
+ */
+export function restDetailsOf(
   type: IssuableCertificateType,
-  from: ClinicalDate | null,
-  to: ClinicalDate | null,
-): RestPeriod | null {
-  const problems: { field: RestPeriodField; problem: RestPeriodProblem }[] = [];
+  request: RestRequest,
+): RestDetails | null {
+  const problems: Problem[] = [];
+  const maternityFields = [
+    ['maternityAdmissionOn', request.maternityAdmissionOn],
+    ['birthOn', request.birthOn],
+    ['maternityDischargeOn', request.maternityDischargeOn],
+  ] as const;
 
   if (type === 'ATTENDANCE') {
-    if (from !== null) problems.push({ field: 'restFrom', problem: 'NOT_ALLOWED' }); // prettier-ignore
-    if (to !== null) problems.push({ field: 'restTo', problem: 'NOT_ALLOWED' });
+    const present: (readonly [RestPeriodField, unknown])[] = [
+      ['restFrom', request.restFrom],
+      ['restTo', request.restTo],
+      ['contingencyType', request.contingencyType],
+      ...maternityFields,
+    ];
+    for (const [field, value] of present) {
+      if (value !== null) problems.push({ field, problem: 'NOT_ALLOWED' });
+    }
     if (problems.length > 0) throw new CertificateRestPeriodInvalidError(problems); // prettier-ignore
     return null;
   }
 
+  const { restFrom: from, restTo: to, contingencyType } = request;
   if (from === null) problems.push({ field: 'restFrom', problem: 'MISSING' });
   if (to === null) problems.push({ field: 'restTo', problem: 'MISSING' });
-  if (from === null || to === null) {
+  if (!request.includeDiagnosis) {
+    problems.push({ field: 'includeDiagnosis', problem: 'MUST_BE_INCLUDED' });
+  }
+  if (contingencyType === null) {
+    problems.push({ field: 'contingencyType', problem: 'MISSING' });
+  }
+  const isMaternity = contingencyType === 'MATERNITY';
+  for (const [field, value] of maternityFields) {
+    if (isMaternity && value === null) problems.push({ field, problem: 'MISSING' }); // prettier-ignore
+    if (!isMaternity && value !== null) problems.push({ field, problem: 'NOT_ALLOWED' }); // prettier-ignore
+  }
+  if (from !== null && to !== null && to < from) {
+    // `YYYY-MM-DD` compares as text exactly as it compares as a date.
+    problems.push({ field: 'restTo', problem: 'ENDS_BEFORE_START' });
+  }
+  if (problems.length > 0 || from === null || to === null || contingencyType === null) {
     throw new CertificateRestPeriodInvalidError(problems);
-  }
+  } // prettier-ignore
 
-  // `YYYY-MM-DD` compares as text exactly as it compares as a date.
-  if (to < from) {
-    throw new CertificateRestPeriodInvalidError([
-      { field: 'restTo', problem: 'ENDS_BEFORE_START' },
-    ]);
-  }
+  const days = clinicalDaySpan(from, to);
+  if (days > MAX_REST_DAYS) throw new CertificateRestTooLongError();
 
-  return { from, to };
+  return {
+    period: { from, to },
+    days,
+    contingencyType,
+    maternity: isMaternity
+      ? {
+          admissionOn: request.maternityAdmissionOn as ClinicalDate,
+          birthOn: request.birthOn as ClinicalDate,
+          dischargeOn: request.maternityDischargeOn as ClinicalDate,
+        }
+      : null,
+  };
+}
+
+/** CER-030. The shortest reason that says something. */
+export const MIN_BACKDATING_REASON_LENGTH = 10;
+
+/**
+ * CER-030. The reason a rest starts before the clinical date of the attention
+ * (in `America/Guayaquil`), trimmed, or a refusal without it.
+ *
+ * A rest that does not start before that day is not backdated and keeps NO
+ * reason: a reason stored on a rest that needed none would read as a backdated
+ * certificate that was not.
+ */
+export function backdatingReasonOf(
+  period: RestPeriod,
+  attentionDate: ClinicalDate,
+  reason: string | null,
+): string | null {
+  if (period.from >= attentionDate) return null;
+  const written = reason?.trim() ?? '';
+  if (written.length < MIN_BACKDATING_REASON_LENGTH) {
+    throw new CertificateBackdatingReasonRequiredError();
+  }
+  return written;
+}
+
+/**
+ * CER-032. ⚠️ PROVISIONAL TEXT: D-075 cites an IESS instructivo of 2014 with
+ * these two thresholds, without its validity confirmed. The text says so.
+ */
+export const REST_NOTICE_OVER_3_DAYS =
+  'Reposo de más de 3 días: el IESS puede pedir justificación adicional (aviso provisional, pendiente de confirmar con el IESS)';
+export const REST_NOTICE_OVER_7_DAYS =
+  'Reposo de más de 7 días: el IESS puede pedir una valoración adicional del reposo (aviso provisional, pendiente de confirmar con el IESS)';
+
+/** CER-032. The notices a rest of `days` days carries; they never refuse. */
+export function restNoticesOf(days: number): string[] {
+  const notices: string[] = [];
+  if (days > 3) notices.push(REST_NOTICE_OVER_3_DAYS);
+  if (days > 7) notices.push(REST_NOTICE_OVER_7_DAYS);
+  return notices;
 }
 
 /**
@@ -135,7 +272,7 @@ export const IESS_VALIDATION_DAYS = 8;
  * keep the type of affiliation, so nobody can tell who it does not apply to.
  */
 export const IESS_NOT_APPLICABLE_NOTICE =
-  'Este certificado no se valida en el IESS para afiliados voluntarios, jubilados ni afiliados al Seguro Social Campesino';
+  'Este certificado no se valida en el IESS para afiliados voluntarios, menores de edad, jubilados ni afiliados al Seguro Social Campesino';
 
 /** CER-013. What the response of a rest certificate tells the doctor. */
 export interface IessValidation {

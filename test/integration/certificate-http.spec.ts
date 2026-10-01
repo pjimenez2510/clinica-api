@@ -60,8 +60,13 @@ interface CertificateBody {
 }
 
 interface IssuedBody {
-  certificate: CertificateBody;
+  certificate: CertificateBody & {
+    contingencyType: string | null;
+    birthOn: string | null;
+    backdatingReason: string | null;
+  };
   iess: { lastValidationDay: string; notice: string } | null;
+  restNotices: string[];
 }
 
 /** The form 117 as GET /certificates/:id serves it. */
@@ -72,7 +77,12 @@ interface Form117Body {
   establishment: Record<string, string>;
   patient: Record<string, unknown>;
   attention: Record<string, unknown> & { date: { iso: string } };
-  rest: Record<string, unknown>;
+  rest: Record<string, unknown> & { periodInWords: string };
+  confidential: boolean;
+  contingency: string;
+  maternity: unknown;
+  placeOfIssue: string;
+  letterhead: Record<string, unknown>;
   diagnoses: { code: string; display: string }[] | 'NA';
   professional: Record<string, unknown>;
 }
@@ -133,6 +143,7 @@ describe('el certificado medico por HTTP', () => {
     registry.invalidate();
 
     siteId = (await createSite(prisma)).id;
+    await giveParish(siteId);
     const started = new Date(Date.now() - 60 * 60 * 1000);
     today = clinicalDateOf(started);
 
@@ -152,6 +163,43 @@ describe('el certificado medico por HTTP', () => {
     ).token;
 
     encounterId = (await anEncounter(siteId, started)).id;
+  }
+
+  /**
+   * CER-036. The place of issue is the CANTON of the site's DPA parish, as
+   * PR-021 reads it: without a parish there is no certificate.
+   */
+  async function giveParish(site: string) {
+    const dpa = await prisma.catalogSystem.upsert({
+      where: { code: 'DPA' },
+      create: { code: 'DPA', name: 'DPA', hierarchical: true },
+      update: {},
+    });
+    const canton = await prisma.catalogConcept.create({
+      data: {
+        systemId: dpa.id,
+        code: `17${site.slice(-4)}`,
+        display: 'Quito',
+        validFrom: new Date('2010-01-01'), // fecha-fija: vigente desde siempre
+      },
+    });
+    const parish = await prisma.catalogConcept.create({
+      data: {
+        systemId: dpa.id,
+        code: `1701${site.slice(-4)}`,
+        display: 'Iñaquito',
+        parentId: canton.id,
+        validFrom: new Date('2010-01-01'), // fecha-fija: vigente desde siempre
+      },
+    });
+    await prisma.site.update({
+      where: { id: site },
+      data: {
+        parishConceptId: parish.id,
+        addressLine: 'Av. Amazonas N24-10',
+        phone: '022345678',
+      },
+    });
   }
 
   function anEncounter(site: string, startedAt: Date) {
@@ -234,7 +282,10 @@ describe('el certificado medico por HTTP', () => {
     type: 'MEDICAL_REST',
     restFrom: today,
     restTo: addDays(today, days - 1),
-    includeDiagnosis: false,
+    // CER-007, CER-034. A rest always carries the diagnosis and its
+    // contingency.
+    includeDiagnosis: true,
+    contingencyType: 'GENERAL_ILLNESS',
     ...overrides,
   });
 
@@ -297,15 +348,18 @@ describe('el certificado medico por HTTP', () => {
   });
 
   it('CER-013 el reposo responde el ultimo dia de validacion en el IESS y el aviso', async () => {
+    await aDiagnosis(encounterId);
     const issued = await issue(restOf(3));
 
     expect(issued.certificate.restFrom).toBe(today);
     expect(issued.certificate.restTo).toBe(addDays(today, 2));
     expect(issued.iess?.lastValidationDay).toBe(addDays(today, 10));
     expect(issued.iess?.notice).toContain('Seguro Social Campesino');
+    expect(issued.iess?.notice).toContain('menores de edad');
   });
 
   it('CER-006 rechaza un reposo que termina antes de empezar, nombrando el campo', async () => {
+    await aDiagnosis(encounterId);
     const response = await post(
       `/encounters/${encounterId}/certificates`,
       doctor.token,
@@ -548,7 +602,7 @@ describe('el certificado medico por HTTP', () => {
     });
     await aDiagnosis(encounterId);
 
-    const issued = await issue(restOf(3, { includeDiagnosis: true }));
+    const issued = await issue(restOf(3));
     const response = await get(
       `/certificates/${issued.certificate.id}`,
       doctor.token,
@@ -583,8 +637,20 @@ describe('el certificado medico por HTTP', () => {
     expect(form.attention.date.iso).toBe(today);
     expect(form.rest).toMatchObject({
       rest: 'SÍ',
-      hours: '72',
-      hoursInWords: 'setenta y dos',
+      days: '3',
+      daysInWords: 'tres',
+    });
+    expect(form.rest).not.toHaveProperty('hours');
+    expect(form.rest.periodInWords).toMatch(/ambas fechas incluidas$/);
+    // CER-033, CER-034, CER-036, CER-037.
+    expect(form.confidential).toBe(true);
+    expect(form.contingency).toBe('Enfermedad general');
+    expect(form.maternity).toBe('NA');
+    expect(form.placeOfIssue).toBe('Quito');
+    expect(form.letterhead).toEqual({
+      address: 'Av. Amazonas N24-10',
+      phone: '022345678',
+      email: null,
     });
     expect(form.rest.from).toMatchObject({ iso: today });
     expect(form.rest.to).toMatchObject({ iso: addDays(today, 2) });
@@ -634,11 +700,134 @@ describe('el certificado medico por HTTP', () => {
     expect(form.diagnoses).toBe('NA');
     expect(form.rest).toEqual({
       rest: 'NO',
-      hours: 'NA',
-      hoursInWords: 'NA',
+      days: 'NA',
+      daysInWords: 'NA',
       from: 'NA',
       to: 'NA',
+      periodInWords: 'NA',
     });
+    expect(form.confidential).toBe(false);
+    expect(form.contingency).toBe('NA');
+  });
+
+  /** A refused issue: the code, and the fields the problem names. */
+  async function refused(body: object) {
+    const response = await post(
+      `/encounters/${encounterId}/certificates`,
+      doctor.token,
+      body,
+    ).expect(422);
+    const problem = response.body as Problem;
+    return {
+      code: problem.code,
+      fields: problem.errors?.map((error) => error.field) ?? [],
+    };
+  }
+
+  it('CER-007 un reposo que dice no llevar diagnostico se rechaza en ese campo', async () => {
+    await aDiagnosis(encounterId);
+    expect(await refused(restOf(3, { includeDiagnosis: false }))).toEqual({
+      code: 'CERTIFICATE_REST_PERIOD_INVALID',
+      fields: ['includeDiagnosis'],
+    });
+    // Control positivo: el mismo reposo con diagnóstico.
+    expect((await issue(restOf(3))).certificate.includeDiagnosis).toBe(true);
+  });
+
+  it('CER-030 un reposo retroactivo sin motivo se rechaza, y con motivo se guarda', async () => {
+    await aDiagnosis(encounterId);
+    const backdated = restOf(3, {
+      restFrom: addDays(today, -2),
+      restTo: today,
+    });
+
+    expect(await refused(backdated)).toEqual({
+      code: 'CERTIFICATE_BACKDATING_REASON_REQUIRED',
+      fields: ['backdatingReason'],
+    });
+    expect(await prisma.medicalCertificate.count()).toBe(0);
+
+    const issued = await issue({
+      ...backdated,
+      backdatingReason: 'Acudió dos días tarde por la fiebre',
+    });
+    expect(issued.certificate.backdatingReason).toBe(
+      'Acudió dos días tarde por la fiebre',
+    );
+    const row = await prisma.medicalCertificate.findUniqueOrThrow({
+      where: { id: issued.certificate.id },
+      select: { restBackdatingReason: true },
+    });
+    expect(row.restBackdatingReason).toBe(
+      'Acudió dos días tarde por la fiebre',
+    );
+  });
+
+  it('CER-031 rechaza un reposo de 31 dias y admite uno de 30', async () => {
+    await aDiagnosis(encounterId);
+    expect((await refused(restOf(31))).code).toBe('CERTIFICATE_REST_TOO_LONG');
+    expect((await issue(restOf(30))).certificate.restTo).toBe(
+      addDays(today, 29),
+    );
+  });
+
+  it('CER-032 un reposo de 8 dias se emite con los dos avisos provisionales', async () => {
+    await aDiagnosis(encounterId);
+    const issued = await issue(restOf(8));
+    expect(issued.restNotices).toHaveLength(2);
+    expect(issued.restNotices.every((n) => n.includes('provisional'))).toBe(
+      true,
+    );
+    expect((await issue(restOf(3))).restNotices).toEqual([]);
+  });
+
+  it('CER-034 un reposo sin contingencia se rechaza en ese campo', async () => {
+    await aDiagnosis(encounterId);
+    expect(await refused(restOf(3, { contingencyType: undefined }))).toEqual({
+      code: 'CERTIFICATE_REST_PERIOD_INVALID',
+      fields: ['contingencyType'],
+    });
+    expect(
+      (await refused(attendance({ contingencyType: 'GENERAL_ILLNESS' })))
+        .fields,
+    ).toEqual(['contingencyType']);
+  });
+
+  it('CER-035 la maternidad sin fecha de parto se rechaza nombrandola, y con las tres se sirve en letras', async () => {
+    await aDiagnosis(encounterId);
+    const maternity = restOf(30, {
+      contingencyType: 'MATERNITY',
+      maternityAdmissionOn: addDays(today, -1),
+      maternityDischargeOn: addDays(today, 2),
+    });
+    expect((await refused(maternity)).fields).toEqual(['birthOn']);
+
+    const issued = await issue({ ...maternity, birthOn: today });
+    expect(issued.certificate.birthOn).toBe(today);
+    const form = (
+      await get(`/certificates/${issued.certificate.id}`, doctor.token).expect(
+        200,
+      )
+    ).body as Form117Body;
+    expect(form.contingency).toBe('Maternidad');
+    expect(form.maternity).toMatchObject({
+      admission: { iso: addDays(today, -1) },
+      birth: { iso: today },
+      discharge: { iso: addDays(today, 2) },
+    });
+  });
+
+  it('CER-036 una sede sin parroquia no emite certificados', async () => {
+    // Control positivo: la sede con parroquia emite.
+    await issue(attendance());
+
+    await prisma.site.update({
+      where: { id: siteId },
+      data: { parishConceptId: null },
+    });
+    expect((await refused(attendance())).code).toBe(
+      'CERTIFICATE_ESTABLISHMENT_INCOMPLETE',
+    );
   });
 
   it('CER-016 emitir, leer, listar y anular dejan su fila en la bitacora de acceso', async () => {

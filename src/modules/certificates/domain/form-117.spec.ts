@@ -27,6 +27,7 @@ const aSource = (
   overrides: {
     certificate?: Partial<Form117Source['certificate']>;
     patient?: Partial<Form117Source['patient']>;
+    site?: Partial<Form117Source['site']>;
     encounter?: Partial<Form117Source['encounter']>;
     practitioner?: Partial<Form117Source['practitioner']>;
     diagnoses?: Form117Source['diagnoses'];
@@ -41,11 +42,20 @@ const aSource = (
     restFrom: null,
     restTo: null,
     includeDiagnosis: false,
+    contingencyType: null,
+    maternity: null,
     revokedAt: null,
     revocationReason: null,
     ...overrides.certificate,
   },
-  site: { name: 'Clínica Central', mspUnicode: '000123' },
+  site: {
+    name: 'Clínica Central',
+    mspUnicode: '000123',
+    city: 'Quito',
+    address: 'Av. Amazonas N24-10',
+    phone: '022345678',
+    ...overrides.site,
+  },
   patient: {
     familyName: 'Guamán',
     secondFamilyName: 'Andrade',
@@ -220,42 +230,110 @@ describe('CER-022 a CER-024 bloque B: la atencion', () => {
   });
 });
 
+/** A rest certificate from `from` to `to`, general illness, with diagnosis. */
+const aRest = (from: ClinicalDate, to: ClinicalDate) =>
+  aSource({
+    certificate: {
+      type: 'MEDICAL_REST',
+      restFrom: from,
+      restTo: to,
+      includeDiagnosis: true,
+      contingencyType: 'GENERAL_ILLNESS',
+    },
+  });
+
 describe('CER-025 y CER-026 bloque C: el reposo', () => {
   it('CER-025 un certificado de asistencia dice reposo NO, y CER-026 el resto «NA»', () => {
     expect(composeForm117(aSource()).rest).toEqual({
       rest: 'NO',
-      hours: NA,
-      hoursInWords: NA,
+      days: NA,
+      daysInWords: NA,
       from: NA,
       to: NA,
+      periodInWords: NA,
     });
   });
 
-  it('CER-026 tres dias de reposo son «72 (setenta y dos)» horas, con las fechas en letras', () => {
+  it('CER-026 tres dias de reposo son «3 (tres)» dias, con las fechas en letras, y nunca horas', () => {
     const from = today;
     const to = addDays(today, 2);
-    const rest = composeForm117(
-      aSource({
-        certificate: { type: 'MEDICAL_REST', restFrom: from, restTo: to },
-      }),
-    ).rest;
+    const rest = composeForm117(aRest(from, to)).rest;
 
     expect(rest).toEqual({
       rest: 'SÍ',
-      hours: '72',
-      hoursInWords: 'setenta y dos',
+      days: '3',
+      daysInWords: 'tres',
       from: dateInNumbersAndWords(from),
       to: dateInNumbersAndWords(to),
+      periodInWords: `desde el ${dateInNumbersAndWords(from).inWords} hasta el ${dateInNumbersAndWords(to).inWords}, ambas fechas incluidas`,
     });
+    expect(Object.keys(rest)).not.toContain('hours');
   });
 
-  it('CER-026 un dia de reposo, con inicio y fin iguales, son 24 horas: ambos extremos cuentan', () => {
-    const rest = composeForm117(
+  it('CER-026 un dia de reposo, con inicio y fin iguales, es un dia: ambos extremos cuentan', () => {
+    const rest = composeForm117(aRest(today, today)).rest;
+    expect([rest.days, rest.daysInWords]).toEqual(['1', 'uno']);
+  });
+});
+
+describe('CER-033 a CER-037 lo que el IESS exige ademas del 117', () => {
+  it('CER-033 con diagnostico el documento es CONFIDENCIAL, y sin el no', () => {
+    expect(composeForm117(aRest(today, today)).confidential).toBe(true);
+    expect(composeForm117(aSource()).confidential).toBe(false);
+  });
+
+  it('CER-034 sirve la contingencia en castellano, y «NA» en asistencia', () => {
+    expect(composeForm117(aRest(today, today)).contingency).toBe(
+      'Enfermedad general',
+    );
+    expect(composeForm117(aSource()).contingency).toBe(NA);
+  });
+
+  it('CER-035 la maternidad sirve ingreso, parto y alta en numeros y en letras', () => {
+    const maternity = {
+      admissionOn: addDays(today, -3),
+      birthOn: addDays(today, -2),
+      dischargeOn: today,
+    };
+    const form = composeForm117(
       aSource({
-        certificate: { type: 'MEDICAL_REST', restFrom: today, restTo: today },
+        certificate: {
+          type: 'MEDICAL_REST',
+          restFrom: today,
+          restTo: addDays(today, 29),
+          includeDiagnosis: true,
+          contingencyType: 'MATERNITY',
+          maternity,
+        },
       }),
-    ).rest;
-    expect([rest.hours, rest.hoursInWords]).toEqual(['24', 'veinticuatro']);
+    );
+
+    expect(form.contingency).toBe('Maternidad');
+    expect(form.maternity).toEqual({
+      admission: dateInNumbersAndWords(maternity.admissionOn),
+      birth: dateInNumbersAndWords(maternity.birthOn),
+      discharge: dateInNumbersAndWords(maternity.dischargeOn),
+    });
+    expect(composeForm117(aRest(today, today)).maternity).toBe(NA);
+  });
+
+  it('CER-036 sirve el lugar de emision, que es el canton de la sede, o «NA»', () => {
+    expect(composeForm117(aSource()).placeOfIssue).toBe('Quito');
+    expect(composeForm117(aSource({ site: { city: null } })).placeOfIssue).toBe(
+      NA,
+    );
+  });
+
+  it('CER-037 sirve direccion y telefono de la sede para el membrete, y el correo que el esquema no tiene como null', () => {
+    expect(composeForm117(aSource()).letterhead).toEqual({
+      address: 'Av. Amazonas N24-10',
+      phone: '022345678',
+      email: null,
+    });
+    expect(
+      composeForm117(aSource({ site: { address: null, phone: null } }))
+        .letterhead,
+    ).toEqual({ address: null, phone: null, email: null });
   });
 });
 

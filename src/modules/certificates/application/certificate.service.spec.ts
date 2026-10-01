@@ -7,10 +7,16 @@ import type {
 } from '../../../shared/audit/access-audit.port';
 import {
   addDays,
+  atWallClock,
   clinicalDateOf,
+  WallClockTime,
   type ClinicalDate,
 } from '../../../shared/domain/clinic-time';
-import { IESS_NOT_APPLICABLE_NOTICE } from '../domain/certificate';
+import {
+  IESS_NOT_APPLICABLE_NOTICE,
+  REST_NOTICE_OVER_3_DAYS,
+  REST_NOTICE_OVER_7_DAYS,
+} from '../domain/certificate';
 import {
   CertificateAlreadyRevokedError,
   CertificateEncounterNotFoundError,
@@ -69,6 +75,9 @@ const aView = (overrides: Partial<CertificateView> = {}): CertificateView => ({
   restFrom: null,
   restTo: null,
   includeDiagnosis: false,
+  contingencyType: null,
+  maternity: null,
+  backdatingReason: null,
   revokedAt: null,
   revokedById: null,
   revocationReason: null,
@@ -78,7 +87,13 @@ const aView = (overrides: Partial<CertificateView> = {}): CertificateView => ({
 /** What storage answers for the form 117 of `view`. */
 const aSource = (view: CertificateView): Form117Source => ({
   certificate: view,
-  site: { name: 'Clínica Central', mspUnicode: '000123' },
+  site: {
+    name: 'Clínica Central',
+    mspUnicode: '000123',
+    city: 'Quito',
+    address: null,
+    phone: null,
+  },
   patient: {
     familyName: 'Guamán',
     secondFamilyName: null,
@@ -105,9 +120,21 @@ const aSource = (view: CertificateView): Form117Source => ({
   },
 });
 
+/** What the issue reads inside its transaction, overridable. */
+const aSnapshot = (overrides: Partial<IssueSnapshot> = {}): IssueSnapshot => ({
+  encounterStatus: 'OPEN',
+  diagnosisCount: 1,
+  encounterStartedAt: NOW,
+  cityOfIssue: 'Quito',
+  ...overrides,
+});
+
 class FakeRepository implements CertificateRepository {
   certifier: CertifierIdentity | null = { practitionerId: PRACTITIONER };
-  snapshot: IssueSnapshot = { encounterStatus: 'OPEN', diagnosisCount: 1 };
+  snapshot: IssueSnapshot = aSnapshot({
+    encounterStatus: 'OPEN',
+    diagnosisCount: 1,
+  });
   encounterFound = true;
   stored: Form117Source | null = aSource(aView());
   alreadyRevoked = false;
@@ -139,6 +166,9 @@ class FakeRepository implements CertificateRepository {
         restFrom: plan.rest?.from ?? null,
         restTo: plan.rest?.to ?? null,
         includeDiagnosis: plan.includeDiagnosis,
+        contingencyType: plan.contingencyType,
+        maternity: plan.maternity,
+        backdatingReason: plan.backdatingReason,
       }),
     );
   }
@@ -176,6 +206,11 @@ const attendance = (
   restFrom: null,
   restTo: null,
   includeDiagnosis: false,
+  contingencyType: null,
+  maternityAdmissionOn: null,
+  birthOn: null,
+  maternityDischargeOn: null,
+  backdatingReason: null,
   ...overrides,
 });
 
@@ -184,6 +219,8 @@ const rest = (days: number, overrides: Partial<IssueCertificateRequest> = {}) =>
     type: 'MEDICAL_REST',
     restFrom: today,
     restTo: addDays(today, days - 1),
+    includeDiagnosis: true,
+    contingencyType: 'GENERAL_ILLNESS',
     ...overrides,
   });
 
@@ -236,14 +273,20 @@ describe('el servicio de certificados', () => {
   });
 
   it('CER-003 rechaza emitir sobre una atencion cerrada, y la dada de alta lo admite', async () => {
-    repository.snapshot = { encounterStatus: 'COMPLETED', diagnosisCount: 1 };
+    repository.snapshot = aSnapshot({
+      encounterStatus: 'COMPLETED',
+      diagnosisCount: 1,
+    });
     await expect(service.issue(attendance(), requester)).rejects.toMatchObject({
       code: 'CERTIFICATE_ENCOUNTER_NOT_OPEN',
     });
     expect(repository.issued).toHaveLength(0);
 
     // Control positivo por el mismo camino.
-    repository.snapshot = { encounterStatus: 'DISCHARGED', diagnosisCount: 1 };
+    repository.snapshot = aSnapshot({
+      encounterStatus: 'DISCHARGED',
+      diagnosisCount: 1,
+    });
     await expect(service.issue(attendance(), requester)).resolves.toBeDefined();
   });
 
@@ -286,7 +329,10 @@ describe('el servicio de certificados', () => {
   });
 
   it('CER-008 rechaza incluir el diagnostico cuando la atencion no tiene ninguno', async () => {
-    repository.snapshot = { encounterStatus: 'OPEN', diagnosisCount: 0 };
+    repository.snapshot = aSnapshot({
+      encounterStatus: 'OPEN',
+      diagnosisCount: 0,
+    });
 
     await expect(
       service.issue(attendance({ includeDiagnosis: true }), requester),
@@ -367,6 +413,108 @@ describe('el servicio de certificados', () => {
     expect(issued.iess).toBeNull();
   });
 
+  it('CER-007 un reposo que dice no llevar diagnostico se rechaza en ese campo; lleva siempre el diagnostico', async () => {
+    await expect(
+      service.issue(rest(3, { includeDiagnosis: false }), requester),
+    ).rejects.toMatchObject({
+      code: 'CERTIFICATE_REST_PERIOD_INVALID',
+      fieldErrors: [expect.objectContaining({ field: 'includeDiagnosis' })],
+    });
+    expect(repository.issued).toHaveLength(0);
+
+    await service.issue(rest(3), requester);
+    expect(repository.issued[0]?.plan.includeDiagnosis).toBe(true);
+  });
+
+  it('CER-008 un reposo exige un diagnostico registrado en la atencion', async () => {
+    repository.snapshot = aSnapshot({ diagnosisCount: 0 });
+    await expect(service.issue(rest(3), requester)).rejects.toMatchObject({
+      code: 'CERTIFICATE_DIAGNOSIS_REQUIRED',
+    });
+  });
+
+  it('CER-030 un reposo que empieza antes del dia clinico de la atencion exige motivo, y lo guarda', async () => {
+    const backdated = rest(3, {
+      restFrom: addDays(today, -2),
+      restTo: today,
+    });
+    await expect(service.issue(backdated, requester)).rejects.toMatchObject({
+      code: 'CERTIFICATE_BACKDATING_REASON_REQUIRED',
+    });
+    expect(repository.issued).toHaveLength(0);
+
+    await service.issue(
+      { ...backdated, backdatingReason: 'Acudió dos días tarde por la fiebre' },
+      requester,
+    );
+    expect(repository.issued[0]?.plan.backdatingReason).toBe(
+      'Acudió dos días tarde por la fiebre',
+    );
+  });
+
+  it('CER-030 el dia clinico es el de Guayaquil: una atencion a las 21:00 no adelanta el dia', async () => {
+    // 21:00 en Guayaquil del día anterior a «today» es 02:00 UTC de «today».
+    repository.snapshot = aSnapshot({
+      encounterStartedAt: atWallClock(
+        addDays(today, -1),
+        WallClockTime.of(21, 0),
+      ),
+    });
+    // El reposo empieza el día de la atención en Ecuador: no es retroactivo.
+    await expect(
+      service.issue(
+        rest(1, { restFrom: addDays(today, -1), restTo: addDays(today, -1) }),
+        requester,
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it('CER-031 rechaza un reposo de 31 dias sin escribir nada', async () => {
+    await expect(service.issue(rest(31), requester)).rejects.toMatchObject({
+      code: 'CERTIFICATE_REST_TOO_LONG',
+    });
+    expect(repository.issued).toHaveLength(0);
+  });
+
+  it('CER-032 la respuesta lleva los avisos de mas de 3 y de mas de 7 dias, sin impedir la emision', async () => {
+    expect((await service.issue(rest(3), requester)).restNotices).toEqual([]);
+    expect((await service.issue(rest(8), requester)).restNotices).toEqual([
+      REST_NOTICE_OVER_3_DAYS,
+      REST_NOTICE_OVER_7_DAYS,
+    ]);
+    expect((await service.issue(attendance(), requester)).restNotices).toEqual(
+      [],
+    );
+  });
+
+  it('CER-034 y CER-035 guarda la contingencia y las fechas de la maternidad', async () => {
+    await service.issue(
+      rest(30, {
+        contingencyType: 'MATERNITY',
+        maternityAdmissionOn: addDays(today, -1),
+        birthOn: today,
+        maternityDischargeOn: addDays(today, 2),
+      }),
+      requester,
+    );
+    expect(repository.issued[0]?.plan).toMatchObject({
+      contingencyType: 'MATERNITY',
+      maternity: {
+        admissionOn: addDays(today, -1),
+        birthOn: today,
+        dischargeOn: addDays(today, 2),
+      },
+    });
+  });
+
+  it('CER-036 rechaza emitir si la sede no tiene parroquia, y no escribe nada', async () => {
+    repository.snapshot = aSnapshot({ cityOfIssue: null });
+    await expect(service.issue(attendance(), requester)).rejects.toMatchObject({
+      code: 'CERTIFICATE_ESTABLISHMENT_INCOMPLETE',
+    });
+    expect(repository.issued).toHaveLength(0);
+  });
+
   it('CER-014 lo que se registra en el log es el acto, sin datos del paciente', async () => {
     await service.issue(rest(3, { includeDiagnosis: true }), requester);
     await service.revoke('certificate-1', 'Motivo con texto libre', requester);
@@ -406,7 +554,10 @@ describe('el servicio de certificados', () => {
   });
 
   it('CER-016 una emision rechazada no deja fila de bitacora', async () => {
-    repository.snapshot = { encounterStatus: 'COMPLETED', diagnosisCount: 1 };
+    repository.snapshot = aSnapshot({
+      encounterStatus: 'COMPLETED',
+      diagnosisCount: 1,
+    });
     await expect(service.issue(attendance(), requester)).rejects.toThrow();
     expect(entries).toEqual([]);
   });

@@ -11,10 +11,17 @@ import {
   assertIssuableType,
   iessValidationOf,
   IESS_NOT_APPLICABLE_NOTICE,
-  restPeriodOf,
+  REST_NOTICE_OVER_3_DAYS,
+  REST_NOTICE_OVER_7_DAYS,
+  backdatingReasonOf,
+  restDetailsOf,
+  restNoticesOf,
+  type RestRequest,
 } from './certificate';
 import {
+  CertificateBackdatingReasonRequiredError,
   CertificateRestPeriodInvalidError,
+  CertificateRestTooLongError,
   CertificateTypeNotSupportedError,
 } from './certificate.errors';
 
@@ -43,20 +50,47 @@ describe('CER-005 sólo asistencia y reposo son un formulario 117', () => {
   });
 });
 
+/** A rest request with every datum the IESS needs, overridable. */
+const aRest = (overrides: Partial<RestRequest> = {}): RestRequest => ({
+  restFrom: today,
+  restTo: addDays(today, 2),
+  contingencyType: 'GENERAL_ILLNESS',
+  maternityAdmissionOn: null,
+  birthOn: null,
+  maternityDischargeOn: null,
+  includeDiagnosis: true,
+  ...overrides,
+});
+
+/** The same request for an attendance certificate: nothing of the rest. */
+const NO_REST: RestRequest = {
+  restFrom: null,
+  restTo: null,
+  contingencyType: null,
+  maternityAdmissionOn: null,
+  birthOn: null,
+  maternityDischargeOn: null,
+  includeDiagnosis: false,
+};
+
+const fieldsOf = (run: () => unknown): string[] =>
+  captured(run).fieldErrors?.map((field) => field.field) ?? [];
+
 describe('CER-006 el período de reposo', () => {
   it('CER-006 un reposo lleva inicio y fin, y el fin puede ser el mismo día', () => {
-    expect(restPeriodOf('MEDICAL_REST', today, today)).toEqual({
-      from: today,
-      to: today,
-    });
-    expect(restPeriodOf('MEDICAL_REST', today, addDays(today, 2))).toEqual({
+    expect(
+      restDetailsOf('MEDICAL_REST', aRest({ restTo: today }))?.period,
+    ).toEqual({ from: today, to: today });
+    expect(restDetailsOf('MEDICAL_REST', aRest())?.period).toEqual({
       from: today,
       to: addDays(today, 2),
     });
   });
 
   it('CER-006 un reposo sin fechas se rechaza nombrando los dos campos', () => {
-    const error = captured(() => restPeriodOf('MEDICAL_REST', null, null));
+    const error = captured(() =>
+      restDetailsOf('MEDICAL_REST', aRest({ restFrom: null, restTo: null })),
+    );
     expect(error).toBeInstanceOf(CertificateRestPeriodInvalidError);
     expect(error.fieldErrors?.map((field) => field.field)).toEqual([
       'restFrom',
@@ -66,7 +100,7 @@ describe('CER-006 el período de reposo', () => {
 
   it('CER-006 un reposo que termina antes de empezar se rechaza en el fin', () => {
     const error = captured(() =>
-      restPeriodOf('MEDICAL_REST', today, addDays(today, -1)),
+      restDetailsOf('MEDICAL_REST', aRest({ restTo: addDays(today, -1) })),
     );
     expect(error.code).toBe('CERTIFICATE_REST_PERIOD_INVALID');
     expect(error.fieldErrors).toEqual([
@@ -74,21 +108,148 @@ describe('CER-006 el período de reposo', () => {
     ]);
   });
 
-  it('CER-006 un certificado de asistencia no admite período', () => {
-    expect(restPeriodOf('ATTENDANCE', null, null)).toBeNull();
+  it('CER-006 un certificado de asistencia no admite nada del reposo', () => {
+    expect(restDetailsOf('ATTENDANCE', NO_REST)).toBeNull();
+    expect(
+      fieldsOf(() =>
+        restDetailsOf('ATTENDANCE', { ...NO_REST, restFrom: today }),
+      ),
+    ).toEqual(['restFrom']);
+  });
+});
 
-    const error = captured(() => restPeriodOf('ATTENDANCE', today, null));
-    expect(error).toBeInstanceOf(CertificateRestPeriodInvalidError);
-    expect(error.fieldErrors?.[0]?.field).toBe('restFrom');
+describe('CER-007 el diagnóstico en el reposo', () => {
+  it('CER-007 un reposo que pide no llevar diagnóstico se rechaza en ese campo', () => {
+    expect(
+      fieldsOf(() =>
+        restDetailsOf('MEDICAL_REST', aRest({ includeDiagnosis: false })),
+      ),
+    ).toEqual(['includeDiagnosis']);
   });
 
-  it('CER-006 NO rechaza un reposo retroactivo ni uno de más de 30 días (D-075 abierta)', () => {
-    // Las dos son política clínica y legal pendiente de decisión: hoy no se
-    // rechazan, y esta prueba falla el día que alguien las rechace sin que
-    // D-075 se haya decidido.
+  it('CER-007 el de asistencia admite las dos respuestas del paciente', () => {
+    expect(restDetailsOf('ATTENDANCE', NO_REST)).toBeNull();
     expect(
-      restPeriodOf('MEDICAL_REST', addDays(today, -10), addDays(today, 40)),
-    ).not.toBeNull();
+      restDetailsOf('ATTENDANCE', { ...NO_REST, includeDiagnosis: true }),
+    ).toBeNull();
+  });
+});
+
+describe('CER-030 el reposo retroactivo', () => {
+  const period = { from: addDays(today, -2), to: today };
+
+  it('CER-030 un reposo que empieza antes del día de la atención exige un motivo de diez caracteres', () => {
+    for (const reason of [null, '', 'corto']) {
+      expect(() => backdatingReasonOf(period, today, reason)).toThrow(
+        CertificateBackdatingReasonRequiredError,
+      );
+    }
+    expect(
+      backdatingReasonOf(period, today, '  Acudió tarde por la fiebre  '),
+    ).toBe('Acudió tarde por la fiebre');
+  });
+
+  it('CER-030 el día de la atención y después no es retroactivo, y no guarda motivo', () => {
+    expect(
+      backdatingReasonOf({ from: today, to: today }, today, null),
+    ).toBeNull();
+    expect(
+      backdatingReasonOf(
+        { from: addDays(today, 1), to: addDays(today, 1) },
+        today,
+        'Motivo que no hace falta',
+      ),
+    ).toBeNull();
+  });
+});
+
+describe('CER-031 el tope de 30 días', () => {
+  it('CER-031 admite 30 días, ambos extremos incluidos, y rechaza 31', () => {
+    expect(
+      restDetailsOf('MEDICAL_REST', aRest({ restTo: addDays(today, 29) }))
+        ?.days,
+    ).toBe(30);
+    expect(() =>
+      restDetailsOf('MEDICAL_REST', aRest({ restTo: addDays(today, 30) })),
+    ).toThrow(CertificateRestTooLongError);
+  });
+});
+
+describe('CER-032 los avisos de más de 3 y de más de 7 días', () => {
+  const noticesFor = (days: number) =>
+    restNoticesOf(
+      restDetailsOf('MEDICAL_REST', aRest({ restTo: addDays(today, days - 1) }))
+        ?.days ?? 0,
+    );
+
+  it('CER-032 hasta 3 días no avisa; 4 días avisa una vez; 8 días avisa dos', () => {
+    expect(noticesFor(3)).toEqual([]);
+    expect(noticesFor(4)).toEqual([REST_NOTICE_OVER_3_DAYS]);
+    expect(noticesFor(7)).toEqual([REST_NOTICE_OVER_3_DAYS]);
+    expect(noticesFor(8)).toEqual([
+      REST_NOTICE_OVER_3_DAYS,
+      REST_NOTICE_OVER_7_DAYS,
+    ]);
+  });
+
+  it('CER-032 el texto dice que es provisional', () => {
+    expect(REST_NOTICE_OVER_3_DAYS).toContain('provisional');
+    expect(REST_NOTICE_OVER_7_DAYS).toContain('provisional');
+  });
+});
+
+describe('CER-034 y CER-035 la contingencia y la maternidad', () => {
+  it('CER-034 un reposo sin contingencia se rechaza en ese campo', () => {
+    expect(
+      fieldsOf(() =>
+        restDetailsOf('MEDICAL_REST', aRest({ contingencyType: null })),
+      ),
+    ).toEqual(['contingencyType']);
+  });
+
+  it('CER-034 un certificado de asistencia no admite contingencia', () => {
+    expect(
+      fieldsOf(() =>
+        restDetailsOf('ATTENDANCE', {
+          ...NO_REST,
+          contingencyType: 'GENERAL_ILLNESS',
+        }),
+      ),
+    ).toEqual(['contingencyType']);
+  });
+
+  it('CER-035 la maternidad exige ingreso, parto y alta, nombrando el que falta', () => {
+    expect(
+      fieldsOf(() =>
+        restDetailsOf(
+          'MEDICAL_REST',
+          aRest({ contingencyType: 'MATERNITY', birthOn: today }),
+        ),
+      ),
+    ).toEqual(['maternityAdmissionOn', 'maternityDischargeOn']);
+
+    // Control positivo: con las tres, pasa y las devuelve.
+    expect(
+      restDetailsOf(
+        'MEDICAL_REST',
+        aRest({
+          contingencyType: 'MATERNITY',
+          maternityAdmissionOn: addDays(today, -3),
+          birthOn: addDays(today, -2),
+          maternityDischargeOn: today,
+        }),
+      )?.maternity,
+    ).toEqual({
+      admissionOn: addDays(today, -3),
+      birthOn: addDays(today, -2),
+      dischargeOn: today,
+    });
+  });
+
+  it('CER-035 las fechas de maternidad no se admiten con otra contingencia', () => {
+    expect(
+      fieldsOf(() => restDetailsOf('MEDICAL_REST', aRest({ birthOn: today }))),
+    ).toEqual(['birthOn']);
   });
 });
 
@@ -123,10 +284,11 @@ describe('CER-013 lo que el IESS necesita saber de un reposo', () => {
     );
   });
 
-  it('CER-013 avisa que no aplica a afiliados voluntarios, jubilados ni Seguro Social Campesino', () => {
+  it('CER-013 avisa que no aplica a afiliados voluntarios, menores de edad, jubilados ni Seguro Social Campesino', () => {
     const { notice } = iessValidationOf(today);
     expect(notice).toBe(IESS_NOT_APPLICABLE_NOTICE);
     expect(notice).toContain('voluntarios');
+    expect(notice).toContain('menores de edad');
     expect(notice).toContain('jubilados');
     expect(notice).toContain('Seguro Social Campesino');
   });

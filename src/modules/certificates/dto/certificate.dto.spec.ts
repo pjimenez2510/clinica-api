@@ -74,6 +74,24 @@ describe('el contrato de entrada del certificado', () => {
     ).toBe(false);
   });
 
+  it('CER-034 admite las cuatro contingencias del IESS y ninguna otra', () => {
+    const rest = (contingencyType: string) =>
+      issueCertificateSchema.safeParse({
+        type: 'MEDICAL_REST',
+        includeDiagnosis: true,
+        contingencyType,
+      }).success;
+    for (const contingency of [
+      'GENERAL_ILLNESS',
+      'WORK_ACCIDENT',
+      'OCCUPATIONAL_DISEASE',
+      'MATERNITY',
+    ]) {
+      expect(rest(contingency)).toBe(true);
+    }
+    expect(rest('OTRA')).toBe(false);
+  });
+
   it('CER-011 exige un motivo escrito para anular', () => {
     expect(revokeCertificateSchema.safeParse({}).success).toBe(false);
     expect(revokeCertificateSchema.safeParse({ reason: '   ' }).success).toBe(

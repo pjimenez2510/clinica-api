@@ -45,6 +45,11 @@ const CERTIFICATE_SELECT = {
   restFrom: true,
   restTo: true,
   includeDiagnosis: true,
+  contingencyType: true,
+  maternityAdmissionOn: true,
+  birthOn: true,
+  maternityDischargeOn: true,
+  restBackdatingReason: true,
   revokedAt: true,
   revokedById: true,
   revocationReason: true,
@@ -96,7 +101,15 @@ export class PrismaCertificateRepository implements CertificateRepository {
           siteId: true,
           patientId: true,
           status: true,
+          startedAt: true,
           _count: { select: { diagnoses: true } },
+          // CER-036. The city is the CANTON: the parent of the site's DPA
+          // parish, as PR-021 reads it.
+          site: {
+            select: {
+              parish: { select: { parent: { select: { display: true } } } },
+            },
+          },
         },
       });
       if (!encounter) throw new CertificateEncounterNotFoundError();
@@ -104,6 +117,8 @@ export class PrismaCertificateRepository implements CertificateRepository {
       const plan = decide({
         encounterStatus: encounter.status,
         diagnosisCount: encounter._count.diagnoses,
+        encounterStartedAt: encounter.startedAt,
+        cityOfIssue: encounter.site.parish?.parent?.display ?? null,
       });
 
       return tx.medicalCertificate.create({
@@ -120,6 +135,11 @@ export class PrismaCertificateRepository implements CertificateRepository {
           restFrom: plan.rest === null ? null : dateColumn(plan.rest.from),
           restTo: plan.rest === null ? null : dateColumn(plan.rest.to),
           includeDiagnosis: plan.includeDiagnosis,
+          contingencyType: plan.contingencyType,
+          maternityAdmissionOn: optionalDate(plan.maternity?.admissionOn),
+          birthOn: optionalDate(plan.maternity?.birthOn),
+          maternityDischargeOn: optionalDate(plan.maternity?.dischargeOn),
+          restBackdatingReason: plan.backdatingReason,
           verificationCode: plan.verificationCode,
           issuedAt: plan.issuedAt,
         },
@@ -155,7 +175,18 @@ export class PrismaCertificateRepository implements CertificateRepository {
         ...CERTIFICATE_SELECT,
         // CER-020. The site is the «establecimiento de salud», with its own
         // unicódigo (D-074).
-        site: { select: { name: true, mspUnicode: true } },
+        // CER-036, CER-037. The canton for the place of issue, and the
+        // address and phone of the letterhead. The establishment has none of
+        // the three in the schema, so there is nothing to fall back to.
+        site: {
+          select: {
+            name: true,
+            mspUnicode: true,
+            addressLine: true,
+            phone: true,
+            parish: { select: { parent: { select: { display: true } } } },
+          },
+        },
         patient: {
           select: {
             familyName: true,
@@ -211,7 +242,13 @@ export class PrismaCertificateRepository implements CertificateRepository {
     const view = toView(row);
     return {
       certificate: view,
-      site: row.site,
+      site: {
+        name: row.site.name,
+        mspUnicode: row.site.mspUnicode,
+        city: row.site.parish?.parent?.display ?? null,
+        address: row.site.addressLine,
+        phone: row.site.phone,
+      },
       patient: {
         familyName: row.patient.familyName,
         secondFamilyName: row.patient.secondFamilyName,
@@ -304,6 +341,11 @@ function dateColumn(date: ClinicalDate): Date {
   return new Date(`${date}T00:00:00Z`);
 }
 
+/** An optional calendar date for an optional `date` column. */
+function optionalDate(date: ClinicalDate | undefined): Date | null {
+  return date === undefined ? null : dateColumn(date);
+}
+
 /** A `date` column back to the calendar date it holds. */
 function clinicalDateColumn(value: Date | null): ClinicalDate | null {
   return value === null ? null : (value.toISOString().slice(0, 10) as ClinicalDate); // prettier-ignore
@@ -323,6 +365,18 @@ function toView(row: CertificateRow): CertificateView {
     restFrom: clinicalDateColumn(row.restFrom),
     restTo: clinicalDateColumn(row.restTo),
     includeDiagnosis: row.includeDiagnosis,
+    contingencyType: row.contingencyType,
+    maternity:
+      row.maternityAdmissionOn === null ||
+      row.birthOn === null ||
+      row.maternityDischargeOn === null
+        ? null
+        : {
+            admissionOn: clinicalDateColumn(row.maternityAdmissionOn) as ClinicalDate, // prettier-ignore
+            birthOn: clinicalDateColumn(row.birthOn) as ClinicalDate,
+            dischargeOn: clinicalDateColumn(row.maternityDischargeOn) as ClinicalDate, // prettier-ignore
+          },
+    backdatingReason: row.restBackdatingReason,
     revokedAt: row.revokedAt,
     revokedById: row.revokedById,
     revocationReason: row.revocationReason,

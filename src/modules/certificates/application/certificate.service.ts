@@ -8,19 +8,26 @@ import {
   type AccessAuditRecorder,
   type AuditAction,
 } from '../../../shared/audit/access-audit.port';
-import type { ClinicalDate } from '../../../shared/domain/clinic-time';
+import {
+  clinicalDateOf,
+  type ClinicalDate,
+} from '../../../shared/domain/clinic-time';
 import {
   admitsNewCertificates,
   assertIssuableType,
+  backdatingReasonOf,
   iessValidationOf,
-  restPeriodOf,
+  restDetailsOf,
+  restNoticesOf,
   type CertificateType,
+  type ContingencyType,
   type IessValidation,
 } from '../domain/certificate';
 import {
   CertificateDiagnosisRequiredError,
   CertificateEncounterNotFoundError,
   CertificateEncounterNotOpenError,
+  CertificateEstablishmentIncompleteError,
   CertificateNotFoundError,
   CertifierProfileRequiredError,
 } from '../domain/certificate.errors';
@@ -65,8 +72,19 @@ export interface IssueCertificateRequest {
   /** CER-006. Calendar dates in Ecuador, or `null`. */
   restFrom: ClinicalDate | null;
   restTo: ClinicalDate | null;
-  /** CER-007. Answered explicitly by the doctor; never defaulted. */
+  /**
+   * CER-007. Answered explicitly on every certificate; on a rest it has to be
+   * `true` — the IESS does not validate a rest without its CIE-10.
+   */
   includeDiagnosis: boolean;
+  /** CER-034. Obligatory on a rest, refused on attendance. */
+  contingencyType: ContingencyType | null;
+  /** CER-035. The three, exactly with `MATERNITY`. */
+  maternityAdmissionOn: ClinicalDate | null;
+  birthOn: ClinicalDate | null;
+  maternityDischargeOn: ClinicalDate | null;
+  /** CER-030. Demanded only when the rest starts before the attention. */
+  backdatingReason: string | null;
 }
 
 /** CER-013. The certificate, and what the IESS needs to be said about it. */
@@ -74,6 +92,8 @@ export interface IssuedCertificate {
   certificate: CertificateView;
   /** `null` on an attendance certificate. */
   iess: IessValidation | null;
+  /** CER-032. Notices of a rest over 3 and over 7 days; they never refuse. */
+  restNotices: string[];
 }
 
 /**
@@ -114,7 +134,9 @@ export class CertificateService {
   ): Promise<IssuedCertificate> {
     const { type } = request;
     assertIssuableType(type);
-    const rest = restPeriodOf(type, request.restFrom, request.restTo);
+    // CER-006, CER-007, CER-031, CER-034, CER-035: everything the request
+    // alone can be judged on, refused before touching storage.
+    const details = restDetailsOf(type, request);
 
     const certifier = await this.certificates.findCertifierByUser(
       requester.userId,
@@ -130,14 +152,32 @@ export class CertificateService {
         if (!admitsNewCertificates(snapshot.encounterStatus)) {
           throw new CertificateEncounterNotOpenError(snapshot.encounterStatus);
         }
-        // CER-008. The diagnosis is read from the attention, never typed.
-        if (request.includeDiagnosis && snapshot.diagnosisCount === 0) {
+        // CER-036. The place of issue is the canton of the site's parish.
+        if (snapshot.cityOfIssue === null) {
+          throw new CertificateEstablishmentIncompleteError();
+        }
+        // CER-008. The diagnosis is read from the attention, never typed; a
+        // rest always carries it (CER-007).
+        const includeDiagnosis = details !== null || request.includeDiagnosis;
+        if (includeDiagnosis && snapshot.diagnosisCount === 0) {
           throw new CertificateDiagnosisRequiredError();
         }
         return {
           type,
-          rest,
-          includeDiagnosis: request.includeDiagnosis,
+          rest: details?.period ?? null,
+          includeDiagnosis,
+          contingencyType: details?.contingencyType ?? null,
+          maternity: details?.maternity ?? null,
+          // CER-030. Against the clinical date of the attention in Ecuador,
+          // read inside the transaction.
+          backdatingReason:
+            details === null
+              ? null
+              : backdatingReasonOf(
+                  details.period,
+                  clinicalDateOf(snapshot.encounterStartedAt),
+                  request.backdatingReason,
+                ),
           issuedById: certifier.practitionerId,
           issuedAt,
           verificationCode,
@@ -152,7 +192,8 @@ export class CertificateService {
 
     return {
       certificate,
-      iess: rest === null ? null : iessValidationOf(rest.to),
+      iess: details === null ? null : iessValidationOf(details.period.to),
+      restNotices: details === null ? [] : restNoticesOf(details.days),
     };
   }
 

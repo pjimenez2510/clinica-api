@@ -14,7 +14,9 @@ import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 
 import type {
   CertificateType,
+  ContingencyType,
   EncounterStatus,
+  MaternityDates,
   IssuableCertificateType,
   RestPeriod,
 } from './certificate';
@@ -52,6 +54,10 @@ export interface IssueSnapshot {
   encounterStatus: EncounterStatus;
   /** CER-008. How many diagnoses the attention has. */
   diagnosisCount: number;
+  /** CER-030. When the attention started; its clinical date is Ecuador's. */
+  encounterStartedAt: Date;
+  /** CER-036. The canton of the site's parish; `null` without a parish. */
+  cityOfIssue: string | null;
 }
 
 /** CER-001. What the issue writes once the policy has accepted it. */
@@ -59,6 +65,12 @@ export interface CertificatePlan {
   type: IssuableCertificateType;
   rest: RestPeriod | null;
   includeDiagnosis: boolean;
+  /** CER-034. `null` on attendance. */
+  contingencyType: ContingencyType | null;
+  /** CER-035. Present exactly with `MATERNITY`. */
+  maternity: MaternityDates | null;
+  /** CER-030. Present exactly when the rest starts before the attention. */
+  backdatingReason: string | null;
   /** CER-004. The practitioner of the session, never an id of the request. */
   issuedById: string;
   issuedAt: Date;
@@ -88,6 +100,12 @@ export interface CertificateView {
   restTo: ClinicalDate | null;
   /** CER-007. Answered explicitly by the doctor on every certificate. */
   includeDiagnosis: boolean;
+  /** CER-034. `null` on attendance. */
+  contingencyType: ContingencyType | null;
+  /** CER-035. Present exactly with `MATERNITY`. */
+  maternity: MaternityDates | null;
+  /** CER-030. Why the rest starts before the attention, or `null`. */
+  backdatingReason: string | null;
   /** CER-011. Who, when and why — the three together or none. */
   revokedAt: Date | null;
   revokedById: string | null;

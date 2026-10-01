@@ -11,6 +11,9 @@ import { DOMAIN_ERROR_CODES } from '../../../shared/domain/errors/error-catalogu
 
 import {
   CertificateAlreadyRevokedError,
+  CertificateBackdatingReasonRequiredError,
+  CertificateEstablishmentIncompleteError,
+  CertificateRestTooLongError,
   CertificateDiagnosisRequiredError,
   CertificateEncounterNotFoundError,
   CertificateEncounterNotOpenError,
@@ -83,6 +86,24 @@ const CONTRACT: readonly {
     category: ConflictError,
     says: 'ya está anulado',
   },
+  {
+    error: new CertificateBackdatingReasonRequiredError(),
+    code: 'CERTIFICATE_BACKDATING_REASON_REQUIRED',
+    category: ValidationError,
+    says: 'antes del día de la atención',
+  },
+  {
+    error: new CertificateRestTooLongError(),
+    code: 'CERTIFICATE_REST_TOO_LONG',
+    category: ValidationError,
+    says: '30 días',
+  },
+  {
+    error: new CertificateEstablishmentIncompleteError(),
+    code: 'CERTIFICATE_ESTABLISHMENT_INCOMPLETE',
+    category: ValidationError,
+    says: 'parroquia',
+  },
 ];
 
 describe('el contrato de errores del certificado', () => {
@@ -121,8 +142,8 @@ describe('el contrato de errores del certificado', () => {
       'restFrom',
       'restTo',
     ]);
-    expect(error.fieldErrors?.[0]?.message).toContain('desde');
-    expect(error.fieldErrors?.[1]?.message).toContain('hasta');
+    expect(error.fieldErrors?.[0]?.message).toContain('inicio');
+    expect(error.fieldErrors?.[1]?.message).toContain('fin');
 
     const attendance = new CertificateRestPeriodInvalidError([
       { field: 'restFrom', problem: 'NOT_ALLOWED' },
@@ -133,6 +154,15 @@ describe('el contrato de errores del certificado', () => {
   it('CER-008 el diagnostico que falta señala la casilla de incluirlo', () => {
     const error = new CertificateDiagnosisRequiredError();
     expect(error.fieldErrors?.[0]?.field).toBe('includeDiagnosis');
+  });
+
+  it('CER-030 y CER-031 señalan el campo que hay que corregir', () => {
+    expect(
+      new CertificateBackdatingReasonRequiredError().fieldErrors?.[0]?.field,
+    ).toBe('backdatingReason');
+    expect(new CertificateRestTooLongError().fieldErrors?.[0]?.field).toBe(
+      'restTo',
+    );
   });
 
   it('CER-005 el tipo no admitido señala el campo del tipo', () => {

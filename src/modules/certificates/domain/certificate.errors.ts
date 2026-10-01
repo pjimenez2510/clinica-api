@@ -92,26 +92,59 @@ export class CertificateTypeNotSupportedError extends ValidationError {
   }
 }
 
-/** CER-006. What is wrong with one field of the rest period. */
-export type RestPeriodProblem = 'MISSING' | 'ENDS_BEFORE_START' | 'NOT_ALLOWED';
+/** CER-006, CER-007, CER-034, CER-035. What is wrong with one field of the rest. */
+export type RestPeriodProblem =
+  'MISSING' | 'ENDS_BEFORE_START' | 'NOT_ALLOWED' | 'MUST_BE_INCLUDED';
 
-/** CER-006. The two fields a rest period has. */
-export type RestPeriodField = 'restFrom' | 'restTo';
+/**
+ * CER-006, CER-007, CER-034, CER-035. The fields that describe a rest: the
+ * period, the diagnosis it always carries, the contingency, and the three
+ * dates of a maternity.
+ */
+export type RestPeriodField =
+  | 'restFrom'
+  | 'restTo'
+  | 'includeDiagnosis'
+  | 'contingencyType'
+  | 'maternityAdmissionOn'
+  | 'birthOn'
+  | 'maternityDischargeOn';
 
-const REST_PERIOD_MESSAGE: Readonly<
-  Record<RestPeriodField, Readonly<Record<RestPeriodProblem, string>>>
-> = {
-  restFrom: {
-    MISSING: 'Indique desde qué día es el reposo',
-    ENDS_BEFORE_START: 'El reposo no puede empezar después de terminar',
-    NOT_ALLOWED: 'Un certificado de asistencia no lleva período de reposo',
-  },
-  restTo: {
-    MISSING: 'Indique hasta qué día es el reposo',
-    ENDS_BEFORE_START: 'El reposo no puede terminar antes de empezar',
-    NOT_ALLOWED: 'Un certificado de asistencia no lleva período de reposo',
-  },
+/** What the box is called, inside a sentence. */
+const FIELD_LABEL: Readonly<Record<RestPeriodField, string>> = {
+  restFrom: 'la fecha de inicio del reposo',
+  restTo: 'la fecha de fin del reposo',
+  includeDiagnosis: 'el diagnóstico',
+  contingencyType: 'el tipo de contingencia',
+  maternityAdmissionOn: 'la fecha de ingreso',
+  birthOn: 'la fecha del parto',
+  maternityDischargeOn: 'la fecha de alta',
 };
+
+/** The sentence for one field and one problem. */
+function restMessage(
+  field: RestPeriodField,
+  problem: RestPeriodProblem,
+): string {
+  switch (problem) {
+    case 'MISSING':
+      return field === 'contingencyType'
+        ? 'Indique el tipo de contingencia del reposo'
+        : `Indique ${FIELD_LABEL[field]}`;
+    case 'ENDS_BEFORE_START':
+      return field === 'restFrom'
+        ? 'El reposo no puede empezar después de terminar'
+        : 'El reposo no puede terminar antes de empezar';
+    case 'MUST_BE_INCLUDED':
+      return 'Un certificado de reposo lleva siempre el diagnóstico: el IESS no lo valida sin él';
+    case 'NOT_ALLOWED':
+      return field === 'maternityAdmissionOn' ||
+        field === 'birthOn' ||
+        field === 'maternityDischargeOn'
+        ? 'Las fechas de ingreso, parto y alta sólo van con la contingencia de maternidad'
+        : 'Un certificado de asistencia no lleva datos de reposo';
+  }
+}
 
 /**
  * CER-006. The rest period is missing, inverted, or present where it does not
@@ -136,7 +169,7 @@ export class CertificateRestPeriodInvalidError extends ValidationError {
     this.fieldErrors = problems.map(({ field, problem }) => ({
       field,
       code: 'CERTIFICATE_REST_PERIOD_INVALID',
-      message: REST_PERIOD_MESSAGE[field][problem],
+      message: restMessage(field, problem),
     }));
   }
 }
@@ -189,5 +222,66 @@ export class CertificateAlreadyRevokedError extends ConflictError {
 
   constructor() {
     super('Certificate is already revoked');
+  }
+}
+
+/**
+ * CER-030. The rest starts before the clinical date of the attention and no
+ * written reason of at least ten characters says why. A backdated certificate
+ * is the typical shape of a certificate of favour: it is admitted only with
+ * the reason written, and the reason stays in the record.
+ */
+export class CertificateBackdatingReasonRequiredError extends ValidationError {
+  readonly code = 'CERTIFICATE_BACKDATING_REASON_REQUIRED';
+  override readonly userTitle =
+    'El reposo empieza antes del día de la atención. Escriba por qué, en al menos diez caracteres';
+  override readonly fieldErrors: readonly DomainFieldError[] = [
+    {
+      field: 'backdatingReason',
+      code: 'CERTIFICATE_BACKDATING_REASON_REQUIRED',
+      message:
+        'Explique por qué el reposo empieza antes del día de la atención',
+    },
+  ];
+
+  constructor() {
+    super('A backdated rest needs a written reason');
+  }
+}
+
+/**
+ * CER-031. More than thirty days, both ends included: the IESS validates
+ * rests of one to thirty days, and a longer one is covered by successive
+ * certificates.
+ */
+export class CertificateRestTooLongError extends ValidationError {
+  readonly code = 'CERTIFICATE_REST_TOO_LONG';
+  override readonly userTitle =
+    'Un certificado de reposo cubre como máximo 30 días. Para un reposo más largo, emita certificados sucesivos';
+  override readonly fieldErrors: readonly DomainFieldError[] = [
+    {
+      field: 'restTo',
+      code: 'CERTIFICATE_REST_TOO_LONG',
+      message: 'El reposo no puede pasar de 30 días',
+    },
+  ];
+
+  constructor() {
+    super('A rest certificate covers at most 30 days');
+  }
+}
+
+/**
+ * CER-036. The site has no parish, so there is no city to print as the place
+ * of issue. 422 and not 500: a datum of the installation is missing, and the
+ * sentence says who fixes it and where.
+ */
+export class CertificateEstablishmentIncompleteError extends ValidationError {
+  readonly code = 'CERTIFICATE_ESTABLISHMENT_INCOMPLETE';
+  override readonly userTitle =
+    'La sede no tiene parroquia configurada, así que el certificado no puede indicar el lugar de emisión. Complete los datos de la sede en configuración';
+
+  constructor() {
+    super('Site has no parish, so the place of issue cannot be resolved');
   }
 }

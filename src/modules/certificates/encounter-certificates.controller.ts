@@ -33,7 +33,7 @@ import {
   type CertificateListResponse,
   type IssuedCertificateResponse,
 } from './dto/certificate.dto';
-import type { CertificateType } from './domain/certificate';
+import type { CertificateType, ContingencyType } from './domain/certificate';
 
 /**
  * The certificates of one attention: issuing them and listing them.
@@ -76,6 +76,12 @@ export class EncounterCertificatesController {
         restFrom: (dto.restFrom ?? null) as ClinicalDate | null,
         restTo: (dto.restTo ?? null) as ClinicalDate | null,
         includeDiagnosis: dto.includeDiagnosis,
+        contingencyType: (dto.contingencyType ??
+          null) as ContingencyType | null,
+        maternityAdmissionOn: (dto.maternityAdmissionOn ?? null) as ClinicalDate | null, // prettier-ignore
+        birthOn: (dto.birthOn ?? null) as ClinicalDate | null,
+        maternityDischargeOn: (dto.maternityDischargeOn ?? null) as ClinicalDate | null, // prettier-ignore
+        backdatingReason: dto.backdatingReason ?? null,
       },
       this.requester(req, 'record:write'),
     );
@@ -83,6 +89,7 @@ export class EncounterCertificatesController {
     return {
       certificate: toCertificateResponse(issued.certificate),
       iess: toIessResponse(issued.iess),
+      restNotices: [...issued.restNotices],
     };
   }
 

@@ -30,6 +30,11 @@ export function toCertificateResponse(
     restFrom: certificate.restFrom,
     restTo: certificate.restTo,
     includeDiagnosis: certificate.includeDiagnosis,
+    contingencyType: certificate.contingencyType,
+    maternityAdmissionOn: certificate.maternity?.admissionOn ?? null,
+    birthOn: certificate.maternity?.birthOn ?? null,
+    maternityDischargeOn: certificate.maternity?.dischargeOn ?? null,
+    backdatingReason: certificate.backdatingReason,
     revokedAt: certificate.revokedAt?.toISOString() ?? null,
     revocationReason: certificate.revocationReason,
   };

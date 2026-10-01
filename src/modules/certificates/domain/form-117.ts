@@ -6,7 +6,12 @@ import {
 } from '../../../shared/domain/clinic-time';
 import { spellQuantity } from '../../../shared/domain/quantity-in-words';
 
-import type { CertificateType } from './certificate';
+import {
+  CONTINGENCY_LABEL,
+  type CertificateType,
+  type ContingencyType,
+  type MaternityDates,
+} from './certificate';
 import {
   dateInNumbersAndWords,
   type DateInNumbersAndWords,
@@ -48,11 +53,23 @@ export interface Form117Source {
     restFrom: ClinicalDate | null;
     restTo: ClinicalDate | null;
     includeDiagnosis: boolean;
+    /** CER-034. `null` on an attendance certificate. */
+    contingencyType: ContingencyType | null;
+    /** CER-035. Present exactly with `MATERNITY`. */
+    maternity: MaternityDates | null;
     revokedAt: Date | null;
     revocationReason: string | null;
   };
   /** The site is the «establecimiento de salud», with its own unicódigo. */
-  site: { name: string; mspUnicode: string };
+  site: {
+    name: string;
+    mspUnicode: string;
+    /** CER-036. The canton of the site's parish; `null` without a parish. */
+    city: string | null;
+    /** CER-037. For the letterhead. */
+    address: string | null;
+    phone: string | null;
+  };
   patient: {
     familyName: string;
     secondFamilyName: string | null;
@@ -101,6 +118,30 @@ export interface Form117 {
     revokedOn: ClinicalDate;
     reason: string;
   } | null;
+  /** CER-033. «CONFIDENCIAL» exactly when the diagnosis is printed. */
+  confidential: boolean;
+  /** CER-036. The city of issue: the canton of the site's parish, or «NA». */
+  placeOfIssue: string;
+  /**
+   * CER-037. For the letterhead: the site's address and phone. The
+   * establishment has no address, phone or email in the schema, so there is
+   * no fallback to it, and `email` is always `null` (⚠️ falta esquema).
+   */
+  letterhead: {
+    address: string | null;
+    phone: string | null;
+    email: null;
+  };
+  /** CER-034. The contingency in Spanish, or «NA» on attendance. */
+  contingency: string;
+  /** CER-035. Admission, birth and discharge, or «NA» outside maternity. */
+  maternity:
+    | {
+        admission: DateInNumbersAndWords;
+        birth: DateInNumbersAndWords;
+        discharge: DateInNumbersAndWords;
+      }
+    | NotApplicable;
   /** CER-020. Block A. */
   establishment: {
     /** MSP, IESS, ISSFFA or ISPOL — a private clinic is none of them. */
@@ -132,13 +173,15 @@ export interface Form117 {
     admissionDate: NotApplicable;
     dischargeDate: NotApplicable;
   };
-  /** CER-025, CER-026. Block C. */
+  /** CER-025, CER-026. Block C, in DAYS and never in hours (D-075). */
   rest: {
     rest: 'SÍ' | 'NO';
-    hours: string;
-    hoursInWords: string;
+    days: string;
+    daysInWords: string;
     from: DateInNumbersAndWords | NotApplicable;
     to: DateInNumbersAndWords | NotApplicable;
+    /** «desde el … hasta el …, ambas fechas incluidas» (instructivo, block C). */
+    periodInWords: string;
   };
   /** CER-027. Block D. */
   diagnoses: readonly { code: string; display: string }[] | NotApplicable;
@@ -160,9 +203,6 @@ export interface Form117 {
 /** CER-022. The clinic is ambulatory (supuesto 1). */
 const SERVICE = 'Consulta externa';
 
-/** CER-026. Hours per day of rest: the form counts the rest in hours. */
-const HOURS_PER_DAY = 24;
-
 /**
  * CER-020. Which document is «el número de historia clínica única»: the
  * cédula, and for foreigners the passport or the refugee card; failing all,
@@ -179,6 +219,10 @@ const DOCUMENT_PRIORITY: readonly IdentifierType[] = [
 /** CER-020 to CER-029. Composes the five blocks of form 117. */
 export function composeForm117(source: Form117Source): Form117 {
   const { certificate, patient, encounter, practitioner } = source;
+  const diagnoses =
+    certificate.includeDiagnosis && source.diagnoses.length > 0
+      ? source.diagnoses.map(({ code, display }) => ({ code, display }))
+      : NA;
 
   return {
     id: certificate.id,
@@ -192,6 +236,25 @@ export function composeForm117(source: Form117Source): Form117 {
             revokedAt: certificate.revokedAt,
             revokedOn: clinicalDateOf(certificate.revokedAt),
             reason: certificate.revocationReason ?? '',
+          },
+    confidential: diagnoses !== NA,
+    placeOfIssue: source.site.city ?? NA,
+    letterhead: {
+      address: source.site.address,
+      phone: source.site.phone,
+      email: null,
+    },
+    contingency:
+      certificate.contingencyType === null
+        ? NA
+        : CONTINGENCY_LABEL[certificate.contingencyType],
+    maternity:
+      certificate.maternity === null
+        ? NA
+        : {
+            admission: dateInNumbersAndWords(certificate.maternity.admissionOn),
+            birth: dateInNumbersAndWords(certificate.maternity.birthOn),
+            discharge: dateInNumbersAndWords(certificate.maternity.dischargeOn),
           },
     establishment: {
       institution: NA,
@@ -218,10 +281,7 @@ export function composeForm117(source: Form117Source): Form117 {
       dischargeDate: NA,
     },
     rest: restOf(certificate.restFrom, certificate.restTo),
-    diagnoses:
-      certificate.includeDiagnosis && source.diagnoses.length > 0
-        ? source.diagnoses.map(({ code, display }) => ({ code, display }))
-        : NA,
+    diagnoses,
     professional: {
       date: clinicalDateOf(certificate.issuedAt),
       time: hourOf(certificate.issuedAt),
@@ -294,23 +354,34 @@ function hourOf(instant: Date): string {
 }
 
 /**
- * CER-025, CER-026. «SÍ» or «NO», never blank; with rest, the hours —
- * calendar days of the period, both ends included, times 24 — and both dates,
- * in numbers and in words.
+ * CER-025, CER-026. «SÍ» or «NO», never blank; with rest, the calendar days of
+ * the period — both ends included — in numbers and in words, and both dates
+ * in numbers and in words. Never hours: the IESS returns a certificate that
+ * expresses the rest in hours (D-075).
  */
 function restOf(
   from: ClinicalDate | null,
   to: ClinicalDate | null,
 ): Form117['rest'] {
   if (from === null || to === null) {
-    return { rest: 'NO', hours: NA, hoursInWords: NA, from: NA, to: NA };
+    return {
+      rest: 'NO',
+      days: NA,
+      daysInWords: NA,
+      from: NA,
+      to: NA,
+      periodInWords: NA,
+    };
   }
-  const hours = clinicalDaySpan(from, to) * HOURS_PER_DAY;
+  const days = clinicalDaySpan(from, to);
+  const start = dateInNumbersAndWords(from);
+  const end = dateInNumbersAndWords(to);
   return {
     rest: 'SÍ',
-    hours: String(hours),
-    hoursInWords: spellQuantity(hours),
-    from: dateInNumbersAndWords(from),
-    to: dateInNumbersAndWords(to),
+    days: String(days),
+    daysInWords: spellQuantity(days),
+    from: start,
+    to: end,
+    periodInWords: `desde el ${start.inWords} hasta el ${end.inWords}, ambas fechas incluidas`,
   };
 }

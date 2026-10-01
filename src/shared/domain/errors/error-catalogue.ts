@@ -833,8 +833,16 @@ export const DOMAIN_ERROR_CODES = [
   //   * `CERTIFICATE_NOT_FOUND` (404) — CER-010. No existe o es de otra sede.
   //   * `CERTIFICATE_ALREADY_REVOKED` (409) — CER-012. Anular dos veces
   //     reescribiría quién lo anuló y por qué.
+  //   * `CERTIFICATE_BACKDATING_REASON_REQUIRED` (422) — CER-030. Reposo que
+  //     empieza antes del día clínico de la atención sin motivo escrito.
+  //   * `CERTIFICATE_REST_TOO_LONG` (422) — CER-031. Más de 30 días.
+  //   * `CERTIFICATE_ESTABLISHMENT_INCOMPLETE` (422) — CER-036. La sede no
+  //     tiene parroquia y no hay lugar de emisión. Propio, no el de la receta.
   'CERTIFICATE_ALREADY_REVOKED',
+  'CERTIFICATE_BACKDATING_REASON_REQUIRED',
   'CERTIFICATE_DIAGNOSIS_REQUIRED',
+  'CERTIFICATE_ESTABLISHMENT_INCOMPLETE',
+  'CERTIFICATE_REST_TOO_LONG',
   'CERTIFICATE_ENCOUNTER_NOT_FOUND',
   'CERTIFICATE_ENCOUNTER_NOT_OPEN',
   'CERTIFICATE_NOT_FOUND',

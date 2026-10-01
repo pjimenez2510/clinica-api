@@ -2,7 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
 import { parseClinicalDate } from '../../../shared/domain/clinic-time';
-import { CERTIFICATE_TYPES } from '../domain/certificate';
+import { CERTIFICATE_TYPES, CONTINGENCY_TYPES } from '../domain/certificate';
 
 /**
  * The medical certificate's contract — form SNS-MSP/HCU-form.117/2021.
@@ -16,6 +16,12 @@ import { CERTIFICATE_TYPES } from '../domain/certificate';
 
 const CERTIFICATE_TYPE = z.enum(CERTIFICATE_TYPES as [string, ...string[]], {
   error: 'Elija el tipo de certificado: asistencia o reposo',
+});
+
+/** CER-034. The contingency of a rest. */
+const CONTINGENCY_TYPE = z.enum(CONTINGENCY_TYPES as [string, ...string[]], {
+  error:
+    'Elija el tipo de contingencia: enfermedad general, accidente de trabajo, enfermedad profesional o maternidad',
 });
 
 /** A calendar date in Ecuador, `YYYY-MM-DD`, that exists on the calendar. */
@@ -53,6 +59,20 @@ export const issueCertificateSchema = z.strictObject(
     includeDiagnosis: z.boolean({
       error: 'Indique si el diagnóstico se incluye en el certificado',
     }),
+    /**
+     * CER-034, CER-035, CER-030. Shape only here; whether each is required or
+     * refused depends on the type and the attention, and the service says it
+     * field by field.
+     */
+    contingencyType: CONTINGENCY_TYPE.optional(),
+    maternityAdmissionOn: clinicalDate('Escriba la fecha de ingreso como AAAA-MM-DD').optional(), // prettier-ignore
+    birthOn: clinicalDate('Escriba la fecha del parto como AAAA-MM-DD').optional(), // prettier-ignore
+    maternityDischargeOn: clinicalDate('Escriba la fecha de alta como AAAA-MM-DD').optional(), // prettier-ignore
+    backdatingReason: z
+      .string()
+      .trim()
+      .max(2000, 'El motivo no puede superar 2000 caracteres')
+      .optional(),
   },
   {
     error: (issue) =>
@@ -96,8 +116,16 @@ export const certificateSchema = z.object({
   /** CER-006. Calendar dates in Ecuador, `YYYY-MM-DD`; `null` on attendance. */
   restFrom: z.string().nullable(),
   restTo: z.string().nullable(),
-  /** CER-007. */
+  /** CER-007. Always `true` on a rest. */
   includeDiagnosis: z.boolean(),
+  /** CER-034. `null` on attendance. */
+  contingencyType: CONTINGENCY_TYPE.nullable(),
+  /** CER-035. `YYYY-MM-DD`, exactly with `MATERNITY`. */
+  maternityAdmissionOn: z.string().nullable(),
+  birthOn: z.string().nullable(),
+  maternityDischargeOn: z.string().nullable(),
+  /** CER-030. Why the rest starts before the attention, or `null`. */
+  backdatingReason: z.string().nullable(),
   /** CER-011. `null` while valid. */
   revokedAt: z.iso.datetime().nullable(),
   revocationReason: z.string().nullable(),
@@ -123,6 +151,8 @@ export const issuedCertificateSchema = z.object({
   certificate: certificateSchema,
   /** CER-013. `null` on an attendance certificate. */
   iess: iessValidationSchema.nullable(),
+  /** CER-032. Over 3 and over 7 days; provisional text, never a refusal. */
+  restNotices: z.array(z.string()),
 });
 /** Response of POST /encounters/:encounterId/certificates. */
 export class IssuedCertificateDto extends createZodDto(
@@ -166,6 +196,31 @@ export const form117Schema = z.object({
       reason: z.string(),
     })
     .nullable(),
+  /** CER-033. «CONFIDENCIAL» exactly when the diagnosis is printed. */
+  confidential: z.boolean(),
+  /** CER-036. The canton of the site's parish, or «NA». */
+  placeOfIssue: z.string(),
+  /**
+   * CER-037. The site's address and phone for the letterhead. `email` is
+   * always `null`: neither the site nor the establishment has one in the
+   * schema.
+   */
+  letterhead: z.object({
+    address: z.string().nullable(),
+    phone: z.string().nullable(),
+    email: z.null(),
+  }),
+  /** CER-034. The contingency in Spanish, or «NA». */
+  contingency: z.string(),
+  /** CER-035. Admission, birth and discharge, or «NA». */
+  maternity: z.union([
+    z.object({
+      admission: dateInNumbersAndWordsSchema,
+      birth: dateInNumbersAndWordsSchema,
+      discharge: dateInNumbersAndWordsSchema,
+    }),
+    NA,
+  ]),
   /** CER-020. Block A. */
   establishment: z.object({
     /** MSP, IESS, ISSFFA or ISPOL; a private clinic is none: «NA». */
@@ -204,10 +259,13 @@ export const form117Schema = z.object({
   /** CER-025, CER-026. Block C. */
   rest: z.object({
     rest: z.enum(['SÍ', 'NO']),
-    hours: z.string(),
-    hoursInWords: z.string(),
+    /** CER-026. Days, both ends included — never hours (D-075). */
+    days: z.string(),
+    daysInWords: z.string(),
     from: z.union([dateInNumbersAndWordsSchema, NA]),
     to: z.union([dateInNumbersAndWordsSchema, NA]),
+    /** «desde el … hasta el …, ambas fechas incluidas», or «NA». */
+    periodInWords: z.string(),
   }),
   /** CER-027. Block D: principal first, or «NA». */
   diagnoses: z.union([
