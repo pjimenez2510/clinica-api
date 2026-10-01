@@ -21,7 +21,11 @@ import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.ser
 import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
 
 import { useDatabase } from './setup/database';
-import { createPatient, createSite } from './setup/fixtures';
+import {
+  createIssuedPrescription,
+  createPatient,
+  createSite,
+} from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
 /**
@@ -165,31 +169,30 @@ describe('los documentos por HTTP', () => {
       },
     });
 
-    const prescription = await prisma.prescription.create({
-      data: {
-        encounterId: encounter.id,
-        siteId: encounter.siteId,
-        prescriberId: practitionerId,
-        status: 'ACTIVE',
-        issuedAt: new Date('2026-08-21T01:00:00Z'),
-        items: {
-          create: [
-            {
-              genericName: 'Amoxicilina',
-              presentation: 'Cápsula',
-              concentration: '500 mg',
-              routeCode: 'ORAL',
-              quantity: 20,
-              doseText: '1 cápsula',
-              frequencyText: 'Cada 8 horas',
-              durationDays: 7,
-              instructions: 'Tomar con alimentos',
-              offFormularyJustification: 'Fuera del CNMB para esta prueba',
-            },
-          ],
-        },
+    const prescription = await createIssuedPrescription(prisma, {
+      encounterId: encounter.id,
+      siteId: encounter.siteId,
+      prescriberId: practitionerId,
+      status: 'ACTIVE',
+      issuedAt: new Date('2026-08-21T01:00:00Z'),
+      items: {
+        create: [
+          {
+            genericName: 'Amoxicilina',
+            presentation: 'Cápsula',
+            concentration: '500 mg',
+            routeCode: 'ORAL',
+            quantity: 20,
+            doseText: '1 cápsula',
+            frequencyText: 'Cada 8 horas',
+            durationDays: 7,
+            instructions: 'Tomar con alimentos',
+            offFormularyJustification: 'Fuera del CNMB para esta prueba',
+          },
+        ],
       },
     });
+
     prescriptionId = prescription.id;
   }
 
@@ -445,19 +448,17 @@ describe('los documentos por HTTP', () => {
         where: { id: prescriptionId },
         select: { encounterId: true, siteId: true, prescriberId: true },
       });
-      await prisma.prescription.create({
-        data: {
-          ...seeded,
-          status: 'ACTIVE',
-          issuedAt: new Date(),
-          ...data,
-          items: {
-            create: {
-              genericName: 'Amoxicilina',
-              doseText: '1 cápsula',
-              frequencyText: 'Cada 8 horas',
-              offFormularyJustification: 'Fuera del CNMB para esta prueba',
-            },
+      await createIssuedPrescription(prisma, {
+        ...seeded,
+        status: 'ACTIVE',
+        issuedAt: new Date(),
+        ...data,
+        items: {
+          create: {
+            genericName: 'Amoxicilina',
+            doseText: '1 cápsula',
+            frequencyText: 'Cada 8 horas',
+            offFormularyJustification: 'Fuera del CNMB para esta prueba',
           },
         },
       });
@@ -933,6 +934,43 @@ describe('los documentos por HTTP', () => {
       await expect(
         prisma.documentRender.count({ where: { prescriptionId } }),
       ).resolves.toBe(1);
+    });
+
+    it('DOC-008 tampoco hay dos originales de una orden ni de un certificado', async () => {
+      const encounter = await prisma.encounter.findFirstOrThrow({
+        select: { id: true, siteId: true, patientId: true },
+      });
+      const order = await prisma.serviceOrder.create({
+        data: {
+          encounterId: encounter.id,
+          siteId: encounter.siteId,
+          orderedById: practitionerId,
+          category: 'LABORATORY',
+        },
+      });
+      const certificate = await prisma.medicalCertificate.create({
+        data: {
+          encounterId: encounter.id,
+          siteId: encounter.siteId,
+          patientId: encounter.patientId,
+          issuedById: practitionerId,
+          type: 'ATTENDANCE',
+          verificationCode: 'ORIG1234ORIG5678',
+        },
+      });
+
+      for (const [kind, subjectId] of [
+        ['SERVICE_ORDER', order.id],
+        ['MEDICAL_CERTIFICATE', certificate.id],
+      ] as const) {
+        // Control positivo: el primero se archiva.
+        await post('/documents/renders', doctorToken, { kind, subjectId }).expect(201); // prettier-ignore
+        const second = await post('/documents/renders', doctorToken, {
+          kind,
+          subjectId,
+        }).expect(409);
+        expect((second.body as Problem).code).toBe('DOCUMENT_ALREADY_EMITTED');
+      }
     });
 
     it('DOC-007 corregir emite otro documento que anula al anterior', async () => {

@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 
 /**
  * Minimum rows needed before anything clinical can exist.
@@ -175,4 +175,29 @@ export function hourSlot(hour: number): { startsAt: Date; endsAt: Date } {
     startsAt: new Date(Date.UTC(2026, 8, 14, hour, 0, 0)),
     endsAt: new Date(Date.UTC(2026, 8, 14, hour + 1, 0, 0)),
   };
+}
+
+/**
+ * PR-020, PR-038. A receta ALREADY ISSUED, with its lines: born a draft with
+ * them and issued afterwards, as the code does it. The lines of an issued
+ * receta never change (`prescription_frozen`), not even to be added at birth.
+ */
+export async function createIssuedPrescription(
+  prisma: PrismaClient,
+  data: Prisma.PrescriptionUncheckedCreateInput,
+) {
+  const {
+    status = 'ACTIVE',
+    issuedAt = new Date(),
+    verificationCode = null,
+    ...draft
+  } = data;
+  const created = await prisma.prescription.create({
+    data: { ...draft, status: 'DRAFT', issuedAt: null, verificationCode: null },
+  });
+  return prisma.prescription.update({
+    where: { id: created.id },
+    data: { status, issuedAt, verificationCode },
+    include: { items: true },
+  });
 }

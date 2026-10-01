@@ -1,9 +1,10 @@
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
 import { useDatabase } from './setup/database';
 import {
   createEncounter,
+  createIssuedPrescription,
   createPatient,
   createPractitioner,
   createSite,
@@ -70,27 +71,29 @@ async function aPrescription(
   scene: Scene,
   issued: boolean,
 ): Promise<{ id: string; itemId: string }> {
-  const prescription = await prisma.prescription.create({
-    data: {
-      encounterId: scene.encounterId,
-      siteId: scene.siteId,
-      prescriberId: scene.practitionerId,
-      status: issued ? 'ACTIVE' : 'DRAFT',
-      issuedAt: issued ? new Date() : null,
-      verificationCode: issued ? nextCode() : null,
-      warningSigns: 'Fiebre mayor de 39 °C',
-      nonPharmacologicalAdvice: 'Reposo relativo',
-      items: {
-        create: {
-          genericName: 'Paracetamol',
-          doseText: '1 tableta',
-          frequencyText: 'cada 8 horas',
-          durationDays: 3,
-          offFormularyJustification: 'Fuera del CNMB para esta prueba',
-        },
+  const create = issued
+    ? (data: Prisma.PrescriptionUncheckedCreateInput) =>
+        createIssuedPrescription(prisma, data)
+    : (data: Prisma.PrescriptionUncheckedCreateInput) =>
+        prisma.prescription.create({ data, include: { items: true } });
+  const prescription = await create({
+    encounterId: scene.encounterId,
+    siteId: scene.siteId,
+    prescriberId: scene.practitionerId,
+    status: issued ? 'ACTIVE' : 'DRAFT',
+    issuedAt: issued ? new Date() : null,
+    verificationCode: issued ? nextCode() : null,
+    warningSigns: 'Fiebre mayor de 39 °C',
+    nonPharmacologicalAdvice: 'Reposo relativo',
+    items: {
+      create: {
+        genericName: 'Paracetamol',
+        doseText: '1 tableta',
+        frequencyText: 'cada 8 horas',
+        durationDays: 3,
+        offFormularyJustification: 'Fuera del CNMB para esta prueba',
       },
     },
-    include: { items: true },
   });
   return { id: prescription.id, itemId: prescription.items[0]!.id };
 }
@@ -179,6 +182,77 @@ describe('PR-020 PR-038 la receta emitida sólo cambia de estado, y no se borra'
     await expect(
       prisma.$executeRaw`DELETE FROM prescription_item WHERE id = ${draft.itemId}::uuid`,
     ).resolves.toBe(1);
+  });
+});
+
+describe('PR-010 PR-038 lo que la segunda revision encontro abierto', () => {
+  it('PR-010 una receta anulada no vuelve a estar vigente; completarla y anularla si', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const { id } = await aPrescription(prisma, scene, true);
+
+    // Control positivo: el estado avanza.
+    await expect(
+      prisma.$executeRaw`UPDATE prescription SET status = 'COMPLETED' WHERE id = ${id}::uuid`,
+    ).resolves.toBe(1);
+    await expect(
+      prisma.$executeRaw`UPDATE prescription SET status = 'CANCELLED' WHERE id = ${id}::uuid`,
+    ).resolves.toBe(1);
+
+    await expect(
+      prisma.$executeRaw`UPDATE prescription SET status = 'ACTIVE' WHERE id = ${id}::uuid`,
+    ).rejects.toThrow(/prescription_frozen/);
+  });
+
+  it('PR-038 una linea no sale de una receta emitida llevandola a un borrador', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const issued = await aPrescription(prisma, scene, true);
+    const draft = await aPrescription(prisma, scene, false);
+
+    await expect(
+      prisma.$executeRaw`UPDATE prescription_item SET prescription_id = ${draft.id}::uuid WHERE id = ${issued.itemId}::uuid`,
+    ).rejects.toThrow(/prescription_frozen/);
+    // Ni al revés: una línea de borrador no entra en la emitida.
+    await expect(
+      prisma.$executeRaw`UPDATE prescription_item SET prescription_id = ${issued.id}::uuid WHERE id = ${draft.itemId}::uuid`,
+    ).rejects.toThrow(/prescription_frozen/);
+  });
+
+  it('PR-038 tocar la receta en la misma transaccion no abre la puerta a añadirle una linea', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const { id } = await aPrescription(prisma, scene, true);
+
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`UPDATE prescription SET status = status WHERE id = ${id}::uuid`;
+        await tx.$executeRaw`
+          INSERT INTO prescription_item (prescription_id, generic_name, dose_text, frequency_text, off_formulary_justification)
+          VALUES (${id}::uuid, 'Morfina', '1 ampolla', 'cada 4 horas', 'Prueba')`;
+      }),
+    ).rejects.toThrow(/prescription_frozen/);
+  });
+
+  it('CER-011 PR-020 ORD-006 TRUNCATE tampoco borra lo emitido', async () => {
+    const prisma = db();
+    // Control positivo: la misma sentencia sobre una tabla sin la guarda pasa.
+    await expect(
+      prisma.$executeRawUnsafe('TRUNCATE TABLE document_counter'),
+    ).resolves.toBeDefined();
+
+    for (const table of [
+      'prescription_item',
+      'prescription',
+      'medical_certificate',
+      'service_order',
+    ]) {
+      await expect(
+        prisma.$executeRawUnsafe(`TRUNCATE TABLE ${table} CASCADE`),
+      ).rejects.toThrow(
+        /_frozen: issued clinical documents are never truncated/,
+      );
+    }
   });
 });
 

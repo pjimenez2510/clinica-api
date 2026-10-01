@@ -39,10 +39,10 @@ UPDATE "medical_certificate" c
           WHERE d.encounter_id = c.encounter_id
             AND c.include_diagnosis
        ), '[]'::jsonb),
-       "employer_name" = p.employer_name,
-       "job_title" = p.job_title,
-       "residence_address_line" = p.residence_address_line,
-       "patient_phone" = p.phone
+       "employer_name" = CASE WHEN c.type = 'MEDICAL_REST' THEN p.employer_name END,
+       "job_title" = CASE WHEN c.type = 'MEDICAL_REST' THEN p.job_title END,
+       "residence_address_line" = CASE WHEN c.type = 'MEDICAL_REST' THEN p.residence_address_line END,
+       "patient_phone" = CASE WHEN c.type = 'MEDICAL_REST' THEN p.phone END
   FROM patient p
  WHERE p.id = c.patient_id;
 
@@ -98,14 +98,16 @@ CREATE TRIGGER "medical_certificate_frozen"
   EXECUTE FUNCTION medical_certificate_is_frozen();
 
 -- ═════════════════════════════════════════════════════════════════════════════
--- 3. PR-020, PR-038. Una receta emitida no cambia salvo de estado, sus líneas
---    tampoco, y no se borra.
+-- 3. PR-010, PR-020, PR-038. Una receta emitida sólo avanza de estado, sus
+--    líneas no cambian, y no se borra.
 -- ═════════════════════════════════════════════════════════════════════════════
 --
--- El estado sí: ACTIVE pasa a COMPLETED o CANCELLED, y eso es lo que la
--- farmacia consulta. Un borrador (sin `issued_at`) se edita libremente. Las
--- columnas del descarte pasan: los CHECK de 20260820130655 ya rechazan
--- descartar una receta emitida, con su propio código, que la API traduce.
+-- El estado avanza: ACTIVE → COMPLETED o CANCELLED, y COMPLETED → CANCELLED.
+-- Nunca hacia atrás: una anulada que volviera a ACTIVE se leería válida en
+-- `/verificar` y en el papel. Un borrador (sin `issued_at`) se edita
+-- libremente. Las columnas del descarte pasan: los CHECK de 20260820130655 ya
+-- rechazan descartar una receta emitida, con su propio código, que la API
+-- traduce.
 
 CREATE OR REPLACE FUNCTION prescription_is_frozen_once_issued()
 RETURNS TRIGGER
@@ -133,6 +135,16 @@ BEGIN
             HINT = 'PR-020, PR-038. Cancel it and issue another one.';
   END IF;
 
+  IF NEW.status IS DISTINCT FROM OLD.status AND NOT (
+       (OLD.status = 'ACTIVE' AND NEW.status IN ('COMPLETED', 'CANCELLED', 'DISCARDED'))
+    OR (OLD.status = 'COMPLETED' AND NEW.status = 'CANCELLED')) THEN
+    -- DISCARDED pasa aquí para que lo rechace su CHECK, con su código.
+    RAISE EXCEPTION
+      'prescription_frozen: an issued receta never goes back to a previous status'
+      USING ERRCODE = 'integrity_constraint_violation',
+            HINT = 'PR-010. A cancelled receta stays cancelled; issue a new one.';
+  END IF;
+
   RETURN NEW;
 END;
 $$;
@@ -143,37 +155,30 @@ CREATE TRIGGER "prescription_frozen"
   FOR EACH ROW
   EXECUTE FUNCTION prescription_is_frozen_once_issued();
 
--- Las líneas de una receta emitida. La INSERCIÓN se admite sólo en la misma
--- transacción que escribió la receta: es como se crea una receta ya emitida de
--- una vez (una importación, una prueba), y fuera de ella sería añadir un
--- medicamento a un papel que la farmacia ya tiene.
+-- Las líneas de una receta emitida: ni se añaden, ni se editan, ni se borran,
+-- ni se llevan a otra receta. Se mira la receta de ANTES y la de DESPUÉS:
+-- mover una línea a un borrador era quitarla de un papel emitido. Una receta
+-- emitida nace borrador con sus líneas y se emite después; así lo hace el
+-- código, y así las crean las pruebas.
 
 CREATE OR REPLACE FUNCTION prescription_item_is_frozen_once_issued()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
-DECLARE
-  parent_id uuid := COALESCE(NEW.prescription_id, OLD.prescription_id);
-  issued boolean;
-  written_now boolean;
 BEGIN
-  SELECT p.issued_at IS NOT NULL,
-         p.xmin::text::bigint = pg_current_xact_id()::text::bigint % 4294967296
-    INTO issued, written_now
-    FROM prescription p
-   WHERE p.id = parent_id;
-
-  IF NOT COALESCE(issued, false) THEN
-    RETURN COALESCE(NEW, OLD);
+  IF EXISTS (
+    SELECT 1 FROM prescription p
+     WHERE p.issued_at IS NOT NULL
+       AND p.id IN (
+         CASE WHEN TG_OP <> 'INSERT' THEN OLD.prescription_id END,
+         CASE WHEN TG_OP <> 'DELETE' THEN NEW.prescription_id END)
+  ) THEN
+    RAISE EXCEPTION
+      'prescription_frozen: the lines of an issued receta never change'
+      USING ERRCODE = 'integrity_constraint_violation',
+            HINT = 'PR-020, PR-038. Cancel the receta and issue another one.';
   END IF;
-  IF TG_OP = 'INSERT' AND written_now THEN
-    RETURN NEW;
-  END IF;
-
-  RAISE EXCEPTION
-    'prescription_frozen: the lines of an issued receta never change'
-    USING ERRCODE = 'integrity_constraint_violation',
-          HINT = 'PR-020, PR-038. Cancel the receta and issue another one.';
+  RETURN COALESCE(NEW, OLD);
 END;
 $$;
 
@@ -205,6 +210,44 @@ CREATE TRIGGER "service_order_never_deleted"
   BEFORE DELETE ON "service_order"
   FOR EACH ROW
   EXECUTE FUNCTION service_order_is_never_deleted();
+
+-- ═════════════════════════════════════════════════════════════════════════════
+-- 4b. Y nada de lo anterior se salta con TRUNCATE, que no dispara los de fila.
+-- ═════════════════════════════════════════════════════════════════════════════
+--
+-- Como `access_audit` o `clinical_note`. La limpieza de las pruebas trabaja en
+-- `session_replication_role = replica`, que no los dispara.
+
+CREATE OR REPLACE FUNCTION clinical_document_is_never_truncated()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RAISE EXCEPTION
+    '%_frozen: issued clinical documents are never truncated', TG_TABLE_NAME
+    USING ERRCODE = 'integrity_constraint_violation';
+END;
+$$;
+
+DROP TRIGGER IF EXISTS "medical_certificate_never_truncated" ON "medical_certificate";
+CREATE TRIGGER "medical_certificate_never_truncated"
+  BEFORE TRUNCATE ON "medical_certificate"
+  FOR EACH STATEMENT EXECUTE FUNCTION clinical_document_is_never_truncated();
+
+DROP TRIGGER IF EXISTS "prescription_never_truncated" ON "prescription";
+CREATE TRIGGER "prescription_never_truncated"
+  BEFORE TRUNCATE ON "prescription"
+  FOR EACH STATEMENT EXECUTE FUNCTION clinical_document_is_never_truncated();
+
+DROP TRIGGER IF EXISTS "prescription_item_never_truncated" ON "prescription_item";
+CREATE TRIGGER "prescription_item_never_truncated"
+  BEFORE TRUNCATE ON "prescription_item"
+  FOR EACH STATEMENT EXECUTE FUNCTION clinical_document_is_never_truncated();
+
+DROP TRIGGER IF EXISTS "service_order_never_truncated" ON "service_order";
+CREATE TRIGGER "service_order_never_truncated"
+  BEFORE TRUNCATE ON "service_order"
+  FOR EACH STATEMENT EXECUTE FUNCTION clinical_document_is_never_truncated();
 
 -- ═════════════════════════════════════════════════════════════════════════════
 -- 5. DOC-008. Un sujeto tiene UN documento original; los demás lo corrigen.

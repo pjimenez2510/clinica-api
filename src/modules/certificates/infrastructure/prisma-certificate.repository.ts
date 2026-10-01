@@ -196,10 +196,16 @@ export class PrismaCertificateRepository implements CertificateRepository {
                 display: diagnosis.cie10Display,
               }))
             : [],
-          employerName: encounter.patient.employerName,
-          jobTitle: encounter.patient.jobTitle,
-          residenceAddressLine: encounter.patient.residenceAddressLine,
-          patientPhone: encounter.patient.phone,
+          // Only on a rest, which is what prints them (CER-038): an attendance
+          // certificate keeps none of the patient's work data, for ever.
+          ...(plan.type === 'MEDICAL_REST'
+            ? {
+                employerName: encounter.patient.employerName,
+                jobTitle: encounter.patient.jobTitle,
+                residenceAddressLine: encounter.patient.residenceAddressLine,
+                patientPhone: encounter.patient.phone,
+              }
+            : {}),
         },
         select: CERTIFICATE_SELECT,
       });

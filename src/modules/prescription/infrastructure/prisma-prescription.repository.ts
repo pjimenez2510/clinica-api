@@ -412,9 +412,12 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
 
       /**
        * PR-070 AGAIN, AT THE ISSUE: «no generar, imprimir NI NUMERAR». A
-       * draft composed before the mark existed —or before a CNMB republication
-       * marked its medicine (D-084)— would otherwise take a number of the ACESS
-       * series here.
+       * draft composed before its concept carried the mark would otherwise
+       * take a number of the ACESS series here.
+       *
+       * ⚠️ IT READS THE LINE'S OWN CONCEPT. A CNMB republication that creates
+       * a NEW version of the concept (D-084) is not seen through an old draft;
+       * when the real import exists, this has to look up the code in force.
        */
       const conceptIds = view.items
         .map((item) => item.conceptId)
