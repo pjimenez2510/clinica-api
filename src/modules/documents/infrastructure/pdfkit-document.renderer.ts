@@ -588,8 +588,11 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
     inline: boolean,
   ): number {
     if (inline) {
+      // Measured in bold, which is wider: the label is bold, and measured in
+      // the regular face a «label: value» that wraps came out one line short —
+      // the next entry was painted over its second line.
       return doc
-        .font(SANS)
+        .font(SANS_BOLD)
         .fontSize(SIZE.body)
         .heightOfString(`${entry.label}: ${entry.value}`, { width, lineGap: LINE_GAP }); // prettier-ignore
     }
@@ -713,6 +716,9 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
           );
           ensure(rowHeight + mm(1));
           const rowTop = cursor.y;
+          // Where the text actually ended: a measure is an estimate, and the
+          // next row starts under the painted one, never over it.
+          let rowBottom = rowTop + rowHeight;
           for (const { entry, column, span } of row) {
             const x = left + column * columnWidth;
             const cellWidth = span * columnWidth - mm(3);
@@ -730,6 +736,7 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
                 .font(entry.alert === true ? SANS_SEMIBOLD : SANS)
                 .fillColor(colour)
                 .text(entry.value);
+              rowBottom = Math.max(rowBottom, doc.y);
               continue;
             }
             doc
@@ -745,8 +752,9 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
                 width: cellWidth,
                 lineGap: LINE_GAP,
               });
+            rowBottom = Math.max(rowBottom, doc.y);
           }
-          cursor.y = rowTop + rowHeight + gap;
+          cursor.y = rowBottom + gap;
         }
         return;
       }

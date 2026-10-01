@@ -948,3 +948,71 @@ describe('DOC-103 DOC-104 la cabecera y los títulos como la plantilla', () => {
     ).toBeGreaterThanOrEqual(2);
   });
 });
+
+describe('DOC-106 los campos «Etiqueta: valor» no se pisan', () => {
+  it('DOC-106 una dirección que se parte en dos líneas empuja a la siguiente, en un recuadro estrecho', async () => {
+    // Long enough that the bold label plus the value wrap within half a page.
+    const matriz = 'Av. Amazonas y Naciones Unidas, Quito';
+    const pdf = await renderer.render(
+      {
+        ...layout,
+        tearOff: null,
+        blocks: [
+          {
+            kind: 'boxes',
+            left: [
+              {
+                kind: 'box',
+                rounded: true,
+                blocks: [
+                  {
+                    kind: 'fields',
+                    columns: 1,
+                    inline: true,
+                    entries: [
+                      { label: 'DIRECCIÓN MATRIZ', value: matriz },
+                      { label: 'DIRECCIÓN ESTABLECIMIENTO', value: 'Av. de los Granados' }, // prettier-ignore
+                    ],
+                  },
+                ],
+              },
+            ],
+            right: [],
+          },
+        ],
+      },
+      images,
+      metadata,
+    );
+    const proxy = await getDocumentProxy(new Uint8Array(pdf));
+    const page = await proxy.getPage(1);
+    const items = (await page.getTextContent()).items.flatMap((item) =>
+      'str' in item && item.str.trim() !== ''
+        ? [{ text: item.str, y: item.transform[5] as number }]
+        : [],
+    );
+    const lineOf = (needle: string): number[] =>
+      items.filter((item) => item.text.includes(needle)).map((item) => item.y);
+
+    // Control: the first entry did wrap, so there is something to overlap.
+    const first = lineOf('DIRECCIÓN MATRIZ');
+    const firstLines = new Set(
+      items
+        .filter(
+          (item) => (first[0] ?? 0) - item.y < 30 && (first[0] ?? 0) >= item.y,
+        )
+        .filter(
+          (item) =>
+            matriz.includes(item.text.trim()) ||
+            item.text.includes('DIRECCIÓN MATRIZ'),
+        )
+        .map((item) => Math.round(item.y)),
+    );
+    expect(firstLines.size).toBeGreaterThan(1);
+
+    // PDF y grows upwards: the second entry starts below the first one's last line.
+    const lowestOfFirst = Math.min(...firstLines);
+    const second = Math.max(...lineOf('DIRECCIÓN ESTABLECIMIENTO'));
+    expect(lowestOfFirst - second).toBeGreaterThan(8);
+  });
+});
