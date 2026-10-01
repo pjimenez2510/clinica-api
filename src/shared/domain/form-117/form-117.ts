@@ -78,6 +78,11 @@ export interface Form117Source {
     sex: PatientSex;
     /** The archive number of the establishment. */
     mrn: string;
+    /** CER-038. Read from the chart (PA-061); printed only on a rest. */
+    employerName: string | null;
+    jobTitle: string | null;
+    residenceAddressLine: string | null;
+    phone: string | null;
     /** The patient's official identity documents, in any order. */
     identifiers: readonly { type: IdentifierType; value: string }[];
   };
@@ -118,6 +123,13 @@ export interface Form117 {
     revokedOn: ClinicalDate;
     reason: string;
   } | null;
+  /**
+   * CER-038. The patient's employer, job title, address and phone, on a rest;
+   * «NA» on attendance. A datum the chart lost after the issue reads «NA».
+   */
+  work:
+    | { employer: string; jobTitle: string; address: string; phone: string }
+    | NotApplicable;
   /** CER-033. «CONFIDENCIAL» exactly when the diagnosis is printed. */
   confidential: boolean;
   /** CER-036. The city of issue: the canton of the site's parish, or «NA». */
@@ -237,6 +249,15 @@ export function composeForm117(source: Form117Source): Form117 {
             revokedOn: clinicalDateOf(certificate.revokedAt),
             reason: certificate.revocationReason ?? '',
           },
+    work:
+      certificate.type === 'MEDICAL_REST'
+        ? {
+            employer: filledOrNa(patient.employerName),
+            jobTitle: filledOrNa(patient.jobTitle),
+            address: filledOrNa(patient.residenceAddressLine),
+            phone: filledOrNa(patient.phone),
+          }
+        : NA,
     confidential: diagnoses !== NA,
     placeOfIssue: source.site.city ?? NA,
     letterhead: {
@@ -384,4 +405,9 @@ function restOf(
     to: end,
     periodInWords: `desde el ${start.inWords} hasta el ${end.inWords}, ambas fechas incluidas`,
   };
+}
+
+/** CER-038. A blank box on an official form is one somebody fills in later. */
+function filledOrNa(value: string | null): string {
+  return value === null || value.trim() === '' ? NA : value;
 }

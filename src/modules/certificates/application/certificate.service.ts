@@ -14,6 +14,7 @@ import {
 } from '../../../shared/domain/clinic-time';
 import {
   admitsNewCertificates,
+  assertPatientWorkComplete,
   assertIssuableType,
   backdatingReasonOf,
   iessValidationOf,
@@ -159,6 +160,9 @@ export class CertificateService {
         if (snapshot.cityOfIssue === null) {
           throw new CertificateEstablishmentIncompleteError();
         }
+        // CER-038. A rest prints the patient's work and contact, read from
+        // the chart in this transaction; the chart is corrected, not this.
+        if (details !== null) assertPatientWorkComplete(snapshot.patientWork);
         // CER-008. The diagnosis is read from the attention, never typed; a
         // rest always carries it (CER-007).
         const includeDiagnosis = details !== null || request.includeDiagnosis;

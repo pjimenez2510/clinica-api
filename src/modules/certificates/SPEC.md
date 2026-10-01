@@ -376,9 +376,10 @@ PR-030).
 
   > **Se piden al emitir y se guardan en la ficha** (D-075): la pantalla
   > corrige la ficha por la ruta de corrección de `patients` —con su rastro— y
-  > después emite. Este módulo sólo lee. ⚠️ **Falta esquema:**
-  > `patient.employer_name` y `patient.job_title`; domicilio y teléfono ya
-  > existen.
+  > después emite. Este módulo sólo lee. **Esquema:**
+  > `patient.employer_name` y `patient.job_title` (PA-061,
+  > `20261001060754_patient_employer_and_job_title`); domicilio y teléfono ya
+  > existían. Se leen dentro de la transacción de la emisión.
 
 ---
 

@@ -117,6 +117,15 @@ export class PrismaCertificateRepository implements CertificateRepository {
           status: true,
           startedAt: true,
           _count: { select: { diagnoses: true } },
+          // CER-038. The chart of the attention, read where the row is written.
+          patient: {
+            select: {
+              employerName: true,
+              jobTitle: true,
+              residenceAddressLine: true,
+              phone: true,
+            },
+          },
           // CER-036. The city is the CANTON: the parent of the site's DPA
           // parish, as PR-021 reads it.
           site: {
@@ -133,6 +142,7 @@ export class PrismaCertificateRepository implements CertificateRepository {
         diagnosisCount: encounter._count.diagnoses,
         encounterStartedAt: encounter.startedAt,
         cityOfIssue: encounter.site.parish?.parent?.display ?? null,
+        patientWork: encounter.patient,
       });
 
       return tx.medicalCertificate.create({
@@ -209,6 +219,11 @@ export class PrismaCertificateRepository implements CertificateRepository {
             secondGivenName: true,
             sex: true,
             mrn: true,
+            // CER-038. Printed on a rest (PA-061).
+            employerName: true,
+            jobTitle: true,
+            residenceAddressLine: true,
+            phone: true,
             // CER-020. The official documents still in force on this chart;
             // the domain picks the one the instructivo names.
             identifiers: {
@@ -270,6 +285,10 @@ export class PrismaCertificateRepository implements CertificateRepository {
         secondGivenName: row.patient.secondGivenName,
         sex: row.patient.sex,
         mrn: row.patient.mrn,
+        employerName: row.patient.employerName,
+        jobTitle: row.patient.jobTitle,
+        residenceAddressLine: row.patient.residenceAddressLine,
+        phone: row.patient.phone,
         identifiers: row.patient.identifiers,
       },
       encounter: {

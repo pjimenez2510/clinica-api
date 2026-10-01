@@ -648,6 +648,10 @@ describe('DOC-075 el certificado sobre el formulario 117 y la plantilla aprobada
         secondGivenName: 'José',
         sex: 'FEMALE',
         mrn: 'HC000042',
+        employerName: 'Florícola del Valle',
+        jobTitle: 'Supervisora de cultivo',
+        residenceAddressLine: 'Calle Sucre 4-12',
+        phone: '0991234567',
         identifiers: [{ type: 'CEDULA', value: '1710034065' }],
       },
       encounter: {
@@ -689,6 +693,49 @@ describe('DOC-075 el certificado sobre el formulario 117 y la plantilla aprobada
       'D. Diagnóstico',
       'E. Datos del profesional responsable',
     ]);
+  });
+
+  it('DOC-075 CER-038 el reposo imprime los datos laborales del paciente bajo el bloque B', () => {
+    const layout = composeLayout(certificate(), context, template);
+    const { blocks } = layout;
+    const text = wholeText(layout);
+
+    expect(text).toContain('Datos laborales del paciente');
+    for (const value of [
+      'Florícola del Valle',
+      'Supervisora de cultivo',
+      'Calle Sucre 4-12',
+      '0991234567',
+    ]) {
+      expect(text).toContain(value);
+    }
+
+    // Bajo el bloque B y antes del C.
+    const order = blocks.map((block) =>
+      block.kind === 'heading'
+        ? block.text
+        : block.kind === 'paragraph'
+          ? block.text
+          : '',
+    );
+    const work = order.indexOf('Datos laborales del paciente');
+    expect(work).toBeGreaterThan(order.indexOf('B. Certifico que'));
+    expect(work).toBeLessThan(order.indexOf('C. Se recomienda'));
+  });
+
+  it('DOC-075 CER-038 el certificado de asistencia no imprime datos laborales', () => {
+    const attendance = form({
+      type: 'ATTENDANCE',
+      restFrom: null,
+      restTo: null,
+      contingencyType: null,
+      includeDiagnosis: false,
+    });
+    const text = wholeText(
+      composeLayout(certificate(attendance), context, template),
+    );
+    expect(text).not.toContain('Datos laborales del paciente');
+    expect(text).not.toContain('Florícola del Valle');
   });
 
   it('DOC-075 no imprime un enum en inglés ni un encabezado vacío', () => {

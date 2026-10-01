@@ -83,6 +83,7 @@ interface Form117Body {
   maternity: unknown;
   placeOfIssue: string;
   letterhead: Record<string, unknown>;
+  work: Record<string, string> | 'NA';
   diagnoses: { code: string; display: string }[] | 'NA';
   professional: Record<string, unknown>;
 }
@@ -153,6 +154,16 @@ describe('el certificado medico por HTTP', () => {
         birthDate: new Date(`${addDays(today, -125)}T00:00:00Z`),
       })
     ).id;
+    // CER-038, PA-061. Lo que el reposo lee de la ficha.
+    await prisma.patient.update({
+      where: { id: patientId },
+      data: {
+        employerName: 'Florícola del Valle',
+        jobTitle: 'Supervisora de cultivo',
+        residenceAddressLine: 'Calle Sucre 4-12',
+        phone: '0991234567',
+      },
+    });
 
     doctor = await signIn('MEDICO', 'medico@clinica.ec', '1710034065');
     nurseToken = (
@@ -647,6 +658,13 @@ describe('el certificado medico por HTTP', () => {
     expect(form.contingency).toBe('Enfermedad general');
     expect(form.maternity).toBe('NA');
     expect(form.placeOfIssue).toBe('Quito');
+    // CER-038. Los datos laborales, leídos de la ficha.
+    expect(form.work).toEqual({
+      employer: 'Florícola del Valle',
+      jobTitle: 'Supervisora de cultivo',
+      address: 'Calle Sucre 4-12',
+      phone: '0991234567',
+    });
     expect(form.letterhead).toEqual({
       address: 'Av. Amazonas N24-10',
       phone: '022345678',
@@ -830,6 +848,36 @@ describe('el certificado medico por HTTP', () => {
       birth: { iso: today },
       discharge: { iso: addDays(today, 2) },
     });
+  });
+
+  it('CER-038 un reposo con la ficha sin empresa ni telefono se rechaza nombrando cada campo, y se emite al corregirla', async () => {
+    await aDiagnosis(encounterId);
+    await prisma.patient.update({
+      where: { id: patientId },
+      data: { employerName: null, phone: null },
+    });
+
+    expect(await refused(restOf(3))).toEqual({
+      code: 'CERTIFICATE_PATIENT_DATA_REQUIRED',
+      fields: ['employerName', 'phone'],
+    });
+    expect(await prisma.medicalCertificate.count()).toBe(0);
+
+    // El certificado de asistencia no los necesita.
+    await issue(attendance());
+
+    // Control positivo: corregida la ficha, el mismo reposo se emite.
+    await prisma.patient.update({
+      where: { id: patientId },
+      data: { employerName: 'Florícola del Valle', phone: '0991234567' },
+    });
+    const issued = await issue(restOf(3));
+    const form = (
+      await get(`/certificates/${issued.certificate.id}`, doctor.token).expect(
+        200,
+      )
+    ).body as Form117Body;
+    expect(form.work).toMatchObject({ employer: 'Florícola del Valle' });
   });
 
   it('CER-036 una sede sin parroquia no emite certificados', async () => {

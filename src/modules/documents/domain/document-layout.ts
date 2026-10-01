@@ -563,6 +563,25 @@ export function composeCertificateLayout(
     },
   );
 
+  // CER-038. The IESS asks for where the patient works on a rest certificate;
+  // the 117 has no box for it, so it goes right under block B, and only on a
+  // rest. On attendance an employer reads the paper and has no business here.
+  if (form.work !== NA) {
+    blocks.push(
+      { kind: 'paragraph', text: 'Datos laborales del paciente', emphasis: true }, // prettier-ignore
+      {
+        kind: 'fields',
+        columns: 2,
+        entries: [
+          { label: 'Empresa', value: form.work.employer },
+          { label: 'Puesto de trabajo', value: form.work.jobTitle },
+          { label: 'Domicilio', value: form.work.address },
+          { label: 'Teléfono', value: form.work.phone },
+        ],
+      },
+    );
+  }
+
   // ── C. Se recomienda.
   blocks.push(
     { kind: 'heading', text: 'C. Se recomienda' },

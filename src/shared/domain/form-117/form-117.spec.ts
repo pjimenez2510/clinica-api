@@ -63,6 +63,10 @@ const aSource = (
     secondGivenName: 'José',
     sex: 'FEMALE',
     mrn: 'HC000042',
+    employerName: 'Florícola del Valle',
+    jobTitle: 'Supervisora de cultivo',
+    residenceAddressLine: 'Calle Sucre 4-12',
+    phone: '0991234567',
     // Cédula sintética con dígito verificador calculado.
     identifiers: [
       { type: 'PASSPORT', value: 'PA1234567' },
@@ -273,6 +277,29 @@ describe('CER-025 y CER-026 bloque C: el reposo', () => {
   it('CER-026 un dia de reposo, con inicio y fin iguales, es un dia: ambos extremos cuentan', () => {
     const rest = composeForm117(aRest(today, today)).rest;
     expect([rest.days, rest.daysInWords]).toEqual(['1', 'uno']);
+  });
+});
+
+describe('CER-038 los datos laborales del paciente en el reposo', () => {
+  it('CER-038 el reposo sirve empresa, puesto, domicilio y telefono leidos de la ficha', () => {
+    expect(composeForm117(aRest(today, today)).work).toEqual({
+      employer: 'Florícola del Valle',
+      jobTitle: 'Supervisora de cultivo',
+      address: 'Calle Sucre 4-12',
+      phone: '0991234567',
+    });
+  });
+
+  it('CER-038 el certificado de asistencia no los lleva: «NA»', () => {
+    expect(composeForm117(aSource()).work).toBe(NA);
+  });
+
+  it('CER-038 un dato que la ficha perdio despues de emitir se sirve «NA», no vacio', () => {
+    const rest = aRest(today, today);
+    expect(
+      composeForm117({ ...rest, patient: { ...rest.patient, phone: null } })
+        .work,
+    ).toMatchObject({ phone: NA });
   });
 });
 

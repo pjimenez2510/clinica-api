@@ -100,6 +100,10 @@ const aSource = (view: CertificateView): Form117Source => ({
     secondGivenName: null,
     sex: 'FEMALE',
     mrn: 'HC000042',
+    employerName: 'Florícola del Valle',
+    jobTitle: 'Supervisora de cultivo',
+    residenceAddressLine: 'Calle Sucre 4-12',
+    phone: '0991234567',
     identifiers: [],
   },
   encounter: {
@@ -125,6 +129,12 @@ const aSnapshot = (overrides: Partial<IssueSnapshot> = {}): IssueSnapshot => ({
   diagnosisCount: 1,
   encounterStartedAt: NOW,
   cityOfIssue: 'Quito',
+  patientWork: {
+    employerName: 'Florícola del Valle',
+    jobTitle: 'Supervisora de cultivo',
+    residenceAddressLine: 'Calle Sucre 4-12',
+    phone: '0991234567',
+  },
   ...overrides,
 });
 
@@ -524,6 +534,30 @@ describe('el servicio de certificados', () => {
       code: 'CERTIFICATE_ESTABLISHMENT_INCOMPLETE',
     });
     expect(repository.issued).toHaveLength(0);
+  });
+
+  it('CER-038 un reposo sin empresa, puesto, domicilio o telefono en la ficha se rechaza nombrando cada campo', async () => {
+    repository.snapshot = aSnapshot({
+      patientWork: {
+        employerName: null,
+        jobTitle: '  ',
+        residenceAddressLine: 'Calle Sucre 4-12',
+        phone: null,
+      },
+    });
+
+    await expect(service.issue(rest(3), requester)).rejects.toMatchObject({
+      code: 'CERTIFICATE_PATIENT_DATA_REQUIRED',
+      fieldErrors: [
+        expect.objectContaining({ field: 'employerName' }),
+        expect.objectContaining({ field: 'jobTitle' }),
+        expect.objectContaining({ field: 'phone' }),
+      ],
+    });
+    expect(repository.issued).toHaveLength(0);
+
+    // Control positivo: el certificado de asistencia no los necesita.
+    await expect(service.issue(attendance(), requester)).resolves.toBeDefined();
   });
 
   it('CER-014 lo que se registra en el log es el acto, sin datos del paciente', async () => {

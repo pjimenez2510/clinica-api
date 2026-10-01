@@ -17,6 +17,7 @@ import type {
   ContingencyType,
   EncounterStatus,
   MaternityDates,
+  PatientWork,
   IssuableCertificateType,
   RestPeriod,
 } from './certificate';
@@ -60,6 +61,8 @@ export interface IssueSnapshot {
   encounterStartedAt: Date;
   /** CER-036. The canton of the site's parish; `null` without a parish. */
   cityOfIssue: string | null;
+  /** CER-038. Read from the chart of the attention, inside the issue. */
+  patientWork: PatientWork;
 }
 
 /** CER-001. What the issue writes once the policy has accepted it. */

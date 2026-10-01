@@ -6,9 +6,11 @@ import {
 
 import {
   CertificateBackdatingReasonRequiredError,
+  CertificatePatientDataRequiredError,
   CertificateRestPeriodInvalidError,
   CertificateRestTooLongError,
   CertificateTypeNotSupportedError,
+  type PatientWorkField,
   type RestPeriodField,
   type RestPeriodProblem,
 } from './certificate.errors';
@@ -94,6 +96,34 @@ export interface RestDetails {
   contingencyType: ContingencyType;
   /** CER-035. Present exactly with `MATERNITY`. */
   maternity: MaternityDates | null;
+}
+
+/** CER-038. What the chart says about the patient's work and contact. */
+export interface PatientWork {
+  employerName: string | null;
+  jobTitle: string | null;
+  residenceAddressLine: string | null;
+  phone: string | null;
+}
+
+/**
+ * CER-038. A rest certificate needs the four, and a blank one is missing:
+ * refused naming every field at once.
+ */
+export function assertPatientWorkComplete(work: PatientWork): void {
+  const fields: PatientWorkField[] = [
+    'employerName',
+    'jobTitle',
+    'residenceAddressLine',
+    'phone',
+  ];
+  const missing = fields.filter((field) => {
+    const value = work[field];
+    return value === null || value.trim() === '';
+  });
+  if (missing.length > 0) {
+    throw new CertificatePatientDataRequiredError(missing);
+  }
 }
 
 /** CER-031. The IESS validates rests of one to thirty days. */

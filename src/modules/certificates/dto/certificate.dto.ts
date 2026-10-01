@@ -196,6 +196,19 @@ export const form117Schema = z.object({
       reason: z.string(),
     })
     .nullable(),
+  /**
+   * CER-038. The patient's employer, job title, address and phone, read from
+   * the chart, on a rest; «NA» on attendance.
+   */
+  work: z.union([
+    z.object({
+      employer: z.string(),
+      jobTitle: z.string(),
+      address: z.string(),
+      phone: z.string(),
+    }),
+    NA,
+  ]),
   /** CER-033. «CONFIDENCIAL» exactly when the diagnosis is printed. */
   confidential: z.boolean(),
   /** CER-036. The canton of the site's parish, or «NA». */

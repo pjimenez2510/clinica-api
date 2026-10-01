@@ -556,6 +556,11 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
             secondGivenName: true,
             sex: true,
             mrn: true,
+            // CER-038. Printed on a rest (PA-061).
+            employerName: true,
+            jobTitle: true,
+            residenceAddressLine: true,
+            phone: true,
             identifiers: {
               where: { use: 'OFFICIAL', patientMerged: false },
               select: { type: true, value: true },
@@ -645,6 +650,10 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
             secondGivenName: row.patient.secondGivenName,
             sex: row.patient.sex,
             mrn: row.patient.mrn,
+            employerName: row.patient.employerName,
+            jobTitle: row.patient.jobTitle,
+            residenceAddressLine: row.patient.residenceAddressLine,
+            phone: row.patient.phone,
             identifiers: row.patient.identifiers,
           },
           encounter: {
