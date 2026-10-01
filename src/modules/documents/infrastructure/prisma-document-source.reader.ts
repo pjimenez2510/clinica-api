@@ -1,3 +1,5 @@
+import { composeForm117 } from '../../../shared/domain/form-117/form-117';
+import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
@@ -437,6 +439,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         id: true,
         siteId: true,
         number: true,
+        verificationCode: true,
         requestedAt: true,
         category: true,
         priority: true,
@@ -450,10 +453,27 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
           },
         },
         orderedBy: { select: PRACTITIONER_SELECT },
-        items: { select: { testDisplay: true, status: true } },
+        items: {
+          orderBy: { createdAt: 'asc' },
+          select: { testCode: true, testDisplay: true, status: true },
+        },
       },
     });
     if (row === null) return null;
+
+    /**
+     * DOC-072. The specimen and the patient's preparation of each exam, by its
+     * FROZEN code: an exam retired since is still resolved, and one the
+     * catalogue no longer has prints a dash rather than an invented specimen.
+     */
+    const exams = new Map(
+      (
+        await this.prisma.examDefinition.findMany({
+          where: { code: { in: row.items.map((item) => item.testCode) } },
+          select: { code: true, specimenType: true, patientPreparation: true },
+        })
+      ).map((exam) => [exam.code, exam]),
+    );
 
     return {
       kind: 'SERVICE_ORDER',
@@ -461,6 +481,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         subjectId: row.id,
         siteId: row.siteId,
         number: row.number,
+        verificationCode: row.verificationCode,
         requestedAt: row.requestedAt,
         category: row.category,
         priority: row.priority,
@@ -476,7 +497,10 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         })),
         orderedBy: toPractitioner(row.orderedBy),
         items: row.items.map((item) => ({
+          code: item.testCode,
           display: item.testDisplay,
+          specimen: exams.get(item.testCode)?.specimenType ?? null,
+          preparation: exams.get(item.testCode)?.patientPreparation ?? null,
           status: item.status,
         })),
       },
@@ -485,7 +509,11 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
 
   // ── medical certificate ──────────────────────────────────────────────────
 
-  /** The certificate, scoped by the attention's site. */
+  /**
+   * DOC-075, CER-020 to CER-037. The certificate as form 117, scoped by its
+   * site. The content is `composeForm117`'s —the same function the
+   * certificate's own screen reads— and this adapter only gathers its source.
+   */
   private async findCertificate(
     subjectId: string,
     sites: SiteScopeFilter,
@@ -493,52 +521,152 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
     const row = await this.prisma.medicalCertificate.findFirst({
       where: {
         id: subjectId,
-        encounter: sites === 'all' ? {} : { siteId: { in: [...sites] } },
+        ...(sites === 'all' ? {} : { siteId: { in: [...sites] } }),
       },
       select: {
         id: true,
+        siteId: true,
         type: true,
+        number: true,
+        verificationCode: true,
         issuedAt: true,
         restFrom: true,
         restTo: true,
         includeDiagnosis: true,
-        verificationCode: true,
+        contingencyType: true,
+        maternityAdmissionOn: true,
+        birthOn: true,
+        maternityDischargeOn: true,
         revokedAt: true,
-        patient: { select: PATIENT_SELECT },
-        encounter: {
+        revocationReason: true,
+        site: {
           select: {
-            siteId: true,
-            ageYears: true,
-            ageMonths: true,
-            diagnoses: { select: DIAGNOSIS_SELECT, orderBy: { rank: 'asc' } },
+            name: true,
+            mspUnicode: true,
+            addressLine: true,
+            phone: true,
+            parish: { select: { parent: { select: { display: true } } } },
           },
         },
-        issuedBy: { select: PRACTITIONER_SELECT },
+        patient: {
+          select: {
+            familyName: true,
+            secondFamilyName: true,
+            givenName: true,
+            secondGivenName: true,
+            sex: true,
+            mrn: true,
+            identifiers: {
+              where: { use: 'OFFICIAL', patientMerged: false },
+              select: { type: true, value: true },
+            },
+          },
+        },
+        encounter: {
+          select: {
+            startedAt: true,
+            endedAt: true,
+            ageYears: true,
+            ageMonths: true,
+            ageDays: true,
+            diagnoses: {
+              orderBy: [{ rank: 'asc' }, { recordedAt: 'asc' }],
+              select: { cie10Code: true, cie10Display: true },
+            },
+          },
+        },
+        issuedBy: {
+          select: {
+            ...PRACTITIONER_SELECT,
+            sealImageId: true,
+            user: {
+              select: {
+                firstName: true,
+                lastName: true,
+                acessRegistration: true,
+                cedula: true,
+              },
+            },
+            specialties: {
+              where: { isPrimary: true },
+              select: { specialty: { select: { name: true } } },
+              take: 1,
+            },
+          },
+        },
       },
     });
     if (row === null) return null;
+
+    const dateOf = (value: Date): ClinicalDate =>
+      value.toISOString().slice(0, 10) as ClinicalDate;
+    const maternity =
+      row.maternityAdmissionOn === null ||
+      row.birthOn === null ||
+      row.maternityDischargeOn === null
+        ? null
+        : {
+            admissionOn: dateOf(row.maternityAdmissionOn),
+            birthOn: dateOf(row.birthOn),
+            dischargeOn: dateOf(row.maternityDischargeOn),
+          };
 
     return {
       kind: 'MEDICAL_CERTIFICATE',
       data: {
         subjectId: row.id,
-        siteId: row.encounter.siteId,
-        type: row.type,
-        issuedAt: row.issuedAt,
-        restFrom: row.restFrom,
-        restTo: row.restTo,
-        includeDiagnosis: row.includeDiagnosis,
-        diagnoses: row.encounter.diagnoses.map((diagnosis) => ({
-          code: diagnosis.cie10Code,
-          display: diagnosis.cie10Display,
-        })),
-        verificationCode: row.verificationCode,
-        revokedAt: row.revokedAt,
-        patient: toPatient(
-          row.patient,
-          row.encounter.ageYears,
-          row.encounter.ageMonths,
-        ),
+        siteId: row.siteId,
+        form: composeForm117({
+          certificate: {
+            id: row.id,
+            number: row.number,
+            verificationCode: row.verificationCode,
+            type: row.type,
+            issuedAt: row.issuedAt,
+            restFrom: row.restFrom === null ? null : dateOf(row.restFrom),
+            restTo: row.restTo === null ? null : dateOf(row.restTo),
+            includeDiagnosis: row.includeDiagnosis,
+            contingencyType: row.contingencyType,
+            maternity,
+            revokedAt: row.revokedAt,
+            revocationReason: row.revocationReason,
+          },
+          site: {
+            name: row.site.name,
+            mspUnicode: row.site.mspUnicode,
+            city: row.site.parish?.parent?.display ?? null,
+            address: row.site.addressLine,
+            phone: row.site.phone,
+          },
+          patient: {
+            familyName: row.patient.familyName,
+            secondFamilyName: row.patient.secondFamilyName,
+            givenName: row.patient.givenName,
+            secondGivenName: row.patient.secondGivenName,
+            sex: row.patient.sex,
+            mrn: row.patient.mrn,
+            identifiers: row.patient.identifiers,
+          },
+          encounter: {
+            startedAt: row.encounter.startedAt,
+            endedAt: row.encounter.endedAt,
+            ageYears: row.encounter.ageYears,
+            ageMonths: row.encounter.ageMonths,
+            ageDays: row.encounter.ageDays,
+          },
+          diagnoses: row.encounter.diagnoses.map((diagnosis) => ({
+            code: diagnosis.cie10Code,
+            display: diagnosis.cie10Display,
+          })),
+          practitioner: {
+            givenNames: row.issuedBy.user.firstName,
+            familyNames: row.issuedBy.user.lastName,
+            cedula: row.issuedBy.user.cedula,
+            primarySpecialty:
+              row.issuedBy.specialties[0]?.specialty.name ?? null,
+            hasSeal: row.issuedBy.sealImageId !== null,
+          },
+        }),
         issuedBy: toPractitioner(row.issuedBy),
       },
     };

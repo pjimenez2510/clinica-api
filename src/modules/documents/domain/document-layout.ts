@@ -1,3 +1,8 @@
+import {
+  NA,
+  type NotApplicable,
+} from '../../../shared/domain/form-117/form-117';
+import type { DateInNumbersAndWords } from '../../../shared/domain/form-117/date-in-words';
 import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
 
 import { DOCUMENT_TITLE } from './document-kind';
@@ -38,13 +43,6 @@ import type {
 /** Every clinical date on every one of these documents, as a person reads it. */
 function ecuadorianDate(instant: Date): string {
   const [year, month, day] = clinicalDateOf(instant).split('-');
-  return `${day}/${month}/${year}`;
-}
-
-/** `2026-05-11` → `11/05/2026`, for a column that is already a calendar date. */
-function calendarDate(date: Date): string {
-  const iso = date.toISOString().slice(0, 10);
-  const [year, month, day] = iso.split('-');
   return `${day}/${month}/${year}`;
 }
 
@@ -350,173 +348,308 @@ export function composeServiceOrderLayout(
   context: DocumentContext,
   template: DocumentTemplate,
 ): DocumentLayout {
-  return {
-    title: DOCUMENT_TITLE.SERVICE_ORDER,
-    reference: `N.º ${data.number}`,
-    accentColour: template.accentColour,
-    header: headerOf(context, template),
-    blocks: [
-      {
-        kind: 'fields',
-        columns: 3,
-        entries: [
-          { label: 'Fecha', value: ecuadorianDate(data.requestedAt) },
-          {
-            label: 'Categoría',
-            value: ORDER_CATEGORY_LABEL[data.category] ?? data.category,
-          },
-          {
-            label: 'Prioridad',
-            value: ORDER_PRIORITY_LABEL[data.priority] ?? data.priority,
-          },
-        ],
-      },
-      { kind: 'rule' },
-      { kind: 'heading', text: 'Paciente' },
-      patientBlock(data.patient),
-      {
-        kind: 'fields',
-        columns: 1,
-        entries: [
-          {
-            label: 'Diagnóstico presuntivo',
-            value:
-              data.diagnoses.length === 0
-                ? '—'
-                : data.diagnoses
-                    .map((d) => `${d.code} · ${d.display}`)
-                    .join(' | '),
-          },
-        ],
-      },
-      { kind: 'heading', text: 'Exámenes solicitados' },
-      {
-        kind: 'table',
-        columns: [
-          { header: '#', width: 0.08, align: 'right' },
-          { header: 'Examen', width: 0.72 },
-          { header: 'Estado', width: 0.2 },
-        ],
-        rows: data.items.map((item, index) => [
-          String(index + 1),
-          item.display,
-          item.status,
-        ]),
-      },
-      ...(data.clinicalNoteText === null
-        ? []
-        : ([
-            {
-              kind: 'fields',
-              columns: 1,
-              entries: [
-                {
-                  label: 'Información clínica para el laboratorio',
-                  value: data.clinicalNoteText,
-                },
-              ],
-            },
-          ] as Block[])),
-      { kind: 'heading', text: 'Profesional solicitante' },
-      prescriberBlock(data.orderedBy),
-      {
-        kind: 'signature',
-        caption: 'Firma y sello del profesional',
-        image: data.orderedBy.seal !== null ? 'seal' : null,
-      },
-    ],
-    tearOff: null,
-    footerText: template.footerText,
-  };
-}
-
-/**
- * DOC-075. The certificate, over the structure of MSP form 117.
- *
- * ⚠️ THE DIAGNOSIS IS PRINTED ONLY IF THE PATIENT SAID SO. `include_diagnosis`
- * defaults to false in the schema, and this is the document their EMPLOYER
- * reads: privacy by default is an LOPDP requirement, not a preference.
- */
-export function composeCertificateLayout(
-  data: CertificatePrintData,
-  context: DocumentContext,
-  template: DocumentTemplate,
-): DocumentLayout {
-  const restEntries: LabelledValue[] = [];
-  if (data.restFrom !== null && data.restTo !== null) {
-    restEntries.push(
-      { label: 'Reposo desde', value: calendarDate(data.restFrom) },
-      { label: 'Reposo hasta', value: calendarDate(data.restTo) },
-    );
-  }
+  // What the patient has to do before the extraction, once per distinct
+  // instruction: an unstated fast is a second puncture (ORD-010).
+  const preparations = [
+    ...new Set(
+      data.items
+        .map((item) => item.preparation)
+        .filter((text): text is string => text !== null && text.trim() !== ''),
+    ),
+  ];
 
   const blocks: Block[] = [
     {
       kind: 'fields',
       columns: 3,
       entries: [
-        { label: 'Formulario', value: '117 — Certificado médico' },
-        { label: 'Fecha de emisión', value: ecuadorianDate(data.issuedAt) },
-        { label: 'Tipo', value: data.type },
+        { label: 'Fecha', value: ecuadorianDate(data.requestedAt) },
+        {
+          label: 'Tipo',
+          value: ORDER_CATEGORY_LABEL[data.category] ?? data.category,
+        },
+        {
+          label: 'Prioridad',
+          value: ORDER_PRIORITY_LABEL[data.priority] ?? data.priority,
+        },
       ],
     },
     { kind: 'rule' },
     { kind: 'heading', text: 'Paciente' },
     patientBlock(data.patient),
-  ];
-
-  if (restEntries.length > 0) {
-    blocks.push({ kind: 'fields', columns: 2, entries: restEntries });
-  }
-
-  if (data.includeDiagnosis && data.diagnoses.length > 0) {
-    blocks.push({
+    {
       kind: 'fields',
       columns: 1,
       entries: [
         {
-          label: 'Diagnóstico',
-          value: data.diagnoses
-            .map((d) => `${d.code} · ${d.display}`)
-            .join(' | '),
+          label: 'Diagnóstico presuntivo',
+          value:
+            data.diagnoses.length === 0
+              ? '—'
+              : data.diagnoses
+                  .map((d) => `${d.code} · ${d.display}`)
+                  .join(' | '),
         },
+        ...(data.clinicalNoteText === null
+          ? []
+          : [
+              {
+                label: 'Datos clínicos para el laboratorio',
+                value: data.clinicalNoteText,
+              },
+            ]),
       ],
-    });
-  }
+    },
+    { kind: 'heading', text: 'Exámenes solicitados' },
+    {
+      kind: 'table',
+      columns: [
+        { header: 'Código', width: 0.28 },
+        { header: 'Examen', width: 0.44 },
+        { header: 'Muestra', width: 0.28 },
+      ],
+      rows: data.items.map((item) => [
+        item.code,
+        item.display,
+        item.specimen ?? '—',
+      ]),
+    },
+    { kind: 'heading', text: 'Indicaciones al paciente' },
+    preparations.length === 0
+      ? { kind: 'paragraph', text: 'No requiere preparación previa.' }
+      : {
+          kind: 'fields',
+          columns: 1,
+          entries: preparations.map((text) => ({
+            label: 'Preparación',
+            value: text,
+          })),
+        },
+    { kind: 'heading', text: 'Médico solicitante' },
+    prescriberBlock(data.orderedBy),
+    {
+      kind: 'signature',
+      caption: 'Firma y sello del profesional',
+      image: data.orderedBy.seal !== null ? 'seal' : null,
+    },
+  ];
 
-  if (data.revokedAt !== null) {
+  return {
+    title: DOCUMENT_TITLE.SERVICE_ORDER,
+    // ORD-006 and D-095: the number, and the code a laboratory checks the
+    // order with.
+    reference: `Orden N.º ${data.number} · Código de verificación: ${data.verificationCode}`,
+    accentColour: template.accentColour,
+    header: headerOf(context, template),
+    blocks,
+    tearOff: null,
+    footerText: template.footerText,
+  };
+}
+
+/** How a date of form 117 prints: «21/05/2026 — veintiuno de mayo de …». */
+function form117Date(value: DateInNumbersAndWords | NotApplicable): string {
+  if (value === NA) return NA;
+  return `${value.iso.split('-').reverse().join('/')} — ${value.inWords}`;
+}
+
+/** The type of certificate in Spanish: never the enum (D-095). */
+const CERTIFICATE_TYPE_LABEL: Record<string, string> = {
+  ATTENDANCE: 'Certificado de asistencia',
+  MEDICAL_REST: 'Reposo médico',
+};
+
+/**
+ * DOC-075. The certificate over the structure of MSP form 117 —blocks A to E
+ * with their own titles— plus what the IESS asks for (D-075) and the approved
+ * template (D-095).
+ *
+ * THE CONTENT IS `composeForm117`'s, the same the screen serves: this function
+ * only lays it out. Nothing here re-derives an age, a date in words or a
+ * number of days.
+ *
+ * ⚠️ «CONFIDENCIAL» exactly when the diagnosis is printed (CER-033, A.M.
+ * 5216-A art. 33). The header and footer are the common frame's
+ * (`feat/documentos-identidad`); until it lands, the legend goes at the top of
+ * the body.
+ */
+export function composeCertificateLayout(
+  data: CertificatePrintData,
+  context: DocumentContext,
+  template: DocumentTemplate,
+): DocumentLayout {
+  const form = data.form;
+  const blocks: Block[] = [];
+
+  if (form.confidential) {
+    blocks.push({ kind: 'paragraph', text: 'CONFIDENCIAL', emphasis: true });
+  }
+  if (form.revocation !== null) {
     // A revoked certificate that printed like a valid one is the failure this
     // line exists for: somebody is holding the paper.
     blocks.push({
       kind: 'paragraph',
-      text: `DOCUMENTO ANULADO el ${ecuadorianDate(data.revokedAt)}. No tiene validez.`,
+      text: `DOCUMENTO ANULADO el ${form.revocation.revokedOn.split('-').reverse().join('/')}: ${form.revocation.reason}. No tiene validez.`,
       emphasis: true,
     });
   }
 
   blocks.push(
-    { kind: 'heading', text: 'Profesional' },
-    prescriberBlock(data.issuedBy),
     {
-      kind: 'signature',
-      caption: 'Firma y sello del profesional',
-      image: data.issuedBy.seal !== null ? 'seal' : null,
+      kind: 'fields',
+      columns: 3,
+      entries: [
+        { label: 'Lugar de emisión', value: form.placeOfIssue },
+        {
+          label: 'Tipo',
+          value: CERTIFICATE_TYPE_LABEL[form.type] ?? NA,
+        },
+        { label: 'Contingencia', value: form.contingency },
+      ],
+    },
+    { kind: 'rule' },
+
+    // ── A. Datos del establecimiento y usuario / paciente.
+    {
+      kind: 'heading',
+      text: 'A. Datos del establecimiento y usuario / paciente',
     },
     {
       kind: 'fields',
-      columns: 1,
+      columns: 3,
       entries: [
         {
-          label: 'Código de verificación',
-          value: data.verificationCode,
+          label: 'Institución del sistema',
+          value: form.establishment.institution,
+        },
+        { label: 'Unicódigo', value: form.establishment.mspUnicode },
+        { label: 'Establecimiento de salud', value: form.establishment.name },
+        {
+          label: 'Número de historia clínica única',
+          value: form.establishment.clinicalRecordNumber,
+        },
+        { label: 'Número de archivo', value: form.establishment.archiveNumber },
+      ],
+    },
+
+    // ── B. Certifico que.
+    { kind: 'heading', text: 'B. Certifico que' },
+    {
+      kind: 'fields',
+      columns: 3,
+      entries: [
+        { label: 'Primer apellido', value: form.patient.firstFamilyName },
+        { label: 'Segundo apellido', value: form.patient.secondFamilyName },
+        { label: 'Primer nombre', value: form.patient.firstGivenName },
+        { label: 'Segundo nombre', value: form.patient.secondGivenName },
+        { label: 'Sexo', value: form.patient.sex },
+        {
+          label: 'Edad',
+          value: `${form.patient.age.value} (${form.patient.age.condition})`,
+        },
+        {
+          label: 'Fue atendido en el servicio de',
+          value: form.attention.service,
+        },
+        { label: 'Especialidad', value: form.attention.specialty },
+        { label: 'Fecha de atención', value: form117Date(form.attention.date) },
+        {
+          label: 'Hora de atención',
+          value: `desde ${form.attention.from} hasta ${form.attention.to}`,
+        },
+        { label: 'Fecha de ingreso', value: form.attention.admissionDate },
+        { label: 'Fecha de alta', value: form.attention.dischargeDate },
+      ],
+    },
+  );
+
+  // ── C. Se recomienda.
+  blocks.push(
+    { kind: 'heading', text: 'C. Se recomienda' },
+    {
+      kind: 'fields',
+      columns: 2,
+      entries: [
+        { label: 'Reposo', value: form.rest.rest },
+        {
+          label: 'Días de reposo',
+          value:
+            form.rest.days === NA
+              ? NA
+              : `${form.rest.days} (${form.rest.daysInWords})`,
+        },
+        { label: 'Desde', value: form117Date(form.rest.from) },
+        { label: 'Hasta', value: form117Date(form.rest.to) },
+      ],
+    },
+  );
+  if (form.rest.periodInWords !== NA) {
+    blocks.push({ kind: 'paragraph', text: form.rest.periodInWords });
+  }
+  if (form.maternity !== NA) {
+    blocks.push({
+      kind: 'fields',
+      columns: 3,
+      entries: [
+        { label: 'Fecha de ingreso', value: form117Date(form.maternity.admission) }, // prettier-ignore
+        { label: 'Fecha del parto', value: form117Date(form.maternity.birth) },
+        {
+          label: 'Fecha de alta',
+          value: form117Date(form.maternity.discharge),
         },
       ],
+    });
+  }
+
+  // ── D. Diagnóstico, con su código CIE, o «NA».
+  blocks.push({ kind: 'heading', text: 'D. Diagnóstico' });
+  blocks.push(
+    form.diagnoses === NA
+      ? { kind: 'paragraph', text: NA }
+      : {
+          kind: 'table',
+          columns: [
+            { header: 'CIE', width: 0.18 },
+            { header: 'Diagnóstico', width: 0.82 },
+          ],
+          rows: form.diagnoses.map((d) => [d.code, d.display]),
+        },
+  );
+
+  // ── E. Datos del profesional responsable.
+  blocks.push(
+    { kind: 'heading', text: 'E. Datos del profesional responsable' },
+    {
+      kind: 'fields',
+      columns: 3,
+      entries: [
+        {
+          label: 'Fecha',
+          value: form.professional.date,
+        },
+        { label: 'Hora', value: form.professional.time },
+        {
+          label: 'Nombres y apellidos',
+          value: `${form.professional.givenNames} ${form.professional.familyNames}`,
+        },
+        {
+          label: 'Número de documento de identificación',
+          value: form.professional.identification,
+        },
+      ],
+    },
+    {
+      // CER-028. The credential signed it; the box is for the seal, never a
+      // drawn stroke.
+      kind: 'signature',
+      caption: 'Firma (credencial del profesional en el sistema) y sello',
+      image: data.issuedBy.seal !== null ? 'seal' : null,
     },
   );
 
   return {
     title: DOCUMENT_TITLE.MEDICAL_CERTIFICATE,
-    reference: `Código de verificación: ${data.verificationCode}`,
+    reference: `Certificado N.º ${form.number} · Código de verificación: ${form.verificationCode}`,
     accentColour: template.accentColour,
     header: headerOf(context, template),
     blocks,

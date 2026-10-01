@@ -1,4 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import {
+  composeForm117,
+  type Form117,
+  type Form117Source,
+} from '../../../shared/domain/form-117/form-117';
+import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
 
 import { composeLayout } from './document-layout';
 import { TEAR_OFF_HEIGHT_MM, millimetresToPoints } from './page-layout';
@@ -485,7 +491,16 @@ describe('DOC-072 la orden de examen', () => {
           patient,
           diagnoses: [{ code: 'E11', display: 'Diabetes mellitus tipo 2' }],
           orderedBy: prescriber,
-          items: [{ display: 'Hemoglobina glicosilada', status: 'REQUESTED' }],
+          verificationCode: 'OR-1A2B',
+          items: [
+            {
+              code: 'EX-HBA1C',
+              display: 'Hemoglobina glicosilada',
+              specimen: 'Sangre total',
+              preparation: null,
+              status: 'REQUESTED',
+            },
+          ],
         },
       },
       context,
@@ -502,98 +517,265 @@ describe('DOC-072 la orden de examen', () => {
   });
 });
 
-describe('ORD-006 la orden impresa lleva su número', () => {
-  const order = (): DocumentSubject => ({
+describe('ORD-006 DOC-072 la orden impresa, como la plantilla aprobada (D-095)', () => {
+  const order = (
+    overrides: Partial<
+      Extract<DocumentSubject, { kind: 'SERVICE_ORDER' }>['data']
+    > = {},
+  ): DocumentSubject => ({
     kind: 'SERVICE_ORDER',
     data: {
       subjectId: 'order-1',
       siteId: 'site-1',
       number: 41,
+      verificationCode: 'OR-9Z8Y',
       requestedAt: new Date(0),
-      category: 'IMAGING',
+      category: 'LABORATORY',
       priority: 'URGENT',
-      clinicalNoteText: null,
+      clinicalNoteText: 'Paciente en tratamiento con metformina',
       patient,
-      diagnoses: [],
+      diagnoses: [{ code: 'E11', display: 'Diabetes mellitus tipo 2' }],
       orderedBy: prescriber,
-      items: [{ display: 'Radiografía de tórax', status: 'REQUESTED' }],
+      items: [
+        {
+          code: 'EX-GLUCOSA-AYUNAS',
+          display: 'Glucosa en ayunas',
+          specimen: 'Suero',
+          preparation: 'Ayuno de 8 a 12 horas.',
+          status: 'REQUESTED',
+        },
+        {
+          code: 'EX-BH',
+          display: 'Biometría hemática completa',
+          specimen: 'Sangre total con EDTA',
+          preparation: null,
+          status: 'REQUESTED',
+        },
+      ],
+      ...overrides,
     },
   });
 
-  it('ORD-006 el número es la referencia del documento y se imprime', () => {
-    const layout = composeLayout(order(), context, template);
-
-    expect(layout.reference).toBe('N.º 41');
-    expect(wholeText(layout)).toContain('41');
+  it('ORD-006 la referencia es el número de la orden y su código de verificación', () => {
+    expect(composeLayout(order(), context, template).reference).toBe(
+      'Orden N.º 41 · Código de verificación: OR-9Z8Y',
+    );
   });
 
   it('ORD-006 la categoría y la prioridad se imprimen en castellano, no como el enum', () => {
     const text = wholeText(composeLayout(order(), context, template));
 
-    expect(text).toContain('Imagen');
+    expect(text).toContain('Laboratorio');
     expect(text).toContain('Urgente');
-    expect(text).not.toContain('IMAGING');
-    expect(text).not.toContain('URGENT');
-  });
-});
-
-describe('DOC-075 el certificado sobre el formulario 117', () => {
-  const certificate = (
-    overrides: Partial<
-      Extract<DocumentSubject, { kind: 'MEDICAL_CERTIFICATE' }>['data']
-    > = {},
-  ): DocumentSubject => ({
-    kind: 'MEDICAL_CERTIFICATE',
-    data: {
-      subjectId: 'certificate-1',
-      siteId: 'site-1',
-      type: 'MEDICAL_REST',
-      issuedAt: new Date('2026-08-21T01:00:00Z'),
-      restFrom: new Date('2026-08-21T00:00:00Z'),
-      restTo: new Date('2026-08-23T00:00:00Z'),
-      includeDiagnosis: false,
-      diagnoses: [{ code: 'J00', display: 'Rinofaringitis aguda' }],
-      verificationCode: 'CM-4T7',
-      revokedAt: null,
-      patient,
-      issuedBy: prescriber,
-      ...overrides,
-    },
+    expect(text).not.toMatch(/LABORATORY|URGENT/);
   });
 
-  it('DOC-075 nombra el formulario y lleva el reposo y el código de verificación', () => {
-    const text = wholeText(composeLayout(certificate(), context, template));
-    expect(text).toContain('117');
-    expect(text).toContain('21/08/2026');
-    expect(text).toContain('23/08/2026');
-    expect(text).toContain('CM-4T7');
+  it('DOC-072 la tabla es código, examen y muestra, y la preparación va en las indicaciones al paciente', () => {
+    const layout = composeLayout(order(), context, template);
+    const table = layout.blocks.find((block) => block.kind === 'table');
+    if (table?.kind !== 'table') throw new Error('no table');
+
+    expect(table.columns.map((column) => column.header)).toEqual([
+      'Código',
+      'Examen',
+      'Muestra',
+    ]);
+    expect(table.rows[0]).toEqual(['EX-GLUCOSA-AYUNAS', 'Glucosa en ayunas', 'Suero']); // prettier-ignore
+    const text = wholeText(layout);
+    expect(text).toContain('Indicaciones al paciente');
+    expect(text).toContain('Ayuno de 8 a 12 horas.');
   });
 
-  it('DOC-075 NO imprime el diagnóstico si el paciente no lo autorizó', () => {
-    // This is the document their EMPLOYER reads. Privacy by default is an LOPDP
-    // requirement, not a preference, and the schema defaults the flag to false.
-    const text = wholeText(composeLayout(certificate(), context, template));
-    expect(text).not.toContain('Rinofaringitis');
+  it('DOC-072 los datos clínicos van para el laboratorio, con su nombre', () => {
+    const text = wholeText(composeLayout(order(), context, template));
+
+    expect(text).toContain('Datos clínicos para el laboratorio');
+    expect(text).toContain('Paciente en tratamiento con metformina');
   });
 
-  it('DOC-075 lo imprime cuando el paciente lo autorizó', () => {
-    const text = wholeText(
-      composeLayout(certificate({ includeDiagnosis: true }), context, template),
-    );
-    expect(text).toContain('Rinofaringitis aguda');
-  });
-
-  it('DOC-075 dice en la cara del documento que está anulado', () => {
-    // Somebody is holding the paper. A revoked certificate that printed like a
-    // valid one is the failure this line exists for.
+  it('DOC-072 sin preparación que pedir, la orden lo dice en vez de dejar el bloque vacío', () => {
     const text = wholeText(
       composeLayout(
-        certificate({ revokedAt: new Date('2026-08-25T15:00:00Z') }),
+        order({
+          items: [
+            { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: null, status: 'REQUESTED' }, // prettier-ignore
+          ],
+        }),
         context,
         template,
       ),
     );
-    expect(text).toMatch(/ANULADO/);
+
+    expect(text).toContain('No requiere preparación');
+  });
+});
+
+describe('DOC-075 el certificado sobre el formulario 117 y la plantilla aprobada (D-095)', () => {
+  const now = new Date(0);
+  const day = clinicalDateOf(now);
+
+  /** A form 117 as `certificates` composes it, the same function the PDF uses. */
+  const form = (
+    certificate: Partial<Form117Source['certificate']> = {},
+  ): Form117 =>
+    composeForm117({
+      certificate: {
+        id: 'certificate-1',
+        number: 7,
+        verificationCode: 'CM-4T7',
+        type: 'MEDICAL_REST',
+        issuedAt: now,
+        restFrom: day,
+        restTo: addDays(day, 2),
+        includeDiagnosis: true,
+        contingencyType: 'GENERAL_ILLNESS',
+        maternity: null,
+        revokedAt: null,
+        revocationReason: null,
+        ...certificate,
+      },
+      site: {
+        name: 'Sede Norte',
+        mspUnicode: '000123',
+        city: 'Quito',
+        address: 'Av. Amazonas N24-10',
+        phone: '022345678',
+      },
+      patient: {
+        familyName: 'Guamán',
+        secondFamilyName: 'Andrade',
+        givenName: 'María',
+        secondGivenName: 'José',
+        sex: 'FEMALE',
+        mrn: 'HC000042',
+        identifiers: [{ type: 'CEDULA', value: '1710034065' }],
+      },
+      encounter: {
+        startedAt: now,
+        endedAt: null,
+        ageYears: 34,
+        ageMonths: 2,
+        ageDays: 9,
+      },
+      diagnoses: [{ code: 'J00', display: 'Rinofaringitis aguda' }],
+      practitioner: {
+        givenNames: 'Rosa',
+        familyNames: 'Cedeño',
+        cedula: '1104637283',
+        primarySpecialty: 'Medicina familiar',
+        hasSeal: false,
+      },
+    });
+
+  const certificate = (formData: Form117 = form()): DocumentSubject => ({
+    kind: 'MEDICAL_CERTIFICATE',
+    data: {
+      subjectId: 'certificate-1',
+      siteId: 'site-1',
+      form: formData,
+      issuedBy: prescriber,
+    },
+  });
+
+  it('DOC-075 CER-020 CER-028 lleva los cinco bloques del 117, de la A a la E', () => {
+    const headings = composeLayout(certificate(), context, template)
+      .blocks.filter((block) => block.kind === 'heading')
+      .map((block) => (block.kind === 'heading' ? block.text : ''));
+
+    expect(headings).toEqual([
+      'A. Datos del establecimiento y usuario / paciente',
+      'B. Certifico que',
+      'C. Se recomienda',
+      'D. Diagnóstico',
+      'E. Datos del profesional responsable',
+    ]);
+  });
+
+  it('DOC-075 no imprime un enum en inglés ni un encabezado vacío', () => {
+    const text = wholeText(composeLayout(certificate(), context, template));
+
+    expect(text).not.toMatch(
+      /MEDICAL_REST|ATTENDANCE|\bREST\b|GENERAL_ILLNESS/,
+    );
+    expect(text).not.toContain('Certificación');
+    expect(text).toContain('Reposo médico');
+  });
+
+  it('CER-020 la sede y su unicódigo van en el bloque A, con la HC y el archivo', () => {
+    const text = wholeText(composeLayout(certificate(), context, template));
+
+    expect(text).toContain('Sede Norte');
+    expect(text).toContain('000123');
+    expect(text).toContain('1710034065');
+    expect(text).toContain('HC000042');
+  });
+
+  it('CER-026 el reposo en días, en números y en letras, con la frase del período', () => {
+    const text = wholeText(composeLayout(certificate(), context, template));
+
+    expect(text).toContain('3 (tres)');
+    expect(text).toContain('ambas fechas incluidas');
+    expect(text).not.toMatch(/horas/i);
+  });
+
+  it('CER-033 lleva la leyenda CONFIDENCIAL cuando imprime el diagnóstico, y no cuando no', () => {
+    const withDiagnosis = composeLayout(certificate(), context, template);
+    const without = composeLayout(
+      certificate(
+        form({ type: 'ATTENDANCE', restFrom: null, restTo: null, includeDiagnosis: false, contingencyType: null }), // prettier-ignore
+      ),
+      context,
+      template,
+    );
+
+    expect(wholeText(withDiagnosis)).toContain('CONFIDENCIAL');
+    expect(wholeText(withDiagnosis)).toContain('J00');
+    expect(wholeText(without)).not.toContain('CONFIDENCIAL');
+    expect(wholeText(without)).not.toContain('J00');
+  });
+
+  it('CER-034 CER-036 la contingencia y el lugar de emisión', () => {
+    const text = wholeText(composeLayout(certificate(), context, template));
+
+    expect(text).toContain('Enfermedad general');
+    expect(text).toContain('Quito');
+  });
+
+  it('CER-035 en maternidad imprime ingreso, parto y alta', () => {
+    const text = wholeText(
+      composeLayout(
+        certificate(
+          form({
+            contingencyType: 'MATERNITY',
+            maternity: { admissionOn: day, birthOn: day, dischargeOn: addDays(day, 2) }, // prettier-ignore
+          }),
+        ),
+        context,
+        template,
+      ),
+    );
+
+    expect(text).toContain('Fecha de ingreso');
+    expect(text).toContain('Fecha del parto');
+    expect(text).toContain('Fecha de alta');
+  });
+
+  it('CER-029 un certificado anulado lo dice en el propio papel', () => {
+    const text = wholeText(
+      composeLayout(
+        certificate(form({ revokedAt: now, revocationReason: 'Se emitió a otro paciente' })), // prettier-ignore
+        context,
+        template,
+      ),
+    );
+
+    expect(text).toContain('ANULADO');
+  });
+
+  it('CER-029 la referencia es el número del certificado y su código de verificación', () => {
+    expect(composeLayout(certificate(), context, template).reference).toBe(
+      'Certificado N.º 7 · Código de verificación: CM-4T7',
+    );
   });
 });
 
