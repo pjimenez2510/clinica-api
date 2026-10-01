@@ -5,6 +5,7 @@ import type {
   AccessAuditEntry,
   AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
+import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
 import {
   AmendmentReasonRequiredError,
   DischargeConditionRequiredError,
@@ -364,13 +365,12 @@ describe('los casos de uso de la nota clínica', () => {
      * registered: a registration that lapses on Tuesday stops enabling on
      * Wednesday without anybody touching a row.
      */
-    const yesterday = new Date();
-    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    // Yesterday IN ECUADOR: from 19:00 in Guayaquil the UTC day before is
+    // today, and the registration would still be in force.
+    const yesterday = addDays(clinicalDateOf(new Date()), -1);
     encounters.practitioner = {
       practitionerId: PRACTITIONER,
-      acessExpiresOn: new Date(
-        `${yesterday.toISOString().slice(0, 10)}T00:00:00.000Z`,
-      ),
+      acessExpiresOn: new Date(`${yesterday}T00:00:00.000Z`),
     };
 
     await expect(
@@ -384,8 +384,9 @@ describe('los casos de uso de la nota clínica', () => {
   it('EN-029 admite firmar el mismo día en que caduca el registro', async () => {
     // The registration is in force THROUGH its expiry date: a column of type
     // `date` names a whole day, and refusing on that day would withdraw a
-    // licence twenty-four hours early.
-    const today = new Date().toISOString().slice(0, 10);
+    // licence twenty-four hours early. Today IN ECUADOR: the UTC date is
+    // already tomorrow from 19:00, and that would test the day after.
+    const today = clinicalDateOf(new Date());
     encounters.practitioner = {
       practitionerId: PRACTITIONER,
       acessExpiresOn: new Date(`${today}T00:00:00.000Z`),
