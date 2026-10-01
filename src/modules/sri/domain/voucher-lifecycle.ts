@@ -1,3 +1,5 @@
+import { escapeXml } from './invoice-xml';
+
 /**
  * SRI-043 to SRI-052. What each answer of the SRI does to a voucher, as pure
  * functions. The queue, the HTTP client and the database only carry it out.
@@ -300,9 +302,11 @@ export function authorisationDocument(answer: {
     '<?xml version="1.0" encoding="UTF-8"?>' +
     '<autorizacion>' +
     '<estado>AUTORIZADO</estado>' +
-    `<numeroAutorizacion>${answer.authorisationNumber}</numeroAutorizacion>` +
-    `<fechaAutorizacion>${answer.authorisedAtText}</fechaAutorizacion>` +
-    `<ambiente>${answer.environmentLabel}</ambiente>` +
+    // Escaped: they come from the SRI's answer already unescaped by the
+    // parser, and this document goes to the customer.
+    `<numeroAutorizacion>${escapeXml(answer.authorisationNumber)}</numeroAutorizacion>` +
+    `<fechaAutorizacion>${escapeXml(answer.authorisedAtText)}</fechaAutorizacion>` +
+    `<ambiente>${escapeXml(answer.environmentLabel)}</ambiente>` +
     `<comprobante><![CDATA[${voucher}]]></comprobante>` +
     '<mensajes/>' +
     '</autorizacion>'

@@ -489,3 +489,203 @@ describe('BI-170 la forma de pago de la factura', () => {
     ).resolves.toBe(1);
   });
 });
+
+/**
+ * The CHECKs and the trail of the migration that no other test exercised
+ * (review of 2026-10-01). Each one with its positive control: the same
+ * statement shape, with the value the constraint admits, goes through.
+ */
+describe('SRI-010 a SRI-051 las demás garantías de la base', () => {
+  async function aCertificateRow(overrides: {
+    notAfter?: string;
+    pkcs12Bytes?: number;
+    active?: boolean;
+    deactivated?: boolean;
+  }) {
+    const bytes = overrides.pkcs12Bytes ?? 40;
+    const deactivatedAt = overrides.deactivated ? new Date() : null;
+    const [row] = await context.prisma.$queryRaw<{ id: string }[]>`
+      INSERT INTO "signing_certificate"
+        ("subject", "issuer", "serial_number", "not_before", "not_after",
+         "encrypted_pkcs12", "encrypted_password", "kdf_salt", "active", "deactivated_at", "uploaded_by_id")
+      VALUES ('CN=Firmante', 'CN=Entidad', '01', CURRENT_TIMESTAMP,
+              CURRENT_TIMESTAMP + ${overrides.notAfter ?? '1 year'}::interval,
+              decode(repeat('ab', ${bytes}), 'hex'), decode(repeat('cd', 40), 'hex'),
+              decode(repeat('ef', 16), 'hex'), ${overrides.active ?? false},
+              ${deactivatedAt}, ${context.userId}::uuid)
+      RETURNING "id"`;
+    return row!.id;
+  }
+
+  it('SRI-034 la vigencia va ordenada, el sobre tiene forma y la desactivación es coherente', async () => {
+    // Control: an inactive certificate, deactivated, with a real envelope.
+    await expect(aCertificateRow({ deactivated: true })).resolves.toBeDefined();
+
+    expect(
+      await rejectionOf(
+        aCertificateRow({ notAfter: '-1 day', deactivated: true }),
+      ),
+    ).toMatch(/signing_certificate_validity_is_ordered/);
+    expect(
+      await rejectionOf(
+        aCertificateRow({ pkcs12Bytes: 20, deactivated: true }),
+      ),
+    ).toMatch(/signing_certificate_envelopes_have_a_shape/);
+    expect(
+      await rejectionOf(aCertificateRow({ active: false, deactivated: false })),
+    ).toMatch(/signing_certificate_deactivation_is_coherent/);
+  });
+
+  it('SRI-026 la apertura del certificado se añade y no se toca ni se borra', async () => {
+    const voucher = await insertVoucher(
+      context.prisma,
+      (await anIssuedInvoice()).id,
+      { signed: true },
+    );
+    const certificate =
+      await context.prisma.signingCertificate.findFirstOrThrow({
+        where: { active: true },
+      });
+    const [opening] = await context.prisma.$queryRaw<{ id: string }[]>`
+      INSERT INTO "signing_certificate_opening" ("certificate_id", "voucher_id")
+      VALUES (${certificate.id}::uuid, ${voucher.id}::uuid)
+      RETURNING "id"`;
+    expect(opening?.id).toBeDefined();
+
+    expect(
+      await rejectionOf(
+        context.prisma.$executeRaw`
+          UPDATE "signing_certificate_opening" SET "opened_at" = CURRENT_TIMESTAMP
+           WHERE "id" = ${opening!.id}::uuid`,
+      ),
+    ).toMatch(/signing_certificate_opening_is_append_only/);
+    expect(
+      await rejectionOf(
+        context.prisma
+          .$executeRaw`DELETE FROM "signing_certificate_opening" WHERE "id" = ${opening!.id}::uuid`,
+      ),
+    ).toMatch(/signing_certificate_opening_is_append_only/);
+  });
+
+  it('SRI-029 SRI-031 pasado PREPARED hay firma, y solo lo PREPARED lleva motivo de espera', async () => {
+    const voucher = await insertVoucher(
+      context.prisma,
+      (await anIssuedInvoice()).id,
+    );
+    // Control: PREPARED with a reason.
+    await expect(
+      context.prisma.$executeRaw`
+        UPDATE "electronic_voucher" SET "blocked_reason" = 'NO_CERTIFICATE'
+         WHERE "id" = ${voucher.id}::uuid`,
+    ).resolves.toBe(1);
+
+    expect(
+      await rejectionOf(
+        context.prisma.$executeRaw`
+          UPDATE "electronic_voucher" SET "status" = 'SIGNED', "blocked_reason" = NULL
+           WHERE "id" = ${voucher.id}::uuid`,
+      ),
+    ).toMatch(/electronic_voucher_signed_beyond_prepared/);
+
+    const signed = await insertVoucher(
+      context.prisma,
+      (await anIssuedInvoice()).id,
+      { signed: true },
+    );
+    expect(
+      await rejectionOf(
+        context.prisma.$executeRaw`
+          UPDATE "electronic_voucher" SET "blocked_reason" = 'NO_CERTIFICATE'
+           WHERE "id" = ${signed.id}::uuid`,
+      ),
+    ).toMatch(/electronic_voucher_blocked_only_when_prepared/);
+  });
+
+  it('SRI-047 SRI-074 lo autorizado lleva su prueba y la entrega solo se anota en lo autorizado', async () => {
+    const voucher = await insertVoucher(
+      context.prisma,
+      (await anIssuedInvoice()).id,
+      { signed: true },
+    );
+    expect(
+      await rejectionOf(
+        context.prisma.$executeRaw`
+          UPDATE "electronic_voucher" SET "status" = 'AUTHORISED'
+           WHERE "id" = ${voucher.id}::uuid`,
+      ),
+    ).toMatch(/electronic_voucher_authorised_carries_its_proof/);
+    expect(
+      await rejectionOf(
+        context.prisma.$executeRaw`
+          UPDATE "electronic_voucher" SET "delivery_status" = 'SENT'
+           WHERE "id" = ${voucher.id}::uuid`,
+      ),
+    ).toMatch(/electronic_voucher_delivery_only_once_authorised/);
+
+    // Control: with its proof it is AUTHORISED, and then delivery is noted.
+    await expect(
+      context.prisma.$executeRaw`
+        UPDATE "electronic_voucher"
+           SET "status" = 'AUTHORISED', "authorisation_number" = ${voucher.accessKey},
+               "authorised_at" = CURRENT_TIMESTAMP, "authorised_xml" = '<autorizacion/>',
+               "delivery_status" = 'PENDING'
+         WHERE "id" = ${voucher.id}::uuid`,
+    ).resolves.toBe(1);
+  });
+
+  it('SRI-043 SRI-051 estados y resultados fuera de la lista no se admiten', async () => {
+    // Signed, so the only rule an unknown status can break is the list's.
+    const voucher = await insertVoucher(
+      context.prisma,
+      (await anIssuedInvoice()).id,
+      { signed: true },
+    );
+    expect(
+      await rejectionOf(
+        context.prisma.$executeRaw`
+          UPDATE "electronic_voucher" SET "status" = 'LOST' WHERE "id" = ${voucher.id}::uuid`,
+      ),
+    ).toMatch(/electronic_voucher_status_is_known/);
+    expect(
+      await rejectionOf(
+        context.prisma.$executeRaw`
+          INSERT INTO "electronic_voucher_attempt"
+            ("voucher_id", "access_key", "operation", "started_at", "duration_ms", "outcome")
+          VALUES (${voucher.id}::uuid, ${voucher.accessKey}, 'RECEPTION', CURRENT_TIMESTAMP, 5, 'MAYBE')`,
+      ),
+    ).toMatch(/electronic_voucher_attempt_outcome_is_known/);
+    // Control: a known outcome is admitted.
+    await expect(
+      context.prisma.$executeRaw`
+        INSERT INTO "electronic_voucher_attempt"
+          ("voucher_id", "access_key", "operation", "started_at", "duration_ms", "outcome")
+        VALUES (${voucher.id}::uuid, ${voucher.accessKey}, 'RECEPTION', CURRENT_TIMESTAMP, 5, 'PENDING')`,
+    ).resolves.toBe(1);
+  });
+
+  it('OR-028 la dirección de la matriz no puede quedar en blanco', async () => {
+    const site = await context.prisma.site.findUniqueOrThrow({
+      where: { id: context.siteId },
+    });
+    const establishment = await context.prisma.establishment.create({
+      data: {
+        mspUnicode: `EST-BLANK-${site.id.slice(0, 8)}`,
+        typology: 'Centro de Salud Tipo A',
+        legalName: 'Clínica de Pruebas',
+      },
+    });
+    // Control: a real address, and no address at all, are both admitted.
+    await expect(
+      context.prisma.$executeRaw`
+        UPDATE "establishment" SET "head_office_address" = 'Av. Amazonas, Quito'
+         WHERE "id" = ${establishment.id}::uuid`,
+    ).resolves.toBe(1);
+    expect(
+      await rejectionOf(
+        context.prisma.$executeRaw`
+          UPDATE "establishment" SET "head_office_address" = '   '
+           WHERE "id" = ${establishment.id}::uuid`,
+      ),
+    ).toMatch(/establishment_head_office_address_not_blank/);
+  });
+});

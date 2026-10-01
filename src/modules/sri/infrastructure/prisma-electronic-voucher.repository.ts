@@ -302,6 +302,10 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
           signingCertificateId: null,
           signedAt: null,
           nextAttemptAt: null,
+          // SRI-052. A re-send starts its own waits: the history stays in
+          // `electronic_voucher_attempt`, not in a count that makes the first
+          // retry wait an hour.
+          attemptCount: 0,
         },
       });
       if (voucher.count === 0) return false;
@@ -369,8 +373,13 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
       });
 
       if (effect.invoiceStatus !== null) {
-        await tx.invoice.update({
-          where: { id: locked.invoice_id },
+        // Only an invoice still in the SRI's hands: a voided one (billing B3)
+        // keeps its status whatever answer arrives late.
+        await tx.invoice.updateMany({
+          where: {
+            id: locked.invoice_id,
+            status: { in: ['ISSUED', 'REJECTED'] },
+          },
           data: {
             status: effect.invoiceStatus,
             ...(effect.authorisation

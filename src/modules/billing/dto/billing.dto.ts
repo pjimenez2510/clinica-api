@@ -87,7 +87,12 @@ export class CatalogueQueryDto extends createZodDto(catalogueQuerySchema) {}
  * transport boundary stops existing the moment a seed writes underneath it.
  */
 export const createServiceSchema = z.object({
-  code: z.string().trim().min(1, 'Indique el código de la prestación').max(32),
+  // SRI-011. The voucher's `codigoPrincipal` admits 25 characters.
+  code: z
+    .string()
+    .trim()
+    .min(1, 'Indique el código de la prestación')
+    .max(25, 'El código admite hasta 25 caracteres, lo que acepta el SRI'),
   name: z.string().trim().min(1, 'Indique el nombre de la prestación').max(200),
   category: z.string().trim().min(1, 'Indique la categoría').max(60),
   /** BI-011. Nomenclature only: no amount is ever taken from the Tarifario. */

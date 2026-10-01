@@ -330,6 +330,21 @@ describe('SRI-014 la cantidad fraccionaria de un insumo', () => {
   });
 });
 
+describe('SRI-011 el código de la prestación en el comprobante', () => {
+  it('SRI-011 un código de más de 25 caracteres se omite, sin recortarlo, y el XML valida', async () => {
+    const long = aSource({
+      lines: [
+        { ...aSource().lines[0]!, code: 'PROC-ESTETICA-TOXINA-BOTULINICA' },
+        aSource().lines[1]!,
+      ],
+    });
+    const xml = composeInvoiceXml(long);
+    expect(xml).not.toContain('PROC-ESTETICA-TOXINA');
+    expect(xml).toContain('<codigoPrincipal>INS-GUANTES</codigoPrincipal>');
+    expect((await validateAgainstXsd(xml)).valid).toBe(true);
+  });
+});
+
 describe('SRI-014 formatos y escape', () => {
   it('SRI-014 fecha dd/mm/aaaa, seis decimales en cantidad y precio, dos en lo demás', () => {
     const factura = parsed(composeInvoiceXml(aSource()));
@@ -354,6 +369,20 @@ describe('SRI-014 formatos y escape', () => {
     expect(xml).toContain('O&apos;Brien &quot;Tom&quot;');
     expect((await validateAgainstXsd(xml)).valid).toBe(true);
     expect(escapeXml('a&b')).toBe('a&amp;b');
+  });
+
+  it('SRI-014 quita los caracteres que XML 1.0 no admite, y el XML sigue validando', async () => {
+    expect(escapeXml('Ana\u0007 Pérez\uD800')).toBe('Ana Pérez');
+    expect(escapeXml('emoji 🩺 entero')).toBe('emoji 🩺 entero');
+    const xml = composeInvoiceXml(
+      aSource({
+        buyer: { ...aSource().buyer, name: 'Guamán\u0001 Andrade' },
+      }),
+    );
+    expect(xml).toContain(
+      '<razonSocialComprador>Guamán Andrade</razonSocialComprador>',
+    );
+    expect((await validateAgainstXsd(xml)).valid).toBe(true);
   });
 });
 

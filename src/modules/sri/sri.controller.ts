@@ -86,7 +86,10 @@ export class SriVouchersController {
       certificate: {
         ...view.certificate,
         active: view.certificate.active
-          ? toCertificate(view.certificate.active)
+          ? {
+              notBefore: view.certificate.active.notBefore.toISOString(),
+              notAfter: view.certificate.active.notAfter.toISOString(),
+            }
           : null,
       },
       webServiceConfigured: view.webServiceConfigured,

@@ -82,8 +82,13 @@ const monitorRowSchema = z.object({
 
 const monitorSchema = z.object({
   rows: z.array(monitorRowSchema),
+  // SRI-082, SRI-063. Caja learns WHETHER signing works and until when — not
+  // whose certificate it is: the subject carries the signer's name and
+  // cédula, and seeing certificates is `config:manage`.
   certificate: z.object({
-    active: certificateSchema.nullable(),
+    active: z
+      .object({ notBefore: z.iso.datetime(), notAfter: z.iso.datetime() })
+      .nullable(),
     aboutToExpire: z.boolean(),
     expired: z.boolean(),
   }),

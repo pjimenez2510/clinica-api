@@ -282,7 +282,7 @@ describe('el comprobante electrónico por HTTP', () => {
   });
 
   describe('SRI-061 a SRI-068 el monitor', () => {
-    it('SRI-061 SRI-063 SRI-054 caja ve el comprobante firmado que espera, sin URL del SRI, y el estado del certificado', async () => {
+    it('SRI-061 SRI-063 SRI-054 SRI-082 caja ve el comprobante firmado que espera, sin URL del SRI, y la vigencia del certificado sin su titular', async () => {
       await uploadCertificate();
       const invoice = await issueInvoice();
 
@@ -298,13 +298,18 @@ describe('el comprobante electrónico por HTTP', () => {
           accessKey: string;
         }[];
         certificate: {
-          active: { subject: string } | null;
+          active: Record<string, string> | null;
           aboutToExpire: boolean;
         };
         webServiceConfigured: boolean;
       };
       expect(body.webServiceConfigured).toBe(false);
-      expect(body.certificate.active?.subject).toContain('FIRMANTE DE PRUEBA');
+      // SRI-082. Caja sees until when signing works, not whose certificate.
+      expect(Object.keys(body.certificate.active!).sort()).toEqual([
+        'notAfter',
+        'notBefore',
+      ]);
+      expect(JSON.stringify(body)).not.toContain('FIRMANTE DE PRUEBA');
       expect(body.rows).toContainEqual(
         expect.objectContaining({
           invoiceId: invoice.id,

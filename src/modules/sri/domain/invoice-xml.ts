@@ -205,12 +205,26 @@ function quantityText(thousandths: bigint): string {
 // ── XML text ───────────────────────────────────────────────────────────────
 
 /**
+ * Characters XML 1.0 forbids even escaped —C0 controls other than tab and
+ * line breaks, U+FFFE/U+FFFF and unpaired surrogates—. One pasted into a name
+ * makes the signer fail, and an issued invoice cannot be corrected (BI-084):
+ * they are dropped, as nothing a person reads is lost with them.
+ */
+const NOT_XML_CHARACTERS = new RegExp(
+  '[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\uFFFE\\uFFFF]' +
+    '|[\\uD800-\\uDBFF](?![\\uDC00-\\uDFFF])' +
+    '|(?<![\\uD800-\\uDBFF])[\\uDC00-\\uDFFF]',
+  'g',
+);
+
+/**
  * SRI-014. The five reserved characters. The Ficha's glossary singles out the
  * ampersand —«caso contrario … se rechazará con motivo de mal estructurado»—,
  * and a clinic's legal name is exactly where one appears.
  */
 export function escapeXml(text: string): string {
   return text
+    .replace(NOT_XML_CHARACTERS, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -327,10 +341,19 @@ function totalTaxes(computed: readonly ComputedLine[]): string {
     .join('');
 }
 
+/** The XSD's `codigoPrincipal`: at most 25 characters, and optional. */
+const MAX_PRINCIPAL_CODE = 25;
+
 function detail({ line, base, tax }: ComputedLine): string {
   return element(
     'detalle',
-    text('codigoPrincipal', line.code) +
+    // A catalogue code longer than the XSD admits is left out rather than
+    // cut: a truncated code could be another service's. The line is still
+    // identified by its description, which is mandatory.
+    optional(
+      'codigoPrincipal',
+      line.code.length <= MAX_PRINCIPAL_CODE ? line.code : null,
+    ) +
       text('descripcion', line.description) +
       text('cantidad', quantityText(toThousandths(line.quantity))) +
       text('precioUnitario', sixDecimals(toCents(line.unitPrice))) +

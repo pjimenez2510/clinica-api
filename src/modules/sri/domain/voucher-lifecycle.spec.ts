@@ -229,6 +229,16 @@ describe('SRI-073 el documento de autorización', () => {
       '<comprobante><![CDATA[<factura id="comprobante"><a>x</a></factura>]]></comprobante>',
     );
   });
+  it('SRI-073 escapa lo que viene de la respuesta del SRI: no se cuela ninguna etiqueta', () => {
+    const document = authorisationDocument({
+      authorisationNumber: '1</numeroAutorizacion><x>',
+      authorisedAtText: 'a&b',
+      environmentLabel: '<ambiente>',
+      voucherXml: '<factura/>',
+    });
+    expect(document).not.toContain('<x>');
+    expect(document).toContain('a&amp;b');
+  });
 });
 
 describe('SRI-074 la espera del correo que falló', () => {
