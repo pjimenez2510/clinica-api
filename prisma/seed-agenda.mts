@@ -90,9 +90,19 @@ async function main() {
   //
   // Puede no existir si `seed-organization` no ha corrido; entonces el día se
   // siembra en Norte como siempre.
-  const central = await prisma.site.findUnique({
+  let central = await prisma.site.findUnique({
     where: { mspUnicode: 'DEV-SEDE-01' },
   });
+  // The same parish for Central, which `seed-organization` creates without
+  // one: on a database seeded from scratch it is where the médico attends,
+  // and no receta could be issued there. Only when it has none — a parish set
+  // from the screen is kept.
+  if (central !== null && central.parishConceptId === null && parish) {
+    central = await prisma.site.update({
+      where: { id: central.id },
+      data: { parishConceptId: parish.id },
+    });
+  }
 
   const sur = await prisma.site.upsert({
     where: { mspUnicode: 'DEV-SUR' },
