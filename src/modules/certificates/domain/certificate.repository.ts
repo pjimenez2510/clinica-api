@@ -43,6 +43,8 @@ export interface EncounterCertificatesQuery {
 /** CER-004. Who the caller is, clinically. */
 export interface CertifierIdentity {
   practitionerId: string;
+  /** CER-032. The code of the PRIMARY specialty, or `null` without one. */
+  primarySpecialtyCode: string | null;
 }
 
 /**

@@ -771,14 +771,29 @@ describe('el certificado medico por HTTP', () => {
     );
   });
 
-  it('CER-032 un reposo de 8 dias se emite con los dos avisos provisionales', async () => {
+  it('CER-032 el aviso de reposo largo depende de la especialidad principal del emisor', async () => {
     await aDiagnosis(encounterId);
-    const issued = await issue(restOf(8));
-    expect(issued.restNotices).toHaveLength(2);
-    expect(issued.restNotices.every((n) => n.includes('provisional'))).toBe(
-      true,
-    );
+    // Sin especialidad: umbral de 3 días.
     expect((await issue(restOf(3))).restNotices).toEqual([]);
+    expect((await issue(restOf(4))).restNotices).toEqual([
+      'Este reposo es de 4 días. El IESS puede pedir una cita de control o una justificación para validar reposos largos; compruebe que el paciente pueda validarlo.',
+    ]);
+
+    // Un especialista: umbral de 7 días.
+    const specialty = await prisma.specialty.create({
+      data: { code: 'pediatria', name: 'Pediatría' },
+    });
+    await prisma.practitionerSpecialty.create({
+      data: {
+        practitionerId: doctor.practitionerId,
+        specialtyId: specialty.id,
+        isPrimary: true,
+      },
+    });
+    expect((await issue(restOf(7))).restNotices).toEqual([]);
+    expect((await issue(restOf(8))).restNotices).toEqual([
+      expect.stringContaining('Este reposo es de 8 días.'),
+    ]);
   });
 
   it('CER-034 un reposo sin contingencia se rechaza en ese campo', async () => {

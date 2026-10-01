@@ -201,20 +201,41 @@ export function backdatingReasonOf(
 }
 
 /**
- * CER-032. ⚠️ PROVISIONAL TEXT: D-075 cites an IESS instructivo of 2014 with
- * these two thresholds, without its validity confirmed. The text says so.
+ * CER-032. The specialty code of general medicine, as `seed-specialties.mts`
+ * ships it.
  */
-export const REST_NOTICE_OVER_3_DAYS =
-  'Reposo de más de 3 días: el IESS puede pedir justificación adicional (aviso provisional, pendiente de confirmar con el IESS)';
-export const REST_NOTICE_OVER_7_DAYS =
-  'Reposo de más de 7 días: el IESS puede pedir una valoración adicional del reposo (aviso provisional, pendiente de confirmar con el IESS)';
+export const GENERAL_MEDICINE_SPECIALTY_CODE = 'medicina-general';
 
-/** CER-032. The notices a rest of `days` days carries; they never refuse. */
-export function restNoticesOf(days: number): string[] {
-  const notices: string[] = [];
-  if (days > 3) notices.push(REST_NOTICE_OVER_3_DAYS);
-  if (days > 7) notices.push(REST_NOTICE_OVER_7_DAYS);
-  return notices;
+/**
+ * CER-032. From how many days a rest is long enough to warn about: three for
+ * general medicine and for a practitioner with no specialty, seven for any
+ * other specialty (decided by the principal session, 01-10-2026).
+ */
+export function restNoticeThresholdOf(
+  primarySpecialtyCode: string | null,
+): number {
+  return primarySpecialtyCode === null ||
+    primarySpecialtyCode === GENERAL_MEDICINE_SPECIALTY_CODE
+    ? 3
+    : 7;
+}
+
+/** CER-032. The notice, with the number of days in it. */
+export function longRestNotice(days: number): string {
+  return `Este reposo es de ${days} días. El IESS puede pedir una cita de control o una justificación para validar reposos largos; compruebe que el paciente pueda validarlo.`;
+}
+
+/**
+ * CER-032. One notice when the rest exceeds the issuer's threshold, none
+ * otherwise. It never refuses the issue.
+ */
+export function restNoticesOf(
+  days: number,
+  primarySpecialtyCode: string | null,
+): string[] {
+  return days > restNoticeThresholdOf(primarySpecialtyCode)
+    ? [longRestNotice(days)]
+    : [];
 }
 
 /**

@@ -69,9 +69,23 @@ export class PrismaCertificateRepository implements CertificateRepository {
   async findCertifierByUser(userId: string): Promise<CertifierIdentity | null> {
     const practitioner = await this.prisma.practitioner.findFirst({
       where: { userId, active: true },
-      select: { id: true },
+      select: {
+        id: true,
+        // CER-032. The threshold of the long-rest notice depends on it.
+        specialties: {
+          where: { isPrimary: true },
+          select: { specialty: { select: { code: true } } },
+          take: 1,
+        },
+      },
     });
-    return practitioner === null ? null : { practitionerId: practitioner.id };
+    return practitioner === null
+      ? null
+      : {
+          practitionerId: practitioner.id,
+          primarySpecialtyCode:
+            practitioner.specialties[0]?.specialty.code ?? null,
+        };
   }
 
   /** CER-002, CER-010. Whether the attention exists within the scope. */

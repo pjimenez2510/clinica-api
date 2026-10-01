@@ -11,8 +11,8 @@ import {
   assertIssuableType,
   iessValidationOf,
   IESS_NOT_APPLICABLE_NOTICE,
-  REST_NOTICE_OVER_3_DAYS,
-  REST_NOTICE_OVER_7_DAYS,
+  longRestNotice,
+  restNoticeThresholdOf,
   backdatingReasonOf,
   restDetailsOf,
   restNoticesOf,
@@ -175,26 +175,26 @@ describe('CER-031 el tope de 30 días', () => {
   });
 });
 
-describe('CER-032 los avisos de más de 3 y de más de 7 días', () => {
-  const noticesFor = (days: number) =>
-    restNoticesOf(
-      restDetailsOf('MEDICAL_REST', aRest({ restTo: addDays(today, days - 1) }))
-        ?.days ?? 0,
-    );
-
-  it('CER-032 hasta 3 días no avisa; 4 días avisa una vez; 8 días avisa dos', () => {
-    expect(noticesFor(3)).toEqual([]);
-    expect(noticesFor(4)).toEqual([REST_NOTICE_OVER_3_DAYS]);
-    expect(noticesFor(7)).toEqual([REST_NOTICE_OVER_3_DAYS]);
-    expect(noticesFor(8)).toEqual([
-      REST_NOTICE_OVER_3_DAYS,
-      REST_NOTICE_OVER_7_DAYS,
-    ]);
+describe('CER-032 el aviso de reposo largo, segun la especialidad del emisor', () => {
+  it('CER-032 el umbral es 3 dias para medicina general o sin especialidad, y 7 para cualquier otra', () => {
+    expect(restNoticeThresholdOf('medicina-general')).toBe(3);
+    expect(restNoticeThresholdOf(null)).toBe(3);
+    expect(restNoticeThresholdOf('pediatria')).toBe(7);
   });
 
-  it('CER-032 el texto dice que es provisional', () => {
-    expect(REST_NOTICE_OVER_3_DAYS).toContain('provisional');
-    expect(REST_NOTICE_OVER_7_DAYS).toContain('provisional');
+  it('CER-032 medicina general avisa a partir de 4 dias, una sola vez', () => {
+    expect(restNoticesOf(3, 'medicina-general')).toEqual([]);
+    expect(restNoticesOf(4, 'medicina-general')).toEqual([
+      'Este reposo es de 4 días. El IESS puede pedir una cita de control o una justificación para validar reposos largos; compruebe que el paciente pueda validarlo.',
+    ]);
+    expect(restNoticesOf(20, null)).toHaveLength(1);
+  });
+
+  it('CER-032 un especialista avisa a partir de 8 dias, con el numero de dias en el texto', () => {
+    expect(restNoticesOf(7, 'pediatria')).toEqual([]);
+    expect(restNoticesOf(8, 'pediatria')).toEqual([longRestNotice(8)]);
+    expect(longRestNotice(8)).toContain('Este reposo es de 8 días.');
+    expect(longRestNotice(8)).not.toContain('provisional');
   });
 });
 

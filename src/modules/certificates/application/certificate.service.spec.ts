@@ -14,8 +14,7 @@ import {
 } from '../../../shared/domain/clinic-time';
 import {
   IESS_NOT_APPLICABLE_NOTICE,
-  REST_NOTICE_OVER_3_DAYS,
-  REST_NOTICE_OVER_7_DAYS,
+  longRestNotice,
 } from '../domain/certificate';
 import {
   CertificateAlreadyRevokedError,
@@ -130,7 +129,10 @@ const aSnapshot = (overrides: Partial<IssueSnapshot> = {}): IssueSnapshot => ({
 });
 
 class FakeRepository implements CertificateRepository {
-  certifier: CertifierIdentity | null = { practitionerId: PRACTITIONER };
+  certifier: CertifierIdentity | null = {
+    practitionerId: PRACTITIONER,
+    primarySpecialtyCode: null,
+  };
   snapshot: IssueSnapshot = aSnapshot({
     encounterStatus: 'OPEN',
     diagnosisCount: 1,
@@ -476,11 +478,20 @@ describe('el servicio de certificados', () => {
     expect(repository.issued).toHaveLength(0);
   });
 
-  it('CER-032 la respuesta lleva los avisos de mas de 3 y de mas de 7 dias, sin impedir la emision', async () => {
+  it('CER-032 la respuesta lleva un solo aviso cuando el reposo supera el umbral de la especialidad del emisor', async () => {
+    // Sin especialidad: umbral de 3 días.
     expect((await service.issue(rest(3), requester)).restNotices).toEqual([]);
+    expect((await service.issue(rest(4), requester)).restNotices).toEqual([
+      longRestNotice(4),
+    ]);
+    // Especialista: umbral de 7 días.
+    repository.certifier = {
+      practitionerId: PRACTITIONER,
+      primarySpecialtyCode: 'pediatria',
+    };
+    expect((await service.issue(rest(7), requester)).restNotices).toEqual([]);
     expect((await service.issue(rest(8), requester)).restNotices).toEqual([
-      REST_NOTICE_OVER_3_DAYS,
-      REST_NOTICE_OVER_7_DAYS,
+      longRestNotice(8),
     ]);
     expect((await service.issue(attendance(), requester)).restNotices).toEqual(
       [],

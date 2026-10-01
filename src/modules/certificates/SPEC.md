@@ -329,12 +329,16 @@ PR-030).
   DEBERÁ rechazar la emisión con `CERTIFICATE_REST_TOO_LONG`. Un reposo más
   largo se cubre con certificados sucesivos.
 
-- **CER-032** — CUANDO se emita un reposo de más de **3** días, y otra vez de más
-  de **7**, la respuesta DEBERÁ llevar un **aviso**, sin impedir la emisión.
+- **CER-032** — CUANDO se emita un reposo que supere el **umbral del emisor**
+  —**3** días si su especialidad principal es `medicina-general` o si no tiene
+  ninguna, **7** si es cualquier otra—, la respuesta DEBERÁ llevar **un**
+  aviso, sin impedir la emisión.
 
-  > ⚠️ **[NECESITA ACLARACIÓN]** — el texto del aviso. D-075 cita un instructivo
-  > del IESS de 2014 con esos topes, sin verificar su vigencia; el aviso se
-  > construye con los dos umbrales y un texto provisional que lo dice.
+  > **Decidido por la principal el 01-10-2026.** El texto es exactamente
+  > «Este reposo es de {N} días. El IESS puede pedir una cita de control o una
+  > justificación para validar reposos largos; compruebe que el paciente pueda
+  > validarlo.», con {N} los días del reposo. El umbral se lee del código de la
+  > especialidad principal del profesional de la sesión.
 
 - **CER-033** — DONDE el certificado lleve diagnóstico, el documento DEBERÁ
   llevar la leyenda **«CONFIDENCIAL»** (A.M. 5216-A art. 33).
@@ -446,5 +450,5 @@ Todo lo que faltaba está en `20261001043001_certificate_number_and_revocation`.
 ## Preguntas abiertas
 
 - **D-074** y **D-075**, resueltas por el autor el 30-09-2026.
-- El texto del aviso de CER-032 y la lista de contingencias de CER-034.
+- La lista de contingencias de CER-034.
 - **Institución del sistema** para una clínica privada (CER-020).

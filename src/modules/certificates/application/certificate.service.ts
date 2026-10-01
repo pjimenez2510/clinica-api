@@ -196,7 +196,10 @@ export class CertificateService {
     return {
       certificate,
       iess: details === null ? null : iessValidationOf(details.period.to),
-      restNotices: details === null ? [] : restNoticesOf(details.days),
+      restNotices:
+        details === null
+          ? []
+          : restNoticesOf(details.days, certifier.primarySpecialtyCode),
     };
   }
 
