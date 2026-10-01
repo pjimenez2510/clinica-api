@@ -647,7 +647,8 @@ describe('la receta contra PostgreSQL', () => {
       const concept = await aCnmbConcept(prisma, {
         code: 'J01CA04',
         display: 'Amoxicilina',
-        validFrom: new Date('2019-01-01'),
+        // In force long before today, whatever today is.
+        validFrom: new Date(`${addDays(today, -365)}T00:00:00.000Z`),
       });
       const service = serviceOf(prisma);
       const requester = { userId: practitioner.userId, sites: [site.id] };
