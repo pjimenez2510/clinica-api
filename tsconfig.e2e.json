@@ -1,0 +1,9 @@
+// The API the web walks start (clinica-web/playwright.config.ts): the build of
+// `nest build`, in its own folder. `deleteOutDir` empties the output folder on
+// every start, and `dist/` is the one `pnpm start:dev` is running from.
+{
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "outDir": "./dist-e2e"
+  }
+}

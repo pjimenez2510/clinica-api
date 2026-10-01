@@ -177,7 +177,7 @@ se puede corregir ni anulando.
 **Prueba independiente:** emitir dos facturas seguidas en el mismo punto de
 emisión y comprobar que los secuenciales son consecutivos y únicos; intentar
 actualizar una factura emitida por debajo de la aplicación y comprobar que la
-base lo rechaza. **Cubre:** BI-080 a BI-090, BI-159.
+base lo rechaza. **Cubre:** BI-080 a BI-090, BI-159, BI-160.
 
 **Solo servidor:** BI-084, BI-085, BI-086, BI-088. La inmutabilidad, el
 secuencial sin huecos y que un cargo no pueda estar en dos facturas vivas son
@@ -1014,6 +1014,36 @@ es falsa, hay requisitos que cambian.
   > aquí: los emite otro país. Los `CHECK` usan `is_valid_cedula()` —la de
   > `patient_identifier_cedula_valid`— e `is_valid_ruc()`, que es `Ruc` en SQL:
   > la cédula que va al SRI la garantiza la base igual que la del paciente.
+- **BI-160** — CUANDO quien cobra vaya a emitir una factura a un receptor de
+  tipo `06` (pasaporte) u `08` (identificación del exterior) cuyo número tenga
+  forma de cédula o RUC ecuatoriano —leído sin guiones, puntos ni espacios,
+  sólo dígitos, diez o trece, y los dos primeros una provincia válida (`01`–`24`
+  o `30`)—, la pantalla de caja DEBERÁ preguntar «¿Es una cédula ecuatoriana?»
+  (o «¿Es un RUC ecuatoriano?» con trece) antes de enviarla, y DEBERÁ permitir
+  tanto corregir el tipo como seguir y emitir con el tipo elegido. NO DEBERÁ
+  bloquear la emisión, y NO DEBERÁ preguntar cuando el número no tenga esa
+  forma.
+  > D-067, opción A (autor, 30-09-2026). Es el agujero que deja BI-159: una
+  > cédula `05` con un dígito mal tecleado no se emite, y la salida rápida con
+  > el paciente delante es cambiar el tipo a pasaporte. La factura sale sin la
+  > cédula del paciente, que pierde la rebaja de gastos personales, y no se
+  > corrige (BI-084). **No se comprueba el dígito verificador** a propósito: el
+  > caso que importa es justo el del verificador equivocado. Los separadores se
+  > quitan por la misma razón: la cédula copiada como viene impresa
+  > (`171003406-6`) la rechaza BI-159 por longitud, y es la que luego se teclea
+  > como pasaporte (revisión de `fix-billing-aviso-documento`).
+  >
+  > **Ninguna respuesta es la de por defecto**: el foco va a la pregunta. «Sí»
+  > ante una cédula colombiana (`10…`, `11…`) inventa una cédula ecuatoriana;
+  > «No» ante una mal tecleada le quita la rebaja al paciente. Siguen abiertas
+  > D-072 (callar cuando la ficha ya dice que es extranjera) y D-073 (los
+  > errores de longitud).
+  >
+  > **Es de la interfaz y no del servidor**, al revés que BI-081, y es
+  > deliberado: un aviso que no bloquea no tiene nada que exigir en la ruta. Un
+  > documento extranjero legítimo puede coincidir por azar con esa forma (por
+  > eso no es la opción B), y una confirmación obligatoria en el contrato sería
+  > un bloqueo para quien llame a la ruta sin pantalla.
 - **BI-088** — El sistema NO DEBERÁ incluir un mismo cargo en más de una factura
   no anulada, y la garantía DEBERÁ vivir en la base de datos.
   > **Resuelto por el estado del cargo, no por un índice.** No existe

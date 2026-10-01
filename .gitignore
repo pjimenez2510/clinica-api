@@ -62,6 +62,7 @@ arquitectura.mmd
 # Solo se ignora el estado local de la máquina.
 .claude/settings.local.json
 .claude/.verify-stamp
+/dist-e2e
 
 # SRI-024: the development master passphrase of the certificate store.
 .dev-secrets/
