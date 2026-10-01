@@ -149,7 +149,7 @@ describe('CER-009 el número del certificado: propio, por sede, sin huecos e inm
       Array.from({ length: 10 }, () => insertCertificate(prisma, scene)),
     );
 
-    // SC-002: max(number) = count(*) en la sede.
+    // SC-065: max(number) = count(*) en la sede.
     expect(numbers.map((row) => row.number).sort((a, b) => a - b)).toEqual(
       Array.from({ length: 10 }, (_, i) => i + 1),
     );

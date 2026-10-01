@@ -310,10 +310,10 @@ PR-030).
 
 ## Criterios de éxito
 
-- **SC-001** — El médico emite un certificado de reposo desde la atención en
+- **SC-064** — El médico emite un certificado de reposo desde la atención en
   menos de un minuto, medido en el recorrido
   `clinica-web/e2e/flujos/f05-ordenes-y-receta.spec.ts`.
-- **SC-002** — Ninguna numeración de certificados de una sede tiene huecos:
+- **SC-065** — Ninguna numeración de certificados de una sede tiene huecos:
   `max(number) = count(*)` por sede, comprobado contra la base.
 
 ## Supuestos
