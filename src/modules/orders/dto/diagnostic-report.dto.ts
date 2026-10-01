@@ -112,6 +112,56 @@ export class RegisterReportDto extends createZodDto(registerReportSchema) {}
 export const correctReportSchema = registerReportSchema;
 export class CorrectReportDto extends createZodDto(correctReportSchema) {}
 
+/** ORD-062. Who received the notice, and by what means. */
+const NOTICE_RECIPIENT = z.enum([
+  'ORDERING_PRACTITIONER',
+  'OTHER_PRACTITIONER',
+  'PATIENT',
+  'REPRESENTATIVE',
+]);
+const NOTICE_CHANNEL = z.enum(['PHONE', 'IN_PERSON', 'VIDEO_CALL']);
+
+/**
+ * ORD-062. One notice of a critical value, as it was written. Never rewritten
+ * (ORD-064).
+ */
+export const criticalNoticeSchema = z.object({
+  id: z.uuid(),
+  resultId: z.string(),
+  recipientKind: NOTICE_RECIPIENT,
+  recipientName: z.string(),
+  channel: NOTICE_CHANNEL,
+  /** When the call happened, which may precede when it was written down. */
+  notifiedAt: z.iso.datetime(),
+  /** The session's account that gave it, with its name. */
+  notifiedBy: z.object({ id: z.uuid(), name: z.string() }),
+  note: z.string().nullable(),
+});
+/** Response of POST /orders/results/:resultId/notices. */
+export class CriticalNoticeDto extends createZodDto(criticalNoticeSchema) {}
+
+/**
+ * ORD-062. What recording a notice asks for.
+ *
+ * ⚠️ NO `notifiedById`: who gave it is the session, never the body.
+ */
+export const recordNoticeSchema = z.object({
+  recipientKind: NOTICE_RECIPIENT,
+  recipientName: z
+    .string()
+    .trim()
+    .min(1, 'Escriba a quién se avisó')
+    .max(200, 'El nombre no puede superar 200 caracteres'),
+  channel: NOTICE_CHANNEL,
+  notifiedAt: instant('La hora del aviso').optional(),
+  note: z
+    .string()
+    .trim()
+    .max(500, 'La nota no puede superar 500 caracteres')
+    .optional(),
+});
+export class RecordNoticeDto extends createZodDto(recordNoticeSchema) {}
+
 /** ORD-031 to ORD-038. One determination as a client reads it. */
 export const observationSchema = z.object({
   id: z.string(),
@@ -132,6 +182,8 @@ export const observationSchema = z.object({
   /** ORD-038. `null` is «no había con qué compararlo», NEVER «normal». */
   abnormalFlag: ABNORMAL_FLAG.nullable(),
   observedAt: z.iso.datetime(),
+  /** ORD-062. The notices given of this value, oldest first. */
+  notices: z.array(criticalNoticeSchema),
 });
 
 /** ORD-030, ORD-051. One report as a client reads it. */
@@ -227,3 +279,4 @@ export type DiagnosticReportListResponse = z.infer<
 >;
 /** Likewise, for both safety worklists. */
 export type FlaggedResultListResponse = z.infer<typeof flaggedResultListSchema>;
+export type CriticalNoticeResponse = z.infer<typeof criticalNoticeSchema>;

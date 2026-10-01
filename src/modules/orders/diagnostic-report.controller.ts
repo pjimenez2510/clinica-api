@@ -26,17 +26,21 @@ import type { Permission } from '../../shared/authorisation/permission.catalogue
 import { DiagnosticReportService } from './application/diagnostic-report.service';
 import type { Requester } from './application/service-order.service';
 import type {
+  CriticalNoticeView,
   DiagnosticReportView,
   FlaggedResultEntry,
 } from './domain/diagnostic-report.repository';
 import {
   CorrectReportDto,
+  CriticalNoticeDto,
   DiagnosticReportDto,
   DiagnosticReportListDto,
   FlaggedResultListDto,
   MatchResultDto,
+  RecordNoticeDto,
   RegisterReportDto,
   WorklistQueryDto,
+  type CriticalNoticeResponse,
   type DiagnosticReportListResponse,
   type DiagnosticReportResponse,
   type FlaggedResultListResponse,
@@ -187,6 +191,44 @@ export class DiagnosticReportController {
   }
 
   /**
+   * ORD-062. Records that somebody was told of a critical value, which takes
+   * it off the list above.
+   *
+   * ⚠️ `result:write` (D-111 §6, provisional). The nurse who makes the call is
+   * the ordinary case, and `record:write` — diagnosing — would leave out
+   * whoever phones. Who gave the notice is the session's account, never the
+   * body; WHEN is declared, because the 03:00 call is written down at 08:00.
+   *
+   * ⚠️ DECLARED BEFORE THE PARAMETERISED ROUTES: Express matches in
+   * registration order.
+   */
+  @Post('results/:resultId/notices')
+  @RequirePermission('result:write', 'query')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Registrar el aviso de un valor crítico' })
+  @ApiCreatedResponse({ type: CriticalNoticeDto })
+  async notify(
+    // NOT `ParseUUIDPipe`: a `bigint` id, as on `match` above.
+    @Param('resultId') resultId: string,
+    @Body() dto: RecordNoticeDto,
+    @Req() req: Request,
+  ): Promise<CriticalNoticeResponse> {
+    const notice = await this.reports.notify(
+      {
+        resultId,
+        recipientKind: dto.recipientKind,
+        recipientName: dto.recipientName,
+        channel: dto.channel,
+        notifiedAt: dto.notifiedAt === undefined ? undefined : new Date(dto.notifiedAt), // prettier-ignore
+        note: dto.note,
+      },
+      this.requester(req, 'result:write'),
+      new Date(),
+    );
+    return toNoticeResponse(notice);
+  }
+
+  /**
    * ORD-050 to ORD-054. Corrects a report by REPLACING it.
    *
    * 201: a correction is a new report, not an edit of an old one, and the
@@ -304,7 +346,22 @@ function toReportResponse(
       referenceText: result.referenceText,
       abnormalFlag: result.abnormalFlag,
       observedAt: result.observedAt.toISOString(),
+      notices: result.notices.map(toNoticeResponse),
     })),
+  };
+}
+
+/** ORD-062. The notice, instants as ISO 8601. */
+function toNoticeResponse(notice: CriticalNoticeView): CriticalNoticeResponse {
+  return {
+    id: notice.id,
+    resultId: notice.resultId,
+    recipientKind: notice.recipientKind,
+    recipientName: notice.recipientName,
+    channel: notice.channel,
+    notifiedAt: notice.notifiedAt.toISOString(),
+    notifiedBy: notice.notifiedBy,
+    note: notice.note,
   };
 }
 

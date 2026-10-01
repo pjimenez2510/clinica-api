@@ -981,6 +981,18 @@ export const DOMAIN_ERROR_CODES = [
   'ORDER_ITEM_NOT_MATCHABLE',
   'RESULT_ALREADY_MATCHED',
   'RESULT_NOT_FOUND',
+  // ─── Orders, E5 (ORD-062). La constancia del aviso de un valor crítico.
+  //
+  // El A.M. 00002393 art. 39 obliga a avisar «de manera urgente» de un valor de
+  // alerta, y el aviso es un acto clínico (D-050 §2). Hasta aquí no había
+  // dónde dejar constancia y la cola de críticos no se podía vaciar.
+  //
+  //   * `RESULT_NOT_CRITICAL` (422) — el resultado no lleva bandera crítica.
+  //   * `CRITICAL_NOTICE_TIME_INVALID` (422) — la hora del aviso es futura o
+  //     anterior al resultado. La declara quien registra, porque la llamada de
+  //     las 03:00 se anota a las 08:00.
+  'CRITICAL_NOTICE_TIME_INVALID',
+  'RESULT_NOT_CRITICAL',
   // ─── Documents, H1 a H4 (DOC-012, DOC-014, DOC-037, DOC-050 a DOC-053).
   // El documento imprimible y el artefacto que queda.
   //

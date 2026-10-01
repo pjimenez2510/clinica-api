@@ -420,3 +420,45 @@ export class OrderItemNotMatchableError extends ValidationError {
     super('The order item does not belong to this result order, or is cancelled'); // prettier-ignore
   }
 }
+
+/**
+ * ORD-062. A notice was recorded for a value that carries no critical flag.
+ *
+ * The notice of A.M. 00002393 art. 39 is the notice of an ALERT value. One on
+ * a normal value would fill the safety record with entries that mean nothing,
+ * and the critical worklist is only read while what is on it matters.
+ */
+export class ResultNotCriticalError extends ValidationError {
+  readonly code = 'RESULT_NOT_CRITICAL';
+  override readonly userTitle =
+    'Ese resultado no es un valor crítico: el aviso urgente se registra solo para los valores de alerta';
+
+  constructor() {
+    super('The observation result carries no critical flag');
+  }
+}
+
+/**
+ * ORD-062. The instant of the notice is in the future, or before the result it
+ * announces.
+ *
+ * The instant is DECLARED by whoever records it, because the call made at
+ * 03:00 is written down at 08:00 and the record has to say 03:00. Neither end
+ * of this refusal could have happened.
+ */
+export class CriticalNoticeTimeInvalidError extends ValidationError {
+  readonly code = 'CRITICAL_NOTICE_TIME_INVALID';
+  override readonly userTitle =
+    'La hora del aviso no puede ser futura ni anterior al resultado. Escriba la hora en que se hizo la llamada';
+  override readonly fieldErrors = [
+    {
+      field: 'notifiedAt',
+      code: 'CRITICAL_NOTICE_TIME_INVALID',
+      message: 'Entre la hora del resultado y ahora',
+    },
+  ];
+
+  constructor() {
+    super('The notice instant is in the future or before the result');
+  }
+}

@@ -12,6 +12,7 @@ import type { Requester } from './service-order.service';
 import type { AnalyteDefinition } from '../domain/analyte';
 import type {
   DiagnosticReportRepository,
+  CriticalNoticeView,
   DiagnosticReportView,
   ExpectedAnalytes,
   FlaggedResultEntry,
@@ -162,6 +163,8 @@ class FakeReports implements Partial<DiagnosticReportRepository> {
     reportId: 'report-0',
     orderId: ORDER,
     orderItemId: null,
+    abnormalFlag: null,
+    observedAt: new Date(0),
   };
   matched: { command: MatchResultCommand; expected: ExpectedAnalytes }[] = [];
 
@@ -176,6 +179,9 @@ class FakeReports implements Partial<DiagnosticReportRepository> {
   ): Promise<DiagnosticReportView> {
     this.matched.push({ command, expected });
     return Promise.resolve(aReport({ id: 'report-0' }));
+  }
+  recordNotice(): Promise<CriticalNoticeView> {
+    return Promise.reject(new Error('not exercised here'));
   }
 }
 
@@ -459,6 +465,8 @@ describe('el registro y la corrección de un resultado', () => {
       reportId: 'report-0',
       orderId: ORDER,
       orderItemId: ITEM_BH,
+      abnormalFlag: null,
+      observedAt: new Date(0),
     };
 
     await expect(

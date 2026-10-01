@@ -59,6 +59,55 @@ export interface ObservationView {
   /** ORD-038. `null` means «nothing to compare against», never «normal». */
   abnormalFlag: AbnormalFlag | null;
   observedAt: Date;
+  /** ORD-062. The notices given of this value, oldest first. */
+  notices: readonly CriticalNoticeView[];
+}
+
+/** ORD-062. Who received the notice of a critical value. */
+export const CRITICAL_NOTICE_RECIPIENTS = [
+  'ORDERING_PRACTITIONER',
+  'OTHER_PRACTITIONER',
+  'PATIENT',
+  'REPRESENTATIVE',
+] as const;
+export type CriticalNoticeRecipient =
+  (typeof CRITICAL_NOTICE_RECIPIENTS)[number];
+
+/** ORD-062. By what means it was given. */
+export const CRITICAL_NOTICE_CHANNELS = [
+  'PHONE',
+  'IN_PERSON',
+  'VIDEO_CALL',
+] as const;
+export type CriticalNoticeChannel = (typeof CRITICAL_NOTICE_CHANNELS)[number];
+
+/**
+ * ORD-062, ORD-064. The notice of a critical value, as it was written — and it
+ * is never written again: `critical_result_notice` is append-only.
+ */
+export interface CriticalNoticeView {
+  id: string;
+  resultId: string;
+  recipientKind: CriticalNoticeRecipient;
+  recipientName: string;
+  channel: CriticalNoticeChannel;
+  /** When the call happened, which may precede when it was written down. */
+  notifiedAt: Date;
+  /** The account that gave it, with the name a reader recognises. */
+  notifiedBy: { id: string; name: string };
+  note: string | null;
+}
+
+/** ORD-062. What recording a notice writes. */
+export interface NewCriticalNotice {
+  resultId: string;
+  recipientKind: CriticalNoticeRecipient;
+  recipientName: string;
+  channel: CriticalNoticeChannel;
+  notifiedById: string;
+  notifiedAt: Date;
+  note: string | null;
+  sites: SiteScopeFilter;
 }
 
 /**
@@ -159,6 +208,10 @@ export interface MatchableResult {
   orderId: string;
   /** ORD-040. `null` is exactly what puts it on the unmatched queue. */
   orderItemId: string | null;
+  /** ORD-062. Only a critical value takes a notice. */
+  abnormalFlag: AbnormalFlag | null;
+  /** ORD-062. A notice cannot precede the result it announces. */
+  observedAt: Date;
 }
 
 /**
@@ -281,6 +334,16 @@ export interface DiagnosticReportRepository {
    * net.
    */
   critical(query: SafetyWorklistQuery): Promise<FlaggedResultEntry[]>;
+
+  /**
+   * ORD-062. Writes the notice of a critical value.
+   *
+   * The scope is judged again where the row lands, as `match` does: between
+   * the service's read and this write a grant can be revoked. Whether the
+   * value is critical and the instant plausible is the service's judgement;
+   * this adapter only refuses what is out of scope.
+   */
+  recordNotice(notice: NewCriticalNotice): Promise<CriticalNoticeView>;
 }
 
 /** Injection token. The application never names the adapter. */

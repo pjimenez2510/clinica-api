@@ -7,6 +7,9 @@ import {
 } from '../../../shared/audit/access-audit.port';
 import {
   DIAGNOSTIC_REPORT_REPOSITORY,
+  type CriticalNoticeChannel,
+  type CriticalNoticeRecipient,
+  type CriticalNoticeView,
   type DiagnosticReportRepository,
   type DiagnosticReportView,
   type ExpectedAnalytes,
@@ -25,6 +28,7 @@ import {
   type ServiceOrderView,
 } from '../domain/service-order.repository';
 import {
+  CriticalNoticeTimeInvalidError,
   OrderItemNotMatchableError,
   OrderNotFoundError,
   ReportAlreadyCorrectedError,
@@ -33,6 +37,7 @@ import {
   ResultAlreadyMatchedError,
   ResultAnalyteUnknownError,
   ResultFlagIsDerivedError,
+  ResultNotCriticalError,
   ResultNotFoundError,
 } from '../domain/orders.errors';
 import { isCorrectable, isLineComplete } from '../domain/service-order';
@@ -98,6 +103,24 @@ export interface RegisterReportRequest {
 export interface MatchResultRequest {
   resultId: string;
   orderItemId: string;
+}
+
+/**
+ * ORD-062. What recording the notice of a critical value needs to be told.
+ *
+ * ⚠️ NO `notifiedById`. Who gave the notice is the session's account, read by
+ * the caller and never taken from the request — the rule ORD-001 applies to
+ * `orderedById`. A field there is a notice somebody can put in a colleague's
+ * name.
+ */
+export interface RecordNoticeRequest {
+  resultId: string;
+  recipientKind: CriticalNoticeRecipient;
+  recipientName: string;
+  channel: CriticalNoticeChannel;
+  /** When the call happened; the clock's «now» when absent. */
+  notifiedAt?: Date;
+  note?: string;
 }
 
 /** ORD-050. A correction is a report with a report behind it. */
@@ -385,6 +408,80 @@ export class DiagnosticReportService {
   /** ORD-060, ORD-061. The values that have to reach a human today. */
   critical(requester: Requester, limit: number): Promise<FlaggedResultEntry[]> {
     return this.reports.critical({ sites: requester.sites, limit });
+  }
+
+  /**
+   * ORD-062. Records that somebody was told of a critical value — which takes
+   * it off the critical worklist.
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * THE CALL IS A CLINICAL ACT, AND THIS IS ITS RECORD
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * A.M. 00002393 art. 39 obliges telling «de manera urgente al médico
+   * tratante y/o al usuario», and D-050 §2 decided the call is recorded as a
+   * clinical act. Without the record nobody can show it happened, which is
+   * exactly what is asked when something goes wrong. It is never rewritten
+   * (ORD-064): a notice written wrongly is answered by writing another.
+   *
+   * ⚠️ THE INSTANT IS DECLARED AND BOUNDED. The 03:00 call is written down at
+   * 08:00 and the record has to say 03:00; but it cannot be later than now nor
+   * earlier than the result it announces.
+   *
+   * What the policy still leaves open — read-back, unanswered attempts — is
+   * D-111, and is not invented here.
+   */
+  async notify(
+    request: RecordNoticeRequest,
+    requester: Requester,
+    now: Date,
+  ): Promise<CriticalNoticeView> {
+    const result = await this.reports.resultById({
+      resultId: request.resultId,
+      sites: requester.sites,
+    });
+    if (!result) throw new ResultNotFoundError();
+    if (
+      result.abnormalFlag !== 'CRITICAL_LOW' &&
+      result.abnormalFlag !== 'CRITICAL_HIGH'
+    ) {
+      throw new ResultNotCriticalError();
+    }
+
+    const notifiedAt = request.notifiedAt ?? now;
+    if (notifiedAt > now || notifiedAt < result.observedAt) {
+      throw new CriticalNoticeTimeInvalidError();
+    }
+
+    const notice = await this.reports.recordNotice({
+      resultId: result.resultId,
+      recipientKind: request.recipientKind,
+      recipientName: request.recipientName,
+      channel: request.channel,
+      notifiedById: requester.userId,
+      notifiedAt,
+      note: request.note ?? null,
+      sites: requester.sites,
+    });
+
+    // ORD-062, ORD-091. After the write, so a refused insert leaves no entry
+    // claiming somebody was told.
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: 'critical_result_notice',
+      resourceId: notice.id,
+      action: 'CREATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+
+    // ORD-024. The site and the fact: never the value, never who was called.
+    this.logger.info(
+      { action: 'CRITICAL_NOTICE_RECORDED', channel: notice.channel },
+      'critical value notice recorded',
+    );
+
+    return notice;
   }
 
   /**

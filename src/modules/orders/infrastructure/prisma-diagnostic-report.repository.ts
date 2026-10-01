@@ -10,12 +10,14 @@ import {
 } from '../domain/orders.errors';
 import { isLineComplete } from '../domain/service-order';
 import type {
+  CriticalNoticeView,
   DiagnosticReportRepository,
   DiagnosticReportView,
   ExpectedAnalytes,
   FlaggedResultEntry,
   MatchResultCommand,
   MatchableResult,
+  NewCriticalNotice,
   NewReport,
   ObservationView,
   OrderPatient,
@@ -51,6 +53,26 @@ import type { SiteScopeFilter } from '../domain/service-order.repository';
  */
 
 /**
+ * ORD-062. A notice with the name of who gave it — the trail says WHO, and a
+ * user id is not something a reader of a clinical record recognises.
+ */
+const NOTICE_SELECT = {
+  id: true,
+  observationResultId: true,
+  recipientKind: true,
+  recipientName: true,
+  channel: true,
+  notifiedAt: true,
+  note: true,
+  notifiedBy: { select: { id: true, firstName: true, lastName: true } },
+} satisfies Prisma.CriticalResultNoticeSelect;
+
+/** The shape `NOTICE_SELECT` produces. */
+type NoticeRow = Prisma.CriticalResultNoticeGetPayload<{
+  select: typeof NOTICE_SELECT;
+}>;
+
+/**
  * One stored result with its frozen unit, range and flag (ORD-034, ORD-037).
  */
 const RESULT_SELECT = {
@@ -67,6 +89,10 @@ const RESULT_SELECT = {
   referenceText: true,
   abnormalFlag: true,
   observedAt: true,
+  notices: {
+    orderBy: [{ notifiedAt: 'asc' }, { id: 'asc' }],
+    select: NOTICE_SELECT,
+  },
 } satisfies Prisma.ObservationResultSelect;
 
 /** The shape `RESULT_SELECT` produces. */
@@ -257,6 +283,8 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
         id: true,
         reportId: true,
         orderItemId: true,
+        abnormalFlag: true,
+        observedAt: true,
         report: { select: { serviceOrderId: true } },
       },
     });
@@ -267,6 +295,8 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
       reportId: row.reportId,
       orderId: row.report.serviceOrderId,
       orderItemId: row.orderItemId,
+      abnormalFlag: row.abnormalFlag,
+      observedAt: row.observedAt,
     };
   }
 
@@ -385,6 +415,12 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
            */
           supersededBy: null,
         },
+        /**
+         * ORD-062. NOT YET NOTIFIED. Any notice takes the value off: the
+         * obligation of art. 39 is to tell somebody, and once somebody was
+         * told, with a name and an hour, the value is no longer waiting.
+         */
+        notices: { none: {} },
       },
       orderBy: [{ observedAt: 'desc' }, { id: 'desc' }],
       take: query.limit,
@@ -392,6 +428,43 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
     });
     return rows.map(toWorklistEntry);
   }
+
+  /** ORD-062. The notice of a critical value; never rewritten (ORD-064). */
+  async recordNotice(notice: NewCriticalNotice): Promise<CriticalNoticeView> {
+    const row = await this.prisma.$transaction((tx) => writeNotice(tx, notice));
+    return toNoticeView(row);
+  }
+}
+
+/**
+ * ORD-062. Writes the notice, after judging the scope again inside the
+ * transaction — the row that lands is the one that matters.
+ */
+async function writeNotice(
+  tx: Prisma.TransactionClient,
+  notice: NewCriticalNotice,
+): Promise<NoticeRow> {
+  const id = toResultId(notice.resultId);
+  if (id === undefined) throw new ResultNotFoundError();
+
+  const result = await tx.observationResult.findFirst({
+    where: { id, report: { serviceOrder: siteFilter(notice.sites) } },
+    select: { id: true },
+  });
+  if (!result) throw new ResultNotFoundError();
+
+  return tx.criticalResultNotice.create({
+    data: {
+      observationResultId: id,
+      recipientKind: notice.recipientKind,
+      recipientName: notice.recipientName,
+      channel: notice.channel,
+      notifiedById: notice.notifiedById,
+      notifiedAt: notice.notifiedAt,
+      note: notice.note,
+    },
+    select: NOTICE_SELECT,
+  });
 }
 
 /**
@@ -510,6 +583,24 @@ function toObservationView(row: ResultRow): ObservationView {
     referenceText: row.referenceText,
     abnormalFlag: row.abnormalFlag,
     observedAt: row.observedAt,
+    notices: row.notices.map(toNoticeView),
+  };
+}
+
+/** Row to view, the giver's name joined for a human reader (ORD-062). */
+function toNoticeView(row: NoticeRow): CriticalNoticeView {
+  return {
+    id: row.id,
+    resultId: row.observationResultId.toString(),
+    recipientKind: row.recipientKind,
+    recipientName: row.recipientName,
+    channel: row.channel,
+    notifiedAt: row.notifiedAt,
+    notifiedBy: {
+      id: row.notifiedBy.id,
+      name: `${row.notifiedBy.firstName} ${row.notifiedBy.lastName}`,
+    },
+    note: row.note,
   };
 }
 
