@@ -7,12 +7,21 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
 import { RefreshTokenReuseError } from '../../src/modules/auth/domain/auth.errors';
+import { sessionFamilyExpiry } from '../../src/modules/auth/domain/session';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
 import { PrismaAccountAdminRepository } from '../../src/modules/auth/infrastructure/prisma-account-admin.repository';
 import { PrismaAuthUserRepository } from '../../src/modules/auth/infrastructure/prisma-auth-user.repository';
@@ -21,6 +30,12 @@ import { RefreshTokenService } from '../../src/modules/auth/infrastructure/refre
 import { TokenService } from '../../src/modules/auth/infrastructure/token.service';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import type { Env } from '../../src/shared/config/env.schema';
+import {
+  atWallClock,
+  clinicalDateOf,
+  wallClockOf,
+  WallClockTime,
+} from '../../src/shared/domain/clinic-time';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
@@ -845,9 +860,10 @@ describe('session over HTTP', () => {
      * AU-040 — UN TOPE DE VIDA POR FAMILIA, CONTADO DESDE EL INICIO DE SESIÓN.
      *
      * Nada aquí escribe una fecha: la familia se ENVEJECE desplazando hacia
-     * atrás todas sus marcas —`created_at`, `used_at`, `expires_at`— los días
-     * de `JWT_REFRESH_TTL_DAYS` que lee la aplicación, más o menos unos
-     * segundos. Cada caso negativo tiene su control, a un lado u otro del tope.
+     * atrás todas sus marcas —`created_at`, `used_at`, `expires_at`— lo que
+     * le falta para su caducidad, leída de la fila (AU-043 la adelanta a las
+     * 03:00), más o menos unos segundos. Cada caso negativo tiene su control,
+     * a un lado u otro del tope.
      */
     describe('AU-040 tope de vida de la sesión', () => {
       /** The session lifetime, in seconds, the running app was configured with. */
@@ -879,6 +895,20 @@ describe('session over HTTP', () => {
         expect(aged, 'la familia tiene filas que envejecer').toBeGreaterThan(0);
       }
 
+      /**
+       * Seconds from now to the family's expiry. With AU-043 that is no
+       * longer the configured lifetime: the cut falls at the last 03:00
+       * before it, so aging «to one minute before the ceiling» is counted
+       * from the row, not from the variable.
+       */
+      async function secondsLeft(familyId: string): Promise<number> {
+        const { _max } = await prisma.refreshToken.aggregate({
+          where: { familyId },
+          _max: { expiresAt: true },
+        });
+        return Math.ceil((_max.expiresAt!.getTime() - Date.now()) / 1000);
+      }
+
       async function familyRows(familyId: string) {
         return prisma.refreshToken.findMany({
           where: { familyId },
@@ -892,16 +922,87 @@ describe('session over HTTP', () => {
         return /;\s*Expires=([^;]+)/i.exec(cookie ?? '')?.[1];
       }
 
-      it('AU-040 la caducidad se fija al iniciar sesión: la vida configurada desde ese instante', async () => {
-        const { cookies } = await signIn();
-        const row = await rowOf(cookies);
+      /**
+       * AU-043 — EL CORTE CAE A LAS 03:00 DE LA CLÍNICA (D-065).
+       *
+       * El reloj de la APLICACIÓN se controla (`Date`, nada más: los
+       * temporizadores de pg siguen siendo reales) y se lleva a una hora de
+       * pared de hoy en Guayaquil. Ningún instante escrito a mano: el
+       * esperado lo da la misma regla pura que prueba `session.spec.ts`, y lo
+       * que se comprueba aquí es que el servicio la usa, que la base la
+       * guarda y que la familia muere justo en ese instante y no antes.
+       */
+      describe('AU-043 el corte a las 03:00 de Guayaquil', () => {
+        afterEach(() => {
+          vi.useRealTimers();
+        });
 
-        const lifetimeMs = row.expiresAt.getTime() - row.createdAt.getTime();
-        // `created_at` is the database clock at the INSERT; `expires_at` the
-        // application clock just before it. Same machine: seconds apart at most.
-        expect(Math.abs(lifetimeMs - lifetimeSeconds() * 1000)).toBeLessThan(
-          5_000,
-        );
+        /** Freezes the application clock at `hour:minute` today in Guayaquil. */
+        function clockAt(hour: number, minute = 0): Date {
+          const instant = atWallClock(
+            clinicalDateOf(new Date()),
+            WallClockTime.of(hour, minute),
+          );
+          vi.useFakeTimers({ toFake: ['Date'] });
+          vi.setSystemTime(instant);
+          return instant;
+        }
+
+        function lifetimeDays(): number {
+          return lifetimeSeconds() / 86_400;
+        }
+
+        it('AU-043 quien entra a las 08:10 guarda una caducidad a las 03:00, no más de los días del tope', async () => {
+          const start = clockAt(8, 10);
+          const { cookies } = await signIn();
+          const row = await rowOf(cookies);
+
+          expect(row.expiresAt).toEqual(
+            sessionFamilyExpiry(start, lifetimeDays()),
+          );
+          expect(wallClockOf(row.expiresAt)).toEqual(WallClockTime.of(3, 0));
+          const life = row.expiresAt.getTime() - start.getTime();
+          expect(life).toBeLessThanOrEqual(lifetimeSeconds() * 1000);
+          expect(life).toBeGreaterThan((lifetimeSeconds() - 86_400) * 1000);
+        });
+
+        it('AU-043 quien entra a las 02:00 la pierde la madrugada anterior: nunca después del tope', async () => {
+          const start = clockAt(2);
+          const { cookies } = await signIn();
+          const row = await rowOf(cookies);
+
+          expect(row.expiresAt).toEqual(
+            sessionFamilyExpiry(start, lifetimeDays()),
+          );
+          // Las 03:00 del último día caerían una hora después del tope.
+          expect(row.expiresAt.getTime() - start.getTime()).toBe(
+            (lifetimeSeconds() - 86_400 + 3_600) * 1000,
+          );
+        });
+
+        it('AU-043 un segundo antes de las 03:00 renueva; a las 03:00 el refresco y el guardia dicen SESSION_EXPIRED', async () => {
+          clockAt(8, 10);
+          const { cookies: first } = await signIn();
+          const { expiresAt } = await rowOf(first);
+
+          // Control positivo: un segundo antes del corte la familia vive, y
+          // el sucesor hereda el corte (AU-040).
+          vi.setSystemTime(expiresAt.getTime() - 1_000);
+          const lastSecond = await refresh(first).expect(200);
+          const second = lastSecond.get('Set-Cookie')!;
+          expect((await rowOf(second)).expiresAt).toEqual(expiresAt);
+          const { accessToken } = sessionBody(lastSecond);
+
+          vi.setSystemTime(expiresAt);
+          const refused = await refresh(second).expect(401);
+          expect(refused.body).toMatchObject({ code: 'SESSION_EXPIRED' });
+          // El token de acceso recién emitido no ha caducado: lo para la familia.
+          const guarded = await request(app.getHttpServer())
+            .post('/api/v1/auth/logout')
+            .set('Authorization', `Bearer ${accessToken}`)
+            .expect(401);
+          expect(guarded.body).toMatchObject({ code: 'SESSION_EXPIRED' });
+        });
       });
 
       it('AU-040 la cookie dura un día más que la sesión, para que el navegador pueda oír que caducó', async () => {
@@ -939,7 +1040,7 @@ describe('session over HTTP', () => {
 
         // Control: a un minuto del tope, renueva. Con la caducidad renovada
         // en cada rotación, esa renovación la habría alargado otra semana.
-        await ageFamily(familyId, lifetimeSeconds() - 60);
+        await ageFamily(familyId, (await secondsLeft(familyId)) - 60);
         const lastMinute = await rotate(first);
 
         // Dos minutos después: el tope pasó hace uno.
@@ -952,7 +1053,7 @@ describe('session over HTTP', () => {
         const { cookies: first } = await signIn();
         const current = await rotate(first);
         const { familyId } = await rowOf(first);
-        await ageFamily(familyId, lifetimeSeconds() + 1);
+        await ageFamily(familyId, (await secondsLeft(familyId)) + 1);
         const before = await familyRows(familyId);
 
         const refused = await refresh(current).expect(401);
@@ -968,7 +1069,7 @@ describe('session over HTTP', () => {
         const { cookies: first } = await signIn();
         await rotate(first);
         const { familyId } = await rowOf(first);
-        await ageFamily(familyId, lifetimeSeconds() + 1);
+        await ageFamily(familyId, (await secondsLeft(familyId)) + 1);
 
         const refused = await refresh(first).expect(401);
         expect(refused.body).toMatchObject({ code: 'SESSION_EXPIRED' });
@@ -1010,7 +1111,7 @@ describe('session over HTTP', () => {
         const { cookies } = await signIn();
         const { familyId } = await rowOf(cookies);
         await app.get(RefreshTokenService).revokeFamily(familyId, 'SIGN_OUT');
-        await ageFamily(familyId, lifetimeSeconds() + 1);
+        await ageFamily(familyId, (await secondsLeft(familyId)) + 1);
 
         const refused = await refresh(cookies).expect(401);
         expect(refused.body).not.toMatchObject({ code: 'SESSION_EXPIRED' });
@@ -1023,7 +1124,9 @@ describe('session over HTTP', () => {
         const { cookies: first } = await signIn();
         await rotate(first); // la respuesta que «se perdió»
         const { familyId } = await rowOf(first);
-        await ageFamily(familyId, lifetimeSeconds() + 1, { keepUse: true });
+        await ageFamily(familyId, (await secondsLeft(familyId)) + 1, {
+          keepUse: true,
+        });
         const before = await familyRows(familyId);
 
         const refused = await refresh(first).expect(401);
@@ -1035,7 +1138,9 @@ describe('session over HTTP', () => {
         const { cookies: first } = await signIn();
         await rotate(first);
         const { familyId } = await rowOf(first);
-        await ageFamily(familyId, lifetimeSeconds() - 60, { keepUse: true });
+        await ageFamily(familyId, (await secondsLeft(familyId)) - 60, {
+          keepUse: true,
+        });
 
         await refresh(first).expect(200);
       });
@@ -1043,7 +1148,7 @@ describe('session over HTTP', () => {
       it('AU-040 el token de acceso de una familia caducada responde SESSION_EXPIRED antes de caducar él', async () => {
         const { cookies, accessToken } = await signIn();
         const { familyId } = await rowOf(cookies);
-        await ageFamily(familyId, lifetimeSeconds() + 1);
+        await ageFamily(familyId, (await secondsLeft(familyId)) + 1);
 
         const refused = await request(app.getHttpServer())
           .post('/api/v1/auth/logout')
@@ -1055,7 +1160,7 @@ describe('session over HTTP', () => {
       it('AU-040 control del guardia: el token de acceso de una familia por debajo del tope sigue valiendo', async () => {
         const { cookies, accessToken } = await signIn();
         const { familyId } = await rowOf(cookies);
-        await ageFamily(familyId, lifetimeSeconds() - 60);
+        await ageFamily(familyId, (await secondsLeft(familyId)) - 60);
 
         await request(app.getHttpServer())
           .post('/api/v1/auth/logout')
