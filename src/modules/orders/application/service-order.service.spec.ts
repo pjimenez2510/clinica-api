@@ -58,6 +58,7 @@ const anExam = (
   specimenType: 'Sangre total con EDTA',
   patientPreparation: 'No requiere ayuno.',
   turnaroundHours: 4,
+  tariffCode: null,
   performedExternally: true,
   externalLabName: null,
   analytes: analytes.map((analyte, index) => ({

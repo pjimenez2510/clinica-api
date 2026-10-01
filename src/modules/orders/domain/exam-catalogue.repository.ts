@@ -26,6 +26,11 @@ export interface ExamDefinitionView {
   /** ORD-010. Printed on the order itself: an unstated fast is a second visit. */
   patientPreparation: string | null;
   turnaroundHours: number | null;
+  /**
+   * ORD-004, ORD-010. The tariff service the exam is invoiced under. `null`
+   * means it cannot be ordered yet, and a screen can say so by its name.
+   */
+  tariffCode: string | null;
   performedExternally: boolean;
   externalLabName: string | null;
   analytes: readonly ExamAnalyteView[];

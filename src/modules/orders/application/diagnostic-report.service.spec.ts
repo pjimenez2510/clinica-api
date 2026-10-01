@@ -72,6 +72,7 @@ const examBh: ExamDefinitionView = {
   specimenType: 'Sangre total con EDTA',
   patientPreparation: null,
   turnaroundHours: 4,
+  tariffCode: null,
   performedExternally: true,
   externalLabName: null,
   analytes: [
