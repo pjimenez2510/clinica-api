@@ -3979,6 +3979,8 @@ model ConsentTextVersion {
   id          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   version     Int      @unique(map: "consent_text_version_number_unique")
   body        String   @db.Text
+  /// DEFAULT statement_timestamp() in SQL (PD-012); `now()` here only tells
+  /// Prisma there is a default.
   publishedAt DateTime @default(now()) @map("published_at") @db.Timestamptz(6)
   publishedBy String   @map("published_by") @db.Uuid
 

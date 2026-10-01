@@ -264,6 +264,9 @@ describe('privacy: lo que prueba el consentimiento y las solicitudes no se reesc
           description: 'Copia',
           receivedAt: now,
           dueOn: now,
+          // Same instant on both sides: the base's own `now()` would race the
+          // application clock in the not-future CHECK.
+          registeredAt: now,
           registeredBy: clerk.id,
           ...overrides,
         },
@@ -287,12 +290,24 @@ describe('privacy: lo que prueba el consentimiento y las solicitudes no se reesc
     await expect(row({})).resolves.toBeTruthy();
   });
 
-  it('PD-001 la base rechaza un número de versión cero o negativo', async () => {
+  it('PD-001 la base rechaza un número de versión cero o negativo, aun sin el disparador', async () => {
     const prisma = db();
-    await expect(publish(prisma, 0, 'Texto')).rejects.toThrow(
-      /consent_text_version_number_positive|consent_text_version_is_next/,
+    const author = await createUser(prisma);
+    // The BEFORE INSERT trigger refuses 0 first; with triggers off for this
+    // transaction only, what refuses it is the CHECK itself.
+    const insert = (version: number) =>
+      prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(
+          'SET LOCAL session_replication_role = replica',
+        );
+        await tx.consentTextVersion.create({
+          data: { version, body: 'Texto', publishedBy: author.id },
+        });
+      });
+    await expect(insert(0)).rejects.toThrow(
+      /consent_text_version_number_positive/,
     );
-    await expect(publish(prisma, 1, 'Texto')).resolves.toBeTruthy();
+    await expect(insert(1)).resolves.toBeUndefined();
   });
 
   it('PD-014 PD-038 la base rechaza vaciar de golpe consentimientos y solicitudes', async () => {

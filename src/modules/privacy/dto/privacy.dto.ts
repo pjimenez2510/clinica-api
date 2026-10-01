@@ -133,7 +133,8 @@ export const dataRequestSchema = z.object({
   patient: z.object({ mrn: z.string(), fullName: z.string() }),
   right: z.enum(DATA_SUBJECT_RIGHTS),
   requestedBy: z.enum(DATA_SUBJECT_PARTIES),
-  description: z.string(),
+  /** Null in the clinic-wide list of open requests (PD-035): see the route. */
+  description: z.string().nullable(),
   receivedAt: z.iso.datetime(),
   /** Clinical date, `YYYY-MM-DD`. */
   dueOn: z.iso.date(),

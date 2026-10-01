@@ -51,7 +51,10 @@ CREATE TABLE "consent_text_version" (
   "id"           UUID         NOT NULL DEFAULT uuidv7(),
   "version"      INTEGER      NOT NULL,
   "body"         TEXT         NOT NULL,
-  "published_at" TIMESTAMPTZ(6) NOT NULL DEFAULT now(),
+  -- `statement_timestamp()` and not `now()`: `now()` is when the transaction
+  -- BEGAN, which can precede the advisory lock that orders publications and
+  -- consents (PD-012); the INSERT runs with the lock held.
+  "published_at" TIMESTAMPTZ(6) NOT NULL DEFAULT statement_timestamp(),
   "published_by" UUID         NOT NULL,
 
   CONSTRAINT "consent_text_version_pkey" PRIMARY KEY ("id"),
@@ -105,7 +108,7 @@ CREATE TABLE "patient_consent" (
   "medium"          "consent_medium" NOT NULL,
   "granted_by"      "data_subject_party" NOT NULL,
   -- PD-011. El instante y el autor son del servidor.
-  "recorded_at"     TIMESTAMPTZ(6)   NOT NULL DEFAULT now(),
+  "recorded_at"     TIMESTAMPTZ(6)   NOT NULL DEFAULT statement_timestamp(),
   "recorded_by"     UUID             NOT NULL,
 
   CONSTRAINT "patient_consent_pkey" PRIMARY KEY ("id"),

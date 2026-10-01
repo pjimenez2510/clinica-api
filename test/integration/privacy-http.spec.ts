@@ -12,6 +12,7 @@ import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
 import { legalDueDate } from '../../src/modules/privacy/domain/legal-due-date';
+import { CONSENT_TEXT_LOCK } from '../../src/modules/privacy/infrastructure/prisma-consent.repository';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import {
   addDays,
@@ -31,6 +32,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // Synthetic cedulas with a computed check digit; never a real person's.
 const OFFICER = { email: 'datos@clinica.ec', cedula: '1710034065' };
 const DESK = { email: 'recepcion@clinica.ec', cedula: '0926687856' };
+const SHIPPED_ADMIN = { email: 'gerencia@clinica.ec', cedula: '1712345675' };
 
 interface Problem {
   status: number;
@@ -72,8 +74,9 @@ interface RequestBody {
  * consecutive version — are in `privacy-immutable.spec.ts`.
  *
  * TWO ACCOUNTS. The officer holds the two privacy permissions through a role
- * created here, because NO shipped role carries them yet (D-083 §4): proving
- * the routes with ADMIN would prove a grant that does not exist. The desk holds
+ * created here, with exactly the two plus `patient:read`/`patient:write` —
+ * the shipped ADMIN carries the two but not `patient:read` (D-083 §4, D-098
+ * §6), and its own describe pins what that lets it do. The desk holds
  * the shipped RECEPCION role, which is what proves the consent rides on
  * `patient:write` and the rest is closed to it.
  */
@@ -237,14 +240,32 @@ describe('privacy por HTTP', () => {
    * has reached the point the race is about. A condition polled, not a sleep;
    * bounded, so a request that never blocks fails the test instead of hanging.
    */
-  async function untilSomeoneWaitsOnALock(): Promise<void> {
+  async function untilSomeoneWaitsOnALock(
+    kind: 'consent-text-advisory' | 'row-or-unique',
+  ): Promise<void> {
     for (let attempt = 0; attempt < 500; attempt += 1) {
-      const [row] = await prisma.$queryRaw<{ waiting: bigint }[]>`
-        SELECT count(*) AS waiting FROM pg_locks WHERE NOT granted`;
+      // In THIS database only, and on the lock the race is about: the server
+      // is shared with other sessions' databases, whose waits would otherwise
+      // count as ours.
+      const [row] =
+        kind === 'consent-text-advisory'
+          ? await prisma.$queryRaw<{ waiting: bigint }[]>`
+              SELECT count(*) AS waiting
+                FROM pg_locks l JOIN pg_stat_activity a USING (pid)
+               WHERE NOT l.granted
+                 AND a.datname = current_database()
+                 AND l.locktype = 'advisory'
+                 AND l.objid = ${CONSENT_TEXT_LOCK}`
+          : await prisma.$queryRaw<{ waiting: bigint }[]>`
+              SELECT count(*) AS waiting
+                FROM pg_locks l JOIN pg_stat_activity a USING (pid)
+               WHERE NOT l.granted
+                 AND a.datname = current_database()
+                 AND l.locktype = 'transactionid'`;
       if (Number(row!.waiting) > 0) return;
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    throw new Error('No request ever waited on a lock');
+    throw new Error('No request ever waited on the lock under test');
   }
 
   function trail(resourceType: string, resourceId: string, action: string) {
@@ -275,6 +296,44 @@ describe('privacy por HTTP', () => {
       expect(desk).not.toContain('patient:data-requests');
       // Control: RECEPCION does hold what records the consent (PD-010).
       expect(desk).toContain('patient:write');
+    });
+
+    it('PD-030 PD-040 D-083 §4 el ADMIN de fábrica registra, exporta y responde por la API sin abrir la ficha (D-098 §6), y la lista global no le da el texto libre', async () => {
+      const { token: adminToken } = await signIn(SHIPPED_ADMIN, 'ADMIN');
+      const patient = await createPatient(prisma);
+
+      // What D-083 §4 grants, pinned: the whole cycle, no chart needed.
+      const created = (
+        await post(
+          `/patients/${patient.id}/requests`,
+          { right: 'ACCESS', requestedBy: 'HOLDER', description: 'Copia' },
+          adminToken,
+        ).expect(201)
+      ).body as RequestBody;
+      await get(`/requests/${created.id}/export`, adminToken).expect(200);
+
+      const open = await get('/requests', adminToken).expect(200);
+      const [row] = (
+        open.body as {
+          items: (RequestBody & {
+            description: string | null;
+          })[];
+        }
+      ).items;
+      expect(row!.id).toBe(created.id);
+      expect(row!.description).toBeNull();
+
+      await post(
+        `/requests/${created.id}/response`,
+        { outcome: 'GRANTED', response: 'Entregada' },
+        adminToken,
+      ).expect(200);
+
+      // And what it still lacks: the chart itself (`patient:read`).
+      await request(app.getHttpServer())
+        .get(`/api/v1/patients/${patient.id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(403);
     });
   });
 
@@ -352,7 +411,7 @@ describe('privacy por HTTP', () => {
           const inFlight = post('/consent-texts', { body: 'Este' }).then(
             (r) => (response = r),
           );
-          await untilSomeoneWaitsOnALock();
+          await untilSomeoneWaitsOnALock('row-or-unique');
           void inFlight;
         },
         { timeout: 20_000 },
@@ -398,7 +457,7 @@ describe('privacy por HTTP', () => {
       await prisma.$transaction(
         async (tx) => {
           // What `publish` does: the exclusive lock, then the next version.
-          await tx.$executeRaw`SELECT pg_advisory_xact_lock(${0x70726976}::bigint)`;
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(${CONSENT_TEXT_LOCK}::bigint)`;
           await tx.consentTextVersion.create({
             data: { version: 2, body: 'Texto dos', publishedBy: author.id },
           });
@@ -411,7 +470,7 @@ describe('privacy por HTTP', () => {
             },
             deskToken,
           ).then((r) => (response = r));
-          await untilSomeoneWaitsOnALock();
+          await untilSomeoneWaitsOnALock('consent-text-advisory');
           void inFlight;
         },
         { timeout: 20_000 },
@@ -424,6 +483,41 @@ describe('privacy por HTTP', () => {
       expect(response!.status).toBe(409);
       expect((response!.body as Problem).code).toBe('CONSENT_TEXT_OUTDATED');
       expect(await prisma.patientConsent.count()).toBe(0);
+    });
+
+    it('PD-012 el instante del consentimiento y el de la publicación siguen el orden del bloqueo, no el del BEGIN', async () => {
+      const first = await publish('Texto uno');
+      const patient = await createPatient(prisma);
+      const author = await createUser(prisma);
+
+      await prisma.$transaction(async (tx) => {
+        // The publication BEGINS first…
+        await tx.$queryRaw`SELECT 1`;
+        // …a consent is recorded and committed meanwhile…
+        await post(
+          `/patients/${patient.id}/consents`,
+          {
+            textVersionId: first.id,
+            medium: 'SIGNED_PAPER',
+            grantedBy: 'HOLDER',
+          },
+          deskToken,
+        ).expect(201);
+        // …and then the publication takes the lock and inserts.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${CONSENT_TEXT_LOCK}::bigint)`;
+        await tx.consentTextVersion.create({
+          data: { version: 2, body: 'Texto dos', publishedBy: author.id },
+        });
+      });
+
+      const consent = await prisma.patientConsent.findFirstOrThrow();
+      const second = await prisma.consentTextVersion.findUniqueOrThrow({
+        where: { version: 2 },
+      });
+      // With `now()` the version would carry its BEGIN, before the consent.
+      expect(second.publishedAt.getTime()).toBeGreaterThan(
+        consent.recordedAt.getTime(),
+      );
     });
 
     it('PD-006 la publicación deja su fila en la bitácora, y sin bitácora no se publica', async () => {
@@ -889,6 +983,10 @@ describe('privacy por HTTP', () => {
       expect(
         (list.body as { items: RequestBody[] }).items.map((r) => r.id),
       ).toEqual([created.id]);
+      // Reading what the patient asked is a READ of the chart (REQ-110).
+      expect(
+        await trail('patient_data_requests', survivor.id, 'READ'),
+      ).toHaveLength(1);
     });
 
     it('PD-030 recepción no ve ni registra solicitudes: cerrado por defecto', async () => {
@@ -956,6 +1054,7 @@ describe('privacy por HTTP', () => {
         'sexual_orientation',
         'priority_groups',
         'contacts',
+        'mother_link',
         'appointments',
         'billing',
         'record_corrections',

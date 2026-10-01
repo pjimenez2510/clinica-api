@@ -193,6 +193,10 @@ que si esa fila no se puede escribir no sale nada.
 - **PD-012** — SI la versión enviada no es la vigente en el instante de
   registrar, ENTONCES el sistema DEBERÁ rechazarlo con `CONSENT_TEXT_OUTDATED`
   (409) sin escribir nada: lo que se muestra al paciente es lo que se registra.
+  Registrar y publicar se ordenan entre sí (un bloqueo), y el instante de cada
+  fila es el de su escritura, no el de su transacción: ningún consentimiento
+  sobre una versión superada lleva un instante posterior a la publicación de
+  la que la superó.
 - **PD-013** — CUANDO se publique una versión nueva, los consentimientos ya
   registrados NO DEBERÁN cambiar: siguen ligados a su versión y a su texto.
 - **PD-014** — Un consentimiento registrado NO DEBERÁ poder modificarse ni
@@ -245,7 +249,11 @@ que si esa fila no se puede escribir no sale nada.
   vencida según la fecha clínica de hoy.
 - **PD-036** — CUANDO alguien con `patient:data-requests` pida las solicitudes de
   una ficha, el sistema DEBERÁ devolver las de la ficha y sus absorbidas, de la
-  más reciente a la más antigua, respondidas o no.
+  más reciente a la más antigua, respondidas o no, y dejar una fila `READ` de
+  `patient_data_requests` con la ficha en la bitácora: lo que pidió el
+  paciente puede llevar datos de salud. La lista de abiertas de toda la
+  clínica (PD-035) NO DEBERÁ llevar el texto de la solicitud ni el de la
+  respuesta.
 - **PD-037** — Todo registro y toda respuesta DEBERÁN dejar una fila (`CREATE`
   y `UPDATE`) de `data_subject_request` en la bitácora en la misma transacción.
 - **PD-038** — Una solicitud NO DEBERÁ poder borrarse, y una respondida NO
@@ -259,17 +267,21 @@ que si esa fila no se puede escribir no sale nada.
   una solicitud de acceso o de portabilidad, el sistema DEBERÁ devolver un
   documento JSON descargable con: el formato y su versión, el instante, la
   ficha administrativa, sus documentos de identidad con su vigencia, los
-  consentimientos con el texto consentido y las solicitudes; de la ficha y sus
-  absorbidas.
+  consentimientos con el texto consentido y las solicitudes; de la ficha
+  **vigente** —la superviviente, si la ficha de la solicitud se absorbió
+  después— y de todas sus absorbidas.
 - **PD-041** — El documento DEBERÁ declarar en `omitted` cada sección que no
-  incluye y la decisión que lo explica (D-083 §3): la historia clínica, la
-  orientación sexual y el motivo de prioridad.
+  incluye y la decisión que lo explica: la historia clínica, la orientación
+  sexual y los grupos prioritarios (D-083 §3), y los contactos, el vínculo con
+  la madre, las citas, la facturación, las correcciones de la ficha y la
+  bitácora de accesos (D-098 §7).
 - **PD-042** — SI la solicitud es de otro derecho, ENTONCES el sistema DEBERÁ
   rechazar la exportación con `DATA_EXPORT_NOT_APPLICABLE` (422) sin escribir
   nada.
-- **PD-043** — Toda exportación DEBERÁ dejar una fila `EXPORT` de la ficha en
-  la bitácora en la misma transacción que la lectura; SI no se puede escribir,
-  ENTONCES el sistema NO DEBERÁ entregar nada.
+- **PD-043** — Toda exportación DEBERÁ dejar, en la misma transacción que la
+  lectura, una fila `EXPORT` por cada ficha cuyos datos salen y otra que nombra
+  la solicitud que la justificó; SI no se pueden escribir, ENTONCES el sistema
+  NO DEBERÁ entregar nada.
 
 ---
 

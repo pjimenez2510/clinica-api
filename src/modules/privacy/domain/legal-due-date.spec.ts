@@ -80,7 +80,7 @@ describe('legalDueDate — el horizonte de feriados', () => {
     const monday = next(MONDAY);
     // Every day of the horizon is a holiday: no working day exists in it.
     const allHolidays = new Set(
-      Array.from({ length: 40 }, (_, d) => addDays(monday, d + 1)),
+      Array.from({ length: 130 }, (_, d) => addDays(monday, d + 1)),
     );
     expect(() => legalDueDate('SUSPENSION', monday, allHolidays)).toThrow(
       RangeError,

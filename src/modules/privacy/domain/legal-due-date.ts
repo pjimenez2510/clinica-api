@@ -54,9 +54,10 @@ const RULES: Readonly<Record<DataSubjectRight, DueDateRule>> = {
 /**
  * The furthest a due date can fall from its receipt, in calendar days: enough
  * holidays to read for any rule. Ten working days span two weeks plus however
- * many holidays fall in them; a month is generous on purpose.
+ * many holidays fall in them; four months covers a clinic-wide closure of
+ * several weeks (D-098 §2) instead of refusing to register the request.
  */
-export const DUE_DATE_HORIZON_DAYS = 31;
+export const DUE_DATE_HORIZON_DAYS = 120;
 
 /**
  * PD-032. The clinical date by which a request must be answered.

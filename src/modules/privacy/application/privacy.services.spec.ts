@@ -277,7 +277,11 @@ describe('DataSubjectRequestsService', () => {
     );
     // REQ-110: reading what the patient asked is a READ of the chart.
     expect(record).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'READ', resourceId: 'p-1' }),
+      expect.objectContaining({
+        action: 'READ',
+        resourceType: 'patient_data_requests',
+        resourceId: 'p-1',
+      }),
     );
   });
 

@@ -34,7 +34,7 @@ import {
  * else: publishing takes it exclusive, recording takes it shared, so consents
  * do not wait for each other. Released at COMMIT or ROLLBACK by PostgreSQL.
  */
-const CONSENT_TEXT_LOCK = 0x70726976; // 'priv'
+export const CONSENT_TEXT_LOCK = 0x70726976; // 'priv'
 
 async function lockConsentText(
   tx: Prisma.TransactionClient,
@@ -92,31 +92,37 @@ export class PrismaConsentRepository implements ConsentRepository {
 
   async publish(body: string, requester: Requester): Promise<ConsentTextView> {
     try {
-      const row = await this.prisma.$transaction(async (tx) => {
-        await lockConsentText(tx, 'exclusive');
-        const last = await tx.consentTextVersion.findFirst({
-          orderBy: { version: 'desc' },
-          select: { version: true },
-        });
-        const created = await tx.consentTextVersion.create({
-          data: {
-            version: (last?.version ?? 0) + 1,
-            body,
-            publishedBy: requester.userId,
-          },
-          select: CONSENT_TEXT_SELECT,
-        });
-        await writeTrail(
-          tx,
-          {
-            resourceType: 'consent_text_version',
-            resourceId: created.id,
-            action: 'CREATE',
-          },
-          requester,
-        );
-        return created;
-      });
+      const row = await this.prisma.$transaction(
+        async (tx) => {
+          await lockConsentText(tx, 'exclusive');
+          const last = await tx.consentTextVersion.findFirst({
+            orderBy: { version: 'desc' },
+            select: { version: true },
+          });
+          const created = await tx.consentTextVersion.create({
+            data: {
+              version: (last?.version ?? 0) + 1,
+              body,
+              publishedBy: requester.userId,
+            },
+            select: CONSENT_TEXT_SELECT,
+          });
+          await writeTrail(
+            tx,
+            {
+              resourceType: 'consent_text_version',
+              resourceId: created.id,
+              action: 'CREATE',
+            },
+            requester,
+          );
+          return created;
+          // 15 s and not Prisma's 5: a publication waits for the consents being
+          // recorded at that moment to finish (the shared lock), and a timeout
+          // there would surface as a 500 instead of a slower success.
+        },
+        { timeout: 15_000 },
+      );
       return toTextView(row, await staffNames(this.prisma, [row.publishedBy]));
     } catch (error) {
       if (isConsentTextRace(error)) throw new ConsentTextVersionConflictError();

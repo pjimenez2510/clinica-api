@@ -4,9 +4,10 @@ import type { ExportOmission } from './privacy.repository';
  * PD-041. What the export does NOT carry, said inside the document itself so
  * that nobody reading it mistakes a partial answer for a complete one.
  *
- * D-083 §3, decided by the author: the administrative part now, the clinical
- * record in FHIR R4 in a later delivery, and the two protected data only with
- * their own permission. Each entry is that decision, not a technical limit.
+ * The first three are D-083 §3, decided by the author: the clinical record in
+ * FHIR R4 in a later delivery, and the protected data only with their own
+ * permission. The rest are D-098 §7, open: administrative data not exported
+ * yet. Each entry is a decision, not a technical limit, and cites it.
  */
 export const EXPORT_OMISSIONS: readonly ExportOmission[] = [
   {
@@ -27,26 +28,31 @@ export const EXPORT_OMISSIONS: readonly ExportOmission[] = [
   {
     section: 'contacts',
     reason:
-      'Los contactos y el representante legal son datos de otras personas; se entregan tras decidir cómo (D-083 §3).',
+      'Los contactos y el representante legal son datos de otras personas; se entregan tras decidir cómo (D-098 §7).',
+  },
+  {
+    section: 'mother_link',
+    reason:
+      'El vínculo con la ficha de la madre del recién nacido es dato de otra persona; se entrega tras decidir cómo (D-098 §7).',
   },
   {
     section: 'appointments',
-    reason: 'Las citas y la lista de espera no se incluyen todavía (D-083 §3).',
+    reason: 'Las citas y la lista de espera no se incluyen todavía (D-098 §7).',
   },
   {
     section: 'billing',
     reason:
-      'Las cuentas, facturas y notas de crédito no se incluyen todavía (D-083 §3).',
+      'Las cuentas, facturas y notas de crédito no se incluyen todavía (D-098 §7).',
   },
   {
     section: 'record_corrections',
     reason:
-      'El histórico de correcciones de la ficha no se incluye todavía (D-083 §3).',
+      'El histórico de correcciones de la ficha no se incluye todavía (D-098 §7).',
   },
   {
     section: 'access_log',
     reason:
-      'Quién consultó la ficha (bitácora de accesos) no se incluye todavía (D-083 §3).',
+      'Quién consultó la ficha (bitácora de accesos) no se incluye todavía (D-098 §7).',
   },
 ];
 

@@ -116,7 +116,10 @@ export class DataSubjectRequestsService {
     // whose policy is the right one for a read: log, never refuse.
     await this.audit.record({
       userId: requester.userId,
-      resourceType: 'data_subject_request',
+      // Its own type, keyed by the CHART: `data_subject_request` rows carry a
+      // request id, and «who read this patient's requests» is a question
+      // about the chart.
+      resourceType: 'patient_data_requests',
       resourceId: patientId,
       action: 'READ',
       ip: requester.ip,
