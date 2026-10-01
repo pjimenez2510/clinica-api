@@ -12,7 +12,7 @@ import {
 } from '../domain/document.errors';
 import { CLINICAL_DOCUMENT_KINDS } from '../domain/document-kind';
 import type { DocumentKind } from '../domain/document-kind';
-import type { StoredImageSummary } from '../domain/document-image';
+import type { StoredImage, StoredImageSummary } from '../domain/document-image';
 import type {
   DocumentContext,
   DocumentSourceReader,
@@ -251,6 +251,14 @@ class FakeRepository implements DocumentRepository {
     };
     this.images.push(stored);
     return Promise.resolve(stored);
+  }
+
+  findEstablishmentLogo(): Promise<StoredImage | null> {
+    return Promise.resolve(null);
+  }
+
+  findPractitionerImage(): Promise<StoredImage | null> {
+    return Promise.resolve(null);
   }
 
   attachEstablishmentLogo(

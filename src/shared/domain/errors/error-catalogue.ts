@@ -948,7 +948,10 @@ export const DOMAIN_ERROR_CODES = [
   //     único de este módulo que es un fallo nuestro, y no lleva ningún detalle
   //     al llamador: una traza de un motor de PDF no le dice nada a una
   //     recepcionista y puede sacar el valor de un campo con ella.
+  //   * `DOCUMENT_IMAGE_NOT_FOUND` (404) — DOC-061: no hay logo, sello o firma
+  //     puestos. La pantalla dice «todavía no hay», no pinta una imagen rota.
   'DOCUMENT_IMAGE_FORMAT_NOT_ALLOWED',
+  'DOCUMENT_IMAGE_NOT_FOUND',
   'DOCUMENT_IMAGE_TOO_LARGE',
   'DOCUMENT_IMAGE_UNREADABLE',
   'DOCUMENT_RENDER_FAILED',

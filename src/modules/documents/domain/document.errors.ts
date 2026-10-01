@@ -214,3 +214,16 @@ export class DocumentRenderFailedError extends ExternalServiceError {
     this.cause = cause;
   }
 }
+
+/**
+ * DOC-061. No logo, seal or signature is set. 404 and not an empty body: the
+ * screen says «no hay logo» rather than drawing a broken image.
+ */
+export class DocumentImageNotFoundError extends NotFoundError {
+  readonly code = 'DOCUMENT_IMAGE_NOT_FOUND';
+  override readonly userTitle = 'Todavía no se ha subido esta imagen';
+
+  constructor() {
+    super('No stored image in that slot');
+  }
+}

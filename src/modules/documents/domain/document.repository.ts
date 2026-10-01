@@ -1,5 +1,5 @@
 import type { DocumentKind, SiteScopeFilter } from './document-kind';
-import type { StoredImageSummary } from './document-image';
+import type { StoredImage, StoredImageSummary } from './document-image';
 import type { DocumentTemplate, TemplateSlots } from './document-template';
 
 /**
@@ -175,6 +175,15 @@ export interface DocumentRepository {
 
   /** DOC-056, DOC-058. Inserts a new image row. Nothing is ever updated. */
   saveImage(image: NewDocumentImage): Promise<StoredImageSummary>;
+
+  /** DOC-061. The establishment's current logo, bytes included. */
+  findEstablishmentLogo(establishmentId: string): Promise<StoredImage | null>;
+
+  /** DOC-061. A practitioner's current seal or signature, bytes included. */
+  findPractitionerImage(
+    practitionerId: string,
+    slot: 'seal' | 'signature',
+  ): Promise<StoredImage | null>;
 
   /** DOC-057. Repoints an establishment's logo at a freshly stored image. */
   attachEstablishmentLogo(

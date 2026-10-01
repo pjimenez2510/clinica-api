@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { Test } from '@nestjs/testing';
 import { ThrottlerStorage } from '@nestjs/throttler';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -991,6 +993,61 @@ describe('los documentos por HTTP', () => {
         where: { id: practitionerId },
       });
       expect(practitioner.sealImageId).toBe((stored.body as { id: string }).id);
+    });
+
+    it('DOC-061 sirve el logo vigente tal como se guardó, con nosniff, y 404 mientras no hay', async () => {
+      const path = `/documents/identity/establishments/${establishmentId}/logo`;
+      const missing = await get(path, adminToken).expect(404);
+      expect((missing.body as Problem).code).toBe('DOCUMENT_IMAGE_NOT_FOUND');
+
+      const logo = await sharp({
+        create: {
+          width: 40,
+          height: 20,
+          channels: 3,
+          background: { r: 15, g: 107, b: 92 },
+        },
+      })
+        .png()
+        .toBuffer();
+      const stored = await upload(path, adminToken, logo, 'image/png').expect(
+        200,
+      );
+
+      const served = await get(path, adminToken)
+        .buffer()
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+
+      expect(served.headers['content-type']).toBe('image/png');
+      expect(served.headers['x-content-type-options']).toBe('nosniff');
+      expect(
+        createHash('sha256')
+          .update(served.body as Buffer)
+          .digest('hex'),
+      ).toBe((stored.body as { sha256: string }).sha256);
+    });
+
+    it('DOC-061 el sello vigente exige staff:read: el médico no lo ve, administración sí', async () => {
+      const path = `/documents/identity/practitioners/${practitionerId}/seal`;
+      const seal = await sharp({
+        create: { width: 30, height: 30, channels: 3, background: '#000000' },
+      })
+        .png()
+        .toBuffer();
+      await upload(path, adminToken, seal, 'image/png').expect(200);
+
+      await get(path, adminToken).expect(200);
+      await get(path, doctorToken).expect(403);
+      const signature = await get(
+        `/documents/identity/practitioners/${practitionerId}/signature`,
+        adminToken,
+      ).expect(404);
+      expect((signature.body as Problem).code).toBe('DOCUMENT_IMAGE_NOT_FOUND');
     });
 
     it('DOC-057 el logo emitido aparece en el documento', async () => {

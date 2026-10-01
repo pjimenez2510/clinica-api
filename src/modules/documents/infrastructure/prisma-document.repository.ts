@@ -6,6 +6,7 @@ import { isClinicalDocumentKind } from '../domain/document-kind';
 import type { DocumentKind, SiteScopeFilter } from '../domain/document-kind';
 import type {
   AllowedImageMimeType,
+  StoredImage,
   StoredImageSummary,
 } from '../domain/document-image';
 import type {
@@ -465,6 +466,32 @@ export class PrismaDocumentRepository implements DocumentRepository {
    * DOC-057. Points the establishment at the new logo; the old image row stays.
    * `false` when no establishment has that id.
    */
+  /** DOC-061. `null` when there is no establishment or it has no logo. */
+  async findEstablishmentLogo(
+    establishmentId: string,
+  ): Promise<StoredImage | null> {
+    const row = await this.prisma.establishment.findUnique({
+      where: { id: establishmentId },
+      select: { logoImage: { select: STORED_IMAGE_SELECT } },
+    });
+    return toStored(row?.logoImage);
+  }
+
+  /** DOC-061. `null` when there is no practitioner or the slot is empty. */
+  async findPractitionerImage(
+    practitionerId: string,
+    slot: 'seal' | 'signature',
+  ): Promise<StoredImage | null> {
+    const row = await this.prisma.practitioner.findUnique({
+      where: { id: practitionerId },
+      select: {
+        sealImage: { select: STORED_IMAGE_SELECT },
+        signatureImage: { select: STORED_IMAGE_SELECT },
+      },
+    });
+    return toStored(slot === 'seal' ? row?.sealImage : row?.signatureImage);
+  }
+
   async attachEstablishmentLogo(
     establishmentId: string,
     imageId: string,
@@ -494,4 +521,34 @@ export class PrismaDocumentRepository implements DocumentRepository {
     });
     return count === 1;
   }
+}
+
+/** DOC-061. Every column of a stored image, its bytes included. */
+const STORED_IMAGE_SELECT = {
+  id: true,
+  mimeType: true,
+  bytes: true,
+  byteSize: true,
+  sha256: true,
+  width: true,
+  height: true,
+} satisfies Prisma.DocumentImageSelect;
+
+/** The mime type cast leans on `document_image_mime_type_allowed`. */
+function toStored(
+  row:
+    | Prisma.DocumentImageGetPayload<{ select: typeof STORED_IMAGE_SELECT }>
+    | null
+    | undefined,
+): StoredImage | null {
+  if (row == null) return null;
+  return {
+    id: row.id,
+    mimeType: row.mimeType as AllowedImageMimeType,
+    bytes: Buffer.from(row.bytes),
+    byteSize: row.byteSize,
+    sha256: row.sha256,
+    width: row.width,
+    height: row.height,
+  };
 }
