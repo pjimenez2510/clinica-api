@@ -1000,6 +1000,25 @@ export const DOMAIN_ERROR_CODES = [
   'DOCUMENT_SUBJECT_NOT_ISSUABLE',
   'DOCUMENT_TEMPLATE_NOT_PUBLISHED',
   'DOCUMENT_TEMPLATE_SLOT_INVALID',
+  // Protección de datos (`privacy`, PD-001..PD-043).
+  //   * `DATA_SUBJECT_NOT_FOUND` (404) — la ficha no existe. Propio y no
+  //     `PATIENT_NOT_FOUND`, que es de `patients`: un código lo declara una sola
+  //     clase y ningún módulo importa a otro. Mismo mensaje, mismo porqué.
+  //   * `CONSENT_TEXT_OUTDATED` (409) — se consiente una versión que dejó de ser
+  //     la vigente: lo registrado debe ser lo que se mostró (PD-012).
+  //   * `CONSENT_TEXT_VERSION_CONFLICT` (409) — dos publicaciones a la vez; la
+  //     base deja pasar una (PD-005).
+  //   * `DATA_REQUEST_ALREADY_ANSWERED` (409) — una respuesta es una sola
+  //     (PD-033); la base tampoco admite otra (PD-038).
+  'CONSENT_TEXT_INVALID',
+  'CONSENT_TEXT_NOT_PUBLISHED',
+  'CONSENT_TEXT_OUTDATED',
+  'CONSENT_TEXT_VERSION_CONFLICT',
+  'DATA_EXPORT_NOT_APPLICABLE',
+  'DATA_REQUEST_ALREADY_ANSWERED',
+  'DATA_REQUEST_NOT_FOUND',
+  'DATA_REQUEST_RECEIVED_IN_FUTURE',
+  'DATA_SUBJECT_NOT_FOUND',
 ] as const;
 
 /**
