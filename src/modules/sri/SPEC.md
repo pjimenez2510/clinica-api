@@ -480,6 +480,10 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
   haya certificado, y vuelva a programar los comprobantes `SIGNED` o `RECEIVED`
   que no tengan trabajo vivo en la cola.
   > SC-072. Es lo que hace segura la frase «el aviso se traga el error».
+  > Revisión del 01-10-2026: un comprobante que lanza se anota y se salta (no
+  > detiene el resto); el barrido no reintenta lo que solo arregla cargar un
+  > certificado (SRI-084) ni las facturas cuya sede aún no tiene los datos
+  > (las enseña el monitor), para que no ocupen las plazas de lo recuperable.
 - **SRI-057** — El sistema NO DEBERÁ tener dos envíos vivos del mismo
   comprobante a la vez.
   > `singletonKey` en la cola y bloqueo de fila del comprobante al transicionar.
@@ -548,8 +552,9 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
   (`autorizacion` con estado, número, fecha, ambiente y el comprobante firmado
   en CDATA), no el XML que se envió.
 - **SRI-074** — SI el correo falla ENTONCES el sistema DEBERÁ reintentarlo con
-  espera creciente, NO DEBERÁ cambiar el estado del comprobante ni de la
-  factura, y DEBERÁ exponer en el comprobante si el correo salió.
+  espera creciente —tanto como lleve fallando desde la autorización, entre
+  diez minutos y seis horas—, NO DEBERÁ cambiar el estado del comprobante ni de
+  la factura, y DEBERÁ exponer en el comprobante si el correo salió.
 - **SRI-075** — El sistema NO DEBERÁ enviar dos veces el correo de un mismo
   comprobante por un reintento de la cola.
 - **SRI-076** — DONDE la factura no tenga correo del receptor, el sistema NO
@@ -573,6 +578,9 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
   > Un `.p12` de una entidad acreditada ronda 4–8 KiB.
 - **SRI-084** — CUANDO se active un certificado, el sistema DEBERÁ programar la
   firma de los comprobantes que quedaron sin firmar (SRI-029).
+  > Los suelta para el barrido siguiente (un minuto), no los firma dentro de la
+  > petición de carga: 200 firmas con su derivación scrypt agotaban el tiempo
+  > de la petición, y dos firmantes a la vez competían por el mismo comprobante.
 
 ---
 

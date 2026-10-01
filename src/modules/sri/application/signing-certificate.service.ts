@@ -5,8 +5,10 @@ import {
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
 import {
+  ELECTRONIC_VOUCHER_REPOSITORY,
   SIGNING_CERTIFICATE_REPOSITORY,
   type CertificateSummary,
+  type ElectronicVoucherRepository,
   type SigningCertificateRepository,
 } from '../domain/electronic-voucher.repository';
 import {
@@ -22,8 +24,6 @@ import {
   SigningCertificateTooLargeError,
 } from '../domain/sri.errors';
 import { SRI_CLOCK, type SriClock } from '../domain/sri-web-service';
-
-import { VoucherPreparationService } from './voucher-preparation.service';
 
 /** SRI-083. A .p12 from an accredited entity is 4–8 KiB. */
 export const MAX_CERTIFICATE_BYTES = 64 * 1024;
@@ -60,7 +60,8 @@ export class SigningCertificateService {
     @Inject(CERTIFICATE_CIPHER) private readonly cipher: CertificateCipher,
     @Inject(ACCESS_AUDIT_RECORDER) private readonly audit: AccessAuditRecorder,
     @Inject(SRI_CLOCK) private readonly clock: SriClock,
-    private readonly preparation: VoucherPreparationService,
+    @Inject(ELECTRONIC_VOUCHER_REPOSITORY)
+    private readonly vouchers: ElectronicVoucherRepository,
   ) {}
 
   /** SRI-080 to SRI-084. */
@@ -100,8 +101,10 @@ export class SigningCertificateService {
       userAgent: uploader.userAgent,
     });
 
-    // SRI-084. What waited for a certificate is signed now.
-    await this.preparation.signWaiting();
+    // SRI-084. What waited for a certificate is released for the sweep,
+    // which signs it within the minute: never 200 signatures inside this
+    // request, and never two signers racing for the same voucher.
+    await this.vouchers.unblockForCertificate();
 
     return summary;
   }

@@ -48,6 +48,16 @@ const SCRYPT: ScryptOptions = {
 export class AesGcmCertificateCipher implements CertificateCipher {
   constructor(private readonly config: ConfigService<Env, true>) {}
 
+  /** SRI-024. Whether the passphrase file is there and long enough. */
+  async ready(): Promise<boolean> {
+    try {
+      await this.readPassphrase();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   newSalt(): Buffer {
     return randomBytes(SALT_BYTES);
   }
@@ -61,17 +71,24 @@ export class AesGcmCertificateCipher implements CertificateCipher {
     return Buffer.concat([iv, cipher.getAuthTag(), ciphertext]);
   }
 
-  async open(sealed: Buffer, salt: Buffer): Promise<Buffer> {
+  /**
+   * The .p12 and its password share the salt: ONE scrypt derivation opens
+   * both, instead of one each (about 32 MB and tens of milliseconds apiece,
+   * on the pool the login's password hashing also uses).
+   */
+  async open(sealed: readonly Buffer[], salt: Buffer): Promise<Buffer[]> {
     const key = await this.deriveKey(salt);
     try {
-      const iv = sealed.subarray(0, IV_BYTES);
-      const tag = sealed.subarray(IV_BYTES, IV_BYTES + TAG_BYTES);
-      const decipher = createDecipheriv('aes-256-gcm', key, iv);
-      decipher.setAuthTag(tag);
-      return Buffer.concat([
-        decipher.update(sealed.subarray(IV_BYTES + TAG_BYTES)),
-        decipher.final(),
-      ]);
+      return sealed.map((envelope) => {
+        const iv = envelope.subarray(0, IV_BYTES);
+        const tag = envelope.subarray(IV_BYTES, IV_BYTES + TAG_BYTES);
+        const decipher = createDecipheriv('aes-256-gcm', key, iv);
+        decipher.setAuthTag(tag);
+        return Buffer.concat([
+          decipher.update(envelope.subarray(IV_BYTES + TAG_BYTES)),
+          decipher.final(),
+        ]);
+      });
     } finally {
       key.fill(0);
     }

@@ -202,6 +202,12 @@ export class VoucherPreparationService implements ElectronicVoucherPreparer {
       this.voucherSource(source, voucher.accessKey),
     );
 
+    // SRI-024. Without the passphrase nothing opens: said, and with no
+    // opening recorded for a decryption that never happened.
+    if (!(await this.cipher.ready())) {
+      return this.blocked(voucher, 'CERTIFICATE_STORE_NOT_CONFIGURED');
+    }
+
     // SRI-026. The opening is recorded BEFORE decrypting; if the row cannot be
     // written this throws, and nothing is decrypted or signed.
     await this.certificates.recordOpening(certificate.id, voucher.id);
@@ -209,17 +215,20 @@ export class VoucherPreparationService implements ElectronicVoucherPreparer {
     let pkcs12: Buffer | null = null;
     let signedXml: string;
     try {
-      pkcs12 = await this.cipher.open(
-        certificate.encryptedPkcs12,
+      const [container, passwordBytes] = await this.cipher.open(
+        [certificate.encryptedPkcs12, certificate.encryptedPassword],
         certificate.kdfSalt,
       );
-      const password = (
-        await this.cipher.open(
-          certificate.encryptedPassword,
-          certificate.kdfSalt,
-        )
-      ).toString('utf8');
-      signedXml = this.signer.sign(unsignedXml, pkcs12, password);
+      pkcs12 = container!;
+      try {
+        signedXml = this.signer.sign(
+          unsignedXml,
+          pkcs12,
+          passwordBytes!.toString('utf8'),
+        );
+      } finally {
+        passwordBytes!.fill(0);
+      }
     } catch (error) {
       if (error instanceof SigningCertificateStoreNotConfiguredError) {
         return this.blocked(voucher, 'CERTIFICATE_STORE_NOT_CONFIGURED');
@@ -259,17 +268,6 @@ export class VoucherPreparationService implements ElectronicVoucherPreparer {
       unsignedXml,
       signedXml,
     };
-  }
-
-  /** SRI-084. Signs every voucher that was waiting, e.g. for a certificate. */
-  async signWaiting(limit = 200): Promise<number> {
-    const { unsigned } = await this.vouchers.pendingWork(limit);
-    let signed = 0;
-    for (const voucher of unsigned) {
-      const result = await this.sign(voucher);
-      if (result.status === 'SIGNED') signed += 1;
-    }
-    return signed;
   }
 
   /** SRI-058. The XML of a voucher, recomposed with its own key. */

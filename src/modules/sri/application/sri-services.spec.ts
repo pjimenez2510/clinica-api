@@ -119,6 +119,7 @@ function voucher(overrides: Partial<VoucherRecord> = {}): VoucherRecord {
     attemptCount: 0,
     nextAttemptAt: null,
     authorisedXml: null,
+    authorisedAt: null,
     deliveryStatus: null,
     ...overrides,
   };
@@ -161,6 +162,7 @@ function fakes() {
     recordAttempt: vi.fn().mockResolvedValue(true),
     scheduleNext: vi.fn(),
     recordDelivery: vi.fn().mockResolvedValue(undefined),
+    unblockForCertificate: vi.fn().mockResolvedValue(0),
     pendingWork: vi.fn().mockResolvedValue({
       invoicesWithoutVoucher: [],
       unsigned: [],
@@ -191,9 +193,10 @@ function fakes() {
       .mockImplementation((plain: Buffer) =>
         Promise.resolve(Buffer.concat([Buffer.from('sealed:'), plain])),
       ),
-    open: vi.fn().mockImplementation((sealed: Buffer) => {
+    ready: vi.fn().mockResolvedValue(true),
+    open: vi.fn().mockImplementation((sealed: readonly Buffer[]) => {
       order.push('open');
-      return Promise.resolve(Buffer.from(sealed));
+      return Promise.resolve(sealed.map((s) => Buffer.from(s)));
     }),
   };
   const signer = {
@@ -352,6 +355,20 @@ describe('SRI-020 a SRI-031 la firma', () => {
       'voucher-1',
       'MISSING_ISSUER_DATA',
     );
+    expect(signer.sign).not.toHaveBeenCalled();
+  });
+
+  it('SRI-024 SRI-026 sin frase maestra no registra una apertura que no ocurrió', async () => {
+    const { preparation, certificates, cipher, signer, vouchers } = fakes();
+    cipher.ready.mockResolvedValue(false);
+    const result = await preparation.sign(voucher());
+    expect(result.blockedReason).toBe('CERTIFICATE_STORE_NOT_CONFIGURED');
+    expect(vouchers.block).toHaveBeenCalledWith(
+      'voucher-1',
+      'CERTIFICATE_STORE_NOT_CONFIGURED',
+    );
+    expect(certificates.recordOpening).not.toHaveBeenCalled();
+    expect(cipher.open).not.toHaveBeenCalled();
     expect(signer.sign).not.toHaveBeenCalled();
   });
 
@@ -535,6 +552,49 @@ describe('SRI-057 el despacho es idempotente', () => {
       ['DELIVER', 'mail'],
     ]);
   });
+
+  it('SRI-075 si falla anotar el envío después de que el correo salió, no lo da por fallido ni lo reenvía', async () => {
+    const f = fakes();
+    f.vouchers.findById.mockResolvedValue(
+      voucher({ status: 'AUTHORISED', authorisedXml: '<autorizacion/>' }),
+    );
+    f.vouchers.deliveryContext.mockResolvedValue({
+      invoiceId: 'invoice-1',
+      issuedById: 'user-1',
+      buyerEmail: 'maria@example.com',
+      buyerName: 'María',
+      documentNumber: '001-001-000000001',
+      establishmentName: 'Clínica',
+    });
+    f.vouchers.recordDelivery.mockRejectedValue(new Error('db down'));
+    const { dispatch, mailer } = dispatchWith(f);
+    await expect(dispatch.run('DELIVER', 'voucher-1')).rejects.toThrow();
+    expect(mailer.send).toHaveBeenCalledTimes(1);
+    expect(f.vouchers.recordDelivery).not.toHaveBeenCalledWith(
+      'voucher-1',
+      'FAILED',
+      expect.anything(),
+    );
+    expect(f.queue.schedule).not.toHaveBeenCalled();
+  });
+
+  it('SC-072 un comprobante que falla no detiene el barrido: los demás siguen', async () => {
+    const f = fakes();
+    f.vouchers.pendingWork.mockResolvedValue({
+      invoicesWithoutVoucher: [],
+      unsigned: [voucher({ id: 'broken' })],
+      inFlight: [voucher({ id: 'due', status: 'RECEIVED' })],
+      undelivered: [],
+    });
+    const { dispatch } = dispatchWith(f);
+    vi.spyOn(f.preparation, 'sign').mockRejectedValue(new Error('52'));
+    await dispatch.sweep();
+    expect(f.queue.schedule).toHaveBeenCalledWith(
+      'AUTHORISE',
+      expect.objectContaining({ id: 'due' }),
+      0,
+    );
+  });
 });
 
 describe('SRI-080 a SRI-083 la carga del certificado', () => {
@@ -559,7 +619,7 @@ describe('SRI-080 a SRI-083 la carga del certificado', () => {
         f.cipher,
         audit,
         () => NOW,
-        f.preparation,
+        f.vouchers,
       ),
     };
   }
@@ -591,7 +651,7 @@ describe('SRI-080 a SRI-083 la carga del certificado', () => {
     ).rejects.toBeInstanceOf(SigningCertificateExpiredError);
   });
 
-  it('SRI-023 SRI-080 SRI-082 SRI-084 guarda solo lo sellado, deja rastro y firma lo que esperaba', async () => {
+  it('SRI-023 SRI-080 SRI-082 SRI-084 guarda solo lo sellado, deja rastro y suelta lo que esperaba para el barrido', async () => {
     const f = fakes();
     const { certificates, audit } = service(f);
     await certificates.upload(Buffer.from('p12-bytes'), 'clave', {
@@ -611,7 +671,7 @@ describe('SRI-080 a SRI-083 la carga del certificado', () => {
         userId: 'admin-1',
       }),
     );
-    expect(f.vouchers.pendingWork).toHaveBeenCalled();
+    expect(f.vouchers.unblockForCertificate).toHaveBeenCalled();
   });
 
   it('SRI-032 avisa cuando faltan 30 días o menos para la caducidad', async () => {

@@ -40,9 +40,12 @@ export const XADES_SIGNER = Symbol('XadesSigner');
  * `SigningCertificateStoreNotConfiguredError` when there is no passphrase.
  */
 export interface CertificateCipher {
+  /** SRI-024. The master passphrase can be read; false, nothing opens. */
+  ready(): Promise<boolean>;
   newSalt(): Buffer;
   seal(plain: Buffer, salt: Buffer): Promise<Buffer>;
-  open(sealed: Buffer, salt: Buffer): Promise<Buffer>;
+  /** Opens envelopes sealed with the same salt, deriving the key once. */
+  open(sealed: readonly Buffer[], salt: Buffer): Promise<Buffer[]>;
 }
 export const CERTIFICATE_CIPHER = Symbol('CertificateCipher');
 

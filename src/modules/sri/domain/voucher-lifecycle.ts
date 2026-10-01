@@ -36,6 +36,28 @@ export type BlockedReason =
   | 'MISSING_ISSUER_DATA'
   | 'SIGNING_FAILED';
 
+/**
+ * SRI-056, SRI-084. What loading a certificate can fix. The sweep leaves these
+ * alone —retrying them every minute would record an opening and derive a key
+ * for nothing— and the upload releases them (`unblockForCertificate`).
+ */
+export const CERTIFICATE_REASONS: readonly BlockedReason[] = [
+  'NO_CERTIFICATE',
+  'CERTIFICATE_NOT_VALID',
+  'CERTIFICATE_UNREADABLE',
+  'SIGNING_FAILED',
+];
+
+/**
+ * SRI-056. What the sweep retries: what nobody blocked, and what is fixed by
+ * editing the issuer's data or the server's configuration. `NO_PAYMENT_METHOD`
+ * is never fixed: the invoice cannot change (BI-170), and the monitor says so.
+ */
+export const SWEPT_REASONS: readonly BlockedReason[] = [
+  'MISSING_ISSUER_DATA',
+  'CERTIFICATE_STORE_NOT_CONFIGURED',
+];
+
 /** One message of the SRI, as its web service returns it. */
 export interface SriMessage {
   identifier: string;
@@ -208,6 +230,30 @@ export function afterAuthorisation(
         next: { step: 'AUTHORISE', delaySeconds: retryDelaySeconds(attempt) },
       };
   }
+}
+
+/** SRI-074. Never sooner than ten minutes, never later than six hours. */
+const DELIVERY_RETRY_FLOOR_SECONDS = 600;
+const DELIVERY_RETRY_CEILING_SECONDS = 6 * 3600;
+
+/**
+ * SRI-074. The e-mail's next try waits as long as it has already been
+ * failing since the authorisation: ten minutes, then about twice as long each
+ * time, capped at six hours. An SMTP down for a day costs a dozen attempts —
+ * each issuing a RIDE— instead of one every ten minutes.
+ */
+export function deliveryRetrySeconds(
+  authorisedAt: Date | null,
+  now: Date,
+): number {
+  const elapsed =
+    authorisedAt === null
+      ? 0
+      : Math.floor((now.getTime() - authorisedAt.getTime()) / 1000);
+  return Math.min(
+    DELIVERY_RETRY_CEILING_SECONDS,
+    Math.max(DELIVERY_RETRY_FLOOR_SECONDS, elapsed),
+  );
 }
 
 /** SRI-058. Only what the SRI returned or refused is retried by a person. */

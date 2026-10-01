@@ -61,6 +61,8 @@ export interface VoucherRecord {
   attemptCount: number;
   nextAttemptAt: Date | null;
   authorisedXml: string | null;
+  /** SRI-074. When the SRI authorised it; the e-mail's retries grow from it. */
+  authorisedAt: Date | null;
   deliveryStatus: DeliveryStatus | null;
 }
 
@@ -189,8 +191,17 @@ export interface ElectronicVoucherRepository {
   /** SRI-074 to SRI-076. Only the delivery columns move. */
   recordDelivery(id: string, status: DeliveryStatus, at: Date): Promise<void>;
 
-  /** SRI-056. What the sweep has to look at. */
-  pendingWork(limit: number): Promise<{
+  /** SRI-084. Releases what waited for a certificate, for the sweep to sign. */
+  unblockForCertificate(): Promise<number>;
+
+  /**
+   * SRI-056. What the sweep has to look at: unsigned vouchers it can retry
+   * (`SWEPT_REASONS`), in-flight ones whose next attempt is due at `now`.
+   */
+  pendingWork(
+    limit: number,
+    now: Date,
+  ): Promise<{
     invoicesWithoutVoucher: string[];
     unsigned: VoucherRecord[];
     inFlight: VoucherRecord[];

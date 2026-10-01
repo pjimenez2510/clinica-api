@@ -252,7 +252,7 @@ describe('SRI-023, SRI-024, SRI-025 el cifrado del certificado', () => {
     const sealed = await cipher.seal(plain, salt);
     expect(sealed.includes(plain.subarray(0, 32))).toBe(false);
     expect(sealed.length).toBeGreaterThan(28);
-    await expect(cipher.open(sealed, salt)).resolves.toEqual(plain);
+    await expect(cipher.open([sealed], salt)).resolves.toEqual([plain]);
   });
 
   it('SRI-023 GCM autentica: un byte alterado o otra frase no abren', async () => {
@@ -263,9 +263,9 @@ describe('SRI-023, SRI-024, SRI-025 el cifrado del certificado', () => {
     const tampered = Buffer.from(sealed);
     const last = tampered.length - 1;
     tampered.writeUInt8(tampered.readUInt8(last) ^ 0xff, last);
-    await expect(cipher.open(tampered, salt)).rejects.toThrow();
+    await expect(cipher.open([tampered], salt)).rejects.toThrow();
     await expect(
-      cipherWith('otra-frase-maestra-distinta').open(sealed, salt),
+      cipherWith('otra-frase-maestra-distinta').open([sealed], salt),
     ).rejects.toThrow();
   });
 

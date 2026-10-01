@@ -15,10 +15,12 @@ import type {
   VoucherRecord,
   VoucherStatusView,
 } from '../domain/electronic-voucher.repository';
-import type {
-  BlockedReason,
-  SriMessage,
-  VoucherStatus,
+import {
+  CERTIFICATE_REASONS,
+  SWEPT_REASONS,
+  type BlockedReason,
+  type SriMessage,
+  type VoucherStatus,
 } from '../domain/voucher-lifecycle';
 
 const VOUCHER_SELECT = {
@@ -36,6 +38,7 @@ const VOUCHER_SELECT = {
   attemptCount: true,
   nextAttemptAt: true,
   authorisedXml: true,
+  authorisedAt: true,
   deliveryStatus: true,
 } satisfies Prisma.ElectronicVoucherSelect;
 
@@ -401,23 +404,58 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
     });
   }
 
-  async pendingWork(limit: number) {
+  async unblockForCertificate(): Promise<number> {
+    const { count } = await this.prisma.electronicVoucher.updateMany({
+      where: {
+        status: 'PREPARED',
+        blockedReason: { in: [...CERTIFICATE_REASONS] },
+      },
+      data: { blockedReason: null },
+    });
+    return count;
+  }
+
+  async pendingWork(limit: number, now: Date) {
     const [withoutVoucher, unsigned, inFlight, undelivered] = await Promise.all(
       [
+        // SRI-008. An invoice whose site or establishment still lacks the
+        // data is shown by the monitor; here it would only take a place that
+        // a recoverable one —a notice lost to a database hiccup— needs.
         this.prisma.invoice.findMany({
-          where: { status: 'ISSUED', electronicVoucher: null },
+          where: {
+            status: 'ISSUED',
+            electronicVoucher: null,
+            site: {
+              sriEstablishmentCode: { not: null },
+              establishment: {
+                is: {
+                  headOfficeAddress: { not: null },
+                  fiscalProfileDeclaredAt: { not: null },
+                },
+              },
+            },
+          },
           orderBy: { issuedAt: 'asc' },
           take: limit,
           select: { id: true },
         }),
         this.prisma.electronicVoucher.findMany({
-          where: { status: 'PREPARED' },
+          where: {
+            status: 'PREPARED',
+            OR: [
+              { blockedReason: null },
+              { blockedReason: { in: [...SWEPT_REASONS] } },
+            ],
+          },
           orderBy: { createdAt: 'asc' },
           take: limit,
           select: VOUCHER_SELECT,
         }),
         this.prisma.electronicVoucher.findMany({
-          where: { status: { in: IN_FLIGHT } },
+          where: {
+            status: { in: IN_FLIGHT },
+            OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+          },
           orderBy: { createdAt: 'asc' },
           take: limit,
           select: VOUCHER_SELECT,

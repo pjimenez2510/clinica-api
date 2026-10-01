@@ -159,7 +159,21 @@ export class SriQueueWorker implements OnApplicationBootstrap {
       // default), and an idle queue costs one cheap query a second.
       await boss.work<StepJob>(name, WORK_OPTIONS, async (jobs) => {
         for (const job of jobs) {
-          await this.dispatch.run(step, job.data.voucherId);
+          // One job that throws must not fail the other nine of its batch.
+          // Its voucher keeps its status, so the sweep queues it again
+          // (SRI-056); nothing is lost by completing this job.
+          try {
+            await this.dispatch.run(step, job.data.voucherId);
+          } catch (error) {
+            this.logger.error(
+              {
+                err: error,
+                voucher_id: job.data.voucherId,
+                error_code: 'SRI_JOB_FAILED',
+              },
+              'a voucher job failed; the sweep will queue it again',
+            );
+          }
         }
       });
     }

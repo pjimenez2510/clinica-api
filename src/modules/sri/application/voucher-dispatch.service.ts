@@ -24,6 +24,7 @@ import {
   afterAuthorisation,
   afterReception,
   authorisationDocument,
+  deliveryRetrySeconds,
   type AuthorisationAnswer,
   type QueueStep,
   type ReceptionAnswer,
@@ -31,9 +32,6 @@ import {
 } from '../domain/voucher-lifecycle';
 
 import { VoucherPreparationService } from './voucher-preparation.service';
-
-/** SRI-074. A failed e-mail is retried on its own, slower clock. */
-const DELIVERY_RETRY_SECONDS = 600;
 
 /**
  * SRI-040 to SRI-057, SRI-072 to SRI-076. What each job of the queue does.
@@ -168,7 +166,6 @@ export class VoucherDispatchService {
           },
         ],
       });
-      await this.vouchers.recordDelivery(voucher.id, 'SENT', this.clock());
     } catch (error) {
       this.logger.warn(
         {
@@ -178,9 +175,18 @@ export class VoucherDispatchService {
         },
         'the authorised voucher could not be e-mailed; it will be retried',
       );
-      await this.vouchers.recordDelivery(voucher.id, 'FAILED', this.clock());
-      await this.queue.schedule('DELIVER', voucher, DELIVERY_RETRY_SECONDS);
+      const now = this.clock();
+      await this.vouchers.recordDelivery(voucher.id, 'FAILED', now);
+      await this.queue.schedule(
+        'DELIVER',
+        voucher,
+        deliveryRetrySeconds(voucher.authorisedAt, now),
+      );
+      return;
     }
+    // SRI-075. Outside the try: the e-mail LEFT. A failure to note it must
+    // not be taken for a failed e-mail and send it again.
+    await this.vouchers.recordDelivery(voucher.id, 'SENT', this.clock());
   }
 
   /**
@@ -189,28 +195,52 @@ export class VoucherDispatchService {
    * what has no job. The queue's singleton key drops what is already queued.
    */
   async sweep(limit = 200): Promise<void> {
-    const work = await this.vouchers.pendingWork(limit);
+    const now = this.clock();
+    const work = await this.vouchers.pendingWork(limit, now);
     for (const invoiceId of work.invoicesWithoutVoucher) {
       await this.preparation.prepare(invoiceId);
     }
+    // SC-072. One voucher that throws —a figure that does not add up, an
+    // opening that cannot be written— is logged and skipped: it must not
+    // stop the sweep from reaching the rest, every minute, for ever.
     for (const voucher of work.unsigned) {
-      await this.preparation.sign(voucher);
+      await this.isolated(voucher, () => this.preparation.sign(voucher));
     }
     if (this.sri.isConfigured()) {
-      const now = this.clock().getTime();
       for (const voucher of work.inFlight) {
-        if (voucher.nextAttemptAt && voucher.nextAttemptAt.getTime() > now) {
+        if (
+          voucher.nextAttemptAt &&
+          voucher.nextAttemptAt.getTime() > now.getTime()
+        ) {
           continue;
         }
-        await this.queue.schedule(
-          voucher.status === 'SIGNED' ? 'SEND' : 'AUTHORISE',
-          voucher,
-          0,
+        await this.isolated(voucher, () =>
+          this.queue.schedule(
+            voucher.status === 'SIGNED' ? 'SEND' : 'AUTHORISE',
+            voucher,
+            0,
+          ),
         );
       }
     }
     for (const voucher of work.undelivered) {
-      await this.queue.schedule('DELIVER', voucher, 0);
+      await this.isolated(voucher, () =>
+        this.queue.schedule('DELIVER', voucher, 0),
+      );
+    }
+  }
+
+  private async isolated(
+    voucher: VoucherRecord,
+    work: () => Promise<unknown>,
+  ): Promise<void> {
+    try {
+      await work();
+    } catch (error) {
+      this.logger.error(
+        { err: error, voucher_id: voucher.id, error_code: 'SRI_SWEEP_FAILED' },
+        'the sweep could not handle a voucher; it carries on with the rest',
+      );
     }
   }
 

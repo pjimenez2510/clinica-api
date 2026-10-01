@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   afterAuthorisation,
   afterReception,
+  deliveryRetrySeconds,
   authorisationDocument,
   isRetriableByAPerson,
   needsAPerson,
@@ -220,5 +221,16 @@ describe('SRI-073 el documento de autorización', () => {
     expect(document).toContain(
       '<comprobante><![CDATA[<factura id="comprobante"><a>x</a></factura>]]></comprobante>',
     );
+  });
+});
+
+describe('SRI-074 la espera del correo que falló', () => {
+  it('SRI-074 crece con lo que lleva fallando, desde diez minutos y hasta seis horas', () => {
+    const now = new Date();
+    const ago = (seconds: number) => new Date(now.getTime() - seconds * 1000);
+    expect(deliveryRetrySeconds(ago(30), now)).toBe(600);
+    expect(deliveryRetrySeconds(ago(1800), now)).toBe(1800);
+    expect(deliveryRetrySeconds(ago(3 * 86_400), now)).toBe(6 * 3600);
+    expect(deliveryRetrySeconds(null, now)).toBe(600);
   });
 });

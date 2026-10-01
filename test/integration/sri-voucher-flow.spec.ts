@@ -153,7 +153,7 @@ beforeEach(async () => {
     cipher,
     { record: () => Promise.resolve() },
     NOW,
-    preparation,
+    vouchers,
   );
   accounts = new PrismaBillingAccountRepository(service);
 
@@ -268,7 +268,12 @@ describe('SRI-001, SRI-041 preparar al emitir, sin bloquear nunca la factura', (
     await preparation.prepare(invoice.id);
     const waiting = await voucherOf(invoice.id);
 
+    expect(waiting.blockedReason).toBe('NO_CERTIFICATE');
+
     await loadCertificate();
+    // Released, not signed inside the upload: the next sweep signs it.
+    expect((await voucherOf(invoice.id)).blockedReason).toBeNull();
+    await dispatch.sweep();
 
     const signed = await voucherOf(invoice.id);
     expect(signed.status).toBe('SIGNED');
