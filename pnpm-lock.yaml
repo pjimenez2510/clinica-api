@@ -153,6 +153,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^4.1.10
         version: 4.1.10(vitest@4.1.10)
+      '@xmldom/xmldom':
+        specifier: ^0.9.12
+        version: 0.9.12
       dependency-cruiser:
         specifier: ^18.1.1
         version: 18.1.1

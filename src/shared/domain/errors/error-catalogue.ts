@@ -328,6 +328,16 @@ export const DOMAIN_ERROR_CODES = [
   'EMISSION_POINT_NOT_FOUND',
   'ESTABLISHMENT_NOT_FOUND',
   'MSP_UNICODE_DUPLICATE',
+  // SRI (sri/SPEC.md §8). El comprobante electrónico y el certificado del
+  // emisor. Uno solo para «no existe» y «fuera de alcance» (SRI-065); uno solo
+  // para «no es .p12» y «clave equivocada» (SRI-081), que distinguidos son un
+  // oráculo para quien adivina la clave de un fichero robado.
+  'SRI_CERTIFICATE_EXPIRED',
+  'SRI_CERTIFICATE_INVALID',
+  'SRI_CERTIFICATE_STORE_NOT_CONFIGURED',
+  'SRI_CERTIFICATE_TOO_LARGE',
+  'SRI_VOUCHER_NOT_FOUND',
+  'SRI_VOUCHER_NOT_RETRIABLE',
   'SITE_IN_USE',
   'SITE_NOT_FOUND',
   'SITE_ROOM_DUPLICATE',

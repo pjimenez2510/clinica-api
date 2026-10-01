@@ -108,6 +108,7 @@
     "@types/pg": "^8.20.4",
     "@types/supertest": "^7.0.0",
     "@vitest/coverage-v8": "^4.1.10",
+    "@xmldom/xmldom": "^0.9.12",
     "dependency-cruiser": "^18.1.1",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",

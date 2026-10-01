@@ -17,7 +17,7 @@ import {
   type InvoiceVoucherSource,
 } from './invoice-xml';
 
-const XSD_DIR = join(import.meta.dirname, '..', 'infrastructure', 'xsd');
+const XSD_DIR = join(process.cwd(), 'src/modules/sri/infrastructure/xsd');
 
 /**
  * Validates against the SRI's OFFICIAL XSD 1.1.0 (`XML y XSD Factura.zip`,

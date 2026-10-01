@@ -7,6 +7,11 @@ import { z } from 'zod';
  * configuration and fails three hours later, on the first invoice, is far
  * worse than one that refuses to start.
  */
+/** `KEY=` in a `.env` file means «not declared», not «declared empty». */
+function emptyAsUndefined(value: unknown): unknown {
+  return value === '' ? undefined : value;
+}
+
 export const envSchema = z.object({
   NODE_ENV: z
     .enum(['development', 'test', 'production'])
@@ -143,7 +148,70 @@ export const envSchema = z.object({
    * decision and never the result of a forgotten default.
    */
   SRI_ENVIRONMENT: z.enum(['1', '2']).default('1'),
+  /**
+   * UNUSED BY THE VOUCHER, on purpose: the issuer's RUC is the establishment's
+   * (`organization`, OR-008), the one the RIDE already prints. Two sources for
+   * one datum is how a voucher ends up signed under one RUC and keyed under
+   * another. Kept only so existing `.env` files keep validating.
+   */
   SRI_ISSUER_RUC: z.string().length(13).optional(),
+
+  /**
+   * SRI-053, SRI-054. The two offline web services, WITHOUT `?wsdl`. Absent:
+   * vouchers are prepared and signed, and wait in the monitor. In development
+   * they point at the local double of the SRI (`pnpm sri:double`).
+   */
+  SRI_RECEPTION_URL: z.preprocess(emptyAsUndefined, z.url().optional()),
+  SRI_AUTHORISATION_URL: z.preprocess(emptyAsUndefined, z.url().optional()),
+  /**
+   * SRI-053. A host that is not local is refused unless this is `true`:
+   * reaching the real SRI is a deliberate act of the author (sri/SPEC.md §9),
+   * never the side effect of a copied `.env`.
+   */
+  SRI_ALLOW_REMOTE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  /** SRI-042. Ceiling per call; the SRI documents none. */
+  SRI_REQUEST_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .max(120_000)
+    .default(30_000),
+  /**
+   * SRI-024. The PATH of the file holding the master passphrase (a Docker
+   * secret in production), never the passphrase itself: environment variables
+   * leak through `docker inspect`, crash dumps and error reports.
+   */
+  SRI_CERTIFICATE_MASTER_KEY_FILE: z.preprocess(
+    emptyAsUndefined,
+    z.string().min(1).optional(),
+  ),
+  /**
+   * SRI-017, D-092. SRI table 24. A fiscal datum chosen by the clinic, so it
+   * has NO default: without it vouchers are not signed and the monitor says why.
+   */
+  SRI_DEFAULT_PAYMENT_METHOD: z.preprocess(
+    emptyAsUndefined,
+    z.enum(['01', '15', '16', '17', '18', '19', '20', '21']).optional(),
+  ),
+  /** SRI-016, D-091. Anexo 26 «RUC Proveedor». Empty: the field is not emitted. */
+  SRI_SOFTWARE_PROVIDER_RUC: z.preprocess(
+    emptyAsUndefined,
+    z
+      .string()
+      .regex(/^[0-9]{13}$/)
+      .optional(),
+  ),
+  /**
+   * SRI-040. Whether this process runs the voucher queue (pg-boss). Off in the
+   * integration suite, where each spec drives the queue it needs.
+   */
+  SRI_QUEUE_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
 
   /** Default site timezone. `Pacific/Galapagos` for the Galapagos islands. */
   DEFAULT_TIMEZONE: z
@@ -188,6 +256,18 @@ export const envSchema = z.object({
  */
 export type Env = z.infer<typeof envSchema>;
 
+/** SRI-053. `localhost`, a loopback address, or a `.localhost`/`.test` name. */
+export function isLocalUrl(value: string): boolean {
+  const host = new URL(value).hostname;
+  return (
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '[::1]' ||
+    host.endsWith('.localhost') ||
+    host.endsWith('.test')
+  );
+}
+
 /**
  * Validates and returns the configuration. Throws with a readable message when
  * it fails: a raw `ZodError` is unreadable at 3am during a deployment.
@@ -204,6 +284,25 @@ export function validateEnv(raw: Record<string, unknown>): Env {
      * a default is worse than a refusal to start.
      */
     .superRefine((env, ctx) => {
+      // SRI-053. No process reaches a remote SRI by accident.
+      for (const key of [
+        'SRI_RECEPTION_URL',
+        'SRI_AUTHORISATION_URL',
+      ] as const) {
+        const value = env[key];
+        if (
+          value !== undefined &&
+          !env.SRI_ALLOW_REMOTE &&
+          !isLocalUrl(value)
+        ) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [key],
+            message:
+              'apunta a un servidor que no es local; declare SRI_ALLOW_REMOTE=true solo si de verdad quiere hablar con el SRI',
+          });
+        }
+      }
       if (env.NODE_ENV === 'production' && raw.TRUST_PROXY_HOPS === undefined) {
         ctx.addIssue({
           code: 'custom',

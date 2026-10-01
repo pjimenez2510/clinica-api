@@ -63,8 +63,8 @@ autorización y, cuando la tiene, entrega al cliente el RIDE y el XML autorizado
 de la matriz), `documents` (el RIDE) y `shared/mail`.
 
 **Frontera con `billing`, y por qué la clave la calcula este módulo.** ADR-004:
-*la clave de acceso es el `singletonKey` de la cola, y quien la calcula no es
-quien decide qué se factura.* `billing` no sabe del SRI; tras confirmar la
+_la clave de acceso es el `singletonKey` de la cola, y quien la calcula no es
+quien decide qué se factura._ `billing` no sabe del SRI; tras confirmar la
 emisión avisa por el puerto compartido `ELECTRONIC_VOUCHER_PREPARER`, y el
 aviso **no puede fallar hacia `billing`**. Lo que sí escribe este módulo en la
 fila de `invoice` es exactamente lo que el SRI decide: la clave de acceso, el
@@ -74,19 +74,19 @@ contar dos historias.
 
 ## Vocabulario
 
-| Término | Significado exacto en este módulo |
-| --- | --- |
-| **Comprobante** (`electronic_voucher`) | La factura como documento electrónico: clave de acceso, XML firmado, estado ante el SRI. **Uno por factura, para siempre** |
-| **Clave de acceso** | Los 49 dígitos de la Ficha (tabla de ADR-004). Identifica el comprobante ante el SRI y es el `singletonKey` de la cola |
-| **Código numérico** | Los 8 dígitos libres de la clave. Aleatorio, generado una vez y guardado |
-| **Ambiente** | `1` pruebas, `2` producción. Parte de la clave: se fija al preparar y no se vuelve a leer |
-| **Recepción** | `validarComprobante`: el SRI dice `RECIBIDA` o `DEVUELTA` |
-| **Autorización** | `autorizacionComprobante`: el SRI dice `AUTORIZADO`, `NO AUTORIZADO`, o todavía nada (`numeroComprobantes = 0`) |
-| **Devuelta** | Recepción rechazada con mensajes. **43 y 70 no son devolución**: son «ya lo tengo» y «lo estoy procesando» |
-| **Intento** (`electronic_voucher_attempt`) | Una llamada al SRI y lo que contestó, o que no contestó. Solo se añade |
-| **Certificado del emisor** (`signing_certificate`) | El `.p12` de la persona que firma por la clínica, cifrado. Lo emite cualquier entidad acreditada por ARCOTEL |
-| **Frase maestra** | El secreto del que se deriva la clave que cifra el `.p12`. Vive en un fichero (Docker secret), nunca en la base ni como valor de una variable de entorno |
-| **Doble del SRI** | Servidor HTTP local que contesta los dos servicios como el de pruebas, con un escenario por comprobante: recibida, devuelta, autorizada, 43, 70, no autorizada, caído |
+| Término                                            | Significado exacto en este módulo                                                                                                                                     |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Comprobante** (`electronic_voucher`)             | La factura como documento electrónico: clave de acceso, XML firmado, estado ante el SRI. **Uno por factura, para siempre**                                            |
+| **Clave de acceso**                                | Los 49 dígitos de la Ficha (tabla de ADR-004). Identifica el comprobante ante el SRI y es el `singletonKey` de la cola                                                |
+| **Código numérico**                                | Los 8 dígitos libres de la clave. Aleatorio, generado una vez y guardado                                                                                              |
+| **Ambiente**                                       | `1` pruebas, `2` producción. Parte de la clave: se fija al preparar y no se vuelve a leer                                                                             |
+| **Recepción**                                      | `validarComprobante`: el SRI dice `RECIBIDA` o `DEVUELTA`                                                                                                             |
+| **Autorización**                                   | `autorizacionComprobante`: el SRI dice `AUTORIZADO`, `NO AUTORIZADO`, o todavía nada (`numeroComprobantes = 0`)                                                       |
+| **Devuelta**                                       | Recepción rechazada con mensajes. **43 y 70 no son devolución**: son «ya lo tengo» y «lo estoy procesando»                                                            |
+| **Intento** (`electronic_voucher_attempt`)         | Una llamada al SRI y lo que contestó, o que no contestó. Solo se añade                                                                                                |
+| **Certificado del emisor** (`signing_certificate`) | El `.p12` de la persona que firma por la clínica, cifrado. Lo emite cualquier entidad acreditada por ARCOTEL                                                          |
+| **Frase maestra**                                  | El secreto del que se deriva la clave que cifra el `.p12`. Vive en un fichero (Docker secret), nunca en la base ni como valor de una variable de entorno              |
+| **Doble del SRI**                                  | Servidor HTTP local que contesta los dos servicios como el de pruebas, con un escenario por comprobante: recibida, devuelta, autorizada, 43, 70, no autorizada, caído |
 
 ---
 
@@ -244,8 +244,8 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
   error 70, devolución o cambio de configuración—, y **la base DEBERÁ rechazar**
   el cambio de `electronic_voucher.access_key` y el de `invoice.access_key` una
   vez escrita.
-  > REQ-082 y la Nota 1 de la Ficha: los rechazados *se reenvían con la misma
-  > clave y el mismo secuencial*. Regenerarla deja secuenciales huérfanos y
+  > REQ-082 y la Nota 1 de la Ficha: los rechazados _se reenvían con la misma
+  > clave y el mismo secuencial_. Regenerarla deja secuenciales huérfanos y
   > convierte el rechazo en permanente. Es el defecto que comete la
   > implementación de referencia revisada (cada reintento de la cola vuelve a
   > emitir con otro código numérico): no se copia.
@@ -255,7 +255,7 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
 - **SRI-007** — La base DEBERÁ rechazar que `invoice.access_key` tome un valor
   que no sea la clave del comprobante de esa misma factura.
   > Clave foránea compuesta `(id, access_key)` → `electronic_voucher
-  > (invoice_id, access_key)`.
+(invoice_id, access_key)`.
 - **SRI-008** — SI falta algún dato que la clave o el XML necesitan —RUC del
   emisor, razón social, código de establecimiento SRI de la sede, dirección de
   la matriz— ENTONCES el sistema NO DEBERÁ crear el comprobante ni inventar el
@@ -332,7 +332,7 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
 
 ## 3. La firma y el certificado del emisor
 
-- **SRI-020** — El sistema DEBERÁ firmar el XML en XAdES-BES, firma *enveloped*,
+- **SRI-020** — El sistema DEBERÁ firmar el XML en XAdES-BES, firma _enveloped_,
   con digest **SHA-1**, firma **RSA-SHA1** y canonicalización C14N 2001.
   > REQ-081. **No se «mejora» a SHA-256: el SRI contesta 39.**
 - **SRI-021** — El sistema DEBERÁ firmar mediante la librería elegida en ADR-004
@@ -414,8 +414,8 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
   (clave en procesamiento), el sistema DEBERÁ pasarlo a `RECEIVED`, consultar la
   autorización con espera creciente y NO DEBERÁ reenviarlo mientras no haya
   respuesta de autorización.
-  > La Ficha: *«no se deberá reenviar el comprobante o generar el comprobante con
-  > otra clave de acceso y secuencial hasta recibir una respuesta»*.
+  > La Ficha: _«no se deberá reenviar el comprobante o generar el comprobante con
+  > otra clave de acceso y secuencial hasta recibir una respuesta»_.
 - **SRI-046** — CUANDO la recepción conteste `DEVUELTA` con cualquier otro
   mensaje, el sistema DEBERÁ pasar el comprobante a `RETURNED`, la factura a
   `REJECTED`, guardar todos los mensajes (`identificador`, `mensaje`,
@@ -552,13 +552,13 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
 
 ## 8. Códigos de error nuevos
 
-| Código | Categoría | Cuándo |
-|---|---|---|
-| `SRI_VOUCHER_NOT_FOUND` | 404 | SRI-065. No existe o es de una sede fuera del alcance. **Uno solo para las dos** |
-| `SRI_VOUCHER_NOT_RETRIABLE` | 409 | SRI-058. Solo se reintenta lo devuelto o no autorizado: lo demás ya está en manos de la cola |
-| `SRI_CERTIFICATE_INVALID` | 422 | SRI-081. No es PKCS#12 con clave RSA, o la clave no lo abre |
-| `SRI_CERTIFICATE_EXPIRED` | 422 | SRI-033. Ya caducó, o todavía no es válido |
-| `SRI_CERTIFICATE_TOO_LARGE` | 422 | SRI-083 |
+| Código                      | Categoría | Cuándo                                                                                       |
+| --------------------------- | --------- | -------------------------------------------------------------------------------------------- |
+| `SRI_VOUCHER_NOT_FOUND`     | 404       | SRI-065. No existe o es de una sede fuera del alcance. **Uno solo para las dos**             |
+| `SRI_VOUCHER_NOT_RETRIABLE` | 409       | SRI-058. Solo se reintenta lo devuelto o no autorizado: lo demás ya está en manos de la cola |
+| `SRI_CERTIFICATE_INVALID`   | 422       | SRI-081. No es PKCS#12 con clave RSA, o la clave no lo abre                                  |
+| `SRI_CERTIFICATE_EXPIRED`   | 422       | SRI-033. Ya caducó, o todavía no es válido                                                   |
+| `SRI_CERTIFICATE_TOO_LARGE` | 422       | SRI-083                                                                                      |
 
 ## 9. La conexión real, que hace el autor
 
@@ -584,15 +584,15 @@ el autor quiera hacerlo:
 
 ## 10. Niveles de prueba
 
-| Requisito | Nivel |
-|---|---|
+| Requisito                                              | Nivel                                                                                                     |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
 | SRI-001 a SRI-004, SRI-010, SRI-011, SRI-013 a SRI-018 | Unitarias sobre el dominio: la clave y el XML son funciones puras; el XML se valida contra el XSD oficial |
-| SRI-005 a SRI-009, SRI-012, SRI-027, SRI-034, SRI-051 | **Integración contra PostgreSQL real, por SQL directo**, con control positivo |
-| SRI-020, SRI-021, SRI-031 | Unitarias con un `.p12` que genera la prueba; la firma se **verifica** criptográficamente |
-| SRI-022 a SRI-026, SRI-028 a SRI-030, SRI-033 | Unitarias del servicio con puertos falsos e integración del repositorio |
-| SRI-040 a SRI-058 | Integración: pg-boss real, PostgreSQL real y el doble del SRI por HTTP |
-| SRI-060 a SRI-068, SRI-080 a SRI-084 | Integración por HTTP (permiso, alcance, contrato) y e2e de la interfaz |
-| SRI-070 a SRI-076 | Unitarias sobre los bytes del RIDE; integración con un `Mailer` falso y e2e con Mailpit |
+| SRI-005 a SRI-009, SRI-012, SRI-027, SRI-034, SRI-051  | **Integración contra PostgreSQL real, por SQL directo**, con control positivo                             |
+| SRI-020, SRI-021, SRI-031                              | Unitarias con un `.p12` que genera la prueba; la firma se **verifica** criptográficamente                 |
+| SRI-022 a SRI-026, SRI-028 a SRI-030, SRI-033          | Unitarias del servicio con puertos falsos e integración del repositorio                                   |
+| SRI-040 a SRI-058                                      | Integración: pg-boss real, PostgreSQL real y el doble del SRI por HTTP                                    |
+| SRI-060 a SRI-068, SRI-080 a SRI-084                   | Integración por HTTP (permiso, alcance, contrato) y e2e de la interfaz                                    |
+| SRI-070 a SRI-076                                      | Unitarias sobre los bytes del RIDE; integración con un `Mailer` falso y e2e con Mailpit                   |
 
 ## 11. Preguntas abiertas
 
