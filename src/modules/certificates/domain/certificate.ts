@@ -387,9 +387,9 @@ export function assertMaternityWithinLeave(
     throw new CertificateMaternityDiagnosisRequiredError();
   }
   // Both ends included: a rest that ends the day this one starts overlaps.
-  if (otherRests.some((other) => other.from <= period.to && period.from <= other.to)) {
-    throw new CertificateRestOverlapsError();
-  } // prettier-ignore
+  const overlaps = (other: RestPeriod) =>
+    other.from <= period.to && period.from <= other.to;
+  if (otherRests.some(overlaps)) throw new CertificateRestOverlapsError();
 }
 
 /** CER-041. Refuses a rest that starts after `latestRestStartOf`. */

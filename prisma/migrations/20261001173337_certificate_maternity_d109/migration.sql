@@ -97,6 +97,9 @@ BEGIN
     -- D-109: lo que acota la maternidad, una vez quitados los 3 y 8 días.
     IF is_maternity THEN
       -- CER-046: ingreso y parto, como mucho 84 días antes de la atención.
+      -- Con una fecha NULL estas comparaciones no rechazan; no hace falta un
+      -- COALESCE: una maternidad sin sus tres fechas la para después el CHECK
+      -- `medical_certificate_maternity_dates_together`.
       IF NEW."maternity_admission_on" < attention_day - 84
          OR NEW."birth_on" < attention_day - 84 THEN
         RAISE EXCEPTION 'medical_certificate_maternity_dates_within_84_days: maternity admission and birth are at most 84 days before the attention'
@@ -131,6 +134,11 @@ BEGIN
       -- que las emisiones de la paciente se ordenan con este candado —la misma
       -- clave que toma el repositorio antes de leer sus reposos—: la segunda
       -- espera a que la primera confirme, y entonces la ve.
+      -- Orden de candados: el repositorio bloquea la atención y luego la
+      -- paciente; un INSERT directo toma la paciente aquí y la clave foránea de
+      -- la atención después. Un INSERT por `psql` a la vez que una emisión por
+      -- la API sobre la MISMA atención puede interbloquearse: PostgreSQL lo
+      -- detecta (40P01) y una de las dos se reintenta.
       PERFORM pg_advisory_xact_lock(hashtextextended('medical_certificate_rest:' || NEW."patient_id"::text, 0));
       IF EXISTS (
         SELECT 1

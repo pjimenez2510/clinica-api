@@ -927,6 +927,73 @@ describe('el certificado medico por HTTP', () => {
     ).toEqual(['contingencyType']);
   });
 
+  it('CER-048 la emision espera a la que tiene el candado de la paciente y, al verla, responde CERTIFICATE_REST_OVERLAPS', async () => {
+    // Otra atención de la misma paciente, el mismo día, con su diagnóstico.
+    const { startedAt } = await prisma.encounter.findUniqueOrThrow({
+      where: { id: encounterId },
+    });
+    const second = (await anEncounter(siteId, startedAt)).id;
+    await aDiagnosis(encounterId, 'O80');
+    await aDiagnosis(second, 'O80');
+    const admission = addDays(today, -1);
+    const discharge = addDays(today, 2);
+    const until = addDays(today, 9);
+
+    // Una emisión en curso desde la otra atención: inserta (el disparador toma
+    // el candado de la paciente) y NO confirma hasta que se la suelte.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    let holding!: () => void;
+    const locked = new Promise<void>((resolve) => (holding = resolve));
+    const first = prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`
+          INSERT INTO medical_certificate
+            (encounter_id, patient_id, issued_by_id, type, rest_from, rest_to,
+             include_diagnosis, contingency_type, verification_code, issued_at,
+             maternity_admission_on, birth_on, maternity_discharge_on)
+          VALUES (${second}::uuid, ${patientId}::uuid, ${doctor.practitionerId}::uuid,
+                  'MEDICAL_REST', ${today}::date, ${until}::date, true, 'MATERNITY',
+                  'CER048-RACE-0001', ${startedAt},
+                  ${admission}::date, ${today}::date, ${discharge}::date)`;
+        holding();
+        await held;
+      },
+      { timeout: 20_000 },
+    );
+    await locked;
+
+    // La emisión por la API sobre la otra atención, a la vez.
+    const answer = post(
+      `/encounters/${encounterId}/certificates`,
+      doctor.token,
+      restOf(10, {
+        contingencyType: 'MATERNITY',
+        maternityAdmissionOn: admission,
+        birthOn: today,
+        maternityDischargeOn: discharge,
+      }),
+    ).then((response) => response);
+    // Espera el candado: sigue sin respuesta.
+    const early = await Promise.race([
+      answer.then(() => 'answered'),
+      new Promise((resolve) => setTimeout(() => resolve('waiting'), 500)),
+    ]);
+    expect(early).toBe('waiting');
+    release();
+    await first;
+
+    // El repositorio leyó los reposos TRAS el candado: lo rechaza el dominio,
+    // con su código. Sin ese candado los habría leído antes y lo pararía el
+    // disparador, con un código genérico.
+    const response = await answer;
+    expect(response.status).toBe(409);
+    expect((response.body as Problem).code).toBe('CERTIFICATE_REST_OVERLAPS');
+    expect(
+      await prisma.medicalCertificate.count({ where: { patientId } }),
+    ).toBe(1);
+  });
+
   it('CER-035 la maternidad sin fecha de parto se rechaza nombrandola, y con las tres se sirve en letras', async () => {
     // CER-049: la maternidad, sobre una atención con diagnóstico obstétrico.
     await aDiagnosis(encounterId, 'O80');
