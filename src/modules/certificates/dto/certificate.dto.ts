@@ -131,13 +131,15 @@ export const certificateSchema = z.object({
   revocationReason: z.string().nullable(),
 });
 /** Response of reading one certificate and of annulling it. */
-export class CertificateDto extends createZodDto(certificateSchema) {}
+export class MedicalCertificateDto extends createZodDto(certificateSchema) {}
 
 export const certificateListSchema = z.object({
   items: z.array(certificateSchema),
 });
 /** Response of GET /encounters/:encounterId/certificates. */
-export class CertificateListDto extends createZodDto(certificateListSchema) {}
+export class MedicalCertificateListDto extends createZodDto(
+  certificateListSchema,
+) {}
 
 /** CER-013. What the response of a rest certificate tells the doctor. */
 export const iessValidationSchema = z.object({

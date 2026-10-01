@@ -27,7 +27,7 @@ import { CertificateService } from './application/certificate.service';
 import type { Requester } from './application/certificate.service';
 import { toCertificateResponse, toIessResponse } from './certificate.presenter';
 import {
-  CertificateListDto,
+  MedicalCertificateListDto,
   IssueCertificateDto,
   IssuedCertificateDto,
   type CertificateListResponse,
@@ -97,7 +97,7 @@ export class EncounterCertificatesController {
   @Get()
   @RequirePermission('record:read', 'query')
   @ApiOperation({ summary: 'Listar los certificados médicos de la atención' })
-  @ApiOkResponse({ type: CertificateListDto })
+  @ApiOkResponse({ type: MedicalCertificateListDto })
   async list(
     @Param('encounterId', ParseUUIDPipe) encounterId: string,
     @Req() req: Request,

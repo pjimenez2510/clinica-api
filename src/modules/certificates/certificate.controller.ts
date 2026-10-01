@@ -24,7 +24,7 @@ import {
   toForm117Response,
 } from './certificate.presenter';
 import {
-  CertificateDto,
+  MedicalCertificateDto,
   Form117Dto,
   RevokeCertificateDto,
   type CertificateResponse,
@@ -76,7 +76,7 @@ export class CertificateController {
   @RequirePermission('record:write', 'query')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Anular un certificado médico, diciendo por qué' })
-  @ApiOkResponse({ type: CertificateDto })
+  @ApiOkResponse({ type: MedicalCertificateDto })
   async revoke(
     @Param('certificateId', ParseUUIDPipe) certificateId: string,
     @Body() body: RevokeCertificateDto,
