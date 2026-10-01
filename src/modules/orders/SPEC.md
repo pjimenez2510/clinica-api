@@ -184,7 +184,11 @@ porque nadie la está buscando.
 **Prueba independiente:** una orden de hace diez días y una de hoy; la de hace
 diez días sale primera, dice `10` días y sale **vencida**; la de hoy no.
 Y con la sesión en `Asia/Tokyo` los días son los mismos.
-**Cubre:** ORD-020 a ORD-025.
+**Cubre:** ORD-020 a ORD-026.
+
+**Solo servidor:** ORD-023. Que la cola no distinga canales es una propiedad de
+la consulta —se alimenta de la orden y no del canal—, y en pantalla no hay un
+canal que enseñar.
 
 ### E3 — El resultado estructurado y su bandera _(P1)_
 
@@ -199,6 +203,10 @@ laboratorios mandan solo «alto/bajo», o nada.
 paciente y `LOW` en un paciente, con los rangos reales de la siembra
 (`HB`: 13,0–17,0 `MALE`, 12,0–15,5 `FEMALE`).
 **Cubre:** ORD-030 a ORD-042.
+
+**Solo servidor:** ORD-031, ORD-036. El nombre congelado en la fila y la
+resolución del rango por sexo y edad en días son escritura y cálculo del
+servidor; la pantalla enseña su resultado, que citan ORD-034, ORD-037 y ORD-038.
 
 ### E4 — La corrección que nunca sobrescribe _(P1)_
 
@@ -222,8 +230,14 @@ valores críticos, que tienen que llegar hoy a una persona.
 primera es la que produce el resultado huérfano; la segunda es el art. 39.
 **Prueba independiente:** una glucosa de 25 mg/dL sale en la cola de críticos
 **aunque el laboratorio la haya enviado sin bandera**; un analito que nadie pidió
-queda con `order_item_id` nulo y sale en la cola de sin orden.
-**Cubre:** ORD-040 a ORD-042, ORD-060 a ORD-063.
+queda con `order_item_id` nulo y sale en la cola de sin orden. Y el aviso de la
+glucosa queda registrado con a quién, quién, cuándo y por qué medio: desde ese
+momento sale de la cola, y la constancia no se puede cambiar.
+**Cubre:** ORD-040 a ORD-043, ORD-046, ORD-060 a ORD-065.
+
+**Solo servidor:** ORD-061, ORD-064. Que la cola se construya sobre los umbrales
+propios y que la constancia no se pueda reescribir son garantías del cálculo y
+de la base; en pantalla no hay nada que las enseñe.
 
 ### E6 — La conciliación por `Cedula` _(P1)_
 
@@ -462,6 +476,20 @@ cuando la gráfica exista.
 - **ORD-025** — La cola DEBERÁ poder filtrarse por sede, por categoría y por
   ordenable, para que sea trabajable por quien la trabaja.
 
+- **ORD-026** — CUANDO la cola se consulta por la `Cedula` del informe
+  (ORD-081), cada entrada DEBERÁ llevar el nombre del paciente de la orden, y SI
+  se consulta sin cédula ENTONCES NO DEBERÁ llevarlo.
+
+  Es la opción C de **D-068**. El laboratorio rotula el informe de un recién
+  nacido sin cédula propia como «RN de …» con la cédula de la madre: el camino
+  en papel abre la ficha de la madre, y si ella tiene pendiente el mismo examen
+  —un hemograma en el puerperio— el resultado del bebé se transcribe en la orden
+  de la madre. Con el nombre en la fila, quien tiene el papel en la mano ve a
+  quién corresponde cada orden. Relaja ORD-024 **solo en ese caso**: quien
+  busca ya tiene el documento de la persona, así que el nombre no le revela
+  nada nuevo. El aviso por vínculo madre-hijo (D-068 B) espera a que el vínculo
+  exista en el modelo.
+
 ---
 
 ## 3. El resultado estructurado y su bandera (ORD-030 a ORD-042)
@@ -646,6 +674,21 @@ cuando la gráfica exista.
   visible** a propósito: si alguien escribe siempre lo mismo en la celda vacía,
   eso es la señal de que falta una fila en el catálogo.
 
+- **ORD-046** — Cada entrada de la cola de resultados sin orden DEBERÁ decir
+  quién es su responsable y cuándo vence: el responsable DEBERÁ ser el
+  profesional que emitió la orden SALVO que la sede designe un rol, y el plazo
+  DEBERÁ contarse en las horas que fije la sede desde que llegó el resultado,
+  24 si no fija otro. SI el plazo pasó ENTONCES la entrada DEBERÁ decir que está
+  vencida.
+
+  Es **D-050 §4**: «un resultado en esa cola es un resultado que ningún médico
+  ha visto», y una cola que es de todos no es de nadie. Por defecto, el médico
+  que pidió el examen con 24 h; la sede lo cambia en
+  `site_parameter.unmatched_result_owner_role_id` y
+  `unmatched_result_deadline_hours`. El plazo se cuenta desde
+  `observation_result.observed_at`, que es cuando el informe dice haberse
+  emitido.
+
 ---
 
 ## 4. La corrección, que nunca sobrescribe (ORD-050 a ORD-054)
@@ -695,25 +738,52 @@ cuando la gráfica exista.
   el **65 %** de las que sí llegan cambia el tratamiento. El paciente ambulatorio
   ya se fue a casa: es el peor de los tres escenarios.
 
-- **ORD-062** — CUANDO se avisa de un valor crítico, el sistema DEBERÁ registrar
-  **a quién se avisó, quién avisó, cuándo y por qué medio**, y el valor DEBERÁ
-  seguir en la cola hasta que esa constancia exista.
+- **ORD-062** — CUANDO se registra el aviso de un valor crítico, el sistema
+  DEBERÁ guardar **a quién se avisó** (tipo y nombre), **quién avisó**, **cuándo**
+  y **por qué medio**, y DEBERÁ dejar fila en `access_audit`; el valor DEBERÁ
+  seguir en la cola de ORD-060 hasta que exista una constancia, y salir de ella
+  en cuanto exista. SI el resultado no lleva bandera crítica ENTONCES DEBERÁ
+  rechazarse con `RESULT_NOT_CRITICAL`; SI el instante declarado es futuro o
+  anterior al resultado, con `CRITICAL_NOTICE_TIME_INVALID`; SI el resultado no
+  existe o es de una sede fuera del alcance, con `RESULT_NOT_FOUND`.
 
-  > **Falta esquema, y es una obligación legal.** No hay tabla para la constancia
-  > del aviso. El **A.M. 00002393 art. 39** obliga a informar *«de manera
-  > urgente al médico tratante y/o al usuario»*, y **el aviso telefónico es un
-  > acto clínico, no una gestión**: sin constancia no se puede demostrar que
-  > ocurrió, que es justo lo que se pregunta cuando algo sale mal. Hace falta
-  > una tabla con el resultado, el destinatario, el emisor, el instante y el
-  > medio; y mientras no exista, la cola de ORD-060 no se puede vaciar.
+  El **A.M. 00002393 art. 39** obliga a informar *«de manera urgente al médico
+  tratante y/o al usuario»*, y **el aviso telefónico es un acto clínico, no una
+  gestión** (D-050 §2): sin constancia no se puede demostrar que ocurrió, que
+  es justo lo que se pregunta cuando algo sale mal. La guarda
+  `critical_result_notice`.
+
+  **Quién avisó** es la cuenta de la sesión y **nunca** un campo del cuerpo: es
+  la misma regla que `orderedById` en ORD-001. **Cuándo** sí lo declara quien
+  registra, porque la llamada de las 03:00 se anota a las 08:00 y la constancia
+  tiene que decir las 03:00; por eso se acota entre el resultado y el ahora.
+  Lo que la política aún no fija —«read-back», intentos fallidos— está en
+  **D-111**.
 
 - **ORD-063** — La política de valores críticos —qué analitos, qué umbrales, a
   quién se avisa y qué pasa fuera de horario— DEBERÁ ser configuración de la
   clínica y no una constante del código.
 
-  Los umbrales ya son datos (`analyte_reference_range` con
-  `range_kind = 'CRITICAL'`). Lo que **no** es dato todavía es el destinatario y
-  el horario. Ver «Preguntas abiertas».
+  Los umbrales son datos (`analyte_reference_range` con
+  `range_kind = 'CRITICAL'`), y el plazo de aviso y el rol al que se escala son
+  parámetros de la sede (`site_parameter.critical_notice_within_minutes`,
+  `critical_escalation_role_id`), vacíos de fábrica. Qué valores deberían traer
+  y qué pasa fuera de horario es **D-111**.
+
+- **ORD-064** — La constancia del aviso NO DEBERÁ poder modificarse ni
+  borrarse; un aviso mal registrado se corrige registrando otro.
+
+  Lo garantiza `critical_result_notice_append_only`, un disparador de la base:
+  una constancia que se puede reescribir no constituye prueba de nada.
+
+- **ORD-065** — Cada entrada de la cola de críticos DEBERÁ decir cuántos
+  minutos lleva esperando aviso, y DONDE la sede fija un plazo DEBERÁ decir si
+  está vencida y a qué rol se escala; SI la sede no lo fija ENTONCES DEBERÁ
+  decir que la clínica no ha fijado plazo, y NO DEBERÁ inventar uno.
+
+  Es el argumento de ORD-022 aplicado a la cola que más importa: un plazo por
+  defecto convierte «la clínica no lo ha decidido» en «va bien» o en «va tarde»,
+  y las dos son mentira. Los minutos se cuentan desde `observed_at`.
 
 ---
 
@@ -847,6 +917,8 @@ contrato —`code`, estado y mensaje—.
 | `RESULT_NOT_FOUND` | 404 | El resultado no existe o es de una sede fuera del alcance. **El mismo para ambas**, y también para un identificador que no es un número: `observation_result.id` es un `bigint` autoincremental, el más fácil de recorrer del sistema | ORD-043 |
 | `RESULT_ALREADY_MATCHED` | 409 | Ese resultado ya responde a una línea. Dos personas trabajando la misma cola es lo normal, y la que pierde no puede reapuntar una fila ya resuelta | ORD-043 |
 | `ORDER_ITEM_NOT_MATCHABLE` | 422 | La línea no es de la orden en la que llegó el resultado, o está anulada. **Uno solo para las dos**: lo que hay que hacer es idéntico, elegir otra línea de esta orden | ORD-043 |
+| `RESULT_NOT_CRITICAL` | 422 | Se intentó registrar el aviso de un resultado sin bandera crítica. La constancia de ORD-062 es la de un valor de alerta, y una sobre un valor normal llenaría la cola de seguridad de ruido | ORD-062 |
+| `CRITICAL_NOTICE_TIME_INVALID` | 422 | El instante del aviso es futuro o anterior al resultado. Ninguno de los dos pudo ocurrir | ORD-062 |
 
 Se **reutilizan**, no se crean: `CATALOG_CONCEPT_NOT_FOUND` y
 `CATALOG_CONCEPT_NOT_IN_FORCE` de `shared/domain/errors`, que existen
@@ -856,19 +928,20 @@ precisamente para que más de un módulo pueda responderlos con el mismo `code`.
 
 ## Notas de esquema
 
-**Doce** filas. Ninguna es una migración correctiva: la base está en fase
+**Trece** filas. Ninguna es una migración correctiva: la base está en fase
 `development`, así que el bucle es editar el SQL y `pnpm db:reset`.
 
 | Qué falta | Dónde | Requisito |
 | --- | --- | --- |
 | ~~Número de orden consecutivo~~ — construido: `document_counter` + disparador. **A.M. 00002393 art. 43** | `service_order` | ORD-006 |
-| **Constancia del aviso de un valor crítico**: destinatario, emisor, instante y medio. **A.M. 00002393 art. 39** | tabla nueva | ORD-062 |
+| ~~**Constancia del aviso de un valor crítico**~~ — construido: `critical_result_notice`, inmutable por disparador. **A.M. 00002393 art. 39** | tabla nueva | ORD-062, ORD-064 |
 | Adjunto del PDF del laboratorio, indexado por paciente, fecha y laboratorio | tabla nueva | ORD-070 |
 | **`analyte_definition_id`**, para que el resultado apunte a su definición y no a un texto | `observation_result` | ORD-031 |
 | Valor `ABNORMAL` en el enum, para la anormalidad cualitativa que no es alta ni baja | `abnormal_flag` | ORD-038 |
 | `concept_id` del tarifario, para no pedir dos identificadores por línea | `exam_definition` | ORD-004 |
 | Motivo de anulación de una línea | `service_order_item` | ORD-007 |
-| Destinatario y horario de la política de críticos | `site_parameter` o tabla nueva | ORD-063 |
+| ~~Plazo y escalado de la política de críticos~~ — construido: `critical_notice_within_minutes`, `critical_escalation_role_id`. **Fuera de horario sigue sin dato** (D-111) | `site_parameter` | ORD-063, ORD-065 |
+| ~~Responsable y plazo de la cola sin orden~~ — construido: `unmatched_result_owner_role_id`, `unmatched_result_deadline_hours` (D-050 §4) | `site_parameter` | ORD-046 |
 | **Resolución sin emparejar** de un resultado sin orden: **`resolved_at`, `resolved_by_id`, `resolution_reason`**. Sin ellas, el resultado que no es de nadie de aquí no puede salir de la cola —y una bandera sin autor ni motivo la vaciaría destruyendo la constancia de que se trabajó—. Las mismas columnas permitirían **deshacer** un emparejamiento equivocado | `observation_result` | ORD-041, ORD-044, ORD-045 |
 | `CHECK` de que `order_item_id` pertenece a la **misma orden** que el informe de la fila. Sin él, emparejar contra la línea de otra orden cerraría una línea con la sangre de otra persona, y la única garantía es la negativa dentro de la transacción | `observation_result` | ORD-043 |
 | Laboratorio que ejecutó **este** informe, que puede no ser el del catálogo | `diagnostic_report` | ORD-070 |
@@ -888,13 +961,14 @@ resuelto de quien llama.
 | `GET` | `/encounters/:encounterId/orders` | `record:read` | ORD-002, ORD-009 |
 | `GET` | `/orders/:orderId` | `record:read` | ORD-009 |
 | `POST` | `/orders/:orderId/items/:itemId/cancel` | `record:write` | ORD-007, ORD-008 |
-| `GET` | `/orders/pending` | `record:read` | ORD-020 a ORD-025, ORD-081, ORD-092 |
+| `GET` | `/orders/pending` | `record:read` | ORD-020 a ORD-026, ORD-081, ORD-092 |
 | `POST` | `/orders/:orderId/reports` | `result:write` | ORD-030 a ORD-042, ORD-094 |
 | `GET` | `/orders/:orderId/reports` | `record:read` | ORD-051, ORD-091 |
 | `POST` | `/orders/reports/:reportId/correct` | `result:write` | ORD-050 a ORD-054 |
-| `GET` | `/orders/results/unmatched` | `record:read` | ORD-040, ORD-041, ORD-092 |
+| `GET` | `/orders/results/unmatched` | `record:read` | ORD-040, ORD-041, ORD-046, ORD-092 |
 | `POST` | `/orders/results/:resultId/match` | `result:write` | ORD-041, ORD-043, ORD-091 |
-| `GET` | `/orders/results/critical` | `record:read` | ORD-060, ORD-061, ORD-092 |
+| `GET` | `/orders/results/critical` | `record:read` | ORD-060, ORD-061, ORD-065, ORD-092 |
+| `POST` | `/orders/results/:resultId/notices` | `result:write` | ORD-062, ORD-091 |
 | `GET` | `/exams` | `catalog:read` | ORD-010 a ORD-012 |
 
 **`POST /orders/results/:resultId/match` lleva `result:write` y no
@@ -925,6 +999,9 @@ columnas donde registrar quién lo decidió y por qué.
 | ORD-043 | Integración | No hay `CHECK` que ate `order_item_id` a la orden del informe, así que la negativa vive en la transacción que escribe: un doble que confirme que se llamó bien al adaptador no demuestra nada sobre la fila que aterriza. Y la reevaluación de ORD-039 sólo se ve en `pending_items`. |
 | ORD-004 | Integración | La vigencia se evalúa con `daterange @>` sobre una columna generada, que Prisma no puede expresar. |
 | ORD-081, ORD-093 | Integración | El alcance de ficha sigue el enlace de fusión, que solo existe en la base. |
+| ORD-062, ORD-064 | Integración | La constancia sale de la cola por una consulta y no se reescribe por un disparador: las dos cosas son de la base, con control positivo (el `INSERT` entra, el `UPDATE` no). |
+| ORD-046, ORD-065 | Integración y unitario | El plazo es aritmética pura con el reloj inyectado; de dónde sale —el parámetro de la sede o su ausencia— se prueba contra la base. |
+| ORD-026 | Integración | El nombre viaja o no según el filtro, y se prueba con dos fichas reales. |
 | ORD-090, ORD-094 | Integración | `route-authorisation.spec` recorre las rutas que NestJS registró de verdad. |
 | Todos los códigos de error | Unitario | Contrato: `code`, categoría y mensaje. |
 
@@ -932,12 +1009,12 @@ columnas donde registrar quién lo decidió y por qué.
 
 ## Preguntas abiertas
 
-> **[NECESITA ACLARACIÓN — ORD-063]** ¿A quién se avisa de un valor crítico
-> cuando el médico tratante no está, y qué pasa fuera de horario? La norma dice
-> «al médico tratante y/o al usuario» y no pone plazo. **Recomendación:** al
-> médico que emitió la orden; si no ha respondido en 60 minutos, a quien la sede
-> designe como responsable clínico de guardia; y constancia obligatoria en los
-> dos casos. Es decisión clínica: no la toma un agente.
+> **[NECESITA ACLARACIÓN — ORD-063, ORD-065] → D-111.** D-050 §2 decidió que
+> la política es de cada clínica y que la llamada es un acto clínico con
+> constancia (construido). Siguen abiertos el plazo y el escalado que traen
+> las sedes de fábrica, qué pasa fuera de horario, el «read-back» y los
+> intentos fallidos. Lo construido no inventa ninguno: sin plazo, la cola dice
+> que la clínica no lo ha fijado.
 
 > **[NECESITA ACLARACIÓN — ORD-094]** ¿Qué rol trae `result:write` de fábrica?
 > El permiso se declara en el catálogo y **ningún rol lo lleva** hasta que la
@@ -946,7 +1023,7 @@ columnas donde registrar quién lo decidió y por qué.
 > laboratorio propio; un rol `LABORATORIO` propio si algún día lo hay.
 
 > **[NECESITA ACLARACIÓN — ORD-020]** ¿Quién es el **dueño** de la cola de
-> pendientes? El requisito dice «con dueño y plazo» y hoy solo hay plazo. Una
+> pendientes? (La de resultados **sin orden** ya lo tiene: ORD-046, D-050 §4.) El requisito dice «con dueño y plazo» y hoy solo hay plazo. Una
 > cola que es de todos no es de nadie. **Recomendación:** el profesional que
 > emitió la orden, con vista de sede para quien coordine. Necesita decisión antes
 > de que la cola se pueda «asignar».
