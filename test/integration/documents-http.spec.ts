@@ -479,14 +479,23 @@ describe('los documentos por HTTP', () => {
         where: { id: prescriptionId },
         data: { verificationCode: 'ABCD1234EF567890', issuedAt: new Date() },
       });
-      // Positive control: the same receta, issued, is found.
+      // Positive control: an issued receta is found by its code.
       await verify('ABCD1234EF567890').expect(200);
 
-      await prisma.prescription.update({
+      // A draft with a code of its own. An issued receta cannot go back to
+      // draft: its number stays (`prescription_number_only_when_issued`).
+      const issued = await prisma.prescription.findUniqueOrThrow({
         where: { id: prescriptionId },
-        data: { status: 'DRAFT', issuedAt: null },
+        select: { encounterId: true, siteId: true, prescriberId: true },
       });
-      const draft = await verify('ABCD1234EF567890').expect(404);
+      await prisma.prescription.create({
+        data: {
+          ...issued,
+          status: 'DRAFT',
+          verificationCode: 'DRAF1234DRAF5678',
+        },
+      });
+      const draft = await verify('DRAF1234DRAF5678').expect(404);
 
       expect((draft.body as Problem).code).toBe((unknown.body as Problem).code);
       expect((draft.body as Problem).title).toBe(
@@ -508,6 +517,12 @@ describe('los documentos por HTTP', () => {
           type: 'ATTENDANCE',
           verificationCode: 'CERT1234CERT5678',
           revokedAt,
+          revokedById: (
+            await prisma.practitioner.findUniqueOrThrow({
+              where: { id: practitionerId },
+              select: { userId: true },
+            })
+          ).userId,
           revocationReason: 'Emitido por error en la prueba',
         },
       });
@@ -560,7 +575,16 @@ describe('los documentos por HTTP', () => {
       const encounter = await prisma.encounter.findFirstOrThrow({
         select: { id: true, siteId: true },
       });
-      const concept = await prisma.catalogConcept.findFirstOrThrow({
+      const system = await prisma.catalogSystem.create({
+        data: { code: 'EXAMENES-DOC094', name: 'Exámenes de la prueba' },
+      });
+      const concept = await prisma.catalogConcept.create({
+        data: {
+          systemId: system.id,
+          code: 'BH',
+          display: 'Biometría hemática completa',
+          validFrom: new Date(Date.now() - 24 * 60 * 60 * 1000),
+        },
         select: { id: true },
       });
       const order = await prisma.serviceOrder.create({

@@ -598,6 +598,15 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
   > `<thead>` al imprimir** y el fallo lleva abierto desde 2008. Una clínica que
   > use Safari imprimiría una receta rota **y nadie se enteraría**.
 
+- **DOC-101** — SI el bloque que cierra un documento —un título, los campos que
+  introduce y el recuadro de firma, o los campos y la firma— no cabe en lo que
+  queda de la página, ENTONCES el sistema DEBERÁ pasarlo **entero** a la
+  siguiente: el recuadro de firma **NO DEBERÁ** quedar solo en una página.
+
+  > Lo encontró la verificación en pantalla de `feat/f05-ordenes-receta`: el 117
+  > imprimía los datos del profesional en la página 1 y el recuadro del sello,
+  > solo, en la 2. Un sello en una hoja vacía no respalda nada de lo escrito.
+
 - **DOC-072** — La **receta** DEBERÁ llevar los cinco bloques del art. 5 en este
   orden: datos generales, datos del paciente, medicamento, prescriptor e
   indicaciones.

@@ -249,6 +249,53 @@ describe('DOC-070, DOC-071, DOC-073 la geometría de la página', () => {
   });
 });
 
+describe('DOC-101 la firma nunca queda sola en una página', () => {
+  it('DOC-101 CER-028 el título, los datos del profesional y la firma pasan juntos de página', async () => {
+    const closing = 'E. Datos del profesional responsable';
+    const caption = 'Firma (credencial del profesional en el sistema) y sello';
+    const pagesOf = async (filler: number): Promise<string[]> => {
+      const pdf = await renderer.render(
+        {
+          ...layout,
+          tearOff: null,
+          blocks: [
+            { kind: 'spacer', millimetres: filler },
+            { kind: 'heading', text: closing },
+            {
+              kind: 'fields',
+              columns: 3,
+              entries: [
+                { label: 'Fecha', value: '2026-10-01' }, // fecha-fija: texto impreso, no un instante
+                { label: 'Hora', value: '02:40' },
+                { label: 'Nombres y apellidos', value: 'Ana Torres' },
+                { label: 'Número de documento', value: '1710034065' },
+              ],
+            },
+            { kind: 'signature', caption, image: null },
+          ],
+        },
+        images,
+        metadata,
+      );
+      const proxy = await getDocumentProxy(new Uint8Array(pdf));
+      const { text } = await extractText(proxy, { mergePages: false });
+      return text;
+    };
+
+    let movedWhole = 0;
+    // Across the bottom edge of the first page, every few millimetres.
+    for (let filler = 170; filler <= 230; filler += 5) {
+      const pages = await pagesOf(filler);
+      const withHeading = pages.findIndex((page) => page.includes(closing));
+      const withBox = pages.findIndex((page) => page.includes('credencial'));
+      expect(withBox, `relleno de ${filler} mm`).toBe(withHeading);
+      if (withHeading === 1) movedWhole += 1;
+    }
+    // Control: the sweep does push the group to the second page.
+    expect(movedWhole).toBeGreaterThan(0);
+  });
+});
+
 describe('DOC-059, DOC-060 las imágenes de la identidad', () => {
   /**
    * A real 8 × 8 opaque PNG, BUILT rather than pasted as base64.
