@@ -6,9 +6,16 @@ import '../../src/modules/agenda/infrastructure/agenda.constraints';
 import '../../src/modules/patients/infrastructure/patients.constraints';
 import '../../src/modules/catalogs/infrastructure/catalogs.constraints';
 import '../../src/modules/encounter/infrastructure/encounter.constraints';
+import '../../src/modules/certificates/infrastructure/certificate.constraints';
+import {
+  addDays,
+  clinicalDateOf,
+  type ClinicalDate,
+} from '../../src/shared/domain/clinic-time';
 
 import { useDatabase } from './setup/database';
 import {
+  createDiagnosis,
   createEncounter,
   createPatient,
   createPractitioner,
@@ -345,6 +352,168 @@ describe('database errors become usable responses', () => {
 
     expect(problem?.status).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
     expect(problem?.code).toBe('INTEGRITY_RULE_FAILED');
+  });
+
+  /**
+   * One medical certificate by raw SQL, so the trigger and not the service is
+   * what refuses it. Every date derives from the encounter's own `started_at`.
+   */
+  function certificate(
+    prisma: ReturnType<typeof db>,
+    row: {
+      encounterId: string;
+      patientId: string;
+      issuedById: string;
+      issuedAt: Date;
+      rest?: { from: ClinicalDate; to: ClinicalDate };
+      maternity?: { admissionOn: ClinicalDate; birthOn: ClinicalDate; dischargeOn: ClinicalDate }; // prettier-ignore
+      backdatingReason?: string;
+    },
+  ) {
+    const rest = row.rest ?? null;
+    const maternity = row.maternity ?? null;
+    const contingency =
+      rest === null
+        ? null
+        : maternity === null
+          ? 'GENERAL_ILLNESS'
+          : 'MATERNITY';
+    return prisma.$executeRaw`
+      INSERT INTO medical_certificate
+        (encounter_id, patient_id, issued_by_id, type, rest_from, rest_to,
+         include_diagnosis, contingency_type, verification_code, issued_at,
+         rest_backdating_reason, maternity_admission_on, birth_on,
+         maternity_discharge_on)
+      VALUES (${row.encounterId}::uuid, ${row.patientId}::uuid,
+              ${row.issuedById}::uuid,
+              ${rest === null ? 'ATTENDANCE' : 'MEDICAL_REST'}::certificate_type,
+              ${rest?.from ?? null}::date, ${rest?.to ?? null}::date,
+              ${rest !== null},
+              ${contingency}::certificate_contingency_type,
+              ${`DBP-${crypto.randomUUID().slice(0, 8)}`}, ${row.issuedAt},
+              ${row.backdatingReason ?? null},
+              ${maternity?.admissionOn ?? null}::date,
+              ${maternity?.birthOn ?? null}::date,
+              ${maternity?.dischargeOn ?? null}::date)
+    `;
+  }
+
+  it('CER-039 keeps the code of a check_violation a TRIGGER raises by name', async () => {
+    // `RAISE … USING CONSTRAINT` names the rule, but @prisma/adapter-pg only
+    // copies `constraint` for a foreign key: for 23514 the name survives only
+    // as the prefix of the message the trigger wrote. Without reading it, a
+    // certificate issued by a colleague without a reason answered the generic
+    // CHECK_FAILED and no field was highlighted.
+    const { prisma, site, practitioner, patient } = await agenda();
+    const encounter = await createEncounter(prisma, {
+      siteId: site.id,
+      practitionerId: practitioner.id,
+      patientId: patient.id,
+    });
+
+    const problem = await problemFrom(
+      certificate(prisma, {
+        encounterId: encounter.id,
+        patientId: patient.id,
+        issuedById: (await createPractitioner(prisma)).id,
+        issuedAt: encounter.startedAt,
+      }),
+    );
+
+    expect(problem).toEqual({
+      status: HttpStatus.UNPROCESSABLE_ENTITY,
+      slug: 'validation',
+      title: 'Datos inválidos',
+      code: 'CERTIFICATE_ISSUER_REASON_REQUIRED',
+      errors: [
+        {
+          field: 'issuedByOtherReason',
+          code: 'CERTIFICATE_ISSUER_REASON_REQUIRED',
+          message:
+            'Explique por qué emite el certificado de una atención que no registró',
+        },
+      ],
+    });
+  });
+
+  it('CER-048 keeps the code of an exclusion_violation a TRIGGER raises by name, as 409', async () => {
+    const { prisma, site, practitioner, patient } = await agenda();
+    const encounter = await createEncounter(prisma, {
+      siteId: site.id,
+      practitionerId: practitioner.id,
+      patientId: patient.id,
+    });
+    await createDiagnosis(prisma, encounter.id, 'O80');
+    const day = clinicalDateOf(encounter.startedAt);
+    const birth = addDays(day, -2);
+    const backdatingReason = 'Dio a luz antes de la atención';
+    const maternity = {
+      admissionOn: addDays(birth, -2),
+      birthOn: birth,
+      dischargeOn: addDays(birth, 2),
+    };
+    // Control positivo: the same rows that overlap below are accepted alone.
+    await expect(
+      certificate(prisma, {
+        encounterId: encounter.id,
+        patientId: patient.id,
+        issuedById: practitioner.id,
+        issuedAt: encounter.startedAt,
+        rest: { from: birth, to: day },
+        maternity,
+        backdatingReason,
+      }),
+    ).resolves.toBe(1);
+
+    const problem = await problemFrom(
+      certificate(prisma, {
+        encounterId: encounter.id,
+        patientId: patient.id,
+        issuedById: practitioner.id,
+        issuedAt: encounter.startedAt,
+        rest: { from: birth, to: day },
+        maternity,
+        backdatingReason,
+      }),
+    );
+
+    expect(problem?.status).toBe(HttpStatus.CONFLICT);
+    expect(problem?.code).toBe('CERTIFICATE_REST_OVERLAPS');
+    expect(problem?.errors?.[0]?.field).toBe('restFrom');
+  });
+
+  it('reads a trigger prefix only for a REGISTERED name, at the start, in class 23', () => {
+    // The prefix is the trigger's own text, but the guard is the registry:
+    // a name nobody registered, a registered name anywhere but the start, or
+    // a SQLSTATE outside class 23 keeps the generic answer.
+    const raised = (code: string, originalMessage: string) => ({
+      code: 'P2039',
+      clientVersion: '7.9.1',
+      meta: { driverAdapterError: { cause: { code, originalMessage } } },
+    });
+
+    expect(
+      extractDatabaseProblem(
+        raised('23514', 'medical_certificate_issuer_reason_required: x'),
+      )?.code,
+    ).toBe('CERTIFICATE_ISSUER_REASON_REQUIRED');
+    expect(
+      extractDatabaseProblem(raised('23514', 'nobody_registered_this: x'))
+        ?.code,
+    ).toBe('CHECK_FAILED');
+    expect(
+      extractDatabaseProblem(
+        raised('23514', 'value medical_certificate_issuer_reason_required: x'),
+      )?.code,
+    ).toBe('CHECK_FAILED');
+    expect(
+      extractDatabaseProblem(
+        raised('P0001', 'medical_certificate_issuer_reason_required: x'),
+      )?.code,
+    ).toBe('INTEGRITY_RULE_FAILED');
+    expect(
+      extractDatabaseProblem(raised('23514', 'constructor: x'))?.code,
+    ).toBe('CHECK_FAILED');
   });
 
   it('NEVER lets a client steer which error it gets back', () => {
