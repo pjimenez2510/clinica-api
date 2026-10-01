@@ -62,3 +62,4 @@ arquitectura.mmd
 # Solo se ignora el estado local de la máquina.
 .claude/settings.local.json
 .claude/.verify-stamp
+/dist-e2e
