@@ -113,6 +113,13 @@ const HISTORY_TABLES: readonly string[] = [
   // listas y es correcto: cuelgan de la cuenta, no de la ficha, así que el
   // analizador no las ve y llegar a ellas ya pasa por aquí.
   'patient_account',
+  // 30-09-2026, con `privacy` (PD-016, PD-036, PD-040). El consentimiento que
+  // dio la persona y las solicitudes que presentó sobre sus datos son de la
+  // PERSONA: si firmó en la ficha que luego se absorbió, la superviviente
+  // tiene que seguir mostrándolo, y una exportación que leyera solo la
+  // superviviente entregaría la mitad (D-083 §3).
+  'patient_consent',
+  'data_subject_request',
 ];
 
 /**

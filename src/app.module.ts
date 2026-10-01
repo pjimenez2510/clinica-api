@@ -11,6 +11,7 @@ import { BillingModule } from './modules/billing/billing.module';
 import { CatalogsModule } from './modules/catalogs/catalogs.module';
 import { ConfigurationModule } from './modules/configuration/configuration.module';
 import { DocumentsModule } from './modules/documents/documents.module';
+import { PrivacyModule } from './modules/privacy/privacy.module';
 import { EncounterModule } from './modules/encounter/encounter.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { OrganizationModule } from './modules/organization/organization.module';
@@ -102,6 +103,7 @@ import { buildLoggerConfig } from './shared/observability/logger.config';
     StaffModule,
     ConfigurationModule,
     DocumentsModule,
+    PrivacyModule,
   ],
   providers: [
     // Registered with APP_FILTER, not useGlobalFilters, so the filter can
