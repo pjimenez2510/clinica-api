@@ -35,7 +35,7 @@ const FICHA_TYPOS = [
 ];
 
 const PARTS = {
-  issuedOn: parseClinicalDate('2026-09-30'),
+  issuedOn: parseClinicalDate('2026-09-30'), // fecha-fija: entrada de una función pura, sin reloj
   documentType: '01' as const,
   ruc: '1790001563001',
   environment: '1' as const,
@@ -105,7 +105,7 @@ describe('SRI-001 composición de la clave de acceso', () => {
   it('SRI-001 reproduce una clave de la Ficha a partir de sus partes', () => {
     // 05032012 · 01 · 1760013210001 · 1 · 001 003 · 000990064 · 12345678 · 1 · 4
     const key = composeAccessKey({
-      issuedOn: parseClinicalDate('2012-03-05'),
+      issuedOn: parseClinicalDate('2012-03-05'), // fecha-fija: vector de prueba de la Ficha del SRI
       documentType: '01',
       ruc: '1760013210001',
       environment: '1',

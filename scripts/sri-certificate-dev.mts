@@ -32,14 +32,17 @@ if (!existsSync(keyFile)) {
   console.log(`Frase maestra de desarrollo creada en ${keyFile}`);
 }
 
-const api = process.env.API_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
+const api =
+  process.env.API_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
 const login = await fetch(`${api}/api/v1/auth/login`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ email: 'admin@clinica.ec', password: DEV_PASSWORD }),
 });
 if (!login.ok) {
-  console.error(`No se pudo iniciar sesión en ${api} (${login.status}). ¿Está la API levantada?`);
+  console.error(
+    `No se pudo iniciar sesión en ${api} (${login.status}). ¿Está la API levantada?`,
+  );
   process.exit(1);
 }
 const { accessToken } = (await login.json()) as { accessToken: string };

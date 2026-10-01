@@ -1,20 +1,12 @@
 import type { PinoLogger } from 'nestjs-pino';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { Mailer } from '../../../shared/mail/mail.port';
 import type {
-  ElectronicVoucherRepository,
   PreparationSource,
-  SigningCertificateRepository,
   StoredCertificate,
-  VoucherQueue,
   VoucherRecord,
 } from '../domain/electronic-voucher.repository';
-import type {
-  CertificateCipher,
-  Pkcs12Inspector,
-  XadesSigner,
-} from '../domain/signing';
+import type { Pkcs12Inspector } from '../domain/signing';
 import {
   ElectronicVoucherNotFoundError,
   ElectronicVoucherNotRetriableError,
@@ -23,7 +15,7 @@ import {
   SigningCertificateStoreNotConfiguredError,
   SigningCertificateTooLargeError,
 } from '../domain/sri.errors';
-import type { SriSettings, SriWebService } from '../domain/sri-web-service';
+import type { SriSettings } from '../domain/sri-web-service';
 
 import {
   MAX_CERTIFICATE_BYTES,
@@ -40,11 +32,12 @@ import {
 const NOW = new Date();
 const DAY = 86_400_000;
 
+const logError = vi.fn();
 const logger = {
   setContext: vi.fn(),
   info: vi.fn(),
   warn: vi.fn(),
-  error: vi.fn(),
+  error: logError,
 } as unknown as PinoLogger;
 
 function source(overrides: Partial<PreparationSource> = {}): PreparationSource {
@@ -191,7 +184,13 @@ function fakes() {
       .fn()
       .mockReturnValue('<factura id="comprobante"><ds:Signature/></factura>'),
   };
-  const queue = { schedule: vi.fn().mockResolvedValue(undefined) };
+  const queue = {
+    schedule: vi
+      .fn<
+        (step: string, voucher: { id: string }, delay: number) => Promise<void>
+      >()
+      .mockResolvedValue(undefined),
+  };
   const web = {
     isConfigured: vi.fn().mockReturnValue(true),
     receive: vi.fn(),
@@ -203,12 +202,12 @@ function fakes() {
     softwareProviderRuc: null,
   };
   const preparation = new VoucherPreparationService(
-    vouchers as unknown as ElectronicVoucherRepository,
-    certificates as unknown as SigningCertificateRepository,
-    cipher as unknown as CertificateCipher,
-    signer as unknown as XadesSigner,
-    queue as unknown as VoucherQueue,
-    web as unknown as SriWebService,
+    vouchers,
+    certificates,
+    cipher,
+    signer,
+    queue,
+    web,
     settings,
     () => NOW,
     logger,
@@ -289,7 +288,7 @@ describe('SRI-001, SRI-041 la preparación', () => {
     const { preparation, vouchers } = fakes();
     vouchers.preparationSource.mockRejectedValue(new Error('database hiccup'));
     await expect(preparation.prepare('invoice-1')).resolves.toBeUndefined();
-    expect(logger.error).toHaveBeenCalled();
+    expect(logError).toHaveBeenCalled();
   });
 });
 
@@ -390,18 +389,16 @@ describe('SRI-057 el despacho es idempotente', () => {
     return {
       mailer,
       dispatch: new VoucherDispatchService(
-        f.vouchers as unknown as ElectronicVoucherRepository,
-        f.web as unknown as SriWebService,
-        f.queue as unknown as VoucherQueue,
+        f.vouchers,
+        f.web,
+        f.queue,
         {
-          issueRide: vi
-            .fn()
-            .mockResolvedValue({
-              content: Buffer.from('%PDF'),
-              fileName: 'r.pdf',
-            }),
+          issueRide: vi.fn().mockResolvedValue({
+            content: Buffer.from('%PDF'),
+            fileName: 'r.pdf',
+          }),
         },
-        mailer as unknown as Mailer,
+        mailer,
         () => NOW,
         f.preparation,
         logger,
@@ -482,10 +479,7 @@ describe('SRI-057 el despacho es idempotente', () => {
     });
     await dispatchWith(f).dispatch.sweep();
     expect(
-      f.queue.schedule.mock.calls.map((call) => [
-        call[0],
-        (call[1] as { id: string }).id,
-      ]),
+      f.queue.schedule.mock.calls.map((call) => [call[0], call[1].id]),
     ).toEqual([
       ['AUTHORISE', 'due'],
       ['DELIVER', 'mail'],
@@ -510,9 +504,9 @@ describe('SRI-080 a SRI-083 la carga del certificado', () => {
       audit,
       inspect,
       certificates: new SigningCertificateService(
-        f.certificates as unknown as SigningCertificateRepository,
-        { inspect, ...inspector } as Pkcs12Inspector,
-        f.cipher as unknown as CertificateCipher,
+        f.certificates,
+        { inspect, ...inspector },
+        f.cipher,
         audit,
         () => NOW,
         f.preparation,
@@ -590,19 +584,17 @@ describe('SRI-058, SRI-062 el monitor', () => {
   function monitorWith(f: ReturnType<typeof fakes>) {
     const audit = { record: vi.fn().mockResolvedValue(undefined) };
     const certificates = {
-      health: vi
-        .fn()
-        .mockResolvedValue({
-          active: null,
-          aboutToExpire: false,
-          expired: false,
-        }),
+      health: vi.fn().mockResolvedValue({
+        active: null,
+        aboutToExpire: false,
+        expired: false,
+      }),
     };
     return {
       audit,
       monitor: new VoucherMonitorService(
-        f.vouchers as unknown as ElectronicVoucherRepository,
-        f.web as unknown as SriWebService,
+        f.vouchers,
+        f.web,
         audit,
         f.preparation,
         certificates as unknown as SigningCertificateService,

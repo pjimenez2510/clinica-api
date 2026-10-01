@@ -106,7 +106,7 @@ function reception(
   );
 }
 
-/** `2026-09-30T16:57:34.997-05:00`, Ecuador's offset, as the SRI writes it. */
+/** ISO-8601 with Ecuador's `-05:00` offset, as the SRI writes `fechaAutorizacion`. */
 function guayaquilTimestamp(instant: Date) {
   const shifted = new Date(instant.getTime() - 5 * 3600 * 1000);
   return shifted.toISOString().replace('Z', '-05:00');

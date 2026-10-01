@@ -19,7 +19,9 @@ const double = await startSriDouble({ port });
 console.log(`Doble local del SRI en ${double.baseUrl}`);
 console.log(`  recepción:    ${double.receptionUrl}`);
 console.log(`  autorización: ${double.authorisationUrl}`);
-console.log(`  estado:       POST ${double.baseUrl}/__double/state {"default": "...", "down": true|false}`);
+console.log(
+  `  estado:       POST ${double.baseUrl}/__double/state {"default": "...", "down": true|false}`,
+);
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
