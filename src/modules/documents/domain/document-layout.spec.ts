@@ -97,6 +97,35 @@ function textOf(blocks: readonly Block[]): string {
           return block.caption;
         case 'boxes':
           return `${textOf(block.left)}\n${textOf(block.right)}`;
+        case 'box':
+          return [block.title ?? '', textOf(block.blocks)].join('\n');
+        case 'strip':
+          return block.entries
+            .map((entry) => `${entry.label}=${entry.value}`)
+            .join('\n');
+        case 'section':
+          return [
+            block.title,
+            ...block.rows.map((row) =>
+              row.kind === 'cells'
+                ? row.cells
+                    .map((cell) => `${cell.label}=${cell.value}`)
+                    .join('\n')
+                : row.kind === 'text'
+                  ? row.text
+                  : [
+                      row.columns.map((column) => column.header).join('|'),
+                      ...row.rows.map((cells) => cells.join('|')),
+                    ].join('\n'),
+            ),
+            block.signature?.caption ?? '',
+          ].join('\n');
+        case 'title':
+        case 'name':
+        case 'caption':
+          return block.text;
+        case 'barcode':
+          return block.value;
         default:
           return '';
       }
@@ -1030,6 +1059,52 @@ describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
     ).toBe(true);
   });
 
+  it('DOC-106 la cabecera es la de la página «Factura»: logo sobre el emisor, recuadros redondeados y FACTURA en grande', () => {
+    const layout = composeLayout(ride, context, template);
+    const head = layout.blocks[0];
+    if (head?.kind !== 'boxes') throw new Error('expected the two columns');
+    // The logo above the issuer, in the left column.
+    expect(head.left.map((block) => block.kind)).toEqual(['logo', 'box']);
+    const [issuer] = head.left.filter((block) => block.kind === 'box');
+    const [voucher] = head.right;
+    expect(issuer?.kind === 'box' && issuer.rounded).toBe(true);
+    expect(voucher?.kind === 'box' && voucher.rounded).toBe(true);
+    // The razón social heads the issuer; «FACTURA» the voucher, as a title.
+    expect(issuer?.kind === 'box' && issuer.blocks[0]).toEqual({
+      kind: 'name',
+      text: 'Centro de Especialidades Bahía',
+    });
+    expect(
+      voucher?.kind === 'box' &&
+        voucher.blocks.find((block) => block.kind === 'title'),
+    ).toEqual({ kind: 'title', text: 'FACTURA' });
+    // The key as the authorisation number and once more under its bars —
+    // no third copy as a «CLAVE DE ACCESO» field above them.
+    const keyed = textOf(head.right);
+    expect(keyed.split('4'.repeat(49))).toHaveLength(3);
+    expect(keyed).not.toContain('CLAVE DE ACCESO=');
+  });
+
+  it('DOC-106 comprador en recuadro, detalle con borde y rejilla, información adicional con barra de título y VALOR TOTAL resaltado', () => {
+    const layout = composeLayout(ride, context, template);
+    const [, buyer, detail, bottom] = layout.blocks;
+    expect(buyer?.kind === 'box' && buyer.rounded).toBe(true);
+    expect(detail?.kind === 'table' && detail.framed).toBe('grid');
+    if (bottom?.kind !== 'boxes') throw new Error('expected the two columns');
+    const [additional, payment] = bottom.left;
+    expect(additional?.kind === 'box' && additional.title).toBe(
+      'Información adicional',
+    );
+    expect(payment?.kind === 'table' && payment.framed).toBe('box');
+    const [totals] = bottom.right;
+    expect(totals?.kind === 'table' && totals.framed).toBe('box');
+    expect(totals?.kind === 'table' && totals.headless).toBe(true);
+    expect(totals?.kind === 'table' && totals.emphasiseLast).toBe(true);
+    expect(totals?.kind === 'table' && totals.rows.at(-1)?.[0]).toBe(
+      'VALOR TOTAL',
+    );
+  });
+
   it('DOC-076 lo que no se conoce no se imprime: sin comprador-paciente no hay dirección ni teléfono', () => {
     const text = wholeText(
       composeLayout(
@@ -1120,6 +1195,7 @@ describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
             walk(block.left);
             walk(block.right);
           }
+          if (block.kind === 'box') walk(block.blocks);
         }
       };
       walk(layout.blocks);
@@ -1160,8 +1236,9 @@ describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
     expect(text).toContain(
       'FECHA Y HORA DE AUTORIZACIÓN=PENDIENTE DE AUTORIZACIÓN',
     );
-    // SRI-070. The key is printed anyway: the RIDE is handed over with it.
-    expect(text).toContain(`CLAVE DE ACCESO=${KEY_IN_TESTS}`);
+    // SRI-070. The key is printed anyway: the RIDE is handed over with it,
+    // under its bars (DOC-106).
+    expect(text).toContain(`CLAVE DE ACCESO\n${KEY_IN_TESTS}`);
   });
 
   it('SRI-071 una factura que el SRI devolvió o no autorizó no promete una autorización', () => {

@@ -777,11 +777,12 @@ export function composeInvoiceLayout(
     data.status === 'REJECTED' ? NOT_AUTHORISED : PENDING_AUTHORISATION;
   const { establishment } = context;
 
-  // DOC-076. The issuer's box of the approved page «Factura» (D-095): legal
-  // name, trade name, head office and establishment addresses, and the fiscal
-  // legends that apply. The logo, when there is one, is the frame's, above it.
+  // DOC-076, DOC-106. The issuer's box of the approved page «Factura»
+  // (D-095): legal name, trade name, head office and establishment
+  // addresses, and the fiscal legends that apply. The logo, when there is
+  // one, sits above it in the same column.
   const issuerBox: Block[] = [
-    { kind: 'paragraph', text: establishment.name, emphasis: true },
+    { kind: 'name', text: establishment.name },
     ...(establishment.tradeName === null ||
     establishment.tradeName === establishment.name
       ? []
@@ -789,6 +790,7 @@ export function composeInvoiceLayout(
     {
       kind: 'fields',
       columns: 1,
+      inline: true,
       entries: [
         ...(establishment.headOfficeAddress === null
           ? []
@@ -816,9 +818,21 @@ export function composeInvoiceLayout(
     {
       kind: 'fields',
       columns: 1,
+      inline: true,
+      entries: [{ label: 'R.U.C.', value: establishment.ruc ?? '—' }],
+    },
+    // DOC-106. The voucher's own name, large and in the accent.
+    { kind: 'title', text: 'FACTURA' },
+    {
+      kind: 'fields',
+      columns: 1,
+      inline: true,
+      entries: [{ label: 'No.', value: data.documentNumber }],
+    },
+    {
+      kind: 'fields',
+      columns: 1,
       entries: [
-        { label: 'R.U.C.', value: establishment.ruc ?? '—' },
-        { label: 'FACTURA No.', value: data.documentNumber },
         // The access key IS the authorisation number for the offline scheme.
         // SRI-071: until the SRI authorises, the RIDE is handed over saying
         // so — never a number or a date that does not exist yet.
@@ -827,6 +841,13 @@ export function composeInvoiceLayout(
           value:
             data.authorisedAt === null ? unauthorised : (data.accessKey ?? '—'),
         },
+      ],
+    },
+    {
+      kind: 'fields',
+      columns: 1,
+      inline: true,
+      entries: [
         {
           label: 'FECHA Y HORA DE AUTORIZACIÓN',
           value:
@@ -834,30 +855,35 @@ export function composeInvoiceLayout(
               ? unauthorised
               : ecuadorianDateTime(data.authorisedAt),
         },
-        // SRI-070. The environment is the one written INSIDE the key (its 24th
-        // digit), never a constant: a test voucher printed «PRODUCCIÓN» claims
-        // a validity it does not have.
       ],
     },
-    // Ambiente and emisión share a row, as on the approved page.
+    // SRI-070. The environment is the one written INSIDE the key (its 24th
+    // digit), never a constant: a test voucher printed «PRODUCCIÓN» claims a
+    // validity it does not have. Ambiente and emisión share a row, as on the
+    // approved page.
     {
       kind: 'fields',
       columns: 2,
+      inline: true,
       entries: [
         { label: 'AMBIENTE', value: environmentOf(data.accessKey) },
         { label: 'EMISIÓN', value: 'NORMAL' },
       ],
     },
-    {
-      kind: 'fields',
-      columns: 1,
-      entries: [{ label: 'CLAVE DE ACCESO', value: data.accessKey ?? '—' }],
-    },
-    // D-095 §5, DOC-078. The key again, as a Code 128 subset C barcode under
-    // the key in text — only when there is a key to encode.
+    // D-095 §5, DOC-078, DOC-106. The key ONCE, centred under its Code 128
+    // bars — only when there is a key to encode; «—» when there is none yet.
     ...(data.accessKey === null
-      ? []
-      : [{ kind: 'barcode' as const, value: data.accessKey }]),
+      ? ([
+          {
+            kind: 'fields',
+            columns: 1,
+            entries: [{ label: 'CLAVE DE ACCESO', value: '—' }],
+          },
+        ] as Block[])
+      : ([
+          { kind: 'caption', text: 'CLAVE DE ACCESO' },
+          { kind: 'barcode', value: data.accessKey },
+        ] as Block[])),
   ];
 
   // DOC-076 «Información adicional»: what the voucher's own fields do not say.
@@ -897,27 +923,44 @@ export function composeInvoiceLayout(
       verificationCode: null,
     }),
     blocks: [
-      { kind: 'boxes', left: issuerBox, right: voucherBox },
+      // DOC-106. The two boxes finish level: the issuer's is stretched.
       {
-        kind: 'fields',
-        columns: 2,
-        entries: [
+        kind: 'boxes',
+        left: [
+          { kind: 'logo' },
+          { kind: 'box', rounded: true, blocks: issuerBox },
+        ],
+        right: [{ kind: 'box', rounded: true, blocks: voucherBox }],
+      },
+      {
+        kind: 'box',
+        rounded: true,
+        blocks: [
           {
-            label: 'Razón social / Apellidos y nombres',
-            value: data.buyerName,
+            kind: 'fields',
+            columns: 2,
+            inline: true,
+            entries: [
+              {
+                label: 'Razón social / Apellidos y nombres',
+                value: data.buyerName,
+              },
+              { label: 'Identificación', value: data.buyerIdentification },
+              {
+                label: 'Fecha de emisión',
+                value:
+                  data.issuedAt === null ? '—' : ecuadorianDate(data.issuedAt),
+              },
+              ...(data.buyerAddress === null
+                ? []
+                : [{ label: 'Dirección', value: data.buyerAddress, span: 2 }]),
+            ],
           },
-          { label: 'Identificación', value: data.buyerIdentification },
-          {
-            label: 'Fecha de emisión',
-            value: data.issuedAt === null ? '—' : ecuadorianDate(data.issuedAt),
-          },
-          ...(data.buyerAddress === null
-            ? []
-            : [{ label: 'Dirección', value: data.buyerAddress }]),
         ],
       },
       {
         kind: 'table',
+        framed: 'grid',
         columns: [
           { header: 'Cód. principal', width: 0.13 },
           { header: 'Cód. auxiliar', width: 0.1 },
@@ -939,20 +982,29 @@ export function composeInvoiceLayout(
       },
       {
         kind: 'boxes',
+        // The template's 1.15fr · 1fr.
+        leftShare: 0.535,
         left: [
           ...(additional.length === 0
             ? []
             : ([
                 {
-                  kind: 'paragraph',
-                  text: 'Información adicional',
-                  emphasis: true,
+                  kind: 'box',
+                  title: 'Información adicional',
+                  blocks: [
+                    {
+                      kind: 'fields',
+                      columns: 1,
+                      inline: true,
+                      entries: additional,
+                    },
+                  ],
                 },
-                { kind: 'fields', columns: 1, entries: additional },
               ] as Block[])),
           // BI-170. The way it was paid, with its SRI table 24 code.
           {
             kind: 'table',
+            framed: 'box',
             columns: [
               { header: 'Forma de pago', width: 0.7 },
               { header: 'Valor', width: 0.3, align: 'right' },
@@ -967,11 +1019,15 @@ export function composeInvoiceLayout(
             ],
           },
         ],
-        // The subtotals the Anexo 2 lists, every one, aligned to the right.
+        // The subtotals the Anexo 2 lists, every one, aligned to the right,
+        // with no header of their own and the total in bold on grey.
         right: [
           {
             kind: 'table',
             dense: true,
+            framed: 'box',
+            headless: true,
+            emphasiseLast: true,
             columns: [
               { header: 'Subtotales', width: 0.68 },
               { header: 'Valor', width: 0.32, align: 'right' },
