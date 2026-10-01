@@ -1,0 +1,107 @@
+-- certificate_d105
+--
+-- Escrito a mano. `prisma migrate dev` está prohibido en este
+-- repositorio: propone borrar las columnas generadas, los índices GIN y
+-- BRIN, los índices únicos parciales y los disparadores, porque
+-- schema.prisma no puede describirlos. Ver scripts/new-migration.mts.
+--
+-- Después: pnpm migrations:check && pnpm db:deploy
+
+
+-- QUÉ GARANTIZA (D-105, resuelta por el autor el 01-10-2026):
+--
+--  · CER-039: el 117 lo emite el profesional de la atención. Un tercero, sólo
+--    con un motivo escrito que queda en la fila (`issued_by_other_reason`); y
+--    quien atendió NO guarda ese motivo, que leído en su certificado diría que
+--    no lo atendió.
+--  · CER-041: el reposo empieza, como tarde, el día siguiente a la emisión. Un
+--    reposo que empieza dentro de 90 días se aceptaba.
+--  · CER-030, ampliado: el reposo pide motivo cuando empieza antes del día de
+--    la atención O cuando se emite un día posterior al de la atención; sin
+--    ninguno de los dos casos, no guarda motivo.
+--
+-- POR QUÉ UN DISPARADOR Y NO UN CHECK. Las tres reglas comparan la fila con
+-- su atención —quién la atendió, qué día—, y un CHECK no puede leer otra
+-- tabla. Antes de esto CER-030 lo garantizaba sólo el servicio; ahora también
+-- lo para un import o un `psql`.
+--
+-- SÓLO AL INSERTAR. Son reglas de la emisión: las filas anteriores se
+-- emitieron con las reglas de entonces y no se reescriben, y la anulación es
+-- un UPDATE que no debe tropezar con ellas.
+--
+-- LAS FECHAS, EN ECUADOR. «El día de la atención» y «el día de la emisión»
+-- son fechas de calendario en America/Guayaquil: un `::date` en el huso de la
+-- sesión pasa una emisión de las 20:00 al día siguiente.
+
+ALTER TABLE "medical_certificate"
+  ADD COLUMN IF NOT EXISTS "issued_by_other_reason" TEXT;
+
+ALTER TABLE "medical_certificate"
+  DROP CONSTRAINT IF EXISTS "medical_certificate_issuer_reason_not_blank";
+ALTER TABLE "medical_certificate"
+  ADD CONSTRAINT "medical_certificate_issuer_reason_not_blank" CHECK (
+    "issued_by_other_reason" IS NULL OR btrim("issued_by_other_reason") <> ''
+  );
+
+CREATE OR REPLACE FUNCTION medical_certificate_issue_rules()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  attending     uuid;
+  attention_day date;
+  issue_day     date;
+BEGIN
+  SELECT e."practitioner_id",
+         (e."started_at" AT TIME ZONE 'America/Guayaquil')::date
+    INTO attending, attention_day
+    FROM "encounter" e
+   WHERE e."id" = NEW."encounter_id";
+  -- Sin atención no hay regla que juzgar: la clave foránea la rechaza.
+  IF NOT FOUND THEN
+    RETURN NEW;
+  END IF;
+  issue_day := (NEW."issued_at" AT TIME ZONE 'America/Guayaquil')::date;
+
+  -- CER-039.
+  IF NEW."issued_by_id" <> attending AND NEW."issued_by_other_reason" IS NULL THEN
+    RAISE EXCEPTION 'medical_certificate_issuer_reason_required: a certificate issued by someone other than the attending practitioner needs a reason'
+      USING ERRCODE = 'check_violation',
+            CONSTRAINT = 'medical_certificate_issuer_reason_required';
+  END IF;
+  IF NEW."issued_by_id" = attending AND NEW."issued_by_other_reason" IS NOT NULL THEN
+    RAISE EXCEPTION 'medical_certificate_issuer_reason_only_for_others: the attending practitioner keeps no third-party reason'
+      USING ERRCODE = 'check_violation',
+            CONSTRAINT = 'medical_certificate_issuer_reason_only_for_others';
+  END IF;
+
+  IF NEW."type" = 'MEDICAL_REST' AND NEW."rest_from" IS NOT NULL THEN
+    -- CER-041.
+    IF NEW."rest_from" > issue_day + 1 THEN
+      RAISE EXCEPTION 'medical_certificate_rest_starts_by_next_day: a rest starts no later than the day after it is issued'
+        USING ERRCODE = 'check_violation',
+              CONSTRAINT = 'medical_certificate_rest_starts_by_next_day';
+    END IF;
+
+    -- CER-030.
+    IF (NEW."rest_from" < attention_day OR issue_day > attention_day) THEN
+      IF NEW."rest_backdating_reason" IS NULL THEN
+        RAISE EXCEPTION 'medical_certificate_backdating_reason_required: a backdated or late rest needs a reason'
+          USING ERRCODE = 'check_violation',
+                CONSTRAINT = 'medical_certificate_backdating_reason_required';
+      END IF;
+    ELSIF NEW."rest_backdating_reason" IS NOT NULL THEN
+      RAISE EXCEPTION 'medical_certificate_backdating_reason_only_when_late: a rest issued on the day of the attention keeps no backdating reason'
+        USING ERRCODE = 'check_violation',
+              CONSTRAINT = 'medical_certificate_backdating_reason_only_when_late';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS "medical_certificate_issue_rules" ON "medical_certificate";
+CREATE TRIGGER "medical_certificate_issue_rules"
+  BEFORE INSERT ON "medical_certificate"
+  FOR EACH ROW EXECUTE FUNCTION medical_certificate_issue_rules();
