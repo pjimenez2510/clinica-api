@@ -22,7 +22,7 @@ function sourceFiles(directory: string): string[] {
 describe('los nombres de los DTO del contrato', () => {
   it('ningún nombre de DTO se repite entre módulos: el OpenAPI los fundiría en uno', () => {
     const seen = new Map<string, string[]>();
-    for (const file of sourceFiles(join(import.meta.dirname, '../..'))) {
+    for (const file of sourceFiles(join(process.cwd(), 'src'))) {
       for (const match of readFileSync(file, 'utf8').matchAll(
         /export class (\w+Dto)\b/g,
       )) {
