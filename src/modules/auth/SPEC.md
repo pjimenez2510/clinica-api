@@ -413,13 +413,15 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   > horario de cada sede, mientras ninguna atienda de madrugada. Si alguna lo
   > hace, la hora pasa a ser configurable por instalación.
 - **AU-044** — MIENTRAS el diálogo de volver a entrar de AU-040 esté abierto,
-  CUANDO lleve **15 minutos** abierto sin que la misma persona haya vuelto a
+  CUANDO lleve **15 minutos** abierto —o hayan pasado 15 minutos desde el
+  corte de AU-046, lo que llegue antes— sin que la misma persona haya vuelto a
   entrar, la interfaz DEBERÁ terminar la sesión, quitar de la pantalla todo lo
   cargado para esa persona y llevarla a iniciar sesión con el aviso «Su sesión
   se cerró por seguridad. Lo que no estaba guardado se perdió.». Mientras
   esté abierto, el diálogo DEBERÁ decir «No se ha perdido nada todavía. Tiene
   15 minutos para volver a entrar; después, por seguridad, se cerrará la
-  pantalla.», sin cuenta atrás.
+  pantalla.», sin cuenta atrás; y su «Salir» DEBERÁ confirmar con «Si sale,
+  se cerrarán todas sus pestañas y se perderá lo que no se haya guardado.».
 
   > **DECIDIDO POR EL AUTOR** (D-065, segunda revisión, 30-09-2026; el texto,
   > el mismo día). Detrás del diálogo la pantalla del paciente sigue visible,
@@ -444,6 +446,11 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   > **LA FRASE DEL DIÁLOGO** (D-094, punto 2): antes decía «No se ha perdido
   > nada de lo que tiene en pantalla», y a los 15 minutos sí se pierde.
   >
+  > **DESDE EL CORTE REAL** (D-094, precisión del autor): un portátil
+  > dormido a las 03:00 y abierto a las 08:00 ya pasó el corte + 15 minutos,
+  > y la pantalla se limpia en el acto, sin diálogo. Se pierde lo escrito sin
+  > opción de volver a entrar; el autor lo prefiere a la historia a la vista.
+  >
   > **LA PANTALLA QUE NO PIDE NADA** la cubre AU-046: el diálogo se abre a la
   > hora de la caducidad aunque ninguna petición la descubra.
   >
@@ -457,10 +464,12 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   (`sessionExpiresIn`). CUANDO, con la pantalla abierta, el reloj de pared
   alcance ese instante, la interfaz DEBERÁ intentar renovar y, si la sesión
   caducó, abrir el diálogo de AU-040 —y con él el límite de AU-044— aunque la
-  pantalla no haya hecho ninguna petición. CUANDO en una pestaña la misma
-  persona vuelva a entrar, o la sesión termine, las demás pestañas del mismo
-  navegador DEBERÁN enterarse: un diálogo abierto se cierra con la sesión
-  renovada, o la pestaña termina con el mismo aviso.
+  pantalla no haya hecho ninguna petición —también si la renovación falla por
+  la red: pasado el corte, la familia ya caducó—. CUANDO en una pestaña la
+  misma persona vuelva a entrar, o la sesión termine, las demás pestañas del
+  mismo navegador DEBERÁN enterarse: un diálogo abierto se cierra con la
+  sesión renovada, o la pestaña termina con el mismo aviso; tras «Cerrar
+  sesión», sin aviso.
 
   > **DECIDIDO POR EL AUTOR** (D-094, punto 1, opción B, 30-09-2026). Una
   > atención abierta en un consultorio vacío no consulta nada: a las 03:00 la
@@ -479,8 +488,24 @@ desde la pantalla de quien reinicia; se comprueba contra la base.
   > descubierto una petición.
   >
   > **LAS PESTAÑAS SE AVISAN** por un `BroadcastChannel` del mismo origen.
-  > Sólo viaja qué pasó y, al terminar, el código del aviso, como en la URL de
-  > `/acceso`: nunca el token ni datos del paciente.
+  > Viaja qué pasó, la cuenta a la que le pasó y, al terminar, el código del
+  > aviso, como en la URL de `/acceso`: nunca el token ni datos del paciente.
+  > La cuenta es lo que impide que una pestaña cierre o reabra la de OTRA
+  > persona que entró en el mismo navegador. Un código desconocido se ignora.
+  >
+  > **EL FIN SE INFORMA UNA VEZ.** Con el diálogo abierto, el fin de otra
+  > pestaña lo contesta el diálogo, con la frase de aquélla; dos informes
+  > pisaban el aviso y el dueño del `redirect` (revisión en contexto limpio).
+  > Sin diálogo, una pestaña renueva antes de terminar: si ahí la persona
+  > entró de nuevo, el diálogo viejo de otra no la cierra.
+  >
+  > **UNA RENOVACIÓN A LA VEZ ENTRE PESTAÑAS** (Web Locks): llegan juntas al
+  > corte, y dos renovaciones con la misma cookie que contestan en otro orden
+  > dejaban la cookie en un sucesor retirado —AU-004 revocaba la familia—.
+  >
+  > **«CERRAR SESIÓN» Y «SALIR» CIERRAN TODAS** las pestañas de la persona
+  > (D-094, precisiones del autor): la primera sin aviso, la segunda con el de
+  > caducada, y su confirmación lo dice.
 - **AU-005** — El sistema DEBERÁ permitir matricular un segundo factor TOTP con
   códigos de respaldo, y DEBERÁ cifrar el secreto en la aplicación (ADR-008 §3).
 
