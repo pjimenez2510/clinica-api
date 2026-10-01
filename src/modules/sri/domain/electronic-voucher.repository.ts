@@ -29,6 +29,8 @@ export interface PreparationSource {
     specialTaxpayerResolution: string | null;
     withholdingAgentResolution: string | null;
     rimpeRegime: RimpeRegime;
+    /** OR-031. A person stated the fiscal flags above; false, never. */
+    fiscalProfileDeclared: boolean;
   };
   buyer: {
     identificationType: string;

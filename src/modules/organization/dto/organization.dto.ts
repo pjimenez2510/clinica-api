@@ -109,6 +109,11 @@ export const establishmentSchema = z.object({
   specialTaxpayerResolution: z.string().nullable(),
   withholdingAgentResolution: z.string().nullable(),
   rimpeRegime: z.enum(RIMPE_REGIMES),
+  /**
+   * OR-031. When a person last declared the fiscal flags; `null` while nobody
+   * has, and then no electronic voucher is prepared (SRI-008).
+   */
+  fiscalProfileDeclaredAt: z.iso.datetime().nullable(),
   active: z.boolean(),
 });
 /** Response of reading and saving the establishment. */

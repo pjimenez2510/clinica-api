@@ -132,6 +132,8 @@ export async function giveSiteAnIssuer(
       legalName: 'Clínica de Pruebas & Asociados S.A.',
       ruc: TEST_ISSUER_RUC,
       headOfficeAddress: 'Av. Amazonas y Naciones Unidas, Quito',
+      keepsAccounting: true,
+      fiscalProfileDeclaredAt: new Date(),
     },
   });
   await prisma.site.update({

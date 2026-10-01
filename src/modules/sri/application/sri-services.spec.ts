@@ -60,6 +60,7 @@ function source(overrides: Partial<PreparationSource> = {}): PreparationSource {
       specialTaxpayerResolution: null,
       withholdingAgentResolution: null,
       rimpeRegime: 'NONE',
+      fiscalProfileDeclared: true,
     },
     buyer: {
       identificationType: '05',
@@ -241,7 +242,7 @@ function fakes() {
 }
 
 describe('SRI-008 los datos del emisor que un comprobante necesita', () => {
-  it('SRI-008 nombra cada dato que falta y ninguno cuando están todos', () => {
+  it('SRI-008 OR-031 nombra cada dato que falta, también las banderas fiscales sin declarar, y ninguno cuando están todos', () => {
     expect(missingIssuerData(source())).toEqual([]);
     expect(
       missingIssuerData(
@@ -252,6 +253,7 @@ describe('SRI-008 los datos del emisor que un comprobante necesita', () => {
             ruc: null,
             legalName: ' ',
             headOfficeAddress: null,
+            fiscalProfileDeclared: false,
           },
         }),
       ),
@@ -260,6 +262,7 @@ describe('SRI-008 los datos del emisor que un comprobante necesita', () => {
       'ISSUER_LEGAL_NAME',
       'SRI_ESTABLISHMENT_CODE',
       'HEAD_OFFICE_ADDRESS',
+      'FISCAL_PROFILE',
     ]);
   });
 });

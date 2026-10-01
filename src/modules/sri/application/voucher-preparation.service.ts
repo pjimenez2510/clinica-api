@@ -51,7 +51,8 @@ export type MissingIssuerDatum =
   | 'ISSUER_RUC'
   | 'ISSUER_LEGAL_NAME'
   | 'SRI_ESTABLISHMENT_CODE'
-  | 'HEAD_OFFICE_ADDRESS';
+  | 'HEAD_OFFICE_ADDRESS'
+  | 'FISCAL_PROFILE';
 
 /** SRI-008. Which of them this invoice's installation still lacks. */
 export function missingIssuerData(
@@ -66,6 +67,9 @@ export function missingIssuerData(
   if (!source.issuer.headOfficeAddress?.trim()) {
     missing.push('HEAD_OFFICE_ADDRESS');
   }
+  // OR-031. `obligadoContabilidad` and RIMPE have defaults; declaring them
+  // because nobody looked is a fiscal statement the system does not make.
+  if (!source.issuer.fiscalProfileDeclared) missing.push('FISCAL_PROFILE');
   return missing;
 }
 

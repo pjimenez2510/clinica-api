@@ -169,3 +169,29 @@ export class EmissionPointDuplicateError extends ConflictError {
     ]);
   }
 }
+
+/**
+ * OR-030. Another site invoicing under the same RUC already has that SRI
+ * establishment code. Its guarantee is
+ * `site_sri_establishment_code_unique_per_ruc`.
+ */
+export class SriEstablishmentCodeDuplicateError extends ConflictError {
+  readonly code = 'SRI_ESTABLISHMENT_CODE_DUPLICATE';
+  override readonly userTitle =
+    'Otra sede que factura con el mismo RUC ya tiene ese código de establecimiento SRI. Use el que el SRI asignó a esta sede';
+
+  constructor() {
+    super(
+      'SRI establishment code already used by another site of the RUC',
+      {},
+      [
+        {
+          field: 'sriEstablishmentCode',
+          code: 'SRI_ESTABLISHMENT_CODE_DUPLICATE',
+          message:
+            'Ese código ya es de otra sede: dos sedes con el mismo código numerarían igual sus facturas',
+        },
+      ],
+    );
+  }
+}

@@ -254,7 +254,11 @@ export class OrganizationController {
   private visibleEstablishment(
     establishment: EstablishmentView,
   ): EstablishmentResponse {
-    const { ruc, ...rest } = establishment;
+    const { ruc, fiscalProfileDeclaredAt, ...columns } = establishment;
+    const rest = {
+      ...columns,
+      fiscalProfileDeclaredAt: fiscalProfileDeclaredAt?.toISOString() ?? null,
+    };
     return this.administersSites() ? { ...rest, ruc } : rest;
   }
 

@@ -25,6 +25,11 @@ export interface EstablishmentView {
   specialTaxpayerResolution: string | null;
   withholdingAgentResolution: string | null;
   rimpeRegime: RimpeRegime;
+  /**
+   * OR-031. When a person last declared the fiscal flags; `null` while
+   * nobody has, and then no voucher is prepared (SRI-008).
+   */
+  fiscalProfileDeclaredAt: Date | null;
   active: boolean;
 }
 
@@ -58,6 +63,8 @@ export interface EstablishmentInput {
   specialTaxpayerResolution: string | null;
   withholdingAgentResolution: string | null;
   rimpeRegime: RimpeRegime;
+  /** OR-031. This save states the fiscal flags; the adapter stamps the instant. */
+  declaresFiscalProfile: boolean;
   active: boolean;
 }
 

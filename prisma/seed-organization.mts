@@ -43,6 +43,9 @@ const ESTABLISHMENT = {
   ruc: DEV_RUC,
   // OR-028. `dirMatriz` of every voucher (sri/SPEC.md SRI-018). Fictitious.
   headOfficeAddress: 'Av. Amazonas y Naciones Unidas, Quito',
+  // OR-029. A company («S.A.») always keeps accounts; no RIMPE.
+  keepsAccounting: true,
+  rimpeRegime: 'NONE',
 } as const;
 
 /** The site created ONLY when the database has none at all. */
@@ -89,6 +92,21 @@ export async function seedOrganization(prisma: PrismaClient): Promise<{
   await prisma.establishment.updateMany({
     where: { mspUnicode: ESTABLISHMENT.mspUnicode, headOfficeAddress: null },
     data: { headOfficeAddress: ESTABLISHMENT.headOfficeAddress },
+  });
+
+  // OR-031. The development seed states the fictitious establishment's fiscal
+  // flags, as an administrator would; a real installation declares them on
+  // the establishment's screen, and until then prepares no voucher.
+  await prisma.establishment.updateMany({
+    where: {
+      mspUnicode: ESTABLISHMENT.mspUnicode,
+      fiscalProfileDeclaredAt: null,
+    },
+    data: {
+      keepsAccounting: ESTABLISHMENT.keepsAccounting,
+      rimpeRegime: ESTABLISHMENT.rimpeRegime,
+      fiscalProfileDeclaredAt: new Date(),
+    },
   });
 
   // --- Sites -----------------------------------------------------------

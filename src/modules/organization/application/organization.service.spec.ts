@@ -44,6 +44,7 @@ const ESTABLISHMENT: EstablishmentView = {
   specialTaxpayerResolution: '5368',
   withholdingAgentResolution: null,
   rimpeRegime: 'NONE',
+  fiscalProfileDeclaredAt: null,
   active: true,
 };
 
@@ -294,7 +295,7 @@ describe('OrganizationService', () => {
       });
     });
 
-    it('OR-029 un guardado sin las banderas fiscales conserva las guardadas, y las enviadas se guardan', async () => {
+    it('OR-029 OR-031 un guardado sin las banderas fiscales conserva las guardadas sin declararlas, y las enviadas se guardan declaradas', async () => {
       const kept = build();
       await kept.service.saveEstablishment(
         {
@@ -311,6 +312,8 @@ describe('OrganizationService', () => {
         specialTaxpayerResolution: '5368',
         withholdingAgentResolution: null,
         rimpeRegime: 'NONE',
+        // OR-031. Kept is not declared: nobody stated them in this save.
+        declaresFiscalProfile: false,
       });
 
       const changed = build();
@@ -331,6 +334,7 @@ describe('OrganizationService', () => {
         keepsAccounting: false,
         specialTaxpayerResolution: null,
         rimpeRegime: 'ENTREPRENEUR',
+        declaresFiscalProfile: true,
       });
     });
 

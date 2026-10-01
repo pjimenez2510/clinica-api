@@ -568,6 +568,34 @@ describe('el comprobante electrónico por HTTP', () => {
       ).toBe('002');
     });
 
+    it('OR-030 dos sedes del mismo RUC no comparten el código SRI; con otro código sí se guarda', async () => {
+      const own = await prisma.site.findUniqueOrThrow({
+        where: { id: siteId },
+      });
+      const sibling = await createSite(prisma, 'Sede del mismo RUC');
+      await prisma.site.update({
+        where: { id: sibling.id },
+        data: { establishmentId: own.establishmentId },
+      });
+
+      const refused = await api()
+        .patch(`/api/v1/organization/sites/${sibling.id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ sriEstablishmentCode: own.sriEstablishmentCode })
+        .expect(409);
+      expect((refused.body as Problem).code).toBe(
+        'SRI_ESTABLISHMENT_CODE_DUPLICATE',
+      );
+
+      // Control: a code nobody else under the RUC has is accepted.
+      const free = own.sriEstablishmentCode === '009' ? '008' : '009';
+      await api()
+        .patch(`/api/v1/organization/sites/${sibling.id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ sriEstablishmentCode: free })
+        .expect(200);
+    });
+
     it('OR-029 administración guarda las banderas fiscales y el comprobante las declara', async () => {
       const establishment = await api()
         .get('/api/v1/organization/establishment')

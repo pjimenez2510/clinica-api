@@ -325,6 +325,7 @@ export const DOMAIN_ERROR_CODES = [
   // instalación recién montada no tiene establecimiento hasta que alguien
   // rellena el formulario, y OR-001 prohíbe operar hasta entonces.
   'EMISSION_POINT_DUPLICATE',
+  'SRI_ESTABLISHMENT_CODE_DUPLICATE',
   'EMISSION_POINT_NOT_FOUND',
   'ESTABLISHMENT_NOT_FOUND',
   'MSP_UNICODE_DUPLICATE',

@@ -120,6 +120,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
                 specialTaxpayerResolution: true,
                 withholdingAgentResolution: true,
                 rimpeRegime: true,
+                fiscalProfileDeclaredAt: true,
               },
             },
           },
@@ -164,6 +165,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
         withholdingAgentResolution:
           establishment?.withholdingAgentResolution ?? null,
         rimpeRegime: establishment?.rimpeRegime ?? 'NONE',
+        fiscalProfileDeclared: Boolean(establishment?.fiscalProfileDeclaredAt),
       },
       buyer: {
         identificationType: row.buyerIdentificationType,

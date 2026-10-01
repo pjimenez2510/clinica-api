@@ -130,6 +130,11 @@ export class OrganizationService {
       specialTaxpayerResolution: command.specialTaxpayerResolution ?? null,
       withholdingAgentResolution: command.withholdingAgentResolution ?? null,
       rimpeRegime: command.rimpeRegime ?? 'NONE',
+      // OR-031. The two flags that have a default are what a person must
+      // state; a save that does not bring them states nothing.
+      declaresFiscalProfile:
+        command.keepsAccounting !== undefined &&
+        command.rimpeRegime !== undefined,
       active: command.active ?? true,
     };
 

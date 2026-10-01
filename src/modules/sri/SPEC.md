@@ -258,7 +258,7 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
 (invoice_id, access_key)`.
 - **SRI-008** — SI falta algún dato que la clave o el XML necesitan —RUC del
   emisor, razón social, código de establecimiento SRI de la sede, dirección de
-  la matriz— ENTONCES el sistema NO DEBERÁ crear el comprobante ni inventar el
+  la matriz, las banderas fiscales declaradas por una persona (OR-031)— ENTONCES el sistema NO DEBERÁ crear el comprobante ni inventar el
   dato, DEBERÁ dejar la factura emitida y DEBERÁ mostrarla en el monitor con el
   dato que falta (SRI-061).
 - **SRI-009** — El sistema DEBERÁ guardar el código de establecimiento SRI de

@@ -1016,6 +1016,8 @@ model Establishment {
   specialTaxpayerResolution  String?     @map("special_taxpayer_resolution") @db.VarChar(16)
   withholdingAgentResolution String?     @map("withholding_agent_resolution") @db.VarChar(16)
   rimpeRegime                RimpeRegime @default(NONE) @map("rimpe_regime")
+  /// OR-031. When a person last declared the fiscal flags; NULL, never.
+  fiscalProfileDeclaredAt    DateTime?   @map("fiscal_profile_declared_at") @db.Timestamptz(6)
 
   /// OR-028, SRI-018. The head office's address: `dirMatriz`, mandatory in
   /// every voucher, and not necessarily the address of any site.

@@ -1,6 +1,7 @@
 import type { DomainError } from '../../../shared/domain/errors/domain-error';
 import {
   EmissionPointDuplicateError,
+  SriEstablishmentCodeDuplicateError,
   MspUnicodeDuplicateError,
   SiteRoomDuplicateError,
 } from '../domain/organization.errors';
@@ -101,6 +102,8 @@ const DUPLICATE_BY_CONSTRAINT: Record<string, () => DomainError> = {
   site_msp_unicode_key: () => new MspUnicodeDuplicateError(),
   site_room_site_id_name_key: () => new SiteRoomDuplicateError(),
   emission_point_code_unique_per_site: () => new EmissionPointDuplicateError(),
+  site_sri_establishment_code_unique_per_ruc: () =>
+    new SriEstablishmentCodeDuplicateError(),
 };
 
 /**

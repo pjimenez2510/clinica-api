@@ -312,6 +312,26 @@ describe('SRI-001, SRI-041 preparar al emitir, sin bloquear nunca la factura', (
     expect((await voucherOf(invoice.id)).status).toBe('SIGNED');
   });
 
+  it('SRI-008 OR-031 sin las banderas fiscales declaradas no hay comprobante; declaradas, el barrido lo prepara', async () => {
+    await loadCertificate();
+    const site = await prisma.site.findUniqueOrThrow({ where: { id: siteId } });
+    await prisma.establishment.update({
+      where: { id: site.establishmentId! },
+      data: { fiscalProfileDeclaredAt: null },
+    });
+    const invoice = await issueInvoice();
+    await preparation.prepare(invoice.id);
+    expect(await prisma.electronicVoucher.count()).toBe(0);
+    expect((await invoiceRow(invoice.id)).accessKey).toBeNull();
+
+    await prisma.establishment.update({
+      where: { id: site.establishmentId! },
+      data: { fiscalProfileDeclaredAt: NOW() },
+    });
+    await dispatch.sweep();
+    expect((await voucherOf(invoice.id)).status).toBe('SIGNED');
+  });
+
   it('SRI-013 SRI-014 una factura con media unidad de un insumo tiene su comprobante firmado, con la cantidad exacta', async () => {
     await loadCertificate();
     const invoice = await issueInvoice(

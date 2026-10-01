@@ -44,8 +44,20 @@ const ESTABLISHMENT_SELECT = {
   specialTaxpayerResolution: true,
   withholdingAgentResolution: true,
   rimpeRegime: true,
+  fiscalProfileDeclaredAt: true,
   active: true,
 } satisfies Prisma.EstablishmentSelect;
+
+/** OR-031. A save that states the fiscal flags records when; one that does not keeps it. */
+function establishmentData({
+  declaresFiscalProfile,
+  ...columns
+}: EstablishmentInput): Prisma.EstablishmentUpdateInput &
+  Prisma.EstablishmentCreateInput {
+  return declaresFiscalProfile
+    ? { ...columns, fiscalProfileDeclaredAt: new Date() }
+    : columns;
+}
 
 const SITE_SELECT = {
   id: true,
@@ -87,7 +99,7 @@ export class PrismaOrganizationRepository implements OrganizationRepository {
   ): Promise<EstablishmentView> {
     try {
       return await this.prisma.establishment.create({
-        data: input,
+        data: establishmentData(input),
         select: ESTABLISHMENT_SELECT,
       });
     } catch (error) {
@@ -106,7 +118,7 @@ export class PrismaOrganizationRepository implements OrganizationRepository {
     try {
       return await this.prisma.establishment.update({
         where: { id },
-        data: input,
+        data: establishmentData(input),
         select: ESTABLISHMENT_SELECT,
       });
     } catch (error) {
