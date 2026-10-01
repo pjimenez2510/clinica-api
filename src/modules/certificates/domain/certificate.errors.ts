@@ -264,6 +264,14 @@ export class CertificateRestIssuedTooLateError extends ValidationError {
   readonly code = 'CERTIFICATE_REST_ISSUED_TOO_LATE';
   override readonly userTitle =
     'Han pasado más de ocho días desde la atención: el reposo se emite desde una atención nueva';
+  override readonly fieldErrors: readonly DomainFieldError[] = [
+    {
+      field: 'type',
+      code: 'CERTIFICATE_REST_ISSUED_TOO_LATE',
+      message:
+        'Han pasado más de ocho días desde la atención: el reposo se emite desde una atención nueva',
+    },
+  ];
 
   constructor() {
     super('A rest is issued within eight days of the attention');

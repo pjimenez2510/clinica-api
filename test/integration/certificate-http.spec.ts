@@ -610,6 +610,38 @@ describe('el certificado medico por HTTP', () => {
     });
   });
 
+  it('CER-044 un reposo que empieza 4 días antes de la atención responde 422 en restFrom, aun con motivo (D-106 §1)', async () => {
+    const response = await post(
+      `/encounters/${encounterId}/certificates`,
+      doctor.token,
+      restOf(5, {
+        restFrom: addDays(today, -4),
+        restTo: today,
+        backdatingReason: 'Fiebre desde hace cuatro días',
+      }),
+    ).expect(422);
+    expect((response.body as Problem).code).toBe(
+      'CERTIFICATE_REST_START_TOO_EARLY',
+    );
+    expect((response.body as Problem).errors?.[0]?.field).toBe('restFrom');
+    expect(await prisma.medicalCertificate.count()).toBe(0);
+  });
+
+  it('CER-045 un reposo sobre una atención de hace nueve días responde 422 en type (D-106 §4)', async () => {
+    const nineDaysAgo = atWallClock(addDays(clinicalDateOf(new Date()), -9), WallClockTime.of(12, 0)); // prettier-ignore
+    const old = await anEncounter(siteId, nineDaysAgo);
+
+    const response = await post(
+      `/encounters/${old.id}/certificates`,
+      doctor.token,
+      restOf(1, { backdatingReason: 'Volvió nueve días después' }),
+    ).expect(422);
+    expect((response.body as Problem).code).toBe(
+      'CERTIFICATE_REST_ISSUED_TOO_LATE',
+    );
+    expect((response.body as Problem).errors?.[0]?.field).toBe('type');
+  });
+
   it('CER-041 un reposo que empieza en 90 días se rechaza nombrando restFrom, y uno desde mañana pasa', async () => {
     const far = addDays(clinicalDateOf(new Date()), 90);
     const refused = await post(

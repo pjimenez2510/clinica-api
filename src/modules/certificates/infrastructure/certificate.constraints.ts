@@ -69,9 +69,11 @@ registerConstraintMeanings({
     message: 'El reposo puede empezar, como mucho, tres días antes de la atención', // prettier-ignore
   },
   /** CER-045, D-106 §4. Within eight days of the attention. */
+  // On `type`: it is the rest itself that no longer fits this attention, and
+  // it is where the service's error and the screen put it.
   medical_certificate_rest_issued_within_8_days: {
     code: 'CERTIFICATE_REST_ISSUED_TOO_LATE',
-    field: 'restFrom',
+    field: 'type',
     message: 'Han pasado más de ocho días desde la atención: el reposo se emite desde una atención nueva', // prettier-ignore
   },
   /** CER-041. A rest starts no later than the day after it is issued. */

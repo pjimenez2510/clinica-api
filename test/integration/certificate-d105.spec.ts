@@ -347,6 +347,28 @@ describe('D-106 los límites de la ventana del reposo, garantizados por la base'
     ).rejects.toThrow(/medical_certificate_rest_issued_within_8_days/);
   });
 
+  it('CER-045 la madrugada del noveno día aún cuenta como el octavo: 05:59 pasa, 06:00 no (D-108 §2)', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const ninth = addDays(scene.day, 9);
+    const rest = { from: ninth, to: ninth };
+
+    await expect(
+      insert(prisma, scene, {
+        rest,
+        issuedAt: atWallClock(ninth, WallClockTime.of(5, 59)),
+        backdatingReason: REASON_LATE,
+      }),
+    ).resolves.toBe(1);
+    await expect(
+      insert(prisma, scene, {
+        rest,
+        issuedAt: atWallClock(ninth, WallClockTime.of(6, 0)),
+        backdatingReason: REASON_LATE,
+      }),
+    ).rejects.toThrow(/medical_certificate_rest_issued_within_8_days/);
+  });
+
   it('CER-045 la asistencia emitida pasados 8 días no tiene ese tope (D-106 §3)', async () => {
     const prisma = db();
     const scene = await aScene(prisma);

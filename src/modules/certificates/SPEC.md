@@ -504,6 +504,11 @@ PR-030).
   > nueva. **Lo garantiza la base:**
   > `medical_certificate_rest_issued_within_8_days`.
 
+  > ⚠️ **CER-044 y CER-045 rigen también para la maternidad.** Que el posparto
+  > tenga otro tope (la fecha de ingreso o del parto, sin plazo de 8 días) está
+  > en **D-108**, pendiente del autor; hasta entonces rige esto. La madrugada de
+  > CER-030 cuenta también para el plazo de 8 días (D-108 §2).
+
 ---
 
 ## Criterios de éxito
