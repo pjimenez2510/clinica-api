@@ -1792,7 +1792,7 @@ Ningún requisito de esta sección lo altera._
   > pantalla los corrige en la ficha antes de emitir y `certificates` sólo los
   > lee. **Esquema:** `patient.employer_name` (160) y `patient.job_title` (120),
   > admitidos en `patient_change_history_field_known`
-  > (`20261001060754_patient_employer_and_job_title`).
+  > (`20261001070800_patient_employer_and_job_title`).
 
 ## 8. Autorización y trazabilidad (REQ-118)
 

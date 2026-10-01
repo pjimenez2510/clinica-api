@@ -206,7 +206,7 @@ lactante de cuatro meses y comprobar que el documento dice «4» con la condici�
   > (`UPDATE … RETURNING`): si la emisión se revierte, el número vuelve. Es el
   > mismo mecanismo que PR-020 y ORD-006, y comparten tabla.
   >
-  > **Esquema:** `20261001043001_certificate_number_and_revocation`.
+  > **Esquema:** `20261001070500_certificate_number_and_revocation`.
   > `medical_certificate.number` y `site_id` los pone el disparador
   > `medical_certificate_number_assigned` al insertar —la sede desde la
   > atención, el número de `next_document_number(site_id,
@@ -389,7 +389,7 @@ PR-030).
   > corrige la ficha por la ruta de corrección de `patients` —con su rastro— y
   > después emite. Este módulo sólo lee. **Esquema:**
   > `patient.employer_name` y `patient.job_title` (PA-061,
-  > `20261001060754_patient_employer_and_job_title`); domicilio y teléfono ya
+  > `20261001070800_patient_employer_and_job_title`); domicilio y teléfono ya
   > existían. Se leen dentro de la transacción de la emisión.
 
 ---
@@ -428,7 +428,7 @@ PR-030).
 
 ## Esquema
 
-Todo lo que faltaba está en `20261001043001_certificate_number_and_revocation`.
+Todo lo que faltaba está en `20261001070500_certificate_number_and_revocation`.
 
 | Qué | Dónde | Requisito |
 | --- | --- | --- |

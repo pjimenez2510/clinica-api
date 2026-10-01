@@ -364,7 +364,7 @@ cuando la gráfica exista.
   inmutable**, distinto de su identificador técnico, y ese número DEBERÁ
   imprimirse en la petición que se entrega al paciente.
 
-  > **Construido** (`20261001031348_document_counter_and_order_number`).
+  > **Construido** (`20261001070100_document_counter_and_order_number`).
   > `service_order.number` lo asigna el disparador
   > `service_order_number_assigned` desde `document_counter`, **por sede**
   > (D-074), dentro de la transacción que emite: una emisión revertida devuelve

@@ -16,7 +16,7 @@
 --    no hay borrador: el certificado nace emitido, así que el número se asigna
 --    AL INSERTAR. Mismo contador que la orden y la receta
 --    (`document_counter`, kind 'MEDICAL_CERTIFICATE', creado en
---    20261001031348_document_counter_and_order_number).
+--    20261001070100_document_counter_and_order_number).
 --  · CER-011 (REQ-074): anular deja constancia de QUIÉN, CUÁNDO y POR QUÉ, los
 --    tres juntos o ninguno, y nada se borra. Es la forma de
 --    `prescription_discard_states_who_when_and_why`.

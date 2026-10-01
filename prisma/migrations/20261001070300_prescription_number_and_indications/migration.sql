@@ -22,7 +22,7 @@
 --    resto del art. 5.
 --
 -- El contador es el mismo `document_counter` de la orden
--- (20261001031348_document_counter_and_order_number), con kind 'PRESCRIPTION'.
+-- (20261001070100_document_counter_and_order_number), con kind 'PRESCRIPTION'.
 --
 -- POR QUÉ `site_id` EN LA RECETA. La unicidad del número es por sede (D-074) y
 -- un `UNIQUE` necesita la columna. La pone el disparador DESDE LA ATENCIÓN y
