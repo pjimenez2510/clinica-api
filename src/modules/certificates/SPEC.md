@@ -382,8 +382,10 @@ PR-030).
   `restNotices` un aviso que nombre cada dato que falta y diga que el IESS puede
   devolver el reposo sin ellos.
 
-  > **D-101** (el autor, 01-10-2026): no se rechaza por esto. El médico tiene
-  > `patient:write` de fábrica y los completa desde el mismo diálogo.
+  > **D-101** (el autor, 01-10-2026): no se rechaza por esto. Los roles los arma
+  > cada clínica: el `MEDICO` de fábrica no trae `patient:write`, y quien lo
+  > tenga los completa desde el mismo diálogo; sin él, el diálogo los enseña y
+  > los completa recepción.
 
   > **Se piden al emitir y se guardan en la ficha** (D-075): la pantalla
   > corrige la ficha por la ruta de corrección de `patients` —con su rastro— y

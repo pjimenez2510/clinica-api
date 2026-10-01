@@ -8,13 +8,19 @@ const permissionsOf = (code: string): readonly string[] => {
   return role.permissions;
 };
 
+/**
+ * D-101, corregida por el autor: LOS ROLES LOS ARMA CADA CLÍNICA. `patient:write`
+ * no es sólo corregir la ficha: registra pacientes, el consentimiento LOPDP y
+ * la orientación sexual. El médico de fábrica no lo lleva; la clínica se lo da
+ * si quiere, y el certificado de reposo se emite igual, con su aviso (CER-038).
+ */
 describe('CER-038 D-101 quién corrige en la ficha los datos que pide el reposo', () => {
-  it('CER-038 el médico recibe patient:write de fábrica', () => {
-    expect(permissionsOf('MEDICO')).toContain('patient:write');
+  it('CER-038 el médico de fábrica no recibe patient:write: lo decide la clínica', () => {
+    expect(permissionsOf('MEDICO')).not.toContain('patient:write');
   });
 
-  it('CER-038 control: caja no lo recibe, y recepción lo sigue teniendo', () => {
-    expect(permissionsOf('CAJA')).not.toContain('patient:write');
+  it('CER-038 control: recepción sí lo trae, y caja no', () => {
     expect(permissionsOf('RECEPCION')).toContain('patient:write');
+    expect(permissionsOf('CAJA')).not.toContain('patient:write');
   });
 });
