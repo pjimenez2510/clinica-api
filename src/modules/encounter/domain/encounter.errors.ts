@@ -584,6 +584,22 @@ export class EncounterAnnulmentReasonRequiredError extends ValidationError {
 }
 
 /**
+ * EN-167, D-083 (pending). The attention holds a draft written by SOMEBODY
+ * ELSE. Interrupting signs the drafts of whoever interrupts (D-082); a draft of
+ * another author would stay unsigned inside a terminal attention, where nobody
+ * could sign it any more — the «texto sin responsable» D-082 rejected.
+ */
+export class EncounterHasOthersDraftsError extends ConflictError {
+  readonly code = 'ENCOUNTER_HAS_OTHERS_DRAFTS';
+  override readonly userTitle =
+    'La atención tiene una nota en borrador de otra persona. Que la firme o la descarte antes de interrumpir';
+
+  constructor() {
+    super('Encounter holds a draft note of another author');
+  }
+}
+
+/**
  * EN-129, EN-167 (D-076, D-082). An interruption without its written reason
  * or without saying where it came from — the patient or the clinic.
  */

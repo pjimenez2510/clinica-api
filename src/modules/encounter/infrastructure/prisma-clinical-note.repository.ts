@@ -20,7 +20,7 @@ import type {
   NotesOfEncounterQuery,
   SignaturePlan,
 } from '../domain/clinical-note.repository';
-import type { DischargeCondition } from '../domain/encounter';
+import type { DischargeCondition, EncounterStatus } from '../domain/encounter';
 import type { SiteScopeFilter } from '../domain/encounter.repository';
 
 /**
@@ -201,6 +201,17 @@ export class PrismaClinicalNoteRepository implements ClinicalNoteRepository {
     return this.prisma.$transaction(async (tx) => {
       const note = await requireNote(tx, query);
       decide(note);
+
+      // EN-169 (D-077, D-082). What was written in an attention that is over
+      // —interrupted, closed, annulled— is not rewritten. Locked first, as
+      // every writer of the attention does, and the database says it again
+      // (`trg_clinical_note_frozen_in_terminal_encounter`).
+      const [attention] = await tx.$queryRaw<{ status: EncounterStatus }[]>`
+        SELECT "status" FROM "encounter" WHERE "id" = ${note.encounterId}::uuid FOR UPDATE
+      `;
+      if (attention && TERMINAL_STATUSES.includes(attention.status)) {
+        throw new EncounterAlreadyClosedError(attention.status);
+      }
 
       const updated = await tx.clinicalNote.updateMany({
         where: { id: note.id, status: 'DRAFT' },

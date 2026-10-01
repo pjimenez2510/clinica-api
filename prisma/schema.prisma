@@ -2406,11 +2406,16 @@ model Encounter {
   /// (`encounter_discontinued_states_who_why_when`). A USER and not a
   /// practitioner because reception records the patient who leaves with the
   /// encounter open and no note (AG-148).
-  discontinuedReason String?                      @map("discontinued_reason") @db.VarChar(500)
+  discontinuedReason String?                      @map("discontinued_reason") @db.VarChar(512)
   discontinuedOrigin EncounterDiscontinuedOrigin? @map("discontinued_origin")
   discontinuedById   String?                      @map("discontinued_by_id") @db.Uuid
   discontinuedBy     User?                        @relation("EncounterDiscontinuer", fields: [discontinuedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "encounter_discontinued_by_fk")
   discontinuedAt     DateTime?                    @map("discontinued_at") @db.Timestamptz(6)
+
+  /// D-085 §2. Why somebody other than the attending practitioner annulled or
+  /// interrupted it (EN-147 applied to the exits). Only on those two states
+  /// (`encounter_exit_substitute_reason_belongs_to_an_exit`).
+  exitSubstituteReason String? @map("exit_substitute_reason") @db.VarChar(500)
 
   /// When this encounter was included in an RDACAA/PRAS submission. NULL means
   /// not yet reported, and drives the pending-report partial index.

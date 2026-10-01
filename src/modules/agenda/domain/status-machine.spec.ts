@@ -249,7 +249,8 @@ describe('deshacer un bloqueo (AG-114)', () => {
     startsAt: new Date('2026-09-14T13:00:00Z'),
     releasedAt: null,
     hasEncounter: false,
-    encounterHasNote: false,
+    encounterHasClinicalAct: false,
+    encounterInProgress: false,
     ...overrides,
   });
 
@@ -290,7 +291,8 @@ describe('la atención manda sobre la cita (AG-045, AG-148)', () => {
     startsAt: now,
     releasedAt: null,
     hasEncounter: true,
-    encounterHasNote: true,
+    encounterHasClinicalAct: true,
+    encounterInProgress: true,
     ...overrides,
   });
 
@@ -299,7 +301,7 @@ describe('la atención manda sobre la cita (AG-045, AG-148)', () => {
     (to) => {
       expect(() =>
         planAttentionEffect(
-          readOf({ encounterHasNote: false }),
+          readOf({ encounterHasClinicalAct: false }),
           to,
           undefined,
           now,
@@ -317,7 +319,7 @@ describe('la atención manda sobre la cita (AG-045, AG-148)', () => {
   it('AG-148 admits «se fue sin ser atendido» with the attention open and no note, and interrupts the attention', () => {
     expect(
       planAttentionEffect(
-        readOf({ encounterHasNote: false }),
+        readOf({ encounterHasClinicalAct: false }),
         'LEFT_WITHOUT_BEING_SEEN',
         '  Se cansó de esperar ',
         now,
@@ -328,7 +330,7 @@ describe('la atención manda sobre la cita (AG-045, AG-148)', () => {
   it('AG-148 writes the fact itself as the reason when reception gave none (EN-129 demands one)', () => {
     expect(
       planAttentionEffect(
-        readOf({ encounterHasNote: false }),
+        readOf({ encounterHasClinicalAct: false }),
         'LEFT_WITHOUT_BEING_SEEN',
         '   ',
         now,
@@ -336,11 +338,22 @@ describe('la atención manda sobre la cita (AG-045, AG-148)', () => {
     ).toEqual({ reason: 'Se fue sin ser atendido', at: now });
   });
 
+  it('AG-148 does not interrupt again an attention already interrupted: its record stays as written', () => {
+    expect(
+      planAttentionEffect(
+        readOf({ encounterHasClinicalAct: false, encounterInProgress: false }),
+        'LEFT_WITHOUT_BEING_SEEN',
+        'Se cansó de esperar',
+        now,
+      ),
+    ).toBeUndefined();
+  });
+
   it('AG-045 lets an appointment without a live attention go anywhere the table admits', () => {
     for (const to of ['CANCELLED', 'LEFT_WITHOUT_BEING_SEEN'] as const) {
       expect(
         planAttentionEffect(
-          readOf({ hasEncounter: false, encounterHasNote: false }),
+          readOf({ hasEncounter: false, encounterHasClinicalAct: false }),
           to,
           undefined,
           now,

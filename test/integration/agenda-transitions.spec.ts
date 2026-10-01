@@ -1271,6 +1271,82 @@ describe('las transiciones de estado de la cita por HTTP', () => {
       ).toBeNull();
     });
 
+    it('AG-148 sobre una atención ya interrumpida, la salida se registra y la interrupción conserva su origen y su motivo', async () => {
+      const { entryId, encounter } = await inTheWaitingRoomWithAttention();
+      const doctor = await prisma.practitioner.findUniqueOrThrow({
+        where: { id: practitionerId },
+      });
+      const at = new Date();
+      await prisma.encounter.update({
+        where: { id: encounter.id },
+        data: {
+          status: 'DISCONTINUED',
+          endedAt: at,
+          discontinuedReason: 'Urgencia en otra sala',
+          discontinuedOrigin: 'ESTABLISHMENT',
+          discontinuedById: doctor.userId,
+          discontinuedAt: at,
+        },
+      });
+
+      await transition(entryId, { to: 'LEFT_WITHOUT_BEING_SEEN' }).expect(200);
+
+      expect(
+        await prisma.encounter.findUniqueOrThrow({
+          where: { id: encounter.id },
+        }),
+      ).toMatchObject({
+        discontinuedOrigin: 'ESTABLISHMENT',
+        discontinuedReason: 'Urgencia en otra sala',
+        discontinuedById: doctor.userId,
+      });
+    });
+
+    it('AG-148 una receta u orden sin nota también es consulta: la salida se rechaza (D-085 §3)', async () => {
+      const { entryId, encounter } = await inTheWaitingRoomWithAttention();
+      await prisma.serviceOrder.create({
+        data: {
+          encounterId: encounter.id,
+          siteId,
+          orderedById: practitionerId,
+          category: 'LABORATORY',
+        },
+      });
+
+      const refused = await transition(entryId, { to: 'LEFT_WITHOUT_BEING_SEEN' }).expect(409); // prettier-ignore
+      expect((refused.body as Problem).code).toBe('AGENDA_ENTRY_HAS_ENCOUNTER');
+    });
+
+    it('AG-146 AG-148 abrir la nota y marcar la salida a la vez: gana exactamente uno, nunca los dos', async () => {
+      const { entryId, encounter } = await inTheWaitingRoomWithAttention();
+
+      const [note, departure] = await Promise.allSettled([
+        openTheNote(encounter.id),
+        transition(entryId, { to: 'LEFT_WITHOUT_BEING_SEEN' }),
+      ]);
+
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      const attention = await prisma.encounter.findUniqueOrThrow({
+        where: { id: encounter.id },
+      });
+      const departed =
+        departure.status === 'fulfilled' && departure.value.status === 200;
+      if (note.status === 'fulfilled') {
+        // La nota ganó: hubo consulta, la salida se rechazó.
+        expect(departed).toBe(false);
+        expect(stored.status).toBe('IN_PROGRESS');
+        expect(attention.status).toBe('OPEN');
+      } else {
+        // La salida ganó: la atención quedó interrumpida y la nota se rechazó.
+        expect(departed).toBe(true);
+        expect(stored.status).toBe('LEFT_WITHOUT_BEING_SEEN');
+        expect(attention.status).toBe('DISCONTINUED');
+        expect(await prisma.clinicalNote.count({ where: { encounterId: encounter.id } })).toBe(0); // prettier-ignore
+      }
+    });
+
     it('AG-045 una atención anulada ya no frena la cita', async () => {
       const { entryId, encounter } = await inTheWaitingRoomWithAttention();
       const at = new Date();

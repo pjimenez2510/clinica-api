@@ -215,16 +215,6 @@ registerConstraintMeanings({
     field: 'reason',
     message: 'Indique por qué se interrumpe la atención y si vino del paciente o del establecimiento', // prettier-ignore
   },
-  /**
-   * EN-168 (D-081). At most one LIVE attention per appointment. Reached when
-   * two people open the attention of the same appointment at once: the
-   * second is told the first already exists.
-   */
-  encounter_one_live_per_agenda_entry: {
-    code: 'APPOINTMENT_ALREADY_HAS_ENCOUNTER',
-    field: 'agendaEntryId',
-    message: 'Esta cita ya tiene una atención abierta: continúe en ella',
-  },
   /** EN-010. `encounter_time_order`: the end never precedes the beginning. */
   encounter_time_order: {
     code: 'INVALID_TIME_RANGE',

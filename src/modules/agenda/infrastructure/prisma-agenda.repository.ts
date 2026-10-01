@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PinoLogger } from 'nestjs-pino';
 
+import { hasClinicalAct } from '../../../shared/infrastructure/prisma/clinical-acts';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
   isSerialisationFailure,
@@ -1071,13 +1072,20 @@ export class PrismaAgendaRepository implements AgendaRepository {
   ): Promise<readonly BlockingAppointment[]> {
     return this.prisma.agendaEntry.findMany({
       where: {
-        siteId: query.siteId,
         practitionerId: query.practitionerId,
         kind: 'APPOINTMENT',
-        blocksCalendar: true,
         releasedAt: null,
         startsAt: { lt: query.endsAt },
         endsAt: { gt: query.startsAt },
+        OR: [
+          // AG-038: the appointments of this site.
+          { siteId: query.siteId, blocksCalendar: true },
+          // AG-152 (D-085 §7): an overbooking of the practitioner AT ANY SITE.
+          // It occupies no calendar, so the EXCLUDE never sees it; without
+          // this the holidays land on top of a patient who comes anyway — the
+          // reverse of D-069.
+          { blocksCalendar: false },
+        ],
       },
       orderBy: [{ startsAt: 'asc' }, { id: 'asc' }],
       select: { id: true, startsAt: true, endsAt: true },
@@ -1371,7 +1379,8 @@ async function applyStatusChange(
     startsAt: row.startsAt,
     releasedAt: row.releasedAt,
     hasEncounter: attention !== null,
-    encounterHasNote: attention?.hasNote ?? false,
+    encounterHasClinicalAct: attention?.hasClinicalAct ?? false,
+    encounterInProgress: attention?.inProgress ?? false,
   });
 
   /**
@@ -1390,7 +1399,10 @@ async function applyStatusChange(
    *    overwriting the first release instant.
    */
   const releasing = change.effects.releasedAt !== undefined;
-  const guardsAttention = releasing && change.interruptAttention === undefined;
+  // A live attention that EXISTED is locked above and no second one can be
+  // created while it lives (EN-168): only an appointment read WITHOUT one
+  // needs the write to re-check that none appeared.
+  const guardsAttention = releasing && attention === null;
   const updated = await tx.agendaEntry.updateMany({
     where: {
       id: command.entryId,
@@ -1433,8 +1445,11 @@ async function applyStatusChange(
    */
   if (change.interruptAttention !== undefined && attention !== null) {
     const { reason, at } = change.interruptAttention;
-    await tx.encounter.update({
-      where: { id: attention.id },
+    // Conditioned on the attention still being in progress: it is locked, so
+    // this cannot lose a race, and if it ever did the refusal is the honest
+    // answer rather than overwriting somebody else's interruption.
+    const interrupted = await tx.encounter.updateMany({
+      where: { id: attention.id, status: { in: ['OPEN', 'ON_HOLD'] } },
       data: {
         status: 'DISCONTINUED',
         endedAt: at,
@@ -1444,6 +1459,7 @@ async function applyStatusChange(
         discontinuedAt: at,
       },
     });
+    if (interrupted.count === 0) throw new AgendaEntryHasEncounterError();
   }
 
   await tx.agendaStatusHistory.create({
@@ -1463,16 +1479,17 @@ const LIVE_ENCOUNTER = {
 } satisfies Prisma.EncounterWhereInput;
 
 /**
- * AG-045, AG-148. The live attention of an appointment, LOCKED, and whether it
- * has any note.
+ * AG-045, AG-148. The live attention of an appointment, LOCKED, whether it
+ * has any clinical act (D-085 §3: a note, a diagnosis, a procedure, a
+ * prescription or an order) and whether it is still in progress.
  *
  * TWO STATEMENTS ON PURPOSE. The lock comes first so that a note being opened
  * at this very moment (`createDraft` locks the same row before it writes,
  * AG-146) either commits before we look or waits until we are done. The note
- * count is a SECOND statement because, in READ COMMITTED, a statement that
- * waited on a lock still reads with the snapshot it started with: asked in the
- * same statement, «does it have a note?» could answer no about a note that had
- * just committed.
+ * question is asked in LATER statements because, in READ COMMITTED, a
+ * statement that waited on a lock still reads with the snapshot it started
+ * with: asked in the same statement, «was there an act?» could answer no about
+ * a note that had just committed.
  *
  * THE ORDER OF LOCKS IS THE ATTENTION, THEN THE APPOINTMENT, in both modules.
  * `createDraft` takes them in that order too, so the two cannot deadlock.
@@ -1480,19 +1497,26 @@ const LIVE_ENCOUNTER = {
 async function lockLiveAttention(
   tx: Prisma.TransactionClient,
   agendaEntryId: string,
-): Promise<{ id: string; hasNote: boolean } | null> {
-  const locked = await tx.$queryRaw<{ id: string }[]>`
-    SELECT "id"::text AS id
+): Promise<{
+  id: string;
+  hasClinicalAct: boolean;
+  inProgress: boolean;
+} | null> {
+  const locked = await tx.$queryRaw<{ id: string; status: string }[]>`
+    SELECT "id"::text AS id, "status"::text AS status
       FROM "encounter"
      WHERE "agenda_entry_id" = ${agendaEntryId}::uuid
        AND "status" <> 'ENTERED_IN_ERROR'
        FOR UPDATE
   `;
-  const id = locked[0]?.id;
-  if (id === undefined) return null;
+  const row = locked[0];
+  if (row === undefined) return null;
 
-  const notes = await tx.clinicalNote.count({ where: { encounterId: id } });
-  return { id, hasNote: notes > 0 };
+  return {
+    id: row.id,
+    hasClinicalAct: await hasClinicalAct(tx, row.id),
+    inProgress: row.status === 'OPEN' || row.status === 'ON_HOLD',
+  };
 }
 
 /** `YYYY-MM-DD` as the instant PostgreSQL stores for that calendar day. */

@@ -21,7 +21,11 @@ import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.ser
 import '../../src/modules/staff/infrastructure/staff.constraints';
 
 import { useDatabase } from './setup/database';
-import { createPatient, createSite } from './setup/fixtures';
+import {
+  createPatient,
+  createScheduleRule,
+  createSite,
+} from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
 /**
@@ -1059,16 +1063,18 @@ describe('el personal por HTTP', () => {
       // half-open `daterange` these two would both be accepted while
       // `slot-availability.ts` considered both in force on 01-06.
       const practitioner = await createPractitioner();
+      // Vigencias desde hoy: la exclusión rige desde la entrada en vigor de
+      // D-070 (D-085 §6), así que el día compartido tiene que ser de ahora.
       await post(`/practitioners/${practitioner.id}/schedule-rules`, {
         siteId,
         ...RULE,
-        validFrom: '2026-01-01',
-        validTo: '2026-06-01',
+        validFrom: clinicDay(0),
+        validTo: clinicDay(60),
       }).expect(201);
 
       const response = await post(
         `/practitioners/${practitioner.id}/schedule-rules`,
-        { siteId, ...RULE, validFrom: '2026-06-01', validTo: null },
+        { siteId, ...RULE, validFrom: clinicDay(60), validTo: null },
       ).expect(409);
 
       expect((response.body as Problem).code).toBe('SCHEDULE_RULE_OVERLAP');
@@ -1095,6 +1101,31 @@ describe('el personal por HTTP', () => {
         /en esta sede o en otra/,
       );
       expect(await prisma.practitionerScheduleRule.count()).toBe(1);
+    });
+
+    it('ST-042 una regla cerrada antes del 2026-10-01 no choca: la exclusión rige desde la entrada en vigor (D-085 §6)', async () => {
+      const practitioner = await createPractitioner();
+      const second = await createSite(prisma, 'Sede Sur');
+      await put(`/practitioners/${practitioner.id}/sites`, {
+        siteIds: [siteId, second.id],
+      }).expect(200);
+      // Lo que la semilla antigua dejó y el arreglo cerró: la misma franja en
+      // la otra sede, vigente hasta el día antes de la entrada en vigor.
+      await createScheduleRule(
+        prisma,
+        { practitionerId: practitioner.id, siteId: second.id },
+        {
+          weekday: RULE.weekday,
+          startTime: RULE.startTime,
+          endTime: RULE.endTime,
+          validTo: new Date('2026-09-30T00:00:00Z'), // fecha-fija: el día antes de la entrada en vigor de D-070
+        },
+      );
+
+      await post(`/practitioners/${practitioner.id}/schedule-rules`, {
+        siteId,
+        ...RULE,
+      }).expect(201);
     });
 
     it('ST-046 la franja contigua en OTRA sede se admite: la regla sigue perteneciendo a una sede', async () => {

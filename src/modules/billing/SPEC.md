@@ -77,8 +77,8 @@ cierre de caja, notas de crédito, anulación dentro del plazo del SRI, y la
 cargo), `organization` (`site`, `establishment`, `emission_point`), `catalogs`
 (la nomenclatura del tarifario) y `staff`/`auth` (quién autoriza qué).
 
-**Bloquea a:** el cierre de la Fase 1 del ROADMAP, cuyo criterio es *«un
-recepcionista agenda, un médico atiende y prescribe, y caja factura»*.
+**Bloquea a:** el cierre de la Fase 1 del ROADMAP, cuyo criterio es _«un
+recepcionista agenda, un médico atiende y prescribe, y caja factura»_.
 
 **Bloqueado por:** D-049, que este documento **cierra en su mayor parte** con las
 respuestas del usuario y con D-A-006 y D-A-007, y deja abierto solo lo que
@@ -86,21 +86,21 @@ enumera «Preguntas abiertas».
 
 ## Vocabulario
 
-| Término | Significado exacto en este módulo |
-| --- | --- |
+| Término                             | Significado exacto en este módulo                                                                                                                                                                                      |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Prestación** (`billable_service`) | Algo que la clínica sabe hacer y puede cobrar. **No tiene precio.** No es un `service_type` de la agenda (eso es cuánto dura una cita) ni un `CatalogConcept` del tarifario nacional (eso es una nomenclatura oficial) |
-| **Pagador** (`payer`) | Quién paga: el propio paciente, el IESS, el ISSFA, el ISSPOL, un seguro privado, un convenio de empresa. **Es una fila, nunca un `enum`** |
-| **Lista de precios** (`price_list`) | El conjunto de precios de **un** pagador. Un pagador, una lista |
-| **Precio** (`price`) | Importe **sin impuesto** de una prestación en una lista, vigente en `[valid_from, valid_to)` |
-| **Fecha del servicio** | La fecha ecuatoriana en que se prestó, no aquella en que se tecleó. Es la que resuelve el precio |
-| **Cargo** (`charge_item`) | El hecho económico, con el precio, el impuesto y el descuento **congelados**. Es la pieza 3 y la que evita todos los problemas |
-| **Congelar** | Copiar el valor a la fila del cargo. Después de congelado, ningún cambio en el catálogo, la lista o la tarifa lo altera |
-| **Cuenta** (`account`) | Agrupa los cargos de un paciente frente a un pagador. **No es la factura**: se abre, se mueve y se cierra |
-| **Factura** (`invoice`) | El documento tributario. **Inmutable desde que se emite** |
-| **Anular** | Dejar sin efecto una factura dentro del plazo que el SRI permite. **No es** una nota de crédito |
-| **Nota de crédito** (`credit_note`) | El único modo de corregir una factura después. Documento propio, con permiso propio y motivo obligatorio |
-| **Consumidor Final** | Emitir sin identificar al receptor. **Excepción explícita que alguien elige**, jamás el valor por defecto |
-| **Tarifario publicado** | La versión del precio particular que se exhibe al público, con su fecha de vigencia. Obligación de la LOS art. 184 |
+| **Pagador** (`payer`)               | Quién paga: el propio paciente, el IESS, el ISSFA, el ISSPOL, un seguro privado, un convenio de empresa. **Es una fila, nunca un `enum`**                                                                              |
+| **Lista de precios** (`price_list`) | El conjunto de precios de **un** pagador. Un pagador, una lista                                                                                                                                                        |
+| **Precio** (`price`)                | Importe **sin impuesto** de una prestación en una lista, vigente en `[valid_from, valid_to)`                                                                                                                           |
+| **Fecha del servicio**              | La fecha ecuatoriana en que se prestó, no aquella en que se tecleó. Es la que resuelve el precio                                                                                                                       |
+| **Cargo** (`charge_item`)           | El hecho económico, con el precio, el impuesto y el descuento **congelados**. Es la pieza 3 y la que evita todos los problemas                                                                                         |
+| **Congelar**                        | Copiar el valor a la fila del cargo. Después de congelado, ningún cambio en el catálogo, la lista o la tarifa lo altera                                                                                                |
+| **Cuenta** (`account`)              | Agrupa los cargos de un paciente frente a un pagador. **No es la factura**: se abre, se mueve y se cierra                                                                                                              |
+| **Factura** (`invoice`)             | El documento tributario. **Inmutable desde que se emite**                                                                                                                                                              |
+| **Anular**                          | Dejar sin efecto una factura dentro del plazo que el SRI permite. **No es** una nota de crédito                                                                                                                        |
+| **Nota de crédito** (`credit_note`) | El único modo de corregir una factura después. Documento propio, con permiso propio y motivo obligatorio                                                                                                               |
+| **Consumidor Final**                | Emitir sin identificar al receptor. **Excepción explícita que alguien elige**, jamás el valor por defecto                                                                                                              |
+| **Tarifario publicado**             | La versión del precio particular que se exhibe al público, con su fecha de vigencia. Obligación de la LOS art. 184                                                                                                     |
 
 ---
 
@@ -231,8 +231,8 @@ Publicar la lista de precios particulares con su versión y su fecha de vigencia
 en una vista pública y en un formato imprimible.
 
 **Por qué es P2 pese a no mover dinero: es una obligación legal directa.** La
-**LOS art. 184** obliga a *«exhibir en sitios visibles para el público las
-tarifas que se cobran»*. No es un informe interno ni un extra de marketing: es
+**LOS art. 184** obliga a _«exhibir en sitios visibles para el público las
+tarifas que se cobran»_. No es un informe interno ni un extra de marketing: es
 un requisito de funcionamiento, y una pantalla de administración que solo ve el
 personal **no lo cumple**.
 
@@ -257,8 +257,8 @@ procedimientos y los exámenes. Caja revisa, quita lo que no se cobra con su
 motivo, añade lo que falte y emite.
 
 **Por qué es P1:** es la petición directa del usuario, y sin ella el criterio de
-cierre de la Fase 1 —*«un recepcionista agenda, un médico atiende y prescribe, y
-caja factura»*— se cumple sólo si alguien teclea a mano cada línea de cada
+cierre de la Fase 1 —_«un recepcionista agenda, un médico atiende y prescribe, y
+caja factura»_— se cumple sólo si alguien teclea a mano cada línea de cada
 visita. Un catálogo de treinta y cinco prestaciones tecleado doce veces al día
 es donde se pierde el dinero que nadie echa en falta: la consulta que no se
 cobró no da ningún error.
@@ -269,7 +269,7 @@ las líneas propuestas con su motivo y volver a enviar, y comprobar que **no
 vuelve**; y comprobar contra PostgreSQL que el segundo cargo del mismo acto lo
 rechaza la BASE y no una lectura previa.
 
-**Cubre:** BI-150 a BI-158, y da ruta por fin a BI-055, BI-056 y BI-059.
+**Cubre:** BI-150 a BI-158, BI-170, y da ruta por fin a BI-055, BI-056 y BI-059.
 
 > **Lo entregado el 20-08-2026.** La ruta de paso a caja, idempotente en sus dos
 > mitades; la derivación de las tres fuentes sobre las ataduras que ya existían
@@ -366,7 +366,7 @@ es falsa, hay requisitos que cambian.
   decimal exacto de dos posiciones, y NO DEBERÁ representarlo en coma flotante
   en ningún punto del almacenamiento, del dominio ni del transporte.
   > `numeric(12,2)`, como ya hace `encounter_procedure.tariff_amount`
-  > (*«Money is always Decimal(12,2), never Float»*). Y **también en el
+  > (_«Money is always Decimal(12,2), never Float»_). Y **también en el
   > transporte**: un importe serializado como número de JavaScript pierde
   > centavos en cuanto pasa por `JSON.parse`, así que viaja como cadena. Esto no
   > es purismo: es la diferencia entre que la suma de las líneas cuadre con el
@@ -501,7 +501,7 @@ es falsa, hay requisitos que cambian.
 > porcentaje, y no son sinónimos de 0 %—, `valid_from`, `valid_to`, la columna
 > generada `valid_period daterange` y
 > `tax_rate_code_temporal_unique UNIQUE (sri_code, valid_period WITHOUT
-> OVERLAPS)`, que impide que un código del SRI tenga dos porcentajes a la vez.
+OVERLAPS)`, que impide que un código del SRI tenga dos porcentajes a la vez.
 >
 > **No hay columna `active`**, y gana el esquema: la vigencia ya dice si una
 > tarifa rige hoy, y un booleano al lado sería una segunda respuesta a la misma
@@ -530,8 +530,8 @@ es falsa, hay requisitos que cambian.
   > 15 % en insumos y estética, y lo anuncia en voz alta al terminar.
 - **BI-023** — El sistema DEBERÁ ofrecer el listado de prestaciones agrupado por
   tarifa de impuesto, con las pendientes de revisión primero.
-  > Ésta es la pantalla que D-A-006 exige que exista: *«el sistema no la
-  > esconda»*. Un catálogo donde la tarifa solo se ve abriendo cada prestación
+  > Ésta es la pantalla que D-A-006 exige que exista: _«el sistema no la
+  > esconda»_. Un catálogo donde la tarifa solo se ve abriendo cada prestación
   > de una en una es un catálogo que nadie revisa.
 - **BI-024** — CUANDO se marque una prestación como revisada, el sistema DEBERÁ
   registrar quién y cuándo, y NO DEBERÁ perder ese registro al cambiarle después
@@ -558,9 +558,9 @@ es falsa, hay requisitos que cambian.
 - **BI-030** — El sistema DEBERÁ mantener los pagadores como filas de una tabla
   administrable, y NO DEBERÁ representarlos como enumeración del código ni como
   tipo de la base de datos.
-  > **El principio rector del usuario, literal:** *«los pagadores se debe incluir
+  > **El principio rector del usuario, literal:** _«los pagadores se debe incluir
   > todos porque este sistema no solo se usa en una clínica, además siempre se
-  > debe hacer flexible»*. Particular, IESS, ISSFA, ISSPOL, seguros privados y
+  > debe hacer flexible»_. Particular, IESS, ISSFA, ISSPOL, seguros privados y
   > convenios de empresa **son filas**. Lo que sigue siendo `enum` en este
   > sistema es lo que la norma ecuatoriana fija y cuyo cambio obligaría a migrar
   > histórico; a quién le cobra una clínica no es eso.
@@ -615,8 +615,8 @@ es falsa, hay requisitos que cambian.
 > `publicly_listed` (LOS art. 184) y `active`. `price`: `price_list_id`,
 > `billable_service_id`, `amount numeric(12,2)` con
 > `price_is_not_negative CHECK (amount >= 0)`, `valid_from date`, `valid_to date
-> NULL`, `price_period_not_empty` y la columna generada `valid_period daterange
-> GENERATED ALWAYS AS (daterange(valid_from, valid_to, '[)')) STORED`,
+NULL`, `price_period_not_empty` y la columna generada `valid_period daterange
+GENERATED ALWAYS AS (daterange(valid_from, valid_to, '[)')) STORED`,
 > exactamente como `catalog_concept.valid_period`.
 >
 > Diferencia con lo que pedía este documento: **`payer_id` NO es único** en
@@ -637,7 +637,7 @@ es falsa, hay requisitos que cambian.
   > **Ya en el esquema, y se llama `price_temporal_unique`** —no
   > `price_no_overlap_per_service`, que es el nombre que este documento
   > imaginó—: `UNIQUE (price_list_id, billable_service_id, valid_period WITHOUT
-  > OVERLAPS)`, el `UNIQUE` temporal de PostgreSQL 18 respaldado por GiST, el
+OVERLAPS)`, el `UNIQUE` temporal de PostgreSQL 18 respaldado por GiST, el
   > mismo que ya usa `catalog_concept_code_temporal_unique`. Y con él
   > `price_period_not_empty`, porque `WITHOUT OVERLAPS` rechaza los rangos
   > vacíos con un mensaje mucho peor.
@@ -777,12 +777,12 @@ es falsa, hay requisitos que cambian.
 ## 7. Descuentos
 
 > **Ya en el esquema, casi entero.** `charge_item.discount_amount
-> numeric(12,2) DEFAULT 0`, `discount_reason varchar(300) NULL`,
+numeric(12,2) DEFAULT 0`, `discount_reason varchar(300) NULL`,
 > `discount_authorised_by_id uuid NULL` (`charge_item_discount_authorised_by_fk`
 > hacia `app_user`, distinta de `created_by_id` a propósito: son las dos
 > personas de BI-063), y **dos `CHECK` que ya obligan lo que importa**:
 > `charge_item_discount_states_a_reason` (`discount_amount = 0 OR
-> discount_reason IS NOT NULL`) y `charge_item_discount_within_line`
+discount_reason IS NOT NULL`) y `charge_item_discount_within_line`
 > (`discount_amount <= unit_amount * quantity`). Los dos tienen prueba contra
 > PostgreSQL.
 >
@@ -881,7 +881,7 @@ es falsa, hay requisitos que cambian.
 > (`buyer_identification_type`, `buyer_identification`, `buyer_name`,
 > `buyer_email`, `is_final_consumer`), los cinco importes, `status`, `issued_at`
 > y `authorised_at`. Con `invoice_sequential_unique (emission_point_id,
-> sequential)`, `invoice_total_is_consistent`,
+sequential)`, `invoice_total_is_consistent`,
 > `invoice_final_consumer_identification`, `invoice_authorised_carries_its_key`
 > y los dos disparadores de BI-084.
 >
@@ -963,12 +963,12 @@ es falsa, hay requisitos que cambian.
   la garantía DEBERÁ vivir en la base de datos.
   > REQ-085. **Ya en el esquema**, y se llama `invoice_sequential_unique`
   > —no `invoice_sequential_unique_per_emission_point`—: `UNIQUE
-  > (emission_point_id, sequential)`. La asignación del número ocurre dentro de
+(emission_point_id, sequential)`. La asignación del número ocurre dentro de
   > la misma transacción que inserta la factura y **bajo el bloqueo de fila del
   > punto de emisión**, que es lo que hace los secuenciales consecutivos y no
   > sólo únicos: `max(sequential) + 1` leído fuera del bloqueo es el mismo
   > número dos veces. `emission_point` guarda su `code` de tres dígitos donde
-  > *«el cero a la izquierda es significativo: «001» no es 1»*, y el secuencial
+  > _«el cero a la izquierda es significativo: «001» no es 1»_, y el secuencial
   > se imprime a nueve posiciones por la misma razón.
   >
   > **Y no se reutiliza ni siquiera el de una factura anulada.** Reutilizarlo es
@@ -987,6 +987,12 @@ es falsa, hay requisitos que cambian.
   > REQ-084, y su origen es el rechazo habitual de las aseguradoras. Es la
   > consecuencia práctica de BI-035: el pagador dice de qué lista sale el
   > precio; no dice quién figura en el documento.
+- **BI-170** — CUANDO la atención esté `DISCONTINUED` sin ningún acto clínico
+  —nota, diagnóstico, procedimiento, receta ni orden—, el sistema NO DEBERÁ
+  proponer ningún cargo, tampoco la consulta.
+  > **D-085 §4 (01-10-2026).** Es quien se fue antes de que el médico lo viera
+  > (D-081 §2): no hubo consulta que proponer. La interrumpida con algún acto
+  > sigue proponiendo la consulta y caja la quita con motivo (D-054 §2).
 - **BI-159** — SI se emite una factura a un receptor identificado con RUC
   (tipo `04`) que no supera OR-008 y OR-009, o con cédula (tipo `05`) que no
   supera el value object `Cedula`, ENTONCES el sistema DEBERÁ rechazarla con
@@ -1019,7 +1025,7 @@ es falsa, hay requisitos que cambian.
   sistema DEBERÁ rechazarla con `INVOICE_HAS_NO_ITEMS`.
 - **BI-090** — El sistema NO DEBERÁ exponer ninguna operación que modifique el
   contenido de una factura emitida.
-  > **D-A-007, literal: «no existe *editar factura* en ninguna pantalla».** Está
+  > **D-A-007, literal: «no existe _editar factura_ en ninguna pantalla».** Está
   > escrito como requisito de la API y no como nota de interfaz porque una ruta
   > que exista sin pantalla se usa igual, y porque `spec-traceability` puede
   > comprobar que ninguna la declara.
@@ -1028,7 +1034,7 @@ es falsa, hay requisitos que cambian.
 
 > **Ya en el esquema.** `credit_note`: `invoice_id`, `emission_point_id`,
 > `sequential` con `credit_note_sequential_unique`, `access_key`, **`reason
-> varchar(500) NOT NULL`** —nunca opcional—, `amount` con
+varchar(500) NOT NULL`** —nunca opcional—, `amount` con
 > `credit_note_amount_is_positive`, `status` (`DRAFT`, `ISSUED`, `AUTHORISED`,
 > `REJECTED`: no hay `VOIDED`, porque una nota de crédito equivocada se corrige
 > con los documentos que la siguen), `issued_by_id` e `issued_at`.
@@ -1118,8 +1124,8 @@ es falsa, hay requisitos que cambian.
 - **BI-110** — El sistema DEBERÁ publicar el tarifario de la clínica como una
   vista accesible al público, con el nombre de cada prestación, su precio, la
   versión de la publicación y su fecha de vigencia.
-  > **LOS art. 184**, que obliga a *«exhibir en sitios visibles para el público
-  > las tarifas que se cobran»*. Es la obligación legal que se suele olvidar
+  > **LOS art. 184**, que obliga a _«exhibir en sitios visibles para el público
+  > las tarifas que se cobran»_. Es la obligación legal que se suele olvidar
   > porque no la pide ningún formulario: la pide un inspector, mirando la pared.
   > Un tarifario que solo existe dentro de la aplicación no la cumple.
 - **BI-111** — La vista pública DEBERÁ mostrar únicamente las prestaciones
@@ -1161,9 +1167,9 @@ es falsa, hay requisitos que cambian.
 - **BI-120** — MIENTRAS una atención esté marcada como situación de emergencia,
   el sistema NO DEBERÁ exigir pagador, cuenta, cargo, cobro ni verificación de
   cobertura para ninguna operación clínica ni para el registro de la atención.
-  > **Art. 9 de la Ley 77**, y D-A-002 ya lo dejó escrito para la llegada: *«una
+  > **Art. 9 de la Ley 77**, y D-A-002 ya lo dejó escrito para la llegada: _«una
   > pantalla que bloquee el paso hasta registrar la forma de pago sería ilegal
-  > justo en el caso que más importa»*. Aquí se dice desde el lado del dinero,
+  > justo en el caso que más importa»_. Aquí se dice desde el lado del dinero,
   > que es donde se implementaría el bloqueo.
 - **BI-121** — El sistema DEBERÁ permitir abrir una cuenta sin pagador y
   asignarlo después, y NO DEBERÁ impedir que se registren cargos sobre una
@@ -1268,15 +1274,15 @@ es falsa, hay requisitos que cambian.
 > `RESTRICT` (BI-004).
 
 Hasta aquí los cargos se tecleaban en caja uno a uno. Esta sección es la
-petición directa del usuario —*«un botón que le permita ya terminar, o enviar a
-caja»* y *«luego determinar el costo según los servicios y exámenes
-atendidos»*— y su regla de gobierno es BI-004: **qué se hizo y qué se cobra son
+petición directa del usuario —_«un botón que le permita ya terminar, o enviar a
+caja»_ y _«luego determinar el costo según los servicios y exámenes
+atendidos»_— y su regla de gobierno es BI-004: **qué se hizo y qué se cobra son
 dos registros distintos.**
 
 - **BI-150** — CUANDO se envíe una atención a caja, el sistema DEBERÁ abrir su
   cuenta o recuperar la que ya tenga abierta, y NO DEBERÁ abrir una segunda.
   > `patient_account_one_open_per_encounter` —único parcial, `WHERE status =
-  > 'OPEN' AND encounter_id IS NOT NULL`— es lo que hace que «abrir o
+'OPEN' AND encounter_id IS NOT NULL`— es lo que hace que «abrir o
   > recuperar» tenga una sola respuesta también cuando dos personas pulsan en el
   > mismo segundo. El paciente sale de la ATENCIÓN y nunca del cuerpo de la
   > petición: aceptarlo dejaría abrir la cuenta de la visita de una persona
@@ -1287,8 +1293,8 @@ dos registros distintos.**
   > Las tres ataduras existen ya en el esquema y ninguna se inventa aquí:
   > `billable_service.specialty_id` para la consulta (BI-158),
   > `billable_service.procedure_concept_id` para el procedimiento —la columna
-  > dice literalmente *«so a charge can be raised from the encounter instead of
-  > typed at the cashier»*— y `exam_definition.billable_service_id` para el
+  > dice literalmente _«so a charge can be raised from the encounter instead of
+  > typed at the cashier»_— y `exam_definition.billable_service_id` para el
   > examen, por el `test_code` que la línea de orden congeló.
   >
   > **Se deriva del examen PEDIDO, no del resultado.** Lo que la clínica vendió
@@ -1365,60 +1371,60 @@ dos registros distintos.**
 
 Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 
-| Código | Estado | Requisito |
-| --- | --- | --- |
-| `BILLABLE_SERVICE_NOT_FOUND` | 404 | BI-010 |
-| `BILLABLE_SERVICE_CODE_DUPLICATE` | 409 | BI-010 |
-| `BILLABLE_SERVICE_IN_USE` | 409 | BI-012 |
-| `BILLABLE_SERVICE_INACTIVE` | 422 | BI-015 |
-| `TAX_RATE_REQUIRED` | 422 | BI-013 |
-| `TAX_RATE_NOT_FOUND` | 404 | BI-020 |
-| `TAX_RATE_IN_USE` | 409 | BI-026 |
-| `PAYER_NOT_FOUND` | 404 | BI-030 |
-| `BILLING_ENCOUNTER_NOT_FOUND` | 404 | BI-150, BI-135 |
-| `PAYER_REQUIRED_TO_OPEN_ACCOUNT` | 422 | BI-150 |
-| `ACT_ALREADY_CHARGED` | 409 | BI-154 |
-| `CHARGE_NOT_FOUND` | 404 | BI-055, BI-135 |
-| `CHARGE_ITEM_ALREADY_INVOICED` | 409 | BI-056 |
-| `CHARGE_ALREADY_VOIDED` | 409 | BI-059 |
-| `PAYER_IN_USE` | 409 | BI-032 |
-| `PAYER_INACTIVE` | 422 | BI-030 |
-| `LAST_ACTIVE_PAYER` | 409 | BI-031 |
-| `PAYER_RUC_REQUIRED` | 422 | BI-034 |
-| `ACCOUNT_HAS_CHARGES` | 409 | BI-033 |
-| `PRICE_LIST_NOT_FOUND` | 404 | BI-040 |
-| `PRICE_PERIOD_INVALID` | 422 | BI-041 |
-| `PRICE_NEGATIVE_AMOUNT` | 422 | BI-043 |
-| `PRICE_NOT_FOUND` | 422 | BI-047 |
-| `CHARGE_ITEM_NOT_FOUND` | 404 | BI-135 |
-| `CHARGE_ITEM_ALREADY_INVOICED` | 409 | BI-056 |
-| `CHARGE_VOID_REASON_REQUIRED` | 422 | BI-055 |
-| `CHARGE_ITEM_VOIDED` | 409 | BI-059 |
-| `INVALID_CHARGE_QUANTITY` | 422 | BI-057 |
-| `DISCOUNT_REASON_REQUIRED` | 422 | BI-061 |
-| `DISCOUNT_EXCEEDS_LIMIT` | 403 | BI-063 |
-| `DISCOUNT_EXCEEDS_LINE_AMOUNT` | 422 | BI-065 |
-| `ACCOUNT_NOT_FOUND` | 404 | BI-135 |
-| `ACCOUNT_CLOSED` | 409 | BI-071 |
-| `ACCOUNT_HAS_OPEN_CHARGES` | 409 | BI-072 |
-| `INVOICE_NOT_FOUND` | 404 | BI-135 |
-| `INVOICE_RECEIVER_REQUIRED` | 422 | BI-080 |
-| `INVOICE_RECEIVER_IS_PAYER` | 422 | BI-087 |
-| `INVOICE_IMMUTABLE` | 409 | BI-084, BI-090 |
-| `FINAL_CONSUMER_NOT_CONFIRMED` | 422 | BI-081 |
-| `INVOICE_HAS_NO_ITEMS` | 422 | BI-089 |
-| `EMISSION_POINT_INACTIVE` | 422 | BI-085 |
-| `CREDIT_NOTE_REASON_REQUIRED` | 422 | BI-091 |
-| `VOID_WINDOW_EXPIRED` | 409 | BI-092 |
-| `FINAL_CONSUMER_NOT_VOIDABLE` | 409 | BI-093 |
-| `CREDIT_NOTE_WINDOW_EXPIRED` | 409 | BI-094 |
-| `CREDIT_NOTE_EXCEEDS_INVOICE` | 422 | BI-095 |
-| `CREDIT_NOTE_INVOICE_VOIDED` | 409 | BI-097 |
-| `PAYMENT_METHOD_NOT_FOUND` | 404 | BI-100 |
-| `PAYMENT_EXCEEDS_BALANCE` | 422 | BI-101 |
-| `PAYMENT_REVERSAL_REASON_REQUIRED` | 422 | BI-102 |
-| `CASH_SESSION_CLOSED` | 409 | BI-104 |
-| `TARIFF_PUBLICATION_NOT_FOUND` | 404 | BI-110 |
+| Código                             | Estado | Requisito      |
+| ---------------------------------- | ------ | -------------- |
+| `BILLABLE_SERVICE_NOT_FOUND`       | 404    | BI-010         |
+| `BILLABLE_SERVICE_CODE_DUPLICATE`  | 409    | BI-010         |
+| `BILLABLE_SERVICE_IN_USE`          | 409    | BI-012         |
+| `BILLABLE_SERVICE_INACTIVE`        | 422    | BI-015         |
+| `TAX_RATE_REQUIRED`                | 422    | BI-013         |
+| `TAX_RATE_NOT_FOUND`               | 404    | BI-020         |
+| `TAX_RATE_IN_USE`                  | 409    | BI-026         |
+| `PAYER_NOT_FOUND`                  | 404    | BI-030         |
+| `BILLING_ENCOUNTER_NOT_FOUND`      | 404    | BI-150, BI-135 |
+| `PAYER_REQUIRED_TO_OPEN_ACCOUNT`   | 422    | BI-150         |
+| `ACT_ALREADY_CHARGED`              | 409    | BI-154         |
+| `CHARGE_NOT_FOUND`                 | 404    | BI-055, BI-135 |
+| `CHARGE_ITEM_ALREADY_INVOICED`     | 409    | BI-056         |
+| `CHARGE_ALREADY_VOIDED`            | 409    | BI-059         |
+| `PAYER_IN_USE`                     | 409    | BI-032         |
+| `PAYER_INACTIVE`                   | 422    | BI-030         |
+| `LAST_ACTIVE_PAYER`                | 409    | BI-031         |
+| `PAYER_RUC_REQUIRED`               | 422    | BI-034         |
+| `ACCOUNT_HAS_CHARGES`              | 409    | BI-033         |
+| `PRICE_LIST_NOT_FOUND`             | 404    | BI-040         |
+| `PRICE_PERIOD_INVALID`             | 422    | BI-041         |
+| `PRICE_NEGATIVE_AMOUNT`            | 422    | BI-043         |
+| `PRICE_NOT_FOUND`                  | 422    | BI-047         |
+| `CHARGE_ITEM_NOT_FOUND`            | 404    | BI-135         |
+| `CHARGE_ITEM_ALREADY_INVOICED`     | 409    | BI-056         |
+| `CHARGE_VOID_REASON_REQUIRED`      | 422    | BI-055         |
+| `CHARGE_ITEM_VOIDED`               | 409    | BI-059         |
+| `INVALID_CHARGE_QUANTITY`          | 422    | BI-057         |
+| `DISCOUNT_REASON_REQUIRED`         | 422    | BI-061         |
+| `DISCOUNT_EXCEEDS_LIMIT`           | 403    | BI-063         |
+| `DISCOUNT_EXCEEDS_LINE_AMOUNT`     | 422    | BI-065         |
+| `ACCOUNT_NOT_FOUND`                | 404    | BI-135         |
+| `ACCOUNT_CLOSED`                   | 409    | BI-071         |
+| `ACCOUNT_HAS_OPEN_CHARGES`         | 409    | BI-072         |
+| `INVOICE_NOT_FOUND`                | 404    | BI-135         |
+| `INVOICE_RECEIVER_REQUIRED`        | 422    | BI-080         |
+| `INVOICE_RECEIVER_IS_PAYER`        | 422    | BI-087         |
+| `INVOICE_IMMUTABLE`                | 409    | BI-084, BI-090 |
+| `FINAL_CONSUMER_NOT_CONFIRMED`     | 422    | BI-081         |
+| `INVOICE_HAS_NO_ITEMS`             | 422    | BI-089         |
+| `EMISSION_POINT_INACTIVE`          | 422    | BI-085         |
+| `CREDIT_NOTE_REASON_REQUIRED`      | 422    | BI-091         |
+| `VOID_WINDOW_EXPIRED`              | 409    | BI-092         |
+| `FINAL_CONSUMER_NOT_VOIDABLE`      | 409    | BI-093         |
+| `CREDIT_NOTE_WINDOW_EXPIRED`       | 409    | BI-094         |
+| `CREDIT_NOTE_EXCEEDS_INVOICE`      | 422    | BI-095         |
+| `CREDIT_NOTE_INVOICE_VOIDED`       | 409    | BI-097         |
+| `PAYMENT_METHOD_NOT_FOUND`         | 404    | BI-100         |
+| `PAYMENT_EXCEEDS_BALANCE`          | 422    | BI-101         |
+| `PAYMENT_REVERSAL_REASON_REQUIRED` | 422    | BI-102         |
+| `CASH_SESSION_CLOSED`              | 409    | BI-104         |
+| `TARIFF_PUBLICATION_NOT_FOUND`     | 404    | BI-110         |
 
 **Se reutilizan, y no se declaran de nuevo:** `SELF_AUTHORISATION_DENIED`
 (BI-064, ya en el catálogo por AG-103), `SITE_SCOPE_DENIED` (BI-131),
@@ -1437,29 +1443,29 @@ documento imaginó antes de que existiera. Se citan tal cual porque son los que
 salen en el mensaje de PostgreSQL y los que hay que poder buscar. Están
 registrados en `infrastructure/billing.constraints.ts`.
 
-| Código | Estado | Constraint | Requisito |
-| --- | --- | --- | --- |
-| `PRICE_PERIOD_OVERLAP` | 409 | `price_temporal_unique` | BI-042 |
-| `PRICE_PERIOD_EMPTY` | 422 | `price_period_not_empty` | BI-041 |
-| `PRICE_AMOUNT_NEGATIVE` | 422 | `price_is_not_negative` | BI-043 |
-| `TAX_RATE_PERIOD_OVERLAP` | 409 | `tax_rate_code_temporal_unique` | BI-020 |
-| `BILLABLE_SERVICE_CODE_DUPLICATE` | 409 | `billable_service_code_unique` | BI-010 |
-| `PAYER_CODE_DUPLICATE` | 409 | `payer_code_unique` | BI-030 |
-| `INVALID_PAYER_KIND` | 422 | `payer_kind_is_known` | BI-030 |
-| `INVALID_RUC` | 422 | `payer_ruc_format` | BI-036 |
-| `INVALID_RUC` | 422 | `invoice_buyer_ruc_valid` | BI-159 |
-| `INVALID_CEDULA` | 422 | `invoice_buyer_cedula_valid` | BI-159 |
-| `INVALID_CHARGE_QUANTITY` | 422 | `charge_item_quantity_is_positive` | BI-057 |
-| `DISCOUNT_REASON_REQUIRED` | 422 | `charge_item_discount_states_a_reason` | BI-061 |
-| `DISCOUNT_EXCEEDS_LINE_AMOUNT` | 422 | `charge_item_discount_within_line` | BI-065 |
-| `INVALID_ACCOUNT_STATUS` | 422 | `patient_account_status_is_known` | BI-070 |
-| `ACCOUNT_CLOSURE_INCOHERENT` | 422 | `patient_account_closed_states_its_instant` | BI-071 |
-| `ACCOUNT_ALREADY_OPEN_FOR_ENCOUNTER` | 409 | `patient_account_one_open_per_encounter` | BI-070 |
-| `INVOICE_SEQUENTIAL_TAKEN` | 409 | `invoice_sequential_unique` | BI-085 |
-| `INVOICE_TOTAL_INCONSISTENT` | 422 | `invoice_total_is_consistent` | BI-058, BI-083 |
-| `FINAL_CONSUMER_IDENTIFICATION_REQUIRED` | 422 | `invoice_final_consumer_identification` | BI-081 |
-| `INVALID_INVOICE_STATUS` | 422 | `invoice_status_is_known` | BI-084 |
-| `INVOICE_AUTHORISATION_INCOMPLETE` | 422 | `invoice_authorised_carries_its_key` | BI-084 |
+| Código                                   | Estado | Constraint                                  | Requisito      |
+| ---------------------------------------- | ------ | ------------------------------------------- | -------------- |
+| `PRICE_PERIOD_OVERLAP`                   | 409    | `price_temporal_unique`                     | BI-042         |
+| `PRICE_PERIOD_EMPTY`                     | 422    | `price_period_not_empty`                    | BI-041         |
+| `PRICE_AMOUNT_NEGATIVE`                  | 422    | `price_is_not_negative`                     | BI-043         |
+| `TAX_RATE_PERIOD_OVERLAP`                | 409    | `tax_rate_code_temporal_unique`             | BI-020         |
+| `BILLABLE_SERVICE_CODE_DUPLICATE`        | 409    | `billable_service_code_unique`              | BI-010         |
+| `PAYER_CODE_DUPLICATE`                   | 409    | `payer_code_unique`                         | BI-030         |
+| `INVALID_PAYER_KIND`                     | 422    | `payer_kind_is_known`                       | BI-030         |
+| `INVALID_RUC`                            | 422    | `payer_ruc_format`                          | BI-036         |
+| `INVALID_RUC`                            | 422    | `invoice_buyer_ruc_valid`                   | BI-159         |
+| `INVALID_CEDULA`                         | 422    | `invoice_buyer_cedula_valid`                | BI-159         |
+| `INVALID_CHARGE_QUANTITY`                | 422    | `charge_item_quantity_is_positive`          | BI-057         |
+| `DISCOUNT_REASON_REQUIRED`               | 422    | `charge_item_discount_states_a_reason`      | BI-061         |
+| `DISCOUNT_EXCEEDS_LINE_AMOUNT`           | 422    | `charge_item_discount_within_line`          | BI-065         |
+| `INVALID_ACCOUNT_STATUS`                 | 422    | `patient_account_status_is_known`           | BI-070         |
+| `ACCOUNT_CLOSURE_INCOHERENT`             | 422    | `patient_account_closed_states_its_instant` | BI-071         |
+| `ACCOUNT_ALREADY_OPEN_FOR_ENCOUNTER`     | 409    | `patient_account_one_open_per_encounter`    | BI-070         |
+| `INVOICE_SEQUENTIAL_TAKEN`               | 409    | `invoice_sequential_unique`                 | BI-085         |
+| `INVOICE_TOTAL_INCONSISTENT`             | 422    | `invoice_total_is_consistent`               | BI-058, BI-083 |
+| `FINAL_CONSUMER_IDENTIFICATION_REQUIRED` | 422    | `invoice_final_consumer_identification`     | BI-081         |
+| `INVALID_INVOICE_STATUS`                 | 422    | `invoice_status_is_known`                   | BI-084         |
+| `INVOICE_AUTHORISATION_INCOMPLETE`       | 422    | `invoice_authorised_carries_its_key`        | BI-084         |
 
 **No existen** `charge_item_one_live_invoice` ni `charge_item_void_coherence`,
 porque no existen las columnas de las que dependían (ver BI-088 y BI-055).
@@ -1487,14 +1493,14 @@ declarados con el recurso `billing` al preparar este módulo—, más
 `settings:read` y `settings:manage`, que AG-099 introdujo y que aquí sirven sin
 duplicarse.
 
-| Código | Estado | Qué habilita | Requisito |
-| --- | --- | --- | --- |
-| `billing:price-manage` | ya declarado | Administrar prestaciones, tarifas de impuesto, pagadores, listas de precios y sus vigencias | BI-046, BI-134 |
-| `billing:discount-override` | ya declarado | Autorizar un descuento por encima del límite de quien lo aplica | BI-063 |
-| `billing:credit-note` | ya declarado | Emitir notas de crédito | BI-091 |
-| `invoice:void` | **nuevo** | Anular una factura dentro del plazo del SRI | BI-092 |
-| `tariff:publish` | **nuevo** | Publicar el tarifario que se exhibe al público | BI-113 |
-| `settings:manage` | ya declarado | Asignar los límites de descuento por rol y administrar los medios de pago | BI-140, BI-141 |
+| Código                      | Estado       | Qué habilita                                                                                | Requisito      |
+| --------------------------- | ------------ | ------------------------------------------------------------------------------------------- | -------------- |
+| `billing:price-manage`      | ya declarado | Administrar prestaciones, tarifas de impuesto, pagadores, listas de precios y sus vigencias | BI-046, BI-134 |
+| `billing:discount-override` | ya declarado | Autorizar un descuento por encima del límite de quien lo aplica                             | BI-063         |
+| `billing:credit-note`       | ya declarado | Emitir notas de crédito                                                                     | BI-091         |
+| `invoice:void`              | **nuevo**    | Anular una factura dentro del plazo del SRI                                                 | BI-092         |
+| `tariff:publish`            | **nuevo**    | Publicar el tarifario que se exhibe al público                                              | BI-113         |
+| `settings:manage`           | ya declarado | Asignar los límites de descuento por rol y administrar los medios de pago                   | BI-140, BI-141 |
 
 > **`invoice:void` es nuevo y no es `billing:credit-note`.** D-A-007 los separa
 > porque son actos distintos con consecuencias distintas: anular devuelve los
@@ -1527,47 +1533,47 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 (BI-130, BI-131). Los alcances son los del sistema: `param:{nombre}`, `query` y
 `global`.
 
-| Método | Ruta | Permiso | Alcance | Requisitos |
-| --- | --- | --- | --- | --- |
-| `GET` | `/billing/services` | `billing:read` | `global` | BI-010, BI-011, BI-014 |
-| `POST` | `/billing/services` | `billing:price-manage` | `global` | BI-010 a BI-016 |
-| `PATCH` | `/billing/services/{id}` | `billing:price-manage` | `global` | BI-011 a BI-016, BI-025 |
-| `DELETE` | `/billing/services/{id}` | `billing:price-manage` | `global` | BI-012 |
-| `GET` | `/billing/services/by-tax-rate` | `billing:price-manage` | `global` | BI-023 |
-| `POST` | `/billing/services/{id}/tax-review` | `billing:price-manage` | `global` | BI-024 |
-| `GET` | `/billing/tax-rates` | `billing:read` | `global` | BI-020, BI-021 |
-| `GET` | `/billing/payers` | `billing:read` | `global` | BI-030, BI-031 |
-| `POST` | `/billing/payers` | `billing:price-manage` | `global` | BI-030, BI-034 |
-| `PATCH` | `/billing/payers/{id}` | `billing:price-manage` | `global` | BI-031, BI-032, BI-034 |
-| `GET` | `/billing/payers/{payerId}/prices` | `billing:read` | `global` | BI-040, BI-041 |
-| `POST` | `/billing/payers/{payerId}/prices` | `billing:price-manage` | `global` | BI-041 a BI-048 |
-| `POST` | `/billing/payers/{payerId}/prices/{priceId}/close` | `billing:price-manage` | `global` | BI-044 |
-| `GET` | `/billing/sites/{siteId}/accounts` | `billing:read` | `param:siteId` | BI-070, BI-133 |
-| `POST` | `/billing/sites/{siteId}/accounts` | `billing:write` | `param:siteId` | BI-070, BI-121 |
-| `GET` | `/billing/sites/{siteId}/accounts/{accountId}` | `billing:read` | `param:siteId` | BI-074, BI-135 |
-| `GET` | `/billing/sites/{siteId}/accounts/{accountId}/invoice-receiver` | `billing:read` | `param:siteId` | BI-082 |
-| `PATCH` | `/billing/sites/{siteId}/accounts/{accountId}` | `billing:write` | `param:siteId` | BI-033 |
-| `POST` | `/billing/sites/{siteId}/accounts/{accountId}/close` | `billing:write` | `param:siteId` | BI-071, BI-072 |
-| `POST` | `/billing/sites/{siteId}/accounts/{accountId}/charges` | `billing:write` | `param:siteId` | BI-015, BI-016, BI-047, BI-050 a BI-058 |
-| `POST` | `/billing/sites/{siteId}/encounters/{encounterId}/checkout` | `billing:write` | `param:siteId` | BI-150 a BI-158 |
-| `POST` | `/billing/sites/{siteId}/accounts/{accountId}/charges/{chargeId}/confirm` | `billing:write` | `param:siteId` | BI-152 |
-| `POST` | `/billing/sites/{siteId}/accounts/{accountId}/charges/{chargeId}/void` | `billing:write` | `param:siteId` | BI-055, BI-056, BI-059 |
-| `POST` | `/billing/sites/{siteId}/charges/{chargeId}/discount` | `billing:write` | `param:siteId` | BI-060 a BI-066 |
-| `GET` | `/billing/sites/{siteId}/invoices` | `billing:read` | `param:siteId` | BI-133, BI-135 |
-| `GET` | `/billing/sites/{siteId}/invoices/{invoiceId}` | `billing:read` | `param:siteId` | BI-135 |
-| `POST` | `/billing/sites/{siteId}/invoices` | `billing:write` | `param:siteId` | BI-080 a BI-089 |
-| `POST` | `/billing/sites/{siteId}/invoices/{invoiceId}/void` | `invoice:void` | `param:siteId` | BI-092, BI-093, BI-096 |
-| `POST` | `/billing/sites/{siteId}/invoices/{invoiceId}/credit-notes` | `billing:credit-note` | `param:siteId` | BI-091, BI-094 a BI-097 |
-| `POST` | `/billing/sites/{siteId}/invoices/{invoiceId}/payments` | `billing:write` | `param:siteId` | BI-100 a BI-103 |
-| `POST` | `/billing/sites/{siteId}/payments/{paymentId}/reversal` | `billing:write` | `param:siteId` | BI-102 |
-| `POST` | `/billing/sites/{siteId}/cash-sessions/close` | `billing:write` | `param:siteId` | BI-104, BI-105 |
-| `GET` | `/billing/discount-limits` | `settings:read` | `global` | BI-062, BI-141 |
-| `PUT` | `/billing/discount-limits/{roleId}` | `settings:manage` | `global` | BI-141, BI-142 |
-| `GET` | `/billing/payment-methods` | `billing:read` | `global` | BI-100 |
-| `POST` | `/billing/payment-methods` | `settings:manage` | `global` | BI-100, BI-140 |
-| `GET` | `/billing/tariff-publications` | `billing:read` | `global` | BI-113 |
-| `POST` | `/billing/tariff-publications` | `tariff:publish` | `global` | BI-113, BI-115 |
-| `GET` | `/public/tariff` | **`@Public()`** | — | BI-110, BI-111, BI-112, BI-114 |
+| Método   | Ruta                                                                      | Permiso                | Alcance        | Requisitos                              |
+| -------- | ------------------------------------------------------------------------- | ---------------------- | -------------- | --------------------------------------- |
+| `GET`    | `/billing/services`                                                       | `billing:read`         | `global`       | BI-010, BI-011, BI-014                  |
+| `POST`   | `/billing/services`                                                       | `billing:price-manage` | `global`       | BI-010 a BI-016                         |
+| `PATCH`  | `/billing/services/{id}`                                                  | `billing:price-manage` | `global`       | BI-011 a BI-016, BI-025                 |
+| `DELETE` | `/billing/services/{id}`                                                  | `billing:price-manage` | `global`       | BI-012                                  |
+| `GET`    | `/billing/services/by-tax-rate`                                           | `billing:price-manage` | `global`       | BI-023                                  |
+| `POST`   | `/billing/services/{id}/tax-review`                                       | `billing:price-manage` | `global`       | BI-024                                  |
+| `GET`    | `/billing/tax-rates`                                                      | `billing:read`         | `global`       | BI-020, BI-021                          |
+| `GET`    | `/billing/payers`                                                         | `billing:read`         | `global`       | BI-030, BI-031                          |
+| `POST`   | `/billing/payers`                                                         | `billing:price-manage` | `global`       | BI-030, BI-034                          |
+| `PATCH`  | `/billing/payers/{id}`                                                    | `billing:price-manage` | `global`       | BI-031, BI-032, BI-034                  |
+| `GET`    | `/billing/payers/{payerId}/prices`                                        | `billing:read`         | `global`       | BI-040, BI-041                          |
+| `POST`   | `/billing/payers/{payerId}/prices`                                        | `billing:price-manage` | `global`       | BI-041 a BI-048                         |
+| `POST`   | `/billing/payers/{payerId}/prices/{priceId}/close`                        | `billing:price-manage` | `global`       | BI-044                                  |
+| `GET`    | `/billing/sites/{siteId}/accounts`                                        | `billing:read`         | `param:siteId` | BI-070, BI-133                          |
+| `POST`   | `/billing/sites/{siteId}/accounts`                                        | `billing:write`        | `param:siteId` | BI-070, BI-121                          |
+| `GET`    | `/billing/sites/{siteId}/accounts/{accountId}`                            | `billing:read`         | `param:siteId` | BI-074, BI-135                          |
+| `GET`    | `/billing/sites/{siteId}/accounts/{accountId}/invoice-receiver`           | `billing:read`         | `param:siteId` | BI-082                                  |
+| `PATCH`  | `/billing/sites/{siteId}/accounts/{accountId}`                            | `billing:write`        | `param:siteId` | BI-033                                  |
+| `POST`   | `/billing/sites/{siteId}/accounts/{accountId}/close`                      | `billing:write`        | `param:siteId` | BI-071, BI-072                          |
+| `POST`   | `/billing/sites/{siteId}/accounts/{accountId}/charges`                    | `billing:write`        | `param:siteId` | BI-015, BI-016, BI-047, BI-050 a BI-058 |
+| `POST`   | `/billing/sites/{siteId}/encounters/{encounterId}/checkout`               | `billing:write`        | `param:siteId` | BI-150 a BI-158                         |
+| `POST`   | `/billing/sites/{siteId}/accounts/{accountId}/charges/{chargeId}/confirm` | `billing:write`        | `param:siteId` | BI-152                                  |
+| `POST`   | `/billing/sites/{siteId}/accounts/{accountId}/charges/{chargeId}/void`    | `billing:write`        | `param:siteId` | BI-055, BI-056, BI-059                  |
+| `POST`   | `/billing/sites/{siteId}/charges/{chargeId}/discount`                     | `billing:write`        | `param:siteId` | BI-060 a BI-066                         |
+| `GET`    | `/billing/sites/{siteId}/invoices`                                        | `billing:read`         | `param:siteId` | BI-133, BI-135                          |
+| `GET`    | `/billing/sites/{siteId}/invoices/{invoiceId}`                            | `billing:read`         | `param:siteId` | BI-135                                  |
+| `POST`   | `/billing/sites/{siteId}/invoices`                                        | `billing:write`        | `param:siteId` | BI-080 a BI-089                         |
+| `POST`   | `/billing/sites/{siteId}/invoices/{invoiceId}/void`                       | `invoice:void`         | `param:siteId` | BI-092, BI-093, BI-096                  |
+| `POST`   | `/billing/sites/{siteId}/invoices/{invoiceId}/credit-notes`               | `billing:credit-note`  | `param:siteId` | BI-091, BI-094 a BI-097                 |
+| `POST`   | `/billing/sites/{siteId}/invoices/{invoiceId}/payments`                   | `billing:write`        | `param:siteId` | BI-100 a BI-103                         |
+| `POST`   | `/billing/sites/{siteId}/payments/{paymentId}/reversal`                   | `billing:write`        | `param:siteId` | BI-102                                  |
+| `POST`   | `/billing/sites/{siteId}/cash-sessions/close`                             | `billing:write`        | `param:siteId` | BI-104, BI-105                          |
+| `GET`    | `/billing/discount-limits`                                                | `settings:read`        | `global`       | BI-062, BI-141                          |
+| `PUT`    | `/billing/discount-limits/{roleId}`                                       | `settings:manage`      | `global`       | BI-141, BI-142                          |
+| `GET`    | `/billing/payment-methods`                                                | `billing:read`         | `global`       | BI-100                                  |
+| `POST`   | `/billing/payment-methods`                                                | `settings:manage`      | `global`       | BI-100, BI-140                          |
+| `GET`    | `/billing/tariff-publications`                                            | `billing:read`         | `global`       | BI-113                                  |
+| `POST`   | `/billing/tariff-publications`                                            | `tariff:publish`       | `global`       | BI-113, BI-115                          |
+| `GET`    | `/public/tariff`                                                          | **`@Public()`**        | —              | BI-110, BI-111, BI-112, BI-114          |
 
 > **No hay ruta que actualice ni borre una factura, y esa ausencia es BI-090 en
 > la tabla de rutas.** No es un olvido que alguien pueda «completar»: es el
@@ -1592,7 +1598,7 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 > falta que `SELF_AUTHORISATION_DENIED` se mude a `shared/`),
 > `/invoices/{id}/void` y `/invoices/{id}/credit-notes` (B3), los cobros y la
 > caja (B6), el tarifario público (B5) y los límites de descuento (B7). `GET
-> /billing/services/by-tax-rate` y `POST /billing/services/{id}/tax-review`
+/billing/services/by-tax-rate` y `POST /billing/services/{id}/tax-review`
 > esperan a `tax_reviewed_at` (BI-022).
 
 > **El catálogo, los pagadores y los precios llevan alcance `global` y no
@@ -1612,46 +1618,46 @@ it('BI-051 does not re-read the price list when totalling an account', …)
 `spec-traceability.spec.ts` lee este archivo y los títulos de las pruebas, y
 falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 
-| Requisitos | Nivel de prueba obligatorio |
-| --- | --- |
-| BI-001, BI-002 | Unitario con huso alterado + integración: un importe leído y reescrito no pierde centavos, y una vigencia que empieza a medianoche resuelve igual con el servidor en cualquier huso |
-| BI-003, BI-004, BI-120 a BI-122 | Seguridad dirigida sobre las rutas clínicas: **ninguna** de ellas exige dato económico. Se prueba llamando a las de `encounter` con la cuenta ausente, y falla si alguna responde 4xx por ese motivo |
-| BI-005, BI-013, BI-022, BI-023 | Unitario de dominio + contrato HTTP: sembrar una prestación sin tarifa deja 0 % **y** la marca de pendiente |
-| BI-007 | Unitario del logger + seguridad dirigida: se registra un cargo cuya prestación tiene un nombre revelador y ningún log ni cuerpo de error lo contiene |
-| BI-010, BI-011, BI-014, BI-015, BI-016 | Contrato HTTP + integración contra PostgreSQL real: la unicidad del código es de la base, y una prestación desactivada sigue apareciendo en los cargos que ya la nombran |
-| BI-030, BI-031, BI-034, BI-035 | Contrato HTTP + integración: el último pagador activo no se puede desactivar, y el `RUC` lo valida el value object compartido |
-| BI-040, BI-045, BI-048 | Unitario de dominio: el precio se resuelve por pagador, se guarda sin impuesto y no hay conversión de moneda que probar |
-| BI-006, BI-051, BI-053, BI-086 | Integración contra PostgreSQL real: se cambia el precio **por debajo de la aplicación** y se vuelven a leer cuenta y factura. Un doble de repositorio no demuestra nada aquí, porque devolvería lo que se le pidiera |
-| BI-012, BI-026, BI-032 | Integración contra PostgreSQL real: el `RESTRICT` es la garantía, no el servicio |
-| BI-041, BI-042, BI-043 | Integración contra PostgreSQL real con dos clientes concurrentes: el `UNIQUE` temporal es el requisito, y la ventana entre `SELECT` e `INSERT` es lo que se está probando |
-| BI-044, BI-047 | Unitario de dominio + contrato HTTP por campo |
-| BI-050, BI-052 | Unitario de dominio + integración: el cargo con fecha de servicio antigua toma el precio antiguo, y las columnas congeladas contienen los valores y no nulos |
-| BI-055 a BI-059 | Unitario de dominio + integración contra PostgreSQL real: los `CHECK` de coherencia |
-| BI-060 a BI-066 | Unitario de dominio (el límite y el tope de línea) + contrato HTTP con **dos sesiones de verdad**: el defecto que se busca es de permiso, y un doble con los grants puestos a mano no lo vería — la lección de AG-111 |
-| BI-070 a BI-074 | Unitario de dominio + integración |
-| BI-080 a BI-083, BI-087, BI-089 | Contrato HTTP (código, estado y mensaje) + unitario de dominio |
-| BI-084, BI-090 | Integración contra PostgreSQL real: se intenta el `UPDATE` y el `DELETE` **por `psql`**, y una prueba de rutas comprueba que ninguna ruta declarada modifica una factura |
-| BI-085 | Integración contra PostgreSQL real con dos clientes concurrentes: es SC-023, y el hueco en la numeración solo aparece bajo concurrencia |
-| BI-088, BI-096 | Integración contra PostgreSQL real: se factura, se anula y se vuelve a facturar el mismo cargo; y con nota de crédito, no |
-| BI-091 a BI-095, BI-097 | Unitario de dominio con reloj fijado (los plazos) + contrato HTTP |
-| BI-100 a BI-105 | Unitario de dominio + integración |
-| BI-110 a BI-115 | Seguridad dirigida **sin credenciales** + contrato HTTP: la ruta pública responde sin sesión, y ningún parámetro la desvía a otra lista de precios |
-| BI-130 a BI-135 | Seguridad dirigida + la prueba de rutas que recorre las que NestJS registró de verdad |
-| BI-140 a BI-143 | Integración + contrato HTTP por campo |
-| BI-150 a BI-153, BI-155, BI-156, BI-158 | Unitario de dominio (la derivación es pura) + integración sobre la siembra REAL: se comprueba que los tres precios salen del catálogo que se instala, no de un fixture |
-| BI-154, BI-157 | Integración contra PostgreSQL real: se envía dos veces, se anula una línea y se vuelve a enviar, y se intenta el segundo cargo del mismo acto **por SQL directo**. Los tres índices únicos parciales son el requisito; una lectura previa no lo es |
+| Requisitos                              | Nivel de prueba obligatorio                                                                                                                                                                                                                        |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| BI-001, BI-002                          | Unitario con huso alterado + integración: un importe leído y reescrito no pierde centavos, y una vigencia que empieza a medianoche resuelve igual con el servidor en cualquier huso                                                                |
+| BI-003, BI-004, BI-120 a BI-122         | Seguridad dirigida sobre las rutas clínicas: **ninguna** de ellas exige dato económico. Se prueba llamando a las de `encounter` con la cuenta ausente, y falla si alguna responde 4xx por ese motivo                                               |
+| BI-005, BI-013, BI-022, BI-023          | Unitario de dominio + contrato HTTP: sembrar una prestación sin tarifa deja 0 % **y** la marca de pendiente                                                                                                                                        |
+| BI-007                                  | Unitario del logger + seguridad dirigida: se registra un cargo cuya prestación tiene un nombre revelador y ningún log ni cuerpo de error lo contiene                                                                                               |
+| BI-010, BI-011, BI-014, BI-015, BI-016  | Contrato HTTP + integración contra PostgreSQL real: la unicidad del código es de la base, y una prestación desactivada sigue apareciendo en los cargos que ya la nombran                                                                           |
+| BI-030, BI-031, BI-034, BI-035          | Contrato HTTP + integración: el último pagador activo no se puede desactivar, y el `RUC` lo valida el value object compartido                                                                                                                      |
+| BI-040, BI-045, BI-048                  | Unitario de dominio: el precio se resuelve por pagador, se guarda sin impuesto y no hay conversión de moneda que probar                                                                                                                            |
+| BI-006, BI-051, BI-053, BI-086          | Integración contra PostgreSQL real: se cambia el precio **por debajo de la aplicación** y se vuelven a leer cuenta y factura. Un doble de repositorio no demuestra nada aquí, porque devolvería lo que se le pidiera                               |
+| BI-012, BI-026, BI-032                  | Integración contra PostgreSQL real: el `RESTRICT` es la garantía, no el servicio                                                                                                                                                                   |
+| BI-041, BI-042, BI-043                  | Integración contra PostgreSQL real con dos clientes concurrentes: el `UNIQUE` temporal es el requisito, y la ventana entre `SELECT` e `INSERT` es lo que se está probando                                                                          |
+| BI-044, BI-047                          | Unitario de dominio + contrato HTTP por campo                                                                                                                                                                                                      |
+| BI-050, BI-052                          | Unitario de dominio + integración: el cargo con fecha de servicio antigua toma el precio antiguo, y las columnas congeladas contienen los valores y no nulos                                                                                       |
+| BI-055 a BI-059                         | Unitario de dominio + integración contra PostgreSQL real: los `CHECK` de coherencia                                                                                                                                                                |
+| BI-060 a BI-066                         | Unitario de dominio (el límite y el tope de línea) + contrato HTTP con **dos sesiones de verdad**: el defecto que se busca es de permiso, y un doble con los grants puestos a mano no lo vería — la lección de AG-111                              |
+| BI-070 a BI-074                         | Unitario de dominio + integración                                                                                                                                                                                                                  |
+| BI-080 a BI-083, BI-087, BI-089         | Contrato HTTP (código, estado y mensaje) + unitario de dominio                                                                                                                                                                                     |
+| BI-084, BI-090                          | Integración contra PostgreSQL real: se intenta el `UPDATE` y el `DELETE` **por `psql`**, y una prueba de rutas comprueba que ninguna ruta declarada modifica una factura                                                                           |
+| BI-085                                  | Integración contra PostgreSQL real con dos clientes concurrentes: es SC-023, y el hueco en la numeración solo aparece bajo concurrencia                                                                                                            |
+| BI-088, BI-096                          | Integración contra PostgreSQL real: se factura, se anula y se vuelve a facturar el mismo cargo; y con nota de crédito, no                                                                                                                          |
+| BI-091 a BI-095, BI-097                 | Unitario de dominio con reloj fijado (los plazos) + contrato HTTP                                                                                                                                                                                  |
+| BI-100 a BI-105                         | Unitario de dominio + integración                                                                                                                                                                                                                  |
+| BI-110 a BI-115                         | Seguridad dirigida **sin credenciales** + contrato HTTP: la ruta pública responde sin sesión, y ningún parámetro la desvía a otra lista de precios                                                                                                 |
+| BI-130 a BI-135                         | Seguridad dirigida + la prueba de rutas que recorre las que NestJS registró de verdad                                                                                                                                                              |
+| BI-140 a BI-143                         | Integración + contrato HTTP por campo                                                                                                                                                                                                              |
+| BI-150 a BI-153, BI-155, BI-156, BI-158 | Unitario de dominio (la derivación es pura) + integración sobre la siembra REAL: se comprueba que los tres precios salen del catálogo que se instala, no de un fixture                                                                             |
+| BI-154, BI-157                          | Integración contra PostgreSQL real: se envía dos veces, se anula una línea y se vuelve a enviar, y se intenta el segundo cargo del mismo acto **por SQL directo**. Los tres índices únicos parciales son el requisito; una lectura previa no lo es |
 
 ## Preguntas abiertas
 
 Lo que este documento **cierra** de D-049, con la respuesta y su origen:
 
-| Pregunta de D-049 | Cerrada así | Origen |
-| --- | --- | --- |
-| ¿Qué pagadores hay? | `payer` es una tabla; todos son filas | Respuesta 7 del usuario; el principio rector de `DECISIONES-TOMADAS-POR-EL-AGENTE.md` |
-| ¿Quién autoriza un cambio de precio? | `billing:price-manage`, separado de `billing:write`, con bitácora | Recomendación 2 de D-049, aceptada (BI-046) |
-| ¿Hasta qué descuento puede dar cada rol? | Límite por rol asignado por el admin, motivo obligatorio, autorización de otro usuario por encima | Respuesta 8 del usuario (BI-062, BI-063) |
-| ¿Qué prestaciones gravan IVA? | `tax_rate` como catálogo, tarifa por prestación como dato editable, siembra 0 % con marca de revisión | D-A-006 (BI-005, BI-020 a BI-025) |
-| ¿Se puede editar una factura? | No existe la operación. Solo nota de crédito y anulación dentro del plazo | D-A-007 (BI-090 a BI-093) |
+| Pregunta de D-049                        | Cerrada así                                                                                           | Origen                                                                                |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| ¿Qué pagadores hay?                      | `payer` es una tabla; todos son filas                                                                 | Respuesta 7 del usuario; el principio rector de `DECISIONES-TOMADAS-POR-EL-AGENTE.md` |
+| ¿Quién autoriza un cambio de precio?     | `billing:price-manage`, separado de `billing:write`, con bitácora                                     | Recomendación 2 de D-049, aceptada (BI-046)                                           |
+| ¿Hasta qué descuento puede dar cada rol? | Límite por rol asignado por el admin, motivo obligatorio, autorización de otro usuario por encima     | Respuesta 8 del usuario (BI-062, BI-063)                                              |
+| ¿Qué prestaciones gravan IVA?            | `tax_rate` como catálogo, tarifa por prestación como dato editable, siembra 0 % con marca de revisión | D-A-006 (BI-005, BI-020 a BI-025)                                                     |
+| ¿Se puede editar una factura?            | No existe la operación. Solo nota de crédito y anulación dentro del plazo                             | D-A-007 (BI-090 a BI-093)                                                             |
 
 Lo que **sigue abierto**, y ninguna de las tres bloquea B1:
 

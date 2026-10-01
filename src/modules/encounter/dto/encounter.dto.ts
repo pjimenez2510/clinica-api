@@ -140,6 +140,15 @@ export const annulEncounterSchema = z.object({
     .trim()
     .max(500, 'El motivo no puede superar 500 caracteres')
     .optional(),
+  /**
+   * EN-147 applied to the exits (D-085 §2): why somebody other than the
+   * attending practitioner does it. Required by the service exactly then.
+   */
+  substituteReason: z
+    .string()
+    .trim()
+    .max(500, 'El motivo no puede superar 500 caracteres')
+    .optional(),
 });
 export class AnnulEncounterDto extends createZodDto(annulEncounterSchema) {}
 
@@ -152,6 +161,15 @@ export const discontinueEncounterSchema = z.object({
     .optional(),
   /** EN-129. Where the interruption came from; obligatory in the service. */
   origin: z.enum(['PATIENT', 'ESTABLISHMENT']).optional(),
+  /**
+   * EN-147 applied to the exits (D-085 §2): why somebody other than the
+   * attending practitioner does it. Required by the service exactly then.
+   */
+  substituteReason: z
+    .string()
+    .trim()
+    .max(500, 'El motivo no puede superar 500 caracteres')
+    .optional(),
 });
 export class DiscontinueEncounterDto extends createZodDto(
   discontinueEncounterSchema,

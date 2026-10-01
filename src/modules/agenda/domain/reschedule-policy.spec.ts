@@ -32,7 +32,8 @@ function aRead(overrides: Partial<TransitionRead> = {}): TransitionRead {
     startsAt: EIGHT,
     releasedAt: null,
     hasEncounter: false,
-    encounterHasNote: false,
+    encounterHasClinicalAct: false,
+    encounterInProgress: false,
     ...overrides,
   };
 }

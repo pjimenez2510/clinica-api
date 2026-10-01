@@ -50,6 +50,7 @@
     "db:seed:staff": "node --env-file=.env --experimental-strip-types prisma/seed-staff.mts",
     "db:seed:configuration": "node --env-file=.env --experimental-strip-types prisma/seed-configuration.mts",
     "db:seed:credential": "node --env-file=.env --experimental-strip-types prisma/seed-credential.mts",
+    "db:fix:schedule-overlaps": "node --env-file=.env --experimental-strip-types scripts/resolve-schedule-overlaps.mts",
     "db:seed:dpa": "node --env-file=.env --experimental-strip-types prisma/seed-dpa.mts",
     "db:seed:countries": "node --env-file=.env --experimental-strip-types prisma/seed-countries.mts",
     "db:seed:rdacaa": "node --env-file=.env --experimental-strip-types prisma/seed-rdacaa.mts",

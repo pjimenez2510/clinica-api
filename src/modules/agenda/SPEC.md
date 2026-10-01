@@ -36,19 +36,19 @@ no está bloqueado por los catálogos.
 
 ## Vocabulario
 
-| Término              | Significado exacto en este módulo                                                           |
-| -------------------- | ------------------------------------------------------------------------------------------- |
-| **Cupo** (_slot_)    | Intervalo derivado de una `PractitionerScheduleRule`; no existe como fila                   |
-| **Ocupa calendario** | `blocks_calendar = true AND released_at IS NULL`. Es el predicado de los dos `EXCLUDE`      |
-| **Sobrecupo**        | Cita creada con `blocks_calendar = false`: rompe la regla a propósito y deja constancia     |
-| **Liberado**         | `released_at IS NOT NULL`. El cupo vuelve a estar disponible aunque la fila siga existiendo |
-| **Bloqueo**          | `kind = BLOCK`: ausencia, quirófano, reunión. Sin paciente                                  |
-| **Fecha clínica**    | La fecha resuelta en `America/Guayaquil`, nunca en el huso de la sesión                     |
-| **Estado de la cita** | El estado administrativo del compromiso: `BOOKED` … `FULFILLED`. Es de la CITA, no del paciente |
-| **Estado del paciente** | Dónde está la persona dentro de la visita: `ARRIVED` … `DEPARTED`. Separado del anterior, §5 bis |
-| **Retraso de llegada** | `checked_in_at − starts_at` en minutos. Es un número calculado, nunca un estado (AG-118) |
-| **Calificación de emergencia** | La constancia de que la llegada se calificó, Ley 77 art. 10. **No es una escala de gravedad** |
-| **Proyección**       | Qué campos del tablero se sirven: `STAFF` o `PUBLIC`. Son dos rutas, no un interruptor      |
+| Término                        | Significado exacto en este módulo                                                                |
+| ------------------------------ | ------------------------------------------------------------------------------------------------ |
+| **Cupo** (_slot_)              | Intervalo derivado de una `PractitionerScheduleRule`; no existe como fila                        |
+| **Ocupa calendario**           | `blocks_calendar = true AND released_at IS NULL`. Es el predicado de los dos `EXCLUDE`           |
+| **Sobrecupo**                  | Cita creada con `blocks_calendar = false`: rompe la regla a propósito y deja constancia          |
+| **Liberado**                   | `released_at IS NOT NULL`. El cupo vuelve a estar disponible aunque la fila siga existiendo      |
+| **Bloqueo**                    | `kind = BLOCK`: ausencia, quirófano, reunión. Sin paciente                                       |
+| **Fecha clínica**              | La fecha resuelta en `America/Guayaquil`, nunca en el huso de la sesión                          |
+| **Estado de la cita**          | El estado administrativo del compromiso: `BOOKED` … `FULFILLED`. Es de la CITA, no del paciente  |
+| **Estado del paciente**        | Dónde está la persona dentro de la visita: `ARRIVED` … `DEPARTED`. Separado del anterior, §5 bis |
+| **Retraso de llegada**         | `checked_in_at − starts_at` en minutos. Es un número calculado, nunca un estado (AG-118)         |
+| **Calificación de emergencia** | La constancia de que la llegada se calificó, Ley 77 art. 10. **No es una escala de gravedad**    |
+| **Proyección**                 | Qué campos del tablero se sirven: `STAFF` o `PUBLIC`. Son dos rutas, no un interruptor           |
 
 ---
 
@@ -159,7 +159,7 @@ comprobar que el cupo original quedó libre y ambas entradas se referencian.
 
 **Por qué es P3:** son la vía documentada para romper la regla; sin ellos el
 personal la rompe por fuera del sistema. **Cubre:** AG-035 a AG-039, AG-100,
-AG-101, AG-103, AG-114, AG-151.
+AG-101, AG-103, AG-114, AG-151, AG-152.
 
 ### E5 — Lista de espera _(P4)_
 
@@ -575,7 +575,7 @@ es falsa, hay requisitos que cambian.
   sede, el sistema NO DEBERÁ ofrecer ningún cupo que se solape con una entrada
   del mismo profesional que ocupa calendario **en cualquier sede**, con el mismo
   predicado que `agenda_entry_no_practitioner_overlap` (`released_at IS NULL AND
-  blocks_calendar`, intervalo `[)`); y la lista de lo ocupado que acompaña a los
+blocks_calendar`, intervalo `[)`); y la lista de lo ocupado que acompaña a los
   cupos NO DEBERÁ incluir las entradas de otras sedes.
   > **Añadido el 30-09-2026 (`fix/agenda-otra-sede`).** AG-003 decía «menos las
   > entradas que ocupan calendario» y la consulta lo leía como «de esta sede»,
@@ -841,7 +841,7 @@ es falsa, hay requisitos que cambian.
   > `20260813025017_organization_establishment_and_emission_points`, firmada en
   > su propio comentario como `OR-021 / AG-105`: la clave foránea compuesta
   > `agenda_entry_room_in_site` sobre `(room_id, site_id) → site_room (id,
-  > site_id)`, apoyada en el `site_room_id_site_unique` que PostgreSQL exige
+site_id)`, apoyada en el `site_room_id_site_unique` que PostgreSQL exige
   > como destino. Con `room_id` anulable, `MATCH SIMPLE` deja pasar la fila sin
   > consultorio —un bloqueo de agenda no ocupa sala—, y en cuanto hay valor el
   > par entero tiene que existir. La comprobación del servicio se queda para dar
@@ -977,7 +977,7 @@ es falsa, hay requisitos que cambian.
   reglas de solapamiento que a una cita.
   > **Ya lo garantizaba la base, y por eso no se escribió regla nueva.** El
   > predicado de los tres `EXCLUDE USING gist` es `released_at IS NULL AND
-  > blocks_calendar` —no menciona `kind`—, así que un bloqueo que ocupa
+blocks_calendar` —no menciona `kind`—, así que un bloqueo que ocupa
   > calendario compite exactamente igual que una cita desde
   > `20260806022956_clinical_core_constraints`. Lo que E4 añadió fue la RUTA que
   > crea el bloqueo y la traducción del rechazo; reimplementar el solapamiento
@@ -1029,6 +1029,7 @@ es falsa, hay requisitos que cambian.
 - **AG-103** — SI el autorizador del sobrecupo es el mismo usuario que reserva,
   ENTONCES el sistema DEBERÁ rechazar la reserva con `SELF_AUTHORISATION_DENIED`,
   salvo que ese usuario tenga el permiso `agenda:overbook:self`.
+
   > D-005, 12-08-2026. La separación de personas **es** el control: un campo de
   > autorización que se rellena solo no autoriza nada. La excepción por permiso
   > existe para el caso real que la separación no cubre —un médico de guardia a
@@ -1039,6 +1040,7 @@ es falsa, hay requisitos que cambian.
 - **AG-113** — CUANDO recepción esté reservando y el paciente no exista todavía,
   el sistema DEBERÁ permitir crearlo sin abandonar la reserva, y DEBERÁ
   continuar la reserva con la ficha recién creada.
+
   > Pedido por el usuario el 14-08-2026, y es la mitad que faltaba para que la
   > agenda sirva en el mostrador: el paciente nuevo es el caso NORMAL en una
   > clínica que crece, no la excepción. Obligar a cerrar la reserva, irse a
@@ -1102,19 +1104,26 @@ es falsa, hay requisitos que cambian.
   > luego escribe. Con D-070 (ST-042 sin sede) el caso del horario ajeno ya no
   > puede producirse entre dos reglas; lo que queda es el sobrecupo fuera de la
   > rejilla de su propia sede.
+- **AG-152** — SI se intenta crear un bloqueo sobre un intervalo en que el
+  profesional tiene un sobrecupo vigente en cualquier sede, ENTONCES el sistema
+  DEBERÁ rechazarlo con `BLOCK_OVERLAPS_APPOINTMENTS` enumerando ese sobrecupo
+  como AG-038 enumera las citas.
+  > **D-085 §7 (01-10-2026), el camino inverso de D-069.** Un sobrecupo no
+  > ocupa calendario, así que el `EXCLUDE` no lo ve: las vacaciones puestas
+  > después caían encima de un paciente que viene igual.
 
 ## 5. Estados de la cita
 
 Transiciones admitidas. Cualquier par no listado se rechaza.
 
-| Desde         | Hacia                                                                     |
-| ------------- | ------------------------------------------------------------------------- |
-| `BOOKED`      | `CONFIRMED`, `CHECKED_IN`, `CANCELLED`, `NO_SHOW`, `ENTERED_IN_ERROR`     |
-| `CONFIRMED`   | `CHECKED_IN`, `CANCELLED`, `NO_SHOW`, `ENTERED_IN_ERROR`                  |
-| `CHECKED_IN`  | `IN_PROGRESS`, `CANCELLED`, `LEFT_WITHOUT_BEING_SEEN`                     |
-| `IN_PROGRESS` | `FULFILLED`                                                               |
-| `FULFILLED`, `CANCELLED`, `NO_SHOW`, `LEFT_WITHOUT_BEING_SEEN`, `ENTERED_IN_ERROR` | _(terminal)_ |
-| `BLOCKED`     | `CANCELLED` _(solo por AG-114, y solo `kind = BLOCK`)_                    |
+| Desde                                                                              | Hacia                                                                 |
+| ---------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `BOOKED`                                                                           | `CONFIRMED`, `CHECKED_IN`, `CANCELLED`, `NO_SHOW`, `ENTERED_IN_ERROR` |
+| `CONFIRMED`                                                                        | `CHECKED_IN`, `CANCELLED`, `NO_SHOW`, `ENTERED_IN_ERROR`              |
+| `CHECKED_IN`                                                                       | `IN_PROGRESS`, `CANCELLED`, `LEFT_WITHOUT_BEING_SEEN`                 |
+| `IN_PROGRESS`                                                                      | `FULFILLED`                                                           |
+| `FULFILLED`, `CANCELLED`, `NO_SHOW`, `LEFT_WITHOUT_BEING_SEEN`, `ENTERED_IN_ERROR` | _(terminal)_                                                          |
+| `BLOCKED`                                                                          | `CANCELLED` _(solo por AG-114, y solo `kind = BLOCK`)_                |
 
 > **`CHECKED_IN → NO_SHOW` sale de la tabla con E8, y es el cambio entero.**
 > Marcar «no vino» a quien está de pie en la sala de espera no es un atajo: es
@@ -1179,6 +1188,7 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   > no con una migración de agenda.
 - **AG-046** — El estado `BLOCKED` DEBERÁ ser válido únicamente para entradas de
   tipo `BLOCK`.
+
   > Garantía de la base desde `20260812125924_agenda_guarantees`:
   > `agenda_entry_kind_status_coherence`. Antes, `agenda_entry_patient_coherence`
   > ataba `kind` con `patient_id` pero nada ataba `kind` con `status`, y la base
@@ -1309,6 +1319,7 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   con `LATE_ARRIVAL_NOT_AUTHORISED`, y DEBERÁ registrar quién admitió la cita
   fuera del umbral cuando sí lo tenga. DONDE la llegada esté calificada como
   situación de emergencia (AG-128), el umbral NO DEBERÁ aplicarse.
+
   > **La política es de la clínica; lo que el sistema aporta es poder aplicarla
   > y dejar constancia.** Sin este requisito, «a partir de veinte minutos se
   > reubica» es un cartel en la pared: se cumple con quien discute poco y se
@@ -1361,19 +1372,27 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   > anulación de una atención firmada y cerrada la corrige la atención, y la
   > cita ya no es el sitio.
 - **AG-148** — CUANDO una cita `CHECKED_IN` cuya atención viva no tiene
-  ninguna nota clínica pase a `LEFT_WITHOUT_BEING_SEEN`, el sistema DEBERÁ
-  pasar esa atención a `DISCONTINUED` con origen `PATIENT`, el motivo dado (o
+  ningún acto clínico —nota, diagnóstico, procedimiento, receta ni orden—
+  pase a `LEFT_WITHOUT_BEING_SEEN`, el sistema DEBERÁ pasar esa atención, si
+  sigue `OPEN` u `ON_HOLD`, a `DISCONTINUED` con origen `PATIENT`, el motivo dado (o
   «Se fue sin ser atendido» si no se dio), quien registra la salida y el mismo
-  instante, en la misma transacción; y CUANDO la atención tenga alguna nota, el
-  sistema DEBERÁ rechazar la transición con `AGENDA_ENTRY_HAS_ENCOUNTER`.
+  instante, en la misma transacción —una atención ya interrumpida se deja como
+  está—; y CUANDO la atención tenga algún acto clínico, el sistema DEBERÁ
+  rechazar la transición con `AGENDA_ENTRY_HAS_ENCOUNTER`.
   > **D-081 §2.** Recepción abrió la atención y enfermería tomó los signos,
   > pero el médico no abrió la nota: no hubo consulta. La frontera es la nota
   > (D-076). Sin esto el servidor rechazaba la salida y el paciente se quedaba
   > en el tablero para siempre.
+  >
+  > **D-085 §3 (01-10-2026): la frontera es cualquier acto clínico**, no solo
+  > la nota: una receta emitida sin abrir la nota sigue siendo una consulta.
+  > Y la escritura es condicional a que la atención siga en curso: una ya
+  > interrumpida desde la atención conserva su motivo, su origen y su autor.
 - **AG-149** — CUANDO se interrumpa la atención (EN-167) de una cita
-  `IN_PROGRESS`, el sistema DEBERÁ pasar la cita a `FULFILLED` y su estado de
-  paciente a `DEPARTED` en la misma transacción, con una fila en
-  `agenda_status_history` que lleva el motivo.
+  `IN_PROGRESS` o `CHECKED_IN`, el sistema DEBERÁ, en la misma transacción,
+  pasar la cita a `FULFILLED` y su estado de paciente a `DEPARTED` si hubo
+  algún acto clínico, y a `LEFT_WITHOUT_BEING_SEEN` con el cupo liberado si no
+  lo hubo, con sus filas en `agenda_status_history`.
   > **D-076: hubo atención**, así que la cita nunca termina como «se fue sin
   > ser atendido». Atendida, y lo que dice que fue a medias es el estado de la
   > atención (`DISCONTINUED`, D-080 §3), que la cita publica (AG-150). Caja
@@ -1404,14 +1423,14 @@ valores (`arrived`, `receiving-care`, `on-leave`, `departed`) son los mismos que
 el flujo ecuatoriano necesita, más los dos que la preparación del A.M. 00115-2021
 añade.
 
-| Estado           | Qué afirma                                              | Lo deriva                        |
-| ---------------- | ------------------------------------------------------- | -------------------------------- |
-| `ARRIVED`        | Está aquí, todavía no lo ha tomado nadie                | Recepción, a mano                |
-| `IN_PREPARATION` | Enfermería lo tiene en preconsulta                      | Se abre la toma de signos        |
-| `READY`          | Terminó la preparación, espera al médico                | Se guardan los signos            |
-| `RECEIVING_CARE` | La atención está en curso, esperas incluidas            | Se abre la nota clínica          |
-| `ON_LEAVE`       | Salió del establecimiento con la atención abierta       | Se registra la salida temporal   |
-| `DEPARTED`       | Terminó su paso por la clínica                          | Se cierra la cuenta              |
+| Estado           | Qué afirma                                        | Lo deriva                      |
+| ---------------- | ------------------------------------------------- | ------------------------------ |
+| `ARRIVED`        | Está aquí, todavía no lo ha tomado nadie          | Recepción, a mano              |
+| `IN_PREPARATION` | Enfermería lo tiene en preconsulta                | Se abre la toma de signos      |
+| `READY`          | Terminó la preparación, espera al médico          | Se guardan los signos          |
+| `RECEIVING_CARE` | La atención está en curso, esperas incluidas      | Se abre la nota clínica        |
+| `ON_LEAVE`       | Salió del establecimiento con la atención abierta | Se registra la salida temporal |
+| `DEPARTED`       | Terminó su paso por la clínica                    | Se cierra la cuenta            |
 
 - **AG-121** — El sistema DEBERÁ mantener el estado del paciente separado del
   estado de la cita, con los valores `ARRIVED`, `IN_PREPARATION`, `READY`,
@@ -1461,7 +1480,7 @@ añade.
   paciente en `RECEIVING_CARE` durante las esperas entre pasos, y NO DEBERÁ
   introducir para ellas ningún estado de espera propio.
   > **Es la definición textual de FHIR R5 y conviene respetarla**:
-  > `receiving-care` incluye *«periods of waiting between care»*. Esperar entre
+  > `receiving-care` incluye _«periods of waiting between care»_. Esperar entre
   > un paso y el siguiente **es parte de la atención**, no un limbo entre dos
   > atenciones. Un estado «esperando resultado» o «esperando al médico otra vez»
   > partiría el tiempo de una misma visita en trozos, y entonces el tiempo en el
@@ -1545,8 +1564,8 @@ añade.
 
 **Esto no es opcional, no depende de que la clínica tenga urgencias y no es una
 elección de diseño.** La **Ley de Derechos y Amparo del Paciente (Ley 77**, R.O.
-Sup. 626 de 3-II-1995) obliga en su **art. 10**: *«El estado de emergencia del
-paciente será calificado por el centro de salud al momento de su arribo»*. Su
+Sup. 626 de 3-II-1995) obliga en su **art. 10**: _«El estado de emergencia del
+paciente será calificado por el centro de salud al momento de su arribo»_. Su
 **art. 1** enumera expresamente a las **clínicas** entre los establecimientos
 alcanzados, y su **art. 13** lo respalda con **prisión de 12 a 18 meses — de 4 a
 6 años si el paciente desatendido fallece** (D-A-002).
@@ -1790,6 +1809,7 @@ pasó de hora.
   > desaparece sin dejar rastro se vuelve a declarar la próxima vez.
 - **AG-052** — SI la cita nueva no puede crearse, ENTONCES el sistema NO DEBERÁ
   liberar el cupo original.
+
   > **Es una propiedad transaccional, y por eso E3 no es «anular y volver a
   > reservar» encadenados.** Liberar el original y crear la entrada nueva
   > ocurren en UNA transacción (`AgendaRepository.reschedule`): si el cupo
@@ -2041,6 +2061,7 @@ pasó de hora.
   > ciento diría «no faltó nadie» un día que la clínica no abrió.
 - **AG-081** — El cálculo de inasistencia DEBERÁ excluir las citas anuladas y
   DEBERÁ contar solo las que alcanzaron su hora de inicio.
+
   > **El denominador es literalmente eso y ni un filtro más:** las citas
   > (`kind = APPOINTMENT`) cuyo `starts_at` cae en el rango y ya pasó, salvo las
   > `CANCELLED`. El numerador son las `NO_SHOW`. «Ya pasó» se implementa
@@ -2256,13 +2277,13 @@ decide que el valor es configurable.
 Esto no es una limitación técnica: es lo que hace que el sistema sea seguro.
 Convertirlo en configuración sería regalar la garantía.
 
-| No configurable                                            | Por qué                                                                                                                                                                                                                                                             |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **El no solapamiento de profesional y de consultorio**     | Vive en dos `EXCLUDE USING gist` de PostgreSQL. Un interruptor «permitir solapes» exigiría eliminar el constraint, y entonces deja de existir para todos. La vía documentada para saltárselo es el sobrecupo, que sí es un parámetro y **deja constancia por cita** |
-| **La coherencia paciente/bloqueo y `ends_at > starts_at`** | `CHECK` de la base. No hay clínica que necesite una cita que termina antes de empezar                                                                                                                                                                               |
-| **La inmutabilidad del historial de estados**              | Es la respuesta a «¿por qué salió anulada esta cita?». Un parámetro que la desactive convierte la bitácora en decorado. Vive en dos disparadores de PostgreSQL (`UPDATE`/`DELETE` y `TRUNCATE`) y en el `RESTRICT` de la clave foránea, no en la costumbre del módulo — D-022, ver AG-005                                                                                                                                              |
-| **La zona horaria `America/Guayaquil`**                    | Parametrizarla parece flexible y es una trampa: el sistema es de una sola clínica ecuatoriana, y un huso mal configurado cambia `age_days` de un neonato, que es como el RDACAA lo clasifica. Se revisará si algún día hay sedes fuera del país                     |
-| **Que toda ruta declare permiso**                          | Cerrado por defecto no admite excepción configurable, o no está cerrado                                                                                                                                                                                             |
+| No configurable                                            | Por qué                                                                                                                                                                                                                                                                                   |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **El no solapamiento de profesional y de consultorio**     | Vive en dos `EXCLUDE USING gist` de PostgreSQL. Un interruptor «permitir solapes» exigiría eliminar el constraint, y entonces deja de existir para todos. La vía documentada para saltárselo es el sobrecupo, que sí es un parámetro y **deja constancia por cita**                       |
+| **La coherencia paciente/bloqueo y `ends_at > starts_at`** | `CHECK` de la base. No hay clínica que necesite una cita que termina antes de empezar                                                                                                                                                                                                     |
+| **La inmutabilidad del historial de estados**              | Es la respuesta a «¿por qué salió anulada esta cita?». Un parámetro que la desactive convierte la bitácora en decorado. Vive en dos disparadores de PostgreSQL (`UPDATE`/`DELETE` y `TRUNCATE`) y en el `RESTRICT` de la clave foránea, no en la costumbre del módulo — D-022, ver AG-005 |
+| **La zona horaria `America/Guayaquil`**                    | Parametrizarla parece flexible y es una trampa: el sistema es de una sola clínica ecuatoriana, y un huso mal configurado cambia `age_days` de un neonato, que es como el RDACAA lo clasifica. Se revisará si algún día hay sedes fuera del país                                           |
+| **Que toda ruta declare permiso**                          | Cerrado por defecto no admite excepción configurable, o no está cerrado                                                                                                                                                                                                                   |
 
 > **Esquema resuelto el 13-08-2026.** `holiday` y `site_parameter` existen
 > desde la migración `20260813040610_configuration_holidays_and_site_parameters`
@@ -2278,41 +2299,41 @@ Convertirlo en configuración sería regalar la garantía.
 
 Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 
-| Código                         | Estado | Requisito |
-| ------------------------------ | ------ | --------- |
-| `INVALID_AGENDA_TRANSITION`    | 409    | AG-040    |
-| `OUTSIDE_SCHEDULE_RULE`        | 422    | AG-028    |
-| `AGENDA_ENTRY_HAS_ENCOUNTER`   | 409    | AG-045, AG-148 |
-| `OVERBOOKING_PRACTITIONER_UNAVAILABLE` | 409 | AG-151 |
-| `BLOCK_OVERLAPS_APPOINTMENTS`  | 409    | AG-038    |
-| `BOOKING_IN_THE_PAST`          | 422    | AG-031    |
-| `BOOKING_TOO_SOON`             | 422    | AG-032    |
-| `BOOKING_TOO_FAR`              | 422    | AG-033    |
-| `INVALID_BOOKING_CHANNEL`      | 422    | AG-034    |
-| `INVALID_SLOT_DURATION`        | 422    | AG-012    |
-| `OVERBOOKING_NOT_ALLOWED`      | 422    | AG-039    |
-| `OVERBOOKING_REASON_REQUIRED`  | 422    | AG-035    |
-| `OVERBOOKING_LIMIT_REACHED`    | 409    | AG-100    |
-| `OVERBOOKING_NOT_AUTHORISED`   | 403    | AG-101    |
-| `SELF_AUTHORISATION_DENIED`    | 403    | AG-103    |
-| `SLOT_NOT_ALIGNED`             | 422    | AG-104    |
-| `ROOM_NOT_IN_SITE`             | 422    | AG-105    |
-| `BOOKING_RETRY_EXHAUSTED`      | 503    | AG-026    |
-| `NO_SHOW_BEFORE_START`         | 422    | AG-043    |
-| `CANCELLATION_REASON_REQUIRED` | 422    | AG-044    |
-| `AGENDA_ENTRY_NOT_FOUND`       | 404    | AG-071    |
-| `ACCESS_CONTEXT_NOT_FOUND`     | 404    | AG-073    |
-| `WAITLIST_ENTRY_NOT_FOUND`     | 404    | AG-071    |
-| `WAITLIST_ENTRY_CLOSED`        | 409    | AG-067    |
-| `WAITLIST_ACCEPTANCE_REQUIRED` | 422    | AG-064    |
-| `WAITLIST_PATIENT_MISMATCH`    | 422    | AG-063    |
-| `WAITLIST_SLOT_ALREADY_CLAIMED`| 409    | AG-063    |
-| `SLOT_NOT_RELEASED`            | 422    | AG-061    |
-| `RELEASED_SLOT_IN_THE_PAST`    | 422    | AG-061    |
-| `ENTERED_IN_ERROR_REASON_REQUIRED` | 422 | AG-117   |
-| `LATE_ARRIVAL_NOT_AUTHORISED`  | 403    | AG-120    |
-| `EMERGENCY_QUALIFICATION_REQUIRED` | 422 | AG-128   |
-| `COVERAGE_SKIP_REASON_REQUIRED` | 422   | AG-131    |
+| Código                                 | Estado | Requisito      |
+| -------------------------------------- | ------ | -------------- |
+| `INVALID_AGENDA_TRANSITION`            | 409    | AG-040         |
+| `OUTSIDE_SCHEDULE_RULE`                | 422    | AG-028         |
+| `AGENDA_ENTRY_HAS_ENCOUNTER`           | 409    | AG-045, AG-148 |
+| `OVERBOOKING_PRACTITIONER_UNAVAILABLE` | 409    | AG-151         |
+| `BLOCK_OVERLAPS_APPOINTMENTS`          | 409    | AG-038, AG-152 |
+| `BOOKING_IN_THE_PAST`                  | 422    | AG-031         |
+| `BOOKING_TOO_SOON`                     | 422    | AG-032         |
+| `BOOKING_TOO_FAR`                      | 422    | AG-033         |
+| `INVALID_BOOKING_CHANNEL`              | 422    | AG-034         |
+| `INVALID_SLOT_DURATION`                | 422    | AG-012         |
+| `OVERBOOKING_NOT_ALLOWED`              | 422    | AG-039         |
+| `OVERBOOKING_REASON_REQUIRED`          | 422    | AG-035         |
+| `OVERBOOKING_LIMIT_REACHED`            | 409    | AG-100         |
+| `OVERBOOKING_NOT_AUTHORISED`           | 403    | AG-101         |
+| `SELF_AUTHORISATION_DENIED`            | 403    | AG-103         |
+| `SLOT_NOT_ALIGNED`                     | 422    | AG-104         |
+| `ROOM_NOT_IN_SITE`                     | 422    | AG-105         |
+| `BOOKING_RETRY_EXHAUSTED`              | 503    | AG-026         |
+| `NO_SHOW_BEFORE_START`                 | 422    | AG-043         |
+| `CANCELLATION_REASON_REQUIRED`         | 422    | AG-044         |
+| `AGENDA_ENTRY_NOT_FOUND`               | 404    | AG-071         |
+| `ACCESS_CONTEXT_NOT_FOUND`             | 404    | AG-073         |
+| `WAITLIST_ENTRY_NOT_FOUND`             | 404    | AG-071         |
+| `WAITLIST_ENTRY_CLOSED`                | 409    | AG-067         |
+| `WAITLIST_ACCEPTANCE_REQUIRED`         | 422    | AG-064         |
+| `WAITLIST_PATIENT_MISMATCH`            | 422    | AG-063         |
+| `WAITLIST_SLOT_ALREADY_CLAIMED`        | 409    | AG-063         |
+| `SLOT_NOT_RELEASED`                    | 422    | AG-061         |
+| `RELEASED_SLOT_IN_THE_PAST`            | 422    | AG-061         |
+| `ENTERED_IN_ERROR_REASON_REQUIRED`     | 422    | AG-117         |
+| `LATE_ARRIVAL_NOT_AUTHORISED`          | 403    | AG-120         |
+| `EMERGENCY_QUALIFICATION_REQUIRED`     | 422    | AG-128         |
+| `COVERAGE_SKIP_REASON_REQUIRED`        | 422    | AG-131         |
 
 > **Los cuatro de E8, y por qué ninguno reutiliza a un vecino.**
 > `ENTERED_IN_ERROR_REASON_REQUIRED` no es `CANCELLATION_REASON_REQUIRED`: son
@@ -2391,15 +2412,15 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 Estos **no** entran, porque los produce el mapeo de errores de PostgreSQL en
 `shared/http/database-problem.ts`, que tiene su propia tabla:
 
-| Código                     | Estado | Constraint                               | Requisito |
-| -------------------------- | ------ | ---------------------------------------- | --------- |
-| `PRACTITIONER_SLOT_TAKEN`  | 409    | `agenda_entry_no_practitioner_overlap`   | AG-023    |
-| `ROOM_SLOT_TAKEN`          | 409    | `agenda_entry_no_room_overlap`           | AG-024    |
-| `PATIENT_DOUBLE_BOOKED`    | 409    | `agenda_entry_no_patient_overlap`        | AG-030    |
-| `INVALID_STATUS_FOR_KIND`  | 422    | `agenda_entry_kind_status_coherence`     | AG-046    |
-| `BOOKING_CHANNEL_REQUIRED` | 422    | `agenda_entry_booking_channel_coherence` | AG-029    |
-| `INVALID_PREFERRED_RANGE`  | 422    | `waitlist_entry_preferred_range_valid`   | AG-060    |
-| `WAITLIST_CONVERSION_INCOMPLETE` | 422 | `waitlist_entry_conversion_complete`  | AG-063    |
+| Código                           | Estado | Constraint                               | Requisito |
+| -------------------------------- | ------ | ---------------------------------------- | --------- |
+| `PRACTITIONER_SLOT_TAKEN`        | 409    | `agenda_entry_no_practitioner_overlap`   | AG-023    |
+| `ROOM_SLOT_TAKEN`                | 409    | `agenda_entry_no_room_overlap`           | AG-024    |
+| `PATIENT_DOUBLE_BOOKED`          | 409    | `agenda_entry_no_patient_overlap`        | AG-030    |
+| `INVALID_STATUS_FOR_KIND`        | 422    | `agenda_entry_kind_status_coherence`     | AG-046    |
+| `BOOKING_CHANNEL_REQUIRED`       | 422    | `agenda_entry_booking_channel_coherence` | AG-029    |
+| `INVALID_PREFERRED_RANGE`        | 422    | `waitlist_entry_preferred_range_valid`   | AG-060    |
+| `WAITLIST_CONVERSION_INCOMPLETE` | 422    | `waitlist_entry_conversion_complete`     | AG-063    |
 
 `PATIENT_DOUBLE_BOOKED` estaba arriba hasta que AG-030 pasó a ser un `EXCLUDE`.
 Se mueve por la regla de esta misma sección: un código que nace de un constraint
@@ -2413,29 +2434,29 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 solo, porque los guards corren antes que los pipes y en ese momento el cuerpo
 aún no está validado.
 
-| Método   | Ruta                                                          | Permiso          | Alcance         | Requisitos                       |
-| -------- | ------------------------------------------------------------- | ---------------- | --------------- | -------------------------------- |
-| `GET`    | `/agenda/sites`                                                | `agenda:read`    | `query`         | AG-107                           |
-| `GET`    | `/agenda/metrics/no-show`                                      | `agenda:read`    | `query`         | AG-080, AG-081                   |
-| `GET`    | `/agenda/sites/{siteId}/practitioners`                         | `agenda:read`    | `param:siteId`  | AG-108, AG-111                   |
-| `GET`    | `/agenda/sites/{siteId}/specialties/{specialtyId}/service-types`| `agenda:read`   | `param:siteId`  | AG-112                           |
-| `GET`    | `/agenda/sites/{siteId}/entries`                               | `agenda:read`    | `param:siteId`  | AG-017, AG-018                   |
-| `GET`    | `/agenda/sites/{siteId}/availability`                          | `agenda:read`    | `param:siteId`  | AG-003, AG-010 a AG-016, AG-093  |
-| `GET`    | `/agenda/sites/{siteId}/duration`                              | `agenda:read`    | `param:siteId`  | SP-023, SP-028                   |
-| `POST`   | `/agenda/sites/{siteId}/entries`                               | `agenda:write`   | `param:siteId`  | AG-020 a AG-035, AG-110          |
-| `POST`   | `/agenda/sites/{siteId}/entries/{entryId}/status`               | `agenda:write`   | `param:siteId`  | AG-040 a AG-046, AG-116, AG-117, AG-120 |
-| `POST`   | `/agenda/sites/{siteId}/entries/{entryId}/check-in`             | `agenda:write`   | `param:siteId`  | AG-041, AG-118, AG-119, AG-128 a AG-132 |
-| `GET`    | `/agenda/metrics/late-arrival`                                  | `agenda:read`    | `query`         | AG-141                           |
-| `GET`    | `/agenda/sites/{siteId}/board`                                  | `agenda:read`    | `param:siteId`  | AG-121, AG-123 a AG-135, AG-138, AG-139 |
-| `GET`    | `/agenda/sites/{siteId}/board/public`                           | `agenda:board:public` | `param:siteId` | AG-136, AG-137, AG-139         |
-| `POST`   | `/agenda/sites/{siteId}/entries/{entryId}/reschedule`           | `agenda:write`   | `param:siteId`  | AG-050 a AG-052, AG-115          |
-| `POST`   | `/agenda/sites/{siteId}/blocks`                                | `agenda:write`   | `param:siteId`  | AG-037, AG-038                   |
-| `DELETE` | `/agenda/sites/{siteId}/blocks/{entryId}`                       | `agenda:write`   | `param:siteId`  | AG-114                           |
-| `GET`    | `/agenda/sites/{siteId}/waitlist`                              | `agenda:read`    | `param:siteId`  | AG-062, AG-065 a AG-067          |
-| `POST`   | `/agenda/sites/{siteId}/waitlist`                              | `agenda:write`   | `param:siteId`  | AG-060                           |
-| `GET`    | `/agenda/sites/{siteId}/waitlist/candidates/{releasedEntryId}`  | `agenda:read`    | `param:siteId`  | AG-061, AG-062, AG-065 a AG-067  |
-| `POST`   | `/agenda/sites/{siteId}/waitlist/{entryId}/contact-attempts`    | `agenda:write`   | `param:siteId`  | AG-064, AG-066                   |
-| `POST`   | `/agenda/sites/{siteId}/waitlist/{entryId}/conversion`          | `agenda:write`   | `param:siteId`  | AG-063, AG-064                   |
+| Método   | Ruta                                                             | Permiso               | Alcance        | Requisitos                              |
+| -------- | ---------------------------------------------------------------- | --------------------- | -------------- | --------------------------------------- |
+| `GET`    | `/agenda/sites`                                                  | `agenda:read`         | `query`        | AG-107                                  |
+| `GET`    | `/agenda/metrics/no-show`                                        | `agenda:read`         | `query`        | AG-080, AG-081                          |
+| `GET`    | `/agenda/sites/{siteId}/practitioners`                           | `agenda:read`         | `param:siteId` | AG-108, AG-111                          |
+| `GET`    | `/agenda/sites/{siteId}/specialties/{specialtyId}/service-types` | `agenda:read`         | `param:siteId` | AG-112                                  |
+| `GET`    | `/agenda/sites/{siteId}/entries`                                 | `agenda:read`         | `param:siteId` | AG-017, AG-018                          |
+| `GET`    | `/agenda/sites/{siteId}/availability`                            | `agenda:read`         | `param:siteId` | AG-003, AG-010 a AG-016, AG-093         |
+| `GET`    | `/agenda/sites/{siteId}/duration`                                | `agenda:read`         | `param:siteId` | SP-023, SP-028                          |
+| `POST`   | `/agenda/sites/{siteId}/entries`                                 | `agenda:write`        | `param:siteId` | AG-020 a AG-035, AG-110                 |
+| `POST`   | `/agenda/sites/{siteId}/entries/{entryId}/status`                | `agenda:write`        | `param:siteId` | AG-040 a AG-046, AG-116, AG-117, AG-120 |
+| `POST`   | `/agenda/sites/{siteId}/entries/{entryId}/check-in`              | `agenda:write`        | `param:siteId` | AG-041, AG-118, AG-119, AG-128 a AG-132 |
+| `GET`    | `/agenda/metrics/late-arrival`                                   | `agenda:read`         | `query`        | AG-141                                  |
+| `GET`    | `/agenda/sites/{siteId}/board`                                   | `agenda:read`         | `param:siteId` | AG-121, AG-123 a AG-135, AG-138, AG-139 |
+| `GET`    | `/agenda/sites/{siteId}/board/public`                            | `agenda:board:public` | `param:siteId` | AG-136, AG-137, AG-139                  |
+| `POST`   | `/agenda/sites/{siteId}/entries/{entryId}/reschedule`            | `agenda:write`        | `param:siteId` | AG-050 a AG-052, AG-115                 |
+| `POST`   | `/agenda/sites/{siteId}/blocks`                                  | `agenda:write`        | `param:siteId` | AG-037, AG-038                          |
+| `DELETE` | `/agenda/sites/{siteId}/blocks/{entryId}`                        | `agenda:write`        | `param:siteId` | AG-114                                  |
+| `GET`    | `/agenda/sites/{siteId}/waitlist`                                | `agenda:read`         | `param:siteId` | AG-062, AG-065 a AG-067                 |
+| `POST`   | `/agenda/sites/{siteId}/waitlist`                                | `agenda:write`        | `param:siteId` | AG-060                                  |
+| `GET`    | `/agenda/sites/{siteId}/waitlist/candidates/{releasedEntryId}`   | `agenda:read`         | `param:siteId` | AG-061, AG-062, AG-065 a AG-067         |
+| `POST`   | `/agenda/sites/{siteId}/waitlist/{entryId}/contact-attempts`     | `agenda:write`        | `param:siteId` | AG-064, AG-066                          |
+| `POST`   | `/agenda/sites/{siteId}/waitlist/{entryId}/conversion`           | `agenda:write`        | `param:siteId` | AG-063, AG-064                          |
 
 **El registro de llegada sale de `/status` y tiene ruta propia**, al revés de lo
 que hizo E2. No es simetría con `blocks`: `CHECKED_IN` dejó de ser una transición
@@ -2483,40 +2504,40 @@ it('AG-023 rejects an overlapping booking for the same practitioner', …)
 `spec-traceability.spec.ts` lee este archivo y los títulos de las pruebas, y
 falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 
-| Requisitos                                      | Nivel de prueba obligatorio                                |
-| ----------------------------------------------- | ---------------------------------------------------------- |
-| AG-021 a AG-026, AG-030                         | Integración contra PostgreSQL real                         |
-| AG-040 a AG-046, AG-050 a AG-052                | Unitario de dominio + integración                          |
-| AG-115                                          | Unitario con doble de repositorio + integración contra PostgreSQL real: la entrada nueva nace con el profesional pedido, el original queda liberado, y un destino ocupado no libera nada (AG-052) |
-| AG-070 a AG-074                                 | Seguridad dirigida                                         |
-| AG-023, AG-024, AG-027, AG-028, AG-030, AG-040  | Contrato HTTP (código, estado, mensaje)                    |
-| AG-031 a AG-034, AG-039, AG-100, AG-101, AG-103 | Contrato HTTP + unitario de dominio                        |
-| AG-035, AG-036, AG-101, AG-103                  | Integración contra PostgreSQL real: la separación de personas y la constancia las garantiza `agenda_entry_overbooking_coherence` |
-| AG-037, AG-038                                  | Integración contra PostgreSQL real: AG-037 ES el `EXCLUDE`, y AG-038 enumera filas |
-| AG-114                                          | Unitario de dominio + integración contra PostgreSQL real: liberar libera de verdad cuando el mismo intervalo se vuelve a reservar, y la fila de historial existe |
-| AG-001, AG-015, AG-017, AG-100                  | Unitario con huso alterado, como en `encounter_freeze_age` |
-| AG-018, AG-046, AG-066, AG-067                  | Integración contra PostgreSQL real                         |
+| Requisitos                                      | Nivel de prueba obligatorio                                                                                                                                                                                      |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AG-021 a AG-026, AG-030                         | Integración contra PostgreSQL real                                                                                                                                                                               |
+| AG-040 a AG-046, AG-050 a AG-052                | Unitario de dominio + integración                                                                                                                                                                                |
+| AG-115                                          | Unitario con doble de repositorio + integración contra PostgreSQL real: la entrada nueva nace con el profesional pedido, el original queda liberado, y un destino ocupado no libera nada (AG-052)                |
+| AG-070 a AG-074                                 | Seguridad dirigida                                                                                                                                                                                               |
+| AG-023, AG-024, AG-027, AG-028, AG-030, AG-040  | Contrato HTTP (código, estado, mensaje)                                                                                                                                                                          |
+| AG-031 a AG-034, AG-039, AG-100, AG-101, AG-103 | Contrato HTTP + unitario de dominio                                                                                                                                                                              |
+| AG-035, AG-036, AG-101, AG-103                  | Integración contra PostgreSQL real: la separación de personas y la constancia las garantiza `agenda_entry_overbooking_coherence`                                                                                 |
+| AG-037, AG-038                                  | Integración contra PostgreSQL real: AG-037 ES el `EXCLUDE`, y AG-038 enumera filas                                                                                                                               |
+| AG-114                                          | Unitario de dominio + integración contra PostgreSQL real: liberar libera de verdad cuando el mismo intervalo se vuelve a reservar, y la fila de historial existe                                                 |
+| AG-001, AG-015, AG-017, AG-100                  | Unitario con huso alterado, como en `encounter_freeze_age`                                                                                                                                                       |
+| AG-018, AG-046, AG-066, AG-067                  | Integración contra PostgreSQL real                                                                                                                                                                               |
 | AG-060, AG-063, AG-064, AG-065                  | Integración contra PostgreSQL real + contrato HTTP: el rastro es append-only y los dos disparadores llegan por SQLSTATE, así que sólo la base demuestra que existen y sólo el contrato demuestra que se traducen |
-| AG-061, AG-062                                  | Unitario de dominio (el orden y la compatibilidad) + integración: la prioridad se deriva de los periodos ALMACENADOS, incluidos los de las fichas absorbidas (PA-055), y eso no lo demuestra ningún doble |
-| AG-012, AG-104, AG-105                          | Unitario de dominio + contrato HTTP                        |
-| AG-094 (turno de la agenda, D-021)              | Unitario de dominio + integración: la rejilla derivada es la de la sede |
-| AG-106                                          | Unitario de dominio + integración con dos reglas solapadas |
-| AG-096, AG-097, AG-098, AG-102                  | Integración + contrato HTTP por campo                      |
-| AG-110                                          | Unitario de dominio + integración contra PostgreSQL real   |
-| AG-111, AG-112                                  | Contrato HTTP con una sesión de `RECEPCION` de verdad: el defecto era de permiso, y un doble con los grants puestos a mano no lo habría visto |
-| AG-116, AG-117                                  | Unitario de dominio (la máquina de estados) + integración contra PostgreSQL real: el valor nuevo del enum, el `CHECK` de AG-046 y el cupo que queda liberado de verdad |
-| AG-118, AG-141                                  | Unitario con huso alterado, como en `encounter_freeze_age`: una llegada a las 21:00 no puede cambiar de día |
-| AG-119, AG-120                                  | Contrato HTTP + unitario de dominio, más un caso con la calificación de emergencia afirmativa que comprueba que el umbral **no** se aplica |
-| AG-121 a AG-127                                 | Unitario de dominio (la derivación) + integración contra PostgreSQL real: el rastro es append-only y AG-122 se comprueba con la prueba de rutas de AG-070, que falla si aparece una que fije un estado derivado |
-| AG-128, AG-129, AG-131, AG-132                  | Integración contra PostgreSQL real + contrato HTTP: la constancia la garantizan un `CHECK` y un disparador, y la exigencia se comprueba mandando un registro de llegada sin calificación |
-| AG-130                                          | Seguridad dirigida: la calificación se hace con el permiso del registro de llegada y con ningún otro |
-| AG-133 a AG-135, AG-138                         | Contrato HTTP + unitario de dominio: el orden por hora, el tiempo calculado, y que dos roles distintos reciban conjuntos de campos distintos |
-| AG-136, AG-137                                  | Seguridad dirigida + contrato HTTP: una sesión con `agenda:board:public` y nada más no alcanza la proyección de personal, y la fila que recibe no lleva ninguno de los campos prohibidos |
-| AG-139, AG-140                                  | Integración contra PostgreSQL real: una consulta del tablero deja **una** fila de bitácora y no una por cita (SC-004), y la tasa no se mueve cuando una cita pasa a `LEFT_WITHOUT_BEING_SEEN` |
-| AG-142                                          | Integración: cambiar el umbral de una sede cambia la advertencia siguiente y no toca las llegadas ya registradas (AG-098) |
-| AG-146 a AG-149                                 | Integración contra PostgreSQL real con control positivo: la cita y la atención se mueven en la misma transacción y la fila de historial existe; una prueba reproduce la captura del autor |
-| AG-150                                          | Contrato HTTP + prueba de interfaz: el menú de una cita con atención viva no ofrece lo que AG-045 rechaza |
-| AG-151                                          | Integración contra PostgreSQL real: los cuatro casos rechazados y, como control positivo, el sobrecupo encima de una cita de la misma sede admitido |
+| AG-061, AG-062                                  | Unitario de dominio (el orden y la compatibilidad) + integración: la prioridad se deriva de los periodos ALMACENADOS, incluidos los de las fichas absorbidas (PA-055), y eso no lo demuestra ningún doble        |
+| AG-012, AG-104, AG-105                          | Unitario de dominio + contrato HTTP                                                                                                                                                                              |
+| AG-094 (turno de la agenda, D-021)              | Unitario de dominio + integración: la rejilla derivada es la de la sede                                                                                                                                          |
+| AG-106                                          | Unitario de dominio + integración con dos reglas solapadas                                                                                                                                                       |
+| AG-096, AG-097, AG-098, AG-102                  | Integración + contrato HTTP por campo                                                                                                                                                                            |
+| AG-110                                          | Unitario de dominio + integración contra PostgreSQL real                                                                                                                                                         |
+| AG-111, AG-112                                  | Contrato HTTP con una sesión de `RECEPCION` de verdad: el defecto era de permiso, y un doble con los grants puestos a mano no lo habría visto                                                                    |
+| AG-116, AG-117                                  | Unitario de dominio (la máquina de estados) + integración contra PostgreSQL real: el valor nuevo del enum, el `CHECK` de AG-046 y el cupo que queda liberado de verdad                                           |
+| AG-118, AG-141                                  | Unitario con huso alterado, como en `encounter_freeze_age`: una llegada a las 21:00 no puede cambiar de día                                                                                                      |
+| AG-119, AG-120                                  | Contrato HTTP + unitario de dominio, más un caso con la calificación de emergencia afirmativa que comprueba que el umbral **no** se aplica                                                                       |
+| AG-121 a AG-127                                 | Unitario de dominio (la derivación) + integración contra PostgreSQL real: el rastro es append-only y AG-122 se comprueba con la prueba de rutas de AG-070, que falla si aparece una que fije un estado derivado  |
+| AG-128, AG-129, AG-131, AG-132                  | Integración contra PostgreSQL real + contrato HTTP: la constancia la garantizan un `CHECK` y un disparador, y la exigencia se comprueba mandando un registro de llegada sin calificación                         |
+| AG-130                                          | Seguridad dirigida: la calificación se hace con el permiso del registro de llegada y con ningún otro                                                                                                             |
+| AG-133 a AG-135, AG-138                         | Contrato HTTP + unitario de dominio: el orden por hora, el tiempo calculado, y que dos roles distintos reciban conjuntos de campos distintos                                                                     |
+| AG-136, AG-137                                  | Seguridad dirigida + contrato HTTP: una sesión con `agenda:board:public` y nada más no alcanza la proyección de personal, y la fila que recibe no lleva ninguno de los campos prohibidos                         |
+| AG-139, AG-140                                  | Integración contra PostgreSQL real: una consulta del tablero deja **una** fila de bitácora y no una por cita (SC-004), y la tasa no se mueve cuando una cita pasa a `LEFT_WITHOUT_BEING_SEEN`                    |
+| AG-142                                          | Integración: cambiar el umbral de una sede cambia la advertencia siguiente y no toca las llegadas ya registradas (AG-098)                                                                                        |
+| AG-146 a AG-149                                 | Integración contra PostgreSQL real con control positivo: la cita y la atención se mueven en la misma transacción y la fila de historial existe; una prueba reproduce la captura del autor                        |
+| AG-150                                          | Contrato HTTP + prueba de interfaz: el menú de una cita con atención viva no ofrece lo que AG-045 rechaza                                                                                                        |
+| AG-151                                          | Integración contra PostgreSQL real: los cuatro casos rechazados y, como control positivo, el sobrecupo encima de una cita de la misma sede admitido                                                              |
 
 ## Preguntas abiertas
 
@@ -2536,8 +2557,8 @@ en `../clinica-docs/DECISIONES-PENDIENTES.md`:
 **Decisiones del agente que E8 y E9 hacen cumplir**, registradas en
 `../clinica-docs/DECISIONES-TOMADAS-POR-EL-AGENTE.md`:
 
-| #       | Decisión                                                                                       |
-| ------- | ---------------------------------------------------------------------------------------------- |
+| #       | Decisión                                                                                        |
+| ------- | ----------------------------------------------------------------------------------------------- |
 | D-A-002 | La calificación de emergencia al llegar **se construye siempre**, y la cobertura es saltable    |
 | D-A-008 | El estado del paciente es consecuencia de documentar, no una casilla: sólo «llegó» se teclea    |
 | D-A-009 | «Se fue sin ser atendido» es estado propio; la llegada tardía **no** es un estado, es una resta |

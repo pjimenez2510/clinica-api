@@ -674,16 +674,20 @@ describe('el sobrecupo y los bloqueos', () => {
       }).expect(201);
     });
 
-    it('AG-038 no cuenta un sobrecupo: no ocupa calendario y no impide bloquear', async () => {
-      // Coherente con el `EXCLUDE`, que tampoco lo mira: el sobrecupo es una
-      // excepción declarada, y el bloqueo no tiene por qué arbitrar sobre ella.
+    it('AG-152 un sobrecupo de la misma sede sí impide bloquear: el paciente viene igual (D-085 §7)', async () => {
+      // Hasta D-085 se admitía, por coherencia con el `EXCLUDE`, que no lo
+      // mira. Pero el sobrecupo es un paciente citado: bloquear encima es
+      // dejarlo sin médico.
       await book(anOverbookingAt(at(monday, '08:10'))).expect(201);
 
-      await blockAgenda({
+      const refused = await blockAgenda({
         practitionerId,
         startsAt: at(monday, '08:00').toISOString(),
         endsAt: at(monday, '12:00').toISOString(),
-      }).expect(201);
+      }).expect(409);
+      expect((refused.body as Problem).code).toBe(
+        'BLOCK_OVERLAPS_APPOINTMENTS',
+      );
     });
 
     it('AG-022 rechaza por campo un bloqueo que termina antes de empezar', async () => {
@@ -787,6 +791,33 @@ describe('el sobrecupo y los bloqueos', () => {
       );
 
       await refusedAs(at(monday, '13:00'), /atiende en otra sede/);
+    });
+
+    it('AG-152 rechaza unas vacaciones encima de un sobrecupo del profesional en otra sede, enumerándolo', async () => {
+      const overbooking = await elsewhere(at(monday, '09:00'), {
+        blocksCalendar: false,
+        overbookingReason: 'Urgencia',
+        overbookingAuthorisedById: doctorUserId,
+      });
+
+      const refused = await blockAgenda({
+        practitionerId,
+        startsAt: at(monday, '08:00').toISOString(),
+        endsAt: at(monday, '12:00').toISOString(),
+      }).expect(409);
+      expect((refused.body as Problem).code).toBe(
+        'BLOCK_OVERLAPS_APPOINTMENTS',
+      );
+      // Enumerado como AG-038: la hora, sin nombre ni motivo ni sede.
+      expect((refused.body as Problem).errors?.[0]?.message).toContain('09:00');
+      expect(overbooking.blocksCalendar).toBe(false);
+
+      // Control positivo: la tarde, sin sobrecupo, se bloquea.
+      await blockAgenda({
+        practitionerId,
+        startsAt: at(monday, '14:00').toISOString(),
+        endsAt: at(monday, '18:00').toISOString(),
+      }).expect(201);
     });
 
     it('AG-151 sigue admitiendo el sobrecupo encima de una cita de la MISMA sede, y lo liberado no cuenta', async () => {

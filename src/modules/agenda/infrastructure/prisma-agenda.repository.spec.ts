@@ -116,15 +116,22 @@ function prismaDouble(options: {
     // tests below pin is what is WRITTEN, and in which order.
     $queryRaw: () =>
       Promise.resolve(
-        options.liveAttention ? [{ id: options.liveAttention.id }] : [],
+        options.liveAttention
+          ? [{ id: options.liveAttention.id, status: 'OPEN' }]
+          : [],
       ),
     clinicalNote: {
       count: () => Promise.resolve(options.liveAttention?.notes ?? 0),
     },
+    // D-085 §3: the other clinical acts, none in these doubles.
+    encounterDiagnosis: { count: () => Promise.resolve(0) },
+    encounterProcedure: { count: () => Promise.resolve(0) },
+    prescription: { count: () => Promise.resolve(0) },
+    serviceOrder: { count: () => Promise.resolve(0) },
     encounter: {
-      update: (args: Record<string, unknown>) => {
+      updateMany: (args: Record<string, unknown>) => {
         calls.push({ method: 'encounter.update', args });
-        return Promise.resolve({});
+        return Promise.resolve({ count: 1 });
       },
     },
   };
@@ -315,11 +322,15 @@ describe('the transition transaction', () => {
     let seen: unknown;
 
     await repository.transition(COMMAND, (read) => {
-      seen = { has: read.hasEncounter, note: read.encounterHasNote };
+      seen = {
+        has: read.hasEncounter,
+        act: read.encounterHasClinicalAct,
+        inProgress: read.encounterInProgress,
+      };
       return { to: 'CONFIRMED', effects: {} };
     });
 
-    expect(seen).toEqual({ has: true, note: false });
+    expect(seen).toEqual({ has: true, act: false, inProgress: true });
   });
 
   it('AG-148 interrupts the attention it locked, after the appointment, and does not demand there be none', async () => {
@@ -343,7 +354,7 @@ describe('the transition transaction', () => {
     ]);
     expect(calls[1]?.args).not.toHaveProperty('where.encounters');
     expect(calls[2]?.args).toEqual({
-      where: { id: 'enc-1' },
+      where: { id: 'enc-1', status: { in: ['OPEN', 'ON_HOLD'] } },
       data: {
         status: 'DISCONTINUED',
         endedAt: NOW,

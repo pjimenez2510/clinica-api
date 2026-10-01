@@ -14,6 +14,8 @@ import { ClinicalCodingService } from './application/clinical-coding.service';
 import { ClinicalNoteController } from './clinical-note.controller';
 import { ClinicalNoteService } from './application/clinical-note.service';
 import { EncounterController } from './encounter.controller';
+import { EncounterExitController } from './encounter-exit.controller';
+import { EncounterExitService } from './application/encounter-exit.service';
 import { EncounterService } from './application/encounter.service';
 import { PatientAllergyController } from './patient-allergy.controller';
 import { PatientAllergyService } from './application/patient-allergy.service';
@@ -25,11 +27,13 @@ import { CHART_SUMMARY_REPOSITORY } from './domain/chart-summary.repository';
 import { CLINICAL_CODING_REPOSITORY } from './domain/clinical-coding.repository';
 import { CLINICAL_NOTE_REPOSITORY } from './domain/clinical-note.repository';
 import { ENCOUNTER_REPOSITORY } from './domain/encounter.repository';
+import { ENCOUNTER_EXIT_REPOSITORY } from './domain/encounter-exit.repository';
 import { PATIENT_ALLERGY_REPOSITORY } from './domain/patient-allergy.repository';
 import { PrismaChartSummaryRepository } from './infrastructure/prisma-chart-summary.repository';
 import { PrismaClinicalCodingRepository } from './infrastructure/prisma-clinical-coding.repository';
 import { PrismaClinicalNoteRepository } from './infrastructure/prisma-clinical-note.repository';
 import { PrismaEncounterRepository } from './infrastructure/prisma-encounter.repository';
+import { PrismaEncounterExitRepository } from './infrastructure/prisma-encounter-exit.repository';
 import { PrismaPatientAllergyRepository } from './infrastructure/prisma-patient-allergy.repository';
 
 /**
@@ -67,6 +71,7 @@ import { PrismaPatientAllergyRepository } from './infrastructure/prisma-patient-
 @Module({
   controllers: [
     EncounterController,
+    EncounterExitController,
     ClinicalNoteController,
     ClinicalCodingController,
     PatientAllergyController,
@@ -75,6 +80,7 @@ import { PrismaPatientAllergyRepository } from './infrastructure/prisma-patient-
   ],
   providers: [
     EncounterService,
+    EncounterExitService,
     ClinicalNoteService,
     ClinicalCodingService,
     PatientAllergyService,
@@ -82,6 +88,10 @@ import { PrismaPatientAllergyRepository } from './infrastructure/prisma-patient-
     ChartSummaryService,
     CurrentUserService,
     { provide: ENCOUNTER_REPOSITORY, useClass: PrismaEncounterRepository },
+    {
+      provide: ENCOUNTER_EXIT_REPOSITORY,
+      useClass: PrismaEncounterExitRepository,
+    },
     {
       provide: CLINICAL_NOTE_REPOSITORY,
       useClass: PrismaClinicalNoteRepository,

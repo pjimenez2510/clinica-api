@@ -658,8 +658,10 @@ export const DOMAIN_ERROR_CODES = [
   //     servicio y en la base, por lo mismo que `CANCELLATION_REASON_REQUIRED`.
   // EN-166, EN-167 (D-077, D-080, D-082). Anular e interrumpir una atención
   // exigen motivo escrito —e interrumpir, además, el origen—. 422 por campo:
-  // es el formulario el que se corrige.
+  // es el formulario el que se corrige. Y 409 cuando hay un borrador de otra
+  // persona que la interrupción dejaría sin firmar (D-083, pendiente).
   'ENCOUNTER_ANNULMENT_REASON_REQUIRED',
+  'ENCOUNTER_HAS_OTHERS_DRAFTS',
   'ENCOUNTER_INTERRUPTION_REASON_REQUIRED',
   'AMENDMENT_REASON_REQUIRED',
   'APPOINTMENT_NOT_ATTENDABLE',

@@ -224,7 +224,8 @@ function aTransitionRead(
     startsAt: EIGHT,
     releasedAt: null,
     hasEncounter: false,
-    encounterHasNote: false,
+    encounterHasClinicalAct: false,
+    encounterInProgress: false,
     ...overrides,
   };
 }

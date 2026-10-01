@@ -30,14 +30,36 @@
 
 -- `ADD CONSTRAINT ... EXCLUDE` valida las filas existentes y su fallo nombra la
 -- restricción pero no las filas. Misma política que la migración original:
--- diagnosticar primero, con identificadores, y decir qué hacer. Hasta hoy dos
--- reglas así eran LEGALES, y la semilla de desarrollo las tiene: una base de
--- desarrollo anterior a esta migración se rehace con `pnpm db:reset`.
+-- diagnosticar primero y decir qué hacer. Hasta hoy dos reglas así eran
+-- LEGALES, y la semilla de desarrollo anterior las tiene.
+--
+-- QUÉ SE LISTA: cada par en conflicto con el profesional, las dos sedes, el
+-- día y las dos franjas, y los identificadores de las reglas — lo necesario
+-- para decidir cuál se queda sin abrir otra consulta. Nombres de sede y de
+-- profesional, no datos de pacientes.
+--
+-- NO SE CORRIGE AQUÍ. Qué regla sobra es una decisión de la clínica sobre el
+-- horario de una persona; una migración que eligiera sola cerraría la agenda
+-- de una sede en silencio. En desarrollo la resuelve, sin borrar nada,
+-- `pnpm db:fix:schedule-overlaps` (scripts/resolve-schedule-overlaps.mts),
+-- cerrando la vigencia de la regla duplicada el 2026-09-30; con datos reales,
+-- la clínica decide cuál se cierra (D-085 §6).
 DO $$
 DECLARE
   v_conflicts text;
 BEGIN
-  SELECT string_agg(format('%s <-> %s', a.id, b.id), E'\n' ORDER BY a.id)
+  SELECT string_agg(
+           format(
+             '%s · %s · %s %s–%s (regla %s) <-> %s %s–%s (regla %s)',
+             coalesce(nullif(btrim(concat_ws(' ', u.first_name, u.last_name)), ''), a.practitioner_id::text),
+             CASE a.weekday WHEN 1 THEN 'lunes' WHEN 2 THEN 'martes' WHEN 3 THEN 'miércoles'
+                            WHEN 4 THEN 'jueves' WHEN 5 THEN 'viernes' WHEN 6 THEN 'sábado'
+                            ELSE 'domingo' END,
+             sa.name, to_char(a.start_time, 'HH24:MI'), to_char(a.end_time, 'HH24:MI'), a.id,
+             sb.name, to_char(b.start_time, 'HH24:MI'), to_char(b.end_time, 'HH24:MI'), b.id
+           ),
+           E'\n' ORDER BY a.practitioner_id, a.weekday, a.start_time, a.id, b.id
+         )
     INTO v_conflicts
     FROM practitioner_schedule_rule a
     JOIN practitioner_schedule_rule b
@@ -47,12 +69,20 @@ BEGIN
      AND a.id < b.id
      AND a.minutes_range && b.minutes_range
      AND a.validity && b.validity
-   WHERE a.active AND b.active;
+    JOIN site sa ON sa.id = a.site_id
+    JOIN site sb ON sb.id = b.site_id
+    JOIN practitioner p ON p.id = a.practitioner_id
+    JOIN app_user u ON u.id = p.user_id
+   WHERE a.active AND b.active
+     -- The same predicate as the exclusion below: only validities still in
+     -- force on or after D-070's cutover.
+     AND (a.valid_to IS NULL OR a.valid_to >= DATE '2026-10-01')
+     AND (b.valid_to IS NULL OR b.valid_to >= DATE '2026-10-01');
 
   IF v_conflicts IS NOT NULL THEN
     RAISE EXCEPTION
-      'practitioner_schedule_rule holds rules of one practitioner at the same hours in two sites (rule id pairs):%', E'\n' || v_conflicts
-      USING HINT = 'D-070: one schedule, one place. Close one rule of each pair (set valid_to) or deactivate it, then run this migration again. Do not delete rows: a published schedule is what past appointments were booked against. A development database seeded before this migration is rebuilt with pnpm db:reset.';
+      'D-070: practitioner_schedule_rule holds rules of one practitioner at the same hours in two sites:%', E'\n' || v_conflicts
+      USING HINT = 'One schedule, one place (ST-042). Close one rule of each pair on 2026-09-30 (valid_to) and, if that schedule should go on, create it again from today at hours that do not collide (D-085 §6). In DEVELOPMENT: `pnpm db:fix:schedule-overlaps --apply` closes the newer rule of each pair on 2026-09-30, deletes nothing. With real data, which rule stays is decided by the clinic. Nothing was changed: mark this migration rolled back with `pnpm exec prisma migrate resolve --rolled-back 20261001040442_staff_schedule_rule_no_overlap_any_site` and run `pnpm db:deploy` again.';
   END IF;
 END;
 $$;
@@ -64,6 +94,14 @@ $$;
 ALTER TABLE practitioner_schedule_rule
   DROP CONSTRAINT schedule_rule_no_overlap;
 
+-- D-085 §6. ONLY THE VALIDITIES STILL IN FORCE FROM D-070'S CUTOVER
+-- (2026-10-01). Two rules that both ruled in the past at the same hours in two
+-- sites were legal then, and an exclusion over whole validities would leave
+-- the clinic only one way out: deactivating a rule, which also erases it from
+-- the past it ruled. With this predicate the way out is the honest one —close
+-- the older rule on 2026-09-30, which keeps its history— and from the cutover
+-- on the guarantee is complete. The date is fixed on purpose: it is the day
+-- the rule changed, not «today», which an index predicate cannot read anyway.
 ALTER TABLE practitioner_schedule_rule
   ADD CONSTRAINT schedule_rule_no_overlap
   EXCLUDE USING gist (
@@ -72,10 +110,10 @@ ALTER TABLE practitioner_schedule_rule
     minutes_range WITH &&,
     validity WITH &&
   )
-  WHERE (active);
+  WHERE (active AND (valid_to IS NULL OR valid_to >= DATE '2026-10-01'));
 
 COMMENT ON CONSTRAINT schedule_rule_no_overlap ON practitioner_schedule_rule IS
   'ST-042 (AG-106), sin sede desde D-070: dos reglas vigentes del mismo '
   'profesional y día de la semana no pueden solaparse en horas, en ninguna '
-  'sede. El nombre viaja al cliente como SCHEDULE_RULE_OVERLAP a través de '
+  'sede, en las vigencias que siguen desde el 2026-10-01 (D-085 §6). El nombre viaja al cliente como SCHEDULE_RULE_OVERLAP a través de '
   'constraint-meanings.';

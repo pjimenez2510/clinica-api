@@ -9,7 +9,6 @@ import {
   EncounterAlreadyClosedError,
   EncounterNotFoundError,
   PatientChartNotOpenError,
-  PractitionerNotLicensedError,
   PractitionerProfileRequiredError,
 } from '../domain/encounter.errors';
 import {
@@ -20,13 +19,7 @@ import {
   type SiteScopeFilter,
   type VitalSignsView,
 } from '../domain/encounter.repository';
-import {
-  acceptsNewClinicalContent,
-  planAnnulment,
-  planInterruption,
-} from '../domain/encounter-state';
-import { contentHashOf, type NoteContent } from '../domain/clinical-note';
-import { clinicalDateOf } from '../../../shared/domain/clinic-time';
+import { acceptsNewClinicalContent } from '../domain/encounter-state';
 import { planClosure } from '../domain/encounter-closure';
 import {
   assertMandatoryAnthropometry,
@@ -35,7 +28,6 @@ import {
 import type {
   CareModality,
   CareSetting,
-  DiscontinuedOrigin,
   VisitSequence,
 } from '../domain/encounter';
 
@@ -112,19 +104,6 @@ export interface CloseEncounterRequest {
    * the domain must not learn what a permission is.
    */
   canSignRecords: boolean;
-}
-
-/** EN-166. Annulling an attention opened by mistake. */
-export interface AnnulEncounterRequest {
-  encounterId: string;
-  reason?: string;
-}
-
-/** EN-167. Interrupting an attention that cannot be finished. */
-export interface DiscontinueEncounterRequest {
-  encounterId: string;
-  reason?: string;
-  origin?: DiscontinuedOrigin;
 }
 
 /**
@@ -388,116 +367,6 @@ export class EncounterService {
   }
 
   /**
-   * EN-166, AG-147 (D-077, D-080). Annuls an attention opened by mistake —the
-   * note opened on the wrong patient— and gives its appointment back to the
-   * waiting room, in one transaction.
-   *
-   * A PRACTITIONER, behind `record:write` (D-080 §2): it is an act on the
-   * clinical record, not on the agenda. Nothing written in the attention is
-   * deleted or changed.
-   */
-  async annul(
-    request: AnnulEncounterRequest,
-    requester: Requester,
-  ): Promise<EncounterView> {
-    await this.requirePractitioner(requester.userId);
-    const now = new Date();
-
-    const annulled = await this.encounters.annul(
-      { encounterId: request.encounterId, sites: requester.sites },
-      (encounter) =>
-        planAnnulment({
-          from: encounter.status,
-          endedAt: encounter.endedAt,
-          reason: request.reason,
-          now,
-        }),
-      requester.userId,
-    );
-
-    await this.audit.record({
-      userId: requester.userId,
-      resourceType: RESOURCE_TYPE,
-      resourceId: annulled.id,
-      action: 'UPDATE',
-      ip: requester.ip,
-      userAgent: requester.userAgent,
-    });
-    // The fact only: no reason, no patient — the reason is clinical text.
-    this.logger.info(
-      { site_id: annulled.siteId, action: 'ENCOUNTER_ENTERED_IN_ERROR' },
-      'encounter annulled',
-    );
-
-    return annulled;
-  }
-
-  /**
-   * EN-167, AG-149 (D-076, D-082). Interrupts an attention that cannot be
-   * finished: signs the caller's drafts «con lo hecho», marks the attention
-   * `DISCONTINUED` with its reason and origin, and the appointment attended.
-   *
-   * THE SIGNATURE IS THE SAME AS EVER (EN-027): content, signer and instant in
-   * the hash, and a registration in force on the day (EN-029) — an
-   * interrupted consultation is still signed by somebody entitled to sign.
-   * What it does NOT demand is the minimum content of a finished one (D-082):
-   * asking for a diagnosis would make the doctor write something that did not
-   * happen.
-   */
-  async discontinue(
-    request: DiscontinueEncounterRequest,
-    requester: Requester,
-  ): Promise<EncounterView> {
-    const signer = await this.encounters.findPractitionerByUser(
-      requester.userId,
-    );
-    if (!signer) throw new PractitionerProfileRequiredError();
-    const now = new Date();
-
-    const discontinued = await this.encounters.discontinue(
-      { encounterId: request.encounterId, sites: requester.sites },
-      (encounter) =>
-        planInterruption({
-          from: encounter.status,
-          reason: request.reason,
-          origin: request.origin,
-          now,
-        }),
-      {
-        authorId: signer.practitionerId,
-        sign: (draft) => {
-          assertLicensedOn(signer.acessExpiresOn, now);
-          return {
-            signedById: signer.practitionerId,
-            signedAt: now,
-            contentHash: contentHashOf({
-              content: (draft.content ?? {}) as NoteContent,
-              signedById: signer.practitionerId,
-              signedAt: now,
-            }),
-          };
-        },
-      },
-      requester.userId,
-    );
-
-    await this.audit.record({
-      userId: requester.userId,
-      resourceType: RESOURCE_TYPE,
-      resourceId: discontinued.id,
-      action: 'UPDATE',
-      ip: requester.ip,
-      userAgent: requester.userAgent,
-    });
-    this.logger.info(
-      { site_id: discontinued.siteId, action: 'ENCOUNTER_DISCONTINUED' },
-      'encounter discontinued',
-    );
-
-    return discontinued;
-  }
-
-  /**
    * EN-135. Nursing opened the vital-signs form: the patient is in
    * preparation.
    *
@@ -682,15 +551,4 @@ export class EncounterService {
     if (!identity) throw new PractitionerProfileRequiredError();
     return identity.practitionerId;
   }
-}
-
-/**
- * EN-029. The registration has to be in force on the Ecuadorian day of the
- * signature. The same rule the note service applies when a note is signed one
- * by one; restated here because an interruption signs too.
- */
-function assertLicensedOn(acessExpiresOn: Date | null, now: Date): void {
-  if (acessExpiresOn === null) return;
-  const expiresOn = acessExpiresOn.toISOString().slice(0, 10);
-  if (expiresOn < clinicalDateOf(now)) throw new PractitionerNotLicensedError();
 }

@@ -37,6 +37,7 @@ const acts = (overrides: Partial<EncounterActs> = {}): EncounterActs => ({
   specialtyId: DERMATOLOGY,
   procedures: [],
   exams: [],
+  clinicallyAttended: true,
   ...overrides,
 });
 
@@ -323,5 +324,26 @@ describe('BI-156 lo económico no reescribe lo clínico', () => {
     );
 
     expect(proposal.proposed).toHaveLength(2);
+  });
+});
+
+describe('BI-170 la atención interrumpida sin ningún acto clínico no propone la consulta (D-085 §4)', () => {
+  it('BI-170 quien se fue antes de que el médico lo viera no deja nada que cobrar', () => {
+    expect(
+      proposeCharges(
+        acts({ status: 'DISCONTINUED', clinicallyAttended: false }),
+        mapping(),
+        nothingCharged(),
+      ),
+    ).toEqual({ proposed: [], skipped: [] });
+  });
+
+  it('BI-170 la interrumpida CON algún acto clínico sigue proponiendo la consulta (D-054 §2)', () => {
+    const { proposed } = proposeCharges(
+      acts({ status: 'DISCONTINUED', clinicallyAttended: true }),
+      mapping(),
+      nothingCharged(),
+    );
+    expect(proposed.length).toBeGreaterThan(0);
   });
 });

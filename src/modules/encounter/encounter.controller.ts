@@ -35,10 +35,8 @@ import { assertBmiNotSupplied } from './domain/vital-signs';
 import type { EncounterView } from './domain/encounter.repository';
 import type { VitalSignsView } from './domain/encounter.repository';
 import {
-  AnnulEncounterDto,
   ChartHistoryQueryDto,
   CloseEncounterDto,
-  DiscontinueEncounterDto,
   EncounterDetailDto,
   EncounterDto,
   EncounterListDto,
@@ -313,53 +311,6 @@ export class EncounterController {
   }
 
   /**
-   * EN-166, AG-147 (D-077, D-080). Annuls an attention opened by mistake.
-   *
-   * `record:write` and not `agenda:write` (D-080 §2): it is an act on the
-   * clinical record. A route of its own and not a `PATCH` of the state, like
-   * the closure: an act with an author, an instant and a reason.
-   */
-  @Post(':id/enter-in-error')
-  @RequirePermission('record:write', 'query')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Anular una atención abierta por error' })
-  @ApiOkResponse({ type: EncounterDto })
-  async annul(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: AnnulEncounterDto,
-    @Req() req: Request,
-  ): Promise<EncounterResponse> {
-    return toEncounterResponse(
-      await this.encounters.annul(
-        { encounterId: id, reason: dto.reason },
-        this.requester(req, 'record:write'),
-      ),
-    );
-  }
-
-  /**
-   * EN-167, AG-149 (D-076, D-082). Interrupts an attention that cannot be
-   * finished, signing the caller's drafts «con lo hecho».
-   */
-  @Post(':id/discontinue')
-  @RequirePermission('record:write', 'query')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Interrumpir una atención que no puede terminarse' })
-  @ApiOkResponse({ type: EncounterDto })
-  async discontinue(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: DiscontinueEncounterDto,
-    @Req() req: Request,
-  ): Promise<EncounterResponse> {
-    return toEncounterResponse(
-      await this.encounters.discontinue(
-        { encounterId: id, reason: dto.reason, origin: dto.origin },
-        this.requester(req, 'record:write'),
-      ),
-    );
-  }
-
-  /**
    * EN-135. Nursing opened the vital-signs form.
    *
    * ⚠️ IT WRITES NOTHING CLINICAL AND IT IS STILL A `POST`: what it records is
@@ -516,7 +467,9 @@ export class EncounterController {
 }
 
 /** Instants leave as ISO 8601; the client renders them in Ecuadorian time. */
-function toEncounterResponse(encounter: EncounterView): EncounterResponse {
+export function toEncounterResponse(
+  encounter: EncounterView,
+): EncounterResponse {
   return {
     id: encounter.id,
     siteId: encounter.siteId,

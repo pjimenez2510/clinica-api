@@ -402,10 +402,17 @@ export interface TransitionRead {
    */
   hasEncounter: boolean;
   /**
-   * AG-148: whether that live encounter has any clinical note. The note is
-   * the boundary of D-076: without it there was no consultation.
+   * AG-148: whether that live encounter has any clinical act — a note, a
+   * diagnosis, a procedure, a prescription or an order (D-085 §3). Without
+   * one there was no consultation.
    */
-  encounterHasNote: boolean;
+  encounterHasClinicalAct: boolean;
+  /**
+   * AG-148. Whether that live attention is still OPEN or ON_HOLD. One already
+   * interrupted is not interrupted again: its reason, origin and author are
+   * the record of an act, and a second write would replace them.
+   */
+  encounterInProgress: boolean;
 }
 
 /**

@@ -2,8 +2,21 @@ import type { PrismaClient } from '@prisma/client';
 import type { PinoLogger } from 'nestjs-pino';
 import { describe, expect, it } from 'vitest';
 
-import { EncounterService } from '../../src/modules/encounter/application/encounter.service';
-import { InvalidEncounterTransitionError } from '../../src/modules/encounter/domain/encounter.errors';
+import { EncounterExitService } from '../../src/modules/encounter/application/encounter-exit.service';
+import {
+  contentHashOf,
+  type NoteContent,
+} from '../../src/modules/encounter/domain/clinical-note';
+import {
+  EncounterAlreadyClosedError,
+  EncounterCloserNotAuthorError,
+  EncounterHasOthersDraftsError,
+  InvalidEncounterTransitionError,
+  PractitionerNotLicensedError,
+  SubstituteClosureReasonRequiredError,
+} from '../../src/modules/encounter/domain/encounter.errors';
+import { PrismaEncounterExitRepository } from '../../src/modules/encounter/infrastructure/prisma-encounter-exit.repository';
+import { addDays, clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import { PrismaClinicalNoteRepository } from '../../src/modules/encounter/infrastructure/prisma-clinical-note.repository';
 import { PrismaEncounterRepository } from '../../src/modules/encounter/infrastructure/prisma-encounter.repository';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
@@ -189,8 +202,8 @@ describe('EN-168 una atención viva por cita', () => {
 });
 
 /**
- * EN-166/AG-147 and EN-167/AG-149 through the real service and adapter: the
- * attention and its appointment move in ONE transaction.
+ * EN-166/AG-147 and EN-167/AG-149 through the real service and adapters: the
+ * attention, its notes and its appointment move in ONE transaction.
  */
 describe('anular e interrumpir mueven la cita en la misma transacción', () => {
   const quietLogger = {
@@ -200,14 +213,18 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
   const noAudit = { record: () => Promise.resolve() };
 
   const serviceOf = (prisma: PrismaClient) =>
-    new EncounterService(
+    new EncounterExitService(
+      new PrismaEncounterExitRepository(prisma as unknown as PrismaService),
       new PrismaEncounterRepository(prisma as unknown as PrismaService),
       noAudit,
       quietLogger,
     );
 
-  /** Cita en atención con la nota abierta: la captura del autor, ya corregida. */
-  async function inAttentionWithNote(prisma: PrismaClient) {
+  const notesOf = (prisma: PrismaClient) =>
+    new PrismaClinicalNoteRepository(prisma as unknown as PrismaService);
+
+  /** The appointment in the waiting room with its attention open, and nothing written yet. */
+  async function inTheWaitingRoom(prisma: PrismaClient) {
     const { ids, entry, encounter } = await anAttendedAppointment(prisma);
     const doctor = await prisma.practitioner.findUniqueOrThrow({
       where: { id: ids.practitionerId },
@@ -217,38 +234,47 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
       data: {
         status: 'CHECKED_IN',
         checkedInAt: encounter.startedAt,
-        subjectStatus: 'ARRIVED',
+        subjectStatus: 'READY',
         subjectStatusAt: encounter.startedAt,
         emergencyAssessedAt: encounter.startedAt,
         emergencyAssessedById: doctor.userId,
       },
     });
-    const note = await new PrismaClinicalNoteRepository(
-      prisma as unknown as PrismaService,
-    ).createDraft({
-      encounterId: encounter.id,
+    const requester = { userId: doctor.userId, sites: [ids.siteId] };
+    return { ids, entry, encounter, doctor, requester };
+  }
+
+  /** The author's capture, fixed: the note open, the appointment in attendance. */
+  async function inAttentionWithNote(prisma: PrismaClient) {
+    const room = await inTheWaitingRoom(prisma);
+    const note = await notesOf(prisma).createDraft({
+      encounterId: room.encounter.id,
       formCode: '002',
       formVersion: '1',
       content: { motivoConsulta: 'Cefalea de tres días' },
-      authorId: ids.practitionerId,
-      authorUserId: doctor.userId,
-      sites: [ids.siteId],
+      authorId: room.ids.practitionerId,
+      authorUserId: room.doctor.userId,
+      sites: [room.ids.siteId],
     });
-    const requester = { userId: doctor.userId, sites: [ids.siteId] };
-    return { ids, entry, encounter, note, requester };
+    return { ...room, note };
   }
+
+  const asAuthor = { canSignRecords: true };
+  const appointment = (prisma: PrismaClient, id: string) =>
+    prisma.agendaEntry.findUniqueOrThrow({ where: { id } });
 
   it('EN-166 AG-147 anular la atención la deja con su motivo, conserva la nota y devuelve la cita a la sala', async () => {
     const prisma = db();
     const { entry, encounter, note, requester } =
       await inAttentionWithNote(prisma);
-    expect(
-      (await prisma.agendaEntry.findUniqueOrThrow({ where: { id: entry.id } }))
-        .status,
-    ).toBe('IN_PROGRESS');
+    expect((await appointment(prisma, entry.id)).status).toBe('IN_PROGRESS');
 
     const annulled = await serviceOf(prisma).annul(
-      { encounterId: encounter.id, reason: 'Nota abierta a otro paciente' },
+      {
+        encounterId: encounter.id,
+        reason: 'Nota abierta a otro paciente',
+        ...asAuthor,
+      },
       requester,
     );
 
@@ -260,20 +286,20 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
     expect(kept.status).toBe('DRAFT');
     expect(kept.content).toEqual({ motivoConsulta: 'Cefalea de tres días' });
 
-    const back = await prisma.agendaEntry.findUniqueOrThrow({
-      where: { id: entry.id },
-    });
+    const back = await appointment(prisma, entry.id);
     expect(back).toMatchObject({ status: 'CHECKED_IN', subjectStatus: 'ARRIVED' }); // prettier-ignore
     expect(back.releasedAt).toBeNull();
     const last = await prisma.agendaStatusHistory.findFirstOrThrow({
       where: { agendaEntryId: entry.id },
       orderBy: { id: 'desc' },
     });
+    // A fixed sentence and not the reason: the reason is clinical text, and
+    // the agenda's history is read with `agenda:read`.
     expect(last).toMatchObject({
       fromStatus: 'IN_PROGRESS',
       toStatus: 'CHECKED_IN',
       changedById: requester.userId,
-      note: 'Nota abierta a otro paciente',
+      note: 'Atención anulada',
     });
   });
 
@@ -281,7 +307,7 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
     const prisma = db();
     const { ids, encounter, requester } = await inAttentionWithNote(prisma);
     await serviceOf(prisma).annul(
-      { encounterId: encounter.id, reason: 'Ficha equivocada' },
+      { encounterId: encounter.id, reason: 'Ficha equivocada', ...asAuthor },
       requester,
     );
 
@@ -300,9 +326,66 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
     expect(good.status).toBe('OPEN');
   });
 
-  it('EN-167 AG-149 interrumpir firma la nota con lo hecho, sin alta, y deja la cita atendida', async () => {
+  it('EN-166 una atención ya firmada no se anula: lo firmado se retracta nota a nota (D-085 §1)', async () => {
     const prisma = db();
-    const { entry, encounter, note, requester } =
+    const { encounter, requester } = await inAttentionWithNote(prisma);
+    await prisma.encounter.update({
+      where: { id: encounter.id },
+      data: {
+        status: 'DISCHARGED',
+        endedAt: endOf(encounter.startedAt),
+        dischargeCondition: 'ALIVE',
+      },
+    });
+
+    await expect(
+      serviceOf(prisma).annul(
+        { encounterId: encounter.id, reason: 'x', ...asAuthor },
+        requester,
+      ),
+    ).rejects.toBeInstanceOf(InvalidEncounterTransitionError);
+  });
+
+  it('EN-166 otro profesional anula solo con `record:sign` y motivo de sustitución (D-085 §2)', async () => {
+    const prisma = db();
+    const { encounter } = await inAttentionWithNote(prisma);
+    const other = await createPractitioner(prisma);
+    const substitute = { userId: other.userId, sites: [encounter.siteId] };
+
+    await expect(
+      serviceOf(prisma).annul(
+        { encounterId: encounter.id, reason: 'Ficha equivocada', canSignRecords: false }, // prettier-ignore
+        substitute,
+      ),
+    ).rejects.toBeInstanceOf(EncounterCloserNotAuthorError);
+    await expect(
+      serviceOf(prisma).annul(
+        { encounterId: encounter.id, reason: 'Ficha equivocada', canSignRecords: true }, // prettier-ignore
+        substitute,
+      ),
+    ).rejects.toBeInstanceOf(SubstituteClosureReasonRequiredError);
+
+    // Control positivo: con el motivo, se anula y queda escrito.
+    await serviceOf(prisma).annul(
+      {
+        encounterId: encounter.id,
+        reason: 'Ficha equivocada',
+        canSignRecords: true,
+        substituteReason: 'La médica tratante salió de turno',
+      },
+      substitute,
+    );
+    const stored = await prisma.encounter.findUniqueOrThrow({
+      where: { id: encounter.id },
+    });
+    expect(stored.exitSubstituteReason).toBe(
+      'La médica tratante salió de turno',
+    );
+  });
+
+  it('EN-167 AG-149 interrumpir firma la nota con lo hecho —hash de la firma normal—, sin alta, y deja la cita atendida', async () => {
+    const prisma = db();
+    const { entry, encounter, note, requester, ids } =
       await inAttentionWithNote(prisma);
 
     const discontinued = await serviceOf(prisma).discontinue(
@@ -310,6 +393,7 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
         encounterId: encounter.id,
         reason: 'El paciente se retiró a mitad de la consulta',
         origin: 'PATIENT',
+        ...asAuthor,
       },
       requester,
     );
@@ -318,21 +402,147 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
     expect(discontinued.dischargeCondition).toBeNull();
     expect(discontinued.interruption?.origin).toBe('PATIENT');
 
-    // D-082: firmada con lo escrito, aunque le falte todo lo de un cierre.
+    // D-082: firmada con lo escrito, y con EL MISMO hash que la firma normal.
     const signed = await prisma.clinicalNote.findUniqueOrThrow({
       where: { id: note.id },
     });
     expect(signed.status).toBe('SIGNED');
-    expect(signed.contentHash).toMatch(/^[0-9a-f]{64}$/);
-    expect(signed.content).toEqual({ motivoConsulta: 'Cefalea de tres días' });
+    expect(signed.signedById).toBe(ids.practitionerId);
+    expect(signed.contentHash).toBe(
+      contentHashOf({
+        content: signed.content as NoteContent,
+        signedById: signed.signedById!,
+        signedAt: signed.signedAt!,
+      }),
+    );
 
-    const attended = await prisma.agendaEntry.findUniqueOrThrow({
-      where: { id: entry.id },
-    });
-    expect(attended).toMatchObject({
+    expect(await appointment(prisma, entry.id)).toMatchObject({
       status: 'FULFILLED',
       subjectStatus: 'DEPARTED',
     });
+  });
+
+  it('EN-167 con el ACESS vencido no firma, y la transacción entera se deshace', async () => {
+    const prisma = db();
+    const { encounter, note, requester, doctor } =
+      await inAttentionWithNote(prisma);
+    const yesterday = addDays(clinicalDateOf(new Date()), -1);
+    await prisma.user.update({
+      where: { id: doctor.userId },
+      data: { acessExpiresOn: new Date(`${yesterday}T00:00:00.000Z`) },
+    });
+
+    await expect(
+      serviceOf(prisma).discontinue(
+        { encounterId: encounter.id, reason: 'x', origin: 'PATIENT', ...asAuthor }, // prettier-ignore
+        requester,
+      ),
+    ).rejects.toBeInstanceOf(PractitionerNotLicensedError);
+    expect(
+      (
+        await prisma.encounter.findUniqueOrThrow({
+          where: { id: encounter.id },
+        })
+      ).status,
+    ).toBe('OPEN');
+    expect(
+      (await prisma.clinicalNote.findUniqueOrThrow({ where: { id: note.id } }))
+        .status,
+    ).toBe('DRAFT');
+  });
+
+  it('EN-167 con un borrador de otra persona no se interrumpe: quedaría sin firma para siempre (D-085 §2)', async () => {
+    const prisma = db();
+    const { encounter, requester, ids } = await inAttentionWithNote(prisma);
+    const resident = await createPractitioner(prisma);
+    await notesOf(prisma).createDraft({
+      encounterId: encounter.id,
+      formCode: '005',
+      formVersion: '1',
+      content: { evolucion: 'Escrito por la residente' },
+      authorId: resident.id,
+      authorUserId: resident.userId,
+      sites: [ids.siteId],
+    });
+
+    await expect(
+      serviceOf(prisma).discontinue(
+        { encounterId: encounter.id, reason: 'x', origin: 'PATIENT', ...asAuthor }, // prettier-ignore
+        requester,
+      ),
+    ).rejects.toBeInstanceOf(EncounterHasOthersDraftsError);
+  });
+
+  it('EN-167 un borrador vacío no se firma: queda como borrador (D-085 §5)', async () => {
+    const prisma = db();
+    const room = await inTheWaitingRoom(prisma);
+    const empty = await notesOf(prisma).createDraft({
+      encounterId: room.encounter.id,
+      formCode: '002',
+      formVersion: '1',
+      content: { motivoConsulta: '   ' },
+      authorId: room.ids.practitionerId,
+      authorUserId: room.doctor.userId,
+      sites: [room.ids.siteId],
+    });
+
+    await serviceOf(prisma).discontinue(
+      { encounterId: room.encounter.id, reason: 'Urgencia en sala', origin: 'ESTABLISHMENT', ...asAuthor }, // prettier-ignore
+      room.requester,
+    );
+
+    expect(
+      (await prisma.clinicalNote.findUniqueOrThrow({ where: { id: empty.id } }))
+        .status,
+    ).toBe('DRAFT');
+  });
+
+  it('AG-149 interrumpir sin ningún acto clínico con la cita en sala la deja «se fue sin ser atendido», con el cupo libre', async () => {
+    const prisma = db();
+    const { entry, encounter, requester } = await inTheWaitingRoom(prisma);
+
+    await serviceOf(prisma).discontinue(
+      { encounterId: encounter.id, reason: 'Se fue la luz', origin: 'ESTABLISHMENT', ...asAuthor }, // prettier-ignore
+      requester,
+    );
+
+    const left = await appointment(prisma, entry.id);
+    expect(left).toMatchObject({
+      status: 'LEFT_WITHOUT_BEING_SEEN',
+      subjectStatus: 'DEPARTED',
+    });
+    expect(left.releasedAt).not.toBeNull();
+  });
+
+  it('AG-149 con un acto clínico y la cita aún en sala, la cita queda atendida pasando por «en atención»', async () => {
+    const prisma = db();
+    const { entry, encounter, requester } = await inTheWaitingRoom(prisma);
+    // Un acto clínico sin nota —aquí, una orden de examen— (D-085 §3).
+    await prisma.serviceOrder.create({
+      data: {
+        encounterId: encounter.id,
+        siteId: encounter.siteId,
+        orderedById: encounter.practitionerId,
+        category: 'LABORATORY',
+      },
+    });
+
+    await serviceOf(prisma).discontinue(
+      { encounterId: encounter.id, reason: 'Se retiró', origin: 'PATIENT', ...asAuthor }, // prettier-ignore
+      requester,
+    );
+
+    const history = await prisma.agendaStatusHistory.findMany({
+      where: { agendaEntryId: entry.id },
+      orderBy: { id: 'asc' },
+    });
+    expect(
+      history.map((row) => [row.fromStatus, row.toStatus]).slice(-2),
+    ).toEqual([
+      ['CHECKED_IN', 'IN_PROGRESS'],
+      ['IN_PROGRESS', 'FULFILLED'],
+    ]);
+    expect((await appointment(prisma, entry.id)).status).toBe('FULFILLED');
   });
 
   it('EN-167 no interrumpe una atención ya firmada y dada de alta', async () => {
@@ -349,9 +559,46 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
 
     await expect(
       serviceOf(prisma).discontinue(
-        { encounterId: encounter.id, reason: 'x', origin: 'PATIENT' },
+        { encounterId: encounter.id, reason: 'x', origin: 'PATIENT', ...asAuthor }, // prettier-ignore
         requester,
       ),
     ).rejects.toBeInstanceOf(InvalidEncounterTransitionError);
+  });
+
+  it('EN-169 lo escrito en una atención anulada no se reescribe, y la base lo garantiza', async () => {
+    const prisma = db();
+    const { encounter, note, requester, ids } =
+      await inAttentionWithNote(prisma);
+
+    // Control positivo: con la atención en curso, el borrador se edita.
+    await prisma.clinicalNote.update({
+      where: { id: note.id },
+      data: { content: { motivoConsulta: 'Cefalea de cuatro días' } },
+    });
+
+    await serviceOf(prisma).annul(
+      { encounterId: encounter.id, reason: 'Ficha equivocada', ...asAuthor },
+      requester,
+    );
+
+    // Por el servicio…
+    await expect(
+      notesOf(prisma).updateDraft(
+        { encounterId: encounter.id, noteId: note.id, sites: [ids.siteId] },
+        {},
+        () => undefined,
+      ),
+    ).rejects.toBeInstanceOf(EncounterAlreadyClosedError);
+    // …y por debajo de él.
+    await expect(
+      prisma.clinicalNote.update({
+        where: { id: note.id },
+        data: { content: {} },
+      }),
+    ).rejects.toThrow(/belongs to an encounter that is over/);
+    expect(
+      (await prisma.clinicalNote.findUniqueOrThrow({ where: { id: note.id } }))
+        .content,
+    ).toEqual({ motivoConsulta: 'Cefalea de cuatro días' });
   });
 });

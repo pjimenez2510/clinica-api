@@ -258,8 +258,10 @@ export function effectsOf(
  * no-show and not «never existed»: an act is documented against it, and if the
  * attention should not exist it is the ATTENTION that is annulled (EN-166).
  *
- * «SE FUE SIN SER ATENDIDO» DEPENDS ON THE NOTE, and the note is the boundary
- * D-076 draws. With it, there was a consultation and the answer is to
+ * «SE FUE SIN SER ATENDIDO» DEPENDS ON THE CLINICAL ACTS: the note D-076
+ * names, and since D-085 §3 any act of a practitioner — a diagnosis, a
+ * procedure, a prescription, an order —, because a prescription issued without
+ * opening the note is still a consultation. With it, there was a consultation and the answer is to
  * interrupt the attention from the attention (EN-167). Without it —reception
  * opened the attention, nursing took the vitals, the patient left before the
  * doctor— nobody attended them, and the honest outcome is this one; the
@@ -280,7 +282,10 @@ export function planAttentionEffect(
     throw new AgendaEntryHasEncounterError();
   }
   if (to !== 'LEFT_WITHOUT_BEING_SEEN') return undefined;
-  if (read.encounterHasNote) throw new AgendaEntryHasEncounterError();
+  if (read.encounterHasClinicalAct) throw new AgendaEntryHasEncounterError();
+  // Already interrupted (from the attention, without a note): the departure
+  // is still the truth, and the attention's own record is left as it is.
+  if (!read.encounterInProgress) return undefined;
 
   /**
    * EN-129 demands a written reason and AG-116 makes it optional at the
