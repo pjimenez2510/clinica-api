@@ -11,7 +11,8 @@ import { startSriDouble } from '../test/sri-double/sri-double.ts';
  *   curl -X POST localhost:8099/__double/state -d '{"down":true}'
  *
  * Scenarios: AUTHORISED · RETURNED_35 · ALREADY_REGISTERED_43 ·
- * IN_PROCESS_70 · NOT_AUTHORISED · PENDING · GARBAGE.
+ * IN_PROCESS_70 · NOT_AUTHORISED · PENDING · GARBAGE · FAULT_500 · HTML_500 ·
+ * HUGE_500 · ECHO_FAULT.
  */
 const port = Number(process.env.SRI_DOUBLE_PORT ?? 8099);
 const double = await startSriDouble({ port });

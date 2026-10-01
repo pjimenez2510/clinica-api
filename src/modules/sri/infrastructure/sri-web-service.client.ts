@@ -7,6 +7,7 @@ import type { SriWebService } from '../domain/sri-web-service';
 import type {
   AuthorisationAnswer,
   ReceptionAnswer,
+  SriFailedResponse,
   SriMessage,
 } from '../domain/voucher-lifecycle';
 
@@ -36,8 +37,13 @@ import type {
  * ⚠️ EVERY FAILURE TO GET AN ANSWER IS `TRANSPORT_FAILURE`, never an exception
  * and never a rejection: a timeout, a refused connection, a non-200 status, a
  * 302 (ADR-004 found one on the production query), a SOAP fault, or a body
- * without `estado`. The beginning of the body is kept so whoever connects to
- * the real SRI can see what it said (sri/SPEC.md §9, step 4).
+ * without `estado`.
+ *
+ * SRI-059. WHAT THE SRI SAID IS KEPT WHOLE: its status, the fault's code,
+ * string and detail, and the body, each up to 16 384 characters with any cut
+ * marked. On 01-10-2026 celcer answered a 500 whose cause sat past character
+ * 200, where the old cut was. The REQUEST is never kept: if the answer
+ * repeats the signed XML or its base64, it is replaced by a mark first.
  */
 const RECEPTION_NS = 'http://ec.gob.sri.ws.recepcion';
 const AUTHORISATION_NS = 'http://ec.gob.sri.ws.autorizacion';
@@ -82,12 +88,115 @@ function messagesIn(container: unknown): SriMessage[] {
   }));
 }
 
+/** `undefined` when the body is not that answer — not even XML (SRI-050). */
 function bodyOf(xml: string, response: string, result: string): unknown {
-  const envelope = child(parser.parse(xml) as Tree, 'Envelope');
+  let tree: Tree;
+  try {
+    tree = parser.parse(xml) as Tree;
+  } catch {
+    return undefined;
+  }
+  const envelope = child(tree, 'Envelope');
   return child(child(child(envelope, 'Body'), response), result);
 }
 
-class TransportFailure extends Error {}
+/** SRI-059. Each kept text's ceiling; the database allows it plus the mark. */
+export const KEPT_TEXT_LIMIT = 16_384;
+const SUMMARY_LIMIT = 500;
+const REQUEST_MARK = '[petición omitida]';
+
+/** Cut at `limit`, saying how much was left out; never half a character. */
+function capped(text: string, limit = KEPT_TEXT_LIMIT): string {
+  if (text.length <= limit) return text;
+  const code = text.charCodeAt(limit - 1);
+  const cut = code >= 0xd800 && code <= 0xdbff ? limit - 1 : limit;
+  return `${text.slice(0, cut)}… [cortado: ${text.length - cut} caracteres más]`;
+}
+
+const escapedXml = (xml: string) =>
+  xml
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+/**
+ * SRI-059. The request out of an answer: the signed XML as sent, escaped, and
+ * its base64 — whole, or any long piece of it.
+ */
+function withoutRequest(body: string, request: readonly string[]): string {
+  let clean = body;
+  for (const sent of request) {
+    if (sent.length > 0) clean = clean.split(sent).join(REQUEST_MARK);
+  }
+  const base64 = request.filter((sent) => /^[A-Za-z0-9+/=]+$/.test(sent));
+  return clean.replace(/[A-Za-z0-9+/=]{64,}/g, (run) =>
+    base64.some((sent) => sent.includes(run)) ? REQUEST_MARK : run,
+  );
+}
+
+const DETAIL =
+  /<(?:[\w.-]+:)?detail\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?detail\s*>/i;
+
+/** SRI-059. The `Fault` of SOAP 1.1 (`faultcode`…) or 1.2 (`Code/Value`…). */
+function readFault(body: string) {
+  let fault: unknown;
+  try {
+    const envelope = child(parser.parse(body) as Tree, 'Envelope');
+    fault = child(child(envelope, 'Body'), 'Fault');
+  } catch {
+    fault = undefined;
+  }
+  if (fault === undefined) return null;
+  const code =
+    text(child(fault, 'faultcode')) ??
+    text(child(child(fault, 'Code'), 'Value'));
+  const reason =
+    text(child(fault, 'faultstring')) ??
+    text(child(child(fault, 'Reason'), 'Text'));
+  return {
+    faultCode: code === null ? null : capped(code),
+    faultString: reason === null ? null : capped(reason),
+    faultDetail: DETAIL.exec(body)?.[1]?.trim() || null,
+  };
+}
+
+function failedResponse(
+  httpStatus: number,
+  body: string,
+  request: readonly string[],
+): SriFailedResponse {
+  const clean = withoutRequest(body, request);
+  const fault = readFault(clean);
+  return {
+    httpStatus,
+    faultCode: fault?.faultCode ?? null,
+    faultString: fault?.faultString ?? null,
+    faultDetail: fault?.faultDetail ? capped(fault.faultDetail) : null,
+    responseBody: capped(clean),
+  };
+}
+
+class TransportFailure extends Error {
+  constructor(
+    message: string,
+    readonly response: SriFailedResponse | null = null,
+  ) {
+    super(message);
+  }
+
+  /** SRI-059. An answer that was not one, with what it said. */
+  static of(
+    response: SriFailedResponse,
+    what = `HTTP ${response.httpStatus}`,
+  ): TransportFailure {
+    const reason =
+      response.faultString === null
+        ? `${what}: ${capped(response.responseBody, SUMMARY_LIMIT)}`
+        : `${what} · ${response.faultCode ?? 'sin faultcode'}: ${response.faultString}`;
+    return new TransportFailure(reason, response);
+  }
+}
 
 @Injectable()
 export class FetchSriWebService implements SriWebService {
@@ -104,10 +213,13 @@ export class FetchSriWebService implements SriWebService {
   }
 
   async receive(signedXml: string): Promise<ReceptionAnswer> {
+    const base64 = Buffer.from(signedXml, 'utf8').toString('base64');
+    const request = [base64, signedXml, escapedXml(signedXml)];
     try {
       const body = await this.call(
         this.config.get('SRI_RECEPTION_URL', { infer: true }),
-        `<ec:validarComprobante xmlns:ec="${RECEPTION_NS}"><xml>${Buffer.from(signedXml, 'utf8').toString('base64')}</xml></ec:validarComprobante>`,
+        `<ec:validarComprobante xmlns:ec="${RECEPTION_NS}"><xml>${base64}</xml></ec:validarComprobante>`,
+        request,
       );
       const answer = bodyOf(
         body,
@@ -121,11 +233,12 @@ export class FetchSriWebService implements SriWebService {
 
       if (state === 'RECIBIDA') return { kind: 'RECIBIDA', messages };
       if (state === 'DEVUELTA') return { kind: 'DEVUELTA', messages };
-      throw new TransportFailure(
-        `unexpected reception body: ${body.slice(0, 300)}`,
+      throw TransportFailure.of(
+        failedResponse(200, body, request),
+        'unexpected reception body',
       );
     } catch (error) {
-      return { kind: 'TRANSPORT_FAILURE', error: describe(error) };
+      return transportFailure(error);
     }
   }
 
@@ -134,6 +247,7 @@ export class FetchSriWebService implements SriWebService {
       const body = await this.call(
         this.config.get('SRI_AUTHORISATION_URL', { infer: true }),
         `<ec:autorizacionComprobante xmlns:ec="${AUTHORISATION_NS}"><claveAccesoComprobante>${accessKey}</claveAccesoComprobante></ec:autorizacionComprobante>`,
+        [],
       );
       const answer = bodyOf(
         body,
@@ -141,8 +255,9 @@ export class FetchSriWebService implements SriWebService {
         'RespuestaAutorizacionComprobante',
       );
       if (answer === undefined) {
-        throw new TransportFailure(
-          `unexpected authorisation body: ${body.slice(0, 300)}`,
+        throw TransportFailure.of(
+          failedResponse(200, body, []),
+          'unexpected authorisation body',
         );
       }
 
@@ -160,7 +275,8 @@ export class FetchSriWebService implements SriWebService {
         const authorisedAt = new Date(authorisedAtText);
         const voucherXml = text(child(authorised, 'comprobante'));
         if (Number.isNaN(authorisedAt.getTime()) || !voucherXml) {
-          throw new TransportFailure(
+          throw TransportFailure.of(
+            failedResponse(200, body, []),
             'authorised answer without date or voucher',
           );
         }
@@ -205,13 +321,15 @@ export class FetchSriWebService implements SriWebService {
       }
       return { kind: 'PENDING' };
     } catch (error) {
-      return { kind: 'TRANSPORT_FAILURE', error: describe(error) };
+      return transportFailure(error);
     }
   }
 
+  /** `request`: what was sent that must never be kept (SRI-059). */
   private async call(
     url: string | undefined,
     operation: string,
+    request: readonly string[],
   ): Promise<string> {
     if (!url) throw new TransportFailure('web service URL not configured');
     const response = await fetch(url, {
@@ -232,22 +350,34 @@ export class FetchSriWebService implements SriWebService {
     });
     const body = await response.text();
     if (response.status !== 200) {
-      throw new TransportFailure(
-        `HTTP ${response.status}: ${body.slice(0, 200)}`,
-      );
+      throw TransportFailure.of(failedResponse(response.status, body, request));
     }
     return body;
   }
 }
 
+function transportFailure(error: unknown) {
+  if (error instanceof TransportFailure) {
+    return {
+      kind: 'TRANSPORT_FAILURE' as const,
+      error: error.message,
+      response: error.response,
+    };
+  }
+  return {
+    kind: 'TRANSPORT_FAILURE' as const,
+    error: describe(error),
+    response: null,
+  };
+}
+
 function describe(error: unknown): string {
-  if (error instanceof TransportFailure) return error.message;
   if (error instanceof Error) {
     const cause = (error as { cause?: { code?: string } }).cause?.code;
-    return [error.name, error.message, cause]
-      .filter(Boolean)
-      .join(': ')
-      .slice(0, 500);
+    return capped(
+      [error.name, error.message, cause].filter(Boolean).join(': '),
+      SUMMARY_LIMIT,
+    );
   }
   return 'unknown transport failure';
 }

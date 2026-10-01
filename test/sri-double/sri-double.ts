@@ -31,7 +31,18 @@ export type DoubleScenario =
   /** RECIBIDA, then nothing for the key yet: `numeroComprobantes = 0`. */
   | 'PENDING'
   /** HTTP 200 with a body that is not an answer (an HTML error page). */
-  | 'GARBAGE';
+  | 'GARBAGE'
+  /**
+   * HTTP 500 with a `soap:Fault` whose `faultstring` is a long Java trace —
+   * the shape celcer answered on 01-10-2026 (SRI-059).
+   */
+  | 'FAULT_500'
+  /** HTTP 500 with a proxy's HTML page, no SOAP at all. */
+  | 'HTML_500'
+  /** HTTP 500 with a body far larger than what is kept (SRI-059's ceiling). */
+  | 'HUGE_500'
+  /** HTTP 500 with a `soap:Fault` that repeats the request it was sent. */
+  | 'ECHO_FAULT';
 
 export interface DoubleCall {
   operation: 'RECEPTION' | 'AUTHORISATION';
@@ -182,6 +193,63 @@ function authorisation(
   );
 }
 
+/**
+ * SRI-059. What celcer said, rebuilt: an exception class, its cause, and a
+ * stack trace long enough that the old 200-character cut lost the cause.
+ * Exported so a test can compare what was stored with what was said.
+ */
+export const LONG_FAULT_STRING =
+  'javax.persistence.PersistenceException: org.hibernate.exception.GenericJDBCException: could not execute statement; ' +
+  'nested exception is java.sql.SQLException: ORA-01438: valor mayor que el que permite la precisión especificada para esta columna [doble local del SRI]\n' +
+  Array.from(
+    { length: 60 },
+    (_, i) =>
+      `\tat ec.gob.sri.comprobantes.ejb.RecepcionComprobantesEJB.validar(RecepcionComprobantesEJB.java:${200 + i})`,
+  ).join('\n');
+
+export const LONG_FAULT_DETAIL =
+  '<ns2:SriException xmlns:ns2="http://ec.gob.sri.ws.recepcion"><codigo>500</codigo><causa>GenericJDBCException</causa></ns2:SriException>';
+
+function longFault() {
+  return envelope(
+    '<soap:Fault><faultcode>soap:Server</faultcode>' +
+      `<faultstring>${LONG_FAULT_STRING}</faultstring>` +
+      `<detail>${LONG_FAULT_DETAIL}</detail></soap:Fault>`,
+  );
+}
+
+const PROXY_HTML =
+  '<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p>The server encountered an internal error [doble local del SRI]</p></body></html>';
+
+/** SRI-059. A failure that repeats what it was sent, in every form. */
+function echoFault(requestBody: string) {
+  const base64 = between(requestBody, '<xml>', '</xml>') ?? '';
+  return envelope(
+    '<soap:Fault><faultcode>soap:Client</faultcode>' +
+      `<faultstring>No se pudo leer el comprobante ${base64}</faultstring>` +
+      `<detail><peticion><![CDATA[${requestBody}]]></peticion></detail></soap:Fault>`,
+  );
+}
+
+/** The failure scenarios answer the same on reception and on authorisation. */
+function failureReply(
+  scenario: DoubleScenario,
+  requestBody: string,
+): { status: number; body: string; type?: string } | null {
+  if (scenario === 'FAULT_500') return { status: 500, body: longFault() };
+  if (scenario === 'HTML_500')
+    return { status: 500, body: PROXY_HTML, type: 'text/html' };
+  if (scenario === 'HUGE_500')
+    return {
+      status: 500,
+      body: `<html><body>${'Error interno del servidor. '.repeat(1500)}</body></html>`,
+      type: 'text/html',
+    };
+  if (scenario === 'ECHO_FAULT')
+    return { status: 500, body: echoFault(requestBody) };
+  return null;
+}
+
 function readBody(request: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -273,6 +341,8 @@ export async function startSriDouble(
           );
 
         const scenario = scenarioOf(accessKey);
+        const failure = failureReply(scenario, body);
+        if (failure) return reply(failure.status, failure.body, failure.type);
         if (scenario === 'GARBAGE')
           return reply(200, '<html>mantenimiento</html>', 'text/html');
         if (scenario === 'RETURNED_35') {
@@ -339,6 +409,8 @@ export async function startSriDouble(
 
         const scenario = scenarioOf(accessKey);
         const voucher = received.get(accessKey) ?? null;
+        const failure = failureReply(scenario, body);
+        if (failure) return reply(failure.status, failure.body, failure.type);
         if (scenario === 'GARBAGE')
           return reply(200, '<html>mantenimiento</html>', 'text/html');
         const history = refusals.get(accessKey) ?? [];
