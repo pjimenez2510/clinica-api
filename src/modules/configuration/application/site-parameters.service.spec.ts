@@ -44,7 +44,7 @@ const CURRENT: SiteParameterView = {
   overbookingPermission: 'agenda:overbook',
   waitlistMaxContactAttempts: 3,
   cancelledRetention: 'NEVER',
-  criticalNoticeWithinMinutes: null,
+  criticalNoticeWithinMinutes: 60,
   criticalEscalationRoleId: null,
   unmatchedResultOwnerRoleId: null,
   unmatchedResultDeadlineHours: 24,
@@ -282,7 +282,7 @@ describe('los parámetros de operación de una sede', () => {
     });
   });
 
-  it('ORD-063 y ORD-046 guardan la política de las colas de resultados, y `null` quita el plazo', async () => {
+  it('ORD-063 y ORD-046 guardan la política de las colas de resultados, y `null` devuelve a quien pidió el examen', async () => {
     repository.findAnswer = {
       ...CURRENT,
       criticalNoticeWithinMinutes: 60,
@@ -292,7 +292,7 @@ describe('los parámetros de operación de una sede', () => {
     const after = await service.update(
       'site-1',
       {
-        criticalNoticeWithinMinutes: null,
+        criticalNoticeWithinMinutes: 30,
         criticalEscalationRoleId: 'role-guardia',
         unmatchedResultOwnerRoleId: null,
         unmatchedResultDeadlineHours: 12,
@@ -300,17 +300,17 @@ describe('los parámetros de operación de una sede', () => {
       REQUESTER,
     );
 
-    // `null` llega a la fila: «sin plazo» y «quien pidió el examen» son
-    // valores que la sede eligió, no ausencias que haya que rellenar.
+    // `null` llega a la fila: «quien pidió el examen» es un valor que la sede
+    // eligió, no una ausencia que haya que rellenar.
     expect(after).toMatchObject({
-      criticalNoticeWithinMinutes: null,
+      criticalNoticeWithinMinutes: 30,
       criticalEscalationRoleId: 'role-guardia',
       unmatchedResultOwnerRoleId: null,
       unmatchedResultDeadlineHours: 12,
     });
     const update = repository.calls.find((call) => call.method === 'update');
     expect(update?.args[1]).toMatchObject({
-      criticalNoticeWithinMinutes: null,
+      unmatchedResultOwnerRoleId: null,
     });
   });
 
@@ -356,7 +356,7 @@ describe('los parámetros de operación de una sede', () => {
       overbookingPermission: 'agenda:overbook',
       waitlistMaxContactAttempts: 3,
       cancelledRetention: 'NEVER',
-      criticalNoticeWithinMinutes: null,
+      criticalNoticeWithinMinutes: 60,
       criticalEscalationRoleId: null,
       unmatchedResultOwnerRoleId: null,
       unmatchedResultDeadlineHours: 24,

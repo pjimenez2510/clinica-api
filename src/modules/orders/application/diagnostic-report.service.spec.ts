@@ -13,7 +13,6 @@ import type { AnalyteDefinition } from '../domain/analyte';
 import type {
   DiagnosticReportRepository,
   CriticalNoticeView,
-  CriticalQueueRow,
   DiagnosticReportView,
   SafetyPolicy,
   ExpectedAnalytes,
@@ -155,8 +154,11 @@ class FakeReports implements Partial<DiagnosticReportRepository> {
   unmatched(): Promise<FlaggedResultEntry[]> {
     return Promise.resolve([]);
   }
-  critical(): Promise<CriticalQueueRow[]> {
+  critical(): Promise<FlaggedResultEntry[]> {
     return Promise.resolve([]);
+  }
+  criticalChains(): Promise<ReadonlyMap<string, never>> {
+    return Promise.resolve(new Map<string, never>());
   }
   sitesInHours(): Promise<ReadonlySet<string>> {
     return Promise.resolve(new Set<string>());
@@ -172,6 +174,8 @@ class FakeReports implements Partial<DiagnosticReportRepository> {
     observedAt: new Date(0),
     siteId: SITE,
     superseded: false,
+    supersededAt: null,
+    orderedByUserId: 'user-ordering',
   };
   matched: { command: MatchResultCommand; expected: ExpectedAnalytes }[] = [];
 
@@ -479,6 +483,8 @@ describe('el registro y la corrección de un resultado', () => {
       observedAt: new Date(0),
       siteId: SITE,
       superseded: false,
+      supersededAt: null,
+      orderedByUserId: 'user-ordering',
     };
 
     await expect(
@@ -523,7 +529,7 @@ describe('el registro y la corrección de un resultado', () => {
     // Una lista que se refresca en una pantalla abierta produciría miles de
     // filas al día y enterraría las que importan. Misma decisión que EN-123.
     await service.unmatched(requester, 50, new Date());
-    await service.critical(requester, 50, new Date());
+    await service.critical(requester, new Date());
 
     expect(audit.entries).toEqual([]);
   });

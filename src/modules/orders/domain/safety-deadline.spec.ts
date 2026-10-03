@@ -49,18 +49,23 @@ describe('el plazo de las colas de seguridad', () => {
   });
 
   it('ORD-068 fuera de horario toca a la guardia, y sin guardia al paciente', () => {
-    expect(criticalNoticeTarget({ overdue: false, afterHours: true, hasOnCallRole: true })).toEqual({ target: 'ON_CALL_ROLE', escalationMissing: false }); // prettier-ignore
-    expect(criticalNoticeTarget({ overdue: false, afterHours: true, hasOnCallRole: false })).toEqual({ target: 'PATIENT', escalationMissing: true }); // prettier-ignore
+    expect(criticalNoticeTarget({ overdue: false, afterHours: true, hasOnCallRole: true, orderingUnanswered: false })).toEqual({ target: 'ON_CALL_ROLE', escalationMissing: false }); // prettier-ignore
+    expect(criticalNoticeTarget({ overdue: false, afterHours: true, hasOnCallRole: false, orderingUnanswered: false })).toEqual({ target: 'PATIENT', escalationMissing: true }); // prettier-ignore
   });
 
   it('ORD-065 en horario y vencido toca a la guardia; sin guardia lo dice y no escala sola', () => {
-    expect(criticalNoticeTarget({ overdue: true, afterHours: false, hasOnCallRole: true })).toEqual({ target: 'ON_CALL_ROLE', escalationMissing: false }); // prettier-ignore
-    expect(criticalNoticeTarget({ overdue: true, afterHours: false, hasOnCallRole: false })).toEqual({ target: 'ORDERING_PRACTITIONER', escalationMissing: true }); // prettier-ignore
+    expect(criticalNoticeTarget({ overdue: true, afterHours: false, hasOnCallRole: true, orderingUnanswered: false })).toEqual({ target: 'ON_CALL_ROLE', escalationMissing: false }); // prettier-ignore
+    expect(criticalNoticeTarget({ overdue: true, afterHours: false, hasOnCallRole: false, orderingUnanswered: false })).toEqual({ target: 'ORDERING_PRACTITIONER', escalationMissing: true }); // prettier-ignore
   });
 
   it('ORD-065 en horario y dentro del plazo, o sin plazo, toca a quien pidió el examen', () => {
     for (const overdue of [false, null]) {
-      expect(criticalNoticeTarget({ overdue, afterHours: false, hasOnCallRole: true })).toEqual({ target: 'ORDERING_PRACTITIONER', escalationMissing: false }); // prettier-ignore
+      expect(criticalNoticeTarget({ overdue, afterHours: false, hasOnCallRole: true, orderingUnanswered: false })).toEqual({ target: 'ORDERING_PRACTITIONER', escalationMissing: false }); // prettier-ignore
     }
+  });
+
+  it('ORD-065 una llamada sin respuesta al médico que pidió escala a la guardia sin esperar a que venza', () => {
+    expect(criticalNoticeTarget({ overdue: false, afterHours: false, hasOnCallRole: true, orderingUnanswered: true })).toEqual({ target: 'ON_CALL_ROLE', escalationMissing: false }); // prettier-ignore
+    expect(criticalNoticeTarget({ overdue: false, afterHours: false, hasOnCallRole: false, orderingUnanswered: true })).toEqual({ target: 'ORDERING_PRACTITIONER', escalationMissing: true }); // prettier-ignore
   });
 });

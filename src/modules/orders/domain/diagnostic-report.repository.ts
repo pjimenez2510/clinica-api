@@ -114,6 +114,11 @@ export interface CriticalNoticeView {
   readBackConfirmed: boolean | null;
   /** ORD-068. Given outside the site's hours. */
   afterHours: boolean;
+  /**
+   * ORD-062, D-113 b. The ordering practitioner recorded a notice to
+   * themselves: kept as a record, it does not close the worklist.
+   */
+  selfNotice: boolean;
 }
 
 /** ORD-062. What recording a notice writes. */
@@ -128,6 +133,7 @@ export interface NewCriticalNotice {
   outcome: CriticalNoticeOutcome;
   readBackConfirmed: boolean | null;
   afterHours: boolean;
+  selfNotice: boolean;
   sites: SiteScopeFilter;
   /**
    * ORD-062, ORD-091. The trail row is written IN THE SAME TRANSACTION as the
@@ -221,12 +227,24 @@ export interface SafetyPolicy {
 }
 
 /** ORD-060, ORD-065. A critical value with how long it has waited. */
-/** ORD-067. A critical row as the adapter reads it: with its unanswered calls. */
-export interface CriticalQueueRow extends FlaggedResultEntry {
+/**
+ * ORD-065, ORD-067. What the correction chain behind a critical value says:
+ * when the FIRST report of the chain was issued, and the unanswered calls made
+ * about this analyte anywhere along it. A correction that is still critical is
+ * the same pending notice, not a new one waiting from zero.
+ */
+export interface CriticalChain {
+  firstObservedAt: Date;
   noAnswerAttempts: number;
+  /** Unanswered calls to the practitioner who placed the order. */
+  orderingUnanswered: number;
 }
 
-export interface CriticalWorklistEntry extends CriticalQueueRow {
+export interface CriticalWorklistEntry extends FlaggedResultEntry {
+  /** ORD-065. The chain's first issue, which the deadline runs from. */
+  firstObservedAt: Date;
+  /** ORD-067. Unanswered calls along the chain; the value is still waiting. */
+  noAnswerAttempts: number;
   waitingMinutes: CriticalWait['waitingMinutes'];
   noticeDueAt: CriticalWait['dueAt'];
   overdue: CriticalWait['overdue'];
@@ -287,6 +305,13 @@ export interface MatchableResult {
   siteId: string;
   /** ORD-043, ORD-062. A retracted value is neither paired nor notified. */
   superseded: boolean;
+  /**
+   * ORD-062. When the correction that retracted it landed: a call made BEFORE
+   * that still gets its record — it was the standing value then.
+   */
+  supersededAt: Date | null;
+  /** ORD-062, D-113 b. Who placed the order, to tell a notice to oneself. */
+  orderedByUserId: string;
 }
 
 /**
@@ -408,7 +433,15 @@ export interface DiagnosticReportRepository {
    * whoever answers. The `CRITICAL` rows of `analyte_reference_range` are the
    * net.
    */
-  critical(query: SafetyWorklistQuery): Promise<CriticalQueueRow[]>;
+  critical(query: { sites: SiteScopeFilter }): Promise<FlaggedResultEntry[]>;
+
+  /**
+   * ORD-065, ORD-067. The correction chain behind each (report, analyte) of
+   * the critical worklist, keyed by `chainKey`.
+   */
+  criticalChains(
+    reportIds: readonly string[],
+  ): Promise<ReadonlyMap<string, CriticalChain>>;
 
   /**
    * ORD-062. Writes the notice of a critical value.
@@ -444,3 +477,8 @@ export interface DiagnosticReportRepository {
 export const DIAGNOSTIC_REPORT_REPOSITORY = Symbol(
   'DiagnosticReportRepository',
 );
+
+/** ORD-065. The key of `criticalChains`: one report, one analyte. */
+export function chainKey(reportId: string, analyteDisplay: string): string {
+  return `${reportId}\u0000${analyteDisplay}`;
+}

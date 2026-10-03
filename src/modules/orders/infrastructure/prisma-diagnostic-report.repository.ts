@@ -11,8 +11,8 @@ import {
 } from '../domain/orders.errors';
 import { isLineComplete } from '../domain/service-order';
 import type {
+  CriticalChain,
   CriticalNoticeView,
-  CriticalQueueRow,
   DiagnosticReportRepository,
   DiagnosticReportView,
   ExpectedAnalytes,
@@ -28,6 +28,7 @@ import type {
   SafetyPolicy,
   SafetyWorklistQuery,
 } from '../domain/diagnostic-report.repository';
+import { chainKey } from '../domain/diagnostic-report.repository';
 import type { SiteScopeFilter } from '../domain/service-order.repository';
 
 /**
@@ -70,6 +71,7 @@ const NOTICE_SELECT = {
   outcome: true,
   readBackConfirmed: true,
   afterHours: true,
+  selfNotice: true,
   notifiedBy: { select: { id: true, firstName: true, lastName: true } },
 } satisfies Prisma.CriticalResultNoticeSelect;
 
@@ -301,8 +303,13 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
         report: {
           select: {
             serviceOrderId: true,
-            serviceOrder: { select: { siteId: true } },
-            supersededBy: { select: { id: true } },
+            serviceOrder: {
+              select: {
+                siteId: true,
+                orderedBy: { select: { userId: true } },
+              },
+            },
+            supersededBy: { select: { createdAt: true } },
           },
         },
       },
@@ -318,6 +325,8 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
       observedAt: row.observedAt,
       siteId: row.report.serviceOrder.siteId,
       superseded: row.report.supersededBy !== null,
+      supersededAt: row.report.supersededBy?.createdAt ?? null,
+      orderedByUserId: row.report.serviceOrder.orderedBy.userId,
     };
   }
 
@@ -420,7 +429,9 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
    * on anything the laboratory sent — many send only «alto/bajo», some send
    * nothing, and the ones that phone do it to whoever picks up.
    */
-  async critical(query: SafetyWorklistQuery): Promise<CriticalQueueRow[]> {
+  async critical(query: {
+    sites: SiteScopeFilter;
+  }): Promise<FlaggedResultEntry[]> {
     const rows = await this.prisma.observationResult.findMany({
       where: {
         abnormalFlag: { in: ['CRITICAL_LOW', 'CRITICAL_HIGH'] },
@@ -445,28 +456,78 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
           supersededBy: null,
         },
         /**
-         * ORD-062, ORD-067. NOT YET NOTIFIED. A notice actually given takes the
-         * value off — somebody was told, with a name and an hour. An
-         * unanswered call does NOT (D-111 §5): more than 5 % of these calls go
-         * unanswered, and that value is still waiting.
+         * ORD-062, ORD-067, D-113 b. NOT YET NOTIFIED. A notice actually given
+         * takes the value off — somebody was told, with a name and an hour.
+         * An unanswered call does NOT (D-111 §5), and neither does the
+         * ordering practitioner «notifying» themselves: the patient at home
+         * still knows nothing.
          */
-        notices: { none: { outcome: 'NOTIFIED' } },
+        notices: { none: { outcome: 'NOTIFIED', selfNotice: false } },
       },
       /**
-       * OLDEST FIRST, and it is the safety order: with more values waiting
-       * than the page holds, the one cut off must never be the most overdue.
+       * OLDEST FIRST, and NEVER CUT (ORD-060). A value waiting for its notice
+       * off the screen is a value nobody notifies — and with the oldest first,
+       * the one cut off would be today's.
        */
       orderBy: [{ observedAt: 'asc' }, { id: 'asc' }],
-      take: query.limit,
-      select: {
-        ...WORKLIST_SELECT,
-        _count: { select: { notices: { where: { outcome: 'NO_ANSWER' } } } },
-      },
+      select: WORKLIST_SELECT,
     });
-    return rows.map((row) => ({
-      ...toWorklistEntry(row),
-      noAnswerAttempts: row._count.notices,
-    }));
+    return rows.map(toWorklistEntry);
+  }
+
+  /**
+   * ORD-065, ORD-067. For each report, its correction chain back to the first
+   * report: when that one was issued, and the unanswered calls made about each
+   * analyte anywhere along the chain. One recursive query for the whole list.
+   */
+  async criticalChains(
+    reportIds: readonly string[],
+  ): Promise<ReadonlyMap<string, CriticalChain>> {
+    if (reportIds.length === 0) return new Map();
+
+    const rows = await this.prisma.$queryRaw<
+      {
+        start_id: string;
+        analyte_display: string;
+        first_observed_at: Date;
+        attempts: bigint;
+        ordering_unanswered: bigint;
+      }[]
+    >`
+      WITH RECURSIVE chain AS (
+        SELECT r."id" AS start_id, r."id" AS report_id, r."supersedes_id"
+          FROM "diagnostic_report" r
+         WHERE r."id" = ANY(${[...new Set(reportIds)]}::uuid[])
+        UNION ALL
+        SELECT c.start_id, p."id", p."supersedes_id"
+          FROM chain c
+          JOIN "diagnostic_report" p ON p."id" = c."supersedes_id"
+      )
+      SELECT c.start_id::text AS start_id,
+             o."analyte_display",
+             MIN(o."observed_at") AS first_observed_at,
+             COUNT(n."id") FILTER (WHERE n."outcome" = 'NO_ANSWER') AS attempts,
+             COUNT(n."id") FILTER (
+               WHERE n."outcome" = 'NO_ANSWER'
+                 AND n."recipient_kind" = 'ORDERING_PRACTITIONER'
+             ) AS ordering_unanswered
+        FROM chain c
+        JOIN "observation_result" o ON o."report_id" = c.report_id
+        LEFT JOIN "critical_result_notice" n
+               ON n."observation_result_id" = o."id"
+       GROUP BY c.start_id, o."analyte_display"
+    `;
+
+    return new Map(
+      rows.map((row) => [
+        chainKey(row.start_id, row.analyte_display),
+        {
+          firstObservedAt: row.first_observed_at,
+          noAnswerAttempts: Number(row.attempts),
+          orderingUnanswered: Number(row.ordering_unanswered),
+        },
+      ]),
+    );
   }
 
   /** ORD-046, ORD-063, ORD-065. Each site's worklist policy. */
@@ -560,11 +621,29 @@ async function writeNotice(
 
   const result = await tx.observationResult.findFirst({
     where: { id, report: { serviceOrder: siteFilter(notice.sites) } },
-    select: { id: true, report: { select: { supersededBy: { select: { id: true } } } } }, // prettier-ignore
+    select: { id: true, reportId: true },
   });
   if (!result) throw new ResultNotFoundError();
-  // ORD-062. A retracted value is not phoned in, judged where the row lands.
-  if (result.report.supersededBy) throw new ResultSupersededError();
+
+  /**
+   * ORD-062. The report is LOCKED FOR SHARE before the supersession is judged:
+   * a correction committing between that read and the insert would otherwise
+   * leave a notice on a value already retracted. A correction inserts a new
+   * report pointing at this one, which the share lock does not block — so the
+   * judgement reads the correction, if any, after taking it.
+   */
+  await tx.$queryRaw`
+    SELECT 1 FROM "diagnostic_report" WHERE "id" = ${result.reportId}::uuid FOR SHARE
+  `;
+  const correction = await tx.diagnosticReport.findFirst({
+    where: { supersedesId: result.reportId },
+    select: { createdAt: true },
+  });
+  // A call made before the laboratory retracted the value still gets its
+  // record; one made after it is about a figure that no longer stands.
+  if (correction && notice.notifiedAt >= correction.createdAt) {
+    throw new ResultSupersededError();
+  }
 
   const written = await tx.criticalResultNotice.create({
     data: {
@@ -578,6 +657,7 @@ async function writeNotice(
       outcome: notice.outcome,
       readBackConfirmed: notice.readBackConfirmed,
       afterHours: notice.afterHours,
+      selfNotice: notice.selfNotice,
     },
     select: NOTICE_SELECT,
   });
@@ -749,6 +829,7 @@ function toNoticeView(row: NoticeRow): CriticalNoticeView {
     outcome: row.outcome,
     readBackConfirmed: row.readBackConfirmed,
     afterHours: row.afterHours,
+    selfNotice: row.selfNotice,
   };
 }
 

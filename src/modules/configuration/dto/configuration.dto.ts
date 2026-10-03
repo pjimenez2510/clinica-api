@@ -233,7 +233,7 @@ export const updateSiteParametersSchema = z
      * ORD-063, ORD-065. `null` says «sin plazo» and is a value; absent says
      * «no lo toque». Ranges are judged by the domain, which names them.
      */
-    criticalNoticeWithinMinutes: parameterSchema.nullable().optional(),
+    criticalNoticeWithinMinutes: parameterSchema.optional(),
     criticalEscalationRoleId: z
       .uuid('Elija el rol al que se escala')
       .nullable()
@@ -269,8 +269,8 @@ export const siteParametersSchema = z.object({
   /** AG-066, AG-094. Viaja en la respuesta o la sede no puede verlo (D-040). */
   waitlistMaxContactAttempts: z.number().int(),
   cancelledRetention: z.enum(CANCELLED_RETENTION_POLICIES),
-  /** ORD-063, ORD-065. `null` = la clínica no ha fijado plazo (D-111). */
-  criticalNoticeWithinMinutes: z.number().int().nullable(),
+  /** ORD-063. Siempre hay plazo: 60 de fábrica, cambiable (D-111 §1). */
+  criticalNoticeWithinMinutes: z.number().int(),
   criticalEscalationRoleId: z.uuid().nullable(),
   /** ORD-046, D-050 §4. `null` = quien pidió el examen. */
   unmatchedResultOwnerRoleId: z.uuid().nullable(),

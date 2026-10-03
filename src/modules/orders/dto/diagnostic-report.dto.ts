@@ -92,7 +92,12 @@ export const registerReportSchema = z.object({
     .max(4000, 'La conclusión no puede superar 4000 caracteres')
     .optional(),
   /** ORD-030. WHEN the laboratory issued it, which is not when it was typed. */
-  issuedAt: instant('La fecha de emisión del informe').optional(),
+  /**
+   * ORD-030. REQUIRED, and with no default anywhere: a «now» nobody touched is
+   * the transcription time again, which is what the deadline of a critical
+   * value must never run from (revisión clínica, G2).
+   */
+  issuedAt: instant('La fecha de emisión del informe'),
   results: z
     .array(submittedResultSchema)
     .min(1, 'Registre al menos una determinación')
@@ -143,6 +148,8 @@ export const criticalNoticeSchema = z.object({
   readBackConfirmed: z.boolean().nullable(),
   /** ORD-068. Given outside the site's hours. */
   afterHours: z.boolean(),
+  /** ORD-062, D-113 b. A notice to oneself: recorded, does not close the worklist. */
+  selfNotice: z.boolean(),
 });
 /** Response of POST /orders/results/:resultId/notices. */
 export class CriticalNoticeDto extends createZodDto(criticalNoticeSchema) {}
@@ -152,30 +159,41 @@ export class CriticalNoticeDto extends createZodDto(criticalNoticeSchema) {}
  *
  * ⚠️ NO `notifiedById`: who gave it is the session, never the body.
  */
-export const recordNoticeSchema = z.object({
-  /** ORD-067. Whether the person answered and was told. */
-  outcome: NOTICE_OUTCOME,
-  /**
-   * ORD-066. The recipient repeated the value. Required — and `true` — on a
-   * notice given; the domain answers `CRITICAL_READ_BACK_REQUIRED` naming it.
-   */
-  readBack: z
-    .boolean({ error: 'Indique si la persona repitió el valor' })
-    .optional(),
-  recipientKind: NOTICE_RECIPIENT,
-  recipientName: z
-    .string()
-    .trim()
-    .min(1, 'Escriba a quién se avisó')
-    .max(200, 'El nombre no puede superar 200 caracteres'),
-  channel: NOTICE_CHANNEL,
-  notifiedAt: instant('La hora del aviso').optional(),
-  note: z
-    .string()
-    .trim()
-    .max(500, 'La nota no puede superar 500 caracteres')
-    .optional(),
-});
+export const recordNoticeSchema = z
+  .object({
+    /** ORD-067. Whether the person answered and was told. */
+    outcome: NOTICE_OUTCOME,
+    /**
+     * ORD-066. The recipient repeated the value. Required — and `true` — on a
+     * notice given; the domain answers `CRITICAL_READ_BACK_REQUIRED` naming it.
+     */
+    readBack: z
+      .boolean({ error: 'Indique si la persona repitió el valor' })
+      .optional(),
+    recipientKind: NOTICE_RECIPIENT,
+    recipientName: z
+      .string()
+      .trim()
+      .min(1, 'Escriba a quién se avisó')
+      .max(200, 'El nombre no puede superar 200 caracteres'),
+    channel: NOTICE_CHANNEL,
+    notifiedAt: instant('La hora del aviso').optional(),
+    note: z
+      .string()
+      .trim()
+      .max(500, 'La nota no puede superar 500 caracteres')
+      .optional(),
+  })
+  .superRefine((value, context) => {
+    // ORD-067. Nobody answered, so nobody repeated anything.
+    if (value.outcome === 'NO_ANSWER' && value.readBack === true) {
+      context.addIssue({
+        code: 'custom',
+        path: ['readBack'],
+        message: 'Una llamada sin respuesta no lleva «repitió el valor»',
+      });
+    }
+  });
 export class RecordNoticeDto extends createZodDto(recordNoticeSchema) {}
 
 /** ORD-031 to ORD-038. One determination as a client reads it. */
@@ -258,7 +276,11 @@ export const criticalResultSchema = flaggedResultSchema.extend({
   noticeDueAt: z.iso.datetime().nullable(),
   overdue: z.boolean().nullable(),
   escalateTo: z.object({ roleId: z.uuid(), name: z.string() }).nullable(),
-  /** ORD-067. Unanswered calls so far; the value is still waiting. */
+  /** ORD-065. The chain's first issue, which the deadline runs from. */
+  firstObservedAt: z.iso.datetime(),
+  /** ORD-065. Who placed the order: the first to tell, by name. */
+  orderedBy: z.object({ id: z.uuid(), name: z.string() }),
+  /** ORD-067. Unanswered calls along the chain; the value is still waiting. */
   noAnswerAttempts: z.number().int(),
   /** ORD-068. The site is out of hours now. */
   afterHours: z.boolean(),

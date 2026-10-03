@@ -461,7 +461,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
     // 40–400, el paciente leería que cualquier glucosa bajo 400 está bien.
     expect(report.results[0]).toMatchObject({ referenceLow: 70, referenceHigh: 100 }); // prettier-ignore
 
-    const critical = await store.critical({ sites: 'all', limit: 50 });
+    const critical = await store.critical({ sites: 'all' });
     expect(critical).toHaveLength(1);
     expect(critical[0]?.abnormalFlag).toBe('CRITICAL_LOW');
   });
@@ -498,7 +498,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
       },
       requester,
     );
-    expect(await store.critical({ sites: 'all', limit: 50 })).toHaveLength(1);
+    expect(await store.critical({ sites: 'all' })).toHaveLength(1);
 
     await reports.correct(
       {
@@ -512,7 +512,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
 
     // El 25 sigue siendo LEGIBLE en el histórico —una corrección nunca
     // sobrescribe— pero deja de ser algo que alguien tenga que ir a avisar.
-    expect(await store.critical({ sites: 'all', limit: 50 })).toEqual([]);
+    expect(await store.critical({ sites: 'all' })).toEqual([]);
   });
 
   it('ORD-050 corrige sin tocar el valor anterior, que sigue legible', async () => {
@@ -626,9 +626,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
     expect(
       await store.byId({ reportId: report.id, sites: [otherSite.id] }),
     ).toBeUndefined();
-    expect(await store.critical({ sites: [otherSite.id], limit: 50 })).toEqual(
-      [],
-    );
+    expect(await store.critical({ sites: [otherSite.id] })).toEqual([]);
   });
 
   it('ORD-041 deja el resultado sin orden en su cola informe tras informe, hasta que una persona lo empareja', async () => {

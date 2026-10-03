@@ -183,13 +183,10 @@ export class DiagnosticReportController {
   @RequirePermission('record:read', 'query')
   @ApiOperation({ summary: 'Listar los valores críticos pendientes de avisar' })
   @ApiOkResponse({ type: CriticalResultListDto })
-  async critical(
-    @Query() query: WorklistQueryDto,
-    @Req() req: Request,
-  ): Promise<CriticalResultListResponse> {
+  async critical(@Req() req: Request): Promise<CriticalResultListResponse> {
+    // ORD-060: never cut, so it takes no limit.
     const items = await this.reports.critical(
       this.requester(req, 'record:read'),
-      query.limit,
       // ORD-065. One instant for the whole listing.
       new Date(),
     );
@@ -259,7 +256,7 @@ export class DiagnosticReportController {
         reportId,
         performedById: null,
         conclusion: dto.conclusion,
-        issuedAt: dto.issuedAt === undefined ? new Date() : new Date(dto.issuedAt), // prettier-ignore
+        issuedAt: new Date(dto.issuedAt),
         results: dto.results,
       },
       this.requester(req, 'result:write'),
@@ -283,7 +280,7 @@ export class DiagnosticReportController {
         orderId,
         performedById: null,
         conclusion: dto.conclusion,
-        issuedAt: dto.issuedAt === undefined ? new Date() : new Date(dto.issuedAt), // prettier-ignore
+        issuedAt: new Date(dto.issuedAt),
         results: dto.results,
       },
       this.requester(req, 'result:write'),
@@ -389,6 +386,7 @@ function toNoticeResponse(notice: CriticalNoticeView): CriticalNoticeResponse {
     outcome: notice.outcome,
     readBackConfirmed: notice.readBackConfirmed,
     afterHours: notice.afterHours,
+    selfNotice: notice.selfNotice,
   };
 }
 
@@ -419,6 +417,8 @@ function toCriticalResponse(
     noticeDueAt: entry.noticeDueAt?.toISOString() ?? null,
     overdue: entry.overdue,
     escalateTo: entry.escalateTo,
+    firstObservedAt: entry.firstObservedAt.toISOString(),
+    orderedBy: entry.orderedBy,
     noAnswerAttempts: entry.noAnswerAttempts,
     afterHours: entry.afterHours,
     noticeTarget: entry.noticeTarget,

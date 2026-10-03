@@ -75,22 +75,25 @@ export type CriticalNoticeTarget =
  *  - OUT OF HOURS: the site's on-call role; without one, the PATIENT — art. 39
  *    allows «al médico tratante y/o al usuario», and the treating doctor is
  *    not there.
- *  - IN HOURS AND OVERDUE: the on-call role; without one the worklist SAYS SO
- *    (`escalationMissing`) and keeps the ordering practitioner, because D-111
- *    §2 forbids escalating to nobody on its own.
+ *  - IN HOURS, AND OVERDUE OR THE ORDERING PRACTITIONER DID NOT ANSWER: the
+ *    on-call role — D-111 §2, «si el médico que pidió no responde → guardia».
+ *    Without one the worklist SAYS SO (`escalationMissing`) and keeps the
+ *    ordering practitioner: nobody is escalated to on its own.
  *  - OTHERWISE: the practitioner who placed the order.
  */
 export function criticalNoticeTarget(state: {
   overdue: boolean | null;
   afterHours: boolean;
   hasOnCallRole: boolean;
+  /** An unanswered call to the practitioner who placed the order. */
+  orderingUnanswered: boolean;
 }): { target: CriticalNoticeTarget; escalationMissing: boolean } {
   if (state.afterHours) {
     return state.hasOnCallRole
       ? { target: 'ON_CALL_ROLE', escalationMissing: false }
       : { target: 'PATIENT', escalationMissing: true };
   }
-  if (state.overdue === true) {
+  if (state.overdue === true || state.orderingUnanswered) {
     return state.hasOnCallRole
       ? { target: 'ON_CALL_ROLE', escalationMissing: false }
       : { target: 'ORDERING_PRACTITIONER', escalationMissing: true };

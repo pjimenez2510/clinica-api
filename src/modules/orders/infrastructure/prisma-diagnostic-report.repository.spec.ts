@@ -308,7 +308,7 @@ describe('el adaptador del informe', () => {
       ],
     });
 
-    const critical = await repository.critical({ sites: 'all', limit: 25 });
+    const critical = await repository.critical({ sites: 'all' });
 
     expect(callTo('observationResult.findMany(outer)')?.args).toMatchObject({
       where: { abnormalFlag: { in: ['CRITICAL_LOW', 'CRITICAL_HIGH'] } },

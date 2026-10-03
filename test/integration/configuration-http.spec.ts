@@ -978,7 +978,7 @@ describe('la configuración por HTTP', () => {
         data: { code: 'CAJA_PRUEBA', name: 'Caja de prueba' },
       });
 
-      // Control positivo: un rol que existe se guarda, y `null` quita el plazo.
+      // Control positivo: un rol que existe se guarda.
       const saved = await put(`/sites/${site.id}/parameters`, {
         criticalNoticeWithinMinutes: 60,
         criticalEscalationRoleId: role.id,
@@ -991,13 +991,13 @@ describe('la configuración por HTTP', () => {
         unmatchedResultOwnerRoleId: role.id,
         unmatchedResultDeadlineHours: 12,
       });
+      // D-111 §1: el plazo se cambia, no se quita.
       const cleared = await put(`/sites/${site.id}/parameters`, {
         criticalNoticeWithinMinutes: null,
-      }).expect(200);
-      expect(cleared.body).toMatchObject({
-        criticalNoticeWithinMinutes: null,
-        criticalEscalationRoleId: role.id,
-      });
+      }).expect(422);
+      expect((cleared.body as Problem).errors?.[0]?.field).toBe(
+        'criticalNoticeWithinMinutes',
+      );
 
       // Un rol que no existe lo rechaza la clave foránea, con su campo.
       const response = await put(`/sites/${site.id}/parameters`, {

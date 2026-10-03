@@ -19,6 +19,7 @@ import {
   type ReportedResult,
   type SafetyPolicy,
   type UnmatchedWorklistEntry,
+  chainKey,
 } from '../domain/diagnostic-report.repository';
 import {
   EXAM_CATALOGUE_REPOSITORY,
@@ -468,27 +469,36 @@ export class DiagnosticReportService {
    */
   async critical(
     requester: Requester,
-    limit: number,
     now: Date,
   ): Promise<CriticalWorklistEntry[]> {
-    const entries = await this.reports.critical({ sites: requester.sites, limit }); // prettier-ignore
+    // ORD-060. Never cut: a value off the screen is a value nobody notifies.
+    const entries = await this.reports.critical({ sites: requester.sites });
     const siteIds = entries.map((e) => e.siteId);
     const policies = await this.reports.safetyPolicies(siteIds);
     // ORD-068. One instant for the whole listing, as for the deadlines.
     const inHours = await this.reports.sitesInHours(siteIds, now);
+    // ORD-065, ORD-067. The correction chain behind each value.
+    const chains = await this.reports.criticalChains(entries.map((e) => e.reportId)); // prettier-ignore
 
     return entries.map((entry) => {
       const policy = policies.get(entry.siteId) ?? DEFAULT_POLICY;
-      const wait = criticalWait(entry.observedAt, now, policy.criticalNoticeWithinMinutes); // prettier-ignore
+      const chain = chains.get(chainKey(entry.reportId, entry.analyteDisplay));
+      // The deadline runs from the chain's FIRST issue: a correction that is
+      // still critical is the same pending notice, not a new one from zero.
+      const firstObservedAt = chain?.firstObservedAt ?? entry.observedAt;
+      const wait = criticalWait(firstObservedAt, now, policy.criticalNoticeWithinMinutes); // prettier-ignore
       const role = policy.criticalEscalationRole;
       const afterHours = !inHours.has(entry.siteId);
       const due = criticalNoticeTarget({
         overdue: wait.overdue,
         afterHours,
         hasOnCallRole: role !== null,
+        orderingUnanswered: (chain?.orderingUnanswered ?? 0) > 0,
       });
       return {
         ...entry,
+        firstObservedAt,
+        noAnswerAttempts: chain?.noAnswerAttempts ?? 0,
         waitingMinutes: wait.waitingMinutes,
         noticeDueAt: wait.dueAt,
         overdue: wait.overdue,
@@ -531,8 +541,6 @@ export class DiagnosticReportService {
       sites: requester.sites,
     });
     if (!result) throw new ResultNotFoundError();
-    // ORD-062. The value the laboratory retracted is not phoned in.
-    if (result.superseded) throw new ResultSupersededError();
     if (
       result.abnormalFlag !== 'CRITICAL_LOW' &&
       result.abnormalFlag !== 'CRITICAL_HIGH'
@@ -550,6 +558,23 @@ export class DiagnosticReportService {
     if (notifiedAt > now || notifiedAt < result.observedAt) {
       throw new CriticalNoticeTimeInvalidError();
     }
+    /**
+     * ORD-062. A value the laboratory retracted is not phoned in — but the
+     * call made while it was still the standing value gets its record: the
+     * act happened, and art. 39 asks for its proof. Judged again, under a
+     * lock, where the row lands.
+     */
+    if (result.supersededAt && notifiedAt >= result.supersededAt) {
+      throw new ResultSupersededError();
+    }
+    /**
+     * ORD-062, D-113 b. The practitioner who placed the order «notifying»
+     * themselves is recorded as it happened — and does not close the worklist:
+     * the patient at home still knows nothing.
+     */
+    const selfNotice =
+      request.recipientKind === 'ORDERING_PRACTITIONER' &&
+      requester.userId === result.orderedByUserId;
 
     // ORD-068. Out of hours at the moment of the CALL, not of the typing.
     const inHours = await this.reports.sitesInHours([result.siteId], notifiedAt); // prettier-ignore
@@ -566,6 +591,7 @@ export class DiagnosticReportService {
       outcome: request.outcome,
       readBackConfirmed: given ? true : null,
       afterHours: !inHours.has(result.siteId),
+      selfNotice,
       sites: requester.sites,
       trail: { ip: requester.ip, userAgent: requester.userAgent },
     });

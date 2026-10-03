@@ -103,11 +103,10 @@ export interface SiteParameters {
    * ORD-063, ORD-065. Minutes a critical laboratory value may wait for its
    * notice before the worklist calls it overdue.
    *
-   * Sixty by default (D-111 §1). `null` is still a value a site may choose —
-   * «la clínica no ha fijado plazo» — and the worklist says so rather than
-   * inventing one.
+   * Sixty by default and always present (D-111 §1): changeable, not
+   * removable — without a deadline nothing would ever escalate in hours.
    */
-  criticalNoticeWithinMinutes: number | null;
+  criticalNoticeWithinMinutes: number;
   /** ORD-063, ORD-065. The role an overdue critical value is escalated to. */
   criticalEscalationRoleId: string | null;
   /**
@@ -310,8 +309,6 @@ export function assertParametersInRange(patch: SiteParametersPatch): void {
 
   for (const key of Object.keys(PARAMETER_RANGES) as RangedParameter[]) {
     const value = patch[key];
-    // `null` is «sin plazo», a value a site may choose (ORD-065), not a
-    // number outside a range.
     if (value === undefined || value === null) continue;
 
     const range: Range = PARAMETER_RANGES[key];

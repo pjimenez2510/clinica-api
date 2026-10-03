@@ -82,11 +82,13 @@ async function aCriticalGlucose(prisma: PrismaClient, now: Date) {
 }
 
 /**
- * NOON IN ECUADOR, TODAY — derived from the clock, never written by hand. The
+ * NOON IN ECUADOR, YESTERDAY — derived from the clock, never written by hand. The
  * hour every in-hours rule below covers, whatever time the suite runs.
  */
 function clinicNoon(): { now: Date; isoWeekday: number; day: string } {
-  const day = clinicalDateOf(new Date());
+  // YESTERDAY: a report issued «an hour before noon» is then in the past
+  // whatever time the suite runs — today's noon is in the future before 11:00.
+  const day = clinicalDateOf(new Date(Date.now() - 86_400_000));
   const weekday = new Date(`${day}T12:00:00Z`).getUTCDay();
   return {
     now: new Date(`${day}T12:00:00-05:00`),
@@ -136,6 +138,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
         outcome: 'NOTIFIED',
         readBackConfirmed: true,
         afterHours: false,
+        selfNotice: false,
       },
     });
     expect(await prisma.criticalResultNotice.count()).toBe(1);
@@ -172,6 +175,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
       notifiedById: nurse.id,
       notifiedAt: now,
       afterHours: false,
+      selfNotice: false,
     };
 
     await expect(
@@ -225,6 +229,10 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     await expect(
       prisma.siteParameter.update({ where, data: { criticalNoticeWithinMinutes: 4 } }), // prettier-ignore
     ).rejects.toThrow();
+    // D-111 §1: cambiable, no eliminable. La base no admite quitarlo.
+    await expect(
+      prisma.$executeRaw`UPDATE "site_parameter" SET "critical_notice_within_minutes" = NULL WHERE "site_id" = ${scene.site.id}::uuid`, // prettier-ignore
+    ).rejects.toThrow();
     await expect(
       prisma.siteParameter.update({ where, data: { unmatchedResultDeadlineHours: 0 } }), // prettier-ignore
     ).rejects.toThrow();
@@ -243,7 +251,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     const requester: Requester = { userId: nurse.id, sites: 'all' };
 
     // Control positivo: antes del aviso, el valor está en la cola.
-    expect(await store.critical({ sites: 'all', limit: 50 })).toHaveLength(1);
+    expect(await store.critical({ sites: 'all' })).toHaveLength(1);
 
     const calledAt = new Date(now.getTime() - 10 * 60_000);
     const notice = await reports.notify(
@@ -262,7 +270,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
       afterHours: false,
       notifiedBy: { id: nurse.id, name: 'Carmen Salazar' },
     });
-    expect(await store.critical({ sites: 'all', limit: 50 })).toEqual([]);
+    expect(await store.critical({ sites: 'all' })).toEqual([]);
 
     const report = await store.byId({
       reportId: scene.report.id,
@@ -323,13 +331,13 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     expect(first).toMatchObject({ outcome: 'NO_ANSWER', readBackConfirmed: null }); // prettier-ignore
     await reports.notify(attempt, requester, now);
 
-    const [waiting] = await reports.critical(requester, 50, now);
+    const [waiting] = await reports.critical(requester, now);
     expect(waiting?.resultId).toBe(scene.result.id);
     expect(waiting?.noAnswerAttempts).toBe(2);
 
     // Control positivo: el aviso hecho sí lo saca.
     await reports.notify({ resultId: scene.result.id, ...given }, requester, now); // prettier-ignore
-    expect(await reports.critical(requester, 50, now)).toEqual([]);
+    expect(await reports.critical(requester, now)).toEqual([]);
   });
 
   it('ORD-062 rechaza el aviso de un valor que no es crítico', async () => {
@@ -381,14 +389,16 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
       requester,
     );
 
+    // Una llamada de AHORA, después de la corrección, es sobre un valor retirado.
+    const afterCorrection = new Date(Date.now() + 1000);
     await expect(
-      reports.notify({ resultId: scene.result.id, ...given }, requester, now),
+      reports.notify({ resultId: scene.result.id, ...given }, requester, afterCorrection), // prettier-ignore
     ).rejects.toMatchObject({ code: 'RESULT_SUPERSEDED' });
 
     // Control positivo: el valor que lo sustituye, crítico también, sí.
-    const [standing] = await reports.critical(requester, 50, now);
+    const [standing] = await reports.critical(requester, now);
     expect(standing?.resultId).not.toBe(scene.result.id);
-    await reports.notify({ resultId: standing!.resultId, ...given }, requester, now); // prettier-ignore
+    await reports.notify({ resultId: standing!.resultId, ...given }, requester, afterCorrection); // prettier-ignore
     expect(await prisma.criticalResultNotice.count()).toBe(1);
   });
 
@@ -444,7 +454,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     const requester: Requester = { userId: 'user-1', sites: 'all' };
 
     // 60 min de fábrica y el resultado tiene 60: aún dentro, a quien pidió.
-    const [onTime] = await reports.critical(requester, 50, now);
+    const [onTime] = await reports.critical(requester, now);
     expect(onTime).toMatchObject({
       waitingMinutes: 60,
       overdue: false,
@@ -458,7 +468,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
       where: { siteId: scene.site.id },
       data: { criticalNoticeWithinMinutes: 30 },
     });
-    const [lateNoRole] = await reports.critical(requester, 50, now);
+    const [lateNoRole] = await reports.critical(requester, now);
     expect(lateNoRole).toMatchObject({
       overdue: true,
       noticeTarget: 'ORDERING_PRACTITIONER',
@@ -475,7 +485,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
       where: { siteId: scene.site.id },
       data: { criticalEscalationRoleId: role.id },
     });
-    const [late] = await reports.critical(requester, 50, now);
+    const [late] = await reports.critical(requester, now);
     expect(late).toMatchObject({
       noticeTarget: 'ON_CALL_ROLE',
       escalationMissing: false,
@@ -492,7 +502,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     const requester: Requester = { userId: nurse.id, sites: 'all' };
 
     // Ninguna regla de horario cubre el mediodía: fuera de horario, sin guardia.
-    const [closed] = await reports.critical(requester, 50, now);
+    const [closed] = await reports.critical(requester, now);
     expect(closed).toMatchObject({ afterHours: true, noticeTarget: 'PATIENT' });
 
     // Con guardia, a la guardia aunque no haya vencido.
@@ -503,18 +513,18 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
       where: { siteId: scene.site.id },
       data: { criticalEscalationRoleId: role.id },
     });
-    const [onCall] = await reports.critical(requester, 50, now);
+    const [onCall] = await reports.critical(requester, now);
     expect(onCall).toMatchObject({ afterHours: true, overdue: false, noticeTarget: 'ON_CALL_ROLE' }); // prettier-ignore
 
     // Control positivo del horario: con una regla que cubre el mediodía, en horario…
     await siteInHours(prisma, scene, isoWeekday);
-    expect((await reports.critical(requester, 50, now))[0]?.afterHours).toBe(false); // prettier-ignore
+    expect((await reports.critical(requester, now))[0]?.afterHours).toBe(false); // prettier-ignore
 
     // …salvo que hoy sea feriado para la sede.
     await prisma.holiday.create({
       data: { date: new Date(`${day}T00:00:00Z`), name: 'Feriado de prueba', siteId: scene.site.id }, // prettier-ignore
     });
-    expect((await reports.critical(requester, 50, now))[0]?.afterHours).toBe(true); // prettier-ignore
+    expect((await reports.critical(requester, now))[0]?.afterHours).toBe(true); // prettier-ignore
 
     // Y la constancia guarda que fue fuera de horario.
     const notice = await reports.notify({ resultId: scene.result.id, ...given }, requester, now); // prettier-ignore
@@ -650,10 +660,214 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
       requester,
     );
 
-    const queue = await reports.critical(requester, 50, now);
+    const queue = await reports.critical(requester, now);
     expect(queue.map((entry) => entry.resultId)).toEqual([
       older.result.id,
       newer.results[0]!.id,
     ]);
+  });
+
+  it('ORD-062 el médico que pidió el examen que se «avisa a sí mismo» deja constancia pero no saca el valor de la cola', async () => {
+    const prisma = db();
+    const { now } = clinicNoon();
+    const scene = await aCriticalGlucose(prisma, now);
+    const { reports } = serviceOf(prisma);
+    // Quien registra es la cuenta del médico que pidió la orden.
+    const orderer: Requester = {
+      userId: scene.practitioner.userId,
+      sites: 'all',
+    };
+
+    const own = await reports.notify(
+      { resultId: scene.result.id, ...given, recipientKind: 'ORDERING_PRACTITIONER', recipientName: 'Yo mismo' }, // prettier-ignore
+      orderer,
+      now,
+    );
+    expect(own.selfNotice).toBe(true);
+    // D-113 b: el paciente en casa no sabe nada; el valor sigue esperando.
+    expect((await reports.critical(orderer, now)).map((e) => e.resultId)).toEqual([scene.result.id]); // prettier-ignore
+
+    // Control positivo: el mismo médico avisa a la paciente, y entonces sale.
+    await reports.notify({ resultId: scene.result.id, ...given }, orderer, now);
+    expect(await reports.critical(orderer, now)).toEqual([]);
+
+    // Y otra persona que avisa al médico que pidió sí cierra la cola.
+    const { orders } = serviceOf(prisma);
+    const order = await orders.place({
+      encounterId: scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [{ examDefinitionId: scene.glucose.id }],
+      sites: 'all',
+    });
+    const secondReport = await reports.register(
+      {
+        orderId: order.id,
+        performedById: null,
+        issuedAt: new Date(now.getTime() - 3_600_000),
+        results: [{ analyteDefinitionId: scene.glu.id, valueNumeric: 20 }],
+      },
+      orderer,
+    );
+    const nurse = await createUser(prisma);
+    const told = await reports.notify(
+      { resultId: secondReport.results[0]!.id, ...given, recipientKind: 'ORDERING_PRACTITIONER', recipientName: 'La médica' }, // prettier-ignore
+      { userId: nurse.id, sites: 'all' },
+      now,
+    );
+    expect(told.selfNotice).toBe(false);
+    expect(await reports.critical(orderer, now)).toEqual([]);
+  });
+
+  it('ORD-062 la llamada hecha antes de que el laboratorio corrigiera se registra; la de después, no', async () => {
+    const prisma = db();
+    const realNow = new Date();
+    const scene = await aCriticalGlucose(prisma, realNow);
+    const nurse = await createUser(prisma);
+    const { reports } = serviceOf(prisma);
+    const requester: Requester = { userId: nurse.id, sites: 'all' };
+    // La llamada fue hace media hora; el laboratorio corrige ahora.
+    const calledAt = new Date(realNow.getTime() - 30 * 60_000);
+    await reports.correct(
+      {
+        reportId: scene.report.id,
+        performedById: null,
+        issuedAt: new Date(realNow.getTime() - 10 * 60_000),
+        results: [{ analyteDefinitionId: scene.glu.id, valueNumeric: 95 }],
+      },
+      requester,
+    );
+
+    const notice = await reports.notify(
+      { resultId: scene.result.id, ...given, notifiedAt: calledAt },
+      requester,
+      new Date(),
+    );
+    expect(notice.notifiedAt).toEqual(calledAt);
+
+    // Una llamada fechada DESPUÉS de la corrección es sobre un valor retirado.
+    await expect(
+      reports.notify({ resultId: scene.result.id, ...given }, requester, new Date(Date.now() + 1000)), // prettier-ignore
+    ).rejects.toMatchObject({ code: 'RESULT_SUPERSEDED' });
+  });
+
+  it('ORD-065 y ORD-067 una corrección que sigue siendo crítica no reinicia el plazo ni los intentos', async () => {
+    const prisma = db();
+    const { now } = clinicNoon();
+    // El primer informe se emitió hace una hora (aCriticalGlucose).
+    const scene = await aCriticalGlucose(prisma, now);
+    const nurse = await createUser(prisma);
+    const { reports } = serviceOf(prisma);
+    const requester: Requester = { userId: nurse.id, sites: 'all' };
+
+    await reports.notify(
+      { resultId: scene.result.id, outcome: 'NO_ANSWER', recipientKind: 'PATIENT', recipientName: 'La paciente', channel: 'PHONE' }, // prettier-ignore
+      requester,
+      now,
+    );
+    // El laboratorio corrige a 22 hace un minuto: sigue siendo crítico.
+    await reports.correct(
+      {
+        reportId: scene.report.id,
+        performedById: null,
+        issuedAt: new Date(now.getTime() - 60_000),
+        results: [{ analyteDefinitionId: scene.glu.id, valueNumeric: 22 }],
+      },
+      requester,
+    );
+
+    const [standing] = await reports.critical(requester, now);
+    expect(standing?.resultId).not.toBe(scene.result.id);
+    expect(standing).toMatchObject({ waitingMinutes: 60, noAnswerAttempts: 1 });
+    expect(standing?.firstObservedAt).toEqual(new Date(now.getTime() - 3_600_000)); // prettier-ignore
+  });
+
+  it('ORD-065 una llamada sin respuesta al médico que pidió pasa el aviso a la guardia sin esperar a que venza', async () => {
+    const prisma = db();
+    const { now, isoWeekday } = clinicNoon();
+    const scene = await aCriticalGlucose(prisma, now);
+    await siteInHours(prisma, scene, isoWeekday);
+    const nurse = await createUser(prisma);
+    const { reports } = serviceOf(prisma);
+    const requester: Requester = { userId: nurse.id, sites: 'all' };
+    const role = await prisma.role.create({
+      data: { code: 'GUARDIA_CLINICA', name: 'Responsable clínico de guardia' },
+    });
+    await prisma.siteParameter.update({
+      where: { siteId: scene.site.id },
+      data: { criticalNoticeWithinMinutes: 120, criticalEscalationRoleId: role.id }, // prettier-ignore
+    });
+
+    // Control positivo: en plazo y sin llamadas, toca a quien pidió.
+    expect((await reports.critical(requester, now))[0]?.noticeTarget).toBe('ORDERING_PRACTITIONER'); // prettier-ignore
+
+    await reports.notify(
+      { resultId: scene.result.id, outcome: 'NO_ANSWER', recipientKind: 'ORDERING_PRACTITIONER', recipientName: 'La médica', channel: 'PHONE' }, // prettier-ignore
+      requester,
+      now,
+    );
+    const [after] = await reports.critical(requester, now);
+    expect(after).toMatchObject({
+      overdue: false,
+      noticeTarget: 'ON_CALL_ROLE',
+    });
+  });
+
+  it('ORD-068 el horario de la sede: feriado nacional, feriado que la sede trabaja, regla inactiva o fuera de vigencia, el borde de la franja y una hora que cruza el día UTC', async () => {
+    const prisma = db();
+    const { now, isoWeekday, day } = clinicNoon();
+    const scene = await aCriticalGlucose(prisma, now);
+    const { store } = serviceOf(prisma);
+    const site = scene.site.id;
+    const inHours = async (at: Date) => (await store.sitesInHours([site], at)).has(site); // prettier-ignore
+    const local = (hhmm: string) => new Date(`${day}T${hhmm}:00-05:00`);
+    const rule = (
+      overrides: Partial<Parameters<typeof createScheduleRule>[2]>,
+    ) =>
+      createScheduleRule(
+        prisma,
+        { practitionerId: scene.practitioner.id, siteId: site },
+        {
+          weekday: isoWeekday,
+          startTime: '08:00',
+          endTime: '20:00',
+          ...overrides,
+        },
+      );
+
+    // Una regla inactiva y una que ya no rige no abren la sede.
+    const inactive = await rule({ active: false });
+    expect(await inHours(now)).toBe(false);
+    await prisma.practitionerScheduleRule.delete({
+      where: { id: inactive.id },
+    });
+    const dayStart = new Date(`${day}T00:00:00Z`);
+    const yesterdayOfDay = new Date(dayStart.getTime() - 86_400_000);
+    const expired = await rule({ validTo: yesterdayOfDay });
+    expect(await inHours(now)).toBe(false);
+    await prisma.practitionerScheduleRule.delete({ where: { id: expired.id } });
+    // La que acaba ESE día aún rige: `validity` es [] e incluye el último.
+    const lastDay = await rule({ validTo: dayStart });
+    expect(await inHours(now)).toBe(true);
+    await prisma.practitionerScheduleRule.delete({ where: { id: lastDay.id } });
+
+    // Control positivo: con una regla activa y vigente, en horario…
+    await rule({});
+    expect(await inHours(now)).toBe(true);
+    // …el borde superior es abierto: a las 20:00 ya no…
+    expect(await inHours(local('20:00'))).toBe(false);
+    expect(await inHours(local('19:59'))).toBe(true);
+    // …y las 19:30 de Guayaquil son las 00:30 UTC del día siguiente: cuenta el
+    // día y la hora de ECUADOR.
+    expect(await inHours(local('19:30'))).toBe(true);
+
+    // Un feriado NACIONAL cierra la sede…
+    const national = await prisma.holiday.create({
+      data: { date: new Date(`${day}T00:00:00Z`), name: 'Feriado nacional de prueba', siteId: null }, // prettier-ignore
+    });
+    expect(await inHours(now)).toBe(false);
+    // …salvo que la sede lo trabaje.
+    await prisma.holidaySiteException.create({ data: { holidayId: national.id, siteId: site } }); // prettier-ignore
+    expect(await inHours(now)).toBe(true);
   });
 });

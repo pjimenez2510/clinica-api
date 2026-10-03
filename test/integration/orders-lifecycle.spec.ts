@@ -482,6 +482,15 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     await prisma.patientIdentifier.create({
       data: { patientId: mother.patient.id, type: 'CEDULA', value: CEDULA },
     });
+    await prisma.patient.update({
+      where: { id: mother.patient.id },
+      data: {
+        givenName: 'María',
+        secondGivenName: 'Elena',
+        familyName: 'Guamán',
+        secondFamilyName: 'Pilco',
+      },
+    });
     const other = await createPatient(prisma);
     await prisma.patient.update({
       where: { id: other.id },
@@ -530,9 +539,8 @@ describe('la orden de exámenes contra PostgreSQL', () => {
 
     const byCedula = await service.pending({ cedula: CEDULA, limit: 50 }, requester, now); // prettier-ignore
     expect(byCedula.map((entry) => entry.orderId)).toEqual([mothers.id]);
-    expect(byCedula[0]?.patientName).toBe(
-      `${mother.patient.givenName} ${mother.patient.familyName}`,
-    );
+    // Los dos nombres y los dos apellidos: es lo que separa a dos homónimos.
+    expect(byCedula[0]?.patientName).toBe('María Elena Guamán Pilco');
 
     // ORD-024: sin cédula vuelven las dos, y ninguna dice de quién es.
     const unfiltered = await service.pending({ limit: 50 }, requester, now);

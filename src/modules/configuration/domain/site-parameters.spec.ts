@@ -166,7 +166,7 @@ describe('los parámetros de operación de una sede', () => {
         overbookingPermission: 'agenda:overbook',
         waitlistMaxContactAttempts: 3,
         cancelledRetention: 'NEVER',
-        criticalNoticeWithinMinutes: null,
+        criticalNoticeWithinMinutes: 60,
         criticalEscalationRoleId: null,
         unmatchedResultOwnerRoleId: null,
         unmatchedResultDeadlineHours: 24,
@@ -192,7 +192,7 @@ describe('los parámetros de operación de una sede', () => {
         overbookingPermission: 'agenda:overbook',
         waitlistMaxContactAttempts: 3,
         cancelledRetention: 'NEVER',
-        criticalNoticeWithinMinutes: null,
+        criticalNoticeWithinMinutes: 60,
         criticalEscalationRoleId: null,
         unmatchedResultOwnerRoleId: null,
         unmatchedResultDeadlineHours: 24,
@@ -263,9 +263,8 @@ describe('los parámetros de operación de una sede', () => {
     ]);
   });
 
-  it('ORD-065 admite «sin plazo» para los críticos y acota el plazo cuando se fija', () => {
-    // `null` es un valor: la clínica no ha decidido, y la cola lo dice.
-    expect(() => assertParametersInRange({ criticalNoticeWithinMinutes: null })).not.toThrow(); // prettier-ignore
+  it('ORD-063 acota el plazo de aviso de los críticos, que siempre existe', () => {
+    expect(DEFAULT_SITE_PARAMETERS.criticalNoticeWithinMinutes).toBe(60);
     expect(() => assertParametersInRange({ criticalNoticeWithinMinutes: 5 })).not.toThrow(); // prettier-ignore
     expect(() => assertParametersInRange({ criticalNoticeWithinMinutes: 1440 })).not.toThrow(); // prettier-ignore
     for (const criticalNoticeWithinMinutes of [0, 4, 1441, 7.5]) {

@@ -248,4 +248,37 @@ describe('los resultados por HTTP', () => {
       }),
     ).toBe(1);
   });
+
+  it('ORD-030 un informe sin fecha de emisión no entra: ningún «ahora» la sustituye', async () => {
+    const response = await post(`/orders/${orderId}/reports`, {
+      results: [{ analyteDefinitionId: glucoseAnalyteId, valueNumeric: 25 }],
+    }).expect(422);
+
+    expect((response.body as Problem).code).toBe('VALIDATION_FAILED');
+    expect((response.body as Problem).errors?.[0]?.field).toBe('issuedAt');
+    expect(await prisma.diagnosticReport.count()).toBe(0);
+  });
+
+  it('ORD-067 una llamada sin respuesta que dice «repitió el valor» se rechaza', async () => {
+    const resultId = await criticalGlucose();
+
+    const response = await post(`/orders/results/${resultId}/notices`, {
+      outcome: 'NO_ANSWER',
+      readBack: true,
+      recipientKind: 'PATIENT',
+      recipientName: 'La paciente',
+      channel: 'PHONE',
+    }).expect(422);
+
+    expect((response.body as Problem).errors?.[0]?.field).toBe('readBack');
+    expect(await prisma.criticalResultNotice.count()).toBe(0);
+
+    // Control positivo: el mismo intento, sin read-back, entra.
+    await post(`/orders/results/${resultId}/notices`, {
+      outcome: 'NO_ANSWER',
+      recipientKind: 'PATIENT',
+      recipientName: 'La paciente',
+      channel: 'PHONE',
+    }).expect(201);
+  });
 });
