@@ -654,12 +654,15 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
   del **formulario 117** del MSP. MIENTRAS sea de **reposo**, DEBERÁ llevar al
   pie, en una franja gris, la nota de validación del IESS: hasta 8 días después
   del fin del reposo; con firma por credencial se valida en ventanilla, y en
-  línea exige firma electrónica; no aplica a afiliados voluntarios, menores de
-  edad, jubilados ni Seguro Social Campesino; y, SI imprime el diagnóstico, que
-  su uso lo autoriza el paciente (A.M. 5216-A).
+  línea exige firma electrónica; y, SI imprime el diagnóstico, que su uso lo
+  autoriza el paciente (A.M. 5216-A). NO DEBERÁ decir a quién no aplica la
+  validación en línea.
 
   > Informativa (D-095): en pantalla la da CER-013. Fuentes del IESS en D-075.
-  > Un certificado de asistencia no se valida en el IESS y no la lleva.
+  > Un certificado de asistencia no se valida en el IESS y no la lleva. La
+  > exclusión de afiliados voluntarios, menores de edad, jubilados y Seguro
+  > Social Campesino es solo de la vía en línea, que este certificado no
+  > admite; impresa bajo «Validación en el IESS» se leía como general (D-114).
 
 - **DOC-076** — El **RIDE** DEBERÁ colocar el logo, los datos del emisor, la
   clave de acceso, la autorización, el receptor, el detalle y los totales
