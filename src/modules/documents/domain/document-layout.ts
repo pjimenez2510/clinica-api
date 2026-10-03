@@ -711,12 +711,14 @@ export function composeCertificateLayout(
 
   // DOC-075, CER-013 (D-095). How the rest is validated, on the paper the
   // patient carries to the IESS. Sources in D-075: the IESS's procedure (up to
-  // eight days after the rest ends), its 2024 guide (a hand signature goes to
-  // the counter; online needs a digital signature, which a credential is not)
-  // and its 2025 digital validation (who it does not apply to). Only on a
-  // rest: an attendance certificate is not validated. And never on a revoked
-  // one: instructions to validate a void certificate are the opposite of what
-  // its «ANULADO» says (CER-029).
+  // eight days after the rest ends) and its 2024 guide (a hand signature goes
+  // to the counter; online needs a digital signature, which a credential is
+  // not). Who the 2025 online validation excludes is not printed (D-114): the
+  // exclusion is of a path this paper does not admit, and read under
+  // «Validación en el IESS» it told a minor the counter was closed to them.
+  // Only on a rest: an attendance certificate is not validated. And never on
+  // a revoked one: instructions to validate a void certificate are the
+  // opposite of what its «ANULADO» says (CER-029).
   if (form.type === 'MEDICAL_REST' && form.revocation === null) {
     blocks.push({
       kind: 'note',
@@ -725,13 +727,15 @@ export function composeCertificateLayout(
           label: 'Validación en el IESS: ',
           text: 'hasta 8 días después del fin del reposo. Este certificado lleva firma por credencial: se valida en ventanilla, impreso y firmado a mano. La validación en línea exige firma electrónica del profesional.',
         },
-        {
-          // A.M. 5216-A only where there is something it covers: a health
-          // datum, which is exactly when the diagnosis is printed.
-          text: form.confidential
-            ? 'No aplica a afiliados voluntarios, menores de edad, jubilados ni afiliados al Seguro Social Campesino. Contiene datos de salud: su uso lo autoriza el paciente (A.M. 5216-A).'
-            : 'No aplica a afiliados voluntarios, menores de edad, jubilados ni afiliados al Seguro Social Campesino.',
-        },
+        // A.M. 5216-A only where there is something it covers: a health
+        // datum, which is exactly when the diagnosis is printed.
+        ...(form.confidential
+          ? [
+              {
+                text: 'Contiene datos de salud: su uso lo autoriza el paciente (A.M. 5216-A).',
+              },
+            ]
+          : []),
       ],
     });
   }

@@ -938,9 +938,14 @@ describe('DOC-075 el certificado sobre el formulario 117 y la plantilla aprobada
     const text = textOf(rest);
     expect(text).toContain('hasta 8 días después del fin del reposo');
     expect(text).toContain('se valida en ventanilla');
-    expect(text).toContain('Seguro Social Campesino');
+    expect(text).toContain('exige firma electrónica');
     // It prints a diagnosis, so it says whose consent covers it.
+    expect(text).toContain('Contiene datos de salud');
     expect(text).toContain('A.M. 5216-A');
+    // D-114. The exclusion is of the online validation only, which a
+    // credential-signed certificate does not admit, so the paper omits it.
+    expect(text).not.toContain('afiliados voluntarios');
+    expect(text).not.toContain('Seguro Social Campesino');
     // Closes the document: after block E.
     const blocks = composeLayout(certificate(), context, template).blocks;
     expect(blocks.at(-1)?.kind).toBe('note');
@@ -974,7 +979,11 @@ describe('DOC-075 el certificado sobre el formulario 117 y la plantilla aprobada
         template,
       ).blocks.filter((block) => block.kind === 'note'),
     );
-    expect(text).toContain('Seguro Social Campesino');
+    expect(text).toContain('hasta 8 días después del fin del reposo');
+    expect(text).toContain('se valida en ventanilla');
+    expect(text).toContain('exige firma electrónica');
+    expect(text).not.toContain('Seguro Social Campesino');
+    expect(text).not.toContain('Contiene datos de salud');
     expect(text).not.toContain('A.M. 5216-A');
   });
 
