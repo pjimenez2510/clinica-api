@@ -500,13 +500,14 @@ cuando la gráfica exista.
 
 - **ORD-030** — CUANDO se registra un informe contra una orden, el sistema DEBERÁ
   crearlo con su estado —`PARTIAL` mientras falten determinaciones, `FINAL`
-  cuando estén todas—, quién lo emitió y **cuándo lo emitió el laboratorio**, y
-  SI esa fecha es futura ENTONCES DEBERÁ rechazarlo con
-  `REPORT_ISSUED_IN_FUTURE`.
+  cuando estén todas—, quién lo emitió y **cuándo lo emitió el laboratorio**, que
+  DEBERÁ declararse siempre; SI falta ENTONCES DEBERÁ rechazarlo como petición
+  mal formada, y SI es futura, con `REPORT_ISSUED_IN_FUTURE`.
 
   La fecha de emisión no es la de transcripción: el papel de anoche se teclea
   esta mañana, y de la emisión corre el plazo de un crítico (ORD-065, D-113 a)
-  y a ella se acota la hora de su aviso (ORD-062).
+  y a ella se acota la hora de su aviso (ORD-062). Por eso no tiene valor por
+  defecto en ningún lado: un «ahora» que nadie toca es la transcripción otra vez.
 
 - **ORD-031** — Cada valor DEBERÁ registrarse contra un `analyte_definition`, y
   el sistema DEBERÁ congelar el nombre del analito en la fila
@@ -603,7 +604,9 @@ cuando la gráfica exista.
   aparecer en la cola de **resultados sin orden**.
 
   Ni se descarta ni se empareja solo. Un valor que llega de más suele ser un
-  panel que el laboratorio amplió, y a veces es el informe de otro paciente.
+  panel que el laboratorio amplió, y a veces es el informe de otro paciente. La
+  cola enseña sólo los de informes **vigentes**: el valor de un informe que el
+  laboratorio corrigió ya no es de nadie que emparejar.
 
 - **ORD-041** — Los resultados sin orden NO DEBERÁN emparejarse automáticamente,
   y su cola DEBERÁ mostrarlos hasta que una persona los resuelva.
@@ -619,8 +622,9 @@ cuando la gráfica exista.
   DEBERÁ reevaluar la completitud de esa línea con la regla de ORD-039, y SI la
   línea es de otra orden o está anulada, ENTONCES DEBERÁ rechazarlo con
   `ORDER_ITEM_NOT_MATCHABLE`. SI el resultado ya responde a una línea, ENTONCES
-  DEBERÁ rechazarlo con `RESULT_ALREADY_MATCHED`; SI no existe o es de una sede
-  fuera del alcance, con `RESULT_NOT_FOUND`.
+  DEBERÁ rechazarlo con `RESULT_ALREADY_MATCHED`; SI su informe ya fue corregido,
+  con `RESULT_SUPERSEDED`; SI no existe o es de una sede fuera del alcance, con
+  `RESULT_NOT_FOUND`.
 
   > ═════════════════════════════════════════════════════════════════════════
   > **DE LA MISMA ORDEN, Y NO HAY `CHECK` QUE LO GARANTICE**
@@ -732,11 +736,17 @@ cuando la gráfica exista.
 
 ---
 
-## 5. Los valores críticos (ORD-060 a ORD-063)
+## 5. Los valores críticos (ORD-060 a ORD-068)
 
 - **ORD-060** — El sistema DEBERÁ publicar, para las sedes del alcance de quien
-  pregunta, los resultados con bandera `CRITICAL_LOW` o `CRITICAL_HIGH`, del más
-  reciente al más antiguo.
+  pregunta, los resultados con bandera `CRITICAL_LOW` o `CRITICAL_HIGH` de
+  informes vigentes que esperan aviso, **todos**, del que más lleva esperando al
+  que menos.
+
+  Sin corte: un valor que espera aviso fuera de la pantalla es un valor que no
+  se avisa, y con los más antiguos primero el que quedaría fuera sería el de
+  hoy (revisión clínica). Los anteriores al despliegue los revisa una persona
+  al ponerlo en marcha (D-113 c).
 
 - **ORD-061** — La cola de críticos NO DEBERÁ depender de ninguna bandera enviada
   por el laboratorio: se construye sobre los rangos `CRITICAL` del catálogo
@@ -751,11 +761,15 @@ cuando la gráfica exista.
   DEBERÁ guardar **a quién se avisó** (tipo y nombre), **quién avisó**, **cuándo**
   y **por qué medio**, DEBERÁ exigir `result:write` y DEBERÁ dejar fila en
   `access_audit`; el valor DEBERÁ seguir en la cola de ORD-060 hasta que exista
-  un aviso hecho, y salir de ella en cuanto exista. SI el resultado no lleva
-  bandera crítica ENTONCES DEBERÁ rechazarse con `RESULT_NOT_CRITICAL`; SI su
-  informe ya fue corregido, con `RESULT_SUPERSEDED`; SI el instante declarado es
-  futuro o anterior al resultado, con `CRITICAL_NOTICE_TIME_INVALID`; SI el
-  resultado no existe o es de una sede fuera del alcance, con `RESULT_NOT_FOUND`.
+  un aviso hecho que la cierre, y salir de ella en cuanto exista. **NO DEBERÁ
+  cerrarla** el aviso «al médico que pidió el examen» que registra ese mismo
+  médico: queda como constancia, y el valor sigue esperando el aviso al paciente
+  o a otra persona (D-113 b). SI el resultado no lleva bandera crítica ENTONCES
+  DEBERÁ rechazarse con `RESULT_NOT_CRITICAL`; SI su informe fue corregido
+  **antes** del instante del aviso, con `RESULT_SUPERSEDED`; SI el instante
+  declarado es futuro o anterior al resultado, con
+  `CRITICAL_NOTICE_TIME_INVALID`; SI el resultado no existe o es de una sede
+  fuera del alcance, con `RESULT_NOT_FOUND`.
 
   El **A.M. 00002393 art. 39** obliga a informar *«de manera urgente al médico
   tratante y/o al usuario»*, y **el aviso telefónico es un acto clínico, no una
@@ -769,19 +783,24 @@ cuando la gráfica exista.
   tiene que decir las 03:00; por eso se acota entre el resultado y el ahora.
   **Quién puede registrarlo** es quien tiene `result:write` (D-111 §6): la
   enfermera que llama es lo corriente. Y un valor que el laboratorio ya
-  retractó no se avisa: se avisa el que lo sustituye, si es crítico.
+  retractó no se avisa: se avisa el que lo sustituye, si es crítico. Pero la
+  llamada de las 03:00 sobre el valor que entonces era el vigente sí se anota
+  aunque la corrección llegara a las 07:30: el acto ocurrió, y su constancia
+  es la que exige el art. 39.
 
 - **ORD-063** — La política de valores críticos —qué analitos, qué umbrales, a
   quién se avisa y qué pasa fuera de horario— DEBERÁ ser configuración de la
-  clínica y no una constante del código, y una sede nueva DEBERÁ nacer con
-  **60 minutos** de plazo de aviso.
+  clínica y no una constante del código; toda sede DEBERÁ tener un plazo de
+  aviso, de 5 a 1440 minutos, y una sede nueva DEBERÁ nacer con **60**.
 
   Los umbrales son datos (`analyte_reference_range` con
   `range_kind = 'CRITICAL'`); el plazo y el rol de guardia, parámetros de la
   sede (`site_parameter.critical_notice_within_minutes`,
   `critical_escalation_role_id`). Los 60 minutos son **D-111 §1**: la
   notificación ambulatoria tarda de media ~14 minutos, y 60 deja margen sin
-  normalizar el retraso. La sede lo cambia en Parámetros.
+  normalizar el retraso. La sede lo cambia en Parámetros, pero **no lo quita**:
+  D-111 §1 lo hizo cambiable, no eliminable, y sin plazo no se escalaría nunca
+  en horario (revisión clínica).
 
 - **ORD-064** — La constancia del aviso, y la del intento sin respuesta, NO
   DEBERÁN poder modificarse ni borrarse; un registro equivocado se corrige
@@ -791,16 +810,18 @@ cuando la gráfica exista.
   una constancia que se puede reescribir no constituye prueba de nada.
 
 - **ORD-065** — Cada entrada de la cola de críticos DEBERÁ decir cuántos
-  minutos lleva esperando aviso, y DONDE la sede fija un plazo DEBERÁ decir si
-  está vencida; SI la sede no lo fija ENTONCES DEBERÁ decir que la clínica no ha
-  fijado plazo, y NO DEBERÁ inventar uno. CUANDO está vencida, DEBERÁ decir a
-  qué rol de guardia toca avisar, y SI la sede no designó ninguno ENTONCES
-  DEBERÁ decirlo y NO DEBERÁ escalar a nadie por su cuenta.
+  minutos lleva esperando aviso, contados desde la emisión del **primer**
+  informe de su cadena de correcciones, si está vencida, y a quién toca avisar:
+  al médico que pidió el examen —con su nombre— MIENTRAS no haya vencido ni
+  haya llamadas sin respuesta a él; y CUANDO venza o ese médico no conteste,
+  al rol de guardia de la sede, y SI la sede no designó ninguno ENTONCES DEBERÁ
+  decirlo y NO DEBERÁ escalar a nadie por su cuenta.
 
-  Es el argumento de ORD-022 aplicado a la cola que más importa, y **D-111
-  §2**: sin rol de guardia, la cola lo dice. Los minutos se cuentan desde
-  `observed_at`, que es cuando el laboratorio emitió el informe: un informe en
-  papel de hace tres días entra ya vencido, y es verdad.
+  **D-111 §2**: «si el médico que pidió no responde → guardia», y sin rol de
+  guardia la cola lo dice. Desde el primer informe de la cadena porque una
+  corrección que sigue siendo crítica no es un valor nuevo que espere desde
+  cero: es el mismo aviso pendiente (revisión clínica). Un informe en papel de
+  hace tres días entra ya vencido, y es verdad.
 
 - **ORD-066** — CUANDO se registra un aviso hecho, el sistema DEBERÁ exigir la
   confirmación de que quien lo recibió **repitió el valor** («read-back»), y SI
@@ -814,7 +835,9 @@ cuando la gráfica exista.
 - **ORD-067** — CUANDO se registra un intento sin respuesta, el sistema DEBERÁ
   guardarlo con a quién se llamó, quién llamó, cuándo y por qué medio, y el
   valor DEBERÁ seguir en la cola de críticos; cada entrada de la cola DEBERÁ
-  decir cuántos intentos sin respuesta lleva.
+  decir cuántos intentos sin respuesta lleva su cadena de correcciones. SI un
+  intento declara «read-back» ENTONCES DEBERÁ rechazarse como petición mal
+  formada: nadie contestó para repetir nada.
 
   **D-111 §5.** Más del 5 % de las llamadas queda sin respuesta, y sin registro
   no se puede demostrar que se intentó. Un intento no es un aviso: no saca el
