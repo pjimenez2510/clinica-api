@@ -371,6 +371,11 @@ export class PrescriptionDto extends createZodDto(prescriptionSchema) {}
 
 export const prescriptionListSchema = z.object({
   items: z.array(prescriptionSchema),
+  /**
+   * PR-100. The caller's own practitioner id, or `null` without a profile: a
+   * draft is rewritten only by its prescriber, and the screen offers only those.
+   */
+  callerPrescriberId: z.uuid().nullable(),
 });
 /** Response of GET /encounters/:encounterId/prescriptions. */
 export class PrescriptionListDto extends createZodDto(prescriptionListSchema) {}

@@ -518,14 +518,20 @@ export class PrescriptionService {
   async listOfEncounter(
     encounterId: string,
     requester: Requester,
-  ): Promise<PrescriptionView[]> {
+  ): Promise<{ items: PrescriptionView[]; callerPrescriberId: string | null }> {
     // PR-001. Refuses an attention outside the caller's scope before serving
     // anything that hangs off it.
     await this.requireEncounter(encounterId, requester);
-    return this.prescriptions.listOfEncounter({
-      encounterId,
-      sites: requester.sites,
-    });
+    const [items, caller] = await Promise.all([
+      this.prescriptions.listOfEncounter({
+        encounterId,
+        sites: requester.sites,
+      }),
+      this.prescriptions.findPrescriberByUser(requester.userId),
+    ]);
+    // PR-100. Who the caller is as a prescriber, so the screen opens only the
+    // drafts it may rewrite instead of one that answers 403 after typing.
+    return { items, callerPrescriberId: caller?.practitionerId ?? null };
   }
 
   /**

@@ -664,6 +664,14 @@ describe('el servicio de recetas', () => {
     ).toBe(true);
   });
 
+  it('PR-100 el listado dice qué prescriptor es quien pregunta, o ninguno', async () => {
+    expect(
+      (await service.listOfEncounter(ENCOUNTER, requester)).callerPrescriberId,
+    ).toBe(aPrescriber().practitionerId);
+    repository.prescriber = null;
+    expect((await service.listOfEncounter(ENCOUNTER, requester)).callerPrescriberId).toBeNull(); // prettier-ignore
+  });
+
   it('PR-092 NO deja fila de bitácora al listar las recetas de una atención', async () => {
     await service.listOfEncounter(ENCOUNTER, requester);
 

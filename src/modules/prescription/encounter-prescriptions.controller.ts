@@ -122,11 +122,14 @@ export class EncounterPrescriptionsController {
     @Param('encounterId', ParseUUIDPipe) encounterId: string,
     @Req() req: Request,
   ): Promise<PrescriptionListResponse> {
-    const items = await this.prescriptions.listOfEncounter(
+    const list = await this.prescriptions.listOfEncounter(
       encounterId,
       this.requester(req, 'record:read'),
     );
-    return { items: items.map(toPrescriptionResponse) };
+    return {
+      items: list.items.map(toPrescriptionResponse),
+      callerPrescriberId: list.callerPrescriberId,
+    };
   }
 
   /** Who is asking, for the access trail and for the site scope. */
