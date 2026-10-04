@@ -173,7 +173,8 @@ tomadas del CNMB, emitirla, anularla y leerla. Aquí van la coherencia
 **Prueba independiente:** abrir una atención, componer una receta de dos líneas,
 emitirla, y comprobar que una tercera línea después de emitir se rechaza.
 
-**Cubre:** PR-001 a PR-011, PR-080, PR-081, PR-090 a PR-094.
+**Cubre:** PR-001 a PR-011, PR-080, PR-081, PR-090 a PR-094, y **PR-100 a
+PR-104**: el borrador que se reescribe y la línea escrita con catálogos.
 **Solo servidor:** PR-081, PR-090 a PR-093. Son el permiso declarado en cada
 ruta, el alcance por sede y las filas de bitácora: se prueban contando filas y
 recorriendo las rutas registradas, no en una pantalla.
@@ -320,7 +321,9 @@ sistemas propios y ninguna es obligación de una clínica sin farmacia.
   `PRESCRIPTION_NOT_EDITABLE`, **nombrando el estado en que está y qué se puede
   hacer desde ahí**.
 
-  > **Las líneas viajan con la receta y no se añaden después.** Una receta se
+  > **Las líneas viajan con la receta y no se añaden después.** Desde el
+  > 04-10-2026 el borrador se **reescribe entero** (PR-100), que mantiene lo
+  > que esta nota protege. Una receta se
   > escribe de una vez —el médico ya la tiene entera en la cabeza cuando empieza
   > a teclearla— y una ruta «añadir línea» abre una ventana en la que existe una
   > receta a medias que alguien puede emitir. No se construye.
@@ -928,6 +931,76 @@ Hay tres niveles de comprobación y **sólo el primero se construye**:
 
 ---
 
+## 8. El borrador se edita, y la línea se escribe con catálogos (D-117)
+
+_Revisión de usabilidad del autor del 04-10-2026: un borrador no se podía
+volver a editar —había que descartarlo y reescribirlo entero— y la forma, la
+vía, la dosis y la frecuencia eran texto libre, de modo que volvía a salir
+«Enalapril 500 mg». La receta se compone en su pestaña, sin diálogo, y lo que
+admite una lista sale de una lista._
+
+- **PR-100** — MIENTRAS la receta esté en `DRAFT`, CUANDO su prescriptor la
+  **reescriba**, el sistema DEBERÁ sustituir **todas** sus líneas y sus
+  indicaciones por las enviadas, en una sola transacción, con las mismas
+  comprobaciones que al componerla (PR-001, PR-002, PR-007 a PR-009, PR-101,
+  PR-102), conservando su identificador, y DEBERÁ devolver las alertas de
+  alergia igual que al componer.
+  > **Se reescribe el documento entero, no se añade una línea.** Es lo que PR-005
+  > protegía: no hay ruta «añadir línea», así que no existe la receta a medias
+  > entre dos peticiones. Lo que cambia es que el borrador que ya tiene el médico
+  > en pantalla vuelve a ser suyo para corregirlo, en vez de descartarlo y
+  > teclearlo otra vez.
+  >
+  > SI la receta no está en `DRAFT`, ENTONCES DEBERÁ rechazarlo con
+  > `PRESCRIPTION_NOT_EDITABLE` nombrando el estado (PR-005). **Garantía de la
+  > base:** `prescription_item_frozen` ya no deja tocar las líneas de una receta
+  > emitida; la prueba de integración lo afirma con control positivo sobre un
+  > borrador.
+  >
+  > SI quien la reescribe **no es su prescriptor**, ENTONCES DEBERÁ rechazarlo
+  > con `PRESCRIPTION_DRAFT_OF_ANOTHER_PRESCRIBER`. El prescriptor es quien la
+  > compuso (PR-004) y su nombre va impreso: si otro pudiera reescribir el
+  > borrador, la receta saldría firmada por alguien que no escribió lo que dice.
+- **PR-101** — Cada línea DEBERÁ nombrar su **forma farmacéutica**, su **vía**
+  y la **unidad de su dosis** con un código de las listas cerradas del dominio,
+  y su **dosis** como cantidad numérica mayor que cero; y SI un código no es de
+  su lista, ENTONCES el sistema DEBERÁ rechazarla nombrando el campo y la línea.
+  > La vía ya lo era (PR-029). La forma y la unidad pasan a serlo por lo mismo:
+  > un texto libre admite «tab», «comp.» y «tabletas» como tres cosas, y el art.
+  > 13 prohíbe las siglas en la receta electrónica. Lo que se **imprime** es el
+  > nombre completo, y lo compone el servidor: el llamador **no** envía el
+  > texto de la forma ni de la dosis, que se congelan en `presentation` y
+  > `dose_text` desde el código —el argumento de PR-008, *la copia es por donde
+  > entraría la mentira*—. Los códigos se guardan al lado (`dosage_form_code`,
+  > `dose_amount`, `dose_unit_code`) para poder reabrir el borrador tal y como
+  > se escribió.
+- **PR-102** — La **frecuencia** de cada línea DEBERÁ ser un código de la lista
+  de frecuencias habituales **o** un texto escrito, nunca los dos; CUANDO sea un
+  código, el sistema DEBERÁ componer el texto desde él.
+  > Las frecuencias no son una lista cerrada —«cada 8 horas durante el día»,
+  > «después de cada deposición»— y forzarlas a una lista empuja a elegir la
+  > que más se parece. La lista resuelve el 90 % de los casos con un clic y el
+  > texto, el resto.
+- **PR-103** — El sistema DEBERÁ publicar las listas de forma farmacéutica, vía,
+  unidad de dosis y frecuencia, con el texto que se imprime y, para cada forma,
+  la unidad de dosis que le corresponde de ordinario, para que la pantalla no
+  las repita.
+  > Una lista copiada en la interfaz es una lista que un día dice otra cosa que
+  > la que el servidor admite. La unidad por forma es la propuesta: elegir
+  > «tableta» deja «tableta» como unidad, y se cambia si no es.
+- **PR-104** — SI el concepto del CNMB de una línea **declara sus
+  presentaciones** (forma farmacéutica y concentración), ENTONCES la línea
+  DEBERÁ llevar una de ellas, y SI lleva otra, ENTONCES el sistema DEBERÁ
+  tratarla como prescripción **fuera del cuadro** y exigir su justificación con
+  `OFF_FORMULARY_JUSTIFICATION_REQUIRED`.
+  > Es lo que impide «Enalapril 500 mg»: el CNMB dice en qué concentraciones
+  > existe cada principio activo, y una que no está en el cuadro **es** una
+  > prescripción fuera del cuadro, con la misma salida que ya tiene (PR-009).
+  > Un concepto que no declara presentaciones —el CNMB oficial aún no está
+  > cargado, bloqueante externo— se receta como hoy, con la concentración
+  > escrita. El catálogo de desarrollo las declara para los medicamentos de la
+  > semilla. La regla es D-117.6.
+
 ## Códigos de error nuevos
 
 Todos entran en `shared/domain/errors/error-catalogue.ts` con su prueba de
@@ -948,6 +1021,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `PRESCRIBER_NOT_LICENSED` | 403 | El prescriptor no tiene registro ACESS, o está vencido en la fecha clínica de la emisión. **Distinto de `PRACTITIONER_NOT_LICENSED`**: aquél no refuta al que no tiene registro anotado, y aquí el número va impreso en el documento | PR-034 |
 | `PRESCRIPTION_DIAGNOSIS_REQUIRED` | 422 | La atención no tiene diagnóstico CIE que imprimir en la receta | PR-095 |
 | `PRESCRIPTION_ESTABLISHMENT_INCOMPLETE` | 422 | La sede no tiene parroquia configurada, así que no hay ciudad de prescripción que imprimir | PR-021 |
+| `PRESCRIPTION_DRAFT_OF_ANOTHER_PRESCRIBER` | 403 | Reescribir un borrador que compuso otro profesional. El nombre del prescriptor va impreso | PR-100 |
 
 **Derivados de un `CHECK` y por eso fuera del catálogo congelado**, con su
 significado registrado en `prescription.constraints.ts`, que es su enumeración:
@@ -1036,6 +1110,8 @@ emite en un sitio, y el art. 10 dice que no vale en otro.
 | `POST` | `/prescriptions/:prescriptionId/issue` | `prescription:write` | PR-005, PR-021, PR-032 a PR-036, PR-050, PR-060, PR-093 |
 | `POST` | `/prescriptions/:prescriptionId/discard` | `prescription:write` | PR-005, PR-011, PR-093 *(sólo sobre un borrador, con motivo obligatorio)* |
 | `POST` | `/prescriptions/:prescriptionId/cancel` | `prescription:write` | PR-005, PR-010, PR-093 *(sólo sobre una receta emitida, y sin motivo mientras no haya columna)* |
+| `PUT` | `/prescriptions/:prescriptionId` | `prescription:write` | PR-100 a PR-102, PR-104 *(sólo un borrador, y sólo su prescriptor)* |
+| `GET` | `/prescriptions/vocabulary` | `prescription:write` | PR-103 |
 
 **La composición y la emisión son dos rutas y no una**, y no es ceremonia: la
 composición no es un acto legal y la emisión sí. Entre las dos el médico ve las
@@ -1074,6 +1150,7 @@ prueba o el CI falla**.
 | Requisitos | Nivel de prueba obligatorio |
 | --- | --- |
 | PR-003, PR-005, PR-009 | **Integración contra PostgreSQL real**, atacando la base directamente: `prescription_issued_coherence` y `prescription_item_off_formulary` son `CHECK`, y un doble que devuelve lo que le pedimos no demuestra que existan |
+| PR-100, PR-104 | **Integración contra PostgreSQL real**, con control positivo: reescribir un borrador conserva su id y sustituye las líneas; las de una emitida no se tocan ni desde la base; otra presentación de un concepto que declara las suyas exige justificación |
 | PR-062 | **Integración contra PostgreSQL real, con una fusión de fichas de por medio.** Es el único nivel que puede demostrarlo: depende de que el enlace se recorra en la base, y `patient-chart-scope.spec.ts` caza la lectura por `patient_id` desnudo recorriendo el AST |
 | PR-050 | **Unitario con el huso alterado**, como `clinical-date-timezone.spec.ts`: la misma emisión bajo `UTC` y bajo `Asia/Tokyo` da la misma fecha límite. Es el defecto real que originó REQ-160 |
 | PR-025, PR-030 | **Unitario de dominio exhaustivo.** La edad en años y meses y el número en letras son funciones puras con casos límite densos —cero meses, un mes, cuatro años once meses, cinco años justos; uno, dieciséis, veintiuno, cien, ciento uno, doscientos, quinientos, mil, veintiún mil— y enumerar sólo los que uno recuerda es cómo se cuela «veinte y uno» |

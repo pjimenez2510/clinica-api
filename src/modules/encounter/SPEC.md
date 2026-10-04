@@ -299,7 +299,8 @@ cuya vigencia terminó **el día anterior** a la atención y comprobar que la ba
 lo rechaza; registrar dos diagnósticos con `rank = 1` y comprobar que el segundo
 falla; y comprobar que el código y la descripción guardados no se pueden
 desincronizar del concepto.
-**Cubre:** EN-040 a EN-052 y **EN-151 a EN-154**, el consentimiento informado:
+**Cubre:** EN-040 a EN-052, **EN-180 a EN-187** —quitar un diagnóstico con
+rastro, cambiar el principal y las propuestas de §19— y **EN-151 a EN-154**, el consentimiento informado:
 va aquí porque el formulario 024 cuelga del **procedimiento** de riesgo mayor
 (EN-050), no de la atención.
 
@@ -2752,6 +2753,108 @@ pantalla aparte a la que hay que ir: es parte de la consulta»._
   > los accesos que importan bajo cuarenta que no dicen nada — la línea que
   > EN-123, AG-072 y PA-023 ya trazaron.
 
+## 19. Corregir y proponer en la pantalla de la atención (REQ-026, D-117)
+
+_Revisión de usabilidad del autor del 04-10-2026: un diagnóstico mal puesto no
+se podía quitar, y la pantalla preguntaba lo que el sistema ya sabe. Lo que se
+puede deducir **con certeza** se propone con su porqué y se deja corregir; lo
+que no, se pregunta con el dato delante. Las cuatro respuestas del autor son
+D-117._
+
+- **EN-180** — MIENTRAS la atención admita contenido clínico nuevo (`OPEN` u
+  `ON_HOLD`), CUANDO el médico quite un diagnóstico, el sistema DEBERÁ
+  **archivarlo** en `encounter_diagnosis_retraction` —la fila entera, con quién
+  lo quitó y cuándo— y retirarlo de la atención, de modo que **deje de contar**
+  en todo lo que lee los diagnósticos de la atención: el principal, la receta,
+  la orden, el certificado y el RDACAA.
+  > **Siempre con rastro, nunca un borrado** (D-117.3). Archivar y retirar, y no
+  > una columna «anulado» en `encounter_diagnosis`, por el tamaño de lo que se
+  > rompería: una decena de lectores de la tabla —el principal único, el recuento de la
+  > receta, los documentos, los disparadores de maternidad de D-109 y D-110, el
+  > resumen de la historia, la exportación— tendrían que acordarse de filtrar, y
+  > el día que uno no lo haga cuenta un diagnóstico que el médico quitó. Con el
+  > archivo, la tabla dice siempre la verdad sin que nadie filtre.
+  >
+  > **Garantía de la base:** `trg_encounter_diagnosis_delete_archived` rechaza
+  > el `DELETE` de un diagnóstico que no esté ya en el archivo, y el archivo no
+  > admite `UPDATE`, `DELETE` ni `TRUNCATE`. Sin archivo no hay borrado posible,
+  > tampoco desde `psql`.
+  >
+  > SI la atención ya no admite contenido clínico, ENTONCES el sistema DEBERÁ
+  > rechazarlo con `ENCOUNTER_ALREADY_CLOSED`, como al registrar (EN-009).
+- **EN-181** — SI la atención tiene una **nota de consulta firmada**, ENTONCES
+  quitar un diagnóstico DEBERÁ exigir un **motivo escrito**, y SI falta, el
+  sistema DEBERÁ rechazarlo con `DIAGNOSIS_RETRACTION_REASON_REQUIRED`. Sin
+  nota firmada, el motivo es opcional.
+  > Lo firmado ya dijo algo con ese diagnóstico delante, y quien lea la historia
+  > tiene que saber por qué dejó de estar. Antes de firmar, un código mal
+  > elegido hace un minuto no merece un párrafo: el rastro de quién y cuándo
+  > queda igual. **Garantía de la base**, en el mismo disparador del archivo.
+- **EN-182** — SI la atención tiene una **receta emitida** (con `issued_at`, en
+  cualquier estado) o una **orden de servicio**, ENTONCES el sistema DEBERÁ
+  rechazar quitar un diagnóstico o cambiar el principal con
+  `DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT`, diciendo que primero se anula el
+  documento.
+  > La receta y la orden **leen el diagnóstico de la atención al componerse**
+  > (PR-026), no lo copian: quitarlo cambiaría lo que dice en pantalla un papel
+  > que ya está en la mano del paciente. El certificado no entra: congela sus
+  > diagnósticos al emitirse (CER-011). **Garantía de la base**, en el mismo
+  > disparador. Es la opción conservadora y es D-117.5.
+- **EN-183** — MIENTRAS la atención admita contenido clínico nuevo, CUANDO el
+  médico marque otro diagnóstico como **principal**, el sistema DEBERÁ hacerlo
+  principal y pasar el anterior principal, si lo había, al primer rango libre,
+  en una sola transacción.
+  > Es la salida de quitar el principal: sin ella, la atención se queda sin
+  > principal y el médico no puede firmar ni arreglarlo salvo quitando y
+  > volviendo a registrar. `encounter_diagnosis_one_primary` sigue garantizando
+  > que nunca hay dos.
+- **EN-184** — CUANDO el médico elija un concepto CIE-10 para registrar un
+  diagnóstico, el sistema DEBERÁ **proponer** «subsecuente» si la misma
+  **categoría** —los tres primeros caracteres— consta en una atención anterior
+  no anulada del paciente, dentro del alcance de ficha y de sedes de quien
+  pregunta, y «primera vez» en otro caso; y DEBERÁ decir **cuál** atención y
+  qué código lo justifican.
+  > Instructivo RDACAA, p. 13: la subsecuente es *«la consulta médica brindada a
+  > un paciente por segunda vez o anterior y por una determinada enfermedad»*. La
+  > categoría y no el código exacto (D-117.4): E11.6 tras E11.9 es la misma
+  > diabetes. **Es una propuesta y no un dato**: el registro sigue exigiendo que
+  > se envíe `occurrence` (EN-045), y el médico la cambia si no aplica.
+  >
+  > Lee historia clínica, así que deja **una** fila de bitácora (EN-161) y se
+  > resuelve por el alcance de ficha (EN-159): con una ficha fusionada, la
+  > diabetes registrada en la absorbida cuenta.
+- **EN-185** — CUANDO se vaya a abrir la atención de una cita, el sistema DEBERÁ
+  decir si el paciente tiene atenciones anteriores no anuladas en la **misma
+  especialidad** de la cita, dentro del alcance de ficha y de sedes; SI no tiene
+  ninguna, DEBERÁ proponer «primera vez»; SI tiene, DEBERÁ devolver la última
+  —fecha y diagnóstico principal— y NO DEBERÁ proponer nada.
+  > **EN-007 no cambia** (D-117.1). Sin ninguna atención en el servicio, la
+  > consulta es de primera vez con certeza; con atenciones, depende de si viene
+  > por lo mismo, y eso sólo lo sabe quien tiene al paciente delante — el caso
+  > más corriente es un paciente conocido con un problema nuevo, que es de
+  > primera vez. Por eso la respuesta lleva el dato para decidir y no una
+  > casilla marcada. Y la diferencia **se cobra** (BI-158), así que una
+  > propuesta equivocada no es inocua.
+  >
+  > Sin cita, o con una cita sin tipo de servicio, no hay especialidad que
+  > comparar y no se propone. Deja una fila de bitácora, como EN-184.
+- **EN-186** — El sistema DEBERÁ servir con cada diagnóstico su clasificación
+  **prevención** o **morbilidad** derivada del código (EN-046), y la pantalla
+  DEBERÁ mostrarla con su porqué sin preguntarla.
+  > Instructivo, p. 62: prevención son los códigos **Z00 a Z99** y morbilidad
+  > todos los demás (p. 63). El plan de la rama decía Z00–Z13 y Z30–Z39; el
+  > instructivo dice el capítulo entero.
+- **EN-187** — MIENTRAS la atención admita contenido clínico nuevo, el médico
+  DEBERÁ poder **corregir la modalidad** de la atención (morbilidad o
+  prevención), y SI el diagnóstico principal es de una modalidad distinta de la
+  de la atención, la pantalla DEBERÁ avisarlo y ofrecer la corrección.
+  > La modalidad de la atención dice a qué vino el paciente (EN-046) y al abrir
+  > no se puede deducir: la cita no lleva un tipo estructurado, sólo el nombre
+  > libre del tipo de servicio (D-117.2). Cuando ya hay principal, sí hay algo
+  > con qué compararla. **Aviso, no bloqueo**: una consulta de control del
+  > embarazo en la que se trata una faringitis es prevención con un principal
+  > de morbilidad si el médico así lo ordena.
+
 ---
 
 ## Códigos de error nuevos
@@ -2804,6 +2907,9 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `HISTORY_ALREADY_REFUTED` | 409 | Se refutó un antecedente ya refutado. Lo arbitra además `trg_patient_history_append_only` | EN-085 |
 | `VITALS_HEIGHT_POSITION_REQUIRED` | 422 | Talla sin posición, o posición sin talla. Del mapeo de constraints (`encounter_vitals_height_needs_position`), señala `heightPosition` | EN-064 |
 | `CHART_HAS_ALLERGIES` | 409 | Se afirmó «sin alergias conocidas» sobre una ficha con alergias sin descartar. Las dos no pueden ser ciertas a la vez, y quien lee la primera deja de mirar la lista. La salida es refutarlas **una a una con su motivo**, que es un juicio clínico por alergia y no el efecto colateral de marcar una casilla. Lo arbitra además `trg_patient_allergy_absence_empty_chart` | EN-087 |
+| `DIAGNOSIS_NOT_FOUND` | 404 | El diagnóstico no es de esa atención, o ya se quitó. **El mismo para ambas**, por lo de `ENCOUNTER_NOT_FOUND` | EN-180, EN-183 |
+| `DIAGNOSIS_RETRACTION_REASON_REQUIRED` | 422 | Quitar un diagnóstico sin motivo cuando la nota de consulta ya está firmada. Se exige **en el servicio** y en la base | EN-181 |
+| `DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT` | 409 | Quitar un diagnóstico o cambiar el principal cuando la atención ya tiene una receta emitida o una orden. El mensaje dice que primero se anula el documento | EN-182 |
 
 **Los que NO entran en el catálogo congelado** son los derivados del mapeo de
 PostgreSQL —`VITALS_OUT_OF_RANGE`, `COUNTER_REFERRAL_WITHOUT_REFERRAL`—: tienen
@@ -2961,6 +3067,11 @@ que es global: una atención ocurre en un sitio.
 | `POST` | `/encounters/:id/consents/:consentId/revoke` | `record:write` | EN-154 |
 | `GET` | `/reports/rdacaa` | `audit:read` *(por decidir)* | EN-110, EN-115 |
 | `POST` | `/reports/rdacaa/submissions` | `audit:read` *(por decidir)* | EN-111 |
+| `POST` | `/encounters/:id/diagnoses/:diagnosisId/retract` | `record:write` | EN-180, EN-181, EN-182 |
+| `POST` | `/encounters/:id/diagnoses/:diagnosisId/primary` | `record:write` | EN-182, EN-183 |
+| `GET` | `/encounters/:id/diagnoses/occurrence-proposal` | `record:read` | EN-184 |
+| `GET` | `/encounters/visit-sequence-proposal` | `encounter:open` | EN-185 |
+| `PUT` | `/encounters/:id/care-modality` | `record:write` | EN-187 |
 
 **Las tres rutas de alergias son las únicas de alcance `'global'`, y es
 deliberado.** Una atención ocurre en una sede; el sistema inmunitario de una
@@ -3024,6 +3135,9 @@ prueba o el CI falla**.
 | EN-025, EN-026, EN-027 | Contrato HTTP + integración: la enmienda deja legible la versión anterior, la retractada no desaparece, y el hash se recalcula y coincide |
 | EN-006, EN-007, EN-045 | **Unitario de dominio**: dos atenciones el mismo día existen las dos; primera vez / subsecuente **no** se deriva del historial; y el caso del esquema —diabetes de primera vez en una visita subsecuente por hipertensión— |
 | EN-046, EN-048 | Unitario de dominio: la clasificación prevención/morbilidad se deriva del rango `Z00`–`Z99` y **no** de lo que teclee nadie, con los códigos adaptados de cinco caracteres entre los casos |
+| EN-180, EN-181, EN-182 | **Integración contra PostgreSQL real**, con control positivo: el `DELETE` sin archivo se rechaza y con archivo pasa; el archivo no admite `UPDATE` ni `DELETE`; sin motivo con nota firmada se rechaza y sin nota firmada pasa; con receta emitida u orden se rechaza y con sólo un borrador pasa. Y **contar filas**: quitar no borra nada de la historia |
+| EN-183 | Integración: el principal cambia y el anterior pasa a un rango libre en una transacción; `encounter_diagnosis_one_primary` sigue sin admitir dos |
+| EN-184, EN-185 | Integración contra la base con fichas fusionadas y una atención anulada, con el reloj inyectado: la categoría cuenta, la anulada no, la absorbida sí; y **una** fila de bitácora por propuesta |
 | EN-063, EN-090, EN-092, EN-096, EN-097 | Unitario de dominio **con la edad congelada de la atención**, no con la de hoy: los cuatro son condiciones por población y todos caducan si se evalúan contra la fecha actual. Es el mismo razonamiento que PA-005 dejó escrito |
 | EN-072, EN-073, EN-095, EN-098 | **Seguridad dirigida, con sesión real.** Sin la llave el dato **se omite** y no hay 403; con ella se ve y deja **una** fila de bitácora; y no viaja en ningún listado bajo ninguna combinación de permisos, afirmado sobre la respuesta. Con sesión de verdad y no con un doble con los permisos puestos a mano — el defecto de AG-111 fue exactamente eso |
 | EN-017, EN-075, EN-122, EN-123 | Seguridad dirigida: **contar filas** de bitácora. Abrir deja una; listar cincuenta atenciones deja cero; un 404 no deja ninguna |
