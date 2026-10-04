@@ -14,6 +14,7 @@ import { UNUSABLE_PASSWORD_HASH } from '../domain/password-hashing';
 import {
   ACCOUNT_ADMIN_REPOSITORY,
   type AccountAdminRepositoryPort,
+  type AccountListItem,
   type AccountListFilter,
   type AccountView,
   type GrantInput,
@@ -104,8 +105,11 @@ export class AccountsService {
     private readonly invitations: CredentialInvitationsService,
   ) {}
 
-  /** AU-022: deactivated accounts travel only when explicitly asked for. */
-  async list(filter: AccountListFilter): Promise<readonly AccountView[]> {
+  /**
+   * AU-022: deactivated accounts travel only when explicitly asked for.
+   * AU-047: each with its live grants.
+   */
+  async list(filter: AccountListFilter): Promise<readonly AccountListItem[]> {
     return this.accounts.list(filter);
   }
 

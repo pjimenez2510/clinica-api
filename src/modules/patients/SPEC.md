@@ -98,7 +98,7 @@ cuenta el módulo entero como trabajo pendiente sin poder decir cuál.
 concurrentes contra PostgreSQL real y comprobar que sólo una ficha queda viva, y
 que la segunda recibe `PATIENT_IDENTIFIER_TAKEN` y no una violación de
 constraint.
-**Cubre:** PA-001 a PA-007, PA-010 a PA-014, PA-016 a PA-025, PA-050, PA-051.
+**Cubre:** PA-001 a PA-007, PA-010 a PA-014, PA-016 a PA-025, PA-050, PA-051, PA-063.
 
 **Solo servidor:** PA-001, PA-002, PA-014, PA-023, PA-024, PA-025. La secuencia
 bajo concurrencia, la inmutabilidad del MRN, el índice único **parcial** y su
@@ -107,6 +107,9 @@ no ocurra** —que la búsqueda no escriba bitácora, que un 404 tampoco, y que
 ningún registro lleve nombre ni documento—. Una pantalla no puede enseñar una
 fila que no se escribió; una prueba de interfaz sobre eso estaría comprobando su
 propio doble.
+
+**Solo interfaz:** PA-063. Volver a la pantalla de la que se vino lo decide el
+historial del navegador; el servidor no sabe de dónde se llegó.
 
 ### P2 — La ficha que el RDACAA exige, y poder corregirla _(P1)_
 
@@ -1801,6 +1804,17 @@ Ningún requisito de esta sección lo altera._
   > ficha tras el candado, hasta que no cambie, y juzga la que quedó. Vive en
   > `shared/infrastructure/prisma/rests-on-merge.ts` por el mismo motivo que
   > PA-060: `medical_certificate` es de `certificates`.
+
+- **PA-063** — CUANDO alguien llegue a la ficha de un paciente desde otra
+  pantalla de la aplicación —una atención, el tablero, la agenda, una solicitud
+  de datos— y pulse «Volver», el sistema DEBERÁ regresarlo a **esa** pantalla con
+  el estado en que la dejó (pestaña, filtros, sede, fecha), y el botón DEBERÁ
+  nombrarla («Volver a la atención»); SI se entró a la ficha directamente por su
+  dirección, ENTONCES DEBERÁ llevar a la lista de pacientes.
+  > Revisión de usabilidad del autor (04-10-2026): desde una atención, «Ficha
+  > completa» llevaba a la ficha y «Volver a pacientes» a la lista, no a la
+  > atención en su pestaña. La regla es de toda la aplicación (ESTANDAR-UI §3);
+  > aquí se ata al caso que la destapó. **Solo interfaz.**
 
 - **PA-061** — La ficha DEBERÁ guardar la **empresa** donde trabaja el paciente
   y su **puesto de trabajo**, los dos opcionales, y CUANDO se corrijan el

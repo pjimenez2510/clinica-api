@@ -92,7 +92,12 @@ export const registerReportSchema = z.object({
     .max(4000, 'La conclusión no puede superar 4000 caracteres')
     .optional(),
   /** ORD-030. WHEN the laboratory issued it, which is not when it was typed. */
-  issuedAt: instant('La fecha de emisión del informe').optional(),
+  /**
+   * ORD-030. REQUIRED, and with no default anywhere: a «now» nobody touched is
+   * the transcription time again, which is what the deadline of a critical
+   * value must never run from (revisión clínica, G2).
+   */
+  issuedAt: instant('La fecha de emisión del informe'),
   results: z
     .array(submittedResultSchema)
     .min(1, 'Registre al menos una determinación')
@@ -111,6 +116,85 @@ export class RegisterReportDto extends createZodDto(registerReportSchema) {}
  */
 export const correctReportSchema = registerReportSchema;
 export class CorrectReportDto extends createZodDto(correctReportSchema) {}
+
+/** ORD-062. Who received the notice, and by what means. */
+const NOTICE_RECIPIENT = z.enum([
+  'ORDERING_PRACTITIONER',
+  'OTHER_PRACTITIONER',
+  'PATIENT',
+  'REPRESENTATIVE',
+]);
+const NOTICE_CHANNEL = z.enum(['PHONE', 'IN_PERSON', 'VIDEO_CALL']);
+/** ORD-067. `NO_ANSWER` is an attempt: recorded, and the value stays queued. */
+const NOTICE_OUTCOME = z.enum(['NOTIFIED', 'NO_ANSWER']);
+
+/**
+ * ORD-062. One notice of a critical value, as it was written. Never rewritten
+ * (ORD-064).
+ */
+export const criticalNoticeSchema = z.object({
+  id: z.uuid(),
+  resultId: z.string(),
+  recipientKind: NOTICE_RECIPIENT,
+  recipientName: z.string(),
+  channel: NOTICE_CHANNEL,
+  /** When the call happened, which may precede when it was written down. */
+  notifiedAt: z.iso.datetime(),
+  /** The session's account that gave it, with its name. */
+  notifiedBy: z.object({ id: z.uuid(), name: z.string() }),
+  note: z.string().nullable(),
+  outcome: NOTICE_OUTCOME,
+  /** ORD-066. `true` on a notice given, `null` on an unanswered call. */
+  readBackConfirmed: z.boolean().nullable(),
+  /** ORD-068. Given outside the site's hours. */
+  afterHours: z.boolean(),
+  /** ORD-062, D-113 b. A notice to oneself: recorded, does not close the worklist. */
+  selfNotice: z.boolean(),
+});
+/** Response of POST /orders/results/:resultId/notices. */
+export class CriticalNoticeDto extends createZodDto(criticalNoticeSchema) {}
+
+/**
+ * ORD-062. What recording a notice asks for.
+ *
+ * ⚠️ NO `notifiedById`: who gave it is the session, never the body.
+ */
+export const recordNoticeSchema = z
+  .object({
+    /** ORD-067. Whether the person answered and was told. */
+    outcome: NOTICE_OUTCOME,
+    /**
+     * ORD-066. The recipient repeated the value. Required — and `true` — on a
+     * notice given; the domain answers `CRITICAL_READ_BACK_REQUIRED` naming it.
+     */
+    readBack: z
+      .boolean({ error: 'Indique si la persona repitió el valor' })
+      .optional(),
+    recipientKind: NOTICE_RECIPIENT,
+    recipientName: z
+      .string()
+      .trim()
+      .min(1, 'Escriba a quién se avisó')
+      .max(200, 'El nombre no puede superar 200 caracteres'),
+    channel: NOTICE_CHANNEL,
+    notifiedAt: instant('La hora del aviso').optional(),
+    note: z
+      .string()
+      .trim()
+      .max(500, 'La nota no puede superar 500 caracteres')
+      .optional(),
+  })
+  .superRefine((value, context) => {
+    // ORD-067. Nobody answered, so nobody repeated anything.
+    if (value.outcome === 'NO_ANSWER' && value.readBack === true) {
+      context.addIssue({
+        code: 'custom',
+        path: ['readBack'],
+        message: 'Una llamada sin respuesta no lleva «repitió el valor»',
+      });
+    }
+  });
+export class RecordNoticeDto extends createZodDto(recordNoticeSchema) {}
 
 /** ORD-031 to ORD-038. One determination as a client reads it. */
 export const observationSchema = z.object({
@@ -132,6 +216,8 @@ export const observationSchema = z.object({
   /** ORD-038. `null` is «no había con qué compararlo», NEVER «normal». */
   abnormalFlag: ABNORMAL_FLAG.nullable(),
   observedAt: z.iso.datetime(),
+  /** ORD-062. The notices given of this value, oldest first. */
+  notices: z.array(criticalNoticeSchema),
 });
 
 /** ORD-030, ORD-051. One report as a client reads it. */
@@ -151,6 +237,8 @@ export const diagnosticReportSchema = z.object({
    */
   supersededById: z.uuid().nullable(),
   supersededAt: z.iso.datetime().nullable(),
+  /** ORD-062. When the correction was recorded: notices after it are refused. */
+  supersededRecordedAt: z.iso.datetime().nullable(),
   results: z.array(observationSchema),
 });
 /** Response of registering, correcting and matching: the report as it stands afterwards. */
@@ -179,12 +267,51 @@ export const flaggedResultSchema = z.object({
   observedAt: z.iso.datetime(),
 });
 
-export const flaggedResultListSchema = z.object({
-  items: z.array(flaggedResultSchema),
+/** ORD-060, ORD-065. A critical value waiting for its notice. */
+export const criticalResultSchema = flaggedResultSchema.extend({
+  waitingMinutes: z.number().int(),
+  noticeDueAt: z.iso.datetime(),
+  overdue: z.boolean(),
+  escalateTo: z.object({ roleId: z.uuid(), name: z.string() }).nullable(),
+  /** ORD-065. The chain's first critical version, which the deadline runs from. */
+  firstObservedAt: z.iso.datetime(),
+  /** ORD-065. Who placed the order: the first to tell, by name. */
+  orderedBy: z.object({ id: z.uuid(), name: z.string() }),
+  /** ORD-067. Unanswered calls along the chain; the value is still waiting. */
+  noAnswerAttempts: z.number().int(),
+  /** ORD-065, D-116 b. An earlier version of the chain was already notified. */
+  previouslyNotified: z.boolean(),
+  /** ORD-068. The site is out of hours now. */
+  afterHours: z.boolean(),
+  /** ORD-065, ORD-068. Whom the notice is due to now (D-111 §2, §3). */
+  noticeTarget: z.enum(['ORDERING_PRACTITIONER', 'ON_CALL_ROLE', 'PATIENT']),
+  /** ORD-065. The escalation is due and the site named no on-call role. */
+  escalationMissing: z.boolean(),
 });
-/** Response of the two safety worklists, GET /orders/results/unmatched and /orders/results/critical. */
-export class FlaggedResultListDto extends createZodDto(
-  flaggedResultListSchema,
+export const criticalResultListSchema = z.object({
+  items: z.array(criticalResultSchema),
+});
+/** Response of GET /orders/results/critical. */
+export class CriticalResultListDto extends createZodDto(
+  criticalResultListSchema,
+) {}
+
+/** ORD-040, ORD-046. A result nobody asked for, with who answers for it. */
+export const unmatchedResultSchema = flaggedResultSchema.extend({
+  owner: z.object({
+    /** `ORDERING_PRACTITIONER` unless the site names a role (D-050 §4). */
+    kind: z.enum(['ORDERING_PRACTITIONER', 'ROLE']),
+    name: z.string(),
+  }),
+  dueAt: z.iso.datetime(),
+  overdue: z.boolean(),
+});
+export const unmatchedResultListSchema = z.object({
+  items: z.array(unmatchedResultSchema),
+});
+/** Response of GET /orders/results/unmatched. */
+export class UnmatchedResultListDto extends createZodDto(
+  unmatchedResultListSchema,
 ) {}
 
 /**
@@ -226,4 +353,6 @@ export type DiagnosticReportListResponse = z.infer<
   typeof diagnosticReportListSchema
 >;
 /** Likewise, for both safety worklists. */
-export type FlaggedResultListResponse = z.infer<typeof flaggedResultListSchema>;
+export type CriticalResultListResponse = z.infer<typeof criticalResultListSchema>; // prettier-ignore
+export type UnmatchedResultListResponse = z.infer<typeof unmatchedResultListSchema>; // prettier-ignore
+export type CriticalNoticeResponse = z.infer<typeof criticalNoticeSchema>;

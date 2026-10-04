@@ -176,6 +176,9 @@ model User {
   documentTemplatesPublished DocumentTemplate[] @relation("DocumentTemplatePublisher")
   documentImagesUploaded     DocumentImage[]    @relation("DocumentImageUploader")
 
+  /// ORD-062. The critical-value notices this account recorded having given.
+  criticalNoticesGiven CriticalResultNotice[] @relation("CriticalNoticeGiver")
+
   @@index([email])
   @@map("app_user")
 }
@@ -226,6 +229,11 @@ model Role {
   permissions   RolePermission[]
   grants        UserRoleGrant[]
   discountLimit RoleDiscountLimit?
+
+  /// ORD-063, ORD-046. Sites that escalate critical values to this role, and
+  /// sites whose unmatched-results queue this role answers for.
+  criticalEscalationSites SiteParameter[] @relation("CriticalEscalationRole")
+  unmatchedOwnerSites     SiteParameter[] @relation("UnmatchedResultOwnerRole")
 
   @@map("role")
 }
@@ -1338,6 +1346,20 @@ model SiteParameter {
   lateArrivalOverridePermission String @default("agenda:overbook") @map("late_arrival_override_permission") @db.VarChar(64)
 
   cancelledRetention CancelledRetentionPolicy @default(NEVER) @map("cancelled_retention")
+
+  /// ORD-063, ORD-065. Minutes a critical value may wait for its notice
+  /// before the queue calls it overdue. NULL = the clinic has not set one, and
+  /// the queue says so instead of inventing one (D-111).
+  criticalNoticeWithinMinutes Int     @default(60) @map("critical_notice_within_minutes") @db.SmallInt
+  /// ORD-063, ORD-065. The role an overdue critical value is escalated to.
+  criticalEscalationRoleId    String? @map("critical_escalation_role_id") @db.Uuid
+  criticalEscalationRole      Role?   @relation("CriticalEscalationRole", fields: [criticalEscalationRoleId], references: [id], onDelete: Restrict)
+
+  /// ORD-046, D-050 §4. NULL = the practitioner who placed the order.
+  unmatchedResultOwnerRoleId   String? @map("unmatched_result_owner_role_id") @db.Uuid
+  unmatchedResultOwnerRole     Role?   @relation("UnmatchedResultOwnerRole", fields: [unmatchedResultOwnerRoleId], references: [id], onDelete: Restrict)
+  /// ORD-046, D-050 §4. Hours an unmatched result may wait; 24 by default.
+  unmatchedResultDeadlineHours Int     @default(24) @map("unmatched_result_deadline_hours") @db.SmallInt
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -3024,9 +3046,73 @@ model ObservationResult {
 
   observedAt DateTime @default(now()) @map("observed_at") @db.Timestamptz(6)
 
+  /// ORD-062. The notices given of this value; any one takes it off the
+  /// critical worklist.
+  notices CriticalResultNotice[]
+
   @@index([reportId])
   @@index([analyteConceptId, observedAt(sort: Desc)])
   @@map("observation_result")
+}
+
+/// ORD-062, ORD-064. The notice of a critical value: who was told, who told
+/// them, when and how. A.M. 00002393 art. 39; D-050 §2 — the call is a
+/// clinical act. APPEND-ONLY: `trg_critical_result_notice_append_only` refuses
+/// any UPDATE, DELETE or TRUNCATE.
+model CriticalResultNotice {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  observationResultId BigInt            @map("observation_result_id")
+  observationResult   ObservationResult @relation(fields: [observationResultId], references: [id], onDelete: Restrict)
+
+  recipientKind CriticalNoticeRecipient @map("recipient_kind")
+  recipientName String                  @map("recipient_name") @db.VarChar(200)
+  channel       CriticalNoticeChannel
+
+  /// The session's account, never a field of the request.
+  notifiedById String @map("notified_by_id") @db.Uuid
+  notifiedBy   User   @relation("CriticalNoticeGiver", fields: [notifiedById], references: [id], onDelete: Restrict)
+
+  /// When the call happened, which may precede when it was written down.
+  notifiedAt DateTime @map("notified_at") @db.Timestamptz(6)
+  note       String?  @db.VarChar(500)
+
+  /// ORD-067, D-111 §5. A call nobody answered is recorded too, and is not a notice.
+  outcome           CriticalNoticeOutcome
+  /// ORD-066, D-111 §4. The recipient repeated the value; required on a notice,
+  /// absent on an attempt (`critical_result_notice_read_back`).
+  readBackConfirmed Boolean?              @map("read_back_confirmed")
+  /// ORD-068, D-111 §3. Given outside the site's hours.
+  afterHours        Boolean               @map("after_hours")
+  /// ORD-062, D-113 b. The ordering practitioner recorded a notice to
+  /// themselves: kept as a record, it does not close the critical worklist.
+  selfNotice        Boolean               @map("self_notice")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([observationResultId])
+  @@map("critical_result_notice")
+}
+
+/// ORD-062. Who received the notice of a critical value.
+enum CriticalNoticeRecipient {
+  ORDERING_PRACTITIONER
+  OTHER_PRACTITIONER
+  PATIENT
+  REPRESENTATIVE
+}
+
+/// ORD-067. Whether somebody was actually told.
+enum CriticalNoticeOutcome {
+  NOTIFIED
+  NO_ANSWER
+}
+
+/// ORD-062. By what means it was given.
+enum CriticalNoticeChannel {
+  PHONE
+  IN_PERSON
+  VIDEO_CALL
 }
 
 // ---------------------------------------------------------------------------

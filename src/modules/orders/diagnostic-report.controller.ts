@@ -26,20 +26,28 @@ import type { Permission } from '../../shared/authorisation/permission.catalogue
 import { DiagnosticReportService } from './application/diagnostic-report.service';
 import type { Requester } from './application/service-order.service';
 import type {
+  CriticalNoticeView,
+  CriticalWorklistEntry,
   DiagnosticReportView,
   FlaggedResultEntry,
+  UnmatchedWorklistEntry,
 } from './domain/diagnostic-report.repository';
 import {
   CorrectReportDto,
+  CriticalNoticeDto,
   DiagnosticReportDto,
   DiagnosticReportListDto,
-  FlaggedResultListDto,
+  CriticalResultListDto,
+  UnmatchedResultListDto,
   MatchResultDto,
+  RecordNoticeDto,
   RegisterReportDto,
   WorklistQueryDto,
+  type CriticalNoticeResponse,
   type DiagnosticReportListResponse,
   type DiagnosticReportResponse,
-  type FlaggedResultListResponse,
+  type CriticalResultListResponse,
+  type UnmatchedResultListResponse,
 } from './dto/diagnostic-report.dto';
 
 /**
@@ -98,16 +106,18 @@ export class DiagnosticReportController {
   @ApiOperation({
     summary: 'Listar los resultados que no corresponden a ninguna orden',
   })
-  @ApiOkResponse({ type: FlaggedResultListDto })
+  @ApiOkResponse({ type: UnmatchedResultListDto })
   async unmatched(
     @Query() query: WorklistQueryDto,
     @Req() req: Request,
-  ): Promise<FlaggedResultListResponse> {
+  ): Promise<UnmatchedResultListResponse> {
     const items = await this.reports.unmatched(
       this.requester(req, 'record:read'),
       query.limit,
+      // ORD-046. One instant for the whole listing.
+      new Date(),
     );
-    return { items: items.map(toFlaggedResponse) };
+    return { items: items.map(toUnmatchedResponse) };
   }
 
   /**
@@ -165,25 +175,62 @@ export class DiagnosticReportController {
    * on anything the laboratory sent: many send only «alto/bajo», some send
    * nothing, and the A.M. 00002393 art. 39 obligation is ours either way.
    *
-   * ⚠️ WHAT IS MISSING IS THE OTHER HALF (ORD-062). There is no route to record
-   * that the call was made, because there is no table for it — and the phone
-   * call is a CLINICAL ACT, not an errand. Until it exists, this list cannot
-   * be emptied, and that is the honest state rather than a button that hides
-   * the row.
+   * ORD-062, ORD-065 to ORD-068. A value leaves this list with a notice
+   * actually given — with read-back —, never with an unanswered call; and each
+   * entry says whom the notice is due to now (D-111).
    */
   @Get('results/critical')
   @RequirePermission('record:read', 'query')
   @ApiOperation({ summary: 'Listar los valores críticos pendientes de avisar' })
-  @ApiOkResponse({ type: FlaggedResultListDto })
-  async critical(
-    @Query() query: WorklistQueryDto,
-    @Req() req: Request,
-  ): Promise<FlaggedResultListResponse> {
+  @ApiOkResponse({ type: CriticalResultListDto })
+  async critical(@Req() req: Request): Promise<CriticalResultListResponse> {
+    // ORD-060: never cut, so it takes no limit.
     const items = await this.reports.critical(
       this.requester(req, 'record:read'),
-      query.limit,
+      // ORD-065. One instant for the whole listing.
+      new Date(),
     );
-    return { items: items.map(toFlaggedResponse) };
+    return { items: items.map(toCriticalResponse) };
+  }
+
+  /**
+   * ORD-062. Records that somebody was told of a critical value, which takes
+   * it off the list above.
+   *
+   * ⚠️ `result:write` (D-111 §6, provisional). The nurse who makes the call is
+   * the ordinary case, and `record:write` — diagnosing — would leave out
+   * whoever phones. Who gave the notice is the session's account, never the
+   * body; WHEN is declared, because the 03:00 call is written down at 08:00.
+   *
+   * ⚠️ DECLARED BEFORE THE PARAMETERISED ROUTES: Express matches in
+   * registration order.
+   */
+  @Post('results/:resultId/notices')
+  @RequirePermission('result:write', 'query')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Registrar el aviso de un valor crítico' })
+  @ApiCreatedResponse({ type: CriticalNoticeDto })
+  async notify(
+    // NOT `ParseUUIDPipe`: a `bigint` id, as on `match` above.
+    @Param('resultId') resultId: string,
+    @Body() dto: RecordNoticeDto,
+    @Req() req: Request,
+  ): Promise<CriticalNoticeResponse> {
+    const notice = await this.reports.notify(
+      {
+        resultId,
+        outcome: dto.outcome,
+        readBack: dto.readBack,
+        recipientKind: dto.recipientKind,
+        recipientName: dto.recipientName,
+        channel: dto.channel,
+        notifiedAt: dto.notifiedAt === undefined ? undefined : new Date(dto.notifiedAt), // prettier-ignore
+        note: dto.note,
+      },
+      this.requester(req, 'result:write'),
+      new Date(),
+    );
+    return toNoticeResponse(notice);
   }
 
   /**
@@ -209,7 +256,7 @@ export class DiagnosticReportController {
         reportId,
         performedById: null,
         conclusion: dto.conclusion,
-        issuedAt: dto.issuedAt === undefined ? new Date() : new Date(dto.issuedAt), // prettier-ignore
+        issuedAt: new Date(dto.issuedAt),
         results: dto.results,
       },
       this.requester(req, 'result:write'),
@@ -233,7 +280,7 @@ export class DiagnosticReportController {
         orderId,
         performedById: null,
         conclusion: dto.conclusion,
-        issuedAt: dto.issuedAt === undefined ? new Date() : new Date(dto.issuedAt), // prettier-ignore
+        issuedAt: new Date(dto.issuedAt),
         results: dto.results,
       },
       this.requester(req, 'result:write'),
@@ -278,6 +325,22 @@ export class DiagnosticReportController {
   }
 }
 
+/** The fields both safety worklists share. */
+type FlaggedResultResponse = Pick<
+  UnmatchedResultListResponse['items'][number],
+  | 'resultId'
+  | 'reportId'
+  | 'orderId'
+  | 'siteId'
+  | 'patientId'
+  | 'analyteDisplay'
+  | 'valueNumeric'
+  | 'valueCode'
+  | 'unit'
+  | 'abnormalFlag'
+  | 'observedAt'
+>;
+
 /** Instants leave as ISO 8601; the client renders them in Ecuadorian time. */
 function toReportResponse(
   report: DiagnosticReportView,
@@ -291,6 +354,7 @@ function toReportResponse(
     supersedesId: report.supersedesId,
     supersededById: report.supersededById,
     supersededAt: report.supersededAt?.toISOString() ?? null,
+    supersededRecordedAt: report.supersededRecordedAt?.toISOString() ?? null,
     results: report.results.map((result) => ({
       id: result.id,
       orderItemId: result.orderItemId,
@@ -304,14 +368,31 @@ function toReportResponse(
       referenceText: result.referenceText,
       abnormalFlag: result.abnormalFlag,
       observedAt: result.observedAt.toISOString(),
+      notices: result.notices.map(toNoticeResponse),
     })),
   };
 }
 
+/** ORD-062. The notice, instants as ISO 8601. */
+function toNoticeResponse(notice: CriticalNoticeView): CriticalNoticeResponse {
+  return {
+    id: notice.id,
+    resultId: notice.resultId,
+    recipientKind: notice.recipientKind,
+    recipientName: notice.recipientName,
+    channel: notice.channel,
+    notifiedAt: notice.notifiedAt.toISOString(),
+    notifiedBy: notice.notifiedBy,
+    note: notice.note,
+    outcome: notice.outcome,
+    readBackConfirmed: notice.readBackConfirmed,
+    afterHours: notice.afterHours,
+    selfNotice: notice.selfNotice,
+  };
+}
+
 /** ORD-024. One worklist entry. The value travels; nothing else about the person does. */
-function toFlaggedResponse(
-  entry: FlaggedResultEntry,
-): FlaggedResultListResponse['items'][number] {
+function toFlaggedResponse(entry: FlaggedResultEntry): FlaggedResultResponse {
   return {
     resultId: entry.resultId,
     reportId: entry.reportId,
@@ -324,5 +405,37 @@ function toFlaggedResponse(
     unit: entry.unit,
     abnormalFlag: entry.abnormalFlag,
     observedAt: entry.observedAt.toISOString(),
+  };
+}
+
+/** ORD-065. A critical entry: the value, how long it waited, whom it goes to. */
+function toCriticalResponse(
+  entry: CriticalWorklistEntry,
+): CriticalResultListResponse['items'][number] {
+  return {
+    ...toFlaggedResponse(entry),
+    waitingMinutes: entry.waitingMinutes,
+    noticeDueAt: entry.noticeDueAt.toISOString(),
+    overdue: entry.overdue,
+    escalateTo: entry.escalateTo,
+    firstObservedAt: entry.firstObservedAt.toISOString(),
+    orderedBy: entry.orderedBy,
+    noAnswerAttempts: entry.noAnswerAttempts,
+    previouslyNotified: entry.previouslyNotified,
+    afterHours: entry.afterHours,
+    noticeTarget: entry.noticeTarget,
+    escalationMissing: entry.escalationMissing,
+  };
+}
+
+/** ORD-046. An unmatched entry: the value, who answers for it, by when. */
+function toUnmatchedResponse(
+  entry: UnmatchedWorklistEntry,
+): UnmatchedResultListResponse['items'][number] {
+  return {
+    ...toFlaggedResponse(entry),
+    owner: entry.owner,
+    dueAt: entry.dueAt.toISOString(),
+    overdue: entry.overdue,
   };
 }

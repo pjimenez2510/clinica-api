@@ -765,6 +765,10 @@ describe('la configuración por HTTP', () => {
         // pantalla y no una migración.
         waitlistMaxContactAttempts: 3,
         cancelledRetention: 'NEVER',
+        criticalNoticeWithinMinutes: 60,
+        criticalEscalationRoleId: null,
+        unmatchedResultOwnerRoleId: null,
+        unmatchedResultDeadlineHours: 24,
       });
     });
 
@@ -791,6 +795,10 @@ describe('la configuración por HTTP', () => {
         overbookingEnabled: true,
         overbookingPermission: 'agenda:overbook',
         cancelledRetention: 'NEVER',
+        criticalNoticeWithinMinutes: 60,
+        criticalEscalationRoleId: null,
+        unmatchedResultOwnerRoleId: null,
+        unmatchedResultDeadlineHours: 24,
       });
     });
 
@@ -948,6 +956,74 @@ describe('la configuración por HTTP', () => {
           data: { maxLeadDays: 90 },
         }),
       ).resolves.toMatchObject({ maxLeadDays: 90 });
+    });
+
+    it('ORD-063, ORD-046 y ORD-065 guardan el plazo de los críticos y los roles de las colas, y rechazan un rol que no existe o que no puede trabajarlas', async () => {
+      const site = await createSite();
+      const role = await prisma.role.create({
+        data: {
+          code: 'GUARDIA_CLINICA',
+          name: 'Responsable clínico de guardia',
+          // ORD-046, ORD-065: un rol que responde de una cola tiene que poder
+          // verla y trabajarla.
+          permissions: {
+            create: [
+              { permissionCode: 'record:read' },
+              { permissionCode: 'result:write' },
+            ],
+          },
+        },
+      });
+      const cashier = await prisma.role.create({
+        data: { code: 'CAJA_PRUEBA', name: 'Caja de prueba' },
+      });
+
+      // Control positivo: un rol que existe se guarda.
+      const saved = await put(`/sites/${site.id}/parameters`, {
+        criticalNoticeWithinMinutes: 60,
+        criticalEscalationRoleId: role.id,
+        unmatchedResultOwnerRoleId: role.id,
+        unmatchedResultDeadlineHours: 12,
+      }).expect(200);
+      expect(saved.body).toMatchObject({
+        criticalNoticeWithinMinutes: 60,
+        criticalEscalationRoleId: role.id,
+        unmatchedResultOwnerRoleId: role.id,
+        unmatchedResultDeadlineHours: 12,
+      });
+      // D-111 §1: el plazo se cambia, no se quita.
+      const cleared = await put(`/sites/${site.id}/parameters`, {
+        criticalNoticeWithinMinutes: null,
+      }).expect(422);
+      expect((cleared.body as Problem).errors?.[0]?.field).toBe(
+        'criticalNoticeWithinMinutes',
+      );
+
+      // Un rol que no existe lo rechaza la clave foránea, con su campo.
+      const response = await put(`/sites/${site.id}/parameters`, {
+        unmatchedResultOwnerRoleId: '00000000-0000-7000-8000-000000000000',
+      });
+      const problem = response.body as Problem;
+      // 422 y no 404: la clave foránea responde sobre un CAMPO del cuerpo.
+      expect(response.status).toBe(422);
+      expect(problem.code).toBe('ROLE_NOT_FOUND');
+      expect(problem.errors?.[0]?.field).toBe('unmatchedResultOwnerRoleId');
+      expect(
+        (
+          await prisma.siteParameter.findUniqueOrThrow({
+            where: { siteId: site.id },
+          })
+        ).unmatchedResultOwnerRoleId,
+      ).toBe(role.id);
+
+      // Y un rol que no puede trabajar la cola se rechaza con su campo.
+      const unable = await put(`/sites/${site.id}/parameters`, {
+        criticalEscalationRoleId: cashier.id,
+      }).expect(422);
+      expect((unable.body as Problem).code).toBe('ROLE_CANNOT_WORK_RESULTS');
+      expect((unable.body as Problem).errors?.[0]?.field).toBe(
+        'criticalEscalationRoleId',
+      );
     });
 
     it('CF-065 rechaza un tope de sobrecupos fuera de rango nombrando el rango', async () => {
@@ -1207,6 +1283,10 @@ describe('la configuración por HTTP', () => {
         overbookingPermission: 'agenda:overbook',
         waitlistMaxContactAttempts: 3,
         cancelledRetention: 'NEVER',
+        criticalNoticeWithinMinutes: 60,
+        criticalEscalationRoleId: null,
+        unmatchedResultOwnerRoleId: null,
+        unmatchedResultDeadlineHours: 24,
       };
 
       expect(row?.before).toEqual(defaults);
@@ -1324,6 +1404,12 @@ describe('la configuración por HTTP', () => {
         'lateArrivalGraceMinutes',
         'lateArrivalOverridePermission',
         'cancelledRetention',
+        // ORD-046, ORD-063, ORD-065 (01-10-2026). La política de las colas de
+        // resultados; la justificación, en la prueba de columnas de abajo.
+        'criticalNoticeWithinMinutes',
+        'criticalEscalationRoleId',
+        'unmatchedResultOwnerRoleId',
+        'unmatchedResultDeadlineHours',
         'createdAt',
         'updatedAt',
       ]);
@@ -1365,6 +1451,12 @@ describe('la configuración por HTTP', () => {
         'allow_past_booking',
         'cancelled_retention',
         'created_at',
+        // ORD-063, ORD-065 (D-050 §2, D-111). Un PLAZO y un rol al que escalar,
+        // no un interruptor: el valor crítico sigue en su cola hasta que hay
+        // constancia del aviso, y la constancia es inmutable por disparador.
+        // Vacíos de fábrica: la cola dice «sin plazo» en vez de inventarlo.
+        'critical_escalation_role_id',
+        'critical_notice_within_minutes',
         // 20-08-2026. Las cuatro columnas del flujo de atención, y por qué
         // ninguna apaga una de las tres garantías que CF-063 nombra
         // —no-solapamiento, inmutabilidad del historial, cierre por defecto—:
@@ -1420,6 +1512,11 @@ describe('la configuración por HTTP', () => {
         // múltiplo suyo.
         'slot_atom_minutes',
         'triage_enabled',
+        // ORD-046 (D-050 §4). Quién responde de los resultados sin orden y en
+        // cuántas horas. Tampoco apaga nada: el resultado no sale de la cola
+        // hasta que una persona lo empareja (ORD-041, ORD-043).
+        'unmatched_result_deadline_hours',
+        'unmatched_result_owner_role_id',
         'updated_at',
         // E5 (AG-066, AG-094). El octavo y último parámetro que AG-094 enumera
         // —«el número máximo de intentos de contacto de la lista de espera»— y

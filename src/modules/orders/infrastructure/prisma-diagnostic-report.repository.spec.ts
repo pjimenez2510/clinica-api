@@ -57,6 +57,10 @@ function prismaDouble(
     calls.push({ method, args });
 
   const tx = {
+    $queryRaw: (strings: TemplateStringsArray, ...values: unknown[]) => {
+      record('$queryRaw', { sql: strings.join('?'), values });
+      return Promise.resolve([]);
+    },
     serviceOrder: {
       findFirst: (args: unknown) => {
         record('serviceOrder.findFirst', args);
@@ -295,15 +299,20 @@ describe('el adaptador del informe', () => {
           unit: 'mg/dL',
           abnormalFlag: 'CRITICAL_LOW',
           observedAt: new Date('2026-09-16T13:00:00Z'),
+          _count: { notices: 0 },
           report: {
             serviceOrderId: ORDER,
-            serviceOrder: { siteId: 'site-1', encounter: { patientId: 'chart-1' } }, // prettier-ignore
+            serviceOrder: {
+              siteId: 'site-1',
+              encounter: { patientId: 'chart-1' },
+              orderedBy: { id: 'pr-1', user: { firstName: 'Ana', lastName: 'Villacís' } }, // prettier-ignore
+            },
           },
         },
       ],
     });
 
-    const critical = await repository.critical({ sites: 'all', limit: 25 });
+    const critical = await repository.critical({ sites: 'all' });
 
     expect(callTo('observationResult.findMany(outer)')?.args).toMatchObject({
       where: { abnormalFlag: { in: ['CRITICAL_LOW', 'CRITICAL_HIGH'] } },
@@ -326,5 +335,23 @@ describe('el adaptador del informe', () => {
         serviceOrder: { siteId: { in: ['site-1'] } },
       },
     });
+  });
+
+  it('ORD-062 una corrección bloquea el informe que sustituye ANTES de insertar; un registro, no', async () => {
+    const correction = prismaDouble();
+    await correction.repository.register(
+      aReport({ status: 'CORRECTED', supersedesId: 'report-0' }),
+      promises,
+    );
+    const order = correction.calls.map((call) => call.method);
+    const lock = correction.calls.find((call) => call.method === '$queryRaw');
+    expect((lock?.args as { sql: string }).sql).toContain('FOR NO KEY UPDATE');
+    expect((lock?.args as { values: unknown[] }).values).toEqual(['report-0']);
+    expect(order.indexOf('$queryRaw')).toBeLessThan(order.indexOf('diagnosticReport.create')); // prettier-ignore
+
+    // Control: un informe que no sustituye a nada no bloquea ninguno.
+    const plain = prismaDouble();
+    await plain.repository.register(aReport(), promises);
+    expect(plain.calls.some((call) => call.method === '$queryRaw')).toBe(false);
   });
 });

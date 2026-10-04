@@ -82,7 +82,7 @@ describe('las rutas del módulo de órdenes', () => {
     await closeApp(app);
   });
 
-  it('ORD-090 y ORD-094 declaran exactamente esta tabla de permisos', () => {
+  it('ORD-090, ORD-094 y ORD-062 declaran exactamente esta tabla de permisos', () => {
     const table = routes
       .map((r) => `${r.method} ${r.path} → ${String(r.permission)}`)
       .sort();
@@ -97,6 +97,8 @@ describe('las rutas del módulo de órdenes', () => {
         'GET /orders/results/unmatched → record:read',
         'POST /orders/results/:resultId/match → result:write',
         'GET /orders/results/critical → record:read',
+        // ORD-062. Avisar lo registra quien transcribe, no quien diagnostica (D-111 §6).
+        'POST /orders/results/:resultId/notices → result:write',
         'POST /orders/reports/:reportId/correct → result:write',
         'POST /orders/:orderId/reports → result:write',
         'GET /orders/:orderId/reports → record:read',
