@@ -219,7 +219,7 @@ valor viejo.
 **Prueba independiente:** corregir una glucosa de 95 a 195 y comprobar que las
 **dos** filas existen, que la vieja no cambió y que la vieja dice quién y cuándo
 la sustituyó.
-**Cubre:** ORD-050 a ORD-054.
+**Cubre:** ORD-050 a ORD-055.
 
 ### E5 — Las dos colas de seguridad _(P1)_
 
@@ -502,7 +502,8 @@ cuando la gráfica exista.
   crearlo con su estado —`PARTIAL` mientras falten determinaciones, `FINAL`
   cuando estén todas—, quién lo emitió y **cuándo lo emitió el laboratorio**, que
   DEBERÁ declararse siempre; SI falta ENTONCES DEBERÁ rechazarlo como petición
-  mal formada, y SI es futura, con `REPORT_ISSUED_IN_FUTURE`.
+  mal formada; SI es futura, con `REPORT_ISSUED_IN_FUTURE`, y SI es anterior a
+  la orden, con `REPORT_ISSUED_BEFORE_ORDER`.
 
   La fecha de emisión no es la de transcripción: el papel de anoche se teclea
   esta mañana, y de la emisión corre el plazo de un crítico (ORD-065, D-113 a)
@@ -730,6 +731,16 @@ cuando la gráfica exista.
   Un informe parcial no se corrige: se completa. Y uno anulado no se corrige
   porque ya no afirma nada.
 
+- **ORD-055** — SI una corrección no trae **todos** los analitos del informe que
+  sustituye, ENTONCES el sistema DEBERÁ rechazarla con
+  `REPORT_CORRECTION_INCOMPLETE`.
+
+  Sustituir un informe retira todos sus valores: uno que la corrección no
+  trajera desaparecería de la orden y de la cola de críticos sin que el
+  laboratorio lo retractara (tercera revisión clínica). Lo que no cambia se
+  vuelve a escribir igual; retirar de verdad un analito es la anulación de
+  D-113 d, no una corrección (D-116 c).
+
 - **ORD-054** — La corrección DEBERÁ registrar sus valores como filas nuevas,
   y las banderas DEBERÁN recalcularse con la misma regla que en el original
   (ORD-035, ORD-036).
@@ -765,8 +776,9 @@ cuando la gráfica exista.
   cerrarla** el aviso «al médico que pidió el examen» que registra ese mismo
   médico: queda como constancia, y el valor sigue esperando el aviso al paciente
   o a otra persona (D-113 b). SI el resultado no lleva bandera crítica ENTONCES
-  DEBERÁ rechazarse con `RESULT_NOT_CRITICAL`; SI su informe fue corregido
-  **antes** del instante del aviso, con `RESULT_SUPERSEDED`; SI el instante
+  DEBERÁ rechazarse con `RESULT_NOT_CRITICAL`; SI la corrección de su informe
+  se **registró** antes del instante del aviso, con `RESULT_SUPERSEDED`; SI el
+  instante
   declarado es futuro o anterior al resultado, con
   `CRITICAL_NOTICE_TIME_INVALID`; SI el resultado no existe o es de una sede
   fuera del alcance, con `RESULT_NOT_FOUND`.
@@ -810,8 +822,9 @@ cuando la gráfica exista.
   una constancia que se puede reescribir no constituye prueba de nada.
 
 - **ORD-065** — Cada entrada de la cola de críticos DEBERÁ decir cuántos
-  minutos lleva esperando aviso, contados desde la emisión del **primer**
-  informe de su cadena de correcciones, si está vencida, y a quién toca avisar:
+  minutos lleva esperando aviso, contados desde la emisión de la primera
+  versión **crítica** de su cadena de correcciones, si está vencida, si ya se
+  avisó de una versión anterior, y a quién toca avisar:
   al médico que pidió el examen —con su nombre— MIENTRAS no haya vencido ni
   haya llamadas sin respuesta a él; y CUANDO venza o ese médico no conteste,
   al rol de guardia de la sede, y SI la sede no designó ninguno ENTONCES DEBERÁ
@@ -990,6 +1003,8 @@ contrato —`code`, estado y mensaje—.
 | `RESULT_NOT_CRITICAL` | 422 | Se intentó registrar el aviso de un resultado sin bandera crítica. La constancia de ORD-062 es la de un valor de alerta, y una sobre un valor normal llenaría la cola de seguridad de ruido | ORD-062 |
 | `CRITICAL_NOTICE_TIME_INVALID` | 422 | El instante del aviso es futuro o anterior al resultado. Ninguno de los dos pudo ocurrir | ORD-062 |
 | `REPORT_ISSUED_IN_FUTURE` | 422 | La fecha de emisión del laboratorio es futura | ORD-030 |
+| `REPORT_ISSUED_BEFORE_ORDER` | 422 | La emisión del laboratorio es anterior a la orden | ORD-030 |
+| `REPORT_CORRECTION_INCOMPLETE` | 422 | La corrección no trae todos los analitos del informe que sustituye | ORD-055 |
 | `RESULT_SUPERSEDED` | 422 | Se intentó avisar de un valor cuyo informe ya fue corregido: se avisa el que lo sustituye | ORD-062 |
 | `CRITICAL_READ_BACK_REQUIRED` | 422 | Un aviso hecho sin confirmar que quien lo recibió repitió el valor | ORD-066 |
 
