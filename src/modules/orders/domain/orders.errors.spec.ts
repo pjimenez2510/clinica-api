@@ -9,6 +9,8 @@ import {
 } from '../../../shared/domain/errors/domain-error';
 
 import {
+  CriticalNoticeTimeInvalidError,
+  CriticalReadBackRequiredError,
   ExamNotOrderableError,
   OrderEncounterNotFoundError,
   OrderEncounterNotOpenError,
@@ -22,7 +24,11 @@ import {
   ResultAnalyteUnknownError,
   ResultChartUnmatchedError,
   ResultFlagIsDerivedError,
+  ResultNotCriticalError,
+  ReportCorrectionIncompleteError,
+  ReportIssuedInFutureError,
   ResultNotFoundError,
+  ResultSupersededError,
   ResultValueNotAllowedError,
   ResultValueTypeMismatchError,
 } from './orders.errors';
@@ -54,6 +60,12 @@ const EVERY_ERROR: readonly DomainError[] = [
   new ResultNotFoundError(),
   new ResultAlreadyMatchedError(),
   new OrderItemNotMatchableError(),
+  new ResultNotCriticalError(),
+  new CriticalNoticeTimeInvalidError(),
+  new ResultSupersededError(),
+  new CriticalReadBackRequiredError(),
+  new ReportIssuedInFutureError(),
+  new ReportCorrectionIncompleteError(['Glucosa en ayunas']),
 ];
 
 describe('el contrato de errores de las órdenes', () => {
@@ -145,6 +157,48 @@ describe('el contrato de errores de las órdenes', () => {
     expect(line).toBeInstanceOf(ValidationError);
     expect(line.fieldErrors?.[0]?.field).toBe('orderItemId');
     expect(line.userTitle).toContain('Elija una línea de esta orden');
+  });
+
+  it('ORD-062 rechaza el aviso de un valor que no es crítico y el de un instante imposible', () => {
+    // 422 los dos: la petición se entiende, lo que afirma no puede ser.
+    const notCritical = new ResultNotCriticalError();
+    expect(notCritical).toBeInstanceOf(ValidationError);
+    expect(notCritical.code).toBe('RESULT_NOT_CRITICAL');
+    expect(notCritical.userTitle).toContain('no es un valor crítico');
+
+    const time = new CriticalNoticeTimeInvalidError();
+    expect(time).toBeInstanceOf(ValidationError);
+    expect(time.code).toBe('CRITICAL_NOTICE_TIME_INVALID');
+    expect(time.fieldErrors?.[0]?.field).toBe('notifiedAt');
+    expect(time.userTitle).toContain('no puede ser futura');
+  });
+
+  it('ORD-066 pide el read-back y dice qué hacer si nadie contestó', () => {
+    const error = new CriticalReadBackRequiredError();
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.fieldErrors?.[0]?.field).toBe('readBack');
+    expect(error.userTitle).toContain('llamada sin respuesta');
+  });
+
+  it('ORD-062 un valor ya corregido manda a trabajar el vigente', () => {
+    const error = new ResultSupersededError();
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.code).toBe('RESULT_SUPERSEDED');
+    expect(error.userTitle).toContain('informe vigente');
+  });
+
+  it('ORD-055 pide que la corrección traiga también lo que no cambia', () => {
+    const error = new ReportCorrectionIncompleteError(['Glucosa en ayunas']);
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.code).toBe('REPORT_CORRECTION_INCOMPLETE');
+    expect(error.userTitle).toContain('Escriba también las que no cambian');
+    // Dice CUÁL falta: en un panel largo, la cuenta sola no sirve.
+    expect(error.fieldErrors).toEqual([
+      expect.objectContaining({
+        field: 'results',
+        message: 'Falta: Glucosa en ayunas',
+      }),
+    ]);
   });
 
   it('ORD-080 manda buscar a la persona antes de registrarla, nunca dice que se creará sola', () => {

@@ -99,6 +99,23 @@ export interface SiteParameters {
    */
   waitlistMaxContactAttempts: number;
   cancelledRetention: CancelledRetention;
+  /**
+   * ORD-063, ORD-065. Minutes a critical laboratory value may wait for its
+   * notice before the worklist calls it overdue.
+   *
+   * Sixty by default and always present (D-111 §1): changeable, not
+   * removable — without a deadline nothing would ever escalate in hours.
+   */
+  criticalNoticeWithinMinutes: number;
+  /** ORD-063, ORD-065. The role an overdue critical value is escalated to. */
+  criticalEscalationRoleId: string | null;
+  /**
+   * ORD-046, D-050 §4. The role that answers for the unmatched-results queue;
+   * `null` is the decided default — the practitioner who placed the order.
+   */
+  unmatchedResultOwnerRoleId: string | null;
+  /** ORD-046, D-050 §4. Hours an unmatched result may wait; 24 by default. */
+  unmatchedResultDeadlineHours: number;
 }
 
 /** What the administrator may send; anything absent keeps its stored value. */
@@ -183,6 +200,28 @@ export const PARAMETER_RANGES = {
     describe: (min, max) =>
       `Los intentos de contacto de la lista de espera van de ${min} a ${max}`,
   },
+  /**
+   * ORD-063, ORD-065. Mirrors `site_parameter_critical_notice_within_minutes_range`.
+   * Below 5 minutes it is noise; above a day it is no longer «de manera
+   * urgente» (A.M. 00002393 art. 39). The deadline is mandatory (D-113 a):
+   * there is no «no deadline» value.
+   */
+  criticalNoticeWithinMinutes: {
+    min: 5,
+    max: 1440,
+    describe: (min, max) =>
+      `El plazo para avisar un valor crítico va de ${min} a ${max} minutos (un día)`,
+  },
+  /**
+   * ORD-046. Mirrors `site_parameter_unmatched_result_deadline_hours_range`.
+   * A result nobody has looked at in a week is not on a queue: it is lost.
+   */
+  unmatchedResultDeadlineHours: {
+    min: 1,
+    max: 168,
+    describe: (min, max) =>
+      `El plazo de los resultados sin orden va de ${min} a ${max} horas (una semana)`,
+  },
 } as const satisfies Record<string, Range>;
 
 /**
@@ -221,6 +260,12 @@ export const DEFAULT_SITE_PARAMETERS: SiteParameters = {
   /** D-040 (a), recommendation pending the clinic's answer. The column default. */
   waitlistMaxContactAttempts: 3,
   cancelledRetention: 'NEVER',
+  /** D-111 §1, decided by the author on 01-10-2026: sixty minutes. */
+  criticalNoticeWithinMinutes: 60,
+  criticalEscalationRoleId: null,
+  /** D-050 §4: the ordering practitioner, with 24 hours. */
+  unmatchedResultOwnerRoleId: null,
+  unmatchedResultDeadlineHours: 24,
 };
 
 /**
@@ -264,7 +309,7 @@ export function assertParametersInRange(patch: SiteParametersPatch): void {
 
   for (const key of Object.keys(PARAMETER_RANGES) as RangedParameter[]) {
     const value = patch[key];
-    if (value === undefined) continue;
+    if (value === undefined || value === null) continue;
 
     const range: Range = PARAMETER_RANGES[key];
     const step = range.step ?? 1;
@@ -344,4 +389,18 @@ export function assertLeadWindowCoherent(result: SiteParameters): void {
         'La antelación mínima no puede superar la máxima: la sede se quedaría sin ninguna hora reservable',
     },
   ]);
+}
+
+/**
+ * ORD-046, ORD-065. What a role needs to answer for a results worklist: to see
+ * it, and to record the notice or pair the value.
+ */
+export const RESULTS_WORK_PERMISSIONS = [
+  'record:read',
+  'result:write',
+] as const;
+
+/** The permissions a role lacks to work the results worklists; empty when none. */
+export function missingResultsWork(granted: readonly string[]): string[] {
+  return RESULTS_WORK_PERMISSIONS.filter((code) => !granted.includes(code));
 }

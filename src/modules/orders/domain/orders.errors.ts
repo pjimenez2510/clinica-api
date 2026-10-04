@@ -420,3 +420,142 @@ export class OrderItemNotMatchableError extends ValidationError {
     super('The order item does not belong to this result order, or is cancelled'); // prettier-ignore
   }
 }
+
+/**
+ * ORD-062. A notice was recorded for a value that carries no critical flag.
+ *
+ * The notice of A.M. 00002393 art. 39 is the notice of an ALERT value. One on
+ * a normal value would fill the safety record with entries that mean nothing,
+ * and the critical worklist is only read while what is on it matters.
+ */
+export class ResultNotCriticalError extends ValidationError {
+  readonly code = 'RESULT_NOT_CRITICAL';
+  override readonly userTitle =
+    'Ese resultado no es un valor crítico: el aviso urgente se registra solo para los valores de alerta';
+
+  constructor() {
+    super('The observation result carries no critical flag');
+  }
+}
+
+/**
+ * ORD-062. The instant of the notice is in the future, or before the result it
+ * announces.
+ *
+ * The instant is DECLARED by whoever records it, because the call made at
+ * 03:00 is written down at 08:00 and the record has to say 03:00. Neither end
+ * of this refusal could have happened.
+ */
+export class CriticalNoticeTimeInvalidError extends ValidationError {
+  readonly code = 'CRITICAL_NOTICE_TIME_INVALID';
+  override readonly userTitle =
+    'La hora del aviso no puede ser futura ni anterior al resultado. Escriba la hora en que se hizo la llamada';
+  override readonly fieldErrors = [
+    {
+      field: 'notifiedAt',
+      code: 'CRITICAL_NOTICE_TIME_INVALID',
+      message: 'Entre la hora del resultado y ahora',
+    },
+  ];
+
+  constructor() {
+    super('The notice instant is in the future or before the result');
+  }
+}
+
+/**
+ * ORD-062, ORD-043. The value belongs to a report the laboratory already
+ * corrected.
+ *
+ * Acting on a figure that was retracted means phoning a patient about a result
+ * that is not theirs, or closing a line with a value that no longer stands.
+ * The one to work is the value that replaced it.
+ */
+export class ResultSupersededError extends ValidationError {
+  readonly code = 'RESULT_SUPERSEDED';
+  override readonly userTitle =
+    'Ese valor pertenece a un informe que el laboratorio ya corrigió. Trabaje el valor del informe vigente';
+
+  constructor() {
+    super('The observation result belongs to a superseded report');
+  }
+}
+
+/**
+ * ORD-066, D-111 §4. A notice given without confirming that the recipient
+ * repeated the value back.
+ *
+ * The figure dictated over the phone is the one most often misheard; read-back
+ * is the standard safety practice for critical results given by voice.
+ */
+export class CriticalReadBackRequiredError extends ValidationError {
+  readonly code = 'CRITICAL_READ_BACK_REQUIRED';
+  override readonly userTitle =
+    'Confirme que quien recibió el aviso repitió el valor. Si nadie contestó, regístrelo como llamada sin respuesta';
+  override readonly fieldErrors = [
+    {
+      field: 'readBack',
+      code: 'CRITICAL_READ_BACK_REQUIRED',
+      message: 'Marque que la persona repitió el valor',
+    },
+  ];
+
+  constructor() {
+    super('A given notice requires the read-back confirmation');
+  }
+}
+
+/**
+ * ORD-030. The laboratory's issue date is in the future.
+ *
+ * The issue date is what a critical value's deadline runs from (ORD-065) and
+ * what bounds the instant of its notice (ORD-062): a future one would leave a
+ * critical value «dentro del plazo» and impossible to notify.
+ */
+export class ReportIssuedInFutureError extends ValidationError {
+  readonly code = 'REPORT_ISSUED_IN_FUTURE';
+  override readonly userTitle =
+    'La fecha de emisión del informe no puede ser futura. Escriba la que imprimió el laboratorio';
+  override readonly fieldErrors = [
+    {
+      field: 'issuedAt',
+      code: 'REPORT_ISSUED_IN_FUTURE',
+      message: 'La fecha y hora que imprimió el laboratorio, no una futura',
+    },
+  ];
+
+  constructor() {
+    super('The report issue date is in the future');
+  }
+}
+
+/**
+ * ORD-055. A correction that leaves out an analyte of the report it replaces.
+ *
+ * Superseding a report retracts ALL its values: one the correction did not
+ * bring would vanish from the order — and a critical one from the worklist —
+ * without the laboratory ever retracting it.
+ */
+export class ReportCorrectionIncompleteError extends ValidationError {
+  readonly code = 'REPORT_CORRECTION_INCOMPLETE';
+  override readonly userTitle =
+    'La corrección tiene que traer todas las determinaciones del informe que sustituye. Escriba también las que no cambian';
+
+  /**
+   * `missing` are catalogue analyte names, not patient values: naming them is
+   * what lets the person find the row in a long panel (fourth review).
+   */
+  constructor(missing: readonly string[]) {
+    super(
+      `The correction leaves out ${missing.length} analyte(s) of the report it replaces`,
+      {},
+      [
+        {
+          field: 'results',
+          code: 'REPORT_CORRECTION_INCOMPLETE',
+          message: `Falta: ${missing.join(', ')}`,
+        },
+      ],
+    );
+  }
+}

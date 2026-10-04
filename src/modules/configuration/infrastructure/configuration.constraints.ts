@@ -46,6 +46,33 @@ registerConstraintMeanings({
     field: 'waitlistMaxContactAttempts',
     message: 'Los intentos de contacto de la lista de espera van de 1 a 10',
   },
+  // ORD-063, ORD-065, ORD-046. Mismo motivo: la escritura que no pasa por
+  // `assertParametersInRange`.
+  site_parameter_critical_notice_within_minutes_range: {
+    code: 'PARAM_OUT_OF_RANGE',
+    field: 'criticalNoticeWithinMinutes',
+    message:
+      'El plazo para avisar un valor crítico va de 5 a 1440 minutos (un día)',
+  },
+  site_parameter_unmatched_result_deadline_hours_range: {
+    code: 'PARAM_OUT_OF_RANGE',
+    field: 'unmatchedResultDeadlineHours',
+    message:
+      'El plazo de los resultados sin orden va de 1 a 168 horas (una semana)',
+  },
+  // El rol lo arbitra la clave foránea, como la sede de un feriado: el
+  // servicio no lee antes y no pierde la ventana de en medio. `ROLE_NOT_FOUND`
+  // es de `auth`, dueño de los roles; esto es el mapeo de un rechazo.
+  site_parameter_critical_escalation_role_id_fkey: {
+    code: 'ROLE_NOT_FOUND',
+    field: 'criticalEscalationRoleId',
+    message: 'El rol indicado no existe. Actualice la lista de roles',
+  },
+  site_parameter_unmatched_result_owner_role_id_fkey: {
+    code: 'ROLE_NOT_FOUND',
+    field: 'unmatchedResultOwnerRoleId',
+    message: 'El rol indicado no existe. Actualice la lista de roles',
+  },
   site_parameter_lead_window_coherent: {
     code: 'PARAM_OUT_OF_RANGE',
     field: 'minLeadMinutes',

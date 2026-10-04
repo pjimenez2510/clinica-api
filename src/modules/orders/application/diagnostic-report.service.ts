@@ -7,12 +7,19 @@ import {
 } from '../../../shared/audit/access-audit.port';
 import {
   DIAGNOSTIC_REPORT_REPOSITORY,
+  type CriticalNoticeChannel,
+  type CriticalNoticeOutcome,
+  type CriticalNoticeRecipient,
+  type CriticalNoticeView,
+  type CriticalWorklistEntry,
   type DiagnosticReportRepository,
   type DiagnosticReportView,
   type ExpectedAnalytes,
-  type FlaggedResultEntry,
   type OrderPatient,
   type ReportedResult,
+  type SafetyPolicy,
+  type UnmatchedWorklistEntry,
+  chainKey,
 } from '../domain/diagnostic-report.repository';
 import {
   EXAM_CATALOGUE_REPOSITORY,
@@ -25,20 +32,45 @@ import {
   type ServiceOrderView,
 } from '../domain/service-order.repository';
 import {
+  CriticalNoticeTimeInvalidError,
+  CriticalReadBackRequiredError,
   OrderItemNotMatchableError,
   OrderNotFoundError,
   ReportAlreadyCorrectedError,
+  ReportCorrectionIncompleteError,
+  ReportIssuedInFutureError,
   ReportNotCorrectableError,
   ReportNotFoundError,
   ResultAlreadyMatchedError,
   ResultAnalyteUnknownError,
   ResultFlagIsDerivedError,
+  ResultNotCriticalError,
   ResultNotFoundError,
+  ResultSupersededError,
 } from '../domain/orders.errors';
 import { isCorrectable, isLineComplete } from '../domain/service-order';
 import { resolveResult } from '../domain/result-value';
+import {
+  criticalNoticeTarget,
+  criticalWait,
+  unmatchedWait,
+} from '../domain/safety-deadline';
 import type { DiagnosticReportStatus } from '../domain/service-order';
 import type { Requester } from './service-order.service';
+
+/**
+ * ORD-046, ORD-065. What a site with no parameter row would have: sixty
+ * minutes for a critical value (D-111 §1) and the ordering practitioner with
+ * 24 hours for an unmatched one (D-050 §4).
+ * `trg_site_parameter_defaults` makes that row exist; this is the same
+ * decision written once more, not a second policy.
+ */
+const DEFAULT_POLICY: SafetyPolicy = {
+  criticalNoticeWithinMinutes: 60,
+  criticalEscalationRole: null,
+  unmatchedResultOwnerRole: null,
+  unmatchedResultDeadlineHours: 24,
+};
 
 /**
  * Its own resource type in the trail, and not `'encounter'`.
@@ -98,6 +130,28 @@ export interface RegisterReportRequest {
 export interface MatchResultRequest {
   resultId: string;
   orderItemId: string;
+}
+
+/**
+ * ORD-062. What recording the notice of a critical value needs to be told.
+ *
+ * ⚠️ NO `notifiedById`. Who gave the notice is the session's account, read by
+ * the caller and never taken from the request — the rule ORD-001 applies to
+ * `orderedById`. A field there is a notice somebody can put in a colleague's
+ * name.
+ */
+export interface RecordNoticeRequest {
+  resultId: string;
+  /** ORD-067. `NO_ANSWER` records the attempt and leaves the value queued. */
+  outcome: CriticalNoticeOutcome;
+  /** ORD-066. Required — and `true` — on a notice actually given. */
+  readBack?: boolean;
+  recipientKind: CriticalNoticeRecipient;
+  recipientName: string;
+  channel: CriticalNoticeChannel;
+  /** When the call happened; the clock's «now» when absent. */
+  notifiedAt?: Date;
+  note?: string;
 }
 
 /** ORD-050. A correction is a report with a report behind it. */
@@ -160,7 +214,11 @@ export class DiagnosticReportService {
   async register(
     request: RegisterReportRequest,
     requester: Requester,
+    now: Date = new Date(),
   ): Promise<DiagnosticReportView> {
+    // ORD-030. The laboratory's issue date is what a critical value's
+    // deadline runs from; a future one would hide it as «dentro del plazo».
+    if (request.issuedAt > now) throw new ReportIssuedInFutureError();
     const prepared = await this.prepare(request.orderId, request.results, requester); // prettier-ignore
 
     const report = await this.reports.register(
@@ -190,7 +248,9 @@ export class DiagnosticReportService {
   async correct(
     request: CorrectReportRequest,
     requester: Requester,
+    now: Date = new Date(),
   ): Promise<DiagnosticReportView> {
+    if (request.issuedAt > now) throw new ReportIssuedInFutureError();
     const previous = await this.reports.byId({
       reportId: request.reportId,
       sites: requester.sites,
@@ -208,6 +268,18 @@ export class DiagnosticReportService {
     }
 
     const prepared = await this.prepare(previous.serviceOrderId, request.results, requester); // prettier-ignore
+
+    /**
+     * ORD-055 (tercera revisión clínica, grave). Superseding a report retracts
+     * ALL its values. A value the correction does not bring would vanish from
+     * the order — a critical one from the worklist — though the laboratory
+     * never retracted it. What did not change is written again, unchanged.
+     */
+    const brought = new Set(prepared.results.map((result) => result.analyteDisplay)); // prettier-ignore
+    const missing = previous.results
+      .map((result) => result.analyteDisplay)
+      .filter((display) => !brought.has(display));
+    if (missing.length > 0) throw new ReportCorrectionIncompleteError(missing);
 
     const report = await this.reports.register(
       {
@@ -263,11 +335,30 @@ export class DiagnosticReportService {
    * NOT AUDITED PER ENTRY (ORD-092), and affordable because what travels is
    * thin — no diagnosis, no reason for the visit.
    */
-  unmatched(
+  async unmatched(
     requester: Requester,
     limit: number,
-  ): Promise<FlaggedResultEntry[]> {
-    return this.reports.unmatched({ sites: requester.sites, limit });
+    now: Date,
+  ): Promise<UnmatchedWorklistEntry[]> {
+    const entries = await this.reports.unmatched({ sites: requester.sites, limit }); // prettier-ignore
+    const policies = await this.reports.safetyPolicies(entries.map((e) => e.siteId)); // prettier-ignore
+
+    /**
+     * ORD-046, D-050 §4. Who answers for it, and by when: the site's role if
+     * it names one, the practitioner who placed the order if not — «una cola
+     * que es de todos no es de nadie».
+     */
+    return entries.map((entry) => {
+      const policy = policies.get(entry.siteId) ?? DEFAULT_POLICY;
+      const role = policy.unmatchedResultOwnerRole;
+      return {
+        ...entry,
+        ...unmatchedWait(entry.observedAt, now, policy.unmatchedResultDeadlineHours), // prettier-ignore
+        owner: role
+          ? { kind: 'ROLE' as const, name: role.name }
+          : { kind: 'ORDERING_PRACTITIONER' as const, name: entry.orderedBy.name }, // prettier-ignore
+      };
+    });
   }
 
   /**
@@ -323,6 +414,8 @@ export class DiagnosticReportService {
     // ORD-043. Refused here so the sentence is about the queue the caller is
     // working; the conditional update is what arbitrates the race.
     if (result.orderItemId !== null) throw new ResultAlreadyMatchedError();
+    // A value the laboratory retracted closes no line.
+    if (result.superseded) throw new ResultSupersededError();
 
     const order = await this.orders.byId({
       orderId: result.orderId,
@@ -382,9 +475,148 @@ export class DiagnosticReportService {
     return report;
   }
 
-  /** ORD-060, ORD-061. The values that have to reach a human today. */
-  critical(requester: Requester, limit: number): Promise<FlaggedResultEntry[]> {
-    return this.reports.critical({ sites: requester.sites, limit });
+  /**
+   * ORD-060, ORD-061, ORD-065. The values that have to reach a human today,
+   * with how long each has waited, whether it is late against the site's
+   * mandatory deadline and whom it goes to (D-111, D-113 a).
+   */
+  async critical(
+    requester: Requester,
+    now: Date,
+  ): Promise<CriticalWorklistEntry[]> {
+    // ORD-060. Never cut: a value off the screen is a value nobody notifies.
+    const entries = await this.reports.critical({ sites: requester.sites });
+    const siteIds = entries.map((e) => e.siteId);
+    const policies = await this.reports.safetyPolicies(siteIds);
+    // ORD-068. One instant for the whole listing, as for the deadlines.
+    const inHours = await this.reports.sitesInHours(siteIds, now);
+    // ORD-065, ORD-067. The correction chain behind each value.
+    const chains = await this.reports.criticalChains(entries.map((e) => e.reportId)); // prettier-ignore
+
+    return entries.map((entry) => {
+      const policy = policies.get(entry.siteId) ?? DEFAULT_POLICY;
+      const chain = chains.get(chainKey(entry.reportId, entry.analyteDisplay));
+      // The deadline runs from the chain's FIRST CRITICAL version: a correction that is
+      // still critical is the same pending notice, not a new one from zero.
+      const firstObservedAt = chain?.firstObservedAt ?? entry.observedAt;
+      const wait = criticalWait(firstObservedAt, now, policy.criticalNoticeWithinMinutes); // prettier-ignore
+      const role = policy.criticalEscalationRole;
+      const afterHours = !inHours.has(entry.siteId);
+      const due = criticalNoticeTarget({
+        overdue: wait.overdue,
+        afterHours,
+        hasOnCallRole: role !== null,
+        orderingUnanswered: (chain?.orderingUnanswered ?? 0) > 0,
+      });
+      return {
+        ...entry,
+        firstObservedAt,
+        noAnswerAttempts: chain?.noAnswerAttempts ?? 0,
+        previouslyNotified: chain?.previouslyNotified ?? false,
+        waitingMinutes: wait.waitingMinutes,
+        noticeDueAt: wait.dueAt,
+        overdue: wait.overdue,
+        escalateTo: role ? { roleId: role.id, name: role.name } : null,
+        afterHours,
+        noticeTarget: due.target,
+        escalationMissing: due.escalationMissing,
+      };
+    });
+  }
+
+  /**
+   * ORD-062. Records that somebody was told of a critical value — which takes
+   * it off the critical worklist.
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * THE CALL IS A CLINICAL ACT, AND THIS IS ITS RECORD
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * A.M. 00002393 art. 39 obliges telling «de manera urgente al médico
+   * tratante y/o al usuario», and D-050 §2 decided the call is recorded as a
+   * clinical act. Without the record nobody can show it happened, which is
+   * exactly what is asked when something goes wrong. It is never rewritten
+   * (ORD-064): a notice written wrongly is answered by writing another.
+   *
+   * ⚠️ THE INSTANT IS DECLARED AND BOUNDED. The 03:00 call is written down at
+   * 08:00 and the record has to say 03:00; but it cannot be later than now nor
+   * earlier than the result it announces.
+   *
+   * What the policy still leaves open — read-back, unanswered attempts — is
+   * D-111, and is not invented here.
+   */
+  async notify(
+    request: RecordNoticeRequest,
+    requester: Requester,
+    now: Date,
+  ): Promise<CriticalNoticeView> {
+    const result = await this.reports.resultById({
+      resultId: request.resultId,
+      sites: requester.sites,
+    });
+    if (!result) throw new ResultNotFoundError();
+    if (
+      result.abnormalFlag !== 'CRITICAL_LOW' &&
+      result.abnormalFlag !== 'CRITICAL_HIGH'
+    ) {
+      throw new ResultNotCriticalError();
+    }
+    // ORD-066, D-111 §4. A notice given carries the read-back; an attempt has
+    // nobody who could have repeated anything.
+    const given = request.outcome === 'NOTIFIED';
+    if (given && request.readBack !== true) {
+      throw new CriticalReadBackRequiredError();
+    }
+
+    const notifiedAt = request.notifiedAt ?? now;
+    if (notifiedAt > now || notifiedAt < result.observedAt) {
+      throw new CriticalNoticeTimeInvalidError();
+    }
+    /**
+     * ORD-062. A value the laboratory retracted is not phoned in — but the
+     * call made while it was still the standing value gets its record: the
+     * act happened, and art. 39 asks for its proof. Judged again, under a
+     * lock, where the row lands.
+     */
+    if (result.supersededAt && notifiedAt >= result.supersededAt) {
+      throw new ResultSupersededError();
+    }
+    /**
+     * ORD-062, D-113 b. The practitioner who placed the order «notifying»
+     * themselves is recorded as it happened — and does not close the worklist:
+     * the patient at home still knows nothing.
+     */
+    const selfNotice =
+      request.recipientKind === 'ORDERING_PRACTITIONER' &&
+      requester.userId === result.orderedByUserId;
+
+    // ORD-068. Out of hours at the moment of the CALL, not of the typing.
+    const inHours = await this.reports.sitesInHours([result.siteId], notifiedAt); // prettier-ignore
+
+    // ORD-062, ORD-091. The trail row is written inside the same transaction.
+    const notice = await this.reports.recordNotice({
+      resultId: result.resultId,
+      recipientKind: request.recipientKind,
+      recipientName: request.recipientName,
+      channel: request.channel,
+      notifiedById: requester.userId,
+      notifiedAt,
+      note: request.note ?? null,
+      outcome: request.outcome,
+      readBackConfirmed: given ? true : null,
+      afterHours: !inHours.has(result.siteId),
+      selfNotice,
+      sites: requester.sites,
+      trail: { ip: requester.ip, userAgent: requester.userAgent },
+    });
+
+    // ORD-024. The site and the fact: never the value, never who was called.
+    this.logger.info(
+      { action: 'CRITICAL_NOTICE_RECORDED', channel: notice.channel },
+      'critical value notice recorded',
+    );
+
+    return notice;
   }
 
   /**

@@ -131,6 +131,12 @@ export interface PendingOrderEntry {
   testDisplay: string;
   requestedAt: Date;
   ageing: Ageing;
+  /**
+   * ORD-026, D-068 C. Whose order this is — ONLY when the listing was asked
+   * for by cedula, by somebody who already holds that person's document.
+   * `null` otherwise: the plain worklist carries no identity (ORD-024).
+   */
+  patientName: string | null;
 }
 
 /**
@@ -146,6 +152,8 @@ export interface PendingOrdersQuery {
   category?: ServiceOrderCategory;
   examCode?: string;
   chartId?: string;
+  /** ORD-026. Whether each entry carries the patient's name. */
+  includePatientName?: boolean;
   /** ORD-021. Injected so the ageing of a listing is one consistent instant. */
   now: Date;
   limit: number;

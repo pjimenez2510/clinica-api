@@ -106,6 +106,13 @@ alcance por sede sobre una escritura, y quien lo burla no usa la pantalla.
   de reserva, tope de sobrecupos por profesional y día, **turno de la agenda**
   y política de retención de anuladas, con los valores de D-001 como defecto al
   crear la sede.
+  > **Y la política de las colas de resultados de laboratorio (01-10-2026,
+  > D-050 §2 y §4):** plazo para avisar un valor crítico y rol al que se
+  > escala (ORD-063, ORD-065; vacíos de fábrica, D-111), y rol responsable y
+  > plazo en horas de los resultados sin orden (ORD-046; de fábrica, quien
+  > pidió el examen y 24 h). Su significado es de `orders/SPEC.md`; aquí solo
+  > se guardan, con sus rangos en la base.
+  >
   > **El turno de la agenda (`slot_atom_minutes`) entró el 14-08-2026 con
   > D-021.** Es el **átomo** de la agenda: el incremento en que la sede trocea
   > su jornada. Todos los cupos que la agenda ofrece duran eso, y **toda

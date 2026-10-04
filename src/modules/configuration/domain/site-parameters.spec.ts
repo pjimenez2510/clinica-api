@@ -60,6 +60,10 @@ describe('los parámetros de operación de una sede', () => {
       overbookingPermission: 'agenda:overbook',
       waitlistMaxContactAttempts: 3,
       cancelledRetention: 'NEVER',
+      criticalNoticeWithinMinutes: 60,
+      criticalEscalationRoleId: null,
+      unmatchedResultOwnerRoleId: null,
+      unmatchedResultDeadlineHours: 24,
     });
   });
 
@@ -162,6 +166,10 @@ describe('los parámetros de operación de una sede', () => {
         overbookingPermission: 'agenda:overbook',
         waitlistMaxContactAttempts: 3,
         cancelledRetention: 'NEVER',
+        criticalNoticeWithinMinutes: 60,
+        criticalEscalationRoleId: null,
+        unmatchedResultOwnerRoleId: null,
+        unmatchedResultDeadlineHours: 24,
       });
       expect.unreachable('debía rechazarse');
     } catch (error) {
@@ -184,6 +192,10 @@ describe('los parámetros de operación de una sede', () => {
         overbookingPermission: 'agenda:overbook',
         waitlistMaxContactAttempts: 3,
         cancelledRetention: 'NEVER',
+        criticalNoticeWithinMinutes: 60,
+        criticalEscalationRoleId: null,
+        unmatchedResultOwnerRoleId: null,
+        unmatchedResultDeadlineHours: 24,
       });
     }).not.toThrow();
   });
@@ -244,7 +256,35 @@ describe('los parámetros de operación de una sede', () => {
       // deja de garantizarse por configurarlo—, y el número dentro del rango
       // es decisión de la clínica (D-040), no del código.
       'waitlistMaxContactAttempts',
+      // ORD-063, ORD-065, ORD-046: los plazos de las colas de resultados. El
+      // valor dentro del rango es de la clínica (D-050, D-111).
+      'criticalNoticeWithinMinutes',
+      'unmatchedResultDeadlineHours',
     ]);
+  });
+
+  it('ORD-063 acota el plazo de aviso de los críticos, que siempre existe', () => {
+    expect(DEFAULT_SITE_PARAMETERS.criticalNoticeWithinMinutes).toBe(60);
+    expect(() => assertParametersInRange({ criticalNoticeWithinMinutes: 5 })).not.toThrow(); // prettier-ignore
+    expect(() => assertParametersInRange({ criticalNoticeWithinMinutes: 1440 })).not.toThrow(); // prettier-ignore
+    for (const criticalNoticeWithinMinutes of [0, 4, 1441, 7.5]) {
+      expect(
+        () => assertParametersInRange({ criticalNoticeWithinMinutes }),
+        `${criticalNoticeWithinMinutes}`,
+      ).toThrow(ParameterOutOfRangeError);
+    }
+  });
+
+  it('ORD-046 acota el plazo de los resultados sin orden y nace en 24 horas', () => {
+    expect(DEFAULT_SITE_PARAMETERS.unmatchedResultDeadlineHours).toBe(24);
+    expect(DEFAULT_SITE_PARAMETERS.unmatchedResultOwnerRoleId).toBeNull();
+    expect(() => assertParametersInRange({ unmatchedResultDeadlineHours: 1 })).not.toThrow(); // prettier-ignore
+    expect(() => assertParametersInRange({ unmatchedResultDeadlineHours: 168 })).not.toThrow(); // prettier-ignore
+    for (const unmatchedResultDeadlineHours of [0, 169]) {
+      expect(() =>
+        assertParametersInRange({ unmatchedResultDeadlineHours }),
+      ).toThrow(ParameterOutOfRangeError);
+    }
   });
 
   /**
