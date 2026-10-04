@@ -5,6 +5,15 @@ Recorre el flujo de atención completo contra la API que está corriendo.
     pnpm start                      # en otra terminal
     python3 scripts/recorrer-el-flujo.py
 
+NUNCA EN LA BASE DEL AUTOR. Hace una docena de escrituras —una atención, su
+nota firmada, una receta, una cuenta—. No supone ningún puerto: exige
+`API_URL` y, antes de escribir nada, `scripts/dev-api-login.mts` prueba que
+esa API escribe en la base de `DATABASE_URL` y rechaza la compartida
+`clinica`, salvo `--i-know-this-is-the-shared-db`. Las dos se leen del `.env`
+de este checkout, salvo que la terminal ya las tenga exportadas: entonces
+mandan las exportadas, y la guarda prueba ESA base, no la del `.env`. Es la guarda de `sri:certificate:dev`,
+puesta tras el 01-10-2026.
+
 PARA QUÉ SIRVE, Y QUÉ NO ES. No sustituye a `pnpm test:integration`: aquella
 prueba las garantías una a una contra PostgreSQL, ésta comprueba que las
 piezas encajan **por HTTP, en el orden en que ocurren en la clínica**. Es la
@@ -23,10 +32,13 @@ FALLAN —editar una nota firmada, por ejemplo—, y ahí el rechazo es el éxit
 
 import datetime
 import json
+import os
+import subprocess
+import sys
 import urllib.error
 import urllib.request
 
-API="http://localhost:3000/api/v1"; TOK=None
+API=None; TOK=None
 def call(m,p,b=None):
     r=urllib.request.Request(API+p,method=m,data=json.dumps(b).encode() if b is not None else None)
     r.add_header('content-type','application/json')
@@ -48,8 +60,17 @@ def show(step, st, d, keys=(), expect_refusal=False):
     print(f"{'✓' if good else '✗'} {step:<44} {st}{extra}")
     return d
 
-st,d=call('POST','/auth/login',{"email":"admin@clinica.ec","password":"el caballo come alfalfa"})
-TOK=d['accessToken']; print("── FLUJO DE ATENCIÓN, DE PRINCIPIO A FIN ──\n")
+# La sesión solo llega si la guarda deja pasar: sin ella no hay token y no se
+# escribe nada. La API_URL y la contraseña de la semilla las pone el ayudante.
+root=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+login=subprocess.run(
+  ['node','--env-file-if-exists=.env','--experimental-strip-types',
+   'scripts/dev-api-login.mts',*sys.argv[1:]],
+  cwd=root,stdout=subprocess.PIPE,text=True)
+if login.returncode!=0: raise SystemExit(1)
+session=json.loads(login.stdout.strip().splitlines()[-1])
+API=session['apiUrl']+'/api/v1'; TOK=session['accessToken']
+print(f"── FLUJO DE ATENCIÓN, DE PRINCIPIO A FIN · {session['apiUrl']} ──\n")
 today=datetime.date.today().isoformat()
 st,sites=call('GET','/organization/sites')
 site=[s for s in sites['items'] if 'Norte' in s['name']][0]

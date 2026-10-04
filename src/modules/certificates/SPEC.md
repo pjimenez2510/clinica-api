@@ -135,7 +135,7 @@ un día después de la atención sin motivo, y comprobar que los tres se rechaza
 con su control positivo (con motivo, mañana, el mismo día); anular con otra
 cuenta sin el permiso y comprobar que se rechaza; imprimir uno anulado y
 comprobar que no lleva el motivo.
-**Cubre:** CER-030, CER-039 a CER-045.
+**Cubre:** CER-030, CER-039 a CER-051.
 
 ---
 
@@ -318,7 +318,8 @@ PR-030).
 
 - **CER-027** — Bloque D: DONDE el certificado incluya el diagnóstico, DEBERÁ
   servir **todos** los diagnósticos de la atención con su código CIE, el
-  principal primero; DONDE no, el bloque DEBERÁ servirse «NA».
+  principal primero, y en el papel la **X en PRE o en DEF** según la certeza
+  que la emisión copió; DONDE no, el bloque DEBERÁ servirse «NA».
 
 - **CER-028** — Bloque E: el certificado DEBERÁ servir la **fecha** (aaaa-mm-dd)
   y la **hora** de 24 horas de emisión, **nombres y apellidos** del
@@ -506,9 +507,8 @@ PR-030).
   > garantiza la base**, que además exige ingreso ≤ parto ≤ alta
   > (`medical_certificate_maternity_dates_in_order`).
 
-  > ⚠️ Nada acota todavía cuán atrás pueden estar el ingreso y el parto, ni
-  > cuántos certificados de maternidad da una atención: **D-109**, pendiente
-  > del autor.
+  > Cuán atrás pueden estar el ingreso y el parto, y cuántos certificados de
+  > maternidad da una atención, lo acotan CER-046 a CER-049 (D-109).
 
 - **CER-045** — SI se emite un reposo **pasados 8 días** de la fecha clínica de
   la atención —con el día de emisión de CER-030, madrugada incluida—, ENTONCES
@@ -521,6 +521,85 @@ PR-030).
   > `medical_certificate_rest_issued_within_8_days`. **D-108:** la maternidad
   > encadena certificados (CER-043) y no lleva el plazo; la madrugada de
   > CER-030 sigue contando para el plazo en los demás reposos (D-108 §2).
+
+### 5. Lo que acota el reposo de maternidad (D-109 y D-110, resueltas el 01-10-2026)
+
+> **D-109** (el autor, 01-10-2026): D-108 quitó a la maternidad los topes de 3 y
+> 8 días; sin otro límite, «maternidad» era la vía para un reposo retroactivo o
+> encadenado sin fin. La ventana de 3 días de CER-044 se mantiene para el
+> prenatal. **D-110** (el autor, 01-10-2026, **provisional hasta confirmar con el
+> IESS el trámite de maternidad**, D-105 §6) cierra lo que D-109 dejó abierto: la
+> licencia son doce semanas contando el día del parto, se cuenta sólo desde el
+> parto, el parto no se declara lejos en el futuro, un embarazo tiene un parto, y
+> el solape se juzga en las dos direcciones. **Lo garantiza la base:**
+> `medical_certificate_issue_rules`, como CER-044 y CER-045.
+
+- **CER-046** — CUANDO se emita un reposo de contingencia **maternidad**, SI la
+  fecha del **parto** es anterior en **más de 84 días** a la fecha clínica de la
+  atención, ENTONCES el sistema DEBERÁ rechazarlo con
+  `CERTIFICATE_MATERNITY_DATES_TOO_OLD`; y SI es posterior en **más de 28 días**,
+  ENTONCES DEBERÁ rechazarlo con `CERTIFICATE_MATERNITY_BIRTH_TOO_FAR`. Los dos
+  nombran `birthOn` y la fecha admitida. La fecha de **ingreso no cuenta**.
+  **Base:** `medical_certificate_maternity_dates_within_84_days` y
+  `medical_certificate_maternity_birth_within_4_weeks`.
+
+  > **D-110 §3:** con el ingreso, el último tramo de una licencia con ingreso
+  > antiguo (preeclampsia, cesárea días después) se rechazaba. **§1:** el parto
+  > de un reposo prenatal se declara antes de ocurrir; sin tope, un parto lejano
+  > daba reposos mes a mes desde una sola consulta. Con el último día en parto +
+  > 83 (CER-047), un parto de hace exactamente 84 días ya no deja emitir nada:
+  > lo rechaza CER-047, y CER-046 da el motivo desde el día 85.
+
+- **CER-047** — CUANDO se emita un reposo de contingencia **maternidad**, SI
+  termina **después del parto + 83 días** —doce semanas contando el día del
+  parto—, o se emite **pasado ese día** —con el día de emisión de CER-030,
+  madrugada incluida—, ENTONCES el sistema DEBERÁ rechazarlo con
+  `CERTIFICATE_MATERNITY_LEAVE_EXCEEDED`, nombrando `restTo` y el último día de
+  la licencia. **Base:** `medical_certificate_maternity_within_leave`.
+
+- **CER-048** — CUANDO se emita un reposo, SI su período se solapa con el de otro
+  reposo **no anulado** de la misma paciente —su ficha y las que absorbió
+  (PA-055), de cualquier atención— y **uno de los dos es de maternidad**,
+  ENTONCES el sistema DEBERÁ rechazarlo con `CERTIFICATE_REST_OVERLAPS`.
+  **Base:** `medical_certificate_maternity_rest_no_overlap`, que serializa las
+  emisiones de reposo de la ficha: dos a la vez desde dos atenciones no pasan
+  las dos.
+
+  > **D-110 §5:** en las dos direcciones; tampoco un reposo general sobre una
+  > maternidad vigente. Dos reposos de otras contingencias pueden solaparse:
+  > nadie decidió lo contrario. **§4:** el choque se ratifica; se corrige
+  > anulando el anterior (CER-011), que deja libre su período. Se cumple **al
+  > emitir**: una fusión de fichas posterior puede juntar dos reposos que se
+  > solapan, y la fusión se hace igual y lo avisa (D-110 §7, PA-062).
+
+- **CER-049** — CUANDO se emita un reposo de contingencia **maternidad**, SI la
+  atención no tiene **ningún diagnóstico CIE-10 obstétrico** —de O00 a O99 o de
+  Z34 a Z39, con sus subcategorías—, ENTONCES el sistema DEBERÁ rechazarlo con
+  `CERTIFICATE_MATERNITY_DIAGNOSIS_REQUIRED`. **Base:**
+  `medical_certificate_maternity_obstetric_diagnosis`.
+
+- **CER-050** — CUANDO se emita un reposo de contingencia **maternidad**, SI otro
+  reposo de maternidad **no anulado** de la paciente —su ficha y las que
+  absorbió— declara **otro parto** a **9 meses o menos** del suyo (meses de
+  calendario), ENTONCES el sistema DEBERÁ rechazarlo con
+  `CERTIFICATE_MATERNITY_BIRTH_MISMATCH`, nombrando `birthOn` y el parto del
+  otro reposo. **Base:** `medical_certificate_maternity_same_birth`.
+
+  > **D-110 §2:** un embarazo, un parto. Sin esto, cada certificado declaraba
+  > un parto nuevo y la licencia se encadenaba cada 84 días.
+
+- **CER-051** — CUANDO se emita un reposo de contingencia **maternidad**, SI la
+  fecha de **ingreso** es anterior en **más de 14 días** a la del parto,
+  ENTONCES el sistema DEBERÁ rechazarlo con
+  `CERTIFICATE_MATERNITY_ADMISSION_TOO_EARLY`, nombrando `maternityAdmissionOn`
+  y la primera fecha admitida. **Base:**
+  `medical_certificate_maternity_admission_within_14_days`.
+
+  > **D-112 §1** (el autor, 01-10-2026): el reposo puede empezar el día del
+  > ingreso (D-108), y sin cota el ingreso daba un reposo retroactivo desde una
+  > fecha inventada, y una cadena de ellos. El resto de D-112 —el parto probable
+  > frente al real, un embarazo nuevo a menos de 9 meses— queda **congelado**
+  > hasta que el IESS confirme cómo se certifica la maternidad (D-105 §6).
 
 ---
 
@@ -560,6 +639,13 @@ PR-030).
 | `CERTIFICATE_REST_START_TOO_LATE` | 422 | CER-041 |
 | `CERTIFICATE_REST_START_TOO_EARLY` | 422 | CER-044 |
 | `CERTIFICATE_REST_ISSUED_TOO_LATE` | 422 | CER-045 |
+| `CERTIFICATE_MATERNITY_DATES_TOO_OLD` | 422 | CER-046 |
+| `CERTIFICATE_MATERNITY_BIRTH_TOO_FAR` | 422 | CER-046 |
+| `CERTIFICATE_MATERNITY_ADMISSION_TOO_EARLY` | 422 | CER-051 |
+| `CERTIFICATE_MATERNITY_BIRTH_MISMATCH` | 409 | CER-050 |
+| `CERTIFICATE_MATERNITY_LEAVE_EXCEEDED` | 422 | CER-047 |
+| `CERTIFICATE_REST_OVERLAPS` | 409 | CER-048 |
+| `CERTIFICATE_MATERNITY_DIAGNOSIS_REQUIRED` | 422 | CER-049 |
 
 ## Esquema
 
@@ -576,6 +662,7 @@ Todo lo que faltaba está en `20261001070500_certificate_number_and_revocation`.
 | `issued_by_other_reason` + `medical_certificate_issuer_reason_not_blank` | `medical_certificate` | CER-039 |
 | Disparador `medical_certificate_issue_rules`: emisor, ventana y motivo | `medical_certificate` | CER-030, CER-039, CER-041, CER-044, CER-045 (maternidad, D-108) |
 | `CHECK medical_certificate_maternity_dates_in_order`: ingreso ≤ parto ≤ alta | `medical_certificate` | CER-035, D-108 |
+| Disparador `medical_certificate_issue_rules`: límites de la maternidad y candado por ficha | `medical_certificate` | CER-046 a CER-051, D-109, D-110, D-112 |
 
 ## Rutas
 

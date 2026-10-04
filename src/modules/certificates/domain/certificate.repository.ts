@@ -17,6 +17,7 @@ import type {
   ContingencyType,
   EncounterStatus,
   MaternityDates,
+  PatientRest,
   PatientWork,
   IssuableCertificateType,
   RestPeriod,
@@ -57,12 +58,18 @@ export interface IssueSnapshot {
   encounterStatus: EncounterStatus;
   /** CER-039. Who attended: the issuer, or someone who has to say why not. */
   attendingPractitionerId: string;
-  /** CER-008. How many diagnoses the attention has. */
-  diagnosisCount: number;
+  /** CER-008, CER-049. The CIE-10 codes of the attention's diagnoses. */
+  diagnosisCodes: string[];
   /** CER-030. When the attention started; its clinical date is Ecuador's. */
   encounterStartedAt: Date;
   /** CER-036. The canton of the site's parish; `null` without a parish. */
   cityOfIssue: string | null;
+  /**
+   * CER-048, CER-050. The patient's rests that are not revoked —her chart and
+   * the charts it absorbed, any attention—, each with its birth when it is a
+   * maternity rest; read once the chart's issues are serialised.
+   */
+  patientRests: PatientRest[];
   /** CER-038. Read from the chart of the attention, inside the issue. */
   patientWork: PatientWork;
 }

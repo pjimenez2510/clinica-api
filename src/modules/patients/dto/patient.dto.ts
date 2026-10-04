@@ -766,6 +766,12 @@ export const patientMergeSchema = z.object({
   targetMrn: z.string(),
   performedAt: z.iso.datetime(),
   linkedRecords: mergeLinkedRecordsSchema,
+  /**
+   * PA-062 (D-110 §7). Si la fusión junta reposos que se solapan con una
+   * maternidad: la fusión se hace igual, y esto dice cuántos y qué hacer.
+   * `null` sin solapes, y siempre al deshacer.
+   */
+  restOverlapNotice: z.string().nullable(),
 });
 /** Response of a merge and of its undo. */
 export class PatientMergeDto extends createZodDto(patientMergeSchema) {}

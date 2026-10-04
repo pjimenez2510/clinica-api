@@ -5,13 +5,7 @@ import { dirname, resolve } from 'node:path';
 import { DEV_PASSWORD } from '../prisma/seed.mts';
 import { createTestPkcs12 } from '../test/support/test-pkcs12.ts';
 
-import {
-  ALLOW_SHARED_FLAG,
-  checkDevApiTarget,
-  refreshTokenFrom,
-  requireApiUrl,
-  tokenIsIn,
-} from './dev-api-target.mts';
+import { provenDevLogin } from './dev-api-target.mts';
 
 /**
  * `pnpm sri:certificate:dev` — a DEVELOPMENT certificate for the issuer, so the
@@ -45,54 +39,16 @@ if (!existsSync(keyFile)) {
 }
 
 let api: string;
+let accessToken: string;
 try {
-  api = requireApiUrl(process.env);
+  ({ apiUrl: api, accessToken } = await provenDevLogin({
+    env: process.env,
+    argv: process.argv,
+    email: 'admin@clinica.ec',
+    password: DEV_PASSWORD,
+  }));
 } catch (error) {
   console.error((error as Error).message);
-  process.exit(1);
-}
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) {
-  console.error(
-    'Falta DATABASE_URL: sin ella no se puede saber a qué base escribe la API.',
-  );
-  process.exit(1);
-}
-
-const login = await fetch(`${api}/api/v1/auth/login`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ email: 'admin@clinica.ec', password: DEV_PASSWORD }),
-});
-if (!login.ok) {
-  console.error(
-    `No se pudo iniciar sesión en ${api} (${login.status}). ¿Está la API levantada?`,
-  );
-  process.exit(1);
-}
-const { accessToken } = (await login.json()) as { accessToken: string };
-
-const refreshToken = refreshTokenFrom(login.headers.getSetCookie());
-if (!refreshToken) {
-  console.error(
-    'El inicio de sesión no devolvió la cookie de sesión: no se sigue.',
-  );
-  process.exit(1);
-}
-const target = await checkDevApiTarget({
-  databaseUrl,
-  refreshToken,
-  allowShared: process.argv.includes(ALLOW_SHARED_FLAG),
-  lookup: tokenIsIn,
-});
-if (!target.ok) {
-  // The login already happened over there: close that session, so the
-  // refusal leaves no open session in a database that is not ours.
-  await fetch(`${api}/api/v1/auth/logout`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}` },
-  }).catch(() => undefined);
-  console.error(target.reason);
   process.exit(1);
 }
 

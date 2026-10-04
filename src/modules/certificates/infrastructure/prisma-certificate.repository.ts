@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
+import { chartScope } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
   CertificateAlreadyRevokedError,
@@ -134,19 +135,21 @@ export class PrismaCertificateRepository implements CertificateRepository {
           practitionerId: true,
           status: true,
           startedAt: true,
-          _count: { select: { diagnoses: true } },
           // CER-027. What the certificate will print, COPIED below: added
           // later, a diagnosis would reach a paper the patient authorised
           // without it.
           diagnoses: {
             orderBy: [{ rank: 'asc' }, { recordedAt: 'asc' }],
-            select: { cie10Code: true, cie10Display: true },
+            // CER-027. With its certainty, for the PRE and DEF columns.
+            select: { cie10Code: true, cie10Display: true, certainty: true },
           },
           // CER-038. The chart of the attention, read where the row is written
           // and copied: a later correction of the chart does not rewrite an
           // issued certificate.
           patient: {
             select: {
+              // CER-048. Whose chart the rests are read from.
+              mergedIntoId: true,
               employerName: true,
               jobTitle: true,
               residenceAddressLine: true,
@@ -164,12 +167,48 @@ export class PrismaCertificateRepository implements CertificateRepository {
       });
       if (!encounter) throw new CertificateEncounterNotFoundError();
 
+      /**
+       * CER-048. THE PATIENT'S ISSUES, ONE AT A TIME. Two attentions of the
+       * same patient lock two different rows, so the lock above does not
+       * order them; this one does, with the SAME key
+       * `medical_certificate_issue_rules` takes, so the rests read below are
+       * every rest that can be there when this one is written.
+       */
+      // The patient is her CHART: the surviving one and those it absorbed
+      // (PA-055); the lock is the chart's too. Read without locking the
+      // patient row: this read gives the doctor the clear refusal, and the
+      // trigger, which reads the chart again under the same lock, is the
+      // guarantee.
+      const chartId = encounter.patient.mergedIntoId ?? encounter.patientId;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('medical_certificate_rest:' || ${chartId}::text, 0))`;
+      const rests = await tx.medicalCertificate.findMany({
+        where: {
+          ...chartScope(chartId),
+          type: 'MEDICAL_REST',
+          revokedAt: null,
+        },
+        select: { restFrom: true, restTo: true, contingencyType: true, birthOn: true }, // prettier-ignore
+      });
+
       const plan = decide({
         encounterStatus: encounter.status,
         attendingPractitionerId: encounter.practitionerId,
-        diagnosisCount: encounter._count.diagnoses,
+        diagnosisCodes: encounter.diagnoses.map((diagnosis) => diagnosis.cie10Code), // prettier-ignore
         encounterStartedAt: encounter.startedAt,
         cityOfIssue: encounter.site.parish?.parent?.display ?? null,
+        patientRests: rests.flatMap(
+          ({ restFrom, restTo, contingencyType, birthOn }) => {
+            const from = clinicalDateColumn(restFrom);
+            const to = clinicalDateColumn(restTo);
+            const maternityBirthOn =
+              contingencyType === 'MATERNITY'
+                ? clinicalDateColumn(birthOn)
+                : null;
+            return from === null || to === null
+              ? []
+              : [{ from, to, maternityBirthOn }];
+          },
+        ),
         patientWork: encounter.patient,
       });
 
@@ -200,6 +239,7 @@ export class PrismaCertificateRepository implements CertificateRepository {
             ? encounter.diagnoses.map((diagnosis) => ({
                 code: diagnosis.cie10Code,
                 display: diagnosis.cie10Display,
+                certainty: diagnosis.certainty,
               }))
             : [],
           // Only on a rest, which is what prints them (CER-038): an attendance

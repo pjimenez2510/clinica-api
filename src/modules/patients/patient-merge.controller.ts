@@ -93,7 +93,7 @@ export class PatientMergeController {
       this.requester(req),
     );
 
-    return toResponse(event);
+    return toResponse(event, event.restOverlapNotice);
   }
 
   /**
@@ -140,8 +140,13 @@ export class PatientMergeController {
  * a copy of one patient's data in the response of an operation about another.
  * Two MRNs, two ids and an instant are what the interface needs to redirect.
  */
-function toResponse(event: PatientMergeEvent): PatientMergeResponse {
+function toResponse(
+  event: PatientMergeEvent,
+  restOverlapNotice: string | null = null,
+): PatientMergeResponse {
   return {
+    // PA-062. Only a merge can join overlapping rests; an undo says nothing.
+    restOverlapNotice,
     mergeId: event.mergeId,
     event: event.event,
     sourcePatientId: event.sourcePatientId,

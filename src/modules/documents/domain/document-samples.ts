@@ -36,6 +36,7 @@ export const SAMPLE_CODE = 'MUESTRA';
 const patient: PatientIdentity = {
   fullName: 'MUESTRA PACIENTE Ejemplo',
   identifier: '1710034065',
+  mrn: 'HC0000000000',
   ageYears: 42,
   ageMonths: 3,
 };
@@ -172,7 +173,11 @@ export function sampleSubject(
               ageMonths: patient.ageMonths,
               ageDays: null,
             },
-            diagnoses,
+            // CER-027. The sample marks DEF, so the preview shows the column.
+            diagnoses: diagnoses.map((d) => ({
+              ...d,
+              certainty: 'DEFINITIVE' as const,
+            })),
             practitioner: {
               givenNames: 'MUESTRA',
               familyNames: 'PROFESIONAL Ejemplo',

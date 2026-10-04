@@ -75,6 +75,11 @@ export interface PatientIdentity {
   /** The identifier printed so a pharmacy or an employer can match the person. */
   identifier: string | null;
   /**
+   * D-078. The chart number, beside the document on everything printed: a
+   * newborn without a cédula is matched by it alone.
+   */
+  mrn: string;
+  /**
    * Art. 5.b.ii. THE FROZEN AGE OF THE ATTENTION, never today's: a document
    * filed five years ago has to keep saying the age the patient had that day.
    */

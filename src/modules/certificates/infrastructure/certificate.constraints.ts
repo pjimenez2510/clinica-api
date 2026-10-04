@@ -82,6 +82,48 @@ registerConstraintMeanings({
     field: 'type',
     message: 'Han pasado más de ocho días desde la atención: el reposo se emite desde una atención nueva', // prettier-ignore
   },
+  /** CER-046, D-109, D-110 §3. The birth at most 84 days before the attention. */
+  medical_certificate_maternity_dates_within_84_days: {
+    code: 'CERTIFICATE_MATERNITY_DATES_TOO_OLD',
+    field: 'birthOn',
+    message: 'El parto puede ser, como mucho, 84 días anterior a la atención', // prettier-ignore
+  },
+  /** CER-051, D-112 §1. The admission at most 14 days before the birth. */
+  medical_certificate_maternity_admission_within_14_days: {
+    code: 'CERTIFICATE_MATERNITY_ADMISSION_TOO_EARLY',
+    field: 'maternityAdmissionOn',
+    message: 'El ingreso puede ser, como mucho, 14 días anterior al parto', // prettier-ignore
+  },
+  /** CER-046, D-110 §1. The birth at most four weeks after the attention. */
+  medical_certificate_maternity_birth_within_4_weeks: {
+    code: 'CERTIFICATE_MATERNITY_BIRTH_TOO_FAR',
+    field: 'birthOn',
+    message: 'El parto puede ser, como mucho, 4 semanas posterior a la atención', // prettier-ignore
+  },
+  /** CER-047, D-110 §6. Within the leave (birth + 83), and issued before it ends. */
+  medical_certificate_maternity_within_leave: {
+    code: 'CERTIFICATE_MATERNITY_LEAVE_EXCEEDED',
+    field: 'restTo',
+    message: 'La licencia de maternidad son doce semanas contando el día del parto: el reposo no pasa de su último día ni se emite después', // prettier-ignore
+  },
+  /** CER-050, D-110 §2. The maternity rests of one pregnancy share the birth. */
+  medical_certificate_maternity_same_birth: {
+    code: 'CERTIFICATE_MATERNITY_BIRTH_MISMATCH',
+    field: 'birthOn',
+    message: 'Otro reposo de maternidad de la paciente declara otro parto del mismo embarazo', // prettier-ignore
+  },
+  /** CER-048, D-109, D-110 §5. A maternity rest and another rest, not revoked, on the same days. */
+  medical_certificate_maternity_rest_no_overlap: {
+    code: 'CERTIFICATE_REST_OVERLAPS',
+    field: 'restFrom',
+    message: 'Se solapa con otro reposo vigente de la paciente, y uno de los dos es de maternidad', // prettier-ignore
+  },
+  /** CER-049, D-109. An obstetric diagnosis on the attention. */
+  medical_certificate_maternity_obstetric_diagnosis: {
+    code: 'CERTIFICATE_MATERNITY_DIAGNOSIS_REQUIRED',
+    field: 'contingencyType',
+    message: 'La atención no tiene un diagnóstico obstétrico', // prettier-ignore
+  },
   /** CER-041. A rest starts no later than the day after it is issued. */
   medical_certificate_rest_starts_by_next_day: {
     code: 'CERTIFICATE_REST_START_TOO_LATE',

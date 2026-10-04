@@ -29,7 +29,8 @@ export function requireApiUrl(env: Record<string, string | undefined>): string {
         '(nunca la de main, :3000): este guion no supone ninguno.',
     );
   }
-  return url;
+  // The base, without a trailing `/`: callers append `/api/v1/...`.
+  return url.replace(/\/+$/, '');
 }
 
 /** The refresh token out of the login's `Set-Cookie` (`refresh` or `__Host-refresh`). */
@@ -85,4 +86,62 @@ export async function checkDevApiTarget(options: {
     };
   }
   return { ok: true };
+}
+
+/**
+ * Logs in as `email` on `API_URL` and returns the session only once the
+ * guard has proved where that API writes. On a refusal the session just
+ * opened over there is closed, so nothing is left behind in a database that
+ * is not ours, and the error carries the reason.
+ *
+ * Shared by `sri:certificate:dev` and, through `dev-api-login.mts`, by
+ * `scripts/recorrer-el-flujo.py`.
+ */
+export async function provenDevLogin(options: {
+  env: Record<string, string | undefined>;
+  argv: readonly string[];
+  email: string;
+  password: string;
+}): Promise<{ apiUrl: string; accessToken: string }> {
+  const apiUrl = requireApiUrl(options.env);
+  const databaseUrl = options.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error(
+      'Falta DATABASE_URL: sin ella no se puede saber a qué base escribe la API.',
+    );
+  }
+
+  const login = await fetch(`${apiUrl}/api/v1/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: options.email, password: options.password }),
+  });
+  if (!login.ok) {
+    throw new Error(
+      `No se pudo iniciar sesión en ${apiUrl} (${login.status}). ¿Está la API levantada?`,
+    );
+  }
+  const { accessToken } = (await login.json()) as { accessToken: string };
+
+  const refreshToken = refreshTokenFrom(login.headers.getSetCookie());
+  const target = refreshToken
+    ? await checkDevApiTarget({
+        databaseUrl,
+        refreshToken,
+        allowShared: options.argv.includes(ALLOW_SHARED_FLAG),
+        lookup: tokenIsIn,
+      })
+    : {
+        ok: false as const,
+        reason:
+          'El inicio de sesión no devolvió la cookie de sesión: no se sigue.',
+      };
+  if (!target.ok) {
+    await fetch(`${apiUrl}/api/v1/auth/logout`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }).catch(() => undefined);
+    throw new Error(target.reason);
+  }
+  return { apiUrl, accessToken };
 }

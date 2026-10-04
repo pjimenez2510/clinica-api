@@ -1,3 +1,4 @@
+import { restOverlapNoticeOf } from '../domain/patient-merge';
 import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 
@@ -63,6 +64,14 @@ import type { Requester } from './patients.service';
  *   - what each rejection MEANS to whoever is at the desk with two charts of
  *     the same person in front of them.
  */
+/**
+ * A merge as it answers: the event, and the notice of PA-062 (`null` when the
+ * merge joined no overlapping rests).
+ */
+export interface PatientMergeResult extends PatientMergeEvent {
+  restOverlapNotice: string | null;
+}
+
 @Injectable()
 export class PatientMergeService {
   constructor(
@@ -89,7 +98,7 @@ export class PatientMergeService {
       reason: string;
     },
     requester: Requester,
-  ): Promise<PatientMergeEvent> {
+  ): Promise<PatientMergeResult> {
     const reason = requireReason(input.reason);
 
     /**
@@ -162,7 +171,11 @@ export class PatientMergeService {
     await this.recordMutation(input.sourcePatientId, requester);
     this.logMerge(outcome.event);
 
-    return outcome.event;
+    // PA-062. Done, and said: rests the merge joined that overlap.
+    return {
+      ...outcome.event,
+      restOverlapNotice: restOverlapNoticeOf(outcome.restOverlaps),
+    };
   }
 
   /**

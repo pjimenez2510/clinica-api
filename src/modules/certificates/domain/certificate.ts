@@ -1,5 +1,6 @@
 import {
   addDays,
+  addMonths,
   clinicalDateOf,
   clinicalDaySpan,
   type ClinicalDate,
@@ -8,6 +9,13 @@ import {
 import {
   CertificateBackdatingReasonRequiredError,
   CertificateIssuerReasonRequiredError,
+  CertificateMaternityAdmissionTooEarlyError,
+  CertificateMaternityBirthMismatchError,
+  CertificateMaternityBirthTooFarError,
+  CertificateMaternityDatesTooOldError,
+  CertificateMaternityDiagnosisRequiredError,
+  CertificateMaternityLeaveExceededError,
+  CertificateRestOverlapsError,
   CertificateRestIssuedTooLateError,
   CertificateRestPeriodInvalidError,
   CertificateRestStartTooEarlyError,
@@ -314,7 +322,7 @@ export const MAX_DAYS_TO_ISSUE_REST = 8;
  * however long ago, and has no eight-day limit: the mother who gave birth in a
  * hospital comes days later, and the leave chains certificates (CER-043). Any
  * other day still keeps the three days, so a prenatal rest is as it was
- * (D-106 §2). What bounds those dates is D-109, pending.
+ * (D-106 §2). What bounds those dates are CER-046 to CER-050 (D-109, D-110).
  */
 export function assertRestWithinAttention(
   period: RestPeriod,
@@ -339,6 +347,127 @@ export function assertRestWithinAttention(
   if (lateIssueDay > addDays(attentionDate, MAX_DAYS_TO_ISSUE_REST)) {
     throw new CertificateRestIssuedTooLateError();
   }
+}
+
+/**
+ * CER-046, D-109, D-110 §3. How many days before the attention the birth may
+ * be: twelve weeks.
+ */
+export const MATERNITY_LEAVE_DAYS = 84;
+
+/** CER-046, D-110 §1. How many days after the attention the birth may be. */
+export const MAX_BIRTH_DAYS_AFTER_ATTENTION = 28;
+
+/**
+ * CER-051, D-112 §1. How many days before the birth the admission may be: the
+ * rest may start on the admission (D-108), so it bounds how far back it goes.
+ */
+export const MAX_ADMISSION_DAYS_BEFORE_BIRTH = 14;
+
+/** CER-050, D-110 §2. Two births closer than this are one pregnancy. */
+export const MONTHS_BETWEEN_PREGNANCIES = 9;
+
+/**
+ * CER-049. An obstetric CIE-10: O00 to O99 or Z34 to Z39, with their
+ * subcategories, as the catalogue writes them (`O80`, `Z390`). A chapter
+ * range (`O00-O9A`) or the US-only `O9A` is not one.
+ */
+export function isObstetricCie10(code: string): boolean {
+  return /^(O[0-9]{2}|Z3[4-9])[0-9A-Z]*$/.test(code);
+}
+
+/**
+ * CER-048. Another rest of the patient's chart, not revoked; `maternityBirthOn`
+ * is its birth when it is a maternity rest, `null` otherwise.
+ */
+export interface PatientRest extends RestPeriod {
+  maternityBirthOn: ClinicalDate | null;
+}
+
+/** CER-048. Both ends included: a rest that ends the day another starts overlaps. */
+const overlaps = (period: RestPeriod) => (other: RestPeriod) =>
+  other.from <= period.to && period.from <= other.to;
+
+/**
+ * CER-050. Whether two births are nine calendar months apart or less, judged
+ * from EACH: the end-of-month clamp makes «nine months after» asymmetric
+ * (31-08 − 9 = 30-11, but 30-11 + 9 = 30-08), and the answer must not depend
+ * on which rest was issued first.
+ */
+function sameMonthsApart(a: ClinicalDate, b: ClinicalDate): boolean {
+  const within = (x: ClinicalDate, y: ClinicalDate) =>
+    y >= addMonths(x, -MONTHS_BETWEEN_PREGNANCIES) &&
+    y <= addMonths(x, MONTHS_BETWEEN_PREGNANCIES);
+  return within(a, b) || within(b, a);
+}
+
+/**
+ * CER-046 to CER-050, D-109, D-110 (provisional until the IESS confirms the
+ * procedure, D-105 §6). What bounds a maternity rest once D-108 took the three
+ * and eight days away:
+ *
+ * - its birth at most 84 days before the attention and 28 after it, and its
+ *   admission at most 14 days before the birth (D-112 §1);
+ * - the rest within the leave, twelve weeks counting the birth's day (last day
+ *   birth + 83), and issued before it ends (with the dawn of CER-030);
+ * - an obstetric diagnosis on the attention;
+ * - the same birth as any other maternity rest of the patient within nine
+ *   months — one pregnancy, one birth;
+ * - no other rest of the patient, not revoked, over the same days.
+ */
+export function assertMaternityWithinLeave(
+  period: RestPeriod,
+  maternity: MaternityDates,
+  attentionDate: ClinicalDate,
+  lateIssueDay: ClinicalDate,
+  diagnosisCodes: readonly string[],
+  otherRests: readonly PatientRest[],
+): void {
+  const birth = maternity.birthOn;
+  const earliest = addDays(attentionDate, -MATERNITY_LEAVE_DAYS);
+  // Refused from 85 days; the message names 83 days, the first birth that
+  // still leaves a day to issue on (the leave ends at birth + 83, CER-047).
+  if (birth < earliest) {
+    throw new CertificateMaternityDatesTooOldError(addDays(earliest, 1));
+  }
+  const latest = addDays(attentionDate, MAX_BIRTH_DAYS_AFTER_ATTENTION);
+  if (birth > latest) throw new CertificateMaternityBirthTooFarError(latest);
+  const earliestAdmission = addDays(birth, -MAX_ADMISSION_DAYS_BEFORE_BIRTH);
+  if (maternity.admissionOn < earliestAdmission) {
+    throw new CertificateMaternityAdmissionTooEarlyError(earliestAdmission);
+  }
+  const lastDay = addDays(birth, MATERNITY_LEAVE_DAYS - 1);
+  if (period.to > lastDay || lateIssueDay > lastDay) {
+    throw new CertificateMaternityLeaveExceededError(lastDay);
+  }
+  if (!diagnosisCodes.some(isObstetricCie10)) {
+    throw new CertificateMaternityDiagnosisRequiredError();
+  }
+  const other = otherRests.find(
+    ({ maternityBirthOn: b }) =>
+      b !== null && b !== birth && sameMonthsApart(birth, b),
+  );
+  if (other?.maternityBirthOn) {
+    throw new CertificateMaternityBirthMismatchError(other.maternityBirthOn);
+  }
+  if (otherRests.some(overlaps(period)))
+    throw new CertificateRestOverlapsError();
+}
+
+/**
+ * CER-048, D-110 §5. A rest of another contingency over a maternity rest of
+ * the patient that is not revoked. Two rests of other contingencies may still
+ * overlap: nobody decided otherwise.
+ */
+export function assertRestDoesNotOverlapMaternity(
+  period: RestPeriod,
+  otherRests: readonly PatientRest[],
+): void {
+  const maternities = otherRests.filter(
+    (rest) => rest.maternityBirthOn !== null,
+  );
+  if (maternities.some(overlaps(period)))
+    throw new CertificateRestOverlapsError();
 }
 
 /** CER-041. Refuses a rest that starts after `latestRestStartOf`. */

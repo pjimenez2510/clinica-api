@@ -19,6 +19,8 @@ import {
   assertIssuableType,
   assertRestStartsInTime,
   assertRestWithinAttention,
+  assertMaternityWithinLeave,
+  assertRestDoesNotOverlapMaternity,
   backdatingReasonOf,
   lateIssueDayOf,
   iessValidationOf,
@@ -190,6 +192,23 @@ export class CertificateService {
             lateIssueDay,
             details.maternity,
           );
+          // CER-046 to CER-050 (D-109, D-110). What bounds a maternity rest;
+          // any other rest does not fall on a maternity rest (D-110 §5).
+          if (details.maternity !== null) {
+            assertMaternityWithinLeave(
+              details.period,
+              details.maternity,
+              attentionDate,
+              lateIssueDay,
+              snapshot.diagnosisCodes,
+              snapshot.patientRests,
+            );
+          } else {
+            assertRestDoesNotOverlapMaternity(
+              details.period,
+              snapshot.patientRests,
+            );
+          }
         }
         // CER-039. Who attended is read under the lock, with the attention.
         const issuedByOtherReason = issuerReasonOf(
@@ -209,7 +228,7 @@ export class CertificateService {
         // CER-008. The diagnosis is read from the attention, never typed; a
         // rest always carries it (CER-007).
         const includeDiagnosis = details !== null || request.includeDiagnosis;
-        if (includeDiagnosis && snapshot.diagnosisCount === 0) {
+        if (includeDiagnosis && snapshot.diagnosisCodes.length === 0) {
           throw new CertificateDiagnosisRequiredError();
         }
         return {

@@ -38,6 +38,23 @@ export type NotApplicable = typeof NA;
 /** `PatientSex` of the schema, declared here: no module imports another. */
 export type PatientSex = 'MALE' | 'FEMALE' | 'INTERSEX' | 'UNKNOWN';
 
+/**
+ * `DiagnosisCertainty` of the schema, declared here for the same reason: the
+ * 117's PRE and DEF columns (CER-027).
+ */
+export type DiagnosisCertainty = 'PRESUMPTIVE' | 'DEFINITIVE';
+
+/**
+ * CER-027. One diagnosis of block D. `certainty` is `null` on a certificate
+ * issued before the copy kept it: printed with neither column marked, never
+ * deduced from the attention as it is now.
+ */
+export interface Form117Diagnosis {
+  code: string;
+  display: string;
+  certainty: DiagnosisCertainty | null;
+}
+
 /** `IdentifierType` of the schema, declared here for the same reason. */
 export type IdentifierType =
   'CEDULA' | 'PASSPORT' | 'REFUGEE_CARD' | 'FOREIGN_ID' | 'PROVISIONAL';
@@ -95,7 +112,7 @@ export interface Form117Source {
     ageDays: number | null;
   };
   /** The diagnoses of the attention, principal first. */
-  diagnoses: readonly { code: string; display: string }[];
+  diagnoses: readonly Form117Diagnosis[];
   practitioner: {
     givenNames: string;
     familyNames: string;
@@ -196,7 +213,7 @@ export interface Form117 {
     periodInWords: string;
   };
   /** CER-027. Block D. */
-  diagnoses: readonly { code: string; display: string }[] | NotApplicable;
+  diagnoses: readonly Form117Diagnosis[] | NotApplicable;
   /** CER-028. Block E. */
   professional: {
     /** `YYYY-MM-DD` of the issue, in Ecuador. */
@@ -233,7 +250,11 @@ export function composeForm117(source: Form117Source): Form117 {
   const { certificate, patient, encounter, practitioner } = source;
   const diagnoses =
     certificate.includeDiagnosis && source.diagnoses.length > 0
-      ? source.diagnoses.map(({ code, display }) => ({ code, display }))
+      ? source.diagnoses.map(({ code, display, certainty }) => ({
+          code,
+          display,
+          certainty,
+        }))
       : NA;
 
   return {

@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   CLINIC_TIME_ZONE,
+  addMonths,
+  type ClinicalDate,
   WallClockTime,
   atWallClock,
   clinicalDateOf,
@@ -246,5 +248,17 @@ describe('clinic time', () => {
         clinicalDatesBetween(d('2026-01-01'), d('2030-01-01')),
       ).toThrow(RangeError);
     });
+  });
+});
+
+describe('addMonths', () => {
+  // Fechas fijas a propósito: lo que se comprueba es el calendario mismo (fin
+  // de mes y bisiesto), no una fecha relativa a hoy.
+  it('suma meses de calendario y recorta al ultimo dia del mes, como PostgreSQL', () => {
+    expect(addMonths('2026-01-15' as ClinicalDate, 9)).toBe('2026-10-15'); // fecha-fija: calendario
+    expect(addMonths('2026-05-31' as ClinicalDate, 9)).toBe('2027-02-28'); // fecha-fija: fin de mes
+    expect(addMonths('2027-05-31' as ClinicalDate, 9)).toBe('2028-02-29'); // fecha-fija: bisiesto
+    expect(addMonths('2026-12-31' as ClinicalDate, -9)).toBe('2026-03-31'); // fecha-fija: hacia atras
+    expect(addMonths('2026-11-30' as ClinicalDate, -9)).toBe('2026-02-28'); // fecha-fija: recorte hacia atras
   });
 });

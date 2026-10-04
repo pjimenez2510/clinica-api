@@ -130,9 +130,10 @@ const aSource = (view: CertificateView): Form117Source => ({
 const aSnapshot = (overrides: Partial<IssueSnapshot> = {}): IssueSnapshot => ({
   encounterStatus: 'OPEN',
   attendingPractitionerId: PRACTITIONER,
-  diagnosisCount: 1,
+  diagnosisCodes: ['J02'],
   encounterStartedAt: NOW,
   cityOfIssue: 'Quito',
+  patientRests: [],
   patientWork: {
     employerName: 'Florícola del Valle',
     jobTitle: 'Supervisora de cultivo',
@@ -149,7 +150,7 @@ class FakeRepository implements CertificateRepository {
   };
   snapshot: IssueSnapshot = aSnapshot({
     encounterStatus: 'OPEN',
-    diagnosisCount: 1,
+    diagnosisCodes: ['J02'],
   });
   encounterFound = true;
   stored: Form117Source | null = aSource(aView());
@@ -301,7 +302,7 @@ describe('el servicio de certificados', () => {
   it('CER-003 rechaza emitir sobre una atencion cerrada, y la dada de alta lo admite', async () => {
     repository.snapshot = aSnapshot({
       encounterStatus: 'COMPLETED',
-      diagnosisCount: 1,
+      diagnosisCodes: ['J02'],
     });
     await expect(service.issue(attendance(), requester)).rejects.toMatchObject({
       code: 'CERTIFICATE_ENCOUNTER_NOT_OPEN',
@@ -311,7 +312,7 @@ describe('el servicio de certificados', () => {
     // Control positivo por el mismo camino.
     repository.snapshot = aSnapshot({
       encounterStatus: 'DISCHARGED',
-      diagnosisCount: 1,
+      diagnosisCodes: ['J02'],
     });
     await expect(service.issue(attendance(), requester)).resolves.toBeDefined();
   });
@@ -357,7 +358,7 @@ describe('el servicio de certificados', () => {
   it('CER-008 rechaza incluir el diagnostico cuando la atencion no tiene ninguno', async () => {
     repository.snapshot = aSnapshot({
       encounterStatus: 'OPEN',
-      diagnosisCount: 0,
+      diagnosisCodes: [],
     });
 
     await expect(
@@ -453,7 +454,7 @@ describe('el servicio de certificados', () => {
   });
 
   it('CER-008 un reposo exige un diagnostico registrado en la atencion', async () => {
-    repository.snapshot = aSnapshot({ diagnosisCount: 0 });
+    repository.snapshot = aSnapshot({ diagnosisCodes: [] });
     await expect(service.issue(rest(3), requester)).rejects.toMatchObject({
       code: 'CERTIFICATE_DIAGNOSIS_REQUIRED',
     });
@@ -526,6 +527,8 @@ describe('el servicio de certificados', () => {
   });
 
   it('CER-034 y CER-035 guarda la contingencia y las fechas de la maternidad', async () => {
+    // CER-049: la maternidad lleva un diagnóstico obstétrico.
+    repository.snapshot = aSnapshot({ diagnosisCodes: ['O80'] });
     await service.issue(
       rest(30, {
         contingencyType: 'MATERNITY',
@@ -633,7 +636,7 @@ describe('el servicio de certificados', () => {
   it('CER-016 una emision rechazada no deja fila de bitacora', async () => {
     repository.snapshot = aSnapshot({
       encounterStatus: 'COMPLETED',
-      diagnosisCount: 1,
+      diagnosisCodes: ['J02'],
     });
     await expect(service.issue(attendance(), requester)).rejects.toThrow();
     expect(entries).toEqual([]);
@@ -709,6 +712,8 @@ describe('el servicio de certificados', () => {
   });
 
   it('CER-043 un reposo de maternidad avisa de confirmar con el IESS, sin impedir la emisión', async () => {
+    // CER-049: la maternidad lleva un diagnóstico obstétrico.
+    repository.snapshot = aSnapshot({ diagnosisCodes: ['O80'] });
     const issued = await service.issue(
       rest(28, {
         contingencyType: 'MATERNITY',
@@ -784,6 +789,7 @@ describe('el servicio de certificados', () => {
   });
 
   it('CER-044 CER-045 el reposo de maternidad empieza desde el parto y se emite pasados 8 días; la enfermedad general igual se rechaza (D-108)', async () => {
+    repository.snapshot = aSnapshot({ diagnosisCodes: ['O80'] });
     const birth = addDays(today, -5);
     const maternity = {
       contingencyType: 'MATERNITY' as const,
@@ -802,6 +808,7 @@ describe('el servicio de certificados', () => {
     // Nueve días después de la atención, a mediodía en Ecuador.
     clockReads = atWallClock(today, WallClockTime.of(12, 0));
     repository.snapshot = aSnapshot({
+      diagnosisCodes: ['O80'],
       encounterStartedAt: atWallClock(addDays(today, -9), WallClockTime.of(12, 0)), // prettier-ignore
     });
     const later = { restFrom: today, restTo: addDays(today, 29), backdatingReason: 'Segundo certificado de la licencia' }; // prettier-ignore
@@ -810,6 +817,97 @@ describe('el servicio de certificados', () => {
     ).rejects.toMatchObject({ code: 'CERTIFICATE_REST_ISSUED_TOO_LATE' });
     await expect(
       service.issue(rest(1, { ...later, ...maternity, maternityAdmissionOn: addDays(today, -15), birthOn: addDays(today, -14), maternityDischargeOn: addDays(today, -12) }), requester), // prettier-ignore
+    ).resolves.toBeDefined();
+  });
+
+  it('CER-048 CER-049 la maternidad pide un diagnostico obstetrico y no se solapa con otro reposo vigente de la paciente (D-109)', async () => {
+    const birth = addDays(today, -5);
+    const request = rest(1, {
+      restFrom: birth,
+      restTo: addDays(today, 10),
+      backdatingReason: 'Dio a luz en el hospital hace cinco días',
+      contingencyType: 'MATERNITY',
+      maternityAdmissionOn: addDays(birth, -1),
+      birthOn: birth,
+      maternityDischargeOn: addDays(birth, 2),
+    });
+
+    repository.snapshot = aSnapshot({ diagnosisCodes: ['J02'] });
+    await expect(service.issue(request, requester)).rejects.toMatchObject({
+      code: 'CERTIFICATE_MATERNITY_DIAGNOSIS_REQUIRED',
+    });
+    repository.snapshot = aSnapshot({
+      diagnosisCodes: ['J02', 'O80'],
+      patientRests: [{ from: addDays(today, 10), to: addDays(today, 12), maternityBirthOn: null }], // prettier-ignore
+    });
+    await expect(service.issue(request, requester)).rejects.toMatchObject({
+      code: 'CERTIFICATE_REST_OVERLAPS',
+    });
+    expect(repository.issued).toHaveLength(0);
+
+    // Control positivo: el otro reposo empieza el día siguiente.
+    repository.snapshot = aSnapshot({
+      diagnosisCodes: ['J02', 'O80'],
+      patientRests: [{ from: addDays(today, 11), to: addDays(today, 12), maternityBirthOn: null }], // prettier-ignore
+    });
+    await expect(service.issue(request, requester)).resolves.toBeDefined();
+  });
+
+  it('CER-046 CER-047 la maternidad con un parto de hace mas de 84 dias, o mas alla de la licencia, se rechaza (D-109)', async () => {
+    repository.snapshot = aSnapshot({ diagnosisCodes: ['O80'] });
+    const maternityOf = (birth: ClinicalDate, to: ClinicalDate) =>
+      rest(1, {
+        restFrom: today,
+        restTo: to,
+        contingencyType: 'MATERNITY',
+        maternityAdmissionOn: birth,
+        birthOn: birth,
+        maternityDischargeOn: birth,
+      });
+    await expect(
+      service.issue(maternityOf(addDays(today, -85), today), requester),
+    ).rejects.toMatchObject({ code: 'CERTIFICATE_MATERNITY_DATES_TOO_OLD' });
+    // D-110 §6: el último día es parto + 83.
+    await expect(
+      service.issue(maternityOf(addDays(today, -70), addDays(today, 14)), requester), // prettier-ignore
+    ).rejects.toMatchObject({ code: 'CERTIFICATE_MATERNITY_LEAVE_EXCEEDED' });
+    await expect(
+      service.issue(maternityOf(addDays(today, -70), addDays(today, 13)), requester), // prettier-ignore
+    ).resolves.toBeDefined();
+    // D-110 §1: el parto, como mucho 4 semanas después de la atención.
+    await expect(
+      service.issue(maternityOf(addDays(today, 29), today), requester),
+    ).rejects.toMatchObject({ code: 'CERTIFICATE_MATERNITY_BIRTH_TOO_FAR' });
+  });
+
+  it('CER-048 CER-050 un reposo general no cabe sobre una maternidad vigente, y las maternidades de un embarazo comparten el parto (D-110)', async () => {
+    const birth = addDays(today, -5);
+    const maternityRest = { from: birth, to: addDays(today, 20), maternityBirthOn: birth }; // prettier-ignore
+    repository.snapshot = aSnapshot({ patientRests: [maternityRest] });
+    await expect(service.issue(rest(3), requester)).rejects.toMatchObject({
+      code: 'CERTIFICATE_REST_OVERLAPS',
+    });
+    // Control positivo: el general, después de la licencia emitida.
+    repository.snapshot = aSnapshot({ patientRests: [{ ...maternityRest, to: addDays(today, -1) }] }); // prettier-ignore
+    await expect(service.issue(rest(3), requester)).resolves.toBeDefined();
+
+    // Otra maternidad sobre otro parto del mismo embarazo.
+    repository.snapshot = aSnapshot({
+      diagnosisCodes: ['O80'],
+      patientRests: [{ ...maternityRest, to: addDays(today, -1) }],
+    });
+    const second = (declaredBirth: ClinicalDate) =>
+      rest(10, {
+        contingencyType: 'MATERNITY',
+        maternityAdmissionOn: declaredBirth,
+        birthOn: declaredBirth,
+        maternityDischargeOn: declaredBirth,
+      });
+    await expect(
+      service.issue(second(addDays(birth, 1)), requester),
+    ).rejects.toMatchObject({ code: 'CERTIFICATE_MATERNITY_BIRTH_MISMATCH' });
+    await expect(
+      service.issue(second(birth), requester),
     ).resolves.toBeDefined();
   });
 });

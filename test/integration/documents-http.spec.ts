@@ -880,6 +880,17 @@ describe('los documentos por HTTP', () => {
       await prisma.site.update({ where: { id: siteId }, data: site });
     });
 
+    it('DOC-104 D-078 la receta impresa lleva el número de historia clínica del paciente', async () => {
+      const { encounter } = await prisma.prescription.findUniqueOrThrow({
+        where: { id: prescriptionId },
+        select: { encounter: { select: { patient: { select: { mrn: true } } } } }, // prettier-ignore
+      });
+      const text = await draftText();
+      // Control: the band is there, labelled, and holds THIS chart's number.
+      expect(text).toContain('HISTORIA CLÍNICA');
+      expect(text).toContain(encounter.patient.mrn);
+    });
+
     it('DOC-080 OR-010 la cabecera imprime el nombre comercial, el correo y el permiso guardados', async () => {
       await prisma.establishment.update({
         where: { id: establishmentId },
