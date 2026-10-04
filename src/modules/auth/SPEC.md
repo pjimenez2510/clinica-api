@@ -79,7 +79,7 @@ que entra el lunes, sigue exigiendo tocar la base de datos a mano.
 **Prueba independiente:** crear una cuenta, concederle un rol en una sede, y
 comprobar que sus permisos efectivos cambian **sin reiniciar** y que la
 concesión aparece en la bitácora.
-**Cubre:** AU-020 a AU-034, AU-038, AU-042, AU-045.
+**Cubre:** AU-020 a AU-034, AU-038, AU-042, AU-045, AU-047.
 
 **Solo servidor:** AU-025, AU-026, AU-027, AU-038 y AU-042. Los dos primeros son
 bitácora y el plazo de caducidad definido en un único sitio; AU-027 es un
@@ -741,6 +741,16 @@ enlace que no sirve y con un correo que no sale.
   > alergia, y que llegue al médico depende de que se lo diga. UNA advertencia
   > por rol: si además receta o escribe, basta la primera, que ya nombra el
   > hueco.
+
+- **AU-047** — CUANDO se listen las cuentas (`GET /auth/users`), cada cuenta
+  DEBERÁ traer sus roles **vigentes** con su alcance de sede —los mismos que
+  `GET /auth/users/{id}/roles`—, y la tabla de Cuentas DEBERÁ mostrarlos en una
+  columna «Roles», con la sede o «Todas las sedes», para identificar a cada
+  persona sin abrir su ficha.
+  > Revisión de usabilidad del autor (04-10-2026). Los roles viajaban sólo por
+  > cuenta, así que la tabla no podía enseñarlos sin una petición por fila. Se
+  > leen en la MISMA consulta de la lista, con el mismo permiso (`user:read`) y
+  > el mismo filtro de revocadas: no se expone nada que la ficha no expusiera.
 
 - **AU-038** — CUANDO se fijen los roles de una cuenta, el sistema NO DEBERÁ
   admitir ninguna concesión cuyo alcance esté fuera del alcance de quien llama

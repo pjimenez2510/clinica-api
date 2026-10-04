@@ -19,6 +19,7 @@ import type {
 } from './credential-invitations.service';
 import type {
   AccountAdminRepositoryPort,
+  AccountListItem,
   AccountListFilter,
   AccountPatch,
   AccountView,
@@ -102,9 +103,9 @@ class AccountsDouble implements AccountAdminRepositoryPort {
   setActiveAnswer: AccountView | null = { ...ACCOUNT, active: false };
   createdWith: CreateAccountInput | null = null;
 
-  list(filter: AccountListFilter): Promise<readonly AccountView[]> {
+  list(filter: AccountListFilter): Promise<readonly AccountListItem[]> {
     this.calls.push({ method: 'list', args: [filter] });
-    return Promise.resolve([ACCOUNT]);
+    return Promise.resolve([{ ...ACCOUNT, grants: [] }]);
   }
 
   findById(id: string): Promise<AccountView | null> {
