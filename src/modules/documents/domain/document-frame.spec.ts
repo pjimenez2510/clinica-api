@@ -158,7 +158,9 @@ describe('composeFrame', () => {
 
     // Revisión de usabilidad del autor (04-10-2026): la conservación se cumple
     // (DOC-013), no se le imprime al paciente.
-    expect(notes('PRESCRIPTION').join(' ')).not.toMatch(/conservad|ACESS|art\./i);
+    expect(notes('PRESCRIPTION').join(' ')).not.toMatch(
+      /conservad|ACESS|art\./i,
+    );
     expect(notes('SERVICE_ORDER').join(' ')).toContain('00002393');
     expect(notes('INVOICE_RIDE').join(' ')).toContain('RIDE');
   });
