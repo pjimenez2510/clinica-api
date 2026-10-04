@@ -149,6 +149,7 @@ function build(
       publiclyListed: true,
       active: true,
     }),
+    record: vi.fn().mockResolvedValue(undefined),
     ...options.accounts,
     ...options.catalogue,
   };
@@ -157,6 +158,7 @@ function build(
     service: new PatientAccountService(
       mocks as unknown as BillingAccountRepository,
       mocks as unknown as BillingCatalogueRepository,
+      { record: mocks.record },
     ),
     mocks,
   };
@@ -594,6 +596,7 @@ describe('BI-003, BI-120 el cobro no bloquea la atención', () => {
       'confirmCharge',
       'listAccounts',
       'openAccount',
+      'openStatement',
       'requireAccount',
       'requireOpenAccount',
       'requireOpenCharge',

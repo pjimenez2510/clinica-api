@@ -85,6 +85,15 @@ export const catalogueQuerySchema = z.object({
 /** Query of GET /billing/services and GET /billing/payers. */
 export class CatalogueQueryDto extends createZodDto(catalogueQuerySchema) {}
 
+export const awaitingCheckoutQuerySchema = z.object({
+  /** D-119. Also the ones older than seven days, still unsettled. */
+  includeOlder: explicitFlag,
+});
+/** Query of GET /billing/sites/:siteId/encounters/awaiting-checkout. */
+export class AwaitingCheckoutQueryDto extends createZodDto(
+  awaitingCheckoutQuerySchema,
+) {}
+
 /**
  * BI-006, BI-013. NO AMOUNT FIELD, AND THAT ABSENCE IS THE REQUIREMENT.
  *

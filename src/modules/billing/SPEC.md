@@ -1493,7 +1493,8 @@ dos registros distintos.**
   cada una con el estado de su cuenta (sin cuenta, o abierta y cuál); y NO
   DEBERÁ listar las anuladas (`ENTERED_IN_ERROR`) ni las de otra sede. El
   sistema DEBERÁ servir además cuántas atenciones anteriores a esa ventana
-  siguen sin cuenta liquidada, para que la pantalla lo diga (D-119).
+  siguen sin cuenta liquidada, para que la pantalla lo diga, y CUANDO caja lo
+  pida DEBERÁ listarlas también (D-119, resuelta por el autor: opción A).
   > **El defecto que lo origina.** BI-150 daba la ruta de paso a caja, pero
   > nada la alcanzaba: la atención enlaza a la cuenta sólo cuando ya existe, y
   > caja listaba cuentas, que nacen precisamente de ese paso. El resultado era
@@ -1520,6 +1521,9 @@ dos registros distintos.**
   > hace falta para reconocer a quién se cobra con el paciente delante, y no
   > dicen nada de su salud. BI-133 prohíbe enterrar la bitácora con un acceso
   > por fila, no enseñar el nombre: la proyección se lee sin pasar por la ficha.
+  > Abrir UNA cuenta sí deja un acceso, a la cuenta y no a la historia
+  > (D-118, resuelta por el autor: A); listarlas, ninguno.
+  >
   > El recién nacido sin documento lleva sólo su HC. El documento es el mismo
   > que enseña la ficha: el primer documento definitivo vigente, por fecha de
   > alta; y si la ficha se fusionó, el de la ficha superviviente (PA-055).
@@ -1547,7 +1551,7 @@ dos registros distintos.**
   > caja confirmó uno entretanto, la factura —que no se edita— no sale por un
   > importe que nadie vio. La cuenta se bloquea durante la emisión, así que dos
   > emisiones simultáneas no se reparten las mismas líneas. Un cargo a $0 no
-  > ofrece factura: la pantalla dice «quítelos» (D-120).
+  > se factura: se quita con su motivo (D-120, resuelta por el autor: A).
 
 ## 18. Prestaciones con estructura
 

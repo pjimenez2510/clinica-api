@@ -54,6 +54,7 @@ import {
   VoidChargeDto,
   type AccountResponse,
   AwaitingCheckoutListDto,
+  AwaitingCheckoutQueryDto,
   type AwaitingCheckoutResponse,
   type PatientIdentityResponse,
   type AccountStatementResponse,
@@ -156,10 +157,12 @@ export class BillingController {
   @ApiOkResponse({ type: AwaitingCheckoutListDto })
   async awaitingCheckout(
     @Param('siteId', ParseUUIDPipe) siteId: string,
+    @Query() query: AwaitingCheckoutQueryDto,
   ): Promise<{ items: AwaitingCheckoutResponse[]; olderCount: number }> {
     const { visits, olderCount } = await this.checkout.awaitingCheckout({
       siteId,
       now: new Date(),
+      includeOlder: query.includeOlder,
     });
     return { items: visits.map(toAwaitingResponse), olderCount };
   }
@@ -218,7 +221,10 @@ export class BillingController {
     @Param('accountId', ParseUUIDPipe) accountId: string,
   ): Promise<AccountStatementResponse> {
     return toStatementResponse(
-      await this.accounts.statement({ accountId, siteId }),
+      await this.accounts.openStatement(
+        { accountId, siteId },
+        { userId: this.currentUser.requireUserId() },
+      ),
     );
   }
 

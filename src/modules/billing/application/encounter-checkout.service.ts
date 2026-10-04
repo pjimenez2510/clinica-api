@@ -152,7 +152,16 @@ export class EncounterCheckoutService {
   async awaitingCheckout(query: {
     siteId: string;
     now: Date;
+    /** D-119: the older ones too, when caja follows the notice. */
+    includeOlder?: boolean;
   }): Promise<{ visits: AwaitingCheckout[]; olderCount: number }> {
+    if (query.includeOlder) {
+      const visits = await this.acts.listAwaitingCheckout({
+        siteId: query.siteId,
+        endedFrom: new Date(0),
+      });
+      return { visits, olderCount: 0 };
+    }
     const since = awaitingCheckoutSince(query.now);
     const [visits, olderCount] = await Promise.all([
       this.acts.listAwaitingCheckout({

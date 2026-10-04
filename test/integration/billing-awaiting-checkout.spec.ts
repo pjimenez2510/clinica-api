@@ -326,8 +326,20 @@ describe('caja: lo pendiente de cobro (B10)', () => {
 
     expect(ids).toContain(inside);
     expect(ids).not.toContain(before);
-    // D-119: the older one is not dropped in silence — it is counted.
+    // D-119: the older one is not dropped in silence — it is counted, and
+    // listed when asked for.
     expect(page.olderCount).toBe(1);
+    const all = await request(app.getHttpServer())
+      .get(
+        `/api/v1/billing/sites/${siteId}/encounters/awaiting-checkout?includeOlder=true`,
+      )
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(
+      (all.body as { items: AwaitingRow[] }).items.map(
+        (row) => row.encounterId,
+      ),
+    ).toEqual(expect.arrayContaining([inside, before]));
   });
 
   it('BI-181 la terminada por caja (COMPLETED) sin liquidar se lista, y la de cuenta anulada sale como sin cuenta', async () => {
@@ -461,6 +473,36 @@ describe('caja: lo pendiente de cobro (B10)', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     expect(await accessesTo()).toBeGreaterThan(0);
+  });
+
+  it('BI-183 D-118 abrir UNA cuenta registra un acceso a la cuenta, no a la historia; listarlas no registra ninguno', async () => {
+    const patient = await patientWithCedula();
+    const encounterId = await visit({ patientId: patient.id, status: 'DISCHARGED', endedAt: new Date(now.getTime() - HOUR_MS) }); // prettier-ignore
+    const accountId = await account(encounterId, patient.id, 'OPEN');
+    const trailOf = () =>
+      prisma.accessAudit.findMany({
+        where: { resourceType: 'patient_account', resourceId: accountId },
+      });
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/billing/sites/${siteId}/accounts`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(await trailOf()).toHaveLength(0);
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/billing/sites/${siteId}/accounts/${accountId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const trail = await trailOf();
+    expect(trail).toHaveLength(1);
+    expect(trail[0]!.action).toBe('READ');
+    // Not an access to the clinical record (D-118).
+    expect(
+      await prisma.accessAudit.count({
+        where: { resourceType: 'patient', resourceId: patient.id },
+      }),
+    ).toBe(0);
   });
 
   it('BI-131 otra sede no se puede consultar', async () => {

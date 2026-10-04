@@ -160,7 +160,7 @@ function build(options: { ports?: Record<string, unknown> } = {}) {
       actsPort,
       accounts,
       catalogue,
-      new PatientAccountService(accounts, catalogue),
+      new PatientAccountService(accounts, catalogue, { record: vi.fn() }),
     ),
     mocks,
   };
