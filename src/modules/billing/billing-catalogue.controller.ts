@@ -261,7 +261,7 @@ export class BillingCatalogueController {
     );
   }
 
-  /** BI-185. Renames or (de)activates; the kind is fixed (BI-187). */
+  /** BI-185, BI-187. Renames, (de)activates or reclassifies when nothing clashes. */
   @Patch('service-categories/:categoryId')
   @RequirePermission('billing:price-manage', 'global')
   @ApiOperation({ summary: 'Renombrar o desactivar una categoría de prestación' }) // prettier-ignore
@@ -274,7 +274,7 @@ export class BillingCatalogueController {
     return toCategoryResponse(
       await this.services.updateCategory(
         categoryId,
-        { name: dto.name, active: dto.active },
+        { name: dto.name, active: dto.active, kind: dto.kind },
         requester,
       ),
     );

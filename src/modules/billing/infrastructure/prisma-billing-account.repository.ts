@@ -23,6 +23,7 @@ import type {
 } from '../domain/billing.repository';
 import {
   ActAlreadyChargedError,
+  InvoiceChargesChangedError,
   InvoiceHasNoItemsError,
   InvoiceImmutableError,
   InvoiceServiceCodeTooLongError,
@@ -510,6 +511,14 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
            WHERE "id" = ${issuance.emissionPointId}::uuid
              FOR UPDATE`;
 
+        // The account too: two issuances of the same account through two
+        // emission points would otherwise read the same pending charges, and
+        // the second would take the lines of the first.
+        await tx.$queryRaw`
+          SELECT "id" FROM "patient_account"
+           WHERE "id" = ${issuance.accountId}::uuid
+             FOR UPDATE`;
+
         const charges = await tx.chargeItem.findMany({
           where: { accountId: issuance.accountId, status: 'BILLABLE' },
           orderBy: { createdAt: 'asc' },
@@ -517,6 +526,16 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         });
 
         if (charges.length === 0) throw new InvoiceHasNoItemsError();
+        // BI-184. Exactly what the cashier saw, or nothing.
+        if (
+          issuance.expectedChargeIds !== undefined &&
+          !sameIds(
+            issuance.expectedChargeIds,
+            charges.map((row) => row.id),
+          )
+        ) {
+          throw new InvoiceChargesChangedError();
+        }
 
         // BI-171. Before the sequential is taken.
         const tooLong = charges.find(
@@ -581,7 +600,10 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         // statement that bills it (`charge_item_billed_carries_its_invoice`):
         // the voucher's lines are read through it.
         await tx.chargeItem.updateMany({
-          where: { id: { in: charges.map((charge) => charge.id) } },
+          where: {
+            id: { in: charges.map((charge) => charge.id) },
+            status: 'BILLABLE',
+          },
           data: { status: 'BILLED', invoiceId: invoice.id },
         });
 
@@ -790,4 +812,10 @@ function toInvoiceView(row: InvoiceRow): InvoiceView {
     authorisedAt: row.authorisedAt,
     issuedById: row.issuedById,
   };
+}
+
+/** BI-184. The same set of ids, in any order. */
+function sameIds(a: readonly string[], b: readonly string[]): boolean {
+  const left = new Set(a);
+  return left.size === b.length && b.every((id) => left.has(id));
 }

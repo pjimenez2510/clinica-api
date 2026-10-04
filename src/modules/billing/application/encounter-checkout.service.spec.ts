@@ -106,6 +106,7 @@ function build(options: { ports?: Record<string, unknown> } = {}) {
     // Clinical acts, READ ONLY.
     findEncounterActs: vi.fn().mockResolvedValue(acts()),
     listAwaitingCheckout: vi.fn().mockResolvedValue([]),
+    countAwaitingBefore: vi.fn().mockResolvedValue(0),
 
     // The account side.
     findOpenAccountOfEncounter: vi.fn().mockResolvedValue(account()),
@@ -387,6 +388,11 @@ describe('BI-181 lo pendiente de cobro', () => {
     expect(mocks.listAwaitingCheckout).toHaveBeenCalledWith({
       siteId: SITE,
       endedFrom: awaitingCheckoutSince(now),
+    });
+    // D-119: and what is older is counted from the same edge.
+    expect(mocks.countAwaitingBefore).toHaveBeenCalledWith({
+      siteId: SITE,
+      endedBefore: awaitingCheckoutSince(now),
     });
   });
 });

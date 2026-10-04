@@ -152,11 +152,17 @@ export class EncounterCheckoutService {
   async awaitingCheckout(query: {
     siteId: string;
     now: Date;
-  }): Promise<AwaitingCheckout[]> {
-    return this.acts.listAwaitingCheckout({
-      siteId: query.siteId,
-      endedFrom: awaitingCheckoutSince(query.now),
-    });
+  }): Promise<{ visits: AwaitingCheckout[]; olderCount: number }> {
+    const since = awaitingCheckoutSince(query.now);
+    const [visits, olderCount] = await Promise.all([
+      this.acts.listAwaitingCheckout({
+        siteId: query.siteId,
+        endedFrom: since,
+      }),
+      // D-119: what fell out of the window is said, not dropped in silence.
+      this.acts.countAwaitingBefore({ siteId: query.siteId, endedBefore: since }), // prettier-ignore
+    ]);
+    return { visits, olderCount };
   }
 
   /**

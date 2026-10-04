@@ -497,6 +497,60 @@ describe('la facturación por HTTP', () => {
     });
   });
 
+  describe('BI-184 la factura lleva lo que caja vio al emitir', () => {
+    const receiver = {
+      identificationType: '05',
+      identification: '1710034065',
+      name: 'Guamán Andrade, María José',
+    };
+
+    it('BI-184 si entre ver el total y emitir alguien confirmó otro cargo, no se emite; con los cargos que hay, sí', async () => {
+      const accountId = await openAccount();
+      await addCharge(accountId);
+      const seen = await api()
+        .get(`/api/v1/billing/sites/${siteId}/accounts/${accountId}`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(200);
+      const seenIds = (seen.body as { charges: { id: string }[] }).charges.map(
+        (charge) => charge.id,
+      );
+      // Otra caja añade un cargo mientras el diálogo está abierto.
+      await addCharge(accountId);
+
+      const refused = await api()
+        .post(`/api/v1/billing/sites/${siteId}/invoices`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({
+          accountId,
+          emissionPointId,
+          paymentMethod: '01',
+          receiver,
+          chargeIds: seenIds,
+        })
+        .expect(409);
+      expect((refused.body as Problem).code).toBe('INVOICE_CHARGES_CHANGED');
+
+      // Control: con los cargos que hay ahora, sale.
+      const now = await api()
+        .get(`/api/v1/billing/sites/${siteId}/accounts/${accountId}`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(200);
+      await api()
+        .post(`/api/v1/billing/sites/${siteId}/invoices`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({
+          accountId,
+          emissionPointId,
+          paymentMethod: '01',
+          receiver,
+          chargeIds: (now.body as { charges: { id: string }[] }).charges.map(
+            (charge) => charge.id,
+          ),
+        })
+        .expect(201);
+    });
+  });
+
   describe('BI-001 el dinero viaja como cadena', () => {
     it('BI-001 sirve todo importe como cadena y nunca como número de JSON', async () => {
       const accountId = await openAccount();

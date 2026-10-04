@@ -64,6 +64,11 @@ function build(overrides: Record<string, unknown> = {}) {
     findTaxRate: vi.fn().mockResolvedValue(taxRate),
     listBillableServices: vi.fn().mockResolvedValue([service]),
     findBillableService: vi.fn().mockResolvedValue(service),
+    listExamsOfService: vi.fn().mockResolvedValue([]),
+    countCategoryTies: vi
+      .fn()
+      .mockResolvedValue({ consultations: 0, procedures: 0, exams: 0 }),
+    updateServiceCategory: vi.fn().mockResolvedValue(SUPPLIES),
     findServiceCategory: vi
       .fn()
       .mockImplementation((id: string) =>
@@ -291,6 +296,57 @@ describe('BI-185, BI-187 la categoría es un catálogo y su clase manda', () => 
 
     await expect(
       catalogue.updateService('service-1', { categoryId: SUPPLIES.id }, requester), // prettier-ignore
+    ).rejects.toBeInstanceOf(ServiceKindMismatchError);
+  });
+});
+
+describe('BI-187 corregir siempre es posible', () => {
+  it('BI-187 una prestación que ya está en desajuste se puede renombrar o desactivar', async () => {
+    // A migrated clinic: «Consulta externa» became OTHER with its consultation
+    // still tied to a specialty. Renaming or deactivating must not be refused.
+    const { service: catalogue } = build({
+      findBillableService: vi.fn().mockResolvedValue({
+        ...service,
+        category: { ...SUPPLIES, kind: 'OTHER' },
+        specialtyId: 'sp-1',
+        visitSequence: 'FIRST_TIME',
+      }),
+    });
+
+    await expect(
+      catalogue.updateService('service-1', { name: 'Otra', active: false }, requester), // prettier-ignore
+    ).resolves.toBeDefined();
+  });
+
+  it('BI-187 una prestación por la que se cobran exámenes no pasa a una clase que no es de examen', async () => {
+    const { service: catalogue } = build({
+      findBillableService: vi.fn().mockResolvedValue({
+        ...service,
+        category: { ...SUPPLIES, id: 'category-lab', kind: 'LABORATORY' },
+      }),
+      listExamsOfService: vi
+        .fn()
+        .mockResolvedValue([
+          { id: 'e1', code: 'EX-BH', name: 'BH', active: true },
+        ]),
+    });
+
+    await expect(
+      catalogue.updateService('service-1', { categoryId: SUPPLIES.id }, requester), // prettier-ignore
+    ).rejects.toBeInstanceOf(ServiceKindMismatchError);
+  });
+
+  it('BI-187 la clase de una categoría se cambia si ninguna de sus prestaciones choca, y no si alguna sí', async () => {
+    const { service: catalogue, mocks } = build();
+
+    await catalogue.updateCategory(SUPPLIES.id, { kind: 'CONSULTATION' }, requester); // prettier-ignore
+    expect(mocks.updateServiceCategory).toHaveBeenCalledWith(SUPPLIES.id, {
+      kind: 'CONSULTATION',
+    });
+
+    mocks.countCategoryTies.mockResolvedValue({ consultations: 1, procedures: 0, exams: 0 }); // prettier-ignore
+    await expect(
+      catalogue.updateCategory(SUPPLIES.id, { kind: 'OTHER' }, requester),
     ).rejects.toBeInstanceOf(ServiceKindMismatchError);
   });
 });

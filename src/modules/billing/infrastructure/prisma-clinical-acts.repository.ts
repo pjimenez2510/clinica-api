@@ -185,22 +185,43 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
       orderBy: { endedAt: 'desc' },
     });
 
-    return Promise.all(
-      rows.map(async (row): Promise<AwaitingCheckout> => {
-        const status = row.status as EndedEncounterStatus;
-        const open = row.accounts[0];
-        return {
-          encounterId: row.id,
-          status,
-          // `encounter_status_matches_ended_at`: an ended visit has its instant.
-          endedAt: row.endedAt!,
-          clinicallyAttended:
-            status !== 'DISCONTINUED' ||
-            (await hasClinicalAct(this.prisma, row.id)),
-          patient: toPatientIdentity(row.patient),
-          account: open ? { id: open.id, status: 'OPEN' } : null,
-        };
-      }),
-    );
+    // In sequence and not all at once: each interrupted visit costs eight
+    // small questions, and firing them for every row together would take the
+    // pool from everybody else at the counter.
+    const visits: AwaitingCheckout[] = [];
+    for (const row of rows) {
+      const status = row.status as EndedEncounterStatus;
+      const open = row.accounts[0];
+      visits.push({
+        encounterId: row.id,
+        status,
+        // `encounter_status_matches_ended_at`: an ended visit has its instant.
+        endedAt: row.endedAt!,
+        clinicallyAttended:
+          status !== 'DISCONTINUED' ||
+          (await hasClinicalAct(this.prisma, row.id)),
+        patient: toPatientIdentity(row.patient),
+        account: open ? { id: open.id, status: 'OPEN' } : null,
+      });
+    }
+    return visits;
+  }
+
+  /**
+   * D-119. How many ended visits older than the window are still unsettled,
+   * so the screen can say they exist instead of dropping them silently.
+   */
+  async countAwaitingBefore(query: {
+    siteId: string;
+    endedBefore: Date;
+  }): Promise<number> {
+    return this.prisma.encounter.count({
+      where: {
+        siteId: query.siteId,
+        status: { in: [...ENDED_ENCOUNTER_STATUSES] },
+        endedAt: { lt: query.endedBefore },
+        accounts: { none: { status: 'SETTLED' } },
+      },
+    });
   }
 }

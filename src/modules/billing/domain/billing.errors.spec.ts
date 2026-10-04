@@ -35,6 +35,7 @@ const EXPECTED: readonly [
   [errors.BillableServiceNotFoundError, 'BILLABLE_SERVICE_NOT_FOUND', NotFoundError], // prettier-ignore
   [errors.BillableServiceInUseError, 'BILLABLE_SERVICE_IN_USE', ConflictError],
   [errors.BillableServiceInactiveError, 'BILLABLE_SERVICE_INACTIVE', BusinessRuleViolation], // prettier-ignore
+  [errors.InvoiceChargesChangedError, 'INVOICE_CHARGES_CHANGED', ConflictError],
   [errors.ServiceCategoryNotFoundError, 'SERVICE_CATEGORY_NOT_FOUND', NotFoundError], // prettier-ignore
   [errors.ServiceCategoryInactiveError, 'SERVICE_CATEGORY_INACTIVE', BusinessRuleViolation], // prettier-ignore
   [errors.ServiceKindMismatchError, 'SERVICE_KIND_MISMATCH', BusinessRuleViolation], // prettier-ignore

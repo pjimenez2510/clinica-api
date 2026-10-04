@@ -189,7 +189,8 @@ describe('caja: lo pendiente de cobro (B10)', () => {
    */
   async function visit(options: {
     patientId: string;
-    status: 'OPEN' | 'DISCHARGED' | 'DISCONTINUED' | 'ENTERED_IN_ERROR';
+    status:
+      'OPEN' | 'DISCHARGED' | 'DISCONTINUED' | 'COMPLETED' | 'ENTERED_IN_ERROR';
     endedAt: Date;
     site?: string;
     /** Writes in the note while the visit is still open (BI-180). */
@@ -214,7 +215,7 @@ describe('caja: lo pendiente de cobro (B10)', () => {
       data: {
         status: options.status,
         endedAt: options.endedAt,
-        ...(options.status === 'DISCHARGED'
+        ...(options.status === 'DISCHARGED' || options.status === 'COMPLETED'
           ? { dischargeCondition: 'ALIVE' }
           : {}),
         ...(options.status === 'DISCONTINUED'
@@ -256,7 +257,7 @@ describe('caja: lo pendiente de cobro (B10)', () => {
   async function account(
     encounterId: string,
     patientId: string,
-    status: 'OPEN' | 'SETTLED',
+    status: 'OPEN' | 'SETTLED' | 'CANCELLED',
   ): Promise<string> {
     const row = await prisma.patientAccount.create({
       data: {
@@ -266,18 +267,25 @@ describe('caja: lo pendiente de cobro (B10)', () => {
         payerId,
         priceListId,
         status,
-        closedAt: status === 'SETTLED' ? now : null,
+        closedAt: status === 'OPEN' ? null : now,
       },
     });
     return row.id;
   }
 
-  async function awaiting(): Promise<AwaitingRow[]> {
+  async function awaitingPage(): Promise<{
+    items: AwaitingRow[];
+    olderCount: number;
+  }> {
     const response = await request(app.getHttpServer())
       .get(`/api/v1/billing/sites/${siteId}/encounters/awaiting-checkout`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    return (response.body as { items: AwaitingRow[] }).items;
+    return response.body as { items: AwaitingRow[]; olderCount: number };
+  }
+
+  async function awaiting(): Promise<AwaitingRow[]> {
+    return (await awaitingPage()).items;
   }
 
   it('BI-181 lista la atención que el médico cerró y todavía no pasó por caja, sin cuenta', async () => {
@@ -313,10 +321,27 @@ describe('caja: lo pendiente de cobro (B10)', () => {
       endedAt: new Date(windowStart.getTime() + MINUTE_MS),
     });
 
-    const ids = (await awaiting()).map((row) => row.encounterId);
+    const page = await awaitingPage();
+    const ids = page.items.map((row) => row.encounterId);
 
     expect(ids).toContain(inside);
     expect(ids).not.toContain(before);
+    // D-119: the older one is not dropped in silence — it is counted.
+    expect(page.olderCount).toBe(1);
+  });
+
+  it('BI-181 la terminada por caja (COMPLETED) sin liquidar se lista, y la de cuenta anulada sale como sin cuenta', async () => {
+    const patient = await patientWithCedula();
+    const completed = await visit({ patientId: patient.id, status: 'COMPLETED', endedAt: new Date(now.getTime() - HOUR_MS) }); // prettier-ignore
+    const cancelled = await visit({ patientId: patient.id, status: 'DISCHARGED', endedAt: new Date(now.getTime() - 2 * HOUR_MS) }); // prettier-ignore
+    await account(cancelled, patient.id, 'CANCELLED');
+
+    const rows = await awaiting();
+
+    expect(rows.map((row) => row.encounterId)).toContain(completed);
+    expect(
+      rows.find((row) => row.encounterId === cancelled)?.account,
+    ).toBeNull();
   });
 
   it('BI-181 con cuenta abierta sigue pendiente y dice cuál; liquidada, anulada, en curso o de otra sede no se lista', async () => {
@@ -419,13 +444,16 @@ describe('caja: lo pendiente de cobro (B10)', () => {
       prisma.accessAudit.count({
         where: { resourceType: 'patient', resourceId: patient.id },
       });
+    // Every row of the trail, whatever its resource type: a per-row access
+    // written under another name would pass a count of `patient` alone.
+    const before = await prisma.accessAudit.count();
 
     await awaiting();
     await request(app.getHttpServer())
       .get(`/api/v1/billing/sites/${siteId}/accounts`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    expect(await accessesTo()).toBe(0);
+    expect(await prisma.accessAudit.count()).toBe(before);
 
     // Control positivo: la bitácora funciona, y abrir la ficha la escribe.
     await request(app.getHttpServer())

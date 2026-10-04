@@ -1491,7 +1491,9 @@ dos registros distintos.**
   `DISCONTINUED` o `COMPLETED`— en los últimos siete días de calendario de
   Ecuador, contando el de hoy, que no tengan una cuenta liquidada (`SETTLED`),
   cada una con el estado de su cuenta (sin cuenta, o abierta y cuál); y NO
-  DEBERÁ listar las anuladas (`ENTERED_IN_ERROR`) ni las de otra sede.
+  DEBERÁ listar las anuladas (`ENTERED_IN_ERROR`) ni las de otra sede. El
+  sistema DEBERÁ servir además cuántas atenciones anteriores a esa ventana
+  siguen sin cuenta liquidada, para que la pantalla lo diga (D-119).
   > **El defecto que lo origina.** BI-150 daba la ruta de paso a caja, pero
   > nada la alcanzaba: la atención enlaza a la cuenta sólo cuando ya existe, y
   > caja listaba cuentas, que nacen precisamente de ese paso. El resultado era
@@ -1518,15 +1520,18 @@ dos registros distintos.**
   > hace falta para reconocer a quién se cobra con el paciente delante, y no
   > dicen nada de su salud. BI-133 prohíbe enterrar la bitácora con un acceso
   > por fila, no enseñar el nombre: la proyección se lee sin pasar por la ficha.
-  > El recién nacido sin documento lleva sólo su HC. El documento es el
-  > preferido de la ficha: la cédula si la tiene; si no, el primero vigente.
+  > El recién nacido sin documento lleva sólo su HC. El documento es el mismo
+  > que enseña la ficha: el primer documento definitivo vigente, por fecha de
+  > alta; y si la ficha se fusionó, el de la ficha superviviente (PA-055).
 - **BI-184** — MIENTRAS una cuenta abierta tenga cargos confirmados sin
   facturar, la pantalla de caja DEBERÁ ofrecer emitir la factura de esos
   cargos, también cuando la cuenta ya tenga otra factura; y MIENTRAS tenga
   cargos propuestos o confirmados sin facturar, la pantalla NO DEBERÁ ofrecer
   cerrar la cuenta como acción disponible y DEBERÁ decir qué falta. El total
   que se anuncia al emitir DEBERÁ ser el de esos cargos confirmados sin
-  facturar, y no el de la cuenta.
+  facturar, y no el de la cuenta; y SI al emitir los cargos pendientes no son
+  los que caja vio, ENTONCES el sistema DEBERÁ rechazarlo con
+  `INVOICE_CHARGES_CHANGED` sin emitir.
   > **El segundo defecto del autor**: facturó, añadió un cargo y la cuenta ya no
   > se podía cerrar. La pantalla escondía «Emitir factura» en cuanto existía una
   > factura, y el servidor —con razón— rechazaba cerrar con un cargo sin
@@ -1538,7 +1543,11 @@ dos registros distintos.**
   > El total de la cuenta sigue contando lo ya facturado (BI-074); por eso el
   > extracto sirve aparte `invoiceableTotals`, lo que llevaría una factura
   > emitida ahora. Sin él, la segunda factura se anunciaba por el importe de
-  > las dos.
+  > las dos. Y la emisión lleva los cargos que caja vio (`chargeIds`): si otra
+  > caja confirmó uno entretanto, la factura —que no se edita— no sale por un
+  > importe que nadie vio. La cuenta se bloquea durante la emisión, así que dos
+  > emisiones simultáneas no se reparten las mismas líneas. Un cargo a $0 no
+  > ofrece factura: la pantalla dice «quítelos» (D-120).
 
 ## 18. Prestaciones con estructura
 
@@ -1564,20 +1573,27 @@ dos registros distintos.**
   especialidad (BI-158) y su categoría no es de clase `CONSULTATION`, ENTONCES
   el sistema DEBERÁ rechazarlo con `SERVICE_KIND_MISMATCH`; y SI se cambia a
   una categoría de otra clase una prestación que es la consulta de una
-  especialidad, o que está atada a un concepto de procedimiento y la nueva no es
-  de clase `PROCEDURE`, ENTONCES DEBERÁ rechazarlo igual. La clase de una
-  categoría NO DEBERÁ poder cambiarse una vez creada.
+  especialidad, que está atada a un concepto de procedimiento (la nueva no es
+  `PROCEDURE`) o por la que se cobra un examen (la nueva no es `LABORATORY` ni
+  `IMAGING`), ENTONCES DEBERÁ rechazarlo igual. La clase de una categoría
+  DEBERÁ poder cambiarse sólo mientras ninguna de sus prestaciones tenga una
+  de esas ataduras que la clase nueva no admita. Lo que no toca la categoría ni
+  la atadura —renombrar, cambiar el impuesto, desactivar— NO DEBERÁ
+  rechazarse por esta regla.
   > Hoy nada impide que «Guantes» sea la consulta de dermatología primera vez,
   > y entonces caja propondría un par de guantes por cada consulta (BI-158). La
   > clase dice qué estructura admite la prestación.
   >
-  > La atadura al procedimiento (`procedure_concept_id`) no se escribe por la
-  > API —la pone la siembra—; por eso aquí sólo se protege al mover la
-  > prestación de categoría. Y la clase no se edita porque cambiarla
-  > convertiría de golpe cada atadura de sus prestaciones en un desajuste.
-  > Al construirlo apareció que el `PATCH` de la prestación aceptaba
-  > `consultation` y el controlador no lo pasaba: la correspondencia de BI-158
-  > sólo la podía cambiar la siembra. Queda conectado.
+  > La atadura al procedimiento (`procedure_concept_id`) no la escribe hoy
+  > ninguna pantalla ni la siembra; la regla la protege igual por si llega por
+  > debajo. Que la regla mire sólo lo que toca la actualización es lo que deja
+  > corregir una prestación que la migración dejó en desajuste (una «Consulta
+  > externa» de una clínica real), y cambiar la clase de su categoría es la
+  > salida para las que quedaron `OTHER`. Al construirlo apareció que el
+  > `PATCH` de la prestación aceptaba `consultation` y el controlador no lo
+  > pasaba: la correspondencia de BI-158 sólo la podía cambiar la siembra.
+  > Queda conectado, y la siembra sólo ata consultas en categorías de clase
+  > consulta.
 - **BI-188** — CUANDO se consulte una prestación de clase `LABORATORY` o
   `IMAGING`, el sistema DEBERÁ servir los exámenes del catálogo de exámenes que
   se cobran con ella (`exam_definition.billable_service_id`), y NO DEBERÁ
@@ -1657,6 +1673,7 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `SERVICE_CATEGORY_NOT_FOUND` | 404 | BI-185 |
 | `SERVICE_CATEGORY_INACTIVE` | 422 | BI-185 |
 | `SERVICE_KIND_MISMATCH` | 422 | BI-187 |
+| `INVOICE_CHARGES_CHANGED` | 409 | BI-184 |
 
 **Se reutilizan, y no se declaran de nuevo:** `SELF_AUTHORISATION_DENIED`
 (BI-064, ya en el catálogo por AG-103), `SITE_SCOPE_DENIED` (BI-131),

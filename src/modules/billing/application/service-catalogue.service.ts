@@ -145,18 +145,28 @@ export class ServiceCatalogueService {
       if (!update.taxRateId) throw new TaxRateRequiredError();
       await this.requireTaxRate(update.taxRateId);
     }
-    const category =
-      update.categoryId === undefined ||
-      update.categoryId === current.category.id
-        ? current.category
-        : await this.requireActiveCategory(update.categoryId);
-    assertKindAdmits(category.kind, {
-      consultation:
-        update.consultation === undefined
-          ? current.specialtyId !== null
-          : update.consultation !== null,
-      procedure: current.procedureConcept !== null,
-    });
+    // BI-187 is checked only when the update touches what it guards — the
+    // category or the consultation tie. A service already out of step (a
+    // migrated «Consulta externa» left as OTHER) can still be renamed,
+    // re-rated or deactivated: correcting is always possible.
+    const movesCategory =
+      update.categoryId !== undefined &&
+      update.categoryId !== current.category.id;
+    if (movesCategory || update.consultation !== undefined) {
+      const category = movesCategory
+        ? await this.requireActiveCategory(update.categoryId!)
+        : current.category;
+      assertKindAdmits(category.kind, {
+        consultations:
+          update.consultation === undefined
+            ? Number(current.specialtyId !== null)
+            : Number(update.consultation !== null),
+        procedures: Number(current.procedureConcept !== null),
+        exams: movesCategory
+          ? (await this.catalogue.listExamsOfService(serviceId)).length
+          : 0,
+      });
+    }
 
     const updated = await this.catalogue.updateBillableService(
       serviceId,
@@ -228,17 +238,25 @@ export class ServiceCatalogueService {
   }
 
   /**
-   * BI-185. Renames or (de)activates. The kind is not editable: a category
-   * whose consultations became supplies would turn every tie BI-187 guards
-   * into a mismatch at once.
+   * BI-185, BI-187. Renames, (de)activates or reclassifies — the last only
+   * while every service of the category keeps a tie its new kind admits.
    */
   async updateCategory(
     categoryId: string,
-    update: { name?: string; active?: boolean },
+    update: { name?: string; active?: boolean; kind?: ServiceCategoryKind },
     requester: Requester,
   ): Promise<ServiceCategoryView> {
     const existing = await this.catalogue.findServiceCategory(categoryId);
     if (!existing) throw new ServiceCategoryNotFoundError();
+    // BI-187. A category is reclassified only when none of its services has a
+    // tie the new kind does not admit — the way out for the OTHER categories
+    // the migration left.
+    if (update.kind !== undefined && update.kind !== existing.kind) {
+      assertKindAdmits(
+        update.kind,
+        await this.catalogue.countCategoryTies(categoryId),
+      );
+    }
     const updated = await this.catalogue.updateServiceCategory(categoryId, update); // prettier-ignore
     await this.recordChange(categoryId, 'UPDATE', requester, CATEGORY_RESOURCE_TYPE); // prettier-ignore
     return updated;
@@ -293,19 +311,23 @@ export class ServiceCatalogueService {
 
 /**
  * BI-187. What a category's kind admits: only a consultation is the
- * consultation of a specialty (BI-158), and only a procedure is tied to a
- * procedure concept (BI-151). Checked on the service AS IT WILL BE after the
+ * consultation of a specialty (BI-158), only a procedure is tied to a
+ * procedure concept, and only a laboratory or imaging service is what an exam
+ * of the exam catalogue is charged through (BI-151). Checked on the service AS IT WILL BE after the
  * update, so moving a mapped consultation into «Insumos» is refused as surely
  * as mapping a glove.
  */
 function assertKindAdmits(
   kind: ServiceCategoryKind,
-  ties: { consultation: boolean; procedure: boolean },
+  ties: { consultations: number; procedures: number; exams: number },
 ): void {
-  if (ties.consultation && kind !== 'CONSULTATION') {
+  if (ties.consultations > 0 && kind !== 'CONSULTATION') {
     throw new ServiceKindMismatchError();
   }
-  if (ties.procedure && kind !== 'PROCEDURE') {
+  if (ties.procedures > 0 && kind !== 'PROCEDURE') {
+    throw new ServiceKindMismatchError();
+  }
+  if (ties.exams > 0 && kind !== 'LABORATORY' && kind !== 'IMAGING') {
     throw new ServiceKindMismatchError();
   }
 }

@@ -303,8 +303,9 @@ const SELF_PAY_CODE = 'PARTICULAR';
 
 /**
  * BI-185, BI-186. The five starting categories and their kind. Created if
- * missing by name (case-insensitive), never overwritten: a clinic that renamed
- * or reclassified one did it on purpose.
+ * missing by name (case-insensitive), never overwritten: a clinic that
+ * reclassified one did it on purpose. One the clinic RENAMED comes back as a
+ * new, empty row, which is where the seed's new services land.
  */
 const CATEGORIES = [
   { name: 'Consultas', kind: 'CONSULTATION' },
@@ -1193,6 +1194,10 @@ async function linkConsultation(
       FROM "specialty"
      WHERE "target"."id" = ${serviceId}::uuid
        AND "target"."specialty_id" IS NULL
+       -- BI-187: only a service of a consultation category is a consultation.
+       AND EXISTS (SELECT 1 FROM "billable_service_category" AS "category"
+                    WHERE "category"."id" = "target"."category_id"
+                      AND "category"."kind" = 'CONSULTATION')
        AND lower("specialty"."code") = lower(${service.specialtyCode})
        AND NOT EXISTS (
          SELECT 1 FROM "billable_service" AS "taken"

@@ -156,12 +156,12 @@ export class BillingController {
   @ApiOkResponse({ type: AwaitingCheckoutListDto })
   async awaitingCheckout(
     @Param('siteId', ParseUUIDPipe) siteId: string,
-  ): Promise<{ items: AwaitingCheckoutResponse[] }> {
-    const items = await this.checkout.awaitingCheckout({
+  ): Promise<{ items: AwaitingCheckoutResponse[]; olderCount: number }> {
+    const { visits, olderCount } = await this.checkout.awaitingCheckout({
       siteId,
       now: new Date(),
     });
-    return { items: items.map(toAwaitingResponse) };
+    return { items: visits.map(toAwaitingResponse), olderCount };
   }
 
   /**
@@ -424,6 +424,7 @@ export class BillingController {
         emissionPointId: dto.emissionPointId,
         receiver: dto.receiver,
         paymentMethod: dto.paymentMethod,
+        expectedChargeIds: dto.chargeIds,
       },
       { userId: this.currentUser.requireUserId() },
     );

@@ -125,16 +125,35 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
     return toCategoryView(row);
   }
 
-  /** The kind is not here: it is fixed once created (BI-187). */
+  /** The service has checked a new kind against the ties (BI-187). */
   async updateServiceCategory(
     categoryId: string,
-    update: { name?: string; active?: boolean },
+    update: { name?: string; active?: boolean; kind?: ServiceCategoryKind },
   ): Promise<ServiceCategoryView> {
     const row = await this.prisma.billableServiceCategory.update({
       where: { id: categoryId },
-      data: { name: update.name, active: update.active },
+      data: { name: update.name, active: update.active, kind: update.kind },
     });
     return toCategoryView(row);
+  }
+
+  async countCategoryTies(categoryId: string): Promise<{
+    consultations: number;
+    procedures: number;
+    exams: number;
+  }> {
+    const [consultations, procedures, exams] = await Promise.all([
+      this.prisma.billableService.count({
+        where: { categoryId, specialtyId: { not: null } },
+      }),
+      this.prisma.billableService.count({
+        where: { categoryId, procedureConceptId: { not: null } },
+      }),
+      this.prisma.examDefinition.count({
+        where: { billableService: { categoryId } },
+      }),
+    ]);
+    return { consultations, procedures, exams };
   }
 
   /**

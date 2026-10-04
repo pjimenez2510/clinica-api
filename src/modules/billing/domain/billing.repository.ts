@@ -242,8 +242,14 @@ export interface BillingCatalogueRepository {
   }): Promise<ServiceCategoryView>;
   updateServiceCategory(
     categoryId: string,
-    update: { name?: string; active?: boolean },
+    update: { name?: string; active?: boolean; kind?: ServiceCategoryKind },
   ): Promise<ServiceCategoryView>;
+  /** BI-187. How many of the category's services carry each kind of tie. */
+  countCategoryTies(categoryId: string): Promise<{
+    consultations: number;
+    procedures: number;
+    exams: number;
+  }>;
 
   /** BI-189. Every list's prices of the service, every validity. */
   listPricesAcrossPayers(serviceId: string): Promise<ServicePriceView[]>;
@@ -484,6 +490,11 @@ export interface InvoiceIssuance {
   /** BI-170. */
   paymentMethod: PaymentMethod;
   issuedById: string;
+  /**
+   * BI-184. The pending charges the cashier saw. When present, the issuance
+   * is refused unless they are exactly the ones still pending.
+   */
+  expectedChargeIds?: readonly string[];
 }
 
 /**

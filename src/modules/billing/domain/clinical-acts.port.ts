@@ -144,6 +144,12 @@ export interface ClinicalActsRepository {
     siteId: string;
     endedFrom: Date;
   }): Promise<AwaitingCheckout[]>;
+
+  /** D-119. The unsettled ended visits older than the window, counted. */
+  countAwaitingBefore(query: {
+    siteId: string;
+    endedBefore: Date;
+  }): Promise<number>;
 }
 
 export const CLINICAL_ACTS_REPOSITORY = Symbol('ClinicalActsRepository');

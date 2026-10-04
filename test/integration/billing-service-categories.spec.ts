@@ -389,6 +389,127 @@ describe('las categorías de prestación (B11)', () => {
     });
   });
 
+  describe('corregir siempre es posible (BI-187)', () => {
+    it('BI-187 una consulta atada en una categoría de otra clase se puede renombrar y desactivar', async () => {
+      const specialty = await prisma.specialty.create({
+        data: { code: 'pruebas-b11-mal', name: 'Especialidad de prueba' },
+      });
+      const other = await prisma.billableServiceCategory.create({
+        data: { name: 'Consulta externa', kind: 'OTHER' },
+      });
+      // The state a migrated clinic can be left in: written underneath.
+      const mismatched = await prisma.billableService.update({
+        where: { code: 'CONS-MG-PV' },
+        data: {
+          categoryId: other.id,
+          specialtyId: specialty.id,
+          visitSequence: 'FIRST_TIME',
+        },
+      });
+
+      await api()
+        .patch(`/api/v1/billing/services/${mismatched.id}`)
+        .set('Authorization', bearer())
+        .send({ name: 'Consulta general', active: false })
+        .expect(200);
+    });
+
+    it('BI-187 una categoría se reclasifica si nada de lo atado choca; si algo choca, no', async () => {
+      const other = await prisma.billableServiceCategory.create({
+        data: { name: 'Consulta externa', kind: 'OTHER' },
+      });
+      const specialty = await prisma.specialty.create({
+        data: { code: 'pruebas-b11-rec', name: 'Especialidad de prueba' },
+      });
+      await prisma.billableService.update({
+        where: { code: 'CONS-MG-PV' },
+        data: {
+          categoryId: other.id,
+          specialtyId: specialty.id,
+          visitSequence: 'FIRST_TIME',
+        },
+      });
+
+      const refused = await api()
+        .patch(`/api/v1/billing/service-categories/${other.id}`)
+        .set('Authorization', bearer())
+        .send({ kind: 'SUPPLY' })
+        .expect(422);
+      expect((refused.body as Problem).code).toBe('SERVICE_KIND_MISMATCH');
+
+      // Control: to the kind its tie admits, it is reclassified.
+      const done = await api()
+        .patch(`/api/v1/billing/service-categories/${other.id}`)
+        .set('Authorization', bearer())
+        .send({ kind: 'CONSULTATION' })
+        .expect(200);
+      expect((done.body as Category).kind).toBe('CONSULTATION');
+    });
+
+    it('BI-187 una prestación que cobra exámenes no pasa a insumos', async () => {
+      const blood = await prisma.billableService.findUniqueOrThrow({
+        where: { code: 'LAB-BH' },
+      });
+      const supplies = await categoryNamed('Insumos');
+
+      const refused = await api()
+        .patch(`/api/v1/billing/services/${blood.id}`)
+        .set('Authorization', bearer())
+        .send({ categoryId: supplies.id })
+        .expect(422);
+      expect((refused.body as Problem).code).toBe('SERVICE_KIND_MISMATCH');
+    });
+  });
+
+  describe('quién toca el catálogo de categorías', () => {
+    it('BI-132 crear y renombrar una categoría queda en la bitácora', async () => {
+      const created = await api()
+        .post('/api/v1/billing/service-categories')
+        .set('Authorization', bearer())
+        .send({ name: 'Rehabilitación', kind: 'PROCEDURE' })
+        .expect(201);
+      const id = (created.body as Category).id;
+      await api()
+        .patch(`/api/v1/billing/service-categories/${id}`)
+        .set('Authorization', bearer())
+        .send({ name: 'Rehabilitación física' })
+        .expect(200);
+
+      const trail = await prisma.accessAudit.findMany({
+        where: { resourceType: 'billable_service_category', resourceId: id },
+      });
+      expect(trail.map((row) => row.action).sort()).toEqual([
+        'CREATE',
+        'UPDATE',
+      ]);
+    });
+
+    it('BI-134 quien sólo puede leer la facturación no crea categorías; quien fija precios, sí', async () => {
+      await prisma.role.create({
+        data: {
+          code: 'LECTOR',
+          name: 'Lector',
+          description: 'Sólo lee',
+          permissions: { create: [{ permissionCode: 'billing:read' }] },
+        },
+      });
+      registry.invalidate();
+      const reader = await signIn('lector@clinica.ec', 'LECTOR', '1710034065');
+
+      await api()
+        .post('/api/v1/billing/service-categories')
+        .set('Authorization', `Bearer ${reader}`)
+        .send({ name: 'No debería', kind: 'OTHER' })
+        .expect(403);
+      // Control: the same body with the price permission is created.
+      await api()
+        .post('/api/v1/billing/service-categories')
+        .set('Authorization', bearer())
+        .send({ name: 'Sí debería', kind: 'OTHER' })
+        .expect(201);
+    });
+  });
+
   describe('la ficha de una prestación', () => {
     interface ServicePrice {
       priceId: string;

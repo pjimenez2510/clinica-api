@@ -111,6 +111,8 @@ export class InvoicingService {
       receiver: ReceiverRequest;
       /** BI-170. */
       paymentMethod: PaymentMethod;
+      /** BI-184. The pending charges the cashier saw. */
+      expectedChargeIds?: readonly string[];
     },
     requester: Requester,
   ): Promise<InvoiceWithVoucher> {
@@ -137,6 +139,7 @@ export class InvoicingService {
       receiver,
       paymentMethod: command.paymentMethod,
       issuedById: requester.userId,
+      expectedChargeIds: command.expectedChargeIds,
     });
 
     /**

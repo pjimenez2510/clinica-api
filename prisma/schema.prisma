@@ -2501,6 +2501,8 @@ model Encounter {
   @@index([patientId, startedAt(sort: Desc)])
   @@index([practitionerId, startedAt(sort: Desc)])
   @@index([siteId, startedAt])
+  // `encounter_ended_by_site` (BI-181) is PARTIAL — ended visits only — and so
+  // lives in the migration: schema.prisma cannot say it.
   @@map("encounter")
 }
 
@@ -3044,22 +3046,22 @@ model MedicalCertificate {
   /// without receiving any clinical data.
   verificationCode String @unique @map("verification_code") @db.VarChar(24)
 
-  issuedAt         DateTime  @default(now()) @map("issued_at") @db.Timestamptz(6)
+  issuedAt             DateTime  @default(now()) @map("issued_at") @db.Timestamptz(6)
   /// CER-011. Who, when and why, the three together or none:
   /// `medical_certificate_revocation_states_who_when_and_why`. The row is never
   /// deleted. `revoked_by_id` is the ACCOUNT that annulled it.
-  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(6)
+  revokedAt            DateTime? @map("revoked_at") @db.Timestamptz(6)
   /// CER-027. The diagnoses it printed, copied at the issue (`[]` without them).
-  diagnoses            Json    @default("[]")
+  diagnoses            Json      @default("[]")
   /// CER-038. The chart's work and contact as they were at the issue.
-  employerName         String? @map("employer_name") @db.VarChar(160)
-  jobTitle             String? @map("job_title") @db.VarChar(120)
-  residenceAddressLine String? @map("residence_address_line") @db.VarChar(255)
-  patientPhone         String? @map("patient_phone") @db.VarChar(32)
+  employerName         String?   @map("employer_name") @db.VarChar(160)
+  jobTitle             String?   @map("job_title") @db.VarChar(120)
+  residenceAddressLine String?   @map("residence_address_line") @db.VarChar(255)
+  patientPhone         String?   @map("patient_phone") @db.VarChar(32)
 
-  revokedById      String?   @map("revoked_by_id") @db.Uuid
-  revokedBy        User?     @relation("CertificateRevoker", fields: [revokedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "medical_certificate_revoked_by_fk")
-  revocationReason String?   @map("revocation_reason") @db.Text
+  revokedById      String? @map("revoked_by_id") @db.Uuid
+  revokedBy        User?   @relation("CertificateRevoker", fields: [revokedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "medical_certificate_revoked_by_fk")
+  revocationReason String? @map("revocation_reason") @db.Text
 
   /// DOC-003, DOC-075. The archived form 117 as it was handed over.
   documentRenders DocumentRender[]
@@ -3239,7 +3241,6 @@ model TaxRate {
   @@map("tax_rate")
 }
 
-/// What the clinic knows how to do — and WITHOUT A PRICE, which is the point.
 /// BI-185, BI-186. The categories of the billable services, administered by
 /// the clinic. Deactivated and never deleted while a service uses one
 /// (`billable_service_category_fk` is RESTRICT).
@@ -3265,6 +3266,7 @@ model BillableServiceCategory {
   @@map("billable_service_category")
 }
 
+/// What the clinic knows how to do — and WITHOUT A PRICE, which is the point.
 model BillableService {
   id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
 
@@ -3274,7 +3276,7 @@ model BillableService {
   /// BI-185, BI-186. A row of the clinic's catalogue, never free text: free
   /// text gave «Laboratorio», «laboratorio» and «Lab.» in the same report, and
   /// the category's KIND says what structure the service admits (BI-187).
-  categoryId String                    @map("category_id") @db.Uuid
+  categoryId String                  @map("category_id") @db.Uuid
   category   BillableServiceCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "billable_service_category_fk")
 
   /// The MSP tariff code, when the service has one. NOMENCLATURE ONLY — the

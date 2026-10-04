@@ -325,6 +325,11 @@ export const issueInvoiceSchema = z.object({
   paymentMethod: z.enum(PAYMENT_METHODS, {
     error: 'Indique la forma de pago',
   }),
+  /**
+   * BI-184. Los cargos pendientes que caja vio al anunciar el total. Si otra
+   * caja los cambió entretanto, `INVOICE_CHARGES_CHANGED` y no se emite.
+   */
+  chargeIds: z.array(z.uuid()).optional(),
 });
 /** Body of POST /billing/sites/:siteId/invoices. */
 export class IssueInvoiceDto extends createZodDto(issueInvoiceSchema) {}
@@ -415,10 +420,15 @@ export class CreateServiceCategoryDto extends createZodDto(
   createServiceCategorySchema,
 ) {}
 
-/** BI-185. The kind is not here: it is fixed once created (BI-187). */
+/** BI-185, BI-187. The kind changes only if no service of it clashes. */
 export const updateServiceCategorySchema = z.object({
   name: z.string().trim().min(1, 'Indique el nombre de la categoría').max(60).optional(), // prettier-ignore
   active: z.boolean().optional(),
+  kind: z
+    .enum(SERVICE_CATEGORY_KINDS, {
+      error: 'Elija la clase: consulta, procedimiento, laboratorio, imagen, insumo u otro', // prettier-ignore
+    })
+    .optional(),
 });
 /** Body of PATCH /billing/service-categories/:categoryId. */
 export class UpdateServiceCategoryDto extends createZodDto(
@@ -546,7 +556,11 @@ const awaitingCheckoutSchema = z.object({
 });
 /** Response of GET /billing/sites/:siteId/encounters/awaiting-checkout. */
 export class AwaitingCheckoutListDto extends createZodDto(
-  z.object({ items: z.array(awaitingCheckoutSchema) }),
+  z.object({
+    items: z.array(awaitingCheckoutSchema),
+    /** D-119. Las de más de siete días que siguen sin liquidar, contadas. */
+    olderCount: z.number().int(),
+  }),
 ) {}
 export type AwaitingCheckoutResponse = z.infer<typeof awaitingCheckoutSchema>;
 

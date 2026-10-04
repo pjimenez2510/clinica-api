@@ -602,6 +602,22 @@ export class FinalConsumerNotConfirmedError extends ValidationError {
   }
 }
 
+/**
+ * BI-184. Between the cashier reading the total and pressing «emitir», the
+ * pending charges changed — another cashier confirmed, added or removed one.
+ * The invoice is a tax document that cannot be edited afterwards (D-A-007), so
+ * it is not issued for an amount nobody saw.
+ */
+export class InvoiceChargesChangedError extends ConflictError {
+  readonly code = 'INVOICE_CHARGES_CHANGED';
+  override readonly userTitle =
+    'Los cargos de la cuenta cambiaron mientras se emitía: revise el total y vuelva a emitir';
+
+  constructor() {
+    super('Pending charges differ from the ones the cashier saw');
+  }
+}
+
 /** BI-089. */
 export class InvoiceHasNoItemsError extends BusinessRuleViolation {
   readonly code = 'INVOICE_HAS_NO_ITEMS';

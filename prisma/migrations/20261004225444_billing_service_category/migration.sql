@@ -23,12 +23,18 @@
 --    razón que `visit_sequence` aquí: el catálogo económico evoluciona sin
 --    depender de un tipo del esquema clínico.
 --
--- LOS DATOS QUE YA HAY. Cada nombre distinto de la columna vieja se convierte
--- en una categoría; su clase se toma de los cinco nombres de la siembra
--- (Consultas, Procedimientos, Laboratorio, Imagen, Insumos) y cualquier otro
--- nombre que una clínica haya escrito queda como OTHER, para que alguien la
--- reclasifique. No es inferir nada que decida un importe (BI-005): la clase
--- sólo dice qué estructura admite la prestación.
+-- LOS DATOS QUE YA HAY. Cada nombre distinto de la columna vieja (sin
+-- distinguir mayúsculas ni espacios) se convierte en una categoría; uno vacío,
+-- en «Sin categoría». Su clase sale PRIMERO de lo que sus prestaciones ya
+-- tienen atado —una consulta de especialidad, un procedimiento, un examen del
+-- catálogo—, que son hechos, y sólo si no hay nada atado, de los cinco nombres
+-- de la siembra (Consultas, Procedimientos, Laboratorio, Imagen, Insumos). El
+-- resto queda OTHER, y se reclasifica en pantalla cuando nada de lo atado choca
+-- (BI-187). No es inferir nada que decida un importe (BI-005): la clase sólo
+-- dice qué estructura admite la prestación.
+--
+-- Y UN ÍNDICE PARA «POR COBRAR» (BI-181): las atenciones terminadas de una
+-- sede por su fin. Sin él, la lista de caja recorre toda la historia de la sede.
 --
 -- Después: pnpm migrations:check && pnpm db:deploy
 
@@ -56,25 +62,43 @@ COMMENT ON COLUMN "billable_service_category"."kind" IS
   'BI-186, BI-187. What structure a service of this category admits: a consultation maps to a specialty, a procedure to a procedure concept, an exam is charged through exam_definition.';
 
 -- Las categorías que ya existen, desde el texto.
+CREATE TEMPORARY TABLE "category_text" AS
+SELECT "service"."id" AS "service_id",
+       COALESCE(NULLIF(btrim("service"."category"), ''), 'Sin categoría') AS "name",
+       "service"."specialty_id" IS NOT NULL AS "is_consultation",
+       "service"."procedure_concept_id" IS NOT NULL AS "is_procedure",
+       EXISTS (SELECT 1 FROM "exam_definition" AS "exam"
+                WHERE "exam"."billable_service_id" = "service"."id") AS "is_exam"
+  FROM "billable_service" AS "service";
+
 INSERT INTO "billable_service_category" ("name", "kind")
-SELECT DISTINCT ON (lower(btrim("category"))) btrim("category"),
-       CASE lower(btrim("category"))
-         WHEN 'consultas'      THEN 'CONSULTATION'
-         WHEN 'procedimientos' THEN 'PROCEDURE'
-         WHEN 'laboratorio'    THEN 'LABORATORY'
-         WHEN 'imagen'         THEN 'IMAGING'
-         WHEN 'insumos'        THEN 'SUPPLY'
-         ELSE 'OTHER'
+SELECT min("name"),
+       CASE
+         WHEN bool_or("is_consultation") THEN 'CONSULTATION'
+         WHEN bool_or("is_procedure")    THEN 'PROCEDURE'
+         WHEN bool_or("is_exam") AND lower(min("name")) = 'imagen' THEN 'IMAGING'
+         WHEN bool_or("is_exam")         THEN 'LABORATORY'
+         ELSE CASE lower(min("name"))
+                WHEN 'consultas'      THEN 'CONSULTATION'
+                WHEN 'procedimientos' THEN 'PROCEDURE'
+                WHEN 'laboratorio'    THEN 'LABORATORY'
+                WHEN 'imagen'         THEN 'IMAGING'
+                WHEN 'insumos'        THEN 'SUPPLY'
+                ELSE 'OTHER'
+              END
        END
-  FROM "billable_service"
- ORDER BY lower(btrim("category")), btrim("category");
+  FROM "category_text"
+ GROUP BY lower("name");
 
 ALTER TABLE "billable_service" ADD COLUMN "category_id" UUID;
 
 UPDATE "billable_service" AS "service"
    SET "category_id" = "category"."id"
-  FROM "billable_service_category" AS "category"
- WHERE lower("category"."name") = lower(btrim("service"."category"));
+  FROM "category_text" AS "text", "billable_service_category" AS "category"
+ WHERE "text"."service_id" = "service"."id"
+   AND lower("category"."name") = lower("text"."name");
+
+DROP TABLE "category_text";
 
 ALTER TABLE "billable_service" ALTER COLUMN "category_id" SET NOT NULL;
 
@@ -90,3 +114,9 @@ ALTER TABLE "billable_service" DROP COLUMN "category";
 
 CREATE INDEX "billable_service_by_category"
   ON "billable_service" ("category_id", "name");
+
+-- BI-181. Lo que caja tiene pendiente: atenciones terminadas de una sede, por
+-- su fin. Parcial: las abiertas y las anuladas nunca se piden aquí.
+CREATE INDEX "encounter_ended_by_site"
+  ON "encounter" ("site_id", "ended_at" DESC)
+  WHERE "status" IN ('DISCHARGED', 'DISCONTINUED', 'COMPLETED');
