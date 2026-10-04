@@ -44,6 +44,10 @@ const CURRENT: SiteParameterView = {
   overbookingPermission: 'agenda:overbook',
   waitlistMaxContactAttempts: 3,
   cancelledRetention: 'NEVER',
+  criticalNoticeWithinMinutes: 60,
+  criticalEscalationRoleId: null,
+  unmatchedResultOwnerRoleId: null,
+  unmatchedResultDeadlineHours: 24,
 };
 
 interface Call {
@@ -64,6 +68,17 @@ class RepositoryDouble implements SiteParameterRepository {
    * simply never heard of.
    */
   installedAnswer: readonly string[] | null = null;
+
+  /** ORD-046, ORD-065: what each role grants; absent = does not exist. */
+  rolesAnswer: Record<string, readonly string[]> = {
+    'role-guardia': ['record:read', 'result:write'],
+    'role-caja': ['billing:read'],
+  };
+
+  rolePermissions(roleId: string): Promise<readonly string[] | null> {
+    this.calls.push({ method: 'rolePermissions', args: [roleId] });
+    return Promise.resolve(this.rolesAnswer[roleId] ?? null);
+  }
 
   installedPermissions(codes: readonly string[]): Promise<readonly string[]> {
     this.calls.push({ method: 'installedPermissions', args: [codes] });
@@ -267,6 +282,52 @@ describe('los parámetros de operación de una sede', () => {
     });
   });
 
+  it('ORD-063 y ORD-046 guardan la política de las colas de resultados, y `null` devuelve a quien pidió el examen', async () => {
+    repository.findAnswer = {
+      ...CURRENT,
+      criticalNoticeWithinMinutes: 60,
+      unmatchedResultOwnerRoleId: 'role-guardia',
+    };
+
+    const after = await service.update(
+      'site-1',
+      {
+        criticalNoticeWithinMinutes: 30,
+        criticalEscalationRoleId: 'role-guardia',
+        unmatchedResultOwnerRoleId: null,
+        unmatchedResultDeadlineHours: 12,
+      },
+      REQUESTER,
+    );
+
+    // `null` llega a la fila: «quien pidió el examen» es un valor que la sede
+    // eligió, no una ausencia que haya que rellenar.
+    expect(after).toMatchObject({
+      criticalNoticeWithinMinutes: 30,
+      criticalEscalationRoleId: 'role-guardia',
+      unmatchedResultOwnerRoleId: null,
+      unmatchedResultDeadlineHours: 12,
+    });
+    const update = repository.calls.find((call) => call.method === 'update');
+    expect(update?.args[1]).toMatchObject({
+      unmatchedResultOwnerRoleId: null,
+    });
+  });
+
+  it('ORD-046 y ORD-065 rechazan un rol que no puede trabajar las colas de resultados, y no escriben nada', async () => {
+    await expect(
+      service.update('site-1', { unmatchedResultOwnerRoleId: 'role-caja' }, REQUESTER), // prettier-ignore
+    ).rejects.toMatchObject({
+      code: 'ROLE_CANNOT_WORK_RESULTS',
+      fieldErrors: [expect.objectContaining({ field: 'unmatchedResultOwnerRoleId' })], // prettier-ignore
+    });
+    expect(repository.calls.some((call) => call.method === 'update')).toBe(false); // prettier-ignore
+
+    // Control positivo: el de guardia sí.
+    await service.update('site-1', { criticalEscalationRoleId: 'role-guardia' }, REQUESTER); // prettier-ignore
+    expect(repository.calls.some((call) => call.method === 'update')).toBe(true); // prettier-ignore
+  });
+
   it('AG-101 no pregunta por el catálogo cuando el permiso no se toca', async () => {
     // Una lectura por cada guardado de las antelaciones es una consulta que no
     // decide nada.
@@ -295,6 +356,10 @@ describe('los parámetros de operación de una sede', () => {
       overbookingPermission: 'agenda:overbook',
       waitlistMaxContactAttempts: 3,
       cancelledRetention: 'NEVER',
+      criticalNoticeWithinMinutes: 60,
+      criticalEscalationRoleId: null,
+      unmatchedResultOwnerRoleId: null,
+      unmatchedResultDeadlineHours: 24,
     });
     expect(recorded[0]?.after).toMatchObject({ overbookingCap: 4 });
   });

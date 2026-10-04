@@ -164,7 +164,9 @@ describe('la emisión y el seguimiento de una orden', () => {
       warn: vi.fn(),
       error: vi.fn(),
     } as unknown as PinoLogger;
-    service = new ServiceOrderService(orders, catalogue, logger);
+    service = new ServiceOrderService(orders, catalogue, logger, {
+      record: () => Promise.resolve(),
+    });
   });
 
   const twoLines = {
@@ -264,6 +266,8 @@ describe('la emisión y el seguimiento de una orden', () => {
       'category',
       'chartId',
       'examCode',
+      // ORD-026: si la fila lleva el nombre, no por qué canal vuelve.
+      'includePatientName',
       'limit',
       'now',
       'sites',

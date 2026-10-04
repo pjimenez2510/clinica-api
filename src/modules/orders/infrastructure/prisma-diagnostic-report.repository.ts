@@ -7,22 +7,28 @@ import {
   OrderNotFoundError,
   ResultAlreadyMatchedError,
   ResultNotFoundError,
+  ResultSupersededError,
 } from '../domain/orders.errors';
 import { isLineComplete } from '../domain/service-order';
 import type {
+  CriticalChain,
+  CriticalNoticeView,
   DiagnosticReportRepository,
   DiagnosticReportView,
   ExpectedAnalytes,
   FlaggedResultEntry,
   MatchResultCommand,
   MatchableResult,
+  NewCriticalNotice,
   NewReport,
   ObservationView,
   OrderPatient,
   ReportQuery,
   ResultQuery,
+  SafetyPolicy,
   SafetyWorklistQuery,
 } from '../domain/diagnostic-report.repository';
+import { chainKey } from '../domain/diagnostic-report.repository';
 import type { SiteScopeFilter } from '../domain/service-order.repository';
 
 /**
@@ -51,6 +57,30 @@ import type { SiteScopeFilter } from '../domain/service-order.repository';
  */
 
 /**
+ * ORD-062. A notice with the name of who gave it — the trail says WHO, and a
+ * user id is not something a reader of a clinical record recognises.
+ */
+const NOTICE_SELECT = {
+  id: true,
+  observationResultId: true,
+  recipientKind: true,
+  recipientName: true,
+  channel: true,
+  notifiedAt: true,
+  note: true,
+  outcome: true,
+  readBackConfirmed: true,
+  afterHours: true,
+  selfNotice: true,
+  notifiedBy: { select: { id: true, firstName: true, lastName: true } },
+} satisfies Prisma.CriticalResultNoticeSelect;
+
+/** The shape `NOTICE_SELECT` produces. */
+type NoticeRow = Prisma.CriticalResultNoticeGetPayload<{
+  select: typeof NOTICE_SELECT;
+}>;
+
+/**
  * One stored result with its frozen unit, range and flag (ORD-034, ORD-037).
  */
 const RESULT_SELECT = {
@@ -67,6 +97,10 @@ const RESULT_SELECT = {
   referenceText: true,
   abnormalFlag: true,
   observedAt: true,
+  notices: {
+    orderBy: [{ notifiedAt: 'asc' }, { id: 'asc' }],
+    select: NOTICE_SELECT,
+  },
 } satisfies Prisma.ObservationResultSelect;
 
 /** The shape `RESULT_SELECT` produces. */
@@ -119,6 +153,22 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
         select: { id: true },
       });
       if (!order) throw new OrderNotFoundError();
+
+      /**
+       * ORD-062 (tercera revisión). A correction LOCKS the report it replaces
+       * before inserting. `FOR NO KEY UPDATE` conflicts with the `FOR SHARE` a
+       * notice takes on the same row, so a notice and a correction no longer
+       * pass each other: whichever comes second waits, and then reads what the
+       * first committed. The foreign key alone takes `FOR KEY SHARE`, which
+       * conflicts with nothing a notice takes.
+       */
+      if (report.supersedesId) {
+        await tx.$queryRaw`
+          SELECT 1 FROM "diagnostic_report"
+           WHERE "id" = ${report.supersedesId}::uuid
+             FOR NO KEY UPDATE
+        `;
+      }
 
       const created = await tx.diagnosticReport.create({
         data: {
@@ -237,9 +287,16 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
     const rows = await this.prisma.observationResult.findMany({
       where: {
         orderItemId: null,
-        report: { serviceOrder: siteFilter(query.sites) },
+        /**
+         * ORD-041, ORD-043. ONLY THE STANDING VERSION, as on the critical
+         * queue: a value the laboratory retracted is not somebody's to pair,
+         * and pairing it would close a line with a figure that no longer
+         * stands.
+         */
+        report: { serviceOrder: siteFilter(query.sites), supersededBy: null },
       },
-      orderBy: [{ observedAt: 'desc' }, { id: 'desc' }],
+      // Oldest first: what has waited longest is what is closest to lost.
+      orderBy: [{ observedAt: 'asc' }, { id: 'asc' }],
       take: query.limit,
       select: WORKLIST_SELECT,
     });
@@ -257,7 +314,20 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
         id: true,
         reportId: true,
         orderItemId: true,
-        report: { select: { serviceOrderId: true } },
+        abnormalFlag: true,
+        observedAt: true,
+        report: {
+          select: {
+            serviceOrderId: true,
+            serviceOrder: {
+              select: {
+                siteId: true,
+                orderedBy: { select: { userId: true } },
+              },
+            },
+            supersededBy: { select: { createdAt: true } },
+          },
+        },
       },
     });
     if (!row) return undefined;
@@ -267,6 +337,12 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
       reportId: row.reportId,
       orderId: row.report.serviceOrderId,
       orderItemId: row.orderItemId,
+      abnormalFlag: row.abnormalFlag,
+      observedAt: row.observedAt,
+      siteId: row.report.serviceOrder.siteId,
+      superseded: row.report.supersededBy !== null,
+      supersededAt: row.report.supersededBy?.createdAt ?? null,
+      orderedByUserId: row.report.serviceOrder.orderedBy.userId,
     };
   }
 
@@ -317,6 +393,8 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
           report: {
             serviceOrderId: command.orderId,
             serviceOrder: siteFilter(command.sites),
+            // ORD-043. Never a retracted value, judged where the row lands.
+            supersededBy: null,
           },
         },
         data: { orderItemId: command.orderItemId },
@@ -330,9 +408,15 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
          */
         const current = await tx.observationResult.findFirst({
           where: { id, report: { serviceOrder: siteFilter(command.sites) } },
-          select: { orderItemId: true },
+          select: {
+            orderItemId: true,
+            report: { select: { supersededBy: { select: { id: true } } } },
+          },
         });
         if (!current) throw new ResultNotFoundError();
+        if (current.orderItemId === null && current.report.supersededBy) {
+          throw new ResultSupersededError();
+        }
         throw new ResultAlreadyMatchedError();
       }
 
@@ -361,7 +445,9 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
    * on anything the laboratory sent — many send only «alto/bajo», some send
    * nothing, and the ones that phone do it to whoever picks up.
    */
-  async critical(query: SafetyWorklistQuery): Promise<FlaggedResultEntry[]> {
+  async critical(query: {
+    sites: SiteScopeFilter;
+  }): Promise<FlaggedResultEntry[]> {
     const rows = await this.prisma.observationResult.findMany({
       where: {
         abnormalFlag: { in: ['CRITICAL_LOW', 'CRITICAL_HIGH'] },
@@ -385,13 +471,248 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
            */
           supersededBy: null,
         },
+        /**
+         * ORD-062, ORD-067, D-113 b. NOT YET NOTIFIED. A notice actually given
+         * takes the value off — somebody was told, with a name and an hour.
+         * An unanswered call does NOT (D-111 §5), and neither does the
+         * ordering practitioner «notifying» themselves: the patient at home
+         * still knows nothing.
+         */
+        notices: { none: { outcome: 'NOTIFIED', selfNotice: false } },
       },
-      orderBy: [{ observedAt: 'desc' }, { id: 'desc' }],
-      take: query.limit,
+      /**
+       * OLDEST FIRST, and NEVER CUT (ORD-060). A value waiting for its notice
+       * off the screen is a value nobody notifies — and with the oldest first,
+       * the one cut off would be today's.
+       */
+      orderBy: [{ observedAt: 'asc' }, { id: 'asc' }],
       select: WORKLIST_SELECT,
     });
     return rows.map(toWorklistEntry);
   }
+
+  /**
+   * ORD-065, ORD-067. For each report, its correction chain back to the first
+   * report: per analyte, when its FIRST CRITICAL version was observed, whether
+   * an earlier version was already notified, and the unanswered calls made
+   * anywhere along the chain. One recursive query for the whole list.
+   */
+  async criticalChains(
+    reportIds: readonly string[],
+  ): Promise<ReadonlyMap<string, CriticalChain>> {
+    if (reportIds.length === 0) return new Map();
+
+    const rows = await this.prisma.$queryRaw<
+      {
+        start_id: string;
+        analyte_display: string;
+        first_observed_at: Date | null;
+        previously_notified: bigint;
+        attempts: bigint;
+        ordering_unanswered: bigint;
+      }[]
+    >`
+      WITH RECURSIVE chain AS (
+        SELECT r."id" AS start_id, r."id" AS report_id, r."supersedes_id",
+               0 AS depth
+          FROM "diagnostic_report" r
+         WHERE r."id" = ANY(${[...new Set(reportIds)]}::uuid[])
+        UNION ALL
+        SELECT c.start_id, p."id", p."supersedes_id", c.depth + 1
+          FROM chain c
+          JOIN "diagnostic_report" p ON p."id" = c."supersedes_id"
+         -- A cycle is impossible by construction (the UNIQUE on supersedes_id
+         -- and insertion order); the guard costs nothing if that ever changes.
+         WHERE c.depth < 100
+      )
+      SELECT c.start_id::text AS start_id,
+             o."analyte_display",
+             -- From the first CRITICAL version: a 95 corrected to 22 has been
+             -- waiting since the 22, not since the 95 (tercera revisión).
+             MIN(o."observed_at") FILTER (
+               WHERE o."abnormal_flag" IN ('CRITICAL_LOW', 'CRITICAL_HIGH')
+             ) AS first_observed_at,
+             -- A notice actually given about an EARLIER version of the chain.
+             COUNT(n."id") FILTER (
+               WHERE n."outcome" = 'NOTIFIED'
+                 AND NOT n."self_notice"
+                 AND c.report_id <> c.start_id
+             ) AS previously_notified,
+             COUNT(n."id") FILTER (WHERE n."outcome" = 'NO_ANSWER') AS attempts,
+             COUNT(n."id") FILTER (
+               WHERE n."outcome" = 'NO_ANSWER'
+                 AND n."recipient_kind" = 'ORDERING_PRACTITIONER'
+             ) AS ordering_unanswered
+        FROM chain c
+        JOIN "observation_result" o ON o."report_id" = c.report_id
+        LEFT JOIN "critical_result_notice" n
+               ON n."observation_result_id" = o."id"
+       GROUP BY c.start_id, o."analyte_display"
+    `;
+
+    return new Map(
+      rows.map((row) => [
+        chainKey(row.start_id, row.analyte_display),
+        {
+          firstObservedAt: row.first_observed_at,
+          previouslyNotified: Number(row.previously_notified) > 0,
+          noAnswerAttempts: Number(row.attempts),
+          orderingUnanswered: Number(row.ordering_unanswered),
+        },
+      ]),
+    );
+  }
+
+  /** ORD-046, ORD-063, ORD-065. Each site's worklist policy. */
+  async safetyPolicies(
+    siteIds: readonly string[],
+  ): Promise<ReadonlyMap<string, SafetyPolicy>> {
+    if (siteIds.length === 0) return new Map();
+
+    const rows = await this.prisma.siteParameter.findMany({
+      where: { siteId: { in: [...new Set(siteIds)] } },
+      select: {
+        siteId: true,
+        criticalNoticeWithinMinutes: true,
+        criticalEscalationRole: { select: { id: true, name: true } },
+        unmatchedResultOwnerRole: { select: { id: true, name: true } },
+        unmatchedResultDeadlineHours: true,
+      },
+    });
+
+    return new Map(
+      rows.map((row) => [
+        row.siteId,
+        {
+          criticalNoticeWithinMinutes: row.criticalNoticeWithinMinutes,
+          criticalEscalationRole: row.criticalEscalationRole,
+          unmatchedResultOwnerRole: row.unmatchedResultOwnerRole,
+          unmatchedResultDeadlineHours: row.unmatchedResultDeadlineHours,
+        },
+      ]),
+    );
+  }
+
+  /**
+   * ORD-068. Sites in hours at `at`, judged in `America/Guayaquil`.
+   *
+   * NO OPENING HOURS EXIST IN THE MODEL, so the site's hours are its
+   * practitioners' (`practitioner_schedule_rule`): in hours when some active
+   * rule of the site, valid that day (`validity`, inclusive), covers that ISO
+   * weekday and wall-clock time, and the day is not a holiday the site keeps —
+   * national or its own, unless it works it (`holiday_site_exception`).
+   */
+  async sitesInHours(
+    siteIds: readonly string[],
+    at: Date,
+  ): Promise<ReadonlySet<string>> {
+    if (siteIds.length === 0) return new Set();
+
+    const rows = await this.prisma.$queryRaw<{ site_id: string }[]>`
+      WITH here AS (
+        SELECT (${at}::timestamptz AT TIME ZONE 'America/Guayaquil') AS local
+      )
+      SELECT s."id"::text AS site_id
+        FROM "site" s, here
+       WHERE s."id" = ANY(${[...new Set(siteIds)]}::uuid[])
+         AND EXISTS (
+               SELECT 1 FROM "practitioner_schedule_rule" r
+                WHERE r."site_id" = s."id"
+                  AND r."active"
+                  AND r."weekday" = EXTRACT(ISODOW FROM here.local)::int
+                  AND r."validity" @> here.local::date
+                  AND here.local::time >= r."start_time"
+                  AND here.local::time <  r."end_time")
+         AND NOT EXISTS (
+               SELECT 1 FROM "holiday" h
+                WHERE h."date" = here.local::date
+                  AND (h."site_id" IS NULL OR h."site_id" = s."id")
+                  AND NOT EXISTS (
+                        SELECT 1 FROM "holiday_site_exception" e
+                         WHERE e."holiday_id" = h."id" AND e."site_id" = s."id"))
+    `;
+    return new Set(rows.map((row) => row.site_id));
+  }
+
+  /** ORD-062. The notice of a critical value; never rewritten (ORD-064). */
+  async recordNotice(notice: NewCriticalNotice): Promise<CriticalNoticeView> {
+    const row = await this.prisma.$transaction((tx) => writeNotice(tx, notice));
+    return toNoticeView(row);
+  }
+}
+
+/**
+ * ORD-062. Writes the notice, after judging the scope again inside the
+ * transaction — the row that lands is the one that matters.
+ */
+async function writeNotice(
+  tx: Prisma.TransactionClient,
+  notice: NewCriticalNotice,
+): Promise<NoticeRow> {
+  const id = toResultId(notice.resultId);
+  if (id === undefined) throw new ResultNotFoundError();
+
+  const result = await tx.observationResult.findFirst({
+    where: { id, report: { serviceOrder: siteFilter(notice.sites) } },
+    select: { id: true, reportId: true },
+  });
+  if (!result) throw new ResultNotFoundError();
+
+  /**
+   * ORD-062. The report is LOCKED FOR SHARE before the supersession is judged:
+   * a correction committing between that read and the insert would otherwise
+   * leave a notice on a value already retracted. A correction inserts a new
+   * report pointing at this one, which the share lock does not block — so the
+   * judgement reads the correction, if any, after taking it.
+   */
+  await tx.$queryRaw`
+    SELECT 1 FROM "diagnostic_report" WHERE "id" = ${result.reportId}::uuid FOR SHARE
+  `;
+  const correction = await tx.diagnosticReport.findFirst({
+    where: { supersedesId: result.reportId },
+    select: { createdAt: true },
+  });
+  // A call made before the laboratory retracted the value still gets its
+  // record; one made after it is about a figure that no longer stands.
+  if (correction && notice.notifiedAt >= correction.createdAt) {
+    throw new ResultSupersededError();
+  }
+
+  const written = await tx.criticalResultNotice.create({
+    data: {
+      observationResultId: id,
+      recipientKind: notice.recipientKind,
+      recipientName: notice.recipientName,
+      channel: notice.channel,
+      notifiedById: notice.notifiedById,
+      notifiedAt: notice.notifiedAt,
+      note: notice.note,
+      outcome: notice.outcome,
+      readBackConfirmed: notice.readBackConfirmed,
+      afterHours: notice.afterHours,
+      selfNotice: notice.selfNotice,
+    },
+    select: NOTICE_SELECT,
+  });
+
+  /**
+   * ORD-062, ORD-091. THE TRAIL ROW IN THE SAME TRANSACTION, as `MFA_RESET`
+   * does: a notice is indelible (ORD-064), so a trail failure after it would
+   * answer 500 to a notice that exists, and the retry would write a second.
+   * Identifiers only — never the value nor who was called.
+   */
+  await tx.accessAudit.create({
+    data: {
+      userId: notice.notifiedById,
+      resourceType: 'critical_result_notice',
+      resourceId: written.id,
+      action: 'CREATE',
+      ip: notice.trail.ip ?? null,
+      userAgent: notice.trail.userAgent ?? null,
+    },
+  });
+
+  return written;
 }
 
 /**
@@ -411,7 +732,17 @@ const WORKLIST_SELECT = {
     select: {
       serviceOrderId: true,
       serviceOrder: {
-        select: { siteId: true, encounter: { select: { patientId: true } } },
+        select: {
+          siteId: true,
+          encounter: { select: { patientId: true } },
+          // ORD-046. Who placed it: the owner of an unmatched result by default.
+          orderedBy: {
+            select: {
+              id: true,
+              user: { select: { firstName: true, lastName: true } },
+            },
+          },
+        },
       },
     },
   },
@@ -478,6 +809,9 @@ function toReportView(row: ReportRow): DiagnosticReportView {
     issuedAt: row.issuedAt,
     supersedesId: row.supersedesId,
     supersededById: row.supersededBy?.id ?? null,
+    // M1: when the correction was RECORDED in the clinic — the one instant
+    // that cuts the notices of this report (ORD-062), and what the screen shows.
+    supersededRecordedAt: row.supersededBy?.createdAt ?? null,
     // The correction's own issue instant, falling back to when the row landed:
     // «corregido el …» is a date a person reads, and a null there would print
     // as a blank beside a number somebody may already have acted on.
@@ -510,6 +844,28 @@ function toObservationView(row: ResultRow): ObservationView {
     referenceText: row.referenceText,
     abnormalFlag: row.abnormalFlag,
     observedAt: row.observedAt,
+    notices: row.notices.map(toNoticeView),
+  };
+}
+
+/** Row to view, the giver's name joined for a human reader (ORD-062). */
+function toNoticeView(row: NoticeRow): CriticalNoticeView {
+  return {
+    id: row.id,
+    resultId: row.observationResultId.toString(),
+    recipientKind: row.recipientKind,
+    recipientName: row.recipientName,
+    channel: row.channel,
+    notifiedAt: row.notifiedAt,
+    notifiedBy: {
+      id: row.notifiedBy.id,
+      name: `${row.notifiedBy.firstName} ${row.notifiedBy.lastName}`,
+    },
+    note: row.note,
+    outcome: row.outcome,
+    readBackConfirmed: row.readBackConfirmed,
+    afterHours: row.afterHours,
+    selfNotice: row.selfNotice,
   };
 }
 
@@ -530,6 +886,10 @@ function toWorklistEntry(row: WorklistRow): FlaggedResultEntry {
     unit: row.unit,
     abnormalFlag: row.abnormalFlag,
     observedAt: row.observedAt,
+    orderedBy: {
+      id: row.report.serviceOrder.orderedBy.id,
+      name: `${row.report.serviceOrder.orderedBy.user.firstName} ${row.report.serviceOrder.orderedBy.user.lastName}`,
+    },
   };
 }
 

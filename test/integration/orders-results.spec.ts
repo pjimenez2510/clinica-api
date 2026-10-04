@@ -461,7 +461,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
     // 40–400, el paciente leería que cualquier glucosa bajo 400 está bien.
     expect(report.results[0]).toMatchObject({ referenceLow: 70, referenceHigh: 100 }); // prettier-ignore
 
-    const critical = await store.critical({ sites: 'all', limit: 50 });
+    const critical = await store.critical({ sites: 'all' });
     expect(critical).toHaveLength(1);
     expect(critical[0]?.abnormalFlag).toBe('CRITICAL_LOW');
   });
@@ -498,7 +498,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
       },
       requester,
     );
-    expect(await store.critical({ sites: 'all', limit: 50 })).toHaveLength(1);
+    expect(await store.critical({ sites: 'all' })).toHaveLength(1);
 
     await reports.correct(
       {
@@ -512,7 +512,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
 
     // El 25 sigue siendo LEGIBLE en el histórico —una corrección nunca
     // sobrescribe— pero deja de ser algo que alguien tenga que ir a avisar.
-    expect(await store.critical({ sites: 'all', limit: 50 })).toEqual([]);
+    expect(await store.critical({ sites: 'all' })).toEqual([]);
   });
 
   it('ORD-050 corrige sin tocar el valor anterior, que sigue legible', async () => {
@@ -626,9 +626,115 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
     expect(
       await store.byId({ reportId: report.id, sites: [otherSite.id] }),
     ).toBeUndefined();
-    expect(await store.critical({ sites: [otherSite.id], limit: 50 })).toEqual(
-      [],
+    expect(await store.critical({ sites: [otherSite.id] })).toEqual([]);
+  });
+
+  it('ORD-041 deja el resultado sin orden en su cola informe tras informe, hasta que una persona lo empareja', async () => {
+    const prisma = db();
+    const scene = await anOrderedBloodCount(prisma);
+    const { reports, store } = serviceOf(prisma);
+    const now = new Date();
+    const hoursAgo = (hours: number) => new Date(now.getTime() - hours * 3_600_000); // prettier-ignore
+
+    // Se pidió biometría; el laboratorio manda además una glucosa.
+    await reports.register(
+      {
+        orderId: scene.order.id,
+        performedById: null,
+        issuedAt: hoursAgo(5),
+        results: [
+          { analyteDefinitionId: scene.hb.id, valueNumeric: 13.4 },
+          { analyteDefinitionId: scene.glu.id, valueNumeric: 92 },
+        ],
+      },
+      requester,
     );
+    const orphan = (await store.unmatched({ sites: 'all', limit: 50 }))[0];
+    expect(orphan?.analyteDisplay).toBe('Glucosa en ayunas');
+
+    // Un segundo informe de la MISMA orden no lo resuelve: nada lo empareja
+    // por su cuenta, ni siquiera cuando vuelve a llegar el mismo analito.
+    await reports.register(
+      {
+        orderId: scene.order.id,
+        performedById: null,
+        issuedAt: hoursAgo(2),
+        results: [{ analyteDefinitionId: scene.glu.id, valueNumeric: 90 }],
+      },
+      requester,
+    );
+    const still = await store.unmatched({ sites: 'all', limit: 50 });
+    expect(still.map((entry) => entry.resultId)).toContain(orphan!.resultId);
+    expect(still).toHaveLength(2);
+    const stored = await prisma.observationResult.findMany({
+      where: { analyteDisplay: 'Glucosa en ayunas' },
+      select: { orderItemId: true },
+    });
+    expect(stored.every((row) => row.orderItemId === null)).toBe(true);
+
+    // Control positivo: la persona lo empareja y SOLO entonces sale.
+    await reports.match(
+      { resultId: orphan!.resultId, orderItemId: scene.order.items[0]!.id },
+      requester,
+    );
+    const after = await store.unmatched({ sites: 'all', limit: 50 });
+    expect(after.map((entry) => entry.resultId)).not.toContain(orphan!.resultId); // prettier-ignore
+    expect(after).toHaveLength(1);
+  });
+
+  it('ORD-054 registra la corrección en filas nuevas y recalcula la bandera con la misma regla', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const { reports, orders } = serviceOf(prisma);
+    const now = new Date();
+
+    const order = await orders.place({
+      encounterId: scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [{ examDefinitionId: scene.glucose.id }],
+      sites: 'all',
+    });
+    const original = await reports.register(
+      {
+        orderId: order.id,
+        performedById: null,
+        issuedAt: new Date(now.getTime() - 3 * 3_600_000),
+        results: [{ analyteDefinitionId: scene.glu.id, valueNumeric: 95 }],
+      },
+      requester,
+    );
+    expect(original.results[0]?.abnormalFlag).toBe('NORMAL');
+
+    // El laboratorio llama: era 25, no 95. La corrección no trae bandera; la
+    // pone el sistema con los mismos rangos que al original.
+    const correction = await reports.correct(
+      {
+        reportId: original.id,
+        performedById: null,
+        issuedAt: new Date(now.getTime() - 3_600_000),
+        results: [{ analyteDefinitionId: scene.glu.id, valueNumeric: 25 }],
+      },
+      requester,
+    );
+
+    expect(correction.results[0]).toMatchObject({
+      valueNumeric: 25,
+      abnormalFlag: 'CRITICAL_LOW',
+      unit: 'mg/dL',
+      referenceLow: 70,
+      referenceHigh: 100,
+    });
+    expect(correction.results[0]?.id).not.toBe(original.results[0]?.id);
+
+    // La fila vieja, tal cual: 95 y NORMAL, y las dos existen.
+    const old = await prisma.observationResult.findFirstOrThrow({
+      where: { id: BigInt(original.results[0]!.id) },
+      select: { valueNumeric: true, abnormalFlag: true },
+    });
+    expect(old.valueNumeric?.toNumber()).toBe(95);
+    expect(old.abnormalFlag).toBe('NORMAL');
+    expect(await prisma.observationResult.count()).toBe(2);
   });
 
   it('ORD-030 deja el informe parcial mientras falte una determinación del examen', async () => {
