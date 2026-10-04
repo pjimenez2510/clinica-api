@@ -31,8 +31,10 @@ import {
   toLine,
 } from './application/patient-account.service';
 import type { AccountView, ChargeView } from './domain/billing.repository';
+import type { AwaitingCheckout } from './domain/clinical-acts.port';
 import { lineBase, lineTax } from './domain/charge';
 import { Quantity } from './domain/money';
+import type { PatientIdentity } from './domain/patient-identity';
 import {
   AccountDto,
   AccountListDto,
@@ -51,6 +53,9 @@ import {
   ReceiverProposalDto,
   VoidChargeDto,
   type AccountResponse,
+  AwaitingCheckoutListDto,
+  type AwaitingCheckoutResponse,
+  type PatientIdentityResponse,
   type AccountStatementResponse,
   type ChargeResponse,
   type CheckoutResponse,
@@ -134,6 +139,29 @@ export class BillingController {
       raisedChargeIds: result.raisedChargeIds,
       skipped: result.skipped,
     };
+  }
+
+  /**
+   * BI-181 to BI-183. What caja still has to look at: the site's visits that
+   * ended in the last seven clinic days and are not settled, each with who it
+   * is for and the account it already has.
+   *
+   * A READ, AND IT OPENS NOTHING. Taking a visit to caja asks who pays, and
+   * that is the cashier's press on `checkout` (BI-150, BI-156). Not audited per
+   * row, for the same reason as the account list (BI-133).
+   */
+  @Get('encounters/awaiting-checkout')
+  @RequirePermission('billing:read', 'param:siteId')
+  @ApiOperation({ summary: 'Consultar las atenciones terminadas pendientes de cobro' }) // prettier-ignore
+  @ApiOkResponse({ type: AwaitingCheckoutListDto })
+  async awaitingCheckout(
+    @Param('siteId', ParseUUIDPipe) siteId: string,
+  ): Promise<{ items: AwaitingCheckoutResponse[] }> {
+    const items = await this.checkout.awaitingCheckout({
+      siteId,
+      now: new Date(),
+    });
+    return { items: items.map(toAwaitingResponse) };
   }
 
   /**
@@ -422,11 +450,43 @@ export class BillingController {
  * The account as served. Instants go out as ISO strings; there is no total on
  * it (BI-074), the statement carries it.
  */
+/**
+ * The document type is narrowed to the four definitive ones: the adapter never
+ * hands over the `PROVISIONAL` marker of a newborn as a document.
+ */
+function toIdentityResponse(
+  identity: PatientIdentity,
+): PatientIdentityResponse {
+  return {
+    ...identity,
+    document: identity.document
+      ? {
+          type: identity.document.type as NonNullable<
+            PatientIdentityResponse['document']
+          >['type'],
+          value: identity.document.value,
+        }
+      : null,
+  };
+}
+
+function toAwaitingResponse(visit: AwaitingCheckout): AwaitingCheckoutResponse {
+  return {
+    encounterId: visit.encounterId,
+    status: visit.status,
+    endedAt: visit.endedAt.toISOString(),
+    clinicallyAttended: visit.clinicallyAttended,
+    patient: toIdentityResponse(visit.patient),
+    account: visit.account,
+  };
+}
+
 function toAccountResponse(account: AccountView): AccountResponse {
   return {
     id: account.id,
     siteId: account.siteId,
     patientId: account.patientId,
+    patient: toIdentityResponse(account.patient),
     encounterId: account.encounterId,
     payerId: account.payerId,
     priceListId: account.priceListId,

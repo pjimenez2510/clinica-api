@@ -4,6 +4,7 @@ import type { ChargeOrigin, ServiceMatch } from './charge-proposal';
 import type { VisitSequence } from './clinical-acts.port';
 import type { InvoiceReceiver, InvoiceStatus, PaymentMethod } from './invoice';
 import type { Money, Percentage, Quantity } from './money';
+import type { PatientIdentity } from './patient-identity';
 import type { PriceChange, PriceRow } from './price-list';
 
 /**
@@ -282,6 +283,8 @@ export interface AccountView {
   id: string;
   siteId: string;
   patientId: string;
+  /** BI-183. Who is being charged, as caja needs to recognise them. */
+  patient: PatientIdentity;
   encounterId: string | null;
   payerId: string;
   priceListId: string;

@@ -21,7 +21,9 @@ import {
   consultationKeyOf,
   proposeCharges,
 } from '../domain/charge-proposal';
+import { awaitingCheckoutSince } from '../domain/awaiting-checkout';
 import {
+  type AwaitingCheckout,
   CLINICAL_ACTS_REPOSITORY,
   type ClinicalActsRepository,
   type EncounterActs,
@@ -141,6 +143,20 @@ export class EncounterCheckoutService {
       raisedChargeIds,
       skipped,
     };
+  }
+
+  /**
+   * BI-181 to BI-183. The site's ended visits caja still has to look at, in
+   * the seven-day window counted in Ecuador from `now`.
+   */
+  async awaitingCheckout(query: {
+    siteId: string;
+    now: Date;
+  }): Promise<AwaitingCheckout[]> {
+    return this.acts.listAwaitingCheckout({
+      siteId: query.siteId,
+      endedFrom: awaitingCheckoutSince(query.now),
+    });
   }
 
   /**

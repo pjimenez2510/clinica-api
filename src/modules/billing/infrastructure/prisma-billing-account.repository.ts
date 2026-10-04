@@ -3,6 +3,7 @@ import type {
   ChargeItem as ChargeItemRow,
   Invoice as InvoiceRow,
   PatientAccount as PatientAccountRow,
+  Prisma,
 } from '@prisma/client';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
@@ -28,6 +29,10 @@ import {
   PriceNotFoundError,
 } from '../domain/billing.errors';
 import { MAX_VOUCHER_SERVICE_CODE } from '../domain/invoice';
+import {
+  PATIENT_IDENTITY_SELECT,
+  toPatientIdentity,
+} from './patient-identity.select';
 import type { ChargeOrigin } from '../domain/charge-proposal';
 import {
   type ChargeStatus,
@@ -90,6 +95,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
   async openAccount(account: NewAccount): Promise<AccountView> {
     const row = await this.prisma.patientAccount.create({
       data: { ...account, patientId: await this.survivingChart(account.patientId) }, // prettier-ignore
+      include: ACCOUNT_INCLUDE,
     });
     return toAccountView(row);
   }
@@ -117,6 +123,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
   }): Promise<AccountView | null> {
     const row = await this.prisma.patientAccount.findFirst({
       where: { id: query.accountId, siteId: query.siteId },
+      include: ACCOUNT_INCLUDE,
     });
     return row === null ? null : toAccountView(row);
   }
@@ -144,6 +151,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         ...(query.patientId === undefined ? {} : chartScope(query.patientId)),
       },
       orderBy: { openedAt: 'desc' },
+      include: ACCOUNT_INCLUDE,
     });
     return rows.map(toAccountView);
   }
@@ -159,6 +167,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     const row = await this.prisma.patientAccount.update({
       where: { id: accountId },
       data: payer,
+      include: ACCOUNT_INCLUDE,
     });
     return toAccountView(row);
   }
@@ -172,6 +181,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     const row = await this.prisma.patientAccount.update({
       where: { id: accountId },
       data: { status: 'SETTLED', closedAt: new Date() },
+      include: ACCOUNT_INCLUDE,
     });
     return toAccountView(row);
   }
@@ -291,6 +301,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         siteId: query.siteId,
         status: 'OPEN',
       },
+      include: ACCOUNT_INCLUDE,
     });
     return row === null ? null : toAccountView(row);
   }
@@ -684,14 +695,24 @@ function databaseMessageOf(error: unknown): string {
   return parts.join('\n');
 }
 
+/** BI-183. Every account read carries who it is for, by projection. */
+const ACCOUNT_INCLUDE = {
+  patient: { select: PATIENT_IDENTITY_SELECT },
+} satisfies Prisma.PatientAccountInclude;
+
+type AccountRow = PatientAccountRow & {
+  patient: Prisma.PatientGetPayload<{ select: typeof PATIENT_IDENTITY_SELECT }>;
+};
+
 /**
  * Row to view. The `status` cast leans on `patient_account_status_is_known`.
  */
-function toAccountView(row: PatientAccountRow): AccountView {
+function toAccountView(row: AccountRow): AccountView {
   return {
     id: row.id,
     siteId: row.siteId,
     patientId: row.patientId,
+    patient: toPatientIdentity(row.patient),
     encounterId: row.encounterId,
     payerId: row.payerId,
     priceListId: row.priceListId,
