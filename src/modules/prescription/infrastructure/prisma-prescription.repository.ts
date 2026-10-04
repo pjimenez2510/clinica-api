@@ -6,8 +6,14 @@ import { chartScope } from '../../../shared/infrastructure/prisma/patient-chart-
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import { assertOffFormularyJustified } from '../domain/prescription-content';
 import {
+  isDeclaredPresentation,
+  type DeclaredPresentation,
+} from '../domain/prescription-vocabulary';
+import {
   ConceptNotPrescribableError,
   ControlledSubstanceNotPrescribableError,
+  OffFormularyJustificationRequiredError,
+  PrescriptionDraftOfAnotherPrescriberError,
   PrescriptionEncounterNotFoundError,
   PrescriptionEncounterNotOpenError,
   PrescriptionNotEditableError,
@@ -17,10 +23,12 @@ import type { ItemContent } from '../domain/prescription-content';
 import type { PrescriptionStatus } from '../domain/prescription';
 import type {
   DiscardPlan,
+  DraftRewrite,
   EncounterPrescriptionsQuery,
   IssuePlan,
   IssueSnapshot,
   NewPrescription,
+  NewPrescriptionItem,
   PrescribingEncounter,
   PrescriberIdentity,
   PrescriptionQuery,
@@ -70,6 +78,11 @@ const ITEM_SELECT = {
   durationDays: true,
   instructions: true,
   offFormularyJustification: true,
+  // PR-101, PR-102. So a draft reopens as it was written (PR-100).
+  dosageFormCode: true,
+  doseAmount: true,
+  doseUnitCode: true,
+  frequencyCode: true,
 } satisfies Prisma.PrescriptionItemSelect;
 
 const PRESCRIPTION_SELECT = {
@@ -117,6 +130,8 @@ interface ConceptRow {
   in_force: boolean;
   /** PR-070. `attributes.controlled` of the CNMB concept. */
   controlled: boolean;
+  /** PR-104. `attributes.presentations`, or `null` when it declares none. */
+  presentations: DeclaredPresentation[] | null;
 }
 
 /** The `PrescriptionRepository` adapter. */
@@ -203,82 +218,11 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
         throw new PrescriptionEncounterNotOpenError(encounter.status);
       }
 
-      /**
-       * PR-007, PR-008. Every concept resolved in ONE statement inside this
-       * transaction: which catalogue it is from, what it is called, and whether
-       * it was in force on the CLINICAL DATE of the attention.
-       */
-      const concepts = await conceptsForEncounter(
+      const items = await resolveItems(
         tx,
         prescription.encounterId,
-        prescription.items
-          .map((item) => item.conceptId)
-          .filter((id): id is string => id !== null),
+        prescription.items,
       );
-
-      const items = prescription.items.map((item, index) => {
-        const line = index + 1;
-
-        // PR-009. Refused here rather than by `prescription_item_off_formulary`
-        // so the answer is a sentence about a box instead of a constraint name.
-        assertOffFormularyJustified({
-          line,
-          conceptId: item.conceptId,
-          offFormularyJustification: item.offFormularyJustification,
-        } as ItemContent);
-
-        if (item.conceptId === null) {
-          return {
-            conceptId: null,
-            // PR-009. Outside the CNMB the caller supplies the name, and the
-            // justification is what makes that acceptable.
-            genericName: (item.genericName ?? '').trim(),
-            ...commonItemFields(item),
-          };
-        }
-
-        const concept = concepts.get(item.conceptId);
-        /**
-         * PR-007. A concept that does not exist, one from another catalogue and
-         * one retired before the attention answer the SAME refusal, because
-         * what the caller does next is identical: pick from the CNMB as it
-         * stood that day. The foreign key would refuse the first a moment later
-         * with `RELATED_RECORD_MISSING`, which says «falta un registro
-         * relacionado» to somebody who chose a medicine.
-         */
-        if (
-          concept === undefined ||
-          concept.system_code !== CNMB ||
-          !concept.in_force
-        ) {
-          throw new ConceptNotPrescribableError(line);
-        }
-
-        /**
-         * PR-070. A narcotic or psychotropic is prescribed on the ACESS's own
-         * pre-printed pad, under the doctor's custody, and its original stays
-         * at the pharmacy. A document from here would not be that receta, so
-         * not even a draft is composed. The mark is
-         * `catalog_concept.attributes.controlled`: which medicines carry it
-         * comes with the real CNMB (D-084).
-         */
-        if (concept.controlled) {
-          throw new ControlledSubstanceNotPrescribableError(line);
-        }
-
-        return {
-          conceptId: item.conceptId,
-          /**
-           * PR-008. THE DCI IS COPIED FROM THE CONCEPT AND NEVER FROM THE
-           * REQUEST. In five years the CNMB may have been migrated, pruned or
-           * reloaded and the archived prescription still has to say what was
-           * prescribed — and that same redundancy is how a lie would get in, so
-           * the value can only come from the row read in this transaction.
-           */
-          genericName: concept.display,
-          ...commonItemFields(item),
-        };
-      });
 
       return tx.prescription.create({
         data: {
@@ -298,6 +242,74 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
     });
 
     return toPrescriptionView(row);
+  }
+
+  /**
+   * PR-100. The draft's lines and indications, replaced whole. The
+   * prescription's row is locked before the attention's: issuing locks it
+   * too, so a rewrite and an issue of the same draft serialise and the loser
+   * sees the state the winner left.
+   */
+  async rewriteDraft(rewrite: DraftRewrite): Promise<PrescriptionView> {
+    const row = await this.prisma.$transaction(async (tx) => {
+      const found = await tx.prescription.findFirst({
+        where: { id: rewrite.prescriptionId, ...siteFilter(rewrite.sites) },
+        select: { id: true, encounterId: true },
+      });
+      if (!found) throw new PrescriptionNotFoundError();
+
+      await tx.$queryRaw`SELECT id FROM "prescription" WHERE id = ${found.id}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM "encounter" WHERE id = ${found.encounterId}::uuid FOR UPDATE`;
+
+      const current = await tx.prescription.findUniqueOrThrow({
+        where: { id: found.id },
+        select: {
+          status: true,
+          prescriberId: true,
+          encounter: { select: { status: true } },
+        },
+      });
+      // PR-005, PR-100. Only a draft is rewritten, and the answer names the
+      // state it is in.
+      if (current.status !== 'DRAFT') {
+        throw new PrescriptionNotEditableError(current.status);
+      }
+      if (current.prescriberId !== rewrite.prescriberId) {
+        throw new PrescriptionDraftOfAnotherPrescriberError();
+      }
+      // PR-002, on the locked row.
+      if (!admitsPrescribing(current.encounter.status)) {
+        throw new PrescriptionEncounterNotOpenError(current.encounter.status);
+      }
+
+      const items = await resolveItems(tx, found.encounterId, rewrite.items);
+
+      await tx.prescriptionItem.deleteMany({
+        where: { prescriptionId: found.id },
+      });
+      return tx.prescription.update({
+        where: { id: found.id },
+        data: {
+          warningSigns: rewrite.warningSigns,
+          nonPharmacologicalAdvice: rewrite.nonPharmacologicalAdvice,
+          items: { create: items },
+        },
+        select: PRESCRIPTION_SELECT,
+      });
+    });
+
+    return toPrescriptionView(row);
+  }
+
+  /** PR-103, PR-104. What the CNMB row says, and nothing when it says nothing. */
+  async presentationsOf(conceptId: string): Promise<DeclaredPresentation[]> {
+    const concept = await this.prisma.catalogConcept.findFirst({
+      where: { id: conceptId, system: { code: CNMB } },
+      select: { attributes: true },
+    });
+    const declared = (concept?.attributes as { presentations?: unknown } | null)
+      ?.presentations;
+    return Array.isArray(declared) ? (declared as DeclaredPresentation[]) : [];
   }
 
   /** PR-006. One prescription within the caller's scope, or `null`. */
@@ -680,6 +692,111 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
   }
 }
 
+/**
+ * PR-007 to PR-009, PR-070, PR-104. The lines as they are stored, resolved
+ * against the CNMB as it stood on the attention's clinical date, inside the
+ * caller's transaction. Shared by composing and rewriting a draft (PR-100), so
+ * the two can never check different things.
+ */
+async function resolveItems(
+  tx: Prisma.TransactionClient,
+  encounterId: string,
+  items: readonly NewPrescriptionItem[],
+) {
+  /**
+   * PR-007, PR-008. Every concept resolved in ONE statement inside this
+   * transaction: which catalogue it is from, what it is called, and whether
+   * it was in force on the CLINICAL DATE of the attention.
+   */
+  const concepts = await conceptsForEncounter(
+    tx,
+    encounterId,
+    items
+      .map((item) => item.conceptId)
+      .filter((id): id is string => id !== null),
+  );
+
+  return items.map((item, index) => {
+    const line = index + 1;
+
+    // PR-009. Refused here rather than by `prescription_item_off_formulary`
+    // so the answer is a sentence about a box instead of a constraint name.
+    assertOffFormularyJustified({
+      line,
+      conceptId: item.conceptId,
+      offFormularyJustification: item.offFormularyJustification,
+    } as ItemContent);
+
+    if (item.conceptId === null) {
+      return {
+        conceptId: null,
+        // PR-009. Outside the CNMB the caller supplies the name, and the
+        // justification is what makes that acceptable.
+        genericName: (item.genericName ?? '').trim(),
+        ...commonItemFields(item),
+      };
+    }
+
+    const concept = concepts.get(item.conceptId);
+    /**
+     * PR-007. A concept that does not exist, one from another catalogue and
+     * one retired before the attention answer the SAME refusal, because
+     * what the caller does next is identical: pick from the CNMB as it
+     * stood that day. The foreign key would refuse the first a moment later
+     * with `RELATED_RECORD_MISSING`, which says «falta un registro
+     * relacionado» to somebody who chose a medicine.
+     */
+    if (
+      concept === undefined ||
+      concept.system_code !== CNMB ||
+      !concept.in_force
+    ) {
+      throw new ConceptNotPrescribableError(line);
+    }
+
+    /**
+     * PR-070. A narcotic or psychotropic is prescribed on the ACESS's own
+     * pre-printed pad, under the doctor's custody, and its original stays
+     * at the pharmacy. A document from here would not be that receta, so
+     * not even a draft is composed. The mark is
+     * `catalog_concept.attributes.controlled`: which medicines carry it
+     * comes with the real CNMB (D-084).
+     */
+    if (concept.controlled) {
+      throw new ControlledSubstanceNotPrescribableError(line);
+    }
+
+    /**
+     * PR-104. A form and concentration the CNMB does not list for this
+     * medicine is a prescription outside the cuadro, with the same way out:
+     * the written justification. «Enalapril 500 mg» stops here.
+     */
+    if (
+      !isDeclaredPresentation(
+        concept.presentations ?? [],
+        item.dosageFormCode ?? null,
+        item.concentration,
+      ) &&
+      (item.offFormularyJustification ?? '').trim() === ''
+    ) {
+      throw new OffFormularyJustificationRequiredError(line, 'presentation');
+    }
+
+    return {
+      conceptId: item.conceptId,
+      /**
+       * PR-008. THE DCI IS COPIED FROM THE CONCEPT AND NEVER FROM THE
+       * REQUEST. In five years the CNMB may have been migrated, pruned or
+       * reloaded and the archived prescription still has to say what was
+       * prescribed — and that same redundancy is how a lie would get in, so
+       * the value can only come from the row read in this transaction.
+       */
+      genericName: concept.display,
+      ...commonItemFields(item),
+    };
+  });
+}
+
 /** PR-005. The state a losing writer has to be told about. */
 async function currentStatus(
   tx: Prisma.TransactionClient,
@@ -724,7 +841,9 @@ async function conceptsForEncounter(
            (cc."valid_period" @> (e."started_at" AT TIME ZONE 'America/Guayaquil')::date)
                               AS in_force,
            (cc."attributes" ->> 'controlled') = 'true'
-                              AS controlled
+                              AS controlled,
+           cc."attributes" -> 'presentations'
+                              AS presentations
       FROM "encounter" AS e
       JOIN "catalog_concept" AS cc
         ON cc."id" = ANY(${[...new Set(conceptIds)]}::uuid[])
@@ -760,18 +879,13 @@ function encounterSiteFilter(
 }
 
 /** The fields a line carries whether or not it names a CNMB concept. */
-function commonItemFields(item: {
-  presentation: string | null;
-  concentration: string | null;
-  routeCode: string | null;
-  quantity: number | null;
-  doseText: string | null;
-  frequencyText: string | null;
-  durationDays: number | null;
-  instructions: string | null;
-  offFormularyJustification: string | null;
-}) {
+function commonItemFields(item: NewPrescriptionItem) {
   return {
+    // PR-101, PR-102. The codes the texts below were composed from.
+    dosageFormCode: item.dosageFormCode ?? null,
+    doseAmount: item.doseAmount ?? null,
+    doseUnitCode: item.doseUnitCode ?? null,
+    frequencyCode: item.frequencyCode ?? null,
     presentation: item.presentation,
     concentration: item.concentration,
     routeCode: item.routeCode,
@@ -819,6 +933,10 @@ function toPrescriptionView(row: PrescriptionRow): PrescriptionView {
       durationDays: item.durationDays,
       instructions: item.instructions,
       offFormularyJustification: item.offFormularyJustification,
+      dosageFormCode: item.dosageFormCode,
+      doseAmount: item.doseAmount === null ? null : item.doseAmount.toNumber(),
+      doseUnitCode: item.doseUnitCode,
+      frequencyCode: item.frequencyCode,
     })),
   };
 }

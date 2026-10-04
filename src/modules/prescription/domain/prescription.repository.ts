@@ -27,6 +27,7 @@
 
 import type { ItemContent } from './prescription-content';
 import type { KnownAllergy } from './allergy-check';
+import type { DeclaredPresentation } from './prescription-vocabulary';
 
 import type { PrescriptionStatus } from './prescription';
 
@@ -105,6 +106,15 @@ export interface NewPrescriptionItem {
   durationDays: number | null;
   instructions: string | null;
   offFormularyJustification: string | null;
+  /**
+   * PR-101, PR-102. The codes the texts above were composed from, kept so a
+   * draft reopens as it was written (PR-100). Absent on lines written before
+   * the vocabulary existed.
+   */
+  dosageFormCode?: string | null;
+  doseAmount?: number | null;
+  doseUnitCode?: string | null;
+  frequencyCode?: string | null;
 }
 
 /** PR-001 to PR-009. Everything a prescription is born with. */
@@ -117,6 +127,17 @@ export interface NewPrescription {
   nonPharmacologicalAdvice: string | null;
   items: readonly NewPrescriptionItem[];
   /** PR-001, PR-006. The caller's own resolved scope, never a site they named. */
+  sites: SiteScopeFilter;
+}
+
+/** PR-100. Rewriting a draft: its lines and indications, replaced whole. */
+export interface DraftRewrite {
+  prescriptionId: string;
+  /** PR-100. Only the draft's own prescriber may rewrite it. */
+  prescriberId: string;
+  warningSigns: string | null;
+  nonPharmacologicalAdvice: string | null;
+  items: readonly NewPrescriptionItem[];
   sites: SiteScopeFilter;
 }
 
@@ -137,6 +158,11 @@ export interface PrescriptionItemView {
   durationDays: number | null;
   instructions: string | null;
   offFormularyJustification: string | null;
+  /** PR-101, PR-102. `null` on lines written before the vocabulary. */
+  dosageFormCode: string | null;
+  doseAmount: number | null;
+  doseUnitCode: string | null;
+  frequencyCode: string | null;
 }
 
 /**
@@ -345,6 +371,20 @@ export interface PrescriptionRepository {
    * also guarantees.
    */
   create(prescription: NewPrescription): Promise<PrescriptionView>;
+
+  /**
+   * PR-100. Replaces the lines and indications of a DRAFT, in one transaction
+   * under the prescription's and the attention's locks, with the same checks
+   * as `create`. Refuses anything that is not a draft, a draft of another
+   * prescriber and an attention that no longer admits prescribing.
+   */
+  rewriteDraft(rewrite: DraftRewrite): Promise<PrescriptionView>;
+
+  /**
+   * PR-103, PR-104. The presentations a CNMB concept declares, or none when it
+   * is not a CNMB concept or declares nothing.
+   */
+  presentationsOf(conceptId: string): Promise<DeclaredPresentation[]>;
 
   /** PR-006. One prescription within the caller's scope, or `null`. */
   findById(query: PrescriptionQuery): Promise<PrescriptionView | null>;

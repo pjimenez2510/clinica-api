@@ -276,12 +276,13 @@ describe('la receta por HTTP', () => {
 
   const aLine = (overrides: Record<string, unknown> = {}) => ({
     conceptId,
-    presentation: 'Cápsula',
+    dosageForm: 'CAPSULE',
     concentration: '500 mg',
     routeCode: 'ORAL',
     quantity: 20,
-    doseText: '1 cápsula',
-    frequencyText: 'Cada 8 horas',
+    doseAmount: 1,
+    doseUnit: 'CAPSULE',
+    frequency: 'EVERY_8_HOURS',
     durationDays: 7,
     ...overrides,
   });
@@ -723,6 +724,124 @@ describe('la receta por HTTP', () => {
     expect((response.body as Problem).code).toBe(
       'PRESCRIPTION_ENCOUNTER_NOT_OPEN',
     );
+  });
+
+  const put = (path: string, token: string, body: object) =>
+    request(app.getHttpServer())
+      .put(`/api/v1${path}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send(body);
+
+  it('PR-100 reescribe el borrador entero: conserva su id y sustituye sus líneas', async () => {
+    const composed = await composeAsDoctor();
+    const id = composed.prescription.id;
+
+    const response = await put(`/prescriptions/${id}`, doctorToken, {
+      warningSigns: 'Fiebre que no cede',
+      items: [
+        aLine({ concentration: '250 mg', doseAmount: 2 }),
+        aLine({ dosageForm: 'ORAL_SUSPENSION', doseAmount: 5, doseUnit: 'MILLILITRE', frequency: undefined, frequencyText: 'después de cada comida' }), // prettier-ignore
+      ],
+    }).expect(200);
+
+    const body = response.body as ComposedBody;
+    expect(body.prescription.id).toBe(id);
+    expect(body.prescription.status).toBe('DRAFT');
+    const stored = await prisma.prescriptionItem.findMany({
+      where: { prescriptionId: id },
+      orderBy: { id: 'asc' },
+    });
+    expect(
+      stored.map((item) => [
+        item.presentation,
+        item.doseText,
+        item.frequencyText,
+      ]),
+    ).toEqual([
+      // prettier-ignore
+      ['Cápsula', '2 cápsulas', 'Cada 8 horas'],
+      ['Suspensión oral', '5 mililitros', 'después de cada comida'],
+    ]);
+    expect(stored[1]).toMatchObject({ dosageFormCode: 'ORAL_SUSPENSION', doseUnitCode: 'MILLILITRE', frequencyCode: null }); // prettier-ignore
+  });
+
+  it('PR-100 una receta emitida no se reescribe, y sus líneas siguen como estaban', async () => {
+    const composed = await composeAsDoctor();
+    const id = composed.prescription.id;
+    await post(`/prescriptions/${id}/issue`, doctorToken).expect(200);
+
+    const refused = await put(`/prescriptions/${id}`, doctorToken, {
+      items: [aLine({ concentration: '250 mg' })],
+    }).expect(409);
+
+    expect((refused.body as Problem).code).toBe('PRESCRIPTION_NOT_EDITABLE');
+    const lines = await prisma.prescriptionItem.findMany({ where: { prescriptionId: id } }); // prettier-ignore
+    expect(lines.map((line) => line.concentration)).toEqual(['500 mg']);
+  });
+
+  it('PR-100 otro médico no reescribe el borrador de un colega; ENFERMERÍA tampoco', async () => {
+    const composed = await composeAsDoctor();
+    const colleague = await signIn('MEDICO', 'colega@clinica.ec', '0102030400');
+    const path = `/prescriptions/${composed.prescription.id}`;
+
+    const refused = await put(path, colleague.token, { items: [aLine()] }).expect(403); // prettier-ignore
+    expect((refused.body as Problem).code).toBe('PRESCRIPTION_DRAFT_OF_ANOTHER_PRESCRIBER'); // prettier-ignore
+    await put(path, nurseToken, { items: [aLine()] }).expect(403);
+  });
+
+  it('PR-101 PR-102 la forma y la unidad salen de la lista, y la frecuencia es una de las dos', async () => {
+    const path = `/encounters/${encounterId}/prescriptions`;
+
+    const badForm = await post(path, doctorToken, { items: [aLine({ dosageForm: 'tab' })] }).expect(422); // prettier-ignore
+    expect((badForm.body as Problem).errors?.map((e) => e.field)).toContain('items[0].dosageForm'); // prettier-ignore
+
+    const both = await post(path, doctorToken, { items: [aLine({ frequencyText: 'cada 8 h' })] }).expect(422); // prettier-ignore
+    expect((both.body as Problem).errors?.map((e) => e.field)).toContain('items[0].frequency'); // prettier-ignore
+
+    await post(path, doctorToken, { items: [aLine()] }).expect(201);
+  });
+
+  it('PR-103 publica las listas con el texto que se imprime', async () => {
+    const response = await get('/prescriptions/vocabulary', doctorToken).expect(200); // prettier-ignore
+    const body = response.body as {
+      dosageForms: { code: string; label: string; doseUnit: string }[];
+      routes: { code: string; label: string }[];
+    };
+
+    expect(body.dosageForms).toContainEqual({ code: 'TABLET', label: 'Tableta', doseUnit: 'TABLET' }); // prettier-ignore
+    expect(body.routes).toContainEqual({ code: 'ORAL', label: 'Vía oral' });
+  });
+
+  it('PR-103 PR-104 con el medicamento, publica las presentaciones que el CNMB le declara', async () => {
+    await prisma.catalogConcept.update({
+      where: { id: conceptId },
+      data: { attributes: { presentations: [{ form: 'CAPSULE', concentration: '500 mg' }] } }, // prettier-ignore
+    });
+
+    const withConcept = await get(`/prescriptions/vocabulary?conceptId=${conceptId}`, doctorToken).expect(200); // prettier-ignore
+    expect(
+      (withConcept.body as { presentations: unknown[] }).presentations,
+    ).toEqual([{ form: 'CAPSULE', concentration: '500 mg' }]);
+    const without = await get('/prescriptions/vocabulary', doctorToken).expect(200); // prettier-ignore
+    expect((without.body as { presentations: unknown[] }).presentations).toEqual([]); // prettier-ignore
+  });
+
+  it('PR-104 una concentración que el CNMB no trae para ese medicamento exige justificación', async () => {
+    await prisma.catalogConcept.update({
+      where: { id: conceptId },
+      data: { attributes: { presentations: [{ form: 'CAPSULE', concentration: '500 mg' }] } }, // prettier-ignore
+    });
+    const path = `/encounters/${encounterId}/prescriptions`;
+
+    // Positive control: the declared presentation passes as it is.
+    await post(path, doctorToken, { items: [aLine()] }).expect(201);
+
+    const refused = await post(path, doctorToken, { items: [aLine({ concentration: '5000 mg' })] }).expect(422); // prettier-ignore
+    expect((refused.body as Problem).code).toBe('OFF_FORMULARY_JUSTIFICATION_REQUIRED'); // prettier-ignore
+
+    await post(path, doctorToken, {
+      items: [aLine({ concentration: '5000 mg', offFormularyJustification: 'Dosis de carga indicada por especialista' })], // prettier-ignore
+    }).expect(201);
   });
 });
 

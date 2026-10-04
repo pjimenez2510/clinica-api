@@ -987,7 +987,9 @@ admite una lista sale de una lista._
   las repita.
   > Una lista copiada en la interfaz es una lista que un día dice otra cosa que
   > la que el servidor admite. La unidad por forma es la propuesta: elegir
-  > «tableta» deja «tableta» como unidad, y se cambia si no es.
+  > «tableta» deja «tableta» como unidad, y se cambia si no es. Con un
+  > medicamento, la misma respuesta trae sus presentaciones (PR-104), para que
+  > el buscador las ofrezca en vez de pedir que se tecleen.
 - **PR-104** — SI el concepto del CNMB de una línea **declara sus
   presentaciones** (forma farmacéutica y concentración), ENTONCES la línea
   DEBERÁ llevar una de ellas, y SI lleva otra, ENTONCES el sistema DEBERÁ
@@ -1111,7 +1113,7 @@ emite en un sitio, y el art. 10 dice que no vale en otro.
 | `POST` | `/prescriptions/:prescriptionId/discard` | `prescription:write` | PR-005, PR-011, PR-093 *(sólo sobre un borrador, con motivo obligatorio)* |
 | `POST` | `/prescriptions/:prescriptionId/cancel` | `prescription:write` | PR-005, PR-010, PR-093 *(sólo sobre una receta emitida, y sin motivo mientras no haya columna)* |
 | `PUT` | `/prescriptions/:prescriptionId` | `prescription:write` | PR-100 a PR-102, PR-104 *(sólo un borrador, y sólo su prescriptor)* |
-| `GET` | `/prescriptions/vocabulary` | `prescription:write` | PR-103 |
+| `GET` | `/prescriptions/vocabulary` | `prescription:write` | PR-103, PR-104 *(con `?conceptId=`, las presentaciones de ese medicamento)* |
 
 **La composición y la emisión son dos rutas y no una**, y no es ceremonia: la
 composición no es un acto legal y la emisión sí. Entre las dos el médico ve las

@@ -2845,8 +2845,15 @@ model PrescriptionItem {
 
   /// CNMB concept version. NULL only when prescribing outside the CNMB, which
   /// then requires `offFormularyJustification` (enforced by CHECK).
-  conceptId String?         @map("concept_id") @db.Uuid
-  concept   CatalogConcept? @relation(fields: [conceptId], references: [id], onDelete: Restrict)
+
+  /// PR-101, PR-102. The codes the line was written with, beside the text the
+  /// server composed from them, so a draft reopens as it was written (PR-100).
+  dosageFormCode String?         @map("dosage_form_code") @db.VarChar(32)
+  doseAmount     Decimal?        @map("dose_amount") @db.Decimal(8, 2)
+  doseUnitCode   String?         @map("dose_unit_code") @db.VarChar(32)
+  frequencyCode  String?         @map("frequency_code") @db.VarChar(32)
+  conceptId      String?         @map("concept_id") @db.Uuid
+  concept        CatalogConcept? @relation(fields: [conceptId], references: [id], onDelete: Restrict)
 
   /// Frozen at prescription time, for the same reason as the CIE-10 display.
   genericName   String  @map("generic_name") @db.VarChar(240)

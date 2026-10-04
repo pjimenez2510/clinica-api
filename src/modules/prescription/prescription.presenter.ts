@@ -1,8 +1,21 @@
 import type { PrescriptionDocument } from './domain/prescription-document';
 import type { PrescriptionView } from './domain/prescription.repository';
+import { MEDICATION_ROUTES } from './domain/prescription';
+import {
+  DOSAGE_FORMS,
+  DOSE_UNITS,
+  FREQUENCIES,
+  type DeclaredPresentation,
+  type DosageForm,
+  type DoseUnit,
+  type Frequency,
+} from './domain/prescription-vocabulary';
+import type { WrittenItem } from './domain/written-item';
 import type {
+  ComposePrescriptionDto,
   PrescriptionDocumentResponse,
   PrescriptionResponse,
+  PrescriptionVocabularyResponse,
 } from './dto/prescription.dto';
 
 /**
@@ -52,6 +65,10 @@ export function toPrescriptionResponse(
       durationDays: item.durationDays,
       instructions: item.instructions,
       offFormularyJustification: item.offFormularyJustification,
+      dosageFormCode: item.dosageFormCode,
+      doseAmount: item.doseAmount,
+      doseUnitCode: item.doseUnitCode,
+      frequencyCode: item.frequencyCode,
     })),
   };
 }
@@ -87,5 +104,62 @@ export function toDocumentResponse(
       signedAt: document.prescriber.signedAt?.toISOString() ?? null,
     },
     items: [...document.items],
+  };
+}
+
+/**
+ * PR-100 to PR-102. A line of the request, as the domain writes it: codes in,
+ * sentences composed by `writeItem`. Shared by composing and rewriting, so the
+ * two routes cannot read the same body differently.
+ */
+export function toWrittenItem(
+  item: ComposePrescriptionDto['items'][number],
+): WrittenItem {
+  return {
+    conceptId: item.conceptId ?? null,
+    // PR-008. Only read when there is no concept: with one, the DCI comes from
+    // the CNMB row the adapter reads in the write's transaction.
+    genericName: item.genericName ?? null,
+    dosageForm: item.dosageForm as DosageForm,
+    concentration: item.concentration,
+    routeCode: item.routeCode,
+    quantity: item.quantity,
+    doseAmount: item.doseAmount,
+    doseUnit: item.doseUnit as DoseUnit,
+    frequency: (item.frequency ?? null) as Frequency | null,
+    frequencyText: item.frequencyText ?? null,
+    durationDays: item.durationDays,
+    instructions: item.instructions ?? null,
+    offFormularyJustification: item.offFormularyJustification ?? null,
+  };
+}
+
+/** PR-103. The vocabulary as the screen reads it, in the domain's order. */
+export function toVocabularyResponse(
+  presentations: readonly DeclaredPresentation[],
+): PrescriptionVocabularyResponse {
+  return {
+    presentations: presentations.map((presentation) => ({
+      form: presentation.form,
+      concentration: presentation.concentration,
+    })),
+    dosageForms: Object.entries(DOSAGE_FORMS).map(([code, form]) => ({
+      code,
+      label: form.label,
+      doseUnit: form.unit,
+    })),
+    doseUnits: Object.entries(DOSE_UNITS).map(([code, unit]) => ({
+      code,
+      one: unit.one,
+      many: unit.many,
+    })),
+    routes: Object.entries(MEDICATION_ROUTES).map(([code, label]) => ({
+      code,
+      label,
+    })),
+    frequencies: Object.entries(FREQUENCIES).map(([code, label]) => ({
+      code,
+      label,
+    })),
   };
 }
