@@ -49,6 +49,13 @@ export interface AccountStatement {
    * same frozen columns and stored nowhere.
    */
   proposedTotals: DocumentTotals;
+  /**
+   * BI-184. What an invoice issued NOW would carry: the `BILLABLE` lines and
+   * nothing else. After a first invoice the account total still counts what
+   * it took, so a dialog announcing «total a facturar» from it would state an
+   * amount that is not the one issued.
+   */
+  invoiceableTotals: DocumentTotals;
 }
 
 /**
@@ -144,6 +151,9 @@ export class PatientAccountService {
       // «esto se hizo y no se cobra».
       totals: totalsOf(charges.filter(countsTowardsTotal).map(toLine)),
       proposedTotals: totalsOf(charges.filter(isProposed).map(toLine)),
+      invoiceableTotals: totalsOf(
+        charges.filter((charge) => charge.status === 'BILLABLE').map(toLine),
+      ),
     };
   }
 

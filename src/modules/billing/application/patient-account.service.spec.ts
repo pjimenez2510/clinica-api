@@ -388,6 +388,29 @@ describe('BI-015, BI-074 los cargos de la cuenta', () => {
     expect(statement.charges).toHaveLength(4);
   });
 
+  it('BI-184 el total a facturar es sólo lo confirmado sin facturar: ni lo propuesto ni lo ya facturado', async () => {
+    const { service: accounts } = build({
+      accounts: {
+        listCharges: vi
+          .fn()
+          .mockResolvedValue([
+            charge('billed', 'BILLED'),
+            charge('pending', 'BILLABLE', { unitAmount: Money.parse('15.00') }),
+            charge('proposed', 'PLANNED'),
+          ]),
+      },
+    });
+
+    const statement = await accounts.statement({
+      accountId: ACCOUNT,
+      siteId: SITE,
+    });
+
+    expect(statement.invoiceableTotals.total.toString()).toBe('15.00');
+    // Control: the account total still counts all three.
+    expect(statement.totals.total.toString()).toBe('75.00');
+  });
+
   it('BI-051 no consulta el catálogo ni el tarifario para totalizar una cuenta', async () => {
     // The JOIN to `price` is shorter, gives the same answer TODAY, and
     // rewrites history the day somebody raises a price. This asserts the

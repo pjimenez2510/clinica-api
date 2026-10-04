@@ -508,6 +508,7 @@ function toStatementResponse(
     charges: statement.charges.map(toChargeResponse),
     totals: toTotalsResponse(statement.totals),
     proposedTotals: toTotalsResponse(statement.proposedTotals),
+    invoiceableTotals: toTotalsResponse(statement.invoiceableTotals),
   };
 }
 

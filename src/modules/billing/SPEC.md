@@ -1524,7 +1524,9 @@ dos registros distintos.**
   facturar, la pantalla de caja DEBERÁ ofrecer emitir la factura de esos
   cargos, también cuando la cuenta ya tenga otra factura; y MIENTRAS tenga
   cargos propuestos o confirmados sin facturar, la pantalla NO DEBERÁ ofrecer
-  cerrar la cuenta como acción disponible y DEBERÁ decir qué falta.
+  cerrar la cuenta como acción disponible y DEBERÁ decir qué falta. El total
+  que se anuncia al emitir DEBERÁ ser el de esos cargos confirmados sin
+  facturar, y no el de la cuenta.
   > **El segundo defecto del autor**: facturó, añadió un cargo y la cuenta ya no
   > se podía cerrar. La pantalla escondía «Emitir factura» en cuanto existía una
   > factura, y el servidor —con razón— rechazaba cerrar con un cargo sin
@@ -1532,6 +1534,11 @@ dos registros distintos.**
   > factura nueva de lo pendiente, cada una con sus líneas (B9, BI-169). Lo que
   > faltaba era que la pantalla lo ofreciera, y que no ofreciera un «Cerrar»
   > que sólo puede fallar.
+  >
+  > El total de la cuenta sigue contando lo ya facturado (BI-074); por eso el
+  > extracto sirve aparte `invoiceableTotals`, lo que llevaría una factura
+  > emitida ahora. Sin él, la segunda factura se anunciaba por el importe de
+  > las dos.
 
 ## 18. Prestaciones con estructura
 
