@@ -738,12 +738,18 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
   con «Página x de y» y, DONDE el documento tenga **código de verificación**, el
   código, la dirección `<WEB_BASE_URL>/verificar/<código>` y un **código QR**
   que la contiene, dibujado como **trazos vectoriales** —nunca como imagen—, y la
-  nota de conservación de su clase.
+  nota de su clase, si la tiene. La receta **NO DEBERÁ** llevar nota de
+  conservación.
 
   > Vectores y no imagen porque PDF/A-1b prohíbe la transparencia (DOC-023) y
   > una imagen es la vía por la que entra. Un documento sin código —hoy la
   > orden— **no lleva QR**: un QR que no lleva a ningún sitio sería un sello
   > falso en pequeño.
+  >
+  > **Sin la línea de conservación** (revisión de usabilidad del autor,
+  > 04-10-2026): «Copia de respaldo conservada cinco años (Res. ACESS-2023-0030,
+  > art. 15)» se imprimía en cada receta. La conservación se cumple (DOC-013: no
+  > se purga nada); imprimirla no la cumple más y le recita la norma al paciente.
 
 - **DOC-084** — El **RIDE** **NO DEBERÁ** llevar la cabecera común ni QR: su
   cabecera es la del Anexo 2 (DOC-076), DOC-078 sigue en pie, y su pie DEBERÁ
