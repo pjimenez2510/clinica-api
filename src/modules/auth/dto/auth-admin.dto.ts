@@ -137,12 +137,6 @@ export const accountSchema = z.object({
  */
 export class UserAccountDto extends createZodDto(accountSchema) {}
 
-export const accountListSchema = z.object({
-  items: z.array(accountSchema).readonly(),
-});
-/** Response of GET /auth/users. */
-export class UserAccountListDto extends createZodDto(accountListSchema) {}
-
 /**
  * What creating an account answers, and what re-sending its invitation
  * answers (AU-021, AU-027, AU-029).
@@ -193,6 +187,23 @@ export const grantListSchema = z.object({
 });
 /** Response of reading and replacing an account's roles. */
 export class GrantListDto extends createZodDto(grantListSchema) {}
+
+export const accountListSchema = z.object({
+  /**
+   * AU-047. Each row carries its live grants, so the table names each person's
+   * roles without one request per row. Only here: the account's own page reads
+   * them from `/users/:id/roles`, where they are granted and revoked.
+   */
+  items: z
+    .array(
+      accountSchema.extend({
+        grants: z.array(grantSchema).readonly(),
+      }),
+    )
+    .readonly(),
+});
+/** Response of GET /auth/users. */
+export class UserAccountListDto extends createZodDto(accountListSchema) {}
 
 /**
  * AU-032. The whole set, not a delta: the screen sends the checkbox state, and

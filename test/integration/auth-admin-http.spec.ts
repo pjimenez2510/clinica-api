@@ -1165,6 +1165,62 @@ describe('la administración de cuentas y roles por HTTP', () => {
       ).toBe(site.id);
     });
 
+    it('AU-047 la lista de cuentas trae los roles vigentes con su sede, y no los revocados', async () => {
+      const site = await prisma.site.create({
+        data: {
+          mspUnicode: 'AUTH-0047',
+          establishmentId: await establishmentId(prisma),
+          name: 'Sede Sur',
+        },
+        select: { id: true },
+      });
+      const account = await createAccount();
+      const recepcion = await roleIdOf('RECEPCION');
+      const caja = await roleIdOf('CAJA');
+
+      // Control positivo: los dos salen mientras están vigentes…
+      await put(`/users/${account.id}/roles`, {
+        grants: [{ roleId: recepcion, siteId: site.id }, { roleId: caja }],
+      }).expect(200);
+      const grantsOf = async (): Promise<
+        { roleId: string; roleName: string; siteId: string | null }[]
+      > => {
+        const list = await get('/users').expect(200);
+        const row = (
+          list.body as {
+            items: (AccountBody & {
+              grants: {
+                roleId: string;
+                roleName: string;
+                siteId: string | null;
+              }[];
+            })[];
+          }
+        ).items.find((item) => item.id === account.id);
+        return row?.grants ?? [];
+      };
+      const both = await grantsOf();
+      expect(both).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ roleId: recepcion, siteId: site.id }),
+          expect.objectContaining({ roleId: caja, siteId: null }),
+        ]),
+      );
+      expect(both).toHaveLength(2);
+
+      // …y el revocado deja de salir, aunque su fila siga en la base (AU-032).
+      await put(`/users/${account.id}/roles`, {
+        grants: [{ roleId: recepcion, siteId: site.id }],
+      }).expect(200);
+      const after = await grantsOf();
+      expect(after.map((grant) => grant.roleId)).toEqual([recepcion]);
+      expect(
+        await prisma.userRoleGrant.count({
+          where: { userId: account.id, roleId: caja, revokedAt: { not: null } },
+        }),
+      ).toBe(1);
+    });
+
     it('AU-032 revoca la concesión en lugar de borrarla, para que quede quién la tuvo', async () => {
       const account = await createAccount();
       const recepcion = await roleIdOf('RECEPCION');

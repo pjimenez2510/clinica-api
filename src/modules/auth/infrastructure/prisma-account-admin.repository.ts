@@ -5,6 +5,7 @@ import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.serv
 import type {
   AccountAdminRepositoryPort,
   AccountListFilter,
+  AccountListItem,
   AccountPatch,
   AccountView,
   CreateAccountInput,
@@ -91,6 +92,19 @@ const GRANT_SELECT = {
   role: { select: { code: true, name: true } },
 } satisfies Prisma.UserRoleGrantSelect;
 
+type GrantRow = Prisma.UserRoleGrantGetPayload<{
+  select: typeof GRANT_SELECT;
+}>;
+
+function toGrantView(row: GrantRow): GrantView {
+  return {
+    roleId: row.roleId,
+    roleCode: row.role.code,
+    roleName: row.role.name,
+    siteId: row.siteId,
+  };
+}
+
 /**
  * Prisma adapter for `AccountAdminRepositoryPort`. Unique-index refusals are
  * translated by `duplicateErrorFrom`, never pre-checked.
@@ -104,7 +118,7 @@ export class PrismaAccountAdminRepository implements AccountAdminRepositoryPort 
    * identifier is how you confirm a person you already found, not how you
    * browse a list, and a substring search over it invites fishing.
    */
-  async list(filter: AccountListFilter): Promise<readonly AccountView[]> {
+  async list(filter: AccountListFilter): Promise<readonly AccountListItem[]> {
     const search = filter.search?.trim();
 
     const rows = await this.prisma.user.findMany({
@@ -120,11 +134,23 @@ export class PrismaAccountAdminRepository implements AccountAdminRepositoryPort 
             }
           : {}),
       },
-      select: ACCOUNT_FIELDS,
+      select: {
+        ...ACCOUNT_FIELDS,
+        // AU-047. The same filter and order as `listGrants`: revoked grants are
+        // trail, not state, and are excluded by the query.
+        roleGrants: {
+          where: { revokedAt: null },
+          select: GRANT_SELECT,
+          orderBy: { grantedAt: 'asc' },
+        },
+      },
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
     });
 
-    return rows.map(toView);
+    return rows.map((row) => ({
+      ...toView(row),
+      grants: row.roleGrants.map(toGrantView),
+    }));
   }
 
   /** `null` for an unknown id; the service decides the refusal. */
@@ -290,12 +316,7 @@ export class PrismaAccountAdminRepository implements AccountAdminRepositoryPort 
       orderBy: { grantedAt: 'asc' },
     });
 
-    return rows.map((row) => ({
-      roleId: row.roleId,
-      roleCode: row.role.code,
-      roleName: row.role.name,
-      siteId: row.siteId,
-    }));
+    return rows.map(toGrantView);
   }
 
   /**

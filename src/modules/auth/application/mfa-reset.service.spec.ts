@@ -5,6 +5,7 @@ import { CannotResetOwnMfaError, UserNotFoundError } from '../domain/auth.errors
 
 import type {
   AccountAdminRepositoryPort,
+  AccountListItem,
   AccountView,
   GrantView,
   MfaResetAuthor,
@@ -70,7 +71,7 @@ class AccountsDouble implements AccountAdminRepositoryPort {
   // than return a plausible value: a silent stub would let a future version of
   // the service read the account first, or deactivate it, and nobody would
   // notice.
-  list(): Promise<readonly AccountView[]> {
+  list(): Promise<readonly AccountListItem[]> {
     throw new Error('not used');
   }
   findById(): Promise<AccountView | null> {
