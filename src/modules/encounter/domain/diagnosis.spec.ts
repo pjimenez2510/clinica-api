@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   PRIMARY_RANK,
   careModalityOfCie10,
+  cie10CategoryOf,
   isPrimary,
   nextRankAfter,
 } from './diagnosis';
@@ -73,5 +74,13 @@ describe('la clasificación de un diagnóstico', () => {
      * sin que nadie hubiera pedido ese orden.
      */
     expect(nextRankAfter([1, 5])).toBe(6);
+  });
+});
+
+describe('la categoría CIE-10 (EN-184)', () => {
+  it('EN-184 toma los tres primeros caracteres, con o sin punto', () => {
+    expect(cie10CategoryOf('E119')).toBe('E11');
+    expect(cie10CategoryOf('E11.6')).toBe('E11');
+    expect(cie10CategoryOf('z3001')).toBe('Z30');
   });
 });

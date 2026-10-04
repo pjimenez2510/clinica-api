@@ -133,12 +133,13 @@ model User {
 
   /// EN-086, EN-143, EN-085. Who wrote each nursing and background datum:
   /// D-048 puts the authorship IN the datum, not in the form that carries it.
-  allergiesRecorded PatientAllergy[]  @relation("AllergyRecorder")
-  allergiesRefuted  PatientAllergy[]  @relation("AllergyRefuter")
-  vitalsRecorded    EncounterVitals[] @relation("VitalsRecorder")
-  vitalsCorrected   EncounterVitals[] @relation("VitalsCorrector")
-  historyRecorded   PatientHistory[]  @relation("HistoryRecorder")
-  historyRefuted    PatientHistory[]  @relation("HistoryRefuter")
+  allergiesRecorded  PatientAllergy[]               @relation("AllergyRecorder")
+  allergiesRefuted   PatientAllergy[]               @relation("AllergyRefuter")
+  diagnosesRetracted EncounterDiagnosisRetraction[] @relation("DiagnosisRetractor")
+  vitalsRecorded     EncounterVitals[]              @relation("VitalsRecorder")
+  vitalsCorrected    EncounterVitals[]              @relation("VitalsCorrector")
+  historyRecorded    PatientHistory[]               @relation("HistoryRecorder")
+  historyRefuted     PatientHistory[]               @relation("HistoryRefuter")
 
   /// AG-064. The waiting-list calls this person made. `RESTRICT` on the way
   /// back: the trail names whoever called, and an account is deactivated, never
@@ -959,13 +960,13 @@ model CatalogConcept {
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  patientsEthnicity       Patient[]                  @relation("PatientEthnicity")
-  patientsNationality     Patient[]                  @relation("PatientNationality")
-  patientsResidence       Patient[]                  @relation("PatientResidenceParish")
-  patientsGenderIdentity  Patient[]                  @relation("PatientGenderIdentity")
-  patientsPeople          Patient[]                  @relation("PatientPeople")
-  patientsOrientation     Patient[]                  @relation("PatientSexualOrientation")
-  sites                   Site[]                     @relation("SiteParish")
+  patientsEthnicity       Patient[]                      @relation("PatientEthnicity")
+  patientsNationality     Patient[]                      @relation("PatientNationality")
+  patientsResidence       Patient[]                      @relation("PatientResidenceParish")
+  patientsGenderIdentity  Patient[]                      @relation("PatientGenderIdentity")
+  patientsPeople          Patient[]                      @relation("PatientPeople")
+  patientsOrientation     Patient[]                      @relation("PatientSexualOrientation")
+  sites                   Site[]                         @relation("SiteParish")
   scheduleRules           PractitionerScheduleRule[]
   /// NO HAY `agendaEntries` NI `waitlistEntries` AQUÍ, y la ausencia es el
   /// arreglo: la cita registra su tipo de atención en `service_type` —el
@@ -975,13 +976,14 @@ model CatalogConcept {
   /// quedado atrás y por eso AG-061 no podía comparar los dos tipos.
   encounterPriorityGroups EncounterPriorityGroup[]
   diagnoses               EncounterDiagnosis[]
+  retractedDiagnoses      EncounterDiagnosisRetraction[]
   procedures              EncounterProcedure[]
   prescriptionItems       PrescriptionItem[]
   serviceOrderItems       ServiceOrderItem[]
-  observationResults      ObservationResult[]        @relation("ObservationAnalyte")
+  observationResults      ObservationResult[]            @relation("ObservationAnalyte")
   allergies               PatientAllergy[]
-  referrals               Referral[]                 @relation("ReferralSpecialty")
-  interconsultations      Interconsultation[]        @relation("InterconsultationSpecialty")
+  referrals               Referral[]                     @relation("ReferralSpecialty")
+  interconsultations      Interconsultation[]            @relation("InterconsultationSpecialty")
   billableServices        BillableService[]
 
   @@index([systemId, code])
@@ -2484,6 +2486,7 @@ model Encounter {
   violenceScreening  ViolenceScreening?
   priorityGroups     EncounterPriorityGroup[]
   diagnoses          EncounterDiagnosis[]
+  retractedDiagnoses EncounterDiagnosisRetraction[]
   procedures         EncounterProcedure[]
   notes              ClinicalNote[]
   prescriptions      Prescription[]
@@ -2637,6 +2640,41 @@ model EncounterDiagnosis {
   @@index([encounterId])
   @@index([cie10Code, recordedAt])
   @@map("encounter_diagnosis")
+}
+
+/// EN-180. A diagnosis taken off its encounter, kept whole with who removed it,
+/// when and — once the consultation note is signed (EN-181) — why. Removing is
+/// ARCHIVE THEN DELETE: `encounter_diagnosis` keeps saying only what still
+/// counts, so none of its readers has to remember a filter, and
+/// `trg_encounter_diagnosis_delete_archived` refuses a DELETE with no row here.
+/// Append-only: no UPDATE, DELETE or TRUNCATE.
+model EncounterDiagnosisRetraction {
+  /// The id the diagnosis had: the archive is the same fact, moved.
+  id String @id @db.Uuid
+
+  encounterId String    @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  conceptId String         @map("concept_id") @db.Uuid
+  concept   CatalogConcept @relation(fields: [conceptId], references: [id], onDelete: Restrict)
+
+  cie10Code    String              @map("cie10_code") @db.VarChar(10)
+  cie10Display String              @map("cie10_display") @db.VarChar(512)
+  certainty    DiagnosisCertainty
+  occurrence   DiagnosisOccurrence
+  rank         Int                 @db.SmallInt
+  notifiable   Boolean
+  note         String?             @db.Text
+  recordedAt   DateTime            @map("recorded_at") @db.Timestamptz(6)
+
+  retractedAt   DateTime @default(now()) @map("retracted_at") @db.Timestamptz(6)
+  retractedById String   @map("retracted_by_id") @db.Uuid
+  retractedBy   User     @relation("DiagnosisRetractor", fields: [retractedById], references: [id], onDelete: Restrict)
+  /// Required by the archive trigger when the encounter has a signed note.
+  reason        String?  @db.VarChar(500)
+
+  @@index([encounterId])
+  @@map("encounter_diagnosis_retraction")
 }
 
 /// FHIR Procedure.
@@ -3044,22 +3082,22 @@ model MedicalCertificate {
   /// without receiving any clinical data.
   verificationCode String @unique @map("verification_code") @db.VarChar(24)
 
-  issuedAt         DateTime  @default(now()) @map("issued_at") @db.Timestamptz(6)
+  issuedAt             DateTime  @default(now()) @map("issued_at") @db.Timestamptz(6)
   /// CER-011. Who, when and why, the three together or none:
   /// `medical_certificate_revocation_states_who_when_and_why`. The row is never
   /// deleted. `revoked_by_id` is the ACCOUNT that annulled it.
-  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(6)
+  revokedAt            DateTime? @map("revoked_at") @db.Timestamptz(6)
   /// CER-027. The diagnoses it printed, copied at the issue (`[]` without them).
-  diagnoses            Json    @default("[]")
+  diagnoses            Json      @default("[]")
   /// CER-038. The chart's work and contact as they were at the issue.
-  employerName         String? @map("employer_name") @db.VarChar(160)
-  jobTitle             String? @map("job_title") @db.VarChar(120)
-  residenceAddressLine String? @map("residence_address_line") @db.VarChar(255)
-  patientPhone         String? @map("patient_phone") @db.VarChar(32)
+  employerName         String?   @map("employer_name") @db.VarChar(160)
+  jobTitle             String?   @map("job_title") @db.VarChar(120)
+  residenceAddressLine String?   @map("residence_address_line") @db.VarChar(255)
+  patientPhone         String?   @map("patient_phone") @db.VarChar(32)
 
-  revokedById      String?   @map("revoked_by_id") @db.Uuid
-  revokedBy        User?     @relation("CertificateRevoker", fields: [revokedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "medical_certificate_revoked_by_fk")
-  revocationReason String?   @map("revocation_reason") @db.Text
+  revokedById      String? @map("revoked_by_id") @db.Uuid
+  revokedBy        User?   @relation("CertificateRevoker", fields: [revokedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "medical_certificate_revoked_by_fk")
+  revocationReason String? @map("revocation_reason") @db.Text
 
   /// DOC-003, DOC-075. The archived form 117 as it was handed over.
   documentRenders DocumentRender[]

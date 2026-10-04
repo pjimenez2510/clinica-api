@@ -1,4 +1,11 @@
-import { Controller, Get, Param, ParseUUIDPipe, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 
@@ -17,7 +24,13 @@ import {
 } from './dto/active-allergy.mapper';
 import {
   ChartSummaryDto,
+  OccurrenceProposalDto,
+  OccurrenceProposalQueryDto,
+  VisitSequenceProposalDto,
+  VisitSequenceProposalQueryDto,
   type ChartSummaryResponse,
+  type OccurrenceProposalResponse,
+  type VisitSequenceProposalResponse,
 } from './dto/chart-summary.dto';
 import { toHistoryResponse } from './dto/patient-history.mapper';
 
@@ -96,6 +109,41 @@ export class ChartSummaryController {
   }
 
   /**
+   * EN-184. «Primera vez» or «subsecuente» for the concept about to be
+   * recorded, with the earlier diagnosis that justifies it. Audited: it reads
+   * the history.
+   */
+  @Get('diagnoses/occurrence-proposal')
+  @RequirePermission('record:read', 'query')
+  @ApiOperation({
+    summary: 'Proponer primera vez o subsecuente para un diagnóstico',
+  })
+  @ApiOkResponse({ type: OccurrenceProposalDto })
+  async occurrenceProposal(
+    @Param('encounterId', ParseUUIDPipe) encounterId: string,
+    @Query() query: OccurrenceProposalQueryDto,
+    @Req() req: Request,
+  ): Promise<OccurrenceProposalResponse> {
+    const proposal = await this.summaries.occurrenceProposal(
+      encounterId,
+      query.conceptId,
+      this.requester(req),
+    );
+    return {
+      proposed: proposal.proposed,
+      basis:
+        proposal.basis === null
+          ? null
+          : {
+              encounterStartedAt:
+                proposal.basis.encounterStartedAt.toISOString(),
+              cie10Code: proposal.basis.cie10Code,
+              cie10Display: proposal.basis.cie10Display,
+            },
+    };
+  }
+
+  /**
    * Who is asking, and over which sites.
    *
    * THE SCOPE IS RESOLVED FOR `record:read` SPECIFICALLY, like everywhere else
@@ -163,4 +211,58 @@ function toChartSummaryResponse(summary: ChartSummary): ChartSummaryResponse {
     })),
     totalEncounters: summary.totalEncounters,
   };
+}
+
+/**
+ * EN-185. The proposal for an appointment about to be attended.
+ *
+ * ⚠️ A CONTROLLER OF ITS OWN, REGISTERED BEFORE `EncounterController`. Its
+ * path is `encounters/visit-sequence-proposal`, and NestJS matches in
+ * registration order: after `GET /encounters/:id` the literal segment would be
+ * swallowed by the parameter and answer a 400 about a malformed UUID.
+ *
+ * `record:read` and not `encounter:open`: the answer carries the principal
+ * diagnosis of an earlier attention, which is clinical content.
+ */
+@ApiTags('encounter')
+@Controller({ path: 'encounters', version: '1' })
+export class VisitSequenceProposalController {
+  constructor(
+    private readonly summaries: ChartSummaryService,
+    private readonly currentUser: CurrentUserService,
+  ) {}
+
+  @Get('visit-sequence-proposal')
+  @RequirePermission('record:read', 'query')
+  @ApiOperation({
+    summary: 'Proponer primera vez al abrir la atención de una cita',
+  })
+  @ApiOkResponse({ type: VisitSequenceProposalDto })
+  async proposal(
+    @Query() query: VisitSequenceProposalQueryDto,
+    @Req() req: Request,
+  ): Promise<VisitSequenceProposalResponse> {
+    const scope = this.currentUser.requirePrincipal().sitesFor('record:read');
+    const proposal = await this.summaries.visitSequenceProposal(
+      query.agendaEntryId,
+      {
+        userId: this.currentUser.requireUserId(),
+        sites: scope === ALL_SITES ? 'all' : scope,
+        ip: req.ip,
+        userAgent: req.get('user-agent'),
+      },
+    );
+    return {
+      proposed: proposal.proposed,
+      specialtyKnown: proposal.specialtyKnown,
+      last:
+        proposal.last === null
+          ? null
+          : {
+              startedAt: proposal.last.startedAt.toISOString(),
+              sameSpecialty: proposal.last.sameSpecialty,
+              principal: proposal.last.principal,
+            },
+    };
+  }
 }

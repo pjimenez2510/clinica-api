@@ -162,6 +162,39 @@ export interface NewProcedure {
   sites: SiteScopeFilter;
 }
 
+/**
+ * EN-180. A diagnosis taken off its attention, as the archive keeps it: the
+ * trace that says it was there, who removed it, when and — once the note was
+ * signed — why.
+ */
+export interface RetractedDiagnosisView {
+  id: string;
+  cie10Code: string;
+  cie10Display: string;
+  rank: number;
+  retractedAt: Date;
+  retractedBy: { id: string; name: string };
+  reason: string | null;
+}
+
+/** EN-180 to EN-182. What removing a diagnosis needs to be told. */
+export interface DiagnosisRetraction {
+  encounterId: string;
+  diagnosisId: string;
+  /** EN-181. Required once the consultation note is signed. */
+  reason: string | null;
+  /** The account that removes it. Never a cedula (REQ-110). */
+  retractedById: string;
+  sites: SiteScopeFilter;
+}
+
+/** EN-183. Which diagnosis becomes the principal. */
+export interface PrimaryChange {
+  encounterId: string;
+  diagnosisId: string;
+  sites: SiteScopeFilter;
+}
+
 /** EN-121. Block K of one attention, within the caller's scope. */
 export interface CodingQuery {
   encounterId: string;
@@ -197,6 +230,34 @@ export interface ClinicalCodingRepository {
 
   /** EN-047. The diagnoses of one attention, principal first. */
   diagnosesOf(query: CodingQuery): Promise<DiagnosisView[]>;
+
+  /**
+   * EN-180 to EN-182. Archives the diagnosis and takes it off the attention,
+   * in one transaction under the attention's lock: whether the note is signed
+   * and whether a document cites the diagnoses can both change between a read
+   * and the write. `trg_encounter_diagnosis_delete_archived` and the archive's
+   * own trigger say it a second time for every other writer.
+   */
+  retractDiagnosis(retraction: DiagnosisRetraction): Promise<void>;
+
+  /**
+   * EN-183. Makes a diagnosis the principal and moves the previous principal,
+   * if any, behind the last rank in use. Returns the attention's diagnoses as
+   * they stand afterwards.
+   */
+  makePrimary(change: PrimaryChange): Promise<DiagnosisView[]>;
+
+  /** EN-180. What was removed from one attention, oldest first. */
+  retractedDiagnosesOf(query: CodingQuery): Promise<RetractedDiagnosisView[]>;
+
+  /**
+   * EN-187. Corrects what the attention says the patient came for, under the
+   * attention's lock and only while it admits new clinical content.
+   */
+  setCareModality(
+    query: CodingQuery,
+    careModality: CareModality,
+  ): Promise<CareModality>;
 
   /**
    * EN-050. Writes one procedure with its quantity.

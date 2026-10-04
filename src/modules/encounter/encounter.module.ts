@@ -7,7 +7,10 @@ import { ACTIVE_ALLERGY_READER } from '../../shared/clinical/patient-allergy.por
 import { PrismaAccessAuditRecorder } from '../../shared/infrastructure/audit/prisma-access-audit.recorder';
 import { PrismaActiveAllergyReader } from '../../shared/infrastructure/clinical/prisma-active-allergy.reader';
 
-import { ChartSummaryController } from './chart-summary.controller';
+import {
+  ChartSummaryController,
+  VisitSequenceProposalController,
+} from './chart-summary.controller';
 import { ChartSummaryService } from './application/chart-summary.service';
 import { ClinicalCodingController } from './clinical-coding.controller';
 import { ClinicalCodingService } from './application/clinical-coding.service';
@@ -70,6 +73,9 @@ import { PrismaPatientAllergyRepository } from './infrastructure/prisma-patient-
  */
 @Module({
   controllers: [
+    // Before `EncounterController`: its literal path would otherwise be
+    // swallowed by `GET /encounters/:id` (EN-185).
+    VisitSequenceProposalController,
     EncounterController,
     EncounterExitController,
     ClinicalNoteController,

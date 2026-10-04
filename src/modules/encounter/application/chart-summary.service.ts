@@ -13,12 +13,19 @@ import {
   CHART_SUMMARY_REPOSITORY,
   type ChartSummaryRepository,
   type PreviousEncounterSummary,
+  type PriorAttention,
+  type PriorDiagnosis,
 } from '../domain/chart-summary.repository';
+import { cie10CategoryOf } from '../domain/diagnosis';
+import type { DiagnosisOccurrence } from '../domain/encounter';
 import {
   ENCOUNTER_REPOSITORY,
   type EncounterRepository,
 } from '../domain/encounter.repository';
-import { EncounterNotFoundError } from '../domain/encounter.errors';
+import {
+  ConceptWrongCatalogueError,
+  EncounterNotFoundError,
+} from '../domain/encounter.errors';
 import {
   PATIENT_ALLERGY_REPOSITORY,
   type AllergyAbsenceAssertion,
@@ -101,6 +108,25 @@ export interface ChartSummary {
   previousEncounters: readonly PreviousEncounterSummary[];
   /** EN-159. So a screen can say «5 de 23» instead of implying there are 5. */
   totalEncounters: number;
+}
+
+/** EN-184. What the screen preselects for a diagnosis, and why. */
+export interface OccurrenceProposal {
+  proposed: DiagnosisOccurrence;
+  /** The earlier diagnosis that makes it «subsecuente»; `null` otherwise. */
+  basis: PriorDiagnosis | null;
+}
+
+/**
+ * EN-185. «Primera vez» only when it is certain; otherwise no proposal and the
+ * last attention that may be of the same service, so the doctor decides with
+ * it in front.
+ */
+export interface VisitSequenceProposal {
+  proposed: 'FIRST_TIME' | null;
+  /** Whether the appointment says which specialty it is. */
+  specialtyKnown: boolean;
+  last: PriorAttention | null;
 }
 
 /**
@@ -248,6 +274,90 @@ export class ChartSummaryService {
       history,
       previousEncounters,
       totalEncounters,
+    };
+  }
+
+  /**
+   * EN-184. «Subsecuente» when the same category was diagnosed in an earlier
+   * attention of the chart; «primera vez» otherwise. A proposal: the record
+   * still demands `occurrence` (EN-045).
+   *
+   * It reads the history, so it is audited once, like the summary (EN-161).
+   */
+  async occurrenceProposal(
+    encounterId: string,
+    conceptId: string,
+    requester: Requester,
+  ): Promise<OccurrenceProposal> {
+    const encounter = await this.encounters.findById({
+      encounterId,
+      sites: requester.sites,
+    });
+    if (!encounter) throw new EncounterNotFoundError();
+
+    const code = await this.summaries.cie10CodeOf(conceptId);
+    if (code === null) throw new ConceptWrongCatalogueError('CIE10');
+
+    const basis = await this.summaries.priorDiagnosisInCategory({
+      patientId: encounter.patientId,
+      sites: requester.sites,
+      encounterId: encounter.id,
+      before: encounter.startedAt,
+      category: cie10CategoryOf(code),
+    });
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: RESOURCE_TYPE,
+      resourceId: encounter.patientId,
+      action: 'READ',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+
+    return { proposed: basis === null ? 'FIRST_TIME' : 'SUBSEQUENT', basis };
+  }
+
+  /**
+   * EN-185. EN-007 stands: an earlier attention in the service does NOT make
+   * the consultation «subsecuente» — the patient may come for something new —
+   * so with one on file nothing is proposed. Without any, «primera vez» is
+   * certain. An appointment with no service type has no specialty to compare,
+   * and nothing is proposed either.
+   */
+  async visitSequenceProposal(
+    agendaEntryId: string,
+    requester: Requester,
+  ): Promise<VisitSequenceProposal> {
+    const appointment = await this.summaries.appointmentForProposal(
+      agendaEntryId,
+      requester.sites,
+    );
+    // Out of scope, or no such appointment: nothing to propose and nothing
+    // disclosed. Opening the attention refuses it on its own (EN-004).
+    if (appointment?.specialtyId == null) {
+      return { proposed: null, specialtyKnown: false, last: null };
+    }
+
+    const last = await this.summaries.latestAttentionPossiblyInService({
+      patientId: appointment.patientId,
+      sites: requester.sites,
+      specialtyId: appointment.specialtyId,
+    });
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: RESOURCE_TYPE,
+      resourceId: appointment.patientId,
+      action: 'READ',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+
+    return {
+      proposed: last === null ? 'FIRST_TIME' : null,
+      specialtyKnown: true,
+      last,
     };
   }
 }

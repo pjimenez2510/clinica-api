@@ -9,9 +9,13 @@ import type {
   ActiveAllergyReader,
 } from '../../../shared/clinical/patient-allergy.port';
 import type {
+  AppointmentForProposal,
   ChartSummaryQuery,
   ChartSummaryRepository,
   PreviousEncounterSummary,
+  PriorAttention,
+  PriorCategoryQuery,
+  PriorDiagnosis,
 } from '../domain/chart-summary.repository';
 import type {
   EncounterQuery,
@@ -142,6 +146,31 @@ class FakeSummaries implements ChartSummaryRepository {
     this.queries.push(query);
     return Promise.resolve(this.total);
   }
+
+  priorCategory: PriorDiagnosis | null = null;
+  categoryQueries: PriorCategoryQuery[] = [];
+  code: string | null = 'E119';
+  appointment: AppointmentForProposal | null = null;
+  lastInService: PriorAttention | null = null;
+
+  priorDiagnosisInCategory(
+    query: PriorCategoryQuery,
+  ): Promise<PriorDiagnosis | null> {
+    this.categoryQueries.push(query);
+    return Promise.resolve(this.priorCategory);
+  }
+
+  appointmentForProposal(): Promise<AppointmentForProposal | null> {
+    return Promise.resolve(this.appointment);
+  }
+
+  latestAttentionPossiblyInService(): Promise<PriorAttention | null> {
+    return Promise.resolve(this.lastInService);
+  }
+
+  cie10CodeOf(): Promise<string | null> {
+    return Promise.resolve(this.code);
+  }
 }
 
 class FakeActiveReader implements ActiveAllergyReader {
@@ -250,6 +279,67 @@ describe('la historia a la vista durante la consulta', () => {
       encounters as unknown as EncounterRepository,
       audit,
     );
+  });
+
+  it('EN-184 propone «subsecuente» con la atención que lo justifica, comparando la CATEGORÍA', async () => {
+    summaries.code = 'E116';
+    summaries.priorCategory = {
+      encounterStartedAt: new Date(0),
+      cie10Code: 'E119',
+      cie10Display: 'Diabetes mellitus tipo 2 sin complicaciones',
+    };
+
+    const proposal = await service.occurrenceProposal(ENCOUNTER, 'concept-1', requester); // prettier-ignore
+
+    expect(proposal.proposed).toBe('SUBSEQUENT');
+    expect(proposal.basis?.cie10Code).toBe('E119');
+    expect(summaries.categoryQueries[0]).toMatchObject({
+      category: 'E11',
+      encounterId: ENCOUNTER,
+      patientId: PATIENT,
+    });
+    expect(audit.entries).toHaveLength(1);
+  });
+
+  it('EN-184 sin esa categoría antes, propone «primera vez» sin base', async () => {
+    const proposal = await service.occurrenceProposal(ENCOUNTER, 'concept-1', requester); // prettier-ignore
+
+    expect(proposal).toEqual({ proposed: 'FIRST_TIME', basis: null });
+  });
+
+  it('EN-185 sin ninguna atención que pueda ser del servicio, «primera vez» es cierta y se propone', async () => {
+    summaries.appointment = { patientId: PATIENT, specialtyId: 'medicina' };
+
+    const proposal = await service.visitSequenceProposal('entry-1', requester);
+
+    expect(proposal).toEqual({ proposed: 'FIRST_TIME', specialtyKnown: true, last: null }); // prettier-ignore
+    expect(audit.entries).toHaveLength(1);
+  });
+
+  it('EN-185 EN-007 con una atención anterior en el servicio NO propone: la devuelve para decidir', async () => {
+    summaries.appointment = { patientId: PATIENT, specialtyId: 'medicina' };
+    summaries.lastInService = {
+      startedAt: new Date(0),
+      sameSpecialty: true,
+      principal: { cie10Code: 'J020', cie10Display: 'Faringitis' },
+    };
+
+    const proposal = await service.visitSequenceProposal('entry-1', requester);
+
+    expect(proposal.proposed).toBeNull();
+    expect(proposal.last?.principal?.cie10Code).toBe('J020');
+  });
+
+  it('EN-185 una cita sin tipo de servicio, o fuera del alcance, no propone ni deja rastro', async () => {
+    summaries.appointment = { patientId: PATIENT, specialtyId: null };
+    expect(await service.visitSequenceProposal('entry-1', requester)).toEqual({
+      proposed: null,
+      specialtyKnown: false,
+      last: null,
+    });
+    summaries.appointment = null;
+    expect((await service.visitSequenceProposal('entry-2', requester)).proposed).toBeNull(); // prettier-ignore
+    expect(audit.entries).toHaveLength(0);
   });
 
   it('EN-159 devuelve alergias, atenciones anteriores y sus signos vitales en UNA respuesta', async () => {

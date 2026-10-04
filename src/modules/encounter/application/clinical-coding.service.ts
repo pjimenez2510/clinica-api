@@ -10,6 +10,7 @@ import {
   type ClinicalCodingRepository,
   type DiagnosisView,
   type ProcedureView,
+  type RetractedDiagnosisView,
 } from '../domain/clinical-coding.repository';
 import {
   ENCOUNTER_REPOSITORY,
@@ -22,6 +23,7 @@ import {
 } from '../domain/encounter.errors';
 import { acceptsNewClinicalContent } from '../domain/encounter-state';
 import type {
+  CareModality,
   DiagnosisCertainty,
   DiagnosisOccurrence,
 } from '../domain/encounter';
@@ -55,6 +57,20 @@ export interface RecordDiagnosisRequest {
   /** EN-049. A stopgap until the concept carries the ministry's list. */
   notifiable?: boolean;
   note?: string;
+}
+
+/** EN-180 to EN-182. What removing a diagnosis needs to be told. */
+export interface RetractDiagnosisRequest {
+  encounterId: string;
+  diagnosisId: string;
+  /** EN-181. Required once the consultation note is signed. */
+  reason?: string;
+}
+
+/** EN-047, EN-180. The diagnoses that count, and the trace of those removed. */
+export interface DiagnosisSheet {
+  items: DiagnosisView[];
+  retracted: RetractedDiagnosisView[];
 }
 
 /** EN-050. What registering a procedure needs to be told. */
@@ -192,19 +208,120 @@ export class ClinicalCodingService {
   async diagnosesOf(
     encounterId: string,
     requester: Requester,
-  ): Promise<DiagnosisView[]> {
+  ): Promise<DiagnosisSheet> {
     const encounter = await this.requireEncounter(encounterId, requester);
 
-    const diagnoses = await this.coding.diagnosesOf({
-      encounterId: encounter.id,
-      sites: requester.sites,
-    });
+    const query = { encounterId: encounter.id, sites: requester.sites };
+    const [items, retracted] = await Promise.all([
+      this.coding.diagnosesOf(query),
+      // EN-180. The trace travels with the list: one read, one audit row.
+      this.coding.retractedDiagnosesOf(query),
+    ]);
 
     await this.audit.record({
       userId: requester.userId,
       resourceType: DIAGNOSIS_RESOURCE_TYPE,
       resourceId: encounter.id,
       action: 'READ',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+
+    return { items, retracted };
+  }
+
+  /**
+   * EN-180 to EN-182. Takes a diagnosis off a live attention, archived with
+   * who removed it and, once the note is signed, why.
+   *
+   * The signed note and the documents that cite the diagnoses are judged by
+   * the adapter under the attention's lock, because both can change between
+   * a read here and the write.
+   */
+  async retractDiagnosis(
+    request: RetractDiagnosisRequest,
+    requester: Requester,
+  ): Promise<void> {
+    const encounter = await this.requireLiveEncounter(
+      request.encounterId,
+      requester,
+    );
+    const reason = request.reason?.trim();
+
+    await this.coding.retractDiagnosis({
+      encounterId: encounter.id,
+      diagnosisId: request.diagnosisId,
+      reason: reason === undefined || reason === '' ? null : reason,
+      retractedById: requester.userId,
+      sites: requester.sites,
+    });
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: DIAGNOSIS_RESOURCE_TYPE,
+      resourceId: request.diagnosisId,
+      // An UPDATE of the attention's coding: the archive row is the record
+      // of what was removed, and there is no DELETE action because nothing
+      // clinical is ever deleted.
+      action: 'UPDATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+
+    this.logger.info(
+      { site_id: encounter.siteId, action: 'DIAGNOSIS_RETRACTED' },
+      'diagnosis retracted',
+    );
+  }
+
+  /**
+   * EN-187. Corrects what the attention says the patient came for. Not the
+   * report's classification — that is per diagnosis and derived (EN-046) —
+   * so it is audited as the attention's own change.
+   */
+  async correctCareModality(
+    encounterId: string,
+    careModality: CareModality,
+    requester: Requester,
+  ): Promise<CareModality> {
+    const encounter = await this.requireLiveEncounter(encounterId, requester);
+
+    const corrected = await this.coding.setCareModality(
+      { encounterId: encounter.id, sites: requester.sites },
+      careModality,
+    );
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: 'encounter',
+      resourceId: encounter.id,
+      action: 'UPDATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+
+    return corrected;
+  }
+
+  /** EN-183. Makes a diagnosis the principal of its live attention. */
+  async makePrimary(
+    encounterId: string,
+    diagnosisId: string,
+    requester: Requester,
+  ): Promise<DiagnosisView[]> {
+    const encounter = await this.requireLiveEncounter(encounterId, requester);
+
+    const diagnoses = await this.coding.makePrimary({
+      encounterId: encounter.id,
+      diagnosisId,
+      sites: requester.sites,
+    });
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: DIAGNOSIS_RESOURCE_TYPE,
+      resourceId: diagnosisId,
+      action: 'UPDATE',
       ip: requester.ip,
       userAgent: requester.userAgent,
     });

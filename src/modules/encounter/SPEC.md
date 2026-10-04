@@ -3070,7 +3070,7 @@ que es global: una atención ocurre en un sitio.
 | `POST` | `/encounters/:id/diagnoses/:diagnosisId/retract` | `record:write` | EN-180, EN-181, EN-182 |
 | `POST` | `/encounters/:id/diagnoses/:diagnosisId/primary` | `record:write` | EN-182, EN-183 |
 | `GET` | `/encounters/:id/diagnoses/occurrence-proposal` | `record:read` | EN-184 |
-| `GET` | `/encounters/visit-sequence-proposal` | `encounter:open` | EN-185 |
+| `GET` | `/encounters/visit-sequence-proposal` | `record:read` | EN-185 *(lleva el diagnóstico principal de una atención anterior)* |
 | `PUT` | `/encounters/:id/care-modality` | `record:write` | EN-187 |
 
 **Las tres rutas de alergias son las únicas de alcance `'global'`, y es

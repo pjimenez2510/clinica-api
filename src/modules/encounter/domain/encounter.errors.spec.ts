@@ -17,8 +17,11 @@ import {
   BmiIsDerivedError,
   ClinicalNoteNotFoundError,
   ConceptWrongCatalogueError,
+  DiagnosisCitedByIssuedDocumentError,
   DiagnosisConceptNotInForceError,
+  DiagnosisNotFoundError,
   DiagnosisPrimaryTakenError,
+  DiagnosisRetractionReasonRequiredError,
   DischargeConditionRequiredError,
   EncounterAlreadyClosedError,
   EncounterAppointmentMismatchError,
@@ -76,6 +79,9 @@ const EVERY_ERROR: readonly DomainError[] = [
   new ConceptWrongCatalogueError('TARIFF'),
   new DiagnosisConceptNotInForceError(),
   new DiagnosisPrimaryTakenError(),
+  new DiagnosisNotFoundError(),
+  new DiagnosisRetractionReasonRequiredError(),
+  new DiagnosisCitedByIssuedDocumentError(),
   // EN-080. La tercera cara de la misma negativa: el concepto es del CNMB o
   // no lo es, y la frase tiene que nombrar la lista que hay que abrir. Con un
   // ternario, «todo lo que no es CIE-10» decía «el tarifario», y una alergia
@@ -149,6 +155,22 @@ describe('el contrato de errores de la atención', () => {
     expect(error.userTitle).toBe(
       'Esa atención no existe en las sedes a las que usted tiene acceso. Actualice la lista',
     );
+  });
+
+  it('EN-180 EN-181 EN-182 quitar un diagnóstico: 404 sin distinguir, 422 que pide el motivo, 409 que manda a anular el documento', () => {
+    const missing = new DiagnosisNotFoundError();
+    expect(missing.code).toBe('DIAGNOSIS_NOT_FOUND');
+    expect(missing).toBeInstanceOf(NotFoundError);
+
+    const reason = new DiagnosisRetractionReasonRequiredError();
+    expect(reason.code).toBe('DIAGNOSIS_RETRACTION_REASON_REQUIRED');
+    expect(reason).toBeInstanceOf(ValidationError);
+    expect(reason.fieldErrors?.[0]?.field).toBe('reason');
+
+    const cited = new DiagnosisCitedByIssuedDocumentError();
+    expect(cited.code).toBe('DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT');
+    expect(cited).toBeInstanceOf(ConflictError);
+    expect(cited.userTitle).toContain('Anule primero el documento');
   });
 
   it('EN-001 responde 409 y manda a registrar la ficha, no a corregir un campo', () => {

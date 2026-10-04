@@ -723,6 +723,15 @@ export const DOMAIN_ERROR_CODES = [
   'CONCEPT_WRONG_CATALOGUE',
   'DIAGNOSIS_CONCEPT_NOT_IN_FORCE',
   'DIAGNOSIS_PRIMARY_TAKEN',
+  //   * `DIAGNOSIS_NOT_FOUND` (404) — EN-180, EN-183. No es de esa atención o ya
+  //     se quitó: el mismo para las dos, como `ENCOUNTER_NOT_FOUND`.
+  //   * `DIAGNOSIS_RETRACTION_REASON_REQUIRED` (422) — EN-181. Con la nota
+  //     firmada, quitar un diagnóstico dice por qué; la base lo exige también.
+  //   * `DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT` (409) — EN-182. Una receta emitida
+  //     o una orden lee los diagnósticos al mostrarse: primero se anula.
+  'DIAGNOSIS_NOT_FOUND',
+  'DIAGNOSIS_RETRACTION_REASON_REQUIRED',
+  'DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT',
   // ── H6: alergias visibles durante la consulta ──────────────────────────
   //   * `PATIENT_ALLERGY_NOT_FOUND` (404) — EN-082. La alergia no está en esa
   //     ficha ni en ninguna que esa ficha absorbiera. **Uno solo para «no

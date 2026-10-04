@@ -365,7 +365,13 @@ describe('la receta por HTTP', () => {
 
   it('PR-095 sin diagnóstico en la atención la receta no se emite y se nombra el campo; con él, sí', async () => {
     const composed = await composeAsDoctor();
-    await prisma.encounterDiagnosis.deleteMany({ where: { encounterId } });
+    // EN-180. Quitado como lo quita el médico: archivado, no borrado.
+    for (const { id } of await prisma.encounterDiagnosis.findMany({
+      where: { encounterId },
+      select: { id: true },
+    })) {
+      await post(`/encounters/${encounterId}/diagnoses/${id}/retract`, doctorToken).expect(204); // prettier-ignore
+    }
     const path = `/prescriptions/${composed.prescription.id}/issue`;
 
     const refused = await post(path, doctorToken).expect(422);
