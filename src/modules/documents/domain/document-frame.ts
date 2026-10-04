@@ -35,11 +35,14 @@ export interface FrameRequest {
 /**
  * DOC-083. The line each class carries at its foot. Written here, not by each
  * composer, so the four footers read as one family.
+ *
+ * The receta carries none. It used to print «Copia de respaldo conservada cinco
+ * años (Res. ACESS-2023-0030, art. 15)»: the retention is kept (DOC-013 purges
+ * nothing), and printing it only recited the norm to the patient (author's
+ * usability review, 04-10-2026).
  */
 const FOOTER_NOTES: Readonly<Record<DocumentKind, readonly string[]>> = {
-  PRESCRIPTION: [
-    'Copia de respaldo conservada cinco años (Res. ACESS-2023-0030, art. 15)',
-  ],
+  PRESCRIPTION: [],
   SERVICE_ORDER: ['Numeración consecutiva por sede (A.M. 00002393, art. 43)'],
   MEDICAL_CERTIFICATE: ['Documento sin enmiendas'],
   INVOICE_RIDE: [
