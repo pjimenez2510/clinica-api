@@ -37,6 +37,7 @@ import {
   OrderItemNotMatchableError,
   OrderNotFoundError,
   ReportAlreadyCorrectedError,
+  ReportCorrectionIncompleteError,
   ReportIssuedInFutureError,
   ReportNotCorrectableError,
   ReportNotFoundError,
@@ -267,6 +268,18 @@ export class DiagnosticReportService {
     }
 
     const prepared = await this.prepare(previous.serviceOrderId, request.results, requester); // prettier-ignore
+
+    /**
+     * ORD-055 (tercera revisión clínica, grave). Superseding a report retracts
+     * ALL its values. A value the correction does not bring would vanish from
+     * the order — a critical one from the worklist — though the laboratory
+     * never retracted it. What did not change is written again, unchanged.
+     */
+    const brought = new Set(prepared.results.map((result) => result.analyteDisplay)); // prettier-ignore
+    const missing = previous.results
+      .map((result) => result.analyteDisplay)
+      .filter((display) => !brought.has(display));
+    if (missing.length > 0) throw new ReportCorrectionIncompleteError(missing);
 
     const report = await this.reports.register(
       {
@@ -499,6 +512,7 @@ export class DiagnosticReportService {
         ...entry,
         firstObservedAt,
         noAnswerAttempts: chain?.noAnswerAttempts ?? 0,
+        previouslyNotified: chain?.previouslyNotified ?? false,
         waitingMinutes: wait.waitingMinutes,
         noticeDueAt: wait.dueAt,
         overdue: wait.overdue,

@@ -40,6 +40,11 @@ export interface DiagnosticReportView {
    */
   supersededById: string | null;
   supersededAt: Date | null;
+  /**
+   * ORD-062. When the correction was RECORDED in the clinic — the cut-off for
+   * notices: a call made before it was about the value then standing.
+   */
+  supersededRecordedAt: Date | null;
   results: readonly ObservationView[];
 }
 
@@ -218,8 +223,8 @@ export interface FlaggedResultEntry {
  * `site_parameter` holds it, with the role names a reader recognises.
  */
 export interface SafetyPolicy {
-  /** `null`: the clinic has set no deadline (D-111). */
-  criticalNoticeWithinMinutes: number | null;
+  /** ORD-063. Always set: 60 by default, changeable, not removable (D-111 §1). */
+  criticalNoticeWithinMinutes: number;
   criticalEscalationRole: { id: string; name: string } | null;
   /** `null`: the practitioner who placed the order (D-050 §4). */
   unmatchedResultOwnerRole: { id: string; name: string } | null;
@@ -234,7 +239,10 @@ export interface SafetyPolicy {
  * the same pending notice, not a new one waiting from zero.
  */
 export interface CriticalChain {
-  firstObservedAt: Date;
+  /** The first CRITICAL version's issue; `null` if none was critical. */
+  firstObservedAt: Date | null;
+  /** ORD-065, D-116 b. A notice actually given about an earlier version. */
+  previouslyNotified: boolean;
   noAnswerAttempts: number;
   /** Unanswered calls to the practitioner who placed the order. */
   orderingUnanswered: number;
@@ -245,6 +253,8 @@ export interface CriticalWorklistEntry extends FlaggedResultEntry {
   firstObservedAt: Date;
   /** ORD-067. Unanswered calls along the chain; the value is still waiting. */
   noAnswerAttempts: number;
+  /** ORD-065, D-116 b. An earlier version of the chain was already notified. */
+  previouslyNotified: boolean;
   waitingMinutes: CriticalWait['waitingMinutes'];
   noticeDueAt: CriticalWait['dueAt'];
   overdue: CriticalWait['overdue'];

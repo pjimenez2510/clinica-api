@@ -230,8 +230,8 @@ export const updateSiteParametersSchema = z
      */
     cancelledRetention: z.enum(CANCELLED_RETENTION_POLICIES).optional(),
     /**
-     * ORD-063, ORD-065. `null` says «sin plazo» and is a value; absent says
-     * «no lo toque». Ranges are judged by the domain, which names them.
+     * ORD-063. Always a number (D-111 §1: changeable, not removable); absent
+     * says «no lo toque». Ranges are judged by the domain, which names them.
      */
     criticalNoticeWithinMinutes: parameterSchema.optional(),
     criticalEscalationRoleId: z

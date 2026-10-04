@@ -502,8 +502,9 @@ cuando la gráfica exista.
   crearlo con su estado —`PARTIAL` mientras falten determinaciones, `FINAL`
   cuando estén todas—, quién lo emitió y **cuándo lo emitió el laboratorio**, que
   DEBERÁ declararse siempre; SI falta ENTONCES DEBERÁ rechazarlo como petición
-  mal formada; SI es futura, con `REPORT_ISSUED_IN_FUTURE`, y SI es anterior a
-  la orden, con `REPORT_ISSUED_BEFORE_ORDER`.
+  mal formada, y SI es futura, con `REPORT_ISSUED_IN_FUTURE`. NO DEBERÁ
+  rechazarse por ser anterior a la orden: la orden también se registra a
+  veces después del hecho, y su hora no acota la del laboratorio.
 
   La fecha de emisión no es la de transcripción: el papel de anoche se teclea
   esta mañana, y de la emisión corre el plazo de un crítico (ORD-065, D-113 a)
@@ -1003,7 +1004,6 @@ contrato —`code`, estado y mensaje—.
 | `RESULT_NOT_CRITICAL` | 422 | Se intentó registrar el aviso de un resultado sin bandera crítica. La constancia de ORD-062 es la de un valor de alerta, y una sobre un valor normal llenaría la cola de seguridad de ruido | ORD-062 |
 | `CRITICAL_NOTICE_TIME_INVALID` | 422 | El instante del aviso es futuro o anterior al resultado. Ninguno de los dos pudo ocurrir | ORD-062 |
 | `REPORT_ISSUED_IN_FUTURE` | 422 | La fecha de emisión del laboratorio es futura | ORD-030 |
-| `REPORT_ISSUED_BEFORE_ORDER` | 422 | La emisión del laboratorio es anterior a la orden | ORD-030 |
 | `REPORT_CORRECTION_INCOMPLETE` | 422 | La corrección no trae todos los analitos del informe que sustituye | ORD-055 |
 | `RESULT_SUPERSEDED` | 422 | Se intentó avisar de un valor cuyo informe ya fue corregido: se avisa el que lo sustituye | ORD-062 |
 | `CRITICAL_READ_BACK_REQUIRED` | 422 | Un aviso hecho sin confirmar que quien lo recibió repitió el valor | ORD-066 |

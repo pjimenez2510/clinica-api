@@ -154,6 +154,22 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
       });
       if (!order) throw new OrderNotFoundError();
 
+      /**
+       * ORD-062 (tercera revisión). A correction LOCKS the report it replaces
+       * before inserting. `FOR NO KEY UPDATE` conflicts with the `FOR SHARE` a
+       * notice takes on the same row, so a notice and a correction no longer
+       * pass each other: whichever comes second waits, and then reads what the
+       * first committed. The foreign key alone takes `FOR KEY SHARE`, which
+       * conflicts with nothing a notice takes.
+       */
+      if (report.supersedesId) {
+        await tx.$queryRaw`
+          SELECT 1 FROM "diagnostic_report"
+           WHERE "id" = ${report.supersedesId}::uuid
+             FOR NO KEY UPDATE
+        `;
+      }
+
       const created = await tx.diagnosticReport.create({
         data: {
           serviceOrderId: report.serviceOrderId,
@@ -489,23 +505,38 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
       {
         start_id: string;
         analyte_display: string;
-        first_observed_at: Date;
+        first_observed_at: Date | null;
+        previously_notified: bigint;
         attempts: bigint;
         ordering_unanswered: bigint;
       }[]
     >`
       WITH RECURSIVE chain AS (
-        SELECT r."id" AS start_id, r."id" AS report_id, r."supersedes_id"
+        SELECT r."id" AS start_id, r."id" AS report_id, r."supersedes_id",
+               0 AS depth
           FROM "diagnostic_report" r
          WHERE r."id" = ANY(${[...new Set(reportIds)]}::uuid[])
         UNION ALL
-        SELECT c.start_id, p."id", p."supersedes_id"
+        SELECT c.start_id, p."id", p."supersedes_id", c.depth + 1
           FROM chain c
           JOIN "diagnostic_report" p ON p."id" = c."supersedes_id"
+         -- A cycle is impossible by construction (the UNIQUE on supersedes_id
+         -- and insertion order); the guard costs nothing if that ever changes.
+         WHERE c.depth < 100
       )
       SELECT c.start_id::text AS start_id,
              o."analyte_display",
-             MIN(o."observed_at") AS first_observed_at,
+             -- From the first CRITICAL version: a 95 corrected to 22 has been
+             -- waiting since the 22, not since the 95 (tercera revisión).
+             MIN(o."observed_at") FILTER (
+               WHERE o."abnormal_flag" IN ('CRITICAL_LOW', 'CRITICAL_HIGH')
+             ) AS first_observed_at,
+             -- A notice actually given about an EARLIER version of the chain.
+             COUNT(n."id") FILTER (
+               WHERE n."outcome" = 'NOTIFIED'
+                 AND NOT n."self_notice"
+                 AND c.report_id <> c.start_id
+             ) AS previously_notified,
              COUNT(n."id") FILTER (WHERE n."outcome" = 'NO_ANSWER') AS attempts,
              COUNT(n."id") FILTER (
                WHERE n."outcome" = 'NO_ANSWER'
@@ -523,6 +554,7 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
         chainKey(row.start_id, row.analyte_display),
         {
           firstObservedAt: row.first_observed_at,
+          previouslyNotified: Number(row.previously_notified) > 0,
           noAnswerAttempts: Number(row.attempts),
           orderingUnanswered: Number(row.ordering_unanswered),
         },
@@ -779,6 +811,7 @@ function toReportView(row: ReportRow): DiagnosticReportView {
     // The correction's own issue instant, falling back to when the row landed:
     // «corregido el …» is a date a person reads, and a null there would print
     // as a blank beside a number somebody may already have acted on.
+    supersededRecordedAt: row.supersededBy?.createdAt ?? null,
     supersededAt: row.supersededBy
       ? (row.supersededBy.issuedAt ?? row.supersededBy.createdAt)
       : null,

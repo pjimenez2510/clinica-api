@@ -237,6 +237,8 @@ export const diagnosticReportSchema = z.object({
    */
   supersededById: z.uuid().nullable(),
   supersededAt: z.iso.datetime().nullable(),
+  /** ORD-062. When the correction was recorded: notices after it are refused. */
+  supersededRecordedAt: z.iso.datetime().nullable(),
   results: z.array(observationSchema),
 });
 /** Response of registering, correcting and matching: the report as it stands afterwards. */
@@ -265,16 +267,11 @@ export const flaggedResultSchema = z.object({
   observedAt: z.iso.datetime(),
 });
 
-/**
- * ORD-060, ORD-065. A critical value waiting for its notice.
- *
- * `overdue` has THREE answers: `null` is «la clínica no ha fijado plazo», which
- * is neither «va bien» nor «va tarde» (D-111).
- */
+/** ORD-060, ORD-065. A critical value waiting for its notice. */
 export const criticalResultSchema = flaggedResultSchema.extend({
   waitingMinutes: z.number().int(),
-  noticeDueAt: z.iso.datetime().nullable(),
-  overdue: z.boolean().nullable(),
+  noticeDueAt: z.iso.datetime(),
+  overdue: z.boolean(),
   escalateTo: z.object({ roleId: z.uuid(), name: z.string() }).nullable(),
   /** ORD-065. The chain's first issue, which the deadline runs from. */
   firstObservedAt: z.iso.datetime(),
@@ -282,6 +279,8 @@ export const criticalResultSchema = flaggedResultSchema.extend({
   orderedBy: z.object({ id: z.uuid(), name: z.string() }),
   /** ORD-067. Unanswered calls along the chain; the value is still waiting. */
   noAnswerAttempts: z.number().int(),
+  /** ORD-065, D-116 b. An earlier version of the chain was already notified. */
+  previouslyNotified: z.boolean(),
   /** ORD-068. The site is out of hours now. */
   afterHours: z.boolean(),
   /** ORD-065, ORD-068. Whom the notice is due to now (D-111 §2, §3). */

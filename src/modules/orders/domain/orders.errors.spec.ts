@@ -25,6 +25,7 @@ import {
   ResultChartUnmatchedError,
   ResultFlagIsDerivedError,
   ResultNotCriticalError,
+  ReportCorrectionIncompleteError,
   ReportIssuedInFutureError,
   ResultNotFoundError,
   ResultSupersededError,
@@ -64,6 +65,7 @@ const EVERY_ERROR: readonly DomainError[] = [
   new ResultSupersededError(),
   new CriticalReadBackRequiredError(),
   new ReportIssuedInFutureError(),
+  new ReportCorrectionIncompleteError(['Glucosa en ayunas']),
 ];
 
 describe('el contrato de errores de las órdenes', () => {
@@ -183,6 +185,13 @@ describe('el contrato de errores de las órdenes', () => {
     expect(error).toBeInstanceOf(ValidationError);
     expect(error.code).toBe('RESULT_SUPERSEDED');
     expect(error.userTitle).toContain('informe vigente');
+  });
+
+  it('ORD-055 pide que la corrección traiga también lo que no cambia', () => {
+    const error = new ReportCorrectionIncompleteError(['Glucosa en ayunas']);
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.code).toBe('REPORT_CORRECTION_INCOMPLETE');
+    expect(error.userTitle).toContain('Escriba también las que no cambian');
   });
 
   it('ORD-080 manda buscar a la persona antes de registrarla, nunca dice que se creará sola', () => {

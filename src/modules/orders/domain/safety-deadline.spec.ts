@@ -17,17 +17,9 @@ const minutesBefore = (minutes: number) =>
 
 describe('el plazo de las colas de seguridad', () => {
   it('ORD-065 dice cuántos minutos lleva un crítico esperando aviso', () => {
-    expect(criticalWait(minutesBefore(61), NOW, null).waitingMinutes).toBe(61);
+    expect(criticalWait(minutesBefore(61), NOW, 60).waitingMinutes).toBe(61);
     // Un informe fechado un poco por delante del reloj no espera «-1».
-    expect(criticalWait(minutesBefore(-2), NOW, null).waitingMinutes).toBe(0);
-  });
-
-  it('ORD-065 no inventa un plazo cuando la sede no lo ha fijado', () => {
-    // `null` es «la clínica no ha fijado plazo», y no es ni «va bien» ni «va
-    // tarde»: es el argumento de ORD-022 en la cola que más importa.
-    const wait = criticalWait(minutesBefore(600), NOW, null);
-    expect(wait.overdue).toBeNull();
-    expect(wait.dueAt).toBeNull();
+    expect(criticalWait(minutesBefore(-2), NOW, 60).waitingMinutes).toBe(0);
   });
 
   it('ORD-065 marca vencido el crítico que pasó el plazo de la sede, y no el que aún está dentro', () => {
@@ -58,10 +50,8 @@ describe('el plazo de las colas de seguridad', () => {
     expect(criticalNoticeTarget({ overdue: true, afterHours: false, hasOnCallRole: false, orderingUnanswered: false })).toEqual({ target: 'ORDERING_PRACTITIONER', escalationMissing: true }); // prettier-ignore
   });
 
-  it('ORD-065 en horario y dentro del plazo, o sin plazo, toca a quien pidió el examen', () => {
-    for (const overdue of [false, null]) {
-      expect(criticalNoticeTarget({ overdue, afterHours: false, hasOnCallRole: true, orderingUnanswered: false })).toEqual({ target: 'ORDERING_PRACTITIONER', escalationMissing: false }); // prettier-ignore
-    }
+  it('ORD-065 en horario y dentro del plazo toca a quien pidió el examen', () => {
+    expect(criticalNoticeTarget({ overdue: false, afterHours: false, hasOnCallRole: true, orderingUnanswered: false })).toEqual({ target: 'ORDERING_PRACTITIONER', escalationMissing: false }); // prettier-ignore
   });
 
   it('ORD-065 una llamada sin respuesta al médico que pidió escala a la guardia sin esperar a que venza', () => {

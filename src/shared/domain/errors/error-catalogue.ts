@@ -1004,6 +1004,10 @@ export const DOMAIN_ERROR_CODES = [
   //   * `REPORT_ISSUED_IN_FUTURE` (422) — ORD-030. La emisión del laboratorio,
   //     de la que corre el plazo de un crítico, no puede ser futura.
   'REPORT_ISSUED_IN_FUTURE',
+  //   * `REPORT_CORRECTION_INCOMPLETE` (422) — ORD-055. La corrección omite un
+  //     analito del informe que sustituye: lo retiraría sin que nadie lo
+  //     retractara (tercera revisión clínica).
+  'REPORT_CORRECTION_INCOMPLETE',
   // ─── Configuration (ORD-046, ORD-065). El rol que responde de una cola de
   //   resultados tiene que poder trabajarla: `record:read` y `result:write`.
   'ROLE_CANNOT_WORK_RESULTS',

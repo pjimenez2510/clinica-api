@@ -528,3 +528,20 @@ export class ReportIssuedInFutureError extends ValidationError {
     super('The report issue date is in the future');
   }
 }
+
+/**
+ * ORD-055. A correction that leaves out an analyte of the report it replaces.
+ *
+ * Superseding a report retracts ALL its values: one the correction did not
+ * bring would vanish from the order — and a critical one from the worklist —
+ * without the laboratory ever retracting it.
+ */
+export class ReportCorrectionIncompleteError extends ValidationError {
+  readonly code = 'REPORT_CORRECTION_INCOMPLETE';
+  override readonly userTitle =
+    'La corrección tiene que traer todas las determinaciones del informe que sustituye. Escriba también las que no cambian';
+
+  constructor(missing: readonly string[]) {
+    super(`The correction leaves out ${missing.length} analyte(s) of the report it replaces`); // prettier-ignore
+  }
+}

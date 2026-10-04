@@ -16,31 +16,24 @@ const HOUR = 60 * MINUTE;
 /** ORD-065. A critical value waiting for its notice. */
 export interface CriticalWait {
   waitingMinutes: number;
-  /** `null` when the site has set no deadline. */
-  dueAt: Date | null;
-  /**
-   * ⚠️ THREE ANSWERS AND NOT TWO. `null` is «la clínica no ha fijado plazo»,
-   * which is neither «va bien» nor «va tarde» — the argument of ORD-022 on the
-   * worklist where it matters most.
-   */
-  overdue: boolean | null;
+  dueAt: Date;
+  overdue: boolean;
 }
 
-/** ORD-065. `withinMinutes` is the site's deadline, or `null` for none. */
+/**
+ * ORD-065. `withinMinutes` is the site's deadline, which always exists: D-111
+ * §1 made it changeable, not removable.
+ */
 export function criticalWait(
   observedAt: Date,
   now: Date,
-  withinMinutes: number | null,
+  withinMinutes: number,
 ): CriticalWait {
   // A report dated slightly ahead of this clock does not wait «-1» minutes.
   const waitingMinutes = Math.max(
     0,
     Math.floor((now.getTime() - observedAt.getTime()) / MINUTE),
   );
-  if (withinMinutes === null) {
-    return { waitingMinutes, dueAt: null, overdue: null };
-  }
-
   const dueAt = new Date(observedAt.getTime() + withinMinutes * MINUTE);
   return { waitingMinutes, dueAt, overdue: now > dueAt };
 }
@@ -82,7 +75,7 @@ export type CriticalNoticeTarget =
  *  - OTHERWISE: the practitioner who placed the order.
  */
 export function criticalNoticeTarget(state: {
-  overdue: boolean | null;
+  overdue: boolean;
   afterHours: boolean;
   hasOnCallRole: boolean;
   /** An unanswered call to the practitioner who placed the order. */

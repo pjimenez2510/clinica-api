@@ -110,6 +110,30 @@ async function siteInHours(
   );
 }
 
+/** Whether some backend of this database is waiting on a row lock. */
+async function someoneWaitsOnALock(prisma: PrismaClient): Promise<boolean> {
+  const rows = await prisma.$queryRaw<{ waiting: bigint }[]>`
+    SELECT count(*) AS waiting FROM pg_stat_activity
+     WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+  return Number(rows[0]?.waiting ?? 0) > 0;
+}
+
+/**
+ * Resolves as soon as either condition holds — a CONDITION, polled, never a
+ * fixed sleep —, and fails after ten seconds so a broken test cannot hang.
+ */
+async function untilEither(
+  done: () => boolean,
+  probe: () => Promise<boolean>,
+): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    if (done() || (await probe())) return;
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  throw new Error('Ni el aviso terminó ni llegó a esperar el bloqueo');
+}
+
 /** A notice that was actually given, with the read-back D-111 §4 requires. */
 const given = {
   outcome: 'NOTIFIED' as const,
@@ -869,5 +893,164 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     // …salvo que la sede lo trabaje.
     await prisma.holidaySiteException.create({ data: { holidayId: national.id, siteId: site } }); // prettier-ignore
     expect(await inHours(now)).toBe(true);
+  });
+
+  it('ORD-055 una corrección que omite un analito se rechaza: el crítico sin avisar no desaparece', async () => {
+    const prisma = db();
+    const { now } = clinicNoon();
+    const scene = await aScene(prisma);
+    const { reports, orders } = serviceOf(prisma);
+    const requester: Requester = { userId: 'user-1', sites: 'all' };
+    const order = await orders.place({
+      encounterId: scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [{ examDefinitionId: scene.glucose.id }, { examDefinitionId: scene.bh.id }], // prettier-ignore
+      sites: 'all',
+    });
+    const first = await reports.register(
+      {
+        orderId: order.id,
+        performedById: null,
+        issuedAt: new Date(now.getTime() - 3_600_000),
+        results: [
+          { analyteDefinitionId: scene.glu.id, valueNumeric: 25 },
+          { analyteDefinitionId: scene.hb.id, valueNumeric: 13.4 },
+        ],
+      },
+      requester,
+    );
+
+    // El laboratorio corrige la hemoglobina; quien transcribe teclea sólo esa.
+    await expect(
+      reports.correct(
+        {
+          reportId: first.id,
+          performedById: null,
+          issuedAt: new Date(now.getTime() - 60_000),
+          results: [{ analyteDefinitionId: scene.hb.id, valueNumeric: 12.1 }],
+        },
+        requester,
+      ),
+    ).rejects.toMatchObject({ code: 'REPORT_CORRECTION_INCOMPLETE' });
+    // El 25 sigue en la cola: nadie lo retractó.
+    expect(
+      (await reports.critical(requester, now)).map((e) => e.resultId),
+    ).toContain(
+      first.results.find((r) => r.analyteDisplay === 'Glucosa en ayunas')!.id,
+    );
+
+    // Control positivo: con la glucosa reescrita igual, la corrección entra.
+    await reports.correct(
+      {
+        reportId: first.id,
+        performedById: null,
+        issuedAt: new Date(now.getTime() - 60_000),
+        results: [
+          { analyteDefinitionId: scene.glu.id, valueNumeric: 25 },
+          { analyteDefinitionId: scene.hb.id, valueNumeric: 12.1 },
+        ],
+      },
+      requester,
+    );
+    expect(await prisma.diagnosticReport.count()).toBe(2);
+  });
+
+  it('ORD-062 un aviso que coincide con una corrección en curso espera a que termine, y entonces se rechaza', async () => {
+    const prisma = db();
+    const realNow = new Date();
+    const scene = await aCriticalGlucose(prisma, realNow);
+    const nurse = await createUser(prisma);
+    const { reports } = serviceOf(prisma);
+
+    // Una corrección abierta en otra conexión, con el informe ya bloqueado.
+    let markLocked!: () => void;
+    const locked = new Promise<void>((resolve) => (markLocked = resolve));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const correction = prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`
+          SELECT 1 FROM "diagnostic_report" WHERE "id" = ${scene.report.id}::uuid FOR NO KEY UPDATE`; // prettier-ignore
+        await tx.diagnosticReport.create({
+          data: {
+            serviceOrderId: scene.order.id,
+            status: 'CORRECTED',
+            supersedesId: scene.report.id,
+            issuedAt: new Date(realNow.getTime() - 60_000),
+          },
+        });
+        markLocked();
+        await gate;
+      },
+      { timeout: 30_000 },
+    );
+    await locked;
+
+    // El aviso arranca mientras la corrección sigue sin confirmar…
+    let settled = false;
+    const notice = reports.notify(
+      { resultId: scene.result.id, ...given },
+      { userId: nurse.id, sites: 'all' },
+      new Date(Date.now() + 1000),
+    );
+    notice.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    // …y llega a esperar el bloqueo: lo dice PostgreSQL, no un reloj. Si el
+    // aviso terminara antes (sin bloqueo, escribiría sobre el valor que se
+    // está retirando), la espera acaba igual y la aserción de abajo falla.
+    await untilEither(
+      () => settled,
+      () => someoneWaitsOnALock(prisma),
+    );
+    // La corrección confirma; el aviso sigue, la ve y no escribe nada.
+    release();
+    await correction;
+    await expect(notice).rejects.toMatchObject({ code: 'RESULT_SUPERSEDED' });
+    expect(await prisma.criticalResultNotice.count()).toBe(0);
+  });
+
+  it('ORD-065 el plazo de la cadena corre desde la primera versión crítica, y la cola dice si ya se avisó de una anterior', async () => {
+    const prisma = db();
+    const { now } = clinicNoon();
+    const scene = await aScene(prisma);
+    const nurse = await createUser(prisma);
+    const { reports, orders } = serviceOf(prisma);
+    const requester: Requester = { userId: nurse.id, sites: 'all' };
+    const order = await orders.place({
+      encounterId: scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [{ examDefinitionId: scene.glucose.id }],
+      sites: 'all',
+    });
+    const at = (hoursAgo: number) => new Date(now.getTime() - hoursAgo * 3_600_000); // prettier-ignore
+
+    // 95 (normal) hace 6 h, corregido a 25 (crítico) hace 2 h.
+    const normal = await reports.register(
+      { orderId: order.id, performedById: null, issuedAt: at(6), results: [{ analyteDefinitionId: scene.glu.id, valueNumeric: 95 }] }, // prettier-ignore
+      requester,
+    );
+    const critical = await reports.correct(
+      { reportId: normal.id, performedById: null, issuedAt: at(2), results: [{ analyteDefinitionId: scene.glu.id, valueNumeric: 25 }] }, // prettier-ignore
+      requester,
+    );
+    const [fromCritical] = await reports.critical(requester, now);
+    // Espera desde el 25, no desde el 95.
+    expect(fromCritical).toMatchObject({ waitingMinutes: 120, previouslyNotified: false }); // prettier-ignore
+
+    // Se avisa del 25, y el laboratorio lo corrige a 22: sigue crítico.
+    await reports.notify({ resultId: critical.results[0]!.id, ...given }, requester, at(1.5)); // prettier-ignore
+    await reports.correct(
+      { reportId: critical.id, performedById: null, issuedAt: at(1), results: [{ analyteDefinitionId: scene.glu.id, valueNumeric: 22 }] }, // prettier-ignore
+      requester,
+    );
+    const [again] = await reports.critical(requester, now);
+    expect(again).toMatchObject({
+      waitingMinutes: 120,
+      previouslyNotified: true,
+    });
   });
 });

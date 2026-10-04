@@ -354,6 +354,7 @@ function toReportResponse(
     supersedesId: report.supersedesId,
     supersededById: report.supersededById,
     supersededAt: report.supersededAt?.toISOString() ?? null,
+    supersededRecordedAt: report.supersededRecordedAt?.toISOString() ?? null,
     results: report.results.map((result) => ({
       id: result.id,
       orderItemId: result.orderItemId,
@@ -414,12 +415,13 @@ function toCriticalResponse(
   return {
     ...toFlaggedResponse(entry),
     waitingMinutes: entry.waitingMinutes,
-    noticeDueAt: entry.noticeDueAt?.toISOString() ?? null,
+    noticeDueAt: entry.noticeDueAt.toISOString(),
     overdue: entry.overdue,
     escalateTo: entry.escalateTo,
     firstObservedAt: entry.firstObservedAt.toISOString(),
     orderedBy: entry.orderedBy,
     noAnswerAttempts: entry.noAnswerAttempts,
+    previouslyNotified: entry.previouslyNotified,
     afterHours: entry.afterHours,
     noticeTarget: entry.noticeTarget,
     escalationMissing: entry.escalationMissing,

@@ -211,6 +211,7 @@ const aReport = (
   supersedesId: overrides.supersedesId ?? null,
   supersededById: overrides.supersededById ?? null,
   supersededAt: overrides.supersededAt ?? null,
+  supersededRecordedAt: overrides.supersededRecordedAt ?? null,
   results: [],
 });
 
