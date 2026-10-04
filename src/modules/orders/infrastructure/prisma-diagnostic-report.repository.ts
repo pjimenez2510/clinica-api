@@ -493,8 +493,9 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
 
   /**
    * ORD-065, ORD-067. For each report, its correction chain back to the first
-   * report: when that one was issued, and the unanswered calls made about each
-   * analyte anywhere along the chain. One recursive query for the whole list.
+   * report: per analyte, when its FIRST CRITICAL version was observed, whether
+   * an earlier version was already notified, and the unanswered calls made
+   * anywhere along the chain. One recursive query for the whole list.
    */
   async criticalChains(
     reportIds: readonly string[],
@@ -808,10 +809,12 @@ function toReportView(row: ReportRow): DiagnosticReportView {
     issuedAt: row.issuedAt,
     supersedesId: row.supersedesId,
     supersededById: row.supersededBy?.id ?? null,
+    // M1: when the correction was RECORDED in the clinic — the one instant
+    // that cuts the notices of this report (ORD-062), and what the screen shows.
+    supersededRecordedAt: row.supersededBy?.createdAt ?? null,
     // The correction's own issue instant, falling back to when the row landed:
     // «corregido el …» is a date a person reads, and a null there would print
     // as a blank beside a number somebody may already have acted on.
-    supersededRecordedAt: row.supersededBy?.createdAt ?? null,
     supersededAt: row.supersededBy
       ? (row.supersededBy.issuedAt ?? row.supersededBy.createdAt)
       : null,

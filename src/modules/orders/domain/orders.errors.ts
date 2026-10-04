@@ -541,7 +541,21 @@ export class ReportCorrectionIncompleteError extends ValidationError {
   override readonly userTitle =
     'La corrección tiene que traer todas las determinaciones del informe que sustituye. Escriba también las que no cambian';
 
+  /**
+   * `missing` are catalogue analyte names, not patient values: naming them is
+   * what lets the person find the row in a long panel (fourth review).
+   */
   constructor(missing: readonly string[]) {
-    super(`The correction leaves out ${missing.length} analyte(s) of the report it replaces`); // prettier-ignore
+    super(
+      `The correction leaves out ${missing.length} analyte(s) of the report it replaces`,
+      {},
+      [
+        {
+          field: 'results',
+          code: 'REPORT_CORRECTION_INCOMPLETE',
+          message: `Falta: ${missing.join(', ')}`,
+        },
+      ],
+    );
   }
 }

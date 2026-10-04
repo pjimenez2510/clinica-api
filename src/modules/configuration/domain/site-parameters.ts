@@ -203,8 +203,8 @@ export const PARAMETER_RANGES = {
   /**
    * ORD-063, ORD-065. Mirrors `site_parameter_critical_notice_within_minutes_range`.
    * Below 5 minutes it is noise; above a day it is no longer «de manera
-   * urgente» (A.M. 00002393 art. 39). `null` — no deadline set — is not
-   * judged here: it is a value, not a number out of range.
+   * urgente» (A.M. 00002393 art. 39). The deadline is mandatory (D-113 a):
+   * there is no «no deadline» value.
    */
   criticalNoticeWithinMinutes: {
     min: 5,

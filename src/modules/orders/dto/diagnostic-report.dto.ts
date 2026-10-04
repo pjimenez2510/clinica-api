@@ -273,7 +273,7 @@ export const criticalResultSchema = flaggedResultSchema.extend({
   noticeDueAt: z.iso.datetime(),
   overdue: z.boolean(),
   escalateTo: z.object({ roleId: z.uuid(), name: z.string() }).nullable(),
-  /** ORD-065. The chain's first issue, which the deadline runs from. */
+  /** ORD-065. The chain's first critical version, which the deadline runs from. */
   firstObservedAt: z.iso.datetime(),
   /** ORD-065. Who placed the order: the first to tell, by name. */
   orderedBy: z.object({ id: z.uuid(), name: z.string() }),

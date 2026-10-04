@@ -124,7 +124,7 @@ export class PrismaSiteParameterRepository implements SiteParameterRepository {
              */
             overbookingPermission: patch.overbookingPermission,
             waitlistMaxContactAttempts: patch.waitlistMaxContactAttempts,
-            // `null` clears (sin plazo, quien pidió); `undefined` leaves alone.
+            // `null` clears a role (quien pidió); `undefined` leaves alone.
             criticalNoticeWithinMinutes: patch.criticalNoticeWithinMinutes,
             criticalEscalationRoleId: patch.criticalEscalationRoleId,
             unmatchedResultOwnerRoleId: patch.unmatchedResultOwnerRoleId,

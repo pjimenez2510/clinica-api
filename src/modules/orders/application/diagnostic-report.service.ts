@@ -477,8 +477,8 @@ export class DiagnosticReportService {
 
   /**
    * ORD-060, ORD-061, ORD-065. The values that have to reach a human today,
-   * with how long each has waited and — when the site set a deadline —
-   * whether it is late and whom it goes to. Without one, it says so (D-111).
+   * with how long each has waited, whether it is late against the site's
+   * mandatory deadline and whom it goes to (D-111, D-113 a).
    */
   async critical(
     requester: Requester,
@@ -496,7 +496,7 @@ export class DiagnosticReportService {
     return entries.map((entry) => {
       const policy = policies.get(entry.siteId) ?? DEFAULT_POLICY;
       const chain = chains.get(chainKey(entry.reportId, entry.analyteDisplay));
-      // The deadline runs from the chain's FIRST issue: a correction that is
+      // The deadline runs from the chain's FIRST CRITICAL version: a correction that is
       // still critical is the same pending notice, not a new one from zero.
       const firstObservedAt = chain?.firstObservedAt ?? entry.observedAt;
       const wait = criticalWait(firstObservedAt, now, policy.criticalNoticeWithinMinutes); // prettier-ignore

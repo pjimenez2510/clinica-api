@@ -732,6 +732,10 @@ cuando la gráfica exista.
   Un informe parcial no se corrige: se completa. Y uno anulado no se corrige
   porque ya no afirma nada.
 
+- **ORD-054** — La corrección DEBERÁ registrar sus valores como filas nuevas,
+  y las banderas DEBERÁN recalcularse con la misma regla que en el original
+  (ORD-035, ORD-036).
+
 - **ORD-055** — SI una corrección no trae **todos** los analitos del informe que
   sustituye, ENTONCES el sistema DEBERÁ rechazarla con
   `REPORT_CORRECTION_INCOMPLETE`.
@@ -741,10 +745,6 @@ cuando la gráfica exista.
   laboratorio lo retractara (tercera revisión clínica). Lo que no cambia se
   vuelve a escribir igual; retirar de verdad un analito es la anulación de
   D-113 d, no una corrección (D-116 c).
-
-- **ORD-054** — La corrección DEBERÁ registrar sus valores como filas nuevas,
-  y las banderas DEBERÁN recalcularse con la misma regla que en el original
-  (ORD-035, ORD-036).
 
 ---
 
@@ -779,8 +779,7 @@ cuando la gráfica exista.
   o a otra persona (D-113 b). SI el resultado no lleva bandera crítica ENTONCES
   DEBERÁ rechazarse con `RESULT_NOT_CRITICAL`; SI la corrección de su informe
   se **registró** antes del instante del aviso, con `RESULT_SUPERSEDED`; SI el
-  instante
-  declarado es futuro o anterior al resultado, con
+  instante declarado es futuro o anterior al resultado, con
   `CRITICAL_NOTICE_TIME_INVALID`; SI el resultado no existe o es de una sede
   fuera del alcance, con `RESULT_NOT_FOUND`.
 

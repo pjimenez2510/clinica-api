@@ -249,7 +249,7 @@ export interface CriticalChain {
 }
 
 export interface CriticalWorklistEntry extends FlaggedResultEntry {
-  /** ORD-065. The chain's first issue, which the deadline runs from. */
+  /** ORD-065. The chain's first critical version, which the deadline runs from. */
   firstObservedAt: Date;
   /** ORD-067. Unanswered calls along the chain; the value is still waiting. */
   noAnswerAttempts: number;

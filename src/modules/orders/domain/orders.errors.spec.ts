@@ -192,6 +192,13 @@ describe('el contrato de errores de las órdenes', () => {
     expect(error).toBeInstanceOf(ValidationError);
     expect(error.code).toBe('REPORT_CORRECTION_INCOMPLETE');
     expect(error.userTitle).toContain('Escriba también las que no cambian');
+    // Dice CUÁL falta: en un panel largo, la cuenta sola no sirve.
+    expect(error.fieldErrors).toEqual([
+      expect.objectContaining({
+        field: 'results',
+        message: 'Falta: Glucosa en ayunas',
+      }),
+    ]);
   });
 
   it('ORD-080 manda buscar a la persona antes de registrarla, nunca dice que se creará sola', () => {

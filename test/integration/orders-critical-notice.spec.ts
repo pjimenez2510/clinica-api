@@ -1012,6 +1012,58 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     expect(await prisma.criticalResultNotice.count()).toBe(0);
   });
 
+  it('ORD-062 la corrección real espera a un aviso en curso: su bloqueo choca con el del aviso', async () => {
+    const prisma = db();
+    const realNow = new Date();
+    const scene = await aCriticalGlucose(prisma, realNow);
+    const { reports } = serviceOf(prisma);
+
+    // Un aviso abierto en otra conexión, con el informe tomado como lo toma
+    // el aviso (`FOR SHARE`).
+    let markLocked!: () => void;
+    const locked = new Promise<void>((resolve) => (markLocked = resolve));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const notice = prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`
+          SELECT 1 FROM "diagnostic_report" WHERE "id" = ${scene.report.id}::uuid FOR SHARE`; // prettier-ignore
+        markLocked();
+        await gate;
+      },
+      { timeout: 30_000 },
+    );
+    await locked;
+
+    // La corrección de PRODUCCIÓN. Sin su `FOR NO KEY UPDATE`, la clave
+    // foránea sólo toma `FOR KEY SHARE`, que no choca con `FOR SHARE`: la
+    // corrección terminaría sin esperar y la aserción de abajo fallaría.
+    let settled = false;
+    const correction = reports.correct(
+      {
+        reportId: scene.report.id,
+        performedById: null,
+        issuedAt: new Date(realNow.getTime() - 60_000),
+        results: [{ analyteDefinitionId: scene.glu.id, valueNumeric: 95 }],
+      },
+      { userId: 'user-1', sites: 'all' },
+    );
+    correction.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    await untilEither(
+      () => settled,
+      () => someoneWaitsOnALock(prisma),
+    );
+    expect(settled).toBe(false);
+
+    // Control positivo: al terminar el aviso, la corrección entra.
+    release();
+    await notice;
+    await expect(correction).resolves.toMatchObject({ status: 'CORRECTED' });
+  });
+
   it('ORD-065 el plazo de la cadena corre desde la primera versión crítica, y la cola dice si ya se avisó de una anterior', async () => {
     const prisma = db();
     const { now } = clinicNoon();

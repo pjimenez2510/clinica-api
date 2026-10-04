@@ -163,7 +163,7 @@ export class SiteParametersService {
         patch.waitlistMaxContactAttempts ?? current.waitlistMaxContactAttempts,
       cancelledRetention:
         patch.cancelledRetention ?? current.cancelledRetention,
-      // `!== undefined` and not `??`: `null` is «sin plazo» or «quien pidió»,
+      // `!== undefined` and not `??`: for the roles `null` is «quien pidió»,
       // a value the site chose, and `??` would put back what the row had.
       criticalNoticeWithinMinutes: chosen(patch.criticalNoticeWithinMinutes, current.criticalNoticeWithinMinutes), // prettier-ignore
       criticalEscalationRoleId: chosen(patch.criticalEscalationRoleId, current.criticalEscalationRoleId), // prettier-ignore
