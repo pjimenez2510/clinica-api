@@ -51,11 +51,41 @@ export interface TaxRateView {
 }
 
 /** A service, and NEVER an amount on it (BI-006). */
+/**
+ * BI-186. The kinds a category can be: the three of a service order
+ * (`service_order_category`) plus the consultation, a supply and anything else.
+ * `billable_service_category_kind_is_known` holds the same list.
+ */
+export const SERVICE_CATEGORY_KINDS = [
+  'CONSULTATION',
+  'PROCEDURE',
+  'LABORATORY',
+  'IMAGING',
+  'SUPPLY',
+  'OTHER',
+] as const;
+export type ServiceCategoryKind = (typeof SERVICE_CATEGORY_KINDS)[number];
+
+/** BI-185. One category of the clinic's catalogue of services. */
+export interface ServiceCategoryView {
+  id: string;
+  name: string;
+  /** Fixed once created: what structure its services admit (BI-187). */
+  kind: ServiceCategoryKind;
+  active: boolean;
+}
+
 export interface BillableServiceView {
   id: string;
   code: string;
   name: string;
-  category: string;
+  /** BI-185. The catalogue row, never free text. */
+  category: ServiceCategoryView;
+  /**
+   * BI-151, BI-187. The procedure this service charges, when it is one. Read
+   * here and set nowhere in the API yet: the tie is seeded.
+   */
+  procedureConcept: { id: string; code: string; display: string } | null;
   /** MSP nomenclature only. No amount is ever taken from it (BI-011). */
   tariffCode: string | null;
   taxRateId: string;
@@ -122,7 +152,7 @@ export interface PriceListView {
 export interface NewBillableService {
   code: string;
   name: string;
-  category: string;
+  categoryId: string;
   tariffCode: string | null;
   taxRateId: string;
 }
@@ -144,7 +174,7 @@ export interface ConsultationMapping {
  */
 export interface BillableServiceUpdate {
   name?: string;
-  category?: string;
+  categoryId?: string;
   tariffCode?: string | null;
   taxRateId?: string;
   active?: boolean;
@@ -178,6 +208,21 @@ export interface PayerUpdate {
  */
 export interface BillingCatalogueRepository {
   /** BI-020, BI-021. The SRI's rates, as rows. */
+  /** BI-185. The categories, the inactive ones only when asked. */
+  listServiceCategories(filter: {
+    includeInactive: boolean;
+  }): Promise<ServiceCategoryView[]>;
+  findServiceCategory(categoryId: string): Promise<ServiceCategoryView | null>;
+  /** `billable_service_category_name_unique` refuses a repeated name. */
+  createServiceCategory(category: {
+    name: string;
+    kind: ServiceCategoryKind;
+  }): Promise<ServiceCategoryView>;
+  updateServiceCategory(
+    categoryId: string,
+    update: { name?: string; active?: boolean },
+  ): Promise<ServiceCategoryView>;
+
   listTaxRates(): Promise<TaxRateView[]>;
   findTaxRate(taxRateId: string): Promise<TaxRateView | null>;
   /** BI-026. */

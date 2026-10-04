@@ -1561,14 +1561,23 @@ dos registros distintos.**
   > Las clases de examen y procedimiento son las mismas que las de una orden
   > (`service_order_category`), para que una orden y su cobro hablen igual.
 - **BI-187** — SI se declara una prestación como la consulta de una
-  especialidad (BI-158) y su categoría no es de clase `CONSULTATION`, o se ata a
-  un concepto de procedimiento y su categoría no es de clase `PROCEDURE`,
-  ENTONCES el sistema DEBERÁ rechazarlo con `SERVICE_KIND_MISMATCH`; y SI se
-  cambia la categoría de una prestación que tiene una de esas ataduras a una de
-  otra clase, ENTONCES DEBERÁ rechazarlo igual.
+  especialidad (BI-158) y su categoría no es de clase `CONSULTATION`, ENTONCES
+  el sistema DEBERÁ rechazarlo con `SERVICE_KIND_MISMATCH`; y SI se cambia a
+  una categoría de otra clase una prestación que es la consulta de una
+  especialidad, o que está atada a un concepto de procedimiento y la nueva no es
+  de clase `PROCEDURE`, ENTONCES DEBERÁ rechazarlo igual. La clase de una
+  categoría NO DEBERÁ poder cambiarse una vez creada.
   > Hoy nada impide que «Guantes» sea la consulta de dermatología primera vez,
   > y entonces caja propondría un par de guantes por cada consulta (BI-158). La
   > clase dice qué estructura admite la prestación.
+  >
+  > La atadura al procedimiento (`procedure_concept_id`) no se escribe por la
+  > API —la pone la siembra—; por eso aquí sólo se protege al mover la
+  > prestación de categoría. Y la clase no se edita porque cambiarla
+  > convertiría de golpe cada atadura de sus prestaciones en un desajuste.
+  > Al construirlo apareció que el `PATCH` de la prestación aceptaba
+  > `consultation` y el controlador no lo pasaba: la correspondencia de BI-158
+  > sólo la podía cambiar la siembra. Queda conectado.
 - **BI-188** — CUANDO se consulte una prestación de clase `LABORATORY` o
   `IMAGING`, el sistema DEBERÁ servir los exámenes del catálogo de exámenes que
   se cobran con ella (`exam_definition.billable_service_id`), y NO DEBERÁ
@@ -1647,7 +1656,6 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `TARIFF_PUBLICATION_NOT_FOUND` | 404 | BI-110 |
 | `SERVICE_CATEGORY_NOT_FOUND` | 404 | BI-185 |
 | `SERVICE_CATEGORY_INACTIVE` | 422 | BI-185 |
-| `SERVICE_CATEGORY_NAME_DUPLICATE` | 409 | BI-185 |
 | `SERVICE_KIND_MISMATCH` | 422 | BI-187 |
 
 **Se reutilizan, y no se declaran de nuevo:** `SELF_AUTHORISATION_DENIED`
@@ -1674,6 +1682,7 @@ registrados en `infrastructure/billing.constraints.ts`.
 | `PRICE_AMOUNT_NEGATIVE` | 422 | `price_is_not_negative` | BI-043 |
 | `TAX_RATE_PERIOD_OVERLAP` | 409 | `tax_rate_code_temporal_unique` | BI-020 |
 | `BILLABLE_SERVICE_CODE_DUPLICATE` | 409 | `billable_service_code_unique` | BI-010 |
+| `SERVICE_CATEGORY_NAME_DUPLICATE` | 409 | `billable_service_category_name_unique` | BI-185 |
 | `PAYER_CODE_DUPLICATE` | 409 | `payer_code_unique` | BI-030 |
 | `INVALID_PAYER_KIND` | 422 | `payer_kind_is_known` | BI-030 |
 | `INVALID_RUC` | 422 | `payer_ruc_format` | BI-036 |

@@ -29,26 +29,32 @@ import type { Requester } from './application/service-catalogue.service';
 import type {
   BillableServiceView,
   PayerView,
+  ServiceCategoryView,
 } from './domain/billing.repository';
 import { Money } from './domain/money';
 import type { PriceRow } from './domain/price-list';
 import {
   CatalogueQueryDto,
   CreatePayerDto,
+  CreateServiceCategoryDto,
   CreateServiceDto,
   PayerDto,
   PayerListDto,
   PriceDto,
   PriceListResponseDto,
+  ServiceCategoryDto,
+  ServiceCategoryListDto,
   ServiceDto,
   ServiceListDto,
   SetPriceDto,
   TaxRateDto,
   UpdatePayerDto,
+  UpdateServiceCategoryDto,
   UpdateServiceDto,
   type PayerResponse,
   type PriceListResponse,
   type PriceResponse,
+  type ServiceCategoryResponse,
   type ServiceResponse,
   type TaxRateResponse,
 } from './dto/billing.dto';
@@ -133,7 +139,7 @@ export class BillingCatalogueController {
         {
           code: dto.code,
           name: dto.name,
-          category: dto.category,
+          categoryId: dto.categoryId,
           tariffCode: dto.tariffCode ?? null,
           taxRateId: dto.taxRateId,
         },
@@ -157,10 +163,13 @@ export class BillingCatalogueController {
         serviceId,
         {
           name: dto.name,
-          category: dto.category,
+          categoryId: dto.categoryId,
           tariffCode: dto.tariffCode,
           taxRateId: dto.taxRateId,
           active: dto.active,
+          // BI-158. The DTO always took it and nothing passed it on: the
+          // mapping could only be changed by the seed (found in B11).
+          consultation: dto.consultation,
         },
         requester,
       ),
@@ -178,6 +187,57 @@ export class BillingCatalogueController {
   ): Promise<void> {
     const requester = this.requireClinicWide('billing:price-manage');
     await this.services.deleteService(serviceId, requester);
+  }
+
+  /** BI-185. The categories, alphabetical; the inactive ones on request. */
+  @Get('service-categories')
+  @RequirePermission('billing:read', 'global')
+  @ApiOperation({ summary: 'Consultar las categorías de prestación' })
+  @ApiOkResponse({ type: ServiceCategoryListDto })
+  async listCategories(
+    @Query() query: CatalogueQueryDto,
+  ): Promise<{ items: ServiceCategoryResponse[] }> {
+    const items = await this.services.listCategories({
+      includeInactive: query.includeInactive,
+    });
+    return { items: items.map(toCategoryResponse) };
+  }
+
+  /** BI-185, BI-186. */
+  @Post('service-categories')
+  @RequirePermission('billing:price-manage', 'global')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Crear una categoría de prestación' })
+  @ApiCreatedResponse({ type: ServiceCategoryDto })
+  async createCategory(
+    @Body() dto: CreateServiceCategoryDto,
+  ): Promise<ServiceCategoryResponse> {
+    const requester = this.requireClinicWide('billing:price-manage');
+    return toCategoryResponse(
+      await this.services.createCategory(
+        { name: dto.name, kind: dto.kind },
+        requester,
+      ),
+    );
+  }
+
+  /** BI-185. Renames or (de)activates; the kind is fixed (BI-187). */
+  @Patch('service-categories/:categoryId')
+  @RequirePermission('billing:price-manage', 'global')
+  @ApiOperation({ summary: 'Renombrar o desactivar una categoría de prestación' }) // prettier-ignore
+  @ApiOkResponse({ type: ServiceCategoryDto })
+  async updateCategory(
+    @Param('categoryId', ParseUUIDPipe) categoryId: string,
+    @Body() dto: UpdateServiceCategoryDto,
+  ): Promise<ServiceCategoryResponse> {
+    const requester = this.requireClinicWide('billing:price-manage');
+    return toCategoryResponse(
+      await this.services.updateCategory(
+        categoryId,
+        { name: dto.name, active: dto.active },
+        requester,
+      ),
+    );
   }
 
   /** BI-030, BI-031. */
@@ -311,7 +371,8 @@ function toServiceResponse(service: BillableServiceView): ServiceResponse {
     id: service.id,
     code: service.code,
     name: service.name,
-    category: service.category,
+    category: toCategoryResponse(service.category),
+    procedureConcept: service.procedureConcept,
     tariffCode: service.tariffCode,
     taxRateId: service.taxRateId,
     taxSriCode: service.taxSriCode,
@@ -321,6 +382,18 @@ function toServiceResponse(service: BillableServiceView): ServiceResponse {
     // and change it instead of the mapping living only in the seed.
     specialtyId: service.specialtyId,
     visitSequence: service.visitSequence,
+  };
+}
+
+/** BI-185. A category as served. */
+function toCategoryResponse(
+  category: ServiceCategoryView,
+): ServiceCategoryResponse {
+  return {
+    id: category.id,
+    name: category.name,
+    kind: category.kind,
+    active: category.active,
   };
 }
 

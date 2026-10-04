@@ -12,7 +12,10 @@ import {
   MAX_VOUCHER_SERVICE_CODE,
   PAYMENT_METHODS,
 } from '../domain/invoice';
-import { PAYER_KINDS } from '../domain/billing.repository';
+import {
+  PAYER_KINDS,
+  SERVICE_CATEGORY_KINDS,
+} from '../domain/billing.repository';
 import {
   CHARGE_ORIGINS,
   PROPOSAL_SKIP_REASONS,
@@ -101,7 +104,8 @@ export const createServiceSchema = z.object({
       'El código admite hasta 25 caracteres, lo que acepta el SRI',
     ),
   name: z.string().trim().min(1, 'Indique el nombre de la prestación').max(200),
-  category: z.string().trim().min(1, 'Indique la categoría').max(60),
+  /** BI-185. A row of the catalogue, never free text. */
+  categoryId: z.uuid('Seleccione la categoría'),
   /** BI-011. Nomenclature only: no amount is ever taken from the Tarifario. */
   tariffCode: z.string().trim().max(16).nullish(),
   taxRateId: z.uuid('Seleccione la tarifa de impuesto que aplica'),
@@ -111,7 +115,7 @@ export class CreateServiceDto extends createZodDto(createServiceSchema) {}
 
 export const updateServiceSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
-  category: z.string().trim().min(1).max(60).optional(),
+  categoryId: z.uuid('Seleccione la categoría').optional(),
   tariffCode: z.string().trim().max(16).nullish(),
   taxRateId: z.uuid('Seleccione la tarifa de impuesto que aplica').optional(),
   active: z.boolean().optional(),
@@ -351,11 +355,53 @@ export class TaxRateDto extends createZodDto(
 /** What the controller maps into; inferred, so it cannot drift from the published schema. */
 export type TaxRateResponse = z.infer<typeof taxRateResponseSchema>;
 
+/** BI-185, BI-186. One category of the catalogue, with its kind. */
+const serviceCategoryResponseSchema = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  kind: z.enum(SERVICE_CATEGORY_KINDS),
+  active: z.boolean(),
+});
+export class ServiceCategoryDto extends createZodDto(
+  serviceCategoryResponseSchema,
+) {}
+export class ServiceCategoryListDto extends createZodDto(
+  z.object({ items: z.array(serviceCategoryResponseSchema) }),
+) {}
+export type ServiceCategoryResponse = z.infer<
+  typeof serviceCategoryResponseSchema
+>;
+
+export const createServiceCategorySchema = z.object({
+  name: z.string().trim().min(1, 'Indique el nombre de la categoría').max(60),
+  kind: z.enum(SERVICE_CATEGORY_KINDS, {
+    error: 'Elija la clase: consulta, procedimiento, laboratorio, imagen, insumo u otro', // prettier-ignore
+  }),
+});
+/** Body of POST /billing/service-categories (`billing:price-manage`). */
+export class CreateServiceCategoryDto extends createZodDto(
+  createServiceCategorySchema,
+) {}
+
+/** BI-185. The kind is not here: it is fixed once created (BI-187). */
+export const updateServiceCategorySchema = z.object({
+  name: z.string().trim().min(1, 'Indique el nombre de la categoría').max(60).optional(), // prettier-ignore
+  active: z.boolean().optional(),
+});
+/** Body of PATCH /billing/service-categories/:categoryId. */
+export class UpdateServiceCategoryDto extends createZodDto(
+  updateServiceCategorySchema,
+) {}
+
 const serviceResponseSchema = z.object({
   id: z.uuid(),
   code: z.string(),
   name: z.string(),
-  category: z.string(),
+  category: serviceCategoryResponseSchema,
+  /** BI-151, BI-187. The procedure it charges, when it is one. Seeded, read-only here. */
+  procedureConcept: z
+    .object({ id: z.uuid(), code: z.string(), display: z.string() })
+    .nullable(),
   tariffCode: z.string().nullable(),
   taxRateId: z.uuid(),
   taxSriCode: z.string(),

@@ -4,12 +4,15 @@ import { parseClinicalDate } from '../../../shared/domain/clinic-time';
 import {
   BillableServiceInUseError,
   BillableServiceNotFoundError,
+  ServiceCategoryInactiveError,
+  ServiceKindMismatchError,
   TaxRateNotFoundError,
   TaxRateRequiredError,
 } from '../domain/billing.errors';
 import type {
   BillableServiceView,
   BillingCatalogueRepository,
+  ServiceCategoryView,
   TaxRateView,
 } from '../domain/billing.repository';
 import { Percentage } from '../domain/money';
@@ -26,11 +29,25 @@ const taxRate: TaxRateView = {
   validTo: null,
 };
 
+const CONSULTATIONS: ServiceCategoryView = {
+  id: 'category-consultations',
+  name: 'Consultas',
+  kind: 'CONSULTATION',
+  active: true,
+};
+const SUPPLIES: ServiceCategoryView = {
+  id: 'category-supplies',
+  name: 'Insumos',
+  kind: 'SUPPLY',
+  active: true,
+};
+
 const service: BillableServiceView = {
   id: 'service-1',
   code: 'CONS-MG-PV',
   name: 'Consulta de medicina general, primera vez',
-  category: 'Consultas',
+  category: CONSULTATIONS,
+  procedureConcept: null,
   tariffCode: null,
   taxRateId: 'tax-0',
   taxSriCode: '0',
@@ -47,6 +64,13 @@ function build(overrides: Record<string, unknown> = {}) {
     findTaxRate: vi.fn().mockResolvedValue(taxRate),
     listBillableServices: vi.fn().mockResolvedValue([service]),
     findBillableService: vi.fn().mockResolvedValue(service),
+    findServiceCategory: vi
+      .fn()
+      .mockImplementation((id: string) =>
+        Promise.resolve(
+          [CONSULTATIONS, SUPPLIES].find((c) => c.id === id) ?? null,
+        ),
+      ),
     createBillableService: vi.fn().mockResolvedValue(service),
     updateBillableService: vi.fn().mockResolvedValue(service),
     countReferencesToService: vi.fn().mockResolvedValue(0),
@@ -67,7 +91,7 @@ function build(overrides: Record<string, unknown> = {}) {
 const newService = {
   code: 'PROC-CURACION',
   name: 'Curación simple',
-  category: 'Procedimientos',
+  categoryId: 'category-supplies',
   tariffCode: null,
   taxRateId: 'tax-0',
 };
@@ -120,7 +144,7 @@ describe('BI-005, BI-013 la tarifa de impuesto es un dato exigido, no deducido',
     expect(Object.keys(written ?? {})).toEqual([
       'code',
       'name',
-      'category',
+      'categoryId',
       'tariffCode',
       'taxRateId',
     ]);
@@ -202,5 +226,71 @@ describe('BI-046, BI-132 la bitácora del catálogo', () => {
       taxRateId: 'tax-15',
       active: undefined,
     });
+  });
+});
+
+describe('BI-185, BI-187 la categoría es un catálogo y su clase manda', () => {
+  it('BI-185 no deja crear una prestación con una categoría desactivada', async () => {
+    const { service: catalogue } = build({
+      findServiceCategory: vi
+        .fn()
+        .mockResolvedValue({ ...SUPPLIES, active: false }),
+    });
+
+    await expect(
+      catalogue.createService(newService, requester),
+    ).rejects.toBeInstanceOf(ServiceCategoryInactiveError);
+  });
+
+  it('BI-187 rechaza declarar la consulta de una especialidad sobre un insumo', async () => {
+    const { service: catalogue } = build({
+      findBillableService: vi
+        .fn()
+        .mockResolvedValue({ ...service, category: SUPPLIES }),
+    });
+
+    await expect(
+      catalogue.updateService(
+        'service-1',
+        { consultation: { specialtyId: 'sp-1', visitSequence: 'FIRST_TIME' } },
+        requester,
+      ),
+    ).rejects.toBeInstanceOf(ServiceKindMismatchError);
+  });
+
+  it('BI-187 rechaza pasar la consulta de una especialidad a una categoría de otra clase, y la deja pasar si se quita la atadura a la vez', async () => {
+    const mapped = { ...service, specialtyId: 'sp-1', visitSequence: 'FIRST_TIME' as const }; // prettier-ignore
+    const { service: catalogue } = build({
+      findBillableService: vi.fn().mockResolvedValue(mapped),
+    });
+
+    await expect(
+      catalogue.updateService('service-1', { categoryId: SUPPLIES.id }, requester), // prettier-ignore
+    ).rejects.toBeInstanceOf(ServiceKindMismatchError);
+    await expect(
+      catalogue.updateService(
+        'service-1',
+        { categoryId: SUPPLIES.id, consultation: null },
+        requester,
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it('BI-187 un procedimiento atado a su concepto no se pasa a otra clase', async () => {
+    const { service: catalogue } = build({
+      findBillableService: vi.fn().mockResolvedValue({
+        ...service,
+        category: {
+          ...CONSULTATIONS,
+          id: 'category-procedures',
+          kind: 'PROCEDURE',
+        },
+        procedureConcept: { id: 'c-1', code: 'SUTURA', display: 'Sutura' },
+      }),
+    });
+
+    await expect(
+      catalogue.updateService('service-1', { categoryId: SUPPLIES.id }, requester), // prettier-ignore
+    ).rejects.toBeInstanceOf(ServiceKindMismatchError);
   });
 });

@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import type {
   BillableService as BillableServiceRow,
+  BillableServiceCategory as CategoryRow,
   Payer as PayerRow,
   Price as PriceStoredRow,
   PriceList as PriceListRow,
+  Prisma,
   TaxRate as TaxRateRow,
 } from '@prisma/client';
 
@@ -21,6 +23,8 @@ import type {
   PayerUpdate,
   PayerView,
   PriceListView,
+  ServiceCategoryKind,
+  ServiceCategoryView,
   TaxRateView,
 } from '../domain/billing.repository';
 import type { ServiceMatch } from '../domain/charge-proposal';
@@ -47,6 +51,52 @@ import { type PriceChange, type PriceRow, toClinicalDate } from '../domain/price
 @Injectable()
 export class PrismaBillingCatalogueRepository implements BillingCatalogueRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  /** BI-185. Alphabetical; inactive ones only on request, never hidden. */
+  async listServiceCategories(filter: {
+    includeInactive: boolean;
+  }): Promise<ServiceCategoryView[]> {
+    const rows = await this.prisma.billableServiceCategory.findMany({
+      where: filter.includeInactive ? {} : { active: true },
+      orderBy: { name: 'asc' },
+    });
+    return rows.map(toCategoryView);
+  }
+
+  async findServiceCategory(
+    categoryId: string,
+  ): Promise<ServiceCategoryView | null> {
+    const row = await this.prisma.billableServiceCategory.findUnique({
+      where: { id: categoryId },
+    });
+    return row === null ? null : toCategoryView(row);
+  }
+
+  /**
+   * BI-185. The name's unicity is NOT read first:
+   * `billable_service_category_name_unique` is the guarantee.
+   */
+  async createServiceCategory(category: {
+    name: string;
+    kind: ServiceCategoryKind;
+  }): Promise<ServiceCategoryView> {
+    const row = await this.prisma.billableServiceCategory.create({
+      data: { name: category.name, kind: category.kind },
+    });
+    return toCategoryView(row);
+  }
+
+  /** The kind is not here: it is fixed once created (BI-187). */
+  async updateServiceCategory(
+    categoryId: string,
+    update: { name?: string; active?: boolean },
+  ): Promise<ServiceCategoryView> {
+    const row = await this.prisma.billableServiceCategory.update({
+      where: { id: categoryId },
+      data: { name: update.name, active: update.active },
+    });
+    return toCategoryView(row);
+  }
 
   /**
    * BI-020, BI-021. Every rate, historical ones included, grouped by SRI code
@@ -85,8 +135,8 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
   }): Promise<BillableServiceView[]> {
     const rows = await this.prisma.billableService.findMany({
       where: filter.includeInactive ? {} : { active: true },
-      include: { taxRate: true },
-      orderBy: [{ category: 'asc' }, { name: 'asc' }],
+      include: SERVICE_INCLUDE,
+      orderBy: [{ category: { name: 'asc' } }, { name: 'asc' }],
     });
     return rows.map(toServiceView);
   }
@@ -97,7 +147,7 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
   ): Promise<BillableServiceView | null> {
     const row = await this.prisma.billableService.findUnique({
       where: { id: serviceId },
-      include: { taxRate: true },
+      include: SERVICE_INCLUDE,
     });
     return row === null ? null : toServiceView(row);
   }
@@ -114,11 +164,11 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
       data: {
         code: service.code,
         name: service.name,
-        category: service.category,
+        categoryId: service.categoryId,
         tariffCode: service.tariffCode,
         taxRateId: service.taxRateId,
       },
-      include: { taxRate: true },
+      include: SERVICE_INCLUDE,
     });
     return toServiceView(row);
   }
@@ -135,7 +185,7 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
       where: { id: serviceId },
       data: {
         name: update.name,
-        category: update.category,
+        categoryId: update.categoryId,
         tariffCode: update.tariffCode,
         taxRateId: update.taxRateId,
         active: update.active,
@@ -149,7 +199,7 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
               visitSequence: update.consultation?.visitSequence ?? null,
             }),
       },
-      include: { taxRate: true },
+      include: SERVICE_INCLUDE,
     });
     return toServiceView(row);
   }
@@ -431,18 +481,40 @@ function toTaxRateView(row: TaxRateRow): TaxRateView {
   };
 }
 
+/** What every service read joins: its rate, its category, its procedure. */
+const SERVICE_INCLUDE = {
+  taxRate: true,
+  category: true,
+  procedureConcept: { select: { id: true, code: true, display: true } },
+} satisfies Prisma.BillableServiceInclude;
+
+type ServiceRow = BillableServiceRow & {
+  taxRate: TaxRateRow;
+  category: CategoryRow;
+  procedureConcept: { id: string; code: string; display: string } | null;
+};
+
+/** The `kind` cast leans on `billable_service_category_kind_is_known`. */
+function toCategoryView(row: CategoryRow): ServiceCategoryView {
+  return {
+    id: row.id,
+    name: row.name,
+    kind: row.kind as ServiceCategoryKind,
+    active: row.active,
+  };
+}
+
 /**
  * Row to view, with the tax code and percentage taken from the joined rate. The
  * `visitSequence` cast leans on `billable_service_visit_sequence_is_known`.
  */
-function toServiceView(
-  row: BillableServiceRow & { taxRate: TaxRateRow },
-): BillableServiceView {
+function toServiceView(row: ServiceRow): BillableServiceView {
   return {
     id: row.id,
     code: row.code,
     name: row.name,
-    category: row.category,
+    category: toCategoryView(row.category),
+    procedureConcept: row.procedureConcept,
     tariffCode: row.tariffCode,
     taxRateId: row.taxRateId,
     taxSriCode: row.taxRate.sriCode,
