@@ -355,6 +355,38 @@ export class TaxRateDto extends createZodDto(
 /** What the controller maps into; inferred, so it cannot drift from the published schema. */
 export type TaxRateResponse = z.infer<typeof taxRateResponseSchema>;
 
+/** BI-189. One price of a service in one payer's list. */
+const servicePriceSchema = z.object({
+  priceId: z.uuid(),
+  payer: z.object({
+    id: z.uuid(),
+    name: z.string(),
+    kind: z.enum(PAYER_KINDS),
+  }),
+  /** BI-001: a string, never a number. */
+  amount: z.string(),
+  validFrom: z.string(),
+  validTo: z.string().nullable(),
+  /** In force on today's date in Ecuador. */
+  inForce: z.boolean(),
+});
+export class ServicePriceListDto extends createZodDto(
+  z.object({ items: z.array(servicePriceSchema) }),
+) {}
+export type ServicePriceResponse = z.infer<typeof servicePriceSchema>;
+
+/** BI-188. An exam charged through the service. */
+const serviceExamSchema = z.object({
+  id: z.uuid(),
+  code: z.string(),
+  name: z.string(),
+  active: z.boolean(),
+});
+export class ServiceExamListDto extends createZodDto(
+  z.object({ items: z.array(serviceExamSchema) }),
+) {}
+export type ServiceExamResponse = z.infer<typeof serviceExamSchema>;
+
 /** BI-185, BI-186. One category of the catalogue, with its kind. */
 const serviceCategoryResponseSchema = z.object({
   id: z.uuid(),

@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 
+import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
@@ -12,8 +13,11 @@ import {
   type NewBillableService,
   type ServiceCategoryKind,
   type ServiceCategoryView,
+  type ServiceExamView,
+  type ServicePriceView,
   type TaxRateView,
 } from '../domain/billing.repository';
+import { isInForceOn } from '../domain/price-list';
 import {
   BillableServiceInUseError,
   BillableServiceNotFoundError,
@@ -179,6 +183,28 @@ export class ServiceCatalogueService {
 
     await this.catalogue.deleteBillableService(serviceId);
     await this.recordChange(serviceId, 'UPDATE', requester);
+  }
+
+  /**
+   * BI-189. The service's prices in every list, each marked in force or not
+   * on `today` — the clinic date in Ecuador, which the caller resolves.
+   */
+  async servicePrices(
+    serviceId: string,
+    today: ClinicalDate,
+  ): Promise<(ServicePriceView & { inForce: boolean })[]> {
+    await this.requireService(serviceId);
+    const prices = await this.catalogue.listPricesAcrossPayers(serviceId);
+    return prices.map((price) => ({
+      ...price,
+      inForce: isInForceOn(price, today),
+    }));
+  }
+
+  /** BI-188. The exams the service charges for, read from their catalogue. */
+  async serviceExams(serviceId: string): Promise<ServiceExamView[]> {
+    await this.requireService(serviceId);
+    return this.catalogue.listExamsOfService(serviceId);
   }
 
   /** BI-185. The catalogue of categories; the inactive ones on request. */

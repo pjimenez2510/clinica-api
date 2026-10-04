@@ -21,6 +21,7 @@ import {
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import { assertClinicWideScope } from '../../shared/authorisation/site-scope';
+import { clinicalDateOf } from '../../shared/domain/clinic-time';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import { PricingService } from './application/pricing.service';
@@ -44,6 +45,8 @@ import {
   PriceListResponseDto,
   ServiceCategoryDto,
   ServiceCategoryListDto,
+  ServiceExamListDto,
+  ServicePriceListDto,
   ServiceDto,
   ServiceListDto,
   SetPriceDto,
@@ -55,6 +58,8 @@ import {
   type PriceListResponse,
   type PriceResponse,
   type ServiceCategoryResponse,
+  type ServiceExamResponse,
+  type ServicePriceResponse,
   type ServiceResponse,
   type TaxRateResponse,
 } from './dto/billing.dto';
@@ -174,6 +179,41 @@ export class BillingCatalogueController {
         requester,
       ),
     );
+  }
+
+  /** BI-189. The service's prices in every payer's list, the one in force marked. */
+  @Get('services/:serviceId/prices')
+  @RequirePermission('billing:read', 'global')
+  @ApiOperation({ summary: 'Consultar los precios de una prestación en todas las listas' }) // prettier-ignore
+  @ApiOkResponse({ type: ServicePriceListDto })
+  async servicePrices(
+    @Param('serviceId', ParseUUIDPipe) serviceId: string,
+  ): Promise<{ items: ServicePriceResponse[] }> {
+    const items = await this.services.servicePrices(
+      serviceId,
+      clinicalDateOf(new Date()),
+    );
+    return {
+      items: items.map((price) => ({
+        priceId: price.priceId,
+        payer: price.payer,
+        amount: price.amount.toString(),
+        validFrom: price.validFrom,
+        validTo: price.validTo,
+        inForce: price.inForce,
+      })),
+    };
+  }
+
+  /** BI-188. The exams of the exam catalogue charged through the service. */
+  @Get('services/:serviceId/exams')
+  @RequirePermission('billing:read', 'global')
+  @ApiOperation({ summary: 'Consultar los exámenes que se cobran con una prestación' }) // prettier-ignore
+  @ApiOkResponse({ type: ServiceExamListDto })
+  async serviceExams(
+    @Param('serviceId', ParseUUIDPipe) serviceId: string,
+  ): Promise<{ items: ServiceExamResponse[] }> {
+    return { items: await this.services.serviceExams(serviceId) };
   }
 
   /** BI-012. */

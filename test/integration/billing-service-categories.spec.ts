@@ -12,6 +12,7 @@ import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
+import { addDays, clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { extractDatabaseProblem } from '../../src/shared/http/database-problem';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
@@ -385,6 +386,92 @@ describe('las categorías de prestación (B11)', () => {
         .set('Authorization', bearer())
         .send({ categoryId: other.id })
         .expect(200);
+    });
+  });
+
+  describe('la ficha de una prestación', () => {
+    interface ServicePrice {
+      priceId: string;
+      payer: { id: string; name: string };
+      amount: string;
+      validFrom: string;
+      validTo: string | null;
+      inForce: boolean;
+    }
+
+    it('BI-189 sirve sus precios en todas las listas, con su vigencia, y marca el vigente hoy', async () => {
+      const service = await prisma.billableService.findUniqueOrThrow({
+        where: { code: 'CONS-MG-PV' },
+      });
+      // A second payer's price that starts tomorrow in Ecuador: listed, not
+      // in force. Derived from the clock, never written by hand.
+      const tomorrow = addDays(clinicalDateOf(new Date()), 1);
+      const insurer = await prisma.payer.findFirstOrThrow({
+        where: { code: { not: 'PARTICULAR' } },
+        include: { priceLists: { select: { id: true } } },
+      });
+      const future = await prisma.price.create({
+        data: {
+          priceListId: insurer.priceLists[0]!.id,
+          billableServiceId: service.id,
+          amount: '42.00',
+          validFrom: new Date(`${tomorrow}T00:00:00Z`),
+        },
+      });
+
+      const response = await api()
+        .get(`/api/v1/billing/services/${service.id}/prices`)
+        .set('Authorization', bearer())
+        .expect(200);
+      const items = (response.body as { items: ServicePrice[] }).items;
+
+      const particular = await prisma.payer.findUniqueOrThrow({
+        where: { code: 'PARTICULAR' },
+      });
+      const selfPay = items.find((item) => item.payer.id === particular.id);
+      expect(selfPay?.inForce).toBe(true);
+      expect(items.find((item) => item.priceId === future.id)).toMatchObject({
+        payer: { id: insurer.id },
+        amount: '42.00',
+        validFrom: tomorrow,
+        inForce: false,
+      });
+    });
+
+    it('BI-188 sirve los exámenes del catálogo que se cobran con ella', async () => {
+      const blood = await prisma.billableService.findUniqueOrThrow({
+        where: { code: 'LAB-BH' },
+      });
+      const consultation = await prisma.billableService.findUniqueOrThrow({
+        where: { code: 'CONS-MG-PV' },
+      });
+
+      const exams = await api()
+        .get(`/api/v1/billing/services/${blood.id}/exams`)
+        .set('Authorization', bearer())
+        .expect(200);
+      expect(
+        (exams.body as { items: { code: string }[] }).items.map((e) => e.code),
+      ).toContain('EX-BH');
+
+      // Control: a consultation is charged through no exam.
+      const none = await api()
+        .get(`/api/v1/billing/services/${consultation.id}/exams`)
+        .set('Authorization', bearer())
+        .expect(200);
+      expect((none.body as { items: unknown[] }).items).toEqual([]);
+    });
+
+    it('BI-188 BI-189 una prestación que no existe responde 404', async () => {
+      const missing = '0190f1a2-0000-7000-8000-000000000000';
+      await api()
+        .get(`/api/v1/billing/services/${missing}/prices`)
+        .set('Authorization', bearer())
+        .expect(404);
+      await api()
+        .get(`/api/v1/billing/services/${missing}/exams`)
+        .set('Authorization', bearer())
+        .expect(404);
     });
   });
 });

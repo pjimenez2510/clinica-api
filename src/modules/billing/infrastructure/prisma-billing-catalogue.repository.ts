@@ -25,6 +25,8 @@ import type {
   PriceListView,
   ServiceCategoryKind,
   ServiceCategoryView,
+  ServiceExamView,
+  ServicePriceView,
   TaxRateView,
 } from '../domain/billing.repository';
 import type { ServiceMatch } from '../domain/charge-proposal';
@@ -51,6 +53,43 @@ import { type PriceChange, type PriceRow, toClinicalDate } from '../domain/price
 @Injectable()
 export class PrismaBillingCatalogueRepository implements BillingCatalogueRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * BI-189. By payer name, newest validity first within each payer. Inactive
+   * payers included: their old prices are part of the history.
+   */
+  async listPricesAcrossPayers(serviceId: string): Promise<ServicePriceView[]> {
+    const rows = await this.prisma.price.findMany({
+      where: { billableServiceId: serviceId },
+      include: {
+        priceList: {
+          select: { payer: { select: { id: true, name: true, kind: true } } },
+        },
+      },
+      orderBy: [
+        { priceList: { payer: { name: 'asc' } } },
+        { validFrom: 'desc' },
+      ],
+    });
+    return rows.map((row) => ({
+      ...toPriceRow(row),
+      priceId: row.id,
+      payer: {
+        id: row.priceList.payer.id,
+        name: row.priceList.payer.name,
+        kind: row.priceList.payer.kind as PayerKind,
+      },
+    }));
+  }
+
+  /** BI-188. A read of the exam catalogue, never a write (BI-004). */
+  async listExamsOfService(serviceId: string): Promise<ServiceExamView[]> {
+    return this.prisma.examDefinition.findMany({
+      where: { billableServiceId: serviceId },
+      select: { id: true, code: true, name: true, active: true },
+      orderBy: { name: 'asc' },
+    });
+  }
 
   /** BI-185. Alphabetical; inactive ones only on request, never hidden. */
   async listServiceCategories(filter: {

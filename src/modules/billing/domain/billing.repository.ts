@@ -5,7 +5,7 @@ import type { VisitSequence } from './clinical-acts.port';
 import type { InvoiceReceiver, InvoiceStatus, PaymentMethod } from './invoice';
 import type { Money, Percentage, Quantity } from './money';
 import type { PatientIdentity } from './patient-identity';
-import type { PriceChange, PriceRow } from './price-list';
+import type { PriceChange, PriceRow, ValidityPeriod } from './price-list';
 
 /**
  * What billing needs from storage, stated without naming a database.
@@ -65,6 +65,28 @@ export const SERVICE_CATEGORY_KINDS = [
   'OTHER',
 ] as const;
 export type ServiceCategoryKind = (typeof SERVICE_CATEGORY_KINDS)[number];
+
+/**
+ * BI-189. One price of a service in one payer's list, with its validity. The
+ * service's card answers «how much is this, to whom, since when» in one place.
+ */
+export interface ServicePriceView extends ValidityPeriod {
+  priceId: string;
+  payer: { id: string; name: string; kind: PayerKind };
+  amount: Money;
+}
+
+/**
+ * BI-188. An exam of the exam catalogue charged through this service
+ * (`exam_definition.billable_service_id`). Read only: the exam catalogue is
+ * its own module's.
+ */
+export interface ServiceExamView {
+  id: string;
+  code: string;
+  name: string;
+  active: boolean;
+}
 
 /** BI-185. One category of the clinic's catalogue of services. */
 export interface ServiceCategoryView {
@@ -222,6 +244,11 @@ export interface BillingCatalogueRepository {
     categoryId: string,
     update: { name?: string; active?: boolean },
   ): Promise<ServiceCategoryView>;
+
+  /** BI-189. Every list's prices of the service, every validity. */
+  listPricesAcrossPayers(serviceId: string): Promise<ServicePriceView[]>;
+  /** BI-188. The exams charged through the service. */
+  listExamsOfService(serviceId: string): Promise<ServiceExamView[]>;
 
   listTaxRates(): Promise<TaxRateView[]>;
   findTaxRate(taxRateId: string): Promise<TaxRateView | null>;
