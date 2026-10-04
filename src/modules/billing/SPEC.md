@@ -310,6 +310,49 @@ otra vez, y comprobar que cada factura tiene exactamente sus líneas.
 **Cubre:** BI-169, BI-170, BI-171.
 **Solo servidor:** BI-169. Es una garantía de almacenamiento.
 
+### B10 — Caja ve qué falta cobrar, y a quién _(P1)_
+
+Revisión de usabilidad del autor (04-10-2026): cerró una atención y **no
+apareció en caja**. La causa no era un filtro: nada llevaba la atención a caja.
+La ruta de paso a caja (BI-150) existía, pero ninguna pantalla la alcanzaba —la
+de atención sólo enlaza a una cuenta que ya exista, y caja sólo listaba cuentas
+abiertas—, y el recorrido F-06 la llamaba por API. Y en caja, una cuenta se
+reconocía por la hora y el pagador: ni nombre, ni documento, ni HC (D-078).
+
+**Por qué es P1:** una consulta que no llega a caja no se cobra, y no da ningún
+error. Es el mismo dinero perdido que B8 existe para evitar.
+
+**Prueba independiente:** el médico cierra una atención en pantalla; caja abre
+Facturación y la ve en «Por cobrar» con nombre, documento y HC, la pasa a caja
+y le sale la consulta propuesta. Una atención interrumpida sin acto clínico
+aparece con el motivo por el que no tiene nada que cobrar. Y facturar, añadir
+un cargo, facturar lo pendiente y cerrar la cuenta termina siempre.
+
+**Cubre:** BI-181 a BI-184. **Solo servidor:** ninguno.
+
+### B11 — Prestaciones con estructura _(P2)_
+
+La categoría de una prestación deja de ser texto libre y pasa a un catálogo
+con **clase** (consulta, procedimiento, laboratorio, imagen, insumo u otro), y
+la clase dice qué estructura tiene la prestación: la consulta, su especialidad
+y tipo de visita (BI-158); el procedimiento, su concepto del tarifario; el
+examen, los exámenes del catálogo que se cobran con ella. Administración la ve
+como las demás pantallas: lista → ficha con pestañas (datos, precios por
+pagador, vigencias).
+
+**Por qué es P2:** no mueve dinero, pero la categoría escrita a mano produce
+«Laboratorio», «laboratorio» y «Lab.» en el mismo informe, y la atadura de la
+consulta a su especialidad (BI-158) hoy se puede poner en un insumo.
+
+**Prueba independiente:** crear una categoría, asignarla a una prestación,
+desactivarla y comprobar que no se ofrece para prestaciones nuevas y que la ya
+asignada sigue leyéndose; intentar declarar «la consulta» de una especialidad
+sobre una prestación de clase insumo y recibir el rechazo; y contra
+PostgreSQL, que la base no admite una prestación sin categoría.
+
+**Cubre:** BI-185 a BI-189. **Solo servidor:** BI-186 (la base garantiza la
+categoría y la clase conocida).
+
 > Las BI-003, BI-004, BI-007 y BI-130 a BI-135 **no son una entrega**: aplican a
 > todas. Una ruta de B1 sin permiso declarado no pasa la prueba de rutas, y una
 > pantalla de B6 que bloquee una atención por falta de pago es ilegal en B6
@@ -1439,6 +1482,101 @@ dos registros distintos.**
   > cita no tiene especialidad, y eso es una propuesta con una línea de menos
   > (BI-155), nunca una adivinanza.
 
+## 17. Caja: qué falta cobrar, y a quién
+
+> Revisión de usabilidad del autor, 04-10-2026 (D-078, BI-150). Ver B10.
+
+- **BI-181** — CUANDO caja consulte lo pendiente de cobro de una sede, el
+  sistema DEBERÁ listar las atenciones de esa sede terminadas —`DISCHARGED`,
+  `DISCONTINUED` o `COMPLETED`— en los últimos siete días de calendario de
+  Ecuador, contando el de hoy, que no tengan una cuenta liquidada (`SETTLED`),
+  cada una con el estado de su cuenta (sin cuenta, o abierta y cuál); y NO
+  DEBERÁ listar las anuladas (`ENTERED_IN_ERROR`) ni las de otra sede.
+  > **El defecto que lo origina.** BI-150 daba la ruta de paso a caja, pero
+  > nada la alcanzaba: la atención enlaza a la cuenta sólo cuando ya existe, y
+  > caja listaba cuentas, que nacen precisamente de ese paso. El resultado era
+  > una atención cerrada que no estaba en ningún sitio de caja.
+  >
+  > **Siete días y no «hoy».** La consulta de la tarde que nadie pasó a caja
+  > tiene que seguir a la vista al día siguiente; una lista que se vacía a
+  > medianoche pierde justo lo que se quedó sin cobrar. Los días se cuentan en
+  > `America/Guayaquil` (BI-002) por el fin de la atención (`ended_at`).
+  >
+  > **Listar no pasa la atención a caja.** Abrir la cuenta exige elegir quién
+  > paga (BI-150) y eso lo hace caja al pulsar; la lista es lectura y no crea
+  > nada (BI-156).
+- **BI-182** — CUANDO una atención listada por BI-181 no tenga acto clínico
+  (BI-180, D-104), el sistema DEBERÁ indicarlo en su fila, para que caja vea por
+  qué no se le propondrá ningún cargo.
+  > «Si no aparece por una regla, la pantalla dice por qué» (autor). Se lista en
+  > vez de esconderse: quien cobra decide si añade algo a mano o la deja.
+- **BI-183** — El sistema DEBERÁ servir, junto a cada cuenta y cada atención que
+  liste a caja, la identidad del paciente —apellidos y nombres, documento con su
+  tipo y número, y número de historia clínica—, y NO DEBERÁ registrar por ello
+  un acceso a historia clínica por fila (BI-133).
+  > **D-078: identidad, no dato clínico.** Nombre, documento y HC son lo que
+  > hace falta para reconocer a quién se cobra con el paciente delante, y no
+  > dicen nada de su salud. BI-133 prohíbe enterrar la bitácora con un acceso
+  > por fila, no enseñar el nombre: la proyección se lee sin pasar por la ficha.
+  > El recién nacido sin documento lleva sólo su HC. El documento es el
+  > preferido de la ficha: la cédula si la tiene; si no, el primero vigente.
+- **BI-184** — MIENTRAS una cuenta abierta tenga cargos confirmados sin
+  facturar, la pantalla de caja DEBERÁ ofrecer emitir la factura de esos
+  cargos, también cuando la cuenta ya tenga otra factura; y MIENTRAS tenga
+  cargos propuestos o confirmados sin facturar, la pantalla NO DEBERÁ ofrecer
+  cerrar la cuenta como acción disponible y DEBERÁ decir qué falta.
+  > **El segundo defecto del autor**: facturó, añadió un cargo y la cuenta ya no
+  > se podía cerrar. La pantalla escondía «Emitir factura» en cuanto existía una
+  > factura, y el servidor —con razón— rechazaba cerrar con un cargo sin
+  > facturar (BI-072). El camino coherente ya existía en el servidor: una
+  > factura nueva de lo pendiente, cada una con sus líneas (B9, BI-169). Lo que
+  > faltaba era que la pantalla lo ofreciera, y que no ofreciera un «Cerrar»
+  > que sólo puede fallar.
+
+## 18. Prestaciones con estructura
+
+> Revisión de usabilidad del autor, 04-10-2026. Ver B11.
+
+- **BI-185** — El sistema DEBERÁ mantener las categorías de prestación como un
+  catálogo administrable —nombre único sin distinguir mayúsculas, clase y estado
+  activo—, y DEBERÁ exigir que toda prestación apunte a una categoría del
+  catálogo; SI se asigna a una prestación una categoría desactivada, ENTONCES
+  DEBERÁ rechazarlo con `SERVICE_CATEGORY_INACTIVE`, y SI se crea o renombra una
+  categoría con el nombre de otra, con `SERVICE_CATEGORY_NAME_DUPLICATE`.
+  > «Catálogos en vez de texto libre» (autor). Una categoría desactivada deja de
+  > ofrecerse, y las prestaciones que ya la llevan la siguen leyendo, como
+  > BI-014 con la prestación.
+- **BI-186** — El sistema DEBERÁ guardar la categoría de cada prestación como
+  referencia al catálogo y la clase de cada categoría como uno de `CONSULTATION`,
+  `PROCEDURE`, `LABORATORY`, `IMAGING`, `SUPPLY` u `OTHER`; y la **base** DEBERÁ
+  rechazar una prestación sin categoría, una categoría con otra clase y el
+  borrado de una categoría que alguna prestación usa.
+  > Las clases de examen y procedimiento son las mismas que las de una orden
+  > (`service_order_category`), para que una orden y su cobro hablen igual.
+- **BI-187** — SI se declara una prestación como la consulta de una
+  especialidad (BI-158) y su categoría no es de clase `CONSULTATION`, o se ata a
+  un concepto de procedimiento y su categoría no es de clase `PROCEDURE`,
+  ENTONCES el sistema DEBERÁ rechazarlo con `SERVICE_KIND_MISMATCH`; y SI se
+  cambia la categoría de una prestación que tiene una de esas ataduras a una de
+  otra clase, ENTONCES DEBERÁ rechazarlo igual.
+  > Hoy nada impide que «Guantes» sea la consulta de dermatología primera vez,
+  > y entonces caja propondría un par de guantes por cada consulta (BI-158). La
+  > clase dice qué estructura admite la prestación.
+- **BI-188** — CUANDO se consulte una prestación de clase `LABORATORY` o
+  `IMAGING`, el sistema DEBERÁ servir los exámenes del catálogo de exámenes que
+  se cobran con ella (`exam_definition.billable_service_id`), y NO DEBERÁ
+  modificarlos desde la facturación.
+  > El enlace prestación ↔ examen ya existe del lado del examen (BI-151). La
+  > estructura de resultados —analitos, unidades, rangos, críticos— es del
+  > catálogo de exámenes y la construye su propia rama; aquí sólo se ve con qué
+  > se cobra cada examen.
+- **BI-189** — CUANDO se consulte una prestación, el sistema DEBERÁ servir sus
+  precios en las listas de todos los pagadores, con su vigencia `[desde,
+  hasta)`, marcando el vigente en la fecha de hoy en Ecuador.
+  > Hasta aquí, para saber cuánto cuesta una prestación a cada pagador había que
+  > abrir la lista de cada uno: la ficha de la prestación lo responde en un
+  > sitio.
+
 ---
 
 ## Códigos de error nuevos
@@ -1500,6 +1638,10 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `PAYMENT_REVERSAL_REASON_REQUIRED` | 422 | BI-102 |
 | `CASH_SESSION_CLOSED` | 409 | BI-104 |
 | `TARIFF_PUBLICATION_NOT_FOUND` | 404 | BI-110 |
+| `SERVICE_CATEGORY_NOT_FOUND` | 404 | BI-185 |
+| `SERVICE_CATEGORY_INACTIVE` | 422 | BI-185 |
+| `SERVICE_CATEGORY_NAME_DUPLICATE` | 409 | BI-185 |
+| `SERVICE_KIND_MISMATCH` | 422 | BI-187 |
 
 **Se reutilizan, y no se declaran de nuevo:** `SELF_AUTHORISATION_DENIED`
 (BI-064, ya en el catálogo por AG-103), `SITE_SCOPE_DENIED` (BI-131),
@@ -1616,6 +1758,11 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 | `DELETE` | `/billing/services/{id}` | `billing:price-manage` | `global` | BI-012 |
 | `GET` | `/billing/services/by-tax-rate` | `billing:price-manage` | `global` | BI-023 |
 | `POST` | `/billing/services/{id}/tax-review` | `billing:price-manage` | `global` | BI-024 |
+| `GET` | `/billing/services/{id}/prices` | `billing:read` | `global` | BI-189 |
+| `GET` | `/billing/services/{id}/exams` | `billing:read` | `global` | BI-188 |
+| `GET` | `/billing/service-categories` | `billing:read` | `global` | BI-185 |
+| `POST` | `/billing/service-categories` | `billing:price-manage` | `global` | BI-185, BI-186 |
+| `PATCH` | `/billing/service-categories/{id}` | `billing:price-manage` | `global` | BI-185, BI-187 |
 | `GET` | `/billing/tax-rates` | `billing:read` | `global` | BI-020, BI-021 |
 | `GET` | `/billing/payers` | `billing:read` | `global` | BI-030, BI-031 |
 | `POST` | `/billing/payers` | `billing:price-manage` | `global` | BI-030, BI-034 |
@@ -1623,7 +1770,8 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 | `GET` | `/billing/payers/{payerId}/prices` | `billing:read` | `global` | BI-040, BI-041 |
 | `POST` | `/billing/payers/{payerId}/prices` | `billing:price-manage` | `global` | BI-041 a BI-048 |
 | `POST` | `/billing/payers/{payerId}/prices/{priceId}/close` | `billing:price-manage` | `global` | BI-044 |
-| `GET` | `/billing/sites/{siteId}/accounts` | `billing:read` | `param:siteId` | BI-070, BI-133 |
+| `GET` | `/billing/sites/{siteId}/accounts` | `billing:read` | `param:siteId` | BI-070, BI-133, BI-183 |
+| `GET` | `/billing/sites/{siteId}/encounters/awaiting-checkout` | `billing:read` | `param:siteId` | BI-181 a BI-183 |
 | `POST` | `/billing/sites/{siteId}/accounts` | `billing:write` | `param:siteId` | BI-070, BI-121 |
 | `GET` | `/billing/sites/{siteId}/accounts/{accountId}` | `billing:read` | `param:siteId` | BI-074, BI-135 |
 | `GET` | `/billing/sites/{siteId}/accounts/{accountId}/invoice-receiver` | `billing:read` | `param:siteId` | BI-082 |
@@ -1721,6 +1869,10 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | BI-140 a BI-143 | Integración + contrato HTTP por campo |
 | BI-150 a BI-153, BI-155, BI-156, BI-158 | Unitario de dominio (la derivación es pura) + integración sobre la siembra REAL: se comprueba que los tres precios salen del catálogo que se instala, no de un fixture |
 | BI-154, BI-157 | Integración contra PostgreSQL real: se envía dos veces, se anula una línea y se vuelve a enviar, y se intenta el segundo cargo del mismo acto **por SQL directo**. Los tres índices únicos parciales son el requisito; una lectura previa no lo es |
+| BI-181 a BI-183 | Integración contra PostgreSQL real con el reloj inyectado: la ventana de siete días se cuenta en Ecuador, y la lista no escribe en `access_audit` |
+| BI-184 | Unitario de la pantalla (qué se ofrece) + recorrido F-06: facturar, añadir, facturar lo pendiente y cerrar |
+| BI-185 a BI-187 | Unitario de dominio + integración contra PostgreSQL real: la referencia `NOT NULL`, la clase conocida y el `RESTRICT` los garantiza la base |
+| BI-188, BI-189 | Integración contra la siembra real + contrato HTTP |
 
 ## Preguntas abiertas
 
