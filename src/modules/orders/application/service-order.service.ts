@@ -2,6 +2,11 @@ import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 
 import {
+  ACCESS_AUDIT_RECORDER,
+  type AccessAuditRecorder,
+} from '../../../shared/audit/access-audit.port';
+
+import {
   SERVICE_ORDER_REPOSITORY,
   type PendingOrderEntry,
   type ServiceOrderRepository,
@@ -98,6 +103,8 @@ export class ServiceOrderService {
     @Inject(EXAM_CATALOGUE_REPOSITORY)
     private readonly exams: ExamCatalogueRepository,
     private readonly logger: PinoLogger,
+    @Inject(ACCESS_AUDIT_RECORDER)
+    private readonly audit: AccessAuditRecorder,
   ) {
     this.logger.setContext(ServiceOrderService.name);
   }
@@ -200,11 +207,35 @@ export class ServiceOrderService {
       if (chartId === undefined) throw new ResultChartUnmatchedError();
     }
 
+    /**
+     * ORD-026 (revisión clínica de F-07). The cedula path shows a NAME and
+     * what is pending for that person: an access to identified health data,
+     * so it leaves ONE row per search — not per refresh of the plain worklist,
+     * which ORD-092 keeps out of the trail.
+     */
+    if (chartId !== undefined) {
+      await this.audit.record({
+        userId: requester.userId,
+        resourceType: 'patient',
+        resourceId: chartId,
+        action: 'READ',
+        ip: requester.ip,
+        userAgent: requester.userAgent,
+      });
+    }
+
     return this.orders.pending({
       sites: requester.sites,
       category: request.category,
       examCode: request.examCode,
       chartId,
+      /**
+       * ORD-026, D-068 C. The name travels ONLY on the cedula path: whoever
+       * searches by it holds the person's document already, so the name tells
+       * them nothing new — and it is what lets them see that «RN de …» with
+       * the mother's cedula is not the mother's own pending blood count.
+       */
+      includePatientName: chartId !== undefined,
       now,
       limit: request.limit,
     });

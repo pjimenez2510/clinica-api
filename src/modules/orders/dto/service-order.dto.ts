@@ -149,8 +149,9 @@ export class PendingOrdersQueryDto extends createZodDto(
  * ORD-020 to ORD-024. One entry of the worklist.
  *
  * ⚠️ WHAT IS NOT HERE IS THE REQUIREMENT (ORD-024): no diagnosis, no reason for
- * the visit, no patient name. The list is opened by everybody with
- * `record:read` over the site and leaves no audit row per entry (ORD-092).
+ * the visit, and no patient name — save on the cedula path (ORD-026). The list
+ * is opened by everybody with `record:read` over the site and leaves no audit
+ * row per entry (ORD-092).
  */
 export const pendingOrderSchema = z.object({
   orderId: z.uuid(),
@@ -174,6 +175,11 @@ export const pendingOrderSchema = z.object({
    */
   overdue: z.boolean().nullable(),
   dueAt: z.iso.datetime().nullable(),
+  /**
+   * ORD-026, D-068 C. Only when the worklist was asked for by cedula; `null`
+   * on the plain worklist, which carries no identity (ORD-024).
+   */
+  patientName: z.string().nullable(),
 });
 /** One worklist entry; no route returns it alone, it is the row of `PendingOrderListDto`. */
 export class PendingOrderDto extends createZodDto(pendingOrderSchema) {}

@@ -1,6 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 
-import { SiteParametersNotFoundError } from '../domain/configuration.errors';
+import {
+  RoleCannotWorkResultsError,
+  SiteParametersNotFoundError,
+} from '../domain/configuration.errors';
 import {
   SITE_PARAMETER_REPOSITORY,
   type SiteParameterRepository,
@@ -11,6 +14,7 @@ import {
   assertLeadWindowCoherent,
   assertParametersInRange,
   assertPermissionIsDeclared,
+  missingResultsWork,
   type SiteParametersPatch,
 } from '../domain/site-parameters';
 import { PERMISSIONS } from '../../../shared/authorisation/permission.catalogue';
@@ -104,6 +108,23 @@ export class SiteParametersService {
     }
 
     /**
+     * ORD-046, ORD-065. A role that answers for a results worklist has to be
+     * able to work it. Read before writing, like the permission above; a role
+     * that does not exist is left to the foreign key (`ROLE_NOT_FOUND`).
+     */
+    for (const field of [
+      'criticalEscalationRoleId',
+      'unmatchedResultOwnerRoleId',
+    ] as const) {
+      const roleId = patch[field];
+      if (!roleId) continue;
+      const granted = await this.repository.rolePermissions(roleId);
+      if (granted === null) continue;
+      const missing = missingResultsWork(granted);
+      if (missing.length > 0) throw new RoleCannotWorkResultsError(field, missing); // prettier-ignore
+    }
+
+    /**
      * D-021, the second half of the guarantee. `assertParametersInRange` says
      * the atom is a sane increment; this says it does not strand a duration
      * somebody already configured against the atom it replaces.
@@ -142,6 +163,14 @@ export class SiteParametersService {
         patch.waitlistMaxContactAttempts ?? current.waitlistMaxContactAttempts,
       cancelledRetention:
         patch.cancelledRetention ?? current.cancelledRetention,
+      // `!== undefined` and not `??`: for the roles `null` is «quien pidió»,
+      // a value the site chose, and `??` would put back what the row had.
+      criticalNoticeWithinMinutes: chosen(patch.criticalNoticeWithinMinutes, current.criticalNoticeWithinMinutes), // prettier-ignore
+      criticalEscalationRoleId: chosen(patch.criticalEscalationRoleId, current.criticalEscalationRoleId), // prettier-ignore
+      unmatchedResultOwnerRoleId: chosen(patch.unmatchedResultOwnerRoleId, current.unmatchedResultOwnerRoleId), // prettier-ignore
+      unmatchedResultDeadlineHours:
+        patch.unmatchedResultDeadlineHours ??
+        current.unmatchedResultDeadlineHours,
     });
 
     const change = await this.repository.update(siteId, patch);
@@ -158,4 +187,9 @@ export class SiteParametersService {
     await this.trail.record('UPDATE', change.after.siteId, requester, change);
     return change.after;
   }
+}
+
+/** The patched value when one was sent — `null` included — else the stored one. */
+function chosen<T>(sent: T | undefined, stored: T): T {
+  return sent === undefined ? stored : sent;
 }

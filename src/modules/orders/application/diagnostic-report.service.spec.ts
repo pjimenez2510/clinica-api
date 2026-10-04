@@ -12,7 +12,9 @@ import type { Requester } from './service-order.service';
 import type { AnalyteDefinition } from '../domain/analyte';
 import type {
   DiagnosticReportRepository,
+  CriticalNoticeView,
   DiagnosticReportView,
+  SafetyPolicy,
   ExpectedAnalytes,
   FlaggedResultEntry,
   MatchResultCommand,
@@ -155,6 +157,12 @@ class FakeReports implements Partial<DiagnosticReportRepository> {
   critical(): Promise<FlaggedResultEntry[]> {
     return Promise.resolve([]);
   }
+  criticalChains(): Promise<ReadonlyMap<string, never>> {
+    return Promise.resolve(new Map<string, never>());
+  }
+  sitesInHours(): Promise<ReadonlySet<string>> {
+    return Promise.resolve(new Set<string>());
+  }
 
   /** ORD-043. The orphan result the queue is showing, or nothing. */
   orphan: MatchableResult | undefined = {
@@ -162,6 +170,12 @@ class FakeReports implements Partial<DiagnosticReportRepository> {
     reportId: 'report-0',
     orderId: ORDER,
     orderItemId: null,
+    abnormalFlag: null,
+    observedAt: new Date(0),
+    siteId: SITE,
+    superseded: false,
+    supersededAt: null,
+    orderedByUserId: 'user-ordering',
   };
   matched: { command: MatchResultCommand; expected: ExpectedAnalytes }[] = [];
 
@@ -177,6 +191,12 @@ class FakeReports implements Partial<DiagnosticReportRepository> {
     this.matched.push({ command, expected });
     return Promise.resolve(aReport({ id: 'report-0' }));
   }
+  recordNotice(): Promise<CriticalNoticeView> {
+    return Promise.reject(new Error('not exercised here'));
+  }
+  safetyPolicies(): Promise<ReadonlyMap<string, SafetyPolicy>> {
+    return Promise.resolve(new Map<string, SafetyPolicy>());
+  }
 }
 
 const aReport = (
@@ -191,6 +211,7 @@ const aReport = (
   supersedesId: overrides.supersedesId ?? null,
   supersededById: overrides.supersededById ?? null,
   supersededAt: overrides.supersededAt ?? null,
+  supersededRecordedAt: overrides.supersededRecordedAt ?? null,
   results: [],
 });
 
@@ -459,6 +480,12 @@ describe('el registro y la corrección de un resultado', () => {
       reportId: 'report-0',
       orderId: ORDER,
       orderItemId: ITEM_BH,
+      abnormalFlag: null,
+      observedAt: new Date(0),
+      siteId: SITE,
+      superseded: false,
+      supersededAt: null,
+      orderedByUserId: 'user-ordering',
     };
 
     await expect(
@@ -502,8 +529,8 @@ describe('el registro y la corrección de un resultado', () => {
   it('ORD-092 no deja fila de bitácora por cada entrada de las dos colas', async () => {
     // Una lista que se refresca en una pantalla abierta produciría miles de
     // filas al día y enterraría las que importan. Misma decisión que EN-123.
-    await service.unmatched(requester, 50);
-    await service.critical(requester, 50);
+    await service.unmatched(requester, 50, new Date());
+    await service.critical(requester, new Date());
 
     expect(audit.entries).toEqual([]);
   });

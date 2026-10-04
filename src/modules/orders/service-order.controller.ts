@@ -204,5 +204,6 @@ function toPendingResponse(
     waitingDays: entry.ageing.waitingDays,
     overdue: entry.ageing.overdue,
     dueAt: entry.ageing.dueAt?.toISOString() ?? null,
+    patientName: entry.patientName,
   };
 }

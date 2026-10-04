@@ -33,6 +33,15 @@ export interface AccountView {
 }
 
 /**
+ * AU-047. A row of the accounts table: the account and its LIVE grants, read
+ * in the same query so the table can name each person's roles without one
+ * request per row.
+ */
+export interface AccountListItem extends AccountView {
+  grants: readonly GrantView[];
+}
+
+/**
  * What the adapter inserts. The email arrives already lowercased by
  * `AccountsService.create` — the normalisation sign-in applies too.
  */
@@ -105,7 +114,7 @@ export interface MfaResetAuthor {
  * this email free?» method, on purpose — see the file header.
  */
 export interface AccountAdminRepositoryPort {
-  list(filter: AccountListFilter): Promise<readonly AccountView[]>;
+  list(filter: AccountListFilter): Promise<readonly AccountListItem[]>;
   findById(id: string): Promise<AccountView | null>;
   /** Throws `EmailAlreadyRegisteredError` when the unique index refuses. */
   create(input: CreateAccountInput): Promise<AccountView>;

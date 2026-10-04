@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 
 import { PrismaExamCatalogueRepository } from '../../src/modules/orders/infrastructure/prisma-exam-catalogue.repository';
 import { PrismaServiceOrderRepository } from '../../src/modules/orders/infrastructure/prisma-service-order.repository';
+import { ServiceOrderService } from '../../src/modules/orders/application/service-order.service';
+import { PrismaAccessAuditRecorder } from '../../src/shared/infrastructure/audit/prisma-access-audit.recorder';
 import { PrismaPatientRepository } from '../../src/modules/patients/infrastructure/prisma-patient.repository';
 import { addDays, clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
@@ -464,6 +466,90 @@ describe('la orden de exámenes contra PostgreSQL', () => {
 
     expect(worklist).toHaveLength(1);
     expect(worklist[0]?.testCode).toBe('EX-BH');
+  });
+
+  /**
+   * D-068 C. El informe del recién nacido llega rotulado «RN de …» con la
+   * cédula de la madre; si la madre tiene pendiente el mismo examen, el
+   * resultado del bebé cabe en la orden de la madre. Con el nombre en la fila,
+   * quien tiene el papel ve a quién corresponde cada orden.
+   */
+  it('ORD-026 al buscar por cédula enseña sólo las órdenes de esa ficha con su nombre, y la cola sin filtro no lleva ninguno', async () => {
+    const prisma = db();
+    // Dos personas con una orden pendiente cada una, en la misma sede: la
+    // madre con cédula y otra paciente con otra.
+    const mother = await aScene(prisma);
+    await prisma.patientIdentifier.create({
+      data: { patientId: mother.patient.id, type: 'CEDULA', value: CEDULA },
+    });
+    await prisma.patient.update({
+      where: { id: mother.patient.id },
+      data: {
+        givenName: 'María',
+        secondGivenName: 'Elena',
+        familyName: 'Guamán',
+        secondFamilyName: 'Pilco',
+      },
+    });
+    const other = await createPatient(prisma);
+    await prisma.patient.update({
+      where: { id: other.id },
+      data: { givenName: 'Rosa', familyName: 'Chicaiza' },
+    });
+    await prisma.patientIdentifier.create({
+      data: { patientId: other.id, type: 'CEDULA', value: OTHER_CEDULA },
+    });
+    const otherEncounter = await prisma.encounter.create({
+      data: {
+        siteId: mother.site.id,
+        practitionerId: mother.practitioner.id,
+        patientId: other.id,
+        startedAt: new Date(),
+        careModality: 'MORBIDITY',
+        visitSequence: 'FIRST_TIME',
+      },
+    });
+    const place = (encounterId: string) =>
+      ordersOf(prisma).place({
+        encounterId,
+        category: 'LABORATORY',
+        priority: 'ROUTINE',
+        lines: [{ examDefinitionId: mother.bh.id }],
+        sites: 'all',
+      });
+    const mothers = await place(mother.encounter.id);
+    const others = await place(otherEncounter.id);
+
+    const logger = {
+      setContext: () => undefined,
+      info: () => undefined,
+      warn: () => undefined,
+      error: () => undefined,
+    };
+    const service = new ServiceOrderService(
+      ordersOf(prisma),
+      catalogueOf(prisma),
+      logger as never,
+      new PrismaAccessAuditRecorder(prisma as unknown as PrismaService, logger as never), // prettier-ignore
+    );
+    // Un usuario de verdad: la bitácora guarda su id, que es un uuid.
+    const reader = await createUser(prisma);
+    const requester = { userId: reader.id, sites: 'all' as const };
+    const now = new Date();
+
+    const byCedula = await service.pending({ cedula: CEDULA, limit: 50 }, requester, now); // prettier-ignore
+    expect(byCedula.map((entry) => entry.orderId)).toEqual([mothers.id]);
+    // Los dos nombres y los dos apellidos: es lo que separa a dos homónimos.
+    expect(byCedula[0]?.patientName).toBe('María Elena Guamán Pilco');
+
+    // ORD-024: sin cédula vuelven las dos, y ninguna dice de quién es.
+    const unfiltered = await service.pending({ limit: 50 }, requester, now);
+    expect(unfiltered.map((entry) => entry.orderId).sort()).toEqual([mothers.id, others.id].sort()); // prettier-ignore
+    expect(unfiltered.every((entry) => entry.patientName === null)).toBe(true);
+
+    // Y la búsqueda por cédula, sólo ella, deja su fila en la bitácora.
+    const trail = await prisma.accessAudit.findMany({ where: { resourceType: 'patient' } }); // prettier-ignore
+    expect(trail.map((row) => row.resourceId)).toEqual([mother.patient.id]);
   });
 
   it('ORD-081 encuentra la ficha por su cédula, y ninguna por una que nadie lleva', async () => {

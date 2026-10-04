@@ -45,6 +45,15 @@ const REFERENCE = /\b([A-Z]{2,4})-(\d{3})\b/g;
 const TEST_TITLE =
   /\b(?:it|test|describe)(?:\.\w+)*\s*\(\s*(['"`])([^'"`]+)\1/g;
 const STATE_LINE = /^\*\*Estado:\*\*\s*(\S+)/m;
+/**
+ * `**Solo interfaz:** PA-063. Volver lo decide el historial…` — a requirement
+ * whose whole behaviour lives in the browser: its test is in clinica-web, where
+ * `pnpm estado` (scripts/board.mts, SCREEN_ONLY) looks for it. Only up to the
+ * first full stop, as there: the explanation may name other requirements
+ * without declaring them.
+ */
+const SCREEN_ONLY = /\*\*Solo interfaz:\*\*\s*([^.]*)\./g;
+const SINGLE_ID = /\b([A-Z]{2,4}-\d{3})\b/g;
 
 /**
  * Success criteria (`SC-001`) are outcomes, not behaviours: latency percentiles,
@@ -62,6 +71,8 @@ interface ModuleSpec {
   module: string;
   state: string;
   ids: string[];
+  /** Declared «Solo interfaz»: tested in clinica-web, not here. */
+  screenOnly: string[];
 }
 
 function exists(path: string): boolean {
@@ -100,10 +111,14 @@ function readSpecs(): ModuleSpec[] {
       for (const match of source.matchAll(DECLARATION)) {
         if (match[1]) ids.push(match[1]);
       }
+      const screenOnly = [...source.matchAll(SCREEN_ONLY)].flatMap((line) =>
+        [...(line[1] ?? '').matchAll(SINGLE_ID)].map((id) => id[1] ?? ''),
+      );
       return {
         module,
         state: STATE_LINE.exec(source)?.[1]?.toLowerCase() ?? 'sin-estado',
         ids,
+        screenOnly,
       };
     });
 }
@@ -159,6 +174,20 @@ describe('trazabilidad de requisitos', () => {
     ).toEqual([]);
   });
 
+  it('no declara «Solo interfaz» un requisito que su SPEC.md no declara', () => {
+    // Una errata ahí descontaría un requisito que nadie ha escrito y no
+    // eximiría al que sí: el que se quería eximir saltaría aquí, en rojo.
+    const strays = specs.flatMap((spec) =>
+      spec.screenOnly
+        .filter((id) => !spec.ids.includes(id))
+        .map((id) => `${spec.module}: ${id}`),
+    );
+    expect(
+      strays,
+      `«Solo interfaz» sin declarar: ${strays.join(', ')}`,
+    ).toEqual([]);
+  });
+
   it('no cita en una prueba ningún requisito que no exista en un SPEC.md', () => {
     const ghosts = [...tested.entries()]
       .filter(([id]) => !declared.has(id))
@@ -184,6 +213,7 @@ describe('trazabilidad de requisitos', () => {
     it(`cubre con al menos una prueba cada requisito vigente de ${spec.module}`, () => {
       const uncovered = spec.ids
         .filter((id) => !OUTCOME_PREFIXES.has(prefixOf(id)))
+        .filter((id) => !spec.screenOnly.includes(id))
         .filter((id) => !tested.has(id));
       expect(
         uncovered,
