@@ -56,7 +56,7 @@ interface PrescriptionBody {
   verificationCode: string | null;
   discardedAt: string | null;
   discardReason: string | null;
-  items: { line: number; genericName: string; quantity: number }[];
+  items: { id: string; line: number; genericName: string; quantity: number }[];
 }
 
 interface ComposedBody {
@@ -801,6 +801,45 @@ describe('la receta por HTTP', () => {
     await post(path, doctorToken, { items: [aLine()] }).expect(201);
   });
 
+  it('PR-026 EN-182 el documento de una receta emitida dice los diagnósticos de su emisión, aunque después se corrijan', async () => {
+    const composed = await composeAsDoctor();
+    await post(`/prescriptions/${composed.prescription.id}/issue`, doctorToken).expect(200); // prettier-ignore
+    const [diagnosis] = await prisma.encounterDiagnosis.findMany({ where: { encounterId } }); // prettier-ignore
+
+    await post(`/encounters/${encounterId}/diagnoses/${diagnosis!.id}/retract`, doctorToken).expect(204); // prettier-ignore
+
+    const document = await get(`/prescriptions/${composed.prescription.id}`, doctorToken).expect(200); // prettier-ignore
+    expect(
+      (document.body as { diagnoses: { code: string }[] }).diagnoses,
+    ).toEqual([expect.objectContaining({ code: 'J029' })]);
+  });
+
+  it('PR-101 la dosis admite cuatro decimales y vuelve tal cual; un quinto se rechaza nombrando el campo', async () => {
+    const path = `/encounters/${encounterId}/prescriptions`;
+
+    const composed = await post(path, doctorToken, { items: [aLine({ doseAmount: 0.125, doseUnit: 'CAPSULE' })] }).expect(201); // prettier-ignore
+    const line = (composed.body as ComposedBody).prescription.items[0] as unknown as { doseAmount: number; doseText: string }; // prettier-ignore
+    expect(line.doseAmount).toBe(0.125);
+    expect(line.doseText).toBe('0,125 cápsulas');
+
+    const refused = await post(path, doctorToken, { items: [aLine({ doseAmount: 0.12345 })] }).expect(422); // prettier-ignore
+    expect((refused.body as Problem).errors?.map((e) => e.field)).toContain('items[0].doseAmount'); // prettier-ignore
+  });
+
+  it('PR-101 la BASE exige dosis mayor que cero y con su unidad', async () => {
+    const composed = await composeAsDoctor();
+    const id = composed.prescription.items[0]!.id;
+
+    await expect(
+      prisma.$executeRaw`UPDATE prescription_item SET dose_amount = 0 WHERE id = ${id}::uuid`,
+    ).rejects.toThrow(/prescription_item_dose_amount_positive/);
+    await expect(
+      prisma.$executeRaw`UPDATE prescription_item SET dose_unit_code = NULL WHERE id = ${id}::uuid`,
+    ).rejects.toThrow(/prescription_item_dose_amount_with_unit/);
+    // Positive control: a draft's line changes when the change is coherent.
+    await prisma.$executeRaw`UPDATE prescription_item SET dose_amount = 2 WHERE id = ${id}::uuid`;
+  });
+
   it('PR-103 publica las listas con el texto que se imprime', async () => {
     const response = await get('/prescriptions/vocabulary', doctorToken).expect(200); // prettier-ignore
     const body = response.body as {
@@ -827,6 +866,8 @@ describe('la receta por HTTP', () => {
   });
 
   it('PR-104 una concentración que el CNMB no trae para ese medicamento exige justificación', async () => {
+    // The database is rebuilt between tests (`useDatabase`), so the declared
+    // presentations do not reach the next one.
     await prisma.catalogConcept.update({
       where: { id: conceptId },
       data: { attributes: { presentations: [{ form: 'CAPSULE', concentration: '500 mg' }] } }, // prettier-ignore

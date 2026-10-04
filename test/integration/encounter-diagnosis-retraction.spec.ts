@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
+import { aTariffConcept } from './orders-fixtures';
 import { useDatabase } from './setup/database';
 import {
   createDiagnosis,
@@ -153,59 +154,98 @@ describe('quitar un diagnóstico deja rastro (EN-180 a EN-183)', () => {
     expect(await prisma.encounterDiagnosisRetraction.count({ where: { encounterId: encounter.id } })).toBe(2); // prettier-ignore
   });
 
-  it('EN-182 con una receta emitida la BASE no deja quitar ni cambiar el principal; con un borrador, sí', async () => {
+  it('EN-182 PR-026 la receta emitida CONGELA sus diagnósticos: quitar o reordenar después no cambia lo que dice', async () => {
     const prisma = db();
     const { site, practitioner, encounter, diagnoses, remover } =
       await anEncounterWithDiagnoses(prisma);
     const [first, second] = diagnoses;
 
-    // Positive control: a DRAFT reads nothing yet.
-    await prisma.prescription.create({
-      data: {
-        encounterId: encounter.id,
-        siteId: site.id,
-        prescriberId: practitioner.id,
-      },
-    });
-    await prisma.$executeRaw`UPDATE encounter_diagnosis SET rank = 9 WHERE id = ${second!.id}::uuid`;
-    await prisma.$executeRaw`UPDATE encounter_diagnosis SET rank = 2 WHERE id = ${second!.id}::uuid`;
-
-    await createIssuedPrescription(prisma, {
+    const issued = await createIssuedPrescription(prisma, {
       encounterId: encounter.id,
       siteId: site.id,
       prescriberId: practitioner.id,
+    });
+    const frozen = [
+      { code: first!.cie10Code, display: first!.cie10Display },
+      { code: second!.cie10Code, display: second!.cie10Display },
+    ];
+    expect(issued.diagnoses).toEqual(frozen);
+
+    // Nothing blocks the correction now, and the receta still says the same.
+    await prisma.$executeRaw`UPDATE encounter_diagnosis SET rank = 9 WHERE id = ${first!.id}::uuid`;
+    await archive(prisma, second!.id, remover.id);
+    await remove(prisma, second!.id);
+
+    const after = await prisma.prescription.findUniqueOrThrow({ where: { id: issued.id } }); // prettier-ignore
+    expect(after.diagnoses).toEqual(frozen);
+    // And a draft never froze anything.
+    const draft = await prisma.prescription.create({
+      data: { encounterId: encounter.id, siteId: site.id, prescriberId: practitioner.id }, // prettier-ignore
+    });
+    expect(draft.diagnoses).toBeNull();
+  });
+
+  it('EN-182 una orden con exámenes vivos impide quitar y reordenar; con todos anulados, no', async () => {
+    const prisma = db();
+    const { site, practitioner, encounter, diagnoses, remover } =
+      await anEncounterWithDiagnoses(prisma);
+    const [first, second] = diagnoses;
+    const exam = await aTariffConcept(prisma);
+    const order = await prisma.serviceOrder.create({
+      data: {
+        encounterId: encounter.id,
+        siteId: site.id,
+        orderedById: practitioner.id,
+        category: 'LABORATORY',
+        items: {
+          create: {
+            conceptId: exam.id,
+            testCode: exam.code,
+            testDisplay: exam.display,
+          },
+        },
+      },
+      include: { items: true },
     });
 
     await expect(archive(prisma, second!.id, remover.id)).rejects.toThrow(
       /encounter_diagnosis_cited/,
     );
     await expect(
-      prisma.$executeRaw`UPDATE encounter_diagnosis SET rank = 9 WHERE id = ${second!.id}::uuid`,
+      prisma.$executeRaw`UPDATE encounter_diagnosis SET rank = 9 WHERE id = ${first!.id}::uuid`,
     ).rejects.toThrow(/encounter_diagnosis_cited/);
-    // The other columns are not this rule's business.
+
+    // Positive control: the exam cancelled (ORD-007), the way out is open.
+    await prisma.serviceOrderItem.update({
+      where: { id: order.items[0]!.id },
+      data: { status: 'CANCELLED' },
+    });
+    await archive(prisma, second!.id, remover.id);
+    await remove(prisma, second!.id);
+  });
+
+  it('EN-180 lo que un diagnóstico ES no se reescribe: ni su código ni su concepto; el resto, sí', async () => {
+    const prisma = db();
+    const { diagnoses } = await anEncounterWithDiagnoses(prisma);
+    const [first] = diagnoses;
+
+    await expect(
+      prisma.$executeRaw`UPDATE encounter_diagnosis SET cie10_display = 'Otra cosa' WHERE id = ${first!.id}::uuid`,
+    ).rejects.toThrow(/encounter_diagnosis_identity_frozen/);
+    // Positive control: what it is not — its certainty, its note — moves.
     await prisma.encounterDiagnosis.update({
       where: { id: first!.id },
-      data: { notifiable: true },
+      data: { certainty: 'PRESUMPTIVE', note: 'pendiente de cultivo' },
     });
   });
 
-  it('EN-182 una orden de servicio también lee los diagnósticos: no se quita ninguno', async () => {
+  it('EN-180 la BASE no vacía la tabla de diagnósticos', async () => {
     const prisma = db();
-    const { site, practitioner, encounter, diagnoses, remover } =
-      await anEncounterWithDiagnoses(prisma);
-    const [, second] = diagnoses;
+    await anEncounterWithDiagnoses(prisma);
 
-    await prisma.serviceOrder.create({
-      data: {
-        encounterId: encounter.id,
-        siteId: site.id,
-        orderedById: practitioner.id,
-        category: 'LABORATORY',
-      },
-    });
-
-    await expect(archive(prisma, second!.id, remover.id)).rejects.toThrow(
-      /encounter_diagnosis_cited/,
-    );
+    await expect(
+      prisma.$executeRawUnsafe('TRUNCATE TABLE encounter_diagnosis'),
+    ).rejects.toThrow(/frozen/);
+    expect(await prisma.encounterDiagnosis.count()).toBe(2);
   });
 });

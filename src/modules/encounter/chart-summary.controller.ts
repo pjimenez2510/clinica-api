@@ -255,6 +255,7 @@ export class VisitSequenceProposalController {
     return {
       proposed: proposal.proposed,
       specialtyKnown: proposal.specialtyKnown,
+      elsewhere: proposal.elsewhere,
       last:
         proposal.last === null
           ? null

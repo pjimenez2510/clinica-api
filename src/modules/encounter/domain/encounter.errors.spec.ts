@@ -170,7 +170,7 @@ describe('el contrato de errores de la atención', () => {
     const cited = new DiagnosisCitedByIssuedDocumentError();
     expect(cited.code).toBe('DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT');
     expect(cited).toBeInstanceOf(ConflictError);
-    expect(cited.userTitle).toContain('Anule primero el documento');
+    expect(cited.userTitle).toContain('Anule primero los exámenes');
   });
 
   it('EN-001 responde 409 y manda a registrar la ficha, no a corregir un campo', () => {

@@ -168,6 +168,12 @@ class FakeSummaries implements ChartSummaryRepository {
     return Promise.resolve(this.lastInService);
   }
 
+  anywhere = false;
+
+  anyAttentionPossiblyInService(): Promise<boolean> {
+    return Promise.resolve(this.anywhere || this.lastInService !== null);
+  }
+
   cie10CodeOf(): Promise<string | null> {
     return Promise.resolve(this.code);
   }
@@ -312,7 +318,7 @@ describe('la historia a la vista durante la consulta', () => {
 
     const proposal = await service.visitSequenceProposal('entry-1', requester);
 
-    expect(proposal).toEqual({ proposed: 'FIRST_TIME', specialtyKnown: true, last: null }); // prettier-ignore
+    expect(proposal).toEqual({ proposed: 'FIRST_TIME', specialtyKnown: true, last: null, elsewhere: false }); // prettier-ignore
     expect(audit.entries).toHaveLength(1);
   });
 
@@ -330,12 +336,25 @@ describe('la historia a la vista durante la consulta', () => {
     expect(proposal.last?.principal?.cie10Code).toBe('J020');
   });
 
+  it('EN-185 una atención del servicio en una sede que no ve quita la certeza: no propone y no dice cuál', async () => {
+    summaries.appointment = { patientId: PATIENT, specialtyId: 'medicina' };
+    summaries.anywhere = true;
+
+    expect(await service.visitSequenceProposal('entry-1', requester)).toEqual({
+      proposed: null,
+      specialtyKnown: true,
+      last: null,
+      elsewhere: true,
+    });
+  });
+
   it('EN-185 una cita sin tipo de servicio, o fuera del alcance, no propone ni deja rastro', async () => {
     summaries.appointment = { patientId: PATIENT, specialtyId: null };
     expect(await service.visitSequenceProposal('entry-1', requester)).toEqual({
       proposed: null,
       specialtyKnown: false,
       last: null,
+      elsewhere: false,
     });
     summaries.appointment = null;
     expect((await service.visitSequenceProposal('entry-2', requester)).proposed).toBeNull(); // prettier-ignore

@@ -2805,6 +2805,11 @@ model Prescription {
   /// PR-039 (art. 5.e.v). Non-pharmacological advice. Demanded at the issue.
   nonPharmacologicalAdvice String? @map("non_pharmacological_advice") @db.Text
 
+  /// PR-026, EN-182. The attention's diagnoses AS THEY WERE when it was
+  /// issued, copied by `a_prescription_freeze_diagnoses`: `[{code, display}]`
+  /// principal first. `NULL` exactly while it was never issued.
+  diagnoses Json?
+
   status   PrescriptionStatus @default(DRAFT)
   issuedAt DateTime?          @map("issued_at") @db.Timestamptz(6)
 
@@ -2849,7 +2854,7 @@ model PrescriptionItem {
   /// PR-101, PR-102. The codes the line was written with, beside the text the
   /// server composed from them, so a draft reopens as it was written (PR-100).
   dosageFormCode String?         @map("dosage_form_code") @db.VarChar(32)
-  doseAmount     Decimal?        @map("dose_amount") @db.Decimal(8, 2)
+  doseAmount     Decimal?        @map("dose_amount") @db.Decimal(12, 4)
   doseUnitCode   String?         @map("dose_unit_code") @db.VarChar(32)
   frequencyCode  String?         @map("frequency_code") @db.VarChar(32)
   conceptId      String?         @map("concept_id") @db.Uuid

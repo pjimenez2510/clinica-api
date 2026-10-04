@@ -42,37 +42,41 @@ export type DoseUnit = keyof typeof DOSE_UNITS;
 export const DOSE_UNIT_CODES = Object.keys(DOSE_UNITS) as DoseUnit[];
 
 /**
- * PR-101, PR-103. The pharmaceutical form, with the unit a dose of it is
- * ordinarily counted in — the proposal the screen preselects.
+ * PR-101, PR-103. The pharmaceutical form and, ONLY where the form implies it
+ * without doubt, the unit a dose of it is counted in — the proposal the screen
+ * preselects. A tablet is counted in tablets; a suspension may be dosed in
+ * millilitres or in milligrams, an injectable in ampoules or in units, and a
+ * proposal there is a default somebody fails to change («10 ampollas» of
+ * insulin). Clinical review of 04-10-2026 (G3); D-117.7.
  */
 export const DOSAGE_FORMS = {
   TABLET: { label: 'Tableta', unit: 'TABLET' },
   COATED_TABLET: { label: 'Tableta recubierta', unit: 'TABLET' },
   CHEWABLE_TABLET: { label: 'Tableta masticable', unit: 'TABLET' },
   CAPSULE: { label: 'Cápsula', unit: 'CAPSULE' },
-  ORAL_SUSPENSION: { label: 'Suspensión oral', unit: 'MILLILITRE' },
-  POWDER_FOR_ORAL_SUSPENSION: { label: 'Polvo para suspensión oral', unit: 'MILLILITRE' }, // prettier-ignore
-  SYRUP: { label: 'Jarabe', unit: 'MILLILITRE' },
-  ORAL_SOLUTION: { label: 'Solución oral', unit: 'MILLILITRE' },
-  ORAL_DROPS: { label: 'Gotas orales', unit: 'DROP' },
+  ORAL_SUSPENSION: { label: 'Suspensión oral', unit: null },
+  POWDER_FOR_ORAL_SUSPENSION: { label: 'Polvo para suspensión oral', unit: null }, // prettier-ignore
+  SYRUP: { label: 'Jarabe', unit: null },
+  ORAL_SOLUTION: { label: 'Solución oral', unit: null },
+  ORAL_DROPS: { label: 'Gotas orales', unit: null },
   GRANULES: { label: 'Granulado', unit: 'SACHET' },
-  INJECTABLE_SOLUTION: { label: 'Solución inyectable', unit: 'AMPOULE' },
-  POWDER_FOR_INJECTION: { label: 'Polvo para solución inyectable', unit: 'AMPOULE' }, // prettier-ignore
-  CREAM: { label: 'Crema', unit: 'APPLICATION' },
-  OINTMENT: { label: 'Ungüento', unit: 'APPLICATION' },
-  GEL: { label: 'Gel', unit: 'APPLICATION' },
-  LOTION: { label: 'Loción', unit: 'APPLICATION' },
-  EYE_DROPS: { label: 'Solución oftálmica', unit: 'DROP' },
-  EYE_OINTMENT: { label: 'Ungüento oftálmico', unit: 'APPLICATION' },
-  EAR_DROPS: { label: 'Gotas óticas', unit: 'DROP' },
-  NASAL_SPRAY: { label: 'Aerosol nasal', unit: 'SPRAY' },
-  INHALER: { label: 'Aerosol para inhalación', unit: 'PUFF' },
-  NEBULISER_SOLUTION: { label: 'Solución para nebulizar', unit: 'MILLILITRE' },
+  INJECTABLE_SOLUTION: { label: 'Solución inyectable', unit: null },
+  POWDER_FOR_INJECTION: { label: 'Polvo para solución inyectable', unit: null }, // prettier-ignore
+  CREAM: { label: 'Crema', unit: null },
+  OINTMENT: { label: 'Ungüento', unit: null },
+  GEL: { label: 'Gel', unit: null },
+  LOTION: { label: 'Loción', unit: null },
+  EYE_DROPS: { label: 'Solución oftálmica', unit: null },
+  EYE_OINTMENT: { label: 'Ungüento oftálmico', unit: null },
+  EAR_DROPS: { label: 'Gotas óticas', unit: null },
+  NASAL_SPRAY: { label: 'Aerosol nasal', unit: null },
+  INHALER: { label: 'Aerosol para inhalación', unit: null },
+  NEBULISER_SOLUTION: { label: 'Solución para nebulizar', unit: null },
   SUPPOSITORY: { label: 'Supositorio', unit: 'SUPPOSITORY' },
   VAGINAL_OVULE: { label: 'Óvulo vaginal', unit: 'OVULE' },
-  VAGINAL_CREAM: { label: 'Crema vaginal', unit: 'APPLICATION' },
+  VAGINAL_CREAM: { label: 'Crema vaginal', unit: null },
   TRANSDERMAL_PATCH: { label: 'Parche transdérmico', unit: 'PATCH' },
-} as const satisfies Record<string, { label: string; unit: DoseUnit }>;
+} as const satisfies Record<string, { label: string; unit: DoseUnit | null }>;
 
 export type DosageForm = keyof typeof DOSAGE_FORMS;
 export const DOSAGE_FORM_CODES = Object.keys(DOSAGE_FORMS) as DosageForm[];
@@ -140,8 +144,13 @@ export function isDeclaredPresentation(
   concentration: string | null,
 ): boolean {
   if (declared.length === 0) return true;
+  // «62,5» and «62.5», «µg» and «mcg» are the same concentration.
   const normal = (value: string | null) =>
-    (value ?? '').toLowerCase().replace(/\s+/g, '');
+    (value ?? '')
+      .toLowerCase()
+      .replace(/\s+/g, '')
+      .replace(/,/g, '.')
+      .replace(/µg/g, 'mcg');
   return declared.some(
     (presentation) =>
       normal(presentation.form) === normal(form) &&

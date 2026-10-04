@@ -196,14 +196,8 @@ export class PrismaChartSummaryRepository implements ChartSummaryRepository {
   ): Promise<PriorAttention | null> {
     const row = await this.prisma.encounter.findFirst({
       where: {
-        ...chartScope(query.patientId),
+        ...possiblyInService(query),
         ...siteFilter(query.sites),
-        status: { not: 'ENTERED_IN_ERROR' },
-        OR: [
-          { agendaEntryId: null },
-          { agendaEntry: { serviceTypeId: null } },
-          { agendaEntry: { serviceType: { specialtyId: query.specialtyId } } },
-        ],
       },
       orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
       select: {
@@ -229,6 +223,16 @@ export class PrismaChartSummaryRepository implements ChartSummaryRepository {
               cie10Display: principal.cie10Display,
             },
     };
+  }
+
+  /** EN-185. A yes or no over every site, never a row. */
+  async anyAttentionPossiblyInService(
+    query: Omit<SameServiceQuery, 'sites'>,
+  ): Promise<boolean> {
+    const count = await this.prisma.encounter.count({
+      where: possiblyInService(query),
+    });
+    return count > 0;
   }
 
   /** EN-184. Only a CIE-10 concept has a category to compare. */
@@ -257,6 +261,34 @@ function previousEncountersWhere(
     ...(query.excludeEncounterId === undefined
       ? {}
       : { id: { not: query.excludeEncounterId } }),
+  };
+}
+
+/**
+ * EN-185. The chart's attentions that may be of the specialty: of it, or of
+ * one nobody can tell. Never the appointment's own, and never an annulled one.
+ */
+function possiblyInService(
+  query: Omit<SameServiceQuery, 'sites'>,
+): Prisma.EncounterWhereInput {
+  return {
+    ...chartScope(query.patientId),
+    status: { not: 'ENTERED_IN_ERROR' },
+    AND: [
+      {
+        OR: [
+          { agendaEntryId: null },
+          { agendaEntryId: { not: query.agendaEntryId } },
+        ],
+      },
+      {
+        OR: [
+          { agendaEntryId: null },
+          { agendaEntry: { serviceTypeId: null } },
+          { agendaEntry: { serviceType: { specialtyId: query.specialtyId } } },
+        ],
+      },
+    ],
   };
 }
 

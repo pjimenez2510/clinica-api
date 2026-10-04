@@ -510,7 +510,12 @@ documento existe y es lo único que la ACESS puede inspeccionar.
   > **No se teclea en la receta.** El diagnóstico ya está en la atención
   > (`encounter_diagnosis`, EN-040 a EN-049) con su instantánea; copiarlo a mano
   > en la receta crearía una segunda versión del mismo hecho que puede
-  > contradecir a la primera. Se lee.
+  > contradecir a la primera. Se lee **mientras es borrador**, y al emitirse
+  > la base copia la lista a `prescription.diagnoses`
+  > (`a_prescription_freeze_diagnoses`): corregir después los diagnósticos de
+  > la atención (EN-180, EN-183) no cambia lo que dice un papel ya entregado.
+  > Lo garantiza la base: `prescription_diagnoses_frozen_when_issued` exige la
+  > copia exactamente cuando hay emisión, y `prescription_frozen` la congela.
   >
   > ⚠️ **[NECESITA ACLARACIÓN]** El art. 5.b.iii dice «el diagnóstico», en
   > singular. Una atención puede tener varios (EN-047). Hoy el documento lleva
@@ -963,8 +968,13 @@ admite una lista sale de una lista._
   > borrador, la receta saldría firmada por alguien que no escribió lo que dice.
 - **PR-101** — Cada línea DEBERÁ nombrar su **forma farmacéutica**, su **vía**
   y la **unidad de su dosis** con un código de las listas cerradas del dominio,
-  y su **dosis** como cantidad numérica mayor que cero; y SI un código no es de
-  su lista, ENTONCES el sistema DEBERÁ rechazarla nombrando el campo y la línea.
+  y su **dosis** como cantidad numérica mayor que cero **con hasta cuatro
+  decimales**; y SI un código no es de su lista, o la dosis tiene más
+  decimales, ENTONCES el sistema DEBERÁ rechazarla nombrando el campo y la
+  línea.
+  > Cuatro decimales porque 0,125 mg de digoxina es una dosis real: con dos,
+  > se imprimía «0,125» y se guardaba 0,13, y el borrador reabierto la
+  > reescribía un 4 % más alta (revisión clínica del 04-10-2026).
   > La vía ya lo era (PR-029). La forma y la unidad pasan a serlo por lo mismo:
   > un texto libre admite «tab», «comp.» y «tabletas» como tres cosas, y el art.
   > 13 prohíbe las siglas en la receta electrónica. Lo que se **imprime** es el
@@ -982,9 +992,13 @@ admite una lista sale de una lista._
   > que más se parece. La lista resuelve el 90 % de los casos con un clic y el
   > texto, el resto.
 - **PR-103** — El sistema DEBERÁ publicar las listas de forma farmacéutica, vía,
-  unidad de dosis y frecuencia, con el texto que se imprime y, para cada forma,
-  la unidad de dosis que le corresponde de ordinario, para que la pantalla no
-  las repita.
+  unidad de dosis y frecuencia, con el texto que se imprime y, **sólo para las
+  formas que la implican sin duda** (tableta, cápsula, supositorio, óvulo,
+  parche, granulado), la unidad de dosis que les corresponde, para que la
+  pantalla no las repita.
+  > Un líquido se dosifica en mililitros o en miligramos y un inyectable en
+  > ampollas o en unidades: proponer ahí una unidad es un valor por defecto que
+  > alguien no cambia («10 ampollas» de insulina). D-117.7.
   > Una lista copiada en la interfaz es una lista que un día dice otra cosa que
   > la que el servidor admite. La unidad por forma es la propuesta: elegir
   > «tableta» deja «tableta» como unidad, y se cambia si no es. Con un

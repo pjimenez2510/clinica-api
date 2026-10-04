@@ -796,11 +796,13 @@ describe('el bloque K por HTTP', () => {
       const diagnosis = await record(encounterId, 'J020');
       await prisma.clinicalNote.create({
         data: {
+          // An evolution note: signing the 002 discharges the attention, and
+          // a discharged one admits no correction but an amendment (EN-181).
           chainId: encounterId,
-          formCode: '002',
+          formCode: '005',
           encounterId,
           authorId: doctorPractitionerId,
-          content: { motivo: 'odinofagia' },
+          content: { evolucion: 'odinofagia' },
           status: 'SIGNED',
           signedById: doctorPractitionerId,
           signedAt: new Date(),
@@ -825,31 +827,70 @@ describe('el bloque K por HTTP', () => {
       );
     });
 
-    it('EN-182 con una receta emitida no se quita ni se cambia el principal, y se dice que se anule primero', async () => {
+    it('EN-182 con exámenes vivos no se quita ni se reordena, y se dice que se anulen; anulados, sí', async () => {
       const encounterId = await openEncounter();
       await record(encounterId, 'J020');
       const second = await record(encounterId, 'R509');
+      const exam = await aConcept('TARIFF', { code: 'BH', display: 'Biometría hemática' }); // prettier-ignore
+      const order = await prisma.serviceOrder.create({
+        data: {
+          encounterId,
+          siteId,
+          orderedById: doctorPractitionerId,
+          category: 'LABORATORY',
+          items: { create: { conceptId: exam, testCode: 'BH', testDisplay: 'Biometría hemática' } }, // prettier-ignore
+        },
+        include: { items: true },
+      });
+      const path = `/encounters/${encounterId}/diagnoses/${second.id}`;
+
+      const refused = await post(`${path}/retract`, doctorToken).expect(409);
+      expect((refused.body as Problem).code).toBe('DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT'); // prettier-ignore
+      expect((refused.body as Problem).title).toContain('Anule primero los exámenes'); // prettier-ignore
+      await post(`${path}/primary`, doctorToken).expect(409);
+
+      // The way out the sentence names is real: cancel the exams (ORD-007).
+      await prisma.serviceOrderItem.update({
+        where: { id: order.items[0]!.id },
+        data: { status: 'CANCELLED' },
+      });
+      await post(`${path}/retract`, doctorToken).expect(204);
+    });
+
+    it('EN-182 PR-026 una receta emitida no impide corregir: el documento sigue diciendo lo que se emitió', async () => {
+      const encounterId = await openEncounter();
+      const first = await record(encounterId, 'J020');
       const draft = await prisma.prescription.create({
         data: { encounterId, siteId, prescriberId: doctorPractitionerId },
       });
-      // Positive control: a draft reads nothing yet.
-      await post(`/encounters/${encounterId}/diagnoses/${second.id}/primary`, doctorToken).expect(200); // prettier-ignore
       await prisma.prescription.update({
         where: { id: draft.id },
         data: { status: 'ACTIVE', issuedAt: new Date() },
       });
 
-      const first = (await sheetOf(encounterId)).items.find(
-        (d) => d.rank !== 1,
-      );
-      const refused = await post(
-        `/encounters/${encounterId}/diagnoses/${first!.id}/retract`,
-        doctorToken,
-      ).expect(409);
-      expect((refused.body as Problem).code).toBe(
-        'DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT',
-      );
-      await post(`/encounters/${encounterId}/diagnoses/${first!.id}/primary`, doctorToken).expect(409); // prettier-ignore
+      await post(`/encounters/${encounterId}/diagnoses/${first.id}/retract`, doctorToken).expect(204); // prettier-ignore
+
+      const stored = await prisma.prescription.findUniqueOrThrow({ where: { id: draft.id } }); // prettier-ignore
+      expect(stored.diagnoses).toEqual([{ code: 'J020', display: 'Dx J020' }]);
+    });
+
+    it('EN-180 un diagnóstico ya quitado responde 404, y quitar deja una fila de bitácora', async () => {
+      const encounterId = await openEncounter();
+      const diagnosis = await record(encounterId, 'J020');
+      const path = `/encounters/${encounterId}/diagnoses/${diagnosis.id}/retract`;
+      const before = await prisma.accessAudit.count({
+        where: { resourceType: 'encounter_diagnosis', resourceId: diagnosis.id, action: 'UPDATE' }, // prettier-ignore
+      });
+
+      await post(path, doctorToken).expect(204);
+      const again = await post(path, doctorToken).expect(404);
+
+      expect((again.body as Problem).code).toBe('DIAGNOSIS_NOT_FOUND');
+      expect(
+        await prisma.accessAudit.count({
+          where: { resourceType: 'encounter_diagnosis', resourceId: diagnosis.id, action: 'UPDATE' }, // prettier-ignore
+        }),
+      ).toBe(before + 1);
     });
 
     it('EN-183 marcar otro como principal pasa el anterior detrás del último', async () => {
@@ -995,6 +1036,23 @@ describe('el bloque K por HTTP', () => {
         proposed: 'FIRST_TIME',
         specialtyKnown: true,
         last: null,
+        elsewhere: false,
+      });
+
+      // One at a site the doctor does not cover takes the certainty away,
+      // and nothing of it is told.
+      const atOtherSite = await prisma.encounter.create({
+        data: { siteId: otherSiteId, practitionerId: doctorPractitionerId, patientId, startedAt: new Date(now - 15 * DAY), careModality: 'MORBIDITY', visitSequence: 'FIRST_TIME' }, // prettier-ignore
+      });
+      expect((await get(path, doctorToken).expect(200)).body).toEqual({
+        proposed: null,
+        specialtyKnown: true,
+        last: null,
+        elsewhere: true,
+      });
+      await prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`); // prettier-ignore
+        await tx.encounter.delete({ where: { id: atOtherSite.id } });
       });
 
       // A walk-in attention may be of the same service: no proposal.
@@ -1019,10 +1077,27 @@ describe('el bloque K por HTTP', () => {
         .expect(200);
 
       expect(response.body).toEqual({ careModality: 'PREVENTION' });
+      const stored0 = await prisma.encounter.findUniqueOrThrow({ where: { id: encounterId } }); // prettier-ignore
+      expect(stored0.careModality).toBe('PREVENTION');
+    });
+
+    it('EN-187 una atención con alta ya no cambia de modalidad', async () => {
+      const encounterId = await openEncounter();
+      await prisma.encounter.update({
+        where: { id: encounterId },
+        data: { status: 'DISCHARGED', endedAt: new Date(), dischargeCondition: 'ALIVE' }, // prettier-ignore
+      });
+
+      const refused = await request(app.getHttpServer())
+        .put(`/api/v1/encounters/${encounterId}/care-modality`)
+        .set('Authorization', `Bearer ${doctorToken}`)
+        .send({ careModality: 'PREVENTION' })
+        .expect(409);
+      expect((refused.body as Problem).code).toBe('ENCOUNTER_ALREADY_CLOSED');
       const stored = await prisma.encounter.findUniqueOrThrow({
         where: { id: encounterId },
       });
-      expect(stored.careModality).toBe('PREVENTION');
+      expect(stored.careModality).toBe('MORBIDITY');
     });
   });
 });

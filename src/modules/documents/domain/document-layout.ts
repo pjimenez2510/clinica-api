@@ -225,7 +225,9 @@ export function composePrescriptionLayout(
         [
           line.doseText,
           line.frequencyText,
-          line.durationDays === null ? null : `por ${line.durationDays} días`,
+          line.durationDays === null
+            ? null
+            : `por ${line.durationDays} ${line.durationDays === 1 ? 'día' : 'días'}`,
         ]
           .filter(Boolean)
           .join(' · '),

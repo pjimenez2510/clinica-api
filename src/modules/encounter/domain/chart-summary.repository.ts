@@ -171,6 +171,8 @@ export interface SameServiceQuery {
   patientId: string;
   sites: SiteScopeFilter;
   specialtyId: string;
+  /** The appointment being opened: its own attention is not «antes». */
+  agendaEntryId: string;
 }
 
 /**
@@ -233,6 +235,16 @@ export interface ChartSummaryRepository {
   latestAttentionPossiblyInService(
     query: SameServiceQuery,
   ): Promise<PriorAttention | null>;
+
+  /**
+   * EN-185. Whether such an attention exists at ANY site — a yes or no and
+   * nothing else, so no clinical content leaves the caller's scope. Without
+   * it, «primera vez» would be «certain» only within the sites the caller
+   * happens to cover, and the difference is charged (BI-158).
+   */
+  anyAttentionPossiblyInService(
+    query: Omit<SameServiceQuery, 'sites'>,
+  ): Promise<boolean>;
 
   /**
    * EN-184. The CIE-10 code of a concept, or `null` when it is not a CIE-10

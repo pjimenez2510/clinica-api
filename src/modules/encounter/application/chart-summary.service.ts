@@ -127,6 +127,8 @@ export interface VisitSequenceProposal {
   /** Whether the appointment says which specialty it is. */
   specialtyKnown: boolean;
   last: PriorAttention | null;
+  /** There are attentions of the service at sites the caller does not cover. */
+  elsewhere: boolean;
 }
 
 /**
@@ -336,14 +338,26 @@ export class ChartSummaryService {
     // Out of scope, or no such appointment: nothing to propose and nothing
     // disclosed. Opening the attention refuses it on its own (EN-004).
     if (appointment?.specialtyId == null) {
-      return { proposed: null, specialtyKnown: false, last: null };
+      return {
+        proposed: null,
+        specialtyKnown: false,
+        last: null,
+        elsewhere: false,
+      };
     }
 
-    const last = await this.summaries.latestAttentionPossiblyInService({
+    const service = {
       patientId: appointment.patientId,
-      sites: requester.sites,
       specialtyId: appointment.specialtyId,
-    });
+      agendaEntryId,
+    };
+    const [last, anywhere] = await Promise.all([
+      this.summaries.latestAttentionPossiblyInService({
+        ...service,
+        sites: requester.sites,
+      }),
+      this.summaries.anyAttentionPossiblyInService(service),
+    ]);
 
     await this.audit.record({
       userId: requester.userId,
@@ -354,10 +368,13 @@ export class ChartSummaryService {
       userAgent: requester.userAgent,
     });
 
+    // Certain only when there is none at ANY site; one the caller cannot see
+    // is said as such, without saying anything of what it was.
     return {
-      proposed: last === null ? 'FIRST_TIME' : null,
+      proposed: anywhere ? null : 'FIRST_TIME',
       specialtyKnown: true,
       last,
+      elsewhere: anywhere && last === null,
     };
   }
 }

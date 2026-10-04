@@ -2782,28 +2782,43 @@ D-117._
   >
   > SI la atención ya no admite contenido clínico, ENTONCES el sistema DEBERÁ
   > rechazarlo con `ENCOUNTER_ALREADY_CLOSED`, como al registrar (EN-009).
-- **EN-181** — SI la atención tiene una **nota de consulta firmada**, ENTONCES
-  quitar un diagnóstico DEBERÁ exigir un **motivo escrito**, y SI falta, el
-  sistema DEBERÁ rechazarlo con `DIAGNOSIS_RETRACTION_REASON_REQUIRED`. Sin
-  nota firmada, el motivo es opcional.
+- **EN-181** — SI la atención tiene alguna **nota firmada**, ENTONCES quitar un
+  diagnóstico DEBERÁ exigir un **motivo escrito**, y SI falta, el sistema
+  DEBERÁ rechazarlo con `DIAGNOSIS_RETRACTION_REASON_REQUIRED`. Sin nota
+  firmada, el motivo es opcional.
+  > **Alcance real (revisión del 04-10-2026).** Firmar la nota de consulta
+  > (002) da el alta a la atención (EN-009), y una atención con alta ya no
+  > admite quitar nada (EN-180): la corrección pasa entonces por la enmienda
+  > de la nota. Dentro de la atención viva, lo firmado es una nota de
+  > evolución (005). Si debe poder quitarse un diagnóstico **después** del
+  > alta, con motivo, es D-117.8.
   > Lo firmado ya dijo algo con ese diagnóstico delante, y quien lea la historia
   > tiene que saber por qué dejó de estar. Antes de firmar, un código mal
   > elegido hace un minuto no merece un párrafo: el rastro de quién y cuándo
   > queda igual. **Garantía de la base**, en el mismo disparador del archivo.
-- **EN-182** — SI la atención tiene una **receta emitida** (con `issued_at`, en
-  cualquier estado) o una **orden de servicio**, ENTONCES el sistema DEBERÁ
-  rechazar quitar un diagnóstico o cambiar el principal con
-  `DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT`, diciendo que primero se anula el
-  documento.
-  > La receta y la orden **leen el diagnóstico de la atención al componerse**
-  > (PR-026), no lo copian: quitarlo cambiaría lo que dice en pantalla un papel
-  > que ya está en la mano del paciente. El certificado no entra: congela sus
-  > diagnósticos al emitirse (CER-011). **Garantía de la base**, en el mismo
-  > disparador. Es la opción conservadora y es D-117.5.
+- **EN-182** — SI la atención tiene una **orden de servicio con algún examen
+  sin anular**, ENTONCES el sistema DEBERÁ rechazar quitar un diagnóstico o
+  cambiar el principal con `DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT`, diciendo que
+  primero se anulan los exámenes.
+  > La orden **lee el diagnóstico de la atención al mostrarse**: quitarlo
+  > cambiaría lo que dice un papel que el laboratorio ya tiene. La salida que
+  > el mensaje nombra existe: anular los exámenes (ORD-007).
+  >
+  > **La receta ya no cuenta (revisión clínica del 04-10-2026).** La primera
+  > versión rechazaba también con una receta emitida y mandaba a anularla;
+  > pero la anulada conserva `issued_at` y seguía contando, así que el médico
+  > anulaba un papel válido —con el aviso del art. 70— para nada. Ahora la
+  > receta **congela sus diagnósticos al emitirse**
+  > (`a_prescription_freeze_diagnoses`, PR-026), como el certificado
+  > (CER-011), y corregir la atención no toca lo emitido.
+  >
+  > **Garantía de la base**, en el disparador del archivo y en el del rango.
+  > Que la orden también congele los suyos —y deje de bloquear— es de `orders`
+  > y es D-117.5.
 - **EN-183** — MIENTRAS la atención admita contenido clínico nuevo, CUANDO el
   médico marque otro diagnóstico como **principal**, el sistema DEBERÁ hacerlo
-  principal y pasar el anterior principal, si lo había, al primer rango libre,
-  en una sola transacción.
+  principal y pasar el anterior principal, si lo había, detrás del último rango
+  en uso, en una sola transacción.
   > Es la salida de quitar el principal: sin ella, la atención se queda sin
   > principal y el médico no puede firmar ni arreglarlo salvo quitando y
   > volviendo a registrar. `encounter_diagnosis_one_primary` sigue garantizando
@@ -2824,10 +2839,17 @@ D-117._
   > resuelve por el alcance de ficha (EN-159): con una ficha fusionada, la
   > diabetes registrada en la absorbida cuenta.
 - **EN-185** — CUANDO se vaya a abrir la atención de una cita, el sistema DEBERÁ
-  decir si el paciente tiene atenciones anteriores no anuladas en la **misma
-  especialidad** de la cita, dentro del alcance de ficha y de sedes; SI no tiene
-  ninguna, DEBERÁ proponer «primera vez»; SI tiene, DEBERÁ devolver la última
-  —fecha y diagnóstico principal— y NO DEBERÁ proponer nada.
+  decir si el paciente tiene atenciones anteriores no anuladas que puedan ser
+  de la **misma especialidad** de la cita; SI no tiene ninguna **en ninguna
+  sede**, DEBERÁ proponer «primera vez»; SI tiene, DEBERÁ devolver la última
+  dentro del alcance de sedes de quien pregunta —fecha y diagnóstico
+  principal— o, si sólo las hay fuera de ese alcance, decir únicamente que las
+  hay, y NO DEBERÁ proponer nada.
+  > **En ninguna sede, y no en las que ve quien pregunta** (revisión del
+  > 04-10-2026): «primera vez» con sólo las sedes propias no es cierta, y se
+  > cobra. Fuera del alcance viaja un sí o un no, nunca el contenido. Una
+  > atención sin cita o con una cita sin tipo de servicio cuenta como «puede
+  > ser del servicio», y la atención de la propia cita no cuenta.
   > **EN-007 no cambia** (D-117.1). Sin ninguna atención en el servicio, la
   > consulta es de primera vez con certeza; con atenciones, depende de si viene
   > por lo mismo, y eso sólo lo sabe quien tiene al paciente delante — el caso

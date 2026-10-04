@@ -245,10 +245,13 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
   }
 
   /**
-   * PR-100. The draft's lines and indications, replaced whole. The
-   * prescription's row is locked before the attention's: issuing locks it
-   * too, so a rewrite and an issue of the same draft serialise and the loser
-   * sees the state the winner left.
+   * PR-100. The draft's lines and indications, replaced whole.
+   *
+   * THE ATTENTION FIRST, THEN THE PRESCRIPTION — the order `issue` and
+   * `create` take them in. Taken the other way round, a «Guardar» and an
+   * «Emitir» of the same draft at once each held the row the other wanted and
+   * PostgreSQL killed one with a deadlock (review of 04-10-2026). In this
+   * order they queue, and the loser reads the state the winner left.
    */
   async rewriteDraft(rewrite: DraftRewrite): Promise<PrescriptionView> {
     const row = await this.prisma.$transaction(async (tx) => {
@@ -258,8 +261,8 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
       });
       if (!found) throw new PrescriptionNotFoundError();
 
-      await tx.$queryRaw`SELECT id FROM "prescription" WHERE id = ${found.id}::uuid FOR UPDATE`;
       await tx.$queryRaw`SELECT id FROM "encounter" WHERE id = ${found.encounterId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM "prescription" WHERE id = ${found.id}::uuid FOR UPDATE`;
 
       const current = await tx.prescription.findUniqueOrThrow({
         where: { id: found.id },
@@ -613,6 +616,8 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
       where: { id: query.prescriptionId, ...siteFilter(query.sites) },
       select: {
         ...PRESCRIPTION_SELECT,
+        // PR-026, EN-182. What the receta said when it was issued.
+        diagnoses: true,
         encounter: {
           select: {
             patientId: true,
@@ -678,10 +683,14 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
         ageMonths: row.encounter.ageMonths,
         ageDays: row.encounter.ageDays,
       },
-      diagnoses: row.encounter.diagnoses.map((diagnosis) => ({
-        code: diagnosis.cie10Code,
-        display: diagnosis.cie10Display,
-      })),
+      // PR-026, EN-182. Issued, the copy frozen at the issue; a draft, the
+      // attention's diagnoses as they are now.
+      diagnoses:
+        frozenDiagnoses(row.diagnoses) ??
+        row.encounter.diagnoses.map((diagnosis) => ({
+          code: diagnosis.cie10Code,
+          display: diagnosis.cie10Display,
+        })),
       prescriber: {
         givenName: row.prescriber.user.firstName,
         familyName: row.prescriber.user.lastName,
@@ -795,6 +804,26 @@ async function resolveItems(
       ...commonItemFields(item),
     };
   });
+}
+
+/**
+ * PR-026, EN-182. The `[{code, display}]` `a_prescription_freeze_diagnoses`
+ * wrote at the issue, or `null` for a draft — read defensively, since a JSON
+ * column is only as typed as its CHECK.
+ */
+function frozenDiagnoses(
+  value: Prisma.JsonValue | null,
+): { code: string; display: string }[] | null {
+  if (!Array.isArray(value)) return null;
+  return value.flatMap((entry) =>
+    entry !== null &&
+    typeof entry === 'object' &&
+    !Array.isArray(entry) &&
+    typeof entry.code === 'string' &&
+    typeof entry.display === 'string'
+      ? [{ code: entry.code, display: entry.display }]
+      : [],
+  );
 }
 
 /** PR-005. The state a losing writer has to be told about. */

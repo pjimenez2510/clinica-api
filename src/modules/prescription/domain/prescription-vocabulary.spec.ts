@@ -29,10 +29,13 @@ describe('el vocabulario de la línea de receta (PR-101 a PR-104)', () => {
     }
   });
 
-  it('PR-103 cada forma propone una unidad que existe', () => {
+  it('PR-103 una forma propone unidad sólo si la implica sin duda; nunca un líquido ni un inyectable', () => {
     for (const form of Object.values(DOSAGE_FORMS)) {
-      expect(DOSE_UNITS[form.unit]).toBeDefined();
+      if (form.unit !== null) expect(DOSE_UNITS[form.unit]).toBeDefined();
     }
+    expect(DOSAGE_FORMS.TABLET.unit).toBe('TABLET');
+    expect(DOSAGE_FORMS.ORAL_SUSPENSION.unit).toBeNull();
+    expect(DOSAGE_FORMS.INJECTABLE_SOLUTION.unit).toBeNull();
   });
 
   it('PR-102 la frecuencia es la frase de la lista o lo escrito, nunca las dos', () => {
@@ -46,6 +49,13 @@ describe('el vocabulario de la línea de receta (PR-101 a PR-104)', () => {
     const declared = [{ form: 'TABLET', concentration: '10 mg' }];
 
     expect(isDeclaredPresentation(declared, 'TABLET', '10mg')).toBe(true);
+    expect(
+      isDeclaredPresentation(
+        [{ form: 'SYRUP', concentration: '62,5 µg/ml' }],
+        'SYRUP',
+        '62.5 mcg/ml',
+      ),
+    ).toBe(true);
     expect(isDeclaredPresentation(declared, 'TABLET', '500 mg')).toBe(false);
     expect(isDeclaredPresentation(declared, 'CAPSULE', '10 mg')).toBe(false);
   });

@@ -110,7 +110,13 @@ const prescriptionItemSchema = z
     doseAmount: z
       .number({ error: 'Indique la dosis' })
       .positive('La dosis tiene que ser mayor que cero')
-      .max(10000, 'Esa dosis es demasiado alta'),
+      .max(10000, 'Esa dosis es demasiado alta')
+      // `dose_amount` keeps four decimals: 0,125 mg is a real digoxin dose,
+      // and a fifth decimal would be printed and then stored rounded.
+      .refine(
+        (value) => Math.round(value * 10_000) === value * 10_000,
+        'La dosis admite hasta cuatro decimales',
+      ),
     doseUnit: DOSE_UNIT,
     /**
      * PR-031, PR-102. Art. 5.c.vi — frecuencia: un código de la lista o, si no
@@ -245,7 +251,12 @@ export class RewritePrescriptionDto extends createZodDto(
 /** PR-103. The lists a line is written with, and the sentence of each. */
 export const prescriptionVocabularySchema = z.object({
   dosageForms: z.array(
-    z.object({ code: z.string(), label: z.string(), doseUnit: z.string() }),
+    z.object({
+      code: z.string(),
+      label: z.string(),
+      /** `null` when the form does not imply its unit (liquids, injectables). */
+      doseUnit: z.string().nullable(),
+    }),
   ),
   doseUnits: z.array(
     z.object({ code: z.string(), one: z.string(), many: z.string() }),

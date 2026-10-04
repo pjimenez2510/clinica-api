@@ -1050,17 +1050,18 @@ export class DiagnosisRetractionReasonRequiredError extends ValidationError {
 }
 
 /**
- * EN-182. An issued receta or an order reads the attention's diagnoses when
+ * EN-182. An order with exams still alive reads the attention's diagnoses when
  * it is shown, so removing one — or changing which is the principal — would
- * change a paper the patient already holds. The way out is to cancel the
- * document first, and the sentence says so.
+ * change a paper the lab already holds. The way out is real: cancel the exams
+ * (ORD-007). A receta is no longer the reason: it froze its diagnoses when it
+ * was issued (PR-026).
  */
 export class DiagnosisCitedByIssuedDocumentError extends ConflictError {
   readonly code = 'DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT';
   override readonly userTitle =
-    'Esta atención ya tiene una receta emitida o una orden con estos diagnósticos. Anule primero el documento y después corrija el diagnóstico';
+    'Esta atención tiene exámenes pedidos con estos diagnósticos. Anule primero los exámenes en «Exámenes» y después corrija el diagnóstico';
 
   constructor() {
-    super('An issued document of the encounter cites its diagnoses');
+    super('A live service order of the encounter cites its diagnoses');
   }
 }

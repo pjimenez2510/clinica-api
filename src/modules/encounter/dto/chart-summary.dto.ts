@@ -201,6 +201,8 @@ export class VisitSequenceProposalQueryDto extends createZodDto(
 export const visitSequenceProposalSchema = z.object({
   proposed: z.enum(['FIRST_TIME']).nullable(),
   specialtyKnown: z.boolean(),
+  /** Attentions of the service at sites the caller does not cover. */
+  elsewhere: z.boolean(),
   last: z
     .object({
       startedAt: z.iso.datetime(),
