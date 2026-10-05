@@ -1398,7 +1398,9 @@ async function applyStatusChange(
    *    a second reschedule of an entry that was already released from
    *    overwriting the first release instant.
    */
-  const releasing = change.effects.releasedAt !== undefined;
+  // A Date stamps a release; `null` is AG-154 taking one back, which must
+  // NOT demand an unreleased row — it demands the released one it read.
+  const releasing = change.effects.releasedAt instanceof Date;
   // A live attention that EXISTED is locked above and no second one can be
   // created while it lives (EN-168): only an appointment read WITHOUT one
   // needs the write to re-check that none appeared.

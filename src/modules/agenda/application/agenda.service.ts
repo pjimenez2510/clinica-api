@@ -36,6 +36,7 @@ import {
   effectsOf,
   planAttentionEffect,
   planBlockRelease,
+  planBlockRestore,
 } from '../domain/status-machine';
 import {
   type ClinicalDate,
@@ -985,6 +986,34 @@ export class AgendaService {
     this.logger.info(
       { site_id: entry.siteId, action: 'AGENDA_BLOCK_RELEASED' },
       'agenda block released',
+    );
+
+    return entry;
+  }
+
+  /**
+   * AG-154. The «Deshacer» of AG-114: the same block closes the calendar
+   * again, through the same port and with its own history row.
+   *
+   * If the hour was booked in the meantime, the `EXCLUDE` constraints refuse
+   * the write and nothing changes: the appointment wins over the undo.
+   */
+  async restoreBlock(
+    request: { siteId: string; entryId: string },
+    requester: Requester,
+  ): Promise<AgendaEntryView> {
+    const entry = await this.agenda.transition(
+      {
+        siteId: request.siteId,
+        entryId: request.entryId,
+        changedById: requester.userId,
+      },
+      (read) => planBlockRestore(read),
+    );
+
+    this.logger.info(
+      { site_id: entry.siteId, action: 'AGENDA_BLOCK_RESTORED' },
+      'agenda block restored',
     );
 
     return entry;

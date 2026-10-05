@@ -232,6 +232,12 @@ describe('las transiciones de estado de la cita por HTTP', () => {
       .delete(`/api/v1/agenda/sites/${site}/blocks/${entryId}`)
       .set('Authorization', `Bearer ${token}`);
 
+  /** AG-154. Deshace el «quitar»: el mismo bloqueo vuelve a cerrar. */
+  const restoreBlock = (entryId: string, site = siteId) =>
+    request(app.getHttpServer())
+      .post(`/api/v1/agenda/sites/${site}/blocks/${entryId}/restore`)
+      .set('Authorization', `Bearer ${token}`);
+
   const historyOf = (entryId: string) =>
     prisma.agendaStatusHistory.findMany({
       where: { agendaEntryId: entryId },
@@ -615,6 +621,51 @@ describe('las transiciones de estado de la cita por HTTP', () => {
       expect((again.body as Problem).code).toBe('INVALID_AGENDA_TRANSITION');
       // Y el historial sigue teniendo UNA fila: la de la liberación real.
       await expect(historyOf(blockId)).resolves.toHaveLength(1);
+    });
+
+    it('AG-154 deshacer el «quitar» vuelve a cerrar la MISMA fila, con su historial', async () => {
+      const blocked = await block().expect(201);
+      const blockId = (blocked.body as EntryBody).id;
+      await releaseBlock(blockId).expect(200);
+
+      const restored = await restoreBlock(blockId).expect(200);
+
+      expect((restored.body as EntryBody).releasedAt).toBeNull();
+      // Cierra de verdad: el `EXCLUDE` del profesional vuelve a verla.
+      await book().expect(409);
+      const rows = await historyOf(blockId);
+      expect(rows.map((row) => [row.fromStatus, row.toStatus])).toEqual([
+        ['BLOCKED', 'CANCELLED'],
+        ['CANCELLED', 'BLOCKED'],
+      ]);
+      expect(rows[1]).toMatchObject({ changedById: userId });
+    });
+
+    it('AG-154 si alguien reservó en el hueco, el bloqueo no se reabre y la cita se queda', async () => {
+      const blocked = await block().expect(201);
+      const blockId = (blocked.body as EntryBody).id;
+      await releaseBlock(blockId).expect(200);
+      // Control positivo: el hueco quedó libre y se reserva.
+      await book().expect(201);
+
+      await restoreBlock(blockId).expect(409);
+
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: blockId },
+      });
+      expect(stored.status).toBe('CANCELLED');
+      expect(stored.releasedAt).toBeInstanceOf(Date);
+      await expect(historyOf(blockId)).resolves.toHaveLength(1);
+    });
+
+    it('AG-154 un bloqueo que sigue en pie no se «reabre»', async () => {
+      const blocked = await block().expect(201);
+      const blockId = (blocked.body as EntryBody).id;
+
+      const response = await restoreBlock(blockId).expect(409);
+
+      expect((response.body as Problem).code).toBe('INVALID_AGENDA_TRANSITION');
+      await expect(historyOf(blockId)).resolves.toHaveLength(0);
     });
 
     it('AG-114 una cita no se deshace por la ruta de los bloqueos', async () => {
