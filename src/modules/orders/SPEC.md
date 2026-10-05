@@ -1406,12 +1406,21 @@ se anula y se pide de nuevo, y la pantalla lo hace en un paso (D-127.4)._
   anterior (`supersedes_id`), sin tocar ningún valor del anterior, que sigue
   legible (ORD-051)—, y MIENTRAS el informe editado esté `PARTIAL`, DEBERÁ
   admitir que la versión nueva **añada** los analitos que faltaban, con todos
-  los que ya traía (ORD-055). La versión nueva DEBERÁ quedar `CORRECTED` si
-  cambia **cualquier** valor que el parcial ya decía, y, si sólo lo completa,
-  con el estado que le dan sus determinaciones —`FINAL` con todas, `PARTIAL`
-  mientras falte alguna (ORD-030)—; y la línea DEBERÁ cerrarse cuando estén
-  todas (ORD-039). SI el informe está `CANCELLED`, ENTONCES DEBERÁ rechazarlo
-  con `REPORT_NOT_CORRECTABLE`.
+  los que ya traía (ORD-055). MIENTRAS a la versión nueva le falte alguna
+  determinación, DEBERÁ quedar `PARTIAL` aunque cambie algo (ORD-030); ya
+  completa, DEBERÁ quedar `CORRECTED` si cambia **cualquier cosa** que el
+  parcial ya decía —un valor, su unidad, su bandera tal como se guarda
+  (ORD-054) o la conclusión del informe— y `FINAL` si sólo lo completa; y la
+  línea DEBERÁ cerrarse cuando estén todas (ORD-039). Sólo DEBERÁ admitir
+  editar un informe `PARTIAL`, `FINAL` o `CORRECTED` —lista cerrada—; SI el
+  informe está `CANCELLED`, ENTONCES DEBERÁ rechazarlo con
+  `REPORT_NOT_CORRECTABLE`.
+  > **`CORRECTED` implica completo (revisión):** igual que `FINAL`, dice
+  > «están todas»; lo que añade es que sustituyó a otro. Un parcial que se
+  > edita y sigue a medias es `PARTIAL`, y el cambio no es silencioso porque
+  > el anterior queda a la vista como sustituido, «Corregido el…» (ORD-051).
+  > Y «lo que el parcial decía» es todo lo que alguien pudo leer: la unidad,
+  > la marca de anormal y la conclusión cuentan como el valor.
   > **Por qué sin romper ORD-050:** la regla que lo funda es de seguridad —«un
   > valor que cambia en silencio es un incidente»— y se cumple igual: el
   > parcial no se sobrescribe, queda como versión, y un valor que cambia sale
@@ -1646,7 +1655,7 @@ columnas donde registrar quién lo decidió y por qué.
 | ORD-116 | Integración y unitario | Que la vuelta `DISCARDED → DRAFT` limpie quién y cuándo y no mueva nada más lo garantiza un disparador: se prueba contra la base, con control positivo; recuperar devuelve las mismas líneas, y lo no descartado responde `ORDER_NOT_DISCARDED`. Que sólo quien firma recupera, con el servicio. |
 | ORD-117 | Interfaz | Anular una línea abre una confirmación con la consecuencia; cancelar no llama al servidor, confirmar sí. |
 | ORD-118 | Integración y unitario | Contra la base: corregir anula las líneas vivas con quién las anuló y deja las dos filas de bitácora, deja la resultada como estaba y abre el borrador con los mismos exámenes, tipo, prioridad e indicación; **un fallo forzado al escribir el borrador deja todas las líneas vivas**, con control positivo; atención cerrada, borrador y orden sin líneas vivas no corrigen. Que sólo quien firma corrige, con el servicio. |
-| ORD-119 | Integración y unitario | Contra la base: editar un parcial añadiendo lo que faltaba deja la versión nueva `FINAL`, el parcial legible y sustituido, y la línea `COMPLETED`, con control positivo (antes de editar, `PARTIAL` y la línea pendiente); cambiar un valor que ya decía la deja `CORRECTED`. Unitario del estado de la versión y del servicio. |
+| ORD-119 | Integración y unitario | Contra la base: editar un parcial añadiendo lo que faltaba deja la versión nueva `FINAL`, el parcial legible y sustituido, y la línea `COMPLETED`, con control positivo (antes de editar, `PARTIAL` y la línea pendiente); cambiar un valor que ya decía la deja `CORRECTED`; un parcial editado que sigue incompleto queda `PARTIAL` con el anterior sustituido, y completarlo cambiando la conclusión lo deja `CORRECTED`, con control positivo. Unitario del estado de la versión (valor, unidad, bandera, conclusión, incompleto) y de la lista cerrada de `isCorrectable`. |
 | Todos los códigos de error | Unitario | Contrato: `code`, categoría y mensaje. |
 
 ---

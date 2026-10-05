@@ -310,6 +310,12 @@ export class DiagnosticReportService {
       .filter((display) => !brought.has(display));
     if (missing.length > 0) throw new ReportCorrectionIncompleteError(missing);
 
+    // ORD-054, ORD-114, D-130. Today's ranges never lower by themselves a
+    // value that was already critical (`keepStandingCritical`).
+    const results = prepared.results.map((result) =>
+      keepStandingCritical(result, previous.results),
+    );
+
     const report = await this.reports.register(
       {
         serviceOrderId: previous.serviceOrderId,
@@ -317,19 +323,20 @@ export class DiagnosticReportService {
          * ORD-050. `CORRECTED` AND NOT `FINAL`, even when every determination
          * is in: the status is how a screen knows to print «corregido el …»
          * beside a number somebody may already have acted on. ORD-119: a
-         * PARTIAL only completed, with nothing it said changed, takes the
-         * status its contents earn.
+         * PARTIAL only completed, with nothing it said changed —values,
+         * units, flags as stored, conclusion—, is `FINAL`; and a version
+         * still incomplete stays `PARTIAL`.
          */
-        status: supersedingStatus(previous, prepared.results, prepared.status),
+        status: supersedingStatus(
+          previous,
+          { conclusion: request.conclusion, results },
+          prepared.status,
+        ),
         performedById: request.performedById,
         conclusion: request.conclusion,
         issuedAt: request.issuedAt,
         supersedesId: previous.id,
-        // ORD-054, ORD-114, D-130. Today's ranges never lower by themselves
-        // a value that was already critical (`keepStandingCritical`).
-        results: prepared.results.map((result) =>
-          keepStandingCritical(result, previous.results),
-        ),
+        results,
         sites: requester.sites,
       },
       prepared.expected,
