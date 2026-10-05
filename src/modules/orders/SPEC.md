@@ -1309,6 +1309,64 @@ desde la pantalla.
 
 ---
 
+## 11. Anular y corregir lo emitido (D-126, D-127)
+
+_Revisión de usabilidad del autor del 04-10-2026: anular un examen de una orden
+emitida era un clic sin aviso, y corregir una orden emitida obligaba a anular
+línea por línea y volver a pedir desde cero. Lo que ya está en manos de un
+tercero —la petición en la mano del paciente o en el laboratorio— no se edita:
+se anula y se pide de nuevo, y la pantalla lo hace en un paso (D-127.4)._
+
+- **ORD-117** — CUANDO se pida anular una línea de una orden emitida, la
+  pantalla DEBERÁ pedir **una** confirmación que diga la consecuencia —«Sale
+  de la cola del laboratorio. El papel entregado todavía la incluye.»—, sin
+  pedir motivo, y sólo al confirmar DEBERÁ anularla (ORD-007).
+  > **Solo interfaz:** el servidor ya anula con ORD-007 y no pide motivo
+  > (D-126.2: el rastro —quién, cuándo— lo guarda el sistema solo). Antes era
+  > un clic sin aviso sobre algo que ya tiene efecto fuera de la consulta.
+
+- **ORD-118** — MIENTRAS la orden esté emitida (`ISSUED`), CUANDO **quien la
+  firma** la **corrija**, el sistema DEBERÁ, **en una sola transacción**, anular
+  cada línea **viva** (`REQUESTED` o `IN_PROGRESS`) como ORD-007 y abrir en la
+  **misma atención** una orden nueva en `DRAFT`, sin número, con el mismo
+  tipo, prioridad e indicación clínica y una línea por cada examen anulado,
+  copiada como estaba congelada (código, nombre y concepto del tarifario); y
+  DEBERÁ responder `{ cancelled, draft }`. SI algo de la transacción falla,
+  ENTONCES **NO DEBERÁ** anular ninguna línea. SI la orden no está `ISSUED`,
+  ENTONCES DEBERÁ rechazarlo con `ORDER_NOT_ISSUED`; SI no le queda ninguna
+  línea viva, ENTONCES con `ORDER_ITEM_NOT_PENDING` (ORD-008); SI quien corrige
+  no la firma, ENTONCES con `ORDER_OF_ANOTHER_PRACTITIONER`; y SI la atención
+  ya no admite órdenes, ENTONCES con `ORDER_ENCOUNTER_NOT_OPEN` (ORD-005), sin
+  anular nada.
+  > **Una línea con su resultado no se anula ni se vuelve a pedir:** ORD-008
+  > ya rechaza anular una línea `COMPLETED`, y pedirla otra vez repetiría un
+  > examen que ya volvió. Queda como estaba en la orden original. La pantalla
+  > lo dice en la confirmación.
+  >
+  > **Por qué se copian las líneas y no se resuelven otra vez contra el
+  > catálogo:** se corrige lo que decía el papel. Lo que tenga que ser cierto
+  > para emitir otra vez —el examen sigue activo y es del tipo de la orden
+  > (ORD-003, ORD-097), la atención sigue abierta (ORD-005)— lo juzga la
+  > emisión del borrador nuevo, como el de cualquier borrador (el argumento de
+  > PR-109).
+  >
+  > **Por qué sólo quien la firma (D-123.1):** el borrador nuevo sale a su
+  > nombre. Un colega puede anular los exámenes (ORD-007, abierto a quien puede
+  > pedir) y pedirlos en una orden suya; por eso el código es distinto de
+  > `ORDER_DRAFT_OF_ANOTHER_PRACTITIONER`, cuya salida es otra.
+  >
+  > **Garantía de la base:** la atomicidad es de la transacción, y la prueba de
+  > integración fuerza un fallo al escribir el borrador para demostrar que
+  > ninguna línea queda anulada. `service_order_item_guard_frozen` admite el
+  > cambio de estado de una línea de una orden emitida y la inserción de
+  > líneas `REQUESTED` en un borrador, que es justo lo que se hace; no hizo
+  > falta migración. Las líneas anuladas conservan su fila (ORD-007): el papel
+  > entregado sigue diciendo lo que se pidió.
+  >
+  > **Una atención ya cerrada no admite el borrador** (ORD-005), así que la
+  > orden de una consulta terminada no se corrige: se anulan sus exámenes y se
+  > piden en una atención nueva.
+
 ## Códigos de error nuevos
 
 Todos entran en `shared/domain/errors/error-catalogue.ts` con su prueba de
@@ -1320,7 +1378,7 @@ contrato —`code`, estado y mensaje—.
 | `ORDER_ENCOUNTER_NOT_FOUND` | 404 | La atención sobre la que se pide no existe o está fuera del alcance. **No es `ENCOUNTER_NOT_FOUND`**, que pertenece a `encounter`: ningún módulo importa de otro y dos clases con el mismo `code` rompen el catálogo. La frase sí es la misma | ORD-001, ORD-090 |
 | `EXAM_NOT_ORDERABLE` | 422 | El ordenable no existe o está deshabilitado. Rechaza la orden **entera** | ORD-003 |
 | `ORDER_ENCOUNTER_NOT_OPEN` | 409 | La atención ya no admite contenido clínico nuevo | ORD-005 |
-| `ORDER_ITEM_NOT_PENDING` | 409 | Se intentó anular una línea ya completada o ya anulada | ORD-008 |
+| `ORDER_ITEM_NOT_PENDING` | 409 | Se intentó anular una línea ya completada o ya anulada, o corregir una orden sin ninguna línea viva | ORD-008, ORD-118 |
 | `REPORT_NOT_FOUND` | 404 | El informe no existe o es de una sede fuera del alcance | ORD-051 |
 | `REPORT_ALREADY_CORRECTED` | 409 | Ese informe ya tiene una corrección. Lo arbitra el `UNIQUE` sobre `supersedes_id` | ORD-052 |
 | `REPORT_NOT_CORRECTABLE` | 409 | Se intentó corregir un informe parcial o anulado | ORD-053 |
@@ -1340,7 +1398,8 @@ contrato —`code`, estado y mensaje—.
 | `CRITICAL_READ_BACK_REQUIRED` | 422 | Un aviso hecho sin confirmar que quien lo recibió repitió el valor | ORD-066 |
 | `ORDER_NOT_DRAFT` | 409 | Se intentó reescribir, emitir o descartar una orden que ya no está en borrador | ORD-096, ORD-098, ORD-099 |
 | `ORDER_NOT_DISCARDED` | 409 | Se intentó recuperar una orden que no está descartada: ya se recuperó, o nunca se descartó | ORD-116 |
-| `ORDER_NOT_ISSUED` | 409 | Se intentó registrar un informe, emparejar un resultado o anular una línea de una orden que no se ha emitido | ORD-100 |
+| `ORDER_NOT_ISSUED` | 409 | Se intentó registrar un informe, emparejar un resultado, anular una línea o corregir una orden que no se ha emitido | ORD-100, ORD-118 |
+| `ORDER_OF_ANOTHER_PRACTITIONER` | 403 | Corregir una orden emitida que firma otro profesional: el borrador nuevo saldría a nombre de quien corrige. **Distinto de `ORDER_DRAFT_OF_ANOTHER_PRACTITIONER`** porque la salida difiere: aquí se pueden anular sus exámenes (ORD-007) y pedirlos en una orden propia | ORD-118 |
 | `EXAM_DEFINITION_NOT_FOUND` | 404 | El examen no existe | ORD-103 |
 | `EXAM_CODE_DUPLICATE` | 409 | Otro examen ya lleva ese código. Lo arbitra `exam_definition_code_unique` | ORD-103 |
 | `ANALYTE_NOT_FOUND` | 404 | El analito no existe o está desactivado | ORD-105, ORD-106 |
@@ -1401,7 +1460,8 @@ resuelto de quien llama.
 | `POST` | `/orders/:orderId/restore` | `record:write` | ORD-116 *(sólo una descartada, y sólo quien la firma)* |
 | `GET` | `/encounters/:encounterId/orders` | `record:read` | ORD-002, ORD-009 |
 | `GET` | `/orders/:orderId` | `record:read` | ORD-009 |
-| `POST` | `/orders/:orderId/items/:itemId/cancel` | `record:write` | ORD-007, ORD-008 |
+| `POST` | `/orders/:orderId/items/:itemId/cancel` | `record:write` | ORD-007, ORD-008, ORD-117 |
+| `POST` | `/orders/:orderId/correct` | `record:write` | ORD-118 *(sólo una emitida, y sólo quien la firma; devuelve `{ cancelled, draft }`)* |
 | `GET` | `/orders/pending` | `record:read` | ORD-020 a ORD-026, ORD-081, ORD-092 |
 | `POST` | `/orders/:orderId/reports` | `result:write` | ORD-030 a ORD-042, ORD-094 |
 | `GET` | `/orders/:orderId/reports` | `record:read` | ORD-051, ORD-091 |
@@ -1458,6 +1518,8 @@ columnas donde registrar quién lo decidió y por qué.
 | ORD-026 | Integración | El nombre viaja o no según el filtro, y se prueba con dos fichas reales. |
 | ORD-090, ORD-094 | Integración | `route-authorisation.spec` recorre las rutas que NestJS registró de verdad. |
 | ORD-116 | Integración y unitario | Que la vuelta `DISCARDED → DRAFT` limpie quién y cuándo y no mueva nada más lo garantiza un disparador: se prueba contra la base, con control positivo; recuperar devuelve las mismas líneas, y lo no descartado responde `ORDER_NOT_DISCARDED`. Que sólo quien firma recupera, con el servicio. |
+| ORD-117 | Interfaz | Anular una línea abre una confirmación con la consecuencia; cancelar no llama al servidor, confirmar sí. |
+| ORD-118 | Integración y unitario | Contra la base: corregir anula las líneas vivas, deja la resultada como estaba y abre el borrador con los mismos exámenes, tipo, prioridad e indicación; **un fallo forzado al escribir el borrador deja todas las líneas vivas**, con control positivo; atención cerrada, borrador y orden sin líneas vivas no corrigen. Que sólo quien firma corrige, con el servicio. |
 | Todos los códigos de error | Unitario | Contrato: `code`, categoría y mensaje. |
 
 ---

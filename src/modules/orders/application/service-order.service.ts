@@ -8,6 +8,7 @@ import {
 
 import {
   SERVICE_ORDER_REPOSITORY,
+  type CorrectedOrder,
   type PendingOrderEntry,
   type ServiceOrderRepository,
   type ServiceOrderView,
@@ -23,6 +24,7 @@ import {
   ExamNotOrderableError,
   OrderDraftOfAnotherPractitionerError,
   OrderNotFoundError,
+  OrderOfAnotherPractitionerError,
   ResultChartUnmatchedError,
 } from '../domain/orders.errors';
 import type {
@@ -251,6 +253,37 @@ export class ServiceOrderService {
     );
 
     return order;
+  }
+
+  /**
+   * ORD-118. «Corregir» an issued order in one step: its live lines are
+   * cancelled and a new draft, with the same exams, type, priority and note,
+   * is opened in the same attention. Only the signer: the draft goes out
+   * under their name (D-123.1, the line PR-109 draws for a receta).
+   */
+  async correct(
+    orderId: string,
+    requester: Requester,
+  ): Promise<CorrectedOrder> {
+    const order = await this.byId(orderId, requester);
+    if (order.orderedByUserId !== requester.userId) {
+      throw new OrderOfAnotherPractitionerError();
+    }
+    const corrected = await this.orders.correct({
+      orderId,
+      sites: requester.sites,
+    });
+
+    this.logger.info(
+      {
+        site_id: corrected.draft.siteId,
+        action: 'SERVICE_ORDER_CORRECTED',
+        item_count: corrected.draft.items.length,
+      },
+      'service order corrected',
+    );
+
+    return corrected;
   }
 
   /**

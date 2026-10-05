@@ -118,6 +118,16 @@ export const serviceOrderSchema = z.object({
 /** Response of placing an order, reading one, and cancelling one of its lines. */
 export class ServiceOrderDto extends createZodDto(serviceOrderSchema) {}
 
+/**
+ * ORD-118. Response of POST /orders/:orderId/correct: the issued order with its
+ * live lines cancelled, and the new draft that carries them.
+ */
+export const correctedOrderSchema = z.object({
+  cancelled: serviceOrderSchema,
+  draft: serviceOrderSchema,
+});
+export class CorrectedOrderDto extends createZodDto(correctedOrderSchema) {}
+
 export const serviceOrderListSchema = z.object({
   items: z.array(serviceOrderSchema),
 });
@@ -203,6 +213,7 @@ export class PendingOrderListDto extends createZodDto(pendingOrderListSchema) {}
 /** Response types the controllers return, inferred from the schemas Swagger publishes. */
 export type ServiceOrderResponse = z.infer<typeof serviceOrderSchema>;
 export type ServiceOrderListResponse = z.infer<typeof serviceOrderListSchema>;
+export type CorrectedOrderResponse = z.infer<typeof correctedOrderSchema>;
 export type PendingOrderListResponse = z.infer<typeof pendingOrderListSchema>;
 
 /** ORD-115. A draft its signer left behind in an attention no longer open. */

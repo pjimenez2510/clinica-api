@@ -200,6 +200,26 @@ export class OrderDraftOfAnotherPractitionerError extends ForbiddenError {
 }
 
 /**
+ * ORD-118. Correcting an issued order signed by another practitioner.
+ *
+ * DISTINCT FROM `ORDER_DRAFT_OF_ANOTHER_PRACTITIONER` because the way out
+ * differs: a colleague's draft is left alone, while a colleague's issued order
+ * can have its exams cancelled (ORD-007, open to anybody who may order) and
+ * asked for again in an order of one's own. The new draft goes out under the
+ * name of whoever corrects, so a correction by somebody else would put one
+ * person's request under another's signature (D-123.1, PR-109).
+ */
+export class OrderOfAnotherPractitionerError extends ForbiddenError {
+  readonly code = 'ORDER_OF_ANOTHER_PRACTITIONER';
+  override readonly userTitle =
+    'Esta orden la firma otro profesional y sólo él puede corregirla. Puede anular sus exámenes y pedirlos en una orden suya';
+
+  constructor() {
+    super('The issued order is signed by another practitioner');
+  }
+}
+
+/**
  * ORD-100. The order has not been issued.
  *
  * A draft never left the consultation: nothing comes back for it, nobody

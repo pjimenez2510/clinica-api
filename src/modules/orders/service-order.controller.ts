@@ -24,11 +24,13 @@ import type { Requester } from './application/service-order.service';
 import type { PendingOrderEntry } from './domain/service-order.repository';
 import type { ServiceOrderView } from './domain/service-order.repository';
 import {
+  CorrectedOrderDto,
   PlaceOrderDto,
   PendingOrderListDto,
   PendingOrdersQueryDto,
   ServiceOrderDto,
   StaleDraftListDto,
+  type CorrectedOrderResponse,
   type PendingOrderListResponse,
   type StaleDraftListResponse,
   type ServiceOrderResponse,
@@ -220,6 +222,32 @@ export class ServiceOrderController {
       this.requester(req, 'record:write'),
     );
     return toOrderResponse(order);
+  }
+
+  /**
+   * ORD-118. «Corregir» an issued order: its live lines cancelled and a new
+   * draft with them, in one transaction. Only its signer.
+   */
+  @Post(':orderId/correct')
+  @RequirePermission('record:write', 'query')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Corregir una orden emitida: anula sus exámenes pendientes y abre un borrador con ellos',
+  })
+  @ApiOkResponse({ type: CorrectedOrderDto })
+  async correct(
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Req() req: Request,
+  ): Promise<CorrectedOrderResponse> {
+    const { cancelled, draft } = await this.orders.correct(
+      orderId,
+      this.requester(req, 'record:write'),
+    );
+    return {
+      cancelled: toOrderResponse(cancelled),
+      draft: toOrderResponse(draft),
+    };
   }
 
   /**

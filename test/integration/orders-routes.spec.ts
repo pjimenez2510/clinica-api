@@ -101,6 +101,8 @@ describe('las rutas del módulo de órdenes', () => {
         'POST /orders/:orderId/discard → record:write',
         // ORD-116. Deshacer el descarte, con el mismo permiso.
         'POST /orders/:orderId/restore → record:write',
+        // ORD-118. Corregir una emitida: anular sus líneas y pedir de nuevo.
+        'POST /orders/:orderId/correct → record:write',
         'GET /orders/results/unmatched → record:read',
         'POST /orders/results/:resultId/match → result:write',
         'GET /orders/results/critical → record:read',

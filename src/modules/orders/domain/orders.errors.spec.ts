@@ -4,6 +4,7 @@ import { DOMAIN_ERROR_CODES } from '../../../shared/domain/errors/error-catalogu
 import {
   ConflictError,
   DomainError,
+  ForbiddenError,
   NotFoundError,
   ValidationError,
 } from '../../../shared/domain/errors/domain-error';
@@ -18,6 +19,7 @@ import {
   OrderNotDiscardedError,
   OrderNotDraftError,
   OrderNotIssuedError,
+  OrderOfAnotherPractitionerError,
   OrderEncounterNotOpenError,
   OrderItemNotMatchableError,
   OrderItemNotPendingError,
@@ -139,6 +141,16 @@ describe('el contrato de errores de las órdenes', () => {
     expect(error.code).toBe('ORDER_NOT_DISCARDED');
     expect(error.userTitle).toBe(
       'Esa orden ya no está descartada: se recuperó o nunca se descartó. Actualice la pantalla',
+    );
+  });
+
+  it('ORD-118 corregir una orden que firma otro es un 403, con su código y una frase que da la salida', () => {
+    const error = new OrderOfAnotherPractitionerError();
+    expect(error).toBeInstanceOf(ForbiddenError);
+    expect(error.code).toBe('ORDER_OF_ANOTHER_PRACTITIONER');
+    expect(DOMAIN_ERROR_CODES).toContain('ORDER_OF_ANOTHER_PRACTITIONER');
+    expect(error.userTitle).toBe(
+      'Esta orden la firma otro profesional y sólo él puede corregirla. Puede anular sus exámenes y pedirlos en una orden suya',
     );
   });
 

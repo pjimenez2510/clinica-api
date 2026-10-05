@@ -1031,6 +1031,9 @@ export const DOMAIN_ERROR_CODES = [
   //   * `ORDER_DRAFT_OF_ANOTHER_PRACTITIONER` (403) — D-123. El borrador lo
   //     corrige, emite o descarta el profesional que firma la orden.
   'ORDER_DRAFT_OF_ANOTHER_PRACTITIONER',
+  // ORD-118. Corregir una orden emitida que firma otro: el borrador nuevo
+  // saldría a nombre de quien corrige. Sus exámenes sí se pueden anular.
+  'ORDER_OF_ANOTHER_PRACTITIONER',
   //   * `ORDER_NOT_DISCARDED` (409) — ORD-116. «Deshacer» un descarte de una
   //     orden que ya no está descartada: otra pestaña o un segundo clic.
   'ORDER_NOT_DISCARDED',
