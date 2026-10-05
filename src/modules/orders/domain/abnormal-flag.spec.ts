@@ -4,11 +4,12 @@ import {
   applicableRange,
   classifyNumeric,
   criticalBounds,
+  keepStandingCritical,
   classifyQualitative,
   isCritical,
 } from './abnormal-flag';
 import { GLUCOSE, HAEMOGLOBIN, NITRITES } from './analyte.fixtures';
-import type { PatientProfile, ReferenceRange } from './analyte';
+import type { AbnormalFlag, PatientProfile, ReferenceRange } from './analyte';
 
 /**
  * The flag: the number that decides whether somebody phones the patient
@@ -241,6 +242,23 @@ describe('la bandera de anormalidad', () => {
     }
     // Control positivo: la exhaustiva recorrió de verdad los casos.
     expect(checked).toBeGreaterThan(1_000);
+  });
+
+  it('ORD-054 ORD-114 una corrección no baja de crítico un valor igual o más extremo que el que ya era crítico', () => {
+    // El 420 fue crítico con el umbral de 400; hoy rige 500 y daría HIGH.
+    const was = { analyteDisplay: 'Glucosa', valueNumeric: 420, abnormalFlag: 'CRITICAL_HIGH' as const }; // prettier-ignore
+    const now = (valueNumeric: number, abnormalFlag: AbnormalFlag | null) => ({ analyteDisplay: 'Glucosa', valueNumeric, abnormalFlag }); // prettier-ignore
+
+    expect(keepStandingCritical(now(420, 'HIGH'), [was]).abnormalFlag).toBe('CRITICAL_HIGH'); // prettier-ignore
+    expect(keepStandingCritical(now(450, 'HIGH'), [was]).abnormalFlag).toBe('CRITICAL_HIGH'); // prettier-ignore
+    // Control positivo: el laboratorio lo corrigió a menos extremo, rige el umbral de hoy.
+    expect(keepStandingCritical(now(410, 'HIGH'), [was]).abnormalFlag).toBe('HIGH'); // prettier-ignore
+    // Y por abajo, igual.
+    const low = { analyteDisplay: 'Glucosa', valueNumeric: 35, abnormalFlag: 'CRITICAL_LOW' as const }; // prettier-ignore
+    expect(keepStandingCritical(now(30, 'LOW'), [low]).abnormalFlag).toBe('CRITICAL_LOW'); // prettier-ignore
+    expect(keepStandingCritical(now(50, 'LOW'), [low]).abnormalFlag).toBe('LOW');
+    // Otra determinación no se mezcla.
+    expect(keepStandingCritical({ ...now(420, 'HIGH'), analyteDisplay: 'Urea' }, [was]).abnormalFlag).toBe('HIGH'); // prettier-ignore
   });
 
   it('ORD-060 reconoce las dos banderas que tienen que llegar hoy a una persona', () => {

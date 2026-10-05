@@ -50,6 +50,7 @@ import {
 } from '../domain/orders.errors';
 import { isCorrectable, isLineComplete } from '../domain/service-order';
 import { resolveResult } from '../domain/result-value';
+import { keepStandingCritical } from '../domain/abnormal-flag';
 import {
   criticalNoticeTarget,
   criticalWait,
@@ -294,7 +295,11 @@ export class DiagnosticReportService {
         conclusion: request.conclusion,
         issuedAt: request.issuedAt,
         supersedesId: previous.id,
-        results: prepared.results,
+        // ORD-054, ORD-114, D-128. Today's ranges never lower by themselves
+        // a value that was already critical (`keepStandingCritical`).
+        results: prepared.results.map((result) =>
+          keepStandingCritical(result, previous.results),
+        ),
         sites: requester.sites,
       },
       prepared.expected,

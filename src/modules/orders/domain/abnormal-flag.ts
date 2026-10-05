@@ -235,3 +235,49 @@ export function classifyQualitative(
 export function isCritical(flag: AbnormalFlag | null): boolean {
   return flag === 'CRITICAL_LOW' || flag === 'CRITICAL_HIGH';
 }
+
+/** What a correction compares: one value, its determination and its flag. */
+interface FlaggedValue {
+  analyteDisplay: string;
+  valueNumeric: number | null;
+  abnormalFlag: AbnormalFlag | null;
+}
+
+/**
+ * ORD-054, ORD-114. A CORRECTION NEVER LOWERS A STANDING CRITICAL BY ITSELF.
+ *
+ * A correction is classified with the ranges in force today (ORD-114), and
+ * ORD-055 makes the laboratory resend every value, the unchanged ones
+ * included. So a glucose of 420 that was critical under a threshold of 400
+ * would come back `HIGH` the day after the clinic raised it to 500 — and
+ * leave the critical worklist without anybody having been called.
+ *
+ * The rule kept here is the monotone one: a corrected value AS EXTREME OR
+ * MORE than one that was already critical on that side stays critical. A
+ * value the laboratory corrected to something less extreme is classified
+ * with today's ranges, as anything new is.
+ *
+ * ⚠️ INTERIM, AND IT IS A CLINICAL DECISION (D-128): which threshold a
+ * correction uses. The recommendation is to freeze the critical bounds on
+ * the result, as ORD-037 already freezes the reference ones.
+ */
+export function keepStandingCritical<T extends FlaggedValue>(
+  corrected: T,
+  previous: readonly FlaggedValue[],
+): T {
+  if (isCritical(corrected.abnormalFlag) || corrected.valueNumeric === null) {
+    return corrected;
+  }
+  const value = corrected.valueNumeric;
+  const was = previous.find(
+    (result) => result.analyteDisplay === corrected.analyteDisplay,
+  );
+  if (!was || was.valueNumeric === null) return corrected;
+  if (was.abnormalFlag === 'CRITICAL_HIGH' && value >= was.valueNumeric) {
+    return { ...corrected, abnormalFlag: 'CRITICAL_HIGH' };
+  }
+  if (was.abnormalFlag === 'CRITICAL_LOW' && value <= was.valueNumeric) {
+    return { ...corrected, abnormalFlag: 'CRITICAL_LOW' };
+  }
+  return corrected;
+}

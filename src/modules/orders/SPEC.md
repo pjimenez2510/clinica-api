@@ -1223,6 +1223,11 @@ desde la pantalla.
   ENTONCES el sistema DEBERÁ rechazar los rangos con `REFERENCE_RANGE_INVALID`
   nombrando la fila del crítico, los dos valores y a quién aplica (D-123.3).
 
+  Lo mismo SI el crítico bajo supera el límite superior de referencia, el
+  crítico alto queda por debajo del inferior, o la banda crítica que resulta
+  para alguien queda invertida (el bajo por encima del alto), haya referencia
+  o no.
+
   Un crítico bajo de 700 en lugar de 70 marcaría todas las glucosas como
   críticas, y la cola de seguridad llena de ruido es una cola que se deja de
   mirar. Se comprueba con **la misma resolución que la bandera** (ORD-036),
@@ -1253,6 +1258,12 @@ desde la pantalla.
   `catalog:manage`, el **historial** de los rangos de un analito —cada fila
   con su vigencia y quién la cambió está en `access_audit` (ORD-111)— para
   reconstruir qué umbral regía en una fecha.
+
+  Y SI una corrección trae un valor igual de extremo o más que uno que ya era
+  crítico de ese lado, ENTONCES el sistema DEBERÁ conservarlo crítico aunque
+  los rangos de hoy no lo marquen: un umbral subido después no saca de la cola
+  un crítico que nadie avisó (revisión clínica; D-128 decide qué umbral usa una
+  corrección, y recomienda congelar en el resultado los límites críticos).
 
   Una fila cerrada que siguiera contando pisaría a la nueva (ORD-107) y la
   bandera dependería del orden de las filas. Y lo vigente se lee por «sin

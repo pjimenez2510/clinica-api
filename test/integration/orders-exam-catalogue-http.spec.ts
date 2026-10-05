@@ -502,6 +502,53 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       expect(await flag('MALE', 14)).toBe('NORMAL');
     });
 
+    it('ORD-054 ORD-114 una corrección después de subir el umbral no saca de la cola un crítico que sigue igual', async () => {
+      const glu = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: 'GLU' } }); // prettier-ignore
+      const client = prisma as unknown as PrismaService;
+      const orders = new PrismaServiceOrderRepository(client);
+      const reports = new DiagnosticReportService(
+        new PrismaDiagnosticReportRepository(client),
+        orders,
+        new PrismaExamCatalogueRepository(client),
+        { record: () => Promise.resolve() },
+        { setContext: () => undefined, info: () => undefined, warn: () => undefined, error: () => undefined } as never, // prettier-ignore
+      );
+      const site = await createSite(prisma);
+      const practitioner = await createPractitioner(prisma);
+      await aTariffConcept(prisma, { code: 'EX-GLUCOSA-AYUNAS' });
+      const exam = await examCoded('EX-GLUCOSA-AYUNAS');
+      const requester = { userId: 'user-1', sites: 'all' as const };
+      const issuedAt = () => new Date(Date.now() - 3_600_000);
+
+      /** A glucose of `first` registered critical, the threshold raised to 500, then corrected to `corrected`. */
+      async function correctedAfterRaise(first: number, corrected: number) {
+        const patient = await createPatient(prisma, { sex: 'FEMALE' });
+        const encounter = await createEncounter(prisma, { siteId: site.id, practitionerId: practitioner.id, patientId: patient.id }); // prettier-ignore
+        const order = await placeIssued(orders, { encounterId: encounter.id, category: 'LABORATORY', priority: 'ROUTINE', lines: [{ examDefinitionId: exam.id }], sites: 'all' }); // prettier-ignore
+        const original = await reports.register({ orderId: order.id, performedById: null, issuedAt: issuedAt(), results: [{ analyteDefinitionId: glu.id, valueNumeric: first }] }, requester); // prettier-ignore
+        expect(original.results[0]?.abnormalFlag).toBe('CRITICAL_HIGH');
+        return { original, correct: () => reports.correct({ reportId: original.id, performedById: null, issuedAt: issuedAt(), results: [{ analyteDefinitionId: glu.id, valueNumeric: corrected }] }, requester) }; // prettier-ignore
+      }
+
+      const same = await correctedAfterRaise(420, 420);
+      const lessExtreme = await correctedAfterRaise(420, 410);
+      await send('put', `/exam-catalogue/analytes/${glu.id}/ranges`, {
+        ranges: [range({ low: 70, high: 100 }), range({ rangeKind: 'CRITICAL', low: 40, high: 500 })],
+      }).expect(200); // prettier-ignore
+
+      const kept = await same.correct();
+      const row = await prisma.observationResult.findFirstOrThrow({ where: { reportId: kept.id } }); // prettier-ignore
+      expect(row.abnormalFlag).toBe('CRITICAL_HIGH');
+      // Y sigue en la cola de críticos, ahora por el informe corregido.
+      const queue = await reports.critical(requester, new Date());
+      expect(queue.map((entry) => entry.reportId)).toContain(kept.id);
+
+      // Control positivo: corregido a un valor menos extremo, rige el umbral de hoy.
+      const lowered = await lessExtreme.correct();
+      const loweredRow = await prisma.observationResult.findFirstOrThrow({ where: { reportId: lowered.id } }); // prettier-ignore
+      expect(loweredRow.abnormalFlag).toBe('HIGH');
+    });
+
     it('ORD-114 un rango cerrado no cuenta: el resultado nuevo usa el que rige al registrarlo', async () => {
       const glu = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: 'GLU' } }); // prettier-ignore
       const flag = await flagsOf('EX-GLUCOSA-AYUNAS', 'GLU');
