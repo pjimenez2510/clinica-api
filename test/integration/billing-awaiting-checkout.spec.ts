@@ -342,6 +342,47 @@ describe('caja: lo pendiente de cobro (B10)', () => {
     ).toEqual(expect.arrayContaining([inside, before]));
   });
 
+  it('BI-190 entre las antiguas no cuentan ni se listan las que nunca se cobran; en los siete días siguen a la vista', async () => {
+    const patient = await patientWithCedula();
+    const old = (minutes: number) =>
+      new Date(windowStart.getTime() - minutes * MINUTE_MS);
+    const recent = new Date(now.getTime() - HOUR_MS);
+
+    const leftUnseen = await visit({ patientId: patient.id, status: 'DISCONTINUED', endedAt: old(1) }); // prettier-ignore
+    const interruptedAfterCare = await visit({ patientId: patient.id, status: 'DISCONTINUED', endedAt: old(2), written: true }); // prettier-ignore
+    const cancelledOnly = await visit({ patientId: patient.id, status: 'DISCHARGED', endedAt: old(3) }); // prettier-ignore
+    await account(cancelledOnly, patient.id, 'CANCELLED');
+    const cancelledThenOpen = await visit({ patientId: patient.id, status: 'DISCHARGED', endedAt: old(4) }); // prettier-ignore
+    await account(cancelledThenOpen, patient.id, 'CANCELLED');
+    await account(cancelledThenOpen, patient.id, 'OPEN');
+    const neverCharged = await visit({ patientId: patient.id, status: 'DISCHARGED', endedAt: old(5) }); // prettier-ignore
+    const recentUnseen = await visit({ patientId: patient.id, status: 'DISCONTINUED', endedAt: recent }); // prettier-ignore
+
+    const page = await awaitingPage();
+    expect(page.olderCount).toBe(3);
+    expect(page.items.map((row) => row.encounterId)).toContain(recentUnseen);
+
+    const all = await request(app.getHttpServer())
+      .get(
+        `/api/v1/billing/sites/${siteId}/encounters/awaiting-checkout?includeOlder=true`,
+      ) // prettier-ignore
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const listed = (all.body as { items: AwaitingRow[] }).items.map(
+      (row) => row.encounterId,
+    );
+    expect(listed).toEqual(
+      expect.arrayContaining([
+        interruptedAfterCare,
+        cancelledThenOpen,
+        neverCharged,
+        recentUnseen,
+      ]),
+    );
+    expect(listed).not.toContain(leftUnseen);
+    expect(listed).not.toContain(cancelledOnly);
+  });
+
   it('BI-181 la terminada por caja (COMPLETED) sin liquidar se lista, y la de cuenta anulada sale como sin cuenta', async () => {
     const patient = await patientWithCedula();
     const completed = await visit({ patientId: patient.id, status: 'COMPLETED', endedAt: new Date(now.getTime() - HOUR_MS) }); // prettier-ignore
