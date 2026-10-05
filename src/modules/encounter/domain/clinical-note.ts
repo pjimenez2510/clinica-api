@@ -24,7 +24,6 @@ import { createHash } from 'node:crypto';
 import {
   AmendmentReasonRequiredError,
   NoteAlreadySignedError,
-  NoteContentIncompleteError,
   NoteNotAmendableError,
   UnknownClinicalFormError,
 } from './encounter.errors';
@@ -165,30 +164,6 @@ export function requireForm(code: string, version: string): ClinicalForm {
 
 /** The narrative sections of a form, as they are stored in `content`. */
 export type NoteContent = Readonly<Record<string, unknown>>;
-
-/**
- * EN-020. Every mandatory section present and not empty.
- *
- * CHECKED WHEN SIGNING AND NOT WHEN DRAFTING, and that is deliberate: a draft
- * is where a doctor writes the motive at 09:02 and the plan at 09:20, and a
- * form that refused to save until it was complete would be a form nobody
- * saves. The signature is the moment the note becomes the record, and it is
- * the moment the article's minimum content has to be true.
- *
- * WHITESPACE IS NOT CONTENT. A section holding three spaces satisfies «the key
- * exists» and satisfies nothing a reader needs.
- */
-export function assertContentComplete(
-  form: ClinicalForm,
-  content: NoteContent,
-): void {
-  const missing = form.mandatorySections.filter((section) => {
-    const value = content[section];
-    return typeof value !== 'string' || value.trim() === '';
-  });
-
-  if (missing.length > 0) throw new NoteContentIncompleteError(missing);
-}
 
 /**
  * EN-027. The cryptographic digest of the content plus the signing metadata.

@@ -139,6 +139,11 @@ export interface ChartHistoryQuery {
   /** EN-121. The caller's own resolved scope, never a site they named. */
   sites: SiteScopeFilter;
   /**
+   * EN-208. Only the attentions born of this appointment, in any state but
+   * annulled in error — the closed ones included, so they can be READ.
+   */
+  agendaEntryId?: string;
+  /**
    * EN-162. Which page, 1-based, and how many rows it holds.
    *
    * ⚠️ THE WINDOW IS NOT OPTIONAL AND HAS NO DEFAULT HERE. A port with an

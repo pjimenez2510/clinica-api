@@ -38,7 +38,23 @@ import type {
 } from '../domain/encounter.repository';
 import type { NoteContent } from '../domain/clinical-note';
 import type { Requester } from './encounter.service';
+import { builtInTemplate, type NoteTemplate } from '../domain/note-template';
+import type { NoteTemplateRepository } from '../domain/note-template.repository';
+import { BackgroundSnapshotReader } from './background-snapshot.reader';
 import { ClinicalNoteService } from './clinical-note.service';
+import type { ActiveAllergy } from '../../../shared/clinical/patient-allergy.port';
+import {
+  BACKGROUND_SNAPSHOT_KEY,
+  backgroundSnapshotIn,
+} from '../domain/background-snapshot';
+import type {
+  AllergyAbsenceAssertion,
+  PatientAllergyRepository,
+} from '../domain/patient-allergy.repository';
+import type {
+  HistoryView,
+  PatientHistoryRepository,
+} from '../domain/patient-history.repository';
 
 /**
  * The note chain's use cases, against in-memory ports.
@@ -55,6 +71,7 @@ const SITE = 'site-1';
 const PRACTITIONER = 'practitioner-1';
 const USER = 'user-1';
 const ENCOUNTER = 'encounter-1';
+const PATIENT = 'patient-1';
 
 const requester: Requester = { userId: USER, sites: [SITE] };
 
@@ -88,6 +105,7 @@ const aNote = (
   version: 1,
   formCode: '002',
   formVersion: '1',
+  templateId: null,
   status: 'DRAFT',
   content: COMPLETE_002,
   authorId: PRACTITIONER,
@@ -152,6 +170,7 @@ class FakeNotes implements ClinicalNoteRepository {
     this.stored = {
       ...this.stored,
       status: 'SIGNED',
+      content: this.signature.content,
       signedById: this.signature.signedById,
       signedAt: this.signature.signedAt,
       contentHash: this.signature.contentHash,
@@ -200,17 +219,66 @@ class FakeEncounters {
   findPractitionerByUser(): Promise<PractitionerIdentity | null> {
     return Promise.resolve(this.practitioner);
   }
+
+  /** EN-206. The chart the snapshot is read from. */
+  findById(): Promise<{ id: string; patientId: string }> {
+    return Promise.resolve({ id: ENCOUNTER, patientId: PATIENT });
+  }
+}
+
+/** EN-206. The three readers behind the snapshot, as the chart stands. */
+class FakeBackground {
+  allergies: ActiveAllergy[] = [];
+  absence: AllergyAbsenceAssertion | null = null;
+  history: HistoryView[] = [];
+
+  activeFor(): Promise<ActiveAllergy[]> {
+    return Promise.resolve(this.allergies);
+  }
+  standingAbsenceFor(): Promise<AllergyAbsenceAssertion | null> {
+    return Promise.resolve(this.absence);
+  }
+}
+
+/** EN-203. The published templates, and which specialty the attention is of. */
+class FakeTemplates {
+  published: NoteTemplate[] = [];
+  specialtyId: string | null = null;
+
+  latest(formCode: string, specialtyId: string | null) {
+    const versions = this.published
+      .filter((t) => t.formCode === formCode && t.specialtyId === specialtyId)
+      .sort((a, b) => b.version - a.version);
+    return Promise.resolve(versions[0] ?? null);
+  }
+  findById(id: string) {
+    return Promise.resolve(this.published.find((t) => t.id === id) ?? null);
+  }
+  specialtyOfEncounter() {
+    return Promise.resolve(this.specialtyId);
+  }
+}
+
+class FakeHistory {
+  constructor(private readonly background: FakeBackground) {}
+  activeFor(): Promise<HistoryView[]> {
+    return Promise.resolve(this.background.history);
+  }
 }
 
 describe('los casos de uso de la nota clínica', () => {
   let notes: FakeNotes;
   let encounters: FakeEncounters;
+  let background: FakeBackground;
+  let templates: FakeTemplates;
   let audit: AccessAuditRecorder & { entries: AccessAuditEntry[] };
   let service: ClinicalNoteService;
 
   beforeEach(() => {
     notes = new FakeNotes();
     encounters = new FakeEncounters();
+    background = new FakeBackground();
+    templates = new FakeTemplates();
     const entries: AccessAuditEntry[] = [];
     audit = {
       entries,
@@ -230,6 +298,12 @@ describe('los casos de uso de la nota clínica', () => {
       notes,
       encounters as unknown as EncounterRepository,
       audit,
+      new BackgroundSnapshotReader(
+        background,
+        background as unknown as PatientAllergyRepository,
+        new FakeHistory(background) as unknown as PatientHistoryRepository,
+      ),
+      templates as unknown as NoteTemplateRepository,
       logger,
     );
   });
@@ -296,10 +370,160 @@ describe('los casos de uso de la nota clínica', () => {
     // and the instant — recomputed here so the service cannot have invented it.
     expect(signed.contentHash).toBe(
       contentHashOf({
-        content: COMPLETE_002,
+        content: signed.content,
         signedById: PRACTITIONER,
         signedAt: signed.signedAt as Date,
       }),
+    );
+  });
+
+  it('EN-206 firma con la foto de alergias y antecedentes del instante de la firma', async () => {
+    background.allergies = [
+      {
+        id: 'allergy-1',
+        patientId: PATIENT,
+        substanceConceptId: null,
+        substanceText: 'Látex',
+        reaction: null,
+        criticality: 'UNABLE_TO_ASSESS',
+        recordedAt: new Date(),
+      },
+    ];
+
+    const signed = await service.sign(
+      { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' },
+      requester,
+    );
+
+    const snapshot = backgroundSnapshotIn(signed.content);
+    expect(snapshot?.allergies.map((allergy) => allergy.substance)).toEqual([
+      'Látex',
+    ]);
+    expect(snapshot?.takenAt).toBe((signed.signedAt as Date).toISOString());
+  });
+
+  it('EN-207 firma sin texto en antecedentes si hay un antecedente registrado', async () => {
+    notes.stored = aNote({ content: { ...COMPLETE_002, antecedentes: '' } });
+    background.history = [
+      {
+        id: 'history-1',
+        patientId: PATIENT,
+        kind: 'PERSONAL',
+        description: 'Hipertensión arterial',
+        relative: null,
+        recordedAt: new Date(),
+        recordedBy: { id: USER, name: 'Dra. Villacís' },
+        refutedAt: null,
+        refutedNotes: null,
+        refutedBy: null,
+      },
+    ];
+
+    const signed = await service.sign(
+      { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' },
+      requester,
+    );
+
+    expect(signed.status).toBe('SIGNED');
+  });
+
+  describe('la plantilla de la nota', () => {
+    const template = (
+      id: string,
+      specialtyId: string | null,
+      version: number,
+      extraRequired = false,
+    ): NoteTemplate => ({
+      id,
+      formCode: '002',
+      specialtyId,
+      version,
+      sections: [
+        ...builtInTemplate('002').sections,
+        {
+          key: 'extra1',
+          title: `Propia de ${id}`,
+          help: '',
+          kind: 'TEXT',
+          options: [],
+          required: extraRequired,
+          minimum: false,
+        },
+      ],
+    });
+
+    it('EN-203 abre la nota con la última versión de la plantilla de su especialidad', async () => {
+      templates.specialtyId = 'odontologia';
+      templates.published = [
+        template('clinica-1', null, 1),
+        template('odonto-1', 'odontologia', 1),
+        template('odonto-2', 'odontologia', 2),
+      ];
+
+      const note = await service.draft(draftRequest, requester);
+
+      expect(notes.drafted[0]?.templateId).toBe('odonto-2');
+      expect(note.template.id).toBe('odonto-2');
+    });
+
+    it('EN-203 sin plantilla de su especialidad usa la de la clínica', async () => {
+      templates.specialtyId = 'pediatria';
+      templates.published = [template('clinica-1', null, 1)];
+
+      await service.draft(draftRequest, requester);
+
+      expect(notes.drafted[0]?.templateId).toBe('clinica-1');
+    });
+
+    it('EN-203 sin ninguna publicada usa la de serie y no guarda plantilla', async () => {
+      const note = await service.draft(draftRequest, requester);
+
+      expect(notes.drafted[0]?.templateId).toBeNull();
+      expect(note.template.version).toBe(0);
+    });
+
+    it('EN-203 la evolución sigue con la de serie aunque la clínica tenga plantilla', async () => {
+      templates.published = [template('clinica-1', null, 1)];
+
+      await service.draft(
+        { ...draftRequest, formCode: '005', content: {} },
+        requester,
+      );
+
+      expect(notes.drafted[0]?.templateId).toBeNull();
+    });
+
+    it('EN-204 y EN-205 firma con la plantilla con que se abrió, aunque haya una más nueva', async () => {
+      templates.published = [
+        template('clinica-1', null, 1, true),
+        template('clinica-2', null, 2, false),
+      ];
+      notes.stored = aNote({ templateId: 'clinica-1' });
+
+      await expect(
+        service.sign(
+          {
+            encounterId: ENCOUNTER,
+            noteId: 'note-1',
+            dischargeCondition: 'ALIVE',
+          },
+          requester,
+        ),
+      ).rejects.toBeInstanceOf(NoteContentIncompleteError);
+    });
+  });
+
+  it('EN-206 no guarda en el borrador la foto que mande la pantalla', async () => {
+    await service.draft(
+      {
+        ...draftRequest,
+        content: { motivoConsulta: 'Control', [BACKGROUND_SNAPSHOT_KEY]: {} },
+      },
+      requester,
+    );
+
+    expect(notes.drafted[0]?.content).not.toHaveProperty(
+      BACKGROUND_SNAPSHOT_KEY,
     );
   });
 
@@ -474,6 +698,36 @@ describe('los casos de uso de la nota clínica', () => {
     // AND IT NEVER DISCHARGES: correcting a March note must not touch the
     // state of a March attention.
     expect(notes.amendment?.signature.dischargesTheEncounter).toBe(false);
+  });
+
+  it('EN-206 la enmienda hereda la foto de la versión que enmienda, no la de hoy', async () => {
+    const thatDay = {
+      takenAt: 'aquel día',
+      allergies: [],
+      noKnownAllergies: null,
+      personalHistory: [],
+      familyHistory: [],
+    };
+    notes.stored = aNote({
+      status: 'SIGNED',
+      content: { ...COMPLETE_002, [BACKGROUND_SNAPSHOT_KEY]: thatDay },
+    });
+    background.history = [];
+
+    await service.amend(
+      {
+        encounterId: ENCOUNTER,
+        noteId: 'note-1',
+        content: {
+          ...COMPLETE_002,
+          [BACKGROUND_SNAPSHOT_KEY]: { forged: true },
+        },
+        amendmentReason: 'Se corrigió el plan',
+      },
+      requester,
+    );
+
+    expect(notes.amendment?.content[BACKGROUND_SNAPSHOT_KEY]).toEqual(thatDay);
   });
 
   it('EN-025 exige el motivo de la enmienda en el SERVICIO, no solo en el DTO', async () => {

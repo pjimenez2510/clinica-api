@@ -488,16 +488,45 @@ export class NoteContentIncompleteError extends ValidationError {
   override readonly userTitle =
     'Faltan secciones obligatorias del formulario. Complételas antes de firmar';
 
-  constructor(missing: readonly string[]) {
+  /**
+   * EN-205. `invalid` are the list sections holding a value that is not one
+   * of their options: the same refusal, because what the doctor does next is
+   * the same — fix the section named before signing.
+   */
+  constructor(missing: readonly string[], invalid: readonly string[] = []) {
     super(
       `Form is missing mandatory sections: ${missing.join(', ')}`,
-      { missing: missing.join(',') },
-      missing.map((section) => ({
-        field: `content.${section}`,
-        code: 'NOTE_CONTENT_INCOMPLETE',
-        message: 'Sección obligatoria del formulario',
-      })),
+      { missing: missing.join(','), invalid: invalid.join(',') },
+      [
+        ...missing.map((section) => ({
+          field: `content.${section}`,
+          code: 'NOTE_CONTENT_INCOMPLETE',
+          message: 'Sección obligatoria del formulario',
+        })),
+        ...invalid.map((section) => ({
+          field: `content.${section}`,
+          code: 'NOTE_CONTENT_INCOMPLETE',
+          message: 'Elija una de las opciones de la lista',
+        })),
+      ],
     );
+  }
+}
+
+/**
+ * EN-201, EN-202. A version of the note template that cannot be published:
+ * a minimum section removed or made optional, a list without two distinct
+ * options, two sections with one title. The field names the section.
+ */
+export class NoteTemplateInvalidError extends ValidationError {
+  readonly code = 'NOTE_TEMPLATE_INVALID';
+  override readonly userTitle =
+    'La plantilla de la nota no se puede publicar así';
+
+  constructor(field: string, message: string) {
+    super(`Note template refused at ${field}`, { field }, [
+      { field, code: 'NOTE_TEMPLATE_INVALID', message },
+    ]);
   }
 }
 
@@ -1097,5 +1126,24 @@ export class DiagnosisPrimaryAfterDischargeError extends ConflictError {
 
   constructor() {
     super('The principal of a discharged encounter is not reordered');
+  }
+}
+
+/**
+ * EN-200. Somebody published a newer version of this template while the
+ * screen was editing an older one. Publishing anyway would silently drop
+ * their changes, so the second publication is refused and the screen reloads
+ * what is current.
+ */
+export class NoteTemplateStaleError extends ConflictError {
+  readonly code = 'NOTE_TEMPLATE_STALE';
+  override readonly userTitle =
+    'Otra persona publicó esta plantilla mientras la editaba. Recargue para ver la versión actual';
+
+  constructor(expected: number, current: number) {
+    super(`Note template is at version ${current}, not ${expected}`, {
+      expected: String(expected),
+      current: String(current),
+    });
   }
 }

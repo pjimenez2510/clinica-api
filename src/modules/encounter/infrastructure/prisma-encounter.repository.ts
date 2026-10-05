@@ -328,11 +328,21 @@ export class PrismaEncounterRepository implements EncounterRepository {
    * history that «no falla ni avisa».
    */
   async historyOf(query: ChartHistoryQuery): Promise<EncounterPage> {
+    // EN-208. By appointment: an annulled-in-error attention is not the
+    // attention of that appointment (EN-166), and it is never shown as such.
+    const ofAppointment =
+      query.agendaEntryId === undefined
+        ? {}
+        : {
+            agendaEntryId: query.agendaEntryId,
+            status: { not: 'ENTERED_IN_ERROR' as const },
+          };
     const [rows, total] = await Promise.all([
       this.prisma.encounter.findMany({
         where: {
           ...chartScope(query.patientId),
           ...siteFilter(query.sites),
+          ...ofAppointment,
         },
         orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
         skip: (query.page - 1) * query.pageSize,
@@ -343,6 +353,7 @@ export class PrismaEncounterRepository implements EncounterRepository {
         where: {
           ...chartScope(query.patientId),
           ...siteFilter(query.sites),
+          ...ofAppointment,
         },
       }),
     ]);

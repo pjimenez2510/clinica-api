@@ -173,9 +173,10 @@ model User {
   /// the identity images they uploaded. All three are `RESTRICT` on the way
   /// back — an account is deactivated, never deleted (AU-024), and an archive
   /// whose author disappeared cannot answer «¿quién emitió esto?».
-  documentRendersIssued      DocumentRender[]   @relation("DocumentRenderIssuer")
-  documentTemplatesPublished DocumentTemplate[] @relation("DocumentTemplatePublisher")
-  documentImagesUploaded     DocumentImage[]    @relation("DocumentImageUploader")
+  documentRendersIssued          DocumentRender[]       @relation("DocumentRenderIssuer")
+  clinicalNoteTemplatesPublished ClinicalNoteTemplate[] @relation("ClinicalNoteTemplatePublisher")
+  documentTemplatesPublished     DocumentTemplate[]     @relation("DocumentTemplatePublisher")
+  documentImagesUploaded         DocumentImage[]        @relation("DocumentImageUploader")
 
   /// ORD-062. The critical-value notices this account recorded having given.
   criticalNoticesGiven CriticalResultNotice[] @relation("CriticalNoticeGiver")
@@ -1471,6 +1472,8 @@ model Specialty {
   /// subsequent. `RESTRICT`: a specialty somebody charges for is deactivated,
   /// never deleted.
   billableServices BillableService[]
+  /// EN-203. The note templates of this specialty (D-124).
+  noteTemplates    ClinicalNoteTemplate[]
 
   @@map("specialty")
 }
@@ -2764,6 +2767,13 @@ model ClinicalNote {
   formCode    String @map("form_code") @db.VarChar(8)
   formVersion String @default("1") @map("form_version") @db.VarChar(16)
 
+  /// EN-204. The template version the note was opened with, and is validated
+  /// and shown with for ever. `null` for notes older than the column and for
+  /// those written with the built-in template. `trg_clinical_note_template_is_fixed`
+  /// refuses changing it, even on a draft.
+  templateId String?               @map("template_id") @db.Uuid
+  template   ClinicalNoteTemplate? @relation(fields: [templateId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "clinical_note_template_fk")
+
   encounterId String    @map("encounter_id") @db.Uuid
   encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
 
@@ -2803,6 +2813,34 @@ model ClinicalNote {
   @@index([encounterId, formCode])
   @@index([chainId, version])
   @@map("clinical_note")
+}
+
+/// EN-200, D-124. One PUBLISHED version of the consultation-note template of
+/// the clinic (`specialtyId` null) or of one specialty. Insert-only
+/// (`trg_clinical_note_template_append_only`): publishing writes the next
+/// version, and `clinical_note_template_version_unique` (NULLS NOT DISTINCT)
+/// refuses a repeated number. The sections are validated by the domain
+/// (`note-template.ts`) before the insert.
+model ClinicalNoteTemplate {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  formCode String @map("form_code") @db.VarChar(8)
+
+  specialtyId String?    @map("specialty_id") @db.Uuid
+  specialty   Specialty? @relation(fields: [specialtyId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "clinical_note_template_specialty_fk")
+
+  version Int
+
+  /// The ordered sections: `{ key, title, help, kind, options, required, minimum }`.
+  sections Json @db.JsonB
+
+  publishedAt   DateTime @map("published_at") @db.Timestamptz(6)
+  publishedById String   @map("published_by_id") @db.Uuid
+  publishedBy   User     @relation("ClinicalNoteTemplatePublisher", fields: [publishedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "clinical_note_template_published_by_fk")
+
+  notes ClinicalNote[]
+
+  @@map("clinical_note_template")
 }
 
 // ---------------------------------------------------------------------------
