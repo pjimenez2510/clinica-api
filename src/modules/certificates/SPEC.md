@@ -626,9 +626,11 @@ PR-030).
 - **CER-045** — SI se emite un reposo **pasados 8 días** de la fecha clínica de
   la atención —con el día de emisión de CER-030, madrugada incluida—, ENTONCES
   el sistema DEBERÁ emitirlo igualmente —con el motivo de emisión tardía de
-  CER-030— y devolver en `restNotices` el aviso de que el IESS puede no
-  validarlo (CER-055). El certificado de asistencia y el reposo de
-  contingencia **maternidad** **NO** llevan ese aviso.
+  CER-030— y devolver en `restNotices` el aviso de que lo habitual es emitirlo
+  desde una atención nueva, con el plazo real del IESS: **hasta 8 días después
+  de terminar el reposo**, no de la atención (ESPECIFICACION §1.5) (CER-055).
+  El certificado de asistencia y el reposo de contingencia **maternidad**
+  **NO** llevan ese aviso.
 
   > **Enmendado por CER-055 (D-128.7): desde D-128.7 avisa y no frena.** Antes
   > rechazaba con `CERTIFICATE_REST_ISSUED_TOO_LATE`, retirado, y el

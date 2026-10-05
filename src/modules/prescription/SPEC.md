@@ -1141,6 +1141,14 @@ anularla y volver a escribirla, la pantalla lo hace en un solo paso (D-127.4)._
   > motivo, y no se inventa ninguno. Esas filas ya eran inmutables, así que el
   > `CHECK` sin validar no las bloquea en nada que hoy se pueda hacer.
   >
+  > ⚠️ **Y no se valida nunca.** `ALTER TABLE … VALIDATE CONSTRAINT
+  > prescription_cancel_states_who_when_and_why` recorre todas las filas y
+  > falla en cuanto encuentra una receta anulada antes del registro, que no
+  > tiene quién ni por qué. Hacerla pasar exigiría rellenar esas tres columnas
+  > —inventar quién anuló y por qué en un registro legal— o borrarlas, y las
+  > dos cosas son peores que un `CHECK` que sólo mira hacia delante. Que figure
+  > `NOT VALID` en `pg_constraint` es lo esperado, no una tarea pendiente.
+  >
   > **Quién puede anular no cambia** (PR-010): cualquier cuenta con
   > `prescription:write` en la sede, no sólo el prescriptor. El estado
   > «notificada a la farmacia» de PR-073 sigue sin esquema.

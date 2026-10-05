@@ -537,6 +537,13 @@ describe('D-106 la ventana del reposo alrededor de la atención', () => {
       ),
     ).toEqual([]);
   });
+
+  it('CER-045 CER-055 el aviso da el plazo del IESS tal como es: hasta 8 días después de terminar el reposo, no de la atención', () => {
+    // ESPECIFICACION §1.5: «hasta 8 días después de terminado el reposo».
+    expect(REST_LIMIT_NOTICE.issuedTooLate).toBe(
+      'Han pasado más de ocho días desde la atención: lo habitual es emitir el reposo desde una atención nueva. El IESS lo valida hasta 8 días después de terminar el reposo.',
+    );
+  });
 });
 
 describe('D-108 en el reposo de maternidad no rigen los topes de D-106', () => {

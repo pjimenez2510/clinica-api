@@ -400,8 +400,8 @@ const shownDay = (day: ClinicalDate): string =>
 
 /**
  * CER-055 (D-128.7). What each limit of a rest says when it is passed. They
- * warn and never refuse: the IESS validates one to thirty days within eight
- * days, and the rest of the limits (3, 84, 28, 14 days…) were provisional
+ * warn and never refuse: the IESS validates rests of one to thirty days, up
+ * to eight days after the rest ENDS (not after the attention), and the rest of the limits (3, 84, 28, 14 days…) were provisional
  * (D-106, D-109, D-110). The screen says the same words before issuing.
  *
  * ⚠️ NO PATIENT DATUM (CER-014): days and dates of the rest, never a name.
@@ -420,7 +420,7 @@ export const REST_LIMIT_NOTICE = {
       : `El reposo empieza más de tres días antes de la atención; lo habitual es, como muy pronto, el ${shownDay(earliest)}. Compruebe la fecha.`,
   /** CER-045. */
   issuedTooLate:
-    'Han pasado más de ocho días desde la atención: el IESS puede no validar el reposo. Lo habitual es emitirlo desde una atención nueva.',
+    'Han pasado más de ocho días desde la atención: lo habitual es emitir el reposo desde una atención nueva. El IESS lo valida hasta 8 días después de terminar el reposo.',
   /** CER-046, the birth too far back. */
   birthTooOld:
     'El parto es de hace más de 84 días: la licencia de maternidad, de doce semanas, ya habría terminado. Compruebe la fecha del parto.',
