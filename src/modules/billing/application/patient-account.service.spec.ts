@@ -150,6 +150,7 @@ function build(
       active: true,
     }),
     record: vi.fn().mockResolvedValue(undefined),
+    draftOrdersOf: vi.fn().mockResolvedValue([]),
     ...options.accounts,
     ...options.catalogue,
   };
@@ -159,6 +160,7 @@ function build(
       mocks as unknown as BillingAccountRepository,
       mocks as unknown as BillingCatalogueRepository,
       { record: mocks.record },
+      { draftOrdersOf: mocks.draftOrdersOf },
     ),
     mocks,
   };
@@ -623,5 +625,32 @@ describe('BI-003, BI-120 el cobro no bloquea la atención', () => {
         createdById: 'user-1',
       }),
     ).resolves.toBeDefined();
+  });
+});
+
+describe('BI-192 la cuenta avisa del borrador de orden sin emitir', () => {
+  it('BI-192 el extracto trae los borradores de la atención de la cuenta, con quién y desde cuándo', async () => {
+    const savedAt = new Date();
+    const notice = { orderId: 'order-1', orderedByName: 'Ana Pérez', savedAt };
+    const { service, mocks } = build({
+      accounts: {
+        findAccount: vi.fn().mockResolvedValue(account({ encounterId: 'encounter-1' })), // prettier-ignore
+        draftOrdersOf: vi.fn().mockResolvedValue([notice]),
+      },
+    });
+
+    const statement = await service.statement({ accountId: ACCOUNT, siteId: SITE }); // prettier-ignore
+
+    expect(statement.draftOrders).toEqual([notice]);
+    expect(mocks.draftOrdersOf).toHaveBeenCalledWith({ encounterId: 'encounter-1', siteId: SITE }); // prettier-ignore
+  });
+
+  it('BI-192 una cuenta sin atención no tiene borradores que avisar', async () => {
+    const { service, mocks } = build();
+
+    const statement = await service.statement({ accountId: ACCOUNT, siteId: SITE }); // prettier-ignore
+
+    expect(statement.draftOrders).toEqual([]);
+    expect(mocks.draftOrdersOf).not.toHaveBeenCalled();
   });
 });

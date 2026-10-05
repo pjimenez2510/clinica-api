@@ -32,6 +32,7 @@ import type {
   ServiceOrderRepository,
   ServiceOrderView,
   SiteScopeFilter,
+  StaleDraftEntry,
 } from '../domain/service-order.repository';
 
 /**
@@ -409,6 +410,72 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
         ),
       })),
     );
+  }
+
+  /**
+   * ORD-115. Not audited per entry (ORD-092): what travels is the patient's
+   * name and what was asked for, never a diagnosis or the indication.
+   */
+  async staleDrafts(query: {
+    userId: string;
+    sites: SiteScopeFilter;
+  }): Promise<StaleDraftEntry[]> {
+    const rows = await this.prisma.serviceOrder.findMany({
+      where: {
+        status: 'DRAFT',
+        orderedBy: { userId: query.userId },
+        encounter: { status: { notIn: ['OPEN', 'ON_HOLD'] } },
+        ...siteFilter(query.sites),
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true,
+        encounterId: true,
+        category: true,
+        createdAt: true,
+        encounter: {
+          select: {
+            status: true,
+            startedAt: true,
+            patient: {
+              select: {
+                givenName: true,
+                secondGivenName: true,
+                familyName: true,
+                secondFamilyName: true,
+              },
+            },
+          },
+        },
+        items: {
+          orderBy: { createdAt: 'asc' },
+          select: { testCode: true, testDisplay: true },
+        },
+      },
+    });
+
+    return rows.map((order) => {
+      const { patient } = order.encounter;
+      return {
+        orderId: order.id,
+        encounterId: order.encounterId,
+        encounterStatus: order.encounter.status,
+        encounterStartedAt: order.encounter.startedAt,
+        // ORD-026. The whole name: two surnames tell namesakes apart.
+        patientName: [
+          patient.givenName,
+          patient.secondGivenName,
+          patient.familyName,
+          patient.secondFamilyName,
+        ]
+          .filter(Boolean)
+          .join(' '),
+        category: order.category,
+        items: order.items,
+        savedAt: order.createdAt,
+        canIssue: admitsNewOrders(order.encounter.status),
+      };
+    });
   }
 
   /** ORD-007, ORD-008. Cancels one line, leaving the row where it is. */

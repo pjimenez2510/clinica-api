@@ -98,6 +98,14 @@ export interface EncounterActs {
   clinicallyAttended: boolean;
 }
 
+/** BI-192. An exam order of the visit that nobody issued yet. */
+export interface DraftOrderNotice {
+  orderId: string;
+  /** The practitioner who signs it, as the cashier calls them. */
+  orderedByName: string;
+  savedAt: Date;
+}
+
 /** BI-181. The states of a visit that has ended and can be charged. */
 export const ENDED_ENCOUNTER_STATUSES = [
   'DISCHARGED',
@@ -144,6 +152,16 @@ export interface ClinicalActsRepository {
     siteId: string;
     endedFrom: Date;
   }): Promise<AwaitingCheckout[]>;
+
+  /**
+   * BI-192. The visit's exam orders still in draft: they propose no charge
+   * (ORD-100), so caja has to be told before closing the account. Who wrote
+   * each and since when — never which exams: a draft is not charged.
+   */
+  draftOrdersOf(query: {
+    encounterId: string;
+    siteId: string;
+  }): Promise<DraftOrderNotice[]>;
 
   /** D-119. The unsettled ended visits older than the window, counted. */
   countAwaitingBefore(query: {

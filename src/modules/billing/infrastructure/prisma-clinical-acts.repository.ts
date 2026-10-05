@@ -7,6 +7,7 @@ import { clinicalDateOf } from '../../../shared/domain/clinic-time';
 import {
   type AwaitingCheckout,
   type ClinicalActsRepository,
+  type DraftOrderNotice,
   ENDED_ENCOUNTER_STATUSES,
   type EncounterActs,
   type EndedEncounterStatus,
@@ -214,6 +215,33 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
       });
     }
     return visits;
+  }
+
+  /** BI-192. Scoped by site, like every read here (BI-135). */
+  async draftOrdersOf(query: {
+    encounterId: string;
+    siteId: string;
+  }): Promise<DraftOrderNotice[]> {
+    const rows = await this.prisma.serviceOrder.findMany({
+      where: {
+        encounterId: query.encounterId,
+        siteId: query.siteId,
+        status: 'DRAFT',
+      },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        createdAt: true,
+        orderedBy: {
+          select: { user: { select: { firstName: true, lastName: true } } },
+        },
+      },
+    });
+    return rows.map((row) => ({
+      orderId: row.id,
+      orderedByName: `${row.orderedBy.user.firstName} ${row.orderedBy.user.lastName}`,
+      savedAt: row.createdAt,
+    }));
   }
 
   /**

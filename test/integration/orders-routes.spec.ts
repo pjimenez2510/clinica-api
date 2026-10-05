@@ -119,6 +119,10 @@ describe('las rutas del módulo de órdenes', () => {
         'POST /exam-catalogue/analytes → catalog:manage',
         'PATCH /exam-catalogue/analytes/:analyteId → catalog:manage',
         'PUT /exam-catalogue/analytes/:analyteId/ranges → catalog:manage',
+        // ORD-114. Qué umbral regía: configuración, sin paciente.
+        'GET /exam-catalogue/analytes/:analyteId/ranges/history → catalog:manage',
+        // ORD-115. Los borradores propios colgados: leer lo que uno pidió.
+        'GET /orders/drafts/stale → record:read',
       ].sort(),
     );
   });
