@@ -1136,18 +1136,75 @@ export class DiagnosisLastAfterDischargeError extends ConflictError {
 }
 
 /**
- * EN-188 (revisión clínica G2). After the discharge the principal changes only
- * by removing the wrong one WITH ITS REASON — the archive keeps it with rank 1
- * — and then naming another where there is none. Reordering would change what
- * is reported without either.
+ * EN-212 (D-127, D-117.14). Changing the CODE of a diagnosis that a paper in
+ * a third party's hands printed — an issued certificate (EN-189) or an issued
+ * receta (PR-026), in force or annulled — states why: the paper does not
+ * change, and the history has to explain why it says something else. Chosen
+ * from a list on the screen (D-126.3); demanded here and by
+ * `trg_encounter_diagnosis_edit_admits`.
  */
-export class DiagnosisPrimaryAfterDischargeError extends ConflictError {
-  readonly code = 'DIAGNOSIS_PRIMARY_AFTER_DISCHARGE';
+export class DiagnosisEditReasonRequiredError extends ValidationError {
+  readonly code = 'DIAGNOSIS_EDIT_REASON_REQUIRED';
   override readonly userTitle =
-    'La atención ya tiene el alta: para cambiar el principal, quite el principal con su motivo y después marque el que corresponde';
+    'Indique por qué cambia el código: un certificado o una receta ya entregados lo imprimieron';
+  override readonly fieldErrors = [
+    {
+      field: 'reason',
+      code: 'DIAGNOSIS_EDIT_REASON_REQUIRED',
+      message: 'Elija por qué cambia el código',
+    },
+  ];
 
   constructor() {
-    super('The principal of a discharged encounter is not reordered');
+    super('Diagnosis code change without a reason while a paper printed it');
+  }
+}
+
+/**
+ * EN-212, D-117.13. After the discharge the coding that goes to the RDACAA is
+ * corrected by whoever may sign the history at the attention's site
+ * (`record:sign`), as the amendment of the note is. Before it, whoever codes.
+ * A 403 and not a 422: nothing in the request is wrong, the caller is.
+ */
+export class DiagnosisCorrectionRequiresSignatureError extends ForbiddenError {
+  readonly code = 'DIAGNOSIS_CORRECTION_REQUIRES_SIGNATURE';
+  override readonly userTitle =
+    'La atención ya tiene el alta: corrige sus diagnósticos quien firma historia clínica en esta sede';
+
+  constructor() {
+    super('Correcting the coding after the discharge requires record:sign');
+  }
+}
+
+/**
+ * EN-212, EN-213, D-117.15. A maternity rest of the attention that is not
+ * annulled stands on an obstetric diagnosis (CER-049): taking the last one
+ * away — or recoding it outside the chapter — would leave an IESS paper with
+ * nothing under it. The way out is to annul the rest.
+ */
+export class DiagnosisSupportsMaternityRestError extends ConflictError {
+  readonly code = 'DIAGNOSIS_SUPPORTS_MATERNITY_REST';
+  override readonly userTitle =
+    'Este diagnóstico sostiene el reposo de maternidad emitido en la atención: anule primero el reposo y después corrija';
+
+  constructor() {
+    super('The obstetric diagnosis supports a maternity rest in force');
+  }
+}
+
+/**
+ * EN-212, EN-213, D-117.16. The attention was already reported to the RDACAA
+ * (`reported_at`, EN-111), and nothing resends it: a correction would leave
+ * the ministry with the old coding and the chart with another. Refused until
+ * the resend exists.
+ */
+export class EncounterAlreadyReportedError extends ConflictError {
+  readonly code = 'ENCOUNTER_ALREADY_REPORTED';
+  override readonly userTitle =
+    'Esta atención ya se reportó al RDACAA y la corrección no llegaría al Ministerio. Pida a administración que gestione la corrección del envío';
+
+  constructor() {
+    super('The encounter was already reported to the RDACAA');
   }
 }
 

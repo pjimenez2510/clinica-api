@@ -78,6 +78,24 @@ export interface DiagnosisView {
   notifiable: boolean;
   note: string | null;
   recordedAt: Date;
+  /**
+   * EN-212. When it was last edited, or `null` if never: the previous
+   * versions are in `record_version` (EN-212, D-127.2).
+   */
+  editedAt: Date | null;
+}
+
+/**
+ * EN-212. One version of a diagnosis that an edit replaced, read with the
+ * SAME mapping as the current one, with who replaced it, when and — if the
+ * code changed while a paper printed it — why.
+ */
+export interface DiagnosisVersionView {
+  version: number;
+  replacedBy: { id: string; name: string };
+  replacedAt: Date;
+  reason: string | null;
+  diagnosis: DiagnosisView;
 }
 
 /**
@@ -188,8 +206,43 @@ export interface DiagnosisRetraction {
   sites: SiteScopeFilter;
 }
 
-/** EN-183. Which diagnosis becomes the principal. */
-export interface PrimaryChange {
+/**
+ * EN-212, D-117.13. Whether the caller may correct the coding once the
+ * attention has its discharge: `record:sign` at its site and an ACESS
+ * registration in force. Decided by the service, and asked again by the
+ * adapter UNDER THE ATTENTION'S LOCK — the discharge can land between the two.
+ */
+export interface CorrectionAuthority {
+  editedById: string;
+  mayCorrectAfterDischarge: boolean;
+}
+
+/** EN-183, EN-212. Which diagnosis becomes the principal. */
+export interface PrimaryChange extends CorrectionAuthority {
+  encounterId: string;
+  diagnosisId: string;
+  sites: SiteScopeFilter;
+}
+
+/**
+ * EN-212. An edit in place: only what is present changes. The code changes
+ * through the CONCEPT (EN-040), never a typed code.
+ */
+export interface DiagnosisEdit extends CorrectionAuthority {
+  encounterId: string;
+  diagnosisId: string;
+  conceptId?: string;
+  certainty?: DiagnosisCertainty;
+  occurrence?: DiagnosisOccurrence;
+  /** `true` makes it the principal; `false` takes the principal off it. */
+  primary?: boolean;
+  /** EN-212. Owed when the code changes and a paper printed the old one. */
+  reason: string | null;
+  sites: SiteScopeFilter;
+}
+
+/** EN-212. The versions of one diagnosis of one attention. */
+export interface DiagnosisQuery {
   encounterId: string;
   diagnosisId: string;
   sites: SiteScopeFilter;
@@ -252,6 +305,22 @@ export interface ClinicalCodingRepository {
    * they stand afterwards.
    */
   makePrimary(change: PrimaryChange): Promise<DiagnosisView[]>;
+
+  /**
+   * EN-212. Edits a diagnosis in place under the attention's lock, stamping
+   * every row it touches with an instant after its previous stamp: the
+   * previous version goes to `record_version` in the same statement
+   * (`trg_encounter_diagnosis_record_version`). The refusals the triggers
+   * also make — a paper that printed the code, a maternity rest, a report
+   * already sent — are asked first, so they are sentences.
+   */
+  editDiagnosis(edit: DiagnosisEdit): Promise<DiagnosisView>;
+
+  /**
+   * EN-212. The versions an edit replaced, most recent first. Refuses with
+   * `DIAGNOSIS_NOT_FOUND` a diagnosis that never was on the attention.
+   */
+  diagnosisVersions(query: DiagnosisQuery): Promise<DiagnosisVersionView[]>;
 
   /** EN-180. What was removed from one attention, oldest first. */
   retractedDiagnosesOf(query: CodingQuery): Promise<RetractedDiagnosisView[]>;

@@ -300,7 +300,8 @@ lo rechaza; registrar dos diagnósticos con `rank = 1` y comprobar que el segund
 falla; y comprobar que el código y la descripción guardados no se pueden
 desincronizar del concepto.
 **Cubre:** EN-040 a EN-052, **EN-180 a EN-189** —quitar un diagnóstico con
-rastro, cambiar el principal y las propuestas de §19— y **EN-151 a EN-154**, el consentimiento informado:
+rastro, cambiar el principal y las propuestas de §19—, **EN-212** —editarlo en
+el sitio con versión (§21)— y **EN-151 a EN-154**, el consentimiento informado:
 va aquí porque el formulario 024 cuelga del **procedimiento** de riesgo mayor
 (EN-050), no de la atención.
 
@@ -2927,6 +2928,10 @@ D-117._
   > principal y el médico no puede firmar ni arreglarlo salvo quitando y
   > volviendo a registrar. `encounter_diagnosis_one_primary` sigue garantizando
   > que nunca hay dos.
+  >
+  > **Desde EN-212 (D-127)** los dos cambios de rango son ediciones con sello,
+  > así que el rango anterior de cada uno queda como versión; y tras el alta
+  > también se hace de un clic.
 - **EN-188** — MIENTRAS la atención tenga el alta (`DISCHARGED` o
   `COMPLETED`), el médico DEBERÁ poder quitar un diagnóstico (EN-180) y marcar
   otro como principal (EN-183), y quitarlo DEBERÁ exigir un **motivo escrito**;
@@ -2934,10 +2939,12 @@ D-117._
   `DIAGNOSIS_RETRACTION_REASON_REQUIRED`. Siguen valiendo EN-180 (archivo con
   quién y cuándo) y EN-182 (la orden con exámenes vivos lo impide). SI el
   diagnóstico es el **último** de la atención, ENTONCES DEBERÁ rechazarlo con
-  `DIAGNOSIS_LAST_AFTER_DISCHARGE`; y SI la atención ya tiene principal,
-  ENTONCES marcar otro DEBERÁ rechazarse con
-  `DIAGNOSIS_PRIMARY_AFTER_DISCHARGE`: tras el alta el principal cambia
-  quitando el equivocado con su motivo y nombrando después otro.
+  `DIAGNOSIS_LAST_AFTER_DISCHARGE`.
+  > **Enmendado por EN-212 (D-127, 05-10-2026).** La regla de que tras el
+  > alta el principal no se reordena —G2, con `DIAGNOSIS_PRIMARY_AFTER_DISCHARGE`,
+  > retirado— se quitó: el principal cambia de un clic y el rango anterior
+  > queda como versión. Corregir tras el alta pide `record:sign` y registro
+  > ACESS vigente (EN-212, D-117.13).
   > **D-117.8, resuelta por el autor el 04-10-2026.** Enmendar la nota 002 no
   > corrige el bloque K que va al RDACAA: éste lee los diagnósticos de la
   > atención (EN-110), no el texto de la nota. Sin esta salida, un código mal
@@ -2954,10 +2961,7 @@ D-117._
   > **Registrar un diagnóstico nuevo después del alta sigue sin poderse**
   > (EN-009): queda en D-117.12. Por eso no se quita el último (revisión
   > clínica, G1): la atención quedaría con el alta y sin diagnóstico, sin
-  > salida. Y el principal no se reordena (G2): cambiaría lo que se informa
-  > sin motivo ni rastro; quitándolo, el archivo lo guarda con su rango 1 y su
-  > motivo. **Garantía de la base**: el disparador del archivo y
-  > `encounter_diagnosis_rank_frozen_when_cited`.
+  > salida. **Garantía de la base**: el disparador del archivo.
   >
   > Que una atención interrumpida o anulada no admita quitar es **sólo del
   > servicio**, como antes de esta regla.
@@ -3153,6 +3157,74 @@ dejaba ver su atención._
   > publique el identificador de la atención, que EN-016 no publica a
   > propósito.
 
+---
+
+## 21. Corregir es editar: el diagnóstico (D-126, D-127, D-117.13 a D-117.16)
+
+_El autor, 04-10-2026: «no me dejas editar un diagnóstico, sólo quitar… si me
+confundí en algo simple tengo que quitar y luego agregar». D-127 sustituye las
+reglas que obligaban a quitar y registrar de nuevo, y D-126 pone la fricción:
+antes de firmar, ninguna; con lo firmado, una confirmación (de la pantalla);
+con un papel en manos de un tercero, un motivo de lista._
+
+- **EN-212** — MIENTRAS la atención admita contenido clínico nuevo o tenga el
+  alta, CUANDO el médico edite un diagnóstico, el sistema DEBERÁ cambiar en la
+  misma fila lo que se envía —el **concepto CIE-10** (y con él el código y la
+  descripción, EN-040 a EN-042), la **condición**, la **ocurrencia** y si es el
+  **principal** (EN-183)— y DEBERÁ guardar la versión anterior entera en
+  `record_version`, con quién la sustituyó y cuándo; y DEBERÁ exponer esas
+  versiones, de la más reciente a la más antigua, a quien puede leer los
+  diagnósticos de la atención. Además:
+  - SI cambia el código y un **certificado emitido** (EN-189) o una **receta
+    emitida** (D-117.14) de la atención —vigentes o anulados— imprimió el
+    código anterior, ENTONCES DEBERÁ exigir un motivo y, SI falta, rechazarlo
+    con `DIAGNOSIS_EDIT_REASON_REQUIRED`;
+  - SI la atención tiene el alta y quien edita no tiene `record:sign` en su
+    sede, ENTONCES DEBERÁ rechazarlo con
+    `DIAGNOSIS_CORRECTION_REQUIRES_SIGNATURE`; y SI su registro ACESS no está
+    vigente, con `PRACTITIONER_NOT_LICENSED` (D-117.13). Vale también para
+    marcar el principal (EN-183);
+  - SI la atención ya se reportó al RDACAA (`reported_at`, EN-111), ENTONCES
+    DEBERÁ rechazarlo con `ENCOUNTER_ALREADY_REPORTED` (D-117.16);
+  - SI el cambio de código dejaría sin diagnóstico obstétrico (O00–O99,
+    Z34–Z39) a un **reposo de maternidad no anulado** de la atención,
+    ENTONCES DEBERÁ rechazarlo con `DIAGNOSIS_SUPPORTS_MATERNITY_REST`
+    (D-117.15): la salida es anular el reposo.
+  > **D-127.** Sustituye la regla de EN-180 de que lo que un diagnóstico es no
+  > se reescribe (`encounter_diagnosis_identity_frozen`, retirado) y la rama
+  > G2 de EN-188. Lo que aquellas garantizaban —que lo dicho no se pierda— lo
+  > garantiza la versión: `trg_encounter_diagnosis_record_version`
+  > (`record_version_archive('edited_by_id', 'edited_at', 'id')`) archiva la
+  > fila anterior en la misma sentencia y rechaza la edición sin sello
+  > (`EDIT_NOT_STAMPED`). Lo derivado del código —prevención o morbilidad
+  > (EN-186)— se recalcula solo; la propuesta de subsecuente (EN-184) la pide
+  > la pantalla al elegir el concepto nuevo.
+  >
+  > **La confirmación es de la pantalla, no de la API (D-126.2):** con una
+  > nota firmada o tras el alta, la pantalla confirma una vez. La API no pide
+  > nada más que el motivo de arriba: el asistente de IA corrige igual que una
+  > persona (D-127.5).
+  >
+  > **El motivo se guarda en la fila nueva** (`edit_reason`), y la lectura de
+  > versiones lo devuelve junto a la versión que esa edición sustituyó. Sólo
+  > se debe al cambiar el **código**: la condición y la ocurrencia no las
+  > imprime ningún papel.
+  >
+  > **Garantía de la base**, en `trg_encounter_diagnosis_edit_admits`: el
+  > motivo (`encounter_diagnosis_code_on_paper`, la función que también usa el
+  > servicio), el reposo de maternidad y el reporte; el código del concepto y
+  > su vigencia siguen siendo `trg_diagnosis_snapshot` y
+  > `trg_diagnosis_concept_in_force`, que ahora miran también el UPDATE, y la
+  > descripción la pone la base. **Lo que la base no garantiza**: que el
+  > motivo sea de esta edición y no uno que quedó de la anterior (la API lo
+  > escribe siempre), ni `record:sign` (la base no conoce la sesión).
+  >
+  > **D-117.15, «vigente» es «no anulado»**, la lectura de CER-048: el reposo
+  > se sostiene sobre el diagnóstico de la atención (CER-049) mientras no se
+  > anule, aunque su período haya pasado. Se aplica antes y después del alta.
+
+---
+
 ## Códigos de error nuevos
 
 Todos entran en `shared/domain/errors/error-catalogue.ts` con su prueba de
@@ -3211,7 +3283,12 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT` | 409 | Quitar un diagnóstico o cambiar el principal cuando la atención ya tiene una receta emitida o una orden. El mensaje dice que primero se anula el documento | EN-182 |
 | `EDIT_NOT_STAMPED` | 422 | Una edición de algo versionado que no dice quién ni cuándo, o repite el sello anterior. La API siempre lo pone; solo lo ve un acceso directo a la base | EN-210 |
 | `DIAGNOSIS_LAST_AFTER_DISCHARGE` | 409 | Quitar el último diagnóstico de una atención con el alta | EN-188 |
-| `DIAGNOSIS_PRIMARY_AFTER_DISCHARGE` | 409 | Marcar otro como principal tras el alta cuando ya hay uno: se quita el equivocado con su motivo | EN-188 |
+| `DIAGNOSIS_EDIT_REASON_REQUIRED` | 422 | Cambiar el código de un diagnóstico que un certificado o una receta emitidos imprimieron, sin motivo. Por campo (`reason`). Se exige en el servicio y en la base | EN-212 |
+| `DIAGNOSIS_CORRECTION_REQUIRES_SIGNATURE` | 403 | Corregir los diagnósticos de una atención con el alta sin `record:sign` en su sede | EN-212 |
+| `DIAGNOSIS_SUPPORTS_MATERNITY_REST` | 409 | Cambiar de capítulo el último diagnóstico obstétrico de una atención con un reposo de maternidad no anulado. Se anula primero el reposo | EN-212 |
+| `ENCOUNTER_ALREADY_REPORTED` | 409 | Corregir los diagnósticos de una atención ya reportada al RDACAA | EN-212 |
+
+`DIAGNOSIS_PRIMARY_AFTER_DISCHARGE` (EN-188, G2) se retiró con EN-212.
 
 **Los que NO entran en el catálogo congelado** son los derivados del mapeo de
 PostgreSQL —`VITALS_OUT_OF_RANGE`, `COUNTER_REFERRAL_WITHOUT_REFERRAL`—: tienen
@@ -3371,7 +3448,9 @@ que es global: una atención ocurre en un sitio.
 | `GET` | `/reports/rdacaa` | `audit:read` *(por decidir)* | EN-110, EN-115 |
 | `POST` | `/reports/rdacaa/submissions` | `audit:read` *(por decidir)* | EN-111 |
 | `POST` | `/encounters/:id/diagnoses/:diagnosisId/retract` | `record:write` | EN-180, EN-181, EN-182, EN-188, EN-189 |
-| `POST` | `/encounters/:id/diagnoses/:diagnosisId/primary` | `record:write` | EN-182, EN-183, EN-188 |
+| `POST` | `/encounters/:id/diagnoses/:diagnosisId/primary` | `record:write` *(tras el alta, además `record:sign`)* | EN-182, EN-183, EN-188, **EN-212** |
+| `PATCH` | `/encounters/:id/diagnoses/:diagnosisId` | `record:write` *(tras el alta, además `record:sign`)* | **EN-212** |
+| `GET` | `/encounters/:id/diagnoses/:diagnosisId/versions` | `record:read` | **EN-212** |
 | `GET` | `/encounters/:id/diagnoses/occurrence-proposal` | `record:read` | EN-184 |
 | `GET` | `/encounters/visit-sequence-proposal` | `record:read` | EN-185 *(lleva el diagnóstico principal de una atención anterior)* |
 | `PUT` | `/encounters/:id/care-modality` | `record:write` | EN-187 |
@@ -3439,8 +3518,9 @@ prueba o el CI falla**.
 | EN-006, EN-007, EN-045 | **Unitario de dominio**: dos atenciones el mismo día existen las dos; primera vez / subsecuente **no** se deriva del historial; y el caso del esquema —diabetes de primera vez en una visita subsecuente por hipertensión— |
 | EN-046, EN-048 | Unitario de dominio: la clasificación prevención/morbilidad se deriva del rango `Z00`–`Z99` y **no** de lo que teclee nadie, con los códigos adaptados de cinco caracteres entre los casos |
 | EN-180, EN-181, EN-182 | **Integración contra PostgreSQL real**, con control positivo: el `DELETE` sin archivo se rechaza y con archivo pasa; el archivo no admite `UPDATE` ni `DELETE`; sin motivo con nota firmada se rechaza y sin nota firmada pasa; con receta emitida u orden se rechaza y con sólo un borrador pasa. Y **contar filas**: quitar no borra nada de la historia |
-| EN-188, EN-189 | **Integración contra PostgreSQL real**, con control positivo: con el alta, sin motivo se rechaza en la base aunque no haya nota firmada y con motivo pasa; el último no se quita; el principal no se reordena y sí se nombra donde ya no lo hay; con un certificado emitido —vigente o anulado— que imprimió el código, sin motivo se rechaza y con un certificado que imprimió otro código pasa. HTTP: quitar y cambiar el principal con el alta responden; interrumpida responde `ENCOUNTER_ALREADY_CLOSED` |
+| EN-188, EN-189 | **Integración contra PostgreSQL real**, con control positivo: con el alta, sin motivo se rechaza en la base aunque no haya nota firmada y con motivo pasa; el último no se quita; con un certificado emitido —vigente o anulado— que imprimió el código, sin motivo se rechaza y con un certificado que imprimió otro código pasa. HTTP: quitar y cambiar el principal con el alta responden; interrumpida responde `ENCOUNTER_ALREADY_CLOSED` |
 | EN-183 | Integración: el principal cambia y el anterior pasa a un rango libre en una transacción; `encounter_diagnosis_one_primary` sigue sin admitir dos |
+| EN-212 | **Integración contra PostgreSQL real**, con control positivo: sin sello no se edita y con sello sí, y la fila anterior está en `record_version`; el código editado es el de su concepto y regía ese día; tras el alta el principal cambia; con un certificado o una receta que imprimieron el código, sin motivo no y con motivo sí, y la condición sin motivo; reportada no; el reposo de maternidad no anulado no deja sacar del capítulo y sí dentro de él, y anulado sí. HTTP: la edición, las versiones con su motivo, `record:sign` y la licencia tras el alta, y los cuatro códigos |
 | EN-184, EN-185 | Integración contra la base con fichas fusionadas y una atención anulada, con el reloj inyectado: la categoría cuenta, la anulada no, la absorbida sí; y **una** fila de bitácora por propuesta |
 | EN-063, EN-090, EN-092, EN-096, EN-097 | Unitario de dominio **con la edad congelada de la atención**, no con la de hoy: los cuatro son condiciones por población y todos caducan si se evalúan contra la fecha actual. Es el mismo razonamiento que PA-005 dejó escrito |
 | EN-072, EN-073, EN-095, EN-098 | **Seguridad dirigida, con sesión real.** Sin la llave el dato **se omite** y no hay 403; con ella se ve y deja **una** fila de bitácora; y no viaja en ningún listado bajo ninguna combinación de permisos, afirmado sobre la respuesta. Con sesión de verdad y no con un doble con los permisos puestos a mano — el defecto de AG-111 fue exactamente eso |

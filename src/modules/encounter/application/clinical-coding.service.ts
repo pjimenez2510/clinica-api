@@ -8,6 +8,8 @@ import {
 import {
   CLINICAL_CODING_REPOSITORY,
   type ClinicalCodingRepository,
+  type CorrectionAuthority,
+  type DiagnosisVersionView,
   type DiagnosisView,
   type ProcedureView,
   type RetractedDiagnosisView,
@@ -18,13 +20,18 @@ import {
   type EncounterView,
 } from '../domain/encounter.repository';
 import {
+  DiagnosisCorrectionRequiresSignatureError,
   EncounterAlreadyClosedError,
   EncounterNotFoundError,
+  PractitionerProfileRequiredError,
 } from '../domain/encounter.errors';
 import {
   acceptsDiagnosisCorrection,
   acceptsNewClinicalContent,
+  hasDischarge,
 } from '../domain/encounter-state';
+import type { SiteScopeFilter } from '../domain/encounter.repository';
+import { assertLicensedOn } from '../domain/practitioner-licence';
 import type {
   CareModality,
   DiagnosisCertainty,
@@ -67,6 +74,28 @@ export interface RetractDiagnosisRequest {
   encounterId: string;
   diagnosisId: string;
   /** EN-181. Required once the consultation note is signed. */
+  reason?: string;
+}
+
+/**
+ * EN-212, D-117.13. Who is correcting, with where they may sign the history:
+ * after the discharge the coding is corrected with `record:sign` at the
+ * attention's site. Resolved by the controller from the session.
+ */
+export interface CodingRequester extends Requester {
+  signSites: SiteScopeFilter;
+}
+
+/** EN-212. An edit in place: only what is present changes. */
+export interface EditDiagnosisRequest {
+  encounterId: string;
+  diagnosisId: string;
+  /** EN-040. A new concept of the catalogue, never a typed code. */
+  conceptId?: string;
+  certainty?: DiagnosisCertainty;
+  occurrence?: DiagnosisOccurrence;
+  primary?: boolean;
+  /** EN-212. Owed when the code changes and a paper printed the old one. */
   reason?: string;
 }
 
@@ -314,21 +343,26 @@ export class ClinicalCodingService {
     return corrected;
   }
 
-  /** EN-183, EN-188. Makes a diagnosis the principal of its attention. */
+  /**
+   * EN-183, EN-212. Makes a diagnosis the principal of its attention, also
+   * after the discharge (D-127): the previous rank is a version.
+   */
   async makePrimary(
     encounterId: string,
     diagnosisId: string,
-    requester: Requester,
+    requester: CodingRequester,
   ): Promise<DiagnosisView[]> {
     const encounter = await this.requireCorrectableEncounter(
       encounterId,
       requester,
     );
+    const authority = await this.correctionAuthority(encounter, requester);
 
     const diagnoses = await this.coding.makePrimary({
       encounterId: encounter.id,
       diagnosisId,
       sites: requester.sites,
+      ...authority,
     });
 
     await this.audit.record({
@@ -341,6 +375,86 @@ export class ClinicalCodingService {
     });
 
     return diagnoses;
+  }
+
+  /**
+   * EN-212 (D-127). Edits a diagnosis in place: its code, its certainty, its
+   * occurrence and whether it is the principal. The previous version is kept
+   * by the database (`record_version`); nothing is removed and recorded again.
+   *
+   * No confirmation is asked here, and none is owed (D-126): the screen
+   * confirms once the note is signed or the attention discharged. What the
+   * API demands is the reason when a paper in a third party's hands printed
+   * the old code, and — after the discharge — `record:sign` and a registration
+   * in force (D-117.13).
+   */
+  async editDiagnosis(
+    request: EditDiagnosisRequest,
+    requester: CodingRequester,
+  ): Promise<DiagnosisView> {
+    const encounter = await this.requireCorrectableEncounter(
+      request.encounterId,
+      requester,
+    );
+    const authority = await this.correctionAuthority(encounter, requester);
+    const reason = request.reason?.trim();
+
+    const diagnosis = await this.coding.editDiagnosis({
+      encounterId: encounter.id,
+      diagnosisId: request.diagnosisId,
+      conceptId: request.conceptId,
+      certainty: request.certainty,
+      occurrence: request.occurrence,
+      primary: request.primary,
+      reason: reason === undefined || reason === '' ? null : reason,
+      sites: requester.sites,
+      ...authority,
+    });
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: DIAGNOSIS_RESOURCE_TYPE,
+      resourceId: diagnosis.id,
+      action: 'UPDATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+
+    this.logger.info(
+      { site_id: encounter.siteId, action: 'DIAGNOSIS_EDITED' },
+      'diagnosis edited',
+    );
+
+    return diagnosis;
+  }
+
+  /**
+   * EN-212. The versions an edit replaced, most recent first. The same
+   * content as the diagnosis, only earlier: `record:read` and one audit row.
+   */
+  async diagnosisVersions(
+    encounterId: string,
+    diagnosisId: string,
+    requester: Requester,
+  ): Promise<DiagnosisVersionView[]> {
+    const encounter = await this.requireEncounter(encounterId, requester);
+
+    const versions = await this.coding.diagnosisVersions({
+      encounterId: encounter.id,
+      diagnosisId,
+      sites: requester.sites,
+    });
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: DIAGNOSIS_RESOURCE_TYPE,
+      resourceId: diagnosisId,
+      action: 'READ',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+
+    return versions;
   }
 
   /**
@@ -452,6 +566,38 @@ export class ClinicalCodingService {
       throw new EncounterAlreadyClosedError(encounter.status);
     }
     return encounter;
+  }
+
+  /**
+   * EN-212, D-117.13. After the discharge the coding is corrected by whoever
+   * may sign the history at the attention's site, with an ACESS registration
+   * in force — the rule of the amendment (EN-025). Before it, by whoever codes.
+   *
+   * The answer travels to the adapter, which asks again under the attention's
+   * lock: a discharge that lands between this read and the write is refused
+   * there for a caller who does not sign.
+   */
+  private async correctionAuthority(
+    encounter: EncounterView,
+    requester: CodingRequester,
+  ): Promise<CorrectionAuthority> {
+    const signsHere =
+      requester.signSites === 'all' ||
+      requester.signSites.includes(encounter.siteId);
+
+    if (hasDischarge(encounter.status)) {
+      if (!signsHere) throw new DiagnosisCorrectionRequiresSignatureError();
+      const identity = await this.encounters.findPractitionerByUser(
+        requester.userId,
+      );
+      if (!identity) throw new PractitionerProfileRequiredError();
+      assertLicensedOn(identity.acessExpiresOn, new Date());
+    }
+
+    return {
+      editedById: requester.userId,
+      mayCorrectAfterDischarge: signsHere,
+    };
   }
 
   /**

@@ -184,6 +184,9 @@ model User {
   criticalNoticesGiven  CriticalResultNotice[] @relation("CriticalNoticeGiver")
   criticalNoticesEdited CriticalResultNotice[] @relation("CriticalNoticeEditor")
 
+  /// EN-212, D-127. The diagnoses this account edited last.
+  diagnosesEdited EncounterDiagnosis[] @relation("DiagnosisEditor")
+
   /// EN-210, D-127. The versions this account replaced by editing.
   recordVersionsChanged RecordVersion[] @relation("RecordVersionChanger")
 
@@ -2681,6 +2684,17 @@ model EncounterDiagnosis {
   note String? @db.Text
 
   recordedAt DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
+
+  /// EN-212, D-127. Who edited it last, and when: the stamp
+  /// `record_version_archive` demands on every edit. The earlier version is in
+  /// `record_version`.
+  editedById String?   @map("edited_by_id") @db.Uuid
+  editedBy   User?     @relation("DiagnosisEditor", fields: [editedById], references: [id], onDelete: Restrict)
+  editedAt   DateTime? @map("edited_at") @db.Timestamptz(6)
+
+  /// EN-212. Why the CODE changed, when a paper in a third party's hands
+  /// printed the previous one (`encounter_diagnosis_edit_admits`).
+  editReason String? @map("edit_reason") @db.VarChar(500)
 
   @@index([encounterId])
   @@index([cie10Code, recordedAt])

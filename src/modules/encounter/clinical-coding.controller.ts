@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Put,
   Req,
@@ -24,9 +25,13 @@ import { ALL_SITES } from '../../shared/authorisation/principal';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 import type { Permission } from '../../shared/authorisation/permission.catalogue';
 
-import { ClinicalCodingService } from './application/clinical-coding.service';
+import {
+  ClinicalCodingService,
+  type CodingRequester,
+} from './application/clinical-coding.service';
 import type { Requester } from './application/encounter.service';
 import type {
+  DiagnosisVersionView,
   DiagnosisView,
   ProcedureView,
   RetractedDiagnosisView,
@@ -35,6 +40,8 @@ import {
   CareModalityDto,
   DiagnosisDto,
   DiagnosisListDto,
+  DiagnosisVersionListDto,
+  EditDiagnosisDto,
   ProcedureDto,
   ProcedureListDto,
   RecordDiagnosisDto,
@@ -42,6 +49,7 @@ import {
   RetractDiagnosisDto,
   type DiagnosisListResponse,
   type DiagnosisResponse,
+  type DiagnosisVersionListResponse,
   type ProcedureListResponse,
   type ProcedureResponse,
 } from './dto/clinical-coding.dto';
@@ -203,6 +211,60 @@ export class ClinicalCodingController {
     return { careModality };
   }
 
+  /**
+   * EN-212 (D-127). Edits a diagnosis in place: its code (through the
+   * concept), its certainty, its occurrence, whether it is the principal.
+   *
+   * `record:write`, like registering it; after the discharge the service asks
+   * for `record:sign` at the attention's site as well (D-117.13). A `PATCH`:
+   * only what travels changes, and the previous version is the database's.
+   */
+  @Patch('diagnoses/:diagnosisId')
+  @RequirePermission('record:write', 'query')
+  @ApiOperation({ summary: 'Editar un diagnóstico de la atención' })
+  @ApiOkResponse({ type: DiagnosisDto })
+  async editDiagnosis(
+    @Param('encounterId', ParseUUIDPipe) encounterId: string,
+    @Param('diagnosisId', ParseUUIDPipe) diagnosisId: string,
+    @Body() dto: EditDiagnosisDto,
+    @Req() req: Request,
+  ): Promise<DiagnosisResponse> {
+    const diagnosis = await this.coding.editDiagnosis(
+      {
+        encounterId,
+        diagnosisId,
+        conceptId: dto.conceptId,
+        certainty: dto.certainty,
+        occurrence: dto.occurrence,
+        primary: dto.primary,
+        reason: dto.reason,
+      },
+      this.correctingRequester(req),
+    );
+    return toDiagnosisResponse(diagnosis);
+  }
+
+  /**
+   * EN-212. The versions of a diagnosis that edits replaced. `record:read`:
+   * the same clinical content, only earlier. Audited like the list.
+   */
+  @Get('diagnoses/:diagnosisId/versions')
+  @RequirePermission('record:read', 'query')
+  @ApiOperation({ summary: 'Versiones anteriores de un diagnóstico' })
+  @ApiOkResponse({ type: DiagnosisVersionListDto })
+  async diagnosisVersions(
+    @Param('encounterId', ParseUUIDPipe) encounterId: string,
+    @Param('diagnosisId', ParseUUIDPipe) diagnosisId: string,
+    @Req() req: Request,
+  ): Promise<DiagnosisVersionListResponse> {
+    const versions = await this.coding.diagnosisVersions(
+      encounterId,
+      diagnosisId,
+      this.requester(req, 'record:read'),
+    );
+    return { items: versions.map(toVersionResponse) };
+  }
+
   /** EN-183. Makes this diagnosis the principal; answers the new order. */
   @Post('diagnoses/:diagnosisId/primary')
   @RequirePermission('record:write', 'query')
@@ -217,7 +279,7 @@ export class ClinicalCodingController {
     const diagnoses = await this.coding.makePrimary(
       encounterId,
       diagnosisId,
-      this.requester(req, 'record:write'),
+      this.correctingRequester(req),
     );
     return diagnoses.map(toDiagnosisResponse);
   }
@@ -275,6 +337,20 @@ export class ClinicalCodingController {
     return { items: items.map(toProcedureResponse) };
   }
 
+  /**
+   * EN-212, D-117.13. Who corrects the coding, with where they may sign the
+   * history: after the discharge that is what lets them correct it.
+   */
+  private correctingRequester(req: Request): CodingRequester {
+    const signScope = this.currentUser
+      .requirePrincipal()
+      .sitesFor('record:sign');
+    return {
+      ...this.requester(req, 'record:write'),
+      signSites: signScope === ALL_SITES ? 'all' : signScope,
+    };
+  }
+
   /** Who is asking, for the access trail and for the site scope. */
   private requester(req: Request, permission: Permission): Requester {
     const scope = this.currentUser.requirePrincipal().sitesFor(permission);
@@ -305,6 +381,20 @@ function toDiagnosisResponse(diagnosis: DiagnosisView): DiagnosisResponse {
     notifiable: diagnosis.notifiable,
     note: diagnosis.note,
     recordedAt: diagnosis.recordedAt.toISOString(),
+    editedAt: diagnosis.editedAt?.toISOString() ?? null,
+  };
+}
+
+/** EN-212. One replaced version, with the same mapping as the current one. */
+function toVersionResponse(
+  version: DiagnosisVersionView,
+): DiagnosisVersionListResponse['items'][number] {
+  return {
+    version: version.version,
+    replacedBy: version.replacedBy,
+    replacedAt: version.replacedAt.toISOString(),
+    reason: version.reason,
+    diagnosis: toDiagnosisResponse(version.diagnosis),
   };
 }
 

@@ -28,7 +28,12 @@ import {
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
-import { createDiagnosis, createPatient, createSite } from './setup/fixtures';
+import {
+  createDiagnosis,
+  createPatient,
+  createSite,
+  createUser,
+} from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
 /**
@@ -1204,7 +1209,12 @@ describe('el certificado medico por HTTP', () => {
     // Corrected afterwards on the attention: the issued copy does not move.
     await prisma.encounterDiagnosis.updateMany({
       where: { encounterId, cie10Code: 'J00' },
-      data: { certainty: 'PRESUMPTIVE' },
+      // EN-212. Every edit is stamped (record_version).
+      data: {
+        certainty: 'PRESUMPTIVE',
+        editedById: (await createUser(prisma)).id,
+        editedAt: new Date(),
+      },
     });
     expect(await frozen()).toEqual([
       { code: 'J00', display: 'Rinofaringitis aguda', certainty: 'DEFINITIVE' },

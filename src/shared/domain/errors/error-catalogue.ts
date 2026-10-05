@@ -747,12 +747,23 @@ export const DOMAIN_ERROR_CODES = [
   'DIAGNOSIS_NOT_FOUND',
   'DIAGNOSIS_RETRACTION_REASON_REQUIRED',
   'DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT',
-  //   * `DIAGNOSIS_LAST_AFTER_DISCHARGE` (409) y
-  //     `DIAGNOSIS_PRIMARY_AFTER_DISCHARGE` (409) — EN-188. Tras el alta no se
-  //     deja la atención sin diagnóstico, y el principal cambia quitándolo con
-  //     su motivo, no reordenando. La base lo exige también.
+  //   * `DIAGNOSIS_LAST_AFTER_DISCHARGE` (409) — EN-188. Tras el alta no se
+  //     deja la atención sin diagnóstico. La base lo exige también.
+  //   * `DIAGNOSIS_PRIMARY_AFTER_DISCHARGE` se retiró con EN-212 (D-127): tras
+  //     el alta el principal cambia de un clic, con su versión.
   'DIAGNOSIS_LAST_AFTER_DISCHARGE',
-  'DIAGNOSIS_PRIMARY_AFTER_DISCHARGE',
+  //   * `DIAGNOSIS_EDIT_REASON_REQUIRED` (422) — EN-212 (D-117.14). Cambiar el
+  //     código que imprimió un certificado o una receta emitidos dice por qué.
+  //   * `DIAGNOSIS_CORRECTION_REQUIRES_SIGNATURE` (403) — EN-212 (D-117.13).
+  //     Tras el alta corrige la codificación quien tiene `record:sign`.
+  //   * `DIAGNOSIS_SUPPORTS_MATERNITY_REST` (409) — EN-212 (D-117.15). El
+  //     diagnóstico obstétrico de un reposo de maternidad no anulado.
+  //   * `ENCOUNTER_ALREADY_REPORTED` (409) — EN-212 (D-117.16). La atención ya
+  //     se reportó al RDACAA y nada la reenvía.
+  'DIAGNOSIS_EDIT_REASON_REQUIRED',
+  'DIAGNOSIS_CORRECTION_REQUIRES_SIGNATURE',
+  'DIAGNOSIS_SUPPORTS_MATERNITY_REST',
+  'ENCOUNTER_ALREADY_REPORTED',
   // ── H6: alergias visibles durante la consulta ──────────────────────────
   //   * `PATIENT_ALLERGY_NOT_FOUND` (404) — EN-082. La alergia no está en esa
   //     ficha ni en ninguna que esa ficha absorbiera. **Uno solo para «no

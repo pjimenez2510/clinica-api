@@ -10,8 +10,11 @@ import {
   DiagnosisPrimaryTakenError,
   DiagnosisRetractionReasonRequiredError,
   DiagnosisLastAfterDischargeError,
-  DiagnosisPrimaryAfterDischargeError,
+  DiagnosisCorrectionRequiresSignatureError,
+  DiagnosisEditReasonRequiredError,
+  DiagnosisSupportsMaternityRestError,
   EncounterAlreadyClosedError,
+  EncounterAlreadyReportedError,
   EncounterNotFoundError,
 } from '../domain/encounter.errors';
 import type { CareModality, EncounterStatus } from '../domain/encounter';
@@ -28,7 +31,11 @@ import {
 import type {
   ClinicalCodingRepository,
   CodingQuery,
+  CorrectionAuthority,
+  DiagnosisEdit,
+  DiagnosisQuery,
   DiagnosisRetraction,
+  DiagnosisVersionView,
   DiagnosisView,
   NewDiagnosis,
   PrimaryChange,
@@ -93,6 +100,7 @@ const DIAGNOSIS_SELECT = {
   notifiable: true,
   note: true,
   recordedAt: true,
+  editedAt: true,
 } satisfies Prisma.EncounterDiagnosisSelect;
 
 /** The row `DIAGNOSIS_SELECT` yields, derived from it so the two cannot drift. */
@@ -334,11 +342,14 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
   }
 
   /**
-   * EN-183. The previous principal moves first: with
+   * EN-183, EN-212. The previous principal moves first: with
    * `encounter_diagnosis_one_primary` there can never be two, not even for
-   * the length of one statement.
+   * the length of one statement. Both moves are edits, stamped, so both
+   * previous ranks are versions (D-127). After the discharge too: the
+   * principal changes in one click (EN-212 retired EN-188's G2).
    */
   async makePrimary(change: PrimaryChange): Promise<DiagnosisView[]> {
+    const now = new Date();
     await this.prisma.$transaction(async (tx) => {
       const status = await requireEncounterInScope(
         tx,
@@ -346,6 +357,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         change.sites,
         acceptsDiagnosisCorrection,
       );
+      await refuseCorrection(tx, change.encounterId, status, change);
       const target = await requireDiagnosisOf(
         tx,
         change.encounterId,
@@ -353,32 +365,190 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
       );
       if (isPrimary(target.rank)) return;
       await refuseWhenCitedByIssuedDocument(tx, change.encounterId);
-
-      const inUse = await tx.encounterDiagnosis.findMany({
-        where: { encounterId: change.encounterId },
-        select: { id: true, rank: true },
-      });
-      const previous = inUse.find((row) => isPrimary(row.rank));
-      // EN-188. After the discharge only an EMPTY principal is filled: the
-      // wrong one leaves through the archive, with its reason.
-      if (previous && hasDischarge(status)) {
-        throw new DiagnosisPrimaryAfterDischargeError();
-      }
-      if (previous) {
-        await tx.encounterDiagnosis.update({
-          where: { id: previous.id },
-          data: { rank: nextRankAfter(inUse.map((row) => row.rank)) },
-        });
-      }
-      await tx.encounterDiagnosis.update({
-        where: { id: target.id },
-        data: { rank: 1 },
-      });
+      await promote(tx, change.encounterId, target, change, now);
     });
 
     return this.diagnosesOf({
       encounterId: change.encounterId,
       sites: change.sites,
+    });
+  }
+
+  /**
+   * EN-212. Edits in place under the attention's lock. The refusals the
+   * triggers also make are asked here first, in the order a doctor can act
+   * on them, so each is a sentence: `trg_encounter_diagnosis_edit_admits`
+   * raises a class code whose name a client cannot branch on.
+   */
+  async editDiagnosis(edit: DiagnosisEdit): Promise<DiagnosisView> {
+    const now = new Date();
+    const row = await this.prisma.$transaction(async (tx) => {
+      const status = await requireEncounterInScope(
+        tx,
+        edit.encounterId,
+        edit.sites,
+        acceptsDiagnosisCorrection,
+      );
+      await refuseCorrection(tx, edit.encounterId, status, edit);
+      const current = await tx.encounterDiagnosis.findFirst({
+        where: { id: edit.diagnosisId, encounterId: edit.encounterId },
+        select: { ...DIAGNOSIS_SELECT },
+      });
+      if (!current) throw new DiagnosisNotFoundError();
+
+      let identity: Prisma.EncounterDiagnosisUncheckedUpdateInput = {};
+      if (
+        edit.conceptId !== undefined &&
+        edit.conceptId !== current.conceptId
+      ) {
+        const concept = await conceptForEncounter(
+          tx,
+          edit.encounterId,
+          edit.conceptId,
+        );
+        // EN-040, EN-042: the same two refusals as registering one.
+        if (concept === undefined || concept.system_code !== CIE10) {
+          throw new ConceptWrongCatalogueError(CIE10);
+        }
+        if (!concept.in_force) throw new DiagnosisConceptNotInForceError();
+
+        if (concept.concept_code !== current.cie10Code) {
+          // EN-182, until ORD-121: an order reads the live diagnoses.
+          await refuseWhenCitedByIssuedDocument(tx, edit.encounterId);
+          const [paper] = await tx.$queryRaw<
+            { printed: boolean; maternity: boolean }[]
+          >`
+            SELECT encounter_diagnosis_code_on_paper(
+                     ${edit.encounterId}::uuid, ${current.cie10Code}) AS printed,
+                   (cie10_is_obstetric(${current.cie10Code})
+                    AND NOT cie10_is_obstetric(${concept.concept_code})
+                    AND encounter_diagnosis_supports_maternity_rest(
+                          ${edit.encounterId}::uuid, ${current.id}::uuid)) AS maternity
+          `;
+          // D-117.15 first: no reason makes it acceptable.
+          if (paper?.maternity) throw new DiagnosisSupportsMaternityRestError();
+          if (paper?.printed && edit.reason === null) {
+            throw new DiagnosisEditReasonRequiredError();
+          }
+        }
+        identity = {
+          conceptId: edit.conceptId,
+          // EN-041. Copied from the concept read in THIS transaction; the
+          // display is the database's on an UPDATE in any case.
+          cie10Code: concept.concept_code,
+          cie10Display: concept.concept_display,
+        };
+      }
+
+      let rank: number | undefined;
+      if (edit.primary === true && !isPrimary(current.rank)) {
+        await refuseWhenCitedByIssuedDocument(tx, edit.encounterId);
+        await promote(tx, edit.encounterId, current, edit, now);
+        // `promote` already wrote the rank, stamped; the rest goes below.
+      } else if (edit.primary === false && isPrimary(current.rank)) {
+        await refuseWhenCitedByIssuedDocument(tx, edit.encounterId);
+        const inUse = await tx.encounterDiagnosis.findMany({
+          where: { encounterId: edit.encounterId },
+          select: { rank: true },
+        });
+        rank = nextRankAfter(inUse.map((r) => r.rank));
+      }
+
+      const changes: Prisma.EncounterDiagnosisUncheckedUpdateInput = {
+        ...identity,
+        ...(edit.certainty !== undefined && edit.certainty !== current.certainty
+          ? { certainty: edit.certainty }
+          : {}),
+        ...(edit.occurrence !== undefined &&
+        edit.occurrence !== current.occurrence
+          ? { occurrence: edit.occurrence }
+          : {}),
+        ...(rank === undefined ? {} : { rank }),
+      };
+      // Nothing to change is not an edit: no version of an identical row.
+      if (Object.keys(changes).length === 0) {
+        return tx.encounterDiagnosis.findUniqueOrThrow({
+          where: { id: current.id },
+          select: DIAGNOSIS_SELECT,
+        });
+      }
+
+      const [stamped] = await tx.$queryRaw<{ edited_at: Date | null }[]>`
+        SELECT edited_at FROM encounter_diagnosis
+         WHERE id = ${current.id}::uuid
+         FOR UPDATE`;
+      return tx.encounterDiagnosis.update({
+        where: { id: current.id },
+        data: {
+          ...changes,
+          // The reason belongs to THIS edit: never carried over.
+          editReason: 'cie10Code' in identity ? edit.reason : null,
+          editedById: edit.editedById,
+          editedAt: stampAfter(stamped?.edited_at ?? null, now),
+        },
+        select: DIAGNOSIS_SELECT,
+      });
+    });
+
+    return toDiagnosisView(row);
+  }
+
+  /**
+   * EN-212. The versions `record_version_archive` kept, read through the SAME
+   * mapping as the current diagnosis. The reason of each replacement is on
+   * the row that replaced it: the next version, or the current one.
+   */
+  async diagnosisVersions(
+    query: DiagnosisQuery,
+  ): Promise<DiagnosisVersionView[]> {
+    const where = {
+      id: query.diagnosisId,
+      encounterId: query.encounterId,
+      encounter: siteFilter(query.sites),
+    };
+    const [live, archived] = await Promise.all([
+      this.prisma.encounterDiagnosis.findFirst({
+        where,
+        select: { editReason: true },
+      }),
+      this.prisma.encounterDiagnosisRetraction.count({ where }),
+    ]);
+    if (live === null && archived === 0) throw new DiagnosisNotFoundError();
+
+    const versions = await this.prisma.recordVersion.findMany({
+      where: {
+        resourceType: 'encounter_diagnosis',
+        resourceId: query.diagnosisId,
+      },
+      orderBy: { version: 'desc' },
+      select: {
+        version: true,
+        data: true,
+        changedAt: true,
+        changedBy: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+
+    return versions.map((version, index) => {
+      const replacing =
+        index === 0
+          ? (live?.editReason ?? null)
+          : (versions[index - 1]!.data as unknown as DiagnosisSnapshot)
+              .edit_reason;
+      return {
+        version: version.version,
+        replacedBy: {
+          id: version.changedBy.id,
+          name: `${version.changedBy.firstName} ${version.changedBy.lastName}`,
+        },
+        replacedAt: version.changedAt,
+        reason: replacing ?? null,
+        diagnosis: toDiagnosisView(
+          diagnosisRowFromSnapshot(
+            version.data as unknown as DiagnosisSnapshot,
+          ),
+        ),
+      };
     });
   }
 
@@ -557,6 +727,79 @@ async function requireDiagnosisOf(
 }
 
 /**
+ * EN-183, EN-212. Makes `target` the principal: the previous principal, if
+ * any, moves behind the last rank in use FIRST (never two principals), and
+ * both rows are stamped edits.
+ */
+async function promote(
+  tx: Prisma.TransactionClient,
+  encounterId: string,
+  target: { id: string },
+  authority: CorrectionAuthority,
+  now: Date,
+): Promise<void> {
+  const inUse = await tx.$queryRaw<
+    { id: string; rank: number; edited_at: Date | null }[]
+  >`
+    SELECT id::text AS id, rank, edited_at FROM encounter_diagnosis
+     WHERE encounter_id = ${encounterId}::uuid
+     FOR UPDATE`;
+  const previous = inUse.find((row) => isPrimary(row.rank));
+  const stampOf = (id: string) =>
+    stampAfter(inUse.find((row) => row.id === id)?.edited_at ?? null, now);
+  if (previous) {
+    await tx.encounterDiagnosis.update({
+      where: { id: previous.id },
+      data: {
+        rank: nextRankAfter(inUse.map((row) => row.rank)),
+        editReason: null,
+        editedById: authority.editedById,
+        editedAt: stampOf(previous.id),
+      },
+    });
+  }
+  await tx.encounterDiagnosis.update({
+    where: { id: target.id },
+    data: {
+      rank: 1,
+      editReason: null,
+      editedById: authority.editedById,
+      editedAt: stampOf(target.id),
+    },
+  });
+}
+
+/**
+ * EN-210's rule for every versioned row: `record_version_archive` refuses an
+ * edit whose stamp did not change, so a second edit in the same millisecond
+ * moves past the first instead of failing as «sin sello». The row is locked
+ * by the caller.
+ */
+function stampAfter(previous: Date | null, now: Date): Date {
+  return previous && previous >= now ? new Date(previous.getTime() + 1) : now;
+}
+
+/**
+ * EN-212, D-117.13, D-117.16. Asked under the attention's lock: a discharge
+ * that landed after the service's read is refused here to a caller who does
+ * not sign, and a report already sent is never corrected.
+ */
+async function refuseCorrection(
+  tx: Prisma.TransactionClient,
+  encounterId: string,
+  status: EncounterStatus,
+  authority: CorrectionAuthority,
+): Promise<void> {
+  if (hasDischarge(status) && !authority.mayCorrectAfterDischarge) {
+    throw new DiagnosisCorrectionRequiresSignatureError();
+  }
+  const [row] = await tx.$queryRaw<{ reported: boolean }[]>`
+    SELECT encounter_is_reported(${encounterId}::uuid) AS reported
+  `;
+  if (row?.reported) throw new EncounterAlreadyReportedError();
+}
+
+/**
  * EN-182. The same function the triggers call, so the sentence and the
  * guarantee cannot disagree about which papers read the diagnoses.
  */
@@ -621,6 +864,45 @@ function siteFilter(sites: SiteScopeFilter): Prisma.EncounterWhereInput {
   return sites === 'all' ? {} : { siteId: { in: [...sites] } };
 }
 
+/**
+ * EN-212. A diagnosis as `record_version` keeps it: `to_jsonb` of the row,
+ * with the DATABASE's column names and instants as ISO strings.
+ */
+interface DiagnosisSnapshot {
+  id: string;
+  encounter_id: string;
+  concept_id: string;
+  cie10_code: string;
+  cie10_display: string;
+  certainty: DiagnosisRow['certainty'];
+  occurrence: DiagnosisRow['occurrence'];
+  rank: number;
+  notifiable: boolean;
+  note: string | null;
+  recorded_at: string;
+  edited_at: string | null;
+  edit_reason: string | null;
+}
+
+/** A kept version back into the shape of a live row, for one mapping. */
+function diagnosisRowFromSnapshot(snapshot: DiagnosisSnapshot): DiagnosisRow {
+  return {
+    id: snapshot.id,
+    encounterId: snapshot.encounter_id,
+    conceptId: snapshot.concept_id,
+    cie10Code: snapshot.cie10_code,
+    cie10Display: snapshot.cie10_display,
+    certainty: snapshot.certainty,
+    occurrence: snapshot.occurrence,
+    rank: snapshot.rank,
+    notifiable: snapshot.notifiable,
+    note: snapshot.note,
+    recordedAt: new Date(snapshot.recorded_at),
+    // A snapshot taken before EN-212 has no such key.
+    editedAt: snapshot.edited_at ? new Date(snapshot.edited_at) : null,
+  };
+}
+
 /** An `encounter_diagnosis` row as the domain reads it. */
 function toDiagnosisView(row: DiagnosisRow): DiagnosisView {
   return {
@@ -647,6 +929,7 @@ function toDiagnosisView(row: DiagnosisRow): DiagnosisView {
     notifiable: row.notifiable,
     note: row.note,
     recordedAt: row.recordedAt,
+    editedAt: row.editedAt,
   };
 }
 

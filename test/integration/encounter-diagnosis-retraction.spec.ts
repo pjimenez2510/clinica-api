@@ -71,6 +71,19 @@ function discharge(
   });
 }
 
+/** EN-212. A stamped rank change: every edit says who and when. */
+async function moveRank(
+  prisma: PrismaClient,
+  diagnosisId: string,
+  value: number,
+) {
+  const editor = await createUser(prisma);
+  return prisma.$executeRaw`
+    UPDATE encounter_diagnosis
+       SET rank = ${value}, edited_by_id = ${editor.id}::uuid, edited_at = ${new Date()}
+     WHERE id = ${diagnosisId}::uuid`;
+}
+
 function remove(prisma: PrismaClient, diagnosisId: string) {
   return prisma.$executeRaw`DELETE FROM encounter_diagnosis WHERE id = ${diagnosisId}::uuid`;
 }
@@ -191,30 +204,6 @@ describe('quitar un diagnóstico deja rastro (EN-180 a EN-183)', () => {
     expect(await prisma.encounterDiagnosis.count({ where: { encounterId: encounter.id } })).toBe(1); // prettier-ignore
   });
 
-  it('EN-188 con el alta la BASE no deja reordenar el principal; sólo nombrar uno donde ya no lo hay', async () => {
-    const prisma = db();
-    const { encounter, diagnoses, remover } =
-      await anEncounterWithDiagnoses(prisma);
-    const [principal, second] = diagnoses;
-    await discharge(prisma, encounter);
-    const rank = (id: string, value: number) =>
-      prisma.$executeRaw`UPDATE encounter_diagnosis SET rank = ${value} WHERE id = ${id}::uuid`;
-
-    await expect(rank(principal!.id, 3)).rejects.toThrow(
-      /encounter_diagnosis_rank_frozen_after_discharge/,
-    );
-    await expect(rank(second!.id, 1)).rejects.toThrow(
-      /encounter_diagnosis_rank_frozen_after_discharge|encounter_diagnosis_one_primary/,
-    );
-
-    // The way: remove the wrong principal with its reason (archived with
-    // rank 1), then name the remaining one.
-    await archive(prisma, principal!.id, remover.id, 'El principal era R50');
-    await remove(prisma, principal!.id);
-    await rank(second!.id, 1);
-    expect((await prisma.encounterDiagnosis.findUniqueOrThrow({ where: { id: second!.id } })).rank).toBe(1); // prettier-ignore
-  });
-
   it('EN-189 un certificado emitido —vigente o anulado— que imprimió el código hace que la BASE exija el motivo; uno que imprimió otro, no', async () => {
     const prisma = db();
     const { practitioner, encounter, diagnoses, remover } =
@@ -281,7 +270,7 @@ describe('quitar un diagnóstico deja rastro (EN-180 a EN-183)', () => {
     expect(issued.diagnoses).toEqual(frozen);
 
     // Nothing blocks the correction now, and the receta still says the same.
-    await prisma.$executeRaw`UPDATE encounter_diagnosis SET rank = 9 WHERE id = ${first!.id}::uuid`;
+    await moveRank(prisma, first!.id, 9);
     await archive(prisma, second!.id, remover.id);
     await remove(prisma, second!.id);
 
@@ -325,9 +314,9 @@ describe('quitar un diagnóstico deja rastro (EN-180 a EN-183)', () => {
     await expect(archive(prisma, second!.id, remover.id)).rejects.toThrow(
       /encounter_diagnosis_cited/,
     );
-    await expect(
-      prisma.$executeRaw`UPDATE encounter_diagnosis SET rank = 9 WHERE id = ${first!.id}::uuid`,
-    ).rejects.toThrow(/encounter_diagnosis_cited/);
+    await expect(moveRank(prisma, first!.id, 9)).rejects.toThrow(
+      /encounter_diagnosis_cited/,
+    );
 
     // Positive control: the exam cancelled (ORD-007), the way out is open.
     await prisma.serviceOrderItem.update({
@@ -375,7 +364,7 @@ describe('quitar un diagnóstico deja rastro (EN-180 a EN-183)', () => {
     });
 
     // Never left the consultation: nothing outside cites the diagnoses.
-    await prisma.$executeRaw`UPDATE encounter_diagnosis SET rank = 9 WHERE id = ${first!.id}::uuid`;
+    await moveRank(prisma, first!.id, 9);
 
     // Positive control: the same draft, issued, blocks the same change.
     await prisma.serviceOrder.update({
@@ -385,21 +374,6 @@ describe('quitar un diagnóstico deja rastro (EN-180 a EN-183)', () => {
     await expect(archive(prisma, second!.id, remover.id)).rejects.toThrow(
       /encounter_diagnosis_cited/,
     );
-  });
-
-  it('EN-180 lo que un diagnóstico ES no se reescribe: ni su código ni su concepto; el resto, sí', async () => {
-    const prisma = db();
-    const { diagnoses } = await anEncounterWithDiagnoses(prisma);
-    const [first] = diagnoses;
-
-    await expect(
-      prisma.$executeRaw`UPDATE encounter_diagnosis SET cie10_display = 'Otra cosa' WHERE id = ${first!.id}::uuid`,
-    ).rejects.toThrow(/encounter_diagnosis_identity_frozen/);
-    // Positive control: what it is not — its certainty, its note — moves.
-    await prisma.encounterDiagnosis.update({
-      where: { id: first!.id },
-      data: { certainty: 'PRESUMPTIVE', note: 'pendiente de cultivo' },
-    });
   });
 
   it('EN-180 la BASE no vacía la tabla de diagnósticos', async () => {

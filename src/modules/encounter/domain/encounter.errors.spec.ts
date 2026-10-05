@@ -19,13 +19,16 @@ import {
   ConceptWrongCatalogueError,
   DiagnosisCitedByIssuedDocumentError,
   DiagnosisLastAfterDischargeError,
-  DiagnosisPrimaryAfterDischargeError,
+  DiagnosisCorrectionRequiresSignatureError,
+  DiagnosisEditReasonRequiredError,
+  DiagnosisSupportsMaternityRestError,
   DiagnosisConceptNotInForceError,
   DiagnosisNotFoundError,
   DiagnosisPrimaryTakenError,
   DiagnosisRetractionReasonRequiredError,
   DischargeConditionRequiredError,
   EncounterAlreadyClosedError,
+  EncounterAlreadyReportedError,
   EncounterAppointmentMismatchError,
   EncounterCloserNotAuthorError,
   EncounterNotFoundError,
@@ -86,6 +89,10 @@ const EVERY_ERROR: readonly DomainError[] = [
   new DiagnosisNotFoundError(),
   new DiagnosisRetractionReasonRequiredError(),
   new DiagnosisCitedByIssuedDocumentError(),
+  new DiagnosisEditReasonRequiredError(),
+  new DiagnosisCorrectionRequiresSignatureError(),
+  new DiagnosisSupportsMaternityRestError(),
+  new EncounterAlreadyReportedError(),
   // EN-080. La tercera cara de la misma negativa: el concepto es del CNMB o
   // no lo es, y la frase tiene que nombrar la lista que hay que abrir. Con un
   // ternario, «todo lo que no es CIE-10» decía «el tarifario», y una alergia
@@ -161,16 +168,36 @@ describe('el contrato de errores de la atención', () => {
     );
   });
 
-  it('EN-188 tras el alta no se quita el último diagnóstico ni se reordena el principal: 409 que dice la salida', () => {
+  it('EN-188 tras el alta no se quita el último diagnóstico: 409 que dice por qué', () => {
     const last = new DiagnosisLastAfterDischargeError();
     expect(last.code).toBe('DIAGNOSIS_LAST_AFTER_DISCHARGE');
     expect(last).toBeInstanceOf(ConflictError);
     expect(last.userTitle).toContain('único diagnóstico');
+  });
 
-    const primary = new DiagnosisPrimaryAfterDischargeError();
-    expect(primary.code).toBe('DIAGNOSIS_PRIMARY_AFTER_DISCHARGE');
-    expect(primary).toBeInstanceOf(ConflictError);
-    expect(primary.userTitle).toContain('quite el principal');
+  it('EN-212 editar un diagnóstico: 422 que pide el motivo por campo, 403 a quien no firma tras el alta, 409 por el reposo o el reporte', () => {
+    const reason = new DiagnosisEditReasonRequiredError();
+    expect(reason.code).toBe('DIAGNOSIS_EDIT_REASON_REQUIRED');
+    expect(reason).toBeInstanceOf(ValidationError);
+    expect(reason.fieldErrors?.[0]?.field).toBe('reason');
+    expect(reason.userTitle).toBe(
+      'Indique por qué cambia el código: un certificado o una receta ya entregados lo imprimieron',
+    );
+
+    const signature = new DiagnosisCorrectionRequiresSignatureError();
+    expect(signature.code).toBe('DIAGNOSIS_CORRECTION_REQUIRES_SIGNATURE');
+    expect(signature).toBeInstanceOf(ForbiddenError);
+    expect(signature.userTitle).toContain('quien firma historia clínica');
+
+    const maternity = new DiagnosisSupportsMaternityRestError();
+    expect(maternity.code).toBe('DIAGNOSIS_SUPPORTS_MATERNITY_REST');
+    expect(maternity).toBeInstanceOf(ConflictError);
+    expect(maternity.userTitle).toContain('anule primero el reposo');
+
+    const reported = new EncounterAlreadyReportedError();
+    expect(reported.code).toBe('ENCOUNTER_ALREADY_REPORTED');
+    expect(reported).toBeInstanceOf(ConflictError);
+    expect(reported.userTitle).toContain('RDACAA');
   });
 
   it('EN-180 EN-181 EN-182 quitar un diagnóstico: 404 sin distinguir, 422 que pide el motivo, 409 que manda a anular el documento', () => {
