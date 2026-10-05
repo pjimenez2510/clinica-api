@@ -3,6 +3,7 @@ import type {
   ChargeItem as ChargeItemRow,
   Invoice as InvoiceRow,
   PatientAccount as PatientAccountRow,
+  Prisma,
 } from '@prisma/client';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
@@ -22,12 +23,17 @@ import type {
 } from '../domain/billing.repository';
 import {
   ActAlreadyChargedError,
+  InvoiceChargesChangedError,
   InvoiceHasNoItemsError,
   InvoiceImmutableError,
   InvoiceServiceCodeTooLongError,
   PriceNotFoundError,
 } from '../domain/billing.errors';
 import { MAX_VOUCHER_SERVICE_CODE } from '../domain/invoice';
+import {
+  PATIENT_IDENTITY_SELECT,
+  toPatientIdentity,
+} from './patient-identity.select';
 import type { ChargeOrigin } from '../domain/charge-proposal';
 import {
   type ChargeStatus,
@@ -90,6 +96,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
   async openAccount(account: NewAccount): Promise<AccountView> {
     const row = await this.prisma.patientAccount.create({
       data: { ...account, patientId: await this.survivingChart(account.patientId) }, // prettier-ignore
+      include: ACCOUNT_INCLUDE,
     });
     return toAccountView(row);
   }
@@ -117,6 +124,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
   }): Promise<AccountView | null> {
     const row = await this.prisma.patientAccount.findFirst({
       where: { id: query.accountId, siteId: query.siteId },
+      include: ACCOUNT_INCLUDE,
     });
     return row === null ? null : toAccountView(row);
   }
@@ -144,6 +152,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         ...(query.patientId === undefined ? {} : chartScope(query.patientId)),
       },
       orderBy: { openedAt: 'desc' },
+      include: ACCOUNT_INCLUDE,
     });
     return rows.map(toAccountView);
   }
@@ -159,6 +168,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     const row = await this.prisma.patientAccount.update({
       where: { id: accountId },
       data: payer,
+      include: ACCOUNT_INCLUDE,
     });
     return toAccountView(row);
   }
@@ -172,6 +182,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     const row = await this.prisma.patientAccount.update({
       where: { id: accountId },
       data: { status: 'SETTLED', closedAt: new Date() },
+      include: ACCOUNT_INCLUDE,
     });
     return toAccountView(row);
   }
@@ -291,6 +302,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         siteId: query.siteId,
         status: 'OPEN',
       },
+      include: ACCOUNT_INCLUDE,
     });
     return row === null ? null : toAccountView(row);
   }
@@ -499,6 +511,23 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
            WHERE "id" = ${issuance.emissionPointId}::uuid
              FOR UPDATE`;
 
+        // The account too: two issuances of the same account through two
+        // emission points would otherwise read the same pending charges, and
+        // the second would take the lines of the first.
+        await tx.$queryRaw`
+          SELECT "id" FROM "patient_account"
+           WHERE "id" = ${issuance.accountId}::uuid
+             FOR UPDATE`;
+
+        // And the pending charges themselves: an annulment or a confirmation
+        // in flight waits for this issuance, or this one reads its result —
+        // never half of it (BI-184).
+        await tx.$queryRaw`
+          SELECT "id" FROM "charge_item"
+           WHERE "account_id" = ${issuance.accountId}::uuid
+             AND "status" = 'BILLABLE'
+             FOR UPDATE`;
+
         const charges = await tx.chargeItem.findMany({
           where: { accountId: issuance.accountId, status: 'BILLABLE' },
           orderBy: { createdAt: 'asc' },
@@ -506,6 +535,16 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         });
 
         if (charges.length === 0) throw new InvoiceHasNoItemsError();
+        // BI-184. Exactly what the cashier saw, or nothing.
+        if (
+          issuance.expectedChargeIds !== undefined &&
+          !sameIds(
+            issuance.expectedChargeIds,
+            charges.map((row) => row.id),
+          )
+        ) {
+          throw new InvoiceChargesChangedError();
+        }
 
         // BI-171. Before the sequential is taken.
         const tooLong = charges.find(
@@ -569,10 +608,18 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         // BI-169. Each charge names the invoice that took it, in the same
         // statement that bills it (`charge_item_billed_carries_its_invoice`):
         // the voucher's lines are read through it.
-        await tx.chargeItem.updateMany({
-          where: { id: { in: charges.map((charge) => charge.id) } },
+        const billed = await tx.chargeItem.updateMany({
+          where: {
+            id: { in: charges.map((charge) => charge.id) },
+            status: 'BILLABLE',
+          },
           data: { status: 'BILLED', invoiceId: invoice.id },
         });
+        // The total above counted every one of them: if any changed after all,
+        // nothing is issued rather than an invoice that does not add up.
+        if (billed.count !== charges.length) {
+          throw new InvoiceChargesChangedError();
+        }
 
         return toInvoiceView(invoice);
       });
@@ -684,14 +731,24 @@ function databaseMessageOf(error: unknown): string {
   return parts.join('\n');
 }
 
+/** BI-183. Every account read carries who it is for, by projection. */
+const ACCOUNT_INCLUDE = {
+  patient: { select: PATIENT_IDENTITY_SELECT },
+} satisfies Prisma.PatientAccountInclude;
+
+type AccountRow = PatientAccountRow & {
+  patient: Prisma.PatientGetPayload<{ select: typeof PATIENT_IDENTITY_SELECT }>;
+};
+
 /**
  * Row to view. The `status` cast leans on `patient_account_status_is_known`.
  */
-function toAccountView(row: PatientAccountRow): AccountView {
+function toAccountView(row: AccountRow): AccountView {
   return {
     id: row.id,
     siteId: row.siteId,
     patientId: row.patientId,
+    patient: toPatientIdentity(row.patient),
     encounterId: row.encounterId,
     payerId: row.payerId,
     priceListId: row.priceListId,
@@ -769,4 +826,10 @@ function toInvoiceView(row: InvoiceRow): InvoiceView {
     authorisedAt: row.authorisedAt,
     issuedById: row.issuedById,
   };
+}
+
+/** BI-184. The same set of ids, in any order. */
+function sameIds(a: readonly string[], b: readonly string[]): boolean {
+  const left = new Set(a);
+  return left.size === b.length && b.every((id) => left.has(id));
 }

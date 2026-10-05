@@ -22,6 +22,7 @@ import type {
 } from '../domain/clinical-acts.port';
 import { Money, Percentage, Quantity } from '../domain/money';
 
+import { awaitingCheckoutSince } from '../domain/awaiting-checkout';
 import { EncounterCheckoutService } from './encounter-checkout.service';
 import { PatientAccountService } from './patient-account.service';
 
@@ -57,6 +58,15 @@ const account = (overrides: Partial<AccountView> = {}): AccountView => ({
   id: 'account-1',
   siteId: SITE,
   patientId: 'patient-1',
+  patient: {
+    id: 'patient-1',
+    mrn: 'HC0000000001',
+    familyName: 'Guamán',
+    secondFamilyName: null,
+    givenName: 'María',
+    secondGivenName: null,
+    document: { type: 'CEDULA', value: '1710034065' },
+  },
   encounterId: ENCOUNTER,
   payerId: 'payer-particular',
   priceListId: 'list-particular',
@@ -95,6 +105,8 @@ function build(options: { ports?: Record<string, unknown> } = {}) {
   const mocks = {
     // Clinical acts, READ ONLY.
     findEncounterActs: vi.fn().mockResolvedValue(acts()),
+    listAwaitingCheckout: vi.fn().mockResolvedValue([]),
+    countAwaitingBefore: vi.fn().mockResolvedValue(0),
 
     // The account side.
     findOpenAccountOfEncounter: vi.fn().mockResolvedValue(account()),
@@ -148,7 +160,7 @@ function build(options: { ports?: Record<string, unknown> } = {}) {
       actsPort,
       accounts,
       catalogue,
-      new PatientAccountService(accounts, catalogue),
+      new PatientAccountService(accounts, catalogue, { record: vi.fn() }),
     ),
     mocks,
   };
@@ -333,12 +345,15 @@ describe('BI-156 el cobro nunca reescribe ni condiciona lo clínico', () => {
     // decision: it is a method somebody calls from the wrong screen. What is
     // asserted is the SHAPE — one public use case, and it answers «what does
     // this visit suggest charging for», never «may this visit be closed».
+    // `awaitingCheckout` (BI-181) is a read of what is still owed: it answers
+    // «what has caja not looked at yet», and gates nothing either.
     const surface = Object.getOwnPropertyNames(
       EncounterCheckoutService.prototype,
     ).filter((name) => name !== 'constructor');
 
     expect(surface.sort()).toEqual([
       'accountOf',
+      'awaitingCheckout',
       'chargedActs',
       'mappingFor',
       'raise',
@@ -359,6 +374,25 @@ describe('BI-156 el cobro nunca reescribe ni condiciona lo clínico', () => {
     expect(mocks.findEncounterActs).toHaveBeenCalledWith({
       encounterId: ENCOUNTER,
       siteId: SITE,
+    });
+  });
+});
+
+describe('BI-181 lo pendiente de cobro', () => {
+  it('BI-181 pregunta por la ventana de siete días contada en Ecuador desde el reloj que recibe', async () => {
+    const { service, mocks } = build();
+    const now = new Date();
+
+    await service.awaitingCheckout({ siteId: SITE, now });
+
+    expect(mocks.listAwaitingCheckout).toHaveBeenCalledWith({
+      siteId: SITE,
+      endedFrom: awaitingCheckoutSince(now),
+    });
+    // D-119: and what is older is counted from the same edge.
+    expect(mocks.countAwaitingBefore).toHaveBeenCalledWith({
+      siteId: SITE,
+      endedBefore: awaitingCheckoutSince(now),
     });
   });
 });

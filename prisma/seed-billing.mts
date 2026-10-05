@@ -301,12 +301,25 @@ const SELF_PAY_CODE = 'PARTICULAR';
 // 4. `billable_service` — el catálogo de arranque
 // ───────────────────────────────────────────────────────────────────────────
 
+/**
+ * BI-185, BI-186. The five starting categories and their kind. Created if
+ * missing by name (case-insensitive), never overwritten: a clinic that
+ * reclassified one did it on purpose. One the clinic RENAMED comes back as a
+ * new, empty row, which is where the seed's new services land.
+ */
+const CATEGORIES = [
+  { name: 'Consultas', kind: 'CONSULTATION' },
+  { name: 'Procedimientos', kind: 'PROCEDURE' },
+  { name: 'Laboratorio', kind: 'LABORATORY' },
+  { name: 'Imagen', kind: 'IMAGING' },
+  { name: 'Insumos', kind: 'SUPPLY' },
+] as const;
+
 /** A starting billable service and its PARTICULAR price; created if missing, never overwritten. */
 interface SeedService {
   code: string;
   name: string;
-  category:
-    'Consultas' | 'Procedimientos' | 'Laboratorio' | 'Imagen' | 'Insumos';
+  category: (typeof CATEGORIES)[number]['name'];
   /** Código SRI de la tarifa por defecto. REVISABLE — ver D-A-006 arriba. */
   taxSriCode: string;
   /** Precio de arranque de la lista PARTICULAR, en USD. Cadena, no `number`. */
@@ -1162,6 +1175,17 @@ async function ensurePriceList(
   return rows[0]!.id;
 }
 
+/** BI-185. The category by name, created with its kind if missing. */
+async function ensureCategory(
+  tx: Client,
+  category: (typeof CATEGORIES)[number],
+): Promise<void> {
+  await tx.$executeRaw`
+    INSERT INTO "billable_service_category" ("name", "kind")
+    VALUES (${category.name}, ${category.kind})
+    ON CONFLICT ((lower("name"))) DO NOTHING`;
+}
+
 /**
  * The service by `code`, created if missing. The `ON CONFLICT` update rewrites
  * `updated_at` with itself: a no-op that still makes `RETURNING` hand back
@@ -1173,8 +1197,10 @@ async function ensureService(
   taxRateId: string,
 ): Promise<string> {
   const rows = await tx.$queryRaw<{ id: string }[]>`
-    INSERT INTO "billable_service" ("code", "name", "category", "tax_rate_id", "updated_at")
-    VALUES (${service.code}, ${service.name}, ${service.category}, ${taxRateId}::uuid, CURRENT_TIMESTAMP)
+    INSERT INTO "billable_service" ("code", "name", "category_id", "tax_rate_id", "updated_at")
+    SELECT ${service.code}, ${service.name}, "category"."id", ${taxRateId}::uuid, CURRENT_TIMESTAMP
+      FROM "billable_service_category" AS "category"
+     WHERE lower("category"."name") = lower(${service.category})
     ON CONFLICT ("code") DO UPDATE SET "updated_at" = "billable_service"."updated_at"
     RETURNING "id"`;
 
@@ -1210,6 +1236,10 @@ async function linkConsultation(
       FROM "specialty"
      WHERE "target"."id" = ${serviceId}::uuid
        AND "target"."specialty_id" IS NULL
+       -- BI-187: only a service of a consultation category is a consultation.
+       AND EXISTS (SELECT 1 FROM "billable_service_category" AS "category"
+                    WHERE "category"."id" = "target"."category_id"
+                      AND "category"."kind" = 'CONSULTATION')
        AND lower("specialty"."code") = lower(${service.specialtyCode})
        AND NOT EXISTS (
          SELECT 1 FROM "billable_service" AS "taken"
@@ -1375,6 +1405,9 @@ export async function seedBilling(prisma: PrismaClient): Promise<void> {
            WHERE "code" = ${old}
              AND NOT EXISTS (SELECT 1 FROM "billable_service" WHERE "code" = ${renamed})`;
       }
+
+      // BI-185. Las categorías, antes que las prestaciones que las nombran.
+      for (const category of CATEGORIES) await ensureCategory(tx, category);
 
       // 2 y 3. Pagadores y su lista de precios.
       const payerIdByCode = new Map<string, string>();

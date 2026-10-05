@@ -166,7 +166,9 @@ beforeEach(async () => {
       new PrismaClinicalActsRepository(asService),
       accountRepository,
       catalogueRepository,
-      new PatientAccountService(accountRepository, catalogueRepository),
+      new PatientAccountService(accountRepository, catalogueRepository, {
+        record: () => Promise.resolve(),
+      }),
     ),
     siteId: site.id,
     patientId: patient.id,

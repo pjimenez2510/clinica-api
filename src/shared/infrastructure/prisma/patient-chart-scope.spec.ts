@@ -219,6 +219,13 @@ const CHART_LINKS: Record<
  * thing the stale-table check does for `HISTORY_TABLES` and `NOT_HISTORY`.
  */
 const EXEMPT: Record<string, string> = {
+  'src/modules/billing/infrastructure/prisma-clinical-acts.repository.ts#listAwaitingCheckout':
+    'BI-181. `accounts` se lee desde la ATENCIÓN, no desde la ficha: son las ' +
+    'cuentas de esa visita (`patient_account.encounter_id`), para saber si ya ' +
+    'pasó por caja. El nombre coincide con la relación de `Patient` y por eso ' +
+    'el escáner la marca; resolver el alcance de la ficha traería cuentas de ' +
+    'OTRAS visitas del mismo paciente y daría por cobrada una atención que no ' +
+    'lo está. Es el mismo caso que `applyStatusChange` con `encounters`.',
   'src/modules/patients/infrastructure/prisma-patient.repository.ts#countLinkedRecords':
     'PA-049. Cuenta a propósito lo que SE QUEDÓ en la ficha ABSORBIDA, que es ' +
     'la única forma de enseñar desde fuera que «se lee por el enlace» (D-031) ' +

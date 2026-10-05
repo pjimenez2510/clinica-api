@@ -2535,6 +2535,8 @@ model Encounter {
   @@index([patientId, startedAt(sort: Desc)])
   @@index([practitionerId, startedAt(sort: Desc)])
   @@index([siteId, startedAt])
+  /// BI-181. What caja still has to look at, by site and end.
+  @@index([siteId, endedAt(sort: Desc)], map: "encounter_ended_by_site")
   @@map("encounter")
 }
 
@@ -3348,6 +3350,31 @@ model TaxRate {
   @@map("tax_rate")
 }
 
+/// BI-185, BI-186. The categories of the billable services, administered by
+/// the clinic. Deactivated and never deleted while a service uses one
+/// (`billable_service_category_fk` is RESTRICT).
+///
+/// `billable_service_category_name_unique` is UNIQUE on `lower(name)` and
+/// `billable_service_category_kind_is_known` bounds `kind`: both live in the
+/// migration, because schema.prisma cannot say either.
+model BillableServiceCategory {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  name String @db.VarChar(60)
+  /// CONSULTATION, PROCEDURE, LABORATORY, IMAGING, SUPPLY or OTHER. Text and not
+  /// an enum, like `visit_sequence`: the economic catalogue evolves without a
+  /// type of the clinical schema. Not editable once created.
+  kind String @db.VarChar(16)
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  services BillableService[]
+
+  @@map("billable_service_category")
+}
+
 /// What the clinic knows how to do — and WITHOUT A PRICE, which is the point.
 model BillableService {
   id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
@@ -3355,9 +3382,11 @@ model BillableService {
   code String @unique(map: "billable_service_code_unique") @db.VarChar(32)
   name String @db.VarChar(200)
 
-  /// Grouping for the screen and for reporting. A table of its own would be
-  /// over-engineering: this is a label, not an entity.
-  category String @db.VarChar(60)
+  /// BI-185, BI-186. A row of the clinic's catalogue, never free text: free
+  /// text gave «Laboratorio», «laboratorio» and «Lab.» in the same report, and
+  /// the category's KIND says what structure the service admits (BI-187).
+  categoryId String                  @map("category_id") @db.Uuid
+  category   BillableServiceCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "billable_service_category_fk")
 
   /// The MSP tariff code, when the service has one. NOMENCLATURE ONLY — the
   /// Tarifario does NOT set what a private patient is charged, its scope having
@@ -3418,7 +3447,7 @@ model BillableService {
   taxReviewedById String?          @map("tax_reviewed_by_id") @db.Uuid
   taxReviewedBy   User?            @relation("TaxRateReviewer", fields: [taxReviewedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "billable_service_tax_reviewer_fk")
 
-  @@index([category, name], map: "billable_service_by_category")
+  @@index([categoryId, name], map: "billable_service_by_category")
   @@map("billable_service")
 }
 

@@ -61,7 +61,8 @@
     "sri:double": "node --experimental-strip-types scripts/sri-double.mts",
     "sri:certificate:dev": "node --env-file=.env --experimental-strip-types scripts/sri-certificate-dev.mts",
     "pdfa:check": "node scripts/pdfa-check.mjs",
-    "db:seed:document-templates": "node --env-file=.env --experimental-strip-types prisma/seed-document-templates.mts"
+    "db:seed:document-templates": "node --env-file=.env --experimental-strip-types prisma/seed-document-templates.mts",
+    "db:seed:caja": "node --env-file=.env --experimental-strip-types prisma/seed-caja.mts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.28",
