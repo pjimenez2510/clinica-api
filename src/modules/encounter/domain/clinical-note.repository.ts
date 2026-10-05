@@ -37,6 +37,8 @@ export interface ClinicalNoteView {
   /** EN-021. The MSP form number, as DATA. */
   formCode: string;
   formVersion: string;
+  /** EN-204. The template version it was opened with; `null` = built-in. */
+  templateId: string | null;
   status: NoteStatus;
   content: NoteContent;
   /** The practitioner who wrote it. Never the account. */
@@ -69,6 +71,8 @@ export interface NewClinicalNote {
   encounterId: string;
   formCode: string;
   formVersion: string;
+  /** EN-203. Chosen by the service, never sent by the screen. */
+  templateId: string | null;
   content: NoteContent;
   authorId: string;
   /**
@@ -109,6 +113,7 @@ export interface AmendmentDraft {
   amendmentReason: string;
   formCode: string;
   formVersion: string;
+  templateId: string | null;
   content: NoteContent;
   authorId: string;
   /** EN-025, EN-027. An amendment is BORN SIGNED: it corrects a signed note. */

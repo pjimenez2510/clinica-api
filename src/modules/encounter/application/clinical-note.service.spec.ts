@@ -38,6 +38,8 @@ import type {
 } from '../domain/encounter.repository';
 import type { NoteContent } from '../domain/clinical-note';
 import type { Requester } from './encounter.service';
+import { builtInTemplate, type NoteTemplate } from '../domain/note-template';
+import type { NoteTemplateRepository } from '../domain/note-template.repository';
 import { ClinicalNoteService } from './clinical-note.service';
 import type { ActiveAllergy } from '../../../shared/clinical/patient-allergy.port';
 import {
@@ -102,6 +104,7 @@ const aNote = (
   version: 1,
   formCode: '002',
   formVersion: '1',
+  templateId: null,
   status: 'DRAFT',
   content: COMPLETE_002,
   authorId: PRACTITIONER,
@@ -236,6 +239,25 @@ class FakeBackground {
   }
 }
 
+/** EN-203. The published templates, and which specialty the attention is of. */
+class FakeTemplates {
+  published: NoteTemplate[] = [];
+  specialtyId: string | null = null;
+
+  latest(formCode: string, specialtyId: string | null) {
+    const versions = this.published
+      .filter((t) => t.formCode === formCode && t.specialtyId === specialtyId)
+      .sort((a, b) => b.version - a.version);
+    return Promise.resolve(versions[0] ?? null);
+  }
+  findById(id: string) {
+    return Promise.resolve(this.published.find((t) => t.id === id) ?? null);
+  }
+  specialtyOfEncounter() {
+    return Promise.resolve(this.specialtyId);
+  }
+}
+
 class FakeHistory {
   constructor(private readonly background: FakeBackground) {}
   activeFor(): Promise<HistoryView[]> {
@@ -247,6 +269,7 @@ describe('los casos de uso de la nota clínica', () => {
   let notes: FakeNotes;
   let encounters: FakeEncounters;
   let background: FakeBackground;
+  let templates: FakeTemplates;
   let audit: AccessAuditRecorder & { entries: AccessAuditEntry[] };
   let service: ClinicalNoteService;
 
@@ -254,6 +277,7 @@ describe('los casos de uso de la nota clínica', () => {
     notes = new FakeNotes();
     encounters = new FakeEncounters();
     background = new FakeBackground();
+    templates = new FakeTemplates();
     const entries: AccessAuditEntry[] = [];
     audit = {
       entries,
@@ -276,6 +300,7 @@ describe('los casos de uso de la nota clínica', () => {
       background,
       background as unknown as PatientAllergyRepository,
       new FakeHistory(background) as unknown as PatientHistoryRepository,
+      templates as unknown as NoteTemplateRepository,
       logger,
     );
   });
@@ -397,6 +422,92 @@ describe('los casos de uso de la nota clínica', () => {
     );
 
     expect(signed.status).toBe('SIGNED');
+  });
+
+  describe('la plantilla de la nota', () => {
+    const template = (
+      id: string,
+      specialtyId: string | null,
+      version: number,
+      extraRequired = false,
+    ): NoteTemplate => ({
+      id,
+      formCode: '002',
+      specialtyId,
+      version,
+      sections: [
+        ...builtInTemplate('002').sections,
+        {
+          key: 'extra1',
+          title: `Propia de ${id}`,
+          help: '',
+          kind: 'TEXT',
+          options: [],
+          required: extraRequired,
+          minimum: false,
+        },
+      ],
+    });
+
+    it('EN-203 abre la nota con la última versión de la plantilla de su especialidad', async () => {
+      templates.specialtyId = 'odontologia';
+      templates.published = [
+        template('clinica-1', null, 1),
+        template('odonto-1', 'odontologia', 1),
+        template('odonto-2', 'odontologia', 2),
+      ];
+
+      const note = await service.draft(draftRequest, requester);
+
+      expect(notes.drafted[0]?.templateId).toBe('odonto-2');
+      expect(note.template.id).toBe('odonto-2');
+    });
+
+    it('EN-203 sin plantilla de su especialidad usa la de la clínica', async () => {
+      templates.specialtyId = 'pediatria';
+      templates.published = [template('clinica-1', null, 1)];
+
+      await service.draft(draftRequest, requester);
+
+      expect(notes.drafted[0]?.templateId).toBe('clinica-1');
+    });
+
+    it('EN-203 sin ninguna publicada usa la de serie y no guarda plantilla', async () => {
+      const note = await service.draft(draftRequest, requester);
+
+      expect(notes.drafted[0]?.templateId).toBeNull();
+      expect(note.template.version).toBe(0);
+    });
+
+    it('EN-203 la evolución sigue con la de serie aunque la clínica tenga plantilla', async () => {
+      templates.published = [template('clinica-1', null, 1)];
+
+      await service.draft(
+        { ...draftRequest, formCode: '005', content: {} },
+        requester,
+      );
+
+      expect(notes.drafted[0]?.templateId).toBeNull();
+    });
+
+    it('EN-204 y EN-205 firma con la plantilla con que se abrió, aunque haya una más nueva', async () => {
+      templates.published = [
+        template('clinica-1', null, 1, true),
+        template('clinica-2', null, 2, false),
+      ];
+      notes.stored = aNote({ templateId: 'clinica-1' });
+
+      await expect(
+        service.sign(
+          {
+            encounterId: ENCOUNTER,
+            noteId: 'note-1',
+            dischargeCondition: 'ALIVE',
+          },
+          requester,
+        ),
+      ).rejects.toBeInstanceOf(NoteContentIncompleteError);
+    });
   });
 
   it('EN-206 no guarda en el borrador la foto que mande la pantalla', async () => {

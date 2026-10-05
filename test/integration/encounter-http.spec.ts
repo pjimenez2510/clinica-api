@@ -809,6 +809,110 @@ describe('la atención por HTTP', () => {
     });
   });
 
+  describe('la plantilla de la nota de consulta', () => {
+    const minimum = () =>
+      [
+        ['motivoConsulta', 'Motivo'],
+        ['antecedentes', 'Antecedentes'],
+        ['enfermedadActual', 'Enfermedad actual'],
+        ['revisionOrganosSistemas', 'Revisión por sistemas'],
+        ['examenFisico', 'Examen físico'],
+        ['planTratamiento', 'Plan'],
+      ].map(([key, title]) => ({
+        key,
+        title,
+        help: '',
+        kind: 'TEXT',
+        required: true,
+      }));
+
+    it('EN-200 la publica quien administra la configuración, y el médico no', async () => {
+      const admin = await signIn('ADMIN', 'admin@clinica.ec', '1710034073', false); // prettier-ignore
+      const body = { sections: minimum() };
+
+      await post('/note-templates', doctorToken, body).expect(403);
+      const published = await post('/note-templates', admin.token, body).expect(201); // prettier-ignore
+      expect(published.body).toMatchObject({ version: 1, specialtyId: null });
+
+      const list = await get('/note-templates', admin.token).expect(200);
+      expect(
+        (list.body as { items: { version: number }[] }).items[0]?.version,
+      ).toBe(1);
+    });
+
+    it('EN-201 rechaza publicar sin una sección del mínimo, nombrándola', async () => {
+      const admin = await signIn('ADMIN', 'admin@clinica.ec', '1710034073', false); // prettier-ignore
+
+      const refused = await post('/note-templates', admin.token, {
+        sections: minimum().filter((section) => section.key !== 'examenFisico'),
+      }).expect(422);
+
+      const problem = refused.body as Problem;
+      expect(problem.code).toBe('NOTE_TEMPLATE_INVALID');
+      expect(problem.errors?.[0]?.message).toContain('Examen físico');
+    });
+
+    it('EN-203 a EN-205 la nota se abre con la plantilla publicada y exige su sección propia', async () => {
+      const admin = await signIn('ADMIN', 'admin@clinica.ec', '1710034073', false); // prettier-ignore
+      await post('/note-templates', admin.token, {
+        sections: [
+          ...minimum(),
+          {
+            title: 'Hallazgos odontológicos',
+            help: '',
+            kind: 'CHOICE',
+            options: ['Caries', 'Sin hallazgos'],
+            required: true,
+          },
+        ],
+      }).expect(201);
+
+      const encounterId = await openEncounter();
+      const draft = await post(
+        `/encounters/${encounterId}/notes`,
+        doctorToken,
+        {
+          formCode: '002',
+          content: COMPLETE_002,
+        },
+      ).expect(201);
+      const note = draft.body as NoteBody & {
+        template: {
+          version: number;
+          sections: { key: string; title: string }[];
+        };
+      };
+      expect(note.template.version).toBe(1);
+      expect(note.template.sections.at(-1)).toMatchObject({
+        key: 'extra1',
+        title: 'Hallazgos odontológicos',
+      });
+
+      const refused = await post(
+        `/encounters/${encounterId}/notes/${note.id}/sign`,
+        doctorToken,
+        { dischargeCondition: 'ALIVE' },
+      ).expect(422);
+      expect((refused.body as Problem).errors?.[0]?.field).toBe(
+        'content.extra1',
+      );
+
+      // Control positivo: con una de sus opciones, firma.
+      await request(app.getHttpServer())
+        .patch(`/api/v1/encounters/${encounterId}/notes/${note.id}`)
+        .set('Authorization', `Bearer ${doctorToken}`)
+        .send({ content: { ...COMPLETE_002, extra1: 'Caries' } })
+        .expect(200);
+      await post(
+        `/encounters/${encounterId}/notes/${note.id}/sign`,
+        doctorToken,
+        {
+          dischargeCondition: 'ALIVE',
+        },
+      ).expect(200);
+    });
+  });
+
   describe('la nota clínica y el alta', () => {
     it('EN-020 a EN-027 abre, firma y da el alta clínica en un solo acto', async () => {
       const encounterId = await openEncounter();

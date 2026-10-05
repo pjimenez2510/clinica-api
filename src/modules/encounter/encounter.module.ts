@@ -15,6 +15,10 @@ import { ChartSummaryService } from './application/chart-summary.service';
 import { ClinicalCodingController } from './clinical-coding.controller';
 import { ClinicalCodingService } from './application/clinical-coding.service';
 import { ClinicalNoteController } from './clinical-note.controller';
+import { NoteTemplateController } from './note-template.controller';
+import { NoteTemplateService } from './application/note-template.service';
+import { NOTE_TEMPLATE_REPOSITORY } from './domain/note-template.repository';
+import { PrismaNoteTemplateRepository } from './infrastructure/prisma-note-template.repository';
 import { ClinicalNoteService } from './application/clinical-note.service';
 import { EncounterController } from './encounter.controller';
 import { EncounterExitController } from './encounter-exit.controller';
@@ -83,6 +87,7 @@ import { PrismaPatientAllergyRepository } from './infrastructure/prisma-patient-
     PatientAllergyController,
     PatientHistoryController,
     ChartSummaryController,
+    NoteTemplateController,
   ],
   providers: [
     EncounterService,
@@ -92,6 +97,7 @@ import { PrismaPatientAllergyRepository } from './infrastructure/prisma-patient-
     PatientAllergyService,
     PatientHistoryService,
     ChartSummaryService,
+    NoteTemplateService,
     CurrentUserService,
     { provide: ENCOUNTER_REPOSITORY, useClass: PrismaEncounterRepository },
     {
@@ -117,6 +123,10 @@ import { PrismaPatientAllergyRepository } from './infrastructure/prisma-patient-
     {
       provide: CHART_SUMMARY_REPOSITORY,
       useClass: PrismaChartSummaryRepository,
+    },
+    {
+      provide: NOTE_TEMPLATE_REPOSITORY,
+      useClass: PrismaNoteTemplateRepository,
     },
     /**
      * EN-084. The SHARED reader, wired here and — identically — by

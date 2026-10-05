@@ -41,6 +41,7 @@ const NOTE_SELECT = {
   version: true,
   formCode: true,
   formVersion: true,
+  templateId: true,
   status: true,
   content: true,
   authorId: true,
@@ -133,6 +134,7 @@ export class PrismaClinicalNoteRepository implements ClinicalNoteRepository {
           encounterId: encounter.id,
           formCode: draft.formCode,
           formVersion: draft.formVersion,
+          templateId: draft.templateId,
           status: 'DRAFT',
           content: draft.content as Prisma.InputJsonObject,
           authorId: draft.authorId,
@@ -369,6 +371,9 @@ export class PrismaClinicalNoteRepository implements ClinicalNoteRepository {
           encounterId: query.encounterId,
           formCode: draft.formCode,
           formVersion: draft.formVersion,
+          // EN-204. The correction is read with the template of what it
+          // corrects.
+          templateId: draft.templateId,
           // EN-025, EN-027. The amendment is BORN SIGNED: a correction left as
           // a draft would leave the chain with no current SIGNED version at
           // all, which is a history with no valid current note.
@@ -571,6 +576,7 @@ function toNoteView(row: NoteRow): ClinicalNoteView {
     version: row.version,
     formCode: row.formCode,
     formVersion: row.formVersion,
+    templateId: row.templateId,
     status: row.status,
     /**
      * `content` is `JsonB` and Prisma types it as `JsonValue`. The domain

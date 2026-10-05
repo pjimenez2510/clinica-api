@@ -30,6 +30,7 @@ import {
   InvalidEncounterTransitionError,
   NoteAlreadySignedError,
   NoteContentIncompleteError,
+  NoteTemplateInvalidError,
   NoteNotAmendableError,
   PatientAllergyNotFoundError,
   PatientChartNotOpenError,
@@ -282,6 +283,26 @@ describe('el contrato de errores de la atención', () => {
     expect(error.code).toBe('UNKNOWN_CLINICAL_FORM');
     expect(error).toBeInstanceOf(ValidationError); // 422
     expect(error.params.admitted).toBe('002@1,005@1');
+  });
+
+  it('EN-201 responde 422 nombrando la sección de la plantilla que no se puede publicar', () => {
+    const error = new NoteTemplateInvalidError(
+      'sections.2.required',
+      '«Examen físico regional» es parte del contenido mínimo',
+    );
+
+    expect(error.code).toBe('NOTE_TEMPLATE_INVALID');
+    expect(error).toBeInstanceOf(ValidationError); // 422
+    expect(error.fieldErrors?.[0]?.field).toBe('sections.2.required');
+  });
+
+  it('EN-205 responde 422 diciendo que se elija una opción de la lista', () => {
+    const error = new NoteContentIncompleteError([], ['extra1']);
+
+    expect(error.fieldErrors?.[0]).toMatchObject({
+      field: 'content.extra1',
+      message: 'Elija una de las opciones de la lista',
+    });
   });
 
   it('EN-020 responde 422 con la ruta de cada sección que falta', () => {

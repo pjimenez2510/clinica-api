@@ -7,7 +7,6 @@ import {
 } from '../../../shared/audit/access-audit.port';
 import {
   assertAmendable,
-  assertContentComplete,
   assertEditable,
   contentHashOf,
   planAmendment,
@@ -24,6 +23,16 @@ import {
   withBackgroundSnapshot,
   type BackgroundSnapshot,
 } from '../domain/background-snapshot';
+import {
+  TEMPLATED_FORMS,
+  assertNoteComplete,
+  builtInTemplate,
+  type NoteTemplate,
+} from '../domain/note-template';
+import {
+  NOTE_TEMPLATE_REPOSITORY,
+  type NoteTemplateRepository,
+} from '../domain/note-template.repository';
 import {
   PATIENT_ALLERGY_REPOSITORY,
   type PatientAllergyRepository,
@@ -63,6 +72,13 @@ import type { Requester } from './encounter.service';
  * wrong answer.
  */
 const RESOURCE_TYPE = 'clinical_note';
+
+/**
+ * EN-204. A note as the screen needs it: with the sections of the template
+ * it was opened with, so a signed note is shown with ITS titles and order and
+ * never with today's.
+ */
+export type NoteWithTemplate = ClinicalNoteView & { template: NoteTemplate };
 
 /** EN-020, EN-021. A first version of a form. */
 export interface DraftNoteRequest {
@@ -140,6 +156,8 @@ export class ClinicalNoteService {
     private readonly allergyRecords: PatientAllergyRepository,
     @Inject(PATIENT_HISTORY_REPOSITORY)
     private readonly historyRecords: PatientHistoryRepository,
+    @Inject(NOTE_TEMPLATE_REPOSITORY)
+    private readonly templates: NoteTemplateRepository,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(ClinicalNoteService.name);
@@ -163,15 +181,20 @@ export class ClinicalNoteService {
   async draft(
     request: DraftNoteRequest,
     requester: Requester,
-  ): Promise<ClinicalNoteView> {
+  ): Promise<NoteWithTemplate> {
     const author = await this.requirePractitioner(requester.userId);
     // EN-021. Refuses an unregistered form before anything is written.
     requireForm(request.formCode, request.formVersion);
+    const template = await this.templateForNewNote(
+      request.formCode,
+      request.encounterId,
+    );
 
     const note = await this.notes.createDraft({
       encounterId: request.encounterId,
       formCode: request.formCode,
       formVersion: request.formVersion,
+      templateId: template.id,
       // EN-206. The snapshot is the server's to write, at the signature.
       content: withBackgroundSnapshot(request.content, null),
       authorId: author.practitionerId,
@@ -188,7 +211,7 @@ export class ClinicalNoteService {
       userAgent: requester.userAgent,
     });
 
-    return note;
+    return { ...note, template };
   }
 
   /**
@@ -204,7 +227,7 @@ export class ClinicalNoteService {
   async listOf(
     encounterId: string,
     requester: Requester,
-  ): Promise<readonly ClinicalNoteView[]> {
+  ): Promise<readonly NoteWithTemplate[]> {
     const notes = await this.notes.listOfEncounter({
       encounterId,
       sites: requester.sites,
@@ -219,7 +242,7 @@ export class ClinicalNoteService {
       userAgent: requester.userAgent,
     });
 
-    return notes;
+    return this.withTemplates(notes);
   }
 
   /**
@@ -235,7 +258,7 @@ export class ClinicalNoteService {
   async updateDraft(
     request: { encounterId: string; noteId: string; content: NoteContent },
     requester: Requester,
-  ): Promise<ClinicalNoteView> {
+  ): Promise<NoteWithTemplate> {
     const updated = await this.notes.updateDraft(
       {
         encounterId: request.encounterId,
@@ -255,7 +278,7 @@ export class ClinicalNoteService {
       userAgent: requester.userAgent,
     });
 
-    return updated;
+    return this.withTemplate(updated);
   }
 
   /**
@@ -282,10 +305,14 @@ export class ClinicalNoteService {
   async sign(
     request: SignNoteRequest,
     requester: Requester,
-  ): Promise<ClinicalNoteView> {
+  ): Promise<NoteWithTemplate> {
     const signer = await this.requirePractitioner(requester.userId);
     this.assertLicensed(signer.acessExpiresOn);
     const now = new Date();
+    // EN-204, EN-205. The template the note was opened with — fixed by
+    // `trg_clinical_note_template_is_fixed`, so reading it before the
+    // transaction cannot read a different one.
+    const template = await this.templateOfNote(request, requester);
     const background = await this.backgroundOf(
       request.encounterId,
       requester,
@@ -308,9 +335,10 @@ export class ClinicalNoteService {
         // EN-206. What the doctor had in front of them goes inside what they
         // sign, before the digest.
         const content = withBackgroundSnapshot(note.content, background);
-        // EN-020, EN-207. The minimum content of art. 6, demanded at the
-        // moment the note becomes the record.
-        assertContentComplete(form, content);
+        // EN-020, EN-205, EN-207. The required sections of the note's own
+        // template — which always include the minimum of art. 6 — demanded
+        // at the moment the note becomes the record.
+        assertNoteComplete(template, content);
 
         /**
          * EN-009, EN-130. Signing the consultation note discharges the
@@ -358,7 +386,7 @@ export class ClinicalNoteService {
       'clinical note signed',
     );
 
-    return signed;
+    return { ...signed, template };
   }
 
   /**
@@ -383,10 +411,13 @@ export class ClinicalNoteService {
   async amend(
     request: AmendNoteRequest,
     requester: Requester,
-  ): Promise<ClinicalNoteView> {
+  ): Promise<NoteWithTemplate> {
     const signer = await this.requirePractitioner(requester.userId);
     this.assertLicensed(signer.acessExpiresOn);
     const now = new Date();
+    // EN-204. The correction is validated with the template of what it
+    // corrects, not with today's.
+    const template = await this.templateOfNote(request, requester);
 
     const amended = await this.notes.amend(
       {
@@ -408,7 +439,7 @@ export class ClinicalNoteService {
           reason: request.amendmentReason,
         });
 
-        const form = requireForm(previous.formCode, previous.formVersion);
+        requireForm(previous.formCode, previous.formVersion);
         // EN-206. An amendment corrects what was written at THAT act, and
         // that act knew what it knew: it inherits its snapshot, never the
         // caller's and never today's.
@@ -416,7 +447,7 @@ export class ClinicalNoteService {
           request.content,
           backgroundSnapshotIn(previous.content),
         );
-        assertContentComplete(form, content);
+        assertNoteComplete(template, content);
 
         return {
           chainId: plan.chainId,
@@ -425,6 +456,7 @@ export class ClinicalNoteService {
           amendmentReason: plan.reason,
           formCode: previous.formCode,
           formVersion: previous.formVersion,
+          templateId: previous.templateId,
           content,
           authorId: signer.practitionerId,
           signature: {
@@ -460,7 +492,7 @@ export class ClinicalNoteService {
       userAgent: requester.userAgent,
     });
 
-    return amended;
+    return { ...amended, template };
   }
 
   /**
@@ -480,7 +512,7 @@ export class ClinicalNoteService {
   async retract(
     request: { encounterId: string; noteId: string },
     requester: Requester,
-  ): Promise<ClinicalNoteView> {
+  ): Promise<NoteWithTemplate> {
     const retracted = await this.notes.retract(
       {
         encounterId: request.encounterId,
@@ -505,7 +537,7 @@ export class ClinicalNoteService {
       userAgent: requester.userAgent,
     });
 
-    return retracted;
+    return this.withTemplate(retracted);
   }
 
   /**
@@ -574,6 +606,75 @@ export class ClinicalNoteService {
       noKnownAllergies,
       history,
     });
+  }
+
+  /**
+   * EN-203, D-124. The newest template of the attention's specialty, else the
+   * clinic's, else the built-in one. Only the 002 has templates.
+   */
+  private async templateForNewNote(
+    formCode: string,
+    encounterId: string,
+  ): Promise<NoteTemplate> {
+    if (!TEMPLATED_FORMS.includes(formCode)) return builtInTemplate(formCode);
+
+    const specialtyId = await this.templates.specialtyOfEncounter(encounterId);
+    return (
+      (specialtyId
+        ? await this.templates.latest(formCode, specialtyId)
+        : null) ??
+      (await this.templates.latest(formCode, null)) ??
+      builtInTemplate(formCode)
+    );
+  }
+
+  /** EN-204. The template one existing note was opened with. */
+  private async templateOfNote(
+    query: { encounterId: string; noteId: string },
+    requester: Requester,
+  ): Promise<NoteTemplate> {
+    const note = await this.notes.findById({
+      encounterId: query.encounterId,
+      noteId: query.noteId,
+      sites: requester.sites,
+    });
+    // An unknown note is refused by the transaction that follows, with the
+    // module's own 404; the built-in template is only what it is checked
+    // against until then.
+    if (!note) return builtInTemplate('002');
+    return (await this.withTemplate(note)).template;
+  }
+
+  private async withTemplate(
+    note: ClinicalNoteView,
+  ): Promise<NoteWithTemplate> {
+    const [withTemplate] = await this.withTemplates([note]);
+    return withTemplate as NoteWithTemplate;
+  }
+
+  /** One read per distinct template, however many versions use it. */
+  private async withTemplates(
+    notes: readonly ClinicalNoteView[],
+  ): Promise<NoteWithTemplate[]> {
+    const ids = [
+      ...new Set(
+        notes.flatMap((note) => (note.templateId ? [note.templateId] : [])),
+      ),
+    ];
+    const found = await Promise.all(
+      ids.map((id) => this.templates.findById(id)),
+    );
+    const byId = new Map(
+      found.flatMap((template) =>
+        template?.id ? [[template.id, template]] : [],
+      ),
+    );
+    return notes.map((note) => ({
+      ...note,
+      template:
+        (note.templateId ? byId.get(note.templateId) : undefined) ??
+        builtInTemplate(note.formCode),
+    }));
   }
 
   private async requirePractitioner(userId: string) {
