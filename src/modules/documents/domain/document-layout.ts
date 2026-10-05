@@ -732,7 +732,9 @@ export function composeCertificateLayout(
         ...(form.confidential
           ? [
               {
-                text: 'Contiene datos de salud: su uso lo autoriza el paciente (A.M. 5216-A).',
+                // D-121: the legend protects the patient; the agreement's
+                // number only recited the norm.
+                text: 'Contiene datos de salud: su uso lo autoriza el paciente.',
               },
             ]
           : []),
