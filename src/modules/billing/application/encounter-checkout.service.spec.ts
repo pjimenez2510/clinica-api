@@ -388,6 +388,7 @@ describe('BI-181 lo pendiente de cobro', () => {
     expect(mocks.listAwaitingCheckout).toHaveBeenCalledWith({
       siteId: SITE,
       endedFrom: awaitingCheckoutSince(now),
+      neverChargedBefore: awaitingCheckoutSince(now),
     });
     // D-119: and what is older is counted from the same edge.
     expect(mocks.countAwaitingBefore).toHaveBeenCalledWith({

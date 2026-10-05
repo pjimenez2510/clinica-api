@@ -137,6 +137,7 @@ const aSnapshot = (overrides: Partial<IssueSnapshot> = {}): IssueSnapshot => ({
     doseText: item.doseText,
     frequencyText: item.frequencyText,
     durationDays: item.durationDays,
+    frequencyCode: item.frequencyCode,
     conceptId: item.conceptId,
     offFormularyJustification: item.offFormularyJustification,
   })),
