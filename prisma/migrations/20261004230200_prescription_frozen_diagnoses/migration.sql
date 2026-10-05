@@ -12,6 +12,12 @@
 -- sin una transacción que la envuelva: la primera versión se cortó en el
 -- UPDATE de abajo con la columna YA creada (base del autor, 04-10-2026). Cada
 -- paso es idempotente para que volver a aplicarla complete lo que falte.
+-- Y DENTRO DE UNA TRANSACCIÓN EXPLÍCITA: sin ella, un fallo entre el DISABLE y
+-- el ENABLE de abajo dejaba `prescription_frozen` apagado, y mientras dura el
+-- relleno la aplicación podía editar o borrar una receta emitida. Todo lo de
+-- este archivo es transaccional en PostgreSQL; un fallo lo deshace entero.
+BEGIN;
+
 ALTER TABLE "prescription" ADD COLUMN IF NOT EXISTS "diagnoses" JSONB;
 
 -- Las ya emitidas: lo que hay ahora es lo único que se sabe de entonces.
@@ -121,3 +127,5 @@ CREATE TRIGGER "encounter_diagnosis_identity_frozen"
 -- ═════════════════════════════════════════════════════════════════════════════
 
 ALTER TABLE "prescription_item" ALTER COLUMN "dose_amount" TYPE DECIMAL(12,4);
+
+COMMIT;
