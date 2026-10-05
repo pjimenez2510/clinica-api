@@ -24,6 +24,7 @@ import type {
   CancelPlan,
   CorrectedPrescription,
   DiscardPlan,
+  DraftDiscardQuery,
   DraftRestore,
   DraftRewrite,
   EncounterPrescriptionsQuery,
@@ -655,18 +656,22 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
    * `null` when nobody said, since D-126 (PR-107).
    */
   async discard(
-    query: PrescriptionQuery,
+    query: DraftDiscardQuery,
     plan: DiscardPlan,
     decide: (status: PrescriptionStatus) => void,
   ): Promise<PrescriptionView> {
     const row = await this.prisma.$transaction(async (tx) => {
       const current = await tx.prescription.findFirst({
         where: { id: query.prescriptionId, ...siteFilter(query.sites) },
-        select: { id: true, status: true },
+        select: { id: true, status: true, prescriberId: true },
       });
       if (!current) throw new PrescriptionNotFoundError();
 
       decide(current.status);
+      // PR-107, PR-100. The draft is its prescriber's: only they discard it.
+      if (current.prescriberId !== query.prescriberId) {
+        throw new PrescriptionDraftOfAnotherPrescriberError();
+      }
 
       const updated = await tx.prescription.updateMany({
         where: { id: query.prescriptionId, status: 'DRAFT' },

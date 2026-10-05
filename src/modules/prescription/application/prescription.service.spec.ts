@@ -19,10 +19,12 @@ import {
   atWallClock,
   clinicalDateOf,
 } from '../../../shared/domain/clinic-time';
+import { PrescriptionDraftOfAnotherPrescriberError } from '../domain/prescription.errors';
 import { PrescriptionService } from './prescription.service';
 import type {
   CancelPlan,
   DiscardPlan,
+  DraftDiscardQuery,
   DraftRestore,
   DraftRewrite,
   IssuePlan,
@@ -252,12 +254,18 @@ class FakeRepository implements PrescriptionRepository {
     });
   }
 
+  /** PR-107. Whose draft it is: by default, the session's professional. */
+  draftPrescriberId = PRACTITIONER;
+
   discard(
-    _query: PrescriptionQuery,
+    query: DraftDiscardQuery,
     plan: DiscardPlan,
     decide: (status: PrescriptionStatus) => void,
   ): Promise<PrescriptionView> {
     decide(this.snapshot.status);
+    if (query.prescriberId !== this.draftPrescriberId) {
+      return Promise.reject(new PrescriptionDraftOfAnotherPrescriberError());
+    }
     this.discarded = plan;
     return Promise.resolve(
       aPrescription({
@@ -742,6 +750,27 @@ describe('el servicio de recetas', () => {
       requester,
     );
     expect(explained.discardReason).toBe('Se tecleó en la atención equivocada');
+  });
+
+  it('PR-107 descartar es acto del prescriptor: el borrador de otro no se descarta, y sin ficha profesional tampoco', async () => {
+    repository.draftPrescriberId = 'practitioner-2';
+    await expect(
+      service.discard(PRESCRIPTION, null, requester),
+    ).rejects.toMatchObject({ code: 'PRESCRIPTION_DRAFT_OF_ANOTHER_PRESCRIBER' }); // prettier-ignore
+    expect(repository.discarded).toBeUndefined();
+    expect(entries).toEqual([]);
+
+    repository.draftPrescriberId = PRACTITIONER;
+    repository.prescriber = null;
+    await expect(
+      service.discard(PRESCRIPTION, null, requester),
+    ).rejects.toMatchObject({ code: 'PRESCRIBER_PROFILE_REQUIRED' });
+    expect(repository.discarded).toBeUndefined();
+
+    // Control positivo: su prescriptor sí.
+    repository.prescriber = aPrescriber();
+    await service.discard(PRESCRIPTION, null, requester);
+    expect(repository.discarded).toBeDefined();
   });
 
   it('PR-107 restaura el borrador como acto de su prescriptor, con fila de bitácora', async () => {

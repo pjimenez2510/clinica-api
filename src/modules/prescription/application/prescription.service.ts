@@ -553,8 +553,15 @@ export class PrescriptionService {
     reason: string | null,
     requester: Requester,
   ): Promise<PrescriptionView> {
+    // PR-107. Only its prescriber discards it, as only they get it back.
+    const prescriber = await this.requirePrescriber(requester.userId);
+
     const discarded = await this.prescriptions.discard(
-      { prescriptionId, sites: requester.sites },
+      {
+        prescriptionId,
+        prescriberId: prescriber.practitionerId,
+        sites: requester.sites,
+      },
       {
         discardedAt: new Date(),
         // `discarded_by_id` targets `app_user`: the ACCOUNT that discarded it,

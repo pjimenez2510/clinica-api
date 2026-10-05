@@ -338,6 +338,15 @@ export interface DraftRestore extends PrescriptionQuery {
 }
 
 /**
+ * PR-107. Discarding a draft: the session's professional, compared with the
+ * draft's prescriber (PR-100). A draft never changes prescriber, so the
+ * comparison needs no lock of its own.
+ */
+export interface DraftDiscardQuery extends PrescriptionQuery {
+  prescriberId: string;
+}
+
+/**
  * PR-020 to PR-040. Everything the DOCUMENT carries, as storage answers it.
  *
  * ⚠️ THIS IS THE ONE SHAPE OF THE MODULE THAT CARRIES A PATIENT AND A
@@ -519,9 +528,13 @@ export interface PrescriptionRepository {
    * The policy travels as a function for the same reason as `issue`: the state
    * has to be judged as it stands INSIDE the transaction, and the conditional
    * update closes the race two callers can still run.
+   *
+   * ONLY ITS PRESCRIBER discards it (PR-107, as PR-100 and the restore):
+   * `PrescriptionDraftOfAnotherPrescriberError` otherwise, judged after the
+   * state.
    */
   discard(
-    query: PrescriptionQuery,
+    query: DraftDiscardQuery,
     plan: DiscardPlan,
     decide: (status: PrescriptionStatus) => void,
   ): Promise<PrescriptionView>;

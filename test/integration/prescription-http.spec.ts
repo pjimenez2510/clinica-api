@@ -690,6 +690,20 @@ describe('la receta por HTTP', () => {
     await post(`/prescriptions/${id}/restore`, doctorToken).expect(200);
   });
 
+  it('PR-107 otro médico no descarta el borrador: sólo su prescriptor', async () => {
+    const composed = await composeAsDoctor();
+    const id = composed.prescription.id;
+    const colleague = await signIn('MEDICO', 'colega@clinica.ec', '0102030400');
+
+    const refused = await post(`/prescriptions/${id}/discard`, colleague.token).expect(403); // prettier-ignore
+    expect((refused.body as Problem).code).toBe('PRESCRIPTION_DRAFT_OF_ANOTHER_PRESCRIBER'); // prettier-ignore
+    const untouched = await prisma.prescription.findUniqueOrThrow({ where: { id } }); // prettier-ignore
+    expect(untouched).toMatchObject({ status: 'DRAFT', discardedAt: null, discardedById: null }); // prettier-ignore
+
+    // Control positivo: su prescriptor sí.
+    await post(`/prescriptions/${id}/discard`, doctorToken).expect(200);
+  });
+
   it('PR-011 no deja descartar dos veces ni descartar lo ya emitido', async () => {
     const composed = await composeAsDoctor();
     await post(

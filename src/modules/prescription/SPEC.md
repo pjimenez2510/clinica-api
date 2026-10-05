@@ -1078,7 +1078,10 @@ cosas para hacer algo?». Lo que no ha salido de la consulta se quita de un clic
 y el error se arregla con «Deshacer», no con un diálogo antes._
 
 - **PR-107** — CUANDO el prescriptor descarte una receta en `DRAFT`, el sistema
-  NO DEBERÁ exigir motivo ni confirmación; y MIENTRAS la receta esté en
+  NO DEBERÁ exigir motivo ni confirmación; SI quien la descarta **no es su
+  prescriptor**, ENTONCES DEBERÁ rechazarlo con
+  `PRESCRIPTION_DRAFT_OF_ANOTHER_PRESCRIBER` sin tocarla (PR-100); y MIENTRAS
+  la receta esté en
   `DISCARDED`, CUANDO su prescriptor la **recupere**, el sistema DEBERÁ
   devolverla a `DRAFT` **tal como estaba** —mismo identificador, mismas líneas
   e indicaciones—, limpiando quién, cuándo y por qué se descartó, y DEBERÁ
@@ -1094,6 +1097,12 @@ y el error se arregla con «Deshacer», no con un diálogo antes._
   > **Por qué se limpian las columnas y no se guardan:** un borrador que dice
   > que se descartó diría dos cosas a la vez. Lo ocurrido queda en
   > `access_audit`: el descarte y su deshacer son dos filas `UPDATE`.
+  >
+  > **Descartar, como recuperar, es sólo del prescriptor (revisión):** sin
+  > confirmación ni motivo, un colega podía quitar de un clic el borrador de
+  > otro, y el «Deshacer» sólo lo tenía quien descartó —que tampoco podía
+  > recuperarlo (PR-100)—. El estado se juzga antes que el dueño: una receta
+  > emitida sigue respondiendo `PRESCRIPTION_NOT_EDITABLE`.
   >
   > **El estado de la atención no se mira**, como no se mira al descartar:
   > deshacer devuelve el borrador adonde estaba hace un momento, y lo que
@@ -1224,7 +1233,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `PRESCRIBER_NOT_LICENSED` | 403 | El prescriptor no tiene registro ACESS, o está vencido en la fecha clínica de la emisión. **Distinto de `PRACTITIONER_NOT_LICENSED`**: aquél no refuta al que no tiene registro anotado, y aquí el número va impreso en el documento | PR-034 |
 | `PRESCRIPTION_DIAGNOSIS_REQUIRED` | 422 | La atención no tiene diagnóstico CIE que imprimir en la receta | PR-095 |
 | `PRESCRIPTION_ESTABLISHMENT_INCOMPLETE` | 422 | La sede no tiene parroquia configurada, así que no hay ciudad de prescripción que imprimir | PR-021 |
-| `PRESCRIPTION_DRAFT_OF_ANOTHER_PRESCRIBER` | 403 | Reescribir o recuperar un borrador que compuso otro profesional. El nombre del prescriptor va impreso | PR-100, PR-107 |
+| `PRESCRIPTION_DRAFT_OF_ANOTHER_PRESCRIBER` | 403 | Reescribir, descartar o recuperar un borrador que compuso otro profesional. El nombre del prescriptor va impreso | PR-100, PR-107 |
 | `PRESCRIPTION_OF_ANOTHER_PRESCRIBER` | 403 | Corregir una receta emitida por otro profesional: el borrador nuevo sale a nombre de quien corrige. **Distinto del anterior** porque la salida difiere: aquí se puede anular (PR-108) y componer una propia | PR-109 |
 
 **Derivados de un `CHECK` y por eso fuera del catálogo congelado**, con su
@@ -1378,7 +1387,7 @@ prueba o el CI falla**.
 | PR-080, PR-081, PR-090, PR-091 | **Seguridad dirigida con sesión real**, no con un doble con los permisos puestos a mano: una sesión de `ENFERMERIA` y una de `RECEPCION` fallan al emitir; una de `MEDICO` emite; y `route-authorisation.spec.ts` recorre las rutas que NestJS registró de verdad |
 | PR-010, PR-054 | Integración: **contar filas** después de anular una receta EMITIDA. Que algo no se borre sólo se demuestra contando. Y un borrador que se intenta anular se rechaza: lo que se hace con él es descartarlo (PR-011) |
 | PR-011 | **Integración contra PostgreSQL real, atacando la base directamente.** `prescription_discard_states_who_and_when` y `prescription_discard_only_from_draft` son `CHECK`: un `UPDATE` crudo que descarte sin quién, y otro que intente descartar una receta emitida, tienen que ser rechazados por la base, con control positivo |
-| PR-107 | **Integración**: descartar sin cuerpo responde 200 `DISCARDED`; recuperar devuelve el mismo id con sus líneas y una fila de bitácora más; recuperar un borrador vivo o una emitida responde 409; otro médico, 403; y la base rechaza un `DRAFT` con el instante del descarte, con control positivo. Unitaria del DTO (sin motivo es `null`) y del servicio (el prescriptor es la sesión) |
+| PR-107 | **Integración**: descartar sin cuerpo responde 200 `DISCARDED`; recuperar devuelve el mismo id con sus líneas y una fila de bitácora más; recuperar un borrador vivo o una emitida responde 409; otro médico no recupera ni descarta (403, y el borrador queda intacto), con control positivo; y la base rechaza un `DRAFT` con el instante del descarte, con control positivo. Unitaria del DTO (sin motivo es `null`) y del servicio (el prescriptor es la sesión, al recuperar y al descartar) |
 | PR-108 | **Integración contra PostgreSQL real, atacando la base directamente**: anular sin motivo o con motivo en blanco lo rechaza `prescription_cancel_states_who_when_and_why`, el registro en una receta vigente lo rechaza `prescription_cancel_columns_only_when_cancelled`, y reescribir el motivo lo rechaza `prescription_frozen`, con control positivo. Contrato HTTP: sin motivo, 422 por campo y la receta sigue vigente; la respuesta y la lista exponen el registro. Unitaria del DTO (5 a 500) y del servicio (quién es la sesión) |
 | PR-109 | **Integración**: corregir copia cada campo de cada línea a un borrador de la misma atención que luego se emite; **un fallo forzado en la base al escribir el borrador deja la receta `ACTIVE` y sin registro**; una atención cerrada no corrige ni anula; otro médico, recepción y enfermería reciben 403; un borrador o una anulada, 409 |
 | PR-092, PR-093 | Seguridad dirigida: **contar filas** de bitácora. Leer el documento deja una; listar diez recetas deja cero |
