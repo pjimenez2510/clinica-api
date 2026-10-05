@@ -699,6 +699,85 @@ describe('la atención por HTTP', () => {
       ).expect(200);
     });
 
+    it('EN-063 exige peso y talla a la embarazada con el embarazo vigente el dia de la atencion, y no el perimetro cefalico', async () => {
+      /**
+       * The pregnancy is the chart's dated PREGNANT record (PA-034) read on
+       * the attention's clinical date, while `encounter_priority_group` has no
+       * catalogue (EN-099). D-129 recommends not asking a pregnant adult for
+       * the head circumference. Dates derive from the opening instant.
+       */
+      const nurse = await prisma.user.findUniqueOrThrow({
+        where: { email: 'enfermeria@clinica.ec' },
+      });
+      const opened = new Date(openBody().startedAt);
+      const clinicalDay = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Guayaquil',
+      }).format(opened);
+      const [year, month, day] = clinicalDay.split('-').map(Number) as [
+        number,
+        number,
+        number,
+      ];
+      const daysFrom = (days: number) =>
+        new Date(Date.UTC(year, month - 1, day + days));
+      const pregnantWith = async (startsOn: Date, endsOn: Date) => {
+        const patient = await createPatient(prisma);
+        await prisma.patientPriorityGroup.create({
+          data: {
+            patientId: patient.id,
+            groupCode: 'PREGNANT',
+            startsOn,
+            endsOn,
+            origin: 'SELF_DECLARED',
+            recordedById: nurse.id,
+          },
+        });
+        return openEncounter(nurseToken, { patientId: patient.id });
+      };
+      const noAnthropometry = { hemoglobinGDl: 11.5 };
+
+      const pregnant = await pregnantWith(daysFrom(-90), daysFrom(150));
+      const refused = await put(
+        `/encounters/${pregnant}/vitals`,
+        nurseToken,
+        noAnthropometry,
+      ).expect(422);
+      const problem = refused.body as Problem;
+      expect(problem.code).toBe('VITALS_REQUIRED');
+      expect(problem.errors?.map((error) => error.field)).toEqual([
+        'weightKg',
+        'heightCm',
+      ]);
+      await expect(
+        prisma.encounterVitals.count({ where: { encounterId: pregnant } }),
+      ).resolves.toBe(0);
+
+      // Positive control, same patient: weight and height, no head circumference.
+      await put(`/encounters/${pregnant}/vitals`, nurseToken, {
+        ...noAnthropometry,
+        weightKg: 64.2,
+        heightCm: 158,
+        heightPosition: 'STANDING',
+      }).expect(200);
+
+      // A pregnancy that ended before the attention does not count.
+      const ended = await pregnantWith(daysFrom(-300), daysFrom(-10));
+      await put(
+        `/encounters/${ended}/vitals`,
+        nurseToken,
+        noAnthropometry,
+      ).expect(200);
+
+      // Nor does an adult with no record at all.
+      const other = await createPatient(prisma);
+      const plain = await openEncounter(nurseToken, { patientId: other.id });
+      await put(
+        `/encounters/${plain}/vitals`,
+        nurseToken,
+        noAnthropometry,
+      ).expect(200);
+    });
+
     it('EN-064 rechaza por HTTP una talla sin posicion, senalando la casilla', async () => {
       const encounterId = await openEncounter(nurseToken);
 

@@ -1,6 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 
+import { clinicalDateOf } from '../../../shared/domain/clinic-time';
+
 import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
@@ -438,11 +440,19 @@ export class EncounterService {
     // today's date instead, a report reprocessed next year would refuse rows
     // it accepted — the reasoning PA-005 wrote down for «intersexual en
     // menores de un año».
-    assertMandatoryAnthropometry(vitals, {
-      years: encounter.ageYears,
-      months: encounter.ageMonths,
-      days: encounter.ageDays,
-    });
+    // The pregnancy, on the attention's clinical date and not today's.
+    assertMandatoryAnthropometry(
+      vitals,
+      {
+        years: encounter.ageYears,
+        months: encounter.ageMonths,
+        days: encounter.ageDays,
+      },
+      await this.encounters.isPregnantOn(
+        encounter.patientId,
+        clinicalDateOf(encounter.startedAt),
+      ),
+    );
 
     // EN-143, D-048. The author goes IN the datum, from the session and never
     // from the body: the author of a first taking, the corrector of a later one.

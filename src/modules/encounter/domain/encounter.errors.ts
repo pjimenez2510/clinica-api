@@ -402,11 +402,9 @@ export class BmiIsDerivedError extends ValidationError {
  * antropométricos con \* es obligatorio para usuarios menores de 5 años o que
  * corresponda al grupo prioritario "Embarazadas"»*.
  *
- * ⚠️ ONLY THE AGE HALF IS ENFORCED TODAY, and the reason is written on the
- * requirement rather than hidden here: the pregnancy half reads
- * `encounter_priority_group`, whose catalogue does not exist yet (EN-099). The
- * age used is the FROZEN one of EN-008 — what was true that day — never
- * today's, which is what keeps a report reprocessed next year identical.
+ * ONE SENTENCE FOR BOTH CONDITIONS. Which one applied is not said: the
+ * pregnancy is a priority group whose reason PA-040 keeps behind its own
+ * permission, and a refusal is not the place to reveal it.
  *
  * THE MISSING FIELDS ARE NAMED ONE BY ONE: «faltan datos» sends a nurse round
  * a form where three boxes could be the one.
@@ -414,16 +412,16 @@ export class BmiIsDerivedError extends ValidationError {
 export class VitalsRequiredError extends ValidationError {
   readonly code = 'VITALS_REQUIRED';
   override readonly userTitle =
-    'En menores de 5 años el peso, la talla y el perímetro cefálico son obligatorios';
+    'Faltan medidas obligatorias en menores de 5 años y embarazadas';
 
   constructor(missing: readonly string[]) {
     super(
-      `Mandatory anthropometry missing for a patient under five: ${missing.join(', ')}`,
+      `Mandatory anthropometry missing: ${missing.join(', ')}`,
       { missing: missing.join(',') },
       missing.map((field) => ({
         field,
         code: 'VITALS_REQUIRED',
-        message: 'Obligatorio en menores de 5 años',
+        message: 'Obligatorio en menores de 5 años y embarazadas',
       })),
     );
   }
