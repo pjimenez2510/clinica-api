@@ -48,7 +48,7 @@ export function toPrescriptionResponse(
     createdAt: prescription.createdAt.toISOString(),
     // PR-011. `null` on every state but `DISCARDED`, which the database keeps
     // true: `prescription_discard_only_from_draft` ties the instant to the
-    // state, and the reason to both.
+    // state. The reason is `null` unless somebody wrote one (PR-107).
     discardedAt: prescription.discardedAt?.toISOString() ?? null,
     discardReason: prescription.discardReason,
     items: prescription.items.map((item) => ({

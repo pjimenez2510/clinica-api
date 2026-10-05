@@ -304,15 +304,12 @@ export type PrescriptionVocabularyResponse = z.infer<
 >;
 
 /**
- * PR-011. Discarding a draft: the motivo, and nothing else.
+ * PR-011, PR-107. Discarding a draft: nothing is asked.
  *
- * ⚠️ THE REASON IS OBLIGATORY, AND IT IS OBLIGATORY BECAUSE IT IS STORED.
- * `prescription.discard_reason` exists and
- * `prescription_discard_states_who_when_and_why` refuses a discarded row
- * without it, so what is typed here is kept. That is the exact difference with
- * the annulment, which asks for nothing precisely because there is no column
- * (⚠️ **Falta esquema**, PR-010): a mandatory reason dropped on the floor makes
- * everybody believe there is a register.
+ * ⚠️ THE REASON IS OPTIONAL SINCE D-126. A draft never left the room, so the
+ * screen discards it with one click and offers «Deshacer». If a caller does
+ * write a reason, `prescription.discard_reason` keeps it; a blank one is no
+ * reason at all and travels as `null`.
  *
  * ⚠️ AND THERE IS NO `discardedById` FIELD. Who discarded it is the
  * authenticated session, never an id the caller supplies — the same rule
@@ -322,10 +319,11 @@ export const discardPrescriptionSchema = z.object({
   reason: z
     .string()
     .trim()
-    .min(5, 'Escriba por qué se descarta este borrador')
     // 500 is `discard_reason`'s own width: refusing here names the box, while
     // letting it through would refuse the row with a constraint name instead.
-    .max(500, 'El motivo no puede superar 500 caracteres'),
+    .max(500, 'El motivo no puede superar 500 caracteres')
+    .nullish()
+    .transform((reason) => (reason ? reason : null)),
 });
 /** Body of POST /prescriptions/:prescriptionId/discard. */
 export class DiscardPrescriptionDto extends createZodDto(

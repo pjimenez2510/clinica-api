@@ -174,8 +174,9 @@ tomadas del CNMB, emitirla, anularla y leerla. Aquí van la coherencia
 emitirla, y comprobar que una tercera línea después de emitir se rechaza.
 
 **Cubre:** PR-001 a PR-011, PR-080, PR-081, PR-090 a PR-094, y **PR-100 a
-PR-106**: el borrador que se reescribe, la línea escrita con catálogos, la
-dosis única sin duración y la vía sin preseleccionar.
+PR-107**: el borrador que se reescribe, la línea escrita con catálogos, la
+dosis única sin duración, la vía sin preseleccionar y el borrador que se
+descarta de un clic y se recupera con «Deshacer».
 **Solo interfaz:** PR-106.
 **Solo servidor:** PR-081, PR-090 a PR-093. Son el permiso declarado en cada
 ruta, el alcance por sede y las filas de bitácora: se prueban contando filas y
@@ -404,10 +405,21 @@ sistemas propios y ninguna es obligación de una clínica sin farmacia.
   > `/discard`.
 
 - **PR-011** — CUANDO se descarte una receta en `DRAFT`, el sistema DEBERÁ
-  exigir un **motivo escrito**, dejarla en `DISCARDED` guardando **quién la
-  descartó, cuándo y por qué**, y **NO DEBERÁ** borrar ninguna fila. SI la
-  receta no está en `DRAFT`, ENTONCES DEBERÁ rechazarlo con
-  `PRESCRIPTION_NOT_EDITABLE`, nombrando el estado.
+  dejarla en `DISCARDED` guardando **quién la descartó y cuándo**, y el motivo
+  si se escribió, y **NO DEBERÁ** borrar ninguna fila. SI la receta no está en
+  `DRAFT`, ENTONCES DEBERÁ rechazarlo con `PRESCRIPTION_NOT_EDITABLE`,
+  nombrando el estado.
+
+  > **Enmendado por D-126 (resuelta el 04-10-2026): el motivo es opcional.**
+  > Hasta esa decisión PR-011 exigía un motivo escrito y
+  > `prescription_discard_states_who_when_and_why` lo imponía en la base. Un
+  > borrador nunca salió de la consulta, y lo que no ha salido se quita sin
+  > preguntar: la restricción pasa a ser
+  > `prescription_discard_states_who_and_when`
+  > (`20261005060000_prescription_discard_reason_optional`) y la pantalla
+  > descarta de un clic con «Deshacer» (PR-107). Ningún motivo ya guardado se
+  > borra. Lo que sigue de esta nota explica el estado y por qué es otro acto
+  > que anular; lo que dice del motivo obligatorio queda como historia.
 
   > ═════════════════════════════════════════════════════════════════════════
   > **DESCARTAR UN BORRADOR Y ANULAR UNA EMITIDA SON DOS ACTOS**
@@ -419,7 +431,7 @@ sistemas propios y ninguna es obligación de una clínica sin farmacia.
   > a «esta receta se anuló» sin poder decir cuál de las dos cosas ocurrió, que
   > es el defecto que `ENTERED_IN_ERROR` evita en la agenda.
   >
-  > **El motivo es obligatorio porque se guarda.** `prescription.discard_reason`
+  > **El motivo era obligatorio porque se guarda** (hasta D-126, arriba). `prescription.discard_reason`
   > existe, y `prescription_discard_states_who_when_and_why` **exige los tres
   > juntos** —`discarded_at`, `discarded_by_id` y `discard_reason`— o el estado
   > no puede ser `DISCARDED`. Sin motivo, descartar sería una forma de hacer
@@ -1041,6 +1053,35 @@ admite una lista sale de una lista._
   > por defecto que nadie cambia, el mismo argumento de PR-103. **Solo
   > interfaz:** el servidor ya exige la vía (PR-101).
 
+## 9. Descartar sin preguntar, y deshacer (D-126)
+
+_Revisión de usabilidad del autor del 04-10-2026: «¿es necesario pedir tantas
+cosas para hacer algo?». Lo que no ha salido de la consulta se quita de un clic,
+y el error se arregla con «Deshacer», no con un diálogo antes._
+
+- **PR-107** — CUANDO el prescriptor descarte una receta en `DRAFT`, el sistema
+  NO DEBERÁ exigir motivo ni confirmación; y MIENTRAS la receta esté en
+  `DISCARDED`, CUANDO su prescriptor la **recupere**, el sistema DEBERÁ
+  devolverla a `DRAFT` **tal como estaba** —mismo identificador, mismas líneas
+  e indicaciones—, limpiando quién, cuándo y por qué se descartó, y DEBERÁ
+  dejar fila de bitácora (PR-093). SI la receta no está en `DISCARDED`,
+  ENTONCES DEBERÁ rechazarlo con `PRESCRIPTION_NOT_EDITABLE` nombrando el
+  estado; SI quien la recupera **no es su prescriptor**, ENTONCES DEBERÁ
+  rechazarlo con `PRESCRIPTION_DRAFT_OF_ANOTHER_PRESCRIBER` (PR-100).
+  > **Garantía de la base:** `prescription_discard_states_who_and_when` exige
+  > quién y cuándo en todo `DISCARDED`; `prescription_discard_only_from_draft`
+  > impide un `DRAFT` que arrastre el instante del descarte, así que volver
+  > obliga a limpiarlo. Se prueba contra la base, con control positivo.
+  >
+  > **Por qué se limpian las columnas y no se guardan:** un borrador que dice
+  > que se descartó diría dos cosas a la vez. Lo ocurrido queda en
+  > `access_audit`: el descarte y su deshacer son dos filas `UPDATE`.
+  >
+  > **El estado de la atención no se mira**, como no se mira al descartar:
+  > deshacer devuelve el borrador adonde estaba hace un momento, y lo que
+  > después se puede hacer con él (reescribirlo, emitirlo) lo juzgan esos
+  > actos (PR-002).
+
 ## Códigos de error nuevos
 
 Todos entran en `shared/domain/errors/error-catalogue.ts` con su prueba de
@@ -1051,7 +1092,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `PRESCRIPTION_NOT_FOUND` | 404 | La receta no existe o es de una sede fuera del alcance. **El mismo para ambas** | PR-006 |
 | `PRESCRIPTION_ENCOUNTER_NOT_FOUND` | 404 | La atención sobre la que se receta no existe o es de otra sede. **Código propio y no `ENCOUNTER_NOT_FOUND`**: ningún módulo importa de otro y `error-catalogue.spec.ts` prohíbe que dos clases compartan `code` | PR-001 |
 | `PRESCRIPTION_ENCOUNTER_NOT_OPEN` | 409 | La atención ya no admite contenido clínico nuevo. Mismo motivo de código propio, y la salida difiere: abrir otra atención | PR-002 |
-| `PRESCRIPTION_NOT_EDITABLE` | 409 | La receta no está en el estado que el acto pide: emitir o descartar algo que ya no es `DRAFT`, anular algo que no está `ACTIVE`. **El mensaje dice en qué estado está y qué se puede hacer desde ahí** | PR-005, PR-010, PR-011 |
+| `PRESCRIPTION_NOT_EDITABLE` | 409 | La receta no está en el estado que el acto pide: emitir o descartar algo que ya no es `DRAFT`, anular algo que no está `ACTIVE`, recuperar algo que no está `DISCARDED`. **El mensaje dice en qué estado está y qué se puede hacer desde ahí** | PR-005, PR-010, PR-011, PR-107 |
 | `PRESCRIPTION_EMPTY` | 422 | Emitir una receta sin ninguna línea | PR-032 |
 | `PRESCRIPTION_ITEM_INCOMPLETE` | 422 | Falta un campo del art. 5.c. **Por campo y por línea**, nombrando el número de línea y nunca el medicamento | PR-032 |
 | `PRESCRIPTION_SINGLE_DOSE_WITH_DURATION` | 422 | Un borrador anterior a PR-105 con «Dosis única» y duración. Por campo y por línea | PR-105 |
@@ -1062,13 +1103,15 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `PRESCRIBER_NOT_LICENSED` | 403 | El prescriptor no tiene registro ACESS, o está vencido en la fecha clínica de la emisión. **Distinto de `PRACTITIONER_NOT_LICENSED`**: aquél no refuta al que no tiene registro anotado, y aquí el número va impreso en el documento | PR-034 |
 | `PRESCRIPTION_DIAGNOSIS_REQUIRED` | 422 | La atención no tiene diagnóstico CIE que imprimir en la receta | PR-095 |
 | `PRESCRIPTION_ESTABLISHMENT_INCOMPLETE` | 422 | La sede no tiene parroquia configurada, así que no hay ciudad de prescripción que imprimir | PR-021 |
-| `PRESCRIPTION_DRAFT_OF_ANOTHER_PRESCRIBER` | 403 | Reescribir un borrador que compuso otro profesional. El nombre del prescriptor va impreso | PR-100 |
+| `PRESCRIPTION_DRAFT_OF_ANOTHER_PRESCRIBER` | 403 | Reescribir o recuperar un borrador que compuso otro profesional. El nombre del prescriptor va impreso | PR-100, PR-107 |
 
 **Derivados de un `CHECK` y por eso fuera del catálogo congelado**, con su
 significado registrado en `prescription.constraints.ts`, que es su enumeración:
 `PRESCRIPTION_STATE_INCONSISTENT` (PR-003),
-`PRESCRIPTION_DISCARD_REASON_REQUIRED` y `PRESCRIPTION_DISCARD_NOT_FROM_DRAFT`
-(PR-011). Nadie debería verlos por la API —el DTO y el servicio se adelantan—,
+`PRESCRIPTION_DISCARD_INCOMPLETE` (`prescription_discard_states_who_and_when`,
+PR-011, PR-107) y `PRESCRIPTION_DISCARD_NOT_FROM_DRAFT` (PR-011).
+`PRESCRIPTION_DISCARD_REASON_REQUIRED` **se retiró** con D-126: era el
+significado de `prescription_discard_states_who_when_and_why`, que ya no existe. Nadie debería verlos por la API —el DTO y el servicio se adelantan—,
 pero el `CHECK` también guarda una importación y un `psql`, y para ésos la
 respuesta honesta es una frase y no el nombre de una restricción.
 
@@ -1120,7 +1163,8 @@ Ninguna es una migración correctiva: la base está en fase `development`
   aplicación: se compone el par y ya está.
 - **El estado `DISCARDED` y sus tres columnas ya existen** —`discarded_at`,
   `discarded_by_id`, `discard_reason`— con
-  `prescription_discard_states_who_when_and_why`, que exige los tres juntos, y
+  `prescription_discard_states_who_and_when`, que exige los dos primeros (el
+  motivo es opcional desde D-126), y
   `prescription_discard_only_from_draft`, que impide descartar lo emitido. No
   hay que crearlos: hay que usarlos (PR-011).
 - `prescription_item_off_formulary` ya impide una línea sin concepto y sin
@@ -1149,7 +1193,8 @@ emite en un sitio, y el art. 10 dice que no vale en otro.
 | `GET` | `/encounters/:encounterId/prescriptions` | `record:read` | PR-006, PR-092 |
 | `GET` | `/prescriptions/:prescriptionId` | `record:read` | PR-020 a PR-040, PR-053, PR-092 |
 | `POST` | `/prescriptions/:prescriptionId/issue` | `prescription:write` | PR-005, PR-021, PR-032 a PR-036, PR-050, PR-060, PR-093 |
-| `POST` | `/prescriptions/:prescriptionId/discard` | `prescription:write` | PR-005, PR-011, PR-093 *(sólo sobre un borrador, con motivo obligatorio)* |
+| `POST` | `/prescriptions/:prescriptionId/discard` | `prescription:write` | PR-005, PR-011, PR-093, PR-107 *(sólo sobre un borrador; el motivo es opcional)* |
+| `POST` | `/prescriptions/:prescriptionId/restore` | `prescription:write` | PR-093, PR-107 *(sólo sobre una descartada, y sólo su prescriptor)* |
 | `POST` | `/prescriptions/:prescriptionId/cancel` | `prescription:write` | PR-005, PR-010, PR-093 *(sólo sobre una receta emitida, y sin motivo mientras no haya columna)* |
 | `PUT` | `/prescriptions/:prescriptionId` | `prescription:write` | PR-100 a PR-102, PR-104 *(sólo un borrador, y sólo su prescriptor)* |
 | `GET` | `/prescriptions/vocabulary` | `prescription:write` | PR-103, PR-104 *(con `?conceptId=`, las presentaciones de ese medicamento)* |
@@ -1166,10 +1211,8 @@ es lo que se imprime y se entrega, y es por eso la única ruta del módulo que d
 fila de bitácora al leer (PR-092).
 
 **`/discard` y `/cancel` son dos rutas y no una con un parámetro**, por lo mismo
-que la composición y la emisión: son dos actos distintos sobre estados distintos,
-y sólo uno de los dos puede prometer que guarda el motivo. Una ruta compartida
-obligaría al cliente a leer el estado para saber si el motivo que escribió se
-guardó.
+que la composición y la emisión: son dos actos distintos sobre estados distintos.
+`/restore` deshace sólo el primero: lo emitido no vuelve atrás.
 
 **No hay ruta para añadir o quitar una línea** (PR-005), no hay ruta que fije el
 estado directamente, **no hay ninguna que borre nada**, y **no hay ninguna ruta
@@ -1201,7 +1244,8 @@ prueba o el CI falla**.
 | PR-032 | Contrato HTTP: el `errors[]` nombra **cada** campo que falta y su línea, y **ningún** mensaje contiene el nombre del medicamento |
 | PR-080, PR-081, PR-090, PR-091 | **Seguridad dirigida con sesión real**, no con un doble con los permisos puestos a mano: una sesión de `ENFERMERIA` y una de `RECEPCION` fallan al emitir; una de `MEDICO` emite; y `route-authorisation.spec.ts` recorre las rutas que NestJS registró de verdad |
 | PR-010, PR-054 | Integración: **contar filas** después de anular una receta EMITIDA. Que algo no se borre sólo se demuestra contando. Y un borrador que se intenta anular se rechaza: lo que se hace con él es descartarlo (PR-011) |
-| PR-011 | **Integración contra PostgreSQL real, atacando la base directamente.** `prescription_discard_states_who_when_and_why` y `prescription_discard_only_from_draft` son `CHECK`: un `UPDATE` crudo que descarte sin motivo, y otro que intente descartar una receta emitida, tienen que ser rechazados por la base. Y contrato HTTP para el motivo por campo |
+| PR-011 | **Integración contra PostgreSQL real, atacando la base directamente.** `prescription_discard_states_who_and_when` y `prescription_discard_only_from_draft` son `CHECK`: un `UPDATE` crudo que descarte sin quién, y otro que intente descartar una receta emitida, tienen que ser rechazados por la base, con control positivo |
+| PR-107 | **Integración**: descartar sin cuerpo responde 200 `DISCARDED`; recuperar devuelve el mismo id con sus líneas y una fila de bitácora más; recuperar un borrador vivo o una emitida responde 409; otro médico, 403; y la base rechaza un `DRAFT` con el instante del descarte, con control positivo. Unitaria del DTO (sin motivo es `null`) y del servicio (el prescriptor es la sesión) |
 | PR-092, PR-093 | Seguridad dirigida: **contar filas** de bitácora. Leer el documento deja una; listar diez recetas deja cero |
 | PR-067 | Contrato HTTP: el borrador **responde 201 con la alerta** y la emisión de esa misma receta responde 409. Es la prueba de que informar e interrumpir son dos cosas |
 | PR-070, PR-071, PR-072, PR-073 | **Sin prueba, porque no hay código.** Están declarados y no construidos, y el `Estado: borrador` de este documento es lo que lo hace legítimo |

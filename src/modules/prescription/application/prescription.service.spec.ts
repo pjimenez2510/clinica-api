@@ -18,6 +18,7 @@ import {
 import { PrescriptionService } from './prescription.service';
 import type {
   DiscardPlan,
+  DraftRestore,
   DraftRewrite,
   IssuePlan,
   IssueSnapshot,
@@ -159,6 +160,7 @@ class FakeRepository implements PrescriptionRepository {
   document: PrescriptionRecordSource | null = null;
   created: NewPrescription | undefined;
   discarded: DiscardPlan | undefined;
+  restored: DraftRestore | undefined;
   listed = 0;
 
   findEncounterForPrescribing(): Promise<PrescribingEncounter | null> {
@@ -230,6 +232,11 @@ class FakeRepository implements PrescriptionRepository {
         discardReason: plan.discardReason,
       }),
     );
+  }
+
+  restore(request: DraftRestore): Promise<PrescriptionView> {
+    this.restored = request;
+    return Promise.resolve(aPrescription());
   }
 
   documentOf(): Promise<PrescriptionRecordSource | null> {
@@ -611,25 +618,54 @@ describe('el servicio de recetas', () => {
     );
   });
 
-  it('PR-011 descarta un borrador guardando quién, cuándo y por qué', async () => {
-    // Los tres juntos porque la base los exige juntos
-    // (`prescription_discard_states_who_when_and_why`): sin motivo, descartar
-    // es hacer desaparecer lo que se escribió.
-    const discarded = await service.discard(
-      PRESCRIPTION,
-      'Se tecleó en la atención equivocada',
-      requester,
-    );
+  it('PR-011 PR-107 descarta un borrador guardando quién y cuándo, y el motivo sólo si se escribió', async () => {
+    // D-126: un borrador nunca salió de la consulta, así que no se pregunta
+    // nada. Quién y cuándo los pone el sistema; el motivo, si lo hay, se guarda.
+    const silent = await service.discard(PRESCRIPTION, null, requester);
 
-    expect(discarded.status).toBe('DISCARDED');
-    expect(discarded.discardReason).toBe('Se tecleó en la atención equivocada');
+    expect(silent.status).toBe('DISCARDED');
     expect(repository.discarded).toMatchObject({
       // Nunca la cédula y nunca el profesional: `discarded_by_id` apunta a
       // `app_user`, que es la cuenta que hizo el acto (REQ-110).
       discardedById: requester.userId,
-      discardReason: 'Se tecleó en la atención equivocada',
+      discardReason: null,
     });
     expect(repository.discarded?.discardedAt).toBeInstanceOf(Date);
+
+    const explained = await service.discard(
+      PRESCRIPTION,
+      'Se tecleó en la atención equivocada',
+      requester,
+    );
+    expect(explained.discardReason).toBe('Se tecleó en la atención equivocada');
+  });
+
+  it('PR-107 restaura el borrador como acto de su prescriptor, con fila de bitácora', async () => {
+    const restored = await service.restore(PRESCRIPTION, requester);
+
+    expect(restored.status).toBe('DRAFT');
+    // El prescriptor es la sesión, nunca un identificador del cuerpo (PR-004).
+    expect(repository.restored).toEqual({
+      prescriptionId: PRESCRIPTION,
+      prescriberId: PRACTITIONER,
+      sites: [SITE],
+    });
+    expect(entries).toEqual([
+      expect.objectContaining({
+        resourceType: 'prescription',
+        resourceId: PRESCRIPTION,
+        action: 'UPDATE',
+      }),
+    ]);
+  });
+
+  it('PR-107 una cuenta sin ficha profesional no restaura nada', async () => {
+    repository.prescriber = null;
+
+    await expect(
+      service.restore(PRESCRIPTION, requester),
+    ).rejects.toMatchObject({ code: 'PRESCRIBER_PROFILE_REQUIRED' });
+    expect(repository.restored).toBeUndefined();
   });
 
   it('PR-011 rechaza descartar una receta ya emitida, que se anula', async () => {
@@ -650,7 +686,7 @@ describe('el servicio de recetas', () => {
   it('PR-093 deja una fila de bitácora al componer, al emitir, al descartar y al anular', async () => {
     await service.compose(composeRequest, requester);
     await service.issue(PRESCRIPTION, requester);
-    await service.discard(PRESCRIPTION, 'Borrador equivocado', requester);
+    await service.discard(PRESCRIPTION, null, requester);
     repository.snapshot = aSnapshot({ status: 'ACTIVE' });
     await service.cancel(PRESCRIPTION, requester);
 

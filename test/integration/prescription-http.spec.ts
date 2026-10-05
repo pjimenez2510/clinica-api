@@ -485,35 +485,104 @@ describe('la receta por HTTP', () => {
     expect(await prisma.prescription.count()).toBe(1);
   });
 
-  it('PR-011 descarta el borrador equivocado, y exige el motivo por campo', async () => {
-    // La salida que faltaba. Y el motivo es obligatorio porque SE GUARDA:
-    // `discard_reason` es una columna, así que pedirlo es una promesa que el
-    // sistema cumple —al revés que en la anulación, donde no hay dónde
-    // guardarlo y por eso no se pide.
-    const composed = await composeAsDoctor();
-
-    const refused = await post(
-      `/prescriptions/${composed.prescription.id}/discard`,
-      doctorToken,
-      {},
-    ).expect(422);
-    const problem = refused.body as Problem;
-    expect(problem.errors?.[0]?.field).toBe('reason');
-
+  it('PR-011 PR-107 descarta el borrador sin pedir motivo, y guarda el que se escriba', async () => {
+    // D-126: lo que no salió de la consulta se quita sin preguntar. El motivo
+    // sigue siendo una columna, así que si alguien lo escribe se guarda.
+    const silent = await composeAsDoctor();
     const discarded = await post(
-      `/prescriptions/${composed.prescription.id}/discard`,
+      `/prescriptions/${silent.prescription.id}/discard`,
       doctorToken,
-      { reason: 'Se tecleó en la atención equivocada' },
     ).expect(200);
 
     const body = discarded.body as PrescriptionBody;
     expect(body.status).toBe('DISCARDED');
-    expect(body.discardReason).toBe('Se tecleó en la atención equivocada');
+    expect(body.discardReason).toBeNull();
     expect(body.discardedAt).not.toBeNull();
-    // Nada se borra: el borrador sigue en la ficha, distinguible de la
+
+    const explained = await composeAsDoctor();
+    const kept = await post(
+      `/prescriptions/${explained.prescription.id}/discard`,
+      doctorToken,
+      { reason: 'Se tecleó en la atención equivocada' },
+    ).expect(200);
+    expect((kept.body as PrescriptionBody).discardReason).toBe(
+      'Se tecleó en la atención equivocada',
+    );
+
+    // El ancho de la columna se nombra por campo, no como una restricción.
+    const third = await composeAsDoctor();
+    const tooLong = await post(
+      `/prescriptions/${third.prescription.id}/discard`,
+      doctorToken,
+      { reason: 'x'.repeat(501) },
+    ).expect(422);
+    expect((tooLong.body as Problem).errors?.[0]?.field).toBe('reason');
+
+    // Nada se borra: los borradores siguen en la ficha, distinguibles de la
     // medicación que el paciente sí toma.
-    expect(await prisma.prescription.count()).toBe(1);
-    expect(await prisma.prescriptionItem.count()).toBe(1);
+    expect(await prisma.prescription.count()).toBe(3);
+    expect(await prisma.prescriptionItem.count()).toBe(3);
+  });
+
+  it('PR-107 deshacer devuelve el borrador tal cual, con sus líneas, y deja fila de bitácora', async () => {
+    const composed = await composeAsDoctor();
+    const id = composed.prescription.id;
+    const lines = composed.prescription.items.map((item) => item.id);
+    await post(`/prescriptions/${id}/discard`, doctorToken, {
+      reason: 'Me equivoqué de paciente',
+    }).expect(200);
+    const trail = await prisma.accessAudit.count({
+      where: { resourceType: 'prescription', resourceId: id, action: 'UPDATE' },
+    });
+
+    const restored = await post(`/prescriptions/${id}/restore`, doctorToken).expect(200); // prettier-ignore
+
+    const body = restored.body as PrescriptionBody;
+    expect(body.id).toBe(id);
+    expect(body.status).toBe('DRAFT');
+    expect(body.discardedAt).toBeNull();
+    expect(body.discardReason).toBeNull();
+    expect(body.items.map((item) => item.id)).toEqual(lines);
+    const stored = await prisma.prescription.findUniqueOrThrow({ where: { id } }); // prettier-ignore
+    expect(stored.discardedById).toBeNull();
+    expect(
+      await prisma.accessAudit.count({
+        where: { resourceType: 'prescription', resourceId: id, action: 'UPDATE' }, // prettier-ignore
+      }),
+    ).toBe(trail + 1);
+    // Y vuelve a ser un borrador de verdad: se emite.
+    await post(`/prescriptions/${id}/issue`, doctorToken).expect(200);
+  });
+
+  it('PR-107 sólo se restaura lo descartado: un borrador vivo o una receta emitida responden 409', async () => {
+    const composed = await composeAsDoctor();
+    const id = composed.prescription.id;
+
+    const alive = await post(`/prescriptions/${id}/restore`, doctorToken).expect(409); // prettier-ignore
+    expect((alive.body as Problem).code).toBe('PRESCRIPTION_NOT_EDITABLE');
+
+    await post(`/prescriptions/${id}/issue`, doctorToken).expect(200);
+    const issued = await post(`/prescriptions/${id}/restore`, doctorToken).expect(409); // prettier-ignore
+    expect((issued.body as Problem).code).toBe('PRESCRIPTION_NOT_EDITABLE');
+
+    // Control positivo: por la misma ruta, lo descartado sí vuelve.
+    const other = await composeAsDoctor();
+    await post(`/prescriptions/${other.prescription.id}/discard`, doctorToken).expect(200); // prettier-ignore
+    await post(`/prescriptions/${other.prescription.id}/restore`, doctorToken).expect(200); // prettier-ignore
+  });
+
+  it('PR-107 sólo su prescriptor recupera el borrador descartado', async () => {
+    const composed = await composeAsDoctor();
+    const id = composed.prescription.id;
+    await post(`/prescriptions/${id}/discard`, doctorToken).expect(200);
+    const colleague = await signIn('MEDICO', 'colega@clinica.ec', '0102030400');
+
+    const refused = await post(`/prescriptions/${id}/restore`, colleague.token).expect(403); // prettier-ignore
+    expect((refused.body as Problem).code).toBe('PRESCRIPTION_DRAFT_OF_ANOTHER_PRESCRIBER'); // prettier-ignore
+    await post(`/prescriptions/${id}/restore`, receptionToken).expect(403);
+
+    // Control positivo: su prescriptor sí.
+    await post(`/prescriptions/${id}/restore`, doctorToken).expect(200);
   });
 
   it('PR-011 no deja descartar dos veces ni descartar lo ya emitido', async () => {

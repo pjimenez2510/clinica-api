@@ -176,11 +176,9 @@ export class PrescriptionController {
    * database keeps them apart with
    * `prescription_discard_only_from_draft`.
    *
-   * ⚠️ AND THE REASON IS OBLIGATORY HERE, WHERE `/cancel` ASKS FOR NONE. The
-   * difference is not politeness: `discard_reason` is a column and
-   * `prescription_discard_states_who_when_and_why` refuses the row without it,
-   * so what is written is kept. On the annulment there is nowhere to keep it
-   * (⚠️ **Falta esquema**, PR-010, PR-073).
+   * ⚠️ AND NOTHING IS ASKED (D-126, PR-107). The body may carry a reason and
+   * `discard_reason` keeps it, but none is required: the screen discards with
+   * one click and offers «Deshacer», which is `/restore` below.
    *
    * 200 AND NOT 204: what comes back is the prescription in its new state, so
    * the screen that listed it does not have to ask again to redraw the row.
@@ -188,9 +186,7 @@ export class PrescriptionController {
   @Post(':prescriptionId/discard')
   @RequirePermission('prescription:write', 'query')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Descartar un borrador de receta, diciendo por qué',
-  })
+  @ApiOperation({ summary: 'Descartar un borrador de receta' })
   @ApiOkResponse({ type: PrescriptionDto })
   async discard(
     @Param('prescriptionId', ParseUUIDPipe) prescriptionId: string,
@@ -206,6 +202,26 @@ export class PrescriptionController {
   }
 
   /**
+   * PR-107. Undoes a discard: DISCARDED back to DRAFT, as it was. Only the
+   * draft's prescriber, with the permission of composing it.
+   */
+  @Post(':prescriptionId/restore')
+  @RequirePermission('prescription:write', 'query')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Recuperar un borrador de receta descartado' })
+  @ApiOkResponse({ type: PrescriptionDto })
+  async restore(
+    @Param('prescriptionId', ParseUUIDPipe) prescriptionId: string,
+    @Req() req: Request,
+  ): Promise<PrescriptionResponse> {
+    const restored = await this.prescriptions.restore(
+      prescriptionId,
+      this.requester(req, 'prescription:write'),
+    );
+    return toPrescriptionResponse(restored);
+  }
+
+  /**
    * PR-010, PR-093. Annuls an ISSUED prescription. NOTHING IS DELETED.
    *
    * ⚠️ AN EMITTED ONE, AND NOT A DRAFT. Art. 70 describes the procedure for the
@@ -217,8 +233,7 @@ export class PrescriptionController {
    * a register of annulled and lost prescriptions and there is no column to
    * keep the reason in (⚠️ **Falta esquema**, PR-010, PR-073). A mandatory
    * reason that is dropped on the floor makes everybody believe there is a
-   * record; what there is, until the columns exist, is the audit row. The
-   * discard above asks for one PRECISELY BECAUSE it has a column to keep it in.
+   * record; what there is, until the columns exist, is the audit row.
    */
   @Post(':prescriptionId/cancel')
   @RequirePermission('prescription:write', 'query')

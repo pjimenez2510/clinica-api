@@ -50,23 +50,23 @@ registerConstraintMeanings({
     message: 'El estado de la receta no concuerda con su instante de emisión: un borrador no puede tener hora de emisión, y una receta emitida no puede quedarse sin ella', // prettier-ignore
   },
   /**
-   * PR-011. `prescription_discard_states_who_when_and_why`: a `DISCARDED`
-   * prescription carries `discarded_at`, `discarded_by_id` AND
-   * `discard_reason`, or it is not `DISCARDED`.
+   * PR-011, PR-107. `prescription_discard_states_who_and_when`: a `DISCARDED`
+   * prescription carries `discarded_at` AND `discarded_by_id`, or it is not
+   * `DISCARDED`.
    *
-   * THE SERVICE WRITES THE THREE TOGETHER, so nobody should reach this through
-   * the API — the DTO refuses a discard with no reason first, with the box
-   * named. It is registered because the `CHECK` also guards an import and a
-   * `psql`, and for those the honest answer is a sentence.
+   * THE SERVICE WRITES THE TWO TOGETHER, from the session and the clock, so
+   * nobody should reach this through the API. It is registered because the
+   * `CHECK` also guards an import and a `psql`, and for those the honest
+   * answer is a sentence.
    *
-   * What it prevents is a draft that disappeared from the chart with nothing
-   * saying who removed it or why, which is the failure that made the reason
-   * obligatory in the first place.
+   * ⚠️ THE REASON IS NO LONGER PART OF IT (D-126). It replaced
+   * `prescription_discard_states_who_when_and_why`: a draft never left the
+   * room, so nothing is asked; who and when are what the system keeps alone.
    */
-  prescription_discard_states_who_when_and_why: {
-    code: 'PRESCRIPTION_DISCARD_REASON_REQUIRED',
-    field: 'reason',
-    message: 'Para descartar un borrador hay que decir quién lo descarta, cuándo y por qué: sin motivo, descartar es hacer desaparecer lo que se escribió', // prettier-ignore
+  prescription_discard_states_who_and_when: {
+    code: 'PRESCRIPTION_DISCARD_INCOMPLETE',
+    field: 'status',
+    message: 'Un borrador descartado tiene que decir quién lo descartó y cuándo', // prettier-ignore
   },
   /**
    * PR-010, PR-011. `prescription_discard_only_from_draft`: `discarded_at IS

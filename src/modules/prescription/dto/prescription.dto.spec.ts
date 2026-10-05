@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { composePrescriptionSchema } from './prescription.dto';
+import {
+  composePrescriptionSchema,
+  discardPrescriptionSchema,
+} from './prescription.dto';
 
 /** The transport's half of PR-031 and PR-105: the line as it is sent. */
 const line = (overrides: Record<string, unknown> = {}) => ({
@@ -47,5 +50,22 @@ describe('la duración de una línea de receta', () => {
         message: 'Con «Dosis única» no se indica duración',
       }),
     ]);
+  });
+});
+
+describe('descartar un borrador de receta', () => {
+  it('PR-107 no pide motivo: sin cuerpo, o con el motivo en blanco, el motivo es nulo', () => {
+    expect(discardPrescriptionSchema.parse({})).toEqual({ reason: null });
+    expect(discardPrescriptionSchema.parse({ reason: '   ' })).toEqual({
+      reason: null,
+    });
+  });
+
+  it('PR-107 el motivo que se escribe se guarda, y no pasa del ancho de su columna', () => {
+    expect(discardPrescriptionSchema.parse({ reason: ' Paciente equivocado ' })).toEqual({ reason: 'Paciente equivocado' }); // prettier-ignore
+    expect(
+      discardPrescriptionSchema.safeParse({ reason: 'x'.repeat(501) }).error
+        ?.issues[0]?.path,
+    ).toEqual(['reason']);
   });
 });

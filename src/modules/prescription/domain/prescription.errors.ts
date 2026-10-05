@@ -60,7 +60,7 @@ const WHAT_TO_DO: Readonly<Record<PrescriptionStatus, string>> = {
   ACTIVE: 'puede anularse',
   COMPLETED: 'ya no admite ningún cambio',
   CANCELLED: 'ya no admite ningún cambio',
-  DISCARDED: 'ya no admite ningún cambio',
+  DISCARDED: 'sólo puede recuperarse',
 };
 
 /**

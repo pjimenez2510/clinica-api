@@ -31,9 +31,9 @@ import { createPatient, createSite, createUser } from './setup/fixtures';
  *  - PR-003: `prescription_issued_coherence`. A draft cannot carry an instant
  *    of issue and an issued prescription cannot be missing one — which is what
  *    keeps the validity of art. 18 computable for ever.
- *  - PR-011: `prescription_discard_states_who_when_and_why` and
- *    `prescription_discard_only_from_draft`. Discarding a draft demands who,
- *    when and why TOGETHER, and cannot touch a prescription that was issued —
+ *  - PR-011, PR-107: `prescription_discard_states_who_and_when` and
+ *    `prescription_discard_only_from_draft`. Discarding a draft demands who
+ *    and when TOGETHER, and cannot touch a prescription that was issued —
  *    that one is annulled, which is the other act. Both are `CHECK`s, so both
  *    are shown here rather than trusted to the service that writes them.
  *  - PR-009: `prescription_item_off_formulary`. Prescribing outside the CNMB is
@@ -835,15 +835,14 @@ describe('la receta contra PostgreSQL', () => {
     expect(stored.discardedAt).not.toBeNull();
   });
 
-  it('PR-011 la BASE rechaza descartar sin decir quién, cuándo y por qué', async () => {
+  it('PR-011 PR-107 la BASE exige quién y cuándo al descartar, y ya no el motivo', async () => {
     /**
-     * `prescription_discard_states_who_when_and_why`: o los tres, o el estado
-     * no es `DISCARDED`. Sin motivo, descartar es una forma de hacer
-     * desaparecer lo que se escribió, y el `CHECK` es lo que se lo impide
-     * también a una importación y a un `psql`.
+     * `prescription_discard_states_who_and_when`: sin quién ni cuándo el estado
+     * no puede ser `DISCARDED`, también para una importación o un `psql`. El
+     * motivo dejó de exigirse con D-126: un borrador nunca salió de la consulta.
      */
     const prisma = db();
-    const { encounter, practitioner } = await anEncounter(prisma);
+    const { encounter, practitioner, requester } = await anEncounter(prisma);
     const prescription = await prisma.prescription.create({
       data: {
         encounterId: encounter.id,
@@ -861,8 +860,62 @@ describe('la receta contra PostgreSQL', () => {
       ),
     );
 
-    expect(problem?.code).toBe('PRESCRIPTION_DISCARD_REASON_REQUIRED');
+    expect(problem?.code).toBe('PRESCRIPTION_DISCARD_INCOMPLETE');
     expect(problem?.status).toBe(422);
+
+    // Control positivo: con quién y cuándo, y sin motivo, la misma sentencia
+    // entra.
+    await expect(
+      prisma.$executeRawUnsafe(
+        `UPDATE prescription
+            SET status = 'DISCARDED', discarded_at = now(),
+                discarded_by_id = $2::uuid, updated_at = now()
+          WHERE id = $1::uuid`,
+        prescription.id,
+        requester.userId,
+      ),
+    ).resolves.toBe(1);
+  });
+
+  it('PR-107 la BASE deja volver un descartado a borrador sólo limpiando quién y cuándo', async () => {
+    const prisma = db();
+    const { encounter, practitioner, requester } = await anEncounter(prisma);
+    const prescription = await prisma.prescription.create({
+      data: {
+        encounterId: encounter.id,
+        siteId: encounter.siteId,
+        prescriberId: practitioner.id,
+      },
+    });
+    await prisma.$executeRawUnsafe(
+      `UPDATE prescription
+          SET status = 'DISCARDED', discarded_at = now(),
+              discarded_by_id = $2::uuid, updated_at = now()
+        WHERE id = $1::uuid`,
+      prescription.id,
+      requester.userId,
+    );
+
+    // Un borrador que arrastra el instante del descarte diría dos cosas a la vez.
+    const problem = await problemFrom(
+      prisma.$executeRawUnsafe(
+        `UPDATE prescription SET status = 'DRAFT', updated_at = now()
+          WHERE id = $1::uuid`,
+        prescription.id,
+      ),
+    );
+    expect(problem?.code).toBe('PRESCRIPTION_DISCARD_NOT_FROM_DRAFT');
+
+    // Control positivo: limpiando las columnas del descarte, vuelve.
+    await expect(
+      prisma.$executeRawUnsafe(
+        `UPDATE prescription
+            SET status = 'DRAFT', discarded_at = NULL, discarded_by_id = NULL,
+                discard_reason = NULL, updated_at = now()
+          WHERE id = $1::uuid`,
+        prescription.id,
+      ),
+    ).resolves.toBe(1);
   });
 
   it('PR-011 la BASE no deja descartar una receta ya emitida, que se anula', async () => {

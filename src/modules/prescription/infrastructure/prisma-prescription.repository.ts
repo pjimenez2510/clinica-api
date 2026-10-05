@@ -23,6 +23,7 @@ import type { ItemContent } from '../domain/prescription-content';
 import type { PrescriptionStatus } from '../domain/prescription';
 import type {
   DiscardPlan,
+  DraftRestore,
   DraftRewrite,
   EncounterPrescriptionsQuery,
   IssuePlan,
@@ -553,9 +554,9 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
    * cannot be discarded even by a writer that never came through here — it is
    * annulled, which is the other act.
    *
-   * ⚠️ AND THE THREE COLUMNS ARE WRITTEN TOGETHER. `prescription_discard_
-   * states_who_when_and_why` refuses the row otherwise, and that is the point:
-   * discarding without saying why is a way of making what was written vanish.
+   * ⚠️ AND WHO AND WHEN ARE WRITTEN TOGETHER. `prescription_discard_states_
+   * who_and_when` refuses the row otherwise. The reason is written as given —
+   * `null` when nobody said, since D-126 (PR-107).
    */
   async discard(
     query: PrescriptionQuery,
@@ -588,6 +589,64 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
 
       return tx.prescription.findUniqueOrThrow({
         where: { id: query.prescriptionId },
+        select: PRESCRIPTION_SELECT,
+      });
+    });
+
+    return toPrescriptionView(row);
+  }
+
+  /**
+   * PR-107. DISCARDED back to DRAFT, as it was: same id, same lines.
+   *
+   * The draft is locked in the order every writer of this module uses —
+   * attention first, prescription second — and judged on the locked row: a
+   * second «Deshacer» in another tab finds it already `DRAFT` and is refused
+   * with the state it is in.
+   *
+   * ⚠️ WHO, WHEN AND WHY ARE CLEARED TOGETHER WITH THE STATE.
+   * `prescription_discard_only_from_draft` refuses a draft that still carries
+   * the instant of a discard, and a draft that says it was discarded would be
+   * two facts at once. What happened stays in `access_audit`: the discard and
+   * its undo are two `UPDATE` rows of the trail.
+   *
+   * ⚠️ THE ATTENTION'S STATE IS NOT JUDGED HERE, as it is not on the discard:
+   * undoing returns the draft exactly where it was a moment ago, and what can
+   * be done with it afterwards (rewrite, issue) is judged by those acts.
+   */
+  async restore(request: DraftRestore): Promise<PrescriptionView> {
+    const row = await this.prisma.$transaction(async (tx) => {
+      const found = await tx.prescription.findFirst({
+        where: { id: request.prescriptionId, ...siteFilter(request.sites) },
+        select: { id: true, encounterId: true },
+      });
+      if (!found) throw new PrescriptionNotFoundError();
+
+      await tx.$queryRaw`SELECT id FROM "encounter" WHERE id = ${found.encounterId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM "prescription" WHERE id = ${found.id}::uuid FOR UPDATE`;
+
+      const current = await tx.prescription.findUniqueOrThrow({
+        where: { id: found.id },
+        select: { status: true, prescriberId: true },
+      });
+      // PR-107. Only what was discarded comes back, and the answer names the
+      // state it is in.
+      if (current.status !== 'DISCARDED') {
+        throw new PrescriptionNotEditableError(current.status);
+      }
+      // PR-100. The draft is its prescriber's, discarded or not.
+      if (current.prescriberId !== request.prescriberId) {
+        throw new PrescriptionDraftOfAnotherPrescriberError();
+      }
+
+      return tx.prescription.update({
+        where: { id: found.id },
+        data: {
+          status: 'DRAFT',
+          discardedAt: null,
+          discardedById: null,
+          discardReason: null,
+        },
         select: PRESCRIPTION_SELECT,
       });
     });

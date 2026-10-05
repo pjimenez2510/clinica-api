@@ -455,13 +455,11 @@ export class PrescriptionService {
    * of them happened — the defect `ENTERED_IN_ERROR` exists to avoid in the
    * agenda.
    *
-   * ⚠️ AND THE REASON IS OBLIGATORY HERE, WHICH IS EXACTLY WHAT `cancel` CANNOT
-   * DO. `discard_reason` is a column, so what the caller writes is kept; on the
-   * annulment there is none (⚠️ **Falta esquema**, PR-010), and a mandatory
-   * reason that is dropped on the floor makes everybody believe there is a
-   * record. Here the register is real, and the database refuses the row without
-   * it: `prescription_discard_states_who_when_and_why` demands who, when and
-   * why together.
+   * ⚠️ NOTHING IS ASKED (D-126, PR-107). A draft never left the room, so the
+   * screen discards it with one click and offers «Deshacer» (`restore`). Who
+   * and when are the session and the clock —
+   * `prescription_discard_states_who_and_when` demands both— and a reason, if
+   * the caller wrote one, is kept in `discard_reason`.
    *
    * ⚠️ WHY IT STAYS IN THE CHART. Nothing is deleted, so the discarded draft is
    * still there — and that is the point rather than a limitation: the next
@@ -470,7 +468,7 @@ export class PrescriptionService {
    */
   async discard(
     prescriptionId: string,
-    reason: string,
+    reason: string | null,
     requester: Requester,
   ): Promise<PrescriptionView> {
     const discarded = await this.prescriptions.discard(
@@ -504,6 +502,49 @@ export class PrescriptionService {
     );
 
     return discarded;
+  }
+
+  /**
+   * PR-107. Undoes a discard: the draft comes back as it was, same id and same
+   * lines, with who, when and why cleared.
+   *
+   * ONLY ITS PRESCRIBER gets it back, by the same rule as the rewrite
+   * (PR-100): a draft is the words of the professional whose name it will
+   * print. The prescriber is the session, never an id in the request, and the
+   * comparison is made by the adapter on the locked row.
+   *
+   * The act leaves an `UPDATE` row in the trail, like the discard it undoes, so
+   * «¿quién lo descartó y quién lo recuperó?» stays answerable after the
+   * columns are cleared.
+   */
+  async restore(
+    prescriptionId: string,
+    requester: Requester,
+  ): Promise<PrescriptionView> {
+    const prescriber = await this.requirePrescriber(requester.userId);
+
+    const restored = await this.prescriptions.restore({
+      prescriptionId,
+      prescriberId: prescriber.practitionerId,
+      sites: requester.sites,
+    });
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: RESOURCE_TYPE,
+      resourceId: restored.id,
+      action: 'UPDATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+
+    // PR-094. The fact only: no patient, no medicine, nothing interpolated.
+    this.logger.info(
+      { action: 'PRESCRIPTION_RESTORED' },
+      'prescription draft restored',
+    );
+
+    return restored;
   }
 
   /**
