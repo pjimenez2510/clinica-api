@@ -180,6 +180,9 @@ model User {
   /// ORD-062. The critical-value notices this account recorded having given.
   criticalNoticesGiven CriticalResultNotice[] @relation("CriticalNoticeGiver")
 
+  /// EN-210, D-127. The versions this account replaced by editing.
+  recordVersionsChanged RecordVersion[] @relation("RecordVersionChanger")
+
   @@index([email])
   @@map("app_user")
 }
@@ -4576,4 +4579,24 @@ model DataSubjectRequest {
 
   @@index([patientId, receivedAt(sort: Desc)], map: "data_subject_request_by_patient")
   @@map("data_subject_request")
+}
+
+/// EN-210, D-127. The PREVIOUS state of an edited row, written by the
+/// `record_version_archive` trigger in the same statement as the edit — never
+/// by the application. Insert-only (`trg_record_version_insert_only`).
+model RecordVersion {
+  id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  /// The table's name (`TG_TABLE_NAME`).
+  resourceType String   @map("resource_type") @db.VarChar(63)
+  resourceId   String   @map("resource_id") @db.Uuid
+  /// 1 is the first version that was replaced; the current one is in its table.
+  version      Int
+  /// The previous row, whole, with the database's column names.
+  data         Json
+  changedById  String   @map("changed_by") @db.Uuid
+  changedBy    User     @relation("RecordVersionChanger", fields: [changedById], references: [id], onDelete: Restrict)
+  changedAt    DateTime @map("changed_at") @db.Timestamptz(6)
+
+  @@unique([resourceType, resourceId, version], map: "record_version_resource_version_key")
+  @@map("record_version")
 }

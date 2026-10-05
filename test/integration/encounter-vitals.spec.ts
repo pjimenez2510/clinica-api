@@ -523,16 +523,25 @@ describe('los signos vitales de la atención', () => {
       encounter.id,
       practitioner.userId,
     );
+    // EN-210: a correction says who and when (`record_version_archive`).
     await prisma.$executeRawUnsafe(
-      `UPDATE encounter_vitals SET weight_kg = 69 WHERE encounter_id = $1`,
+      `UPDATE encounter_vitals
+          SET weight_kg = 69, corrected_by = $2::uuid, corrected_at = $3
+        WHERE encounter_id = $1`,
       encounter.id,
+      other.id,
+      new Date(),
     );
 
     await expect(
       prisma.$executeRawUnsafe(
-        `UPDATE encounter_vitals SET recorded_by = $2::uuid WHERE encounter_id = $1`,
+        // Stamped, so the only rule left to refuse it is the author's.
+        `UPDATE encounter_vitals
+            SET recorded_by = $2::uuid, corrected_by = $2::uuid, corrected_at = $3
+          WHERE encounter_id = $1`,
         encounter.id,
         other.id,
+        new Date(Date.now() + 60_000),
       ),
     ).rejects.toThrow(/cannot change once written/);
 

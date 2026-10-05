@@ -334,11 +334,12 @@ tiene nada que hacer en el sistema.
 **Prueba independiente:** registrar peso y talla y comprobar que el IMC **vuelve
 calculado** y que enviarlo en la petición no lo cambia; y que un peso de 750 kg
 —el dedo que tecleó 750 en vez de 75— se rechaza por la base y no por el DTO.
-**Cubre:** EN-060 a EN-068, EN-163, EN-165.
+**Cubre:** EN-060 a EN-068, EN-163, EN-165, **EN-210 y EN-211** —la toma
+corregida queda como versión anterior y se ve (D-127, `fix/menos-preguntas`)—.
 
-**Solo servidor:** EN-061, EN-062. El IMC lo escribe un disparador y el rango lo
-impone un `CHECK`: un doble que devuelve lo que le pedimos no demuestra ninguna
-de las dos.
+**Solo servidor:** EN-061, EN-062, EN-210. El IMC lo escribe un disparador, el
+rango lo impone un `CHECK` y la versión la archiva otro disparador: un doble que
+devuelve lo que le pedimos no demuestra ninguna de las tres.
 
 ### H5 — Tamizaje de violencia _(P1)_
 
@@ -1411,9 +1412,29 @@ requisitos que cambian.
   vitales.
   > `encounter_vitals.encounter_id` es la clave primaria, así que la base ya lo
   > garantiza. Se escribe porque tiene una consecuencia que hay que decir: **una
-  > segunda toma en la misma consulta sobreescribe la primera**, y no hay historial.
-  > Para consulta externa es correcto —se toma una vez—, y el día que la clínica
-  > monitorice tensión durante una hora hace falta otra tabla. Queda anotado.
+  > segunda toma en la misma consulta sustituye a la primera**. Para consulta
+  > externa es correcto —se toma una vez—, y el día que la clínica monitorice
+  > tensión durante una hora hace falta otra tabla. Queda anotado.
+  >
+  > **Desde `fix/menos-preguntas` (D-127) la toma sustituida no se pierde**: queda
+  > como versión anterior (EN-210) y se ve en la pantalla (EN-211).
+- **EN-210** — CUANDO se corrija la toma de signos vitales de una atención, el
+  sistema DEBERÁ guardar la toma anterior entera como versión, con quién la
+  corrigió y cuándo, en la misma operación; y SI la corrección no dice quién ni
+  cuándo, el sistema DEBERÁ rechazarla.
+  > **D-127.2**: «la historia la guarda el sistema, no el usuario». La guarda la
+  > **base**, con un disparador genérico que cualquier tabla editable reutiliza:
+  > `record_version_archive(columna_por, columna_cuando, columna_id)` copia la
+  > fila anterior a `record_version` (solo inserción) y rechaza el UPDATE cuyo
+  > sello no cambió (`record_version_change_is_stamped` → 422
+  > `EDIT_NOT_STAMPED`). Así no hay camino —API, importación, asistente de IA o
+  > psql— que edite sin dejar rastro. En los signos el sello es el de EN-143:
+  > `corrected_by` y `corrected_at`, con el instante del reloj de la aplicación.
+  > Quién tomó la toma sigue sin cambiar.
+  >
+  > Dos correcciones de la misma toma en el mismo instante chocan: la segunda
+  > trae el mismo sello y se rechaza. Es el precio de reconocer el UPDATE sin
+  > sello, y una persona corrigiendo a mano no lo paga.
 - **EN-068** — El sistema DEBERÁ exponer, junto a los signos vitales de una
   atención, los de las atenciones anteriores del mismo paciente en orden
   cronológico.
