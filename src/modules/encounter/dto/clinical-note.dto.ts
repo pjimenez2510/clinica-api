@@ -1,6 +1,8 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
+import { noteTemplateSchema } from './note-template.dto';
+
 /**
  * The clinical note's contract.
  *
@@ -36,7 +38,7 @@ const DISCHARGE_CONDITION = z.enum([
  * the moment the note becomes the record.
  *
  * ⚠️ THE VALUES ARE STRINGS. A section holding an object would sail past
- * `assertContentComplete`, which asks for non-empty text, and would then be
+ * `assertNoteComplete`, which asks for non-empty text, and would then be
  * unprintable — and this content is what a court is shown.
  */
 const noteContent = z.record(
@@ -171,6 +173,12 @@ export const clinicalNoteSchema = z.object({
   supersedesId: z.uuid().nullable(),
   amendmentReason: z.string().nullable(),
   createdAt: z.iso.datetime(),
+  /**
+   * EN-204. The template the note was opened with: its sections, titles and
+   * order, so a signed note is shown as it was written and not as the clinic
+   * configures the note today.
+   */
+  template: noteTemplateSchema,
 });
 /** Response of every write on a note: drafting, updating, signing, amending and retracting. */
 export class ClinicalNoteDto extends createZodDto(clinicalNoteSchema) {}

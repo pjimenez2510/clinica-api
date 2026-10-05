@@ -6,6 +6,8 @@ import {
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
 import { contentHashOf, type NoteContent } from '../domain/clinical-note';
+import { withBackgroundSnapshot } from '../domain/background-snapshot';
+import { BackgroundSnapshotReader } from './background-snapshot.reader';
 import type { DiscontinuedOrigin } from '../domain/encounter';
 import { PractitionerProfileRequiredError } from '../domain/encounter.errors';
 import { assertLicensedOn } from '../domain/practitioner-licence';
@@ -79,6 +81,8 @@ export class EncounterExitService {
     private readonly encounters: EncounterRepository,
     @Inject(ACCESS_AUDIT_RECORDER)
     private readonly audit: AccessAuditRecorder,
+    /** EN-206. The interruption signs too, and signing freezes the background. */
+    private readonly background: BackgroundSnapshotReader,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(EncounterExitService.name);
@@ -168,6 +172,16 @@ export class EncounterExitService {
     );
     if (!signer) throw new PractitionerProfileRequiredError();
     const now = new Date();
+    // EN-206. A note signed «con lo hecho» is still a signed note: it carries
+    // what the chart said. An unknown attention is refused by the
+    // transaction that follows, with the module's own 404.
+    const encounter = await this.encounters.findById({
+      encounterId: request.encounterId,
+      sites: requester.sites,
+    });
+    const snapshot = encounter
+      ? await this.background.snapshotOf(encounter.patientId, now)
+      : null;
 
     const {
       encounter: discontinued,
@@ -192,11 +206,16 @@ export class EncounterExitService {
         authorId: signer.practitionerId,
         sign: (draft) => {
           assertLicensedOn(signer.acessExpiresOn, now);
+          const content = withBackgroundSnapshot(
+            (draft.content ?? {}) as NoteContent,
+            snapshot,
+          );
           return {
             signedById: signer.practitionerId,
             signedAt: now,
+            content,
             contentHash: contentHashOf({
-              content: (draft.content ?? {}) as NoteContent,
+              content,
               signedById: signer.practitionerId,
               signedAt: now,
             }),

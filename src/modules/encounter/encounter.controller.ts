@@ -158,6 +158,7 @@ export class EncounterController {
     const page = await this.encounters.historyOf(
       {
         patientId: query.patientId,
+        agendaEntryId: query.agendaEntryId,
         page: query.page,
         pageSize: query.pageSize,
       },

@@ -37,6 +37,8 @@ export interface ClinicalNoteView {
   /** EN-021. The MSP form number, as DATA. */
   formCode: string;
   formVersion: string;
+  /** EN-204. The template version it was opened with; `null` = built-in. */
+  templateId: string | null;
   status: NoteStatus;
   content: NoteContent;
   /** The practitioner who wrote it. Never the account. */
@@ -69,6 +71,8 @@ export interface NewClinicalNote {
   encounterId: string;
   formCode: string;
   formVersion: string;
+  /** EN-203. Chosen by the service, never sent by the screen. */
+  templateId: string | null;
   content: NoteContent;
   authorId: string;
   /**
@@ -83,6 +87,8 @@ export interface NewClinicalNote {
 export interface SignaturePlan {
   signedById: string;
   signedAt: Date;
+  /** EN-206. What is signed: the draft plus the background snapshot. */
+  content: NoteContent;
   contentHash: string;
   /**
    * EN-130, EN-138. Whether signing THIS form is the clinical discharge.
@@ -107,6 +113,7 @@ export interface AmendmentDraft {
   amendmentReason: string;
   formCode: string;
   formVersion: string;
+  templateId: string | null;
   content: NoteContent;
   authorId: string;
   /** EN-025, EN-027. An amendment is BORN SIGNED: it corrects a signed note. */

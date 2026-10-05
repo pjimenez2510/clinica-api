@@ -88,6 +88,8 @@ export interface OpenEncounterRequest {
  */
 export interface ChartHistoryRequest {
   patientId: string;
+  /** EN-208. Only the attentions of this appointment. */
+  agendaEntryId?: string;
   /** 1-based, as the client counts it. */
   page: number;
   pageSize: number;
@@ -281,6 +283,7 @@ export class EncounterService {
   ): Promise<EncounterPage> {
     return this.encounters.historyOf({
       patientId: request.patientId,
+      agendaEntryId: request.agendaEntryId,
       sites: requester.sites,
       page: request.page,
       pageSize: request.pageSize,

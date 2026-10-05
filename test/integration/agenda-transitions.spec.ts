@@ -1129,6 +1129,7 @@ describe('las transiciones de estado de la cita por HTTP', () => {
         encounterId,
         formCode: '002',
         formVersion: '1',
+        templateId: null,
         content: { motivoConsulta: 'Dolor abdominal' },
         authorId: practitionerId,
         authorUserId: doctor.userId,
