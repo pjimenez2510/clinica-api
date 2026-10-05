@@ -37,6 +37,7 @@ import {
 import {
   DuplicateIdentifierError,
   PatientMergedError,
+  PriorityGroupAlreadyClosedError,
 } from '../domain/patient.errors';
 import { ABSORBED_MRN_LIMIT } from '../domain/patient.repository';
 import type {
@@ -1367,17 +1368,26 @@ export class PrismaPatientRepository implements PatientRepository {
     closedById: string;
   }): Promise<PriorityGroupRecord | null> {
     const { count } = await this.prisma.patientPriorityGroup.updateMany({
-      where: { id: input.recordId, ...chartScope(input.patientId) },
+      // `closedAt: null`: of two closures that read the row open, only the
+      // first writes (PA-037), and the second is told so below.
+      where: {
+        id: input.recordId,
+        closedAt: null,
+        ...chartScope(input.patientId),
+      },
       data: {
         endsOn: fromClinicalDate(input.endsOn),
         closedById: input.closedById,
         closedAt: new Date(),
       },
     });
-    if (count === 0) return null;
 
     const records = await this.listPriorityGroups(input.patientId);
-    return records.find((record) => record.id === input.recordId) ?? null;
+    const record = records.find((row) => row.id === input.recordId) ?? null;
+    if (count === 0 && record !== null) {
+      throw new PriorityGroupAlreadyClosedError();
+    }
+    return count === 0 ? null : record;
   }
 
   // -------------------------------------------------------------------------

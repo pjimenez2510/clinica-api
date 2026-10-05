@@ -622,6 +622,68 @@ describe('los grupos prioritarios por HTTP', () => {
     );
   });
 
+  it('PA-037 refuses a second closure with PRIORITY_GROUP_ALREADY_CLOSED and keeps the first one', async () => {
+    const created = await recordGroup({
+      group: 'DISABILITY',
+      startsOn: daysFromToday(-200),
+      origin: 'SELF_DECLARED',
+    }).expect(201);
+    const recordId = (created.body as PriorityGroupBody).id;
+
+    // Control positivo: el primer cierre SÍ se escribe.
+    await closeGroup(recordId, { endsOn: daysFromToday(-2) }).expect(200);
+    const first = await prisma.patientPriorityGroup.findUniqueOrThrow({
+      where: { id: recordId },
+      select: { endsOn: true, closedAt: true, closedById: true },
+    });
+    expect(first.closedAt).not.toBeNull();
+    expect(first.closedById).toBe(medicoUserId);
+
+    const refused = await closeGroup(recordId, {
+      endsOn: daysFromToday(-1),
+    }).expect(409);
+    expect((refused.body as { code: string }).code).toBe(
+      'PRIORITY_GROUP_ALREADY_CLOSED',
+    );
+
+    const after = await prisma.patientPriorityGroup.findUniqueOrThrow({
+      where: { id: recordId },
+      select: { endsOn: true, closedAt: true, closedById: true },
+    });
+    expect(after).toEqual(first);
+  });
+
+  it('PA-037 refuses to rewrite a closure in the database too, and admits the first one', async () => {
+    const created = await recordGroup({
+      group: 'DISABILITY',
+      startsOn: daysFromToday(-200),
+      origin: 'SELF_DECLARED',
+    }).expect(201);
+    const recordId = (created.body as PriorityGroupBody).id;
+
+    // Control positivo: cerrar una fila abierta, por SQL, la base lo admite.
+    await prisma.$executeRaw`
+      UPDATE patient_priority_group
+         SET ends_on = ${daysFromToday(-2)}::date, closed_at = now(), closed_by = ${medicoUserId}::uuid
+       WHERE id = ${recordId}::uuid`;
+
+    for (const rewrite of [
+      prisma.$executeRaw`
+        UPDATE patient_priority_group SET ends_on = ${daysFromToday(-1)}::date
+         WHERE id = ${recordId}::uuid`,
+      prisma.$executeRaw`
+        UPDATE patient_priority_group SET closed_at = now() + interval '1 hour'
+         WHERE id = ${recordId}::uuid`,
+      prisma.$executeRaw`
+        UPDATE patient_priority_group SET closed_at = NULL, closed_by = NULL
+         WHERE id = ${recordId}::uuid`,
+    ]) {
+      await expect(rewrite).rejects.toThrow(
+        /patient_priority_group_closure_once/,
+      );
+    }
+  });
+
   it('PA-038 refuses an accredited assessment that does not name its document, in the database too', async () => {
     const response = await recordGroup({
       group: 'DISABILITY',

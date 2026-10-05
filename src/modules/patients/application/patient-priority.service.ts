@@ -9,6 +9,7 @@ import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import {
   PatientMergedError,
   PatientNotFoundError,
+  PriorityGroupAlreadyClosedError,
   PriorityGroupNotFoundError,
   RestrictedPriorityGroupError,
 } from '../domain/patient.errors';
@@ -221,6 +222,9 @@ export class PatientPriorityService {
      * un error de validación sobre una fila restringida confirmaría que la fila
      * está ahí, que es justo lo que `PRIORITY_GROUP_NOT_FOUND` evita (D-027).
      */
+    // PA-037. A second closure would overwrite the first one's who and when.
+    if (existing.closedAt !== null) throw new PriorityGroupAlreadyClosedError();
+
     assertPriorityPeriodOrder(existing.startsOn, input.endsOn);
 
     const closed = await this.patients.closePriorityGroup({
