@@ -324,6 +324,8 @@ describe('el servicio de recetas', () => {
   let service: PrescriptionService;
   /** DOC-109. What the documents port was asked to archive. */
   let archived: AnnulledDocument[];
+  /** DOC-109. What the port answers about the PDF; `true` unless a test moves it. */
+  let archiveAnswer: boolean | null;
 
   beforeEach(() => {
     repository = new FakeRepository();
@@ -337,10 +339,11 @@ describe('el servicio de recetas', () => {
     };
     const logger = { setContext: vi.fn(), info: vi.fn() } as unknown as PinoLogger; // prettier-ignore
     archived = [];
+    archiveAnswer = true;
     const documents: AnnulledDocumentArchiver = {
       archiveAnnulled: (document) => {
         archived.push(document);
-        return Promise.resolve(true);
+        return Promise.resolve(archiveAnswer);
       },
     };
     service = new PrescriptionService(repository, allergyReader, audit, logger, documents); // prettier-ignore
@@ -699,6 +702,20 @@ describe('el servicio de recetas', () => {
       { kind: 'PRESCRIPTION', subjectId: PRESCRIPTION, userId: USER, cause: 'ANNULMENT' }, // prettier-ignore
       { kind: 'PRESCRIPTION', subjectId: PRESCRIPTION, userId: USER, cause: 'CORRECTION' }, // prettier-ignore
     ]);
+  });
+
+  it('DOC-109 PR-108 PR-109 la respuesta dice si el PDF con la marca quedó archivado', async () => {
+    repository.snapshot = aSnapshot({ status: 'ACTIVE' });
+
+    // Control positivo: archivado.
+    await expect(service.cancel(PRESCRIPTION, 'Pérdida', requester)).resolves.toMatchObject({ documentArchived: true }); // prettier-ignore
+    // Había PDF y no se pudo archivar: la pantalla tiene que avisar.
+    archiveAnswer = false;
+    await expect(service.cancel(PRESCRIPTION, 'Pérdida', requester)).resolves.toMatchObject({ documentArchived: false }); // prettier-ignore
+    await expect(service.correct(PRESCRIPTION, 'Error de prescripción', requester)).resolves.toMatchObject({ documentArchived: false }); // prettier-ignore
+    // No había PDF que sustituir.
+    archiveAnswer = null;
+    await expect(service.correct(PRESCRIPTION, 'Error de prescripción', requester)).resolves.toMatchObject({ documentArchived: null }); // prettier-ignore
   });
 
   it('PR-109 una cuenta sin ficha profesional no corrige nada', async () => {

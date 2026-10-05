@@ -187,12 +187,32 @@ export class IssuedCertificateDto extends createZodDto(
 ) {}
 
 /**
+ * DOC-109. Whether the PDF that replaces the annulled one was filed: `true`
+ * filed; `false` there was one and it COULD NOT be filed —the screen warns,
+ * because the archive still holds the PDF without the mark—; `null` there was
+ * no PDF to replace.
+ */
+const documentArchivedSchema = z.boolean().nullable();
+
+/** CER-011. What annulling answers: the certificate, and its PDF (DOC-109). */
+export const revokedCertificateSchema = certificateSchema.extend({
+  documentArchived: documentArchivedSchema,
+});
+export class RevokedCertificateDto extends createZodDto(
+  revokedCertificateSchema,
+) {}
+export type RevokedCertificateResponse = z.infer<
+  typeof revokedCertificateSchema
+>;
+
+/**
  * CER-053. A correction: the certificate it annulled and the one it issued,
  * with what the IESS needs to be told about the new one.
  */
 export const correctedCertificateSchema = z.object({
   revoked: certificateSchema,
   issued: issuedCertificateSchema,
+  documentArchived: documentArchivedSchema,
 });
 /** Response of POST /certificates/:certificateId/correct. */
 export class CorrectedCertificateDto extends createZodDto(

@@ -26,9 +26,16 @@ export interface AnnulledDocument {
   cause: 'ANNULMENT' | 'CORRECTION';
 }
 
+/**
+ * DOC-109. What the annulment answers about its PDF, so the screen can warn:
+ * `true` filed; `false` there was one to replace and it COULD NOT be filed —
+ * the archive still holds the PDF without the mark, and nobody must hand it
+ * out; `null` there was no PDF to replace.
+ */
+export type DocumentArchived = boolean | null;
+
 export interface AnnulledDocumentArchiver {
-  /** `true` when a PDF was filed; `false` when there was none to replace, or it failed. */
-  archiveAnnulled(document: AnnulledDocument): Promise<boolean>;
+  archiveAnnulled(document: AnnulledDocument): Promise<DocumentArchived>;
 }
 
 export const ANNULLED_DOCUMENT_ARCHIVER = Symbol('AnnulledDocumentArchiver');

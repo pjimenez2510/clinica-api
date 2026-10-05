@@ -4,6 +4,7 @@ import { PinoLogger } from 'nestjs-pino';
 import type {
   AnnulledDocument,
   AnnulledDocumentArchiver,
+  DocumentArchived,
 } from '../../../shared/documents/annulled-document.port';
 
 import { DocumentService } from './document.service';
@@ -36,7 +37,7 @@ export class AnnulledDocumentArchiverService implements AnnulledDocumentArchiver
     this.logger.setContext(AnnulledDocumentArchiverService.name);
   }
 
-  async archiveAnnulled(document: AnnulledDocument): Promise<boolean> {
+  async archiveAnnulled(document: AnnulledDocument): Promise<DocumentArchived> {
     try {
       const archived = await this.documents.archiveReplacement(
         {
@@ -46,14 +47,29 @@ export class AnnulledDocumentArchiverService implements AnnulledDocumentArchiver
         },
         { userId: document.userId, sites: 'all' },
       );
-      return archived !== null;
-    } catch {
-      // The kind only: the error may carry what the document says (DOC-093).
+      return archived === null ? null : true;
+    } catch (error) {
+      // Which subject and which failure, NEVER the message: it may carry what
+      // the document says (DOC-093). The name tells a font from a lock, and
+      // Prisma's code tells which constraint.
       this.logger.warn(
-        { action: 'ANNULLED_DOCUMENT_NOT_ARCHIVED', kind: document.kind },
+        {
+          action: 'ANNULLED_DOCUMENT_NOT_ARCHIVED',
+          subject_id: document.subjectId,
+          document_type: document.kind,
+          type: error instanceof Error ? error.name : typeof error,
+          error_code: prismaCodeOf(error),
+        },
         'annulled document could not be archived',
       );
       return false;
     }
   }
+}
+
+/** `P2002` and the like: Prisma's stable code, without importing Prisma. */
+function prismaCodeOf(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null) return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' && /^P\d{4}$/.test(code) ? code : undefined;
 }

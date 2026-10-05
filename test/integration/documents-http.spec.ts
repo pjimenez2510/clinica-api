@@ -1255,9 +1255,16 @@ describe('los documentos por HTTP', () => {
     it('DOC-109 PR-108 anular una receta con PDF archiva el que la sustituye, con la marca y «Receta anulada»', async () => {
       const first = await emitted('PRESCRIPTION', prescriptionId);
 
-      await post(`/prescriptions/${prescriptionId}/cancel`, doctorToken, {
-        reason: 'Pérdida',
-      }).expect(200);
+      const cancelled = await post(
+        `/prescriptions/${prescriptionId}/cancel`,
+        doctorToken,
+        { reason: 'Pérdida' },
+      ).expect(200);
+      // La pantalla sabe que el PDF con la marca quedó archivado.
+      expect(cancelled.body).toMatchObject({
+        status: 'CANCELLED',
+        documentArchived: true,
+      });
 
       const [latest, original] = await historyOf(
         'PRESCRIPTION',
@@ -1274,9 +1281,13 @@ describe('los documentos por HTTP', () => {
     });
 
     it('DOC-109 una receta sin PDF archivado se anula y no se archiva nada (control positivo)', async () => {
-      await post(`/prescriptions/${prescriptionId}/cancel`, doctorToken, {
-        reason: 'Pérdida',
-      }).expect(200);
+      const cancelled = await post(
+        `/prescriptions/${prescriptionId}/cancel`,
+        doctorToken,
+        { reason: 'Pérdida' },
+      ).expect(200);
+      // Nada que sustituir: ni éxito ni fallo.
+      expect(cancelled.body).toMatchObject({ documentArchived: null });
 
       await expect(prisma.documentRender.count()).resolves.toBe(0);
     });
@@ -1295,9 +1306,16 @@ describe('los documentos por HTTP', () => {
           BEFORE INSERT ON document_render FOR EACH ROW
           EXECUTE FUNCTION test_refuse_render_insert()`);
       try {
-        await post(`/prescriptions/${prescriptionId}/cancel`, doctorToken, {
-          reason: 'Robo o hurto',
-        }).expect(200);
+        const cancelled = await post(
+          `/prescriptions/${prescriptionId}/cancel`,
+          doctorToken,
+          { reason: 'Robo o hurto' },
+        ).expect(200);
+        // Había PDF y no se archivó: la pantalla tiene que avisar.
+        expect(cancelled.body).toMatchObject({
+          status: 'CANCELLED',
+          documentArchived: false,
+        });
       } finally {
         await prisma.$executeRawUnsafe(
           'DROP TRIGGER IF EXISTS test_refuse_render_insert ON document_render',
@@ -1335,9 +1353,12 @@ describe('los documentos por HTTP', () => {
         select: { sequenceNumber: true },
       });
 
-      await post(`/prescriptions/${prescriptionId}/correct`, doctorToken, {
-        reason: 'Error de prescripción',
-      }).expect(200);
+      const corrected = await post(
+        `/prescriptions/${prescriptionId}/correct`,
+        doctorToken,
+        { reason: 'Error de prescripción' },
+      ).expect(200);
+      expect(corrected.body).toMatchObject({ documentArchived: true });
 
       const [latest] = await historyOf('PRESCRIPTION', prescriptionId);
       expect(latest).toMatchObject({
@@ -1363,9 +1384,12 @@ describe('los documentos por HTTP', () => {
       });
       const first = await emitted('MEDICAL_CERTIFICATE', certificate.id);
 
-      await post(`/certificates/${certificate.id}/revoke`, doctorToken, {
-        reason: 'Error en las fechas',
-      }).expect(200);
+      const revoked = await post(
+        `/certificates/${certificate.id}/revoke`,
+        doctorToken,
+        { reason: 'Error en las fechas' },
+      ).expect(200);
+      expect(revoked.body).toMatchObject({ documentArchived: true });
 
       const [latest] = await historyOf('MEDICAL_CERTIFICATE', certificate.id);
       expect(latest).toMatchObject({
@@ -1421,10 +1445,11 @@ describe('los documentos por HTTP', () => {
       expect(await renderText(first.id)).toContain('Glucosa en ayunas');
 
       const glucose = order.items.find((item) => item.testCode === 'GLU')!;
-      await post(
+      const cancelled = await post(
         `/orders/${order.id}/items/${glucose.id}/cancel`,
         doctorToken,
       ).expect(200);
+      expect(cancelled.body).toMatchObject({ documentArchived: true });
 
       const [latest] = await historyOf('SERVICE_ORDER', order.id);
       expect(latest).toMatchObject({
@@ -1434,6 +1459,15 @@ describe('los documentos por HTTP', () => {
       const text = await renderText(latest!.id);
       expect(text).not.toContain('Glucosa en ayunas');
       expect(text).toContain('Biometría hemática completa');
+
+      // ORD-118. «Corregir» la orden archiva otra vez, y lo dice.
+      const corrected = await post(
+        `/orders/${order.id}/correct`,
+        doctorToken,
+      ).expect(200);
+      expect(corrected.body).toMatchObject({ documentArchived: true });
+      const [afterCorrection] = await historyOf('SERVICE_ORDER', order.id);
+      expect(afterCorrection?.supersedesId).toBe(latest!.id);
     });
   });
 

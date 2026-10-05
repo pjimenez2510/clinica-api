@@ -33,7 +33,7 @@ const db = useDatabase();
 
 /** DOC-109 is proven in `documents-http.spec.ts`; here, no PDF to archive. */
 const noDocuments: AnnulledDocumentArchiver = {
-  archiveAnnulled: () => Promise.resolve(false),
+  archiveAnnulled: () => Promise.resolve(null),
 };
 const noopLogger = {
   setContext: () => undefined,

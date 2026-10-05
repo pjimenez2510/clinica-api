@@ -4,6 +4,7 @@ import { PinoLogger } from 'nestjs-pino';
 import {
   ANNULLED_DOCUMENT_ARCHIVER,
   type AnnulledDocumentArchiver,
+  type DocumentArchived,
 } from '../../../shared/documents/annulled-document.port';
 import {
   ACCESS_AUDIT_RECORDER,
@@ -271,7 +272,7 @@ export class ServiceOrderService {
   async correct(
     orderId: string,
     requester: Requester,
-  ): Promise<CorrectedOrder> {
+  ): Promise<CorrectedOrder & { documentArchived: DocumentArchived }> {
     const order = await this.byId(orderId, requester);
     if (order.orderedByUserId !== requester.userId) {
       throw new OrderOfAnotherPractitionerError();
@@ -311,14 +312,14 @@ export class ServiceOrderService {
     );
 
     // DOC-109. The corrected order's PDF, without its annulled exams.
-    await this.documents.archiveAnnulled({
+    const documentArchived = await this.documents.archiveAnnulled({
       kind: 'SERVICE_ORDER',
       subjectId: orderId,
       userId: requester.userId,
       cause: 'CORRECTION',
     });
 
-    return corrected;
+    return { ...corrected, documentArchived };
   }
 
   /**
@@ -454,7 +455,7 @@ export class ServiceOrderService {
     orderId: string,
     itemId: string,
     requester: Requester,
-  ): Promise<ServiceOrderView> {
+  ): Promise<ServiceOrderView & { documentArchived: DocumentArchived }> {
     const order = await this.orders.cancelItem({
       orderId,
       itemId,
@@ -479,13 +480,13 @@ export class ServiceOrderService {
     );
 
     // DOC-109. The PDF up to date, without the cancelled exam; never fails this.
-    await this.documents.archiveAnnulled({
+    const documentArchived = await this.documents.archiveAnnulled({
       kind: 'SERVICE_ORDER',
       subjectId: orderId,
       userId: requester.userId,
       cause: 'ANNULMENT',
     });
 
-    return order;
+    return { ...order, documentArchived };
   }
 }

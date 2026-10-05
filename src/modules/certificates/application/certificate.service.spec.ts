@@ -308,6 +308,8 @@ describe('el servicio de certificados', () => {
   let clockReads: Date;
   /** DOC-109. What the documents port was asked to archive. */
   let archived: AnnulledDocument[];
+  /** DOC-109. What the port answers about the PDF; `true` unless a test moves it. */
+  let archiveAnswer: boolean | null;
 
   beforeEach(() => {
     clockReads = NOW;
@@ -325,10 +327,11 @@ describe('el servicio de certificados', () => {
       info: (...args: unknown[]) => logged.push(args),
     } as unknown as PinoLogger;
     archived = [];
+    archiveAnswer = true;
     const documents: AnnulledDocumentArchiver = {
       archiveAnnulled: (document) => {
         archived.push(document);
-        return Promise.resolve(true);
+        return Promise.resolve(archiveAnswer);
       },
     };
     service = new CertificateService(repository, audit, logger, () => clockReads, documents); // prettier-ignore
@@ -529,6 +532,20 @@ describe('el servicio de certificados', () => {
       { kind: 'MEDICAL_CERTIFICATE', subjectId: 'certificate-1', userId: USER, cause: 'ANNULMENT' }, // prettier-ignore
       { kind: 'MEDICAL_CERTIFICATE', subjectId: 'certificate-1', userId: USER, cause: 'CORRECTION' }, // prettier-ignore
     ]);
+  });
+
+  it('DOC-109 CER-011 CER-053 la respuesta dice si el PDF con la marca quedó archivado', async () => {
+    const correction = { ...fieldsOf(rest(5)), reason: 'Error en las fechas' };
+
+    // Control positivo: archivado.
+    await expect(service.revoke('certificate-1', 'Error en las fechas', requester, [])).resolves.toMatchObject({ documentArchived: true }); // prettier-ignore
+    // Había PDF y no se pudo archivar: la pantalla tiene que avisar.
+    archiveAnswer = false;
+    await expect(service.revoke('certificate-1', 'Error en las fechas', requester, [])).resolves.toMatchObject({ documentArchived: false }); // prettier-ignore
+    await expect(service.correct('certificate-1', correction, requester, [])).resolves.toMatchObject({ documentArchived: false }); // prettier-ignore
+    // No había PDF que sustituir.
+    archiveAnswer = null;
+    await expect(service.correct('certificate-1', correction, requester, [])).resolves.toMatchObject({ documentArchived: null }); // prettier-ignore
   });
 
   it('CER-053 y CER-040 sólo quien lo emitió o la dirección médica de su sede lo corrige, antes de escribir nada', async () => {

@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { pruneToAllowlist } from '../../../shared/observability/log-privacy';
+
 import { AnnulledDocumentArchiverService } from './annulled-document.archiver';
 import type { DocumentService } from './document.service';
 
@@ -38,9 +40,10 @@ describe('DOC-109 el archivo del PDF anulado no frena la anulación', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it('DOC-109 sin PDF que sustituir responde que no archivó nada', async () => {
-    const { archiver } = archiverWith(vi.fn().mockResolvedValue(null));
-    await expect(archiver.archiveAnnulled(ANNULLED)).resolves.toBe(false);
+  it('DOC-109 sin PDF que sustituir responde null: no había nada que archivar, y no es un fallo', async () => {
+    const { archiver, warn } = archiverWith(vi.fn().mockResolvedValue(null));
+    await expect(archiver.archiveAnnulled(ANNULLED)).resolves.toBeNull();
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it('DOC-109 si el PDF falla, no lanza: lo deja en el registro sin datos del paciente', async () => {
@@ -50,6 +53,46 @@ describe('DOC-109 el archivo del PDF anulado no frena la anulación', () => {
 
     await expect(archiver.archiveAnnulled(ANNULLED)).resolves.toBe(false);
     expect(warn).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('María');
+  });
+
+  it('DOC-109 el registro del fallo dice qué sujeto y de qué clase, con el nombre del error, y sobrevive a la poda', async () => {
+    const { archiver, warn } = archiverWith(
+      vi.fn().mockRejectedValue(new TypeError('font of María Guamán missing')),
+    );
+
+    await archiver.archiveAnnulled(ANNULLED);
+
+    const entry = warn.mock.calls[0]?.[0] as Record<string, unknown>;
+    // What reaches disk is what the allowlist keeps: a key it drops is a
+    // field nobody will ever read.
+    expect(pruneToAllowlist(entry)).toEqual({
+      action: 'ANNULLED_DOCUMENT_NOT_ARCHIVED',
+      subject_id: 'prescription-1',
+      document_type: 'PRESCRIPTION',
+      type: 'TypeError',
+    });
+  });
+
+  it('DOC-109 si el fallo es de Prisma, registra su código y no su mensaje', async () => {
+    const prismaError = Object.assign(
+      new Error('Unique constraint failed on María Guamán'),
+      { name: 'PrismaClientKnownRequestError', code: 'P2002' },
+    );
+    const { archiver, warn } = archiverWith(
+      vi.fn().mockRejectedValue(prismaError),
+    );
+
+    await expect(archiver.archiveAnnulled(ANNULLED)).resolves.toBe(false);
+
+    const entry = pruneToAllowlist(warn.mock.calls[0]?.[0]);
+    expect(entry).toEqual({
+      action: 'ANNULLED_DOCUMENT_NOT_ARCHIVED',
+      subject_id: 'prescription-1',
+      document_type: 'PRESCRIPTION',
+      type: 'PrismaClientKnownRequestError',
+      error_code: 'P2002',
+    });
     expect(JSON.stringify(warn.mock.calls)).not.toContain('María');
   });
 });

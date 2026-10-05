@@ -6,6 +6,7 @@ import { PinoLogger } from 'nestjs-pino';
 import {
   ANNULLED_DOCUMENT_ARCHIVER,
   type AnnulledDocumentArchiver,
+  type DocumentArchived,
 } from '../../../shared/documents/annulled-document.port';
 import {
   ACCESS_AUDIT_RECORDER,
@@ -220,7 +221,7 @@ export class CertificateService {
     request: CorrectCertificateRequest,
     requester: Requester,
     directionSites: SiteScopeFilter,
-  ): Promise<CorrectedCertificate> {
+  ): Promise<CorrectedCertificate & { documentArchived: DocumentArchived }> {
     const { reason, ...fields } = request;
     const issuing = await this.prepareIssue(fields, requester);
 
@@ -246,14 +247,14 @@ export class CertificateService {
     );
 
     // DOC-109. The annulled one's PDF, with the mark; never fails this.
-    await this.documents.archiveAnnulled({
+    const documentArchived = await this.documents.archiveAnnulled({
       kind: 'MEDICAL_CERTIFICATE',
       subjectId: revoked.id,
       userId: requester.userId,
       cause: 'CORRECTION',
     });
 
-    return { revoked, issued: issuing.respond(issued) };
+    return { revoked, issued: issuing.respond(issued), documentArchived };
   }
 
   /**
@@ -438,7 +439,7 @@ export class CertificateService {
     reason: string,
     requester: Requester,
     directionSites: SiteScopeFilter,
-  ): Promise<CertificateView> {
+  ): Promise<CertificateView & { documentArchived: DocumentArchived }> {
     const revoked = await this.certificates.revoke(
       { certificateId, sites: requester.sites },
       {
@@ -456,14 +457,14 @@ export class CertificateService {
     this.logger.info({ action: 'CERTIFICATE_REVOKED' }, 'certificate revoked');
 
     // DOC-109. The PDF with «ANULADO el …»; never fails the annulment.
-    await this.documents.archiveAnnulled({
+    const documentArchived = await this.documents.archiveAnnulled({
       kind: 'MEDICAL_CERTIFICATE',
       subjectId: revoked.id,
       userId: requester.userId,
       cause: 'ANNULMENT',
     });
 
-    return revoked;
+    return { ...revoked, documentArchived };
   }
 
   /** CER-016. One row of the access trail. */

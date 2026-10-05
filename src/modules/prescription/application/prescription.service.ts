@@ -7,6 +7,7 @@ import { PinoLogger } from 'nestjs-pino';
 import {
   ANNULLED_DOCUMENT_ARCHIVER,
   type AnnulledDocumentArchiver,
+  type DocumentArchived,
 } from '../../../shared/documents/annulled-document.port';
 import {
   ACCESS_AUDIT_RECORDER,
@@ -432,7 +433,7 @@ export class PrescriptionService {
     prescriptionId: string,
     reason: string,
     requester: Requester,
-  ): Promise<PrescriptionView> {
+  ): Promise<PrescriptionView & { documentArchived: DocumentArchived }> {
     const cancelled = await this.prescriptions.cancel(
       { prescriptionId, sites: requester.sites },
       cancelPlan(reason, requester),
@@ -449,15 +450,16 @@ export class PrescriptionService {
       userAgent: requester.userAgent,
     });
 
-    // DOC-109. After the commit, and it never fails the annulment.
-    await this.documents.archiveAnnulled({
+    // DOC-109. After the commit, and it never fails the annulment; whether it
+    // filed travels back, so the screen can warn when it did not.
+    const documentArchived = await this.documents.archiveAnnulled({
       kind: 'PRESCRIPTION',
       subjectId: cancelled.id,
       userId: requester.userId,
       cause: 'ANNULMENT',
     });
 
-    return cancelled;
+    return { ...cancelled, documentArchived };
   }
 
   /**
@@ -479,7 +481,7 @@ export class PrescriptionService {
     prescriptionId: string,
     reason: string,
     requester: Requester,
-  ): Promise<CorrectedPrescription> {
+  ): Promise<CorrectedPrescription & { documentArchived: DocumentArchived }> {
     const prescriber = await this.requirePrescriber(requester.userId);
 
     const corrected = await this.prescriptions.correct({
@@ -513,14 +515,14 @@ export class PrescriptionService {
     );
 
     // DOC-109. The annulled one's PDF, with the mark; never fails this.
-    await this.documents.archiveAnnulled({
+    const documentArchived = await this.documents.archiveAnnulled({
       kind: 'PRESCRIPTION',
       subjectId: corrected.cancelled.id,
       userId: requester.userId,
       cause: 'CORRECTION',
     });
 
-    return corrected;
+    return { ...corrected, documentArchived };
   }
 
   /**

@@ -25,12 +25,14 @@ import type { PendingOrderEntry } from './domain/service-order.repository';
 import type { ServiceOrderView } from './domain/service-order.repository';
 import {
   CorrectedOrderDto,
+  OrderWithCancelledItemDto,
   PlaceOrderDto,
   PendingOrderListDto,
   PendingOrdersQueryDto,
   ServiceOrderDto,
   StaleDraftListDto,
   type CorrectedOrderResponse,
+  type OrderWithCancelledItemResponse,
   type PendingOrderListResponse,
   type StaleDraftListResponse,
   type ServiceOrderResponse,
@@ -240,13 +242,14 @@ export class ServiceOrderController {
     @Param('orderId', ParseUUIDPipe) orderId: string,
     @Req() req: Request,
   ): Promise<CorrectedOrderResponse> {
-    const { cancelled, draft } = await this.orders.correct(
+    const { cancelled, draft, documentArchived } = await this.orders.correct(
       orderId,
       this.requester(req, 'record:write'),
     );
     return {
       cancelled: toOrderResponse(cancelled),
       draft: toOrderResponse(draft),
+      documentArchived,
     };
   }
 
@@ -263,18 +266,21 @@ export class ServiceOrderController {
   @RequirePermission('record:write', 'query')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Anular una línea de la orden pedida por error' })
-  @ApiOkResponse({ type: ServiceOrderDto })
+  @ApiOkResponse({ type: OrderWithCancelledItemDto })
   async cancelItem(
     @Param('orderId', ParseUUIDPipe) orderId: string,
     @Param('itemId', ParseUUIDPipe) itemId: string,
     @Req() req: Request,
-  ): Promise<ServiceOrderResponse> {
+  ): Promise<OrderWithCancelledItemResponse> {
     const order = await this.orders.cancelItem(
       orderId,
       itemId,
       this.requester(req, 'record:write'),
     );
-    return toOrderResponse(order);
+    return {
+      ...toOrderResponse(order),
+      documentArchived: order.documentArchived,
+    };
   }
 
   /** Who is asking, for the site scope and for the access trail. */

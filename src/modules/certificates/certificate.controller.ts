@@ -33,11 +33,11 @@ import {
 import {
   CorrectCertificateDto,
   CorrectedCertificateDto,
-  MedicalCertificateDto,
+  RevokedCertificateDto,
   Form117Dto,
   RevokeCertificateDto,
-  type CertificateResponse,
   type CorrectedCertificateResponse,
+  type RevokedCertificateResponse,
   type Form117Response,
 } from './dto/certificate.dto';
 
@@ -87,12 +87,12 @@ export class CertificateController {
   @RequirePermission('record:write', 'query')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Anular un certificado médico, diciendo por qué' })
-  @ApiOkResponse({ type: MedicalCertificateDto })
+  @ApiOkResponse({ type: RevokedCertificateDto })
   async revoke(
     @Param('certificateId', ParseUUIDPipe) certificateId: string,
     @Body() body: RevokeCertificateDto,
     @Req() req: Request,
-  ): Promise<CertificateResponse> {
+  ): Promise<RevokedCertificateResponse> {
     const direction = this.currentUser
       .requirePrincipal()
       .sitesFor('certificate:revoke-any');
@@ -103,7 +103,10 @@ export class CertificateController {
       // CER-040. Where the caller is the medical direction; often nowhere.
       direction === ALL_SITES ? 'all' : direction,
     );
-    return toCertificateResponse(revoked);
+    return {
+      ...toCertificateResponse(revoked),
+      documentArchived: revoked.documentArchived,
+    };
   }
 
   /**
@@ -138,6 +141,7 @@ export class CertificateController {
     return {
       revoked: toCertificateResponse(corrected.revoked),
       issued: toIssuedResponse(corrected.issued),
+      documentArchived: corrected.documentArchived,
     };
   }
 

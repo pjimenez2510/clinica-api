@@ -431,8 +431,27 @@ export const prescriptionSchema = z.object({
   cancelReason: z.string().nullable(),
   items: z.array(prescriptionItemViewSchema),
 });
-/** Response of issuing, discarding and annulling a prescription. */
+/** Response of issuing and discarding a prescription. */
 export class PrescriptionDto extends createZodDto(prescriptionSchema) {}
+
+/**
+ * DOC-109. Whether the PDF that replaces the annulled one was filed: `true`
+ * filed; `false` there was one and it COULD NOT be filed —the screen warns,
+ * because the archive still holds the PDF without the mark—; `null` there was
+ * no PDF to replace.
+ */
+const documentArchivedSchema = z.boolean().nullable();
+
+/** PR-108. What annulling answers: the prescription, and its PDF (DOC-109). */
+export const cancelledPrescriptionSchema = prescriptionSchema.extend({
+  documentArchived: documentArchivedSchema,
+});
+export class CancelledPrescriptionDto extends createZodDto(
+  cancelledPrescriptionSchema,
+) {}
+export type CancelledPrescriptionResponse = z.infer<
+  typeof cancelledPrescriptionSchema
+>;
 
 /**
  * PR-109. What correcting answers: the prescription annulled, and the draft
@@ -441,6 +460,7 @@ export class PrescriptionDto extends createZodDto(prescriptionSchema) {}
 export const correctedPrescriptionSchema = z.object({
   cancelled: prescriptionSchema,
   draft: prescriptionSchema,
+  documentArchived: documentArchivedSchema,
 });
 export class CorrectedPrescriptionDto extends createZodDto(
   correctedPrescriptionSchema,

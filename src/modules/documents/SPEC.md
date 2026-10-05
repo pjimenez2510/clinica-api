@@ -413,7 +413,11 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
   del certificado N.º …», con el número del corregido, SI lo anuló
   «Corregir». SI el sujeto no tiene ningún PDF archivado, ENTONCES **NO
   DEBERÁ** archivar ninguno. SI el PDF no se puede archivar, ENTONCES la
-  anulación **NO DEBERÁ** fallar por ello.
+  anulación **NO DEBERÁ** fallar por ello. La respuesta de anular y de corregir
+  **DEBERÁ** llevar `documentArchived`: `true` si lo archivó, `false` si había
+  PDF y no se pudo archivar, y `null` si no había PDF que sustituir; y el
+  registro del fallo **DEBERÁ** llevar el identificador del sujeto, su clase y
+  el nombre del error o el código de Prisma, **nunca** su mensaje.
 
   > **Después de la anulación, no dentro de ella.** Componer un PDF —fuentes,
   > imágenes, plantilla— con el candado de la receta puesto ataría el acto
@@ -425,13 +429,20 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
   > PDF anterior sigue archivado, y «Corregir…» (DOC-108) archiva el nuevo
   > después con la causa. La prueba de integración fuerza ese fallo.
   >
-  > Desaparece el paso encadenado del aviso «no entregue los PDF emitidos
-  > antes; use Corregir…»: la pantalla lo dice como información cuando el
-  > vigente ya lleva la marca.
+  > **Que no se pierda en silencio.** Con `documentArchived: false` la
+  > pantalla lo dice en el mismo aviso de la anulación («use “Corregir…” en el
+  > documento antes de entregar nada»), y el panel de documentos vuelve a
+  > avisar mientras el PDF vigente sea anterior a la anulación.
+  >
+  > **Un solo vigente, y lo garantiza la base:** un original por sujeto
+  > (`document_render_*_original_unique`) y un solo sustituto por PDF
+  > (`document_render_supersedes_unique`, DOC-008) dejan la cadena en una sola
+  > línea, sin ramas: sustituir al que ningún otro sustituye es sustituirlos a
+  > todos.
   >
   > ⚠️ **Dos anulaciones a la vez del mismo sujeto** (dos exámenes de una orden
   > en el mismo instante) eligen el mismo vigente; DOC-008 deja archivar sólo
-  > una, y la otra se pierde en silencio hasta el siguiente «Corregir…». No se
+  > una, y la otra responde `documentArchived: false`, con su aviso. No se
   > reintenta.
 
 - **DOC-011** — El sistema **NO DEBERÁ** ofrecer ninguna ruta, ningún método de
@@ -1091,7 +1102,7 @@ Por qué no se construye hoy:
 | DOC-005, DOC-008, DOC-009, DOC-010 | **Integración contra PostgreSQL real, por SQL directo.** Lo garantiza la base y por debajo de todas las capas |
 | DOC-003, DOC-004, DOC-030, DOC-032, DOC-035, DOC-036 | Integración: son `CHECK`, `UNIQUE` y disparadores |
 | DOC-001, DOC-002, DOC-006, DOC-007, DOC-012, DOC-014 | Integración por HTTP: es donde el alcance de sedes y el permiso son reales |
-| DOC-108, DOC-109 | **Integración por HTTP** (`documents-http.spec.ts`): corregir sin motivo y con él; anular una receta, un certificado y un examen, y corregir una receta, archivan el que sustituye al vigente con su marca y su motivo; sin PDF previo no se archiva nada (control positivo); un fallo forzado de la base al archivar no impide la anulación, y «Corregir…» lo archiva después. Unitario: el motivo de cada causa, el vigente que se sustituye, el puerto que nunca lanza, y que cada servicio lo llama tras anular o corregir |
+| DOC-108, DOC-109 | **Integración por HTTP** (`documents-http.spec.ts`): corregir sin motivo y con él; anular una receta, un certificado y un examen, y corregir una receta, archivan el que sustituye al vigente con su marca y su motivo; sin PDF previo no se archiva nada (control positivo); un fallo forzado de la base al archivar no impide la anulación, y «Corregir…» lo archiva después; cada respuesta lleva `documentArchived` (`true`, `false` con el fallo forzado, `null` sin PDF). Unitario: el motivo de cada causa, el vigente que se sustituye, el puerto que nunca lanza y responde `true`, `false` o `null`, el registro del fallo que sobrevive a la poda sin el mensaje, y que cada servicio lo llama tras anular o corregir y propaga la respuesta |
 | DOC-020 a DOC-025, DOC-070 a DOC-085 | Unitarias sobre los bytes generados: el PDF se inspecciona, no se cree; y veraPDF (`pnpm pdfa:check`) al cerrar |
 | DOC-038, DOC-039, DOC-061, DOC-094 a DOC-096 | Integración por HTTP: permiso, transacción y cuerpo de la respuesta reales |
 | DOC-050 a DOC-056 | Unitarias sobre el normalizador de imagen, con ficheros sintéticos |

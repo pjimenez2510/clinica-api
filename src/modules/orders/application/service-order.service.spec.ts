@@ -199,6 +199,8 @@ describe('la emisión y el seguimiento de una orden', () => {
   let service: ServiceOrderService;
   /** DOC-109. What the documents port was asked to archive. */
   let archived: AnnulledDocument[];
+  /** DOC-109. What the port answers about the PDF; `true` unless a test moves it. */
+  let archiveAnswer: boolean | null;
 
   beforeEach(() => {
     orders = new FakeOrders();
@@ -210,10 +212,11 @@ describe('la emisión y el seguimiento de una orden', () => {
       error: vi.fn(),
     } as unknown as PinoLogger;
     archived = [];
+    archiveAnswer = true;
     const documents: AnnulledDocumentArchiver = {
       archiveAnnulled: (document) => {
         archived.push(document);
-        return Promise.resolve(true);
+        return Promise.resolve(archiveAnswer);
       },
     };
     service = new ServiceOrderService(
@@ -454,5 +457,17 @@ describe('la emisión y el seguimiento de una orden', () => {
       { kind: 'SERVICE_ORDER', subjectId: 'order-1', userId: requester.userId, cause: 'ANNULMENT' }, // prettier-ignore
       { kind: 'SERVICE_ORDER', subjectId: 'order-1', userId: requester.userId, cause: 'CORRECTION' }, // prettier-ignore
     ]);
+  });
+
+  it('DOC-109 ORD-007 ORD-118 la respuesta dice si el PDF al día quedó archivado', async () => {
+    // Control positivo: archivado.
+    await expect(service.cancelItem('order-1', 'item-0', requester)).resolves.toMatchObject({ documentArchived: true }); // prettier-ignore
+    // Había PDF y no se pudo archivar: la pantalla tiene que avisar.
+    archiveAnswer = false;
+    await expect(service.cancelItem('order-1', 'item-0', requester)).resolves.toMatchObject({ documentArchived: false }); // prettier-ignore
+    await expect(service.correct('order-1', requester)).resolves.toMatchObject({ documentArchived: false }); // prettier-ignore
+    // No había PDF que sustituir.
+    archiveAnswer = null;
+    await expect(service.correct('order-1', requester)).resolves.toMatchObject({ documentArchived: null }); // prettier-ignore
   });
 });

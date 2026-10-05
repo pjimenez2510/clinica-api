@@ -80,7 +80,7 @@ const serviceOf = (prisma: PrismaClient) => {
     audit,
     logger,
     // DOC-109 is proven in `documents-http.spec.ts`.
-    { archiveAnnulled: () => Promise.resolve(false) },
+    { archiveAnnulled: () => Promise.resolve(null) },
   );
 };
 

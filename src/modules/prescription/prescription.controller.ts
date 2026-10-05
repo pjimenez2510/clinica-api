@@ -30,6 +30,7 @@ import {
   CancelPrescriptionDto,
   ComposedPrescriptionDto,
   CorrectPrescriptionDto,
+  CancelledPrescriptionDto,
   CorrectedPrescriptionDto,
   DiscardPrescriptionDto,
   PrescriptionDocumentDto,
@@ -38,6 +39,7 @@ import {
   RewritePrescriptionDto,
   VocabularyQueryDto,
   type ComposedPrescriptionResponse,
+  type CancelledPrescriptionResponse,
   type CorrectedPrescriptionResponse,
   type PrescriptionDocumentResponse,
   type PrescriptionResponse,
@@ -242,18 +244,21 @@ export class PrescriptionController {
   @RequirePermission('prescription:write', 'query')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Anular una receta emitida, diciendo por qué' })
-  @ApiOkResponse({ type: PrescriptionDto })
+  @ApiOkResponse({ type: CancelledPrescriptionDto })
   async cancel(
     @Param('prescriptionId', ParseUUIDPipe) prescriptionId: string,
     @Body() body: CancelPrescriptionDto,
     @Req() req: Request,
-  ): Promise<PrescriptionResponse> {
+  ): Promise<CancelledPrescriptionResponse> {
     const cancelled = await this.prescriptions.cancel(
       prescriptionId,
       body.reason,
       this.requester(req, 'prescription:write'),
     );
-    return toPrescriptionResponse(cancelled);
+    return {
+      ...toPrescriptionResponse(cancelled),
+      documentArchived: cancelled.documentArchived,
+    };
   }
 
   /**
@@ -285,6 +290,7 @@ export class PrescriptionController {
     return {
       cancelled: toPrescriptionResponse(corrected.cancelled),
       draft: toPrescriptionResponse(corrected.draft),
+      documentArchived: corrected.documentArchived,
     };
   }
 
