@@ -103,7 +103,6 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
           // ORD-100. A draft or a discarded order proposes no charge.
           where: { status: 'ISSUED' },
           select: {
-            requestedAt: true,
             items: {
               select: { id: true, testCode: true, status: true },
               orderBy: { createdAt: 'asc' },
@@ -134,16 +133,18 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
         serviceDate: clinicalDateOf(procedure.performedAt),
         quantity: procedure.quantity,
       })),
-      // ⚠️ THE DATE OF THE ORDER, not of the result. The clinic sold the
-      // request: the patient took the order and the specimen was drawn. Most
-      // exams here are performed externally (`performed_externally` defaults
-      // to true) and their report may never arrive, so pricing by the result
-      // would leave those lines uncharged forever.
+      // ⚠️ THE CLINICAL DATE OF THE VISIT (BI-193, D-123.7), not of the
+      // result and not of the order. Not the result: most exams here are
+      // performed externally and their report may never arrive. Not the
+      // order: since ORD-098 `requested_at` is when it was ISSUED, and a
+      // draft issued the next day was priced at the next day's tariff while
+      // its service (ORD-004) was resolved on the visit's date. What was sold
+      // was sold the day of the visit.
       exams: row.serviceOrders.flatMap((order) =>
         order.items.map((item): OrderedExam => ({
           serviceOrderItemId: item.id,
           testCode: item.testCode,
-          serviceDate: clinicalDateOf(order.requestedAt),
+          serviceDate: clinicalDateOf(row.startedAt),
           cancelled: item.status === 'CANCELLED',
         })),
       ),
