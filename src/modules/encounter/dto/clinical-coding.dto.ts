@@ -193,7 +193,11 @@ export const retractedDiagnosisSchema = z.object({
 });
 
 export const diagnosisListSchema = z.object({
-  items: z.array(diagnosisSchema),
+  /**
+   * EN-189. With whether an issued certificate printed the code, so removing
+   * it asks for the reason before sending.
+   */
+  items: z.array(diagnosisSchema.extend({ printedOnCertificate: z.boolean() })),
   /** EN-180. What was removed, so the trace is in front of whoever reads. */
   retracted: z.array(retractedDiagnosisSchema),
 });

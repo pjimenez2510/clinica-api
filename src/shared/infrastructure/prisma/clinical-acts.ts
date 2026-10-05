@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 
 import { WRITTEN_TEXT_PATTERN } from '../../domain/written-text';
 
@@ -39,6 +39,44 @@ export const STANDING_INTERCONSULTATION_STATUSES = [
   'ANSWERED',
 ] as const;
 
+/**
+ * The same predicate as SQL, for a query that has to ask it of many
+ * attentions at once (BI-190: the old unsettled visits have no ceiling, so
+ * eight questions per row would be an N+1 without end). `encounterId` is the
+ * expression that names the attention — a parameter or a column.
+ *
+ * ONE DEFINITION: `hasClinicalAct` asks exactly this, so the two answers
+ * cannot drift.
+ */
+export function clinicalActExists(encounterId: Prisma.Sql): Prisma.Sql {
+  return Prisma.sql`(
+    EXISTS (
+      SELECT 1
+        FROM clinical_note n,
+             jsonb_each(CASE WHEN jsonb_typeof(n.content) = 'object' THEN n.content ELSE '{}'::jsonb END) AS section
+       WHERE n.encounter_id = ${encounterId}
+         AND jsonb_typeof(section.value) = 'string'
+         AND (section.value #>> '{}') ~ ${WRITTEN_TEXT_PATTERN}
+    )
+    OR EXISTS (SELECT 1 FROM encounter_diagnosis d WHERE d.encounter_id = ${encounterId})
+    OR EXISTS (SELECT 1 FROM encounter_procedure p WHERE p.encounter_id = ${encounterId})
+    OR EXISTS (SELECT 1 FROM prescription r WHERE r.encounter_id = ${encounterId})
+    -- ORD-100. A draft is not an act yet; a discarded one never was.
+    OR EXISTS (SELECT 1 FROM service_order o
+                WHERE o.encounter_id = ${encounterId} AND o.status::text = 'ISSUED')
+    -- D-104: a certificate states there was an attention; a referral and an
+    -- interconsultation are clinical decisions about the patient.
+    OR EXISTS (SELECT 1 FROM medical_certificate c
+                WHERE c.encounter_id = ${encounterId} AND c.revoked_at IS NULL)
+    OR EXISTS (SELECT 1 FROM referral f
+                WHERE f.encounter_id = ${encounterId}
+                  AND f.status::text IN (${Prisma.join(STANDING_REFERRAL_STATUSES)}))
+    OR EXISTS (SELECT 1 FROM interconsultation i
+                WHERE i.encounter_id = ${encounterId}
+                  AND i.status::text IN (${Prisma.join(STANDING_INTERCONSULTATION_STATUSES)}))
+  )`;
+}
+
 export async function hasClinicalAct(
   client: Prisma.TransactionClient | PrismaClient,
   encounterId: string,
@@ -48,38 +86,8 @@ export async function hasClinicalAct(
   // rule of `written-text.ts`, the same one that decides which drafts are
   // signed: only text sections, and blanks are every character `trim`
   // removes — `btrim` alone took a lone Enter for writing (3.ª revisión, G1).
-  const [written] = await client.$queryRaw<{ any: boolean }[]>`
-    SELECT EXISTS (
-      SELECT 1
-        FROM clinical_note n,
-             jsonb_each(CASE WHEN jsonb_typeof(n.content) = 'object' THEN n.content ELSE '{}'::jsonb END) AS section
-       WHERE n.encounter_id = ${encounterId}::uuid
-         AND jsonb_typeof(section.value) = 'string'
-         AND (section.value #>> '{}') ~ ${WRITTEN_TEXT_PATTERN}
-    ) AS any
+  const [row] = await client.$queryRaw<{ any: boolean }[]>`
+    SELECT ${clinicalActExists(Prisma.sql`${encounterId}::uuid`)} AS any
   `;
-  if (written?.any) return true;
-
-  const counts = await Promise.all([
-    client.encounterDiagnosis.count({ where: { encounterId } }),
-    client.encounterProcedure.count({ where: { encounterId } }),
-    client.prescription.count({ where: { encounterId } }),
-    // ORD-100. A draft is not an act yet; a discarded one never was.
-    client.serviceOrder.count({ where: { encounterId, status: 'ISSUED' } }),
-    // D-104: a certificate states there was an attention; a referral and an
-    // interconsultation are clinical decisions about the patient.
-    client.medicalCertificate.count({
-      where: { encounterId, revokedAt: null },
-    }),
-    client.referral.count({
-      where: { encounterId, status: { in: [...STANDING_REFERRAL_STATUSES] } },
-    }),
-    client.interconsultation.count({
-      where: {
-        encounterId,
-        status: { in: [...STANDING_INTERCONSULTATION_STATUSES] },
-      },
-    }),
-  ]);
-  return counts.some((count) => count > 0);
+  return row?.any === true;
 }

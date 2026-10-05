@@ -148,7 +148,10 @@ export class ClinicalCodingController {
       this.requester(req, 'record:read'),
     );
     return {
-      items: sheet.items.map(toDiagnosisResponse),
+      items: sheet.items.map((item) => ({
+        ...toDiagnosisResponse(item),
+        printedOnCertificate: item.printedOnCertificate,
+      })),
       retracted: sheet.retracted.map(toRetractedResponse),
     };
   }

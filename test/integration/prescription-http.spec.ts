@@ -420,6 +420,29 @@ describe('la receta por HTTP', () => {
     expect(document.prescriber.acessRegistration).toBe('ACESS-1710034065'); // PR-034
   });
 
+  it('PR-105 con «Dosis única» se emite sin duración y el documento no la dice; con duración se rechaza', async () => {
+    const refused = await post(`/encounters/${encounterId}/prescriptions`, doctorToken, {
+      items: [aLine({ frequency: 'SINGLE_DOSE', durationDays: 1 })],
+    }).expect(422); // prettier-ignore
+    expect(JSON.stringify(refused.body)).toContain('durationDays');
+
+    const composed = await composeAsDoctor([
+      aLine({ frequency: 'SINGLE_DOSE', durationDays: undefined, quantity: 1 }),
+    ]);
+    await post(
+      `/prescriptions/${composed.prescription.id}/issue`,
+      doctorToken,
+    ).expect(200);
+
+    const document = (
+      await get(`/prescriptions/${composed.prescription.id}`, doctorToken).expect(200)
+    ).body as DocumentBody; // prettier-ignore
+    const item = document.items[0] as unknown as { durationDays: number | null; indications: string }; // prettier-ignore
+    expect(item.durationDays).toBeNull();
+    expect(item.indications).toContain('dosis única');
+    expect(item.indications).not.toMatch(/durante|día/);
+  });
+
   it('PR-005 rechaza emitir dos veces, diciendo en qué estado está', async () => {
     const composed = await composeAsDoctor();
     await post(

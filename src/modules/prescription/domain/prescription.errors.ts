@@ -218,6 +218,30 @@ export class PrescriptionItemIncompleteError extends ValidationError {
 }
 
 /**
+ * PR-105. «Dosis única» and a duration on the same line: a single dose does
+ * not last, and the paper must not choose which of the two to believe. Only a
+ * draft written before PR-105 can reach the issue like this — the request
+ * already refuses it — so the way out is to reopen it and save it again.
+ */
+export class PrescriptionSingleDoseWithDurationError extends ValidationError {
+  readonly code = 'PRESCRIPTION_SINGLE_DOSE_WITH_DURATION';
+  override readonly userTitle =
+    'Con «Dosis única» no se indica duración. Abra el borrador, revise la línea y guárdelo antes de emitir';
+  override readonly fieldErrors: readonly DomainFieldError[];
+
+  constructor(lines: readonly number[]) {
+    super(`Single-dose lines with a duration: ${lines.join(', ')}`, {
+      lines: lines.length,
+    });
+    this.fieldErrors = lines.map((line) => ({
+      field: `items.${line - 1}.durationDays`,
+      code: 'PRESCRIPTION_SINGLE_DOSE_WITH_DURATION',
+      message: `Con «Dosis única» no se indica duración (línea ${line})`,
+    }));
+  }
+}
+
+/**
  * PR-009. A line that names no CNMB concept and gives no written reason.
  *
  * ═══════════════════════════════════════════════════════════════════════════

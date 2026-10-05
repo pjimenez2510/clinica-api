@@ -232,6 +232,12 @@ export interface ClinicalCodingRepository {
   diagnosesOf(query: CodingQuery): Promise<DiagnosisView[]>;
 
   /**
+   * EN-189. The CIE-10 codes an issued certificate of the attention printed
+   * —in force or revoked—, as `medical_certificate.diagnoses` froze them.
+   */
+  codesPrintedOnCertificates(query: CodingQuery): Promise<string[]>;
+
+  /**
    * EN-180 to EN-182. Archives the diagnosis and takes it off the attention,
    * in one transaction under the attention's lock: whether the note is signed
    * and whether a document cites the diagnoses can both change between a read

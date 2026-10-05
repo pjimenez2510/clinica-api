@@ -982,6 +982,7 @@ function toItemContent(item: PrescriptionView['items'][number]): ItemContent {
     doseText: item.doseText,
     frequencyText: item.frequencyText,
     durationDays: item.durationDays,
+    frequencyCode: item.frequencyCode,
     conceptId: item.conceptId,
     offFormularyJustification: item.offFormularyJustification,
   };

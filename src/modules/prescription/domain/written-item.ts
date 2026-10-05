@@ -20,7 +20,8 @@ export interface WrittenItem {
   doseUnit: DoseUnit;
   frequency: Frequency | null;
   frequencyText: string | null;
-  durationDays: number;
+  /** PR-105. `null` exactly with «Dosis única». */
+  durationDays: number | null;
   instructions: string | null;
   offFormularyJustification: string | null;
 }

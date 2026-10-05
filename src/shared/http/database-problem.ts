@@ -254,11 +254,12 @@ function isPrismaError(
 /**
  * The constraint that fired.
  *
- * Prisma is inconsistent about where it puts this, so all three known places
- * are read: a foreign key arrives in `constraint.index`, while an exclusion or
- * a CHECK only names it inside the original message. Reading the name out of
- * that message is safe — the name is ours; the row is in `detail`, which is
- * never touched.
+ * Prisma is inconsistent about where it puts this, so all known places are
+ * read: a foreign key arrives in `constraint.index`, while an exclusion or a
+ * CHECK only names it inside the original message — PostgreSQL's own wording
+ * for a declared one, the trigger's `<name>: ` prefix for a raised one.
+ * Reading the name out of that message is safe — the name is ours; the row is
+ * in `detail`, which is never touched.
  */
 function constraintName(
   error: PrismaErrorLike,
@@ -278,6 +279,16 @@ function constraintName(
 
   const message = cause.originalMessage;
   if (typeof message !== 'string') return undefined;
+  // A trigger that raises `'<name>: …' USING CONSTRAINT = '<name>'` names the
+  // rule, but the adapter only copies `constraint` for a foreign key, so for a
+  // 23514 or a 23P01 the name survives only as that prefix. Anchored at the
+  // start, where only the trigger's own text can be, and accepted only when
+  // the name is registered: a message that merely begins with a word and a
+  // colon must not pick an error. Read FIRST, so text the trigger interpolates
+  // later in its message can never outrank the name it raised.
+  const prefix = /^([a-z][a-z0-9_]*): /.exec(message)?.[1];
+  if (prefix && constraintMeaningOf(prefix)) return prefix;
+
   // Anchored on the exact wording PostgreSQL uses, so the name can only be
   // read from where PostgreSQL puts it.
   return /violates (?:unique|check|exclusion|foreign key) constraint "([^"]+)"/.exec(

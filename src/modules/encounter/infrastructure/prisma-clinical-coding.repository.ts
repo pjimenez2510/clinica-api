@@ -9,11 +9,17 @@ import {
   DiagnosisNotFoundError,
   DiagnosisPrimaryTakenError,
   DiagnosisRetractionReasonRequiredError,
+  DiagnosisLastAfterDischargeError,
+  DiagnosisPrimaryAfterDischargeError,
   EncounterAlreadyClosedError,
   EncounterNotFoundError,
 } from '../domain/encounter.errors';
 import type { CareModality, EncounterStatus } from '../domain/encounter';
-import { acceptsNewClinicalContent } from '../domain/encounter-state';
+import {
+  acceptsDiagnosisCorrection,
+  acceptsNewClinicalContent,
+  hasDischarge,
+} from '../domain/encounter-state';
 import {
   careModalityOfCie10,
   isPrimary,
@@ -239,17 +245,49 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
   }
 
   /**
-   * EN-180 to EN-182. Archive, then delete — the order the database demands.
+   * EN-189. What the certificates froze (CER-027), revoked ones included: the
+   * paper may have circulated before it was annulled.
+   */
+  async codesPrintedOnCertificates(query: CodingQuery): Promise<string[]> {
+    const rows = await this.prisma.medicalCertificate.findMany({
+      where: {
+        encounterId: query.encounterId,
+        encounter: siteFilter(query.sites),
+      },
+      select: { diagnoses: true },
+    });
+    return [
+      ...new Set(
+        rows.flatMap((row) =>
+          Array.isArray(row.diagnoses)
+            ? row.diagnoses.flatMap((printed) =>
+                typeof printed === 'object' &&
+                printed !== null &&
+                'code' in printed &&
+                typeof printed.code === 'string'
+                  ? [printed.code]
+                  : [],
+              )
+            : [],
+        ),
+      ),
+    ];
+  }
+
+  /**
+   * EN-180 to EN-182, EN-188, EN-189. Archive, then delete — the order the
+   * database demands.
    *
    * The two refusals are asked here, under the attention's lock, so they are
    * sentences: the triggers raise a class code whose name never travels.
    */
   async retractDiagnosis(retraction: DiagnosisRetraction): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
-      await requireEncounterInScope(
+      const status = await requireEncounterInScope(
         tx,
         retraction.encounterId,
         retraction.sites,
+        acceptsDiagnosisCorrection,
       );
       await requireDiagnosisOf(
         tx,
@@ -258,14 +296,24 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
       );
       await refuseWhenCitedByIssuedDocument(tx, retraction.encounterId);
 
-      if (retraction.reason === null) {
-        const signedNotes = await tx.clinicalNote.count({
-          where: {
-            encounterId: retraction.encounterId,
-            signedAt: { not: null },
-          },
+      // EN-188. A discharged attention keeps one: nothing new can be coded.
+      if (hasDischarge(status)) {
+        const left = await tx.encounterDiagnosis.count({
+          where: { encounterId: retraction.encounterId },
         });
-        if (signedNotes > 0) throw new DiagnosisRetractionReasonRequiredError();
+        if (left <= 1) throw new DiagnosisLastAfterDischargeError();
+      }
+
+      if (retraction.reason === null) {
+        // The same function the archive's trigger calls: a signed note, the
+        // discharge, or a certificate that printed the code.
+        const [row] = await tx.$queryRaw<{ needs: boolean }[]>`
+          SELECT encounter_diagnosis_retraction_needs_reason(
+                   d.encounter_id, d.cie10_code) AS needs
+            FROM encounter_diagnosis d
+           WHERE d.id = ${retraction.diagnosisId}::uuid
+        `;
+        if (row?.needs) throw new DiagnosisRetractionReasonRequiredError();
       }
 
       await tx.$executeRaw`
@@ -292,7 +340,12 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
    */
   async makePrimary(change: PrimaryChange): Promise<DiagnosisView[]> {
     await this.prisma.$transaction(async (tx) => {
-      await requireEncounterInScope(tx, change.encounterId, change.sites);
+      const status = await requireEncounterInScope(
+        tx,
+        change.encounterId,
+        change.sites,
+        acceptsDiagnosisCorrection,
+      );
       const target = await requireDiagnosisOf(
         tx,
         change.encounterId,
@@ -306,6 +359,11 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         select: { id: true, rank: true },
       });
       const previous = inUse.find((row) => isPrimary(row.rank));
+      // EN-188. After the discharge only an EMPTY principal is filled: the
+      // wrong one leaves through the archive, with its reason.
+      if (previous && hasDischarge(status)) {
+        throw new DiagnosisPrimaryAfterDischargeError();
+      }
       if (previous) {
         await tx.encounterDiagnosis.update({
           where: { id: previous.id },
@@ -461,7 +519,10 @@ async function requireEncounterInScope(
   tx: Prisma.TransactionClient,
   encounterId: string,
   sites: SiteScopeFilter,
-): Promise<void> {
+  // EN-188. Correcting the coding reaches past the discharge; adding to it
+  // does not.
+  accepts: (status: EncounterStatus) => boolean = acceptsNewClinicalContent,
+): Promise<EncounterStatus> {
   const encounter = await tx.encounter.findFirst({
     where: { id: encounterId, ...siteFilter(sites) },
     select: { id: true },
@@ -475,9 +536,10 @@ async function requireEncounterInScope(
        FOR UPDATE
   `;
   if (!locked) throw new EncounterNotFoundError();
-  if (!acceptsNewClinicalContent(locked.status)) {
+  if (!accepts(locked.status)) {
     throw new EncounterAlreadyClosedError(locked.status);
   }
+  return locked.status;
 }
 
 /** EN-180, EN-183. The diagnosis, on THIS attention, or the one refusal. */

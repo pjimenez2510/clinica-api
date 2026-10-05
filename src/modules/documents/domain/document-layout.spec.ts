@@ -409,6 +409,20 @@ describe('DOC-072 la tabla de la receta, como la plantilla aprobada (D-095)', ()
 
     expect(table.rows[0]?.[5]).toBe('1 tableta · cada 8 horas · por 1 día');
   });
+
+  it('PR-105 con «Dosis única» la posología no dice duración', () => {
+    const base = prescription() as Extract<DocumentSubject, { kind: 'PRESCRIPTION' }>; // prettier-ignore
+    const single = prescription({
+      lines: base.data.lines.map((line) => ({
+        ...line,
+        frequencyText: 'Dosis única',
+        durationDays: null,
+      })),
+    });
+    const table = tableOf(composeLayout(single, context, template));
+
+    expect(table.rows[0]?.[5]).toBe('1 tableta · Dosis única');
+  });
 });
 
 describe('PR-020 PR-038 PR-039 la receta impresa lleva su número y sus indicaciones', () => {

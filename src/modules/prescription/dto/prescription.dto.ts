@@ -129,12 +129,16 @@ const prescriptionItemSchema = z
       .min(1, 'Indique cada cuánto se toma')
       .max(160, 'La frecuencia no puede superar 160 caracteres')
       .optional(),
-    /** PR-031. Art. 5.c.vi — duración del tratamiento, en días. */
+    /**
+     * PR-031, PR-105. Art. 5.c.vi — duración del tratamiento, en días.
+     * Obligatoria salvo con «Dosis única», que no dura y la rechaza.
+     */
     durationDays: z
       .number()
       .int('La duración se indica en días enteros')
       .min(1, 'La duración tiene que ser de al menos un día')
-      .max(365, 'Una receta no puede durar más de un año'),
+      .max(365, 'Una receta no puede durar más de un año')
+      .optional(),
     /** PR-037. Art. 5.e.iii — indicaciones de esta línea, sin abreviaturas. */
     instructions: z
       .string()
@@ -161,6 +165,24 @@ const prescriptionItemSchema = z
           item.frequency === undefined
             ? 'Indique cada cuánto se toma: elíjalo de la lista o escríbalo'
             : 'Elija la frecuencia de la lista o escríbala, no las dos',
+      });
+    }
+    // PR-031, PR-105. A single dose does not last; everything else does.
+    const singleDose = item.frequency === 'SINGLE_DOSE';
+    if (singleDose && item.durationDays !== undefined) {
+      ctx.issues.push({
+        code: 'custom',
+        input: item,
+        path: ['durationDays'],
+        message: 'Con «Dosis única» no se indica duración',
+      });
+    }
+    if (!singleDose && item.durationDays === undefined) {
+      ctx.issues.push({
+        code: 'custom',
+        input: item,
+        path: ['durationDays'],
+        message: 'Indique cuántos días dura el tratamiento',
       });
     }
     if (item.conceptId === undefined && item.genericName === undefined) {

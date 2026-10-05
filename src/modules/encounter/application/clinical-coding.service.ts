@@ -21,7 +21,10 @@ import {
   EncounterAlreadyClosedError,
   EncounterNotFoundError,
 } from '../domain/encounter.errors';
-import { acceptsNewClinicalContent } from '../domain/encounter-state';
+import {
+  acceptsDiagnosisCorrection,
+  acceptsNewClinicalContent,
+} from '../domain/encounter-state';
 import type {
   CareModality,
   DiagnosisCertainty,
@@ -69,7 +72,8 @@ export interface RetractDiagnosisRequest {
 
 /** EN-047, EN-180. The diagnoses that count, and the trace of those removed. */
 export interface DiagnosisSheet {
-  items: DiagnosisView[];
+  /** EN-189. Each with whether an issued certificate printed its code. */
+  items: (DiagnosisView & { printedOnCertificate: boolean })[];
   retracted: RetractedDiagnosisView[];
 }
 
@@ -212,11 +216,17 @@ export class ClinicalCodingService {
     const encounter = await this.requireEncounter(encounterId, requester);
 
     const query = { encounterId: encounter.id, sites: requester.sites };
-    const [items, retracted] = await Promise.all([
+    const [diagnoses, retracted, printed] = await Promise.all([
       this.coding.diagnosesOf(query),
       // EN-180. The trace travels with the list: one read, one audit row.
       this.coding.retractedDiagnosesOf(query),
+      // EN-189. So the screen asks for the reason before sending, not after.
+      this.coding.codesPrintedOnCertificates(query),
     ]);
+    const items = diagnoses.map((diagnosis) => ({
+      ...diagnosis,
+      printedOnCertificate: printed.includes(diagnosis.cie10Code),
+    }));
 
     await this.audit.record({
       userId: requester.userId,
@@ -231,18 +241,19 @@ export class ClinicalCodingService {
   }
 
   /**
-   * EN-180 to EN-182. Takes a diagnosis off a live attention, archived with
-   * who removed it and, once the note is signed, why.
+   * EN-180 to EN-182, EN-188, EN-189. Takes a diagnosis off a live or
+   * discharged attention, archived with who removed it and, once something
+   * was signed or printed with it, why.
    *
-   * The signed note and the documents that cite the diagnoses are judged by
-   * the adapter under the attention's lock, because both can change between
-   * a read here and the write.
+   * Whether a reason is owed and whether a document cites the diagnoses are
+   * judged by the adapter under the attention's lock, because both can change
+   * between a read here and the write.
    */
   async retractDiagnosis(
     request: RetractDiagnosisRequest,
     requester: Requester,
   ): Promise<void> {
-    const encounter = await this.requireLiveEncounter(
+    const encounter = await this.requireCorrectableEncounter(
       request.encounterId,
       requester,
     );
@@ -303,13 +314,16 @@ export class ClinicalCodingService {
     return corrected;
   }
 
-  /** EN-183. Makes a diagnosis the principal of its live attention. */
+  /** EN-183, EN-188. Makes a diagnosis the principal of its attention. */
   async makePrimary(
     encounterId: string,
     diagnosisId: string,
     requester: Requester,
   ): Promise<DiagnosisView[]> {
-    const encounter = await this.requireLiveEncounter(encounterId, requester);
+    const encounter = await this.requireCorrectableEncounter(
+      encounterId,
+      requester,
+    );
 
     const diagnoses = await this.coding.makePrimary({
       encounterId: encounter.id,
@@ -435,6 +449,21 @@ export class ClinicalCodingService {
   ): Promise<EncounterView> {
     const encounter = await this.requireEncounter(encounterId, requester);
     if (!acceptsNewClinicalContent(encounter.status)) {
+      throw new EncounterAlreadyClosedError(encounter.status);
+    }
+    return encounter;
+  }
+
+  /**
+   * EN-188. Correcting the coding reaches past the discharge (D-117.8): the
+   * report reads these rows, and amending the note does not change them.
+   */
+  private async requireCorrectableEncounter(
+    encounterId: string,
+    requester: Requester,
+  ): Promise<EncounterView> {
+    const encounter = await this.requireEncounter(encounterId, requester);
+    if (!acceptsDiagnosisCorrection(encounter.status)) {
       throw new EncounterAlreadyClosedError(encounter.status);
     }
     return encounter;
