@@ -999,6 +999,23 @@ export const DOMAIN_ERROR_CODES = [
   'EXAM_CATEGORY_MISMATCH',
   'ORDER_NOT_DRAFT',
   'ORDER_NOT_ISSUED',
+  // ─── Orders, E10 (ORD-103 a ORD-111). El catálogo de exámenes, administrado.
+  //
+  //   * `EXAM_DEFINITION_NOT_FOUND` (404), `ANALYTE_NOT_FOUND` (404).
+  //   * `ANALYTE_DEFINITION_INVALID` (422): unidad, decimales o valores
+  //     admitidos que no casan con el tipo de valor.
+  //   * `REFERENCE_RANGE_INVALID` y `REFERENCE_RANGE_OVERLAP` (422): un rango
+  //     imposible, o dos igual de específicos que se pisan (ORD-036 no podría
+  //     elegir).
+  //   * `EXAM_SERVICE_KIND_MISMATCH` (422) y `EXAM_SERVICE_NOT_FOUND` (404):
+  //     la prestación de cobro, de la clase del tipo del examen.
+  'ANALYTE_DEFINITION_INVALID',
+  'ANALYTE_NOT_FOUND',
+  'EXAM_DEFINITION_NOT_FOUND',
+  'EXAM_SERVICE_KIND_MISMATCH',
+  'EXAM_SERVICE_NOT_FOUND',
+  'REFERENCE_RANGE_INVALID',
+  'REFERENCE_RANGE_OVERLAP',
   // ─── Orders, E7 (ORD-043). Sacar un resultado huérfano de la cola.
   //
   // `GET /orders/results/unmatched` listaba los resultados que no responden a

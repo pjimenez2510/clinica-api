@@ -108,6 +108,17 @@ describe('las rutas del módulo de órdenes', () => {
         'POST /orders/:orderId/reports → result:write',
         'GET /orders/:orderId/reports → record:read',
         'GET /exams → catalog:read',
+        // ORD-103 a ORD-111. Administrar el catálogo, lectura incluida: la
+        // ficha enseña lo desactivado y con qué se cobra cada examen.
+        'GET /exam-catalogue/exams → catalog:manage',
+        'GET /exam-catalogue/exams/:examId → catalog:manage',
+        'POST /exam-catalogue/exams → catalog:manage',
+        'PATCH /exam-catalogue/exams/:examId → catalog:manage',
+        'PUT /exam-catalogue/exams/:examId/analytes → catalog:manage',
+        'GET /exam-catalogue/analytes → catalog:manage',
+        'POST /exam-catalogue/analytes → catalog:manage',
+        'PATCH /exam-catalogue/analytes/:analyteId → catalog:manage',
+        'PUT /exam-catalogue/analytes/:analyteId/ranges → catalog:manage',
       ].sort(),
     );
   });
@@ -142,7 +153,10 @@ describe('las rutas del módulo de órdenes', () => {
     // y no está en la URL: el guard no puede comprobar lo que no ve, así que
     // el manejador estrecha con el alcance resuelto de quien llama.
     for (const route of routes) {
-      const expected = route.path === '/exams' ? 'global' : 'query';
+      // El catálogo es de la clínica, no de una sede: global.
+      const catalogue =
+        route.path === '/exams' || route.path.startsWith('/exam-catalogue');
+      const expected = catalogue ? 'global' : 'query';
       expect(route.siteScope, route.path).toBe(expected);
     }
   });

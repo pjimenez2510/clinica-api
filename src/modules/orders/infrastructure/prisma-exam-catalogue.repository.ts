@@ -17,11 +17,9 @@ import type {
 /**
  * The two catalogues — orderable and resultable — as the domain reads them.
  *
- * ⚠️ READ-ONLY, and there is no write anywhere in this class. Creating an exam
- * or an analyte is a CATALOGUE operation with three rules this system already
- * implements once: versioned whole replacement, retired codes disabled and
- * never deleted, validity per version. A second mechanism here is how two
- * catalogues of one thing start disagreeing.
+ * ⚠️ READ-ONLY, and there is no write anywhere in this class: the clinic
+ * writes the catalogue through `PrismaExamAdministrationRepository`
+ * (ORD-103 to ORD-111), with `catalog:manage`, and ordering never does.
  *
  * ⚠️ AND `billable_service_id` IS NEVER SELECTED (ORD-002). The exam points at
  * what the line is invoiced under; the AMOUNT is a price list, per payer, per
@@ -30,7 +28,7 @@ import type {
  */
 
 /** An analyte with every range it declares, of whatever kind. */
-const ANALYTE_SELECT = {
+export const ANALYTE_SELECT = {
   id: true,
   code: true,
   name: true,
@@ -52,12 +50,12 @@ const ANALYTE_SELECT = {
 } satisfies Prisma.AnalyteDefinitionSelect;
 
 /** The shape `ANALYTE_SELECT` produces. */
-type AnalyteRow = Prisma.AnalyteDefinitionGetPayload<{
+export type AnalyteRow = Prisma.AnalyteDefinitionGetPayload<{
   select: typeof ANALYTE_SELECT;
 }>;
 
 /** An exam and its analytes, without `billable_service_id` (see above). */
-const EXAM_SELECT = {
+export const EXAM_SELECT = {
   id: true,
   code: true,
   name: true,
@@ -82,7 +80,9 @@ const EXAM_SELECT = {
 } satisfies Prisma.ExamDefinitionSelect;
 
 /** The shape `EXAM_SELECT` produces. */
-type ExamRow = Prisma.ExamDefinitionGetPayload<{ select: typeof EXAM_SELECT }>;
+export type ExamRow = Prisma.ExamDefinitionGetPayload<{
+  select: typeof EXAM_SELECT;
+}>;
 
 /** The `ExamCatalogueRepository` adapter; it only reads. */
 @Injectable()
@@ -137,7 +137,7 @@ export class PrismaExamCatalogueRepository implements ExamCatalogueRepository {
 }
 
 /** Row to view, analytes in their stored position. */
-function toExamView(row: ExamRow): ExamDefinitionView {
+export function toExamView(row: ExamRow): ExamDefinitionView {
   return {
     id: row.id,
     code: row.code,
@@ -159,7 +159,7 @@ function toExamView(row: ExamRow): ExamDefinitionView {
 }
 
 /** Row to domain analyte, with `allowed_values` and the ranges parsed. */
-function toAnalyte(row: AnalyteRow): AnalyteDefinition {
+export function toAnalyte(row: AnalyteRow): AnalyteDefinition {
   return {
     id: row.id,
     code: row.code,

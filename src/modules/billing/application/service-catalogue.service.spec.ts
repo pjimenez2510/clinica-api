@@ -65,9 +65,11 @@ function build(overrides: Record<string, unknown> = {}) {
     listBillableServices: vi.fn().mockResolvedValue([service]),
     findBillableService: vi.fn().mockResolvedValue(service),
     listExamsOfService: vi.fn().mockResolvedValue([]),
-    countCategoryTies: vi
-      .fn()
-      .mockResolvedValue({ consultations: 0, procedures: 0, exams: 0 }),
+    countCategoryTies: vi.fn().mockResolvedValue({
+      consultations: 0,
+      procedures: 0,
+      examCategories: [],
+    }),
     updateServiceCategory: vi.fn().mockResolvedValue(SUPPLIES),
     findServiceCategory: vi
       .fn()
@@ -324,15 +326,27 @@ describe('BI-187 corregir siempre es posible', () => {
         ...service,
         category: { ...SUPPLIES, id: 'category-lab', kind: 'LABORATORY' },
       }),
-      listExamsOfService: vi
-        .fn()
-        .mockResolvedValue([
-          { id: 'e1', code: 'EX-BH', name: 'BH', active: true },
-        ]),
+      listExamsOfService: vi.fn().mockResolvedValue([
+        { id: 'e1', code: 'EX-BH', name: 'BH', category: 'LABORATORY', active: true }, // prettier-ignore
+      ]),
     });
 
     await expect(
       catalogue.updateService('service-1', { categoryId: SUPPLIES.id }, requester), // prettier-ignore
+    ).rejects.toBeInstanceOf(ServiceKindMismatchError);
+  });
+
+  it('BI-187 ORD-108 la prestación de un examen es de la clase de su tipo: un ECG se cobra como procedimiento, un hemograma no como imagen', async () => {
+    const { service: catalogue, mocks } = build();
+
+    mocks.countCategoryTies.mockResolvedValue({ consultations: 0, procedures: 0, examCategories: ['PROCEDURE'] }); // prettier-ignore
+    await expect(
+      catalogue.updateCategory(SUPPLIES.id, { kind: 'PROCEDURE' }, requester),
+    ).resolves.toBeDefined();
+
+    mocks.countCategoryTies.mockResolvedValue({ consultations: 0, procedures: 0, examCategories: ['LABORATORY'] }); // prettier-ignore
+    await expect(
+      catalogue.updateCategory(SUPPLIES.id, { kind: 'IMAGING' }, requester),
     ).rejects.toBeInstanceOf(ServiceKindMismatchError);
   });
 
@@ -344,7 +358,7 @@ describe('BI-187 corregir siempre es posible', () => {
       kind: 'CONSULTATION',
     });
 
-    mocks.countCategoryTies.mockResolvedValue({ consultations: 1, procedures: 0, exams: 0 }); // prettier-ignore
+    mocks.countCategoryTies.mockResolvedValue({ consultations: 1, procedures: 0, examCategories: [] }); // prettier-ignore
     await expect(
       catalogue.updateCategory(SUPPLIES.id, { kind: 'OTHER' }, requester),
     ).rejects.toBeInstanceOf(ServiceKindMismatchError);

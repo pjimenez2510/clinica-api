@@ -85,6 +85,8 @@ export interface ServiceExamView {
   id: string;
   code: string;
   name: string;
+  /** ORD-108. The exam's type, which is the class its service must be. */
+  category: string;
   active: boolean;
 }
 
@@ -244,11 +246,14 @@ export interface BillingCatalogueRepository {
     categoryId: string,
     update: { name?: string; active?: boolean; kind?: ServiceCategoryKind },
   ): Promise<ServiceCategoryView>;
-  /** BI-187. How many of the category's services carry each kind of tie. */
+  /**
+   * BI-187. How many of the category's services carry each kind of tie, and
+   * the types of the exams charged through them (ORD-108).
+   */
   countCategoryTies(categoryId: string): Promise<{
     consultations: number;
     procedures: number;
-    exams: number;
+    examCategories: string[];
   }>;
 
   /** BI-189. Every list's prices of the service, every validity. */

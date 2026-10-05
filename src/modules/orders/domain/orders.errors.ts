@@ -615,3 +615,110 @@ export class ReportCorrectionIncompleteError extends ValidationError {
     );
   }
 }
+
+// ─── The exam catalogue, administered (ORD-103 to ORD-111) ──────────────────
+
+/** ORD-103. The exam does not exist. */
+export class ExamDefinitionNotFoundError extends NotFoundError {
+  readonly code = 'EXAM_DEFINITION_NOT_FOUND';
+  override readonly userTitle =
+    'Ese examen no está en el catálogo. Vuelva a la lista de exámenes';
+
+  constructor() {
+    super('Exam definition not found');
+  }
+}
+
+/** ORD-105, ORD-106. The analyte does not exist or is deactivated. */
+export class AnalyteNotFoundError extends NotFoundError {
+  readonly code = 'ANALYTE_NOT_FOUND';
+  override readonly userTitle =
+    'Esa determinación no está en el catálogo o está desactivada. Elíjala de la lista';
+
+  constructor() {
+    super('Analyte definition not found or inactive');
+  }
+}
+
+/**
+ * ORD-104. Unit, decimals or allowed values that do not fit the value type.
+ * Each offending field is named: the screen puts the sentence under it.
+ */
+export class AnalyteDefinitionInvalidError extends ValidationError {
+  readonly code = 'ANALYTE_DEFINITION_INVALID';
+  override readonly userTitle =
+    'La determinación no casa con su tipo de valor. Revise los campos señalados';
+
+  constructor(fields: readonly { field: string; message: string }[]) {
+    super(
+      'Analyte definition does not fit its value type',
+      {},
+      fields.map((f) => ({ ...f, code: 'ANALYTE_DEFINITION_INVALID' })),
+    );
+  }
+}
+
+/** ORD-106. A range that cannot be true, named by its row. */
+export class ReferenceRangeInvalidError extends ValidationError {
+  readonly code = 'REFERENCE_RANGE_INVALID';
+  override readonly userTitle =
+    'Hay un rango que no se puede guardar así. Revise las filas señaladas';
+
+  constructor(fields: readonly { field: string; message: string }[]) {
+    super(
+      'Reference range is not coherent',
+      {},
+      fields.map((f) => ({ ...f, code: 'REFERENCE_RANGE_INVALID' })),
+    );
+  }
+}
+
+/**
+ * ORD-107. Two ranges of the same kind and specificity cover one patient:
+ * ORD-036 could not choose between them, and the flag would depend on row
+ * order.
+ */
+export class ReferenceRangeOverlapError extends ValidationError {
+  readonly code = 'REFERENCE_RANGE_OVERLAP';
+  override readonly userTitle =
+    'Dos rangos del mismo tipo se pisan para el mismo paciente. Ajuste el sexo o las edades';
+
+  constructor(fields: readonly { field: string; message: string }[]) {
+    super(
+      'Two reference ranges of equal specificity overlap',
+      {},
+      fields.map((f) => ({ ...f, code: 'REFERENCE_RANGE_OVERLAP' })),
+    );
+  }
+}
+
+/**
+ * ORD-108, ORD-109. The billing service is of another class than the exam's
+ * type: an imaging order is charged with an imaging service.
+ */
+export class ExamServiceKindMismatchError extends ValidationError {
+  readonly code = 'EXAM_SERVICE_KIND_MISMATCH';
+  override readonly userTitle =
+    'La prestación de cobro es de otra clase que el tipo del examen. Elija una prestación del mismo tipo';
+
+  constructor() {
+    super('Billable service category kind differs from the exam category', {}, [
+      {
+        field: 'billableServiceId',
+        code: 'EXAM_SERVICE_KIND_MISMATCH',
+        message: 'Elija una prestación del mismo tipo que el examen',
+      },
+    ]);
+  }
+}
+
+/** ORD-108. The billing service does not exist or is deactivated. */
+export class ExamServiceNotFoundError extends NotFoundError {
+  readonly code = 'EXAM_SERVICE_NOT_FOUND';
+  override readonly userTitle =
+    'Esa prestación no existe o está desactivada. Elíjala de la lista de prestaciones';
+
+  constructor() {
+    super('Billable service not found or inactive');
+  }
+}
