@@ -503,49 +503,67 @@ export class PrismaEncounterRepository implements EncounterRepository {
     };
     const now = new Date();
 
-    const row = await this.prisma.encounterVitals.upsert({
-      where: { encounterId: query.encounterId },
-      create: {
-        encounterId: query.encounterId,
-        ...measurements,
-        // EN-143. Whoever writes the first taking is who took it.
-        recordedById: authorId,
-        // EN-060. The instant of the MEASUREMENT, which is not the instant of
-        // the typing: nursing weighs at 08:10 and the network returns at 08:40.
-        measuredAt: vitals.measuredAt ?? now,
-      },
+    return this.prisma.$transaction(async (tx) => {
       /**
-       * EVERY COLUMN IS WRITTEN ON THE UPDATE, including the ones that arrived
-       * `undefined`. A `PUT` replaces the resource: a partial update would let
-       * a second taking that omitted the abdominal circumference keep the
-       * first taking's figure beside the second taking's weight, and the row
-       * would then describe a measurement nobody performed.
+       * EN-210. `record_version_archive` refuses an edit whose stamp did not
+       * change, so a second correction in the same millisecond as the first —
+       * a double submit, two people at once — would fail as «sin sello». The
+       * row is locked and the stamp moved past the previous one: the second
+       * waits for the first and still gets a stamp of its own.
        */
-      update: {
-        ...Object.fromEntries(
-          Object.entries(measurements).map(([field, value]) => [
-            field,
-            value ?? null,
-          ]),
-        ),
-        /**
-         * ⚠️ A CORRECTION IS NOT A TAKING (EN-143, D-048). The author and the
-         * instant of the taking stay; who corrected it goes beside them.
-         * Rewriting `recorded_by` made the doctor who fixed a temperature the
-         * author of the weight nursing took (clinical review, 30-09-2026), and
-         * the database now refuses it (`trg_encounter_vitals_keeps_its_author`).
-         * Per-measure authorship is D-062.
-         */
-        correctedById: authorId,
-        correctedAt: now,
-        ...(vitals.measuredAt === undefined
-          ? {}
-          : { measuredAt: vitals.measuredAt }),
-      },
-      select: VITALS_SELECT,
-    });
+      const [previous] = await tx.$queryRaw<{ corrected_at: Date | null }[]>`
+        SELECT corrected_at FROM encounter_vitals
+         WHERE encounter_id = ${query.encounterId}::uuid
+         FOR UPDATE`;
+      const stamp =
+        previous?.corrected_at && previous.corrected_at >= now
+          ? new Date(previous.corrected_at.getTime() + 1)
+          : now;
 
-    return toVitalsView(row);
+      const row = await tx.encounterVitals.upsert({
+        where: { encounterId: query.encounterId },
+        create: {
+          encounterId: query.encounterId,
+          ...measurements,
+          // EN-143. Whoever writes the first taking is who took it.
+          recordedById: authorId,
+          // EN-060. The instant of the MEASUREMENT, which is not the instant of
+          // the typing: nursing weighs at 08:10 and the network returns at 08:40.
+          measuredAt: vitals.measuredAt ?? now,
+        },
+        /**
+         * EVERY COLUMN IS WRITTEN ON THE UPDATE, including the ones that arrived
+         * `undefined`. A `PUT` replaces the resource: a partial update would let
+         * a second taking that omitted the abdominal circumference keep the
+         * first taking's figure beside the second taking's weight, and the row
+         * would then describe a measurement nobody performed.
+         */
+        update: {
+          ...Object.fromEntries(
+            Object.entries(measurements).map(([field, value]) => [
+              field,
+              value ?? null,
+            ]),
+          ),
+          /**
+           * ⚠️ A CORRECTION IS NOT A TAKING (EN-143, D-048). The author and the
+           * instant of the taking stay; who corrected it goes beside them.
+           * Rewriting `recorded_by` made the doctor who fixed a temperature the
+           * author of the weight nursing took (clinical review, 30-09-2026), and
+           * the database now refuses it (`trg_encounter_vitals_keeps_its_author`).
+           * Per-measure authorship is D-062.
+           */
+          correctedById: authorId,
+          correctedAt: stamp,
+          ...(vitals.measuredAt === undefined
+            ? {}
+            : { measuredAt: vitals.measuredAt }),
+        },
+        select: VITALS_SELECT,
+      });
+
+      return toVitalsView(row);
+    });
   }
 
   /**
@@ -784,40 +802,46 @@ function toVitalsView(row: VitalsRow): VitalSignsView {
  * `record_version`: the DATABASE's column names, numerics as JSON numbers and
  * instants as ISO text.
  */
-interface VitalsSnapshot {
+export interface VitalsSnapshot {
   encounter_id: string;
-  weight_kg: number | null;
-  height_cm: number | null;
-  head_circumference_cm: number | null;
-  abdominal_circumference_cm: number | null;
-  bmi: number | null;
-  systolic_bp: number | null;
-  diastolic_bp: number | null;
-  heart_rate: number | null;
-  respiratory_rate: number | null;
-  temperature_c: number | null;
-  oxygen_saturation: number | null;
+  weight_kg?: number | null;
+  height_cm?: number | null;
+  head_circumference_cm?: number | null;
+  abdominal_circumference_cm?: number | null;
+  bmi?: number | null;
+  systolic_bp?: number | null;
+  diastolic_bp?: number | null;
+  heart_rate?: number | null;
+  respiratory_rate?: number | null;
+  temperature_c?: number | null;
+  oxygen_saturation?: number | null;
   measured_at: string;
-  height_position: 'STANDING' | 'LYING' | null;
-  hemoglobin_g_dl: number | null;
-  hemoglobin_corrected_g_dl: number | null;
-  presenting_complaint: string | null;
-  recorded_by: string | null;
-  corrected_by: string | null;
-  corrected_at: string | null;
+  height_position?: 'STANDING' | 'LYING' | null;
+  hemoglobin_g_dl?: number | null;
+  hemoglobin_corrected_g_dl?: number | null;
+  presenting_complaint?: string | null;
+  recorded_by?: string | null;
+  corrected_by?: string | null;
+  corrected_at?: string | null;
 }
 
 type Author = { id: string; firstName: string; lastName: string };
 
 /** EN-211. A snapshot in the shape `VITALS_SELECT` yields, for `toVitalsView`. */
-function vitalsRowFromSnapshot(
+export function vitalsRowFromSnapshot(
   snapshot: VitalsSnapshot,
   authors: Map<string, Author>,
 ): VitalsRow {
-  const decimal = (value: number | null) =>
-    value === null ? null : new Prisma.Decimal(value);
-  const author = (id: string | null) =>
-    id === null ? null : (authors.get(id) ?? null);
+  /*
+   * `== null` AND NOT `=== null`, on purpose: a snapshot written before a
+   * column existed does not carry it at all. Reading an old version must
+   * never fail because the table grew since.
+   */
+  const decimal = (value: number | null | undefined) =>
+    value == null ? null : new Prisma.Decimal(value);
+  const integer = (value: number | null | undefined) => value ?? null;
+  const author = (id: string | null | undefined) =>
+    id == null ? null : (authors.get(id) ?? null);
 
   return {
     encounterId: snapshot.encounter_id,
@@ -826,21 +850,21 @@ function vitalsRowFromSnapshot(
     headCircumferenceCm: decimal(snapshot.head_circumference_cm),
     abdominalCircumferenceCm: decimal(snapshot.abdominal_circumference_cm),
     bmi: decimal(snapshot.bmi),
-    systolicBp: snapshot.systolic_bp,
-    diastolicBp: snapshot.diastolic_bp,
-    heartRate: snapshot.heart_rate,
-    respiratoryRate: snapshot.respiratory_rate,
+    systolicBp: integer(snapshot.systolic_bp),
+    diastolicBp: integer(snapshot.diastolic_bp),
+    heartRate: integer(snapshot.heart_rate),
+    respiratoryRate: integer(snapshot.respiratory_rate),
     temperatureC: decimal(snapshot.temperature_c),
-    oxygenSaturation: snapshot.oxygen_saturation,
+    oxygenSaturation: integer(snapshot.oxygen_saturation),
     measuredAt: new Date(snapshot.measured_at),
-    heightPosition: snapshot.height_position,
+    heightPosition: snapshot.height_position ?? null,
     hemoglobinGDl: decimal(snapshot.hemoglobin_g_dl),
     hemoglobinCorrectedGDl: decimal(snapshot.hemoglobin_corrected_g_dl),
-    presentingComplaint: snapshot.presenting_complaint,
+    presentingComplaint: snapshot.presenting_complaint ?? null,
     recordedBy: author(snapshot.recorded_by),
     correctedBy: author(snapshot.corrected_by),
     correctedAt:
-      snapshot.corrected_at === null ? null : new Date(snapshot.corrected_at),
+      snapshot.corrected_at == null ? null : new Date(snapshot.corrected_at),
   };
 }
 

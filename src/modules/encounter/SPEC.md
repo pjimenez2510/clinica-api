@@ -1444,13 +1444,19 @@ requisitos que cambian.
   > fila anterior a `record_version` (solo inserción) y rechaza el UPDATE cuyo
   > sello no cambió (`record_version_change_is_stamped` → 422
   > `EDIT_NOT_STAMPED`). Así no hay camino —API, importación, asistente de IA o
-  > psql— que edite sin dejar rastro. En los signos el sello es el de EN-143:
-  > `corrected_by` y `corrected_at`, con el instante del reloj de la aplicación.
-  > Quién tomó la toma sigue sin cambiar.
+  > psql— que edite sin que la versión anterior quede guardada, y la tabla de
+  > versiones tampoco se vacía con `TRUNCATE`. En los signos el sello es el de
+  > EN-143: `corrected_by` y `corrected_at`, con el instante del reloj de la
+  > aplicación. Quién tomó la toma sigue sin cambiar.
   >
-  > Dos correcciones de la misma toma en el mismo instante chocan: la segunda
-  > trae el mismo sello y se rechaza. Es el precio de reconocer el UPDATE sin
-  > sello, y una persona corrigiendo a mano no lo paga.
+  > **Lo que la base NO puede garantizar:** que el autor del sello sea quien
+  > ejecuta el UPDATE. La API siempre sella con el usuario de la sesión. Un
+  > psql que solo cambie el instante atribuiría la edición al último que
+  > corrigió. Cerrarlo pide una identidad de sesión en la base
+  > (`SET LOCAL app.user_id`), que el sistema aún no tiene.
+  >
+  > Dos guardados de la misma toma en el mismo milisegundo no chocan: el
+  > adaptador bloquea la fila y pone el sello nuevo después del anterior.
 - **EN-211** — El sistema DEBERÁ exponer, a quien puede leer los signos de una
   atención, las tomas que las correcciones sustituyeron, de la más reciente a
   la más antigua, cada una tal como era, con quién la sustituyó y cuándo; y la
@@ -3138,6 +3144,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `DIAGNOSIS_NOT_FOUND` | 404 | El diagnóstico no es de esa atención, o ya se quitó. **El mismo para ambas**, por lo de `ENCOUNTER_NOT_FOUND` | EN-180, EN-183 |
 | `DIAGNOSIS_RETRACTION_REASON_REQUIRED` | 422 | Quitar un diagnóstico sin motivo cuando hay una nota firmada, la atención tiene el alta o un certificado emitido imprimió su código. Se exige **en el servicio** y en la base | EN-181, EN-188, EN-189 |
 | `DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT` | 409 | Quitar un diagnóstico o cambiar el principal cuando la atención ya tiene una receta emitida o una orden. El mensaje dice que primero se anula el documento | EN-182 |
+| `EDIT_NOT_STAMPED` | 422 | Una edición de algo versionado que no dice quién ni cuándo, o repite el sello anterior. La API siempre lo pone; solo lo ve un acceso directo a la base | EN-210 |
 | `DIAGNOSIS_LAST_AFTER_DISCHARGE` | 409 | Quitar el último diagnóstico de una atención con el alta | EN-188 |
 | `DIAGNOSIS_PRIMARY_AFTER_DISCHARGE` | 409 | Marcar otro como principal tras el alta cuando ya hay uno: se quita el equivocado con su motivo | EN-188 |
 

@@ -696,9 +696,39 @@ describe('los signos vitales de la atención', () => {
     expect(versions[0]!.replacedAt.getTime()).toBeGreaterThan(
       versions[1]!.replacedAt.getTime(),
     );
-    // The taking replaced keeps its own author and instant (EN-143).
+    // The taking replaced keeps its own author and instant (EN-143), and is
+    // read through the same mapping as the current one.
+    const current = await repository.findVitals(query);
     expect(versions[1]!.taking.recordedBy?.id).toBe(practitioner.userId);
+    expect(versions[1]!.taking.measuredAt).toEqual(current!.measuredAt);
     expect(versions[1]!.taking.temperatureC).toBeUndefined();
+    expect(versions[1]!.taking.correctedBy).toBeNull();
+    expect(versions[0]!.taking.correctedBy?.id).toBe(practitioner.userId);
+  });
+
+  it('EN-210 una corrección que cae en el mismo instante que la anterior recibe su propio sello', async () => {
+    const prisma = db();
+    const { site, encounter, practitioner, repository, save } =
+      await anEncounter(prisma);
+    const query = { encounterId: encounter.id, sites: [site.id] };
+    await save(query, { weightKg: 68 });
+    // The previous correction stamped AHEAD of the clock of this save: the
+    // case of two saves in the same millisecond, made deterministic.
+    const ahead = new Date(Date.now() + 60_000);
+    await prisma.$executeRawUnsafe(
+      `UPDATE encounter_vitals
+          SET corrected_by = $2::uuid, corrected_at = $3
+        WHERE encounter_id = $1`,
+      encounter.id,
+      practitioner.userId,
+      ahead,
+    );
+
+    const saved = await save(query, { weightKg: 69 });
+
+    expect(saved.weightKg).toBe(69);
+    expect(new Date(saved.correctedAt!).getTime()).toBe(ahead.getTime() + 1);
+    expect(await repository.findVitalsVersions(query)).toHaveLength(2);
   });
 
   it('EN-211 no enseña las versiones de una atención de otra sede', async () => {

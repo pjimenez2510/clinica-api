@@ -174,5 +174,10 @@ describe('record_version: la versión anterior la guarda la base', () => {
         encounter.id,
       ),
     ).rejects.toThrow(/insert-only/);
+    // TRUNCATE skips row triggers; the statement trigger catches it.
+    await expect(
+      prisma.$executeRawUnsafe(`TRUNCATE record_version`),
+    ).rejects.toThrow(/insert-only/);
+    expect((await versionsOf(prisma, encounter.id)).length).toBe(1);
   });
 });
