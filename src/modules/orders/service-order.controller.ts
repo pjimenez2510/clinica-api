@@ -28,7 +28,9 @@ import {
   PendingOrderListDto,
   PendingOrdersQueryDto,
   ServiceOrderDto,
+  StaleDraftListDto,
   type PendingOrderListResponse,
+  type StaleDraftListResponse,
   type ServiceOrderResponse,
 } from './dto/service-order.dto';
 
@@ -103,6 +105,28 @@ export class ServiceOrderController {
       new Date(),
     );
     return { items: items.map(toPendingResponse) };
+  }
+
+  /**
+   * ORD-115. The caller's own drafts left in attentions no longer open.
+   * Before `:orderId` for the same reason as `pending`; not audited per entry
+   * (ORD-092).
+   */
+  @Get('drafts/stale')
+  @RequirePermission('record:read', 'query')
+  @ApiOperation({ summary: 'Listar mis órdenes en borrador que quedaron sin emitir' }) // prettier-ignore
+  @ApiOkResponse({ type: StaleDraftListDto })
+  async staleDrafts(@Req() req: Request): Promise<StaleDraftListResponse> {
+    const items = await this.orders.staleDrafts(
+      this.requester(req, 'record:read'),
+    );
+    return {
+      items: items.map((entry) => ({
+        ...entry,
+        encounterStartedAt: entry.encounterStartedAt.toISOString(),
+        savedAt: entry.savedAt.toISOString(),
+      })),
+    };
   }
 
   /** ORD-009. One order with its lines. */

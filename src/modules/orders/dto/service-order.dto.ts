@@ -204,3 +204,23 @@ export class PendingOrderListDto extends createZodDto(pendingOrderListSchema) {}
 export type ServiceOrderResponse = z.infer<typeof serviceOrderSchema>;
 export type ServiceOrderListResponse = z.infer<typeof serviceOrderListSchema>;
 export type PendingOrderListResponse = z.infer<typeof pendingOrderListSchema>;
+
+/** ORD-115. A draft its signer left behind in an attention no longer open. */
+export const staleDraftSchema = z.object({
+  orderId: z.uuid(),
+  encounterId: z.uuid(),
+  encounterStatus: z.enum(['OPEN', 'ON_HOLD', 'DISCHARGED', 'COMPLETED', 'DISCONTINUED', 'ENTERED_IN_ERROR']), // prettier-ignore
+  encounterStartedAt: z.iso.datetime(),
+  patientName: z.string(),
+  category: CATEGORY,
+  items: z.array(z.object({ testCode: z.string(), testDisplay: z.string() })),
+  savedAt: z.iso.datetime(),
+  /** ORD-005. `false` in a terminal attention: it can only be discarded. */
+  canIssue: z.boolean(),
+});
+export const staleDraftListSchema = z.object({
+  items: z.array(staleDraftSchema),
+});
+/** Response of GET /orders/drafts/stale. */
+export class StaleDraftListDto extends createZodDto(staleDraftListSchema) {}
+export type StaleDraftListResponse = z.infer<typeof staleDraftListSchema>;

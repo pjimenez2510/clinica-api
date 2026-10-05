@@ -1,4 +1,5 @@
 import type {
+  EncounterStatus,
   ServiceOrderCategory,
   ServiceOrderItemStatus,
   ServiceOrderPriority,
@@ -270,6 +271,30 @@ export interface ServiceOrderRepository {
    * port or anywhere in this module, and the absence IS ORD-080.
    */
   chartByCedula(cedula: string): Promise<string | undefined>;
+
+  /**
+   * ORD-115. The caller's drafts left behind: still `DRAFT`, signed by them,
+   * in attentions that are neither open nor on hold, oldest first.
+   */
+  staleDrafts(query: {
+    userId: string;
+    sites: SiteScopeFilter;
+  }): Promise<StaleDraftEntry[]>;
+}
+
+/** ORD-115. A draft nobody issued, as the practitioner's list shows it. */
+export interface StaleDraftEntry {
+  orderId: string;
+  encounterId: string;
+  encounterStatus: EncounterStatus;
+  /** When the attention started; the screen prints its date in Ecuador. */
+  encounterStartedAt: Date;
+  patientName: string;
+  category: ServiceOrderCategory;
+  items: { testCode: string; testDisplay: string }[];
+  savedAt: Date;
+  /** ORD-005: `false` once the attention is terminal — it is only discarded. */
+  canIssue: boolean;
 }
 
 /** Injection token. The application never names the adapter. */

@@ -9,6 +9,10 @@ import { PrismaClient } from '@prisma/client';
  * something written, and one interrupted before anything was done. Without
  * it the list is empty until somebody closes a consultation on screen.
  *
+ * The attended visit also leaves a fasting-glucose order IN DRAFT that the
+ * doctor never issued (D-123.6): the account shows its notice (BI-192) and
+ * the doctor finds it under «Sus órdenes sin emitir» (ORD-115).
+ *
  * Run after `db:seed`, `db:seed:patients` and `db:seed:agenda`. Idempotent:
  * if the site already has a visit ended today, nothing is added.
  *
@@ -84,6 +88,38 @@ async function main(): Promise<void> {
       authorId: doctor.id,
     },
   });
+  // BI-192, ORD-115. A draft written while the visit was open, never issued.
+  const glucose = await prisma.examDefinition.findUnique({
+    where: { code: 'EX-GLUCOSA-AYUNAS' },
+  });
+  const [tariff] = glucose?.tariffCode
+    ? await prisma.$queryRaw<{ id: string }[]>`
+        SELECT cc."id"::text AS id
+          FROM "catalog_concept" cc
+          JOIN "catalog_system" cs ON cs."id" = cc."system_id" AND cs."code" = 'TARIFF'
+         WHERE cc."code" = ${glucose.tariffCode}
+         ORDER BY lower(cc."valid_period") DESC
+         LIMIT 1`
+    : [];
+  if (glucose && tariff) {
+    await prisma.serviceOrder.create({
+      data: {
+        encounterId: attended.id,
+        siteId: site.id,
+        orderedById: doctor.id,
+        category: 'LABORATORY',
+        status: 'DRAFT',
+        requestedAt: at(20),
+        items: {
+          create: {
+            conceptId: tariff.id,
+            testCode: glucose.code,
+            testDisplay: glucose.name,
+          },
+        },
+      },
+    });
+  }
   await prisma.encounter.update({
     where: { id: attended.id },
     data: {
@@ -118,7 +154,7 @@ async function main(): Promise<void> {
   });
 
   console.log(
-    'Caja: 2 atenciones terminadas hoy en Sede Norte para «Por cobrar» (una atendida, una sin acto clínico).',
+    'Caja: 2 atenciones terminadas hoy en Sede Norte para «Por cobrar» (una atendida, con una orden de exámenes en borrador sin emitir; una sin acto clínico).',
   );
 }
 

@@ -23,6 +23,15 @@ const range = (overrides: Partial<ReferenceRange> = {}): ReferenceRange => ({
   ...overrides,
 });
 
+const messagesOf = (fn: () => void): string[] => {
+  try {
+    fn();
+  } catch (error) {
+    return ((error as { fieldErrors?: { message: string }[] }).fieldErrors ?? []).map((f) => f.message); // prettier-ignore
+  }
+  return [];
+};
+
 const fieldsOf = (fn: () => void): string[] => {
   try {
     fn();
@@ -75,6 +84,11 @@ describe('los rangos de un analito', () => {
       assertRangesHold('NUMERIC', [
         range({ sex: 'MALE', low: 13, high: 17 }),
         range({ sex: 'FEMALE', low: 12, high: 15.5 }),
+      ]),
+    ).not.toThrow();
+    expect(() =>
+      assertRangesHold('NUMERIC', [
+        range({ low: 70, high: 100 }),
         range({ rangeKind: 'CRITICAL', low: 40, high: 400 }),
       ]),
     ).not.toThrow();
@@ -139,22 +153,118 @@ describe('los rangos de un analito', () => {
     ).toEqual(['ranges[0].low']);
   });
 
-  it('ORD-060 un crítico por sexo no pierde el lado que tiene el crítico general', () => {
-    // El varón con glucosa 25 quedaría LOW, sin alerta.
+  it('ORD-106 un crítico por sexo con un solo lado se guarda: hereda el otro del general', () => {
+    expect(() =>
+      assertRangesHold('NUMERIC', [
+        range({ rangeKind: 'CRITICAL', low: 40, high: 400 }),
+        range({ rangeKind: 'CRITICAL', sex: 'MALE', high: 450 }),
+      ]),
+    ).not.toThrow();
+  });
+
+  it('ORD-112 un crítico bajo por encima del límite inferior de referencia se rechaza con los dos valores', () => {
+    // 700 en lugar de 70: todas las glucosas saldrían críticas.
+    const refuse = () =>
+      assertRangesHold('NUMERIC', [
+        range({ low: 70, high: 100 }),
+        range({ rangeKind: 'CRITICAL', low: 700, high: 900 }),
+      ]);
+    expect(fieldsOf(refuse)).toContain('ranges[1].low');
+    expect(messagesOf(refuse).join(' ')).toMatch(/700.*70/);
+  });
+
+  it('ORD-112 un crítico alto por debajo del límite superior de referencia se rechaza', () => {
     expect(
       fieldsOf(() =>
         assertRangesHold('NUMERIC', [
+          range({ low: 70, high: 100 }),
+          range({ rangeKind: 'CRITICAL', low: 40, high: 90 }),
+        ]),
+      ),
+    ).toEqual(['ranges[1].high']);
+  });
+
+  it('ORD-112 el crítico igual al límite de referencia se admite: es el borde de la banda', () => {
+    expect(() =>
+      assertRangesHold('NUMERIC', [
+        range({ low: 70, high: 100 }),
+        range({ rangeKind: 'CRITICAL', low: 70, high: 100 }),
+      ]),
+    ).not.toThrow();
+  });
+
+  it('ORD-112 compara con la resolución de la bandera: el crítico general contra la referencia de cada sexo', () => {
+    // La referencia de las mujeres baja hasta 30; el crítico general de 40
+    // marcaría crítica a una mujer normal. Se nombra la fila del crítico.
+    const refuse = () =>
+      assertRangesHold('NUMERIC', [
+        range({ sex: 'MALE', low: 80, high: 120 }),
+        range({ sex: 'FEMALE', low: 30, high: 120 }),
+        range({ rangeKind: 'CRITICAL', low: 40, high: 400 }),
+      ]);
+    expect(fieldsOf(refuse)).toEqual(['ranges[2].low']);
+    expect(messagesOf(refuse).join(' ')).toMatch(/mujeres/);
+    // Control positivo: el mismo crítico con la referencia femenina en 45 entra.
+    expect(() =>
+      assertRangesHold('NUMERIC', [
+        range({ sex: 'MALE', low: 80, high: 120 }),
+        range({ sex: 'FEMALE', low: 45, high: 120 }),
+        range({ rangeKind: 'CRITICAL', low: 40, high: 400 }),
+      ]),
+    ).not.toThrow();
+  });
+
+  it('ORD-112 el lado heredado también se compara: el bajo general contra la referencia del varón', () => {
+    expect(
+      fieldsOf(() =>
+        assertRangesHold('NUMERIC', [
+          range({ low: 70, high: 100 }),
+          range({ sex: 'MALE', ageMinDays: 0, ageMaxDays: 27, low: 30, high: 100 }), // prettier-ignore
           range({ rangeKind: 'CRITICAL', low: 40, high: 400 }),
           range({ rangeKind: 'CRITICAL', sex: 'MALE', high: 450 }),
         ]),
       ),
-    ).toEqual(['ranges[1].low']);
-    // Control positivo: con sus dos lados, se guarda.
+    ).toEqual(['ranges[2].low']);
+  });
+
+  it('ORD-112 un crítico bajo escrito en la casilla equivocada, sobre una referencia sólo con máximo, se rechaza', () => {
+    // PCR: referencia «hasta 5» y crítico «desde 100» como bajo: todo PCR
+    // normal saldría crítico bajo.
+    const refuse = () =>
+      assertRangesHold('NUMERIC', [
+        range({ high: 5 }),
+        range({ rangeKind: 'CRITICAL', low: 100 }),
+      ]);
+    expect(fieldsOf(refuse)).toEqual(['ranges[1].low']);
+    expect(messagesOf(refuse).join(' ')).toMatch(/100.*5/);
+    // Control positivo: el mismo crítico como alto entra.
     expect(() =>
       assertRangesHold('NUMERIC', [
-        range({ rangeKind: 'CRITICAL', low: 40, high: 400 }),
-        range({ rangeKind: 'CRITICAL', sex: 'MALE', low: 35, high: 450 }),
+        range({ high: 5 }),
+        range({ rangeKind: 'CRITICAL', high: 100 }),
       ]),
     ).not.toThrow();
+  });
+
+  it('ORD-112 una banda crítica invertida por herencia se rechaza aunque no haya referencia', () => {
+    // El varón hereda el bajo 40 y su alto es 30: todo valor sería crítico.
+    expect(
+      fieldsOf(() =>
+        assertRangesHold('NUMERIC', [
+          range({ rangeKind: 'CRITICAL', low: 40, high: 400 }),
+          range({ rangeKind: 'CRITICAL', sex: 'MALE', high: 30 }),
+        ]),
+      ),
+    ).toEqual(['ranges[1].high']);
+  });
+
+  it('ORD-112 el mensaje dice a qué sexo y edad aplica el choque', () => {
+    const refuse = () =>
+      assertRangesHold('NUMERIC', [
+        range({ low: 70, high: 100 }),
+        range({ sex: 'MALE', ageMinDays: 0, ageMaxDays: 27, low: 30, high: 100 }), // prettier-ignore
+        range({ rangeKind: 'CRITICAL', low: 40, high: 400 }),
+      ]);
+    expect(messagesOf(refuse).join(' ')).toMatch(/hombres.*0 a 27 días/);
   });
 });
