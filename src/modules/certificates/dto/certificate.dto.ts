@@ -152,8 +152,6 @@ export const certificateSchema = z.object({
   revokedAt: z.iso.datetime().nullable(),
   revocationReason: z.string().nullable(),
 });
-/** Response of reading one certificate and of annulling it. */
-export class MedicalCertificateDto extends createZodDto(certificateSchema) {}
 
 export const certificateListSchema = z.object({
   items: z.array(certificateSchema),

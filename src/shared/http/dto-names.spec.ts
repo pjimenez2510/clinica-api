@@ -32,7 +32,7 @@ describe('los nombres de los DTO del contrato', () => {
     }
 
     // Control positivo: el recorrido encuentra los DTO de verdad.
-    expect(seen.has('MedicalCertificateDto')).toBe(true);
+    expect(seen.has('RevokedCertificateDto')).toBe(true);
     const repeated = [...seen].filter(([, files]) => files.length > 1);
     expect(repeated).toEqual([]);
   });
