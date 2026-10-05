@@ -163,59 +163,84 @@ describe('la bandera de anormalidad', () => {
     });
   });
 
-  it('ORD-036 ningún paciente pierde un lado de alerta que el crítico general le da', () => {
-    // Exhaustiva sobre combinaciones de críticos parciales por sexo y edad:
-    // para cada paciente, si ALGÚN crítico que le alcanza tiene un lado, un
-    // valor muy por fuera de ese lado sale crítico.
-    const sides = [
+  it('ORD-036 ningún paciente pierde un lado de alerta, y cada lado toma el umbral del crítico más específico que lo tiene', () => {
+    // Exhaustiva: un crítico general y uno calificado (por sexo, por edad
+    // —con y sin mínimo— o por los dos), cada uno con uno o dos lados, sobre
+    // todos los sexos y los bordes de cada tramo. El oráculo se escribe aparte
+    // del código: de los críticos que alcanzan al paciente y tienen ese lado,
+    // el más específico (sexo pesa 2, edad 1).
+    const general = [
       { low: 40, high: 400 },
       { low: 40, high: null },
       { low: null, high: 400 },
     ];
+    const specificSides = [
+      { low: 30, high: 450 },
+      { low: 30, high: null },
+      { low: null, high: 450 },
+    ];
     const qualifiers = [
-      { sex: null, ageMinDays: null, ageMaxDays: null },
       { sex: 'MALE' as const, ageMinDays: null, ageMaxDays: null },
-      { sex: null, ageMinDays: 0, ageMaxDays: 6_574 },
-      { sex: 'MALE' as const, ageMinDays: 0, ageMaxDays: 6_574 },
+      { sex: null, ageMinDays: 0, ageMaxDays: 27 },
+      { sex: null, ageMinDays: null, ageMaxDays: 364 },
+      { sex: 'FEMALE' as const, ageMinDays: 28, ageMaxDays: 364 },
     ];
-    const patients: PatientProfile[] = [
-      { sex: 'MALE', ageDays: 100 },
-      { sex: 'MALE', ageDays: 12_000 },
-      { sex: 'FEMALE', ageDays: 100 },
-      { sex: 'FEMALE', ageDays: 12_000 },
-      { sex: null, ageDays: null },
-    ];
+    const sexes = ['MALE', 'FEMALE', 'INTERSEX', 'UNKNOWN', null] as const;
+    const ages = [null, 0, 27, 28, 364, 365, 12_000];
+
+    const reaches = (range: ReferenceRange, patient: PatientProfile) => {
+      if (range.sex !== null && range.sex !== patient.sex) return false;
+      if (range.ageMinDays === null && range.ageMaxDays === null) return true;
+      if (patient.ageDays === null) return false;
+      return (
+        patient.ageDays >= (range.ageMinDays ?? 0) &&
+        patient.ageDays <= (range.ageMaxDays ?? Infinity)
+      );
+    };
+    const weight = (range: ReferenceRange) =>
+      (range.sex !== null ? 2 : 0) +
+      (range.ageMinDays !== null || range.ageMaxDays !== null ? 1 : 0);
+    const expected = (
+      ranges: ReferenceRange[],
+      patient: PatientProfile,
+      side: 'low' | 'high',
+    ) =>
+      // prettier-ignore
+      ranges
+        .filter((range) => range[side] !== null && reaches(range, patient))
+        .sort((a, b) => weight(b) - weight(a))[0]?.[side] ?? null;
+
     let checked = 0;
-    for (const general of sides) {
-      for (const qualifier of qualifiers.slice(1)) {
-        for (const specific of sides) {
+    for (const sides of general) {
+      for (const qualifier of qualifiers) {
+        for (const specific of specificSides) {
           const ranges: ReferenceRange[] = [
-            { rangeKind: 'CRITICAL', sex: null, ageMinDays: null, ageMaxDays: null, text: null, ...general }, // prettier-ignore
+            { rangeKind: 'CRITICAL', sex: null, ageMinDays: null, ageMaxDays: null, text: null, ...sides }, // prettier-ignore
             { rangeKind: 'CRITICAL', text: null, ...qualifier, ...specific },
           ];
-          for (const patient of patients) {
-            const reaching = ranges.filter(
-              (range) =>
-                (range.sex === null || range.sex === patient.sex) &&
-                (range.ageMinDays === null ||
-                  (patient.ageDays !== null &&
-                    patient.ageDays >= range.ageMinDays &&
-                    patient.ageDays <= (range.ageMaxDays ?? Infinity))),
-            );
-            if (reaching.some((range) => range.low !== null)) {
-              expect(classifyNumeric(-1_000, { ranges }, patient).flag).toBe('CRITICAL_LOW'); // prettier-ignore
-              checked++;
-            }
-            if (reaching.some((range) => range.high !== null)) {
-              expect(classifyNumeric(10_000, { ranges }, patient).flag).toBe('CRITICAL_HIGH'); // prettier-ignore
-              checked++;
+          for (const sex of sexes) {
+            for (const ageDays of ages) {
+              const patient = { sex, ageDays };
+              const low = expected(ranges, patient, 'low');
+              const high = expected(ranges, patient, 'high');
+              const flag = (value: number) => classifyNumeric(value, { ranges }, patient).flag; // prettier-ignore
+              if (low !== null) {
+                expect(flag(low - 0.5)).toBe('CRITICAL_LOW');
+                expect(flag(low + 0.5)).not.toBe('CRITICAL_LOW');
+                checked++;
+              }
+              if (high !== null) {
+                expect(flag(high + 0.5)).toBe('CRITICAL_HIGH');
+                expect(flag(high - 0.5)).not.toBe('CRITICAL_HIGH');
+                checked++;
+              }
             }
           }
         }
       }
     }
     // Control positivo: la exhaustiva recorrió de verdad los casos.
-    expect(checked).toBeGreaterThan(100);
+    expect(checked).toBeGreaterThan(1_000);
   });
 
   it('ORD-060 reconoce las dos banderas que tienen que llegar hoy a una persona', () => {

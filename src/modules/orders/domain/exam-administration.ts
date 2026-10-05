@@ -181,41 +181,84 @@ function criticalInsideReference(
 ): { field: string; message: string }[] {
   const found = new Map<string, string>();
   const rowOf = (range: ReferenceRange) => ranges.indexOf(range);
+  const say = (field: string, message: string) => {
+    if (!found.has(field)) found.set(field, message);
+  };
+  const NOISE = 'valores normales saldrían críticos';
 
   for (const patient of patientsTellingApart(ranges)) {
     const reference = applicableRange(ranges, 'REFERENCE', patient);
-    if (!reference) continue;
-    const critical = criticalBounds(ranges, patient);
-    const who = patient.sex ? ` (${SEX_LABELS[patient.sex]})` : '';
+    const { low, high } = criticalBounds(ranges, patient);
+    const who = (range: ReferenceRange) => whoOf(range, patient);
 
-    if (
-      critical.low &&
-      reference.low !== null &&
-      critical.low.value > reference.low
-    ) {
-      const field = `ranges[${rowOf(critical.low.range)}].low`;
-      if (!found.has(field)) {
-        found.set(
-          field,
-          `El crítico bajo ${decimal(critical.low.value)} es mayor que el límite inferior de referencia ${decimal(reference.low)} de la fila ${rowOf(reference) + 1}${who}: valores normales saldrían críticos`,
-        );
-      }
+    // The band itself, whatever the reference: with the sides resolved one
+    // by one (ORD-036), a «varón» high of 30 under an inherited low of 40
+    // makes every value critical. Named on the more specific row's own side.
+    if (low && high && low.value > high.value) {
+      const own =
+        specificityOf(high.range) >= specificityOf(low.range)
+          ? { field: `ranges[${rowOf(high.range)}].high`, range: high.range }
+          : { field: `ranges[${rowOf(low.range)}].low`, range: low.range };
+      say(
+        own.field,
+        `El crítico alto ${decimal(high.value)} es menor que el crítico bajo ${decimal(low.value)}${who(own.range)}: todo valor saldría crítico`,
+      );
     }
-    if (
-      critical.high &&
-      reference.high !== null &&
-      critical.high.value < reference.high
-    ) {
-      const field = `ranges[${rowOf(critical.high.range)}].high`;
-      if (!found.has(field)) {
-        found.set(
-          field,
-          `El crítico alto ${decimal(critical.high.value)} es menor que el límite superior de referencia ${decimal(reference.high)} de la fila ${rowOf(reference) + 1}${who}: valores normales saldrían críticos`,
-        );
-      }
+    if (!reference) continue;
+    const row = `de la fila ${rowOf(reference) + 1}${who(reference)}`;
+
+    if (low && reference.low !== null && low.value > reference.low) {
+      say(
+        `ranges[${rowOf(low.range)}].low`,
+        `El crítico bajo ${decimal(low.value)} es mayor que el límite inferior de referencia ${decimal(reference.low)} ${row}: ${NOISE}`,
+      );
+    } else if (low && reference.high !== null && low.value > reference.high) {
+      // A reference with only its upper bound: a «low» written in the wrong
+      // box would make every normal value critically low.
+      say(
+        `ranges[${rowOf(low.range)}].low`,
+        `El crítico bajo ${decimal(low.value)} es mayor que el límite superior de referencia ${decimal(reference.high)} ${row}: ${NOISE}`,
+      );
+    }
+    if (high && reference.high !== null && high.value < reference.high) {
+      say(
+        `ranges[${rowOf(high.range)}].high`,
+        `El crítico alto ${decimal(high.value)} es menor que el límite superior de referencia ${decimal(reference.high)} ${row}: ${NOISE}`,
+      );
+    } else if (high && reference.low !== null && high.value < reference.low) {
+      say(
+        `ranges[${rowOf(high.range)}].high`,
+        `El crítico alto ${decimal(high.value)} es menor que el límite inferior de referencia ${decimal(reference.low)} ${row}: ${NOISE}`,
+      );
     }
   }
   return [...found].map(([field, message]) => ({ field, message }));
+}
+
+/** ORD-036's weighing: sex above an age window. */
+function specificityOf(range: ReferenceRange): number {
+  const aged = range.ageMinDays !== null || range.ageMaxDays !== null;
+  return (range.sex !== null ? 2 : 0) + (aged ? 1 : 0);
+}
+
+/**
+ * «(hombres, de 0 a 27 días)»: who a clash is about, from the row's own
+ * qualifiers, the sex falling back to the patient's being walked.
+ */
+function whoOf(range: ReferenceRange, patient: PatientProfile): string {
+  const sex = range.sex ?? patient.sex;
+  const parts = [
+    sex ? SEX_LABELS[sex] : null,
+    ageWindow(range.ageMinDays, range.ageMaxDays),
+  ].filter((part): part is string => part !== null);
+  return parts.length > 0 ? ` (${parts.join(', ')})` : '';
+}
+
+/** Stored days, inclusive at both ends, as a laboratory reads them. */
+function ageWindow(min: number | null, max: number | null): string | null {
+  if (min === null && max === null) return null;
+  if (max === null) return `desde ${min} días`;
+  return `de ${min ?? 0} a ${max} días`;
 }
 
 /**
