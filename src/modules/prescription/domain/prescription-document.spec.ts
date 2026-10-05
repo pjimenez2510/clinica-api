@@ -89,6 +89,25 @@ describe('la receta como documento', () => {
     expect(document.issuedAt).toEqual(ISSUED_AT);
   });
 
+  it('PR-108 DOC-109 lleva el instante de anulación, para saber si un PDF es anterior a ella', () => {
+    expect(
+      composeDocument(source(), { context: 'AMBULATORY' }).cancelledAt,
+    ).toBeNull();
+
+    const cancelledAt = new Date(ISSUED_AT.getTime() + 60 * 60 * 1000);
+    const cancelled = source();
+    cancelled.prescription = {
+      ...cancelled.prescription,
+      status: 'CANCELLED',
+      cancelledAt,
+      cancelledBy: { id: 'user-1', name: 'Ana Villacís' },
+      cancelReason: 'Pérdida',
+    };
+    expect(
+      composeDocument(cancelled, { context: 'AMBULATORY' }).cancelledAt,
+    ).toEqual(cancelledAt);
+  });
+
   it('PR-022 lleva el establecimiento con su código único del MSP', () => {
     const document = composeDocument(source(), { context: 'AMBULATORY' });
 

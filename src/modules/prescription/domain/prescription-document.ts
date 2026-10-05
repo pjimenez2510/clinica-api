@@ -89,6 +89,12 @@ export interface PrescriptionDocument {
   status: string;
   /** PR-021. Art. 5.a.ii — the instant, which the client renders as DD/MM/AAAA. */
   issuedAt: Date | null;
+  /**
+   * PR-108, DOC-109. When it was annulled; `null` otherwise, and on one
+   * annulled before the register. The screen compares the current PDF with
+   * it: one issued earlier does not carry the mark.
+   */
+  cancelledAt: Date | null;
   /** PR-021. Art. 5.a.ii — the canton of the site's parish. */
   city: string | null;
   /** PR-022. Art. 5.a.iii. */
@@ -180,6 +186,7 @@ export function composeDocument(
     nonPharmacologicalAdvice: prescription.nonPharmacologicalAdvice,
     status: prescription.status,
     issuedAt: prescription.issuedAt,
+    cancelledAt: prescription.cancelledAt,
     city: site.city,
     establishment: { name: site.name, mspUnicode: site.mspUnicode },
     validity:

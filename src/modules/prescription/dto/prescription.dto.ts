@@ -517,6 +517,8 @@ export const prescriptionDocumentSchema = z.object({
   status: PRESCRIPTION_STATUS,
   /** PR-021. Art. 5.a.ii — the client renders it as DD/MM/AAAA. */
   issuedAt: z.iso.datetime().nullable(),
+  /** PR-108, DOC-109. When it was annulled: a PDF issued earlier lacks the mark. */
+  cancelledAt: z.iso.datetime().nullable(),
   /** PR-021. Art. 5.a.ii — the canton of the site's parish. */
   city: z.string().nullable(),
   /** PR-022. Art. 5.a.iii. */

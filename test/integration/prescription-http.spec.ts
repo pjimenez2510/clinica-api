@@ -508,6 +508,11 @@ describe('la receta por HTTP', () => {
     expect(cancelled.cancelledBy?.name).toBe('Ana Villacís');
     expect(cancelled.cancelledAt).not.toBeNull();
 
+    // DOC-109. El documento dice cuándo se anuló: la pantalla compara con él
+    // el PDF vigente.
+    const document = (await get(`/prescriptions/${id}`, doctorToken).expect(200)).body as { cancelledAt: string | null }; // prettier-ignore
+    expect(document.cancelledAt).toBe(cancelled.cancelledAt);
+
     // El registro se lee en la lista de la atención, que es donde se busca.
     const listed = (
       await get(`/encounters/${encounterId}/prescriptions`, doctorToken).expect(200)

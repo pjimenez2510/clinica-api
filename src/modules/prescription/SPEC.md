@@ -1121,7 +1121,9 @@ anularla y volver a escribirla, la pantalla lo hace en un solo paso (D-127.4)._
   `CANCELLED`, **quién la anuló** (la cuenta de la sesión, nunca un
   identificador del cuerpo), **cuándo** (el reloj de la aplicación) y **por
   qué**; y la respuesta DEBERÁ exponer `cancelledAt`, `cancelledBy {id, name}` y
-  `cancelReason`, también en la lista de la atención. SI falta el motivo,
+  `cancelReason`, también en la lista de la atención, y el documento
+  (`GET /prescriptions/:id`) `cancelledAt`, con el que la pantalla sabe si el
+  PDF vigente es anterior a la anulación (DOC-109). SI falta el motivo,
   ENTONCES DEBERÁ rechazarlo con un error del campo `reason` sin anular nada.
   > **Es el registro del art. 70** de la Res. ACESS-2023-0030 —«llevar un
   > registro de las recetas médicas perdidas»—, y por eso el motivo sigue

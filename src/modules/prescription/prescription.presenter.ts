@@ -90,6 +90,7 @@ export function toDocumentResponse(
     nonPharmacologicalAdvice: document.nonPharmacologicalAdvice,
     status: document.status as PrescriptionResponse['status'],
     issuedAt: document.issuedAt?.toISOString() ?? null,
+    cancelledAt: document.cancelledAt?.toISOString() ?? null,
     city: document.city,
     establishment: document.establishment,
     /**
