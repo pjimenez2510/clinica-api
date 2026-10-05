@@ -17,6 +17,7 @@ import {
 } from '../../../shared/domain/clinic-time';
 import { PrescriptionService } from './prescription.service';
 import type {
+  CancelPlan,
   DiscardPlan,
   DraftRestore,
   DraftRewrite,
@@ -25,6 +26,7 @@ import type {
   NewPrescription,
   PrescribingEncounter,
   PrescriberIdentity,
+  PrescriptionCorrection,
   PrescriptionQuery,
   PrescriptionRecordSource,
   PrescriptionRepository,
@@ -100,6 +102,9 @@ const aPrescription = (
   createdAt: new Date('2026-09-14T14:05:00Z'),
   discardedAt: null,
   discardReason: null,
+  cancelledAt: null,
+  cancelledBy: null,
+  cancelReason: null,
   items: [
     {
       id: 'item-1',
@@ -161,6 +166,8 @@ class FakeRepository implements PrescriptionRepository {
   created: NewPrescription | undefined;
   discarded: DiscardPlan | undefined;
   restored: DraftRestore | undefined;
+  cancelled: CancelPlan | undefined;
+  corrected: PrescriptionCorrection | undefined;
   listed = 0;
 
   findEncounterForPrescribing(): Promise<PrescribingEncounter | null> {
@@ -212,10 +219,32 @@ class FakeRepository implements PrescriptionRepository {
 
   cancel(
     _query: PrescriptionQuery,
+    plan: CancelPlan,
     decide: (status: PrescriptionStatus) => void,
   ): Promise<PrescriptionView> {
     decide(this.snapshot.status);
-    return Promise.resolve(aPrescription({ status: 'CANCELLED' }));
+    this.cancelled = plan;
+    return Promise.resolve(
+      aPrescription({
+        status: 'CANCELLED',
+        cancelledAt: plan.cancelledAt,
+        cancelledBy: { id: plan.cancelledById, name: 'Ana Villacís' },
+        cancelReason: plan.cancelReason,
+      }),
+    );
+  }
+
+  correct(
+    request: PrescriptionCorrection,
+  ): Promise<{ cancelled: PrescriptionView; draft: PrescriptionView }> {
+    this.corrected = request;
+    return Promise.resolve({
+      cancelled: aPrescription({
+        status: 'CANCELLED',
+        cancelReason: request.cancel.cancelReason,
+      }),
+      draft: aPrescription({ id: 'prescription-2' }),
+    });
   }
 
   discard(
@@ -596,9 +625,57 @@ describe('el servicio de recetas', () => {
   it('PR-010 anula una receta EMITIDA sin borrar nada', async () => {
     repository.snapshot = aSnapshot({ status: 'ACTIVE' });
 
-    const cancelled = await service.cancel(PRESCRIPTION, requester);
+    const cancelled = await service.cancel(PRESCRIPTION, 'Pérdida', requester);
 
     expect(cancelled.status).toBe('CANCELLED');
+  });
+
+  it('PR-108 anula guardando quién (la sesión), cuándo (el reloj de la app) y el motivo', async () => {
+    repository.snapshot = aSnapshot({ status: 'ACTIVE' });
+    const before = Date.now();
+
+    const cancelled = await service.cancel(PRESCRIPTION, 'Robo o hurto', requester); // prettier-ignore
+
+    // `cancelled_by_id` apunta a `app_user`: la CUENTA que anuló, nunca un id
+    // que mande el llamador (PR-004).
+    expect(repository.cancelled).toMatchObject({
+      cancelledById: USER,
+      cancelReason: 'Robo o hurto',
+    });
+    expect(repository.cancelled?.cancelledAt.getTime()).toBeGreaterThanOrEqual(before); // prettier-ignore
+    expect(cancelled.cancelReason).toBe('Robo o hurto');
+    expect(cancelled.cancelledBy?.id).toBe(USER);
+  });
+
+  it('PR-109 corrige como acto del prescriptor de la sesión: anula con el motivo y abre el borrador, con dos filas de bitácora', async () => {
+    const corrected = await service.correct(PRESCRIPTION, 'Error de prescripción', requester); // prettier-ignore
+
+    expect(repository.corrected).toMatchObject({
+      prescriptionId: PRESCRIPTION,
+      // PR-100. El borrador nuevo es de quien corrige, y sólo su prescriptor
+      // corrige: el adaptador lo compara con la fila bloqueada.
+      prescriberId: PRACTITIONER,
+      sites: [SITE],
+      cancel: { cancelledById: USER, cancelReason: 'Error de prescripción' },
+    });
+    expect(repository.corrected?.cancel.cancelledAt).toBeInstanceOf(Date);
+    expect(corrected.cancelled.status).toBe('CANCELLED');
+    expect(corrected.draft.status).toBe('DRAFT');
+    // La anulación y el borrador nuevo son dos hechos de la bitácora.
+    expect(entries.map((entry) => [entry.action, entry.resourceId])).toEqual([
+      ['UPDATE', PRESCRIPTION],
+      ['CREATE', 'prescription-2'],
+    ]);
+  });
+
+  it('PR-109 una cuenta sin ficha profesional no corrige nada', async () => {
+    repository.prescriber = null;
+
+    await expect(
+      service.correct(PRESCRIPTION, 'Error de prescripción', requester),
+    ).rejects.toMatchObject({ code: 'PRESCRIBER_PROFILE_REQUIRED' });
+    expect(repository.corrected).toBeUndefined();
+    expect(entries).toEqual([]);
   });
 
   it('PR-010 rechaza anular un borrador, porque no hay acto legal que anular', async () => {
@@ -610,12 +687,12 @@ describe('el servicio de recetas', () => {
      * altera—, así que la base y la norma coinciden. La salida de un borrador
      * equivocado es DESCARTARLO (PR-011), que es otro acto.
      */
-    await expect(service.cancel(PRESCRIPTION, requester)).rejects.toMatchObject(
-      {
-        code: 'PRESCRIPTION_NOT_EDITABLE',
-        params: { status: 'DRAFT' },
-      },
-    );
+    await expect(
+      service.cancel(PRESCRIPTION, 'Pérdida', requester),
+    ).rejects.toMatchObject({
+      code: 'PRESCRIPTION_NOT_EDITABLE',
+      params: { status: 'DRAFT' },
+    });
   });
 
   it('PR-011 PR-107 descarta un borrador guardando quién y cuándo, y el motivo sólo si se escribió', async () => {
@@ -688,7 +765,7 @@ describe('el servicio de recetas', () => {
     await service.issue(PRESCRIPTION, requester);
     await service.discard(PRESCRIPTION, null, requester);
     repository.snapshot = aSnapshot({ status: 'ACTIVE' });
-    await service.cancel(PRESCRIPTION, requester);
+    await service.cancel(PRESCRIPTION, 'Pérdida', requester);
 
     expect(entries.map((entry) => entry.action)).toEqual([
       'CREATE',

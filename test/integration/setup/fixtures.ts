@@ -258,14 +258,27 @@ export async function createIssuedPrescription(
     status = 'ACTIVE',
     issuedAt = new Date(),
     verificationCode = null,
+    cancelledAt,
+    cancelledById,
+    cancelReason,
     ...draft
   } = data;
   const created = await prisma.prescription.create({
     data: { ...draft, status: 'DRAFT', issuedAt: null, verificationCode: null },
   });
+  // PR-108. An annulled one carries the register of art. 70, or the database
+  // refuses it (`prescription_cancel_states_who_when_and_why`).
+  const cancellation =
+    status === 'CANCELLED'
+      ? {
+          cancelledAt: cancelledAt ?? new Date(),
+          cancelledById: cancelledById ?? (await createUser(prisma)).id,
+          cancelReason: cancelReason ?? 'Pérdida',
+        }
+      : {};
   return prisma.prescription.update({
     where: { id: created.id },
-    data: { status, issuedAt, verificationCode },
+    data: { status, issuedAt, verificationCode, ...cancellation },
     include: { items: true },
   });
 }

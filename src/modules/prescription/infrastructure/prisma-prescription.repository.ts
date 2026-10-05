@@ -15,6 +15,7 @@ import {
   OffFormularyJustificationRequiredError,
   PrescriptionDraftOfAnotherPrescriberError,
   PrescriptionEncounterNotFoundError,
+  PrescriptionOfAnotherPrescriberError,
   PrescriptionEncounterNotOpenError,
   PrescriptionNotEditableError,
   PrescriptionNotFoundError,
@@ -22,6 +23,8 @@ import {
 import type { ItemContent } from '../domain/prescription-content';
 import type { PrescriptionStatus } from '../domain/prescription';
 import type {
+  CancelPlan,
+  CorrectedPrescription,
   DiscardPlan,
   DraftRestore,
   DraftRewrite,
@@ -32,6 +35,7 @@ import type {
   NewPrescriptionItem,
   PrescribingEncounter,
   PrescriberIdentity,
+  PrescriptionCorrection,
   PrescriptionQuery,
   PrescriptionRecordSource,
   PrescriptionRepository,
@@ -102,6 +106,11 @@ const PRESCRIPTION_SELECT = {
   // on every screen that lists a prescription (PR-092).
   discardedAt: true,
   discardReason: true,
+  // PR-108. The register of art. 70, WITH the account: an annulled receta is a
+  // paper in somebody's hand, and «¿quién la anuló?» is part of the register.
+  cancelledAt: true,
+  cancelReason: true,
+  cancelledBy: { select: { id: true, firstName: true, lastName: true } },
   items: {
     /**
      * ⚠️ **Falta esquema** (PR-032). `prescription_item` HAS NO ORDER COLUMN,
@@ -503,7 +512,8 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
   }
 
   /**
-   * PR-010. Annuls an ISSUED prescription. NOTHING IS DELETED.
+   * PR-010, PR-108. Annuls an ISSUED prescription with who, when and why.
+   * NOTHING IS DELETED.
    *
    * ⚠️ CONDITIONAL ON `ACTIVE` AND NOT ON `DRAFT`, and it is
    * `prescription_issued_coherence` that decides it: every state other than
@@ -513,6 +523,7 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
    */
   async cancel(
     query: PrescriptionQuery,
+    plan: CancelPlan,
     decide: (status: PrescriptionStatus) => void,
   ): Promise<PrescriptionView> {
     const row = await this.prisma.$transaction(async (tx) => {
@@ -524,15 +535,7 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
 
       decide(current.status);
 
-      const updated = await tx.prescription.updateMany({
-        where: { id: query.prescriptionId, status: 'ACTIVE' },
-        data: { status: 'CANCELLED' },
-      });
-      if (updated.count === 0) {
-        throw new PrescriptionNotEditableError(
-          await currentStatus(tx, query.prescriptionId),
-        );
-      }
+      await annul(tx, query.prescriptionId, plan);
 
       return tx.prescription.findUniqueOrThrow({
         where: { id: query.prescriptionId },
@@ -541,6 +544,99 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
     });
 
     return toPrescriptionView(row);
+  }
+
+  /**
+   * PR-109. Annuls an issued prescription and opens a draft with the same
+   * lines, in ONE transaction.
+   *
+   * THE ATTENTION FIRST, THEN THE PRESCRIPTION — the order every writer of
+   * this module takes them in, so a «Corregir» racing an «Anular» or an
+   * annulment of the attention queues instead of deadlocking. Everything that
+   * can refuse is judged on the locked rows BEFORE writing; and if a write
+   * still fails — a constraint, a trigger — the transaction takes the
+   * annulment with it: a receta annulled with no draft to replace it is
+   * exactly what «Corregir» promises not to leave.
+   *
+   * ⚠️ THE LINES ARE COPIED, NOT RESOLVED AGAIN. Every column of every line —
+   * the frozen DCI, the codes, the texts, the justification — travels as it
+   * was issued: the doctor corrects what the paper said, not what the CNMB
+   * says today. Whatever has to be true to issue it again (a concept marked
+   * controlled since, an allergy recorded since) is judged by the issue
+   * (PR-060, PR-070), as for any draft.
+   *
+   * The diagnoses are not copied: a draft reads the attention's as they are
+   * now, and the issue freezes them (PR-026).
+   */
+  async correct(
+    request: PrescriptionCorrection,
+  ): Promise<CorrectedPrescription> {
+    return this.prisma.$transaction(async (tx) => {
+      const found = await tx.prescription.findFirst({
+        where: { id: request.prescriptionId, ...siteFilter(request.sites) },
+        select: { id: true, encounterId: true },
+      });
+      if (!found) throw new PrescriptionNotFoundError();
+
+      await tx.$queryRaw`SELECT id FROM "encounter" WHERE id = ${found.encounterId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM "prescription" WHERE id = ${found.id}::uuid FOR UPDATE`;
+
+      const current = await tx.prescription.findUniqueOrThrow({
+        where: { id: found.id },
+        select: {
+          status: true,
+          prescriberId: true,
+          siteId: true,
+          warningSigns: true,
+          nonPharmacologicalAdvice: true,
+          encounter: { select: { status: true } },
+          // Every column of the line but its identity.
+          items: {
+            orderBy: { id: 'asc' },
+            select: { ...ITEM_SELECT, id: false },
+          },
+        },
+      });
+      // PR-109. Only what is in force is corrected; a draft is rewritten
+      // (PR-100), and what is annulled stays annulled.
+      if (current.status !== 'ACTIVE') {
+        throw new PrescriptionNotEditableError(current.status);
+      }
+      // PR-100. The new draft is in the name of whoever corrects.
+      if (current.prescriberId !== request.prescriberId) {
+        throw new PrescriptionOfAnotherPrescriberError();
+      }
+      // PR-002. The draft is born in the same attention, so it has to admit
+      // one; refused here, nothing has been annulled.
+      if (!admitsPrescribing(current.encounter.status)) {
+        throw new PrescriptionEncounterNotOpenError(current.encounter.status);
+      }
+
+      await annul(tx, found.id, request.cancel);
+      const cancelled = await tx.prescription.findUniqueOrThrow({
+        where: { id: found.id },
+        select: PRESCRIPTION_SELECT,
+      });
+
+      const draft = await tx.prescription.create({
+        data: {
+          encounterId: found.encounterId,
+          prescriberId: request.prescriberId,
+          siteId: current.siteId,
+          warningSigns: current.warningSigns,
+          nonPharmacologicalAdvice: current.nonPharmacologicalAdvice,
+          items: {
+            create: current.items,
+          },
+        },
+        select: PRESCRIPTION_SELECT,
+      });
+
+      return {
+        cancelled: toPrescriptionView(cancelled),
+        draft: toPrescriptionView(draft),
+      };
+    });
   }
 
   /**
@@ -885,6 +981,32 @@ function frozenDiagnoses(
   );
 }
 
+/**
+ * PR-010, PR-108. ACTIVE to CANCELLED with the register of art. 70, CONDITIONAL
+ * on the status that was read: two annulments that both read `ACTIVE` cannot
+ * both write, and the loser is told the winner's state.
+ */
+async function annul(
+  tx: Prisma.TransactionClient,
+  prescriptionId: string,
+  plan: CancelPlan,
+): Promise<void> {
+  const updated = await tx.prescription.updateMany({
+    where: { id: prescriptionId, status: 'ACTIVE' },
+    data: {
+      status: 'CANCELLED',
+      cancelledAt: plan.cancelledAt,
+      cancelledById: plan.cancelledById,
+      cancelReason: plan.cancelReason,
+    },
+  });
+  if (updated.count === 0) {
+    throw new PrescriptionNotEditableError(
+      await currentStatus(tx, prescriptionId),
+    );
+  }
+}
+
 /** PR-005. The state a losing writer has to be told about. */
 async function currentStatus(
   tx: Prisma.TransactionClient,
@@ -1004,6 +1126,15 @@ function toPrescriptionView(row: PrescriptionRow): PrescriptionView {
     createdAt: row.createdAt,
     discardedAt: row.discardedAt,
     discardReason: row.discardReason,
+    cancelledAt: row.cancelledAt,
+    cancelledBy:
+      row.cancelledBy === null
+        ? null
+        : {
+            id: row.cancelledBy.id,
+            name: `${row.cancelledBy.firstName} ${row.cancelledBy.lastName}`,
+          },
+    cancelReason: row.cancelReason,
     items: row.items.map((item, index) => ({
       id: item.id,
       // The 1-based address every message uses (PR-032, PR-094).

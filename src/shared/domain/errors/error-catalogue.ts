@@ -874,6 +874,10 @@ export const DOMAIN_ERROR_CODES = [
   'PRESCRIPTION_ITEM_INCOMPLETE',
   'PRESCRIPTION_NOT_EDITABLE',
   'PRESCRIPTION_NOT_FOUND',
+  //   * `PRESCRIPTION_OF_ANOTHER_PRESCRIBER` (403) — PR-109. Sólo quien emitió
+  //     la receta la corrige: el borrador nuevo sale a su nombre. Otro médico
+  //     puede anularla (PR-108) y componer una propia.
+  'PRESCRIPTION_OF_ANOTHER_PRESCRIBER',
   // PR-105. Un borrador anterior con «Dosis única» y duración no se emite.
   'PRESCRIPTION_SINGLE_DOSE_WITH_DURATION',
   // ── Certificado médico (módulo `certificates`, CER-001 a CER-016) ────────

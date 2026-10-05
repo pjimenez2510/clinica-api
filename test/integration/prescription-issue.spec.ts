@@ -19,7 +19,12 @@ import type { PrismaService } from '../../src/shared/infrastructure/prisma/prism
 
 import { attemptWhileAnnulled } from './setup/encounter-race';
 import { useDatabase } from './setup/database';
-import { createPatient, createSite, createUser } from './setup/fixtures';
+import {
+  createIssuedPrescription,
+  createPatient,
+  createSite,
+  createUser,
+} from './setup/fixtures';
 
 /**
  * The prescription against a real PostgreSQL.
@@ -781,7 +786,7 @@ describe('la receta contra PostgreSQL', () => {
       userId: requester.userId,
       sites: [...requester.sites],
     });
-    await service.cancel(composed.prescription.id, {
+    await service.cancel(composed.prescription.id, 'Pérdida', {
       userId: requester.userId,
       sites: [...requester.sites],
     });
@@ -792,6 +797,233 @@ describe('la receta contra PostgreSQL', () => {
       where: { id: composed.prescription.id },
     });
     expect(stored.status).toBe('CANCELLED');
+    // PR-108. El registro del art. 70: la cuenta, el instante y el motivo.
+    expect(stored.cancelledById).toBe(requester.userId);
+    expect(stored.cancelReason).toBe('Pérdida');
+    expect(stored.cancelledAt).not.toBeNull();
+  });
+
+  it('PR-108 la BASE exige quién, cuándo y por qué al anular, y no los deja en otro estado ni reescribirlos', async () => {
+    const prisma = db();
+    const { encounter, practitioner, requester } = await anEncounter(prisma);
+    const anIssued = (code: string) =>
+      createIssuedPrescription(prisma, {
+        encounterId: encounter.id,
+        siteId: encounter.siteId,
+        prescriberId: practitioner.id,
+        verificationCode: code,
+      });
+    const issued = await anIssued('PR108A0000000001');
+
+    // Sin motivo, y con un motivo en blanco: el registro del art. 70 no existe.
+    for (const reason of [null, '   ']) {
+      const problem = await problemFrom(
+        prisma.$executeRawUnsafe(
+          `UPDATE prescription
+              SET status = 'CANCELLED', cancelled_at = now(),
+                  cancelled_by_id = $2::uuid, cancel_reason = $3
+            WHERE id = $1::uuid`,
+          issued.id,
+          requester.userId,
+          reason,
+        ),
+      );
+      expect(problem?.code).toBe('PRESCRIPTION_CANCEL_INCOMPLETE');
+      expect(problem?.status).toBe(422);
+    }
+
+    // Una receta vigente no dice quién la anuló.
+    const notCancelled = await problemFrom(
+      prisma.$executeRawUnsafe(
+        `UPDATE prescription
+            SET cancelled_at = now(), cancelled_by_id = $2::uuid,
+                cancel_reason = 'Pérdida'
+          WHERE id = $1::uuid`,
+        issued.id,
+        requester.userId,
+      ),
+    );
+    expect(notCancelled?.code).toBe('PRESCRIPTION_CANCEL_NOT_CANCELLED');
+
+    // Control positivo: con los tres, la misma sentencia anula.
+    await expect(
+      prisma.$executeRawUnsafe(
+        `UPDATE prescription
+            SET status = 'CANCELLED', cancelled_at = now(),
+                cancelled_by_id = $2::uuid, cancel_reason = 'Pérdida'
+          WHERE id = $1::uuid`,
+        issued.id,
+        requester.userId,
+      ),
+    ).resolves.toBe(1);
+
+    // Y lo que dice la anulación ya no cambia.
+    await expect(
+      prisma.$executeRawUnsafe(
+        `UPDATE prescription SET cancel_reason = 'Otro motivo' WHERE id = $1::uuid`,
+        issued.id,
+      ),
+    ).rejects.toThrow(/prescription_frozen/);
+  });
+
+  it('PR-109 corregir anula con el motivo y abre en la misma atención un borrador con todas las líneas', async () => {
+    const prisma = db();
+    const { encounter, requester } = await anEncounter(prisma);
+    const concept = await aCnmbConcept(prisma, {
+      code: 'J01CA04',
+      display: 'Amoxicilina',
+      validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+    });
+    const service = serviceOf(prisma);
+    const who = { userId: requester.userId, sites: [...requester.sites] };
+    const composed = await service.compose(
+      {
+        encounterId: encounter.id,
+        ...INDICATIONS,
+        items: [
+          { ...aLine(concept.id), instructions: 'Después de las comidas' },
+          {
+            ...aLine(null),
+            genericName: 'Ibuprofeno',
+            offFormularyJustification: 'Presentación pediátrica no listada',
+          },
+        ],
+      },
+      who,
+    );
+    await service.issue(composed.prescription.id, who);
+
+    const corrected = await service.correct(
+      composed.prescription.id,
+      'Error de prescripción',
+      who,
+    );
+
+    expect(corrected.cancelled).toMatchObject({
+      id: composed.prescription.id,
+      status: 'CANCELLED',
+      cancelReason: 'Error de prescripción',
+      cancelledBy: { id: requester.userId, name: 'Ana Villacís' },
+    });
+    expect(corrected.draft).toMatchObject({
+      status: 'DRAFT',
+      encounterId: encounter.id,
+      issuedAt: null,
+      sequenceNumber: null,
+      ...INDICATIONS,
+    });
+    expect(corrected.draft.id).not.toBe(composed.prescription.id);
+    // Cada campo de cada línea, salvo su identificador.
+    const withoutIds = (items: readonly { id: string }[]) =>
+      items.map((line) => ({ ...line, id: undefined }));
+    expect(withoutIds(corrected.draft.items)).toEqual(
+      withoutIds(corrected.cancelled.items),
+    );
+    expect(corrected.draft.items).toHaveLength(2);
+    // Nada se borra: la anulada sigue con sus líneas.
+    expect(await prisma.prescription.count()).toBe(2);
+    expect(await prisma.prescriptionItem.count()).toBe(4);
+
+    // Y el borrador es un borrador de verdad: se emite.
+    await expect(service.issue(corrected.draft.id, who)).resolves.toMatchObject(
+      { status: 'ACTIVE' },
+    );
+  });
+
+  it('PR-109 si el borrador nuevo no se puede escribir, la receta NO se anula', async () => {
+    const prisma = db();
+    const { encounter, requester } = await anEncounter(prisma);
+    const concept = await aCnmbConcept(prisma, {
+      code: 'J01CA04',
+      display: 'Amoxicilina',
+      validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+    });
+    const service = serviceOf(prisma);
+    const who = { userId: requester.userId, sites: [...requester.sites] };
+    const composed = await service.compose(
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
+      who,
+    );
+    await service.issue(composed.prescription.id, who);
+
+    /**
+     * EL FALLO SE FUERZA EN LA BASE, DESPUÉS DE ANULAR: un disparador de prueba
+     * rechaza el INSERT del borrador de esta atención. La anulación ya se
+     * escribió en la misma transacción, así que sólo la atomicidad puede
+     * deshacerla.
+     */
+    await prisma.$executeRawUnsafe(`
+      CREATE OR REPLACE FUNCTION test_refuse_prescription_insert()
+      RETURNS TRIGGER LANGUAGE plpgsql AS $$
+      BEGIN
+        RAISE EXCEPTION 'test_forced_failure';
+      END;
+      $$`);
+    await prisma.$executeRawUnsafe(`
+      CREATE TRIGGER test_refuse_prescription_insert
+        BEFORE INSERT ON prescription FOR EACH ROW
+        WHEN (NEW.encounter_id = '${encounter.id}'::uuid)
+        EXECUTE FUNCTION test_refuse_prescription_insert()`);
+    try {
+      await expect(
+        service.correct(composed.prescription.id, 'Error de prescripción', who),
+      ).rejects.toThrow(/test_forced_failure/);
+    } finally {
+      await prisma.$executeRawUnsafe(
+        'DROP TRIGGER IF EXISTS test_refuse_prescription_insert ON prescription',
+      );
+      await prisma.$executeRawUnsafe(
+        'DROP FUNCTION IF EXISTS test_refuse_prescription_insert()',
+      );
+    }
+
+    const untouched = await prisma.prescription.findUniqueOrThrow({
+      where: { id: composed.prescription.id },
+    });
+    expect(untouched.status).toBe('ACTIVE');
+    expect(untouched.cancelledAt).toBeNull();
+    expect(untouched.cancelReason).toBeNull();
+    expect(await prisma.prescription.count()).toBe(1);
+
+    // Control positivo: sin el fallo, el mismo camino anula y abre el borrador.
+    await service.correct(composed.prescription.id, 'Error de prescripción', who); // prettier-ignore
+    expect(await prisma.prescription.count()).toBe(2);
+  });
+
+  it('PR-109 en una atención que ya no admite recetas no corrige, y no anula nada', async () => {
+    const prisma = db();
+    const { encounter, requester } = await anEncounter(prisma);
+    const concept = await aCnmbConcept(prisma, {
+      code: 'J01CA04',
+      display: 'Amoxicilina',
+      validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+    });
+    const service = serviceOf(prisma);
+    const who = { userId: requester.userId, sites: [...requester.sites] };
+    const composed = await service.compose(
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(concept.id)] },
+      who,
+    );
+    await service.issue(composed.prescription.id, who);
+    await prisma.encounter.update({
+      where: { id: encounter.id },
+      data: { status: 'DISCHARGED', endedAt: new Date(encounter.startedAt.getTime() + 20 * 60_000), dischargeCondition: 'ALIVE' }, // prettier-ignore
+    });
+
+    await expect(
+      service.correct(composed.prescription.id, 'Error de prescripción', who),
+    ).rejects.toMatchObject({ code: 'PRESCRIPTION_ENCOUNTER_NOT_OPEN' });
+    const stored = await prisma.prescription.findUniqueOrThrow({
+      where: { id: composed.prescription.id },
+    });
+    expect(stored.status).toBe('ACTIVE');
+    expect(await prisma.prescription.count()).toBe(1);
+
+    // Control positivo: anularla sí se puede; sólo el borrador necesita la
+    // atención abierta.
+    await expect(
+      service.cancel(composed.prescription.id, 'Error de prescripción', who),
+    ).resolves.toMatchObject({ status: 'CANCELLED' });
   });
 
   it('PR-011 descarta un borrador con su motivo, sin borrar ninguna fila', async () => {

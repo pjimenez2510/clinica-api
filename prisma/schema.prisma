@@ -150,6 +150,7 @@ model User {
   /// art. 13 turns «nobody assessed them» into a criminal matter.
   emergencyFlagsRaised           AgendaEntry[]                @relation("EmergencyFlagger")
   prescriptionsDiscarded         Prescription[]               @relation("PrescriptionDiscarder")
+  prescriptionsCancelled         Prescription[]               @relation("PrescriptionCanceller")
   serviceOrdersDiscarded         ServiceOrder[]               @relation("ServiceOrderDiscardedBy")
   certificatesRevoked            MedicalCertificate[]         @relation("CertificateRevoker")
   subjectStatusChanges           AgendaSubjectStatusHistory[] @relation("SubjectStatusChanger")
@@ -2912,6 +2913,17 @@ model Prescription {
   discardedById String?   @map("discarded_by_id") @db.Uuid
   discardedBy   User?     @relation("PrescriptionDiscarder", fields: [discardedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "prescription_discarded_by_fk")
   discardReason String?   @map("discard_reason") @db.VarChar(500)
+
+  /// PR-108 (art. 70 de la Res. ACESS-2023-0030). El registro de la anulación
+  /// de una receta EMITIDA: quién, cuándo y por qué. Los tres juntos en toda
+  /// receta anulada desde `20261005060200` (`prescription_cancel_states_who_
+  /// when_and_why`, NOT VALID: las anuladas antes no tienen motivo y no se
+  /// inventa), y en ningún otro estado (`prescription_cancel_columns_only_
+  /// when_cancelled`). `prescription_frozen` no deja reescribirlos.
+  cancelledAt   DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  cancelledById String?   @map("cancelled_by_id") @db.Uuid
+  cancelledBy   User?     @relation("PrescriptionCanceller", fields: [cancelledById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "prescription_cancelled_by_fk")
+  cancelReason  String?   @map("cancel_reason") @db.VarChar(500)
 
   @@unique([siteId, sequenceNumber], map: "prescription_site_number_unique")
   @@index([encounterId])

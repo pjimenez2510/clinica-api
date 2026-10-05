@@ -31,6 +31,9 @@ const source = (
     // DRAFT and never of a document that already left the room.
     discardedAt: null,
     discardReason: null,
+    cancelledAt: null,
+    cancelledBy: null,
+    cancelReason: null,
     items: [
       {
         id: 'item-1',

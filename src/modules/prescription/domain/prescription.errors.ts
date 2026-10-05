@@ -301,6 +301,26 @@ export class PrescriptionDraftOfAnotherPrescriberError extends ForbiddenError {
 }
 
 /**
+ * PR-109. An issued prescription is corrected only by the professional whose
+ * name it prints: correcting opens a draft in their name with the same lines,
+ * and a colleague doing it would put somebody else's words under their own
+ * name — or their own under somebody else's.
+ *
+ * ⚠️ A CODE OF ITS OWN AND NOT `PRESCRIPTION_DRAFT_OF_ANOTHER_PRESCRIBER`: that
+ * one is about a draft, and the way out differs. Here the colleague can still
+ * ANNUL it (PR-108) and compose a prescription of their own.
+ */
+export class PrescriptionOfAnotherPrescriberError extends ForbiddenError {
+  readonly code = 'PRESCRIPTION_OF_ANOTHER_PRESCRIBER';
+  override readonly userTitle =
+    'Esta receta la emitió otro profesional y sólo él puede corregirla. Puede anularla y componer una receta propia';
+
+  constructor() {
+    super('The issued prescription belongs to another prescriber');
+  }
+}
+
+/**
  * PR-007. The concept named is from another catalogue, or was not in force on
  * the clinical date of the attention.
  *

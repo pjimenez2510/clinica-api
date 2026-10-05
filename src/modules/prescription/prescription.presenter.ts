@@ -51,6 +51,10 @@ export function toPrescriptionResponse(
     // state. The reason is `null` unless somebody wrote one (PR-107).
     discardedAt: prescription.discardedAt?.toISOString() ?? null,
     discardReason: prescription.discardReason,
+    // PR-108. The register of art. 70; `null` on every other state.
+    cancelledAt: prescription.cancelledAt?.toISOString() ?? null,
+    cancelledBy: prescription.cancelledBy,
+    cancelReason: prescription.cancelReason,
     items: prescription.items.map((item) => ({
       id: item.id,
       line: item.line,

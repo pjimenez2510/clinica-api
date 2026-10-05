@@ -79,6 +79,31 @@ registerConstraintMeanings({
    * happened, which is the whole reason `DISCARDED` exists as a state of its
    * own instead of reusing `CANCELLED`.
    */
+  /**
+   * PR-108. `prescription_cancel_states_who_when_and_why`: a prescription
+   * annulled from `20261005060200` on carries `cancelled_at`,
+   * `cancelled_by_id` AND a non-blank `cancel_reason` — the register of art.
+   * 70. `NOT VALID`, so the ones annulled before, which had nowhere to keep
+   * them, are not rejected and nothing is invented for them.
+   *
+   * The DTO refuses a missing reason first, with the box named; this is the
+   * same rule for an import or a `psql`.
+   */
+  prescription_cancel_states_who_when_and_why: {
+    code: 'PRESCRIPTION_CANCEL_INCOMPLETE',
+    field: 'reason',
+    message: 'Una receta anulada tiene que decir quién la anuló, cuándo y por qué: es el registro que pide el art. 70', // prettier-ignore
+  },
+  /**
+   * PR-108. `prescription_cancel_columns_only_when_cancelled`: no other state
+   * carries the register. A receta in force that said who annulled it would
+   * say two things at once.
+   */
+  prescription_cancel_columns_only_when_cancelled: {
+    code: 'PRESCRIPTION_CANCEL_NOT_CANCELLED',
+    field: 'status',
+    message: 'Sólo una receta anulada lleva quién la anuló, cuándo y por qué', // prettier-ignore
+  },
   prescription_discard_only_from_draft: {
     code: 'PRESCRIPTION_DISCARD_NOT_FROM_DRAFT',
     field: 'status',

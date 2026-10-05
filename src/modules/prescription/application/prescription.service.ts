@@ -32,6 +32,7 @@ import {
 } from '../domain/prescription.errors';
 import {
   PRESCRIPTION_REPOSITORY,
+  type CorrectedPrescription,
   type PrescriptionRepository,
   type PrescriptionView,
   type SiteScopeFilter,
@@ -413,18 +414,21 @@ export class PrescriptionService {
    * `prescription_discard_only_from_draft` refuses a discard on anything that
    * was issued.
    *
-   * ⚠️ NO REASON IS ASKED FOR, AND THE ABSENCE IS THE REQUIREMENT. Art. 70 wants
-   * a register of annulled and lost prescriptions and there is no column for it
-   * (⚠️ **Falta esquema**, PR-010, PR-073). Asking for a reason and dropping it
-   * would make everybody believe there is a record. What there IS, until the
-   * columns exist, is the audit row this leaves.
+   * ⚠️ THE REASON IS OBLIGATORY (PR-108), AND IT IS THE REGISTER. Art. 70
+   * wants a register of annulled and lost prescriptions: `cancelled_at`,
+   * `cancelled_by_id` and `cancel_reason` are it, and the database demands
+   * the three together. Who is the session and when is the application's
+   * clock — never `now()` in PostgreSQL, which the end-to-end runs cannot
+   * move.
    */
   async cancel(
     prescriptionId: string,
+    reason: string,
     requester: Requester,
   ): Promise<PrescriptionView> {
     const cancelled = await this.prescriptions.cancel(
       { prescriptionId, sites: requester.sites },
+      cancelPlan(reason, requester),
       // PR-010. Only an issued prescription is annullable — see above.
       (status) => assertIssued(status),
     );
@@ -439,6 +443,61 @@ export class PrescriptionService {
     });
 
     return cancelled;
+  }
+
+  /**
+   * PR-109. «Corregir» an issued prescription: annul it with its reason
+   * (PR-108) and open a draft in the same attention with the same lines, in
+   * ONE transaction. What the doctor sees is the draft, ready to edit; the
+   * annulled one stays in the chart with its register.
+   *
+   * ⚠️ ONLY ITS PRESCRIBER, by the rule of PR-100: the draft comes out in the
+   * name of whoever corrects, so a colleague correcting would be a receta
+   * with the words of one doctor and the name of another. The colleague can
+   * still annul it (PR-108). The prescriber is the session, and the adapter
+   * compares on the locked row.
+   *
+   * Two rows of the trail, because two facts happened: the prescription that
+   * was annulled (`UPDATE`) and the draft that was born (`CREATE`).
+   */
+  async correct(
+    prescriptionId: string,
+    reason: string,
+    requester: Requester,
+  ): Promise<CorrectedPrescription> {
+    const prescriber = await this.requirePrescriber(requester.userId);
+
+    const corrected = await this.prescriptions.correct({
+      prescriptionId,
+      prescriberId: prescriber.practitionerId,
+      sites: requester.sites,
+      cancel: cancelPlan(reason, requester),
+    });
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: RESOURCE_TYPE,
+      resourceId: corrected.cancelled.id,
+      action: 'UPDATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: RESOURCE_TYPE,
+      resourceId: corrected.draft.id,
+      action: 'CREATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+
+    // PR-094. The fact only: no patient, no medicine, no reason interpolated.
+    this.logger.info(
+      { action: 'PRESCRIPTION_CORRECTED' },
+      'prescription annulled and redrafted',
+    );
+
+    return corrected;
   }
 
   /**
@@ -667,6 +726,18 @@ export class PrescriptionService {
  */
 function assertDraft(status: PrescriptionStatus): void {
   if (status !== 'DRAFT') throw new PrescriptionNotEditableError(status);
+}
+
+/**
+ * PR-108. The register of art. 70: the account of the session, the
+ * application's clock and the reason as it was chosen or written.
+ */
+function cancelPlan(reason: string, requester: Requester) {
+  return {
+    cancelledAt: new Date(),
+    cancelledById: requester.userId,
+    cancelReason: reason,
+  };
 }
 
 /** PR-010. Only an issued prescription can be annulled (art. 70). */

@@ -330,6 +330,50 @@ export class DiscardPrescriptionDto extends createZodDto(
   discardPrescriptionSchema,
 ) {}
 
+/**
+ * PR-108, PR-109. Annulling an ISSUED prescription, or correcting it: the
+ * reason, and nothing else.
+ *
+ * ⚠️ THE REASON IS OBLIGATORY, AND IT IS OBLIGATORY BECAUSE IT IS STORED.
+ * Art. 70 of Res. ACESS-2023-0030 obliges a «registro de las recetas médicas
+ * perdidas», and `cancel_reason` is that register:
+ * `prescription_cancel_states_who_when_and_why` refuses a cancelled row
+ * without it. The paper is in a third party's hand, which is the case D-126.3
+ * keeps a reason for.
+ *
+ * TEXT AND NOT AN ENUM. The screen offers a short list with «Otro»
+ * (`ReasonPicker`) and sends the label it chose, or what was written in
+ * «Otro»: the list belongs to the screen, the column keeps a sentence, and the
+ * AI assistant sends the same thing a person does (D-127.5).
+ *
+ * ⚠️ AND THERE IS NO `cancelledById` FIELD. Who annulled it is the
+ * authenticated session, never an id the caller supplies (PR-004).
+ */
+const issuedPrescriptionReasonSchema = z.object({
+  reason: z
+    .string({ error: 'Elija el motivo' })
+    .trim()
+    .min(5, 'Elija el motivo, o escriba uno de al menos 5 letras')
+    // 500 is `cancel_reason`'s own width.
+    .max(500, 'El motivo no puede superar 500 caracteres'),
+});
+
+/** PR-108. Body of POST /prescriptions/:prescriptionId/cancel. */
+export const cancelPrescriptionSchema = issuedPrescriptionReasonSchema;
+export class CancelPrescriptionDto extends createZodDto(
+  cancelPrescriptionSchema,
+) {}
+
+/**
+ * PR-109. Body of POST /prescriptions/:prescriptionId/correct. The SAME
+ * contract as the annulment, because correcting IS annulling — plus a draft
+ * with the same lines, in the same transaction.
+ */
+export const correctPrescriptionSchema = issuedPrescriptionReasonSchema;
+export class CorrectPrescriptionDto extends createZodDto(
+  correctPrescriptionSchema,
+) {}
+
 /** One line as a client reads it. */
 export const prescriptionItemViewSchema = z.object({
   id: z.uuid(),
@@ -384,10 +428,33 @@ export const prescriptionSchema = z.object({
    */
   discardedAt: z.iso.datetime().nullable(),
   discardReason: z.string().nullable(),
+  /**
+   * PR-108. The register of art. 70: when it was annulled, by whom and why.
+   * `null` on every state but `CANCELLED` — and on a prescription annulled
+   * before the register existed, which has none to give.
+   */
+  cancelledAt: z.iso.datetime().nullable(),
+  cancelledBy: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+  cancelReason: z.string().nullable(),
   items: z.array(prescriptionItemViewSchema),
 });
 /** Response of issuing, discarding and annulling a prescription. */
 export class PrescriptionDto extends createZodDto(prescriptionSchema) {}
+
+/**
+ * PR-109. What correcting answers: the prescription annulled, and the draft
+ * that replaces it, ready to be edited and issued.
+ */
+export const correctedPrescriptionSchema = z.object({
+  cancelled: prescriptionSchema,
+  draft: prescriptionSchema,
+});
+export class CorrectedPrescriptionDto extends createZodDto(
+  correctedPrescriptionSchema,
+) {}
+export type CorrectedPrescriptionResponse = z.infer<
+  typeof correctedPrescriptionSchema
+>;
 
 export const prescriptionListSchema = z.object({
   items: z.array(prescriptionSchema),

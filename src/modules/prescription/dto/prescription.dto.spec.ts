@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  cancelPrescriptionSchema,
   composePrescriptionSchema,
+  correctPrescriptionSchema,
   discardPrescriptionSchema,
 } from './prescription.dto';
 
@@ -68,4 +70,36 @@ describe('descartar un borrador de receta', () => {
         ?.issues[0]?.path,
     ).toEqual(['reason']);
   });
+});
+
+describe('anular y corregir una receta emitida', () => {
+  it.each([
+    ['PR-108', cancelPrescriptionSchema],
+    ['PR-109', correctPrescriptionSchema],
+  ] as const)(
+    '%s exige el motivo: sin él, o con menos de 5 letras, se nombra el campo',
+    (_id, schema) => {
+      for (const body of [{}, { reason: '   ' }, { reason: 'Abc' }]) {
+        expect(schema.safeParse(body).error?.issues[0]?.path).toEqual([
+          'reason',
+        ]);
+      }
+    },
+  );
+
+  it.each([
+    ['PR-108', cancelPrescriptionSchema],
+    ['PR-109', correctPrescriptionSchema],
+  ] as const)(
+    '%s guarda el motivo de la lista o el que se escribió, sin espacios, y hasta 500',
+    (_id, schema) => {
+      expect(schema.parse({ reason: ' Pérdida ' })).toEqual({ reason: 'Pérdida' }); // prettier-ignore
+      expect(schema.parse({ reason: 'x'.repeat(500) }).reason).toHaveLength(
+        500,
+      );
+      expect(
+        schema.safeParse({ reason: 'x'.repeat(501) }).error?.issues[0]?.path,
+      ).toEqual(['reason']);
+    },
+  );
 });

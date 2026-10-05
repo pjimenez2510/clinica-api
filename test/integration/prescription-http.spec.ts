@@ -56,6 +56,10 @@ interface PrescriptionBody {
   verificationCode: string | null;
   discardedAt: string | null;
   discardReason: string | null;
+  cancelledAt: string | null;
+  cancelledBy: { id: string; name: string } | null;
+  cancelReason: string | null;
+  encounterId: string;
   items: { id: string; line: number; genericName: string; quantity: number }[];
 }
 
@@ -468,6 +472,7 @@ describe('la receta por HTTP', () => {
     const refused = await post(
       `/prescriptions/${composed.prescription.id}/cancel`,
       doctorToken,
+      { reason: 'Pérdida' },
     ).expect(409);
     expect((refused.body as Problem).code).toBe('PRESCRIPTION_NOT_EDITABLE');
 
@@ -478,11 +483,114 @@ describe('la receta por HTTP', () => {
     const cancelled = await post(
       `/prescriptions/${composed.prescription.id}/cancel`,
       doctorToken,
+      { reason: 'Pérdida' },
     ).expect(200);
 
     expect((cancelled.body as PrescriptionBody).status).toBe('CANCELLED');
     // Nada se borra: contar es la única forma de demostrarlo.
     expect(await prisma.prescription.count()).toBe(1);
+  });
+
+  it('PR-108 anular exige el motivo, y la receta anulada dice quién, cuándo y por qué', async () => {
+    const composed = await composeAsDoctor();
+    const id = composed.prescription.id;
+    await post(`/prescriptions/${id}/issue`, doctorToken).expect(200);
+
+    // Sin motivo, se nombra la casilla y la receta sigue vigente.
+    for (const body of [undefined, { reason: '  ' }]) {
+      const missing = await post(`/prescriptions/${id}/cancel`, doctorToken, body).expect(422); // prettier-ignore
+      expect((missing.body as Problem).errors?.[0]?.field).toBe('reason');
+    }
+    expect((await prisma.prescription.findUniqueOrThrow({ where: { id } })).status).toBe('ACTIVE'); // prettier-ignore
+
+    // Control positivo: con el motivo de la lista, se anula con su registro.
+    const cancelled =
+      (await post(`/prescriptions/${id}/cancel`, doctorToken, { reason: 'Robo o hurto' }).expect(200)) // prettier-ignore
+      .body as PrescriptionBody;
+    expect(cancelled.cancelReason).toBe('Robo o hurto');
+    expect(cancelled.cancelledBy?.name).toBe('Ana Villacís');
+    expect(cancelled.cancelledAt).not.toBeNull();
+
+    // El registro se lee en la lista de la atención, que es donde se busca.
+    const listed = (
+      await get(`/encounters/${encounterId}/prescriptions`, doctorToken).expect(200)
+    ).body as { items: PrescriptionBody[] }; // prettier-ignore
+    expect(listed.items[0]).toMatchObject({
+      status: 'CANCELLED',
+      cancelReason: 'Robo o hurto',
+      cancelledBy: { name: 'Ana Villacís' },
+    });
+  });
+
+  it('PR-109 corregir devuelve la anulada y el borrador nuevo con las mismas líneas, en la misma atención', async () => {
+    const composed = await composeAsDoctor([aLine(), aLine({ quantity: 10 })]);
+    const id = composed.prescription.id;
+    await post(`/prescriptions/${id}/issue`, doctorToken).expect(200);
+    const trail = () =>
+      prisma.accessAudit.count({ where: { resourceType: 'prescription' } });
+    const before = await trail();
+
+    const response = await post(`/prescriptions/${id}/correct`, doctorToken, {
+      reason: 'Error de prescripción',
+    }).expect(200);
+
+    const { cancelled, draft } = response.body as {
+      cancelled: PrescriptionBody;
+      draft: PrescriptionBody;
+    };
+    expect(cancelled).toMatchObject({
+      id,
+      status: 'CANCELLED',
+      cancelReason: 'Error de prescripción',
+    });
+    expect(draft.status).toBe('DRAFT');
+    expect(draft.encounterId).toBe(encounterId);
+    expect(draft.items.map((item) => [item.genericName, item.quantity])).toEqual(
+      [['Amoxicilina', 20], ['Amoxicilina', 10]],
+    ); // prettier-ignore
+    // Dos hechos, dos filas: la anulación y el borrador nuevo.
+    expect(await trail()).toBe(before + 2);
+    // Y el borrador se emite como cualquier otro.
+    await post(`/prescriptions/${draft.id}/issue`, doctorToken).expect(200);
+  });
+
+  it('PR-109 sólo su prescriptor corrige: otro médico recibe 403 y la receta sigue vigente', async () => {
+    const composed = await composeAsDoctor();
+    const id = composed.prescription.id;
+    await post(`/prescriptions/${id}/issue`, doctorToken).expect(200);
+    const colleague = await signIn('MEDICO', 'colega@clinica.ec', '0102030400');
+    const reason = { reason: 'Error de prescripción' };
+
+    const refused = await post(`/prescriptions/${id}/correct`, colleague.token, reason).expect(403); // prettier-ignore
+    expect((refused.body as Problem).code).toBe('PRESCRIPTION_OF_ANOTHER_PRESCRIBER'); // prettier-ignore
+    await post(`/prescriptions/${id}/correct`, receptionToken, reason).expect(
+      403,
+    );
+    await post(`/prescriptions/${id}/correct`, nurseToken, reason).expect(403);
+    expect((await prisma.prescription.findUniqueOrThrow({ where: { id } })).status).toBe('ACTIVE'); // prettier-ignore
+    expect(await prisma.prescription.count()).toBe(1);
+
+    // Control positivo: su prescriptor sí.
+    await post(`/prescriptions/${id}/correct`, doctorToken, reason).expect(200);
+  });
+
+  it('PR-109 sin motivo, sobre un borrador o sobre una anulada no corrige', async () => {
+    const composed = await composeAsDoctor();
+    const id = composed.prescription.id;
+    const reason = { reason: 'Error de prescripción' };
+
+    const draft = await post(`/prescriptions/${id}/correct`, doctorToken, reason).expect(409); // prettier-ignore
+    expect((draft.body as Problem).code).toBe('PRESCRIPTION_NOT_EDITABLE');
+
+    await post(`/prescriptions/${id}/issue`, doctorToken).expect(200);
+    const missing = await post(`/prescriptions/${id}/correct`, doctorToken).expect(422); // prettier-ignore
+    expect((missing.body as Problem).errors?.[0]?.field).toBe('reason');
+
+    // Control positivo, y después la anulada ya no se corrige otra vez.
+    await post(`/prescriptions/${id}/correct`, doctorToken, reason).expect(200);
+    const twice = await post(`/prescriptions/${id}/correct`, doctorToken, reason).expect(409); // prettier-ignore
+    expect((twice.body as Problem).title).toContain('Anulada');
+    expect(await prisma.prescription.count()).toBe(2);
   });
 
   it('PR-011 PR-107 descarta el borrador sin pedir motivo, y guarda el que se escriba', async () => {
