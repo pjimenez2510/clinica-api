@@ -1179,6 +1179,94 @@ describe('la atención por HTTP', () => {
       ).expect(200);
     });
 
+    it('EN-207 una alergia sola no cubre antecedentes; «niega antecedentes» sí, y queda en la foto firmada', async () => {
+      await post(`/patients/${patientId}/allergies`, doctorToken, {
+        substanceText: 'Penicilina',
+        criticality: 'HIGH',
+      }).expect(201);
+      const encounterId = await openEncounter();
+      await createDiagnosis(prisma, encounterId, 'J00');
+      const draft = await post(
+        `/encounters/${encounterId}/notes`,
+        doctorToken,
+        {
+          formCode: '002',
+          content: { ...COMPLETE_002, antecedentes: '' },
+        },
+      ).expect(201);
+      const noteId = (draft.body as NoteBody).id;
+      const sign = () =>
+        post(`/encounters/${encounterId}/notes/${noteId}/sign`, doctorToken, {
+          dischargeCondition: 'ALIVE',
+        });
+
+      const refused = await sign().expect(422);
+      expect((refused.body as Problem).errors?.map((e) => e.field)).toEqual([
+        'content.antecedentes',
+      ]);
+
+      // The one click: the draft carries the statement, and it signs.
+      await request(app.getHttpServer())
+        .patch(`/api/v1/encounters/${encounterId}/notes/${noteId}`)
+        .set('Authorization', `Bearer ${doctorToken}`)
+        .send({
+          content: {
+            ...COMPLETE_002,
+            antecedentes: '',
+            backgroundDenied: true,
+          },
+        })
+        .expect(200);
+      await sign().expect(200);
+
+      const stored = await prisma.clinicalNote.findUniqueOrThrow({
+        where: { id: noteId },
+      });
+      const content = stored.content as Record<string, unknown>;
+      expect(content).not.toHaveProperty('backgroundDenied');
+      expect(content.backgroundSnapshot).toMatchObject({ historyDenied: true });
+      // Inside the digest: the statement is part of what was signed.
+      expect(stored.contentHash).toBe(
+        contentHashOf({
+          content,
+          signedById: stored.signedById as string,
+          signedAt: stored.signedAt as Date,
+        }),
+      );
+    });
+
+    it('EN-207 un antecedente familiar registrado cubre antecedentes sin texto ni constancia', async () => {
+      await post(`/patients/${patientId}/history`, doctorToken, {
+        kind: 'FAMILY',
+        description: 'Diabetes tipo 2',
+        relative: 'Madre',
+      }).expect(201);
+      const encounterId = await openEncounter();
+      await createDiagnosis(prisma, encounterId, 'J00');
+      const draft = await post(
+        `/encounters/${encounterId}/notes`,
+        doctorToken,
+        {
+          formCode: '002',
+          content: { ...COMPLETE_002, antecedentes: '' },
+        },
+      ).expect(201);
+
+      await post(
+        `/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}/sign`,
+        doctorToken,
+        { dischargeCondition: 'ALIVE' },
+      ).expect(200);
+    });
+
+    it('EN-207 la constancia sólo admite «sí»: otro valor no es una sección de texto', async () => {
+      const encounterId = await openEncounter();
+      await post(`/encounters/${encounterId}/notes`, doctorToken, {
+        formCode: '002',
+        content: { ...COMPLETE_002, backgroundDenied: 'si' },
+      }).expect(422);
+    });
+
     it('EN-009 rechaza firmar la consulta externa sin condición de egreso', async () => {
       const encounterId = await openEncounter();
       const draft = await post(

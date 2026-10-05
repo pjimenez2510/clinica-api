@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  BACKGROUND_DENIED_KEY,
   BACKGROUND_SNAPSHOT_KEY,
   backgroundSnapshotIn,
   backgroundSnapshotOf,
@@ -115,6 +116,7 @@ describe('la foto de alergias y antecedentes al firmar', () => {
           recordedAt: EARLIER.toISOString(),
         },
       ],
+      historyDenied: false,
     });
   });
 
@@ -171,16 +173,46 @@ describe('la sección de antecedentes cubierta por lo registrado', () => {
   const form = builtInTemplate('002');
   const noText = { ...COMPLETE_002, antecedentes: '' };
 
-  it('EN-207 da por escrita la sección sin texto si hay una alergia registrada', () => {
+  it('EN-207 NO da por escrita la sección con una alergia sola (D-125 ajustada)', () => {
     expect(coversBackgroundSection(snapshot({ allergies: [PENICILLIN] }))).toBe(
-      true,
+      false,
     );
     expect(() =>
       assertNoteComplete(
         form,
         withBackgroundSnapshot(noText, snapshot({ allergies: [PENICILLIN] })),
       ),
-    ).not.toThrow();
+    ).toThrow(NoteContentIncompleteError);
+  });
+
+  it('EN-207 da por escrita la sección con la constancia «niega antecedentes», que pasa a la foto', () => {
+    const signed = withBackgroundSnapshot(
+      { ...noText, [BACKGROUND_DENIED_KEY]: true },
+      snapshot({}),
+    );
+
+    expect(backgroundSnapshotIn(signed)?.historyDenied).toBe(true);
+    // La foto es la única constancia: la clave del borrador no se firma suelta.
+    expect(signed).not.toHaveProperty(BACKGROUND_DENIED_KEY);
+    expect(() => assertNoteComplete(form, signed)).not.toThrow();
+  });
+
+  it('EN-207 con un antecedente registrado la constancia no entra en la foto', () => {
+    const signed = withBackgroundSnapshot(
+      { ...noText, [BACKGROUND_DENIED_KEY]: true },
+      snapshot({ history: [DIABETES_MOTHER] }),
+    );
+
+    expect(backgroundSnapshotIn(signed)?.historyDenied).toBe(false);
+  });
+
+  it('EN-207 el borrador conserva la constancia hasta la firma', () => {
+    const draft = withBackgroundSnapshot(
+      { ...noText, [BACKGROUND_DENIED_KEY]: true },
+      null,
+    );
+
+    expect(draft[BACKGROUND_DENIED_KEY]).toBe(true);
   });
 
   it('EN-207 da por escrita la sección sin texto si hay un antecedente registrado', () => {
@@ -222,7 +254,7 @@ describe('la sección de antecedentes cubierta por lo registrado', () => {
         form,
         withBackgroundSnapshot(
           { ...COMPLETE_002, examenFisico: '' },
-          snapshot({ allergies: [PENICILLIN] }),
+          snapshot({ history: [DIABETES_MOTHER] }),
         ),
       ),
     ).toThrow(NoteContentIncompleteError);

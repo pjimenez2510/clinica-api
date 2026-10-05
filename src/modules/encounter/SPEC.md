@@ -3077,12 +3077,23 @@ dejaba ver su atención._
   > esos milisegundos queda en la ficha y en su rastro, y la foto dice lo que
   > la ficha decía en `takenAt`.
 - **EN-207** — CUANDO se firme una nota de consulta, el sistema DEBERÁ dar por
-  escrita la sección de **antecedentes** si tiene texto **o** si la foto de
-  EN-206 contiene al menos una alergia activa o un antecedente; «sin alergias
-  conocidas» por sí sola NO DEBERÁ bastar (D-125).
+  escrita la sección de **antecedentes** si tiene texto, **o** si la foto de
+  EN-206 contiene al menos un antecedente personal o familiar, **o** si el
+  borrador lleva la constancia **«niega antecedentes»**; una alergia sola y
+  «sin alergias conocidas» NO DEBERÁN bastar (D-125, ajustada el 05-10-2026).
   > Así el médico no reescribe lo que ya registró, y el texto queda para lo que
-  > no cabe en una alergia o un antecedente. «Sin alergias conocidas» no dice
+  > no cabe en un antecedente. Ni una alergia ni «sin alergias conocidas» dicen
   > nada de los antecedentes personales ni familiares que pide el art. 6.
+  >
+  > **La constancia es de la nota, no de la ficha** (`fix/fallos-inventario`):
+  > es lo que dijo el paciente en ESTA consulta y puede cambiar en la
+  > siguiente, a diferencia de un antecedente registrado. Viaja en el borrador
+  > como `backgroundDenied: true` —el único valor del contenido que no es
+  > texto, y sólo admite `true`—, se marca con un clic y sin motivo (D-126), y
+  > al firmar pasa a la foto como `historyDenied`, dentro del hash (EN-027);
+  > quién y cuándo son el firmante y el instante de la firma. **Con un
+  > antecedente registrado no se congela**: la nota diría las dos cosas. La
+  > enmienda conserva la de su original.
 - **EN-208** — El sistema DEBERÁ permitir buscar las atenciones de una ficha
   **por la cita** de la que nacieron, en cualquier estado salvo anulada por
   error, con `record:read`.
