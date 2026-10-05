@@ -132,6 +132,8 @@ export interface NoteEncounterRead {
   practitionerId: string;
   endedAt: Date | null;
   dischargeCondition: string | null;
+  /** EN-020. Diagnoses on the attention, read inside the signing transaction. */
+  diagnosisCount: number;
 }
 
 /**

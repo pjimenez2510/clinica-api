@@ -14,6 +14,7 @@ import {
   MergeReasonRequiredError,
   MergeUndoConflictError,
   PatientAlreadyMergedError,
+  PriorityGroupAlreadyClosedError,
 } from './patient.errors';
 
 /**
@@ -164,5 +165,18 @@ describe('los errores de la fusión de duplicados', () => {
     ]) {
       expect(DOMAIN_ERROR_CODES).toContain(code);
     }
+  });
+});
+
+describe('el cierre de un grupo prioritario', () => {
+  it('PA-037 answers PRIORITY_GROUP_ALREADY_CLOSED as a conflict, without naming the group', () => {
+    const error = new PriorityGroupAlreadyClosedError();
+
+    expect(error.code).toBe('PRIORITY_GROUP_ALREADY_CLOSED');
+    expect(error).toBeInstanceOf(ConflictError); // 409
+    expect(error.userTitle).toBe(
+      'Ese registro ya estaba cerrado. Se conserva el primer cierre',
+    );
+    expect(DOMAIN_ERROR_CODES).toContain('PRIORITY_GROUP_ALREADY_CLOSED');
   });
 });

@@ -1186,6 +1186,17 @@ Ningún requisito de esta sección lo altera._
   > Aquí sí son `Condition` en términos de FHIR: estados con relevancia clínica
   > que duran. Y que un estado se cerrara borrando la fila destruiría la
   > respuesta a «¿por qué esta persona tuvo prioridad en marzo?».
+  >
+  > **Enmendado el 04-10-2026 (`fix/fallos-inventario`, PA-14 del inventario de
+  > D-126).** SI se intenta cerrar un registro que ya está cerrado, ENTONCES el
+  > sistema DEBERÁ rechazarlo con `PRIORITY_GROUP_ALREADY_CLOSED` y NO DEBERÁ
+  > tocar el primer cierre. Hasta entonces el segundo cierre sobrescribía
+  > `closed_by`, `closed_at` y `ends_on` sin dejar rastro, que es borrar
+  > PA-039 por la puerta de atrás. «Cerrado» es tener `closed_at`, no `ends_on`:
+  > el embarazo nace con fin (PA-036). **Garantía de la base:**
+  > `trg_patient_priority_group_closure_once` rechaza cambiar esas tres columnas
+  > de una fila ya cerrada. Corregir un cierre equivocado será la edición con
+  > versión de D-127 (`fix/menos-preguntas`), no un segundo cierre.
 - **PA-038** — Todo registro DEBERÁ constar como **declarado por el paciente** o
   como **acreditado**, y SI es acreditado, ENTONCES DEBERÁ constar con qué
   documento.
@@ -1937,6 +1948,7 @@ no dos porque lo que hay que hacer es distinto en cada caso:
 | `PRIORITY_GROUP_EVIDENCE_REQUIRED` | 422  | Se marcó «acreditado» sin decir con qué documento                       | PA-038    |
 | `PRIORITY_GROUP_RESTRICTED`        | 403  | Se intentó **registrar** un grupo de la segunda frase sin la llave      | PA-034    |
 | `PRIORITY_GROUP_NOT_FOUND`         | 404  | La fila no existe, es de otro paciente, o quien pregunta no puede verla | PA-037    |
+| `PRIORITY_GROUP_ALREADY_CLOSED`    | 409  | Se intentó cerrar un registro que ya estaba cerrado; el primer cierre queda | PA-037    |
 
 **El motivo de la fusión se exige en el servicio y no sólo en el DTO**, por lo
 mismo que `CANCELLATION_REASON_REQUIRED` en la agenda: un `DEBERÁ` que sólo hace

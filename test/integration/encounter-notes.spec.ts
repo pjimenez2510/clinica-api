@@ -15,6 +15,7 @@ import type { PrismaService } from '../../src/shared/infrastructure/prisma/prism
 
 import { useDatabase } from './setup/database';
 import {
+  createDiagnosis,
   createPatient,
   createPractitioner,
   createSite,
@@ -67,6 +68,9 @@ async function aDraft(prisma: PrismaClient) {
     careSetting: 'INTRAMURAL',
     visitSequence: 'FIRST_TIME',
   });
+
+  // EN-020. Signing the 002 discharges, and a discharge needs a diagnosis.
+  await createDiagnosis(prisma, encounter.id, 'J00');
 
   const note = await notesOf(prisma).createDraft({
     encounterId: encounter.id,

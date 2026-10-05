@@ -529,6 +529,24 @@ export class PriorityGroupNotFoundError extends NotFoundError {
 }
 
 /**
+ * PA-037. The record is already closed, and a second closure would overwrite
+ * who closed it, when, and on what date — the trail PA-039 keeps.
+ *
+ * 409 AND NOT 422: what was sent is a valid closure; it is the state of the
+ * row that refuses it. Correcting a wrong closure is an edit with its version
+ * (D-127), not a closure on top of another one. The guarantee is
+ * `trg_patient_priority_group_closure_once`; this is its sentence.
+ */
+export class PriorityGroupAlreadyClosedError extends ConflictError {
+  readonly code = 'PRIORITY_GROUP_ALREADY_CLOSED';
+  override readonly userTitle =
+    'Ese registro ya estaba cerrado. Se conserva el primer cierre';
+  constructor() {
+    super('Priority group record is already closed');
+  }
+}
+
+/**
  * AG-073. The chart was asked for FROM an appointment that does not back the
  * claim: it does not exist, it is somebody else's (or a block, with nobody),
  * or it sits at a site where the caller cannot read the agenda.

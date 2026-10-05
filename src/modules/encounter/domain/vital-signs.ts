@@ -121,20 +121,19 @@ export function assertBmiNotSupplied(body: { readonly bmi?: unknown }): void {
 }
 
 /**
- * EN-063. The anthropometry the instructivo makes obligatory for under-fives.
+ * EN-063. The anthropometry the instructivo makes obligatory for under-fives
+ * and for pregnant women.
  *
  * Literal from the note to block D (instructivo, p. 44): *«los datos
  * antropométricos con \* es obligatorio para usuarios menores de 5 años o que
  * corresponda al grupo prioritario "Embarazadas"; para el resto de usuarios el
  * registro es opcional»*.
  *
- * ⚠️ THE PREGNANCY HALF IS NOT ENFORCED, and saying so here is better than
- * discovering it later: it reads `encounter_priority_group`, whose catalogue
- * of the fourteen RDACAA groups does not exist yet (EN-099, «Falta esquema»).
- * The day it does, this function takes a second argument and the sentence in
- * `VitalsRequiredError` grows a clause. What is enforced today is the half
- * that the FROZEN AGE can answer on its own, which is the half that covers
- * every newborn and every well-child visit.
+ * THE PREGNANT WOMAN IS ASKED FOR WEIGHT AND HEIGHT, NOT THE HEAD
+ * CIRCUMFERENCE. The instructivo stars all three, and describes the third as
+ * the measure «de la cabeza del niño»; D-129 (resolved 05-10-2026) does not
+ * demand it of a pregnant adult. Whether she is pregnant is the caller's to
+ * answer, on the attention's clinical date.
  *
  * ALL THE MISSING FIELDS AT ONCE, never the first one: a nurse correcting a
  * form one refusal at a time is a nurse who stops reading them.
@@ -142,18 +141,17 @@ export function assertBmiNotSupplied(body: { readonly bmi?: unknown }): void {
 export function assertMandatoryAnthropometry(
   vitals: VitalSigns,
   age: FrozenAge,
+  pregnant: boolean,
 ): void {
-  if (!isUnderFive(age)) return;
+  const required: readonly (keyof VitalSigns)[] = isUnderFive(age)
+    ? ['weightKg', 'heightCm', 'headCircumferenceCm']
+    : pregnant
+      ? ['weightKg', 'heightCm']
+      : [];
 
-  const missing = (
-    [
-      ['weightKg', vitals.weightKg],
-      ['heightCm', vitals.heightCm],
-      ['headCircumferenceCm', vitals.headCircumferenceCm],
-    ] as const
-  )
-    .filter(([, value]) => value === undefined || value === null)
-    .map(([field]) => field);
+  const missing = required.filter(
+    (field) => vitals[field] === undefined || vitals[field] === null,
+  );
 
   if (missing.length > 0) throw new VitalsRequiredError(missing);
 }
