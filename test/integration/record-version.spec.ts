@@ -123,7 +123,15 @@ describe('record_version: la versión anterior la guarda la base', () => {
         encounter.id,
       ),
     );
-    expect(unstamped?.code).toBe('EDIT_NOT_STAMPED');
+    // The contract: stable code, 422 and the sentence the reader gets.
+    expect(unstamped).toMatchObject({
+      code: 'EDIT_NOT_STAMPED',
+      status: 422,
+    });
+    expect(unstamped?.errors?.[0]).toMatchObject({
+      field: 'record',
+      message: 'Toda corrección dice quién la hizo y cuándo',
+    });
 
     // Control positivo: con sello, la misma corrección entra.
     await prisma.$executeRawUnsafe(
