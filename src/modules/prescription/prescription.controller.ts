@@ -7,6 +7,8 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
+  Query,
   Req,
 } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -21,13 +23,21 @@ import { PrescriptionService } from './application/prescription.service';
 import {
   toDocumentResponse,
   toPrescriptionResponse,
+  toVocabularyResponse,
+  toWrittenItem,
 } from './prescription.presenter';
 import {
+  ComposedPrescriptionDto,
   DiscardPrescriptionDto,
   PrescriptionDocumentDto,
   PrescriptionDto,
+  PrescriptionVocabularyDto,
+  RewritePrescriptionDto,
+  VocabularyQueryDto,
+  type ComposedPrescriptionResponse,
   type PrescriptionDocumentResponse,
   type PrescriptionResponse,
+  type PrescriptionVocabularyResponse,
 } from './dto/prescription.dto';
 import type { Requester } from './application/prescription.service';
 
@@ -63,6 +73,54 @@ export class PrescriptionController {
     private readonly prescriptions: PrescriptionService,
     private readonly currentUser: CurrentUserService,
   ) {}
+
+  /**
+   * PR-103. The lists a line is written with. DECLARED BEFORE
+   * `:prescriptionId`: NestJS matches in declaration order, and the literal
+   * segment would otherwise be swallowed by the parameter.
+   */
+  @Get('vocabulary')
+  @RequirePermission('prescription:write', 'query')
+  @ApiOperation({ summary: 'Listas para escribir una línea de receta' })
+  @ApiOkResponse({ type: PrescriptionVocabularyDto })
+  async vocabulary(
+    @Query() query: VocabularyQueryDto,
+  ): Promise<PrescriptionVocabularyResponse> {
+    const presentations =
+      query.conceptId === undefined
+        ? []
+        : await this.prescriptions.presentationsOf(query.conceptId);
+    return toVocabularyResponse(presentations);
+  }
+
+  /**
+   * PR-100. Rewrites a DRAFT whole: its lines and its indications. A `PUT`
+   * because the body IS the draft — there is no route that adds one line, so
+   * there is never a receta half written between two requests (PR-005).
+   */
+  @Put(':prescriptionId')
+  @RequirePermission('prescription:write', 'query')
+  @ApiOperation({ summary: 'Corregir un borrador de receta' })
+  @ApiOkResponse({ type: ComposedPrescriptionDto })
+  async rewrite(
+    @Param('prescriptionId', ParseUUIDPipe) prescriptionId: string,
+    @Body() dto: RewritePrescriptionDto,
+    @Req() req: Request,
+  ): Promise<ComposedPrescriptionResponse> {
+    const rewritten = await this.prescriptions.rewrite(
+      {
+        prescriptionId,
+        warningSigns: dto.warningSigns ?? null,
+        nonPharmacologicalAdvice: dto.nonPharmacologicalAdvice ?? null,
+        items: dto.items.map(toWrittenItem),
+      },
+      this.requester(req, 'prescription:write'),
+    );
+    return {
+      prescription: toPrescriptionResponse(rewritten.prescription),
+      allergyAlerts: [...rewritten.allergyAlerts],
+    };
+  }
 
   /**
    * PR-020 to PR-053, PR-092. The prescription as art. 5 obliges it.

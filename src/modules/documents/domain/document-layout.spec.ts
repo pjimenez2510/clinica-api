@@ -399,6 +399,16 @@ describe('DOC-072 la tabla de la receta, como la plantilla aprobada (D-095)', ()
     ).toBeCloseTo(1);
     expect(table.rows[0]?.[5]).toBe('1 tableta · cada 8 horas · por 7 días');
   });
+
+  it('DOC-072 un solo día se escribe en singular: «por 1 día»', () => {
+    const base = prescription() as Extract<DocumentSubject, { kind: 'PRESCRIPTION' }>; // prettier-ignore
+    const oneDay = prescription({
+      lines: base.data.lines.map((line) => ({ ...line, durationDays: 1 })),
+    });
+    const table = tableOf(composeLayout(oneDay, context, template));
+
+    expect(table.rows[0]?.[5]).toBe('1 tableta · cada 8 horas · por 1 día');
+  });
 });
 
 describe('PR-020 PR-038 PR-039 la receta impresa lleva su número y sus indicaciones', () => {

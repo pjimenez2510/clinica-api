@@ -18,6 +18,7 @@ import {
 import { PrescriptionService } from './prescription.service';
 import type {
   DiscardPlan,
+  DraftRewrite,
   IssuePlan,
   IssueSnapshot,
   NewPrescription,
@@ -113,6 +114,10 @@ const aPrescription = (
       durationDays: 7,
       instructions: null,
       offFormularyJustification: null,
+      dosageFormCode: 'CAPSULE',
+      doseAmount: 1,
+      doseUnitCode: 'CAPSULE',
+      frequencyCode: 'EVERY_8_HOURS',
     },
   ],
   ...overrides,
@@ -165,6 +170,17 @@ class FakeRepository implements PrescriptionRepository {
 
   create(prescription: NewPrescription): Promise<PrescriptionView> {
     this.created = prescription;
+    return Promise.resolve(aPrescription());
+  }
+
+  rewritten: DraftRewrite | undefined;
+
+  presentationsOf(): Promise<{ form: string; concentration: string }[]> {
+    return Promise.resolve([]);
+  }
+
+  rewriteDraft(rewrite: DraftRewrite): Promise<PrescriptionView> {
+    this.rewritten = rewrite;
     return Promise.resolve(aPrescription());
   }
 
@@ -277,18 +293,58 @@ describe('el servicio de recetas', () => {
       {
         conceptId: AMOXICILLIN,
         genericName: null,
-        presentation: 'Cápsula',
+        dosageForm: 'CAPSULE' as const,
         concentration: '500 mg',
         routeCode: 'ORAL',
         quantity: 20,
-        doseText: '1 cápsula',
-        frequencyText: 'Cada 8 horas',
+        doseAmount: 1,
+        doseUnit: 'CAPSULE' as const,
+        frequency: 'EVERY_8_HOURS' as const,
+        frequencyText: null,
         durationDays: 7,
         instructions: null,
         offFormularyJustification: null,
       },
     ],
   };
+
+  it('PR-101 PR-102 compone los textos de la línea desde los códigos, y guarda los códigos', async () => {
+    await service.compose(composeRequest, requester);
+
+    expect(repository.created?.items[0]).toMatchObject({
+      presentation: 'Cápsula',
+      doseText: '1 cápsula',
+      frequencyText: 'Cada 8 horas',
+      dosageFormCode: 'CAPSULE',
+      doseAmount: 1,
+      doseUnitCode: 'CAPSULE',
+      frequencyCode: 'EVERY_8_HOURS',
+    });
+  });
+
+  it('PR-100 reescribe el borrador como acto del prescriptor de la sesión, con las alertas y la bitácora', async () => {
+    const rewritten = await service.rewrite(
+      { prescriptionId: 'prescription-1', items: composeRequest.items },
+      requester,
+    );
+
+    expect(repository.rewritten).toMatchObject({
+      prescriptionId: 'prescription-1',
+      prescriberId: aPrescriber().practitionerId,
+    });
+    expect(repository.rewritten?.items[0]?.doseText).toBe('1 cápsula');
+    expect(rewritten.allergyAlerts).toEqual([]);
+    expect(entries.map((entry) => entry.action)).toEqual(['UPDATE']);
+  });
+
+  it('PR-100 sin ficha profesional no reescribe nada', async () => {
+    repository.prescriber = null;
+
+    await expect(
+      service.rewrite({ prescriptionId: 'prescription-1', items: composeRequest.items }, requester), // prettier-ignore
+    ).rejects.toMatchObject({ code: 'PRESCRIBER_PROFILE_REQUIRED' });
+    expect(repository.rewritten).toBeUndefined();
+  });
 
   it('PR-001 rechaza componer sobre una atención que no existe o es de otra sede', async () => {
     repository.encounter = null;
@@ -606,6 +662,14 @@ describe('el servicio de recetas', () => {
     expect(
       entries.every((entry) => entry.resourceType === 'prescription'),
     ).toBe(true);
+  });
+
+  it('PR-100 el listado dice qué prescriptor es quien pregunta, o ninguno', async () => {
+    expect(
+      (await service.listOfEncounter(ENCOUNTER, requester)).callerPrescriberId,
+    ).toBe(aPrescriber().practitionerId);
+    repository.prescriber = null;
+    expect((await service.listOfEncounter(ENCOUNTER, requester)).callerPrescriberId).toBeNull(); // prettier-ignore
   });
 
   it('PR-092 NO deja fila de bitácora al listar las recetas de una atención', async () => {

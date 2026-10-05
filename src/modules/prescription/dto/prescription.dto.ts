@@ -5,6 +5,11 @@ import {
   MEDICATION_ROUTE_CODES,
   MEDICATION_ROUTES,
 } from '../domain/prescription';
+import {
+  DOSAGE_FORM_CODES,
+  DOSE_UNIT_CODES,
+  FREQUENCY_CODES,
+} from '../domain/prescription-vocabulary';
 import { MAX_SPELLABLE_QUANTITY } from '../../../shared/domain/quantity-in-words';
 
 /**
@@ -29,6 +34,17 @@ const routeCodes = MEDICATION_ROUTE_CODES as [string, ...string[]];
 
 const ROUTE = z.enum(routeCodes, {
   error: `Elija la vía de administración: ${Object.values(MEDICATION_ROUTES).join(', ')}`, // prettier-ignore
+});
+
+// PR-101, PR-102. The codes of the vocabulary; the sentences are the server's.
+const DOSAGE_FORM = z.enum(DOSAGE_FORM_CODES as [string, ...string[]], {
+  error: 'Elija la forma farmacéutica de la lista',
+});
+const DOSE_UNIT = z.enum(DOSE_UNIT_CODES as [string, ...string[]], {
+  error: 'Elija la unidad de la dosis de la lista',
+});
+const FREQUENCY = z.enum(FREQUENCY_CODES as [string, ...string[]], {
+  error: 'Elija la frecuencia de la lista, o escríbala',
 });
 
 const PRESCRIPTION_STATUS = z.enum([
@@ -65,12 +81,8 @@ const prescriptionItemSchema = z
       .min(3, 'Escriba el nombre genérico del medicamento')
       .max(240, 'El nombre genérico no puede superar 240 caracteres')
       .optional(),
-    /** PR-029. Art. 5.c.ii — forma farmacéutica. */
-    presentation: z
-      .string()
-      .trim()
-      .min(1, 'Indique la forma farmacéutica')
-      .max(160, 'La forma farmacéutica no puede superar 160 caracteres'),
+    /** PR-029, PR-101. Art. 5.c.ii — forma farmacéutica, de la lista. */
+    dosageForm: DOSAGE_FORM,
     /** PR-029. Art. 5.c.iii — concentración del principio activo. */
     concentration: z
       .string()
@@ -91,18 +103,32 @@ const prescriptionItemSchema = z
         MAX_SPELLABLE_QUANTITY,
         'Esa cantidad es demasiado alta para una receta',
       ),
-    /** PR-031. Art. 5.c.vi — dosis/posología. */
-    doseText: z
-      .string()
-      .trim()
-      .min(1, 'Indique la dosis')
-      .max(160, 'La dosis no puede superar 160 caracteres'),
-    /** PR-031. Art. 5.c.vi — frecuencia de la administración. */
+    /**
+     * PR-031, PR-101. Art. 5.c.vi — dosis: una cantidad y su unidad, de la
+     * lista. «1 tableta» lo compone el servidor.
+     */
+    doseAmount: z
+      .number({ error: 'Indique la dosis' })
+      .positive('La dosis tiene que ser mayor que cero')
+      .max(10000, 'Esa dosis es demasiado alta')
+      // `dose_amount` keeps four decimals: 0,125 mg is a real digoxin dose,
+      // and a fifth decimal would be printed and then stored rounded.
+      .refine(
+        (value) => Math.round(value * 10_000) === value * 10_000,
+        'La dosis admite hasta cuatro decimales',
+      ),
+    doseUnit: DOSE_UNIT,
+    /**
+     * PR-031, PR-102. Art. 5.c.vi — frecuencia: un código de la lista o, si no
+     * está, el texto escrito. Uno de los dos y nunca ambos.
+     */
+    frequency: FREQUENCY.optional(),
     frequencyText: z
       .string()
       .trim()
       .min(1, 'Indique cada cuánto se toma')
-      .max(160, 'La frecuencia no puede superar 160 caracteres'),
+      .max(160, 'La frecuencia no puede superar 160 caracteres')
+      .optional(),
     /** PR-031. Art. 5.c.vi — duración del tratamiento, en días. */
     durationDays: z
       .number()
@@ -125,6 +151,18 @@ const prescriptionItemSchema = z
   })
   .check((ctx) => {
     const item = ctx.value;
+    // PR-102. One frequency: from the list or written, never both, never none.
+    if ((item.frequency === undefined) === (item.frequencyText === undefined)) {
+      ctx.issues.push({
+        code: 'custom',
+        input: item,
+        path: ['frequency'],
+        message:
+          item.frequency === undefined
+            ? 'Indique cada cuánto se toma: elíjalo de la lista o escríbalo'
+            : 'Elija la frecuencia de la lista o escríbala, no las dos',
+      });
+    }
     if (item.conceptId === undefined && item.genericName === undefined) {
       ctx.issues.push({
         code: 'custom',
@@ -205,6 +243,44 @@ export class ComposePrescriptionDto extends createZodDto(
   composePrescriptionSchema,
 ) {}
 
+/** PR-100. Body of PUT /prescriptions/:prescriptionId: the draft, whole. */
+export class RewritePrescriptionDto extends createZodDto(
+  composePrescriptionSchema,
+) {}
+
+/** PR-103. The lists a line is written with, and the sentence of each. */
+export const prescriptionVocabularySchema = z.object({
+  dosageForms: z.array(
+    z.object({
+      code: z.string(),
+      label: z.string(),
+      /** `null` when the form does not imply its unit (liquids, injectables). */
+      doseUnit: z.string().nullable(),
+    }),
+  ),
+  doseUnits: z.array(
+    z.object({ code: z.string(), one: z.string(), many: z.string() }),
+  ),
+  routes: z.array(z.object({ code: z.string(), label: z.string() })),
+  frequencies: z.array(z.object({ code: z.string(), label: z.string() })),
+  /** PR-104. Only with `?conceptId=`: the presentations that medicine has. */
+  presentations: z.array(
+    z.object({ form: z.string(), concentration: z.string() }),
+  ),
+});
+
+/** PR-104. The medicine whose presentations the picker offers. */
+export const vocabularyQuerySchema = z.object({
+  conceptId: z.uuid('Seleccione el medicamento en el CNMB').optional(),
+});
+export class VocabularyQueryDto extends createZodDto(vocabularyQuerySchema) {}
+export class PrescriptionVocabularyDto extends createZodDto(
+  prescriptionVocabularySchema,
+) {}
+export type PrescriptionVocabularyResponse = z.infer<
+  typeof prescriptionVocabularySchema
+>;
+
 /**
  * PR-011. Discarding a draft: the motivo, and nothing else.
  *
@@ -251,6 +327,11 @@ export const prescriptionItemViewSchema = z.object({
   durationDays: z.number().int().nullable(),
   instructions: z.string().nullable(),
   offFormularyJustification: z.string().nullable(),
+  /** PR-101, PR-102. `null` on lines written before the vocabulary. */
+  dosageFormCode: z.string().nullable(),
+  doseAmount: z.number().nullable(),
+  doseUnitCode: z.string().nullable(),
+  frequencyCode: z.string().nullable(),
 });
 
 /**
@@ -290,6 +371,11 @@ export class PrescriptionDto extends createZodDto(prescriptionSchema) {}
 
 export const prescriptionListSchema = z.object({
   items: z.array(prescriptionSchema),
+  /**
+   * PR-100. The caller's own practitioner id, or `null` without a profile: a
+   * draft is rewritten only by its prescriber, and the screen offers only those.
+   */
+  callerPrescriberId: z.uuid().nullable(),
 });
 /** Response of GET /encounters/:encounterId/prescriptions. */
 export class PrescriptionListDto extends createZodDto(prescriptionListSchema) {}

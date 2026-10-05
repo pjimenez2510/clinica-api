@@ -1011,3 +1011,57 @@ export class ChartHasAllergiesError extends ConflictError {
     super('Cannot assert no known allergies on a chart with active allergies');
   }
 }
+
+/**
+ * EN-180, EN-183. The diagnosis named is not on this attention, or it was
+ * already removed. One answer for both, the line `ENCOUNTER_NOT_FOUND` took.
+ */
+export class DiagnosisNotFoundError extends NotFoundError {
+  readonly code = 'DIAGNOSIS_NOT_FOUND';
+  override readonly userTitle =
+    'Ese diagnóstico ya no consta en esta atención. Actualice la lista';
+
+  constructor() {
+    super('Diagnosis not found on the encounter');
+  }
+}
+
+/**
+ * EN-181. Removing a diagnosis once the consultation note is signed states
+ * why: what was signed already said something with it in front, and whoever
+ * reads the chart has to know why it is gone. Demanded in the service, and by
+ * `trg_encounter_diagnosis_retraction_admits` a second time.
+ */
+export class DiagnosisRetractionReasonRequiredError extends ValidationError {
+  readonly code = 'DIAGNOSIS_RETRACTION_REASON_REQUIRED';
+  override readonly userTitle =
+    'La nota de esta atención ya está firmada: indique por qué quita el diagnóstico';
+  override readonly fieldErrors = [
+    {
+      field: 'reason',
+      code: 'DIAGNOSIS_RETRACTION_REASON_REQUIRED',
+      message: 'Indique por qué quita el diagnóstico',
+    },
+  ];
+
+  constructor() {
+    super('Diagnosis retraction without a reason after the note was signed');
+  }
+}
+
+/**
+ * EN-182. An order with exams still alive reads the attention's diagnoses when
+ * it is shown, so removing one — or changing which is the principal — would
+ * change a paper the lab already holds. The way out is real: cancel the exams
+ * (ORD-007). A receta is no longer the reason: it froze its diagnoses when it
+ * was issued (PR-026).
+ */
+export class DiagnosisCitedByIssuedDocumentError extends ConflictError {
+  readonly code = 'DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT';
+  override readonly userTitle =
+    'Esta atención tiene exámenes pedidos con estos diagnósticos. Anule primero los exámenes en «Exámenes» y después corrija el diagnóstico';
+
+  constructor() {
+    super('A live service order of the encounter cites its diagnoses');
+  }
+}

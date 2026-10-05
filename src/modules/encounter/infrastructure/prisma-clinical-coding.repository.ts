@@ -4,12 +4,15 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
   ConceptWrongCatalogueError,
+  DiagnosisCitedByIssuedDocumentError,
   DiagnosisConceptNotInForceError,
+  DiagnosisNotFoundError,
   DiagnosisPrimaryTakenError,
+  DiagnosisRetractionReasonRequiredError,
   EncounterAlreadyClosedError,
   EncounterNotFoundError,
 } from '../domain/encounter.errors';
-import type { EncounterStatus } from '../domain/encounter';
+import type { CareModality, EncounterStatus } from '../domain/encounter';
 import { acceptsNewClinicalContent } from '../domain/encounter-state';
 import {
   careModalityOfCie10,
@@ -19,8 +22,11 @@ import {
 import type {
   ClinicalCodingRepository,
   CodingQuery,
+  DiagnosisRetraction,
   DiagnosisView,
   NewDiagnosis,
+  PrimaryChange,
+  RetractedDiagnosisView,
   NewProcedure,
   ProcedureView,
 } from '../domain/clinical-coding.repository';
@@ -232,6 +238,142 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
     return rows.map(toDiagnosisView);
   }
 
+  /**
+   * EN-180 to EN-182. Archive, then delete — the order the database demands.
+   *
+   * The two refusals are asked here, under the attention's lock, so they are
+   * sentences: the triggers raise a class code whose name never travels.
+   */
+  async retractDiagnosis(retraction: DiagnosisRetraction): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await requireEncounterInScope(
+        tx,
+        retraction.encounterId,
+        retraction.sites,
+      );
+      await requireDiagnosisOf(
+        tx,
+        retraction.encounterId,
+        retraction.diagnosisId,
+      );
+      await refuseWhenCitedByIssuedDocument(tx, retraction.encounterId);
+
+      if (retraction.reason === null) {
+        const signedNotes = await tx.clinicalNote.count({
+          where: {
+            encounterId: retraction.encounterId,
+            signedAt: { not: null },
+          },
+        });
+        if (signedNotes > 0) throw new DiagnosisRetractionReasonRequiredError();
+      }
+
+      await tx.$executeRaw`
+        INSERT INTO "encounter_diagnosis_retraction"
+          ("id", "encounter_id", "concept_id", "cie10_code", "cie10_display",
+           "certainty", "occurrence", "rank", "notifiable", "note",
+           "recorded_at", "retracted_by_id", "reason")
+        SELECT "id", "encounter_id", "concept_id", "cie10_code", "cie10_display",
+               "certainty", "occurrence", "rank", "notifiable", "note",
+               "recorded_at", ${retraction.retractedById}::uuid, ${retraction.reason}
+          FROM "encounter_diagnosis"
+         WHERE "id" = ${retraction.diagnosisId}::uuid
+      `;
+      await tx.encounterDiagnosis.delete({
+        where: { id: retraction.diagnosisId },
+      });
+    });
+  }
+
+  /**
+   * EN-183. The previous principal moves first: with
+   * `encounter_diagnosis_one_primary` there can never be two, not even for
+   * the length of one statement.
+   */
+  async makePrimary(change: PrimaryChange): Promise<DiagnosisView[]> {
+    await this.prisma.$transaction(async (tx) => {
+      await requireEncounterInScope(tx, change.encounterId, change.sites);
+      const target = await requireDiagnosisOf(
+        tx,
+        change.encounterId,
+        change.diagnosisId,
+      );
+      if (isPrimary(target.rank)) return;
+      await refuseWhenCitedByIssuedDocument(tx, change.encounterId);
+
+      const inUse = await tx.encounterDiagnosis.findMany({
+        where: { encounterId: change.encounterId },
+        select: { id: true, rank: true },
+      });
+      const previous = inUse.find((row) => isPrimary(row.rank));
+      if (previous) {
+        await tx.encounterDiagnosis.update({
+          where: { id: previous.id },
+          data: { rank: nextRankAfter(inUse.map((row) => row.rank)) },
+        });
+      }
+      await tx.encounterDiagnosis.update({
+        where: { id: target.id },
+        data: { rank: 1 },
+      });
+    });
+
+    return this.diagnosesOf({
+      encounterId: change.encounterId,
+      sites: change.sites,
+    });
+  }
+
+  /** EN-180. The archive of one attention, narrowed through the attention. */
+  async retractedDiagnosesOf(
+    query: CodingQuery,
+  ): Promise<RetractedDiagnosisView[]> {
+    const rows = await this.prisma.encounterDiagnosisRetraction.findMany({
+      where: {
+        encounterId: query.encounterId,
+        encounter: siteFilter(query.sites),
+      },
+      orderBy: [{ retractedAt: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true,
+        cie10Code: true,
+        cie10Display: true,
+        rank: true,
+        retractedAt: true,
+        reason: true,
+        retractedBy: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      cie10Code: row.cie10Code,
+      cie10Display: row.cie10Display,
+      rank: row.rank,
+      retractedAt: row.retractedAt,
+      retractedBy: {
+        id: row.retractedBy.id,
+        name: `${row.retractedBy.firstName} ${row.retractedBy.lastName}`,
+      },
+      reason: row.reason,
+    }));
+  }
+
+  /** EN-187. The modality of a live attention, corrected under its lock. */
+  async setCareModality(
+    query: CodingQuery,
+    careModality: CareModality,
+  ): Promise<CareModality> {
+    return this.prisma.$transaction(async (tx) => {
+      await requireEncounterInScope(tx, query.encounterId, query.sites);
+      const updated = await tx.encounter.update({
+        where: { id: query.encounterId },
+        data: { careModality },
+        select: { careModality: true },
+      });
+      return updated.careModality;
+    });
+  }
+
   /** EN-050. Writes one procedure with its quantity. */
   async addProcedure(procedure: NewProcedure): Promise<ProcedureView> {
     const row = await this.prisma.$transaction(async (tx) => {
@@ -336,6 +478,34 @@ async function requireEncounterInScope(
   if (!acceptsNewClinicalContent(locked.status)) {
     throw new EncounterAlreadyClosedError(locked.status);
   }
+}
+
+/** EN-180, EN-183. The diagnosis, on THIS attention, or the one refusal. */
+async function requireDiagnosisOf(
+  tx: Prisma.TransactionClient,
+  encounterId: string,
+  diagnosisId: string,
+): Promise<{ id: string; rank: number }> {
+  const diagnosis = await tx.encounterDiagnosis.findFirst({
+    where: { id: diagnosisId, encounterId },
+    select: { id: true, rank: true },
+  });
+  if (!diagnosis) throw new DiagnosisNotFoundError();
+  return diagnosis;
+}
+
+/**
+ * EN-182. The same function the triggers call, so the sentence and the
+ * guarantee cannot disagree about which papers read the diagnoses.
+ */
+async function refuseWhenCitedByIssuedDocument(
+  tx: Prisma.TransactionClient,
+  encounterId: string,
+): Promise<void> {
+  const [row] = await tx.$queryRaw<{ cited: boolean }[]>`
+    SELECT encounter_has_document_citing_diagnoses(${encounterId}::uuid) AS cited
+  `;
+  if (row?.cited) throw new DiagnosisCitedByIssuedDocumentError();
 }
 
 /**

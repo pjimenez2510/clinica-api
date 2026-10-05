@@ -7,10 +7,12 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   Req,
 } from '@nestjs/common';
 import {
   ApiCreatedResponse,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -27,14 +29,17 @@ import type { Requester } from './application/encounter.service';
 import type {
   DiagnosisView,
   ProcedureView,
+  RetractedDiagnosisView,
 } from './domain/clinical-coding.repository';
 import {
+  CareModalityDto,
   DiagnosisDto,
   DiagnosisListDto,
   ProcedureDto,
   ProcedureListDto,
   RecordDiagnosisDto,
   RecordProcedureDto,
+  RetractDiagnosisDto,
   type DiagnosisListResponse,
   type DiagnosisResponse,
   type ProcedureListResponse,
@@ -138,11 +143,80 @@ export class ClinicalCodingController {
     @Param('encounterId', ParseUUIDPipe) encounterId: string,
     @Req() req: Request,
   ): Promise<DiagnosisListResponse> {
-    const items = await this.coding.diagnosesOf(
+    const sheet = await this.coding.diagnosesOf(
       encounterId,
       this.requester(req, 'record:read'),
     );
-    return { items: items.map(toDiagnosisResponse) };
+    return {
+      items: sheet.items.map(toDiagnosisResponse),
+      retracted: sheet.retracted.map(toRetractedResponse),
+    };
+  }
+
+  /**
+   * EN-180 to EN-182. Takes a diagnosis off the attention, with a trace.
+   *
+   * A `POST` of an act and not a `DELETE`: nothing is deleted from the
+   * history — the row moves to the archive with who, when and why — and the
+   * reason travels in a body, which a `DELETE` does not reliably carry.
+   */
+  @Post('diagnoses/:diagnosisId/retract')
+  @RequirePermission('record:write', 'query')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Quitar un diagnóstico registrado por error' })
+  @ApiNoContentResponse()
+  async retractDiagnosis(
+    @Param('encounterId', ParseUUIDPipe) encounterId: string,
+    @Param('diagnosisId', ParseUUIDPipe) diagnosisId: string,
+    @Body() dto: RetractDiagnosisDto,
+    @Req() req: Request,
+  ): Promise<void> {
+    await this.coding.retractDiagnosis(
+      { encounterId, diagnosisId, reason: dto.reason },
+      this.requester(req, 'record:write'),
+    );
+  }
+
+  /**
+   * EN-187. Corrects the attention's modality while it is live. A `PUT`: the
+   * attention has exactly one, and repeating the call changes nothing more.
+   */
+  @Put('care-modality')
+  @RequirePermission('record:write', 'query')
+  @ApiOperation({
+    summary: 'Corregir si la atención es de morbilidad o de prevención',
+  })
+  @ApiOkResponse({ type: CareModalityDto })
+  async correctCareModality(
+    @Param('encounterId', ParseUUIDPipe) encounterId: string,
+    @Body() dto: CareModalityDto,
+    @Req() req: Request,
+  ): Promise<CareModalityDto> {
+    const careModality = await this.coding.correctCareModality(
+      encounterId,
+      dto.careModality,
+      this.requester(req, 'record:write'),
+    );
+    return { careModality };
+  }
+
+  /** EN-183. Makes this diagnosis the principal; answers the new order. */
+  @Post('diagnoses/:diagnosisId/primary')
+  @RequirePermission('record:write', 'query')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Marcar un diagnóstico como principal' })
+  @ApiOkResponse({ type: DiagnosisDto, isArray: true })
+  async makePrimary(
+    @Param('encounterId', ParseUUIDPipe) encounterId: string,
+    @Param('diagnosisId', ParseUUIDPipe) diagnosisId: string,
+    @Req() req: Request,
+  ): Promise<DiagnosisResponse[]> {
+    const diagnoses = await this.coding.makePrimary(
+      encounterId,
+      diagnosisId,
+      this.requester(req, 'record:write'),
+    );
+    return diagnoses.map(toDiagnosisResponse);
   }
 
   /**
@@ -228,6 +302,21 @@ function toDiagnosisResponse(diagnosis: DiagnosisView): DiagnosisResponse {
     notifiable: diagnosis.notifiable,
     note: diagnosis.note,
     recordedAt: diagnosis.recordedAt.toISOString(),
+  };
+}
+
+/** EN-180. The archive row; who removed it travels as a name, never a cedula. */
+function toRetractedResponse(
+  retracted: RetractedDiagnosisView,
+): DiagnosisListResponse['retracted'][number] {
+  return {
+    id: retracted.id,
+    cie10Code: retracted.cie10Code,
+    cie10Display: retracted.cie10Display,
+    rank: retracted.rank,
+    retractedAt: retracted.retractedAt.toISOString(),
+    retractedBy: retracted.retractedBy,
+    reason: retracted.reason,
   };
 }
 

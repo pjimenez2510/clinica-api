@@ -159,3 +159,63 @@ export class ChartSummaryDto extends createZodDto(chartSummarySchema) {}
 /** What the controller returns, and the type of one `previousEncounters` entry, inferred from the schemas. Nothing outside this file imports the second today. */
 export type ChartSummaryResponse = z.infer<typeof chartSummarySchema>;
 export type PreviousEncounterResponse = z.infer<typeof previousEncounterSchema>;
+
+/** EN-184. Which concept the doctor is about to record. */
+export const occurrenceProposalQuerySchema = z.object({
+  conceptId: z.uuid('Seleccione el diagnóstico en el catálogo CIE-10'),
+});
+export class OccurrenceProposalQueryDto extends createZodDto(
+  occurrenceProposalQuerySchema,
+) {}
+
+/** EN-184. The proposal and, for «subsecuente», the diagnosis behind it. */
+export const occurrenceProposalSchema = z.object({
+  proposed: z.enum(['FIRST_TIME', 'SUBSEQUENT']),
+  basis: z
+    .object({
+      encounterStartedAt: z.iso.datetime(),
+      cie10Code: z.string(),
+      cie10Display: z.string(),
+    })
+    .nullable(),
+});
+export class OccurrenceProposalDto extends createZodDto(
+  occurrenceProposalSchema,
+) {}
+export type OccurrenceProposalResponse = z.infer<
+  typeof occurrenceProposalSchema
+>;
+
+/** EN-185. The appointment about to be attended. */
+export const visitSequenceProposalQuerySchema = z.object({
+  agendaEntryId: z.uuid('Indique la cita que va a atender'),
+});
+export class VisitSequenceProposalQueryDto extends createZodDto(
+  visitSequenceProposalQuerySchema,
+) {}
+
+/**
+ * EN-185. `proposed` is «primera vez» only when certain; otherwise `null`, and
+ * `last` is the attention to decide with.
+ */
+export const visitSequenceProposalSchema = z.object({
+  proposed: z.enum(['FIRST_TIME']).nullable(),
+  specialtyKnown: z.boolean(),
+  /** Attentions of the service at sites the caller does not cover. */
+  elsewhere: z.boolean(),
+  last: z
+    .object({
+      startedAt: z.iso.datetime(),
+      sameSpecialty: z.boolean(),
+      principal: z
+        .object({ cie10Code: z.string(), cie10Display: z.string() })
+        .nullable(),
+    })
+    .nullable(),
+});
+export class VisitSequenceProposalDto extends createZodDto(
+  visitSequenceProposalSchema,
+) {}
+export type VisitSequenceProposalResponse = z.infer<
+  typeof visitSequenceProposalSchema
+>;

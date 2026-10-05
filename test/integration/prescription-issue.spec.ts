@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { PrescriptionService } from '../../src/modules/prescription/application/prescription.service';
 import { PrismaPrescriptionRepository } from '../../src/modules/prescription/infrastructure/prisma-prescription.repository';
+import { writeItem } from '../../src/modules/prescription/domain/written-item';
 import { PrismaActiveAllergyReader } from '../../src/shared/infrastructure/clinical/prisma-active-allergy.reader';
 import '../../src/modules/prescription/infrastructure/prescription.constraints';
 import {
@@ -250,12 +251,14 @@ async function anEncounter(prisma: PrismaClient) {
 const aLine = (conceptId: string | null) => ({
   conceptId,
   genericName: conceptId === null ? 'Amoxicilina' : null,
-  presentation: 'Cápsula',
+  dosageForm: 'CAPSULE' as const,
   concentration: '500 mg',
   routeCode: 'ORAL',
   quantity: 20,
-  doseText: '1 cápsula',
-  frequencyText: 'Cada 8 horas',
+  doseAmount: 1,
+  doseUnit: 'CAPSULE' as const,
+  frequency: 'EVERY_8_HOURS' as const,
+  frequencyText: null,
   durationDays: 7,
   instructions: null,
   offFormularyJustification: null,
@@ -285,7 +288,7 @@ describe('la receta contra PostgreSQL', () => {
       encounterId: encounter.id,
       prescriberId: practitioner.id,
       ...INDICATIONS,
-      items: [aLine(concept.id)],
+      items: [writeItem(aLine(concept.id))],
       sites: [...requester.sites],
     });
 
@@ -350,7 +353,7 @@ describe('la receta contra PostgreSQL', () => {
         encounterId: encounter.id,
         prescriberId: practitioner.id,
         ...INDICATIONS,
-        items: [aLine(null)],
+        items: [writeItem(aLine(null))],
         sites: [...requester.sites],
       }),
     ).rejects.toMatchObject({ code: 'OFF_FORMULARY_JUSTIFICATION_REQUIRED' });
@@ -365,10 +368,10 @@ describe('la receta contra PostgreSQL', () => {
       prescriberId: practitioner.id,
       ...INDICATIONS,
       items: [
-        {
+        writeItem({
           ...aLine(null),
           offFormularyJustification: 'Desabastecimiento del equivalente CNMB',
-        },
+        }),
       ],
       sites: [...requester.sites],
     });
@@ -396,7 +399,7 @@ describe('la receta contra PostgreSQL', () => {
       encounterId: encounter.id,
       prescriberId: practitioner.id,
       ...INDICATIONS,
-      items: [{ ...aLine(concept.id), genericName: 'Otra cosa' }],
+      items: [writeItem({ ...aLine(concept.id), genericName: 'Otra cosa' })],
       sites: [...requester.sites],
     });
 
@@ -423,7 +426,7 @@ describe('la receta contra PostgreSQL', () => {
         encounterId: encounter.id,
         prescriberId: practitioner.id,
         ...INDICATIONS,
-        items: [aLine(notAMedicine.id)],
+        items: [writeItem(aLine(notAMedicine.id))],
         sites: [...requester.sites],
       }),
     ).rejects.toMatchObject({ code: 'CONCEPT_NOT_PRESCRIBABLE' });
@@ -444,7 +447,7 @@ describe('la receta contra PostgreSQL', () => {
         encounterId: encounter.id,
         prescriberId: practitioner.id,
         ...INDICATIONS,
-        items: [aLine(retired.id)],
+        items: [writeItem(aLine(retired.id))],
         sites: [...requester.sites],
       }),
     ).rejects.toMatchObject({ code: 'CONCEPT_NOT_PRESCRIBABLE' });
@@ -465,7 +468,7 @@ describe('la receta contra PostgreSQL', () => {
         encounterId: encounter.id,
         prescriberId: practitioner.id,
         ...INDICATIONS,
-        items: [aLine(concept.id)],
+        items: [writeItem(aLine(concept.id))],
         sites: [otherSite.id],
       }),
     ).rejects.toMatchObject({ code: 'PRESCRIPTION_ENCOUNTER_NOT_FOUND' });

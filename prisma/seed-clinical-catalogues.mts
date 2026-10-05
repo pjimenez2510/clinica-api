@@ -38,11 +38,22 @@ import { PrismaClient } from '@prisma/client';
  * confunda esto con la lista del ministerio.
  */
 
+/**
+ * PR-104. Una presentación del cuadro: forma farmacéutica (código del
+ * vocabulario de la receta) y concentración. Las de aquí son de desarrollo y
+ * no las del CNMB: sirven para que la regla se vea.
+ */
+type Presentation = { form: string; concentration: string };
+const p = (form: string, concentration: string): Presentation => ({
+  form,
+  concentration,
+});
+
 /** Principios activos por su Denominación Común Internacional. */
 const CNMB_DEV: readonly {
   code: string;
   display: string;
-  form: string;
+  presentations: readonly Presentation[];
   /**
    * PR-070. Estupefaciente o psicotrópico: se receta en el recetario especial
    * de la ACESS y este sistema no compone esa receta. Cuáles lo son lo dirá el
@@ -50,58 +61,42 @@ const CNMB_DEV: readonly {
    */
   controlled?: true;
 }[] = [
-  { code: 'PARACETAMOL', display: 'Paracetamol', form: 'tableta / jarabe' },
-  { code: 'IBUPROFENO', display: 'Ibuprofeno', form: 'tableta / suspensión' },
-  { code: 'AMOXICILINA', display: 'Amoxicilina', form: 'cápsula / suspensión' },
-  { code: 'AMOXICILINA-CLAVULANICO', display: 'Amoxicilina + ácido clavulánico', form: 'tableta / suspensión' }, // prettier-ignore
-  { code: 'AZITROMICINA', display: 'Azitromicina', form: 'tableta / suspensión' }, // prettier-ignore
-  { code: 'CEFALEXINA', display: 'Cefalexina', form: 'cápsula / suspensión' },
-  { code: 'CIPROFLOXACINO', display: 'Ciprofloxacino', form: 'tableta' },
-  { code: 'TRIMETOPRIMA-SULFAMETOXAZOL', display: 'Trimetoprima + sulfametoxazol', form: 'tableta / suspensión' }, // prettier-ignore
-  {
-    code: 'METRONIDAZOL',
-    display: 'Metronidazol',
-    form: 'tableta / suspensión',
-  },
-  { code: 'NITROFURANTOINA', display: 'Nitrofurantoína', form: 'cápsula' },
-  { code: 'LORATADINA', display: 'Loratadina', form: 'tableta / jarabe' },
-  { code: 'CETIRIZINA', display: 'Cetirizina', form: 'tableta / gotas' },
-  { code: 'SALBUTAMOL', display: 'Salbutamol', form: 'inhalador / solución para nebulizar' }, // prettier-ignore
-  { code: 'PREDNISONA', display: 'Prednisona', form: 'tableta' },
-  { code: 'DEXAMETASONA', display: 'Dexametasona', form: 'ampolla / tableta' },
-  { code: 'OMEPRAZOL', display: 'Omeprazol', form: 'cápsula' },
-  { code: 'RANITIDINA', display: 'Ranitidina', form: 'tableta' },
-  {
-    code: 'METOCLOPRAMIDA',
-    display: 'Metoclopramida',
-    form: 'tableta / ampolla',
-  },
-  { code: 'SALES-REHIDRATACION', display: 'Sales de rehidratación oral', form: 'sobre' }, // prettier-ignore
-  { code: 'ALBENDAZOL', display: 'Albendazol', form: 'tableta / suspensión' },
-  { code: 'ENALAPRIL', display: 'Enalapril', form: 'tableta' },
-  { code: 'LOSARTAN', display: 'Losartán', form: 'tableta' },
-  { code: 'AMLODIPINO', display: 'Amlodipino', form: 'tableta' },
-  { code: 'HIDROCLOROTIAZIDA', display: 'Hidroclorotiazida', form: 'tableta' },
-  { code: 'ATORVASTATINA', display: 'Atorvastatina', form: 'tableta' },
-  { code: 'METFORMINA', display: 'Metformina', form: 'tableta' },
-  { code: 'GLIBENCLAMIDA', display: 'Glibenclamida', form: 'tableta' },
-  { code: 'INSULINA-NPH', display: 'Insulina humana NPH', form: 'vial' },
-  { code: 'LEVOTIROXINA', display: 'Levotiroxina sódica', form: 'tableta' },
-  { code: 'ACIDO-FOLICO', display: 'Ácido fólico', form: 'tableta' },
-  {
-    code: 'SULFATO-FERROSO',
-    display: 'Sulfato ferroso',
-    form: 'tableta / jarabe',
-  },
-  { code: 'CARBONATO-CALCIO', display: 'Carbonato de calcio', form: 'tableta' },
-  { code: 'ACIDO-ACETILSALICILICO', display: 'Ácido acetilsalicílico', form: 'tableta' }, // prettier-ignore
-  {
-    code: 'DICLOFENACO',
-    display: 'Diclofenaco sódico',
-    form: 'tableta / ampolla',
-  },
-  { code: 'TRAMADOL', display: 'Tramadol', form: 'cápsula / ampolla' },
-  { code: 'MORFINA', display: 'Morfina', form: 'ampolla / tableta', controlled: true }, // prettier-ignore
+  { code: 'PARACETAMOL', display: 'Paracetamol', presentations: [p('TABLET', '500 mg'), p('SYRUP', '120 mg/5 ml'), p('ORAL_DROPS', '100 mg/ml')] }, // prettier-ignore
+  { code: 'IBUPROFENO', display: 'Ibuprofeno', presentations: [p('TABLET', '400 mg'), p('ORAL_SUSPENSION', '100 mg/5 ml')] }, // prettier-ignore
+  { code: 'AMOXICILINA', display: 'Amoxicilina', presentations: [p('CAPSULE', '500 mg'), p('POWDER_FOR_ORAL_SUSPENSION', '250 mg/5 ml')] }, // prettier-ignore
+  { code: 'AMOXICILINA-CLAVULANICO', display: 'Amoxicilina + ácido clavulánico', presentations: [p('TABLET', '500 mg + 125 mg'), p('POWDER_FOR_ORAL_SUSPENSION', '250 mg + 62,5 mg/5 ml')] }, // prettier-ignore
+  { code: 'AZITROMICINA', display: 'Azitromicina', presentations: [p('TABLET', '500 mg'), p('POWDER_FOR_ORAL_SUSPENSION', '200 mg/5 ml')] }, // prettier-ignore
+  { code: 'CEFALEXINA', display: 'Cefalexina', presentations: [p('CAPSULE', '500 mg'), p('POWDER_FOR_ORAL_SUSPENSION', '250 mg/5 ml')] }, // prettier-ignore
+  { code: 'CIPROFLOXACINO', display: 'Ciprofloxacino', presentations: [p('TABLET', '500 mg')] }, // prettier-ignore
+  { code: 'TRIMETOPRIMA-SULFAMETOXAZOL', display: 'Trimetoprima + sulfametoxazol', presentations: [p('TABLET', '160 mg + 800 mg'), p('ORAL_SUSPENSION', '40 mg + 200 mg/5 ml')] }, // prettier-ignore
+  { code: 'METRONIDAZOL', display: 'Metronidazol', presentations: [p('TABLET', '500 mg'), p('ORAL_SUSPENSION', '250 mg/5 ml')] }, // prettier-ignore
+  { code: 'NITROFURANTOINA', display: 'Nitrofurantoína', presentations: [p('CAPSULE', '100 mg')] }, // prettier-ignore
+  { code: 'LORATADINA', display: 'Loratadina', presentations: [p('TABLET', '10 mg'), p('SYRUP', '5 mg/5 ml')] }, // prettier-ignore
+  { code: 'CETIRIZINA', display: 'Cetirizina', presentations: [p('TABLET', '10 mg'), p('ORAL_DROPS', '10 mg/ml')] }, // prettier-ignore
+  { code: 'SALBUTAMOL', display: 'Salbutamol', presentations: [p('INHALER', '100 mcg/dosis'), p('NEBULISER_SOLUTION', '5 mg/ml')] }, // prettier-ignore
+  { code: 'PREDNISONA', display: 'Prednisona', presentations: [p('TABLET', '5 mg'), p('TABLET', '20 mg')] }, // prettier-ignore
+  { code: 'DEXAMETASONA', display: 'Dexametasona', presentations: [p('INJECTABLE_SOLUTION', '4 mg/ml'), p('TABLET', '4 mg')] }, // prettier-ignore
+  { code: 'OMEPRAZOL', display: 'Omeprazol', presentations: [p('CAPSULE', '20 mg')] }, // prettier-ignore
+  { code: 'RANITIDINA', display: 'Ranitidina', presentations: [p('TABLET', '150 mg')] }, // prettier-ignore
+  { code: 'METOCLOPRAMIDA', display: 'Metoclopramida', presentations: [p('TABLET', '10 mg'), p('INJECTABLE_SOLUTION', '5 mg/ml')] }, // prettier-ignore
+  { code: 'SALES-REHIDRATACION', display: 'Sales de rehidratación oral', presentations: [p('GRANULES', '20,5 g')] }, // prettier-ignore
+  { code: 'ALBENDAZOL', display: 'Albendazol', presentations: [p('TABLET', '400 mg'), p('ORAL_SUSPENSION', '400 mg/20 ml')] }, // prettier-ignore
+  { code: 'ENALAPRIL', display: 'Enalapril', presentations: [p('TABLET', '10 mg'), p('TABLET', '20 mg')] }, // prettier-ignore
+  { code: 'LOSARTAN', display: 'Losartán', presentations: [p('TABLET', '50 mg'), p('TABLET', '100 mg')] }, // prettier-ignore
+  { code: 'AMLODIPINO', display: 'Amlodipino', presentations: [p('TABLET', '5 mg'), p('TABLET', '10 mg')] }, // prettier-ignore
+  { code: 'HIDROCLOROTIAZIDA', display: 'Hidroclorotiazida', presentations: [p('TABLET', '25 mg')] }, // prettier-ignore
+  { code: 'ATORVASTATINA', display: 'Atorvastatina', presentations: [p('TABLET', '20 mg')] }, // prettier-ignore
+  { code: 'METFORMINA', display: 'Metformina', presentations: [p('TABLET', '500 mg'), p('TABLET', '850 mg')] }, // prettier-ignore
+  { code: 'GLIBENCLAMIDA', display: 'Glibenclamida', presentations: [p('TABLET', '5 mg')] }, // prettier-ignore
+  { code: 'INSULINA-NPH', display: 'Insulina humana NPH', presentations: [p('INJECTABLE_SOLUTION', '100 UI/ml')] }, // prettier-ignore
+  { code: 'LEVOTIROXINA', display: 'Levotiroxina sódica', presentations: [p('TABLET', '50 mcg'), p('TABLET', '100 mcg')] }, // prettier-ignore
+  { code: 'ACIDO-FOLICO', display: 'Ácido fólico', presentations: [p('TABLET', '1 mg')] }, // prettier-ignore
+  { code: 'SULFATO-FERROSO', display: 'Sulfato ferroso', presentations: [p('TABLET', '200 mg'), p('SYRUP', '125 mg/5 ml')] }, // prettier-ignore
+  { code: 'CARBONATO-CALCIO', display: 'Carbonato de calcio', presentations: [p('TABLET', '500 mg')] }, // prettier-ignore
+  { code: 'ACIDO-ACETILSALICILICO', display: 'Ácido acetilsalicílico', presentations: [p('TABLET', '100 mg')] }, // prettier-ignore
+  { code: 'DICLOFENACO', display: 'Diclofenaco sódico', presentations: [p('TABLET', '50 mg'), p('INJECTABLE_SOLUTION', '75 mg/3 ml')] }, // prettier-ignore
+  { code: 'TRAMADOL', display: 'Tramadol', presentations: [p('CAPSULE', '50 mg'), p('INJECTABLE_SOLUTION', '50 mg/ml')] }, // prettier-ignore
+  { code: 'MORFINA', display: 'Morfina', presentations: [p('INJECTABLE_SOLUTION', '10 mg/ml'), p('TABLET', '10 mg')], controlled: true }, // prettier-ignore
 ];
 
 const CNMB_VERSION = 'DEV-2026-08';
@@ -164,7 +159,7 @@ export async function seedClinicalCatalogues(prisma: PrismaClient) {
           display: item.display,
           validFrom: EFFECTIVE_FROM,
           attributes: {
-            form: item.form,
+            presentations: item.presentations,
             source: 'DEV FIXTURE — no es el CNMB',
             ...(item.controlled ? { controlled: true } : {}),
           },
@@ -178,18 +173,20 @@ export async function seedClinicalCatalogues(prisma: PrismaClient) {
     });
   }
 
-  // PR-070. Una base sembrada con esta versión antes de que existiera la
-  // marca no la recibiría: la versión ya existe y no se vuelve a sembrar. Se
-  // garantiza aparte, sin retirar nada.
-  for (const item of CNMB_DEV.filter((entry) => entry.controlled)) {
+  // PR-070, PR-104. Una base sembrada con esta versión antes de que existieran
+  // la marca de controlado o las presentaciones no las recibiría: la versión
+  // ya existe y no se vuelve a sembrar. Se garantizan aparte, en el sitio y sin
+  // retirar nada — retirar dejaría sin concepto vigente a las atenciones de
+  // ayer.
+  for (const item of CNMB_DEV) {
     const current = await prisma.catalogConcept.findFirst({
       where: { systemId: cnmb.id, code: item.code, validTo: null },
       select: { id: true },
     });
     const attributes = {
-      form: item.form,
+      presentations: item.presentations,
       source: 'DEV FIXTURE — no es el CNMB',
-      controlled: true,
+      ...(item.controlled ? { controlled: true } : {}),
     };
     if (current) {
       await prisma.catalogConcept.update({

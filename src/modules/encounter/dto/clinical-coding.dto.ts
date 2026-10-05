@@ -130,6 +130,28 @@ export const recordProcedureSchema = z.object({
 /** Body of POST /encounters/:encounterId/procedures. */
 export class RecordProcedureDto extends createZodDto(recordProcedureSchema) {}
 
+/**
+ * EN-180, EN-181. Removing a diagnosis. The reason is optional here and
+ * required by the service once the consultation note is signed: the transport
+ * cannot see the note.
+ */
+export const retractDiagnosisSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .max(500, 'El motivo no puede superar 500 caracteres')
+    .optional(),
+});
+/** Body of POST /encounters/:encounterId/diagnoses/:diagnosisId/retract. */
+export class RetractDiagnosisDto extends createZodDto(retractDiagnosisSchema) {}
+
+/** EN-187. Correcting what the attention says the patient came for. */
+export const careModalitySchema = z.object({
+  careModality: CARE_MODALITY,
+});
+/** Body and response of PUT /encounters/:encounterId/care-modality. */
+export class CareModalityDto extends createZodDto(careModalitySchema) {}
+
 /** One diagnosis as a client reads it. */
 export const diagnosisSchema = z.object({
   id: z.uuid(),
@@ -159,8 +181,21 @@ export const diagnosisSchema = z.object({
 /** Response of recording a diagnosis. */
 export class DiagnosisDto extends createZodDto(diagnosisSchema) {}
 
+/** EN-180. A diagnosis taken off the attention, as the archive keeps it. */
+export const retractedDiagnosisSchema = z.object({
+  id: z.uuid(),
+  cie10Code: z.string(),
+  cie10Display: z.string(),
+  rank: z.number().int(),
+  retractedAt: z.iso.datetime(),
+  retractedBy: z.object({ id: z.uuid(), name: z.string() }),
+  reason: z.string().nullable(),
+});
+
 export const diagnosisListSchema = z.object({
   items: z.array(diagnosisSchema),
+  /** EN-180. What was removed, so the trace is in front of whoever reads. */
+  retracted: z.array(retractedDiagnosisSchema),
 });
 /** Response of GET /encounters/:encounterId/diagnoses. */
 export class DiagnosisListDto extends createZodDto(diagnosisListSchema) {}

@@ -4,9 +4,14 @@ import { Prisma } from '@prisma/client';
 import { chartScope } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import type {
+  AppointmentForProposal,
   ChartSummaryQuery,
   ChartSummaryRepository,
   PreviousEncounterSummary,
+  PriorAttention,
+  PriorCategoryQuery,
+  PriorDiagnosis,
+  SameServiceQuery,
   SummaryVitals,
 } from '../domain/chart-summary.repository';
 import type { SiteScopeFilter } from '../domain/encounter.repository';
@@ -122,6 +127,122 @@ export class PrismaChartSummaryRepository implements ChartSummaryRepository {
       where: previousEncountersWhere(query),
     });
   }
+
+  /**
+   * EN-184. Through `chartScope`, like every read here: a diabetes coded on
+   * the chart this one absorbed is the same diabetes. An annulled attention
+   * never happened, so it proves nothing.
+   */
+  async priorDiagnosisInCategory(
+    query: PriorCategoryQuery,
+  ): Promise<PriorDiagnosis | null> {
+    const row = await this.prisma.encounterDiagnosis.findFirst({
+      where: {
+        cie10Code: { startsWith: query.category },
+        encounter: {
+          ...chartScope(query.patientId),
+          ...siteFilter(query.sites),
+          id: { not: query.encounterId },
+          status: { not: 'ENTERED_IN_ERROR' },
+          startedAt: { lt: query.before },
+        },
+      },
+      orderBy: [{ encounter: { startedAt: 'desc' } }, { rank: 'asc' }],
+      select: {
+        cie10Code: true,
+        cie10Display: true,
+        encounter: { select: { startedAt: true } },
+      },
+    });
+    return row === null
+      ? null
+      : {
+          encounterStartedAt: row.encounter.startedAt,
+          cie10Code: row.cie10Code,
+          cie10Display: row.cie10Display,
+        };
+  }
+
+  /** EN-185. The appointment's patient and specialty, inside the scope. */
+  async appointmentForProposal(
+    agendaEntryId: string,
+    sites: SiteScopeFilter,
+  ): Promise<AppointmentForProposal | null> {
+    const entry = await this.prisma.agendaEntry.findFirst({
+      where: {
+        id: agendaEntryId,
+        ...(sites === 'all' ? {} : { siteId: { in: [...sites] } }),
+      },
+      select: {
+        patientId: true,
+        serviceType: { select: { specialtyId: true } },
+      },
+    });
+    if (entry?.patientId == null) return null;
+    return {
+      patientId: entry.patientId,
+      specialtyId: entry.serviceType?.specialtyId ?? null,
+    };
+  }
+
+  /**
+   * EN-185. An attention with no appointment, or an appointment with no
+   * service type, MAY be of the same specialty, so it counts against
+   * certainty: «primera vez» is proposed only when every earlier attention is
+   * known to be of another one.
+   */
+  async latestAttentionPossiblyInService(
+    query: SameServiceQuery,
+  ): Promise<PriorAttention | null> {
+    const row = await this.prisma.encounter.findFirst({
+      where: {
+        ...possiblyInService(query),
+        ...siteFilter(query.sites),
+      },
+      orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
+      select: {
+        startedAt: true,
+        agendaEntry: { select: { serviceType: { select: { specialtyId: true } } } }, // prettier-ignore
+        diagnoses: {
+          where: { rank: 1 },
+          select: { cie10Code: true, cie10Display: true },
+        },
+      },
+    });
+    if (row === null) return null;
+    const principal = row.diagnoses[0];
+    return {
+      startedAt: row.startedAt,
+      sameSpecialty:
+        row.agendaEntry?.serviceType?.specialtyId === query.specialtyId,
+      principal:
+        principal === undefined
+          ? null
+          : {
+              cie10Code: principal.cie10Code,
+              cie10Display: principal.cie10Display,
+            },
+    };
+  }
+
+  /** EN-185. A yes or no over every site, never a row. */
+  async anyAttentionPossiblyInService(
+    query: Omit<SameServiceQuery, 'sites'>,
+  ): Promise<boolean> {
+    const count = await this.prisma.encounter.count({
+      where: possiblyInService(query),
+    });
+    return count > 0;
+  }
+
+  /** EN-184. Only a CIE-10 concept has a category to compare. */
+  async cie10CodeOf(conceptId: string): Promise<string | null> {
+    const concept = await this.prisma.catalogConcept.findFirst({
+      where: { id: conceptId, system: { code: 'CIE10' } },
+      select: { code: true },
+    });
+    return concept?.code ?? null;
+  }
 }
 
 /**
@@ -140,6 +261,34 @@ function previousEncountersWhere(
     ...(query.excludeEncounterId === undefined
       ? {}
       : { id: { not: query.excludeEncounterId } }),
+  };
+}
+
+/**
+ * EN-185. The chart's attentions that may be of the specialty: of it, or of
+ * one nobody can tell. Never the appointment's own, and never an annulled one.
+ */
+function possiblyInService(
+  query: Omit<SameServiceQuery, 'sites'>,
+): Prisma.EncounterWhereInput {
+  return {
+    ...chartScope(query.patientId),
+    status: { not: 'ENTERED_IN_ERROR' },
+    AND: [
+      {
+        OR: [
+          { agendaEntryId: null },
+          { agendaEntryId: { not: query.agendaEntryId } },
+        ],
+      },
+      {
+        OR: [
+          { agendaEntryId: null },
+          { agendaEntry: { serviceTypeId: null } },
+          { agendaEntry: { serviceType: { specialtyId: query.specialtyId } } },
+        ],
+      },
+    ],
   };
 }
 

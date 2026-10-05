@@ -86,3 +86,15 @@ export function isPrimary(rank: number): boolean {
 export function nextRankAfter(ranksInUse: readonly number[]): number {
   return ranksInUse.reduce((highest, rank) => Math.max(highest, rank), 0) + 1;
 }
+
+/**
+ * EN-184. The CIE-10 category of a code: its first three characters, with any
+ * dot dropped — `E11` for `E119`, `E11.9` and `E116` alike.
+ *
+ * The category and not the exact code (D-117.4): the instructivo (p. 13) asks
+ * whether the patient is seen «por una determinada enfermedad» again, and a
+ * diabetes coded E11.9 in March and E11.6 today is the same disease.
+ */
+export function cie10CategoryOf(code: string): string {
+  return code.replace(/[.\s]/g, '').slice(0, 3).toUpperCase();
+}

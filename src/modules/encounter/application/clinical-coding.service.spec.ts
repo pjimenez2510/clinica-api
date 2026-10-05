@@ -11,10 +11,12 @@ import {
 } from '../domain/encounter.errors';
 import type {
   ClinicalCodingRepository,
+  DiagnosisRetraction,
   DiagnosisView,
   NewDiagnosis,
   NewProcedure,
   ProcedureView,
+  RetractedDiagnosisView,
 } from '../domain/clinical-coding.repository';
 import type {
   EncounterQuery,
@@ -146,6 +148,28 @@ class FakeCoding implements ClinicalCodingRepository {
   proceduresOf(): Promise<ProcedureView[]> {
     return Promise.resolve(this.procedures);
   }
+
+  retracted: DiagnosisRetraction[] = [];
+
+  retractDiagnosis(retraction: DiagnosisRetraction): Promise<void> {
+    this.retracted.push(retraction);
+    return Promise.resolve();
+  }
+
+  makePrimary(): Promise<DiagnosisView[]> {
+    return Promise.resolve(this.diagnoses);
+  }
+
+  retractedDiagnosesOf(): Promise<RetractedDiagnosisView[]> {
+    return Promise.resolve([]);
+  }
+
+  setCareModality(
+    _query: unknown,
+    careModality: 'MORBIDITY' | 'PREVENTION',
+  ): Promise<'MORBIDITY' | 'PREVENTION'> {
+    return Promise.resolve(careModality);
+  }
 }
 
 describe('los casos de uso del bloque K', () => {
@@ -253,8 +277,41 @@ describe('los casos de uso del bloque K', () => {
       await service.recordDiagnosis(aDiagnosis({ rank }), requester);
     }
 
-    const diagnoses = await service.diagnosesOf(ENCOUNTER, requester);
-    expect(diagnoses).toHaveLength(4);
+    const { items } = await service.diagnosesOf(ENCOUNTER, requester);
+    expect(items).toHaveLength(4);
+  });
+
+  it('EN-180 quita un diagnóstico como acto de quien lo quita, y un motivo en blanco no es motivo', async () => {
+    await service.retractDiagnosis(
+      { encounterId: ENCOUNTER, diagnosisId: 'diagnosis-1', reason: '   ' },
+      requester,
+    );
+
+    expect(coding.retracted).toEqual([
+      expect.objectContaining({
+        diagnosisId: 'diagnosis-1',
+        reason: null,
+        retractedById: requester.userId,
+      }),
+    ]);
+    expect(audit.entries.map((entry) => entry.action)).toEqual(['UPDATE']);
+  });
+
+  it('EN-180 no quita un diagnóstico de una atención con alta clínica', async () => {
+    encounters.stored = anEncounter({
+      status: 'DISCHARGED',
+      endedAt: new Date('2026-09-14T15:00:00Z'), // fecha-fija: la de la atención de prueba
+      dischargeCondition: 'ALIVE',
+    });
+
+    await expect(
+      service.retractDiagnosis(
+        { encounterId: ENCOUNTER, diagnosisId: 'diagnosis-1' },
+        requester,
+      ),
+    ).rejects.toBeInstanceOf(EncounterAlreadyClosedError);
+    expect(coding.retracted).toHaveLength(0);
+    expect(audit.entries).toHaveLength(0);
   });
 
   it('EN-009 rechaza diagnosticar en una atención con alta clínica', async () => {

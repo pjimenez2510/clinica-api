@@ -234,19 +234,45 @@ export class PrescriptionItemIncompleteError extends ValidationError {
  */
 export class OffFormularyJustificationRequiredError extends ValidationError {
   readonly code = 'OFF_FORMULARY_JUSTIFICATION_REQUIRED';
-  override readonly userTitle =
-    'Puede recetar fuera del CNMB, pero tiene que escribir por qué. Indique la justificación en esa línea';
+  override readonly userTitle: string;
   override readonly fieldErrors: readonly DomainFieldError[];
 
-  constructor(line: number) {
+  /**
+   * `presentation` is PR-104: the medicine is in the CNMB, but not in that
+   * form and concentration — which makes the line a prescription outside the
+   * cuadro all the same, with the same way out.
+   */
+  constructor(line: number, reason: 'concept' | 'presentation' = 'concept') {
     super('An item outside the CNMB needs a written justification', { line });
+    this.userTitle =
+      reason === 'presentation'
+        ? 'Esa forma y concentración no constan en el CNMB para ese medicamento. Elija una de las del cuadro, o justifique la prescripción fuera del cuadro'
+        : 'Puede recetar fuera del CNMB, pero tiene que escribir por qué. Indique la justificación en esa línea';
     this.fieldErrors = [
       {
         field: `items.${line - 1}.offFormularyJustification`,
         code: 'OFF_FORMULARY_JUSTIFICATION_REQUIRED',
-        message: `Escriba por qué se receta fuera del CNMB (línea ${line})`,
+        message:
+          reason === 'presentation'
+            ? `Elija una presentación del CNMB o escriba por qué receta otra (línea ${line})`
+            : `Escriba por qué se receta fuera del CNMB (línea ${line})`,
       },
     ];
+  }
+}
+
+/**
+ * PR-100. A draft is rewritten only by the professional who composed it: the
+ * prescriber's name is printed on the receta, and a colleague's rewrite would
+ * put words under somebody else's name.
+ */
+export class PrescriptionDraftOfAnotherPrescriberError extends ForbiddenError {
+  readonly code = 'PRESCRIPTION_DRAFT_OF_ANOTHER_PRESCRIBER';
+  override readonly userTitle =
+    'Este borrador lo compuso otro profesional y sólo él puede corregirlo. Componga una receta propia';
+
+  constructor() {
+    super('The draft belongs to another prescriber');
   }
 }
 
