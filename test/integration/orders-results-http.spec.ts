@@ -290,7 +290,7 @@ describe('los resultados por HTTP', () => {
     }).expect(201);
   });
 
-  it('ORD-120 editar el aviso por HTTP lo cambia en el sitio con la sesión como sello, y sus versiones se leen', async () => {
+  it('ORD-120 editar el aviso por HTTP lo cambia en el sitio con la sesión como sello, exige la versión vigente, y sus versiones se leen', async () => {
     const resultId = await criticalGlucose();
     const colleague = await createUser(prisma);
     const created = await post(`/orders/results/${resultId}/notices`, {
@@ -306,6 +306,7 @@ describe('los resultados por HTTP', () => {
     const refused = await put(
       `/orders/results/${resultId}/notices/${notice.id}`,
       {
+        expectedEditedAt: null,
         outcome: 'NOTIFIED',
         recipientKind: 'REPRESENTATIVE',
         recipientName: 'La hija de la paciente',
@@ -317,6 +318,7 @@ describe('los resultados por HTTP', () => {
     const edited = await put(
       `/orders/results/${resultId}/notices/${notice.id}`,
       {
+        expectedEditedAt: null,
         outcome: 'NOTIFIED',
         readBack: true,
         recipientKind: 'REPRESENTATIVE',
@@ -351,11 +353,51 @@ describe('los resultados por HTTP', () => {
       ],
     });
 
+    // La versión que trae el cuerpo ya no es la vigente: 409 con su código.
+    const stale = await put(
+      `/orders/results/${resultId}/notices/${notice.id}`,
+      {
+        expectedEditedAt: null,
+        outcome: 'NOTIFIED',
+        readBack: true,
+        recipientKind: 'PATIENT',
+        recipientName: 'La paciente',
+        channel: 'PHONE',
+      },
+    ).expect(409);
+    expect((stale.body as Problem).code).toBe(
+      'CRITICAL_NOTICE_EDITED_CONCURRENTLY',
+    );
+    // Sin decir sobre qué versión edita, ni se intenta.
+    const unversioned = await put(
+      `/orders/results/${resultId}/notices/${notice.id}`,
+      {
+        outcome: 'NOTIFIED',
+        readBack: true,
+        recipientKind: 'PATIENT',
+        recipientName: 'La paciente',
+        channel: 'PHONE',
+      },
+    ).expect(422);
+    expect((unversioned.body as Problem).errors?.[0]?.field).toBe(
+      'expectedEditedAt',
+    );
+    // Control positivo: con la versión vigente, entra.
+    await put(`/orders/results/${resultId}/notices/${notice.id}`, {
+      expectedEditedAt: (edited.body as { editedAt: string }).editedAt,
+      outcome: 'NOTIFIED',
+      readBack: true,
+      recipientKind: 'PATIENT',
+      recipientName: 'La paciente',
+      channel: 'PHONE',
+    }).expect(200);
+
     // Un aviso que no es de ese valor: 404 con su código.
     const otherResult = await criticalGlucose();
     const missing = await put(
       `/orders/results/${otherResult}/notices/${notice.id}`,
       {
+        expectedEditedAt: null,
         outcome: 'NO_ANSWER',
         recipientKind: 'PATIENT',
         recipientName: 'La paciente',

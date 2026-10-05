@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
+  CriticalNoticeEditedConcurrentlyError,
   CriticalNoticeNotFoundError,
   OrderItemNotMatchableError,
   OrderNotFoundError,
@@ -749,6 +750,10 @@ function isUuid(value: string): boolean {
  * ORD-120. Rewrites the notice under a row lock, after judging again that it
  * is of that result and that the call does not land after a correction.
  *
+ * ⚠️ THE VERSION IS JUDGED UNDER THE LOCK. Two edits made over the same
+ * version: the first to take the row writes, the second finds a stamp it did
+ * not read and is refused, instead of silently overwriting the first.
+ *
  * ⚠️ THE STAMP MOVES PAST THE PREVIOUS ONE. `record_version_archive` refuses
  * an edit whose instant did not change, so two edits in the same millisecond —
  * a double submit, two people at once — would fail as «sin sello». The row is
@@ -771,6 +776,11 @@ async function rewriteNotice(
     SELECT "edited_at" FROM "critical_result_notice"
      WHERE "id" = ${target.id}::uuid
        FOR UPDATE`;
+  // ORD-120. Optimistic: the edit was made over the version it names.
+  const currentVersion = previous?.edited_at?.getTime() ?? null;
+  if (currentVersion !== (edit.expectedEditedAt?.getTime() ?? null)) {
+    throw new CriticalNoticeEditedConcurrentlyError();
+  }
   const stamp =
     previous?.edited_at && previous.edited_at >= edit.editedAt
       ? new Date(previous.edited_at.getTime() + 1)

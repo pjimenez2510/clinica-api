@@ -1095,6 +1095,15 @@ export const DOMAIN_ERROR_CODES = [
   //   * `CRITICAL_NOTICE_NOT_FOUND` (404) — ORD-120. Se pide editar un aviso
   //     que no es de ese valor: no existe o es de otro resultado.
   'CRITICAL_NOTICE_NOT_FOUND',
+  //   * `CRITICAL_NOTICE_OF_ANOTHER_USER` (403) — ORD-120, D-133.1. Sólo
+  //     quien dio el aviso lo edita.
+  'CRITICAL_NOTICE_OF_ANOTHER_USER',
+  //   * `CRITICAL_NOTICE_NO_ANSWER_STAYS` (409) — ORD-120, D-133.1. Un «no
+  //     contestó» no pasa a avisado por edición: es un aviso nuevo.
+  'CRITICAL_NOTICE_NO_ANSWER_STAYS',
+  //   * `CRITICAL_NOTICE_EDITED_CONCURRENTLY` (409) — ORD-120. La edición se
+  //     hizo sobre una versión que ya no es la vigente.
+  'CRITICAL_NOTICE_EDITED_CONCURRENTLY',
   //   * `REPORT_ISSUED_IN_FUTURE` (422) — ORD-030. La emisión del laboratorio,
   //     de la que corre el plazo de un crítico, no puede ser futura.
   'REPORT_ISSUED_IN_FUTURE',

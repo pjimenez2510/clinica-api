@@ -175,6 +175,12 @@ export interface CriticalNoticeEdit {
    * the previous stamp under the row lock, so two edits never share one.
    */
   editedAt: Date;
+  /**
+   * The version the edit was made over (`editedAt` as the client read it,
+   * `null` if nobody had edited it). Compared under the row lock: a mismatch
+   * is `CRITICAL_NOTICE_EDITED_CONCURRENTLY` and nothing is written.
+   */
+  expectedEditedAt: Date | null;
   sites: SiteScopeFilter;
   trail: { ip?: string; userAgent?: string };
 }
@@ -523,8 +529,9 @@ export interface DiagnosticReportRepository {
    * ORD-120. Edits the notice in place, with its stamp and its trail row in
    * the same transaction; `record_version_archive` keeps the earlier one.
    * Judges again, under a lock, that the notice is of that result
-   * (`CRITICAL_NOTICE_NOT_FOUND`) and that the call does not land after a
-   * correction of the report (`RESULT_SUPERSEDED`).
+   * (`CRITICAL_NOTICE_NOT_FOUND`), that it is still the version the edit was
+   * made over (`CRITICAL_NOTICE_EDITED_CONCURRENTLY`) and that the call does
+   * not land after a correction of the report (`RESULT_SUPERSEDED`).
    */
   editNotice(edit: CriticalNoticeEdit): Promise<CriticalNoticeView>;
 

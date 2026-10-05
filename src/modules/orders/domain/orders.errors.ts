@@ -473,6 +473,56 @@ export class CriticalNoticeNotFoundError extends NotFoundError {
 }
 
 /**
+ * ORD-120, D-133.1. Editing a notice somebody else gave.
+ *
+ * The record says who made the call; letting a colleague rewrite it would make
+ * the current version say that someone called who did not, with the read-back
+ * that person never heard. A later call by somebody else is a notice of its
+ * own.
+ */
+export class CriticalNoticeOfAnotherUserError extends ForbiddenError {
+  readonly code = 'CRITICAL_NOTICE_OF_ANOTHER_USER';
+  override readonly userTitle =
+    'Este aviso lo dio otra persona y sólo ella puede editarlo. Si usted volvió a llamar, registre un aviso nuevo';
+
+  constructor() {
+    super('The critical notice was given by another user');
+  }
+}
+
+/**
+ * ORD-120, D-133.1. Turning a «no contestó» into a notice given by editing it.
+ *
+ * The unanswered attempt is a fact the escalation counts (ORD-065, ORD-067).
+ * The call that was answered later happened at another moment, and is a
+ * notice of its own; editing the attempt would erase that it went unanswered.
+ */
+export class CriticalNoticeNoAnswerStaysError extends ConflictError {
+  readonly code = 'CRITICAL_NOTICE_NO_ANSWER_STAYS';
+  override readonly userTitle =
+    'Una llamada posterior que sí contestan es un aviso nuevo: regístrelo';
+
+  constructor() {
+    super('An unanswered critical notice cannot be edited into a given one');
+  }
+}
+
+/**
+ * ORD-120. The edit was made over a version of the notice that is no longer
+ * the current one: somebody saved in between (another tab, a double submit).
+ * Saving it anyway would silently discard what that edit said.
+ */
+export class CriticalNoticeEditedConcurrentlyError extends ConflictError {
+  readonly code = 'CRITICAL_NOTICE_EDITED_CONCURRENTLY';
+  override readonly userTitle =
+    'Otra persona acaba de editar este aviso; recárguelo';
+
+  constructor() {
+    super('The critical notice changed since it was read');
+  }
+}
+
+/**
  * ORD-043. The result does not exist — or belongs to a site outside the
  * caller's scope.
  *

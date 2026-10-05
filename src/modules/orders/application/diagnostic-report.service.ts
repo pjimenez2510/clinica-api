@@ -33,7 +33,9 @@ import {
   type ServiceOrderView,
 } from '../domain/service-order.repository';
 import {
+  CriticalNoticeNoAnswerStaysError,
   CriticalNoticeNotFoundError,
+  CriticalNoticeOfAnotherUserError,
   CriticalNoticeTimeInvalidError,
   CriticalReadBackRequiredError,
   OrderItemNotMatchableError,
@@ -167,6 +169,12 @@ export interface RecordNoticeRequest {
  */
 export interface EditNoticeRequest extends RecordNoticeRequest {
   noticeId: string;
+  /**
+   * The version the edit was made over: the `editedAt` the client read, or
+   * `null` if it read a notice nobody had edited. A mismatch is
+   * `CRITICAL_NOTICE_EDITED_CONCURRENTLY`.
+   */
+  expectedEditedAt: Date | null;
 }
 
 /** ORD-120. One notice, through the result it belongs to. */
@@ -653,9 +661,12 @@ export class DiagnosticReportService {
    * The same rules as recording it, judged on what it will say: a notice
    * given carries the read-back (ORD-066), the instant is bounded by the
    * result and the clock and may not land after a correction (ORD-062), and
-   * whether it is a notice to oneself is judged on who GAVE it — the original
-   * author, which never changes —, not on who edits. Out of hours is judged
-   * again on the instant of the call.
+   * whether it is a notice to oneself is judged on who GAVE it — the only one
+   * who may edit it (D-133.1). An unanswered attempt does not become a notice
+   * given by editing. Out of hours is judged again on the instant of the call.
+   *
+   * OPTIMISTIC: the edit names the version it was made over
+   * (`expectedEditedAt`), and the adapter compares it under the row lock.
    *
    * The earlier version is kept by the database (`record_version`), with the
    * editor and the instant as its stamp; nothing here can skip it.
@@ -677,8 +688,19 @@ export class DiagnosticReportService {
     });
     if (!current) throw new CriticalNoticeNotFoundError();
 
-    // ORD-066. Editing does not lift the read-back.
+    // D-133.1. The record says who made the call: only that person edits it.
+    if (current.notifiedBy.id !== requester.userId) {
+      throw new CriticalNoticeOfAnotherUserError();
+    }
+    // D-133.1. An unanswered attempt stays one; the answered call is a new
+    // notice. The adapter judges the version under the lock, so this reading
+    // cannot be stale by the time the row is written.
     const given = request.outcome === 'NOTIFIED';
+    if (current.outcome === 'NO_ANSWER' && given) {
+      throw new CriticalNoticeNoAnswerStaysError();
+    }
+
+    // ORD-066. Editing does not lift the read-back.
     if (given && request.readBack !== true) {
       throw new CriticalReadBackRequiredError();
     }
@@ -711,6 +733,7 @@ export class DiagnosticReportService {
       selfNotice,
       editedById: requester.userId,
       editedAt: now,
+      expectedEditedAt: request.expectedEditedAt,
       sites: requester.sites,
       trail: { ip: requester.ip, userAgent: requester.userAgent },
     });

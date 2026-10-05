@@ -181,49 +181,66 @@ export class CriticalNoticeVersionListDto extends createZodDto(
  *
  * ⚠️ NO `notifiedById`: who gave it is the session, never the body.
  */
-export const recordNoticeSchema = z
-  .object({
-    /** ORD-067. Whether the person answered and was told. */
-    outcome: NOTICE_OUTCOME,
-    /**
-     * ORD-066. The recipient repeated the value. Required — and `true` — on a
-     * notice given; the domain answers `CRITICAL_READ_BACK_REQUIRED` naming it.
-     */
-    readBack: z
-      .boolean({ error: 'Indique si la persona repitió el valor' })
-      .optional(),
-    recipientKind: NOTICE_RECIPIENT,
-    recipientName: z
-      .string()
-      .trim()
-      .min(1, 'Escriba a quién se avisó')
-      .max(200, 'El nombre no puede superar 200 caracteres'),
-    channel: NOTICE_CHANNEL,
-    notifiedAt: instant('La hora del aviso').optional(),
-    note: z
-      .string()
-      .trim()
-      .max(500, 'La nota no puede superar 500 caracteres')
-      .optional(),
-  })
-  .superRefine((value, context) => {
-    // ORD-067. Nobody answered, so nobody repeated anything.
-    if (value.outcome === 'NO_ANSWER' && value.readBack === true) {
-      context.addIssue({
-        code: 'custom',
-        path: ['readBack'],
-        message: 'Una llamada sin respuesta no lleva «repitió el valor»',
-      });
-    }
-  });
+const noticeFields = z.object({
+  /** ORD-067. Whether the person answered and was told. */
+  outcome: NOTICE_OUTCOME,
+  /**
+   * ORD-066. The recipient repeated the value. Required — and `true` — on a
+   * notice given; the domain answers `CRITICAL_READ_BACK_REQUIRED` naming it.
+   */
+  readBack: z
+    .boolean({ error: 'Indique si la persona repitió el valor' })
+    .optional(),
+  recipientKind: NOTICE_RECIPIENT,
+  recipientName: z
+    .string()
+    .trim()
+    .min(1, 'Escriba a quién se avisó')
+    .max(200, 'El nombre no puede superar 200 caracteres'),
+  channel: NOTICE_CHANNEL,
+  notifiedAt: instant('La hora del aviso').optional(),
+  note: z
+    .string()
+    .trim()
+    .max(500, 'La nota no puede superar 500 caracteres')
+    .optional(),
+});
+
+/** ORD-067. Nobody answered, so nobody repeated anything. */
+function unansweredHasNoReadBack(
+  value: { outcome: string; readBack?: boolean },
+  context: z.RefinementCtx,
+): void {
+  if (value.outcome === 'NO_ANSWER' && value.readBack === true) {
+    context.addIssue({
+      code: 'custom',
+      path: ['readBack'],
+      message: 'Una llamada sin respuesta no lleva «repitió el valor»',
+    });
+  }
+}
+
+export const recordNoticeSchema = noticeFields.superRefine(
+  unansweredHasNoReadBack,
+);
 export class RecordNoticeDto extends createZodDto(recordNoticeSchema) {}
 
 /**
  * ORD-120. Editing a notice: the whole notice as it should read — the same
- * shape as recording it. Without `notifiedAt` the call keeps its instant.
- * Who edits is the session, never the body.
+ * shape as recording it, plus the version it was made over. Without
+ * `notifiedAt` the call keeps its instant. Who edits is the session, never the
+ * body.
  */
-export const editNoticeSchema = recordNoticeSchema;
+export const editNoticeSchema = noticeFields
+  .extend({
+    /**
+     * The version the edit was made over: the notice's `editedAt` as read, or
+     * `null` if nobody had edited it. REQUIRED, so a client cannot overwrite
+     * an edit it never saw (`CRITICAL_NOTICE_EDITED_CONCURRENTLY`).
+     */
+    expectedEditedAt: instant('La versión del aviso').nullable(),
+  })
+  .superRefine(unansweredHasNoReadBack);
 export class EditNoticeDto extends createZodDto(editNoticeSchema) {}
 
 /** ORD-031 to ORD-038. One determination as a client reads it. */

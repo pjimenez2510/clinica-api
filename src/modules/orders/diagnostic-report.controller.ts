@@ -261,6 +261,7 @@ export class DiagnosticReportController {
       {
         resultId,
         noticeId,
+        expectedEditedAt: dto.expectedEditedAt === null ? null : new Date(dto.expectedEditedAt), // prettier-ignore
         outcome: dto.outcome,
         readBack: dto.readBack,
         recipientKind: dto.recipientKind,

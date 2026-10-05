@@ -10,7 +10,10 @@ import {
 } from '../../../shared/domain/errors/domain-error';
 
 import {
+  CriticalNoticeEditedConcurrentlyError,
+  CriticalNoticeNoAnswerStaysError,
   CriticalNoticeNotFoundError,
+  CriticalNoticeOfAnotherUserError,
   CriticalNoticeTimeInvalidError,
   CriticalReadBackRequiredError,
   ExamCategoryMismatchError,
@@ -198,6 +201,36 @@ describe('el contrato de errores de las órdenes', () => {
     expect(DOMAIN_ERROR_CODES).toContain('CRITICAL_NOTICE_NOT_FOUND');
     expect(error.userTitle).toBe(
       'Ese aviso no es de este valor. Actualice el informe y edítelo desde allí',
+    );
+  });
+
+  it('ORD-120 editar el aviso que dio otra persona es un 403, con su código y una frase que da la salida', () => {
+    const error = new CriticalNoticeOfAnotherUserError();
+    expect(error).toBeInstanceOf(ForbiddenError);
+    expect(error.code).toBe('CRITICAL_NOTICE_OF_ANOTHER_USER');
+    expect(DOMAIN_ERROR_CODES).toContain('CRITICAL_NOTICE_OF_ANOTHER_USER');
+    expect(error.userTitle).toBe(
+      'Este aviso lo dio otra persona y sólo ella puede editarlo. Si usted volvió a llamar, registre un aviso nuevo',
+    );
+  });
+
+  it('ORD-120 pasar a «avisado» un «no contestó» por edición es un 409, con su código y su frase', () => {
+    const error = new CriticalNoticeNoAnswerStaysError();
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.code).toBe('CRITICAL_NOTICE_NO_ANSWER_STAYS');
+    expect(DOMAIN_ERROR_CODES).toContain('CRITICAL_NOTICE_NO_ANSWER_STAYS');
+    expect(error.userTitle).toBe(
+      'Una llamada posterior que sí contestan es un aviso nuevo: regístrelo',
+    );
+  });
+
+  it('ORD-120 editar sobre una versión del aviso que ya no es la vigente es un 409, con su código y su frase', () => {
+    const error = new CriticalNoticeEditedConcurrentlyError();
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.code).toBe('CRITICAL_NOTICE_EDITED_CONCURRENTLY');
+    expect(DOMAIN_ERROR_CODES).toContain('CRITICAL_NOTICE_EDITED_CONCURRENTLY');
+    expect(error.userTitle).toBe(
+      'Otra persona acaba de editar este aviso; recárguelo',
     );
   });
 

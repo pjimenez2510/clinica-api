@@ -1418,11 +1418,31 @@ se anula y se pide de nuevo, y la pantalla lo hace en un paso (D-127.4)._
   resultado y el ahora (`CRITICAL_NOTICE_TIME_INVALID`) y no puede caer después
   de la corrección del informe (`RESULT_SUPERSEDED`); fuera de horario se
   juzga otra vez con el instante de la llamada (ORD-068); y el aviso a sí
-  mismo se juzga con **quién avisó**, no con quién edita (D-113 b). Quién avisó
-  NO DEBERÁ cambiar. SI el aviso no es de ese resultado ENTONCES DEBERÁ
-  rechazarlo con `CRITICAL_NOTICE_NOT_FOUND`; SI el resultado no existe o es
-  de una sede fuera del alcance, con `RESULT_NOT_FOUND`. Y DEBERÁ ofrecer las
-  versiones anteriores, de la más reciente a la más antigua, con `record:read`.
+  mismo se juzga con **quién avisó** (D-113 b). Quién avisó NO DEBERÁ cambiar.
+  SI quien edita no es quien dio el aviso (`notified_by`), ENTONCES DEBERÁ
+  rechazarlo con `CRITICAL_NOTICE_OF_ANOTHER_USER`; SI el aviso es un «no
+  contestó» (`NO_ANSWER`) y la edición lo hace «avisado» (`NOTIFIED`),
+  ENTONCES con `CRITICAL_NOTICE_NO_ANSWER_STAYS` —el resto de sus campos sí se
+  edita—; SI la edición no trae la versión vigente (`expectedEditedAt`: el
+  `editedAt` leído, o nulo si nunca se editó), ENTONCES con
+  `CRITICAL_NOTICE_EDITED_CONCURRENTLY`, sin escribir nada. SI el aviso no es
+  de ese resultado ENTONCES DEBERÁ rechazarlo con `CRITICAL_NOTICE_NOT_FOUND`;
+  SI el resultado no existe o es de una sede fuera del alcance, con
+  `RESULT_NOT_FOUND`. Y DEBERÁ ofrecer las versiones anteriores, de la más
+  reciente a la más antigua, con `record:read`.
+  > **D-133.1 (construido con la recomendación mientras el autor decide):**
+  > con la edición abierta a cualquiera con `result:write`, otra persona podía
+  > convertir el «no contestó» de una compañera en «avisado», con otra hora y
+  > el read-back marcado: la constancia vigente decía que avisó quien no
+  > avisó, y el intento dejaba de contar para la escalada (ORD-065, ORD-067).
+  > Por eso el aviso lo edita sólo quien lo dio, y la llamada posterior que sí
+  > contestan es un aviso nuevo, con su hora. La alternativa pendiente es
+  > dejar editar a cualquiera con `result:write`, con la versión como único
+  > rastro.
+  >
+  > **Concurrencia optimista:** la versión se compara bajo el bloqueo de la
+  > fila. De dos ediciones hechas sobre la misma versión gana la que toma la
+  > fila primero; la otra recibe el 409 en lugar de pisarla en silencio.
   > **D-127:** lo registrado se edita en el sitio y la historia la guarda el
   > sistema. El aviso no ha salido a un tercero —es la constancia interna de
   > una llamada—, así que no hay «Corregir» que anule y rehaga: se edita.
@@ -1432,16 +1452,16 @@ se anula y se pide de nuevo, y la pantalla lo hace en un paso (D-127.4)._
   > Quién edita es la sesión, nunca un campo del cuerpo.
   >
   > **El sello lo pone el reloj de la aplicación** y, bajo el bloqueo de la
-  > fila, pasa del anterior: dos ediciones en el mismo milisegundo no chocan,
-  > la segunda espera y lleva el suyo (el patrón de `saveVitals`, EN-210).
+  > fila, pasa del anterior: dos ediciones seguidas en el mismo milisegundo no
+  > chocan, la segunda lleva el suyo (el patrón de `saveVitals`, EN-210).
   >
-  > **Pasar de intento a aviso, o al revés, mueve la cola:** un intento que se
-  > corrige a aviso hecho, con read-back, saca el valor; un aviso que se
-  > corrige a «no contestó» lo devuelve. Es la dirección segura.
+  > **Un aviso que se corrige a «no contestó» devuelve el valor a la cola.**
+  > Es la dirección segura, y la única que admite la edición.
   >
-  > **Solo interfaz:** «Editar» en cada constancia del informe abre el diálogo
-  > de registrar con los valores cargados, y «Versiones anteriores» enseña lo
-  > que decía antes. La constancia se lee donde se registra —el informe de la
+  > **Solo interfaz:** «Editar» en cada constancia del informe —sólo en las
+  > que dio quien mira— abre el diálogo de registrar con los valores cargados
+  > y el read-back **desmarcado**, y «Versiones anteriores» enseña lo que decía
+  > antes. La constancia se lee donde se registra —el informe de la
   > orden—, porque la cola de críticos sólo lista lo que aún espera aviso.
 
 ## Códigos de error nuevos
@@ -1474,6 +1494,9 @@ contrato —`code`, estado y mensaje—.
 | `RESULT_SUPERSEDED` | 422 | Se intentó avisar de un valor cuyo informe ya fue corregido: se avisa el que lo sustituye | ORD-062 |
 | `CRITICAL_READ_BACK_REQUIRED` | 422 | Un aviso hecho sin confirmar que quien lo recibió repitió el valor | ORD-066, ORD-120 |
 | `CRITICAL_NOTICE_NOT_FOUND` | 404 | Se pidió editar o leer las versiones de un aviso que no es de ese resultado. Sólo después de encontrar el resultado en el alcance, así que no confirma nada de otra sede | ORD-120 |
+| `CRITICAL_NOTICE_OF_ANOTHER_USER` | 403 | Se intentó editar un aviso que dio otra persona (D-133.1) | ORD-120 |
+| `CRITICAL_NOTICE_NO_ANSWER_STAYS` | 409 | Se intentó pasar a «avisado» un «no contestó» editándolo: la llamada que contestan es un aviso nuevo (D-133.1) | ORD-120 |
+| `CRITICAL_NOTICE_EDITED_CONCURRENTLY` | 409 | La edición se hizo sobre una versión del aviso que ya no es la vigente (`expectedEditedAt`) | ORD-120 |
 | `ORDER_NOT_DRAFT` | 409 | Se intentó reescribir, emitir o descartar una orden que ya no está en borrador | ORD-096, ORD-098, ORD-099 |
 | `ORDER_NOT_DISCARDED` | 409 | Se intentó recuperar una orden que no está descartada: ya se recuperó, o nunca se descartó | ORD-116 |
 | `ORDER_NOT_ISSUED` | 409 | Se intentó registrar un informe, emparejar un resultado, anular una línea o corregir una orden que no se ha emitido | ORD-100, ORD-118 |
@@ -1548,7 +1571,7 @@ resuelto de quien llama.
 | `POST` | `/orders/results/:resultId/match` | `result:write` | ORD-041, ORD-043, ORD-091 |
 | `GET` | `/orders/results/critical` | `record:read` | ORD-060, ORD-061, ORD-065, ORD-092 |
 | `POST` | `/orders/results/:resultId/notices` | `result:write` | ORD-062, ORD-091 |
-| `PUT` | `/orders/results/:resultId/notices/:noticeId` | `result:write` | ORD-120 *(el aviso entero; sin `notifiedAt` conserva la hora)* |
+| `PUT` | `/orders/results/:resultId/notices/:noticeId` | `result:write` | ORD-120 *(el aviso entero y `expectedEditedAt`; sin `notifiedAt` conserva la hora; sólo quien lo dio)* |
 | `GET` | `/orders/results/:resultId/notices/:noticeId/versions` | `record:read` | ORD-120 |
 | `GET` | `/exams` | `catalog:read` | ORD-010 a ORD-012, ORD-101 |
 | `GET` | `/exam-catalogue/exams` | `catalog:manage` | ORD-103 (activos e inactivos, con estructura, rangos y prestación) |
@@ -1594,7 +1617,7 @@ columnas donde registrar quién lo decidió y por qué.
 | ORD-004 | Integración | La vigencia se evalúa con `daterange @>` sobre una columna generada, que Prisma no puede expresar. |
 | ORD-081, ORD-093 | Integración | El alcance de ficha sigue el enlace de fusión, que solo existe en la base. |
 | ORD-062, ORD-064 | Integración | La constancia sale de la cola por una consulta y no se borra ni cambia de origen por un disparador: las dos cosas son de la base, con control positivo (el `INSERT` y la edición con sello entran; el `UPDATE` sin sello, el que cambia el origen y el `DELETE`, no). |
-| ORD-120 | Integración | Contra la base: la edición con sello archiva la versión anterior y la sin sello, la de origen y la que quita el read-back se rechazan, con control positivo; por el servicio, la edición cambia lo dicho y no quién avisó, la versión se lee con el mismo mapeo, la cola se mueve con el desenlace, y dos ediciones simultáneas llevan sellos distintos y gana la que escribió después. Por HTTP, la ruta y su 404. |
+| ORD-120 | Integración | Contra la base: la edición con sello archiva la versión anterior y la sin sello, la de origen y la que quita el read-back se rechazan, con control positivo; por el servicio, la edición cambia lo dicho y no quién avisó, la versión se lee con el mismo mapeo, la cola vuelve a abrirse con el aviso que pasa a «no contestó»; otra cuenta no edita, el «no contestó» no pasa a avisado, y la versión que no es la vigente se rechaza, cada una con control positivo; de dos ediciones simultáneas sobre la misma versión gana una y la otra recibe el 409, y dos seguidas en el mismo instante llevan sellos distintos. Por HTTP, la ruta, el 409 de la versión, el 422 sin versión y su 404. |
 | ORD-046, ORD-065 | Integración y unitario | El plazo es aritmética pura con el reloj inyectado; de dónde sale —el parámetro de la sede o su ausencia— se prueba contra la base. |
 | ORD-026 | Integración | El nombre viaja o no según el filtro, y se prueba con dos fichas reales. |
 | ORD-090, ORD-094 | Integración | `route-authorisation.spec` recorre las rutas que NestJS registró de verdad. |
