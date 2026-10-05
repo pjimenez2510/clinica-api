@@ -138,7 +138,9 @@ un día después de la atención sin motivo, y comprobar que los tres se rechaza
 con su control positivo (con motivo, mañana, el mismo día); anular con otra
 cuenta sin el permiso y comprobar que se rechaza; imprimir uno anulado y
 comprobar que no lleva el motivo.
-**Cubre:** CER-030, CER-039 a CER-051.
+**Cubre:** CER-030, CER-039 a CER-051, y **CER-054** —los motivos de lista
+del reposo retroactivo y del tercero que emite (D-128.11)—.
+**Solo interfaz:** CER-054.
 
 ---
 
@@ -416,6 +418,10 @@ PR-030).
   > servicio lo comprueba antes para nombrar el campo. La nota siguiente
   > describe cómo era antes de D-105.
 
+  > **Enmendado por CER-054 (D-128.11, 04-10-2026):** el motivo sigue, pero ya
+  > no se redacta: la pantalla lo ofrece como lista con «Otro». La API sigue
+  > recibiendo texto, con el mismo mínimo de diez caracteres.
+
   > Un certificado retroactivo es la forma típica del certificado de favor; el
   > autor decidió que se admita sólo con el porqué escrito, que queda en la
   > historia. **Esquema:** `medical_certificate.rest_backdating_reason`. Que
@@ -500,6 +506,38 @@ PR-030).
   > (CER-016). **Lo garantiza la base:** `medical_certificate_issue_rules`
   > compara `issued_by_id` con el profesional de la atención, y
   > `medical_certificate_issuer_reason_not_blank` impide el motivo vacío.
+  >
+  > **Enmendado por CER-054 (D-128.11):** el motivo se elige de una lista con
+  > «Otro», y la pantalla lo pide desde el principio, no después del rechazo.
+
+- **CER-054** — CUANDO la pantalla de emitir —o de corregir (CER-053)— pida el
+  motivo del reposo retroactivo o de la emisión tardía (CER-030), DEBERÁ
+  ofrecerlo como **lista con «Otro»** —«El paciente acudió tarde», «Reposo
+  desde el inicio de los síntomas», «Emisión diferida por el médico»—; CUANDO
+  pida el de emitir en lugar de quien atendió (CER-039), como lista con «Otro»
+  —«Cubre el turno», «Dirección médica»—; y con «Otro» DEBERÁ pedir el texto,
+  de al menos diez caracteres. MIENTRAS la pantalla sepa quién es la ficha
+  profesional de la sesión en la sede —o que no tiene ninguna—, DEBERÁ saber
+  **de antemano** si quien emite atendió, comparándola con el profesional de
+  la atención, y pedir ese motivo **desde el principio**, sin esperar a que el
+  servidor responda `CERTIFICATE_ISSUER_REASON_REQUIRED`.
+  > **D-128.11** (el autor, 04-10-2026): con la regla de D-126 estos motivos se
+  > quitarían, porque el papel aún no ha salido; se quedan porque son lo que
+  > el IESS o una auditoría preguntan, pero de una lista. Viaja la etiqueta, o
+  > lo escrito en «Otro», como el texto de siempre: el contrato, los mínimos
+  > y los motivos ya guardados no cambian, y el asistente de IA manda lo mismo
+  > que la pantalla. Cada etiqueta pasa los diez caracteres (lo comprueba la
+  > prueba del esquema de la pantalla).
+  >
+  > **Cómo lo sabe de antemano, sin dato nuevo de la API:** la página ya lee
+  > los profesionales de la sede (`/agenda/sites/:siteId/practitioners`) y la
+  > atención trae su `practitionerId`. Si la sesión no está en esa lista, no
+  > atendió. Sólo mientras la lista no ha llegado no lo supone, y entonces el
+  > rechazo del servidor sigue mostrando el motivo, como antes. Un falso «no
+  > atendió» cuesta un clic y no deja rastro falso: el servidor no guarda el
+  > motivo de quien sí atendió (CER-039).
+  >
+  > **Solo interfaz:** la API no cambia.
 
 - **CER-040** — CUANDO se anule un certificado, el sistema DEBERÁ admitirlo
   sólo a la **cuenta del profesional que lo emitió** o a quien tenga, en la
