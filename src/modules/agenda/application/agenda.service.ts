@@ -1002,6 +1002,25 @@ export class AgendaService {
     request: { siteId: string; entryId: string },
     requester: Requester,
   ): Promise<AgendaEntryView> {
+    /**
+     * AG-038, AG-152, the same question `blockAgenda` asks. The `EXCLUDE`
+     * constraints do not see an overbooking (`blocks_calendar = false`), so
+     * without this read a block would close over a patient who is coming
+     * anyway — exactly what creating it refuses. Like there, the read can go
+     * stale before the write; the constraints still arbitrate the rest.
+     */
+    const block = await this.agenda.findEntry(request);
+    if (block !== null && block.kind === 'BLOCK') {
+      const blocking = await this.agenda.blockingAppointments({
+        siteId: block.siteId,
+        practitionerId: block.practitionerId,
+        startsAt: block.startsAt,
+        endsAt: block.endsAt,
+      });
+      if (blocking.length > 0)
+        throw new BlockOverlapsAppointmentsError(blocking);
+    }
+
     const entry = await this.agenda.transition(
       {
         siteId: request.siteId,
