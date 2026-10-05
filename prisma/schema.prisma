@@ -3265,6 +3265,8 @@ model MedicalCertificate {
 
   @@unique([siteId, number], map: "medical_certificate_site_number_unique")
   @@index([patientId, issuedAt(sort: Desc)])
+  /// BI-190, EN-189. Asked per attention.
+  @@index([encounterId])
   @@map("medical_certificate")
 }
 
@@ -3308,6 +3310,8 @@ model Referral {
 
   @@index([patientId, issuedAt(sort: Desc)])
   @@index([status, issuedAt])
+  /// BI-190. Asked per attention.
+  @@index([encounterId])
   @@map("referral")
 }
 
@@ -3648,6 +3652,8 @@ model PatientAccount {
   /// encounter_id IS NOT NULL`), and a plain `@@unique` would forbid the second
   /// account even after the first was settled. It lives in the migration.
   @@index([patientId, openedAt(sort: Desc)], map: "patient_account_by_patient")
+  /// BI-181, BI-190. Settled, cancelled or open, per attention.
+  @@index([encounterId, status])
   @@map("patient_account")
 }
 

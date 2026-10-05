@@ -731,7 +731,7 @@ describe('el bloque K por HTTP', () => {
     }
 
     interface Sheet {
-      items: DiagnosisBody[];
+      items: (DiagnosisBody & { printedOnCertificate: boolean })[];
       retracted: {
         id: string;
         cie10Code: string;
@@ -931,6 +931,83 @@ describe('el bloque K por HTTP', () => {
         cie10Code: 'R509',
         rank: 1,
       });
+    });
+
+    it('EN-188 con el alta se quita con motivo y se marca otro como principal; interrumpida, no', async () => {
+      const encounterId = await openEncounter();
+      const first = await record(encounterId, 'J020');
+      const second = await record(encounterId, 'R509');
+      const encounter = await prisma.encounter.findUniqueOrThrow({ where: { id: encounterId } }); // prettier-ignore
+      await prisma.encounter.update({
+        where: { id: encounterId },
+        data: { status: 'DISCHARGED', endedAt: new Date(encounter.startedAt.getTime() + 20 * 60_000), dischargeCondition: 'ALIVE' }, // prettier-ignore
+      });
+      const path = `/encounters/${encounterId}/diagnoses/${first.id}/retract`;
+
+      // G2: with a principal in place, it is not reordered after the discharge.
+      const reordered = await post(`/encounters/${encounterId}/diagnoses/${second.id}/primary`, doctorToken).expect(409); // prettier-ignore
+      expect((reordered.body as Problem).code).toBe(
+        'DIAGNOSIS_PRIMARY_AFTER_DISCHARGE',
+      );
+
+      const refused = await post(path, doctorToken).expect(422);
+      expect((refused.body as Problem).code).toBe(
+        'DIAGNOSIS_RETRACTION_REASON_REQUIRED',
+      );
+      await post(path, doctorToken, { reason: 'Código equivocado' }).expect(204); // prettier-ignore
+      await post(`/encounters/${encounterId}/diagnoses/${second.id}/primary`, doctorToken).expect(200); // prettier-ignore
+
+      const sheet = await sheetOf(encounterId);
+      expect(sheet.items).toEqual([
+        expect.objectContaining({ cie10Code: 'R509', rank: 1 }),
+      ]);
+      expect(sheet.retracted[0]?.reason).toBe('Código equivocado');
+
+      // G1: the last one stays — nothing new can be coded after the discharge.
+      const last = await post(`/encounters/${encounterId}/diagnoses/${second.id}/retract`, doctorToken, { reason: 'x' }).expect(409); // prettier-ignore
+      expect((last.body as Problem).code).toBe(
+        'DIAGNOSIS_LAST_AFTER_DISCHARGE',
+      );
+
+      const interrupted = await openEncounter();
+      const kept = await record(interrupted, 'K210');
+      const at = new Date(encounter.startedAt.getTime() + 20 * 60_000);
+      const { userId: doctorUserId } = await prisma.practitioner.findUniqueOrThrow({ where: { id: doctorPractitionerId } }); // prettier-ignore
+      await prisma.encounter.update({
+        where: { id: interrupted },
+        data: { status: 'DISCONTINUED', endedAt: at, discontinuedAt: at, discontinuedOrigin: 'PATIENT', discontinuedReason: 'Se fue', discontinuedById: doctorUserId }, // prettier-ignore
+      });
+      const closed = await post(`/encounters/${interrupted}/diagnoses/${kept.id}/retract`, doctorToken, { reason: 'x' }).expect(409); // prettier-ignore
+      expect((closed.body as Problem).code).toBe('ENCOUNTER_ALREADY_CLOSED');
+    });
+
+    it('EN-189 la lista dice qué diagnóstico imprimió un certificado, y quitarlo pide el motivo', async () => {
+      const encounterId = await openEncounter();
+      const printed = await record(encounterId, 'J020');
+      await record(encounterId, 'R509');
+      const encounter = await prisma.encounter.findUniqueOrThrow({ where: { id: encounterId } }); // prettier-ignore
+      await prisma.$executeRaw`
+        INSERT INTO medical_certificate
+          (encounter_id, patient_id, issued_by_id, type, verification_code,
+           include_diagnosis, diagnoses)
+        VALUES (${encounterId}::uuid, ${encounter.patientId}::uuid,
+                ${doctorPractitionerId}::uuid, 'ATTENDANCE',
+                ${`EN189-${encounterId.slice(0, 12)}`}, true,
+                ${JSON.stringify([{ code: 'J020', display: 'Dx J020', certainty: 'PRESUMPTIVE' }])}::jsonb)`;
+
+      const sheet = await sheetOf(encounterId);
+      expect(
+        Object.fromEntries(
+          sheet.items.map((d) => [d.cie10Code, d.printedOnCertificate]),
+        ),
+      ).toEqual({ J020: true, R509: false });
+
+      const path = `/encounters/${encounterId}/diagnoses/${printed.id}/retract`;
+      const refused = await post(path, doctorToken).expect(422);
+      expect((refused.body as Problem).code).toBe(
+        'DIAGNOSIS_RETRACTION_REASON_REQUIRED',
+      );
+      await post(path, doctorToken, { reason: 'El certificado lo dijo mal' }).expect(204); // prettier-ignore
     });
 
     it('EN-184 propone «subsecuente» por la misma CATEGORÍA en una atención anterior, y no por una anulada', async () => {

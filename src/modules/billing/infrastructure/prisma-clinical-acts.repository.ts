@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
-import { hasClinicalAct } from '../../../shared/infrastructure/prisma/clinical-acts';
+import {
+  clinicalActExists,
+  hasClinicalAct,
+} from '../../../shared/infrastructure/prisma/clinical-acts';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import { clinicalDateOf } from '../../../shared/domain/clinic-time';
 
@@ -168,14 +172,22 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
   async listAwaitingCheckout(query: {
     siteId: string;
     endedFrom: Date;
+    neverChargedBefore: Date;
   }): Promise<AwaitingCheckout[]> {
+    // BI-190. Which ones, decided in SQL: the never-charged test is per row
+    // and the older ones have no ceiling, so it cannot be a filter in memory
+    // after a `take`.
+    const listed = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT e.id
+        FROM encounter e
+       WHERE ${awaitingCheckout(query.siteId)}
+         AND e.ended_at >= ${query.endedFrom}
+         AND NOT (e.ended_at < ${query.neverChargedBefore} AND ${neverCharged})
+       ORDER BY e.ended_at DESC
+       LIMIT ${AWAITING_CHECKOUT_LIMIT}
+    `;
     const rows = await this.prisma.encounter.findMany({
-      where: {
-        siteId: query.siteId,
-        status: { in: [...ENDED_ENCOUNTER_STATUSES] },
-        endedAt: { gte: query.endedFrom },
-        accounts: { none: { status: 'SETTLED' } },
-      },
+      where: { id: { in: listed.map((row) => row.id) } },
       select: {
         id: true,
         status: true,
@@ -223,13 +235,41 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
     siteId: string;
     endedBefore: Date;
   }): Promise<number> {
-    return this.prisma.encounter.count({
-      where: {
-        siteId: query.siteId,
-        status: { in: [...ENDED_ENCOUNTER_STATUSES] },
-        endedAt: { lt: query.endedBefore },
-        accounts: { none: { status: 'SETTLED' } },
-      },
-    });
+    // BI-190. Not the ones that are never charged: the notice would grow
+    // forever with visits nobody is going to chase.
+    const [row] = await this.prisma.$queryRaw<{ count: number }[]>`
+      SELECT count(*)::int AS count
+        FROM encounter e
+       WHERE ${awaitingCheckout(query.siteId)}
+         AND e.ended_at < ${query.endedBefore}
+         AND NOT ${neverCharged}
+    `;
+    return row?.count ?? 0;
   }
 }
+
+/** BI-181. Ended at the site, and no account of THIS visit settled. */
+function awaitingCheckout(siteId: string): Prisma.Sql {
+  return Prisma.sql`
+    e.site_id = ${siteId}::uuid
+    AND e.status::text IN (${Prisma.join([...ENDED_ENCOUNTER_STATUSES])})
+    AND NOT EXISTS (SELECT 1 FROM patient_account a
+                     WHERE a.encounter_id = e.id AND a.status = 'SETTLED')`;
+}
+
+/**
+ * BI-190 (D-119, ampliada). The visits that will never be charged: an
+ * interruption with no clinical act proposes nothing (BI-180), and a
+ * cancelled account with no open one is the decision not to charge, taken.
+ * Neither counts as «never» once caja has an open account for the visit.
+ */
+const neverCharged = Prisma.sql`(
+  -- An open account means caja began charging it, whatever the act (M2).
+  NOT EXISTS (SELECT 1 FROM patient_account a
+               WHERE a.encounter_id = e.id AND a.status = 'OPEN')
+  AND (
+    (e.status = 'DISCONTINUED' AND NOT ${clinicalActExists(Prisma.sql`e.id`)})
+    OR EXISTS (SELECT 1 FROM patient_account a
+                WHERE a.encounter_id = e.id AND a.status = 'CANCELLED')
+  )
+)`;

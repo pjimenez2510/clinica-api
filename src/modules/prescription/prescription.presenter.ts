@@ -128,7 +128,7 @@ export function toWrittenItem(
     doseUnit: item.doseUnit as DoseUnit,
     frequency: (item.frequency ?? null) as Frequency | null,
     frequencyText: item.frequencyText ?? null,
-    durationDays: item.durationDays,
+    durationDays: item.durationDays ?? null,
     instructions: item.instructions ?? null,
     offFormularyJustification: item.offFormularyJustification ?? null,
   };

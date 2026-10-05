@@ -9,6 +9,7 @@ import {
   OffFormularyJustificationRequiredError,
   PrescriptionEmptyError,
   PrescriptionItemIncompleteError,
+  PrescriptionSingleDoseWithDurationError,
 } from './prescription.errors';
 import type { ItemContent } from './prescription-content';
 
@@ -31,6 +32,7 @@ const complete = (overrides: Partial<ItemContent> = {}): ItemContent => ({
   doseText: '1 cápsula',
   frequencyText: 'Cada 8 horas',
   durationDays: 7,
+  frequencyCode: 'EVERY_8_HOURS',
   conceptId: 'concept-1',
   offFormularyJustification: null,
   ...overrides,
@@ -60,6 +62,37 @@ describe('el contenido mínimo del art. 5', () => {
     expect(thrown?.fieldErrors?.map((error) => error.field)).toEqual([
       'items.0.concentration',
       'items.0.routeCode',
+      'items.1.durationDays',
+    ]);
+  });
+
+  it('PR-105 con «Dosis única» emitir no pide duración; con otra frecuencia, sí', () => {
+    expect(() =>
+      assertItemsComplete([
+        complete({
+          frequencyCode: 'SINGLE_DOSE',
+          frequencyText: 'Dosis única',
+          durationDays: null,
+        }),
+      ]),
+    ).not.toThrow();
+    expect(() =>
+      assertItemsComplete([complete({ durationDays: null })]),
+    ).toThrow(PrescriptionItemIncompleteError);
+  });
+
+  it('PR-105 un borrador con «Dosis única» y una duración guardada no se emite, y se nombra el campo', () => {
+    let thrown: PrescriptionSingleDoseWithDurationError | undefined;
+    try {
+      assertItemsComplete([
+        complete({ line: 2, frequencyCode: 'SINGLE_DOSE', durationDays: 1 }),
+      ]);
+    } catch (error) {
+      thrown = error as PrescriptionSingleDoseWithDurationError;
+    }
+
+    expect(thrown).toBeInstanceOf(PrescriptionSingleDoseWithDurationError);
+    expect(thrown?.fieldErrors?.map((error) => error.field)).toEqual([
       'items.1.durationDays',
     ]);
   });

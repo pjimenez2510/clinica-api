@@ -156,8 +156,17 @@ class FakeCoding implements ClinicalCodingRepository {
     return Promise.resolve();
   }
 
-  makePrimary(): Promise<DiagnosisView[]> {
+  madePrimary: string[] = [];
+
+  makePrimary(change: { diagnosisId: string }): Promise<DiagnosisView[]> {
+    this.madePrimary.push(change.diagnosisId);
     return Promise.resolve(this.diagnoses);
+  }
+
+  certificateCodes: string[] = [];
+
+  codesPrintedOnCertificates(): Promise<string[]> {
+    return Promise.resolve(this.certificateCodes);
   }
 
   retractedDiagnosesOf(): Promise<RetractedDiagnosisView[]> {
@@ -297,21 +306,66 @@ describe('los casos de uso del bloque K', () => {
     expect(audit.entries.map((entry) => entry.action)).toEqual(['UPDATE']);
   });
 
-  it('EN-180 no quita un diagnóstico de una atención con alta clínica', async () => {
-    encounters.stored = anEncounter({
-      status: 'DISCHARGED',
-      endedAt: new Date('2026-09-14T15:00:00Z'), // fecha-fija: la de la atención de prueba
-      dischargeCondition: 'ALIVE',
-    });
+  it.each(['DISCHARGED', 'COMPLETED'] as const)(
+    'EN-188 quita un diagnóstico y cambia el principal de una atención con alta (%s)',
+    async (status) => {
+      encounters.stored = anEncounter({
+        status,
+        endedAt: new Date('2026-09-14T15:00:00Z'), // fecha-fija: la de la atención de prueba
+        dischargeCondition: 'ALIVE',
+      });
 
-    await expect(
-      service.retractDiagnosis(
-        { encounterId: ENCOUNTER, diagnosisId: 'diagnosis-1' },
+      await service.retractDiagnosis(
+        {
+          encounterId: ENCOUNTER,
+          diagnosisId: 'diagnosis-1',
+          reason: 'Código equivocado',
+        },
         requester,
-      ),
-    ).rejects.toBeInstanceOf(EncounterAlreadyClosedError);
-    expect(coding.retracted).toHaveLength(0);
-    expect(audit.entries).toHaveLength(0);
+      );
+      await service.makePrimary(ENCOUNTER, 'diagnosis-2', requester);
+
+      expect(coding.retracted).toEqual([
+        expect.objectContaining({ reason: 'Código equivocado' }),
+      ]);
+      expect(coding.madePrimary).toEqual(['diagnosis-2']);
+    },
+  );
+
+  it.each(['DISCONTINUED', 'ENTERED_IN_ERROR'] as const)(
+    'EN-180 no quita un diagnóstico de una atención %s',
+    async (status) => {
+      encounters.stored = anEncounter({
+        status,
+        endedAt: new Date('2026-09-14T15:00:00Z'), // fecha-fija: la de la atención de prueba
+      });
+
+      await expect(
+        service.retractDiagnosis(
+          { encounterId: ENCOUNTER, diagnosisId: 'diagnosis-1', reason: 'x' },
+          requester,
+        ),
+      ).rejects.toBeInstanceOf(EncounterAlreadyClosedError);
+      await expect(
+        service.makePrimary(ENCOUNTER, 'diagnosis-1', requester),
+      ).rejects.toBeInstanceOf(EncounterAlreadyClosedError);
+      expect(coding.retracted).toHaveLength(0);
+      expect(audit.entries).toHaveLength(0);
+    },
+  );
+
+  it('EN-189 sirve con cada diagnóstico si un certificado emitido imprimió su código', async () => {
+    await service.recordDiagnosis(aDiagnosis(), requester);
+    coding.certificateCodes = ['J020'];
+
+    const { items } = await service.diagnosesOf(ENCOUNTER, requester);
+    expect(items.map((item) => item.printedOnCertificate)).toEqual([true]);
+
+    coding.certificateCodes = ['A09'];
+    const again = await service.diagnosesOf(ENCOUNTER, requester);
+    expect(again.items.map((item) => item.printedOnCertificate)).toEqual([
+      false,
+    ]);
   });
 
   it('EN-009 rechaza diagnosticar en una atención con alta clínica', async () => {

@@ -1064,7 +1064,7 @@ export class DiagnosisNotFoundError extends NotFoundError {
 export class DiagnosisRetractionReasonRequiredError extends ValidationError {
   readonly code = 'DIAGNOSIS_RETRACTION_REASON_REQUIRED';
   override readonly userTitle =
-    'La nota de esta atención ya está firmada: indique por qué quita el diagnóstico';
+    'Indique por qué quita el diagnóstico: ya consta en lo firmado o impreso de esta atención';
   override readonly fieldErrors = [
     {
       field: 'reason',
@@ -1074,7 +1074,9 @@ export class DiagnosisRetractionReasonRequiredError extends ValidationError {
   ];
 
   constructor() {
-    super('Diagnosis retraction without a reason after the note was signed');
+    super(
+      'Diagnosis retraction without a reason after a signature, the discharge or a printed certificate',
+    );
   }
 }
 
@@ -1092,5 +1094,37 @@ export class DiagnosisCitedByIssuedDocumentError extends ConflictError {
 
   constructor() {
     super('A live service order of the encounter cites its diagnoses');
+  }
+}
+
+/**
+ * EN-188 (revisión clínica G1). After the discharge nothing new is coded
+ * (EN-009; whether it should be is D-117.12), so removing the LAST diagnosis
+ * would leave a discharged attention with none and no way back — and the
+ * RDACAA without its block K.
+ */
+export class DiagnosisLastAfterDischargeError extends ConflictError {
+  readonly code = 'DIAGNOSIS_LAST_AFTER_DISCHARGE';
+  override readonly userTitle =
+    'Es el único diagnóstico de la atención y ya tiene el alta: no se puede quitar, porque la atención quedaría sin diagnóstico';
+
+  constructor() {
+    super('The last diagnosis of a discharged encounter cannot be removed');
+  }
+}
+
+/**
+ * EN-188 (revisión clínica G2). After the discharge the principal changes only
+ * by removing the wrong one WITH ITS REASON — the archive keeps it with rank 1
+ * — and then naming another where there is none. Reordering would change what
+ * is reported without either.
+ */
+export class DiagnosisPrimaryAfterDischargeError extends ConflictError {
+  readonly code = 'DIAGNOSIS_PRIMARY_AFTER_DISCHARGE';
+  override readonly userTitle =
+    'La atención ya tiene el alta: para cambiar el principal, quite el principal con su motivo y después marque el que corresponde';
+
+  constructor() {
+    super('The principal of a discharged encounter is not reordered');
   }
 }

@@ -18,6 +18,8 @@ import {
   ClinicalNoteNotFoundError,
   ConceptWrongCatalogueError,
   DiagnosisCitedByIssuedDocumentError,
+  DiagnosisLastAfterDischargeError,
+  DiagnosisPrimaryAfterDischargeError,
   DiagnosisConceptNotInForceError,
   DiagnosisNotFoundError,
   DiagnosisPrimaryTakenError,
@@ -158,6 +160,18 @@ describe('el contrato de errores de la atención', () => {
     );
   });
 
+  it('EN-188 tras el alta no se quita el último diagnóstico ni se reordena el principal: 409 que dice la salida', () => {
+    const last = new DiagnosisLastAfterDischargeError();
+    expect(last.code).toBe('DIAGNOSIS_LAST_AFTER_DISCHARGE');
+    expect(last).toBeInstanceOf(ConflictError);
+    expect(last.userTitle).toContain('único diagnóstico');
+
+    const primary = new DiagnosisPrimaryAfterDischargeError();
+    expect(primary.code).toBe('DIAGNOSIS_PRIMARY_AFTER_DISCHARGE');
+    expect(primary).toBeInstanceOf(ConflictError);
+    expect(primary.userTitle).toContain('quite el principal');
+  });
+
   it('EN-180 EN-181 EN-182 quitar un diagnóstico: 404 sin distinguir, 422 que pide el motivo, 409 que manda a anular el documento', () => {
     const missing = new DiagnosisNotFoundError();
     expect(missing.code).toBe('DIAGNOSIS_NOT_FOUND');
@@ -167,6 +181,11 @@ describe('el contrato de errores de la atención', () => {
     expect(reason.code).toBe('DIAGNOSIS_RETRACTION_REASON_REQUIRED');
     expect(reason).toBeInstanceOf(ValidationError);
     expect(reason.fieldErrors?.[0]?.field).toBe('reason');
+    // EN-188, EN-189: el motivo se debe también con el alta o un certificado
+    // que lo imprimió, así que el título no puede hablar sólo de la nota.
+    expect(reason.userTitle).toBe(
+      'Indique por qué quita el diagnóstico: ya consta en lo firmado o impreso de esta atención',
+    );
 
     const cited = new DiagnosisCitedByIssuedDocumentError();
     expect(cited.code).toBe('DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT');
