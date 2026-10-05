@@ -27,12 +27,20 @@ import {
   DocumentTemplateNotPublishedError,
 } from '../domain/document.errors';
 import { assertSlotsAreValid } from '../domain/document-template';
+import {
+  supersedeReasonOf,
+  type SupersedeCause,
+} from '../domain/document-supersession';
 import { SAMPLE_MARK, sampleSubject } from '../domain/document-samples';
 import {
   DOCUMENT_KINDS,
   isClinicalDocumentKind,
 } from '../domain/document-kind';
-import type { DocumentKind, SiteScopeFilter } from '../domain/document-kind';
+import type {
+  ClinicalDocumentKind,
+  DocumentKind,
+  SiteScopeFilter,
+} from '../domain/document-kind';
 import type { DocumentTemplate, TemplateSlots } from '../domain/document-template'; // prettier-ignore
 
 /** DOC-090, DOC-091. Who is asking. */
@@ -54,10 +62,22 @@ export interface RenderRequest {
   subjectId: string;
 }
 
-/** DOC-007. Emitting a correction: the artefact it annuls, and why. */
+/**
+ * DOC-007, DOC-108. Emitting a correction: the artefact it annuls, and why.
+ * Without a reason the system writes the one of its cause (`cause`, the
+ * subject's state when `AUTOMATIC`).
+ */
 export interface SupersedeRequest extends RenderRequest {
   supersedesId: string;
-  reason: string;
+  reason?: string | null;
+  cause?: SupersedeCause;
+}
+
+/** DOC-109. What was annulled, and how. */
+export interface ReplacementRequest {
+  kind: ClinicalDocumentKind;
+  subjectId: string;
+  cause: 'ANNULMENT' | 'CORRECTION';
 }
 
 /** The bytes plus what has to travel with them in an HTTP response. */
@@ -198,11 +218,50 @@ export class DocumentService {
         sha256: sha256Of(content),
         issuedById: requester.userId,
         supersedesId: supersedes?.supersedesId ?? null,
-        supersedeReason: supersedes?.reason ?? null,
+        // DOC-108. The written reason, or the one of its cause.
+        supersedeReason:
+          supersedes === null
+            ? null
+            : supersedes.reason?.trim() ||
+              supersedeReasonOf(subject, supersedes.cause ?? 'AUTOMATIC'),
       },
       isClinicalDocumentKind(subject.kind)
         ? disclosureOf(requester, request.subjectId, 'CREATE')
         : null,
+    );
+  }
+
+  /**
+   * DOC-109. After an annulment, files the PDF that replaces the CURRENT one
+   * —the archived render no later one replaces—, with the mark the layout
+   * prints and the reason of its cause. `null` when nothing was archived:
+   * there is no paper to replace, and the next emission carries the mark
+   * anyway.
+   *
+   * It throws like `emit` does. Not throwing into the annulment is the job of
+   * the port's adapter (`AnnulledDocumentArchiverService`), not of this.
+   */
+  async archiveReplacement(
+    request: ReplacementRequest,
+    requester: Requester,
+  ): Promise<DocumentRenderSummary | null> {
+    const renders = await this.documents.listRendersOfSubject(
+      request.subjectId,
+      request.kind,
+      requester.sites,
+    );
+    const replaced = new Set(renders.map((render) => render.supersedesId));
+    const current = renders.find((render) => !replaced.has(render.id));
+    if (current === undefined) return null;
+
+    return this.emit(
+      {
+        kind: request.kind,
+        subjectId: request.subjectId,
+        supersedesId: current.id,
+        cause: request.cause === 'CORRECTION' ? 'CORRECTION' : 'AUTOMATIC',
+      },
+      requester,
     );
   }
 

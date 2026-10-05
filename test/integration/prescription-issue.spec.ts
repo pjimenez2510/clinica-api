@@ -79,6 +79,8 @@ const serviceOf = (prisma: PrismaClient) => {
     new PrismaActiveAllergyReader(prisma as unknown as PrismaService),
     audit,
     logger,
+    // DOC-109 is proven in `documents-http.spec.ts`.
+    { archiveAnnulled: () => Promise.resolve(false) },
   );
 };
 

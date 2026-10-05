@@ -8,6 +8,7 @@ import {
 import { PrismaExamCatalogueRepository } from '../../src/modules/orders/infrastructure/prisma-exam-catalogue.repository';
 import { PrismaServiceOrderRepository } from '../../src/modules/orders/infrastructure/prisma-service-order.repository';
 import type { AccessAuditRecorder } from '../../src/shared/audit/access-audit.port';
+import type { AnnulledDocumentArchiver } from '../../src/shared/documents/annulled-document.port';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { aScene, placeIssued } from './orders-fixtures';
@@ -27,6 +28,10 @@ import { useDatabase } from './setup/database';
 const db = useDatabase();
 
 const silentAudit: AccessAuditRecorder = { record: () => Promise.resolve() };
+/** DOC-109 is proven in `documents-http.spec.ts`; here, no PDF to archive. */
+const noDocuments: AnnulledDocumentArchiver = {
+  archiveAnnulled: () => Promise.resolve(false),
+};
 const noopLogger = {
   setContext: () => undefined,
   info: () => undefined,
@@ -41,6 +46,7 @@ function serviceOf(prisma: PrismaClient) {
     new PrismaExamCatalogueRepository(client),
     noopLogger as never,
     silentAudit,
+    noDocuments,
   );
 }
 

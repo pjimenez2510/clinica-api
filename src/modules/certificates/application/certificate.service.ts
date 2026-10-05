@@ -4,6 +4,10 @@ import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 
 import {
+  ANNULLED_DOCUMENT_ARCHIVER,
+  type AnnulledDocumentArchiver,
+} from '../../../shared/documents/annulled-document.port';
+import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
   type AuditAction,
@@ -162,6 +166,9 @@ export class CertificateService {
     private readonly logger: PinoLogger,
     @Inject(CERTIFICATE_CLOCK)
     private readonly clock: CertificateClock,
+    /** DOC-109. The PDF with the mark, archived once the annulment is committed. */
+    @Inject(ANNULLED_DOCUMENT_ARCHIVER)
+    private readonly documents: AnnulledDocumentArchiver,
   ) {
     this.logger.setContext(CertificateService.name);
   }
@@ -237,6 +244,14 @@ export class CertificateService {
       { action: 'CERTIFICATE_CORRECTED' },
       'certificate corrected',
     );
+
+    // DOC-109. The annulled one's PDF, with the mark; never fails this.
+    await this.documents.archiveAnnulled({
+      kind: 'MEDICAL_CERTIFICATE',
+      subjectId: revoked.id,
+      userId: requester.userId,
+      cause: 'CORRECTION',
+    });
 
     return { revoked, issued: issuing.respond(issued) };
   }
@@ -439,6 +454,14 @@ export class CertificateService {
 
     // CER-014. The reason is free text and belongs in the row, not in a log.
     this.logger.info({ action: 'CERTIFICATE_REVOKED' }, 'certificate revoked');
+
+    // DOC-109. The PDF with «ANULADO el …»; never fails the annulment.
+    await this.documents.archiveAnnulled({
+      kind: 'MEDICAL_CERTIFICATE',
+      subjectId: revoked.id,
+      userId: requester.userId,
+      cause: 'ANNULMENT',
+    });
 
     return revoked;
   }

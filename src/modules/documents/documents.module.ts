@@ -10,12 +10,14 @@ import {
   RIDE_ISSUER,
   type RideIssuer,
 } from '../../shared/documents/ride-issuer.port';
+import { ANNULLED_DOCUMENT_ARCHIVER } from '../../shared/documents/annulled-document.port';
 
 import { DocumentIdentityController } from './document-identity.controller';
 import { DocumentTemplatesController } from './document-templates.controller';
 import { DocumentVerificationController } from './document-verification.controller';
 import { DocumentsController } from './documents.controller';
 import { InvoiceDocumentsController } from './invoice-documents.controller';
+import { AnnulledDocumentArchiverService } from './application/annulled-document.archiver';
 import { DocumentIdentityService } from './application/document-identity.service';
 import { DocumentService } from './application/document.service';
 import { DocumentVerificationService } from './application/document-verification.service';
@@ -103,7 +105,7 @@ import { SharpImageNormaliser } from './infrastructure/sharp-image.normaliser';
      * SRI-072. The RIDE `sri` attaches to the e-mail of an authorised voucher:
      * emitted and FILED here like any other (DOC-002), in the name of whoever
      * issued the invoice, and read back as the stored bytes. `@Global` exports
-     * this token and nothing else of the module.
+     * this token and `ANNULLED_DOCUMENT_ARCHIVER`, nothing else of the module.
      */
     {
       provide: RIDE_ISSUER,
@@ -124,8 +126,18 @@ import { SharpImageNormaliser } from './infrastructure/sharp-image.normaliser';
         },
       }),
     },
+    /**
+     * DOC-109. The PDF that replaces the archived one after a receta, an exam
+     * or a certificate is annulled: `prescription`, `orders` and
+     * `certificates` call it once their annulment is committed, and it never
+     * fails them.
+     */
+    {
+      provide: ANNULLED_DOCUMENT_ARCHIVER,
+      useClass: AnnulledDocumentArchiverService,
+    },
   ],
-  exports: [RIDE_ISSUER],
+  exports: [RIDE_ISSUER, ANNULLED_DOCUMENT_ARCHIVER],
 })
 export class DocumentsModule implements NestModule {
   /**

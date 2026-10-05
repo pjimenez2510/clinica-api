@@ -123,7 +123,8 @@ export class DocumentsController {
   }
 
   /**
-   * DOC-007. Corrects an emitted document by emitting a NEW one that annuls it.
+   * DOC-007, DOC-108. Corrects an emitted document by emitting a NEW one that
+   * annuls it; without a reason, the system writes the one of its cause.
    *
    * ⚠️ IT IS NOT A `PATCH` OF THE PREVIOUS ONE, and it never will be. Ley 67
    * art. 7 requires being able to show the document kept its integrity «desde
@@ -132,7 +133,7 @@ export class DocumentsController {
    */
   @Post('renders/supersede')
   @RequirePermission('record:read', 'query')
-  @ApiOperation({ summary: 'Emitir un documento que anula a otro, diciendo por qué' }) // prettier-ignore
+  @ApiOperation({ summary: 'Emitir un documento que anula a otro; el motivo, si no llega, lo pone el sistema' }) // prettier-ignore
   @ApiCreatedResponse({ type: DocumentRenderDto })
   async supersede(
     @Body() body: SupersedeRequestDto,
@@ -143,7 +144,7 @@ export class DocumentsController {
         kind: body.kind as ClinicalDocumentKind,
         subjectId: body.subjectId,
         supersedesId: body.supersedesId,
-        reason: body.reason,
+        reason: body.reason ?? null,
       },
       this.requester(req, 'record:read'),
     );

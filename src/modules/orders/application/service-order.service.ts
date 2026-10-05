@@ -2,6 +2,10 @@ import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 
 import {
+  ANNULLED_DOCUMENT_ARCHIVER,
+  type AnnulledDocumentArchiver,
+} from '../../../shared/documents/annulled-document.port';
+import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
@@ -116,6 +120,9 @@ export class ServiceOrderService {
     private readonly logger: PinoLogger,
     @Inject(ACCESS_AUDIT_RECORDER)
     private readonly audit: AccessAuditRecorder,
+    /** DOC-109. The PDF up to date, archived once the annulment is committed. */
+    @Inject(ANNULLED_DOCUMENT_ARCHIVER)
+    private readonly documents: AnnulledDocumentArchiver,
   ) {
     this.logger.setContext(ServiceOrderService.name);
   }
@@ -283,6 +290,14 @@ export class ServiceOrderService {
       'service order corrected',
     );
 
+    // DOC-109. The corrected order's PDF, without its annulled exams.
+    await this.documents.archiveAnnulled({
+      kind: 'SERVICE_ORDER',
+      subjectId: orderId,
+      userId: requester.userId,
+      cause: 'CORRECTION',
+    });
+
     return corrected;
   }
 
@@ -430,6 +445,14 @@ export class ServiceOrderService {
       { site_id: order.siteId, action: 'SERVICE_ORDER_ITEM_CANCELLED' },
       'service order item cancelled',
     );
+
+    // DOC-109. The PDF up to date, without the cancelled exam; never fails this.
+    await this.documents.archiveAnnulled({
+      kind: 'SERVICE_ORDER',
+      subjectId: orderId,
+      userId: requester.userId,
+      cause: 'ANNULMENT',
+    });
 
     return order;
   }

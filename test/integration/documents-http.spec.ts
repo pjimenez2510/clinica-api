@@ -1111,7 +1111,39 @@ describe('los documentos por HTTP', () => {
       expect(history.body as RenderBody[]).toHaveLength(2);
     });
 
-    it('DOC-010 rechaza anular sin decir por qué, nombrando el campo', async () => {
+    it('DOC-108 corregir sin motivo: el servidor pone el suyo, y uno escrito se guarda tal cual', async () => {
+      const first = (
+        await post('/documents/renders', doctorToken, {
+          kind: 'PRESCRIPTION',
+          subjectId: prescriptionId,
+        }).expect(201)
+      ).body as RenderBody;
+
+      const automatic = (
+        await post('/documents/renders/supersede', doctorToken, {
+          kind: 'PRESCRIPTION',
+          subjectId: prescriptionId,
+          supersedesId: first.id,
+        }).expect(201)
+      ).body as RenderBody;
+      expect(automatic.supersedesId).toBe(first.id);
+      expect(automatic.supersedeReason).toBe('Nueva versión del documento');
+
+      // Control positivo: si llega un motivo, es el que queda.
+      const written = (
+        await post('/documents/renders/supersede', doctorToken, {
+          kind: 'PRESCRIPTION',
+          subjectId: prescriptionId,
+          supersedesId: automatic.id,
+          reason: 'Se corrigió la posología de la primera línea',
+        }).expect(201)
+      ).body as RenderBody;
+      expect(written.supersedeReason).toBe(
+        'Se corrigió la posología de la primera línea',
+      );
+    });
+
+    it('DOC-010 un motivo escrito de menos de diez caracteres se rechaza, nombrando el campo', async () => {
       const first = (
         await post('/documents/renders', doctorToken, {
           kind: 'PRESCRIPTION',
@@ -1123,11 +1155,11 @@ describe('los documentos por HTTP', () => {
         kind: 'PRESCRIPTION',
         subjectId: prescriptionId,
         supersedesId: first.id,
+        reason: 'error',
       }).expect(422);
 
-      // The box is NAMED, which is what a form can act on: without a reason,
-      // annulling is a way of making what was emitted disappear.
       expect((refused.body as Problem).code).toBe('VALIDATION_FAILED');
+      expect((refused.body as Problem).errors?.[0]?.field).toBe('reason');
       await expect(prisma.documentRender.count()).resolves.toBe(1);
     });
 
@@ -1173,6 +1205,231 @@ describe('los documentos por HTTP', () => {
       // DOC-012: the same answer as a document that does not exist, so probing
       // identifiers one by one confirms nothing about another site.
       expect((response.body as Problem).code).toBe('DOCUMENT_RENDER_NOT_FOUND');
+    });
+  });
+
+  describe('DOC-109 al anular, el PDF que sustituye al anterior se archiva solo', () => {
+    beforeEach(async () => {
+      await publishTemplate('PRESCRIPTION');
+    });
+
+    /** The text a reader sees in an archived artefact. */
+    async function renderText(renderId: string): Promise<string> {
+      const response = await get(
+        `/documents/renders/${renderId}/content`,
+        doctorToken,
+      )
+        .buffer()
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+      const proxy = await getDocumentProxy(
+        new Uint8Array(response.body as Buffer),
+      );
+      return (await extractText(proxy, { mergePages: true })).text;
+    }
+
+    const historyOf = async (kind: string, subjectId: string) =>
+      (
+        await get(
+          `/documents/subjects/${kind}/${subjectId}/renders`,
+          doctorToken,
+        ).expect(200)
+      ).body as RenderBody[];
+
+    const emitted = async (kind: string, subjectId: string) =>
+      (
+        await post('/documents/renders', doctorToken, {
+          kind,
+          subjectId,
+        }).expect(201)
+      ).body as RenderBody;
+
+    it('DOC-109 PR-108 anular una receta con PDF archiva el que la sustituye, con la marca y «Receta anulada»', async () => {
+      const first = await emitted('PRESCRIPTION', prescriptionId);
+
+      await post(`/prescriptions/${prescriptionId}/cancel`, doctorToken, {
+        reason: 'Pérdida',
+      }).expect(200);
+
+      const [latest, original] = await historyOf(
+        'PRESCRIPTION',
+        prescriptionId,
+      );
+      expect(original?.id).toBe(first.id);
+      expect(latest).toMatchObject({
+        supersedesId: first.id,
+        supersedeReason: 'Receta anulada',
+      });
+      expect(await renderText(latest!.id)).toContain('RECETA ANULADA');
+      // El anterior sigue archivado, igual.
+      expect(original?.sha256).toBe(first.sha256);
+    });
+
+    it('DOC-109 una receta sin PDF archivado se anula y no se archiva nada (control positivo)', async () => {
+      await post(`/prescriptions/${prescriptionId}/cancel`, doctorToken, {
+        reason: 'Pérdida',
+      }).expect(200);
+
+      await expect(prisma.documentRender.count()).resolves.toBe(0);
+    });
+
+    it('DOC-109 si el PDF no se puede archivar, la receta se anula igual', async () => {
+      const first = await emitted('PRESCRIPTION', prescriptionId);
+      await prisma.$executeRawUnsafe(`
+        CREATE OR REPLACE FUNCTION test_refuse_render_insert()
+        RETURNS TRIGGER LANGUAGE plpgsql AS $$
+        BEGIN
+          RAISE EXCEPTION 'test_forced_failure';
+        END;
+        $$`);
+      await prisma.$executeRawUnsafe(`
+        CREATE TRIGGER test_refuse_render_insert
+          BEFORE INSERT ON document_render FOR EACH ROW
+          EXECUTE FUNCTION test_refuse_render_insert()`);
+      try {
+        await post(`/prescriptions/${prescriptionId}/cancel`, doctorToken, {
+          reason: 'Robo o hurto',
+        }).expect(200);
+      } finally {
+        await prisma.$executeRawUnsafe(
+          'DROP TRIGGER IF EXISTS test_refuse_render_insert ON document_render',
+        );
+        await prisma.$executeRawUnsafe(
+          'DROP FUNCTION IF EXISTS test_refuse_render_insert()',
+        );
+      }
+
+      const prescription = await prisma.prescription.findUniqueOrThrow({
+        where: { id: prescriptionId },
+        select: { status: true, cancelReason: true },
+      });
+      expect(prescription).toEqual({
+        status: 'CANCELLED',
+        cancelReason: 'Robo o hurto',
+      });
+      await expect(prisma.documentRender.count()).resolves.toBe(1);
+
+      // Control positivo: «Corregir…» lo archiva después, con la causa.
+      const archived = (
+        await post('/documents/renders/supersede', doctorToken, {
+          kind: 'PRESCRIPTION',
+          subjectId: prescriptionId,
+          supersedesId: first.id,
+        }).expect(201)
+      ).body as RenderBody;
+      expect(archived.supersedeReason).toBe('Receta anulada');
+    });
+
+    it('DOC-109 PR-109 corregir una receta archiva el de la anulada con «Corrección de la receta N.º …»', async () => {
+      const first = await emitted('PRESCRIPTION', prescriptionId);
+      const { sequenceNumber } = await prisma.prescription.findUniqueOrThrow({
+        where: { id: prescriptionId },
+        select: { sequenceNumber: true },
+      });
+
+      await post(`/prescriptions/${prescriptionId}/correct`, doctorToken, {
+        reason: 'Error de prescripción',
+      }).expect(200);
+
+      const [latest] = await historyOf('PRESCRIPTION', prescriptionId);
+      expect(latest).toMatchObject({
+        supersedesId: first.id,
+        supersedeReason: `Corrección de la receta N.º ${sequenceNumber}`,
+      });
+    });
+
+    it('DOC-109 CER-011 anular un certificado archiva el PDF con su marca y «Certificado anulado»', async () => {
+      await publishTemplate('MEDICAL_CERTIFICATE');
+      const encounter = await prisma.encounter.findFirstOrThrow({
+        select: { id: true, siteId: true, patientId: true },
+      });
+      const certificate = await prisma.medicalCertificate.create({
+        data: {
+          encounterId: encounter.id,
+          siteId: encounter.siteId,
+          patientId: encounter.patientId,
+          issuedById: practitionerId,
+          type: 'ATTENDANCE',
+          verificationCode: 'D109CERT0000ANUL',
+        },
+      });
+      const first = await emitted('MEDICAL_CERTIFICATE', certificate.id);
+
+      await post(`/certificates/${certificate.id}/revoke`, doctorToken, {
+        reason: 'Error en las fechas',
+      }).expect(200);
+
+      const [latest] = await historyOf('MEDICAL_CERTIFICATE', certificate.id);
+      expect(latest).toMatchObject({
+        supersedesId: first.id,
+        supersedeReason: 'Certificado anulado',
+      });
+      const text = await renderText(latest!.id);
+      expect(text).toContain('ANULADO el');
+      // CER-042: el papel no lleva el motivo de anular.
+      expect(text).not.toContain('Error en las fechas');
+    });
+
+    it('DOC-109 ORD-007 anular un examen archiva la orden al día, sin él, con «Examen anulado»', async () => {
+      await publishTemplate('SERVICE_ORDER');
+      const encounter = await prisma.encounter.findFirstOrThrow({
+        select: { id: true, siteId: true },
+      });
+      const system = await prisma.catalogSystem.create({
+        data: { code: 'EXAMENES-DOC109', name: 'Exámenes de la prueba' },
+      });
+      const conceptOf = (code: string, display: string) =>
+        prisma.catalogConcept.create({
+          data: {
+            systemId: system.id,
+            code,
+            display,
+            validFrom: new Date(Date.now() - 24 * 60 * 60 * 1000),
+          },
+          select: { id: true },
+        });
+      const bh = await conceptOf('BH', 'Biometría hemática completa');
+      const glu = await conceptOf('GLU', 'Glucosa en ayunas');
+      const order = await prisma.serviceOrder.create({
+        data: {
+          encounterId: encounter.id,
+          siteId: encounter.siteId,
+          orderedById: practitionerId,
+          category: 'LABORATORY',
+          items: {
+            create: [
+              { conceptId: bh.id, testCode: 'BH', testDisplay: 'Biometría hemática completa' }, // prettier-ignore
+              { conceptId: glu.id, testCode: 'GLU', testDisplay: 'Glucosa en ayunas' }, // prettier-ignore
+            ],
+          },
+        },
+        select: { id: true, items: { select: { id: true, testCode: true } } },
+      });
+      await prisma.serviceOrder.update({
+        where: { id: order.id },
+        data: { status: 'ISSUED' },
+      });
+      const first = await emitted('SERVICE_ORDER', order.id);
+      expect(await renderText(first.id)).toContain('Glucosa en ayunas');
+
+      const glucose = order.items.find((item) => item.testCode === 'GLU')!;
+      await post(
+        `/orders/${order.id}/items/${glucose.id}/cancel`,
+        doctorToken,
+      ).expect(200);
+
+      const [latest] = await historyOf('SERVICE_ORDER', order.id);
+      expect(latest).toMatchObject({
+        supersedesId: first.id,
+        supersedeReason: 'Examen anulado',
+      });
+      const text = await renderText(latest!.id);
+      expect(text).not.toContain('Glucosa en ayunas');
+      expect(text).toContain('Biometría hemática completa');
     });
   });
 

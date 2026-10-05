@@ -527,6 +527,8 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       catalogueOf(prisma),
       logger as never,
       new PrismaAccessAuditRecorder(prisma as unknown as PrismaService, logger as never), // prettier-ignore
+      // DOC-109 is proven in `documents-http.spec.ts`.
+      { archiveAnnulled: () => Promise.resolve(false) },
     );
     // Un usuario de verdad: la bitácora guarda su id, que es un uuid.
     const reader = await createUser(prisma);

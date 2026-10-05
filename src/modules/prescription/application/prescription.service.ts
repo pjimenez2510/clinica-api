@@ -5,6 +5,10 @@ import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 
 import {
+  ANNULLED_DOCUMENT_ARCHIVER,
+  type AnnulledDocumentArchiver,
+} from '../../../shared/documents/annulled-document.port';
+import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
@@ -155,6 +159,9 @@ export class PrescriptionService {
     @Inject(ACCESS_AUDIT_RECORDER)
     private readonly audit: AccessAuditRecorder,
     private readonly logger: PinoLogger,
+    /** DOC-109. The PDF with the mark, archived once the annulment is committed. */
+    @Inject(ANNULLED_DOCUMENT_ARCHIVER)
+    private readonly documents: AnnulledDocumentArchiver,
   ) {
     this.logger.setContext(PrescriptionService.name);
   }
@@ -442,6 +449,14 @@ export class PrescriptionService {
       userAgent: requester.userAgent,
     });
 
+    // DOC-109. After the commit, and it never fails the annulment.
+    await this.documents.archiveAnnulled({
+      kind: 'PRESCRIPTION',
+      subjectId: cancelled.id,
+      userId: requester.userId,
+      cause: 'ANNULMENT',
+    });
+
     return cancelled;
   }
 
@@ -496,6 +511,14 @@ export class PrescriptionService {
       { action: 'PRESCRIPTION_CORRECTED' },
       'prescription annulled and redrafted',
     );
+
+    // DOC-109. The annulled one's PDF, with the mark; never fails this.
+    await this.documents.archiveAnnulled({
+      kind: 'PRESCRIPTION',
+      subjectId: corrected.cancelled.id,
+      userId: requester.userId,
+      cause: 'CORRECTION',
+    });
 
     return corrected;
   }

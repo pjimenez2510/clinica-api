@@ -2,6 +2,10 @@ import { PinoLogger } from 'nestjs-pino';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type {
+  AnnulledDocument,
+  AnnulledDocumentArchiver,
+} from '../../../shared/documents/annulled-document.port';
+import type {
   AccessAuditEntry,
   AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
@@ -310,6 +314,8 @@ describe('el servicio de recetas', () => {
   let allergyReader: FakeAllergyReader;
   let entries: AccessAuditEntry[];
   let service: PrescriptionService;
+  /** DOC-109. What the documents port was asked to archive. */
+  let archived: AnnulledDocument[];
 
   beforeEach(() => {
     repository = new FakeRepository();
@@ -322,7 +328,14 @@ describe('el servicio de recetas', () => {
       },
     };
     const logger = { setContext: vi.fn(), info: vi.fn() } as unknown as PinoLogger; // prettier-ignore
-    service = new PrescriptionService(repository, allergyReader, audit, logger);
+    archived = [];
+    const documents: AnnulledDocumentArchiver = {
+      archiveAnnulled: (document) => {
+        archived.push(document);
+        return Promise.resolve(true);
+      },
+    };
+    service = new PrescriptionService(repository, allergyReader, audit, logger, documents); // prettier-ignore
   });
 
   const composeRequest = {
@@ -669,6 +682,17 @@ describe('el servicio de recetas', () => {
     ]);
   });
 
+  it('DOC-109 PR-108 PR-109 al anular o corregir pide archivar el PDF con la marca, a nombre de la sesión', async () => {
+    repository.snapshot = aSnapshot({ status: 'ACTIVE' });
+    await service.cancel(PRESCRIPTION, 'Pérdida', requester);
+    await service.correct(PRESCRIPTION, 'Error de prescripción', requester);
+
+    expect(archived).toEqual([
+      { kind: 'PRESCRIPTION', subjectId: PRESCRIPTION, userId: USER, cause: 'ANNULMENT' }, // prettier-ignore
+      { kind: 'PRESCRIPTION', subjectId: PRESCRIPTION, userId: USER, cause: 'CORRECTION' }, // prettier-ignore
+    ]);
+  });
+
   it('PR-109 una cuenta sin ficha profesional no corrige nada', async () => {
     repository.prescriber = null;
 
@@ -677,6 +701,8 @@ describe('el servicio de recetas', () => {
     ).rejects.toMatchObject({ code: 'PRESCRIBER_PROFILE_REQUIRED' });
     expect(repository.corrected).toBeUndefined();
     expect(entries).toEqual([]);
+    // DOC-109. Nada se anuló: no hay PDF que archivar.
+    expect(archived).toEqual([]);
   });
 
   it('PR-010 rechaza anular un borrador, porque no hay acto legal que anular', async () => {

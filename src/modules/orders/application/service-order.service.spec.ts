@@ -1,6 +1,10 @@
 import { PinoLogger } from 'nestjs-pino';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type {
+  AnnulledDocument,
+  AnnulledDocumentArchiver,
+} from '../../../shared/documents/annulled-document.port';
 import { GLUCOSE, HAEMOGLOBIN } from '../domain/analyte.fixtures';
 import { ServiceOrderService } from './service-order.service';
 import type { Requester } from './service-order.service';
@@ -193,6 +197,8 @@ describe('la emisión y el seguimiento de una orden', () => {
   let catalogue: FakeCatalogue;
   let logger: PinoLogger;
   let service: ServiceOrderService;
+  /** DOC-109. What the documents port was asked to archive. */
+  let archived: AnnulledDocument[];
 
   beforeEach(() => {
     orders = new FakeOrders();
@@ -203,9 +209,20 @@ describe('la emisión y el seguimiento de una orden', () => {
       warn: vi.fn(),
       error: vi.fn(),
     } as unknown as PinoLogger;
-    service = new ServiceOrderService(orders, catalogue, logger, {
-      record: () => Promise.resolve(),
-    });
+    archived = [];
+    const documents: AnnulledDocumentArchiver = {
+      archiveAnnulled: (document) => {
+        archived.push(document);
+        return Promise.resolve(true);
+      },
+    };
+    service = new ServiceOrderService(
+      orders,
+      catalogue,
+      logger,
+      { record: () => Promise.resolve() },
+      documents,
+    );
   });
 
   const twoLines = {
@@ -421,5 +438,18 @@ describe('la emisión y el seguimiento de una orden', () => {
   it('ORD-007 anula la línea sin borrarla de la orden', async () => {
     const order = await service.cancelItem('order-1', 'item-0', requester);
     expect(order.items).toHaveLength(1);
+  });
+
+  it('DOC-109 ORD-007 ORD-118 al anular una línea o corregir pide archivar el PDF al día, a nombre de la sesión', async () => {
+    await service.cancelItem('order-1', 'item-0', requester);
+    await service.correct('order-1', requester);
+    await expect(
+      service.correct('order-1', { ...requester, userId: 'user-2' }),
+    ).rejects.toMatchObject({ code: 'ORDER_OF_ANOTHER_PRACTITIONER' });
+
+    expect(archived).toEqual([
+      { kind: 'SERVICE_ORDER', subjectId: 'order-1', userId: requester.userId, cause: 'ANNULMENT' }, // prettier-ignore
+      { kind: 'SERVICE_ORDER', subjectId: 'order-1', userId: requester.userId, cause: 'CORRECTION' }, // prettier-ignore
+    ]);
   });
 });

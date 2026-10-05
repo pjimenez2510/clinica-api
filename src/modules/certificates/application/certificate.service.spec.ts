@@ -5,6 +5,10 @@ import type {
   AccessAuditEntry,
   AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
+import type {
+  AnnulledDocument,
+  AnnulledDocumentArchiver,
+} from '../../../shared/documents/annulled-document.port';
 import {
   addDays,
   atWallClock,
@@ -302,6 +306,8 @@ describe('el servicio de certificados', () => {
   let service: CertificateService;
   /** What the injected clock answers; `NOW` unless a test moves it. */
   let clockReads: Date;
+  /** DOC-109. What the documents port was asked to archive. */
+  let archived: AnnulledDocument[];
 
   beforeEach(() => {
     clockReads = NOW;
@@ -318,7 +324,14 @@ describe('el servicio de certificados', () => {
       setContext: vi.fn(),
       info: (...args: unknown[]) => logged.push(args),
     } as unknown as PinoLogger;
-    service = new CertificateService(repository, audit, logger, () => clockReads); // prettier-ignore
+    archived = [];
+    const documents: AnnulledDocumentArchiver = {
+      archiveAnnulled: (document) => {
+        archived.push(document);
+        return Promise.resolve(true);
+      },
+    };
+    service = new CertificateService(repository, audit, logger, () => clockReads, documents); // prettier-ignore
   });
 
   it('CER-001 registra el certificado con la atencion, el profesional de la sesion, el tipo y el instante', async () => {
@@ -495,6 +508,26 @@ describe('el servicio de certificados', () => {
     ).toEqual([
       ['certificate-1', 'UPDATE'],
       ['certificate-2', 'CREATE'],
+    ]);
+  });
+
+  it('DOC-109 CER-011 CER-053 al anular o corregir pide archivar el PDF con la marca, a nombre de la sesión', async () => {
+    await service.revoke('certificate-1', 'Error en las fechas', requester, []);
+    await service.correct(
+      'certificate-1',
+      { ...fieldsOf(rest(5)), reason: 'Error en las fechas' },
+      requester,
+      [],
+    );
+    // Un rechazo no anula nada: no hay PDF que archivar.
+    repository.snapshot = aSnapshot({ encounterStatus: 'COMPLETED' });
+    await expect(
+      service.correct('certificate-1', { ...fieldsOf(attendance()), reason: 'Paciente equivocado' }, requester, []), // prettier-ignore
+    ).rejects.toMatchObject({ code: 'CERTIFICATE_ENCOUNTER_NOT_OPEN' });
+
+    expect(archived).toEqual([
+      { kind: 'MEDICAL_CERTIFICATE', subjectId: 'certificate-1', userId: USER, cause: 'ANNULMENT' }, // prettier-ignore
+      { kind: 'MEDICAL_CERTIFICATE', subjectId: 'certificate-1', userId: USER, cause: 'CORRECTION' }, // prettier-ignore
     ]);
   });
 
