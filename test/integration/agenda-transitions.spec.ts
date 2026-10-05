@@ -1311,6 +1311,8 @@ describe('las transiciones de estado de la cita por HTTP', () => {
           siteId,
           orderedById: practitionerId,
           category: 'LABORATORY',
+          // ORD-100. An issued order: a draft is not an act yet.
+          status: 'ISSUED',
         },
       });
 

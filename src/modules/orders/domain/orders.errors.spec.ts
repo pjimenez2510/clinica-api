@@ -11,8 +11,11 @@ import {
 import {
   CriticalNoticeTimeInvalidError,
   CriticalReadBackRequiredError,
+  ExamCategoryMismatchError,
   ExamNotOrderableError,
   OrderEncounterNotFoundError,
+  OrderNotDraftError,
+  OrderNotIssuedError,
   OrderEncounterNotOpenError,
   OrderItemNotMatchableError,
   OrderItemNotPendingError,
@@ -48,6 +51,9 @@ const EVERY_ERROR: readonly DomainError[] = [
   new ExamNotOrderableError(),
   new OrderEncounterNotOpenError('COMPLETED'),
   new OrderItemNotPendingError(),
+  new OrderNotDraftError(),
+  new OrderNotIssuedError(),
+  new ExamCategoryMismatchError(),
   new ReportAlreadyCorrectedError(),
   new ReportNotCorrectableError('PARTIAL'),
   new ResultAnalyteUnknownError(),
@@ -109,6 +115,18 @@ describe('el contrato de errores de las órdenes', () => {
     const error = new ExamNotOrderableError();
     expect(error).toBeInstanceOf(ValidationError);
     expect(error.fieldErrors?.[0]?.field).toBe('items');
+  });
+
+  it('ORD-097 rechaza la orden entera y señala el campo de los exámenes', () => {
+    const error = new ExamCategoryMismatchError();
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.fieldErrors?.[0]?.field).toBe('items');
+    expect(error.userTitle).toContain('tipo de la orden');
+  });
+
+  it('ORD-096 y ORD-100 son conflictos de estado: borrador y emitida', () => {
+    expect(new OrderNotDraftError()).toBeInstanceOf(ConflictError);
+    expect(new OrderNotIssuedError()).toBeInstanceOf(ConflictError);
   });
 
   it('ORD-005 y ORD-008 son conflictos de estado, no de contenido', () => {

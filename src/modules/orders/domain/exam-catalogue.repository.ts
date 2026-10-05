@@ -1,4 +1,5 @@
 import type { AnalyteDefinition } from './analyte';
+import type { ServiceOrderCategory } from './service-order';
 
 /**
  * The ORDERABLE catalogue, read-only.
@@ -20,6 +21,8 @@ export interface ExamDefinitionView {
   /** `EX-BH`. The identity of the row, frozen onto every line that asks for it. */
   code: string;
   name: string;
+  /** ORD-097, ORD-101. An order only carries exams of its own category. */
+  category: ServiceOrderCategory;
   /** ORD-010. The section of form 010A, so a compliant order can be printed. */
   form010Section: string | null;
   specimenType: string | null;

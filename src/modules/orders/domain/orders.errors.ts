@@ -149,6 +149,62 @@ export class OrderItemNotPendingError extends ConflictError {
 }
 
 /**
+ * ORD-096, ORD-098, ORD-099. The order is no longer a draft.
+ *
+ * 409: nothing sent is wrong. Somebody issued or discarded it — in another tab,
+ * or a second click — and an issued order is corrected by cancelling its lines
+ * (ORD-007), never by rewriting it.
+ */
+export class OrderNotDraftError extends ConflictError {
+  readonly code = 'ORDER_NOT_DRAFT';
+  override readonly userTitle =
+    'Esa orden ya no es un borrador: se emitió o se descartó. Actualice la pantalla';
+
+  constructor() {
+    super('The service order is not a DRAFT');
+  }
+}
+
+/**
+ * ORD-100. The order has not been issued.
+ *
+ * A draft never left the consultation: nothing comes back for it, nobody
+ * matches against it, and a line of it is removed in the editor rather than
+ * cancelled.
+ */
+export class OrderNotIssuedError extends ConflictError {
+  readonly code = 'ORDER_NOT_ISSUED';
+  override readonly userTitle =
+    'Esa orden todavía no se ha emitido. Emítala desde la atención antes de registrar nada contra ella';
+
+  constructor() {
+    super('The service order is not ISSUED');
+  }
+}
+
+/**
+ * ORD-097. An exam of the order is not of the order's category.
+ *
+ * THE WHOLE ORDER, like ORD-003: a blood count sent as «imagen» reaches the
+ * wrong service, and keeping the other lines would hide which one was wrong.
+ */
+export class ExamCategoryMismatchError extends ValidationError {
+  readonly code = 'EXAM_CATEGORY_MISMATCH';
+  override readonly userTitle =
+    'Hay exámenes que no son del tipo de la orden. Quítelos o cambie el tipo de la orden';
+
+  constructor() {
+    super('An exam definition is not of the order category', {}, [
+      {
+        field: 'items',
+        code: 'EXAM_CATEGORY_MISMATCH',
+        message: 'Elija exámenes del tipo de la orden',
+      },
+    ]);
+  }
+}
+
+/**
  * ORD-052. The report already has a correction.
  *
  * GUARANTEED BY THE `UNIQUE` ON `diagnostic_report.supersedes_id`; this class

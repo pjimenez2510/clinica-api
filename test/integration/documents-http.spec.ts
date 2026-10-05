@@ -625,6 +625,11 @@ describe('los documentos por HTTP', () => {
         },
         select: { id: true, verificationCode: true, requestedAt: true },
       });
+      // ORD-100. Only an issued order is verified: lines in while a draft.
+      await prisma.serviceOrder.update({
+        where: { id: order.id },
+        data: { status: 'ISSUED' },
+      });
 
       // Positive control: the same code, while the exam is still to be done.
       const valid = await verify(order.verificationCode).expect(200);
@@ -1028,6 +1033,8 @@ describe('los documentos por HTTP', () => {
           siteId: encounter.siteId,
           orderedById: practitionerId,
           category: 'LABORATORY',
+          // ORD-100. Only an issued order is printed.
+          status: 'ISSUED',
         },
       });
       const certificate = await prisma.medicalCertificate.create({

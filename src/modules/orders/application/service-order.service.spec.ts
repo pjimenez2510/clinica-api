@@ -10,6 +10,8 @@ import type {
   ExamDefinitionView,
 } from '../domain/exam-catalogue.repository';
 import type {
+  DraftDiscard,
+  DraftRewrite,
   NewServiceOrder,
   OrderQuery,
   PendingOrderEntry,
@@ -37,6 +39,7 @@ const SITE = 'site-1';
 const ENCOUNTER = 'encounter-1';
 const EXAM_BH = 'exam-bh';
 const EXAM_GLU = 'exam-glu';
+const EXAM_RX = 'exam-rx';
 const CONCEPT = 'concept-1';
 
 const requester: Requester = {
@@ -50,10 +53,12 @@ const anExam = (
   id: string,
   code: string,
   analytes: AnalyteDefinition[],
+  category: ExamDefinitionView['category'] = 'LABORATORY',
 ): ExamDefinitionView => ({
   id,
   code,
   name: `Examen ${code}`,
+  category,
   form010Section: 'HEMATOLOGÍA',
   specimenType: 'Sangre total con EDTA',
   patientPreparation: 'No requiere ayuno.',
@@ -72,6 +77,7 @@ class FakeCatalogue implements ExamCatalogueRepository {
   readonly exams = new Map<string, ExamDefinitionView>([
     [EXAM_BH, anExam(EXAM_BH, 'EX-BH', [HAEMOGLOBIN])],
     [EXAM_GLU, anExam(EXAM_GLU, 'EX-GLUCOSA-AYUNAS', [GLUCOSE])],
+    [EXAM_RX, anExam(EXAM_RX, 'RX-TORAX', [], 'IMAGING')],
   ]);
   retired = new Set<string>();
 
@@ -99,12 +105,27 @@ class FakeCatalogue implements ExamCatalogueRepository {
 
 class FakeOrders implements ServiceOrderRepository {
   placed: NewServiceOrder[] = [];
+  rewritten: DraftRewrite[] = [];
+  issued: OrderQuery[] = [];
+  discarded: DraftDiscard[] = [];
   pendingQueries: PendingOrdersQuery[] = [];
   charts = new Map<string, string>([['1710034065', 'chart-1']]);
 
-  place(order: NewServiceOrder): Promise<ServiceOrderView> {
+  compose(order: NewServiceOrder): Promise<ServiceOrderView> {
     this.placed.push(order);
     return Promise.resolve(anOrder(order.lines.length));
+  }
+  rewrite(request: DraftRewrite): Promise<ServiceOrderView> {
+    this.rewritten.push(request);
+    return Promise.resolve(anOrder(request.lines.length));
+  }
+  issue(query: OrderQuery): Promise<ServiceOrderView> {
+    this.issued.push(query);
+    return Promise.resolve(anOrder(1));
+  }
+  discard(request: DraftDiscard): Promise<ServiceOrderView> {
+    this.discarded.push(request);
+    return Promise.resolve(anOrder(1));
   }
   byId(query: OrderQuery): Promise<ServiceOrderView | undefined> {
     return Promise.resolve(
@@ -133,6 +154,8 @@ const anOrder = (lines: number): ServiceOrderView => ({
   patientId: 'chart-1',
   orderedById: 'practitioner-1',
   number: 1,
+  status: 'ISSUED',
+  discardedAt: null,
   category: 'LABORATORY',
   priority: 'ROUTINE',
   clinicalNoteText: null,
@@ -177,7 +200,7 @@ describe('la emisión y el seguimiento de una orden', () => {
   };
 
   it('ORD-002 emite una línea por examen pedido', async () => {
-    const order = await service.place(twoLines, requester);
+    const order = await service.compose(twoLines, requester);
 
     expect(order.items).toHaveLength(2);
     expect(orders.placed[0]?.lines).toHaveLength(2);
@@ -186,7 +209,7 @@ describe('la emisión y el seguimiento de una orden', () => {
   it('ORD-001 nunca deja que quien llama elija quién firma la orden', async () => {
     // El profesional lo pone la ATENCIÓN. Un id en la petición es una orden
     // que alguien puede archivar a nombre de un colega.
-    await service.place(twoLines, requester);
+    await service.compose(twoLines, requester);
 
     expect(Object.keys(twoLines)).not.toContain('orderedById');
     expect(orders.placed[0]).not.toHaveProperty('orderedById');
@@ -197,14 +220,14 @@ describe('la emisión y el seguimiento de una orden', () => {
     // nadie se fija en cuál falta, y el que falta es el que nadie reclama.
     catalogue.retired.add(EXAM_GLU);
 
-    await expect(service.place(twoLines, requester)).rejects.toMatchObject({
+    await expect(service.compose(twoLines, requester)).rejects.toMatchObject({
       code: 'EXAM_NOT_ORDERABLE',
     });
     expect(orders.placed).toEqual([]);
   });
 
   it('ORD-024 no deja viajar el nombre del examen ni el paciente a la bitácora técnica', async () => {
-    await service.place(twoLines, requester);
+    await service.compose(twoLines, requester);
 
     const calls = (logger.info as unknown as { mock: { calls: unknown[][] } })
       .mock.calls;
@@ -212,9 +235,71 @@ describe('la emisión y el seguimiento de una orden', () => {
 
     expect(context).toEqual({
       site_id: SITE,
-      action: 'SERVICE_ORDER_PLACED',
+      action: 'SERVICE_ORDER_COMPOSED',
       item_count: 2,
     });
+  });
+
+  it('ORD-097 rechaza la orden ENTERA si un examen no es del tipo de la orden', async () => {
+    // Un hemograma pedido como imagen llega al servicio equivocado.
+    await expect(
+      service.compose({ ...twoLines, category: 'IMAGING' as const }, requester),
+    ).rejects.toMatchObject({ code: 'EXAM_CATEGORY_MISMATCH' });
+    expect(orders.placed).toEqual([]);
+  });
+
+  it('ORD-097 la corrección del borrador pasa por la misma comprobación de tipo', async () => {
+    await expect(
+      service.rewrite(
+        {
+          orderId: 'order-1',
+          category: 'LABORATORY',
+          priority: 'ROUTINE',
+          lines: [{ examDefinitionId: EXAM_RX }],
+        },
+        requester,
+      ),
+    ).rejects.toMatchObject({ code: 'EXAM_CATEGORY_MISMATCH' });
+    expect(orders.rewritten).toEqual([]);
+  });
+
+  it('ORD-096 corrige el borrador entero con el alcance de quien llama', async () => {
+    await service.rewrite(
+      {
+        orderId: 'order-1',
+        category: 'IMAGING',
+        priority: 'URGENT',
+        lines: [{ examDefinitionId: EXAM_RX }],
+      },
+      requester,
+    );
+
+    expect(orders.rewritten[0]).toMatchObject({
+      orderId: 'order-1',
+      category: 'IMAGING',
+      sites: [SITE],
+    });
+  });
+
+  it('ORD-098 emite con el alcance de quien llama y deja constancia sin nombrar el examen', async () => {
+    await service.issue('order-1', requester);
+
+    expect(orders.issued).toEqual([{ orderId: 'order-1', sites: [SITE] }]);
+    const calls = (logger.info as unknown as { mock: { calls: unknown[][] } })
+      .mock.calls;
+    expect(calls[0]?.[0]).toEqual({
+      site_id: SITE,
+      action: 'SERVICE_ORDER_PLACED',
+      item_count: 1,
+    });
+  });
+
+  it('ORD-099 descarta dejando quién lo hizo, que es quien llama y no un id enviado', async () => {
+    await service.discard('order-1', requester);
+
+    expect(orders.discarded).toEqual([
+      { orderId: 'order-1', sites: [SITE], userId: 'user-1' },
+    ]);
   });
 
   it('ORD-009 responde que no existe cuando la orden está fuera del alcance', async () => {

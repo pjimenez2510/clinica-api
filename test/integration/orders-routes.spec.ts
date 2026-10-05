@@ -94,6 +94,11 @@ describe('las rutas del módulo de órdenes', () => {
         'GET /orders/pending → record:read',
         'GET /orders/:orderId → record:read',
         'POST /orders/:orderId/items/:itemId/cancel → record:write',
+        // ORD-096, ORD-098, ORD-099. El borrador: corregirlo, emitirlo y
+        // descartarlo son pedir, con el permiso de pedir.
+        'PUT /orders/:orderId → record:write',
+        'POST /orders/:orderId/issue → record:write',
+        'POST /orders/:orderId/discard → record:write',
         'GET /orders/results/unmatched → record:read',
         'POST /orders/results/:resultId/match → result:write',
         'GET /orders/results/critical → record:read',

@@ -28,9 +28,9 @@ async function insertOrder(
   scene: { encounterId: string; siteId: string; practitionerId: string },
 ): Promise<number> {
   const [row] = await prisma.$queryRaw<{ number: number }[]>`
-    INSERT INTO service_order (encounter_id, site_id, ordered_by_id, category, updated_at)
+    INSERT INTO service_order (encounter_id, site_id, ordered_by_id, category, status, updated_at)
     VALUES (${scene.encounterId}::uuid, ${scene.siteId}::uuid,
-            ${scene.practitionerId}::uuid, 'LABORATORY', now())
+            ${scene.practitionerId}::uuid, 'LABORATORY', 'ISSUED', now())
     RETURNING number
   `;
   return row!.number;
@@ -111,7 +111,7 @@ describe('ORD-006 el número de orden: propio, consecutivo, sin huecos e inmutab
 
     // Control positivo: otra columna de la misma orden sí se actualiza.
     await expect(
-      prisma.$executeRaw`UPDATE service_order SET clinical_note_text = 'Ayuno'`,
+      prisma.$executeRaw`UPDATE service_order SET updated_at = now()`,
     ).resolves.toBe(1);
     await expect(
       prisma.$executeRaw`UPDATE service_order SET number = 99`,
@@ -155,9 +155,9 @@ describe('ORD-006 el número de orden: propio, consecutivo, sin huecos e inmutab
     const { ids } = await sceneOf(prisma);
 
     const [row] = await prisma.$queryRaw<{ number: number }[]>`
-      INSERT INTO service_order (encounter_id, site_id, ordered_by_id, category, number, updated_at)
+      INSERT INTO service_order (encounter_id, site_id, ordered_by_id, category, status, number, updated_at)
       VALUES (${ids.encounterId}::uuid, ${ids.siteId}::uuid,
-              ${ids.practitionerId}::uuid, 'LABORATORY', 500, now())
+              ${ids.practitionerId}::uuid, 'LABORATORY', 'ISSUED', 500, now())
       RETURNING number
     `;
 

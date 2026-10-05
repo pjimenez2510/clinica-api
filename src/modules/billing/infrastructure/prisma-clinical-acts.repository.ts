@@ -89,6 +89,8 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
           orderBy: { performedAt: 'asc' },
         },
         serviceOrders: {
+          // ORD-100. A draft or a discarded order proposes no charge.
+          where: { status: 'ISSUED' },
           select: {
             requestedAt: true,
             items: {

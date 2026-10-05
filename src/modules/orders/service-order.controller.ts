@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   HttpCode,
@@ -6,6 +7,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   Query,
   Req,
 } from '@nestjs/common';
@@ -22,6 +24,7 @@ import type { Requester } from './application/service-order.service';
 import type { PendingOrderEntry } from './domain/service-order.repository';
 import type { ServiceOrderView } from './domain/service-order.repository';
 import {
+  PlaceOrderDto,
   PendingOrderListDto,
   PendingOrdersQueryDto,
   ServiceOrderDto,
@@ -119,6 +122,66 @@ export class ServiceOrderController {
   }
 
   /**
+   * ORD-096, ORD-097. Rewrites a draft whole — category, priority, note and
+   * lines — keeping its id. `PUT` because the body IS the new draft.
+   */
+  @Put(':orderId')
+  @RequirePermission('record:write', 'query')
+  @ApiOperation({ summary: 'Corregir una orden en borrador' })
+  @ApiOkResponse({ type: ServiceOrderDto })
+  async rewrite(
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Body() dto: PlaceOrderDto,
+    @Req() req: Request,
+  ): Promise<ServiceOrderResponse> {
+    const order = await this.orders.rewrite(
+      {
+        orderId,
+        category: dto.category,
+        priority: dto.priority,
+        clinicalNoteText: dto.clinicalNoteText,
+        lines: dto.items,
+      },
+      this.requester(req, 'record:write'),
+    );
+    return toOrderResponse(order);
+  }
+
+  /** ORD-098. Issues a draft: it takes its number and is frozen. */
+  @Post(':orderId/issue')
+  @RequirePermission('record:write', 'query')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Emitir una orden en borrador' })
+  @ApiOkResponse({ type: ServiceOrderDto })
+  async issue(
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Req() req: Request,
+  ): Promise<ServiceOrderResponse> {
+    const order = await this.orders.issue(
+      orderId,
+      this.requester(req, 'record:write'),
+    );
+    return toOrderResponse(order);
+  }
+
+  /** ORD-099. Discards a draft; the row stays with who and when. */
+  @Post(':orderId/discard')
+  @RequirePermission('record:write', 'query')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Descartar una orden en borrador' })
+  @ApiOkResponse({ type: ServiceOrderDto })
+  async discard(
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Req() req: Request,
+  ): Promise<ServiceOrderResponse> {
+    const order = await this.orders.discard(
+      orderId,
+      this.requester(req, 'record:write'),
+    );
+    return toOrderResponse(order);
+  }
+
+  /**
    * ORD-007, ORD-008. Anula una línea pedida por error.
    *
    * A `POST` AND NOT A `DELETE`, and the verb is the requirement: the row
@@ -167,6 +230,8 @@ export function toOrderResponse(order: ServiceOrderView): ServiceOrderResponse {
     patientId: order.patientId,
     orderedById: order.orderedById,
     number: order.number,
+    status: order.status,
+    discardedAt: order.discardedAt?.toISOString() ?? null,
     category: order.category,
     priority: order.priority,
     clinicalNoteText: order.clinicalNoteText,

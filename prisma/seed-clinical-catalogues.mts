@@ -258,9 +258,31 @@ export async function seedClinicalCatalogues(prisma: PrismaClient) {
         tariffCount = created.count;
       });
     } else {
-      tariffCount = await prisma.catalogConcept.count({
-        where: { systemId: tariff.id, validTo: null },
-      });
+      // An exam added to the seed after the release was published (ORD-101's
+      // imaging and procedure examples) joins it; the ones already there are
+      // left as they are.
+      const live = new Set(
+        (
+          await prisma.catalogConcept.findMany({
+            where: { systemId: tariff.id, validTo: null },
+            select: { code: true },
+          })
+        ).map((concept) => concept.code),
+      );
+      const missing = exams.filter((exam) => !live.has(exam.code));
+      if (missing.length > 0) {
+        await prisma.catalogConcept.createMany({
+          data: missing.map((exam) => ({
+            systemId: tariff.id,
+            introducedByReleaseId: existing.id,
+            code: exam.code,
+            display: exam.name,
+            validFrom: EFFECTIVE_FROM,
+            attributes: { source: 'DEV FIXTURE — derivado de exam_definition' },
+          })),
+        });
+      }
+      tariffCount = live.size + missing.length;
     }
   }
 

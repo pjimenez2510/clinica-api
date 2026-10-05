@@ -10,6 +10,9 @@
 /** `service_order_category`. An order is laboratory, imaging or procedure. */
 export type ServiceOrderCategory = 'LABORATORY' | 'IMAGING' | 'PROCEDURE';
 
+/** `service_order_status`. ORD-095 to ORD-099. */
+export type ServiceOrderStatus = 'DRAFT' | 'ISSUED' | 'DISCARDED';
+
 /** `service_order_priority`. */
 export type ServiceOrderPriority = 'ROUTINE' | 'URGENT' | 'STAT';
 

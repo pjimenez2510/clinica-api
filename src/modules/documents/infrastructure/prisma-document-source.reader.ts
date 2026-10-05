@@ -401,7 +401,9 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
     // ORD-006, D-095. The order prints its code too, and the laboratory that
     // scans it must get an answer, not «no document has this code».
     const order = await this.prisma.serviceOrder.findFirst({
-      where: { verificationCode: exact },
+      // ORD-100. A draft has a code from birth but never left the room: it
+      // answers what an unknown code answers.
+      where: { verificationCode: exact, status: 'ISSUED' },
       select: {
         requestedAt: true,
         orderedBy: signer,
@@ -575,6 +577,8 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
     const row = await this.prisma.serviceOrder.findFirst({
       where: {
         id: subjectId,
+        // ORD-100. Only an issued order is printed: a draft has no number.
+        status: 'ISSUED',
         ...(sites === 'all' ? {} : { siteId: { in: [...sites] } }),
       },
       select: {
@@ -622,7 +626,8 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       data: {
         subjectId: row.id,
         siteId: row.siteId,
-        number: row.number,
+        // Issued, so numbered (`service_order_number_iff_issued`).
+        number: row.number ?? 0,
         verificationCode: row.verificationCode,
         requestedAt: row.requestedAt,
         category: row.category,

@@ -977,6 +977,19 @@ export const DOMAIN_ERROR_CODES = [
   'RESULT_FLAG_IS_DERIVED',
   'RESULT_VALUE_NOT_ALLOWED',
   'RESULT_VALUE_TYPE_MISMATCH',
+  // ─── Orders, E9 (ORD-095 a ORD-102). La orden en borrador y el examen con
+  // tipo (revisión de usabilidad del autor, 04-10-2026).
+  //
+  //   * `ORDER_NOT_DRAFT` (409) — ORD-096, ORD-098, ORD-099. Reescribir, emitir
+  //     o descartar lo que ya se emitió o descartó: otra pestaña o un segundo
+  //     clic. Una orden emitida se corrige anulando sus líneas.
+  //   * `ORDER_NOT_ISSUED` (409) — ORD-100. Un informe, un emparejamiento o una
+  //     anulación de línea contra un borrador, que nunca salió de la consulta.
+  //   * `EXAM_CATEGORY_MISMATCH` (422) — ORD-097. Un hemograma pedido como
+  //     imagen. Rechaza la orden ENTERA, como `EXAM_NOT_ORDERABLE`.
+  'EXAM_CATEGORY_MISMATCH',
+  'ORDER_NOT_DRAFT',
+  'ORDER_NOT_ISSUED',
   // ─── Orders, E7 (ORD-043). Sacar un resultado huérfano de la cola.
   //
   // `GET /orders/results/unmatched` listaba los resultados que no responden a
