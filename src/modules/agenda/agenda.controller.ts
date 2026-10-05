@@ -317,6 +317,31 @@ export class AgendaController {
   }
 
   /**
+   * AG-154. Undoes the release of a block: the same row closes the calendar
+   * again. What the screen's «Deshacer» calls, and what an assistant calls
+   * to correct the same mistake (D-127.5).
+   *
+   * 409 when the hour was booked in the meantime, through the `EXCLUDE`
+   * mapping: the appointment stays and the block stays released.
+   */
+  @Post('blocks/:entryId/restore')
+  @RequirePermission('agenda:write', 'param:siteId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Volver a cerrar un bloqueo que se quitó' })
+  @ApiOkResponse({ type: AgendaEntryDto })
+  async restoreBlock(
+    @Param('siteId', ParseUUIDPipe) siteId: string,
+    @Param('entryId', ParseUUIDPipe) entryId: string,
+  ): Promise<AgendaEntryResponse> {
+    const entry = await this.agenda.restoreBlock(
+      { siteId, entryId },
+      { userId: this.currentUser.requireUserId() },
+    );
+
+    return toEntryResponse(entry);
+  }
+
+  /**
    * AG-040 to AG-045. One status transition, with its history row (AG-004).
    *
    * POST AND NOT PATCH, because it is not an edit: it is a command against a

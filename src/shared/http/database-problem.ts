@@ -3,6 +3,7 @@ import { HttpStatus } from '@nestjs/common';
 import type { DomainFieldError } from '../domain/errors/domain-error';
 import { constraintMeaningOf } from './constraint-meanings';
 import './pending-constraints';
+import './record-version.constraints';
 
 /**
  * Translates a database rejection into the error contract.

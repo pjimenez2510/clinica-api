@@ -334,11 +334,12 @@ tiene nada que hacer en el sistema.
 **Prueba independiente:** registrar peso y talla y comprobar que el IMC **vuelve
 calculado** y que enviarlo en la petición no lo cambia; y que un peso de 750 kg
 —el dedo que tecleó 750 en vez de 75— se rechaza por la base y no por el DTO.
-**Cubre:** EN-060 a EN-068, EN-163, EN-165.
+**Cubre:** EN-060 a EN-068, EN-163, EN-165, **EN-210 y EN-211** —la toma
+corregida queda como versión anterior y se ve (D-127, `fix/menos-preguntas`)—.
 
-**Solo servidor:** EN-061, EN-062. El IMC lo escribe un disparador y el rango lo
-impone un `CHECK`: un doble que devuelve lo que le pedimos no demuestra ninguna
-de las dos.
+**Solo servidor:** EN-061, EN-062, EN-210. El IMC lo escribe un disparador, el
+rango lo impone un `CHECK` y la versión la archiva otro disparador: un doble que
+devuelve lo que le pedimos no demuestra ninguna de las tres.
 
 ### H5 — Tamizaje de violencia _(P1)_
 
@@ -1473,9 +1474,45 @@ requisitos que cambian.
   vitales.
   > `encounter_vitals.encounter_id` es la clave primaria, así que la base ya lo
   > garantiza. Se escribe porque tiene una consecuencia que hay que decir: **una
-  > segunda toma en la misma consulta sobreescribe la primera**, y no hay historial.
-  > Para consulta externa es correcto —se toma una vez—, y el día que la clínica
-  > monitorice tensión durante una hora hace falta otra tabla. Queda anotado.
+  > segunda toma en la misma consulta sustituye a la primera**. Para consulta
+  > externa es correcto —se toma una vez—, y el día que la clínica monitorice
+  > tensión durante una hora hace falta otra tabla. Queda anotado.
+  >
+  > **Desde `fix/menos-preguntas` (D-127) la toma sustituida no se pierde**: queda
+  > como versión anterior (EN-210) y se ve en la pantalla (EN-211).
+- **EN-210** — CUANDO se corrija la toma de signos vitales de una atención, el
+  sistema DEBERÁ guardar la toma anterior entera como versión, con quién la
+  corrigió y cuándo, en la misma operación; y SI la corrección no dice quién ni
+  cuándo, el sistema DEBERÁ rechazarla.
+  > **D-127.2**: «la historia la guarda el sistema, no el usuario». La guarda la
+  > **base**, con un disparador genérico que cualquier tabla editable reutiliza:
+  > `record_version_archive(columna_por, columna_cuando, columna_id)` copia la
+  > fila anterior a `record_version` (solo inserción) y rechaza el UPDATE cuyo
+  > sello no cambió (`record_version_change_is_stamped` → 422
+  > `EDIT_NOT_STAMPED`). Así no hay camino —API, importación, asistente de IA o
+  > psql— que edite sin que la versión anterior quede guardada, y la tabla de
+  > versiones tampoco se vacía con `TRUNCATE`. En los signos el sello es el de
+  > EN-143: `corrected_by` y `corrected_at`, con el instante del reloj de la
+  > aplicación. Quién tomó la toma sigue sin cambiar.
+  >
+  > **Lo que la base NO puede garantizar:** que el autor del sello sea quien
+  > ejecuta el UPDATE. La API siempre sella con el usuario de la sesión. Un
+  > psql que solo cambie el instante atribuiría la edición al último que
+  > corrigió. Cerrarlo pide una identidad de sesión en la base
+  > (`SET LOCAL app.user_id`), que el sistema aún no tiene.
+  >
+  > Dos guardados de la misma toma en el mismo milisegundo no chocan: el
+  > adaptador bloquea la fila y pone el sello nuevo después del anterior.
+- **EN-211** — El sistema DEBERÁ exponer, a quien puede leer los signos de una
+  atención, las tomas que las correcciones sustituyeron, de la más reciente a
+  la más antigua, cada una tal como era, con quién la sustituyó y cuándo; y la
+  pantalla de signos DEBERÁ mostrarlas junto a la toma vigente.
+  > `GET /encounters/:id/vitals/versions`, con `record:read` como la toma
+  > vigente, porque es el mismo contenido clínico, solo que anterior. La lectura
+  > queda en la bitácora igual que `GET …/vitals`. Fuera de las sedes de quien
+  > pide no hay versiones, igual que no hay toma (EN-121). Cada versión se lee
+  > con el MISMO mapeo que la toma vigente, para que una cifra sustituida y la
+  > que la sustituyó no se puedan pintar distinto.
 - **EN-068** — El sistema DEBERÁ exponer, junto a los signos vitales de una
   atención, los de las atenciones anteriores del mismo paciente en orden
   cronológico.
@@ -3172,6 +3209,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `DIAGNOSIS_NOT_FOUND` | 404 | El diagnóstico no es de esa atención, o ya se quitó. **El mismo para ambas**, por lo de `ENCOUNTER_NOT_FOUND` | EN-180, EN-183 |
 | `DIAGNOSIS_RETRACTION_REASON_REQUIRED` | 422 | Quitar un diagnóstico sin motivo cuando hay una nota firmada, la atención tiene el alta o un certificado emitido imprimió su código. Se exige **en el servicio** y en la base | EN-181, EN-188, EN-189 |
 | `DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT` | 409 | Quitar un diagnóstico o cambiar el principal cuando la atención ya tiene una receta emitida o una orden. El mensaje dice que primero se anula el documento | EN-182 |
+| `EDIT_NOT_STAMPED` | 422 | Una edición de algo versionado que no dice quién ni cuándo, o repite el sello anterior. La API siempre lo pone; solo lo ve un acceso directo a la base | EN-210 |
 | `DIAGNOSIS_LAST_AFTER_DISCHARGE` | 409 | Quitar el último diagnóstico de una atención con el alta | EN-188 |
 | `DIAGNOSIS_PRIMARY_AFTER_DISCHARGE` | 409 | Marcar otro como principal tras el alta cuando ya hay uno: se quita el equivocado con su motivo | EN-188 |
 
@@ -3302,6 +3340,7 @@ que es global: una atención ocurre en un sitio.
 | `POST` | `/encounters/:id/notes/:noteId/amend` | `record:sign` | EN-025 |
 | `POST` | `/encounters/:id/notes/:noteId/retract` | `record:sign` | EN-026 |
 | `PUT` | `/encounters/:id/vitals` | `vitals:write` | EN-060 a EN-067, EN-136, EN-142, EN-143, **EN-163** |
+| `GET` | `/encounters/:id/vitals/versions` | `record:read` | **EN-211** |
 | `POST` | `/encounters/:id/vitals/start` | `vitals:write` | EN-135 |
 | `POST` | `/encounters/:id/nursing-notes` | `nursing:write` | EN-142 *(formulario 120)* |
 | `POST` | `/encounters/:id/medication-administrations` | `nursing:write` | EN-142 *(formulario 022)* |

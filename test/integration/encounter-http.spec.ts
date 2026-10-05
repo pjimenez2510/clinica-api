@@ -599,6 +599,45 @@ describe('la atención por HTTP', () => {
       await expect(prisma.encounterVitals.count()).resolves.toBe(0);
     });
 
+    it('EN-211 la ruta de versiones devuelve la toma sustituida, deja su fila en la bitácora y exige leer la historia', async () => {
+      const encounterId = await openEncounter(nurseToken);
+      await put(`/encounters/${encounterId}/vitals`, nurseToken, {
+        weightKg: 68,
+      }).expect(200);
+      await put(`/encounters/${encounterId}/vitals`, doctorToken, {
+        weightKg: 69,
+      }).expect(200);
+      const before = await auditRows();
+
+      const response = await get(
+        `/encounters/${encounterId}/vitals/versions`,
+        doctorToken,
+      ).expect(200);
+
+      const body = response.body as {
+        items: {
+          version: number;
+          replacedAt: string;
+          replacedBy: { name: string };
+          taking: { weightKg: number; recordedBy: { name: string } | null };
+        }[];
+      };
+      expect(body.items).toHaveLength(1);
+      expect(body.items[0]).toMatchObject({
+        version: 1,
+        taking: { weightKg: 68 },
+      });
+      expect(body.items[0]!.replacedBy.name).not.toBe('');
+      expect(Number.isNaN(Date.parse(body.items[0]!.replacedAt))).toBe(false);
+      await expect(auditRows()).resolves.toBe(before + 1);
+
+      // Recepción no lee la historia clínica: tampoco sus versiones.
+      await get(
+        `/encounters/${encounterId}/vitals/versions`,
+        receptionToken,
+      ).expect(403);
+    });
+
     it('EN-142 rechaza que ENFERMERÍA abra o firme una nota de consulta externa', async () => {
       /**
        * ⚠️ LO QUE EL PERMISO NIEGA ES EL REQUISITO. La LOS art. 198 exige

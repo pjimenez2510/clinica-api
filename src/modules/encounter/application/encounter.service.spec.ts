@@ -23,6 +23,7 @@ import type {
   PractitionerIdentity,
   SubjectStatusStamp,
   VitalSignsView,
+  VitalsVersionView,
 } from '../domain/encounter.repository';
 import type { ClosurePlan } from '../domain/encounter-closure';
 import type { VitalSigns } from '../domain/vital-signs';
@@ -171,6 +172,10 @@ class FakeEncounters implements EncounterRepository {
     return Promise.resolve(false);
   }
 
+  findVitalsVersions(): Promise<VitalsVersionView[]> {
+    return Promise.resolve([]);
+  }
+
   stampSubjectStatus(stamp: SubjectStatusStamp): Promise<void> {
     this.stamps.push(stamp);
     return Promise.resolve();
@@ -274,6 +279,18 @@ describe('los casos de uso de la atención', () => {
 
     expect(audit.entries).toHaveLength(1);
     expect(audit.entries[0]).toMatchObject({ action: 'READ' });
+  });
+
+  it('EN-211 deja una fila de bitácora al leer las versiones de los signos', async () => {
+    const versions = await service.vitalsVersionsOf('encounter-1', requester);
+
+    expect(versions).toEqual([]);
+    expect(audit.entries).toHaveLength(1);
+    expect(audit.entries[0]).toMatchObject({
+      resourceType: 'encounter_vitals',
+      resourceId: 'encounter-1',
+      action: 'READ',
+    });
   });
 
   it('EN-123 no deja ninguna fila de bitácora al LISTAR atenciones', async () => {

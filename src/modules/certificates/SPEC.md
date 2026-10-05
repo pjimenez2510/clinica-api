@@ -110,7 +110,9 @@ emitirlo, F-05 deja al médico escribiéndolo a mano.
 que sus números son consecutivos; emitir uno de reposo con `rest_to` anterior a
 `rest_from` y comprobar que la base lo rechaza; anular uno y comprobar que la
 fila sigue con motivo, autor e instante.
-**Cubre:** CER-001 a CER-016.
+**Cubre:** CER-001 a CER-016, **CER-052** —el motivo de anular se elige de una
+lista (D-126, `fix/menos-preguntas`)—.
+**Solo interfaz:** CER-052.
 **Solo servidor:** CER-009, CER-014, CER-015, CER-016. Son la unicidad del
 número en la base, el permiso de cada ruta, la bitácora y la ausencia de PHI en
 mensajes y registros: se prueban contra la base y las rutas registradas.
@@ -236,12 +238,28 @@ comprobar que no lleva el motivo.
   quien pregunta ENTONCES el sistema DEBERÁ responder `CERTIFICATE_NOT_FOUND`.
 
 - **CER-011** — CUANDO se anule un certificado, el sistema DEBERÁ exigir un
-  **motivo escrito**, guardar quién lo anuló, cuándo y por qué, y **NO DEBERÁ**
+  **motivo**, guardar quién lo anuló, cuándo y por qué, y **NO DEBERÁ**
   borrar ninguna fila.
 
   > **Esquema:** `revoked_by_id` (clave foránea a `app_user`) y
   > `medical_certificate_revocation_states_who_when_and_why`, que exige los
   > tres juntos y el motivo no vacío.
+  >
+  > **D-126 (04-10-2026):** el motivo se queda porque el papel ya está en
+  > manos de un tercero —empleador o IESS—, pero ya no se redacta: se elige
+  > (CER-052). La API sigue recibiendo texto.
+
+- **CER-052** — CUANDO se anule un certificado, la pantalla DEBERÁ ofrecer el
+  motivo como una **lista corta con «Otro»** —«Error en las fechas»,
+  «Diagnóstico equivocado», «Lo sustituye otro certificado», «Paciente
+  equivocado»— en un único diálogo, que es la única confirmación; y con «Otro»
+  DEBERÁ pedir el texto.
+  > **D-126.3**: motivo solo donde la norma lo exige o el papel salió a un
+  > tercero, y aun así de una lista. Viaja la etiqueta elegida, o lo escrito en
+  > «Otro», como el texto de siempre: ni el contrato ni los motivos ya guardados
+  > cambian, y el asistente de IA manda lo mismo que la pantalla. La lista vive
+  > en el esquema de la pantalla (`revoke-certificate.schema.ts`); el selector
+  > es el común (`ReasonPicker`).
 
 - **CER-012** — SI el certificado ya está anulado, ENTONCES el sistema DEBERÁ
   rechazar la anulación con `CERTIFICATE_ALREADY_REVOKED`.

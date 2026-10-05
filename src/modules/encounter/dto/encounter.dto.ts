@@ -464,9 +464,29 @@ export const vitalSignsSchema = z.object({
 /** Response of reading and recording block D. */
 export class VitalSignsDto extends createZodDto(vitalSignsSchema) {}
 
+/**
+ * EN-211, D-127. The takings corrections replaced, newest first. Each one is
+ * block D exactly as it was, plus who replaced it and when — the database kept
+ * it (EN-210), the client only shows it.
+ */
+export const vitalsVersionSchema = z.object({
+  version: z.number().int().min(1),
+  replacedBy: z.object({ id: z.uuid(), name: z.string() }),
+  replacedAt: z.iso.datetime(),
+  taking: vitalSignsSchema,
+});
+export const vitalsVersionListSchema = z.object({
+  items: z.array(vitalsVersionSchema),
+});
+/** Response of GET /encounters/:id/vitals/versions. */
+export class VitalsVersionListDto extends createZodDto(
+  vitalsVersionListSchema,
+) {}
+
 /** Response types the controller returns, inferred from the schemas Swagger publishes. */
 export type EncounterResponse = z.infer<typeof encounterSchema>;
 export type EncounterDetailResponse = z.infer<typeof encounterDetailSchema>;
 export type EncounterListResponse = z.infer<typeof encounterListSchema>;
 export type EncounterPageResponse = z.infer<typeof encounterPageSchema>;
 export type VitalSignsResponse = z.infer<typeof vitalSignsSchema>;
+export type VitalsVersionListResponse = z.infer<typeof vitalsVersionListSchema>;

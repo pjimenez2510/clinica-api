@@ -216,6 +216,18 @@ export interface VitalSignsView extends VitalSigns {
 }
 
 /**
+ * EN-211, D-127. A taking that a correction REPLACED, as it was, with who
+ * replaced it and when. The database wrote it (EN-210); nobody chose to.
+ */
+export interface VitalsVersionView {
+  /** 1 is the first taking replaced; the current one is not a version. */
+  version: number;
+  replacedBy: { id: string; name: string };
+  replacedAt: Date;
+  taking: VitalSignsView;
+}
+
+/**
  * EN-135 to EN-139. What the board is told, and by which documented fact.
  *
  * ⚠️ IT WRITES A COLUMN OF `agenda_entry`, WHICH IS ANOTHER MODULE'S TABLE,
@@ -369,6 +381,13 @@ export interface EncounterRepository {
    * EN-063 named the attention in the first place.
    */
   isPregnantOn(patientId: string, on: ClinicalDate): Promise<boolean>;
+
+  /**
+   * EN-211. The takings corrections replaced, newest first; empty when the
+   * taking was never corrected or the attention is not in the requester's
+   * sites.
+   */
+  findVitalsVersions(query: EncounterQuery): Promise<VitalsVersionView[]>;
 
   /**
    * EN-135. Records that the vital-signs form was OPENED — nothing clinical is

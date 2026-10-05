@@ -439,10 +439,13 @@ export interface TransitionEffects {
   checkedInAt?: Date;
   /** AG-042. */
   noShowAt?: Date;
-  /** AG-044. */
-  cancelledAt?: Date;
-  /** AG-042, AG-044, AG-116, AG-117: what «liberar el cupo» means. */
-  releasedAt?: Date;
+  /** AG-044. `null` only when AG-154 undoes a block's release. */
+  cancelledAt?: Date | null;
+  /**
+   * AG-042, AG-044, AG-116, AG-117: what «liberar el cupo» means. `null`
+   * only when AG-154 puts a released block back on the calendar.
+   */
+  releasedAt?: Date | null;
   /**
    * AG-116. The instant somebody gave up waiting, in its own column.
    *
