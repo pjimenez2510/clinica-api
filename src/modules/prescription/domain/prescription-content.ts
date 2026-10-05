@@ -24,6 +24,7 @@ import {
   PrescriptionEmptyError,
   PrescriptionItemIncompleteError,
 } from './prescription.errors';
+import type { Frequency } from './prescription-vocabulary';
 
 /** One line of the prescription, as the content rules see it. */
 export interface ItemContent {
@@ -45,6 +46,11 @@ export interface ItemContent {
   frequencyText: string | null;
   /** Art. 5.c.vi — duración del tratamiento, in days. */
   durationDays: number | null;
+  /**
+   * PR-102, PR-105. The frequency's code when it came from the list, so a
+   * single dose is not asked for a duration.
+   */
+  frequencyCode: string | null;
   /** PR-007. The CNMB concept, or `null` when prescribing outside it. */
   conceptId: string | null;
   /** PR-009. Mandatory exactly when `conceptId` is `null`. */
@@ -68,6 +74,9 @@ const MANDATORY_ITEM_FIELDS: readonly (keyof ItemContent)[] = [
   'frequencyText',
   'durationDays',
 ];
+
+/** PR-105. The frequency code of «Dosis única». */
+const SINGLE_DOSE: Frequency = 'SINGLE_DOSE';
 
 /** Blank is missing: `''` in a `varchar` is not a concentration. */
 function isMissing(value: unknown): boolean {
@@ -115,6 +124,9 @@ function missingItemFields(
   for (const item of items) {
     assertOffFormularyJustified(item);
     for (const field of MANDATORY_ITEM_FIELDS) {
+      // PR-105. A single dose does not last: no duration to demand.
+      if (field === 'durationDays' && item.frequencyCode === SINGLE_DOSE)
+        continue;
       if (isMissing(item[field])) missing.push({ line: item.line, field });
     }
   }

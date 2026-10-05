@@ -31,6 +31,7 @@ const complete = (overrides: Partial<ItemContent> = {}): ItemContent => ({
   doseText: '1 cápsula',
   frequencyText: 'Cada 8 horas',
   durationDays: 7,
+  frequencyCode: 'EVERY_8_HOURS',
   conceptId: 'concept-1',
   offFormularyJustification: null,
   ...overrides,
@@ -62,6 +63,21 @@ describe('el contenido mínimo del art. 5', () => {
       'items.0.routeCode',
       'items.1.durationDays',
     ]);
+  });
+
+  it('PR-105 con «Dosis única» emitir no pide duración; con otra frecuencia, sí', () => {
+    expect(() =>
+      assertItemsComplete([
+        complete({
+          frequencyCode: 'SINGLE_DOSE',
+          frequencyText: 'Dosis única',
+          durationDays: null,
+        }),
+      ]),
+    ).not.toThrow();
+    expect(() =>
+      assertItemsComplete([complete({ durationDays: null })]),
+    ).toThrow(PrescriptionItemIncompleteError);
   });
 
   it('PR-094 no nombra el medicamento en ningún mensaje', () => {
