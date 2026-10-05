@@ -15,6 +15,8 @@ import { z } from 'zod';
 const DIAGNOSIS_CERTAINTY = z.enum(['PRESUMPTIVE', 'DEFINITIVE']);
 const DIAGNOSIS_OCCURRENCE = z.enum(['FIRST_TIME', 'SUBSEQUENT']);
 const CARE_MODALITY = z.enum(['MORBIDITY', 'PREVENTION']);
+/** EN-007. First-time or subsequent, at this establishment. */
+const VISIT_SEQUENCE = z.enum(['FIRST_TIME', 'SUBSEQUENT']);
 
 /**
  * An instant, with its offset stated — the same rule as everywhere else in
@@ -183,12 +185,33 @@ export const editDiagnosisSchema = z
 /** Body of PATCH /encounters/:encounterId/diagnoses/:diagnosisId. */
 export class EditDiagnosisDto extends createZodDto(editDiagnosisSchema) {}
 
-/** EN-187. Correcting what the attention says the patient came for. */
-export const careModalitySchema = z.object({
+/**
+ * EN-187, EN-215. Correcting the attention's own coding: what the patient
+ * came for and whether it is first-time or subsequent. Only what travels
+ * changes.
+ */
+export const correctEncounterCodingSchema = z
+  .object({
+    careModality: CARE_MODALITY.optional(),
+    visitSequence: VISIT_SEQUENCE.optional(),
+  })
+  .refine(
+    (body) =>
+      body.careModality !== undefined || body.visitSequence !== undefined,
+    { message: 'Indique qué corrige de la atención' },
+  );
+/** Body of PATCH /encounters/:encounterId. */
+export class CorrectEncounterCodingDto extends createZodDto(
+  correctEncounterCodingSchema,
+) {}
+
+/** EN-187, EN-215. The attention's coding after the correction. */
+export const encounterCodingSchema = z.object({
   careModality: CARE_MODALITY,
+  visitSequence: VISIT_SEQUENCE,
 });
-/** Body and response of PUT /encounters/:encounterId/care-modality. */
-export class CareModalityDto extends createZodDto(careModalitySchema) {}
+/** Response of PATCH /encounters/:encounterId. */
+export class EncounterCodingDto extends createZodDto(encounterCodingSchema) {}
 
 /** One diagnosis as a client reads it. */
 export const diagnosisSchema = z.object({

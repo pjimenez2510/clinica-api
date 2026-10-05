@@ -11,6 +11,7 @@ import {
   type CorrectionAuthority,
   type DiagnosisVersionView,
   type DiagnosisView,
+  type EncounterCodingView,
   type ProcedureView,
   type RetractedDiagnosisView,
 } from '../domain/clinical-coding.repository';
@@ -36,6 +37,7 @@ import type {
   CareModality,
   DiagnosisCertainty,
   DiagnosisOccurrence,
+  VisitSequence,
 } from '../domain/encounter';
 import type { Requester } from './encounter.service';
 
@@ -177,25 +179,30 @@ export class ClinicalCodingService {
   }
 
   /**
-   * EN-040 to EN-049. Registers one diagnosis.
+   * EN-040 to EN-049, EN-215. Registers one diagnosis.
    *
    * WHAT IS CHECKED HERE is the pair no constraint can see: that the attention
    * exists inside the caller's scope, and that it still admits new clinical
-   * content. Everything else — the catalogue, the validity on the clinical
+   * content or — after the discharge — a correction by whoever signs. Everything else — the catalogue, the validity on the clinical
    * date, the rank still free — is arbitrated INSIDE the write, because every
    * one of them is a race and a read taken first can be stale by the time the
    * row lands.
    */
   async recordDiagnosis(
     request: RecordDiagnosisRequest,
-    requester: Requester,
+    requester: CodingRequester,
   ): Promise<DiagnosisView> {
-    const encounter = await this.requireLiveEncounter(
+    // EN-215 (D-117.12). After the discharge the right code is still added:
+    // the report reads the attention's diagnoses, not the note. It is a
+    // correction of the coding, so D-117.13 and D-117.16 apply.
+    const encounter = await this.requireCorrectableEncounter(
       request.encounterId,
       requester,
     );
+    const authority = await this.correctionAuthority(encounter, requester);
 
     const diagnosis = await this.coding.addDiagnosis({
+      mayCorrectAfterDischarge: authority.mayCorrectAfterDischarge,
       encounterId: encounter.id,
       conceptId: request.conceptId,
       certainty: request.certainty,
@@ -367,21 +374,38 @@ export class ClinicalCodingService {
   }
 
   /**
-   * EN-187. Corrects what the attention says the patient came for. Not the
-   * report's classification — that is per diagnosis and derived (EN-046) —
-   * so it is audited as the attention's own change.
+   * EN-187, EN-215. Corrects what the attention says the patient came for
+   * and whether it is first-time or subsequent — also after the discharge
+   * (D-127), by whoever may correct the coding then (D-117.13). Not the
+   * report's per-diagnosis classification — that is derived (EN-046) — so it
+   * is audited as the attention's own change. The previous attention is the
+   * database's version (`record_version`).
+   *
+   * ⚠️ IT DOES NOT REPRICE THE CONSULTATION (BI-158). The charge is
+   * `billing`'s, proposed when caja sends the attention; a proposal already
+   * raised keeps the consultation it was raised with.
    */
-  async correctCareModality(
-    encounterId: string,
-    careModality: CareModality,
-    requester: Requester,
-  ): Promise<CareModality> {
-    const encounter = await this.requireLiveEncounter(encounterId, requester);
-
-    const corrected = await this.coding.setCareModality(
-      { encounterId: encounter.id, sites: requester.sites },
-      careModality,
+  async correctEncounterCoding(
+    request: {
+      encounterId: string;
+      careModality?: CareModality;
+      visitSequence?: VisitSequence;
+    },
+    requester: CodingRequester,
+  ): Promise<EncounterCodingView> {
+    const encounter = await this.requireCorrectableEncounter(
+      request.encounterId,
+      requester,
     );
+    const authority = await this.correctionAuthority(encounter, requester);
+
+    const corrected = await this.coding.correctEncounterCoding({
+      encounterId: encounter.id,
+      careModality: request.careModality,
+      visitSequence: request.visitSequence,
+      sites: requester.sites,
+      ...authority,
+    });
 
     await this.audit.record({
       userId: requester.userId,
@@ -604,10 +628,10 @@ export class ClinicalCodingService {
    * EN-009, EN-130. New clinical content goes into an attention that is still
    * live.
    *
-   * A DIAGNOSIS IS NEW CONTENT AND NOT AN AMENDMENT, so `DISCHARGED` refuses
-   * it: the doctor signed, the act is over, and coding a disease afterwards
-   * would change what the consultation said without a single trace of a
-   * correction. The way to add one is to amend the note that discharged it.
+   * A PROCEDURE, and bringing back a removed diagnosis (EN-213), are new
+   * content: `DISCHARGED` refuses them. A NEW DIAGNOSIS after the discharge
+   * is not refused here since EN-215 (D-117.12): it is a correction of the
+   * coding the report reads, with its own rules (`correctionAuthority`).
    */
   private async requireLiveEncounter(
     encounterId: string,

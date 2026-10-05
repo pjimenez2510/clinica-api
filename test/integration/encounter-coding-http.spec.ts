@@ -1500,37 +1500,166 @@ describe('el bloque K por HTTP', () => {
       expect(undecided.last.sameSpecialty).toBe(false);
     });
 
-    it('EN-187 corrige la modalidad de la atención mientras está viva', async () => {
+    const patchEncounter = (encounterId: string, token: string, body: object) =>
+      request(app.getHttpServer())
+        .patch(`/api/v1/encounters/${encounterId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send(body);
+
+    /** A role that writes the history and does not sign it (a resident). */
+    async function aResident(): Promise<string> {
+      const role = await prisma.role.create({
+        data: {
+          code: 'RESIDENTE_PRUEBA',
+          name: 'Residente',
+          permissions: { create: [{ permissionCode: 'record:read' }, { permissionCode: 'record:write' }] }, // prettier-ignore
+        },
+      });
+      registry.invalidate();
+      return (await signIn(role.code, 'residente@clinica.ec', '0102030400'))
+        .token;
+    }
+
+    async function interruptOf(encounterId: string): Promise<void> {
+      const encounter = await prisma.encounter.findUniqueOrThrow({ where: { id: encounterId } }); // prettier-ignore
+      const at = new Date(encounter.startedAt.getTime() + 20 * 60_000);
+      const { userId } = await prisma.practitioner.findUniqueOrThrow({ where: { id: doctorPractitionerId } }); // prettier-ignore
+      await prisma.encounter.update({
+        where: { id: encounterId },
+        data: { status: 'DISCONTINUED', endedAt: at, discontinuedAt: at, discontinuedOrigin: 'PATIENT', discontinuedReason: 'Se fue', discontinuedById: userId }, // prettier-ignore
+      });
+    }
+
+    it('EN-187 EN-215 corrige la modalidad de la atención mientras está viva', async () => {
       const encounterId = await openEncounter();
 
-      const response = await request(app.getHttpServer())
-        .put(`/api/v1/encounters/${encounterId}/care-modality`)
-        .set('Authorization', `Bearer ${doctorToken}`)
-        .send({ careModality: 'PREVENTION' })
-        .expect(200);
+      const response = await patchEncounter(encounterId, doctorToken, {
+        careModality: 'PREVENTION',
+      }).expect(200);
 
-      expect(response.body).toEqual({ careModality: 'PREVENTION' });
+      expect(response.body).toMatchObject({
+        careModality: 'PREVENTION',
+        visitSequence: 'FIRST_TIME',
+      });
       const stored0 = await prisma.encounter.findUniqueOrThrow({ where: { id: encounterId } }); // prettier-ignore
       expect(stored0.careModality).toBe('PREVENTION');
     });
 
-    it('EN-187 una atención con alta ya no cambia de modalidad', async () => {
+    it('EN-215 tras el alta corrige la modalidad y la primera vez o subsecuente quien firma historia, y guarda cada versión', async () => {
       const encounterId = await openEncounter();
-      await prisma.encounter.update({
-        where: { id: encounterId },
-        data: { status: 'DISCHARGED', endedAt: new Date(), dischargeCondition: 'ALIVE' }, // prettier-ignore
+      await record(encounterId, 'J020');
+      const resident = await aResident();
+
+      // Positive control: live, the resident corrects it.
+      await patchEncounter(encounterId, resident, { careModality: 'PREVENTION' }).expect(200); // prettier-ignore
+
+      await dischargeOf(encounterId);
+      const unsigned = await patchEncounter(encounterId, resident, { visitSequence: 'SUBSEQUENT' }).expect(403); // prettier-ignore
+      expect((unsigned.body as Problem).code).toBe(
+        'DIAGNOSIS_CORRECTION_REQUIRES_SIGNATURE',
+      );
+
+      const corrected = await patchEncounter(encounterId, doctorToken, {
+        careModality: 'MORBIDITY',
+        visitSequence: 'SUBSEQUENT',
+      }).expect(200);
+      expect(corrected.body).toMatchObject({
+        careModality: 'MORBIDITY',
+        visitSequence: 'SUBSEQUENT',
       });
 
-      const refused = await request(app.getHttpServer())
-        .put(`/api/v1/encounters/${encounterId}/care-modality`)
-        .set('Authorization', `Bearer ${doctorToken}`)
-        .send({ careModality: 'PREVENTION' })
-        .expect(409);
+      // D-127.2: each correction kept the row it replaced, with who and when.
+      const versions = await prisma.recordVersion.findMany({
+        where: { resourceType: 'encounter', resourceId: encounterId },
+        orderBy: { version: 'asc' },
+      });
+      expect(
+        versions.map((v) => {
+          const data = v.data as { careModality: string; visitSequence: string }; // prettier-ignore
+          return [v.version, data.careModality, data.visitSequence];
+        }),
+      ).toEqual([
+        [1, 'MORBIDITY', 'FIRST_TIME'],
+        [2, 'PREVENTION', 'FIRST_TIME'],
+      ]);
+      const { userId } = await prisma.practitioner.findUniqueOrThrow({ where: { id: doctorPractitionerId } }); // prettier-ignore
+      expect(versions[1]?.changedById).toBe(userId);
+
+      // Nothing to change is not an edit: no version of an identical row.
+      await patchEncounter(encounterId, doctorToken, { visitSequence: 'SUBSEQUENT' }).expect(200); // prettier-ignore
+      expect(await prisma.recordVersion.count({ where: { resourceType: 'encounter', resourceId: encounterId } })).toBe(2); // prettier-ignore
+
+      await prisma.encounter.update({ where: { id: encounterId }, data: { reportedAt: new Date() } }); // prettier-ignore
+      const reported = await patchEncounter(encounterId, doctorToken, { careModality: 'PREVENTION' }).expect(409); // prettier-ignore
+      expect((reported.body as Problem).code).toBe(
+        'ENCOUNTER_ALREADY_REPORTED',
+      );
+    });
+
+    it('EN-215 una atención interrumpida no cambia de modalidad, y ENFERMERÍA no la corrige', async () => {
+      const encounterId = await openEncounter();
+      const nurse = await patchEncounter(encounterId, nurseToken, { careModality: 'PREVENTION' }).expect(403); // prettier-ignore
+      expect((nurse.body as Problem).code).not.toBe('ENCOUNTER_ALREADY_CLOSED');
+
+      await interruptOf(encounterId);
+      const refused = await patchEncounter(encounterId, doctorToken, { careModality: 'PREVENTION' }).expect(409); // prettier-ignore
       expect((refused.body as Problem).code).toBe('ENCOUNTER_ALREADY_CLOSED');
       const stored = await prisma.encounter.findUniqueOrThrow({
         where: { id: encounterId },
       });
       expect(stored.careModality).toBe('MORBIDITY');
+    });
+
+    it('EN-215 D-117.13 D-117.16 tras el alta se registra un diagnóstico nuevo: quien firma historia, con registro vigente, y no si ya se reportó', async () => {
+      const encounterId = await openEncounter();
+      await record(encounterId, 'J020');
+      const resident = await aResident();
+      await dischargeOf(encounterId);
+
+      const fever = await aConcept('CIE10', {
+        code: 'R509',
+        display: 'Fiebre',
+      });
+      const unsigned = await post(`/encounters/${encounterId}/diagnoses`, resident, aDiagnosisBody(fever)).expect(403); // prettier-ignore
+      expect((unsigned.body as Problem).code).toBe(
+        'DIAGNOSIS_CORRECTION_REQUIRES_SIGNATURE',
+      );
+
+      const added = await post(`/encounters/${encounterId}/diagnoses`, doctorToken, aDiagnosisBody(fever)).expect(201); // prettier-ignore
+      expect(added.body).toMatchObject({ cie10Code: 'R509', rank: 2 });
+      expect((await sheetOf(encounterId)).items.map((d) => d.cie10Code)).toEqual(['J020', 'R509']); // prettier-ignore
+
+      const doctor = await prisma.practitioner.findUniqueOrThrow({ where: { id: doctorPractitionerId } }); // prettier-ignore
+      await prisma.user.update({
+        where: { id: doctor.userId },
+        data: { acessExpiresOn: new Date(Date.now() - 3 * DAY) },
+      });
+      const other = await aConcept('CIE10', { code: 'I10', display: 'HTA' });
+      const lapsed = await post(`/encounters/${encounterId}/diagnoses`, doctorToken, aDiagnosisBody(other)).expect(403); // prettier-ignore
+      expect((lapsed.body as Problem).code).toBe('PRACTITIONER_NOT_LICENSED');
+      await prisma.user.update({
+        where: { id: doctor.userId },
+        data: { acessExpiresOn: null },
+      });
+
+      await prisma.encounter.update({ where: { id: encounterId }, data: { reportedAt: new Date() } }); // prettier-ignore
+      const reported = await post(`/encounters/${encounterId}/diagnoses`, doctorToken, aDiagnosisBody(other)).expect(409); // prettier-ignore
+      expect((reported.body as Problem).code).toBe(
+        'ENCOUNTER_ALREADY_REPORTED',
+      );
+    });
+
+    it('EN-215 una atención interrumpida no admite un diagnóstico nuevo', async () => {
+      const encounterId = await openEncounter();
+      // Positive control: the same body is accepted while the attention lives.
+      await record(encounterId, 'J020');
+      await interruptOf(encounterId);
+      const fever = await aConcept('CIE10', {
+        code: 'R509',
+        display: 'Fiebre',
+      });
+      const refused = await post(`/encounters/${encounterId}/diagnoses`, doctorToken, aDiagnosisBody(fever)).expect(409); // prettier-ignore
+      expect((refused.body as Problem).code).toBe('ENCOUNTER_ALREADY_CLOSED');
     });
   });
 });

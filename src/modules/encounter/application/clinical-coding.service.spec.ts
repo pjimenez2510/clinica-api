@@ -221,11 +221,17 @@ class FakeCoding implements ClinicalCodingRepository {
     return Promise.resolve([]);
   }
 
-  setCareModality(
-    _query: unknown,
-    careModality: 'MORBIDITY' | 'PREVENTION',
-  ): Promise<'MORBIDITY' | 'PREVENTION'> {
-    return Promise.resolve(careModality);
+  correctEncounterCoding(correction: {
+    careModality?: 'MORBIDITY' | 'PREVENTION';
+    visitSequence?: 'FIRST_TIME' | 'SUBSEQUENT';
+  }): Promise<{
+    careModality: 'MORBIDITY' | 'PREVENTION';
+    visitSequence: 'FIRST_TIME' | 'SUBSEQUENT';
+  }> {
+    return Promise.resolve({
+      careModality: correction.careModality ?? 'MORBIDITY',
+      visitSequence: correction.visitSequence ?? 'FIRST_TIME',
+    });
   }
 }
 
@@ -531,18 +537,24 @@ describe('los casos de uso del bloque K', () => {
     expect(coding.restored).toHaveLength(1);
   });
 
-  it('EN-009 rechaza diagnosticar en una atención con alta clínica', async () => {
+  it('EN-215 tras el alta sólo registra un diagnóstico quien firma historia en la sede; interrumpida, nadie', async () => {
     /**
-     * Un diagnóstico es contenido NUEVO, no una enmienda: el médico firmó, el
-     * acto terminó, y codificar una enfermedad después cambiaría lo que dijo
-     * la consulta sin rastro de corrección. Lo que queda es enmendar la nota.
+     * D-117.12: tras el alta el código correcto se añade, porque el RDACAA lee
+     * los diagnósticos de la atención y no la nota. Es corregir la
+     * codificación, así que D-117.13 pide `record:sign`.
      */
     encounters.stored = anEncounter({
       status: 'DISCHARGED',
-      endedAt: new Date('2026-09-14T15:00:00Z'),
+      endedAt: new Date('2026-09-14T15:00:00Z'), // fecha-fija: la del doble
       dischargeCondition: 'ALIVE',
     });
 
+    await expect(
+      service.recordDiagnosis(aDiagnosis(), { ...requester, signSites: [] }),
+    ).rejects.toBeInstanceOf(DiagnosisCorrectionRequiresSignatureError);
+    expect(coding.written).toHaveLength(0);
+
+    encounters.stored = anEncounter({ status: 'DISCONTINUED' });
     await expect(
       service.recordDiagnosis(aDiagnosis(), requester),
     ).rejects.toBeInstanceOf(EncounterAlreadyClosedError);

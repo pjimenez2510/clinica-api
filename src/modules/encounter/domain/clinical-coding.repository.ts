@@ -32,6 +32,7 @@ import type {
   CareModality,
   DiagnosisCertainty,
   DiagnosisOccurrence,
+  VisitSequence,
 } from './encounter';
 import type { SiteScopeFilter } from './encounter.repository';
 
@@ -167,6 +168,29 @@ export interface NewDiagnosis {
   note?: string;
   /** EN-121. The caller's own resolved scope, never a site they named. */
   sites: SiteScopeFilter;
+  /**
+   * EN-215 (D-117.12, D-117.13). After the discharge a new diagnosis is a
+   * correction of the coding: asked again under the attention's lock.
+   * Absent is «no»: closed by default.
+   */
+  mayCorrectAfterDischarge?: boolean;
+}
+
+/**
+ * EN-187, EN-215. The attention's own coding, corrected in place: only what is
+ * present changes, and the previous attention is the database's version.
+ */
+export interface EncounterCodingCorrection extends CorrectionAuthority {
+  encounterId: string;
+  careModality?: CareModality;
+  visitSequence?: VisitSequence;
+  sites: SiteScopeFilter;
+}
+
+/** EN-187, EN-215. The attention's coding as it stands after a correction. */
+export interface EncounterCodingView {
+  careModality: CareModality;
+  visitSequence: VisitSequence;
 }
 
 /** EN-050. What registering a procedure needs to be told. */
@@ -360,13 +384,15 @@ export interface ClinicalCodingRepository {
   retractedDiagnosesOf(query: CodingQuery): Promise<RetractedDiagnosisView[]>;
 
   /**
-   * EN-187. Corrects what the attention says the patient came for, under the
-   * attention's lock and only while it admits new clinical content.
+   * EN-187, EN-215. Corrects what the attention says the patient came for
+   * and whether it is first-time or subsequent, under the attention's lock:
+   * while it is live, or after the discharge by whoever may correct then
+   * (D-117.13), and never once reported (D-117.16). Stamped, so the database
+   * keeps the previous attention in `record_version`.
    */
-  setCareModality(
-    query: CodingQuery,
-    careModality: CareModality,
-  ): Promise<CareModality>;
+  correctEncounterCoding(
+    correction: EncounterCodingCorrection,
+  ): Promise<EncounterCodingView>;
 
   /**
    * EN-050. Writes one procedure with its quantity.

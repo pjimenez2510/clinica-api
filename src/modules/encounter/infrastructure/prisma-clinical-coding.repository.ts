@@ -17,7 +17,7 @@ import {
   EncounterAlreadyReportedError,
   EncounterNotFoundError,
 } from '../domain/encounter.errors';
-import type { CareModality, EncounterStatus } from '../domain/encounter';
+import type { EncounterStatus } from '../domain/encounter';
 import {
   acceptsDiagnosisCorrection,
   acceptsNewClinicalContent,
@@ -38,6 +38,8 @@ import type {
   DiagnosisRetraction,
   DiagnosisVersionView,
   DiagnosisView,
+  EncounterCodingCorrection,
+  EncounterCodingView,
   NewDiagnosis,
   PrimaryChange,
   RetractedDiagnosisView,
@@ -149,7 +151,15 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
   /** EN-040 to EN-049. Writes one diagnosis. */
   async addDiagnosis(diagnosis: NewDiagnosis): Promise<DiagnosisView> {
     const row = await this.prisma.$transaction(async (tx) => {
-      await requireEncounterInScope(tx, diagnosis.encounterId, diagnosis.sites);
+      // EN-215 (D-117.12). After the discharge too: the right code is added,
+      // by whoever may correct then (D-117.13), never once reported (D-117.16).
+      const status = await requireEncounterInScope(
+        tx,
+        diagnosis.encounterId,
+        diagnosis.sites,
+        acceptsDiagnosisCorrection,
+      );
+      await refuseCorrection(tx, diagnosis.encounterId, status, diagnosis);
 
       const concept = await conceptForEncounter(
         tx,
@@ -314,10 +324,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         retraction.sites,
         acceptsDiagnosisCorrection,
       );
-      await refuseCorrection(tx, retraction.encounterId, status, {
-        editedById: retraction.retractedById,
-        mayCorrectAfterDischarge: retraction.mayCorrectAfterDischarge,
-      });
+      await refuseCorrection(tx, retraction.encounterId, status, retraction);
       await requireDiagnosisOf(
         tx,
         retraction.encounterId,
@@ -687,19 +694,53 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
     }));
   }
 
-  /** EN-187. The modality of a live attention, corrected under its lock. */
-  async setCareModality(
-    query: CodingQuery,
-    careModality: CareModality,
-  ): Promise<CareModality> {
+  /** EN-187, EN-215. The attention's coding, corrected under its lock. */
+  async correctEncounterCoding(
+    correction: EncounterCodingCorrection,
+  ): Promise<EncounterCodingView> {
+    const now = new Date();
     return this.prisma.$transaction(async (tx) => {
-      await requireEncounterInScope(tx, query.encounterId, query.sites);
-      const updated = await tx.encounter.update({
-        where: { id: query.encounterId },
-        data: { careModality },
-        select: { careModality: true },
+      const status = await requireEncounterInScope(
+        tx,
+        correction.encounterId,
+        correction.sites,
+        acceptsDiagnosisCorrection,
+      );
+      await refuseCorrection(tx, correction.encounterId, status, correction);
+
+      const current = await tx.encounter.findUniqueOrThrow({
+        where: { id: correction.encounterId },
+        select: { careModality: true, visitSequence: true, correctedAt: true },
       });
-      return updated.careModality;
+      const changes = {
+        ...(correction.careModality !== undefined &&
+        correction.careModality !== current.careModality
+          ? { careModality: correction.careModality }
+          : {}),
+        ...(correction.visitSequence !== undefined &&
+        correction.visitSequence !== current.visitSequence
+          ? { visitSequence: correction.visitSequence }
+          : {}),
+      };
+      // Nothing to change is not an edit: no version of an identical row.
+      if (Object.keys(changes).length === 0) {
+        return {
+          careModality: current.careModality,
+          visitSequence: current.visitSequence,
+        };
+      }
+
+      // EN-210. `trg_encounter_record_version` keeps the previous attention
+      // and refuses a correction whose stamp did not move.
+      return tx.encounter.update({
+        where: { id: correction.encounterId },
+        data: {
+          ...changes,
+          correctedById: correction.editedById,
+          correctedAt: stampAfter(current.correctedAt, now),
+        },
+        select: { careModality: true, visitSequence: true },
+      });
     });
   }
 
@@ -889,7 +930,7 @@ async function refuseCorrection(
   tx: Prisma.TransactionClient,
   encounterId: string,
   status: EncounterStatus,
-  authority: CorrectionAuthority,
+  authority: { mayCorrectAfterDischarge?: boolean },
 ): Promise<void> {
   if (hasDischarge(status) && !authority.mayCorrectAfterDischarge) {
     throw new DiagnosisCorrectionRequiresSignatureError();

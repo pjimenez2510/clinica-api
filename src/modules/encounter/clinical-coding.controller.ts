@@ -8,7 +8,6 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
-  Put,
   Req,
 } from '@nestjs/common';
 import {
@@ -37,7 +36,8 @@ import type {
   RetractedDiagnosisView,
 } from './domain/clinical-coding.repository';
 import {
-  CareModalityDto,
+  CorrectEncounterCodingDto,
+  EncounterCodingDto,
   DiagnosisDto,
   DiagnosisListDto,
   DiagnosisVersionListDto,
@@ -131,7 +131,8 @@ export class ClinicalCodingController {
         notifiable: dto.notifiable,
         note: dto.note,
       },
-      this.requester(req, 'record:write'),
+      // EN-215. After the discharge it is a correction: `record:sign` too.
+      this.correctingRequester(req),
     );
     return toDiagnosisResponse(diagnosis);
   }
@@ -214,26 +215,34 @@ export class ClinicalCodingController {
   }
 
   /**
-   * EN-187. Corrects the attention's modality while it is live. A `PUT`: the
-   * attention has exactly one, and repeating the call changes nothing more.
+   * EN-187, EN-215. Corrects the attention's own coding — its modality and
+   * whether it is first-time or subsequent — while it is live and after the
+   * discharge. A `PATCH` of the attention: only what travels changes, and the
+   * previous attention is the database's version.
+   *
+   * `record:write`, like coding; after the discharge the service asks for
+   * `record:sign` at the attention's site as well (D-117.13).
    */
-  @Put('care-modality')
+  @Patch()
   @RequirePermission('record:write', 'query')
   @ApiOperation({
-    summary: 'Corregir si la atención es de morbilidad o de prevención',
+    summary:
+      'Corregir la modalidad de la atención y si es de primera vez o subsecuente',
   })
-  @ApiOkResponse({ type: CareModalityDto })
-  async correctCareModality(
+  @ApiOkResponse({ type: EncounterCodingDto })
+  async correctEncounterCoding(
     @Param('encounterId', ParseUUIDPipe) encounterId: string,
-    @Body() dto: CareModalityDto,
+    @Body() dto: CorrectEncounterCodingDto,
     @Req() req: Request,
-  ): Promise<CareModalityDto> {
-    const careModality = await this.coding.correctCareModality(
-      encounterId,
-      dto.careModality,
-      this.requester(req, 'record:write'),
+  ): Promise<EncounterCodingDto> {
+    return this.coding.correctEncounterCoding(
+      {
+        encounterId,
+        careModality: dto.careModality,
+        visitSequence: dto.visitSequence,
+      },
+      this.correctingRequester(req),
     );
-    return { careModality };
   }
 
   /**

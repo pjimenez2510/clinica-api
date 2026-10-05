@@ -111,6 +111,7 @@ model User {
   overbookingsAuthorised AgendaEntry[] @relation("OverbookingAuthoriser")
   encountersAnnulled     Encounter[]   @relation("EncounterAnnuller")
   encountersDiscontinued Encounter[]   @relation("EncounterDiscontinuer")
+  encountersCorrected    Encounter[]   @relation("EncounterCorrector")
 
   /// PA-039: the priority group records this person wrote, and the ones they
   /// closed. Two relations because they are two acts by two people at two
@@ -2522,6 +2523,14 @@ model Encounter {
   /// interrupted it (EN-147 applied to the exits). Only on those two states
   /// (`encounter_exit_substitute_reason_belongs_to_an_exit`).
   exitSubstituteReason String? @map("exit_substitute_reason") @db.VarChar(500)
+
+  /// EN-215 (D-127). Who last corrected the modality or the first-time /
+  /// subsequent mark, and when: the stamp `trg_encounter_record_version`
+  /// demands of that correction, which keeps the previous attention in
+  /// `record_version`. Both or neither (`encounter_correction_stamped`).
+  correctedById String?   @map("corrected_by_id") @db.Uuid
+  correctedBy   User?     @relation("EncounterCorrector", fields: [correctedById], references: [id], onDelete: Restrict)
+  correctedAt   DateTime? @map("corrected_at") @db.Timestamptz(6)
 
   /// When this encounter was included in an RDACAA/PRAS submission. NULL means
   /// not yet reported, and drives the pending-report partial index.

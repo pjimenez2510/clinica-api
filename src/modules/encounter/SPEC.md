@@ -2945,10 +2945,11 @@ D-117._
   > por lo mismo: quitar el principal sin poder nombrar otro dejaría la atención
   > sin principal en el RDACAA.
   >
-  > **Registrar un diagnóstico nuevo después del alta sigue sin poderse**
-  > (EN-009): queda en D-117.12. Por eso no se quita el último (revisión
-  > clínica, G1): la atención quedaría con el alta y sin diagnóstico, sin
-  > salida. **Garantía de la base**: el disparador del archivo.
+  > **Desde EN-215 (D-117.12) tras el alta también se registra un
+  > diagnóstico nuevo.** G1 se mantiene: no se quita el último (revisión
+  > clínica), porque la atención quedaría un momento con el alta y sin
+  > diagnóstico; la salida es registrar el correcto y quitar después el
+  > equivocado, o editarlo (EN-212). **Garantía de la base**: el disparador del archivo.
   >
   > Que una atención interrumpida o anulada no admita quitar es **sólo del
   > servicio**, como antes de esta regla.
@@ -3020,6 +3021,10 @@ D-117._
   > con qué compararla. **Aviso, no bloqueo**: una consulta de control del
   > embarazo en la que se trata una faringitis es prevención con un principal
   > de morbilidad si el médico así lo ordena.
+  >
+  > **Ampliado por EN-215 (05-10-2026):** también tras el alta, con
+  > `PATCH /encounters/:id`, junto con la primera vez o subsecuente; la ruta
+  > `PUT /encounters/:id/care-modality` se retira.
 
 ---
 
@@ -3255,6 +3260,44 @@ con un papel en manos de un tercero, un motivo de lista._
   > mal elegido», «Diagnóstico descartado», «Otro». La lista es de la pantalla;
   > la API guarda el texto. Es la misma regla que EN-212 aplica al cambiar el
   > código, con la misma función: `encounter_diagnosis_code_on_paper`.
+- **EN-215** — MIENTRAS la atención tenga el alta (`DISCHARGED` o
+  `COMPLETED`), el médico DEBERÁ poder **registrar un diagnóstico nuevo**
+  (EN-040 a EN-049), y MIENTRAS la atención admita contenido clínico nuevo o
+  tenga el alta, DEBERÁ poder **corregir la modalidad** de la atención
+  (EN-187) y si es de **primera vez o subsecuente** (EN-007) con
+  `PATCH /encounters/:id`; y el sistema DEBERÁ guardar la atención anterior
+  entera en `record_version`, con quién la corrigió y cuándo. Además:
+  - SI la atención tiene el alta y quien registra o corrige no tiene
+    `record:sign` en su sede, ENTONCES DEBERÁ rechazarlo con
+    `DIAGNOSIS_CORRECTION_REQUIRES_SIGNATURE`; y SI su registro ACESS no está
+    vigente, con `PRACTITIONER_NOT_LICENSED` (D-117.13);
+  - SI la atención ya se reportó al RDACAA, ENTONCES DEBERÁ rechazarlo con
+    `ENCOUNTER_ALREADY_REPORTED` (D-117.16);
+  - SI la atención está interrumpida o anulada, ENTONCES DEBERÁ rechazarlo con
+    `ENCOUNTER_ALREADY_CLOSED`.
+  > **D-117.12, bajada a D-126 (05-10-2026).** La recomendación pedía motivo;
+  > con D-126 basta **una confirmación en la pantalla**: el RDACAA lee los
+  > diagnósticos, la modalidad y la primera vez de la atención, no de la nota,
+  > y sin esta salida un código que faltaba no llegaba nunca al Ministerio. La
+  > API no pide nada más (D-127.5). «Deshacer» un quitar sigue siendo sólo de
+  > la atención viva (EN-213).
+  >
+  > **Garantía de la base**: `trg_encounter_record_version`
+  > (`record_version_archive('corrected_by_id', 'corrected_at', 'id')`) sólo
+  > cuando cambia `careModality` o `visitSequence` —el resto de escrituras de
+  > la atención no llevan sello—, y rechaza la corrección sin sello nuevo;
+  > `trg_encounter_coding_correction_admits` (`encounter_reported`) y
+  > `trg_encounter_diagnosis_insert_admits` (`encounter_diagnosis_reported`)
+  > rechazan corregir o registrar en una atención reportada. **Lo que la base
+  > no garantiza**: `record:sign` y la licencia (la base no conoce la sesión),
+  > ni el estado (lo rechaza el servicio, como al quitar, EN-180).
+  >
+  > ⚠️ **El precio de la consulta no se recalcula.** Cambiar primera vez por
+  > subsecuente cambia qué consulta se cobra (BI-158), pero el cargo lo
+  > propone `billing` al enviar la atención a caja, y un cargo ya propuesto y
+  > sin facturar se queda con la consulta con que nació. Recalcularlo desde
+  > aquí cruzaría al módulo `billing` (la resolución del precio vive en su
+  > adaptador): queda para caja.
 
 ---
 
@@ -3437,7 +3480,6 @@ que es global: una atención ocurre en un sitio.
 | `GET` | `/encounters` | `record:read` | EN-015, EN-098, EN-123, **EN-162** |
 | `POST` | `/encounters` | `encounter:open` | EN-001 a EN-014, EN-017, EN-127, EN-141 |
 | `GET` | `/encounters/:id` | `record:read` | EN-081, EN-122 |
-| `PATCH` | `/encounters/:id` | `record:write` | EN-009, EN-010, EN-018 |
 | `GET` | `/encounters/open` | `record:read` | EN-146 |
 | `POST` | `/encounters/:id/hold` | `encounter:open` | EN-128 |
 | `POST` | `/encounters/:id/resume` | `encounter:open` | EN-128 |
@@ -3456,7 +3498,7 @@ que es global: una atención ocurre en un sitio.
 | `POST` | `/encounters/:id/nursing-notes` | `nursing:write` | EN-142 *(formulario 120)* |
 | `POST` | `/encounters/:id/medication-administrations` | `nursing:write` | EN-142 *(formulario 022)* |
 | `PUT` | `/encounters/:id/triage` | `nursing:write` | EN-148, EN-149 *(sólo DONDE la capacidad esté habilitada)* |
-| `POST` | `/encounters/:id/diagnoses` | `record:write` | EN-040 a EN-049 |
+| `POST` | `/encounters/:id/diagnoses` | `record:write` *(tras el alta, además `record:sign`)* | EN-040 a EN-049, **EN-215** |
 | `GET` | `/encounters/:id/diagnoses` | `record:read` | EN-043, EN-046, EN-047 |
 | `POST` | `/encounters/:id/procedures` | `record:write` | EN-050, EN-151 |
 | `GET` | `/encounters/:id/procedures` | `record:read` | EN-050 |
@@ -3488,7 +3530,7 @@ que es global: una atención ocurre en un sitio.
 | `GET` | `/encounters/:id/diagnoses/:diagnosisId/versions` | `record:read` | **EN-212** |
 | `GET` | `/encounters/:id/diagnoses/occurrence-proposal` | `record:read` | EN-184 |
 | `GET` | `/encounters/visit-sequence-proposal` | `record:read` | EN-185 *(lleva el diagnóstico principal de una atención anterior)* |
-| `PUT` | `/encounters/:id/care-modality` | `record:write` | EN-187 |
+| `PATCH` | `/encounters/:id` | `record:write` *(tras el alta, además `record:sign`)* | EN-187, **EN-215** *(modalidad y primera vez o subsecuente; sustituye a `PUT …/care-modality`)* |
 
 **Las tres rutas de alergias son las únicas de alcance `'global'`, y es
 deliberado.** Una atención ocurre en una sede; el sistema inmunitario de una
