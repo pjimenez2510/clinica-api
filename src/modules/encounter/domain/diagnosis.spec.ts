@@ -84,3 +84,13 @@ describe('la categoría CIE-10 (EN-184)', () => {
     expect(cie10CategoryOf('z3001')).toBe('Z30');
   });
 });
+
+describe('prevención o morbilidad, servida con cada diagnóstico (EN-186)', () => {
+  it('EN-186 Z00 a Z99 es prevención y todo lo demás morbilidad, también los cinco caracteres de Ecuador', () => {
+    expect(careModalityOfCie10('Z00')).toBe('PREVENTION');
+    expect(careModalityOfCie10('Z3001')).toBe('PREVENTION');
+    expect(careModalityOfCie10('Z99')).toBe('PREVENTION');
+    expect(careModalityOfCie10('J02')).toBe('MORBIDITY');
+    expect(careModalityOfCie10('Y98')).toBe('MORBIDITY');
+  });
+});
