@@ -167,7 +167,8 @@ const UNCLASSIFIED: Classification = {
  * ORD-035 to ORD-038. Classifies one numeric value.
  *
  * The order is the requirement: critical first, reference second, nothing
- * third. The critical band is resolved side by side (`criticalBounds`). A value inside the critical band but outside the reference band is
+ * third, the critical band resolved side by side (`criticalBounds`). A value
+ * inside the critical band but outside the reference band is
  * `LOW`/`HIGH`; a value outside the critical band is `CRITICAL_LOW`/
  * `CRITICAL_HIGH` even if no reference range exists at all.
  *

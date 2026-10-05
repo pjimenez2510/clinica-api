@@ -243,9 +243,11 @@ export class PrismaExamAdministrationRepository implements ExamAdministrationRep
    * once would otherwise both read the same rows in force and leave two
    * versions open side by side (ORD-107).
    *
-   * The closing instant is never before the row's own `valid_from`
-   * (`analyte_reference_range_validity_is_ordered`): a row opened by an API
-   * whose clock runs ahead —the Playwright runs move it— must still close.
+   * ONE INSTANT closes what goes and opens what comes, so the history has
+   * neither a gap nor an overlap — and it is never before the analyte's last
+   * change (`trg_analyte_reference_range_history_kept`): a row written by an
+   * API whose clock ran ahead —the Playwright runs move it— must still close,
+   * and the next version still opens after it.
    */
   async setRanges(
     analyteId: string,
@@ -267,6 +269,13 @@ export class PrismaExamAdministrationRepository implements ExamAdministrationRep
         select: { id: true, validFrom: true, ...RANGE_FIELDS },
       });
 
+      const [last] = await tx.$queryRaw<{ latest: Date | null }[]>`
+        SELECT max(greatest("valid_from", coalesce("valid_to", "valid_from"))) AS latest
+          FROM "analyte_reference_range"
+         WHERE "analyte_definition_id" = ${analyteId}::uuid`;
+      const latest = last?.latest ?? null;
+      const at = latest && latest > now ? latest : now;
+
       const unmatched = [...inForce];
       const added: ReferenceRange[] = [];
       for (const range of ranges) {
@@ -280,7 +289,7 @@ export class PrismaExamAdministrationRepository implements ExamAdministrationRep
       for (const gone of unmatched) {
         await tx.analyteReferenceRange.update({
           where: { id: gone.id },
-          data: { validTo: gone.validFrom > now ? gone.validFrom : now },
+          data: { validTo: at },
         });
       }
       await tx.analyteReferenceRange.createMany({
@@ -293,7 +302,7 @@ export class PrismaExamAdministrationRepository implements ExamAdministrationRep
           low: range.low,
           high: range.high,
           text: range.text,
-          validFrom: now,
+          validFrom: at,
         })),
       });
       return tx.analyteDefinition.findUniqueOrThrow({
@@ -330,15 +339,22 @@ const RANGE_FIELDS = {
   text: true,
 } as const;
 
-/** Equal in everything that decides a flag or prints on a report. */
+/**
+ * Equal in everything that decides a flag or prints on a report. Bounds are
+ * compared as the column stores them, `Decimal(14,4)`: a bound typed with
+ * more decimals is rounded on the way in, and comparing it raw would close
+ * and reopen the same range on every save.
+ */
 function sameRange(a: ReferenceRange, b: ReferenceRange): boolean {
+  const stored = (bound: number | null) =>
+    bound === null ? null : Math.round(bound * 10_000);
   return (
     a.rangeKind === b.rangeKind &&
     a.sex === b.sex &&
     a.ageMinDays === b.ageMinDays &&
     a.ageMaxDays === b.ageMaxDays &&
-    a.low === b.low &&
-    a.high === b.high &&
+    stored(a.low) === stored(b.low) &&
+    stored(a.high) === stored(b.high) &&
     (a.text ?? null) === (b.text ?? null)
   );
 }

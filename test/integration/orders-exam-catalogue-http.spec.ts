@@ -373,6 +373,53 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
     expect(kept.validTo).toEqual(closedAt);
   });
 
+  it('ORD-113 la base no deja fabricar historia: un rango nace abierto, y ni se abre ni se cierra antes del último cambio', async () => {
+    const glu = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: 'GLU' } }); // prettier-ignore
+    const refusedBy = async (write: Promise<unknown>) => {
+      const error = await write.then(
+        () => null,
+        (e: unknown) => e,
+      );
+      return String((error as Error | null)?.message ?? 'aceptado');
+    };
+    const latest = await prisma.analyteReferenceRange.findFirstOrThrow({
+      where: { analyteDefinitionId: glu.id }, orderBy: { validFrom: 'desc' },
+    }); // prettier-ignore
+    const before = new Date(latest.validFrom.getTime() - 86_400_000);
+    const after = new Date(latest.validFrom.getTime() + 1_000);
+    const row = { analyteDefinitionId: glu.id, rangeKind: 'CRITICAL', sex: 'FEMALE', low: '30', high: '450' }; // prettier-ignore
+
+    // Ni una fila ya cerrada, ni una abierta «desde antes» del último cambio.
+    expect(await refusedBy(prisma.analyteReferenceRange.create({ data: { ...row, validFrom: after, validTo: new Date(after.getTime() + 1_000) } }))).toMatch(/keeps its history/); // prettier-ignore
+    expect(await refusedBy(prisma.analyteReferenceRange.create({ data: { ...row, validFrom: before } }))).toMatch(/keeps its history/); // prettier-ignore
+    // Ni cerrar una vigente antes de la apertura más reciente.
+    expect(await refusedBy(prisma.analyteReferenceRange.update({ where: { id: latest.id }, data: { validTo: before } }))).toMatch(/keeps its history/); // prettier-ignore
+
+    // Control positivo: abierta y después del último cambio, entra; y se cierra hacia delante.
+    const opened = await prisma.analyteReferenceRange.create({ data: { ...row, validFrom: after } }); // prettier-ignore
+    const closed = await prisma.analyteReferenceRange.update({ where: { id: opened.id }, data: { validTo: new Date(after.getTime() + 1_000) } }); // prettier-ignore
+    expect(closed.validTo).not.toBeNull();
+  });
+
+  it('ORD-107 ORD-113 dos guardados a la vez dejan una sola versión vigente por tramo', async () => {
+    const glu = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: 'GLU' } }); // prettier-ignore
+    const save = (high: number) =>
+      send('put', `/exam-catalogue/analytes/${glu.id}/ranges`, {
+        ranges: [range({ low: 70, high: 100 }), range({ rangeKind: 'CRITICAL', low: 40, high })],
+      }); // prettier-ignore
+
+    const answers = await Promise.all([save(450), save(500)]);
+    expect(answers.map((answer) => answer.status)).toEqual([200, 200]);
+
+    const open = await prisma.analyteReferenceRange.findMany({
+      where: { analyteDefinitionId: glu.id, validTo: null },
+    });
+    expect(open.filter((r) => r.rangeKind === 'CRITICAL')).toHaveLength(1);
+    expect(open.filter((r) => r.rangeKind === 'REFERENCE')).toHaveLength(1);
+    // Control positivo: los dos guardados llegaron, y el primero quedó en la historia.
+    expect(await prisma.analyteReferenceRange.count({ where: { analyteDefinitionId: glu.id, rangeKind: 'CRITICAL' } })).toBe(3); // prettier-ignore
+  });
+
   it('ORD-113 ORD-114 sustituir los rangos cierra lo que cambia, deja abierto lo igual y lo guarda en el historial', async () => {
     const glu = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: 'GLU' } }); // prettier-ignore
     const before = await prisma.analyteReferenceRange.findMany({

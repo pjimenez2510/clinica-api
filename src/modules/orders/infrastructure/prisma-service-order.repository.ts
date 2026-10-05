@@ -428,6 +428,9 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
         ...siteFilter(query.sites),
       },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      // A ceiling, not a page: one practitioner's forgotten drafts, oldest
+      // first — the ones most worth issuing or discarding.
+      take: STALE_DRAFTS_LIMIT,
       select: {
         id: true,
         encounterId: true,
@@ -729,6 +732,9 @@ async function tariffConceptsInForce(
  * the permission at no site, precisely so «no filter to apply» can never be
  * spelled as «every site».
  */
+/** ORD-115. How many of one practitioner's left-behind drafts are listed. */
+const STALE_DRAFTS_LIMIT = 100;
+
 function siteFilter(sites: SiteScopeFilter): { siteId?: { in: string[] } } {
   return sites === 'all' ? {} : { siteId: { in: [...sites] } };
 }
