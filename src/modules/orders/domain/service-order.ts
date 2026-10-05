@@ -1,3 +1,5 @@
+import type { AbnormalFlag } from './analyte';
+
 /**
  * The ORDERABLE half: what the doctor asks for and what the invoice charges.
  *
@@ -89,15 +91,84 @@ export function isPending(status: ServiceOrderItemStatus): boolean {
 }
 
 /**
- * ORD-053. Whether a report can be superseded by a correction.
+ * ORD-053, ORD-119. The statuses a new version may supersede, NAMED rather
+ * than «everything but CANCELLED», so a status added tomorrow is not editable
+ * by omission.
  *
- * A `PARTIAL` report is not corrected, it is COMPLETED — the determinations
- * that were missing simply arrive. A `CANCELLED` one asserts nothing. What is
- * left is `FINAL` and `CORRECTED`, and the second is in the list on purpose: a
- * correction can itself be wrong, and the chain has to be able to grow.
+ * A `CANCELLED` one asserts nothing. `CORRECTED` is in the list on purpose: a
+ * correction can itself be wrong, and the chain has to be able to grow. And
+ * since ORD-119 a `PARTIAL` one is completed by EDITING it: the new version
+ * brings what it said and what was missing, and the partial stays readable
+ * behind it (ORD-050, ORD-051).
  */
+const CORRECTABLE_REPORT_STATUSES: readonly DiagnosticReportStatus[] = [
+  'PARTIAL',
+  'FINAL',
+  'CORRECTED',
+];
+
+/** ORD-053, ORD-119. Whether a report can be superseded by a new version. */
 export function isCorrectable(status: DiagnosticReportStatus): boolean {
-  return status === 'FINAL' || status === 'CORRECTED';
+  return CORRECTABLE_REPORT_STATUSES.includes(status);
+}
+
+/** One value as a report states it, for comparing two versions. */
+interface StatedValue {
+  analyteDisplay: string;
+  valueNumeric: number | null;
+  valueCode: string | null;
+  valueText: string | null;
+  unit: string | null;
+  /** The flag as STORED, the standing critical kept (ORD-054). */
+  abnormalFlag: AbnormalFlag | null;
+}
+
+/** What a version of a report says: its values and its conclusion. */
+interface StatedReport {
+  conclusion?: string | null;
+  results: readonly StatedValue[];
+}
+
+/** An empty conclusion and an absent one say the same: nothing. */
+const conclusionOf = (report: StatedReport): string | null =>
+  report.conclusion?.trim() || null;
+
+/**
+ * ORD-050, ORD-119. The status of the version that supersedes `previous`.
+ *
+ * ⚠️ A VERSION STILL INCOMPLETE STAYS `PARTIAL`, whatever changed: `CORRECTED`
+ * means «complete, and it replaced something», as `FINAL` means «complete».
+ * The partial it replaced still reads «Corregido el…» beside its old values
+ * (ORD-051), so a change is never silent.
+ *
+ * Complete, a definitive report superseded is always `CORRECTED`: that is how
+ * a screen knows to print «corregido» beside a number somebody may have acted
+ * on. A PARTIAL one that is only COMPLETED —everything it said comes back the
+ * same— is `FINAL`, because nothing anybody read has changed. «Everything it
+ * said» is each value with its unit and its flag, and the conclusion: a
+ * conclusion rewritten is a report that says something else.
+ */
+export function supersedingStatus(
+  previous: StatedReport & { status: DiagnosticReportStatus },
+  brought: StatedReport,
+  completeness: DiagnosticReportStatus,
+): DiagnosticReportStatus {
+  if (completeness === 'PARTIAL') return 'PARTIAL';
+  if (previous.status !== 'PARTIAL') return 'CORRECTED';
+  const changed =
+    conclusionOf(previous) !== conclusionOf(brought) ||
+    previous.results.some((was) => {
+      const now = brought.results.find((value) => value.analyteDisplay === was.analyteDisplay); // prettier-ignore
+      return (
+        now === undefined ||
+        now.valueNumeric !== was.valueNumeric ||
+        now.valueCode !== was.valueCode ||
+        now.valueText !== was.valueText ||
+        now.unit !== was.unit ||
+        now.abnormalFlag !== was.abnormalFlag
+      );
+    });
+  return changed ? 'CORRECTED' : completeness;
 }
 
 /**

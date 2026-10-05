@@ -6,7 +6,6 @@ import {
   type DomainFieldError,
 } from '../../../shared/domain/errors/domain-error';
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
-import type { MaternityDates } from '../../../shared/domain/form-117/vocabulary';
 
 /**
  * What can go wrong when a medical certificate is issued, read or annulled, in
@@ -235,107 +234,9 @@ export class CertificateAlreadyRevokedError extends ConflictError {
   }
 }
 
-/**
- * CER-044, D-106 §1. Even with its reason, a rest starts at most three days
- * before the attention; the earliest admitted day is named. A maternity rest
- * may also start on its admission or birth (D-108): both days are named too.
- */
-export class CertificateRestStartTooEarlyError extends ValidationError {
-  readonly code = 'CERTIFICATE_REST_START_TOO_EARLY';
-  override readonly userTitle: string;
-  override readonly fieldErrors: readonly DomainFieldError[];
-
-  constructor(earliest: ClinicalDate, maternity: MaternityDates | null) {
-    super('A rest starts at most three days before the attention, or on its maternity admission or birth'); // prettier-ignore
-    const label = (day: ClinicalDate) => day.split('-').reverse().join('/');
-    this.userTitle =
-      maternity === null
-        ? 'El reposo puede empezar, como mucho, tres días antes de la atención'
-        : 'El reposo de maternidad empieza el día del ingreso o del parto, o como mucho tres días antes de la atención';
-    this.fieldErrors = [
-      {
-        field: 'restFrom',
-        code: 'CERTIFICATE_REST_START_TOO_EARLY',
-        message:
-          maternity === null
-            ? `El reposo debe empezar, como muy pronto, el ${label(earliest)}`
-            : `El reposo de maternidad empieza el día del ingreso (${label(maternity.admissionOn)}) o del parto (${label(maternity.birthOn)}), o como muy pronto el ${label(earliest)}`,
-      },
-    ];
-  }
-}
-
 /** DD/MM/AAAA, as the screen and the paper write a day. */
 const shownDay = (day: ClinicalDate): string =>
   day.split('-').reverse().join('/');
-
-/**
- * CER-046, D-109 §1, D-110 §3. A birth more than 84 days before the attention
- * is not a leave this attention certifies. The admission does not count.
- */
-export class CertificateMaternityDatesTooOldError extends ValidationError {
-  readonly code = 'CERTIFICATE_MATERNITY_DATES_TOO_OLD';
-  override readonly userTitle =
-    'El parto puede ser, como mucho, 84 días anterior a la atención';
-  override readonly fieldErrors: readonly DomainFieldError[];
-
-  constructor(earliest: ClinicalDate) {
-    super('A maternity birth is at most 84 days before the attention');
-    this.fieldErrors = [
-      {
-        field: 'birthOn',
-        code: 'CERTIFICATE_MATERNITY_DATES_TOO_OLD',
-        message: `La fecha del parto debe ser, como muy pronto, el ${shownDay(earliest)}`,
-      },
-    ];
-  }
-}
-
-/**
- * CER-051, D-112 §1. An admission more than 14 days before the birth: with the
- * admission free, a maternity rest started on an admission declared a year back
- * was a retroactive rest, and a chain of them.
- */
-export class CertificateMaternityAdmissionTooEarlyError extends ValidationError {
-  readonly code = 'CERTIFICATE_MATERNITY_ADMISSION_TOO_EARLY';
-  override readonly userTitle =
-    'El ingreso puede ser, como mucho, 14 días anterior al parto';
-  override readonly fieldErrors: readonly DomainFieldError[];
-
-  constructor(earliest: ClinicalDate) {
-    super('A maternity admission is at most 14 days before the birth');
-    this.fieldErrors = [
-      {
-        field: 'maternityAdmissionOn',
-        code: 'CERTIFICATE_MATERNITY_ADMISSION_TOO_EARLY',
-        message: `La fecha de ingreso debe ser, como muy pronto, el ${shownDay(earliest)}`,
-      },
-    ];
-  }
-}
-
-/**
- * CER-046, D-110 §1. A birth declared more than four weeks after the
- * attention: a prenatal rest on a birth that far away chained certificates
- * from one consultation.
- */
-export class CertificateMaternityBirthTooFarError extends ValidationError {
-  readonly code = 'CERTIFICATE_MATERNITY_BIRTH_TOO_FAR';
-  override readonly userTitle =
-    'El parto puede ser, como mucho, 4 semanas posterior a la atención';
-  override readonly fieldErrors: readonly DomainFieldError[];
-
-  constructor(latest: ClinicalDate) {
-    super('A maternity birth is at most four weeks after the attention');
-    this.fieldErrors = [
-      {
-        field: 'birthOn',
-        code: 'CERTIFICATE_MATERNITY_BIRTH_TOO_FAR',
-        message: `La fecha del parto debe ser, como muy tarde, el ${shownDay(latest)}`,
-      },
-    ];
-  }
-}
 
 /**
  * CER-050, D-110 §2. Another maternity rest of the patient, not revoked,
@@ -354,29 +255,6 @@ export class CertificateMaternityBirthMismatchError extends ConflictError {
         field: 'birthOn',
         code: 'CERTIFICATE_MATERNITY_BIRTH_MISMATCH',
         message: `Otro reposo de maternidad de la paciente declara el parto el ${shownDay(otherBirth)}`,
-      },
-    ];
-  }
-}
-
-/**
- * CER-047, D-109 §2, D-110 §6. Maternity leave is twelve weeks counting the
- * birth's day: its last day is birth + 83. No rest beyond it, and none issued
- * once it is over.
- */
-export class CertificateMaternityLeaveExceededError extends ValidationError {
-  readonly code = 'CERTIFICATE_MATERNITY_LEAVE_EXCEEDED';
-  override readonly userTitle =
-    'La licencia de maternidad son doce semanas contando el día del parto: el reposo no pasa de su último día ni se emite después';
-  override readonly fieldErrors: readonly DomainFieldError[];
-
-  constructor(lastDay: ClinicalDate) {
-    super('A maternity rest ends, and is issued, within 84 days of the birth');
-    this.fieldErrors = [
-      {
-        field: 'restTo',
-        code: 'CERTIFICATE_MATERNITY_LEAVE_EXCEEDED',
-        message: `La licencia de maternidad termina el ${shownDay(lastDay)}`,
       },
     ];
   }
@@ -422,28 +300,6 @@ export class CertificateMaternityDiagnosisRequiredError extends ValidationError 
 
   constructor() {
     super('A maternity rest needs an obstetric diagnosis on its encounter');
-  }
-}
-
-/**
- * CER-045, D-106 §4. More than eight days after the attention a rest is not
- * issued on it: the patient is seen again, in a new attention.
- */
-export class CertificateRestIssuedTooLateError extends ValidationError {
-  readonly code = 'CERTIFICATE_REST_ISSUED_TOO_LATE';
-  override readonly userTitle =
-    'Han pasado más de ocho días desde la atención: el reposo se emite desde una atención nueva';
-  override readonly fieldErrors: readonly DomainFieldError[] = [
-    {
-      field: 'type',
-      code: 'CERTIFICATE_REST_ISSUED_TOO_LATE',
-      message:
-        'Han pasado más de ocho días desde la atención: el reposo se emite desde una atención nueva',
-    },
-  ];
-
-  constructor() {
-    super('A rest is issued within eight days of the attention');
   }
 }
 
@@ -517,51 +373,6 @@ export class CertificateIssuerReasonRequiredError extends ValidationError {
 
   constructor() {
     super('A certificate issued by someone other than the attending practitioner needs a reason'); // prettier-ignore
-  }
-}
-
-/**
- * CER-041, D-105 §3. The rest starts after the day following the issue. The
- * latest admitted day is named: «demasiado tarde» alone sends the doctor
- * guessing. A date is not a patient datum (CER-014).
- */
-export class CertificateRestStartTooLateError extends ValidationError {
-  readonly code = 'CERTIFICATE_REST_START_TOO_LATE';
-  override readonly userTitle =
-    'El reposo empieza, como muy tarde, el día siguiente a la emisión del certificado';
-  override readonly fieldErrors: readonly DomainFieldError[];
-
-  constructor(latest: ClinicalDate) {
-    super('A rest starts no later than the day after it is issued');
-    this.fieldErrors = [
-      {
-        field: 'restFrom',
-        code: 'CERTIFICATE_REST_START_TOO_LATE',
-        message: `El reposo debe empezar, como muy tarde, el ${latest.split('-').reverse().join('/')}`,
-      },
-    ];
-  }
-}
-
-/**
- * CER-031. More than thirty days, both ends included: the IESS validates
- * rests of one to thirty days, and a longer one is covered by successive
- * certificates.
- */
-export class CertificateRestTooLongError extends ValidationError {
-  readonly code = 'CERTIFICATE_REST_TOO_LONG';
-  override readonly userTitle =
-    'Un certificado de reposo cubre como máximo 30 días. Para un reposo más largo, emita certificados sucesivos';
-  override readonly fieldErrors: readonly DomainFieldError[] = [
-    {
-      field: 'restTo',
-      code: 'CERTIFICATE_REST_TOO_LONG',
-      message: 'El reposo no puede pasar de 30 días',
-    },
-  ];
-
-  constructor() {
-    super('A rest certificate covers at most 30 days');
   }
 }
 

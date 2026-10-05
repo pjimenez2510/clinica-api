@@ -445,7 +445,7 @@ describe('el adaptador de la orden', () => {
     });
 
     await expect(
-      repository.cancelItem({ orderId: 'order-1', itemId: 'item-1', sites: 'all' }), // prettier-ignore
+      repository.cancelItem({ orderId: 'order-1', itemId: 'item-1', sites: 'all', cancelledById: 'user-1' }), // prettier-ignore
     ).rejects.toMatchObject({ code: 'ORDER_NOT_ISSUED' });
     expect(callTo('serviceOrderItem.update')).toBeUndefined();
   });
@@ -453,22 +453,24 @@ describe('el adaptador de la orden', () => {
   it('ORD-007 escribe el estado Y el instante que saca la línea de la cola', async () => {
     const { repository, callTo } = prismaDouble();
 
-    await repository.cancelItem({ orderId: 'order-1', itemId: 'item-1', sites: 'all' }); // prettier-ignore
+    await repository.cancelItem({ orderId: 'order-1', itemId: 'item-1', sites: 'all', cancelledById: 'user-1' }); // prettier-ignore
 
     const data = (callTo('serviceOrderItem.update')?.args as { data: Record<string, unknown> }).data; // prettier-ignore
     expect(data.status).toBe('CANCELLED');
     expect(data.completedAt).toBeInstanceOf(Date);
+    // ORD-007. Y quién: la sesión, que la base exige al anular.
+    expect(data.cancelledById).toBe('user-1');
   });
 
   it('ORD-008 y ORD-009 distinguen la línea inexistente de la que ya no está pendiente', async () => {
     const missing = prismaDouble({ item: null });
     await expect(
-      missing.repository.cancelItem({ orderId: 'order-1', itemId: 'x', sites: 'all' }), // prettier-ignore
+      missing.repository.cancelItem({ orderId: 'order-1', itemId: 'x', sites: 'all', cancelledById: 'user-1' }), // prettier-ignore
     ).rejects.toMatchObject({ code: 'ORDER_NOT_FOUND' });
 
     const done = prismaDouble({ item: { id: 'item-1', status: 'COMPLETED', serviceOrder: { status: 'ISSUED' } } }); // prettier-ignore
     await expect(
-      done.repository.cancelItem({ orderId: 'order-1', itemId: 'item-1', sites: 'all' }), // prettier-ignore
+      done.repository.cancelItem({ orderId: 'order-1', itemId: 'item-1', sites: 'all', cancelledById: 'user-1' }), // prettier-ignore
     ).rejects.toMatchObject({ code: 'ORDER_ITEM_NOT_PENDING' });
   });
 

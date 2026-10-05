@@ -99,11 +99,19 @@ describe('las rutas del módulo de órdenes', () => {
         'PUT /orders/:orderId → record:write',
         'POST /orders/:orderId/issue → record:write',
         'POST /orders/:orderId/discard → record:write',
+        // ORD-116. Deshacer el descarte, con el mismo permiso.
+        'POST /orders/:orderId/restore → record:write',
+        // ORD-118. Corregir una emitida: anular sus líneas y pedir de nuevo.
+        'POST /orders/:orderId/correct → record:write',
         'GET /orders/results/unmatched → record:read',
         'POST /orders/results/:resultId/match → result:write',
         'GET /orders/results/critical → record:read',
         // ORD-062. Avisar lo registra quien transcribe, no quien diagnostica (D-111 §6).
         'POST /orders/results/:resultId/notices → result:write',
+        // ORD-120. Editarlo, con el permiso de registrarlo; sus versiones se leen
+        // con el de leer el resultado.
+        'PUT /orders/results/:resultId/notices/:noticeId → result:write',
+        'GET /orders/results/:resultId/notices/:noticeId/versions → record:read',
         'POST /orders/reports/:reportId/correct → result:write',
         'POST /orders/:orderId/reports → result:write',
         'GET /orders/:orderId/reports → record:read',

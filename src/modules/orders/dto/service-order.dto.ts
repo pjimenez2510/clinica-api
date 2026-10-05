@@ -118,6 +118,33 @@ export const serviceOrderSchema = z.object({
 /** Response of placing an order, reading one, and cancelling one of its lines. */
 export class ServiceOrderDto extends createZodDto(serviceOrderSchema) {}
 
+/**
+ * ORD-118. Response of POST /orders/:orderId/correct: the issued order with its
+ * live lines cancelled, and the new draft that carries them.
+ */
+/**
+ * DOC-109. Whether the PDF that replaces the annulled one was filed: `true`
+ * filed; `false` there was one and it COULD NOT be filed —the screen warns,
+ * because the archive still holds the PDF without the mark—; `null` there was
+ * no PDF to replace.
+ */
+const documentArchivedSchema = z.boolean().nullable();
+
+/** ORD-007. What annulling an exam answers: the order, and its PDF (DOC-109). */
+export const orderWithCancelledItemSchema = serviceOrderSchema.extend({
+  documentArchived: documentArchivedSchema,
+});
+export class OrderWithCancelledItemDto extends createZodDto(
+  orderWithCancelledItemSchema,
+) {}
+
+export const correctedOrderSchema = z.object({
+  cancelled: serviceOrderSchema,
+  draft: serviceOrderSchema,
+  documentArchived: documentArchivedSchema,
+});
+export class CorrectedOrderDto extends createZodDto(correctedOrderSchema) {}
+
 export const serviceOrderListSchema = z.object({
   items: z.array(serviceOrderSchema),
 });
@@ -203,6 +230,10 @@ export class PendingOrderListDto extends createZodDto(pendingOrderListSchema) {}
 /** Response types the controllers return, inferred from the schemas Swagger publishes. */
 export type ServiceOrderResponse = z.infer<typeof serviceOrderSchema>;
 export type ServiceOrderListResponse = z.infer<typeof serviceOrderListSchema>;
+export type CorrectedOrderResponse = z.infer<typeof correctedOrderSchema>;
+export type OrderWithCancelledItemResponse = z.infer<
+  typeof orderWithCancelledItemSchema
+>;
 export type PendingOrderListResponse = z.infer<typeof pendingOrderListSchema>;
 
 /** ORD-115. A draft its signer left behind in an attention no longer open. */

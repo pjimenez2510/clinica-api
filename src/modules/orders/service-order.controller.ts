@@ -24,11 +24,15 @@ import type { Requester } from './application/service-order.service';
 import type { PendingOrderEntry } from './domain/service-order.repository';
 import type { ServiceOrderView } from './domain/service-order.repository';
 import {
+  CorrectedOrderDto,
+  OrderWithCancelledItemDto,
   PlaceOrderDto,
   PendingOrderListDto,
   PendingOrdersQueryDto,
   ServiceOrderDto,
   StaleDraftListDto,
+  type CorrectedOrderResponse,
+  type OrderWithCancelledItemResponse,
   type PendingOrderListResponse,
   type StaleDraftListResponse,
   type ServiceOrderResponse,
@@ -205,6 +209,50 @@ export class ServiceOrderController {
     return toOrderResponse(order);
   }
 
+  /** ORD-116. Undoes a discard: the same draft comes back, with its lines. */
+  @Post(':orderId/restore')
+  @RequirePermission('record:write', 'query')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Recuperar una orden en borrador descartada' })
+  @ApiOkResponse({ type: ServiceOrderDto })
+  async restore(
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Req() req: Request,
+  ): Promise<ServiceOrderResponse> {
+    const order = await this.orders.restore(
+      orderId,
+      this.requester(req, 'record:write'),
+    );
+    return toOrderResponse(order);
+  }
+
+  /**
+   * ORD-118. «Corregir» an issued order: its live lines cancelled and a new
+   * draft with them, in one transaction. Only its signer.
+   */
+  @Post(':orderId/correct')
+  @RequirePermission('record:write', 'query')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Corregir una orden emitida: anula sus exámenes pendientes y abre un borrador con ellos',
+  })
+  @ApiOkResponse({ type: CorrectedOrderDto })
+  async correct(
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Req() req: Request,
+  ): Promise<CorrectedOrderResponse> {
+    const { cancelled, draft, documentArchived } = await this.orders.correct(
+      orderId,
+      this.requester(req, 'record:write'),
+    );
+    return {
+      cancelled: toOrderResponse(cancelled),
+      draft: toOrderResponse(draft),
+      documentArchived,
+    };
+  }
+
   /**
    * ORD-007, ORD-008. Anula una línea pedida por error.
    *
@@ -218,18 +266,21 @@ export class ServiceOrderController {
   @RequirePermission('record:write', 'query')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Anular una línea de la orden pedida por error' })
-  @ApiOkResponse({ type: ServiceOrderDto })
+  @ApiOkResponse({ type: OrderWithCancelledItemDto })
   async cancelItem(
     @Param('orderId', ParseUUIDPipe) orderId: string,
     @Param('itemId', ParseUUIDPipe) itemId: string,
     @Req() req: Request,
-  ): Promise<ServiceOrderResponse> {
+  ): Promise<OrderWithCancelledItemResponse> {
     const order = await this.orders.cancelItem(
       orderId,
       itemId,
       this.requester(req, 'record:write'),
     );
-    return toOrderResponse(order);
+    return {
+      ...toOrderResponse(order),
+      documentArchived: order.documentArchived,
+    };
   }
 
   /** Who is asking, for the site scope and for the access trail. */

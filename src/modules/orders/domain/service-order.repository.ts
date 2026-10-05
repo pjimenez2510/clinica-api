@@ -183,11 +183,29 @@ export interface PendingOrdersQuery {
   limit: number;
 }
 
+/**
+ * ORD-118. An issued order corrected in one step: its live lines cancelled and
+ * a new draft written with them, in the same transaction.
+ */
+export interface CorrectedOrder {
+  /** The same order, ISSUED, with its live lines now `CANCELLED`. */
+  cancelled: ServiceOrderView;
+  /** The new DRAFT, in the same attention, with the exams that were live. */
+  draft: ServiceOrderView;
+}
+
 /** ORD-007. Cancelling one line that was asked for by mistake. */
 export interface CancelOrderItem {
   orderId: string;
   itemId: string;
   sites: SiteScopeFilter;
+  /** ORD-007. The session's account: who cancelled the line. */
+  cancelledById: string;
+}
+
+/** ORD-118. Correcting an order: whose session cancels its live lines. */
+export interface OrderCorrection extends OrderQuery {
+  cancelledById: string;
 }
 
 /**
@@ -230,6 +248,21 @@ export interface ServiceOrderRepository {
 
   /** ORD-099. Discards a draft, keeping the row with who and when. */
   discard(request: DraftDiscard): Promise<ServiceOrderView>;
+  /**
+   * ORD-116. DISCARDED back to DRAFT, as it was: same id, same lines, who and
+   * when cleared. `OrderNotDiscardedError` when it is not discarded.
+   */
+  restore(query: OrderQuery): Promise<ServiceOrderView>;
+
+  /**
+   * ORD-118. In ONE transaction: cancels every live line of an ISSUED order
+   * (ORD-007) and writes a DRAFT in the same attention with the same category,
+   * priority, clinical note and those exams, copied as they were frozen. If
+   * anything fails, no line is cancelled. `OrderNotIssuedError` for an order
+   * that is not issued, `OrderEncounterNotOpenError` when the attention no
+   * longer admits orders, `OrderItemNotPendingError` when no line is live.
+   */
+  correct(request: OrderCorrection): Promise<CorrectedOrder>;
 
   /** ORD-009. One order with its lines, within the caller's scope. */
   byId(query: OrderQuery): Promise<ServiceOrderView | undefined>;

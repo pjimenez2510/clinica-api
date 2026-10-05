@@ -558,6 +558,161 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
     expect(await prisma.observationResult.count()).toBe(2);
   });
 
+  it('ORD-119 un informe parcial se completa editándolo: queda FINAL, la versión anterior sigue legible y la línea se cierra', async () => {
+    const prisma = db();
+    const scene = await anOrderedBloodCount(prisma);
+    // The blood count promises a second, non-reflex determination here.
+    await prisma.examDefinitionAnalyte.create({
+      data: { examDefinitionId: scene.bh.id, analyteDefinitionId: scene.glu.id, position: 2 }, // prettier-ignore
+    });
+    const { reports, store } = serviceOf(prisma);
+    const issuedAt = new Date(Date.now() - 2 * 3_600_000);
+
+    const partial = await reports.register(
+      {
+        orderId: scene.order.id,
+        performedById: null,
+        issuedAt,
+        results: [{ analyteDefinitionId: scene.hb.id, valueNumeric: 13.4 }],
+      },
+      requester,
+    );
+    // Positive control: with one of two, the report is partial and the line
+    // still waits.
+    expect(partial.status).toBe('PARTIAL');
+    const line = () =>
+      prisma.serviceOrderItem.findFirstOrThrow({
+        where: { serviceOrderId: scene.order.id },
+      });
+    expect((await line()).status).toBe('REQUESTED');
+
+    const completed = await reports.correct(
+      {
+        reportId: partial.id,
+        performedById: null,
+        issuedAt,
+        results: [
+          { analyteDefinitionId: scene.hb.id, valueNumeric: 13.4 },
+          { analyteDefinitionId: scene.glu.id, valueNumeric: 92 },
+        ],
+      },
+      requester,
+    );
+
+    expect(completed).toMatchObject({ status: 'FINAL', supersedesId: partial.id }); // prettier-ignore
+    expect(completed.results.map((result) => result.analyteDisplay)).toEqual([
+      'Hemoglobina',
+      'Glucosa en ayunas',
+    ]);
+    const before = await store.byId({ reportId: partial.id, sites: 'all' });
+    expect(before?.supersededById).toBe(completed.id);
+    expect(before?.results.map((result) => result.valueNumeric)).toEqual([13.4]); // prettier-ignore
+    expect((await line()).status).toBe('COMPLETED');
+  });
+
+  it('ORD-119 editar un parcial cambiando un valor que ya decía lo deja CORREGIDO, no en silencio', async () => {
+    const prisma = db();
+    const scene = await anOrderedBloodCount(prisma);
+    await prisma.examDefinitionAnalyte.create({
+      data: { examDefinitionId: scene.bh.id, analyteDefinitionId: scene.glu.id, position: 2 }, // prettier-ignore
+    });
+    const { reports } = serviceOf(prisma);
+    const issuedAt = new Date(Date.now() - 2 * 3_600_000);
+    const partial = await reports.register(
+      { orderId: scene.order.id, performedById: null, issuedAt, results: [{ analyteDefinitionId: scene.hb.id, valueNumeric: 13.4 }] }, // prettier-ignore
+      requester,
+    );
+
+    const changed = await reports.correct(
+      {
+        reportId: partial.id,
+        performedById: null,
+        issuedAt,
+        results: [
+          { analyteDefinitionId: scene.hb.id, valueNumeric: 9.1 },
+          { analyteDefinitionId: scene.glu.id, valueNumeric: 92 },
+        ],
+      },
+      requester,
+    );
+
+    expect(changed).toMatchObject({ status: 'CORRECTED', supersedesId: partial.id }); // prettier-ignore
+  });
+
+  it('ORD-119 un parcial editado que sigue incompleto queda PARCIAL aunque cambie un valor; completarlo cambiando la conclusión lo deja CORREGIDO', async () => {
+    const prisma = db();
+    const scene = await anOrderedBloodCount(prisma);
+    await prisma.examDefinitionAnalyte.create({
+      data: { examDefinitionId: scene.bh.id, analyteDefinitionId: scene.glu.id, position: 2 }, // prettier-ignore
+    });
+    const { reports, store } = serviceOf(prisma);
+    const issuedAt = new Date(Date.now() - 2 * 3_600_000);
+    const line = () =>
+      prisma.serviceOrderItem.findFirstOrThrow({
+        where: { serviceOrderId: scene.order.id },
+      });
+    const first = await reports.register(
+      { orderId: scene.order.id, performedById: null, issuedAt, conclusion: 'Muestra lipémica', results: [{ analyteDefinitionId: scene.hb.id, valueNumeric: 13.4 }] }, // prettier-ignore
+      requester,
+    );
+
+    // Cambia la hemoglobina, y la glucosa sigue sin llegar.
+    const second = await reports.correct(
+      { reportId: first.id, performedById: null, issuedAt, conclusion: 'Muestra lipémica', results: [{ analyteDefinitionId: scene.hb.id, valueNumeric: 9.1 }] }, // prettier-ignore
+      requester,
+    );
+    expect(second).toMatchObject({ status: 'PARTIAL', supersedesId: first.id });
+    // El cambio no es silencioso: el primero queda sustituido y legible.
+    const replaced = await store.byId({ reportId: first.id, sites: 'all' });
+    expect(replaced?.supersededById).toBe(second.id);
+    expect(replaced?.results.map((result) => result.valueNumeric)).toEqual([13.4]); // prettier-ignore
+    expect((await line()).status).toBe('REQUESTED');
+
+    // Se completa con los mismos valores, pero la conclusión dice otra cosa.
+    const third = await reports.correct(
+      {
+        reportId: second.id,
+        performedById: null,
+        issuedAt,
+        conclusion: 'Sin observaciones',
+        results: [
+          { analyteDefinitionId: scene.hb.id, valueNumeric: 9.1 },
+          { analyteDefinitionId: scene.glu.id, valueNumeric: 92 },
+        ],
+      },
+      requester,
+    );
+    expect(third).toMatchObject({ status: 'CORRECTED', supersedesId: second.id }); // prettier-ignore
+    expect((await line()).status).toBe('COMPLETED');
+
+    // Control positivo: otro parcial, completado con la MISMA conclusión, es FINAL.
+    const other = await placeIssued(serviceOf(prisma).orders, {
+      encounterId: scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [{ examDefinitionId: scene.bh.id }],
+      sites: 'all',
+    });
+    const partial = await reports.register(
+      { orderId: other.id, performedById: null, issuedAt, conclusion: 'Muestra lipémica', results: [{ analyteDefinitionId: scene.hb.id, valueNumeric: 13.4 }] }, // prettier-ignore
+      requester,
+    );
+    const completed = await reports.correct(
+      {
+        reportId: partial.id,
+        performedById: null,
+        issuedAt,
+        conclusion: 'Muestra lipémica',
+        results: [
+          { analyteDefinitionId: scene.hb.id, valueNumeric: 13.4 },
+          { analyteDefinitionId: scene.glu.id, valueNumeric: 92 },
+        ],
+      },
+      requester,
+    );
+    expect(completed.status).toBe('FINAL');
+  });
+
   it('ORD-052 impide que la cadena de correcciones se bifurque, también por SQL directo', async () => {
     const prisma = db();
     const scene = await anOrderedBloodCount(prisma);

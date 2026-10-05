@@ -20,7 +20,6 @@
  */
 
 import {
-  OffFormularyJustificationRequiredError,
   PrescriptionEmptyError,
   PrescriptionItemIncompleteError,
   PrescriptionSingleDoseWithDurationError,
@@ -54,7 +53,7 @@ export interface ItemContent {
   frequencyCode: string | null;
   /** PR-007. The CNMB concept, or `null` when prescribing outside it. */
   conceptId: string | null;
-  /** PR-009. Mandatory exactly when `conceptId` is `null`. */
+  /** PR-110. Optional since D-128.6: outside the CNMB only the mark is due. */
   offFormularyJustification: string | null;
 }
 
@@ -88,21 +87,6 @@ function isMissing(value: unknown): boolean {
 }
 
 /**
- * PR-009. Prescribing outside the CNMB is allowed; not saying why is not.
- *
- * CHECKED WHEN THE LINE IS WRITTEN and not only at the issue, unlike everything
- * else in this file, and the reason is that `prescription_item_off_formulary`
- * refuses the INSERT: without this the caller would get the constraint's
- * `CHECK_FAILED` instead of a sentence, at composition time, on a form where
- * one box is empty.
- */
-export function assertOffFormularyJustified(item: ItemContent): void {
-  if (item.conceptId !== null) return;
-  if (!isMissing(item.offFormularyJustification)) return;
-  throw new OffFormularyJustificationRequiredError(item.line);
-}
-
-/**
  * PR-032. Everything art. 5.c demands, on every line, at the moment of issue.
  *
  * ⚠️ IT REPORTS EVERY MISSING FIELD OF EVERY LINE IN ONE ANSWER. The failure
@@ -133,7 +117,6 @@ function missingItemFields(
 ): { line: number; field: string }[] {
   const missing: { line: number; field: string }[] = [];
   for (const item of items) {
-    assertOffFormularyJustified(item);
     for (const field of MANDATORY_ITEM_FIELDS) {
       // PR-105. A single dose does not last: no duration to demand.
       if (field === 'durationDays' && item.frequencyCode === SINGLE_DOSE)

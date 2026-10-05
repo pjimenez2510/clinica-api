@@ -4,7 +4,6 @@ import { Prisma } from '@prisma/client';
 
 import { chartScope } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
-import { assertOffFormularyJustified } from '../domain/prescription-content';
 import {
   isDeclaredPresentation,
   type DeclaredPresentation,
@@ -12,9 +11,9 @@ import {
 import {
   ConceptNotPrescribableError,
   ControlledSubstanceNotPrescribableError,
-  OffFormularyJustificationRequiredError,
   PrescriptionDraftOfAnotherPrescriberError,
   PrescriptionEncounterNotFoundError,
+  PrescriptionOfAnotherPrescriberError,
   PrescriptionEncounterNotOpenError,
   PrescriptionNotEditableError,
   PrescriptionNotFoundError,
@@ -22,7 +21,11 @@ import {
 import type { ItemContent } from '../domain/prescription-content';
 import type { PrescriptionStatus } from '../domain/prescription';
 import type {
+  CancelPlan,
+  CorrectedPrescription,
   DiscardPlan,
+  DraftDiscardQuery,
+  DraftRestore,
   DraftRewrite,
   EncounterPrescriptionsQuery,
   IssuePlan,
@@ -31,6 +34,7 @@ import type {
   NewPrescriptionItem,
   PrescribingEncounter,
   PrescriberIdentity,
+  PrescriptionCorrection,
   PrescriptionQuery,
   PrescriptionRecordSource,
   PrescriptionRepository,
@@ -77,6 +81,8 @@ const ITEM_SELECT = {
   frequencyText: true,
   durationDays: true,
   instructions: true,
+  // PR-110. The mark, decided when the line was written.
+  offFormulary: true,
   offFormularyJustification: true,
   // PR-101, PR-102. So a draft reopens as it was written (PR-100).
   dosageFormCode: true,
@@ -101,6 +107,11 @@ const PRESCRIPTION_SELECT = {
   // on every screen that lists a prescription (PR-092).
   discardedAt: true,
   discardReason: true,
+  // PR-108. The register of art. 70, WITH the account: an annulled receta is a
+  // paper in somebody's hand, and «¿quién la anuló?» is part of the register.
+  cancelledAt: true,
+  cancelReason: true,
+  cancelledBy: { select: { id: true, firstName: true, lastName: true } },
   items: {
     /**
      * ⚠️ **Falta esquema** (PR-032). `prescription_item` HAS NO ORDER COLUMN,
@@ -502,7 +513,8 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
   }
 
   /**
-   * PR-010. Annuls an ISSUED prescription. NOTHING IS DELETED.
+   * PR-010, PR-108. Annuls an ISSUED prescription with who, when and why.
+   * NOTHING IS DELETED.
    *
    * ⚠️ CONDITIONAL ON `ACTIVE` AND NOT ON `DRAFT`, and it is
    * `prescription_issued_coherence` that decides it: every state other than
@@ -512,6 +524,7 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
    */
   async cancel(
     query: PrescriptionQuery,
+    plan: CancelPlan,
     decide: (status: PrescriptionStatus) => void,
   ): Promise<PrescriptionView> {
     const row = await this.prisma.$transaction(async (tx) => {
@@ -523,15 +536,7 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
 
       decide(current.status);
 
-      const updated = await tx.prescription.updateMany({
-        where: { id: query.prescriptionId, status: 'ACTIVE' },
-        data: { status: 'CANCELLED' },
-      });
-      if (updated.count === 0) {
-        throw new PrescriptionNotEditableError(
-          await currentStatus(tx, query.prescriptionId),
-        );
-      }
+      await annul(tx, query.prescriptionId, plan);
 
       return tx.prescription.findUniqueOrThrow({
         where: { id: query.prescriptionId },
@@ -540,6 +545,99 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
     });
 
     return toPrescriptionView(row);
+  }
+
+  /**
+   * PR-109. Annuls an issued prescription and opens a draft with the same
+   * lines, in ONE transaction.
+   *
+   * THE ATTENTION FIRST, THEN THE PRESCRIPTION — the order every writer of
+   * this module takes them in, so a «Corregir» racing an «Anular» or an
+   * annulment of the attention queues instead of deadlocking. Everything that
+   * can refuse is judged on the locked rows BEFORE writing; and if a write
+   * still fails — a constraint, a trigger — the transaction takes the
+   * annulment with it: a receta annulled with no draft to replace it is
+   * exactly what «Corregir» promises not to leave.
+   *
+   * ⚠️ THE LINES ARE COPIED, NOT RESOLVED AGAIN. Every column of every line —
+   * the frozen DCI, the codes, the texts, the justification — travels as it
+   * was issued: the doctor corrects what the paper said, not what the CNMB
+   * says today. Whatever has to be true to issue it again (a concept marked
+   * controlled since, an allergy recorded since) is judged by the issue
+   * (PR-060, PR-070), as for any draft.
+   *
+   * The diagnoses are not copied: a draft reads the attention's as they are
+   * now, and the issue freezes them (PR-026).
+   */
+  async correct(
+    request: PrescriptionCorrection,
+  ): Promise<CorrectedPrescription> {
+    return this.prisma.$transaction(async (tx) => {
+      const found = await tx.prescription.findFirst({
+        where: { id: request.prescriptionId, ...siteFilter(request.sites) },
+        select: { id: true, encounterId: true },
+      });
+      if (!found) throw new PrescriptionNotFoundError();
+
+      await tx.$queryRaw`SELECT id FROM "encounter" WHERE id = ${found.encounterId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM "prescription" WHERE id = ${found.id}::uuid FOR UPDATE`;
+
+      const current = await tx.prescription.findUniqueOrThrow({
+        where: { id: found.id },
+        select: {
+          status: true,
+          prescriberId: true,
+          siteId: true,
+          warningSigns: true,
+          nonPharmacologicalAdvice: true,
+          encounter: { select: { status: true } },
+          // Every column of the line but its identity.
+          items: {
+            orderBy: { id: 'asc' },
+            select: { ...ITEM_SELECT, id: false },
+          },
+        },
+      });
+      // PR-109. Only what is in force is corrected; a draft is rewritten
+      // (PR-100), and what is annulled stays annulled.
+      if (current.status !== 'ACTIVE') {
+        throw new PrescriptionNotEditableError(current.status);
+      }
+      // PR-100. The new draft is in the name of whoever corrects.
+      if (current.prescriberId !== request.prescriberId) {
+        throw new PrescriptionOfAnotherPrescriberError();
+      }
+      // PR-002. The draft is born in the same attention, so it has to admit
+      // one; refused here, nothing has been annulled.
+      if (!admitsPrescribing(current.encounter.status)) {
+        throw new PrescriptionEncounterNotOpenError(current.encounter.status);
+      }
+
+      await annul(tx, found.id, request.cancel);
+      const cancelled = await tx.prescription.findUniqueOrThrow({
+        where: { id: found.id },
+        select: PRESCRIPTION_SELECT,
+      });
+
+      const draft = await tx.prescription.create({
+        data: {
+          encounterId: found.encounterId,
+          prescriberId: request.prescriberId,
+          siteId: current.siteId,
+          warningSigns: current.warningSigns,
+          nonPharmacologicalAdvice: current.nonPharmacologicalAdvice,
+          items: {
+            create: current.items,
+          },
+        },
+        select: PRESCRIPTION_SELECT,
+      });
+
+      return {
+        cancelled: toPrescriptionView(cancelled),
+        draft: toPrescriptionView(draft),
+      };
+    });
   }
 
   /**
@@ -553,23 +651,27 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
    * cannot be discarded even by a writer that never came through here — it is
    * annulled, which is the other act.
    *
-   * ⚠️ AND THE THREE COLUMNS ARE WRITTEN TOGETHER. `prescription_discard_
-   * states_who_when_and_why` refuses the row otherwise, and that is the point:
-   * discarding without saying why is a way of making what was written vanish.
+   * ⚠️ AND WHO AND WHEN ARE WRITTEN TOGETHER. `prescription_discard_states_
+   * who_and_when` refuses the row otherwise. The reason is written as given —
+   * `null` when nobody said, since D-126 (PR-107).
    */
   async discard(
-    query: PrescriptionQuery,
+    query: DraftDiscardQuery,
     plan: DiscardPlan,
     decide: (status: PrescriptionStatus) => void,
   ): Promise<PrescriptionView> {
     const row = await this.prisma.$transaction(async (tx) => {
       const current = await tx.prescription.findFirst({
         where: { id: query.prescriptionId, ...siteFilter(query.sites) },
-        select: { id: true, status: true },
+        select: { id: true, status: true, prescriberId: true },
       });
       if (!current) throw new PrescriptionNotFoundError();
 
       decide(current.status);
+      // PR-107, PR-100. The draft is its prescriber's: only they discard it.
+      if (current.prescriberId !== query.prescriberId) {
+        throw new PrescriptionDraftOfAnotherPrescriberError();
+      }
 
       const updated = await tx.prescription.updateMany({
         where: { id: query.prescriptionId, status: 'DRAFT' },
@@ -588,6 +690,64 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
 
       return tx.prescription.findUniqueOrThrow({
         where: { id: query.prescriptionId },
+        select: PRESCRIPTION_SELECT,
+      });
+    });
+
+    return toPrescriptionView(row);
+  }
+
+  /**
+   * PR-107. DISCARDED back to DRAFT, as it was: same id, same lines.
+   *
+   * The draft is locked in the order every writer of this module uses —
+   * attention first, prescription second — and judged on the locked row: a
+   * second «Deshacer» in another tab finds it already `DRAFT` and is refused
+   * with the state it is in.
+   *
+   * ⚠️ WHO, WHEN AND WHY ARE CLEARED TOGETHER WITH THE STATE.
+   * `prescription_discard_only_from_draft` refuses a draft that still carries
+   * the instant of a discard, and a draft that says it was discarded would be
+   * two facts at once. What happened stays in `access_audit`: the discard and
+   * its undo are two `UPDATE` rows of the trail.
+   *
+   * ⚠️ THE ATTENTION'S STATE IS NOT JUDGED HERE, as it is not on the discard:
+   * undoing returns the draft exactly where it was a moment ago, and what can
+   * be done with it afterwards (rewrite, issue) is judged by those acts.
+   */
+  async restore(request: DraftRestore): Promise<PrescriptionView> {
+    const row = await this.prisma.$transaction(async (tx) => {
+      const found = await tx.prescription.findFirst({
+        where: { id: request.prescriptionId, ...siteFilter(request.sites) },
+        select: { id: true, encounterId: true },
+      });
+      if (!found) throw new PrescriptionNotFoundError();
+
+      await tx.$queryRaw`SELECT id FROM "encounter" WHERE id = ${found.encounterId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM "prescription" WHERE id = ${found.id}::uuid FOR UPDATE`;
+
+      const current = await tx.prescription.findUniqueOrThrow({
+        where: { id: found.id },
+        select: { status: true, prescriberId: true },
+      });
+      // PR-107. Only what was discarded comes back, and the answer names the
+      // state it is in.
+      if (current.status !== 'DISCARDED') {
+        throw new PrescriptionNotEditableError(current.status);
+      }
+      // PR-100. The draft is its prescriber's, discarded or not.
+      if (current.prescriberId !== request.prescriberId) {
+        throw new PrescriptionDraftOfAnotherPrescriberError();
+      }
+
+      return tx.prescription.update({
+        where: { id: found.id },
+        data: {
+          status: 'DRAFT',
+          discardedAt: null,
+          discardedById: null,
+          discardReason: null,
+        },
         select: PRESCRIPTION_SELECT,
       });
     });
@@ -728,20 +888,13 @@ async function resolveItems(
   return items.map((item, index) => {
     const line = index + 1;
 
-    // PR-009. Refused here rather than by `prescription_item_off_formulary`
-    // so the answer is a sentence about a box instead of a constraint name.
-    assertOffFormularyJustified({
-      line,
-      conceptId: item.conceptId,
-      offFormularyJustification: item.offFormularyJustification,
-    } as ItemContent);
-
     if (item.conceptId === null) {
       return {
         conceptId: null,
-        // PR-009. Outside the CNMB the caller supplies the name, and the
-        // justification is what makes that acceptable.
+        // PR-009, PR-110. Outside the CNMB the caller supplies the name, and
+        // the line is marked; a justification is kept only if one was given.
         genericName: (item.genericName ?? '').trim(),
+        offFormulary: true,
         ...commonItemFields(item),
       };
     }
@@ -776,20 +929,17 @@ async function resolveItems(
     }
 
     /**
-     * PR-104. A form and concentration the CNMB does not list for this
-     * medicine is a prescription outside the cuadro, with the same way out:
-     * the written justification. «Enalapril 500 mg» stops here.
+     * PR-104, PR-110. A form and concentration the CNMB does not list for this
+     * medicine is a prescription outside the cuadro: it is marked so, and
+     * frozen with the line, because the declared presentations live in the
+     * catalogue and change with every load of the cuadro. «Enalapril 500 mg»
+     * no longer passes for a medicine of the cuadro.
      */
-    if (
-      !isDeclaredPresentation(
-        concept.presentations ?? [],
-        item.dosageFormCode ?? null,
-        item.concentration,
-      ) &&
-      (item.offFormularyJustification ?? '').trim() === ''
-    ) {
-      throw new OffFormularyJustificationRequiredError(line, 'presentation');
-    }
+    const offFormulary = !isDeclaredPresentation(
+      concept.presentations ?? [],
+      item.dosageFormCode ?? null,
+      item.concentration,
+    );
 
     return {
       conceptId: item.conceptId,
@@ -801,6 +951,7 @@ async function resolveItems(
        * the value can only come from the row read in this transaction.
        */
       genericName: concept.display,
+      offFormulary,
       ...commonItemFields(item),
     };
   });
@@ -824,6 +975,32 @@ function frozenDiagnoses(
       ? [{ code: entry.code, display: entry.display }]
       : [],
   );
+}
+
+/**
+ * PR-010, PR-108. ACTIVE to CANCELLED with the register of art. 70, CONDITIONAL
+ * on the status that was read: two annulments that both read `ACTIVE` cannot
+ * both write, and the loser is told the winner's state.
+ */
+async function annul(
+  tx: Prisma.TransactionClient,
+  prescriptionId: string,
+  plan: CancelPlan,
+): Promise<void> {
+  const updated = await tx.prescription.updateMany({
+    where: { id: prescriptionId, status: 'ACTIVE' },
+    data: {
+      status: 'CANCELLED',
+      cancelledAt: plan.cancelledAt,
+      cancelledById: plan.cancelledById,
+      cancelReason: plan.cancelReason,
+    },
+  });
+  if (updated.count === 0) {
+    throw new PrescriptionNotEditableError(
+      await currentStatus(tx, prescriptionId),
+    );
+  }
 }
 
 /** PR-005. The state a losing writer has to be told about. */
@@ -945,6 +1122,15 @@ function toPrescriptionView(row: PrescriptionRow): PrescriptionView {
     createdAt: row.createdAt,
     discardedAt: row.discardedAt,
     discardReason: row.discardReason,
+    cancelledAt: row.cancelledAt,
+    cancelledBy:
+      row.cancelledBy === null
+        ? null
+        : {
+            id: row.cancelledBy.id,
+            name: `${row.cancelledBy.firstName} ${row.cancelledBy.lastName}`,
+          },
+    cancelReason: row.cancelReason,
     items: row.items.map((item, index) => ({
       id: item.id,
       // The 1-based address every message uses (PR-032, PR-094).
@@ -961,6 +1147,13 @@ function toPrescriptionView(row: PrescriptionRow): PrescriptionView {
       frequencyText: item.frequencyText,
       durationDays: item.durationDays,
       instructions: item.instructions,
+      // PR-110. A line written before the mark existed carries `false` and
+      // the justification that was the mark then; without concept it was
+      // always outside the cuadro.
+      offFormulary:
+        item.offFormulary ||
+        item.conceptId === null ||
+        item.offFormularyJustification !== null,
       offFormularyJustification: item.offFormularyJustification,
       dosageFormCode: item.dosageFormCode,
       doseAmount: item.doseAmount === null ? null : item.doseAmount.toNumber(),

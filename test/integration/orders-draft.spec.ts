@@ -124,12 +124,13 @@ describe('ORD-095 a ORD-099 la orden en borrador contra PostgreSQL', () => {
     // Control positivo: anular una línea emitida (ORD-007) sigue funcionando.
     await expect(
       prisma.$executeRaw`
-        UPDATE service_order_item SET status = 'CANCELLED', completed_at = now()
+        UPDATE service_order_item SET status = 'CANCELLED', completed_at = now(),
+               cancelled_by_id = ${scene.practitioner.userId}::uuid
          WHERE service_order_id = ${order}::uuid`,
     ).resolves.toBe(1);
   });
 
-  it('ORD-099 una orden emitida o descartada no vuelve a borrador, y la emitida no se descarta', async () => {
+  it('ORD-099 una orden emitida no vuelve a borrador, una descartada no se emite, y la emitida no se descarta', async () => {
     const prisma = db();
     const scene = await aScene(prisma);
     const user = await createUser(prisma);
@@ -153,6 +154,41 @@ describe('ORD-095 a ORD-099 la orden en borrador contra PostgreSQL', () => {
            SET status = 'DISCARDED', discarded_at = now(), discarded_by_id = ${user.id}::uuid
          WHERE id = ${issued}::uuid`,
     ).rejects.toThrow(/service_order_status_transition/);
+  });
+
+  it('ORD-116 la BASE deja volver una descartada a borrador limpiando quién y cuándo, y nada más', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const user = await createUser(prisma);
+    const order = await aDraft(prisma, scene);
+    await prisma.$executeRaw`
+      UPDATE service_order
+         SET status = 'DISCARDED', discarded_at = now(), discarded_by_id = ${user.id}::uuid
+       WHERE id = ${order}::uuid`;
+
+    // Un borrador que arrastra quién lo descartó diría dos cosas a la vez.
+    await expect(
+      prisma.$executeRaw`UPDATE service_order SET status = 'DRAFT' WHERE id = ${order}::uuid`,
+    ).rejects.toThrow(/service_order_discard_states_who_and_when/);
+    // Deshacer devuelve el borrador tal cual: no es una puerta para reescribirlo.
+    await expect(
+      prisma.$executeRaw`
+        UPDATE service_order
+           SET status = 'DRAFT', discarded_at = NULL, discarded_by_id = NULL, priority = 'STAT'
+         WHERE id = ${order}::uuid`,
+    ).rejects.toThrow(/service_order_frozen_once_issued/);
+
+    // Control positivo: limpiando quién y cuándo, vuelve.
+    await expect(
+      prisma.$executeRaw`
+        UPDATE service_order
+           SET status = 'DRAFT', discarded_at = NULL, discarded_by_id = NULL
+         WHERE id = ${order}::uuid`,
+    ).resolves.toBe(1);
+    expect(await numberOf(prisma, order)).toBeNull();
+    // Y vuelto a borrador, se emite y toma número.
+    await issue(prisma, order);
+    expect(await numberOf(prisma, order)).toBe(1);
   });
 
   it('ORD-099 descartar exige quién y cuándo', async () => {

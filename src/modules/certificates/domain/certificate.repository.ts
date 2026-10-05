@@ -189,6 +189,24 @@ export interface CertificateRepository {
   ): Promise<CertificateView>;
 
   /**
+   * CER-053. Annuls the certificate and issues its replacement on the same
+   * attention, in ONE transaction — or neither.
+   *
+   * `authorise` judges who may (CER-040) before anything is written; the
+   * annulment is conditional on `revoked_at IS NULL` as in `revoke`
+   * (`CERTIFICATE_ALREADY_REVOKED`); and it is written BEFORE the patient's
+   * rests are read for `decide`, so the certificate being replaced is not a
+   * rest the new one can overlap (CER-048). Whatever `decide` or the insert
+   * refuses rolls the annulment back.
+   */
+  correct(
+    query: CertificateQuery,
+    revocation: RevocationPlan,
+    authorise: (snapshot: RevocationSnapshot) => void,
+    decide: (snapshot: IssueSnapshot) => CertificatePlan,
+  ): Promise<{ revoked: CertificateView; issued: CertificateView }>;
+
+  /**
    * CER-010, CER-020 to CER-029. Everything form 117 prints about one
    * certificate within the caller's scope, or `null`. ONE STATEMENT, so the
    * answers describe the same instant.

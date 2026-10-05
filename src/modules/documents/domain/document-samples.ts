@@ -92,6 +92,7 @@ export function sampleSubject(
               frequencyText: 'cada 24 horas',
               durationDays: 30,
               instructions: 'Tome 1 tableta cada mañana. No la suspenda.',
+              offFormulary: false,
               offFormularyJustification: null,
             },
           ],

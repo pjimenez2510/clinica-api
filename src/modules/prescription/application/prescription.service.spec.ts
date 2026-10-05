@@ -2,6 +2,10 @@ import { PinoLogger } from 'nestjs-pino';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type {
+  AnnulledDocument,
+  AnnulledDocumentArchiver,
+} from '../../../shared/documents/annulled-document.port';
+import type {
   AccessAuditEntry,
   AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
@@ -15,15 +19,20 @@ import {
   atWallClock,
   clinicalDateOf,
 } from '../../../shared/domain/clinic-time';
+import { PrescriptionDraftOfAnotherPrescriberError } from '../domain/prescription.errors';
 import { PrescriptionService } from './prescription.service';
 import type {
+  CancelPlan,
   DiscardPlan,
+  DraftDiscardQuery,
+  DraftRestore,
   DraftRewrite,
   IssuePlan,
   IssueSnapshot,
   NewPrescription,
   PrescribingEncounter,
   PrescriberIdentity,
+  PrescriptionCorrection,
   PrescriptionQuery,
   PrescriptionRecordSource,
   PrescriptionRepository,
@@ -99,6 +108,9 @@ const aPrescription = (
   createdAt: new Date('2026-09-14T14:05:00Z'),
   discardedAt: null,
   discardReason: null,
+  cancelledAt: null,
+  cancelledBy: null,
+  cancelReason: null,
   items: [
     {
       id: 'item-1',
@@ -113,6 +125,7 @@ const aPrescription = (
       frequencyText: 'Cada 8 horas',
       durationDays: 7,
       instructions: null,
+      offFormulary: false,
       offFormularyJustification: null,
       dosageFormCode: 'CAPSULE',
       doseAmount: 1,
@@ -159,6 +172,9 @@ class FakeRepository implements PrescriptionRepository {
   document: PrescriptionRecordSource | null = null;
   created: NewPrescription | undefined;
   discarded: DiscardPlan | undefined;
+  restored: DraftRestore | undefined;
+  cancelled: CancelPlan | undefined;
+  corrected: PrescriptionCorrection | undefined;
   listed = 0;
 
   findEncounterForPrescribing(): Promise<PrescribingEncounter | null> {
@@ -210,18 +226,46 @@ class FakeRepository implements PrescriptionRepository {
 
   cancel(
     _query: PrescriptionQuery,
+    plan: CancelPlan,
     decide: (status: PrescriptionStatus) => void,
   ): Promise<PrescriptionView> {
     decide(this.snapshot.status);
-    return Promise.resolve(aPrescription({ status: 'CANCELLED' }));
+    this.cancelled = plan;
+    return Promise.resolve(
+      aPrescription({
+        status: 'CANCELLED',
+        cancelledAt: plan.cancelledAt,
+        cancelledBy: { id: plan.cancelledById, name: 'Ana Villacís' },
+        cancelReason: plan.cancelReason,
+      }),
+    );
   }
 
+  correct(
+    request: PrescriptionCorrection,
+  ): Promise<{ cancelled: PrescriptionView; draft: PrescriptionView }> {
+    this.corrected = request;
+    return Promise.resolve({
+      cancelled: aPrescription({
+        status: 'CANCELLED',
+        cancelReason: request.cancel.cancelReason,
+      }),
+      draft: aPrescription({ id: 'prescription-2' }),
+    });
+  }
+
+  /** PR-107. Whose draft it is: by default, the session's professional. */
+  draftPrescriberId = PRACTITIONER;
+
   discard(
-    _query: PrescriptionQuery,
+    query: DraftDiscardQuery,
     plan: DiscardPlan,
     decide: (status: PrescriptionStatus) => void,
   ): Promise<PrescriptionView> {
     decide(this.snapshot.status);
+    if (query.prescriberId !== this.draftPrescriberId) {
+      return Promise.reject(new PrescriptionDraftOfAnotherPrescriberError());
+    }
     this.discarded = plan;
     return Promise.resolve(
       aPrescription({
@@ -230,6 +274,11 @@ class FakeRepository implements PrescriptionRepository {
         discardReason: plan.discardReason,
       }),
     );
+  }
+
+  restore(request: DraftRestore): Promise<PrescriptionView> {
+    this.restored = request;
+    return Promise.resolve(aPrescription());
   }
 
   documentOf(): Promise<PrescriptionRecordSource | null> {
@@ -273,6 +322,10 @@ describe('el servicio de recetas', () => {
   let allergyReader: FakeAllergyReader;
   let entries: AccessAuditEntry[];
   let service: PrescriptionService;
+  /** DOC-109. What the documents port was asked to archive. */
+  let archived: AnnulledDocument[];
+  /** DOC-109. What the port answers about the PDF; `true` unless a test moves it. */
+  let archiveAnswer: boolean | null;
 
   beforeEach(() => {
     repository = new FakeRepository();
@@ -285,7 +338,15 @@ describe('el servicio de recetas', () => {
       },
     };
     const logger = { setContext: vi.fn(), info: vi.fn() } as unknown as PinoLogger; // prettier-ignore
-    service = new PrescriptionService(repository, allergyReader, audit, logger);
+    archived = [];
+    archiveAnswer = true;
+    const documents: AnnulledDocumentArchiver = {
+      archiveAnnulled: (document) => {
+        archived.push(document);
+        return Promise.resolve(archiveAnswer);
+      },
+    };
+    service = new PrescriptionService(repository, allergyReader, audit, logger, documents); // prettier-ignore
   });
 
   const composeRequest = {
@@ -589,9 +650,84 @@ describe('el servicio de recetas', () => {
   it('PR-010 anula una receta EMITIDA sin borrar nada', async () => {
     repository.snapshot = aSnapshot({ status: 'ACTIVE' });
 
-    const cancelled = await service.cancel(PRESCRIPTION, requester);
+    const cancelled = await service.cancel(PRESCRIPTION, 'Pérdida', requester);
 
     expect(cancelled.status).toBe('CANCELLED');
+  });
+
+  it('PR-108 anula guardando quién (la sesión), cuándo (el reloj de la app) y el motivo', async () => {
+    repository.snapshot = aSnapshot({ status: 'ACTIVE' });
+    const before = Date.now();
+
+    const cancelled = await service.cancel(PRESCRIPTION, 'Robo o hurto', requester); // prettier-ignore
+
+    // `cancelled_by_id` apunta a `app_user`: la CUENTA que anuló, nunca un id
+    // que mande el llamador (PR-004).
+    expect(repository.cancelled).toMatchObject({
+      cancelledById: USER,
+      cancelReason: 'Robo o hurto',
+    });
+    expect(repository.cancelled?.cancelledAt.getTime()).toBeGreaterThanOrEqual(before); // prettier-ignore
+    expect(cancelled.cancelReason).toBe('Robo o hurto');
+    expect(cancelled.cancelledBy?.id).toBe(USER);
+  });
+
+  it('PR-109 corrige como acto del prescriptor de la sesión: anula con el motivo y abre el borrador, con dos filas de bitácora', async () => {
+    const corrected = await service.correct(PRESCRIPTION, 'Error de prescripción', requester); // prettier-ignore
+
+    expect(repository.corrected).toMatchObject({
+      prescriptionId: PRESCRIPTION,
+      // PR-100. El borrador nuevo es de quien corrige, y sólo su prescriptor
+      // corrige: el adaptador lo compara con la fila bloqueada.
+      prescriberId: PRACTITIONER,
+      sites: [SITE],
+      cancel: { cancelledById: USER, cancelReason: 'Error de prescripción' },
+    });
+    expect(repository.corrected?.cancel.cancelledAt).toBeInstanceOf(Date);
+    expect(corrected.cancelled.status).toBe('CANCELLED');
+    expect(corrected.draft.status).toBe('DRAFT');
+    // La anulación y el borrador nuevo son dos hechos de la bitácora.
+    expect(entries.map((entry) => [entry.action, entry.resourceId])).toEqual([
+      ['UPDATE', PRESCRIPTION],
+      ['CREATE', 'prescription-2'],
+    ]);
+  });
+
+  it('DOC-109 PR-108 PR-109 al anular o corregir pide archivar el PDF con la marca, a nombre de la sesión', async () => {
+    repository.snapshot = aSnapshot({ status: 'ACTIVE' });
+    await service.cancel(PRESCRIPTION, 'Pérdida', requester);
+    await service.correct(PRESCRIPTION, 'Error de prescripción', requester);
+
+    expect(archived).toEqual([
+      { kind: 'PRESCRIPTION', subjectId: PRESCRIPTION, userId: USER, cause: 'ANNULMENT' }, // prettier-ignore
+      { kind: 'PRESCRIPTION', subjectId: PRESCRIPTION, userId: USER, cause: 'CORRECTION' }, // prettier-ignore
+    ]);
+  });
+
+  it('DOC-109 PR-108 PR-109 la respuesta dice si el PDF con la marca quedó archivado', async () => {
+    repository.snapshot = aSnapshot({ status: 'ACTIVE' });
+
+    // Control positivo: archivado.
+    await expect(service.cancel(PRESCRIPTION, 'Pérdida', requester)).resolves.toMatchObject({ documentArchived: true }); // prettier-ignore
+    // Había PDF y no se pudo archivar: la pantalla tiene que avisar.
+    archiveAnswer = false;
+    await expect(service.cancel(PRESCRIPTION, 'Pérdida', requester)).resolves.toMatchObject({ documentArchived: false }); // prettier-ignore
+    await expect(service.correct(PRESCRIPTION, 'Error de prescripción', requester)).resolves.toMatchObject({ documentArchived: false }); // prettier-ignore
+    // No había PDF que sustituir.
+    archiveAnswer = null;
+    await expect(service.correct(PRESCRIPTION, 'Error de prescripción', requester)).resolves.toMatchObject({ documentArchived: null }); // prettier-ignore
+  });
+
+  it('PR-109 una cuenta sin ficha profesional no corrige nada', async () => {
+    repository.prescriber = null;
+
+    await expect(
+      service.correct(PRESCRIPTION, 'Error de prescripción', requester),
+    ).rejects.toMatchObject({ code: 'PRESCRIBER_PROFILE_REQUIRED' });
+    expect(repository.corrected).toBeUndefined();
+    expect(entries).toEqual([]);
+    // DOC-109. Nada se anuló: no hay PDF que archivar.
+    expect(archived).toEqual([]);
   });
 
   it('PR-010 rechaza anular un borrador, porque no hay acto legal que anular', async () => {
@@ -603,33 +739,83 @@ describe('el servicio de recetas', () => {
      * altera—, así que la base y la norma coinciden. La salida de un borrador
      * equivocado es DESCARTARLO (PR-011), que es otro acto.
      */
-    await expect(service.cancel(PRESCRIPTION, requester)).rejects.toMatchObject(
-      {
-        code: 'PRESCRIPTION_NOT_EDITABLE',
-        params: { status: 'DRAFT' },
-      },
-    );
+    await expect(
+      service.cancel(PRESCRIPTION, 'Pérdida', requester),
+    ).rejects.toMatchObject({
+      code: 'PRESCRIPTION_NOT_EDITABLE',
+      params: { status: 'DRAFT' },
+    });
   });
 
-  it('PR-011 descarta un borrador guardando quién, cuándo y por qué', async () => {
-    // Los tres juntos porque la base los exige juntos
-    // (`prescription_discard_states_who_when_and_why`): sin motivo, descartar
-    // es hacer desaparecer lo que se escribió.
-    const discarded = await service.discard(
-      PRESCRIPTION,
-      'Se tecleó en la atención equivocada',
-      requester,
-    );
+  it('PR-011 PR-107 descarta un borrador guardando quién y cuándo, y el motivo sólo si se escribió', async () => {
+    // D-126: un borrador nunca salió de la consulta, así que no se pregunta
+    // nada. Quién y cuándo los pone el sistema; el motivo, si lo hay, se guarda.
+    const silent = await service.discard(PRESCRIPTION, null, requester);
 
-    expect(discarded.status).toBe('DISCARDED');
-    expect(discarded.discardReason).toBe('Se tecleó en la atención equivocada');
+    expect(silent.status).toBe('DISCARDED');
     expect(repository.discarded).toMatchObject({
       // Nunca la cédula y nunca el profesional: `discarded_by_id` apunta a
       // `app_user`, que es la cuenta que hizo el acto (REQ-110).
       discardedById: requester.userId,
-      discardReason: 'Se tecleó en la atención equivocada',
+      discardReason: null,
     });
     expect(repository.discarded?.discardedAt).toBeInstanceOf(Date);
+
+    const explained = await service.discard(
+      PRESCRIPTION,
+      'Se tecleó en la atención equivocada',
+      requester,
+    );
+    expect(explained.discardReason).toBe('Se tecleó en la atención equivocada');
+  });
+
+  it('PR-107 descartar es acto del prescriptor: el borrador de otro no se descarta, y sin ficha profesional tampoco', async () => {
+    repository.draftPrescriberId = 'practitioner-2';
+    await expect(
+      service.discard(PRESCRIPTION, null, requester),
+    ).rejects.toMatchObject({ code: 'PRESCRIPTION_DRAFT_OF_ANOTHER_PRESCRIBER' }); // prettier-ignore
+    expect(repository.discarded).toBeUndefined();
+    expect(entries).toEqual([]);
+
+    repository.draftPrescriberId = PRACTITIONER;
+    repository.prescriber = null;
+    await expect(
+      service.discard(PRESCRIPTION, null, requester),
+    ).rejects.toMatchObject({ code: 'PRESCRIBER_PROFILE_REQUIRED' });
+    expect(repository.discarded).toBeUndefined();
+
+    // Control positivo: su prescriptor sí.
+    repository.prescriber = aPrescriber();
+    await service.discard(PRESCRIPTION, null, requester);
+    expect(repository.discarded).toBeDefined();
+  });
+
+  it('PR-107 restaura el borrador como acto de su prescriptor, con fila de bitácora', async () => {
+    const restored = await service.restore(PRESCRIPTION, requester);
+
+    expect(restored.status).toBe('DRAFT');
+    // El prescriptor es la sesión, nunca un identificador del cuerpo (PR-004).
+    expect(repository.restored).toEqual({
+      prescriptionId: PRESCRIPTION,
+      prescriberId: PRACTITIONER,
+      sites: [SITE],
+    });
+    expect(entries).toEqual([
+      expect.objectContaining({
+        resourceType: 'prescription',
+        resourceId: PRESCRIPTION,
+        action: 'UPDATE',
+      }),
+    ]);
+  });
+
+  it('PR-107 una cuenta sin ficha profesional no restaura nada', async () => {
+    repository.prescriber = null;
+
+    await expect(
+      service.restore(PRESCRIPTION, requester),
+    ).rejects.toMatchObject({ code: 'PRESCRIBER_PROFILE_REQUIRED' });
+    expect(repository.restored).toBeUndefined();
   });
 
   it('PR-011 rechaza descartar una receta ya emitida, que se anula', async () => {
@@ -650,9 +836,9 @@ describe('el servicio de recetas', () => {
   it('PR-093 deja una fila de bitácora al componer, al emitir, al descartar y al anular', async () => {
     await service.compose(composeRequest, requester);
     await service.issue(PRESCRIPTION, requester);
-    await service.discard(PRESCRIPTION, 'Borrador equivocado', requester);
+    await service.discard(PRESCRIPTION, null, requester);
     repository.snapshot = aSnapshot({ status: 'ACTIVE' });
-    await service.cancel(PRESCRIPTION, requester);
+    await service.cancel(PRESCRIPTION, 'Pérdida', requester);
 
     expect(entries.map((entry) => entry.action)).toEqual([
       'CREATE',

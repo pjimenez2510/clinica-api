@@ -857,7 +857,10 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
 
     await prisma.serviceOrderItem.update({
       where: { id: order.items[0]!.id },
-      data: { status: 'CANCELLED' },
+      data: {
+        status: 'CANCELLED',
+        cancelledById: (await createUser(prisma)).id,
+      },
     });
 
     // ORD-102. Un borrador de orden también está vivo, como la receta en

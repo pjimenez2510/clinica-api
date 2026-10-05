@@ -14,6 +14,7 @@ import {
   OrderEncounterNotFoundError,
   OrderEncounterNotOpenError,
   OrderItemNotPendingError,
+  OrderNotDiscardedError,
   OrderNotDraftError,
   OrderNotFoundError,
   OrderNotIssuedError,
@@ -22,10 +23,12 @@ import { admitsNewOrders, isPending } from '../domain/service-order';
 import { ageingOf } from '../domain/order-ageing';
 import type {
   CancelOrderItem,
+  CorrectedOrder,
   DraftDiscard,
   DraftRewrite,
   NewOrderLine,
   NewServiceOrder,
+  OrderCorrection,
   OrderQuery,
   PendingOrderEntry,
   PendingOrdersQuery,
@@ -258,6 +261,144 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
     });
 
     return toOrderView(row);
+  }
+
+  /**
+   * ORD-116. DISCARDED back to DRAFT, as it was a moment ago.
+   *
+   * Locked in the order every writer of the draft uses —attention first,
+   * order second—, and judged on the locked row, so a second «Deshacer» finds
+   * it already a draft. Who and when are cleared with the state:
+   * `service_order_discard_states_who_and_when` refuses a draft that still
+   * says it was discarded, and `service_order_guard_status` lets this one
+   * transition through and nothing else with it.
+   *
+   * ⚠️ THE ATTENTION'S STATE IS NOT JUDGED, as it is not on the discard: the
+   * draft returns where it was, and issuing it is still judged by ORD-005.
+   */
+  async restore(query: OrderQuery): Promise<ServiceOrderView> {
+    const row = await this.prisma.$transaction(async (tx) => {
+      const found = await tx.serviceOrder.findFirst({
+        where: { id: query.orderId, ...siteFilter(query.sites) },
+        select: { encounterId: true },
+      });
+      if (!found) throw new OrderNotFoundError();
+
+      await tx.$queryRaw`SELECT id FROM "encounter" WHERE id = ${found.encounterId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM "service_order" WHERE id = ${query.orderId}::uuid FOR UPDATE`;
+
+      const current = await tx.serviceOrder.findUniqueOrThrow({
+        where: { id: query.orderId },
+        select: { status: true },
+      });
+      if (current.status !== 'DISCARDED') throw new OrderNotDiscardedError();
+
+      return tx.serviceOrder.update({
+        where: { id: query.orderId },
+        data: { status: 'DRAFT', discardedAt: null, discardedById: null },
+        select: ORDER_SELECT,
+      });
+    });
+
+    return toOrderView(row);
+  }
+
+  /**
+   * ORD-118. «Corregir» an issued order: its live lines cancelled and a new
+   * draft written with them, IN ONE TRANSACTION, so a failure writing the
+   * draft leaves every line live.
+   *
+   * Locked in the order every writer uses —attention first, order second—,
+   * and judged on the locked rows. The attention has to admit a new order
+   * (ORD-005), because the draft is born in it; refused here, nothing has
+   * been cancelled.
+   *
+   * ⚠️ ONLY THE LIVE LINES. A line with its result in (`COMPLETED`) is not
+   * cancelled, as ORD-008 refuses, and is not asked for again: it was
+   * answered. A cancelled one stays as it was.
+   *
+   * ⚠️ THE LINES ARE COPIED AS THEY WERE FROZEN —code, name and tariff
+   * concept— and not resolved again against the catalogue: what is corrected
+   * is what the paper asked for. What has to be true to issue again (the exam
+   * still active and of its type, ORD-003, ORD-097) is judged by the issue of
+   * the new draft, as for any draft.
+   */
+  async correct(query: OrderCorrection): Promise<CorrectedOrder> {
+    return this.prisma.$transaction(async (tx) => {
+      const found = await tx.serviceOrder.findFirst({
+        where: { id: query.orderId, ...siteFilter(query.sites) },
+        select: { encounterId: true },
+      });
+      if (!found) throw new OrderNotFoundError();
+
+      await tx.$queryRaw`SELECT id FROM "encounter" WHERE id = ${found.encounterId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM "service_order" WHERE id = ${query.orderId}::uuid FOR UPDATE`;
+
+      const current = await tx.serviceOrder.findUniqueOrThrow({
+        where: { id: query.orderId },
+        select: {
+          status: true,
+          siteId: true,
+          orderedById: true,
+          category: true,
+          priority: true,
+          clinicalNoteText: true,
+          encounter: { select: { status: true } },
+          items: {
+            orderBy: { createdAt: 'asc' },
+            select: {
+              id: true,
+              status: true,
+              testCode: true,
+              testDisplay: true,
+              conceptId: true,
+            },
+          },
+        },
+      });
+      // ORD-100. A draft is rewritten (ORD-096), not corrected.
+      if (current.status !== 'ISSUED') throw new OrderNotIssuedError();
+      if (!admitsNewOrders(current.encounter.status)) {
+        throw new OrderEncounterNotOpenError(current.encounter.status);
+      }
+      const live = current.items.filter((item) => isPending(item.status));
+      if (live.length === 0) throw new OrderItemNotPendingError();
+
+      // ORD-007. The three columns, as `cancelItem` writes them.
+      await tx.serviceOrderItem.updateMany({
+        where: { id: { in: live.map((item) => item.id) } },
+        data: {
+          status: 'CANCELLED',
+          completedAt: new Date(),
+          cancelledById: query.cancelledById,
+        },
+      });
+      const cancelled = await tx.serviceOrder.findUniqueOrThrow({
+        where: { id: query.orderId },
+        select: ORDER_SELECT,
+      });
+
+      const draft = await tx.serviceOrder.create({
+        data: {
+          encounterId: found.encounterId,
+          siteId: current.siteId,
+          orderedById: current.orderedById,
+          category: current.category,
+          priority: current.priority,
+          clinicalNoteText: current.clinicalNoteText,
+          items: {
+            create: live.map((item) => ({
+              testCode: item.testCode,
+              testDisplay: item.testDisplay,
+              conceptId: item.conceptId,
+            })),
+          },
+        },
+        select: ORDER_SELECT,
+      });
+
+      return { cancelled: toOrderView(cancelled), draft: toOrderView(draft) };
+    });
   }
 
   /** ORD-009. One order, within the caller's scope. */
@@ -507,11 +648,16 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
        * a human reads, and `completed_at` is what takes the row out of
        * `service_order_item_pending` and makes the trigger lower
        * `pending_items`. Setting one and not the other leaves the record and
-       * the worklist disagreeing about the same line.
+       * the worklist disagreeing about the same line. And WHO, which
+       * `service_order_item_cancel_states_who` demands.
        */
       await tx.serviceOrderItem.update({
         where: { id: item.id },
-        data: { status: 'CANCELLED', completedAt: new Date() },
+        data: {
+          status: 'CANCELLED',
+          completedAt: new Date(),
+          cancelledById: request.cancelledById,
+        },
       });
 
       return tx.serviceOrder.findFirstOrThrow({

@@ -493,6 +493,8 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
             frequencyText: true,
             durationDays: true,
             instructions: true,
+            conceptId: true,
+            offFormulary: true,
             offFormularyJustification: true,
           },
         },
@@ -551,6 +553,12 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
           frequencyText: item.frequencyText,
           durationDays: item.durationDays,
           instructions: item.instructions,
+          // PR-110. Lines written before the mark carry `false` and the
+          // justification that was the mark then.
+          offFormulary:
+            item.offFormulary ||
+            item.conceptId === null ||
+            item.offFormularyJustification !== null,
           offFormularyJustification: item.offFormularyJustification,
         })),
       },

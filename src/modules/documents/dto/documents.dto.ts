@@ -43,12 +43,14 @@ const renderRequestSchema = z.object({
 export class RenderRequestDto extends createZodDto(renderRequestSchema) {}
 
 /**
- * DOC-007. Emitting a correction.
+ * DOC-007, DOC-108. Emitting a correction.
  *
- * ⚠️ THE REASON IS OBLIGATORY, and `document_render_supersession_states_why`
- * says the same thing in the database. Without it, annulling is a way of making
- * what was emitted disappear — the same argument that made the reason
- * obligatory on discarding a prescription draft.
+ * ⚠️ THE ROW ALWAYS HAS A REASON, and `document_render_supersession_states_why`
+ * says so in the database: without it, annulling is a way of making what was
+ * emitted disappear. Since D-126 NOBODY HAS TO WRITE IT: without `reason` the
+ * server writes the one of its cause («Receta anulada», «Examen anulado»,
+ * «Certificado anulado», «Nueva versión del documento»). One that arrives is
+ * kept, with the same bounds as before.
  */
 const supersedeRequestSchema = renderRequestSchema.extend({
   supersedesId: z.uuid('Indique el documento que se está corrigiendo'),
@@ -56,7 +58,8 @@ const supersedeRequestSchema = renderRequestSchema.extend({
     .string()
     .trim()
     .min(10, 'Escriba por qué se corrige el documento anterior')
-    .max(500, 'El motivo no puede superar 500 caracteres'),
+    .max(500, 'El motivo no puede superar 500 caracteres')
+    .optional(),
 });
 
 /** Body of POST /documents/renders/supersede. */

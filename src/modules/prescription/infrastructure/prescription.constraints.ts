@@ -16,20 +16,24 @@ import { registerConstraintMeanings } from '../../../shared/http/constraint-mean
  */
 registerConstraintMeanings({
   /**
-   * PR-009. `prescription_item_off_formulary`: `concept_id IS NOT NULL OR
-   * off_formulary_justification IS NOT NULL`.
+   * PR-110. `prescription_item_off_formulary`: `concept_id IS NOT NULL OR
+   * off_formulary OR off_formulary_justification IS NOT NULL`.
    *
-   * THE SERVICE GETS THERE FIRST in the ordinary case, with
-   * `OFF_FORMULARY_JUSTIFICATION_REQUIRED` and the box named — which is what a
-   * form can act on. This entry is the same rule for the writer that did not
-   * come through the service: an import, a `psql`, a use case somebody writes
-   * in two years. Prescribing outside the CNMB is allowed; not saying why is
-   * not.
+   * Prescribing outside the CNMB is allowed and needs no reason (D-128.6);
+   * what it needs is the MARK, which REQ-054 asks for. The repository sets it
+   * on every line it writes without a concept, so nobody should reach this
+   * through the API. It is the same rule for an import or a `psql`. The
+   * justification still satisfies it because, before the mark existed, it
+   * was the mark.
+   *
+   * ⚠️ THE CONSTRAINT KEEPS ITS NAME (it is contract) AND CHANGES ITS CODE:
+   * `OFF_FORMULARY_JUSTIFICATION_REQUIRED` was retired with PR-110, because
+   * a reason is no longer required.
    */
   prescription_item_off_formulary: {
-    code: 'OFF_FORMULARY_JUSTIFICATION_REQUIRED',
-    field: 'offFormularyJustification',
-    message: 'Puede recetar fuera del CNMB, pero tiene que escribir por qué', // prettier-ignore
+    code: 'PRESCRIPTION_ITEM_OFF_FORMULARY_UNMARKED',
+    field: 'offFormulary',
+    message: 'Una línea sin medicamento del CNMB tiene que llevar la marca «fuera del CNMB»', // prettier-ignore
   },
   /**
    * PR-003. `prescription_issued_coherence`: `(status = 'DRAFT') = (issued_at
@@ -50,23 +54,23 @@ registerConstraintMeanings({
     message: 'El estado de la receta no concuerda con su instante de emisión: un borrador no puede tener hora de emisión, y una receta emitida no puede quedarse sin ella', // prettier-ignore
   },
   /**
-   * PR-011. `prescription_discard_states_who_when_and_why`: a `DISCARDED`
-   * prescription carries `discarded_at`, `discarded_by_id` AND
-   * `discard_reason`, or it is not `DISCARDED`.
+   * PR-011, PR-107. `prescription_discard_states_who_and_when`: a `DISCARDED`
+   * prescription carries `discarded_at` AND `discarded_by_id`, or it is not
+   * `DISCARDED`.
    *
-   * THE SERVICE WRITES THE THREE TOGETHER, so nobody should reach this through
-   * the API — the DTO refuses a discard with no reason first, with the box
-   * named. It is registered because the `CHECK` also guards an import and a
-   * `psql`, and for those the honest answer is a sentence.
+   * THE SERVICE WRITES THE TWO TOGETHER, from the session and the clock, so
+   * nobody should reach this through the API. It is registered because the
+   * `CHECK` also guards an import and a `psql`, and for those the honest
+   * answer is a sentence.
    *
-   * What it prevents is a draft that disappeared from the chart with nothing
-   * saying who removed it or why, which is the failure that made the reason
-   * obligatory in the first place.
+   * ⚠️ THE REASON IS NO LONGER PART OF IT (D-126). It replaced
+   * `prescription_discard_states_who_when_and_why`: a draft never left the
+   * room, so nothing is asked; who and when are what the system keeps alone.
    */
-  prescription_discard_states_who_when_and_why: {
-    code: 'PRESCRIPTION_DISCARD_REASON_REQUIRED',
-    field: 'reason',
-    message: 'Para descartar un borrador hay que decir quién lo descarta, cuándo y por qué: sin motivo, descartar es hacer desaparecer lo que se escribió', // prettier-ignore
+  prescription_discard_states_who_and_when: {
+    code: 'PRESCRIPTION_DISCARD_INCOMPLETE',
+    field: 'status',
+    message: 'Un borrador descartado tiene que decir quién lo descartó y cuándo', // prettier-ignore
   },
   /**
    * PR-010, PR-011. `prescription_discard_only_from_draft`: `discarded_at IS
@@ -79,6 +83,31 @@ registerConstraintMeanings({
    * happened, which is the whole reason `DISCARDED` exists as a state of its
    * own instead of reusing `CANCELLED`.
    */
+  /**
+   * PR-108. `prescription_cancel_states_who_when_and_why`: a prescription
+   * annulled from `20261005060200` on carries `cancelled_at`,
+   * `cancelled_by_id` AND a non-blank `cancel_reason` — the register of art.
+   * 70. `NOT VALID`, so the ones annulled before, which had nowhere to keep
+   * them, are not rejected and nothing is invented for them.
+   *
+   * The DTO refuses a missing reason first, with the box named; this is the
+   * same rule for an import or a `psql`.
+   */
+  prescription_cancel_states_who_when_and_why: {
+    code: 'PRESCRIPTION_CANCEL_INCOMPLETE',
+    field: 'reason',
+    message: 'Una receta anulada tiene que decir quién la anuló, cuándo y por qué: es el registro que pide el art. 70', // prettier-ignore
+  },
+  /**
+   * PR-108. `prescription_cancel_columns_only_when_cancelled`: no other state
+   * carries the register. A receta in force that said who annulled it would
+   * say two things at once.
+   */
+  prescription_cancel_columns_only_when_cancelled: {
+    code: 'PRESCRIPTION_CANCEL_NOT_CANCELLED',
+    field: 'status',
+    message: 'Sólo una receta anulada lleva quién la anuló, cuándo y por qué', // prettier-ignore
+  },
   prescription_discard_only_from_draft: {
     code: 'PRESCRIPTION_DISCARD_NOT_FROM_DRAFT',
     field: 'status',

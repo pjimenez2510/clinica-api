@@ -5,6 +5,10 @@ import type {
   AccessAuditEntry,
   AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
+import type {
+  AnnulledDocument,
+  AnnulledDocumentArchiver,
+} from '../../../shared/documents/annulled-document.port';
 import {
   addDays,
   atWallClock,
@@ -16,6 +20,7 @@ import {
   IESS_NOT_APPLICABLE_NOTICE,
   longRestNotice,
   MATERNITY_CHAIN_NOTICE,
+  REST_LIMIT_NOTICE,
 } from '../domain/certificate';
 import {
   CertificateAlreadyRevokedError,
@@ -219,6 +224,36 @@ class FakeRepository implements CertificateRepository {
     this.asked.push(query);
     return Promise.resolve(this.stored);
   }
+
+  /** CER-053. One call: authorise, annul, decide, issue — or nothing. */
+  corrected: { query: CertificateQuery; revocation: RevocationPlan; plan: CertificatePlan }[] = []; // prettier-ignore
+
+  correct(
+    query: CertificateQuery,
+    revocation: RevocationPlan,
+    authorise: (snapshot: RevocationSnapshot) => void,
+    decide: (snapshot: IssueSnapshot) => CertificatePlan,
+  ): Promise<{ revoked: CertificateView; issued: CertificateView }> {
+    authorise(this.revocationSnapshot);
+    if (this.alreadyRevoked) throw new CertificateAlreadyRevokedError();
+    const plan = decide(this.snapshot);
+    this.corrected.push({ query, revocation, plan });
+    return Promise.resolve({
+      revoked: aView({
+        revokedAt: revocation.revokedAt,
+        revokedById: revocation.revokedById,
+        revocationReason: revocation.reason,
+      }),
+      issued: aView({
+        id: 'certificate-2',
+        number: 2,
+        type: plan.type,
+        issuedById: plan.issuedById,
+        restFrom: plan.rest?.from ?? null,
+        restTo: plan.rest?.to ?? null,
+      }),
+    });
+  }
 }
 
 const attendance = (
@@ -248,6 +283,22 @@ const rest = (days: number, overrides: Partial<IssueCertificateRequest> = {}) =>
     ...overrides,
   });
 
+/** CER-055. Only the notices of a limit: not CER-032's, CER-038's nor CER-043's. */
+const limitNoticesOf = (notices: string[]): string[] =>
+  notices.filter(
+    (notice) =>
+      notice !== MATERNITY_CHAIN_NOTICE &&
+      !notice.startsWith('Este reposo es de '),
+  );
+
+/** CER-053. The fields of an issue, without the attention a correction keeps. */
+const fieldsOf = (
+  request: IssueCertificateRequest,
+): Omit<IssueCertificateRequest, 'encounterId'> =>
+  Object.fromEntries(
+    Object.entries(request).filter(([field]) => field !== 'encounterId'),
+  ) as Omit<IssueCertificateRequest, 'encounterId'>;
+
 describe('el servicio de certificados', () => {
   let repository: FakeRepository;
   let entries: AccessAuditEntry[];
@@ -255,6 +306,10 @@ describe('el servicio de certificados', () => {
   let service: CertificateService;
   /** What the injected clock answers; `NOW` unless a test moves it. */
   let clockReads: Date;
+  /** DOC-109. What the documents port was asked to archive. */
+  let archived: AnnulledDocument[];
+  /** DOC-109. What the port answers about the PDF; `true` unless a test moves it. */
+  let archiveAnswer: boolean | null;
 
   beforeEach(() => {
     clockReads = NOW;
@@ -271,7 +326,15 @@ describe('el servicio de certificados', () => {
       setContext: vi.fn(),
       info: (...args: unknown[]) => logged.push(args),
     } as unknown as PinoLogger;
-    service = new CertificateService(repository, audit, logger, () => clockReads); // prettier-ignore
+    archived = [];
+    archiveAnswer = true;
+    const documents: AnnulledDocumentArchiver = {
+      archiveAnnulled: (document) => {
+        archived.push(document);
+        return Promise.resolve(archiveAnswer);
+      },
+    };
+    service = new CertificateService(repository, audit, logger, () => clockReads, documents); // prettier-ignore
   });
 
   it('CER-001 registra el certificado con la atencion, el profesional de la sesion, el tipo y el instante', async () => {
@@ -417,6 +480,100 @@ describe('el servicio de certificados', () => {
     expect(revoked.revocationReason).toBe('Se emitió con el tipo equivocado');
   });
 
+  it('CER-053 corrige en una sola llamada: anula con el motivo y la sesión, emite lo pedido a nombre de la sesión, y audita las dos', async () => {
+    const fields = fieldsOf(rest(5));
+    const corrected = await service.correct(
+      'certificate-1',
+      { ...fields, reason: 'Error en las fechas' },
+      requester,
+      [],
+    );
+
+    const [{ query, revocation, plan }] = repository.corrected as [
+      (typeof repository.corrected)[number],
+    ];
+    expect(query).toEqual({ certificateId: 'certificate-1', sites: [SITE] });
+    expect(revocation).toEqual({
+      revokedAt: NOW,
+      revokedById: USER,
+      reason: 'Error en las fechas',
+    });
+    expect(plan).toMatchObject({
+      type: 'MEDICAL_REST',
+      issuedById: PRACTITIONER,
+      issuedAt: NOW,
+      rest: { from: today, to: addDays(today, 4) },
+    });
+    expect(corrected.revoked.revocationReason).toBe('Error en las fechas');
+    expect(corrected.issued.iess?.lastValidationDay).toBe(addDays(today, 12));
+    expect(
+      entries.map(({ resourceId, action }) => [resourceId, action]),
+    ).toEqual([
+      ['certificate-1', 'UPDATE'],
+      ['certificate-2', 'CREATE'],
+    ]);
+  });
+
+  it('DOC-109 CER-011 CER-053 al anular o corregir pide archivar el PDF con la marca, a nombre de la sesión', async () => {
+    await service.revoke('certificate-1', 'Error en las fechas', requester, []);
+    await service.correct(
+      'certificate-1',
+      { ...fieldsOf(rest(5)), reason: 'Error en las fechas' },
+      requester,
+      [],
+    );
+    // Un rechazo no anula nada: no hay PDF que archivar.
+    repository.snapshot = aSnapshot({ encounterStatus: 'COMPLETED' });
+    await expect(
+      service.correct('certificate-1', { ...fieldsOf(attendance()), reason: 'Paciente equivocado' }, requester, []), // prettier-ignore
+    ).rejects.toMatchObject({ code: 'CERTIFICATE_ENCOUNTER_NOT_OPEN' });
+
+    expect(archived).toEqual([
+      { kind: 'MEDICAL_CERTIFICATE', subjectId: 'certificate-1', userId: USER, cause: 'ANNULMENT' }, // prettier-ignore
+      { kind: 'MEDICAL_CERTIFICATE', subjectId: 'certificate-1', userId: USER, cause: 'CORRECTION' }, // prettier-ignore
+    ]);
+  });
+
+  it('DOC-109 CER-011 CER-053 la respuesta dice si el PDF con la marca quedó archivado', async () => {
+    const correction = { ...fieldsOf(rest(5)), reason: 'Error en las fechas' };
+
+    // Control positivo: archivado.
+    await expect(service.revoke('certificate-1', 'Error en las fechas', requester, [])).resolves.toMatchObject({ documentArchived: true }); // prettier-ignore
+    // Había PDF y no se pudo archivar: la pantalla tiene que avisar.
+    archiveAnswer = false;
+    await expect(service.revoke('certificate-1', 'Error en las fechas', requester, [])).resolves.toMatchObject({ documentArchived: false }); // prettier-ignore
+    await expect(service.correct('certificate-1', correction, requester, [])).resolves.toMatchObject({ documentArchived: false }); // prettier-ignore
+    // No había PDF que sustituir.
+    archiveAnswer = null;
+    await expect(service.correct('certificate-1', correction, requester, [])).resolves.toMatchObject({ documentArchived: null }); // prettier-ignore
+  });
+
+  it('CER-053 y CER-040 sólo quien lo emitió o la dirección médica de su sede lo corrige, antes de escribir nada', async () => {
+    repository.revocationSnapshot = { issuerUserId: 'user-2', siteId: SITE };
+    const fields = fieldsOf(attendance());
+    const request = { ...fields, reason: 'Paciente equivocado' };
+
+    await expect(
+      service.correct('certificate-1', request, requester, []),
+    ).rejects.toMatchObject({ code: 'CERTIFICATE_REVOKE_FORBIDDEN' });
+    expect(repository.corrected).toEqual([]);
+    expect(entries).toEqual([]);
+
+    // Control positivo: con la dirección médica de esa sede, corrige.
+    await service.correct('certificate-1', request, requester, [SITE]);
+    expect(repository.corrected).toHaveLength(1);
+  });
+
+  it('CER-053 si el nuevo no se puede emitir, la negativa sale sin auditar ninguna anulación', async () => {
+    repository.snapshot = aSnapshot({ encounterStatus: 'COMPLETED' });
+    const fields = fieldsOf(attendance());
+
+    await expect(
+      service.correct('certificate-1', { ...fields, reason: 'Paciente equivocado' }, requester, []), // prettier-ignore
+    ).rejects.toMatchObject({ code: 'CERTIFICATE_ENCOUNTER_NOT_OPEN' });
+    expect(entries).toEqual([]);
+  });
+
   it('CER-012 deja pasar la negativa de un certificado ya anulado sin auditar una anulacion que no ocurrio', async () => {
     repository.alreadyRevoked = true;
 
@@ -499,11 +656,13 @@ describe('el servicio de certificados', () => {
     ).resolves.toBeDefined();
   });
 
-  it('CER-031 rechaza un reposo de 31 dias sin escribir nada', async () => {
-    await expect(service.issue(rest(31), requester)).rejects.toMatchObject({
-      code: 'CERTIFICATE_REST_TOO_LONG',
-    });
-    expect(repository.issued).toHaveLength(0);
+  it('CER-031 CER-055 un reposo de 31 dias se emite con su aviso, y uno de 30 sin el', async () => {
+    const long = await service.issue(rest(31), requester);
+    expect(repository.issued).toHaveLength(1);
+    expect(long.restNotices).toContain(REST_LIMIT_NOTICE.tooLong(31));
+    expect(
+      (await service.issue(rest(30), requester)).restNotices,
+    ).not.toContain(REST_LIMIT_NOTICE.tooLong(30));
   });
 
   it('CER-032 la respuesta lleva un solo aviso cuando el reposo supera el umbral de la especialidad del emisor', async () => {
@@ -667,25 +826,22 @@ describe('el servicio de certificados', () => {
     expect(own.certificate.issuedByOtherReason).toBeNull();
   });
 
-  it('CER-041 un reposo que empieza en 90 días se rechaza antes de tocar la base, nombrando restFrom', async () => {
-    await expect(
-      service.issue(
-        rest(3, { restFrom: addDays(today, 90), restTo: addDays(today, 92) }),
-        requester,
-      ),
-    ).rejects.toMatchObject({
-      code: 'CERTIFICATE_REST_START_TOO_LATE',
-      fieldErrors: [expect.objectContaining({ field: 'restFrom' })],
-    });
-    expect(repository.issued).toHaveLength(0);
+  it('CER-041 CER-055 un reposo que empieza en 90 días se emite con su aviso, y uno desde mañana sin él', async () => {
+    const far = await service.issue(
+      rest(3, { restFrom: addDays(today, 90), restTo: addDays(today, 92) }),
+      requester,
+    );
+    expect(repository.issued).toHaveLength(1);
+    expect(far.restNotices).toEqual([
+      REST_LIMIT_NOTICE.startsAfterTomorrow(addDays(today, 1)),
+    ]);
 
-    // Control positivo: desde mañana.
-    await expect(
-      service.issue(
-        rest(1, { restFrom: addDays(today, 1), restTo: addDays(today, 1) }),
-        requester,
-      ),
-    ).resolves.toBeDefined();
+    // Control positivo: desde mañana, sin aviso.
+    const tomorrow = await service.issue(
+      rest(1, { restFrom: addDays(today, 1), restTo: addDays(today, 1) }),
+      requester,
+    );
+    expect(tomorrow.restNotices).toEqual([]);
   });
 
   it('CER-030 emitido dos días después de la atención pide motivo aunque el reposo empiece ese día', async () => {
@@ -755,13 +911,21 @@ describe('el servicio de certificados', () => {
       service.revoke('certificate-1', 'Emitido a la persona equivocada', requester, 'all'), // prettier-ignore
     ).resolves.toBeDefined();
   });
-  it('CER-044 CER-045 el reposo empieza como mucho 3 días antes y se emite hasta el octavo día de la atención (D-106)', async () => {
+  it('CER-044 CER-045 CER-055 el reposo 4 días antes de la atención, o emitido el noveno día, se emite con su aviso y su motivo (D-106)', async () => {
+    const early = await service.issue(
+      rest(5, { restFrom: addDays(today, -4), restTo: today, backdatingReason: 'Fiebre desde hace cuatro días' }), // prettier-ignore
+      requester,
+    );
+    expect(early.restNotices).toContain(
+      REST_LIMIT_NOTICE.startsTooEarly(addDays(today, -3), false),
+    );
+    expect(early.certificate.backdatingReason).toBe(
+      'Fiebre desde hace cuatro días',
+    );
+    // CER-030 sigue: sin motivo no se emite.
     await expect(
-      service.issue(
-        rest(5, { restFrom: addDays(today, -4), restTo: today, backdatingReason: 'Fiebre desde hace cuatro días' }), // prettier-ignore
-        requester,
-      ),
-    ).rejects.toMatchObject({ code: 'CERTIFICATE_REST_START_TOO_EARLY' });
+      service.issue(rest(5, { restFrom: addDays(today, -4), restTo: today }), requester), // prettier-ignore
+    ).rejects.toMatchObject({ code: 'CERTIFICATE_BACKDATING_REASON_REQUIRED' });
 
     // Mediodía en Ecuador: la madrugada (D-106 §5) no corre ningún día.
     clockReads = atWallClock(today, WallClockTime.of(12, 0));
@@ -771,24 +935,25 @@ describe('el servicio de certificados', () => {
         WallClockTime.of(12, 0),
       ),
     });
-    await expect(
-      service.issue(rest(1, { backdatingReason: 'Volvió nueve días después' }), requester), // prettier-ignore
-    ).rejects.toMatchObject({ code: 'CERTIFICATE_REST_ISSUED_TOO_LATE' });
-    expect(repository.issued).toHaveLength(0);
+    const late = await service.issue(
+      rest(1, { backdatingReason: 'Volvió nueve días después' }),
+      requester,
+    );
+    expect(late.restNotices).toEqual([REST_LIMIT_NOTICE.issuedTooLate]);
 
-    // Control positivo: el octavo día, con su motivo.
+    // Control positivo: el octavo día, con su motivo, sin aviso.
     repository.snapshot = aSnapshot({
       encounterStartedAt: atWallClock(
         addDays(today, -8),
         WallClockTime.of(12, 0),
       ),
     });
-    await expect(
-      service.issue(rest(1, { backdatingReason: 'Volvió ocho días después' }), requester), // prettier-ignore
-    ).resolves.toBeDefined();
+    expect(
+      (await service.issue(rest(1, { backdatingReason: 'Volvió ocho días después' }), requester)).restNotices, // prettier-ignore
+    ).toEqual([]);
   });
 
-  it('CER-044 CER-045 el reposo de maternidad empieza desde el parto y se emite pasados 8 días; la enfermedad general igual se rechaza (D-108)', async () => {
+  it('CER-044 CER-045 CER-055 el reposo de maternidad desde el parto y emitido pasados 8 días no avisa; la enfermedad general sí (D-108)', async () => {
     repository.snapshot = aSnapshot({ diagnosisCodes: ['O80'] });
     const birth = addDays(today, -5);
     const maternity = {
@@ -798,12 +963,12 @@ describe('el servicio de certificados', () => {
       maternityDischargeOn: addDays(birth, 2),
     };
     const fromBirth = { restFrom: birth, restTo: today, backdatingReason: 'Dio a luz en el hospital hace cinco días' }; // prettier-ignore
-    await expect(
-      service.issue(rest(1, fromBirth), requester),
-    ).rejects.toMatchObject({ code: 'CERTIFICATE_REST_START_TOO_EARLY' });
-    await expect(
-      service.issue(rest(1, { ...fromBirth, ...maternity }), requester),
-    ).resolves.toBeDefined();
+    expect(
+      (await service.issue(rest(1, fromBirth), requester)).restNotices,
+    ).toContain(REST_LIMIT_NOTICE.startsTooEarly(addDays(today, -3), false));
+    expect(
+      limitNoticesOf((await service.issue(rest(1, { ...fromBirth, ...maternity }), requester)).restNotices), // prettier-ignore
+    ).toEqual([]);
 
     // Nueve días después de la atención, a mediodía en Ecuador.
     clockReads = atWallClock(today, WallClockTime.of(12, 0));
@@ -812,12 +977,12 @@ describe('el servicio de certificados', () => {
       encounterStartedAt: atWallClock(addDays(today, -9), WallClockTime.of(12, 0)), // prettier-ignore
     });
     const later = { restFrom: today, restTo: addDays(today, 29), backdatingReason: 'Segundo certificado de la licencia' }; // prettier-ignore
-    await expect(
-      service.issue(rest(1, later), requester),
-    ).rejects.toMatchObject({ code: 'CERTIFICATE_REST_ISSUED_TOO_LATE' });
-    await expect(
-      service.issue(rest(1, { ...later, ...maternity, maternityAdmissionOn: addDays(today, -15), birthOn: addDays(today, -14), maternityDischargeOn: addDays(today, -12) }), requester), // prettier-ignore
-    ).resolves.toBeDefined();
+    expect(
+      (await service.issue(rest(1, later), requester)).restNotices,
+    ).toContain(REST_LIMIT_NOTICE.issuedTooLate);
+    expect(
+      limitNoticesOf((await service.issue(rest(1, { ...later, ...maternity, maternityAdmissionOn: addDays(today, -15), birthOn: addDays(today, -14), maternityDischargeOn: addDays(today, -12) }), requester)).restNotices), // prettier-ignore
+    ).toEqual([]);
   });
 
   it('CER-048 CER-049 la maternidad pide un diagnostico obstetrico y no se solapa con otro reposo vigente de la paciente (D-109)', async () => {
@@ -853,31 +1018,46 @@ describe('el servicio de certificados', () => {
     await expect(service.issue(request, requester)).resolves.toBeDefined();
   });
 
-  it('CER-046 CER-047 la maternidad con un parto de hace mas de 84 dias, o mas alla de la licencia, se rechaza (D-109)', async () => {
+  it('CER-046 CER-047 CER-051 CER-055 la maternidad fuera de sus límites se emite con sus avisos (D-109, D-110)', async () => {
     repository.snapshot = aSnapshot({ diagnosisCodes: ['O80'] });
-    const maternityOf = (birth: ClinicalDate, to: ClinicalDate) =>
+    const maternityOf = (
+      birth: ClinicalDate,
+      to: ClinicalDate,
+      admission: ClinicalDate = birth,
+    ) =>
       rest(1, {
         restFrom: today,
         restTo: to,
         contingencyType: 'MATERNITY',
-        maternityAdmissionOn: birth,
+        maternityAdmissionOn: admission,
         birthOn: birth,
         maternityDischargeOn: birth,
       });
-    await expect(
-      service.issue(maternityOf(addDays(today, -85), today), requester),
-    ).rejects.toMatchObject({ code: 'CERTIFICATE_MATERNITY_DATES_TOO_OLD' });
+    const noticesOf = async (request: IssueCertificateRequest) =>
+      limitNoticesOf((await service.issue(request, requester)).restNotices);
+
+    // Control positivo: dentro de la licencia, sin avisos de límite.
+    expect(
+      await noticesOf(maternityOf(addDays(today, -70), addDays(today, 13))),
+    ).toEqual([]);
+    expect(await noticesOf(maternityOf(addDays(today, -85), today))).toEqual([
+      REST_LIMIT_NOTICE.birthTooOld,
+      REST_LIMIT_NOTICE.leaveExceeded(addDays(today, -2)),
+    ]);
     // D-110 §6: el último día es parto + 83.
-    await expect(
-      service.issue(maternityOf(addDays(today, -70), addDays(today, 14)), requester), // prettier-ignore
-    ).rejects.toMatchObject({ code: 'CERTIFICATE_MATERNITY_LEAVE_EXCEEDED' });
-    await expect(
-      service.issue(maternityOf(addDays(today, -70), addDays(today, 13)), requester), // prettier-ignore
-    ).resolves.toBeDefined();
+    expect(
+      await noticesOf(maternityOf(addDays(today, -70), addDays(today, 14))),
+    ).toEqual([REST_LIMIT_NOTICE.leaveExceeded(addDays(today, 13))]);
     // D-110 §1: el parto, como mucho 4 semanas después de la atención.
-    await expect(
-      service.issue(maternityOf(addDays(today, 29), today), requester),
-    ).rejects.toMatchObject({ code: 'CERTIFICATE_MATERNITY_BIRTH_TOO_FAR' });
+    expect(await noticesOf(maternityOf(addDays(today, 29), today))).toEqual([
+      REST_LIMIT_NOTICE.birthTooFar(addDays(today, 28)),
+    ]);
+    // D-112 §1: el ingreso, como mucho 14 días antes del parto.
+    const birth = addDays(today, -1);
+    expect(
+      await noticesOf(maternityOf(birth, today, addDays(birth, -15))),
+    ).toEqual([REST_LIMIT_NOTICE.admissionTooEarly(addDays(birth, -14))]);
+    expect(repository.issued).toHaveLength(5);
   });
 
   it('CER-048 CER-050 un reposo general no cabe sobre una maternidad vigente, y las maternidades de un embarazo comparten el parto (D-110)', async () => {

@@ -145,7 +145,10 @@ const prescriptionItemSchema = z
       .trim()
       .max(2000, 'Las indicaciones no pueden superar 2000 caracteres')
       .optional(),
-    /** PR-009. Obligatoria exactamente cuando no hay concepto del CNMB. */
+    /**
+     * PR-110. Opcional (D-128.6): fuera del CNMB basta la marca, que pone el
+     * servidor. Si llega, se guarda y se imprime.
+     */
     offFormularyJustification: z
       .string()
       .trim()
@@ -191,19 +194,7 @@ const prescriptionItemSchema = z
         input: item,
         path: ['genericName'],
         message:
-          'Elija el medicamento en el CNMB, o escriba su nombre genérico y justifique la prescripción fuera del cuadro',
-      });
-    }
-    if (
-      item.conceptId === undefined &&
-      item.offFormularyJustification === undefined
-    ) {
-      // prettier-ignore
-      ctx.issues.push({
-        code: 'custom',
-        input: item,
-        path: ['offFormularyJustification'],
-        message: 'Escriba por qué se receta fuera del CNMB',
+          'Elija el medicamento en el CNMB, o escriba su nombre genérico si no está en el cuadro',
       });
     }
     /**
@@ -304,15 +295,12 @@ export type PrescriptionVocabularyResponse = z.infer<
 >;
 
 /**
- * PR-011. Discarding a draft: the motivo, and nothing else.
+ * PR-011, PR-107. Discarding a draft: nothing is asked.
  *
- * ⚠️ THE REASON IS OBLIGATORY, AND IT IS OBLIGATORY BECAUSE IT IS STORED.
- * `prescription.discard_reason` exists and
- * `prescription_discard_states_who_when_and_why` refuses a discarded row
- * without it, so what is typed here is kept. That is the exact difference with
- * the annulment, which asks for nothing precisely because there is no column
- * (⚠️ **Falta esquema**, PR-010): a mandatory reason dropped on the floor makes
- * everybody believe there is a register.
+ * ⚠️ THE REASON IS OPTIONAL SINCE D-126. A draft never left the room, so the
+ * screen discards it with one click and offers «Deshacer». If a caller does
+ * write a reason, `prescription.discard_reason` keeps it; a blank one is no
+ * reason at all and travels as `null`.
  *
  * ⚠️ AND THERE IS NO `discardedById` FIELD. Who discarded it is the
  * authenticated session, never an id the caller supplies — the same rule
@@ -322,14 +310,59 @@ export const discardPrescriptionSchema = z.object({
   reason: z
     .string()
     .trim()
-    .min(5, 'Escriba por qué se descarta este borrador')
     // 500 is `discard_reason`'s own width: refusing here names the box, while
     // letting it through would refuse the row with a constraint name instead.
-    .max(500, 'El motivo no puede superar 500 caracteres'),
+    .max(500, 'El motivo no puede superar 500 caracteres')
+    .nullish()
+    .transform((reason) => (reason ? reason : null)),
 });
 /** Body of POST /prescriptions/:prescriptionId/discard. */
 export class DiscardPrescriptionDto extends createZodDto(
   discardPrescriptionSchema,
+) {}
+
+/**
+ * PR-108, PR-109. Annulling an ISSUED prescription, or correcting it: the
+ * reason, and nothing else.
+ *
+ * ⚠️ THE REASON IS OBLIGATORY, AND IT IS OBLIGATORY BECAUSE IT IS STORED.
+ * Art. 70 of Res. ACESS-2023-0030 obliges a «registro de las recetas médicas
+ * perdidas», and `cancel_reason` is that register:
+ * `prescription_cancel_states_who_when_and_why` refuses a cancelled row
+ * without it. The paper is in a third party's hand, which is the case D-126.3
+ * keeps a reason for.
+ *
+ * TEXT AND NOT AN ENUM. The screen offers a short list with «Otro»
+ * (`ReasonPicker`) and sends the label it chose, or what was written in
+ * «Otro»: the list belongs to the screen, the column keeps a sentence, and the
+ * AI assistant sends the same thing a person does (D-127.5).
+ *
+ * ⚠️ AND THERE IS NO `cancelledById` FIELD. Who annulled it is the
+ * authenticated session, never an id the caller supplies (PR-004).
+ */
+const issuedPrescriptionReasonSchema = z.object({
+  reason: z
+    .string({ error: 'Elija el motivo' })
+    .trim()
+    .min(5, 'Elija el motivo, o escriba uno de al menos 5 letras')
+    // 500 is `cancel_reason`'s own width.
+    .max(500, 'El motivo no puede superar 500 caracteres'),
+});
+
+/** PR-108. Body of POST /prescriptions/:prescriptionId/cancel. */
+export const cancelPrescriptionSchema = issuedPrescriptionReasonSchema;
+export class CancelPrescriptionDto extends createZodDto(
+  cancelPrescriptionSchema,
+) {}
+
+/**
+ * PR-109. Body of POST /prescriptions/:prescriptionId/correct. The SAME
+ * contract as the annulment, because correcting IS annulling — plus a draft
+ * with the same lines, in the same transaction.
+ */
+export const correctPrescriptionSchema = issuedPrescriptionReasonSchema;
+export class CorrectPrescriptionDto extends createZodDto(
+  correctPrescriptionSchema,
 ) {}
 
 /** One line as a client reads it. */
@@ -348,6 +381,8 @@ export const prescriptionItemViewSchema = z.object({
   frequencyText: z.string(),
   durationDays: z.number().int().nullable(),
   instructions: z.string().nullable(),
+  /** PR-110. Fuera del CNMB: sin concepto, o en una presentación que el cuadro no trae (PR-104). */
+  offFormulary: z.boolean(),
   offFormularyJustification: z.string().nullable(),
   /** PR-101, PR-102. `null` on lines written before the vocabulary. */
   dosageFormCode: z.string().nullable(),
@@ -386,10 +421,53 @@ export const prescriptionSchema = z.object({
    */
   discardedAt: z.iso.datetime().nullable(),
   discardReason: z.string().nullable(),
+  /**
+   * PR-108. The register of art. 70: when it was annulled, by whom and why.
+   * `null` on every state but `CANCELLED` — and on a prescription annulled
+   * before the register existed, which has none to give.
+   */
+  cancelledAt: z.iso.datetime().nullable(),
+  cancelledBy: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+  cancelReason: z.string().nullable(),
   items: z.array(prescriptionItemViewSchema),
 });
-/** Response of issuing, discarding and annulling a prescription. */
+/** Response of issuing and discarding a prescription. */
 export class PrescriptionDto extends createZodDto(prescriptionSchema) {}
+
+/**
+ * DOC-109. Whether the PDF that replaces the annulled one was filed: `true`
+ * filed; `false` there was one and it COULD NOT be filed —the screen warns,
+ * because the archive still holds the PDF without the mark—; `null` there was
+ * no PDF to replace.
+ */
+const documentArchivedSchema = z.boolean().nullable();
+
+/** PR-108. What annulling answers: the prescription, and its PDF (DOC-109). */
+export const cancelledPrescriptionSchema = prescriptionSchema.extend({
+  documentArchived: documentArchivedSchema,
+});
+export class CancelledPrescriptionDto extends createZodDto(
+  cancelledPrescriptionSchema,
+) {}
+export type CancelledPrescriptionResponse = z.infer<
+  typeof cancelledPrescriptionSchema
+>;
+
+/**
+ * PR-109. What correcting answers: the prescription annulled, and the draft
+ * that replaces it, ready to be edited and issued.
+ */
+export const correctedPrescriptionSchema = z.object({
+  cancelled: prescriptionSchema,
+  draft: prescriptionSchema,
+  documentArchived: documentArchivedSchema,
+});
+export class CorrectedPrescriptionDto extends createZodDto(
+  correctedPrescriptionSchema,
+) {}
+export type CorrectedPrescriptionResponse = z.infer<
+  typeof correctedPrescriptionSchema
+>;
 
 export const prescriptionListSchema = z.object({
   items: z.array(prescriptionSchema),
@@ -439,6 +517,8 @@ export const prescriptionDocumentSchema = z.object({
   status: PRESCRIPTION_STATUS,
   /** PR-021. Art. 5.a.ii — the client renders it as DD/MM/AAAA. */
   issuedAt: z.iso.datetime().nullable(),
+  /** PR-108, DOC-109. When it was annulled: a PDF issued earlier lacks the mark. */
+  cancelledAt: z.iso.datetime().nullable(),
   /** PR-021. Art. 5.a.ii — the canton of the site's parish. */
   city: z.string().nullable(),
   /** PR-022. Art. 5.a.iii. */
@@ -489,6 +569,8 @@ export const prescriptionDocumentSchema = z.object({
       instructions: z.string().nullable(),
       /** PR-037. Composed from the fields, never typed: no abbreviation. */
       indications: z.string(),
+      /** PR-110. REQ-054: la marca «fuera del CNMB». */
+      offFormulary: z.boolean(),
       offFormularyJustification: z.string().nullable(),
     }),
   ),

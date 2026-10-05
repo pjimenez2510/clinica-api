@@ -1,10 +1,54 @@
-import type { IessValidation } from './domain/certificate';
+import type {
+  CertificateType,
+  ContingencyType,
+  IessValidation,
+} from './domain/certificate';
 import type { CertificateView } from './domain/certificate.repository';
+import type {
+  IssueCertificateRequest,
+  IssuedCertificate,
+} from './application/certificate.service';
+import type { ClinicalDate } from '../../shared/domain/clinic-time';
 import type { Form117 } from '../../shared/domain/form-117/form-117';
 import type {
   CertificateResponse,
   Form117Response,
+  IssueCertificateBody,
+  IssuedCertificateResponse,
 } from './dto/certificate.dto';
+
+/**
+ * CER-001 to CER-008, CER-053. The body of an issue —or of the certificate a
+ * correction issues— as the service reads it. The dates were validated as
+ * calendar dates by the DTO.
+ */
+export function toIssueFields(
+  dto: IssueCertificateBody,
+): Omit<IssueCertificateRequest, 'encounterId'> {
+  return {
+    type: dto.type as CertificateType,
+    restFrom: (dto.restFrom ?? null) as ClinicalDate | null,
+    restTo: (dto.restTo ?? null) as ClinicalDate | null,
+    includeDiagnosis: dto.includeDiagnosis,
+    contingencyType: (dto.contingencyType ?? null) as ContingencyType | null,
+    maternityAdmissionOn: (dto.maternityAdmissionOn ?? null) as ClinicalDate | null, // prettier-ignore
+    birthOn: (dto.birthOn ?? null) as ClinicalDate | null,
+    maternityDischargeOn: (dto.maternityDischargeOn ?? null) as ClinicalDate | null, // prettier-ignore
+    backdatingReason: dto.backdatingReason ?? null,
+    issuedByOtherReason: dto.issuedByOtherReason ?? null,
+  };
+}
+
+/** CER-013. An issued certificate with what the IESS needs to be told. */
+export function toIssuedResponse(
+  issued: IssuedCertificate,
+): IssuedCertificateResponse {
+  return {
+    certificate: toCertificateResponse(issued.certificate),
+    iess: toIessResponse(issued.iess),
+    restNotices: [...issued.restNotices],
+  };
+}
 
 /**
  * Domain shapes out, JSON in. Shared by the two controllers of this module.

@@ -48,9 +48,13 @@ export function toPrescriptionResponse(
     createdAt: prescription.createdAt.toISOString(),
     // PR-011. `null` on every state but `DISCARDED`, which the database keeps
     // true: `prescription_discard_only_from_draft` ties the instant to the
-    // state, and the reason to both.
+    // state. The reason is `null` unless somebody wrote one (PR-107).
     discardedAt: prescription.discardedAt?.toISOString() ?? null,
     discardReason: prescription.discardReason,
+    // PR-108. The register of art. 70; `null` on every other state.
+    cancelledAt: prescription.cancelledAt?.toISOString() ?? null,
+    cancelledBy: prescription.cancelledBy,
+    cancelReason: prescription.cancelReason,
     items: prescription.items.map((item) => ({
       id: item.id,
       line: item.line,
@@ -64,6 +68,7 @@ export function toPrescriptionResponse(
       frequencyText: item.frequencyText,
       durationDays: item.durationDays,
       instructions: item.instructions,
+      offFormulary: item.offFormulary,
       offFormularyJustification: item.offFormularyJustification,
       dosageFormCode: item.dosageFormCode,
       doseAmount: item.doseAmount,
@@ -85,6 +90,7 @@ export function toDocumentResponse(
     nonPharmacologicalAdvice: document.nonPharmacologicalAdvice,
     status: document.status as PrescriptionResponse['status'],
     issuedAt: document.issuedAt?.toISOString() ?? null,
+    cancelledAt: document.cancelledAt?.toISOString() ?? null,
     city: document.city,
     establishment: document.establishment,
     /**

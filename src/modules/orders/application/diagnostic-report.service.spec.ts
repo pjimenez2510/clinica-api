@@ -198,6 +198,16 @@ class FakeReports implements Partial<DiagnosticReportRepository> {
   recordNotice(): Promise<CriticalNoticeView> {
     return Promise.reject(new Error('not exercised here'));
   }
+  // ORD-120: against the database, in `orders-critical-notice.spec.ts`.
+  noticeOf(): Promise<CriticalNoticeView | undefined> {
+    return Promise.reject(new Error('not exercised here'));
+  }
+  editNotice(): Promise<CriticalNoticeView> {
+    return Promise.reject(new Error('not exercised here'));
+  }
+  noticeVersions(): Promise<never[]> {
+    return Promise.reject(new Error('not exercised here'));
+  }
   safetyPolicies(): Promise<ReadonlyMap<string, SafetyPolicy>> {
     return Promise.resolve(new Map<string, SafetyPolicy>());
   }
@@ -418,8 +428,8 @@ describe('el registro y la corrección de un resultado', () => {
     ).rejects.toMatchObject({ code: 'REPORT_ALREADY_CORRECTED' });
   });
 
-  it('ORD-053 rechaza corregir un informe parcial: se completa, no se corrige', async () => {
-    reports.existing.set('report-0', aReport({ status: 'PARTIAL' }));
+  it('ORD-053 rechaza corregir un informe anulado: ya no afirma nada', async () => {
+    reports.existing.set('report-0', aReport({ status: 'CANCELLED' }));
 
     await expect(
       service.correct(
@@ -427,6 +437,39 @@ describe('el registro y la corrección de un resultado', () => {
         requester,
       ),
     ).rejects.toMatchObject({ code: 'REPORT_NOT_CORRECTABLE' });
+  });
+
+  it('ORD-119 editar un informe parcial añade lo que faltaba, lo sustituye y lo deja FINAL', async () => {
+    catalogue.byCodes = () =>
+      Promise.resolve([
+        {
+          ...examBh,
+          analytes: [
+            { analyte: HAEMOGLOBIN, position: 1, isReflex: false },
+            { analyte: GLUCOSE, position: 2, isReflex: false },
+          ],
+        },
+      ]);
+    reports.existing.set('report-0', aReport({ status: 'PARTIAL' }));
+
+    await service.correct(
+      {
+        reportId: 'report-0',
+        performedById: null,
+        issuedAt: new Date(),
+        results: [
+          { analyteDefinitionId: HAEMOGLOBIN.id, valueNumeric: 13 },
+          { analyteDefinitionId: GLUCOSE.id, valueNumeric: 92 },
+        ],
+      },
+      requester,
+    );
+
+    expect(reports.written[0]?.report).toMatchObject({
+      status: 'FINAL',
+      supersedesId: 'report-0',
+    });
+    expect(reports.written[0]?.report.results).toHaveLength(2);
   });
 
   it('ORD-051 responde que el informe no existe cuando está fuera del alcance', async () => {

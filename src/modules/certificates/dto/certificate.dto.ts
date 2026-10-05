@@ -89,6 +89,7 @@ export const issueCertificateSchema = z.strictObject(
 );
 /** Body of POST /encounters/:encounterId/certificates. */
 export class IssueCertificateDto extends createZodDto(issueCertificateSchema) {}
+export type IssueCertificateBody = z.infer<typeof issueCertificateSchema>;
 
 /**
  * CER-011. Annulling: the reason, and nothing else. Who annulled it is the
@@ -104,6 +105,19 @@ export const revokeCertificateSchema = z.object({
 /** Body of POST /certificates/:certificateId/revoke. */
 export class RevokeCertificateDto extends createZodDto(
   revokeCertificateSchema,
+) {}
+
+/**
+ * CER-053. Correcting an issued certificate: the new certificate as it should
+ * read —the body of issuing one, still strict (CER-004)— and the reason of the
+ * annulment, the contract of revoking (CER-011, CER-052).
+ */
+export const correctCertificateSchema = issueCertificateSchema.extend(
+  revokeCertificateSchema.shape,
+);
+/** Body of POST /certificates/:certificateId/correct. */
+export class CorrectCertificateDto extends createZodDto(
+  correctCertificateSchema,
 ) {}
 
 /** A certificate as a client reads it on the write path. */
@@ -138,8 +152,6 @@ export const certificateSchema = z.object({
   revokedAt: z.iso.datetime().nullable(),
   revocationReason: z.string().nullable(),
 });
-/** Response of reading one certificate and of annulling it. */
-export class MedicalCertificateDto extends createZodDto(certificateSchema) {}
 
 export const certificateListSchema = z.object({
   items: z.array(certificateSchema),
@@ -161,13 +173,52 @@ export const issuedCertificateSchema = z.object({
   certificate: certificateSchema,
   /** CER-013. `null` on an attendance certificate. */
   iess: iessValidationSchema.nullable(),
-  /** CER-032. Over 3 and over 7 days; provisional text, never a refusal. */
+  /**
+   * CER-032, CER-038, CER-043, CER-055. A long rest, the limits it passes
+   * (D-128.7), the maternity procedure, the missing work data; never a refusal.
+   */
   restNotices: z.array(z.string()),
 });
 /** Response of POST /encounters/:encounterId/certificates. */
 export class IssuedCertificateDto extends createZodDto(
   issuedCertificateSchema,
 ) {}
+
+/**
+ * DOC-109. Whether the PDF that replaces the annulled one was filed: `true`
+ * filed; `false` there was one and it COULD NOT be filed —the screen warns,
+ * because the archive still holds the PDF without the mark—; `null` there was
+ * no PDF to replace.
+ */
+const documentArchivedSchema = z.boolean().nullable();
+
+/** CER-011. What annulling answers: the certificate, and its PDF (DOC-109). */
+export const revokedCertificateSchema = certificateSchema.extend({
+  documentArchived: documentArchivedSchema,
+});
+export class RevokedCertificateDto extends createZodDto(
+  revokedCertificateSchema,
+) {}
+export type RevokedCertificateResponse = z.infer<
+  typeof revokedCertificateSchema
+>;
+
+/**
+ * CER-053. A correction: the certificate it annulled and the one it issued,
+ * with what the IESS needs to be told about the new one.
+ */
+export const correctedCertificateSchema = z.object({
+  revoked: certificateSchema,
+  issued: issuedCertificateSchema,
+  documentArchived: documentArchivedSchema,
+});
+/** Response of POST /certificates/:certificateId/correct. */
+export class CorrectedCertificateDto extends createZodDto(
+  correctedCertificateSchema,
+) {}
+export type CorrectedCertificateResponse = z.infer<
+  typeof correctedCertificateSchema
+>;
 
 /** «NA = no aplica», as the instructivo of form 117 writes it. */
 const NA = z.literal('NA');

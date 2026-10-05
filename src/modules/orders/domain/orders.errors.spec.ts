@@ -4,19 +4,26 @@ import { DOMAIN_ERROR_CODES } from '../../../shared/domain/errors/error-catalogu
 import {
   ConflictError,
   DomainError,
+  ForbiddenError,
   NotFoundError,
   ValidationError,
 } from '../../../shared/domain/errors/domain-error';
 
 import {
+  CriticalNoticeEditedConcurrentlyError,
+  CriticalNoticeNoAnswerStaysError,
+  CriticalNoticeNotFoundError,
+  CriticalNoticeOfAnotherUserError,
   CriticalNoticeTimeInvalidError,
   CriticalReadBackRequiredError,
   ExamCategoryMismatchError,
   ExamNotOrderableError,
   OrderEncounterNotFoundError,
   OrderDraftOfAnotherPractitionerError,
+  OrderNotDiscardedError,
   OrderNotDraftError,
   OrderNotIssuedError,
+  OrderOfAnotherPractitionerError,
   OrderEncounterNotOpenError,
   OrderItemNotMatchableError,
   OrderItemNotPendingError,
@@ -53,11 +60,12 @@ const EVERY_ERROR: readonly DomainError[] = [
   new OrderEncounterNotOpenError('COMPLETED'),
   new OrderItemNotPendingError(),
   new OrderNotDraftError(),
+  new OrderNotDiscardedError(),
   new OrderNotIssuedError(),
   new OrderDraftOfAnotherPractitionerError(),
   new ExamCategoryMismatchError(),
   new ReportAlreadyCorrectedError(),
-  new ReportNotCorrectableError('PARTIAL'),
+  new ReportNotCorrectableError('CANCELLED'),
   new ResultAnalyteUnknownError(),
   new ResultValueTypeMismatchError('HB', 'NUMERIC'),
   new ResultValueTypeMismatchError('EMO-NITRITOS', 'CODED'),
@@ -72,6 +80,7 @@ const EVERY_ERROR: readonly DomainError[] = [
   new CriticalNoticeTimeInvalidError(),
   new ResultSupersededError(),
   new CriticalReadBackRequiredError(),
+  new CriticalNoticeNotFoundError(),
   new ReportIssuedInFutureError(),
   new ReportCorrectionIncompleteError(['Glucosa en ayunas']),
 ];
@@ -131,6 +140,25 @@ describe('el contrato de errores de las órdenes', () => {
     expect(new OrderNotIssuedError()).toBeInstanceOf(ConflictError);
   });
 
+  it('ORD-116 recuperar lo que no está descartado es un conflicto de estado, con su código y su frase', () => {
+    const error = new OrderNotDiscardedError();
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.code).toBe('ORDER_NOT_DISCARDED');
+    expect(error.userTitle).toBe(
+      'Esa orden ya no está descartada: se recuperó o nunca se descartó. Actualice la pantalla',
+    );
+  });
+
+  it('ORD-118 corregir una orden que firma otro es un 403, con su código y una frase que da la salida', () => {
+    const error = new OrderOfAnotherPractitionerError();
+    expect(error).toBeInstanceOf(ForbiddenError);
+    expect(error.code).toBe('ORDER_OF_ANOTHER_PRACTITIONER');
+    expect(DOMAIN_ERROR_CODES).toContain('ORDER_OF_ANOTHER_PRACTITIONER');
+    expect(error.userTitle).toBe(
+      'Esta orden la firma otro profesional y sólo él puede corregirla. Puede anular sus exámenes y pedirlos en una orden suya',
+    );
+  });
+
   it('ORD-005 y ORD-008 son conflictos de estado, no de contenido', () => {
     // 409 y no 422: lo enviado es correcto, y lo que lo impide es el estado.
     expect(new OrderEncounterNotOpenError('COMPLETED')).toBeInstanceOf(
@@ -138,8 +166,12 @@ describe('el contrato de errores de las órdenes', () => {
     );
     expect(new OrderItemNotPendingError()).toBeInstanceOf(ConflictError);
     expect(new ReportAlreadyCorrectedError()).toBeInstanceOf(ConflictError);
-    expect(new ReportNotCorrectableError('PARTIAL')).toBeInstanceOf(
+    expect(new ReportNotCorrectableError('CANCELLED')).toBeInstanceOf(
       ConflictError,
+    );
+    // ORD-119. A partial is edited now: the sentence names only the annulled.
+    expect(new ReportNotCorrectableError('CANCELLED').userTitle).toBe(
+      'Un informe anulado no se edita: ya no afirma nada. Registre uno nuevo',
     );
   });
 
@@ -160,6 +192,46 @@ describe('el contrato de errores de las órdenes', () => {
     expect(
       new ResultValueTypeMismatchError('X', 'RATIO').userTitle,
     ).toBeTruthy();
+  });
+
+  it('ORD-120 editar un aviso que no es de ese valor es un 404, con su código y una frase que da la salida', () => {
+    const error = new CriticalNoticeNotFoundError();
+    expect(error).toBeInstanceOf(NotFoundError);
+    expect(error.code).toBe('CRITICAL_NOTICE_NOT_FOUND');
+    expect(DOMAIN_ERROR_CODES).toContain('CRITICAL_NOTICE_NOT_FOUND');
+    expect(error.userTitle).toBe(
+      'Ese aviso no es de este valor. Actualice el informe y edítelo desde allí',
+    );
+  });
+
+  it('ORD-120 editar el aviso que dio otra persona es un 403, con su código y una frase que da la salida', () => {
+    const error = new CriticalNoticeOfAnotherUserError();
+    expect(error).toBeInstanceOf(ForbiddenError);
+    expect(error.code).toBe('CRITICAL_NOTICE_OF_ANOTHER_USER');
+    expect(DOMAIN_ERROR_CODES).toContain('CRITICAL_NOTICE_OF_ANOTHER_USER');
+    expect(error.userTitle).toBe(
+      'Este aviso lo dio otra persona y sólo ella puede editarlo. Si usted volvió a llamar, registre un aviso nuevo',
+    );
+  });
+
+  it('ORD-120 pasar a «avisado» un «no contestó» por edición es un 409, con su código y su frase', () => {
+    const error = new CriticalNoticeNoAnswerStaysError();
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.code).toBe('CRITICAL_NOTICE_NO_ANSWER_STAYS');
+    expect(DOMAIN_ERROR_CODES).toContain('CRITICAL_NOTICE_NO_ANSWER_STAYS');
+    expect(error.userTitle).toBe(
+      'Una llamada posterior que sí contestan es un aviso nuevo: regístrelo',
+    );
+  });
+
+  it('ORD-120 editar sobre una versión del aviso que ya no es la vigente es un 409, con su código y su frase', () => {
+    const error = new CriticalNoticeEditedConcurrentlyError();
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.code).toBe('CRITICAL_NOTICE_EDITED_CONCURRENTLY');
+    expect(DOMAIN_ERROR_CODES).toContain('CRITICAL_NOTICE_EDITED_CONCURRENTLY');
+    expect(error.userTitle).toBe(
+      'Otra persona acaba de editar este aviso; recárguelo',
+    );
   });
 
   it('ORD-043 dice qué hacer al que trabaja la cola de resultados sin orden', () => {

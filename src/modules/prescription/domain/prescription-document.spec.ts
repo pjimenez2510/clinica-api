@@ -31,6 +31,9 @@ const source = (
     // DRAFT and never of a document that already left the room.
     discardedAt: null,
     discardReason: null,
+    cancelledAt: null,
+    cancelledBy: null,
+    cancelReason: null,
     items: [
       {
         id: 'item-1',
@@ -45,6 +48,7 @@ const source = (
         frequencyText: 'Cada 8 horas',
         durationDays: 7,
         instructions: 'Tomar con alimentos',
+        offFormulary: false,
         offFormularyJustification: null,
         dosageFormCode: 'CAPSULE',
         doseAmount: 1,
@@ -83,6 +87,25 @@ describe('la receta como documento', () => {
 
     expect(document.city).toBe('Quito');
     expect(document.issuedAt).toEqual(ISSUED_AT);
+  });
+
+  it('PR-108 DOC-109 lleva el instante de anulación, para saber si un PDF es anterior a ella', () => {
+    expect(
+      composeDocument(source(), { context: 'AMBULATORY' }).cancelledAt,
+    ).toBeNull();
+
+    const cancelledAt = new Date(ISSUED_AT.getTime() + 60 * 60 * 1000);
+    const cancelled = source();
+    cancelled.prescription = {
+      ...cancelled.prescription,
+      status: 'CANCELLED',
+      cancelledAt,
+      cancelledBy: { id: 'user-1', name: 'Ana Villacís' },
+      cancelReason: 'Pérdida',
+    };
+    expect(
+      composeDocument(cancelled, { context: 'AMBULATORY' }).cancelledAt,
+    ).toEqual(cancelledAt);
   });
 
   it('PR-022 lleva el establecimiento con su código único del MSP', () => {
@@ -290,6 +313,35 @@ describe('la receta como documento', () => {
       'Amoxicilina 500 mg: 1 cápsula, cada 8 horas, durante 7 días',
     );
     expect(document.items[0]?.indications).not.toContain('VO');
+  });
+
+  it('PR-110 marca la línea fuera del CNMB aunque no lleve justificación, y la del cuadro no', () => {
+    const base = source().prescription;
+    const inside = base.items[0]!;
+    const document = composeDocument(
+      source({
+        prescription: {
+          ...base,
+          items: [
+            inside,
+            {
+              ...inside,
+              id: 'item-2',
+              line: 2,
+              conceptId: null,
+              offFormulary: true,
+            },
+          ],
+        },
+      }),
+      { context: 'AMBULATORY' },
+    );
+
+    expect(document.items.map((item) => item.offFormulary)).toEqual([
+      false,
+      true,
+    ]);
+    expect(document.items[1]?.offFormularyJustification).toBeNull();
   });
 
   it('PR-040 lleva el teléfono de contacto permanente del prescriptor', () => {

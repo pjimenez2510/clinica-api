@@ -156,7 +156,9 @@ por sede.
 sus bytes y borrarla, y comprobar que las dos se rechazan **y que la fila no se
 movió**.
 
-**Cubre:** DOC-001 a DOC-014, DOC-090 a DOC-093.
+**Cubre:** DOC-001 a DOC-014, DOC-090 a DOC-093, y **DOC-108** y **DOC-109**
+—corregir un PDF con una confirmación, y el PDF anulado que se archiva solo
+(D-126, D-127, `fix/menos-preguntas`)—.
 **Solo servidor:** DOC-004, DOC-005, DOC-011, DOC-013, DOC-090, DOC-092. Son el
 tamaño guardado, los disparadores que impiden `UPDATE` y `DELETE`, la ausencia
 de ruta de borrado y de purga, el permiso de cada ruta y la bitácora: ninguno se
@@ -352,6 +354,10 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
   > Es el patrón que `prescription.discardedAt` y la nota de crédito de
   > `billing` ya usan: en un sistema clínico no se borra, se anula.
 
+  > **Enmendado por DOC-108 (D-126, 05-10-2026):** el motivo sigue en la fila,
+  > pero ya no lo escribe nadie: si la petición no lo trae, lo pone el sistema
+  > según la causa.
+
 - **DOC-008** — Un artefacto DEBERÁ poder anular **como mucho a uno**, y ser
   anulado **como mucho por uno** (`document_render_supersedes_id_key`).
 
@@ -372,6 +378,72 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
 
   > Sin motivo, anular es hacer desaparecer lo que se emitió. Es la misma línea
   > que `prescription_discard_states_who_when_and_why`.
+
+  > **Enmendado por DOC-108 (D-126):** la base sigue exigiendo el motivo con el
+  > `supersedes_id`, y la API ya no lo exige en la petición: el que falta lo
+  > escribe el servidor, así que la fila nunca queda sin él. Sin migración:
+  > el `CHECK` es `(supersedes_id IS NULL) = (supersede_reason IS NULL)`, que no
+  > cambia. ⚠️ No excluye un motivo en blanco; no hace falta para esto, porque
+  > el servidor nunca lo escribe (el de la petición se recorta y pide de 10 a
+  > 500 caracteres; el automático es una de las frases de DOC-108).
+
+- **DOC-108** — CUANDO se **corrija** un PDF archivado sin motivo en la
+  petición, el sistema DEBERÁ archivar el nuevo con un motivo que pone él según
+  el sujeto: «Receta anulada» SI la receta está `CANCELLED`, «Examen anulado»
+  SI la orden tiene algún examen `CANCELLED`, «Certificado anulado» SI el
+  certificado está anulado, y «Nueva versión del documento» en otro caso. SI la
+  petición trae `reason` —de 10 a 500 caracteres—, ENTONCES DEBERÁ guardar ese.
+  La pantalla DEBERÁ pedir **una sola confirmación** y **NO DEBERÁ** pedir que
+  se escriba nada.
+
+  > **D-126.2 y D-127.4:** lo que ya tiene efecto pide una confirmación que diga
+  > la consecuencia, y el rastro lo guarda el sistema. El PDF no lo lleva nadie
+  > a ningún sitio por corregirlo: el motivo de esta fila es para quien lea el
+  > archivo, y la causa la sabe el servidor mejor que quien la teclea. El texto
+  > está en `supersedeReasonOf` (`domain/document-supersession.ts`) y no lleva
+  > datos del paciente (DOC-093).
+
+- **DOC-109** — CUANDO se anule una receta (PR-010, PR-108), una línea de una
+  orden (ORD-007) o un certificado (CER-011), o se corrijan (PR-109, ORD-118,
+  CER-053), SI el sujeto tiene un PDF archivado, ENTONCES el sistema DEBERÁ
+  archivar **él solo** el PDF nuevo —con la marca de anulado que pinta la
+  plantilla, o sin el examen anulado— que sustituya al **vigente** (el que
+  ningún otro sustituye), a nombre de quien anuló y con el motivo de DOC-108; o
+  «Corrección de la receta N.º …», «Corrección de la orden N.º …» o «Corrección
+  del certificado N.º …», con el número del corregido, SI lo anuló
+  «Corregir». SI el sujeto no tiene ningún PDF archivado, ENTONCES **NO
+  DEBERÁ** archivar ninguno. SI el PDF no se puede archivar, ENTONCES la
+  anulación **NO DEBERÁ** fallar por ello. La respuesta de anular y de corregir
+  **DEBERÁ** llevar `documentArchived`: `true` si lo archivó, `false` si había
+  PDF y no se pudo archivar, y `null` si no había PDF que sustituir; y el
+  registro del fallo **DEBERÁ** llevar el identificador del sujeto, su clase y
+  el nombre del error o el código de Prisma, **nunca** su mensaje.
+
+  > **Después de la anulación, no dentro de ella.** Componer un PDF —fuentes,
+  > imágenes, plantilla— con el candado de la receta puesto ataría el acto
+  > clínico a la impresora; lo que pide el art. 70 es el registro de la
+  > anulación, que es la fila, no el fichero. La anulación confirma primero y,
+  > en la misma petición, el puerto compartido `ANNULLED_DOCUMENT_ARCHIVER`
+  > (`shared/documents/annulled-document.port.ts`, que exporta este módulo)
+  > archiva el PDF; si falla, se registra sin datos del paciente y se traga. El
+  > PDF anterior sigue archivado, y «Corregir…» (DOC-108) archiva el nuevo
+  > después con la causa. La prueba de integración fuerza ese fallo.
+  >
+  > **Que no se pierda en silencio.** Con `documentArchived: false` la
+  > pantalla lo dice en el mismo aviso de la anulación («use “Corregir…” en el
+  > documento antes de entregar nada»), y el panel de documentos vuelve a
+  > avisar mientras el PDF vigente sea anterior a la anulación.
+  >
+  > **Un solo vigente, y lo garantiza la base:** un original por sujeto
+  > (`document_render_*_original_unique`) y un solo sustituto por PDF
+  > (`document_render_supersedes_unique`, DOC-008) dejan la cadena en una sola
+  > línea, sin ramas: sustituir al que ningún otro sustituye es sustituirlos a
+  > todos.
+  >
+  > ⚠️ **Dos anulaciones a la vez del mismo sujeto** (dos exámenes de una orden
+  > en el mismo instante) eligen el mismo vigente; DOC-008 deja archivar sólo
+  > una, y la otra responde `documentArchived: false`, con su aviso. No se
+  > reintenta.
 
 - **DOC-011** — El sistema **NO DEBERÁ** ofrecer ninguna ruta, ningún método de
   servicio y ningún método de repositorio que modifique o borre un artefacto.
@@ -630,6 +702,13 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
 - **DOC-072** — La **receta** DEBERÁ llevar los cinco bloques del art. 5 en este
   orden: datos generales, datos del paciente, medicamento, prescriptor e
   indicaciones.
+  Y DEBERÁ marcar «Fuera del CNMB» cada línea que lo esté (REQ-054), con su
+  justificación si el prescriptor la escribió.
+
+  > PR-110 (D-128.6): la justificación dejó de ser obligatoria y la marca dejó
+  > de ser la justificación. Una línea fuera del cuadro sin justificación se
+  > imprime marcada con «Medicamento o presentación que no consta en el
+  > cuadro».
 
 - **DOC-073** — La receta DEBERÁ colocar el bloque de indicaciones al paciente
   en una **banda desprendible al pie**, separada por una **línea de corte**
@@ -1023,6 +1102,7 @@ Por qué no se construye hoy:
 | DOC-005, DOC-008, DOC-009, DOC-010 | **Integración contra PostgreSQL real, por SQL directo.** Lo garantiza la base y por debajo de todas las capas |
 | DOC-003, DOC-004, DOC-030, DOC-032, DOC-035, DOC-036 | Integración: son `CHECK`, `UNIQUE` y disparadores |
 | DOC-001, DOC-002, DOC-006, DOC-007, DOC-012, DOC-014 | Integración por HTTP: es donde el alcance de sedes y el permiso son reales |
+| DOC-108, DOC-109 | **Integración por HTTP** (`documents-http.spec.ts`): corregir sin motivo y con él; anular una receta, un certificado y un examen, y corregir una receta, archivan el que sustituye al vigente con su marca y su motivo; sin PDF previo no se archiva nada (control positivo); un fallo forzado de la base al archivar no impide la anulación, y «Corregir…» lo archiva después; cada respuesta lleva `documentArchived` (`true`, `false` con el fallo forzado, `null` sin PDF). Unitario: el motivo de cada causa, el vigente que se sustituye, el puerto que nunca lanza y responde `true`, `false` o `null`, el registro del fallo que sobrevive a la poda sin el mensaje, y que cada servicio lo llama tras anular o corregir y propaga la respuesta |
 | DOC-020 a DOC-025, DOC-070 a DOC-085 | Unitarias sobre los bytes generados: el PDF se inspecciona, no se cree; y veraPDF (`pnpm pdfa:check`) al cerrar |
 | DOC-038, DOC-039, DOC-061, DOC-094 a DOC-096 | Integración por HTTP: permiso, transacción y cuerpo de la respuesta reales |
 | DOC-050 a DOC-056 | Unitarias sobre el normalizador de imagen, con ficheros sintéticos |

@@ -27,7 +27,11 @@ import {
   toWrittenItem,
 } from './prescription.presenter';
 import {
+  CancelPrescriptionDto,
   ComposedPrescriptionDto,
+  CorrectPrescriptionDto,
+  CancelledPrescriptionDto,
+  CorrectedPrescriptionDto,
   DiscardPrescriptionDto,
   PrescriptionDocumentDto,
   PrescriptionDto,
@@ -35,6 +39,8 @@ import {
   RewritePrescriptionDto,
   VocabularyQueryDto,
   type ComposedPrescriptionResponse,
+  type CancelledPrescriptionResponse,
+  type CorrectedPrescriptionResponse,
   type PrescriptionDocumentResponse,
   type PrescriptionResponse,
   type PrescriptionVocabularyResponse,
@@ -176,11 +182,9 @@ export class PrescriptionController {
    * database keeps them apart with
    * `prescription_discard_only_from_draft`.
    *
-   * ⚠️ AND THE REASON IS OBLIGATORY HERE, WHERE `/cancel` ASKS FOR NONE. The
-   * difference is not politeness: `discard_reason` is a column and
-   * `prescription_discard_states_who_when_and_why` refuses the row without it,
-   * so what is written is kept. On the annulment there is nowhere to keep it
-   * (⚠️ **Falta esquema**, PR-010, PR-073).
+   * ⚠️ AND NOTHING IS ASKED (D-126, PR-107). The body may carry a reason and
+   * `discard_reason` keeps it, but none is required: the screen discards with
+   * one click and offers «Deshacer», which is `/restore` below.
    *
    * 200 AND NOT 204: what comes back is the prescription in its new state, so
    * the screen that listed it does not have to ask again to redraw the row.
@@ -188,9 +192,7 @@ export class PrescriptionController {
   @Post(':prescriptionId/discard')
   @RequirePermission('prescription:write', 'query')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Descartar un borrador de receta, diciendo por qué',
-  })
+  @ApiOperation({ summary: 'Descartar un borrador de receta' })
   @ApiOkResponse({ type: PrescriptionDto })
   async discard(
     @Param('prescriptionId', ParseUUIDPipe) prescriptionId: string,
@@ -206,34 +208,90 @@ export class PrescriptionController {
   }
 
   /**
-   * PR-010, PR-093. Annuls an ISSUED prescription. NOTHING IS DELETED.
+   * PR-107. Undoes a discard: DISCARDED back to DRAFT, as it was. Only the
+   * draft's prescriber, with the permission of composing it.
+   */
+  @Post(':prescriptionId/restore')
+  @RequirePermission('prescription:write', 'query')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Recuperar un borrador de receta descartado' })
+  @ApiOkResponse({ type: PrescriptionDto })
+  async restore(
+    @Param('prescriptionId', ParseUUIDPipe) prescriptionId: string,
+    @Req() req: Request,
+  ): Promise<PrescriptionResponse> {
+    const restored = await this.prescriptions.restore(
+      prescriptionId,
+      this.requester(req, 'prescription:write'),
+    );
+    return toPrescriptionResponse(restored);
+  }
+
+  /**
+   * PR-010, PR-093, PR-108. Annuls an ISSUED prescription, saying why.
+   * NOTHING IS DELETED.
    *
    * ⚠️ AN EMITTED ONE, AND NOT A DRAFT. Art. 70 describes the procedure for the
    * receta that WAS emitted and then lost, altered or must not be dispensed:
    * there is paper in somebody's hand and a pharmacy may have dispensed against
    * it. A wrong draft has no legal act to undo — it is DISCARDED, above.
    *
-   * ⚠️ NO REASON IS ASKED FOR, AND THE ABSENCE IS THE REQUIREMENT. Art. 70 wants
-   * a register of annulled and lost prescriptions and there is no column to
-   * keep the reason in (⚠️ **Falta esquema**, PR-010, PR-073). A mandatory
-   * reason that is dropped on the floor makes everybody believe there is a
-   * record; what there is, until the columns exist, is the audit row. The
-   * discard above asks for one PRECISELY BECAUSE it has a column to keep it in.
+   * ⚠️ THE REASON IS OBLIGATORY (PR-108): `cancelled_at`, `cancelled_by_id`
+   * and `cancel_reason` are the register art. 70 asks for, and the database
+   * demands the three together.
    */
   @Post(':prescriptionId/cancel')
   @RequirePermission('prescription:write', 'query')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Anular una receta emitida' })
-  @ApiOkResponse({ type: PrescriptionDto })
+  @ApiOperation({ summary: 'Anular una receta emitida, diciendo por qué' })
+  @ApiOkResponse({ type: CancelledPrescriptionDto })
   async cancel(
     @Param('prescriptionId', ParseUUIDPipe) prescriptionId: string,
+    @Body() body: CancelPrescriptionDto,
     @Req() req: Request,
-  ): Promise<PrescriptionResponse> {
+  ): Promise<CancelledPrescriptionResponse> {
     const cancelled = await this.prescriptions.cancel(
       prescriptionId,
+      body.reason,
       this.requester(req, 'prescription:write'),
     );
-    return toPrescriptionResponse(cancelled);
+    return {
+      ...toPrescriptionResponse(cancelled),
+      documentArchived: cancelled.documentArchived,
+    };
+  }
+
+  /**
+   * PR-109. «Corregir» an issued prescription: annuls it with its reason and
+   * opens a draft in the same attention with the same lines, in one
+   * transaction. Only its prescriber, with the permission of annulling it.
+   *
+   * 200 AND NOT 201: what the caller asked for is the correction of an
+   * existing prescription; the draft is part of the answer, not the resource
+   * the request names.
+   */
+  @Post(':prescriptionId/correct')
+  @RequirePermission('prescription:write', 'query')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Corregir una receta emitida: anularla y abrir un borrador igual',
+  })
+  @ApiOkResponse({ type: CorrectedPrescriptionDto })
+  async correct(
+    @Param('prescriptionId', ParseUUIDPipe) prescriptionId: string,
+    @Body() body: CorrectPrescriptionDto,
+    @Req() req: Request,
+  ): Promise<CorrectedPrescriptionResponse> {
+    const corrected = await this.prescriptions.correct(
+      prescriptionId,
+      body.reason,
+      this.requester(req, 'prescription:write'),
+    );
+    return {
+      cancelled: toPrescriptionResponse(corrected.cancelled),
+      draft: toPrescriptionResponse(corrected.draft),
+      documentArchived: corrected.documentArchived,
+    };
   }
 
   /** Who is asking, for the access trail and for the site scope. */

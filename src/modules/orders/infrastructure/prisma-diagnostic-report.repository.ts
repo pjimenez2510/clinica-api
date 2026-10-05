@@ -3,6 +3,8 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
+  CriticalNoticeEditedConcurrentlyError,
+  CriticalNoticeNotFoundError,
   OrderItemNotMatchableError,
   OrderNotFoundError,
   OrderNotIssuedError,
@@ -13,6 +15,9 @@ import {
 import { isLineComplete } from '../domain/service-order';
 import type {
   CriticalChain,
+  CriticalNoticeEdit,
+  CriticalNoticeQuery,
+  CriticalNoticeVersionView,
   CriticalNoticeView,
   DiagnosticReportRepository,
   DiagnosticReportView,
@@ -74,6 +79,9 @@ const NOTICE_SELECT = {
   afterHours: true,
   selfNotice: true,
   notifiedBy: { select: { id: true, firstName: true, lastName: true } },
+  // ORD-120. The stamp of the last edit.
+  editedAt: true,
+  editedBy: { select: { id: true, firstName: true, lastName: true } },
 } satisfies Prisma.CriticalResultNoticeSelect;
 
 /** The shape `NOTICE_SELECT` produces. */
@@ -639,11 +647,246 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
     return new Set(rows.map((row) => row.site_id));
   }
 
-  /** ORD-062. The notice of a critical value; never rewritten (ORD-064). */
+  /** ORD-062. The notice of a critical value; never deleted (ORD-064). */
   async recordNotice(notice: NewCriticalNotice): Promise<CriticalNoticeView> {
     const row = await this.prisma.$transaction((tx) => writeNotice(tx, notice));
     return toNoticeView(row);
   }
+
+  /** ORD-120. One notice of that result, within the caller's scope. */
+  async noticeOf(
+    query: CriticalNoticeQuery,
+  ): Promise<CriticalNoticeView | undefined> {
+    const where = noticeWhere(query);
+    if (where === undefined) return undefined;
+    const row = await this.prisma.criticalResultNotice.findFirst({
+      where,
+      select: NOTICE_SELECT,
+    });
+    return row === null ? undefined : toNoticeView(row);
+  }
+
+  /** ORD-120. Edits the notice in place, with its stamp and its trail row. */
+  async editNotice(edit: CriticalNoticeEdit): Promise<CriticalNoticeView> {
+    const row = await this.prisma.$transaction((tx) => rewriteNotice(tx, edit));
+    return toNoticeView(row);
+  }
+
+  /**
+   * ORD-120. The versions `record_version_archive` kept, read back through
+   * the SAME mapping as the current notice, so a replaced notice and the one
+   * that replaced it can never be shown differently (the argument of EN-211).
+   */
+  async noticeVersions(
+    query: CriticalNoticeQuery,
+  ): Promise<CriticalNoticeVersionView[]> {
+    const where = noticeWhere(query);
+    if (where === undefined) return [];
+    const current = await this.prisma.criticalResultNotice.findFirst({
+      where,
+      select: { id: true },
+    });
+    if (current === null) return [];
+
+    const versions = await this.prisma.recordVersion.findMany({
+      where: { resourceType: 'critical_result_notice', resourceId: current.id },
+      orderBy: { version: 'desc' },
+      select: {
+        version: true,
+        data: true,
+        changedAt: true,
+        changedBy: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+    if (versions.length === 0) return [];
+
+    const authorIds = new Set<string>();
+    for (const { data } of versions) {
+      const snapshot = data as unknown as NoticeSnapshot;
+      authorIds.add(snapshot.notified_by_id);
+      if (snapshot.edited_by_id) authorIds.add(snapshot.edited_by_id);
+    }
+    const authors = new Map(
+      (
+        await this.prisma.user.findMany({
+          where: { id: { in: [...authorIds] } },
+          select: { id: true, firstName: true, lastName: true },
+        })
+      ).map((user) => [user.id, user]),
+    );
+
+    return versions.map((version) => ({
+      version: version.version,
+      replacedBy: personOf(version.changedBy),
+      replacedAt: version.changedAt,
+      notice: toNoticeView(
+        noticeRowFromSnapshot(version.data as unknown as NoticeSnapshot, authors), // prettier-ignore
+      ),
+    }));
+  }
+}
+
+/** ORD-120. A notice, reached through its result and the caller's scope. */
+function noticeWhere(
+  query: CriticalNoticeQuery,
+): Prisma.CriticalResultNoticeWhereInput | undefined {
+  const resultId = toResultId(query.resultId);
+  if (resultId === undefined || !isUuid(query.noticeId)) return undefined;
+  return {
+    id: query.noticeId,
+    observationResultId: resultId,
+    observationResult: { report: { serviceOrder: siteFilter(query.sites) } },
+  };
+}
+
+/** A notice id that PostgreSQL would accept as a `uuid`, so a typo is a 404. */
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
+/**
+ * ORD-120. Rewrites the notice under a row lock, after judging again that it
+ * is of that result and that the call does not land after a correction.
+ *
+ * ⚠️ THE VERSION IS JUDGED UNDER THE LOCK. Two edits made over the same
+ * version: the first to take the row writes, the second finds a stamp it did
+ * not read and is refused, instead of silently overwriting the first.
+ *
+ * ⚠️ THE STAMP MOVES PAST THE PREVIOUS ONE. `record_version_archive` refuses
+ * an edit whose instant did not change, so two edits in the same millisecond —
+ * a double submit, two people at once — would fail as «sin sello». The row is
+ * locked and the stamp moved past the previous one: the second waits for the
+ * first and still gets a stamp of its own (the pattern of `saveVitals`).
+ */
+async function rewriteNotice(
+  tx: Prisma.TransactionClient,
+  edit: CriticalNoticeEdit,
+): Promise<NoticeRow> {
+  const where = noticeWhere(edit);
+  if (where === undefined) throw new CriticalNoticeNotFoundError();
+  const target = await tx.criticalResultNotice.findFirst({
+    where,
+    select: { id: true, observationResult: { select: { reportId: true } } },
+  });
+  if (!target) throw new CriticalNoticeNotFoundError();
+
+  const [previous] = await tx.$queryRaw<{ edited_at: Date | null }[]>`
+    SELECT "edited_at" FROM "critical_result_notice"
+     WHERE "id" = ${target.id}::uuid
+       FOR UPDATE`;
+  // ORD-120. Optimistic: the edit was made over the version it names.
+  const currentVersion = previous?.edited_at?.getTime() ?? null;
+  if (currentVersion !== (edit.expectedEditedAt?.getTime() ?? null)) {
+    throw new CriticalNoticeEditedConcurrentlyError();
+  }
+  const stamp =
+    previous?.edited_at && previous.edited_at >= edit.editedAt
+      ? new Date(previous.edited_at.getTime() + 1)
+      : edit.editedAt;
+
+  // ORD-062. The same judgement as recording it, under the same share lock.
+  const reportId = target.observationResult.reportId;
+  await tx.$queryRaw`
+    SELECT 1 FROM "diagnostic_report" WHERE "id" = ${reportId}::uuid FOR SHARE
+  `;
+  const correction = await tx.diagnosticReport.findFirst({
+    where: { supersedesId: reportId },
+    select: { createdAt: true },
+  });
+  if (correction && edit.notifiedAt >= correction.createdAt) {
+    throw new ResultSupersededError();
+  }
+
+  const written = await tx.criticalResultNotice.update({
+    where: { id: target.id },
+    data: {
+      recipientKind: edit.recipientKind,
+      recipientName: edit.recipientName,
+      channel: edit.channel,
+      notifiedAt: edit.notifiedAt,
+      note: edit.note,
+      outcome: edit.outcome,
+      readBackConfirmed: edit.readBackConfirmed,
+      afterHours: edit.afterHours,
+      selfNotice: edit.selfNotice,
+      editedById: edit.editedById,
+      editedAt: stamp,
+    },
+    select: NOTICE_SELECT,
+  });
+
+  // ORD-091. The trail row in the same transaction, as `writeNotice` does.
+  await tx.accessAudit.create({
+    data: {
+      userId: edit.editedById,
+      resourceType: 'critical_result_notice',
+      resourceId: written.id,
+      action: 'UPDATE',
+      ip: edit.trail.ip ?? null,
+      userAgent: edit.trail.userAgent ?? null,
+    },
+  });
+
+  return written;
+}
+
+/**
+ * ORD-120. A `critical_result_notice` row as `to_jsonb` wrote it into
+ * `record_version`: the database's column names, the `bigint` result id as a
+ * JSON number and instants as ISO text.
+ */
+interface NoticeSnapshot {
+  id: string;
+  observation_result_id: number | string;
+  recipient_kind: NoticeRow['recipientKind'];
+  recipient_name: string;
+  channel: NoticeRow['channel'];
+  notified_by_id: string;
+  notified_at: string;
+  note?: string | null;
+  outcome: NoticeRow['outcome'];
+  read_back_confirmed?: boolean | null;
+  after_hours: boolean;
+  self_notice: boolean;
+  edited_by_id?: string | null;
+  edited_at?: string | null;
+}
+
+type Author = { id: string; firstName: string; lastName: string };
+
+/** ORD-120. A snapshot in the shape `NOTICE_SELECT` yields, for `toNoticeView`. */
+function noticeRowFromSnapshot(
+  snapshot: NoticeSnapshot,
+  authors: Map<string, Author>,
+): NoticeRow {
+  // An author removed since cannot be: `app_user` is `ON DELETE RESTRICT`.
+  const author = (id: string) =>
+    authors.get(id) ?? { id, firstName: '', lastName: '' };
+  return {
+    id: snapshot.id,
+    observationResultId: BigInt(snapshot.observation_result_id),
+    recipientKind: snapshot.recipient_kind,
+    recipientName: snapshot.recipient_name,
+    channel: snapshot.channel,
+    notifiedAt: new Date(snapshot.notified_at),
+    // `== null` on purpose: a snapshot written before a column existed does
+    // not carry it at all.
+    note: snapshot.note ?? null,
+    outcome: snapshot.outcome,
+    readBackConfirmed: snapshot.read_back_confirmed ?? null,
+    afterHours: snapshot.after_hours,
+    selfNotice: snapshot.self_notice,
+    notifiedBy: author(snapshot.notified_by_id),
+    editedAt: snapshot.edited_at == null ? null : new Date(snapshot.edited_at),
+    editedBy: snapshot.edited_by_id == null ? null : author(snapshot.edited_by_id), // prettier-ignore
+  };
+}
+
+/** A user as a reader of the record recognises them. */
+function personOf(user: Author): { id: string; name: string } {
+  return { id: user.id, name: `${user.firstName} ${user.lastName}` };
 }
 
 /**
@@ -871,6 +1114,8 @@ function toNoticeView(row: NoticeRow): CriticalNoticeView {
     readBackConfirmed: row.readBackConfirmed,
     afterHours: row.afterHours,
     selfNotice: row.selfNotice,
+    editedBy: row.editedBy === null ? null : personOf(row.editedBy),
+    editedAt: row.editedAt,
   };
 }
 

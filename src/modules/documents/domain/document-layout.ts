@@ -235,17 +235,20 @@ export function composePrescriptionLayout(
     },
   ];
 
+  // PR-110, REQ-054. The MARK is what is due; the reason only if one was given.
   const offFormulary = data.lines
     .map((line, index) => ({ line, index }))
-    .filter(({ line }) => line.offFormularyJustification !== null);
+    .filter(({ line }) => line.offFormulary);
 
   if (offFormulary.length > 0) {
     blocks.push({
       kind: 'fields',
       columns: 1,
       entries: offFormulary.map(({ line, index }) => ({
-        label: `Justificación fuera del CNMB — línea ${index + 1}`,
-        value: line.offFormularyJustification ?? '',
+        label: `Fuera del CNMB — línea ${index + 1}`,
+        value:
+          line.offFormularyJustification ??
+          'Medicamento o presentación que no consta en el cuadro',
       })),
     });
   }

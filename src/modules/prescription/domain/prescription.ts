@@ -39,8 +39,9 @@ export type PrescriptionStatus =
    * of the two happened, the same defect `ENTERED_IN_ERROR` avoids in the
    * agenda.
    *
-   * `prescription_discard_states_who_when_and_why` demands the three together,
-   * and `prescription_discard_only_from_draft` keeps it out of the issued path.
+   * `prescription_discard_states_who_and_when` demands who and when (the
+   * reason is optional since D-126), `prescription_discard_only_from_draft`
+   * keeps it out of the issued path, and PR-107 brings it back to `DRAFT`.
    */
   | 'DISCARDED'
   /** Issued and dispensable while its validity lasts (PR-050). */

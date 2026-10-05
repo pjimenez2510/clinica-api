@@ -2,12 +2,18 @@ import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 
 import {
+  ANNULLED_DOCUMENT_ARCHIVER,
+  type AnnulledDocumentArchiver,
+  type DocumentArchived,
+} from '../../../shared/documents/annulled-document.port';
+import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
 
 import {
   SERVICE_ORDER_REPOSITORY,
+  type CorrectedOrder,
   type PendingOrderEntry,
   type ServiceOrderRepository,
   type ServiceOrderView,
@@ -23,6 +29,7 @@ import {
   ExamNotOrderableError,
   OrderDraftOfAnotherPractitionerError,
   OrderNotFoundError,
+  OrderOfAnotherPractitionerError,
   ResultChartUnmatchedError,
 } from '../domain/orders.errors';
 import type {
@@ -114,6 +121,9 @@ export class ServiceOrderService {
     private readonly logger: PinoLogger,
     @Inject(ACCESS_AUDIT_RECORDER)
     private readonly audit: AccessAuditRecorder,
+    /** DOC-109. The PDF up to date, archived once the annulment is committed. */
+    @Inject(ANNULLED_DOCUMENT_ARCHIVER)
+    private readonly documents: AnnulledDocumentArchiver,
   ) {
     this.logger.setContext(ServiceOrderService.name);
   }
@@ -229,6 +239,87 @@ export class ServiceOrderService {
     );
 
     return order;
+  }
+
+  /**
+   * ORD-116. Undoes a discard: the same draft comes back, with its lines.
+   * Only the signer, by the same rule as the discard it undoes (D-123.1).
+   */
+  async restore(
+    orderId: string,
+    requester: Requester,
+  ): Promise<ServiceOrderView> {
+    await this.assertSigner(orderId, requester);
+    const order = await this.orders.restore({
+      orderId,
+      sites: requester.sites,
+    });
+
+    this.logger.info(
+      { site_id: order.siteId, action: 'SERVICE_ORDER_RESTORED' },
+      'service order restored',
+    );
+
+    return order;
+  }
+
+  /**
+   * ORD-118. «Corregir» an issued order in one step: its live lines are
+   * cancelled and a new draft, with the same exams, type, priority and note,
+   * is opened in the same attention. Only the signer: the draft goes out
+   * under their name (D-123.1, the line PR-109 draws for a receta).
+   */
+  async correct(
+    orderId: string,
+    requester: Requester,
+  ): Promise<CorrectedOrder & { documentArchived: DocumentArchived }> {
+    const order = await this.byId(orderId, requester);
+    if (order.orderedByUserId !== requester.userId) {
+      throw new OrderOfAnotherPractitionerError();
+    }
+    const corrected = await this.orders.correct({
+      orderId,
+      sites: requester.sites,
+      cancelledById: requester.userId,
+    });
+
+    // Two facts, two rows, as the receta's «Corregir» (PR-109): the order
+    // whose exams were cancelled, and the draft that was born.
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: 'service_order',
+      resourceId: corrected.cancelled.id,
+      action: 'UPDATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: 'service_order',
+      resourceId: corrected.draft.id,
+      action: 'CREATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+
+    this.logger.info(
+      {
+        site_id: corrected.draft.siteId,
+        action: 'SERVICE_ORDER_CORRECTED',
+        item_count: corrected.draft.items.length,
+      },
+      'service order corrected',
+    );
+
+    // DOC-109. The corrected order's PDF, without its annulled exams.
+    const documentArchived = await this.documents.archiveAnnulled({
+      kind: 'SERVICE_ORDER',
+      subjectId: orderId,
+      userId: requester.userId,
+      cause: 'CORRECTION',
+    });
+
+    return { ...corrected, documentArchived };
   }
 
   /**
@@ -364,11 +455,23 @@ export class ServiceOrderService {
     orderId: string,
     itemId: string,
     requester: Requester,
-  ): Promise<ServiceOrderView> {
+  ): Promise<ServiceOrderView & { documentArchived: DocumentArchived }> {
     const order = await this.orders.cancelItem({
       orderId,
       itemId,
       sites: requester.sites,
+      cancelledById: requester.userId,
+    });
+
+    // ORD-007. The exam left the laboratory's worklist with the paper already
+    // handed over: who did it is in the line and in the trail.
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: 'service_order_item',
+      resourceId: itemId,
+      action: 'UPDATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
     });
 
     this.logger.info(
@@ -376,6 +479,14 @@ export class ServiceOrderService {
       'service order item cancelled',
     );
 
-    return order;
+    // DOC-109. The PDF up to date, without the cancelled exam; never fails this.
+    const documentArchived = await this.documents.archiveAnnulled({
+      kind: 'SERVICE_ORDER',
+      subjectId: orderId,
+      userId: requester.userId,
+      cause: 'ANNULMENT',
+    });
+
+    return { ...order, documentArchived };
   }
 }

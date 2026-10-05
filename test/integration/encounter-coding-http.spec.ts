@@ -15,7 +15,7 @@ import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
-import { createPatient, createSite } from './setup/fixtures';
+import { createPatient, createSite, createUser } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
 /**
@@ -857,7 +857,10 @@ describe('el bloque K por HTTP', () => {
       // The way out the sentence names is real: cancel the exams (ORD-007).
       await prisma.serviceOrderItem.update({
         where: { id: order.items[0]!.id },
-        data: { status: 'CANCELLED' },
+        data: {
+          status: 'CANCELLED',
+          cancelledById: (await createUser(prisma)).id,
+        },
       });
       await post(`${path}/retract`, doctorToken).expect(204);
     });

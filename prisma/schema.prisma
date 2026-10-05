@@ -150,7 +150,9 @@ model User {
   /// art. 13 turns «nobody assessed them» into a criminal matter.
   emergencyFlagsRaised           AgendaEntry[]                @relation("EmergencyFlagger")
   prescriptionsDiscarded         Prescription[]               @relation("PrescriptionDiscarder")
+  prescriptionsCancelled         Prescription[]               @relation("PrescriptionCanceller")
   serviceOrdersDiscarded         ServiceOrder[]               @relation("ServiceOrderDiscardedBy")
+  serviceOrderItemsCancelled     ServiceOrderItem[]           @relation("ServiceOrderItemCancelledBy")
   certificatesRevoked            MedicalCertificate[]         @relation("CertificateRevoker")
   subjectStatusChanges           AgendaSubjectStatusHistory[] @relation("SubjectStatusChanger")
   chargeItemsVoided              ChargeItem[]                 @relation("ChargeVoider")
@@ -179,7 +181,8 @@ model User {
   documentImagesUploaded         DocumentImage[]        @relation("DocumentImageUploader")
 
   /// ORD-062. The critical-value notices this account recorded having given.
-  criticalNoticesGiven CriticalResultNotice[] @relation("CriticalNoticeGiver")
+  criticalNoticesGiven  CriticalResultNotice[] @relation("CriticalNoticeGiver")
+  criticalNoticesEdited CriticalResultNotice[] @relation("CriticalNoticeEditor")
 
   /// EN-210, D-127. The versions this account replaced by editing.
   recordVersionsChanged RecordVersion[] @relation("RecordVersionChanger")
@@ -2913,6 +2916,17 @@ model Prescription {
   discardedBy   User?     @relation("PrescriptionDiscarder", fields: [discardedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "prescription_discarded_by_fk")
   discardReason String?   @map("discard_reason") @db.VarChar(500)
 
+  /// PR-108 (art. 70 de la Res. ACESS-2023-0030). El registro de la anulación
+  /// de una receta EMITIDA: quién, cuándo y por qué. Los tres juntos en toda
+  /// receta anulada desde `20261005060200` (`prescription_cancel_states_who_
+  /// when_and_why`, NOT VALID: las anuladas antes no tienen motivo y no se
+  /// inventa), y en ningún otro estado (`prescription_cancel_columns_only_
+  /// when_cancelled`). `prescription_frozen` no deja reescribirlos.
+  cancelledAt   DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  cancelledById String?   @map("cancelled_by_id") @db.Uuid
+  cancelledBy   User?     @relation("PrescriptionCanceller", fields: [cancelledById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "prescription_cancelled_by_fk")
+  cancelReason  String?   @map("cancel_reason") @db.VarChar(500)
+
   @@unique([siteId, sequenceNumber], map: "prescription_site_number_unique")
   @@index([encounterId])
   @@map("prescription")
@@ -2926,7 +2940,7 @@ model PrescriptionItem {
   prescription   Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
 
   /// CNMB concept version. NULL only when prescribing outside the CNMB, which
-  /// then requires `offFormularyJustification` (enforced by CHECK).
+  /// then carries the mark `offFormulary` (enforced by CHECK, PR-110).
 
   /// PR-101, PR-102. The codes the line was written with, beside the text the
   /// server composed from them, so a draft reopens as it was written (PR-100).
@@ -2949,7 +2963,12 @@ model PrescriptionItem {
   quantity      Decimal? @db.Decimal(10, 2)
   instructions  String?  @db.Text
 
-  /// Prescribing outside the CNMB is allowed but must be justified in writing.
+  /// PR-110. Outside the CNMB: no concept, or a presentation the cuadro does
+  /// not declare for it (PR-104). Decided by the server when the line is
+  /// written. Lines written before it carry `false` and their justification,
+  /// which was the mark then.
+  offFormulary              Boolean @default(false) @map("off_formulary")
+  /// PR-110. Optional since D-128.6: kept and printed when given.
   offFormularyJustification String? @map("off_formulary_justification") @db.Text
 
   @@index([prescriptionId])
@@ -3039,6 +3058,12 @@ model ServiceOrderItem {
   /// this column, so rows LEAVE the index when they complete and it stays
   /// permanently small and cache-resident.
   completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+
+  /// ORD-007, ORD-118. Who cancelled the line; `completed_at` says when.
+  /// Required on a line cancelled from 20261005060600 on
+  /// (`service_order_item_cancel_states_who`, NOT VALID for older ones).
+  cancelledById String? @map("cancelled_by_id") @db.Uuid
+  cancelledBy   User?   @relation("ServiceOrderItemCancelledBy", fields: [cancelledById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "service_order_item_cancelled_by_fk")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -3155,6 +3180,13 @@ model CriticalResultNotice {
   selfNotice        Boolean               @map("self_notice")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  /// ORD-120, D-127. Who edited it last, and when: the stamp
+  /// `record_version_archive` demands on every edit. The earlier version is in
+  /// `record_version`. Who gave the notice (`notifiedById`) never changes.
+  editedById String?   @map("edited_by_id") @db.Uuid
+  editedBy   User?     @relation("CriticalNoticeEditor", fields: [editedById], references: [id], onDelete: Restrict)
+  editedAt   DateTime? @map("edited_at") @db.Timestamptz(6)
 
   @@index([observationResultId])
   @@map("critical_result_notice")

@@ -234,12 +234,13 @@ primera es la que produce el resultado huérfano; la segunda es el art. 39.
 **aunque el laboratorio la haya enviado sin bandera**; un analito que nadie pidió
 queda con `order_item_id` nulo y sale en la cola de sin orden. Y el aviso de la
 glucosa queda registrado con a quién, quién, cuándo y por qué medio: desde ese
-momento sale de la cola, y la constancia no se puede cambiar.
-**Cubre:** ORD-040 a ORD-043, ORD-046, ORD-060 a ORD-068.
+momento sale de la cola, y la constancia se edita en el sitio sin perder la
+versión anterior (ORD-120).
+**Cubre:** ORD-040 a ORD-043, ORD-046, ORD-060 a ORD-068, **ORD-120**.
 
 **Solo servidor:** ORD-061, ORD-064. Que la cola se construya sobre los umbrales
-propios y que la constancia no se pueda reescribir son garantías del cálculo y
-de la base; en pantalla no hay nada que las enseñe.
+propios y que la constancia no se pueda borrar ni cambiar de origen son
+garantías del cálculo y de la base; en pantalla no hay nada que las enseñe.
 
 ### E6 — La conciliación por `Cedula` _(P1)_
 
@@ -281,7 +282,8 @@ hemograma pedido como «Imagen» llega al laboratorio equivocado.
 `EX-GLUCOSA-AYUNAS`, emitirlo y comprobar que lleva el siguiente número de la
 sede y que un borrador descartado antes no consumió ninguno; pedir `EX-BH` en
 una orden de imagen y ver el rechazo.
-**Cubre:** ORD-095 a ORD-102.
+**Cubre:** ORD-095 a ORD-102, y **ORD-116**: el borrador que se descarta sin
+confirmación y vuelve con «Deshacer».
 
 **Solo servidor:** ORD-100, ORD-102. Que el borrador no salga en la cola, ni en
 caja, ni en la verificación, ni cuente para anular la atención son filtros de
@@ -432,14 +434,32 @@ cuando la gráfica exista.
   > informe vuelve en papel.
 
 - **ORD-007** — CUANDO se anula una línea pedida por error, el sistema DEBERÁ
-  dejarla en `CANCELLED` con su `completed_at`, y la línea DEBERÁ desaparecer de
-  la cola de pendientes **sin desaparecer de la orden**.
+  dejarla en `CANCELLED` con su `completed_at` y **quién la anuló**
+  (`cancelled_by_id`, la cuenta de la sesión), DEBERÁ dejar fila `UPDATE` en
+  `access_audit` (`service_order_item`), y la línea DEBERÁ desaparecer de la
+  cola de pendientes **sin desaparecer de la orden**.
 
   Con `completed_at` puesto sale del índice parcial `service_order_item_pending`
   y `trg_service_order_item_pending` baja `pending_items`. Borrar la fila sería
   perder que alguien pidió algo y se arrepintió, que es justo lo que hay que
   poder auditar.
 
+  > **Quién anuló (revisión de `fix/menos-preguntas-receta-ordenes`):**
+  > `20261005060600_service_order_item_cancelled_by` añade `cancelled_by_id`
+  > (FK a `app_user`, `RESTRICT`). `service_order_item_cancel_states_who`
+  > exige quién en toda línea que pase a `CANCELLED` desde esa migración;
+  > `service_order_item_cancelled_by_only_when_cancelled`, que ningún otro
+  > estado lo lleve; y `service_order_item_guard_frozen`, que una línea nazca
+  > sin él, que se escriba sólo junto al estado en una orden emitida y que no
+  > se reescriba.
+  >
+  > **`service_order_item_cancel_states_who` es `NOT VALID` y no se validará
+  > nunca.** Las líneas anuladas antes no tienen quién y no se inventa nadie:
+  > `VALIDATE CONSTRAINT` fallaría mientras exista una sola, y siempre
+  > existirán. PostgreSQL la comprueba en toda fila que se escriba desde
+  > entonces, y una línea anulada es terminal (ORD-008), así que no estorba a
+  > nada que se pueda hacer con las antiguas.
+  >
   > **Falta esquema.** No hay columna de motivo de anulación en
   > `service_order_item`. Una anulación sin motivo es la que nadie puede explicar
   > seis meses después; el resto del sistema ya exige motivo para anular una cita
@@ -781,6 +801,10 @@ cuando la gráfica exista.
   Un informe parcial no se corrige: se completa. Y uno anulado no se corrige
   porque ya no afirma nada.
 
+  > **Enmendado por ORD-119 (D-127, 04-10-2026):** el parcial se completa
+  > **editándolo**, con la misma ruta de la corrección y su versión. Sólo el
+  > anulado sigue rechazándose con `REPORT_NOT_CORRECTABLE`.
+
 - **ORD-054** — La corrección DEBERÁ registrar sus valores como filas nuevas,
   y las banderas DEBERÁN recalcularse con la misma regla que en el original
   (ORD-035, ORD-036).
@@ -864,11 +888,19 @@ cuando la gráfica exista.
   en horario (revisión clínica).
 
 - **ORD-064** — La constancia del aviso, y la del intento sin respuesta, NO
-  DEBERÁN poder modificarse ni borrarse; un registro equivocado se corrige
-  registrando otro.
+  DEBERÁN poder borrarse, ni cambiar **de qué valor es, quién avisó ni cuándo
+  se anotó**; y toda edición DEBERÁ conservar la versión anterior (ORD-120).
 
-  Lo garantiza `critical_result_notice_append_only`, un disparador de la base:
-  una constancia que se puede reescribir no constituye prueba de nada.
+  > **Enmendado por ORD-120 (D-127, 04-10-2026).** Antes decía «NO DEBERÁN
+  > poder modificarse; un registro equivocado se corrige registrando otro», y
+  > la constancia equivocada se quedaba al lado de la buena. Lo que hacía de
+  > prueba —que nada se pierda— lo hace ahora `record_version`: la versión
+  > anterior entera, con quién la cambió y cuándo. Lo garantiza la base:
+  > `critical_result_notice_keeps_its_origin` rechaza el `DELETE` y el
+  > `UPDATE` que cambia el valor, el autor o el alta, y
+  > `record_version_archive` el `UPDATE` sin sello nuevo (`edited_by_id`,
+  > `edited_at`); `TRUNCATE` sigue cerrado
+  > (`trg_critical_result_notice_no_truncate`).
 
 - **ORD-065** — Cada entrada de la cola de críticos DEBERÁ decir cuántos
   minutos lleva esperando aviso, contados desde la emisión de la primera
@@ -1081,6 +1113,30 @@ marcar Imagen y pedir un hemograma.
   > emite o descarta sólo el profesional que firma la orden, como la receta
   > (PR-100), con `ORDER_DRAFT_OF_ANOTHER_PRACTITIONER`. Y al emitir se
   > vuelve a comprobar también el tipo de cada examen (ORD-097).
+  >
+  > **Enmendado por D-126 (resuelta el 04-10-2026):** descartar ya no se
+  > confirma; el error se arregla con «Deshacer», que devuelve el borrador
+  > (ORD-116). `DISCARDED` deja de ser un estado final.
+
+- **ORD-116** — CUANDO el profesional que firma la orden descarte un borrador,
+  el sistema NO DEBERÁ pedir confirmación ni motivo; y MIENTRAS la orden esté
+  en `DISCARDED`, CUANDO ese profesional la **recupere**, el sistema DEBERÁ
+  devolverla a `DRAFT` **tal como estaba** —mismo identificador, mismas líneas,
+  sin número— limpiando quién y cuándo se descartó. SI la orden no está en
+  `DISCARDED`, ENTONCES DEBERÁ rechazarlo con `ORDER_NOT_DISCARDED`; SI quien
+  la recupera no es quien la firma, ENTONCES DEBERÁ rechazarlo con
+  `ORDER_DRAFT_OF_ANOTHER_PRACTITIONER` (D-123.1).
+
+  > **Garantía de la base:** `service_order_guard_status` admite
+  > `DISCARDED → DRAFT` y ninguna otra vuelta atrás —lo emitido no regresa—,
+  > y en esa vuelta sólo deja cambiar el estado y quién/cuándo: el tipo, la
+  > prioridad, la indicación y lo demás siguen congelados
+  > (`20261005060100_service_order_restore_discarded_draft`).
+  > `service_order_discard_states_who_and_when` obliga a limpiar quién y
+  > cuándo. Se prueba contra la base con control positivo.
+  >
+  > **La atención cerrada no lo impide**, igual que no impide descartar: se
+  > devuelve el borrador adonde estaba, y emitirlo sigue sujeto a ORD-005.
 
 - **ORD-100** — Una orden que no esté en `ISSUED` NO DEBERÁ aparecer en la cola de
   pendientes, ni proponer cargo en caja, ni contar como acto clínico de la
@@ -1284,6 +1340,160 @@ desde la pantalla.
 
 ---
 
+## 11. Anular y corregir lo emitido (D-126, D-127)
+
+_Revisión de usabilidad del autor del 04-10-2026: anular un examen de una orden
+emitida era un clic sin aviso, y corregir una orden emitida obligaba a anular
+línea por línea y volver a pedir desde cero. Lo que ya está en manos de un
+tercero —la petición en la mano del paciente o en el laboratorio— no se edita:
+se anula y se pide de nuevo, y la pantalla lo hace en un paso (D-127.4)._
+
+- **ORD-117** — CUANDO se pida anular una línea de una orden emitida, la
+  pantalla DEBERÁ pedir **una** confirmación que diga la consecuencia —«Sale
+  de la cola del laboratorio. El papel entregado todavía la incluye.»—, sin
+  pedir motivo, y sólo al confirmar DEBERÁ anularla (ORD-007).
+  > **Solo interfaz:** el servidor ya anula con ORD-007 y no pide motivo
+  > (D-126.2: el rastro —quién, cuándo— lo guarda el sistema solo). Antes era
+  > un clic sin aviso sobre algo que ya tiene efecto fuera de la consulta.
+
+- **ORD-118** — MIENTRAS la orden esté emitida (`ISSUED`), CUANDO **quien la
+  firma** la **corrija**, el sistema DEBERÁ, **en una sola transacción**, anular
+  cada línea **viva** (`REQUESTED` o `IN_PROGRESS`) como ORD-007 y abrir en la
+  **misma atención** una orden nueva en `DRAFT`, sin número, con el mismo
+  tipo, prioridad e indicación clínica y una línea por cada examen anulado,
+  copiada como estaba congelada (código, nombre y concepto del tarifario); y
+  DEBERÁ responder `{ cancelled, draft }`. SI algo de la transacción falla,
+  ENTONCES **NO DEBERÁ** anular ninguna línea. SI la orden no está `ISSUED`,
+  ENTONCES DEBERÁ rechazarlo con `ORDER_NOT_ISSUED`; SI no le queda ninguna
+  línea viva, ENTONCES con `ORDER_ITEM_NOT_PENDING` (ORD-008); SI quien corrige
+  no la firma, ENTONCES con `ORDER_OF_ANOTHER_PRACTITIONER`; y SI la atención
+  ya no admite órdenes, ENTONCES con `ORDER_ENCOUNTER_NOT_OPEN` (ORD-005), sin
+  anular nada.
+  > **Una línea con su resultado no se anula ni se vuelve a pedir:** ORD-008
+  > ya rechaza anular una línea `COMPLETED`, y pedirla otra vez repetiría un
+  > examen que ya volvió. Queda como estaba en la orden original. La pantalla
+  > lo dice en la confirmación.
+  >
+  > **Por qué se copian las líneas y no se resuelven otra vez contra el
+  > catálogo:** se corrige lo que decía el papel. Lo que tenga que ser cierto
+  > para emitir otra vez —el examen sigue activo y es del tipo de la orden
+  > (ORD-003, ORD-097), la atención sigue abierta (ORD-005)— lo juzga la
+  > emisión del borrador nuevo, como el de cualquier borrador (el argumento de
+  > PR-109).
+  >
+  > **Por qué sólo quien la firma (D-123.1):** el borrador nuevo sale a su
+  > nombre. Un colega puede anular los exámenes (ORD-007, abierto a quien puede
+  > pedir) y pedirlos en una orden suya; por eso el código es distinto de
+  > `ORDER_DRAFT_OF_ANOTHER_PRACTITIONER`, cuya salida es otra.
+  >
+  > **Garantía de la base:** la atomicidad es de la transacción, y la prueba de
+  > integración fuerza un fallo al escribir el borrador para demostrar que
+  > ninguna línea queda anulada. `service_order_item_guard_frozen` admite el
+  > cambio de estado de una línea de una orden emitida y la inserción de
+  > líneas `REQUESTED` en un borrador, que es justo lo que se hace. Cada línea
+  > anulada lleva quién la anuló, como en ORD-007, y la corrección deja dos
+  > filas en `access_audit`: `UPDATE` de la orden corregida y `CREATE` del
+  > borrador nuevo (como «Corregir» la receta, PR-109). Las líneas anuladas
+  > conservan su fila (ORD-007): el papel entregado sigue diciendo lo que se
+  > pidió.
+  >
+  > **Una atención ya cerrada no admite el borrador** (ORD-005), así que la
+  > orden de una consulta terminada no se corrige: se anulan sus exámenes y se
+  > piden en una atención nueva.
+
+- **ORD-119** — CUANDO se edite el informe vigente de una orden, el sistema
+  DEBERÁ hacerlo como en ORD-050 —un informe **nuevo** que sustituye al
+  anterior (`supersedes_id`), sin tocar ningún valor del anterior, que sigue
+  legible (ORD-051)—, y MIENTRAS el informe editado esté `PARTIAL`, DEBERÁ
+  admitir que la versión nueva **añada** los analitos que faltaban, con todos
+  los que ya traía (ORD-055). MIENTRAS a la versión nueva le falte alguna
+  determinación, DEBERÁ quedar `PARTIAL` aunque cambie algo (ORD-030); ya
+  completa, DEBERÁ quedar `CORRECTED` si cambia **cualquier cosa** que el
+  parcial ya decía —un valor, su unidad, su bandera tal como se guarda
+  (ORD-054) o la conclusión del informe— y `FINAL` si sólo lo completa; y la
+  línea DEBERÁ cerrarse cuando estén todas (ORD-039). Sólo DEBERÁ admitir
+  editar un informe `PARTIAL`, `FINAL` o `CORRECTED` —lista cerrada—; SI el
+  informe está `CANCELLED`, ENTONCES DEBERÁ rechazarlo con
+  `REPORT_NOT_CORRECTABLE`.
+  > **`CORRECTED` implica completo (revisión):** igual que `FINAL`, dice
+  > «están todas»; lo que añade es que sustituyó a otro. Un parcial que se
+  > edita y sigue a medias es `PARTIAL`, y el cambio no es silencioso porque
+  > el anterior queda a la vista como sustituido, «Corregido el…» (ORD-051).
+  > Y «lo que el parcial decía» es todo lo que alguien pudo leer: la unidad,
+  > la marca de anormal y la conclusión cuentan como el valor.
+  > **Por qué sin romper ORD-050:** la regla que lo funda es de seguridad —«un
+  > valor que cambia en silencio es un incidente»— y se cumple igual: el
+  > parcial no se sobrescribe, queda como versión, y un valor que cambia sale
+  > `CORRECTED`, que es lo que hace a la pantalla decir «corregido». Completar
+  > sin cambiar nada no altera nada que alguien haya leído, y llamarlo
+  > «corregido» sería una alarma falsa. ORD-052 (una sola sustitución por
+  > informe) y ORD-055 (la versión nueva trae todo lo que decía la anterior)
+  > siguen igual.
+  >
+  > **Registrar otro informe** sigue siendo posible: es como llega un segundo
+  > envío del laboratorio, y ORD-039 cuenta lo recibido en total. Lo nuevo es
+  > que quien transcribe no está obligado a ese camino para terminar un
+  > parcial que él mismo dejó a medias.
+  >
+  > **Solo interfaz:** el botón del informe vigente se llama «Editar», también
+  > en un parcial, y abre los valores ya cargados.
+
+- **ORD-120** — CUANDO se edite el aviso de un valor crítico, o el intento sin
+  respuesta, el sistema DEBERÁ cambiarlo **en el sitio** —a quién, tipo, medio,
+  cuándo, nota, si contestó y el read-back—, guardar la versión anterior
+  entera en `record_version` con **quién la editó y cuándo**, exigir
+  `result:write` y dejar fila en `access_audit`, y DEBERÁ aplicar las mismas
+  reglas que al registrarlo: el aviso hecho exige el read-back
+  (`CRITICAL_READ_BACK_REQUIRED`, ORD-066); el instante sigue acotado entre el
+  resultado y el ahora (`CRITICAL_NOTICE_TIME_INVALID`) y no puede caer después
+  de la corrección del informe (`RESULT_SUPERSEDED`); fuera de horario se
+  juzga otra vez con el instante de la llamada (ORD-068); y el aviso a sí
+  mismo se juzga con **quién avisó** (D-113 b). Quién avisó NO DEBERÁ cambiar.
+  SI quien edita no es quien dio el aviso (`notified_by`), ENTONCES DEBERÁ
+  rechazarlo con `CRITICAL_NOTICE_OF_ANOTHER_USER`; SI el aviso es un «no
+  contestó» (`NO_ANSWER`) y la edición lo hace «avisado» (`NOTIFIED`),
+  ENTONCES con `CRITICAL_NOTICE_NO_ANSWER_STAYS` —el resto de sus campos sí se
+  edita—; SI la edición no trae la versión vigente (`expectedEditedAt`: el
+  `editedAt` leído, o nulo si nunca se editó), ENTONCES con
+  `CRITICAL_NOTICE_EDITED_CONCURRENTLY`, sin escribir nada. SI el aviso no es
+  de ese resultado ENTONCES DEBERÁ rechazarlo con `CRITICAL_NOTICE_NOT_FOUND`;
+  SI el resultado no existe o es de una sede fuera del alcance, con
+  `RESULT_NOT_FOUND`. Y DEBERÁ ofrecer las versiones anteriores, de la más
+  reciente a la más antigua, con `record:read`.
+  > **D-133.1 (construido con la recomendación mientras el autor decide):**
+  > con la edición abierta a cualquiera con `result:write`, otra persona podía
+  > convertir el «no contestó» de una compañera en «avisado», con otra hora y
+  > el read-back marcado: la constancia vigente decía que avisó quien no
+  > avisó, y el intento dejaba de contar para la escalada (ORD-065, ORD-067).
+  > Por eso el aviso lo edita sólo quien lo dio, y la llamada posterior que sí
+  > contestan es un aviso nuevo, con su hora. La alternativa pendiente es
+  > dejar editar a cualquiera con `result:write`, con la versión como único
+  > rastro.
+  >
+  > **Concurrencia optimista:** la versión se compara bajo el bloqueo de la
+  > fila. De dos ediciones hechas sobre la misma versión gana la que toma la
+  > fila primero; la otra recibe el 409 en lugar de pisarla en silencio.
+  > **D-127:** lo registrado se edita en el sitio y la historia la guarda el
+  > sistema. El aviso no ha salido a un tercero —es la constancia interna de
+  > una llamada—, así que no hay «Corregir» que anule y rehaga: se edita.
+  >
+  > **El cuerpo es el aviso entero**, la forma de registrarlo (`PUT`): un campo
+  > que no viaja queda vacío, salvo la hora, que sin `notifiedAt` se conserva.
+  > Quién edita es la sesión, nunca un campo del cuerpo.
+  >
+  > **El sello lo pone el reloj de la aplicación** y, bajo el bloqueo de la
+  > fila, pasa del anterior: dos ediciones seguidas en el mismo milisegundo no
+  > chocan, la segunda lleva el suyo (el patrón de `saveVitals`, EN-210).
+  >
+  > **Un aviso que se corrige a «no contestó» devuelve el valor a la cola.**
+  > Es la dirección segura, y la única que admite la edición.
+  >
+  > **Solo interfaz:** «Editar» en cada constancia del informe —sólo en las
+  > que dio quien mira— abre el diálogo de registrar con los valores cargados
+  > y el read-back **desmarcado**, y «Versiones anteriores» enseña lo que decía
+  > antes. La constancia se lee donde se registra —el informe de la
+  > orden—, porque la cola de críticos sólo lista lo que aún espera aviso.
+
 ## Códigos de error nuevos
 
 Todos entran en `shared/domain/errors/error-catalogue.ts` con su prueba de
@@ -1295,10 +1505,10 @@ contrato —`code`, estado y mensaje—.
 | `ORDER_ENCOUNTER_NOT_FOUND` | 404 | La atención sobre la que se pide no existe o está fuera del alcance. **No es `ENCOUNTER_NOT_FOUND`**, que pertenece a `encounter`: ningún módulo importa de otro y dos clases con el mismo `code` rompen el catálogo. La frase sí es la misma | ORD-001, ORD-090 |
 | `EXAM_NOT_ORDERABLE` | 422 | El ordenable no existe o está deshabilitado. Rechaza la orden **entera** | ORD-003 |
 | `ORDER_ENCOUNTER_NOT_OPEN` | 409 | La atención ya no admite contenido clínico nuevo | ORD-005 |
-| `ORDER_ITEM_NOT_PENDING` | 409 | Se intentó anular una línea ya completada o ya anulada | ORD-008 |
+| `ORDER_ITEM_NOT_PENDING` | 409 | Se intentó anular una línea ya completada o ya anulada, o corregir una orden sin ninguna línea viva | ORD-008, ORD-118 |
 | `REPORT_NOT_FOUND` | 404 | El informe no existe o es de una sede fuera del alcance | ORD-051 |
 | `REPORT_ALREADY_CORRECTED` | 409 | Ese informe ya tiene una corrección. Lo arbitra el `UNIQUE` sobre `supersedes_id` | ORD-052 |
-| `REPORT_NOT_CORRECTABLE` | 409 | Se intentó corregir un informe parcial o anulado | ORD-053 |
+| `REPORT_NOT_CORRECTABLE` | 409 | Se intentó editar un informe anulado. Un parcial sí se edita desde ORD-119 | ORD-053, ORD-119 |
 | `RESULT_ANALYTE_UNKNOWN` | 422 | El analito no está en el catálogo | ORD-042 |
 | `RESULT_VALUE_TYPE_MISMATCH` | 422 | El valor no corresponde al tipo que el analito declara | ORD-032 |
 | `RESULT_VALUE_NOT_ALLOWED` | 422 | El valor codificado no está en `allowed_values` | ORD-033 |
@@ -1312,9 +1522,15 @@ contrato —`code`, estado y mensaje—.
 | `REPORT_ISSUED_IN_FUTURE` | 422 | La fecha de emisión del laboratorio es futura | ORD-030 |
 | `REPORT_CORRECTION_INCOMPLETE` | 422 | La corrección no trae todos los analitos del informe que sustituye | ORD-055 |
 | `RESULT_SUPERSEDED` | 422 | Se intentó avisar de un valor cuyo informe ya fue corregido: se avisa el que lo sustituye | ORD-062 |
-| `CRITICAL_READ_BACK_REQUIRED` | 422 | Un aviso hecho sin confirmar que quien lo recibió repitió el valor | ORD-066 |
+| `CRITICAL_READ_BACK_REQUIRED` | 422 | Un aviso hecho sin confirmar que quien lo recibió repitió el valor | ORD-066, ORD-120 |
+| `CRITICAL_NOTICE_NOT_FOUND` | 404 | Se pidió editar o leer las versiones de un aviso que no es de ese resultado. Sólo después de encontrar el resultado en el alcance, así que no confirma nada de otra sede | ORD-120 |
+| `CRITICAL_NOTICE_OF_ANOTHER_USER` | 403 | Se intentó editar un aviso que dio otra persona (D-133.1) | ORD-120 |
+| `CRITICAL_NOTICE_NO_ANSWER_STAYS` | 409 | Se intentó pasar a «avisado» un «no contestó» editándolo: la llamada que contestan es un aviso nuevo (D-133.1) | ORD-120 |
+| `CRITICAL_NOTICE_EDITED_CONCURRENTLY` | 409 | La edición se hizo sobre una versión del aviso que ya no es la vigente (`expectedEditedAt`) | ORD-120 |
 | `ORDER_NOT_DRAFT` | 409 | Se intentó reescribir, emitir o descartar una orden que ya no está en borrador | ORD-096, ORD-098, ORD-099 |
-| `ORDER_NOT_ISSUED` | 409 | Se intentó registrar un informe, emparejar un resultado o anular una línea de una orden que no se ha emitido | ORD-100 |
+| `ORDER_NOT_DISCARDED` | 409 | Se intentó recuperar una orden que no está descartada: ya se recuperó, o nunca se descartó | ORD-116 |
+| `ORDER_NOT_ISSUED` | 409 | Se intentó registrar un informe, emparejar un resultado, anular una línea o corregir una orden que no se ha emitido | ORD-100, ORD-118 |
+| `ORDER_OF_ANOTHER_PRACTITIONER` | 403 | Corregir una orden emitida que firma otro profesional: el borrador nuevo saldría a nombre de quien corrige. **Distinto de `ORDER_DRAFT_OF_ANOTHER_PRACTITIONER`** porque la salida difiere: aquí se pueden anular sus exámenes (ORD-007) y pedirlos en una orden propia | ORD-118 |
 | `EXAM_DEFINITION_NOT_FOUND` | 404 | El examen no existe | ORD-103 |
 | `EXAM_CODE_DUPLICATE` | 409 | Otro examen ya lleva ese código. Lo arbitra `exam_definition_code_unique` | ORD-103 |
 | `ANALYTE_NOT_FOUND` | 404 | El analito no existe o está desactivado | ORD-105, ORD-106 |
@@ -1345,11 +1561,12 @@ precisamente para que más de un módulo pueda responderlos con el mismo `code`.
 | Qué falta | Dónde | Requisito |
 | --- | --- | --- |
 | ~~Número de orden consecutivo~~ — construido: `document_counter` + disparador. **A.M. 00002393 art. 43** | `service_order` | ORD-006 |
-| ~~**Constancia del aviso de un valor crítico**~~ — construido: `critical_result_notice`, inmutable por disparador. **A.M. 00002393 art. 39** | tabla nueva | ORD-062, ORD-064 |
+| ~~**Constancia del aviso de un valor crítico**~~ — construido: `critical_result_notice`, sin borrado ni cambio de origen por disparador; se edita con sello (`edited_by_id`, `edited_at`) y su versión anterior va a `record_version` (`20261005060400_critical_notice_edit_in_place`). **A.M. 00002393 art. 39** | tabla nueva | ORD-062, ORD-064, ORD-120 |
 | Adjunto del PDF del laboratorio, indexado por paciente, fecha y laboratorio | tabla nueva | ORD-070 |
 | **`analyte_definition_id`**, para que el resultado apunte a su definición y no a un texto | `observation_result` | ORD-031 |
 | Valor `ABNORMAL` en el enum, para la anormalidad cualitativa que no es alta ni baja | `abnormal_flag` | ORD-038 |
 | `concept_id` del tarifario, para no pedir dos identificadores por línea | `exam_definition` | ORD-004 |
+| ~~Quién anuló una línea~~ — construido: `cancelled_by_id` con `service_order_item_cancel_states_who` (`NOT VALID` para las anuladas antes, nunca se valida) y `service_order_item_cancelled_by_only_when_cancelled` (`20261005060600_service_order_item_cancelled_by`) | `service_order_item` | ORD-007, ORD-118 |
 | Motivo de anulación de una línea | `service_order_item` | ORD-007 |
 | ~~Plazo y escalado de la política de críticos~~ — construido: `critical_notice_within_minutes` (60 de fábrica), `critical_escalation_role_id`. **Fuera de horario se deduce del horario de los profesionales de la sede** (ORD-068): no hay horario de sede propio | `site_parameter` | ORD-063, ORD-065, ORD-068 |
 | ~~Responsable y plazo de la cola sin orden~~ — construido: `unmatched_result_owner_role_id`, `unmatched_result_deadline_hours` (D-050 §4) | `site_parameter` | ORD-046 |
@@ -1371,18 +1588,22 @@ resuelto de quien llama.
 | `POST` | `/encounters/:encounterId/orders` | `record:write` | ORD-001 a ORD-005, ORD-095, ORD-097 |
 | `PUT` | `/orders/:orderId` | `record:write` | ORD-096, ORD-097 |
 | `POST` | `/orders/:orderId/issue` | `record:write` | ORD-006, ORD-098 |
-| `POST` | `/orders/:orderId/discard` | `record:write` | ORD-099 |
+| `POST` | `/orders/:orderId/discard` | `record:write` | ORD-099, ORD-116 |
+| `POST` | `/orders/:orderId/restore` | `record:write` | ORD-116 *(sólo una descartada, y sólo quien la firma)* |
 | `GET` | `/encounters/:encounterId/orders` | `record:read` | ORD-002, ORD-009 |
 | `GET` | `/orders/:orderId` | `record:read` | ORD-009 |
-| `POST` | `/orders/:orderId/items/:itemId/cancel` | `record:write` | ORD-007, ORD-008 |
+| `POST` | `/orders/:orderId/items/:itemId/cancel` | `record:write` | ORD-007, ORD-008, ORD-117 |
+| `POST` | `/orders/:orderId/correct` | `record:write` | ORD-118 *(sólo una emitida, y sólo quien la firma; devuelve `{ cancelled, draft }`)* |
 | `GET` | `/orders/pending` | `record:read` | ORD-020 a ORD-026, ORD-081, ORD-092 |
 | `POST` | `/orders/:orderId/reports` | `result:write` | ORD-030 a ORD-042, ORD-094 |
 | `GET` | `/orders/:orderId/reports` | `record:read` | ORD-051, ORD-091 |
-| `POST` | `/orders/reports/:reportId/correct` | `result:write` | ORD-050 a ORD-054 |
+| `POST` | `/orders/reports/:reportId/correct` | `result:write` | ORD-050 a ORD-055, ORD-119 |
 | `GET` | `/orders/results/unmatched` | `record:read` | ORD-040, ORD-041, ORD-046, ORD-092 |
 | `POST` | `/orders/results/:resultId/match` | `result:write` | ORD-041, ORD-043, ORD-091 |
 | `GET` | `/orders/results/critical` | `record:read` | ORD-060, ORD-061, ORD-065, ORD-092 |
 | `POST` | `/orders/results/:resultId/notices` | `result:write` | ORD-062, ORD-091 |
+| `PUT` | `/orders/results/:resultId/notices/:noticeId` | `result:write` | ORD-120 *(el aviso entero y `expectedEditedAt`; sin `notifiedAt` conserva la hora; sólo quien lo dio)* |
+| `GET` | `/orders/results/:resultId/notices/:noticeId/versions` | `record:read` | ORD-120 |
 | `GET` | `/exams` | `catalog:read` | ORD-010 a ORD-012, ORD-101 |
 | `GET` | `/exam-catalogue/exams` | `catalog:manage` | ORD-103 (activos e inactivos, con estructura, rangos y prestación) |
 | `GET` | `/exam-catalogue/exams/:examId` | `catalog:manage` | ORD-103 |
@@ -1421,15 +1642,20 @@ columnas donde registrar quién lo decidió y por qué.
 | ORD-036, ORD-038, ORD-039 | Unitario | Son políticas puras: rango aplicable, bandera y completitud. Se prueban sin base, con los rangos reales de la siembra. |
 | ORD-021, ORD-022 | Unitario | El envejecimiento es aritmética de fechas clínicas; el huso se prueba fijando la zona de la sesión. |
 | ORD-032, ORD-033 | Unitario | La coherencia entre el tipo del analito y el valor enviado es una regla de dominio. |
-| ORD-002, ORD-007, ORD-039 | Integración | `trg_service_order_item_pending` y el índice parcial son garantías de la base: se prueban contra PostgreSQL. |
+| ORD-002, ORD-007, ORD-039 | Integración | `trg_service_order_item_pending` y el índice parcial son garantías de la base: se prueban contra PostgreSQL. Quién anuló, también: la línea anulada sin quién, el quién en una línea no anulada, el que se reescribe y el de una línea que nace se rechazan, con control positivo; y por el servicio, que lo escribe la sesión con su fila en la bitácora. |
 | ORD-050, ORD-052 | Integración | El `UNIQUE` sobre `supersedes_id` lo arbitra la base. |
 | ORD-043 | Integración | No hay `CHECK` que ate `order_item_id` a la orden del informe, así que la negativa vive en la transacción que escribe: un doble que confirme que se llamó bien al adaptador no demuestra nada sobre la fila que aterriza. Y la reevaluación de ORD-039 sólo se ve en `pending_items`. |
 | ORD-004 | Integración | La vigencia se evalúa con `daterange @>` sobre una columna generada, que Prisma no puede expresar. |
 | ORD-081, ORD-093 | Integración | El alcance de ficha sigue el enlace de fusión, que solo existe en la base. |
-| ORD-062, ORD-064 | Integración | La constancia sale de la cola por una consulta y no se reescribe por un disparador: las dos cosas son de la base, con control positivo (el `INSERT` entra, el `UPDATE` no). |
+| ORD-062, ORD-064 | Integración | La constancia sale de la cola por una consulta y no se borra ni cambia de origen por un disparador: las dos cosas son de la base, con control positivo (el `INSERT` y la edición con sello entran; el `UPDATE` sin sello, el que cambia el origen y el `DELETE`, no). |
+| ORD-120 | Integración | Contra la base: la edición con sello archiva la versión anterior y la sin sello, la de origen y la que quita el read-back se rechazan, con control positivo; por el servicio, la edición cambia lo dicho y no quién avisó, la versión se lee con el mismo mapeo, la cola vuelve a abrirse con el aviso que pasa a «no contestó»; otra cuenta no edita, el «no contestó» no pasa a avisado, y la versión que no es la vigente se rechaza, cada una con control positivo; de dos ediciones simultáneas sobre la misma versión gana una y la otra recibe el 409, y dos seguidas en el mismo instante llevan sellos distintos. Por HTTP, la ruta, el 409 de la versión, el 422 sin versión y su 404. |
 | ORD-046, ORD-065 | Integración y unitario | El plazo es aritmética pura con el reloj inyectado; de dónde sale —el parámetro de la sede o su ausencia— se prueba contra la base. |
 | ORD-026 | Integración | El nombre viaja o no según el filtro, y se prueba con dos fichas reales. |
 | ORD-090, ORD-094 | Integración | `route-authorisation.spec` recorre las rutas que NestJS registró de verdad. |
+| ORD-116 | Integración y unitario | Que la vuelta `DISCARDED → DRAFT` limpie quién y cuándo y no mueva nada más lo garantiza un disparador: se prueba contra la base, con control positivo; recuperar devuelve las mismas líneas, y lo no descartado responde `ORDER_NOT_DISCARDED`. Que sólo quien firma recupera, con el servicio. |
+| ORD-117 | Interfaz | Anular una línea abre una confirmación con la consecuencia; cancelar no llama al servidor, confirmar sí. |
+| ORD-118 | Integración y unitario | Contra la base: corregir anula las líneas vivas con quién las anuló y deja las dos filas de bitácora, deja la resultada como estaba y abre el borrador con los mismos exámenes, tipo, prioridad e indicación; **un fallo forzado al escribir el borrador deja todas las líneas vivas**, con control positivo; atención cerrada, borrador y orden sin líneas vivas no corrigen. Que sólo quien firma corrige, con el servicio. |
+| ORD-119 | Integración y unitario | Contra la base: editar un parcial añadiendo lo que faltaba deja la versión nueva `FINAL`, el parcial legible y sustituido, y la línea `COMPLETED`, con control positivo (antes de editar, `PARTIAL` y la línea pendiente); cambiar un valor que ya decía la deja `CORRECTED`; un parcial editado que sigue incompleto queda `PARTIAL` con el anterior sustituido, y completarlo cambiando la conclusión lo deja `CORRECTED`, con control positivo. Unitario del estado de la versión (valor, unidad, bandera, conclusión, incompleto) y de la lista cerrada de `isCorrectable`. |
 | Todos los códigos de error | Unitario | Contrato: `code`, categoría y mensaje. |
 
 ---

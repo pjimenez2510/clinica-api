@@ -332,7 +332,10 @@ describe('quitar un diagnóstico deja rastro (EN-180 a EN-183)', () => {
     // Positive control: the exam cancelled (ORD-007), the way out is open.
     await prisma.serviceOrderItem.update({
       where: { id: order.items[0]!.id },
-      data: { status: 'CANCELLED' },
+      data: {
+        status: 'CANCELLED',
+        cancelledById: (await createUser(prisma)).id,
+      },
     });
     await archive(prisma, second!.id, remover.id);
     await remove(prisma, second!.id);

@@ -861,3 +861,81 @@ describe('DOC-039 una sola identidad para las cuatro clases', () => {
     expect(repository.templates).toHaveLength(1);
   });
 });
+
+describe('DOC-108 corregir un PDF sin escribir el motivo', () => {
+  it('DOC-108 sin motivo, el servidor pone el de la causa; el que llega se guarda tal cual', async () => {
+    const first = await service.emit(
+      { kind: 'PRESCRIPTION', subjectId: 'prescription-1' },
+      requester,
+    );
+    const automatic = await service.emit(
+      { kind: 'PRESCRIPTION', subjectId: 'prescription-1', supersedesId: first.id }, // prettier-ignore
+      requester,
+    );
+    expect(automatic.supersedesId).toBe(first.id);
+    expect(automatic.supersedeReason).toBe('Nueva versión del documento');
+
+    sources.subject = prescriptionSubject('CANCELLED');
+    const written = await service.emit(
+      {
+        kind: 'PRESCRIPTION',
+        subjectId: 'prescription-1',
+        supersedesId: automatic.id,
+        reason: 'La farmacia pidió el original',
+      },
+      requester,
+    );
+    expect(written.supersedeReason).toBe('La farmacia pidió el original');
+  });
+});
+
+describe('DOC-109 al anular se archiva el PDF que sustituye al vigente', () => {
+  it('DOC-109 sin ningún PDF archivado no archiva nada (control positivo)', async () => {
+    sources.subject = prescriptionSubject('CANCELLED');
+    await expect(
+      service.archiveReplacement(
+        { kind: 'PRESCRIPTION', subjectId: 'prescription-1', cause: 'ANNULMENT' }, // prettier-ignore
+        requester,
+      ),
+    ).resolves.toBeNull();
+    expect(repository.renders).toHaveLength(0);
+  });
+
+  it('DOC-109 con PDF archivado, el nuevo sustituye al último vigente con el motivo de la causa', async () => {
+    const first = await service.emit(
+      { kind: 'PRESCRIPTION', subjectId: 'prescription-1' },
+      requester,
+    );
+    const corrected = await service.emit(
+      { kind: 'PRESCRIPTION', subjectId: 'prescription-1', supersedesId: first.id }, // prettier-ignore
+      requester,
+    );
+    sources.subject = prescriptionSubject('CANCELLED');
+
+    const archived = await service.archiveReplacement(
+      { kind: 'PRESCRIPTION', subjectId: 'prescription-1', cause: 'ANNULMENT' },
+      { userId: 'user-2', sites: 'all' },
+    );
+
+    expect(archived).toMatchObject({
+      supersedesId: corrected.id,
+      supersedeReason: 'Receta anulada',
+      issuedById: 'user-2',
+    });
+    expect(repository.renders).toHaveLength(3);
+  });
+
+  it('DOC-109 la de una corrección dice el número de la receta corregida', async () => {
+    await service.emit(
+      { kind: 'PRESCRIPTION', subjectId: 'prescription-1' },
+      requester,
+    );
+    sources.subject = prescriptionSubject('CANCELLED');
+
+    const archived = await service.archiveReplacement(
+      { kind: 'PRESCRIPTION', subjectId: 'prescription-1', cause: 'CORRECTION' }, // prettier-ignore
+      requester,
+    );
+    expect(archived?.supersedeReason).toBe('Corrección de la receta N.º 1');
+  });
+});

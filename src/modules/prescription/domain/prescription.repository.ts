@@ -157,6 +157,11 @@ export interface PrescriptionItemView {
   frequencyText: string;
   durationDays: number | null;
   instructions: string | null;
+  /**
+   * PR-110. Outside the CNMB: no concept, or a presentation the cuadro does
+   * not declare (PR-104). What the paper marks; the reason is optional.
+   */
+  offFormulary: boolean;
   offFormularyJustification: string | null;
   /** PR-101, PR-102. `null` on lines written before the vocabulary. */
   dosageFormCode: string | null;
@@ -199,14 +204,14 @@ export interface PrescriptionView {
   nonPharmacologicalAdvice: string | null;
   createdAt: Date;
   /**
-   * PR-011. When the draft was discarded, and why.
+   * PR-011, PR-107. When the draft was discarded, and why if somebody said.
    *
    * ⚠️ THE REASON TRAVELS AND IS NOT KEPT BACK, because a register nobody can
-   * read is not a register. `prescription_discard_states_who_when_and_why`
-   * refuses the row unless all three are present, so a `DISCARDED` prescription
-   * with a blank reason cannot exist — and the next doctor opening the chart is
-   * exactly who has to be able to see that this line was a typing mistake and
-   * not medication that was stopped.
+   * read is not a register. Since D-126 it is optional
+   * (`prescription_discard_states_who_and_when` demands who and when only), so
+   * it is `null` on most discarded drafts; the STATE is what tells the next
+   * doctor that this line was a typing mistake and not medication that was
+   * stopped.
    *
    * WHO discarded it is deliberately NOT here: the listing is not audited
    * (PR-092), and the accountable «quién» belongs in the trail rather than on
@@ -214,6 +219,19 @@ export interface PrescriptionView {
    */
   discardedAt: Date | null;
   discardReason: string | null;
+  /**
+   * PR-108. The register of art. 70 of Res. ACESS-2023-0030: when the issued
+   * prescription was annulled, by which account and why.
+   *
+   * ⚠️ UNLIKE THE DISCARD, WHO IS HERE. A discarded draft never left the room;
+   * an annulled receta is a paper in a pharmacy's or a patient's hand, and
+   * «¿quién la anuló?» is the first question of whoever calls about it. All
+   * three are `null` on every other state, and on a receta annulled before
+   * `20261005060200`, which had nowhere to keep them.
+   */
+  cancelledAt: Date | null;
+  cancelledBy: { id: string; name: string } | null;
+  cancelReason: string | null;
   items: readonly PrescriptionItemView[];
 }
 
@@ -256,22 +274,76 @@ export interface IssuePlan {
 }
 
 /**
- * PR-011. What discarding a draft writes: who, when and why, the three
- * together.
+ * PR-011, PR-107. What discarding a draft writes: who and when, and the reason
+ * only if one was given.
  *
- * ⚠️ THE THREE ARE ONE SHAPE BECAUSE THE DATABASE TREATS THEM AS ONE.
- * `prescription_discard_states_who_when_and_why` is
- * `status <> 'DISCARDED' OR (discarded_at IS NOT NULL AND discarded_by_id IS
- * NOT NULL AND discard_reason IS NOT NULL)`, so a plan able to carry two of
- * them would be a plan the `CHECK` refuses. Making them optional here would
- * move a guarantee that already exists into a place where it can be forgotten.
+ * ⚠️ WHO AND WHEN ARE NOT OPTIONAL HERE BECAUSE THE DATABASE TREATS THEM AS
+ * ONE. `prescription_discard_states_who_and_when` is `status <> 'DISCARDED' OR
+ * (discarded_at IS NOT NULL AND discarded_by_id IS NOT NULL)`, so a plan able
+ * to carry one of them would be a plan the `CHECK` refuses.
  */
 export interface DiscardPlan {
   discardedAt: Date;
   /** The ACCOUNT that discarded it: `discarded_by_id` targets `app_user`. */
   discardedById: string;
-  /** PR-011. Obligatory. Without it, discarding is a way of making it vanish. */
-  discardReason: string;
+  /** PR-107. Optional since D-126; kept when somebody writes one. */
+  discardReason: string | null;
+}
+
+/**
+ * PR-108. What annulling an issued prescription writes: who, when and why, the
+ * three together.
+ *
+ * ⚠️ NONE IS OPTIONAL BECAUSE THE DATABASE TREATS THEM AS ONE.
+ * `prescription_cancel_states_who_when_and_why` refuses a `CANCELLED` row
+ * missing any of them, so a plan able to carry two would be a plan the
+ * `CHECK` refuses.
+ */
+export interface CancelPlan {
+  cancelledAt: Date;
+  /** The ACCOUNT that annulled it: `cancelled_by_id` targets `app_user`. */
+  cancelledById: string;
+  /** PR-108. Obligatory: it is the register art. 70 asks for. */
+  cancelReason: string;
+}
+
+/**
+ * PR-109. Correcting an issued prescription: annulling it with `cancel` and
+ * opening a draft with the same lines, in ONE transaction.
+ *
+ * The prescriber travels for the same reason as in `DraftRewrite`: only the
+ * professional whose name is printed on it corrects it (PR-100), the new draft
+ * is theirs, and the comparison is made under the lock.
+ */
+export interface PrescriptionCorrection extends PrescriptionQuery {
+  prescriberId: string;
+  cancel: CancelPlan;
+}
+
+/** PR-109. The prescription annulled and the draft that replaces it. */
+export interface CorrectedPrescription {
+  cancelled: PrescriptionView;
+  draft: PrescriptionView;
+}
+
+/**
+ * PR-107. Undoing a discard: the draft comes back as it was.
+ *
+ * The prescriber travels for the same reason as in `DraftRewrite`: only the
+ * professional who composed it gets it back (PR-100), and the comparison is
+ * made under the lock.
+ */
+export interface DraftRestore extends PrescriptionQuery {
+  prescriberId: string;
+}
+
+/**
+ * PR-107. Discarding a draft: the session's professional, compared with the
+ * draft's prescriber (PR-100). A draft never changes prescriber, so the
+ * comparison needs no lock of its own.
+ */
+export interface DraftDiscardQuery extends PrescriptionQuery {
+  prescriberId: string;
 }
 
 /**
@@ -414,18 +486,29 @@ export interface PrescriptionRepository {
   ): Promise<PrescriptionView>;
 
   /**
-   * PR-010. Annuls the prescription. NOTHING IS DELETED.
+   * PR-010, PR-108. Annuls the prescription, writing who, when and why.
+   * NOTHING IS DELETED.
    *
-   * ⚠️ NO REASON IS TAKEN, AND THE ABSENCE IS THE REQUIREMENT rather than an
-   * omission: there is no column for it (⚠️ **Falta esquema**, PR-010), and a
-   * reason accepted here would be text the caller believes was recorded and
-   * that nothing keeps. Art. 70 asks for that register; PR-073 says what it
-   * needs.
+   * The three columns are the register of art. 70, and the database demands
+   * them together (`prescription_cancel_states_who_when_and_why`).
    */
   cancel(
     query: PrescriptionQuery,
+    plan: CancelPlan,
     decide: (status: PrescriptionStatus) => void,
   ): Promise<PrescriptionView>;
+
+  /**
+   * PR-109. Annuls an ISSUED prescription and opens a draft in the same
+   * attention with a copy of every line and of its indications. ONE
+   * transaction: if the draft cannot be written, nothing is annulled.
+   *
+   * Refused with `PrescriptionNotEditableError` when it is not `ACTIVE`, with
+   * `PrescriptionOfAnotherPrescriberError` when it is somebody else's, and
+   * with `PrescriptionEncounterNotOpenError` when the attention no longer
+   * admits a prescription — all judged on the locked rows, before writing.
+   */
+  correct(request: PrescriptionCorrection): Promise<CorrectedPrescription>;
 
   /**
    * PR-011. Discards a DRAFT. NOTHING IS DELETED.
@@ -438,21 +521,33 @@ export interface PrescriptionRepository {
    * `prescription_issued_coherence` (`status IN ('DRAFT','DISCARDED')` iff no
    * instant of issue) keep the two paths apart in the database.
    *
-   * ⚠️ AND A REASON IS TAKEN HERE PRECISELY BECAUSE IT IS STORED, which is what
-   * `cancel` cannot say. `discard_reason` exists as a column, so asking for it
-   * is a promise the system keeps; on the annulment there is no column, so
-   * asking would be text the caller believes was recorded and nothing keeps
-   * (⚠️ **Falta esquema**, PR-010).
+   * ⚠️ A REASON IS ACCEPTED, NOT DEMANDED (D-126, PR-107). `discard_reason`
+   * is a column, so one that is given is kept; a draft never left the room, so
+   * none is asked for.
    *
    * The policy travels as a function for the same reason as `issue`: the state
    * has to be judged as it stands INSIDE the transaction, and the conditional
    * update closes the race two callers can still run.
+   *
+   * ONLY ITS PRESCRIBER discards it (PR-107, as PR-100 and the restore):
+   * `PrescriptionDraftOfAnotherPrescriberError` otherwise, judged after the
+   * state.
    */
   discard(
-    query: PrescriptionQuery,
+    query: DraftDiscardQuery,
     plan: DiscardPlan,
     decide: (status: PrescriptionStatus) => void,
   ): Promise<PrescriptionView>;
+
+  /**
+   * PR-107. DISCARDED back to DRAFT, clearing who, when and why: the draft is
+   * the one that was discarded, with its id and its lines.
+   *
+   * Refused with `PrescriptionNotEditableError` when it is not `DISCARDED`, and
+   * with `PrescriptionDraftOfAnotherPrescriberError` when it is somebody
+   * else's. Both judged inside the transaction, on the locked row.
+   */
+  restore(request: DraftRestore): Promise<PrescriptionView>;
 
   /**
    * PR-020 to PR-040, PR-092. Everything the printed prescription carries.

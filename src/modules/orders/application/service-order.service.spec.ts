@@ -1,6 +1,10 @@
 import { PinoLogger } from 'nestjs-pino';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type {
+  AnnulledDocument,
+  AnnulledDocumentArchiver,
+} from '../../../shared/documents/annulled-document.port';
 import { GLUCOSE, HAEMOGLOBIN } from '../domain/analyte.fixtures';
 import { ServiceOrderService } from './service-order.service';
 import type { Requester } from './service-order.service';
@@ -10,6 +14,7 @@ import type {
   ExamDefinitionView,
 } from '../domain/exam-catalogue.repository';
 import type {
+  CorrectedOrder,
   DraftDiscard,
   DraftRewrite,
   NewServiceOrder,
@@ -108,6 +113,8 @@ class FakeOrders implements ServiceOrderRepository {
   rewritten: DraftRewrite[] = [];
   issued: OrderQuery[] = [];
   discarded: DraftDiscard[] = [];
+  restored: OrderQuery[] = [];
+  corrected: OrderQuery[] = [];
   pendingQueries: PendingOrdersQuery[] = [];
   charts = new Map<string, string>([['1710034065', 'chart-1']]);
 
@@ -126,6 +133,14 @@ class FakeOrders implements ServiceOrderRepository {
   discard(request: DraftDiscard): Promise<ServiceOrderView> {
     this.discarded.push(request);
     return Promise.resolve(anOrder(1));
+  }
+  restore(query: OrderQuery): Promise<ServiceOrderView> {
+    this.restored.push(query);
+    return Promise.resolve(anOrder(1));
+  }
+  correct(query: OrderQuery): Promise<CorrectedOrder> {
+    this.corrected.push(query);
+    return Promise.resolve({ cancelled: anOrder(1), draft: anOrder(1) });
   }
   byId(query: OrderQuery): Promise<ServiceOrderView | undefined> {
     return Promise.resolve(
@@ -182,6 +197,10 @@ describe('la emisión y el seguimiento de una orden', () => {
   let catalogue: FakeCatalogue;
   let logger: PinoLogger;
   let service: ServiceOrderService;
+  /** DOC-109. What the documents port was asked to archive. */
+  let archived: AnnulledDocument[];
+  /** DOC-109. What the port answers about the PDF; `true` unless a test moves it. */
+  let archiveAnswer: boolean | null;
 
   beforeEach(() => {
     orders = new FakeOrders();
@@ -192,9 +211,21 @@ describe('la emisión y el seguimiento de una orden', () => {
       warn: vi.fn(),
       error: vi.fn(),
     } as unknown as PinoLogger;
-    service = new ServiceOrderService(orders, catalogue, logger, {
-      record: () => Promise.resolve(),
-    });
+    archived = [];
+    archiveAnswer = true;
+    const documents: AnnulledDocumentArchiver = {
+      archiveAnnulled: (document) => {
+        archived.push(document);
+        return Promise.resolve(archiveAnswer);
+      },
+    };
+    service = new ServiceOrderService(
+      orders,
+      catalogue,
+      logger,
+      { record: () => Promise.resolve() },
+      documents,
+    );
   });
 
   const twoLines = {
@@ -307,6 +338,29 @@ describe('la emisión y el seguimiento de una orden', () => {
     ]);
   });
 
+  it('ORD-116 deshace el descarte como acto de quien firma la orden; un colega no', async () => {
+    await service.restore('order-1', requester);
+    expect(orders.restored).toEqual([{ orderId: 'order-1', sites: [SITE] }]);
+
+    await expect(
+      service.restore('order-1', { ...requester, userId: 'user-2' }),
+    ).rejects.toMatchObject({ code: 'ORDER_DRAFT_OF_ANOTHER_PRACTITIONER' });
+    expect(orders.restored).toHaveLength(1);
+  });
+
+  it('ORD-118 corrige como acto de quien firma la orden, con su alcance y su cuenta como quien anula; un colega no', async () => {
+    await service.correct('order-1', requester);
+    // ORD-007. Quién anula sus exámenes es la sesión.
+    expect(orders.corrected).toEqual([
+      { orderId: 'order-1', sites: [SITE], cancelledById: requester.userId },
+    ]);
+
+    await expect(
+      service.correct('order-1', { ...requester, userId: 'user-2' }),
+    ).rejects.toMatchObject({ code: 'ORDER_OF_ANOTHER_PRACTITIONER' });
+    expect(orders.corrected).toHaveLength(1);
+  });
+
   it('D-123 un colega no corrige, emite ni descarta el borrador que firma otro profesional', async () => {
     const colleague = { ...requester, userId: 'user-2' };
     const rewrite = {
@@ -390,5 +444,30 @@ describe('la emisión y el seguimiento de una orden', () => {
   it('ORD-007 anula la línea sin borrarla de la orden', async () => {
     const order = await service.cancelItem('order-1', 'item-0', requester);
     expect(order.items).toHaveLength(1);
+  });
+
+  it('DOC-109 ORD-007 ORD-118 al anular una línea o corregir pide archivar el PDF al día, a nombre de la sesión', async () => {
+    await service.cancelItem('order-1', 'item-0', requester);
+    await service.correct('order-1', requester);
+    await expect(
+      service.correct('order-1', { ...requester, userId: 'user-2' }),
+    ).rejects.toMatchObject({ code: 'ORDER_OF_ANOTHER_PRACTITIONER' });
+
+    expect(archived).toEqual([
+      { kind: 'SERVICE_ORDER', subjectId: 'order-1', userId: requester.userId, cause: 'ANNULMENT' }, // prettier-ignore
+      { kind: 'SERVICE_ORDER', subjectId: 'order-1', userId: requester.userId, cause: 'CORRECTION' }, // prettier-ignore
+    ]);
+  });
+
+  it('DOC-109 ORD-007 ORD-118 la respuesta dice si el PDF al día quedó archivado', async () => {
+    // Control positivo: archivado.
+    await expect(service.cancelItem('order-1', 'item-0', requester)).resolves.toMatchObject({ documentArchived: true }); // prettier-ignore
+    // Había PDF y no se pudo archivar: la pantalla tiene que avisar.
+    archiveAnswer = false;
+    await expect(service.cancelItem('order-1', 'item-0', requester)).resolves.toMatchObject({ documentArchived: false }); // prettier-ignore
+    await expect(service.correct('order-1', requester)).resolves.toMatchObject({ documentArchived: false }); // prettier-ignore
+    // No había PDF que sustituir.
+    archiveAnswer = null;
+    await expect(service.correct('order-1', requester)).resolves.toMatchObject({ documentArchived: null }); // prettier-ignore
   });
 });

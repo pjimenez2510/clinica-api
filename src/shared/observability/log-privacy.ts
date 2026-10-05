@@ -83,6 +83,12 @@ export const ALLOWED_KEYS: ReadonlySet<string> = new Set([
   'encounter_id',
   'order_id',
   'invoice_id',
+  /**
+   * DOC-109. The receta, order or certificate whose annulled PDF could not be
+   * filed: an internal UUID, and the only way support can find which one to
+   * «Corregir…» by hand.
+   */
+  'subject_id',
 
   // De-identified clinical context
   'specialty_code',

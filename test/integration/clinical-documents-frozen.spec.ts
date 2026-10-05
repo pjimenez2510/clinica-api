@@ -144,7 +144,11 @@ describe('PR-020 PR-038 la receta emitida sólo cambia de estado, y no se borra'
 
     // Control positivo: anularla es cambiar de estado, y pasa.
     await expect(
-      prisma.$executeRaw`UPDATE prescription SET status = 'CANCELLED' WHERE id = ${id}::uuid`,
+      prisma.$executeRaw`
+        UPDATE prescription
+           SET status = 'CANCELLED', cancelled_at = now(),
+               cancelled_by_id = ${scene.userId}::uuid, cancel_reason = 'Pérdida'
+         WHERE id = ${id}::uuid`,
     ).resolves.toBe(1);
 
     await expect(
@@ -196,7 +200,11 @@ describe('PR-010 PR-038 lo que la segunda revision encontro abierto', () => {
       prisma.$executeRaw`UPDATE prescription SET status = 'COMPLETED' WHERE id = ${id}::uuid`,
     ).resolves.toBe(1);
     await expect(
-      prisma.$executeRaw`UPDATE prescription SET status = 'CANCELLED' WHERE id = ${id}::uuid`,
+      prisma.$executeRaw`
+        UPDATE prescription
+           SET status = 'CANCELLED', cancelled_at = now(),
+               cancelled_by_id = ${scene.userId}::uuid, cancel_reason = 'Pérdida'
+         WHERE id = ${id}::uuid`,
     ).resolves.toBe(1);
 
     await expect(

@@ -178,29 +178,24 @@ describe('CER-039 el 117 lo emite el profesional de la atención; un tercero, co
   });
 });
 
-describe('CER-041 el reposo empieza, como tarde, el día siguiente a la emisión', () => {
-  it('CER-041 un reposo desde mañana pasa, y uno desde pasado mañana se rechaza', async () => {
+describe('CER-055 CER-041 el reposo que empieza más allá de mañana ya no lo frena la base (D-128.7)', () => {
+  it('CER-055 CER-041 un reposo desde pasado mañana, o en 90 días, se guarda; el disparador sigue vivo para lo que se queda', async () => {
     const prisma = db();
     const scene = await aScene(prisma);
-    const tomorrow = addDays(scene.day, 1);
     const later = addDays(scene.day, 2);
-
-    await expect(
-      insert(prisma, scene, { rest: { from: tomorrow, to: tomorrow } }),
-    ).resolves.toBe(1);
-    await expect(
-      insert(prisma, scene, { rest: { from: later, to: later } }),
-    ).rejects.toThrow(/medical_certificate_rest_starts_by_next_day/);
-  });
-
-  it('CER-041 un reposo que empieza en 90 días se rechaza (D-105 §3)', async () => {
-    const prisma = db();
-    const scene = await aScene(prisma);
     const far = addDays(scene.day, 90);
 
     await expect(
+      insert(prisma, scene, { rest: { from: later, to: later } }),
+    ).resolves.toBe(1);
+    await expect(
       insert(prisma, scene, { rest: { from: far, to: far } }),
-    ).rejects.toThrow(/medical_certificate_rest_starts_by_next_day/);
+    ).resolves.toBe(1);
+    // Control positivo: el mismo reposo, emitido por quien no atendió y sin
+    // motivo, lo sigue parando el disparador (CER-039).
+    await expect(
+      insert(prisma, scene, { rest: { from: far, to: far }, issuedById: scene.otherId }), // prettier-ignore
+    ).rejects.toThrow(/medical_certificate_issuer_reason_required/);
   });
 });
 
@@ -264,8 +259,8 @@ describe('CER-030 el reposo pide motivo si empieza antes de la atención o se em
   });
 });
 
-describe('CER-030 CER-041 el disparador cuenta los días en America/Guayaquil, no en UTC', () => {
-  it('CER-041 CER-030 una atención a las 20:00 de Ecuador (ya el día siguiente en UTC) se juzga por su día ecuatoriano', async () => {
+describe('CER-030 el disparador cuenta los días en America/Guayaquil, no en UTC', () => {
+  it('CER-030 una atención a las 20:00 de Ecuador (ya el día siguiente en UTC) se juzga por su día ecuatoriano', async () => {
     const prisma = db();
     const base = await aScene(prisma);
     // 20:00 in Ecuador is 01:00 UTC of the following day: a bare `::date`
@@ -282,12 +277,12 @@ describe('CER-030 CER-041 el disparador cuenta los días en America/Guayaquil, n
     await expect(
       insert(prisma, scene, { rest: { from: base.day, to: base.day } }),
     ).resolves.toBe(1);
-    // And the latest start is the Ecuadorian next day, not the one after.
+    // And a rest from the Ecuadorian day before needs its reason.
     await expect(
       insert(prisma, scene, {
-        rest: { from: addDays(base.day, 2), to: addDays(base.day, 2) },
+        rest: { from: addDays(base.day, -1), to: base.day },
       }),
-    ).rejects.toThrow(/medical_certificate_rest_starts_by_next_day/);
+    ).rejects.toThrow(/medical_certificate_backdating_reason_required/);
   });
 
   it('CER-030 una atención a las 23:00 de Ecuador: emitido a las 05:59 del día siguiente no es tardío, a las 06:00 sí (D-106 §5)', async () => {
@@ -319,29 +314,27 @@ describe('CER-030 CER-041 el disparador cuenta los días en America/Guayaquil, n
   });
 });
 
-describe('D-106 los límites de la ventana del reposo, garantizados por la base', () => {
+describe('CER-055 los límites de D-106 ya no los frena la base, y el motivo de CER-030 sigue', () => {
   const REASON_LATE = 'Volvió por el certificado días después';
 
-  it('CER-044 con motivo, el reposo empieza como mucho 3 días antes de la atención; 4 días antes se rechaza (D-106 §1)', async () => {
+  it('CER-055 CER-044 un reposo que empieza 4 días antes de la atención se guarda con motivo, y sin él se rechaza (CER-030)', async () => {
     const prisma = db();
     const scene = await aScene(prisma);
+    const rest = { from: addDays(scene.day, -4), to: scene.day };
 
-    // Control positivo: three days before, with its reason.
+    // Control positivo de la regla que se queda: sin motivo, no.
+    await expect(insert(prisma, scene, { rest })).rejects.toThrow(
+      /medical_certificate_backdating_reason_required/,
+    );
     await expect(
       insert(prisma, scene, {
-        rest: { from: addDays(scene.day, -3), to: scene.day },
-        backdatingReason: 'Fiebre desde tres días antes',
-      }),
-    ).resolves.toBe(1);
-    await expect(
-      insert(prisma, scene, {
-        rest: { from: addDays(scene.day, -4), to: scene.day },
+        rest,
         backdatingReason: 'Fiebre desde cuatro días antes',
       }),
-    ).rejects.toThrow(/medical_certificate_rest_starts_at_most_3_days_before/);
+    ).resolves.toBe(1);
   });
 
-  it('CER-045 un reposo se emite hasta el octavo día después de la atención; el noveno se rechaza (D-106 §4)', async () => {
+  it('CER-055 CER-045 un reposo emitido el noveno día, o el vigésimo, se guarda con su motivo de emisión tardía', async () => {
     const prisma = db();
     const scene = await aScene(prisma);
     const startingThen = (days: number) => ({
@@ -349,46 +342,26 @@ describe('D-106 los límites de la ventana del reposo, garantizados por la base'
       to: addDays(scene.day, days),
     });
 
-    // Control positivo: issued on day 8, starting that day, with its reason.
     await expect(
-      insert(prisma, scene, {
-        rest: startingThen(8),
-        issuedDaysLater: 8,
-        backdatingReason: REASON_LATE,
-      }),
-    ).resolves.toBe(1);
+      insert(prisma, scene, { rest: startingThen(9), issuedDaysLater: 9 }),
+    ).rejects.toThrow(/medical_certificate_backdating_reason_required/);
     await expect(
       insert(prisma, scene, {
         rest: startingThen(9),
         issuedDaysLater: 9,
         backdatingReason: REASON_LATE,
       }),
-    ).rejects.toThrow(/medical_certificate_rest_issued_within_8_days/);
-  });
-
-  it('CER-045 la madrugada del noveno día aún cuenta como el octavo: 05:59 pasa, 06:00 no (D-108 §2)', async () => {
-    const prisma = db();
-    const scene = await aScene(prisma);
-    const ninth = addDays(scene.day, 9);
-    const rest = { from: ninth, to: ninth };
-
-    await expect(
-      insert(prisma, scene, {
-        rest,
-        issuedAt: atWallClock(ninth, WallClockTime.of(5, 59)),
-        backdatingReason: REASON_LATE,
-      }),
     ).resolves.toBe(1);
     await expect(
       insert(prisma, scene, {
-        rest,
-        issuedAt: atWallClock(ninth, WallClockTime.of(6, 0)),
+        rest: startingThen(20),
+        issuedDaysLater: 20,
         backdatingReason: REASON_LATE,
       }),
-    ).rejects.toThrow(/medical_certificate_rest_issued_within_8_days/);
+    ).resolves.toBe(1);
   });
 
-  it('CER-045 la asistencia emitida pasados 8 días no tiene ese tope (D-106 §3)', async () => {
+  it('CER-045 la asistencia emitida pasados 8 días no pide motivo (D-106 §3)', async () => {
     const prisma = db();
     const scene = await aScene(prisma);
 
@@ -406,50 +379,26 @@ describe('D-108 en el reposo de maternidad no rigen los topes de D-106, garantiz
     dischargeOn: addDays(birth, 2),
   });
   const REASON_BIRTH = 'Dio a luz en el hospital antes de la atención';
-  const TOO_EARLY = /medical_certificate_rest_starts_at_most_3_days_before/;
 
-  it('CER-044 la maternidad empieza el día del parto al 5.º día, o el del ingreso; la enfermedad general igual se rechaza', async () => {
+  it('CER-055 CER-044 un reposo, de maternidad o general, desde cualquier día anterior se guarda con su motivo', async () => {
     const prisma = db();
     const scene = await aScene(prisma, { diagnosis: 'O80' });
     const birth = addDays(scene.day, -5);
     const maternity = maternityFrom(birth);
-    const from = (day: ClinicalDate) => ({ from: day, to: scene.day });
 
-    // Control positivo: maternity from birth, and —not overlapping it
-    // (CER-048)— from admission to the day before the birth.
+    // Desde el parto, y —sin solaparse (CER-048)— un día que no es ni el
+    // ingreso ni el parto.
     await expect(
-      insert(prisma, scene, { rest: from(birth), maternity, backdatingReason: REASON_BIRTH }), // prettier-ignore
+      insert(prisma, scene, { rest: { from: birth, to: scene.day }, maternity, backdatingReason: REASON_BIRTH }), // prettier-ignore
     ).resolves.toBe(1);
     await expect(
-      insert(prisma, scene, { rest: { from: maternity.admissionOn, to: addDays(birth, -1) }, maternity, backdatingReason: REASON_BIRTH }), // prettier-ignore
+      insert(prisma, scene, { rest: { from: addDays(maternity.admissionOn, -1), to: addDays(birth, -1) }, maternity, backdatingReason: REASON_BIRTH }), // prettier-ignore
     ).resolves.toBe(1);
+    // Una enfermedad general 6 días antes, en otra paciente.
+    const general = await aScene(prisma);
     await expect(
-      insert(prisma, scene, { rest: from(birth), backdatingReason: REASON_BIRTH }), // prettier-ignore
-    ).rejects.toThrow(TOO_EARLY);
-  });
-
-  it('CER-044 un día que no es ni el ingreso ni el parto se rechaza, y la prenatal conserva los 3 días', async () => {
-    const prisma = db();
-    const scene = await aScene(prisma, { diagnosis: 'O80' });
-    const maternity = maternityFrom(addDays(scene.day, -5));
-
-    for (const day of [
-      addDays(maternity.admissionOn, 1),
-      addDays(maternity.admissionOn, -1),
-    ]) {
-      await expect(
-        insert(prisma, scene, { rest: { from: day, to: scene.day }, maternity, backdatingReason: REASON_BIRTH }), // prettier-ignore
-      ).rejects.toThrow(TOO_EARLY);
-    }
-
-    const prenatal = maternityFrom(addDays(scene.day, 20));
-    const CONTRACTIONS = 'Contracciones desde días antes';
-    await expect(
-      insert(prisma, scene, { rest: { from: addDays(scene.day, -3), to: scene.day }, maternity: prenatal, backdatingReason: CONTRACTIONS }), // prettier-ignore
+      insert(prisma, general, { rest: { from: addDays(general.day, -6), to: general.day }, backdatingReason: REASON_BIRTH }), // prettier-ignore
     ).resolves.toBe(1);
-    await expect(
-      insert(prisma, scene, { rest: { from: addDays(scene.day, -4), to: scene.day }, maternity: prenatal, backdatingReason: CONTRACTIONS }), // prettier-ignore
-    ).rejects.toThrow(TOO_EARLY);
   });
 
   it('CER-030 la maternidad desde el parto sigue pidiendo el motivo', async () => {
@@ -460,26 +409,6 @@ describe('D-108 en el reposo de maternidad no rigen los topes de D-106, garantiz
     await expect(
       insert(prisma, scene, { rest: { from: birth, to: scene.day }, maternity: maternityFrom(birth) }), // prettier-ignore
     ).rejects.toThrow(/medical_certificate_backdating_reason_required/);
-  });
-
-  it('CER-045 un reposo de maternidad se emite pasados 8 días de la atención; el general, no', async () => {
-    const prisma = db();
-    const scene = await aScene(prisma, { diagnosis: 'O80' });
-    const twentieth = addDays(scene.day, 20);
-    const rest = { from: twentieth, to: addDays(twentieth, 29) };
-    const REASON_CHAIN = 'Segundo certificado de la licencia de maternidad';
-
-    await expect(
-      insert(prisma, scene, {
-        rest,
-        issuedDaysLater: 20,
-        maternity: maternityFrom(addDays(scene.day, -1)),
-        backdatingReason: REASON_CHAIN,
-      }),
-    ).resolves.toBe(1);
-    await expect(
-      insert(prisma, scene, { rest, issuedDaysLater: 20, backdatingReason: REASON_CHAIN }), // prettier-ignore
-    ).rejects.toThrow(/medical_certificate_rest_issued_within_8_days/);
   });
 
   it('CER-035 la base exige ingreso ≤ parto ≤ alta, porque de esas fechas sale el inicio admitido', async () => {
@@ -513,86 +442,65 @@ describe('D-109 y D-110 lo que acota el reposo de maternidad, garantizado por la
   });
   const REASON = 'Dio a luz en el hospital antes de la atención';
 
-  it('CER-046 el parto como mucho 84 días antes de la atención y 28 después; el ingreso no cuenta (D-110 §1 y §3)', async () => {
+  it('CER-055 CER-046 un parto de hace 85 días, o dentro de 29, se guarda; sin diagnóstico obstétrico, no (CER-049)', async () => {
     const prisma = db();
     const scene = await aScene(prisma, { diagnosis: 'O80' });
     const today = { from: scene.day, to: scene.day };
-    const withBirth = (
-      birth: ClinicalDate,
-      admission = addDays(birth, -1),
-    ) => ({
-      admissionOn: admission,
-      birthOn: birth,
-      dischargeOn: addDays(birth, 2),
-    });
 
-    // Control positivo: parto 83 días antes con un ingreso de más de 84 días
-    // —el último tramo de una licencia con preeclampsia; 14 días antes del
-    // parto, el máximo de CER-051— pasa.
     await expect(
-      insert(prisma, scene, { rest: today, maternity: withBirth(addDays(scene.day, -83), addDays(scene.day, -97)) }), // prettier-ignore
+      insert(prisma, scene, { rest: today, maternity: maternityFrom(addDays(scene.day, -85)) }), // prettier-ignore
     ).resolves.toBe(1);
-    await expect(
-      insert(prisma, scene, { rest: today, maternity: withBirth(addDays(scene.day, -85)) }), // prettier-ignore
-    ).rejects.toThrow(/medical_certificate_maternity_dates_within_84_days/);
 
     // Hacia delante, en otra paciente (la de arriba ya tiene ese día).
     const prenatal = await aScene(prisma, { diagnosis: 'Z34' });
     const day = { from: prenatal.day, to: prenatal.day };
     await expect(
-      insert(prisma, prenatal, { rest: day, maternity: withBirth(addDays(prenatal.day, 29)) }), // prettier-ignore
-    ).rejects.toThrow(/medical_certificate_maternity_birth_within_4_weeks/);
-    await expect(
-      insert(prisma, prenatal, { rest: day, maternity: withBirth(addDays(prenatal.day, 28)) }), // prettier-ignore
+      insert(prisma, prenatal, { rest: day, maternity: maternityFrom(addDays(prenatal.day, 29)) }), // prettier-ignore
     ).resolves.toBe(1);
+
+    // Control positivo de lo que se queda: sin diagnóstico obstétrico.
+    const without = await aScene(prisma, { diagnosis: 'J00' });
+    await expect(
+      insert(prisma, without, { rest: { from: without.day, to: without.day }, maternity: maternityFrom(addDays(without.day, 29)) }), // prettier-ignore
+    ).rejects.toThrow(/medical_certificate_maternity_obstetric_diagnosis/);
   });
 
-  it('CER-051 el ingreso como mucho 14 días antes del parto; 15, no (D-112 §1)', async () => {
+  it('CER-055 CER-051 un ingreso 15 días antes del parto se guarda (D-112 §1)', async () => {
     const prisma = db();
     const scene = await aScene(prisma, { diagnosis: 'O80' });
     const birth = addDays(scene.day, -1);
-    const admittedBefore = (days: number) => ({
-      admissionOn: addDays(birth, -days),
-      birthOn: birth,
-      dischargeOn: addDays(birth, 2),
-    });
-    const day = { from: scene.day, to: scene.day };
 
     await expect(
-      insert(prisma, scene, { rest: day, maternity: admittedBefore(15) }),
-    ).rejects.toThrow(/medical_certificate_maternity_admission_within_14_days/);
-    // Control positivo: 14 días antes.
-    await expect(
-      insert(prisma, scene, { rest: day, maternity: admittedBefore(14) }),
+      insert(prisma, scene, {
+        rest: { from: scene.day, to: scene.day },
+        maternity: {
+          admissionOn: addDays(birth, -15),
+          birthOn: birth,
+          dischargeOn: addDays(birth, 2),
+        },
+      }),
     ).resolves.toBe(1);
   });
 
-  it('CER-047 el reposo termina como tarde en parto + 83 días y no se emite pasado ese día (D-110 §6)', async () => {
+  it('CER-055 CER-047 un reposo que pasa del parto + 83 días, o emitido después, se guarda (D-110 §6)', async () => {
     const prisma = db();
     const scene = await aScene(prisma, { diagnosis: 'O80' });
     const birth = addDays(scene.day, -60);
     const last = addDays(birth, 83);
     const maternity = maternityFrom(birth);
-    const WITHIN = /medical_certificate_maternity_within_leave/;
 
     await expect(
       insert(prisma, scene, { rest: { from: scene.day, to: addDays(last, 1) }, maternity }), // prettier-ignore
-    ).rejects.toThrow(WITHIN);
-    await expect(
-      insert(prisma, scene, { rest: { from: scene.day, to: last }, maternity }),
     ).resolves.toBe(1);
 
-    // Emitida el último día de la licencia pasa; el siguiente, no. Otra
-    // paciente: la de arriba ya tiene esos días (CER-048).
+    // Emitida pasado el último día de la licencia. Otra paciente: la de
+    // arriba ya tiene esos días (CER-048).
     const late = await aScene(prisma, { diagnosis: 'O80' });
     const lastDayRest = { from: last, to: last };
     const daysTo = (day: ClinicalDate) =>
       Math.round((Date.parse(day) - Date.parse(scene.day)) / DAY_MS);
     await expect(
       insert(prisma, late, { rest: lastDayRest, maternity, issuedDaysLater: daysTo(last) + 1, backdatingReason: REASON }), // prettier-ignore
-    ).rejects.toThrow(WITHIN);
-    await expect(
-      insert(prisma, late, { rest: lastDayRest, maternity, issuedDaysLater: daysTo(last), backdatingReason: REASON }), // prettier-ignore
     ).resolves.toBe(1);
   });
 

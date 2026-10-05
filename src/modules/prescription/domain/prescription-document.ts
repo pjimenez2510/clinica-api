@@ -62,7 +62,9 @@ export interface DocumentItem {
    * no abbreviation slips in: the route comes from the closed list, spelled.
    */
   indications: string;
-  /** PR-009. Written when the medicine is outside the CNMB. */
+  /** PR-110. REQ-054: the line is outside the CNMB, and the paper says so. */
+  offFormulary: boolean;
+  /** PR-110. The reason, only if the prescriber gave one. */
   offFormularyJustification: string | null;
 }
 
@@ -87,6 +89,12 @@ export interface PrescriptionDocument {
   status: string;
   /** PR-021. Art. 5.a.ii — the instant, which the client renders as DD/MM/AAAA. */
   issuedAt: Date | null;
+  /**
+   * PR-108, DOC-109. When it was annulled; `null` otherwise, and on one
+   * annulled before the register. The screen compares the current PDF with
+   * it: one issued earlier does not carry the mark.
+   */
+  cancelledAt: Date | null;
   /** PR-021. Art. 5.a.ii — the canton of the site's parish. */
   city: string | null;
   /** PR-022. Art. 5.a.iii. */
@@ -178,6 +186,7 @@ export function composeDocument(
     nonPharmacologicalAdvice: prescription.nonPharmacologicalAdvice,
     status: prescription.status,
     issuedAt: prescription.issuedAt,
+    cancelledAt: prescription.cancelledAt,
     city: site.city,
     establishment: { name: site.name, mspUnicode: site.mspUnicode },
     validity:
@@ -232,6 +241,7 @@ export function composeDocument(
         durationDays: item.durationDays,
         instructions: item.instructions,
       }),
+      offFormulary: item.offFormulary,
       offFormularyJustification: item.offFormularyJustification,
     })),
   };

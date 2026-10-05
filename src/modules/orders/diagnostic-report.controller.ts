@@ -7,6 +7,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   Query,
   Req,
 } from '@nestjs/common';
@@ -35,7 +36,9 @@ import type {
 import {
   CorrectReportDto,
   CriticalNoticeDto,
+  CriticalNoticeVersionListDto,
   DiagnosticReportDto,
+  EditNoticeDto,
   DiagnosticReportListDto,
   CriticalResultListDto,
   UnmatchedResultListDto,
@@ -44,6 +47,7 @@ import {
   RegisterReportDto,
   WorklistQueryDto,
   type CriticalNoticeResponse,
+  type CriticalNoticeVersionListResponse,
   type DiagnosticReportListResponse,
   type DiagnosticReportResponse,
   type CriticalResultListResponse,
@@ -76,7 +80,8 @@ import {
  * when it stopped being true. A value that changes in silence is a safety
  * incident, not an edit. The one `POST` that touches an existing row is
  * `results/:resultId/match` (ORD-043), and it writes the LINE a value answers
- * — never the value.
+ * — never the value. The `PUT` on a notice (ORD-120) edits the record of a
+ * CALL, not a value, and the database keeps the version it replaces.
  *
  * ⚠️ AND THERE IS NO ROUTE THAT CREATES A PATIENT (ORD-080). Its absence is the
  * requirement: creating a chart from an incoming result is the main cause of
@@ -234,6 +239,73 @@ export class DiagnosticReportController {
   }
 
   /**
+   * ORD-120 (D-127). Edits the notice IN PLACE; the earlier version is kept by
+   * the database (`record_version`) with the session as its stamp.
+   *
+   * `PUT` and not `PATCH`: the body is the whole notice as it should read, the
+   * shape of recording it, so a field left out is a field cleared — except the
+   * instant, which is kept when absent. Same permission as recording it.
+   * The read-back is still demanded (ORD-066).
+   */
+  @Put('results/:resultId/notices/:noticeId')
+  @RequirePermission('result:write', 'query')
+  @ApiOperation({ summary: 'Editar el aviso de un valor crítico' })
+  @ApiOkResponse({ type: CriticalNoticeDto })
+  async editNotice(
+    @Param('resultId') resultId: string,
+    @Param('noticeId', ParseUUIDPipe) noticeId: string,
+    @Body() dto: EditNoticeDto,
+    @Req() req: Request,
+  ): Promise<CriticalNoticeResponse> {
+    const notice = await this.reports.editNotice(
+      {
+        resultId,
+        noticeId,
+        expectedEditedAt: dto.expectedEditedAt === null ? null : new Date(dto.expectedEditedAt), // prettier-ignore
+        outcome: dto.outcome,
+        readBack: dto.readBack,
+        recipientKind: dto.recipientKind,
+        recipientName: dto.recipientName,
+        channel: dto.channel,
+        notifiedAt: dto.notifiedAt === undefined ? undefined : new Date(dto.notifiedAt), // prettier-ignore
+        note: dto.note,
+      },
+      this.requester(req, 'result:write'),
+      new Date(),
+    );
+    return toNoticeResponse(notice);
+  }
+
+  /**
+   * ORD-120. The versions of the notice that edits replaced, newest first.
+   * Same permission as reading the result: the same clinical content, older.
+   */
+  @Get('results/:resultId/notices/:noticeId/versions')
+  @RequirePermission('record:read', 'query')
+  @ApiOperation({
+    summary: 'Consultar las versiones anteriores del aviso de un valor crítico',
+  })
+  @ApiOkResponse({ type: CriticalNoticeVersionListDto })
+  async noticeVersions(
+    @Param('resultId') resultId: string,
+    @Param('noticeId', ParseUUIDPipe) noticeId: string,
+    @Req() req: Request,
+  ): Promise<CriticalNoticeVersionListResponse> {
+    const versions = await this.reports.noticeVersions(
+      { resultId, noticeId },
+      this.requester(req, 'record:read'),
+    );
+    return {
+      items: versions.map((version) => ({
+        version: version.version,
+        replacedBy: version.replacedBy,
+        replacedAt: version.replacedAt.toISOString(),
+        notice: toNoticeResponse(version.notice),
+      })),
+    };
+  }
+
+  /**
    * ORD-050 to ORD-054. Corrects a report by REPLACING it.
    *
    * 201: a correction is a new report, not an edit of an old one, and the
@@ -388,6 +460,8 @@ function toNoticeResponse(notice: CriticalNoticeView): CriticalNoticeResponse {
     readBackConfirmed: notice.readBackConfirmed,
     afterHours: notice.afterHours,
     selfNotice: notice.selfNotice,
+    editedBy: notice.editedBy,
+    editedAt: notice.editedAt?.toISOString() ?? null,
   };
 }
 

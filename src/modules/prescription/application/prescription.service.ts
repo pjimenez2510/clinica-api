@@ -5,6 +5,11 @@ import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 
 import {
+  ANNULLED_DOCUMENT_ARCHIVER,
+  type AnnulledDocumentArchiver,
+  type DocumentArchived,
+} from '../../../shared/documents/annulled-document.port';
+import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
@@ -32,6 +37,7 @@ import {
 } from '../domain/prescription.errors';
 import {
   PRESCRIPTION_REPOSITORY,
+  type CorrectedPrescription,
   type PrescriptionRepository,
   type PrescriptionView,
   type SiteScopeFilter,
@@ -154,6 +160,9 @@ export class PrescriptionService {
     @Inject(ACCESS_AUDIT_RECORDER)
     private readonly audit: AccessAuditRecorder,
     private readonly logger: PinoLogger,
+    /** DOC-109. The PDF with the mark, archived once the annulment is committed. */
+    @Inject(ANNULLED_DOCUMENT_ARCHIVER)
+    private readonly documents: AnnulledDocumentArchiver,
   ) {
     this.logger.setContext(PrescriptionService.name);
   }
@@ -413,18 +422,21 @@ export class PrescriptionService {
    * `prescription_discard_only_from_draft` refuses a discard on anything that
    * was issued.
    *
-   * ⚠️ NO REASON IS ASKED FOR, AND THE ABSENCE IS THE REQUIREMENT. Art. 70 wants
-   * a register of annulled and lost prescriptions and there is no column for it
-   * (⚠️ **Falta esquema**, PR-010, PR-073). Asking for a reason and dropping it
-   * would make everybody believe there is a record. What there IS, until the
-   * columns exist, is the audit row this leaves.
+   * ⚠️ THE REASON IS OBLIGATORY (PR-108), AND IT IS THE REGISTER. Art. 70
+   * wants a register of annulled and lost prescriptions: `cancelled_at`,
+   * `cancelled_by_id` and `cancel_reason` are it, and the database demands
+   * the three together. Who is the session and when is the application's
+   * clock — never `now()` in PostgreSQL, which the end-to-end runs cannot
+   * move.
    */
   async cancel(
     prescriptionId: string,
+    reason: string,
     requester: Requester,
-  ): Promise<PrescriptionView> {
+  ): Promise<PrescriptionView & { documentArchived: DocumentArchived }> {
     const cancelled = await this.prescriptions.cancel(
       { prescriptionId, sites: requester.sites },
+      cancelPlan(reason, requester),
       // PR-010. Only an issued prescription is annullable — see above.
       (status) => assertIssued(status),
     );
@@ -438,7 +450,79 @@ export class PrescriptionService {
       userAgent: requester.userAgent,
     });
 
-    return cancelled;
+    // DOC-109. After the commit, and it never fails the annulment; whether it
+    // filed travels back, so the screen can warn when it did not.
+    const documentArchived = await this.documents.archiveAnnulled({
+      kind: 'PRESCRIPTION',
+      subjectId: cancelled.id,
+      userId: requester.userId,
+      cause: 'ANNULMENT',
+    });
+
+    return { ...cancelled, documentArchived };
+  }
+
+  /**
+   * PR-109. «Corregir» an issued prescription: annul it with its reason
+   * (PR-108) and open a draft in the same attention with the same lines, in
+   * ONE transaction. What the doctor sees is the draft, ready to edit; the
+   * annulled one stays in the chart with its register.
+   *
+   * ⚠️ ONLY ITS PRESCRIBER, by the rule of PR-100: the draft comes out in the
+   * name of whoever corrects, so a colleague correcting would be a receta
+   * with the words of one doctor and the name of another. The colleague can
+   * still annul it (PR-108). The prescriber is the session, and the adapter
+   * compares on the locked row.
+   *
+   * Two rows of the trail, because two facts happened: the prescription that
+   * was annulled (`UPDATE`) and the draft that was born (`CREATE`).
+   */
+  async correct(
+    prescriptionId: string,
+    reason: string,
+    requester: Requester,
+  ): Promise<CorrectedPrescription & { documentArchived: DocumentArchived }> {
+    const prescriber = await this.requirePrescriber(requester.userId);
+
+    const corrected = await this.prescriptions.correct({
+      prescriptionId,
+      prescriberId: prescriber.practitionerId,
+      sites: requester.sites,
+      cancel: cancelPlan(reason, requester),
+    });
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: RESOURCE_TYPE,
+      resourceId: corrected.cancelled.id,
+      action: 'UPDATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: RESOURCE_TYPE,
+      resourceId: corrected.draft.id,
+      action: 'CREATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+
+    // PR-094. The fact only: no patient, no medicine, no reason interpolated.
+    this.logger.info(
+      { action: 'PRESCRIPTION_CORRECTED' },
+      'prescription annulled and redrafted',
+    );
+
+    // DOC-109. The annulled one's PDF, with the mark; never fails this.
+    const documentArchived = await this.documents.archiveAnnulled({
+      kind: 'PRESCRIPTION',
+      subjectId: corrected.cancelled.id,
+      userId: requester.userId,
+      cause: 'CORRECTION',
+    });
+
+    return { ...corrected, documentArchived };
   }
 
   /**
@@ -455,13 +539,11 @@ export class PrescriptionService {
    * of them happened — the defect `ENTERED_IN_ERROR` exists to avoid in the
    * agenda.
    *
-   * ⚠️ AND THE REASON IS OBLIGATORY HERE, WHICH IS EXACTLY WHAT `cancel` CANNOT
-   * DO. `discard_reason` is a column, so what the caller writes is kept; on the
-   * annulment there is none (⚠️ **Falta esquema**, PR-010), and a mandatory
-   * reason that is dropped on the floor makes everybody believe there is a
-   * record. Here the register is real, and the database refuses the row without
-   * it: `prescription_discard_states_who_when_and_why` demands who, when and
-   * why together.
+   * ⚠️ NOTHING IS ASKED (D-126, PR-107). A draft never left the room, so the
+   * screen discards it with one click and offers «Deshacer» (`restore`). Who
+   * and when are the session and the clock —
+   * `prescription_discard_states_who_and_when` demands both— and a reason, if
+   * the caller wrote one, is kept in `discard_reason`.
    *
    * ⚠️ WHY IT STAYS IN THE CHART. Nothing is deleted, so the discarded draft is
    * still there — and that is the point rather than a limitation: the next
@@ -470,11 +552,18 @@ export class PrescriptionService {
    */
   async discard(
     prescriptionId: string,
-    reason: string,
+    reason: string | null,
     requester: Requester,
   ): Promise<PrescriptionView> {
+    // PR-107. Only its prescriber discards it, as only they get it back.
+    const prescriber = await this.requirePrescriber(requester.userId);
+
     const discarded = await this.prescriptions.discard(
-      { prescriptionId, sites: requester.sites },
+      {
+        prescriptionId,
+        prescriberId: prescriber.practitionerId,
+        sites: requester.sites,
+      },
       {
         discardedAt: new Date(),
         // `discarded_by_id` targets `app_user`: the ACCOUNT that discarded it,
@@ -504,6 +593,49 @@ export class PrescriptionService {
     );
 
     return discarded;
+  }
+
+  /**
+   * PR-107. Undoes a discard: the draft comes back as it was, same id and same
+   * lines, with who, when and why cleared.
+   *
+   * ONLY ITS PRESCRIBER gets it back, by the same rule as the rewrite
+   * (PR-100): a draft is the words of the professional whose name it will
+   * print. The prescriber is the session, never an id in the request, and the
+   * comparison is made by the adapter on the locked row.
+   *
+   * The act leaves an `UPDATE` row in the trail, like the discard it undoes, so
+   * «¿quién lo descartó y quién lo recuperó?» stays answerable after the
+   * columns are cleared.
+   */
+  async restore(
+    prescriptionId: string,
+    requester: Requester,
+  ): Promise<PrescriptionView> {
+    const prescriber = await this.requirePrescriber(requester.userId);
+
+    const restored = await this.prescriptions.restore({
+      prescriptionId,
+      prescriberId: prescriber.practitionerId,
+      sites: requester.sites,
+    });
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: RESOURCE_TYPE,
+      resourceId: restored.id,
+      action: 'UPDATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+
+    // PR-094. The fact only: no patient, no medicine, nothing interpolated.
+    this.logger.info(
+      { action: 'PRESCRIPTION_RESTORED' },
+      'prescription draft restored',
+    );
+
+    return restored;
   }
 
   /**
@@ -626,6 +758,18 @@ export class PrescriptionService {
  */
 function assertDraft(status: PrescriptionStatus): void {
   if (status !== 'DRAFT') throw new PrescriptionNotEditableError(status);
+}
+
+/**
+ * PR-108. The register of art. 70: the account of the session, the
+ * application's clock and the reason as it was chosen or written.
+ */
+function cancelPlan(reason: string, requester: Requester) {
+  return {
+    cancelledAt: new Date(),
+    cancelledById: requester.userId,
+    cancelReason: reason,
+  };
 }
 
 /** PR-010. Only an issued prescription can be annulled (art. 70). */

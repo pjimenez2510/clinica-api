@@ -9,7 +9,12 @@ import {
   Post,
   Req,
 } from '@nestjs/common';
-import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import type { Request } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
@@ -22,12 +27,17 @@ import type { Requester } from './application/certificate.service';
 import {
   toCertificateResponse,
   toForm117Response,
+  toIssueFields,
+  toIssuedResponse,
 } from './certificate.presenter';
 import {
-  MedicalCertificateDto,
+  CorrectCertificateDto,
+  CorrectedCertificateDto,
+  RevokedCertificateDto,
   Form117Dto,
   RevokeCertificateDto,
-  type CertificateResponse,
+  type CorrectedCertificateResponse,
+  type RevokedCertificateResponse,
   type Form117Response,
 } from './dto/certificate.dto';
 
@@ -77,12 +87,12 @@ export class CertificateController {
   @RequirePermission('record:write', 'query')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Anular un certificado médico, diciendo por qué' })
-  @ApiOkResponse({ type: MedicalCertificateDto })
+  @ApiOkResponse({ type: RevokedCertificateDto })
   async revoke(
     @Param('certificateId', ParseUUIDPipe) certificateId: string,
     @Body() body: RevokeCertificateDto,
     @Req() req: Request,
-  ): Promise<CertificateResponse> {
+  ): Promise<RevokedCertificateResponse> {
     const direction = this.currentUser
       .requirePrincipal()
       .sitesFor('certificate:revoke-any');
@@ -93,7 +103,46 @@ export class CertificateController {
       // CER-040. Where the caller is the medical direction; often nowhere.
       direction === ALL_SITES ? 'all' : direction,
     );
-    return toCertificateResponse(revoked);
+    return {
+      ...toCertificateResponse(revoked),
+      documentArchived: revoked.documentArchived,
+    };
+  }
+
+  /**
+   * CER-053 (D-127.4). Corrects an issued certificate in ONE step: annuls it
+   * with the reason (CER-011) and issues the one in the body on the same
+   * attention, in one transaction — or neither. Same permission and same
+   * «who may» as annulling (CER-015, CER-040). 201: a certificate that did not
+   * exist is what it leaves behind.
+   */
+  @Post(':certificateId/correct')
+  @RequirePermission('record:write', 'query')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Corregir un certificado médico: anularlo y emitir el nuevo',
+  })
+  @ApiCreatedResponse({ type: CorrectedCertificateDto })
+  async correct(
+    @Param('certificateId', ParseUUIDPipe) certificateId: string,
+    @Body() body: CorrectCertificateDto,
+    @Req() req: Request,
+  ): Promise<CorrectedCertificateResponse> {
+    const direction = this.currentUser
+      .requirePrincipal()
+      .sitesFor('certificate:revoke-any');
+    const { reason, ...fields } = body;
+    const corrected = await this.certificates.correct(
+      certificateId,
+      { ...toIssueFields(fields), reason },
+      this.requester(req, 'record:write'),
+      direction === ALL_SITES ? 'all' : direction,
+    );
+    return {
+      revoked: toCertificateResponse(corrected.revoked),
+      issued: toIssuedResponse(corrected.issued),
+      documentArchived: corrected.documentArchived,
+    };
   }
 
   /** Who is asking, for the access trail and for the site scope. */

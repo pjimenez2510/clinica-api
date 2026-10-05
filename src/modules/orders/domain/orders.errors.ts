@@ -167,6 +167,23 @@ export class OrderNotDraftError extends ConflictError {
 }
 
 /**
+ * ORD-116. Undoing a discard of an order that is not discarded.
+ *
+ * 409: nothing sent is wrong. It was already restored — a second «Deshacer»,
+ * another tab — or it never was discarded, and an issued order never goes
+ * back to a draft.
+ */
+export class OrderNotDiscardedError extends ConflictError {
+  readonly code = 'ORDER_NOT_DISCARDED';
+  override readonly userTitle =
+    'Esa orden ya no está descartada: se recuperó o nunca se descartó. Actualice la pantalla';
+
+  constructor() {
+    super('The service order is not DISCARDED');
+  }
+}
+
+/**
  * ORD-103 (D-123). A draft is corrected, issued or discarded only by the
  * professional the order is signed by — as a receta draft only by its
  * prescriber (PR-100): a colleague's issue would put an order under
@@ -179,6 +196,26 @@ export class OrderDraftOfAnotherPractitionerError extends ForbiddenError {
 
   constructor() {
     super('The draft order is signed by another practitioner');
+  }
+}
+
+/**
+ * ORD-118. Correcting an issued order signed by another practitioner.
+ *
+ * DISTINCT FROM `ORDER_DRAFT_OF_ANOTHER_PRACTITIONER` because the way out
+ * differs: a colleague's draft is left alone, while a colleague's issued order
+ * can have its exams cancelled (ORD-007, open to anybody who may order) and
+ * asked for again in an order of one's own. The new draft goes out under the
+ * name of whoever corrects, so a correction by somebody else would put one
+ * person's request under another's signature (D-123.1, PR-109).
+ */
+export class OrderOfAnotherPractitionerError extends ForbiddenError {
+  readonly code = 'ORDER_OF_ANOTHER_PRACTITIONER';
+  override readonly userTitle =
+    'Esta orden la firma otro profesional y sólo él puede corregirla. Puede anular sus exámenes y pedirlos en una orden suya';
+
+  constructor() {
+    super('The issued order is signed by another practitioner');
   }
 }
 
@@ -242,14 +279,14 @@ export class ReportAlreadyCorrectedError extends ConflictError {
 /**
  * ORD-053. A partial or an annulled report is not corrected.
  *
- * A partial report is not corrected, it is COMPLETED — the determinations that
- * were missing simply arrive. And an annulled one asserts nothing, so there is
- * nothing to correct. The message names the way out of each.
+ * An annulled report asserts nothing, so there is nothing to correct. Since
+ * ORD-119 a partial one IS edited —that is how it is completed—, so this only
+ * answers an annulled one, and the message names the way out.
  */
 export class ReportNotCorrectableError extends ConflictError {
   readonly code = 'REPORT_NOT_CORRECTABLE';
   override readonly userTitle =
-    'Sólo se corrige un informe definitivo. Si el informe está parcial, complételo; si está anulado, registre uno nuevo';
+    'Un informe anulado no se edita: ya no afirma nada. Registre uno nuevo';
 
   constructor(status: string) {
     super(`A ${status} report cannot be corrected`, { status });
@@ -413,6 +450,75 @@ export class ResultChartUnmatchedError extends NotFoundError {
 
   constructor() {
     super('No live patient chart holds that cedula');
+  }
+}
+
+/**
+ * ORD-120. The notice named is not one of THIS value's — it does not exist,
+ * or it belongs to another result.
+ *
+ * Only reached once the result itself was found within the caller's scope
+ * (`RESULT_NOT_FOUND` answers before), so it confirms nothing about other
+ * sites. Addressing the notice through its result keeps a client from editing
+ * a notice of a value it is not looking at.
+ */
+export class CriticalNoticeNotFoundError extends NotFoundError {
+  readonly code = 'CRITICAL_NOTICE_NOT_FOUND';
+  override readonly userTitle =
+    'Ese aviso no es de este valor. Actualice el informe y edítelo desde allí';
+
+  constructor() {
+    super('Critical notice not found on that result');
+  }
+}
+
+/**
+ * ORD-120, D-133.1. Editing a notice somebody else gave.
+ *
+ * The record says who made the call; letting a colleague rewrite it would make
+ * the current version say that someone called who did not, with the read-back
+ * that person never heard. A later call by somebody else is a notice of its
+ * own.
+ */
+export class CriticalNoticeOfAnotherUserError extends ForbiddenError {
+  readonly code = 'CRITICAL_NOTICE_OF_ANOTHER_USER';
+  override readonly userTitle =
+    'Este aviso lo dio otra persona y sólo ella puede editarlo. Si usted volvió a llamar, registre un aviso nuevo';
+
+  constructor() {
+    super('The critical notice was given by another user');
+  }
+}
+
+/**
+ * ORD-120, D-133.1. Turning a «no contestó» into a notice given by editing it.
+ *
+ * The unanswered attempt is a fact the escalation counts (ORD-065, ORD-067).
+ * The call that was answered later happened at another moment, and is a
+ * notice of its own; editing the attempt would erase that it went unanswered.
+ */
+export class CriticalNoticeNoAnswerStaysError extends ConflictError {
+  readonly code = 'CRITICAL_NOTICE_NO_ANSWER_STAYS';
+  override readonly userTitle =
+    'Una llamada posterior que sí contestan es un aviso nuevo: regístrelo';
+
+  constructor() {
+    super('An unanswered critical notice cannot be edited into a given one');
+  }
+}
+
+/**
+ * ORD-120. The edit was made over a version of the notice that is no longer
+ * the current one: somebody saved in between (another tab, a double submit).
+ * Saving it anyway would silently discard what that edit said.
+ */
+export class CriticalNoticeEditedConcurrentlyError extends ConflictError {
+  readonly code = 'CRITICAL_NOTICE_EDITED_CONCURRENTLY';
+  override readonly userTitle =
+    'Otra persona acaba de editar este aviso; recárguelo';
+
+  constructor() {
+    super('The critical notice changed since it was read');
   }
 }
 

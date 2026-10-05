@@ -9,18 +9,10 @@ import {
 import {
   CertificateBackdatingReasonRequiredError,
   CertificateIssuerReasonRequiredError,
-  CertificateMaternityAdmissionTooEarlyError,
   CertificateMaternityBirthMismatchError,
-  CertificateMaternityBirthTooFarError,
-  CertificateMaternityDatesTooOldError,
   CertificateMaternityDiagnosisRequiredError,
-  CertificateMaternityLeaveExceededError,
   CertificateRestOverlapsError,
-  CertificateRestIssuedTooLateError,
   CertificateRestPeriodInvalidError,
-  CertificateRestStartTooEarlyError,
-  CertificateRestStartTooLateError,
-  CertificateRestTooLongError,
   CertificateTypeNotSupportedError,
   type PatientWorkField,
   type RestPeriodField,
@@ -157,21 +149,25 @@ export function patientWorkNotice(
   return `Falta en la ficha ${listed} del paciente. El IESS puede devolver el reposo sin estos datos; complételos en la ficha.`;
 }
 
-/** CER-031. The IESS validates rests of one to thirty days. */
+/**
+ * CER-031. The IESS validates rests of one to thirty days. Since D-128.7 a
+ * longer rest is issued with a notice (CER-055), not refused.
+ */
 export const MAX_REST_DAYS = 30;
 
 type Problem = { field: RestPeriodField; problem: RestPeriodProblem };
 
 /**
- * CER-006, CER-007, CER-031, CER-034, CER-035. The rest of a certificate, or a
- * refusal naming every field at once.
+ * CER-006, CER-007, CER-034, CER-035. The rest of a certificate, or a refusal
+ * naming every field at once.
  *
  * `ATTENDANCE` admits nothing of the rest. `MEDICAL_REST` demands both dates
  * in order, the diagnosis always (CER-007: the IESS does not validate a rest
  * without its CIE-10), the contingency, and — with `MATERNITY` and only then —
- * the dates of admission, birth and discharge. More than 30 days is its own
- * refusal (CER-031). The backdating (CER-030) needs the attention's date and
- * is judged apart, in `backdatingReasonOf`.
+ * the dates of admission, birth and discharge. More than 30 days is not a
+ * refusal since D-128.7: it is a notice (CER-031, CER-055,
+ * `restLimitNoticesOf`). The backdating (CER-030) needs the attention's date
+ * and is judged apart, in `backdatingReasonOf`.
  */
 export function restDetailsOf(
   type: IssuableCertificateType,
@@ -240,7 +236,6 @@ export function restDetailsOf(
   } // prettier-ignore
 
   const days = clinicalDaySpan(from, to);
-  if (days > MAX_REST_DAYS) throw new CertificateRestTooLongError();
 
   return {
     period: { from, to },
@@ -288,9 +283,10 @@ export function backdatingReasonOf(
 }
 
 /**
- * CER-041. The latest day a rest may start: the day after it is issued. The
- * doctor who attends at night gives the rest from tomorrow; a rest that starts
- * in three months is not a rest of this attention (D-105 §3).
+ * CER-041. The latest day a rest usually starts: the day after it is issued.
+ * The doctor who attends at night gives the rest from tomorrow; a rest that
+ * starts in three months is not a rest of this attention (D-105 §3). Since
+ * D-128.7 a later start is a notice, not a refusal (CER-055).
  */
 export function latestRestStartOf(issueDate: ClinicalDate): ClinicalDate {
   return addDays(issueDate, 1);
@@ -307,60 +303,24 @@ export function lateIssueDayOf(issuedAt: Date): ClinicalDate {
   return clinicalDateOf(new Date(issuedAt.getTime() - DAWN_HOURS * 60 * 60 * 1000)); // prettier-ignore
 }
 
-/** CER-044, D-106 §1. How many days before the attention a rest may start. */
+/** CER-044, D-106 §1. How many days before the attention a rest usually starts. */
 export const MAX_REST_DAYS_BEFORE_ATTENTION = 3;
 
-/** CER-045, D-106 §4. How many days after the attention a rest is issued. */
+/** CER-045, D-106 §4. How many days after the attention a rest is usually issued. */
 export const MAX_DAYS_TO_ISSUE_REST = 8;
 
 /**
- * CER-044, CER-045. The window of a rest around its attention: it starts at
- * most three days before, and it is issued at most eight days after (with the
- * dawn of CER-030). The reason of CER-030 does not widen either bound.
- *
- * D-108. A maternity rest may also start ON the day of admission or of birth,
- * however long ago, and has no eight-day limit: the mother who gave birth in a
- * hospital comes days later, and the leave chains certificates (CER-043). Any
- * other day still keeps the three days, so a prenatal rest is as it was
- * (D-106 §2). What bounds those dates are CER-046 to CER-050 (D-109, D-110).
- */
-export function assertRestWithinAttention(
-  period: RestPeriod,
-  attentionDate: ClinicalDate,
-  lateIssueDay: ClinicalDate,
-  maternity: MaternityDates | null,
-): void {
-  const earliest = addDays(attentionDate, -MAX_REST_DAYS_BEFORE_ATTENTION);
-  const onMaternityDay =
-    maternity !== null &&
-    (period.from === maternity.admissionOn ||
-      period.from === maternity.birthOn);
-  if (period.from < earliest && !onMaternityDay) {
-    // Its days are named only when one of them is before the bound: a prenatal
-    // rest is offered no future day that CER-041 would refuse next.
-    const namesItsDays =
-      maternity !== null &&
-      (maternity.admissionOn < earliest || maternity.birthOn < earliest);
-    throw new CertificateRestStartTooEarlyError(earliest, namesItsDays ? maternity : null); // prettier-ignore
-  }
-  if (maternity !== null) return;
-  if (lateIssueDay > addDays(attentionDate, MAX_DAYS_TO_ISSUE_REST)) {
-    throw new CertificateRestIssuedTooLateError();
-  }
-}
-
-/**
- * CER-046, D-109, D-110 §3. How many days before the attention the birth may
- * be: twelve weeks.
+ * CER-046, D-109, D-110 §3. How many days before the attention the birth
+ * usually is: twelve weeks.
  */
 export const MATERNITY_LEAVE_DAYS = 84;
 
-/** CER-046, D-110 §1. How many days after the attention the birth may be. */
+/** CER-046, D-110 §1. How many days after the attention the birth usually is. */
 export const MAX_BIRTH_DAYS_AFTER_ATTENTION = 28;
 
 /**
- * CER-051, D-112 §1. How many days before the birth the admission may be: the
- * rest may start on the admission (D-108), so it bounds how far back it goes.
+ * CER-051, D-112 §1. How many days before the birth the admission usually is:
+ * the rest may start on the admission (D-108), so it says how far back it goes.
  */
 export const MAX_ADMISSION_DAYS_BEFORE_BIRTH = 14;
 
@@ -402,44 +362,24 @@ function sameMonthsApart(a: ClinicalDate, b: ClinicalDate): boolean {
 }
 
 /**
- * CER-046 to CER-050, D-109, D-110 (provisional until the IESS confirms the
- * procedure, D-105 §6). What bounds a maternity rest once D-108 took the three
- * and eight days away:
+ * CER-048 to CER-050, D-109, D-110. What still REFUSES a maternity rest once
+ * D-128.7 turned its limits into notices (CER-055): these are not limits but
+ * coherence —
  *
- * - its birth at most 84 days before the attention and 28 after it, and its
- *   admission at most 14 days before the birth (D-112 §1);
- * - the rest within the leave, twelve weeks counting the birth's day (last day
- *   birth + 83), and issued before it ends (with the dawn of CER-030);
- * - an obstetric diagnosis on the attention;
+ * - an obstetric diagnosis on the attention (CER-049): without one there is no
+ *   maternity;
  * - the same birth as any other maternity rest of the patient within nine
- *   months — one pregnancy, one birth;
- * - no other rest of the patient, not revoked, over the same days.
+ *   months — one pregnancy, one birth (CER-050);
+ * - no other rest of the patient, not revoked, over the same days (CER-048):
+ *   two papers for the same days.
  */
-export function assertMaternityWithinLeave(
+export function assertMaternityCoherent(
   period: RestPeriod,
   maternity: MaternityDates,
-  attentionDate: ClinicalDate,
-  lateIssueDay: ClinicalDate,
   diagnosisCodes: readonly string[],
   otherRests: readonly PatientRest[],
 ): void {
   const birth = maternity.birthOn;
-  const earliest = addDays(attentionDate, -MATERNITY_LEAVE_DAYS);
-  // Refused from 85 days; the message names 83 days, the first birth that
-  // still leaves a day to issue on (the leave ends at birth + 83, CER-047).
-  if (birth < earliest) {
-    throw new CertificateMaternityDatesTooOldError(addDays(earliest, 1));
-  }
-  const latest = addDays(attentionDate, MAX_BIRTH_DAYS_AFTER_ATTENTION);
-  if (birth > latest) throw new CertificateMaternityBirthTooFarError(latest);
-  const earliestAdmission = addDays(birth, -MAX_ADMISSION_DAYS_BEFORE_BIRTH);
-  if (maternity.admissionOn < earliestAdmission) {
-    throw new CertificateMaternityAdmissionTooEarlyError(earliestAdmission);
-  }
-  const lastDay = addDays(birth, MATERNITY_LEAVE_DAYS - 1);
-  if (period.to > lastDay || lateIssueDay > lastDay) {
-    throw new CertificateMaternityLeaveExceededError(lastDay);
-  }
   if (!diagnosisCodes.some(isObstetricCie10)) {
     throw new CertificateMaternityDiagnosisRequiredError();
   }
@@ -452,6 +392,113 @@ export function assertMaternityWithinLeave(
   }
   if (otherRests.some(overlaps(period)))
     throw new CertificateRestOverlapsError();
+}
+
+/** DD/MM/AAAA, as the screen and the paper write a day. */
+const shownDay = (day: ClinicalDate): string =>
+  day.split('-').reverse().join('/');
+
+/**
+ * CER-055 (D-128.7). What each limit of a rest says when it is passed. They
+ * warn and never refuse: the IESS validates rests of one to thirty days, up
+ * to eight days after the rest ENDS (not after the attention), and the rest of the limits (3, 84, 28, 14 days…) were provisional
+ * (D-106, D-109, D-110). The screen says the same words before issuing.
+ *
+ * ⚠️ NO PATIENT DATUM (CER-014): days and dates of the rest, never a name.
+ */
+export const REST_LIMIT_NOTICE = {
+  /** CER-031. */
+  tooLong: (days: number): string =>
+    `El IESS valida reposos de 1 a ${MAX_REST_DAYS} días y este es de ${days}: puede devolverlo. Lo habitual es emitir certificados sucesivos.`,
+  /** CER-041. */
+  startsAfterTomorrow: (latest: ClinicalDate): string =>
+    `El reposo empieza más allá del día siguiente a la emisión; lo habitual es que empiece, como muy tarde, el ${shownDay(latest)}. Compruebe la fecha.`,
+  /** CER-044. With maternity, its admission and birth days are usual too. */
+  startsTooEarly: (earliest: ClinicalDate, maternity: boolean): string =>
+    maternity
+      ? `El reposo de maternidad suele empezar el día del ingreso o del parto, o como muy pronto el ${shownDay(earliest)}, tres días antes de la atención. Compruebe la fecha.`
+      : `El reposo empieza más de tres días antes de la atención; lo habitual es, como muy pronto, el ${shownDay(earliest)}. Compruebe la fecha.`,
+  /** CER-045. */
+  issuedTooLate:
+    'Han pasado más de ocho días desde la atención: lo habitual es emitir el reposo desde una atención nueva. El IESS lo valida hasta 8 días después de terminar el reposo.',
+  /** CER-046, the birth too far back. */
+  birthTooOld:
+    'El parto es de hace más de 84 días: la licencia de maternidad, de doce semanas, ya habría terminado. Compruebe la fecha del parto.',
+  /** CER-046, the birth too far ahead. */
+  birthTooFar: (latest: ClinicalDate): string =>
+    `El parto es más de 4 semanas posterior a la atención; lo habitual es, como muy tarde, el ${shownDay(latest)}. Compruebe la fecha del parto.`,
+  /** CER-051. */
+  admissionTooEarly: (earliest: ClinicalDate): string =>
+    `El ingreso es más de 14 días anterior al parto; lo habitual es, como muy pronto, el ${shownDay(earliest)}. Compruebe la fecha de ingreso.`,
+  /** CER-047. */
+  leaveExceeded: (lastDay: ClinicalDate): string =>
+    `La licencia de maternidad termina el ${shownDay(lastDay)}, doce semanas contando el día del parto, y este reposo pasa de ese día o se emite después.`,
+} as const;
+
+/** CER-055. The days the limits of a rest are judged against, in Ecuador. */
+export interface RestLimitDays {
+  /** CER-044, CER-045, CER-046. The clinical date of the attention. */
+  attentionDate: ClinicalDate;
+  /** CER-041. The calendar day of the issue. */
+  issueDate: ClinicalDate;
+  /** CER-045, CER-047. The issue's day with its dawn (D-106 §5). */
+  lateIssueDay: ClinicalDate;
+}
+
+/**
+ * CER-055 (D-128.7). The notices of the limits a rest passes, in the order the
+ * form reads: its length (CER-031), its start (CER-041, CER-044), when it is
+ * issued (CER-045) and, on a maternity rest, its birth, admission and leave
+ * (CER-046, CER-051, CER-047). Empty when it passes none. NEVER refuses.
+ *
+ * D-108 still shapes them: a maternity rest may start on its admission or
+ * birth day, however far back, and has no eight-day limit.
+ */
+export function restLimitNoticesOf(
+  rest: Pick<RestDetails, 'period' | 'days' | 'maternity'>,
+  { attentionDate, issueDate, lateIssueDay }: RestLimitDays,
+): string[] {
+  const { period, days, maternity } = rest;
+  const notices: string[] = [];
+  if (days > MAX_REST_DAYS) notices.push(REST_LIMIT_NOTICE.tooLong(days));
+
+  const latest = latestRestStartOf(issueDate);
+  if (period.from > latest) {
+    notices.push(REST_LIMIT_NOTICE.startsAfterTomorrow(latest));
+  }
+  const earliest = addDays(attentionDate, -MAX_REST_DAYS_BEFORE_ATTENTION);
+  const onMaternityDay =
+    maternity !== null &&
+    (period.from === maternity.admissionOn ||
+      period.from === maternity.birthOn);
+  if (period.from < earliest && !onMaternityDay) {
+    notices.push(REST_LIMIT_NOTICE.startsTooEarly(earliest, maternity !== null)); // prettier-ignore
+  }
+  if (
+    maternity === null &&
+    lateIssueDay > addDays(attentionDate, MAX_DAYS_TO_ISSUE_REST)
+  ) {
+    notices.push(REST_LIMIT_NOTICE.issuedTooLate);
+  }
+  if (maternity === null) return notices;
+
+  const birth = maternity.birthOn;
+  if (birth < addDays(attentionDate, -MATERNITY_LEAVE_DAYS)) {
+    notices.push(REST_LIMIT_NOTICE.birthTooOld);
+  }
+  const latestBirth = addDays(attentionDate, MAX_BIRTH_DAYS_AFTER_ATTENTION);
+  if (birth > latestBirth) {
+    notices.push(REST_LIMIT_NOTICE.birthTooFar(latestBirth));
+  }
+  const earliestAdmission = addDays(birth, -MAX_ADMISSION_DAYS_BEFORE_BIRTH);
+  if (maternity.admissionOn < earliestAdmission) {
+    notices.push(REST_LIMIT_NOTICE.admissionTooEarly(earliestAdmission));
+  }
+  const lastDay = addDays(birth, MATERNITY_LEAVE_DAYS - 1);
+  if (period.to > lastDay || lateIssueDay > lastDay) {
+    notices.push(REST_LIMIT_NOTICE.leaveExceeded(lastDay));
+  }
+  return notices;
 }
 
 /**
@@ -468,15 +515,6 @@ export function assertRestDoesNotOverlapMaternity(
   );
   if (maternities.some(overlaps(period)))
     throw new CertificateRestOverlapsError();
-}
-
-/** CER-041. Refuses a rest that starts after `latestRestStartOf`. */
-export function assertRestStartsInTime(
-  period: RestPeriod,
-  issueDate: ClinicalDate,
-): void {
-  const latest = latestRestStartOf(issueDate);
-  if (period.from > latest) throw new CertificateRestStartTooLateError(latest);
 }
 
 /**
@@ -525,26 +563,30 @@ export function longRestNotice(days: number): string {
 }
 
 /**
- * CER-043, D-105 §6. Maternity leave is twelve weeks and a certificate covers
- * thirty days at most (CER-031), so it chains three or more; whether the IESS
+ * CER-043, D-105 §6. Maternity leave is twelve weeks and the IESS validates a
+ * certificate of thirty days at most (CER-031), so it chains three or more; whether the IESS
  * takes it on this form at all is what the doctor confirms first.
  */
 export const MATERNITY_CHAIN_NOTICE =
   'La licencia de maternidad dura doce semanas y cada certificado cubre como mucho 30 días. Antes de emitir los siguientes, confirme con el IESS si la maternidad se certifica en este formulario o por otro trámite.';
 
 /**
- * CER-032, CER-043. One notice when the rest exceeds the issuer's threshold,
- * and one on every maternity rest. They never refuse the issue.
+ * CER-032, CER-043, CER-055. One notice when the rest exceeds the issuer's
+ * threshold, then the notices of the limits it passes (`limits`, from
+ * `restLimitNoticesOf`), and one on every maternity rest. They never refuse
+ * the issue.
  */
 export function restNoticesOf(
   days: number,
   primarySpecialtyCode: string | null,
   contingencyType: ContingencyType,
+  limits: readonly string[] = [],
 ): string[] {
   const notices =
     days > restNoticeThresholdOf(primarySpecialtyCode)
       ? [longRestNotice(days)]
       : [];
+  notices.push(...limits);
   if (contingencyType === 'MATERNITY') notices.push(MATERNITY_CHAIN_NOTICE);
   return notices;
 }
