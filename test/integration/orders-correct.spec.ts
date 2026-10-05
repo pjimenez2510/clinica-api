@@ -30,7 +30,7 @@ const db = useDatabase();
 const silentAudit: AccessAuditRecorder = { record: () => Promise.resolve() };
 /** DOC-109 is proven in `documents-http.spec.ts`; here, no PDF to archive. */
 const noDocuments: AnnulledDocumentArchiver = {
-  archiveAnnulled: () => Promise.resolve(false),
+  archiveAnnulled: () => Promise.resolve(null),
 };
 const noopLogger = {
   setContext: () => undefined,
@@ -228,5 +228,31 @@ describe('ORD-118 corregir una orden emitida', () => {
       serviceOf(prisma).correct(order.id, signer),
     ).rejects.toMatchObject({ code: 'ORDER_ITEM_NOT_PENDING' });
     expect(await prisma.serviceOrder.count()).toBe(2);
+  });
+
+  it('ORD-118 dos «Corregir» a la vez de la misma orden: gana uno, que abre UN borrador, y el otro recibe ORDER_ITEM_NOT_PENDING', async () => {
+    const prisma = db();
+    const { signer, order } = await anIssuedOrder(prisma);
+    const service = serviceOf(prisma);
+
+    const outcomes = await Promise.allSettled([
+      service.correct(order.id, signer),
+      service.correct(order.id, signer),
+    ]);
+
+    const won = outcomes.filter((outcome) => outcome.status === 'fulfilled');
+    const lost = outcomes.filter((outcome) => outcome.status === 'rejected');
+    expect(won).toHaveLength(1);
+    expect(lost).toHaveLength(1);
+    expect(lost[0]?.reason).toMatchObject({ code: 'ORDER_ITEM_NOT_PENDING' });
+    // Exactamente un borrador nuevo, el de la ganadora, con los dos exámenes.
+    const drafts = await prisma.serviceOrder.findMany({
+      where: { status: 'DRAFT' },
+      select: { id: true, _count: { select: { items: true } } },
+    });
+    expect(drafts).toEqual([
+      { id: won[0]!.value.draft.id, _count: { items: 2 } },
+    ]);
+    expect(await liveLines(prisma, order.id)).toBe(0);
   });
 });

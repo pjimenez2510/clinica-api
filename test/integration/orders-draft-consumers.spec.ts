@@ -282,6 +282,32 @@ describe('ORD-096 a ORD-099 las transiciones del borrador', () => {
     ).resolves.toMatchObject({ status: 'DRAFT' });
   });
 
+  it('ORD-116 dos «Deshacer» a la vez del mismo descarte: uno lo recupera y el otro recibe ORDER_NOT_DISCARDED', async () => {
+    const prisma = db();
+    const { scene, draft } = await aDraft(prisma);
+    const userId = (await prisma.practitioner.findUniqueOrThrow({ where: { id: scene.practitioner.id } })).userId; // prettier-ignore
+    const { orders } = adapters(prisma);
+    await orders.discard({ orderId: draft.id, sites: 'all', userId });
+
+    const outcomes = await Promise.allSettled([
+      orders.restore({ orderId: draft.id, sites: 'all' }),
+      orders.restore({ orderId: draft.id, sites: 'all' }),
+    ]);
+
+    const won = outcomes.filter((outcome) => outcome.status === 'fulfilled');
+    const lost = outcomes.filter((outcome) => outcome.status === 'rejected');
+    expect(won).toHaveLength(1);
+    expect(won[0]?.value).toMatchObject({ id: draft.id, status: 'DRAFT' });
+    expect(lost).toHaveLength(1);
+    expect(lost[0]?.reason).toMatchObject({ code: 'ORDER_NOT_DISCARDED' });
+    // Recuperar no crea nada: sigue habiendo una orden, en borrador.
+    expect(
+      await prisma.serviceOrder.findMany({
+        select: { id: true, status: true },
+      }),
+    ).toEqual([{ id: draft.id, status: 'DRAFT' }]);
+  });
+
   it('ORD-096 la orden descartada tampoco se reescribe, y una línea de borrador no nace hecha', async () => {
     const prisma = db();
     const { scene, draft } = await aDraft(prisma);

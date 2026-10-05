@@ -1281,6 +1281,7 @@ describe('el certificado medico por HTTP', () => {
   interface CorrectedBody {
     revoked: CertificateBody;
     issued: IssuedBody;
+    documentArchived: boolean | null;
   }
 
   const correct = (id: string, token: string, body: object) =>
@@ -1309,6 +1310,8 @@ describe('el certificado medico por HTTP', () => {
       revocationReason: 'Error en las fechas',
     });
     expect(body.revoked.revokedAt).not.toBeNull();
+    // DOC-109. Sin PDF archivado del anterior, nada que sustituir.
+    expect(body.documentArchived).toBeNull();
     expect(body.issued.certificate).toMatchObject({
       number: 2,
       encounterId,
@@ -1338,6 +1341,32 @@ describe('el certificado medico por HTTP', () => {
         { resourceId: body.issued.certificate.id, action: 'CREATE' },
       ]),
     );
+  });
+
+  it('CER-053 dos «Corregir» a la vez del mismo certificado: gana uno, que emite UN certificado nuevo, y el otro recibe su error', async () => {
+    await aDiagnosis(encounterId);
+    const issued = await issue(restOf(3));
+    const id = issued.certificate.id;
+    const body = { ...restOf(5), reason: 'Error en las fechas' };
+
+    const responses = await Promise.all([
+      correct(id, doctor.token, body),
+      correct(id, doctor.token, body),
+    ]);
+
+    expect(responses.map((response) => response.status).sort()).toEqual([201, 409]); // prettier-ignore
+    const winner = responses.find((response) => response.status === 201)!;
+    const loser = responses.find((response) => response.status === 409)!;
+    expect((loser.body as Problem).code).toBe('CERTIFICATE_ALREADY_REVOKED');
+    // Exactamente un certificado nuevo: el de la ganadora.
+    const live = await prisma.medicalCertificate.findMany({
+      where: { revokedAt: null },
+      select: { id: true },
+    });
+    expect(live).toEqual([
+      { id: (winner.body as CorrectedBody).issued.certificate.id },
+    ]);
+    expect(await prisma.medicalCertificate.count()).toBe(2);
   });
 
   it('CER-053 y CER-048 una maternidad se corrige aunque el nuevo período se solape con el que sustituye', async () => {
@@ -1404,6 +1433,7 @@ describe('el certificado medico por HTTP', () => {
     await prisma.$executeRawUnsafe(`
       CREATE TRIGGER test_refuse_certificate_insert
         BEFORE INSERT ON medical_certificate FOR EACH ROW
+        WHEN (NEW.encounter_id = '${encounterId}'::uuid)
         EXECUTE FUNCTION test_refuse_certificate_insert()`);
     try {
       const failed = await correct(id, doctor.token, {

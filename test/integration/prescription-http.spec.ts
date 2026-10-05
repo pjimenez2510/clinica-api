@@ -590,6 +590,38 @@ describe('la receta por HTTP', () => {
     expect(await prisma.prescription.count()).toBe(2);
   });
 
+  it('PR-109 dos «Corregir» a la vez de la misma receta: gana uno, que abre UN borrador, y el otro recibe 409 PRESCRIPTION_NOT_EDITABLE', async () => {
+    const composed = await composeAsDoctor();
+    const id = composed.prescription.id;
+    await post(`/prescriptions/${id}/issue`, doctorToken).expect(200);
+    const reason = { reason: 'Error de prescripción' };
+
+    const responses = await Promise.all([
+      post(`/prescriptions/${id}/correct`, doctorToken, reason),
+      post(`/prescriptions/${id}/correct`, doctorToken, reason),
+    ]);
+
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]); // prettier-ignore
+    const winner = responses.find((response) => response.status === 200)!;
+    const loser = responses.find((response) => response.status === 409)!;
+    expect((loser.body as Problem).code).toBe('PRESCRIPTION_NOT_EDITABLE');
+    // Exactamente un borrador nuevo: el de la ganadora.
+    const drafts = await prisma.prescription.findMany({
+      where: { status: 'DRAFT' },
+      select: { id: true },
+    });
+    expect(drafts).toEqual([
+      { id: (winner.body as { draft: PrescriptionBody }).draft.id },
+    ]);
+    // Y un solo registro de la anulación, el de la ganadora.
+    expect(
+      await prisma.prescription.findUniqueOrThrow({
+        where: { id },
+        select: { status: true, cancelReason: true },
+      }),
+    ).toEqual({ status: 'CANCELLED', cancelReason: 'Error de prescripción' });
+  });
+
   it('PR-011 PR-107 descarta el borrador sin pedir motivo, y guarda el que se escriba', async () => {
     // D-126: lo que no salió de la consulta se quita sin preguntar. El motivo
     // sigue siendo una columna, así que si alguien lo escribe se guarda.
@@ -674,6 +706,31 @@ describe('la receta por HTTP', () => {
     const other = await composeAsDoctor();
     await post(`/prescriptions/${other.prescription.id}/discard`, doctorToken).expect(200); // prettier-ignore
     await post(`/prescriptions/${other.prescription.id}/restore`, doctorToken).expect(200); // prettier-ignore
+  });
+
+  it('PR-107 dos «Deshacer» a la vez del mismo descarte: uno lo recupera y el otro recibe 409 PRESCRIPTION_NOT_EDITABLE', async () => {
+    const composed = await composeAsDoctor();
+    const id = composed.prescription.id;
+    await post(`/prescriptions/${id}/discard`, doctorToken).expect(200);
+    const updates = () =>
+      prisma.accessAudit.count({
+        where: { resourceType: 'prescription', resourceId: id, action: 'UPDATE' }, // prettier-ignore
+      });
+    const before = await updates();
+
+    const responses = await Promise.all([
+      post(`/prescriptions/${id}/restore`, doctorToken),
+      post(`/prescriptions/${id}/restore`, doctorToken),
+    ]);
+
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]); // prettier-ignore
+    const winner = responses.find((response) => response.status === 200)!;
+    const loser = responses.find((response) => response.status === 409)!;
+    expect((winner.body as PrescriptionBody).status).toBe('DRAFT');
+    expect((loser.body as Problem).code).toBe('PRESCRIPTION_NOT_EDITABLE');
+    // Una sola recuperación en la bitácora, y una sola receta.
+    expect(await updates()).toBe(before + 1);
+    expect(await prisma.prescription.count()).toBe(1);
   });
 
   it('PR-107 sólo su prescriptor recupera el borrador descartado', async () => {
