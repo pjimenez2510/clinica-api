@@ -114,150 +114,49 @@ export class PrismaCertificateRepository implements CertificateRepository {
     query: EncounterCertificatesQuery,
     decide: (snapshot: IssueSnapshot) => CertificatePlan,
   ): Promise<CertificateView> {
-    const row = await this.prisma.$transaction(async (tx) => {
-      /**
-       * THE ATTENTION'S ROW, LOCKED FIRST. Agenda locks it FOR UPDATE when
-       * reception marks «se fue sin ser atendido» or the doctor annuls the
-       * attention; locking it here serialises the two, and every read below
-       * —this transaction is READ COMMITTED— sees the attention as it ended
-       * up. Without it, a write that read «open» an instant before the
-       * annulment committed lands in an annulled attention.
-       */
-      await tx.$queryRaw`SELECT id FROM "encounter" WHERE id = ${query.encounterId}::uuid FOR UPDATE`;
+    const row = await this.prisma.$transaction((tx) =>
+      issueWithin(tx, query, decide),
+    );
+    return toView(row);
+  }
 
-      const encounter = await tx.encounter.findFirst({
-        where: { id: query.encounterId, ...encounterSiteFilter(query.sites) },
-        select: {
-          id: true,
-          siteId: true,
-          patientId: true,
-          // CER-039. Who attended, read under the lock.
-          practitionerId: true,
-          status: true,
-          startedAt: true,
-          // CER-027. What the certificate will print, COPIED below: added
-          // later, a diagnosis would reach a paper the patient authorised
-          // without it.
-          diagnoses: {
-            orderBy: [{ rank: 'asc' }, { recordedAt: 'asc' }],
-            // CER-027. With its certainty, for the PRE and DEF columns.
-            select: { cie10Code: true, cie10Display: true, certainty: true },
-          },
-          // CER-038. The chart of the attention, read where the row is written
-          // and copied: a later correction of the chart does not rewrite an
-          // issued certificate.
-          patient: {
-            select: {
-              // CER-048. Whose chart the rests are read from.
-              mergedIntoId: true,
-              employerName: true,
-              jobTitle: true,
-              residenceAddressLine: true,
-              phone: true,
-            },
-          },
-          // CER-036. The city is the CANTON: the parent of the site's DPA
-          // parish, as PR-021 reads it.
-          site: {
-            select: {
-              parish: { select: { parent: { select: { display: true } } } },
-            },
-          },
-        },
+  /**
+   * CER-053. Annuls and issues in ONE transaction: the annulment is written
+   * first, so the rests `decide` reads no longer include the one being
+   * replaced (CER-048), and anything `decide` or the insert refuses rolls it
+   * back.
+   */
+  async correct(
+    query: CertificateQuery,
+    revocation: RevocationPlan,
+    authorise: (snapshot: RevocationSnapshot) => void,
+    decide: (snapshot: IssueSnapshot) => CertificatePlan,
+  ): Promise<{ revoked: CertificateView; issued: CertificateView }> {
+    const rows = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.medicalCertificate.findFirst({
+        where: { id: query.certificateId, ...siteFilter(query.sites) },
+        select: { id: true, encounterId: true },
       });
-      if (!encounter) throw new CertificateEncounterNotFoundError();
+      if (!current) throw new CertificateNotFoundError();
 
-      /**
-       * CER-048. THE PATIENT'S ISSUES, ONE AT A TIME. Two attentions of the
-       * same patient lock two different rows, so the lock above does not
-       * order them; this one does, with the SAME key
-       * `medical_certificate_issue_rules` takes, so the rests read below are
-       * every rest that can be there when this one is written.
-       */
-      // The patient is her CHART: the surviving one and those it absorbed
-      // (PA-055); the lock is the chart's too. Read without locking the
-      // patient row: this read gives the doctor the clear refusal, and the
-      // trigger, which reads the chart again under the same lock, is the
-      // guarantee.
-      const chartId = encounter.patient.mergedIntoId ?? encounter.patientId;
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('medical_certificate_rest:' || ${chartId}::text, 0))`;
-      const rests = await tx.medicalCertificate.findMany({
-        where: {
-          ...chartScope(chartId),
-          type: 'MEDICAL_REST',
-          revokedAt: null,
+      const issued = await issueWithin(
+        tx,
+        { encounterId: current.encounterId, sites: query.sites },
+        decide,
+        // After the attention's lock and the patient's, before her rests are
+        // read: the same order of locks as an issue, and the old period freed.
+        async () => {
+          await revokeWithin(tx, query, revocation, authorise);
         },
-        select: { restFrom: true, restTo: true, contingencyType: true, birthOn: true }, // prettier-ignore
-      });
-
-      const plan = decide({
-        encounterStatus: encounter.status,
-        attendingPractitionerId: encounter.practitionerId,
-        diagnosisCodes: encounter.diagnoses.map((diagnosis) => diagnosis.cie10Code), // prettier-ignore
-        encounterStartedAt: encounter.startedAt,
-        cityOfIssue: encounter.site.parish?.parent?.display ?? null,
-        patientRests: rests.flatMap(
-          ({ restFrom, restTo, contingencyType, birthOn }) => {
-            const from = clinicalDateColumn(restFrom);
-            const to = clinicalDateColumn(restTo);
-            const maternityBirthOn =
-              contingencyType === 'MATERNITY'
-                ? clinicalDateColumn(birthOn)
-                : null;
-            return from === null || to === null
-              ? []
-              : [{ from, to, maternityBirthOn }];
-          },
-        ),
-        patientWork: encounter.patient,
-      });
-
-      return tx.medicalCertificate.create({
-        data: {
-          encounterId: encounter.id,
-          // CER-009. `medical_certificate_number_assigned` takes it from the
-          // attention whatever is sent; sending the right one keeps Prisma's
-          // type honest.
-          siteId: encounter.siteId,
-          // CER-001. The patient OF THE ATTENTION, never one of the request.
-          patientId: encounter.patientId,
-          issuedById: plan.issuedById,
-          type: plan.type,
-          restFrom: plan.rest === null ? null : dateColumn(plan.rest.from),
-          restTo: plan.rest === null ? null : dateColumn(plan.rest.to),
-          includeDiagnosis: plan.includeDiagnosis,
-          contingencyType: plan.contingencyType,
-          maternityAdmissionOn: optionalDate(plan.maternity?.admissionOn),
-          birthOn: optionalDate(plan.maternity?.birthOn),
-          maternityDischargeOn: optionalDate(plan.maternity?.dischargeOn),
-          restBackdatingReason: plan.backdatingReason,
-          issuedByOtherReason: plan.issuedByOtherReason,
-          verificationCode: plan.verificationCode,
-          issuedAt: plan.issuedAt,
-          // Only what it prints: a certificate without the diagnosis keeps none.
-          diagnoses: plan.includeDiagnosis
-            ? encounter.diagnoses.map((diagnosis) => ({
-                code: diagnosis.cie10Code,
-                display: diagnosis.cie10Display,
-                certainty: diagnosis.certainty,
-              }))
-            : [],
-          // Only on a rest, which is what prints them (CER-038): an attendance
-          // certificate keeps none of the patient's work data, for ever.
-          ...(plan.type === 'MEDICAL_REST'
-            ? {
-                employerName: encounter.patient.employerName,
-                jobTitle: encounter.patient.jobTitle,
-                residenceAddressLine: encounter.patient.residenceAddressLine,
-                patientPhone: encounter.patient.phone,
-              }
-            : {}),
-        },
+      );
+      const revoked = await tx.medicalCertificate.findUniqueOrThrow({
+        where: { id: current.id },
         select: CERTIFICATE_SELECT,
       });
+      return { revoked, issued };
     });
 
-    return toView(row);
+    return { revoked: toView(rows.revoked), issued: toView(rows.issued) };
   }
 
   /** CER-010. The certificates of one attention, newest first. */
@@ -297,32 +196,199 @@ export class PrismaCertificateRepository implements CertificateRepository {
     authorise: (snapshot: RevocationSnapshot) => void,
   ): Promise<CertificateView> {
     const row = await this.prisma.$transaction(async (tx) => {
-      const current = await tx.medicalCertificate.findFirst({
-        where: { id: query.certificateId, ...siteFilter(query.sites) },
-        select: { id: true, siteId: true, issuedBy: { select: { userId: true } } }, // prettier-ignore
-      });
-      if (!current) throw new CertificateNotFoundError();
-      // CER-040. Before anything is written.
-      authorise({ issuerUserId: current.issuedBy.userId, siteId: current.siteId }); // prettier-ignore
-
-      const updated = await tx.medicalCertificate.updateMany({
-        where: { id: current.id, revokedAt: null },
-        data: {
-          revokedAt: plan.revokedAt,
-          revokedById: plan.revokedById,
-          revocationReason: plan.reason,
-        },
-      });
-      if (updated.count === 0) throw new CertificateAlreadyRevokedError();
-
+      const id = await revokeWithin(tx, query, plan, authorise);
       return tx.medicalCertificate.findUniqueOrThrow({
-        where: { id: current.id },
+        where: { id },
         select: CERTIFICATE_SELECT,
       });
     });
 
     return toView(row);
   }
+}
+
+/**
+ * CER-001 to CER-009, CER-048. One issue inside the caller's transaction: the
+ * attention locked and read, the patient's issues serialised, her rests read,
+ * the plan decided and the row inserted. `beforeRests` runs once both locks
+ * are held and before the rests are read — where `correct` annuls.
+ */
+async function issueWithin(
+  tx: Prisma.TransactionClient,
+  query: EncounterCertificatesQuery,
+  decide: (snapshot: IssueSnapshot) => CertificatePlan,
+  beforeRests?: () => Promise<void>,
+): Promise<CertificateRow> {
+  /**
+   * THE ATTENTION'S ROW, LOCKED FIRST. Agenda locks it FOR UPDATE when
+   * reception marks «se fue sin ser atendido» or the doctor annuls the
+   * attention; locking it here serialises the two, and every read below
+   * —this transaction is READ COMMITTED— sees the attention as it ended
+   * up. Without it, a write that read «open» an instant before the
+   * annulment committed lands in an annulled attention.
+   */
+  await tx.$queryRaw`SELECT id FROM "encounter" WHERE id = ${query.encounterId}::uuid FOR UPDATE`;
+
+  const encounter = await tx.encounter.findFirst({
+    where: { id: query.encounterId, ...encounterSiteFilter(query.sites) },
+    select: {
+      id: true,
+      siteId: true,
+      patientId: true,
+      // CER-039. Who attended, read under the lock.
+      practitionerId: true,
+      status: true,
+      startedAt: true,
+      // CER-027. What the certificate will print, COPIED below: added
+      // later, a diagnosis would reach a paper the patient authorised
+      // without it.
+      diagnoses: {
+        orderBy: [{ rank: 'asc' }, { recordedAt: 'asc' }],
+        // CER-027. With its certainty, for the PRE and DEF columns.
+        select: { cie10Code: true, cie10Display: true, certainty: true },
+      },
+      // CER-038. The chart of the attention, read where the row is written
+      // and copied: a later correction of the chart does not rewrite an
+      // issued certificate.
+      patient: {
+        select: {
+          // CER-048. Whose chart the rests are read from.
+          mergedIntoId: true,
+          employerName: true,
+          jobTitle: true,
+          residenceAddressLine: true,
+          phone: true,
+        },
+      },
+      // CER-036. The city is the CANTON: the parent of the site's DPA
+      // parish, as PR-021 reads it.
+      site: {
+        select: {
+          parish: { select: { parent: { select: { display: true } } } },
+        },
+      },
+    },
+  });
+  if (!encounter) throw new CertificateEncounterNotFoundError();
+
+  /**
+   * CER-048. THE PATIENT'S ISSUES, ONE AT A TIME. Two attentions of the
+   * same patient lock two different rows, so the lock above does not
+   * order them; this one does, with the SAME key
+   * `medical_certificate_issue_rules` takes, so the rests read below are
+   * every rest that can be there when this one is written.
+   */
+  // The patient is her CHART: the surviving one and those it absorbed
+  // (PA-055); the lock is the chart's too. Read without locking the
+  // patient row: this read gives the doctor the clear refusal, and the
+  // trigger, which reads the chart again under the same lock, is the
+  // guarantee.
+  const chartId = encounter.patient.mergedIntoId ?? encounter.patientId;
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('medical_certificate_rest:' || ${chartId}::text, 0))`;
+  await beforeRests?.();
+  const rests = await tx.medicalCertificate.findMany({
+    where: {
+      ...chartScope(chartId),
+      type: 'MEDICAL_REST',
+      revokedAt: null,
+    },
+    select: { restFrom: true, restTo: true, contingencyType: true, birthOn: true }, // prettier-ignore
+  });
+
+  const plan = decide({
+    encounterStatus: encounter.status,
+    attendingPractitionerId: encounter.practitionerId,
+    diagnosisCodes: encounter.diagnoses.map((diagnosis) => diagnosis.cie10Code), // prettier-ignore
+    encounterStartedAt: encounter.startedAt,
+    cityOfIssue: encounter.site.parish?.parent?.display ?? null,
+    patientRests: rests.flatMap(
+      ({ restFrom, restTo, contingencyType, birthOn }) => {
+        const from = clinicalDateColumn(restFrom);
+        const to = clinicalDateColumn(restTo);
+        const maternityBirthOn =
+          contingencyType === 'MATERNITY' ? clinicalDateColumn(birthOn) : null;
+        return from === null || to === null
+          ? []
+          : [{ from, to, maternityBirthOn }];
+      },
+    ),
+    patientWork: encounter.patient,
+  });
+
+  return tx.medicalCertificate.create({
+    data: {
+      encounterId: encounter.id,
+      // CER-009. `medical_certificate_number_assigned` takes it from the
+      // attention whatever is sent; sending the right one keeps Prisma's
+      // type honest.
+      siteId: encounter.siteId,
+      // CER-001. The patient OF THE ATTENTION, never one of the request.
+      patientId: encounter.patientId,
+      issuedById: plan.issuedById,
+      type: plan.type,
+      restFrom: plan.rest === null ? null : dateColumn(plan.rest.from),
+      restTo: plan.rest === null ? null : dateColumn(plan.rest.to),
+      includeDiagnosis: plan.includeDiagnosis,
+      contingencyType: plan.contingencyType,
+      maternityAdmissionOn: optionalDate(plan.maternity?.admissionOn),
+      birthOn: optionalDate(plan.maternity?.birthOn),
+      maternityDischargeOn: optionalDate(plan.maternity?.dischargeOn),
+      restBackdatingReason: plan.backdatingReason,
+      issuedByOtherReason: plan.issuedByOtherReason,
+      verificationCode: plan.verificationCode,
+      issuedAt: plan.issuedAt,
+      // Only what it prints: a certificate without the diagnosis keeps none.
+      diagnoses: plan.includeDiagnosis
+        ? encounter.diagnoses.map((diagnosis) => ({
+            code: diagnosis.cie10Code,
+            display: diagnosis.cie10Display,
+            certainty: diagnosis.certainty,
+          }))
+        : [],
+      // Only on a rest, which is what prints them (CER-038): an attendance
+      // certificate keeps none of the patient's work data, for ever.
+      ...(plan.type === 'MEDICAL_REST'
+        ? {
+            employerName: encounter.patient.employerName,
+            jobTitle: encounter.patient.jobTitle,
+            residenceAddressLine: encounter.patient.residenceAddressLine,
+            patientPhone: encounter.patient.phone,
+          }
+        : {}),
+    },
+    select: CERTIFICATE_SELECT,
+  });
+}
+
+/**
+ * CER-011, CER-012, CER-040. CONDITIONAL ON `revoked_at IS NULL`: of two people
+ * annulling at once, the loser matches zero rows and is told it is already
+ * annulled, never handed a second annulment that rewrites the first.
+ */
+async function revokeWithin(
+  tx: Prisma.TransactionClient,
+  query: CertificateQuery,
+  plan: RevocationPlan,
+  authorise: (snapshot: RevocationSnapshot) => void,
+): Promise<string> {
+  const current = await tx.medicalCertificate.findFirst({
+    where: { id: query.certificateId, ...siteFilter(query.sites) },
+    select: { id: true, siteId: true, issuedBy: { select: { userId: true } } }, // prettier-ignore
+  });
+  if (!current) throw new CertificateNotFoundError();
+  // CER-040. Before anything is written.
+  authorise({ issuerUserId: current.issuedBy.userId, siteId: current.siteId }); // prettier-ignore
+
+  const updated = await tx.medicalCertificate.updateMany({
+    where: { id: current.id, revokedAt: null },
+    data: {
+      revokedAt: plan.revokedAt,
+      revokedById: plan.revokedById,
+      revocationReason: plan.reason,
+    },
+  });
+  if (updated.count === 0) throw new CertificateAlreadyRevokedError();
+  return current.id;
 }
 
 /**

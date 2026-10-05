@@ -49,8 +49,12 @@ import {
   CERTIFICATE_CLOCK,
   CERTIFICATE_REPOSITORY,
   type CertificateClock,
+  type CertificatePlan,
   type CertificateRepository,
   type CertificateView,
+  type CertifierIdentity,
+  type IssueSnapshot,
+  type RevocationSnapshot,
   type SiteScopeFilter,
 } from '../domain/certificate.repository';
 
@@ -107,6 +111,24 @@ export interface IssueCertificateRequest {
   issuedByOtherReason: string | null;
 }
 
+/**
+ * CER-053. Correcting an issued certificate: the new one as it should read —
+ * the same fields as issuing it, on the same attention — and the reason of
+ * the annulment (CER-011).
+ */
+export interface CorrectCertificateRequest extends Omit<
+  IssueCertificateRequest,
+  'encounterId'
+> {
+  reason: string;
+}
+
+/** CER-053. The annulled certificate, and the one that replaces it. */
+export interface CorrectedCertificate {
+  revoked: CertificateView;
+  issued: IssuedCertificate;
+}
+
 /** CER-013. The certificate, and what the IESS needs to be said about it. */
 export interface IssuedCertificate {
   certificate: CertificateView;
@@ -154,6 +176,83 @@ export class CertificateService {
     request: IssueCertificateRequest,
     requester: Requester,
   ): Promise<IssuedCertificate> {
+    const issuing = await this.prepareIssue(request, requester);
+
+    const certificate = await this.certificates.issue(
+      { encounterId: request.encounterId, sites: requester.sites },
+      issuing.decide,
+    );
+
+    await this.trail(certificate.id, 'CREATE', requester);
+
+    // CER-014. The fact only: no patient, no diagnosis, nothing interpolated.
+    this.logger.info({ action: 'CERTIFICATE_ISSUED' }, 'certificate issued');
+
+    return issuing.respond(certificate);
+  }
+
+  /**
+   * CER-053 (D-127.4). Corrects an issued certificate IN ONE STEP: annuls it
+   * with its reason (CER-011) and issues the new one on the same attention,
+   * in ONE transaction. If the new one cannot be issued —any rule of the
+   * issue, judged exactly as `issue` judges it— nothing is annulled.
+   *
+   * Who may: whoever may annul it (CER-040). The new one is issued by the
+   * session (CER-004), so a medical director correcting a colleague's
+   * certificate states why they issue instead of who attended (CER-039).
+   *
+   * ⚠️ THE ANNULMENT COMES FIRST INSIDE THE TRANSACTION, so the rests the issue
+   * reads no longer include the one being replaced: a corrected period that
+   * overlaps the old one is not an overlap (CER-048), the old one is gone.
+   */
+  async correct(
+    certificateId: string,
+    request: CorrectCertificateRequest,
+    requester: Requester,
+    directionSites: SiteScopeFilter,
+  ): Promise<CorrectedCertificate> {
+    const { reason, ...fields } = request;
+    const issuing = await this.prepareIssue(fields, requester);
+
+    const { revoked, issued } = await this.certificates.correct(
+      { certificateId, sites: requester.sites },
+      {
+        revokedAt: issuing.issuedAt,
+        // The ACCOUNT, never a cedula and never the practitioner (REQ-110).
+        revokedById: requester.userId,
+        reason,
+      },
+      (snapshot) => authoriseRevocation(snapshot, requester, directionSites),
+      issuing.decide,
+    );
+
+    await this.trail(revoked.id, 'UPDATE', requester);
+    await this.trail(issued.id, 'CREATE', requester);
+
+    // CER-014. The facts only; the reason is free text and stays in the row.
+    this.logger.info(
+      { action: 'CERTIFICATE_CORRECTED' },
+      'certificate corrected',
+    );
+
+    return { revoked, issued: issuing.respond(issued) };
+  }
+
+  /**
+   * CER-001 to CER-009, CER-013, CER-030 to CER-051. Everything an issue
+   * needs, ONE place for `issue` and `correct`: what the request alone can be
+   * judged on is refused here, before touching storage; what depends on the
+   * attention is the `decide` the adapter calls inside its transaction; and
+   * `respond` composes what the IESS needs to be told.
+   */
+  private async prepareIssue(
+    request: Omit<IssueCertificateRequest, 'encounterId'>,
+    requester: Requester,
+  ): Promise<{
+    issuedAt: Date;
+    decide: (snapshot: IssueSnapshot) => CertificatePlan;
+    respond: (certificate: CertificateView) => IssuedCertificate;
+  }> {
     const { type } = request;
     assertIssuableType(type);
     // CER-006, CER-007, CER-031, CER-034, CER-035: everything the request
@@ -167,102 +266,93 @@ export class CertificateService {
     // CER-030, D-106 §5. The issue's day for lateness, dawn counted as before.
     const lateIssueDay = lateIssueDayOf(issuedAt);
 
-    const certifier = await this.certificates.findCertifierByUser(
-      requester.userId,
-    );
+    const certifier: CertifierIdentity | null =
+      await this.certificates.findCertifierByUser(requester.userId);
     if (!certifier) throw new CertifierProfileRequiredError();
 
     const verificationCode = newVerificationCode();
 
     // CER-038. Filled from the snapshot, inside the transaction.
     let missingWork: PatientWorkField[] = [];
-    const certificate = await this.certificates.issue(
-      { encounterId: request.encounterId, sites: requester.sites },
-      (snapshot) => {
-        if (!admitsNewCertificates(snapshot.encounterStatus)) {
-          throw new CertificateEncounterNotOpenError(snapshot.encounterStatus);
-        }
-        // CER-044, CER-045 (D-106). The window around the attention, which no
-        // reason widens; maternity has its own (D-108).
-        const attentionDate = clinicalDateOf(snapshot.encounterStartedAt);
-        if (details !== null) {
-          assertRestWithinAttention(
+    const decide = (snapshot: IssueSnapshot): CertificatePlan => {
+      if (!admitsNewCertificates(snapshot.encounterStatus)) {
+        throw new CertificateEncounterNotOpenError(snapshot.encounterStatus);
+      }
+      // CER-044, CER-045 (D-106). The window around the attention, which no
+      // reason widens; maternity has its own (D-108).
+      const attentionDate = clinicalDateOf(snapshot.encounterStartedAt);
+      if (details !== null) {
+        assertRestWithinAttention(
+          details.period,
+          attentionDate,
+          lateIssueDay,
+          details.maternity,
+        );
+        // CER-046 to CER-050 (D-109, D-110). What bounds a maternity rest;
+        // any other rest does not fall on a maternity rest (D-110 §5).
+        if (details.maternity !== null) {
+          assertMaternityWithinLeave(
             details.period,
+            details.maternity,
             attentionDate,
             lateIssueDay,
-            details.maternity,
+            snapshot.diagnosisCodes,
+            snapshot.patientRests,
           );
-          // CER-046 to CER-050 (D-109, D-110). What bounds a maternity rest;
-          // any other rest does not fall on a maternity rest (D-110 §5).
-          if (details.maternity !== null) {
-            assertMaternityWithinLeave(
-              details.period,
-              details.maternity,
-              attentionDate,
-              lateIssueDay,
-              snapshot.diagnosisCodes,
-              snapshot.patientRests,
-            );
-          } else {
-            assertRestDoesNotOverlapMaternity(
-              details.period,
-              snapshot.patientRests,
-            );
-          }
+        } else {
+          assertRestDoesNotOverlapMaternity(
+            details.period,
+            snapshot.patientRests,
+          );
         }
-        // CER-039. Who attended is read under the lock, with the attention.
-        const issuedByOtherReason = issuerReasonOf(
-          certifier.practitionerId,
-          snapshot.attendingPractitionerId,
-          request.issuedByOtherReason,
-        );
-        // CER-036. The place of issue is the canton of the site's parish.
-        if (snapshot.cityOfIssue === null) {
-          throw new CertificateEstablishmentIncompleteError();
-        }
-        // CER-038, D-101. A rest prints the patient's work and contact, read
-        // from the chart in this transaction. What is missing does not stop
-        // the issue: the doctor is warned.
-        missingWork =
-          details === null ? [] : missingPatientWork(snapshot.patientWork);
-        // CER-008. The diagnosis is read from the attention, never typed; a
-        // rest always carries it (CER-007).
-        const includeDiagnosis = details !== null || request.includeDiagnosis;
-        if (includeDiagnosis && snapshot.diagnosisCodes.length === 0) {
-          throw new CertificateDiagnosisRequiredError();
-        }
-        return {
-          type,
-          rest: details?.period ?? null,
-          includeDiagnosis,
-          contingencyType: details?.contingencyType ?? null,
-          maternity: details?.maternity ?? null,
-          // CER-030. Against the clinical date of the attention in Ecuador,
-          // read inside the transaction, and the day of the issue with its
-          // dawn (D-106 §5).
-          backdatingReason:
-            details === null
-              ? null
-              : backdatingReasonOf(
-                  details.period,
-                  attentionDate,
-                  lateIssueDay,
-                  request.backdatingReason,
-                ),
-          issuedByOtherReason,
-          issuedById: certifier.practitionerId,
-          issuedAt,
-          verificationCode,
-        };
-      },
-    );
+      }
+      // CER-039. Who attended is read under the lock, with the attention.
+      const issuedByOtherReason = issuerReasonOf(
+        certifier.practitionerId,
+        snapshot.attendingPractitionerId,
+        request.issuedByOtherReason,
+      );
+      // CER-036. The place of issue is the canton of the site's parish.
+      if (snapshot.cityOfIssue === null) {
+        throw new CertificateEstablishmentIncompleteError();
+      }
+      // CER-038, D-101. A rest prints the patient's work and contact, read
+      // from the chart in this transaction. What is missing does not stop
+      // the issue: the doctor is warned.
+      missingWork =
+        details === null ? [] : missingPatientWork(snapshot.patientWork);
+      // CER-008. The diagnosis is read from the attention, never typed; a
+      // rest always carries it (CER-007).
+      const includeDiagnosis = details !== null || request.includeDiagnosis;
+      if (includeDiagnosis && snapshot.diagnosisCodes.length === 0) {
+        throw new CertificateDiagnosisRequiredError();
+      }
+      return {
+        type,
+        rest: details?.period ?? null,
+        includeDiagnosis,
+        contingencyType: details?.contingencyType ?? null,
+        maternity: details?.maternity ?? null,
+        // CER-030. Against the clinical date of the attention in Ecuador,
+        // read inside the transaction, and the day of the issue with its
+        // dawn (D-106 §5).
+        backdatingReason:
+          details === null
+            ? null
+            : backdatingReasonOf(
+                details.period,
+                attentionDate,
+                lateIssueDay,
+                request.backdatingReason,
+              ),
+        issuedByOtherReason,
+        issuedById: certifier.practitionerId,
+        issuedAt,
+        verificationCode,
+      };
+    };
 
-    await this.trail(certificate.id, 'CREATE', requester);
-
-    // CER-014. The fact only: no patient, no diagnosis, nothing interpolated.
-    this.logger.info({ action: 'CERTIFICATE_ISSUED' }, 'certificate issued');
-
-    return {
+    const respond = (certificate: CertificateView): IssuedCertificate => ({
       certificate,
       iess: details === null ? null : iessValidationOf(details.period.to),
       restNotices:
@@ -278,7 +368,9 @@ export class CertificateService {
                 (notice): notice is string => notice !== null,
               ),
             ],
-    };
+    });
+
+    return { issuedAt, decide, respond };
   }
 
   /** CER-010, CER-016. The certificates of one attention, newest first. */
@@ -338,14 +430,7 @@ export class CertificateService {
         revokedById: requester.userId,
         reason,
       },
-      ({ issuerUserId, siteId }) => {
-        const issuedIt = issuerUserId === requester.userId;
-        const directsTheSite =
-          directionSites === 'all' || directionSites.includes(siteId);
-        if (!issuedIt && !directsTheSite) {
-          throw new CertificateRevokeForbiddenError();
-        }
-      },
+      (snapshot) => authoriseRevocation(snapshot, requester, directionSites),
     );
 
     await this.trail(revoked.id, 'UPDATE', requester);
@@ -370,6 +455,23 @@ export class CertificateService {
       ip: requester.ip,
       userAgent: requester.userAgent,
     });
+  }
+}
+
+/**
+ * CER-040, D-105 §2. Annulling —and so correcting— is for the account that
+ * issued it, or for whoever holds `certificate:revoke-any` at its site.
+ */
+function authoriseRevocation(
+  { issuerUserId, siteId }: RevocationSnapshot,
+  requester: Requester,
+  directionSites: SiteScopeFilter,
+): void {
+  const issuedIt = issuerUserId === requester.userId;
+  const directsTheSite =
+    directionSites === 'all' || directionSites.includes(siteId);
+  if (!issuedIt && !directsTheSite) {
+    throw new CertificateRevokeForbiddenError();
   }
 }
 

@@ -111,7 +111,8 @@ que sus números son consecutivos; emitir uno de reposo con `rest_to` anterior a
 `rest_from` y comprobar que la base lo rechaza; anular uno y comprobar que la
 fila sigue con motivo, autor e instante.
 **Cubre:** CER-001 a CER-016, **CER-052** —el motivo de anular se elige de una
-lista (D-126, `fix/menos-preguntas`)—.
+lista (D-126, `fix/menos-preguntas`)— y **CER-053** —un solo «Corregir» del
+certificado emitido (D-127.4)—.
 **Solo interfaz:** CER-052.
 **Solo servidor:** CER-009, CER-014, CER-015, CER-016. Son la unicidad del
 número en la base, el permiso de cada ruta, la bitácora y la ausencia de PHI en
@@ -260,6 +261,45 @@ comprobar que no lleva el motivo.
   > cambian, y el asistente de IA manda lo mismo que la pantalla. La lista vive
   > en el esquema de la pantalla (`revoke-certificate.schema.ts`); el selector
   > es el común (`ReasonPicker`).
+
+- **CER-053** — CUANDO se **corrija** un certificado emitido, el sistema DEBERÁ,
+  **en una sola transacción**, anularlo con el motivo de CER-011 —el mismo
+  contrato que anular: texto de 5 a 500 caracteres, que la pantalla elige de
+  la lista de CER-052— y emitir en **la misma atención** el certificado que
+  trae la petición —los campos de emitir, con todas sus reglas (CER-001 a
+  CER-051)—, y DEBERÁ responder `{ revoked, issued }`, con `issued` igual a la
+  respuesta de emitir (CER-013), y dejar en la bitácora la anulación y la
+  emisión (CER-016). SI el nuevo no se puede emitir, por la regla que sea,
+  ENTONCES **NO DEBERÁ** anular nada. Lo corrige quien puede anularlo
+  (CER-040, `CERTIFICATE_REVOKE_FORBIDDEN`), y el nuevo lo emite la sesión
+  (CER-004), así que la dirección médica que corrige el de un colega da el
+  motivo de CER-039. SI ya está anulado, ENTONCES `CERTIFICATE_ALREADY_REVOKED`;
+  y SI la atención ya no admite certificados, ENTONCES
+  `CERTIFICATE_ENCOUNTER_NOT_OPEN` (CER-003), sin anular nada.
+  > **D-127.4:** el certificado entregado está en manos de un tercero y no se
+  > edita; «Corregir» hace por debajo lo que corresponde —anular y emitir otro—
+  > con lo anterior ya cargado, y el usuario no encadena pasos. La pantalla
+  > abre el diálogo de emitir con todo lo del certificado cargado, para
+  > cambiar lo que haga falta, y el motivo de la lista en el mismo diálogo.
+  >
+  > **El nuevo sustituye al anulado, y el solape no lo impide (CER-048):** la
+  > anulación se escribe primero dentro de la transacción, antes de leer los
+  > reposos de la paciente, así que el período anterior ya no cuenta. Lo
+  > garantiza la base igual: `medical_certificate_issue_rules` sólo mira
+  > reposos `revoked_at IS NULL`, y en la misma transacción ve la anulación.
+  > `medical_certificate_frozen` admite escribir las tres columnas de la
+  > anulación; no hizo falta migración.
+  >
+  > **Una atención cerrada no admite el certificado nuevo** (CER-003), igual
+  > que en la receta (PR-109) y la orden (ORD-118): el de una consulta
+  > terminada se anula (CER-011, que no pide la atención viva) y se emite
+  > desde una atención nueva. La prueba de integración lo comprueba, y la de
+  > atomicidad fuerza un fallo de la base al insertar el nuevo, después de
+  > anular, con control positivo.
+  >
+  > **El enlace entre los dos** («lo sustituye el N.º …») no se guarda: no hay
+  > columna para ello, y es la segunda mitad de D-131.2, pendiente del asesor.
+  > Hoy se lee por el motivo y por la atención.
 
 - **CER-012** — SI el certificado ya está anulado, ENTONCES el sistema DEBERÁ
   rechazar la anulación con `CERTIFICATE_ALREADY_REVOKED`.
@@ -690,6 +730,7 @@ Todo lo que faltaba está en `20261001070500_certificate_number_and_revocation`.
 | `GET` | `/encounters/:encounterId/certificates` | `record:read` | CER-010 |
 | `GET` | `/certificates/:certificateId` | `record:read` | CER-010, CER-020 a CER-029 |
 | `POST` | `/certificates/:certificateId/revoke` | `record:write` | CER-011, CER-012, CER-040 |
+| `POST` | `/certificates/:certificateId/correct` | `record:write` | CER-053 *(el certificado nuevo y `reason`; devuelve `{ revoked, issued }`)* |
 
 ## Niveles de prueba
 
@@ -698,6 +739,7 @@ Todo lo que faltaba está en `20261001070500_certificate_number_and_revocation`.
 | CER-001 a CER-008, CER-010 a CER-013 | Unitario del servicio con dobles de los puertos; contrato del error en el controlador |
 | CER-006, CER-009, CER-011 | **Integración contra la base**: el `CHECK` del período, la unicidad y la ausencia de huecos con dos emisiones concurrentes y una revertida, el `CHECK` de la anulación. Con control positivo |
 | CER-014 a CER-016 | Recorrido de las rutas registradas y conteo de filas de bitácora |
+| CER-053 | **Integración por HTTP**: anula y emite de una vez con sus dos filas de bitácora; una maternidad corregida sobre su propio período, con control positivo del solape; una regla del reposo y un fallo forzado de la base al insertar no anulan nada, con control positivo; atención cerrada, colega sin permiso, dirección médica sin y con motivo de CER-039, sin motivo y ya anulado. Unitario del servicio: una sola llamada al almacén, quién puede antes de escribir, y sin bitácora si falla |
 | CER-020 a CER-029 | Unitario del dominio: edad y condición, horas y fechas en letras, «NA» |
 | C1 y C2 en pantalla | `e2e/flujos/f05-ordenes-y-receta.spec.ts` con `medico@` |
 

@@ -219,6 +219,36 @@ class FakeRepository implements CertificateRepository {
     this.asked.push(query);
     return Promise.resolve(this.stored);
   }
+
+  /** CER-053. One call: authorise, annul, decide, issue — or nothing. */
+  corrected: { query: CertificateQuery; revocation: RevocationPlan; plan: CertificatePlan }[] = []; // prettier-ignore
+
+  correct(
+    query: CertificateQuery,
+    revocation: RevocationPlan,
+    authorise: (snapshot: RevocationSnapshot) => void,
+    decide: (snapshot: IssueSnapshot) => CertificatePlan,
+  ): Promise<{ revoked: CertificateView; issued: CertificateView }> {
+    authorise(this.revocationSnapshot);
+    if (this.alreadyRevoked) throw new CertificateAlreadyRevokedError();
+    const plan = decide(this.snapshot);
+    this.corrected.push({ query, revocation, plan });
+    return Promise.resolve({
+      revoked: aView({
+        revokedAt: revocation.revokedAt,
+        revokedById: revocation.revokedById,
+        revocationReason: revocation.reason,
+      }),
+      issued: aView({
+        id: 'certificate-2',
+        number: 2,
+        type: plan.type,
+        issuedById: plan.issuedById,
+        restFrom: plan.rest?.from ?? null,
+        restTo: plan.rest?.to ?? null,
+      }),
+    });
+  }
 }
 
 const attendance = (
@@ -247,6 +277,14 @@ const rest = (days: number, overrides: Partial<IssueCertificateRequest> = {}) =>
     contingencyType: 'GENERAL_ILLNESS',
     ...overrides,
   });
+
+/** CER-053. The fields of an issue, without the attention a correction keeps. */
+const fieldsOf = (
+  request: IssueCertificateRequest,
+): Omit<IssueCertificateRequest, 'encounterId'> =>
+  Object.fromEntries(
+    Object.entries(request).filter(([field]) => field !== 'encounterId'),
+  ) as Omit<IssueCertificateRequest, 'encounterId'>;
 
 describe('el servicio de certificados', () => {
   let repository: FakeRepository;
@@ -415,6 +453,66 @@ describe('el servicio de certificados', () => {
     expect(plan.reason).toBe('Se emitió con el tipo equivocado');
     expect(plan.revokedAt).toBe(NOW);
     expect(revoked.revocationReason).toBe('Se emitió con el tipo equivocado');
+  });
+
+  it('CER-053 corrige en una sola llamada: anula con el motivo y la sesión, emite lo pedido a nombre de la sesión, y audita las dos', async () => {
+    const fields = fieldsOf(rest(5));
+    const corrected = await service.correct(
+      'certificate-1',
+      { ...fields, reason: 'Error en las fechas' },
+      requester,
+      [],
+    );
+
+    const [{ query, revocation, plan }] = repository.corrected as [
+      (typeof repository.corrected)[number],
+    ];
+    expect(query).toEqual({ certificateId: 'certificate-1', sites: [SITE] });
+    expect(revocation).toEqual({
+      revokedAt: NOW,
+      revokedById: USER,
+      reason: 'Error en las fechas',
+    });
+    expect(plan).toMatchObject({
+      type: 'MEDICAL_REST',
+      issuedById: PRACTITIONER,
+      issuedAt: NOW,
+      rest: { from: today, to: addDays(today, 4) },
+    });
+    expect(corrected.revoked.revocationReason).toBe('Error en las fechas');
+    expect(corrected.issued.iess?.lastValidationDay).toBe(addDays(today, 12));
+    expect(
+      entries.map(({ resourceId, action }) => [resourceId, action]),
+    ).toEqual([
+      ['certificate-1', 'UPDATE'],
+      ['certificate-2', 'CREATE'],
+    ]);
+  });
+
+  it('CER-053 y CER-040 sólo quien lo emitió o la dirección médica de su sede lo corrige, antes de escribir nada', async () => {
+    repository.revocationSnapshot = { issuerUserId: 'user-2', siteId: SITE };
+    const fields = fieldsOf(attendance());
+    const request = { ...fields, reason: 'Paciente equivocado' };
+
+    await expect(
+      service.correct('certificate-1', request, requester, []),
+    ).rejects.toMatchObject({ code: 'CERTIFICATE_REVOKE_FORBIDDEN' });
+    expect(repository.corrected).toEqual([]);
+    expect(entries).toEqual([]);
+
+    // Control positivo: con la dirección médica de esa sede, corrige.
+    await service.correct('certificate-1', request, requester, [SITE]);
+    expect(repository.corrected).toHaveLength(1);
+  });
+
+  it('CER-053 si el nuevo no se puede emitir, la negativa sale sin auditar ninguna anulación', async () => {
+    repository.snapshot = aSnapshot({ encounterStatus: 'COMPLETED' });
+    const fields = fieldsOf(attendance());
+
+    await expect(
+      service.correct('certificate-1', { ...fields, reason: 'Paciente equivocado' }, requester, []), // prettier-ignore
+    ).rejects.toMatchObject({ code: 'CERTIFICATE_ENCOUNTER_NOT_OPEN' });
+    expect(entries).toEqual([]);
   });
 
   it('CER-012 deja pasar la negativa de un certificado ya anulado sin auditar una anulacion que no ocurrio', async () => {

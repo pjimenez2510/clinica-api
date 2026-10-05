@@ -89,6 +89,7 @@ export const issueCertificateSchema = z.strictObject(
 );
 /** Body of POST /encounters/:encounterId/certificates. */
 export class IssueCertificateDto extends createZodDto(issueCertificateSchema) {}
+export type IssueCertificateBody = z.infer<typeof issueCertificateSchema>;
 
 /**
  * CER-011. Annulling: the reason, and nothing else. Who annulled it is the
@@ -104,6 +105,19 @@ export const revokeCertificateSchema = z.object({
 /** Body of POST /certificates/:certificateId/revoke. */
 export class RevokeCertificateDto extends createZodDto(
   revokeCertificateSchema,
+) {}
+
+/**
+ * CER-053. Correcting an issued certificate: the new certificate as it should
+ * read —the body of issuing one, still strict (CER-004)— and the reason of the
+ * annulment, the contract of revoking (CER-011, CER-052).
+ */
+export const correctCertificateSchema = issueCertificateSchema.extend(
+  revokeCertificateSchema.shape,
+);
+/** Body of POST /certificates/:certificateId/correct. */
+export class CorrectCertificateDto extends createZodDto(
+  correctCertificateSchema,
 ) {}
 
 /** A certificate as a client reads it on the write path. */
@@ -168,6 +182,22 @@ export const issuedCertificateSchema = z.object({
 export class IssuedCertificateDto extends createZodDto(
   issuedCertificateSchema,
 ) {}
+
+/**
+ * CER-053. A correction: the certificate it annulled and the one it issued,
+ * with what the IESS needs to be told about the new one.
+ */
+export const correctedCertificateSchema = z.object({
+  revoked: certificateSchema,
+  issued: issuedCertificateSchema,
+});
+/** Response of POST /certificates/:certificateId/correct. */
+export class CorrectedCertificateDto extends createZodDto(
+  correctedCertificateSchema,
+) {}
+export type CorrectedCertificateResponse = z.infer<
+  typeof correctedCertificateSchema
+>;
 
 /** «NA = no aplica», as the instructivo of form 117 writes it. */
 const NA = z.literal('NA');
