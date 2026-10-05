@@ -8,18 +8,35 @@
 -- anulada conserva `issued_at` y seguía contando.
 -- ═════════════════════════════════════════════════════════════════════════════
 
-ALTER TABLE "prescription" ADD COLUMN "diagnoses" JSONB;
+-- ⚠️ REAPLICABLE. PostgreSQL ejecuta esta migración sentencia a sentencia y
+-- sin una transacción que la envuelva: la primera versión se cortó en el
+-- UPDATE de abajo con la columna YA creada (base del autor, 04-10-2026). Cada
+-- paso es idempotente para que volver a aplicarla complete lo que falte.
+ALTER TABLE "prescription" ADD COLUMN IF NOT EXISTS "diagnoses" JSONB;
 
--- Las ya emitidas en una base de desarrollo: lo que hay ahora es lo único que
--- se sabe de entonces.
+-- Las ya emitidas: lo que hay ahora es lo único que se sabe de entonces.
+--
+-- ⚠️ CON `prescription_frozen` APAGADO MIENTRAS DURA EL RELLENO, Y SÓLO
+-- ENTONCES. Ese disparador no deja cambiar en una receta emitida más que su
+-- estado, y esta columna nueva es precisamente lo que una emitida aún no tiene:
+-- rellenarla es completar el registro, no editarlo. `DISABLE TRIGGER` con
+-- nombre (no `ALL`) lo puede hacer el dueño de la tabla sin superusuario, y
+-- deja activas las demás garantías.
+ALTER TABLE "prescription" DISABLE TRIGGER "prescription_frozen";
+
 UPDATE "prescription" p
    SET "diagnoses" = COALESCE((
          SELECT jsonb_agg(jsonb_build_object('code', d.cie10_code, 'display', d.cie10_display)
                           ORDER BY d.rank, d.recorded_at)
            FROM encounter_diagnosis d
           WHERE d.encounter_id = p.encounter_id), '[]'::jsonb)
- WHERE p.issued_at IS NOT NULL;
+ WHERE p.issued_at IS NOT NULL
+   AND p.diagnoses IS NULL;
 
+ALTER TABLE "prescription" ENABLE TRIGGER "prescription_frozen";
+
+ALTER TABLE "prescription"
+  DROP CONSTRAINT IF EXISTS "prescription_diagnoses_frozen_when_issued";
 ALTER TABLE "prescription"
   ADD CONSTRAINT "prescription_diagnoses_frozen_when_issued"
   CHECK (("issued_at" IS NULL) = ("diagnoses" IS NULL)
@@ -45,6 +62,7 @@ END;
 $$;
 
 -- «a_» para correr antes que `prescription_frozen` (orden alfabético).
+DROP TRIGGER IF EXISTS "a_prescription_freeze_diagnoses" ON "prescription";
 CREATE TRIGGER "a_prescription_freeze_diagnoses"
   BEFORE INSERT OR UPDATE ON "prescription"
   FOR EACH ROW
@@ -91,6 +109,7 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS "encounter_diagnosis_identity_frozen" ON "encounter_diagnosis";
 CREATE TRIGGER "encounter_diagnosis_identity_frozen"
   BEFORE UPDATE ON "encounter_diagnosis"
   FOR EACH ROW
