@@ -3,11 +3,13 @@ import { describe, expect, it } from 'vitest';
 import {
   applicableRange,
   classifyNumeric,
+  criticalBounds,
+  keepStandingCritical,
   classifyQualitative,
   isCritical,
 } from './abnormal-flag';
 import { GLUCOSE, HAEMOGLOBIN, NITRITES } from './analyte.fixtures';
-import type { PatientProfile, ReferenceRange } from './analyte';
+import type { AbnormalFlag, PatientProfile, ReferenceRange } from './analyte';
 
 /**
  * The flag: the number that decides whether somebody phones the patient
@@ -129,6 +131,136 @@ describe('la bandera de anormalidad', () => {
       referenceHigh: null,
       referenceText: 'Negativo',
     });
+  });
+
+  it('ORD-036 un crítico por sexo con un solo lado toma el otro del crítico general', () => {
+    // D-123.2: «varón» sólo con el alto. El varón con glucosa 25 no puede
+    // quedarse en LOW: hereda el bajo de 40 del general.
+    const ranges: ReferenceRange[] = [
+      ...GLUCOSE.ranges,
+      { rangeKind: 'CRITICAL', sex: 'MALE', ageMinDays: null, ageMaxDays: null, low: null, high: 450, text: null }, // prettier-ignore
+    ];
+    expect(classifyNumeric(25, { ranges }, man).flag).toBe('CRITICAL_LOW');
+    // El lado que sí escribió manda sobre el general: 420 ya no es crítico.
+    expect(classifyNumeric(420, { ranges }, man).flag).toBe('HIGH');
+    expect(classifyNumeric(460, { ranges }, man).flag).toBe('CRITICAL_HIGH');
+    // Control positivo: a la mujer le sigue aplicando el general entero.
+    expect(classifyNumeric(420, { ranges }, woman).flag).toBe('CRITICAL_HIGH');
+    expect(criticalBounds(ranges, man)).toMatchObject({
+      low: { value: 40 },
+      high: { value: 450 },
+    });
+  });
+
+  it('ORD-036 el rango de referencia no hereda: se aplica entero', () => {
+    const ranges: ReferenceRange[] = [
+      { rangeKind: 'REFERENCE', sex: null, ageMinDays: null, ageMaxDays: null, low: 70, high: 100, text: null }, // prettier-ignore
+      { rangeKind: 'REFERENCE', sex: 'MALE', ageMinDays: null, ageMaxDays: null, low: null, high: 110, text: null }, // prettier-ignore
+    ];
+    expect(classifyNumeric(60, { ranges }, man)).toMatchObject({
+      flag: 'NORMAL',
+      referenceLow: null,
+      referenceHigh: 110,
+    });
+  });
+
+  it('ORD-036 ningún paciente pierde un lado de alerta, y cada lado toma el umbral del crítico más específico que lo tiene', () => {
+    // Exhaustiva: un crítico general y uno calificado (por sexo, por edad
+    // —con y sin mínimo— o por los dos), cada uno con uno o dos lados, sobre
+    // todos los sexos y los bordes de cada tramo. El oráculo se escribe aparte
+    // del código: de los críticos que alcanzan al paciente y tienen ese lado,
+    // el más específico (sexo pesa 2, edad 1).
+    const general = [
+      { low: 40, high: 400 },
+      { low: 40, high: null },
+      { low: null, high: 400 },
+    ];
+    const specificSides = [
+      { low: 30, high: 450 },
+      { low: 30, high: null },
+      { low: null, high: 450 },
+    ];
+    const qualifiers = [
+      { sex: 'MALE' as const, ageMinDays: null, ageMaxDays: null },
+      { sex: null, ageMinDays: 0, ageMaxDays: 27 },
+      { sex: null, ageMinDays: null, ageMaxDays: 364 },
+      { sex: 'FEMALE' as const, ageMinDays: 28, ageMaxDays: 364 },
+    ];
+    const sexes = ['MALE', 'FEMALE', 'INTERSEX', 'UNKNOWN', null] as const;
+    const ages = [null, 0, 27, 28, 364, 365, 12_000];
+
+    const reaches = (range: ReferenceRange, patient: PatientProfile) => {
+      if (range.sex !== null && range.sex !== patient.sex) return false;
+      if (range.ageMinDays === null && range.ageMaxDays === null) return true;
+      if (patient.ageDays === null) return false;
+      return (
+        patient.ageDays >= (range.ageMinDays ?? 0) &&
+        patient.ageDays <= (range.ageMaxDays ?? Infinity)
+      );
+    };
+    const weight = (range: ReferenceRange) =>
+      (range.sex !== null ? 2 : 0) +
+      (range.ageMinDays !== null || range.ageMaxDays !== null ? 1 : 0);
+    const expected = (
+      ranges: ReferenceRange[],
+      patient: PatientProfile,
+      side: 'low' | 'high',
+    ) =>
+      // prettier-ignore
+      ranges
+        .filter((range) => range[side] !== null && reaches(range, patient))
+        .sort((a, b) => weight(b) - weight(a))[0]?.[side] ?? null;
+
+    let checked = 0;
+    for (const sides of general) {
+      for (const qualifier of qualifiers) {
+        for (const specific of specificSides) {
+          const ranges: ReferenceRange[] = [
+            { rangeKind: 'CRITICAL', sex: null, ageMinDays: null, ageMaxDays: null, text: null, ...sides }, // prettier-ignore
+            { rangeKind: 'CRITICAL', text: null, ...qualifier, ...specific },
+          ];
+          for (const sex of sexes) {
+            for (const ageDays of ages) {
+              const patient = { sex, ageDays };
+              const low = expected(ranges, patient, 'low');
+              const high = expected(ranges, patient, 'high');
+              const flag = (value: number) => classifyNumeric(value, { ranges }, patient).flag; // prettier-ignore
+              if (low !== null) {
+                expect(flag(low - 0.5)).toBe('CRITICAL_LOW');
+                expect(flag(low + 0.5)).not.toBe('CRITICAL_LOW');
+                checked++;
+              }
+              if (high !== null) {
+                expect(flag(high + 0.5)).toBe('CRITICAL_HIGH');
+                expect(flag(high - 0.5)).not.toBe('CRITICAL_HIGH');
+                checked++;
+              }
+            }
+          }
+        }
+      }
+    }
+    // Control positivo: la exhaustiva recorrió de verdad los casos.
+    expect(checked).toBeGreaterThan(1_000);
+  });
+
+  it('ORD-054 ORD-114 una corrección no baja de crítico un valor igual o más extremo que el que ya era crítico', () => {
+    // El 420 fue crítico con el umbral de 400; hoy rige 500 y daría HIGH.
+    const was = { analyteDisplay: 'Glucosa', valueNumeric: 420, abnormalFlag: 'CRITICAL_HIGH' as const }; // prettier-ignore
+    const now = (valueNumeric: number, abnormalFlag: AbnormalFlag | null) => ({ analyteDisplay: 'Glucosa', valueNumeric, abnormalFlag }); // prettier-ignore
+
+    expect(keepStandingCritical(now(420, 'HIGH'), [was]).abnormalFlag).toBe('CRITICAL_HIGH'); // prettier-ignore
+    expect(keepStandingCritical(now(450, 'HIGH'), [was]).abnormalFlag).toBe('CRITICAL_HIGH'); // prettier-ignore
+    // Control positivo: el laboratorio lo corrigió a menos extremo, rige el umbral de hoy.
+    expect(keepStandingCritical(now(410, 'HIGH'), [was]).abnormalFlag).toBe('HIGH'); // prettier-ignore
+    // Y por abajo, igual.
+    const low = { analyteDisplay: 'Glucosa', valueNumeric: 35, abnormalFlag: 'CRITICAL_LOW' as const }; // prettier-ignore
+    expect(keepStandingCritical(now(30, 'LOW'), [low]).abnormalFlag).toBe('CRITICAL_LOW'); // prettier-ignore
+    expect(keepStandingCritical(now(50, 'LOW'), [low]).abnormalFlag).toBe(
+      'LOW',
+    );
+    // Otra determinación no se mezcla.
+    expect(keepStandingCritical({ ...now(420, 'HIGH'), analyteDisplay: 'Urea' }, [was]).abnormalFlag).toBe('HIGH'); // prettier-ignore
   });
 
   it('ORD-060 reconoce las dos banderas que tienen que llegar hoy a una persona', () => {

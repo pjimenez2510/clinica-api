@@ -157,6 +157,19 @@ const rangeResponse = z.object({
   text: z.string().nullable(),
 });
 
+/** ORD-114. One version of a range, with the time it applied. */
+export const rangeHistorySchema = z.object({
+  items: z.array(
+    rangeResponse.extend({
+      validFrom: z.iso.datetime(),
+      /** `null` while it is the one in force. */
+      validTo: z.iso.datetime().nullable(),
+    }),
+  ),
+});
+/** Response of GET /exam-catalogue/analytes/:analyteId/ranges/history. */
+export class RangeHistoryDto extends createZodDto(rangeHistorySchema) {}
+
 export const adminAnalyteSchema = z.object({
   id: z.uuid(),
   code: z.string(),
@@ -236,3 +249,4 @@ export type AdminExamResponse = z.infer<typeof adminExamSchema>;
 export type AdminExamListResponse = z.infer<typeof adminExamListSchema>;
 export type AdminAnalyteResponse = z.infer<typeof adminAnalyteSchema>;
 export type AdminAnalyteListResponse = z.infer<typeof adminAnalyteListSchema>;
+export type RangeHistoryResponse = z.infer<typeof rangeHistorySchema>;

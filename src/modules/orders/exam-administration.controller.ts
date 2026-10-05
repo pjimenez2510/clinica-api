@@ -40,12 +40,14 @@ import {
   CreateAnalyteDto,
   CreateExamDto,
   ExamStructureDto,
+  RangeHistoryDto,
   UpdateAnalyteDto,
   UpdateExamDto,
   type AdminAnalyteListResponse,
   type AdminAnalyteResponse,
   type AdminExamListResponse,
   type AdminExamResponse,
+  type RangeHistoryResponse,
 } from './dto/exam-administration.dto';
 
 /**
@@ -175,6 +177,28 @@ export class ExamAdministrationController {
     return toAnalyteResponse(
       await this.catalogue.setRanges(analyteId, ranges, this.editor(req)),
     );
+  }
+
+  /**
+   * ORD-114. The ranges as they were, so «¿qué umbral regía ese día?» has an
+   * answer. Read with `catalog:manage` and not audited: it is configuration,
+   * with no patient in it.
+   */
+  @Get('analytes/:analyteId/ranges/history')
+  @RequirePermission('catalog:manage', 'global')
+  @ApiOperation({ summary: 'Historial de los rangos de una determinación' })
+  @ApiOkResponse({ type: RangeHistoryDto })
+  async rangeHistory(
+    @Param('analyteId', ParseUUIDPipe) analyteId: string,
+  ): Promise<RangeHistoryResponse> {
+    const versions = await this.catalogue.rangeHistory(analyteId);
+    return {
+      items: versions.map((version) => ({
+        ...version,
+        validFrom: version.validFrom.toISOString(),
+        validTo: version.validTo?.toISOString() ?? null,
+      })),
+    };
   }
 
   /** ORD-111. Who changes the catalogue, from the session, never the body. */

@@ -37,6 +37,11 @@ import {
   totalsOf,
 } from '../domain/charge';
 import type { Quantity } from '../domain/money';
+import {
+  CLINICAL_ACTS_REPOSITORY,
+  type ClinicalActsRepository,
+  type DraftOrderNotice,
+} from '../domain/clinical-acts.port';
 
 /** An account with its charges and the total DERIVED from them (BI-074). */
 export interface AccountStatement {
@@ -61,6 +66,11 @@ export interface AccountStatement {
    * amount that is not the one issued.
    */
   invoiceableTotals: DocumentTotals;
+  /**
+   * BI-192. The visit's exam orders nobody issued: they propose no charge, so
+   * the cashier is told before closing — never stopped (D-123.6).
+   */
+  draftOrders: DraftOrderNotice[];
 }
 
 /**
@@ -92,6 +102,8 @@ export class PatientAccountService {
     private readonly catalogue: BillingCatalogueRepository,
     @Inject(ACCESS_AUDIT_RECORDER)
     private readonly audit: AccessAuditRecorder,
+    @Inject(CLINICAL_ACTS_REPOSITORY)
+    private readonly acts: Pick<ClinicalActsRepository, 'draftOrdersOf'>,
   ) {}
 
   /**
@@ -171,6 +183,12 @@ export class PatientAccountService {
   }): Promise<AccountStatement> {
     const account = await this.requireAccount(query);
     const charges = await this.accounts.listCharges(account.id);
+    const draftOrders = account.encounterId
+      ? await this.acts.draftOrdersOf({
+          encounterId: account.encounterId,
+          siteId: account.siteId,
+        })
+      : [];
 
     return {
       account,
@@ -184,6 +202,7 @@ export class PatientAccountService {
       invoiceableTotals: totalsOf(
         charges.filter((charge) => charge.status === 'BILLABLE').map(toLine),
       ),
+      draftOrders,
     };
   }
 

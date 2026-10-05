@@ -27,7 +27,16 @@ import type {
  * screen.
  */
 
-/** An analyte with every range it declares, of whatever kind. */
+/**
+ * An analyte with every range IN FORCE, of whatever kind.
+ *
+ * ⚠️ `valid_to IS NULL` AND NOTHING ELSE (ORD-114). Everything that classifies
+ * a value or edits the catalogue reads through here, and a closed row that
+ * still counted would sit beside its replacement as two equally specific
+ * ranges — the flag would depend on the order the rows came back in. «In
+ * force» is the absence of a closing instant, not a comparison with the
+ * clock: a clock that is off cannot leave a patient without a range.
+ */
 export const ANALYTE_SELECT = {
   id: true,
   code: true,
@@ -37,6 +46,15 @@ export const ANALYTE_SELECT = {
   decimals: true,
   allowedValues: true,
   referenceRanges: {
+    where: { validTo: null },
+    // A STABLE ORDER, not the rows' age: editing one range opens a newer row
+    // (ORD-113), and the editor's rows must not jump on every save.
+    orderBy: [
+      { rangeKind: 'desc' },
+      { sex: { sort: 'asc', nulls: 'first' } },
+      { ageMinDays: { sort: 'asc', nulls: 'first' } },
+      { validFrom: 'asc' },
+    ],
     select: {
       rangeKind: true,
       sex: true,
@@ -204,7 +222,7 @@ function toAllowedValues(value: Prisma.JsonValue): readonly string[] | null {
  * `analyte_reference_range_kind_is_known`; `sex` is a bare `varchar(16)` with no
  * CHECK in the migrations, so the database does not guard that cast.
  */
-function toRange(row: {
+export function toRange(row: {
   rangeKind: string;
   sex: string | null;
   ageMinDays: number | null;
