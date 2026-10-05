@@ -220,10 +220,14 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
         throw new ExamCategoryMismatchError();
       }
 
-      await tx.$executeRaw`
-        UPDATE "service_order"
-           SET "status" = 'ISSUED', "requested_at" = now(), "updated_at" = now()
-         WHERE "id" = ${draft.id}::uuid`;
+      // The issue instant from the application's clock, like every other
+      // instant this module writes (a cancellation, a discard): PostgreSQL's
+      // own `now()` is a second clock, and the order was born «yesterday»
+      // wherever the two disagreed (seen in the walks, which move the first).
+      await tx.serviceOrder.update({
+        where: { id: draft.id },
+        data: { status: 'ISSUED', requestedAt: new Date() },
+      });
 
       return tx.serviceOrder.findUniqueOrThrow({
         where: { id: draft.id },

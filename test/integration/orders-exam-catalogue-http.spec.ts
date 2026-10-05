@@ -181,6 +181,17 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
   const examCoded = (code: string) =>
     prisma.examDefinition.findUniqueOrThrow({ where: { code } });
 
+  it('ORD-101 el catálogo que se lee al pedir publica el tipo de cada examen', async () => {
+    const orderable = (await get('/exams').expect(200)).body as {
+      items: { code: string; category: string }[];
+    };
+    const byCode = new Map(orderable.items.map((e) => [e.code, e.category]));
+
+    expect(byCode.get('EX-BH')).toBe('LABORATORY');
+    expect(byCode.get('EX-RX-TORAX')).toBe('IMAGING');
+    expect(byCode.get('EX-ECG')).toBe('PROCEDURE');
+  });
+
   it('ORD-103 ORD-111 da de alta un examen, lo lista con los desactivados y deja rastro', async () => {
     const created = await send('post', '/exam-catalogue/exams', NEW_EXAM).expect(201); // prettier-ignore
     const exam = created.body as AdminExam;
