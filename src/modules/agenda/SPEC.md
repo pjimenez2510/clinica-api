@@ -1436,7 +1436,9 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
 
 - **AG-160** — CUANDO quien tiene `record:read` elija «Ver atención» en una
   cita **cerrada** con atención (atendida, también interrumpida), la pantalla
-  DEBERÁ abrir esa atención en **solo lectura**; y SI la cita está cerrada,
+  DEBERÁ abrir esa atención **como está**: en solo lectura si la atención ya
+  terminó, y con la enmienda de su nota a mano si sólo tiene el alta
+  (D-127); y SI la cita está cerrada,
   ENTONCES la pantalla NO DEBERÁ abrir una atención nueva desde ella, ni
   ofrecerlo.
   > Revisión de usabilidad del autor del 04-10-2026: una cita «Atendida» no
