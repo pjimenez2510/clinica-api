@@ -448,6 +448,8 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         sequenceNumber: true,
         warningSigns: true,
         nonPharmacologicalAdvice: true,
+        // PR-026, EN-182. What the receta said when it was issued.
+        diagnoses: true,
         encounter: {
           select: {
             siteId: true,
@@ -518,10 +520,14 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
           row.encounter.ageYears,
           row.encounter.ageMonths,
         ),
-        diagnoses: row.encounter.diagnoses.map((diagnosis) => ({
-          code: diagnosis.cie10Code,
-          display: diagnosis.cie10Display,
-        })),
+        // PR-026, EN-182. Issued, the diagnoses frozen at the issue (the
+        // attention's may have been corrected since); a draft, the live ones.
+        diagnoses:
+          frozenDiagnoses(row.diagnoses) ??
+          row.encounter.diagnoses.map((diagnosis) => ({
+            code: diagnosis.cie10Code,
+            display: diagnosis.cie10Display,
+          })),
         // Refuted ones are filtered HERE and not in the `where`, because
         // `chartScopeSelect` applies one selection to both halves of the chart:
         // knowing an allergy was ruled out is clinical information, and it is
@@ -851,4 +857,23 @@ function nameOf(site: {
   establishment: { legalName: string; tradeName: string | null };
 }): string {
   return site.establishment.tradeName ?? site.establishment.legalName;
+}
+
+/**
+ * PR-026, EN-182. The receta's frozen `[{code, display}]`, or `null` while it
+ * is a draft. Read defensively: a JSON column is only as typed as its CHECK.
+ */
+function frozenDiagnoses(
+  value: Prisma.JsonValue | null,
+): { code: string; display: string }[] | null {
+  if (!Array.isArray(value)) return null;
+  return value.flatMap((entry) =>
+    entry !== null &&
+    typeof entry === 'object' &&
+    !Array.isArray(entry) &&
+    typeof entry.code === 'string' &&
+    typeof entry.display === 'string'
+      ? [{ code: entry.code, display: entry.display }]
+      : [],
+  );
 }

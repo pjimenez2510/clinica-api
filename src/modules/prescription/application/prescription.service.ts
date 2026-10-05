@@ -16,6 +16,8 @@ import { clinicalDateOf } from '../../../shared/domain/clinic-time';
 import { exactAllergyMatches } from '../domain/allergy-check';
 import { assertPrescriptionComplete } from '../domain/prescription-content';
 import { composeDocument } from '../domain/prescription-document';
+import type { DeclaredPresentation } from '../domain/prescription-vocabulary';
+import { writeItem, type WrittenItem } from '../domain/written-item';
 import {
   AllergyContraindicationError,
   PrescriberContactRequiredError,
@@ -30,7 +32,6 @@ import {
 } from '../domain/prescription.errors';
 import {
   PRESCRIPTION_REPOSITORY,
-  type NewPrescriptionItem,
   type PrescriptionRepository,
   type PrescriptionView,
   type SiteScopeFilter,
@@ -72,7 +73,16 @@ export interface ComposePrescriptionRequest {
   /** PR-038, PR-039. Optional while composing; the issue demands them. */
   warningSigns?: string | null;
   nonPharmacologicalAdvice?: string | null;
-  items: readonly NewPrescriptionItem[];
+  /** PR-101, PR-102. Codes; the sentences are composed by `writeItem`. */
+  items: readonly WrittenItem[];
+}
+
+/** PR-100. What rewriting a draft needs to be told. */
+export interface RewritePrescriptionRequest {
+  prescriptionId: string;
+  warningSigns?: string | null;
+  nonPharmacologicalAdvice?: string | null;
+  items: readonly WrittenItem[];
 }
 
 /**
@@ -173,7 +183,7 @@ export class PrescriptionService {
       prescriberId: prescriber.practitionerId,
       warningSigns: request.warningSigns ?? null,
       nonPharmacologicalAdvice: request.nonPharmacologicalAdvice ?? null,
-      items: request.items,
+      items: request.items.map(writeItem),
       sites: requester.sites,
     });
 
@@ -210,6 +220,63 @@ export class PrescriptionService {
     this.logger.info(
       { site_id: encounter.siteId, action: 'PRESCRIPTION_COMPOSED' },
       'prescription composed',
+    );
+
+    return { prescription, allergyAlerts };
+  }
+
+  /** PR-103, PR-104. The presentations of one medicine, for the picker. */
+  presentationsOf(conceptId: string): Promise<DeclaredPresentation[]> {
+    return this.prescriptions.presentationsOf(conceptId);
+  }
+
+  /**
+   * PR-100. Rewrites a draft whole — its lines and its indications — so the
+   * doctor corrects it instead of discarding and typing it again. Who may,
+   * whether it is still a draft and whether the attention still admits
+   * prescribing are judged by the adapter under the locks.
+   */
+  async rewrite(
+    request: RewritePrescriptionRequest,
+    requester: Requester,
+  ): Promise<ComposedPrescription> {
+    const prescriber = await this.requirePrescriber(requester.userId);
+
+    const prescription = await this.prescriptions.rewriteDraft({
+      prescriptionId: request.prescriptionId,
+      prescriberId: prescriber.practitionerId,
+      warningSigns: request.warningSigns ?? null,
+      nonPharmacologicalAdvice: request.nonPharmacologicalAdvice ?? null,
+      items: request.items.map(writeItem),
+      sites: requester.sites,
+    });
+
+    // PR-067. Informative while composing, exactly as `compose` does it.
+    const encounter = await this.requireEncounter(
+      prescription.encounterId,
+      requester,
+    );
+    const allergies = await this.allergies.activeFor(encounter.patientId);
+    const allergyAlerts = exactAllergyMatches(
+      prescription.items.map((item) => ({
+        line: item.line,
+        conceptId: item.conceptId,
+      })),
+      allergies,
+    );
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: RESOURCE_TYPE,
+      resourceId: prescription.id,
+      action: 'UPDATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+
+    this.logger.info(
+      { site_id: encounter.siteId, action: 'PRESCRIPTION_REWRITTEN' },
+      'prescription draft rewritten',
     );
 
     return { prescription, allergyAlerts };
@@ -451,14 +518,20 @@ export class PrescriptionService {
   async listOfEncounter(
     encounterId: string,
     requester: Requester,
-  ): Promise<PrescriptionView[]> {
+  ): Promise<{ items: PrescriptionView[]; callerPrescriberId: string | null }> {
     // PR-001. Refuses an attention outside the caller's scope before serving
     // anything that hangs off it.
     await this.requireEncounter(encounterId, requester);
-    return this.prescriptions.listOfEncounter({
-      encounterId,
-      sites: requester.sites,
-    });
+    const [items, caller] = await Promise.all([
+      this.prescriptions.listOfEncounter({
+        encounterId,
+        sites: requester.sites,
+      }),
+      this.prescriptions.findPrescriberByUser(requester.userId),
+    ]);
+    // PR-100. Who the caller is as a prescriber, so the screen opens only the
+    // drafts it may rewrite instead of one that answers 403 after typing.
+    return { items, callerPrescriberId: caller?.practitionerId ?? null };
   }
 
   /**

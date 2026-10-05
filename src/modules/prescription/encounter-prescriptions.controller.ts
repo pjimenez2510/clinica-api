@@ -23,7 +23,10 @@ import { RequirePermission } from '../../shared/http/auth.decorators';
 import type { Permission } from '../../shared/authorisation/permission.catalogue';
 
 import { PrescriptionService } from './application/prescription.service';
-import { toPrescriptionResponse } from './prescription.presenter';
+import {
+  toPrescriptionResponse,
+  toWrittenItem,
+} from './prescription.presenter';
 import {
   ComposePrescriptionDto,
   ComposedPrescriptionDto,
@@ -92,21 +95,7 @@ export class EncounterPrescriptionsController {
         encounterId,
         warningSigns: dto.warningSigns ?? null,
         nonPharmacologicalAdvice: dto.nonPharmacologicalAdvice ?? null,
-        items: dto.items.map((item) => ({
-          conceptId: item.conceptId ?? null,
-          // PR-008. Only read when there is no concept: with one, the DCI comes
-          // from the CNMB row the adapter reads in the write's transaction.
-          genericName: item.genericName ?? null,
-          presentation: item.presentation,
-          concentration: item.concentration,
-          routeCode: item.routeCode,
-          quantity: item.quantity,
-          doseText: item.doseText,
-          frequencyText: item.frequencyText,
-          durationDays: item.durationDays,
-          instructions: item.instructions ?? null,
-          offFormularyJustification: item.offFormularyJustification ?? null,
-        })),
+        items: dto.items.map(toWrittenItem),
       },
       this.requester(req, 'prescription:write'),
     );
@@ -133,11 +122,14 @@ export class EncounterPrescriptionsController {
     @Param('encounterId', ParseUUIDPipe) encounterId: string,
     @Req() req: Request,
   ): Promise<PrescriptionListResponse> {
-    const items = await this.prescriptions.listOfEncounter(
+    const list = await this.prescriptions.listOfEncounter(
       encounterId,
       this.requester(req, 'record:read'),
     );
-    return { items: items.map(toPrescriptionResponse) };
+    return {
+      items: list.items.map(toPrescriptionResponse),
+      callerPrescriberId: list.callerPrescriberId,
+    };
   }
 
   /** Who is asking, for the access trail and for the site scope. */

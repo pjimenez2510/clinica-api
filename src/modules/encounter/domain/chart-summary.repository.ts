@@ -138,6 +138,54 @@ export interface SummaryVitals {
 }
 
 /** EN-159. The read model described at the top of this file: one statement, no note text. */
+/**
+ * EN-184. Whether the same CIE-10 CATEGORY was already diagnosed in an
+ * earlier, non-annulled attention of the chart, inside the caller's scope.
+ */
+export interface PriorCategoryQuery {
+  patientId: string;
+  sites: SiteScopeFilter;
+  /** The attention being coded: neither it nor anything after it counts. */
+  encounterId: string;
+  before: Date;
+  /** The three-character category: E11 for E119 and for E116 alike. */
+  category: string;
+}
+
+/** EN-184. The diagnosis that makes «subsecuente» the proposal. */
+export interface PriorDiagnosis {
+  encounterStartedAt: Date;
+  cie10Code: string;
+  cie10Display: string;
+}
+
+/** EN-185. The appointment about to be attended, within the caller's scope. */
+export interface AppointmentForProposal {
+  patientId: string;
+  /** `null` when the appointment has no service type to tell the specialty. */
+  specialtyId: string | null;
+}
+
+/** EN-185. The chart's attentions that could be of the same service. */
+export interface SameServiceQuery {
+  patientId: string;
+  sites: SiteScopeFilter;
+  specialtyId: string;
+  /** The appointment being opened: its own attention is not «antes». */
+  agendaEntryId: string;
+}
+
+/**
+ * EN-185. The latest earlier attention that is of the same specialty — or of
+ * one nobody can tell, because without a service type it may well be.
+ */
+export interface PriorAttention {
+  startedAt: Date;
+  /** Whether it is KNOWN to be the same specialty; false is «no se sabe». */
+  sameSpecialty: boolean;
+  principal: { cie10Code: string; cie10Display: string } | null;
+}
+
 export interface ChartSummaryRepository {
   /**
    * EN-159. The chart's previous attentions, newest first, in ONE statement.
@@ -167,6 +215,42 @@ export interface ChartSummaryRepository {
    * shorter than it is.
    */
   countEncounters(query: ChartSummaryQuery): Promise<number>;
+
+  /** EN-184. The latest earlier diagnosis of the same category, or `null`. */
+  priorDiagnosisInCategory(
+    query: PriorCategoryQuery,
+  ): Promise<PriorDiagnosis | null>;
+
+  /** EN-185. The appointment, or `null` when it is outside the scope. */
+  appointmentForProposal(
+    agendaEntryId: string,
+    sites: SiteScopeFilter,
+  ): Promise<AppointmentForProposal | null>;
+
+  /**
+   * EN-185. The latest earlier attention of the same specialty OR of an
+   * unknown one, or `null` when every earlier attention is known to be of
+   * another — the only case in which «primera vez» is certain.
+   */
+  latestAttentionPossiblyInService(
+    query: SameServiceQuery,
+  ): Promise<PriorAttention | null>;
+
+  /**
+   * EN-185. Whether such an attention exists at ANY site — a yes or no and
+   * nothing else, so no clinical content leaves the caller's scope. Without
+   * it, «primera vez» would be «certain» only within the sites the caller
+   * happens to cover, and the difference is charged (BI-158).
+   */
+  anyAttentionPossiblyInService(
+    query: Omit<SameServiceQuery, 'sites'>,
+  ): Promise<boolean>;
+
+  /**
+   * EN-184. The CIE-10 code of a concept, or `null` when it is not a CIE-10
+   * concept: the proposal then has nothing to compare.
+   */
+  cie10CodeOf(conceptId: string): Promise<string | null>;
 }
 
 /** Injection token. The application never names the adapter. */
