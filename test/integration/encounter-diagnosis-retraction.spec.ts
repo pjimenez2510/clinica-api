@@ -154,6 +154,76 @@ describe('quitar un diagnóstico deja rastro (EN-180 a EN-183)', () => {
     expect(await prisma.encounterDiagnosisRetraction.count({ where: { encounterId: encounter.id } })).toBe(2); // prettier-ignore
   });
 
+  it('EN-188 con el alta la BASE exige el motivo aunque no haya nota firmada; con motivo, lo archiva', async () => {
+    const prisma = db();
+    const { encounter, diagnoses, remover } =
+      await anEncounterWithDiagnoses(prisma);
+    const [first, second] = diagnoses;
+
+    // Positive control: live and nothing signed, no reason needed.
+    await archive(prisma, second!.id, remover.id);
+    await remove(prisma, second!.id);
+
+    await prisma.encounter.update({
+      where: { id: encounter.id },
+      data: {
+        status: 'DISCHARGED',
+        endedAt: new Date(encounter.startedAt.getTime() + 20 * 60_000),
+        dischargeCondition: 'ALIVE',
+      },
+    });
+
+    await expect(archive(prisma, first!.id, remover.id)).rejects.toThrow(
+      /encounter_diagnosis_retraction_reason/,
+    );
+    await archive(prisma, first!.id, remover.id, 'Código equivocado');
+    await remove(prisma, first!.id);
+    expect(await prisma.encounterDiagnosis.count({ where: { encounterId: encounter.id } })).toBe(0); // prettier-ignore
+  });
+
+  it('EN-189 un certificado emitido —vigente o anulado— que imprimió el código hace que la BASE exija el motivo; uno que imprimió otro, no', async () => {
+    const prisma = db();
+    const { practitioner, encounter, diagnoses, remover } =
+      await anEncounterWithDiagnoses(prisma);
+    const [first, second] = diagnoses;
+    let code = 0;
+    const certificate = async (printed: string) => {
+      const [row] = await prisma.$queryRaw<{ id: string }[]>`
+        INSERT INTO medical_certificate
+          (encounter_id, patient_id, issued_by_id, type, verification_code,
+           include_diagnosis, diagnoses)
+        VALUES (${encounter.id}::uuid, ${encounter.patientId}::uuid,
+                ${practitioner.id}::uuid, 'ATTENDANCE',
+                ${`EN189-${String((code += 1))}-${encounter.id.slice(0, 8)}`},
+                true,
+                ${JSON.stringify([{ code: printed, display: 'x', certainty: 'PRESUMPTIVE' }])}::jsonb)
+        RETURNING id`;
+      return row!.id;
+    };
+
+    // Positive control: a certificate that printed ANOTHER code.
+    await certificate('A09');
+    await archive(prisma, second!.id, remover.id);
+
+    const printedFirst = await certificate(first!.cie10Code);
+    await prisma.$executeRaw`
+      UPDATE medical_certificate
+         SET revoked_at = now(), revoked_by_id = ${remover.id}::uuid,
+             revocation_reason = 'Se emitió por error'
+       WHERE id = ${printedFirst}::uuid`;
+
+    await expect(archive(prisma, first!.id, remover.id)).rejects.toThrow(
+      /encounter_diagnosis_retraction_reason/,
+    );
+    await archive(
+      prisma,
+      first!.id,
+      remover.id,
+      'El certificado decía J02 y era R50',
+    );
+    expect(await prisma.encounterDiagnosisRetraction.count({ where: { encounterId: encounter.id } })).toBe(2); // prettier-ignore
+  });
+
   it('EN-182 PR-026 la receta emitida CONGELA sus diagnósticos: quitar o reordenar después no cambia lo que dice', async () => {
     const prisma = db();
     const { site, practitioner, encounter, diagnoses, remover } =

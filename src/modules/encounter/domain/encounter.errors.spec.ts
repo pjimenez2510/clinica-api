@@ -166,6 +166,11 @@ describe('el contrato de errores de la atención', () => {
     expect(reason.code).toBe('DIAGNOSIS_RETRACTION_REASON_REQUIRED');
     expect(reason).toBeInstanceOf(ValidationError);
     expect(reason.fieldErrors?.[0]?.field).toBe('reason');
+    // EN-188, EN-189: el motivo se debe también con el alta o un certificado
+    // que lo imprimió, así que el título no puede hablar sólo de la nota.
+    expect(reason.userTitle).toBe(
+      'Indique por qué quita el diagnóstico: ya consta en lo firmado o impreso de esta atención',
+    );
 
     const cited = new DiagnosisCitedByIssuedDocumentError();
     expect(cited.code).toBe('DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT');

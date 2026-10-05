@@ -188,6 +188,23 @@ export function acceptsNewClinicalContent(status: EncounterStatus): boolean {
 }
 
 /**
+ * EN-180, EN-183, EN-188. Whether a diagnosis may still be taken off the
+ * attention or another made the principal.
+ *
+ * WIDER THAN `acceptsNewClinicalContent`: after the discharge nothing new is
+ * coded, but a wrong code has to be correctable, because the monthly report
+ * reads the attention's diagnoses and not the note (D-117.8). An interrupted
+ * attention has no discharge to correct and an annulled one never existed.
+ */
+export function acceptsDiagnosisCorrection(status: EncounterStatus): boolean {
+  return (
+    acceptsNewClinicalContent(status) ||
+    status === 'DISCHARGED' ||
+    status === 'COMPLETED'
+  );
+}
+
+/**
  * EN-166 (D-077, D-080). Annulling an attention: «this should never have
  * existed», with its reason, author and instant.
  *
