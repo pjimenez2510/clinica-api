@@ -2275,12 +2275,14 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   > va al reporte. No confundir con anular (EN-018), que dice que la atención no
   > debió existir.
 - **EN-166** — CUANDO quien tenga `record:write` anule una atención `OPEN` u
-  `ON_HOLD` (EN-018) siendo su profesional —o, si es otro, con `record:sign` y
-  motivo de sustitución (EN-144, EN-147)—, el sistema DEBERÁ exigir motivo
-  escrito, DEBERÁ guardar en la propia
+  `ON_HOLD` (EN-018) siendo su profesional —o, si es otro, con `record:sign`
+  (EN-144, EN-147)—, el sistema DEBERÁ guardar en la propia
   fila el motivo, quién la anuló y el instante, y NO DEBERÁ borrar ni cambiar
   sus notas, signos ni diagnósticos; la base DEBERÁ rechazar una atención
-  `ENTERED_IN_ERROR` sin esos tres datos.
+  `ENTERED_IN_ERROR` sin quién ni cuándo.
+  > **Enmendado por EN-218 (D-126.2, 05-10-2026):** el motivo es opcional,
+  > el sustituto no da motivo, y los borradores de receta y orden se
+  > descartan con la anulación en lugar de impedirla.
   > **D-077, D-080 §1 y §2.** La nota abierta al paciente equivocado: lo que no
   > debió existir es la atención, no la cita (AG-147 la devuelve a la sala).
   > `record:write` y no `agenda:write`, porque es un acto sobre la historia
@@ -2312,8 +2314,8 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   > `CANCELLED`. Una referencia emitida aún no tiene cómo retirarse: su
   > `CANCELLED` llega con la entrega que construya las referencias.
 - **EN-167** — CUANDO quien tenga `record:sign` interrumpa una atención `OPEN`
-  u `ON_HOLD` (EN-129) siendo su profesional —o, si es otro, con motivo de
-  sustitución (EN-147)—, el sistema DEBERÁ exigir motivo escrito y origen
+  u `ON_HOLD` (EN-129) siendo su profesional —o, si es otro, en su nombre
+  (EN-147, sin motivo desde EN-218)—, el sistema DEBERÁ exigir motivo y origen
   (`PATIENT` o `ESTABLISHMENT`), DEBERÁ guardar el motivo, el origen, quién la
   interrumpió y el instante, y DEBERÁ firmar en el mismo acto las notas en
   borrador de quien interrumpe con lo escrito, sin exigir el contenido mínimo
@@ -3348,6 +3350,47 @@ falta de una medida; y salir de la atención pide lo justo._
   > `trg_clinical_note_sign_needs_anthropometry`, diferido como el de EN-020.
   > **Lo que no garantiza la base**: que la corrección de una atención
   > reportada se rechace; lo hace el adaptador bajo el bloqueo.
+- **EN-218** — CUANDO se anule una atención (EN-166), el sistema NO DEBERÁ
+  exigir motivo —el que se envíe DEBERÁ guardarse— y DEBERÁ guardar quién la
+  anuló y cuándo; DEBERÁ descartar en la misma transacción, con quién y
+  cuándo, las recetas y las órdenes que sigan en borrador; y SI queda algún
+  papel emitido —receta, orden con exámenes pendientes, nota firmada,
+  certificado sin anular, referencia o interconsulta (D-099, D-103)—,
+  ENTONCES DEBERÁ rechazarlo con `ENCOUNTER_HAS_LIVE_ACTS` nombrando cada
+  papel con su número, uno por entrada de `errors[]` (`acts.<tipo>.<id>`), sin
+  descartar nada. Y CUANDO quien anule o interrumpa (EN-167) no sea el
+  profesional de la atención, el sistema DEBERÁ exigir `record:sign` en su
+  sede y NO DEBERÁ exigir motivo de sustitución.
+  > **D-126.2 y AT-19 a AT-23 del inventario.** Anular pide en la pantalla
+  > **una confirmación** que dice la consecuencia («la cita vuelve a la
+  > sala; lo escrito queda marcado») con un motivo **opcional** de lista
+  > («Paciente equivocado», «Duplicada», «Otro»). Interrumpir pide **una**
+  > lista que ya lleva el origen —«El paciente se retiró» (`PATIENT`),
+  > «Derivado a urgencias», «El profesional tuvo que salir», «Corte de
+  > servicio» (`ESTABLISHMENT`), «Otro» con texto y origen a elegir—; la API
+  > sigue recibiendo `reason` y `origin`, obligatorios. Actuar en nombre de
+  > otro es una confirmación «Lo hará en nombre de Dr. X»: quién lo hizo ya
+  > está en `entered_in_error_by_id` / `discontinued_by_id`, y un motivo que
+  > se envíe se sigue guardando en `exit_substitute_reason`. El cierre (EN-147)
+  > conserva su motivo.
+  >
+  > **Los borradores se descartan solos** (D-126.1): nunca salieron de la
+  > consulta. Lo de otro prescriptor también, a nombre de quien anula: anular
+  > dice que la atención entera no debió existir. Lo emitido no se toca: cada
+  > papel se anula por su puerta (D-127.4), y la pantalla ofrece la suya junto
+  > a cada uno.
+  >
+  > **Interrumpir con la cita sin llegada registrada**
+  > (`APPOINTMENT_ARRIVAL_NOT_RECORDED`, D-099 §2) **sigue rechazándose en la
+  > API**: la llegada lleva la calificación de emergencia del art. 10 de la
+  > Ley 77 (AG-128), que sólo puede contestar una persona. La pantalla la
+  > pregunta en el mismo diálogo y registra la llegada antes de interrumpir,
+  > en un solo paso para quien lo hace.
+  >
+  > **Garantía de la base**: `encounter_entered_in_error_states_who_when`
+  > (antes `…_who_why_when`): quién y cuándo, y un motivo, si lo hay, no en
+  > blanco. Los descartes los garantizan `prescription_discard_states_who_and_when`
+  > y `service_order_discard_states_who_and_when`.
 
 ---
 
@@ -3387,10 +3430,10 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `ENCOUNTER_ALREADY_REPORTED` | 409 | Incluir en un envío una atención ya reportada | EN-111 |
 | `RDACAA_FIELDS_MISSING` | 422 | Exportar con fichas incompletas. Nombra **los campos**, nunca a los pacientes | EN-115 |
 | `ENCOUNTER_STATE_TRANSITION_INVALID` | 409 | Transición de estado que la tabla de EN-132 no admite: reabrir una cerrada, saltarse el alta clínica, suspender una ya dada de alta. **Un solo código para todas**: el mensaje dice en qué estado está y qué se puede hacer desde ahí | EN-132 |
-| `ENCOUNTER_HAS_LIVE_ACTS`                | 409  | Anular una atención en curso que ya tiene receta activa o en borrador, orden pendiente, nota firmada, certificado sin revocar, referencia o interconsulta (D-103): se retractan antes (D-099 §1)                                                                                                                                                                                                                                                                                        | EN-166                 |
+| `ENCOUNTER_HAS_LIVE_ACTS` | 409 | Anular una atención en curso que ya tiene receta emitida, orden con exámenes pendientes, nota firmada, certificado sin anular, referencia o interconsulta (D-103): cada papel se anula antes por su puerta, y `errors[]` los nombra uno a uno (`acts.<tipo>.<id>`, EN-218). Los borradores ya no lo impiden: se descartan con la anulación | EN-166, EN-218 |
 | `APPOINTMENT_ARRIVAL_NOT_RECORDED`       | 409  | Interrumpir la atención de una cita sin llegada registrada (D-099 §2)                                                                                                                                                                                                                                                                                                                                                       | EN-167                 |
 | `ENCOUNTER_HAS_OTHERS_DRAFTS`            | 409  | Interrumpir una atención con un borrador de otra persona, que quedaría sin firma para siempre (D-085 §2)                                                                                                                                                                                                                                                                                                                    | EN-167                 |
-| `ENCOUNTER_ANNULMENT_REASON_REQUIRED`    | 422  | Anular una atención sin motivo escrito. Se exige **en el servicio** además del DTO                                                                                                                                                                                                                                                                                                                                          | EN-166                 |
+| `ENCOUNTER_ANNULMENT_REASON_REQUIRED` | — | **Retirado por EN-218 (D-126.2)**: anular ya no exige motivo | EN-166 |
 | `ENCOUNTER_INTERRUPTION_REASON_REQUIRED` | 422  | Interrumpir una atención sin motivo escrito o sin origen (D-082: sin condición de egreso, que no se exige). Se exige **en el servicio** además del DTO, por lo mismo que `AMENDMENT_REASON_REQUIRED`                                                                                                                                                                                                                        | EN-129                 |
 | `ENCOUNTER_CLOSER_NOT_AUTHOR` | 403 | Cierra alguien que no la abrió y no lleva `record:sign`. Con `record:sign` **no falla**: cierra dejando constancia de la sustitución | EN-144, EN-147 |
 | `NURSING_SCOPE_DENIED` | 403 | Se intentó registrar diagnóstico, procedimiento o receta con `nursing:write`. **Distinto de un 403 genérico de permiso**: dice que el acto está fuera del ámbito del título, no que falte una casilla en el rol | EN-142 |

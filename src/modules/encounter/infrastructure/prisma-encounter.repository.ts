@@ -763,8 +763,9 @@ export function toEncounterView(row: EncounterRow): EncounterView {
     closedBySubstituteReason: row.closedBySubstituteReason,
     // The CHECKs of `encounter_annulment_and_interruption` make each group
     // all-or-nothing, so one column standing for the group is enough.
+    // EN-218: the reason is optional; the instant stands for the group.
     annulment:
-      row.enteredInErrorReason !== null && row.enteredInErrorAt !== null
+      row.enteredInErrorAt !== null
         ? { reason: row.enteredInErrorReason, at: row.enteredInErrorAt }
         : null,
     interruption:

@@ -200,14 +200,15 @@ registerConstraintMeanings({
     message: 'Indique por qué cierra esta atención otra persona: queda registrado junto a la atención', // prettier-ignore
   },
   /**
-   * EN-166. An annulled attention states why, who and when — and a live one
-   * states none of the three. The service refuses the missing reason first,
-   * with this same code; this is the rule for a writer that went around it.
+   * EN-166, EN-218. An annulled attention states who and when —the reason is
+   * optional, and not blank if given— and a live one states none of them.
+   * The service always writes both; this answers a writer that went around
+   * it.
    */
-  encounter_entered_in_error_states_who_why_when: {
-    code: 'ENCOUNTER_ANNULMENT_REASON_REQUIRED',
+  encounter_entered_in_error_states_who_when: {
+    code: 'ENCOUNTER_ANNULMENT_INCOMPLETE',
     field: 'reason',
-    message: 'Indique por qué anula la atención: queda escrito con su nombre y la hora', // prettier-ignore
+    message: 'Una atención anulada dice quién la anuló y cuándo, y un motivo escrito no puede quedar en blanco', // prettier-ignore
   },
   /** EN-167. The same for an interruption, with its origin. */
   encounter_discontinued_states_who_why_when: {

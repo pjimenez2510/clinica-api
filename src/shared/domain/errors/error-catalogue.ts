@@ -685,13 +685,13 @@ export const DOMAIN_ERROR_CODES = [
   //     enmienda sin motivo, y la enmienda de un borrador, de una versión ya
   //     sustituida o de una retractada. El motivo se exige en el DTO, en el
   //     servicio y en la base, por lo mismo que `CANCELLATION_REASON_REQUIRED`.
-  // EN-166, EN-167 (D-077, D-080, D-082). Anular e interrumpir una atención
-  // exigen motivo escrito —e interrumpir, además, el origen—. 422 por campo:
+  // EN-166, EN-167 (D-077, D-080, D-082). Interrumpir una atención exige
+  // motivo y origen; anularla ya no exige motivo (EN-218, D-126.2:
+  // `ENCOUNTER_ANNULMENT_REASON_REQUIRED` se retiró). 422 por campo:
   // es el formulario el que se corrige. Y 409 cuando hay un borrador de otra
   // persona que la interrupción dejaría sin firmar (D-085 §2); 409 si la
   // atención tiene actos vivos que retractar antes de anularla (D-099 §1), y
   // 409 si la cita no tiene registrada la llegada (D-099 §2).
-  'ENCOUNTER_ANNULMENT_REASON_REQUIRED',
   'ENCOUNTER_HAS_LIVE_ACTS',
   'ENCOUNTER_HAS_OTHERS_DRAFTS',
   'APPOINTMENT_ARRIVAL_NOT_RECORDED',

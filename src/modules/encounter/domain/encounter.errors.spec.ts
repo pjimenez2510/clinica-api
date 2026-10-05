@@ -476,19 +476,25 @@ describe('el contrato de errores de la atención', () => {
 });
 
 describe('EN-166 la atención con actos vivos no se anula', () => {
-  it('EN-166 nombra el certificado con la palabra de su pantalla, «sin anular», y es un 409', () => {
-    const error = new EncounterHasLiveActsError({
-      prescriptions: 0,
-      orders: 0,
-      signedNotes: 0,
-      certificates: 1,
-      referrals: 0,
-      interconsultations: 0,
-    });
+  it('EN-166 EN-218 nombra cada papel emitido con su número y lo que hay que hacer, y es un 409', () => {
+    const error = new EncounterHasLiveActsError([
+      { kind: 'certificates', id: 'c-1', number: 7 },
+      { kind: 'prescriptions', id: 'p-1', number: 12 },
+      { kind: 'signedNotes', id: 'n-1', number: null },
+    ]);
 
     expect(error.code).toBe('ENCOUNTER_HAS_LIVE_ACTS');
     expect(error).toBeInstanceOf(ConflictError);
-    expect(error.userTitle).toContain('1 certificado(s) sin anular');
+    expect(error.userTitle).toContain('el certificado N.º 7');
+    expect(error.userTitle).toContain('la receta N.º 12');
     expect(error.userTitle).not.toContain('revocar');
+    // Each paper travels by itself, so the screen offers its own «Anular».
+    expect(error.fieldErrors).toEqual([
+      { field: 'acts.certificates.c-1', code: 'ENCOUNTER_HAS_LIVE_ACTS', message: 'Certificado N.º 7 sin anular' }, // prettier-ignore
+      { field: 'acts.prescriptions.p-1', code: 'ENCOUNTER_HAS_LIVE_ACTS', message: 'Receta N.º 12 emitida' }, // prettier-ignore
+      { field: 'acts.signedNotes.n-1', code: 'ENCOUNTER_HAS_LIVE_ACTS', message: 'Nota firmada' }, // prettier-ignore
+    ]);
+    // Counts only in the params: no patient, no drug reaches a log.
+    expect(error.params).toMatchObject({ certificates: 1, prescriptions: 1 });
   });
 });

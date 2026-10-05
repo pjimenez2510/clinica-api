@@ -15,7 +15,6 @@ import {
   EncounterHasOthersDraftsError,
   InvalidEncounterTransitionError,
   PractitionerNotLicensedError,
-  SubstituteClosureReasonRequiredError,
 } from '../../src/modules/encounter/domain/encounter.errors';
 import { PrismaClinicalActsRepository } from '../../src/modules/billing/infrastructure/prisma-clinical-acts.repository';
 import { PrismaEncounterExitRepository } from '../../src/modules/encounter/infrastructure/prisma-encounter-exit.repository';
@@ -91,7 +90,7 @@ async function anAttendedAppointment(prisma: PrismaClient) {
 const endOf = (startedAt: Date) => new Date(startedAt.getTime() + 20 * 60_000);
 
 describe('EN-166 la atención anulada dice por qué, quién y cuándo', () => {
-  it('EN-166 la base rechaza ENTERED_IN_ERROR sin motivo y lo admite con los tres datos', async () => {
+  it('EN-166 EN-218 la base rechaza ENTERED_IN_ERROR sin quién ni cuándo, o con un motivo en blanco, y lo admite sin motivo', async () => {
     const prisma = db();
     const { encounter } = await anAttendedAppointment(prisma);
     const annuller = await createUser(prisma);
@@ -102,7 +101,7 @@ describe('EN-166 la atención anulada dice por qué, quién y cuándo', () => {
         where: { id: encounter.id },
         data: { status: 'ENTERED_IN_ERROR', endedAt },
       }),
-    ).rejects.toThrow(/encounter_entered_in_error_states_who_why_when/);
+    ).rejects.toThrow(/encounter_entered_in_error_states_who_when/);
 
     await expect(
       prisma.encounter.update({
@@ -115,20 +114,21 @@ describe('EN-166 la atención anulada dice por qué, quién y cuándo', () => {
           enteredInErrorAt: endedAt,
         },
       }),
-    ).rejects.toThrow(/encounter_entered_in_error_states_who_why_when/);
+    ).rejects.toThrow(/encounter_entered_in_error_states_who_when/);
 
-    // Control positivo: los tres datos, y la base lo admite.
+    // Control positivo: quién y cuándo, sin motivo (D-126.2), y la base lo
+    // admite.
     const annulled = await prisma.encounter.update({
       where: { id: encounter.id },
       data: {
         status: 'ENTERED_IN_ERROR',
         endedAt,
-        enteredInErrorReason: 'Se abrió sobre la ficha de otro paciente',
         enteredInErrorById: annuller.id,
         enteredInErrorAt: endedAt,
       },
     });
     expect(annulled.status).toBe('ENTERED_IN_ERROR');
+    expect(annulled.enteredInErrorReason).toBeNull();
   });
 
   it('EN-166 la base rechaza un motivo de anulación en una atención viva', async () => {
@@ -140,7 +140,7 @@ describe('EN-166 la atención anulada dice por qué, quién y cuándo', () => {
         where: { id: encounter.id },
         data: { enteredInErrorReason: 'a medias' },
       }),
-    ).rejects.toThrow(/encounter_entered_in_error_states_who_why_when/);
+    ).rejects.toThrow(/encounter_entered_in_error_states_who_when/);
   });
 });
 
@@ -370,7 +370,7 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
     ).rejects.toBeInstanceOf(InvalidEncounterTransitionError);
   });
 
-  it('EN-166 otro profesional anula solo con `record:sign` y motivo de sustitución (D-085 §2)', async () => {
+  it('EN-166 EN-218 otro profesional anula con `record:sign` en la sede, sin motivo de sustitución; quién lo hizo queda (D-085 §2, AT-23)', async () => {
     const prisma = db();
     const { encounter } = await inAttentionWithNote(prisma);
     const other = await createPractitioner(prisma);
@@ -378,7 +378,7 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
 
     await expect(
       serviceOf(prisma).annul(
-        { encounterId: encounter.id, reason: 'Ficha equivocada', signSites: [] }, // prettier-ignore
+        { encounterId: encounter.id, signSites: [] },
         substitute,
       ),
     ).rejects.toBeInstanceOf(EncounterCloserNotAuthorError);
@@ -387,33 +387,46 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
     const elsewhere = await createSite(prisma, 'Sede Norte');
     await expect(
       serviceOf(prisma).annul(
-        { encounterId: encounter.id, reason: 'Ficha equivocada', signSites: [elsewhere.id], substituteReason: 'Salió de turno' }, // prettier-ignore
+        { encounterId: encounter.id, signSites: [elsewhere.id] },
         substitute,
       ),
     ).rejects.toBeInstanceOf(EncounterCloserNotAuthorError);
-    await expect(
-      serviceOf(prisma).annul(
-        { encounterId: encounter.id, reason: 'Ficha equivocada', signSites: [encounter.siteId] }, // prettier-ignore
-        substitute,
-      ),
-    ).rejects.toBeInstanceOf(SubstituteClosureReasonRequiredError);
 
-    // Control positivo: con el motivo, se anula y queda escrito.
+    // Control positivo: firma en la sede; sin motivo, se anula a su nombre.
     await serviceOf(prisma).annul(
-      {
-        encounterId: encounter.id,
-        reason: 'Ficha equivocada',
-        signSites: [encounter.siteId],
-        substituteReason: 'La médica tratante salió de turno',
-      },
+      { encounterId: encounter.id, signSites: [encounter.siteId] },
       substitute,
     );
     const stored = await prisma.encounter.findUniqueOrThrow({
       where: { id: encounter.id },
     });
-    expect(stored.exitSubstituteReason).toBe(
-      'La médica tratante salió de turno',
+    expect(stored.status).toBe('ENTERED_IN_ERROR');
+    expect(stored.exitSubstituteReason).toBeNull();
+    expect(stored.enteredInErrorById).toBe(other.userId);
+    expect(stored.practitionerId).not.toBe(other.id);
+  });
+
+  it('EN-167 EN-218 otro profesional interrumpe sin motivo de sustitución, y queda a su nombre', async () => {
+    const prisma = db();
+    const { encounter } = await inTheWaitingRoom(prisma);
+    const other = await createPractitioner(prisma);
+
+    const { encounter: discontinued } = await serviceOf(prisma).discontinue(
+      {
+        encounterId: encounter.id,
+        reason: 'El paciente se retiró',
+        origin: 'PATIENT',
+        canSignRecords: true,
+      },
+      { userId: other.userId, sites: [encounter.siteId] },
     );
+
+    expect(discontinued.status).toBe('DISCONTINUED');
+    const stored = await prisma.encounter.findUniqueOrThrow({
+      where: { id: encounter.id },
+    });
+    expect(stored.exitSubstituteReason).toBeNull();
+    expect(stored.discontinuedById).toBe(other.userId);
   });
 
   it('EN-167 AG-149 interrumpir firma la nota con lo hecho —hash de la firma normal—, sin alta, y deja la cita atendida', async () => {
@@ -790,12 +803,12 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
     expect(stored.content).toEqual(kept);
   });
 
-  it('EN-166 con una receta en borrador o una orden pendiente no se anula; descartada la receta y cancelada la orden, sí (D-099 §1)', async () => {
+  it('EN-166 EN-218 los borradores de receta y de orden se descartan solos al anular; una orden emitida pendiente lo impide y el rechazo la nombra (D-099 §1)', async () => {
     const prisma = db();
     const { encounter, requester, ids } = await inAttentionWithNote(prisma);
     const annul = () =>
       serviceOf(prisma).annul(
-        { encounterId: encounter.id, reason: 'Ficha equivocada', ...asAuthor },
+        { encounterId: encounter.id, ...asAuthor },
         requester,
       );
     const prescription = await prisma.prescription.create({
@@ -803,6 +816,14 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
         encounterId: encounter.id,
         siteId: encounter.siteId,
         prescriberId: ids.practitionerId,
+      },
+    });
+    const draft = await prisma.serviceOrder.create({
+      data: {
+        encounterId: encounter.id,
+        siteId: encounter.siteId,
+        orderedById: encounter.practitionerId,
+        category: 'LABORATORY',
       },
     });
     const system = await prisma.catalogSystem.upsert({
@@ -834,26 +855,23 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
       },
       include: { items: true },
     });
-    await prisma.serviceOrder.update({
+    const issued = await prisma.serviceOrder.update({
       where: { id: order.id },
       data: { status: 'ISSUED' },
     });
 
-    await expect(annul()).rejects.toMatchObject({
-      code: 'ENCOUNTER_HAS_LIVE_ACTS',
-    });
-
-    // Retractada la receta, la orden sola sigue impidiéndolo.
-    await prisma.prescription.update({
-      where: { id: prescription.id },
-      data: {
-        status: 'DISCARDED',
-        discardedAt: new Date(),
-        discardedById: requester.userId,
-        discardReason: 'Se tecleó en la ficha equivocada',
-      },
-    });
-    await expect(annul()).rejects.toBeInstanceOf(EncounterHasLiveActsError);
+    // The issued order names itself; the drafts do not: they go on their own.
+    const refused: unknown = await annul().catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(EncounterHasLiveActsError);
+    const papers = (refused as EncounterHasLiveActsError).fieldErrors ?? [];
+    expect(papers.map((paper) => paper.field)).toEqual([
+      `acts.orders.${order.id}`,
+    ]);
+    expect(papers[0]?.message).toContain(`N.º ${issued.number}`);
+    // Refused, nothing moved: the drafts are still drafts.
+    expect(
+      (await prisma.prescription.findUniqueOrThrow({ where: { id: prescription.id } })).status, // prettier-ignore
+    ).toBe('DRAFT');
 
     await prisma.serviceOrderItem.update({
       where: { id: order.items[0]!.id },
@@ -863,35 +881,18 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
       },
     });
 
-    // ORD-102. Un borrador de orden también está vivo, como la receta en
-    // borrador; descartado, ya no.
-    const draft = await prisma.serviceOrder.create({
-      data: {
-        encounterId: encounter.id,
-        siteId: encounter.siteId,
-        orderedById: encounter.practitionerId,
-        category: 'LABORATORY',
-      },
-    });
-    await expect(annul()).rejects.toBeInstanceOf(EncounterHasLiveActsError);
-    await prisma.serviceOrder.update({
-      where: { id: draft.id },
-      data: {
-        status: 'DISCARDED',
-        discardedAt: new Date(),
-        discardedById: requester.userId,
-      },
-    });
-
-    // Control positivo: cancelada la orden y descartado el borrador, se anula.
+    // Control positivo: sin papel emitido, se anula y los borradores se
+    // descartan en la misma transacción, a nombre de quien anula.
     await annul();
     expect(
-      (
-        await prisma.encounter.findUniqueOrThrow({
-          where: { id: encounter.id },
-        })
-      ).status,
+      (await prisma.encounter.findUniqueOrThrow({ where: { id: encounter.id } })).status, // prettier-ignore
     ).toBe('ENTERED_IN_ERROR');
+    expect(
+      await prisma.prescription.findUniqueOrThrow({ where: { id: prescription.id } }), // prettier-ignore
+    ).toMatchObject({ status: 'DISCARDED', discardedById: requester.userId });
+    expect(
+      await prisma.serviceOrder.findUniqueOrThrow({ where: { id: draft.id } }),
+    ).toMatchObject({ status: 'DISCARDED', discardedById: requester.userId });
   });
 
   it('EN-166 un certificado no revocado, una referencia emitida o atendida y una interconsulta pedida o contestada impiden anular; revocado, rechazada y cancelada, se anula (D-099 §1, D-103)', async () => {

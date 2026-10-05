@@ -142,7 +142,8 @@ export const annulEncounterSchema = z.object({
     .optional(),
   /**
    * EN-147 applied to the exits (D-085 §2): why somebody other than the
-   * attending practitioner does it. Required by the service exactly then.
+   * attending practitioner does it. Optional since EN-218 (AT-23): the
+   * screen confirms «en nombre de»; who acted is stored on the row.
    */
   substituteReason: z
     .string()
@@ -163,7 +164,8 @@ export const discontinueEncounterSchema = z.object({
   origin: z.enum(['PATIENT', 'ESTABLISHMENT']).optional(),
   /**
    * EN-147 applied to the exits (D-085 §2): why somebody other than the
-   * attending practitioner does it. Required by the service exactly then.
+   * attending practitioner does it. Optional since EN-218 (AT-23): the
+   * screen confirms «en nombre de»; who acted is stored on the row.
    */
   substituteReason: z
     .string()
@@ -334,7 +336,10 @@ export const encounterSchema = z.object({
   closedAt: z.iso.datetime().nullable(),
   closedBySubstituteReason: z.string().nullable(),
   /** EN-166. Why and when it was annulled; `null` unless `ENTERED_IN_ERROR`. */
-  annulment: z.object({ reason: z.string(), at: z.iso.datetime() }).nullable(),
+  /** EN-166, EN-218. The reason is optional since D-126.2. */
+  annulment: z
+    .object({ reason: z.string().nullable(), at: z.iso.datetime() })
+    .nullable(),
   /** EN-167. Why, from where and when it was interrupted; `null` unless `DISCONTINUED`. */
   interruption: z
     .object({

@@ -1943,19 +1943,22 @@ describe('la atención por HTTP', () => {
       expect(await auditRows('encounter')).toBe(before + 1);
     });
 
-    it('EN-166 sin motivo responde 422 por campo y no anula', async () => {
+    it('EN-166 EN-218 sin motivo anula: el motivo es opcional, y quién y cuándo quedan', async () => {
       const encounterId = await openEncounter();
 
-      const refused = await post(
+      const annulled = await post(
         `/encounters/${encounterId}/enter-in-error`,
         doctorToken,
         {},
-      ).expect(422);
+      ).expect(200);
 
-      expect((refused.body as Problem).code).toBe(
-        'ENCOUNTER_ANNULMENT_REASON_REQUIRED',
-      );
-      expect((refused.body as Problem).errors?.[0]?.field).toBe('reason');
+      expect(annulled.body).toMatchObject({
+        status: 'ENTERED_IN_ERROR',
+        annulment: { reason: null },
+      });
+      const stored = await prisma.encounter.findUniqueOrThrow({ where: { id: encounterId } }); // prettier-ignore
+      expect(stored.enteredInErrorById).not.toBeNull();
+      expect(stored.enteredInErrorAt).not.toBeNull();
     });
 
     it('EN-166 EN-167 recepción no anula ni interrumpe: no tiene `record:write` ni `record:sign` (D-080 §2)', async () => {

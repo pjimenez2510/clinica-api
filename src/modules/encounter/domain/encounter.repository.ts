@@ -70,7 +70,8 @@ export interface EncounterView {
   closedAt: Date | null;
   closedBySubstituteReason: string | null;
   /** EN-166. Why and when it was annulled; `null` unless `ENTERED_IN_ERROR`. */
-  annulment: { reason: string; at: Date } | null;
+  /** EN-166, EN-218. Who and when always; the reason only if one was given. */
+  annulment: { reason: string | null; at: Date } | null;
   /** EN-167. Why, from where and when it was interrupted; `null` unless `DISCONTINUED`. */
   interruption: { reason: string; origin: DiscontinuedOrigin; at: Date } | null;
 }

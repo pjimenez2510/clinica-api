@@ -5,7 +5,7 @@ import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.serv
 import {
   AppointmentArrivalNotRecordedError,
   EncounterHasLiveActsError,
-  type LiveActs,
+  type LivePaper,
   EncounterHasOthersDraftsError,
   EncounterNotFoundError,
   InvalidEncounterTransitionError,
@@ -65,16 +65,24 @@ export class PrismaEncounterExitRepository implements EncounterExitRepository {
       const plan = decide(current);
 
       /**
+       * EN-218 (AT-22). The drafts never left the consultation (D-126.1): a
+       * prescription or an order still in draft is discarded by the
+       * annulment itself, in this transaction, with who and when —the same
+       * columns their own «Descartar» writes (PR-107, ORD-099)—. If anything
+       * below refuses, the transaction rolls back and they are drafts again.
+       */
+      await discardDrafts(tx, current.id, changedById, plan.at);
+
+      /**
        * D-099 §1. What the attention already left in the chart is retracted
        * by its own door —the prescription (PR-010), the order (ORD-007), the
        * signed note (EN-026)— before the attention can say it never existed.
        * Annulled with it, a prescription would stay valid on paper in the
-       * wrong patient's name, and an order pending at the laboratory.
+       * wrong patient's name, and an order pending at the laboratory. Each
+       * paper is named, with its number (EN-218).
        */
-      const acts = await liveActsOf(tx, current.id);
-      if (Object.values(acts).some((count) => count > 0)) {
-        throw new EncounterHasLiveActsError(acts);
-      }
+      const papers = await livePapersOf(tx, current.id);
+      if (papers.length > 0) throw new EncounterHasLiveActsError(papers);
 
       await moveConditionally(tx, query, current.status, plan.to, {
         status: plan.to,
@@ -278,10 +286,10 @@ async function lockAndRead(
  * has no way to be withdrawn yet; `CANCELLED` comes with the delivery that
  * builds referrals (D-103 §3), and until then no route creates one.
  */
-async function liveActsOf(
+async function livePapersOf(
   tx: Prisma.TransactionClient,
   encounterId: string,
-): Promise<LiveActs> {
+): Promise<LivePaper[]> {
   const [
     prescriptions,
     orders,
@@ -290,12 +298,13 @@ async function liveActsOf(
     referrals,
     interconsultations,
   ] = await Promise.all([
-    tx.prescription.count({
+    // EN-218: the drafts were discarded just before; only the issued stand.
+    tx.prescription.findMany({
       where: { encounterId, status: { in: ['DRAFT', 'ACTIVE'] } },
+      select: { id: true, sequenceNumber: true },
+      orderBy: { createdAt: 'asc' },
     }),
-    // ORD-102. A draft stands like a draft prescription; a discarded one,
-    // like a cancelled line, does not.
-    tx.serviceOrder.count({
+    tx.serviceOrder.findMany({
       where: {
         encounterId,
         OR: [
@@ -306,30 +315,65 @@ async function liveActsOf(
           },
         ],
       },
+      select: { id: true, number: true },
+      orderBy: { createdAt: 'asc' },
     }),
-    tx.clinicalNote.count({ where: { encounterId, status: 'SIGNED' } }),
-    tx.medicalCertificate.count({ where: { encounterId, revokedAt: null } }),
-    tx.referral.count({
-      where: {
-        encounterId,
-        status: { in: [...STANDING_REFERRAL_STATUSES] },
-      },
+    tx.clinicalNote.findMany({
+      where: { encounterId, status: 'SIGNED' },
+      select: { id: true },
+      orderBy: { createdAt: 'asc' },
     }),
-    tx.interconsultation.count({
+    tx.medicalCertificate.findMany({
+      where: { encounterId, revokedAt: null },
+      select: { id: true, number: true },
+      orderBy: { number: 'asc' },
+    }),
+    tx.referral.findMany({
+      where: { encounterId, status: { in: [...STANDING_REFERRAL_STATUSES] } },
+      select: { id: true },
+    }),
+    tx.interconsultation.findMany({
       where: {
         encounterId,
         status: { in: [...STANDING_INTERCONSULTATION_STATUSES] },
       },
+      select: { id: true },
     }),
   ]);
-  return {
-    prescriptions,
-    orders,
-    signedNotes,
-    certificates,
-    referrals,
-    interconsultations,
-  };
+  return [
+    ...prescriptions.map((row) => ({ kind: 'prescriptions' as const, id: row.id, number: row.sequenceNumber })), // prettier-ignore
+    ...orders.map((row) => ({ kind: 'orders' as const, id: row.id, number: row.number })), // prettier-ignore
+    ...signedNotes.map((row) => ({ kind: 'signedNotes' as const, id: row.id, number: null })), // prettier-ignore
+    ...certificates.map((row) => ({ kind: 'certificates' as const, id: row.id, number: row.number })), // prettier-ignore
+    ...referrals.map((row) => ({ kind: 'referrals' as const, id: row.id, number: null })), // prettier-ignore
+    ...interconsultations.map((row) => ({ kind: 'interconsultations' as const, id: row.id, number: null })), // prettier-ignore
+  ];
+}
+
+/**
+ * EN-218 (AT-22). The drafts of the attention, discarded with the annulment.
+ * The prescription keeps a fixed reason so its list reads why it went; the
+ * order's discard has no reason column.
+ */
+async function discardDrafts(
+  tx: Prisma.TransactionClient,
+  encounterId: string,
+  discardedById: string,
+  at: Date,
+): Promise<void> {
+  await tx.prescription.updateMany({
+    where: { encounterId, status: 'DRAFT' },
+    data: {
+      status: 'DISCARDED',
+      discardedAt: at,
+      discardedById,
+      discardReason: 'Atención anulada',
+    },
+  });
+  await tx.serviceOrder.updateMany({
+    where: { encounterId, status: 'DRAFT' },
+    data: { status: 'DISCARDED', discardedAt: at, discardedById },
+  });
 }
 
 /**

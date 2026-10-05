@@ -609,71 +609,80 @@ export class AmendmentReasonRequiredError extends ValidationError {
 }
 
 /**
- * EN-166 (D-077). An attention annulled without a written reason.
- *
- * Demanded in the service and not only in the DTO: «esta atención no debió
- * existir» without a reason is a door for making a consultation disappear,
- * and the database refuses it a third time
- * (`encounter_entered_in_error_states_who_why_when`).
+ * EN-166, EN-218. What still stands in the attention, one paper at a time:
+ * each is retracted by its own door before the attention can say it never
+ * existed. Drafts are not here: the annulment discards them in the same act.
  */
-export class EncounterAnnulmentReasonRequiredError extends ValidationError {
-  readonly code = 'ENCOUNTER_ANNULMENT_REASON_REQUIRED';
-  override readonly userTitle =
-    'Indique por qué anula la atención. Queda escrito con su nombre y la hora, y lo escrito en ella no se borra';
-  override readonly fieldErrors = [
-    {
-      field: 'reason',
-      code: 'ENCOUNTER_ANNULMENT_REASON_REQUIRED',
-      message: 'Indique el motivo de la anulación',
-    },
-  ];
-
-  constructor() {
-    super('Encounter annulment requested without a reason');
-  }
+export interface LivePaper {
+  kind:
+    | 'prescriptions'
+    | 'orders'
+    | 'signedNotes'
+    | 'certificates'
+    | 'referrals'
+    | 'interconsultations';
+  id: string;
+  /** The paper's own number, when it has one: how the user finds it. */
+  number: number | null;
 }
 
-/** EN-166, D-099 §1. How many of each act still stands in the attention. */
-export interface LiveActs {
-  prescriptions: number;
-  orders: number;
-  signedNotes: number;
-  certificates: number;
-  referrals: number;
-  interconsultations: number;
+/** How each paper is named, with what still makes it stand. */
+const LIVE_PAPER_LABELS: Readonly<
+  Record<LivePaper['kind'], { article: string; noun: string; state: string }>
+> = {
+  prescriptions: { article: 'la', noun: 'receta', state: 'emitida' },
+  orders: { article: 'la', noun: 'orden de exámenes', state: 'con exámenes pendientes' }, // prettier-ignore
+  signedNotes: { article: 'la', noun: 'nota', state: 'firmada' },
+  certificates: { article: 'el', noun: 'certificado', state: 'sin anular' },
+  referrals: { article: 'la', noun: 'referencia', state: 'emitida' },
+  interconsultations: { article: 'la', noun: 'interconsulta', state: 'pedida' },
+};
+
+function paperName(paper: LivePaper): string {
+  const label = LIVE_PAPER_LABELS[paper.kind];
+  return paper.number === null
+    ? label.noun
+    : `${label.noun} N.º ${paper.number}`;
 }
 
 /**
- * EN-166, D-099 §1. The attention already left something in the chart —a
- * prescription active or in draft, an order still pending, a signed note, a
+ * EN-166, D-099 §1, EN-218. The attention already left something in the chart
+ * —a prescription issued, an order with exams pending, a signed note, a
  * certificate not revoked, a referral or an interconsultation (D-103)— and it
  * is retracted by its own door before the attention is annulled.
+ *
+ * EACH PAPER BY NAME (AT-22): the sentence says which, with its number, and
+ * `errors[]` carries one entry per paper (`acts.<kind>.<id>`) so the screen
+ * offers its own «Anular» or «Corregir» beside it. Numbers and kinds only: no
+ * patient, no drug, no exam.
  */
 export class EncounterHasLiveActsError extends ConflictError {
   readonly code = 'ENCOUNTER_HAS_LIVE_ACTS';
   override readonly userTitle: string;
 
-  constructor(acts: LiveActs) {
-    // Counts only: no patient, no drug, no exam reaches a log.
-    super('Encounter holds acts that have to be retracted first', { ...acts });
-    const parts = [
-      acts.prescriptions > 0
-        ? `${acts.prescriptions} receta(s) activa(s) o en borrador`
-        : null,
-      acts.orders > 0 ? `${acts.orders} orden(es) pendiente(s)` : null,
-      acts.signedNotes > 0 ? `${acts.signedNotes} nota(s) firmada(s)` : null,
-      acts.certificates > 0
-        ? `${acts.certificates} certificado(s) sin anular`
-        : null,
-      acts.referrals > 0 ? `${acts.referrals} referencia(s)` : null,
-      acts.interconsultations > 0
-        ? `${acts.interconsultations} interconsulta(s)`
-        : null,
-    ].filter(Boolean);
+  constructor(papers: readonly LivePaper[]) {
+    const counts: Record<string, number> = {};
+    for (const paper of papers) counts[paper.kind] = (counts[paper.kind] ?? 0) + 1; // prettier-ignore
+    super(
+      'Encounter holds acts that have to be retracted first',
+      counts,
+      papers.map((paper) => {
+        const label = LIVE_PAPER_LABELS[paper.kind];
+        const name = paperName(paper);
+        return {
+          field: `acts.${paper.kind}.${paper.id}`,
+          code: 'ENCOUNTER_HAS_LIVE_ACTS',
+          message: `${name[0]!.toUpperCase()}${name.slice(1)} ${label.state}`,
+        };
+      }),
+    );
+    const named = papers.map(
+      (paper) => `${LIVE_PAPER_LABELS[paper.kind].article} ${paperName(paper)}`,
+    );
     // A referral already seen elsewhere or an answered interconsultation has
     // no way back (D-103): the sentence says so instead of sending the user
     // to a door that does not exist (4.ª revisión, m3).
-    this.userTitle = `La atención tiene ${parts.join(', ')}. Retire primero lo que se pueda retirar; si algo ya no se puede, esta atención no se anula`;
+    this.userTitle = `Antes de anular la atención, anule ${named.join(', ')}; si alguno ya no se puede anular, esta atención no se anula`;
   }
 }
 
