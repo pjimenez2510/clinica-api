@@ -256,7 +256,9 @@ describe('la bandera de anormalidad', () => {
     // Y por abajo, igual.
     const low = { analyteDisplay: 'Glucosa', valueNumeric: 35, abnormalFlag: 'CRITICAL_LOW' as const }; // prettier-ignore
     expect(keepStandingCritical(now(30, 'LOW'), [low]).abnormalFlag).toBe('CRITICAL_LOW'); // prettier-ignore
-    expect(keepStandingCritical(now(50, 'LOW'), [low]).abnormalFlag).toBe('LOW');
+    expect(keepStandingCritical(now(50, 'LOW'), [low]).abnormalFlag).toBe(
+      'LOW',
+    );
     // Otra determinación no se mezcla.
     expect(keepStandingCritical({ ...now(420, 'HIGH'), analyteDisplay: 'Urea' }, [was]).abnormalFlag).toBe('HIGH'); // prettier-ignore
   });

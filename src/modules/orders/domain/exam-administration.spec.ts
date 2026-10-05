@@ -268,4 +268,3 @@ describe('los rangos de un analito', () => {
     expect(messagesOf(refuse).join(' ')).toMatch(/hombres.*0 a 27 días/);
   });
 });
-
