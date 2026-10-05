@@ -3043,6 +3043,13 @@ model ServiceOrder {
 
   clinicalNoteText String? @map("clinical_note_text") @db.Text
 
+  /// ORD-121 (D-117.5). The diagnoses the order printed, `[{code, display}]`,
+  /// frozen by the DATABASE when it is issued (`a_service_order_freeze_diagnoses`)
+  /// and never rewritten; NULL while it is a draft
+  /// (`service_order_diagnoses_frozen_when_issued`). The attention's own can
+  /// be corrected afterwards without changing what the laboratory holds.
+  diagnoses Json?
+
   /// Denormalised count maintained by trigger. It exists only so the "pending
   /// results" worklist can be a partial index: index predicates cannot contain
   /// subqueries.

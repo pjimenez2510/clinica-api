@@ -406,7 +406,7 @@ describe('quitar un diagnóstico deja rastro (EN-180 a EN-183)', () => {
     expect(draft.diagnoses).toBeNull();
   });
 
-  it('EN-182 una orden con exámenes vivos impide quitar y reordenar; con todos anulados, no', async () => {
+  it('EN-182 ORD-121 una orden con exámenes vivos ya no impide reordenar ni quitar: lo que imprimió pide el motivo', async () => {
     const prisma = db();
     const { site, practitioner, encounter, diagnoses, remover } =
       await anEncounterWithDiagnoses(prisma);
@@ -434,26 +434,19 @@ describe('quitar un diagnóstico deja rastro (EN-180 a EN-183)', () => {
       data: { status: 'ISSUED' },
     });
 
+    // The order froze what it printed (ORD-121): the rank moves freely…
+    await moveRank(prisma, first!.id, 9);
+    // …and removing what the laboratory holds states why (EN-214).
     await expect(archive(prisma, second!.id, remover.id)).rejects.toThrow(
-      /encounter_diagnosis_cited/,
+      /encounter_diagnosis_retraction_reason/,
     );
-    await expect(moveRank(prisma, first!.id, 9)).rejects.toThrow(
-      /encounter_diagnosis_cited/,
-    );
-
-    // Positive control: the exam cancelled (ORD-007), the way out is open.
-    await prisma.serviceOrderItem.update({
-      where: { id: order.items[0]!.id },
-      data: {
-        status: 'CANCELLED',
-        cancelledById: (await createUser(prisma)).id,
-      },
-    });
-    await archive(prisma, second!.id, remover.id);
+    // Positive control: with the reason, and the exam still alive.
+    expect(order.items[0]!.status).not.toBe('CANCELLED');
+    await archive(prisma, second!.id, remover.id, 'Diagnóstico descartado');
     await remove(prisma, second!.id);
   });
 
-  it('EN-182 ORD-102 una orden en borrador o descartada no impide quitar un diagnóstico; emitida, sí', async () => {
+  it('ORD-102 ORD-121 una orden en borrador o descartada no imprimió nada: se quita sin motivo; emitida, lo pide', async () => {
     const prisma = db();
     const { site, practitioner, encounter, diagnoses, remover } =
       await anEncounterWithDiagnoses(prisma);
@@ -486,16 +479,18 @@ describe('quitar un diagnóstico deja rastro (EN-180 a EN-183)', () => {
       },
     });
 
-    // Never left the consultation: nothing outside cites the diagnoses.
+    // Never left the consultation: nothing outside printed the diagnoses.
     await moveRank(prisma, first!.id, 9);
+    await archive(prisma, first!.id, remover.id);
+    await remove(prisma, first!.id);
 
-    // Positive control: the same draft, issued, blocks the same change.
+    // Positive control: the same draft, issued, printed R50.
     await prisma.serviceOrder.update({
       where: { id: draft.id },
       data: { status: 'ISSUED' },
     });
     await expect(archive(prisma, second!.id, remover.id)).rejects.toThrow(
-      /encounter_diagnosis_cited/,
+      /encounter_diagnosis_retraction_reason/,
     );
   });
 

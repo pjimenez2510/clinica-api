@@ -242,6 +242,8 @@ export const diagnosisListSchema = z.object({
       printedOnCertificate: z.boolean(),
       /** EN-214 (D-117.14). An issued receta printed the code. */
       printedOnPrescription: z.boolean(),
+      /** ORD-121. An issued order printed the code. */
+      printedOnOrder: z.boolean(),
     }),
   ),
   /** EN-180. What was removed, so the trace is in front of whoever reads. */

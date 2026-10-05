@@ -108,6 +108,8 @@ export interface DiagnosisSheet {
   items: (DiagnosisView & {
     printedOnCertificate: boolean;
     printedOnPrescription: boolean;
+    /** ORD-121. An issued order printed it: the laboratory holds the paper. */
+    printedOnOrder: boolean;
   })[];
   retracted: RetractedDiagnosisView[];
 }
@@ -251,18 +253,21 @@ export class ClinicalCodingService {
     const encounter = await this.requireEncounter(encounterId, requester);
 
     const query = { encounterId: encounter.id, sites: requester.sites };
-    const [diagnoses, retracted, printed, prescribed] = await Promise.all([
-      this.coding.diagnosesOf(query),
-      // EN-180. The trace travels with the list: one read, one audit row.
-      this.coding.retractedDiagnosesOf(query),
-      // EN-189, EN-214. So the screen asks for the reason before sending.
-      this.coding.codesPrintedOnCertificates(query),
-      this.coding.codesPrintedOnPrescriptions(query),
-    ]);
+    const [diagnoses, retracted, printed, prescribed, ordered] =
+      await Promise.all([
+        this.coding.diagnosesOf(query),
+        // EN-180. The trace travels with the list: one read, one audit row.
+        this.coding.retractedDiagnosesOf(query),
+        // EN-189, EN-214. So the screen asks for the reason before sending.
+        this.coding.codesPrintedOnCertificates(query),
+        this.coding.codesPrintedOnPrescriptions(query),
+        this.coding.codesPrintedOnOrders(query),
+      ]);
     const items = diagnoses.map((diagnosis) => ({
       ...diagnosis,
       printedOnCertificate: printed.includes(diagnosis.cie10Code),
       printedOnPrescription: prescribed.includes(diagnosis.cie10Code),
+      printedOnOrder: ordered.includes(diagnosis.cie10Code),
     }));
 
     await this.audit.record({

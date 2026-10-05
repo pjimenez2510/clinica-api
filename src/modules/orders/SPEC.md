@@ -1494,6 +1494,33 @@ se anula y se pide de nuevo, y la pantalla lo hace en un paso (D-127.4)._
   > antes. La constancia se lee donde se registra —el informe de la
   > orden—, porque la cola de críticos sólo lista lo que aún espera aviso.
 
+- **ORD-121** — CUANDO se emita una orden (`DRAFT` → `ISSUED`), el sistema
+  DEBERÁ copiar en ella los diagnósticos de su atención en ese instante
+  —código y descripción, el principal primero— y la orden emitida NO DEBERÁ
+  cambiarlos después; y el documento de la orden DEBERÁ imprimir esa copia y
+  no los diagnósticos vivos de la atención. Una orden en borrador o descartada
+  NO DEBERÁ tener copia.
+  > **D-117.5, recomendación del autor del 04-10-2026.** Hasta aquí la orden
+  > leía los diagnósticos de la atención al mostrarse, y por eso EN-182
+  > prohibía corregir la atención mientras hubiera exámenes vivos: la salida
+  > era anular exámenes que el laboratorio ya tenía. Ahora la orden hace lo de
+  > la receta (PR-026) y el certificado (CER-027), y EN-182 deja de frenar.
+  > Un diagnóstico registrado después de emitir no entra en esa orden; sí en
+  > la siguiente.
+  >
+  > **La orden pasa a ser un papel en manos de un tercero** —el laboratorio—:
+  > quitar o cambiar el código que imprimió pide el motivo de lista, como la
+  > receta y el certificado (EN-212, EN-214 en `encounter`). La atención sirve
+  > con cada diagnóstico si una orden emitida lo imprimió (`printedOnOrder`).
+  >
+  > **Garantía de la base:** la copia la escribe
+  > `a_service_order_freeze_diagnoses` en el instante de la emisión, sea quien
+  > sea quien emite; `service_order_diagnoses_frozen_when_issued` exige que la
+  > emitida la tenga y la que no lo es no; y `service_order_guard_status` no
+  > deja reescribirla. Las emitidas antes de esta regla se rellenaron con los
+  > diagnósticos que tenía la atención al migrar: mientras regía EN-182, nada
+  > pudo cambiarlos con exámenes vivos.
+
 ## Códigos de error nuevos
 
 Todos entran en `shared/domain/errors/error-catalogue.ts` con su prueba de
@@ -1648,6 +1675,7 @@ columnas donde registrar quién lo decidió y por qué.
 | ORD-004 | Integración | La vigencia se evalúa con `daterange @>` sobre una columna generada, que Prisma no puede expresar. |
 | ORD-081, ORD-093 | Integración | El alcance de ficha sigue el enlace de fusión, que solo existe en la base. |
 | ORD-062, ORD-064 | Integración | La constancia sale de la cola por una consulta y no se borra ni cambia de origen por un disparador: las dos cosas son de la base, con control positivo (el `INSERT` y la edición con sello entran; el `UPDATE` sin sello, el que cambia el origen y el `DELETE`, no). |
+| ORD-121 | Integración | Contra la base: el borrador no tiene copia y la emitida sí, con el principal primero, y no se reescribe; con exámenes vivos el diagnóstico se reordena, se edita y se quita —con el motivo, porque el laboratorio tiene el papel— y la orden y su documento siguen diciendo lo que imprimieron, con control positivo; un diagnóstico registrado después no entra en la emitida y sí en la siguiente. |
 | ORD-120 | Integración | Contra la base: la edición con sello archiva la versión anterior y la sin sello, la de origen y la que quita el read-back se rechazan, con control positivo; por el servicio, la edición cambia lo dicho y no quién avisó, la versión se lee con el mismo mapeo, la cola vuelve a abrirse con el aviso que pasa a «no contestó»; otra cuenta no edita, el «no contestó» no pasa a avisado, y la versión que no es la vigente se rechaza, cada una con control positivo; de dos ediciones simultáneas sobre la misma versión gana una y la otra recibe el 409, y dos seguidas en el mismo instante llevan sellos distintos. Por HTTP, la ruta, el 409 de la versión, el 422 sin versión y su 404. |
 | ORD-046, ORD-065 | Integración y unitario | El plazo es aritmética pura con el reloj inyectado; de dónde sale —el parámetro de la sede o su ausencia— se prueba contra la base. |
 | ORD-026 | Integración | El nombre viaja o no según el filtro, y se prueba con dos fichas reales. |

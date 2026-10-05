@@ -160,6 +160,7 @@ export class ClinicalCodingController {
         ...toDiagnosisResponse(item),
         printedOnCertificate: item.printedOnCertificate,
         printedOnPrescription: item.printedOnPrescription,
+        printedOnOrder: item.printedOnOrder,
       })),
       retracted: sheet.retracted.map(toRetractedResponse),
     };

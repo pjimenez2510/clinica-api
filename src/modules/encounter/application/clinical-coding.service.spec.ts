@@ -200,6 +200,12 @@ class FakeCoding implements ClinicalCodingRepository {
     return Promise.resolve(this.prescriptionCodes);
   }
 
+  orderCodes: string[] = [];
+
+  codesPrintedOnOrders(): Promise<string[]> {
+    return Promise.resolve(this.orderCodes);
+  }
+
   restored: DiagnosisRestoration[] = [];
 
   restoreDiagnosis(restoration: DiagnosisRestoration): Promise<DiagnosisView> {
@@ -484,6 +490,14 @@ describe('los casos de uso del bloque K', () => {
 
     const { items } = await service.diagnosesOf(ENCOUNTER, requester);
     expect(items.map((item) => item.printedOnPrescription)).toEqual([true]);
+  });
+
+  it('ORD-121 sirve con cada diagnóstico si una orden emitida imprimió su código', async () => {
+    await service.recordDiagnosis(aDiagnosis(), requester);
+    coding.orderCodes = ['J020'];
+
+    const { items } = await service.diagnosesOf(ENCOUNTER, requester);
+    expect(items.map((item) => item.printedOnOrder)).toEqual([true]);
   });
 
   it('EN-213 «Deshacer» es un acto de quien deshace, sólo en la atención viva, y deja una fila de bitácora', async () => {

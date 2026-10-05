@@ -4,7 +4,6 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
   ConceptWrongCatalogueError,
-  DiagnosisCitedByIssuedDocumentError,
   DiagnosisConceptNotInForceError,
   DiagnosisNotFoundError,
   DiagnosisPrimaryTakenError,
@@ -286,6 +285,21 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
   }
 
   /**
+   * ORD-121. What the issued orders froze: the laboratory holds the paper.
+   */
+  async codesPrintedOnOrders(query: CodingQuery): Promise<string[]> {
+    const rows = await this.prisma.serviceOrder.findMany({
+      where: {
+        encounterId: query.encounterId,
+        status: 'ISSUED',
+        encounter: siteFilter(query.sites),
+      },
+      select: { diagnoses: true },
+    });
+    return [...new Set(rows.flatMap((row) => printedCodes(row.diagnoses)))];
+  }
+
+  /**
    * EN-180, EN-188, EN-213, EN-214. Archive, then delete — the order the
    * database demands.
    *
@@ -309,7 +323,6 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         retraction.encounterId,
         retraction.diagnosisId,
       );
-      await refuseWhenCitedByIssuedDocument(tx, retraction.encounterId);
 
       // D-117.15. No reason makes it acceptable: the rest is annulled first.
       const [maternity] = await tx.$queryRaw<{ refused: boolean }[]>`
@@ -381,7 +394,6 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         change.diagnosisId,
       );
       if (isPrimary(target.rank)) return;
-      await refuseWhenCitedByIssuedDocument(tx, change.encounterId);
       await promote(tx, change.encounterId, target, change, now);
     });
 
@@ -430,8 +442,6 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         if (!concept.in_force) throw new DiagnosisConceptNotInForceError();
 
         if (concept.concept_code !== current.cie10Code) {
-          // EN-182, until ORD-121: an order reads the live diagnoses.
-          await refuseWhenCitedByIssuedDocument(tx, edit.encounterId);
           const [paper] = await tx.$queryRaw<
             { printed: boolean; maternity: boolean }[]
           >`
@@ -459,11 +469,9 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
 
       let rank: number | undefined;
       if (edit.primary === true && !isPrimary(current.rank)) {
-        await refuseWhenCitedByIssuedDocument(tx, edit.encounterId);
         await promote(tx, edit.encounterId, current, edit, now);
         // `promote` already wrote the rank, stamped; the rest goes below.
       } else if (edit.primary === false && isPrimary(current.rank)) {
-        await refuseWhenCitedByIssuedDocument(tx, edit.encounterId);
         const inUse = await tx.encounterDiagnosis.findMany({
           where: { encounterId: edit.encounterId },
           select: { rank: true },
@@ -890,20 +898,6 @@ async function refuseCorrection(
     SELECT encounter_is_reported(${encounterId}::uuid) AS reported
   `;
   if (row?.reported) throw new EncounterAlreadyReportedError();
-}
-
-/**
- * EN-182. The same function the triggers call, so the sentence and the
- * guarantee cannot disagree about which papers read the diagnoses.
- */
-async function refuseWhenCitedByIssuedDocument(
-  tx: Prisma.TransactionClient,
-  encounterId: string,
-): Promise<void> {
-  const [row] = await tx.$queryRaw<{ cited: boolean }[]>`
-    SELECT encounter_has_document_citing_diagnoses(${encounterId}::uuid) AS cited
-  `;
-  if (row?.cited) throw new DiagnosisCitedByIssuedDocumentError();
 }
 
 /**

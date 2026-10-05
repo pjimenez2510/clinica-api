@@ -17,7 +17,6 @@ import {
   BmiIsDerivedError,
   ClinicalNoteNotFoundError,
   ConceptWrongCatalogueError,
-  DiagnosisCitedByIssuedDocumentError,
   DiagnosisLastAfterDischargeError,
   DiagnosisCorrectionRequiresSignatureError,
   DiagnosisEditReasonRequiredError,
@@ -89,7 +88,6 @@ const EVERY_ERROR: readonly DomainError[] = [
   new DiagnosisPrimaryTakenError(),
   new DiagnosisNotFoundError(),
   new DiagnosisRetractionReasonRequiredError(),
-  new DiagnosisCitedByIssuedDocumentError(),
   new DiagnosisEditReasonRequiredError(),
   new DiagnosisCorrectionRequiresSignatureError(),
   new DiagnosisSupportsMaternityRestError(),
@@ -190,7 +188,7 @@ describe('el contrato de errores de la atención', () => {
     expect(reason).toBeInstanceOf(ValidationError);
     expect(reason.fieldErrors?.[0]?.field).toBe('reason');
     expect(reason.userTitle).toBe(
-      'Indique por qué cambia el código: un certificado o una receta ya entregados lo imprimieron',
+      'Indique por qué cambia el código: un certificado, una receta o una orden ya entregados lo imprimieron',
     );
 
     const signature = new DiagnosisCorrectionRequiresSignatureError();
@@ -209,7 +207,7 @@ describe('el contrato de errores de la atención', () => {
     expect(reported.userTitle).toContain('RDACAA');
   });
 
-  it('EN-180 EN-181 EN-182 quitar un diagnóstico: 404 sin distinguir, 422 que pide el motivo, 409 que manda a anular el documento', () => {
+  it('EN-180 EN-181 EN-214 quitar un diagnóstico: 404 sin distinguir, y 422 que pide el motivo cuando un papel entregado lo imprimió', () => {
     const missing = new DiagnosisNotFoundError();
     expect(missing.code).toBe('DIAGNOSIS_NOT_FOUND');
     expect(missing).toBeInstanceOf(NotFoundError);
@@ -220,13 +218,8 @@ describe('el contrato de errores de la atención', () => {
     expect(reason.fieldErrors?.[0]?.field).toBe('reason');
     // EN-214: sólo un papel en manos de un tercero lo debe ya (D-126.3).
     expect(reason.userTitle).toBe(
-      'Indique por qué quita el diagnóstico: un certificado o una receta ya entregados lo imprimieron',
+      'Indique por qué quita el diagnóstico: un certificado, una receta o una orden ya entregados lo imprimieron',
     );
-
-    const cited = new DiagnosisCitedByIssuedDocumentError();
-    expect(cited.code).toBe('DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT');
-    expect(cited).toBeInstanceOf(ConflictError);
-    expect(cited.userTitle).toContain('Anule primero los exámenes');
   });
 
   it('EN-063 nombra cada medida que falta, porque la pantalla une los mensajes en una línea', () => {

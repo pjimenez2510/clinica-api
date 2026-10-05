@@ -2896,30 +2896,21 @@ D-117._
   > consulta (002) da el alta (EN-009); dentro de la atención viva, lo firmado
   > es una nota de evolución (005). Después del alta también se quita: EN-188.
   > El rastro de quién, cuándo y la fila entera lo guarda el archivo igual.
-- **EN-182** — SI la atención tiene una **orden de servicio emitida con algún
-  examen sin anular**, ENTONCES el sistema DEBERÁ rechazar quitar un diagnóstico o
-  cambiar el principal con `DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT`, diciendo que
-  primero se anulan los exámenes.
-  > La orden **lee el diagnóstico de la atención al mostrarse**: quitarlo
-  > cambiaría lo que dice un papel que el laboratorio ya tiene. La salida que
-  > el mensaje nombra existe: anular los exámenes (ORD-007).
+- **EN-182** — Ningún documento emitido de la atención —receta, orden,
+  certificado— DEBERÁ impedir quitar un diagnóstico, editarlo ni cambiar el
+  principal: cada uno DEBERÁ conservar los diagnósticos que imprimió al
+  emitirse, sin que la corrección de la atención los cambie.
+  > **Enmendado por ORD-121 (D-117.5, 05-10-2026).** Antes, una orden emitida
+  > con algún examen sin anular lo impedía (`DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT`,
+  > retirado), porque la orden leía los diagnósticos de la atención al
+  > mostrarse y la salida era anular los exámenes. Ahora la orden congela los
+  > suyos al emitirse (`a_service_order_freeze_diagnoses`), como la receta
+  > (`a_prescription_freeze_diagnoses`, PR-026) y el certificado (CER-027), y
+  > se retiran `encounter_has_document_citing_diagnoses` y
+  > `trg_encounter_diagnosis_rank_frozen_when_cited`.
   >
-  > **La receta ya no cuenta (revisión clínica del 04-10-2026).** La primera
-  > versión rechazaba también con una receta emitida y mandaba a anularla;
-  > pero la anulada conserva `issued_at` y seguía contando, así que el médico
-  > anulaba un papel válido —con el aviso del art. 70— para nada. Ahora la
-  > receta **congela sus diagnósticos al emitirse**
-  > (`a_prescription_freeze_diagnoses`, PR-026), como el certificado
-  > (CER-011), y corregir la atención no toca lo emitido.
-  >
-  > **Sólo la orden emitida (ORD-100, ORD-102).** Desde que la orden nace en
-  > borrador (`fix/atencion-examenes`), un borrador o una orden descartada no
-  > cuentan: nunca salieron de la consulta ni las tiene ningún laboratorio.
-  > Lo redefine `20261005011607_en182_only_issued_orders_cite_diagnoses`.
-  >
-  > **Garantía de la base**, en el disparador del archivo y en el del rango.
-  > Que la orden también congele los suyos —y deje de bloquear— es de `orders`
-  > y es D-117.5.
+  > Lo que un papel en manos de un tercero imprimió no se corrige en silencio:
+  > quitarlo o cambiar su código pide el motivo de lista (EN-212, EN-214).
 - **EN-183** — MIENTRAS la atención admita contenido clínico nuevo o tenga el
   alta (EN-188), CUANDO el médico marque otro diagnóstico como **principal**, el sistema DEBERÁ hacerlo
   principal y pasar el anterior principal, si lo había, detrás del último rango
@@ -3173,9 +3164,9 @@ con un papel en manos de un tercero, un motivo de lista._
   `record_version`, con quién la sustituyó y cuándo; y DEBERÁ exponer esas
   versiones, de la más reciente a la más antigua, a quien puede leer los
   diagnósticos de la atención. Además:
-  - SI cambia el código y un **certificado emitido** (EN-189) o una **receta
-    emitida** (D-117.14) de la atención —vigentes o anulados— imprimió el
-    código anterior, ENTONCES DEBERÁ exigir un motivo y, SI falta, rechazarlo
+  - SI cambia el código y un **certificado emitido** (EN-189), una **receta
+    emitida** (D-117.14) o una **orden emitida** (ORD-121) de la atención
+    —vigentes o anulados— imprimió el código anterior, ENTONCES DEBERÁ exigir un motivo y, SI falta, rechazarlo
     con `DIAGNOSIS_EDIT_REASON_REQUIRED`;
   - SI la atención tiene el alta y quien edita no tiene `record:sign` en su
     sede, ENTONCES DEBERÁ rechazarlo con
@@ -3259,7 +3250,8 @@ con un papel en manos de un tercero, un motivo de lista._
   imprimió (`printedOnPrescription`), para que la pantalla pida el motivo antes
   de enviar.
   > **D-126.3**: el motivo sólo cuando el papel está en manos de un tercero
-  > —la farmacia, el empleador, el IESS—, y de una lista con «Otro»: «Código
+  > —la farmacia, el empleador, el IESS y, desde ORD-121, el laboratorio:
+  > la orden emitida también cuenta, y la lista lo dice con `printedOnOrder`—, y de una lista con «Otro»: «Código
   > mal elegido», «Diagnóstico descartado», «Otro». La lista es de la pantalla;
   > la API guarda el texto. Es la misma regla que EN-212 aplica al cambiar el
   > código, con la misma función: `encounter_diagnosis_code_on_paper`.
@@ -3320,8 +3312,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `VITALS_HEIGHT_POSITION_REQUIRED` | 422 | Talla sin posición, o posición sin talla. Del mapeo de constraints (`encounter_vitals_height_needs_position`), señala `heightPosition` | EN-064 |
 | `CHART_HAS_ALLERGIES` | 409 | Se afirmó «sin alergias conocidas» sobre una ficha con alergias sin descartar. Las dos no pueden ser ciertas a la vez, y quien lee la primera deja de mirar la lista. La salida es refutarlas **una a una con su motivo**, que es un juicio clínico por alergia y no el efecto colateral de marcar una casilla. Lo arbitra además `trg_patient_allergy_absence_empty_chart` | EN-087 |
 | `DIAGNOSIS_NOT_FOUND` | 404 | El diagnóstico no es de esa atención, o ya se quitó. **El mismo para ambas**, por lo de `ENCOUNTER_NOT_FOUND` | EN-180, EN-183 |
-| `DIAGNOSIS_RETRACTION_REASON_REQUIRED` | 422 | Quitar un diagnóstico sin motivo cuando un certificado o una receta emitidos imprimieron su código. Se exige **en el servicio** y en la base. Desde EN-213, la nota firmada y el alta ya no lo piden | EN-189, EN-214 |
-| `DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT` | 409 | Quitar un diagnóstico o cambiar el principal cuando la atención ya tiene una receta emitida o una orden. El mensaje dice que primero se anula el documento | EN-182 |
+| `DIAGNOSIS_RETRACTION_REASON_REQUIRED` | 422 | Quitar un diagnóstico sin motivo cuando un certificado, una receta o una orden emitidos imprimieron su código. Se exige **en el servicio** y en la base. Desde EN-213, la nota firmada y el alta ya no lo piden | EN-189, EN-214 |
 | `EDIT_NOT_STAMPED` | 422 | Una edición de algo versionado que no dice quién ni cuándo, o repite el sello anterior. La API siempre lo pone; solo lo ve un acceso directo a la base | EN-210 |
 | `DIAGNOSIS_LAST_AFTER_DISCHARGE` | 409 | Quitar el último diagnóstico de una atención con el alta | EN-188 |
 | `DIAGNOSIS_EDIT_REASON_REQUIRED` | 422 | Cambiar el código de un diagnóstico que un certificado o una receta emitidos imprimieron, sin motivo. Por campo (`reason`). Se exige en el servicio y en la base | EN-212 |
@@ -3330,7 +3321,8 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `ENCOUNTER_ALREADY_REPORTED` | 409 | Corregir los diagnósticos de una atención ya reportada al RDACAA | EN-212, EN-213 |
 | `DIAGNOSIS_NOT_RESTORABLE` | 409 | Deshacer el quitar de un diagnóstico ya recuperado, o cuyo código volvió a registrarse | EN-213 |
 
-`DIAGNOSIS_PRIMARY_AFTER_DISCHARGE` (EN-188, G2) se retiró con EN-212.
+`DIAGNOSIS_PRIMARY_AFTER_DISCHARGE` (EN-188, G2) se retiró con EN-212, y
+`DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT` (EN-182) con ORD-121.
 
 **Los que NO entran en el catálogo congelado** son los derivados del mapeo de
 PostgreSQL —`VITALS_OUT_OF_RANGE`, `COUNTER_REFERRAL_WITHOUT_REFERRAL`—: tienen
@@ -3489,7 +3481,7 @@ que es global: una atención ocurre en un sitio.
 | `POST` | `/encounters/:id/consents/:consentId/revoke` | `record:write` | EN-154 |
 | `GET` | `/reports/rdacaa` | `audit:read` *(por decidir)* | EN-110, EN-115 |
 | `POST` | `/reports/rdacaa/submissions` | `audit:read` *(por decidir)* | EN-111 |
-| `POST` | `/encounters/:id/diagnoses/:diagnosisId/retract` | `record:write` *(tras el alta, además `record:sign`)* | EN-180, EN-182, EN-188, EN-189, **EN-213**, **EN-214** |
+| `POST` | `/encounters/:id/diagnoses/:diagnosisId/retract` | `record:write` *(tras el alta, además `record:sign`)* | EN-180, EN-182, EN-188, EN-189, **EN-213**, **EN-214** *(la lista sirve `printedOnOrder`, ORD-121)* |
 | `POST` | `/encounters/:id/diagnoses/:diagnosisId/restore` | `record:write` | **EN-213** |
 | `POST` | `/encounters/:id/diagnoses/:diagnosisId/primary` | `record:write` *(tras el alta, además `record:sign`)* | EN-182, EN-183, EN-188, **EN-212** |
 | `PATCH` | `/encounters/:id/diagnoses/:diagnosisId` | `record:write` *(tras el alta, además `record:sign`)* | **EN-212** |
@@ -3560,7 +3552,7 @@ prueba o el CI falla**.
 | EN-025, EN-026, EN-027 | Contrato HTTP + integración: la enmienda deja legible la versión anterior, la retractada no desaparece, y el hash se recalcula y coincide |
 | EN-006, EN-007, EN-045 | **Unitario de dominio**: dos atenciones el mismo día existen las dos; primera vez / subsecuente **no** se deriva del historial; y el caso del esquema —diabetes de primera vez en una visita subsecuente por hipertensión— |
 | EN-046, EN-048 | Unitario de dominio: la clasificación prevención/morbilidad se deriva del rango `Z00`–`Z99` y **no** de lo que teclee nadie, con los códigos adaptados de cinco caracteres entre los casos |
-| EN-180, EN-181, EN-182 | **Integración contra PostgreSQL real**, con control positivo: el `DELETE` sin archivo se rechaza y con archivo pasa; el archivo no admite `UPDATE` ni `DELETE`; un motivo en blanco no es motivo; con receta emitida u orden se rechaza y con sólo un borrador pasa. Y **contar filas**: quitar no borra nada de la historia |
+| EN-180, EN-181, EN-182 | **Integración contra PostgreSQL real**, con control positivo: el `DELETE` sin archivo se rechaza y con archivo pasa; el archivo no admite `UPDATE` ni `DELETE`; un motivo en blanco no es motivo; con una receta o una orden emitidas (exámenes vivos incluidos) se reordena y se quita —con el motivo de lo que imprimieron— y el papel sigue diciendo lo que emitió. Y **contar filas**: quitar no borra nada de la historia |
 | EN-188, EN-189 | **Integración contra PostgreSQL real**, con control positivo: con el alta se quita sin motivo y el último no; con un certificado emitido —vigente o anulado— que imprimió el código, sin motivo se rechaza y con un certificado que imprimió otro código pasa. HTTP: quitar y cambiar el principal con el alta responden; interrumpida responde `ENCOUNTER_ALREADY_CLOSED` |
 | EN-183 | Integración: el principal cambia y el anterior pasa a un rango libre en una transacción; `encounter_diagnosis_one_primary` sigue sin admitir dos |
 | EN-213, EN-214 | **Integración contra PostgreSQL real**, con control positivo: con nota firmada y con el alta se quita sin motivo; con una receta emitida —vigente o anulada— que imprimió el código, sin motivo no y con otra receta sí; el último obstétrico de un reposo de maternidad no anulado no, y anulado sí; reportada no; el archivo se marca recuperado una vez, hacia ese diagnóstico, y nada más de él cambia. HTTP: deshacer devuelve el diagnóstico y deja de figurar entre los quitados, dos veces no, un principal ocupado lo deja detrás, sólo en la atención viva; `printedOnPrescription`; `record:sign` tras el alta |

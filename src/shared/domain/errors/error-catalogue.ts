@@ -740,21 +740,21 @@ export const DOMAIN_ERROR_CODES = [
   //   * `DIAGNOSIS_NOT_FOUND` (404) — EN-180, EN-183. No es de esa atención o ya
   //     se quitó: el mismo para las dos, como `ENCOUNTER_NOT_FOUND`.
   //   * `DIAGNOSIS_RETRACTION_REASON_REQUIRED` (422) — EN-214, EN-189.
-  //     Con un certificado o una receta emitidos que imprimieron el código,
+  //     Con un certificado, una receta o una orden emitidos que imprimieron el código,
   //     quitar un diagnóstico dice por qué; la base lo exige también. Desde
   //     EN-213 la nota firmada y el alta ya no lo piden (D-126.2).
-  //   * `DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT` (409) — EN-182. Una orden con
-  //     exámenes vivos lee los diagnósticos al mostrarse: primero se anulan.
+  //   * `DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT` se retiró con ORD-121 (D-117.5):
+  //     la orden congela sus diagnósticos al emitirse y ya ningún papel lee los
+  //     de la atención; quitar lo que imprimió pide el motivo (EN-214).
   'DIAGNOSIS_NOT_FOUND',
   'DIAGNOSIS_RETRACTION_REASON_REQUIRED',
-  'DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT',
   //   * `DIAGNOSIS_LAST_AFTER_DISCHARGE` (409) — EN-188. Tras el alta no se
   //     deja la atención sin diagnóstico. La base lo exige también.
   //   * `DIAGNOSIS_PRIMARY_AFTER_DISCHARGE` se retiró con EN-212 (D-127): tras
   //     el alta el principal cambia de un clic, con su versión.
   'DIAGNOSIS_LAST_AFTER_DISCHARGE',
   //   * `DIAGNOSIS_EDIT_REASON_REQUIRED` (422) — EN-212 (D-117.14). Cambiar el
-  //     código que imprimió un certificado o una receta emitidos dice por qué.
+  //     código que imprimió un certificado, una receta o una orden emitidos dice por qué.
   //   * `DIAGNOSIS_CORRECTION_REQUIRES_SIGNATURE` (403) — EN-212 (D-117.13).
   //     Tras el alta corrige la codificación quien tiene `record:sign`.
   //   * `DIAGNOSIS_SUPPORTS_MATERNITY_REST` (409) — EN-212 (D-117.15). El

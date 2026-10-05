@@ -1074,12 +1074,13 @@ describe('la receta por HTTP', () => {
     await post(path, doctorToken, { items: [aLine()] }).expect(201);
   });
 
-  it('PR-026 EN-182 el documento de una receta emitida dice los diagnósticos de su emisión, aunque después se corrijan', async () => {
+  it('PR-026 EN-182 EN-214 el documento de una receta emitida dice los diagnósticos de su emisión, aunque después se corrijan', async () => {
     const composed = await composeAsDoctor();
     await post(`/prescriptions/${composed.prescription.id}/issue`, doctorToken).expect(200); // prettier-ignore
     const [diagnosis] = await prisma.encounterDiagnosis.findMany({ where: { encounterId } }); // prettier-ignore
 
-    await post(`/encounters/${encounterId}/diagnoses/${diagnosis!.id}/retract`, doctorToken).expect(204); // prettier-ignore
+    // EN-214: the pharmacy holds a paper that printed it, so it states why.
+    await post(`/encounters/${encounterId}/diagnoses/${diagnosis!.id}/retract`, doctorToken, { reason: 'Código mal elegido' }).expect(204); // prettier-ignore
 
     const document = await get(`/prescriptions/${composed.prescription.id}`, doctorToken).expect(200); // prettier-ignore
     expect(

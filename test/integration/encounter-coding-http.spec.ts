@@ -15,7 +15,7 @@ import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
-import { createPatient, createSite, createUser } from './setup/fixtures';
+import { createPatient, createSite } from './setup/fixtures';
 import { addDays, clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import { closeApp, listenForTests } from './setup/http-server';
 
@@ -823,7 +823,7 @@ describe('el bloque K por HTTP', () => {
       await post(`/encounters/${encounterId}/diagnoses/${second.id}/retract`, doctorToken).expect(204); // prettier-ignore
     });
 
-    it('EN-182 con exámenes vivos no se quita ni se reordena, y se dice que se anulen; anulados, sí', async () => {
+    it('EN-182 ORD-121 con exámenes vivos se reordena y se quita: la lista dice qué imprimió la orden y eso pide el motivo', async () => {
       const encounterId = await openEncounter();
       await record(encounterId, 'J020');
       const second = await record(encounterId, 'R509');
@@ -845,20 +845,16 @@ describe('el bloque K por HTTP', () => {
       });
       const path = `/encounters/${encounterId}/diagnoses/${second.id}`;
 
-      const refused = await post(`${path}/retract`, doctorToken).expect(409);
-      expect((refused.body as Problem).code).toBe('DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT'); // prettier-ignore
-      expect((refused.body as Problem).title).toContain('Anule primero los exámenes'); // prettier-ignore
-      await post(`${path}/primary`, doctorToken).expect(409);
+      const sheet = (await get(`/encounters/${encounterId}/diagnoses`, doctorToken).expect(200)).body as { items: { cie10Code: string; printedOnOrder: boolean }[] }; // prettier-ignore
+      expect(sheet.items.every((d) => d.printedOnOrder)).toBe(true);
 
-      // The way out the sentence names is real: cancel the exams (ORD-007).
-      await prisma.serviceOrderItem.update({
-        where: { id: order.items[0]!.id },
-        data: {
-          status: 'CANCELLED',
-          cancelledById: (await createUser(prisma)).id,
-        },
-      });
-      await post(`${path}/retract`, doctorToken).expect(204);
+      await post(`${path}/primary`, doctorToken).expect(200);
+      const refused = await post(`${path}/retract`, doctorToken).expect(422);
+      expect((refused.body as Problem).code).toBe('DIAGNOSIS_RETRACTION_REASON_REQUIRED'); // prettier-ignore
+      // With the reason, the exams stay alive (no cancelling first).
+      await post(`${path}/retract`, doctorToken, { reason: 'Diagnóstico descartado' }).expect(204); // prettier-ignore
+      const item = await prisma.serviceOrderItem.findUniqueOrThrow({ where: { id: order.items[0]!.id } }); // prettier-ignore
+      expect(item.status).not.toBe('CANCELLED');
     });
 
     it('EN-182 PR-026 una receta emitida no impide corregir: el documento sigue diciendo lo que se emitió', async () => {
@@ -1301,7 +1297,7 @@ describe('el bloque K por HTTP', () => {
         'DIAGNOSIS_RETRACTION_REASON_REQUIRED',
       );
       expect((refused.body as Problem).title).toContain(
-        'un certificado o una receta',
+        'un certificado, una receta o una orden',
       );
       await post(path, doctorToken, { reason: 'Código mal elegido' }).expect(
         204,

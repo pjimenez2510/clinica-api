@@ -1089,7 +1089,7 @@ export class DiagnosisNotFoundError extends NotFoundError {
 export class DiagnosisRetractionReasonRequiredError extends ValidationError {
   readonly code = 'DIAGNOSIS_RETRACTION_REASON_REQUIRED';
   override readonly userTitle =
-    'Indique por qué quita el diagnóstico: un certificado o una receta ya entregados lo imprimieron';
+    'Indique por qué quita el diagnóstico: un certificado, una receta o una orden ya entregados lo imprimieron';
   override readonly fieldErrors = [
     {
       field: 'reason',
@@ -1102,23 +1102,6 @@ export class DiagnosisRetractionReasonRequiredError extends ValidationError {
     super(
       'Diagnosis retraction without a reason while an issued paper printed it',
     );
-  }
-}
-
-/**
- * EN-182. An order with exams still alive reads the attention's diagnoses when
- * it is shown, so removing one — or changing which is the principal — would
- * change a paper the lab already holds. The way out is real: cancel the exams
- * (ORD-007). A receta is no longer the reason: it froze its diagnoses when it
- * was issued (PR-026).
- */
-export class DiagnosisCitedByIssuedDocumentError extends ConflictError {
-  readonly code = 'DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT';
-  override readonly userTitle =
-    'Esta atención tiene exámenes pedidos con estos diagnósticos. Anule primero los exámenes en «Exámenes» y después corrija el diagnóstico';
-
-  constructor() {
-    super('A live service order of the encounter cites its diagnoses');
   }
 }
 
@@ -1164,7 +1147,7 @@ export class DiagnosisNotRestorableError extends ConflictError {
 export class DiagnosisEditReasonRequiredError extends ValidationError {
   readonly code = 'DIAGNOSIS_EDIT_REASON_REQUIRED';
   override readonly userTitle =
-    'Indique por qué cambia el código: un certificado o una receta ya entregados lo imprimieron';
+    'Indique por qué cambia el código: un certificado, una receta o una orden ya entregados lo imprimieron';
   override readonly fieldErrors = [
     {
       field: 'reason',
