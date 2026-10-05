@@ -1308,7 +1308,11 @@ async function ensureAnalyte(
   return rows[0]!.id;
 }
 
-/** Un rango por analito, tipo y sexo. `IS NOT DISTINCT FROM` porque NULL —«todos»— es un valor. */
+/**
+ * Un rango por analito, tipo y sexo. `IS NOT DISTINCT FROM` porque NULL —«todos»— es un valor.
+ * Mira también las filas cerradas (ORD-113): si la clínica cerró un rango sembrado, sembrar
+ * otra vez no lo reabre.
+ */
 async function ensureRange(
   tx: Client,
   analyteId: string,
@@ -1316,10 +1320,10 @@ async function ensureRange(
 ): Promise<void> {
   await tx.$executeRaw`
     INSERT INTO "analyte_reference_range"
-      ("analyte_definition_id", "sex", "range_kind", "low", "high", "text", "updated_at")
+      ("analyte_definition_id", "sex", "range_kind", "low", "high", "text", "valid_from", "updated_at")
     SELECT ${analyteId}::uuid, ${range.sex}, ${range.kind},
            ${range.low}::decimal(14, 4), ${range.high}::decimal(14, 4), ${range.text},
-           CURRENT_TIMESTAMP
+           ${new Date()}, CURRENT_TIMESTAMP
      WHERE NOT EXISTS (
        SELECT 1 FROM "analyte_reference_range"
         WHERE "analyte_definition_id" = ${analyteId}::uuid

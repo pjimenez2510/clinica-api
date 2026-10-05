@@ -337,7 +337,177 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       ranges: [range({ low: 12, high: 17 }), range({ low: 11, high: 18 })],
     }).expect(422); // prettier-ignore
     expect((overlap.body as Problem).code).toBe('REFERENCE_RANGE_OVERLAP');
-    expect(await prisma.analyteReferenceRange.count({ where: { analyteDefinitionId: hb.id } })).toBe(3); // prettier-ignore
+    expect(await prisma.analyteReferenceRange.count({ where: { analyteDefinitionId: hb.id, validTo: null } })).toBe(3); // prettier-ignore
+  });
+
+  it('ORD-113 la base no deja borrar ni reescribir un rango; cerrarlo sí, una vez', async () => {
+    const glu = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: 'GLU' } }); // prettier-ignore
+    const row = await prisma.analyteReferenceRange.findFirstOrThrow({
+      where: { analyteDefinitionId: glu.id, rangeKind: 'CRITICAL', validTo: null },
+    }); // prettier-ignore
+    const refusedBy = async (write: Promise<unknown>) => {
+      const error = await write.then(
+        () => null,
+        (e: unknown) => e,
+      );
+      return String((error as Error | null)?.message ?? 'aceptado');
+    };
+
+    expect(await refusedBy(prisma.analyteReferenceRange.delete({ where: { id: row.id } }))).toMatch(/keeps its history/); // prettier-ignore
+    expect(await refusedBy(prisma.analyteReferenceRange.update({ where: { id: row.id }, data: { low: '4' } }))).toMatch(/keeps its history/); // prettier-ignore
+    expect(await refusedBy(prisma.$executeRawUnsafe('TRUNCATE "analyte_reference_range" CASCADE'))).toMatch(/keeps its history/); // prettier-ignore
+
+    // Control positivo: cerrar la vigencia entra…
+    const closedAt = new Date();
+    await prisma.analyteReferenceRange.update({ where: { id: row.id }, data: { validTo: closedAt } }); // prettier-ignore
+    // …y una vez cerrada no se reabre ni se le mueve la fecha.
+    expect(await refusedBy(prisma.analyteReferenceRange.update({ where: { id: row.id }, data: { validTo: null } }))).toMatch(/keeps its history/); // prettier-ignore
+    expect(await refusedBy(prisma.analyteReferenceRange.update({ where: { id: row.id }, data: { validTo: new Date(closedAt.getTime() + 1_000) } }))).toMatch(/keeps its history/); // prettier-ignore
+    const kept = await prisma.analyteReferenceRange.findUniqueOrThrow({ where: { id: row.id } }); // prettier-ignore
+    expect(kept.low?.toString()).toBe('40');
+    expect(kept.validTo).toEqual(closedAt);
+  });
+
+  it('ORD-113 ORD-114 sustituir los rangos cierra lo que cambia, deja abierto lo igual y lo guarda en el historial', async () => {
+    const glu = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: 'GLU' } }); // prettier-ignore
+    const before = await prisma.analyteReferenceRange.findMany({
+      where: { analyteDefinitionId: glu.id, validTo: null },
+    });
+    const reference = before.find((r) => r.rangeKind === 'REFERENCE')!;
+    const critical = before.find((r) => r.rangeKind === 'CRITICAL')!;
+
+    await send('put', `/exam-catalogue/analytes/${glu.id}/ranges`, {
+      ranges: [
+        range({ low: 70, high: 100 }),
+        range({ rangeKind: 'CRITICAL', low: 40, high: 500 }),
+      ],
+    }).expect(200); // prettier-ignore
+
+    const rows = await prisma.analyteReferenceRange.findMany({ where: { analyteDefinitionId: glu.id } }); // prettier-ignore
+    // La referencia no cambió: es la MISMA fila, abierta.
+    expect(rows.find((r) => r.id === reference.id)?.validTo).toBeNull();
+    // El crítico de 400 sigue ahí, cerrado; el de 500 rige desde el mismo instante.
+    const closed = rows.find((r) => r.id === critical.id)!;
+    const opened = rows.find((r) => r.validTo === null && r.rangeKind === 'CRITICAL')!; // prettier-ignore
+    expect(closed.validTo).not.toBeNull();
+    expect(opened.high?.toString()).toBe('500');
+    expect(opened.validFrom).toEqual(closed.validTo);
+    expect(rows).toHaveLength(3);
+
+    // Lo que se administra y lo que clasifica sólo ve las vigentes.
+    const current = (await get(`/exam-catalogue/analytes`).expect(200)).body as { items: AdminAnalyte[] }; // prettier-ignore
+    expect(current.items.find((a) => a.code === 'GLU')?.ranges).toHaveLength(2);
+
+    const history = (await get(`/exam-catalogue/analytes/${glu.id}/ranges/history`).expect(200)).body as {
+      items: { high: number | null; validFrom: string; validTo: string | null }[];
+    }; // prettier-ignore
+    expect(history.items).toHaveLength(3);
+    expect(history.items.find((r) => r.high === 400)?.validTo).toBe(closed.validTo!.toISOString()); // prettier-ignore
+    expect(history.items.find((r) => r.high === 500)?.validTo).toBeNull();
+  });
+
+  describe('la bandera que aterriza en la fila (ORD-036, ORD-038, ORD-114)', () => {
+    /**
+     * One patient per value: a fresh order of fasting glucose or blood count,
+     * registered through the real service against PostgreSQL, and the flag
+     * read back FROM THE ROW.
+     */
+    async function flagsOf(examCode: string, analyteCode: string) {
+      const client = prisma as unknown as PrismaService;
+      const orders = new PrismaServiceOrderRepository(client);
+      const reports = new DiagnosticReportService(
+        new PrismaDiagnosticReportRepository(client),
+        orders,
+        new PrismaExamCatalogueRepository(client),
+        { record: () => Promise.resolve() },
+        { setContext: () => undefined, info: () => undefined, warn: () => undefined, error: () => undefined } as never, // prettier-ignore
+      );
+      const site = await createSite(prisma);
+      const practitioner = await createPractitioner(prisma);
+      await aTariffConcept(prisma, { code: examCode });
+      const exam = await examCoded(examCode);
+      const analyte = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: analyteCode } }); // prettier-ignore
+
+      return async (sex: 'MALE' | 'FEMALE', valueNumeric: number) => {
+        const patient = await createPatient(prisma, { sex });
+        const encounter = await createEncounter(prisma, {
+          siteId: site.id,
+          practitionerId: practitioner.id,
+          patientId: patient.id,
+        });
+        const order = await placeIssued(orders, {
+          encounterId: encounter.id,
+          category: 'LABORATORY',
+          priority: 'ROUTINE',
+          lines: [{ examDefinitionId: exam.id }],
+          sites: 'all',
+        });
+        const report = await reports.register(
+          {
+            orderId: order.id,
+            performedById: null,
+            issuedAt: new Date(Date.now() - 3_600_000),
+            results: [{ analyteDefinitionId: analyte.id, valueNumeric }],
+          },
+          { userId: 'user-1', sites: 'all' },
+        );
+        const row = await prisma.observationResult.findFirstOrThrow({ where: { reportId: report.id } }); // prettier-ignore
+        return row.abnormalFlag;
+      };
+    }
+
+    it('ORD-036 el crítico del varón con sólo el alto hereda el bajo del general, y la referencia decide lo demás', async () => {
+      const glu = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: 'GLU' } }); // prettier-ignore
+      await send('put', `/exam-catalogue/analytes/${glu.id}/ranges`, {
+        ranges: [
+          range({ low: 70, high: 100 }),
+          range({ rangeKind: 'CRITICAL', low: 40, high: 400 }),
+          range({ rangeKind: 'CRITICAL', sex: 'MALE', high: 450 }),
+        ],
+      }).expect(200); // prettier-ignore
+      const flag = await flagsOf('EX-GLUCOSA-AYUNAS', 'GLU');
+
+      expect(await flag('MALE', 25)).toBe('CRITICAL_LOW'); // heredado del general
+      expect(await flag('MALE', 420)).toBe('HIGH'); // su alto manda
+      expect(await flag('MALE', 460)).toBe('CRITICAL_HIGH');
+      // Control positivo: a la mujer le aplica el general entero.
+      expect(await flag('FEMALE', 420)).toBe('CRITICAL_HIGH');
+      expect(await flag('FEMALE', 25)).toBe('CRITICAL_LOW');
+      expect(await flag('FEMALE', 65)).toBe('LOW');
+      expect(await flag('FEMALE', 150)).toBe('HIGH');
+      expect(await flag('FEMALE', 88)).toBe('NORMAL');
+    });
+
+    it('ORD-038 sin rango para su sexo la bandera queda vacía, no normal', async () => {
+      const hb = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: 'HB' } }); // prettier-ignore
+      await send('put', `/exam-catalogue/analytes/${hb.id}/ranges`, {
+        ranges: [range({ sex: 'MALE', low: 13, high: 17 })],
+      }).expect(200); // prettier-ignore
+      const flag = await flagsOf('EX-BH', 'HB');
+
+      expect(await flag('FEMALE', 14)).toBeNull();
+      // Control positivo: el varón sí tiene con qué compararse.
+      expect(await flag('MALE', 14)).toBe('NORMAL');
+    });
+
+    it('ORD-114 un rango cerrado no cuenta: el resultado nuevo usa el que rige al registrarlo', async () => {
+      const glu = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: 'GLU' } }); // prettier-ignore
+      const flag = await flagsOf('EX-GLUCOSA-AYUNAS', 'GLU');
+      // Control positivo: con el crítico de la siembra (400), 420 es crítico.
+      expect(await flag('FEMALE', 420)).toBe('CRITICAL_HIGH');
+
+      await send('put', `/exam-catalogue/analytes/${glu.id}/ranges`, {
+        ranges: [
+          range({ low: 70, high: 100 }),
+          range({ rangeKind: 'CRITICAL', low: 40, high: 500 }),
+        ],
+      }).expect(200); // prettier-ignore
+
+      expect(await flag('FEMALE', 420)).toBe('HIGH');
+      expect(await flag('FEMALE', 520)).toBe('CRITICAL_HIGH');
+      // El de 400 sigue en la base, cerrado: es la respuesta a «qué regía».
+      expect(await prisma.analyteReferenceRange.count({ where: { analyteDefinitionId: glu.id, high: '400', validTo: { not: null } } })).toBe(1); // prettier-ignore
+    });
   });
 
   /** An issued blood count on a new chart, and its report service. */

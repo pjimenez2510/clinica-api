@@ -10,6 +10,7 @@ import type {
   ExamAdministrationRepository,
   ExamServiceView,
   ExamWrite,
+  RangeVersion,
   StructureEntry,
 } from '../domain/exam-administration.repository';
 import {
@@ -21,6 +22,7 @@ import {
   EXAM_SELECT,
   toAnalyte,
   toExamView,
+  toRange,
 } from './prisma-exam-catalogue.repository';
 
 /**
@@ -236,29 +238,53 @@ export class PrismaExamAdministrationRepository implements ExamAdministrationRep
   }
 
   /**
-   * ORD-106, ORD-110. Delete and insert in one transaction. Safe because no
-   * result row references a range: each result froze the bounds it applied.
+   * ORD-106, ORD-113. Close what changes, open what is new, keep what is
+   * equal — in one transaction, with the analyte row LOCKED: two saves at
+   * once would otherwise both read the same rows in force and leave two
+   * versions open side by side (ORD-107).
+   *
+   * The closing instant is never before the row's own `valid_from`
+   * (`analyte_reference_range_validity_is_ordered`): a row opened by an API
+   * whose clock runs ahead —the Playwright runs move it— must still close.
    */
   async setRanges(
     analyteId: string,
     ranges: readonly ReferenceRange[],
+    now: Date,
   ): Promise<AdminAnalyteView> {
     const row = await this.prisma.$transaction(async (tx) => {
-      const analyte = await tx.analyteDefinition.findUnique({
-        where: { id: analyteId },
-        select: { id: true },
-      });
-      if (!analyte) throw new AnalyteNotFoundError();
+      const locked = await tx.$queryRaw<{ id: string }[]>`
+        SELECT "id" FROM "analyte_definition" WHERE "id" = ${analyteId}::uuid FOR UPDATE`;
+      if (locked.length === 0) throw new AnalyteNotFoundError();
 
       // ABSOLUTE ranges are not edited here, so they are not replaced either.
-      await tx.analyteReferenceRange.deleteMany({
+      const inForce = await tx.analyteReferenceRange.findMany({
         where: {
           analyteDefinitionId: analyteId,
           rangeKind: { in: ['REFERENCE', 'CRITICAL'] },
+          validTo: null,
         },
+        select: { id: true, validFrom: true, ...RANGE_FIELDS },
       });
+
+      const unmatched = [...inForce];
+      const added: ReferenceRange[] = [];
+      for (const range of ranges) {
+        const same = unmatched.findIndex((current) =>
+          sameRange(toRange(current), range),
+        );
+        if (same >= 0) unmatched.splice(same, 1);
+        else added.push(range);
+      }
+
+      for (const gone of unmatched) {
+        await tx.analyteReferenceRange.update({
+          where: { id: gone.id },
+          data: { validTo: gone.validFrom > now ? gone.validFrom : now },
+        });
+      }
       await tx.analyteReferenceRange.createMany({
-        data: ranges.map((range) => ({
+        data: added.map((range) => ({
           analyteDefinitionId: analyteId,
           rangeKind: range.rangeKind,
           sex: range.sex,
@@ -267,6 +293,7 @@ export class PrismaExamAdministrationRepository implements ExamAdministrationRep
           low: range.low,
           high: range.high,
           text: range.text,
+          validFrom: now,
         })),
       });
       return tx.analyteDefinition.findUniqueOrThrow({
@@ -276,6 +303,44 @@ export class PrismaExamAdministrationRepository implements ExamAdministrationRep
     });
     return toAdminAnalyte(row);
   }
+
+  /** ORD-114. Newest first; the ones in force are the ones without `validTo`. */
+  async rangeHistory(analyteId: string): Promise<RangeVersion[]> {
+    const rows = await this.prisma.analyteReferenceRange.findMany({
+      where: { analyteDefinitionId: analyteId },
+      orderBy: [{ validFrom: 'desc' }, { rangeKind: 'asc' }],
+      select: { validFrom: true, validTo: true, ...RANGE_FIELDS },
+    });
+    return rows.map((row) => ({
+      ...toRange(row),
+      validFrom: row.validFrom,
+      validTo: row.validTo,
+    }));
+  }
+}
+
+/** The columns that make a range what it is. */
+const RANGE_FIELDS = {
+  rangeKind: true,
+  sex: true,
+  ageMinDays: true,
+  ageMaxDays: true,
+  low: true,
+  high: true,
+  text: true,
+} as const;
+
+/** Equal in everything that decides a flag or prints on a report. */
+function sameRange(a: ReferenceRange, b: ReferenceRange): boolean {
+  return (
+    a.rangeKind === b.rangeKind &&
+    a.sex === b.sex &&
+    a.ageMinDays === b.ageMinDays &&
+    a.ageMaxDays === b.ageMaxDays &&
+    a.low === b.low &&
+    a.high === b.high &&
+    (a.text ?? null) === (b.text ?? null)
+  );
 }
 
 /** `allowed_values` is `jsonb`: `null` when there is no list. */

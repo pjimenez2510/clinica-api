@@ -3943,6 +3943,13 @@ model AnalyteReferenceRange {
   high Decimal? @db.Decimal(14, 4)
   text String?  @db.VarChar(200)
 
+  /// ORD-113. When the row started and stopped applying. In force means
+  /// `valid_to IS NULL` — never a comparison of instants. Written by the
+  /// application's clock, never `now()`. The row is never deleted and only
+  /// ever updated to close it (`trg_analyte_reference_range_history_kept`).
+  validFrom DateTime  @map("valid_from") @db.Timestamptz(6)
+  validTo   DateTime? @map("valid_to") @db.Timestamptz(6)
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
