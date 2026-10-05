@@ -11,6 +11,10 @@ import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
+import {
+  lateIssueDayOf,
+  MAX_DAYS_TO_ISSUE_REST,
+} from '../../src/modules/certificates/domain/certificate';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import {
   addDays,
@@ -605,7 +609,12 @@ describe('el certificado medico por HTTP', () => {
   });
 
   it('CER-045 un reposo sobre una atención de hace nueve días responde 422 en type (D-106 §4)', async () => {
-    const nineDaysAgo = atWallClock(addDays(clinicalDateOf(new Date()), -9), WallClockTime.of(12, 0)); // prettier-ignore
+    // Un día más allá del plazo, contado desde el día de emisión, que es el que
+    // juzga la regla: de madrugada, hasta las 06:00, es el día anterior
+    // (CER-030, D-106 §5). Contado desde el calendario, a esas horas la atención
+    // caía dentro del plazo y la emisión se rechazaba por otra cosa.
+    const tooLate = addDays(lateIssueDayOf(new Date()), -(MAX_DAYS_TO_ISSUE_REST + 1)); // prettier-ignore
+    const nineDaysAgo = atWallClock(tooLate, WallClockTime.of(12, 0));
     const old = await anEncounter(siteId, nineDaysAgo);
 
     const response = await post(
