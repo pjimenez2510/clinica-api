@@ -1622,6 +1622,28 @@ dos registros distintos.**
   > abrir la lista de cada uno: la ficha de la prestación lo responde en un
   > sitio.
 
+## 19. Lo que la orden de exámenes deja a caja
+
+> D-123, resuelta por el autor el 04-10-2026 con la recomendación.
+
+- **BI-190** — CUANDO caja consulte la cuenta de una atención que tiene una
+  orden de exámenes **en borrador sin emitir**, el extracto DEBERÁ servir cada
+  borrador con quién lo escribió y desde cuándo está, y la pantalla DEBERÁ
+  avisarlo antes de cerrar la cuenta, **sin impedir cerrarla** (D-123.6).
+  > Un borrador no propone cargo (ORD-100): sin el aviso, caja cierra una
+  > cuenta a la que le falta un examen que el médico quería pedir, y nadie lo
+  > vuelve a ver. No bloquea porque el borrador puede ser intencional, y
+  > porque caja no puede emitirlo ni descartarlo: eso lo hace el médico
+  > (ORD-099, ORD-115). Sólo viaja quién y cuándo, no qué exámenes: caja ve
+  > lo que se cobra, y un borrador no se cobra.
+- **BI-191** — El cargo propuesto por un examen pedido DEBERÁ tomar la **fecha
+  clínica de la atención** en Ecuador, y NO DEBERÁ tomar la de emisión de la
+  orden, para resolver la prestación y su precio (D-123.7).
+  > Desde ORD-098 la orden lleva el instante de su emisión, y un borrador
+  > emitido al día siguiente se cobraba con el precio del día siguiente,
+  > mientras su prestación (ORD-004) se había resuelto con la de la atención.
+  > Lo que se vendió se vendió el día de la atención.
+
 ---
 
 ## Códigos de error nuevos
@@ -1819,7 +1841,7 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 | `GET` | `/billing/sites/{siteId}/accounts` | `billing:read` | `param:siteId` | BI-070, BI-133, BI-183 |
 | `GET` | `/billing/sites/{siteId}/encounters/awaiting-checkout` | `billing:read` | `param:siteId` | BI-181 a BI-183 |
 | `POST` | `/billing/sites/{siteId}/accounts` | `billing:write` | `param:siteId` | BI-070, BI-121 |
-| `GET` | `/billing/sites/{siteId}/accounts/{accountId}` | `billing:read` | `param:siteId` | BI-074, BI-135 |
+| `GET` | `/billing/sites/{siteId}/accounts/{accountId}` | `billing:read` | `param:siteId` | BI-074, BI-135, BI-190 |
 | `GET` | `/billing/sites/{siteId}/accounts/{accountId}/invoice-receiver` | `billing:read` | `param:siteId` | BI-082 |
 | `PATCH` | `/billing/sites/{siteId}/accounts/{accountId}` | `billing:write` | `param:siteId` | BI-033 |
 | `POST` | `/billing/sites/{siteId}/accounts/{accountId}/close` | `billing:write` | `param:siteId` | BI-071, BI-072 |

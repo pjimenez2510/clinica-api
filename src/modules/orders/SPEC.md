@@ -613,6 +613,14 @@ cuando la gráfica exista.
   estrecho: es la banda que tiene que llegar hoy a una persona, y un valor que es
   a la vez alto y crítico es **crítico**.
 
+  **El crítico se resuelve lado a lado (D-123.2, resuelta por el autor: B).**
+  El límite crítico bajo es el del crítico aplicable **más específico que tenga
+  límite bajo**, y el alto, el del más específico que tenga límite alto: un
+  crítico «varón» escrito sólo con el alto toma el bajo del crítico general. El
+  rango de **referencia** se sigue aplicando entero. Así, SI un crítico menos
+  específico que alcanza al paciente tiene un lado, ENTONCES el paciente
+  DEBERÁ tener alerta de ese lado: ningún crítico más específico la apaga.
+
 - **ORD-037** — El sistema DEBERÁ congelar en la fila el rango aplicado
   (`reference_low`, `reference_high`, `reference_text`).
 
@@ -1092,7 +1100,7 @@ marcar Imagen y pedir un hemograma.
   borrador dentro, que se descarta antes. Las órdenes `DISCARDED` NO DEBERÁN
   contar.
 
-## 10. El catálogo de exámenes, administrado (ORD-103 a ORD-111)
+## 10. El catálogo de exámenes, administrado (ORD-103 a ORD-115)
 
 Revisión de usabilidad del autor (04-10-2026): «catálogos configurables por la
 clínica». El modelo ya existía (`exam_definition`, `exam_definition_analyte`,
@@ -1148,9 +1156,11 @@ desde la pantalla.
   mínima por encima de la máxima, o es crítico o numérico sobre un analito que
   no es numérico, ENTONCES DEBERÁ rechazarlo con `REFERENCE_RANGE_INVALID`
   nombrando la fila. Un rango de una determinación numérica DEBERÁ llevar al
-  menos un límite, y un crítico más específico NO DEBERÁ carecer de un lado
-  que tenga un crítico menos específico que le alcanza (ORD-060: esos
-  pacientes se quedarían sin alerta de ese lado; D-123.2).
+  menos un límite. Un crítico más específico con un solo lado se admite: el
+  lado que le falta lo hereda del menos específico (ORD-036, D-123.2).
+
+  > Hasta D-123 se rechazaba, porque el crítico más específico se aplicaba
+  > entero y esos pacientes se quedaban sin alerta de ese lado.
 
   > Las edades se escriben «desde» (incluido) y «menos de» (excluido) y se
   > guardan en días reales (D-123.5): los tramos «0 a 1 año» y «1 a 18 años»
@@ -1198,14 +1208,68 @@ desde la pantalla.
 
   Ya lo garantiza lo que congelan: la línea, su código y su nombre (ORD-002);
   el resultado, el nombre del analito, su unidad y el rango aplicado
-  (ORD-031, ORD-037). Por eso los rangos se sustituyen enteros sin miedo: no
-  hay fila de resultado que apunte a uno.
+  (ORD-031, ORD-037). Ninguna fila de resultado apunta a un rango; los rangos
+  se versionan por ORD-113.
 
 - **ORD-111** — Toda alta o corrección del catálogo DEBERÁ dejar fila en
   `access_audit` con quién, cuándo y qué examen o analito.
 
   Un rango crítico cambiado decide si alguien llama esta noche a un paciente
   (ORD-060): tiene que poder saberse quién lo cambió.
+
+- **ORD-112** — SI, para algún sexo y edad, el límite crítico bajo que se
+  aplicaría (ORD-036) es **mayor** que el límite bajo de referencia que se
+  aplicaría, o el crítico alto es **menor** que el alto de referencia,
+  ENTONCES el sistema DEBERÁ rechazar los rangos con `REFERENCE_RANGE_INVALID`
+  nombrando la fila del crítico, los dos valores y a quién aplica (D-123.3).
+
+  Un crítico bajo de 700 en lugar de 70 marcaría todas las glucosas como
+  críticas, y la cola de seguridad llena de ruido es una cola que se deja de
+  mirar. Se comprueba con **la misma resolución que la bandera** (ORD-036),
+  sobre cada tramo de sexo y edad que los rangos escritos distinguen: la
+  validación y la bandera no pueden discrepar sobre qué rango aplica a quién.
+  Igual a la referencia se admite: el crítico es el borde de la banda.
+
+- **ORD-113** — Cada rango de un analito DEBERÁ llevar su **vigencia** —desde,
+  y hasta mientras no esté vigente—, y NO DEBERÁ borrarse nunca. CUANDO se
+  sustituyen los rangos de un analito (ORD-106), el sistema DEBERÁ cerrar en
+  ese instante las filas vigentes que cambian o desaparecen y abrir las
+  nuevas, y DEBERÁ dejar abiertas las que no cambian; y la **base** DEBERÁ
+  impedir borrar una fila de rango y cambiar en ella nada que no sea cerrar su
+  vigencia (D-123.4, resuelta por el autor: A).
+
+  > `analyte_reference_range.valid_from`, `valid_to`. Las filas que ya había
+  > nacen vigentes desde su `created_at`. Los instantes salen del reloj de la
+  > aplicación, no de `now()` de PostgreSQL.
+
+  Cada resultado congela el rango de **referencia** que aplicó (ORD-037),
+  pero no el crítico. Ante un crítico que no se avisó, la pregunta «¿qué
+  umbral regía ese día?» sólo tiene respuesta si la fila de entonces sigue
+  ahí.
+
+- **ORD-114** — CUANDO se registra o corrige un informe, la bandera DEBERÁ
+  calcularse sólo con los rangos **vigentes** en ese momento, y NO DEBERÁ
+  considerar ninguna fila cerrada. El catálogo DEBERÁ ofrecer, con
+  `catalog:manage`, el **historial** de los rangos de un analito —cada fila
+  con su vigencia y quién la cambió está en `access_audit` (ORD-111)— para
+  reconstruir qué umbral regía en una fecha.
+
+  Una fila cerrada que siguiera contando pisaría a la nueva (ORD-107) y la
+  bandera dependería del orden de las filas. Y lo vigente se lee por «sin
+  fecha de cierre», no comparando instantes: un reloj desfasado no puede
+  dejar a un paciente sin rango.
+
+- **ORD-115** — El sistema DEBERÁ ofrecer a cada profesional la lista de **sus
+  borradores de orden colgados** —los que firma él, en `DRAFT`, de atenciones
+  que ya no están abiertas ni en espera—, con el paciente, la fecha de la
+  atención y los exámenes, y desde ella emitirlos (ORD-098) o descartarlos
+  (ORD-099) (D-123.6, resuelta por el autor).
+
+  Emitir sigue sujeto a ORD-005: con el alta dada (`DISCHARGED`) se emite; en
+  una atención terminada (`COMPLETED`, `DISCONTINUED`) sólo se descarta, y la
+  pantalla lo dice en vez de ofrecer un botón que sólo puede fallar. La lista
+  no deja fila de bitácora por entrada (ORD-092): lleva el nombre del paciente
+  y qué se pidió, nada del diagnóstico.
 
 ---
 
@@ -1245,7 +1309,7 @@ contrato —`code`, estado y mensaje—.
 | `ANALYTE_NOT_FOUND` | 404 | El analito no existe o está desactivado | ORD-105, ORD-106 |
 | `ANALYTE_CODE_DUPLICATE` | 409 | Otro analito ya lleva ese código. Lo arbitra `analyte_definition_code_unique` | ORD-104 |
 | `ANALYTE_DEFINITION_INVALID` | 422 | Unidad, decimales o valores admitidos que no casan con el tipo de valor | ORD-104 |
-| `REFERENCE_RANGE_INVALID` | 422 | Límites o edades al revés, o un rango numérico o crítico sobre un analito que no es numérico | ORD-106 |
+| `REFERENCE_RANGE_INVALID` | 422 | Límites o edades al revés, un rango numérico o crítico sobre un analito que no es numérico, o una banda crítica que entra en la de referencia | ORD-106, ORD-112 |
 | `REFERENCE_RANGE_OVERLAP` | 422 | Dos rangos igual de específicos que cubren al mismo paciente | ORD-107 |
 | `EXAM_SERVICE_KIND_MISMATCH` | 422 | La prestación de cobro es de otra clase que el tipo del examen | ORD-108, ORD-109 |
 | `EXAM_SERVICE_NOT_FOUND` | 404 | La prestación de cobro no existe o está desactivada | ORD-108 |
@@ -1317,7 +1381,9 @@ resuelto de quien llama.
 | `GET` | `/exam-catalogue/analytes` | `catalog:manage` | ORD-104 |
 | `POST` | `/exam-catalogue/analytes` | `catalog:manage` | ORD-104, ORD-111 |
 | `PATCH` | `/exam-catalogue/analytes/:analyteId` | `catalog:manage` | ORD-104, ORD-111 |
-| `PUT` | `/exam-catalogue/analytes/:analyteId/ranges` | `catalog:manage` | ORD-106, ORD-107, ORD-111 |
+| `PUT` | `/exam-catalogue/analytes/:analyteId/ranges` | `catalog:manage` | ORD-106, ORD-107, ORD-111, ORD-112, ORD-113 |
+| `GET` | `/exam-catalogue/analytes/:analyteId/ranges/history` | `catalog:manage` | ORD-114 |
+| `GET` | `/orders/drafts/stale` | `record:read` | ORD-115 |
 
 **`POST /orders/results/:resultId/match` lleva `result:write` y no
 `record:read`**: leer la cola es una lectura, pero emparejar ESCRIBE el
@@ -1339,6 +1405,8 @@ columnas donde registrar quién lo decidió y por qué.
 
 | Requisitos | Nivel | Por qué |
 | --- | --- | --- |
+| ORD-036, ORD-112 | Unitario e integración | La resolución lado a lado y la banda crítica son puras; que la bandera que **aterriza en la fila** sale de ellas, con los rangos vigentes y nunca de una fila cerrada (ORD-114), se prueba registrando informes contra PostgreSQL, con control positivo. |
+| ORD-113 | Integración | Que una fila de rango no se borra ni se reescribe lo garantiza un disparador: se prueba contra la base, con control positivo (cerrar la vigencia entra; borrar y reescribir no). |
 | ORD-036, ORD-038, ORD-039 | Unitario | Son políticas puras: rango aplicable, bandera y completitud. Se prueban sin base, con los rangos reales de la siembra. |
 | ORD-021, ORD-022 | Unitario | El envejecimiento es aritmética de fechas clínicas; el huso se prueba fijando la zona de la sesión. |
 | ORD-032, ORD-033 | Unitario | La coherencia entre el tipo del analito y el valor enviado es una regla de dominio. |
