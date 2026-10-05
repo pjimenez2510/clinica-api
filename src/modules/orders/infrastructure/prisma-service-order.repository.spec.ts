@@ -44,6 +44,7 @@ const anOrderRow = (items: unknown[] = []) => ({
   encounterId: ENCOUNTER,
   siteId: SITE,
   orderedById: PRACTITIONER,
+  orderedBy: { userId: 'user-1' },
   number: 1,
   status: 'ISSUED',
   discardedAt: null,

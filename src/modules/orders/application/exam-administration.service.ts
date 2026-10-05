@@ -20,8 +20,11 @@ import {
   type StructureEntry,
 } from '../domain/exam-administration.repository';
 import {
+  AnalyteHasResultsError,
   AnalyteNotFoundError,
+  AnalyteUnitWithRangesError,
   ExamDefinitionNotFoundError,
+  ExamHasOpenOrdersError,
   ExamServiceKindMismatchError,
   ExamServiceNotFoundError,
 } from '../domain/orders.errors';
@@ -99,17 +102,42 @@ export class ExamAdministrationService {
     if (serviceChanged || patch.category !== undefined) {
       await this.assertServiceFits(next, serviceChanged);
     }
-    const updated = await this.catalogue.updateExam(id, next);
+    // Only what changed is written: two tabs saving at once (Datos, Cobro) do
+    // not undo each other.
+    const updated = await this.catalogue.updateExam(id, patch);
     await this.record(EXAM_RESOURCE, id, 'UPDATE', editor);
     return updated;
   }
 
-  /** ORD-105. The exam's analytes, in printing order, replaced whole. */
+  /**
+   * ORD-105, ORD-110. The exam's analytes, in printing order, replaced whole.
+   *
+   * ⚠️ NOT WHILE ITS ORDERS WAIT. Whether an issued line is complete is judged
+   * against the CURRENT structure (ORD-039): removing an analyte would close
+   * lines without its value, adding one would keep them open forever. Only
+   * the printing order may change meanwhile, which judges nothing.
+   */
   async setStructure(
     id: string,
     entries: readonly StructureEntry[],
     editor: CatalogueEditor,
   ): Promise<AdminExamView> {
+    const current = await this.exam(id);
+    const shape = (list: readonly StructureEntry[]) =>
+      list
+        .map((entry) => `${entry.analyteDefinitionId}:${entry.isReflex}`)
+        .sort()
+        .join('|');
+    const before = current.analytes.map((entry) => ({
+      analyteDefinitionId: entry.analyte.id,
+      isReflex: entry.isReflex,
+    }));
+    if (
+      shape(before) !== shape(entries) &&
+      (await this.catalogue.pendingLines(current.code)) > 0
+    ) {
+      throw new ExamHasOpenOrdersError();
+    }
     const updated = await this.catalogue.setStructure(id, entries);
     await this.record(EXAM_RESOURCE, id, 'UPDATE', editor);
     return updated;
@@ -153,9 +181,28 @@ export class ExamAdministrationService {
       ...patch,
     };
     assertAnalyteFitsItsType(next);
-    if (next.valueType !== current.valueType) {
-      assertRangesHold(next.valueType, current.ranges);
+
+    /**
+     * ORD-110. What its results froze is not rewritten under them: the name
+     * ties each result to its analyte (ORD-031) and is what a correction
+     * compares (ORD-055); the type and the unit are how they were read.
+     */
+    const renamed = next.name.trim() !== current.name.trim();
+    const retyped = next.valueType !== current.valueType;
+    const reunited = (next.unit ?? '') !== (current.unit ?? '');
+    if (
+      (renamed || retyped || reunited) &&
+      (await this.catalogue.analyteHasResults(current.name))
+    ) {
+      throw new AnalyteHasResultsError();
     }
+    // ORD-106. Ranges in the old unit would be read against values in the new
+    // one: a critical value nobody is told about (ORD-060).
+    const bounded = current.ranges.some(
+      (range) => range.low !== null || range.high !== null,
+    );
+    if (reunited && bounded) throw new AnalyteUnitWithRangesError();
+    if (retyped) assertRangesHold(next.valueType, current.ranges);
     const updated = await this.catalogue.updateAnalyte(id, next);
     await this.record(ANALYTE_RESOURCE, id, 'UPDATE', editor);
     return updated;

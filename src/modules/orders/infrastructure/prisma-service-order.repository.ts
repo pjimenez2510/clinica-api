@@ -74,6 +74,8 @@ const ORDER_SELECT = {
   encounterId: true,
   siteId: true,
   orderedById: true,
+  // D-123. Who may correct, issue or discard the draft: the signer's account.
+  orderedBy: { select: { userId: true } },
   number: true,
   status: true,
   discardedAt: true,
@@ -200,16 +202,22 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
       const draft = await lockDraft(tx, query);
 
       /**
-       * ORD-003, AGAIN. The draft may have waited an hour, and the clinic may
+       * ORD-003 and ORD-097, AGAIN. The draft may have waited an hour, and the clinic may
        * have disabled one of its exams meanwhile: a retired exam is not
        * issued. By the frozen code, which is what the line keeps.
        */
       const codes = [...new Set(draft.items.map((item) => item.testCode))];
-      const active = await tx.examDefinition.count({
+      const exams = await tx.examDefinition.findMany({
         where: { code: { in: codes }, active: true },
+        select: { category: true },
       });
-      if (codes.length === 0 || active !== codes.length) {
+      if (codes.length === 0 || exams.length !== codes.length) {
         throw new ExamNotOrderableError();
+      }
+      // An exam reclassified while the draft waited is not issued under the
+      // wrong type: it would sit in the worklist under the wrong filter.
+      if (exams.some((exam) => exam.category !== draft.category)) {
+        throw new ExamCategoryMismatchError();
       }
 
       await tx.$executeRaw`
@@ -229,7 +237,10 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
   /** ORD-099. DRAFT to DISCARDED, with who and when; no row is deleted. */
   async discard(request: DraftDiscard): Promise<ServiceOrderView> {
     const row = await this.prisma.$transaction(async (tx) => {
-      const draft = await lockDraft(tx, request);
+      // ORD-099. Discarding adds nothing to the chart, so it is allowed even
+      // once the attention closed: otherwise a draft left at the close stays
+      // a draft forever, with nobody able to tidy it.
+      const draft = await lockDraft(tx, request, { evenIfClosed: true });
       return tx.serviceOrder.update({
         where: { id: draft.id },
         data: {
@@ -357,8 +368,9 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
       order.items.map((item) => ({
         orderId: order.id,
         // ORD-100. Only issued orders are listed, and an issued one has its
-        // number (`service_order_number_iff_issued`).
-        orderNumber: order.number ?? 0,
+        // number (`service_order_number_iff_issued`): a missing one is a
+        // broken invariant, said aloud rather than printed as «N.º 0».
+        orderNumber: issuedNumber(order.number),
         itemId: item.id,
         siteId: order.siteId,
         patientId: order.encounter.patientId,
@@ -486,7 +498,11 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
  * deadlock waiting for a busy morning. Its state is read under the lock, so
  * an issue and a discard of the same draft cannot both win.
  */
-async function lockDraft(tx: Prisma.TransactionClient, query: OrderQuery) {
+async function lockDraft(
+  tx: Prisma.TransactionClient,
+  query: OrderQuery,
+  options: { evenIfClosed?: boolean } = {},
+) {
   const found = await tx.serviceOrder.findFirst({
     where: { id: query.orderId, ...siteFilter(query.sites) },
     select: { encounterId: true },
@@ -502,13 +518,14 @@ async function lockDraft(tx: Prisma.TransactionClient, query: OrderQuery) {
       id: true,
       encounterId: true,
       status: true,
+      category: true,
       encounter: { select: { status: true } },
       items: { select: { testCode: true } },
     },
   });
   if (order.status !== 'DRAFT') throw new OrderNotDraftError();
   // ORD-005. A draft in an attention that was closed meanwhile stays a draft.
-  if (!admitsNewOrders(order.encounter.status)) {
+  if (!options.evenIfClosed && !admitsNewOrders(order.encounter.status)) {
     throw new OrderEncounterNotOpenError(order.encounter.status);
   }
   return order;
@@ -645,6 +662,14 @@ function siteFilter(sites: SiteScopeFilter): { siteId?: { in: string[] } } {
   return sites === 'all' ? {} : { siteId: { in: [...sites] } };
 }
 
+/** The number of an issued order, which the database guarantees is there. */
+function issuedNumber(number: number | null): number {
+  if (number === null) {
+    throw new Error('Issued service order without a number (service_order_number_iff_issued)'); // prettier-ignore
+  }
+  return number;
+}
+
 /** A `service_order` row with its lines, as the domain reads it. */
 function toOrderView(row: OrderRow): ServiceOrderView {
   return {
@@ -653,6 +678,7 @@ function toOrderView(row: OrderRow): ServiceOrderView {
     siteId: row.siteId,
     patientId: row.encounter.patientId,
     orderedById: row.orderedById,
+    orderedByUserId: row.orderedBy.userId,
     number: row.number,
     status: row.status,
     discardedAt: row.discardedAt,

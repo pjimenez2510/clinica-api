@@ -376,30 +376,26 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     const scene = await aScene(prisma);
     const repository = ordersOf(prisma);
 
-    const old = await placeIssued(repository, {
-      encounterId: scene.encounter.id,
-      category: 'LABORATORY',
-      priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.bh.id }],
-      sites: 'all',
-    });
-    const fresh = await placeIssued(repository, {
-      encounterId: scene.encounter.id,
-      category: 'LABORATORY',
-      priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.glucose.id }], // prettier-ignore
-      sites: 'all',
-    });
-
-    const now = new Date('2026-09-25T18:00:00Z');
-    await prisma.serviceOrder.update({
-      where: { id: old.id },
-      data: { requestedAt: new Date('2026-09-15T18:00:00Z') },
-    });
-    await prisma.serviceOrder.update({
-      where: { id: fresh.id },
-      data: { requestedAt: new Date('2026-09-25T14:00:00Z') },
-    });
+    // Issued at two known instants: the issue instant is frozen once issued
+    // (`service_order_frozen_once_issued`), so it is set on the way out of
+    // the draft, the only moment it can be.
+    const issuedAt = async (examDefinitionId: string, at: Date) => {
+      const draft = await repository.compose({
+        encounterId: scene.encounter.id,
+        category: 'LABORATORY',
+        priority: 'ROUTINE',
+        lines: [{ examDefinitionId }],
+        sites: 'all',
+      });
+      await prisma.$executeRaw`
+        UPDATE service_order SET status = 'ISSUED', requested_at = ${at}
+         WHERE id = ${draft.id}::uuid`;
+      return draft;
+    };
+    const old = await issuedAt(scene.bh.id, new Date('2026-09-15T18:00:00Z')); // fecha-fija: la antigüedad se mide contra `now` de abajo, inyectado
+    const freshAt = new Date('2026-09-25T14:00:00Z'); // fecha-fija: idem
+    const fresh = await issuedAt(scene.glucose.id, freshAt);
+    const now = new Date('2026-09-25T18:00:00Z'); // fecha-fija: el «ahora» que se inyecta a la cola
 
     const worklist = await repository.pending({ sites: 'all', now, limit: 50 });
 

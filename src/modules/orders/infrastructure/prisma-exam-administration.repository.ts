@@ -99,11 +99,14 @@ export class PrismaExamAdministrationRepository implements ExamAdministrationRep
     return toAdminExam(row);
   }
 
-  async updateExam(id: string, exam: ExamWrite): Promise<AdminExamView> {
+  async updateExam(
+    id: string,
+    patch: Partial<ExamWrite>,
+  ): Promise<AdminExamView> {
     try {
       const row = await this.prisma.examDefinition.update({
         where: { id },
-        data: exam,
+        data: patch,
         select: ADMIN_EXAM_SELECT,
       });
       return toAdminExam(row);
@@ -124,15 +127,22 @@ export class PrismaExamAdministrationRepository implements ExamAdministrationRep
     const row = await this.prisma.$transaction(async (tx) => {
       const exam = await tx.examDefinition.findUnique({
         where: { id: examId },
-        select: { id: true },
+        select: { id: true, analytes: { select: { analyteDefinitionId: true } } }, // prettier-ignore
       });
       if (!exam) throw new ExamDefinitionNotFoundError();
 
+      /**
+       * A retired analyte already in the structure stays —it keeps being
+       * received for the orders that expect it—; one retired is not ADDED.
+       */
+      const current = new Set(exam.analytes.map((a) => a.analyteDefinitionId));
       const ids = [...new Set(entries.map((entry) => entry.analyteDefinitionId))]; // prettier-ignore
-      const found = await tx.analyteDefinition.count({
-        where: { id: { in: ids }, active: true },
+      const found = await tx.analyteDefinition.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, active: true },
       });
-      if (found !== ids.length || ids.length !== entries.length) {
+      const usable = found.filter((a) => a.active || current.has(a.id));
+      if (usable.length !== ids.length || ids.length !== entries.length) {
         throw new AnalyteNotFoundError();
       }
 
@@ -154,6 +164,24 @@ export class PrismaExamAdministrationRepository implements ExamAdministrationRep
       });
     });
     return toAdminExam(row);
+  }
+
+  async pendingLines(examCode: string): Promise<number> {
+    return this.prisma.serviceOrderItem.count({
+      where: {
+        testCode: examCode,
+        completedAt: null,
+        serviceOrder: { status: 'ISSUED' },
+      },
+    });
+  }
+
+  async analyteHasResults(analyteName: string): Promise<boolean> {
+    const found = await this.prisma.observationResult.findFirst({
+      where: { analyteDisplay: analyteName },
+      select: { id: true },
+    });
+    return found !== null;
   }
 
   async service(id: string): Promise<ExamServiceView | undefined> {
@@ -222,8 +250,12 @@ export class PrismaExamAdministrationRepository implements ExamAdministrationRep
       });
       if (!analyte) throw new AnalyteNotFoundError();
 
+      // ABSOLUTE ranges are not edited here, so they are not replaced either.
       await tx.analyteReferenceRange.deleteMany({
-        where: { analyteDefinitionId: analyteId },
+        where: {
+          analyteDefinitionId: analyteId,
+          rangeKind: { in: ['REFERENCE', 'CRITICAL'] },
+        },
       });
       await tx.analyteReferenceRange.createMany({
         data: ranges.map((range) => ({

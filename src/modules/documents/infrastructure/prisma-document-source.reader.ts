@@ -632,8 +632,13 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       data: {
         subjectId: row.id,
         siteId: row.siteId,
-        // Issued, so numbered (`service_order_number_iff_issued`).
-        number: row.number ?? 0,
+        // Issued, so numbered (`service_order_number_iff_issued`); a missing
+        // number is a broken invariant, never printed as «N.º 0».
+        number:
+          row.number ??
+          (() => {
+            throw new Error('Issued service order without a number');
+          })(),
         verificationCode: row.verificationCode,
         requestedAt: row.requestedAt,
         category: row.category,

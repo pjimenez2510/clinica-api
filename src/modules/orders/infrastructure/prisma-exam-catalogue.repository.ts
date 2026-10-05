@@ -125,11 +125,20 @@ export class PrismaExamCatalogueRepository implements ExamCatalogueRepository {
     return rows.map(toExamView);
   }
 
-  /** ORD-042. Fewer rows than ids means one determination is not catalogued. */
+  /**
+   * ORD-042. Fewer rows than ids means one determination is not catalogued.
+   *
+   * ⚠️ RETIRED ONES INCLUDED (revisión clínica de `fix/atencion-examenes`).
+   * Retiring an analyte means it is not offered for a new structure; the
+   * orders already issued still expect it, and a report that carries it —or a
+   * correction of one that did (ORD-055)— must still be receivable. Refusing
+   * it rejected the whole report (ORD-042) and left a wrong value
+   * uncorrectable.
+   */
   async analytesByIds(ids: readonly string[]): Promise<AnalyteDefinition[]> {
     if (ids.length === 0) return [];
     const rows = await this.prisma.analyteDefinition.findMany({
-      where: { id: { in: [...ids] }, active: true },
+      where: { id: { in: [...ids] } },
       select: ANALYTE_SELECT,
     });
     return rows.map(toAnalyte);

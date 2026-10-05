@@ -84,15 +84,29 @@ export interface ExamAdministrationRepository {
   exam(id: string): Promise<AdminExamView | undefined>;
   /** `EXAM_CODE_DUPLICATE` comes from `exam_definition_code_unique`. */
   createExam(code: string, exam: ExamWrite): Promise<AdminExamView>;
-  updateExam(id: string, exam: ExamWrite): Promise<AdminExamView>;
+  /** Writes only what changed: two tabs saving at once do not undo each other. */
+  updateExam(id: string, patch: Partial<ExamWrite>): Promise<AdminExamView>;
   /**
    * ORD-105. Replaces the exam's structure whole, in the order given. Refuses
-   * with `ANALYTE_NOT_FOUND`, inside the write, an analyte missing or retired.
+   * with `ANALYTE_NOT_FOUND`, inside the write, an analyte missing, or retired
+   * and not already in the structure (a retired analyte keeps being received).
    */
   setStructure(
     examId: string,
     entries: readonly StructureEntry[],
   ): Promise<AdminExamView>;
+
+  /**
+   * ORD-110. How many ISSUED lines of the exam still wait for their result:
+   * their completeness is judged against the current structure (ORD-039).
+   */
+  pendingLines(examCode: string): Promise<number>;
+
+  /**
+   * ORD-110. Whether any result froze this analyte's name: results are tied
+   * to their analyte by that name (ORD-031) and corrected by it (ORD-055).
+   */
+  analyteHasResults(analyteName: string): Promise<boolean>;
 
   /** ORD-108. The service by id, `undefined` when there is none. */
   service(id: string): Promise<ExamServiceView | undefined>;
@@ -103,9 +117,10 @@ export interface ExamAdministrationRepository {
   createAnalyte(code: string, analyte: AnalyteWrite): Promise<AdminAnalyteView>;
   updateAnalyte(id: string, analyte: AnalyteWrite): Promise<AdminAnalyteView>;
   /**
-   * ORD-106, ORD-110. Replaces the analyte's ranges whole. No result points
-   * at a range row —each froze the range it applied (ORD-037)—, so nothing
-   * registered moves.
+   * ORD-106, ORD-110. Replaces the analyte's REFERENCE and CRITICAL ranges
+   * whole; ABSOLUTE ones, which this screen does not edit, stay. No result
+   * points at a range row —each froze the range it applied (ORD-037)—, so
+   * nothing registered moves.
    */
   setRanges(
     analyteId: string,

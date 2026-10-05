@@ -20,6 +20,7 @@ import {
 import {
   ExamCategoryMismatchError,
   ExamNotOrderableError,
+  OrderDraftOfAnotherPractitionerError,
   OrderNotFoundError,
   ResultChartUnmatchedError,
 } from '../domain/orders.errors';
@@ -166,6 +167,7 @@ export class ServiceOrderService {
     requester: Requester,
   ): Promise<ServiceOrderView> {
     await this.checkOrderable(request);
+    await this.assertSigner(request.orderId, requester);
 
     const order = await this.orders.rewrite({
       orderId: request.orderId,
@@ -193,6 +195,7 @@ export class ServiceOrderService {
     orderId: string,
     requester: Requester,
   ): Promise<ServiceOrderView> {
+    await this.assertSigner(orderId, requester);
     const order = await this.orders.issue({ orderId, sites: requester.sites });
 
     this.logger.info(
@@ -212,6 +215,7 @@ export class ServiceOrderService {
     orderId: string,
     requester: Requester,
   ): Promise<ServiceOrderView> {
+    await this.assertSigner(orderId, requester);
     const order = await this.orders.discard({
       orderId,
       sites: requester.sites,
@@ -224,6 +228,22 @@ export class ServiceOrderService {
     );
 
     return order;
+  }
+
+  /**
+   * D-123. The draft is the signer's: a colleague's issue would put an order
+   * under somebody else's name (the line PR-100 draws for a receta). The
+   * signer never changes before the issue and is frozen after it, so reading
+   * it first is no race.
+   */
+  private async assertSigner(
+    orderId: string,
+    requester: Requester,
+  ): Promise<void> {
+    const order = await this.byId(orderId, requester);
+    if (order.orderedByUserId !== requester.userId) {
+      throw new OrderDraftOfAnotherPractitionerError();
+    }
   }
 
   /**

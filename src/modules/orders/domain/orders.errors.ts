@@ -1,5 +1,6 @@
 import {
   ConflictError,
+  ForbiddenError,
   NotFoundError,
   ValidationError,
 } from '../../../shared/domain/errors/domain-error';
@@ -162,6 +163,22 @@ export class OrderNotDraftError extends ConflictError {
 
   constructor() {
     super('The service order is not a DRAFT');
+  }
+}
+
+/**
+ * ORD-103 (D-123). A draft is corrected, issued or discarded only by the
+ * professional the order is signed by — as a receta draft only by its
+ * prescriber (PR-100): a colleague's issue would put an order under
+ * somebody else's name.
+ */
+export class OrderDraftOfAnotherPractitionerError extends ForbiddenError {
+  readonly code = 'ORDER_DRAFT_OF_ANOTHER_PRACTITIONER';
+  override readonly userTitle =
+    'Esta orden la firma otro profesional y sólo él puede corregirla, emitirla o descartarla';
+
+  constructor() {
+    super('The draft order is signed by another practitioner');
   }
 }
 
@@ -720,5 +737,52 @@ export class ExamServiceNotFoundError extends NotFoundError {
 
   constructor() {
     super('Billable service not found or inactive');
+  }
+}
+
+/**
+ * ORD-110. The analyte already has results: its name and its type are what
+ * those results froze (ORD-031) and what correcting them compares against
+ * (ORD-055). Renaming or retyping it would leave every one of them
+ * uncorrectable. A new name is a new analyte.
+ */
+export class AnalyteHasResultsError extends ConflictError {
+  readonly code = 'ANALYTE_HAS_RESULTS';
+  override readonly userTitle =
+    'Esa determinación ya tiene resultados registrados: su nombre, su tipo y su unidad no cambian. Dé de alta una nueva';
+
+  constructor() {
+    super('The analyte has registered results');
+  }
+}
+
+/**
+ * ORD-106. Changing the unit of an analyte that has ranges would leave them in
+ * the old unit: a critical glucose in mmol/L read against bounds in mg/dL is
+ * a critical value nobody is told about (ORD-060).
+ */
+export class AnalyteUnitWithRangesError extends ConflictError {
+  readonly code = 'ANALYTE_UNIT_WITH_RANGES';
+  override readonly userTitle =
+    'Sus rangos están en la unidad actual. Quite los rangos, cambie la unidad y vuelva a escribirlos';
+
+  constructor() {
+    super('The analyte has ranges in its current unit');
+  }
+}
+
+/**
+ * ORD-110. The exam has issued lines still waiting for their result, and
+ * whether each is complete is judged against the exam's structure (ORD-039):
+ * changing which analytes it yields would close a line without a value, or
+ * keep one open forever.
+ */
+export class ExamHasOpenOrdersError extends ConflictError {
+  readonly code = 'EXAM_HAS_OPEN_ORDERS';
+  override readonly userTitle =
+    'Hay órdenes de este examen esperando resultado. Cambie sus determinaciones cuando vuelvan, o dé de alta un examen nuevo';
+
+  constructor() {
+    super('The exam has pending issued order lines');
   }
 }

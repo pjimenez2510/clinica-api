@@ -153,6 +153,7 @@ const anOrder = (lines: number): ServiceOrderView => ({
   siteId: SITE,
   patientId: 'chart-1',
   orderedById: 'practitioner-1',
+  orderedByUserId: 'user-1',
   number: 1,
   status: 'ISSUED',
   discardedAt: null,
@@ -300,6 +301,29 @@ describe('la emisión y el seguimiento de una orden', () => {
     expect(orders.discarded).toEqual([
       { orderId: 'order-1', sites: [SITE], userId: 'user-1' },
     ]);
+  });
+
+  it('D-123 un colega no corrige, emite ni descarta el borrador que firma otro profesional', async () => {
+    const colleague = { ...requester, userId: 'user-2' };
+    const rewrite = {
+      orderId: 'order-1',
+      category: 'LABORATORY' as const,
+      priority: 'ROUTINE' as const,
+      lines: [{ examDefinitionId: EXAM_BH }],
+    };
+
+    for (const attempt of [
+      service.issue('order-1', colleague),
+      service.discard('order-1', colleague),
+      service.rewrite(rewrite, colleague),
+    ]) {
+      await expect(attempt).rejects.toMatchObject({
+        code: 'ORDER_DRAFT_OF_ANOTHER_PRACTITIONER',
+      });
+    }
+    expect(orders.issued).toEqual([]);
+    expect(orders.discarded).toEqual([]);
+    expect(orders.rewritten).toEqual([]);
   });
 
   it('ORD-009 responde que no existe cuando la orden está fuera del alcance', async () => {

@@ -155,12 +155,13 @@ describe('el adaptador del catálogo de exámenes', () => {
     expect(calls).toEqual([]);
   });
 
-  it('ORD-042 resuelve los analitos por id, sólo los activos', async () => {
+  it('ORD-042 resuelve los analitos por id, también los desactivados: lo ya pedido los sigue esperando', async () => {
     const { repository, calls } = prismaDouble();
 
     const analytes = await repository.analytesByIds(['analyte-1']);
 
     expect(analytes[0]?.code).toBe('HB');
-    expect(calls[0]?.args).toMatchObject({ where: { active: true } });
+    const where = (calls[0]?.args as { where: Record<string, unknown> }).where;
+    expect(where).not.toHaveProperty('active');
   });
 });

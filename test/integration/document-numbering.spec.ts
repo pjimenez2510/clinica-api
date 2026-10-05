@@ -130,10 +130,19 @@ describe('ORD-006 el número de orden: propio, consecutivo, sin huecos e inmutab
     expect(codes[0]!.verification_code).toMatch(/^[0-9A-F]{16}$/);
     expect(codes[0]!.verification_code).not.toBe(codes[1]!.verification_code);
 
+    // ORD-098. Once issued it is not rewritten at all
+    // (`service_order_frozen_once_issued`)…
     await expect(
       prisma.$executeRaw`
         UPDATE service_order SET verification_code = ${codes[0]!.verification_code}
          WHERE verification_code = ${codes[1]!.verification_code}`,
+    ).rejects.toThrow(/service_order_frozen_once_issued/);
+    // …and no second order can be born with a code already taken.
+    await expect(
+      prisma.$executeRaw`
+        INSERT INTO service_order (encounter_id, site_id, ordered_by_id, category, status, verification_code, updated_at)
+        VALUES (${ids.encounterId}::uuid, ${ids.siteId}::uuid, ${ids.practitionerId}::uuid,
+                'LABORATORY', 'ISSUED', ${codes[0]!.verification_code}, now())`,
     ).rejects.toThrow(/verification_code/);
   });
 

@@ -1011,6 +1011,9 @@ export const DOMAIN_ERROR_CODES = [
   'EXAM_CATEGORY_MISMATCH',
   'ORDER_NOT_DRAFT',
   'ORDER_NOT_ISSUED',
+  //   * `ORDER_DRAFT_OF_ANOTHER_PRACTITIONER` (403) — D-123. El borrador lo
+  //     corrige, emite o descarta el profesional que firma la orden.
+  'ORDER_DRAFT_OF_ANOTHER_PRACTITIONER',
   // ─── Orders, E10 (ORD-103 a ORD-111). El catálogo de exámenes, administrado.
   //
   //   * `EXAM_DEFINITION_NOT_FOUND` (404), `ANALYTE_NOT_FOUND` (404).
@@ -1021,7 +1024,13 @@ export const DOMAIN_ERROR_CODES = [
   //     elegir).
   //   * `EXAM_SERVICE_KIND_MISMATCH` (422) y `EXAM_SERVICE_NOT_FOUND` (404):
   //     la prestación de cobro, de la clase del tipo del examen.
+  //   * `ANALYTE_HAS_RESULTS` (409), `ANALYTE_UNIT_WITH_RANGES` (409) y
+  //     `EXAM_HAS_OPEN_ORDERS` (409) — ORD-110: lo que ya se registró o se
+  //     pidió no cambia por tocar el catálogo.
   'ANALYTE_DEFINITION_INVALID',
+  'ANALYTE_HAS_RESULTS',
+  'ANALYTE_UNIT_WITH_RANGES',
+  'EXAM_HAS_OPEN_ORDERS',
   'ANALYTE_NOT_FOUND',
   'EXAM_DEFINITION_NOT_FOUND',
   'EXAM_SERVICE_KIND_MISMATCH',

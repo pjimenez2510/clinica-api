@@ -78,7 +78,13 @@ export const examStructureSchema = z
           })
           .strict(),
       )
-      .max(80, 'Un examen no puede devolver más de 80 determinaciones'),
+      .max(80, 'Un examen no puede devolver más de 80 determinaciones')
+      .refine(
+        (list) =>
+          new Set(list.map((entry) => entry.analyteDefinitionId)).size ===
+          list.length,
+        'Una determinación no puede repetirse en el mismo examen',
+      ),
   })
   .strict();
 /** Body of PUT /exam-catalogue/exams/:examId/analytes. */

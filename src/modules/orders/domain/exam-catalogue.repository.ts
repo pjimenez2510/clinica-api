@@ -71,7 +71,11 @@ export interface ExamCatalogueRepository {
    */
   byCodes(codes: readonly string[]): Promise<ExamDefinitionView[]>;
 
-  /** ORD-042. The analytes named, by id. Fewer rows means one is unknown. */
+  /**
+   * ORD-042. The analytes named, by id, retired ones included: an order
+   * issued before an analyte was retired still expects it. Fewer rows means
+   * one is unknown.
+   */
   analytesByIds(ids: readonly string[]): Promise<AnalyteDefinition[]>;
 }
 

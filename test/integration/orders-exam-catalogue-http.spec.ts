@@ -15,6 +15,9 @@ import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/ro
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
+import { DiagnosticReportService } from '../../src/modules/orders/application/diagnostic-report.service';
+import { PrismaDiagnosticReportRepository } from '../../src/modules/orders/infrastructure/prisma-diagnostic-report.repository';
+import { PrismaExamCatalogueRepository } from '../../src/modules/orders/infrastructure/prisma-exam-catalogue.repository';
 import { PrismaServiceOrderRepository } from '../../src/modules/orders/infrastructure/prisma-service-order.repository';
 
 import { aTariffConcept, placeIssued } from './orders-fixtures';
@@ -326,11 +329,21 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
     expect(await prisma.analyteReferenceRange.count({ where: { analyteDefinitionId: hb.id } })).toBe(3); // prettier-ignore
   });
 
-  it('ORD-110 cambiar el rango no cambia un resultado ya registrado: guarda el rango que aplicó', async () => {
+  /** An issued blood count on a new chart, and its report service. */
+  async function anIssuedBloodCount(sex: 'MALE' | 'FEMALE' = 'FEMALE') {
+    const client = prisma as unknown as PrismaService;
+    const orders = new PrismaServiceOrderRepository(client);
+    const reports = new DiagnosticReportService(
+      new PrismaDiagnosticReportRepository(client),
+      orders,
+      new PrismaExamCatalogueRepository(client),
+      { record: () => Promise.resolve() },
+      { setContext: () => undefined, info: () => undefined, warn: () => undefined, error: () => undefined } as never, // prettier-ignore
+    );
     // La siembra de caja ya trae `EX-BH` y `HB`: se pide ése.
     const site = await createSite(prisma);
     const practitioner = await createPractitioner(prisma);
-    const patient = await createPatient(prisma, { sex: 'FEMALE' });
+    const patient = await createPatient(prisma, { sex });
     const encounter = await createEncounter(prisma, {
       siteId: site.id,
       practitionerId: practitioner.id,
@@ -339,41 +352,111 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
     await aTariffConcept(prisma, { code: 'EX-BH' });
     const bh = await examCoded('EX-BH');
     const hb = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: 'HB' } }); // prettier-ignore
-    const order = await placeIssued(
-      new PrismaServiceOrderRepository(prisma as unknown as PrismaService),
-      {
-        encounterId: encounter.id,
-        category: 'LABORATORY',
-        priority: 'ROUTINE',
-        lines: [{ examDefinitionId: bh.id }],
-        sites: 'all',
-      },
-    );
-    const report = await prisma.diagnosticReport.create({
-      data: { serviceOrderId: order.id, status: 'FINAL', issuedAt: new Date() },
+    const order = await placeIssued(orders, {
+      encounterId: encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [{ examDefinitionId: bh.id }],
+      sites: 'all',
     });
-    const result = await prisma.observationResult.create({
-      data: {
-        reportId: report.id,
-        orderItemId: order.items[0]!.id,
-        analyteDisplay: 'Hemoglobina',
-        valueNumeric: '12.5',
-        unit: 'g/dL',
-        referenceLow: '12.0',
-        referenceHigh: '15.5',
-        abnormalFlag: 'NORMAL',
-      },
+    const registerHb = (valueNumeric: number) =>
+      reports.register(
+        {
+          orderId: order.id,
+          performedById: null,
+          issuedAt: new Date(Date.now() - 3_600_000),
+          results: [{ analyteDefinitionId: hb.id, valueNumeric }],
+        },
+        { userId: 'user-1', sites: 'all' },
+      );
+    return { bh, hb, order, registerHb };
+  }
+
+  const range = (over: object) => ({
+    rangeKind: 'REFERENCE', sex: null, ageMinDays: null, ageMaxDays: null,
+    low: null, high: null, text: null, ...over,
+  }); // prettier-ignore
+
+  it('ORD-110 cambiar el rango no cambia un resultado ya registrado: guarda el rango y la bandera que aplicó', async () => {
+    const { hb, registerHb } = await anIssuedBloodCount('FEMALE');
+    const report = await registerHb(12.5);
+    const registered = report.results[0]!;
+    // Con la siembra (12,0–15,5 en mujeres), 12,5 es normal.
+    expect(registered).toMatchObject({
+      abnormalFlag: 'NORMAL',
+      referenceLow: 12,
     });
 
-    const range = { rangeKind: 'REFERENCE', sex: null, ageMinDays: null, ageMaxDays: null, low: 13, high: 18, text: null }; // prettier-ignore
-    const changed = (await send('put', `/exam-catalogue/analytes/${hb.id}/ranges`, { ranges: [range] }).expect(200)).body as AdminAnalyte; // prettier-ignore
+    const changed = (await send('put', `/exam-catalogue/analytes/${hb.id}/ranges`, {
+      ranges: [range({ low: 13, high: 18 })],
+    }).expect(200)).body as AdminAnalyte; // prettier-ignore
 
-    // Control positivo: el catálogo SÍ cambió.
+    // Control positivo: el catálogo SÍ cambió, y un resultado NUEVO lo usa.
     expect(changed.ranges).toEqual([expect.objectContaining({ low: 13, high: 18 })]); // prettier-ignore
-    const after = await prisma.observationResult.findUniqueOrThrow({ where: { id: result.id } }); // prettier-ignore
+    const after = await prisma.observationResult.findFirstOrThrow({
+      where: { reportId: report.id },
+    });
     expect(after.referenceLow?.toString()).toBe('12');
     expect(after.referenceHigh?.toString()).toBe('15.5');
     expect(after.abnormalFlag).toBe('NORMAL');
+  });
+
+  it('ORD-110 una determinación con resultados no se renombra ni cambia de unidad: la corrección compara por su nombre', async () => {
+    const { hb, registerHb } = await anIssuedBloodCount();
+    // Control positivo: sin resultados, el nombre se corrige.
+    await send('patch', `/exam-catalogue/analytes/${hb.id}`, { name: 'Hemoglobina total' }).expect(200); // prettier-ignore
+    await send('patch', `/exam-catalogue/analytes/${hb.id}`, { name: 'Hemoglobina' }).expect(200); // prettier-ignore
+    await registerHb(12.5);
+
+    for (const change of [{ name: 'Hemoglobina sérica' }, { unit: 'g/L' }]) {
+      const refused = await send('patch', `/exam-catalogue/analytes/${hb.id}`, change).expect(409); // prettier-ignore
+      expect((refused.body as Problem).code).toBe('ANALYTE_HAS_RESULTS');
+    }
+    // Lo que no toca el resultado se corrige igual.
+    await send('patch', `/exam-catalogue/analytes/${hb.id}`, { loincCode: '718-7' }).expect(200); // prettier-ignore
+  });
+
+  it('ORD-106 cambiar la unidad con rangos escritos se rechaza; sin rangos, se cambia', async () => {
+    const created = (await send('post', '/exam-catalogue/analytes', {
+      code: 'GLU2', name: 'Glucosa capilar', valueType: 'NUMERIC', unit: 'mg/dL',
+      decimals: 0, allowedValues: null, loincCode: null, active: true,
+    }).expect(201)).body as AdminAnalyte; // prettier-ignore
+    await send('put', `/exam-catalogue/analytes/${created.id}/ranges`, {
+      ranges: [range({ rangeKind: 'CRITICAL', low: 40, high: 400 })],
+    }).expect(200); // prettier-ignore
+
+    const refused = await send('patch', `/exam-catalogue/analytes/${created.id}`, { unit: 'mmol/L' }).expect(409); // prettier-ignore
+    expect((refused.body as Problem).code).toBe('ANALYTE_UNIT_WITH_RANGES');
+
+    await send('put', `/exam-catalogue/analytes/${created.id}/ranges`, { ranges: [] }).expect(200); // prettier-ignore
+    await send('patch', `/exam-catalogue/analytes/${created.id}`, { unit: 'mmol/L' }).expect(200); // prettier-ignore
+  });
+
+  it('ORD-110 con órdenes esperando resultado no cambian las determinaciones del examen; el orden sí', async () => {
+    const { bh } = await anIssuedBloodCount();
+    const structure = await prisma.examDefinitionAnalyte.findMany({
+      where: { examDefinitionId: bh.id },
+      orderBy: { position: 'asc' },
+      select: { analyteDefinitionId: true, isReflex: true },
+    });
+
+    const fewer = await send('put', `/exam-catalogue/exams/${bh.id}/analytes`, {
+      analytes: structure.slice(1),
+    }).expect(409); // prettier-ignore
+    expect((fewer.body as Problem).code).toBe('EXAM_HAS_OPEN_ORDERS');
+
+    // Control positivo: reordenar no juzga nada, y se guarda.
+    await send('put', `/exam-catalogue/exams/${bh.id}/analytes`, {
+      analytes: [...structure].reverse(),
+    }).expect(200); // prettier-ignore
+  });
+
+  it('ORD-042 una determinación desactivada se sigue recibiendo en lo ya pedido', async () => {
+    const { hb, registerHb } = await anIssuedBloodCount();
+    await send('patch', `/exam-catalogue/analytes/${hb.id}`, { active: false }).expect(200); // prettier-ignore
+
+    const report = await registerHb(13.4);
+    expect(report.results[0]?.analyteDisplay).toBe('Hemoglobina');
   });
 
   it('ORD-103 sin catalog:manage no se ve ni se toca el catálogo administrado', async () => {

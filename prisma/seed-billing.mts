@@ -954,6 +954,21 @@ const ANALYTES: SeedAnalyte[] = [
       { kind: 'REFERENCE', sex: null, low: null, high: null, text: 'Ausentes' },
     ],
   },
+  // ── Imagen y procedimiento ───────────────────────────────────────────────
+  {
+    // Lo que vuelve de una radiografía, una ecografía o un electrocardiograma
+    // es un informe escrito. Sin una determinación que lo reciba, la línea no
+    // se completa nunca (ORD-039) y la orden se queda en la cola de
+    // pendientes para siempre: revisión de `fix/atencion-examenes`.
+    code: 'INFORME',
+    name: 'Informe',
+    loincCode: null,
+    unit: null,
+    valueType: 'TEXT',
+    decimals: null,
+    allowedValues: null,
+    ranges: [],
+  },
 ];
 
 /** A starting exam: its 010A section, the service that bills it, and its analytes in print order. */
@@ -1034,9 +1049,9 @@ const EXAMS: SeedExam[] = [
       'EMO-BACTERIAS',
     ],
   },
-  // ORD-101. Uno de imagen y uno de procedimiento, para que el filtro por tipo
-  // de la pestaña de órdenes tenga algo que filtrar. Sin determinaciones: su
-  // resultado es un informe escrito, que este catálogo todavía no estructura.
+  // ORD-101. Dos de imagen y uno de procedimiento, para que el filtro por tipo
+  // de la pestaña de órdenes tenga algo que filtrar. Devuelven un informe
+  // escrito, la determinación `INFORME`.
   {
     code: 'EX-RX-TORAX',
     category: 'IMAGING',
@@ -1046,7 +1061,7 @@ const EXAMS: SeedExam[] = [
     patientPreparation: 'Retire objetos metálicos del tórax.',
     turnaroundHours: 24,
     billableServiceCode: 'IMG-RX-SIMPLE',
-    analyteCodes: [],
+    analyteCodes: ['INFORME'],
   },
   {
     code: 'EX-ECO-ABDOMINAL',
@@ -1058,7 +1073,7 @@ const EXAMS: SeedExam[] = [
       'Ayuno de 6 horas. Vejiga llena: beba 1 litro de agua una hora antes.',
     turnaroundHours: 24,
     billableServiceCode: 'IMG-ECO-ABDOMINAL',
-    analyteCodes: [],
+    analyteCodes: ['INFORME'],
   },
   {
     code: 'EX-ECG',
@@ -1069,7 +1084,7 @@ const EXAMS: SeedExam[] = [
     patientPreparation: 'No requiere preparación.',
     turnaroundHours: 2,
     billableServiceCode: 'PROC-ECG',
-    analyteCodes: [],
+    analyteCodes: ['INFORME'],
   },
 ];
 

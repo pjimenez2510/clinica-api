@@ -128,4 +128,33 @@ describe('los rangos de un analito', () => {
       overlap(range({ ageMinDays: 0, ageMaxDays: 27 }), range({ ageMinDays: 28 })), // prettier-ignore
     ).toBe(false);
   });
+
+  it('ORD-106 un rango numérico de solo texto no clasifica nada: se rechaza', () => {
+    expect(
+      fieldsOf(() =>
+        assertRangesHold('NUMERIC', [
+          range({ rangeKind: 'CRITICAL', text: 'llamar si sube' }),
+        ]),
+      ),
+    ).toEqual(['ranges[0].low']);
+  });
+
+  it('ORD-060 un crítico por sexo no pierde el lado que tiene el crítico general', () => {
+    // El varón con glucosa 25 quedaría LOW, sin alerta.
+    expect(
+      fieldsOf(() =>
+        assertRangesHold('NUMERIC', [
+          range({ rangeKind: 'CRITICAL', low: 40, high: 400 }),
+          range({ rangeKind: 'CRITICAL', sex: 'MALE', high: 450 }),
+        ]),
+      ),
+    ).toEqual(['ranges[1].low']);
+    // Control positivo: con sus dos lados, se guarda.
+    expect(() =>
+      assertRangesHold('NUMERIC', [
+        range({ rangeKind: 'CRITICAL', low: 40, high: 400 }),
+        range({ rangeKind: 'CRITICAL', sex: 'MALE', low: 35, high: 450 }),
+      ]),
+    ).not.toThrow();
+  });
 });

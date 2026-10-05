@@ -90,7 +90,16 @@ export function assertRangesHold(
     const at = (field: string) => `ranges[${index}].${field}`;
     const bounded = range.low !== null || range.high !== null;
 
-    if (!bounded && !range.text?.trim()) {
+    if (valueType === 'NUMERIC' && !bounded) {
+      // A numeric range made of text alone never classifies anything: a
+      // critical one would switch the alert off for whoever it is more
+      // specific to (ORD-036 picks it over the general one).
+      invalid.push({
+        field: at('low'),
+        message:
+          'Un rango de una determinación numérica lleva al menos un límite',
+      });
+    } else if (!bounded && !range.text?.trim()) {
       invalid.push({ field: at('low'), message: 'Escriba un límite o un texto' }); // prettier-ignore
     }
     if (range.low !== null && range.high !== null && range.low > range.high) {
@@ -124,6 +133,42 @@ export function assertRangesHold(
   });
   if (invalid.length > 0) throw new ReferenceRangeInvalidError(invalid);
 
+  /**
+   * ORD-060. A critical band more specific than another (a sex, an age) is
+   * applied WHOLE in its place (ORD-036). If it lacks a side the general one
+   * has, that side stops alerting for exactly those patients: a man with a
+   * glucose of 25 would read LOW and nobody would be called. Refused until
+   * the author decides whether a partial band inherits the missing side
+   * (D-123).
+   */
+  const lostSides: { field: string; message: string }[] = [];
+  ranges.forEach((range, index) => {
+    if (range.rangeKind !== 'CRITICAL') return;
+    ranges.forEach((general, other) => {
+      if (
+        other === index ||
+        general.rangeKind !== 'CRITICAL' ||
+        specificity(general) >= specificity(range) ||
+        !covers(general, range)
+      ) {
+        return;
+      }
+      if (general.low !== null && range.low === null) {
+        lostSides.push({
+          field: `ranges[${index}].low`,
+          message: `Le falta el límite inferior que tiene el crítico de la fila ${other + 1}: sin él, esos pacientes no tienen alerta baja`,
+        });
+      }
+      if (general.high !== null && range.high === null) {
+        lostSides.push({
+          field: `ranges[${index}].high`,
+          message: `Le falta el límite superior que tiene el crítico de la fila ${other + 1}: sin él, esos pacientes no tienen alerta alta`,
+        });
+      }
+    });
+  });
+  if (lostSides.length > 0) throw new ReferenceRangeInvalidError(lostSides);
+
   const overlaps: { field: string; message: string }[] = [];
   ranges.forEach((range, index) => {
     const earlier = ranges.findIndex(
@@ -144,6 +189,25 @@ export function assertRangesHold(
  * both with or both without an age window, and windows that meet. A narrower
  * one beside a general one is NOT an overlap — ORD-036 takes the narrower.
  */
+/** ORD-036's weighing: sex above an age window. */
+function specificity(range: ReferenceRange): number {
+  return (range.sex !== null ? 2 : 0) + (aged(range) ? 1 : 0);
+}
+
+function aged(range: ReferenceRange): boolean {
+  return range.ageMinDays !== null || range.ageMaxDays !== null;
+}
+
+/** Whether some patient the specific range applies to is also under `general`. */
+function covers(general: ReferenceRange, specific: ReferenceRange): boolean {
+  if (general.sex !== null && general.sex !== specific.sex) return false;
+  const gMin = general.ageMinDays ?? -Infinity;
+  const gMax = general.ageMaxDays ?? Infinity;
+  const sMin = specific.ageMinDays ?? -Infinity;
+  const sMax = specific.ageMaxDays ?? Infinity;
+  return gMin <= sMax && sMin <= gMax;
+}
+
 export function overlap(a: ReferenceRange, b: ReferenceRange): boolean {
   if (a.rangeKind !== b.rangeKind) return false;
   if (a.sex !== b.sex) return false;

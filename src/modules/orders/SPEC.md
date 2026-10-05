@@ -1065,8 +1065,14 @@ marcar Imagen y pedir un hemograma.
   en `DISCARDED` con quién y cuándo, **sin borrar ninguna fila**; SI no está en
   `DRAFT`, ENTONCES DEBERÁ rechazarlo con `ORDER_NOT_DRAFT`.
 
-  > **[NECESITA ACLARACIÓN — D-122]** ¿Se pide motivo al descartar, como en la
-  > receta (PR-011)? Construido sin motivo, con la recomendación.
+  > **D-122 (resuelta, A):** sin motivo; queda quién y cuándo. Se descarta
+  > también con la atención ya cerrada —descartar no añade nada a la
+  > historia—, para que un borrador olvidado no quede colgado para siempre.
+  >
+  > **D-123.1 (construida con la recomendación):** el borrador lo corrige,
+  > emite o descarta sólo el profesional que firma la orden, como la receta
+  > (PR-100), con `ORDER_DRAFT_OF_ANOTHER_PRACTITIONER`. Y al emitir se
+  > vuelve a comprobar también el tipo de cada examen (ORD-097).
 
 - **ORD-100** — Una orden que no esté en `ISSUED` NO DEBERÁ aparecer en la cola de
   pendientes, ni proponer cargo en caja, ni contar como acto clínico de la
@@ -1112,13 +1118,24 @@ desde la pantalla.
   unidad, o uno codificado u ordinal no trae al menos dos valores admitidos, o
   uno numérico o de texto los trae, ENTONCES DEBERÁ rechazarlo con
   `ANALYTE_DEFINITION_INVALID` nombrando el campo; SI el código ya existe, con
-  `ANALYTE_CODE_DUPLICATE`.
+  `ANALYTE_CODE_DUPLICATE`; y SI otra determinación activa ya lleva ese nombre,
+  con `ANALYTE_NAME_DUPLICATE` (`analyte_definition_active_name_unique`).
+
+  > El nombre es único porque hoy es lo que ata un resultado a su
+  > determinación (ORD-031, falta la columna de identificador): dos activas
+  > con el mismo nombre se confundirían al completar una línea (ORD-039) y al
+  > corregir un informe (ORD-055).
 
 - **ORD-105** — Con `catalog:manage`, el sistema DEBERÁ permitir fijar la
   **estructura de resultados** de un examen: qué analitos produce, en qué orden
   y cuáles son reflejos, sustituyéndola entera; SI nombra un analito que no
-  existe o está desactivado, ENTONCES DEBERÁ rechazarla con
-  `ANALYTE_NOT_FOUND`.
+  existe, o está desactivado y no estaba ya en la estructura, ENTONCES DEBERÁ
+  rechazarla con `ANALYTE_NOT_FOUND`.
+
+  > Desactivar una determinación es dejar de ofrecerla para estructuras
+  > nuevas, no dejar de recibirla: lo ya pedido la sigue esperando, y un
+  > informe que la trae —o la corrección de uno que la trajo— se recibe
+  > (revisión clínica: rechazarla tumbaba el informe entero por ORD-042).
 
   Un analito es de todos los exámenes que lo usan —la glucosa del perfil y la
   de la glucosa en ayunas son la misma determinación—, así que corregirlo
@@ -1130,7 +1147,14 @@ desde la pantalla.
   enteros; SI un rango tiene el inferior por encima del superior o la edad
   mínima por encima de la máxima, o es crítico o numérico sobre un analito que
   no es numérico, ENTONCES DEBERÁ rechazarlo con `REFERENCE_RANGE_INVALID`
-  nombrando la fila.
+  nombrando la fila. Un rango de una determinación numérica DEBERÁ llevar al
+  menos un límite, y un crítico más específico NO DEBERÁ carecer de un lado
+  que tenga un crítico menos específico que le alcanza (ORD-060: esos
+  pacientes se quedarían sin alerta de ese lado; D-123.2).
+
+  > Las edades se escriben «desde» (incluido) y «menos de» (excluido) y se
+  > guardan en días reales (D-123.5): los tramos «0 a 1 año» y «1 a 18 años»
+  > se tocan sin pisarse ni dejar hueco.
 
 - **ORD-107** — SI dos rangos del mismo tipo y la misma especificidad (ORD-036:
   mismo sexo, ambos con o sin ventana de edad) cubren a un mismo paciente,
@@ -1157,7 +1181,20 @@ desde la pantalla.
   rechazarlo con `EXAM_SERVICE_KIND_MISMATCH`.
 
 - **ORD-110** — Un cambio del catálogo NO DEBERÁ alterar ningún resultado ya
-  registrado ni ninguna orden ya emitida.
+  registrado ni ninguna orden ya emitida: SI se renombra, cambia de tipo o de
+  unidad una determinación con resultados, ENTONCES DEBERÁ rechazarlo con
+  `ANALYTE_HAS_RESULTS`; SI se cambia la unidad de una con rangos escritos,
+  con `ANALYTE_UNIT_WITH_RANGES`; y SI se cambian las determinaciones de un
+  examen con líneas emitidas esperando resultado, con `EXAM_HAS_OPEN_ORDERS`
+  (cambiar sólo su orden de impresión se admite).
+
+  > Revisión clínica de `fix/atencion-examenes`: la completitud de una línea
+  > se juzga contra la estructura ACTUAL (ORD-039) y la corrección compara por
+  > el nombre congelado (ORD-055). Renombrar dejaba incorregible un valor
+  > erróneo; cambiar la unidad con rangos en la vieja apagaba un crítico;
+  > quitar o añadir determinaciones cerraba líneas sin valor o las dejaba
+  > abiertas para siempre. Lo de fondo —guardar el identificador en el
+  > resultado y congelar en la línea lo que espera— es la nota de ORD-031.
 
   Ya lo garantiza lo que congelan: la línea, su código y su nombre (ORD-002);
   el resultado, el nombre del analito, su unidad y el rango aplicado
@@ -1212,6 +1249,11 @@ contrato —`code`, estado y mensaje—.
 | `REFERENCE_RANGE_OVERLAP` | 422 | Dos rangos igual de específicos que cubren al mismo paciente | ORD-107 |
 | `EXAM_SERVICE_KIND_MISMATCH` | 422 | La prestación de cobro es de otra clase que el tipo del examen | ORD-108, ORD-109 |
 | `EXAM_SERVICE_NOT_FOUND` | 404 | La prestación de cobro no existe o está desactivada | ORD-108 |
+| `ANALYTE_NAME_DUPLICATE` | 409 | Otra determinación activa ya lleva ese nombre. Lo arbitra `analyte_definition_active_name_unique` | ORD-104 |
+| `ANALYTE_HAS_RESULTS` | 409 | Renombrar, cambiar el tipo o la unidad de una determinación con resultados | ORD-110 |
+| `ANALYTE_UNIT_WITH_RANGES` | 409 | Cambiar la unidad mientras tiene rangos escritos en la vieja | ORD-106 |
+| `EXAM_HAS_OPEN_ORDERS` | 409 | Cambiar las determinaciones de un examen con órdenes esperando resultado | ORD-110 |
+| `ORDER_DRAFT_OF_ANOTHER_PRACTITIONER` | 403 | Corregir, emitir o descartar el borrador que firma otro profesional | ORD-096, D-123 |
 | `EXAM_CATEGORY_MISMATCH` | 422 | Un examen de la orden no es del tipo de la orden. Rechaza la orden **entera**, como ORD-003 | ORD-097 |
 
 Se **reutilizan**, no se crean: `CATALOG_CONCEPT_NOT_FOUND` y

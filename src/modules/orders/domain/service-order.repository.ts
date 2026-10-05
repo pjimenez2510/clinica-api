@@ -46,6 +46,8 @@ export interface ServiceOrderView {
   siteId: string;
   patientId: string;
   orderedById: string;
+  /** D-123. The signer's account: only it corrects, issues or discards a draft. */
+  orderedByUserId: string;
   /**
    * ORD-006, ORD-098. Assigned by `service_order_number_assigned` when the
    * order is ISSUED, never by the code; `null` while it is a draft.

@@ -23,7 +23,8 @@
 --    (`service_order_status_transition`). Descartar deja quién y cuándo
 --    (`service_order_discard_states_who_and_when`), sin borrar nada.
 --  · Fuera de borrador, la orden y sus líneas quedan CONGELADAS: tipo,
---    prioridad, indicación, atención y profesional
+--    prioridad, indicación, atención, profesional, instante de la petición y
+--    código de verificación
 --    (`service_order_frozen_once_issued`), y las líneas no se añaden, quitan
 --    ni reescriben (`service_order_item_frozen_once_issued`). Lo único que
 --    cambia en una línea emitida es su estado —anulación (ORD-007) y
@@ -141,6 +142,11 @@ BEGIN
     OR NEW.ordered_by_id IS DISTINCT FROM OLD.ordered_by_id
     OR NEW.discarded_at IS DISTINCT FROM OLD.discarded_at
     OR NEW.discarded_by_id IS DISTINCT FROM OLD.discarded_by_id
+    -- The issue instant is printed, ages the worklist (ORD-021) and dates the
+    -- charge; the code is printed for the laboratory to check (D-095).
+    OR NEW.requested_at IS DISTINCT FROM OLD.requested_at
+    OR NEW.verification_code IS DISTINCT FROM OLD.verification_code
+    OR NEW.created_at IS DISTINCT FROM OLD.created_at
   ) THEN
     RAISE EXCEPTION
       'service_order_frozen_once_issued: an issued or discarded order is not rewritten'
@@ -165,14 +171,20 @@ DECLARE
   parent_status service_order_status;
   violation BOOLEAN;
 BEGIN
+  -- FOR SHARE: an issue committing meanwhile is waited for, so a line cannot
+  -- land in an order that stopped being a draft under its feet.
   SELECT status INTO parent_status
     FROM service_order
    WHERE id = CASE TG_OP WHEN 'DELETE' THEN OLD.service_order_id
-                         ELSE NEW.service_order_id END;
+                         ELSE NEW.service_order_id END
+     FOR SHARE;
 
   violation := CASE TG_OP
     -- Las líneas se ponen y se quitan mientras la orden es borrador.
+    -- And a line is born asked for: never already done or cancelled.
     WHEN 'INSERT' THEN parent_status IS DISTINCT FROM 'DRAFT'
+                    OR NEW.status <> 'REQUESTED'
+                    OR NEW.completed_at IS NOT NULL
     WHEN 'DELETE' THEN parent_status IS DISTINCT FROM 'DRAFT'
     -- Lo que la línea pide no se reescribe nunca: en borrador se quita y se
     -- pone otra. Su estado sólo se mueve en una orden emitida.
