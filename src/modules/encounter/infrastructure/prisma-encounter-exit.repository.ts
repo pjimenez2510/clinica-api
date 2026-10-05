@@ -164,7 +164,6 @@ export class PrismaEncounterExitRepository implements EncounterExitRepository {
         }
       }
 
-
       /**
        * D-082. «Con lo hecho»: each draft is signed as it stands, with no
        * completeness demanded and no discharge, and the signature is what gives a responsible author
