@@ -608,14 +608,13 @@ describe('el certificado medico por HTTP', () => {
     expect(await prisma.medicalCertificate.count()).toBe(0);
   });
 
-  it('CER-045 un reposo sobre una atención de hace nueve días responde 422 en type (D-106 §4)', async () => {
+  it('CER-045 un reposo sobre una atención de nueve días antes del día de emisión responde 422 en type (D-106 §4)', async () => {
     // Un día más allá del plazo, contado desde el día de emisión, que es el que
     // juzga la regla: de madrugada, hasta las 06:00, es el día anterior
     // (CER-030, D-106 §5). Contado desde el calendario, a esas horas la atención
     // caía dentro del plazo y la emisión se rechazaba por otra cosa.
     const tooLate = addDays(lateIssueDayOf(new Date()), -(MAX_DAYS_TO_ISSUE_REST + 1)); // prettier-ignore
-    const nineDaysAgo = atWallClock(tooLate, WallClockTime.of(12, 0));
-    const old = await anEncounter(siteId, nineDaysAgo);
+    const old = await anEncounter(siteId, atWallClock(tooLate, WallClockTime.of(12, 0))); // prettier-ignore
 
     const response = await post(
       `/encounters/${old.id}/certificates`,
@@ -626,6 +625,7 @@ describe('el certificado medico por HTTP', () => {
       'CERTIFICATE_REST_ISSUED_TOO_LATE',
     );
     expect((response.body as Problem).errors?.[0]?.field).toBe('type');
+    expect(await prisma.medicalCertificate.count()).toBe(0);
   });
 
   it('CER-041 un reposo que empieza en 90 días se rechaza nombrando restFrom, y uno desde mañana pasa', async () => {
