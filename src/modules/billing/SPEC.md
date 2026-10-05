@@ -719,6 +719,14 @@ es falsa, hay requisitos que cambian.
   > los cargos congelados seguirían correctos —esa es la gracia de la pieza 3—
   > pero **nadie podría explicar por qué**, porque la fila que los justificaba
   > ya no diría ese importe.
+  >
+  > **Precisado el 04-10-2026 (`fix/fallos-inventario`, AD-3 del inventario de
+  > D-126).** Cerrar la vigencia anterior es parte de `POST …/prices` y no una
+  > ruta propia: la tabla de rutas nombraba un `POST …/prices/{priceId}/close`
+  > que nunca existió y se ha quitado. Un cierre suelto dejaría la prestación sin
+  > precio y el siguiente cargo en `PRICE_NOT_FOUND`, y ningún flujo lo pide.
+  > Corregir un precio mal tecleado será «Editar» con versión (D-127,
+  > `fix/menos-preguntas`).
 - **BI-045** — El sistema DEBERÁ guardar el precio **sin impuesto**, y DEBERÁ
   calcular el impuesto sobre la base ya descontada.
 - **BI-046** — El sistema DEBERÁ exigir el permiso `billing:price-manage` para
@@ -1834,7 +1842,6 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 | `PATCH` | `/billing/payers/{id}` | `billing:price-manage` | `global` | BI-031, BI-032, BI-034 |
 | `GET` | `/billing/payers/{payerId}/prices` | `billing:read` | `global` | BI-040, BI-041 |
 | `POST` | `/billing/payers/{payerId}/prices` | `billing:price-manage` | `global` | BI-041 a BI-048 |
-| `POST` | `/billing/payers/{payerId}/prices/{priceId}/close` | `billing:price-manage` | `global` | BI-044 |
 | `GET` | `/billing/sites/{siteId}/accounts` | `billing:read` | `param:siteId` | BI-070, BI-133, BI-183 |
 | `GET` | `/billing/sites/{siteId}/encounters/awaiting-checkout` | `billing:read` | `param:siteId` | BI-181 a BI-183, BI-190 |
 | `POST` | `/billing/sites/{siteId}/accounts` | `billing:write` | `param:siteId` | BI-070, BI-121 |

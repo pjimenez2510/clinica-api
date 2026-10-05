@@ -834,6 +834,22 @@ requisitos que cambian.
   > prosa que sólo se muestra e imprime vive aquí»*. Meter el motivo de consulta en
   > una columna no compraría nada; sacar el diagnóstico del JSON haría imposible
   > el reporte mensual.
+  >
+  > **Enmendado el 04-10-2026 (`fix/fallos-inventario`, AT-14 del inventario de
+  > D-126).** CUANDO se firme el formulario 002, el sistema DEBERÁ exigir, además
+  > de las seis secciones de prosa, **al menos un diagnóstico** registrado en la
+  > atención, y SI falta, ENTONCES DEBERÁ rechazar la firma con
+  > `NOTE_CONTENT_INCOMPLETE` nombrando `diagnoses` junto a las secciones que
+  > falten. Hasta entonces sólo lo frenaba la pantalla, y un cliente de la API
+  > —el asistente de IA de D-127.5— firmaba una nota sin diagnóstico: una
+  > atención dada de alta que el RDACAA no puede reportar. **Garantía de la
+  > base:** `trg_clinical_note_sign_needs_diagnosis` rechaza que una nota 002
+  > pase a `SIGNED` —o nazca firmada, como la enmienda— en una atención sin
+  > ninguna fila en `encounter_diagnosis`. Es la otra mitad de
+  > `encounter_diagnosis_last_after_discharge` (EN-188): aquélla impide quitar el
+  > último tras el alta, ésta impide llegar al alta sin ninguno. La 005 no lo
+  > exige: el art. 6 rige el contenido mínimo de la historia, y aquí lo cumple
+  > la 002.
 - **EN-021** — El sistema DEBERÁ identificar cada nota por su **código de
   formulario del MSP** guardado como dato, y NO DEBERÁ codificar la lista de
   formularios en el esquema.
@@ -1321,6 +1337,24 @@ requisitos que cambian.
   > registro es opcional»*. La edad es la **congelada** de EN-008 y el grupo se lee
   > de `encounter_priority_group` (EN-099), no de la ficha: lo que cuenta es lo que
   > era verdad ese día.
+  >
+  > **Enmendado el 04-10-2026 (`fix/fallos-inventario`, AT-18 del inventario de
+  > D-126).** Hasta entonces sólo se aplicaba la mitad de la edad. Dos
+  > precisiones:
+  >
+  > - **De dónde sale el embarazo.** `encounter_priority_group` no se puede
+  >   poblar mientras falte su catálogo (EN-099), así que se lee el registro
+  >   `PREGNANT` de la ficha (PA-034) **vigente en la fecha clínica de la
+  >   atención** (`America/Guayaquil`), con el alcance de PA-055. Su periodo
+  >   fechado es lo que era verdad ese día, que es lo que la frase de arriba
+  >   protege. Cuando EN-099 tenga catálogo, la fuente pasa a ser la atención.
+  > - **Qué se exige a la embarazada: peso y talla.** El instructivo pone
+  >   asterisco también al perímetro cefálico, que la misma página describe como
+  >   «la medida… de la cabeza del niño». **D-129** (pendiente) recomienda no
+  >   exigirlo en la gestante, y es lo que se construye mientras tanto.
+  >
+  > El error no dice cuál de las dos condiciones se cumplió: `VITALS_REQUIRED`
+  > nombra los campos y la frase cubre las dos.
 - **EN-064** — El sistema DEBERÁ registrar **cómo se tomó la talla**: **1 de
   pie** o **2 acostado**.
   > Columna 23 del RDACAA. No es un detalle
@@ -2954,6 +2988,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `DIAGNOSIS_CONCEPT_NOT_IN_FORCE` | 422 | El código CIE-10 no estaba vigente en la fecha de la atención. **Lo emite el adaptador**, no el mapeo de constraints: `trg_diagnosis_concept_in_force` levanta `integrity_constraint_violation` desde PL/pgSQL, así que el nombre del disparador nunca viaja al cliente | EN-042 |
 | `VITALS_OUT_OF_RANGE` | 422 | Medida fuera de rango. Del mapeo de constraints: `encounter_vitals_ranges_*`, una por medida (D-058). **Por campo**, señalando cuál y diciendo el rango | EN-062 |
 | `VITALS_REQUIRED` | 422 | Falta antropometría obligatoria en menor de 5 años o embarazada | EN-063 |
+| `NOTE_CONTENT_INCOMPLETE` | 422 | Firmar sin una sección obligatoria, o la 002 sin ningún diagnóstico en la atención (`diagnoses`). Nombra lo que falta, nunca su contenido | EN-020 |
 | `BMI_IS_DERIVED` | 422 | Se envió el IMC en la petición | EN-061 |
 | `VIOLENCE_SCREENING_RESTRICTED` | 403 | Se intentó **registrar** el tamizaje sin la segunda llave. Al **leer** no se rechaza: se omite | EN-072 |
 | `HIV_DATA_RESTRICTED` | 403 | Lo mismo para el bloque de VIH | EN-095 |
