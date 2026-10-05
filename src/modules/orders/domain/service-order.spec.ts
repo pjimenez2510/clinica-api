@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   admitsNewOrders,
   isCorrectable,
+  supersedingStatus,
   isLineComplete,
   isPending,
 } from './service-order';
@@ -40,13 +41,30 @@ describe('las políticas de la orden', () => {
     expect(isPending('CANCELLED')).toBe(false);
   });
 
-  it('ORD-053 sólo corrige un informe definitivo o ya corregido', () => {
-    // Un parcial no se corrige, se completa; uno anulado ya no afirma nada. Y
-    // `CORRECTED` sí, porque una corrección también puede estar mal.
+  it('ORD-053 ORD-119 se sustituye un informe definitivo, ya corregido o parcial; uno anulado no', () => {
+    // Uno anulado ya no afirma nada. `CORRECTED` sí, porque una corrección
+    // también puede estar mal; y un parcial se completa editándolo (ORD-119).
     expect(isCorrectable('FINAL')).toBe(true);
     expect(isCorrectable('CORRECTED')).toBe(true);
-    expect(isCorrectable('PARTIAL')).toBe(false);
+    expect(isCorrectable('PARTIAL')).toBe(true);
     expect(isCorrectable('CANCELLED')).toBe(false);
+  });
+
+  it('ORD-119 completar un parcial sin cambiar lo que ya decía no es una corrección; cambiar un valor, sí', () => {
+    const was = [
+      { analyteDisplay: 'Hemoglobina', valueNumeric: 13.4, valueCode: null, valueText: null }, // prettier-ignore
+    ];
+    const kept = { analyteDisplay: 'Hemoglobina', valueNumeric: 13.4, valueCode: null, valueText: null }; // prettier-ignore
+    const added = { analyteDisplay: 'Glucosa en ayunas', valueNumeric: 92, valueCode: null, valueText: null }; // prettier-ignore
+
+    // Completed: the status says what it now is.
+    expect(supersedingStatus({ status: 'PARTIAL', results: was }, [kept, added], 'FINAL')).toBe('FINAL'); // prettier-ignore
+    expect(supersedingStatus({ status: 'PARTIAL', results: was }, [kept], 'PARTIAL')).toBe('PARTIAL'); // prettier-ignore
+    // A value that changes is never silent (ORD-050), complete or not.
+    expect(supersedingStatus({ status: 'PARTIAL', results: was }, [{ ...kept, valueNumeric: 9.1 }, added], 'FINAL')).toBe('CORRECTED'); // prettier-ignore
+    expect(supersedingStatus({ status: 'PARTIAL', results: was }, [{ ...kept, valueText: 'hemolizada' }], 'PARTIAL')).toBe('CORRECTED'); // prettier-ignore
+    // A definitive report superseded is always a correction.
+    expect(supersedingStatus({ status: 'FINAL', results: was }, [kept], 'FINAL')).toBe('CORRECTED'); // prettier-ignore
   });
 
   it('ORD-039 cierra la línea cuando llegan todas las determinaciones no reflejas', () => {

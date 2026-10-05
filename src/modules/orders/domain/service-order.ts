@@ -89,15 +89,53 @@ export function isPending(status: ServiceOrderItemStatus): boolean {
 }
 
 /**
- * ORD-053. Whether a report can be superseded by a correction.
+ * ORD-053, ORD-119. Whether a report can be superseded by a new version.
  *
- * A `PARTIAL` report is not corrected, it is COMPLETED — the determinations
- * that were missing simply arrive. A `CANCELLED` one asserts nothing. What is
- * left is `FINAL` and `CORRECTED`, and the second is in the list on purpose: a
- * correction can itself be wrong, and the chain has to be able to grow.
+ * A `CANCELLED` one asserts nothing. `CORRECTED` is in the list on purpose: a
+ * correction can itself be wrong, and the chain has to be able to grow. And
+ * since ORD-119 a `PARTIAL` one is completed by EDITING it: the new version
+ * brings what it said and what was missing, and the partial stays readable
+ * behind it (ORD-050, ORD-051).
  */
 export function isCorrectable(status: DiagnosticReportStatus): boolean {
-  return status === 'FINAL' || status === 'CORRECTED';
+  return status !== 'CANCELLED';
+}
+
+/** One value as a report states it, for comparing two versions. */
+interface StatedValue {
+  analyteDisplay: string;
+  valueNumeric: number | null;
+  valueCode: string | null;
+  valueText: string | null;
+}
+
+/**
+ * ORD-050, ORD-119. The status of the version that supersedes `previous`.
+ *
+ * A definitive report superseded is always `CORRECTED`: that is how a screen
+ * knows to print «corregido el …» beside a number somebody may have acted on.
+ * A PARTIAL one that is only COMPLETED —every value it stated comes back the
+ * same— takes the status its contents earn (`completeness`: `FINAL` with every
+ * determination in, `PARTIAL` while one is missing), because nothing anybody
+ * read has changed. If any value it stated changes, it is a correction, and
+ * says so: a value that changes in silence is a safety incident.
+ */
+export function supersedingStatus(
+  previous: { status: DiagnosticReportStatus; results: readonly StatedValue[] },
+  brought: readonly StatedValue[],
+  completeness: DiagnosticReportStatus,
+): DiagnosticReportStatus {
+  if (previous.status !== 'PARTIAL') return 'CORRECTED';
+  const changed = previous.results.some((was) => {
+    const now = brought.find((value) => value.analyteDisplay === was.analyteDisplay); // prettier-ignore
+    return (
+      now === undefined ||
+      now.valueNumeric !== was.valueNumeric ||
+      now.valueCode !== was.valueCode ||
+      now.valueText !== was.valueText
+    );
+  });
+  return changed ? 'CORRECTED' : completeness;
 }
 
 /**

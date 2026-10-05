@@ -48,7 +48,11 @@ import {
   ResultNotFoundError,
   ResultSupersededError,
 } from '../domain/orders.errors';
-import { isCorrectable, isLineComplete } from '../domain/service-order';
+import {
+  isCorrectable,
+  isLineComplete,
+  supersedingStatus,
+} from '../domain/service-order';
 import { resolveResult } from '../domain/result-value';
 import { keepStandingCritical } from '../domain/abnormal-flag';
 import {
@@ -288,9 +292,11 @@ export class DiagnosticReportService {
         /**
          * ORD-050. `CORRECTED` AND NOT `FINAL`, even when every determination
          * is in: the status is how a screen knows to print «corregido el …»
-         * beside a number somebody may already have acted on.
+         * beside a number somebody may already have acted on. ORD-119: a
+         * PARTIAL only completed, with nothing it said changed, takes the
+         * status its contents earn.
          */
-        status: 'CORRECTED',
+        status: supersedingStatus(previous, prepared.results, prepared.status),
         performedById: request.performedById,
         conclusion: request.conclusion,
         issuedAt: request.issuedAt,

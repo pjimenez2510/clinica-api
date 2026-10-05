@@ -61,7 +61,7 @@ const EVERY_ERROR: readonly DomainError[] = [
   new OrderDraftOfAnotherPractitionerError(),
   new ExamCategoryMismatchError(),
   new ReportAlreadyCorrectedError(),
-  new ReportNotCorrectableError('PARTIAL'),
+  new ReportNotCorrectableError('CANCELLED'),
   new ResultAnalyteUnknownError(),
   new ResultValueTypeMismatchError('HB', 'NUMERIC'),
   new ResultValueTypeMismatchError('EMO-NITRITOS', 'CODED'),
@@ -161,8 +161,12 @@ describe('el contrato de errores de las órdenes', () => {
     );
     expect(new OrderItemNotPendingError()).toBeInstanceOf(ConflictError);
     expect(new ReportAlreadyCorrectedError()).toBeInstanceOf(ConflictError);
-    expect(new ReportNotCorrectableError('PARTIAL')).toBeInstanceOf(
+    expect(new ReportNotCorrectableError('CANCELLED')).toBeInstanceOf(
       ConflictError,
+    );
+    // ORD-119. A partial is edited now: the sentence names only the annulled.
+    expect(new ReportNotCorrectableError('CANCELLED').userTitle).toBe(
+      'Un informe anulado no se edita: ya no afirma nada. Registre uno nuevo',
     );
   });
 

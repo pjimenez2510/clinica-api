@@ -279,14 +279,14 @@ export class ReportAlreadyCorrectedError extends ConflictError {
 /**
  * ORD-053. A partial or an annulled report is not corrected.
  *
- * A partial report is not corrected, it is COMPLETED — the determinations that
- * were missing simply arrive. And an annulled one asserts nothing, so there is
- * nothing to correct. The message names the way out of each.
+ * An annulled report asserts nothing, so there is nothing to correct. Since
+ * ORD-119 a partial one IS edited —that is how it is completed—, so this only
+ * answers an annulled one, and the message names the way out.
  */
 export class ReportNotCorrectableError extends ConflictError {
   readonly code = 'REPORT_NOT_CORRECTABLE';
   override readonly userTitle =
-    'Sólo se corrige un informe definitivo. Si el informe está parcial, complételo; si está anulado, registre uno nuevo';
+    'Un informe anulado no se edita: ya no afirma nada. Registre uno nuevo';
 
   constructor(status: string) {
     super(`A ${status} report cannot be corrected`, { status });

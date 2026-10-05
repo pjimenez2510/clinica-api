@@ -782,6 +782,10 @@ cuando la gráfica exista.
   Un informe parcial no se corrige: se completa. Y uno anulado no se corrige
   porque ya no afirma nada.
 
+  > **Enmendado por ORD-119 (D-127, 04-10-2026):** el parcial se completa
+  > **editándolo**, con la misma ruta de la corrección y su versión. Sólo el
+  > anulado sigue rechazándose con `REPORT_NOT_CORRECTABLE`.
+
 - **ORD-054** — La corrección DEBERÁ registrar sus valores como filas nuevas,
   y las banderas DEBERÁN recalcularse con la misma regla que en el original
   (ORD-035, ORD-036).
@@ -1367,6 +1371,34 @@ se anula y se pide de nuevo, y la pantalla lo hace en un paso (D-127.4)._
   > orden de una consulta terminada no se corrige: se anulan sus exámenes y se
   > piden en una atención nueva.
 
+- **ORD-119** — CUANDO se edite el informe vigente de una orden, el sistema
+  DEBERÁ hacerlo como en ORD-050 —un informe **nuevo** que sustituye al
+  anterior (`supersedes_id`), sin tocar ningún valor del anterior, que sigue
+  legible (ORD-051)—, y MIENTRAS el informe editado esté `PARTIAL`, DEBERÁ
+  admitir que la versión nueva **añada** los analitos que faltaban, con todos
+  los que ya traía (ORD-055). La versión nueva DEBERÁ quedar `CORRECTED` si
+  cambia **cualquier** valor que el parcial ya decía, y, si sólo lo completa,
+  con el estado que le dan sus determinaciones —`FINAL` con todas, `PARTIAL`
+  mientras falte alguna (ORD-030)—; y la línea DEBERÁ cerrarse cuando estén
+  todas (ORD-039). SI el informe está `CANCELLED`, ENTONCES DEBERÁ rechazarlo
+  con `REPORT_NOT_CORRECTABLE`.
+  > **Por qué sin romper ORD-050:** la regla que lo funda es de seguridad —«un
+  > valor que cambia en silencio es un incidente»— y se cumple igual: el
+  > parcial no se sobrescribe, queda como versión, y un valor que cambia sale
+  > `CORRECTED`, que es lo que hace a la pantalla decir «corregido». Completar
+  > sin cambiar nada no altera nada que alguien haya leído, y llamarlo
+  > «corregido» sería una alarma falsa. ORD-052 (una sola sustitución por
+  > informe) y ORD-055 (la versión nueva trae todo lo que decía la anterior)
+  > siguen igual.
+  >
+  > **Registrar otro informe** sigue siendo posible: es como llega un segundo
+  > envío del laboratorio, y ORD-039 cuenta lo recibido en total. Lo nuevo es
+  > que quien transcribe no está obligado a ese camino para terminar un
+  > parcial que él mismo dejó a medias.
+  >
+  > **Solo interfaz:** el botón del informe vigente se llama «Editar», también
+  > en un parcial, y abre los valores ya cargados.
+
 ## Códigos de error nuevos
 
 Todos entran en `shared/domain/errors/error-catalogue.ts` con su prueba de
@@ -1381,7 +1413,7 @@ contrato —`code`, estado y mensaje—.
 | `ORDER_ITEM_NOT_PENDING` | 409 | Se intentó anular una línea ya completada o ya anulada, o corregir una orden sin ninguna línea viva | ORD-008, ORD-118 |
 | `REPORT_NOT_FOUND` | 404 | El informe no existe o es de una sede fuera del alcance | ORD-051 |
 | `REPORT_ALREADY_CORRECTED` | 409 | Ese informe ya tiene una corrección. Lo arbitra el `UNIQUE` sobre `supersedes_id` | ORD-052 |
-| `REPORT_NOT_CORRECTABLE` | 409 | Se intentó corregir un informe parcial o anulado | ORD-053 |
+| `REPORT_NOT_CORRECTABLE` | 409 | Se intentó editar un informe anulado. Un parcial sí se edita desde ORD-119 | ORD-053, ORD-119 |
 | `RESULT_ANALYTE_UNKNOWN` | 422 | El analito no está en el catálogo | ORD-042 |
 | `RESULT_VALUE_TYPE_MISMATCH` | 422 | El valor no corresponde al tipo que el analito declara | ORD-032 |
 | `RESULT_VALUE_NOT_ALLOWED` | 422 | El valor codificado no está en `allowed_values` | ORD-033 |
@@ -1465,7 +1497,7 @@ resuelto de quien llama.
 | `GET` | `/orders/pending` | `record:read` | ORD-020 a ORD-026, ORD-081, ORD-092 |
 | `POST` | `/orders/:orderId/reports` | `result:write` | ORD-030 a ORD-042, ORD-094 |
 | `GET` | `/orders/:orderId/reports` | `record:read` | ORD-051, ORD-091 |
-| `POST` | `/orders/reports/:reportId/correct` | `result:write` | ORD-050 a ORD-054 |
+| `POST` | `/orders/reports/:reportId/correct` | `result:write` | ORD-050 a ORD-055, ORD-119 |
 | `GET` | `/orders/results/unmatched` | `record:read` | ORD-040, ORD-041, ORD-046, ORD-092 |
 | `POST` | `/orders/results/:resultId/match` | `result:write` | ORD-041, ORD-043, ORD-091 |
 | `GET` | `/orders/results/critical` | `record:read` | ORD-060, ORD-061, ORD-065, ORD-092 |
@@ -1520,6 +1552,7 @@ columnas donde registrar quién lo decidió y por qué.
 | ORD-116 | Integración y unitario | Que la vuelta `DISCARDED → DRAFT` limpie quién y cuándo y no mueva nada más lo garantiza un disparador: se prueba contra la base, con control positivo; recuperar devuelve las mismas líneas, y lo no descartado responde `ORDER_NOT_DISCARDED`. Que sólo quien firma recupera, con el servicio. |
 | ORD-117 | Interfaz | Anular una línea abre una confirmación con la consecuencia; cancelar no llama al servidor, confirmar sí. |
 | ORD-118 | Integración y unitario | Contra la base: corregir anula las líneas vivas, deja la resultada como estaba y abre el borrador con los mismos exámenes, tipo, prioridad e indicación; **un fallo forzado al escribir el borrador deja todas las líneas vivas**, con control positivo; atención cerrada, borrador y orden sin líneas vivas no corrigen. Que sólo quien firma corrige, con el servicio. |
+| ORD-119 | Integración y unitario | Contra la base: editar un parcial añadiendo lo que faltaba deja la versión nueva `FINAL`, el parcial legible y sustituido, y la línea `COMPLETED`, con control positivo (antes de editar, `PARTIAL` y la línea pendiente); cambiar un valor que ya decía la deja `CORRECTED`. Unitario del estado de la versión y del servicio. |
 | Todos los códigos de error | Unitario | Contrato: `code`, categoría y mensaje. |
 
 ---
