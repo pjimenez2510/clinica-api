@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import { chartScope } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
   AppointmentNotAttendableError,
+  EncounterAlreadyReportedError,
   EncounterAppointmentMismatchError,
   EncounterNotFoundError,
   InvalidEncounterTransitionError,
@@ -27,7 +27,7 @@ import type {
   VitalSignsView,
   VitalsVersionView,
 } from '../domain/encounter.repository';
-import type { VitalSigns } from '../domain/vital-signs';
+import type { AnthropometryField, VitalSigns } from '../domain/vital-signs';
 
 /**
  * Rows in, domain shapes out.
@@ -506,6 +506,16 @@ export class PrismaEncounterRepository implements EncounterRepository {
 
     return this.prisma.$transaction(async (tx) => {
       /**
+       * D-117.16, EN-217. Block D travels to the RDACAA too: an attention
+       * already reported is not corrected, asked under the attention's lock.
+       */
+      const [attention] = await tx.$queryRaw<{ reported: boolean }[]>`
+        SELECT reported_at IS NOT NULL AS reported FROM encounter
+         WHERE id = ${query.encounterId}::uuid
+           FOR UPDATE`;
+      if (attention?.reported) throw new EncounterAlreadyReportedError();
+
+      /**
        * EN-210. `record_version_archive` refuses an edit whose stamp did not
        * change, so a second correction in the same millisecond as the first —
        * a double submit, two people at once — would fail as «sin sello». The
@@ -567,21 +577,17 @@ export class PrismaEncounterRepository implements EncounterRepository {
     });
   }
 
-  /** EN-063. A PREGNANT record of the chart, in force on that clinical date. */
-  async isPregnantOn(patientId: string, on: ClinicalDate): Promise<boolean> {
-    const day = new Date(`${on}T00:00:00Z`);
-    const found = await this.prisma.patientPriorityGroup.findFirst({
-      where: {
-        ...chartScope(patientId),
-        groupCode: 'PREGNANT',
-        startsOn: { lte: day },
-        // PA-036 makes the pregnancy's end mandatory; `null` is admitted all
-        // the same, as «not ended», for the persistent groups' shape.
-        OR: [{ endsOn: null }, { endsOn: { gte: day } }],
-      },
-      select: { id: true },
-    });
-    return found !== null;
+  /**
+   * EN-063, EN-217. What `encounter_anthropometry_pending` says is missing:
+   * the function the signature's deferred trigger asks too, so the screen's
+   * warning and the refusal cannot disagree.
+   */
+  async anthropometryPending(
+    encounterId: string,
+  ): Promise<AnthropometryField[]> {
+    const [row] = await this.prisma.$queryRaw<{ pending: string[] | null }[]>`
+      SELECT encounter_anthropometry_pending(${encounterId}::uuid) AS pending`;
+    return (row?.pending ?? []) as AnthropometryField[];
   }
 
   /**

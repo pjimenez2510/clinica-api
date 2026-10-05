@@ -23,7 +23,7 @@
  * PURE: the age is handed in already frozen, so nothing here reads a clock.
  */
 
-import { BmiIsDerivedError, VitalsRequiredError } from './encounter.errors';
+import { BmiIsDerivedError } from './encounter.errors';
 
 /**
  * EN-060. The block D measurements, as `encounter_vitals` stores them.
@@ -81,28 +81,18 @@ export interface VitalSigns {
 }
 
 /**
- * The frozen age of EN-008, in the three units the RDACAA classifies by.
+ * EN-063, EN-217. The anthropometry the instructivo makes obligatory for
+ * under-fives and for pregnant women, by the field name the API uses.
  *
- * IT IS THE ATTENTION'S AGE AND NOT THE PATIENT'S. A child of 10 attended in
- * March is 10 in March's row for ever, and evaluating this rule against
- * today's date would make a report reprocessed next year refuse rows it
- * accepted — the same reasoning PA-005 wrote down for «intersexual en menores
- * de un año».
+ * WHICH ONES ARE MISSING IS NOT DECIDED HERE: `encounter_anthropometry_pending`
+ * in the database answers it for the taking's response, for the signature
+ * and for the deferred trigger that guards the signature (D-132 B). The rule
+ * reads the frozen age, the chart's dated pregnancy on the clinical date and
+ * the absorbed charts; one statement of it is what keeps the three answers
+ * the same.
  */
-export interface FrozenAge {
-  years: number | null;
-  months: number | null;
-  days: number | null;
-}
-
-/** EN-063. Under five, read off the frozen age and never off a clock. */
-export function isUnderFive(age: FrozenAge): boolean {
-  // `null` means the trigger has not run, which cannot happen on a stored row
-  // — `trg_encounter_freeze_age` is `BEFORE INSERT` and fills all three. It is
-  // treated as «not under five» rather than asserted away because the honest
-  // failure of an unknown age is to demand nothing, not to demand everything.
-  return age.years !== null && age.years < 5;
-}
+export type AnthropometryField =
+  'weightKg' | 'heightCm' | 'headCircumferenceCm';
 
 /**
  * EN-061. Refuses a body that carried a body mass index.
@@ -118,40 +108,4 @@ export function isUnderFive(age: FrozenAge): boolean {
  */
 export function assertBmiNotSupplied(body: { readonly bmi?: unknown }): void {
   if (body.bmi !== undefined) throw new BmiIsDerivedError();
-}
-
-/**
- * EN-063. The anthropometry the instructivo makes obligatory for under-fives
- * and for pregnant women.
- *
- * Literal from the note to block D (instructivo, p. 44): *«los datos
- * antropométricos con \* es obligatorio para usuarios menores de 5 años o que
- * corresponda al grupo prioritario "Embarazadas"; para el resto de usuarios el
- * registro es opcional»*.
- *
- * THE PREGNANT WOMAN IS ASKED FOR WEIGHT AND HEIGHT, NOT THE HEAD
- * CIRCUMFERENCE. The instructivo stars all three, and describes the third as
- * the measure «de la cabeza del niño»; D-129 (resolved 05-10-2026) does not
- * demand it of a pregnant adult. Whether she is pregnant is the caller's to
- * answer, on the attention's clinical date.
- *
- * ALL THE MISSING FIELDS AT ONCE, never the first one: a nurse correcting a
- * form one refusal at a time is a nurse who stops reading them.
- */
-export function assertMandatoryAnthropometry(
-  vitals: VitalSigns,
-  age: FrozenAge,
-  pregnant: boolean,
-): void {
-  const required: readonly (keyof VitalSigns)[] = isUnderFive(age)
-    ? ['weightKg', 'heightCm', 'headCircumferenceCm']
-    : pregnant
-      ? ['weightKg', 'heightCm']
-      : [];
-
-  const missing = required.filter(
-    (field) => vitals[field] === undefined || vitals[field] === null,
-  );
-
-  if (missing.length > 0) throw new VitalsRequiredError(missing);
 }

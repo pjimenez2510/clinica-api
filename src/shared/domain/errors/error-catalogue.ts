@@ -668,9 +668,10 @@ export const DOMAIN_ERROR_CODES = [
   //     `trg_encounter_vitals_bmi` lo sobrescribe, así que descartarlo en
   //     silencio dejaría a quien lo tecleó creyendo que su número es el que
   //     está en el expediente.
-  //   * `VITALS_REQUIRED` (422) — falta la antropometría que el instructivo
-  //     hace obligatoria en menores de 5 años, evaluada con la EDAD CONGELADA
-  //     de la atención y no con la de hoy.
+  //   * `ANTHROPOMETRY_PENDING` (422) — EN-217 (D-132 B). Se firma la 002
+  //     sin la antropometría que el instructivo hace obligatoria en menores
+  //     de 5 años y embarazadas. La toma ya no se rechaza (`VITALS_REQUIRED`
+  //     se retiró): se guarda, y la firma lo exige; la base también.
   //   * `CLINICAL_NOTE_NOT_FOUND` (404), `UNKNOWN_CLINICAL_FORM` (422) y
   //     `NOTE_CONTENT_INCOMPLETE` (422) — la nota no existe en esa atención,
   //     el formulario no está configurado, o falta una de las secciones que el
@@ -696,6 +697,7 @@ export const DOMAIN_ERROR_CODES = [
   'APPOINTMENT_ARRIVAL_NOT_RECORDED',
   'ENCOUNTER_INTERRUPTION_REASON_REQUIRED',
   'AMENDMENT_REASON_REQUIRED',
+  'ANTHROPOMETRY_PENDING',
   'APPOINTMENT_NOT_ATTENDABLE',
   'BMI_IS_DERIVED',
   'CLINICAL_NOTE_NOT_FOUND',
@@ -715,7 +717,6 @@ export const DOMAIN_ERROR_CODES = [
   'PRACTITIONER_PROFILE_REQUIRED',
   'SUBSTITUTE_CLOSURE_REASON_REQUIRED',
   'UNKNOWN_CLINICAL_FORM',
-  'VITALS_REQUIRED',
   // ── H3: el bloque K del RDACAA — diagnósticos y procedimientos ──────────
   //   * `CONCEPT_WRONG_CATALOGUE` (422) — el concepto existe y es de otro
   //     catálogo. La clave foránea apunta a `catalog_concept`, que guarda

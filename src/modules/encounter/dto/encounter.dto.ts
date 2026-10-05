@@ -461,8 +461,19 @@ export const vitalSignsSchema = z.object({
   correctedBy: z.object({ id: z.uuid(), name: z.string() }).nullable(),
   correctedAt: z.iso.datetime().nullable(),
 });
+/**
+ * EN-217 (D-132 B). Block D as reading and recording it answer: the taking,
+ * and the mandatory anthropometry still missing — the screen warns, and the
+ * signature of the 002 demands it. Not on a version: what was pending then is
+ * not a fact of the taking.
+ */
+export const vitalsReadingSchema = vitalSignsSchema.extend({
+  anthropometryPending: z.array(
+    z.enum(['weightKg', 'heightCm', 'headCircumferenceCm']),
+  ),
+});
 /** Response of reading and recording block D. */
-export class VitalSignsDto extends createZodDto(vitalSignsSchema) {}
+export class VitalSignsDto extends createZodDto(vitalsReadingSchema) {}
 
 /**
  * EN-211, D-127. The takings corrections replaced, newest first. Each one is
@@ -489,4 +500,5 @@ export type EncounterDetailResponse = z.infer<typeof encounterDetailSchema>;
 export type EncounterListResponse = z.infer<typeof encounterListSchema>;
 export type EncounterPageResponse = z.infer<typeof encounterPageSchema>;
 export type VitalSignsResponse = z.infer<typeof vitalSignsSchema>;
+export type VitalsReadingResponse = z.infer<typeof vitalsReadingSchema>;
 export type VitalsVersionListResponse = z.infer<typeof vitalsVersionListSchema>;

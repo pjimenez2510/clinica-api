@@ -1384,8 +1384,11 @@ requisitos que cambian.
   >   «la medida… de la cabeza del niño». **D-129** (resuelta por el autor el
   >   05-10-2026) no lo exige en la gestante.
   >
-  > El error no dice cuál de las dos condiciones se cumplió: `VITALS_REQUIRED`
-  > nombra los campos y la frase cubre las dos.
+  > **Enmendado por EN-217 (D-132 B, 05-10-2026): «exigir» es al FIRMAR la
+  > 002, no al guardar la toma.** La toma se guarda sin la antropometría
+  > obligatoria y la respuesta dice qué falta; `VITALS_REQUIRED` se retiró y
+  > la firma responde `ANTHROPOMETRY_PENDING`, que nombra los campos y no
+  > cuál de las dos condiciones se cumplió.
 - **EN-064** — El sistema DEBERÁ registrar **cómo se tomó la talla**: **1 de
   pie** o **2 acostado**.
   > Columna 23 del RDACAA. No es un detalle
@@ -3322,6 +3325,29 @@ falta de una medida; y salir de la atención pide lo justo._
   > (`AMENDMENT_REASON_REQUIRED`, `clinical_note_amendment_reason`). Al firmar,
   > la pantalla dice «Después se podrá corregir con Editar; queda la versión
   > firmada» en lugar de «una nota firmada no se edita» (AT-13).
+- **EN-217** — CUANDO se guarden los signos vitales de una atención y falte
+  la antropometría que EN-063 hace obligatoria, el sistema DEBERÁ guardar la
+  toma igualmente y DEBERÁ servir, al guardarla y al leerla, qué medidas
+  faltan (`anthropometryPending`); SI se firma la nota de consulta (002) que
+  da el alta mientras falte alguna, ENTONCES DEBERÁ rechazarlo con
+  `ANTHROPOMETRY_PENDING`, nombrando cada medida; y MIENTRAS la atención tenga
+  el alta, DEBERÁ admitir **corregir** la toma ya registrada —con su versión
+  (EN-210)—, y SI la atención ya se reportó al RDACAA, ENTONCES DEBERÁ
+  rechazarlo con `ENCOUNTER_ALREADY_REPORTED`.
+  > **D-132 B.** Rechazar la toma entera perdía la presión arterial de la
+  > gestante que no se podía pesar —la cifra que alerta de preeclampsia— o
+  > hacía teclear un peso inventado que llegaba falso al RDACAA. Interrumpir
+  > (EN-167) firma la 002 sin dar el alta y no lo exige. Tras el alta no se
+  > registra una toma **nueva** (EN-130, `ENCOUNTER_ALREADY_CLOSED`): se
+  > corrige la que hay, y la corrección no mueve el tablero.
+  >
+  > **Garantía de la base**: `encounter_anthropometry_pending` es la única
+  > lectura de la regla —edad congelada, registro `PREGNANT` de la ficha o de
+  > una absorbida vigente en la fecha clínica, extremos incluidos— y la usan
+  > la respuesta de la toma, la firma (bajo el bloqueo de la atención) y
+  > `trg_clinical_note_sign_needs_anthropometry`, diferido como el de EN-020.
+  > **Lo que no garantiza la base**: que la corrección de una atención
+  > reportada se rechace; lo hace el adaptador bajo el bloqueo.
 
 ---
 
@@ -3349,7 +3375,8 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `DIAGNOSIS_PRIMARY_TAKEN` | 409 | Segundo diagnóstico principal. Lo arbitra `encounter_diagnosis_one_primary`; el adaptador lee el rango en uso dentro de la misma transacción para que el rechazo sea una frase, así que el código llega por **las dos vías** | EN-043 |
 | `DIAGNOSIS_CONCEPT_NOT_IN_FORCE` | 422 | El código CIE-10 no estaba vigente en la fecha de la atención. **Lo emite el adaptador**, no el mapeo de constraints: `trg_diagnosis_concept_in_force` levanta `integrity_constraint_violation` desde PL/pgSQL, así que el nombre del disparador nunca viaja al cliente | EN-042 |
 | `VITALS_OUT_OF_RANGE` | 422 | Medida fuera de rango. Del mapeo de constraints: `encounter_vitals_ranges_*`, una por medida (D-058). **Por campo**, señalando cuál y diciendo el rango | EN-062 |
-| `VITALS_REQUIRED` | 422 | Falta antropometría obligatoria en menor de 5 años o embarazada | EN-063 |
+| `VITALS_REQUIRED` | — | **Retirado por EN-217 (D-132 B)**: la toma ya no se rechaza por la antropometría | EN-063 |
+| `ANTHROPOMETRY_PENDING` | 422 | Se firma la 002 (da el alta) sin la antropometría obligatoria del menor de 5 años o de la embarazada; nombra cada campo | EN-217 |
 | `NOTE_CONTENT_INCOMPLETE` | 422 | Firmar sin una sección obligatoria, o la 002 sin ningún diagnóstico en la atención (`diagnoses`). Nombra lo que falta, nunca su contenido | EN-020 |
 | `BMI_IS_DERIVED` | 422 | Se envió el IMC en la petición | EN-061 |
 | `VIOLENCE_SCREENING_RESTRICTED` | 403 | Se intentó **registrar** el tamizaje sin la segunda llave. Al **leer** no se rechaza: se omite | EN-072 |

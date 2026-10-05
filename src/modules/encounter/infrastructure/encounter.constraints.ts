@@ -256,6 +256,17 @@ registerConstraintMeanings({
     field: 'diagnoses',
     message: 'Registre al menos un diagnóstico antes de firmar',
   },
+  /**
+   * EN-217 (D-132 B). The deferred trigger: the consultation note signed and
+   * the attention discharged with the mandatory anthropometry missing. The
+   * service refuses it first naming each measure; this is the sentence for
+   * whatever reaches the commit anyway.
+   */
+  clinical_note_sign_needs_anthropometry: {
+    code: 'ANTHROPOMETRY_PENDING',
+    field: 'weightKg',
+    message: 'Falta peso/talla: obligatorio para firmar la nota',
+  },
   /** EN-024. `clinical_note_chain_version_unique`: versions never repeat. */
   clinical_note_chain_version_unique: {
     code: 'NOTE_VERSION_TAKEN',

@@ -1,8 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 
-import { clinicalDateOf } from '../../../shared/domain/clinic-time';
-
 import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
@@ -22,12 +20,12 @@ import {
   type VitalSignsView,
   type VitalsVersionView,
 } from '../domain/encounter.repository';
-import { acceptsNewClinicalContent } from '../domain/encounter-state';
-import { planClosure } from '../domain/encounter-closure';
 import {
-  assertMandatoryAnthropometry,
-  type VitalSigns,
-} from '../domain/vital-signs';
+  acceptsNewClinicalContent,
+  hasDischarge,
+} from '../domain/encounter-state';
+import { planClosure } from '../domain/encounter-closure';
+import type { AnthropometryField, VitalSigns } from '../domain/vital-signs';
 import type {
   CareModality,
   CareSetting,
@@ -54,6 +52,15 @@ const RESOURCE_TYPE = 'encounter';
  * names who took it and who corrected it last (EN-143); the trail keeps all.
  */
 const VITALS_RESOURCE_TYPE = 'encounter_vitals';
+
+/**
+ * EN-217 (D-132 B). Block D as it is served: the taking, and the mandatory
+ * anthropometry still missing — said, never refused; the signature of the
+ * 002 is what demands it.
+ */
+export type VitalsReading = VitalSignsView & {
+  anthropometryPending: AnthropometryField[];
+};
 
 /** Who is asking, for the access trail (EN-017, EN-122). */
 export interface Requester {
@@ -420,10 +427,10 @@ export class EncounterService {
    *    750 kg, and it also refuses it to an import and to a `psql`. A copy of
    *    the numbers here would be a second, weaker rule that drifts.
    *
-   * WHAT *IS* CHECKED is the pair a constraint cannot see: that the attention
-   * still admits content, and that an under-five carries the anthropometry the
-   * instructivo makes obligatory — which needs the FROZEN age of the row
-   * (EN-008), not today's.
+   * WHAT *IS* CHECKED is what a constraint cannot see: that the attention
+   * still admits content — or, after the discharge, that there is a taking to
+   * correct (EN-217). The mandatory anthropometry is SAID, not refused
+   * (D-132 B): the signature of the 002 demands it.
    *
    * ⚠️ AND IT DOES NOT NEED `record:write` (EN-066). The route asks for
    * `vitals:write`, which `ENFERMERIA` holds and which authorises nothing
@@ -436,43 +443,46 @@ export class EncounterService {
     encounterId: string,
     vitals: VitalSigns,
     requester: Requester,
-  ): Promise<VitalSignsView> {
+  ): Promise<VitalsReading> {
     const encounter = await this.requireEncounter(encounterId, requester);
-    this.assertAcceptsContent(encounter);
+    const query = { encounterId: encounter.id, sites: requester.sites };
 
-    // EN-063 against the age FROZEN on the attention. Evaluated against
-    // today's date instead, a report reprocessed next year would refuse rows
-    // it accepted — the reasoning PA-005 wrote down for «intersexual en
-    // menores de un año».
-    // The pregnancy, on the attention's clinical date and not today's.
-    assertMandatoryAnthropometry(
-      vitals,
-      {
-        years: encounter.ageYears,
-        months: encounter.ageMonths,
-        days: encounter.ageDays,
-      },
-      await this.encounters.isPregnantOn(
-        encounter.patientId,
-        clinicalDateOf(encounter.startedAt),
-      ),
-    );
+    /**
+     * EN-217. After the discharge the taking is still CORRECTED — versioned
+     * (EN-210) — but a first taking is new content (EN-130). A report already
+     * sent is refused by the adapter, under the attention's lock (D-117.16).
+     */
+    const correctingAfterDischarge = hasDischarge(encounter.status);
+    if (!correctingAfterDischarge) {
+      this.assertAcceptsContent(encounter);
+    } else if ((await this.encounters.findVitals(query)) === null) {
+      throw new EncounterAlreadyClosedError(encounter.status);
+    }
 
+    /**
+     * EN-063, EN-217 (D-132 B). THE MANDATORY ANTHROPOMETRY IS NOT DEMANDED
+     * HERE ANY MORE. A pregnant woman who cannot be weighed still has her
+     * blood pressure in the history; what is missing is said in the answer
+     * and demanded when the 002 is signed.
+     */
     // EN-143, D-048. The author goes IN the datum, from the session and never
     // from the body: the author of a first taking, the corrector of a later one.
     const saved = await this.encounters.saveVitals(
-      { encounterId: encounter.id, sites: requester.sites },
+      query,
       vitals,
       requester.userId,
     );
 
     // EN-136. The board moves because the signs were SAVED — the fact proves
-    // the state, and nobody had to press a second button (D-A-008).
-    await this.encounters.stampSubjectStatus({
-      encounterId: encounter.id,
-      fact: 'VITALS_RECORDED',
-      now: new Date(),
-    });
+    // the state, and nobody had to press a second button (D-A-008). Not after
+    // the discharge: a correction does not send a seen patient back.
+    if (!correctingAfterDischarge) {
+      await this.encounters.stampSubjectStatus({
+        encounterId: encounter.id,
+        fact: 'VITALS_RECORDED',
+        now: new Date(),
+      });
+    }
 
     /**
      * EN-143. The row names who took the reading and who corrected it last;
@@ -482,12 +492,17 @@ export class EncounterService {
       userId: requester.userId,
       resourceType: VITALS_RESOURCE_TYPE,
       resourceId: encounter.id,
-      action: 'CREATE',
+      action: correctingAfterDischarge ? 'UPDATE' : 'CREATE',
       ip: requester.ip,
       userAgent: requester.userAgent,
     });
 
-    return saved;
+    return {
+      ...saved,
+      anthropometryPending: await this.encounters.anthropometryPending(
+        encounter.id,
+      ),
+    };
   }
 
   /**
@@ -499,7 +514,7 @@ export class EncounterService {
   async vitalsOf(
     encounterId: string,
     requester: Requester,
-  ): Promise<VitalSignsView | null> {
+  ): Promise<VitalsReading | null> {
     const encounter = await this.requireEncounter(encounterId, requester);
 
     const vitals = await this.encounters.findVitals({
@@ -516,7 +531,14 @@ export class EncounterService {
       userAgent: requester.userAgent,
     });
 
-    return vitals;
+    if (vitals === null) return null;
+    // EN-217. The warning survives a reload: it is read, not remembered.
+    return {
+      ...vitals,
+      anthropometryPending: await this.encounters.anthropometryPending(
+        encounter.id,
+      ),
+    };
   }
 
   /**

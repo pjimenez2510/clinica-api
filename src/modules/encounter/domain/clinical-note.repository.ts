@@ -19,6 +19,7 @@
 import type { NoteContent } from './clinical-note';
 import type { EncounterStatus, NoteStatus } from './encounter';
 import type { SiteScopeFilter } from './encounter.repository';
+import type { AnthropometryField } from './vital-signs';
 
 /**
  * One version of a note, as this module serves it.
@@ -137,6 +138,15 @@ export interface NoteEncounterRead {
 }
 
 /**
+ * EN-217. The attention as the SIGNATURE judges it: also the mandatory
+ * anthropometry still missing, from `encounter_anthropometry_pending` under
+ * the attention's lock — the function the deferred trigger asks at commit.
+ */
+export interface SigningEncounterRead extends NoteEncounterRead {
+  anthropometryPending: AnthropometryField[];
+}
+
+/**
  * The note chain's port, described at the top of this file. It writes drafts
  * and can move a signed version only to `SUPERSEDED` or `ENTERED_IN_ERROR`;
  * rewriting one is not expressible.
@@ -199,7 +209,7 @@ export interface ClinicalNoteRepository {
     query: NoteQuery,
     decide: (
       note: ClinicalNoteView,
-      encounter: NoteEncounterRead,
+      encounter: SigningEncounterRead,
     ) => SignaturePlan,
   ): Promise<ClinicalNoteView>;
 

@@ -47,7 +47,7 @@ import {
   PractitionerProfileRequiredError,
   SubstituteClosureReasonRequiredError,
   UnknownClinicalFormError,
-  VitalsRequiredError,
+  AnthropometryPendingError,
   EncounterHasLiveActsError,
 } from './encounter.errors';
 
@@ -75,7 +75,7 @@ const EVERY_ERROR: readonly DomainError[] = [
   new PractitionerProfileRequiredError(),
   new PractitionerNotLicensedError(),
   new BmiIsDerivedError(),
-  new VitalsRequiredError(['heightCm']),
+  new AnthropometryPendingError(['heightCm']),
   new ClinicalNoteNotFoundError(),
   new UnknownClinicalFormError(['002@1']),
   new NoteContentIncompleteError(['motivoConsulta']),
@@ -222,16 +222,17 @@ describe('el contrato de errores de la atención', () => {
     );
   });
 
-  it('EN-063 nombra cada medida que falta, porque la pantalla une los mensajes en una línea', () => {
-    const error = new VitalsRequiredError(['weightKg', 'heightCm']);
+  it('EN-217 al firmar nombra cada medida que falta, porque la pantalla une los mensajes en una línea', () => {
+    const error = new AnthropometryPendingError(['weightKg', 'heightCm']);
 
-    expect(error.code).toBe('VITALS_REQUIRED');
+    expect(error.code).toBe('ANTHROPOMETRY_PENDING');
+    expect(error).toBeInstanceOf(ValidationError); // 422
     expect(error.userTitle).toBe(
-      'Faltan medidas obligatorias en menores de 5 años y embarazadas',
+      'Falta peso/talla: obligatorio para firmar la nota',
     );
     expect(error.fieldErrors?.map((field) => field.message)).toEqual([
-      'Peso: obligatorio en menores de 5 años y embarazadas',
-      'Talla: obligatorio en menores de 5 años y embarazadas',
+      'Peso: obligatorio para firmar la nota',
+      'Talla: obligatorio para firmar la nota',
     ]);
   });
 
@@ -328,10 +329,10 @@ describe('el contrato de errores de la atención', () => {
     expect(error.fieldErrors?.[0]?.field).toBe('bmi');
   });
 
-  it('EN-063 responde 422 nombrando cada medida que falta', () => {
-    const error = new VitalsRequiredError(['weightKg', 'heightCm']);
+  it('EN-217 responde 422 nombrando cada medida que falta', () => {
+    const error = new AnthropometryPendingError(['weightKg', 'heightCm']);
 
-    expect(error.code).toBe('VITALS_REQUIRED');
+    expect(error.code).toBe('ANTHROPOMETRY_PENDING');
     expect(error.fieldErrors?.map((field) => field.field)).toEqual([
       'weightKg',
       'heightCm',

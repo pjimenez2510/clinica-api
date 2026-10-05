@@ -395,7 +395,7 @@ export class BmiIsDerivedError extends ValidationError {
   }
 }
 
-/** EN-063. How each measurement is named in a refusal. */
+/** EN-063, EN-217. How each measurement is named in a refusal. */
 const ANTHROPOMETRY_LABELS: Readonly<Record<string, string>> = {
   weightKg: 'Peso',
   heightCm: 'Talla',
@@ -403,34 +403,33 @@ const ANTHROPOMETRY_LABELS: Readonly<Record<string, string>> = {
 };
 
 /**
- * EN-063. Anthropometry that the instructivo makes obligatory is missing.
+ * EN-217 (D-132 B). Signing the consultation note — which discharges the
+ * attention — with the anthropometry the instructivo makes obligatory still
+ * missing (EN-063): weight, height and head circumference of an under-five,
+ * weight and height of a pregnant woman.
  *
- * Literal from the note to block D (instructivo, p. 44): *«los datos
- * antropométricos con \* es obligatorio para usuarios menores de 5 años o que
- * corresponda al grupo prioritario "Embarazadas"»*.
+ * AT THE SIGNATURE AND NOT AT THE TAKING. Refusing the whole taking lost the
+ * blood pressure of a pregnant woman who could not be weighed — the figure
+ * that warns of pre-eclampsia — or made somebody type an invented weight.
  *
- * ONE SENTENCE FOR BOTH CONDITIONS. Which one applied is not said: the
- * nurse already has the patient in front of her, and the fields named are
- * what she has to fill.
- *
- * THE MISSING FIELDS ARE NAMED ONE BY ONE: «faltan datos» sends a nurse round
+ * THE MISSING FIELDS ARE NAMED ONE BY ONE: «faltan datos» sends somebody round
  * a form where three boxes could be the one.
  */
-export class VitalsRequiredError extends ValidationError {
-  readonly code = 'VITALS_REQUIRED';
+export class AnthropometryPendingError extends ValidationError {
+  readonly code = 'ANTHROPOMETRY_PENDING';
   override readonly userTitle =
-    'Faltan medidas obligatorias en menores de 5 años y embarazadas';
+    'Falta peso/talla: obligatorio para firmar la nota';
 
   constructor(missing: readonly string[]) {
     super(
-      `Mandatory anthropometry missing: ${missing.join(', ')}`,
+      `Mandatory anthropometry missing at signature: ${missing.join(', ')}`,
       { missing: missing.join(',') },
       missing.map((field) => ({
         field,
-        code: 'VITALS_REQUIRED',
+        code: 'ANTHROPOMETRY_PENDING',
         // Named, because the screen joins the messages of several fields into
         // one line, and three identical sentences say nothing.
-        message: `${ANTHROPOMETRY_LABELS[field] ?? field}: obligatorio en menores de 5 años y embarazadas`,
+        message: `${ANTHROPOMETRY_LABELS[field] ?? field}: obligatorio para firmar la nota`,
       })),
     );
   }
