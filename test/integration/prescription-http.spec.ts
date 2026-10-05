@@ -353,19 +353,16 @@ describe('la receta por HTTP', () => {
     );
   });
 
-  it('PR-009 rechaza una línea fuera del CNMB sin justificación, por campo', async () => {
+  it('PR-110 una línea fuera del CNMB sin justificación se compone y sale marcada', async () => {
     const response = await post(
       `/encounters/${encounterId}/prescriptions`,
       doctorToken,
-      { items: [aLine({ conceptId: undefined, genericName: 'Amoxicilina' })] },
-    ).expect(422);
+      { items: [aLine(), aLine({ conceptId: undefined, genericName: 'Amoxicilina' })] }, // prettier-ignore
+    ).expect(201);
 
-    const problem = response.body as Problem;
-    expect(
-      problem.errors?.some((e) =>
-        e.field.endsWith('offFormularyJustification'),
-      ),
-    ).toBe(true);
+    const items = (response.body as { prescription: { items: { offFormulary: boolean; offFormularyJustification: string | null }[] } }).prescription.items; // prettier-ignore
+    expect(items.map((item) => item.offFormulary)).toEqual([false, true]);
+    expect(items[1]?.offFormularyJustification).toBeNull();
   });
 
   it('PR-095 sin diagnóstico en la atención la receta no se emite y se nombra el campo; con él, sí', async () => {
@@ -1065,7 +1062,7 @@ describe('la receta por HTTP', () => {
     expect((without.body as { presentations: unknown[] }).presentations).toEqual([]); // prettier-ignore
   });
 
-  it('PR-104 una concentración que el CNMB no trae para ese medicamento exige justificación', async () => {
+  it('PR-104 PR-110 una concentración que el CNMB no trae para ese medicamento se receta marcada fuera del cuadro, sin justificación', async () => {
     // The database is rebuilt between tests (`useDatabase`), so the declared
     // presentations do not reach the next one.
     await prisma.catalogConcept.update({
@@ -1073,16 +1070,20 @@ describe('la receta por HTTP', () => {
       data: { attributes: { presentations: [{ form: 'CAPSULE', concentration: '500 mg' }] } }, // prettier-ignore
     });
     const path = `/encounters/${encounterId}/prescriptions`;
+    type Body = { prescription: { items: { offFormulary: boolean; offFormularyJustification: string | null }[] } }; // prettier-ignore
 
-    // Positive control: the declared presentation passes as it is.
-    await post(path, doctorToken, { items: [aLine()] }).expect(201);
+    // Positive control: the declared presentation passes, and is not marked.
+    const declared = await post(path, doctorToken, { items: [aLine()] }).expect(201); // prettier-ignore
+    expect((declared.body as Body).prescription.items[0]?.offFormulary).toBe(false); // prettier-ignore
 
-    const refused = await post(path, doctorToken, { items: [aLine({ concentration: '5000 mg' })] }).expect(422); // prettier-ignore
-    expect((refused.body as Problem).code).toBe('OFF_FORMULARY_JUSTIFICATION_REQUIRED'); // prettier-ignore
+    const outside = await post(path, doctorToken, { items: [aLine({ concentration: '5000 mg' })] }).expect(201); // prettier-ignore
+    expect((outside.body as Body).prescription.items[0]).toMatchObject({ offFormulary: true, offFormularyJustification: null }); // prettier-ignore
 
-    await post(path, doctorToken, {
+    // If a reason is sent anyway, it is kept.
+    const justified = await post(path, doctorToken, {
       items: [aLine({ concentration: '5000 mg', offFormularyJustification: 'Dosis de carga indicada por especialista' })], // prettier-ignore
     }).expect(201);
+    expect((justified.body as Body).prescription.items[0]).toMatchObject({ offFormulary: true, offFormularyJustification: 'Dosis de carga indicada por especialista' }); // prettier-ignore
   });
 });
 

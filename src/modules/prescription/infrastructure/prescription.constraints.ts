@@ -16,20 +16,24 @@ import { registerConstraintMeanings } from '../../../shared/http/constraint-mean
  */
 registerConstraintMeanings({
   /**
-   * PR-009. `prescription_item_off_formulary`: `concept_id IS NOT NULL OR
-   * off_formulary_justification IS NOT NULL`.
+   * PR-110. `prescription_item_off_formulary`: `concept_id IS NOT NULL OR
+   * off_formulary OR off_formulary_justification IS NOT NULL`.
    *
-   * THE SERVICE GETS THERE FIRST in the ordinary case, with
-   * `OFF_FORMULARY_JUSTIFICATION_REQUIRED` and the box named — which is what a
-   * form can act on. This entry is the same rule for the writer that did not
-   * come through the service: an import, a `psql`, a use case somebody writes
-   * in two years. Prescribing outside the CNMB is allowed; not saying why is
-   * not.
+   * Prescribing outside the CNMB is allowed and needs no reason (D-128.6);
+   * what it needs is the MARK, which REQ-054 asks for. The repository sets it
+   * on every line it writes without a concept, so nobody should reach this
+   * through the API. It is the same rule for an import or a `psql`. The
+   * justification still satisfies it because, before the mark existed, it
+   * was the mark.
+   *
+   * ⚠️ THE CONSTRAINT KEEPS ITS NAME (it is contract) AND CHANGES ITS CODE:
+   * `OFF_FORMULARY_JUSTIFICATION_REQUIRED` was retired with PR-110, because
+   * a reason is no longer required.
    */
   prescription_item_off_formulary: {
-    code: 'OFF_FORMULARY_JUSTIFICATION_REQUIRED',
-    field: 'offFormularyJustification',
-    message: 'Puede recetar fuera del CNMB, pero tiene que escribir por qué', // prettier-ignore
+    code: 'PRESCRIPTION_ITEM_OFF_FORMULARY_UNMARKED',
+    field: 'offFormulary',
+    message: 'Una línea sin medicamento del CNMB tiene que llevar la marca «fuera del CNMB»', // prettier-ignore
   },
   /**
    * PR-003. `prescription_issued_coherence`: `(status = 'DRAFT') = (issued_at

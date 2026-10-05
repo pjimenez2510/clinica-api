@@ -4,7 +4,6 @@ import { Prisma } from '@prisma/client';
 
 import { chartScope } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
-import { assertOffFormularyJustified } from '../domain/prescription-content';
 import {
   isDeclaredPresentation,
   type DeclaredPresentation,
@@ -12,7 +11,6 @@ import {
 import {
   ConceptNotPrescribableError,
   ControlledSubstanceNotPrescribableError,
-  OffFormularyJustificationRequiredError,
   PrescriptionDraftOfAnotherPrescriberError,
   PrescriptionEncounterNotFoundError,
   PrescriptionOfAnotherPrescriberError,
@@ -82,6 +80,8 @@ const ITEM_SELECT = {
   frequencyText: true,
   durationDays: true,
   instructions: true,
+  // PR-110. The mark, decided when the line was written.
+  offFormulary: true,
   offFormularyJustification: true,
   // PR-101, PR-102. So a draft reopens as it was written (PR-100).
   dosageFormCode: true,
@@ -883,20 +883,13 @@ async function resolveItems(
   return items.map((item, index) => {
     const line = index + 1;
 
-    // PR-009. Refused here rather than by `prescription_item_off_formulary`
-    // so the answer is a sentence about a box instead of a constraint name.
-    assertOffFormularyJustified({
-      line,
-      conceptId: item.conceptId,
-      offFormularyJustification: item.offFormularyJustification,
-    } as ItemContent);
-
     if (item.conceptId === null) {
       return {
         conceptId: null,
-        // PR-009. Outside the CNMB the caller supplies the name, and the
-        // justification is what makes that acceptable.
+        // PR-009, PR-110. Outside the CNMB the caller supplies the name, and
+        // the line is marked; a justification is kept only if one was given.
         genericName: (item.genericName ?? '').trim(),
+        offFormulary: true,
         ...commonItemFields(item),
       };
     }
@@ -931,20 +924,17 @@ async function resolveItems(
     }
 
     /**
-     * PR-104. A form and concentration the CNMB does not list for this
-     * medicine is a prescription outside the cuadro, with the same way out:
-     * the written justification. «Enalapril 500 mg» stops here.
+     * PR-104, PR-110. A form and concentration the CNMB does not list for this
+     * medicine is a prescription outside the cuadro: it is marked so, and
+     * frozen with the line, because the declared presentations live in the
+     * catalogue and change with every load of the cuadro. «Enalapril 500 mg»
+     * no longer passes for a medicine of the cuadro.
      */
-    if (
-      !isDeclaredPresentation(
-        concept.presentations ?? [],
-        item.dosageFormCode ?? null,
-        item.concentration,
-      ) &&
-      (item.offFormularyJustification ?? '').trim() === ''
-    ) {
-      throw new OffFormularyJustificationRequiredError(line, 'presentation');
-    }
+    const offFormulary = !isDeclaredPresentation(
+      concept.presentations ?? [],
+      item.dosageFormCode ?? null,
+      item.concentration,
+    );
 
     return {
       conceptId: item.conceptId,
@@ -956,6 +946,7 @@ async function resolveItems(
        * the value can only come from the row read in this transaction.
        */
       genericName: concept.display,
+      offFormulary,
       ...commonItemFields(item),
     };
   });
@@ -1151,6 +1142,13 @@ function toPrescriptionView(row: PrescriptionRow): PrescriptionView {
       frequencyText: item.frequencyText,
       durationDays: item.durationDays,
       instructions: item.instructions,
+      // PR-110. A line written before the mark existed carries `false` and
+      // the justification that was the mark then; without concept it was
+      // always outside the cuadro.
+      offFormulary:
+        item.offFormulary ||
+        item.conceptId === null ||
+        item.offFormularyJustification !== null,
       offFormularyJustification: item.offFormularyJustification,
       dosageFormCode: item.dosageFormCode,
       doseAmount: item.doseAmount === null ? null : item.doseAmount.toNumber(),

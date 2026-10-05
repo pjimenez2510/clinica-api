@@ -630,6 +630,13 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
 - **DOC-072** — La **receta** DEBERÁ llevar los cinco bloques del art. 5 en este
   orden: datos generales, datos del paciente, medicamento, prescriptor e
   indicaciones.
+  Y DEBERÁ marcar «Fuera del CNMB» cada línea que lo esté (REQ-054), con su
+  justificación si el prescriptor la escribió.
+
+  > PR-110 (D-128.6): la justificación dejó de ser obligatoria y la marca dejó
+  > de ser la justificación. Una línea fuera del cuadro sin justificación se
+  > imprime marcada con «Medicamento o presentación que no consta en el
+  > cuadro».
 
 - **DOC-073** — La receta DEBERÁ colocar el bloque de indicaciones al paciente
   en una **banda desprendible al pie**, separada por una **línea de corte**

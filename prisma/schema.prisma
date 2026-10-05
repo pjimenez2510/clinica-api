@@ -2938,7 +2938,7 @@ model PrescriptionItem {
   prescription   Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
 
   /// CNMB concept version. NULL only when prescribing outside the CNMB, which
-  /// then requires `offFormularyJustification` (enforced by CHECK).
+  /// then carries the mark `offFormulary` (enforced by CHECK, PR-110).
 
   /// PR-101, PR-102. The codes the line was written with, beside the text the
   /// server composed from them, so a draft reopens as it was written (PR-100).
@@ -2961,7 +2961,12 @@ model PrescriptionItem {
   quantity      Decimal? @db.Decimal(10, 2)
   instructions  String?  @db.Text
 
-  /// Prescribing outside the CNMB is allowed but must be justified in writing.
+  /// PR-110. Outside the CNMB: no concept, or a presentation the cuadro does
+  /// not declare for it (PR-104). Decided by the server when the line is
+  /// written. Lines written before it carry `false` and their justification,
+  /// which was the mark then.
+  offFormulary              Boolean @default(false) @map("off_formulary")
+  /// PR-110. Optional since D-128.6: kept and printed when given.
   offFormularyJustification String? @map("off_formulary_justification") @db.Text
 
   @@index([prescriptionId])

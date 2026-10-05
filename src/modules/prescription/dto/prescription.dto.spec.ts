@@ -55,6 +55,20 @@ describe('la duración de una línea de receta', () => {
   });
 });
 
+describe('recetar fuera del CNMB', () => {
+  it('PR-110 una línea sin concepto del CNMB se admite sin justificación; si llega, viaja', () => {
+    const outside = line({ conceptId: undefined, genericName: 'Amoxicilina' });
+
+    expect(parse(outside).success).toBe(true);
+    expect(
+      parse({
+        ...outside,
+        offFormularyJustification: 'Desabastecimiento del cuadro',
+      }).data?.items[0]?.offFormularyJustification,
+    ).toBe('Desabastecimiento del cuadro');
+  });
+});
+
 describe('descartar un borrador de receta', () => {
   it('PR-107 no pide motivo: sin cuerpo, o con el motivo en blanco, el motivo es nulo', () => {
     expect(discardPrescriptionSchema.parse({})).toEqual({ reason: null });

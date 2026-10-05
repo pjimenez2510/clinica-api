@@ -822,10 +822,10 @@ export const DOMAIN_ERROR_CODES = [
   //     segundo viaja POR CAMPO y POR LÍNEA, y **nunca nombra el medicamento**:
   //     un fármaco es un diagnóstico dicho de otra forma —la metformina dice
   //     diabetes y el efavirenz dice VIH—.
-  //   * `OFF_FORMULARY_JUSTIFICATION_REQUIRED` (422) — recetar fuera del CNMB
-  //     está permitido; no decir por qué, no. Lo exige además
-  //     `prescription_item_off_formulary` en la base, y la aplicación sólo se
-  //     adelanta para dar la frase.
+  //   * `OFF_FORMULARY_JUSTIFICATION_REQUIRED` se retiró con PR-110 (D-128.6):
+  //     recetar fuera del CNMB ya no exige justificación, sólo la marca. La
+  //     restricción `prescription_item_off_formulary` responde ahora
+  //     `PRESCRIPTION_ITEM_OFF_FORMULARY_UNMARKED`, fuera de este catálogo.
   //   * `CONCEPT_NOT_PRESCRIBABLE` (422) — el concepto es de otro catálogo o no
   //     estaba vigente ese día. La clave foránea apunta a `catalog_concept`,
   //     que guarda TODOS los catálogos: sin este código una parroquia del DPA
@@ -858,7 +858,6 @@ export const DOMAIN_ERROR_CODES = [
   'ALLERGY_CONTRAINDICATION',
   'CONCEPT_NOT_PRESCRIBABLE',
   'CONTROLLED_SUBSTANCE_NOT_PRESCRIBABLE',
-  'OFF_FORMULARY_JUSTIFICATION_REQUIRED',
   //   * `PRESCRIPTION_DRAFT_OF_ANOTHER_PRESCRIBER` (403) — PR-100. Sólo quien
   //     compuso el borrador lo corrige: su nombre va impreso en la receta.
   'PRESCRIPTION_DRAFT_OF_ANOTHER_PRESCRIBER',

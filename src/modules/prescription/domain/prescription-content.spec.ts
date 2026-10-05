@@ -2,11 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   assertItemsComplete,
-  assertOffFormularyJustified,
   assertPrescriptionComplete,
 } from './prescription-content';
 import {
-  OffFormularyJustificationRequiredError,
   PrescriptionEmptyError,
   PrescriptionItemIncompleteError,
   PrescriptionSingleDoseWithDurationError,
@@ -14,7 +12,7 @@ import {
 import type { ItemContent } from './prescription-content';
 
 /**
- * PR-009, PR-032. Art. 5.c of the Resolución ACESS-2023-0030.
+ * PR-032, PR-110. Art. 5.c of the Resolución ACESS-2023-0030.
  *
  * ⚠️ THE TEST THAT MATTERS MOST IS «reports EVERY missing field at once». The
  * opposite failure mode is familiar and specific: the doctor fixes the
@@ -126,44 +124,13 @@ describe('el contenido mínimo del art. 5', () => {
     );
   });
 
-  it('PR-009 exige la justificación cuando no hay concepto del CNMB', () => {
+  it('PR-110 una línea fuera del CNMB sin justificación se emite: basta la marca', () => {
     expect(() =>
-      assertOffFormularyJustified(
-        complete({ conceptId: null, offFormularyJustification: null }),
-      ),
-    ).toThrow(OffFormularyJustificationRequiredError);
-  });
-
-  it('PR-009 admite recetar fuera del CNMB cuando se escribe por qué', () => {
-    expect(() =>
-      assertOffFormularyJustified(
-        complete({
-          conceptId: null,
-          offFormularyJustification: 'Desabastecimiento del equivalente CNMB',
-        }),
-      ),
-    ).not.toThrow();
-  });
-
-  it('PR-009 no pide justificación a una línea que sí nombra un concepto', () => {
-    expect(() => assertOffFormularyJustified(complete())).not.toThrow();
-  });
-
-  it('PR-009 señala la línea en la que falta la justificación', () => {
-    let thrown: OffFormularyJustificationRequiredError | undefined;
-    try {
       assertItemsComplete([
         complete({ line: 1 }),
         complete({ line: 2, conceptId: null, offFormularyJustification: null }),
-      ]);
-    } catch (error) {
-      thrown = error as OffFormularyJustificationRequiredError;
-    }
-
-    expect(thrown?.code).toBe('OFF_FORMULARY_JUSTIFICATION_REQUIRED');
-    expect(thrown?.fieldErrors?.[0]?.field).toBe(
-      'items.1.offFormularyJustification',
-    );
+      ]),
+    ).not.toThrow();
   });
 });
 

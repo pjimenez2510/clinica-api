@@ -242,50 +242,6 @@ export class PrescriptionSingleDoseWithDurationError extends ValidationError {
 }
 
 /**
- * PR-009. A line that names no CNMB concept and gives no written reason.
- *
- * ═══════════════════════════════════════════════════════════════════════════
- * PRESCRIBING OUTSIDE THE CUADRO IS ALLOWED. NOT SAYING WHY IS NOT.
- * ═══════════════════════════════════════════════════════════════════════════
- *
- * `prescription_item_off_formulary` says the same thing in the database —
- * `concept_id IS NOT NULL OR off_formulary_justification IS NOT NULL` — and it
- * is what also stops an import and a `psql`. This class is what turns that
- * `CHECK_FAILED` into a sentence a doctor can act on.
- *
- * FREE TEXT AND NEVER A DROPDOWN, like the amendment reason of EN-025: a
- * dropdown gets filled in on autopilot, a text box does not.
- */
-export class OffFormularyJustificationRequiredError extends ValidationError {
-  readonly code = 'OFF_FORMULARY_JUSTIFICATION_REQUIRED';
-  override readonly userTitle: string;
-  override readonly fieldErrors: readonly DomainFieldError[];
-
-  /**
-   * `presentation` is PR-104: the medicine is in the CNMB, but not in that
-   * form and concentration — which makes the line a prescription outside the
-   * cuadro all the same, with the same way out.
-   */
-  constructor(line: number, reason: 'concept' | 'presentation' = 'concept') {
-    super('An item outside the CNMB needs a written justification', { line });
-    this.userTitle =
-      reason === 'presentation'
-        ? 'Esa forma y concentración no constan en el CNMB para ese medicamento. Elija una de las del cuadro, o justifique la prescripción fuera del cuadro'
-        : 'Puede recetar fuera del CNMB, pero tiene que escribir por qué. Indique la justificación en esa línea';
-    this.fieldErrors = [
-      {
-        field: `items.${line - 1}.offFormularyJustification`,
-        code: 'OFF_FORMULARY_JUSTIFICATION_REQUIRED',
-        message:
-          reason === 'presentation'
-            ? `Elija una presentación del CNMB o escriba por qué receta otra (línea ${line})`
-            : `Escriba por qué se receta fuera del CNMB (línea ${line})`,
-      },
-    ];
-  }
-}
-
-/**
  * PR-100. A draft is rewritten only by the professional who composed it: the
  * prescriber's name is printed on the receta, and a colleague's rewrite would
  * put words under somebody else's name.

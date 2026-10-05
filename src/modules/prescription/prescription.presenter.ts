@@ -68,6 +68,7 @@ export function toPrescriptionResponse(
       frequencyText: item.frequencyText,
       durationDays: item.durationDays,
       instructions: item.instructions,
+      offFormulary: item.offFormulary,
       offFormularyJustification: item.offFormularyJustification,
       dosageFormCode: item.dosageFormCode,
       doseAmount: item.doseAmount,

@@ -62,7 +62,9 @@ export interface DocumentItem {
    * no abbreviation slips in: the route comes from the closed list, spelled.
    */
   indications: string;
-  /** PR-009. Written when the medicine is outside the CNMB. */
+  /** PR-110. REQ-054: the line is outside the CNMB, and the paper says so. */
+  offFormulary: boolean;
+  /** PR-110. The reason, only if the prescriber gave one. */
   offFormularyJustification: string | null;
 }
 
@@ -232,6 +234,7 @@ export function composeDocument(
         durationDays: item.durationDays,
         instructions: item.instructions,
       }),
+      offFormulary: item.offFormulary,
       offFormularyJustification: item.offFormularyJustification,
     })),
   };

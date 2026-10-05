@@ -205,6 +205,7 @@ const prescription = (
         frequencyText: 'cada 8 horas',
         durationDays: 7,
         instructions: 'Tomar con alimentos',
+        offFormulary: false,
         offFormularyJustification: null,
       },
     ],
@@ -326,6 +327,7 @@ describe('DOC-072 la receta lleva los cinco bloques del art. 5', () => {
             frequencyText: 'cada día',
             durationDays: null,
             instructions: null,
+            offFormulary: true,
             offFormularyJustification: 'No hay alternativa en el cuadro',
           },
         ],
@@ -334,6 +336,34 @@ describe('DOC-072 la receta lleva los cinco bloques del art. 5', () => {
       template,
     );
     expect(wholeText(layout)).toContain('No hay alternativa en el cuadro');
+  });
+
+  it('DOC-072 marca la línea fuera del CNMB aunque no lleve justificación, y la del cuadro no', () => {
+    const line = {
+      genericName: 'Amoxicilina',
+      presentation: 'Cápsula',
+      concentration: '5000 mg',
+      routeCode: 'ORAL',
+      quantity: 1,
+      doseText: '1 cápsula',
+      frequencyText: 'cada día',
+      durationDays: 3,
+      instructions: null,
+      offFormularyJustification: null,
+    };
+    const marked = composeLayout(
+      prescription({ lines: [{ ...line, offFormulary: true }] }),
+      context,
+      template,
+    );
+    const unmarked = composeLayout(
+      prescription({ lines: [{ ...line, offFormulary: false }] }),
+      context,
+      template,
+    );
+
+    expect(wholeText(marked)).toContain('Fuera del CNMB — línea 1');
+    expect(wholeText(unmarked)).not.toContain('Fuera del CNMB');
   });
 
   it('DOC-074 deja la vía en blanco antes que imprimir un código que no sabe nombrar', () => {
@@ -350,6 +380,7 @@ describe('DOC-072 la receta lleva los cinco bloques del art. 5', () => {
             frequencyText: 'cada día',
             durationDays: null,
             instructions: null,
+            offFormulary: false,
             offFormularyJustification: null,
           },
         ],
@@ -567,6 +598,7 @@ describe('DOC-073 la banda desprendible del art. 5.e', () => {
             frequencyText: 'cada día',
             durationDays: null,
             instructions: null,
+            offFormulary: false,
             offFormularyJustification: null,
           },
         ],

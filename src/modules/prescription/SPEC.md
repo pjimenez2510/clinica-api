@@ -145,7 +145,7 @@ paciente, el profesional y la cita.
 | **Emisión** | El acto por el que la receta pasa a `ACTIVE` con su `issued_at`. **Es el momento en que el art. 5 se exige entero**, porque es cuando el documento existe |
 | **DCI** | Denominación Común Internacional. El nombre genérico del principio activo, **sin siglas ni abreviaturas** (art. 5.c.i). Es `prescription_item.generic_name`, congelado |
 | **CNMB** | Cuadro Nacional de Medicamentos Básicos. El catálogo del que sale el concepto de cada línea |
-| **Fuera del CNMB** | Prescribir un medicamento que no está en el cuadro. Está **permitido** y exige justificación escrita: lo obliga `prescription_item_off_formulary` |
+| **Fuera del CNMB** | Prescribir un medicamento que no está en el cuadro, o uno del cuadro en una presentación que el cuadro no le declara (PR-104). Está **permitido** y lleva **la marca** `prescription_item.off_formulary`; la justificación escrita es opcional desde PR-110 (D-128.6) |
 | **Vigencia** | Los días durante los cuales la farmacia puede dispensar. **Derivada** de los arts. 18 y 19, nunca tecleada |
 | **Coincidencia exacta** | El concepto CNMB recetado **es el mismo** al que la ficha dice que el paciente es alérgico. Comparación de claves, no de texto |
 | **Alerta que interrumpe** | La que impide emitir. En este módulo hay **una sola** (PR-060), y es deliberado |
@@ -372,6 +372,11 @@ sistemas propios y ninguna es obligación de una clínica sin farmacia.
   `OFF_FORMULARY_JUSTIFICATION_REQUIRED` si falta.
   `prescription_item_off_formulary` lo exige una segunda vez en la base:
   `concept_id IS NOT NULL OR off_formulary_justification IS NOT NULL`.
+
+  > **Enmendado por PR-110 (D-128.6, resuelta el 04-10-2026):** la
+  > justificación deja de ser obligatoria; queda la marca. El código
+  > `OFF_FORMULARY_JUSTIFICATION_REQUIRED` se retiró y
+  > `prescription_item_off_formulary` pide ahora la marca.
 
 - **PR-010** — CUANDO se anule una receta **emitida**, el sistema DEBERÁ dejarla
   en `CANCELLED` y **NO DEBERÁ** borrar ninguna fila. SI se intenta anular un
@@ -1039,6 +1044,11 @@ admite una lista sale de una lista._
   > cargado, bloqueante externo— se receta como hoy, con la concentración
   > escrita. El catálogo de desarrollo las declara para los medicamentos de la
   > semilla. La regla es D-117.6.
+  >
+  > **Enmendado por PR-110 (D-128.6):** la presentación que el cuadro no trae
+  > ya no exige justificación. La línea se compone y queda **marcada** fuera
+  > del cuadro, que es lo que impide que «Enalapril 500 mg» pase por un
+  > medicamento del CNMB.
 - **PR-105** — CUANDO la frecuencia de una línea sea el código `SINGLE_DOSE`
   («Dosis única»), el sistema NO DEBERÁ exigir la duración al emitir, NO
   DEBERÁ imprimirla, y SI la línea la trae, ENTONCES DEBERÁ rechazarla
@@ -1153,6 +1163,47 @@ anularla y volver a escribirla, la pantalla lo hace en un solo paso (D-127.4)._
   > receta de una consulta terminada no se corrige: se anula y se receta en
   > una atención nueva.
 
+## 11. Fuera del CNMB, sólo la marca; y la «Dosis única» sin duración (D-128.6, D-126)
+
+_D-128.6, resuelta por el autor el 04-10-2026: la Res. ACESS-2023-0030 sólo ata
+al CNMB a la Red Pública (art. 35) y REQ-054 sólo pide marcar si el medicamento
+está o no en el cuadro. Una clínica privada no tiene que justificarlo._
+
+- **PR-110** — CUANDO una línea no nombre ningún concepto del CNMB (PR-009), o
+  nombre uno en una forma y concentración que el concepto no declara (PR-104),
+  el sistema DEBERÁ componerla **sin exigir justificación**, DEBERÁ guardarla
+  **marcada** fuera del cuadro (`prescription_item.off_formulary`), decidido por
+  el servidor al escribir la línea, y DEBERÁ exponer la marca como
+  `offFormulary` en cada línea de la respuesta, de la lista y del documento, y
+  en el papel (DOC-072). SI llega una justificación, ENTONCES DEBERÁ guardarla e
+  imprimirla junto a la marca. Una línea del cuadro en una presentación
+  declarada **NO DEBERÁ** llevar la marca.
+  > **Por qué una columna y no la justificación:** hasta PR-110 la marca era la
+  > justificación. Sin ella, la línea de PR-104 no tendría con qué marcarse: las
+  > presentaciones declaradas viven en `catalog_concept.attributes`, que cambia
+  > con cada carga del cuadro, y la receta archivada tiene que seguir diciendo
+  > lo que se marcó al escribirla (el argumento de PR-008).
+  >
+  > **Garantía de la base**
+  > (`20261005060300_prescription_off_formulary_mark`):
+  > `prescription_item_off_formulary` pasa a `concept_id IS NOT NULL OR
+  > off_formulary OR off_formulary_justification IS NOT NULL`. Conserva su
+  > nombre, que es contrato. **No toca ninguna fila guardada**: las líneas
+  > escritas antes llevan `off_formulary = false` y la justificación que
+  > entonces era la marca, y la lectura las da por marcadas (marca, o sin
+  > concepto, o con justificación). Las líneas de una receta emitida siguen
+  > congeladas por `prescription_item_frozen`.
+
+- **PR-111** — CUANDO en una línea se elija la frecuencia «Dosis única»
+  (`SINGLE_DOSE`, PR-105), la pantalla DEBERÁ vaciar y ocultar la duración ella
+  sola, también en un borrador guardado antes de PR-105 que se reabra con
+  «Dosis única» y una duración, de modo que nadie reciba
+  `PRESCRIPTION_SINGLE_DOSE_WITH_DURATION` desde el editor.
+  > **Solo interfaz:** el servidor ya rechaza la duración con «Dosis única»
+  > (PR-105). Elegirla ya vaciaba y ocultaba la casilla desde PR-105; lo que
+  > faltaba era el borrador antiguo reabierto, que traía la duración oculta y la
+  > devolvía al cambiar de frecuencia.
+
 ## Códigos de error nuevos
 
 Todos entran en `shared/domain/errors/error-catalogue.ts` con su prueba de
@@ -1167,7 +1218,6 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `PRESCRIPTION_EMPTY` | 422 | Emitir una receta sin ninguna línea | PR-032 |
 | `PRESCRIPTION_ITEM_INCOMPLETE` | 422 | Falta un campo del art. 5.c. **Por campo y por línea**, nombrando el número de línea y nunca el medicamento | PR-032 |
 | `PRESCRIPTION_SINGLE_DOSE_WITH_DURATION` | 422 | Un borrador anterior a PR-105 con «Dosis única» y duración. Por campo y por línea | PR-105 |
-| `OFF_FORMULARY_JUSTIFICATION_REQUIRED` | 422 | Línea sin concepto del CNMB y sin justificación escrita. Lo exige además `prescription_item_off_formulary` en la base | PR-009 |
 | `CONCEPT_NOT_PRESCRIBABLE` | 422 | El concepto es de otro catálogo o no estaba vigente en la fecha clínica de la atención. **Uno solo para las dos**: lo que hay que hacer es idéntico, elegir del CNMB | PR-007 |
 | `ALLERGY_CONTRAINDICATION` | 409 | Coincidencia exacta con una alergia no refutada. **409 y no 422**: lo enviado es correcto y lo que lo impide es un hecho de la ficha; la salida es refutar la alergia, y el mensaje lo dice | PR-060 |
 | `PRESCRIBER_PROFILE_REQUIRED` | 403 | La cuenta no tiene ficha profesional activa. `prescription.prescriber_id` es clave foránea a `practitioner`, no a `app_user` | PR-004 |
@@ -1184,7 +1234,11 @@ significado registrado en `prescription.constraints.ts`, que es su enumeración:
 PR-011, PR-107), `PRESCRIPTION_DISCARD_NOT_FROM_DRAFT` (PR-011),
 `PRESCRIPTION_CANCEL_INCOMPLETE` (`prescription_cancel_states_who_when_and_why`,
 PR-108) y `PRESCRIPTION_CANCEL_NOT_CANCELLED`
-(`prescription_cancel_columns_only_when_cancelled`, PR-108).
+(`prescription_cancel_columns_only_when_cancelled`, PR-108) y
+`PRESCRIPTION_ITEM_OFF_FORMULARY_UNMARKED` (`prescription_item_off_formulary`,
+PR-110). `OFF_FORMULARY_JUSTIFICATION_REQUIRED` **se retiró** con PR-110
+(D-128.6): recetar fuera del CNMB ya no exige justificación, y ningún otro
+módulo ni la interfaz lo usaban.
 `PRESCRIPTION_DISCARD_REASON_REQUIRED` **se retiró** con D-126: era el
 significado de `prescription_discard_states_who_when_and_why`, que ya no existe. Nadie debería verlos por la API —el DTO y el servicio se adelantan—,
 pero el `CHECK` también guarda una importación y un `psql`, y para ésos la
@@ -1242,8 +1296,9 @@ Ninguna es una migración correctiva: la base está en fase `development`
   motivo es opcional desde D-126), y
   `prescription_discard_only_from_draft`, que impide descartar lo emitido. No
   hay que crearlos: hay que usarlos (PR-011).
-- `prescription_item_off_formulary` ya impide una línea sin concepto y sin
-  justificación. La aplicación se adelanta **sólo** para dar la frase.
+- `prescription_item_off_formulary` impide una línea sin concepto y sin la
+  marca (PR-110). La marca la pone el repositorio, así que nadie la ve por la
+  API.
 - `prescription.verification_code` es `@unique` y existe para que una farmacia
   compruebe la receta **sin recibir dato clínico alguno**. No es la numeración
   secuencial de PR-020 y no se debe reutilizar como tal.
@@ -1309,10 +1364,12 @@ prueba o el CI falla**.
 
 | Requisitos | Nivel de prueba obligatorio |
 | --- | --- |
-| PR-003, PR-005, PR-009 | **Integración contra PostgreSQL real**, atacando la base directamente: `prescription_issued_coherence` y `prescription_item_off_formulary` son `CHECK`, y un doble que devuelve lo que le pedimos no demuestra que existan |
+| PR-003, PR-005, PR-009, PR-110 | **Integración contra PostgreSQL real**, atacando la base directamente: `prescription_issued_coherence` y `prescription_item_off_formulary` son `CHECK`, y un doble que devuelve lo que le pedimos no demuestra que existan |
 | PR-105 | Unitaria del contenido y del DTO: con `SINGLE_DOSE` sin duración se emite y con duración se rechaza; con otra frecuencia sin duración se rechaza. HTTP: el documento emitido no dice «durante» ni «por N día» |
 | PR-106 | Interfaz: la línea nueva arranca sin vía y emitir sin elegirla se señala en el campo |
-| PR-100, PR-104 | **Integración contra PostgreSQL real**, con control positivo: reescribir un borrador conserva su id y sustituye las líneas; las de una emitida no se tocan ni desde la base; otra presentación de un concepto que declara las suyas exige justificación |
+| PR-110 | **Integración contra PostgreSQL real**: la base admite la línea sin concepto marcada y sin justificación y rechaza la que no lleva la marca, con control positivo; una línea anterior a la marca, con justificación, se lee marcada. HTTP: sin concepto y con una presentación no declarada se compone 201 con `offFormulary: true`; la declarada, `false`. Unitaria del DTO, del contenido, del documento y del papel (DOC-072) |
+| PR-111 | Interfaz: elegir «Dosis única» vacía y oculta la duración; un borrador antiguo reabierto con «Dosis única» no la trae |
+| PR-100, PR-104 | **Integración contra PostgreSQL real**, con control positivo: reescribir un borrador conserva su id y sustituye las líneas; las de una emitida no se tocan ni desde la base; otra presentación de un concepto que declara las suyas se compone sin justificación y sale marcada (PR-110) |
 | PR-062 | **Integración contra PostgreSQL real, con una fusión de fichas de por medio.** Es el único nivel que puede demostrarlo: depende de que el enlace se recorra en la base, y `patient-chart-scope.spec.ts` caza la lectura por `patient_id` desnudo recorriendo el AST |
 | PR-050 | **Unitario con el huso alterado**, como `clinical-date-timezone.spec.ts`: la misma emisión bajo `UTC` y bajo `Asia/Tokyo` da la misma fecha límite. Es el defecto real que originó REQ-160 |
 | PR-025, PR-030 | **Unitario de dominio exhaustivo.** La edad en años y meses y el número en letras son funciones puras con casos límite densos —cero meses, un mes, cuatro años once meses, cinco años justos; uno, dieciséis, veintiuno, cien, ciento uno, doscientos, quinientos, mil, veintiún mil— y enumerar sólo los que uno recuerda es cómo se cuela «veinte y uno» |

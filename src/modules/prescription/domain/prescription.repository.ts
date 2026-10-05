@@ -157,6 +157,11 @@ export interface PrescriptionItemView {
   frequencyText: string;
   durationDays: number | null;
   instructions: string | null;
+  /**
+   * PR-110. Outside the CNMB: no concept, or a presentation the cuadro does
+   * not declare (PR-104). What the paper marks; the reason is optional.
+   */
+  offFormulary: boolean;
   offFormularyJustification: string | null;
   /** PR-101, PR-102. `null` on lines written before the vocabulary. */
   dosageFormCode: string | null;

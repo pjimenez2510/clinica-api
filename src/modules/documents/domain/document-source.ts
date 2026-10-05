@@ -101,6 +101,8 @@ export interface PrescriptionLine {
   durationDays: number | null;
   /** Art. 5.e.iii — what goes on the tear-off band. */
   instructions: string | null;
+  /** PR-110, REQ-054. Outside the CNMB: printed whether or not a reason was given. */
+  offFormulary: boolean;
   offFormularyJustification: string | null;
 }
 

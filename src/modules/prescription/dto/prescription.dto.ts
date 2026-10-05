@@ -145,7 +145,10 @@ const prescriptionItemSchema = z
       .trim()
       .max(2000, 'Las indicaciones no pueden superar 2000 caracteres')
       .optional(),
-    /** PR-009. Obligatoria exactamente cuando no hay concepto del CNMB. */
+    /**
+     * PR-110. Opcional (D-128.6): fuera del CNMB basta la marca, que pone el
+     * servidor. Si llega, se guarda y se imprime.
+     */
     offFormularyJustification: z
       .string()
       .trim()
@@ -191,19 +194,7 @@ const prescriptionItemSchema = z
         input: item,
         path: ['genericName'],
         message:
-          'Elija el medicamento en el CNMB, o escriba su nombre genérico y justifique la prescripción fuera del cuadro',
-      });
-    }
-    if (
-      item.conceptId === undefined &&
-      item.offFormularyJustification === undefined
-    ) {
-      // prettier-ignore
-      ctx.issues.push({
-        code: 'custom',
-        input: item,
-        path: ['offFormularyJustification'],
-        message: 'Escriba por qué se receta fuera del CNMB',
+          'Elija el medicamento en el CNMB, o escriba su nombre genérico si no está en el cuadro',
       });
     }
     /**
@@ -390,6 +381,8 @@ export const prescriptionItemViewSchema = z.object({
   frequencyText: z.string(),
   durationDays: z.number().int().nullable(),
   instructions: z.string().nullable(),
+  /** PR-110. Fuera del CNMB: sin concepto, o en una presentación que el cuadro no trae (PR-104). */
+  offFormulary: z.boolean(),
   offFormularyJustification: z.string().nullable(),
   /** PR-101, PR-102. `null` on lines written before the vocabulary. */
   dosageFormCode: z.string().nullable(),
@@ -554,6 +547,8 @@ export const prescriptionDocumentSchema = z.object({
       instructions: z.string().nullable(),
       /** PR-037. Composed from the fields, never typed: no abbreviation. */
       indications: z.string(),
+      /** PR-110. REQ-054: la marca «fuera del CNMB». */
+      offFormulary: z.boolean(),
       offFormularyJustification: z.string().nullable(),
     }),
   ),

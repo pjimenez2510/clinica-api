@@ -48,6 +48,7 @@ const source = (
         frequencyText: 'Cada 8 horas',
         durationDays: 7,
         instructions: 'Tomar con alimentos',
+        offFormulary: false,
         offFormularyJustification: null,
         dosageFormCode: 'CAPSULE',
         doseAmount: 1,
@@ -293,6 +294,35 @@ describe('la receta como documento', () => {
       'Amoxicilina 500 mg: 1 cápsula, cada 8 horas, durante 7 días',
     );
     expect(document.items[0]?.indications).not.toContain('VO');
+  });
+
+  it('PR-110 marca la línea fuera del CNMB aunque no lleve justificación, y la del cuadro no', () => {
+    const base = source().prescription;
+    const inside = base.items[0]!;
+    const document = composeDocument(
+      source({
+        prescription: {
+          ...base,
+          items: [
+            inside,
+            {
+              ...inside,
+              id: 'item-2',
+              line: 2,
+              conceptId: null,
+              offFormulary: true,
+            },
+          ],
+        },
+      }),
+      { context: 'AMBULATORY' },
+    );
+
+    expect(document.items.map((item) => item.offFormulary)).toEqual([
+      false,
+      true,
+    ]);
+    expect(document.items[1]?.offFormularyJustification).toBeNull();
   });
 
   it('PR-040 lleva el teléfono de contacto permanente del prescriptor', () => {

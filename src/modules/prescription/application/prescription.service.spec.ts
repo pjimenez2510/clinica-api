@@ -119,6 +119,7 @@ const aPrescription = (
       frequencyText: 'Cada 8 horas',
       durationDays: 7,
       instructions: null,
+      offFormulary: false,
       offFormularyJustification: null,
       dosageFormCode: 'CAPSULE',
       doseAmount: 1,

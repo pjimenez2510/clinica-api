@@ -41,8 +41,9 @@ import {
  *    and when TOGETHER, and cannot touch a prescription that was issued —
  *    that one is annulled, which is the other act. Both are `CHECK`s, so both
  *    are shown here rather than trusted to the service that writes them.
- *  - PR-009: `prescription_item_off_formulary`. Prescribing outside the CNMB is
- *    allowed; not saying why is not.
+ *  - PR-110: `prescription_item_off_formulary`. Prescribing outside the CNMB is
+ *    allowed and needs no reason (D-128.6); a line without concept carries the
+ *    mark.
  *  - PR-007: the concept has to be a CNMB medicine IN FORCE on the clinical
  *    date, resolved with `AT TIME ZONE 'America/Guayaquil'`. A double returning
  *    what we asked it for proves nothing about a `daterange @>`.
@@ -324,10 +325,15 @@ describe('la receta contra PostgreSQL', () => {
     expect(problem?.status).toBe(422);
   });
 
-  it('PR-009 la BASE rechaza una línea sin concepto y sin justificación', async () => {
+  it('PR-110 la BASE admite una línea fuera del CNMB marcada y sin justificación, y rechaza la que no lleva la marca', async () => {
+    /**
+     * `prescription_item_off_formulary`, relaxed by
+     * `20261005060300_prescription_off_formulary_mark`: a line with no CNMB
+     * concept carries the mark (`off_formulary`) — or, written before the
+     * mark existed, the justification that used to stand for it.
+     */
     const prisma = db();
     const { encounter, practitioner } = await anEncounter(prisma);
-
     const prescription = await prisma.prescription.create({
       data: {
         encounterId: encounter.id,
@@ -335,54 +341,79 @@ describe('la receta contra PostgreSQL', () => {
         prescriberId: practitioner.id,
       },
     });
-
-    const problem = await problemFrom(
+    const insert = (offFormulary: boolean) =>
       prisma.$executeRawUnsafe(
         `INSERT INTO prescription_item
-           (prescription_id, generic_name, dose_text, frequency_text)
-         VALUES ($1::uuid, 'Amoxicilina', '1 cápsula', 'Cada 8 horas')`,
+           (prescription_id, generic_name, dose_text, frequency_text, off_formulary)
+         VALUES ($1::uuid, 'Amoxicilina', '1 cápsula', 'Cada 8 horas', $2)`,
         prescription.id,
-      ),
-    );
+        offFormulary,
+      );
 
-    expect(problem?.code).toBe('OFF_FORMULARY_JUSTIFICATION_REQUIRED');
+    // Positive control: marked, with no justification at all, it is stored.
+    await expect(insert(true)).resolves.toBe(1);
+
+    const problem = await problemFrom(insert(false));
+    expect(problem?.code).toBe('PRESCRIPTION_ITEM_OFF_FORMULARY_UNMARKED');
     expect(problem?.status).toBe(422);
   });
 
-  it('PR-009 el servicio se adelanta con una frase sobre la casilla', async () => {
+  it('PR-110 recetar fuera del CNMB sin escribir por qué deja la línea marcada; con concepto, sin marca', async () => {
     const prisma = db();
     const { encounter, practitioner, requester } = await anEncounter(prisma);
-
-    await expect(
-      repositoryOf(prisma).create({
-        encounterId: encounter.id,
-        prescriberId: practitioner.id,
-        ...INDICATIONS,
-        items: [writeItem(aLine(null))],
-        sites: [...requester.sites],
-      }),
-    ).rejects.toMatchObject({ code: 'OFF_FORMULARY_JUSTIFICATION_REQUIRED' });
-  });
-
-  it('PR-009 admite recetar fuera del CNMB cuando se escribe por qué', async () => {
-    const prisma = db();
-    const { encounter, practitioner, requester } = await anEncounter(prisma);
+    const concept = await aCnmbConcept(prisma, {
+      code: 'J01CA04',
+      display: 'Amoxicilina',
+      validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+    });
 
     const prescription = await repositoryOf(prisma).create({
       encounterId: encounter.id,
       prescriberId: practitioner.id,
       ...INDICATIONS,
-      items: [
-        writeItem({
-          ...aLine(null),
-          offFormularyJustification: 'Desabastecimiento del equivalente CNMB',
-        }),
-      ],
+      items: [writeItem(aLine(concept.id)), writeItem(aLine(null))],
       sites: [...requester.sites],
     });
 
-    expect(prescription.items[0]?.conceptId).toBeNull();
-    expect(prescription.items[0]?.genericName).toBe('Amoxicilina');
+    expect(
+      prescription.items.map((item) => [
+        item.offFormulary,
+        item.offFormularyJustification,
+      ]),
+    ).toEqual([
+      [false, null],
+      [true, null],
+    ]);
+    expect(prescription.items[1]?.genericName).toBe('Amoxicilina');
+  });
+
+  it('PR-110 una línea escrita antes de la marca, con su justificación, se sigue leyendo fuera del CNMB', async () => {
+    const prisma = db();
+    const { encounter, practitioner, requester } = await anEncounter(prisma);
+    const prescription = await prisma.prescription.create({
+      data: {
+        encounterId: encounter.id,
+        siteId: encounter.siteId,
+        prescriberId: practitioner.id,
+      },
+    });
+    // As the rows before the mark are: justified, `off_formulary` false.
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO prescription_item
+         (prescription_id, generic_name, dose_text, frequency_text, off_formulary_justification)
+       VALUES ($1::uuid, 'Amoxicilina', '1 cápsula', 'Cada 8 horas', 'Desabastecimiento')`,
+      prescription.id,
+    );
+
+    const read = await repositoryOf(prisma).findById({
+      prescriptionId: prescription.id,
+      sites: [...requester.sites],
+    });
+
+    expect(read?.items[0]).toMatchObject({
+      offFormulary: true,
+      offFormularyJustification: 'Desabastecimiento',
+    });
   });
 
   it('PR-008 congela la DCI del concepto y no la que envíe el llamador', async () => {
