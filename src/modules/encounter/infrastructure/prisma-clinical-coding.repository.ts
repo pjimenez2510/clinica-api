@@ -11,6 +11,7 @@ import {
   DiagnosisRetractionReasonRequiredError,
   DiagnosisLastAfterDischargeError,
   DiagnosisCorrectionRequiresSignatureError,
+  DiagnosisNotRestorableError,
   DiagnosisEditReasonRequiredError,
   DiagnosisSupportsMaternityRestError,
   EncounterAlreadyClosedError,
@@ -34,6 +35,7 @@ import type {
   CorrectionAuthority,
   DiagnosisEdit,
   DiagnosisQuery,
+  DiagnosisRestoration,
   DiagnosisRetraction,
   DiagnosisVersionView,
   DiagnosisView,
@@ -264,29 +266,30 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
       },
       select: { diagnoses: true },
     });
-    return [
-      ...new Set(
-        rows.flatMap((row) =>
-          Array.isArray(row.diagnoses)
-            ? row.diagnoses.flatMap((printed) =>
-                typeof printed === 'object' &&
-                printed !== null &&
-                'code' in printed &&
-                typeof printed.code === 'string'
-                  ? [printed.code]
-                  : [],
-              )
-            : [],
-        ),
-      ),
-    ];
+    return [...new Set(rows.flatMap((row) => printedCodes(row.diagnoses)))];
   }
 
   /**
-   * EN-180 to EN-182, EN-188, EN-189. Archive, then delete — the order the
+   * EN-214 (D-117.14). What the issued recetas froze (PR-026), annulled ones
+   * included: the pharmacy may hold the paper.
+   */
+  async codesPrintedOnPrescriptions(query: CodingQuery): Promise<string[]> {
+    const rows = await this.prisma.prescription.findMany({
+      where: {
+        encounterId: query.encounterId,
+        issuedAt: { not: null },
+        encounter: siteFilter(query.sites),
+      },
+      select: { diagnoses: true },
+    });
+    return [...new Set(rows.flatMap((row) => printedCodes(row.diagnoses)))];
+  }
+
+  /**
+   * EN-180, EN-188, EN-213, EN-214. Archive, then delete — the order the
    * database demands.
    *
-   * The two refusals are asked here, under the attention's lock, so they are
+   * The refusals are asked here, under the attention's lock, so they are
    * sentences: the triggers raise a class code whose name never travels.
    */
   async retractDiagnosis(retraction: DiagnosisRetraction): Promise<void> {
@@ -297,12 +300,26 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         retraction.sites,
         acceptsDiagnosisCorrection,
       );
+      await refuseCorrection(tx, retraction.encounterId, status, {
+        editedById: retraction.retractedById,
+        mayCorrectAfterDischarge: retraction.mayCorrectAfterDischarge,
+      });
       await requireDiagnosisOf(
         tx,
         retraction.encounterId,
         retraction.diagnosisId,
       );
       await refuseWhenCitedByIssuedDocument(tx, retraction.encounterId);
+
+      // D-117.15. No reason makes it acceptable: the rest is annulled first.
+      const [maternity] = await tx.$queryRaw<{ refused: boolean }[]>`
+        SELECT (cie10_is_obstetric(d.cie10_code)
+                AND encounter_diagnosis_supports_maternity_rest(
+                      d.encounter_id, d.id)) AS refused
+          FROM encounter_diagnosis d
+         WHERE d.id = ${retraction.diagnosisId}::uuid
+      `;
+      if (maternity?.refused) throw new DiagnosisSupportsMaternityRestError();
 
       // EN-188. A discharged attention keeps one: nothing new can be coded.
       if (hasDischarge(status)) {
@@ -313,8 +330,8 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
       }
 
       if (retraction.reason === null) {
-        // The same function the archive's trigger calls: a signed note, the
-        // discharge, or a certificate that printed the code.
+        // The same function the archive's trigger calls: an issued
+        // certificate or receta that printed the code (EN-214).
         const [row] = await tx.$queryRaw<{ needs: boolean }[]>`
           SELECT encounter_diagnosis_retraction_needs_reason(
                    d.encounter_id, d.cie10_code) AS needs
@@ -552,13 +569,89 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
     });
   }
 
-  /** EN-180. The archive of one attention, narrowed through the attention. */
+  /**
+   * EN-213. «Deshacer». The diagnosis comes back as a NEW row: the archive's
+   * id is the old row's, and a second removal will need it. Everything else
+   * as it was, including when it was recorded; the rank, coherent with what
+   * happened meanwhile.
+   */
+  async restoreDiagnosis(
+    restoration: DiagnosisRestoration,
+  ): Promise<DiagnosisView> {
+    const now = new Date();
+    const row = await this.prisma.$transaction(async (tx) => {
+      await requireEncounterInScope(
+        tx,
+        restoration.encounterId,
+        restoration.sites,
+      );
+      const archived = await tx.encounterDiagnosisRetraction.findFirst({
+        where: {
+          id: restoration.retractionId,
+          encounterId: restoration.encounterId,
+        },
+      });
+      if (!archived) throw new DiagnosisNotFoundError();
+      if (archived.restoredAt !== null) throw new DiagnosisNotRestorableError();
+
+      const live = await tx.encounterDiagnosis.findMany({
+        where: { encounterId: restoration.encounterId },
+        select: { rank: true, cie10Code: true },
+      });
+      // Recorded again meanwhile: it would be there twice.
+      if (live.some((d) => d.cie10Code === archived.cie10Code)) {
+        throw new DiagnosisNotRestorableError();
+      }
+      const ranks = live.map((d) => d.rank);
+      // A principal comes back as principal only if the place is still free.
+      const rank =
+        isPrimary(archived.rank) && ranks.some(isPrimary)
+          ? nextRankAfter(ranks)
+          : archived.rank;
+
+      const restored = await tx.encounterDiagnosis.create({
+        data: {
+          encounterId: archived.encounterId,
+          conceptId: archived.conceptId,
+          cie10Code: archived.cie10Code,
+          cie10Display: archived.cie10Display,
+          certainty: archived.certainty,
+          occurrence: archived.occurrence,
+          rank,
+          notifiable: archived.notifiable,
+          note: archived.note,
+          recordedAt: archived.recordedAt,
+        },
+        select: DIAGNOSIS_SELECT,
+      });
+      // `encounter_diagnosis_retraction_frozen` admits this once, and only
+      // towards that very diagnosis back on its attention.
+      await tx.encounterDiagnosisRetraction.update({
+        where: { id: archived.id },
+        data: {
+          restoredAt: now,
+          restoredById: restoration.restoredById,
+          restoredAsId: restored.id,
+        },
+      });
+      return restored;
+    });
+
+    return toDiagnosisView(row);
+  }
+
+  /**
+   * EN-180, EN-213. The archive of one attention, narrowed through the
+   * attention, without what was brought back: «Deshacer» means it was not
+   * removed after all (the archive keeps saying it was, and who undid it).
+   */
   async retractedDiagnosesOf(
     query: CodingQuery,
   ): Promise<RetractedDiagnosisView[]> {
     const rows = await this.prisma.encounterDiagnosisRetraction.findMany({
       where: {
         encounterId: query.encounterId,
+        restoredAt: null,
         encounter: siteFilter(query.sites),
       },
       orderBy: [{ retractedAt: 'asc' }, { id: 'asc' }],
@@ -862,6 +955,22 @@ async function conceptForEncounter(
  */
 function siteFilter(sites: SiteScopeFilter): Prisma.EncounterWhereInput {
   return sites === 'all' ? {} : { siteId: { in: [...sites] } };
+}
+
+/**
+ * EN-189, EN-214. The codes a frozen `[{code, …}]` printed. Read defensively:
+ * a JSON column is only as typed as its CHECK.
+ */
+function printedCodes(value: Prisma.JsonValue | null): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((printed) =>
+    typeof printed === 'object' &&
+    printed !== null &&
+    'code' in printed &&
+    typeof printed.code === 'string'
+      ? [printed.code]
+      : [],
+  );
 }
 
 /**

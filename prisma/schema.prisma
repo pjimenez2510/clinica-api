@@ -136,6 +136,8 @@ model User {
   allergiesRecorded  PatientAllergy[]               @relation("AllergyRecorder")
   allergiesRefuted   PatientAllergy[]               @relation("AllergyRefuter")
   diagnosesRetracted EncounterDiagnosisRetraction[] @relation("DiagnosisRetractor")
+  /// EN-213. The removed diagnoses this account brought back («Deshacer»).
+  diagnosesRestored  EncounterDiagnosisRetraction[] @relation("DiagnosisRestorer")
   vitalsRecorded     EncounterVitals[]              @relation("VitalsRecorder")
   vitalsCorrected    EncounterVitals[]              @relation("VitalsCorrector")
   historyRecorded    PatientHistory[]               @relation("HistoryRecorder")
@@ -2731,6 +2733,14 @@ model EncounterDiagnosisRetraction {
   retractedBy   User     @relation("DiagnosisRetractor", fields: [retractedById], references: [id], onDelete: Restrict)
   /// Required by the archive trigger when the encounter has a signed note.
   reason        String?  @db.VarChar(500)
+
+  /// EN-213. «Deshacer»: who brought it back, when, and as which new row of
+  /// `encounter_diagnosis`. Written once (`encounter_diagnosis_retraction_frozen`);
+  /// not a foreign key, because the restored row can be removed again.
+  restoredAt   DateTime? @map("restored_at") @db.Timestamptz(6)
+  restoredById String?   @map("restored_by_id") @db.Uuid
+  restoredBy   User?     @relation("DiagnosisRestorer", fields: [restoredById], references: [id], onDelete: Restrict)
+  restoredAsId String?   @map("restored_as_id") @db.Uuid
 
   @@index([encounterId])
   @@map("encounter_diagnosis_retraction")

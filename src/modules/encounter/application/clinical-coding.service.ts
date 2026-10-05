@@ -69,11 +69,11 @@ export interface RecordDiagnosisRequest {
   note?: string;
 }
 
-/** EN-180 to EN-182. What removing a diagnosis needs to be told. */
+/** EN-180, EN-213, EN-214. What removing a diagnosis needs to be told. */
 export interface RetractDiagnosisRequest {
   encounterId: string;
   diagnosisId: string;
-  /** EN-181. Required once the consultation note is signed. */
+  /** EN-214. Owed when an issued certificate or receta printed the code. */
   reason?: string;
 }
 
@@ -101,8 +101,14 @@ export interface EditDiagnosisRequest {
 
 /** EN-047, EN-180. The diagnoses that count, and the trace of those removed. */
 export interface DiagnosisSheet {
-  /** EN-189. Each with whether an issued certificate printed its code. */
-  items: (DiagnosisView & { printedOnCertificate: boolean })[];
+  /**
+   * EN-189, EN-214. Each with whether an issued certificate or receta printed
+   * its code: the screen asks for the reason before sending.
+   */
+  items: (DiagnosisView & {
+    printedOnCertificate: boolean;
+    printedOnPrescription: boolean;
+  })[];
   retracted: RetractedDiagnosisView[];
 }
 
@@ -245,16 +251,18 @@ export class ClinicalCodingService {
     const encounter = await this.requireEncounter(encounterId, requester);
 
     const query = { encounterId: encounter.id, sites: requester.sites };
-    const [diagnoses, retracted, printed] = await Promise.all([
+    const [diagnoses, retracted, printed, prescribed] = await Promise.all([
       this.coding.diagnosesOf(query),
       // EN-180. The trace travels with the list: one read, one audit row.
       this.coding.retractedDiagnosesOf(query),
-      // EN-189. So the screen asks for the reason before sending, not after.
+      // EN-189, EN-214. So the screen asks for the reason before sending.
       this.coding.codesPrintedOnCertificates(query),
+      this.coding.codesPrintedOnPrescriptions(query),
     ]);
     const items = diagnoses.map((diagnosis) => ({
       ...diagnosis,
       printedOnCertificate: printed.includes(diagnosis.cie10Code),
+      printedOnPrescription: prescribed.includes(diagnosis.cie10Code),
     }));
 
     await this.audit.record({
@@ -270,22 +278,24 @@ export class ClinicalCodingService {
   }
 
   /**
-   * EN-180 to EN-182, EN-188, EN-189. Takes a diagnosis off a live or
-   * discharged attention, archived with who removed it and, once something
-   * was signed or printed with it, why.
+   * EN-180, EN-188, EN-213, EN-214. Takes a diagnosis off a live or
+   * discharged attention, archived with who removed it and — when a paper in
+   * a third party's hands printed it — why.
    *
-   * Whether a reason is owed and whether a document cites the diagnoses are
-   * judged by the adapter under the attention's lock, because both can change
-   * between a read here and the write.
+   * No confirmation is asked here (D-126.2): the screen confirms once a note
+   * is signed or the attention discharged. Whether a reason is owed and the
+   * refusals are judged by the adapter under the attention's lock, because
+   * they can change between a read here and the write.
    */
   async retractDiagnosis(
     request: RetractDiagnosisRequest,
-    requester: Requester,
+    requester: CodingRequester,
   ): Promise<void> {
     const encounter = await this.requireCorrectableEncounter(
       request.encounterId,
       requester,
     );
+    const authority = await this.correctionAuthority(encounter, requester);
     const reason = request.reason?.trim();
 
     await this.coding.retractDiagnosis({
@@ -293,6 +303,7 @@ export class ClinicalCodingService {
       diagnosisId: request.diagnosisId,
       reason: reason === undefined || reason === '' ? null : reason,
       retractedById: requester.userId,
+      mayCorrectAfterDischarge: authority.mayCorrectAfterDischarge,
       sites: requester.sites,
     });
 
@@ -312,6 +323,42 @@ export class ClinicalCodingService {
       { site_id: encounter.siteId, action: 'DIAGNOSIS_RETRACTED' },
       'diagnosis retracted',
     );
+  }
+
+  /**
+   * EN-213. «Deshacer» a removal: the diagnosis comes back as it was, behind
+   * the principal if another took its place. Only while the attention admits
+   * new clinical content (EN-009): bringing a diagnosis back is recording it.
+   */
+  async restoreDiagnosis(
+    encounterId: string,
+    diagnosisId: string,
+    requester: Requester,
+  ): Promise<DiagnosisView> {
+    const encounter = await this.requireLiveEncounter(encounterId, requester);
+
+    const diagnosis = await this.coding.restoreDiagnosis({
+      encounterId: encounter.id,
+      retractionId: diagnosisId,
+      restoredById: requester.userId,
+      sites: requester.sites,
+    });
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: DIAGNOSIS_RESOURCE_TYPE,
+      resourceId: diagnosis.id,
+      action: 'CREATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+
+    this.logger.info(
+      { site_id: encounter.siteId, action: 'DIAGNOSIS_RESTORED' },
+      'diagnosis restored',
+    );
+
+    return diagnosis;
   }
 
   /**

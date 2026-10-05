@@ -24,6 +24,7 @@ import {
   DiagnosisSupportsMaternityRestError,
   DiagnosisConceptNotInForceError,
   DiagnosisNotFoundError,
+  DiagnosisNotRestorableError,
   DiagnosisPrimaryTakenError,
   DiagnosisRetractionReasonRequiredError,
   DischargeConditionRequiredError,
@@ -93,6 +94,7 @@ const EVERY_ERROR: readonly DomainError[] = [
   new DiagnosisCorrectionRequiresSignatureError(),
   new DiagnosisSupportsMaternityRestError(),
   new EncounterAlreadyReportedError(),
+  new DiagnosisNotRestorableError(),
   // EN-080. La tercera cara de la misma negativa: el concepto es del CNMB o
   // no lo es, y la frase tiene que nombrar la lista que hay que abrir. Con un
   // ternario, «todo lo que no es CIE-10» decía «el tarifario», y una alergia
@@ -175,6 +177,13 @@ describe('el contrato de errores de la atención', () => {
     expect(last.userTitle).toContain('único diagnóstico');
   });
 
+  it('EN-213 «Deshacer» lo que ya se deshizo, o lo que ya volvió a registrarse: 409 que manda a actualizar', () => {
+    const error = new DiagnosisNotRestorableError();
+    expect(error.code).toBe('DIAGNOSIS_NOT_RESTORABLE');
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.userTitle).toContain('Actualice la lista');
+  });
+
   it('EN-212 editar un diagnóstico: 422 que pide el motivo por campo, 403 a quien no firma tras el alta, 409 por el reposo o el reporte', () => {
     const reason = new DiagnosisEditReasonRequiredError();
     expect(reason.code).toBe('DIAGNOSIS_EDIT_REASON_REQUIRED');
@@ -209,10 +218,9 @@ describe('el contrato de errores de la atención', () => {
     expect(reason.code).toBe('DIAGNOSIS_RETRACTION_REASON_REQUIRED');
     expect(reason).toBeInstanceOf(ValidationError);
     expect(reason.fieldErrors?.[0]?.field).toBe('reason');
-    // EN-188, EN-189: el motivo se debe también con el alta o un certificado
-    // que lo imprimió, así que el título no puede hablar sólo de la nota.
+    // EN-214: sólo un papel en manos de un tercero lo debe ya (D-126.3).
     expect(reason.userTitle).toBe(
-      'Indique por qué quita el diagnóstico: ya consta en lo firmado o impreso de esta atención',
+      'Indique por qué quita el diagnóstico: un certificado o una receta ya entregados lo imprimieron',
     );
 
     const cited = new DiagnosisCitedByIssuedDocumentError();

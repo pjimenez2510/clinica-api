@@ -1,6 +1,8 @@
 import type { PrismaClient } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
+import { addDays, clinicalDateOf } from '../../src/shared/domain/clinic-time';
+
 import { aTariffConcept } from './orders-fixtures';
 import { useDatabase } from './setup/database';
 import {
@@ -21,7 +23,10 @@ import {
  */
 const db = useDatabase();
 
-async function anEncounterWithDiagnoses(prisma: PrismaClient) {
+async function anEncounterWithDiagnoses(
+  prisma: PrismaClient,
+  codes: string[] = ['J02', 'R50'],
+) {
   const site = await createSite(prisma);
   const practitioner = await createPractitioner(prisma);
   const patient = await createPatient(prisma);
@@ -30,8 +35,7 @@ async function anEncounterWithDiagnoses(prisma: PrismaClient) {
     practitionerId: practitioner.id,
     patientId: patient.id,
   });
-  await createDiagnosis(prisma, encounter.id, 'J02');
-  await createDiagnosis(prisma, encounter.id, 'R50');
+  for (const code of codes) await createDiagnosis(prisma, encounter.id, code);
   const diagnoses = await prisma.encounterDiagnosis.findMany({
     where: { encounterId: encounter.id },
     orderBy: { rank: 'asc' },
@@ -149,7 +153,7 @@ describe('quitar un diagnóstico deja rastro (EN-180 a EN-183)', () => {
     expect(await prisma.encounterDiagnosisRetraction.count({ where: { id: second!.id } })).toBe(1); // prettier-ignore
   });
 
-  it('EN-181 con la nota firmada la BASE exige el motivo; sin nota firmada, no', async () => {
+  it('EN-181 EN-213 con la nota firmada la BASE ya no exige motivo; un motivo en blanco sigue sin ser motivo', async () => {
     const prisma = db();
     const { practitioner, encounter, diagnoses, remover } =
       await anEncounterWithDiagnoses(prisma);
@@ -172,28 +176,24 @@ describe('quitar un diagnóstico deja rastro (EN-180 a EN-183)', () => {
       },
     });
 
-    await expect(archive(prisma, first!.id, remover.id)).rejects.toThrow(
-      /encounter_diagnosis_retraction_reason/,
-    );
+    // D-126.2: the signed note asks for a confirmation on the screen, and no
+    // reason in the database.
     await expect(archive(prisma, first!.id, remover.id, '   ')).rejects.toThrow(
       /encounter_diagnosis_retraction_reason_not_blank/,
     );
-    await archive(prisma, first!.id, remover.id, 'Era R50, no J02');
+    await archive(prisma, first!.id, remover.id);
     expect(await prisma.encounterDiagnosisRetraction.count({ where: { encounterId: encounter.id } })).toBe(2); // prettier-ignore
   });
 
-  it('EN-188 con el alta la BASE exige el motivo aunque no haya nota firmada, y no deja quitar el último', async () => {
+  it('EN-188 EN-213 con el alta la BASE no exige motivo, y no deja quitar el último', async () => {
     const prisma = db();
     const { encounter, diagnoses, remover } =
       await anEncounterWithDiagnoses(prisma);
     const [first, second] = diagnoses;
     await discharge(prisma, encounter);
 
-    await expect(archive(prisma, second!.id, remover.id)).rejects.toThrow(
-      /encounter_diagnosis_retraction_reason/,
-    );
-    // Positive control: with a reason, and another diagnosis left.
-    await archive(prisma, second!.id, remover.id, 'Código equivocado');
+    // Positive control: without a reason, and another diagnosis left.
+    await archive(prisma, second!.id, remover.id);
     await remove(prisma, second!.id);
 
     // The last one would leave a discharged attention with no diagnosis and
@@ -252,6 +252,128 @@ describe('quitar un diagnóstico deja rastro (EN-180 a EN-183)', () => {
     expect(await prisma.encounterDiagnosisRetraction.count({ where: { encounterId: encounter.id } })).toBe(2); // prettier-ignore
   });
 
+  it('EN-214 una receta emitida —vigente o anulada— que imprimió el código hace que la BASE exija el motivo; con otro código, no', async () => {
+    const prisma = db();
+    const { site, practitioner, encounter, diagnoses, remover } =
+      await anEncounterWithDiagnoses(prisma, ['J02']);
+    const [printed] = diagnoses;
+    // Issued now, it froze J02 (PR-026): the pharmacy holds the paper.
+    const receta = await createIssuedPrescription(prisma, {
+      encounterId: encounter.id,
+      siteId: site.id,
+      prescriberId: practitioner.id,
+    });
+    // Recorded after the issue: no paper printed it (positive control).
+    await createDiagnosis(prisma, encounter.id, 'R50');
+    const unprinted = await prisma.encounterDiagnosis.findFirstOrThrow({
+      where: { encounterId: encounter.id, cie10Code: 'R50' },
+    });
+    await archive(prisma, unprinted.id, remover.id);
+    await remove(prisma, unprinted.id);
+
+    await expect(archive(prisma, printed!.id, remover.id)).rejects.toThrow(
+      /encounter_diagnosis_retraction_reason/,
+    );
+    // Annulled, the paper may still have circulated.
+    await prisma.prescription.update({
+      where: { id: receta.id },
+      data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledById: remover.id, cancelReason: 'Pérdida' }, // prettier-ignore
+    });
+    await expect(archive(prisma, printed!.id, remover.id)).rejects.toThrow(
+      /encounter_diagnosis_retraction_reason/,
+    );
+    await archive(prisma, printed!.id, remover.id, 'Código mal elegido');
+  });
+
+  it('EN-213 D-117.15 la BASE no quita el último diagnóstico obstétrico de un reposo de maternidad no anulado; anulado, sí', async () => {
+    const prisma = db();
+    const { practitioner, encounter, diagnoses, remover } =
+      await anEncounterWithDiagnoses(prisma, ['O80', 'O82', 'R50']);
+    const [o80, o82] = diagnoses;
+    const day = clinicalDateOf(encounter.startedAt);
+    const [rest] = await prisma.$queryRaw<{ id: string }[]>`
+      INSERT INTO medical_certificate
+        (encounter_id, patient_id, issued_by_id, type, rest_from, rest_to,
+         include_diagnosis, verification_code, contingency_type,
+         maternity_admission_on, birth_on, maternity_discharge_on, issued_at)
+      VALUES (${encounter.id}::uuid, ${encounter.patientId}::uuid,
+              ${practitioner.id}::uuid, 'MEDICAL_REST', ${day}::date,
+              ${addDays(day, 83)}::date, false,
+              ${`EN213M-${encounter.id.slice(0, 12)}`}, 'MATERNITY',
+              ${addDays(day, -2)}::date, ${addDays(day, -1)}::date,
+              ${day}::date, ${encounter.startedAt})
+      RETURNING id`;
+
+    // Positive control: another obstetric diagnosis still supports it.
+    await archive(prisma, o80!.id, remover.id);
+    await remove(prisma, o80!.id);
+
+    await expect(archive(prisma, o82!.id, remover.id)).rejects.toThrow(
+      /encounter_diagnosis_supports_maternity_rest/,
+    );
+    await prisma.$executeRaw`
+      UPDATE medical_certificate
+         SET revoked_at = ${new Date()}, revoked_by_id = ${remover.id}::uuid,
+             revocation_reason = 'Se emitió por error'
+       WHERE id = ${rest!.id}::uuid`;
+    await archive(prisma, o82!.id, remover.id);
+  });
+
+  it('EN-213 D-117.16 la BASE no quita un diagnóstico de una atención reportada al RDACAA', async () => {
+    const prisma = db();
+    const { encounter, diagnoses, remover } = await anEncounterWithDiagnoses(
+      prisma,
+      ['J02', 'R50', 'R51'],
+    );
+    const [, second, third] = diagnoses;
+    await discharge(prisma, encounter);
+    // Positive control: discharged, not reported.
+    await archive(prisma, second!.id, remover.id);
+    await remove(prisma, second!.id);
+
+    await prisma.encounter.update({ where: { id: encounter.id }, data: { reportedAt: new Date() } }); // prettier-ignore
+    await expect(archive(prisma, third!.id, remover.id)).rejects.toThrow(
+      /encounter_diagnosis_reported/,
+    );
+  });
+
+  it('EN-213 deshacer: el archivo se marca recuperado UNA vez, hacia el diagnóstico que lo devuelve, y nada más de él cambia', async () => {
+    const prisma = db();
+    const { encounter, diagnoses, remover } =
+      await anEncounterWithDiagnoses(prisma);
+    const [, second] = diagnoses;
+    await archive(prisma, second!.id, remover.id);
+    await remove(prisma, second!.id);
+    const restore = (restoredAs: string) =>
+      prisma.$executeRaw`
+        UPDATE encounter_diagnosis_retraction
+           SET restored_at = ${new Date()}, restored_by_id = ${remover.id}::uuid,
+               restored_as_id = ${restoredAs}::uuid
+         WHERE id = ${second!.id}::uuid`;
+
+    // Not towards a diagnosis that is not that one, back on this attention.
+    await expect(restore(diagnoses[0]!.id)).rejects.toThrow(
+      /encounter_diagnosis_retraction_restored_as_itself/,
+    );
+    await createDiagnosis(prisma, encounter.id, 'R50');
+    const back = await prisma.encounterDiagnosis.findFirstOrThrow({
+      where: { encounterId: encounter.id, cie10Code: 'R50' },
+    });
+    // Positive control.
+    await restore(back.id);
+    // Once.
+    await expect(restore(back.id)).rejects.toThrow(
+      /encounter_diagnosis_retraction_frozen/,
+    );
+    // And the rest of the archive still does not move.
+    await expect(
+      prisma.$executeRaw`UPDATE encounter_diagnosis_retraction SET reason = 'luego' WHERE id = ${second!.id}::uuid`,
+    ).rejects.toThrow(/encounter_diagnosis_retraction_frozen/);
+    await expect(
+      prisma.$executeRaw`UPDATE encounter_diagnosis_retraction SET restored_at = NULL, restored_by_id = NULL, restored_as_id = NULL WHERE id = ${second!.id}::uuid`,
+    ).rejects.toThrow(/encounter_diagnosis_retraction_frozen/);
+  });
+
   it('EN-182 PR-026 la receta emitida CONGELA sus diagnósticos: quitar o reordenar después no cambia lo que dice', async () => {
     const prisma = db();
     const { site, practitioner, encounter, diagnoses, remover } =
@@ -271,7 +393,8 @@ describe('quitar un diagnóstico deja rastro (EN-180 a EN-183)', () => {
 
     // Nothing blocks the correction now, and the receta still says the same.
     await moveRank(prisma, first!.id, 9);
-    await archive(prisma, second!.id, remover.id);
+    // EN-214: the receta printed it, so removing it states why.
+    await archive(prisma, second!.id, remover.id, 'Código mal elegido');
     await remove(prisma, second!.id);
 
     const after = await prisma.prescription.findUniqueOrThrow({ where: { id: issued.id } }); // prettier-ignore

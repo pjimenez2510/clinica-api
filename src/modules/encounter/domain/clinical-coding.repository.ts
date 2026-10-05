@@ -195,14 +195,25 @@ export interface RetractedDiagnosisView {
   reason: string | null;
 }
 
-/** EN-180 to EN-182. What removing a diagnosis needs to be told. */
+/** EN-180, EN-213, EN-214. What removing a diagnosis needs to be told. */
 export interface DiagnosisRetraction {
   encounterId: string;
   diagnosisId: string;
-  /** EN-181. Required once the consultation note is signed. */
+  /** EN-214. Owed when an issued certificate or receta printed the code. */
   reason: string | null;
   /** The account that removes it. Never a cedula (REQ-110). */
   retractedById: string;
+  /** EN-213, D-117.13. Whether it may still be done after the discharge. */
+  mayCorrectAfterDischarge: boolean;
+  sites: SiteScopeFilter;
+}
+
+/** EN-213. «Deshacer»: which removed diagnosis comes back, and who asks. */
+export interface DiagnosisRestoration {
+  encounterId: string;
+  /** The id the diagnosis had, which is the id of its archive row. */
+  retractionId: string;
+  restoredById: string;
   sites: SiteScopeFilter;
 }
 
@@ -291,6 +302,12 @@ export interface ClinicalCodingRepository {
   codesPrintedOnCertificates(query: CodingQuery): Promise<string[]>;
 
   /**
+   * EN-214 (D-117.14). The CIE-10 codes an issued receta of the attention
+   * printed —in force or annulled—, as `prescription.diagnoses` froze them.
+   */
+  codesPrintedOnPrescriptions(query: CodingQuery): Promise<string[]>;
+
+  /**
    * EN-180 to EN-182. Archives the diagnosis and takes it off the attention,
    * in one transaction under the attention's lock: whether the note is signed
    * and whether a document cites the diagnoses can both change between a read
@@ -305,6 +322,14 @@ export interface ClinicalCodingRepository {
    * they stand afterwards.
    */
   makePrimary(change: PrimaryChange): Promise<DiagnosisView[]>;
+
+  /**
+   * EN-213. Brings a removed diagnosis back as a NEW row, under the
+   * attention's lock, and marks its archive restored once. Refuses with
+   * `DIAGNOSIS_NOT_RESTORABLE` an archive already restored or a code that is
+   * live again; a principal comes back behind if another took its place.
+   */
+  restoreDiagnosis(restoration: DiagnosisRestoration): Promise<DiagnosisView>;
 
   /**
    * EN-212. Edits a diagnosis in place under the attention's lock, stamping
@@ -322,7 +347,10 @@ export interface ClinicalCodingRepository {
    */
   diagnosisVersions(query: DiagnosisQuery): Promise<DiagnosisVersionView[]>;
 
-  /** EN-180. What was removed from one attention, oldest first. */
+  /**
+   * EN-180, EN-213. What was removed from one attention and not brought back,
+   * oldest first.
+   */
   retractedDiagnosesOf(query: CodingQuery): Promise<RetractedDiagnosisView[]>;
 
   /**

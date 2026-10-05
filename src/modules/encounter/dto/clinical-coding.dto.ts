@@ -131,9 +131,10 @@ export const recordProcedureSchema = z.object({
 export class RecordProcedureDto extends createZodDto(recordProcedureSchema) {}
 
 /**
- * EN-180, EN-181. Removing a diagnosis. The reason is optional here and
- * required by the service once the consultation note is signed: the transport
- * cannot see the note.
+ * EN-180, EN-213, EN-214. Removing a diagnosis. The reason is optional here
+ * and required by the service when an issued certificate or receta printed
+ * the code: the transport cannot see the papers. On the screen it is chosen
+ * from a list (D-126.3).
  */
 export const retractDiagnosisSchema = z.object({
   reason: z
@@ -236,7 +237,13 @@ export const diagnosisListSchema = z.object({
    * EN-189. With whether an issued certificate printed the code, so removing
    * it asks for the reason before sending.
    */
-  items: z.array(diagnosisSchema.extend({ printedOnCertificate: z.boolean() })),
+  items: z.array(
+    diagnosisSchema.extend({
+      printedOnCertificate: z.boolean(),
+      /** EN-214 (D-117.14). An issued receta printed the code. */
+      printedOnPrescription: z.boolean(),
+    }),
+  ),
   /** EN-180. What was removed, so the trace is in front of whoever reads. */
   retracted: z.array(retractedDiagnosisSchema),
 });

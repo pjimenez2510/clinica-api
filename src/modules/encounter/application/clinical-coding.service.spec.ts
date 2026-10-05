@@ -14,6 +14,7 @@ import {
 import type {
   ClinicalCodingRepository,
   DiagnosisEdit,
+  DiagnosisRestoration,
   DiagnosisRetraction,
   DiagnosisVersionView,
   DiagnosisView,
@@ -193,6 +194,18 @@ class FakeCoding implements ClinicalCodingRepository {
   }
 
   certificateCodes: string[] = [];
+  prescriptionCodes: string[] = [];
+
+  codesPrintedOnPrescriptions(): Promise<string[]> {
+    return Promise.resolve(this.prescriptionCodes);
+  }
+
+  restored: DiagnosisRestoration[] = [];
+
+  restoreDiagnosis(restoration: DiagnosisRestoration): Promise<DiagnosisView> {
+    this.restored.push(restoration);
+    return Promise.resolve({ ...this.diagnoses[0]!, id: 'diagnosis-restored' });
+  }
 
   codesPrintedOnCertificates(): Promise<string[]> {
     return Promise.resolve(this.certificateCodes);
@@ -463,6 +476,45 @@ describe('los casos de uso del bloque K', () => {
     expect(again.items.map((item) => item.printedOnCertificate)).toEqual([
       false,
     ]);
+  });
+
+  it('EN-214 sirve con cada diagnóstico si una receta emitida imprimió su código', async () => {
+    await service.recordDiagnosis(aDiagnosis(), requester);
+    coding.prescriptionCodes = ['J020'];
+
+    const { items } = await service.diagnosesOf(ENCOUNTER, requester);
+    expect(items.map((item) => item.printedOnPrescription)).toEqual([true]);
+  });
+
+  it('EN-213 «Deshacer» es un acto de quien deshace, sólo en la atención viva, y deja una fila de bitácora', async () => {
+    await service.recordDiagnosis(aDiagnosis(), requester);
+    audit.entries.length = 0;
+
+    const back = await service.restoreDiagnosis(
+      ENCOUNTER,
+      'diagnosis-1',
+      requester,
+    );
+    expect(back.id).toBe('diagnosis-restored');
+    expect(coding.restored).toEqual([
+      expect.objectContaining({
+        retractionId: 'diagnosis-1',
+        restoredById: USER,
+      }),
+    ]);
+    expect(
+      audit.entries.map((entry) => [entry.action, entry.resourceId]),
+    ).toEqual([['CREATE', 'diagnosis-restored']]);
+
+    encounters.stored = anEncounter({
+      status: 'DISCHARGED',
+      endedAt: new Date('2026-09-14T15:00:00Z'), // fecha-fija: la de la atención de prueba
+      dischargeCondition: 'ALIVE',
+    });
+    await expect(
+      service.restoreDiagnosis(ENCOUNTER, 'diagnosis-1', requester),
+    ).rejects.toBeInstanceOf(EncounterAlreadyClosedError);
+    expect(coding.restored).toHaveLength(1);
   });
 
   it('EN-009 rechaza diagnosticar en una atención con alta clínica', async () => {

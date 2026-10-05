@@ -739,9 +739,10 @@ export const DOMAIN_ERROR_CODES = [
   'DIAGNOSIS_PRIMARY_TAKEN',
   //   * `DIAGNOSIS_NOT_FOUND` (404) — EN-180, EN-183. No es de esa atención o ya
   //     se quitó: el mismo para las dos, como `ENCOUNTER_NOT_FOUND`.
-  //   * `DIAGNOSIS_RETRACTION_REASON_REQUIRED` (422) — EN-181, EN-188, EN-189.
-  //     Con una nota firmada, el alta o un certificado que imprimió el código,
-  //     quitar un diagnóstico dice por qué; la base lo exige también.
+  //   * `DIAGNOSIS_RETRACTION_REASON_REQUIRED` (422) — EN-214, EN-189.
+  //     Con un certificado o una receta emitidos que imprimieron el código,
+  //     quitar un diagnóstico dice por qué; la base lo exige también. Desde
+  //     EN-213 la nota firmada y el alta ya no lo piden (D-126.2).
   //   * `DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT` (409) — EN-182. Una orden con
   //     exámenes vivos lee los diagnósticos al mostrarse: primero se anulan.
   'DIAGNOSIS_NOT_FOUND',
@@ -764,6 +765,9 @@ export const DOMAIN_ERROR_CODES = [
   'DIAGNOSIS_CORRECTION_REQUIRES_SIGNATURE',
   'DIAGNOSIS_SUPPORTS_MATERNITY_REST',
   'ENCOUNTER_ALREADY_REPORTED',
+  //   * `DIAGNOSIS_NOT_RESTORABLE` (409) — EN-213. «Deshacer» lo que ya se
+  //     recuperó, o cuyo código volvió a registrarse.
+  'DIAGNOSIS_NOT_RESTORABLE',
   // ── H6: alergias visibles durante la consulta ──────────────────────────
   //   * `PATIENT_ALLERGY_NOT_FOUND` (404) — EN-082. La alergia no está en esa
   //     ficha ni en ninguna que esa ficha absorbiera. **Uno solo para «no

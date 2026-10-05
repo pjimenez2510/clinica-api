@@ -1078,15 +1078,18 @@ export class DiagnosisNotFoundError extends NotFoundError {
 }
 
 /**
- * EN-181. Removing a diagnosis once the consultation note is signed states
- * why: what was signed already said something with it in front, and whoever
- * reads the chart has to know why it is gone. Demanded in the service, and by
- * `trg_encounter_diagnosis_retraction_admits` a second time.
+ * EN-214 (D-126.3, D-117.9, D-117.14). Removing a diagnosis whose code a paper
+ * in a third party's hands printed — an issued certificate or receta, in force
+ * or annulled — states why: the paper does not change, and the history has to
+ * explain why it says something else. Chosen from a list on the screen.
+ * Demanded in the service, and by `trg_encounter_diagnosis_retraction_admits`
+ * a second time. A signed note or the discharge no longer owe it (EN-213):
+ * the screen confirms once.
  */
 export class DiagnosisRetractionReasonRequiredError extends ValidationError {
   readonly code = 'DIAGNOSIS_RETRACTION_REASON_REQUIRED';
   override readonly userTitle =
-    'Indique por qué quita el diagnóstico: ya consta en lo firmado o impreso de esta atención';
+    'Indique por qué quita el diagnóstico: un certificado o una receta ya entregados lo imprimieron';
   override readonly fieldErrors = [
     {
       field: 'reason',
@@ -1097,7 +1100,7 @@ export class DiagnosisRetractionReasonRequiredError extends ValidationError {
 
   constructor() {
     super(
-      'Diagnosis retraction without a reason after a signature, the discharge or a printed certificate',
+      'Diagnosis retraction without a reason while an issued paper printed it',
     );
   }
 }
@@ -1132,6 +1135,21 @@ export class DiagnosisLastAfterDischargeError extends ConflictError {
 
   constructor() {
     super('The last diagnosis of a discharged encounter cannot be removed');
+  }
+}
+
+/**
+ * EN-213. «Deshacer» a removal that was already undone, or whose code was
+ * recorded again meanwhile: bringing it back would leave the same diagnosis
+ * twice. The list on screen is stale.
+ */
+export class DiagnosisNotRestorableError extends ConflictError {
+  readonly code = 'DIAGNOSIS_NOT_RESTORABLE';
+  override readonly userTitle =
+    'Ese diagnóstico ya se recuperó o se volvió a registrar. Actualice la lista';
+
+  constructor() {
+    super('The removed diagnosis was already restored or recorded again');
   }
 }
 

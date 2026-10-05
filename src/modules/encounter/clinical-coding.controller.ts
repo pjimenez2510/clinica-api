@@ -159,6 +159,7 @@ export class ClinicalCodingController {
       items: sheet.items.map((item) => ({
         ...toDiagnosisResponse(item),
         printedOnCertificate: item.printedOnCertificate,
+        printedOnPrescription: item.printedOnPrescription,
       })),
       retracted: sheet.retracted.map(toRetractedResponse),
     };
@@ -184,8 +185,31 @@ export class ClinicalCodingController {
   ): Promise<void> {
     await this.coding.retractDiagnosis(
       { encounterId, diagnosisId, reason: dto.reason },
+      this.correctingRequester(req),
+    );
+  }
+
+  /**
+   * EN-213. «Deshacer» a removal: the diagnosis comes back as it was. A
+   * `POST` of an act, like removing it; 200 with the diagnosis brought back,
+   * which has a new id.
+   */
+  @Post('diagnoses/:diagnosisId/restore')
+  @RequirePermission('record:write', 'query')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Deshacer el quitar un diagnóstico' })
+  @ApiOkResponse({ type: DiagnosisDto })
+  async restoreDiagnosis(
+    @Param('encounterId', ParseUUIDPipe) encounterId: string,
+    @Param('diagnosisId', ParseUUIDPipe) diagnosisId: string,
+    @Req() req: Request,
+  ): Promise<DiagnosisResponse> {
+    const diagnosis = await this.coding.restoreDiagnosis(
+      encounterId,
+      diagnosisId,
       this.requester(req, 'record:write'),
     );
+    return toDiagnosisResponse(diagnosis);
   }
 
   /**
