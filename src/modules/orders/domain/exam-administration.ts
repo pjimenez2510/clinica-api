@@ -1,4 +1,10 @@
-import type { AnalyteValueType, ReferenceRange } from './analyte';
+import { applicableRange, criticalBounds } from './abnormal-flag';
+import type {
+  AnalyteValueType,
+  PatientProfile,
+  PatientSex,
+  ReferenceRange,
+} from './analyte';
 import {
   AnalyteDefinitionInvalidError,
   ReferenceRangeInvalidError,
@@ -146,6 +152,96 @@ export function assertRangesHold(
     }
   });
   if (overlaps.length > 0) throw new ReferenceRangeOverlapError(overlaps);
+
+  const inside = criticalInsideReference(ranges);
+  if (inside.length > 0) throw new ReferenceRangeInvalidError(inside);
+}
+
+const SEX_LABELS: Record<PatientSex, string> = {
+  MALE: 'hombres',
+  FEMALE: 'mujeres',
+  INTERSEX: 'personas intersexuales',
+  UNKNOWN: 'pacientes sin sexo registrado',
+};
+
+/**
+ * ORD-112, D-123.3. The critical band lies OUTSIDE the reference one: a
+ * critical low of 700 instead of 70 would flag every glucose as critical, and
+ * a safety queue full of noise is one nobody looks at.
+ *
+ * ⚠️ WITH THE FLAG'S OWN RESOLUTION, NOT ROW AGAINST ROW. Which reference and
+ * which critical apply to whom is ORD-036's question — side by side for the
+ * critical band — so the check walks every sex and every age the written
+ * rows tell apart and asks `applicableRange` and `criticalBounds` themselves.
+ * A check that paired rows by eye could pass a set the flag then reads
+ * differently. Equal is admitted: the critical bound is the band's edge.
+ */
+function criticalInsideReference(
+  ranges: readonly ReferenceRange[],
+): { field: string; message: string }[] {
+  const found = new Map<string, string>();
+  const rowOf = (range: ReferenceRange) => ranges.indexOf(range);
+
+  for (const patient of patientsTellingApart(ranges)) {
+    const reference = applicableRange(ranges, 'REFERENCE', patient);
+    if (!reference) continue;
+    const critical = criticalBounds(ranges, patient);
+    const who = patient.sex ? ` (${SEX_LABELS[patient.sex]})` : '';
+
+    if (
+      critical.low &&
+      reference.low !== null &&
+      critical.low.value > reference.low
+    ) {
+      const field = `ranges[${rowOf(critical.low.range)}].low`;
+      if (!found.has(field)) {
+        found.set(
+          field,
+          `El crítico bajo ${decimal(critical.low.value)} es mayor que el límite inferior de referencia ${decimal(reference.low)} de la fila ${rowOf(reference) + 1}${who}: valores normales saldrían críticos`,
+        );
+      }
+    }
+    if (
+      critical.high &&
+      reference.high !== null &&
+      critical.high.value < reference.high
+    ) {
+      const field = `ranges[${rowOf(critical.high.range)}].high`;
+      if (!found.has(field)) {
+        found.set(
+          field,
+          `El crítico alto ${decimal(critical.high.value)} es menor que el límite superior de referencia ${decimal(reference.high)} de la fila ${rowOf(reference) + 1}${who}: valores normales saldrían críticos`,
+        );
+      }
+    }
+  }
+  return [...found].map(([field, message]) => ({ field, message }));
+}
+
+/**
+ * Every patient the written rows tell apart: each sex (and «not recorded»),
+ * at no known age and at each edge of every age window, on both sides of it.
+ * Between two edges nothing changes which row applies, so these are enough.
+ */
+function patientsTellingApart(
+  ranges: readonly ReferenceRange[],
+): PatientProfile[] {
+  const ages = new Set<number | null>([null, 0]);
+  for (const range of ranges) {
+    for (const edge of [range.ageMinDays, range.ageMaxDays]) {
+      if (edge === null) continue;
+      for (const age of [edge - 1, edge, edge + 1]) {
+        if (age >= 0) ages.add(age);
+      }
+    }
+  }
+  const sexes: (PatientSex | null)[] = [null, ...(Object.keys(SEX_LABELS) as PatientSex[])]; // prettier-ignore
+  return sexes.flatMap((sex) => [...ages].map((ageDays) => ({ sex, ageDays })));
+}
+
+/** As the laboratory writes it: decimal comma. */
+function decimal(value: number): string {
+  return String(value).replace('.', ',');
 }
 
 /**
