@@ -9,7 +9,7 @@ import { PrismaPatientRepository } from '../../src/modules/patients/infrastructu
 import { addDays, clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
-import { aScene, aTariffConcept } from './orders-fixtures';
+import { placeIssued, aScene, aTariffConcept } from './orders-fixtures';
 import { attemptWhileAnnulled } from './setup/encounter-race';
 import { useDatabase } from './setup/database';
 import { createPatient, createSite, createUser } from './setup/fixtures';
@@ -55,7 +55,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     const prisma = db();
     const scene = await aScene(prisma);
 
-    const order = await ordersOf(prisma).place({
+    const order = await placeIssued(ordersOf(prisma), {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
@@ -80,7 +80,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     const prisma = db();
     const scene = await aScene(prisma);
     const place = () =>
-      ordersOf(prisma).place({
+      placeIssued(ordersOf(prisma), {
         encounterId: scene.encounter.id,
         category: 'LABORATORY',
         priority: 'ROUTINE',
@@ -103,7 +103,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     const prisma = db();
     const scene = await aScene(prisma);
     const place = () =>
-      ordersOf(prisma).place({
+      placeIssued(ordersOf(prisma), {
         encounterId: scene.encounter.id,
         category: 'LABORATORY',
         priority: 'ROUTINE',
@@ -131,7 +131,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     const prisma = db();
     const scene = await aScene(prisma);
 
-    const order = await ordersOf(prisma).place({
+    const order = await placeIssued(ordersOf(prisma), {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
@@ -157,7 +157,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     const scene = await aScene(prisma);
     const repository = ordersOf(prisma);
 
-    const order = await repository.place({
+    const order = await placeIssued(repository, {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
@@ -189,7 +189,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     const scene = await aScene(prisma);
     const repository = ordersOf(prisma);
 
-    const order = await repository.place({
+    const order = await placeIssued(repository, {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
@@ -214,7 +214,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     });
 
     await expect(
-      ordersOf(prisma).place({
+      placeIssued(ordersOf(prisma), {
         encounterId: scene.encounter.id,
         category: 'LABORATORY',
         priority: 'ROUTINE',
@@ -249,7 +249,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       validTo: dateColumn(addDays(clinicalDay, -200)),
     });
 
-    const order = await ordersOf(prisma).place({
+    const order = await placeIssued(ordersOf(prisma), {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
@@ -269,7 +269,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     });
 
     await expect(
-      ordersOf(prisma).place({
+      placeIssued(ordersOf(prisma), {
         encounterId: scene.encounter.id,
         category: 'LABORATORY',
         priority: 'ROUTINE',
@@ -292,7 +292,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     // La clave foránea apunta a `catalog_concept`, que guarda TODOS los
     // catálogos: sin esta comprobación un código CIE-10 se pide como examen.
     await expect(
-      ordersOf(prisma).place({
+      placeIssued(ordersOf(prisma), {
         encounterId: scene.encounter.id,
         category: 'LABORATORY',
         priority: 'ROUTINE',
@@ -319,7 +319,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     // La vigencia se evalúa con `daterange @>` sobre una columna GENERADA, que
     // Prisma modela como `Unsupported`: no se puede ni expresar por el cliente.
     await expect(
-      ordersOf(prisma).place({
+      placeIssued(ordersOf(prisma), {
         encounterId: scene.encounter.id,
         category: 'LABORATORY',
         priority: 'ROUTINE',
@@ -345,7 +345,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     });
 
     await expect(
-      ordersOf(prisma).place({
+      placeIssued(ordersOf(prisma), {
         encounterId: scene.encounter.id,
         category: 'LABORATORY',
         priority: 'ROUTINE',
@@ -361,7 +361,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     const otherSite = await createSite(prisma, 'Sede Norte');
 
     await expect(
-      ordersOf(prisma).place({
+      placeIssued(ordersOf(prisma), {
         encounterId: scene.encounter.id,
         category: 'LABORATORY',
         priority: 'ROUTINE',
@@ -376,30 +376,26 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     const scene = await aScene(prisma);
     const repository = ordersOf(prisma);
 
-    const old = await repository.place({
-      encounterId: scene.encounter.id,
-      category: 'LABORATORY',
-      priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.bh.id }],
-      sites: 'all',
-    });
-    const fresh = await repository.place({
-      encounterId: scene.encounter.id,
-      category: 'LABORATORY',
-      priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.glucose.id }], // prettier-ignore
-      sites: 'all',
-    });
-
-    const now = new Date('2026-09-25T18:00:00Z');
-    await prisma.serviceOrder.update({
-      where: { id: old.id },
-      data: { requestedAt: new Date('2026-09-15T18:00:00Z') },
-    });
-    await prisma.serviceOrder.update({
-      where: { id: fresh.id },
-      data: { requestedAt: new Date('2026-09-25T14:00:00Z') },
-    });
+    // Issued at two known instants: the issue instant is frozen once issued
+    // (`service_order_frozen_once_issued`), so it is set on the way out of
+    // the draft, the only moment it can be.
+    const issuedAt = async (examDefinitionId: string, at: Date) => {
+      const draft = await repository.compose({
+        encounterId: scene.encounter.id,
+        category: 'LABORATORY',
+        priority: 'ROUTINE',
+        lines: [{ examDefinitionId }],
+        sites: 'all',
+      });
+      await prisma.$executeRaw`
+        UPDATE service_order SET status = 'ISSUED', requested_at = ${at}
+         WHERE id = ${draft.id}::uuid`;
+      return draft;
+    };
+    const old = await issuedAt(scene.bh.id, new Date('2026-09-15T18:00:00Z')); // fecha-fija: la antigüedad se mide contra `now` de abajo, inyectado
+    const freshAt = new Date('2026-09-25T14:00:00Z'); // fecha-fija: idem
+    const fresh = await issuedAt(scene.glucose.id, freshAt);
+    const now = new Date('2026-09-25T18:00:00Z'); // fecha-fija: el «ahora» que se inyecta a la cola
 
     const worklist = await repository.pending({ sites: 'all', now, limit: 50 });
 
@@ -418,7 +414,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     const scene = await aScene(prisma);
     const repository = ordersOf(prisma);
 
-    const order = await repository.place({
+    const order = await placeIssued(repository, {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
@@ -446,7 +442,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     const scene = await aScene(prisma);
     const repository = ordersOf(prisma);
 
-    await repository.place({
+    await placeIssued(repository, {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
@@ -510,7 +506,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       },
     });
     const place = (encounterId: string) =>
-      ordersOf(prisma).place({
+      placeIssued(ordersOf(prisma), {
         encounterId,
         category: 'LABORATORY',
         priority: 'ROUTINE',
@@ -639,7 +635,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     await prisma.patientIdentifier.create({
       data: { patientId: scene.patient.id, type: 'CEDULA', value: CEDULA },
     });
-    await repository.place({
+    await placeIssued(repository, {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
@@ -690,7 +686,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     const repository = ordersOf(prisma);
 
     // La orden se emite sobre la ficha que LUEGO absorbe una fusión.
-    await repository.place({
+    await placeIssued(repository, {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',

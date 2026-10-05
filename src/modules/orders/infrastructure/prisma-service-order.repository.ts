@@ -9,16 +9,22 @@ import {
 import { CLINIC_TIME_ZONE } from '../../../shared/domain/clinic-time';
 import { chartScope } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import {
+  ExamCategoryMismatchError,
   ExamNotOrderableError,
   OrderEncounterNotFoundError,
   OrderEncounterNotOpenError,
   OrderItemNotPendingError,
+  OrderNotDraftError,
   OrderNotFoundError,
+  OrderNotIssuedError,
 } from '../domain/orders.errors';
 import { admitsNewOrders, isPending } from '../domain/service-order';
 import { ageingOf } from '../domain/order-ageing';
 import type {
   CancelOrderItem,
+  DraftDiscard,
+  DraftRewrite,
+  NewOrderLine,
   NewServiceOrder,
   OrderQuery,
   PendingOrderEntry,
@@ -68,7 +74,11 @@ const ORDER_SELECT = {
   encounterId: true,
   siteId: true,
   orderedById: true,
+  // D-123. Who may correct, issue or discard the draft: the signer's account.
+  orderedBy: { select: { userId: true } },
   number: true,
+  status: true,
+  discardedAt: true,
   category: true,
   priority: true,
   clinicalNoteText: true,
@@ -96,8 +106,8 @@ interface ConceptRow {
 export class PrismaServiceOrderRepository implements ServiceOrderRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** ORD-001 to ORD-006. Writes one order and every one of its lines. */
-  async place(order: NewServiceOrder): Promise<ServiceOrderView> {
+  /** ORD-001 to ORD-005, ORD-095. Writes one DRAFT order and its lines. */
+  async compose(order: NewServiceOrder): Promise<ServiceOrderView> {
     const row = await this.prisma.$transaction(async (tx) => {
       /**
        * THE ATTENTION'S ROW, LOCKED FIRST. Agenda locks it FOR UPDATE when
@@ -132,26 +142,10 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
         throw new OrderEncounterNotOpenError(encounter.status);
       }
 
-      /**
-       * ORD-002, ORD-003. The orderables, read again INSIDE the transaction.
-       * The service already refused a retired one and this is not ceremony: a
-       * catalogue edit can land between the two, and the row that lands is the
-       * one that matters.
-       */
-      const examIds = [...new Set(order.lines.map((l) => l.examDefinitionId))];
-      const exams = await tx.examDefinition.findMany({
-        where: { id: { in: examIds }, active: true },
-        select: { id: true, code: true, name: true, tariffCode: true },
-      });
-      if (exams.length !== examIds.length) throw new ExamNotOrderableError();
-      const examById = new Map(exams.map((exam) => [exam.id, exam]));
+      const lines = await linesOf(tx, encounter.id, order.category, order.lines); // prettier-ignore
 
-      const conceptByExam = await tariffConceptsInForce(
-        tx,
-        order.encounterId,
-        exams,
-      );
-
+      // ORD-095. `status` is left to its default: the order is born a DRAFT,
+      // and the database gives it no number until it is issued.
       return tx.serviceOrder.create({
         data: {
           encounterId: encounter.id,
@@ -160,20 +154,103 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
           category: order.category,
           priority: order.priority,
           clinicalNoteText: order.clinicalNoteText ?? null,
-          items: {
-            create: order.lines.map((line) => ({
-              conceptId: conceptByExam.get(line.examDefinitionId) ?? '',
-              /**
-               * ORD-002. FROZEN HERE, from the definition read in this same
-               * transaction. In fifteen years the catalogue may have been
-               * migrated, pruned or reloaded and the order still has to say
-               * what was asked for — the same reason an invoice stores the
-               * price and not only the product id.
-               */
-              testCode: examById.get(line.examDefinitionId)?.code ?? '',
-              testDisplay: examById.get(line.examDefinitionId)?.name ?? '',
-            })),
-          },
+          items: { create: lines },
+        },
+        select: ORDER_SELECT,
+      });
+    });
+
+    return toOrderView(row);
+  }
+
+  /**
+   * ORD-096. The draft rewritten whole. Its lines are REPLACED: they never
+   * left the consultation, so there is nothing to audit in removing them —
+   * what is audited starts with the issue (ORD-007).
+   */
+  async rewrite(request: DraftRewrite): Promise<ServiceOrderView> {
+    const row = await this.prisma.$transaction(async (tx) => {
+      const draft = await lockDraft(tx, request);
+      const lines = await linesOf(tx, draft.encounterId, request.category, request.lines); // prettier-ignore
+
+      await tx.serviceOrderItem.deleteMany({
+        where: { serviceOrderId: draft.id },
+      });
+      return tx.serviceOrder.update({
+        where: { id: draft.id },
+        data: {
+          category: request.category,
+          priority: request.priority,
+          clinicalNoteText: request.clinicalNoteText ?? null,
+          items: { create: lines },
+        },
+        select: ORDER_SELECT,
+      });
+    });
+
+    return toOrderView(row);
+  }
+
+  /**
+   * ORD-098. DRAFT to ISSUED. The number is the database's
+   * (`service_order_number_assigned` on the transition), and the request
+   * instant is the issue's own, because the worklist ages from it (ORD-021)
+   * and the cashier charges on its date.
+   */
+  async issue(query: OrderQuery): Promise<ServiceOrderView> {
+    const row = await this.prisma.$transaction(async (tx) => {
+      const draft = await lockDraft(tx, query);
+
+      /**
+       * ORD-003 and ORD-097, AGAIN. The draft may have waited an hour, and the clinic may
+       * have disabled one of its exams meanwhile: a retired exam is not
+       * issued. By the frozen code, which is what the line keeps.
+       */
+      const codes = [...new Set(draft.items.map((item) => item.testCode))];
+      const exams = await tx.examDefinition.findMany({
+        where: { code: { in: codes }, active: true },
+        select: { category: true },
+      });
+      if (codes.length === 0 || exams.length !== codes.length) {
+        throw new ExamNotOrderableError();
+      }
+      // An exam reclassified while the draft waited is not issued under the
+      // wrong type: it would sit in the worklist under the wrong filter.
+      if (exams.some((exam) => exam.category !== draft.category)) {
+        throw new ExamCategoryMismatchError();
+      }
+
+      // The issue instant from the application's clock, like every other
+      // instant this module writes (a cancellation, a discard): PostgreSQL's
+      // own `now()` is a second clock, and the order was born «yesterday»
+      // wherever the two disagreed (seen in the walks, which move the first).
+      await tx.serviceOrder.update({
+        where: { id: draft.id },
+        data: { status: 'ISSUED', requestedAt: new Date() },
+      });
+
+      return tx.serviceOrder.findUniqueOrThrow({
+        where: { id: draft.id },
+        select: ORDER_SELECT,
+      });
+    });
+
+    return toOrderView(row);
+  }
+
+  /** ORD-099. DRAFT to DISCARDED, with who and when; no row is deleted. */
+  async discard(request: DraftDiscard): Promise<ServiceOrderView> {
+    const row = await this.prisma.$transaction(async (tx) => {
+      // ORD-099. Discarding adds nothing to the chart, so it is allowed even
+      // once the attention closed: otherwise a draft left at the close stays
+      // a draft forever, with nobody able to tidy it.
+      const draft = await lockDraft(tx, request, { evenIfClosed: true });
+      return tx.serviceOrder.update({
+        where: { id: draft.id },
+        data: {
+          status: 'DISCARDED',
+          discardedAt: new Date(),
+          discardedById: request.userId,
         },
         select: ORDER_SELECT,
       });
@@ -224,6 +301,9 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
     const rows = await this.prisma.serviceOrder.findMany({
       where: {
         pendingItems: { gt: 0 },
+        // ORD-100. A draft has lines without a result too, and nobody is
+        // waiting for them: only what was issued is pending.
+        status: 'ISSUED',
         ...siteFilter(query.sites),
         ...(query.category ? { category: query.category } : {}),
         ...(query.chartId ? { encounter: chartScope(query.chartId) } : {}),
@@ -291,7 +371,10 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
     return rows.flatMap((order) =>
       order.items.map((item) => ({
         orderId: order.id,
-        orderNumber: order.number,
+        // ORD-100. Only issued orders are listed, and an issued one has its
+        // number (`service_order_number_iff_issued`): a missing one is a
+        // broken invariant, said aloud rather than printed as «N.º 0».
+        orderNumber: issuedNumber(order.number),
         itemId: item.id,
         siteId: order.siteId,
         patientId: order.encounter.patientId,
@@ -337,9 +420,16 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
           serviceOrderId: request.orderId,
           serviceOrder: siteFilter(request.sites),
         },
-        select: { id: true, status: true },
+        select: {
+          id: true,
+          status: true,
+          serviceOrder: { select: { status: true } },
+        },
       });
       if (!item) throw new OrderNotFoundError();
+      // ORD-100. A draft line is removed in the editor, not cancelled.
+      if (item.serviceOrder.status !== 'ISSUED')
+        throw new OrderNotIssuedError();
       if (!isPending(item.status)) throw new OrderItemNotPendingError();
 
       /**
@@ -402,6 +492,92 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
     });
     return row?.patientId;
   }
+}
+
+/**
+ * ORD-096, ORD-098, ORD-099. The draft, locked, within the caller's scope.
+ *
+ * THE ATTENTION FIRST AND THE ORDER SECOND, the order `compose` and agenda
+ * take too: two writers that lock the same rows in different orders are a
+ * deadlock waiting for a busy morning. Its state is read under the lock, so
+ * an issue and a discard of the same draft cannot both win.
+ */
+async function lockDraft(
+  tx: Prisma.TransactionClient,
+  query: OrderQuery,
+  options: { evenIfClosed?: boolean } = {},
+) {
+  const found = await tx.serviceOrder.findFirst({
+    where: { id: query.orderId, ...siteFilter(query.sites) },
+    select: { encounterId: true },
+  });
+  if (!found) throw new OrderNotFoundError();
+
+  await tx.$queryRaw`SELECT id FROM "encounter" WHERE id = ${found.encounterId}::uuid FOR UPDATE`;
+  await tx.$queryRaw`SELECT id FROM "service_order" WHERE id = ${query.orderId}::uuid FOR UPDATE`;
+
+  const order = await tx.serviceOrder.findUniqueOrThrow({
+    where: { id: query.orderId },
+    select: {
+      id: true,
+      encounterId: true,
+      status: true,
+      category: true,
+      encounter: { select: { status: true } },
+      items: { select: { testCode: true } },
+    },
+  });
+  if (order.status !== 'DRAFT') throw new OrderNotDraftError();
+  // ORD-005. A draft in an attention that was closed meanwhile stays a draft.
+  if (!options.evenIfClosed && !admitsNewOrders(order.encounter.status)) {
+    throw new OrderEncounterNotOpenError(order.encounter.status);
+  }
+  return order;
+}
+
+/**
+ * ORD-002 to ORD-004, ORD-097. The lines to write, from the exams named.
+ *
+ * The orderables are read again INSIDE the transaction: the service already
+ * refused a retired one and this is not ceremony — a catalogue edit can land
+ * between the two, and the row that lands is the one that matters.
+ */
+async function linesOf(
+  tx: Prisma.TransactionClient,
+  encounterId: string,
+  category: NewServiceOrder['category'],
+  wanted: readonly NewOrderLine[],
+) {
+  const examIds = [...new Set(wanted.map((line) => line.examDefinitionId))];
+  const exams = await tx.examDefinition.findMany({
+    where: { id: { in: examIds }, active: true },
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      tariffCode: true,
+      category: true,
+    },
+  });
+  if (exams.length !== examIds.length) throw new ExamNotOrderableError();
+  // ORD-097. A blood count is not an imaging order, whatever the screen sent.
+  if (exams.some((exam) => exam.category !== category)) {
+    throw new ExamCategoryMismatchError();
+  }
+  const examById = new Map(exams.map((exam) => [exam.id, exam]));
+  const conceptByExam = await tariffConceptsInForce(tx, encounterId, exams);
+
+  return wanted.map((line) => ({
+    conceptId: conceptByExam.get(line.examDefinitionId) ?? '',
+    /**
+     * ORD-002. FROZEN HERE, from the definition read in this same
+     * transaction. In fifteen years the catalogue may have been migrated,
+     * pruned or reloaded and the order still has to say what was asked for —
+     * the same reason an invoice stores the price and not only the product id.
+     */
+    testCode: examById.get(line.examDefinitionId)?.code ?? '',
+    testDisplay: examById.get(line.examDefinitionId)?.name ?? '',
+  }));
 }
 
 /**
@@ -490,6 +666,14 @@ function siteFilter(sites: SiteScopeFilter): { siteId?: { in: string[] } } {
   return sites === 'all' ? {} : { siteId: { in: [...sites] } };
 }
 
+/** The number of an issued order, which the database guarantees is there. */
+function issuedNumber(number: number | null): number {
+  if (number === null) {
+    throw new Error('Issued service order without a number (service_order_number_iff_issued)'); // prettier-ignore
+  }
+  return number;
+}
+
 /** A `service_order` row with its lines, as the domain reads it. */
 function toOrderView(row: OrderRow): ServiceOrderView {
   return {
@@ -498,7 +682,10 @@ function toOrderView(row: OrderRow): ServiceOrderView {
     siteId: row.siteId,
     patientId: row.encounter.patientId,
     orderedById: row.orderedById,
+    orderedByUserId: row.orderedBy.userId,
     number: row.number,
+    status: row.status,
+    discardedAt: row.discardedAt,
     category: row.category,
     priority: row.priority,
     clinicalNoteText: row.clinicalNoteText,

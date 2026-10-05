@@ -954,12 +954,29 @@ const ANALYTES: SeedAnalyte[] = [
       { kind: 'REFERENCE', sex: null, low: null, high: null, text: 'Ausentes' },
     ],
   },
+  // ── Imagen y procedimiento ───────────────────────────────────────────────
+  {
+    // Lo que vuelve de una radiografía, una ecografía o un electrocardiograma
+    // es un informe escrito. Sin una determinación que lo reciba, la línea no
+    // se completa nunca (ORD-039) y la orden se queda en la cola de
+    // pendientes para siempre: revisión de `fix/atencion-examenes`.
+    code: 'INFORME',
+    name: 'Informe',
+    loincCode: null,
+    unit: null,
+    valueType: 'TEXT',
+    decimals: null,
+    allowedValues: null,
+    ranges: [],
+  },
 ];
 
 /** A starting exam: its 010A section, the service that bills it, and its analytes in print order. */
 interface SeedExam {
   code: string;
   name: string;
+  /** ORD-097, ORD-101. Lo que filtra la lista al pedir. */
+  category: 'LABORATORY' | 'IMAGING' | 'PROCEDURE';
   /** Sección del formulario 010A del MSP, para poder imprimir una orden conforme. */
   form010Section: string;
   specimenType: string;
@@ -987,6 +1004,7 @@ interface SeedExam {
 const EXAMS: SeedExam[] = [
   {
     code: 'EX-BH',
+    category: 'LABORATORY',
     name: 'Biometría hemática completa',
     form010Section: 'HEMATOLOGÍA',
     specimenType: 'Sangre total con EDTA',
@@ -997,6 +1015,7 @@ const EXAMS: SeedExam[] = [
   },
   {
     code: 'EX-GLUCOSA-AYUNAS',
+    category: 'LABORATORY',
     name: 'Glucosa en ayunas',
     form010Section: 'BIOQUÍMICA',
     specimenType: 'Suero',
@@ -1008,6 +1027,7 @@ const EXAMS: SeedExam[] = [
   },
   {
     code: 'EX-EMO',
+    category: 'LABORATORY',
     name: 'Elemental y microscópico de orina (EMO)',
     form010Section: 'ORINA',
     specimenType: 'Orina, primera micción de la mañana, chorro medio',
@@ -1028,6 +1048,43 @@ const EXAMS: SeedExam[] = [
       'EMO-CELULAS-EPITELIALES',
       'EMO-BACTERIAS',
     ],
+  },
+  // ORD-101. Dos de imagen y uno de procedimiento, para que el filtro por tipo
+  // de la pestaña de órdenes tenga algo que filtrar. Devuelven un informe
+  // escrito, la determinación `INFORME`.
+  {
+    code: 'EX-RX-TORAX',
+    category: 'IMAGING',
+    name: 'Radiografía de tórax (PA y lateral)',
+    form010Section: 'RAYOS X',
+    specimenType: '',
+    patientPreparation: 'Retire objetos metálicos del tórax.',
+    turnaroundHours: 24,
+    billableServiceCode: 'IMG-RX-SIMPLE',
+    analyteCodes: ['INFORME'],
+  },
+  {
+    code: 'EX-ECO-ABDOMINAL',
+    category: 'IMAGING',
+    name: 'Ecografía abdominal',
+    form010Section: 'ECOGRAFÍA',
+    specimenType: '',
+    patientPreparation:
+      'Ayuno de 6 horas. Vejiga llena: beba 1 litro de agua una hora antes.',
+    turnaroundHours: 24,
+    billableServiceCode: 'IMG-ECO-ABDOMINAL',
+    analyteCodes: ['INFORME'],
+  },
+  {
+    code: 'EX-ECG',
+    category: 'PROCEDURE',
+    name: 'Electrocardiograma de 12 derivaciones',
+    form010Section: 'CARDIOLOGÍA',
+    specimenType: '',
+    patientPreparation: 'No requiere preparación.',
+    turnaroundHours: 2,
+    billableServiceCode: 'PROC-ECG',
+    analyteCodes: ['INFORME'],
   },
 ];
 
@@ -1283,9 +1340,10 @@ async function ensureExam(
 ): Promise<string> {
   const rows = await tx.$queryRaw<{ id: string }[]>`
     INSERT INTO "exam_definition"
-      ("code", "name", "form_010_section", "specimen_type", "patient_preparation",
+      ("code", "name", "category", "form_010_section", "specimen_type", "patient_preparation",
        "turnaround_hours", "billable_service_id", "tariff_code", "updated_at")
-    VALUES (${exam.code}, ${exam.name}, ${exam.form010Section}, ${exam.specimenType},
+    VALUES (${exam.code}, ${exam.name}, ${exam.category}::service_order_category,
+            ${exam.form010Section}, NULLIF(${exam.specimenType}, ''),
             ${exam.patientPreparation}, ${exam.turnaroundHours}, ${billableServiceId}::uuid,
             ${exam.code}, CURRENT_TIMESTAMP)
     ON CONFLICT ("code") DO UPDATE

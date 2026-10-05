@@ -9,7 +9,7 @@ import type { Requester } from '../../src/modules/orders/application/service-ord
 import type { AccessAuditRecorder } from '../../src/shared/audit/access-audit.port';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
-import { aScene } from './orders-fixtures';
+import { placeIssued, aScene } from './orders-fixtures';
 import { useDatabase } from './setup/database';
 import { createSite } from './setup/fixtures';
 
@@ -76,7 +76,7 @@ async function anOrderedBloodCount(
   const scene = await aScene(prisma, options);
   const { orders } = serviceOf(prisma);
 
-  const order = await orders.place({
+  const order = await placeIssued(orders, {
     encounterId: scene.encounter.id,
     category: 'LABORATORY',
     priority: 'ROUTINE',
@@ -149,7 +149,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
         visitSequence: 'FIRST_TIME',
       },
     });
-    const hisOrder = await women.orders.place({
+    const hisOrder = await placeIssued(women.orders, {
       encounterId: encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
@@ -305,7 +305,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
         visitSequence: 'SUBSEQUENT',
       },
     });
-    const otherOrder = await orders.place({
+    const otherOrder = await placeIssued(orders, {
       encounterId: otherEncounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
@@ -436,7 +436,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
     const scene = await aScene(prisma);
     const { reports, orders, store } = serviceOf(prisma);
 
-    const order = await orders.place({
+    const order = await placeIssued(orders, {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
@@ -481,7 +481,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
     const scene = await aScene(prisma);
     const { orders, reports, store } = serviceOf(prisma);
 
-    const order = await orders.place({
+    const order = await placeIssued(orders, {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
@@ -688,7 +688,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
     const { reports, orders } = serviceOf(prisma);
     const now = new Date();
 
-    const order = await orders.place({
+    const order = await placeIssued(orders, {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
@@ -750,7 +750,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
         position: 2,
       },
     });
-    const order = await orders.place({
+    const order = await placeIssued(orders, {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',

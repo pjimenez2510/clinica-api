@@ -645,6 +645,8 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
         siteId: encounter.siteId,
         orderedById: encounter.practitionerId,
         category: 'LABORATORY',
+        // ORD-100. An issued order: a draft is not an act yet.
+        status: 'ISSUED',
       },
     });
 
@@ -813,6 +815,10 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
       },
       include: { items: true },
     });
+    await prisma.serviceOrder.update({
+      where: { id: order.id },
+      data: { status: 'ISSUED' },
+    });
 
     await expect(annul()).rejects.toMatchObject({
       code: 'ENCOUNTER_HAS_LIVE_ACTS',
@@ -830,11 +836,32 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
     });
     await expect(annul()).rejects.toBeInstanceOf(EncounterHasLiveActsError);
 
-    // Control positivo: cancelada también la orden, se anula.
     await prisma.serviceOrderItem.update({
       where: { id: order.items[0]!.id },
       data: { status: 'CANCELLED' },
     });
+
+    // ORD-102. Un borrador de orden también está vivo, como la receta en
+    // borrador; descartado, ya no.
+    const draft = await prisma.serviceOrder.create({
+      data: {
+        encounterId: encounter.id,
+        siteId: encounter.siteId,
+        orderedById: encounter.practitionerId,
+        category: 'LABORATORY',
+      },
+    });
+    await expect(annul()).rejects.toBeInstanceOf(EncounterHasLiveActsError);
+    await prisma.serviceOrder.update({
+      where: { id: draft.id },
+      data: {
+        status: 'DISCARDED',
+        discardedAt: new Date(),
+        discardedById: requester.userId,
+      },
+    });
+
+    // Control positivo: cancelada la orden y descartado el borrador, se anula.
     await annul();
     expect(
       (

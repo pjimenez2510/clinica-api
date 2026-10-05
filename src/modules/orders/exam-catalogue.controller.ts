@@ -43,6 +43,7 @@ export class ExamCatalogueController {
         id: exam.id,
         code: exam.code,
         name: exam.name,
+        category: exam.category,
         form010Section: exam.form010Section,
         specimenType: exam.specimenType,
         patientPreparation: exam.patientPreparation,

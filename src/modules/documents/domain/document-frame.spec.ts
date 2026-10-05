@@ -152,7 +152,7 @@ describe('composeFrame', () => {
     expect(footer.verification).toBeNull();
   });
 
-  it('DOC-083 cada clase lleva su nota, y la receta ninguna de conservación', () => {
+  it('DOC-083 cada clase lleva su nota, y ni la receta ni la orden recitan la norma', () => {
     const notes = (kind: FrameRequest['kind']) =>
       composeFrame(context, template, { ...prescription, kind }).footer.notes;
 
@@ -161,7 +161,8 @@ describe('composeFrame', () => {
     expect(notes('PRESCRIPTION').join(' ')).not.toMatch(
       /conservad|ACESS|art\./i,
     );
-    expect(notes('SERVICE_ORDER').join(' ')).toContain('00002393');
+    // D-121: la orden ya lleva su número; la línea sólo citaba el acuerdo.
+    expect(notes('SERVICE_ORDER')).toEqual([]);
     expect(notes('INVOICE_RIDE').join(' ')).toContain('RIDE');
   });
 

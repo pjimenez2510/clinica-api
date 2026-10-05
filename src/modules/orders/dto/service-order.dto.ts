@@ -14,6 +14,7 @@ import { z } from 'zod';
 
 const CATEGORY = z.enum(['LABORATORY', 'IMAGING', 'PROCEDURE']);
 const PRIORITY = z.enum(['ROUTINE', 'URGENT', 'STAT']);
+const STATUS = z.enum(['DRAFT', 'ISSUED', 'DISCARDED']);
 const ITEM_STATUS = z.enum([
   'REQUESTED',
   'IN_PROGRESS',
@@ -36,7 +37,8 @@ export const orderLineSchema = z
   .strict();
 
 /**
- * ORD-001 to ORD-006. Emitting one order.
+ * ORD-001 to ORD-005, ORD-095, ORD-096. Composing one order as a draft, and
+ * rewriting that draft: the same body for both.
  *
  * ⚠️ THERE IS NO `orderedById` FIELD (ORD-001). The order is signed by the
  * professional OF THE ATTENTION, read from the attention itself: an id in the
@@ -66,7 +68,7 @@ export const placeOrderSchema = z.object({
     .min(1, 'Añada al menos un examen a la orden')
     .max(40, 'Una orden no puede llevar más de 40 exámenes'),
 });
-/** Body of POST /encounters/:encounterId/orders. */
+/** Body of POST /encounters/:encounterId/orders and PUT /orders/:orderId. */
 export class PlaceOrderDto extends createZodDto(placeOrderSchema) {}
 
 /** ORD-002. One line as a client reads it. */
@@ -95,13 +97,21 @@ export const serviceOrderSchema = z.object({
   siteId: z.uuid(),
   patientId: z.uuid(),
   orderedById: z.uuid(),
-  /** ORD-006. Consecutive per site; assigned by the database. */
-  number: z.number().int().positive(),
+  /**
+   * ORD-006, ORD-098. Consecutive per site; assigned by the database when the
+   * order is issued. `null` while it is a draft.
+   */
+  number: z.number().int().positive().nullable(),
+  /** ORD-095 to ORD-099. Only a `DRAFT` is rewritten, issued or discarded. */
+  status: STATUS,
+  /** ORD-099. When the draft was discarded. */
+  discardedAt: z.iso.datetime().nullable(),
   category: CATEGORY,
   priority: PRIORITY,
   clinicalNoteText: z.string().nullable(),
   /** Maintained by `trg_service_order_item_pending`; never written by a client. */
   pendingItems: z.number().int(),
+  /** The issue instant once issued; while a draft, when it was composed. */
   requestedAt: z.iso.datetime(),
   items: z.array(orderItemSchema),
 });

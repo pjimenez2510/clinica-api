@@ -950,8 +950,11 @@ describe('DOC-075 el certificado sobre el formulario 117 y la plantilla aprobada
     expect(text).toContain('se valida en ventanilla');
     expect(text).toContain('exige firma electrónica');
     // It prints a diagnosis, so it says whose consent covers it.
-    expect(text).toContain('Contiene datos de salud');
-    expect(text).toContain('A.M. 5216-A');
+    expect(text).toContain(
+      'Contiene datos de salud: su uso lo autoriza el paciente.',
+    );
+    // D-121: la leyenda se queda; el número del acuerdo, no.
+    expect(text).not.toContain('5216-A');
     // D-114. The exclusion is of the online validation only, which a
     // credential-signed certificate does not admit, so the paper omits it.
     expect(text).not.toContain('afiliados voluntarios');

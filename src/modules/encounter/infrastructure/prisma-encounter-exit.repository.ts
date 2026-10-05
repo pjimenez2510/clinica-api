@@ -258,7 +258,8 @@ async function lockAndRead(
  * attention's lock so a writer that locks it too cannot slip one in between.
  *
  * - a prescription active or still in draft (retracted by PR-010);
- * - an order with an item the laboratory still sees (ORD-007);
+ * - an order in draft, or issued with an item the laboratory still sees
+ *   (ORD-007, ORD-102);
  * - a signed note (EN-026);
  * - a certificate not revoked — an IESS rest certificate on the wrong
  *   patient is a document someone can still present (3.ª revisión, m5);
@@ -288,10 +289,18 @@ async function liveActsOf(
     tx.prescription.count({
       where: { encounterId, status: { in: ['DRAFT', 'ACTIVE'] } },
     }),
+    // ORD-102. A draft stands like a draft prescription; a discarded one,
+    // like a cancelled line, does not.
     tx.serviceOrder.count({
       where: {
         encounterId,
-        items: { some: { status: { in: ['REQUESTED', 'IN_PROGRESS'] } } },
+        OR: [
+          { status: 'DRAFT' },
+          {
+            status: 'ISSUED',
+            items: { some: { status: { in: ['REQUESTED', 'IN_PROGRESS'] } } },
+          },
+        ],
       },
     }),
     tx.clinicalNote.count({ where: { encounterId, status: 'SIGNED' } }),

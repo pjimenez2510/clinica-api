@@ -654,9 +654,9 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
   del **formulario 117** del MSP. MIENTRAS sea de **reposo**, DEBERÁ llevar al
   pie, en una franja gris, la nota de validación del IESS: hasta 8 días después
   del fin del reposo; con firma por credencial se valida en ventanilla, y en
-  línea exige firma electrónica; y, SI imprime el diagnóstico, que su uso lo
-  autoriza el paciente (A.M. 5216-A). NO DEBERÁ decir a quién no aplica la
-  validación en línea.
+  línea exige firma electrónica; y, SI imprime el diagnóstico, «Contiene datos
+  de salud: su uso lo autoriza el paciente.» (A.M. 5216-A, sin citarlo en el
+  papel: D-121). NO DEBERÁ decir a quién no aplica la validación en línea.
 
   > Informativa (D-095): en pantalla la da CER-013. Fuentes del IESS en D-075.
   > Un certificado de asistencia no se valida en el IESS y no la lleva. La
@@ -739,7 +739,7 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
   código, la dirección `<WEB_BASE_URL>/verificar/<código>` y un **código QR**
   que la contiene, dibujado como **trazos vectoriales** —nunca como imagen—, y la
   nota de su clase, si la tiene. La receta **NO DEBERÁ** llevar nota de
-  conservación.
+  conservación, ni la orden la de numeración (D-121).
 
   > Vectores y no imagen porque PDF/A-1b prohíbe la transparencia (DOC-023) y
   > una imagen es la vía por la que entra. Un documento sin código —hoy la

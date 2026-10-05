@@ -64,7 +64,8 @@ export async function hasClinicalAct(
     client.encounterDiagnosis.count({ where: { encounterId } }),
     client.encounterProcedure.count({ where: { encounterId } }),
     client.prescription.count({ where: { encounterId } }),
-    client.serviceOrder.count({ where: { encounterId } }),
+    // ORD-100. A draft is not an act yet; a discarded one never was.
+    client.serviceOrder.count({ where: { encounterId, status: 'ISSUED' } }),
     // D-104: a certificate states there was an attention; a referral and an
     // interconsultation are clinical decisions about the patient.
     client.medicalCertificate.count({
