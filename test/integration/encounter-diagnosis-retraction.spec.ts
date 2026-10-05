@@ -56,6 +56,21 @@ function archive(
       FROM encounter_diagnosis WHERE id = ${diagnosisId}::uuid`;
 }
 
+/** EN-130. The 002 was signed: the attention has its discharge. */
+function discharge(
+  prisma: PrismaClient,
+  encounter: { id: string; startedAt: Date },
+) {
+  return prisma.encounter.update({
+    where: { id: encounter.id },
+    data: {
+      status: 'DISCHARGED',
+      endedAt: new Date(encounter.startedAt.getTime() + 20 * 60_000),
+      dischargeCondition: 'ALIVE',
+    },
+  });
+}
+
 function remove(prisma: PrismaClient, diagnosisId: string) {
   return prisma.$executeRaw`DELETE FROM encounter_diagnosis WHERE id = ${diagnosisId}::uuid`;
 }
@@ -154,31 +169,50 @@ describe('quitar un diagnóstico deja rastro (EN-180 a EN-183)', () => {
     expect(await prisma.encounterDiagnosisRetraction.count({ where: { encounterId: encounter.id } })).toBe(2); // prettier-ignore
   });
 
-  it('EN-188 con el alta la BASE exige el motivo aunque no haya nota firmada; con motivo, lo archiva', async () => {
+  it('EN-188 con el alta la BASE exige el motivo aunque no haya nota firmada, y no deja quitar el último', async () => {
     const prisma = db();
     const { encounter, diagnoses, remover } =
       await anEncounterWithDiagnoses(prisma);
     const [first, second] = diagnoses;
+    await discharge(prisma, encounter);
 
-    // Positive control: live and nothing signed, no reason needed.
-    await archive(prisma, second!.id, remover.id);
-    await remove(prisma, second!.id);
-
-    await prisma.encounter.update({
-      where: { id: encounter.id },
-      data: {
-        status: 'DISCHARGED',
-        endedAt: new Date(encounter.startedAt.getTime() + 20 * 60_000),
-        dischargeCondition: 'ALIVE',
-      },
-    });
-
-    await expect(archive(prisma, first!.id, remover.id)).rejects.toThrow(
+    await expect(archive(prisma, second!.id, remover.id)).rejects.toThrow(
       /encounter_diagnosis_retraction_reason/,
     );
-    await archive(prisma, first!.id, remover.id, 'Código equivocado');
-    await remove(prisma, first!.id);
-    expect(await prisma.encounterDiagnosis.count({ where: { encounterId: encounter.id } })).toBe(0); // prettier-ignore
+    // Positive control: with a reason, and another diagnosis left.
+    await archive(prisma, second!.id, remover.id, 'Código equivocado');
+    await remove(prisma, second!.id);
+
+    // The last one would leave a discharged attention with no diagnosis and
+    // no way to code one (EN-009, D-117.12).
+    await expect(
+      archive(prisma, first!.id, remover.id, 'Código equivocado'),
+    ).rejects.toThrow(/encounter_diagnosis_last_after_discharge/);
+    expect(await prisma.encounterDiagnosis.count({ where: { encounterId: encounter.id } })).toBe(1); // prettier-ignore
+  });
+
+  it('EN-188 con el alta la BASE no deja reordenar el principal; sólo nombrar uno donde ya no lo hay', async () => {
+    const prisma = db();
+    const { encounter, diagnoses, remover } =
+      await anEncounterWithDiagnoses(prisma);
+    const [principal, second] = diagnoses;
+    await discharge(prisma, encounter);
+    const rank = (id: string, value: number) =>
+      prisma.$executeRaw`UPDATE encounter_diagnosis SET rank = ${value} WHERE id = ${id}::uuid`;
+
+    await expect(rank(principal!.id, 3)).rejects.toThrow(
+      /encounter_diagnosis_rank_frozen_after_discharge/,
+    );
+    await expect(rank(second!.id, 1)).rejects.toThrow(
+      /encounter_diagnosis_rank_frozen_after_discharge|encounter_diagnosis_one_primary/,
+    );
+
+    // The way: remove the wrong principal with its reason (archived with
+    // rank 1), then name the remaining one.
+    await archive(prisma, principal!.id, remover.id, 'El principal era R50');
+    await remove(prisma, principal!.id);
+    await rank(second!.id, 1);
+    expect((await prisma.encounterDiagnosis.findUniqueOrThrow({ where: { id: second!.id } })).rank).toBe(1); // prettier-ignore
   });
 
   it('EN-189 un certificado emitido —vigente o anulado— que imprimió el código hace que la BASE exija el motivo; uno que imprimió otro, no', async () => {
@@ -206,6 +240,11 @@ describe('quitar un diagnóstico deja rastro (EN-180 a EN-183)', () => {
     await archive(prisma, second!.id, remover.id);
 
     const printedFirst = await certificate(first!.cie10Code);
+    // In force…
+    await expect(archive(prisma, first!.id, remover.id)).rejects.toThrow(
+      /encounter_diagnosis_retraction_reason/,
+    );
+    // …and revoked: the paper may have circulated before.
     await prisma.$executeRaw`
       UPDATE medical_certificate
          SET revoked_at = now(), revoked_by_id = ${remover.id}::uuid,

@@ -197,11 +197,12 @@ export function acceptsNewClinicalContent(status: EncounterStatus): boolean {
  * attention has no discharge to correct and an annulled one never existed.
  */
 export function acceptsDiagnosisCorrection(status: EncounterStatus): boolean {
-  return (
-    acceptsNewClinicalContent(status) ||
-    status === 'DISCHARGED' ||
-    status === 'COMPLETED'
-  );
+  return acceptsNewClinicalContent(status) || hasDischarge(status);
+}
+
+/** EN-188. The attention has its discharge, whatever came after it. */
+export function hasDischarge(status: EncounterStatus): boolean {
+  return status === 'DISCHARGED' || status === 'COMPLETED';
 }
 
 /**

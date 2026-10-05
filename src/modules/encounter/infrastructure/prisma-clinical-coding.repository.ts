@@ -9,6 +9,8 @@ import {
   DiagnosisNotFoundError,
   DiagnosisPrimaryTakenError,
   DiagnosisRetractionReasonRequiredError,
+  DiagnosisLastAfterDischargeError,
+  DiagnosisPrimaryAfterDischargeError,
   EncounterAlreadyClosedError,
   EncounterNotFoundError,
 } from '../domain/encounter.errors';
@@ -16,6 +18,7 @@ import type { CareModality, EncounterStatus } from '../domain/encounter';
 import {
   acceptsDiagnosisCorrection,
   acceptsNewClinicalContent,
+  hasDischarge,
 } from '../domain/encounter-state';
 import {
   careModalityOfCie10,
@@ -280,7 +283,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
    */
   async retractDiagnosis(retraction: DiagnosisRetraction): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
-      await requireEncounterInScope(
+      const status = await requireEncounterInScope(
         tx,
         retraction.encounterId,
         retraction.sites,
@@ -292,6 +295,14 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         retraction.diagnosisId,
       );
       await refuseWhenCitedByIssuedDocument(tx, retraction.encounterId);
+
+      // EN-188. A discharged attention keeps one: nothing new can be coded.
+      if (hasDischarge(status)) {
+        const left = await tx.encounterDiagnosis.count({
+          where: { encounterId: retraction.encounterId },
+        });
+        if (left <= 1) throw new DiagnosisLastAfterDischargeError();
+      }
 
       if (retraction.reason === null) {
         // The same function the archive's trigger calls: a signed note, the
@@ -329,7 +340,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
    */
   async makePrimary(change: PrimaryChange): Promise<DiagnosisView[]> {
     await this.prisma.$transaction(async (tx) => {
-      await requireEncounterInScope(
+      const status = await requireEncounterInScope(
         tx,
         change.encounterId,
         change.sites,
@@ -348,6 +359,11 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         select: { id: true, rank: true },
       });
       const previous = inUse.find((row) => isPrimary(row.rank));
+      // EN-188. After the discharge only an EMPTY principal is filled: the
+      // wrong one leaves through the archive, with its reason.
+      if (previous && hasDischarge(status)) {
+        throw new DiagnosisPrimaryAfterDischargeError();
+      }
       if (previous) {
         await tx.encounterDiagnosis.update({
           where: { id: previous.id },
@@ -506,7 +522,7 @@ async function requireEncounterInScope(
   // EN-188. Correcting the coding reaches past the discharge; adding to it
   // does not.
   accepts: (status: EncounterStatus) => boolean = acceptsNewClinicalContent,
-): Promise<void> {
+): Promise<EncounterStatus> {
   const encounter = await tx.encounter.findFirst({
     where: { id: encounterId, ...siteFilter(sites) },
     select: { id: true },
@@ -523,6 +539,7 @@ async function requireEncounterInScope(
   if (!accepts(locked.status)) {
     throw new EncounterAlreadyClosedError(locked.status);
   }
+  return locked.status;
 }
 
 /** EN-180, EN-183. The diagnosis, on THIS attention, or the one refusal. */

@@ -742,6 +742,12 @@ export const DOMAIN_ERROR_CODES = [
   'DIAGNOSIS_NOT_FOUND',
   'DIAGNOSIS_RETRACTION_REASON_REQUIRED',
   'DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT',
+  //   * `DIAGNOSIS_LAST_AFTER_DISCHARGE` (409) y
+  //     `DIAGNOSIS_PRIMARY_AFTER_DISCHARGE` (409) — EN-188. Tras el alta no se
+  //     deja la atención sin diagnóstico, y el principal cambia quitándolo con
+  //     su motivo, no reordenando. La base lo exige también.
+  'DIAGNOSIS_LAST_AFTER_DISCHARGE',
+  'DIAGNOSIS_PRIMARY_AFTER_DISCHARGE',
   // ── H6: alergias visibles durante la consulta ──────────────────────────
   //   * `PATIENT_ALLERGY_NOT_FOUND` (404) — EN-082. La alergia no está en esa
   //     ficha ni en ninguna que esa ficha absorbiera. **Uno solo para «no
@@ -863,6 +869,8 @@ export const DOMAIN_ERROR_CODES = [
   'PRESCRIPTION_ITEM_INCOMPLETE',
   'PRESCRIPTION_NOT_EDITABLE',
   'PRESCRIPTION_NOT_FOUND',
+  // PR-105. Un borrador anterior con «Dosis única» y duración no se emite.
+  'PRESCRIPTION_SINGLE_DOSE_WITH_DURATION',
   // ── Certificado médico (módulo `certificates`, CER-001 a CER-016) ────────
   //
   // El formulario SNS-MSP/HCU-form.117/2021 del A.M. 00115-2021. Ninguno de

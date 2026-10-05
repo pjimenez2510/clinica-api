@@ -24,6 +24,7 @@ import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.ser
 
 import { useDatabase } from './setup/database';
 import {
+  createDiagnosis,
   createPatient,
   createPractitioner,
   createSite,
@@ -355,11 +356,17 @@ describe('caja: lo pendiente de cobro (B10)', () => {
     const cancelledThenOpen = await visit({ patientId: patient.id, status: 'DISCHARGED', endedAt: old(4) }); // prettier-ignore
     await account(cancelledThenOpen, patient.id, 'CANCELLED');
     await account(cancelledThenOpen, patient.id, 'OPEN');
-    const neverCharged = await visit({ patientId: patient.id, status: 'DISCHARGED', endedAt: old(5) }); // prettier-ignore
+    const dischargedNoAccount = await visit({ patientId: patient.id, status: 'DISCHARGED', endedAt: old(5) }); // prettier-ignore
+    // The diagnosis branch of the shared predicate, correlated by `e.id`.
+    const interruptedDiagnosed = await visit({ patientId: patient.id, status: 'DISCONTINUED', endedAt: old(6) }); // prettier-ignore
+    await createDiagnosis(prisma, interruptedDiagnosed, 'J02');
+    // Caja already began charging it: it is not «never charged» (review M2).
+    const interruptedWithOpenAccount = await visit({ patientId: patient.id, status: 'DISCONTINUED', endedAt: old(7) }); // prettier-ignore
+    await account(interruptedWithOpenAccount, patient.id, 'OPEN');
     const recentUnseen = await visit({ patientId: patient.id, status: 'DISCONTINUED', endedAt: recent }); // prettier-ignore
 
     const page = await awaitingPage();
-    expect(page.olderCount).toBe(3);
+    expect(page.olderCount).toBe(5);
     expect(page.items.map((row) => row.encounterId)).toContain(recentUnseen);
 
     const all = await request(app.getHttpServer())
@@ -375,7 +382,9 @@ describe('caja: lo pendiente de cobro (B10)', () => {
       expect.arrayContaining([
         interruptedAfterCare,
         cancelledThenOpen,
-        neverCharged,
+        dischargedNoAccount,
+        interruptedDiagnosed,
+        interruptedWithOpenAccount,
         recentUnseen,
       ]),
     );

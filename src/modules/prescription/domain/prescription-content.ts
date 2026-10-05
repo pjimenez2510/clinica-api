@@ -23,6 +23,7 @@ import {
   OffFormularyJustificationRequiredError,
   PrescriptionEmptyError,
   PrescriptionItemIncompleteError,
+  PrescriptionSingleDoseWithDurationError,
 } from './prescription.errors';
 import type { Frequency } from './prescription-vocabulary';
 
@@ -114,6 +115,16 @@ export function assertItemsComplete(items: readonly ItemContent[]): void {
   if (items.length === 0) throw new PrescriptionEmptyError();
   const missing = missingItemFields(items);
   if (missing.length > 0) throw new PrescriptionItemIncompleteError(missing);
+  // PR-105. Not printed, and not issued either: a contradiction somebody
+  // wrote before the request refused it.
+  const contradicted = items
+    .filter(
+      (item) =>
+        item.frequencyCode === SINGLE_DOSE && item.durationDays !== null,
+    )
+    .map((item) => item.line);
+  if (contradicted.length > 0)
+    throw new PrescriptionSingleDoseWithDurationError(contradicted);
 }
 
 /** Every art. 5.c field missing on every line, in line order. */

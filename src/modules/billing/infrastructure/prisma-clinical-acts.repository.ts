@@ -261,11 +261,15 @@ function awaitingCheckout(siteId: string): Prisma.Sql {
  * BI-190 (D-119, ampliada). The visits that will never be charged: an
  * interruption with no clinical act proposes nothing (BI-180), and a
  * cancelled account with no open one is the decision not to charge, taken.
+ * Neither counts as «never» once caja has an open account for the visit.
  */
 const neverCharged = Prisma.sql`(
-  (e.status = 'DISCONTINUED' AND NOT ${clinicalActExists(Prisma.sql`e.id`)})
-  OR (EXISTS (SELECT 1 FROM patient_account a
-               WHERE a.encounter_id = e.id AND a.status = 'CANCELLED')
-      AND NOT EXISTS (SELECT 1 FROM patient_account a
-                       WHERE a.encounter_id = e.id AND a.status = 'OPEN'))
+  -- An open account means caja began charging it, whatever the act (M2).
+  NOT EXISTS (SELECT 1 FROM patient_account a
+               WHERE a.encounter_id = e.id AND a.status = 'OPEN')
+  AND (
+    (e.status = 'DISCONTINUED' AND NOT ${clinicalActExists(Prisma.sql`e.id`)})
+    OR EXISTS (SELECT 1 FROM patient_account a
+                WHERE a.encounter_id = e.id AND a.status = 'CANCELLED')
+  )
 )`;

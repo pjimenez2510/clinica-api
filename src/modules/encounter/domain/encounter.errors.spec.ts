@@ -18,6 +18,8 @@ import {
   ClinicalNoteNotFoundError,
   ConceptWrongCatalogueError,
   DiagnosisCitedByIssuedDocumentError,
+  DiagnosisLastAfterDischargeError,
+  DiagnosisPrimaryAfterDischargeError,
   DiagnosisConceptNotInForceError,
   DiagnosisNotFoundError,
   DiagnosisPrimaryTakenError,
@@ -155,6 +157,18 @@ describe('el contrato de errores de la atención', () => {
     expect(error.userTitle).toBe(
       'Esa atención no existe en las sedes a las que usted tiene acceso. Actualice la lista',
     );
+  });
+
+  it('EN-188 tras el alta no se quita el último diagnóstico ni se reordena el principal: 409 que dice la salida', () => {
+    const last = new DiagnosisLastAfterDischargeError();
+    expect(last.code).toBe('DIAGNOSIS_LAST_AFTER_DISCHARGE');
+    expect(last).toBeInstanceOf(ConflictError);
+    expect(last.userTitle).toContain('único diagnóstico');
+
+    const primary = new DiagnosisPrimaryAfterDischargeError();
+    expect(primary.code).toBe('DIAGNOSIS_PRIMARY_AFTER_DISCHARGE');
+    expect(primary).toBeInstanceOf(ConflictError);
+    expect(primary.userTitle).toContain('quite el principal');
   });
 
   it('EN-180 EN-181 EN-182 quitar un diagnóstico: 404 sin distinguir, 422 que pide el motivo, 409 que manda a anular el documento', () => {

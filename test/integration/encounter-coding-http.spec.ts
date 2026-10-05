@@ -944,6 +944,12 @@ describe('el bloque K por HTTP', () => {
       });
       const path = `/encounters/${encounterId}/diagnoses/${first.id}/retract`;
 
+      // G2: with a principal in place, it is not reordered after the discharge.
+      const reordered = await post(`/encounters/${encounterId}/diagnoses/${second.id}/primary`, doctorToken).expect(409); // prettier-ignore
+      expect((reordered.body as Problem).code).toBe(
+        'DIAGNOSIS_PRIMARY_AFTER_DISCHARGE',
+      );
+
       const refused = await post(path, doctorToken).expect(422);
       expect((refused.body as Problem).code).toBe(
         'DIAGNOSIS_RETRACTION_REASON_REQUIRED',
@@ -956,6 +962,12 @@ describe('el bloque K por HTTP', () => {
         expect.objectContaining({ cie10Code: 'R509', rank: 1 }),
       ]);
       expect(sheet.retracted[0]?.reason).toBe('Código equivocado');
+
+      // G1: the last one stays — nothing new can be coded after the discharge.
+      const last = await post(`/encounters/${encounterId}/diagnoses/${second.id}/retract`, doctorToken, { reason: 'x' }).expect(409); // prettier-ignore
+      expect((last.body as Problem).code).toBe(
+        'DIAGNOSIS_LAST_AFTER_DISCHARGE',
+      );
 
       const interrupted = await openEncounter();
       const kept = await record(interrupted, 'K210');

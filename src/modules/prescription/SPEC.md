@@ -1022,8 +1022,10 @@ admite una lista sale de una lista._
 - **PR-105** — CUANDO la frecuencia de una línea sea el código `SINGLE_DOSE`
   («Dosis única»), el sistema NO DEBERÁ exigir la duración al emitir, NO
   DEBERÁ imprimirla, y SI la línea la trae, ENTONCES DEBERÁ rechazarla
-  nombrando el campo y la línea. Con cualquier otra frecuencia, la duración
-  sigue siendo obligatoria (PR-031).
+  nombrando el campo y la línea: al componer, como error de validación; al
+  emitir un borrador guardado antes de esta regla, con
+  `PRESCRIPTION_SINGLE_DOSE_WITH_DURATION`. Con cualquier otra frecuencia, la
+  duración sigue siendo obligatoria (PR-031).
   > **D-117.10, resuelta por el autor el 04-10-2026.** «Dosis única · por 1
   > día» era la duración obligatoria rellenada por obligación: una dosis única
   > no dura. Rechazarla en vez de ignorarla, porque una duración junto a
@@ -1052,6 +1054,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `PRESCRIPTION_NOT_EDITABLE` | 409 | La receta no está en el estado que el acto pide: emitir o descartar algo que ya no es `DRAFT`, anular algo que no está `ACTIVE`. **El mensaje dice en qué estado está y qué se puede hacer desde ahí** | PR-005, PR-010, PR-011 |
 | `PRESCRIPTION_EMPTY` | 422 | Emitir una receta sin ninguna línea | PR-032 |
 | `PRESCRIPTION_ITEM_INCOMPLETE` | 422 | Falta un campo del art. 5.c. **Por campo y por línea**, nombrando el número de línea y nunca el medicamento | PR-032 |
+| `PRESCRIPTION_SINGLE_DOSE_WITH_DURATION` | 422 | Un borrador anterior a PR-105 con «Dosis única» y duración. Por campo y por línea | PR-105 |
 | `OFF_FORMULARY_JUSTIFICATION_REQUIRED` | 422 | Línea sin concepto del CNMB y sin justificación escrita. Lo exige además `prescription_item_off_formulary` en la base | PR-009 |
 | `CONCEPT_NOT_PRESCRIBABLE` | 422 | El concepto es de otro catálogo o no estaba vigente en la fecha clínica de la atención. **Uno solo para las dos**: lo que hay que hacer es idéntico, elegir del CNMB | PR-007 |
 | `ALLERGY_CONTRAINDICATION` | 409 | Coincidencia exacta con una alergia no refutada. **409 y no 422**: lo enviado es correcto y lo que lo impide es un hecho de la ficha; la salida es refutar la alergia, y el mensaje lo dice | PR-060 |
