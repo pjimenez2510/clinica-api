@@ -44,6 +44,12 @@ registerConstraintMeanings({
   },
 
   // ── The catalogue (BI-010, BI-030) ──────────────────────────────────────
+  // BI-185. Unique on `lower(name)`: «Laboratorio» and «laboratorio» are one.
+  billable_service_category_name_unique: {
+    code: 'SERVICE_CATEGORY_NAME_DUPLICATE',
+    field: 'name',
+    message: 'Ya existe una categoría con ese nombre',
+  },
   billable_service_code_unique: {
     code: 'BILLABLE_SERVICE_CODE_DUPLICATE',
     field: 'code',

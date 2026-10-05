@@ -507,6 +507,15 @@ export const DOMAIN_ERROR_CODES = [
   'BILLABLE_SERVICE_INACTIVE',
   'BILLABLE_SERVICE_IN_USE',
   'BILLABLE_SERVICE_NOT_FOUND',
+  // La categoría como catálogo y su clase (BI-185, BI-187). Una categoría
+  // desactivada no se ofrece (422); la clase dice qué estructura admite la
+  // prestación, y «guantes» no puede ser la consulta de dermatología.
+  // BI-184. La factura lleva lo que caja vio al emitir: si otra caja cambió
+  // los cargos pendientes entretanto, 409 y se vuelve a mirar.
+  'INVOICE_CHARGES_CHANGED',
+  'SERVICE_CATEGORY_INACTIVE',
+  'SERVICE_CATEGORY_NOT_FOUND',
+  'SERVICE_KIND_MISMATCH',
   'TAX_RATE_IN_USE',
   'TAX_RATE_NOT_FOUND',
   'TAX_RATE_REQUIRED',

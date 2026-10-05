@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
 } from '@nestjs/common';
 import {
   ApiCreatedResponse,
@@ -16,6 +17,8 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+
+import type { Request } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import { RequirePermission } from '../../shared/http/auth.decorators';
@@ -31,8 +34,10 @@ import {
   toLine,
 } from './application/patient-account.service';
 import type { AccountView, ChargeView } from './domain/billing.repository';
+import type { AwaitingCheckout } from './domain/clinical-acts.port';
 import { lineBase, lineTax } from './domain/charge';
 import { Quantity } from './domain/money';
+import type { PatientIdentity } from './domain/patient-identity';
 import {
   AccountDto,
   AccountListDto,
@@ -51,6 +56,10 @@ import {
   ReceiverProposalDto,
   VoidChargeDto,
   type AccountResponse,
+  AwaitingCheckoutListDto,
+  AwaitingCheckoutQueryDto,
+  type AwaitingCheckoutResponse,
+  type PatientIdentityResponse,
   type AccountStatementResponse,
   type ChargeResponse,
   type CheckoutResponse,
@@ -137,6 +146,31 @@ export class BillingController {
   }
 
   /**
+   * BI-181 to BI-183. What caja still has to look at: the site's visits that
+   * ended in the last seven clinic days and are not settled, each with who it
+   * is for and the account it already has.
+   *
+   * A READ, AND IT OPENS NOTHING. Taking a visit to caja asks who pays, and
+   * that is the cashier's press on `checkout` (BI-150, BI-156). Not audited per
+   * row, for the same reason as the account list (BI-133).
+   */
+  @Get('encounters/awaiting-checkout')
+  @RequirePermission('billing:read', 'param:siteId')
+  @ApiOperation({ summary: 'Consultar las atenciones terminadas pendientes de cobro' }) // prettier-ignore
+  @ApiOkResponse({ type: AwaitingCheckoutListDto })
+  async awaitingCheckout(
+    @Param('siteId', ParseUUIDPipe) siteId: string,
+    @Query() query: AwaitingCheckoutQueryDto,
+  ): Promise<{ items: AwaitingCheckoutResponse[]; olderCount: number }> {
+    const { visits, olderCount } = await this.checkout.awaitingCheckout({
+      siteId,
+      now: new Date(),
+      includeOlder: query.includeOlder,
+    });
+    return { items: visits.map(toAwaitingResponse), olderCount };
+  }
+
+  /**
    * BI-070, BI-133. The cashier's list of the day.
    *
    * NOT AUDITED PER ROW (BI-133, REQ-111). Burying the accesses that matter
@@ -188,9 +222,19 @@ export class BillingController {
   async statement(
     @Param('siteId', ParseUUIDPipe) siteId: string,
     @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Req() req: Request,
   ): Promise<AccountStatementResponse> {
+    // D-118: who, and from where — `req.ip` is the client because
+    // `trust proxy` counts hops (see the patients controller).
     return toStatementResponse(
-      await this.accounts.statement({ accountId, siteId }),
+      await this.accounts.openStatement(
+        { accountId, siteId },
+        {
+          userId: this.currentUser.requireUserId(),
+          ip: req.ip,
+          userAgent: req.get('user-agent'),
+        },
+      ),
     );
   }
 
@@ -396,6 +440,7 @@ export class BillingController {
         emissionPointId: dto.emissionPointId,
         receiver: dto.receiver,
         paymentMethod: dto.paymentMethod,
+        expectedChargeIds: dto.chargeIds,
       },
       { userId: this.currentUser.requireUserId() },
     );
@@ -422,11 +467,43 @@ export class BillingController {
  * The account as served. Instants go out as ISO strings; there is no total on
  * it (BI-074), the statement carries it.
  */
+/**
+ * The document type is narrowed to the four definitive ones: the adapter never
+ * hands over the `PROVISIONAL` marker of a newborn as a document.
+ */
+function toIdentityResponse(
+  identity: PatientIdentity,
+): PatientIdentityResponse {
+  return {
+    ...identity,
+    document: identity.document
+      ? {
+          type: identity.document.type as NonNullable<
+            PatientIdentityResponse['document']
+          >['type'],
+          value: identity.document.value,
+        }
+      : null,
+  };
+}
+
+function toAwaitingResponse(visit: AwaitingCheckout): AwaitingCheckoutResponse {
+  return {
+    encounterId: visit.encounterId,
+    status: visit.status,
+    endedAt: visit.endedAt.toISOString(),
+    clinicallyAttended: visit.clinicallyAttended,
+    patient: toIdentityResponse(visit.patient),
+    account: visit.account,
+  };
+}
+
 function toAccountResponse(account: AccountView): AccountResponse {
   return {
     id: account.id,
     siteId: account.siteId,
     patientId: account.patientId,
+    patient: toIdentityResponse(account.patient),
     encounterId: account.encounterId,
     payerId: account.payerId,
     priceListId: account.priceListId,
@@ -448,6 +525,7 @@ function toStatementResponse(
     charges: statement.charges.map(toChargeResponse),
     totals: toTotalsResponse(statement.totals),
     proposedTotals: toTotalsResponse(statement.proposedTotals),
+    invoiceableTotals: toTotalsResponse(statement.invoiceableTotals),
   };
 }
 

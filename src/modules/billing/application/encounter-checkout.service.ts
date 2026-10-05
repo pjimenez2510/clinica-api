@@ -21,7 +21,9 @@ import {
   consultationKeyOf,
   proposeCharges,
 } from '../domain/charge-proposal';
+import { awaitingCheckoutSince } from '../domain/awaiting-checkout';
 import {
+  type AwaitingCheckout,
   CLINICAL_ACTS_REPOSITORY,
   type ClinicalActsRepository,
   type EncounterActs,
@@ -141,6 +143,35 @@ export class EncounterCheckoutService {
       raisedChargeIds,
       skipped,
     };
+  }
+
+  /**
+   * BI-181 to BI-183. The site's ended visits caja still has to look at, in
+   * the seven-day window counted in Ecuador from `now`.
+   */
+  async awaitingCheckout(query: {
+    siteId: string;
+    now: Date;
+    /** D-119: the older ones too, when caja follows the notice. */
+    includeOlder?: boolean;
+  }): Promise<{ visits: AwaitingCheckout[]; olderCount: number }> {
+    if (query.includeOlder) {
+      const visits = await this.acts.listAwaitingCheckout({
+        siteId: query.siteId,
+        endedFrom: new Date(0),
+      });
+      return { visits, olderCount: 0 };
+    }
+    const since = awaitingCheckoutSince(query.now);
+    const [visits, olderCount] = await Promise.all([
+      this.acts.listAwaitingCheckout({
+        siteId: query.siteId,
+        endedFrom: since,
+      }),
+      // D-119: what fell out of the window is said, not dropped in silence.
+      this.acts.countAwaitingBefore({ siteId: query.siteId, endedBefore: since }), // prettier-ignore
+    ]);
+    return { visits, olderCount };
   }
 
   /**

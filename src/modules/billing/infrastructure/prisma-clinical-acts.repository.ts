@@ -4,12 +4,20 @@ import { hasClinicalAct } from '../../../shared/infrastructure/prisma/clinical-a
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import { clinicalDateOf } from '../../../shared/domain/clinic-time';
 
-import type {
-  ClinicalActsRepository,
-  EncounterActs,
+import {
+  type AwaitingCheckout,
+  type ClinicalActsRepository,
+  ENDED_ENCOUNTER_STATUSES,
+  type EncounterActs,
+  type EndedEncounterStatus,
   OrderedExam,
   PerformedProcedure,
 } from '../domain/clinical-acts.port';
+
+import {
+  PATIENT_IDENTITY_SELECT,
+  toPatientIdentity,
+} from './patient-identity.select';
 
 /**
  * WHAT ONE VISIT DID, read by billing's OWN adapter.
@@ -43,6 +51,9 @@ import type {
  * does not shift a statistic — it resolves a different price, because the
  * validity that started that midnight would apply.
  */
+/** D-119. Most visits caja is shown at once. */
+const AWAITING_CHECKOUT_LIMIT = 200;
+
 @Injectable()
 export class PrismaClinicalActsRepository implements ClinicalActsRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -135,5 +146,88 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
         })),
       ),
     };
+  }
+
+  /**
+   * BI-181 to BI-183. What caja still has to look at, in one query plus one
+   * per visit that was interrupted.
+   *
+   * «STILL OWED» MEANS NO SETTLED ACCOUNT. A visit with an open account is
+   * listed with it — it is half way through the counter — and one whose
+   * account was cancelled is listed as never having gone, because nothing was
+   * charged for it.
+   *
+   * BI-182. `hasClinicalAct` is asked ONLY OF THE INTERRUPTED. A discharged or
+   * completed visit got there by signing a 002 whose mandatory sections are
+   * written text (EN-024, EN-130), so it was attended by construction; asking
+   * eight questions per row of the day to learn that would be the N+1 this
+   * list must not be.
+   */
+  async listAwaitingCheckout(query: {
+    siteId: string;
+    endedFrom: Date;
+  }): Promise<AwaitingCheckout[]> {
+    const rows = await this.prisma.encounter.findMany({
+      where: {
+        siteId: query.siteId,
+        status: { in: [...ENDED_ENCOUNTER_STATUSES] },
+        endedAt: { gte: query.endedFrom },
+        accounts: { none: { status: 'SETTLED' } },
+      },
+      select: {
+        id: true,
+        status: true,
+        endedAt: true,
+        patient: { select: PATIENT_IDENTITY_SELECT },
+        accounts: {
+          where: { status: 'OPEN' },
+          select: { id: true },
+          take: 1,
+        },
+      },
+      orderBy: { endedAt: 'desc' },
+      // A ceiling, not a page: the seven-day list never reaches it, and the
+      // older ones (D-119) come newest first — the ones still worth chasing.
+      take: AWAITING_CHECKOUT_LIMIT,
+    });
+
+    // In sequence and not all at once: each interrupted visit costs eight
+    // small questions, and firing them for every row together would take the
+    // pool from everybody else at the counter.
+    const visits: AwaitingCheckout[] = [];
+    for (const row of rows) {
+      const status = row.status as EndedEncounterStatus;
+      const open = row.accounts[0];
+      visits.push({
+        encounterId: row.id,
+        status,
+        // `encounter_status_matches_ended_at`: an ended visit has its instant.
+        endedAt: row.endedAt!,
+        clinicallyAttended:
+          status !== 'DISCONTINUED' ||
+          (await hasClinicalAct(this.prisma, row.id)),
+        patient: toPatientIdentity(row.patient),
+        account: open ? { id: open.id, status: 'OPEN' } : null,
+      });
+    }
+    return visits;
+  }
+
+  /**
+   * D-119. How many ended visits older than the window are still unsettled,
+   * so the screen can say they exist instead of dropping them silently.
+   */
+  async countAwaitingBefore(query: {
+    siteId: string;
+    endedBefore: Date;
+  }): Promise<number> {
+    return this.prisma.encounter.count({
+      where: {
+        siteId: query.siteId,
+        status: { in: [...ENDED_ENCOUNTER_STATUSES] },
+        endedAt: { lt: query.endedBefore },
+        accounts: { none: { status: 'SETTLED' } },
+      },
+    });
   }
 }

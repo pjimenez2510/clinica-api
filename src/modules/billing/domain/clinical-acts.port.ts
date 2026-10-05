@@ -1,5 +1,7 @@
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 
+import type { PatientIdentity } from './patient-identity';
+
 /**
  * WHAT WAS DONE, as the money side needs to read it — and nothing more.
  *
@@ -96,9 +98,29 @@ export interface EncounterActs {
   clinicallyAttended: boolean;
 }
 
+/** BI-181. The states of a visit that has ended and can be charged. */
+export const ENDED_ENCOUNTER_STATUSES = [
+  'DISCHARGED',
+  'DISCONTINUED',
+  'COMPLETED',
+] as const;
+export type EndedEncounterStatus = (typeof ENDED_ENCOUNTER_STATUSES)[number];
+
+/** BI-181 to BI-183. One ended visit still owed something, as caja lists it. */
+export interface AwaitingCheckout {
+  encounterId: string;
+  status: EndedEncounterStatus;
+  endedAt: Date;
+  /** BI-182. `false` is a visit nothing was done in: nothing will be proposed. */
+  clinicallyAttended: boolean;
+  patient: PatientIdentity;
+  /** The visit's open account, or `null` when it never went to caja. */
+  account: { id: string; status: 'OPEN' } | null;
+}
+
 /**
- * The read port billing's own adapter implements over the clinical tables. One
- * method, a read: see the file header for why it can never grow a write.
+ * The read port billing's own adapter implements over the clinical tables.
+ * Reads only: see the file header for why it can never grow a write.
  */
 export interface ClinicalActsRepository {
   /**
@@ -112,6 +134,22 @@ export interface ClinicalActsRepository {
     encounterId: string;
     siteId: string;
   }): Promise<EncounterActs | null>;
+
+  /**
+   * BI-181. The site's visits that ended from `endedFrom` on and have no
+   * settled account, most recent first. `ENTERED_IN_ERROR` never: it was not a
+   * visit.
+   */
+  listAwaitingCheckout(query: {
+    siteId: string;
+    endedFrom: Date;
+  }): Promise<AwaitingCheckout[]>;
+
+  /** D-119. The unsettled ended visits older than the window, counted. */
+  countAwaitingBefore(query: {
+    siteId: string;
+    endedBefore: Date;
+  }): Promise<number>;
 }
 
 export const CLINICAL_ACTS_REPOSITORY = Symbol('ClinicalActsRepository');

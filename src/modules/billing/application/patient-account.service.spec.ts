@@ -31,6 +31,15 @@ const account = (overrides: Partial<AccountView> = {}): AccountView => ({
   id: ACCOUNT,
   siteId: SITE,
   patientId: 'patient-1',
+  patient: {
+    id: 'patient-1',
+    mrn: 'HC0000000001',
+    familyName: 'Guamán',
+    secondFamilyName: null,
+    givenName: 'María',
+    secondGivenName: null,
+    document: { type: 'CEDULA', value: '1710034065' },
+  },
   encounterId: null,
   payerId: 'payer-particular',
   priceListId: 'list-particular',
@@ -75,7 +84,13 @@ const service = (
   id: 'service-1',
   code: 'CONS-MG-PV',
   name: 'Consulta de medicina general, primera vez',
-  category: 'Consultas',
+  category: {
+    id: 'category-consultations',
+    name: 'Consultas',
+    kind: 'CONSULTATION',
+    active: true,
+  },
+  procedureConcept: null,
   tariffCode: null,
   taxRateId: 'tax-0',
   taxSriCode: '0',
@@ -134,6 +149,7 @@ function build(
       publiclyListed: true,
       active: true,
     }),
+    record: vi.fn().mockResolvedValue(undefined),
     ...options.accounts,
     ...options.catalogue,
   };
@@ -142,6 +158,7 @@ function build(
     service: new PatientAccountService(
       mocks as unknown as BillingAccountRepository,
       mocks as unknown as BillingCatalogueRepository,
+      { record: mocks.record },
     ),
     mocks,
   };
@@ -379,6 +396,29 @@ describe('BI-015, BI-074 los cargos de la cuenta', () => {
     expect(statement.charges).toHaveLength(4);
   });
 
+  it('BI-184 el total a facturar es sólo lo confirmado sin facturar: ni lo propuesto ni lo ya facturado', async () => {
+    const { service: accounts } = build({
+      accounts: {
+        listCharges: vi
+          .fn()
+          .mockResolvedValue([
+            charge('billed', 'BILLED'),
+            charge('pending', 'BILLABLE', { unitAmount: Money.parse('15.00') }),
+            charge('proposed', 'PLANNED'),
+          ]),
+      },
+    });
+
+    const statement = await accounts.statement({
+      accountId: ACCOUNT,
+      siteId: SITE,
+    });
+
+    expect(statement.invoiceableTotals.total.toString()).toBe('15.00');
+    // Control: the account total still counts all three.
+    expect(statement.totals.total.toString()).toBe('75.00');
+  });
+
   it('BI-051 no consulta el catálogo ni el tarifario para totalizar una cuenta', async () => {
     // The JOIN to `price` is shorter, gives the same answer TODAY, and
     // rewrites history the day somebody raises a price. This asserts the
@@ -556,6 +596,7 @@ describe('BI-003, BI-120 el cobro no bloquea la atención', () => {
       'confirmCharge',
       'listAccounts',
       'openAccount',
+      'openStatement',
       'requireAccount',
       'requireOpenAccount',
       'requireOpenCharge',

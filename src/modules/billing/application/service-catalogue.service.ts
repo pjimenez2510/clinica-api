@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 
+import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
@@ -10,11 +11,19 @@ import {
   type BillableServiceView,
   type BillingCatalogueRepository,
   type NewBillableService,
+  type ServiceCategoryKind,
+  type ServiceCategoryView,
+  type ServiceExamView,
+  type ServicePriceView,
   type TaxRateView,
 } from '../domain/billing.repository';
+import { isInForceOn } from '../domain/price-list';
 import {
   BillableServiceInUseError,
   BillableServiceNotFoundError,
+  ServiceCategoryInactiveError,
+  ServiceCategoryNotFoundError,
+  ServiceKindMismatchError,
   TaxRateNotFoundError,
   TaxRateRequiredError,
 } from '../domain/billing.errors';
@@ -36,6 +45,7 @@ export interface Requester {
  * would look thinner than the truth, which is the worst failure a trail has.
  */
 const SERVICE_RESOURCE_TYPE = 'billable_service';
+const CATEGORY_RESOURCE_TYPE = 'billable_service_category';
 
 /**
  * The catalogue of what the clinic knows how to do — WITHOUT A PRICE.
@@ -108,6 +118,7 @@ export class ServiceCatalogueService {
   ): Promise<BillableServiceView> {
     if (!service.taxRateId) throw new TaxRateRequiredError();
     await this.requireTaxRate(service.taxRateId);
+    await this.requireActiveCategory(service.categoryId);
 
     const created = await this.catalogue.createBillableService(service);
     await this.recordChange(created.id, 'CREATE', requester);
@@ -129,10 +140,32 @@ export class ServiceCatalogueService {
     update: BillableServiceUpdate,
     requester: Requester,
   ): Promise<BillableServiceView> {
-    await this.requireService(serviceId);
+    const current = await this.requireService(serviceId);
     if (update.taxRateId !== undefined) {
       if (!update.taxRateId) throw new TaxRateRequiredError();
       await this.requireTaxRate(update.taxRateId);
+    }
+    // BI-187 is checked only when the update touches what it guards — the
+    // category or the consultation tie. A service already out of step (a
+    // migrated «Consulta externa» left as OTHER) can still be renamed,
+    // re-rated or deactivated: correcting is always possible.
+    const movesCategory =
+      update.categoryId !== undefined &&
+      update.categoryId !== current.category.id;
+    if (movesCategory || update.consultation !== undefined) {
+      const category = movesCategory
+        ? await this.requireActiveCategory(update.categoryId!)
+        : current.category;
+      assertKindAdmits(category.kind, {
+        consultations:
+          update.consultation === undefined
+            ? Number(current.specialtyId !== null)
+            : Number(update.consultation !== null),
+        procedures: Number(current.procedureConcept !== null),
+        exams: movesCategory
+          ? (await this.catalogue.listExamsOfService(serviceId)).length
+          : 0,
+      });
     }
 
     const updated = await this.catalogue.updateBillableService(
@@ -162,6 +195,83 @@ export class ServiceCatalogueService {
     await this.recordChange(serviceId, 'UPDATE', requester);
   }
 
+  /**
+   * BI-189. The service's prices in every list, each marked in force or not
+   * on `today` — the clinic date in Ecuador, which the caller resolves.
+   */
+  async servicePrices(
+    serviceId: string,
+    today: ClinicalDate,
+  ): Promise<(ServicePriceView & { inForce: boolean })[]> {
+    await this.requireService(serviceId);
+    const prices = await this.catalogue.listPricesAcrossPayers(serviceId);
+    return prices.map((price) => ({
+      ...price,
+      inForce: isInForceOn(price, today),
+    }));
+  }
+
+  /** BI-188. The exams the service charges for, read from their catalogue. */
+  async serviceExams(serviceId: string): Promise<ServiceExamView[]> {
+    await this.requireService(serviceId);
+    return this.catalogue.listExamsOfService(serviceId);
+  }
+
+  /** BI-185. The catalogue of categories; the inactive ones on request. */
+  async listCategories(options: {
+    includeInactive: boolean;
+  }): Promise<ServiceCategoryView[]> {
+    return this.catalogue.listServiceCategories(options);
+  }
+
+  /**
+   * BI-185, BI-186. A new category with its kind. A repeated name is refused
+   * by `billable_service_category_name_unique`, not by a read first.
+   */
+  async createCategory(
+    category: { name: string; kind: ServiceCategoryKind },
+    requester: Requester,
+  ): Promise<ServiceCategoryView> {
+    const created = await this.catalogue.createServiceCategory(category);
+    await this.recordChange(created.id, 'CREATE', requester, CATEGORY_RESOURCE_TYPE); // prettier-ignore
+    return created;
+  }
+
+  /**
+   * BI-185, BI-187. Renames, (de)activates or reclassifies — the last only
+   * while every service of the category keeps a tie its new kind admits.
+   */
+  async updateCategory(
+    categoryId: string,
+    update: { name?: string; active?: boolean; kind?: ServiceCategoryKind },
+    requester: Requester,
+  ): Promise<ServiceCategoryView> {
+    const existing = await this.catalogue.findServiceCategory(categoryId);
+    if (!existing) throw new ServiceCategoryNotFoundError();
+    // BI-187. A category is reclassified only when none of its services has a
+    // tie the new kind does not admit — the way out for the OTHER categories
+    // the migration left.
+    if (update.kind !== undefined && update.kind !== existing.kind) {
+      assertKindAdmits(
+        update.kind,
+        await this.catalogue.countCategoryTies(categoryId),
+      );
+    }
+    const updated = await this.catalogue.updateServiceCategory(categoryId, update); // prettier-ignore
+    await this.recordChange(categoryId, 'UPDATE', requester, CATEGORY_RESOURCE_TYPE); // prettier-ignore
+    return updated;
+  }
+
+  /** BI-185. A category a service may take now: it exists and is active. */
+  private async requireActiveCategory(
+    categoryId: string,
+  ): Promise<ServiceCategoryView> {
+    const category = await this.catalogue.findServiceCategory(categoryId);
+    if (!category) throw new ServiceCategoryNotFoundError();
+    if (!category.active) throw new ServiceCategoryInactiveError();
+    return category;
+  }
+
   /** The service, or `BillableServiceNotFoundError`. */
   private async requireService(
     serviceId: string,
@@ -186,14 +296,38 @@ export class ServiceCatalogueService {
     resourceId: string,
     action: 'CREATE' | 'UPDATE',
     requester: Requester,
+    resourceType: string = SERVICE_RESOURCE_TYPE,
   ): Promise<void> {
     await this.audit.record({
       userId: requester.userId,
-      resourceType: SERVICE_RESOURCE_TYPE,
+      resourceType,
       resourceId,
       action,
       ip: requester.ip,
       userAgent: requester.userAgent,
     });
+  }
+}
+
+/**
+ * BI-187. What a category's kind admits: only a consultation is the
+ * consultation of a specialty (BI-158), only a procedure is tied to a
+ * procedure concept, and only a laboratory or imaging service is what an exam
+ * of the exam catalogue is charged through (BI-151). Checked on the service AS IT WILL BE after the
+ * update, so moving a mapped consultation into «Insumos» is refused as surely
+ * as mapping a glove.
+ */
+function assertKindAdmits(
+  kind: ServiceCategoryKind,
+  ties: { consultations: number; procedures: number; exams: number },
+): void {
+  if (ties.consultations > 0 && kind !== 'CONSULTATION') {
+    throw new ServiceKindMismatchError();
+  }
+  if (ties.procedures > 0 && kind !== 'PROCEDURE') {
+    throw new ServiceKindMismatchError();
+  }
+  if (ties.exams > 0 && kind !== 'LABORATORY' && kind !== 'IMAGING') {
+    throw new ServiceKindMismatchError();
   }
 }
