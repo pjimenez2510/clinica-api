@@ -1435,6 +1435,16 @@ requisitos que cambian.
   > Dos correcciones de la misma toma en el mismo instante chocan: la segunda
   > trae el mismo sello y se rechaza. Es el precio de reconocer el UPDATE sin
   > sello, y una persona corrigiendo a mano no lo paga.
+- **EN-211** — El sistema DEBERÁ exponer, a quien puede leer los signos de una
+  atención, las tomas que las correcciones sustituyeron, de la más reciente a
+  la más antigua, cada una tal como era, con quién la sustituyó y cuándo; y la
+  pantalla de signos DEBERÁ mostrarlas junto a la toma vigente.
+  > `GET /encounters/:id/vitals/versions`, con `record:read` como la toma
+  > vigente, porque es el mismo contenido clínico, solo que anterior. La lectura
+  > queda en la bitácora igual que `GET …/vitals`. Fuera de las sedes de quien
+  > pide no hay versiones, igual que no hay toma (EN-121). Cada versión se lee
+  > con el MISMO mapeo que la toma vigente, para que una cifra sustituida y la
+  > que la sustituyó no se puedan pintar distinto.
 - **EN-068** — El sistema DEBERÁ exponer, junto a los signos vitales de una
   atención, los de las atenciones anteriores del mismo paciente en orden
   cronológico.
@@ -3135,6 +3145,7 @@ que es global: una atención ocurre en un sitio.
 | `POST` | `/encounters/:id/notes/:noteId/amend` | `record:sign` | EN-025 |
 | `POST` | `/encounters/:id/notes/:noteId/retract` | `record:sign` | EN-026 |
 | `PUT` | `/encounters/:id/vitals` | `vitals:write` | EN-060 a EN-067, EN-136, EN-142, EN-143, **EN-163** |
+| `GET` | `/encounters/:id/vitals/versions` | `record:read` | **EN-211** |
 | `POST` | `/encounters/:id/vitals/start` | `vitals:write` | EN-135 |
 | `POST` | `/encounters/:id/nursing-notes` | `nursing:write` | EN-142 *(formulario 120)* |
 | `POST` | `/encounters/:id/medication-administrations` | `nursing:write` | EN-142 *(formulario 022)* |

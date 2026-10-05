@@ -672,4 +672,60 @@ describe('los signos vitales de la atención', () => {
       70, 72,
     ]);
   });
+
+  it('EN-211 devuelve las tomas sustituidas, la más reciente primero, con quién y cuándo las sustituyó', async () => {
+    const prisma = db();
+    const { site, encounter, practitioner, repository, save } =
+      await anEncounter(prisma);
+    const query = { encounterId: encounter.id, sites: [site.id] };
+
+    // Control positivo: sin correcciones no hay versiones, y la lectura entra.
+    await save(query, { weightKg: 68 });
+    expect(await repository.findVitalsVersions(query)).toEqual([]);
+
+    await save(query, { weightKg: 69 });
+    await save(query, { weightKg: 70, temperatureC: 37.5 });
+
+    const versions = await repository.findVitalsVersions(query);
+    expect(versions.map((v) => [v.version, v.taking.weightKg])).toEqual([
+      [2, 69],
+      [1, 68],
+    ]);
+    expect(versions[0]!.replacedBy.id).toBe(practitioner.userId);
+    expect(versions[0]!.replacedBy.name).not.toBe('');
+    expect(versions[0]!.replacedAt.getTime()).toBeGreaterThan(
+      versions[1]!.replacedAt.getTime(),
+    );
+    // The taking replaced keeps its own author and instant (EN-143).
+    expect(versions[1]!.taking.recordedBy?.id).toBe(practitioner.userId);
+    expect(versions[1]!.taking.temperatureC).toBeUndefined();
+  });
+
+  it('EN-211 no enseña las versiones de una atención de otra sede', async () => {
+    const prisma = db();
+    const { site, encounter, save, repository } = await anEncounter(prisma);
+    await save(
+      { encounterId: encounter.id, sites: [site.id] },
+      { weightKg: 68 },
+    );
+    await save(
+      { encounterId: encounter.id, sites: [site.id] },
+      { weightKg: 69 },
+    );
+    const elsewhere = await createSite(prisma, 'Sede Norte');
+
+    // Control positivo: desde su sede, la versión está.
+    expect(
+      await repository.findVitalsVersions({
+        encounterId: encounter.id,
+        sites: [site.id],
+      }),
+    ).toHaveLength(1);
+    expect(
+      await repository.findVitalsVersions({
+        encounterId: encounter.id,
+        sites: [elsewhere.id],
+      }),
+    ).toEqual([]);
+  });
 });

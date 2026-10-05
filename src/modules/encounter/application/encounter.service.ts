@@ -18,6 +18,7 @@ import {
   type EncounterView,
   type SiteScopeFilter,
   type VitalSignsView,
+  type VitalsVersionView,
 } from '../domain/encounter.repository';
 import { acceptsNewClinicalContent } from '../domain/encounter-state';
 import { planClosure } from '../domain/encounter-closure';
@@ -503,6 +504,35 @@ export class EncounterService {
     });
 
     return vitals;
+  }
+
+  /**
+   * EN-211. The takings corrections replaced (EN-210), newest first.
+   *
+   * AUDITED like `vitalsOf`: a replaced weight is still a measurement of an
+   * identifiable person.
+   */
+  async vitalsVersionsOf(
+    encounterId: string,
+    requester: Requester,
+  ): Promise<VitalsVersionView[]> {
+    const encounter = await this.requireEncounter(encounterId, requester);
+
+    const versions = await this.encounters.findVitalsVersions({
+      encounterId: encounter.id,
+      sites: requester.sites,
+    });
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: VITALS_RESOURCE_TYPE,
+      resourceId: encounter.id,
+      action: 'READ',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+
+    return versions;
   }
 
   /**
