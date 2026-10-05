@@ -445,7 +445,7 @@ sobre una consulta que sí ocurrió. **Prueba independiente:** abrir la nota de
 una cita en sala, comprobar contra la base que la cita está `IN_PROGRESS` con
 su fila de historial, que el servidor rechaza `LEFT_WITHOUT_BEING_SEEN` y
 `CANCELLED` sobre ella, y que el menú ya no los ofrece.
-**Cubre:** AG-045, AG-146 a AG-150, AG-153. Decisiones D-076, D-077, D-080,
+**Cubre:** AG-045, AG-146 a AG-150, AG-153, **AG-160 y AG-161** (ver la atención de una cita cerrada, 04-10-2026). Decisiones D-076, D-077, D-080,
 D-081, D-082, D-085, D-099.
 
 > **AG-045 se cubre otra vez aquí** porque su mitad visible nace en esta
@@ -1433,6 +1433,25 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   > lo que el servidor rechaza. Solo el estado: el identificador de la atención
   > no viaja con la cita, porque quien ve la agenda puede no tener
   > `record:read`.
+
+- **AG-160** — CUANDO quien tiene `record:read` elija «Ver atención» en una
+  cita **cerrada** con atención (atendida, también interrumpida), la pantalla
+  DEBERÁ abrir esa atención en **solo lectura**; y SI la cita está cerrada,
+  ENTONCES la pantalla NO DEBERÁ abrir una atención nueva desde ella, ni
+  ofrecerlo.
+  > Revisión de usabilidad del autor del 04-10-2026: una cita «Atendida» no
+  > ofrecía nada salvo la ficha, y la búsqueda de su atención no encontraba
+  > las cerradas, así que el camino de «Atender» habría abierto una atención
+  > nueva sobre una consulta que ya ocurrió. La busca por la cita (EN-208), no
+  > por el listado de la agenda (AG-150 no publica el identificador). Si no la
+  > encuentra, lo dice; nunca abre el diálogo de abrir atención.
+  >
+  > Vale en la agenda y en el tablero del día con las cerradas a la vista.
+- **AG-161** — CUANDO se vuelva desde la atención abierta con «Ver atención»,
+  la pantalla DEBERÁ regresar a la agenda o al tablero en el **mismo día, la
+  misma vista y los mismos filtros** de los que se salió.
+  > PA-063: el `BackLink` vuelve por el historial, y el día y la vista viven en
+  > la dirección de la agenda.
 
 ## 5 bis. El estado del paciente
 
