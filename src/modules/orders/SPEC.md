@@ -1262,7 +1262,7 @@ desde la pantalla.
   Y SI una corrección trae un valor igual de extremo o más que uno que ya era
   crítico de ese lado, ENTONCES el sistema DEBERÁ conservarlo crítico aunque
   los rangos de hoy no lo marquen: un umbral subido después no saca de la cola
-  un crítico que nadie avisó (revisión clínica; D-128 decide qué umbral usa una
+  un crítico que nadie avisó (revisión clínica; D-130 decide qué umbral usa una
   corrección, y recomienda congelar en el resultado los límites críticos).
 
   Una fila cerrada que siguiera contando pisaría a la nueva (ORD-107) y la

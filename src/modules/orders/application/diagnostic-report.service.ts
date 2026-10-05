@@ -295,7 +295,7 @@ export class DiagnosticReportService {
         conclusion: request.conclusion,
         issuedAt: request.issuedAt,
         supersedesId: previous.id,
-        // ORD-054, ORD-114, D-128. Today's ranges never lower by themselves
+        // ORD-054, ORD-114, D-130. Today's ranges never lower by themselves
         // a value that was already critical (`keepStandingCritical`).
         results: prepared.results.map((result) =>
           keepStandingCritical(result, previous.results),

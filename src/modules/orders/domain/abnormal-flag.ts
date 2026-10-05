@@ -258,7 +258,7 @@ interface FlaggedValue {
  * value the laboratory corrected to something less extreme is classified
  * with today's ranges, as anything new is.
  *
- * ⚠️ INTERIM, AND IT IS A CLINICAL DECISION (D-128): which threshold a
+ * ⚠️ INTERIM, AND IT IS A CLINICAL DECISION (D-130): which threshold a
  * correction uses. The recommendation is to freeze the critical bounds on
  * the result, as ORD-037 already freezes the reference ones.
  */
