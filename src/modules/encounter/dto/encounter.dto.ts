@@ -194,6 +194,8 @@ export class DiscontinueEncounterDto extends createZodDto(
  */
 export const chartHistoryQuerySchema = z.object({
   patientId: z.uuid('Seleccione el paciente cuya historia quiere ver'),
+  /** EN-208. Only the attentions of this appointment. */
+  agendaEntryId: z.uuid('Cita no válida').optional(),
   page: z.coerce.number().int().min(1).default(1),
   /**
    * Acotado a 50, como el registro de pacientes y no como el catálogo.
