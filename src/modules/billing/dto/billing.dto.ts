@@ -636,6 +636,14 @@ const statementSchema = z.object({
   proposedTotals: totalsSchema,
   /** BI-184. Lo que llevaría una factura emitida ahora: lo confirmado sin facturar. */
   invoiceableTotals: totalsSchema,
+  /** BI-192. Las órdenes de exámenes de la atención que nadie emitió. */
+  draftOrders: z.array(
+    z.object({
+      orderId: z.uuid(),
+      orderedByName: z.string(),
+      savedAt: z.iso.datetime(),
+    }),
+  ),
 });
 /** Response of GET /billing/sites/:siteId/accounts/:accountId (BI-074). The inferred type below is what the controller returns. */
 export class AccountStatementDto extends createZodDto(statementSchema) {}

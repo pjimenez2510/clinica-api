@@ -526,6 +526,10 @@ function toStatementResponse(
     totals: toTotalsResponse(statement.totals),
     proposedTotals: toTotalsResponse(statement.proposedTotals),
     invoiceableTotals: toTotalsResponse(statement.invoiceableTotals),
+    draftOrders: statement.draftOrders.map((draft) => ({
+      ...draft,
+      savedAt: draft.savedAt.toISOString(),
+    })),
   };
 }
 

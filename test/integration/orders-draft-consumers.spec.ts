@@ -263,3 +263,84 @@ describe('ORD-096 a ORD-099 las transiciones del borrador', () => {
     ).resolves.toBe(1);
   });
 });
+
+describe('D-123.6 el borrador que nadie emitió no se pierde de vista', () => {
+  /** The attention ended in `status`, an hour after it started. */
+  const endEncounter = (
+    prisma: PrismaClient,
+    scene: Awaited<ReturnType<typeof aScene>>,
+    status: 'DISCHARGED' | 'COMPLETED',
+  ) =>
+    prisma.encounter.update({
+      where: { id: scene.encounter.id },
+      data: {
+        status,
+        endedAt: new Date(scene.encounter.startedAt.getTime() + 3_600_000),
+        dischargeCondition: 'ALIVE',
+      },
+    });
+  const signerOf = async (prisma: PrismaClient, practitionerId: string) =>
+    (await prisma.practitioner.findUniqueOrThrow({ where: { id: practitionerId } })).userId; // prettier-ignore
+
+  it('ORD-115 lista los borradores del profesional en atenciones ya no abiertas, con si se pueden emitir', async () => {
+    const prisma = db();
+    const { scene, draft } = await aDraft(prisma);
+    const userId = await signerOf(prisma, scene.practitioner.id);
+    const stale = () => adapters(prisma).orders.staleDrafts({ userId, sites: 'all' }); // prettier-ignore
+
+    // Con la atención abierta no está colgado: se emite desde la pestaña.
+    expect(await stale()).toEqual([]);
+
+    await endEncounter(prisma, scene, 'DISCHARGED');
+    const [entry] = await stale();
+    expect(entry).toMatchObject({
+      orderId: draft.id,
+      encounterId: scene.encounter.id,
+      encounterStatus: 'DISCHARGED',
+      canIssue: true,
+      items: [{ testCode: 'EX-BH' }],
+    });
+    expect(entry?.patientName).toContain(scene.patient.familyName);
+
+    // ORD-005: terminada, sólo se descarta.
+    await prisma.encounter.update({ where: { id: scene.encounter.id }, data: { status: 'COMPLETED' } }); // prettier-ignore
+    expect((await stale())[0]).toMatchObject({ canIssue: false });
+
+    // De otro profesional, no es suyo.
+    expect(await adapters(prisma).orders.staleDrafts({ userId: '00000000-0000-4000-8000-000000000002', sites: 'all' })).toEqual([]); // prettier-ignore
+    // Fuera de su alcance de sedes, tampoco.
+    expect(await adapters(prisma).orders.staleDrafts({ userId, sites: [] })).toEqual([]); // prettier-ignore
+  });
+
+  it('ORD-115 lo emitido y lo descartado ya no cuelgan', async () => {
+    const prisma = db();
+    const { scene, draft } = await aDraft(prisma);
+    const userId = await signerOf(prisma, scene.practitioner.id);
+    await endEncounter(prisma, scene, 'DISCHARGED');
+    const stale = () => adapters(prisma).orders.staleDrafts({ userId, sites: 'all' }); // prettier-ignore
+    expect(await stale()).toHaveLength(1);
+
+    await issue(prisma, draft.id);
+    expect(await stale()).toEqual([]);
+  });
+
+  it('BI-192 la cuenta de la atención ve el borrador con quién lo escribió; emitido, ya no', async () => {
+    const prisma = db();
+    const { scene, draft } = await aDraft(prisma);
+    const author = await prisma.user.findUniqueOrThrow({
+      where: { id: await signerOf(prisma, scene.practitioner.id) },
+    });
+    const drafts = () =>
+      adapters(prisma).acts.draftOrdersOf({ encounterId: scene.encounter.id, siteId: scene.site.id }); // prettier-ignore
+
+    const [notice] = await drafts();
+    expect(notice).toMatchObject({ orderId: draft.id });
+    expect(notice?.orderedByName).toContain(author.lastName);
+    expect(notice?.savedAt).toBeInstanceOf(Date);
+    // De otra sede, nada: la cuenta es de su sede (BI-135).
+    expect(await adapters(prisma).acts.draftOrdersOf({ encounterId: scene.encounter.id, siteId: '00000000-0000-4000-8000-000000000001' })).toEqual([]); // prettier-ignore
+
+    await issue(prisma, draft.id);
+    expect(await drafts()).toEqual([]);
+  });
+});

@@ -1,4 +1,10 @@
-import type { AnalyteValueType, ReferenceRange } from './analyte';
+import { applicableRange, criticalBounds } from './abnormal-flag';
+import type {
+  AnalyteValueType,
+  PatientProfile,
+  PatientSex,
+  ReferenceRange,
+} from './analyte';
 import {
   AnalyteDefinitionInvalidError,
   ReferenceRangeInvalidError,
@@ -133,42 +139,6 @@ export function assertRangesHold(
   });
   if (invalid.length > 0) throw new ReferenceRangeInvalidError(invalid);
 
-  /**
-   * ORD-060. A critical band more specific than another (a sex, an age) is
-   * applied WHOLE in its place (ORD-036). If it lacks a side the general one
-   * has, that side stops alerting for exactly those patients: a man with a
-   * glucose of 25 would read LOW and nobody would be called. Refused until
-   * the author decides whether a partial band inherits the missing side
-   * (D-123).
-   */
-  const lostSides: { field: string; message: string }[] = [];
-  ranges.forEach((range, index) => {
-    if (range.rangeKind !== 'CRITICAL') return;
-    ranges.forEach((general, other) => {
-      if (
-        other === index ||
-        general.rangeKind !== 'CRITICAL' ||
-        specificity(general) >= specificity(range) ||
-        !covers(general, range)
-      ) {
-        return;
-      }
-      if (general.low !== null && range.low === null) {
-        lostSides.push({
-          field: `ranges[${index}].low`,
-          message: `Le falta el límite inferior que tiene el crítico de la fila ${other + 1}: sin él, esos pacientes no tienen alerta baja`,
-        });
-      }
-      if (general.high !== null && range.high === null) {
-        lostSides.push({
-          field: `ranges[${index}].high`,
-          message: `Le falta el límite superior que tiene el crítico de la fila ${other + 1}: sin él, esos pacientes no tienen alerta alta`,
-        });
-      }
-    });
-  });
-  if (lostSides.length > 0) throw new ReferenceRangeInvalidError(lostSides);
-
   const overlaps: { field: string; message: string }[] = [];
   ranges.forEach((range, index) => {
     const earlier = ranges.findIndex(
@@ -182,6 +152,139 @@ export function assertRangesHold(
     }
   });
   if (overlaps.length > 0) throw new ReferenceRangeOverlapError(overlaps);
+
+  const inside = criticalInsideReference(ranges);
+  if (inside.length > 0) throw new ReferenceRangeInvalidError(inside);
+}
+
+const SEX_LABELS: Record<PatientSex, string> = {
+  MALE: 'hombres',
+  FEMALE: 'mujeres',
+  INTERSEX: 'personas intersexuales',
+  UNKNOWN: 'pacientes sin sexo registrado',
+};
+
+/**
+ * ORD-112, D-123.3. The critical band lies OUTSIDE the reference one: a
+ * critical low of 700 instead of 70 would flag every glucose as critical, and
+ * a safety queue full of noise is one nobody looks at.
+ *
+ * ⚠️ WITH THE FLAG'S OWN RESOLUTION, NOT ROW AGAINST ROW. Which reference and
+ * which critical apply to whom is ORD-036's question — side by side for the
+ * critical band — so the check walks every sex and every age the written
+ * rows tell apart and asks `applicableRange` and `criticalBounds` themselves.
+ * A check that paired rows by eye could pass a set the flag then reads
+ * differently. Equal is admitted: the critical bound is the band's edge.
+ */
+function criticalInsideReference(
+  ranges: readonly ReferenceRange[],
+): { field: string; message: string }[] {
+  const found = new Map<string, string>();
+  const rowOf = (range: ReferenceRange) => ranges.indexOf(range);
+  const say = (field: string, message: string) => {
+    if (!found.has(field)) found.set(field, message);
+  };
+  const NOISE = 'valores normales saldrían críticos';
+
+  for (const patient of patientsTellingApart(ranges)) {
+    const reference = applicableRange(ranges, 'REFERENCE', patient);
+    const { low, high } = criticalBounds(ranges, patient);
+    const who = (range: ReferenceRange) => whoOf(range, patient);
+
+    // The band itself, whatever the reference: with the sides resolved one
+    // by one (ORD-036), a «varón» high of 30 under an inherited low of 40
+    // makes every value critical. Named on the more specific row's own side.
+    if (low && high && low.value > high.value) {
+      const own =
+        specificityOf(high.range) >= specificityOf(low.range)
+          ? { field: `ranges[${rowOf(high.range)}].high`, range: high.range }
+          : { field: `ranges[${rowOf(low.range)}].low`, range: low.range };
+      say(
+        own.field,
+        `El crítico alto ${decimal(high.value)} es menor que el crítico bajo ${decimal(low.value)}${who(own.range)}: todo valor saldría crítico`,
+      );
+    }
+    if (!reference) continue;
+    const row = `de la fila ${rowOf(reference) + 1}${who(reference)}`;
+
+    if (low && reference.low !== null && low.value > reference.low) {
+      say(
+        `ranges[${rowOf(low.range)}].low`,
+        `El crítico bajo ${decimal(low.value)} es mayor que el límite inferior de referencia ${decimal(reference.low)} ${row}: ${NOISE}`,
+      );
+    } else if (low && reference.high !== null && low.value > reference.high) {
+      // A reference with only its upper bound: a «low» written in the wrong
+      // box would make every normal value critically low.
+      say(
+        `ranges[${rowOf(low.range)}].low`,
+        `El crítico bajo ${decimal(low.value)} es mayor que el límite superior de referencia ${decimal(reference.high)} ${row}: ${NOISE}`,
+      );
+    }
+    if (high && reference.high !== null && high.value < reference.high) {
+      say(
+        `ranges[${rowOf(high.range)}].high`,
+        `El crítico alto ${decimal(high.value)} es menor que el límite superior de referencia ${decimal(reference.high)} ${row}: ${NOISE}`,
+      );
+    } else if (high && reference.low !== null && high.value < reference.low) {
+      say(
+        `ranges[${rowOf(high.range)}].high`,
+        `El crítico alto ${decimal(high.value)} es menor que el límite inferior de referencia ${decimal(reference.low)} ${row}: ${NOISE}`,
+      );
+    }
+  }
+  return [...found].map(([field, message]) => ({ field, message }));
+}
+
+/** ORD-036's weighing: sex above an age window. */
+function specificityOf(range: ReferenceRange): number {
+  const aged = range.ageMinDays !== null || range.ageMaxDays !== null;
+  return (range.sex !== null ? 2 : 0) + (aged ? 1 : 0);
+}
+
+/**
+ * «(hombres, de 0 a 27 días)»: who a clash is about, from the row's own
+ * qualifiers, the sex falling back to the patient's being walked.
+ */
+function whoOf(range: ReferenceRange, patient: PatientProfile): string {
+  const sex = range.sex ?? patient.sex;
+  const parts = [
+    sex ? SEX_LABELS[sex] : null,
+    ageWindow(range.ageMinDays, range.ageMaxDays),
+  ].filter((part): part is string => part !== null);
+  return parts.length > 0 ? ` (${parts.join(', ')})` : '';
+}
+
+/** Stored days, inclusive at both ends, as a laboratory reads them. */
+function ageWindow(min: number | null, max: number | null): string | null {
+  if (min === null && max === null) return null;
+  if (max === null) return `desde ${min} días`;
+  return `de ${min ?? 0} a ${max} días`;
+}
+
+/**
+ * Every patient the written rows tell apart: each sex (and «not recorded»),
+ * at no known age and at each edge of every age window, on both sides of it.
+ * Between two edges nothing changes which row applies, so these are enough.
+ */
+function patientsTellingApart(
+  ranges: readonly ReferenceRange[],
+): PatientProfile[] {
+  const ages = new Set<number | null>([null, 0]);
+  for (const range of ranges) {
+    for (const edge of [range.ageMinDays, range.ageMaxDays]) {
+      if (edge === null) continue;
+      for (const age of [edge - 1, edge, edge + 1]) {
+        if (age >= 0) ages.add(age);
+      }
+    }
+  }
+  const sexes: (PatientSex | null)[] = [null, ...(Object.keys(SEX_LABELS) as PatientSex[])]; // prettier-ignore
+  return sexes.flatMap((sex) => [...ages].map((ageDays) => ({ sex, ageDays })));
+}
+
+/** As the laboratory writes it: decimal comma. */
+function decimal(value: number): string {
+  return String(value).replace('.', ',');
 }
 
 /**
@@ -189,25 +292,6 @@ export function assertRangesHold(
  * both with or both without an age window, and windows that meet. A narrower
  * one beside a general one is NOT an overlap — ORD-036 takes the narrower.
  */
-/** ORD-036's weighing: sex above an age window. */
-function specificity(range: ReferenceRange): number {
-  return (range.sex !== null ? 2 : 0) + (aged(range) ? 1 : 0);
-}
-
-function aged(range: ReferenceRange): boolean {
-  return range.ageMinDays !== null || range.ageMaxDays !== null;
-}
-
-/** Whether some patient the specific range applies to is also under `general`. */
-function covers(general: ReferenceRange, specific: ReferenceRange): boolean {
-  if (general.sex !== null && general.sex !== specific.sex) return false;
-  const gMin = general.ageMinDays ?? -Infinity;
-  const gMax = general.ageMaxDays ?? Infinity;
-  const sMin = specific.ageMinDays ?? -Infinity;
-  const sMax = specific.ageMaxDays ?? Infinity;
-  return gMin <= sMax && sMin <= gMax;
-}
-
 export function overlap(a: ReferenceRange, b: ReferenceRange): boolean {
   if (a.rangeKind !== b.rangeKind) return false;
   if (a.sex !== b.sex) return false;

@@ -145,6 +145,10 @@ class FakeOrders implements ServiceOrderRepository {
   chartByCedula(cedula: string): Promise<string | undefined> {
     return Promise.resolve(this.charts.get(cedula));
   }
+
+  staleDrafts(): Promise<never[]> {
+    return Promise.resolve([]);
+  }
 }
 
 const anOrder = (lines: number): ServiceOrderView => ({

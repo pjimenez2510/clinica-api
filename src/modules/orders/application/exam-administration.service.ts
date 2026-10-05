@@ -17,6 +17,7 @@ import {
   type AnalyteWrite,
   type ExamAdministrationRepository,
   type ExamWrite,
+  type RangeVersion,
   type StructureEntry,
 } from '../domain/exam-administration.repository';
 import {
@@ -216,9 +217,17 @@ export class ExamAdministrationService {
   ): Promise<AdminAnalyteView> {
     const analyte = await this.requireAnalyte(id);
     assertRangesHold(analyte.valueType, ranges);
-    const updated = await this.catalogue.setRanges(id, ranges);
+    // ORD-113. ONE instant for what closes and what opens, from the
+    // application's clock: the history then reads without a gap or an overlap.
+    const updated = await this.catalogue.setRanges(id, ranges, new Date());
     await this.record(ANALYTE_RESOURCE, id, 'UPDATE', editor);
     return updated;
+  }
+
+  /** ORD-114. What applied when: every version, open and closed. */
+  async rangeHistory(id: string): Promise<RangeVersion[]> {
+    await this.requireAnalyte(id);
+    return this.catalogue.rangeHistory(id);
   }
 
   private async requireAnalyte(id: string): Promise<AdminAnalyteView> {
