@@ -12,6 +12,7 @@ import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
+import { contentHashOf } from '../../src/modules/encounter/domain/clinical-note';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
@@ -808,6 +809,144 @@ describe('la atención por HTTP', () => {
     });
   });
 
+  describe('la plantilla de la nota de consulta', () => {
+    const minimum = () =>
+      [
+        ['motivoConsulta', 'Motivo'],
+        ['antecedentes', 'Antecedentes'],
+        ['enfermedadActual', 'Enfermedad actual'],
+        ['revisionOrganosSistemas', 'Revisión por sistemas'],
+        ['examenFisico', 'Examen físico'],
+        ['planTratamiento', 'Plan'],
+      ].map(([key, title]) => ({
+        key,
+        title,
+        help: '',
+        kind: 'TEXT',
+        required: true,
+      }));
+
+    it('EN-200 la publica quien administra la configuración, y el médico no', async () => {
+      const admin = await signIn('ADMIN', 'admin@clinica.ec', '1710034073', false); // prettier-ignore
+      const body = { baseVersion: 0, sections: minimum() };
+
+      await post('/note-templates', doctorToken, body).expect(403);
+      const published = await post('/note-templates', admin.token, body).expect(201); // prettier-ignore
+      expect(published.body).toMatchObject({ version: 1, specialtyId: null });
+
+      const list = await get('/note-templates', admin.token).expect(200);
+      expect(
+        (list.body as { items: { version: number }[] }).items[0]?.version,
+      ).toBe(1);
+    });
+
+    it('EN-203 una especialidad mal escrita en la consulta es un 422, no un 500', async () => {
+      const admin = await signIn('ADMIN', 'admin@clinica.ec', '1710034073', false); // prettier-ignore
+
+      await get('/note-templates/current', admin.token).expect(200);
+      await get('/note-templates/current?specialtyId=abc', admin.token).expect(
+        422,
+      );
+    });
+
+    it('EN-200 publicar sobre una versión que ya no es la última se rechaza con 409', async () => {
+      const admin = await signIn('ADMIN', 'admin@clinica.ec', '1710034073', false); // prettier-ignore
+      await post('/note-templates', admin.token, { baseVersion: 0, sections: minimum() }).expect(201); // prettier-ignore
+
+      const stale = await post('/note-templates', admin.token, {
+        baseVersion: 0,
+        sections: minimum(),
+      }).expect(409);
+      expect((stale.body as Problem).code).toBe('NOTE_TEMPLATE_STALE');
+    });
+
+    it('EN-201 rechaza publicar sin una sección del mínimo, nombrándola', async () => {
+      const admin = await signIn('ADMIN', 'admin@clinica.ec', '1710034073', false); // prettier-ignore
+
+      const refused = await post('/note-templates', admin.token, {
+        baseVersion: 0,
+        sections: minimum().filter((section) => section.key !== 'examenFisico'),
+      }).expect(422);
+
+      const problem = refused.body as Problem;
+      expect(problem.code).toBe('NOTE_TEMPLATE_INVALID');
+      expect(problem.errors?.[0]?.message).toContain('Examen físico');
+    });
+
+    it('EN-203 a EN-205 la nota se abre con la plantilla publicada y exige su sección propia', async () => {
+      const admin = await signIn('ADMIN', 'admin@clinica.ec', '1710034073', false); // prettier-ignore
+      await post('/note-templates', admin.token, {
+        baseVersion: 0,
+        sections: [
+          ...minimum(),
+          {
+            title: 'Hallazgos odontológicos',
+            help: '',
+            kind: 'CHOICE',
+            options: ['Caries', 'Sin hallazgos'],
+            required: true,
+          },
+        ],
+      }).expect(201);
+
+      const encounterId = await openEncounter();
+      const draft = await post(
+        `/encounters/${encounterId}/notes`,
+        doctorToken,
+        {
+          formCode: '002',
+          content: COMPLETE_002,
+        },
+      ).expect(201);
+      const note = draft.body as NoteBody & {
+        template: {
+          version: number;
+          sections: { key: string; title: string }[];
+        };
+      };
+      expect(note.template.version).toBe(1);
+      expect(note.template.sections.at(-1)).toMatchObject({
+        key: 'extra1',
+        title: 'Hallazgos odontológicos',
+      });
+
+      const refused = await post(
+        `/encounters/${encounterId}/notes/${note.id}/sign`,
+        doctorToken,
+        { dischargeCondition: 'ALIVE' },
+      ).expect(422);
+      expect((refused.body as Problem).errors?.[0]?.field).toBe(
+        'content.extra1',
+      );
+
+      // EN-204. La clínica publica otra versión sin esa sección: el borrador
+      // ya abierto sigue con la suya y la sigue exigiendo.
+      await post('/note-templates', admin.token, {
+        baseVersion: 1,
+        sections: minimum(),
+      }).expect(201);
+      await post(
+        `/encounters/${encounterId}/notes/${note.id}/sign`,
+        doctorToken,
+        { dischargeCondition: 'ALIVE' },
+      ).expect(422);
+
+      // Control positivo: con una de sus opciones, firma.
+      await request(app.getHttpServer())
+        .patch(`/api/v1/encounters/${encounterId}/notes/${note.id}`)
+        .set('Authorization', `Bearer ${doctorToken}`)
+        .send({ content: { ...COMPLETE_002, extra1: 'Caries' } })
+        .expect(200);
+      await post(
+        `/encounters/${encounterId}/notes/${note.id}/sign`,
+        doctorToken,
+        {
+          dischargeCondition: 'ALIVE',
+        },
+      ).expect(200);
+    });
+  });
+
   describe('la nota clínica y el alta', () => {
     it('EN-020 a EN-027 abre, firma y da el alta clínica en un solo acto', async () => {
       const encounterId = await openEncounter();
@@ -838,6 +977,115 @@ describe('la atención por HTTP', () => {
         status: 'DISCHARGED',
         dischargeCondition: 'ALIVE',
       });
+    });
+
+    it('EN-206 la nota firmada conserva la foto de alergias y antecedentes aunque luego se refuten, y el hash cuadra', async () => {
+      const allergy = await post(
+        `/patients/${patientId}/allergies`,
+        doctorToken,
+        {
+          substanceText: 'Penicilina',
+          criticality: 'HIGH',
+        },
+      ).expect(201);
+      await post(`/patients/${patientId}/history`, doctorToken, {
+        kind: 'FAMILY',
+        description: 'Diabetes tipo 2',
+        relative: 'Madre',
+      }).expect(201);
+
+      const encounterId = await openEncounter();
+      const draft = await post(
+        `/encounters/${encounterId}/notes`,
+        doctorToken,
+        {
+          formCode: '002',
+          // EN-207: sin texto en antecedentes, y una foto inventada que el
+          // servidor no debe guardar.
+          content: {
+            ...COMPLETE_002,
+            antecedentes: '',
+            backgroundSnapshot: 'sin alergias',
+          },
+        },
+      ).expect(201);
+      const noteId = (draft.body as NoteBody).id;
+
+      await post(
+        `/encounters/${encounterId}/notes/${noteId}/sign`,
+        doctorToken,
+        {
+          dischargeCondition: 'ALIVE',
+        },
+      ).expect(200);
+
+      await post(
+        `/patients/${patientId}/allergies/${(allergy.body as { id: string }).id}/refute`,
+        doctorToken,
+        { notes: 'Prueba cutánea negativa' },
+      ).expect(200);
+
+      const row = await prisma.clinicalNote.findUniqueOrThrow({
+        where: { id: noteId },
+      });
+      const content = row.content as {
+        backgroundSnapshot: {
+          allergies: { substance: string }[];
+          familyHistory: { description: string; relative: string }[];
+        };
+      };
+      expect(content.backgroundSnapshot.allergies).toEqual([
+        expect.objectContaining({ substance: 'Penicilina' }),
+      ]);
+      expect(content.backgroundSnapshot.familyHistory).toEqual([
+        expect.objectContaining({
+          description: 'Diabetes tipo 2',
+          relative: 'Madre',
+        }),
+      ]);
+      expect(row.contentHash).toBe(
+        contentHashOf({
+          content: row.content as Record<string, unknown>,
+          signedById: row.signedById as string,
+          signedAt: row.signedAt as Date,
+        }),
+      );
+    });
+
+    it('EN-207 no deja firmar sin texto en antecedentes con solo «sin alergias conocidas»', async () => {
+      await post(`/patients/${patientId}/allergies/none-known`, doctorToken).expect(201); // prettier-ignore
+      const encounterId = await openEncounter();
+      const draft = await post(
+        `/encounters/${encounterId}/notes`,
+        doctorToken,
+        {
+          formCode: '002',
+          content: { ...COMPLETE_002, antecedentes: '' },
+        },
+      ).expect(201);
+
+      const refused = await post(
+        `/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}/sign`,
+        doctorToken,
+        { dischargeCondition: 'ALIVE' },
+      ).expect(422);
+      expect((refused.body as Problem).code).toBe('NOTE_CONTENT_INCOMPLETE');
+
+      // Control positivo: con una línea escrita, la misma nota se firma.
+      await request(app.getHttpServer())
+        .patch(
+          `/api/v1/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}`,
+        )
+        .set('Authorization', `Bearer ${doctorToken}`)
+        .send({
+          content: { ...COMPLETE_002, antecedentes: 'Niega antecedentes' },
+        })
+        .expect(200);
+      await post(
+        `/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}/sign`,
+        doctorToken,
+        { dischargeCondition: 'ALIVE' },
+      ).expect(200);
     });
 
     it('EN-009 rechaza firmar la consulta externa sin condición de egreso', async () => {

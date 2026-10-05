@@ -25,7 +25,8 @@ import type { Permission } from '../../shared/authorisation/permission.catalogue
 
 import { ClinicalNoteService } from './application/clinical-note.service';
 import type { Requester } from './application/encounter.service';
-import type { ClinicalNoteView } from './domain/clinical-note.repository';
+import type { NoteWithTemplate } from './application/clinical-note.service';
+import { toTemplateResponse } from './dto/note-template.mapper';
 import {
   AmendNoteDto,
   ClinicalNoteDto,
@@ -272,7 +273,7 @@ export class ClinicalNoteController {
 }
 
 /** Instants leave as ISO 8601; the client renders them in Ecuadorian time. */
-function toNoteResponse(note: ClinicalNoteView): ClinicalNoteResponse {
+function toNoteResponse(note: NoteWithTemplate): ClinicalNoteResponse {
   return {
     id: note.id,
     encounterId: note.encounterId,
@@ -291,5 +292,6 @@ function toNoteResponse(note: ClinicalNoteView): ClinicalNoteResponse {
     supersedesId: note.supersedesId,
     amendmentReason: note.amendmentReason,
     createdAt: note.createdAt.toISOString(),
+    template: toTemplateResponse(note.template),
   };
 }

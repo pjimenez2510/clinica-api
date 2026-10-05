@@ -21,6 +21,8 @@ export interface DraftSigning {
   sign: (draft: { content: unknown }) => {
     signedById: string;
     signedAt: Date;
+    /** EN-206. What is signed: the draft plus the background snapshot. */
+    content: Readonly<Record<string, unknown>>;
     contentHash: string;
   };
 }
