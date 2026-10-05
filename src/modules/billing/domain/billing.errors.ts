@@ -56,6 +56,57 @@ export class BillableServiceInUseError extends ConflictError {
   }
 }
 
+/** BI-185, BI-135. */
+export class ServiceCategoryNotFoundError extends NotFoundError {
+  readonly code = 'SERVICE_CATEGORY_NOT_FOUND';
+  override readonly userTitle = 'Esa categoría no existe o ya no está disponible'; // prettier-ignore
+
+  constructor() {
+    super('No service category with that identifier');
+  }
+}
+
+/**
+ * BI-185. A deactivated category is no longer offered: the services that
+ * already carry it keep it, new ones cannot take it.
+ */
+export class ServiceCategoryInactiveError extends BusinessRuleViolation {
+  readonly code = 'SERVICE_CATEGORY_INACTIVE';
+  override readonly userTitle =
+    'Esa categoría está desactivada: elija otra o vuelva a activarla';
+
+  constructor() {
+    super('Service category is inactive', {}, [
+      {
+        field: 'categoryId',
+        code: 'SERVICE_CATEGORY_INACTIVE',
+        message: 'Seleccione una categoría activa',
+      },
+    ]);
+  }
+}
+
+/**
+ * BI-187. The category's kind says what structure the service admits: only a
+ * consultation is the consultation of a specialty (BI-158), and a service tied
+ * to one — or to a procedure — cannot move to a category of another kind.
+ */
+export class ServiceKindMismatchError extends BusinessRuleViolation {
+  readonly code = 'SERVICE_KIND_MISMATCH';
+  override readonly userTitle =
+    'Esa clase no admite lo que la prestación ya tiene atado (una especialidad, un procedimiento o exámenes)';
+
+  constructor() {
+    super('Service category kind does not admit that structure', {}, [
+      {
+        field: 'categoryId',
+        code: 'SERVICE_KIND_MISMATCH',
+        message: 'Elija una categoría de la clase que corresponde',
+      },
+    ]);
+  }
+}
+
 /** BI-015. */
 export class BillableServiceInactiveError extends BusinessRuleViolation {
   readonly code = 'BILLABLE_SERVICE_INACTIVE';
@@ -548,6 +599,22 @@ export class FinalConsumerNotConfirmedError extends ValidationError {
       },
       ],
     );
+  }
+}
+
+/**
+ * BI-184. Between the cashier reading the total and pressing «emitir», the
+ * pending charges changed — another cashier confirmed, added or removed one.
+ * The invoice is a tax document that cannot be edited afterwards (D-A-007), so
+ * it is not issued for an amount nobody saw.
+ */
+export class InvoiceChargesChangedError extends ConflictError {
+  readonly code = 'INVOICE_CHARGES_CHANGED';
+  override readonly userTitle =
+    'Los cargos de la cuenta cambiaron mientras se emitía: revise el total y vuelva a emitir';
+
+  constructor() {
+    super('Pending charges differ from the ones the cashier saw');
   }
 }
 

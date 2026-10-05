@@ -1,5 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 
+import {
+  ACCESS_AUDIT_RECORDER,
+  type AccessAuditRecorder,
+} from '../../../shared/audit/access-audit.port';
+
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 
 import {
@@ -49,6 +54,13 @@ export interface AccountStatement {
    * same frozen columns and stored nowhere.
    */
   proposedTotals: DocumentTotals;
+  /**
+   * BI-184. What an invoice issued NOW would carry: the `BILLABLE` lines and
+   * nothing else. After a first invoice the account total still counts what
+   * it took, so a dialog announcing «total a facturar» from it would state an
+   * amount that is not the one issued.
+   */
+  invoiceableTotals: DocumentTotals;
 }
 
 /**
@@ -78,7 +90,32 @@ export class PatientAccountService {
     private readonly accounts: BillingAccountRepository,
     @Inject(BILLING_CATALOGUE_REPOSITORY)
     private readonly catalogue: BillingCatalogueRepository,
+    @Inject(ACCESS_AUDIT_RECORDER)
+    private readonly audit: AccessAuditRecorder,
   ) {}
+
+  /**
+   * D-118 (A, resolved by the author on 04-10-2026). Somebody OPENED this
+   * account: it names the patient and what was charged, and that leaves one
+   * access on the trail — to the account, not to the clinical record. The
+   * listings never do it per row (BI-133); `statement` itself does not either,
+   * because the checkout reads it too and that read is not a person looking.
+   */
+  async openStatement(
+    query: { accountId: string; siteId: string },
+    requester: { userId: string; ip?: string; userAgent?: string },
+  ): Promise<AccountStatement> {
+    const statement = await this.statement(query);
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: 'patient_account',
+      resourceId: statement.account.id,
+      action: 'READ',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+    return statement;
+  }
 
   /**
    * BI-070. Opens the account, WITH ITS PAYER DECIDED ON ARRIVAL.
@@ -144,6 +181,9 @@ export class PatientAccountService {
       // «esto se hizo y no se cobra».
       totals: totalsOf(charges.filter(countsTowardsTotal).map(toLine)),
       proposedTotals: totalsOf(charges.filter(isProposed).map(toLine)),
+      invoiceableTotals: totalsOf(
+        charges.filter((charge) => charge.status === 'BILLABLE').map(toLine),
+      ),
     };
   }
 

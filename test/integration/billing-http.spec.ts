@@ -4,7 +4,8 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
 import request from 'supertest';
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import pg from 'pg';
+import { afterAll, beforeEach, describe, expect, inject, it } from 'vitest';
 
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
 import { seedBilling } from '../../prisma/seed-billing.mts';
@@ -495,6 +496,134 @@ describe('la facturación por HTTP', () => {
       expect(problem.code).toBe('CHARGE_ITEM_ALREADY_INVOICED');
       expect(problem.title).toContain('nota de crédito');
     });
+  });
+
+  describe('BI-184 la factura lleva lo que caja vio al emitir', () => {
+    const receiver = {
+      identificationType: '05',
+      identification: '1710034065',
+      name: 'Guamán Andrade, María José',
+    };
+
+    it('BI-184 si entre ver el total y emitir alguien confirmó otro cargo, no se emite; con los cargos que hay, sí', async () => {
+      const accountId = await openAccount();
+      await addCharge(accountId);
+      const seen = await api()
+        .get(`/api/v1/billing/sites/${siteId}/accounts/${accountId}`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(200);
+      const seenIds = (seen.body as { charges: { id: string }[] }).charges.map(
+        (charge) => charge.id,
+      );
+      // Otra caja añade un cargo mientras el diálogo está abierto.
+      await addCharge(accountId);
+
+      const refused = await api()
+        .post(`/api/v1/billing/sites/${siteId}/invoices`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({
+          accountId,
+          emissionPointId,
+          paymentMethod: '01',
+          receiver,
+          chargeIds: seenIds,
+        })
+        .expect(409);
+      expect((refused.body as Problem).code).toBe('INVOICE_CHARGES_CHANGED');
+
+      // Control: con los cargos que hay ahora, sale.
+      const now = await api()
+        .get(`/api/v1/billing/sites/${siteId}/accounts/${accountId}`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(200);
+      await api()
+        .post(`/api/v1/billing/sites/${siteId}/invoices`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({
+          accountId,
+          emissionPointId,
+          paymentMethod: '01',
+          receiver,
+          chargeIds: (now.body as { charges: { id: string }[] }).charges.map(
+            (charge) => charge.id,
+          ),
+        })
+        .expect(201);
+    });
+  });
+
+  describe('BI-184 una anulación a media emisión no deja una factura descuadrada', () => {
+    it('BI-184 si otra caja anula un cargo mientras se emite, no sale ninguna factura que cuente un cargo que no lleva', async () => {
+      const accountId = await openAccount();
+      await addCharge(accountId);
+      await addCharge(accountId);
+      const seen = await api()
+        .get(`/api/v1/billing/sites/${siteId}/accounts/${accountId}`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(200);
+      const ids = (seen.body as { charges: { id: string }[] }).charges.map(
+        (charge) => charge.id,
+      );
+      const voider = await prisma.user.findFirstOrThrow({
+        where: { email: CASHIER_EMAIL },
+      });
+
+      // Otra caja anula el segundo cargo en su propia transacción, y la
+      // mantiene abierta mientras esta emite.
+      const other = new pg.Client({ connectionString: inject('databaseUrl') });
+      await other.connect();
+      try {
+        await other.query('BEGIN');
+        await other.query(
+          `UPDATE "charge_item"
+              SET "status" = 'CANCELLED', "voided_at" = now(),
+                  "voided_by_id" = $1, "void_reason" = 'No se hizo'
+            WHERE "id" = $2`,
+          [voider.id, ids[1]],
+        );
+
+        const issuing = api()
+          .post(`/api/v1/billing/sites/${siteId}/invoices`)
+          .set('Authorization', `Bearer ${cashierToken}`)
+          .send({
+            accountId,
+            emissionPointId,
+            paymentMethod: '01',
+            receiver: {
+              identificationType: '05',
+              identification: '1710034065',
+              name: 'Guamán Andrade, María José',
+            },
+            chargeIds: ids,
+          })
+          .then((response) => response);
+
+        await untilSomebodyWaitsOnARowLock();
+        await other.query('COMMIT');
+        const response = await issuing;
+
+        expect(response.status).toBe(409);
+        expect((response.body as Problem).code).toBe('INVOICE_CHARGES_CHANGED');
+        expect(await prisma.invoice.count({ where: { accountId } })).toBe(0);
+      } finally {
+        await other.end();
+      }
+    });
+
+    /** Until a session of THIS database waits on a row lock. */
+    async function untilSomebodyWaitsOnARowLock(): Promise<void> {
+      for (let attempt = 0; attempt < 500; attempt += 1) {
+        const [row] = await prisma.$queryRaw<{ waiting: bigint }[]>`
+          SELECT count(*) AS waiting
+            FROM pg_locks l JOIN pg_stat_activity a USING (pid)
+           WHERE NOT l.granted
+             AND a.datname = current_database()
+             AND l.locktype = 'transactionid'`;
+        if (Number(row!.waiting) > 0) return;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error('La emisión nunca esperó al candado de la anulación');
+    }
   });
 
   describe('BI-001 el dinero viaja como cadena', () => {

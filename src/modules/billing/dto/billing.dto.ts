@@ -12,7 +12,10 @@ import {
   MAX_VOUCHER_SERVICE_CODE,
   PAYMENT_METHODS,
 } from '../domain/invoice';
-import { PAYER_KINDS } from '../domain/billing.repository';
+import {
+  PAYER_KINDS,
+  SERVICE_CATEGORY_KINDS,
+} from '../domain/billing.repository';
 import {
   CHARGE_ORIGINS,
   PROPOSAL_SKIP_REASONS,
@@ -82,6 +85,15 @@ export const catalogueQuerySchema = z.object({
 /** Query of GET /billing/services and GET /billing/payers. */
 export class CatalogueQueryDto extends createZodDto(catalogueQuerySchema) {}
 
+export const awaitingCheckoutQuerySchema = z.object({
+  /** D-119. Also the ones older than seven days, still unsettled. */
+  includeOlder: explicitFlag,
+});
+/** Query of GET /billing/sites/:siteId/encounters/awaiting-checkout. */
+export class AwaitingCheckoutQueryDto extends createZodDto(
+  awaitingCheckoutQuerySchema,
+) {}
+
 /**
  * BI-006, BI-013. NO AMOUNT FIELD, AND THAT ABSENCE IS THE REQUIREMENT.
  *
@@ -101,7 +113,8 @@ export const createServiceSchema = z.object({
       'El código admite hasta 25 caracteres, lo que acepta el SRI',
     ),
   name: z.string().trim().min(1, 'Indique el nombre de la prestación').max(200),
-  category: z.string().trim().min(1, 'Indique la categoría').max(60),
+  /** BI-185. A row of the catalogue, never free text. */
+  categoryId: z.uuid('Seleccione la categoría'),
   /** BI-011. Nomenclature only: no amount is ever taken from the Tarifario. */
   tariffCode: z.string().trim().max(16).nullish(),
   taxRateId: z.uuid('Seleccione la tarifa de impuesto que aplica'),
@@ -111,7 +124,7 @@ export class CreateServiceDto extends createZodDto(createServiceSchema) {}
 
 export const updateServiceSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
-  category: z.string().trim().min(1).max(60).optional(),
+  categoryId: z.uuid('Seleccione la categoría').optional(),
   tariffCode: z.string().trim().max(16).nullish(),
   taxRateId: z.uuid('Seleccione la tarifa de impuesto que aplica').optional(),
   active: z.boolean().optional(),
@@ -321,6 +334,11 @@ export const issueInvoiceSchema = z.object({
   paymentMethod: z.enum(PAYMENT_METHODS, {
     error: 'Indique la forma de pago',
   }),
+  /**
+   * BI-184. Los cargos pendientes que caja vio al anunciar el total. Si otra
+   * caja los cambió entretanto, `INVOICE_CHARGES_CHANGED` y no se emite.
+   */
+  chargeIds: z.array(z.uuid()).optional(),
 });
 /** Body of POST /billing/sites/:siteId/invoices. */
 export class IssueInvoiceDto extends createZodDto(issueInvoiceSchema) {}
@@ -351,11 +369,90 @@ export class TaxRateDto extends createZodDto(
 /** What the controller maps into; inferred, so it cannot drift from the published schema. */
 export type TaxRateResponse = z.infer<typeof taxRateResponseSchema>;
 
+/** BI-189. One price of a service in one payer's list. */
+const servicePriceSchema = z.object({
+  priceId: z.uuid(),
+  payer: z.object({
+    id: z.uuid(),
+    name: z.string(),
+    kind: z.enum(PAYER_KINDS),
+  }),
+  /** BI-001: a string, never a number. */
+  amount: z.string(),
+  validFrom: z.string(),
+  validTo: z.string().nullable(),
+  /** In force on today's date in Ecuador. */
+  inForce: z.boolean(),
+});
+export class ServicePriceListDto extends createZodDto(
+  z.object({ items: z.array(servicePriceSchema) }),
+) {}
+export type ServicePriceResponse = z.infer<typeof servicePriceSchema>;
+
+/** BI-188. An exam charged through the service. */
+const serviceExamSchema = z.object({
+  id: z.uuid(),
+  code: z.string(),
+  name: z.string(),
+  active: z.boolean(),
+});
+export class ServiceExamListDto extends createZodDto(
+  z.object({ items: z.array(serviceExamSchema) }),
+) {}
+export type ServiceExamResponse = z.infer<typeof serviceExamSchema>;
+
+/** BI-185, BI-186. One category of the catalogue, with its kind. */
+const serviceCategoryResponseSchema = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  kind: z.enum(SERVICE_CATEGORY_KINDS),
+  active: z.boolean(),
+});
+export class ServiceCategoryDto extends createZodDto(
+  serviceCategoryResponseSchema,
+) {}
+export class ServiceCategoryListDto extends createZodDto(
+  z.object({ items: z.array(serviceCategoryResponseSchema) }),
+) {}
+export type ServiceCategoryResponse = z.infer<
+  typeof serviceCategoryResponseSchema
+>;
+
+export const createServiceCategorySchema = z.object({
+  name: z.string().trim().min(1, 'Indique el nombre de la categoría').max(60),
+  kind: z.enum(SERVICE_CATEGORY_KINDS, {
+    error: 'Elija la clase: consulta, procedimiento, laboratorio, imagen, insumo u otro', // prettier-ignore
+  }),
+});
+/** Body of POST /billing/service-categories (`billing:price-manage`). */
+export class CreateServiceCategoryDto extends createZodDto(
+  createServiceCategorySchema,
+) {}
+
+/** BI-185, BI-187. The kind changes only if no service of it clashes. */
+export const updateServiceCategorySchema = z.object({
+  name: z.string().trim().min(1, 'Indique el nombre de la categoría').max(60).optional(), // prettier-ignore
+  active: z.boolean().optional(),
+  kind: z
+    .enum(SERVICE_CATEGORY_KINDS, {
+      error: 'Elija la clase: consulta, procedimiento, laboratorio, imagen, insumo u otro', // prettier-ignore
+    })
+    .optional(),
+});
+/** Body of PATCH /billing/service-categories/:categoryId. */
+export class UpdateServiceCategoryDto extends createZodDto(
+  updateServiceCategorySchema,
+) {}
+
 const serviceResponseSchema = z.object({
   id: z.uuid(),
   code: z.string(),
   name: z.string(),
-  category: z.string(),
+  category: serviceCategoryResponseSchema,
+  /** BI-151, BI-187. The procedure it charges, when it is one. Seeded, read-only here. */
+  procedureConcept: z
+    .object({ id: z.uuid(), code: z.string(), display: z.string() })
+    .nullable(),
   tariffCode: z.string().nullable(),
   taxRateId: z.uuid(),
   taxSriCode: z.string(),
@@ -414,10 +511,32 @@ export class PriceListResponseDto extends createZodDto(
 export type PriceResponse = z.infer<typeof priceResponseSchema>;
 export type PriceListResponse = z.infer<typeof priceListResponseSchema>;
 
+/**
+ * BI-183, D-078. Who the account or the visit is for: names, document and HC.
+ * Identity and nothing clinical, read without opening the chart (BI-133).
+ */
+const patientIdentitySchema = z.object({
+  id: z.uuid(),
+  mrn: z.string(),
+  familyName: z.string(),
+  secondFamilyName: z.string().nullable(),
+  givenName: z.string(),
+  secondGivenName: z.string().nullable(),
+  /** `null` for a newborn with no document yet: the HC alone identifies them. */
+  document: z
+    .object({
+      type: z.enum(['CEDULA', 'PASSPORT', 'REFUGEE_CARD', 'FOREIGN_ID']),
+      value: z.string(),
+    })
+    .nullable(),
+});
+export type PatientIdentityResponse = z.infer<typeof patientIdentitySchema>;
+
 const accountResponseSchema = z.object({
   id: z.uuid(),
   siteId: z.uuid(),
   patientId: z.uuid(),
+  patient: patientIdentitySchema,
   encounterId: z.uuid().nullable(),
   payerId: z.uuid(),
   priceListId: z.uuid(),
@@ -432,6 +551,27 @@ export class AccountListDto extends createZodDto(
 ) {}
 /** Return type of the account mapper, inferred from the published schema. */
 export type AccountResponse = z.infer<typeof accountResponseSchema>;
+
+/** BI-181 to BI-183. One ended visit caja still has to look at. */
+const awaitingCheckoutSchema = z.object({
+  encounterId: z.uuid(),
+  status: z.enum(['DISCHARGED', 'DISCONTINUED', 'COMPLETED']),
+  endedAt: z.iso.datetime(),
+  /** BI-182. `false`: nothing was done in it, so nothing will be proposed. */
+  clinicallyAttended: z.boolean(),
+  patient: patientIdentitySchema,
+  /** The open account it already has, or `null` if it never went to caja. */
+  account: z.object({ id: z.uuid(), status: z.literal('OPEN') }).nullable(),
+});
+/** Response of GET /billing/sites/:siteId/encounters/awaiting-checkout. */
+export class AwaitingCheckoutListDto extends createZodDto(
+  z.object({
+    items: z.array(awaitingCheckoutSchema),
+    /** D-119. Las de más de siete días que siguen sin liquidar, contadas. */
+    olderCount: z.number().int(),
+  }),
+) {}
+export type AwaitingCheckoutResponse = z.infer<typeof awaitingCheckoutSchema>;
 
 /**
  * A charge, AS IT WAS FROZEN. Everything here is a copy taken on the day of
@@ -494,6 +634,8 @@ const statementSchema = z.object({
    * cuando ya no se puede corregir.
    */
   proposedTotals: totalsSchema,
+  /** BI-184. Lo que llevaría una factura emitida ahora: lo confirmado sin facturar. */
+  invoiceableTotals: totalsSchema,
 });
 /** Response of GET /billing/sites/:siteId/accounts/:accountId (BI-074). The inferred type below is what the controller returns. */
 export class AccountStatementDto extends createZodDto(statementSchema) {}
