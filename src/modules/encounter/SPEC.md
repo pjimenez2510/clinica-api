@@ -951,12 +951,13 @@ requisitos que cambian.
   > NULL OR amendment_reason IS NOT NULL`— y `supersedes_id` es `@unique`, así que
   > una versión no puede ser enmendada dos veces en paralelo.
   >
-  > **El motivo es texto libre obligatorio y no un desplegable**, y el comentario
-  > del esquema dice por qué: *«un desplegable se rellena en piloto automático; un
-  > cuadro de texto no»*. La misma decisión que `CANCELLATION_REASON_REQUIRED` en
-  > la agenda, y por la misma razón: se exige **en el servicio** y no sólo en el
-  > DTO, porque un `DEBERÁ` que sólo hace cumplir la capa de transporte deja de
-  > cumplirse el día que otro caso de uso llame por dentro.
+  > **Enmendado por EN-216 (D-128.1, 05-10-2026): el motivo se elige en la
+  > pantalla de una lista con «Otro»**, y no se redacta cada vez; la API sigue
+  > recibiendo `amendmentReason` como texto obligatorio y lo exige **en el
+  > servicio** y no sólo en el DTO, porque un `DEBERÁ` que sólo hace cumplir la
+  > capa de transporte deja de cumplirse el día que otro caso de uso llame por
+  > dentro. Antes decía «texto libre, no desplegable»; D-128.1 lo sustituye a
+  > la espera de que lo confirme el asesor legal.
   >
   > Y la enmienda es **un acto clínico**, no un efecto de cómo se almacenan las
   > filas: por eso es una nota nueva y no una tabla versionada por el sistema ni
@@ -3298,6 +3299,29 @@ con un papel en manos de un tercero, un motivo de lista._
   > sin facturar se queda con la consulta con que nació. Recalcularlo desde
   > aquí cruzaría al módulo `billing` (la resolución del precio vive en su
   > adaptador): queda para caja.
+
+---
+
+## 22. Corregir es editar: la nota firmada, los signos y la salida de la atención (D-126, D-127, D-128.1, D-132)
+
+_Inventario de `fix/menos-preguntas`, filas AT-13 a AT-23. Lo firmado se edita
+en el sitio y la historia la guarda el sistema; los signos no se pierden por
+falta de una medida; y salir de la atención pide lo justo._
+
+- **EN-216** — CUANDO quien tenga `record:sign` pulse «Editar» sobre la nota
+  firmada vigente, la pantalla DEBERÁ abrir la **enmienda** (EN-025) en el
+  mismo panel de la nota, con lo escrito en la versión firmada ya cargado, y
+  DEBERÁ pedir el motivo de una lista —«Error de transcripción», «Dato
+  omitido», «Paciente equivocado», «Otro» con texto— que viaja como
+  `amendmentReason`; y la versión firmada NO DEBERÁ cambiar.
+  > **D-127.3 y D-128.1.** Para el médico es «Editar»; para la historia, una
+  > versión nueva. El original sigue siendo la fila firmada que
+  > `trg_clinical_note_immutable` no deja tocar, y se lee entre las versiones
+  > anteriores. La lista es de la pantalla (`clinica-web`); la API no cambia:
+  > `POST …/notes/:noteId/amend` con el texto, obligatorio
+  > (`AMENDMENT_REASON_REQUIRED`, `clinical_note_amendment_reason`). Al firmar,
+  > la pantalla dice «Después se podrá corregir con Editar; queda la versión
+  > firmada» en lugar de «una nota firmada no se edita» (AT-13).
 
 ---
 
