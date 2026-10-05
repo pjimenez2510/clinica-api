@@ -232,6 +232,28 @@ export class ServiceOrderService {
   }
 
   /**
+   * ORD-116. Undoes a discard: the same draft comes back, with its lines.
+   * Only the signer, by the same rule as the discard it undoes (D-123.1).
+   */
+  async restore(
+    orderId: string,
+    requester: Requester,
+  ): Promise<ServiceOrderView> {
+    await this.assertSigner(orderId, requester);
+    const order = await this.orders.restore({
+      orderId,
+      sites: requester.sites,
+    });
+
+    this.logger.info(
+      { site_id: order.siteId, action: 'SERVICE_ORDER_RESTORED' },
+      'service order restored',
+    );
+
+    return order;
+  }
+
+  /**
    * D-123. The draft is the signer's: a colleague's issue would put an order
    * under somebody else's name (the line PR-100 draws for a receta). The
    * signer never changes before the issue and is frozen after it, so reading

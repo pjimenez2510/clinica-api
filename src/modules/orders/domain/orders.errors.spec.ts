@@ -15,6 +15,7 @@ import {
   ExamNotOrderableError,
   OrderEncounterNotFoundError,
   OrderDraftOfAnotherPractitionerError,
+  OrderNotDiscardedError,
   OrderNotDraftError,
   OrderNotIssuedError,
   OrderEncounterNotOpenError,
@@ -53,6 +54,7 @@ const EVERY_ERROR: readonly DomainError[] = [
   new OrderEncounterNotOpenError('COMPLETED'),
   new OrderItemNotPendingError(),
   new OrderNotDraftError(),
+  new OrderNotDiscardedError(),
   new OrderNotIssuedError(),
   new OrderDraftOfAnotherPractitionerError(),
   new ExamCategoryMismatchError(),
@@ -129,6 +131,15 @@ describe('el contrato de errores de las órdenes', () => {
   it('ORD-096 y ORD-100 son conflictos de estado: borrador y emitida', () => {
     expect(new OrderNotDraftError()).toBeInstanceOf(ConflictError);
     expect(new OrderNotIssuedError()).toBeInstanceOf(ConflictError);
+  });
+
+  it('ORD-116 recuperar lo que no está descartado es un conflicto de estado, con su código y su frase', () => {
+    const error = new OrderNotDiscardedError();
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.code).toBe('ORDER_NOT_DISCARDED');
+    expect(error.userTitle).toBe(
+      'Esa orden ya no está descartada: se recuperó o nunca se descartó. Actualice la pantalla',
+    );
   });
 
   it('ORD-005 y ORD-008 son conflictos de estado, no de contenido', () => {

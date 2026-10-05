@@ -99,6 +99,8 @@ describe('las rutas del módulo de órdenes', () => {
         'PUT /orders/:orderId → record:write',
         'POST /orders/:orderId/issue → record:write',
         'POST /orders/:orderId/discard → record:write',
+        // ORD-116. Deshacer el descarte, con el mismo permiso.
+        'POST /orders/:orderId/restore → record:write',
         'GET /orders/results/unmatched → record:read',
         'POST /orders/results/:resultId/match → result:write',
         'GET /orders/results/critical → record:read',

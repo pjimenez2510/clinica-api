@@ -14,6 +14,7 @@ import {
   OrderEncounterNotFoundError,
   OrderEncounterNotOpenError,
   OrderItemNotPendingError,
+  OrderNotDiscardedError,
   OrderNotDraftError,
   OrderNotFoundError,
   OrderNotIssuedError,
@@ -253,6 +254,46 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
           discardedAt: new Date(),
           discardedById: request.userId,
         },
+        select: ORDER_SELECT,
+      });
+    });
+
+    return toOrderView(row);
+  }
+
+  /**
+   * ORD-116. DISCARDED back to DRAFT, as it was a moment ago.
+   *
+   * Locked in the order every writer of the draft uses —attention first,
+   * order second—, and judged on the locked row, so a second «Deshacer» finds
+   * it already a draft. Who and when are cleared with the state:
+   * `service_order_discard_states_who_and_when` refuses a draft that still
+   * says it was discarded, and `service_order_guard_status` lets this one
+   * transition through and nothing else with it.
+   *
+   * ⚠️ THE ATTENTION'S STATE IS NOT JUDGED, as it is not on the discard: the
+   * draft returns where it was, and issuing it is still judged by ORD-005.
+   */
+  async restore(query: OrderQuery): Promise<ServiceOrderView> {
+    const row = await this.prisma.$transaction(async (tx) => {
+      const found = await tx.serviceOrder.findFirst({
+        where: { id: query.orderId, ...siteFilter(query.sites) },
+        select: { encounterId: true },
+      });
+      if (!found) throw new OrderNotFoundError();
+
+      await tx.$queryRaw`SELECT id FROM "encounter" WHERE id = ${found.encounterId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM "service_order" WHERE id = ${query.orderId}::uuid FOR UPDATE`;
+
+      const current = await tx.serviceOrder.findUniqueOrThrow({
+        where: { id: query.orderId },
+        select: { status: true },
+      });
+      if (current.status !== 'DISCARDED') throw new OrderNotDiscardedError();
+
+      return tx.serviceOrder.update({
+        where: { id: query.orderId },
+        data: { status: 'DRAFT', discardedAt: null, discardedById: null },
         select: ORDER_SELECT,
       });
     });

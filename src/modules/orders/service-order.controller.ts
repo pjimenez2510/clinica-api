@@ -205,6 +205,23 @@ export class ServiceOrderController {
     return toOrderResponse(order);
   }
 
+  /** ORD-116. Undoes a discard: the same draft comes back, with its lines. */
+  @Post(':orderId/restore')
+  @RequirePermission('record:write', 'query')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Recuperar una orden en borrador descartada' })
+  @ApiOkResponse({ type: ServiceOrderDto })
+  async restore(
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Req() req: Request,
+  ): Promise<ServiceOrderResponse> {
+    const order = await this.orders.restore(
+      orderId,
+      this.requester(req, 'record:write'),
+    );
+    return toOrderResponse(order);
+  }
+
   /**
    * ORD-007, ORD-008. Anula una línea pedida por error.
    *

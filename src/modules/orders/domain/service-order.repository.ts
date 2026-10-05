@@ -230,6 +230,11 @@ export interface ServiceOrderRepository {
 
   /** ORD-099. Discards a draft, keeping the row with who and when. */
   discard(request: DraftDiscard): Promise<ServiceOrderView>;
+  /**
+   * ORD-116. DISCARDED back to DRAFT, as it was: same id, same lines, who and
+   * when cleared. `OrderNotDiscardedError` when it is not discarded.
+   */
+  restore(query: OrderQuery): Promise<ServiceOrderView>;
 
   /** ORD-009. One order with its lines, within the caller's scope. */
   byId(query: OrderQuery): Promise<ServiceOrderView | undefined>;

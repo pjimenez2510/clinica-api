@@ -167,6 +167,23 @@ export class OrderNotDraftError extends ConflictError {
 }
 
 /**
+ * ORD-116. Undoing a discard of an order that is not discarded.
+ *
+ * 409: nothing sent is wrong. It was already restored — a second «Deshacer»,
+ * another tab — or it never was discarded, and an issued order never goes
+ * back to a draft.
+ */
+export class OrderNotDiscardedError extends ConflictError {
+  readonly code = 'ORDER_NOT_DISCARDED';
+  override readonly userTitle =
+    'Esa orden ya no está descartada: se recuperó o nunca se descartó. Actualice la pantalla';
+
+  constructor() {
+    super('The service order is not DISCARDED');
+  }
+}
+
+/**
  * ORD-103 (D-123). A draft is corrected, issued or discarded only by the
  * professional the order is signed by — as a receta draft only by its
  * prescriber (PR-100): a colleague's issue would put an order under

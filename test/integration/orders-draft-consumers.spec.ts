@@ -226,6 +226,62 @@ describe('ORD-096 a ORD-099 las transiciones del borrador', () => {
     expect(discarded.number).toBeNull();
   });
 
+  it('ORD-116 deshacer el descarte devuelve el mismo borrador con sus líneas, aun con la atención cerrada', async () => {
+    const prisma = db();
+    const { scene, draft } = await aDraft(prisma);
+    const userId = (await prisma.practitioner.findUniqueOrThrow({ where: { id: scene.practitioner.id } })).userId; // prettier-ignore
+    const { orders } = adapters(prisma);
+    await orders.discard({ orderId: draft.id, sites: 'all', userId });
+    await prisma.encounter.update({
+      where: { id: scene.encounter.id },
+      data: {
+        status: 'COMPLETED',
+        endedAt: new Date(scene.encounter.startedAt.getTime() + 3_600_000),
+        dischargeCondition: 'ALIVE',
+      },
+    });
+
+    const restored = await orders.restore({ orderId: draft.id, sites: 'all' });
+
+    expect(restored).toMatchObject({
+      id: draft.id,
+      status: 'DRAFT',
+      discardedAt: null,
+      number: null,
+    });
+    expect(restored.items.map((item) => item.id)).toEqual(
+      draft.items.map((item) => item.id),
+    );
+  });
+
+  it('ORD-116 sólo se restaura lo descartado: un borrador vivo o una emitida responden ORDER_NOT_DISCARDED', async () => {
+    const prisma = db();
+    const { scene, draft } = await aDraft(prisma);
+    const userId = (await prisma.practitioner.findUniqueOrThrow({ where: { id: scene.practitioner.id } })).userId; // prettier-ignore
+    const { orders } = adapters(prisma);
+
+    await expect(
+      orders.restore({ orderId: draft.id, sites: 'all' }),
+    ).rejects.toMatchObject({ code: 'ORDER_NOT_DISCARDED' });
+    await issue(prisma, draft.id);
+    await expect(
+      orders.restore({ orderId: draft.id, sites: 'all' }),
+    ).rejects.toMatchObject({ code: 'ORDER_NOT_DISCARDED' });
+
+    // Control positivo: por el mismo camino, lo descartado vuelve.
+    const other = await orders.compose({
+      encounterId: scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [{ examDefinitionId: scene.bh.id }],
+      sites: 'all',
+    });
+    await orders.discard({ orderId: other.id, sites: 'all', userId });
+    await expect(
+      orders.restore({ orderId: other.id, sites: 'all' }),
+    ).resolves.toMatchObject({ status: 'DRAFT' });
+  });
+
   it('ORD-096 la orden descartada tampoco se reescribe, y una línea de borrador no nace hecha', async () => {
     const prisma = db();
     const { scene, draft } = await aDraft(prisma);

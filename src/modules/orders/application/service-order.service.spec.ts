@@ -108,6 +108,7 @@ class FakeOrders implements ServiceOrderRepository {
   rewritten: DraftRewrite[] = [];
   issued: OrderQuery[] = [];
   discarded: DraftDiscard[] = [];
+  restored: OrderQuery[] = [];
   pendingQueries: PendingOrdersQuery[] = [];
   charts = new Map<string, string>([['1710034065', 'chart-1']]);
 
@@ -125,6 +126,10 @@ class FakeOrders implements ServiceOrderRepository {
   }
   discard(request: DraftDiscard): Promise<ServiceOrderView> {
     this.discarded.push(request);
+    return Promise.resolve(anOrder(1));
+  }
+  restore(query: OrderQuery): Promise<ServiceOrderView> {
+    this.restored.push(query);
     return Promise.resolve(anOrder(1));
   }
   byId(query: OrderQuery): Promise<ServiceOrderView | undefined> {
@@ -305,6 +310,16 @@ describe('la emisión y el seguimiento de una orden', () => {
     expect(orders.discarded).toEqual([
       { orderId: 'order-1', sites: [SITE], userId: 'user-1' },
     ]);
+  });
+
+  it('ORD-116 deshace el descarte como acto de quien firma la orden; un colega no', async () => {
+    await service.restore('order-1', requester);
+    expect(orders.restored).toEqual([{ orderId: 'order-1', sites: [SITE] }]);
+
+    await expect(
+      service.restore('order-1', { ...requester, userId: 'user-2' }),
+    ).rejects.toMatchObject({ code: 'ORDER_DRAFT_OF_ANOTHER_PRACTITIONER' });
+    expect(orders.restored).toHaveLength(1);
   });
 
   it('D-123 un colega no corrige, emite ni descarta el borrador que firma otro profesional', async () => {

@@ -281,7 +281,8 @@ hemograma pedido como «Imagen» llega al laboratorio equivocado.
 `EX-GLUCOSA-AYUNAS`, emitirlo y comprobar que lleva el siguiente número de la
 sede y que un borrador descartado antes no consumió ninguno; pedir `EX-BH` en
 una orden de imagen y ver el rechazo.
-**Cubre:** ORD-095 a ORD-102.
+**Cubre:** ORD-095 a ORD-102, y **ORD-116**: el borrador que se descarta sin
+confirmación y vuelve con «Deshacer».
 
 **Solo servidor:** ORD-100, ORD-102. Que el borrador no salga en la cola, ni en
 caja, ni en la verificación, ni cuente para anular la atención son filtros de
@@ -1081,6 +1082,30 @@ marcar Imagen y pedir un hemograma.
   > emite o descarta sólo el profesional que firma la orden, como la receta
   > (PR-100), con `ORDER_DRAFT_OF_ANOTHER_PRACTITIONER`. Y al emitir se
   > vuelve a comprobar también el tipo de cada examen (ORD-097).
+  >
+  > **Enmendado por D-126 (resuelta el 04-10-2026):** descartar ya no se
+  > confirma; el error se arregla con «Deshacer», que devuelve el borrador
+  > (ORD-116). `DISCARDED` deja de ser un estado final.
+
+- **ORD-116** — CUANDO el profesional que firma la orden descarte un borrador,
+  el sistema NO DEBERÁ pedir confirmación ni motivo; y MIENTRAS la orden esté
+  en `DISCARDED`, CUANDO ese profesional la **recupere**, el sistema DEBERÁ
+  devolverla a `DRAFT` **tal como estaba** —mismo identificador, mismas líneas,
+  sin número— limpiando quién y cuándo se descartó. SI la orden no está en
+  `DISCARDED`, ENTONCES DEBERÁ rechazarlo con `ORDER_NOT_DISCARDED`; SI quien
+  la recupera no es quien la firma, ENTONCES DEBERÁ rechazarlo con
+  `ORDER_DRAFT_OF_ANOTHER_PRACTITIONER` (D-123.1).
+
+  > **Garantía de la base:** `service_order_guard_status` admite
+  > `DISCARDED → DRAFT` y ninguna otra vuelta atrás —lo emitido no regresa—,
+  > y en esa vuelta sólo deja cambiar el estado y quién/cuándo: el tipo, la
+  > prioridad, la indicación y lo demás siguen congelados
+  > (`20261005060100_service_order_restore_discarded_draft`).
+  > `service_order_discard_states_who_and_when` obliga a limpiar quién y
+  > cuándo. Se prueba contra la base con control positivo.
+  >
+  > **La atención cerrada no lo impide**, igual que no impide descartar: se
+  > devuelve el borrador adonde estaba, y emitirlo sigue sujeto a ORD-005.
 
 - **ORD-100** — Una orden que no esté en `ISSUED` NO DEBERÁ aparecer en la cola de
   pendientes, ni proponer cargo en caja, ni contar como acto clínico de la
@@ -1314,6 +1339,7 @@ contrato —`code`, estado y mensaje—.
 | `RESULT_SUPERSEDED` | 422 | Se intentó avisar de un valor cuyo informe ya fue corregido: se avisa el que lo sustituye | ORD-062 |
 | `CRITICAL_READ_BACK_REQUIRED` | 422 | Un aviso hecho sin confirmar que quien lo recibió repitió el valor | ORD-066 |
 | `ORDER_NOT_DRAFT` | 409 | Se intentó reescribir, emitir o descartar una orden que ya no está en borrador | ORD-096, ORD-098, ORD-099 |
+| `ORDER_NOT_DISCARDED` | 409 | Se intentó recuperar una orden que no está descartada: ya se recuperó, o nunca se descartó | ORD-116 |
 | `ORDER_NOT_ISSUED` | 409 | Se intentó registrar un informe, emparejar un resultado o anular una línea de una orden que no se ha emitido | ORD-100 |
 | `EXAM_DEFINITION_NOT_FOUND` | 404 | El examen no existe | ORD-103 |
 | `EXAM_CODE_DUPLICATE` | 409 | Otro examen ya lleva ese código. Lo arbitra `exam_definition_code_unique` | ORD-103 |
@@ -1371,7 +1397,8 @@ resuelto de quien llama.
 | `POST` | `/encounters/:encounterId/orders` | `record:write` | ORD-001 a ORD-005, ORD-095, ORD-097 |
 | `PUT` | `/orders/:orderId` | `record:write` | ORD-096, ORD-097 |
 | `POST` | `/orders/:orderId/issue` | `record:write` | ORD-006, ORD-098 |
-| `POST` | `/orders/:orderId/discard` | `record:write` | ORD-099 |
+| `POST` | `/orders/:orderId/discard` | `record:write` | ORD-099, ORD-116 |
+| `POST` | `/orders/:orderId/restore` | `record:write` | ORD-116 *(sólo una descartada, y sólo quien la firma)* |
 | `GET` | `/encounters/:encounterId/orders` | `record:read` | ORD-002, ORD-009 |
 | `GET` | `/orders/:orderId` | `record:read` | ORD-009 |
 | `POST` | `/orders/:orderId/items/:itemId/cancel` | `record:write` | ORD-007, ORD-008 |
@@ -1430,6 +1457,7 @@ columnas donde registrar quién lo decidió y por qué.
 | ORD-046, ORD-065 | Integración y unitario | El plazo es aritmética pura con el reloj inyectado; de dónde sale —el parámetro de la sede o su ausencia— se prueba contra la base. |
 | ORD-026 | Integración | El nombre viaja o no según el filtro, y se prueba con dos fichas reales. |
 | ORD-090, ORD-094 | Integración | `route-authorisation.spec` recorre las rutas que NestJS registró de verdad. |
+| ORD-116 | Integración y unitario | Que la vuelta `DISCARDED → DRAFT` limpie quién y cuándo y no mueva nada más lo garantiza un disparador: se prueba contra la base, con control positivo; recuperar devuelve las mismas líneas, y lo no descartado responde `ORDER_NOT_DISCARDED`. Que sólo quien firma recupera, con el servicio. |
 | Todos los códigos de error | Unitario | Contrato: `code`, categoría y mensaje. |
 
 ---
