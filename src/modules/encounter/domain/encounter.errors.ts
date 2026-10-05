@@ -395,6 +395,13 @@ export class BmiIsDerivedError extends ValidationError {
   }
 }
 
+/** EN-063. How each measurement is named in a refusal. */
+const ANTHROPOMETRY_LABELS: Readonly<Record<string, string>> = {
+  weightKg: 'Peso',
+  heightCm: 'Talla',
+  headCircumferenceCm: 'Perímetro cefálico',
+};
+
 /**
  * EN-063. Anthropometry that the instructivo makes obligatory is missing.
  *
@@ -402,11 +409,9 @@ export class BmiIsDerivedError extends ValidationError {
  * antropométricos con \* es obligatorio para usuarios menores de 5 años o que
  * corresponda al grupo prioritario "Embarazadas"»*.
  *
- * ⚠️ ONLY THE AGE HALF IS ENFORCED TODAY, and the reason is written on the
- * requirement rather than hidden here: the pregnancy half reads
- * `encounter_priority_group`, whose catalogue does not exist yet (EN-099). The
- * age used is the FROZEN one of EN-008 — what was true that day — never
- * today's, which is what keeps a report reprocessed next year identical.
+ * ONE SENTENCE FOR BOTH CONDITIONS. Which one applied is not said: the
+ * nurse already has the patient in front of her, and the fields named are
+ * what she has to fill.
  *
  * THE MISSING FIELDS ARE NAMED ONE BY ONE: «faltan datos» sends a nurse round
  * a form where three boxes could be the one.
@@ -414,16 +419,18 @@ export class BmiIsDerivedError extends ValidationError {
 export class VitalsRequiredError extends ValidationError {
   readonly code = 'VITALS_REQUIRED';
   override readonly userTitle =
-    'En menores de 5 años el peso, la talla y el perímetro cefálico son obligatorios';
+    'Faltan medidas obligatorias en menores de 5 años y embarazadas';
 
   constructor(missing: readonly string[]) {
     super(
-      `Mandatory anthropometry missing for a patient under five: ${missing.join(', ')}`,
+      `Mandatory anthropometry missing: ${missing.join(', ')}`,
       { missing: missing.join(',') },
       missing.map((field) => ({
         field,
         code: 'VITALS_REQUIRED',
-        message: 'Obligatorio en menores de 5 años',
+        // Named, because the screen joins the messages of several fields into
+        // one line, and three identical sentences say nothing.
+        message: `${ANTHROPOMETRY_LABELS[field] ?? field}: obligatorio en menores de 5 años y embarazadas`,
       })),
     );
   }
@@ -493,10 +500,16 @@ export class NoteContentIncompleteError extends ValidationError {
    * of their options: the same refusal, because what the doctor does next is
    * the same — fix the section named before signing.
    */
-  constructor(missing: readonly string[], invalid: readonly string[] = []) {
+  constructor(
+    missing: readonly string[],
+    invalid: readonly string[] = [],
+    /** EN-020. The 002 discharges the attention, and that needs a diagnosis. */
+    withoutDiagnosis = false,
+  ) {
+    const named = withoutDiagnosis ? [...missing, 'diagnoses'] : missing;
     super(
-      `Form is missing mandatory sections: ${missing.join(', ')}`,
-      { missing: missing.join(','), invalid: invalid.join(',') },
+      `Form is missing mandatory sections: ${named.join(', ')}`,
+      { missing: named.join(','), invalid: invalid.join(',') },
       [
         ...missing.map((section) => ({
           field: `content.${section}`,
@@ -508,6 +521,15 @@ export class NoteContentIncompleteError extends ValidationError {
           code: 'NOTE_CONTENT_INCOMPLETE',
           message: 'Elija una de las opciones de la lista',
         })),
+        ...(withoutDiagnosis
+          ? [
+              {
+                field: 'diagnoses',
+                code: 'NOTE_CONTENT_INCOMPLETE',
+                message: 'Registre al menos un diagnóstico antes de firmar',
+              },
+            ]
+          : []),
       ],
     );
   }

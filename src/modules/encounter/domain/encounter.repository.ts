@@ -31,6 +31,7 @@ import type {
 } from './encounter';
 import type { StateChange } from './encounter-state';
 import type { ClosurePlan } from './encounter-closure';
+import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import type { VitalSigns } from './vital-signs';
 import type { TriggeringFact } from './patient-flow';
 
@@ -369,6 +370,17 @@ export interface EncounterRepository {
 
   /** EN-068. The vital signs of one attention, or `null` when none were taken. */
   findVitals(query: EncounterQuery): Promise<VitalSignsView | null>;
+
+  /**
+   * EN-063. Whether the chart had a PREGNANT record (PA-034) in force on that
+   * clinical date — its own rows and those of every chart it absorbed
+   * (PA-055). The period is inclusive at both ends, like PA-036's.
+   *
+   * THE CHART AND NOT `encounter_priority_group`, which has no catalogue yet
+   * (EN-099). The dated record is what was true that day, which is the reason
+   * EN-063 named the attention in the first place.
+   */
+  isPregnantOn(patientId: string, on: ClinicalDate): Promise<boolean>;
 
   /**
    * EN-211. The takings corrections replaced, newest first; empty when the

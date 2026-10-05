@@ -15,6 +15,7 @@ import {
 } from '../domain/clinical-note';
 import {
   backgroundSnapshotIn,
+  draftContent,
   withBackgroundSnapshot,
   type BackgroundSnapshot,
 } from '../domain/background-snapshot';
@@ -179,7 +180,7 @@ export class ClinicalNoteService {
       formVersion: request.formVersion,
       templateId: template.id,
       // EN-206. The snapshot is the server's to write, at the signature.
-      content: withBackgroundSnapshot(request.content, null),
+      content: draftContent(request.content),
       authorId: author.practitionerId,
       authorUserId: requester.userId,
       sites: requester.sites,
@@ -248,7 +249,7 @@ export class ClinicalNoteService {
         noteId: request.noteId,
         sites: requester.sites,
       },
-      withBackgroundSnapshot(request.content, null),
+      draftContent(request.content),
       (note) => assertEditable(note.status),
     );
 
@@ -320,8 +321,13 @@ export class ClinicalNoteService {
         const content = withBackgroundSnapshot(note.content, background);
         // EN-020, EN-205, EN-207. The required sections of the note's own
         // template — which always include the minimum of art. 6 — demanded
-        // at the moment the note becomes the record.
-        assertNoteComplete(template, content);
+        // at the moment the note becomes the record — and, for the note that
+        // discharges, a diagnosis on the attention.
+        assertNoteComplete(
+          template,
+          content,
+          form.dischargesTheEncounter && encounter.diagnosisCount === 0,
+        );
 
         /**
          * EN-009, EN-130. Signing the consultation note discharges the

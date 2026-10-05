@@ -34,6 +34,13 @@ export const BACKGROUND_SNAPSHOT_KEY = 'backgroundSnapshot';
 /** EN-207. The section the snapshot can stand in for. */
 export const BACKGROUND_SECTION = 'antecedentes';
 
+/**
+ * EN-207, D-125. The draft's «niega antecedentes»: `true` or absent. What the
+ * patient said at THIS visit, so it is the note's and not the chart's; at the
+ * signature it moves into the snapshot as `historyDenied`.
+ */
+export const BACKGROUND_DENIED_KEY = 'backgroundDenied';
+
 export interface BackgroundSnapshot {
   takenAt: string;
   allergies: {
@@ -49,6 +56,11 @@ export interface BackgroundSnapshot {
     relative: string;
     recordedAt: string;
   }[];
+  /**
+   * EN-207. «Niega antecedentes» at the signature, only when nothing was
+   * recorded. Absent on notes signed before it, which reads as `false`.
+   */
+  historyDenied?: boolean;
 }
 
 /**
@@ -88,21 +100,67 @@ export function backgroundSnapshotOf(input: {
         relative: entry.relative ?? '',
         recordedAt: entry.recordedAt.toISOString(),
       })),
+    historyDenied: false,
   };
 }
 
 /**
- * EN-206. The content with THIS snapshot under the reserved key, or with none
- * when `snapshot` is null — never with the one the caller sent.
+ * EN-206, EN-207. A draft's content as the server stores it: never with a
+ * snapshot the caller sent, and with its «niega antecedentes» kept until the
+ * signature.
+ */
+export function draftContent(content: NoteContent): NoteContent {
+  return Object.fromEntries(
+    Object.entries(content).filter(([key]) => key !== BACKGROUND_SNAPSHOT_KEY),
+  );
+}
+
+/**
+ * EN-206, EN-207. The content a SIGNATURE seals: with THIS snapshot under the
+ * reserved key, or with none when `snapshot` is null — never with the one the
+ * caller sent — and never with the draft's «niega antecedentes» loose in it.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * «NIEGA ANTECEDENTES» MOVES INTO THE SNAPSHOT, AND ONLY WHEN IT IS TRUE
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * It is frozen as `historyDenied` only when nothing contradicts it: no
+ * personal or family history recorded, and no text written in
+ * «antecedentes». A note saying both would contradict itself, and it is what
+ * a court would be shown.
+ *
+ * EACH SIGNATURE DECIDES ITS OWN, the amendment included: the statement comes
+ * from the content being signed, never from the snapshot inherited, so an
+ * amendment can take back a «niega» marked by mistake (EN-025). A snapshot
+ * signed before the statement existed has no `historyDenied` key, and it is
+ * left without one unless this signature states it: that is what keeps such
+ * a note judged by the rule it was signed under (`coversBackgroundSection`).
  */
 export function withBackgroundSnapshot(
   content: NoteContent,
   snapshot: BackgroundSnapshot | null,
 ): NoteContent {
-  const rest = Object.fromEntries(
-    Object.entries(content).filter(([key]) => key !== BACKGROUND_SNAPSHOT_KEY),
+  const denied = content[BACKGROUND_DENIED_KEY];
+  const prose = Object.fromEntries(
+    Object.entries(content).filter(
+      ([key]) =>
+        key !== BACKGROUND_SNAPSHOT_KEY && key !== BACKGROUND_DENIED_KEY,
+    ),
   );
-  return snapshot ? { ...rest, [BACKGROUND_SNAPSHOT_KEY]: snapshot } : rest;
+  if (!snapshot) return prose;
+
+  const text = prose[BACKGROUND_SECTION];
+  const historyDenied =
+    denied === true &&
+    snapshot.personalHistory.length === 0 &&
+    snapshot.familyHistory.length === 0 &&
+    (typeof text !== 'string' || text.trim() === '');
+  const { historyDenied: inherited, ...facts } = snapshot;
+  const sealed: BackgroundSnapshot =
+    historyDenied || inherited !== undefined
+      ? { ...facts, historyDenied }
+      : facts;
+  return { ...prose, [BACKGROUND_SNAPSHOT_KEY]: sealed };
 }
 
 /** The snapshot a signed note carries, or `null` (notes signed before it). */
@@ -116,17 +174,22 @@ export function backgroundSnapshotIn(
 }
 
 /**
- * EN-207, D-125. An allergy or a history entry makes the «antecedentes»
- * section written. «Sin alergias conocidas» alone does NOT: it says nothing of
+ * EN-207, D-125 (adjusted 05-10-2026). A personal or family history entry, or
+ * «niega antecedentes», makes the «antecedentes» section written. An allergy
+ * alone does NOT, nor does «sin alergias conocidas»: neither says anything of
  * the personal and family history art. 6 asks for.
  */
 export function coversBackgroundSection(
   snapshot: BackgroundSnapshot | null,
 ): boolean {
   if (!snapshot) return false;
-  return (
-    snapshot.allergies.length > 0 ||
-    snapshot.personalHistory.length > 0 ||
-    snapshot.familyHistory.length > 0
-  );
+  const historyRecorded =
+    snapshot.personalHistory.length > 0 || snapshot.familyHistory.length > 0;
+  // A snapshot signed before D-125 was adjusted (no `historyDenied` key) is
+  // judged by the rule it was signed under, where an allergy covered the
+  // section: amending it must not demand what its signature did not.
+  if (snapshot.historyDenied === undefined) {
+    return historyRecorded || snapshot.allergies.length > 0;
+  }
+  return historyRecorded || snapshot.historyDenied;
 }

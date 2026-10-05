@@ -291,6 +291,9 @@ export const DOMAIN_ERROR_CODES = [
   //   * `PRIORITY_GROUP_NOT_FOUND` (404) — la fila no existe, es de otro
   //     paciente o es una que quien pregunta no puede ver. Las tres responden
   //     igual, por lo mismo que `PATIENT_NOT_FOUND`.
+  //   * `PRIORITY_GROUP_ALREADY_CLOSED` (409) — cerrar un registro que ya
+  //     estaba cerrado. El primer cierre se conserva (PA-037).
+  'PRIORITY_GROUP_ALREADY_CLOSED',
   'PRIORITY_GROUP_EVIDENCE_REQUIRED',
   'PRIORITY_GROUP_NOT_FOUND',
   'PRIORITY_GROUP_NOT_RECORDABLE',

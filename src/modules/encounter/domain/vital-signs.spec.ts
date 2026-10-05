@@ -66,7 +66,7 @@ describe('los signos vitales', () => {
 
   it('EN-063 exige peso, talla y perímetro cefálico en un menor de 5 años', () => {
     try {
-      assertMandatoryAnthropometry({ weightKg: 3.4 }, NEWBORN);
+      assertMandatoryAnthropometry({ weightKg: 3.4 }, NEWBORN, false);
       expect.unreachable('la antropometría obligatoria debía exigirse');
     } catch (error) {
       expect(error).toBeInstanceOf(VitalsRequiredError);
@@ -86,6 +86,7 @@ describe('los signos vitales', () => {
       assertMandatoryAnthropometry(
         { weightKg: 3.4, heightCm: 50, headCircumferenceCm: 34.5 },
         NEWBORN,
+        false,
       ),
     ).not.toThrow();
   });
@@ -94,8 +95,10 @@ describe('los signos vitales', () => {
     // Literal from the instructivo (p. 44): «para el resto de usuarios el
     // registro es opcional». A required field here would refuse the ordinary
     // adult consultation.
-    expect(() => assertMandatoryAnthropometry({}, ADULT)).not.toThrow();
-    expect(() => assertMandatoryAnthropometry({}, SCHOOLCHILD)).not.toThrow();
+    expect(() => assertMandatoryAnthropometry({}, ADULT, false)).not.toThrow();
+    expect(() =>
+      assertMandatoryAnthropometry({}, SCHOOLCHILD, false),
+    ).not.toThrow();
   });
 
   it('EN-063 no exige nada cuando la atención no tiene edad congelada', () => {
@@ -106,7 +109,37 @@ describe('los signos vitales', () => {
       assertMandatoryAnthropometry(
         {},
         { years: null, months: null, days: null },
+        false,
       ),
     ).not.toThrow();
+  });
+
+  it('EN-063 exige peso y talla a la embarazada, y no el perímetro cefálico (D-129)', () => {
+    try {
+      assertMandatoryAnthropometry({ hemoglobinGDl: 11.5 }, ADULT, true);
+      expect.unreachable('la antropometría de la embarazada debía exigirse');
+    } catch (error) {
+      expect(error).toBeInstanceOf(VitalsRequiredError);
+      expect(
+        (error as VitalsRequiredError).fieldErrors?.map((field) => field.field),
+      ).toEqual(['weightKg', 'heightCm']);
+    }
+    expect(() =>
+      assertMandatoryAnthropometry(
+        { weightKg: 61, heightCm: 158 },
+        ADULT,
+        true,
+      ),
+    ).not.toThrow();
+  });
+
+  it('EN-063 sigue exigiendo las tres medidas a una menor de 5 años, embarazada o no', () => {
+    expect(() =>
+      assertMandatoryAnthropometry(
+        { weightKg: 12, heightCm: 86 },
+        TODDLER,
+        true,
+      ),
+    ).toThrow(VitalsRequiredError);
   });
 });

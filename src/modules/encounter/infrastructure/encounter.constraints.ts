@@ -245,6 +245,17 @@ registerConstraintMeanings({
     field: 'amendmentReason',
     message: 'Indique el motivo de la enmienda: queda escrito junto a la versión nueva', // prettier-ignore
   },
+  /**
+   * EN-020. The deferred trigger: the consultation note signed and the
+   * attention discharged with no diagnosis. The service refuses it first,
+   * under the attention's lock; this is the sentence for whatever reaches the
+   * commit anyway.
+   */
+  clinical_note_sign_needs_diagnosis: {
+    code: 'NOTE_CONTENT_INCOMPLETE',
+    field: 'diagnoses',
+    message: 'Registre al menos un diagnóstico antes de firmar',
+  },
   /** EN-024. `clinical_note_chain_version_unique`: versions never repeat. */
   clinical_note_chain_version_unique: {
     code: 'NOTE_VERSION_TAKEN',

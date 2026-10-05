@@ -64,6 +64,7 @@ const ENCOUNTER_FOR_NOTE = {
   endedAt: true,
   dischargeCondition: true,
   agendaEntryId: true,
+  _count: { select: { diagnoses: true } },
 } satisfies Prisma.EncounterSelect;
 
 /**
@@ -265,6 +266,12 @@ export class PrismaClinicalNoteRepository implements ClinicalNoteRepository {
   ): Promise<ClinicalNoteView> {
     return this.prisma.$transaction(async (tx) => {
       const note = await requireNote(tx, query);
+      // EN-020. Locked before the diagnoses are counted, as every writer of
+      // the attention does: a diagnosis removed meanwhile waits for this
+      // signature instead of slipping between the count and the discharge.
+      await tx.$queryRaw`
+        SELECT 1 FROM "encounter" WHERE "id" = ${note.encounterId}::uuid FOR UPDATE
+      `;
       const encounter = await requireEncounter(
         tx,
         query.encounterId,
@@ -478,6 +485,7 @@ function toEncounterRead(
     practitionerId: row.practitionerId,
     endedAt: row.endedAt,
     dischargeCondition: row.dischargeCondition,
+    diagnosisCount: row._count.diagnoses,
   };
 }
 

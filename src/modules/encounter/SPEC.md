@@ -851,6 +851,33 @@ requisitos que cambian.
   > prosa que sólo se muestra e imprime vive aquí»*. Meter el motivo de consulta en
   > una columna no compraría nada; sacar el diagnóstico del JSON haría imposible
   > el reporte mensual.
+  >
+  > **Enmendado el 04-10-2026 (`fix/fallos-inventario`, AT-14 del inventario de
+  > D-126).** CUANDO se firme el formulario 002, el sistema DEBERÁ exigir, además
+  > de las seis secciones de prosa, **al menos un diagnóstico** registrado en la
+  > atención, y SI falta, ENTONCES DEBERÁ rechazar la firma con
+  > `NOTE_CONTENT_INCOMPLETE` nombrando `diagnoses` junto a las secciones que
+  > falten. Hasta entonces sólo lo frenaba la pantalla, y un cliente de la API
+  > —el asistente de IA de D-127.5— firmaba una nota sin diagnóstico: una
+  > atención dada de alta que el RDACAA no puede reportar. **Garantía de la
+  > base:** `trg_clinical_note_sign_needs_diagnosis`, diferido al final de la
+  > transacción, rechaza que una nota 002 pase de `DRAFT` a `SIGNED` si la
+  > atención queda con el alta y sin ninguna fila en `encounter_diagnosis`. Lo
+  > que cubre es **la firma**: un alta escrita en otra sentencia sin firmar la
+  > nota (un `UPDATE encounter` desde `psql`, una importación que inserta la
+  > 002 ya firmada) no lo dispara, y hoy el único camino de código que da el
+  > alta es esta firma. La firma bloquea la atención (`FOR UPDATE`) antes de
+  > contar, así que quitar el último diagnóstico mientras se firma espera a la
+  > firma y no se cuela entre el conteo y el alta.
+  > Diferido porque interrumpir (EN-167) también firma la 002 y deja la atención
+  > `DISCONTINUED` sin exigir diagnóstico, y sólo al confirmar se sabe cuál de
+  > las dos fue. La enmienda, que nace firmada, no lo necesita: parte de una
+  > 002 que ya pasó por aquí, en una atención que tras el alta no puede
+  > quedarse sin diagnóstico. Es la otra mitad de
+  > `encounter_diagnosis_last_after_discharge` (EN-188): aquélla impide quitar el
+  > último tras el alta, ésta impide llegar al alta sin ninguno. La 005 no lo
+  > exige: el art. 6 rige el contenido mínimo de la historia, y aquí lo cumple
+  > la 002.
 - **EN-021** — El sistema DEBERÁ identificar cada nota por su **código de
   formulario del MSP** guardado como dato, y NO DEBERÁ codificar la lista de
   formularios en el esquema.
@@ -1329,15 +1356,34 @@ requisitos que cambian.
   > la restricción que falló —el valor viaja en la fila, que nunca se lee—: así el
   > 422 `VITALS_OUT_OF_RANGE` señala la casilla (`weightKg`, `temperatureC`…) con
   > un mensaje que dice el rango. El par sistólica/diastólica señala `systolicBp`.
-- **EN-063** — MIENTRAS el paciente sea **menor de 5 años** o tenga registrado el
-  grupo prioritario **embarazada**, el sistema DEBERÁ exigir peso, talla y
-  perímetro cefálico; para el resto DEBERÁN ser opcionales.
+- **EN-063** — MIENTRAS el paciente sea **menor de 5 años**, el sistema DEBERÁ
+  exigir peso, talla y perímetro cefálico; MIENTRAS tenga registrado el grupo
+  prioritario **embarazada**, DEBERÁ exigir peso y talla (D-129); para el resto
+  DEBERÁN ser opcionales.
   > Es literal de la nota del instructivo al bloque D (p. 44): *«los datos
   > antropométricos con \* es obligatorio para usuarios menores de 5 años o que
   > corresponda al grupo prioritario "Embarazadas"; para el resto de usuarios el
   > registro es opcional»*. La edad es la **congelada** de EN-008 y el grupo se lee
   > de `encounter_priority_group` (EN-099), no de la ficha: lo que cuenta es lo que
   > era verdad ese día.
+  >
+  > **Enmendado el 04-10-2026 (`fix/fallos-inventario`, AT-18 del inventario de
+  > D-126).** Hasta entonces sólo se aplicaba la mitad de la edad. Dos
+  > precisiones:
+  >
+  > - **De dónde sale el embarazo.** `encounter_priority_group` no se puede
+  >   poblar mientras falte su catálogo (EN-099), así que se lee el registro
+  >   `PREGNANT` de la ficha (PA-034) **vigente en la fecha clínica de la
+  >   atención** (`America/Guayaquil`), con el alcance de PA-055. Su periodo
+  >   fechado es lo que era verdad ese día, que es lo que la frase de arriba
+  >   protege. Cuando EN-099 tenga catálogo, la fuente pasa a ser la atención.
+  > - **Qué se exige a la embarazada: peso y talla.** El instructivo pone
+  >   asterisco también al perímetro cefálico, que la misma página describe como
+  >   «la medida… de la cabeza del niño». **D-129** (resuelta por el autor el
+  >   05-10-2026) no lo exige en la gestante.
+  >
+  > El error no dice cuál de las dos condiciones se cumplió: `VITALS_REQUIRED`
+  > nombra los campos y la frase cubre las dos.
 - **EN-064** — El sistema DEBERÁ registrar **cómo se tomó la talla**: **1 de
   pie** o **2 acostado**.
   > Columna 23 del RDACAA. No es un detalle
@@ -3075,12 +3121,30 @@ dejaba ver su atención._
   > esos milisegundos queda en la ficha y en su rastro, y la foto dice lo que
   > la ficha decía en `takenAt`.
 - **EN-207** — CUANDO se firme una nota de consulta, el sistema DEBERÁ dar por
-  escrita la sección de **antecedentes** si tiene texto **o** si la foto de
-  EN-206 contiene al menos una alergia activa o un antecedente; «sin alergias
-  conocidas» por sí sola NO DEBERÁ bastar (D-125).
+  escrita la sección de **antecedentes** si tiene texto, **o** si la foto de
+  EN-206 contiene al menos un antecedente personal o familiar, **o** si el
+  borrador lleva la constancia **«niega antecedentes»**; una alergia sola y
+  «sin alergias conocidas» NO DEBERÁN bastar (D-125, ajustada el 05-10-2026).
   > Así el médico no reescribe lo que ya registró, y el texto queda para lo que
-  > no cabe en una alergia o un antecedente. «Sin alergias conocidas» no dice
+  > no cabe en un antecedente. Ni una alergia ni «sin alergias conocidas» dicen
   > nada de los antecedentes personales ni familiares que pide el art. 6.
+  >
+  > **La constancia es de la nota, no de la ficha** (`fix/fallos-inventario`):
+  > es lo que dijo el paciente en ESTA consulta y puede cambiar en la
+  > siguiente, a diferencia de un antecedente registrado. Viaja en el borrador
+  > como `backgroundDenied: true` —el único valor del contenido que no es
+  > texto, y sólo admite `true`—, se marca con un clic y sin motivo (D-126), y
+  > al firmar pasa a la foto como `historyDenied`, dentro del hash (EN-027);
+  > quién y cuándo son el firmante y el instante de la firma. **No se congela
+  > si algo la contradice**: un antecedente registrado o texto escrito en la
+  > sección. La nota diría las dos cosas.
+  >
+  > **Cada firma decide la suya, también la enmienda** (EN-025): la constancia
+  > sale del contenido que se firma, nunca de la foto heredada, así que una
+  > enmienda puede retirar una constancia marcada por error. **Una foto firmada
+  > antes de esta regla** (sin `historyDenied`) se juzga con la regla con que
+  > se firmó, en la que una alergia cubría la sección. Así, enmendar una nota
+  > antigua no exige lo que su firma no exigía.
 - **EN-208** — El sistema DEBERÁ permitir buscar las atenciones de una ficha
   **por la cita** de la que nacieron, en cualquier estado salvo anulada por
   error, con `record:read`.
@@ -3114,6 +3178,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `DIAGNOSIS_CONCEPT_NOT_IN_FORCE` | 422 | El código CIE-10 no estaba vigente en la fecha de la atención. **Lo emite el adaptador**, no el mapeo de constraints: `trg_diagnosis_concept_in_force` levanta `integrity_constraint_violation` desde PL/pgSQL, así que el nombre del disparador nunca viaja al cliente | EN-042 |
 | `VITALS_OUT_OF_RANGE` | 422 | Medida fuera de rango. Del mapeo de constraints: `encounter_vitals_ranges_*`, una por medida (D-058). **Por campo**, señalando cuál y diciendo el rango | EN-062 |
 | `VITALS_REQUIRED` | 422 | Falta antropometría obligatoria en menor de 5 años o embarazada | EN-063 |
+| `NOTE_CONTENT_INCOMPLETE` | 422 | Firmar sin una sección obligatoria, o la 002 sin ningún diagnóstico en la atención (`diagnoses`). Nombra lo que falta, nunca su contenido | EN-020 |
 | `BMI_IS_DERIVED` | 422 | Se envió el IMC en la petición | EN-061 |
 | `VIOLENCE_SCREENING_RESTRICTED` | 403 | Se intentó **registrar** el tamizaje sin la segunda llave. Al **leer** no se rechaza: se omite | EN-072 |
 | `HIV_DATA_RESTRICTED` | 403 | Lo mismo para el bloque de VIH | EN-095 |

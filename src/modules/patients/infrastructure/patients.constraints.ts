@@ -2,6 +2,15 @@ import { registerConstraintMeanings } from '../../../shared/http/constraint-mean
 
 /** See `agenda.constraints.ts` for why each module registers its own. */
 registerConstraintMeanings({
+  /**
+   * PA-037. A closed record keeps its first closure. The service and the
+   * conditional update refuse a second one first; this is the net.
+   */
+  patient_priority_group_closure_once: {
+    code: 'PRIORITY_GROUP_ALREADY_CLOSED',
+    field: 'endsOn',
+    message: 'Ese registro ya estaba cerrado. Se conserva el primer cierre',
+  },
   patient_identifier_cedula_valid: {
     code: 'INVALID_CEDULA',
     field: 'value',

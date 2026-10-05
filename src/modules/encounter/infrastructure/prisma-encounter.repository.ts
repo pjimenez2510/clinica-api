@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import { chartScope } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
@@ -564,6 +565,23 @@ export class PrismaEncounterRepository implements EncounterRepository {
 
       return toVitalsView(row);
     });
+  }
+
+  /** EN-063. A PREGNANT record of the chart, in force on that clinical date. */
+  async isPregnantOn(patientId: string, on: ClinicalDate): Promise<boolean> {
+    const day = new Date(`${on}T00:00:00Z`);
+    const found = await this.prisma.patientPriorityGroup.findFirst({
+      where: {
+        ...chartScope(patientId),
+        groupCode: 'PREGNANT',
+        startsOn: { lte: day },
+        // PA-036 makes the pregnancy's end mandatory; `null` is admitted all
+        // the same, as «not ended», for the persistent groups' shape.
+        OR: [{ endsOn: null }, { endsOn: { gte: day } }],
+      },
+      select: { id: true },
+    });
+    return found !== null;
   }
 
   /**

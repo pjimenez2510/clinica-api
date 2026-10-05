@@ -167,6 +167,11 @@ class FakeEncounters implements EncounterRepository {
     return Promise.resolve(null);
   }
 
+  /** EN-063. The pregnancy half is proven against the database. */
+  isPregnantOn(): Promise<boolean> {
+    return Promise.resolve(false);
+  }
+
   findVitalsVersions(): Promise<VitalsVersionView[]> {
     return Promise.resolve([]);
   }

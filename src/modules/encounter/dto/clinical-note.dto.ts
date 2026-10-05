@@ -41,10 +41,16 @@ const DISCHARGE_CONDITION = z.enum([
  * `assertNoteComplete`, which asks for non-empty text, and would then be
  * unprintable — and this content is what a court is shown.
  */
-const noteContent = z.record(
-  z.string(),
-  z.string({ error: 'Cada sección del formulario es texto' }),
-);
+const noteContent = z
+  .object({
+    /**
+     * EN-207, D-125. «Niega antecedentes», one click and no reason: the only
+     * value that is not text, and it is only ever `true`. The signature moves
+     * it into the background snapshot.
+     */
+    backgroundDenied: z.literal(true).optional(),
+  })
+  .catchall(z.string({ error: 'Cada sección del formulario es texto' }));
 
 /**
  * EN-020, EN-021, EN-137. Opening a note.

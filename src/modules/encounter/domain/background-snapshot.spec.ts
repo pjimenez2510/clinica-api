@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  BACKGROUND_DENIED_KEY,
   BACKGROUND_SNAPSHOT_KEY,
   backgroundSnapshotIn,
   backgroundSnapshotOf,
   coversBackgroundSection,
+  draftContent,
   withBackgroundSnapshot,
+  type BackgroundSnapshot,
 } from './background-snapshot';
 import { NoteContentIncompleteError } from './encounter.errors';
 import { contentHashOf } from './clinical-note';
@@ -115,6 +118,7 @@ describe('la foto de alergias y antecedentes al firmar', () => {
           recordedAt: EARLIER.toISOString(),
         },
       ],
+      historyDenied: false,
     });
   });
 
@@ -171,16 +175,87 @@ describe('la sección de antecedentes cubierta por lo registrado', () => {
   const form = builtInTemplate('002');
   const noText = { ...COMPLETE_002, antecedentes: '' };
 
-  it('EN-207 da por escrita la sección sin texto si hay una alergia registrada', () => {
+  it('EN-207 NO da por escrita la sección con una alergia sola (D-125 ajustada)', () => {
     expect(coversBackgroundSection(snapshot({ allergies: [PENICILLIN] }))).toBe(
-      true,
+      false,
     );
     expect(() =>
       assertNoteComplete(
         form,
         withBackgroundSnapshot(noText, snapshot({ allergies: [PENICILLIN] })),
       ),
-    ).not.toThrow();
+    ).toThrow(NoteContentIncompleteError);
+  });
+
+  it('EN-207 da por escrita la sección con la constancia «niega antecedentes», que pasa a la foto', () => {
+    const signed = withBackgroundSnapshot(
+      { ...noText, [BACKGROUND_DENIED_KEY]: true },
+      snapshot({}),
+    );
+
+    expect(backgroundSnapshotIn(signed)?.historyDenied).toBe(true);
+    // La foto es la única constancia: la clave del borrador no se firma suelta.
+    expect(signed).not.toHaveProperty(BACKGROUND_DENIED_KEY);
+    expect(() => assertNoteComplete(form, signed)).not.toThrow();
+  });
+
+  it('EN-207 con un antecedente registrado la constancia no entra en la foto', () => {
+    const signed = withBackgroundSnapshot(
+      { ...noText, [BACKGROUND_DENIED_KEY]: true },
+      snapshot({ history: [DIABETES_MOTHER] }),
+    );
+
+    expect(backgroundSnapshotIn(signed)?.historyDenied).toBe(false);
+  });
+
+  it('EN-207 el borrador conserva la constancia hasta la firma', () => {
+    const draft = draftContent({ ...noText, [BACKGROUND_DENIED_KEY]: true });
+
+    expect(draft[BACKGROUND_DENIED_KEY]).toBe(true);
+  });
+
+  it('EN-207 con texto en antecedentes la constancia no se congela: la nota no se contradice', () => {
+    const signed = withBackgroundSnapshot(
+      {
+        ...COMPLETE_002,
+        antecedentes: 'HTA desde 2019',
+        [BACKGROUND_DENIED_KEY]: true,
+      },
+      snapshot({}),
+    );
+
+    expect(backgroundSnapshotIn(signed)?.historyDenied).toBe(false);
+    expect(signed).not.toHaveProperty(BACKGROUND_DENIED_KEY);
+  });
+
+  it('EN-025 EN-207 la enmienda decide su constancia: la que no la trae la retira', () => {
+    const inherited = { ...snapshot({}), historyDenied: true };
+
+    const amended = withBackgroundSnapshot(
+      { ...COMPLETE_002, antecedentes: 'HTA' },
+      inherited,
+    );
+
+    expect(backgroundSnapshotIn(amended)?.historyDenied).toBe(false);
+  });
+
+  it('EN-207 una foto firmada antes de la constancia se juzga con su regla: la alergia la cubría', () => {
+    const legacy: BackgroundSnapshot = snapshot({ allergies: [PENICILLIN] });
+    delete legacy.historyDenied;
+
+    const amended = withBackgroundSnapshot(noText, legacy);
+
+    expect(backgroundSnapshotIn(amended)).not.toHaveProperty('historyDenied');
+    expect(() => assertNoteComplete(form, amended)).not.toThrow();
+  });
+
+  it('EN-207 sin foto (nota anterior a EN-206) la constancia no queda suelta en lo firmado', () => {
+    const sealed = withBackgroundSnapshot(
+      { ...COMPLETE_002, [BACKGROUND_DENIED_KEY]: true },
+      null,
+    );
+
+    expect(sealed).not.toHaveProperty(BACKGROUND_DENIED_KEY);
   });
 
   it('EN-207 da por escrita la sección sin texto si hay un antecedente registrado', () => {
@@ -222,7 +297,7 @@ describe('la sección de antecedentes cubierta por lo registrado', () => {
         form,
         withBackgroundSnapshot(
           { ...COMPLETE_002, examenFisico: '' },
-          snapshot({ allergies: [PENICILLIN] }),
+          snapshot({ history: [DIABETES_MOTHER] }),
         ),
       ),
     ).toThrow(NoteContentIncompleteError);

@@ -9,6 +9,7 @@ import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import {
   PatientMergedError,
   PatientNotFoundError,
+  PriorityGroupAlreadyClosedError,
   PriorityGroupNotFoundError,
   RestrictedPriorityGroupError,
 } from '../domain/patient.errors';
@@ -206,6 +207,9 @@ export class PatientPriorityService {
     if (!existing || !this.mayHandle(existing.group, principal)) {
       throw new PriorityGroupNotFoundError();
     }
+
+    // PA-037. A second closure would overwrite the first one's who and when.
+    if (existing.closedAt !== null) throw new PriorityGroupAlreadyClosedError();
 
     /**
      * LA MISMA REGLA QUE AL REGISTRAR, Y POR EL MISMO SITIO.
