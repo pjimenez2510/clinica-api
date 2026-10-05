@@ -1582,8 +1582,8 @@ dos registros distintos.**
   el sistema DEBERÁ rechazarlo con `SERVICE_KIND_MISMATCH`; y SI se cambia a
   una categoría de otra clase una prestación que es la consulta de una
   especialidad, que está atada a un concepto de procedimiento (la nueva no es
-  `PROCEDURE`) o por la que se cobra un examen (la nueva no es `LABORATORY` ni
-  `IMAGING`), ENTONCES DEBERÁ rechazarlo igual. La clase de una categoría
+  `PROCEDURE`) o por la que se cobra un examen (la nueva no es el tipo de ese
+  examen, ORD-108), ENTONCES DEBERÁ rechazarlo igual. La clase de una categoría
   DEBERÁ poder cambiarse sólo mientras ninguna de sus prestaciones tenga una
   de esas ataduras que la clase nueva no admita. Lo que no toca la categoría ni
   la atadura —renombrar, cambiar el impuesto, desactivar— NO DEBERÁ
@@ -1602,6 +1602,11 @@ dos registros distintos.**
   > pasaba: la correspondencia de BI-158 sólo la podía cambiar la siembra.
   > Queda conectado, y la siembra sólo ata consultas en categorías de clase
   > consulta.
+  >
+  > **Desde `fix/atencion-examenes` (ORD-108):** el examen tiene tipo
+  > —laboratorio, imagen o procedimiento— y la prestación con que se cobra es de
+  > esa misma clase. Antes la regla admitía «laboratorio o imagen» para todo
+  > examen, y un electrocardiograma no podía cobrarse como procedimiento.
 - **BI-188** — CUANDO se consulte una prestación de clase `LABORATORY` o
   `IMAGING`, el sistema DEBERÁ servir los exámenes del catálogo de exámenes que
   se cobran con ella (`exam_definition.billable_service_id`), y NO DEBERÁ

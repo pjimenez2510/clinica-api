@@ -111,8 +111,9 @@ una interoperación y afirma algo falso.
 5. Las dos colas de seguridad: **resultados sin orden** y **valores críticos**.
 6. La conciliación por **`Cedula`** de un informe en papel contra las órdenes
    abiertas de esa ficha.
-7. El catálogo de lo ordenable, en lectura: qué exámenes hay, qué analitos
-   producen, qué muestra y qué preparación necesitan.
+7. El catálogo de lo ordenable: qué exámenes hay, qué analitos producen, qué
+   muestra y qué preparación necesitan; y, con `catalog:manage`, su alta y su
+   corrección desde la pantalla (§10).
 
 **Fuera:**
 
@@ -120,8 +121,8 @@ una interoperación y afirma algo falso.
   lo que cuesta es `charge_item`, de `billing`, resuelto de la lista de precios
   del pagador en la fecha de servicio (ORD-002). Este módulo **no lee ni escribe
   ningún importe**.
-- **Editar el catálogo de exámenes y analitos.** Es un catálogo, y los catálogos
-  se cargan y versionan con `catalog:manage`. Aquí solo se lee.
+- ~~Editar el catálogo de exámenes y analitos.~~ Entra con §10 (ORD-103 a
+  ORD-111): la clínica lo administra en pantalla con `catalog:manage`.
 - **La receta.** Un medicamento no es un examen: `prescription` tiene su propia
   cadena de firma y su propia norma.
 - **La imagen y su informe radiológico.** `ServiceOrderCategory` admite
@@ -286,6 +287,24 @@ una orden de imagen y ver el rechazo.
 caja, ni en la verificación, ni cuente para anular la atención son filtros de
 las consultas del servidor; en pantalla no hay nada que enseñar salvo su
 ausencia.
+
+### E10 — El catálogo de exámenes, administrado por la clínica _(P2)_
+
+Dar de alta y corregir un examen —datos, tipo, sección, muestra, preparación,
+entrega, laboratorio—, su estructura de resultados —analitos en orden, con su
+tipo de valor, unidad, decimales y valores admitidos—, los rangos de referencia
+y críticos de cada analito por sexo y edad, y la prestación con que se cobra.
+
+**Por qué es P2:** sin él el catálogo sólo lo cambia una siembra, y un examen
+que la clínica hace y el sistema no tiene se pide a mano o no se pide.
+**Prueba independiente:** crear un examen de laboratorio con dos analitos y sus
+rangos, cobrarlo con una prestación de laboratorio, pedirlo desde una atención;
+y ver rechazada la prestación de imagen.
+**Cubre:** ORD-103 a ORD-111.
+
+**Solo servidor:** ORD-110. Que un cambio del catálogo no altere un resultado ya
+registrado es una propiedad de lo que el resultado congela; en pantalla no hay
+nada que lo enseñe.
 
 ### Fuera de las ocho
 
@@ -1067,6 +1086,90 @@ marcar Imagen y pedir un hemograma.
   borrador dentro, que se descarta antes. Las órdenes `DISCARDED` NO DEBERÁN
   contar.
 
+## 10. El catálogo de exámenes, administrado (ORD-103 a ORD-111)
+
+Revisión de usabilidad del autor (04-10-2026): «catálogos configurables por la
+clínica». El modelo ya existía (`exam_definition`, `exam_definition_analyte`,
+`analyte_definition`, `analyte_reference_range`); faltaba poder escribirlo
+desde la pantalla.
+
+- **ORD-103** — Con `catalog:manage`, el sistema DEBERÁ permitir dar de alta y
+  corregir un examen —código, nombre, tipo, sección, muestra, preparación,
+  tiempo de entrega, si lo hace un laboratorio externo y cuál, código del
+  tarifario— y desactivarlo y reactivarlo; el código NO DEBERÁ cambiar una vez
+  creado, y un examen NO DEBERÁ borrarse. SI el código ya lo lleva otro examen,
+  ENTONCES DEBERÁ rechazarlo con `EXAM_CODE_DUPLICATE`.
+
+  El código se congela en cada línea que lo pidió (ORD-002) y es lo que el
+  informe de papel cita: cambiarlo dejaría órdenes apuntando a un código que ya
+  no existe. Desactivado, deja de ofrecerse (ORD-003) y lo pedido antes se
+  sigue leyendo.
+
+- **ORD-104** — Con `catalog:manage`, el sistema DEBERÁ permitir dar de alta y
+  corregir un analito —código, nombre, tipo de valor (`NUMERIC`, `CODED`,
+  `TEXT`, `ORDINAL`), unidad, decimales, valores admitidos, LOINC opcional—; el
+  código NO DEBERÁ cambiar una vez creado. SI un analito numérico no trae
+  unidad, o uno codificado u ordinal no trae al menos dos valores admitidos, o
+  uno numérico o de texto los trae, ENTONCES DEBERÁ rechazarlo con
+  `ANALYTE_DEFINITION_INVALID` nombrando el campo; SI el código ya existe, con
+  `ANALYTE_CODE_DUPLICATE`.
+
+- **ORD-105** — Con `catalog:manage`, el sistema DEBERÁ permitir fijar la
+  **estructura de resultados** de un examen: qué analitos produce, en qué orden
+  y cuáles son reflejos, sustituyéndola entera; SI nombra un analito que no
+  existe o está desactivado, ENTONCES DEBERÁ rechazarla con
+  `ANALYTE_NOT_FOUND`.
+
+  Un analito es de todos los exámenes que lo usan —la glucosa del perfil y la
+  de la glucosa en ayunas son la misma determinación—, así que corregirlo
+  corrige los dos, y la pantalla lo dice.
+
+- **ORD-106** — Con `catalog:manage`, el sistema DEBERÁ permitir fijar los
+  **rangos** de un analito —de referencia y críticos, cada uno por sexo y por
+  edad en días, con límite inferior, superior o texto—, sustituyéndolos
+  enteros; SI un rango tiene el inferior por encima del superior o la edad
+  mínima por encima de la máxima, o es crítico o numérico sobre un analito que
+  no es numérico, ENTONCES DEBERÁ rechazarlo con `REFERENCE_RANGE_INVALID`
+  nombrando la fila.
+
+- **ORD-107** — SI dos rangos del mismo tipo y la misma especificidad (ORD-036:
+  mismo sexo, ambos con o sin ventana de edad) cubren a un mismo paciente,
+  ENTONCES el sistema DEBERÁ rechazarlos con `REFERENCE_RANGE_OVERLAP`.
+
+  ORD-036 elige el rango **más específico**; entre dos igual de específicos que
+  se pisan no hay respuesta, y la bandera dependería del orden de las filas.
+
+- **ORD-108** — Con `catalog:manage`, el sistema DEBERÁ permitir fijar la
+  **prestación de cobro** de un examen, y SI la clase de la categoría de esa
+  prestación (`billable_service_category.kind`) no es el tipo del examen,
+  ENTONCES DEBERÁ rechazarlo con `EXAM_SERVICE_KIND_MISMATCH`; SI la
+  prestación no existe o está desactivada, con `EXAM_SERVICE_NOT_FOUND`.
+
+  Las clases `LABORATORY`, `IMAGING` y `PROCEDURE` de caja son, a propósito,
+  las de una orden (BI-186): una orden de imagen se cobra con una prestación de
+  imagen. Es la otra mitad de BI-187, que impide mover a otra clase la
+  prestación con que se cobra un examen; desde aquí, BI-187 compara con el tipo
+  de sus exámenes y deja de admitir sólo laboratorio e imagen, para que un
+  electrocardiograma se cobre como procedimiento.
+
+- **ORD-109** — SI se cambia el tipo de un examen que tiene prestación de cobro
+  a uno que no es la clase de esa prestación, ENTONCES el sistema DEBERÁ
+  rechazarlo con `EXAM_SERVICE_KIND_MISMATCH`.
+
+- **ORD-110** — Un cambio del catálogo NO DEBERÁ alterar ningún resultado ya
+  registrado ni ninguna orden ya emitida.
+
+  Ya lo garantiza lo que congelan: la línea, su código y su nombre (ORD-002);
+  el resultado, el nombre del analito, su unidad y el rango aplicado
+  (ORD-031, ORD-037). Por eso los rangos se sustituyen enteros sin miedo: no
+  hay fila de resultado que apunte a uno.
+
+- **ORD-111** — Toda alta o corrección del catálogo DEBERÁ dejar fila en
+  `access_audit` con quién, cuándo y qué examen o analito.
+
+  Un rango crítico cambiado decide si alguien llama esta noche a un paciente
+  (ORD-060): tiene que poder saberse quién lo cambió.
+
 ---
 
 ## Códigos de error nuevos
@@ -1100,6 +1203,15 @@ contrato —`code`, estado y mensaje—.
 | `CRITICAL_READ_BACK_REQUIRED` | 422 | Un aviso hecho sin confirmar que quien lo recibió repitió el valor | ORD-066 |
 | `ORDER_NOT_DRAFT` | 409 | Se intentó reescribir, emitir o descartar una orden que ya no está en borrador | ORD-096, ORD-098, ORD-099 |
 | `ORDER_NOT_ISSUED` | 409 | Se intentó registrar un informe, emparejar un resultado o anular una línea de una orden que no se ha emitido | ORD-100 |
+| `EXAM_DEFINITION_NOT_FOUND` | 404 | El examen no existe | ORD-103 |
+| `EXAM_CODE_DUPLICATE` | 409 | Otro examen ya lleva ese código. Lo arbitra `exam_definition_code_unique` | ORD-103 |
+| `ANALYTE_NOT_FOUND` | 404 | El analito no existe o está desactivado | ORD-105, ORD-106 |
+| `ANALYTE_CODE_DUPLICATE` | 409 | Otro analito ya lleva ese código. Lo arbitra `analyte_definition_code_unique` | ORD-104 |
+| `ANALYTE_DEFINITION_INVALID` | 422 | Unidad, decimales o valores admitidos que no casan con el tipo de valor | ORD-104 |
+| `REFERENCE_RANGE_INVALID` | 422 | Límites o edades al revés, o un rango numérico o crítico sobre un analito que no es numérico | ORD-106 |
+| `REFERENCE_RANGE_OVERLAP` | 422 | Dos rangos igual de específicos que cubren al mismo paciente | ORD-107 |
+| `EXAM_SERVICE_KIND_MISMATCH` | 422 | La prestación de cobro es de otra clase que el tipo del examen | ORD-108, ORD-109 |
+| `EXAM_SERVICE_NOT_FOUND` | 404 | La prestación de cobro no existe o está desactivada | ORD-108 |
 | `EXAM_CATEGORY_MISMATCH` | 422 | Un examen de la orden no es del tipo de la orden. Rechaza la orden **entera**, como ORD-003 | ORD-097 |
 
 Se **reutilizan**, no se crean: `CATALOG_CONCEPT_NOT_FOUND` y
@@ -1154,7 +1266,16 @@ resuelto de quien llama.
 | `POST` | `/orders/results/:resultId/match` | `result:write` | ORD-041, ORD-043, ORD-091 |
 | `GET` | `/orders/results/critical` | `record:read` | ORD-060, ORD-061, ORD-065, ORD-092 |
 | `POST` | `/orders/results/:resultId/notices` | `result:write` | ORD-062, ORD-091 |
-| `GET` | `/exams` | `catalog:read` | ORD-010 a ORD-012 |
+| `GET` | `/exams` | `catalog:read` | ORD-010 a ORD-012, ORD-101 |
+| `GET` | `/exam-catalogue/exams` | `catalog:manage` | ORD-103 (activos e inactivos, con estructura, rangos y prestación) |
+| `GET` | `/exam-catalogue/exams/:examId` | `catalog:manage` | ORD-103 |
+| `POST` | `/exam-catalogue/exams` | `catalog:manage` | ORD-103, ORD-108, ORD-111 |
+| `PATCH` | `/exam-catalogue/exams/:examId` | `catalog:manage` | ORD-103, ORD-108, ORD-109, ORD-111 |
+| `PUT` | `/exam-catalogue/exams/:examId/analytes` | `catalog:manage` | ORD-105, ORD-111 |
+| `GET` | `/exam-catalogue/analytes` | `catalog:manage` | ORD-104 |
+| `POST` | `/exam-catalogue/analytes` | `catalog:manage` | ORD-104, ORD-111 |
+| `PATCH` | `/exam-catalogue/analytes/:analyteId` | `catalog:manage` | ORD-104, ORD-111 |
+| `PUT` | `/exam-catalogue/analytes/:analyteId/ranges` | `catalog:manage` | ORD-106, ORD-107, ORD-111 |
 
 **`POST /orders/results/:resultId/match` lleva `result:write` y no
 `record:read`**: leer la cola es una lectura, pero emparejar ESCRIBE el
