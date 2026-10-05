@@ -60,7 +60,12 @@ interface AdminExam {
 interface AdminAnalyte {
   id: string;
   code: string;
-  ranges: { sex: string | null; low: number | null; high: number | null }[];
+  ranges: {
+    rangeKind: string;
+    sex: string | null;
+    low: number | null;
+    high: number | null;
+  }[];
   usedBy: { code: string }[];
 }
 
@@ -394,14 +399,21 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
     expect(opened.validFrom).toEqual(closed.validTo);
     expect(rows).toHaveLength(3);
 
-    // Lo que se administra y lo que clasifica sólo ve las vigentes.
+    // Lo que se administra y lo que clasifica sólo ve las vigentes, y en un
+    // orden que no cambia al editar: la referencia sigue primera aunque el
+    // crítico sea la fila más reciente.
     const current = (await get(`/exam-catalogue/analytes`).expect(200)).body as { items: AdminAnalyte[] }; // prettier-ignore
     expect(current.items.find((a) => a.code === 'GLU')?.ranges).toHaveLength(2);
+    await send('put', `/exam-catalogue/analytes/${glu.id}/ranges`, {
+      ranges: [range({ low: 70, high: 110 }), range({ rangeKind: 'CRITICAL', low: 40, high: 500 })],
+    }).expect(200); // prettier-ignore
+    const reordered = (await get(`/exam-catalogue/analytes`).expect(200)).body as { items: AdminAnalyte[] }; // prettier-ignore
+    expect(reordered.items.find((a) => a.code === 'GLU')?.ranges.map((r) => r.rangeKind)).toEqual(['REFERENCE', 'CRITICAL']); // prettier-ignore
 
     const history = (await get(`/exam-catalogue/analytes/${glu.id}/ranges/history`).expect(200)).body as {
       items: { high: number | null; validFrom: string; validTo: string | null }[];
     }; // prettier-ignore
-    expect(history.items).toHaveLength(3);
+    expect(history.items).toHaveLength(4);
     expect(history.items.find((r) => r.high === 400)?.validTo).toBe(closed.validTo!.toISOString()); // prettier-ignore
     expect(history.items.find((r) => r.high === 500)?.validTo).toBeNull();
   });

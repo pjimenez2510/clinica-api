@@ -47,6 +47,14 @@ export const ANALYTE_SELECT = {
   allowedValues: true,
   referenceRanges: {
     where: { validTo: null },
+    // A STABLE ORDER, not the rows' age: editing one range opens a newer row
+    // (ORD-113), and the editor's rows must not jump on every save.
+    orderBy: [
+      { rangeKind: 'desc' },
+      { sex: { sort: 'asc', nulls: 'first' } },
+      { ageMinDays: { sort: 'asc', nulls: 'first' } },
+      { validFrom: 'asc' },
+    ],
     select: {
       rangeKind: true,
       sex: true,
