@@ -345,9 +345,12 @@ describe('la emisión y el seguimiento de una orden', () => {
     expect(orders.restored).toHaveLength(1);
   });
 
-  it('ORD-118 corrige como acto de quien firma la orden, con su alcance; un colega no', async () => {
+  it('ORD-118 corrige como acto de quien firma la orden, con su alcance y su cuenta como quien anula; un colega no', async () => {
     await service.correct('order-1', requester);
-    expect(orders.corrected).toEqual([{ orderId: 'order-1', sites: [SITE] }]);
+    // ORD-007. Quién anula sus exámenes es la sesión.
+    expect(orders.corrected).toEqual([
+      { orderId: 'order-1', sites: [SITE], cancelledById: requester.userId },
+    ]);
 
     await expect(
       service.correct('order-1', { ...requester, userId: 'user-2' }),

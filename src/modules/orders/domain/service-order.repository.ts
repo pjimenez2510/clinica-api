@@ -199,6 +199,13 @@ export interface CancelOrderItem {
   orderId: string;
   itemId: string;
   sites: SiteScopeFilter;
+  /** ORD-007. The session's account: who cancelled the line. */
+  cancelledById: string;
+}
+
+/** ORD-118. Correcting an order: whose session cancels its live lines. */
+export interface OrderCorrection extends OrderQuery {
+  cancelledById: string;
 }
 
 /**
@@ -255,7 +262,7 @@ export interface ServiceOrderRepository {
    * that is not issued, `OrderEncounterNotOpenError` when the attention no
    * longer admits orders, `OrderItemNotPendingError` when no line is live.
    */
-  correct(query: OrderQuery): Promise<CorrectedOrder>;
+  correct(request: OrderCorrection): Promise<CorrectedOrder>;
 
   /** ORD-009. One order with its lines, within the caller's scope. */
   byId(query: OrderQuery): Promise<ServiceOrderView | undefined>;

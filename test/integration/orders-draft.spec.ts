@@ -124,7 +124,8 @@ describe('ORD-095 a ORD-099 la orden en borrador contra PostgreSQL', () => {
     // Control positivo: anular una línea emitida (ORD-007) sigue funcionando.
     await expect(
       prisma.$executeRaw`
-        UPDATE service_order_item SET status = 'CANCELLED', completed_at = now()
+        UPDATE service_order_item SET status = 'CANCELLED', completed_at = now(),
+               cancelled_by_id = ${scene.practitioner.userId}::uuid
          WHERE service_order_id = ${order}::uuid`,
     ).resolves.toBe(1);
   });

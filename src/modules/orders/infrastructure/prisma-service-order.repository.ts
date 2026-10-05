@@ -28,6 +28,7 @@ import type {
   DraftRewrite,
   NewOrderLine,
   NewServiceOrder,
+  OrderCorrection,
   OrderQuery,
   PendingOrderEntry,
   PendingOrdersQuery,
@@ -322,7 +323,7 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
    * still active and of its type, ORD-003, ORD-097) is judged by the issue of
    * the new draft, as for any draft.
    */
-  async correct(query: OrderQuery): Promise<CorrectedOrder> {
+  async correct(query: OrderCorrection): Promise<CorrectedOrder> {
     return this.prisma.$transaction(async (tx) => {
       const found = await tx.serviceOrder.findFirst({
         where: { id: query.orderId, ...siteFilter(query.sites) },
@@ -363,10 +364,14 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
       const live = current.items.filter((item) => isPending(item.status));
       if (live.length === 0) throw new OrderItemNotPendingError();
 
-      // ORD-007. Both columns, as `cancelItem` writes them.
+      // ORD-007. The three columns, as `cancelItem` writes them.
       await tx.serviceOrderItem.updateMany({
         where: { id: { in: live.map((item) => item.id) } },
-        data: { status: 'CANCELLED', completedAt: new Date() },
+        data: {
+          status: 'CANCELLED',
+          completedAt: new Date(),
+          cancelledById: query.cancelledById,
+        },
       });
       const cancelled = await tx.serviceOrder.findUniqueOrThrow({
         where: { id: query.orderId },
@@ -643,11 +648,16 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
        * a human reads, and `completed_at` is what takes the row out of
        * `service_order_item_pending` and makes the trigger lower
        * `pending_items`. Setting one and not the other leaves the record and
-       * the worklist disagreeing about the same line.
+       * the worklist disagreeing about the same line. And WHO, which
+       * `service_order_item_cancel_states_who` demands.
        */
       await tx.serviceOrderItem.update({
         where: { id: item.id },
-        data: { status: 'CANCELLED', completedAt: new Date() },
+        data: {
+          status: 'CANCELLED',
+          completedAt: new Date(),
+          cancelledById: request.cancelledById,
+        },
       });
 
       return tx.serviceOrder.findFirstOrThrow({

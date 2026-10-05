@@ -152,6 +152,7 @@ model User {
   prescriptionsDiscarded         Prescription[]               @relation("PrescriptionDiscarder")
   prescriptionsCancelled         Prescription[]               @relation("PrescriptionCanceller")
   serviceOrdersDiscarded         ServiceOrder[]               @relation("ServiceOrderDiscardedBy")
+  serviceOrderItemsCancelled     ServiceOrderItem[]           @relation("ServiceOrderItemCancelledBy")
   certificatesRevoked            MedicalCertificate[]         @relation("CertificateRevoker")
   subjectStatusChanges           AgendaSubjectStatusHistory[] @relation("SubjectStatusChanger")
   chargeItemsVoided              ChargeItem[]                 @relation("ChargeVoider")
@@ -3057,6 +3058,12 @@ model ServiceOrderItem {
   /// this column, so rows LEAVE the index when they complete and it stays
   /// permanently small and cache-resident.
   completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+
+  /// ORD-007, ORD-118. Who cancelled the line; `completed_at` says when.
+  /// Required on a line cancelled from 20261005060600 on
+  /// (`service_order_item_cancel_states_who`, NOT VALID for older ones).
+  cancelledById String? @map("cancelled_by_id") @db.Uuid
+  cancelledBy   User?   @relation("ServiceOrderItemCancelledBy", fields: [cancelledById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "service_order_item_cancelled_by_fk")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 

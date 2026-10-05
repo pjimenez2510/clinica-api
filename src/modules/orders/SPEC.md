@@ -434,14 +434,32 @@ cuando la gráfica exista.
   > informe vuelve en papel.
 
 - **ORD-007** — CUANDO se anula una línea pedida por error, el sistema DEBERÁ
-  dejarla en `CANCELLED` con su `completed_at`, y la línea DEBERÁ desaparecer de
-  la cola de pendientes **sin desaparecer de la orden**.
+  dejarla en `CANCELLED` con su `completed_at` y **quién la anuló**
+  (`cancelled_by_id`, la cuenta de la sesión), DEBERÁ dejar fila `UPDATE` en
+  `access_audit` (`service_order_item`), y la línea DEBERÁ desaparecer de la
+  cola de pendientes **sin desaparecer de la orden**.
 
   Con `completed_at` puesto sale del índice parcial `service_order_item_pending`
   y `trg_service_order_item_pending` baja `pending_items`. Borrar la fila sería
   perder que alguien pidió algo y se arrepintió, que es justo lo que hay que
   poder auditar.
 
+  > **Quién anuló (revisión de `fix/menos-preguntas-receta-ordenes`):**
+  > `20261005060600_service_order_item_cancelled_by` añade `cancelled_by_id`
+  > (FK a `app_user`, `RESTRICT`). `service_order_item_cancel_states_who`
+  > exige quién en toda línea que pase a `CANCELLED` desde esa migración;
+  > `service_order_item_cancelled_by_only_when_cancelled`, que ningún otro
+  > estado lo lleve; y `service_order_item_guard_frozen`, que una línea nazca
+  > sin él, que se escriba sólo junto al estado en una orden emitida y que no
+  > se reescriba.
+  >
+  > **`service_order_item_cancel_states_who` es `NOT VALID` y no se validará
+  > nunca.** Las líneas anuladas antes no tienen quién y no se inventa nadie:
+  > `VALIDATE CONSTRAINT` fallaría mientras exista una sola, y siempre
+  > existirán. PostgreSQL la comprueba en toda fila que se escriba desde
+  > entonces, y una línea anulada es terminal (ORD-008), así que no estorba a
+  > nada que se pueda hacer con las antiguas.
+  >
   > **Falta esquema.** No hay columna de motivo de anulación en
   > `service_order_item`. Una anulación sin motivo es la que nadie puede explicar
   > seis meses después; el resto del sistema ya exige motivo para anular una cita
@@ -1372,9 +1390,12 @@ se anula y se pide de nuevo, y la pantalla lo hace en un paso (D-127.4)._
   > integración fuerza un fallo al escribir el borrador para demostrar que
   > ninguna línea queda anulada. `service_order_item_guard_frozen` admite el
   > cambio de estado de una línea de una orden emitida y la inserción de
-  > líneas `REQUESTED` en un borrador, que es justo lo que se hace; no hizo
-  > falta migración. Las líneas anuladas conservan su fila (ORD-007): el papel
-  > entregado sigue diciendo lo que se pidió.
+  > líneas `REQUESTED` en un borrador, que es justo lo que se hace. Cada línea
+  > anulada lleva quién la anuló, como en ORD-007, y la corrección deja dos
+  > filas en `access_audit`: `UPDATE` de la orden corregida y `CREATE` del
+  > borrador nuevo (como «Corregir» la receta, PR-109). Las líneas anuladas
+  > conservan su fila (ORD-007): el papel entregado sigue diciendo lo que se
+  > pidió.
   >
   > **Una atención ya cerrada no admite el borrador** (ORD-005), así que la
   > orden de una consulta terminada no se corrige: se anulan sus exámenes y se
@@ -1536,6 +1557,7 @@ precisamente para que más de un módulo pueda responderlos con el mismo `code`.
 | **`analyte_definition_id`**, para que el resultado apunte a su definición y no a un texto | `observation_result` | ORD-031 |
 | Valor `ABNORMAL` en el enum, para la anormalidad cualitativa que no es alta ni baja | `abnormal_flag` | ORD-038 |
 | `concept_id` del tarifario, para no pedir dos identificadores por línea | `exam_definition` | ORD-004 |
+| ~~Quién anuló una línea~~ — construido: `cancelled_by_id` con `service_order_item_cancel_states_who` (`NOT VALID` para las anuladas antes, nunca se valida) y `service_order_item_cancelled_by_only_when_cancelled` (`20261005060600_service_order_item_cancelled_by`) | `service_order_item` | ORD-007, ORD-118 |
 | Motivo de anulación de una línea | `service_order_item` | ORD-007 |
 | ~~Plazo y escalado de la política de críticos~~ — construido: `critical_notice_within_minutes` (60 de fábrica), `critical_escalation_role_id`. **Fuera de horario se deduce del horario de los profesionales de la sede** (ORD-068): no hay horario de sede propio | `site_parameter` | ORD-063, ORD-065, ORD-068 |
 | ~~Responsable y plazo de la cola sin orden~~ — construido: `unmatched_result_owner_role_id`, `unmatched_result_deadline_hours` (D-050 §4) | `site_parameter` | ORD-046 |
@@ -1611,7 +1633,7 @@ columnas donde registrar quién lo decidió y por qué.
 | ORD-036, ORD-038, ORD-039 | Unitario | Son políticas puras: rango aplicable, bandera y completitud. Se prueban sin base, con los rangos reales de la siembra. |
 | ORD-021, ORD-022 | Unitario | El envejecimiento es aritmética de fechas clínicas; el huso se prueba fijando la zona de la sesión. |
 | ORD-032, ORD-033 | Unitario | La coherencia entre el tipo del analito y el valor enviado es una regla de dominio. |
-| ORD-002, ORD-007, ORD-039 | Integración | `trg_service_order_item_pending` y el índice parcial son garantías de la base: se prueban contra PostgreSQL. |
+| ORD-002, ORD-007, ORD-039 | Integración | `trg_service_order_item_pending` y el índice parcial son garantías de la base: se prueban contra PostgreSQL. Quién anuló, también: la línea anulada sin quién, el quién en una línea no anulada, el que se reescribe y el de una línea que nace se rechazan, con control positivo; y por el servicio, que lo escribe la sesión con su fila en la bitácora. |
 | ORD-050, ORD-052 | Integración | El `UNIQUE` sobre `supersedes_id` lo arbitra la base. |
 | ORD-043 | Integración | No hay `CHECK` que ate `order_item_id` a la orden del informe, así que la negativa vive en la transacción que escribe: un doble que confirme que se llamó bien al adaptador no demuestra nada sobre la fila que aterriza. Y la reevaluación de ORD-039 sólo se ve en `pending_items`. |
 | ORD-004 | Integración | La vigencia se evalúa con `daterange @>` sobre una columna generada, que Prisma no puede expresar. |
@@ -1623,7 +1645,7 @@ columnas donde registrar quién lo decidió y por qué.
 | ORD-090, ORD-094 | Integración | `route-authorisation.spec` recorre las rutas que NestJS registró de verdad. |
 | ORD-116 | Integración y unitario | Que la vuelta `DISCARDED → DRAFT` limpie quién y cuándo y no mueva nada más lo garantiza un disparador: se prueba contra la base, con control positivo; recuperar devuelve las mismas líneas, y lo no descartado responde `ORDER_NOT_DISCARDED`. Que sólo quien firma recupera, con el servicio. |
 | ORD-117 | Interfaz | Anular una línea abre una confirmación con la consecuencia; cancelar no llama al servidor, confirmar sí. |
-| ORD-118 | Integración y unitario | Contra la base: corregir anula las líneas vivas, deja la resultada como estaba y abre el borrador con los mismos exámenes, tipo, prioridad e indicación; **un fallo forzado al escribir el borrador deja todas las líneas vivas**, con control positivo; atención cerrada, borrador y orden sin líneas vivas no corrigen. Que sólo quien firma corrige, con el servicio. |
+| ORD-118 | Integración y unitario | Contra la base: corregir anula las líneas vivas con quién las anuló y deja las dos filas de bitácora, deja la resultada como estaba y abre el borrador con los mismos exámenes, tipo, prioridad e indicación; **un fallo forzado al escribir el borrador deja todas las líneas vivas**, con control positivo; atención cerrada, borrador y orden sin líneas vivas no corrigen. Que sólo quien firma corrige, con el servicio. |
 | ORD-119 | Integración y unitario | Contra la base: editar un parcial añadiendo lo que faltaba deja la versión nueva `FINAL`, el parcial legible y sustituido, y la línea `COMPLETED`, con control positivo (antes de editar, `PARTIAL` y la línea pendiente); cambiar un valor que ya decía la deja `CORRECTED`. Unitario del estado de la versión y del servicio. |
 | Todos los códigos de error | Unitario | Contrato: `code`, categoría y mensaje. |
 

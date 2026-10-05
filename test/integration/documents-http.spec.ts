@@ -25,6 +25,7 @@ import {
   createIssuedPrescription,
   createPatient,
   createSite,
+  createUser,
 } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
@@ -643,7 +644,10 @@ describe('los documentos por HTTP', () => {
 
       await prisma.serviceOrderItem.updateMany({
         where: { serviceOrderId: order.id },
-        data: { status: 'CANCELLED' },
+        data: {
+          status: 'CANCELLED',
+          cancelledById: (await createUser(prisma)).id,
+        },
       });
       const annulled = await verify(order.verificationCode).expect(200);
       expect((annulled.body as { status: string }).status).toBe('ANNULLED');

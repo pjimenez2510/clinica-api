@@ -279,6 +279,26 @@ export class ServiceOrderService {
     const corrected = await this.orders.correct({
       orderId,
       sites: requester.sites,
+      cancelledById: requester.userId,
+    });
+
+    // Two facts, two rows, as the receta's «Corregir» (PR-109): the order
+    // whose exams were cancelled, and the draft that was born.
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: 'service_order',
+      resourceId: corrected.cancelled.id,
+      action: 'UPDATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: 'service_order',
+      resourceId: corrected.draft.id,
+      action: 'CREATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
     });
 
     this.logger.info(
@@ -439,6 +459,18 @@ export class ServiceOrderService {
       orderId,
       itemId,
       sites: requester.sites,
+      cancelledById: requester.userId,
+    });
+
+    // ORD-007. The exam left the laboratory's worklist with the paper already
+    // handed over: who did it is in the line and in the trail.
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: 'service_order_item',
+      resourceId: itemId,
+      action: 'UPDATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
     });
 
     this.logger.info(

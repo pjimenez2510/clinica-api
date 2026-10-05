@@ -173,6 +173,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       orderId: order.id,
       itemId: first?.id ?? '',
       sites: 'all',
+      cancelledById: scene.practitioner.userId,
     });
 
     // La fila SIGUE: borrarla perdería que alguien pidió algo y se arrepintió.
@@ -198,10 +199,11 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     });
     const itemId = order.items[0]?.id ?? '';
 
-    await repository.cancelItem({ orderId: order.id, itemId, sites: 'all' });
+    const cancelledById = scene.practitioner.userId;
+    await repository.cancelItem({ orderId: order.id, itemId, sites: 'all', cancelledById }); // prettier-ignore
 
     await expect(
-      repository.cancelItem({ orderId: order.id, itemId, sites: 'all' }),
+      repository.cancelItem({ orderId: order.id, itemId, sites: 'all', cancelledById }), // prettier-ignore
     ).rejects.toMatchObject({ code: 'ORDER_ITEM_NOT_PENDING' });
   });
 
@@ -425,6 +427,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       orderId: order.id,
       itemId: order.items[0]?.id ?? '',
       sites: 'all',
+      cancelledById: scene.practitioner.userId,
     });
 
     // La fila SALE del índice parcial al ponerse `completed_at`: es lo que

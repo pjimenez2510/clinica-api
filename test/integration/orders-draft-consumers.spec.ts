@@ -140,7 +140,7 @@ describe('ORD-100 un borrador no existe fuera de la pestaña', () => {
       code: 'ORDER_NOT_ISSUED',
     });
     await expect(
-      orders.cancelItem({ orderId: draft.id, itemId: draft.items[0]!.id, sites: 'all' }), // prettier-ignore
+      orders.cancelItem({ orderId: draft.id, itemId: draft.items[0]!.id, sites: 'all', cancelledById: requester.userId }), // prettier-ignore
     ).rejects.toMatchObject({ code: 'ORDER_NOT_ISSUED' });
 
     await issue(prisma, draft.id);
