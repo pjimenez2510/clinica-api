@@ -10,7 +10,6 @@ import {
 import {
   CLINICAL_FORMS,
   assertAmendable,
-  assertContentComplete,
   assertEditable,
   canonicalise,
   contentHashOf,
@@ -18,6 +17,7 @@ import {
   requireAmendmentReason,
   requireForm,
 } from './clinical-note';
+import { assertNoteComplete, builtInTemplate } from './note-template';
 import type { NoteStatus } from './encounter';
 
 /**
@@ -108,13 +108,13 @@ describe('el formulario de la nota clínica', () => {
 describe('el contenido mínimo del artículo 6', () => {
   it('EN-020 acepta un formulario 002 con las seis secciones narrativas', () => {
     expect(() =>
-      assertContentComplete(requireForm('002', '1'), COMPLETE_002),
+      assertNoteComplete(builtInTemplate('002'), COMPLETE_002),
     ).not.toThrow();
   });
 
   it('EN-020 rechaza una nota sin motivo de consulta', () => {
     try {
-      assertContentComplete(requireForm('002', '1'), without('motivoConsulta'));
+      assertNoteComplete(builtInTemplate('002'), without('motivoConsulta'));
       expect.unreachable('la nota incompleta debía rechazarse');
     } catch (error) {
       expect(error).toBeInstanceOf(NoteContentIncompleteError);
@@ -128,7 +128,7 @@ describe('el contenido mínimo del artículo 6', () => {
     // Three spaces satisfy «the key exists» and satisfy nothing a reader —
     // or a court — needs.
     expect(() =>
-      assertContentComplete(requireForm('002', '1'), {
+      assertNoteComplete(builtInTemplate('002'), {
         ...COMPLETE_002,
         planTratamiento: '   ',
       }),
@@ -138,7 +138,7 @@ describe('el contenido mínimo del artículo 6', () => {
   it('EN-020 nombra TODAS las secciones que faltan, no la primera', () => {
     const refusal = (() => {
       try {
-        assertContentComplete(requireForm('002', '1'), {
+        assertNoteComplete(builtInTemplate('002'), {
           motivoConsulta: 'Control',
         });
         return undefined;

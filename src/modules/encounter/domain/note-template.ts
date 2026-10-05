@@ -22,9 +22,11 @@ import {
   backgroundSnapshotIn,
   coversBackgroundSection,
 } from './background-snapshot';
+import { CLINICAL_FORMS } from './clinical-note';
 import {
   NoteContentIncompleteError,
   NoteTemplateInvalidError,
+  UnknownClinicalFormError,
 } from './encounter.errors';
 
 export type NoteSectionKind = 'TEXT' | 'CHOICE';
@@ -115,33 +117,51 @@ export const MINIMUM_002_KEYS: readonly string[] = MINIMUM_002.map(
   (section) => section.key,
 );
 
-/**
- * The evolution note keeps one narrative and no template (the plan leaves the
- * 005 as it is): a two-line note about a dressing change is not a form.
- */
-const EVOLUTION_005: readonly NoteSection[] = [
-  {
-    key: 'evolucion',
+/** Titles for the built-in sections of the forms without a template. */
+const BUILT_IN_TITLES: Readonly<
+  Record<string, { title: string; help: string }>
+> = {
+  evolucion: {
     title: 'Evolución',
     help: 'Qué cambió desde la última nota y qué se indica.',
-    kind: 'TEXT',
-    options: [],
-    required: true,
-    minimum: true,
   },
-];
+};
 
 /** The forms whose template a clinic may change. Only the 002. */
 export const TEMPLATED_FORMS: readonly string[] = ['002'];
 
-/** EN-200. The template a form has when no version was ever published. */
+/**
+ * EN-200. The template a form has when no version was ever published.
+ *
+ * The 002 has its six; any other registered form takes its mandatory
+ * sections from `CLINICAL_FORMS` — the evolution note keeps one narrative and
+ * no template. A form nobody registered is REFUSED, never validated as if it
+ * were another.
+ */
 export function builtInTemplate(formCode: string): NoteTemplate {
+  if (formCode === '002') {
+    return { id: null, formCode, specialtyId: null, version: 0, sections: MINIMUM_002 }; // prettier-ignore
+  }
+  const form = CLINICAL_FORMS.find((each) => each.code === formCode);
+  if (!form) {
+    throw new UnknownClinicalFormError(
+      CLINICAL_FORMS.map((known) => `${known.code}@${known.version}`),
+    );
+  }
   return {
     id: null,
     formCode,
     specialtyId: null,
     version: 0,
-    sections: formCode === '002' ? MINIMUM_002 : EVOLUTION_005,
+    sections: form.mandatorySections.map((key) => ({
+      key,
+      title: BUILT_IN_TITLES[key]?.title ?? key,
+      help: BUILT_IN_TITLES[key]?.help ?? '',
+      kind: 'TEXT' as const,
+      options: [],
+      required: true,
+      minimum: true,
+    })),
   };
 }
 
@@ -151,6 +171,10 @@ const MAX_HELP = 300;
 const MAX_OPTIONS = 20;
 const MAX_OPTION = 80;
 const OWN_KEY = /^extra([1-9][0-9]{0,3})$/;
+
+/** `extra7` → 7; anything else → 0. */
+export const ownKeyIndex = (key: string | undefined): number =>
+  Number(OWN_KEY.exec(key ?? '')?.[1] ?? 0);
 
 const normalised = (text: string) => text.trim().toLocaleLowerCase('es');
 
@@ -162,6 +186,12 @@ const normalised = (text: string) => text.trim().toLocaleLowerCase('es');
 export function publishableSections(
   formCode: string,
   input: readonly NoteSectionInput[],
+  /**
+   * EN-202. The highest `extraN` ANY version of this template ever used: a
+   * removed section's key is never handed to a new one, or `content.extra2`
+   * would mean two things in two notes.
+   */
+  highestOwnKeyEverUsed = 0,
 ): NoteSection[] {
   if (!TEMPLATED_FORMS.includes(formCode)) {
     throw new NoteTemplateInvalidError(
@@ -180,10 +210,8 @@ export function publishableSections(
   const seenKeys = new Set<string>();
   const seenTitles = new Set<string>();
   let nextOwn =
-    Math.max(
-      0,
-      ...input.map((s) => Number(OWN_KEY.exec(s.key ?? '')?.[1] ?? 0)),
-    ) + 1;
+    Math.max(highestOwnKeyEverUsed, ...input.map((s) => ownKeyIndex(s.key))) +
+    1;
 
   const sections = input.map((raw, index): NoteSection => {
     const field = `sections.${index}`;
@@ -280,14 +308,26 @@ function choiceOptions(field: string, raw: readonly string[]): string[] {
  * background snapshot already holds an allergy or a history entry (D-125).
  */
 export function assertNoteComplete(
-  template: Pick<NoteTemplate, 'sections'>,
+  template: Pick<NoteTemplate, 'sections' | 'formCode'>,
   content: Readonly<Record<string, unknown>>,
 ): void {
   const background = backgroundSnapshotIn(content);
   const missing: string[] = [];
   const invalid: string[] = [];
 
-  for (const section of template.sections) {
+  /**
+   * EN-201. The minimum of the 002 is demanded EVEN IF the stored template
+   * lacks one of its sections — a row written outside `publish`, or a
+   * minimum that grows after a template was published. The template decides
+   * titles and order; art. 6 decides what cannot be missing.
+   */
+  const declared = new Set(template.sections.map((section) => section.key));
+  const minimumNotDeclared =
+    template.formCode === '002'
+      ? MINIMUM_002.filter((section) => !declared.has(section.key))
+      : [];
+
+  for (const section of [...template.sections, ...minimumNotDeclared]) {
     const value = content[section.key];
     const text = typeof value === 'string' ? value.trim() : '';
 

@@ -52,6 +52,11 @@ export class NoteTemplateListDto extends createZodDto(noteTemplateListSchema) {}
 /** Body of POST /note-templates: publishes the next version. */
 export const publishNoteTemplateSchema = z.object({
   formCode: z.string().trim().default('002'),
+  /**
+   * EN-200. The version the screen edited: 0 when the template did not exist
+   * yet. Publishing over an older one is refused (`NOTE_TEMPLATE_STALE`).
+   */
+  baseVersion: z.number().int().min(0),
   /** Absent or `null`: the clinic's template (D-124). */
   specialtyId: z
     .uuid({ error: 'Especialidad no válida' })
@@ -72,6 +77,14 @@ export const publishNoteTemplateSchema = z.object({
 });
 export class PublishNoteTemplateDto extends createZodDto(
   publishNoteTemplateSchema,
+) {}
+
+/** Query of GET /note-templates/current. Absent: the clinic's. */
+export const currentNoteTemplateQuerySchema = z.object({
+  specialtyId: z.uuid({ error: 'Especialidad no válida' }).optional(),
+});
+export class CurrentNoteTemplateQueryDto extends createZodDto(
+  currentNoteTemplateQuerySchema,
 ) {}
 
 export type NoteTemplateResponse = z.infer<typeof noteTemplateSchema>;

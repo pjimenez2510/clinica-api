@@ -1128,3 +1128,22 @@ export class DiagnosisPrimaryAfterDischargeError extends ConflictError {
     super('The principal of a discharged encounter is not reordered');
   }
 }
+
+/**
+ * EN-200. Somebody published a newer version of this template while the
+ * screen was editing an older one. Publishing anyway would silently drop
+ * their changes, so the second publication is refused and the screen reloads
+ * what is current.
+ */
+export class NoteTemplateStaleError extends ConflictError {
+  readonly code = 'NOTE_TEMPLATE_STALE';
+  override readonly userTitle =
+    'Otra persona publicó esta plantilla mientras la editaba. Recargue para ver la versión actual';
+
+  constructor(expected: number, current: number) {
+    super(`Note template is at version ${current}, not ${expected}`, {
+      expected: String(expected),
+      current: String(current),
+    });
+  }
+}

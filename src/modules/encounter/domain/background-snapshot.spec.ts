@@ -8,11 +8,8 @@ import {
   withBackgroundSnapshot,
 } from './background-snapshot';
 import { NoteContentIncompleteError } from './encounter.errors';
-import {
-  assertContentComplete,
-  contentHashOf,
-  requireForm,
-} from './clinical-note';
+import { contentHashOf } from './clinical-note';
+import { assertNoteComplete, builtInTemplate } from './note-template';
 import type { AllergyAbsenceAssertion } from './patient-allergy.repository';
 import type { HistoryView } from './patient-history.repository';
 import type { ActiveAllergy } from '../../../shared/clinical/patient-allergy.port';
@@ -171,7 +168,7 @@ describe('la foto de alergias y antecedentes al firmar', () => {
 });
 
 describe('la sección de antecedentes cubierta por lo registrado', () => {
-  const form = requireForm('002', '1');
+  const form = builtInTemplate('002');
   const noText = { ...COMPLETE_002, antecedentes: '' };
 
   it('EN-207 da por escrita la sección sin texto si hay una alergia registrada', () => {
@@ -179,7 +176,7 @@ describe('la sección de antecedentes cubierta por lo registrado', () => {
       true,
     );
     expect(() =>
-      assertContentComplete(
+      assertNoteComplete(
         form,
         withBackgroundSnapshot(noText, snapshot({ allergies: [PENICILLIN] })),
       ),
@@ -188,7 +185,7 @@ describe('la sección de antecedentes cubierta por lo registrado', () => {
 
   it('EN-207 da por escrita la sección sin texto si hay un antecedente registrado', () => {
     expect(() =>
-      assertContentComplete(
+      assertNoteComplete(
         form,
         withBackgroundSnapshot(
           noText,
@@ -203,7 +200,7 @@ describe('la sección de antecedentes cubierta por lo registrado', () => {
       coversBackgroundSection(snapshot({ noKnownAllergies: NONE_KNOWN })),
     ).toBe(false);
     expect(() =>
-      assertContentComplete(
+      assertNoteComplete(
         form,
         withBackgroundSnapshot(
           noText,
@@ -215,13 +212,13 @@ describe('la sección de antecedentes cubierta por lo registrado', () => {
 
   it('EN-207 sigue pidiendo texto si no hay nada registrado', () => {
     expect(() =>
-      assertContentComplete(form, withBackgroundSnapshot(noText, snapshot({}))),
+      assertNoteComplete(form, withBackgroundSnapshot(noText, snapshot({}))),
     ).toThrow(NoteContentIncompleteError);
   });
 
   it('EN-207 una foto no cubre ninguna otra sección', () => {
     expect(() =>
-      assertContentComplete(
+      assertNoteComplete(
         form,
         withBackgroundSnapshot(
           { ...COMPLETE_002, examenFisico: '' },

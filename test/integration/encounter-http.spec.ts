@@ -828,7 +828,7 @@ describe('la atención por HTTP', () => {
 
     it('EN-200 la publica quien administra la configuración, y el médico no', async () => {
       const admin = await signIn('ADMIN', 'admin@clinica.ec', '1710034073', false); // prettier-ignore
-      const body = { sections: minimum() };
+      const body = { baseVersion: 0, sections: minimum() };
 
       await post('/note-templates', doctorToken, body).expect(403);
       const published = await post('/note-templates', admin.token, body).expect(201); // prettier-ignore
@@ -840,10 +840,31 @@ describe('la atención por HTTP', () => {
       ).toBe(1);
     });
 
+    it('EN-203 una especialidad mal escrita en la consulta es un 422, no un 500', async () => {
+      const admin = await signIn('ADMIN', 'admin@clinica.ec', '1710034073', false); // prettier-ignore
+
+      await get('/note-templates/current', admin.token).expect(200);
+      await get('/note-templates/current?specialtyId=abc', admin.token).expect(
+        422,
+      );
+    });
+
+    it('EN-200 publicar sobre una versión que ya no es la última se rechaza con 409', async () => {
+      const admin = await signIn('ADMIN', 'admin@clinica.ec', '1710034073', false); // prettier-ignore
+      await post('/note-templates', admin.token, { baseVersion: 0, sections: minimum() }).expect(201); // prettier-ignore
+
+      const stale = await post('/note-templates', admin.token, {
+        baseVersion: 0,
+        sections: minimum(),
+      }).expect(409);
+      expect((stale.body as Problem).code).toBe('NOTE_TEMPLATE_STALE');
+    });
+
     it('EN-201 rechaza publicar sin una sección del mínimo, nombrándola', async () => {
       const admin = await signIn('ADMIN', 'admin@clinica.ec', '1710034073', false); // prettier-ignore
 
       const refused = await post('/note-templates', admin.token, {
+        baseVersion: 0,
         sections: minimum().filter((section) => section.key !== 'examenFisico'),
       }).expect(422);
 
@@ -855,6 +876,7 @@ describe('la atención por HTTP', () => {
     it('EN-203 a EN-205 la nota se abre con la plantilla publicada y exige su sección propia', async () => {
       const admin = await signIn('ADMIN', 'admin@clinica.ec', '1710034073', false); // prettier-ignore
       await post('/note-templates', admin.token, {
+        baseVersion: 0,
         sections: [
           ...minimum(),
           {
@@ -896,6 +918,18 @@ describe('la atención por HTTP', () => {
       expect((refused.body as Problem).errors?.[0]?.field).toBe(
         'content.extra1',
       );
+
+      // EN-204. La clínica publica otra versión sin esa sección: el borrador
+      // ya abierto sigue con la suya y la sigue exigiendo.
+      await post('/note-templates', admin.token, {
+        baseVersion: 1,
+        sections: minimum(),
+      }).expect(201);
+      await post(
+        `/encounters/${encounterId}/notes/${note.id}/sign`,
+        doctorToken,
+        { dischargeCondition: 'ALIVE' },
+      ).expect(422);
 
       // Control positivo: con una de sus opciones, firma.
       await request(app.getHttpServer())

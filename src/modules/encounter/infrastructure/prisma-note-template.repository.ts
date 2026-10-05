@@ -2,7 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
-import type { NoteSection, NoteTemplate } from '../domain/note-template';
+import { NoteTemplateStaleError } from '../domain/encounter.errors';
+import {
+  ownKeyIndex,
+  type NoteSection,
+  type NoteTemplate,
+} from '../domain/note-template';
 import type {
   NoteTemplateRepository,
   NoteTemplateSummary,
@@ -64,11 +69,20 @@ export class PrismaNoteTemplateRepository implements NoteTemplateRepository {
     return row ? toTemplate(row) : null;
   }
 
+  /**
+   * The newest version per template, chosen in SQL: Prisma's `distinct`
+   * would fetch every version ever published and discard them in memory.
+   */
   async listLatest(formCode: string): Promise<NoteTemplateSummary[]> {
+    const newest = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT DISTINCT ON (specialty_id) id::text AS id
+        FROM clinical_note_template
+       WHERE form_code = ${formCode}
+       ORDER BY specialty_id, version DESC
+    `;
+    if (newest.length === 0) return [];
     const rows = await this.prisma.clinicalNoteTemplate.findMany({
-      where: { formCode },
-      distinct: ['specialtyId'],
-      orderBy: [{ specialtyId: 'asc' }, { version: 'desc' }],
+      where: { id: { in: newest.map((row) => row.id) } },
       select: TEMPLATE_SELECT,
     });
     return rows.map(toSummary);
@@ -82,18 +96,33 @@ export class PrismaNoteTemplateRepository implements NoteTemplateRepository {
       const lockKey = `clinical_note_template:${input.formCode}:${input.specialtyId ?? 'clinic'}`;
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 
-      const newest = await tx.clinicalNoteTemplate.findFirst({
+      const versions = await tx.clinicalNoteTemplate.findMany({
         where: { formCode: input.formCode, specialtyId: input.specialtyId },
         orderBy: { version: 'desc' },
-        select: { version: true },
+        select: { version: true, sections: true },
       });
+      const current = versions[0]?.version ?? 0;
+      // EN-200. Somebody published while this screen edited an older one.
+      if (current !== input.baseVersion) {
+        throw new NoteTemplateStaleError(input.baseVersion, current);
+      }
+      // EN-202. No key a removed section ever had is handed out again.
+      const highestOwnKeyEverUsed = Math.max(
+        0,
+        ...versions.flatMap((version) =>
+          (version.sections as unknown as NoteSection[]).map((section) =>
+            ownKeyIndex(section.key),
+          ),
+        ),
+      );
+      const sections = input.sectionsGiven(highestOwnKeyEverUsed);
 
       const row = await tx.clinicalNoteTemplate.create({
         data: {
           formCode: input.formCode,
           specialtyId: input.specialtyId,
-          version: (newest?.version ?? 0) + 1,
-          sections: input.sections as unknown as Prisma.InputJsonValue,
+          version: current + 1,
+          sections: sections as unknown as Prisma.InputJsonValue,
           publishedAt: input.publishedAt,
           publishedById: input.publishedById,
         },

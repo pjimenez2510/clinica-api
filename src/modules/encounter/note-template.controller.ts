@@ -11,16 +11,14 @@ import {
   ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
-import { z } from 'zod';
-
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import { NoteTemplateService } from './application/note-template.service';
 import {
+  CurrentNoteTemplateQueryDto,
   NoteTemplateDto,
   NoteTemplateListDto,
   NoteTemplateSummaryDto,
@@ -33,8 +31,6 @@ import {
   toTemplateResponse,
   toTemplateSummaryResponse,
 } from './dto/note-template.mapper';
-
-const optionalSpecialty = z.uuid().optional();
 
 /**
  * EN-200 to EN-203. The consultation-note template, from the administration.
@@ -66,14 +62,15 @@ export class NoteTemplateController {
   @ApiOperation({
     summary: 'La plantilla que usaría hoy una nota de esa especialidad',
   })
-  @ApiQuery({ name: 'specialtyId', required: false })
   @ApiOkResponse({ type: NoteTemplateDto })
   async current(
-    @Query('specialtyId') specialtyId?: string,
+    // A schema and not a `parse` inside the method: a hand-made `ZodError`
+    // is not translated by the problem filter and would answer 500.
+    @Query() query: CurrentNoteTemplateQueryDto,
   ): Promise<NoteTemplateResponse> {
     const template = await this.templates.current(
       '002',
-      optionalSpecialty.parse(specialtyId || undefined) ?? null,
+      query.specialtyId ?? null,
     );
     return toTemplateResponse(template);
   }
@@ -90,6 +87,7 @@ export class NoteTemplateController {
       {
         formCode: body.formCode,
         specialtyId: body.specialtyId,
+        baseVersion: body.baseVersion,
         sections: body.sections,
       },
       this.currentUser.requireUserId(),

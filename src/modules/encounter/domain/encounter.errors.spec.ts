@@ -33,6 +33,7 @@ import {
   NoteAlreadySignedError,
   NoteContentIncompleteError,
   NoteTemplateInvalidError,
+  NoteTemplateStaleError,
   NoteNotAmendableError,
   PatientAllergyNotFoundError,
   PatientChartNotOpenError,
@@ -313,6 +314,14 @@ describe('el contrato de errores de la atención', () => {
     expect(error.code).toBe('NOTE_TEMPLATE_INVALID');
     expect(error).toBeInstanceOf(ValidationError); // 422
     expect(error.fieldErrors?.[0]?.field).toBe('sections.2.required');
+  });
+
+  it('EN-200 responde 409 cuando otra persona publicó la plantilla mientras se editaba', () => {
+    const error = new NoteTemplateStaleError(3, 4);
+
+    expect(error.code).toBe('NOTE_TEMPLATE_STALE');
+    expect(error).toBeInstanceOf(ConflictError); // 409
+    expect(error.params).toMatchObject({ expected: '3', current: '4' });
   });
 
   it('EN-205 responde 422 diciendo que se elija una opción de la lista', () => {

@@ -70,16 +70,24 @@ export class NoteTemplateService {
     );
   }
 
-  /** EN-200 to EN-202. Validates and publishes the next version. */
+  /**
+   * EN-200 to EN-202. Validates and publishes the next version over
+   * `baseVersion`, the one the screen edited.
+   *
+   * Validated once here, so a bad template is refused before any lock is
+   * taken, and again inside the transaction with the highest own key any
+   * version ever used — the only place that number is current.
+   */
   async publish(
     request: {
       formCode: string;
       specialtyId: string | null;
+      baseVersion: number;
       sections: readonly NoteSectionInput[];
     },
     publishedById: string,
   ): Promise<NoteTemplateSummary> {
-    const sections = publishableSections(request.formCode, request.sections);
+    publishableSections(request.formCode, request.sections);
     if (
       request.specialtyId !== null &&
       !(await this.templates.specialtyExists(request.specialtyId))
@@ -93,7 +101,9 @@ export class NoteTemplateService {
     return this.templates.publish({
       formCode: request.formCode,
       specialtyId: request.specialtyId,
-      sections,
+      baseVersion: request.baseVersion,
+      sectionsGiven: (highest) =>
+        publishableSections(request.formCode, request.sections, highest),
       publishedById,
       publishedAt: new Date(),
     });

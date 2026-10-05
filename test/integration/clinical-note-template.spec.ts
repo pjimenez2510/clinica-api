@@ -1,7 +1,12 @@
 import type { PrismaClient } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
-import { builtInTemplate } from '../../src/modules/encounter/domain/note-template';
+import { NoteTemplateStaleError } from '../../src/modules/encounter/domain/encounter.errors';
+import {
+  builtInTemplate,
+  publishableSections,
+  type NoteSectionInput,
+} from '../../src/modules/encounter/domain/note-template';
 import { PrismaClinicalNoteRepository } from '../../src/modules/encounter/infrastructure/prisma-clinical-note.repository';
 import { PrismaNoteTemplateRepository } from '../../src/modules/encounter/infrastructure/prisma-note-template.repository';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
@@ -13,6 +18,7 @@ import {
   createPractitioner,
   createSite,
   createUser,
+  hourSlot,
 } from './setup/fixtures';
 
 /**
@@ -33,10 +39,13 @@ async function publish(
   specialtyId: string | null = null,
 ) {
   const author = await createUser(prisma);
-  return new PrismaNoteTemplateRepository(asPrisma(prisma)).publish({
+  const templates = new PrismaNoteTemplateRepository(asPrisma(prisma));
+  const current = await templates.latest('002', specialtyId);
+  return templates.publish({
     formCode: '002',
     specialtyId,
-    sections: SECTIONS,
+    baseVersion: current?.version ?? 0,
+    sectionsGiven: () => SECTIONS,
     publishedById: author.id,
     publishedAt: new Date(),
   });
@@ -117,6 +126,67 @@ describe('las versiones de la plantilla de nota', () => {
   });
 });
 
+describe('publicar sobre lo que otro publicó', () => {
+  it('EN-200 rechaza publicar sobre una versión que ya no es la última, y no pisa la de otro', async () => {
+    const prisma = db();
+    const author = await createUser(prisma);
+    const templates = new PrismaNoteTemplateRepository(asPrisma(prisma));
+    const over = (baseVersion: number) =>
+      templates.publish({
+        formCode: '002',
+        specialtyId: null,
+        baseVersion,
+        sectionsGiven: () => SECTIONS,
+        publishedById: author.id,
+        publishedAt: new Date(),
+      });
+
+    // Control positivo: sobre la última, publica.
+    await over(0);
+    await over(1);
+    await expect(over(1)).rejects.toBeInstanceOf(NoteTemplateStaleError);
+    expect((await templates.latest('002', null))?.version).toBe(2);
+  });
+
+  it('EN-202 la clave de una sección quitada no se vuelve a dar a otra', async () => {
+    const prisma = db();
+    const author = await createUser(prisma);
+    const templates = new PrismaNoteTemplateRepository(asPrisma(prisma));
+    const minimum = SECTIONS.map((section) => ({ ...section }));
+    const publishing = (baseVersion: number, own: NoteSectionInput[]) =>
+      templates.publish({
+        formCode: '002',
+        specialtyId: null,
+        baseVersion,
+        sectionsGiven: (highest) =>
+          publishableSections('002', [...minimum, ...own], highest),
+        publishedById: author.id,
+        publishedAt: new Date(),
+      });
+
+    const v1 = await publishing(0, [
+      {
+        title: 'Hallazgos odontológicos',
+        help: '',
+        kind: 'TEXT',
+        required: false,
+      },
+    ]);
+    expect(v1.sections.at(-1)?.key).toBe('extra1');
+    await publishing(1, []);
+    const v3 = await publishing(2, [
+      {
+        title: 'Riesgo cardiovascular',
+        help: '',
+        kind: 'TEXT',
+        required: false,
+      },
+    ]);
+
+    expect(v3.sections.at(-1)?.key).toBe('extra2');
+  });
+});
+
 describe('la plantilla de cada nota', () => {
   it('EN-204 la base no deja cambiar la plantilla de una nota, ni en borrador', async () => {
     const prisma = db();
@@ -149,6 +219,56 @@ describe('la plantilla de cada nota', () => {
 });
 
 describe('la especialidad de la atención', () => {
+  it('EN-203 con cita, la especialidad es la del tipo de la cita aunque el profesional tenga otra principal', async () => {
+    const prisma = db();
+    const site = await createSite(prisma);
+    const practitioner = await createPractitioner(prisma);
+    const patient = await createPatient(prisma);
+    const [general, odontologia] = await Promise.all([
+      prisma.specialty.create({ data: { code: 'general', name: 'General' } }),
+      prisma.specialty.create({
+        data: { code: 'odontologia', name: 'Odontología' },
+      }),
+    ]);
+    await prisma.practitionerSpecialty.create({
+      data: {
+        practitionerId: practitioner.id,
+        specialtyId: general.id,
+        isPrimary: true,
+      },
+    });
+    const serviceType = await prisma.serviceType.create({
+      data: {
+        specialtyId: odontologia.id,
+        name: 'Primera vez',
+        durationMinutes: 30,
+      },
+    });
+    const entry = await prisma.agendaEntry.create({
+      data: {
+        kind: 'APPOINTMENT',
+        bookingChannel: 'PHONE',
+        siteId: site.id,
+        practitionerId: practitioner.id,
+        patientId: patient.id,
+        serviceTypeId: serviceType.id,
+        ...hourSlot(9),
+      },
+    });
+    const encounter = await createEncounter(prisma, {
+      siteId: site.id,
+      practitionerId: practitioner.id,
+      patientId: patient.id,
+      agendaEntryId: entry.id,
+    });
+
+    await expect(
+      new PrismaNoteTemplateRepository(asPrisma(prisma)).specialtyOfEncounter(
+        encounter.id,
+      ),
+    ).resolves.toBe(odontologia.id);
+  });
+
   it('EN-203 sin cita, la especialidad es la principal del profesional', async () => {
     const prisma = db();
     const site = await createSite(prisma);

@@ -14,7 +14,16 @@ export interface NoteTemplateSummary extends NoteTemplate {
 export interface PublishNoteTemplate {
   formCode: string;
   specialtyId: string | null;
-  sections: readonly NoteSection[];
+  /**
+   * EN-200. The version the screen edited (0 if the template did not exist).
+   * Inside the publishing transaction, anything else is a stale edit.
+   */
+  baseVersion: number;
+  /**
+   * EN-202. Mints the sections from the highest own key any version ever
+   * used, read under the same lock.
+   */
+  sectionsGiven: (highestOwnKeyEverUsed: number) => readonly NoteSection[];
   publishedById: string;
   publishedAt: Date;
 }

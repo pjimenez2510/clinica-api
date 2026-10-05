@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   NoteContentIncompleteError,
   NoteTemplateInvalidError,
+  UnknownClinicalFormError,
 } from './encounter.errors';
 import {
   MINIMUM_002_KEYS,
@@ -145,6 +146,25 @@ describe('lo que la clínica puede cambiar', () => {
     ]);
   });
 
+  it('EN-202 una sección nueva nunca recibe la clave de una que existió en una versión anterior', () => {
+    // v1 tuvo extra2; v2 la quitó. La nueva de v3 no puede ser extra2 otra vez.
+    const sections = publishableSections(
+      '002',
+      [
+        ...asInput(),
+        {
+          title: 'Riesgo cardiovascular',
+          help: '',
+          kind: 'TEXT',
+          required: false,
+        },
+      ],
+      2,
+    );
+
+    expect(sections.at(-1)?.key).toBe('extra3');
+  });
+
   it('EN-202 rechaza una lista de menos de dos opciones', () => {
     expect(
       refusalOf([
@@ -245,6 +265,31 @@ describe('firmar con la plantilla de la nota', () => {
         message: 'Elija una de las opciones de la lista',
       });
     }
+  });
+
+  it('EN-201 exige el mínimo aunque la plantilla guardada no lo traiga', () => {
+    const short = {
+      formCode: '002',
+      sections: builtIn.sections.filter(
+        (section) => section.key !== 'examenFisico',
+      ),
+    };
+
+    try {
+      assertNoteComplete(short, { ...COMPLETE_002, examenFisico: '' });
+      expect.unreachable('el examen físico es parte del mínimo');
+    } catch (error) {
+      expect(
+        (error as NoteContentIncompleteError).fieldErrors?.[0]?.field,
+      ).toBe('content.examenFisico');
+    }
+  });
+
+  it('EN-021 un formulario sin registrar no se valida como si fuera otro', () => {
+    expect(() => builtInTemplate('033')).toThrow(UnknownClinicalFormError);
+    expect(
+      builtInTemplate('005').sections.map((section) => section.key),
+    ).toEqual(['evolucion']);
   });
 
   it('EN-205 con la plantilla de serie exige las seis de siempre', () => {

@@ -2963,6 +2963,11 @@ dejaba ver su atención._
   > `DELETE` y `TRUNCATE`, y `clinical_note_template_version_unique` rechaza
   > dos versiones con el mismo número para la misma especialidad.
   >
+  > Publicar dice **sobre qué versión** se editó. SI ya no es la última
+  > —otra persona publicó entretanto—, ENTONCES el sistema DEBERÁ rechazarlo
+  > con `NOTE_TEMPLATE_STALE` en vez de pisar sus cambios (revisión del
+  > 04-10-2026).
+  >
   > Sin ninguna versión publicada, la plantilla es la de serie: las seis
   > secciones de EN-020 con su título y su ayuda. Una instalación que nunca
   > entre en la pantalla no pierde nada.
@@ -2976,6 +2981,11 @@ dejaba ver su atención._
   > clave de la sección —lo que se guarda en `content` y lo que se valida al
   > firmar— no cambia nunca. Lo que la norma pide no lo quita un
   > administrador.
+  >
+  > **Y la firma exige el mínimo aunque la plantilla guardada no lo traiga**:
+  > una fila escrita fuera de la publicación, o un mínimo que crezca después,
+  > no deja firmar una nota sin él. La plantilla decide títulos y orden; el
+  > art. 6, lo que no puede faltar.
 - **EN-202** — El sistema DEBERÁ permitir añadir a la plantilla **secciones
   propias** de la clínica, de texto o de una lista de opciones, cada una
   obligatoria o no; SI una lista tiene menos de dos opciones o alguna repetida,
@@ -2983,13 +2993,15 @@ dejaba ver su atención._
   `NOTE_TEMPLATE_INVALID`.
   > La clave de una sección propia la pone el servidor al crearla y se
   > conserva entre versiones, así que renombrarla no deja huérfano lo escrito.
+  > **Nunca se reutiliza**: la de una sección quitada no se da a otra nueva,
+  > o `content.extra2` querría decir dos cosas en dos notas.
   > Una sección propia de lista guarda **una** opción.
 - **EN-203** — DONDE haya una plantilla publicada para la **especialidad** de la
   atención, CUANDO se abra una nota de consulta, el sistema DEBERÁ usar su
   última versión; si no la hay, la última de la plantilla de la clínica; y si
   tampoco, la de serie (D-124).
-  > La especialidad es la del tipo de la cita y, sin cita, la principal del
-  > profesional. La plantilla la elige el **servidor**: la pantalla no la
+  > La especialidad es la del tipo de la cita y, sin cita o con una cita sin
+  > tipo, la principal del profesional. La plantilla la elige el **servidor**: la pantalla no la
   > manda, porque una nota escrita con una plantilla y validada con otra es el
   > fallo que esto evita.
 - **EN-204** — Cada nota DEBERÁ guardar la **versión de la plantilla** con la
@@ -3017,7 +3029,14 @@ dejaba ver su atención._
   > firmadas antes de esta entrega no tienen foto y no se les inventa.
   >
   > Se lee con `chartScope` (la ficha y las que absorbió), como el resumen de
-  > la historia (EN-159).
+  > la historia (EN-159), y la toman **todas las firmas**: la de la nota y la
+  > de los borradores que firma la interrupción «con lo hecho» (EN-167), que
+  > firma antes de cerrar la atención.
+  >
+  > **Límite aceptado:** la foto se lee justo antes de la transacción de
+  > firma, con los lectores compartidos. Lo que se registre o se descarte en
+  > esos milisegundos queda en la ficha y en su rastro, y la foto dice lo que
+  > la ficha decía en `takenAt`.
 - **EN-207** — CUANDO se firme una nota de consulta, el sistema DEBERÁ dar por
   escrita la sección de **antecedentes** si tiene texto **o** si la foto de
   EN-206 contiene al menos una alergia activa o un antecedente; «sin alergias
@@ -3044,6 +3063,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `PATIENT_CHART_NOT_OPEN` | 409 | Se intentó abrir una atención de una ficha inexistente o absorbida por una fusión | EN-001 |
 | `ENCOUNTER_APPOINTMENT_MISMATCH` | 422 | La cita nombrada es de otro paciente | EN-004 |
 | `APPOINTMENT_NOT_ATTENDABLE` | 409 | La cita está anulada o marcada como inasistencia. **Es el reverso de `AGENDA_ENTRY_HAS_ENCOUNTER`**, que ya existe: aquélla la emite `agenda` al anular, ésta la emite este módulo al atender | EN-005 |
+| `NOTE_TEMPLATE_STALE` | 409 | Se publicó una plantilla sobre una versión que ya no es la última: otra persona publicó entretanto | EN-200 |
 | `NOTE_TEMPLATE_INVALID` | 422 | Una versión de la plantilla de nota sin una sección del mínimo, con una del mínimo no obligatoria, con una lista de menos de dos opciones o repetidas, o con títulos repetidos | EN-201, EN-202 |
 | `ENCOUNTER_ALREADY_CLOSED` | 409 | Se intentó registrar contenido clínico en una atención ya cerrada | EN-009 |
 | `DISCHARGE_CONDITION_REQUIRED` | 422 | Cerrar sin condición de egreso | EN-009 |
