@@ -126,6 +126,7 @@ const anEncounterRead = (
   practitionerId: PRACTITIONER,
   endedAt: null,
   dischargeCondition: null,
+  diagnosisCount: 1,
   ...overrides,
 });
 
@@ -355,6 +356,23 @@ describe('los casos de uso de la nota clínica', () => {
         requester,
       ),
     ).rejects.toBeInstanceOf(NoteContentIncompleteError);
+  });
+
+  it('EN-020 rechaza firmar la 002 en una atención sin diagnóstico, nombrándolo con lo que falte', async () => {
+    notes.stored = aNote({ content: without('planTratamiento') });
+    notes.encounter = anEncounterRead({ diagnosisCount: 0 });
+
+    const refusal = await service
+      .sign(
+        { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, // prettier-ignore
+        requester,
+      )
+      .catch((error: unknown) => error);
+
+    expect(refusal).toBeInstanceOf(NoteContentIncompleteError);
+    expect(
+      (refusal as NoteContentIncompleteError).fieldErrors?.map((e) => e.field),
+    ).toEqual(['content.planTratamiento', 'diagnoses']);
   });
 
   it('EN-027 firma registrando quién, cuándo y el resumen del contenido', async () => {

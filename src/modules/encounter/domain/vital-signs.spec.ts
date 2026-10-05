@@ -135,7 +135,11 @@ describe('los signos vitales', () => {
 
   it('EN-063 sigue exigiendo las tres medidas a una menor de 5 años, embarazada o no', () => {
     expect(() =>
-      assertMandatoryAnthropometry({ weightKg: 12, heightCm: 86 }, TODDLER, true),
+      assertMandatoryAnthropometry(
+        { weightKg: 12, heightCm: 86 },
+        TODDLER,
+        true,
+      ),
     ).toThrow(VitalsRequiredError);
   });
 });

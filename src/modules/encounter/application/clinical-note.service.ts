@@ -320,8 +320,13 @@ export class ClinicalNoteService {
         const content = withBackgroundSnapshot(note.content, background);
         // EN-020, EN-205, EN-207. The required sections of the note's own
         // template — which always include the minimum of art. 6 — demanded
-        // at the moment the note becomes the record.
-        assertNoteComplete(template, content);
+        // at the moment the note becomes the record — and, for the note that
+        // discharges, a diagnosis on the attention.
+        assertNoteComplete(
+          template,
+          content,
+          form.dischargesTheEncounter && encounter.diagnosisCount === 0,
+        );
 
         /**
          * EN-009, EN-130. Signing the consultation note discharges the

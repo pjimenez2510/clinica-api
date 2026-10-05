@@ -491,10 +491,20 @@ export class NoteContentIncompleteError extends ValidationError {
    * of their options: the same refusal, because what the doctor does next is
    * the same — fix the section named before signing.
    */
-  constructor(missing: readonly string[], invalid: readonly string[] = []) {
+  constructor(
+    missing: readonly string[],
+    invalid: readonly string[] = [],
+    /** EN-020. The 002 discharges the attention, and that needs a diagnosis. */
+    withoutDiagnosis = false,
+  ) {
     super(
-      `Form is missing mandatory sections: ${missing.join(', ')}`,
-      { missing: missing.join(','), invalid: invalid.join(',') },
+      `Form is missing mandatory sections: ${[...missing, ...(withoutDiagnosis ? ['diagnoses'] : [])].join(', ')}`,
+      {
+        missing: [...missing, ...(withoutDiagnosis ? ['diagnoses'] : [])].join(
+          ',',
+        ),
+        invalid: invalid.join(','),
+      },
       [
         ...missing.map((section) => ({
           field: `content.${section}`,
@@ -506,6 +516,15 @@ export class NoteContentIncompleteError extends ValidationError {
           code: 'NOTE_CONTENT_INCOMPLETE',
           message: 'Elija una de las opciones de la lista',
         })),
+        ...(withoutDiagnosis
+          ? [
+              {
+                field: 'diagnoses',
+                code: 'NOTE_CONTENT_INCOMPLETE',
+                message: 'Registre al menos un diagnóstico antes de firmar',
+              },
+            ]
+          : []),
       ],
     );
   }

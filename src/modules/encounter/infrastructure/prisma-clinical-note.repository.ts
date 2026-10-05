@@ -64,6 +64,7 @@ const ENCOUNTER_FOR_NOTE = {
   endedAt: true,
   dischargeCondition: true,
   agendaEntryId: true,
+  _count: { select: { diagnoses: true } },
 } satisfies Prisma.EncounterSelect;
 
 /**
@@ -478,6 +479,7 @@ function toEncounterRead(
     practitionerId: row.practitionerId,
     endedAt: row.endedAt,
     dischargeCondition: row.dischargeCondition,
+    diagnosisCount: row._count.diagnoses,
   };
 }
 

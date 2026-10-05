@@ -310,6 +310,13 @@ function choiceOptions(field: string, raw: readonly string[]): string[] {
 export function assertNoteComplete(
   template: Pick<NoteTemplate, 'sections' | 'formCode'>,
   content: Readonly<Record<string, unknown>>,
+  /**
+   * EN-020. True when the note discharges the attention and the attention has
+   * no diagnosis: art. 6 lists the diagnosis among the minimum, and it lives
+   * in `encounter_diagnosis`, not in `content`. Named with the sections so
+   * the doctor reads everything missing in one refusal.
+   */
+  withoutDiagnosis = false,
 ): void {
   const background = backgroundSnapshotIn(content);
   const missing: string[] = [];
@@ -343,7 +350,7 @@ export function assertNoteComplete(
     }
   }
 
-  if (missing.length > 0 || invalid.length > 0) {
-    throw new NoteContentIncompleteError(missing, invalid);
+  if (missing.length > 0 || invalid.length > 0 || withoutDiagnosis) {
+    throw new NoteContentIncompleteError(missing, invalid, withoutDiagnosis);
   }
 }

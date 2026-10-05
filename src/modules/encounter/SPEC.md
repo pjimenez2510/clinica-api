@@ -859,9 +859,14 @@ requisitos que cambian.
   > falten. Hasta entonces sólo lo frenaba la pantalla, y un cliente de la API
   > —el asistente de IA de D-127.5— firmaba una nota sin diagnóstico: una
   > atención dada de alta que el RDACAA no puede reportar. **Garantía de la
-  > base:** `trg_clinical_note_sign_needs_diagnosis` rechaza que una nota 002
-  > pase a `SIGNED` —o nazca firmada, como la enmienda— en una atención sin
-  > ninguna fila en `encounter_diagnosis`. Es la otra mitad de
+  > base:** `trg_clinical_note_sign_needs_diagnosis`, diferido al final de la
+  > transacción, rechaza que una nota 002 pase de `DRAFT` a `SIGNED` si la
+  > atención queda con el alta y sin ninguna fila en `encounter_diagnosis`.
+  > Diferido porque interrumpir (EN-167) también firma la 002 y deja la atención
+  > `DISCONTINUED` sin exigir diagnóstico, y sólo al confirmar se sabe cuál de
+  > las dos fue. La enmienda, que nace firmada, no lo necesita: parte de una
+  > 002 que ya pasó por aquí, en una atención que tras el alta no puede
+  > quedarse sin diagnóstico. Es la otra mitad de
   > `encounter_diagnosis_last_after_discharge` (EN-188): aquélla impide quitar el
   > último tras el alta, ésta impide llegar al alta sin ninguno. La 005 no lo
   > exige: el art. 6 rige el contenido mínimo de la historia, y aquí lo cumple

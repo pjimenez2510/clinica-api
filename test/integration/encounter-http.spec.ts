@@ -16,7 +16,12 @@ import { contentHashOf } from '../../src/modules/encounter/domain/clinical-note'
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
-import { createPatient, createSite, hourSlot } from './setup/fixtures';
+import {
+  createDiagnosis,
+  createPatient,
+  createSite,
+  hourSlot,
+} from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
 /**
@@ -989,6 +994,7 @@ describe('la atención por HTTP', () => {
         title: 'Hallazgos odontológicos',
       });
 
+      await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
       const refused = await post(
         `/encounters/${encounterId}/notes/${note.id}/sign`,
         doctorToken,
@@ -1004,6 +1010,7 @@ describe('la atención por HTTP', () => {
         baseVersion: 1,
         sections: minimum(),
       }).expect(201);
+      await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
       await post(
         `/encounters/${encounterId}/notes/${note.id}/sign`,
         doctorToken,
@@ -1016,6 +1023,7 @@ describe('la atención por HTTP', () => {
         .set('Authorization', `Bearer ${doctorToken}`)
         .send({ content: { ...COMPLETE_002, extra1: 'Caries' } })
         .expect(200);
+      await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
       await post(
         `/encounters/${encounterId}/notes/${note.id}/sign`,
         doctorToken,
@@ -1042,6 +1050,7 @@ describe('la atención por HTTP', () => {
       expect(note.status).toBe('DRAFT');
       expect(note.chainId).toBe(note.id);
 
+      await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
       const signed = await post(
         `/encounters/${encounterId}/notes/${note.id}/sign`,
         doctorToken,
@@ -1090,6 +1099,7 @@ describe('la atención por HTTP', () => {
       ).expect(201);
       const noteId = (draft.body as NoteBody).id;
 
+      await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
       await post(
         `/encounters/${encounterId}/notes/${noteId}/sign`,
         doctorToken,
@@ -1143,6 +1153,7 @@ describe('la atención por HTTP', () => {
         },
       ).expect(201);
 
+      await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
       const refused = await post(
         `/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}/sign`,
         doctorToken,
@@ -1160,6 +1171,7 @@ describe('la atención por HTTP', () => {
           content: { ...COMPLETE_002, antecedentes: 'Niega antecedentes' },
         })
         .expect(200);
+      await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
       await post(
         `/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}/sign`,
         doctorToken,
@@ -1178,6 +1190,7 @@ describe('la atención por HTTP', () => {
         },
       ).expect(201);
 
+      await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
       const response = await post(
         `/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}/sign`,
         doctorToken,
@@ -1199,6 +1212,7 @@ describe('la atención por HTTP', () => {
         },
       ).expect(201);
 
+      await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
       const response = await post(
         `/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}/sign`,
         doctorToken,
@@ -1208,6 +1222,114 @@ describe('la atención por HTTP', () => {
       const problem = response.body as Problem;
       expect(problem.code).toBe('NOTE_CONTENT_INCOMPLETE');
       expect(problem.errors?.[0]?.field).toBe('content.planTratamiento');
+    });
+
+    it('EN-020 rechaza firmar la 002 sin ningun diagnostico, y con uno firma y da el alta', async () => {
+      const encounterId = await openEncounter();
+      const draft = await post(
+        `/encounters/${encounterId}/notes`,
+        doctorToken,
+        { formCode: '002', content: COMPLETE_002 },
+      ).expect(201);
+      const noteId = (draft.body as NoteBody).id;
+      const sign = () =>
+        post(`/encounters/${encounterId}/notes/${noteId}/sign`, doctorToken, {
+          dischargeCondition: 'ALIVE',
+        });
+
+      const refused = await sign().expect(422);
+      const problem = refused.body as Problem;
+      expect(problem.code).toBe('NOTE_CONTENT_INCOMPLETE');
+      expect(problem.errors?.map((error) => error.field)).toEqual([
+        'diagnoses',
+      ]);
+      // Nothing moved: the note is a draft and the attention is open.
+      await expect(
+        prisma.clinicalNote.findUniqueOrThrow({ where: { id: noteId } }),
+      ).resolves.toMatchObject({ status: 'DRAFT' });
+      await expect(
+        prisma.encounter.findUniqueOrThrow({ where: { id: encounterId } }),
+      ).resolves.toMatchObject({ status: 'OPEN' });
+
+      // Positive control, same note: with a diagnosis it signs and discharges.
+      await createDiagnosis(prisma, encounterId, 'J00');
+      await sign().expect(200);
+      await expect(
+        prisma.encounter.findUniqueOrThrow({ where: { id: encounterId } }),
+      ).resolves.toMatchObject({ status: 'DISCHARGED' });
+    });
+
+    it('EN-020 hace que la base rechace la 002 firmada con alta y sin diagnostico, y no la interrumpida', async () => {
+      const { id: signerId } = await prisma.practitioner.findFirstOrThrow({
+        where: { user: { email: 'medico@clinica.ec' } },
+        select: { id: true },
+      });
+      const { id: doctorUserId } = await prisma.user.findUniqueOrThrow({
+        where: { email: 'medico@clinica.ec' },
+      });
+      const draft002 = async () => {
+        const encounterId = await openEncounter();
+        const note = await post(
+          `/encounters/${encounterId}/notes`,
+          doctorToken,
+          { formCode: '002', content: COMPLETE_002 },
+        ).expect(201);
+        return { encounterId, noteId: (note.body as NoteBody).id };
+      };
+      // What the signing adapter does, in one transaction: sign, then end the
+      // attention. The trigger is deferred to the commit.
+      const signAndEnd = (
+        ids: { encounterId: string; noteId: string },
+        ending: 'DISCHARGED' | 'DISCONTINUED',
+      ) =>
+        prisma.$transaction([
+          prisma.$executeRaw`
+            UPDATE clinical_note
+               SET status = 'SIGNED', signed_at = now(),
+                   signed_by_id = ${signerId}::uuid, content_hash = repeat('a', 64)
+             WHERE id = ${ids.noteId}::uuid`,
+          ending === 'DISCHARGED'
+            ? prisma.encounter.update({
+                where: { id: ids.encounterId },
+                data: {
+                  status: 'DISCHARGED',
+                  endedAt: new Date(),
+                  dischargeCondition: 'ALIVE',
+                },
+              })
+            : prisma.encounter.update({
+                where: { id: ids.encounterId },
+                data: {
+                  status: 'DISCONTINUED',
+                  endedAt: new Date(),
+                  discontinuedReason: 'El paciente se retiró',
+                  discontinuedOrigin: 'PATIENT',
+                  discontinuedById: doctorUserId,
+                  discontinuedAt: new Date(),
+                },
+              }),
+        ]);
+
+      const refused = await draft002();
+      await expect(signAndEnd(refused, 'DISCHARGED')).rejects.toThrow(
+        /clinical_note_sign_needs_diagnosis/,
+      );
+      await expect(
+        prisma.clinicalNote.findUniqueOrThrow({
+          where: { id: refused.noteId },
+        }),
+      ).resolves.toMatchObject({ status: 'DRAFT' });
+
+      // Positive control: the same statements with a diagnosis commit.
+      const coded = await draft002();
+      await createDiagnosis(prisma, coded.encounterId, 'J00');
+      await expect(signAndEnd(coded, 'DISCHARGED')).resolves.toHaveLength(2);
+
+      // And an interruption signs the 002 without one (EN-167).
+      const interrupted = await draft002();
+      await expect(
+        signAndEnd(interrupted, 'DISCONTINUED'),
+      ).resolves.toHaveLength(2);
     });
 
     it('EN-021 rechaza un formulario que esta instalación no sabe validar', async () => {
@@ -1238,6 +1360,7 @@ describe('la atención por HTTP', () => {
         },
       ).expect(201);
       const noteId = (draft.body as NoteBody).id;
+      await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
       await post(
         `/encounters/${encounterId}/notes/${noteId}/sign`,
         doctorToken,
@@ -1266,6 +1389,7 @@ describe('la atención por HTTP', () => {
         },
       ).expect(201);
       const noteId = (draft.body as NoteBody).id;
+      await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
       await post(
         `/encounters/${encounterId}/notes/${noteId}/sign`,
         doctorToken,
@@ -1307,6 +1431,7 @@ describe('la atención por HTTP', () => {
         },
       ).expect(201);
       const noteId = (draft.body as NoteBody).id;
+      await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
       await post(
         `/encounters/${encounterId}/notes/${noteId}/sign`,
         doctorToken,
@@ -1334,6 +1459,7 @@ describe('la atención por HTTP', () => {
         },
       ).expect(201);
       const noteId = (draft.body as NoteBody).id;
+      await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
       await post(
         `/encounters/${encounterId}/notes/${noteId}/sign`,
         doctorToken,
@@ -1367,6 +1493,7 @@ describe('la atención por HTTP', () => {
         },
       ).expect(201);
       const noteId = (draft.body as NoteBody).id;
+      await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
       await post(
         `/encounters/${encounterId}/notes/${noteId}/sign`,
         doctorToken,
@@ -1485,6 +1612,7 @@ describe('la atención por HTTP', () => {
         formCode: '002',
         content: COMPLETE_002,
       }).expect(201);
+      await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
       await post(
         `/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}/sign`,
         token,
@@ -1640,6 +1768,7 @@ describe('la atención por HTTP', () => {
 
       // EN-138: se firma. La atención pasa a DISCHARGED y el PACIENTE SIGUE
       // AQUÍ — la fila que prueba que hacen falta los dos ejes.
+      await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
       await post(
         `/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}/sign`,
         doctorToken,
