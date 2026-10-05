@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
 } from '@nestjs/common';
 import {
   ApiCreatedResponse,
@@ -16,6 +17,8 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+
+import type { Request } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import { RequirePermission } from '../../shared/http/auth.decorators';
@@ -219,11 +222,18 @@ export class BillingController {
   async statement(
     @Param('siteId', ParseUUIDPipe) siteId: string,
     @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Req() req: Request,
   ): Promise<AccountStatementResponse> {
+    // D-118: who, and from where — `req.ip` is the client because
+    // `trust proxy` counts hops (see the patients controller).
     return toStatementResponse(
       await this.accounts.openStatement(
         { accountId, siteId },
-        { userId: this.currentUser.requireUserId() },
+        {
+          userId: this.currentUser.requireUserId(),
+          ip: req.ip,
+          userAgent: req.get('user-agent'),
+        },
       ),
     );
   }

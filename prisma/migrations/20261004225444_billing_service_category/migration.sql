@@ -116,7 +116,9 @@ CREATE INDEX "billable_service_by_category"
   ON "billable_service" ("category_id", "name");
 
 -- BI-181. Lo que caja tiene pendiente: atenciones terminadas de una sede, por
--- su fin. Parcial: las abiertas y las anuladas nunca se piden aquí.
+-- su fin. NO parcial a propósito: Prisma manda el `status IN (...)` con
+-- parámetros, y con un plan genérico PostgreSQL no puede demostrar el
+-- predicado de un índice parcial y no lo usaría. Las abiertas tienen `ended_at`
+-- nulo y no estorban.
 CREATE INDEX "encounter_ended_by_site"
-  ON "encounter" ("site_id", "ended_at" DESC)
-  WHERE "status" IN ('DISCHARGED', 'DISCONTINUED', 'COMPLETED');
+  ON "encounter" ("site_id", "ended_at" DESC);

@@ -51,6 +51,9 @@ import {
  * does not shift a statistic — it resolves a different price, because the
  * validity that started that midnight would apply.
  */
+/** D-119. Most visits caja is shown at once. */
+const AWAITING_CHECKOUT_LIMIT = 200;
+
 @Injectable()
 export class PrismaClinicalActsRepository implements ClinicalActsRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -183,6 +186,9 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
         },
       },
       orderBy: { endedAt: 'desc' },
+      // A ceiling, not a page: the seven-day list never reaches it, and the
+      // older ones (D-119) come newest first — the ones still worth chasing.
+      take: AWAITING_CHECKOUT_LIMIT,
     });
 
     // In sequence and not all at once: each interrupted visit costs eight

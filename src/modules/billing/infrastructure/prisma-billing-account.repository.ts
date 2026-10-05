@@ -519,6 +519,15 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
            WHERE "id" = ${issuance.accountId}::uuid
              FOR UPDATE`;
 
+        // And the pending charges themselves: an annulment or a confirmation
+        // in flight waits for this issuance, or this one reads its result —
+        // never half of it (BI-184).
+        await tx.$queryRaw`
+          SELECT "id" FROM "charge_item"
+           WHERE "account_id" = ${issuance.accountId}::uuid
+             AND "status" = 'BILLABLE'
+             FOR UPDATE`;
+
         const charges = await tx.chargeItem.findMany({
           where: { accountId: issuance.accountId, status: 'BILLABLE' },
           orderBy: { createdAt: 'asc' },
@@ -599,13 +608,18 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         // BI-169. Each charge names the invoice that took it, in the same
         // statement that bills it (`charge_item_billed_carries_its_invoice`):
         // the voucher's lines are read through it.
-        await tx.chargeItem.updateMany({
+        const billed = await tx.chargeItem.updateMany({
           where: {
             id: { in: charges.map((charge) => charge.id) },
             status: 'BILLABLE',
           },
           data: { status: 'BILLED', invoiceId: invoice.id },
         });
+        // The total above counted every one of them: if any changed after all,
+        // nothing is issued rather than an invoice that does not add up.
+        if (billed.count !== charges.length) {
+          throw new InvoiceChargesChangedError();
+        }
 
         return toInvoiceView(invoice);
       });

@@ -94,7 +94,7 @@ export class ServiceCategoryInactiveError extends BusinessRuleViolation {
 export class ServiceKindMismatchError extends BusinessRuleViolation {
   readonly code = 'SERVICE_KIND_MISMATCH';
   override readonly userTitle =
-    'La categoría no admite esa estructura: sólo una consulta es la consulta de una especialidad, y sólo un procedimiento se ata a un procedimiento';
+    'Esa clase no admite lo que la prestación ya tiene atado (una especialidad, un procedimiento o exámenes)';
 
   constructor() {
     super('Service category kind does not admit that structure', {}, [

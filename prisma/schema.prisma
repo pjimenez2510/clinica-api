@@ -2523,8 +2523,8 @@ model Encounter {
   @@index([patientId, startedAt(sort: Desc)])
   @@index([practitionerId, startedAt(sort: Desc)])
   @@index([siteId, startedAt])
-  // `encounter_ended_by_site` (BI-181) is PARTIAL — ended visits only — and so
-  // lives in the migration: schema.prisma cannot say it.
+  /// BI-181. What caja still has to look at, by site and end.
+  @@index([siteId, endedAt(sort: Desc)], map: "encounter_ended_by_site")
   @@map("encounter")
 }
 

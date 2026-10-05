@@ -1494,7 +1494,8 @@ dos registros distintos.**
   DEBERÁ listar las anuladas (`ENTERED_IN_ERROR`) ni las de otra sede. El
   sistema DEBERÁ servir además cuántas atenciones anteriores a esa ventana
   siguen sin cuenta liquidada, para que la pantalla lo diga, y CUANDO caja lo
-  pida DEBERÁ listarlas también (D-119, resuelta por el autor: opción A).
+  pida DEBERÁ listarlas también, las más recientes primero y hasta 200 (D-119,
+  resuelta por el autor: opción A).
   > **El defecto que lo origina.** BI-150 daba la ruta de paso a caja, pero
   > nada la alcanzaba: la atención enlaza a la cuenta sólo cuando ya existe, y
   > caja listaba cuentas, que nacen precisamente de ese paso. El resultado era
@@ -1522,7 +1523,10 @@ dos registros distintos.**
   > dicen nada de su salud. BI-133 prohíbe enterrar la bitácora con un acceso
   > por fila, no enseñar el nombre: la proyección se lee sin pasar por la ficha.
   > Abrir UNA cuenta sí deja un acceso, a la cuenta y no a la historia
-  > (D-118, resuelta por el autor: A); listarlas, ninguno.
+  > (D-118, resuelta por el autor: A), con quién y desde dónde; listarlas,
+  > ninguno. Es un acceso por cada vez que se sirve el extracto: la pantalla lo
+  > vuelve a pedir tras cada cambio en la cuenta, y cada una de esas lecturas
+  > queda, igual que cada apertura de la ficha.
   >
   > El recién nacido sin documento lleva sólo su HC. El documento es el mismo
   > que enseña la ficha: el primer documento definitivo vigente, por fecha de
