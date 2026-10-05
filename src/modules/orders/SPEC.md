@@ -102,7 +102,8 @@ una interoperación y afirma algo falso.
 
 **Dentro:**
 
-1. Emitir una orden de examen desde una atención, con sus líneas.
+1. Emitir una orden de examen desde una atención, con sus líneas, tras
+   componerla y corregirla en borrador (ORD-095 a ORD-099).
 2. La cola de **órdenes sin resultado**, que envejece, con dueño y plazo.
 3. Registrar el informe que vuelve: valores estructurados por analito, con su
    unidad, su rango de referencia y su bandera **calculada**.
@@ -266,6 +267,26 @@ extracción repetida.
 **No se construye todavía y no es una decisión de prioridad: falta el esquema.**
 No hay tabla de adjuntos en ninguna parte del modelo. Ver ORD-070 y ORD-071.
 
+### E9 — La orden en borrador y el examen con tipo _(P1)_
+
+Componer la orden en la pestaña de la atención, guardarla en borrador,
+corregirla, descartarla o emitirla; elegir los exámenes de una lista filtrada
+por el tipo de la orden.
+
+**Por qué es P1:** una orden que se emite al primer clic y solo se corrige
+anulando líneas llena la cola de pendientes de pedidos que nadie quería, y un
+hemograma pedido como «Imagen» llega al laboratorio equivocado.
+**Prueba independiente:** guardar un borrador con `EX-BH`, cambiarlo por
+`EX-GLUCOSA-AYUNAS`, emitirlo y comprobar que lleva el siguiente número de la
+sede y que un borrador descartado antes no consumió ninguno; pedir `EX-BH` en
+una orden de imagen y ver el rechazo.
+**Cubre:** ORD-095 a ORD-102.
+
+**Solo servidor:** ORD-100, ORD-102. Que el borrador no salga en la cola, ni en
+caja, ni en la verificación, ni cuente para anular la atención son filtros de
+las consultas del servidor; en pantalla no hay nada que enseñar salvo su
+ausencia.
+
 ### Fuera de las ocho
 
 **Transcripción masiva y gráficas de evolución.** Se transcribe **solo lo que se
@@ -381,7 +402,8 @@ cuando la gráfica exista.
   > **Construido** (`20261001070100_document_counter_and_order_number`).
   > `service_order.number` lo asigna el disparador
   > `service_order_number_assigned` desde `document_counter`, **por sede**
-  > (D-074), dentro de la transacción que emite: una emisión revertida devuelve
+  > (D-074), dentro de la transacción que emite —**al emitir**, no al guardar
+  > el borrador (ORD-098)—: una emisión revertida devuelve
   > su número y la serie no tiene huecos, que es lo que una `SEQUENCE` como
   > `patient_mrn_seq` no garantiza. `service_order_site_number_unique` y
   > `service_order_number_immutable` lo dicen una segunda vez. El disparador
@@ -975,6 +997,76 @@ cuando la gráfica exista.
   asigne»). Es el mismo argumento que produjo `nursing:write` y
   `encounter:open`.
 
+## 9. El borrador y el tipo del examen (ORD-095 a ORD-102)
+
+Revisión de usabilidad del autor (04-10-2026): la orden se compone en la
+pestaña de la atención, como la receta, y hasta emitirla **se corrige**: hoy se
+emitía al primer clic y lo pedido por error solo se podía anular línea a línea.
+Y el «Tipo de orden» no filtraba nada, porque el examen no tenía tipo: se podía
+marcar Imagen y pedir un hemograma.
+
+- **ORD-095** — CUANDO un profesional guarda una orden sin emitirla, el sistema
+  DEBERÁ registrarla en `DRAFT`, **sin número** y con las líneas validadas como
+  al emitir (ORD-002 a ORD-005, ORD-097).
+
+  > `service_order.status` (`service_order_status`: `DRAFT`, `ISSUED`,
+  > `DISCARDED`). Las órdenes que ya existían pasan a `ISSUED`: se emitieron
+  > así.
+
+- **ORD-096** — MIENTRAS una orden esté en `DRAFT`, el sistema DEBERÁ admitir
+  reescribirla entera —tipo, prioridad, indicación clínica y líneas—
+  conservando su identificador; SI no está en `DRAFT`, ENTONCES DEBERÁ
+  rechazarlo con `ORDER_NOT_DRAFT`, y la base DEBERÁ impedir cambiar el tipo,
+  la prioridad, la indicación o las líneas de una orden que no está en
+  borrador.
+
+  Las líneas del borrador **se sustituyen**: nunca salieron de la consulta, así
+  que no hay nada que auditar en quitarlas. Lo que se audita empieza al
+  emitir, y desde ahí rige ORD-007 —una línea se anula, nunca se borra—.
+
+- **ORD-097** — SI algún examen de la orden no es del tipo de la orden, ENTONCES
+  el sistema DEBERÁ rechazar la orden entera con `EXAM_CATEGORY_MISMATCH`.
+
+  > `exam_definition.category` (`service_order_category`), `LABORATORY` de
+  > fábrica para lo que ya había. La coherencia con la **clase** de la
+  > categoría de su prestación de cobro (`billable_service_category.kind`, de
+  > `fix/caja-usabilidad`) entra con el catálogo de exámenes.
+
+- **ORD-098** — CUANDO se emite una orden en `DRAFT`, el sistema DEBERÁ pasarla a
+  `ISSUED`, asignarle **en ese momento** el número de ORD-006 y fijar
+  `requested_at` en el instante de la emisión, volviendo a comprobar ORD-003 y
+  ORD-005; una orden que no llega a emitirse NO DEBERÁ consumir número.
+
+  El número se asigna al emitir para que la serie del art. 43 no tenga huecos:
+  un borrador descartado que se hubiera llevado el 42 dejaría la orden 41 y la
+  43 y una pregunta por la 42. Y `requested_at` es el de la emisión porque de
+  él cuelgan la antigüedad de la cola (ORD-021) y la fecha del cargo en caja.
+
+- **ORD-099** — CUANDO se descarta una orden en `DRAFT`, el sistema DEBERÁ dejarla
+  en `DISCARDED` con quién y cuándo, **sin borrar ninguna fila**; SI no está en
+  `DRAFT`, ENTONCES DEBERÁ rechazarlo con `ORDER_NOT_DRAFT`.
+
+  > **[NECESITA ACLARACIÓN — D-122]** ¿Se pide motivo al descartar, como en la
+  > receta (PR-011)? Construido sin motivo, con la recomendación.
+
+- **ORD-100** — Una orden que no esté en `ISSUED` NO DEBERÁ aparecer en la cola de
+  pendientes, ni proponer cargo en caja, ni contar como acto clínico de la
+  atención, ni imprimirse ni verificarse por su código; y SI se intenta
+  registrar un informe, emparejar un resultado o anular una línea de una orden
+  que no está en `ISSUED`, ENTONCES el sistema DEBERÁ rechazarlo con
+  `ORDER_NOT_ISSUED`.
+
+- **ORD-101** — El catálogo de ORD-010 DEBERÁ publicar el **tipo** de cada
+  ordenable.
+
+  Es lo que deja filtrar la lista al pedir. Filtrar por la sección del 010A no
+  sirve para esto: una radiografía no tiene sección del 010A.
+
+- **ORD-102** — Una orden en `DRAFT` DEBERÁ contar como acto vivo de la atención
+  (D-099 §1), como la receta en borrador: la atención no se anula con un
+  borrador dentro, que se descarta antes. Las órdenes `DISCARDED` NO DEBERÁN
+  contar.
+
 ---
 
 ## Códigos de error nuevos
@@ -1006,6 +1098,9 @@ contrato —`code`, estado y mensaje—.
 | `REPORT_CORRECTION_INCOMPLETE` | 422 | La corrección no trae todos los analitos del informe que sustituye | ORD-055 |
 | `RESULT_SUPERSEDED` | 422 | Se intentó avisar de un valor cuyo informe ya fue corregido: se avisa el que lo sustituye | ORD-062 |
 | `CRITICAL_READ_BACK_REQUIRED` | 422 | Un aviso hecho sin confirmar que quien lo recibió repitió el valor | ORD-066 |
+| `ORDER_NOT_DRAFT` | 409 | Se intentó reescribir, emitir o descartar una orden que ya no está en borrador | ORD-096, ORD-098, ORD-099 |
+| `ORDER_NOT_ISSUED` | 409 | Se intentó registrar un informe, emparejar un resultado o anular una línea de una orden que no se ha emitido | ORD-100 |
+| `EXAM_CATEGORY_MISMATCH` | 422 | Un examen de la orden no es del tipo de la orden. Rechaza la orden **entera**, como ORD-003 | ORD-097 |
 
 Se **reutilizan**, no se crean: `CATALOG_CONCEPT_NOT_FOUND` y
 `CATALOG_CONCEPT_NOT_IN_FORCE` de `shared/domain/errors`, que existen
@@ -1044,7 +1139,10 @@ resuelto de quien llama.
 
 | Método | Ruta | Permiso | Requisitos |
 | --- | --- | --- | --- |
-| `POST` | `/encounters/:encounterId/orders` | `record:write` | ORD-001 a ORD-006 |
+| `POST` | `/encounters/:encounterId/orders` | `record:write` | ORD-001 a ORD-005, ORD-095, ORD-097 |
+| `PUT` | `/orders/:orderId` | `record:write` | ORD-096, ORD-097 |
+| `POST` | `/orders/:orderId/issue` | `record:write` | ORD-006, ORD-098 |
+| `POST` | `/orders/:orderId/discard` | `record:write` | ORD-099 |
 | `GET` | `/encounters/:encounterId/orders` | `record:read` | ORD-002, ORD-009 |
 | `GET` | `/orders/:orderId` | `record:read` | ORD-009 |
 | `POST` | `/orders/:orderId/items/:itemId/cancel` | `record:write` | ORD-007, ORD-008 |
