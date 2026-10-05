@@ -29,7 +29,21 @@ import { PrismaClinicalNoteRepository } from '../../src/modules/encounter/infras
 import { PrismaEncounterRepository } from '../../src/modules/encounter/infrastructure/prisma-encounter.repository';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
+import { BackgroundSnapshotReader } from '../../src/modules/encounter/application/background-snapshot.reader';
+import { PrismaPatientAllergyRepository } from '../../src/modules/encounter/infrastructure/prisma-patient-allergy.repository';
+import { PrismaPatientHistoryRepository } from '../../src/modules/encounter/infrastructure/prisma-patient-history.repository';
+import { PrismaActiveAllergyReader } from '../../src/shared/infrastructure/clinical/prisma-active-allergy.reader';
 import { useDatabase } from './setup/database';
+
+/** EN-206. The real readers behind the snapshot every signature freezes. */
+const backgroundOf = (prisma: PrismaClient) => {
+  const service = prisma as unknown as PrismaService;
+  return new BackgroundSnapshotReader(
+    new PrismaActiveAllergyReader(service),
+    new PrismaPatientAllergyRepository(service),
+    new PrismaPatientHistoryRepository(service),
+  );
+};
 import {
   createEncounter,
   createPatient,
@@ -225,6 +239,7 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
       new PrismaEncounterExitRepository(prisma as unknown as PrismaService),
       new PrismaEncounterRepository(prisma as unknown as PrismaService),
       noAudit,
+      backgroundOf(prisma),
       quietLogger,
     );
 
@@ -515,6 +530,7 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
           return Promise.resolve();
         },
       },
+      backgroundOf(prisma),
       quietLogger,
     );
 
@@ -1335,6 +1351,7 @@ describe('escribir un diagnóstico o un procedimiento se serializa con anular e 
       new PrismaEncounterExitRepository(asPrisma(prisma)),
       new PrismaEncounterRepository(asPrisma(prisma)),
       noAudit,
+      backgroundOf(prisma),
       quietLogger,
     );
 
@@ -1438,6 +1455,7 @@ describe('una nota con solo blancos no es acto clínico, en la base igual que en
       new PrismaEncounterExitRepository(asPrisma(prisma)),
       new PrismaEncounterRepository(asPrisma(prisma)),
       { record: () => Promise.resolve() },
+      backgroundOf(prisma),
       quietLogger,
     );
 
@@ -1450,5 +1468,70 @@ describe('una nota con solo blancos no es acto clínico, en la base igual que en
     expect((await prisma.clinicalNote.findUniqueOrThrow({ where: { id: note.id } })).status).toBe('DRAFT'); // prettier-ignore
     const acts = await new PrismaClinicalActsRepository(asPrisma(prisma)).findEncounterActs({ encounterId: encounter.id, siteId: ids.siteId }); // prettier-ignore
     expect(acts?.clinicallyAttended).toBe(false);
+  });
+  it('EN-206 interrumpir firma lo escrito con la foto de alergias y antecedentes, dentro del hash', async () => {
+    const prisma = db();
+    const { ids, entry, encounter } = await anAttendedAppointment(prisma);
+    const doctor = await prisma.practitioner.findUniqueOrThrow({
+      where: { id: ids.practitionerId },
+    });
+    await prisma.agendaEntry.update({
+      where: { id: entry.id },
+      data: {
+        status: 'CHECKED_IN',
+        checkedInAt: encounter.startedAt,
+        subjectStatus: 'READY',
+        subjectStatusAt: encounter.startedAt,
+        emergencyAssessedAt: encounter.startedAt,
+        emergencyAssessedById: doctor.userId,
+      },
+    });
+    await prisma.patientAllergy.create({
+      data: {
+        patientId: ids.patientId,
+        substanceText: 'Penicilina',
+        criticality: 'HIGH',
+        recordedById: doctor.userId,
+      },
+    });
+    const note = await new PrismaClinicalNoteRepository(
+      asPrisma(prisma),
+    ).createDraft({
+      encounterId: encounter.id,
+      formCode: '002',
+      formVersion: '1',
+      templateId: null,
+      content: { motivoConsulta: 'Cefalea' },
+      authorId: ids.practitionerId,
+      authorUserId: doctor.userId,
+      sites: [ids.siteId],
+    });
+    const exits = new EncounterExitService(
+      new PrismaEncounterExitRepository(asPrisma(prisma)),
+      new PrismaEncounterRepository(asPrisma(prisma)),
+      { record: () => Promise.resolve() },
+      backgroundOf(prisma),
+      quietLogger,
+    );
+
+    await exits.discontinue(
+      { encounterId: encounter.id, reason: 'Se retiró', origin: 'PATIENT', canSignRecords: true }, // prettier-ignore
+      { userId: doctor.userId, sites: [ids.siteId] },
+    );
+
+    const signed = await prisma.clinicalNote.findUniqueOrThrow({ where: { id: note.id } }); // prettier-ignore
+    expect(signed.status).toBe('SIGNED');
+    const content = signed.content as {
+      backgroundSnapshot?: { allergies: { substance: string }[] };
+    };
+    expect(content.backgroundSnapshot?.allergies.map((a) => a.substance)).toEqual(['Penicilina']); // prettier-ignore
+    expect(signed.contentHash).toBe(
+      contentHashOf({
+        content: signed.content as Record<string, unknown>,
+        signedById: signed.signedById as string,
+        signedAt: signed.signedAt as Date,
+      }),
+    );
+    expect((await prisma.encounter.findUniqueOrThrow({ where: { id: encounter.id } })).status).toBe('DISCONTINUED'); // prettier-ignore
   });
 });

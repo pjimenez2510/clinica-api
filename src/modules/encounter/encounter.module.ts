@@ -17,6 +17,7 @@ import { ClinicalCodingService } from './application/clinical-coding.service';
 import { ClinicalNoteController } from './clinical-note.controller';
 import { NoteTemplateController } from './note-template.controller';
 import { NoteTemplateService } from './application/note-template.service';
+import { BackgroundSnapshotReader } from './application/background-snapshot.reader';
 import { NOTE_TEMPLATE_REPOSITORY } from './domain/note-template.repository';
 import { PrismaNoteTemplateRepository } from './infrastructure/prisma-note-template.repository';
 import { ClinicalNoteService } from './application/clinical-note.service';
@@ -98,6 +99,7 @@ import { PrismaPatientAllergyRepository } from './infrastructure/prisma-patient-
     PatientHistoryService,
     ChartSummaryService,
     NoteTemplateService,
+    BackgroundSnapshotReader,
     CurrentUserService,
     { provide: ENCOUNTER_REPOSITORY, useClass: PrismaEncounterRepository },
     {

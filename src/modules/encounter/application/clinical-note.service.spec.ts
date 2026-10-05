@@ -40,6 +40,7 @@ import type { NoteContent } from '../domain/clinical-note';
 import type { Requester } from './encounter.service';
 import { builtInTemplate, type NoteTemplate } from '../domain/note-template';
 import type { NoteTemplateRepository } from '../domain/note-template.repository';
+import { BackgroundSnapshotReader } from './background-snapshot.reader';
 import { ClinicalNoteService } from './clinical-note.service';
 import type { ActiveAllergy } from '../../../shared/clinical/patient-allergy.port';
 import {
@@ -297,9 +298,11 @@ describe('los casos de uso de la nota clínica', () => {
       notes,
       encounters as unknown as EncounterRepository,
       audit,
-      background,
-      background as unknown as PatientAllergyRepository,
-      new FakeHistory(background) as unknown as PatientHistoryRepository,
+      new BackgroundSnapshotReader(
+        background,
+        background as unknown as PatientAllergyRepository,
+        new FakeHistory(background) as unknown as PatientHistoryRepository,
+      ),
       templates as unknown as NoteTemplateRepository,
       logger,
     );

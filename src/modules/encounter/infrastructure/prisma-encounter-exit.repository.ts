@@ -164,20 +164,10 @@ export class PrismaEncounterExitRepository implements EncounterExitRepository {
         }
       }
 
-      await moveConditionally(tx, query, current.status, plan.to, {
-        status: plan.to,
-        endedAt: plan.endedAt,
-        discontinuedReason: plan.reason,
-        discontinuedOrigin: plan.origin,
-        discontinuedById: changedById,
-        discontinuedAt: plan.at,
-        exitSubstituteReason: plan.substituteReason,
-      });
 
       /**
        * D-082. «Con lo hecho»: each draft is signed as it stands, with no
-       * completeness demanded and no discharge — the attention is already
-       * `DISCONTINUED`, and the signature is what gives a responsible author
+       * completeness demanded and no discharge, and the signature is what gives a responsible author
        * to what was written. Conditioned on `DRAFT` like every signature.
        */
       const own = await tx.clinicalNote.findMany({
@@ -202,6 +192,7 @@ export class PrismaEncounterExitRepository implements EncounterExitRepository {
           where: { id: draft.id, status: 'DRAFT' },
           data: {
             status: 'SIGNED',
+            content: signature.content as Prisma.InputJsonValue,
             signedById: signature.signedById,
             signedAt: signature.signedAt,
             contentHash: signature.contentHash,
@@ -209,6 +200,20 @@ export class PrismaEncounterExitRepository implements EncounterExitRepository {
         });
         if (signed.count === 1) signedNoteIds.push(draft.id);
       }
+
+      // EN-206. The state moves AFTER the drafts are signed: signing writes
+      // the background snapshot into the content, and
+      // `trg_clinical_note_frozen_in_terminal_encounter` refuses touching a
+      // draft's content once the attention is `DISCONTINUED`.
+      await moveConditionally(tx, query, current.status, plan.to, {
+        status: plan.to,
+        endedAt: plan.endedAt,
+        discontinuedReason: plan.reason,
+        discontinuedOrigin: plan.origin,
+        discontinuedById: changedById,
+        discontinuedAt: plan.at,
+        exitSubstituteReason: plan.substituteReason,
+      });
 
       if (current.agendaEntryId !== null) {
         await settleAppointment(tx, {
