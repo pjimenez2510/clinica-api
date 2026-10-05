@@ -139,21 +139,11 @@ describe('los rangos de un analito', () => {
     ).toEqual(['ranges[0].low']);
   });
 
-  it('ORD-060 un crítico por sexo no pierde el lado que tiene el crítico general', () => {
-    // El varón con glucosa 25 quedaría LOW, sin alerta.
-    expect(
-      fieldsOf(() =>
-        assertRangesHold('NUMERIC', [
-          range({ rangeKind: 'CRITICAL', low: 40, high: 400 }),
-          range({ rangeKind: 'CRITICAL', sex: 'MALE', high: 450 }),
-        ]),
-      ),
-    ).toEqual(['ranges[1].low']);
-    // Control positivo: con sus dos lados, se guarda.
+  it('ORD-106 un crítico por sexo con un solo lado se guarda: hereda el otro del general', () => {
     expect(() =>
       assertRangesHold('NUMERIC', [
         range({ rangeKind: 'CRITICAL', low: 40, high: 400 }),
-        range({ rangeKind: 'CRITICAL', sex: 'MALE', low: 35, high: 450 }),
+        range({ rangeKind: 'CRITICAL', sex: 'MALE', high: 450 }),
       ]),
     ).not.toThrow();
   });

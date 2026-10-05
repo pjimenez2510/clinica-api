@@ -85,6 +85,43 @@ export function applicableRange(
   return best;
 }
 
+/** One side of the critical band, and the row it came from. */
+export interface CriticalSide {
+  value: number;
+  range: ReferenceRange;
+}
+
+/**
+ * ORD-036, D-123.2. The critical band SIDE BY SIDE: the low bound is the one
+ * of the most specific applicable critical range THAT HAS A LOW BOUND, and the
+ * same for the high one.
+ *
+ * ⚠️ THE REASON IS A PATIENT WITHOUT AN ALERT. Applying the most specific
+ * critical range whole meant a «varón» row written only with its high bound
+ * left every man without a low alert the general row gave him. Side by side,
+ * a more specific row can only REPLACE a side, never switch one off: if any
+ * critical range reaching the patient has a side, he has an alert on it.
+ *
+ * The reference range is NOT resolved this way: it is printed as «lo normal»
+ * (ORD-037), and mixing the low of one row with the high of another would
+ * print a range nobody wrote.
+ */
+export function criticalBounds(
+  ranges: readonly ReferenceRange[],
+  patient: PatientProfile,
+): { low: CriticalSide | null; high: CriticalSide | null } {
+  const side = (bound: 'low' | 'high'): CriticalSide | null => {
+    const range = applicableRange(
+      ranges.filter((candidate) => candidate[bound] !== null),
+      'CRITICAL',
+      patient,
+    );
+    const value = range?.[bound];
+    return range && value != null ? { value, range } : null;
+  };
+  return { low: side('low'), high: side('high') };
+}
+
 /** Whether one range covers this patient at all. */
 function appliesTo(range: ReferenceRange, patient: PatientProfile): boolean {
   if (range.sex !== null && range.sex !== patient.sex) return false;
@@ -130,7 +167,7 @@ const UNCLASSIFIED: Classification = {
  * ORD-035 to ORD-038. Classifies one numeric value.
  *
  * The order is the requirement: critical first, reference second, nothing
- * third. A value inside the critical band but outside the reference band is
+ * third. The critical band is resolved side by side (`criticalBounds`). A value inside the critical band but outside the reference band is
  * `LOW`/`HIGH`; a value outside the critical band is `CRITICAL_LOW`/
  * `CRITICAL_HIGH` even if no reference range exists at all.
  *
@@ -151,14 +188,12 @@ export function classifyNumeric(
     referenceText: reference?.text ?? null,
   };
 
-  const critical = applicableRange(analyte.ranges, 'CRITICAL', patient);
-  if (critical) {
-    if (critical.low !== null && value < critical.low) {
-      return { flag: 'CRITICAL_LOW', ...frozen };
-    }
-    if (critical.high !== null && value > critical.high) {
-      return { flag: 'CRITICAL_HIGH', ...frozen };
-    }
+  const critical = criticalBounds(analyte.ranges, patient);
+  if (critical.low && value < critical.low.value) {
+    return { flag: 'CRITICAL_LOW', ...frozen };
+  }
+  if (critical.high && value > critical.high.value) {
+    return { flag: 'CRITICAL_HIGH', ...frozen };
   }
 
   if (!reference) return { ...UNCLASSIFIED, ...frozen };

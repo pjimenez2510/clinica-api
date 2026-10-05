@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applicableRange,
   classifyNumeric,
+  criticalBounds,
   classifyQualitative,
   isCritical,
 } from './abnormal-flag';
@@ -129,6 +130,92 @@ describe('la bandera de anormalidad', () => {
       referenceHigh: null,
       referenceText: 'Negativo',
     });
+  });
+
+  it('ORD-036 un crítico por sexo con un solo lado toma el otro del crítico general', () => {
+    // D-123.2: «varón» sólo con el alto. El varón con glucosa 25 no puede
+    // quedarse en LOW: hereda el bajo de 40 del general.
+    const ranges: ReferenceRange[] = [
+      ...GLUCOSE.ranges,
+      { rangeKind: 'CRITICAL', sex: 'MALE', ageMinDays: null, ageMaxDays: null, low: null, high: 450, text: null }, // prettier-ignore
+    ];
+    expect(classifyNumeric(25, { ranges }, man).flag).toBe('CRITICAL_LOW');
+    // El lado que sí escribió manda sobre el general: 420 ya no es crítico.
+    expect(classifyNumeric(420, { ranges }, man).flag).toBe('HIGH');
+    expect(classifyNumeric(460, { ranges }, man).flag).toBe('CRITICAL_HIGH');
+    // Control positivo: a la mujer le sigue aplicando el general entero.
+    expect(classifyNumeric(420, { ranges }, woman).flag).toBe('CRITICAL_HIGH');
+    expect(criticalBounds(ranges, man)).toMatchObject({
+      low: { value: 40 },
+      high: { value: 450 },
+    });
+  });
+
+  it('ORD-036 el rango de referencia no hereda: se aplica entero', () => {
+    const ranges: ReferenceRange[] = [
+      { rangeKind: 'REFERENCE', sex: null, ageMinDays: null, ageMaxDays: null, low: 70, high: 100, text: null }, // prettier-ignore
+      { rangeKind: 'REFERENCE', sex: 'MALE', ageMinDays: null, ageMaxDays: null, low: null, high: 110, text: null }, // prettier-ignore
+    ];
+    expect(classifyNumeric(60, { ranges }, man)).toMatchObject({
+      flag: 'NORMAL',
+      referenceLow: null,
+      referenceHigh: 110,
+    });
+  });
+
+  it('ORD-036 ningún paciente pierde un lado de alerta que el crítico general le da', () => {
+    // Exhaustiva sobre combinaciones de críticos parciales por sexo y edad:
+    // para cada paciente, si ALGÚN crítico que le alcanza tiene un lado, un
+    // valor muy por fuera de ese lado sale crítico.
+    const sides = [
+      { low: 40, high: 400 },
+      { low: 40, high: null },
+      { low: null, high: 400 },
+    ];
+    const qualifiers = [
+      { sex: null, ageMinDays: null, ageMaxDays: null },
+      { sex: 'MALE' as const, ageMinDays: null, ageMaxDays: null },
+      { sex: null, ageMinDays: 0, ageMaxDays: 6_574 },
+      { sex: 'MALE' as const, ageMinDays: 0, ageMaxDays: 6_574 },
+    ];
+    const patients: PatientProfile[] = [
+      { sex: 'MALE', ageDays: 100 },
+      { sex: 'MALE', ageDays: 12_000 },
+      { sex: 'FEMALE', ageDays: 100 },
+      { sex: 'FEMALE', ageDays: 12_000 },
+      { sex: null, ageDays: null },
+    ];
+    let checked = 0;
+    for (const general of sides) {
+      for (const qualifier of qualifiers.slice(1)) {
+        for (const specific of sides) {
+          const ranges: ReferenceRange[] = [
+            { rangeKind: 'CRITICAL', sex: null, ageMinDays: null, ageMaxDays: null, text: null, ...general }, // prettier-ignore
+            { rangeKind: 'CRITICAL', text: null, ...qualifier, ...specific },
+          ];
+          for (const patient of patients) {
+            const reaching = ranges.filter(
+              (range) =>
+                (range.sex === null || range.sex === patient.sex) &&
+                (range.ageMinDays === null ||
+                  (patient.ageDays !== null &&
+                    patient.ageDays >= range.ageMinDays &&
+                    patient.ageDays <= (range.ageMaxDays ?? Infinity))),
+            );
+            if (reaching.some((range) => range.low !== null)) {
+              expect(classifyNumeric(-1_000, { ranges }, patient).flag).toBe('CRITICAL_LOW'); // prettier-ignore
+              checked++;
+            }
+            if (reaching.some((range) => range.high !== null)) {
+              expect(classifyNumeric(10_000, { ranges }, patient).flag).toBe('CRITICAL_HIGH'); // prettier-ignore
+              checked++;
+            }
+          }
+        }
+      }
+    }
+    // Control positivo: la exhaustiva recorrió de verdad los casos.
+    expect(checked).toBeGreaterThan(100);
   });
 
   it('ORD-060 reconoce las dos banderas que tienen que llegar hoy a una persona', () => {
