@@ -56,7 +56,8 @@ export class EncounterOrderController {
   ) {}
 
   /**
-   * ORD-001 to ORD-006. Emits one order with its lines.
+   * ORD-001 to ORD-005, ORD-095. Composes one order with its lines, as a
+   * DRAFT: it is issued with `POST /orders/:orderId/issue` (ORD-098).
    *
    * 201, because what it leaves behind is a row that did not exist.
    *
@@ -67,14 +68,14 @@ export class EncounterOrderController {
   @Post()
   @RequirePermission('record:write', 'query')
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Emitir una orden de exámenes de la atención' })
+  @ApiOperation({ summary: 'Componer una orden de exámenes en borrador' })
   @ApiCreatedResponse({ type: ServiceOrderDto })
   async place(
     @Param('encounterId', ParseUUIDPipe) encounterId: string,
     @Body() dto: PlaceOrderDto,
     @Req() req: Request,
   ): Promise<ServiceOrderResponse> {
-    const order = await this.orders.place(
+    const order = await this.orders.compose(
       {
         encounterId,
         category: dto.category,
@@ -95,7 +96,9 @@ export class EncounterOrderController {
    */
   @Get()
   @RequirePermission('record:read', 'query')
-  @ApiOperation({ summary: 'Listar las órdenes emitidas en la atención' })
+  @ApiOperation({
+    summary: 'Listar las órdenes de la atención, borradores incluidos',
+  })
   @ApiOkResponse({ type: ServiceOrderListDto })
   async ofEncounter(
     @Param('encounterId', ParseUUIDPipe) encounterId: string,

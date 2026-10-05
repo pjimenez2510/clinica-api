@@ -2,6 +2,7 @@ import type {
   ServiceOrderCategory,
   ServiceOrderItemStatus,
   ServiceOrderPriority,
+  ServiceOrderStatus,
 } from './service-order';
 import type { Ageing } from './order-ageing';
 
@@ -45,8 +46,17 @@ export interface ServiceOrderView {
   siteId: string;
   patientId: string;
   orderedById: string;
-  /** ORD-006. Assigned by `service_order_number_assigned`, never by the code. */
-  number: number;
+  /** D-123. The signer's account: only it corrects, issues or discards a draft. */
+  orderedByUserId: string;
+  /**
+   * ORD-006, ORD-098. Assigned by `service_order_number_assigned` when the
+   * order is ISSUED, never by the code; `null` while it is a draft.
+   */
+  number: number | null;
+  /** ORD-095 to ORD-099. */
+  status: ServiceOrderStatus;
+  /** ORD-099. When the draft was discarded; `null` otherwise. */
+  discardedAt: Date | null;
   category: ServiceOrderCategory;
   priority: ServiceOrderPriority;
   clinicalNoteText: string | null;
@@ -69,7 +79,7 @@ export interface ServiceOrderItemView {
   createdAt: Date;
 }
 
-/** ORD-001. What emitting an order needs to be told. */
+/** ORD-001, ORD-095. What composing an order needs to be told. */
 export interface NewServiceOrder {
   encounterId: string;
   /**
@@ -107,6 +117,19 @@ export interface OrderQuery {
 }
 
 /**
+ * ORD-096. The draft rewritten whole: its category, priority, note and lines.
+ * Same fields as composing, addressed by the order instead of the attention.
+ */
+export interface DraftRewrite extends Omit<NewServiceOrder, 'encounterId'> {
+  orderId: string;
+}
+
+/** ORD-099. Discarding a draft, and who does it. */
+export interface DraftDiscard extends OrderQuery {
+  userId: string;
+}
+
+/**
  * ORD-020 to ORD-025. One entry of the worklist of orders with no result.
  *
  * ⚠️ WHAT IT CARRIES IS DELIBERATELY THIN (ORD-024). The list is opened by
@@ -118,7 +141,7 @@ export interface OrderQuery {
  */
 export interface PendingOrderEntry {
   orderId: string;
-  /** ORD-006. What a paper report quotes back. */
+  /** ORD-006. What a paper report quotes back. Only issued orders are listed. */
   orderNumber: number;
   itemId: string;
   siteId: string;
@@ -172,7 +195,7 @@ export interface CancelOrderItem {
  */
 export interface ServiceOrderRepository {
   /**
-   * ORD-001 to ORD-006. Writes one order and its lines.
+   * ORD-001 to ORD-005, ORD-095, ORD-097. Writes one DRAFT order and its lines.
    *
    * ═══════════════════════════════════════════════════════════════════════════
    * EVERY CHECK LIVES INSIDE THIS METHOD'S TRANSACTION
@@ -188,7 +211,24 @@ export interface ServiceOrderRepository {
    * ⚠️ ALL LINES OR NONE (ORD-003). A request for five exams that stores four
    * is a request in which nobody notices which one is missing.
    */
-  place(order: NewServiceOrder): Promise<ServiceOrderView>;
+  compose(order: NewServiceOrder): Promise<ServiceOrderView>;
+
+  /**
+   * ORD-096, ORD-097. Replaces a draft's category, priority, note and lines,
+   * with every check of `compose` made again inside the transaction. Refuses
+   * with `ORDER_NOT_DRAFT` what is no longer a draft.
+   */
+  rewrite(request: DraftRewrite): Promise<ServiceOrderView>;
+
+  /**
+   * ORD-098. Issues a draft: the database gives it its number and the request
+   * instant is the issue's. ORD-003 and ORD-005 are checked again, inside the
+   * transaction.
+   */
+  issue(query: OrderQuery): Promise<ServiceOrderView>;
+
+  /** ORD-099. Discards a draft, keeping the row with who and when. */
+  discard(request: DraftDiscard): Promise<ServiceOrderView>;
 
   /** ORD-009. One order with its lines, within the caller's scope. */
   byId(query: OrderQuery): Promise<ServiceOrderView | undefined>;

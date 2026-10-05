@@ -277,6 +277,11 @@ describe('quitar un diagnóstico deja rastro (EN-180 a EN-183)', () => {
       },
       include: { items: true },
     });
+    // ORD-098. Lines go in while it is a draft; issued, it cites the diagnoses.
+    await prisma.serviceOrder.update({
+      where: { id: order.id },
+      data: { status: 'ISSUED' },
+    });
 
     await expect(archive(prisma, second!.id, remover.id)).rejects.toThrow(
       /encounter_diagnosis_cited/,
@@ -292,6 +297,52 @@ describe('quitar un diagnóstico deja rastro (EN-180 a EN-183)', () => {
     });
     await archive(prisma, second!.id, remover.id);
     await remove(prisma, second!.id);
+  });
+
+  it('EN-182 ORD-102 una orden en borrador o descartada no impide quitar un diagnóstico; emitida, sí', async () => {
+    const prisma = db();
+    const { site, practitioner, encounter, diagnoses, remover } =
+      await anEncounterWithDiagnoses(prisma);
+    const [first, second] = diagnoses;
+    const exam = await aTariffConcept(prisma);
+    const anOrder = () =>
+      prisma.serviceOrder.create({
+        data: {
+          encounterId: encounter.id,
+          siteId: site.id,
+          orderedById: practitioner.id,
+          category: 'LABORATORY',
+          items: {
+            create: {
+              conceptId: exam.id,
+              testCode: exam.code,
+              testDisplay: exam.display,
+            },
+          },
+        },
+      });
+    const draft = await anOrder();
+    const discarded = await anOrder();
+    await prisma.serviceOrder.update({
+      where: { id: discarded.id },
+      data: {
+        status: 'DISCARDED',
+        discardedAt: new Date(),
+        discardedById: remover.id,
+      },
+    });
+
+    // Never left the consultation: nothing outside cites the diagnoses.
+    await prisma.$executeRaw`UPDATE encounter_diagnosis SET rank = 9 WHERE id = ${first!.id}::uuid`;
+
+    // Positive control: the same draft, issued, blocks the same change.
+    await prisma.serviceOrder.update({
+      where: { id: draft.id },
+      data: { status: 'ISSUED' },
+    });
+    await expect(archive(prisma, second!.id, remover.id)).rejects.toThrow(
+      /encounter_diagnosis_cited/,
+    );
   });
 
   it('EN-180 lo que un diagnóstico ES no se reescribe: ni su código ni su concepto; el resto, sí', async () => {

@@ -1,3 +1,4 @@
+import './infrastructure/orders.constraints';
 import { Module } from '@nestjs/common';
 
 import { ACCESS_AUDIT_RECORDER } from '../../shared/audit/access-audit.port';
@@ -7,14 +8,18 @@ import { PrismaAccessAuditRecorder } from '../../shared/infrastructure/audit/pri
 import { DiagnosticReportController } from './diagnostic-report.controller';
 import { DiagnosticReportService } from './application/diagnostic-report.service';
 import { EncounterOrderController } from './encounter-order.controller';
+import { ExamAdministrationController } from './exam-administration.controller';
+import { ExamAdministrationService } from './application/exam-administration.service';
 import { ExamCatalogueController } from './exam-catalogue.controller';
 import { ExamCatalogueService } from './application/exam-catalogue.service';
 import { ServiceOrderController } from './service-order.controller';
 import { ServiceOrderService } from './application/service-order.service';
 import { DIAGNOSTIC_REPORT_REPOSITORY } from './domain/diagnostic-report.repository';
+import { EXAM_ADMINISTRATION_REPOSITORY } from './domain/exam-administration.repository';
 import { EXAM_CATALOGUE_REPOSITORY } from './domain/exam-catalogue.repository';
 import { SERVICE_ORDER_REPOSITORY } from './domain/service-order.repository';
 import { PrismaDiagnosticReportRepository } from './infrastructure/prisma-diagnostic-report.repository';
+import { PrismaExamAdministrationRepository } from './infrastructure/prisma-exam-administration.repository';
 import { PrismaExamCatalogueRepository } from './infrastructure/prisma-exam-catalogue.repository';
 import { PrismaServiceOrderRepository } from './infrastructure/prisma-service-order.repository';
 
@@ -33,7 +38,9 @@ import { PrismaServiceOrderRepository } from './infrastructure/prisma-service-or
  * WITH DIFFERENT REASONS TO CHANGE (ADR-008 §2). The ORDER is what somebody
  * asked for; the REPORT has a lifecycle the order does not have — issued,
  * superseded, never edited — and answers questions about analytes, ranges and
- * flags; and the CATALOGUE is republished on its own calendar. The day the
+ * flags; and the CATALOGUE is republished on its own calendar —read by ordering
+ * every consultation, written by its administration (ORD-103 to ORD-111) a
+ * few times a year, each with its own service. The day the
  * analyte catalogue changes, one of the three moves and the other two do not.
  *
  * ⚠️ IT WIRES AN ACCESS AUDIT RECORDER, like `EncounterModule` and unlike
@@ -52,11 +59,13 @@ import { PrismaServiceOrderRepository } from './infrastructure/prisma-service-or
     ServiceOrderController,
     DiagnosticReportController,
     ExamCatalogueController,
+    ExamAdministrationController,
   ],
   providers: [
     ServiceOrderService,
     DiagnosticReportService,
     ExamCatalogueService,
+    ExamAdministrationService,
     CurrentUserService,
     {
       provide: SERVICE_ORDER_REPOSITORY,
@@ -69,6 +78,10 @@ import { PrismaServiceOrderRepository } from './infrastructure/prisma-service-or
     {
       provide: EXAM_CATALOGUE_REPOSITORY,
       useClass: PrismaExamCatalogueRepository,
+    },
+    {
+      provide: EXAM_ADMINISTRATION_REPOSITORY,
+      useClass: PrismaExamAdministrationRepository,
     },
     { provide: ACCESS_AUDIT_RECORDER, useClass: PrismaAccessAuditRecorder },
   ],

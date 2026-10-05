@@ -162,9 +162,11 @@ export class ServiceCatalogueService {
             ? Number(current.specialtyId !== null)
             : Number(update.consultation !== null),
         procedures: Number(current.procedureConcept !== null),
-        exams: movesCategory
-          ? (await this.catalogue.listExamsOfService(serviceId)).length
-          : 0,
+        examCategories: movesCategory
+          ? (await this.catalogue.listExamsOfService(serviceId)).map(
+              (exam) => exam.category,
+            )
+          : [],
       });
     }
 
@@ -312,14 +314,18 @@ export class ServiceCatalogueService {
 /**
  * BI-187. What a category's kind admits: only a consultation is the
  * consultation of a specialty (BI-158), only a procedure is tied to a
- * procedure concept, and only a laboratory or imaging service is what an exam
- * of the exam catalogue is charged through (BI-151). Checked on the service AS IT WILL BE after the
+ * procedure concept, and an exam is charged through a service of ITS OWN
+ * type —laboratory, imaging or procedure— (BI-151, ORD-108). Checked on the service AS IT WILL BE after the
  * update, so moving a mapped consultation into «Insumos» is refused as surely
  * as mapping a glove.
  */
 function assertKindAdmits(
   kind: ServiceCategoryKind,
-  ties: { consultations: number; procedures: number; exams: number },
+  ties: {
+    consultations: number;
+    procedures: number;
+    examCategories: readonly string[];
+  },
 ): void {
   if (ties.consultations > 0 && kind !== 'CONSULTATION') {
     throw new ServiceKindMismatchError();
@@ -327,7 +333,7 @@ function assertKindAdmits(
   if (ties.procedures > 0 && kind !== 'PROCEDURE') {
     throw new ServiceKindMismatchError();
   }
-  if (ties.exams > 0 && kind !== 'LABORATORY' && kind !== 'IMAGING') {
+  if (ties.examCategories.some((category) => category !== kind)) {
     throw new ServiceKindMismatchError();
   }
 }

@@ -257,19 +257,20 @@ describe('PR-010 PR-038 lo que la segunda revision encontro abierto', () => {
 });
 
 describe('ORD-006 la orden numerada no se borra', () => {
-  it('ORD-006 borrarla se rechaza; cambiar su nota clínica pasa', async () => {
+  it('ORD-006 borrarla se rechaza; tocar lo que no está congelado pasa', async () => {
     const prisma = db();
     const scene = await aScene(prisma);
     const [order] = await prisma.$queryRaw<{ id: string }[]>`
-      INSERT INTO service_order (encounter_id, site_id, ordered_by_id, category, updated_at)
-      SELECT e.id, e.site_id, ${scene.practitionerId}::uuid, 'LABORATORY', now()
+      INSERT INTO service_order (encounter_id, site_id, ordered_by_id, category, status, updated_at)
+      SELECT e.id, e.site_id, ${scene.practitionerId}::uuid, 'LABORATORY', 'ISSUED', now()
         FROM encounter e WHERE e.id = ${scene.encounterId}::uuid
       RETURNING id
     `;
 
-    // Control positivo: el mismo UPDATE sobre la orden pasa.
+    // Control positivo: un UPDATE sobre la orden pasa. Su nota clínica ya
+    // no, desde ORD-096: una orden emitida no se reescribe.
     await expect(
-      prisma.$executeRaw`UPDATE service_order SET clinical_note_text = 'Ayuno' WHERE id = ${order!.id}::uuid`,
+      prisma.$executeRaw`UPDATE service_order SET updated_at = now() WHERE id = ${order!.id}::uuid`,
     ).resolves.toBe(1);
     await expect(
       prisma.$executeRaw`DELETE FROM service_order WHERE id = ${order!.id}::uuid`,

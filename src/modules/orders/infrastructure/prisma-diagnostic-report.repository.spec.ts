@@ -45,7 +45,7 @@ const aReportRow = (overrides: Record<string, unknown> = {}) => ({
 
 function prismaDouble(
   options: {
-    order?: { id: string } | null;
+    order?: { id: string; status: string } | null;
     reported?: { analyteDisplay: string }[];
     report?: Record<string, unknown>;
     orderRow?: Record<string, unknown> | null;
@@ -65,7 +65,9 @@ function prismaDouble(
       findFirst: (args: unknown) => {
         record('serviceOrder.findFirst', args);
         return Promise.resolve(
-          options.order === undefined ? { id: ORDER } : options.order,
+          options.order === undefined
+            ? { id: ORDER, status: 'ISSUED' }
+            : options.order,
         );
       },
     },
@@ -177,6 +179,17 @@ describe('el adaptador del informe', () => {
       // prettier-ignore
       code: 'ORDER_NOT_FOUND',
     });
+  });
+
+  it('ORD-100 no registra nada contra un borrador, que nunca llegó a un laboratorio', async () => {
+    const { repository, callTo } = prismaDouble({
+      order: { id: ORDER, status: 'DRAFT' },
+    });
+
+    await expect(
+      repository.register(aReport(), promises),
+    ).rejects.toMatchObject({ code: 'ORDER_NOT_ISSUED' });
+    expect(callTo('diagnosticReport.create')).toBeUndefined();
   });
 
   it('ORD-031 escribe la determinación con su texto congelado y sin concepto inventado', async () => {

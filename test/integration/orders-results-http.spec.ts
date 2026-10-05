@@ -141,6 +141,8 @@ describe('los resultados por HTTP', () => {
       items: [{ examDefinitionId: exams.glucose.id }],
     }).expect(201);
     orderId = (order.body as { id: string }).id;
+    // ORD-098. Composed as a draft; a result only comes back for an issued one.
+    await post(`/orders/${orderId}/issue`, {}).expect(200);
   }
 
   const post = (path: string, body: object) =>

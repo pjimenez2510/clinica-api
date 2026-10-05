@@ -86,7 +86,7 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
   async listExamsOfService(serviceId: string): Promise<ServiceExamView[]> {
     return this.prisma.examDefinition.findMany({
       where: { billableServiceId: serviceId },
-      select: { id: true, code: true, name: true, active: true },
+      select: { id: true, code: true, name: true, category: true, active: true }, // prettier-ignore
       orderBy: { name: 'asc' },
     });
   }
@@ -140,7 +140,7 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
   async countCategoryTies(categoryId: string): Promise<{
     consultations: number;
     procedures: number;
-    exams: number;
+    examCategories: string[];
   }> {
     const [consultations, procedures, exams] = await Promise.all([
       this.prisma.billableService.count({
@@ -149,11 +149,17 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
       this.prisma.billableService.count({
         where: { categoryId, procedureConceptId: { not: null } },
       }),
-      this.prisma.examDefinition.count({
+      this.prisma.examDefinition.findMany({
         where: { billableService: { categoryId } },
+        distinct: ['category'],
+        select: { category: true },
       }),
     ]);
-    return { consultations, procedures, exams };
+    return {
+      consultations,
+      procedures,
+      examCategories: exams.map((exam) => exam.category),
+    };
   }
 
   /**

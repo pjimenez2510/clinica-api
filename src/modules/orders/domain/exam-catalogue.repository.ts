@@ -1,17 +1,13 @@
 import type { AnalyteDefinition } from './analyte';
+import type { ServiceOrderCategory } from './service-order';
 
 /**
- * The ORDERABLE catalogue, read-only.
+ * The ORDERABLE catalogue, as ordering reads it.
  *
- * ⚠️ READ-ONLY ON PURPOSE, AND THE ABSENCE OF A WRITE IS THE DECISION. Three
- * rules of the IHE catalogue-distribution standard apply to every catalogue in
- * this system and are already built into `CatalogSystem → CatalogRelease →
- * CatalogConcept`: versioned WHOLE replacement rather than incremental
- * patching, retired codes DISABLED and never deleted, and a validity date per
- * version so a result from three years ago is read with the catalogue of three
- * years ago. Letting this module create an exam would be a second, weaker
- * catalogue mechanism beside the one that already works — which is exactly
- * what `catalog:manage` exists to prevent.
+ * READ-ONLY HERE: the clinic writes the catalogue through
+ * `ExamAdministrationRepository` (ORD-103 to ORD-111), with `catalog:manage`.
+ * Retired exams are DISABLED, never deleted —historical orders reference
+ * them— so `active` is an ordinary, permanent state of this catalogue.
  */
 
 /** ORD-010 to ORD-012. One orderable, with what it yields. */
@@ -20,6 +16,8 @@ export interface ExamDefinitionView {
   /** `EX-BH`. The identity of the row, frozen onto every line that asks for it. */
   code: string;
   name: string;
+  /** ORD-097, ORD-101. An order only carries exams of its own category. */
+  category: ServiceOrderCategory;
   /** ORD-010. The section of form 010A, so a compliant order can be printed. */
   form010Section: string | null;
   specimenType: string | null;
@@ -73,7 +71,11 @@ export interface ExamCatalogueRepository {
    */
   byCodes(codes: readonly string[]): Promise<ExamDefinitionView[]>;
 
-  /** ORD-042. The analytes named, by id. Fewer rows means one is unknown. */
+  /**
+   * ORD-042. The analytes named, by id, retired ones included: an order
+   * issued before an analyte was retired still expects it. Fewer rows means
+   * one is unknown.
+   */
   analytesByIds(ids: readonly string[]): Promise<AnalyteDefinition[]>;
 }
 

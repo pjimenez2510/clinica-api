@@ -5,6 +5,7 @@ import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.serv
 import {
   OrderItemNotMatchableError,
   OrderNotFoundError,
+  OrderNotIssuedError,
   ResultAlreadyMatchedError,
   ResultNotFoundError,
   ResultSupersededError,
@@ -150,9 +151,13 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
        */
       const order = await tx.serviceOrder.findFirst({
         where: { id: report.serviceOrderId, ...siteFilter(report.sites) },
-        select: { id: true },
+        select: { id: true, status: true },
       });
       if (!order) throw new OrderNotFoundError();
+      // ORD-100. Nothing comes back for a draft: it never reached a laboratory.
+      // And since reports only land on issued orders, so do their results and
+      // every match against them (ORD-043).
+      if (order.status !== 'ISSUED') throw new OrderNotIssuedError();
 
       /**
        * ORD-062 (tercera revisión). A correction LOCKS the report it replaces

@@ -61,7 +61,9 @@ export function clinicalActExists(encounterId: Prisma.Sql): Prisma.Sql {
     OR EXISTS (SELECT 1 FROM encounter_diagnosis d WHERE d.encounter_id = ${encounterId})
     OR EXISTS (SELECT 1 FROM encounter_procedure p WHERE p.encounter_id = ${encounterId})
     OR EXISTS (SELECT 1 FROM prescription r WHERE r.encounter_id = ${encounterId})
-    OR EXISTS (SELECT 1 FROM service_order o WHERE o.encounter_id = ${encounterId})
+    -- ORD-100. A draft is not an act yet; a discarded one never was.
+    OR EXISTS (SELECT 1 FROM service_order o
+                WHERE o.encounter_id = ${encounterId} AND o.status::text = 'ISSUED')
     -- D-104: a certificate states there was an attention; a referral and an
     -- interconsultation are clinical decisions about the patient.
     OR EXISTS (SELECT 1 FROM medical_certificate c

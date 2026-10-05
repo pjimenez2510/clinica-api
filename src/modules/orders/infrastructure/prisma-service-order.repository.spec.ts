@@ -44,6 +44,10 @@ const anOrderRow = (items: unknown[] = []) => ({
   encounterId: ENCOUNTER,
   siteId: SITE,
   orderedById: PRACTITIONER,
+  orderedBy: { userId: 'user-1' },
+  number: 1,
+  status: 'ISSUED',
+  discardedAt: null,
   category: 'LABORATORY',
   priority: 'ROUTINE',
   clinicalNoteText: null,
@@ -94,7 +98,7 @@ function prismaDouble(
       findMany: (args: unknown) => {
         record('examDefinition.findMany', args);
         return Promise.resolve(
-          options.exams ?? [{ id: EXAM, code: 'EX-BH', name: 'Biometría hemática completa', tariffCode: 'T-100' }], // prettier-ignore
+          options.exams ?? [{ id: EXAM, code: 'EX-BH', name: 'Biometría hemática completa', tariffCode: 'T-100', category: 'LABORATORY' }], // prettier-ignore
         );
       },
     },
@@ -141,7 +145,7 @@ function prismaDouble(
         record('serviceOrderItem.findFirst', args);
         return Promise.resolve(
           options.item === undefined
-            ? { id: 'item-1', status: 'REQUESTED' }
+            ? { id: 'item-1', status: 'REQUESTED', serviceOrder: { status: 'ISSUED' } } // prettier-ignore
             : options.item,
         );
       },
@@ -196,7 +200,7 @@ describe('el adaptador de la orden', () => {
   it('ORD-001 toma la sede y el profesional de la ATENCIÓN, no de la petición', async () => {
     const { repository, callTo } = prismaDouble();
 
-    await repository.place(aRequest);
+    await repository.compose(aRequest);
 
     const data = (callTo('serviceOrder.create')?.args as { data: Record<string, unknown> }).data; // prettier-ignore
     expect(data.siteId).toBe(SITE);
@@ -206,7 +210,7 @@ describe('el adaptador de la orden', () => {
   it('ORD-002 congela el código y el nombre leídos de la definición', async () => {
     const { repository, callTo } = prismaDouble();
 
-    await repository.place(aRequest);
+    await repository.compose(aRequest);
 
     const data = (callTo('serviceOrder.create')?.args as { data: Record<string, unknown> }).data; // prettier-ignore
     const lines = (data.items as { create: Record<string, unknown>[] }).create;
@@ -220,7 +224,7 @@ describe('el adaptador de la orden', () => {
   it('ORD-001 responde que la atención no existe cuando está fuera del alcance', async () => {
     const { repository } = prismaDouble({ encounter: null });
 
-    await expect(repository.place(aRequest)).rejects.toMatchObject({
+    await expect(repository.compose(aRequest)).rejects.toMatchObject({
       code: 'ORDER_ENCOUNTER_NOT_FOUND',
     });
   });
@@ -230,7 +234,7 @@ describe('el adaptador de la orden', () => {
       encounter: { id: ENCOUNTER, siteId: SITE, status: 'COMPLETED', practitionerId: PRACTITIONER }, // prettier-ignore
     });
 
-    await expect(repository.place(aRequest)).rejects.toMatchObject({
+    await expect(repository.compose(aRequest)).rejects.toMatchObject({
       code: 'ORDER_ENCOUNTER_NOT_OPEN',
     });
   });
@@ -241,25 +245,46 @@ describe('el adaptador de la orden', () => {
     // escribe es la que importa.
     const { repository, callTo } = prismaDouble({ exams: [] });
 
-    await expect(repository.place(aRequest)).rejects.toMatchObject({
+    await expect(repository.compose(aRequest)).rejects.toMatchObject({
       code: 'EXAM_NOT_ORDERABLE',
     });
     expect((callTo('examDefinition.findMany')?.args as { where: { active: boolean } }).where.active).toBe(true); // prettier-ignore
     expect(callTo('serviceOrder.create')).toBeUndefined();
   });
 
+  it('ORD-097 vuelve a comprobar el tipo DENTRO de la transacción, y no escribe nada', async () => {
+    const { repository, callTo } = prismaDouble({
+      exams: [{ id: EXAM, code: 'RX-TORAX', name: 'Radiografía de tórax', tariffCode: 'T-100', category: 'IMAGING' }], // prettier-ignore
+    });
+
+    await expect(repository.compose(aRequest)).rejects.toMatchObject({
+      code: 'EXAM_CATEGORY_MISMATCH',
+    });
+    expect(callTo('serviceOrder.create')).toBeUndefined();
+  });
+
+  it('ORD-095 compone sin decir el estado: la orden nace en el borrador de la base', async () => {
+    const { repository, callTo } = prismaDouble();
+
+    await repository.compose(aRequest);
+
+    const data = (callTo('serviceOrder.create')?.args as { data: Record<string, unknown> }).data; // prettier-ignore
+    expect(data).not.toHaveProperty('status');
+    expect(data).not.toHaveProperty('number');
+  });
+
   it('ORD-004 rechaza igual el examen sin prestación y la prestación ausente del tarifario', async () => {
     // Distinguirlos convertiría el endpoint en un oráculo del catálogo entero.
     const absent = prismaDouble({ concepts: [] });
-    await expect(absent.repository.place(aRequest)).rejects.toMatchObject({
+    await expect(absent.repository.compose(aRequest)).rejects.toMatchObject({
       code: 'CATALOG_CONCEPT_NOT_FOUND',
     });
 
     const withoutTariff = prismaDouble({
-      exams: [{ id: EXAM, code: 'EX-BH', name: 'Biometría hemática completa', tariffCode: null }], // prettier-ignore
+      exams: [{ id: EXAM, code: 'EX-BH', name: 'Biometría hemática completa', tariffCode: null, category: 'LABORATORY' }], // prettier-ignore
     });
     await expect(
-      withoutTariff.repository.place(aRequest),
+      withoutTariff.repository.compose(aRequest),
     ).rejects.toMatchObject({
       code: 'CATALOG_CONCEPT_NOT_FOUND',
     });
@@ -268,7 +293,7 @@ describe('el adaptador de la orden', () => {
   it('ORD-005 bloquea la fila de la atención antes de leer su estado', async () => {
     const { repository, calls } = prismaDouble();
 
-    await repository.place(aRequest);
+    await repository.compose(aRequest);
 
     const methods = calls.map((call) => call.method);
     expect(methods.indexOf('$queryRaw:lock')).toBeGreaterThanOrEqual(0);
@@ -280,7 +305,7 @@ describe('el adaptador de la orden', () => {
   it('ORD-004 sólo busca la prestación en el TARIFARIO, nunca en otro catálogo', async () => {
     const { repository, callTo } = prismaDouble();
 
-    await repository.place(aRequest);
+    await repository.compose(aRequest);
 
     const query = callTo('$queryRaw')?.args as { values: unknown[] };
     expect(query.values).toContain('TARIFF');
@@ -294,7 +319,7 @@ describe('el adaptador de la orden', () => {
       ],
     });
 
-    await repository.place(aRequest);
+    await repository.compose(aRequest);
 
     const data = (callTo('serviceOrder.create')?.args as { data: Record<string, unknown> }).data; // prettier-ignore
     const lines = (data.items as { create: Record<string, unknown>[] }).create;
@@ -306,7 +331,7 @@ describe('el adaptador de la orden', () => {
       concepts: [{ id: CONCEPT, concept_code: 'T-100', system_code: 'TARIFF', in_force: false }], // prettier-ignore
     });
 
-    await expect(repository.place(aRequest)).rejects.toMatchObject({
+    await expect(repository.compose(aRequest)).rejects.toMatchObject({
       code: 'CATALOG_CONCEPT_NOT_IN_FORCE',
     });
   });
@@ -316,7 +341,7 @@ describe('el adaptador de la orden', () => {
     // siguiente, y el último día de vigencia de un código dejaría de poder
     // usarse cinco horas antes de tiempo.
     const { repository, callTo } = prismaDouble();
-    await repository.place(aRequest);
+    await repository.compose(aRequest);
 
     const raw = callTo('$queryRaw')?.args as { sql: string; values: unknown[] };
     expect(raw.sql).toContain('AT TIME ZONE');
@@ -405,6 +430,26 @@ describe('el adaptador de la orden', () => {
     });
   });
 
+  it('ORD-100 la cola sólo lista lo emitido', async () => {
+    const { repository, callTo } = prismaDouble();
+
+    await repository.pending({ sites: 'all', now: new Date(), limit: 50 });
+
+    const where = (callTo('serviceOrder.findMany')?.args as { where: Record<string, unknown> }).where; // prettier-ignore
+    expect(where.status).toBe('ISSUED');
+  });
+
+  it('ORD-100 una línea de un borrador no se anula: se quita en el editor', async () => {
+    const { repository, callTo } = prismaDouble({
+      item: { id: 'item-1', status: 'REQUESTED', serviceOrder: { status: 'DRAFT' } }, // prettier-ignore
+    });
+
+    await expect(
+      repository.cancelItem({ orderId: 'order-1', itemId: 'item-1', sites: 'all' }), // prettier-ignore
+    ).rejects.toMatchObject({ code: 'ORDER_NOT_ISSUED' });
+    expect(callTo('serviceOrderItem.update')).toBeUndefined();
+  });
+
   it('ORD-007 escribe el estado Y el instante que saca la línea de la cola', async () => {
     const { repository, callTo } = prismaDouble();
 
@@ -421,7 +466,7 @@ describe('el adaptador de la orden', () => {
       missing.repository.cancelItem({ orderId: 'order-1', itemId: 'x', sites: 'all' }), // prettier-ignore
     ).rejects.toMatchObject({ code: 'ORDER_NOT_FOUND' });
 
-    const done = prismaDouble({ item: { id: 'item-1', status: 'COMPLETED' } });
+    const done = prismaDouble({ item: { id: 'item-1', status: 'COMPLETED', serviceOrder: { status: 'ISSUED' } } }); // prettier-ignore
     await expect(
       done.repository.cancelItem({ orderId: 'order-1', itemId: 'item-1', sites: 'all' }), // prettier-ignore
     ).rejects.toMatchObject({ code: 'ORDER_ITEM_NOT_PENDING' });

@@ -1,5 +1,6 @@
 import {
   ConflictError,
+  ForbiddenError,
   NotFoundError,
   ValidationError,
 } from '../../../shared/domain/errors/domain-error';
@@ -145,6 +146,78 @@ export class OrderItemNotPendingError extends ConflictError {
 
   constructor() {
     super('The order item is neither REQUESTED nor IN_PROGRESS');
+  }
+}
+
+/**
+ * ORD-096, ORD-098, ORD-099. The order is no longer a draft.
+ *
+ * 409: nothing sent is wrong. Somebody issued or discarded it — in another tab,
+ * or a second click — and an issued order is corrected by cancelling its lines
+ * (ORD-007), never by rewriting it.
+ */
+export class OrderNotDraftError extends ConflictError {
+  readonly code = 'ORDER_NOT_DRAFT';
+  override readonly userTitle =
+    'Esa orden ya no es un borrador: se emitió o se descartó. Actualice la pantalla';
+
+  constructor() {
+    super('The service order is not a DRAFT');
+  }
+}
+
+/**
+ * ORD-103 (D-123). A draft is corrected, issued or discarded only by the
+ * professional the order is signed by — as a receta draft only by its
+ * prescriber (PR-100): a colleague's issue would put an order under
+ * somebody else's name.
+ */
+export class OrderDraftOfAnotherPractitionerError extends ForbiddenError {
+  readonly code = 'ORDER_DRAFT_OF_ANOTHER_PRACTITIONER';
+  override readonly userTitle =
+    'Esta orden la firma otro profesional y sólo él puede corregirla, emitirla o descartarla';
+
+  constructor() {
+    super('The draft order is signed by another practitioner');
+  }
+}
+
+/**
+ * ORD-100. The order has not been issued.
+ *
+ * A draft never left the consultation: nothing comes back for it, nobody
+ * matches against it, and a line of it is removed in the editor rather than
+ * cancelled.
+ */
+export class OrderNotIssuedError extends ConflictError {
+  readonly code = 'ORDER_NOT_ISSUED';
+  override readonly userTitle =
+    'Esa orden todavía no se ha emitido. Emítala desde la atención antes de registrar nada contra ella';
+
+  constructor() {
+    super('The service order is not ISSUED');
+  }
+}
+
+/**
+ * ORD-097. An exam of the order is not of the order's category.
+ *
+ * THE WHOLE ORDER, like ORD-003: a blood count sent as «imagen» reaches the
+ * wrong service, and keeping the other lines would hide which one was wrong.
+ */
+export class ExamCategoryMismatchError extends ValidationError {
+  readonly code = 'EXAM_CATEGORY_MISMATCH';
+  override readonly userTitle =
+    'Hay exámenes que no son del tipo de la orden. Quítelos o cambie el tipo de la orden';
+
+  constructor() {
+    super('An exam definition is not of the order category', {}, [
+      {
+        field: 'items',
+        code: 'EXAM_CATEGORY_MISMATCH',
+        message: 'Elija exámenes del tipo de la orden',
+      },
+    ]);
   }
 }
 
@@ -557,5 +630,159 @@ export class ReportCorrectionIncompleteError extends ValidationError {
         },
       ],
     );
+  }
+}
+
+// ─── The exam catalogue, administered (ORD-103 to ORD-111) ──────────────────
+
+/** ORD-103. The exam does not exist. */
+export class ExamDefinitionNotFoundError extends NotFoundError {
+  readonly code = 'EXAM_DEFINITION_NOT_FOUND';
+  override readonly userTitle =
+    'Ese examen no está en el catálogo. Vuelva a la lista de exámenes';
+
+  constructor() {
+    super('Exam definition not found');
+  }
+}
+
+/** ORD-105, ORD-106. The analyte does not exist or is deactivated. */
+export class AnalyteNotFoundError extends NotFoundError {
+  readonly code = 'ANALYTE_NOT_FOUND';
+  override readonly userTitle =
+    'Esa determinación no está en el catálogo o está desactivada. Elíjala de la lista';
+
+  constructor() {
+    super('Analyte definition not found or inactive');
+  }
+}
+
+/**
+ * ORD-104. Unit, decimals or allowed values that do not fit the value type.
+ * Each offending field is named: the screen puts the sentence under it.
+ */
+export class AnalyteDefinitionInvalidError extends ValidationError {
+  readonly code = 'ANALYTE_DEFINITION_INVALID';
+  override readonly userTitle =
+    'La determinación no casa con su tipo de valor. Revise los campos señalados';
+
+  constructor(fields: readonly { field: string; message: string }[]) {
+    super(
+      'Analyte definition does not fit its value type',
+      {},
+      fields.map((f) => ({ ...f, code: 'ANALYTE_DEFINITION_INVALID' })),
+    );
+  }
+}
+
+/** ORD-106. A range that cannot be true, named by its row. */
+export class ReferenceRangeInvalidError extends ValidationError {
+  readonly code = 'REFERENCE_RANGE_INVALID';
+  override readonly userTitle =
+    'Hay un rango que no se puede guardar así. Revise las filas señaladas';
+
+  constructor(fields: readonly { field: string; message: string }[]) {
+    super(
+      'Reference range is not coherent',
+      {},
+      fields.map((f) => ({ ...f, code: 'REFERENCE_RANGE_INVALID' })),
+    );
+  }
+}
+
+/**
+ * ORD-107. Two ranges of the same kind and specificity cover one patient:
+ * ORD-036 could not choose between them, and the flag would depend on row
+ * order.
+ */
+export class ReferenceRangeOverlapError extends ValidationError {
+  readonly code = 'REFERENCE_RANGE_OVERLAP';
+  override readonly userTitle =
+    'Dos rangos del mismo tipo se pisan para el mismo paciente. Ajuste el sexo o las edades';
+
+  constructor(fields: readonly { field: string; message: string }[]) {
+    super(
+      'Two reference ranges of equal specificity overlap',
+      {},
+      fields.map((f) => ({ ...f, code: 'REFERENCE_RANGE_OVERLAP' })),
+    );
+  }
+}
+
+/**
+ * ORD-108, ORD-109. The billing service is of another class than the exam's
+ * type: an imaging order is charged with an imaging service.
+ */
+export class ExamServiceKindMismatchError extends ValidationError {
+  readonly code = 'EXAM_SERVICE_KIND_MISMATCH';
+  override readonly userTitle =
+    'La prestación de cobro es de otra clase que el tipo del examen. Elija una prestación del mismo tipo';
+
+  constructor() {
+    super('Billable service category kind differs from the exam category', {}, [
+      {
+        field: 'billableServiceId',
+        code: 'EXAM_SERVICE_KIND_MISMATCH',
+        message: 'Elija una prestación del mismo tipo que el examen',
+      },
+    ]);
+  }
+}
+
+/** ORD-108. The billing service does not exist or is deactivated. */
+export class ExamServiceNotFoundError extends NotFoundError {
+  readonly code = 'EXAM_SERVICE_NOT_FOUND';
+  override readonly userTitle =
+    'Esa prestación no existe o está desactivada. Elíjala de la lista de prestaciones';
+
+  constructor() {
+    super('Billable service not found or inactive');
+  }
+}
+
+/**
+ * ORD-110. The analyte already has results: its name and its type are what
+ * those results froze (ORD-031) and what correcting them compares against
+ * (ORD-055). Renaming or retyping it would leave every one of them
+ * uncorrectable. A new name is a new analyte.
+ */
+export class AnalyteHasResultsError extends ConflictError {
+  readonly code = 'ANALYTE_HAS_RESULTS';
+  override readonly userTitle =
+    'Esa determinación ya tiene resultados registrados: su nombre, su tipo y su unidad no cambian. Dé de alta una nueva';
+
+  constructor() {
+    super('The analyte has registered results');
+  }
+}
+
+/**
+ * ORD-106. Changing the unit of an analyte that has ranges would leave them in
+ * the old unit: a critical glucose in mmol/L read against bounds in mg/dL is
+ * a critical value nobody is told about (ORD-060).
+ */
+export class AnalyteUnitWithRangesError extends ConflictError {
+  readonly code = 'ANALYTE_UNIT_WITH_RANGES';
+  override readonly userTitle =
+    'Sus rangos están en la unidad actual. Quite los rangos, cambie la unidad y vuelva a escribirlos';
+
+  constructor() {
+    super('The analyte has ranges in its current unit');
+  }
+}
+
+/**
+ * ORD-110. The exam has issued lines still waiting for their result, and
+ * whether each is complete is judged against the exam's structure (ORD-039):
+ * changing which analytes it yields would close a line without a value, or
+ * keep one open forever.
+ */
+export class ExamHasOpenOrdersError extends ConflictError {
+  readonly code = 'EXAM_HAS_OPEN_ORDERS';
+  override readonly userTitle =
+    'Hay órdenes de este examen esperando resultado. Cambie sus determinaciones cuando vuelvan, o dé de alta un examen nuevo';
+
+  constructor() {
+    super('The exam has pending issued order lines');
   }
 }

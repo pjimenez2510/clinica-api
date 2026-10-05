@@ -9,7 +9,7 @@ import type { Requester } from '../../src/modules/orders/application/service-ord
 import type { AccessAuditRecorder } from '../../src/shared/audit/access-audit.port';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
-import { aScene } from './orders-fixtures';
+import { placeIssued, aScene } from './orders-fixtures';
 import { useDatabase } from './setup/database';
 import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
 
@@ -59,7 +59,7 @@ async function aCriticalGlucose(prisma: PrismaClient, now: Date) {
   const { reports, orders } = serviceOf(prisma);
   const requester: Requester = { userId: 'user-1', sites: 'all' };
 
-  const order = await orders.place({
+  const order = await placeIssued(orders, {
     encounterId: scene.encounter.id,
     category: 'LABORATORY',
     priority: 'ROUTINE',
@@ -372,7 +372,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     const { reports, orders } = serviceOf(prisma);
     const requester: Requester = { userId: nurse.id, sites: 'all' };
 
-    const order = await orders.place({
+    const order = await placeIssued(orders, {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
@@ -563,7 +563,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     const requester: Requester = { userId: 'user-1', sites: 'all' };
     const observedAt = new Date(now.getTime() - 2 * 3_600_000);
 
-    const order = await orders.place({
+    const order = await placeIssued(orders, {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
@@ -615,7 +615,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     const { reports, orders } = serviceOf(prisma);
     const requester: Requester = { userId: 'user-1', sites: 'all' };
 
-    const order = await orders.place({
+    const order = await placeIssued(orders, {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
@@ -667,7 +667,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     const older = await aCriticalGlucose(prisma, new Date(now.getTime() - 3_600_000)); // prettier-ignore
     const { reports, orders } = serviceOf(prisma);
     const requester: Requester = { userId: 'user-1', sites: 'all' };
-    const order = await orders.place({
+    const order = await placeIssued(orders, {
       encounterId: older.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
@@ -717,7 +717,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
 
     // Y otra persona que avisa al médico que pidió sí cierra la cola.
     const { orders } = serviceOf(prisma);
-    const order = await orders.place({
+    const order = await placeIssued(orders, {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
@@ -901,7 +901,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     const scene = await aScene(prisma);
     const { reports, orders } = serviceOf(prisma);
     const requester: Requester = { userId: 'user-1', sites: 'all' };
-    const order = await orders.place({
+    const order = await placeIssued(orders, {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
@@ -1071,7 +1071,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     const nurse = await createUser(prisma);
     const { reports, orders } = serviceOf(prisma);
     const requester: Requester = { userId: nurse.id, sites: 'all' };
-    const order = await orders.place({
+    const order = await placeIssued(orders, {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',

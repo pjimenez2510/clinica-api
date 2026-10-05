@@ -39,11 +39,13 @@ export interface FrameRequest {
  * The receta carries none. It used to print «Copia de respaldo conservada cinco
  * años (Res. ACESS-2023-0030, art. 15)»: the retention is kept (DOC-013 purges
  * nothing), and printing it only recited the norm to the patient (author's
- * usability review, 04-10-2026).
+ * usability review, 04-10-2026). The order carried «Numeración consecutiva
+ * por sede (A.M. 00002393, art. 43)» for the same nothing: its number is on
+ * it already (D-121).
  */
 const FOOTER_NOTES: Readonly<Record<DocumentKind, readonly string[]>> = {
   PRESCRIPTION: [],
-  SERVICE_ORDER: ['Numeración consecutiva por sede (A.M. 00002393, art. 43)'],
+  SERVICE_ORDER: [],
   MEDICAL_CERTIFICATE: ['Documento sin enmiendas'],
   INVOICE_RIDE: [
     'Representación impresa del comprobante electrónico (RIDE) · Ficha técnica del SRI, Anexo 2',

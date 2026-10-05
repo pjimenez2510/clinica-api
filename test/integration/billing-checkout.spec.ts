@@ -221,6 +221,11 @@ async function aBloodCountWasOrdered(): Promise<string> {
     },
     include: { items: true },
   });
+  // ORD-098. Lines go in while it is a draft; only an issued one is charged.
+  await context.prisma.serviceOrder.update({
+    where: { id: order.id },
+    data: { status: 'ISSUED' },
+  });
   return order.items[0]!.id;
 }
 

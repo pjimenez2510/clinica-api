@@ -2796,8 +2796,8 @@ D-117._
   > tiene que saber por qué dejó de estar. Antes de firmar, un código mal
   > elegido hace un minuto no merece un párrafo: el rastro de quién y cuándo
   > queda igual. **Garantía de la base**, en el mismo disparador del archivo.
-- **EN-182** — SI la atención tiene una **orden de servicio con algún examen
-  sin anular**, ENTONCES el sistema DEBERÁ rechazar quitar un diagnóstico o
+- **EN-182** — SI la atención tiene una **orden de servicio emitida con algún
+  examen sin anular**, ENTONCES el sistema DEBERÁ rechazar quitar un diagnóstico o
   cambiar el principal con `DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT`, diciendo que
   primero se anulan los exámenes.
   > La orden **lee el diagnóstico de la atención al mostrarse**: quitarlo
@@ -2811,6 +2811,11 @@ D-117._
   > receta **congela sus diagnósticos al emitirse**
   > (`a_prescription_freeze_diagnoses`, PR-026), como el certificado
   > (CER-011), y corregir la atención no toca lo emitido.
+  >
+  > **Sólo la orden emitida (ORD-100, ORD-102).** Desde que la orden nace en
+  > borrador (`fix/atencion-examenes`), un borrador o una orden descartada no
+  > cuentan: nunca salieron de la consulta ni las tiene ningún laboratorio.
+  > Lo redefine `20261005011607_en182_only_issued_orders_cite_diagnoses`.
   >
   > **Garantía de la base**, en el disparador del archivo y en el del rango.
   > Que la orden también congele los suyos —y deje de bloquear— es de `orders`

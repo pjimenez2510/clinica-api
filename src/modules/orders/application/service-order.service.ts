@@ -18,7 +18,9 @@ import {
   type ExamCatalogueRepository,
 } from '../domain/exam-catalogue.repository';
 import {
+  ExamCategoryMismatchError,
   ExamNotOrderableError,
+  OrderDraftOfAnotherPractitionerError,
   OrderNotFoundError,
   ResultChartUnmatchedError,
 } from '../domain/orders.errors';
@@ -42,7 +44,7 @@ export interface Requester {
   userAgent?: string;
 }
 
-/** ORD-001. What emitting an order needs to be told. */
+/** ORD-001, ORD-095. What composing an order needs to be told. */
 export interface PlaceOrderRequest {
   encounterId: string;
   category: ServiceOrderCategory;
@@ -50,6 +52,11 @@ export interface PlaceOrderRequest {
   clinicalNoteText?: string;
   lines: readonly { examDefinitionId: string }[];
 }
+
+/** ORD-096. The draft's new content, addressed by the order. */
+export type RewriteOrderRequest = Omit<PlaceOrderRequest, 'encounterId'> & {
+  orderId: string;
+};
 
 /** ORD-020 to ORD-025, ORD-081. What the pending worklist is asked for. */
 export interface PendingOrdersRequest {
@@ -90,10 +97,11 @@ export interface PendingOrdersRequest {
  *    is no counterpart that writes, in this file or anywhere in this module.
  *    Creating a chart from an incoming result is the main cause of duplicate
  *    records in the systems that do it the other way round.
- *  - IT DOES NOT EDIT AN ORDER. A line asked for by mistake is CANCELLED, with
- *    its row intact (ORD-007): deleting it would erase that somebody asked for
- *    something and changed their mind, which is precisely what has to stay
- *    auditable.
+ *  - IT DOES NOT EDIT AN ISSUED ORDER. A draft is rewritten whole until it is
+ *    issued (ORD-096); from then on a line asked for by mistake is CANCELLED,
+ *    with its row intact (ORD-007): deleting it would erase that somebody
+ *    asked for something and changed their mind, which is precisely what has
+ *    to stay auditable.
  */
 @Injectable()
 export class ServiceOrderService {
@@ -110,30 +118,22 @@ export class ServiceOrderService {
   }
 
   /**
-   * ORD-001 to ORD-006. Emits one order with its lines.
+   * ORD-001 to ORD-005, ORD-095, ORD-097. Composes one DRAFT order with its
+   * lines; it takes no number until it is issued (ORD-098).
    *
-   * WHAT IS CHECKED HERE is the pair no constraint can see: that every
-   * orderable named exists and is active, and that there is at least one line.
-   * Everything else — the attention's state, the tariff concept's validity on
-   * the clinical date — is arbitrated INSIDE the write, because each is a race
-   * and a read taken first can be stale by the time the row lands.
+   * WHAT IS CHECKED HERE is what no constraint can see: that every orderable
+   * named exists, is active and is of the order's category. Everything else —
+   * the attention's state, the tariff concept's validity on the clinical date
+   * — is arbitrated INSIDE the write, because each is a race and a read taken
+   * first can be stale by the time the row lands.
    */
-  async place(
+  async compose(
     request: PlaceOrderRequest,
     requester: Requester,
   ): Promise<ServiceOrderView> {
-    /**
-     * ORD-003. THE WHOLE ORDER OR NOTHING. Comparing counts rather than
-     * looking each one up in turn is deliberate: `activeByIds` returns only
-     * what is orderable, so a short answer means at least one line names
-     * something retired or invented — and which one it is does not change what
-     * the caller does next, which is pick from the list.
-     */
-    const wanted = [...new Set(request.lines.map((line) => line.examDefinitionId))]; // prettier-ignore
-    const orderable = await this.exams.activeByIds(wanted);
-    if (orderable.length !== wanted.length) throw new ExamNotOrderableError();
+    await this.checkOrderable(request);
 
-    const order = await this.orders.place({
+    const order = await this.orders.compose({
       encounterId: request.encounterId,
       category: request.category,
       priority: request.priority,
@@ -152,6 +152,55 @@ export class ServiceOrderService {
     this.logger.info(
       {
         site_id: order.siteId,
+        action: 'SERVICE_ORDER_COMPOSED',
+        item_count: order.items.length,
+      },
+      'service order composed',
+    );
+
+    return order;
+  }
+
+  /** ORD-096, ORD-097. Rewrites a draft whole, with the checks of `compose`. */
+  async rewrite(
+    request: RewriteOrderRequest,
+    requester: Requester,
+  ): Promise<ServiceOrderView> {
+    await this.checkOrderable(request);
+    await this.assertSigner(request.orderId, requester);
+
+    const order = await this.orders.rewrite({
+      orderId: request.orderId,
+      category: request.category,
+      priority: request.priority,
+      clinicalNoteText: request.clinicalNoteText,
+      lines: request.lines,
+      sites: requester.sites,
+    });
+
+    this.logger.info(
+      {
+        site_id: order.siteId,
+        action: 'SERVICE_ORDER_REWRITTEN',
+        item_count: order.items.length,
+      },
+      'service order rewritten',
+    );
+
+    return order;
+  }
+
+  /** ORD-098. Issues a draft: from here it has its number and is frozen. */
+  async issue(
+    orderId: string,
+    requester: Requester,
+  ): Promise<ServiceOrderView> {
+    await this.assertSigner(orderId, requester);
+    const order = await this.orders.issue({ orderId, sites: requester.sites });
+
+    this.logger.info(
+      {
+        site_id: order.siteId,
         action: 'SERVICE_ORDER_PLACED',
         item_count: order.items.length,
       },
@@ -159,6 +208,60 @@ export class ServiceOrderService {
     );
 
     return order;
+  }
+
+  /** ORD-099. Discards a draft; the row stays, with who and when. */
+  async discard(
+    orderId: string,
+    requester: Requester,
+  ): Promise<ServiceOrderView> {
+    await this.assertSigner(orderId, requester);
+    const order = await this.orders.discard({
+      orderId,
+      sites: requester.sites,
+      userId: requester.userId,
+    });
+
+    this.logger.info(
+      { site_id: order.siteId, action: 'SERVICE_ORDER_DISCARDED' },
+      'service order discarded',
+    );
+
+    return order;
+  }
+
+  /**
+   * D-123. The draft is the signer's: a colleague's issue would put an order
+   * under somebody else's name (the line PR-100 draws for a receta). The
+   * signer never changes before the issue and is frozen after it, so reading
+   * it first is no race.
+   */
+  private async assertSigner(
+    orderId: string,
+    requester: Requester,
+  ): Promise<void> {
+    const order = await this.byId(orderId, requester);
+    if (order.orderedByUserId !== requester.userId) {
+      throw new OrderDraftOfAnotherPractitionerError();
+    }
+  }
+
+  /**
+   * ORD-003, ORD-097. THE WHOLE ORDER OR NOTHING. Comparing counts rather than
+   * looking each one up in turn is deliberate: `activeByIds` returns only
+   * what is orderable, so a short answer means at least one line names
+   * something retired or invented — and which one it is does not change what
+   * the caller does next, which is pick from the list.
+   */
+  private async checkOrderable(
+    request: Pick<PlaceOrderRequest, 'category' | 'lines'>,
+  ): Promise<void> {
+    const wanted = [...new Set(request.lines.map((line) => line.examDefinitionId))]; // prettier-ignore
+    const orderable = await this.exams.activeByIds(wanted);
+    if (orderable.length !== wanted.length) throw new ExamNotOrderableError();
+    if (orderable.some((exam) => exam.category !== request.category)) {
+      throw new ExamCategoryMismatchError();
+    }
   }
 
   /** ORD-009. One order with its lines, within the caller's scope. */

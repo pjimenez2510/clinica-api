@@ -102,7 +102,8 @@ una interoperación y afirma algo falso.
 
 **Dentro:**
 
-1. Emitir una orden de examen desde una atención, con sus líneas.
+1. Emitir una orden de examen desde una atención, con sus líneas, tras
+   componerla y corregirla en borrador (ORD-095 a ORD-099).
 2. La cola de **órdenes sin resultado**, que envejece, con dueño y plazo.
 3. Registrar el informe que vuelve: valores estructurados por analito, con su
    unidad, su rango de referencia y su bandera **calculada**.
@@ -110,8 +111,9 @@ una interoperación y afirma algo falso.
 5. Las dos colas de seguridad: **resultados sin orden** y **valores críticos**.
 6. La conciliación por **`Cedula`** de un informe en papel contra las órdenes
    abiertas de esa ficha.
-7. El catálogo de lo ordenable, en lectura: qué exámenes hay, qué analitos
-   producen, qué muestra y qué preparación necesitan.
+7. El catálogo de lo ordenable: qué exámenes hay, qué analitos producen, qué
+   muestra y qué preparación necesitan; y, con `catalog:manage`, su alta y su
+   corrección desde la pantalla (§10).
 
 **Fuera:**
 
@@ -119,8 +121,8 @@ una interoperación y afirma algo falso.
   lo que cuesta es `charge_item`, de `billing`, resuelto de la lista de precios
   del pagador en la fecha de servicio (ORD-002). Este módulo **no lee ni escribe
   ningún importe**.
-- **Editar el catálogo de exámenes y analitos.** Es un catálogo, y los catálogos
-  se cargan y versionan con `catalog:manage`. Aquí solo se lee.
+- ~~Editar el catálogo de exámenes y analitos.~~ Entra con §10 (ORD-103 a
+  ORD-111): la clínica lo administra en pantalla con `catalog:manage`.
 - **La receta.** Un medicamento no es un examen: `prescription` tiene su propia
   cadena de firma y su propia norma.
 - **La imagen y su informe radiológico.** `ServiceOrderCategory` admite
@@ -266,6 +268,44 @@ extracción repetida.
 **No se construye todavía y no es una decisión de prioridad: falta el esquema.**
 No hay tabla de adjuntos en ninguna parte del modelo. Ver ORD-070 y ORD-071.
 
+### E9 — La orden en borrador y el examen con tipo _(P1)_
+
+Componer la orden en la pestaña de la atención, guardarla en borrador,
+corregirla, descartarla o emitirla; elegir los exámenes de una lista filtrada
+por el tipo de la orden.
+
+**Por qué es P1:** una orden que se emite al primer clic y solo se corrige
+anulando líneas llena la cola de pendientes de pedidos que nadie quería, y un
+hemograma pedido como «Imagen» llega al laboratorio equivocado.
+**Prueba independiente:** guardar un borrador con `EX-BH`, cambiarlo por
+`EX-GLUCOSA-AYUNAS`, emitirlo y comprobar que lleva el siguiente número de la
+sede y que un borrador descartado antes no consumió ninguno; pedir `EX-BH` en
+una orden de imagen y ver el rechazo.
+**Cubre:** ORD-095 a ORD-102.
+
+**Solo servidor:** ORD-100, ORD-102. Que el borrador no salga en la cola, ni en
+caja, ni en la verificación, ni cuente para anular la atención son filtros de
+las consultas del servidor; en pantalla no hay nada que enseñar salvo su
+ausencia.
+
+### E10 — El catálogo de exámenes, administrado por la clínica _(P2)_
+
+Dar de alta y corregir un examen —datos, tipo, sección, muestra, preparación,
+entrega, laboratorio—, su estructura de resultados —analitos en orden, con su
+tipo de valor, unidad, decimales y valores admitidos—, los rangos de referencia
+y críticos de cada analito por sexo y edad, y la prestación con que se cobra.
+
+**Por qué es P2:** sin él el catálogo sólo lo cambia una siembra, y un examen
+que la clínica hace y el sistema no tiene se pide a mano o no se pide.
+**Prueba independiente:** crear un examen de laboratorio con dos analitos y sus
+rangos, cobrarlo con una prestación de laboratorio, pedirlo desde una atención;
+y ver rechazada la prestación de imagen.
+**Cubre:** ORD-103 a ORD-111.
+
+**Solo servidor:** ORD-110. Que un cambio del catálogo no altere un resultado ya
+registrado es una propiedad de lo que el resultado congela; en pantalla no hay
+nada que lo enseñe.
+
 ### Fuera de las ocho
 
 **Transcripción masiva y gráficas de evolución.** Se transcribe **solo lo que se
@@ -381,7 +421,8 @@ cuando la gráfica exista.
   > **Construido** (`20261001070100_document_counter_and_order_number`).
   > `service_order.number` lo asigna el disparador
   > `service_order_number_assigned` desde `document_counter`, **por sede**
-  > (D-074), dentro de la transacción que emite: una emisión revertida devuelve
+  > (D-074), dentro de la transacción que emite —**al emitir**, no al guardar
+  > el borrador (ORD-098)—: una emisión revertida devuelve
   > su número y la serie no tiene huecos, que es lo que una `SEQUENCE` como
   > `patient_mrn_seq` no garantiza. `service_order_site_number_unique` y
   > `service_order_number_immutable` lo dicen una segunda vez. El disparador
@@ -975,6 +1016,197 @@ cuando la gráfica exista.
   asigne»). Es el mismo argumento que produjo `nursing:write` y
   `encounter:open`.
 
+## 9. El borrador y el tipo del examen (ORD-095 a ORD-102)
+
+Revisión de usabilidad del autor (04-10-2026): la orden se compone en la
+pestaña de la atención, como la receta, y hasta emitirla **se corrige**: hoy se
+emitía al primer clic y lo pedido por error solo se podía anular línea a línea.
+Y el «Tipo de orden» no filtraba nada, porque el examen no tenía tipo: se podía
+marcar Imagen y pedir un hemograma.
+
+- **ORD-095** — CUANDO un profesional guarda una orden sin emitirla, el sistema
+  DEBERÁ registrarla en `DRAFT`, **sin número** y con las líneas validadas como
+  al emitir (ORD-002 a ORD-005, ORD-097).
+
+  > `service_order.status` (`service_order_status`: `DRAFT`, `ISSUED`,
+  > `DISCARDED`). Las órdenes que ya existían pasan a `ISSUED`: se emitieron
+  > así.
+
+- **ORD-096** — MIENTRAS una orden esté en `DRAFT`, el sistema DEBERÁ admitir
+  reescribirla entera —tipo, prioridad, indicación clínica y líneas—
+  conservando su identificador; SI no está en `DRAFT`, ENTONCES DEBERÁ
+  rechazarlo con `ORDER_NOT_DRAFT`, y la base DEBERÁ impedir cambiar el tipo,
+  la prioridad, la indicación o las líneas de una orden que no está en
+  borrador.
+
+  Las líneas del borrador **se sustituyen**: nunca salieron de la consulta, así
+  que no hay nada que auditar en quitarlas. Lo que se audita empieza al
+  emitir, y desde ahí rige ORD-007 —una línea se anula, nunca se borra—.
+
+- **ORD-097** — SI algún examen de la orden no es del tipo de la orden, ENTONCES
+  el sistema DEBERÁ rechazar la orden entera con `EXAM_CATEGORY_MISMATCH`.
+
+  > `exam_definition.category` (`service_order_category`), `LABORATORY` de
+  > fábrica para lo que ya había. La coherencia con la **clase** de la
+  > categoría de su prestación de cobro (`billable_service_category.kind`, de
+  > `fix/caja-usabilidad`) entra con el catálogo de exámenes.
+
+- **ORD-098** — CUANDO se emite una orden en `DRAFT`, el sistema DEBERÁ pasarla a
+  `ISSUED`, asignarle **en ese momento** el número de ORD-006 y fijar
+  `requested_at` en el instante de la emisión, volviendo a comprobar ORD-003 y
+  ORD-005; una orden que no llega a emitirse NO DEBERÁ consumir número.
+
+  El número se asigna al emitir para que la serie del art. 43 no tenga huecos:
+  un borrador descartado que se hubiera llevado el 42 dejaría la orden 41 y la
+  43 y una pregunta por la 42. Y `requested_at` es el de la emisión porque de
+  él cuelgan la antigüedad de la cola (ORD-021) y la fecha del cargo en caja.
+
+- **ORD-099** — CUANDO se descarta una orden en `DRAFT`, el sistema DEBERÁ dejarla
+  en `DISCARDED` con quién y cuándo, **sin borrar ninguna fila**; SI no está en
+  `DRAFT`, ENTONCES DEBERÁ rechazarlo con `ORDER_NOT_DRAFT`.
+
+  > **D-122 (resuelta, A):** sin motivo; queda quién y cuándo. Se descarta
+  > también con la atención ya cerrada —descartar no añade nada a la
+  > historia—, para que un borrador olvidado no quede colgado para siempre.
+  >
+  > **D-123.1 (construida con la recomendación):** el borrador lo corrige,
+  > emite o descarta sólo el profesional que firma la orden, como la receta
+  > (PR-100), con `ORDER_DRAFT_OF_ANOTHER_PRACTITIONER`. Y al emitir se
+  > vuelve a comprobar también el tipo de cada examen (ORD-097).
+
+- **ORD-100** — Una orden que no esté en `ISSUED` NO DEBERÁ aparecer en la cola de
+  pendientes, ni proponer cargo en caja, ni contar como acto clínico de la
+  atención, ni imprimirse ni verificarse por su código; y SI se intenta
+  registrar un informe, emparejar un resultado o anular una línea de una orden
+  que no está en `ISSUED`, ENTONCES el sistema DEBERÁ rechazarlo con
+  `ORDER_NOT_ISSUED`.
+
+- **ORD-101** — El catálogo de ORD-010 DEBERÁ publicar el **tipo** de cada
+  ordenable.
+
+  Es lo que deja filtrar la lista al pedir. Filtrar por la sección del 010A no
+  sirve para esto: una radiografía no tiene sección del 010A.
+
+- **ORD-102** — Una orden en `DRAFT` DEBERÁ contar como acto vivo de la atención
+  (D-099 §1), como la receta en borrador: la atención no se anula con un
+  borrador dentro, que se descarta antes. Las órdenes `DISCARDED` NO DEBERÁN
+  contar.
+
+## 10. El catálogo de exámenes, administrado (ORD-103 a ORD-111)
+
+Revisión de usabilidad del autor (04-10-2026): «catálogos configurables por la
+clínica». El modelo ya existía (`exam_definition`, `exam_definition_analyte`,
+`analyte_definition`, `analyte_reference_range`); faltaba poder escribirlo
+desde la pantalla.
+
+- **ORD-103** — Con `catalog:manage`, el sistema DEBERÁ permitir dar de alta y
+  corregir un examen —código, nombre, tipo, sección, muestra, preparación,
+  tiempo de entrega, si lo hace un laboratorio externo y cuál, código del
+  tarifario— y desactivarlo y reactivarlo; el código NO DEBERÁ cambiar una vez
+  creado, y un examen NO DEBERÁ borrarse. SI el código ya lo lleva otro examen,
+  ENTONCES DEBERÁ rechazarlo con `EXAM_CODE_DUPLICATE`.
+
+  El código se congela en cada línea que lo pidió (ORD-002) y es lo que el
+  informe de papel cita: cambiarlo dejaría órdenes apuntando a un código que ya
+  no existe. Desactivado, deja de ofrecerse (ORD-003) y lo pedido antes se
+  sigue leyendo.
+
+- **ORD-104** — Con `catalog:manage`, el sistema DEBERÁ permitir dar de alta y
+  corregir un analito —código, nombre, tipo de valor (`NUMERIC`, `CODED`,
+  `TEXT`, `ORDINAL`), unidad, decimales, valores admitidos, LOINC opcional—; el
+  código NO DEBERÁ cambiar una vez creado. SI un analito numérico no trae
+  unidad, o uno codificado u ordinal no trae al menos dos valores admitidos, o
+  uno numérico o de texto los trae, ENTONCES DEBERÁ rechazarlo con
+  `ANALYTE_DEFINITION_INVALID` nombrando el campo; SI el código ya existe, con
+  `ANALYTE_CODE_DUPLICATE`; y SI otra determinación activa ya lleva ese nombre,
+  con `ANALYTE_NAME_DUPLICATE` (`analyte_definition_active_name_unique`).
+
+  > El nombre es único porque hoy es lo que ata un resultado a su
+  > determinación (ORD-031, falta la columna de identificador): dos activas
+  > con el mismo nombre se confundirían al completar una línea (ORD-039) y al
+  > corregir un informe (ORD-055).
+
+- **ORD-105** — Con `catalog:manage`, el sistema DEBERÁ permitir fijar la
+  **estructura de resultados** de un examen: qué analitos produce, en qué orden
+  y cuáles son reflejos, sustituyéndola entera; SI nombra un analito que no
+  existe, o está desactivado y no estaba ya en la estructura, ENTONCES DEBERÁ
+  rechazarla con `ANALYTE_NOT_FOUND`.
+
+  > Desactivar una determinación es dejar de ofrecerla para estructuras
+  > nuevas, no dejar de recibirla: lo ya pedido la sigue esperando, y un
+  > informe que la trae —o la corrección de uno que la trajo— se recibe
+  > (revisión clínica: rechazarla tumbaba el informe entero por ORD-042).
+
+  Un analito es de todos los exámenes que lo usan —la glucosa del perfil y la
+  de la glucosa en ayunas son la misma determinación—, así que corregirlo
+  corrige los dos, y la pantalla lo dice.
+
+- **ORD-106** — Con `catalog:manage`, el sistema DEBERÁ permitir fijar los
+  **rangos** de un analito —de referencia y críticos, cada uno por sexo y por
+  edad en días, con límite inferior, superior o texto—, sustituyéndolos
+  enteros; SI un rango tiene el inferior por encima del superior o la edad
+  mínima por encima de la máxima, o es crítico o numérico sobre un analito que
+  no es numérico, ENTONCES DEBERÁ rechazarlo con `REFERENCE_RANGE_INVALID`
+  nombrando la fila. Un rango de una determinación numérica DEBERÁ llevar al
+  menos un límite, y un crítico más específico NO DEBERÁ carecer de un lado
+  que tenga un crítico menos específico que le alcanza (ORD-060: esos
+  pacientes se quedarían sin alerta de ese lado; D-123.2).
+
+  > Las edades se escriben «desde» (incluido) y «menos de» (excluido) y se
+  > guardan en días reales (D-123.5): los tramos «0 a 1 año» y «1 a 18 años»
+  > se tocan sin pisarse ni dejar hueco.
+
+- **ORD-107** — SI dos rangos del mismo tipo y la misma especificidad (ORD-036:
+  mismo sexo, ambos con o sin ventana de edad) cubren a un mismo paciente,
+  ENTONCES el sistema DEBERÁ rechazarlos con `REFERENCE_RANGE_OVERLAP`.
+
+  ORD-036 elige el rango **más específico**; entre dos igual de específicos que
+  se pisan no hay respuesta, y la bandera dependería del orden de las filas.
+
+- **ORD-108** — Con `catalog:manage`, el sistema DEBERÁ permitir fijar la
+  **prestación de cobro** de un examen, y SI la clase de la categoría de esa
+  prestación (`billable_service_category.kind`) no es el tipo del examen,
+  ENTONCES DEBERÁ rechazarlo con `EXAM_SERVICE_KIND_MISMATCH`; SI la
+  prestación no existe o está desactivada, con `EXAM_SERVICE_NOT_FOUND`.
+
+  Las clases `LABORATORY`, `IMAGING` y `PROCEDURE` de caja son, a propósito,
+  las de una orden (BI-186): una orden de imagen se cobra con una prestación de
+  imagen. Es la otra mitad de BI-187, que impide mover a otra clase la
+  prestación con que se cobra un examen; desde aquí, BI-187 compara con el tipo
+  de sus exámenes y deja de admitir sólo laboratorio e imagen, para que un
+  electrocardiograma se cobre como procedimiento.
+
+- **ORD-109** — SI se cambia el tipo de un examen que tiene prestación de cobro
+  a uno que no es la clase de esa prestación, ENTONCES el sistema DEBERÁ
+  rechazarlo con `EXAM_SERVICE_KIND_MISMATCH`.
+
+- **ORD-110** — Un cambio del catálogo NO DEBERÁ alterar ningún resultado ya
+  registrado ni ninguna orden ya emitida: SI se renombra, cambia de tipo o de
+  unidad una determinación con resultados, ENTONCES DEBERÁ rechazarlo con
+  `ANALYTE_HAS_RESULTS`; SI se cambia la unidad de una con rangos escritos,
+  con `ANALYTE_UNIT_WITH_RANGES`; y SI se cambian las determinaciones de un
+  examen con líneas emitidas esperando resultado, con `EXAM_HAS_OPEN_ORDERS`
+  (cambiar sólo su orden de impresión se admite).
+
+  > Revisión clínica de `fix/atencion-examenes`: la completitud de una línea
+  > se juzga contra la estructura ACTUAL (ORD-039) y la corrección compara por
+  > el nombre congelado (ORD-055). Renombrar dejaba incorregible un valor
+  > erróneo; cambiar la unidad con rangos en la vieja apagaba un crítico;
+  > quitar o añadir determinaciones cerraba líneas sin valor o las dejaba
+  > abiertas para siempre. Lo de fondo —guardar el identificador en el
+  > resultado y congelar en la línea lo que espera— es la nota de ORD-031.
+
+  Ya lo garantiza lo que congelan: la línea, su código y su nombre (ORD-002);
+  el resultado, el nombre del analito, su unidad y el rango aplicado
+  (ORD-031, ORD-037). Por eso los rangos se sustituyen enteros sin miedo: no
+  hay fila de resultado que apunte a uno.
+
+- **ORD-111** — Toda alta o corrección del catálogo DEBERÁ dejar fila en
+  `access_audit` con quién, cuándo y qué examen o analito.
+
+  Un rango crítico cambiado decide si alguien llama esta noche a un paciente
+  (ORD-060): tiene que poder saberse quién lo cambió.
+
 ---
 
 ## Códigos de error nuevos
@@ -1006,6 +1238,23 @@ contrato —`code`, estado y mensaje—.
 | `REPORT_CORRECTION_INCOMPLETE` | 422 | La corrección no trae todos los analitos del informe que sustituye | ORD-055 |
 | `RESULT_SUPERSEDED` | 422 | Se intentó avisar de un valor cuyo informe ya fue corregido: se avisa el que lo sustituye | ORD-062 |
 | `CRITICAL_READ_BACK_REQUIRED` | 422 | Un aviso hecho sin confirmar que quien lo recibió repitió el valor | ORD-066 |
+| `ORDER_NOT_DRAFT` | 409 | Se intentó reescribir, emitir o descartar una orden que ya no está en borrador | ORD-096, ORD-098, ORD-099 |
+| `ORDER_NOT_ISSUED` | 409 | Se intentó registrar un informe, emparejar un resultado o anular una línea de una orden que no se ha emitido | ORD-100 |
+| `EXAM_DEFINITION_NOT_FOUND` | 404 | El examen no existe | ORD-103 |
+| `EXAM_CODE_DUPLICATE` | 409 | Otro examen ya lleva ese código. Lo arbitra `exam_definition_code_unique` | ORD-103 |
+| `ANALYTE_NOT_FOUND` | 404 | El analito no existe o está desactivado | ORD-105, ORD-106 |
+| `ANALYTE_CODE_DUPLICATE` | 409 | Otro analito ya lleva ese código. Lo arbitra `analyte_definition_code_unique` | ORD-104 |
+| `ANALYTE_DEFINITION_INVALID` | 422 | Unidad, decimales o valores admitidos que no casan con el tipo de valor | ORD-104 |
+| `REFERENCE_RANGE_INVALID` | 422 | Límites o edades al revés, o un rango numérico o crítico sobre un analito que no es numérico | ORD-106 |
+| `REFERENCE_RANGE_OVERLAP` | 422 | Dos rangos igual de específicos que cubren al mismo paciente | ORD-107 |
+| `EXAM_SERVICE_KIND_MISMATCH` | 422 | La prestación de cobro es de otra clase que el tipo del examen | ORD-108, ORD-109 |
+| `EXAM_SERVICE_NOT_FOUND` | 404 | La prestación de cobro no existe o está desactivada | ORD-108 |
+| `ANALYTE_NAME_DUPLICATE` | 409 | Otra determinación activa ya lleva ese nombre. Lo arbitra `analyte_definition_active_name_unique` | ORD-104 |
+| `ANALYTE_HAS_RESULTS` | 409 | Renombrar, cambiar el tipo o la unidad de una determinación con resultados | ORD-110 |
+| `ANALYTE_UNIT_WITH_RANGES` | 409 | Cambiar la unidad mientras tiene rangos escritos en la vieja | ORD-106 |
+| `EXAM_HAS_OPEN_ORDERS` | 409 | Cambiar las determinaciones de un examen con órdenes esperando resultado | ORD-110 |
+| `ORDER_DRAFT_OF_ANOTHER_PRACTITIONER` | 403 | Corregir, emitir o descartar el borrador que firma otro profesional | ORD-096, D-123 |
+| `EXAM_CATEGORY_MISMATCH` | 422 | Un examen de la orden no es del tipo de la orden. Rechaza la orden **entera**, como ORD-003 | ORD-097 |
 
 Se **reutilizan**, no se crean: `CATALOG_CONCEPT_NOT_FOUND` y
 `CATALOG_CONCEPT_NOT_IN_FORCE` de `shared/domain/errors`, que existen
@@ -1044,7 +1293,10 @@ resuelto de quien llama.
 
 | Método | Ruta | Permiso | Requisitos |
 | --- | --- | --- | --- |
-| `POST` | `/encounters/:encounterId/orders` | `record:write` | ORD-001 a ORD-006 |
+| `POST` | `/encounters/:encounterId/orders` | `record:write` | ORD-001 a ORD-005, ORD-095, ORD-097 |
+| `PUT` | `/orders/:orderId` | `record:write` | ORD-096, ORD-097 |
+| `POST` | `/orders/:orderId/issue` | `record:write` | ORD-006, ORD-098 |
+| `POST` | `/orders/:orderId/discard` | `record:write` | ORD-099 |
 | `GET` | `/encounters/:encounterId/orders` | `record:read` | ORD-002, ORD-009 |
 | `GET` | `/orders/:orderId` | `record:read` | ORD-009 |
 | `POST` | `/orders/:orderId/items/:itemId/cancel` | `record:write` | ORD-007, ORD-008 |
@@ -1056,7 +1308,16 @@ resuelto de quien llama.
 | `POST` | `/orders/results/:resultId/match` | `result:write` | ORD-041, ORD-043, ORD-091 |
 | `GET` | `/orders/results/critical` | `record:read` | ORD-060, ORD-061, ORD-065, ORD-092 |
 | `POST` | `/orders/results/:resultId/notices` | `result:write` | ORD-062, ORD-091 |
-| `GET` | `/exams` | `catalog:read` | ORD-010 a ORD-012 |
+| `GET` | `/exams` | `catalog:read` | ORD-010 a ORD-012, ORD-101 |
+| `GET` | `/exam-catalogue/exams` | `catalog:manage` | ORD-103 (activos e inactivos, con estructura, rangos y prestación) |
+| `GET` | `/exam-catalogue/exams/:examId` | `catalog:manage` | ORD-103 |
+| `POST` | `/exam-catalogue/exams` | `catalog:manage` | ORD-103, ORD-108, ORD-111 |
+| `PATCH` | `/exam-catalogue/exams/:examId` | `catalog:manage` | ORD-103, ORD-108, ORD-109, ORD-111 |
+| `PUT` | `/exam-catalogue/exams/:examId/analytes` | `catalog:manage` | ORD-105, ORD-111 |
+| `GET` | `/exam-catalogue/analytes` | `catalog:manage` | ORD-104 |
+| `POST` | `/exam-catalogue/analytes` | `catalog:manage` | ORD-104, ORD-111 |
+| `PATCH` | `/exam-catalogue/analytes/:analyteId` | `catalog:manage` | ORD-104, ORD-111 |
+| `PUT` | `/exam-catalogue/analytes/:analyteId/ranges` | `catalog:manage` | ORD-106, ORD-107, ORD-111 |
 
 **`POST /orders/results/:resultId/match` lleva `result:write` y no
 `record:read`**: leer la cola es una lectura, pero emparejar ESCRIBE el

@@ -1,5 +1,11 @@
 import type { PrismaClient } from '@prisma/client';
 
+import type {
+  NewServiceOrder,
+  ServiceOrderRepository,
+  ServiceOrderView,
+} from '../../src/modules/orders/domain/service-order.repository';
+
 import {
   createEncounter,
   createPatient,
@@ -152,3 +158,17 @@ export async function aScene(
 }
 
 export { createSite, createPatient };
+
+/**
+ * ORD-095, ORD-098. An ISSUED order, the way the screen gets one: composed as
+ * a draft and issued. Most suites need an order that already left the
+ * consultation —the only kind a result comes back for (ORD-100)— and taking
+ * both steps keeps them on the production path instead of a shortcut.
+ */
+export async function placeIssued(
+  orders: Pick<ServiceOrderRepository, 'compose' | 'issue'>,
+  order: NewServiceOrder,
+): Promise<ServiceOrderView> {
+  const draft = await orders.compose(order);
+  return orders.issue({ orderId: draft.id, sites: order.sites });
+}

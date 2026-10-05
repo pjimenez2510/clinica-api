@@ -842,6 +842,11 @@ describe('el bloque K por HTTP', () => {
         },
         include: { items: true },
       });
+      // ORD-098. Lines go in while it is a draft; issued, it cites (EN-182).
+      await prisma.serviceOrder.update({
+        where: { id: order.id },
+        data: { status: 'ISSUED' },
+      });
       const path = `/encounters/${encounterId}/diagnoses/${second.id}`;
 
       const refused = await post(`${path}/retract`, doctorToken).expect(409);

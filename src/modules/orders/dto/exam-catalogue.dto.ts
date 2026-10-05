@@ -34,6 +34,8 @@ export const examDefinitionSchema = z.object({
   id: z.uuid(),
   code: z.string(),
   name: z.string(),
+  /** ORD-101. What lets the list be filtered by the order's category. */
+  category: z.enum(['LABORATORY', 'IMAGING', 'PROCEDURE']),
   /** ORD-010. The section of form 010A, so a compliant order can be printed. */
   form010Section: z.string().nullable(),
   specimenType: z.string().nullable(),
