@@ -175,7 +175,10 @@ export const issuedCertificateSchema = z.object({
   certificate: certificateSchema,
   /** CER-013. `null` on an attendance certificate. */
   iess: iessValidationSchema.nullable(),
-  /** CER-032. Over 3 and over 7 days; provisional text, never a refusal. */
+  /**
+   * CER-032, CER-038, CER-043, CER-055. A long rest, the limits it passes
+   * (D-128.7), the maternity procedure, the missing work data; never a refusal.
+   */
   restNotices: z.array(z.string()),
 });
 /** Response of POST /encounters/:encounterId/certificates. */

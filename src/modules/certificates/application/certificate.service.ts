@@ -17,15 +17,14 @@ import {
   missingPatientWork,
   patientWorkNotice,
   assertIssuableType,
-  assertRestStartsInTime,
-  assertRestWithinAttention,
-  assertMaternityWithinLeave,
+  assertMaternityCoherent,
   assertRestDoesNotOverlapMaternity,
   backdatingReasonOf,
   lateIssueDayOf,
   iessValidationOf,
   issuerReasonOf,
   restDetailsOf,
+  restLimitNoticesOf,
   restNoticesOf,
   type CertificateType,
   type ContingencyType,
@@ -134,7 +133,11 @@ export interface IssuedCertificate {
   certificate: CertificateView;
   /** `null` on an attendance certificate. */
   iess: IessValidation | null;
-  /** CER-032. Notices of a rest over 3 and over 7 days; they never refuse. */
+  /**
+   * CER-032, CER-038, CER-043, CER-055. What the doctor is warned of: a long
+   * rest, the limits it passes, the maternity procedure, the chart's missing
+   * work data. They never refuse.
+   */
   restNotices: string[];
 }
 
@@ -239,7 +242,7 @@ export class CertificateService {
   }
 
   /**
-   * CER-001 to CER-009, CER-013, CER-030 to CER-051. Everything an issue
+   * CER-001 to CER-009, CER-013, CER-030 to CER-055. Everything an issue
    * needs, ONE place for `issue` and `correct`: what the request alone can be
    * judged on is refused here, before touching storage; what depends on the
    * attention is the `decide` the adapter calls inside its transaction; and
@@ -255,14 +258,13 @@ export class CertificateService {
   }> {
     const { type } = request;
     assertIssuableType(type);
-    // CER-006, CER-007, CER-031, CER-034, CER-035: everything the request
-    // alone can be judged on, refused before touching storage.
+    // CER-006, CER-007, CER-034, CER-035: everything the request alone can be
+    // judged on, refused before touching storage.
     const details = restDetailsOf(type, request);
 
     const issuedAt = this.clock();
-    // CER-030, CER-041. The calendar date of the issue, in Ecuador.
+    // CER-041. The calendar date of the issue, in Ecuador.
     const issueDate = clinicalDateOf(issuedAt);
-    if (details !== null) assertRestStartsInTime(details.period, issueDate);
     // CER-030, D-106 §5. The issue's day for lateness, dawn counted as before.
     const lateIssueDay = lateIssueDayOf(issuedAt);
 
@@ -272,30 +274,29 @@ export class CertificateService {
 
     const verificationCode = newVerificationCode();
 
-    // CER-038. Filled from the snapshot, inside the transaction.
+    // CER-038, CER-055. Filled from the snapshot, inside the transaction.
     let missingWork: PatientWorkField[] = [];
+    let limitNotices: string[] = [];
     const decide = (snapshot: IssueSnapshot): CertificatePlan => {
       if (!admitsNewCertificates(snapshot.encounterStatus)) {
         throw new CertificateEncounterNotOpenError(snapshot.encounterStatus);
       }
-      // CER-044, CER-045 (D-106). The window around the attention, which no
-      // reason widens; maternity has its own (D-108).
       const attentionDate = clinicalDateOf(snapshot.encounterStartedAt);
       if (details !== null) {
-        assertRestWithinAttention(
-          details.period,
+        // CER-055 (D-128.7). The limits around the attention —CER-031,
+        // CER-041, CER-044 to CER-047, CER-051— warn and do not refuse.
+        limitNotices = restLimitNoticesOf(details, {
           attentionDate,
+          issueDate,
           lateIssueDay,
-          details.maternity,
-        );
-        // CER-046 to CER-050 (D-109, D-110). What bounds a maternity rest;
-        // any other rest does not fall on a maternity rest (D-110 §5).
+        });
+        // CER-048 to CER-050 (D-109, D-110). What still refuses: coherence,
+        // not limits. Any other rest does not fall on a maternity rest
+        // (D-110 §5).
         if (details.maternity !== null) {
-          assertMaternityWithinLeave(
+          assertMaternityCoherent(
             details.period,
             details.maternity,
-            attentionDate,
-            lateIssueDay,
             snapshot.diagnosisCodes,
             snapshot.patientRests,
           );
@@ -363,6 +364,7 @@ export class CertificateService {
                 details.days,
                 certifier.primarySpecialtyCode,
                 details.contingencyType,
+                limitNotices,
               ),
               ...[patientWorkNotice(missingWork)].filter(
                 (notice): notice is string => notice !== null,

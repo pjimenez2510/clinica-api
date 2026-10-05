@@ -15,17 +15,9 @@ import {
   CertificateBackdatingReasonRequiredError,
   CertificateEstablishmentIncompleteError,
   CertificateIssuerReasonRequiredError,
-  CertificateMaternityAdmissionTooEarlyError,
   CertificateMaternityBirthMismatchError,
-  CertificateMaternityBirthTooFarError,
-  CertificateMaternityDatesTooOldError,
   CertificateMaternityDiagnosisRequiredError,
-  CertificateMaternityLeaveExceededError,
   CertificateRestOverlapsError,
-  CertificateRestIssuedTooLateError,
-  CertificateRestStartTooEarlyError,
-  CertificateRestStartTooLateError,
-  CertificateRestTooLongError,
   CertificateRevokeForbiddenError,
   CertificateDiagnosisRequiredError,
   CertificateEncounterNotFoundError,
@@ -50,34 +42,6 @@ const CONTRACT: readonly {
   says: string;
 }[] = [
   {
-    error: new CertificateRestStartTooEarlyError(
-      '2026-09-28' as ClinicalDate, // fecha-fija: sólo se comprueba el formato DD/MM/AAAA
-      null,
-    ),
-    code: 'CERTIFICATE_REST_START_TOO_EARLY',
-    category: ValidationError,
-    says: 'tres días antes de la atención',
-  },
-  {
-    error: new CertificateRestStartTooEarlyError(
-      '2026-09-28' as ClinicalDate, // fecha-fija: sólo se comprueba el formato DD/MM/AAAA
-      {
-        admissionOn: '2026-09-20' as ClinicalDate, // fecha-fija: ídem
-        birthOn: '2026-09-21' as ClinicalDate, // fecha-fija: ídem
-        dischargeOn: '2026-09-23' as ClinicalDate, // fecha-fija: ídem
-      },
-    ),
-    code: 'CERTIFICATE_REST_START_TOO_EARLY',
-    category: ValidationError,
-    says: 'el día del ingreso o del parto',
-  },
-  {
-    error: new CertificateRestIssuedTooLateError(),
-    code: 'CERTIFICATE_REST_ISSUED_TOO_LATE',
-    category: ValidationError,
-    says: 'más de ocho días',
-  },
-  {
     error: new CertificateRevokeForbiddenError(),
     code: 'CERTIFICATE_REVOKE_FORBIDDEN',
     category: ForbiddenError,
@@ -88,14 +52,6 @@ const CONTRACT: readonly {
     code: 'CERTIFICATE_ISSUER_REASON_REQUIRED',
     category: ValidationError,
     says: 'la registró otro profesional',
-  },
-  {
-    error: new CertificateRestStartTooLateError(
-      '2026-10-02' as ClinicalDate, // fecha-fija: sólo se comprueba el formato DD/MM/AAAA
-    ),
-    code: 'CERTIFICATE_REST_START_TOO_LATE',
-    category: ValidationError,
-    says: 'el día siguiente a la emisión',
   },
   {
     error: new CertificateBackdatingReasonRequiredError('LATE'),
@@ -160,50 +116,12 @@ const CONTRACT: readonly {
     says: 'antes del día de la atención',
   },
   {
-    error: new CertificateRestTooLongError(),
-    code: 'CERTIFICATE_REST_TOO_LONG',
-    category: ValidationError,
-    says: '30 días',
-  },
-  {
-    error: new CertificateMaternityDatesTooOldError(
-      '2026-07-09' as ClinicalDate, // fecha-fija: sólo se comprueba el formato DD/MM/AAAA
-    ),
-    code: 'CERTIFICATE_MATERNITY_DATES_TOO_OLD',
-    category: ValidationError,
-    says: '84 días',
-  },
-  {
-    error: new CertificateMaternityAdmissionTooEarlyError(
-      '2026-09-16' as ClinicalDate, // fecha-fija: sólo se comprueba el formato DD/MM/AAAA
-    ),
-    code: 'CERTIFICATE_MATERNITY_ADMISSION_TOO_EARLY',
-    category: ValidationError,
-    says: '14 días',
-  },
-  {
-    error: new CertificateMaternityBirthTooFarError(
-      '2026-10-29' as ClinicalDate, // fecha-fija: sólo se comprueba el formato DD/MM/AAAA
-    ),
-    code: 'CERTIFICATE_MATERNITY_BIRTH_TOO_FAR',
-    category: ValidationError,
-    says: '4 semanas',
-  },
-  {
     error: new CertificateMaternityBirthMismatchError(
       '2026-03-02' as ClinicalDate, // fecha-fija: sólo se comprueba el formato DD/MM/AAAA
     ),
     code: 'CERTIFICATE_MATERNITY_BIRTH_MISMATCH',
     category: ConflictError,
     says: 'mismo parto',
-  },
-  {
-    error: new CertificateMaternityLeaveExceededError(
-      '2026-12-24' as ClinicalDate, // fecha-fija: sólo se comprueba el formato DD/MM/AAAA
-    ),
-    code: 'CERTIFICATE_MATERNITY_LEAVE_EXCEEDED',
-    category: ValidationError,
-    says: 'licencia de maternidad',
   },
   {
     error: new CertificateRestOverlapsError(),
@@ -275,13 +193,34 @@ describe('el contrato de errores del certificado', () => {
     expect(error.fieldErrors?.[0]?.field).toBe('includeDiagnosis');
   });
 
-  it('CER-030 y CER-031 señalan el campo que hay que corregir', () => {
+  it('CER-030 señala el campo que hay que corregir', () => {
     expect(
       new CertificateBackdatingReasonRequiredError().fieldErrors?.[0]?.field,
     ).toBe('backdatingReason');
-    expect(new CertificateRestTooLongError().fieldErrors?.[0]?.field).toBe(
-      'restTo',
-    );
+  });
+
+  it('CER-055 los límites que pasan a aviso ya no tienen código de error en el catálogo (D-128.7)', () => {
+    for (const code of [
+      'CERTIFICATE_REST_START_TOO_EARLY',
+      'CERTIFICATE_REST_ISSUED_TOO_LATE',
+      'CERTIFICATE_REST_START_TOO_LATE',
+      'CERTIFICATE_REST_TOO_LONG',
+      'CERTIFICATE_MATERNITY_DATES_TOO_OLD',
+      'CERTIFICATE_MATERNITY_ADMISSION_TOO_EARLY',
+      'CERTIFICATE_MATERNITY_BIRTH_TOO_FAR',
+      'CERTIFICATE_MATERNITY_LEAVE_EXCEEDED',
+    ]) {
+      expect(DOMAIN_ERROR_CODES, code).not.toContain(code);
+    }
+    // Control positivo: los que se quedan como rechazo siguen.
+    for (const code of [
+      'CERTIFICATE_REST_OVERLAPS',
+      'CERTIFICATE_MATERNITY_BIRTH_MISMATCH',
+      'CERTIFICATE_MATERNITY_DIAGNOSIS_REQUIRED',
+      'CERTIFICATE_BACKDATING_REASON_REQUIRED',
+    ]) {
+      expect(DOMAIN_ERROR_CODES, code).toContain(code);
+    }
   });
 
   it('CER-005 el tipo no admitido señala el campo del tipo', () => {

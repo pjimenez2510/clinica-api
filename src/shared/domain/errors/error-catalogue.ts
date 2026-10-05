@@ -903,49 +903,36 @@ export const DOMAIN_ERROR_CODES = [
   //     reescribiría quién lo anuló y por qué.
   //   * `CERTIFICATE_BACKDATING_REASON_REQUIRED` (422) — CER-030. Reposo que
   //     empieza antes del día clínico de la atención sin motivo escrito.
-  //   * `CERTIFICATE_REST_TOO_LONG` (422) — CER-031. Más de 30 días.
   //   * `CERTIFICATE_ESTABLISHMENT_INCOMPLETE` (422) — CER-036. La sede no
   //     tiene parroquia y no hay lugar de emisión. Propio, no el de la receta.
   //   * `CERTIFICATE_ISSUER_REASON_REQUIRED` (422) — CER-039 (D-105 §1). Emite
   //     quien no atendió y no dice por qué.
-  //   * `CERTIFICATE_REST_START_TOO_LATE` (422) — CER-041 (D-105 §3). El
-  //     reposo empieza después del día siguiente a la emisión.
-  //   * `CERTIFICATE_REST_START_TOO_EARLY` (422) — CER-044 (D-106 §1). Aun
-  //     con motivo, más de tres días antes de la atención.
-  //   * `CERTIFICATE_REST_ISSUED_TOO_LATE` (422) — CER-045 (D-106 §4). Un
-  //     reposo pasados ocho días de la atención.
   //   * `CERTIFICATE_REVOKE_FORBIDDEN` (403) — CER-040 (D-105 §2). Anula quien
   //     no lo emitió y no tiene `certificate:revoke-any` en su sede.
-  //   * `CERTIFICATE_MATERNITY_DATES_TOO_OLD` (422) — CER-046 (D-109 §1,
-  //     D-110 §3). Parto más de 84 días antes de la atención.
-  //   * `CERTIFICATE_MATERNITY_BIRTH_TOO_FAR` (422) — CER-046 (D-110 §1).
-  //     Parto más de 4 semanas después de la atención.
-  //   * `CERTIFICATE_MATERNITY_ADMISSION_TOO_EARLY` (422) — CER-051 (D-112
-  //     §1). Ingreso más de 14 días antes del parto.
   //   * `CERTIFICATE_MATERNITY_BIRTH_MISMATCH` (409) — CER-050 (D-110 §2).
   //     Otra maternidad de la paciente con otro parto a 9 meses o menos.
-  //   * `CERTIFICATE_MATERNITY_LEAVE_EXCEEDED` (422) — CER-047 (D-109 §2,
-  //     D-110 §6). El reposo pasa del parto + 83 días, o se emite después.
   //   * `CERTIFICATE_REST_OVERLAPS` (409) — CER-048 (D-109 §2, D-110 §5). Una
   //     maternidad y otro reposo no anulado de la paciente se solapan.
   //   * `CERTIFICATE_MATERNITY_DIAGNOSIS_REQUIRED` (422) — CER-049 (D-109 §3).
   //     La atención no tiene diagnóstico obstétrico.
+  //   * Se retiraron con CER-055 (D-128.7), porque los límites del reposo
+  //     avisan y no frenan: `CERTIFICATE_REST_TOO_LONG` (CER-031),
+  //     `CERTIFICATE_REST_START_TOO_LATE` (CER-041),
+  //     `CERTIFICATE_REST_START_TOO_EARLY` (CER-044),
+  //     `CERTIFICATE_REST_ISSUED_TOO_LATE` (CER-045),
+  //     `CERTIFICATE_MATERNITY_DATES_TOO_OLD` y
+  //     `CERTIFICATE_MATERNITY_BIRTH_TOO_FAR` (CER-046),
+  //     `CERTIFICATE_MATERNITY_LEAVE_EXCEEDED` (CER-047) y
+  //     `CERTIFICATE_MATERNITY_ADMISSION_TOO_EARLY` (CER-051). La respuesta los
+  //     dice en `restNotices`.
   'CERTIFICATE_ALREADY_REVOKED',
   'CERTIFICATE_BACKDATING_REASON_REQUIRED',
   'CERTIFICATE_DIAGNOSIS_REQUIRED',
   'CERTIFICATE_ESTABLISHMENT_INCOMPLETE',
   'CERTIFICATE_ISSUER_REASON_REQUIRED',
-  'CERTIFICATE_MATERNITY_ADMISSION_TOO_EARLY',
   'CERTIFICATE_MATERNITY_BIRTH_MISMATCH',
-  'CERTIFICATE_MATERNITY_BIRTH_TOO_FAR',
-  'CERTIFICATE_MATERNITY_DATES_TOO_OLD',
   'CERTIFICATE_MATERNITY_DIAGNOSIS_REQUIRED',
-  'CERTIFICATE_MATERNITY_LEAVE_EXCEEDED',
   'CERTIFICATE_REST_OVERLAPS',
-  'CERTIFICATE_REST_ISSUED_TOO_LATE',
-  'CERTIFICATE_REST_START_TOO_EARLY',
-  'CERTIFICATE_REST_START_TOO_LATE',
-  'CERTIFICATE_REST_TOO_LONG',
   'CERTIFICATE_REVOKE_FORBIDDEN',
   'CERTIFICATE_ENCOUNTER_NOT_FOUND',
   'CERTIFICATE_ENCOUNTER_NOT_OPEN',

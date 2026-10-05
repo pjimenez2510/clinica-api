@@ -138,9 +138,12 @@ un día después de la atención sin motivo, y comprobar que los tres se rechaza
 con su control positivo (con motivo, mañana, el mismo día); anular con otra
 cuenta sin el permiso y comprobar que se rechaza; imprimir uno anulado y
 comprobar que no lleva el motivo.
-**Cubre:** CER-030, CER-039 a CER-051, y **CER-054** —los motivos de lista
-del reposo retroactivo y del tercero que emite (D-128.11)—.
+**Cubre:** CER-030, CER-039 a CER-051, **CER-054** —los motivos de lista
+del reposo retroactivo y del tercero que emite (D-128.11)— y **CER-055** —los
+límites del reposo avisan y no frenan (D-128.7)—.
 **Solo interfaz:** CER-054.
+**Desde D-128.7** la prueba independiente cambia en la ventana: un reposo que
+empieza dentro de tres días se guarda, y la respuesta lo avisa.
 
 ---
 
@@ -430,8 +433,13 @@ PR-030).
   > servicio; la base sólo impide guardarlo vacío.
 
 - **CER-031** — SI el período de reposo pasa de **30 días**, ENTONCES el sistema
-  DEBERÁ rechazar la emisión con `CERTIFICATE_REST_TOO_LONG`. Un reposo más
-  largo se cubre con certificados sucesivos.
+  DEBERÁ emitirlo igualmente y devolver en `restNotices` el aviso de que el
+  IESS valida reposos de 1 a 30 días (CER-055).
+
+  > **Enmendado por CER-055 (D-128.7, 04-10-2026): desde D-128.7 avisa y no
+  > frena.** Antes rechazaba con `CERTIFICATE_REST_TOO_LONG`, retirado. Lo
+  > habitual sigue siendo cubrir un reposo más largo con certificados
+  > sucesivos, y el aviso lo dice. Nunca estuvo en la base.
 
 - **CER-032** — CUANDO se emita un reposo que supere el **umbral del emisor**
   —**3** días si su especialidad principal es `medicina-general` o si no tiene
@@ -553,13 +561,17 @@ PR-030).
 
 - **CER-041** — SI el reposo empieza **después del día siguiente a la
   emisión** —en fecha de calendario de `America/Guayaquil`—, ENTONCES el
-  sistema DEBERÁ rechazar la emisión con `CERTIFICATE_REST_START_TOO_LATE`,
-  nombrando el campo `restFrom` y la última fecha admitida.
+  sistema DEBERÁ emitirlo igualmente y devolver en `restNotices` un aviso que
+  nombre la última fecha habitual (CER-055).
+
+  > **Enmendado por CER-055 (D-128.7): desde D-128.7 avisa y no frena.** Antes
+  > rechazaba con `CERTIFICATE_REST_START_TOO_LATE`, retirado, y el disparador
+  > con `medical_certificate_rest_starts_by_next_day`, que ya no existe.
 
   > **D-105 §3.** Antes no había tope hacia el futuro: un reposo que empezaba
   > dentro de 90 días se aceptaba. El día siguiente cabe porque el médico que
-  > atiende por la noche da el reposo desde mañana. **Lo garantiza la base:**
-  > `medical_certificate_issue_rules`, sobre `issued_at` en la zona de Ecuador.
+  > atiende por la noche da el reposo desde mañana. ~~Lo garantiza la base~~:
+  > desde `20261005060500_certificate_rest_limits_warn` la base no lo juzga.
 
 - **CER-042** — MIENTRAS un certificado esté anulado, el documento impreso
   DEBERÁ decir **sólo «ANULADO el DD/MM/AAAA»** con la fecha de anulación en
@@ -584,37 +596,47 @@ PR-030).
   > otro trámite.».
 
 - **CER-044** — SI el reposo empieza **más de 3 días antes** de la fecha clínica
-  de la atención, ENTONCES el sistema DEBERÁ rechazar la emisión con
-  `CERTIFICATE_REST_START_TOO_EARLY`, nombrando el campo `restFrom` y la
-  primera fecha admitida, **aunque traiga el motivo** de CER-030. MIENTRAS la
-  contingencia sea **maternidad**, el reposo DEBERÁ admitirse además si empieza
-  **el día del ingreso o el del parto** (CER-035), por antiguo que sea, y el
-  rechazo DEBERÁ nombrar también esas dos fechas.
+  de la atención, ENTONCES el sistema DEBERÁ emitirlo igualmente —con el
+  motivo de CER-030, que se sigue exigiendo— y devolver en `restNotices` un
+  aviso que nombre la primera fecha habitual (CER-055). MIENTRAS la
+  contingencia sea **maternidad**, empezar **el día del ingreso o el del
+  parto** (CER-035), por antiguo que sea, NO DEBERÁ avisar, y el aviso de
+  cualquier otro día DEBERÁ nombrar también esos dos días.
+
+  > **Enmendado por CER-055 (D-128.7): desde D-128.7 avisa y no frena.** Antes
+  > rechazaba con `CERTIFICATE_REST_START_TOO_EARLY`, retirado, y el
+  > disparador con `medical_certificate_rest_starts_at_most_3_days_before`. Las
+  > notas siguientes cuentan cómo se decidió el límite que hoy sólo avisa.
 
   > **D-106 §1** (el autor, 01-10-2026): el motivo admite el retroactivo, pero
-  > no sin límite. **Lo garantiza la base:**
-  > `medical_certificate_rest_starts_at_most_3_days_before`.
+  > no sin límite. Lo garantizaba la base con
+  > `medical_certificate_rest_starts_at_most_3_days_before`, hasta CER-055.
 
   > **D-108** (el autor, 01-10-2026): la paciente que da a luz en un hospital y
   > acude días después recibe el reposo desde el parto o el ingreso; un día
   > cualquiera entre ellos y la atención, no. Los 3 días se conservan en la
   > maternidad para que el reposo prenatal —el ingreso aún no ha ocurrido— siga
-  > como estaba (D-106 §2). El motivo de CER-030 se sigue pidiendo. **Lo
-  > garantiza la base**, que además exige ingreso ≤ parto ≤ alta
-  > (`medical_certificate_maternity_dates_in_order`).
+  > como estaba (D-106 §2). El motivo de CER-030 se sigue pidiendo. La base
+  > sigue exigiendo ingreso ≤ parto ≤ alta
+  > (`medical_certificate_maternity_dates_in_order`), que no es un límite.
 
   > Cuán atrás pueden estar el ingreso y el parto, y cuántos certificados de
   > maternidad da una atención, lo acotan CER-046 a CER-049 (D-109).
 
 - **CER-045** — SI se emite un reposo **pasados 8 días** de la fecha clínica de
   la atención —con el día de emisión de CER-030, madrugada incluida—, ENTONCES
-  el sistema DEBERÁ rechazarlo con `CERTIFICATE_REST_ISSUED_TOO_LATE`. El
-  certificado de asistencia y el reposo de contingencia **maternidad** **NO**
-  tienen ese tope.
+  el sistema DEBERÁ emitirlo igualmente —con el motivo de emisión tardía de
+  CER-030— y devolver en `restNotices` el aviso de que el IESS puede no
+  validarlo (CER-055). El certificado de asistencia y el reposo de
+  contingencia **maternidad** **NO** llevan ese aviso.
+
+  > **Enmendado por CER-055 (D-128.7): desde D-128.7 avisa y no frena.** Antes
+  > rechazaba con `CERTIFICATE_REST_ISSUED_TOO_LATE`, retirado, y el
+  > disparador con `medical_certificate_rest_issued_within_8_days`.
 
   > **D-106 §4 y §3.** Pasado ese plazo el paciente se ve en una atención
-  > nueva. **Lo garantiza la base:**
-  > `medical_certificate_rest_issued_within_8_days`. **D-108:** la maternidad
+  > nueva. Lo garantizaba la base con
+  > `medical_certificate_rest_issued_within_8_days`, hasta CER-055. **D-108:** la maternidad
   > encadena certificados (CER-043) y no lleva el plazo; la madrugada de
   > CER-030 sigue contando para el plazo en los demás reposos (D-108 §2).
 
@@ -628,30 +650,44 @@ PR-030).
 > licencia son doce semanas contando el día del parto, se cuenta sólo desde el
 > parto, el parto no se declara lejos en el futuro, un embarazo tiene un parto, y
 > el solape se juzga en las dos direcciones. **Lo garantiza la base:**
-> `medical_certificate_issue_rules`, como CER-044 y CER-045.
+> `medical_certificate_issue_rules`.
+>
+> **Desde D-128.7 (CER-055)** los límites de días —CER-046, CER-047 y CER-051—
+> avisan y no frenan, en el servicio y en la base. Lo que no es un límite sino
+> coherencia sigue rechazando: el solape (CER-048), el diagnóstico obstétrico
+> (CER-049) y un parto por embarazo (CER-050).
 
 - **CER-046** — CUANDO se emita un reposo de contingencia **maternidad**, SI la
   fecha del **parto** es anterior en **más de 84 días** a la fecha clínica de la
-  atención, ENTONCES el sistema DEBERÁ rechazarlo con
-  `CERTIFICATE_MATERNITY_DATES_TOO_OLD`; y SI es posterior en **más de 28 días**,
-  ENTONCES DEBERÁ rechazarlo con `CERTIFICATE_MATERNITY_BIRTH_TOO_FAR`. Los dos
-  nombran `birthOn` y la fecha admitida. La fecha de **ingreso no cuenta**.
-  **Base:** `medical_certificate_maternity_dates_within_84_days` y
-  `medical_certificate_maternity_birth_within_4_weeks`.
+  atención, ENTONCES el sistema DEBERÁ emitirlo igualmente y devolver en
+  `restNotices` el aviso de que la licencia ya habría terminado; y SI es
+  posterior en **más de 28 días**, ENTONCES DEBERÁ emitirlo y devolver un aviso
+  que nombre la última fecha habitual (CER-055). La fecha de **ingreso no
+  cuenta**.
+
+  > **Enmendado por CER-055 (D-128.7): desde D-128.7 avisa y no frena.** Antes
+  > rechazaba con `CERTIFICATE_MATERNITY_DATES_TOO_OLD` y
+  > `CERTIFICATE_MATERNITY_BIRTH_TOO_FAR`, retirados, y la base con
+  > `medical_certificate_maternity_dates_within_84_days` y
+  > `medical_certificate_maternity_birth_within_4_weeks`.
 
   > **D-110 §3:** con el ingreso, el último tramo de una licencia con ingreso
   > antiguo (preeclampsia, cesárea días después) se rechazaba. **§1:** el parto
   > de un reposo prenatal se declara antes de ocurrir; sin tope, un parto lejano
   > daba reposos mes a mes desde una sola consulta. Con el último día en parto +
-  > 83 (CER-047), un parto de hace exactamente 84 días ya no deja emitir nada:
-  > lo rechaza CER-047, y CER-046 da el motivo desde el día 85.
+  > 83 (CER-047), un parto de hace exactamente 84 días ya avisa por CER-047,
+  > y desde el día 85 avisan los dos.
 
 - **CER-047** — CUANDO se emita un reposo de contingencia **maternidad**, SI
   termina **después del parto + 83 días** —doce semanas contando el día del
   parto—, o se emite **pasado ese día** —con el día de emisión de CER-030,
-  madrugada incluida—, ENTONCES el sistema DEBERÁ rechazarlo con
-  `CERTIFICATE_MATERNITY_LEAVE_EXCEEDED`, nombrando `restTo` y el último día de
-  la licencia. **Base:** `medical_certificate_maternity_within_leave`.
+  madrugada incluida—, ENTONCES el sistema DEBERÁ emitirlo igualmente y
+  devolver en `restNotices` un aviso que nombre el último día de la licencia
+  (CER-055).
+
+  > **Enmendado por CER-055 (D-128.7): desde D-128.7 avisa y no frena.** Antes
+  > rechazaba con `CERTIFICATE_MATERNITY_LEAVE_EXCEEDED`, retirado, y la base
+  > con `medical_certificate_maternity_within_leave`.
 
 - **CER-048** — CUANDO se emita un reposo, SI su período se solapa con el de otro
   reposo **no anulado** de la misma paciente —su ficha y las que absorbió
@@ -686,16 +722,60 @@ PR-030).
 
 - **CER-051** — CUANDO se emita un reposo de contingencia **maternidad**, SI la
   fecha de **ingreso** es anterior en **más de 14 días** a la del parto,
-  ENTONCES el sistema DEBERÁ rechazarlo con
-  `CERTIFICATE_MATERNITY_ADMISSION_TOO_EARLY`, nombrando `maternityAdmissionOn`
-  y la primera fecha admitida. **Base:**
-  `medical_certificate_maternity_admission_within_14_days`.
+  ENTONCES el sistema DEBERÁ emitirlo igualmente y devolver en `restNotices`
+  un aviso que nombre la primera fecha habitual de ingreso (CER-055).
+
+  > **Enmendado por CER-055 (D-128.7): desde D-128.7 avisa y no frena.** Antes
+  > rechazaba con `CERTIFICATE_MATERNITY_ADMISSION_TOO_EARLY`, retirado, y la
+  > base con `medical_certificate_maternity_admission_within_14_days`.
 
   > **D-112 §1** (el autor, 01-10-2026): el reposo puede empezar el día del
   > ingreso (D-108), y sin cota el ingreso daba un reposo retroactivo desde una
   > fecha inventada, y una cadena de ellos. El resto de D-112 —el parto probable
   > frente al real, un embarazo nuevo a menos de 9 meses— queda **congelado**
   > hasta que el IESS confirme cómo se certifica la maternidad (D-105 §6).
+
+### 6. Los límites del reposo avisan y no frenan (D-128.7, resuelta el 04-10-2026)
+
+- **CER-055** — CUANDO se emita —o se corrija (CER-053)— un reposo que pase uno
+  de sus límites —más de 30 días (CER-031), un inicio más allá del día
+  siguiente a la emisión (CER-041) o más de 3 días antes de la atención
+  (CER-044), una emisión pasados 8 días (CER-045) y, en la maternidad, un
+  parto a más de 84 días antes o 28 después de la atención (CER-046), un
+  reposo más allá de la licencia (CER-047) o un ingreso más de 14 días antes
+  del parto (CER-051)—, el sistema DEBERÁ emitirlo y devolver en `restNotices`
+  **un aviso por límite**, en ese orden, entre el de reposo largo (CER-032) y
+  el de maternidad (CER-043), y **NO DEBERÁ** rechazarlo por ello, ni en el
+  servicio ni en la base (`medical_certificate_issue_rules`). MIENTRAS el
+  reposo no pase ninguno, la respuesta **NO DEBERÁ** llevar ningún aviso de
+  límite. Lo que no es un límite **DEBERÁ** seguir rechazándose: el fin antes
+  del inicio (CER-006), el lugar de emisión (CER-036), el diagnóstico
+  (CER-008), el motivo del reposo retroactivo o tardío (CER-030) y el del
+  tercero que emite (CER-039), el solape (CER-048), el diagnóstico obstétrico
+  (CER-049) y otro parto del mismo embarazo (CER-050).
+
+  > **D-128.7** (el autor, 04-10-2026): «que pasen a avisos que no frenan». El
+  > IESS valida de 1 a 30 días y hasta 8 días; los demás límites (3, 84, 28,
+  > 14 días…) eran provisionales (D-106, D-109, D-110). D-126.4: los avisos
+  > informan, no frenan, salvo riesgo para el paciente, y un reposo largo no lo
+  > es. El texto de cada aviso está en `REST_LIMIT_NOTICE`
+  > (`domain/certificate.ts`); no lleva datos del paciente, sólo días y
+  > fechas (CER-014). La pantalla los enseña **antes** de emitir, con el botón
+  > activo.
+  >
+  > **Por qué el motivo de CER-030 sigue:** no es un límite sino la pregunta
+  > que el IESS o una auditoría hacen de un reposo retroactivo (D-128.11). Se
+  > pide cuando el reposo empieza antes del día de la atención o se emite
+  > después, sea cual sea la distancia.
+  >
+  > **Esquema:** `20261005060500_certificate_rest_limits_warn` reescribe el
+  > disparador sin las siete reglas de días. Sólo corre al insertar: no
+  > revalida ni toca ninguna fila guardada. Los siete nombres de restricción
+  > ya no se lanzan y salen del mapa de `certificate.constraints.ts`.
+  >
+  > **Dudas que se quedan como rechazo:** ninguna más que las nombradas; el
+  > orden ingreso ≤ parto ≤ alta (`medical_certificate_maternity_dates_in_order`)
+  > es coherencia de fechas, no un límite, y sigue rechazando.
 
 ---
 
@@ -728,20 +808,20 @@ PR-030).
 | `CERTIFICATE_NOT_FOUND` | 404 | CER-010 |
 | `CERTIFICATE_ALREADY_REVOKED` | 409 | CER-012 |
 | `CERTIFICATE_BACKDATING_REASON_REQUIRED` | 422 | CER-030 |
-| `CERTIFICATE_REST_TOO_LONG` | 422 | CER-031 |
 | `CERTIFICATE_ESTABLISHMENT_INCOMPLETE` | 422 | CER-036 |
 | `CERTIFICATE_ISSUER_REASON_REQUIRED` | 422 | CER-039 |
 | `CERTIFICATE_REVOKE_FORBIDDEN` | 403 | CER-040 |
-| `CERTIFICATE_REST_START_TOO_LATE` | 422 | CER-041 |
-| `CERTIFICATE_REST_START_TOO_EARLY` | 422 | CER-044 |
-| `CERTIFICATE_REST_ISSUED_TOO_LATE` | 422 | CER-045 |
-| `CERTIFICATE_MATERNITY_DATES_TOO_OLD` | 422 | CER-046 |
-| `CERTIFICATE_MATERNITY_BIRTH_TOO_FAR` | 422 | CER-046 |
-| `CERTIFICATE_MATERNITY_ADMISSION_TOO_EARLY` | 422 | CER-051 |
 | `CERTIFICATE_MATERNITY_BIRTH_MISMATCH` | 409 | CER-050 |
-| `CERTIFICATE_MATERNITY_LEAVE_EXCEEDED` | 422 | CER-047 |
 | `CERTIFICATE_REST_OVERLAPS` | 409 | CER-048 |
 | `CERTIFICATE_MATERNITY_DIAGNOSIS_REQUIRED` | 422 | CER-049 |
+
+**Retirados con CER-055 (D-128.7):** `CERTIFICATE_REST_TOO_LONG` (CER-031),
+`CERTIFICATE_REST_START_TOO_LATE` (CER-041), `CERTIFICATE_REST_START_TOO_EARLY`
+(CER-044), `CERTIFICATE_REST_ISSUED_TOO_LATE` (CER-045),
+`CERTIFICATE_MATERNITY_DATES_TOO_OLD` y `CERTIFICATE_MATERNITY_BIRTH_TOO_FAR`
+(CER-046), `CERTIFICATE_MATERNITY_LEAVE_EXCEEDED` (CER-047) y
+`CERTIFICATE_MATERNITY_ADMISSION_TOO_EARLY` (CER-051). Esos límites se dicen en
+`restNotices`.
 
 ## Esquema
 
@@ -756,9 +836,10 @@ Todo lo que faltaba está en `20261001070500_certificate_number_and_revocation`.
 | `contingency_type`, `rest_backdating_reason`, `maternity_admission_on`, `birth_on`, `maternity_discharge_on` | `medical_certificate` | CER-030, CER-034, CER-035 |
 | `employer_name`, `job_title` | `patient` | CER-038 — pendiente de coordinación con `feat/datos-consentimiento-arco` |
 | `issued_by_other_reason` + `medical_certificate_issuer_reason_not_blank` | `medical_certificate` | CER-039 |
-| Disparador `medical_certificate_issue_rules`: emisor, ventana y motivo | `medical_certificate` | CER-030, CER-039, CER-041, CER-044, CER-045 (maternidad, D-108) |
+| Disparador `medical_certificate_issue_rules`: emisor y motivo (la ventana de CER-041, CER-044 y CER-045 ya no, CER-055) | `medical_certificate` | CER-030, CER-039 |
 | `CHECK medical_certificate_maternity_dates_in_order`: ingreso ≤ parto ≤ alta | `medical_certificate` | CER-035, D-108 |
-| Disparador `medical_certificate_issue_rules`: límites de la maternidad y candado por ficha | `medical_certificate` | CER-046 a CER-051, D-109, D-110, D-112 |
+| Disparador `medical_certificate_issue_rules`: coherencia de la maternidad y candado por ficha (los límites de CER-046, CER-047 y CER-051 ya no, CER-055) | `medical_certificate` | CER-048 a CER-050, D-109, D-110 |
+| Disparador sin las reglas de días | `20261005060500_certificate_rest_limits_warn` | CER-055 |
 
 ## Rutas
 
@@ -778,6 +859,7 @@ Todo lo que faltaba está en `20261001070500_certificate_number_and_revocation`.
 | CER-006, CER-009, CER-011 | **Integración contra la base**: el `CHECK` del período, la unicidad y la ausencia de huecos con dos emisiones concurrentes y una revertida, el `CHECK` de la anulación. Con control positivo |
 | CER-014 a CER-016 | Recorrido de las rutas registradas y conteo de filas de bitácora |
 | CER-053 | **Integración por HTTP**: anula y emite de una vez con sus dos filas de bitácora; una maternidad corregida sobre su propio período, con control positivo del solape; una regla del reposo y un fallo forzado de la base al insertar no anulan nada, con control positivo; atención cerrada, colega sin permiso, dirección médica sin y con motivo de CER-039, sin motivo y ya anulado. Unitario del servicio: una sola llamada al almacén, quién puede antes de escribir, y sin bitácora si falla |
+| CER-055 | **Integración contra la base**: cada límite de días se guarda con un `INSERT` directo, y lo que se queda (CER-030, CER-039, CER-049) sigue rechazando por el mismo camino. **Por HTTP**: cada límite emite y devuelve su aviso, con control positivo de un reposo normal sin avisos. Unitario del dominio: cada aviso, su borde y su texto |
 | CER-020 a CER-029 | Unitario del dominio: edad y condición, horas y fechas en letras, «NA» |
 | C1 y C2 en pantalla | `e2e/flujos/f05-ordenes-y-receta.spec.ts` con `medico@` |
 

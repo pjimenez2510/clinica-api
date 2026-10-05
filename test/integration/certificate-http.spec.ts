@@ -13,7 +13,9 @@ import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
 import {
   lateIssueDayOf,
+  MATERNITY_CHAIN_NOTICE,
   MAX_DAYS_TO_ISSUE_REST,
+  REST_LIMIT_NOTICE,
 } from '../../src/modules/certificates/domain/certificate';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import {
@@ -591,59 +593,120 @@ describe('el certificado medico por HTTP', () => {
     });
   });
 
-  it('CER-044 un reposo que empieza 4 días antes de la atención responde 422 en restFrom, aun con motivo (D-106 §1)', async () => {
-    const response = await post(
-      `/encounters/${encounterId}/certificates`,
-      doctor.token,
-      restOf(5, {
-        restFrom: addDays(today, -4),
-        restTo: today,
-        backdatingReason: 'Fiebre desde hace cuatro días',
-      }),
-    ).expect(422);
-    expect((response.body as Problem).code).toBe(
-      'CERTIFICATE_REST_START_TOO_EARLY',
-    );
-    expect((response.body as Problem).errors?.[0]?.field).toBe('restFrom');
-    expect(await prisma.medicalCertificate.count()).toBe(0);
+  it('CER-055 un reposo normal se emite sin ningún aviso (control positivo)', async () => {
+    await aDiagnosis(encounterId);
+    expect((await issue(restOf(3))).restNotices).toEqual([]);
   });
 
-  it('CER-045 un reposo sobre una atención de nueve días antes del día de emisión responde 422 en type (D-106 §4)', async () => {
+  it('CER-055 CER-044 un reposo que empieza 4 días antes de la atención se emite con su aviso y su motivo; sin motivo, no (CER-030)', async () => {
+    await aDiagnosis(encounterId);
+    const early = restOf(5, { restFrom: addDays(today, -4), restTo: today });
+    expect((await refused(early)).code).toBe(
+      'CERTIFICATE_BACKDATING_REASON_REQUIRED',
+    );
+
+    const issued = await issue({
+      ...early,
+      backdatingReason: 'Fiebre desde hace cuatro días',
+    });
+    expect(issued.restNotices).toContain(
+      REST_LIMIT_NOTICE.startsTooEarly(addDays(today, -3), false),
+    );
+    expect(issued.certificate.backdatingReason).toBe(
+      'Fiebre desde hace cuatro días',
+    );
+  });
+
+  it('CER-055 CER-045 un reposo sobre una atención de nueve días antes se emite con su aviso (D-106 §4)', async () => {
     // Un día más allá del plazo, contado desde el día de emisión, que es el que
     // juzga la regla: de madrugada, hasta las 06:00, es el día anterior
-    // (CER-030, D-106 §5). Contado desde el calendario, a esas horas la atención
-    // caía dentro del plazo y la emisión se rechazaba por otra cosa.
+    // (CER-030, D-106 §5).
     const tooLate = addDays(lateIssueDayOf(new Date()), -(MAX_DAYS_TO_ISSUE_REST + 1)); // prettier-ignore
     const old = await anEncounter(siteId, atWallClock(tooLate, WallClockTime.of(12, 0))); // prettier-ignore
+    await aDiagnosis(old.id);
 
-    const response = await post(
-      `/encounters/${old.id}/certificates`,
-      doctor.token,
+    const issued = await issue(
       restOf(1, { backdatingReason: 'Volvió nueve días después' }),
-    ).expect(422);
-    expect((response.body as Problem).code).toBe(
-      'CERTIFICATE_REST_ISSUED_TOO_LATE',
+      old.id,
     );
-    expect((response.body as Problem).errors?.[0]?.field).toBe('type');
-    expect(await prisma.medicalCertificate.count()).toBe(0);
+    expect(issued.restNotices).toEqual([REST_LIMIT_NOTICE.issuedTooLate]);
   });
 
-  it('CER-041 un reposo que empieza en 90 días se rechaza nombrando restFrom, y uno desde mañana pasa', async () => {
-    const far = addDays(clinicalDateOf(new Date()), 90);
-    const refused = await post(
-      `/encounters/${encounterId}/certificates`,
-      doctor.token,
-      restOf(3, { restFrom: far, restTo: addDays(far, 2) }),
-    ).expect(422);
-    expect((refused.body as Problem).code).toBe(
-      'CERTIFICATE_REST_START_TOO_LATE',
-    );
-    expect((refused.body as Problem).errors?.[0]?.field).toBe('restFrom');
-
-    // Control positivo: desde mañana, con el diagnóstico que el reposo lleva.
+  it('CER-055 CER-041 un reposo que empieza en 90 días se emite con su aviso, y uno desde mañana sin él', async () => {
     await aDiagnosis(encounterId);
-    const tomorrow = addDays(clinicalDateOf(new Date()), 1);
-    await issue(restOf(1, { restFrom: tomorrow, restTo: tomorrow }));
+    const issueDay = clinicalDateOf(new Date());
+    const far = addDays(issueDay, 90);
+    const issued = await issue(
+      restOf(3, { restFrom: far, restTo: addDays(far, 2) }),
+    );
+    expect(issued.restNotices).toEqual([
+      REST_LIMIT_NOTICE.startsAfterTomorrow(addDays(issueDay, 1)),
+    ]);
+
+    // Control positivo: desde mañana, sin aviso.
+    const tomorrow = addDays(issueDay, 1);
+    expect(
+      (await issue(restOf(1, { restFrom: tomorrow, restTo: tomorrow })))
+        .restNotices,
+    ).toEqual([]);
+  });
+
+  it('CER-055 CER-046 CER-047 CER-051 una maternidad fuera de sus límites se emite con sus avisos, y sin diagnóstico obstétrico sigue rechazándose (CER-049)', async () => {
+    const birth = addDays(today, -85);
+    const maternity = restOf(1, {
+      contingencyType: 'MATERNITY',
+      maternityAdmissionOn: addDays(birth, -15),
+      birthOn: birth,
+      maternityDischargeOn: addDays(birth, 2),
+    });
+    await aDiagnosis(encounterId, 'J00');
+    expect((await refused(maternity)).code).toBe(
+      'CERTIFICATE_MATERNITY_DIAGNOSIS_REQUIRED',
+    );
+
+    await aDiagnosis(encounterId, 'O80');
+    const issued = await issue(maternity);
+    expect(issued.restNotices).toEqual([
+      REST_LIMIT_NOTICE.birthTooOld,
+      REST_LIMIT_NOTICE.admissionTooEarly(addDays(birth, -14)),
+      REST_LIMIT_NOTICE.leaveExceeded(addDays(birth, 83)),
+      MATERNITY_CHAIN_NOTICE,
+    ]);
+    const row = await prisma.medicalCertificate.findUniqueOrThrow({
+      where: { id: issued.certificate.id },
+      select: { birthOn: true, revokedAt: true },
+    });
+    expect(row.revokedAt).toBeNull();
+
+    // Y un parto a más de 4 semanas, en otra atención de otra paciente.
+    const other = (await createPatient(prisma)).id;
+    const prenatal = await prisma.encounter.create({
+      data: {
+        siteId,
+        practitionerId: doctor.practitionerId,
+        patientId: other,
+        startedAt: (await prisma.encounter.findUniqueOrThrow({ where: { id: encounterId } })).startedAt, // prettier-ignore
+        careModality: 'MORBIDITY',
+        visitSequence: 'FIRST_TIME',
+      },
+    });
+    await aDiagnosis(prenatal.id, 'Z34');
+    const far = addDays(today, 29);
+    const farIssued = await issue(
+      restOf(1, {
+        contingencyType: 'MATERNITY',
+        maternityAdmissionOn: far,
+        birthOn: far,
+        maternityDischargeOn: far,
+      }),
+      prenatal.id,
+    );
+    expect(farIssued.restNotices).toEqual([
+      REST_LIMIT_NOTICE.birthTooFar(addDays(today, 28)),
+      MATERNITY_CHAIN_NOTICE,
+      // CER-038: esta ficha no tiene datos laborales.
+      expect.stringContaining('Falta en la ficha'),
+    ]);
   });
 
   it('CER-040 otro médico no anula un certificado ajeno y la fila queda intacta; con el permiso de dirección médica, sí', async () => {
@@ -891,11 +954,16 @@ describe('el certificado medico por HTTP', () => {
     );
   });
 
-  it('CER-031 rechaza un reposo de 31 dias y admite uno de 30', async () => {
+  it('CER-031 CER-055 un reposo de 35 dias se emite con su aviso, y uno de 30 sin el', async () => {
     await aDiagnosis(encounterId);
-    expect((await refused(restOf(31))).code).toBe('CERTIFICATE_REST_TOO_LONG');
-    expect((await issue(restOf(30))).certificate.restTo).toBe(
-      addDays(today, 29),
+    const long = await issue(restOf(35));
+    expect(long.certificate.restTo).toBe(addDays(today, 34));
+    expect(long.restNotices).toEqual([
+      expect.stringContaining('Este reposo es de 35 días.'),
+      REST_LIMIT_NOTICE.tooLong(35),
+    ]);
+    expect((await issue(restOf(30))).restNotices).not.toContain(
+      REST_LIMIT_NOTICE.tooLong(30),
     );
   });
 
@@ -1305,17 +1373,20 @@ describe('el certificado medico por HTTP', () => {
     const issued = await issue(restOf(3));
     const id = issued.certificate.id;
 
-    // Una regla del reposo que se juzga dentro de la transacción (CER-044):
-    // cuatro días antes de la atención, aun con motivo.
-    const tooEarly = await correct(id, doctor.token, {
+    // Una regla del reposo que se juzga dentro de la transacción (CER-049):
+    // una maternidad sobre una atención sin diagnóstico obstétrico. Los
+    // límites de días ya no rechazan (CER-055).
+    const notObstetric = await correct(id, doctor.token, {
       ...restOf(3, {
-        restFrom: addDays(today, -4),
-        backdatingReason: 'El paciente acudió tarde',
+        contingencyType: 'MATERNITY',
+        maternityAdmissionOn: today,
+        birthOn: today,
+        maternityDischargeOn: today,
       }),
       reason: 'Error en las fechas',
     }).expect(422);
-    expect((tooEarly.body as Problem).code).toBe(
-      'CERTIFICATE_REST_START_TOO_EARLY',
+    expect((notObstetric.body as Problem).code).toBe(
+      'CERTIFICATE_MATERNITY_DIAGNOSIS_REQUIRED',
     );
     expect(await stateOf(id)).toEqual(untouched);
 
