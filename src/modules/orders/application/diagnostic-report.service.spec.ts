@@ -198,6 +198,16 @@ class FakeReports implements Partial<DiagnosticReportRepository> {
   recordNotice(): Promise<CriticalNoticeView> {
     return Promise.reject(new Error('not exercised here'));
   }
+  // ORD-120: against the database, in `orders-critical-notice.spec.ts`.
+  noticeOf(): Promise<CriticalNoticeView | undefined> {
+    return Promise.reject(new Error('not exercised here'));
+  }
+  editNotice(): Promise<CriticalNoticeView> {
+    return Promise.reject(new Error('not exercised here'));
+  }
+  noticeVersions(): Promise<never[]> {
+    return Promise.reject(new Error('not exercised here'));
+  }
   safetyPolicies(): Promise<ReadonlyMap<string, SafetyPolicy>> {
     return Promise.resolve(new Map<string, SafetyPolicy>());
   }

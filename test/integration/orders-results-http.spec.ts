@@ -151,6 +151,12 @@ describe('los resultados por HTTP', () => {
       .set('Authorization', `Bearer ${token}`)
       .send(body);
 
+  const put = (path: string, body: object) =>
+    request(app.getHttpServer())
+      .put(`/api/v1${path}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send(body);
+
   const get = (path: string) =>
     request(app.getHttpServer())
       .get(`/api/v1${path}`)
@@ -282,5 +288,80 @@ describe('los resultados por HTTP', () => {
       recipientName: 'La paciente',
       channel: 'PHONE',
     }).expect(201);
+  });
+
+  it('ORD-120 editar el aviso por HTTP lo cambia en el sitio con la sesión como sello, y sus versiones se leen', async () => {
+    const resultId = await criticalGlucose();
+    const colleague = await createUser(prisma);
+    const created = await post(`/orders/results/${resultId}/notices`, {
+      outcome: 'NOTIFIED',
+      readBack: true,
+      recipientKind: 'PATIENT',
+      recipientName: 'La paciente',
+      channel: 'PHONE',
+    }).expect(201);
+    const notice = created.body as { id: string; notifiedAt: string };
+
+    // ORD-066: editar no levanta el read-back.
+    const refused = await put(
+      `/orders/results/${resultId}/notices/${notice.id}`,
+      {
+        outcome: 'NOTIFIED',
+        recipientKind: 'REPRESENTATIVE',
+        recipientName: 'La hija de la paciente',
+        channel: 'IN_PERSON',
+      },
+    ).expect(422);
+    expect((refused.body as Problem).code).toBe('CRITICAL_READ_BACK_REQUIRED');
+
+    const edited = await put(
+      `/orders/results/${resultId}/notices/${notice.id}`,
+      {
+        outcome: 'NOTIFIED',
+        readBack: true,
+        recipientKind: 'REPRESENTATIVE',
+        recipientName: 'La hija de la paciente',
+        channel: 'IN_PERSON',
+        // Ni se lee ni se guarda: quien edita es la sesión.
+        editedById: colleague.id,
+      },
+    ).expect(200);
+    expect(edited.body).toMatchObject({
+      id: notice.id,
+      recipientName: 'La hija de la paciente',
+      notifiedAt: notice.notifiedAt,
+      notifiedBy: { id: doctorUserId },
+      editedBy: { id: doctorUserId, name: 'Ana Villacís' },
+    });
+
+    const versions = await get(
+      `/orders/results/${resultId}/notices/${notice.id}/versions`,
+    ).expect(200);
+    expect(versions.body).toMatchObject({
+      items: [
+        {
+          version: 1,
+          replacedBy: { id: doctorUserId },
+          notice: {
+            id: notice.id,
+            recipientName: 'La paciente',
+            editedBy: null,
+          },
+        },
+      ],
+    });
+
+    // Un aviso que no es de ese valor: 404 con su código.
+    const otherResult = await criticalGlucose();
+    const missing = await put(
+      `/orders/results/${otherResult}/notices/${notice.id}`,
+      {
+        outcome: 'NO_ANSWER',
+        recipientKind: 'PATIENT',
+        recipientName: 'La paciente',
+        channel: 'PHONE',
+      },
+    ).expect(404);
+    expect((missing.body as Problem).code).toBe('CRITICAL_NOTICE_NOT_FOUND');
   });
 });

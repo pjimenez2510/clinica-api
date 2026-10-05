@@ -454,6 +454,25 @@ export class ResultChartUnmatchedError extends NotFoundError {
 }
 
 /**
+ * ORD-120. The notice named is not one of THIS value's — it does not exist,
+ * or it belongs to another result.
+ *
+ * Only reached once the result itself was found within the caller's scope
+ * (`RESULT_NOT_FOUND` answers before), so it confirms nothing about other
+ * sites. Addressing the notice through its result keeps a client from editing
+ * a notice of a value it is not looking at.
+ */
+export class CriticalNoticeNotFoundError extends NotFoundError {
+  readonly code = 'CRITICAL_NOTICE_NOT_FOUND';
+  override readonly userTitle =
+    'Ese aviso no es de este valor. Actualice el informe y edítelo desde allí';
+
+  constructor() {
+    super('Critical notice not found on that result');
+  }
+}
+
+/**
  * ORD-043. The result does not exist — or belongs to a site outside the
  * caller's scope.
  *

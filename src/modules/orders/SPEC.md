@@ -234,12 +234,13 @@ primera es la que produce el resultado huérfano; la segunda es el art. 39.
 **aunque el laboratorio la haya enviado sin bandera**; un analito que nadie pidió
 queda con `order_item_id` nulo y sale en la cola de sin orden. Y el aviso de la
 glucosa queda registrado con a quién, quién, cuándo y por qué medio: desde ese
-momento sale de la cola, y la constancia no se puede cambiar.
-**Cubre:** ORD-040 a ORD-043, ORD-046, ORD-060 a ORD-068.
+momento sale de la cola, y la constancia se edita en el sitio sin perder la
+versión anterior (ORD-120).
+**Cubre:** ORD-040 a ORD-043, ORD-046, ORD-060 a ORD-068, **ORD-120**.
 
 **Solo servidor:** ORD-061, ORD-064. Que la cola se construya sobre los umbrales
-propios y que la constancia no se pueda reescribir son garantías del cálculo y
-de la base; en pantalla no hay nada que las enseñe.
+propios y que la constancia no se pueda borrar ni cambiar de origen son
+garantías del cálculo y de la base; en pantalla no hay nada que las enseñe.
 
 ### E6 — La conciliación por `Cedula` _(P1)_
 
@@ -869,11 +870,19 @@ cuando la gráfica exista.
   en horario (revisión clínica).
 
 - **ORD-064** — La constancia del aviso, y la del intento sin respuesta, NO
-  DEBERÁN poder modificarse ni borrarse; un registro equivocado se corrige
-  registrando otro.
+  DEBERÁN poder borrarse, ni cambiar **de qué valor es, quién avisó ni cuándo
+  se anotó**; y toda edición DEBERÁ conservar la versión anterior (ORD-120).
 
-  Lo garantiza `critical_result_notice_append_only`, un disparador de la base:
-  una constancia que se puede reescribir no constituye prueba de nada.
+  > **Enmendado por ORD-120 (D-127, 04-10-2026).** Antes decía «NO DEBERÁN
+  > poder modificarse; un registro equivocado se corrige registrando otro», y
+  > la constancia equivocada se quedaba al lado de la buena. Lo que hacía de
+  > prueba —que nada se pierda— lo hace ahora `record_version`: la versión
+  > anterior entera, con quién la cambió y cuándo. Lo garantiza la base:
+  > `critical_result_notice_keeps_its_origin` rechaza el `DELETE` y el
+  > `UPDATE` que cambia el valor, el autor o el alta, y
+  > `record_version_archive` el `UPDATE` sin sello nuevo (`edited_by_id`,
+  > `edited_at`); `TRUNCATE` sigue cerrado
+  > (`trg_critical_result_notice_no_truncate`).
 
 - **ORD-065** — Cada entrada de la cola de críticos DEBERÁ decir cuántos
   minutos lleva esperando aviso, contados desde la emisión de la primera
@@ -1399,6 +1408,42 @@ se anula y se pide de nuevo, y la pantalla lo hace en un paso (D-127.4)._
   > **Solo interfaz:** el botón del informe vigente se llama «Editar», también
   > en un parcial, y abre los valores ya cargados.
 
+- **ORD-120** — CUANDO se edite el aviso de un valor crítico, o el intento sin
+  respuesta, el sistema DEBERÁ cambiarlo **en el sitio** —a quién, tipo, medio,
+  cuándo, nota, si contestó y el read-back—, guardar la versión anterior
+  entera en `record_version` con **quién la editó y cuándo**, exigir
+  `result:write` y dejar fila en `access_audit`, y DEBERÁ aplicar las mismas
+  reglas que al registrarlo: el aviso hecho exige el read-back
+  (`CRITICAL_READ_BACK_REQUIRED`, ORD-066); el instante sigue acotado entre el
+  resultado y el ahora (`CRITICAL_NOTICE_TIME_INVALID`) y no puede caer después
+  de la corrección del informe (`RESULT_SUPERSEDED`); fuera de horario se
+  juzga otra vez con el instante de la llamada (ORD-068); y el aviso a sí
+  mismo se juzga con **quién avisó**, no con quién edita (D-113 b). Quién avisó
+  NO DEBERÁ cambiar. SI el aviso no es de ese resultado ENTONCES DEBERÁ
+  rechazarlo con `CRITICAL_NOTICE_NOT_FOUND`; SI el resultado no existe o es
+  de una sede fuera del alcance, con `RESULT_NOT_FOUND`. Y DEBERÁ ofrecer las
+  versiones anteriores, de la más reciente a la más antigua, con `record:read`.
+  > **D-127:** lo registrado se edita en el sitio y la historia la guarda el
+  > sistema. El aviso no ha salido a un tercero —es la constancia interna de
+  > una llamada—, así que no hay «Corregir» que anule y rehaga: se edita.
+  >
+  > **El cuerpo es el aviso entero**, la forma de registrarlo (`PUT`): un campo
+  > que no viaja queda vacío, salvo la hora, que sin `notifiedAt` se conserva.
+  > Quién edita es la sesión, nunca un campo del cuerpo.
+  >
+  > **El sello lo pone el reloj de la aplicación** y, bajo el bloqueo de la
+  > fila, pasa del anterior: dos ediciones en el mismo milisegundo no chocan,
+  > la segunda espera y lleva el suyo (el patrón de `saveVitals`, EN-210).
+  >
+  > **Pasar de intento a aviso, o al revés, mueve la cola:** un intento que se
+  > corrige a aviso hecho, con read-back, saca el valor; un aviso que se
+  > corrige a «no contestó» lo devuelve. Es la dirección segura.
+  >
+  > **Solo interfaz:** «Editar» en cada constancia del informe abre el diálogo
+  > de registrar con los valores cargados, y «Versiones anteriores» enseña lo
+  > que decía antes. La constancia se lee donde se registra —el informe de la
+  > orden—, porque la cola de críticos sólo lista lo que aún espera aviso.
+
 ## Códigos de error nuevos
 
 Todos entran en `shared/domain/errors/error-catalogue.ts` con su prueba de
@@ -1427,7 +1472,8 @@ contrato —`code`, estado y mensaje—.
 | `REPORT_ISSUED_IN_FUTURE` | 422 | La fecha de emisión del laboratorio es futura | ORD-030 |
 | `REPORT_CORRECTION_INCOMPLETE` | 422 | La corrección no trae todos los analitos del informe que sustituye | ORD-055 |
 | `RESULT_SUPERSEDED` | 422 | Se intentó avisar de un valor cuyo informe ya fue corregido: se avisa el que lo sustituye | ORD-062 |
-| `CRITICAL_READ_BACK_REQUIRED` | 422 | Un aviso hecho sin confirmar que quien lo recibió repitió el valor | ORD-066 |
+| `CRITICAL_READ_BACK_REQUIRED` | 422 | Un aviso hecho sin confirmar que quien lo recibió repitió el valor | ORD-066, ORD-120 |
+| `CRITICAL_NOTICE_NOT_FOUND` | 404 | Se pidió editar o leer las versiones de un aviso que no es de ese resultado. Sólo después de encontrar el resultado en el alcance, así que no confirma nada de otra sede | ORD-120 |
 | `ORDER_NOT_DRAFT` | 409 | Se intentó reescribir, emitir o descartar una orden que ya no está en borrador | ORD-096, ORD-098, ORD-099 |
 | `ORDER_NOT_DISCARDED` | 409 | Se intentó recuperar una orden que no está descartada: ya se recuperó, o nunca se descartó | ORD-116 |
 | `ORDER_NOT_ISSUED` | 409 | Se intentó registrar un informe, emparejar un resultado, anular una línea o corregir una orden que no se ha emitido | ORD-100, ORD-118 |
@@ -1462,7 +1508,7 @@ precisamente para que más de un módulo pueda responderlos con el mismo `code`.
 | Qué falta | Dónde | Requisito |
 | --- | --- | --- |
 | ~~Número de orden consecutivo~~ — construido: `document_counter` + disparador. **A.M. 00002393 art. 43** | `service_order` | ORD-006 |
-| ~~**Constancia del aviso de un valor crítico**~~ — construido: `critical_result_notice`, inmutable por disparador. **A.M. 00002393 art. 39** | tabla nueva | ORD-062, ORD-064 |
+| ~~**Constancia del aviso de un valor crítico**~~ — construido: `critical_result_notice`, sin borrado ni cambio de origen por disparador; se edita con sello (`edited_by_id`, `edited_at`) y su versión anterior va a `record_version` (`20261005060400_critical_notice_edit_in_place`). **A.M. 00002393 art. 39** | tabla nueva | ORD-062, ORD-064, ORD-120 |
 | Adjunto del PDF del laboratorio, indexado por paciente, fecha y laboratorio | tabla nueva | ORD-070 |
 | **`analyte_definition_id`**, para que el resultado apunte a su definición y no a un texto | `observation_result` | ORD-031 |
 | Valor `ABNORMAL` en el enum, para la anormalidad cualitativa que no es alta ni baja | `abnormal_flag` | ORD-038 |
@@ -1502,6 +1548,8 @@ resuelto de quien llama.
 | `POST` | `/orders/results/:resultId/match` | `result:write` | ORD-041, ORD-043, ORD-091 |
 | `GET` | `/orders/results/critical` | `record:read` | ORD-060, ORD-061, ORD-065, ORD-092 |
 | `POST` | `/orders/results/:resultId/notices` | `result:write` | ORD-062, ORD-091 |
+| `PUT` | `/orders/results/:resultId/notices/:noticeId` | `result:write` | ORD-120 *(el aviso entero; sin `notifiedAt` conserva la hora)* |
+| `GET` | `/orders/results/:resultId/notices/:noticeId/versions` | `record:read` | ORD-120 |
 | `GET` | `/exams` | `catalog:read` | ORD-010 a ORD-012, ORD-101 |
 | `GET` | `/exam-catalogue/exams` | `catalog:manage` | ORD-103 (activos e inactivos, con estructura, rangos y prestación) |
 | `GET` | `/exam-catalogue/exams/:examId` | `catalog:manage` | ORD-103 |
@@ -1545,7 +1593,8 @@ columnas donde registrar quién lo decidió y por qué.
 | ORD-043 | Integración | No hay `CHECK` que ate `order_item_id` a la orden del informe, así que la negativa vive en la transacción que escribe: un doble que confirme que se llamó bien al adaptador no demuestra nada sobre la fila que aterriza. Y la reevaluación de ORD-039 sólo se ve en `pending_items`. |
 | ORD-004 | Integración | La vigencia se evalúa con `daterange @>` sobre una columna generada, que Prisma no puede expresar. |
 | ORD-081, ORD-093 | Integración | El alcance de ficha sigue el enlace de fusión, que solo existe en la base. |
-| ORD-062, ORD-064 | Integración | La constancia sale de la cola por una consulta y no se reescribe por un disparador: las dos cosas son de la base, con control positivo (el `INSERT` entra, el `UPDATE` no). |
+| ORD-062, ORD-064 | Integración | La constancia sale de la cola por una consulta y no se borra ni cambia de origen por un disparador: las dos cosas son de la base, con control positivo (el `INSERT` y la edición con sello entran; el `UPDATE` sin sello, el que cambia el origen y el `DELETE`, no). |
+| ORD-120 | Integración | Contra la base: la edición con sello archiva la versión anterior y la sin sello, la de origen y la que quita el read-back se rechazan, con control positivo; por el servicio, la edición cambia lo dicho y no quién avisó, la versión se lee con el mismo mapeo, la cola se mueve con el desenlace, y dos ediciones simultáneas llevan sellos distintos y gana la que escribió después. Por HTTP, la ruta y su 404. |
 | ORD-046, ORD-065 | Integración y unitario | El plazo es aritmética pura con el reloj inyectado; de dónde sale —el parámetro de la sede o su ausencia— se prueba contra la base. |
 | ORD-026 | Integración | El nombre viaja o no según el filtro, y se prueba con dos fichas reales. |
 | ORD-090, ORD-094 | Integración | `route-authorisation.spec` recorre las rutas que NestJS registró de verdad. |

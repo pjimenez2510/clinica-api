@@ -99,8 +99,9 @@ export const CRITICAL_NOTICE_OUTCOMES = ['NOTIFIED', 'NO_ANSWER'] as const;
 export type CriticalNoticeOutcome = (typeof CRITICAL_NOTICE_OUTCOMES)[number];
 
 /**
- * ORD-062, ORD-064. The notice of a critical value, as it was written — and it
- * is never written again: `critical_result_notice` is append-only.
+ * ORD-062, ORD-120. The notice of a critical value, as it reads now. It is
+ * edited in place (D-127), never deleted, and every earlier version is kept by
+ * `record_version`.
  */
 export interface CriticalNoticeView {
   id: string;
@@ -124,6 +125,58 @@ export interface CriticalNoticeView {
    * themselves: kept as a record, it does not close the worklist.
    */
   selfNotice: boolean;
+  /**
+   * ORD-120. Who edited it last, and when; `null` on a notice nobody edited.
+   * Who GAVE it (`notifiedBy`) never changes.
+   */
+  editedBy: { id: string; name: string } | null;
+  editedAt: Date | null;
+}
+
+/**
+ * ORD-120. A version of the notice that an edit REPLACED, as it read then,
+ * with who replaced it and when.
+ */
+export interface CriticalNoticeVersionView {
+  version: number;
+  replacedBy: { id: string; name: string };
+  replacedAt: Date;
+  notice: CriticalNoticeView;
+}
+
+/** ORD-120. One notice, through the result it belongs to. */
+export interface CriticalNoticeQuery {
+  resultId: string;
+  noticeId: string;
+  sites: SiteScopeFilter;
+}
+
+/**
+ * ORD-120. What editing a notice writes: the whole notice as it should read,
+ * and the stamp. The origin —the value, who gave it, when it was written
+ * down— is not here, because it does not change.
+ */
+export interface CriticalNoticeEdit {
+  resultId: string;
+  noticeId: string;
+  recipientKind: CriticalNoticeRecipient;
+  recipientName: string;
+  channel: CriticalNoticeChannel;
+  notifiedAt: Date;
+  note: string | null;
+  outcome: CriticalNoticeOutcome;
+  readBackConfirmed: boolean | null;
+  afterHours: boolean;
+  selfNotice: boolean;
+  /** The session's account: the stamp's «who». */
+  editedById: string;
+  /**
+   * The application's clock: the stamp's «when». The adapter moves it past
+   * the previous stamp under the row lock, so two edits never share one.
+   */
+  editedAt: Date;
+  sites: SiteScopeFilter;
+  trail: { ip?: string; userAgent?: string };
 }
 
 /** ORD-062. What recording a notice writes. */
@@ -462,6 +515,23 @@ export interface DiagnosticReportRepository {
    * this adapter only refuses what is out of scope.
    */
   recordNotice(notice: NewCriticalNotice): Promise<CriticalNoticeView>;
+
+  /** ORD-120. One notice of that result, or `undefined`. */
+  noticeOf(query: CriticalNoticeQuery): Promise<CriticalNoticeView | undefined>;
+
+  /**
+   * ORD-120. Edits the notice in place, with its stamp and its trail row in
+   * the same transaction; `record_version_archive` keeps the earlier one.
+   * Judges again, under a lock, that the notice is of that result
+   * (`CRITICAL_NOTICE_NOT_FOUND`) and that the call does not land after a
+   * correction of the report (`RESULT_SUPERSEDED`).
+   */
+  editNotice(edit: CriticalNoticeEdit): Promise<CriticalNoticeView>;
+
+  /** ORD-120. The versions edits replaced, newest first. */
+  noticeVersions(
+    query: CriticalNoticeQuery,
+  ): Promise<CriticalNoticeVersionView[]>;
 
   /**
    * ORD-046, ORD-063, ORD-065. The worklist policy of each site named. A site

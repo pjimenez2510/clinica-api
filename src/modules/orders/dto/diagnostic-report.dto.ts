@@ -129,8 +129,8 @@ const NOTICE_CHANNEL = z.enum(['PHONE', 'IN_PERSON', 'VIDEO_CALL']);
 const NOTICE_OUTCOME = z.enum(['NOTIFIED', 'NO_ANSWER']);
 
 /**
- * ORD-062. One notice of a critical value, as it was written. Never rewritten
- * (ORD-064).
+ * ORD-062, ORD-120. One notice of a critical value, as it reads now. Edited in
+ * place, never deleted; earlier versions at `…/versions`.
  */
 export const criticalNoticeSchema = z.object({
   id: z.uuid(),
@@ -150,9 +150,31 @@ export const criticalNoticeSchema = z.object({
   afterHours: z.boolean(),
   /** ORD-062, D-113 b. A notice to oneself: recorded, does not close the worklist. */
   selfNotice: z.boolean(),
+  /** ORD-120. Who edited it last, and when; `null` if nobody did. */
+  editedBy: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+  editedAt: z.iso.datetime().nullable(),
 });
-/** Response of POST /orders/results/:resultId/notices. */
+/** Response of POST and PUT /orders/results/:resultId/notices…. */
 export class CriticalNoticeDto extends createZodDto(criticalNoticeSchema) {}
+
+/**
+ * ORD-120, D-127. The versions of a notice that edits replaced, newest first:
+ * the notice exactly as it read, plus who replaced it and when. The database
+ * kept them (`record_version`); the client only shows them.
+ */
+export const criticalNoticeVersionSchema = z.object({
+  version: z.number().int().min(1),
+  replacedBy: z.object({ id: z.uuid(), name: z.string() }),
+  replacedAt: z.iso.datetime(),
+  notice: criticalNoticeSchema,
+});
+export const criticalNoticeVersionListSchema = z.object({
+  items: z.array(criticalNoticeVersionSchema),
+});
+/** Response of GET /orders/results/:resultId/notices/:noticeId/versions. */
+export class CriticalNoticeVersionListDto extends createZodDto(
+  criticalNoticeVersionListSchema,
+) {}
 
 /**
  * ORD-062. What recording a notice asks for.
@@ -195,6 +217,14 @@ export const recordNoticeSchema = z
     }
   });
 export class RecordNoticeDto extends createZodDto(recordNoticeSchema) {}
+
+/**
+ * ORD-120. Editing a notice: the whole notice as it should read — the same
+ * shape as recording it. Without `notifiedAt` the call keeps its instant.
+ * Who edits is the session, never the body.
+ */
+export const editNoticeSchema = recordNoticeSchema;
+export class EditNoticeDto extends createZodDto(editNoticeSchema) {}
 
 /** ORD-031 to ORD-038. One determination as a client reads it. */
 export const observationSchema = z.object({
@@ -356,3 +386,6 @@ export type DiagnosticReportListResponse = z.infer<
 export type CriticalResultListResponse = z.infer<typeof criticalResultListSchema>; // prettier-ignore
 export type UnmatchedResultListResponse = z.infer<typeof unmatchedResultListSchema>; // prettier-ignore
 export type CriticalNoticeResponse = z.infer<typeof criticalNoticeSchema>;
+export type CriticalNoticeVersionListResponse = z.infer<
+  typeof criticalNoticeVersionListSchema
+>;

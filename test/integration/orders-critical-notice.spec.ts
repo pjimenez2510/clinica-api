@@ -56,6 +56,15 @@ function serviceOf(
 /** A glucose of 25 mg/dL — critical low — registered an hour before `now`. */
 async function aCriticalGlucose(prisma: PrismaClient, now: Date) {
   const scene = await aScene(prisma);
+  return { ...scene, ...(await criticalGlucoseIn(prisma, scene, now)) };
+}
+
+/** Another glucose of 25 mg/dL, on a new order of the same attention. */
+async function criticalGlucoseIn(
+  prisma: PrismaClient,
+  scene: Awaited<ReturnType<typeof aScene>>,
+  now: Date,
+) {
   const { reports, orders } = serviceOf(prisma);
   const requester: Requester = { userId: 'user-1', sites: 'all' };
 
@@ -78,7 +87,7 @@ async function aCriticalGlucose(prisma: PrismaClient, now: Date) {
   const result = report.results[0]!;
   expect(result.abnormalFlag).toBe('CRITICAL_LOW');
 
-  return { ...scene, order, report, result };
+  return { order, report, result };
 }
 
 /**
@@ -144,7 +153,7 @@ const given = {
 };
 
 describe('la constancia del aviso de un valor crítico contra PostgreSQL', () => {
-  it('ORD-064 no deja reescribir, borrar ni vaciar la constancia, ni por SQL directo', async () => {
+  it('ORD-064 y ORD-120 no deja reescribir sin sello, borrar ni vaciar la constancia, ni por SQL directo', async () => {
     const prisma = db();
     const { now } = clinicNoon();
     const scene = await aCriticalGlucose(prisma, now);
@@ -167,11 +176,12 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     });
     expect(await prisma.criticalResultNotice.count()).toBe(1);
 
+    // ORD-120: editar sí, pero nunca sin decir quién y cuándo.
     await expect(
       prisma.$executeRaw`
         UPDATE "critical_result_notice" SET "recipient_name" = 'Otra persona'
         WHERE "id" = ${notice.id}::uuid`,
-    ).rejects.toThrow(/append-only/);
+    ).rejects.toThrow(/record_version_change_is_stamped/);
     await expect(
       prisma.$executeRaw`
         DELETE FROM "critical_result_notice" WHERE "id" = ${notice.id}::uuid`,
@@ -1104,5 +1114,347 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
       waitingMinutes: 120,
       previouslyNotified: true,
     });
+  });
+});
+
+/**
+ * ORD-120 (D-127): el aviso de un crítico se EDITA en el sitio, y la versión
+ * anterior la guarda `record_version`. Lo que sólo la base puede demostrar: que
+ * la edición sin sello, el cambio de quién avisó o de qué valor, y el borrado
+ * se rechazan aunque se salte la aplicación.
+ */
+describe('editar el aviso de un valor crítico (ORD-120)', () => {
+  const versionsOf = (prisma: PrismaClient, noticeId: string) =>
+    prisma.recordVersion.findMany({
+      where: { resourceType: 'critical_result_notice', resourceId: noticeId },
+      orderBy: { version: 'asc' },
+    });
+
+  it('ORD-120 la base admite la edición con sello y guarda la anterior; quién avisó, de qué valor y cuándo se anotó no cambian', async () => {
+    const prisma = db();
+    const { now } = clinicNoon();
+    const scene = await aCriticalGlucose(prisma, now);
+    const other = await criticalGlucoseIn(prisma, scene, now);
+    const nurse = await createUser(prisma);
+    const colleague = await createUser(prisma);
+    const notice = await prisma.criticalResultNotice.create({
+      data: {
+        observationResultId: BigInt(scene.result.id),
+        recipientKind: 'PATIENT',
+        recipientName: 'La paciente',
+        channel: 'PHONE',
+        notifiedById: nurse.id,
+        notifiedAt: now,
+        outcome: 'NOTIFIED',
+        readBackConfirmed: true,
+        afterHours: false,
+        selfNotice: false,
+      },
+    });
+    const stamp = (minutes: number) => new Date(now.getTime() + minutes * 60_000); // prettier-ignore
+
+    // Quién avisó, de qué valor y cuándo se anotó: ni con sello.
+    await expect(
+      prisma.$executeRaw`
+        UPDATE "critical_result_notice"
+           SET "notified_by_id" = ${colleague.id}::uuid,
+               "edited_by_id" = ${colleague.id}::uuid, "edited_at" = ${stamp(1)}
+         WHERE "id" = ${notice.id}::uuid`,
+    ).rejects.toThrow(/cannot be modified/);
+    await expect(
+      prisma.$executeRaw`
+        UPDATE "critical_result_notice"
+           SET "observation_result_id" = ${BigInt(other.result.id)},
+               "edited_by_id" = ${colleague.id}::uuid, "edited_at" = ${stamp(1)}
+         WHERE "id" = ${notice.id}::uuid`,
+    ).rejects.toThrow(/cannot be modified/);
+    await expect(
+      prisma.$executeRaw`
+        UPDATE "critical_result_notice"
+           SET "created_at" = ${stamp(-5)},
+               "edited_by_id" = ${colleague.id}::uuid, "edited_at" = ${stamp(1)}
+         WHERE "id" = ${notice.id}::uuid`,
+    ).rejects.toThrow(/cannot be modified/);
+    // ORD-066: editado o no, un aviso hecho lleva su read-back.
+    await expect(
+      prisma.$executeRaw`
+        UPDATE "critical_result_notice"
+           SET "read_back_confirmed" = NULL,
+               "edited_by_id" = ${colleague.id}::uuid, "edited_at" = ${stamp(1)}
+         WHERE "id" = ${notice.id}::uuid`,
+    ).rejects.toThrow(/critical_result_notice_read_back/);
+    // Un sello a medias tampoco.
+    await expect(
+      prisma.$executeRaw`
+        UPDATE "critical_result_notice"
+           SET "recipient_name" = 'Otra persona', "edited_by_id" = ${colleague.id}::uuid
+         WHERE "id" = ${notice.id}::uuid`,
+    ).rejects.toThrow(/record_version_change_is_stamped/);
+    expect(await versionsOf(prisma, notice.id)).toEqual([]);
+
+    // Control positivo: lo que se dijo, con sello nuevo, entra y archiva lo de antes.
+    await prisma.$executeRaw`
+      UPDATE "critical_result_notice"
+         SET "recipient_name" = 'La hija de la paciente', "channel" = 'IN_PERSON',
+             "edited_by_id" = ${colleague.id}::uuid, "edited_at" = ${stamp(1)}
+       WHERE "id" = ${notice.id}::uuid`;
+
+    const stored = await prisma.criticalResultNotice.findUniqueOrThrow({
+      where: { id: notice.id },
+    });
+    expect(stored).toMatchObject({
+      recipientName: 'La hija de la paciente',
+      channel: 'IN_PERSON',
+      notifiedById: nurse.id,
+      editedById: colleague.id,
+      editedAt: stamp(1),
+    });
+    const versions = await versionsOf(prisma, notice.id);
+    expect(versions).toHaveLength(1);
+    expect(versions[0]).toMatchObject({ version: 1, changedById: colleague.id, changedAt: stamp(1) }); // prettier-ignore
+    expect(versions[0]?.data).toMatchObject({
+      recipient_name: 'La paciente',
+      channel: 'PHONE',
+      notified_by_id: nurse.id,
+      edited_by_id: null,
+    });
+  });
+
+  it('ORD-120 editar el aviso lo cambia en el sitio con quién y cuándo, la versión anterior se lee igual que la vigente y queda su fila en la bitácora', async () => {
+    const prisma = db();
+    const { now, isoWeekday } = clinicNoon();
+    const scene = await aCriticalGlucose(prisma, now);
+    await siteInHours(prisma, scene, isoWeekday);
+    const nurse = await createUser(prisma);
+    const colleague = await createUser(prisma);
+    const { reports, store } = serviceOf(prisma);
+    const calledAt = new Date(now.getTime() - 10 * 60_000);
+
+    const notice = await reports.notify(
+      { resultId: scene.result.id, ...given, notifiedAt: calledAt },
+      { userId: nurse.id, sites: 'all' },
+      now,
+    );
+    expect(notice).toMatchObject({ editedBy: null, editedAt: null });
+
+    const later = new Date(now.getTime() + 5 * 60_000);
+    const edited = await reports.editNotice(
+      {
+        resultId: scene.result.id,
+        noticeId: notice.id,
+        ...given,
+        recipientKind: 'REPRESENTATIVE',
+        recipientName: 'La hija de la paciente',
+        channel: 'IN_PERSON',
+        notifiedAt: calledAt,
+        note: 'Se le explicó que acuda hoy',
+      },
+      { userId: colleague.id, sites: 'all' },
+      later,
+    );
+
+    expect(edited).toMatchObject({
+      id: notice.id,
+      resultId: scene.result.id,
+      recipientKind: 'REPRESENTATIVE',
+      recipientName: 'La hija de la paciente',
+      channel: 'IN_PERSON',
+      note: 'Se le explicó que acuda hoy',
+      notifiedAt: calledAt,
+      outcome: 'NOTIFIED',
+      readBackConfirmed: true,
+      // Quién AVISÓ no cambia: quien edita queda aparte.
+      notifiedBy: { id: nurse.id, name: 'Carmen Salazar' },
+      editedBy: { id: colleague.id, name: 'Carmen Salazar' },
+      editedAt: later,
+    });
+    const report = await store.byId({ reportId: scene.report.id, sites: 'all' }); // prettier-ignore
+    expect(report?.results[0]?.notices).toEqual([edited]);
+
+    // La versión anterior, con el MISMO mapeo que la vigente.
+    const versions = await reports.noticeVersions(
+      { resultId: scene.result.id, noticeId: notice.id },
+      { userId: colleague.id, sites: 'all' },
+    );
+    expect(versions).toEqual([
+      {
+        version: 1,
+        replacedBy: { id: colleague.id, name: 'Carmen Salazar' },
+        replacedAt: later,
+        notice,
+      },
+    ]);
+
+    // La bitácora: el alta y la edición, escritas con la constancia.
+    const trail = await prisma.accessAudit.findMany({
+      where: { resourceType: 'critical_result_notice', resourceId: notice.id },
+      orderBy: { occurredAt: 'asc' },
+    });
+    expect(trail.map((row) => [row.userId, row.action])).toEqual([
+      [nurse.id, 'CREATE'],
+      [colleague.id, 'UPDATE'],
+    ]);
+  });
+
+  it('ORD-120 y ORD-066 al editar, el aviso hecho sigue exigiendo el read-back; un intento que pasa a aviso saca el valor de la cola, y al revés lo devuelve', async () => {
+    const prisma = db();
+    const { now } = clinicNoon();
+    const scene = await aCriticalGlucose(prisma, now);
+    const nurse = await createUser(prisma);
+    const { reports, store } = serviceOf(prisma);
+    const requester: Requester = { userId: nurse.id, sites: 'all' };
+    const attempt = await reports.notify(
+      { resultId: scene.result.id, ...given, outcome: 'NO_ANSWER', readBack: undefined }, // prettier-ignore
+      requester,
+      now,
+    );
+    const edit = (
+      changes: { outcome?: 'NOTIFIED' | 'NO_ANSWER'; readBack?: boolean },
+      at: Date,
+    ) =>
+      // prettier-ignore
+      reports.editNotice(
+        { resultId: scene.result.id, noticeId: attempt.id, ...given, ...changes }, // prettier-ignore
+        requester,
+        at,
+      );
+    const later = (minutes: number) => new Date(now.getTime() + minutes * 60_000); // prettier-ignore
+
+    await expect(edit({ readBack: undefined }, later(1))).rejects.toMatchObject({ code: 'CRITICAL_READ_BACK_REQUIRED' }); // prettier-ignore
+    await expect(edit({ readBack: false }, later(1))).rejects.toMatchObject({ code: 'CRITICAL_READ_BACK_REQUIRED' }); // prettier-ignore
+    expect(await versionsOf(prisma, attempt.id)).toEqual([]);
+    expect(await store.critical({ sites: 'all' })).toHaveLength(1);
+
+    // Control positivo: con read-back es un aviso, y el valor sale de la cola.
+    await edit({}, later(1));
+    expect(await store.critical({ sites: 'all' })).toEqual([]);
+
+    // Y si resulta que nadie contestó, vuelve a ella.
+    await edit({ outcome: 'NO_ANSWER', readBack: undefined }, later(2));
+    expect(await store.critical({ sites: 'all' })).toHaveLength(1);
+    expect(await versionsOf(prisma, attempt.id)).toHaveLength(2);
+  });
+
+  it('ORD-120 y ORD-062 el aviso a sí mismo lo juzga quién AVISÓ, no quién edita', async () => {
+    const prisma = db();
+    const { now } = clinicNoon();
+    const scene = await aCriticalGlucose(prisma, now);
+    const colleague = await createUser(prisma);
+    const { reports, store } = serviceOf(prisma);
+    const ordering: Requester = { userId: scene.practitioner.userId, sites: 'all' }; // prettier-ignore
+
+    // El médico que pidió el examen anota que avisó al paciente…
+    const notice = await reports.notify(
+      { resultId: scene.result.id, ...given },
+      ordering,
+      now,
+    );
+    expect(notice.selfNotice).toBe(false);
+
+    // …y un colega corrige: en realidad fue «al médico que pidió», él mismo.
+    const edited = await reports.editNotice(
+      { resultId: scene.result.id, noticeId: notice.id, ...given, recipientKind: 'ORDERING_PRACTITIONER' }, // prettier-ignore
+      { userId: colleague.id, sites: 'all' },
+      new Date(now.getTime() + 60_000),
+    );
+    expect(edited.selfNotice).toBe(true);
+    // D-113 b: un aviso a sí mismo no cierra la cola.
+    expect(await store.critical({ sites: 'all' })).toHaveLength(1);
+  });
+
+  it('ORD-120 la hora editada sigue acotada, y un aviso de otro valor o de una sede fuera del alcance no se encuentra', async () => {
+    const prisma = db();
+    const { now } = clinicNoon();
+    const scene = await aCriticalGlucose(prisma, now);
+    const other = await criticalGlucoseIn(prisma, scene, now);
+    const nurse = await createUser(prisma);
+    const otherSite = await createSite(prisma, 'Sede Norte');
+    const { reports } = serviceOf(prisma);
+    const requester: Requester = { userId: nurse.id, sites: 'all' };
+    const notice = await reports.notify({ resultId: scene.result.id, ...given }, requester, now); // prettier-ignore
+    const later = new Date(now.getTime() + 60_000);
+    const edit = (
+      changes: { notifiedAt?: Date; resultId?: string },
+      who: Requester = requester,
+    ) =>
+      reports.editNotice(
+        {
+          resultId: scene.result.id,
+          noticeId: notice.id,
+          ...given,
+          ...changes,
+        },
+        who,
+        later,
+      );
+
+    await expect(edit({ notifiedAt: new Date(later.getTime() + 60_000) })).rejects.toMatchObject({ code: 'CRITICAL_NOTICE_TIME_INVALID' }); // prettier-ignore
+    await expect(edit({ notifiedAt: new Date(now.getTime() - 2 * 3_600_000) })).rejects.toMatchObject({ code: 'CRITICAL_NOTICE_TIME_INVALID' }); // prettier-ignore
+    // El aviso es de OTRO valor: no se edita por esta ruta.
+    await expect(edit({ resultId: other.result.id })).rejects.toMatchObject({ code: 'CRITICAL_NOTICE_NOT_FOUND' }); // prettier-ignore
+    await expect(
+      reports.editNotice({ resultId: scene.result.id, noticeId: '01999999-0000-7000-8000-000000000000', ...given }, requester, later), // prettier-ignore
+    ).rejects.toMatchObject({ code: 'CRITICAL_NOTICE_NOT_FOUND' });
+    await expect(edit({}, { userId: nurse.id, sites: [otherSite.id] })).rejects.toMatchObject({ code: 'RESULT_NOT_FOUND' }); // prettier-ignore
+    expect(await versionsOf(prisma, notice.id)).toEqual([]);
+
+    // Control positivo: sin hora declarada se queda la que tenía, y entra.
+    const edited = await edit({});
+    expect(edited.notifiedAt).toEqual(now);
+    expect(await versionsOf(prisma, notice.id)).toHaveLength(1);
+  });
+
+  it('ORD-120 y ORD-062 la llamada que se mueve después de la corrección del laboratorio se rechaza', async () => {
+    const prisma = db();
+    const { now } = clinicNoon();
+    const scene = await aCriticalGlucose(prisma, now);
+    const nurse = await createUser(prisma);
+    const { reports } = serviceOf(prisma);
+    const requester: Requester = { userId: nurse.id, sites: 'all' };
+    const calledAt = new Date(now.getTime() - 30 * 60_000);
+    const notice = await reports.notify({ resultId: scene.result.id, ...given, notifiedAt: calledAt }, requester, now); // prettier-ignore
+
+    await reports.correct(
+      {
+        reportId: scene.report.id,
+        performedById: null,
+        issuedAt: new Date(now.getTime() - 20 * 60_000),
+        results: [{ analyteDefinitionId: scene.glu.id, valueNumeric: 30 }],
+      },
+      requester,
+    );
+    const afterCorrection = new Date(Date.now() + 60_000);
+
+    await expect(
+      reports.editNotice({ resultId: scene.result.id, noticeId: notice.id, ...given, notifiedAt: new Date(Date.now() + 1000) }, requester, afterCorrection), // prettier-ignore
+    ).rejects.toMatchObject({ code: 'RESULT_SUPERSEDED' });
+
+    // Control positivo: la misma llamada, con su hora de antes, se corrige.
+    const edited = await reports.editNotice({ resultId: scene.result.id, noticeId: notice.id, ...given, recipientName: 'La paciente, en persona' }, requester, afterCorrection); // prettier-ignore
+    expect(edited.recipientName).toBe('La paciente, en persona');
+  });
+
+  it('ORD-120 dos ediciones en el mismo instante no chocan: la segunda espera a la primera y lleva su propio sello', async () => {
+    const prisma = db();
+    const { now } = clinicNoon();
+    const scene = await aCriticalGlucose(prisma, now);
+    const nurse = await createUser(prisma);
+    const { reports } = serviceOf(prisma);
+    const requester: Requester = { userId: nurse.id, sites: 'all' };
+    const notice = await reports.notify({ resultId: scene.result.id, ...given }, requester, now); // prettier-ignore
+    const sameInstant = new Date(now.getTime() + 60_000);
+    const edit = (recipientName: string) =>
+      reports.editNotice({ resultId: scene.result.id, noticeId: notice.id, ...given, recipientName }, requester, sameInstant); // prettier-ignore
+
+    const [first, second] = await Promise.all([edit('Uno'), edit('Dos')]);
+
+    const versions = await versionsOf(prisma, notice.id);
+    expect(versions).toHaveLength(2);
+    expect(versions[0]?.changedAt).not.toEqual(versions[1]?.changedAt);
+    // Gana la que se escribió después: la de sello mayor es la vigente.
+    const winner = first.editedAt! > second.editedAt! ? first : second;
+    const stored = await prisma.criticalResultNotice.findUniqueOrThrow({ where: { id: notice.id } }); // prettier-ignore
+    expect(stored.recipientName).toBe(winner.recipientName);
+    expect(stored.editedAt).toEqual(winner.editedAt);
   });
 });

@@ -10,6 +10,7 @@ import {
 } from '../../../shared/domain/errors/domain-error';
 
 import {
+  CriticalNoticeNotFoundError,
   CriticalNoticeTimeInvalidError,
   CriticalReadBackRequiredError,
   ExamCategoryMismatchError,
@@ -76,6 +77,7 @@ const EVERY_ERROR: readonly DomainError[] = [
   new CriticalNoticeTimeInvalidError(),
   new ResultSupersededError(),
   new CriticalReadBackRequiredError(),
+  new CriticalNoticeNotFoundError(),
   new ReportIssuedInFutureError(),
   new ReportCorrectionIncompleteError(['Glucosa en ayunas']),
 ];
@@ -187,6 +189,16 @@ describe('el contrato de errores de las órdenes', () => {
     expect(
       new ResultValueTypeMismatchError('X', 'RATIO').userTitle,
     ).toBeTruthy();
+  });
+
+  it('ORD-120 editar un aviso que no es de ese valor es un 404, con su código y una frase que da la salida', () => {
+    const error = new CriticalNoticeNotFoundError();
+    expect(error).toBeInstanceOf(NotFoundError);
+    expect(error.code).toBe('CRITICAL_NOTICE_NOT_FOUND');
+    expect(DOMAIN_ERROR_CODES).toContain('CRITICAL_NOTICE_NOT_FOUND');
+    expect(error.userTitle).toBe(
+      'Ese aviso no es de este valor. Actualice el informe y edítelo desde allí',
+    );
   });
 
   it('ORD-043 dice qué hacer al que trabaja la cola de resultados sin orden', () => {

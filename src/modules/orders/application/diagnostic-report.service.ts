@@ -10,6 +10,7 @@ import {
   type CriticalNoticeChannel,
   type CriticalNoticeOutcome,
   type CriticalNoticeRecipient,
+  type CriticalNoticeVersionView,
   type CriticalNoticeView,
   type CriticalWorklistEntry,
   type DiagnosticReportRepository,
@@ -32,6 +33,7 @@ import {
   type ServiceOrderView,
 } from '../domain/service-order.repository';
 import {
+  CriticalNoticeNotFoundError,
   CriticalNoticeTimeInvalidError,
   CriticalReadBackRequiredError,
   OrderItemNotMatchableError,
@@ -157,6 +159,20 @@ export interface RecordNoticeRequest {
   /** When the call happened; the clock's «now» when absent. */
   notifiedAt?: Date;
   note?: string;
+}
+
+/**
+ * ORD-120. Editing a notice: the whole notice as it should read, the same
+ * shape as recording it. Without `notifiedAt` the call keeps its instant.
+ */
+export interface EditNoticeRequest extends RecordNoticeRequest {
+  noticeId: string;
+}
+
+/** ORD-120. One notice, through the result it belongs to. */
+export interface NoticeRequest {
+  resultId: string;
+  noticeId: string;
 }
 
 /** ORD-050. A correction is a report with a report behind it. */
@@ -546,8 +562,9 @@ export class DiagnosticReportService {
    * A.M. 00002393 art. 39 obliges telling «de manera urgente al médico
    * tratante y/o al usuario», and D-050 §2 decided the call is recorded as a
    * clinical act. Without the record nobody can show it happened, which is
-   * exactly what is asked when something goes wrong. It is never rewritten
-   * (ORD-064): a notice written wrongly is answered by writing another.
+   * exactly what is asked when something goes wrong. It is never deleted
+   * (ORD-064); a notice written wrongly is edited in place, and the database
+   * keeps the version it replaces (ORD-120, `editNotice`).
    *
    * ⚠️ THE INSTANT IS DECLARED AND BOUNDED. The 03:00 call is written down at
    * 08:00 and the record has to say 03:00; but it cannot be later than now nor
@@ -628,6 +645,112 @@ export class DiagnosticReportService {
     );
 
     return notice;
+  }
+
+  /**
+   * ORD-120. Edits the notice of a critical value IN PLACE (D-127).
+   *
+   * The same rules as recording it, judged on what it will say: a notice
+   * given carries the read-back (ORD-066), the instant is bounded by the
+   * result and the clock and may not land after a correction (ORD-062), and
+   * whether it is a notice to oneself is judged on who GAVE it — the original
+   * author, which never changes —, not on who edits. Out of hours is judged
+   * again on the instant of the call.
+   *
+   * The earlier version is kept by the database (`record_version`), with the
+   * editor and the instant as its stamp; nothing here can skip it.
+   */
+  async editNotice(
+    request: EditNoticeRequest,
+    requester: Requester,
+    now: Date,
+  ): Promise<CriticalNoticeView> {
+    const result = await this.reports.resultById({
+      resultId: request.resultId,
+      sites: requester.sites,
+    });
+    if (!result) throw new ResultNotFoundError();
+    const current = await this.reports.noticeOf({
+      resultId: result.resultId,
+      noticeId: request.noticeId,
+      sites: requester.sites,
+    });
+    if (!current) throw new CriticalNoticeNotFoundError();
+
+    // ORD-066. Editing does not lift the read-back.
+    const given = request.outcome === 'NOTIFIED';
+    if (given && request.readBack !== true) {
+      throw new CriticalReadBackRequiredError();
+    }
+
+    const notifiedAt = request.notifiedAt ?? current.notifiedAt;
+    if (notifiedAt > now || notifiedAt < result.observedAt) {
+      throw new CriticalNoticeTimeInvalidError();
+    }
+    if (result.supersededAt && notifiedAt >= result.supersededAt) {
+      throw new ResultSupersededError();
+    }
+    // ORD-062, D-113 b. Who gave the notice, not who edits it.
+    const selfNotice =
+      request.recipientKind === 'ORDERING_PRACTITIONER' &&
+      current.notifiedBy.id === result.orderedByUserId;
+    // ORD-068. Out of hours at the moment of the CALL.
+    const inHours = await this.reports.sitesInHours([result.siteId], notifiedAt); // prettier-ignore
+
+    const notice = await this.reports.editNotice({
+      resultId: result.resultId,
+      noticeId: current.id,
+      recipientKind: request.recipientKind,
+      recipientName: request.recipientName,
+      channel: request.channel,
+      notifiedAt,
+      note: request.note ?? null,
+      outcome: request.outcome,
+      readBackConfirmed: given ? true : null,
+      afterHours: !inHours.has(result.siteId),
+      selfNotice,
+      editedById: requester.userId,
+      editedAt: now,
+      sites: requester.sites,
+      trail: { ip: requester.ip, userAgent: requester.userAgent },
+    });
+
+    // ORD-024. The fact: never the value, never who was called.
+    this.logger.info(
+      { action: 'CRITICAL_NOTICE_EDITED', channel: notice.channel },
+      'critical value notice edited',
+    );
+
+    return notice;
+  }
+
+  /**
+   * ORD-120. The versions of a notice that edits replaced, newest first.
+   *
+   * AUDITED: an earlier version still says who was told of whose value.
+   */
+  async noticeVersions(
+    request: NoticeRequest,
+    requester: Requester,
+  ): Promise<CriticalNoticeVersionView[]> {
+    const query = { ...request, sites: requester.sites };
+    const result = await this.reports.resultById(query);
+    if (!result) throw new ResultNotFoundError();
+    const current = await this.reports.noticeOf(query);
+    if (!current) throw new CriticalNoticeNotFoundError();
+
+    const versions = await this.reports.noticeVersions(query);
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: 'critical_result_notice',
+      resourceId: current.id,
+      action: 'READ',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+
+    return versions;
   }
 
   /**

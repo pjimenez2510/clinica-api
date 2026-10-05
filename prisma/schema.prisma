@@ -180,7 +180,8 @@ model User {
   documentImagesUploaded         DocumentImage[]        @relation("DocumentImageUploader")
 
   /// ORD-062. The critical-value notices this account recorded having given.
-  criticalNoticesGiven CriticalResultNotice[] @relation("CriticalNoticeGiver")
+  criticalNoticesGiven  CriticalResultNotice[] @relation("CriticalNoticeGiver")
+  criticalNoticesEdited CriticalResultNotice[] @relation("CriticalNoticeEditor")
 
   /// EN-210, D-127. The versions this account replaced by editing.
   recordVersionsChanged RecordVersion[] @relation("RecordVersionChanger")
@@ -3172,6 +3173,13 @@ model CriticalResultNotice {
   selfNotice        Boolean               @map("self_notice")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  /// ORD-120, D-127. Who edited it last, and when: the stamp
+  /// `record_version_archive` demands on every edit. The earlier version is in
+  /// `record_version`. Who gave the notice (`notifiedById`) never changes.
+  editedById String?   @map("edited_by_id") @db.Uuid
+  editedBy   User?     @relation("CriticalNoticeEditor", fields: [editedById], references: [id], onDelete: Restrict)
+  editedAt   DateTime? @map("edited_at") @db.Timestamptz(6)
 
   @@index([observationResultId])
   @@map("critical_result_notice")

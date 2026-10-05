@@ -1105,6 +1105,9 @@ export const DOMAIN_ERROR_CODES = [
   //     quien lo recibió repitió el valor (D-111 §4).
   'CRITICAL_READ_BACK_REQUIRED',
   'RESULT_SUPERSEDED',
+  //   * `CRITICAL_NOTICE_NOT_FOUND` (404) — ORD-120. Se pide editar un aviso
+  //     que no es de ese valor: no existe o es de otro resultado.
+  'CRITICAL_NOTICE_NOT_FOUND',
   //   * `REPORT_ISSUED_IN_FUTURE` (422) — ORD-030. La emisión del laboratorio,
   //     de la que corre el plazo de un crítico, no puede ser futura.
   'REPORT_ISSUED_IN_FUTURE',
