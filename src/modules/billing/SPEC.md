@@ -328,7 +328,7 @@ y le sale la consulta propuesta. Una atención interrumpida sin acto clínico
 aparece con el motivo por el que no tiene nada que cobrar. Y facturar, añadir
 un cargo, facturar lo pendiente y cerrar la cuenta termina siempre.
 
-**Cubre:** BI-181 a BI-184. **Solo servidor:** ninguno.
+**Cubre:** BI-181 a BI-184, BI-190. **Solo servidor:** ninguno.
 
 ### B11 — Prestaciones con estructura _(P2)_
 
@@ -1495,7 +1495,7 @@ dos registros distintos.**
   sistema DEBERÁ servir además cuántas atenciones anteriores a esa ventana
   siguen sin cuenta liquidada, para que la pantalla lo diga, y CUANDO caja lo
   pida DEBERÁ listarlas también, las más recientes primero y hasta 200 (D-119,
-  resuelta por el autor: opción A).
+  resuelta por el autor: opción A), salvo las que nunca se cobran (BI-190).
   > **El defecto que lo origina.** BI-150 daba la ruta de paso a caja, pero
   > nada la alcanzaba: la atención enlaza a la cuenta sólo cuando ya existe, y
   > caja listaba cuentas, que nacen precisamente de ese paso. El resultado era
@@ -1509,6 +1509,18 @@ dos registros distintos.**
   > **Listar no pasa la atención a caja.** Abrir la cuenta exige elegir quién
   > paga (BI-150) y eso lo hace caja al pulsar; la lista es lectura y no crea
   > nada (BI-156).
+- **BI-190** — El recuento de atenciones anteriores a la ventana de siete días
+  y su lista (BI-181) NO DEBERÁN incluir las interrumpidas (`DISCONTINUED`)
+  sin acto clínico (BI-180, D-104) ni las que tienen alguna cuenta anulada
+  (`CANCELLED`) y ninguna abierta.
+  > **D-119, ampliada por el autor el 04-10-2026:** «nunca se cobran». Una
+  > interrumpida sin acto no propone cargo (BI-180) y una cuenta anulada es la
+  > decisión ya tomada de no cobrar; contarlas hacía crecer el aviso para
+  > siempre con atenciones que nadie va a perseguir. **Sólo las antiguas**: en
+  > los siete días siguen a la vista, porque ahí caja todavía decide (BI-182).
+  > El acto clínico se pregunta **en la misma consulta** con el predicado
+  > compartido (`clinicalActExistsSql`), no fila a fila: las antiguas no tienen
+  > techo y el recuento no puede ser un N+1.
 - **BI-182** — CUANDO una atención listada por BI-181 no tenga acto clínico
   (BI-180, D-104), el sistema DEBERÁ indicarlo en su fila, para que caja vea por
   qué no se le propondrá ningún cargo.
@@ -1812,7 +1824,7 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 | `POST` | `/billing/payers/{payerId}/prices` | `billing:price-manage` | `global` | BI-041 a BI-048 |
 | `POST` | `/billing/payers/{payerId}/prices/{priceId}/close` | `billing:price-manage` | `global` | BI-044 |
 | `GET` | `/billing/sites/{siteId}/accounts` | `billing:read` | `param:siteId` | BI-070, BI-133, BI-183 |
-| `GET` | `/billing/sites/{siteId}/encounters/awaiting-checkout` | `billing:read` | `param:siteId` | BI-181 a BI-183 |
+| `GET` | `/billing/sites/{siteId}/encounters/awaiting-checkout` | `billing:read` | `param:siteId` | BI-181 a BI-183, BI-190 |
 | `POST` | `/billing/sites/{siteId}/accounts` | `billing:write` | `param:siteId` | BI-070, BI-121 |
 | `GET` | `/billing/sites/{siteId}/accounts/{accountId}` | `billing:read` | `param:siteId` | BI-074, BI-135 |
 | `GET` | `/billing/sites/{siteId}/accounts/{accountId}/invoice-receiver` | `billing:read` | `param:siteId` | BI-082 |
@@ -1911,6 +1923,7 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | BI-150 a BI-153, BI-155, BI-156, BI-158 | Unitario de dominio (la derivación es pura) + integración sobre la siembra REAL: se comprueba que los tres precios salen del catálogo que se instala, no de un fixture |
 | BI-154, BI-157 | Integración contra PostgreSQL real: se envía dos veces, se anula una línea y se vuelve a enviar, y se intenta el segundo cargo del mismo acto **por SQL directo**. Los tres índices únicos parciales son el requisito; una lectura previa no lo es |
 | BI-181 a BI-183 | Integración contra PostgreSQL real con el reloj inyectado: la ventana de siete días se cuenta en Ecuador, y la lista no escribe en `access_audit` |
+| BI-190 | Integración contra PostgreSQL real con el reloj inyectado: entre las antiguas, una interrumpida sin acto y una con la cuenta anulada no cuentan ni se listan; una interrumpida con un diagnóstico y una con cuenta anulada y otra abierta sí (control positivo); en los siete días siguen listadas |
 | BI-184 | Unitario de la pantalla (qué se ofrece) + recorrido F-06: facturar, añadir, facturar lo pendiente y cerrar |
 | BI-185 a BI-187 | Unitario de dominio + integración contra PostgreSQL real: la referencia `NOT NULL`, la clase conocida y el `RESTRICT` los garantiza la base |
 | BI-188, BI-189 | Integración contra la siembra real + contrato HTTP |

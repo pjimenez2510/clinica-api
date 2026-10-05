@@ -299,7 +299,7 @@ cuya vigencia terminó **el día anterior** a la atención y comprobar que la ba
 lo rechaza; registrar dos diagnósticos con `rank = 1` y comprobar que el segundo
 falla; y comprobar que el código y la descripción guardados no se pueden
 desincronizar del concepto.
-**Cubre:** EN-040 a EN-052, **EN-180 a EN-187** —quitar un diagnóstico con
+**Cubre:** EN-040 a EN-052, **EN-180 a EN-189** —quitar un diagnóstico con
 rastro, cambiar el principal y las propuestas de §19— y **EN-151 a EN-154**, el consentimiento informado:
 va aquí porque el formulario 024 cuelga del **procedimiento** de riesgo mayor
 (EN-050), no de la atención.
@@ -2762,7 +2762,8 @@ que no, se pregunta con el dato delante. Las cuatro respuestas del autor son
 D-117._
 
 - **EN-180** — MIENTRAS la atención admita contenido clínico nuevo (`OPEN` u
-  `ON_HOLD`), CUANDO el médico quite un diagnóstico, el sistema DEBERÁ
+  `ON_HOLD`) o tenga el alta (`DISCHARGED` o `COMPLETED`, EN-188), CUANDO el
+  médico quite un diagnóstico, el sistema DEBERÁ
   **archivarlo** en `encounter_diagnosis_retraction` —la fila entera, con quién
   lo quitó y cuándo— y retirarlo de la atención, de modo que **deje de contar**
   en todo lo que lee los diagnósticos de la atención: el principal, la receta,
@@ -2780,18 +2781,17 @@ D-117._
   > admite `UPDATE`, `DELETE` ni `TRUNCATE`. Sin archivo no hay borrado posible,
   > tampoco desde `psql`.
   >
-  > SI la atención ya no admite contenido clínico, ENTONCES el sistema DEBERÁ
-  > rechazarlo con `ENCOUNTER_ALREADY_CLOSED`, como al registrar (EN-009).
+  > SI la atención está interrumpida (`DISCONTINUED`) o anulada
+  > (`ENTERED_IN_ERROR`), ENTONCES el sistema DEBERÁ rechazarlo con
+  > `ENCOUNTER_ALREADY_CLOSED`, como al registrar (EN-009).
 - **EN-181** — SI la atención tiene alguna **nota firmada**, ENTONCES quitar un
   diagnóstico DEBERÁ exigir un **motivo escrito**, y SI falta, el sistema
   DEBERÁ rechazarlo con `DIAGNOSIS_RETRACTION_REASON_REQUIRED`. Sin nota
   firmada, el motivo es opcional.
-  > **Alcance real (revisión del 04-10-2026).** Firmar la nota de consulta
-  > (002) da el alta a la atención (EN-009), y una atención con alta ya no
-  > admite quitar nada (EN-180): la corrección pasa entonces por la enmienda
-  > de la nota. Dentro de la atención viva, lo firmado es una nota de
-  > evolución (005). Si debe poder quitarse un diagnóstico **después** del
-  > alta, con motivo, es D-117.8.
+  > **Alcance (revisión del 04-10-2026, D-117.8).** Firmar la nota de
+  > consulta (002) da el alta (EN-009); dentro de la atención viva, lo firmado
+  > es una nota de evolución (005). Después del alta también se quita, y
+  > siempre con motivo: EN-188.
   > Lo firmado ya dijo algo con ese diagnóstico delante, y quien lea la historia
   > tiene que saber por qué dejó de estar. Antes de firmar, un código mal
   > elegido hace un minuto no merece un párrafo: el rastro de quién y cuándo
@@ -2815,14 +2815,47 @@ D-117._
   > **Garantía de la base**, en el disparador del archivo y en el del rango.
   > Que la orden también congele los suyos —y deje de bloquear— es de `orders`
   > y es D-117.5.
-- **EN-183** — MIENTRAS la atención admita contenido clínico nuevo, CUANDO el
-  médico marque otro diagnóstico como **principal**, el sistema DEBERÁ hacerlo
+- **EN-183** — MIENTRAS la atención admita contenido clínico nuevo o tenga el
+  alta (EN-188), CUANDO el médico marque otro diagnóstico como **principal**, el sistema DEBERÁ hacerlo
   principal y pasar el anterior principal, si lo había, detrás del último rango
   en uso, en una sola transacción.
   > Es la salida de quitar el principal: sin ella, la atención se queda sin
   > principal y el médico no puede firmar ni arreglarlo salvo quitando y
   > volviendo a registrar. `encounter_diagnosis_one_primary` sigue garantizando
   > que nunca hay dos.
+- **EN-188** — MIENTRAS la atención tenga el alta (`DISCHARGED` o
+  `COMPLETED`), el médico DEBERÁ poder quitar un diagnóstico (EN-180) y marcar
+  otro como principal (EN-183), y quitarlo DEBERÁ exigir un **motivo escrito**;
+  SI falta, el sistema DEBERÁ rechazarlo con
+  `DIAGNOSIS_RETRACTION_REASON_REQUIRED`. Siguen valiendo EN-180 (archivo con
+  quién y cuándo) y EN-182 (la orden con exámenes vivos lo impide).
+  > **D-117.8, resuelta por el autor el 04-10-2026.** Enmendar la nota 002 no
+  > corrige el bloque K que va al RDACAA: éste lee los diagnósticos de la
+  > atención (EN-110), no el texto de la nota. Sin esta salida, un código mal
+  > puesto viajaba al Ministerio para siempre. Marcar otro como principal entra
+  > por lo mismo: quitar el principal sin poder nombrar otro dejaría la atención
+  > sin principal en el RDACAA.
+  >
+  > El alta implica una nota 002 firmada, así que EN-181 ya lo exigiría; se
+  > dice aparte porque la regla es del **alta**, no de la nota, y la base la
+  > garantiza por el estado: `encounter_diagnosis_retraction_admits` pide
+  > motivo a toda atención que no esté `OPEN` ni `ON_HOLD`.
+  >
+  > **Registrar un diagnóstico nuevo después del alta sigue sin poderse**
+  > (EN-009): queda en D-117.12.
+- **EN-189** — SI un **certificado emitido** de la atención —vigente o
+  anulado— imprimió el código CIE-10 del diagnóstico que se quita, ENTONCES
+  quitarlo DEBERÁ exigir un **motivo escrito**, y SI falta, el sistema DEBERÁ
+  rechazarlo con `DIAGNOSIS_RETRACTION_REASON_REQUIRED`; y la atención DEBERÁ
+  servir, con cada diagnóstico, si un certificado emitido lo cita, para que la
+  pantalla pida el motivo antes de enviar.
+  > **D-117.9, resuelta por el autor el 04-10-2026.** El certificado congeló
+  > sus diagnósticos al emitirse (CER-027, `medical_certificate.diagnoses`) y no
+  > cambia; la historia tiene que explicar por qué el papel dice otra cosa.
+  > **También el anulado**: el papel pudo circular antes de anularse, y pedir
+  > una frase cuesta poco. Se compara por **código** porque el certificado
+  > guarda el código y no la fila. **Garantía de la base**, en el mismo
+  > disparador del archivo.
 - **EN-184** — CUANDO el médico elija un concepto CIE-10 para registrar un
   diagnóstico, el sistema DEBERÁ **proponer** «subsecuente» si la misma
   **categoría** —los tres primeros caracteres— consta en una atención anterior
@@ -2930,7 +2963,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `VITALS_HEIGHT_POSITION_REQUIRED` | 422 | Talla sin posición, o posición sin talla. Del mapeo de constraints (`encounter_vitals_height_needs_position`), señala `heightPosition` | EN-064 |
 | `CHART_HAS_ALLERGIES` | 409 | Se afirmó «sin alergias conocidas» sobre una ficha con alergias sin descartar. Las dos no pueden ser ciertas a la vez, y quien lee la primera deja de mirar la lista. La salida es refutarlas **una a una con su motivo**, que es un juicio clínico por alergia y no el efecto colateral de marcar una casilla. Lo arbitra además `trg_patient_allergy_absence_empty_chart` | EN-087 |
 | `DIAGNOSIS_NOT_FOUND` | 404 | El diagnóstico no es de esa atención, o ya se quitó. **El mismo para ambas**, por lo de `ENCOUNTER_NOT_FOUND` | EN-180, EN-183 |
-| `DIAGNOSIS_RETRACTION_REASON_REQUIRED` | 422 | Quitar un diagnóstico sin motivo cuando la nota de consulta ya está firmada. Se exige **en el servicio** y en la base | EN-181 |
+| `DIAGNOSIS_RETRACTION_REASON_REQUIRED` | 422 | Quitar un diagnóstico sin motivo cuando hay una nota firmada, la atención tiene el alta o un certificado emitido imprimió su código. Se exige **en el servicio** y en la base | EN-181, EN-188, EN-189 |
 | `DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT` | 409 | Quitar un diagnóstico o cambiar el principal cuando la atención ya tiene una receta emitida o una orden. El mensaje dice que primero se anula el documento | EN-182 |
 
 **Los que NO entran en el catálogo congelado** son los derivados del mapeo de
@@ -3089,8 +3122,8 @@ que es global: una atención ocurre en un sitio.
 | `POST` | `/encounters/:id/consents/:consentId/revoke` | `record:write` | EN-154 |
 | `GET` | `/reports/rdacaa` | `audit:read` *(por decidir)* | EN-110, EN-115 |
 | `POST` | `/reports/rdacaa/submissions` | `audit:read` *(por decidir)* | EN-111 |
-| `POST` | `/encounters/:id/diagnoses/:diagnosisId/retract` | `record:write` | EN-180, EN-181, EN-182 |
-| `POST` | `/encounters/:id/diagnoses/:diagnosisId/primary` | `record:write` | EN-182, EN-183 |
+| `POST` | `/encounters/:id/diagnoses/:diagnosisId/retract` | `record:write` | EN-180, EN-181, EN-182, EN-188, EN-189 |
+| `POST` | `/encounters/:id/diagnoses/:diagnosisId/primary` | `record:write` | EN-182, EN-183, EN-188 |
 | `GET` | `/encounters/:id/diagnoses/occurrence-proposal` | `record:read` | EN-184 |
 | `GET` | `/encounters/visit-sequence-proposal` | `record:read` | EN-185 *(lleva el diagnóstico principal de una atención anterior)* |
 | `PUT` | `/encounters/:id/care-modality` | `record:write` | EN-187 |
@@ -3158,6 +3191,7 @@ prueba o el CI falla**.
 | EN-006, EN-007, EN-045 | **Unitario de dominio**: dos atenciones el mismo día existen las dos; primera vez / subsecuente **no** se deriva del historial; y el caso del esquema —diabetes de primera vez en una visita subsecuente por hipertensión— |
 | EN-046, EN-048 | Unitario de dominio: la clasificación prevención/morbilidad se deriva del rango `Z00`–`Z99` y **no** de lo que teclee nadie, con los códigos adaptados de cinco caracteres entre los casos |
 | EN-180, EN-181, EN-182 | **Integración contra PostgreSQL real**, con control positivo: el `DELETE` sin archivo se rechaza y con archivo pasa; el archivo no admite `UPDATE` ni `DELETE`; sin motivo con nota firmada se rechaza y sin nota firmada pasa; con receta emitida u orden se rechaza y con sólo un borrador pasa. Y **contar filas**: quitar no borra nada de la historia |
+| EN-188, EN-189 | **Integración contra PostgreSQL real**, con control positivo: con el alta, sin motivo se rechaza en la base aunque no haya nota firmada y con motivo pasa; con un certificado emitido —vigente o anulado— que imprimió el código, sin motivo se rechaza y con un certificado que imprimió otro código pasa. HTTP: quitar y cambiar el principal con el alta responden; interrumpida responde `ENCOUNTER_ALREADY_CLOSED` |
 | EN-183 | Integración: el principal cambia y el anterior pasa a un rango libre en una transacción; `encounter_diagnosis_one_primary` sigue sin admitir dos |
 | EN-184, EN-185 | Integración contra la base con fichas fusionadas y una atención anulada, con el reloj inyectado: la categoría cuenta, la anulada no, la absorbida sí; y **una** fila de bitácora por propuesta |
 | EN-063, EN-090, EN-092, EN-096, EN-097 | Unitario de dominio **con la edad congelada de la atención**, no con la de hoy: los cuatro son condiciones por población y todos caducan si se evalúan contra la fecha actual. Es el mismo razonamiento que PA-005 dejó escrito |

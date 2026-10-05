@@ -174,7 +174,9 @@ tomadas del CNMB, emitirla, anularla y leerla. Aquí van la coherencia
 emitirla, y comprobar que una tercera línea después de emitir se rechaza.
 
 **Cubre:** PR-001 a PR-011, PR-080, PR-081, PR-090 a PR-094, y **PR-100 a
-PR-104**: el borrador que se reescribe y la línea escrita con catálogos.
+PR-106**: el borrador que se reescribe, la línea escrita con catálogos, la
+dosis única sin duración y la vía sin preseleccionar.
+**Solo interfaz:** PR-106.
 **Solo servidor:** PR-081, PR-090 a PR-093. Son el permiso declarado en cada
 ruta, el alcance por sede y las filas de bitácora: se prueban contando filas y
 recorriendo las rutas registradas, no en una pantalla.
@@ -555,7 +557,8 @@ documento existe y es lo único que la ACESS puede inspeccionar.
   > pueden contradecirse, y el que gana en una inspección es el que dice menos.
 
 - **PR-031** — Cada línea de una receta emitida DEBERÁ llevar **dosis o
-  posología**, **frecuencia de administración** y **duración del tratamiento**.
+  posología**, **frecuencia de administración** y **duración del tratamiento**,
+  salvo la duración cuando la frecuencia es «Dosis única» (PR-105).
 
 - **PR-032** — SI al emitir falta cualquiera de los campos de PR-028 a PR-031,
   ENTONCES el sistema DEBERÁ rechazar la emisión con
@@ -1016,6 +1019,25 @@ admite una lista sale de una lista._
   > cargado, bloqueante externo— se receta como hoy, con la concentración
   > escrita. El catálogo de desarrollo las declara para los medicamentos de la
   > semilla. La regla es D-117.6.
+- **PR-105** — CUANDO la frecuencia de una línea sea el código `SINGLE_DOSE`
+  («Dosis única»), el sistema NO DEBERÁ exigir la duración al emitir, NO
+  DEBERÁ imprimirla, y SI la línea la trae, ENTONCES DEBERÁ rechazarla
+  nombrando el campo y la línea. Con cualquier otra frecuencia, la duración
+  sigue siendo obligatoria (PR-031).
+  > **D-117.10, resuelta por el autor el 04-10-2026.** «Dosis única · por 1
+  > día» era la duración obligatoria rellenada por obligación: una dosis única
+  > no dura. Rechazarla en vez de ignorarla, porque una duración junto a
+  > «Dosis única» es una contradicción que alguien escribió, y el papel no
+  > debe elegir cuál de las dos creer. Sólo el **código**: una frecuencia
+  > escrita a mano no se interpreta. Las recetas ya emitidas con «por 1 día»
+  > están congeladas y se reimprimen como se emitieron.
+- **PR-106** — CUANDO se añada una línea nueva a la receta, la pantalla NO
+  DEBERÁ traer la vía elegida, como no trae la forma ni la unidad, y DEBERÁ
+  pedir que se elija antes de emitir.
+  > **D-117.11, resuelta por el autor el 04-10-2026.** La vía oral venía
+  > marcada «porque un desplegable tiene que arrancar en algo»: es el valor
+  > por defecto que nadie cambia, el mismo argumento de PR-103. **Solo
+  > interfaz:** el servidor ya exige la vía (PR-101).
 
 ## Códigos de error nuevos
 
@@ -1166,6 +1188,8 @@ prueba o el CI falla**.
 | Requisitos | Nivel de prueba obligatorio |
 | --- | --- |
 | PR-003, PR-005, PR-009 | **Integración contra PostgreSQL real**, atacando la base directamente: `prescription_issued_coherence` y `prescription_item_off_formulary` son `CHECK`, y un doble que devuelve lo que le pedimos no demuestra que existan |
+| PR-105 | Unitaria del contenido y del DTO: con `SINGLE_DOSE` sin duración se emite y con duración se rechaza; con otra frecuencia sin duración se rechaza. HTTP: el documento emitido no dice «durante» ni «por N día» |
+| PR-106 | Interfaz: la línea nueva arranca sin vía y emitir sin elegirla se señala en el campo |
 | PR-100, PR-104 | **Integración contra PostgreSQL real**, con control positivo: reescribir un borrador conserva su id y sustituye las líneas; las de una emitida no se tocan ni desde la base; otra presentación de un concepto que declara las suyas exige justificación |
 | PR-062 | **Integración contra PostgreSQL real, con una fusión de fichas de por medio.** Es el único nivel que puede demostrarlo: depende de que el enlace se recorra en la base, y `patient-chart-scope.spec.ts` caza la lectura por `patient_id` desnudo recorriendo el AST |
 | PR-050 | **Unitario con el huso alterado**, como `clinical-date-timezone.spec.ts`: la misma emisión bajo `UTC` y bajo `Asia/Tokyo` da la misma fecha límite. Es el defecto real que originó REQ-160 |
