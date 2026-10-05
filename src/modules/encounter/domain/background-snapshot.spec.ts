@@ -6,7 +6,9 @@ import {
   backgroundSnapshotIn,
   backgroundSnapshotOf,
   coversBackgroundSection,
+  draftContent,
   withBackgroundSnapshot,
+  type BackgroundSnapshot,
 } from './background-snapshot';
 import { NoteContentIncompleteError } from './encounter.errors';
 import { contentHashOf } from './clinical-note';
@@ -207,12 +209,53 @@ describe('la sección de antecedentes cubierta por lo registrado', () => {
   });
 
   it('EN-207 el borrador conserva la constancia hasta la firma', () => {
-    const draft = withBackgroundSnapshot(
-      { ...noText, [BACKGROUND_DENIED_KEY]: true },
+    const draft = draftContent({ ...noText, [BACKGROUND_DENIED_KEY]: true });
+
+    expect(draft[BACKGROUND_DENIED_KEY]).toBe(true);
+  });
+
+  it('EN-207 con texto en antecedentes la constancia no se congela: la nota no se contradice', () => {
+    const signed = withBackgroundSnapshot(
+      {
+        ...COMPLETE_002,
+        antecedentes: 'HTA desde 2019',
+        [BACKGROUND_DENIED_KEY]: true,
+      },
+      snapshot({}),
+    );
+
+    expect(backgroundSnapshotIn(signed)?.historyDenied).toBe(false);
+    expect(signed).not.toHaveProperty(BACKGROUND_DENIED_KEY);
+  });
+
+  it('EN-025 EN-207 la enmienda decide su constancia: la que no la trae la retira', () => {
+    const inherited = { ...snapshot({}), historyDenied: true };
+
+    const amended = withBackgroundSnapshot(
+      { ...COMPLETE_002, antecedentes: 'HTA' },
+      inherited,
+    );
+
+    expect(backgroundSnapshotIn(amended)?.historyDenied).toBe(false);
+  });
+
+  it('EN-207 una foto firmada antes de la constancia se juzga con su regla: la alergia la cubría', () => {
+    const legacy: BackgroundSnapshot = snapshot({ allergies: [PENICILLIN] });
+    delete legacy.historyDenied;
+
+    const amended = withBackgroundSnapshot(noText, legacy);
+
+    expect(backgroundSnapshotIn(amended)).not.toHaveProperty('historyDenied');
+    expect(() => assertNoteComplete(form, amended)).not.toThrow();
+  });
+
+  it('EN-207 sin foto (nota anterior a EN-206) la constancia no queda suelta en lo firmado', () => {
+    const sealed = withBackgroundSnapshot(
+      { ...COMPLETE_002, [BACKGROUND_DENIED_KEY]: true },
       null,
     );
 
-    expect(draft[BACKGROUND_DENIED_KEY]).toBe(true);
+    expect(sealed).not.toHaveProperty(BACKGROUND_DENIED_KEY);
   });
 
   it('EN-207 da por escrita la sección sin texto si hay un antecedente registrado', () => {

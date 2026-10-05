@@ -12,6 +12,8 @@ import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
+import { PrismaPatientRepository } from '../../src/modules/patients/infrastructure/prisma-patient.repository';
+import { parseClinicalDate } from '../../src/shared/domain/clinic-time';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
@@ -651,6 +653,50 @@ describe('los grupos prioritarios por HTTP', () => {
       select: { endsOn: true, closedAt: true, closedById: true },
     });
     expect(after).toEqual(first);
+  });
+
+  it('PA-037 the repository refuses a closure that lost the race, keeping the first one', async () => {
+    // Two closures that both read the row open: the service let both through,
+    // and the conditional update is what decides. Called on the repository so
+    // the service's own check cannot answer first.
+    const created = await recordGroup({
+      group: 'DISABILITY',
+      startsOn: daysFromToday(-200),
+      origin: 'SELF_DECLARED',
+    }).expect(201);
+    const recordId = (created.body as PriorityGroupBody).id;
+    const repository = new PrismaPatientRepository(
+      prisma as unknown as PrismaService,
+    );
+
+    // Positive control: the first one writes.
+    await expect(
+      repository.closePriorityGroup({
+        patientId,
+        recordId,
+        endsOn: parseClinicalDate(daysFromToday(-2)),
+        closedById: medicoUserId,
+      }),
+    ).resolves.toMatchObject({ id: recordId });
+    const first = await prisma.patientPriorityGroup.findUniqueOrThrow({
+      where: { id: recordId },
+      select: { endsOn: true, closedAt: true, closedById: true },
+    });
+
+    await expect(
+      repository.closePriorityGroup({
+        patientId,
+        recordId,
+        endsOn: parseClinicalDate(daysFromToday(-1)),
+        closedById: medicoUserId,
+      }),
+    ).rejects.toMatchObject({ code: 'PRIORITY_GROUP_ALREADY_CLOSED' });
+    await expect(
+      prisma.patientPriorityGroup.findUniqueOrThrow({
+        where: { id: recordId },
+        select: { endsOn: true, closedAt: true, closedById: true },
+      }),
+    ).resolves.toEqual(first);
   });
 
   it('PA-037 refuses to rewrite a closure in the database too, and admits the first one', async () => {

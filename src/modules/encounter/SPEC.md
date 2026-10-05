@@ -861,7 +861,13 @@ requisitos que cambian.
   > atención dada de alta que el RDACAA no puede reportar. **Garantía de la
   > base:** `trg_clinical_note_sign_needs_diagnosis`, diferido al final de la
   > transacción, rechaza que una nota 002 pase de `DRAFT` a `SIGNED` si la
-  > atención queda con el alta y sin ninguna fila en `encounter_diagnosis`.
+  > atención queda con el alta y sin ninguna fila en `encounter_diagnosis`. Lo
+  > que cubre es **la firma**: un alta escrita en otra sentencia sin firmar la
+  > nota (un `UPDATE encounter` desde `psql`, una importación que inserta la
+  > 002 ya firmada) no lo dispara, y hoy el único camino de código que da el
+  > alta es esta firma. La firma bloquea la atención (`FOR UPDATE`) antes de
+  > contar, así que quitar el último diagnóstico mientras se firma espera a la
+  > firma y no se cuela entre el conteo y el alta.
   > Diferido porque interrumpir (EN-167) también firma la 002 y deja la atención
   > `DISCONTINUED` sin exigir diagnóstico, y sólo al confirmar se sabe cuál de
   > las dos fue. La enmienda, que nace firmada, no lo necesita: parte de una
@@ -1349,9 +1355,10 @@ requisitos que cambian.
   > la restricción que falló —el valor viaja en la fila, que nunca se lee—: así el
   > 422 `VITALS_OUT_OF_RANGE` señala la casilla (`weightKg`, `temperatureC`…) con
   > un mensaje que dice el rango. El par sistólica/diastólica señala `systolicBp`.
-- **EN-063** — MIENTRAS el paciente sea **menor de 5 años** o tenga registrado el
-  grupo prioritario **embarazada**, el sistema DEBERÁ exigir peso, talla y
-  perímetro cefálico; para el resto DEBERÁN ser opcionales.
+- **EN-063** — MIENTRAS el paciente sea **menor de 5 años**, el sistema DEBERÁ
+  exigir peso, talla y perímetro cefálico; MIENTRAS tenga registrado el grupo
+  prioritario **embarazada**, DEBERÁ exigir peso y talla (D-129); para el resto
+  DEBERÁN ser opcionales.
   > Es literal de la nota del instructivo al bloque D (p. 44): *«los datos
   > antropométricos con \* es obligatorio para usuarios menores de 5 años o que
   > corresponda al grupo prioritario "Embarazadas"; para el resto de usuarios el
@@ -1371,8 +1378,8 @@ requisitos que cambian.
   >   protege. Cuando EN-099 tenga catálogo, la fuente pasa a ser la atención.
   > - **Qué se exige a la embarazada: peso y talla.** El instructivo pone
   >   asterisco también al perímetro cefálico, que la misma página describe como
-  >   «la medida… de la cabeza del niño». **D-129** (pendiente) recomienda no
-  >   exigirlo en la gestante, y es lo que se construye mientras tanto.
+  >   «la medida… de la cabeza del niño». **D-129** (resuelta por el autor el
+  >   05-10-2026) no lo exige en la gestante.
   >
   > El error no dice cuál de las dos condiciones se cumplió: `VITALS_REQUIRED`
   > nombra los campos y la frase cubre las dos.
@@ -3091,9 +3098,16 @@ dejaba ver su atención._
   > como `backgroundDenied: true` —el único valor del contenido que no es
   > texto, y sólo admite `true`—, se marca con un clic y sin motivo (D-126), y
   > al firmar pasa a la foto como `historyDenied`, dentro del hash (EN-027);
-  > quién y cuándo son el firmante y el instante de la firma. **Con un
-  > antecedente registrado no se congela**: la nota diría las dos cosas. La
-  > enmienda conserva la de su original.
+  > quién y cuándo son el firmante y el instante de la firma. **No se congela
+  > si algo la contradice**: un antecedente registrado o texto escrito en la
+  > sección. La nota diría las dos cosas.
+  >
+  > **Cada firma decide la suya, también la enmienda** (EN-025): la constancia
+  > sale del contenido que se firma, nunca de la foto heredada, así que una
+  > enmienda puede retirar una constancia marcada por error. **Una foto firmada
+  > antes de esta regla** (sin `historyDenied`) se juzga con la regla con que
+  > se firmó, en la que una alergia cubría la sección. Así, enmendar una nota
+  > antigua no exige lo que su firma no exigía.
 - **EN-208** — El sistema DEBERÁ permitir buscar las atenciones de una ficha
   **por la cita** de la que nacieron, en cualquier estado salvo anulada por
   error, con `record:read`.

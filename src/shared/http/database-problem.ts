@@ -239,6 +239,41 @@ const IMMUTABILITY_TRIGGER =
  * Duck-typed on what every Prisma client error carries — a `P` code of four
  * digits and a `clientVersion` — so this layer needs no Prisma import.
  */
+/**
+ * The error as Prisma's shape, or `undefined` when it is none of ours.
+ *
+ * ⚠️ A DEFERRED CONSTRAINT FAILS AT THE COMMIT, and the commit of an
+ * interactive transaction is run by the driver adapter itself: what reaches
+ * the caller is the adapter's `DriverAdapterError`, NOT wrapped in a Prisma
+ * error (captured with `trg_clinical_note_sign_needs_diagnosis`, EN-020). Its
+ * `cause` is the same object Prisma would put under
+ * `meta.driverAdapterError.cause`, so it is read the same way; the `P2010`
+ * («raw query failed») only tells the checks below that it is not a P2025 or
+ * an outage.
+ */
+function asPrismaError(
+  exception: unknown,
+): (PrismaErrorLike & { code: string }) | undefined {
+  if (isPrismaError(exception)) return exception;
+  if (
+    exception instanceof Error &&
+    exception.name === 'DriverAdapterError' &&
+    typeof exception.cause === 'object' &&
+    exception.cause !== null
+  ) {
+    return {
+      code: 'P2010',
+      clientVersion: '',
+      meta: {
+        driverAdapterError: {
+          cause: exception.cause,
+        },
+      },
+    };
+  }
+  return undefined;
+}
+
 function isPrismaError(
   exception: unknown,
 ): exception is PrismaErrorLike & { code: string } {
@@ -302,9 +337,10 @@ function constraintName(
  * are read.
  */
 export function extractDatabaseProblem(
-  exception: unknown,
+  thrown: unknown,
 ): DatabaseProblem | undefined {
-  if (!isPrismaError(exception)) return undefined;
+  const exception = asPrismaError(thrown);
+  if (!exception) return undefined;
 
   // P2025: the row the operation depended on is gone. Prisma resolves this one
   // itself, so there is no SQLSTATE to read.

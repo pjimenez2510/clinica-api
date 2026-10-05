@@ -548,14 +548,6 @@ export class PrismaEncounterRepository implements EncounterRepository {
     return toVitalsView(row);
   }
 
-  /**
-   * EN-068. Block D of one attention.
-   *
-   * NARROWED BY THE ATTENTION'S OWN SCOPE and not by the vitals table, which
-   * has no site of its own: reading through the relation is what keeps an
-   * attention of another site from answering its measurements to a caller who
-   * cannot open the attention itself.
-   */
   /** EN-063. A PREGNANT record of the chart, in force on that clinical date. */
   async isPregnantOn(patientId: string, on: ClinicalDate): Promise<boolean> {
     const day = new Date(`${on}T00:00:00Z`);
@@ -573,6 +565,14 @@ export class PrismaEncounterRepository implements EncounterRepository {
     return found !== null;
   }
 
+  /**
+   * EN-068. Block D of one attention.
+   *
+   * NARROWED BY THE ATTENTION'S OWN SCOPE and not by the vitals table, which
+   * has no site of its own: reading through the relation is what keeps an
+   * attention of another site from answering its measurements to a caller who
+   * cannot open the attention itself.
+   */
   async findVitals(query: EncounterQuery): Promise<VitalSignsView | null> {
     const row = await this.prisma.encounterVitals.findFirst({
       where: {

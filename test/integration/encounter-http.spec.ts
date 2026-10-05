@@ -13,6 +13,7 @@ import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { contentHashOf } from '../../src/modules/encounter/domain/clinical-note';
+import { extractDatabaseProblem } from '../../src/shared/http/database-problem';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
@@ -784,6 +785,62 @@ describe('la atención por HTTP', () => {
       ).expect(200);
     });
 
+    it('EN-063 lee el embarazo en la fecha de la atencion, con los extremos incluidos y la ficha absorbida', async () => {
+      const nurse = await prisma.user.findUniqueOrThrow({
+        where: { email: 'enfermeria@clinica.ec' },
+      });
+      const opened = new Date(openBody().startedAt);
+      const [year, month, day] = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Guayaquil',
+      })
+        .format(opened)
+        .split('-')
+        .map(Number) as [number, number, number];
+      const daysFrom = (days: number) =>
+        new Date(Date.UTC(year, month - 1, day + days));
+      const pregnancy = (patientId: string, startsOn: Date, endsOn: Date) =>
+        prisma.patientPriorityGroup.create({
+          data: {
+            patientId,
+            groupCode: 'PREGNANT',
+            startsOn,
+            endsOn,
+            origin: 'SELF_DECLARED',
+            recordedById: nurse.id,
+          },
+        });
+      const vitalsOf = async (patientId: string, status: number) => {
+        const encounterId = await openEncounter(nurseToken, { patientId });
+        await put(`/encounters/${encounterId}/vitals`, nurseToken, {
+          hemoglobinGDl: 11.5,
+        }).expect(status);
+      };
+
+      // In force from the attention's own day, and until its own day.
+      const startsThatDay = await createPatient(prisma);
+      await pregnancy(startsThatDay.id, daysFrom(0), daysFrom(200));
+      await vitalsOf(startsThatDay.id, 422);
+      const endsThatDay = await createPatient(prisma);
+      await pregnancy(endsThatDay.id, daysFrom(-200), daysFrom(0));
+      await vitalsOf(endsThatDay.id, 422);
+
+      // On the chart it absorbed (PA-055).
+      const survivor = await createPatient(prisma);
+      const absorbed = await createPatient(prisma);
+      await pregnancy(absorbed.id, daysFrom(-30), daysFrom(200));
+      await prisma.patient.update({
+        where: { id: absorbed.id },
+        data: { mergedIntoId: survivor.id, mergedAt: new Date() },
+      });
+      await vitalsOf(survivor.id, 422);
+
+      // Positive control on the date: a pregnancy that began AFTER the
+      // attention — in force today, not that day — demands nothing.
+      const later = await createPatient(prisma);
+      await pregnancy(later.id, daysFrom(1), daysFrom(400));
+      await vitalsOf(later.id, 200);
+    });
+
     it('EN-064 rechaza por HTTP una talla sin posicion, senalando la casilla', async () => {
       const encounterId = await openEncounter(nurseToken);
 
@@ -1235,6 +1292,58 @@ describe('la atención por HTTP', () => {
       );
     });
 
+    it('EN-025 EN-207 la enmienda retira una constancia marcada por error, escribiendo los antecedentes', async () => {
+      const encounterId = await openEncounter();
+      await createDiagnosis(prisma, encounterId, 'J00');
+      const draft = await post(
+        `/encounters/${encounterId}/notes`,
+        doctorToken,
+        {
+          formCode: '002',
+          content: {
+            ...COMPLETE_002,
+            antecedentes: '',
+            backgroundDenied: true,
+          },
+        },
+      ).expect(201);
+      const noteId = (draft.body as NoteBody).id;
+      await post(
+        `/encounters/${encounterId}/notes/${noteId}/sign`,
+        doctorToken,
+        {
+          dischargeCondition: 'ALIVE',
+        },
+      ).expect(200);
+
+      const amended = await post(
+        `/encounters/${encounterId}/notes/${noteId}/amend`,
+        doctorToken,
+        {
+          content: {
+            ...COMPLETE_002,
+            antecedentes: 'Hipertensión arterial desde 2019',
+          },
+          amendmentReason: 'El paciente recordó su hipertensión',
+        },
+      ).expect(201);
+
+      const stored = await prisma.clinicalNote.findUniqueOrThrow({
+        where: { id: (amended.body as NoteBody).id },
+      });
+      const content = stored.content as Record<string, unknown>;
+      expect(content.backgroundSnapshot).toMatchObject({
+        historyDenied: false,
+      });
+      // Positive control: the version it corrects keeps what it said.
+      const original = await prisma.clinicalNote.findUniqueOrThrow({
+        where: { id: noteId },
+      });
+      expect(
+        (original.content as Record<string, unknown>).backgroundSnapshot,
+      ).toMatchObject({ historyDenied: true });
+    });
+
     it('EN-207 un antecedente familiar registrado cubre antecedentes sin texto ni constancia', async () => {
       await post(`/patients/${patientId}/history`, doctorToken, {
         kind: 'FAMILY',
@@ -1366,18 +1475,20 @@ describe('la atención por HTTP', () => {
       };
       // What the signing adapter does, in one transaction: sign, then end the
       // attention. The trigger is deferred to the commit.
+      // An INTERACTIVE transaction, as the adapter's: the refusal arrives at
+      // the commit, and that is the error the HTTP filter has to read.
       const signAndEnd = (
         ids: { encounterId: string; noteId: string },
         ending: 'DISCHARGED' | 'DISCONTINUED',
       ) =>
-        prisma.$transaction([
-          prisma.$executeRaw`
+        prisma.$transaction(async (tx) => [
+          await tx.$executeRaw`
             UPDATE clinical_note
                SET status = 'SIGNED', signed_at = now(),
                    signed_by_id = ${signerId}::uuid, content_hash = repeat('a', 64)
              WHERE id = ${ids.noteId}::uuid`,
           ending === 'DISCHARGED'
-            ? prisma.encounter.update({
+            ? await tx.encounter.update({
                 where: { id: ids.encounterId },
                 data: {
                   status: 'DISCHARGED',
@@ -1385,7 +1496,7 @@ describe('la atención por HTTP', () => {
                   dischargeCondition: 'ALIVE',
                 },
               })
-            : prisma.encounter.update({
+            : await tx.encounter.update({
                 where: { id: ids.encounterId },
                 data: {
                   status: 'DISCONTINUED',
@@ -1399,9 +1510,14 @@ describe('la atención por HTTP', () => {
         ]);
 
       const refused = await draft002();
-      await expect(signAndEnd(refused, 'DISCHARGED')).rejects.toThrow(
-        /clinical_note_sign_needs_diagnosis/,
+      const error: unknown = await signAndEnd(refused, 'DISCHARGED').catch(
+        (thrown: unknown) => thrown,
       );
+      // Read at the commit, and translated as the service would answer.
+      expect(extractDatabaseProblem(error)).toMatchObject({
+        code: 'NOTE_CONTENT_INCOMPLETE',
+        errors: [expect.objectContaining({ field: 'diagnoses' })],
+      });
       await expect(
         prisma.clinicalNote.findUniqueOrThrow({
           where: { id: refused.noteId },

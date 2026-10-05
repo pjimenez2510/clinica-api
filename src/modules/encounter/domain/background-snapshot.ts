@@ -105,38 +105,62 @@ export function backgroundSnapshotOf(input: {
 }
 
 /**
- * EN-206. The content with THIS snapshot under the reserved key, or with none
- * when `snapshot` is null — never with the one the caller sent.
+ * EN-206, EN-207. A draft's content as the server stores it: never with a
+ * snapshot the caller sent, and with its «niega antecedentes» kept until the
+ * signature.
+ */
+export function draftContent(content: NoteContent): NoteContent {
+  return Object.fromEntries(
+    Object.entries(content).filter(([key]) => key !== BACKGROUND_SNAPSHOT_KEY),
+  );
+}
+
+/**
+ * EN-206, EN-207. The content a SIGNATURE seals: with THIS snapshot under the
+ * reserved key, or with none when `snapshot` is null — never with the one the
+ * caller sent — and never with the draft's «niega antecedentes» loose in it.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * «NIEGA ANTECEDENTES» MOVES INTO THE SNAPSHOT, AND ONLY WHEN IT IS TRUE
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * It is frozen as `historyDenied` only when nothing contradicts it: no
+ * personal or family history recorded, and no text written in
+ * «antecedentes». A note saying both would contradict itself, and it is what
+ * a court would be shown.
+ *
+ * EACH SIGNATURE DECIDES ITS OWN, the amendment included: the statement comes
+ * from the content being signed, never from the snapshot inherited, so an
+ * amendment can take back a «niega» marked by mistake (EN-025). A snapshot
+ * signed before the statement existed has no `historyDenied` key, and it is
+ * left without one unless this signature states it: that is what keeps such
+ * a note judged by the rule it was signed under (`coversBackgroundSection`).
  */
 export function withBackgroundSnapshot(
   content: NoteContent,
   snapshot: BackgroundSnapshot | null,
 ): NoteContent {
-  const rest = Object.fromEntries(
-    Object.entries(content).filter(([key]) => key !== BACKGROUND_SNAPSHOT_KEY),
+  const denied = content[BACKGROUND_DENIED_KEY];
+  const prose = Object.fromEntries(
+    Object.entries(content).filter(
+      ([key]) =>
+        key !== BACKGROUND_SNAPSHOT_KEY && key !== BACKGROUND_DENIED_KEY,
+    ),
   );
-  if (!snapshot) return rest;
+  if (!snapshot) return prose;
 
-  /**
-   * EN-207. At the signature the draft's «niega antecedentes» becomes part of
-   * the snapshot, and the snapshot is then the only place that says it. With
-   * a history entry recorded it does not apply and is not frozen: a note
-   * stating both would contradict itself. An amendment keeps what its
-   * original froze.
-   */
-  const { [BACKGROUND_DENIED_KEY]: denied, ...prose } = rest;
-  const nothingRecorded =
-    snapshot.personalHistory.length === 0 &&
-    snapshot.familyHistory.length === 0;
+  const text = prose[BACKGROUND_SECTION];
   const historyDenied =
-    snapshot.historyDenied === true || (denied === true && nothingRecorded);
-  return {
-    ...prose,
-    // An inherited snapshot that never had the key is copied as it was.
-    [BACKGROUND_SNAPSHOT_KEY]: historyDenied
-      ? { ...snapshot, historyDenied }
-      : snapshot,
-  };
+    denied === true &&
+    snapshot.personalHistory.length === 0 &&
+    snapshot.familyHistory.length === 0 &&
+    (typeof text !== 'string' || text.trim() === '');
+  const { historyDenied: inherited, ...facts } = snapshot;
+  const sealed: BackgroundSnapshot =
+    historyDenied || inherited !== undefined
+      ? { ...facts, historyDenied }
+      : facts;
+  return { ...prose, [BACKGROUND_SNAPSHOT_KEY]: sealed };
 }
 
 /** The snapshot a signed note carries, or `null` (notes signed before it). */
@@ -159,9 +183,13 @@ export function coversBackgroundSection(
   snapshot: BackgroundSnapshot | null,
 ): boolean {
   if (!snapshot) return false;
-  return (
-    snapshot.personalHistory.length > 0 ||
-    snapshot.familyHistory.length > 0 ||
-    snapshot.historyDenied === true
-  );
+  const historyRecorded =
+    snapshot.personalHistory.length > 0 || snapshot.familyHistory.length > 0;
+  // A snapshot signed before D-125 was adjusted (no `historyDenied` key) is
+  // judged by the rule it was signed under, where an allergy covered the
+  // section: amending it must not demand what its signature did not.
+  if (snapshot.historyDenied === undefined) {
+    return historyRecorded || snapshot.allergies.length > 0;
+  }
+  return historyRecorded || snapshot.historyDenied;
 }

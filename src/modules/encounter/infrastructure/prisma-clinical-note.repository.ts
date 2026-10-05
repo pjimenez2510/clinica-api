@@ -266,6 +266,12 @@ export class PrismaClinicalNoteRepository implements ClinicalNoteRepository {
   ): Promise<ClinicalNoteView> {
     return this.prisma.$transaction(async (tx) => {
       const note = await requireNote(tx, query);
+      // EN-020. Locked before the diagnoses are counted, as every writer of
+      // the attention does: a diagnosis removed meanwhile waits for this
+      // signature instead of slipping between the count and the discharge.
+      await tx.$queryRaw`
+        SELECT 1 FROM "encounter" WHERE "id" = ${note.encounterId}::uuid FOR UPDATE
+      `;
       const encounter = await requireEncounter(
         tx,
         query.encounterId,

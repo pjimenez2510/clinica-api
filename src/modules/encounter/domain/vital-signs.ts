@@ -131,9 +131,9 @@ export function assertBmiNotSupplied(body: { readonly bmi?: unknown }): void {
  *
  * THE PREGNANT WOMAN IS ASKED FOR WEIGHT AND HEIGHT, NOT THE HEAD
  * CIRCUMFERENCE. The instructivo stars all three, and describes the third as
- * the measure «de la cabeza del niño»; D-129 recommends not demanding it of a
- * pregnant adult, and that is what is built while it is pending. Whether she
- * is pregnant is the caller's to answer, on the attention's clinical date.
+ * the measure «de la cabeza del niño»; D-129 (resolved 05-10-2026) does not
+ * demand it of a pregnant adult. Whether she is pregnant is the caller's to
+ * answer, on the attention's clinical date.
  *
  * ALL THE MISSING FIELDS AT ONCE, never the first one: a nurse correcting a
  * form one refusal at a time is a nurse who stops reading them.

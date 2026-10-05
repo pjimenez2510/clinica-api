@@ -395,6 +395,13 @@ export class BmiIsDerivedError extends ValidationError {
   }
 }
 
+/** EN-063. How each measurement is named in a refusal. */
+const ANTHROPOMETRY_LABELS: Readonly<Record<string, string>> = {
+  weightKg: 'Peso',
+  heightCm: 'Talla',
+  headCircumferenceCm: 'Perímetro cefálico',
+};
+
 /**
  * EN-063. Anthropometry that the instructivo makes obligatory is missing.
  *
@@ -403,18 +410,12 @@ export class BmiIsDerivedError extends ValidationError {
  * corresponda al grupo prioritario "Embarazadas"»*.
  *
  * ONE SENTENCE FOR BOTH CONDITIONS. Which one applied is not said: the
- * pregnancy is a priority group whose reason PA-040 keeps behind its own
- * permission, and a refusal is not the place to reveal it.
+ * nurse already has the patient in front of her, and the fields named are
+ * what she has to fill.
  *
  * THE MISSING FIELDS ARE NAMED ONE BY ONE: «faltan datos» sends a nurse round
  * a form where three boxes could be the one.
  */
-const ANTHROPOMETRY_LABELS: Readonly<Record<string, string>> = {
-  weightKg: 'Peso',
-  heightCm: 'Talla',
-  headCircumferenceCm: 'Perímetro cefálico',
-};
-
 export class VitalsRequiredError extends ValidationError {
   readonly code = 'VITALS_REQUIRED';
   override readonly userTitle =
@@ -505,14 +506,10 @@ export class NoteContentIncompleteError extends ValidationError {
     /** EN-020. The 002 discharges the attention, and that needs a diagnosis. */
     withoutDiagnosis = false,
   ) {
+    const named = withoutDiagnosis ? [...missing, 'diagnoses'] : missing;
     super(
-      `Form is missing mandatory sections: ${[...missing, ...(withoutDiagnosis ? ['diagnoses'] : [])].join(', ')}`,
-      {
-        missing: [...missing, ...(withoutDiagnosis ? ['diagnoses'] : [])].join(
-          ',',
-        ),
-        invalid: invalid.join(','),
-      },
+      `Form is missing mandatory sections: ${named.join(', ')}`,
+      { missing: named.join(','), invalid: invalid.join(',') },
       [
         ...missing.map((section) => ({
           field: `content.${section}`,

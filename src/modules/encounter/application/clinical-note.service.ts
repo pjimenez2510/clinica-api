@@ -15,6 +15,7 @@ import {
 } from '../domain/clinical-note';
 import {
   backgroundSnapshotIn,
+  draftContent,
   withBackgroundSnapshot,
   type BackgroundSnapshot,
 } from '../domain/background-snapshot';
@@ -179,7 +180,7 @@ export class ClinicalNoteService {
       formVersion: request.formVersion,
       templateId: template.id,
       // EN-206. The snapshot is the server's to write, at the signature.
-      content: withBackgroundSnapshot(request.content, null),
+      content: draftContent(request.content),
       authorId: author.practitionerId,
       authorUserId: requester.userId,
       sites: requester.sites,
@@ -248,7 +249,7 @@ export class ClinicalNoteService {
         noteId: request.noteId,
         sites: requester.sites,
       },
-      withBackgroundSnapshot(request.content, null),
+      draftContent(request.content),
       (note) => assertEditable(note.status),
     );
 
