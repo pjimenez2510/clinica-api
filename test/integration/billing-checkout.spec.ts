@@ -8,6 +8,7 @@ import { PatientAccountService } from '../../src/modules/billing/application/pat
 import { PrismaBillingAccountRepository } from '../../src/modules/billing/infrastructure/prisma-billing-account.repository';
 import { PrismaBillingCatalogueRepository } from '../../src/modules/billing/infrastructure/prisma-billing-catalogue.repository';
 import { PrismaClinicalActsRepository } from '../../src/modules/billing/infrastructure/prisma-clinical-acts.repository';
+import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import { extractDatabaseProblem } from '../../src/shared/http/database-problem';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
@@ -166,9 +167,12 @@ beforeEach(async () => {
       new PrismaClinicalActsRepository(asService),
       accountRepository,
       catalogueRepository,
-      new PatientAccountService(accountRepository, catalogueRepository, {
-        record: () => Promise.resolve(),
-      }),
+      new PatientAccountService(
+        accountRepository,
+        catalogueRepository,
+        { record: () => Promise.resolve() },
+        new PrismaClinicalActsRepository(asService),
+      ),
     ),
     siteId: site.id,
     patientId: patient.id,
@@ -198,7 +202,9 @@ async function aSutureWasPerformed(
 }
 
 /** One blood count, ordered from the visit. */
-async function aBloodCountWasOrdered(): Promise<string> {
+async function aBloodCountWasOrdered(
+  requestedAt = VISIT_STARTED_AT,
+): Promise<string> {
   const order = await context.prisma.serviceOrder.create({
     data: {
       encounterId: context.encounterId,
@@ -210,7 +216,7 @@ async function aBloodCountWasOrdered(): Promise<string> {
         })
       ).practitionerId,
       category: 'LABORATORY',
-      requestedAt: VISIT_STARTED_AT,
+      requestedAt,
       items: {
         create: {
           conceptId: context.procedureConceptId,
@@ -285,6 +291,24 @@ describe('BI-150, BI-151 el costo sale de lo que realmente se hizo', () => {
       '2026-09-14',
       '2026-09-14',
     ]);
+  });
+});
+
+describe('BI-193 el examen se cobra con la fecha de la atención', () => {
+  it('BI-193 un borrador emitido al día siguiente se cobra con la fecha clínica de la atención', async () => {
+    // ORD-098: la orden lleva el instante de su EMISIÓN. Emitida un día
+    // después de la visita, su fecha no es la del acto que se vendió.
+    const nextDay = new Date(VISIT_STARTED_AT.getTime() + 86_400_000);
+    await aBloodCountWasOrdered(nextDay);
+
+    const result = await press();
+    const exam = result.statement.charges.find((line) => line.origin === 'EXAM'); // prettier-ignore
+    const consultation = result.statement.charges.find((line) => line.origin === 'CONSULTATION'); // prettier-ignore
+
+    expect(exam?.serviceDate).toBe(clinicalDateOf(VISIT_STARTED_AT));
+    expect(exam?.serviceDate).toBe(consultation?.serviceDate);
+    // Control positivo: el día siguiente es otra fecha clínica.
+    expect(clinicalDateOf(nextDay)).not.toBe(exam?.serviceDate);
   });
 });
 

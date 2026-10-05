@@ -117,15 +117,27 @@ export interface ExamAdministrationRepository {
   createAnalyte(code: string, analyte: AnalyteWrite): Promise<AdminAnalyteView>;
   updateAnalyte(id: string, analyte: AnalyteWrite): Promise<AdminAnalyteView>;
   /**
-   * ORD-106, ORD-110. Replaces the analyte's REFERENCE and CRITICAL ranges
-   * whole; ABSOLUTE ones, which this screen does not edit, stay. No result
-   * points at a range row —each froze the range it applied (ORD-037)—, so
-   * nothing registered moves.
+   * ORD-106, ORD-113. Replaces the analyte's REFERENCE and CRITICAL ranges
+   * whole —ABSOLUTE ones, which this screen does not edit, stay— WITHOUT
+   * DELETING ANY ROW: the ones in force that change or go are closed at
+   * `now`, the new ones open at `now`, and the ones that stay equal stay
+   * open, so the history only records what changed.
    */
   setRanges(
     analyteId: string,
     ranges: readonly ReferenceRange[],
+    now: Date,
   ): Promise<AdminAnalyteView>;
+
+  /** ORD-114. Every range the analyte ever had, open and closed. */
+  rangeHistory(analyteId: string): Promise<RangeVersion[]>;
+}
+
+/** ORD-113. One row of a range's history, with the time it applied. */
+export interface RangeVersion extends ReferenceRange {
+  validFrom: Date;
+  /** `null` while it is the one in force. */
+  validTo: Date | null;
 }
 
 /** Injection token. The application never names the adapter. */

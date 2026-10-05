@@ -12,6 +12,7 @@ import {
   type ServiceOrderRepository,
   type ServiceOrderView,
   type SiteScopeFilter,
+  type StaleDraftEntry,
 } from '../domain/service-order.repository';
 import {
   EXAM_CATALOGUE_REPOSITORY,
@@ -269,6 +270,14 @@ export class ServiceOrderService {
     const order = await this.orders.byId({ orderId, sites: requester.sites });
     if (!order) throw new OrderNotFoundError();
     return order;
+  }
+
+  /** ORD-115. The caller's drafts left behind, within their scope. */
+  staleDrafts(requester: Requester): Promise<StaleDraftEntry[]> {
+    return this.orders.staleDrafts({
+      userId: requester.userId,
+      sites: requester.sites,
+    });
   }
 
   /** ORD-002, ORD-009. The orders of one attention, newest first. */

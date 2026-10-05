@@ -83,8 +83,20 @@ export async function seedExams(prisma: PrismaClient) {
       decimals: 1,
       referenceRanges: {
         create: [
-          { sex: 'MALE', rangeKind: 'REFERENCE', low: '13.0', high: '17.0' },
-          { sex: 'FEMALE', rangeKind: 'REFERENCE', low: '12.0', high: '15.5' },
+          {
+            sex: 'MALE',
+            rangeKind: 'REFERENCE',
+            low: '13.0',
+            high: '17.0',
+            validFrom: new Date(),
+          },
+          {
+            sex: 'FEMALE',
+            rangeKind: 'REFERENCE',
+            low: '12.0',
+            high: '15.5',
+            validFrom: new Date(),
+          },
         ],
       },
     },
@@ -100,8 +112,18 @@ export async function seedExams(prisma: PrismaClient) {
       decimals: 0,
       referenceRanges: {
         create: [
-          { rangeKind: 'REFERENCE', low: '70', high: '100' },
-          { rangeKind: 'CRITICAL', low: '40', high: '400' },
+          {
+            rangeKind: 'REFERENCE',
+            low: '70',
+            high: '100',
+            validFrom: new Date(),
+          },
+          {
+            rangeKind: 'CRITICAL',
+            low: '40',
+            high: '400',
+            validFrom: new Date(),
+          },
         ],
       },
     },
