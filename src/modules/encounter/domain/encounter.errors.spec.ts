@@ -194,6 +194,19 @@ describe('el contrato de errores de la atención', () => {
     expect(cited.userTitle).toContain('Anule primero los exámenes');
   });
 
+  it('EN-063 nombra cada medida que falta, porque la pantalla une los mensajes en una línea', () => {
+    const error = new VitalsRequiredError(['weightKg', 'heightCm']);
+
+    expect(error.code).toBe('VITALS_REQUIRED');
+    expect(error.userTitle).toBe(
+      'Faltan medidas obligatorias en menores de 5 años y embarazadas',
+    );
+    expect(error.fieldErrors?.map((field) => field.message)).toEqual([
+      'Peso: obligatorio en menores de 5 años y embarazadas',
+      'Talla: obligatorio en menores de 5 años y embarazadas',
+    ]);
+  });
+
   it('EN-001 responde 409 y manda a registrar la ficha, no a corregir un campo', () => {
     const error = new PatientChartNotOpenError();
 

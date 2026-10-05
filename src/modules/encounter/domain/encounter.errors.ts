@@ -409,6 +409,12 @@ export class BmiIsDerivedError extends ValidationError {
  * THE MISSING FIELDS ARE NAMED ONE BY ONE: «faltan datos» sends a nurse round
  * a form where three boxes could be the one.
  */
+const ANTHROPOMETRY_LABELS: Readonly<Record<string, string>> = {
+  weightKg: 'Peso',
+  heightCm: 'Talla',
+  headCircumferenceCm: 'Perímetro cefálico',
+};
+
 export class VitalsRequiredError extends ValidationError {
   readonly code = 'VITALS_REQUIRED';
   override readonly userTitle =
@@ -421,7 +427,9 @@ export class VitalsRequiredError extends ValidationError {
       missing.map((field) => ({
         field,
         code: 'VITALS_REQUIRED',
-        message: 'Obligatorio en menores de 5 años y embarazadas',
+        // Named, because the screen joins the messages of several fields into
+        // one line, and three identical sentences say nothing.
+        message: `${ANTHROPOMETRY_LABELS[field] ?? field}: obligatorio en menores de 5 años y embarazadas`,
       })),
     );
   }
