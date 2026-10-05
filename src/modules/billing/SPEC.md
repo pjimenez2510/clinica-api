@@ -328,7 +328,8 @@ y le sale la consulta propuesta. Una atención interrumpida sin acto clínico
 aparece con el motivo por el que no tiene nada que cobrar. Y facturar, añadir
 un cargo, facturar lo pendiente y cerrar la cuenta termina siempre.
 
-**Cubre:** BI-181 a BI-184, BI-190. **Solo servidor:** ninguno.
+**Cubre:** BI-181 a BI-184, BI-190. **Solo servidor:** BI-190 (la pantalla
+dice el número y lista lo que el servidor sirve; qué cuenta es del servidor).
 
 ### B11 — Prestaciones con estructura _(P2)_
 
