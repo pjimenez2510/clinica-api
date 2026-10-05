@@ -36,6 +36,7 @@ import {
   effectsOf,
   planAttentionEffect,
   planBlockRelease,
+  planBlockRestore,
 } from '../domain/status-machine';
 import {
   type ClinicalDate,
@@ -985,6 +986,53 @@ export class AgendaService {
     this.logger.info(
       { site_id: entry.siteId, action: 'AGENDA_BLOCK_RELEASED' },
       'agenda block released',
+    );
+
+    return entry;
+  }
+
+  /**
+   * AG-154. The «Deshacer» of AG-114: the same block closes the calendar
+   * again, through the same port and with its own history row.
+   *
+   * If the hour was booked in the meantime, the `EXCLUDE` constraints refuse
+   * the write and nothing changes: the appointment wins over the undo.
+   */
+  async restoreBlock(
+    request: { siteId: string; entryId: string },
+    requester: Requester,
+  ): Promise<AgendaEntryView> {
+    /**
+     * AG-038, AG-152, the same question `blockAgenda` asks. The `EXCLUDE`
+     * constraints do not see an overbooking (`blocks_calendar = false`), so
+     * without this read a block would close over a patient who is coming
+     * anyway — exactly what creating it refuses. Like there, the read can go
+     * stale before the write; the constraints still arbitrate the rest.
+     */
+    const block = await this.agenda.findEntry(request);
+    if (block !== null && block.kind === 'BLOCK') {
+      const blocking = await this.agenda.blockingAppointments({
+        siteId: block.siteId,
+        practitionerId: block.practitionerId,
+        startsAt: block.startsAt,
+        endsAt: block.endsAt,
+      });
+      if (blocking.length > 0)
+        throw new BlockOverlapsAppointmentsError(blocking);
+    }
+
+    const entry = await this.agenda.transition(
+      {
+        siteId: request.siteId,
+        entryId: request.entryId,
+        changedById: requester.userId,
+      },
+      (read) => planBlockRestore(read),
+    );
+
+    this.logger.info(
+      { site_id: entry.siteId, action: 'AGENDA_BLOCK_RESTORED' },
+      'agenda block restored',
     );
 
     return entry;

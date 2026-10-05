@@ -194,9 +194,14 @@ describe('clinical record integrity', () => {
         },
       });
 
+      // EN-210: a correction says who and when (`record_version_archive`).
       const corrected = await prisma.encounterVitals.update({
         where: { encounterId: encounter.id },
-        data: { weightKg: 80 },
+        data: {
+          weightKg: 80,
+          correctedById: (await createUser(prisma)).id,
+          correctedAt: new Date(),
+        },
       });
 
       expect(corrected.bmi?.toString()).toBe('26.12');

@@ -159,7 +159,8 @@ comprobar que el cupo original quedó libre y ambas entradas se referencian.
 
 **Por qué es P3:** son la vía documentada para romper la regla; sin ellos el
 personal la rompe por fuera del sistema. **Cubre:** AG-035 a AG-039, AG-100,
-AG-101, AG-103, AG-114, AG-151, AG-152.
+AG-101, AG-103, AG-114, AG-151, AG-152, **AG-154** —quitar un bloqueo sin
+confirmación y con «Deshacer» (D-126, `fix/menos-preguntas`)—.
 **Solo servidor:** AG-152. El diálogo de bloqueo ya enumera lo que el servidor
 devuelve con `BLOCK_OVERLAPS_APPOINTMENTS` (AG-038); AG-152 añade el sobrecupo
 a esa lista y la pantalla no cambia.
@@ -1081,6 +1082,26 @@ es falsa, hay requisitos que cambian.
   > ningún requisito exige es una casilla más en la pantalla cuyo objeto es
   > deshacer un error deprisa. Un paciente merece la explicación de una
   > anulación; un bloqueo no se la debe a nadie.
+  >
+  > **D-126 (04-10-2026): tampoco pide confirmación.** Un bloqueo no ha salido
+  > de la clínica (D-126.1); el clic equivocado se corrige con «Deshacer»
+  > (AG-154), que es más rápido que un paso de «¿seguro?» en cada acierto.
+- **AG-154** — CUANDO se deshaga la eliminación de un bloqueo, el sistema
+  DEBERÁ volver a cerrar el intervalo con **la misma fila** —su motivo
+  intacto— y dejar constancia de quién y cuándo en el historial; y SI el
+  intervalo se reservó entretanto, ENTONCES DEBERÁ rechazarlo y dejar la cita
+  y el bloqueo liberado como estaban. La pantalla DEBERÁ quitar el bloqueo
+  **sin confirmación** y ofrecer «Deshacer» en el aviso.
+  > `POST /agenda/sites/{siteId}/blocks/{entryId}/restore`, por el mismo puerto
+  > que AG-114 y con su regla pura (`planBlockRestore`): de `CANCELLED` a
+  > `BLOCKED`, `released_at` y `cancelled_at` a nulo. Quién decide si la hora
+  > sigue libre son los `EXCLUDE`: la cita gana al deshacer. Deshacer creando
+  > un bloqueo nuevo perdería el motivo, que la entrada no publica, y dejaría
+  > dos filas para un solo cierre.
+  >
+  > Es la primera pieza de «Deshacer» de D-126: cada zona añade la operación
+  > contraria de lo que deja de confirmar, y la API la expone para que el
+  > asistente de IA corrija igual que una persona (D-127.5).
 - **AG-151** — SI un sobrecupo se solapa con un bloqueo del profesional en
   cualquier sede, con una entrada suya que ocupa calendario en otra sede, con
   su horario vigente en otra sede o con un sobrecupo suyo vigente en otra sede,
@@ -2499,6 +2520,7 @@ aún no está validado.
 | `POST`   | `/agenda/sites/{siteId}/entries/{entryId}/reschedule`           | `agenda:write`   | `param:siteId`  | AG-050 a AG-052, AG-115          |
 | `POST`   | `/agenda/sites/{siteId}/blocks`                                | `agenda:write`   | `param:siteId`  | AG-037, AG-038                   |
 | `DELETE` | `/agenda/sites/{siteId}/blocks/{entryId}`                       | `agenda:write`   | `param:siteId`  | AG-114                           |
+| `POST`   | `/agenda/sites/{siteId}/blocks/{entryId}/restore`               | `agenda:write`   | `param:siteId`  | AG-154                           |
 | `GET`    | `/agenda/sites/{siteId}/waitlist`                              | `agenda:read`    | `param:siteId`  | AG-062, AG-065 a AG-067          |
 | `POST`   | `/agenda/sites/{siteId}/waitlist`                              | `agenda:write`   | `param:siteId`  | AG-060                           |
 | `GET`    | `/agenda/sites/{siteId}/waitlist/candidates/{releasedEntryId}`  | `agenda:read`    | `param:siteId`  | AG-061, AG-062, AG-065 a AG-067  |

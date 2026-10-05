@@ -45,11 +45,13 @@ import {
   OpenEncountersQueryDto,
   RecordVitalsDto,
   VitalSignsDto,
+  VitalsVersionListDto,
   type EncounterDetailResponse,
   type EncounterListResponse,
   type EncounterPageResponse,
   type EncounterResponse,
   type VitalSignsResponse,
+  type VitalsVersionListResponse,
 } from './dto/encounter.dto';
 
 /**
@@ -442,6 +444,35 @@ export class EncounterController {
       this.requester(req, 'record:read'),
     );
     return vitals === null ? null : toVitalsResponse(vitals);
+  }
+
+  /**
+   * EN-211. The takings corrections replaced, newest first, with who and
+   * when. Same permission as reading the current taking: the versions are the
+   * same clinical content, only older.
+   */
+  @Get(':id/vitals/versions')
+  @RequirePermission('record:read', 'query')
+  @ApiOperation({
+    summary: 'Consultar las versiones anteriores de los signos vitales',
+  })
+  @ApiOkResponse({ type: VitalsVersionListDto })
+  async vitalsVersions(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request,
+  ): Promise<VitalsVersionListResponse> {
+    const versions = await this.encounters.vitalsVersionsOf(
+      id,
+      this.requester(req, 'record:read'),
+    );
+    return {
+      items: versions.map((version) => ({
+        version: version.version,
+        replacedBy: version.replacedBy,
+        replacedAt: version.replacedAt.toISOString(),
+        taking: toVitalsResponse(version.taking),
+      })),
+    };
   }
 
   /**

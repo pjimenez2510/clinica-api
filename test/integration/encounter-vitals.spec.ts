@@ -523,16 +523,25 @@ describe('los signos vitales de la atención', () => {
       encounter.id,
       practitioner.userId,
     );
+    // EN-210: a correction says who and when (`record_version_archive`).
     await prisma.$executeRawUnsafe(
-      `UPDATE encounter_vitals SET weight_kg = 69 WHERE encounter_id = $1`,
+      `UPDATE encounter_vitals
+          SET weight_kg = 69, corrected_by = $2::uuid, corrected_at = $3
+        WHERE encounter_id = $1`,
       encounter.id,
+      other.id,
+      new Date(),
     );
 
     await expect(
       prisma.$executeRawUnsafe(
-        `UPDATE encounter_vitals SET recorded_by = $2::uuid WHERE encounter_id = $1`,
+        // Stamped, so the only rule left to refuse it is the author's.
+        `UPDATE encounter_vitals
+            SET recorded_by = $2::uuid, corrected_by = $2::uuid, corrected_at = $3
+          WHERE encounter_id = $1`,
         encounter.id,
         other.id,
+        new Date(Date.now() + 60_000),
       ),
     ).rejects.toThrow(/cannot change once written/);
 
@@ -662,5 +671,91 @@ describe('los signos vitales de la atención', () => {
     expect(previous.map((encounter) => encounter.vitals?.weightKg)).toEqual([
       70, 72,
     ]);
+  });
+
+  it('EN-211 devuelve las tomas sustituidas, la más reciente primero, con quién y cuándo las sustituyó', async () => {
+    const prisma = db();
+    const { site, encounter, practitioner, repository, save } =
+      await anEncounter(prisma);
+    const query = { encounterId: encounter.id, sites: [site.id] };
+
+    // Control positivo: sin correcciones no hay versiones, y la lectura entra.
+    await save(query, { weightKg: 68 });
+    expect(await repository.findVitalsVersions(query)).toEqual([]);
+
+    await save(query, { weightKg: 69 });
+    await save(query, { weightKg: 70, temperatureC: 37.5 });
+
+    const versions = await repository.findVitalsVersions(query);
+    expect(versions.map((v) => [v.version, v.taking.weightKg])).toEqual([
+      [2, 69],
+      [1, 68],
+    ]);
+    expect(versions[0]!.replacedBy.id).toBe(practitioner.userId);
+    expect(versions[0]!.replacedBy.name).not.toBe('');
+    expect(versions[0]!.replacedAt.getTime()).toBeGreaterThan(
+      versions[1]!.replacedAt.getTime(),
+    );
+    // The taking replaced keeps its own author and instant (EN-143), and is
+    // read through the same mapping as the current one.
+    const current = await repository.findVitals(query);
+    expect(versions[1]!.taking.recordedBy?.id).toBe(practitioner.userId);
+    expect(versions[1]!.taking.measuredAt).toEqual(current!.measuredAt);
+    expect(versions[1]!.taking.temperatureC).toBeUndefined();
+    expect(versions[1]!.taking.correctedBy).toBeNull();
+    expect(versions[0]!.taking.correctedBy?.id).toBe(practitioner.userId);
+  });
+
+  it('EN-210 una corrección que cae en el mismo instante que la anterior recibe su propio sello', async () => {
+    const prisma = db();
+    const { site, encounter, practitioner, repository, save } =
+      await anEncounter(prisma);
+    const query = { encounterId: encounter.id, sites: [site.id] };
+    await save(query, { weightKg: 68 });
+    // The previous correction stamped AHEAD of the clock of this save: the
+    // case of two saves in the same millisecond, made deterministic.
+    const ahead = new Date(Date.now() + 60_000);
+    await prisma.$executeRawUnsafe(
+      `UPDATE encounter_vitals
+          SET corrected_by = $2::uuid, corrected_at = $3
+        WHERE encounter_id = $1`,
+      encounter.id,
+      practitioner.userId,
+      ahead,
+    );
+
+    const saved = await save(query, { weightKg: 69 });
+
+    expect(saved.weightKg).toBe(69);
+    expect(new Date(saved.correctedAt!).getTime()).toBe(ahead.getTime() + 1);
+    expect(await repository.findVitalsVersions(query)).toHaveLength(2);
+  });
+
+  it('EN-211 no enseña las versiones de una atención de otra sede', async () => {
+    const prisma = db();
+    const { site, encounter, save, repository } = await anEncounter(prisma);
+    await save(
+      { encounterId: encounter.id, sites: [site.id] },
+      { weightKg: 68 },
+    );
+    await save(
+      { encounterId: encounter.id, sites: [site.id] },
+      { weightKg: 69 },
+    );
+    const elsewhere = await createSite(prisma, 'Sede Norte');
+
+    // Control positivo: desde su sede, la versión está.
+    expect(
+      await repository.findVitalsVersions({
+        encounterId: encounter.id,
+        sites: [site.id],
+      }),
+    ).toHaveLength(1);
+    expect(
+      await repository.findVitalsVersions({
+        encounterId: encounter.id,
+        sites: [elsewhere.id],
+      }),
+    ).toEqual([]);
   });
 });

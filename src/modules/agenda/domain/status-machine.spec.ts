@@ -15,6 +15,7 @@ import {
   effectsOf,
   planAttentionEffect,
   planBlockRelease,
+  planBlockRestore,
 } from './status-machine';
 
 /**
@@ -279,6 +280,41 @@ describe('deshacer un bloqueo (AG-114)', () => {
     expect(() =>
       planBlockRelease(readOf({ kind: 'APPOINTMENT', status: 'BOOKED' }), now),
     ).toThrow(AgendaEntryNotFoundError);
+  });
+});
+
+describe('volver a cerrar un bloqueo quitado (AG-154)', () => {
+  const readOf = (overrides: Partial<TransitionRead> = {}): TransitionRead => ({
+    id: 'entry-1',
+    kind: 'BLOCK',
+    status: 'CANCELLED',
+    startsAt: new Date(),
+    releasedAt: new Date(),
+    hasEncounter: false,
+    encounterHasClinicalAct: false,
+    encounterInProgress: false,
+    ...overrides,
+  });
+
+  it('AG-154 deshace la liberación: vuelve a BLOCKED y borra los dos sellos', () => {
+    // `released_at IS NULL` is the EXCLUDE predicate again, so the database
+    // is who decides whether the hour is still free.
+    expect(planBlockRestore(readOf())).toEqual({
+      to: 'BLOCKED',
+      effects: { cancelledAt: null, releasedAt: null },
+    });
+  });
+
+  it('AG-154 refuses a block that is still closing the calendar', () => {
+    expect(() =>
+      planBlockRestore(readOf({ status: 'BLOCKED', releasedAt: null })),
+    ).toThrow(InvalidAgendaTransitionError);
+  });
+
+  it('AG-154 refuses an appointment exactly like a missing entry', () => {
+    expect(() => planBlockRestore(readOf({ kind: 'APPOINTMENT' }))).toThrow(
+      AgendaEntryNotFoundError,
+    );
   });
 });
 

@@ -160,6 +160,29 @@ export function planBlockRelease(
 }
 
 /**
+ * AG-154, D-126. Undoes AG-114: the SAME block closes the calendar again.
+ *
+ * The «Deshacer» of «Quitar bloqueo». Removing a block no longer asks for a
+ * confirmation (D-126.1: it never left the clinic), so the way back has to be
+ * real: the same row, its reason intact, with one more history row — not a
+ * new block typed again from memory.
+ *
+ * WHETHER THE HOUR IS STILL FREE IS NOT DECIDED HERE. Clearing `released_at`
+ * puts the row back under both `EXCLUDE` constraints, and if somebody booked
+ * the gap in the meantime the database refuses the write: the appointment
+ * stays, the block stays released.
+ */
+export function planBlockRestore(entry: TransitionRead): StatusChange {
+  if (entry.kind !== 'BLOCK') throw new AgendaEntryNotFoundError();
+
+  if (entry.status !== 'CANCELLED' || entry.releasedAt === null) {
+    throw new InvalidAgendaTransitionError(entry.status, 'BLOCKED');
+  }
+
+  return { to: 'BLOCKED', effects: { cancelledAt: null, releasedAt: null } };
+}
+
+/**
  * AG-043. A no-show cannot be declared before the appointment starts:
  * until then the patient is not late, only not early.
  *

@@ -690,6 +690,41 @@ describe('el sobrecupo y los bloqueos', () => {
       );
     });
 
+    it('AG-154 deshacer el «quitar» no reabre el bloqueo encima de un sobrecupo (AG-152)', async () => {
+      // El sobrecupo no ocupa calendario, así que los `EXCLUDE` no lo ven: la
+      // reapertura tiene que preguntar lo mismo que la creación del bloqueo.
+      const blocked = await blockAgenda({
+        practitionerId,
+        startsAt: at(monday, '10:00').toISOString(),
+        endsAt: at(monday, '11:00').toISOString(),
+      }).expect(201);
+      const blockId = (blocked.body as { id: string }).id;
+      const release = () =>
+        request(app.getHttpServer())
+          .delete(`/api/v1/agenda/sites/${siteId}/blocks/${blockId}`)
+          .set('Authorization', `Bearer ${token}`);
+      const restore = () =>
+        request(app.getHttpServer())
+          .post(`/api/v1/agenda/sites/${siteId}/blocks/${blockId}/restore`)
+          .set('Authorization', `Bearer ${token}`);
+
+      // Control positivo: sin nadie dentro, quitar y reabrir funciona.
+      await release().expect(200);
+      await restore().expect(200);
+
+      await release().expect(200);
+      await book(anOverbookingAt(at(monday, '10:10'))).expect(201);
+
+      const refused = await restore().expect(409);
+      expect((refused.body as Problem).code).toBe(
+        'BLOCK_OVERLAPS_APPOINTMENTS',
+      );
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: blockId },
+      });
+      expect(stored.releasedAt).toBeInstanceOf(Date);
+    });
+
     it('AG-022 rechaza por campo un bloqueo que termina antes de empezar', async () => {
       const response = await blockAgenda({
         practitionerId,
