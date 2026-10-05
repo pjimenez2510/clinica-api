@@ -83,6 +83,8 @@ export interface NewClinicalNote {
 export interface SignaturePlan {
   signedById: string;
   signedAt: Date;
+  /** EN-206. What is signed: the draft plus the background snapshot. */
+  content: NoteContent;
   contentHash: string;
   /**
    * EN-130, EN-138. Whether signing THIS form is the clinical discharge.

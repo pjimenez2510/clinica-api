@@ -275,6 +275,7 @@ export class PrismaClinicalNoteRepository implements ClinicalNoteRepository {
         where: { id: note.id, status: 'DRAFT' },
         data: {
           status: 'SIGNED',
+          content: plan.content as Prisma.InputJsonValue,
           signedById: plan.signedById,
           signedAt: plan.signedAt,
           contentHash: plan.contentHash,

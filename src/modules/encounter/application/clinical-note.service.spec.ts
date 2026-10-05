@@ -39,6 +39,19 @@ import type {
 import type { NoteContent } from '../domain/clinical-note';
 import type { Requester } from './encounter.service';
 import { ClinicalNoteService } from './clinical-note.service';
+import type { ActiveAllergy } from '../../../shared/clinical/patient-allergy.port';
+import {
+  BACKGROUND_SNAPSHOT_KEY,
+  backgroundSnapshotIn,
+} from '../domain/background-snapshot';
+import type {
+  AllergyAbsenceAssertion,
+  PatientAllergyRepository,
+} from '../domain/patient-allergy.repository';
+import type {
+  HistoryView,
+  PatientHistoryRepository,
+} from '../domain/patient-history.repository';
 
 /**
  * The note chain's use cases, against in-memory ports.
@@ -55,6 +68,7 @@ const SITE = 'site-1';
 const PRACTITIONER = 'practitioner-1';
 const USER = 'user-1';
 const ENCOUNTER = 'encounter-1';
+const PATIENT = 'patient-1';
 
 const requester: Requester = { userId: USER, sites: [SITE] };
 
@@ -152,6 +166,7 @@ class FakeNotes implements ClinicalNoteRepository {
     this.stored = {
       ...this.stored,
       status: 'SIGNED',
+      content: this.signature.content,
       signedById: this.signature.signedById,
       signedAt: this.signature.signedAt,
       contentHash: this.signature.contentHash,
@@ -200,17 +215,45 @@ class FakeEncounters {
   findPractitionerByUser(): Promise<PractitionerIdentity | null> {
     return Promise.resolve(this.practitioner);
   }
+
+  /** EN-206. The chart the snapshot is read from. */
+  findById(): Promise<{ id: string; patientId: string }> {
+    return Promise.resolve({ id: ENCOUNTER, patientId: PATIENT });
+  }
+}
+
+/** EN-206. The three readers behind the snapshot, as the chart stands. */
+class FakeBackground {
+  allergies: ActiveAllergy[] = [];
+  absence: AllergyAbsenceAssertion | null = null;
+  history: HistoryView[] = [];
+
+  activeFor(): Promise<ActiveAllergy[]> {
+    return Promise.resolve(this.allergies);
+  }
+  standingAbsenceFor(): Promise<AllergyAbsenceAssertion | null> {
+    return Promise.resolve(this.absence);
+  }
+}
+
+class FakeHistory {
+  constructor(private readonly background: FakeBackground) {}
+  activeFor(): Promise<HistoryView[]> {
+    return Promise.resolve(this.background.history);
+  }
 }
 
 describe('los casos de uso de la nota clínica', () => {
   let notes: FakeNotes;
   let encounters: FakeEncounters;
+  let background: FakeBackground;
   let audit: AccessAuditRecorder & { entries: AccessAuditEntry[] };
   let service: ClinicalNoteService;
 
   beforeEach(() => {
     notes = new FakeNotes();
     encounters = new FakeEncounters();
+    background = new FakeBackground();
     const entries: AccessAuditEntry[] = [];
     audit = {
       entries,
@@ -230,6 +273,9 @@ describe('los casos de uso de la nota clínica', () => {
       notes,
       encounters as unknown as EncounterRepository,
       audit,
+      background,
+      background as unknown as PatientAllergyRepository,
+      new FakeHistory(background) as unknown as PatientHistoryRepository,
       logger,
     );
   });
@@ -296,10 +342,74 @@ describe('los casos de uso de la nota clínica', () => {
     // and the instant — recomputed here so the service cannot have invented it.
     expect(signed.contentHash).toBe(
       contentHashOf({
-        content: COMPLETE_002,
+        content: signed.content,
         signedById: PRACTITIONER,
         signedAt: signed.signedAt as Date,
       }),
+    );
+  });
+
+  it('EN-206 firma con la foto de alergias y antecedentes del instante de la firma', async () => {
+    background.allergies = [
+      {
+        id: 'allergy-1',
+        patientId: PATIENT,
+        substanceConceptId: null,
+        substanceText: 'Látex',
+        reaction: null,
+        criticality: 'UNABLE_TO_ASSESS',
+        recordedAt: new Date(),
+      },
+    ];
+
+    const signed = await service.sign(
+      { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' },
+      requester,
+    );
+
+    const snapshot = backgroundSnapshotIn(signed.content);
+    expect(snapshot?.allergies.map((allergy) => allergy.substance)).toEqual([
+      'Látex',
+    ]);
+    expect(snapshot?.takenAt).toBe((signed.signedAt as Date).toISOString());
+  });
+
+  it('EN-207 firma sin texto en antecedentes si hay un antecedente registrado', async () => {
+    notes.stored = aNote({ content: { ...COMPLETE_002, antecedentes: '' } });
+    background.history = [
+      {
+        id: 'history-1',
+        patientId: PATIENT,
+        kind: 'PERSONAL',
+        description: 'Hipertensión arterial',
+        relative: null,
+        recordedAt: new Date(),
+        recordedBy: { id: USER, name: 'Dra. Villacís' },
+        refutedAt: null,
+        refutedNotes: null,
+        refutedBy: null,
+      },
+    ];
+
+    const signed = await service.sign(
+      { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' },
+      requester,
+    );
+
+    expect(signed.status).toBe('SIGNED');
+  });
+
+  it('EN-206 no guarda en el borrador la foto que mande la pantalla', async () => {
+    await service.draft(
+      {
+        ...draftRequest,
+        content: { motivoConsulta: 'Control', [BACKGROUND_SNAPSHOT_KEY]: {} },
+      },
+      requester,
+    );
+
+    expect(notes.drafted[0]?.content).not.toHaveProperty(
+      BACKGROUND_SNAPSHOT_KEY,
     );
   });
 
@@ -474,6 +584,36 @@ describe('los casos de uso de la nota clínica', () => {
     // AND IT NEVER DISCHARGES: correcting a March note must not touch the
     // state of a March attention.
     expect(notes.amendment?.signature.dischargesTheEncounter).toBe(false);
+  });
+
+  it('EN-206 la enmienda hereda la foto de la versión que enmienda, no la de hoy', async () => {
+    const thatDay = {
+      takenAt: 'aquel día',
+      allergies: [],
+      noKnownAllergies: null,
+      personalHistory: [],
+      familyHistory: [],
+    };
+    notes.stored = aNote({
+      status: 'SIGNED',
+      content: { ...COMPLETE_002, [BACKGROUND_SNAPSHOT_KEY]: thatDay },
+    });
+    background.history = [];
+
+    await service.amend(
+      {
+        encounterId: ENCOUNTER,
+        noteId: 'note-1',
+        content: {
+          ...COMPLETE_002,
+          [BACKGROUND_SNAPSHOT_KEY]: { forged: true },
+        },
+        amendmentReason: 'Se corrigió el plan',
+      },
+      requester,
+    );
+
+    expect(notes.amendment?.content[BACKGROUND_SNAPSHOT_KEY]).toEqual(thatDay);
   });
 
   it('EN-025 exige el motivo de la enmienda en el SERVICIO, no solo en el DTO', async () => {

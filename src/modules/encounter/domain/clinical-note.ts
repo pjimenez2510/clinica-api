@@ -28,6 +28,11 @@ import {
   NoteNotAmendableError,
   UnknownClinicalFormError,
 } from './encounter.errors';
+import {
+  BACKGROUND_SECTION,
+  backgroundSnapshotIn,
+  coversBackgroundSection,
+} from './background-snapshot';
 import type { NoteStatus } from './encounter';
 
 /**
@@ -182,7 +187,12 @@ export function assertContentComplete(
   form: ClinicalForm,
   content: NoteContent,
 ): void {
+  const background = backgroundSnapshotIn(content);
   const missing = form.mandatorySections.filter((section) => {
+    // EN-207. What is recorded stands in for the prose of «antecedentes».
+    if (section === BACKGROUND_SECTION && coversBackgroundSection(background)) {
+      return false;
+    }
     const value = content[section];
     return typeof value !== 'string' || value.trim() === '';
   });

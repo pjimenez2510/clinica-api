@@ -93,6 +93,7 @@ async function sign(
     (note) => ({
       signedById: ids.practitioner.id,
       signedAt: SIGNED_AT,
+      content: note.content,
       contentHash: contentHashOf({
         content: note.content,
         signedById: ids.practitioner.id,
@@ -301,6 +302,7 @@ describe('la nota clínica firmada', () => {
         signature: {
           signedById: practitioner.id,
           signedAt: new Date('2026-08-15T09:00:00Z'),
+          content: corrected,
           contentHash: contentHashOf({
             content: corrected,
             signedById: practitioner.id,
@@ -361,6 +363,7 @@ describe('la nota clínica firmada', () => {
       signature: {
         signedById: practitioner.id,
         signedAt: new Date('2026-08-15T09:00:00Z'),
+        content: COMPLETE_002,
         contentHash: 'b'.repeat(64),
         dischargesTheEncounter: false,
         dischargeCondition: null,
@@ -472,6 +475,7 @@ describe('la nota clínica firmada', () => {
         signature: {
           signedById: practitioner.id,
           signedAt: new Date('2026-08-16T09:00:00Z'),
+          content: COMPLETE_002,
           contentHash: 'c'.repeat(64),
           dischargesTheEncounter: false,
           dischargeCondition: null,

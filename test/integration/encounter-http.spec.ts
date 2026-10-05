@@ -12,6 +12,7 @@ import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
+import { contentHashOf } from '../../src/modules/encounter/domain/clinical-note';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
@@ -838,6 +839,115 @@ describe('la atención por HTTP', () => {
         status: 'DISCHARGED',
         dischargeCondition: 'ALIVE',
       });
+    });
+
+    it('EN-206 la nota firmada conserva la foto de alergias y antecedentes aunque luego se refuten, y el hash cuadra', async () => {
+      const allergy = await post(
+        `/patients/${patientId}/allergies`,
+        doctorToken,
+        {
+          substanceText: 'Penicilina',
+          criticality: 'HIGH',
+        },
+      ).expect(201);
+      await post(`/patients/${patientId}/history`, doctorToken, {
+        kind: 'FAMILY',
+        description: 'Diabetes tipo 2',
+        relative: 'Madre',
+      }).expect(201);
+
+      const encounterId = await openEncounter();
+      const draft = await post(
+        `/encounters/${encounterId}/notes`,
+        doctorToken,
+        {
+          formCode: '002',
+          // EN-207: sin texto en antecedentes, y una foto inventada que el
+          // servidor no debe guardar.
+          content: {
+            ...COMPLETE_002,
+            antecedentes: '',
+            backgroundSnapshot: 'sin alergias',
+          },
+        },
+      ).expect(201);
+      const noteId = (draft.body as NoteBody).id;
+
+      await post(
+        `/encounters/${encounterId}/notes/${noteId}/sign`,
+        doctorToken,
+        {
+          dischargeCondition: 'ALIVE',
+        },
+      ).expect(200);
+
+      await post(
+        `/patients/${patientId}/allergies/${(allergy.body as { id: string }).id}/refute`,
+        doctorToken,
+        { notes: 'Prueba cutánea negativa' },
+      ).expect(200);
+
+      const row = await prisma.clinicalNote.findUniqueOrThrow({
+        where: { id: noteId },
+      });
+      const content = row.content as {
+        backgroundSnapshot: {
+          allergies: { substance: string }[];
+          familyHistory: { description: string; relative: string }[];
+        };
+      };
+      expect(content.backgroundSnapshot.allergies).toEqual([
+        expect.objectContaining({ substance: 'Penicilina' }),
+      ]);
+      expect(content.backgroundSnapshot.familyHistory).toEqual([
+        expect.objectContaining({
+          description: 'Diabetes tipo 2',
+          relative: 'Madre',
+        }),
+      ]);
+      expect(row.contentHash).toBe(
+        contentHashOf({
+          content: row.content as Record<string, unknown>,
+          signedById: row.signedById as string,
+          signedAt: row.signedAt as Date,
+        }),
+      );
+    });
+
+    it('EN-207 no deja firmar sin texto en antecedentes con solo «sin alergias conocidas»', async () => {
+      await post(`/patients/${patientId}/allergies/none-known`, doctorToken).expect(201); // prettier-ignore
+      const encounterId = await openEncounter();
+      const draft = await post(
+        `/encounters/${encounterId}/notes`,
+        doctorToken,
+        {
+          formCode: '002',
+          content: { ...COMPLETE_002, antecedentes: '' },
+        },
+      ).expect(201);
+
+      const refused = await post(
+        `/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}/sign`,
+        doctorToken,
+        { dischargeCondition: 'ALIVE' },
+      ).expect(422);
+      expect((refused.body as Problem).code).toBe('NOTE_CONTENT_INCOMPLETE');
+
+      // Control positivo: con una línea escrita, la misma nota se firma.
+      await request(app.getHttpServer())
+        .patch(
+          `/api/v1/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}`,
+        )
+        .set('Authorization', `Bearer ${doctorToken}`)
+        .send({
+          content: { ...COMPLETE_002, antecedentes: 'Niega antecedentes' },
+        })
+        .expect(200);
+      await post(
+        `/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}/sign`,
+        doctorToken,
+        { dischargeCondition: 'ALIVE' },
+      ).expect(200);
     });
 
     it('EN-009 rechaza firmar la consulta externa sin condición de egreso', async () => {

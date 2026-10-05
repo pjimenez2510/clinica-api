@@ -15,6 +15,24 @@ import {
   type NoteContent,
 } from '../domain/clinical-note';
 import {
+  ACTIVE_ALLERGY_READER,
+  type ActiveAllergyReader,
+} from '../../../shared/clinical/patient-allergy.port';
+import {
+  backgroundSnapshotIn,
+  backgroundSnapshotOf,
+  withBackgroundSnapshot,
+  type BackgroundSnapshot,
+} from '../domain/background-snapshot';
+import {
+  PATIENT_ALLERGY_REPOSITORY,
+  type PatientAllergyRepository,
+} from '../domain/patient-allergy.repository';
+import {
+  PATIENT_HISTORY_REPOSITORY,
+  type PatientHistoryRepository,
+} from '../domain/patient-history.repository';
+import {
   CLINICAL_NOTE_REPOSITORY,
   type ClinicalNoteRepository,
   type ClinicalNoteView,
@@ -27,6 +45,7 @@ import {
 import {
   DischargeConditionRequiredError,
   EncounterAlreadyClosedError,
+  EncounterNotFoundError,
   PractitionerProfileRequiredError,
 } from '../domain/encounter.errors';
 import { acceptsNewClinicalContent } from '../domain/encounter-state';
@@ -114,6 +133,13 @@ export class ClinicalNoteService {
     private readonly encounters: EncounterRepository,
     @Inject(ACCESS_AUDIT_RECORDER)
     private readonly audit: AccessAuditRecorder,
+    /** EN-206. Reads only: the snapshot is what the chart says at signing. */
+    @Inject(ACTIVE_ALLERGY_READER)
+    private readonly allergies: ActiveAllergyReader,
+    @Inject(PATIENT_ALLERGY_REPOSITORY)
+    private readonly allergyRecords: PatientAllergyRepository,
+    @Inject(PATIENT_HISTORY_REPOSITORY)
+    private readonly historyRecords: PatientHistoryRepository,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(ClinicalNoteService.name);
@@ -146,7 +172,8 @@ export class ClinicalNoteService {
       encounterId: request.encounterId,
       formCode: request.formCode,
       formVersion: request.formVersion,
-      content: request.content,
+      // EN-206. The snapshot is the server's to write, at the signature.
+      content: withBackgroundSnapshot(request.content, null),
       authorId: author.practitionerId,
       authorUserId: requester.userId,
       sites: requester.sites,
@@ -215,7 +242,7 @@ export class ClinicalNoteService {
         noteId: request.noteId,
         sites: requester.sites,
       },
-      request.content,
+      withBackgroundSnapshot(request.content, null),
       (note) => assertEditable(note.status),
     );
 
@@ -259,6 +286,11 @@ export class ClinicalNoteService {
     const signer = await this.requirePractitioner(requester.userId);
     this.assertLicensed(signer.acessExpiresOn);
     const now = new Date();
+    const background = await this.backgroundOf(
+      request.encounterId,
+      requester,
+      now,
+    );
 
     const signed = await this.notes.sign(
       {
@@ -273,9 +305,12 @@ export class ClinicalNoteService {
         this.assertEncounterAcceptsContent(encounter);
 
         const form = requireForm(note.formCode, note.formVersion);
-        // EN-020. The minimum content of art. 6, demanded at the moment the
-        // note becomes the record.
-        assertContentComplete(form, note.content);
+        // EN-206. What the doctor had in front of them goes inside what they
+        // sign, before the digest.
+        const content = withBackgroundSnapshot(note.content, background);
+        // EN-020, EN-207. The minimum content of art. 6, demanded at the
+        // moment the note becomes the record.
+        assertContentComplete(form, content);
 
         /**
          * EN-009, EN-130. Signing the consultation note discharges the
@@ -291,11 +326,12 @@ export class ClinicalNoteService {
         return {
           signedById: signer.practitionerId,
           signedAt: now,
+          content,
           // EN-027. Content, signer and instant, all three inside the digest:
           // hashing the content alone would let a note be re-attributed with
           // the hash still checking out.
           contentHash: contentHashOf({
-            content: note.content,
+            content,
             signedById: signer.practitionerId,
             signedAt: now,
           }),
@@ -373,7 +409,14 @@ export class ClinicalNoteService {
         });
 
         const form = requireForm(previous.formCode, previous.formVersion);
-        assertContentComplete(form, request.content);
+        // EN-206. An amendment corrects what was written at THAT act, and
+        // that act knew what it knew: it inherits its snapshot, never the
+        // caller's and never today's.
+        const content = withBackgroundSnapshot(
+          request.content,
+          backgroundSnapshotIn(previous.content),
+        );
+        assertContentComplete(form, content);
 
         return {
           chainId: plan.chainId,
@@ -382,13 +425,14 @@ export class ClinicalNoteService {
           amendmentReason: plan.reason,
           formCode: previous.formCode,
           formVersion: previous.formVersion,
-          content: request.content,
+          content,
           authorId: signer.practitionerId,
           signature: {
             signedById: signer.practitionerId,
             signedAt: now,
+            content,
             contentHash: contentHashOf({
-              content: request.content,
+              content,
               signedById: signer.practitionerId,
               signedAt: now,
             }),
@@ -499,6 +543,39 @@ export class ClinicalNoteService {
   }
 
   /** EN-011. The caller's clinical identity, or a refusal naming nothing. */
+  /**
+   * EN-206. The chart's active background at `now`, read through the same
+   * readers as the history summary (EN-159) so both say the same thing.
+   *
+   * Read just before the signing transaction and not inside it: the readers
+   * are the shared adapters, and a background recorded in the same
+   * millisecond is still on the chart for the next reader.
+   */
+  private async backgroundOf(
+    encounterId: string,
+    requester: Requester,
+    now: Date,
+  ): Promise<BackgroundSnapshot> {
+    const encounter = await this.encounters.findById({
+      encounterId,
+      sites: requester.sites,
+    });
+    if (!encounter) throw new EncounterNotFoundError();
+
+    const [allergies, noKnownAllergies, history] = await Promise.all([
+      this.allergies.activeFor(encounter.patientId),
+      this.allergyRecords.standingAbsenceFor(encounter.patientId),
+      this.historyRecords.activeFor(encounter.patientId),
+    ]);
+
+    return backgroundSnapshotOf({
+      takenAt: now,
+      allergies,
+      noKnownAllergies,
+      history,
+    });
+  }
+
   private async requirePractitioner(userId: string) {
     const identity = await this.encounters.findPractitionerByUser(userId);
     if (!identity) throw new PractitionerProfileRequiredError();
