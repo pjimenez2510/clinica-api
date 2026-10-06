@@ -36,17 +36,17 @@ export const DOMAIN_ERROR_CODES = [
   // AG-153 (D-099 §3): «Marcar atendida» con la atención aún en curso.
   'ATTENTION_STILL_IN_PROGRESS',
   'AGENDA_ENTRY_NOT_FOUND',
+  // AG-162, AG-163 (D-127): la cita se edita en el sitio mientras su estado lo
+  // admite, y la inasistencia se deshace el mismo día.
+  'AGENDA_ENTRY_NOT_EDITABLE',
+  'NO_SHOW_UNDO_EXPIRED',
   'INVALID_AGENDA_TRANSITION',
   'NO_SHOW_BEFORE_START',
-  // Agenda, E8 (AG-116, AG-117, AG-122, AG-125, AG-127, AG-128). Los tres
-  // desenlaces que la máquina de estados no tenía, y son tres códigos y no uno
-  // porque lo que hay que hacer difiere:
+  // Agenda, E8 (AG-116, AG-117, AG-122, AG-125, AG-127, AG-128). Los
+  // desenlaces que la máquina de estados no tenía. `ENTERED_IN_ERROR_REASON_REQUIRED`
+  // se retiró el 06-10-2026: retirar una cita registrada por error ya no exige
+  // motivo (D-126, AG-117 enmendado).
   //
-  //   * `ENTERED_IN_ERROR_REASON_REQUIRED` (422, por campo) — retractar una
-  //     cita que nunca debió existir exige motivo. NO comparte código con
-  //     `CANCELLATION_REASON_REQUIRED`: separar los dos actos es justo para lo
-  //     que existe el estado, y un cliente que ramificara por el código común
-  //     pediría «el motivo de la anulación» de una cita que nadie anula.
   //   * `EMERGENCY_ASSESSMENT_REQUIRED` (422, por campo) — la Ley 77 art. 10
   //     obliga a calificar el estado de emergencia AL ARRIBO, y su art. 13 lo
   //     respalda con prisión. Un valor por defecto no prueba que alguien
@@ -56,7 +56,6 @@ export const DOMAIN_ERROR_CODES = [
   //     es un bloqueo (AG-021). Uno solo para los tres porque en los tres lo
   //     que hay que hacer es lo mismo: nada.
   'EMERGENCY_ASSESSMENT_REQUIRED',
-  'ENTERED_IN_ERROR_REASON_REQUIRED',
   'SUBJECT_STATUS_NOT_DERIVABLE',
   // Agenda, AG-026: PostgreSQL abortó la reserva por serialización y se
   // agotaron los reintentos. NO es un conflicto de cupo: un `40001` no dice
@@ -82,14 +81,12 @@ export const DOMAIN_ERROR_CODES = [
   // Agenda, E4 (AG-035 a AG-039, AG-100, AG-101, AG-103): el sobrecupo y los
   // bloqueos, que son las dos vías DOCUMENTADAS de romper la rejilla (D-005).
   //
-  // Son cinco códigos y no uno porque lo que hay que hacer es distinto en cada
+  // Son cuatro códigos y no uno porque lo que hay que hacer es distinto en cada
   // caso, y quien lo lee está en el mostrador con el paciente delante:
   //
   //   * `OVERBOOKING_NOT_ALLOWED` (422) — esta sede no admite sobrecupos. No
   //     hay nada que corregir en el formulario: se cambia un parámetro de sede
   //     o no se hace.
-  //   * `OVERBOOKING_REASON_REQUIRED` (422) — falta el motivo. Es un campo del
-  //     formulario, y por eso viaja por campo (AG-035).
   //   * `OVERBOOKING_LIMIT_REACHED` (409) — el profesional ya agotó el tope
   //     del DÍA (D-001: dos). Es 409 y no 422 porque lo enviado es correcto:
   //     lo que lo impide es el estado de la agenda, y mañana el mismo cuerpo
@@ -109,7 +106,6 @@ export const DOMAIN_ERROR_CODES = [
   'OVERBOOKING_NOT_ALLOWED',
   'OVERBOOKING_NOT_AUTHORISED',
   'OVERBOOKING_PRACTITIONER_UNAVAILABLE',
-  'OVERBOOKING_REASON_REQUIRED',
   'SELF_AUTHORISATION_DENIED',
   // Agenda, E5 (AG-060 a AG-067): la lista de espera, que reparte un recurso
   // escaso —el cupo que otro paciente acaba de liberar— y por eso tiene que
@@ -150,6 +146,8 @@ export const DOMAIN_ERROR_CODES = [
   'SLOT_NOT_RELEASED',
   'WAITLIST_ACCEPTANCE_REQUIRED',
   'WAITLIST_ENTRY_CLOSED',
+  // AG-064 (D-127): corregir el último intento de una entrada sin llamadas.
+  'WAITLIST_NO_CONTACT_ATTEMPT',
   'WAITLIST_ENTRY_NOT_FOUND',
   'WAITLIST_PATIENT_MISMATCH',
   'WAITLIST_SLOT_ALREADY_CLAIMED',
@@ -179,7 +177,6 @@ export const DOMAIN_ERROR_CODES = [
   // antigua perfectamente válida, y «no seleccionable» es un capítulo que hay
   // que concretar. Un 404 para las tres haría que la de en medio pareciera
   // corrupción de datos.
-  'CANCELLATION_REASON_REQUIRED',
   'CATALOG_CONCEPT_NOT_FOUND',
   'CATALOG_CONCEPT_NOT_IN_FORCE',
   'CATALOG_CONCEPT_NOT_SELECTABLE',

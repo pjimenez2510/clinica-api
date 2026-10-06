@@ -5,7 +5,6 @@ import {
   OverbookingNotAllowedError,
   OverbookingNotAuthorisedError,
   OverbookingPractitionerUnavailableError,
-  OverbookingReasonRequiredError,
   SelfAuthorisationDeniedError,
 } from './agenda.errors';
 import {
@@ -15,7 +14,7 @@ import {
   checkOverbookingCap,
   checkPractitionerIsThere,
   type PresenceEntry,
-  requireOverbookingReason,
+  overbookingReasonOf,
 } from './overbooking-policy';
 import type { ScheduleRule } from './slot-availability';
 import {
@@ -56,24 +55,14 @@ describe('AG-039 the site switch', () => {
 });
 
 describe('AG-035 the reason', () => {
-  it('AG-035 demands a reason for the overbooking', () => {
-    expect(() => requireOverbookingReason(undefined)).toThrow(
-      OverbookingReasonRequiredError,
-    );
-  });
-
-  it('AG-035 refuses a reason made of blanks', () => {
-    // `IS NOT NULL` is satisfied by a space, and a space explains nothing. The
-    // CHECK in the base says the same with `btrim(...) <> ''`.
-    expect(() => requireOverbookingReason('   ')).toThrow(
-      OverbookingReasonRequiredError,
-    );
+  it('AG-035 admits an overbooking without a reason (D-126)', () => {
+    expect(overbookingReasonOf(undefined)).toBeNull();
+    // A reason made of blanks is no reason: stored as `null`, never «   ».
+    expect(overbookingReasonOf('   ')).toBeNull();
   });
 
   it('AG-035 hands back the reason trimmed, which is what gets stored', () => {
-    expect(requireOverbookingReason('  Urgencia dental  ')).toBe(
-      'Urgencia dental',
-    );
+    expect(overbookingReasonOf('  Urgencia  ')).toBe('Urgencia');
   });
 });
 

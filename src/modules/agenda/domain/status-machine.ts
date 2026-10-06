@@ -16,7 +16,10 @@ import {
   AgendaEntryNotFoundError,
   InvalidAgendaTransitionError,
   NoShowBeforeStartError,
+  NoShowUndoExpiredError,
 } from './agenda.errors';
+import { clinicalDateOf } from '../../../shared/domain/clinic-time';
+
 import type { AgendaEntryKind, AgendaEntryStatus } from './agenda-entry';
 import type {
   AttentionInterruption,
@@ -180,6 +183,37 @@ export function planBlockRestore(entry: TransitionRead): StatusChange {
   }
 
   return { to: 'BLOCKED', effects: { cancelledAt: null, releasedAt: null } };
+}
+
+/**
+ * AG-163, D-126. Undoes a no-show marked by mistake: the appointment goes
+ * back to the status it had, `no_show_at` is cleared and the slot occupies
+ * the calendar again.
+ *
+ * ONLY ON THE ECUADORIAN DAY IT WAS MARKED. That is the window of a mistaken
+ * click; after it the figure of AG-080 has been read, and a patient who did
+ * come is told so at the counter, not by rewriting yesterday.
+ *
+ * WHETHER THE HOUR IS STILL FREE IS NOT DECIDED HERE, as in AG-154: clearing
+ * `released_at` puts the row back under the `EXCLUDE` constraints, and if
+ * somebody booked the gap the write is refused and nothing changes.
+ */
+export function planNoShowUndo(entry: TransitionRead, now: Date): StatusChange {
+  if (entry.kind !== 'APPOINTMENT') throw new AgendaEntryNotFoundError();
+
+  const back = entry.statusBeforeNoShow;
+  if (entry.status !== 'NO_SHOW' || entry.noShowAt === null || back === null) {
+    throw new InvalidAgendaTransitionError(entry.status, back ?? 'BOOKED');
+  }
+  if (clinicalDateOf(entry.noShowAt) !== clinicalDateOf(now)) {
+    throw new NoShowUndoExpiredError();
+  }
+
+  return {
+    to: back,
+    effects: { noShowAt: null, releasedAt: null },
+    historyNote: 'Inasistencia deshecha',
+  };
 }
 
 /**

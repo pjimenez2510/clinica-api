@@ -110,6 +110,22 @@ export const VERSIONED_TABLES: Readonly<Record<string, VersionedTablePath>> = {
     resourceIdsOf: byPatientId('data_subject_request'),
     omittedBecause: null,
   },
+  // AG-051, AG-162. The appointment moved or corrected in place. A version
+  // from before the patient was corrected names the patient booked BY
+  // MISTAKE: that identifier is somebody else's and does not leave.
+  agenda_entry: {
+    resourceIdsOf: byPatientId('agenda_entry'),
+    omittedBecause: null,
+    redactedColumns: ['patient_id'],
+  },
+  // AG-064. The outcome of a call about this patient's waiting-list entry.
+  waitlist_contact_attempt: {
+    resourceIdsOf: (chartId) => Prisma.sql`
+      SELECT a.id FROM waitlist_contact_attempt a
+        JOIN waitlist_entry w ON w.id = a.waitlist_entry_id
+       WHERE w.patient_id IN ${chartScopeIds(chartId)}`,
+    omittedBecause: null,
+  },
 };
 
 /**

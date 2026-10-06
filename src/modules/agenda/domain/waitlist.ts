@@ -156,6 +156,8 @@ export interface WaitlistCandidate {
   contactAttempts: number;
   /** AG-064. Derived from the same trail: `max(attempted_at)`, or `null`. */
   lastContactedAt: Date | null;
+  /** AG-165. The outcome of the last attempt, or `null` with none. */
+  lastOutcome: WaitlistContactOutcome | null;
   patient: CandidatePatientFacts;
 }
 
@@ -275,7 +277,12 @@ export function hasLapsed(
 export function hasExhaustedContactAttempts(
   attempts: number,
   parameters: WaitlistSiteParameters,
+  lastOutcome: WaitlistContactOutcome | null = null,
 ): boolean {
+  // AG-165 (D-141). A patient who said yes on the last call is waiting for
+  // the appointment to be linked, not for another call: expiring the entry
+  // would lose the slot they accepted.
+  if (lastOutcome === 'ACCEPTED') return false;
   return attempts >= parameters.maxContactAttempts;
 }
 
@@ -313,7 +320,11 @@ export function entriesToExpire(
       (entry) =>
         isOpenWaitlistStatus(entry.status) &&
         (hasLapsed(entry, today) ||
-          hasExhaustedContactAttempts(entry.contactAttempts, parameters)),
+          hasExhaustedContactAttempts(
+            entry.contactAttempts,
+            parameters,
+            entry.lastOutcome,
+          )),
     )
     .map((entry) => entry.id);
 }
@@ -438,8 +449,9 @@ export function rankWaiting(
 export function statusAfterContact(
   attemptsAfter: number,
   parameters: WaitlistSiteParameters,
+  outcome: WaitlistContactOutcome | null = null,
 ): Extract<WaitlistStatus, 'CONTACTED' | 'EXPIRED'> {
-  return hasExhaustedContactAttempts(attemptsAfter, parameters)
+  return hasExhaustedContactAttempts(attemptsAfter, parameters, outcome)
     ? 'EXPIRED'
     : 'CONTACTED';
 }

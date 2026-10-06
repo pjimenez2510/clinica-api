@@ -32,7 +32,10 @@ import type {
   HolidayQuery,
   NewBooking,
   PatientBookingStatus,
-  RescheduledBooking,
+  AgendaEntryVersion,
+  EditCommand,
+  EditRead,
+  EntryEdit,
   ScheduleContext,
   ScheduleContextQuery,
   StatusChange,
@@ -47,16 +50,15 @@ import {
   AgendaEntryHasEncounterError,
   AgendaEntryNotFoundError,
   BlockOverlapsAppointmentsError,
-  CancellationReasonRequiredError,
+  AgendaEntryNotEditableError,
   EmergencyAssessmentRequiredError,
-  EnteredInErrorReasonRequiredError,
   InvalidAgendaTransitionError,
+  NoShowUndoExpiredError,
   NoShowBeforeStartError,
   SubjectStatusNotDerivableError,
   OverbookingLimitReachedError,
   OverbookingNotAllowedError,
   OverbookingNotAuthorisedError,
-  OverbookingReasonRequiredError,
   SelfAuthorisationDeniedError,
 } from '../domain/agenda.errors';
 import type { Holiday } from '../domain/holiday-calendar';
@@ -89,8 +91,6 @@ const SERVICE_TYPE = '00000000-0000-4000-8000-000000000007';
 const DOCTOR_USER = '00000000-0000-4000-8000-000000000008';
 /** AG-115: the practitioner an appointment can be MOVED TO. */
 const OTHER_PRACTITIONER = '00000000-0000-4000-8000-000000000009';
-/** AG-115: the type of attention it can be moved to, distinct from the stored one. */
-const OTHER_SERVICE_TYPE = '00000000-0000-4000-8000-00000000000a';
 
 const REQUESTER: Requester = { userId: USER };
 
@@ -206,11 +206,7 @@ interface Recorded {
    * order of two calls — because there must not be two. `transitions` and
    * `booked` staying empty during a reschedule is the assertion.
    */
-  reschedules: {
-    command: TransitionCommand;
-    booking: RescheduledBooking;
-    change: StatusChange;
-  }[];
+  edits: { command: EditCommand; edit: EntryEdit }[];
 }
 
 /** The row `transition` hands the service's policy, as the adapter would. */
@@ -223,9 +219,24 @@ function aTransitionRead(
     status: 'BOOKED',
     startsAt: EIGHT,
     releasedAt: null,
+    noShowAt: null,
+    statusBeforeNoShow: null,
     hasEncounter: false,
     encounterHasClinicalAct: false,
     encounterInProgress: false,
+    ...overrides,
+  };
+}
+
+/** The row `editEntry` hands the edit policy, as the adapter would. */
+function anEditRead(overrides: Partial<EditRead> = {}): EditRead {
+  return {
+    id: 'entry-1',
+    kind: 'APPOINTMENT',
+    status: 'BOOKED',
+    releasedAt: null,
+    emergencyAssessedAt: null,
+    hasEncounter: false,
     ...overrides,
   };
 }
@@ -260,8 +271,12 @@ function repositoryDouble(
     transitionRead?: TransitionRead;
     /** AG-125, AG-127: the row the patient-axis policy judges. */
     subjectStatusRead?: SubjectStatusRead;
-    /** AG-050: the entry a reschedule reads before it decides, or `null`. */
+    /** AG-050: the entry an edit reads before it decides, or `null`. */
     entry?: AgendaEntryView | null;
+    /** AG-162: the row the edit policy judges inside the transaction. */
+    editRead?: EditRead;
+    /** AG-168: the versions storage answers. */
+    versions?: AgendaEntryVersion[];
     /** AG-094, AG-095: what the site has stored, `null` when it has no row. */
     siteParameters?: StoredSiteParameters | null;
     /** AG-110: the rows of `holiday` the booked date could be closed by. */
@@ -299,7 +314,7 @@ function repositoryDouble(
     authoriserQueries: [],
     transitions: [],
     subjectStatusChanges: [],
-    reschedules: [],
+    edits: [],
   };
 
   const repository: AgendaRepository = {
@@ -498,31 +513,18 @@ function repositoryDouble(
           ? anEntry({ id: query.entryId, siteId: query.siteId })
           : overrides.entry,
       ),
-    /**
-     * AG-050 to AG-052. The double answers the pair the real adapter answers
-     * — original annulled and released, new one pointing back at it — so a
-     * caller that expected one entry would not compile.
-     */
-    reschedule: (command, booking, decide) => {
-      const change = decide(overrides.transitionRead ?? aTransitionRead());
-      recorded.reschedules.push({ command, booking, change });
-      return Promise.resolve({
-        original: anEntry({
+    editEntry: (command, decide) => {
+      const edit = decide(overrides.editRead ?? anEditRead());
+      recorded.edits.push({ command, edit });
+      return Promise.resolve(
+        anEntry({
           id: command.entryId,
-          status: change.to,
-          releasedAt: change.effects.releasedAt ?? null,
-          rescheduledToId: 'entry-2',
+          ...(edit.startsAt ? { startsAt: edit.startsAt } : {}),
+          ...(edit.endsAt ? { endsAt: edit.endsAt } : {}),
         }),
-        created: anEntry({
-          id: 'entry-2',
-          startsAt: booking.startsAt,
-          endsAt: booking.endsAt,
-          bookingChannel: booking.bookingChannel,
-          createdById: command.changedById,
-          rescheduledFromId: command.entryId,
-        }),
-      });
+      );
     },
+    entryVersions: () => Promise.resolve(overrides.versions ?? []),
   };
 
   return { repository, recorded };
@@ -1133,21 +1135,14 @@ describe('transitioning an appointment', () => {
     expect(change?.effects.releasedAt).toBeInstanceOf(Date);
   });
 
-  it('AG-044 refuses a cancellation without a reason even for internal callers', async () => {
-    // The DTO already blocks this over HTTP; this pins the rule INSIDE the
-    // service, where E3's reschedule will call from (adversarial review P2-3).
+  it('AG-044 annuls without a reason (D-126) and stores no note', async () => {
     const { service, recorded } = serviceWith();
 
-    await expect(
-      service.transition({ ...aTransition(), to: 'CANCELLED' }, REQUESTER),
-    ).rejects.toBeInstanceOf(CancellationReasonRequiredError);
-    await expect(
-      service.transition(
-        { ...aTransition(), to: 'CANCELLED', reason: '   ' },
-        REQUESTER,
-      ),
-    ).rejects.toBeInstanceOf(CancellationReasonRequiredError);
-    expect(recorded.transitions).toHaveLength(0);
+    await service.transition({ ...aTransition(), to: 'CANCELLED' }, REQUESTER);
+
+    expect(recorded.transitions).toHaveLength(1);
+    expect(recorded.transitions[0]?.change.to).toBe('CANCELLED');
+    expect(recorded.transitions[0]?.change.cancellationNote).toBeUndefined();
   });
 
   it('AG-044 keeps the cancellation note for annulments alone', async () => {
@@ -1332,19 +1327,15 @@ describe('transitioning an appointment', () => {
     expect(recorded.transitions).toEqual([]);
   });
 
-  it('AG-117 requires a reason to retract an entry, even for internal callers', async () => {
+  it('AG-117 retracts an entry without a reason (D-126)', async () => {
     const { service, recorded } = serviceWith();
 
-    await expect(
-      service.transition({ ...aTransition(), to: 'ENTERED_IN_ERROR' }, REQUESTER), // prettier-ignore
-    ).rejects.toBeInstanceOf(EnteredInErrorReasonRequiredError);
-    await expect(
-      service.transition(
-        { ...aTransition(), to: 'ENTERED_IN_ERROR', reason: '   ' },
-        REQUESTER,
-      ),
-    ).rejects.toBeInstanceOf(EnteredInErrorReasonRequiredError);
-    expect(recorded.transitions).toHaveLength(0);
+    await service.transition(
+      { ...aTransition(), to: 'ENTERED_IN_ERROR' },
+      REQUESTER,
+    );
+
+    expect(recorded.transitions[0]?.change.to).toBe('ENTERED_IN_ERROR');
   });
 
   it('AG-117 releases the slot and keeps the reason out of the cancellation note', async () => {
@@ -1692,233 +1683,264 @@ describe('deriving the patient subject status', () => {
   });
 });
 
-/**
- * Rescheduling, at the layer that decides HOW it is done.
- *
- * WHAT ONLY THIS FILE CAN PROVE, and it is the whole reason AG-052 is
- * satisfiable at all: that the service does NOT compose the operation out of
- * an annulment followed by a booking. Whether the transaction really rolls
- * back is PostgreSQL's answer and lives in
- * `test/integration/agenda-reschedule.spec.ts`; whether there is a single
- * atomic call for it to roll back is decided here, and a double is exactly the
- * right instrument for it.
- */
-const aReschedule = (overrides: Record<string, unknown> = {}) => ({
+/** An hour after `EIGHT`: the slot an appointment is moved to. */
+const NINE = new Date(EIGHT.getTime() + 60 * 60_000);
+const NINE_TWENTY = new Date(EIGHT_TWENTY.getTime() + 60 * 60_000);
+
+/** AG-050, AG-162. An edit of the SAME appointment. */
+const anEdit = (overrides: Record<string, unknown> = {}) => ({
   siteId: SITE,
   entryId: 'entry-1',
-  startsAt: new Date('2026-09-14T14:00:00Z'),
-  endsAt: new Date('2026-09-14T14:20:00Z'),
-  bookingChannel: 'PHONE',
-  reason: 'Paciente pide otra hora',
+  startsAt: NINE,
+  endsAt: NINE_TWENTY,
   ...overrides,
 });
 
-describe('rescheduling an appointment', () => {
-  it('AG-052 moves the appointment through ONE atomic port call, never an annulment plus a booking', async () => {
+describe('editing an appointment in place (D-127)', () => {
+  it('AG-050 moves the SAME entry through one edit, never an annulment plus a booking', async () => {
     const { service, recorded } = serviceWith();
 
-    await service.reschedule(aReschedule(), REQUESTER);
+    const edited = await service.editEntry(anEdit(), REQUESTER);
 
-    // The assertion that matters is the pair of empties: composing the
-    // operation out of these two is what leaves a patient with no appointment
-    // the first time the destination slot is taken.
     expect(recorded.transitions).toEqual([]);
     expect(recorded.booked).toEqual([]);
-    expect(recorded.reschedules).toHaveLength(1);
-    expect(recorded.reschedules[0]?.command).toEqual({
+    expect(recorded.edits).toHaveLength(1);
+    expect(recorded.edits[0]?.command).toMatchObject({
       siteId: SITE,
       entryId: 'entry-1',
-      changedById: USER,
+      editedById: USER,
     });
+    expect(recorded.edits[0]?.edit).toMatchObject({
+      startsAt: NINE,
+      endsAt: NINE_TWENTY,
+    });
+    expect(edited.entry.id).toBe('entry-1');
   });
 
-  it('AG-050 hands the port the new interval and a decision that only releases the old row', async () => {
+  it('AG-050 keeps the channel it had when none is sent', async () => {
     const { service, recorded } = serviceWith();
 
-    const moved = await service.reschedule(aReschedule(), REQUESTER);
+    await service.editEntry(anEdit(), REQUESTER);
 
-    const [only] = recorded.reschedules;
-    expect(only?.booking).toEqual({
-      startsAt: new Date('2026-09-14T14:00:00Z'),
-      endsAt: new Date('2026-09-14T14:20:00Z'),
-      bookingChannel: 'PHONE',
-      // AG-115: asked for by nobody here, so they are the stored row's.
-      practitionerId: PRACTITIONER,
-      serviceTypeId: null,
-    });
-    // What the ORIGINAL row is told to become: annulled and released, with no
-    // key that could carry an interval (AG-050's «no mover la fila existente»).
-    expect(only?.change.to).toBe('CANCELLED');
-    expect(Object.keys(only?.change.effects ?? {}).sort()).toEqual([
-      'cancelledAt',
-      'releasedAt',
-    ]);
-    expect(moved.original.releasedAt).toBeInstanceOf(Date);
-  });
-
-  it('AG-051 answers with both entries naming each other', async () => {
-    const { service } = serviceWith();
-
-    const moved = await service.reschedule(aReschedule(), REQUESTER);
-
-    expect(moved.original.rescheduledToId).toBe(moved.created.id);
-    expect(moved.created.rescheduledFromId).toBe(moved.original.id);
-  });
-
-  it('AG-115 hands the port the practitioner and the type the request asked for', async () => {
-    const { service, recorded } = serviceWith({
-      entry: anEntry({ serviceTypeId: SERVICE_TYPE }),
-    });
-
-    await service.reschedule(
-      aReschedule({
-        practitionerId: OTHER_PRACTITIONER,
-        serviceTypeId: OTHER_SERVICE_TYPE,
-      }),
-      REQUESTER,
-    );
-
-    // The two fields of a row that is being BORN, so choosing them is not a
-    // mutation of the appointment that already exists (AG-050).
-    expect(recorded.reschedules[0]?.booking).toMatchObject({
-      practitionerId: OTHER_PRACTITIONER,
-      serviceTypeId: OTHER_SERVICE_TYPE,
-    });
-  });
-
-  it('AG-115 keeps the practitioner and the type of the original when the request names neither', async () => {
-    const { service, recorded } = serviceWith({
-      entry: anEntry({ serviceTypeId: SERVICE_TYPE }),
-    });
-
-    await service.reschedule(aReschedule(), REQUESTER);
-
-    // The behaviour that existed before AG-115 and that AG-115 must not break:
-    // both fields are optional, and absent means «the one it already had».
-    expect(recorded.reschedules[0]?.booking).toMatchObject({
-      practitionerId: PRACTITIONER,
-      serviceTypeId: SERVICE_TYPE,
-    });
+    expect(recorded.edits[0]?.edit.bookingChannel).toBeUndefined();
   });
 
   it('AG-115 judges the new interval against the schedule of the NEW practitioner', async () => {
     const { service, recorded } = serviceWith();
 
-    await service.reschedule(
-      aReschedule({ practitionerId: OTHER_PRACTITIONER }),
+    await service.editEntry(
+      anEdit({ practitionerId: OTHER_PRACTITIONER }),
       REQUESTER,
     );
 
-    // «Las mismas comprobaciones que una reserva» is worth nothing if they are
-    // run against the doctor being LEFT: the grid, the bookable flag and the
-    // site link (AG-028, AG-013) all belong to the one who will attend.
     expect(recorded.context.at(-1)?.practitionerId).toBe(OTHER_PRACTITIONER);
+    expect(recorded.edits[0]?.edit.practitionerId).toBe(OTHER_PRACTITIONER);
   });
 
-  it('AG-044 refuses a reschedule with no reason before it reads anything', async () => {
+  it('AG-162 corrects the motive of the visit without judging any schedule', async () => {
     const { service, recorded } = serviceWith();
 
-    await expect(
-      service.reschedule(aReschedule({ reason: '  ' }), REQUESTER),
-    ).rejects.toBeInstanceOf(CancellationReasonRequiredError);
-    expect(recorded.reschedules).toEqual([]);
-    // Not even the schedule was read: a refusal that costs a round trip is a
-    // worse refusal.
+    await service.editEntry(
+      { siteId: SITE, entryId: 'entry-1', reason: '  Control de presión  ' },
+      REQUESTER,
+    );
+
     expect(recorded.context).toEqual([]);
+    expect(recorded.edits[0]?.edit.reason).toBe('Control de presión');
   });
 
-  it('AG-071 answers a missing entry and a foreign one the same way', async () => {
-    const { service, recorded } = serviceWith({ entry: null });
-
-    await expect(
-      service.reschedule(aReschedule(), REQUESTER),
-    ).rejects.toBeInstanceOf(AgendaEntryNotFoundError);
-    expect(recorded.reschedules).toEqual([]);
-  });
-
-  it('AG-034 refuses an unknown booking channel before touching the entry', async () => {
-    const { service, recorded } = serviceWith();
-
-    await expect(
-      service.reschedule(
-        aReschedule({ bookingChannel: 'telefono' }),
-        REQUESTER,
-      ),
-    ).rejects.toBeInstanceOf(InvalidBookingChannelError);
-    expect(recorded.reschedules).toEqual([]);
-  });
-
-  it('AG-040 refuses to reschedule an appointment that is already terminal', async () => {
+  it('AG-162 refuses to move an appointment whose patient already arrived', async () => {
     const { service, recorded } = serviceWith({
-      entry: anEntry({ status: 'CANCELLED', releasedAt: EIGHT }),
+      editRead: anEditRead({ status: 'CHECKED_IN' }),
     });
 
-    await expect(
-      service.reschedule(aReschedule(), REQUESTER),
-    ).rejects.toBeInstanceOf(InvalidAgendaTransitionError);
-    expect(recorded.reschedules).toEqual([]);
+    await expect(service.editEntry(anEdit(), REQUESTER)).rejects.toBeInstanceOf(
+      AgendaEntryNotEditableError,
+    );
+    expect(recorded.edits).toEqual([]);
   });
 
-  it('AG-104 judges the NEW interval with the same rules a fresh booking gets', async () => {
-    const { service, recorded } = serviceWith();
-
-    // 14:10Z is 09:10 in Guayaquil: inside the rule, off the twenty-minute
-    // grid. A reschedule that skipped these checks would place an appointment
-    // the booking route refuses to create.
-    await expect(
-      service.reschedule(
-        aReschedule({
-          startsAt: new Date('2026-09-14T14:10:00Z'),
-          endsAt: new Date('2026-09-14T14:30:00Z'),
-        }),
-        REQUESTER,
-      ),
-    ).rejects.toBeInstanceOf(SlotNotAlignedError);
-    expect(recorded.reschedules).toEqual([]);
-  });
-
-  it('AG-027 refuses moving an appointment whose chart was merged away', async () => {
+  it('AG-162 still corrects the room of an appointment in the waiting room', async () => {
     const { service, recorded } = serviceWith({
-      patient: { id: PATIENT, mergedIntoMrn: 'HC-000042' },
+      editRead: anEditRead({ status: 'CHECKED_IN' }),
     });
 
-    await expect(
-      service.reschedule(aReschedule(), REQUESTER),
-    ).rejects.toBeInstanceOf(PatientMergedError);
-    expect(recorded.reschedules).toEqual([]);
+    await service.editEntry(
+      { siteId: SITE, entryId: 'entry-1', roomId: ROOM },
+      REQUESTER,
+    );
+
+    expect(recorded.rooms).toEqual([ROOM]);
+    expect(recorded.edits[0]?.edit.roomId).toBe(ROOM);
   });
 
-  it('AG-110 warns about the day the appointment LANDED on, read after it exists', async () => {
+  it('AG-162 a moved overbooking becomes an ordinary appointment', async () => {
+    const { service, recorded } = serviceWith({
+      entry: anEntry({ blocksCalendar: false }),
+    });
+
+    await service.editEntry(anEdit(), REQUESTER);
+
+    expect(recorded.edits[0]?.edit.clearOverbooking).toBe(true);
+  });
+
+  it('AG-071 answers a missing entry, a foreign one and a block the same way', async () => {
+    for (const entry of [null, anEntry({ kind: 'BLOCK', patientId: null })]) {
+      const { service, recorded } = serviceWith({ entry });
+      await expect(
+        service.editEntry(anEdit(), REQUESTER),
+      ).rejects.toBeInstanceOf(AgendaEntryNotFoundError);
+      expect(recorded.edits).toEqual([]);
+    }
+  });
+
+  it('AG-045 refuses to move an appointment with a live attention', async () => {
     const { service } = serviceWith({
-      holidays: [
-        {
-          id: 'holiday-1',
-          date: parseClinicalDate('2026-09-14'),
-          name: 'Fiesta local',
-          siteId: SITE,
-          workedBySiteIds: [],
-        },
+      editRead: anEditRead({ hasEncounter: true }),
+    });
+
+    await expect(service.editEntry(anEdit(), REQUESTER)).rejects.toBeInstanceOf(
+      AgendaEntryHasEncounterError,
+    );
+  });
+});
+
+describe('editing a block (AG-164)', () => {
+  const aBlock = () =>
+    anEntry({ kind: 'BLOCK', patientId: null, status: 'BLOCKED' });
+
+  it('AG-164 edits the same block and asks first whether appointments stand inside', async () => {
+    const { service, recorded } = serviceWith({
+      entry: aBlock(),
+      editRead: anEditRead({ kind: 'BLOCK', status: 'BLOCKED' }),
+    });
+
+    await service.editBlock(
+      { siteId: SITE, entryId: 'entry-1', reason: 'Congreso' },
+      REQUESTER,
+    );
+
+    expect(recorded.blockingQueries).toHaveLength(1);
+    expect(recorded.edits[0]?.edit.reason).toBe('Congreso');
+  });
+
+  it('AG-164 refuses with the list when the new interval holds appointments', async () => {
+    const { service, recorded } = serviceWith({
+      entry: aBlock(),
+      blockingAppointments: [
+        { id: 'entry-9', startsAt: EIGHT, endsAt: EIGHT_TWENTY },
       ],
     });
 
-    const moved = await service.reschedule(aReschedule(), REQUESTER);
+    await expect(service.editBlock(anEdit(), REQUESTER)).rejects.toBeInstanceOf(
+      BlockOverlapsAppointmentsError,
+    );
+    expect(recorded.edits).toEqual([]);
+  });
+});
 
-    expect(moved.warnings.join(' ')).toContain('Fiesta local');
+describe('undoing a no-show (AG-163)', () => {
+  it('AG-163 takes the appointment back to the status it had, the same day', async () => {
+    const now = new Date();
+    const { service, recorded } = serviceWith({
+      transitionRead: aTransitionRead({
+        status: 'NO_SHOW',
+        noShowAt: now,
+        statusBeforeNoShow: 'CONFIRMED',
+        releasedAt: now,
+      }),
+    });
+
+    await service.undoNoShow({ siteId: SITE, entryId: 'entry-1' }, REQUESTER);
+
+    expect(recorded.transitions[0]?.change).toMatchObject({
+      to: 'CONFIRMED',
+      effects: { noShowAt: null, releasedAt: null },
+    });
   });
 
-  it('AG-074 logs the site and the fact, never the patient or the reason', async () => {
-    const { service, lines } = serviceWith();
+  it('AG-163 refuses it on a later day', async () => {
+    const yesterday = new Date(Date.now() - 36 * 60 * 60 * 1000);
+    const { service } = serviceWith({
+      transitionRead: aTransitionRead({
+        status: 'NO_SHOW',
+        noShowAt: yesterday,
+        statusBeforeNoShow: 'BOOKED',
+        releasedAt: yesterday,
+      }),
+    });
 
-    await service.reschedule(
-      aReschedule({ reason: 'Motivo con dato de salud' }),
+    await expect(
+      service.undoNoShow({ siteId: SITE, entryId: 'entry-1' }, REQUESTER),
+    ).rejects.toBeInstanceOf(NoShowUndoExpiredError);
+  });
+
+  it('AG-163 refuses it on an appointment that is not a no-show', async () => {
+    const { service } = serviceWith();
+
+    await expect(
+      service.undoNoShow({ siteId: SITE, entryId: 'entry-1' }, REQUESTER),
+    ).rejects.toBeInstanceOf(InvalidAgendaTransitionError);
+  });
+});
+
+describe('correcting the emergency call (AG-132)', () => {
+  it('AG-132 the corrector makes the call again, now', async () => {
+    const { service, recorded } = serviceWith({
+      editRead: anEditRead({
+        status: 'CHECKED_IN',
+        emergencyAssessedAt: EIGHT,
+      }),
+    });
+
+    await service.correctEmergency(
+      { siteId: SITE, entryId: 'entry-1', emergency: true, emergencyNote: 'Dolor torácico' }, // prettier-ignore
       REQUESTER,
     );
 
-    const logged = JSON.stringify(lines);
-    expect(logged).toContain('AGENDA_ENTRY_RESCHEDULED');
-    expect(logged).not.toContain('Motivo con dato de salud');
-    expect(logged).not.toContain(PATIENT);
-    expect(logged).not.toContain(PRACTITIONER);
+    const emergency = recorded.edits[0]?.edit.emergency;
+    expect(emergency?.assessedById).toBe(USER);
+    expect(emergency?.flaggedById).toBe(USER);
+    expect(emergency?.note).toBe('Dolor torácico');
+  });
+
+  it('AG-132 corrects only a call that was made', async () => {
+    const { service } = serviceWith();
+
+    await expect(
+      service.correctEmergency(
+        { siteId: SITE, entryId: 'entry-1', emergency: false },
+        REQUESTER,
+      ),
+    ).rejects.toBeInstanceOf(AgendaEntryNotEditableError);
+  });
+});
+
+describe('the versions of an appointment (AG-168)', () => {
+  it('AG-168 answers what storage keeps, and nothing for a foreign entry', async () => {
+    const version: AgendaEntryVersion = {
+      version: 1,
+      replacedAt: EIGHT,
+      replacedBy: { id: USER, name: 'Rosa Cedeño' },
+      startsAt: EIGHT,
+      endsAt: EIGHT_TWENTY,
+      practitionerId: PRACTITIONER,
+      roomId: null,
+      serviceTypeId: null,
+      bookingChannel: 'PHONE',
+      patientId: PATIENT,
+      blocksCalendar: true,
+      emergencyFlagged: null,
+    };
+    const { service } = serviceWith({ versions: [version] });
+    await expect(
+      service.entryVersions({ siteId: SITE, entryId: 'entry-1' }),
+    ).resolves.toEqual([version]);
+
+    const foreign = serviceWith({ entry: null });
+    await expect(
+      foreign.service.entryVersions({ siteId: SITE, entryId: 'entry-1' }),
+    ).rejects.toBeInstanceOf(AgendaEntryNotFoundError);
   });
 });
 
@@ -2252,20 +2274,21 @@ describe('AG-035 el sobrecupo', () => {
     });
   });
 
-  it('AG-035 rechaza el sobrecupo sin motivo y no escribe nada', async () => {
+  it('AG-035 admite el sobrecupo sin motivo y guarda solo el autorizador', async () => {
     const { service, recorded } = serviceWith();
 
-    await expect(
-      service.book(
-        {
-          ...aBooking(),
-          overbooking: { reason: '   ', authorisedById: DOCTOR_USER },
-        },
-        REQUESTER,
-      ),
-    ).rejects.toBeInstanceOf(OverbookingReasonRequiredError);
+    await service.book(
+      {
+        ...aBooking(),
+        overbooking: { reason: '   ', authorisedById: DOCTOR_USER },
+      },
+      REQUESTER,
+    );
 
-    expect(recorded.booked).toEqual([]);
+    expect(recorded.booked[0]?.overbooking).toEqual({
+      reason: null,
+      authorisedById: DOCTOR_USER,
+    });
   });
 
   it('AG-028, AG-104 admite el intervalo fuera de la rejilla cuando se declara sobrecupo', async () => {

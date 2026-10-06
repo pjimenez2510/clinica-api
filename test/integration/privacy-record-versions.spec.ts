@@ -205,6 +205,39 @@ async function everyVersionedRowOf(
     },
   });
 
+  // AG-051, AG-064: an appointment and a waiting-list call of this patient.
+  // One hour per call, so two scenes on the same practitioner never overlap.
+  const hour = (await prisma.agendaEntry.count()) * 3_600_000;
+  const appointment = await prisma.agendaEntry.create({
+    data: {
+      kind: 'APPOINTMENT',
+      siteId: scene.site.id,
+      practitionerId: scene.practitioner.id,
+      patientId,
+      startsAt: new Date(
+        scene.encounter.startedAt.getTime() - 3_600_000 - hour,
+      ),
+      endsAt: new Date(scene.encounter.startedAt.getTime() - 3_000_000 - hour),
+      bookingChannel: 'PHONE',
+      createdById: author.id,
+    },
+  });
+  const waiting = await prisma.waitlistEntry.create({
+    data: {
+      patientId,
+      siteId: scene.site.id,
+      preferredFrom: new Date(),
+      preferredTo: new Date(),
+    },
+  });
+  const call = await prisma.waitlistContactAttempt.create({
+    data: {
+      waitlistEntryId: waiting.id,
+      recordedById: author.id,
+      outcome: 'NO_ANSWER',
+    },
+  });
+
   const versioned: Record<string, string> = {
     encounter: encounterId,
     // Vitals are one row per attention, archived by `encounter_id`.
@@ -215,6 +248,8 @@ async function everyVersionedRowOf(
     patient_history: history.id,
     patient_priority_group: group.id,
     data_subject_request: request.id,
+    agenda_entry: appointment.id,
+    waitlist_contact_attempt: call.id,
   };
   for (const [table, resourceId] of Object.entries(versioned)) {
     await prisma.recordVersion.create({

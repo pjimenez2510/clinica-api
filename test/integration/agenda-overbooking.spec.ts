@@ -338,15 +338,16 @@ describe('el sobrecupo y los bloqueos', () => {
       ).rejects.toThrow(/agenda_entry_overbooking_coherence/);
     });
 
-    it('AG-035 rechaza el sobrecupo sin motivo por campo, y no escribe nada', async () => {
+    it('AG-035 admite el sobrecupo sin motivo (D-126) y guarda el autorizador', async () => {
       const response = await book(
         anOverbookingAt(at(monday, '08:10'), { overbookingReason: undefined }),
-      ).expect(422);
+      ).expect(201);
 
-      expect((response.body as Problem).errors?.[0]).toMatchObject({
-        field: 'overbookingReason',
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: (response.body as { id: string }).id },
       });
-      await expect(prisma.agendaEntry.count()).resolves.toBe(0);
+      expect(stored.overbookingReason).toBeNull();
+      expect(stored.overbookingAuthorisedById).not.toBeNull();
     });
   });
 

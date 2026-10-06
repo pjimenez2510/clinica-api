@@ -31,7 +31,6 @@ import {
   OverbookingNotAllowedError,
   OverbookingNotAuthorisedError,
   OverbookingPractitionerUnavailableError,
-  OverbookingReasonRequiredError,
   SelfAuthorisationDeniedError,
 } from './agenda.errors';
 import type { Permission } from '../../../shared/authorisation/permission.catalogue';
@@ -69,17 +68,13 @@ export function assertOverbookingAdmitted(parameters: {
 }
 
 /**
- * AG-035. The reason, trimmed, or a refusal.
- *
- * IT RETURNS THE VALUE INSTEAD OF ASSERTING IT, so what gets stored is what
- * was checked: a caller that validated the raw string and then stored the
- * untrimmed one would write «   » into a column whose CHECK forbids it, and
- * the honest 422 would arrive from PostgreSQL as a constraint name.
+ * AG-035 (enmendado, D-126). The reason, trimmed, or `null` when none was
+ * given: the authoriser is the control of an overbooking, and the reason is
+ * an optional pick from a short list.
  */
-export function requireOverbookingReason(reason: string | undefined): string {
+export function overbookingReasonOf(reason: string | undefined): string | null {
   const trimmed = reason?.trim() ?? '';
-  if (trimmed === '') throw new OverbookingReasonRequiredError();
-  return trimmed;
+  return trimmed === '' ? null : trimmed;
 }
 
 /** AG-101, AG-103. The facts `checkOverbookingAuthoriser` decides on. */
