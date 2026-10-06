@@ -5,6 +5,7 @@ import {
   classifyNumeric,
   criticalBounds,
   classifyQualitative,
+  inWholeYears,
   isCritical,
 } from './abnormal-flag';
 import { GLUCOSE, HAEMOGLOBIN, NITRITES } from './analyte.fixtures';
@@ -285,5 +286,18 @@ describe('la bandera de anormalidad', () => {
     expect(isCritical('CRITICAL_HIGH')).toBe(true);
     expect(isCritical('HIGH')).toBe(false);
     expect(isCritical(null)).toBe(false);
+  });
+});
+
+describe('ORD-127 la ventana de edad en años enteros', () => {
+  it('ORD-127 reconoce los años como los guarda la pantalla, y no los meses ni los días', () => {
+    // «0 a menos de 2 años»: 0 y 730 (731 − 1).
+    expect(inWholeYears({ ageMinDays: 0, ageMaxDays: 730 })).toBe(true);
+    // «desde 18 años»: 6575 (18 × 365,25).
+    expect(inWholeYears({ ageMinDays: 6575, ageMaxDays: null })).toBe(true);
+    // «0 a menos de 18 meses»: 547 (548 − 1).
+    expect(inWholeYears({ ageMinDays: 0, ageMaxDays: 547 })).toBe(false);
+    // «0 a 28 días».
+    expect(inWholeYears({ ageMinDays: 0, ageMaxDays: 27 })).toBe(false);
   });
 });

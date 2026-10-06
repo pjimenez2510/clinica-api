@@ -11,7 +11,8 @@ import type { PrismaService } from '../../src/shared/infrastructure/prisma/prism
 
 import { placeIssued, aScene } from './orders-fixtures';
 import { useDatabase } from './setup/database';
-import { createSite } from './setup/fixtures';
+import { createSite, createUser } from './setup/fixtures';
+import { OrderItemNotPendingError } from '../../src/modules/orders/domain/orders.errors';
 
 /**
  * The result against a real PostgreSQL.
@@ -1019,5 +1020,256 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
       select: { pendingItems: true },
     });
     expect(stored.pendingItems).toBe(1);
+  });
+  it('ORD-124 rechaza el informe de una orden con todos sus exámenes anulados y no escribe nada', async () => {
+    const prisma = db();
+    const scene = await anOrderedBloodCount(prisma);
+    const { reports, orders } = serviceOf(prisma);
+    const canceller = await createUser(prisma);
+    await orders.cancelItem({
+      orderId: scene.order.id,
+      itemId: scene.order.items[0]!.id,
+      sites: 'all',
+      cancelledById: canceller.id,
+    });
+
+    const now = new Date();
+    await expect(
+      reports.register(
+        {
+          orderId: scene.order.id,
+          performedById: null,
+          issuedAt: new Date(now.getTime() - 60 * 60 * 1000),
+          results: [{ analyteDefinitionId: scene.hb.id, valueNumeric: 13.4 }],
+        },
+        requester,
+        now,
+      ),
+    ).rejects.toBeInstanceOf(OrderItemNotPendingError);
+
+    expect(
+      await prisma.diagnosticReport.count({ where: { serviceOrderId: scene.order.id } }), // prettier-ignore
+    ).toBe(0);
+  });
+
+  it('ORD-124 con un examen vivo y otro anulado el informe entra, y ningún valor queda bajo el anulado', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const { reports, orders } = serviceOf(prisma);
+    const order = await placeIssued(orders, {
+      encounterId: scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [
+        { examDefinitionId: scene.bh.id },
+        { examDefinitionId: scene.glucose.id },
+      ],
+      sites: 'all',
+    });
+    const glucoseLine = order.items.find((i) => i.testCode === 'EX-GLUCOSA-AYUNAS')!; // prettier-ignore
+    const canceller = await createUser(prisma);
+    await orders.cancelItem({
+      orderId: order.id,
+      itemId: glucoseLine.id,
+      sites: 'all',
+      cancelledById: canceller.id,
+    });
+
+    const now = new Date();
+    const report = await reports.register(
+      {
+        orderId: order.id,
+        performedById: null,
+        issuedAt: new Date(now.getTime() - 60 * 60 * 1000),
+        results: [
+          { analyteDefinitionId: scene.hb.id, valueNumeric: 13.4 },
+          { analyteDefinitionId: scene.glu.id, valueNumeric: 92 },
+        ],
+      },
+      requester,
+      now,
+    );
+
+    // Control positivo: el informe entra y la biometría cierra su línea.
+    expect(report.status).toBe('FINAL');
+    const rows = await prisma.observationResult.findMany({
+      where: { reportId: report.id },
+      select: { analyteDisplay: true, orderItemId: true },
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows.some((r) => r.orderItemId === glucoseLine.id)).toBe(false);
+    // La glucosa que llegó queda sin línea, en su cola (ORD-040).
+    expect(rows.find((r) => r.analyteDisplay === 'Glucosa en ayunas')?.orderItemId).toBeNull(); // prettier-ignore
+    const stored = await prisma.serviceOrderItem.findUniqueOrThrow({
+      where: { id: glucoseLine.id },
+      select: { status: true },
+    });
+    expect(stored.status).toBe('CANCELLED');
+  });
+});
+
+/**
+ * ORD-124, ORD-008 (revisión de la rama). Lo que garantiza la base, y las dos
+ * carreras con la anulación, reproducidas sin esperas fijas: una transacción
+ * retiene el bloqueo y la prueba espera a ver la otra sesión bloqueada en
+ * `pg_locks` antes de soltarlo.
+ */
+describe('ORD-124 la anulación y el informe, a la vez, contra PostgreSQL', () => {
+  /** Waits until some session is waiting on a lock: the race is set. */
+  async function untilSomeoneWaits(prisma: PrismaClient): Promise<void> {
+    const deadline = Date.now() + 10_000;
+    for (;;) {
+      const [row] = await prisma.$queryRaw<{ waiting: bigint }[]>`
+        SELECT count(*) AS "waiting" FROM pg_locks WHERE NOT granted`;
+      if (Number(row?.waiting ?? 0) > 0) return;
+      if (Date.now() > deadline) throw new Error('Nadie quedó esperando el bloqueo'); // prettier-ignore
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  }
+
+  async function aTwoLineOrder(prisma: PrismaClient) {
+    const scene = await aScene(prisma);
+    const { orders } = serviceOf(prisma);
+    const order = await placeIssued(orders, {
+      encounterId: scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [
+        { examDefinitionId: scene.bh.id },
+        { examDefinitionId: scene.glucose.id },
+      ],
+      sites: 'all',
+    });
+    const line = (code: string) => order.items.find((i) => i.testCode === code)!; // prettier-ignore
+    return { scene, order, bh: line('EX-BH'), glucose: line('EX-GLUCOSA-AYUNAS') }; // prettier-ignore
+  }
+
+  it('ORD-124 la base no deja colgar un resultado de una línea anulada; de una viva, sí (control positivo)', async () => {
+    const prisma = db();
+    const { scene, order, glucose, bh } = await aTwoLineOrder(prisma);
+    const { reports, orders } = serviceOf(prisma);
+    const now = new Date();
+    // Un informe de verdad, del que se copian las filas de prueba.
+    const report = await reports.register(
+      {
+        orderId: order.id,
+        performedById: null,
+        issuedAt: new Date(now.getTime() - 60 * 60 * 1000),
+        results: [{ analyteDefinitionId: scene.hb.id, valueNumeric: 13.4 }],
+      },
+      requester,
+      now,
+    );
+    const resultId = report.results[0]!.id;
+    await orders.cancelItem({ orderId: order.id, itemId: glucose.id, sites: 'all', cancelledById: (await createUser(prisma)).id }); // prettier-ignore
+
+    await expect(
+      prisma.$executeRaw`INSERT INTO "observation_result" ("report_id", "order_item_id", "analyte_display", "value_numeric", "unit", "observed_at")
+        SELECT "report_id", ${glucose.id}::uuid, 'Glucosa en ayunas', 90, 'mg/dL', "observed_at" FROM "observation_result" WHERE "id" = ${BigInt(resultId)}`,
+    ).rejects.toThrow(/ORD-124|observation_result_not_on_cancelled_line/);
+    // Control positivo: la misma fila, bajo la línea viva, entra.
+    await expect(
+      prisma.$executeRaw`INSERT INTO "observation_result" ("report_id", "order_item_id", "analyte_display", "value_numeric", "unit", "observed_at")
+        SELECT "report_id", ${bh.id}::uuid, 'Hemoglobina', 13.1, 'g/dL', "observed_at" FROM "observation_result" WHERE "id" = ${BigInt(resultId)}`,
+    ).resolves.toBe(1);
+  });
+
+  it('ORD-008 la base no deja anular una línea completada; una pendiente, sí (control positivo)', async () => {
+    const prisma = db();
+    const { bh, glucose } = await aTwoLineOrder(prisma);
+    const userId = (await createUser(prisma)).id;
+    await prisma.serviceOrderItem.update({ where: { id: bh.id }, data: { status: 'COMPLETED', completedAt: new Date() } }); // prettier-ignore
+
+    await expect(
+      prisma.serviceOrderItem.update({ where: { id: bh.id }, data: { status: 'CANCELLED', cancelledById: userId } }), // prettier-ignore
+    ).rejects.toThrow(/ORD-008|service_order_item_completed_is_not_cancelled/);
+    await prisma.serviceOrderItem.update({
+      where: { id: glucose.id },
+      data: {
+        status: 'CANCELLED',
+        completedAt: new Date(),
+        cancelledById: userId,
+      },
+    });
+  });
+
+  it('ORD-124 una anulación confirmada mientras el informe espera hace que el informe se rechace entero', async () => {
+    const prisma = db();
+    const { scene, order, glucose } = await aTwoLineOrder(prisma);
+    const { reports } = serviceOf(prisma);
+    const userId = (await createUser(prisma)).id;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+
+    // Otra sesión anula la glucosa y retiene el bloqueo.
+    const cancelling = prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`UPDATE "service_order_item" SET "status" = 'CANCELLED', "completed_at" = clock_timestamp(), "cancelled_by_id" = ${userId}::uuid WHERE "id" = ${glucose.id}::uuid`;
+        await held;
+      },
+      { timeout: 20_000 },
+    );
+    const now = new Date();
+    const registering = reports
+      .register(
+        {
+          orderId: order.id,
+          performedById: null,
+          issuedAt: new Date(now.getTime() - 60 * 60 * 1000),
+          results: [
+            { analyteDefinitionId: scene.hb.id, valueNumeric: 13.4 },
+            { analyteDefinitionId: scene.glu.id, valueNumeric: 92 },
+          ],
+        },
+        requester,
+        now,
+      )
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+    await untilSomeoneWaits(prisma);
+    release();
+    await cancelling;
+
+    expect(await registering).toBeInstanceOf(OrderItemNotPendingError);
+    expect(await prisma.diagnosticReport.count({ where: { serviceOrderId: order.id } })).toBe(0); // prettier-ignore
+  });
+
+  it('ORD-008 una anulación que espera a que el informe complete la línea se rechaza, y la línea sigue completada', async () => {
+    const prisma = db();
+    const { order, bh } = await aTwoLineOrder(prisma);
+    const { orders } = serviceOf(prisma);
+    const userId = (await createUser(prisma)).id;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+
+    // El informe completa la biometría y retiene el bloqueo.
+    const completing = prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT 1 FROM "service_order_item" WHERE "id" = ${bh.id}::uuid FOR UPDATE`;
+        await tx.$executeRaw`UPDATE "service_order_item" SET "status" = 'COMPLETED', "completed_at" = clock_timestamp() WHERE "id" = ${bh.id}::uuid`;
+        await held;
+      },
+      { timeout: 20_000 },
+    );
+    const cancelling = orders
+      .cancelItem({
+        orderId: order.id,
+        itemId: bh.id,
+        sites: 'all',
+        cancelledById: userId,
+      }) // prettier-ignore
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+    await untilSomeoneWaits(prisma);
+    release();
+    await completing;
+
+    expect(await cancelling).toBeInstanceOf(OrderItemNotPendingError);
+    const stored = await prisma.serviceOrderItem.findUniqueOrThrow({ where: { id: bh.id }, select: { status: true } }); // prettier-ignore
+    expect(stored.status).toBe('COMPLETED');
   });
 });

@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { PrismaDiagnosticReportRepository } from './prisma-diagnostic-report.repository';
 import type { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import type { NewReport } from '../domain/diagnostic-report.repository';
-import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
 
 /**
  * The report's write transaction, against a double of the Prisma client.
@@ -24,8 +23,6 @@ import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
  */
 
 const ORDER = '00000000-0000-4000-8000-00000000000a';
-/** When the fixture encounter began: today, so the age is derived, not typed. */
-const STARTED_AT = new Date();
 const ITEM = '00000000-0000-4000-8000-00000000000b';
 
 interface Call {
@@ -61,8 +58,12 @@ function prismaDouble(
 
   const tx = {
     $queryRaw: (strings: TemplateStringsArray, ...values: unknown[]) => {
-      record('$queryRaw', { sql: strings.join('?'), values });
-      return Promise.resolve([]);
+      const sql = strings.join('?');
+      record('$queryRaw', { sql, values });
+      // ORD-124. The order's lines, locked: one live line by default.
+      return Promise.resolve(
+        sql.includes('service_order_item') ? [{ status: 'REQUESTED' }] : [],
+      );
     },
     serviceOrder: {
       findFirst: (args: unknown) => {
@@ -119,13 +120,12 @@ function prismaDouble(
                 siteId: 'site-1',
                 encounter: {
                   patientId: 'chart-1',
-                  startedAt: STARTED_AT,
-                  // 32 años y 10 días: el resto de días de la edad es 10.
+                  // EN-221. La edad entera que congeló la atención; el resto
+                  // de días tras años y meses (`ageDays`, 10) no se lee.
                   ageDays: 10,
-                  patient: {
-                    sex: 'FEMALE',
-                    birthDate: new Date(`${addDays(clinicalDateOf(STARTED_AT), -12_000)}T00:00:00Z`), // prettier-ignore
-                  },
+                  ageInDays: 12_000,
+                  ageEstimated: false,
+                  patient: { sex: 'FEMALE' },
                 },
               }
             : options.orderRow,
@@ -280,10 +280,11 @@ describe('el adaptador del informe', () => {
     expect(report?.supersededAt).toEqual(new Date('2026-09-19T13:00:00Z'));
   });
 
-  it('ORD-036 lee la edad en días el día de la ATENCIÓN y el sexo de la ficha', async () => {
-    // La edad entera en días el día de la atención, no la de hoy: un
-    // resultado de hace dos años no se reclasifica. Y no `encounter.age_days`,
-    // que es sólo el resto de días tras años y meses (lo que imprime el 010).
+  it('ORD-036 ORD-127 lee la edad entera que congeló la atención, si era estimada, y el sexo de la ficha', async () => {
+    // La edad entera en días que congeló la atención (EN-221), no la de hoy
+    // ni la de la fecha de la ficha: un resultado de hace dos años, o
+    // corregido tras rectificar la fecha, no se reclasifica. Y no
+    // `encounter.age_days`, que es sólo el resto tras años y meses.
     const { repository } = prismaDouble();
 
     expect(await repository.patientOfOrder(ORDER, 'all')).toEqual({
@@ -291,21 +292,11 @@ describe('el adaptador del informe', () => {
       siteId: 'site-1',
       sex: 'FEMALE',
       ageDays: 12_000,
+      ageEstimated: false,
     });
 
     const missing = prismaDouble({ orderRow: null });
     expect(await missing.repository.patientOfOrder(ORDER, 'all')).toBeUndefined(); // prettier-ignore
-  });
-
-  it('ORD-036 una fecha de nacimiento posterior a la atención da edad desconocida, no negativa', async () => {
-    const born = (days: number) => new Date(`${addDays(clinicalDateOf(STARTED_AT), days)}T00:00:00Z`); // prettier-ignore
-    const row = (birthDate: Date) => ({ siteId: 'site-1', encounter: { patientId: 'chart-1', startedAt: STARTED_AT, patient: { sex: 'FEMALE', birthDate } } }); // prettier-ignore
-
-    const later = prismaDouble({ orderRow: row(born(1)) });
-    expect((await later.repository.patientOfOrder(ORDER, 'all'))?.ageDays).toBeNull(); // prettier-ignore
-    // Control positivo: nacido el mismo día tiene 0 días.
-    const sameDay = prismaDouble({ orderRow: row(born(0)) });
-    expect((await sameDay.repository.patientOfOrder(ORDER, 'all'))?.ageDays).toBe(0); // prettier-ignore
   });
 
   it('ORD-040 pide a la base exactamente los resultados sin línea, dentro del alcance', async () => {
@@ -381,14 +372,24 @@ describe('el adaptador del informe', () => {
       promises,
     );
     const order = correction.calls.map((call) => call.method);
-    const lock = correction.calls.find((call) => call.method === '$queryRaw');
+    const lock = correction.calls.find(
+      (call) =>
+        call.method === '$queryRaw' &&
+        (call.args as { sql: string }).sql.includes('diagnostic_report'),
+    );
     expect((lock?.args as { sql: string }).sql).toContain('FOR NO KEY UPDATE');
     expect((lock?.args as { values: unknown[] }).values).toEqual(['report-0']);
-    expect(order.indexOf('$queryRaw')).toBeLessThan(order.indexOf('diagnosticReport.create')); // prettier-ignore
+    expect(correction.calls.indexOf(lock!)).toBeLessThan(order.indexOf('diagnosticReport.create')); // prettier-ignore
 
     // Control: un informe que no sustituye a nada no bloquea ninguno.
     const plain = prismaDouble();
     await plain.repository.register(aReport(), promises);
-    expect(plain.calls.some((call) => call.method === '$queryRaw')).toBe(false);
+    expect(
+      plain.calls.some((call) =>
+        ((call.args as { sql?: string }).sql ?? '').includes(
+          'FOR NO KEY UPDATE',
+        ),
+      ),
+    ).toBe(false);
   });
 });

@@ -118,7 +118,8 @@ describe('DOC-090 qué clases sirve cada permiso', () => {
     // It is pre-printed paper the ACESS issues and sells, with its own
     // numbering and under the doctor's nominal custody. A PDF we produced would
     // not be that prescription.
-    expect(DOCUMENT_KINDS).toHaveLength(4);
+    // DOC-113: the fifth is the summary of the attention, never archived.
+    expect(DOCUMENT_KINDS).toHaveLength(5);
     expect(DOCUMENT_KINDS.join(',')).not.toMatch(/CONTROLLED|ESTUPEFACIENTE/i);
   });
 

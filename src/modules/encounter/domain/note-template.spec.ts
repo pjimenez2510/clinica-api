@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { FORM_002_BUILT_IN_SECTIONS } from '../../../shared/clinical/form-002';
+
 import {
   NoteContentIncompleteError,
   NoteTemplateInvalidError,
@@ -50,6 +52,12 @@ const COMPLETE_002 = {
 };
 
 describe('la plantilla de serie', () => {
+  it('DOC-111 los títulos de la 002 de serie son los que imprime el resumen de la atención', () => {
+    expect(
+      builtInTemplate('002').sections.map(({ key, title }) => ({ key, title })),
+    ).toEqual(FORM_002_BUILT_IN_SECTIONS);
+  });
+
   it('EN-200 trae las seis secciones del mínimo de EN-020, obligatorias y en el orden de la consulta', () => {
     expect(builtIn.sections.map((section) => section.key)).toEqual([
       ...MINIMUM_002_KEYS,

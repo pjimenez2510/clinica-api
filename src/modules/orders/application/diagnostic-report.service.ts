@@ -833,8 +833,17 @@ export class DiagnosticReportService {
       throw new ResultAnalyteUnknownError();
     const byId = new Map(analytes.map((analyte) => [analyte.id, analyte]));
 
-    const exams = await this.exams.byCodes(order.items.map((i) => i.testCode));
-    const lineOfAnalyte = matchAnalytesToLines(order, exams);
+    /**
+     * ORD-124. A cancelled line answers nothing: no value hangs under it and
+     * nothing is expected of it. The refusal of an order with no live line is
+     * the repository's, under the lock that makes it true at the write.
+     */
+    const live = {
+      ...order,
+      items: order.items.filter((item) => item.status !== 'CANCELLED'),
+    };
+    const exams = await this.exams.byCodes(live.items.map((i) => i.testCode));
+    const lineOfAnalyte = matchAnalytesToLines(live, exams);
 
     const results: ReportedResult[] = submitted.map((result) => {
       const analyte = byId.get(result.analyteDefinitionId);
@@ -851,9 +860,9 @@ export class DiagnosticReportService {
       };
     });
 
-    const expected = expectedAnalytesOf(order, exams);
+    const expected = expectedAnalytesOf(live, exams);
     return {
-      status: statusOf(order, expected, results),
+      status: statusOf(live, expected, results),
       results,
       expected,
       patient,

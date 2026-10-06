@@ -88,6 +88,10 @@ function subjectIdOf(row: RenderRow): string {
       return row.certificateId ?? '';
     case 'INVOICE_RIDE':
       return row.invoiceId ?? '';
+    case 'ENCOUNTER_SUMMARY':
+      // DOC-111. Unreachable: `document_render_kind_matches_subject` admits
+      // no row of this kind.
+      return '';
   }
 }
 
@@ -129,6 +133,9 @@ function subjectColumn(
       return { certificateId: subjectId };
     case 'INVOICE_RIDE':
       return { invoiceId: subjectId };
+    case 'ENCOUNTER_SUMMARY':
+      // DOC-111. Never archived, and the base refuses it besides.
+      throw new Error('An encounter summary is never archived');
   }
 }
 
@@ -185,7 +192,7 @@ function auditRow(
 ): Prisma.AccessAuditUncheckedCreateInput {
   return {
     userId: disclosure.userId,
-    resourceType: 'document',
+    resourceType: disclosure.resourceType ?? 'document',
     resourceId: disclosure.resourceId,
     action: disclosure.action,
     ip: disclosure.ip,

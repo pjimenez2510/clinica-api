@@ -47,6 +47,7 @@ const FOOTER_NOTES: Readonly<Record<DocumentKind, readonly string[]>> = {
   PRESCRIPTION: [],
   SERVICE_ORDER: [],
   MEDICAL_CERTIFICATE: ['Documento sin enmiendas'],
+  ENCOUNTER_SUMMARY: [],
   INVOICE_RIDE: [
     'Representación impresa del comprobante electrónico (RIDE) · Ficha técnica del SRI, Anexo 2',
     'Consulte su validez en srienlinea.sri.gob.ec con la clave de acceso',

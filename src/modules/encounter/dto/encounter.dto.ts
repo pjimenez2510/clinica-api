@@ -335,6 +335,8 @@ export const encounterSchema = z.object({
   closedById: z.uuid().nullable(),
   closedAt: z.iso.datetime().nullable(),
   closedBySubstituteReason: z.string().nullable(),
+  /** EN-220. Its 002 stands signed and it is not annulled: the summary exists. */
+  summaryAvailable: z.boolean(),
   /** EN-166. Why and when it was annulled; `null` unless `ENTERED_IN_ERROR`. */
   /** EN-166, EN-218. The reason is optional since D-126.2. */
   annulment: z

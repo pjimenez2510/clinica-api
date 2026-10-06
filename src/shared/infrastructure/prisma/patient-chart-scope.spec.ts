@@ -219,6 +219,13 @@ const CHART_LINKS: Record<
  * thing the stale-table check does for `HISTORY_TABLES` and `NOT_HISTORY`.
  */
 const EXEMPT: Record<string, string> = {
+  'src/modules/documents/infrastructure/prisma-document-source.reader.ts#findEncounterSummary':
+    'DOC-111. `certificates` se lee desde la ATENCIÓN, no desde la ficha: son ' +
+    'los certificados emitidos en esa visita (`medical_certificate.encounter_id`), ' +
+    'lo que su resumen imprime. El nombre coincide con la relación de `Patient` ' +
+    'y por eso el escáner la marca; resolver el alcance de la ficha traería ' +
+    'certificados de OTRAS visitas del mismo paciente a un resumen que no es ' +
+    'suyo. Es el mismo caso que `listAwaitingCheckout` con `accounts`.',
   'src/modules/billing/infrastructure/prisma-clinical-acts.repository.ts#listAwaitingCheckout':
     'BI-181. `accounts` se lee desde la ATENCIÓN, no desde la ficha: son las ' +
     'cuentas de esa visita (`patient_account.encounter_id`), para saber si ya ' +

@@ -309,6 +309,43 @@ y ver rechazada la prestación de imagen.
 registrado es una propiedad de lo que el resultado congela; en pantalla no hay
 nada que lo enseñe.
 
+### E11 — La orden que se compone y se imprime sin dudas _(P1)_
+
+Cambiar de tipo mientras se compone sin perder lo marcado, y una orden impresa
+que se lee como el 010A: lo pedido por sección, con la cabecera del formulario,
+y cada indicación con el nombre de su examen y el ayuno a la vista.
+
+**Por qué es P1:** revisión del autor del 06-10-2026, con capturas. Volver a
+marcar lo que se desmarcó solo es un examen que se olvida, y dos «Preparación»
+sin examen hacen que el paciente llegue desayunado a la glucosa.
+**Prueba independiente:** marcar `EX-BH` y `EX-GLUCOSA-AYUNAS`, pasar a Imagen
+y volver: siguen marcados. Emitir y abrir el PDF: «HEMATOLOGÍA» y «BIOQUÍMICA»
+encabezan sus exámenes, la cabecera trae el sexo y, arriba de las indicaciones,
+la línea del ayuno nombra la glucosa; la biometría, que no pide preparación, no
+ocupa línea.
+**Cubre:** ORD-123, ORD-125, ORD-126, ORD-127, ORD-128.
+
+ORD-127 y ORD-128 (D-138.1 y D-138.5) entran en esta rama por encargo de la
+principal: son de la bandera y de la lista de borradores, no del papel.
+
+**Solo servidor:** ORD-127 (la edad con que se elige el rango no se ve en
+pantalla). ORD-123 es solo de interfaz.
+
+### E12 — Un examen anulado no recibe informe _(P1)_
+
+Una orden cuyos exámenes están todos anulados no ofrece transcribir su informe,
+y la API lo rechaza; ningún valor queda colgado de un examen anulado.
+
+**Por qué es P1:** un informe sobre lo que se retiró pone una lectura bajo una
+petición que ya no existe, y cierra una línea que nadie espera.
+**Prueba independiente:** anular el único examen de una orden emitida: la
+pantalla de la orden no enseña «Transcribir informe», y `POST
+/v1/orders/<id>/reports` responde `ORDER_ITEM_NOT_PENDING` sin escribir nada.
+**Cubre:** ORD-124.
+
+**Solo servidor:** ORD-124 (la parte del analito que solo respondía a una línea
+anulada, que queda sin línea): es la forma de lo que se guarda.
+
 ### Fuera de las ocho
 
 **Transcripción masiva y gráficas de evolución.** Se transcribe **solo lo que se
@@ -1346,7 +1383,7 @@ desde la pantalla.
   descartarlos (ORD-099) (D-123.6, resuelta por el autor).
 
   Las 24 horas se cuentan desde que se guardó el borrador y con el reloj de la
-  aplicación. Sin ellas, una atención que se queda `OPEN` u `ON_HOLD` días
+  aplicación (**enmendado por ORD-128**: desde la última edición). Sin ellas, una atención que se queda `OPEN` u `ON_HOLD` días
   esconde su borrador en una pestaña que nadie vuelve a abrir. En una atención
   abierta o en espera el borrador se emite (ORD-005).
 
@@ -1355,6 +1392,33 @@ desde la pantalla.
   pantalla lo dice en vez de ofrecer un botón que sólo puede fallar. La lista
   no deja fila de bitácora por entrada (ORD-092): lleva el nombre del paciente
   y qué se pidió, nada del diagnóstico.
+
+- **ORD-127** — La edad con que se elige un rango (ORD-036) DEBERÁ ser la
+  **edad entera en días congelada en la atención** (EN-221), y no la que da
+  hoy la fecha de nacimiento de la ficha (D-138.1, resuelta por el autor).
+  MIENTRAS la fecha de nacimiento de la atención fuera **estimada**, la edad
+  DEBERÁ contar como desconocida para los rangos acotados en **días o meses**,
+  y DEBERÁ aplicarse a los acotados en **años enteros**: la ventana cuyos
+  límites son años exactos (365,25 días por año, como los guarda la pantalla,
+  ORD-106; «desde» tal cual y «menos de» el día siguiente al guardado). Un
+  rango sin límites de edad aplica igual.
+  > Antes se contaba desde la fecha de la ficha al corregir un informe, así
+  > que rectificar la fecha de nacimiento después cambiaba la edad de una
+  > corrección; y una fecha estimada —el migrante sin documentos— se trataba
+  > como exacta, y elegía un rango neonatal o de lactante con un error de
+  > meses. **Garantía de la base:** la edad la congela el disparador de la
+  > atención (EN-221); la prueba de integración corrige la fecha de la ficha
+  > y comprueba que la bandera sigue con la edad congelada, con control
+  > positivo.
+
+- **ORD-128** — Las 24 horas de ORD-115 DEBERÁN contarse desde la **última
+  edición** del borrador (`service_order.updated_at`, con el reloj de la
+  aplicación), y la lista DEBERÁ decir esa fecha como «guardado» (D-138.5,
+  resuelta por el autor).
+  > Antes contaban desde que se creó: un borrador de ayer editado hace cinco
+  > minutos salía como «guardado hace más de un día». Emitir desde la lista
+  > sigue emitiendo el contenido actual del borrador: es del mismo firmante y
+  > la orden emitida se lee entera.
 
 - **ORD-122** — Cada resultado numérico DEBERÁ congelar en su fila los
   **límites críticos que se le aplicaron** (`critical_low`, `critical_high`;
@@ -1571,6 +1635,87 @@ se anula y se pide de nuevo, y la pantalla lo hace en un paso (D-127.4)._
   > corrige: lo que imprimió no está en ninguna otra parte, y esas órdenes ya
   > no piden nada al laboratorio. No se tocan datos.
 
+## 12. Lo que se entiende al pedir y al imprimir (revisión del 06-10-2026)
+
+_Revisión del autor del 06-10-2026, con capturas: al cambiar de tipo se
+desmarcaba lo elegido, una orden con su examen anulado seguía ofreciendo su
+informe, y el PDF traía dos «Preparación» sin decir de qué examen. D-136
+(recomendación A, construida mientras el autor decide): la orden impresa se lee
+como el 010A._
+
+- **ORD-123** — MIENTRAS se compone una orden en borrador, CUANDO se cambie su
+  tipo, la pantalla DEBERÁ **conservar** los exámenes marcados de cada tipo y
+  volver a enseñarlos marcados al regresar a ese tipo; DEBERÁ guardar y emitir
+  **sólo** los del tipo activo (ORD-097); y MIENTRAS otro tipo tenga exámenes
+  marcados, DEBERÁ decirlo junto a los tipos —«Laboratorio: 2 marcados, no van
+  en esta orden»—.
+  > **Solo interfaz:** el servidor ya rechaza la orden que mezcla tipos
+  > (ORD-097) y no recibe nunca lo marcado de otro tipo. Antes, cambiar de tipo
+  > quitaba lo marcado del otro y había que volver a buscarlo. Lo marcado de
+  > otro tipo vive mientras se compone, como lo no guardado de
+  > `useOrderEditorMemory`; no se guarda en el borrador, que es de un solo tipo.
+
+- **ORD-124** — CUANDO se registre o se edite el informe de una orden, SI la
+  orden no tiene **ningún** examen sin anular, ENTONCES el sistema DEBERÁ
+  rechazarlo con `ORDER_ITEM_NOT_PENDING` y **NO DEBERÁ** escribir nada; y
+  ningún resultado DEBERÁ quedar apuntando a una línea `CANCELLED`: el analito
+  que sólo responde a líneas anuladas DEBERÁ quedar sin línea (ORD-040), y una
+  línea anulada **NO DEBERÁ** contar entre lo que el informe espera (ORD-039).
+  La comprobación DEBERÁ hacerse **dentro** de la transacción que escribe, con
+  las líneas de la orden bloqueadas (`FOR SHARE`), de modo que una anulación a
+  la vez espere o haga esperar. MIENTRAS la orden no tenga ningún examen sin
+  anular, la pantalla **NO DEBERÁ** ofrecer «Transcribir informe» ni «Editar».
+  > Antes sólo el emparejamiento (ORD-043) rechazaba una línea anulada: el
+  > registro buscaba la línea de cada analito entre **todas**, y un valor podía
+  > quedar bajo un examen retirado.
+  >
+  > **Revisión de la rama:** las líneas se bloquean `FOR UPDATE` (no
+  > `FOR SHARE`: dos informes a la vez de la misma orden se interbloqueaban),
+  > y SI algún resultado o alguna línea esperada del informe está anulada
+  > bajo el bloqueo, ENTONCES el informe entero se rechaza con
+  > `ORDER_ITEM_NOT_PENDING`. La anulación (ORD-007) bloquea la línea antes
+  > de leer su estado, así que una anulación que espera a un informe que
+  > completa la línea la lee completada y se rechaza (ORD-008).
+  >
+  > ⚠️ Una línea con **resultado parcial** sigue `REQUESTED` y se puede
+  > anular (ORD-008 sólo protege la completada): sus valores quedan bajo una
+  > línea anulada. Es D-139.
+  >
+  > **Garantía de la base:** `trg_observation_result_not_on_cancelled_line`
+  > (ningún resultado nuevo bajo una línea anulada) y
+  > `trg_service_order_item_completed_is_not_cancelled` (una completada no se
+  > anula), cada una probada contra la base con control positivo, y las dos
+  > carreras reproducidas reteniendo el bloqueo en otra sesión.
+
+- **ORD-125** — El PDF de la orden DEBERÁ imprimir cada indicación al paciente
+  con **el nombre de su examen**, y **NO DEBERÁ** imprimir la de un examen sin
+  preparación —vacía, o una sola frase que empiece por «No requiere»: «No
+  requiere ayuno. Recoja la primera orina de la mañana.» se imprime entera—. SI algún examen vivo
+  pide ayuno —su preparación empieza por «Ayuno»—, ENTONCES DEBERÁ imprimir
+  **arriba** del recuadro una línea destacada que lo diga para toda la toma y
+  nombre los exámenes que lo piden: «Venga en ayunas: ayuno de 8 a 12 horas
+  (Glucosa en ayunas).». SI ningún examen pide preparación, ENTONCES DEBERÁ
+  decir «No requiere preparación previa.».
+  > **Por el texto, a falta de un campo.** El catálogo guarda la preparación
+  > como texto libre (`exam_definition.patient_preparation`), y el ayuno no es
+  > un dato aparte. La regla del comienzo es la que siguen las preparaciones
+  > del catálogo sembrado; un ayuno escrito de otro modo sale como una
+  > indicación más, con su examen, sin la línea destacada. Un campo propio es
+  > D-137.
+
+- **ORD-126** — El PDF de la orden DEBERÁ imprimir los exámenes vivos
+  **agrupados por su sección del 010A** (`exam_definition.form_010_section`),
+  cada sección con su nombre como encabezado, en el orden en que aparece por
+  primera vez en la orden, y los que no tienen sección al final bajo «OTROS
+  EXÁMENES»; y la cabecera DEBERÁ llevar, además de lo que ya imprime (fecha,
+  tipo, prioridad, historia clínica, paciente, documento, edad, diagnóstico,
+  datos clínicos, médico y firma), el **sexo** del paciente.
+  > **D-136, recomendación A**, construida mientras el autor decide y el asesor
+  > confirma si el art. 42 exige la maqueta del 010A o su contenido. La sección
+  > se lee del catálogo **al imprimir**, como la muestra y la preparación
+  > (DOC-072): la línea congela código y nombre, no la sección. Lo que la
+  > orden ya imprimía se conserva.
+
 ## Códigos de error nuevos
 
 Todos entran en `shared/domain/errors/error-catalogue.ts` con su prueba de
@@ -1582,7 +1727,7 @@ contrato —`code`, estado y mensaje—.
 | `ORDER_ENCOUNTER_NOT_FOUND` | 404 | La atención sobre la que se pide no existe o está fuera del alcance. **No es `ENCOUNTER_NOT_FOUND`**, que pertenece a `encounter`: ningún módulo importa de otro y dos clases con el mismo `code` rompen el catálogo. La frase sí es la misma | ORD-001, ORD-090 |
 | `EXAM_NOT_ORDERABLE` | 422 | El ordenable no existe o está deshabilitado. Rechaza la orden **entera** | ORD-003 |
 | `ORDER_ENCOUNTER_NOT_OPEN` | 409 | La atención ya no admite contenido clínico nuevo | ORD-005 |
-| `ORDER_ITEM_NOT_PENDING` | 409 | Se intentó anular una línea ya completada o ya anulada, o corregir una orden sin ninguna línea viva | ORD-008, ORD-118 |
+| `ORDER_ITEM_NOT_PENDING` | 409 | Se intentó anular una línea ya completada o ya anulada, o corregir una orden sin ninguna línea viva, o registrar o editar el informe de una orden con todos sus exámenes anulados | ORD-008, ORD-118, ORD-124 |
 | `REPORT_NOT_FOUND` | 404 | El informe no existe o es de una sede fuera del alcance | ORD-051 |
 | `REPORT_ALREADY_CORRECTED` | 409 | Ese informe ya tiene una corrección. Lo arbitra el `UNIQUE` sobre `supersedes_id` | ORD-052 |
 | `REPORT_NOT_CORRECTABLE` | 409 | Se intentó editar un informe anulado. Un parcial sí se edita desde ORD-119 | ORD-053, ORD-119 |

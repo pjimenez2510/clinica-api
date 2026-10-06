@@ -25,6 +25,8 @@ const KINDS = [
   'SERVICE_ORDER',
   'MEDICAL_CERTIFICATE',
   'INVOICE_RIDE',
+  // DOC-113. Composed on demand, never archived, but with its template.
+  'ENCOUNTER_SUMMARY',
 ] as const;
 
 /** D-095: the approved template's accent, and every header switch on. */

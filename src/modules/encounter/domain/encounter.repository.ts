@@ -44,6 +44,11 @@ import type { TriggeringFact } from './patient-flow';
  * never loaded cannot leak into a response, a log or a support screenshot.
  */
 export interface EncounterView {
+  /**
+   * EN-220. Its 002 stands signed and it is not annulled: the summary of the
+   * attention (DOC-111) can be downloaded. Absent where it was not read.
+   */
+  summaryAvailable?: boolean;
   id: string;
   siteId: string;
   practitionerId: string;
