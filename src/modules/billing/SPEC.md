@@ -331,6 +331,22 @@ un cargo, facturar lo pendiente y cerrar la cuenta termina siempre.
 **Cubre:** BI-181 a BI-184, BI-190, BI-194. **Solo servidor:** BI-190 (la pantalla
 dice el número y lista lo que el servidor sirve; qué cuenta es del servidor).
 
+### B12 — Menos preguntas en caja _(P1)_
+
+D-126 y D-127 en caja: quitar, marcar «No se cobra», editar un cargo y cambiar
+el pagador sin rehacer nada; una confirmación donde hay efecto; los avisos no
+frenan. La versión anterior la guarda la base.
+
+**Prueba independiente:** quitar un cargo propuesto sin motivo y deshacerlo;
+editar la cantidad de otro y ver su versión en `record_version`; cambiar el
+pagador con cargos y ver el total re-tarifado; y comprobar contra PostgreSQL que
+un cargo facturado no cambia de contenido y que una corrección sin sello se
+rechaza.
+
+**Cubre:** BI-195 a BI-203. **Solo servidor:** BI-200 (la ruta de descuento no
+existe todavía; es una restricción de la base) y BI-203 (lo dispara la
+corrección de la atención; caja ve el cargo ya re-tarifado).
+
 ### B11 — Prestaciones con estructura _(P2)_
 
 La categoría de una prestación deja de ser texto libre y pasa a un catálogo
@@ -644,6 +660,10 @@ es falsa, hay requisitos que cambian.
   > necesita que el cambio arrastre y reprecie los cargos automáticamente, es
   > una decisión de negocio con consecuencias contables — va a
   > `DECISIONES-PENDIENTES.md`.
+  >
+  > **Enmendado por BI-198** (D-126, D-127; inventario CA-4): los cargos sin
+  > facturar se re-tarifan con el pagador nuevo, y sólo frena un cargo ya
+  > facturado. `ACCOUNT_HAS_CHARGES` deja de existir.
 - **BI-034** — SI un pagador es institucional y se guarda sin `RUC`,
   ENTONCES el sistema DEBERÁ rechazarlo con `PAYER_RUC_REQUIRED`; uno escrito
   pero mal formado es BI-036 (`INVALID_RUC`).
@@ -806,19 +826,12 @@ es falsa, hay requisitos que cambian.
   > cargo que ninguna nota clínica respalda, y hay clínicas que lo prohíben a
   > propósito. Si la respuesta es que se prohíbe, `encounter_id` pasa a NOT NULL
   > y este requisito cambia de forma. Va a `DECISIONES-PENDIENTES.md`.
-- **BI-055** — CUANDO se deje sin efecto un cargo, el sistema DEBERÁ exigir un
-  motivo, DEBERÁ conservar la fila marcándola anulada, y NO DEBERÁ borrarla.
-  > **Falta esquema, y por eso NO HAY ruta de anulación en esta entrega.**
-  > `charge_item` tiene `status` con `CANCELLED`, pero **no tiene `voided_at`,
-  > `voided_by` ni `void_reason`**, y `access_audit` no puede suplirlas: su
-  > `access_audit_payload_only_for_declared_resources` sólo admite carga útil
-  > para `'configuration'`, así que el motivo se perdería en silencio.
-  >
-  > Exigir un motivo que no se guarda en ningún sitio es peor que no ofrecer la
-  > operación: deja el requisito a medias y hace creer que se cumple. La ruta
-  > `POST /charges/{id}/void` se construye **con** esas tres columnas y su
-  > `CHECK` de coherencia —los tres juntos o ninguno, como
-  > `agenda_entry_overbooking_coherence`—, no antes.
+- **BI-055** — CUANDO se deje sin efecto un cargo, el sistema DEBERÁ conservar
+  la fila marcándola anulada con quién y cuándo, y NO DEBERÁ borrarla.
+  > **Enmendado por BI-195** (D-126.1): un cargo sin facturar todavía no salió
+  > de caja, así que se quita sin pedir motivo. El motivo queda opcional; los
+  > que ya se guardaron no se tocan. La ruta y sus columnas existen desde B8
+  > (`voided_at`, `voided_by_id`, `void_reason`).
 - **BI-056** — SI se intenta anular o modificar un cargo que ya pertenece a una
   factura emitida, ENTONCES el sistema DEBERÁ rechazarlo con
   `CHARGE_ITEM_ALREADY_INVOICED` y DEBERÁ indicar que la corrección es una nota
@@ -836,9 +849,11 @@ es falsa, hay requisitos que cambian.
   > la suma de las líneas impresas, y el SRI exige el desglose por ítem
   > (REQ-083). Es una de esas reglas que solo se ve cuando la factura ya está
   > emitida y no se puede corregir.
-- **BI-059** — El sistema NO DEBERÁ admitir que un cargo anulado se reactive.
-  > Un cargo anulado que vuelve deja una cuenta cuyo total cambió sin que nada
-  > lo explique. Lo que se hace es registrar uno nuevo, que nace con su fecha.
+- **BI-059** — El sistema NO DEBERÁ admitir que un cargo anulado se reactive
+  salvo con «Deshacer» (BI-195), que deja la versión anterior guardada.
+  > Un cargo anulado que vuelve sin rastro deja una cuenta cuyo total cambió sin
+  > que nada lo explique. Con `record_version` el rastro lo guarda la base
+  > (D-127.2), así que deshacer un «Quitar» pulsado por error ya no es ese caso.
 
 ## 7. Descuentos
 
@@ -869,8 +884,11 @@ es falsa, hay requisitos que cambian.
   > Por línea porque el SRI lo pide por ítem, y porque un descuento al total no
   > se puede repartir hacia atrás entre líneas con tarifas de impuesto distintas
   > sin inventarse un criterio.
-- **BI-061** — El sistema DEBERÁ exigir un motivo en todo descuento, y SI falta,
-  ENTONCES DEBERÁ rechazarlo con `DISCOUNT_REASON_REQUIRED` señalando el campo.
+- **BI-061** — El sistema DEBERÁ admitir un motivo de lista, opcional, en todo
+  descuento.
+  > **Enmendado por BI-200** (D-126, inventario CA-6): el SRI pide el descuento
+  > por ítem, no un motivo; el control es el límite del rol (BI-062, BI-063).
+  > Antes decía «DEBERÁ exigir un motivo… `DISCOUNT_REASON_REQUIRED`».
   > La exigencia vive en el servicio y no solo en el DTO, por el mismo argumento
   > que `CANCELLATION_REASON_REQUIRED`: un `DEBERÁ` que solo hace cumplir la capa
   > de transporte deja de ser una garantía en cuanto otro caso de uso llama al
@@ -886,7 +904,8 @@ es falsa, hay requisitos que cambian.
 - **BI-063** — SI el descuento supera el límite de quien lo aplica, ENTONCES el
   sistema DEBERÁ rechazarlo con `DISCOUNT_EXCEEDS_LIMIT` salvo que venga
   acompañado de la autorización de **otro** usuario con
-  `billing:discount-override`.
+  `billing:discount-override`; y dentro del límite, la pantalla DEBERÁ pedir
+  una sola confirmación (BI-200).
   > **Recomendación 3 de D-049, aceptada entera:** límite por rol, motivo
   > obligatorio y autorización de otro usuario por encima del límite.
 - **BI-064** — SI quien autoriza el descuento es el mismo usuario que lo aplica,
@@ -968,8 +987,8 @@ es falsa, hay requisitos que cambian.
   ENTONCES DEBERÁ rechazarla con `INVOICE_RECEIVER_REQUIRED` señalando el campo.
 - **BI-081** — El sistema NO DEBERÁ tomar «Consumidor Final» como valor por
   defecto en ninguna pantalla ni en ninguna ruta, y CUANDO se emita así, DEBERÁ
-  exigir una confirmación explícita y un motivo, rechazando con
-  `FINAL_CONSUMER_NOT_CONFIRMED` si no vienen.
+  exigir una confirmación explícita, rechazando con
+  `FINAL_CONSUMER_NOT_CONFIRMED` si no viene. El motivo es opcional (BI-201).
   > **D-A-007, corolario.** Emitir a consumidor final **destruye la rebaja de
   > gastos personales del paciente**, y desde 2026 esa factura ya no se puede
   > ni anular. Es la definición de un valor por defecto caro: cómodo para quien
@@ -1107,6 +1126,9 @@ es falsa, hay requisitos que cambian.
   > documento extranjero legítimo puede coincidir por azar con esa forma (por
   > eso no es la opción B), y una confirmación obligatoria en el contrato sería
   > un bloqueo para quien llame a la ruta sin pantalla.
+  >
+  > **Enmendado por BI-202** (D-126.4, inventario CA-10): la pregunta se
+  > muestra mientras se escribe, junto al número, y ya no detiene el envío.
 - **BI-088** — El sistema NO DEBERÁ incluir un mismo cargo en más de una factura
   no anulada, y la garantía DEBERÁ vivir en la base de datos.
   > **Resuelto por el estado del cargo, no por un índice.** No existe
@@ -1582,7 +1604,8 @@ dos registros distintos.**
   > caja confirmó uno entretanto, la factura —que no se edita— no sale por un
   > importe que nadie vio. La cuenta se bloquea durante la emisión, así que dos
   > emisiones simultáneas no se reparten las mismas líneas. Un cargo a $0 no
-  > se factura: se quita con su motivo (D-120, resuelta por el autor: A).
+  > se factura: se marca «No se cobra» en un clic, sin motivo (BI-196, que
+  > enmienda D-120 con D-126).
 
 ## 18. Prestaciones con estructura
 
@@ -1689,6 +1712,101 @@ dos registros distintos.**
   > prestación lo da por cobrado: caja pudo cobrarlo a mano mientras era
   > borrador (BI-192), y proponerlo otra vez lo cobraría dos veces.
 
+## 20. Corregir es editar, también en caja
+
+> D-126 y D-127, resueltas por el autor el 04-10-2026; inventario CA-1 a CA-7 y
+> CA-10 de `planes/fix-menos-preguntas.md`, aprobado ese día; D-134.2, resuelta
+> el 06-10-2026. Un cargo sin facturar todavía no salió de caja: se quita, se
+> marca y se edita sin preguntar, y la base guarda la versión anterior
+> (`record_version`, EN-210). Lo facturado no se toca aquí: «Corregir» la
+> factura autorizada es CA-8 y CA-9, otra rama.
+
+- **BI-195** — CUANDO caja quite un cargo propuesto o confirmado sin facturar,
+  el sistema DEBERÁ anularlo sin exigir motivo, DEBERÁ guardar en
+  `record_version` la versión anterior con quién y cuándo, y DEBERÁ permitir
+  deshacerlo con `POST …/charges/{id}/restore`, que lo devuelve al estado que
+  tenía con el precio de la lista vigente de la cuenta en su fecha de servicio.
+  SI se pide deshacer un cargo que no está quitado ni marcado «No se cobra»,
+  ENTONCES el sistema DEBERÁ rechazarlo con `CHARGE_NOT_REMOVED`; y SI la
+  cuenta está cerrada, con `ACCOUNT_CLOSED`.
+  > Inventario CA-1. La pantalla quita en un clic y ofrece «Deshacer»
+  > (`notifyUndoable`). El motivo sigue admitido y se guarda si llega; el
+  > `CHECK` `charge_item_void_states_who_when_and_why` deja de exigirlo.
+  > Deshacer re-tarifa porque el pagador pudo cambiar entretanto (BI-198): un
+  > cargo que vuelve con el precio de otro pagador es una cuenta con dos
+  > tarifarios. El índice único de su acto (BI-154) ya lo ocupaba la fila
+  > quitada, así que deshacer no puede duplicar el cargo.
+- **BI-196** — CUANDO caja marque «No se cobra» un cargo sin facturar de
+  importe $0, el sistema DEBERÁ pasarlo a `NOT_BILLABLE` sin pedir motivo ni
+  confirmación, con su versión, y DEBERÁ contarlo como resuelto para cerrar la
+  cuenta; SI el cargo tiene importe, ENTONCES DEBERÁ rechazarlo con
+  `CHARGE_HAS_AMOUNT`. Se deshace con la misma ruta de BI-195.
+  > Inventario CA-2, D-120 al nivel 1 de D-126. El estado existía y ninguna
+  > ruta lo ponía: un acto de $0 se quitaba con motivo, y la cuenta perdía que
+  > el acto se hizo. Sólo a $0, porque «no se cobra» un cargo con precio es
+  > quitarlo (BI-195).
+- **BI-197** — MIENTRAS un cargo esté propuesto o confirmado sin facturar, el
+  sistema DEBERÁ permitir editar en el sitio su cantidad, su fecha de servicio
+  y su prestación (`PATCH …/charges/{id}`), DEBERÁ volver a resolver el precio,
+  el impuesto y el nombre congelados con la lista de la cuenta en la fecha de
+  servicio cuando cambie la fecha o la prestación, y DEBERÁ guardar la versión
+  anterior en `record_version`. SI el cargo está facturado, ENTONCES DEBERÁ
+  rechazarlo con `CHARGE_ITEM_ALREADY_INVOICED` (BI-056); y la BASE DEBERÁ
+  rechazar todo cambio del contenido de un cargo facturado.
+  > Inventario CA-3. Antes, corregir una cantidad era quitar con motivo y añadir
+  > otro. Editar no confirma: un cargo propuesto sigue propuesto. La base sólo
+  > exige el sello en lo que es corrección —contenido, quitar, «No se cobra» y
+  > deshacer—; confirmar y facturar siguen sin sello, como hasta hoy.
+- **BI-198** — CUANDO caja cambie el pagador de una cuenta abierta, el sistema
+  DEBERÁ re-tarifar con la lista del pagador nuevo, en su fecha de servicio,
+  cada cargo propuesto o confirmado sin facturar, con su versión y en la misma
+  transacción; SI la cuenta tiene un cargo facturado, ENTONCES DEBERÁ
+  rechazarlo con `ACCOUNT_HAS_BILLED_CHARGES`; y SI la lista nueva no tiene
+  precio para alguno, con `PRICE_NOT_FOUND`, sin cambiar nada. Antes de
+  cambiarlo, `GET …/repricing?payerId=` DEBERÁ servir el total actual y el que
+  quedaría, línea a línea, sin escribir.
+  > Inventario CA-4; enmienda BI-033, que obligaba a anular cada cargo con
+  > motivo y añadirlo de nuevo. La pantalla pide una sola confirmación con el
+  > total nuevo. Lo facturado frena porque cambiarlo es corregir la factura
+  > (CA-8). Los quitados no se re-tarifan: si vuelven, BI-195 les pone el
+  > precio del día.
+- **BI-199** — CUANDO caja pulse «Cerrar cuenta», la pantalla DEBERÁ pedir una
+  sola confirmación que diga la consecuencia («ya no podrá añadir ni quitar
+  cargos»).
+  > Inventario CA-5, D-126.2: cerrar es irreversible (BI-071) e iba en un clic.
+- **BI-200** — El sistema NO DEBERÁ exigir motivo en un descuento: la base
+  DEBERÁ admitir `discount_amount > 0` con `discount_reason` nulo.
+  > Inventario CA-6; enmienda BI-061 y BI-063. La ruta de descuento sigue sin
+  > construir (B4); cuando se construya, dentro del límite del rol pide una
+  > confirmación y por encima el autorizador, con motivo opcional de lista. Lo
+  > que se adelanta es aflojar `charge_item_discount_states_a_reason`.
+- **BI-201** — CUANDO se emita una factura a Consumidor Final, el sistema
+  DEBERÁ aceptarla con `finalConsumer.confirmed` verdadero y sin motivo, y la
+  pantalla DEBERÁ pedir una sola confirmación que diga la consecuencia (el
+  paciente pierde la rebaja de gastos personales y la factura no se corrige).
+  > Inventario CA-7; enmienda BI-081, que pedía alerta, motivo, casilla y botón
+  > rojo. El motivo nunca se guardó (no hay columna), así que pedirlo era un
+  > rastro que no existía. La frase «desde 2026 no se puede anular» está por
+  > confirmar con el contador (D-128.5); la confirmación no la repite.
+- **BI-202** — MIENTRAS quien cobra escriba un número de tipo `06` u `08` con
+  forma de cédula o RUC ecuatoriano (BI-160), la pantalla DEBERÁ decir junto al
+  campo «¿Es una cédula ecuatoriana?» con la opción de cambiar el tipo, y NO
+  DEBERÁ detener el envío para preguntarlo.
+  > Inventario CA-10, D-126.4: los avisos informan, no frenan. Enmienda la
+  > forma de BI-160, no el criterio.
+- **BI-203** — CUANDO se corrija primera vez o subsecuente de una atención
+  (EN-215) y su consulta tenga un cargo propuesto o confirmado sin facturar en
+  una cuenta abierta, el sistema DEBERÁ volver a resolver qué prestación es la
+  consulta (BI-158) y su precio en la fecha de servicio, con su versión y el
+  sello de quien corrigió; SI no hay prestación o precio para la combinación
+  nueva, ENTONCES DEBERÁ dejar el cargo como estaba y registrarlo en el log,
+  sin deshacer la corrección clínica.
+  > D-134.2. Sin esto el paciente paga una primera vez mientras la historia
+  > dice subsecuente. `encounter` no importa `billing`: lo avisa por el puerto
+  > `CONSULTATION_REPRICER` de `shared/billing`, después de su transacción,
+  > como `billing` avisa a `sri` (SRI-041). Lo facturado lo resuelve
+  > «Corregir» la factura (CA-8).
+
 ---
 
 ## Códigos de error nuevos
@@ -1715,7 +1833,9 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `PAYER_INACTIVE` | 422 | BI-030 |
 | `LAST_ACTIVE_PAYER` | 409 | BI-031 |
 | `PAYER_RUC_REQUIRED` | 422 | BI-034 |
-| `ACCOUNT_HAS_CHARGES` | 409 | BI-033 |
+| `ACCOUNT_HAS_BILLED_CHARGES` | 409 | BI-198 (sustituye a `ACCOUNT_HAS_CHARGES`, BI-033) |
+| `CHARGE_NOT_REMOVED` | 409 | BI-195 |
+| `CHARGE_HAS_AMOUNT` | 409 | BI-196 |
 | `PRICE_LIST_NOT_FOUND` | 404 | BI-040 |
 | `PRICE_PERIOD_INVALID` | 422 | BI-041 |
 | `PRICE_NEGATIVE_AMOUNT` | 422 | BI-043 |
@@ -1887,12 +2007,16 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 | `POST` | `/billing/sites/{siteId}/accounts` | `billing:write` | `param:siteId` | BI-070, BI-121 |
 | `GET` | `/billing/sites/{siteId}/accounts/{accountId}` | `billing:read` | `param:siteId` | BI-074, BI-135, BI-192 |
 | `GET` | `/billing/sites/{siteId}/accounts/{accountId}/invoice-receiver` | `billing:read` | `param:siteId` | BI-082 |
-| `PATCH` | `/billing/sites/{siteId}/accounts/{accountId}` | `billing:write` | `param:siteId` | BI-033 |
+| `PATCH` | `/billing/sites/{siteId}/accounts/{accountId}` | `billing:write` | `param:siteId` | BI-033, BI-198 |
 | `POST` | `/billing/sites/{siteId}/accounts/{accountId}/close` | `billing:write` | `param:siteId` | BI-071, BI-072 |
 | `POST` | `/billing/sites/{siteId}/accounts/{accountId}/charges` | `billing:write` | `param:siteId` | BI-015, BI-016, BI-047, BI-050 a BI-058 |
 | `POST` | `/billing/sites/{siteId}/encounters/{encounterId}/checkout` | `billing:write` | `param:siteId` | BI-150 a BI-158 |
 | `POST` | `/billing/sites/{siteId}/accounts/{accountId}/charges/{chargeId}/confirm` | `billing:write` | `param:siteId` | BI-152 |
-| `POST` | `/billing/sites/{siteId}/accounts/{accountId}/charges/{chargeId}/void` | `billing:write` | `param:siteId` | BI-055, BI-056, BI-059 |
+| `POST` | `/billing/sites/{siteId}/accounts/{accountId}/charges/{chargeId}/void` | `billing:write` | `param:siteId` | BI-055, BI-056, BI-059, BI-195 |
+| `POST` | `/billing/sites/{siteId}/accounts/{accountId}/charges/{chargeId}/restore` | `billing:write` | `param:siteId` | BI-195, BI-196 |
+| `POST` | `/billing/sites/{siteId}/accounts/{accountId}/charges/{chargeId}/not-billable` | `billing:write` | `param:siteId` | BI-196 |
+| `PATCH` | `/billing/sites/{siteId}/accounts/{accountId}/charges/{chargeId}` | `billing:write` | `param:siteId` | BI-197 |
+| `GET` | `/billing/sites/{siteId}/accounts/{accountId}/repricing` | `billing:read` | `param:siteId` | BI-198 |
 | `POST` | `/billing/sites/{siteId}/charges/{chargeId}/discount` | `billing:write` | `param:siteId` | BI-060 a BI-066 |
 | `GET` | `/billing/sites/{siteId}/invoices` | `billing:read` | `param:siteId` | BI-133, BI-135 |
 | `GET` | `/billing/sites/{siteId}/invoices/{invoiceId}` | `billing:read` | `param:siteId` | BI-135 |
