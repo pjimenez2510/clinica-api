@@ -1071,10 +1071,12 @@ solo PDF, completo, generado al momento._
 - **DOC-112** — El resumen DEBERÁ imprimir en el pie el código de
   verificación **de la atención** (EN-219) con su QR (DOC-083); y CUANDO
   cualquiera pida `GET /v1/documents/verify/<código>` con ese código, el sistema
-  DEBERÁ responder como DOC-094, con la clase «Resumen de la atención», la
-  referencia «Atención del <fecha>», la fecha de inicio, el establecimiento, la
-  sede, el profesional y el estado: vigente, o **anulado** si la atención está
-  `ENTERED_IN_ERROR`; sin ningún dato del paciente (DOC-095).
+  DEBERÁ responder como DOC-094, con la clase `ENCOUNTER_SUMMARY`, la fecha de
+  la atención, el establecimiento, la sede, el profesional y el estado:
+  vigente, o **anulado** —con su fecha— si la atención está
+  `ENTERED_IN_ERROR`; sin ningún dato del paciente (DOC-095). SI la atención
+  nunca tuvo la 002 firmada, ENTONCES DEBERÁ responder como a un código
+  inexistente (DOC-096): de ella no salió ningún resumen.
   > El código es de la atención y no del PDF, que no se guarda: dos resúmenes
   > de la misma atención llevan el mismo código, y el código dice que la
   > atención existe y quién la firmó, no qué decía un fichero.
