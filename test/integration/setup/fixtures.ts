@@ -181,12 +181,17 @@ export async function createEncounter(
     patientId: string;
     /** AG-045: set to hang the encounter off an appointment. */
     agendaEntryId?: string;
+    /** When the age frozen on the encounter matters (ORD-036). */
+    startedAt?: Date;
   },
 ) {
   return prisma.encounter.create({
     data: {
-      ...ids,
+      // fecha-fija: an instant in the past, whatever today is; the age it
+      // freezes (ORD-036) follows from `createPatient`'s fixed birth date.
+      // Pass `startedAt` when the test is about the age.
       startedAt: new Date('2026-09-14T14:00:00Z'),
+      ...ids,
       // Both are required, and on purpose: the RDACAA report demands them for
       // every single consultation. Making them optional would let a record be
       // created that the Ministry then rejects, months later.

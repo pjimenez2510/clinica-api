@@ -19,7 +19,11 @@ import {
   OrderNotFoundError,
   OrderNotIssuedError,
 } from '../domain/orders.errors';
-import { admitsNewOrders, isPending } from '../domain/service-order';
+import {
+  admitsNewOrders,
+  isPending,
+  STALE_DRAFT_AFTER_MS,
+} from '../domain/service-order';
 import { ageingOf } from '../domain/order-ageing';
 import type {
   CancelOrderItem,
@@ -566,12 +570,21 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
   async staleDrafts(query: {
     userId: string;
     sites: SiteScopeFilter;
+    now: Date;
   }): Promise<StaleDraftEntry[]> {
     const rows = await this.prisma.serviceOrder.findMany({
       where: {
         status: 'DRAFT',
         orderedBy: { userId: query.userId },
-        encounter: { status: { notIn: ['OPEN', 'ON_HOLD'] } },
+        OR: [
+          { encounter: { status: { notIn: ['OPEN', 'ON_HOLD'] } } },
+          // D-130.3. Still open, but forgotten: more than a day old.
+          {
+            createdAt: {
+              lt: new Date(query.now.getTime() - STALE_DRAFT_AFTER_MS),
+            },
+          },
+        ],
         ...siteFilter(query.sites),
       },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],

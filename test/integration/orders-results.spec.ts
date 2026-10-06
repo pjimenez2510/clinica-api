@@ -762,6 +762,95 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
     ).rejects.toThrow();
   });
 
+  it('ORD-122 congela los límites críticos aplicados, y la base rechaza una bandera que no explican', async () => {
+    const prisma = db();
+    const scene = await anOrderedBloodCount(prisma);
+    const { reports } = serviceOf(prisma);
+    const report = await reports.register(
+      {
+        orderId: scene.order.id,
+        performedById: null,
+        issuedAt: new Date(Date.now() - 3_600_000),
+        results: [
+          { analyteDefinitionId: scene.glu.id, valueNumeric: 92 },
+          { analyteDefinitionId: scene.hb.id, valueNumeric: 13.4 },
+        ],
+      },
+      requester,
+    );
+    const glucose = await prisma.observationResult.findFirstOrThrow({ where: { reportId: report.id, analyteDisplay: scene.glu.name } }); // prettier-ignore
+    expect(glucose).toMatchObject({ abnormalFlag: 'NORMAL' });
+    expect([Number(glucose.criticalLow), Number(glucose.criticalHigh)]).toEqual([40, 400]); // prettier-ignore
+    const hb = await prisma.observationResult.findFirstOrThrow({ where: { reportId: report.id, analyteDisplay: scene.hb.name } }); // prettier-ignore
+    // Sin crítico definido, ningún lado.
+    expect([hb.criticalLow, hb.criticalHigh]).toEqual([null, null]);
+
+    // Filas escritas por SQL directo en el mismo informe: lo que también
+    // detiene un import o un `psql`.
+    const insert = (value: number, flag: string | null, low: number | null, high: number | null) =>
+      prisma.$executeRaw`
+        INSERT INTO "observation_result"
+          ("report_id", "analyte_display", "value_numeric", "unit", "critical_low", "critical_high", "abnormal_flag", "observed_at")
+        VALUES (${report.id}::uuid, 'Glucosa en ayunas', ${value}, 'mg/dL', ${low}, ${high},
+                ${flag}::abnormal_flag, ${new Date()})`; // prettier-ignore
+    const refused = expect.objectContaining({ message: expect.stringContaining('observation_result_flag_agrees_with_critical_bounds') }); // prettier-ignore
+
+    // Control positivo: filas que sus límites explican entran, bordes incluidos.
+    await expect(insert(450, 'CRITICAL_HIGH', 40, 400)).resolves.toBe(1);
+    await expect(insert(30, 'CRITICAL_LOW', 40, 400)).resolves.toBe(1);
+    await expect(insert(400, 'HIGH', 40, 400)).resolves.toBe(1); // el borde no es crítico
+    await expect(insert(40, 'LOW', 40, 400)).resolves.toBe(1);
+    // Crítica sin el límite que la hace crítica, o en el borde.
+    await expect(insert(300, 'CRITICAL_HIGH', 40, 400)).rejects.toEqual(
+      refused,
+    );
+    await expect(insert(400, 'CRITICAL_HIGH', 40, 400)).rejects.toEqual(
+      refused,
+    );
+    await expect(insert(30, 'CRITICAL_LOW', null, 400)).rejects.toEqual(
+      refused,
+    );
+    // Fuera de sus límites y marcada como no crítica: el caso que saca de la cola.
+    await expect(insert(450, 'HIGH', 40, 400)).rejects.toEqual(refused);
+    await expect(insert(450, null, 40, 400)).rejects.toEqual(refused);
+    // Límites en una determinación que no es numérica.
+    await expect(
+      prisma.$executeRaw`
+        INSERT INTO "observation_result" ("report_id", "analyte_display", "value_text", "critical_high", "observed_at")
+        VALUES (${report.id}::uuid, 'Aspecto', 'Hemolizada', 400, ${new Date()})`, // prettier-ignore
+    ).rejects.toEqual(refused);
+  });
+
+  it('ORD-050 ORD-122 la base no deja reescribir ni borrar un resultado; sólo emparejar el que no tiene línea', async () => {
+    const prisma = db();
+    const scene = await anOrderedBloodCount(prisma);
+    const { reports } = serviceOf(prisma);
+    const report = await reports.register(
+      {
+        orderId: scene.order.id,
+        performedById: null,
+        issuedAt: new Date(Date.now() - 3_600_000),
+        // Una glucosa crítica que la orden de biometría no pidió: sin línea.
+        results: [{ analyteDefinitionId: scene.glu.id, valueNumeric: 420 }],
+      },
+      requester,
+    );
+    const row = await prisma.observationResult.findFirstOrThrow({ where: { reportId: report.id } }); // prettier-ignore
+    expect(row).toMatchObject({ abnormalFlag: 'CRITICAL_HIGH', orderItemId: null }); // prettier-ignore
+    const frozen = expect.objectContaining({ message: expect.stringContaining('observation_result_frozen') }); // prettier-ignore
+
+    // Subir el umbral congelado y bajar la bandera a la vez pasaría el CHECK.
+    await expect(prisma.$executeRaw`UPDATE "observation_result" SET "critical_high" = 500, "abnormal_flag" = 'HIGH' WHERE "id" = ${row.id}`).rejects.toEqual(frozen); // prettier-ignore
+    await expect(prisma.$executeRaw`UPDATE "observation_result" SET "value_numeric" = 90, "abnormal_flag" = 'NORMAL' WHERE "id" = ${row.id}`).rejects.toEqual(frozen); // prettier-ignore
+    await expect(prisma.$executeRaw`DELETE FROM "observation_result" WHERE "id" = ${row.id}`).rejects.toEqual(frozen); // prettier-ignore
+
+    // Control positivo: emparejarlo con una línea, una vez (ORD-043).
+    const line = scene.order.items[0]!.id;
+    await expect(prisma.$executeRaw`UPDATE "observation_result" SET "order_item_id" = ${line}::uuid WHERE "id" = ${row.id}`).resolves.toBe(1); // prettier-ignore
+    // Y no re-apuntarlo después.
+    await expect(prisma.$executeRaw`UPDATE "observation_result" SET "order_item_id" = NULL WHERE "id" = ${row.id}`).rejects.toEqual(frozen); // prettier-ignore
+  });
+
   it('ORD-090 no deja leer un informe de una sede fuera del alcance', async () => {
     const prisma = db();
     const scene = await anOrderedBloodCount(prisma);

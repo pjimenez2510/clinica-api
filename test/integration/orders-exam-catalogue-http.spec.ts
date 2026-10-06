@@ -20,6 +20,11 @@ import { PrismaDiagnosticReportRepository } from '../../src/modules/orders/infra
 import { PrismaExamCatalogueRepository } from '../../src/modules/orders/infrastructure/prisma-exam-catalogue.repository';
 import { PrismaServiceOrderRepository } from '../../src/modules/orders/infrastructure/prisma-service-order.repository';
 
+import {
+  addDays,
+  addMonths,
+  clinicalDateOf,
+} from '../../src/shared/domain/clinic-time';
 import { aTariffConcept, placeIssued } from './orders-fixtures';
 import { useDatabase } from './setup/database';
 import {
@@ -487,12 +492,25 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       const exam = await examCoded(examCode);
       const analyte = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: analyteCode } }); // prettier-ignore
 
-      return async (sex: 'MALE' | 'FEMALE', valueNumeric: number) => {
-        const patient = await createPatient(prisma, { sex });
+      return async (
+        sex: 'MALE' | 'FEMALE',
+        valueNumeric: number,
+        /** Born this long before the encounter, as a clinical date. */
+        bornBefore?: { months: number; days: number },
+      ) => {
+        const startedAt = new Date();
+        const born = bornBefore
+          ? addDays(addMonths(clinicalDateOf(startedAt), -bornBefore.months), -bornBefore.days) // prettier-ignore
+          : undefined;
+        const patient = await createPatient(prisma, {
+          sex,
+          ...(born ? { birthDate: new Date(`${born}T00:00:00Z`) } : {}),
+        });
         const encounter = await createEncounter(prisma, {
           siteId: site.id,
           practitionerId: practitioner.id,
           patientId: patient.id,
+          startedAt,
         });
         const order = await placeIssued(orders, {
           encounterId: encounter.id,
@@ -537,6 +555,24 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       expect(await flag('FEMALE', 88)).toBe('NORMAL');
     });
 
+    it('ORD-036 la edad que decide un rango es la edad en días, no el resto de días de la edad', async () => {
+      const glu = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: 'GLU' } }); // prettier-ignore
+      await send('put', `/exam-catalogue/analytes/${glu.id}/ranges`, {
+        ranges: [
+          range({ low: 70, high: 100 }),
+          range({ rangeKind: 'CRITICAL', low: 40, high: 400 }),
+          range({ rangeKind: 'CRITICAL', ageMinDays: 0, ageMaxDays: 28, low: 30 }),
+        ],
+      }).expect(200); // prettier-ignore
+      const flag = await flagsOf('EX-GLUCOSA-AYUNAS', 'GLU');
+
+      // 32 años y 10 días: el resto de días de su edad es 10, y el rango
+      // neonatal no es suyo. Con 35 queda por debajo del crítico de adulto.
+      expect(await flag('FEMALE', 35, { months: 32 * 12, days: 10 })).toBe('CRITICAL_LOW'); // prettier-ignore
+      // Control positivo: el recién nacido de 10 días sí recibe el neonatal.
+      expect(await flag('FEMALE', 35, { months: 0, days: 10 })).toBe('LOW');
+    });
+
     it('ORD-038 sin rango para su sexo la bandera queda vacía, no normal', async () => {
       const hb = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: 'HB' } }); // prettier-ignore
       await send('put', `/exam-catalogue/analytes/${hb.id}/ranges`, {
@@ -549,7 +585,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       expect(await flag('MALE', 14)).toBe('NORMAL');
     });
 
-    it('ORD-054 ORD-114 una corrección después de subir el umbral no saca de la cola un crítico que sigue igual', async () => {
+    it('ORD-054 ORD-114 ORD-122 una corrección después de subir el umbral compara con el que se aplicó al original', async () => {
       const glu = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: 'GLU' } }); // prettier-ignore
       const client = prisma as unknown as PrismaService;
       const orders = new PrismaServiceOrderRepository(client);
@@ -579,6 +615,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
 
       const same = await correctedAfterRaise(420, 420);
       const lessExtreme = await correctedAfterRaise(420, 410);
+      const belowApplied = await correctedAfterRaise(420, 390);
       await send('put', `/exam-catalogue/analytes/${glu.id}/ranges`, {
         ranges: [range({ low: 70, high: 100 }), range({ rangeKind: 'CRITICAL', low: 40, high: 500 })],
       }).expect(200); // prettier-ignore
@@ -586,14 +623,65 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       const kept = await same.correct();
       const row = await prisma.observationResult.findFirstOrThrow({ where: { reportId: kept.id } }); // prettier-ignore
       expect(row.abnormalFlag).toBe('CRITICAL_HIGH');
+      // La fila nueva congela el umbral del original, no el de hoy.
+      expect(Number(row.criticalHigh)).toBe(400);
       // Y sigue en la cola de críticos, ahora por el informe corregido.
       const queue = await reports.critical(requester, new Date());
       expect(queue.map((entry) => entry.reportId)).toContain(kept.id);
 
-      // Control positivo: corregido a un valor menos extremo, rige el umbral de hoy.
+      // Menos extremo pero por encima del 400 aplicado: sigue crítico. Con los
+      // rangos de hoy (500) habría salido HIGH y de la cola.
       const lowered = await lessExtreme.correct();
       const loweredRow = await prisma.observationResult.findFirstOrThrow({ where: { reportId: lowered.id } }); // prettier-ignore
-      expect(loweredRow.abnormalFlag).toBe('HIGH');
+      expect(loweredRow.abnormalFlag).toBe('CRITICAL_HIGH');
+
+      // Control positivo: por debajo del umbral aplicado deja de ser crítico.
+      const below = await belowApplied.correct();
+      const belowRow = await prisma.observationResult.findFirstOrThrow({ where: { reportId: below.id } }); // prettier-ignore
+      expect(belowRow.abnormalFlag).toBe('HIGH');
+      expect(Number(belowRow.criticalHigh)).toBe(400);
+    });
+
+    it('ORD-114 ORD-122 D-135 una corrección después de BAJAR el umbral se marca con el de hoy, que es el más protector', async () => {
+      const glu = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: 'GLU' } }); // prettier-ignore
+      const client = prisma as unknown as PrismaService;
+      const orders = new PrismaServiceOrderRepository(client);
+      const reports = new DiagnosticReportService(
+        new PrismaDiagnosticReportRepository(client),
+        orders,
+        new PrismaExamCatalogueRepository(client),
+        { record: () => Promise.resolve() },
+        { setContext: () => undefined, info: () => undefined, warn: () => undefined, error: () => undefined } as never, // prettier-ignore
+      );
+      const site = await createSite(prisma);
+      const practitioner = await createPractitioner(prisma);
+      await aTariffConcept(prisma, { code: 'EX-GLUCOSA-AYUNAS' });
+      const exam = await examCoded('EX-GLUCOSA-AYUNAS');
+      const requester = { userId: 'user-1', sites: 'all' as const };
+      const issuedAt = () => new Date(Date.now() - 3_600_000);
+      await send('put', `/exam-catalogue/analytes/${glu.id}/ranges`, {
+        ranges: [range({ low: 70, high: 100 }), range({ rangeKind: 'CRITICAL', low: 40, high: 400 })],
+      }).expect(200); // prettier-ignore
+
+      const patient = await createPatient(prisma, { sex: 'FEMALE' });
+      const encounter = await createEncounter(prisma, { siteId: site.id, practitionerId: practitioner.id, patientId: patient.id }); // prettier-ignore
+      const order = await placeIssued(orders, { encounterId: encounter.id, category: 'LABORATORY', priority: 'ROUTINE', lines: [{ examDefinitionId: exam.id }], sites: 'all' }); // prettier-ignore
+      const original = await reports.register({ orderId: order.id, performedById: null, issuedAt: issuedAt(), results: [{ analyteDefinitionId: glu.id, valueNumeric: 380 }] }, requester); // prettier-ignore
+      expect(original.results[0]).toMatchObject({ abnormalFlag: 'HIGH', criticalHigh: 400 }); // prettier-ignore
+
+      // La clínica baja el crítico alto a 350; el laboratorio corrige a 390.
+      await send('put', `/exam-catalogue/analytes/${glu.id}/ranges`, {
+        ranges: [range({ low: 70, high: 100 }), range({ rangeKind: 'CRITICAL', low: 40, high: 350 })],
+      }).expect(200); // prettier-ignore
+      const corrected = await reports.correct({ reportId: original.id, performedById: null, issuedAt: issuedAt(), results: [{ analyteDefinitionId: glu.id, valueNumeric: 390 }] }, requester); // prettier-ignore
+
+      const row = await prisma.observationResult.findFirstOrThrow({ where: { reportId: corrected.id } }); // prettier-ignore
+      expect(row.abnormalFlag).toBe('CRITICAL_HIGH');
+      // Congela el límite que la marcó.
+      expect(Number(row.criticalHigh)).toBe(350);
+      const queue = await reports.critical(requester, new Date());
+      // Y la cola de críticos lo dice junto al valor.
+      expect(queue.find((entry) => entry.reportId === corrected.id)).toMatchObject({ criticalHigh: 350 }); // prettier-ignore
     });
 
     it('ORD-114 un rango cerrado no cuenta: el resultado nuevo usa el que rige al registrarlo', async () => {

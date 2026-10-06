@@ -495,6 +495,7 @@ function toAwaitingResponse(visit: AwaitingCheckout): AwaitingCheckoutResponse {
     clinicallyAttended: visit.clinicallyAttended,
     patient: toIdentityResponse(visit.patient),
     account: visit.account,
+    unchargedExams: visit.unchargedExams,
   };
 }
 

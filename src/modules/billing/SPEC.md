@@ -328,7 +328,7 @@ y le sale la consulta propuesta. Una atención interrumpida sin acto clínico
 aparece con el motivo por el que no tiene nada que cobrar. Y facturar, añadir
 un cargo, facturar lo pendiente y cerrar la cuenta termina siempre.
 
-**Cubre:** BI-181 a BI-184, BI-190. **Solo servidor:** BI-190 (la pantalla
+**Cubre:** BI-181 a BI-184, BI-190, BI-194. **Solo servidor:** BI-190 (la pantalla
 dice el número y lista lo que el servidor sirve; qué cuenta es del servidor).
 
 ### B11 — Prestaciones con estructura _(P2)_
@@ -1670,6 +1670,24 @@ dos registros distintos.**
   > emitido al día siguiente se cobraba con el precio del día siguiente,
   > mientras su prestación (ORD-004) se había resuelto con la de la atención.
   > Lo que se vendió se vendió el día de la atención.
+- **BI-194** — Lo pendiente de cobro (BI-181) DEBERÁ listar también la
+  atención con una cuenta liquidada SI tiene una cuenta abierta o un examen
+  **emitido sin cargo después de abrirse su última cuenta liquidada** —de una
+  orden `ISSUED`, sin anular, con prestación activa en el catálogo, sin ningún
+  cargo que lo nombre y sin un cargo manual vigente de esa misma prestación en
+  una cuenta de la atención—, y DEBERÁ decir cuántos exámenes sin cargo tiene
+  (D-130.4, resuelta por el autor; D-138).
+  > El médico puede emitir el borrador después de que caja cerró la cuenta
+  > (la atención sigue con el alta dada, ORD-115). Ese examen no propone cargo
+  > solo: hay que volver a pasar la atención a caja (BI-150), que abre una
+  > cuenta nueva. Sin esto la atención no volvía a aparecer en ningún sitio.
+  > Un examen sin prestación activa no la trae de vuelta: caja no podría
+  > cobrarlo y la fila no se iría nunca. Lo emitido antes de abrir la cuenta
+  > liquidada ya lo tuvo caja delante (sin precio del día, lo cobra a mano,
+  > BI-155). Cualquier cargo que lo nombre, aunque esté anulado, cuenta como
+  > decidido, igual que al proponer (BI-151). Y un cargo manual de la misma
+  > prestación lo da por cobrado: caja pudo cobrarlo a mano mientras era
+  > borrador (BI-192), y proponerlo otra vez lo cobraría dos veces.
 
 ---
 

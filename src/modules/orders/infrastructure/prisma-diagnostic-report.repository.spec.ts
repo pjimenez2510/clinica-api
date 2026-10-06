@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { PrismaDiagnosticReportRepository } from './prisma-diagnostic-report.repository';
 import type { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import type { NewReport } from '../domain/diagnostic-report.repository';
+import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
 
 /**
  * The report's write transaction, against a double of the Prisma client.
@@ -23,6 +24,8 @@ import type { NewReport } from '../domain/diagnostic-report.repository';
  */
 
 const ORDER = '00000000-0000-4000-8000-00000000000a';
+/** When the fixture encounter began: today, so the age is derived, not typed. */
+const STARTED_AT = new Date();
 const ITEM = '00000000-0000-4000-8000-00000000000b';
 
 interface Call {
@@ -116,8 +119,13 @@ function prismaDouble(
                 siteId: 'site-1',
                 encounter: {
                   patientId: 'chart-1',
-                  ageDays: 12_000,
-                  patient: { sex: 'FEMALE' },
+                  startedAt: STARTED_AT,
+                  // 32 años y 10 días: el resto de días de la edad es 10.
+                  ageDays: 10,
+                  patient: {
+                    sex: 'FEMALE',
+                    birthDate: new Date(`${addDays(clinicalDateOf(STARTED_AT), -12_000)}T00:00:00Z`), // prettier-ignore
+                  },
                 },
               }
             : options.orderRow,
@@ -158,6 +166,8 @@ const aReport = (overrides: Partial<NewReport> = {}): NewReport => ({
       referenceLow: 12,
       referenceHigh: 15.5,
       referenceText: null,
+      criticalLow: null,
+      criticalHigh: null,
       abnormalFlag: 'NORMAL',
       orderItemId: ITEM,
     },
@@ -270,9 +280,10 @@ describe('el adaptador del informe', () => {
     expect(report?.supersededAt).toEqual(new Date('2026-09-19T13:00:00Z'));
   });
 
-  it('ORD-036 lee la edad de la ATENCIÓN y el sexo de la ficha', async () => {
-    // `encounter.age_days` está congelado por disparador; derivar la edad de
-    // `birth_date` al transcribir reclasificaría un resultado de hace dos años.
+  it('ORD-036 lee la edad en días el día de la ATENCIÓN y el sexo de la ficha', async () => {
+    // La edad entera en días el día de la atención, no la de hoy: un
+    // resultado de hace dos años no se reclasifica. Y no `encounter.age_days`,
+    // que es sólo el resto de días tras años y meses (lo que imprime el 010).
     const { repository } = prismaDouble();
 
     expect(await repository.patientOfOrder(ORDER, 'all')).toEqual({
@@ -284,6 +295,17 @@ describe('el adaptador del informe', () => {
 
     const missing = prismaDouble({ orderRow: null });
     expect(await missing.repository.patientOfOrder(ORDER, 'all')).toBeUndefined(); // prettier-ignore
+  });
+
+  it('ORD-036 una fecha de nacimiento posterior a la atención da edad desconocida, no negativa', async () => {
+    const born = (days: number) => new Date(`${addDays(clinicalDateOf(STARTED_AT), days)}T00:00:00Z`); // prettier-ignore
+    const row = (birthDate: Date) => ({ siteId: 'site-1', encounter: { patientId: 'chart-1', startedAt: STARTED_AT, patient: { sex: 'FEMALE', birthDate } } }); // prettier-ignore
+
+    const later = prismaDouble({ orderRow: row(born(1)) });
+    expect((await later.repository.patientOfOrder(ORDER, 'all'))?.ageDays).toBeNull(); // prettier-ignore
+    // Control positivo: nacido el mismo día tiene 0 días.
+    const sameDay = prismaDouble({ orderRow: row(born(0)) });
+    expect((await sameDay.repository.patientOfOrder(ORDER, 'all'))?.ageDays).toBe(0); // prettier-ignore
   });
 
   it('ORD-040 pide a la base exactamente los resultados sin línea, dentro del alcance', async () => {
@@ -310,6 +332,8 @@ describe('el adaptador del informe', () => {
           valueNumeric: null,
           valueCode: null,
           unit: 'mg/dL',
+          criticalLow: null,
+          criticalHigh: null,
           abnormalFlag: 'CRITICAL_LOW',
           observedAt: new Date('2026-09-16T13:00:00Z'),
           _count: { notices: 0 },
