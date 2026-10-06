@@ -611,7 +611,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
           select: {
             ageYears: true,
             ageMonths: true,
-            patient: { select: PATIENT_SELECT },
+            patient: { select: { ...PATIENT_SELECT, sex: true } },
           },
         },
         orderedBy: { select: PRACTITIONER_SELECT },
@@ -632,7 +632,12 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       (
         await this.prisma.examDefinition.findMany({
           where: { code: { in: row.items.map((item) => item.testCode) } },
-          select: { code: true, specimenType: true, patientPreparation: true },
+          select: {
+            code: true,
+            specimenType: true,
+            patientPreparation: true,
+            form010Section: true,
+          },
         })
       ).map((exam) => [exam.code, exam]),
     );
@@ -659,6 +664,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
           row.encounter.ageYears,
           row.encounter.ageMonths,
         ),
+        patientSex: row.encounter.patient.sex,
         // ORD-121, D-117.5. Frozen at the issue: correcting the attention
         // afterwards does not change the paper the laboratory holds.
         diagnoses: frozenDiagnoses(row.diagnoses) ?? [],
@@ -668,6 +674,9 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
           display: item.testDisplay,
           specimen: exams.get(item.testCode)?.specimenType ?? null,
           preparation: exams.get(item.testCode)?.patientPreparation ?? null,
+          // ORD-126. Read at print time, like the specimen: the line freezes
+          // code and name, not the section.
+          section: exams.get(item.testCode)?.form010Section ?? null,
           status: item.status,
         })),
       },

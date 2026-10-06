@@ -390,16 +390,6 @@ export function composeServiceOrderLayout(
   const live = data.items.filter((item) => item.status !== 'CANCELLED');
   const annulled = live.length === 0;
 
-  // What the patient has to do before the extraction, once per distinct
-  // instruction: an unstated fast is a second puncture (ORD-010).
-  const preparations = [
-    ...new Set(
-      live
-        .map((item) => item.preparation)
-        .filter((text): text is string => text !== null && text.trim() !== ''),
-    ),
-  ];
-
   const blocks: Block[] = [
     ...(annulled
       ? ([
@@ -432,6 +422,8 @@ export function composeServiceOrderLayout(
     },
     { kind: 'heading', text: 'Paciente' },
     patientBlock(data.patient, [
+      // ORD-126. Form 010A's header carries it.
+      { label: 'Sexo', value: SEX_LABEL[data.patientSex] ?? '—' },
       {
         label: 'Diagnóstico presuntivo',
         value:
@@ -449,33 +441,9 @@ export function composeServiceOrderLayout(
           ]),
     ]),
     { kind: 'heading', text: 'Exámenes solicitados' },
-    {
-      kind: 'table',
-      columns: [
-        { header: 'Código', width: 0.28 },
-        { header: 'Examen', width: 0.44 },
-        { header: 'Muestra', width: 0.28 },
-      ],
-      rows: live.map((item) => [item.code, item.display, item.specimen ?? '—']),
-    },
+    ...examsBySection(live),
     // The template's framed note: what the patient has to do before going.
-    {
-      kind: 'box',
-      light: true,
-      blocks: [
-        { kind: 'caption', text: 'Indicaciones al paciente' },
-        preparations.length === 0
-          ? { kind: 'paragraph', text: 'No requiere preparación previa.' }
-          : {
-              kind: 'fields',
-              columns: 1,
-              entries: preparations.map((text) => ({
-                label: 'Preparación',
-                value: text,
-              })),
-            },
-      ],
-    },
+    { kind: 'box', light: true, blocks: instructionsFor(live) },
     { kind: 'heading', text: 'Médico solicitante' },
     prescriberBlock(data.orderedBy),
     {
@@ -500,6 +468,99 @@ export function composeServiceOrderLayout(
     blocks,
     tearOff: null,
   };
+}
+
+/** ORD-126. How the 010A header says the sex; «—» for what nobody declared. */
+const SEX_LABEL: Readonly<Record<string, string>> = {
+  MALE: 'Hombre',
+  FEMALE: 'Mujer',
+  INTERSEX: 'Intersexual',
+};
+
+type OrderItem = ServiceOrderPrintData['items'][number];
+
+/**
+ * ORD-126, D-136 A. The live exams under their section of form 010A, each
+ * section in the order it first appears in the order, and those without one
+ * last, under «OTROS EXÁMENES»: it reads as the 010A and still fits each
+ * clinic's own catalogue.
+ */
+function examsBySection(live: readonly OrderItem[]): Block[] {
+  const OTHERS = 'OTROS EXÁMENES';
+  const groups = new Map<string, OrderItem[]>();
+  for (const item of live) {
+    const section = item.section?.trim() || OTHERS;
+    groups.set(section, [...(groups.get(section) ?? []), item]);
+  }
+  const ordered = [
+    ...[...groups.keys()].filter((section) => section !== OTHERS),
+    ...(groups.has(OTHERS) ? [OTHERS] : []),
+  ];
+  return ordered.flatMap((section): Block[] => [
+    { kind: 'caption', text: section },
+    {
+      kind: 'table',
+      columns: [
+        { header: 'Código', width: 0.28 },
+        { header: 'Examen', width: 0.44 },
+        { header: 'Muestra', width: 0.28 },
+      ],
+      rows: (groups.get(section) ?? []).map((item) => [
+        item.code,
+        item.display,
+        item.specimen ?? '—',
+      ]),
+    },
+  ]);
+}
+
+/**
+ * ORD-125. What the patient has to do before going, each with the name of its
+ * exam; an exam with nothing to do takes no line. A fast is said ON TOP, once
+ * for the whole sampling, naming who asks for it: an unstated fast is a second
+ * puncture (ORD-010).
+ *
+ * ⚠️ BY THE TEXT, for want of a field (D-137): a preparation that BEGINS with
+ * «Ayuno» is a fast, one that begins with «No requiere» is none.
+ */
+function instructionsFor(live: readonly OrderItem[]): Block[] {
+  const asked = live
+    .map((item) => ({
+      exam: item.display,
+      text: item.preparation?.trim() ?? '',
+    })) // prettier-ignore
+    .filter(({ text }) => text !== '' && !/^no requiere/i.test(text));
+  const fasts = asked.filter(({ text }) => /^ayuno/i.test(text));
+
+  const caption: Block = { kind: 'caption', text: 'Indicaciones al paciente' };
+  if (asked.length === 0) {
+    return [caption, { kind: 'paragraph', text: 'No requiere preparación previa.' }]; // prettier-ignore
+  }
+  return [
+    caption,
+    ...(fasts.length === 0
+      ? []
+      : ([
+          {
+            kind: 'paragraph',
+            text: `Venga en ayunas: ${fasts
+              .map(({ exam, text }) => `${firstSentence(text)} (${exam})`)
+              .join('; ')}.`,
+            emphasis: true,
+          },
+        ] as Block[])),
+    {
+      kind: 'fields',
+      columns: 1,
+      entries: asked.map(({ exam, text }) => ({ label: exam, value: text })),
+    },
+  ];
+}
+
+/** «Ayuno de 8 a 12 horas. Puede…» → «ayuno de 8 a 12 horas». */
+function firstSentence(text: string): string {
+  const first = text.split(/\.\s/)[0]?.replace(/\.$/, '') ?? text;
+  return first.charAt(0).toLowerCase() + first.slice(1);
 }
 
 /** How a date of form 117 prints: «21/05/2026 — veintiuno de mayo de …». */

@@ -777,6 +777,86 @@ describe('los documentos por HTTP', () => {
       );
     });
 
+    /** The text a reader sees in a PDF served by the API. */
+    async function pdfText(path: string, body?: object): Promise<string> {
+      const call =
+        body === undefined ? get(path, doctorToken) : post(path, doctorToken, body); // prettier-ignore
+      const response = await call
+        .buffer()
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+      const proxy = await getDocumentProxy(
+        new Uint8Array(response.body as Buffer),
+      );
+      return (await extractText(proxy, { mergePages: true })).text;
+    }
+
+    it('ORD-125 ORD-126 el PDF real de la orden agrupa por sección del 010A, lleva el sexo y nombra el examen de cada indicación', async () => {
+      await publishTemplate('SERVICE_ORDER');
+      const encounter = await prisma.encounter.findFirstOrThrow({
+        select: { id: true, siteId: true, patient: { select: { sex: true } } },
+      });
+      const system = await prisma.catalogSystem.create({
+        data: { code: 'EXAMENES-ORD126', name: 'Exámenes de la prueba' },
+      });
+      const exams = [
+        { code: 'EX-GLU-126', name: 'Glucosa en ayunas', section: 'BIOQUÍMICA', preparation: 'Ayuno de 8 a 12 horas. Puede beber agua.' }, // prettier-ignore
+        { code: 'EX-BH-126', name: 'Biometría hemática completa', section: 'HEMATOLOGÍA', preparation: 'No requiere ayuno.' }, // prettier-ignore
+      ];
+      const items = [];
+      for (const exam of exams) {
+        await prisma.examDefinition.create({
+          data: {
+            code: exam.code,
+            name: exam.name,
+            form010Section: exam.section,
+            patientPreparation: exam.preparation,
+          },
+        });
+        const concept = await prisma.catalogConcept.create({
+          data: {
+            systemId: system.id,
+            code: exam.code,
+            display: exam.name,
+            validFrom: new Date(Date.now() - 24 * 60 * 60 * 1000),
+          },
+          select: { id: true },
+        });
+        items.push({ conceptId: concept.id, testCode: exam.code, testDisplay: exam.name }); // prettier-ignore
+      }
+      const order = await prisma.serviceOrder.create({
+        data: {
+          encounterId: encounter.id,
+          siteId: encounter.siteId,
+          orderedById: practitionerId,
+          category: 'LABORATORY',
+          items: { create: items },
+        },
+        select: { id: true },
+      });
+      await prisma.serviceOrder.update({
+        where: { id: order.id },
+        data: { status: 'ISSUED' },
+      });
+
+      const text = await pdfText('/documents/drafts', {
+        kind: 'SERVICE_ORDER',
+        subjectId: order.id,
+      });
+
+      expect(text).toContain('BIOQUÍMICA');
+      expect(text).toContain('HEMATOLOGÍA');
+      expect(text.indexOf('BIOQUÍMICA')).toBeLessThan(text.indexOf('HEMATOLOGÍA')); // prettier-ignore
+      expect(text).toContain('Sexo');
+      expect(text).toContain('Venga en ayunas: ayuno de 8 a 12 horas (Glucosa en ayunas).'); // prettier-ignore
+      expect(text).not.toContain('No requiere ayuno');
+      expect(text).not.toContain('Preparación');
+    });
+
     /** The text a reader sees in the draft of this test's receta. */
     async function draftText(): Promise<string> {
       const response = await post('/documents/drafts', doctorToken, {

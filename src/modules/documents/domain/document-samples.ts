@@ -111,6 +111,7 @@ export function sampleSubject(
           priority: 'ROUTINE',
           clinicalNoteText: SAMPLE_MARK,
           patient,
+          patientSex: 'FEMALE',
           diagnoses,
           orderedBy: practitioner,
           items: [
@@ -119,6 +120,7 @@ export function sampleSubject(
               display: 'Creatinina sérica',
               specimen: 'Sangre',
               preparation: 'Ayuno de 8 horas.',
+              section: 'QUÍMICA SANGUÍNEA',
               status: 'REQUESTED',
             },
           ],

@@ -145,17 +145,21 @@ export interface ServiceOrderPrintData {
   priority: string;
   clinicalNoteText: string | null;
   patient: PatientIdentity;
+  /** ORD-126. The header of form 010A carries it: `MALE`, `FEMALE`, … */
+  patientSex: string;
   diagnoses: readonly { code: string; display: string }[];
   orderedBy: PractitionerIdentity;
   /**
-   * DOC-072. Each exam with its frozen code and name, and the specimen and the
-   * patient's preparation as the catalogue holds them today.
+   * DOC-072. Each exam with its frozen code and name, and the specimen, the
+   * patient's preparation and its section of form 010A (ORD-126) as the
+   * catalogue holds them today.
    */
   items: readonly {
     code: string;
     display: string;
     specimen: string | null;
     preparation: string | null;
+    section: string | null;
     status: string;
   }[];
 }
