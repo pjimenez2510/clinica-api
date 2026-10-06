@@ -323,9 +323,13 @@ y volver: siguen marcados. Emitir y abrir el PDF: «HEMATOLOGÍA» y «BIOQUÍMI
 encabezan sus exámenes, la cabecera trae el sexo y, arriba de las indicaciones,
 la línea del ayuno nombra la glucosa; la biometría, que no pide preparación, no
 ocupa línea.
-**Cubre:** ORD-123, ORD-125, ORD-126.
+**Cubre:** ORD-123, ORD-125, ORD-126, ORD-127, ORD-128.
 
-**Solo servidor:** ninguno. ORD-123 es solo de interfaz.
+ORD-127 y ORD-128 (D-138.1 y D-138.5) entran en esta rama por encargo de la
+principal: son de la bandera y de la lista de borradores, no del papel.
+
+**Solo servidor:** ORD-127 (la edad con que se elige el rango no se ve en
+pantalla). ORD-123 es solo de interfaz.
 
 ### E12 — Un examen anulado no recibe informe _(P1)_
 
@@ -1388,6 +1392,33 @@ desde la pantalla.
   pantalla lo dice en vez de ofrecer un botón que sólo puede fallar. La lista
   no deja fila de bitácora por entrada (ORD-092): lleva el nombre del paciente
   y qué se pidió, nada del diagnóstico.
+
+- **ORD-127** — La edad con que se elige un rango (ORD-036) DEBERÁ ser la
+  **edad entera en días congelada en la atención** (EN-221), y no la que da
+  hoy la fecha de nacimiento de la ficha (D-138.1, resuelta por el autor).
+  MIENTRAS la fecha de nacimiento de la atención fuera **estimada**, la edad
+  DEBERÁ contar como desconocida para los rangos acotados en **días o meses**,
+  y DEBERÁ aplicarse a los acotados en **años enteros**: la ventana cuyos
+  límites son años exactos (365,25 días por año, como los guarda la pantalla,
+  ORD-106; «desde» tal cual y «menos de» el día siguiente al guardado). Un
+  rango sin límites de edad aplica igual.
+  > Antes se contaba desde la fecha de la ficha al corregir un informe, así
+  > que rectificar la fecha de nacimiento después cambiaba la edad de una
+  > corrección; y una fecha estimada —el migrante sin documentos— se trataba
+  > como exacta, y elegía un rango neonatal o de lactante con un error de
+  > meses. **Garantía de la base:** la edad la congela el disparador de la
+  > atención (EN-221); la prueba de integración corrige la fecha de la ficha
+  > y comprueba que la bandera sigue con la edad congelada, con control
+  > positivo.
+
+- **ORD-128** — Las 24 horas de ORD-115 DEBERÁN contarse desde la **última
+  edición** del borrador (`service_order.updated_at`, con el reloj de la
+  aplicación), y la lista DEBERÁ decir esa fecha como «guardado» (D-138.5,
+  resuelta por el autor).
+  > Antes contaban desde que se creó: un borrador de ayer editado hace cinco
+  > minutos salía como «guardado hace más de un día». Emitir desde la lista
+  > sigue emitiendo el contenido actual del borrador: es del mismo firmante y
+  > la orden emitida se lee entera.
 
 - **ORD-122** — Cada resultado numérico DEBERÁ congelar en su fila los
   **límites críticos que se le aplicaron** (`critical_low`, `critical_high`;

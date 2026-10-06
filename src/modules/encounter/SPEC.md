@@ -274,9 +274,9 @@ versión anterior **sigue siendo legible** y que sólo una está vigente; y que 
 **Cubre:** EN-020 a EN-034, **EN-155 y EN-156** —la firma electrónica
 certificada y su parámetro por sede— y **EN-157 y EN-158**, el plazo de
 conservación. Y **EN-219 y EN-220**, el resumen de la atención (su PDF
-es DOC-111, en `documents`).
+es DOC-111, en `documents`), y **EN-221**, la edad entera congelada.
 
-**Solo servidor:** EN-023, EN-024, EN-030, EN-031, EN-219. Las tres primeras son
+**Solo servidor:** EN-023, EN-024, EN-030, EN-031, EN-219, EN-221. Las tres primeras son
 negativas que sólo se demuestran contra PostgreSQL —que el `UPDATE` falle, que el
 índice parcial rechace la segunda vigente, que `TRUNCATE` no pase—; la cuarta es
 que corregir la ficha del paciente **no** toque una nota ya firmada.
@@ -3492,6 +3492,20 @@ verifica, que es de la atención, y dónde se ofrece._
   > La bitácora la escribe el servidor (DOC-111). En la lista, la acción va
   > fuera del enlace de la fila: un botón dentro de un enlace no se puede
   > pulsar con el teclado ni lo anuncia el lector de pantalla.
+
+- **EN-221** — Al crear una atención, la base DEBERÁ congelar en ella, además
+  de años, meses y días sueltos, la **edad entera en días** hasta su fecha
+  clínica en `America/Guayaquil` (`age_in_days`) y si la fecha de nacimiento
+  era **estimada** (`age_estimated`), con el mismo disparador
+  (`encounter_freeze_age`); y **NO DEBERÁ** dejar cambiar ninguna de las dos
+  después (D-138.1, resuelta por el autor).
+  > La usa la bandera de laboratorio (ORD-127). `age_days` no sirve: es el
+  > resto tras años y meses (0–30), lo que imprimen el 010 y la receta. Las
+  > atenciones anteriores se rellenaron al migrar con la fecha de nacimiento
+  > de la ficha de ese momento —la mejor que hay— y su marca de estimada.
+  > **Garantía de la base:** el disparador de inserción y
+  > `trg_encounter_age_frozen`; la prueba de integración inserta y luego
+  > intenta cambiarlas, con control positivo.
 
 ---
 

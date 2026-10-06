@@ -3,11 +3,6 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
-  type ClinicalDate,
-  clinicalDateOf,
-  clinicalDaySpan,
-} from '../../../shared/domain/clinic-time';
-import {
   CriticalNoticeEditedConcurrentlyError,
   CriticalNoticeNotFoundError,
   OrderItemNotMatchableError,
@@ -285,10 +280,9 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
   /**
    * ORD-036. Who the order is for, and how old they were THAT DAY.
    *
-   * The age is counted to the ATTENTION's clinical date, so a report
-   * transcribed two years later still classifies against the age the patient
-   * HAD. It follows the chart's birth date: a corrected birth date applies to
-   * a later correction too (D-138 asks whether to freeze it instead).
+   * The age is the one the ATTENTION froze (EN-221, ORD-127): a report
+   * transcribed two years later, or corrected after the chart's birth date
+   * was rectified, still classifies against the age the patient HAD.
    */
   async patientOfOrder(
     orderId: string,
@@ -301,8 +295,9 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
         encounter: {
           select: {
             patientId: true,
-            startedAt: true,
-            patient: { select: { sex: true, birthDate: true } },
+            ageInDays: true,
+            ageEstimated: true,
+            patient: { select: { sex: true } },
           },
         },
       },
@@ -315,13 +310,13 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
       siteId: row.siteId,
       sex: patient.sex,
       /**
-       * ORD-036. The WHOLE age in days on the clinical date of the encounter.
-       * ⚠️ NOT `encounter.age_days`: `trg_encounter_freeze_age` stores there
-       * only the days left over after years and months (0–30), which is what
-       * the 010 and the prescription print. Read as an age, it gave a woman of
-       * 32 the ranges of a ten-day-old.
+       * ORD-036, ORD-127. The WHOLE age in days the attention froze (EN-221),
+       * and whether its birth date was an estimate. ⚠️ NOT `age_days`: that is
+       * only the days left over after years and months (0–30), what the 010
+       * and the prescription print.
        */
-      ageDays: ageInDaysOn(patient.birthDate, row.encounter.startedAt),
+      ageDays: row.encounter.ageInDays,
+      ageEstimated: row.encounter.ageEstimated,
     };
   }
 
@@ -1195,15 +1190,4 @@ function toNumber(value: Prisma.Decimal | null): number | null {
 function toResultId(value: string): bigint | undefined {
   if (!/^\d{1,19}$/.test(value)) return undefined;
   return BigInt(value);
-}
-
-/**
- * ORD-036. Whole days from birth to the attention's clinical date in Ecuador;
- * `null` when the birth date is after it — an age that cannot be is unknown,
- * not «−1», which would have matched a range with only an upper bound.
- */
-function ageInDaysOn(birthDate: Date, startedAt: Date): number | null {
-  const born = birthDate.toISOString().slice(0, 10) as ClinicalDate;
-  const span = clinicalDaySpan(born, clinicalDateOf(startedAt));
-  return span === 0 ? null : span - 1;
 }

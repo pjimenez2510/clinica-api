@@ -96,4 +96,9 @@ export interface ReferenceRange {
 export interface PatientProfile {
   sex: PatientSex | null;
   ageDays: number | null;
+  /**
+   * ORD-127. The birth date the attention froze was an ESTIMATE: the age is
+   * unknown for a window in days or months, and good for one in whole years.
+   */
+  ageEstimated?: boolean;
 }

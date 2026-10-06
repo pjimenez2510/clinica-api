@@ -129,6 +129,8 @@ function appliesTo(range: ReferenceRange, patient: PatientProfile): boolean {
   const bounded = range.ageMinDays !== null || range.ageMaxDays !== null;
   if (!bounded) return true;
   if (patient.ageDays === null) return false;
+  // ORD-127. An estimated age is good to a year, not to a day or a month.
+  if (patient.ageEstimated === true && !inWholeYears(range)) return false;
   if (range.ageMinDays !== null && patient.ageDays < range.ageMinDays) {
     return false;
   }
@@ -136,6 +138,24 @@ function appliesTo(range: ReferenceRange, patient: PatientProfile): boolean {
     return false;
   }
   return true;
+}
+
+/**
+ * ORD-127. Whether an age window is written in whole years, as the screen
+ * stores them (ORD-106): years of 365,25 days, «desde» as stored and «menos
+ * de» the day after the stored upper bound. 0 fits any unit.
+ */
+export function inWholeYears(range: {
+  ageMinDays: number | null;
+  ageMaxDays: number | null;
+}): boolean {
+  const years = (days: number) => {
+    const amount = Math.round(days / 365.25);
+    return amount > 0 && Math.round(amount * 365.25) === days;
+  };
+  const from = range.ageMinDays;
+  const below = range.ageMaxDays === null ? null : range.ageMaxDays + 1;
+  return (from === null || from === 0 || years(from)) && (below === null || years(below)); // prettier-ignore
 }
 
 /** Sex is worth more than an age window. See the note on `applicableRange`. */
