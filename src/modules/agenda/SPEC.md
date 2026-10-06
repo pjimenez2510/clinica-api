@@ -478,6 +478,22 @@ D-081, D-082, D-085, D-099.
 > 29/29 a 35/36, y esa fila roja es trabajo real que llevaba escondido detrás de
 > una nota.
 
+### E11 — Menos preguntas y editar en el sitio _(P1)_
+
+La cita se corrige donde está: se mueve, se le cambia el profesional, el tipo,
+el consultorio, el motivo de consulta, el canal o el paciente (antes de que
+llegue), y la versión anterior la guarda el sistema. Anular, marcar «no
+asistió» y retirar una cita registrada por error piden una confirmación y
+ningún motivo escrito; los motivos que quedan son de lista y opcionales.
+
+**Por qué es P1:** decisión del autor D-126 y D-127 (04-10-2026), con el
+inventario de `planes/fix-menos-preguntas.md`, filas AG-1 a AG-13.
+**Prueba independiente:** mover una cita y comprobar contra la base que es la
+misma fila, con su versión anterior en `record_version`.
+**Cubre:** AG-035, AG-044, AG-050 a AG-052, AG-064, AG-115, AG-117, AG-132,
+AG-162 a AG-168.
+**Solo servidor:** AG-051, AG-052.
+
 ## Criterios de éxito
 
 Medibles y sin nombrar tecnología. Son la respuesta a «¿esto quedó bien?» cuando
@@ -931,8 +947,14 @@ es falsa, hay requisitos que cambian.
 ## 4. Sobrecupo y bloqueos
 
 - **AG-035** — CUANDO se reserve una cita declarada como sobrecupo, el sistema
-  DEBERÁ crearla con `blocks_calendar = false`, DEBERÁ exigir un motivo y DEBERÁ
-  registrar quién la autorizó.
+  DEBERÁ crearla con `blocks_calendar = false`, DEBERÁ registrar quién la
+  autorizó y DEBERÁ admitir un motivo opcional de lista («Urgencia»,
+  «Control», «Otro»).
+  > **Enmendado el 06-10-2026 (D-126, D-127, `fix/menos-preguntas-agenda`).** Decía «DEBERÁ exigir un motivo».
+  > El control del sobrecupo es el autorizador (AG-103), y se queda; el motivo
+  > escrito no lo exige ninguna norma (fila AG-7 del inventario). El `CHECK`
+  > `agenda_entry_overbooking_coherence` deja de pedir el motivo y sigue
+  > exigiendo el autorizador, y los motivos ya guardados no se tocan.
   > **Esquema resuelto el 14-08-2026 — migración
   > `agenda_overbooking_authorisation`.** `agenda_entry.overbooking_authorised_by_id`
   > apunta a la cuenta que autorizó, con `ON DELETE RESTRICT` (§5: una cita no se
@@ -1182,8 +1204,16 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   `no_show_at` y DEBERÁ liberar el cupo fijando `released_at`.
 - **AG-043** — SI se intenta marcar `NO_SHOW` antes de la hora de inicio de la
   cita, ENTONCES el sistema DEBERÁ rechazarlo.
-- **AG-044** — CUANDO una cita pase a `CANCELLED`, el sistema DEBERÁ exigir
-  motivo, DEBERÁ registrar `cancelled_at` y DEBERÁ liberar el cupo.
+- **AG-044** — CUANDO una cita pase a `CANCELLED`, el sistema DEBERÁ admitir un
+  motivo opcional, DEBERÁ registrar `cancelled_at` y DEBERÁ liberar el cupo; y
+  la pantalla DEBERÁ pedir una confirmación que diga la consecuencia («se
+  libera el cupo de las HH:MM») y ofrecer el motivo en una lista («El paciente
+  avisó», «La clínica», «Otro»).
+  > **Enmendado el 06-10-2026 (D-126, D-127, `fix/menos-preguntas-agenda`).** Decía «DEBERÁ exigir motivo»
+  > (fila AG-1 del inventario). Anular tiene efecto y por eso lleva una
+  > confirmación; el motivo no lo pide ninguna norma, y quién y cuándo los
+  > guarda la fila de historial (AG-004). `cancellation_note` ya admitía nulo:
+  > no hay migración.
 - **AG-045** — MIENTRAS una cita tenga una atención viva (un `Encounter` que no
   esté `ENTERED_IN_ERROR`), el sistema NO DEBERÁ permitir anularla, marcarla
   como `NO_SHOW`, marcarla `ENTERED_IN_ERROR` ni marcarla
@@ -1265,9 +1295,14 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   > la métrica una consulta distinta a la de sus tres vecinas por una asimetría
   > que no responde a nada—.
 - **AG-117** — CUANDO una cita pase a `ENTERED_IN_ERROR`, el sistema DEBERÁ
-  exigir motivo, DEBERÁ registrar `entered_in_error_at` y DEBERÁ liberar el
-  cupo; y NO DEBERÁ admitir esa transición sobre una cita que ya alcanzó
-  `CHECKED_IN`.
+  admitir un motivo opcional, DEBERÁ registrar `entered_in_error_at` y DEBERÁ
+  liberar el cupo; y NO DEBERÁ admitir esa transición sobre una cita que ya
+  alcanzó `CHECKED_IN`. La pantalla DEBERÁ pedir una confirmación sin motivo.
+  > **Enmendado el 06-10-2026 (D-126, D-127, `fix/menos-preguntas-agenda`).** Decía «DEBERÁ exigir motivo»
+  > (fila AG-4). Con la edición en el sitio (AG-162) casi no se usa: la cita
+  > con un dato mal puesto se corrige, no se retira. El `CHECK`
+  > `agenda_entry_entered_in_error_states_a_reason` se retira; los motivos ya
+  > guardados se quedan.
   > **Anular una cita real y retirar una que nunca debió existir no son el mismo
   > acto** (D-A-009). Hoy las dos salen `CANCELLED` y cuentan igual en la
   > métrica de anulaciones, así que una tarde de errores de tecleo se lee como
@@ -1729,9 +1764,16 @@ reclame, esa fila es la diferencia entre un incidente y una imputación penal.
   > `agenda_entry.coverage_check_skipped_reason`, y su propio comentario cita el
   > art. 9. Lo que falta no es columna: es que las dos capas dejen de exigir el
   > dato, que es donde el requisito se incumple de verdad.
-- **AG-132** — El registro de la calificación de emergencia DEBERÁ ser
-  append-only: ninguna operación lo actualiza ni lo borra, y la base DEBERÁ
-  rechazar el intento venga de donde venga.
+- **AG-132** — CUANDO se corrija la calificación de emergencia ya registrada,
+  el sistema DEBERÁ guardar la calificación anterior en `record_version`, con
+  quién y cuándo, y NO DEBERÁ admitir que se borre ni que se corrija sin ese
+  sello, venga de donde venga.
+  > **Enmendado el 06-10-2026 (D-126, D-127, `fix/menos-preguntas-agenda`).** Decía «append-only:
+  > ninguna operación lo actualiza ni lo borra» (fila AG-11). D-128.4: la Ley 77
+  > art. 10 obliga a calificar al llegar, no prohíbe corregir; lo que prueba
+  > que se calificó es que la original queda, y queda en la versión. La ruta es
+  > `PATCH …/entries/{entryId}/emergency`, con el permiso del registro de
+  > llegada (AG-130).
   > Es la garantía de AG-005 aplicada a la fila que puede acabar delante de un
   > juez. Una calificación que se pueda reescribir después del incidente no
   > prueba lo que el art. 10 pide que se pruebe: la prueba es que la fila no ha
@@ -1853,11 +1895,28 @@ pasó de hora.
 
 ## 6. Reprogramación
 
-- **AG-050** — CUANDO se reprograme una cita, el sistema DEBERÁ liberar el cupo
-  original y crear una entrada nueva, y NO DEBERÁ mover el intervalo de la fila
-  existente.
-- **AG-051** — CUANDO se reprograme una cita, el sistema DEBERÁ dejar en el
-  historial de ambas entradas la referencia a la otra.
+- **AG-050** — CUANDO se reprograme una cita, el sistema DEBERÁ mover **la
+  misma** cita (hora, profesional, tipo de atención, consultorio) con
+  `PATCH /agenda/sites/{siteId}/entries/{entryId}`, y NO DEBERÁ anularla ni
+  crear otra. El canal es opcional y, si falta, se queda el original. La
+  pantalla DEBERÁ pedir una confirmación solo cuando se reprograma
+  arrastrando.
+- **AG-051** — CUANDO se reprograme o se edite una cita, el sistema DEBERÁ
+  guardar la fila anterior en `record_version`, con quién y cuándo
+  (`edited_by_id`, `edited_at`), en la misma sentencia; y NO DEBERÁ admitir
+  una edición sin ese sello, venga de donde venga.
+  > **Enmendado el 06-10-2026 (D-126, D-127, `fix/menos-preguntas-agenda`).** AG-050 decía «liberar el
+  > cupo original y crear una entrada nueva, y NO DEBERÁ mover el intervalo de
+  > la fila existente», y AG-051 «dejar en el historial de ambas entradas la
+  > referencia a la otra» (fila AG-5 del inventario). La pregunta «¿estuvo
+  > alguna vez a las 08:00?», que era la razón de no mover la fila, la contesta
+  > ahora `record_version` (EN-210). Lo que cambia para la métrica: mover deja
+  > de escribir una cita `CANCELLED`, así que AG-081 ya no tiene que excluir
+  > originales de reprogramación, y la tasa de anulaciones deja de contar los
+  > movimientos. **Las reprogramaciones ya guardadas** (con
+  > `rescheduled_from_id`) se quedan como están: la columna, su índice y la
+  > lectura de `rescheduledFromId` y `rescheduledToId` siguen, y nada nuevo
+  > las escribe. La ruta `POST …/reschedule` se retira.
   > **Esquema resuelto el 14-08-2026 — migración `agenda_reschedule_link`.**
   > `agenda_entry.rescheduled_from_id` apunta a la entrada de la que procede,
   > con `ON DELETE RESTRICT` (§5: una cita no se borra) y un índice único
@@ -1876,8 +1935,13 @@ pasó de hora.
   > El bloqueo se anota como resuelto y no se borra, por la misma razón que el
   > de §10: `pnpm estado` los cuenta leyendo este archivo, y un bloqueo que
   > desaparece sin dejar rastro se vuelve a declarar la próxima vez.
-- **AG-052** — SI la cita nueva no puede crearse, ENTONCES el sistema NO DEBERÁ
-  liberar el cupo original.
+- **AG-052** — SI la cita no puede moverse al intervalo pedido (cupo ocupado,
+  paciente con otra cita solapada, ventana de la sede, fuera del horario),
+  ENTONCES el sistema DEBERÁ rechazarlo y la cita DEBERÁ quedar como estaba.
+  > **Enmendado el 06-10-2026 (D-126, D-127, `fix/menos-preguntas-agenda`).** Decía «SI la cita nueva
+  > no puede crearse, ENTONCES NO DEBERÁ liberar el cupo original». Con un
+  > solo `UPDATE` la propiedad es la de la sentencia: o se mueve entera o no se
+  > mueve.
   > **Es una propiedad transaccional, y por eso E3 no es «anular y volver a
   > reservar» encadenados.** Liberar el original y crear la entrada nueva
   > ocurren en UNA transacción (`AgendaRepository.reschedule`): si el cupo
@@ -2020,7 +2084,13 @@ pasó de hora.
 - **AG-063** — CUANDO una entrada de lista de espera se convierta en cita, el
   sistema DEBERÁ marcarla `SCHEDULED` y DEBERÁ enlazarla con la cita creada.
 - **AG-064** — El sistema DEBERÁ registrar cada intento de contacto con su
-  instante, y NO DEBERÁ reasignar automáticamente el cupo sin confirmación.
+  instante, y NO DEBERÁ reasignar automáticamente el cupo sin confirmación; y
+  DEBERÁ admitir que se edite el resultado del **último** intento, guardando el
+  anterior en `record_version`.
+  > **Enmendado el 06-10-2026 (D-126, D-127, `fix/menos-preguntas-agenda`).** Decía solo la primera
+  > frase, y el intento era de solo inserción: un resultado pulsado por error
+  > no se corregía (fila AG-12). Solo el último, porque es el que decide el
+  > estado de la entrada; los anteriores ya los superó otro intento.
   > **El esquema que faltaba existe desde el 19-08-2026**
   > (`agenda_waitlist_contact_trail`). Este requisito estuvo declarado como
   > bloqueo desde el 12-08-2026 —`waitlist_entry` guardaba `contact_attempts`,
@@ -2362,6 +2432,58 @@ Convertirlo en configuración sería regalar la garantía.
 
 ---
 
+## 11. Menos preguntas y editar en el sitio (D-126, D-127)
+
+- **AG-162** — CUANDO se edite una cita con
+  `PATCH /agenda/sites/{siteId}/entries/{entryId}`, el sistema DEBERÁ admitir
+  cambiar el motivo de consulta, el consultorio, el canal y el paciente, además
+  de lo que mueve AG-050, con la versión de AG-051; y el paciente, la hora y el
+  profesional SOLO MIENTRAS la cita esté `BOOKED` o `CONFIRMED`. SI la cita está
+  en otro estado, ENTONCES DEBERÁ rechazar esos cambios con
+  `AGENDA_ENTRY_NOT_EDITABLE` (409); el motivo de consulta y el consultorio se
+  admiten también en `CHECKED_IN` e `IN_PROGRESS`.
+  > Fila AG-6 del inventario. Lo que cambia el intervalo, el profesional o el
+  > paciente pasa por las mismas comprobaciones que una reserva (AG-115):
+  > ventana, ficha fusionada, consultorio de la sede, horario, y el solape lo
+  > arbitran los `EXCLUDE`. Un sobrecupo que se mueve pasa a cita ordinaria y
+  > debe caber en el horario, como hacía la reprogramación; su autorización
+  > queda en la versión anterior.
+- **AG-163** — CUANDO se marque «No asistió», la pantalla DEBERÁ pedir una
+  confirmación que diga «cuenta como inasistencia»; y CUANDO se deshaga el
+  mismo día de Ecuador en que se marcó, el sistema DEBERÁ devolver la cita al
+  estado que tenía, borrar `no_show_at`, volver a ocupar el cupo y dejar la
+  fila de historial. SI el día ya pasó o el cupo se reservó entretanto,
+  ENTONCES DEBERÁ rechazarlo y dejar la cita como estaba.
+  > Fila AG-2. Hoy era un clic sin confirmación sobre un estado terminal. La
+  > ruta es `POST …/entries/{entryId}/no-show/undo`, y el aviso de la pantalla
+  > ofrece «Deshacer».
+- **AG-164** — CUANDO se edite un bloqueo con
+  `PATCH /agenda/sites/{siteId}/blocks/{entryId}` (hora, consultorio o motivo),
+  el sistema DEBERÁ editar la misma fila con versión; y SI el intervalo nuevo
+  contiene citas, ENTONCES DEBERÁ rechazarlo con `BLOCK_OVERLAPS_APPOINTMENTS`
+  enumerándolas, como AG-038.
+  > Fila AG-8. Antes había que quitarlo y crearlo de nuevo.
+- **AG-165** — CUANDO la edición del último intento (AG-064) deje una entrada
+  `EXPIRED` por debajo del máximo de intentos de la sede, el sistema DEBERÁ
+  reabrirla a `CONTACTED`, con la versión de la entrada guardada.
+  > Fila AG-12, la segunda mitad. Una entrada caducada por un «no contestó»
+  > pulsado por error vuelve a competir con su antigüedad, que es lo justo:
+  > el error fue de quien llamó.
+- **AG-166** — La pantalla DEBERÁ ofrecer como lista de un toque, y opcional,
+  el motivo de «Se fue sin ser atendido» (AG-116) y el de omitir la
+  verificación de cobertura (AG-131).
+  > Filas AG-3 y AG-13. La API ya los admitía opcionales.
+- **AG-167** — CUANDO la reserva quede fuera del horario (AG-028), la pantalla
+  DEBERÁ decirlo en el diálogo y ofrecer «Reservar como sobrecupo» con lo ya
+  escrito; y CUANDO un bloqueo se rechace por citas (AG-038), DEBERÁ ofrecer
+  «Reprogramar estas citas» desde el mismo aviso.
+  > Filas AG-9 y AG-10. El envío fuera de horario se cortaba sin decir nada
+  > útil y el arrastre se ignoraba.
+- **AG-168** — El sistema DEBERÁ servir las versiones anteriores de una cita
+  en su detalle (`versions`: cuándo, quién y qué cambió), y la pantalla DEBERÁ
+  mostrarlas.
+  > D-127.2: la historia la guarda el sistema y se puede ver.
+
 ## Códigos de error nuevos
 
 Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
@@ -2373,7 +2495,9 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `AGENDA_ENTRY_HAS_ENCOUNTER`           | 409    | AG-045, AG-148 |
 | `ATTENTION_STILL_IN_PROGRESS`          | 409    | AG-153         |
 | `OVERBOOKING_PRACTITIONER_UNAVAILABLE` | 409    | AG-151         |
-| `BLOCK_OVERLAPS_APPOINTMENTS`          | 409    | AG-038, AG-152 |
+| `BLOCK_OVERLAPS_APPOINTMENTS`          | 409    | AG-038, AG-152, AG-164 |
+| `AGENDA_ENTRY_NOT_EDITABLE`            | 409    | AG-162         |
+| `NO_SHOW_UNDO_EXPIRED`                 | 409    | AG-163         |
 | `BOOKING_IN_THE_PAST`                  | 422    | AG-031         |
 | `BOOKING_TOO_SOON`                     | 422    | AG-032         |
 | `BOOKING_TOO_FAR`                      | 422    | AG-033         |
@@ -2517,7 +2641,10 @@ aún no está validado.
 | `GET`    | `/agenda/metrics/late-arrival`                                  | `agenda:read`    | `query`         | AG-141                           |
 | `GET`    | `/agenda/sites/{siteId}/board`                                  | `agenda:read`    | `param:siteId`  | AG-121, AG-123 a AG-135, AG-138, AG-139 |
 | `GET`    | `/agenda/sites/{siteId}/board/public`                           | `agenda:board:public` | `param:siteId` | AG-136, AG-137, AG-139         |
-| `POST`   | `/agenda/sites/{siteId}/entries/{entryId}/reschedule`           | `agenda:write`   | `param:siteId`  | AG-050 a AG-052, AG-115          |
+| `PATCH`  | `/agenda/sites/{siteId}/entries/{entryId}`                      | `agenda:write`   | `param:siteId`  | AG-050 a AG-052, AG-115, AG-162, AG-168 |
+| `POST`   | `/agenda/sites/{siteId}/entries/{entryId}/no-show/undo`         | `agenda:write`   | `param:siteId`  | AG-163                           |
+| `PATCH`  | `/agenda/sites/{siteId}/entries/{entryId}/emergency`            | `agenda:write`   | `param:siteId`  | AG-132                           |
+| `PATCH`  | `/agenda/sites/{siteId}/blocks/{entryId}`                       | `agenda:write`   | `param:siteId`  | AG-164                           |
 | `POST`   | `/agenda/sites/{siteId}/blocks`                                | `agenda:write`   | `param:siteId`  | AG-037, AG-038                   |
 | `DELETE` | `/agenda/sites/{siteId}/blocks/{entryId}`                       | `agenda:write`   | `param:siteId`  | AG-114                           |
 | `POST`   | `/agenda/sites/{siteId}/blocks/{entryId}/restore`               | `agenda:write`   | `param:siteId`  | AG-154                           |
@@ -2525,6 +2652,7 @@ aún no está validado.
 | `POST`   | `/agenda/sites/{siteId}/waitlist`                              | `agenda:write`   | `param:siteId`  | AG-060                           |
 | `GET`    | `/agenda/sites/{siteId}/waitlist/candidates/{releasedEntryId}`  | `agenda:read`    | `param:siteId`  | AG-061, AG-062, AG-065 a AG-067  |
 | `POST`   | `/agenda/sites/{siteId}/waitlist/{entryId}/contact-attempts`    | `agenda:write`   | `param:siteId`  | AG-064, AG-066                   |
+| `PATCH`  | `/agenda/sites/{siteId}/waitlist/{entryId}/contact-attempts/last` | `agenda:write` | `param:siteId`  | AG-064, AG-165                   |
 | `POST`   | `/agenda/sites/{siteId}/waitlist/{entryId}/conversion`          | `agenda:write`   | `param:siteId`  | AG-063, AG-064                   |
 
 **El registro de llegada sale de `/status` y tiene ruta propia**, al revés de lo
