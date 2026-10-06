@@ -8,6 +8,7 @@ import {
   type NoteContent,
 } from '../../src/modules/encounter/domain/clinical-note';
 import {
+  ClinicalNoteAlreadyOpenError,
   NoteAlreadySignedError,
   NoteNotAmendableError,
 } from '../../src/modules/encounter/domain/encounter.errors';
@@ -437,6 +438,43 @@ describe('la nota clínica firmada', () => {
     // `encounter_discharge_states_a_condition` obligan a los tres a la vez.
     expect(stored.endedAt).toEqual(SIGNED_AT);
     expect(stored.dischargeCondition).toBe('ALIVE');
+  });
+
+  it('EN-229 una atención no abre una segunda nota 002, ni por el adaptador ni por SQL; otro formulario y otra atención, sí', async () => {
+    const prisma = db();
+    const { site, practitioner, encounter, note } = await aDraft(prisma);
+    const draftOf = (encounterId: string, formCode: string) =>
+      notesOf(prisma).createDraft({
+        encounterId,
+        formCode,
+        formVersion: '1',
+        templateId: null,
+        content: {},
+        authorId: practitioner.id,
+        authorUserId: practitioner.userId,
+        sites: [site.id],
+      });
+
+    await expect(draftOf(encounter.id, '002')).rejects.toBeInstanceOf(
+      ClinicalNoteAlreadyOpenError,
+    );
+    // La base, sin pasar por el adaptador: una versión 1 nueva de la 002.
+    const rawVersionOne = (formCode: string) =>
+      prisma.$executeRaw`INSERT INTO "clinical_note" ("id", "chain_id", "version", "form_code", "encounter_id", "status", "content", "author_id", "updated_at")
+        SELECT g.id, g.id, 1, ${formCode}, "encounter_id", 'DRAFT', '{}'::jsonb, "author_id", "updated_at"
+          FROM "clinical_note", (SELECT uuidv7() AS id) g WHERE "clinical_note"."id" = ${note.id}::uuid`;
+    await failsWith(
+      rawVersionOne('002'),
+      'clinical_note_one_002_chain_per_encounter',
+    );
+    expect(await prisma.clinicalNote.count({ where: { encounterId: encounter.id, formCode: '002' } })).toBe(1); // prettier-ignore
+
+    // Control positivo: el mismo INSERT de otro formulario entra; por el
+    // adaptador, otro formulario en la misma atención y la 002 de otra.
+    await expect(rawVersionOne('007')).resolves.toBe(1);
+    await expect(draftOf(encounter.id, '005')).resolves.toMatchObject({ formCode: '005' }); // prettier-ignore
+    const other = await aDraft(prisma);
+    expect(other.note.formCode).toBe('002');
   });
 
   it('EN-022 ordena las versiones por cadena y versión, no por su propia fecha', async () => {

@@ -35,6 +35,7 @@ import {
   EncounterCloserNotAuthorError,
   EncounterNotFoundError,
   InvalidEncounterTransitionError,
+  ClinicalNoteAlreadyOpenError,
   NoteAlreadySignedError,
   NoteContentIncompleteError,
   NoteTemplateInvalidError,
@@ -88,6 +89,7 @@ const EVERY_ERROR: readonly DomainError[] = [
   new UnknownClinicalFormError(['002@1']),
   new NoteContentIncompleteError(['motivoConsulta']),
   new NoteAlreadySignedError(),
+  new ClinicalNoteAlreadyOpenError(),
   new AmendmentReasonRequiredError(),
   new NoteNotAmendableError('SUPERSEDED'),
   new ConceptWrongCatalogueError('CIE10'),
@@ -513,6 +515,16 @@ describe('el contrato de errores de la atención', () => {
     expect(error.code).toBe('NOTE_ALREADY_SIGNED');
     expect(error).toBeInstanceOf(ConflictError); // 409, nunca 403
     expect(error.userTitle).toContain('enmiéndela indicando el motivo');
+  });
+
+  it('EN-229 abrir una segunda nota de consulta es un 409 que dice qué hacer', () => {
+    const error = new ClinicalNoteAlreadyOpenError();
+
+    expect(error.code).toBe('CLINICAL_NOTE_ALREADY_OPEN');
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.userTitle).toBe(
+      'Esta atención ya tiene su nota de consulta. Ábrala para seguir escribiendo o enmendarla',
+    );
   });
 
   it('EN-025 y EN-026 responden distinto a un borrador y a una versión sustituida', () => {

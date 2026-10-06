@@ -2926,6 +2926,8 @@ model ClinicalNote {
 
   prescriptions Prescription[]
 
+  /// EN-229. `clinical_note_one_002_chain_per_encounter`, a partial UNIQUE
+  /// on (encounter_id) of the 002's version 1 rows, lives in SQL only.
   @@index([encounterId, formCode])
   @@index([chainId, version])
   @@map("clinical_note")
