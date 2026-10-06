@@ -708,6 +708,8 @@ export const DOMAIN_ERROR_CODES = [
   'ENCOUNTER_NOT_FOUND',
   'ENCOUNTER_STATE_TRANSITION_INVALID',
   'NOTE_ALREADY_SIGNED',
+  // EN-229 (D-139.5). Una sola cadena 002 por atención.
+  'CLINICAL_NOTE_ALREADY_OPEN',
   'NOTE_CONTENT_INCOMPLETE',
   'NOTE_NOT_AMENDABLE',
   'NOTE_TEMPLATE_INVALID',
@@ -1065,6 +1067,9 @@ export const DOMAIN_ERROR_CODES = [
   // ORD-118. Corregir una orden emitida que firma otro: el borrador nuevo
   // saldría a nombre de quien corrige. Sus exámenes sí se pueden anular.
   'ORDER_OF_ANOTHER_PRACTITIONER',
+  // ORD-131 (D-139.1). Anular un examen que ya tiene algún resultado, o
+  // corregir una orden cuyos pendientes los tienen todos.
+  'ORDER_ITEM_HAS_RESULTS',
   //   * `ORDER_NOT_DISCARDED` (409) — ORD-116. «Deshacer» un descarte de una
   //     orden que ya no está descartada: otra pestaña o un segundo clic.
   'ORDER_NOT_DISCARDED',

@@ -301,3 +301,44 @@ describe('ORD-127 la ventana de edad en años enteros', () => {
     expect(inWholeYears({ ageMinDays: 0, ageMaxDays: 27 })).toBe(false);
   });
 });
+
+describe('ORD-132 críticos con fecha de nacimiento estimada', () => {
+  // Potasio: crítico sólo para 0–30 días (neonatal) y otro para todas las edades.
+  const potassium: ReferenceRange[] = [
+    { rangeKind: 'REFERENCE', sex: null, ageMinDays: 0, ageMaxDays: 30, low: 3.7, high: 5.9, text: null }, // prettier-ignore
+    { rangeKind: 'CRITICAL', sex: null, ageMinDays: 0, ageMaxDays: 30, low: 2.8, high: 7.5, text: null }, // prettier-ignore
+    { rangeKind: 'CRITICAL', sex: null, ageMinDays: 6575, ageMaxDays: null, low: 2.5, high: 6.5, text: null }, // prettier-ignore
+  ];
+
+  it('ORD-132 un recién nacido con fecha estimada recibe el crítico neonatal: cubre su edad ± 6 meses', () => {
+    const newborn: PatientProfile = { sex: 'FEMALE', ageDays: 10, ageEstimated: true }; // prettier-ignore
+
+    expect(classifyNumeric(7.8, { ranges: potassium }, newborn)).toMatchObject({ flag: 'CRITICAL_HIGH', criticalLow: 2.8, criticalHigh: 7.5 }); // prettier-ignore
+    // La referencia sigue ORD-127: en días, con edad estimada no aplica.
+    expect(classifyNumeric(5, { ranges: potassium }, newborn)).toMatchObject({ flag: null, referenceLow: null }); // prettier-ignore
+  });
+
+  it('ORD-132 entre dos que la cubren, el más protector de cada lado', () => {
+    const ranges: ReferenceRange[] = [
+      { rangeKind: 'CRITICAL', sex: null, ageMinDays: 0, ageMaxDays: 364, low: 2.8, high: 7.5, text: null }, // prettier-ignore
+      { rangeKind: 'CRITICAL', sex: null, ageMinDays: 365, ageMaxDays: null, low: 2.5, high: 6.5, text: null }, // prettier-ignore
+    ];
+    // Estimado en 300 días: ± 183 cruza las dos ventanas.
+    const infant: PatientProfile = { sex: 'MALE', ageDays: 300, ageEstimated: true }; // prettier-ignore
+
+    expect(criticalBounds(ranges, infant)).toMatchObject({ low: { value: 2.8 }, high: { value: 6.5 } }); // prettier-ignore
+    // Control positivo: con fecha exacta, sólo la de su edad.
+    expect(criticalBounds(ranges, { ...infant, ageEstimated: false })).toMatchObject({ low: { value: 2.8 }, high: { value: 7.5 } }); // prettier-ignore
+  });
+
+  it('ORD-132 una ventana a más de 6 meses de la edad estimada no cuenta, y la de otro sexo tampoco', () => {
+    const adult: PatientProfile = { sex: 'FEMALE', ageDays: 12_000, ageEstimated: true }; // prettier-ignore
+    expect(criticalBounds(potassium, adult)).toMatchObject({ low: { value: 2.5 }, high: { value: 6.5 } }); // prettier-ignore
+
+    const ranges: ReferenceRange[] = [
+      ...potassium,
+      { rangeKind: 'CRITICAL', sex: 'MALE', ageMinDays: null, ageMaxDays: null, low: 3, high: 6, text: null }, // prettier-ignore
+    ];
+    expect(criticalBounds(ranges, adult)).toMatchObject({ low: { value: 2.5 }, high: { value: 6.5 } }); // prettier-ignore
+  });
+});

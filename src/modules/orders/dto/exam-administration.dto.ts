@@ -46,6 +46,14 @@ const examFields = {
     .min(1, 'El tiempo de entrega es de al menos una hora')
     .max(32000, 'El tiempo de entrega es demasiado largo')
     .nullable(),
+  /** ORD-129. Hours only with a fast: the database refuses the pair otherwise. */
+  requiresFasting: z.boolean(),
+  fastingHours: z
+    .number()
+    .int('Escriba horas enteras')
+    .min(1, 'El ayuno es de al menos una hora')
+    .max(24, 'El ayuno no puede pasar de 24 horas')
+    .nullable(),
   performedExternally: z.boolean(),
   externalLabName: optionalText(160, 'El laboratorio no puede superar 160 caracteres'), // prettier-ignore
   externalLabCode: optionalText(64, 'El código del laboratorio no puede superar 64 caracteres'), // prettier-ignore
@@ -56,7 +64,14 @@ const examFields = {
 };
 
 export const createExamSchema = z
-  .object({ code: CODE, ...examFields })
+  .object({
+    code: CODE,
+    ...examFields,
+    // ORD-129. Defaults on creation only: inside the PATCH's `.partial()` a
+    // default would reset the fast on every edit that leaves it out.
+    requiresFasting: examFields.requiresFasting.default(false),
+    fastingHours: examFields.fastingHours.default(null),
+  })
   .strict();
 /** Body of POST /exam-catalogue/exams. */
 export class CreateExamDto extends createZodDto(createExamSchema) {}
@@ -211,6 +226,8 @@ export const adminExamSchema = z.object({
   specimenType: z.string().nullable(),
   patientPreparation: z.string().nullable(),
   turnaroundHours: z.number().int().nullable(),
+  requiresFasting: z.boolean(),
+  fastingHours: z.number().int().nullable(),
   performedExternally: z.boolean(),
   externalLabName: z.string().nullable(),
   externalLabCode: z.string().nullable(),

@@ -797,7 +797,7 @@ describe('los documentos por HTTP', () => {
       return (await extractText(proxy, { mergePages: true })).text;
     }
 
-    it('ORD-125 ORD-126 el PDF real de la orden agrupa por sección del 010A, lleva el sexo y nombra el examen de cada indicación', async () => {
+    it('ORD-125 ORD-126 ORD-129 el PDF real de la orden agrupa por sección del 010A, lleva el sexo y nombra el examen de cada indicación', async () => {
       await publishTemplate('SERVICE_ORDER');
       const encounter = await prisma.encounter.findFirstOrThrow({
         select: { id: true, siteId: true, patient: { select: { sex: true } } },
@@ -806,8 +806,8 @@ describe('los documentos por HTTP', () => {
         data: { code: 'EXAMENES-ORD126', name: 'Exámenes de la prueba' },
       });
       const exams = [
-        { code: 'EX-GLU-126', name: 'Glucosa en ayunas', section: 'BIOQUÍMICA', preparation: 'Ayuno de 8 a 12 horas. Puede beber agua.' }, // prettier-ignore
-        { code: 'EX-BH-126', name: 'Biometría hemática completa', section: 'HEMATOLOGÍA', preparation: 'No requiere ayuno.' }, // prettier-ignore
+        { code: 'EX-GLU-126', name: 'Glucosa en ayunas', section: 'BIOQUÍMICA', preparation: 'Ayuno de 8 a 12 horas. Puede beber agua.', fastingHours: 8 }, // prettier-ignore
+        { code: 'EX-BH-126', name: 'Biometría hemática completa', section: 'HEMATOLOGÍA', preparation: 'No requiere ayuno.', fastingHours: null }, // prettier-ignore
       ];
       const items = [];
       for (const exam of exams) {
@@ -817,6 +817,9 @@ describe('los documentos por HTTP', () => {
             name: exam.name,
             form010Section: exam.section,
             patientPreparation: exam.preparation,
+            // ORD-129. The fast is the exam's datum, read at print time.
+            requiresFasting: exam.fastingHours !== null,
+            fastingHours: exam.fastingHours,
           },
         });
         const concept = await prisma.catalogConcept.create({
@@ -854,7 +857,7 @@ describe('los documentos por HTTP', () => {
       expect(text).toContain('HEMATOLOGÍA');
       expect(text.indexOf('BIOQUÍMICA')).toBeLessThan(text.indexOf('HEMATOLOGÍA')); // prettier-ignore
       expect(text).toContain('Sexo');
-      expect(text).toContain('Venga en ayunas: ayuno de 8 a 12 horas (Glucosa en ayunas).'); // prettier-ignore
+      expect(text).toContain('Venga con 8 horas de ayuno como mínimo (Glucosa en ayunas).'); // prettier-ignore
       expect(text).not.toContain('No requiere ayuno');
       expect(text).not.toContain('Preparación');
     });

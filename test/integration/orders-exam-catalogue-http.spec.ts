@@ -233,6 +233,32 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
     await send('patch', `/exam-catalogue/exams/${bh.id}`, { code: 'EX-OTRO' }).expect(422); // prettier-ignore
   });
 
+  it('ORD-129 «Pide ayuno» y sus horas se guardan, se publican al pedir y la base no admite horas sin ayuno', async () => {
+    // Control positivo: con ayuno, las horas entran y se leen al pedir.
+    const created = await send('post', '/exam-catalogue/exams', { ...NEW_EXAM, requiresFasting: true, fastingHours: 8 }).expect(201); // prettier-ignore
+    const exam = created.body as AdminExam & { requiresFasting: boolean; fastingHours: number | null }; // prettier-ignore
+    expect(exam).toMatchObject({ requiresFasting: true, fastingHours: 8 });
+    const orderable = (await get('/exams').expect(200)).body as { items: { id: string; requiresFasting: boolean; fastingHours: number | null }[] }; // prettier-ignore
+    expect(orderable.items.find((e) => e.id === exam.id)).toMatchObject({ requiresFasting: true, fastingHours: 8 }); // prettier-ignore
+
+    // Quitar el ayuno dejando las horas: lo rechaza la base, nombrando el campo.
+    const refused = await send('patch', `/exam-catalogue/exams/${exam.id}`, { requiresFasting: false }).expect(422); // prettier-ignore
+    expect((refused.body as Problem).code).toBe('EXAM_FASTING_HOURS_INVALID');
+    expect(JSON.stringify(refused.body)).toContain('fastingHours');
+    // Una edición que no lo menciona no lo toca.
+    await send('patch', `/exam-catalogue/exams/${exam.id}`, { name: 'Perfil renal completo' }).expect(200); // prettier-ignore
+    expect(await examCoded('EX-PERFIL-RENAL')).toMatchObject({ requiresFasting: true, fastingHours: 8 }); // prettier-ignore
+    // Quitarlo con sus horas, sí.
+    await send('patch', `/exam-catalogue/exams/${exam.id}`, { requiresFasting: false, fastingHours: null }).expect(200); // prettier-ignore
+
+    // La base, sin pasar por la API: 25 horas no.
+    await expect(
+      prisma.$executeRaw`UPDATE "exam_definition" SET "requires_fasting" = true, "fasting_hours" = 25 WHERE "id" = ${exam.id}::uuid`,
+    ).rejects.toThrow(/exam_definition_fasting_hours_range/);
+    // Y la semilla marca la glucosa con sus 8 horas.
+    expect(await examCoded('EX-GLUCOSA-AYUNAS')).toMatchObject({ requiresFasting: true, fastingHours: 8 }); // prettier-ignore
+  });
+
   it('ORD-108 se cobra con una prestación de su clase; la de imagen se rechaza', async () => {
     const lab = await serviceCoded('LAB-BH');
     const imaging = await serviceCoded('IMG-RX-SIMPLE');

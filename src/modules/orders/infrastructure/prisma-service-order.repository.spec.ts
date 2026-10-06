@@ -65,6 +65,7 @@ const anItemRow = (overrides: Record<string, unknown> = {}) => ({
   status: 'REQUESTED',
   completedAt: null,
   createdAt: new Date('2026-09-15T13:00:00Z'),
+  _count: { results: 0 },
   ...overrides,
 });
 
@@ -84,6 +85,13 @@ function prismaDouble(
     calls.push({ method, args });
 
   const tx = {
+    // ORD-131. No line has results unless a test says so.
+    observationResult: {
+      findMany: (args: unknown) => {
+        record('observationResult.findMany', args);
+        return Promise.resolve([]);
+      },
+    },
     encounter: {
       findFirst: (args: unknown) => {
         record('encounter.findFirst', args);

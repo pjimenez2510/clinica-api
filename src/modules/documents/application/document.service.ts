@@ -565,7 +565,8 @@ function signerOf(subject: DocumentSubject) {
     case 'MEDICAL_CERTIFICATE':
       return subject.data.issuedBy;
     case 'ENCOUNTER_SUMMARY':
-      return subject.data.practitioner;
+      // DOC-115 (D-139.4). Nobody signs the summary: no seal travels with it.
+      return null;
     case 'INVOICE_RIDE':
       // A tax document is not signed by a practitioner. Returning `null` rather
       // than reaching for «somebody» is what keeps a doctor's seal off an

@@ -564,6 +564,21 @@ export class NoteTemplateInvalidError extends ValidationError {
 }
 
 /**
+ * EN-229 (D-139.5). The attention already has its 002 note — draft, signed,
+ * amended or retracted —: a second chain would leave the first out of the
+ * summary (DOC-111). What changes is amended (EN-025).
+ */
+export class ClinicalNoteAlreadyOpenError extends ConflictError {
+  readonly code = 'CLINICAL_NOTE_ALREADY_OPEN';
+  override readonly userTitle =
+    'Esta atención ya tiene su nota de consulta. Ábrala para seguir escribiendo o enmendarla';
+
+  constructor() {
+    super('The encounter already has a 002 note chain');
+  }
+}
+
+/**
  * EN-023, REQ-005. Somebody tried to edit a note that is already signed.
  *
  * ═══════════════════════════════════════════════════════════════════════════

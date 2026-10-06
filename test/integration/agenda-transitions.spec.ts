@@ -1149,7 +1149,7 @@ describe('las transiciones de estado de la cita por HTTP', () => {
     }
 
     /** La médica abre la nota por el mismo adaptador que usa la API. */
-    async function openTheNote(encounterId: string) {
+    async function openTheNote(encounterId: string, formCode = '002') {
       const doctor = await prisma.practitioner.findUniqueOrThrow({
         where: { id: practitionerId },
       });
@@ -1157,7 +1157,7 @@ describe('las transiciones de estado de la cita por HTTP', () => {
         prisma as unknown as PrismaService,
       ).createDraft({
         encounterId,
-        formCode: '002',
+        formCode,
         formVersion: '1',
         templateId: null,
         content: { motivoConsulta: 'Dolor abdominal' },
@@ -1193,7 +1193,9 @@ describe('las transiciones de estado de la cita por HTTP', () => {
 
       await openTheNote(encounter.id);
       const before = (await historyOf(entryId)).length;
-      await openTheNote(encounter.id);
+      // EN-229: a second 002 is refused; a note of another form is the
+      // second note an attention can legitimately get.
+      await openTheNote(encounter.id, '005');
 
       expect(await historyOf(entryId)).toHaveLength(before);
     });

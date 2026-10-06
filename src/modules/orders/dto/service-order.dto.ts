@@ -82,6 +82,8 @@ export const orderItemSchema = z.object({
   /** `null` means «no ha vuelto». It is what the whole worklist is built on. */
   completedAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
+  /** ORD-131. Some result already came back for it: it is not cancelled. */
+  hasResults: z.boolean(),
 });
 
 /**

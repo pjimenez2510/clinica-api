@@ -267,6 +267,14 @@ principal, el medicamento y el examen; que `document_render` no ganó fila y
 **Solo servidor:** DOC-113 (la plantilla se publica con las demás; la pantalla
 de Identidad no cambia de forma).
 
+### H10 — El resumen, confidencial y sin firma _(P1)_
+
+**Prueba independiente:** descargar el resumen de una atención sin
+diagnósticos: lleva CONFIDENCIAL y no lleva «Firma y sello del profesional»;
+sí «Atendido por» con el nombre.
+
+**Cubre:** DOC-114, DOC-115.
+
 ### H9 — «Volver a generar», dicho en simple _(P1)_
 
 La tarjeta del PDF dice lo que hace, y por qué hay un PDF nuevo, sin hablar de
@@ -1067,6 +1075,9 @@ solo PDF, completo, generado al momento._
   >
   > Lleva CONFIDENCIAL (DOC-082) cuando imprime un diagnóstico, y el sello del
   > profesional de la atención si lo tiene (DOC-060).
+  >
+  > **Enmendado por DOC-114 y DOC-115 (D-139.3 y D-139.4, 06-10-2026):**
+  > CONFIDENCIAL siempre, y sin firma ni sello.
 
 - **DOC-112** — El resumen DEBERÁ imprimir en el pie el código de
   verificación **de la atención** (EN-219) con su QR (DOC-083); y CUANDO
@@ -1094,6 +1105,19 @@ solo PDF, completo, generado al momento._
   > plantilla vigente del **certificado** —la identidad es una sola
   > (D-095.3)—, y sólo si hay una; sin plantilla publicada no inventa ninguna.
   > La semilla la publica como a las otras.
+
+- **DOC-114** — El resumen de la atención DEBERÁ llevar **CONFIDENCIAL**
+  (DOC-082) **siempre**, tenga o no diagnóstico.
+  > **D-139.3, resuelta por el autor.** Lleva siempre la nota 002 entera, que
+  > es información de salud aunque no haya diagnóstico codificado.
+
+- **DOC-115** — El resumen de la atención **NO DEBERÁ** llevar el recuadro de
+  firma ni el sello del profesional; DEBERÁ seguir diciendo «Atendido por» con
+  su nombre y su registro.
+  > **D-139.4, resuelta por el autor.** No es un documento que firme nadie:
+  > se compone cuando alguien lo descarga, quizá días después y otra persona.
+  > Su autenticidad la prueba el código de verificación de la atención
+  > (DOC-112).
 
 ---
 

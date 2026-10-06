@@ -322,6 +322,7 @@ export function toOrderResponse(order: ServiceOrderView): ServiceOrderResponse {
       status: item.status,
       completedAt: item.completedAt?.toISOString() ?? null,
       createdAt: item.createdAt.toISOString(),
+      hasResults: item.hasResults,
     })),
   };
 }

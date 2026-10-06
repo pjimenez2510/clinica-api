@@ -68,6 +68,8 @@ const anExam = (
   specimenType: 'Sangre total con EDTA',
   patientPreparation: 'No requiere ayuno.',
   turnaroundHours: 4,
+  requiresFasting: false,
+  fastingHours: null,
   tariffCode: null,
   performedExternally: true,
   externalLabName: null,
@@ -189,6 +191,7 @@ const anOrder = (lines: number): ServiceOrderView => ({
     status: 'REQUESTED' as const,
     completedAt: null,
     createdAt: new Date('2026-09-15T13:00:00Z'),
+    hasResults: false,
   })),
 });
 

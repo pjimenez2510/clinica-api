@@ -22,6 +22,34 @@ registerConstraintMeanings({
     field: 'name',
     message: 'Ya hay una determinación activa con ese nombre',
   },
+  // ORD-129 (D-137). Hours of fast only on an exam that asks for one; the
+  // range is also checked by the DTO, this answers whatever bypasses it.
+  exam_definition_fasting_hours_needs_fasting: {
+    code: 'EXAM_FASTING_HOURS_INVALID',
+    field: 'fastingHours',
+    message:
+      'Marque «Pide ayuno» para indicar las horas, o deje las horas vacías',
+  },
+  exam_definition_fasting_hours_range: {
+    code: 'EXAM_FASTING_HOURS_INVALID',
+    field: 'fastingHours',
+    message: 'El ayuno es de 1 a 24 horas',
+  },
+  // ORD-008, ORD-131. Raised by `trg_service_order_item_completed_is_not_cancelled`
+  // only when a write passes the application's own check (a race, a psql):
+  // the same code and sentence the application gives.
+  service_order_item_completed_is_not_cancelled: {
+    code: 'ORDER_ITEM_NOT_PENDING',
+    field: 'status',
+    message:
+      'Esa línea de la orden ya no está pendiente: su resultado llegó o ya se anuló',
+  },
+  service_order_item_with_result_is_not_cancelled: {
+    code: 'ORDER_ITEM_HAS_RESULTS',
+    field: 'status',
+    message:
+      'Este examen ya tiene resultados y no se anula. Edite el informe o pídalo de nuevo',
+  },
   analyte_definition_code_unique: {
     code: 'ANALYTE_CODE_DUPLICATE',
     field: 'code',

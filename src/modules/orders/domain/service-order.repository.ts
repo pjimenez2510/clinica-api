@@ -78,6 +78,8 @@ export interface ServiceOrderItemView {
   /** `null` means pending. It is what the partial index is built on. */
   completedAt: Date | null;
   createdAt: Date;
+  /** ORD-131. Some result already hangs from it, so it is not cancelled. */
+  hasResults: boolean;
 }
 
 /** ORD-001, ORD-095. What composing an order needs to be told. */

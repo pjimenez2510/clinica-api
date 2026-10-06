@@ -2926,6 +2926,8 @@ model ClinicalNote {
 
   prescriptions Prescription[]
 
+  /// EN-229. `clinical_note_one_002_chain_per_encounter`, a partial UNIQUE
+  /// on (encounter_id) of the 002's version 1 rows, lives in SQL only.
   @@index([encounterId, formCode])
   @@index([chainId, version])
   @@map("clinical_note")
@@ -3266,6 +3268,9 @@ model ObservationResult {
   notices CriticalResultNotice[]
 
   @@index([reportId])
+  /// ORD-131. What `service_order_item_completed_is_not_cancelled` asks on
+  /// every cancellation: does any result hang from this line?
+  @@index([orderItemId])
   @@index([analyteConceptId, observedAt(sort: Desc)])
   @@map("observation_result")
 }
@@ -4190,6 +4195,13 @@ model ExamDefinition {
   specimenType       String? @map("specimen_type") @db.VarChar(80)
   patientPreparation String? @map("patient_preparation") @db.VarChar(500)
   turnaroundHours    Int?    @map("turnaround_hours") @db.SmallInt
+
+  /// ORD-129 (D-137). Whether the exam asks for a fast, and its MINIMUM hours
+  /// (1–24, optional): the order's highlighted line comes from here, not from
+  /// how the preparation is worded. Hours only with a fast
+  /// (`exam_definition_fasting_hours_needs_fasting`).
+  requiresFasting Boolean @default(false) @map("requires_fasting")
+  fastingHours    Int?    @map("fasting_hours") @db.SmallInt
 
   /// Which lab performs it. External is the realistic case (D-A-012), so it is
   /// the default rather than the exception.

@@ -48,6 +48,8 @@ export class ExamCatalogueController {
         specimenType: exam.specimenType,
         patientPreparation: exam.patientPreparation,
         turnaroundHours: exam.turnaroundHours,
+        requiresFasting: exam.requiresFasting,
+        fastingHours: exam.fastingHours,
         tariffCode: exam.tariffCode,
         performedExternally: exam.performedExternally,
         externalLabName: exam.externalLabName,

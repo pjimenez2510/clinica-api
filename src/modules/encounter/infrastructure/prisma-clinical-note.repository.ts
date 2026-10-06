@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
+  ClinicalNoteAlreadyOpenError,
   ClinicalNoteNotFoundError,
   EncounterAlreadyClosedError,
   EncounterNotFoundError,
@@ -119,6 +120,17 @@ export class PrismaClinicalNoteRepository implements ClinicalNoteRepository {
       // annulled— documents nothing that happened in it.
       if (TERMINAL_STATUSES.includes(encounter.status)) {
         throw new EncounterAlreadyClosedError(encounter.status);
+      }
+      // EN-229 (D-139.5). One 002 chain per attention, read under the
+      // attention's lock; `clinical_note_one_002_chain_per_encounter` is the
+      // guarantee for whatever does not come through here.
+      if (
+        draft.formCode === '002' &&
+        (await tx.clinicalNote.count({
+          where: { encounterId: encounter.id, formCode: '002' },
+        })) > 0
+      ) {
+        throw new ClinicalNoteAlreadyOpenError();
       }
 
       const [generated] = await tx.$queryRaw<{ id: string }[]>`

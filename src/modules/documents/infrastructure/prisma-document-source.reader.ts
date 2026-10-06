@@ -918,6 +918,8 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
             code: true,
             specimenType: true,
             patientPreparation: true,
+            requiresFasting: true,
+            fastingHours: true,
             form010Section: true,
           },
         })
@@ -956,6 +958,10 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
           display: item.testDisplay,
           specimen: exams.get(item.testCode)?.specimenType ?? null,
           preparation: exams.get(item.testCode)?.patientPreparation ?? null,
+          // ORD-129. Read at print time, like the preparation.
+          fasting: exams.get(item.testCode)?.requiresFasting
+            ? { hours: exams.get(item.testCode)?.fastingHours ?? null }
+            : null,
           // ORD-126. Read at print time, like the specimen: the line freezes
           // code and name, not the section.
           section: exams.get(item.testCode)?.form010Section ?? null,

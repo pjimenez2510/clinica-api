@@ -75,6 +75,8 @@ const examBh: ExamDefinitionView = {
   specimenType: 'Sangre total con EDTA',
   patientPreparation: null,
   turnaroundHours: 4,
+  requiresFasting: false,
+  fastingHours: null,
   tariffCode: null,
   performedExternally: true,
   externalLabName: null,
@@ -108,6 +110,7 @@ const anOrder = (): ServiceOrderView => ({
       status: 'REQUESTED',
       completedAt: null,
       createdAt: new Date('2026-09-15T13:00:00Z'),
+      hasResults: false,
     },
   ],
 });

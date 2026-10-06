@@ -110,6 +110,9 @@ export function criticalBounds(
   ranges: readonly ReferenceRange[],
   patient: PatientProfile,
 ): { low: CriticalSide | null; high: CriticalSide | null } {
+  if (patient.ageEstimated === true && patient.ageDays !== null) {
+    return estimatedCriticalBounds(ranges, patient.sex, patient.ageDays);
+  }
   const side = (bound: 'low' | 'high'): CriticalSide | null => {
     const range = applicableRange(
       ranges.filter((candidate) => candidate[bound] !== null),
@@ -120,6 +123,45 @@ export function criticalBounds(
     return range && value != null ? { value, range } : null;
   };
   return { low: side('low'), high: side('high') };
+}
+
+/** ORD-132. Six months either side of an estimated age, in days. */
+const ESTIMATED_AGE_MARGIN_DAYS = 183;
+
+/**
+ * ORD-132 (D-139.2, resuelta por el autor). With an ESTIMATED birth date, each
+ * side takes the MORE PROTECTIVE bound —the higher low, the lower high— of
+ * every critical range of the patient's sex (or none) whose age window meets
+ * the estimated age ± 6 months, or has no window.
+ *
+ * Not the most specific one: the estimate can be months off, and a newborn
+ * whose only potassium critical is written for 0–30 days was left without an
+ * alert (ORD-127 alone). An error in the age errs towards alerting more.
+ */
+function estimatedCriticalBounds(
+  ranges: readonly ReferenceRange[],
+  sex: PatientProfile['sex'],
+  ageDays: number,
+): { low: CriticalSide | null; high: CriticalSide | null } {
+  const from = ageDays - ESTIMATED_AGE_MARGIN_DAYS;
+  const to = ageDays + ESTIMATED_AGE_MARGIN_DAYS;
+  const reaching = ranges.filter(
+    (range) =>
+      range.rangeKind === 'CRITICAL' &&
+      (range.sex === null || range.sex === sex) &&
+      (range.ageMinDays === null || range.ageMinDays <= to) &&
+      (range.ageMaxDays === null || range.ageMaxDays >= from),
+  );
+  const side = (
+    bound: 'low' | 'high',
+    better: (a: number, b: number) => boolean,
+  ): CriticalSide | null =>
+    reaching.reduce<CriticalSide | null>((best, range) => {
+      const value = range[bound];
+      if (value === null) return best;
+      return best === null || better(value, best.value) ? { value, range } : best; // prettier-ignore
+    }, null);
+  return { low: side('low', (a, b) => a > b), high: side('high', (a, b) => a < b) }; // prettier-ignore
 }
 
 /** Whether one range covers this patient at all. */
