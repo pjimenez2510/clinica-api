@@ -10,17 +10,18 @@ import type {
   ActiveAllergyReader,
 } from '../../../shared/clinical/patient-allergy.port';
 import {
-  ChartHasAllergiesError,
   PatientAllergyNotFoundError,
   PatientChartNotOpenError,
-  RefutationReasonRequiredError,
 } from '../domain/encounter.errors';
 import type {
   AllergyAbsenceAssertion,
+  AllergyVersionView,
   AllergyView,
+  EditAllergy,
   NewAllergy,
   NewAllergyAbsence,
   PatientAllergyRepository,
+  ReactivateAllergy,
   RefuteAllergy,
 } from '../domain/patient-allergy.repository';
 import type {
@@ -69,6 +70,7 @@ const anAllergy = (overrides: Partial<AllergyView> = {}): AllergyView => ({
   refutedNotes: null,
   recordedBy: null,
   refutedBy: null,
+  changedAt: null,
   ...overrides,
 });
 
@@ -137,6 +139,38 @@ class FakeAllergies implements PatientAllergyRepository {
 
   standingAbsenceFor(): Promise<AllergyAbsenceAssertion | null> {
     return Promise.resolve(this.standing);
+  }
+
+  /** EN-220. What was asked to change; `null` reproduces «no está». */
+  edits: EditAllergy[] = [];
+  editAnswer: AllergyView | null = anAllergy({ criticality: 'LOW' });
+
+  edit(edit: EditAllergy): Promise<AllergyView | null> {
+    this.edits.push(edit);
+    return Promise.resolve(this.editAnswer);
+  }
+
+  /** EN-219. Who reactivated; `null` reproduces «no está». */
+  reactivations: ReactivateAllergy[] = [];
+  reactivateAnswer: AllergyView | null = anAllergy();
+
+  reactivate(reactivation: ReactivateAllergy): Promise<AllergyView | null> {
+    this.reactivations.push(reactivation);
+    return Promise.resolve(this.reactivateAnswer);
+  }
+
+  versions: AllergyVersionView[] | null = [];
+
+  versionsOf(): Promise<AllergyVersionView[] | null> {
+    return Promise.resolve(this.versions);
+  }
+
+  refuteAndAssertNoKnownAllergies(): Promise<AllergyAbsenceAssertion> {
+    return Promise.reject(new Error('not used by this service'));
+  }
+
+  retractNoKnownAllergies(): Promise<boolean> {
+    return Promise.reject(new Error('not used by this service'));
   }
 }
 
@@ -299,17 +333,28 @@ describe('las alergias del paciente', () => {
     expect(Object.keys(allergies)).not.toContain('deleted');
   });
 
-  it('EN-082 rechaza la refutación sin motivo antes de tocar el almacenamiento', async () => {
-    // Se exige en el servicio ADEMÁS del DTO: una importación, una consola y
-    // un caso de uso escrito dentro de dos años llegan hasta aquí.
-    await expect(
-      service.refute(
-        { patientId: PATIENT, allergyId: 'allergy-1', notes: '   ' },
-        requester,
-      ),
-    ).rejects.toBeInstanceOf(RefutationReasonRequiredError);
+  it('EN-219 descarta sin motivo, y un motivo en blanco viaja como ninguno', async () => {
+    // D-126.2: una confirmación y un motivo opcional de lista. Quién y cuándo
+    // los guarda la fila; lo que había, la versión.
+    await service.refute({ patientId: PATIENT, allergyId: 'allergy-1' }, requester); // prettier-ignore
+    await service.refute(
+      { patientId: PATIENT, allergyId: 'allergy-1', notes: '   ' },
+      requester,
+    );
+    await service.refute(
+      {
+        patientId: PATIENT,
+        allergyId: 'allergy-1',
+        notes: ' Prueba negativa ',
+      },
+      requester,
+    );
 
-    expect(allergies.refutations).toHaveLength(0);
+    expect(allergies.refutations.map((r) => r.notes)).toEqual([
+      null,
+      null,
+      'Prueba negativa',
+    ]);
   });
 
   it('EN-082 responde una sola negativa cuando la alergia no está en esa ficha', async () => {
@@ -421,71 +466,87 @@ describe('las alergias del paciente', () => {
     expect(audit.entries).toHaveLength(1);
   });
 
-  it('EN-087 afirma «sin alergias conocidas» con el autor de la SESIÓN, nunca con uno del cuerpo', async () => {
-    /**
-     * Es la frase del International Patient Summary hecha código: «una
-     * afirmación positiva por parte de un usuario clínico, y no una posición
-     * por defecto afirmada por un sistema informático a falta de otra
-     * información». Sin autor, esto vuelve a ser el silencio de una base de
-     * datos.
-     */
-    reader.rows = [];
+  it('EN-220 edita la alergia con el autor de la SESIÓN y deja la bitácora como actualización', async () => {
+    const edited = await service.edit(
+      {
+        patientId: PATIENT,
+        allergyId: 'allergy-1',
+        changes: { criticality: 'LOW' },
+      },
+      requester,
+    );
 
-    const assertion = await service.assertNoKnownAllergies(PATIENT, requester);
-
-    expect(allergies.absences).toEqual([
-      { patientId: PATIENT, assertedById: USER },
+    expect(allergies.edits).toEqual([
+      expect.objectContaining({
+        patientId: PATIENT,
+        allergyId: 'allergy-1',
+        changes: { criticality: 'LOW' },
+        editedById: USER,
+      }),
     ]);
-    expect(assertion.assertedByName).toBe('Ana Villacís');
-    expect(assertion.assertedAt).toBeInstanceOf(Date);
-  });
-
-  it('EN-087 audita la afirmación como una creación: es contenido clínico sobre una persona', async () => {
-    // «Esta persona no tiene alergias conocidas» cambia lo que se receta, y a
-    // diferencia de `patient_allergy` (EN-086) la fila ya nombra a su autor.
-    reader.rows = [];
-
-    await service.assertNoKnownAllergies(PATIENT, requester);
-
+    expect(allergies.edits[0]?.now).toBeInstanceOf(Date);
+    expect(edited.criticality).toBe('LOW');
     expect(audit.entries).toEqual([
       expect.objectContaining({
-        userId: USER,
         resourceType: 'patient_allergy',
-        action: 'CREATE',
+        resourceId: 'allergy-1',
+        action: 'UPDATE',
       }),
     ]);
   });
 
-  it('EN-087 rechaza «sin alergias conocidas» sobre una ficha que tiene alergias', async () => {
-    /**
-     * Las dos cosas no pueden ser ciertas a la vez, y quien lee la primera
-     * deja de mirar la lista. La salida es refutarlas UNA A UNA con su motivo
-     * (EN-082), que es un juicio clínico por alergia.
-     *
-     * La pregunta se hace por el lector COMPARTIDO, así que es la misma «¿a
-     * qué es alérgica esta persona?» que comprueba una receta, alcance de
-     * ficha incluido.
-     */
-    await expect(
-      service.assertNoKnownAllergies(PATIENT, requester),
-    ).rejects.toBeInstanceOf(ChartHasAllergiesError);
+  it('EN-220 responde una sola negativa al editar o reactivar una alergia que no está en esa ficha', async () => {
+    allergies.editAnswer = null;
+    allergies.reactivateAnswer = null;
+    allergies.versions = null;
 
-    expect(reader.asked).toEqual([PATIENT]);
-    expect(allergies.absences).toHaveLength(0);
+    await expect(
+      service.edit(
+        { patientId: PATIENT, allergyId: 'otra', changes: { reaction: null } },
+        requester,
+      ),
+    ).rejects.toBeInstanceOf(PatientAllergyNotFoundError);
+    await expect(
+      service.reactivate(PATIENT, 'otra', requester),
+    ).rejects.toBeInstanceOf(PatientAllergyNotFoundError);
+    await expect(
+      service.versionsOf(PATIENT, 'otra', requester),
+    ).rejects.toBeInstanceOf(PatientAllergyNotFoundError);
     expect(audit.entries).toHaveLength(0);
   });
 
-  it('EN-087 rechaza afirmarlo sobre una ficha absorbida, igual que registrar una alergia', async () => {
-    // Escribe algo NUEVO sobre la persona, así que se escribe en la ficha
-    // viva: una afirmación escrita en una ficha que después se separa se va
-    // con la persona equivocada.
-    reader.rows = [];
-    encounters.chart = { id: PATIENT, mergedIntoId: 'ficha-superviviente' };
+  it('EN-219 reactiva con quien está en la sesión, sin exigir una ficha abierta', async () => {
+    // Corrige algo que ya está en la ficha: alcanzable desde la superviviente.
+    encounters.chart = null;
 
-    await expect(
-      service.assertNoKnownAllergies(PATIENT, requester),
-    ).rejects.toBeInstanceOf(PatientChartNotOpenError);
+    const back = await service.reactivate(PATIENT, 'allergy-1', requester);
 
-    expect(allergies.absences).toHaveLength(0);
+    expect(allergies.reactivations[0]).toMatchObject({
+      patientId: PATIENT,
+      allergyId: 'allergy-1',
+      reactivatedById: USER,
+    });
+    expect(back.refutedAt).toBeNull();
+    expect(audit.entries[0]?.action).toBe('UPDATE');
+  });
+
+  it('EN-220 sirve las versiones y deja la lectura en la bitácora', async () => {
+    allergies.versions = [
+      {
+        version: 1,
+        replacedBy: { id: USER, name: 'Ana Villacís' },
+        replacedAt: new Date(),
+        allergy: anAllergy({ substanceText: 'Penisilina' }),
+      },
+    ];
+
+    const versions = await service.versionsOf(PATIENT, 'allergy-1', requester);
+
+    expect(versions.map((v) => v.allergy.substanceText)).toEqual([
+      'Penisilina',
+    ]);
+    expect(audit.entries).toEqual([
+      expect.objectContaining({ resourceId: 'allergy-1', action: 'READ' }),
+    ]);
   });
 });

@@ -785,29 +785,38 @@ export const DOMAIN_ERROR_CODES = [
   //     y el motivo de la primera, y saber quién descartó una alergia y por qué
   //     es «información clínica por derecho propio». Aceptarla en silencio es
   //     borrar el dato a cámara lenta, que es justo lo que el requisito impide.
-  //   * `REFUTATION_REASON_REQUIRED` (422) — EN-082. Descartar sin escribir por
-  //     qué. Se exige **en el servicio** además del DTO, por lo mismo que
-  //     `AMENDMENT_REASON_REQUIRED`: el DTO guarda una sola puerta.
+  //     Editar una alergia descartada también lo responde: primero se
+  //     reactiva (EN-220).
+  //   * Descartar ya no exige motivo (EN-219, D-126.2):
+  //     `REFUTATION_REASON_REQUIRED` se retiró.
+  //   * `ALLERGY_NOT_REFUTED` (409) — EN-219. «Reactivar» una alergia que
+  //     sigue activa.
+  //   * `NO_KNOWN_ALLERGIES_NOT_STANDING` (409) — EN-221. «Retirar» un «sin
+  //     alergias conocidas» que ya no está vigente.
   //   * `CHART_HAS_ALLERGIES` (409) — EN-087. Se afirmó «sin alergias
   //     conocidas» sobre una ficha que tiene alergias sin descartar. Las dos
   //     cosas no pueden ser ciertas a la vez, y quien lee la primera deja de
-  //     mirar la lista. La salida es refutarlas **una a una con su motivo**
-  //     (EN-082), que es un juicio clínico por alergia y no el efecto colateral
-  //     de marcar una casilla. Lo arbitra además
+  //     mirar la lista. La salida es descartarlas —desde EN-221 en el mismo
+  //     paso, nombrando cada una—, que es un juicio clínico por alergia y no el
+  //     efecto colateral de marcar una casilla. Lo arbitra además
   //     `trg_patient_allergy_absence_empty_chart`: el servicio no puede ver las
   //     dos peticiones simultáneas que registran una alergia y afirman que no
   //     hay ninguna.
   'ALLERGY_ALREADY_REFUTED',
+  'ALLERGY_NOT_REFUTED',
   'CHART_HAS_ALLERGIES',
+  'NO_KNOWN_ALLERGIES_NOT_STANDING',
   'PATIENT_ALLERGY_NOT_FOUND',
-  'REFUTATION_REASON_REQUIRED',
   // ── H6: antecedentes (EN-085), con el régimen de las alergias ───────────
   //   * `PATIENT_HISTORY_NOT_FOUND` (404) — el mismo para «no existe» y «es
   //     de otra ficha», por lo mismo que `PATIENT_ALLERGY_NOT_FOUND`.
   //   * `HISTORY_ALREADY_REFUTED` (409) — no es idempotente: reescribiría
   //     quién lo descartó y por qué. Lo arbitra además
   //     `trg_patient_history_append_only`.
+  //   * `HISTORY_NOT_REFUTED` (409) — EN-219. «Reactivar» uno que sigue
+  //     activo.
   'HISTORY_ALREADY_REFUTED',
+  'HISTORY_NOT_REFUTED',
   'PATIENT_HISTORY_NOT_FOUND',
   // ── Receta médica (módulo `prescription`, PR-001 a PR-094) ──────────────
   //

@@ -59,6 +59,7 @@ const DIABETES_MOTHER: HistoryView = {
   refutedAt: null,
   refutedNotes: null,
   refutedBy: null,
+  changedAt: null,
 };
 
 const ASTHMA: HistoryView = {

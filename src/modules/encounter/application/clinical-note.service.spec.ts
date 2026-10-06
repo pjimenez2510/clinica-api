@@ -457,6 +457,7 @@ describe('los casos de uso de la nota clínica', () => {
         refutedAt: null,
         refutedNotes: null,
         refutedBy: null,
+        changedAt: null,
       },
     ];
 

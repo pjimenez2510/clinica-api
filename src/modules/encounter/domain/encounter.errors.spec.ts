@@ -43,9 +43,12 @@ import {
   PatientAllergyNotFoundError,
   PatientChartNotOpenError,
   PractitionerNotLicensedError,
-  RefutationReasonRequiredError,
   PatientHistoryNotFoundError,
   HistoryAlreadyRefutedError,
+  AllergyNotRefutedError,
+  HistoryNotRefutedError,
+  NoKnownAllergiesNotStandingError,
+  ChartHasAllergiesError,
   PractitionerProfileRequiredError,
   SubstituteClosureReasonRequiredError,
   UnknownClinicalFormError,
@@ -103,11 +106,14 @@ const EVERY_ERROR: readonly DomainError[] = [
   new ConceptWrongCatalogueError('CNMB'),
   new PatientAllergyNotFoundError(),
   new AllergyAlreadyRefutedError(),
-  new RefutationReasonRequiredError(),
   // EN-085. Los antecedentes, con el régimen de las alergias.
-  new RefutationReasonRequiredError('el antecedente'),
   new PatientHistoryNotFoundError(),
   new HistoryAlreadyRefutedError(),
+  // EN-219, EN-221. Reactivar lo vigente y retirar lo que ya no está.
+  new AllergyNotRefutedError(),
+  new HistoryNotRefutedError(),
+  new NoKnownAllergiesNotStandingError(),
+  new ChartHasAllergiesError(),
 ];
 
 describe('el contrato de errores de la atención', () => {
@@ -175,6 +181,35 @@ describe('el contrato de errores de la atención', () => {
     expect(last.code).toBe('DIAGNOSIS_LAST_AFTER_DISCHARGE');
     expect(last).toBeInstanceOf(ConflictError);
     expect(last.userTitle).toContain('único diagnóstico');
+  });
+
+  it('EN-219 EN-220 lo descartado se reactiva antes de editarlo, y reactivar lo vigente responde 409', () => {
+    const refuted = new AllergyAlreadyRefutedError();
+    expect(refuted.code).toBe('ALLERGY_ALREADY_REFUTED');
+    expect(refuted).toBeInstanceOf(ConflictError);
+    expect(refuted.userTitle).toContain('reactívela');
+    expect(new HistoryAlreadyRefutedError().userTitle).toContain('reactívelo');
+
+    for (const [error, code] of [
+      [new AllergyNotRefutedError(), 'ALLERGY_NOT_REFUTED'],
+      [new HistoryNotRefutedError(), 'HISTORY_NOT_REFUTED'],
+    ] as const) {
+      expect(error.code).toBe(code);
+      expect(error).toBeInstanceOf(ConflictError);
+      expect(error.userTitle).toContain('Actualice la lista');
+    }
+  });
+
+  it('EN-221 retirar lo que ya no está vigente responde 409, y afirmar con alergias activas sigue frenado', () => {
+    const notStanding = new NoKnownAllergiesNotStandingError();
+    expect(notStanding.code).toBe('NO_KNOWN_ALLERGIES_NOT_STANDING');
+    expect(notStanding).toBeInstanceOf(ConflictError);
+    expect(notStanding.userTitle).toContain('Actualice la ficha');
+
+    const active = new ChartHasAllergiesError();
+    expect(active.code).toBe('CHART_HAS_ALLERGIES');
+    expect(active).toBeInstanceOf(ConflictError);
+    expect(active.userTitle).toContain('Descártelas');
   });
 
   it('EN-213 «Deshacer» lo que ya se deshizo, o lo que ya volvió a registrarse: 409 que manda a actualizar', () => {

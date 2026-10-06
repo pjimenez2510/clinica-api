@@ -16,14 +16,14 @@ import {
   type EncounterRepository,
 } from '../domain/encounter.repository';
 import {
-  ChartHasAllergiesError,
   PatientAllergyNotFoundError,
   PatientChartNotOpenError,
-  RefutationReasonRequiredError,
 } from '../domain/encounter.errors';
 import {
   PATIENT_ALLERGY_REPOSITORY,
   type AllergyAbsenceAssertion,
+  type AllergyChanges,
+  type AllergyVersionView,
   type AllergyView,
   type PatientAllergyRepository,
 } from '../domain/patient-allergy.repository';
@@ -82,11 +82,18 @@ export interface AllergyChart {
   noKnownAllergies: AllergyAbsenceAssertion | null;
 }
 
-/** EN-082. What ruling one out needs to be told. */
+/** EN-082, EN-219. What ruling one out needs to be told; the reason is optional. */
 export interface RefuteAllergyRequest {
   patientId: string;
   allergyId: string;
-  notes: string;
+  notes?: string;
+}
+
+/** EN-220. Editing one allergy in its row. */
+export interface EditAllergyRequest {
+  patientId: string;
+  allergyId: string;
+  changes: AllergyChanges;
 }
 
 /**
@@ -192,13 +199,12 @@ export class PatientAllergyService {
   }
 
   /**
-   * EN-082. Rules one out. NEVER deletes it.
+   * EN-082, EN-219. Rules one out. NEVER deletes it.
    *
-   * THE REASON IS DEMANDED HERE AND NOT ONLY IN THE DTO, the same belt and
-   * braces `AMENDMENT_REASON_REQUIRED` gets: the DTO guards one door, and an
-   * import, a console or a use case written in two years all arrive at this
-   * method. A refutation with no reason is a row a future doctor cannot decide
-   * whether to trust — which makes it worse than no row.
+   * THE REASON IS OPTIONAL (D-126.2): the screen asks for one confirmation
+   * and offers a short list. Who ruled it out and when is kept by the row and
+   * the allergy as it was by `record_version`; a blank reason is stored as
+   * none, never as a string of spaces.
    *
    * NO CHART CHECK, unlike `record`, and the difference is deliberate: this
    * writes nothing new about the person, it CORRECTS something already on the
@@ -210,14 +216,10 @@ export class PatientAllergyService {
     request: RefuteAllergyRequest,
     requester: Requester,
   ): Promise<AllergyView> {
-    if (request.notes.trim().length === 0) {
-      throw new RefutationReasonRequiredError();
-    }
-
     const refuted = await this.allergies.refute({
       patientId: request.patientId,
       allergyId: request.allergyId,
-      notes: request.notes,
+      notes: request.notes?.trim() || null,
       // Taken once and handed down: the domain owns no clock, and two readings
       // could straddle a second for no reason.
       now: new Date(),
@@ -296,74 +298,77 @@ export class PatientAllergyService {
   }
 
   /**
-   * EN-087. «Sin alergias conocidas», affirmed BY THIS PERSON, right now.
+   * EN-220. Edits what an allergy says —substance, reaction, criticality— in
+   * its row. The allergy as it was is kept by `record_version`, with who and
+   * when, in the same statement; nobody refutes and records again.
    *
-   * ═══════════════════════════════════════════════════════════════════════════
-   * THE THIRD STATE, AND THE ONE ALMOST NOBODY IMPLEMENTS (D-A-018)
-   * ═══════════════════════════════════════════════════════════════════════════
-   *
-   * HL7's International Patient Summary — aligned with ISO 27269 — separates
-   * `nilknown` from `notasked`, and defines the first one like this:
-   *
-   *   «Esto es una afirmación positiva por parte de un usuario clínico, y no
-   *    una posición por defecto afirmada por un sistema informático a falta de
-   *    otra información.»
-   *
-   * Which is why this is a use case with a caller, a route and a permission,
-   * and not a branch inside a reader. `activeFor` returning an empty list means
-   * «no consta ninguna», and no amount of reading it cleverly turns that into
-   * «no tiene»: the only thing that can is a person saying so.
-   *
-   * THE CHART IS CHECKED FIRST AND AN ABSORBED ONE IS REFUSED, exactly as in
-   * `record` and for the same reason: this writes something NEW about the
-   * person, and an assertion written onto a chart that is later separated again
-   * walks away with the wrong one.
-   *
-   * ⚠️ IT REFUSES A CHART THAT HAS ALLERGIES, and the way out is to refute them
-   * one by one with their reason (EN-082) — a clinical judgement per allergy,
-   * never the side effect of ticking a box. The read here is the SHARED one, so
-   * the question asked is the same «¿a qué es alérgica esta persona?» a
-   * prescription asks, chart scope included. The database refuses it again:
-   * this service cannot see the request that is recording an allergy at the
-   * same instant, and only `trg_patient_allergy_absence_empty_chart` arbitrates
-   * that.
-   *
-   * AUDITED AS A CREATION. «Esta persona no tiene alergias conocidas» is a
-   * clinical assertion about an identifiable person that changes what gets
-   * prescribed, and the row itself already names its author — unlike
-   * `patient_allergy`, which still cannot (EN-086).
+   * NO CHART CHECK, like `refute`: this corrects something already on the
+   * chart, reachable from the survivor after a merge. An allergy that is
+   * ruled out is not edited (`ALLERGY_ALREADY_REFUTED`): it is reactivated
+   * first, so a correction never changes what a refutation was about.
    */
-  async assertNoKnownAllergies(
-    patientId: string,
+  async edit(
+    request: EditAllergyRequest,
     requester: Requester,
-  ): Promise<AllergyAbsenceAssertion> {
-    await this.requireOpenChart(patientId);
-
-    const active = await this.activeAllergies.activeFor(patientId);
-    if (active.length > 0) throw new ChartHasAllergiesError();
-
-    const assertion = await this.allergies.assertNoKnownAllergies({
-      patientId,
-      assertedById: requester.userId,
+  ): Promise<AllergyView> {
+    const edited = await this.allergies.edit({
+      patientId: request.patientId,
+      allergyId: request.allergyId,
+      changes: request.changes,
+      editedById: requester.userId,
+      now: new Date(),
     });
+    if (edited === null) throw new PatientAllergyNotFoundError();
+
+    await this.auditUpdate(edited.id, requester);
+    this.logger.info({ action: 'ALLERGY_EDITED' }, 'allergy edited');
+    return edited;
+  }
+
+  /**
+   * EN-219. «Reactivar» an allergy refuted by mistake. It counts again from
+   * this instant — at the next prescription check — and the refutation, with
+   * who, when and why, stays in the version this change leaves behind.
+   */
+  async reactivate(
+    patientId: string,
+    allergyId: string,
+    requester: Requester,
+  ): Promise<AllergyView> {
+    const reactivated = await this.allergies.reactivate({
+      patientId,
+      allergyId,
+      reactivatedById: requester.userId,
+      now: new Date(),
+    });
+    if (reactivated === null) throw new PatientAllergyNotFoundError();
+
+    await this.auditUpdate(reactivated.id, requester);
+    this.logger.info({ action: 'ALLERGY_REACTIVATED' }, 'allergy reactivated');
+    return reactivated;
+  }
+
+  /**
+   * EN-220. The versions the changes replaced, newest first. Audited as a
+   * read of clinical content, like the list.
+   */
+  async versionsOf(
+    patientId: string,
+    allergyId: string,
+    requester: Requester,
+  ): Promise<AllergyVersionView[]> {
+    const versions = await this.allergies.versionsOf(patientId, allergyId);
+    if (versions === null) throw new PatientAllergyNotFoundError();
 
     await this.audit.record({
       userId: requester.userId,
       resourceType: RESOURCE_TYPE,
-      resourceId: assertion.id,
-      action: 'CREATE',
+      resourceId: allergyId,
+      action: 'READ',
       ip: requester.ip,
       userAgent: requester.userAgent,
     });
-
-    // EN-124, SC-016. The fact and nothing else, and nothing interpolated:
-    // «Fulano no tiene alergias» is still a health datum about a named person.
-    this.logger.info(
-      { action: 'NO_KNOWN_ALLERGIES_ASSERTED' },
-      'no known allergies asserted',
-    );
-
-    return assertion;
+    return versions;
   }
 
   /**
@@ -393,6 +398,20 @@ export class PatientAllergyService {
    * `PatientChartNotOpenError`: the surviving MRN of somebody else's chart is
    * not a datum this module hands out one guess at a time.
    */
+  private async auditUpdate(
+    allergyId: string,
+    requester: Requester,
+  ): Promise<void> {
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: RESOURCE_TYPE,
+      resourceId: allergyId,
+      action: 'UPDATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+  }
+
   private async requireOpenChart(patientId: string): Promise<string> {
     const chart = await this.encounters.findPatientChart(patientId);
     if (!chart || chart.mergedIntoId !== null) {

@@ -322,7 +322,7 @@ describe('las alergias y la historia de la consulta por HTTP', () => {
       expect(await prisma.patientAllergy.count()).toBe(0);
     });
 
-    it('EN-082 exige el motivo al descartar una alergia', async () => {
+    it('EN-082 EN-219 descarta una alergia con el motivo en blanco y lo guarda como ninguno', async () => {
       const created = await recordAllergy({
         substanceText: 'Penicilina',
         criticality: 'HIGH',
@@ -331,12 +331,13 @@ describe('las alergias y la historia de la consulta por HTTP', () => {
 
       await post(`/patients/${patientId}/allergies/${id}/refute`, doctorToken, {
         notes: '',
-      }).expect(422);
+      }).expect(200);
 
       const stored = await prisma.patientAllergy.findUniqueOrThrow({
         where: { id },
       });
-      expect(stored.refutedAt).toBeNull();
+      expect(stored.refutedAt).not.toBeNull();
+      expect(stored.refutedNotes).toBeNull();
     });
 
     it('EN-082 descarta la alergia y la fila sigue existiendo, con su motivo', async () => {

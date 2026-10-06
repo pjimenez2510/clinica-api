@@ -114,7 +114,7 @@ describe('los antecedentes del paciente contra PostgreSQL', () => {
     );
   });
 
-  it('EN-085 la base rechaza borrar, truncar y reescribir un antecedente', async () => {
+  it('EN-085 EN-220 la base rechaza borrar, truncar y reescribir un antecedente sin sello', async () => {
     const prisma = db();
     const patient = await createPatient(prisma);
     const { entry } = await aFamilyEntry(prisma, patient.id);
@@ -124,16 +124,16 @@ describe('los antecedentes del paciente contra PostgreSQL', () => {
         `DELETE FROM patient_history WHERE id = $1::uuid`,
         entry.id,
       ),
-    ).rejects.toThrow(/append-only/);
+    ).rejects.toThrow(/never deleted/);
     await expect(
       prisma.$executeRawUnsafe(`TRUNCATE patient_history`),
-    ).rejects.toThrow(/append-only/);
+    ).rejects.toThrow(/never deleted/);
     await expect(
       prisma.$executeRawUnsafe(
         `UPDATE patient_history SET description = 'Hipertensión' WHERE id = $1::uuid`,
         entry.id,
       ),
-    ).rejects.toThrow(/append-only/);
+    ).rejects.toThrow(/record_version_change_is_stamped/);
     await expect(prisma.patientHistory.count()).resolves.toBe(1);
   });
 
@@ -173,7 +173,7 @@ describe('los antecedentes del paciente contra PostgreSQL', () => {
     ).rejects.toThrow(/patient_history_family_names_relative/);
   });
 
-  it('EN-085 la base rechaza la descripcion en blanco, la refutacion a medias y refutar dos veces', async () => {
+  it('EN-085 EN-219 la base rechaza la descripcion en blanco, la refutacion a medias y refutar dos veces', async () => {
     const prisma = db();
     const patient = await createPatient(prisma);
     const author = await createUser(prisma);
@@ -190,10 +190,12 @@ describe('los antecedentes del paciente contra PostgreSQL', () => {
       }),
     ).rejects.toThrow(/patient_history_description_not_blank/);
 
-    // Sin motivo: refutar es cuándo, por qué y quién, o nada.
+    // Sin quién: refutar es cuándo y quién, juntos (el motivo es opcional
+    // desde EN-219).
     await expect(
       prisma.$executeRawUnsafe(
-        `UPDATE patient_history SET refuted_at = now(), refuted_by = $2::uuid
+        `UPDATE patient_history
+            SET refuted_at = now(), changed_by = $2::uuid, changed_at = now()
           WHERE id = $1::uuid`,
         entry.id,
         author.id,
@@ -203,17 +205,22 @@ describe('los antecedentes del paciente contra PostgreSQL', () => {
     // Control positivo: la refutación entera entra por SQL…
     await prisma.$executeRawUnsafe(
       `UPDATE patient_history
-          SET refuted_at = now(), refuted_by = $2::uuid, refuted_notes = 'Era la tía'
+          SET refuted_at = now(), refuted_by = $2::uuid, refuted_notes = 'Era la tía',
+              changed_by = $2::uuid, changed_at = now()
         WHERE id = $1::uuid`,
       entry.id,
       author.id,
     );
-    // …y la segunda la para el disparador, no el repositorio.
+    // …y reescribir el motivo la para el disparador, no el repositorio.
     await expect(
       prisma.$executeRawUnsafe(
-        `UPDATE patient_history SET refuted_notes = 'Otro motivo' WHERE id = $1::uuid`,
+        `UPDATE patient_history
+            SET refuted_notes = 'Otro motivo',
+                changed_by = $2::uuid, changed_at = now() + interval '1 second'
+          WHERE id = $1::uuid`,
         entry.id,
+        author.id,
       ),
-    ).rejects.toThrow(/append-only/);
+    ).rejects.toThrow(/cannot be modified/);
   });
 });

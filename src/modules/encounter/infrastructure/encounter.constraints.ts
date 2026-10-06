@@ -151,11 +151,21 @@ registerConstraintMeanings({
     field: 'description',
     message: 'Describa el antecedente',
   },
-  /** EN-085. Refuting is a whole act: when, why and who, or nothing. */
+  /**
+   * EN-085, EN-219. Refuting is when and who together; the reason is
+   * optional, but never blank. The API trims a blank one to none, so only a
+   * direct write reaches this.
+   */
   patient_history_refutation_is_whole: {
-    code: 'REFUTATION_REASON_REQUIRED',
+    code: 'VALIDATION_FAILED',
     field: 'notes',
-    message: 'Indique por qué se descarta este antecedente',
+    message: 'El motivo, si se indica, no puede quedar en blanco',
+  },
+  /** EN-219. The same for an allergy: a reason only on a refuted one. */
+  patient_allergy_refutation_is_coherent: {
+    code: 'VALIDATION_FAILED',
+    field: 'notes',
+    message: 'El motivo, si se indica, no puede quedar en blanco',
   },
 });
 

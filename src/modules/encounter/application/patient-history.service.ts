@@ -12,10 +12,11 @@ import {
 import {
   PatientChartNotOpenError,
   PatientHistoryNotFoundError,
-  RefutationReasonRequiredError,
 } from '../domain/encounter.errors';
 import {
   PATIENT_HISTORY_REPOSITORY,
+  type HistoryChanges,
+  type HistoryVersionView,
   type HistoryView,
   type PatientHistoryKind,
   type PatientHistoryRepository,
@@ -36,7 +37,15 @@ export interface RecordHistoryRequest {
 export interface RefuteHistoryRequest {
   patientId: string;
   historyId: string;
-  notes: string;
+  /** EN-219. Optional, from the screen's list. */
+  notes?: string;
+}
+
+/** EN-220. Editing one entry in its row. */
+export interface EditHistoryRequest {
+  patientId: string;
+  historyId: string;
+  changes: HistoryChanges;
 }
 
 /**
@@ -94,8 +103,8 @@ export class PatientHistoryService {
   }
 
   /**
-   * EN-085. Rules one out, never deletes it. The reason is demanded here and
-   * not only in the DTO, as with the allergy (EN-082). No open-chart check,
+   * EN-085, EN-219. Rules one out, never deletes it. The reason is optional
+   * (D-126.2), as with the allergy; blank is none. No open-chart check,
    * for the allergy's reason: a wrong entry on an absorbed chart must still be
    * correctable from the survivor.
    */
@@ -103,14 +112,10 @@ export class PatientHistoryService {
     request: RefuteHistoryRequest,
     requester: Requester,
   ): Promise<HistoryView> {
-    if (request.notes.trim().length === 0) {
-      throw new RefutationReasonRequiredError('el antecedente');
-    }
-
     const refuted = await this.history.refute({
       patientId: request.patientId,
       historyId: request.historyId,
-      notes: request.notes,
+      notes: request.notes?.trim() || null,
       now: new Date(),
       refutedById: requester.userId,
     });
@@ -150,6 +155,82 @@ export class PatientHistoryService {
   }
 
   /** The chart must exist and not be absorbed (PA-055): read the survivor. */
+  /**
+   * EN-220. Edits what an entry says —description, kind, relative— in its
+   * row; the entry as it was stays in `record_version`. No open-chart check,
+   * like `refute`. A ruled-out entry is reactivated first.
+   */
+  async edit(
+    request: EditHistoryRequest,
+    requester: Requester,
+  ): Promise<HistoryView> {
+    const edited = await this.history.edit({
+      patientId: request.patientId,
+      historyId: request.historyId,
+      changes: request.changes,
+      editedById: requester.userId,
+      now: new Date(),
+    });
+    if (edited === null) throw new PatientHistoryNotFoundError();
+
+    await this.auditUpdate(edited.id, requester);
+    this.logger.info({ action: 'HISTORY_EDITED' }, 'history edited');
+    return edited;
+  }
+
+  /** EN-219. «Reactivar» an entry ruled out by mistake, as one more version. */
+  async reactivate(
+    patientId: string,
+    historyId: string,
+    requester: Requester,
+  ): Promise<HistoryView> {
+    const reactivated = await this.history.reactivate({
+      patientId,
+      historyId,
+      reactivatedById: requester.userId,
+      now: new Date(),
+    });
+    if (reactivated === null) throw new PatientHistoryNotFoundError();
+
+    await this.auditUpdate(reactivated.id, requester);
+    this.logger.info({ action: 'HISTORY_REACTIVATED' }, 'history reactivated');
+    return reactivated;
+  }
+
+  /** EN-220. The versions the changes replaced, newest first; audited. */
+  async versionsOf(
+    patientId: string,
+    historyId: string,
+    requester: Requester,
+  ): Promise<HistoryVersionView[]> {
+    const versions = await this.history.versionsOf(patientId, historyId);
+    if (versions === null) throw new PatientHistoryNotFoundError();
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: RESOURCE_TYPE,
+      resourceId: historyId,
+      action: 'READ',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+    return versions;
+  }
+
+  private async auditUpdate(
+    historyId: string,
+    requester: Requester,
+  ): Promise<void> {
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: RESOURCE_TYPE,
+      resourceId: historyId,
+      action: 'UPDATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+  }
+
   private async requireOpenChart(patientId: string): Promise<string> {
     const chart = await this.encounters.findPatientChart(patientId);
     if (!chart || chart.mergedIntoId !== null) {
