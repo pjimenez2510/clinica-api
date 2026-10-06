@@ -11,9 +11,11 @@ import {
   CertificateIssuerReasonRequiredError,
   CertificateMaternityBirthMismatchError,
   CertificateMaternityDiagnosisRequiredError,
+  CertificateRestImplausibleError,
   CertificateRestOverlapsError,
   CertificateRestPeriodInvalidError,
   CertificateTypeNotSupportedError,
+  type ImplausibleRestField,
   type PatientWorkField,
   type RestPeriodField,
   type RestPeriodProblem,
@@ -499,6 +501,36 @@ export function restLimitNoticesOf(
     notices.push(REST_LIMIT_NOTICE.leaveExceeded(lastDay));
   }
   return notices;
+}
+
+/** CER-056 (D-133.3). The longest rest that is not a typo, in days. */
+export const MAX_PLAUSIBLE_REST_DAYS = 365;
+
+/** CER-056. How far from the attention, in calendar months, a rest starts. */
+export const MAX_PLAUSIBLE_REST_START_MONTHS = 12;
+
+/**
+ * CER-056 (D-133.3). Refuses what can only be a typo: a rest of more than 365
+ * days, or one starting more than a year before or after the attention's
+ * clinical date —a calendar year, as PostgreSQL's `interval '1 year'` counts
+ * it (from a 29 February, the 28th)—. Every limit below these still warns and
+ * does not refuse (CER-055). `medical_certificate_issue_rules` says the same.
+ */
+export function assertRestPlausible(
+  period: RestPeriod,
+  attentionDate: ClinicalDate,
+): void {
+  const fields: ImplausibleRestField[] = [];
+  if (
+    period.from < addMonths(attentionDate, -MAX_PLAUSIBLE_REST_START_MONTHS) ||
+    period.from > addMonths(attentionDate, MAX_PLAUSIBLE_REST_START_MONTHS)
+  ) {
+    fields.push('restFrom');
+  }
+  if (clinicalDaySpan(period.from, period.to) > MAX_PLAUSIBLE_REST_DAYS) {
+    fields.push('restTo');
+  }
+  if (fields.length > 0) throw new CertificateRestImplausibleError(fields);
 }
 
 /**

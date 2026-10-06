@@ -101,6 +101,18 @@ registerConstraintMeanings({
     field: 'backdatingReason',
     message: 'Un reposo emitido el día de la atención y que empieza ese día no lleva motivo de retroactividad', // prettier-ignore
   },
+  /** CER-056 (D-133.3). More than 365 days can only be a typo. */
+  medical_certificate_rest_at_most_365_days: {
+    code: 'CERTIFICATE_REST_IMPLAUSIBLE',
+    field: 'restTo',
+    message: 'Un reposo no puede pasar de 365 días: compruebe la fecha de fin', // prettier-ignore
+  },
+  /** CER-056 (D-133.3). A start more than a year from the attention. */
+  medical_certificate_rest_starts_within_a_year: {
+    code: 'CERTIFICATE_REST_IMPLAUSIBLE',
+    field: 'restFrom',
+    message: 'El reposo no puede empezar a más de un año de la atención: compruebe la fecha de inicio', // prettier-ignore
+  },
   /**
    * CER-009. Two certificates of one site with the same number. The trigger
    * makes it unreachable; registered for the day something goes around it.

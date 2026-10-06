@@ -20,6 +20,7 @@ import {
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import {
   addDays,
+  addMonths,
   atWallClock,
   clinicalDateOf,
   WallClockTime,
@@ -601,6 +602,39 @@ describe('el certificado medico por HTTP', () => {
   it('CER-055 un reposo normal se emite sin ningún aviso (control positivo)', async () => {
     await aDiagnosis(encounterId);
     expect((await issue(restOf(3))).restNotices).toEqual([]);
+  });
+
+  it('CER-056 un reposo de 366 días, o que empieza a más de un año de la atención, responde 422 en su campo y no se guarda; 365 días se emite con el aviso de CER-055', async () => {
+    await aDiagnosis(encounterId);
+    const long = await post(
+      `/encounters/${encounterId}/certificates`,
+      doctor.token,
+      restOf(366),
+    ).expect(422);
+    expect(long.body).toMatchObject({
+      code: 'CERTIFICATE_REST_IMPLAUSIBLE',
+      title: 'Compruebe las fechas del reposo: parecen mal escritas',
+      errors: [
+        {
+          field: 'restTo',
+          code: 'CERTIFICATE_REST_IMPLAUSIBLE',
+          message:
+            'Un reposo no puede pasar de 365 días: compruebe la fecha de fin',
+        },
+      ],
+    });
+    const far = addDays(addMonths(today, 12), 1);
+    expect(
+      await refused(restOf(2, { restFrom: far, restTo: addDays(far, 1) })),
+    ).toEqual({ code: 'CERTIFICATE_REST_IMPLAUSIBLE', fields: ['restFrom'] });
+    expect(
+      await prisma.medicalCertificate.count({ where: { encounterId } }),
+    ).toBe(0);
+
+    // Positive control: below the sanity limits CER-055 only warns.
+    expect((await issue(restOf(365))).restNotices).toContain(
+      REST_LIMIT_NOTICE.tooLong(365),
+    );
   });
 
   it('CER-055 CER-044 un reposo que empieza 4 días antes de la atención se emite con su aviso y su motivo; sin motivo, no (CER-030)', async () => {

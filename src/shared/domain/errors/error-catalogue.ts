@@ -959,6 +959,10 @@ export const DOMAIN_ERROR_CODES = [
   'CERTIFICATE_MATERNITY_BIRTH_MISMATCH',
   'CERTIFICATE_MATERNITY_DIAGNOSIS_REQUIRED',
   'CERTIFICATE_REST_OVERLAPS',
+  //   * `CERTIFICATE_REST_IMPLAUSIBLE` (422) — CER-056 (D-133.3). Más de 365
+  //     días, o un inicio a más de un año de la atención: un error de tecleo.
+  //     Por campo (`restFrom`, `restTo`). La base lo rechaza también.
+  'CERTIFICATE_REST_IMPLAUSIBLE',
   'CERTIFICATE_REVOKE_FORBIDDEN',
   'CERTIFICATE_ENCOUNTER_NOT_FOUND',
   'CERTIFICATE_ENCOUNTER_NOT_OPEN',

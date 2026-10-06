@@ -778,6 +778,34 @@ PR-030).
   > **Dudas que se quedan como rechazo:** ninguna más que las nombradas; el
   > orden ingreso ≤ parto ≤ alta (`medical_certificate_maternity_dates_in_order`)
   > es coherencia de fechas, no un límite, y sigue rechazando.
+  >
+  > **Acotado por CER-056 (D-133.3):** lo absurdo —más de 365 días, o un
+  > inicio a más de un año de la atención— vuelve a rechazarse. Por debajo,
+  > todo sigue igual.
+
+### 7. Un tope de cordura para el reposo (D-133.3, resuelta el 05-10-2026)
+
+- **CER-056** — SI un reposo que se emite —o se corrige (CER-053)— dura **más
+  de 365 días**, contados los dos extremos, ENTONCES el sistema DEBERÁ
+  rechazarlo con `CERTIFICATE_REST_IMPLAUSIBLE` en el campo `restTo`; y SI
+  empieza **más de un año** (de calendario) antes o después del día de la
+  atención en `America/Guayaquil`, ENTONCES DEBERÁ rechazarlo con
+  `CERTIFICATE_REST_IMPLAUSIBLE` en el campo `restFrom`; las dos a la vez se
+  dicen las dos. La base DEBERÁ rechazar lo mismo
+  (`medical_certificate_issue_rules`). Por debajo de esos topes los límites
+  de CER-055 DEBERÁN seguir avisando sin rechazar, y la pantalla DEBERÁ
+  mostrar cada mensaje bajo su campo.
+  > **D-133.3**: «rechazar lo absurdo, no lo largo». Con CER-055 un error de
+  > tecleo —3 000 días, un inicio en 2062— se emitía con un aviso y además
+  > bloqueaba por solape futuras maternidades (CER-048). Un año de
+  > calendario como en la base: `interval '1 year'` y `addMonths(…, 12)`
+  > (desde un 29 de febrero, el 28). Se juzga antes que los avisos, con la
+  > fecha de la atención leída en la transacción.
+  >
+  > **Garantía de la base** (`20261006095636_certificate_rest_sanity_limits`):
+  > `medical_certificate_rest_at_most_365_days` y
+  > `medical_certificate_rest_starts_within_a_year`, en el disparador de
+  > inserción y antes del candado por ficha. No revalida filas guardadas.
 
 ---
 
@@ -816,6 +844,7 @@ PR-030).
 | `CERTIFICATE_MATERNITY_BIRTH_MISMATCH` | 409 | CER-050 |
 | `CERTIFICATE_REST_OVERLAPS` | 409 | CER-048 |
 | `CERTIFICATE_MATERNITY_DIAGNOSIS_REQUIRED` | 422 | CER-049 |
+| `CERTIFICATE_REST_IMPLAUSIBLE` | 422 | CER-056 (por campo: `restFrom`, `restTo`) |
 
 **Retirados con CER-055 (D-128.7):** `CERTIFICATE_REST_TOO_LONG` (CER-031),
 `CERTIFICATE_REST_START_TOO_LATE` (CER-041), `CERTIFICATE_REST_START_TOO_EARLY`
@@ -842,6 +871,7 @@ Todo lo que faltaba está en `20261001070500_certificate_number_and_revocation`.
 | `CHECK medical_certificate_maternity_dates_in_order`: ingreso ≤ parto ≤ alta | `medical_certificate` | CER-035, D-108 |
 | Disparador `medical_certificate_issue_rules`: coherencia de la maternidad y candado por ficha (los límites de CER-046, CER-047 y CER-051 ya no, CER-055) | `medical_certificate` | CER-048 a CER-050, D-109, D-110 |
 | Disparador sin las reglas de días | `20261005060500_certificate_rest_limits_warn` | CER-055 |
+| Disparador con el tope de cordura: 365 días y un año desde la atención | `20261006095636_certificate_rest_sanity_limits` | CER-056 |
 
 ## Rutas
 
@@ -862,6 +892,7 @@ Todo lo que faltaba está en `20261001070500_certificate_number_and_revocation`.
 | CER-014 a CER-016 | Recorrido de las rutas registradas y conteo de filas de bitácora |
 | CER-053 | **Integración por HTTP**: anula y emite de una vez con sus dos filas de bitácora; una maternidad corregida sobre su propio período, con control positivo del solape; una regla del reposo y un fallo forzado de la base al insertar no anulan nada, con control positivo; atención cerrada, colega sin permiso, dirección médica sin y con motivo de CER-039, sin motivo y ya anulado. Unitario del servicio: una sola llamada al almacén, quién puede antes de escribir, y sin bitácora si falla |
 | CER-055 | **Integración contra la base**: cada límite de días se guarda con un `INSERT` directo, y lo que se queda (CER-030, CER-039, CER-049) sigue rechazando por el mismo camino. **Por HTTP**: cada límite emite y devuelve su aviso, con control positivo de un reposo normal sin avisos. Unitario del dominio: cada aviso, su borde y su texto |
+| CER-056 | **Integración contra la base**: 365 días y el inicio a un año justo, antes y después, se guardan con un `INSERT` directo; un día más se rechaza, y el rechazo llega como `CERTIFICATE_REST_IMPLAUSIBLE` en su campo. **Por HTTP**: 366 días y un inicio a un año y un día responden 422 por campo sin guardar nada, y 365 días se emiten con el aviso de CER-055. Unitario del dominio (bordes, 29 de febrero) y del servicio (también al corregir). Interfaz: el mensaje bajo el campo |
 | CER-020 a CER-029 | Unitario del dominio: edad y condición, horas y fechas en letras, «NA» |
 | C1 y C2 en pantalla | `e2e/flujos/f05-ordenes-y-receta.spec.ts` con `medico@` |
 

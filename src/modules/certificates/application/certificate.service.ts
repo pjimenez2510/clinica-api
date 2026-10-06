@@ -24,6 +24,7 @@ import {
   assertIssuableType,
   assertMaternityCoherent,
   assertRestDoesNotOverlapMaternity,
+  assertRestPlausible,
   backdatingReasonOf,
   lateIssueDayOf,
   iessValidationOf,
@@ -299,6 +300,9 @@ export class CertificateService {
       }
       const attentionDate = clinicalDateOf(snapshot.encounterStartedAt);
       if (details !== null) {
+        // CER-056 (D-133.3). What can only be a typo is refused first; the
+        // limits below it warn.
+        assertRestPlausible(details.period, attentionDate);
         // CER-055 (D-128.7). The limits around the attention —CER-031,
         // CER-041, CER-044 to CER-047, CER-051— warn and do not refuse.
         limitNotices = restLimitNoticesOf(details, {

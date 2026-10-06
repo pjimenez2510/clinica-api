@@ -23,6 +23,7 @@ import {
   CertificateEncounterNotFoundError,
   CertificateEncounterNotOpenError,
   CertificateNotFoundError,
+  CertificateRestImplausibleError,
   CertificateRestPeriodInvalidError,
   CertificateTypeNotSupportedError,
   CertifierProfileRequiredError,
@@ -41,6 +42,12 @@ const CONTRACT: readonly {
   category: { prototype: DomainError };
   says: string;
 }[] = [
+  {
+    error: new CertificateRestImplausibleError(['restFrom', 'restTo']),
+    code: 'CERTIFICATE_REST_IMPLAUSIBLE',
+    category: ValidationError,
+    says: 'Compruebe las fechas del reposo',
+  },
   {
     error: new CertificateRevokeForbiddenError(),
     code: 'CERTIFICATE_REVOKE_FORBIDDEN',
@@ -186,6 +193,28 @@ describe('el contrato de errores del certificado', () => {
       { field: 'restFrom', problem: 'NOT_ALLOWED' },
     ]);
     expect(attendance.fieldErrors?.[0]?.message).toContain('asistencia');
+  });
+
+  it('CER-056 el reposo absurdo señala cada fecha con su frase: 422 por campo', () => {
+    const error = new CertificateRestImplausibleError(['restTo']);
+    expect(error.code).toBe('CERTIFICATE_REST_IMPLAUSIBLE');
+    expect(error).toBeInstanceOf(ValidationError); // 422
+    expect(error.userTitle).toBe(
+      'Compruebe las fechas del reposo: parecen mal escritas',
+    );
+    expect(error.fieldErrors).toEqual([
+      {
+        field: 'restTo',
+        code: 'CERTIFICATE_REST_IMPLAUSIBLE',
+        message:
+          'Un reposo no puede pasar de 365 días: compruebe la fecha de fin',
+      },
+    ]);
+    expect(
+      new CertificateRestImplausibleError(['restFrom']).fieldErrors[0]?.message,
+    ).toBe(
+      'El reposo no puede empezar a más de un año de la atención: compruebe la fecha de inicio',
+    );
   });
 
   it('CER-008 el diagnostico que falta señala la casilla de incluirlo', () => {
